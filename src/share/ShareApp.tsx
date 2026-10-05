@@ -3,6 +3,7 @@ import { createStore, reconcile } from "solid-js/store";
 import { SHARE_TEXT_MAX, type BatonView, type GoneWhy, type ShareServerMessage } from "../../shared/baton";
 import { HOP_LOST_CLOSE, RECONNECT_BACKOFF_MS } from "../../shared/public-links";
 import { PhotoFormatError, processPhoto, sizeLabel, uploadPhoto, type UploadRefusal } from "./photos";
+import { batonKinds } from "./markdown";
 import { Item, LinkedText, MessagePhotos, Reply } from "./thread";
 import { visitTab } from "./visit-tab";
 
@@ -59,6 +60,8 @@ interface Pending {
 let seq = 0;
 const cid = () => `c${++seq}`;
 const photosWord = (n: number) => (n === 1 ? "1 photo" : `${n} photos`);
+/** The composer shows its character count only from here on: 80% of the limit. */
+const COUNT_FROM = 3200;
 
 const UNKNOWN: Problem = { title: "This link doesn't open a conversation.", body: "Check that you copied the whole link, or ask the person who sent it for a new one." };
 
@@ -83,7 +86,6 @@ export function ShareApp() {
     setOffline(false);
     setSendError((e) => (e === NOT_SENT_OFFLINE ? null : e));
   };
-  let listEnd: HTMLDivElement | undefined;
 
   /** The viewer's own messages in the view (the server labels them "you"; it sends no person ids). */
   const ownCount = () => (view()?.items ?? []).filter((i) => i.kind === "message" && i.by === "you").length;
@@ -239,7 +241,18 @@ export function ShareApp() {
     clearTimeout(retry);
     socket?.close();
   });
-  createEffect(on([() => view()?.items.length, pending, streaming], () => queueMicrotask(() => listEnd?.scrollIntoView({ block: "end" })), { defer: true }));
+  // To the page's end, not the thread's: the composer is the last thing in the flow, so the newest
+  // item then ends just above it. scrollIntoView on the thread's end would tuck it under the
+  // sticky composer.
+  createEffect(on([() => view()?.items.length, pending, streaming], () => queueMicrotask(() => window.scrollTo(0, document.documentElement.scrollHeight)), { defer: true }));
+  // The textarea grows with its text from one line up to its CSS max-height, then scrolls.
+  let input: HTMLTextAreaElement | undefined;
+  const fit = () => {
+    if (!input) return;
+    input.style.height = "auto";
+    input.style.height = `${input.scrollHeight}px`;
+  };
+  createEffect(on(draft, () => queueMicrotask(fit)));
 
   const send = async (e?: Event) => {
     e?.preventDefault();
@@ -305,7 +318,7 @@ export function ShareApp() {
   };
 
   return (
-    <main class="share">
+    <main class="share share-baton">
       <Show
         when={!problem()}
         fallback={
@@ -316,9 +329,12 @@ export function ShareApp() {
         }
       >
         <header class="share-head">
-          <h1 class="share-title">{view()?.publicTitle ?? "Loading the conversation."}</h1>
+          {/* Until the view arrives the title is a placeholder, and the loading line is status, never the heading. */}
+          <Show when={view()} fallback={<div class="skeleton skeleton-title share-title-skeleton" aria-hidden="true" />}>
+            <h1 class="share-title">{view()!.publicTitle}</h1>
+          </Show>
           <p class="share-status" role="status" aria-live="polite">
-            {statusLine()}
+            {view() ? statusLine() : "Loading the conversation."}
           </p>
           <Show when={offline()}>
             <p class="share-note" role="status">
@@ -330,11 +346,13 @@ export function ShareApp() {
           </Show>
         </header>
         <section class="share-thread" aria-label="Conversation">
-          <For each={view()?.items ?? []}>{(it) => <Item item={it} photo={photoSrc} />}</For>
+          <For each={view()?.items ?? []}>{(it) => <Item item={it} photo={photoSrc} viewer={view()?.viewer?.name} drawings={view()?.drawings} />}</For>
           <For each={pending()}>
             {(t) => (
               <article class="share-msg share-msg-own" aria-label="You, sending">
-                <span class="share-who">You · sending</span>
+                <span class="share-who share-who-sending">
+                  <span class="visually-hidden">You · </span>Sending
+                </span>
                 <Show when={t.thumbs.length}>
                   <MessagePhotos srcs={t.thumbs} from="you" />
                 </Show>
@@ -347,15 +365,13 @@ export function ShareApp() {
           <Show when={streaming()}>
             <article class="share-msg share-msg-reply" aria-label="Facilitator, writing">
               <span class="share-who">Facilitator · writing</span>
-              <Reply text={streaming()} streaming />
+              <Reply text={streaming()} streaming kinds={batonKinds(view()?.drawings?.html === true)} />
             </article>
           </Show>
-          <div ref={listEnd} />
         </section>
         <Show when={view()?.viewer?.canWrite}>
           <form
             class="share-composer"
-            classList={{ "share-composer-drop": dropping() }}
             onSubmit={send}
             onDragOver={(e) => {
               if (!photos() || !e.dataTransfer?.types.includes("Files")) return;
@@ -372,102 +388,127 @@ export function ShareApp() {
               void addFiles(imageFiles(e.dataTransfer?.files));
             }}
           >
-            <Show when={atts.length}>
-              <ul class="share-atts" aria-label="Photos to send">
-                <For each={atts}>
-                  {(a) => (
-                    <li class="share-att" classList={{ "share-att-failed": a.state === "failed" }}>
-                      <Show when={a.thumb} fallback={<span class="icon share-icon-alert share-att-icon" aria-hidden="true" />}>
-                        <img class="share-att-thumb" src={a.thumb!} alt="" />
-                      </Show>
-                      <span class="share-att-text">
-                        <span class="share-att-name" title={a.name}>
-                          {a.name}
-                        </span>
-                        <span class="share-att-meta">
-                          {a.state === "failed"
-                            ? a.reason
-                            : a.state === "processing"
-                              ? "Preparing"
-                              : a.state === "uploading"
-                                ? `Uploading ${Math.round(a.progress * 100)}%`
-                                : sizeLabel(a.size)}
-                        </span>
-                        <Show when={a.state === "uploading"}>
-                          <progress class="share-att-progress" max="1" value={a.progress} aria-hidden="true" />
+            {/* One field: the pending photos, then attach · text · Send in a row. A click on its
+                padding focuses the text, as a plain input would. */}
+            <div
+              class="share-field"
+              classList={{ "share-composer-drop": dropping() }}
+              onClick={(e) => {
+                if (e.target === e.currentTarget) input?.focus();
+              }}
+            >
+              <Show when={atts.length}>
+                <ul class="share-atts" aria-label="Photos to send">
+                  <For each={atts}>
+                    {(a) => (
+                      <li class="share-att" classList={{ "share-att-failed": a.state === "failed" }}>
+                        <Show when={a.thumb} fallback={<span class="icon share-icon-alert share-att-icon" aria-hidden="true" />}>
+                          <img class="share-att-thumb" src={a.thumb!} alt="" />
                         </Show>
-                      </span>
-                      <Show when={a.state === "failed" && a.blob}>
-                        <button type="button" class="button button-ghost share-att-retry" aria-label={`Retry ${a.name}`} onClick={() => void upload(a.cid)}>
-                          Retry
+                        <span class="share-att-text">
+                          <span class="share-att-name" title={a.name}>
+                            {a.name}
+                          </span>
+                          <span class="share-att-meta">
+                            {a.state === "failed"
+                              ? a.reason
+                              : a.state === "processing"
+                                ? "Preparing"
+                                : a.state === "uploading"
+                                  ? `Uploading ${Math.round(a.progress * 100)}%`
+                                  : sizeLabel(a.size)}
+                          </span>
+                          <Show when={a.state === "uploading"}>
+                            <progress class="share-att-progress" max="1" value={a.progress} aria-hidden="true" />
+                          </Show>
+                        </span>
+                        <Show when={a.state === "failed" && a.blob}>
+                          <button type="button" class="button button-ghost share-att-retry" aria-label={`Retry ${a.name}`} onClick={() => void upload(a.cid)}>
+                            Retry
+                          </button>
+                        </Show>
+                        <button type="button" class="button button-icon button-ghost" aria-label={`Remove ${a.name}`} onClick={() => remove(a.cid)}>
+                          <span class="icon share-icon-close" aria-hidden="true" />
                         </button>
-                      </Show>
-                      <button type="button" class="button button-icon button-ghost" aria-label={`Remove ${a.name}`} onClick={() => remove(a.cid)}>
-                        <span class="icon share-icon-close" aria-hidden="true" />
-                      </button>
-                    </li>
-                  )}
-                </For>
-              </ul>
-            </Show>
-            <label class="visually-hidden" for="share-text">
-              Your reply
-            </label>
-            <div class="share-compose-row">
-              <Show when={photos()}>
-                <button type="button" class="button button-icon share-clip" aria-label="Attach Photos" title="Attach Photos" onClick={() => fileInput?.click()}>
-                  <span class="icon share-icon-attach" aria-hidden="true" />
-                </button>
-                <input
-                  ref={fileInput}
-                  class="visually-hidden"
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  tabindex="-1"
-                  aria-hidden="true"
-                  onChange={(e) => {
-                    const files = imageFiles(e.currentTarget.files);
-                    e.currentTarget.value = "";
-                    void addFiles(files);
+                      </li>
+                    )}
+                  </For>
+                </ul>
+              </Show>
+              <label class="visually-hidden" for="share-text">
+                Your reply
+              </label>
+              <div class="share-compose-row">
+                <Show when={photos()}>
+                  <button type="button" class="button button-icon button-ghost share-clip" aria-label="Attach Photos" title="Attach Photos" onClick={() => fileInput?.click()}>
+                    <span class="icon share-icon-attach" aria-hidden="true" />
+                  </button>
+                  <input
+                    ref={fileInput}
+                    class="visually-hidden"
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    tabindex="-1"
+                    aria-hidden="true"
+                    onChange={(e) => {
+                      const files = imageFiles(e.currentTarget.files);
+                      e.currentTarget.value = "";
+                      void addFiles(files);
+                    }}
+                  />
+                </Show>
+                <textarea
+                  ref={input}
+                  id="share-text"
+                  class="share-input"
+                  rows={1}
+                  maxlength={SHARE_TEXT_MAX}
+                  placeholder="Write your reply"
+                  aria-describedby="share-hint"
+                  value={draft()}
+                  onInput={(e) => setDraft(e.currentTarget.value)}
+                  onPaste={(e) => {
+                    const files = photos() ? imageFiles(e.clipboardData?.files) : [];
+                    if (!files.length) return;
+                    // A paste with text keeps its text and attaches the image too.
+                    if (!e.clipboardData?.types.includes("text/plain")) e.preventDefault();
+                    void addFiles(files, true);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void send();
                   }}
                 />
-              </Show>
-              <textarea
-                id="share-text"
-                class="input textarea share-input"
-                rows={3}
-                maxlength={SHARE_TEXT_MAX}
-                placeholder="Write your reply"
-                value={draft()}
-                onInput={(e) => setDraft(e.currentTarget.value)}
-                onPaste={(e) => {
-                  const files = photos() ? imageFiles(e.clipboardData?.files) : [];
-                  if (!files.length) return;
-                  // A paste with text keeps its text and attaches the image too.
-                  if (!e.clipboardData?.types.includes("text/plain")) e.preventDefault();
-                  void addFiles(files, true);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void send();
-                }}
-              />
+                <button
+                  type="submit"
+                  class="button button-icon share-send"
+                  aria-label={sending() ? "Sending" : "Send"}
+                  title={sending() ? "Sending" : "Send"}
+                  aria-disabled={sending() || uploading() || (!draft().trim() && !ready().length) ? "true" : undefined}
+                >
+                  <span class="icon share-icon-send" aria-hidden="true" />
+                </button>
+              </div>
             </div>
             <Show when={sendError()}>
               <p class="field-error" role="alert">
                 {sendError()}
               </p>
             </Show>
-            <div class="share-composer-foot">
-              <span class="field-hint">
-                {uploading()
-                  ? "Waiting for photos to finish."
-                  : `${draft().length.toLocaleString("en-US")} of ${SHARE_TEXT_MAX.toLocaleString("en-US")} characters · Ctrl+Enter sends`}
-              </span>
-              <button type="submit" class="button button-primary" aria-disabled={sending() || uploading() || (!draft().trim() && !ready().length) ? "true" : undefined}>
-                {sending() ? "Sending" : "Send"}
-              </button>
-            </div>
+            {/* Quiet: the keys only where there is a keyboard to press them (CSS), the count only near the limit. */}
+            <p id="share-hint" class="field-hint share-composer-foot">
+              <Show
+                when={!uploading()}
+                fallback={<span>Waiting for photos to finish.</span>}
+              >
+                <span class="share-hint-keys">Ctrl+Enter sends</span>
+                <Show when={draft().length >= COUNT_FROM}>
+                  <span class="share-hint-count">
+                    {draft().length.toLocaleString("en-US")} of {SHARE_TEXT_MAX.toLocaleString("en-US")} characters
+                  </span>
+                </Show>
+              </Show>
+            </p>
             <p class="visually-hidden" aria-live="polite">
               {announce()}
             </p>

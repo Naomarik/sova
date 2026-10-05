@@ -8,6 +8,8 @@ import {
   CUT_REPLY_MAX,
   LIMIT_QUESTION,
   LIMIT_REACHED_FOR_PEOPLE,
+  abilitiesOf,
+  drawsHtml,
   OPERATOR,
   type BatonSession,
   type BatonView,
@@ -15,6 +17,9 @@ import {
   type PersonRef,
 } from "../shared/baton";
 import type { HEntry } from "../shared/harness";
+import { shareFences } from "../src/share/markdown";
+import { visKindWord } from "../src/vis/parse";
+import { canonicalKind } from "../src/vis/registry";
 import { typedText } from "./harness/pi/reader";
 import { REDACTED } from "./overseer-redact";
 
@@ -52,6 +57,64 @@ export function redactPhrases(text: string, phrases: readonly string[]): string 
     out = out.replace(re, REDACTED);
   }
   return out;
+}
+
+/** What a withheld drawing becomes: a fence of no kind a page draws, so it shows the quiet line. */
+const WITHHELD_KIND = "vis withheld";
+export const WITHHELD_FENCE = `\`\`\`${WITHHELD_KIND}\n\`\`\``;
+
+/** The text a person would read in markup: entities and script escapes decoded; `tags` "" joins
+    what a tag split (`Sec<b>ret`), " " keeps words a tag separated apart (`Secret<br>phrase`). */
+function markupTexts(body: string): string[] {
+  const decoded = body
+    .replace(/&#x([0-9a-f]{1,6});?/gi, (_, h: string) => cp(parseInt(h, 16)))
+    .replace(/&#([0-9]{1,7});?/g, (_, d: string) => cp(Number(d)))
+    .replace(/&(amp|lt|gt|quot|apos|nbsp);/gi, (_, n: string) => ({ amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " })[n.toLowerCase() as "amp"])
+    .replace(/\\u\{([0-9a-f]{1,6})\}|\\u([0-9a-f]{4})|\\x([0-9a-f]{2})/gi, (_, a?: string, b?: string, c?: string) => cp(parseInt((a ?? b ?? c)!, 16)));
+  const fold = (t: string) => t.replace(/\s+/g, " ");
+  return [fold(decoded), fold(decoded.replace(/<[^>]*>/g, "")), fold(decoded.replace(/<[^>]*>/g, " "))];
+}
+const cp = (n: number): string => (Number.isInteger(n) && n >= 0 && n <= 0x10ffff ? String.fromCodePoint(n) : "");
+
+/** Whether a phrase is in a markup text, as a whole phrase, any whitespace between its words. */
+function phraseIn(texts: readonly string[], phrase: string): boolean {
+  const word = /[\p{L}\p{N}]/u;
+  const body = phrase.trim().split(/\s+/).map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s+");
+  const re = new RegExp(`${word.test(phrase.trim()[0] ?? "") ? "(?<![\\p{L}\\p{N}])" : ""}${body}${word.test(phrase.trim().at(-1) ?? "") ? "(?![\\p{L}\\p{N}])" : ""}`, "iu");
+  return texts.some((t) => re.test(t));
+}
+
+/**
+ * The markup backstop (§app.baton/outsider-view), after the plain pass (redactPhrases): a `vis html`
+ * or `vis svg` fence is checked again with its entities and escapes decoded and its tags stripped,
+ * since a phrase written `S&#101;cret` or `Sec<b>ret` would pass the plain pass and still read
+ * whole on the person's page. Fences are found exactly as the page finds them, by its own
+ * markdown-it parse (src/share/markdown.ts shareFences): nested in a list item or a quote too, and a
+ * vis line inside another code block is no fence. A phrase found that way withholds the whole fence:
+ * its opening line becomes `vis withheld` (its list or quote prefix kept, so it stays where it was)
+ * and its body goes, which the page draws as the quiet line. An unclosed one (a reply still
+ * streaming) is dropped with everything after it, so its source never crosses the socket. `onHit`
+ * hears which kind, never the phrase. Pure.
+ */
+export function markupBackstop(text: string, phrases: readonly string[], onHit?: (kind: string) => void): string {
+  if (!phrases.length || !/vis/i.test(text)) return text;
+  const lines = text.split("\n");
+  // Last first, so an earlier fence's line numbers still hold.
+  for (const f of shareFences(text).reverse()) {
+    const word = visKindWord(f.info);
+    const kind = word ? canonicalKind(word) : null;
+    if (kind !== "html" && kind !== "svg") continue;
+    const texts = markupTexts(f.content);
+    if (!phrases.some((p) => p && phraseIn(texts, p))) continue;
+    onHit?.(kind);
+    if (!f.closed) {
+      lines.length = f.start;
+      continue;
+    }
+    const open = lines[f.start]!;
+    lines.splice(f.start, f.end - 1 - f.start, `${open.slice(0, open.indexOf(f.markup))}${f.markup}${WITHHELD_KIND}`);
+  }
+  return lines.join("\n");
 }
 
 /**
@@ -159,7 +222,7 @@ export function labelAuthors<M>(messages: M[], notes: readonly AuthorNote[], ori
 }
 
 export interface ViewInput {
-  row: Pick<BatonSession, "publicTitle" | "state" | "holder">;
+  row: Pick<BatonSession, "publicTitle" | "state" | "holder" | "abilities">;
   /** The active branch, oldest first (server/harness/pi/reader.ts readBranch). */
   branch: readonly HEntry[];
   /** personId (and "operator") → display name. */
@@ -268,6 +331,8 @@ export function batonView(input: ViewInput): BatonView {
     publicTitle: redact(input.row.publicTitle),
     state: input.row.state,
     holder: input.row.holder === null || input.untilOffer !== undefined ? null : name(input.row.holder),
+    // The session's abilities as they are now: the strip's change reaches the page's next view.
+    drawings: { html: drawsHtml(abilitiesOf(input.row)) },
     items,
   };
 }

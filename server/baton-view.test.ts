@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { BATON_DECISION_ENTRY, BATON_DONE_ENTRY, BATON_ENTRY, BATON_HANDOFF_ENTRY, BATON_OFFER_ENTRY, BATON_SENT_ENTRY, BATON_WRAPUP_ENTRY } from "../shared/baton";
 import { OVERSEER_SENT_ENTRY } from "../shared/protocol";
-import { authorNotes, batonView, labelAuthors, redactPhrases } from "./baton-view";
+import { authorNotes, batonView, labelAuthors, markupBackstop, redactPhrases, WITHHELD_FENCE } from "./baton-view";
+import { batonKinds, BROKEN_DRAWING, renderShareMarkdown } from "../src/share/markdown";
 import { historyOf } from "./harness/pi/reader";
 
 const names = { operator: "Omar", p_t: "Tony", p_m: "Maria" };
@@ -174,4 +175,94 @@ test("the limit's hand-off to the operator shows people that the limit was reach
   };
   assert.equal(q("p_t"), "This conversation reached its message limit.");
   assert.equal(q(), LIMIT_QUESTION);
+});
+
+test("the view says whether its replies' vis html runs: only with draw and interactive drawings, as the session is now", () => {
+  const drawings = (abilities?: { draw: boolean; readLinks: boolean; drawHtml: boolean }) =>
+    batonView({ row: { publicTitle: "Portal", state: "open", holder: "p_t", ...(abilities ? { abilities } : {}) }, branch: historyOf(BRANCH), names, redact: (t) => t }).drawings;
+  assert.deepEqual(drawings(), { html: false }, "a session from before abilities");
+  assert.deepEqual(drawings({ draw: true, readLinks: false, drawHtml: false }), { html: false });
+  assert.deepEqual(drawings({ draw: false, readLinks: false, drawHtml: true }), { html: false }, "interactive drawings count only with draw");
+  assert.deepEqual(drawings({ draw: true, readLinks: false, drawHtml: true }), { html: true });
+});
+
+// The markup backstop (§app.baton/outsider-view): after the plain pass, an html or svg drawing is
+// read again as a person would read it on the page.
+const SECRET = "direct and technical";
+const said = (t: string, hits: string[] = []) => markupBackstop(redactPhrases(t, [SECRET]), [SECRET], (k) => hits.push(k));
+const fence = (kind: string, body: string) => `Here it is:\n\`\`\`vis ${kind}\ntitle: Totals\n${body}\n\`\`\`\nAfter.`;
+
+test("the backstop withholds an html or svg drawing whose markup hides a phrase the plain pass missed", () => {
+  for (const [kind, body] of [
+    ["html", "<p>Be d&#105;rect and technical</p>"], // a decimal entity
+    ["html", "<p>Be dir&#x65;ct&nbsp;and technical</p>"], // a hex entity, a no-break space
+    ["svg", "<svg viewBox='0 0 9 9'><text>Dir<tspan>ect</tspan> and <tspan>tech</tspan>nical</text></svg>"], // split by tags
+    ["html", "<div title='Direct&#32;and technical'></div>"], // in an attribute
+    ["html", "<script>var s='Dire\\u0063t and techn\\x69cal'</script>"], // script escapes
+    ["html", "<p>Direct<br>and\n  technical</p>"], // a tag between words, wrapped
+  ] as const) {
+    const hits: string[] = [];
+    const out = said(fence(kind, body), hits);
+    assert.equal(out, `Here it is:\n${WITHHELD_FENCE}\nAfter.`, body);
+    assert.deepEqual(hits, [kind], body);
+  }
+  const shown = renderShareMarkdown(said(fence("html", "<p>d&#105;rect and technical</p>")), false, batonKinds(true));
+  assert.match(shown.html, new RegExp(BROKEN_DRAWING.replace(/[.']/g, "\\$&")), "a withheld drawing is the quiet line");
+  assert.deepEqual(shown.visuals, []);
+});
+
+test("the backstop leaves a clean drawing, one the plain pass already redacted, and other fences alone", () => {
+  const hits: string[] = [];
+  const clean = fence("html", "<p>Totals by month</p>");
+  assert.equal(said(clean, hits), clean);
+  // Plain text in the markup: the plain pass already blanks it, so nothing is withheld.
+  assert.equal(said(fence("html", "<p>Be direct and technical</p>"), hits), fence("html", "<p>Be [redacted]</p>"));
+  // A code block that shows a vis fence, and a figure kind, are not markup drawings.
+  const code = "````md\n```vis html\n<p>d&#105;rect and technical</p>\n```\n````";
+  assert.equal(said(code, hits), code);
+  const chart = fence("chart", '"d&#105;rect and technical" 3');
+  assert.equal(said(chart, hits), chart);
+  assert.deepEqual(hits, []);
+});
+
+// Fences are found as the page's own parser finds them: a list item or a quote holds one too.
+const drawn = (t: string) => renderShareMarkdown(t, false, batonKinds(true));
+const quietLines = (html: string) => html.split(BROKEN_DRAWING).length - 1;
+
+test("the backstop withholds drawings nested in a list item or a quote, and a nested fence never hides a later one", () => {
+  const hits: string[] = [];
+  const both = markupBackstop("- ```vis html\n  <p>S&#101;cret</p>\n  ```\n\n```vis svg\n<text>Sec<b>ret</b></text>\n```", ["Secret"], (k) => hits.push(k));
+  assert.deepEqual(hits.sort(), ["html", "svg"]);
+  assert.doesNotMatch(both, /S&#101;cret|Sec<b>ret/);
+  const page = drawn(both);
+  assert.deepEqual(page.visuals, [], "nothing drawn");
+  assert.equal(quietLines(page.html), 2, "each fence is the quiet line");
+  assert.doesNotMatch(page.html, /<svg|&lt;text|cret/);
+
+  const quote = said("> ```vis svg\n> <svg viewBox='0 0 9 9'><text>d&#105;rect and technical</text></svg>\n> ```\n\nAfter.");
+  assert.equal(quote, "> ```vis withheld\n> ```\n\nAfter.");
+  assert.equal(quietLines(drawn(quote).html), 1);
+
+  // A clean nested fence stays drawn; its indented close never swallows the fence after it.
+  const mixed = said("1. Steps:\n   ```vis html\n   <p>Totals</p>\n   ```\n2. Next\n\n```vis html\n<p>D&#105;rect and technical</p>\n```");
+  const r = drawn(mixed);
+  assert.equal(r.visuals.length, 1, "the clean nested drawing still draws");
+  assert.equal(quietLines(r.html), 1, "the later one is withheld");
+});
+
+test("while a reply streams, an unclosed nested drawing that hides a phrase is dropped with all after it", () => {
+  assert.equal(said("Look:\n\n- ```vis html\n  <p>S&#101;cret"), "Look:\n\n- ```vis html\n  <p>S&#101;cret", "not this session's phrase: kept");
+  assert.equal(markupBackstop("Look:\n\n- ```vis html\n  <p>S&#101;cret", ["Secret"]), "Look:\n");
+  assert.equal(markupBackstop("Look:\n\n> ```vis svg\n> <text>Sec<b>ret", ["Secret"]), "Look:\n");
+});
+
+test("while a reply streams, an unclosed drawing that hides a phrase is left out of the text, with all after it", () => {
+  const hits: string[] = [];
+  const streaming = "Look:\n```vis svg\n<svg viewBox='0 0 9 9'><text>Dir<tspan>ect and tech";
+  // Not yet a whole phrase: the tail stays (the page shows its Drawing… box).
+  assert.equal(said(streaming, hits), streaming);
+  const more = `${streaming}</tspan>nical</text>`;
+  assert.equal(said(more, hits), "Look:");
+  assert.deepEqual(hits, ["svg"]);
+  assert.doesNotMatch(said(more), /tspan|nical/, "the source never rides the socket");
 });

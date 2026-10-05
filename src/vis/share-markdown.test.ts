@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { test } from "node:test";
-import { BROKEN_DRAWING, renderShareMarkdown, SHARE_VIS_KINDS } from "../share/markdown";
+import { batonKinds, BROKEN_DRAWING, renderShareMarkdown, SHARE_VIS_KINDS } from "../share/markdown";
 import { SHARE_VIS_KINDS as TAUGHT } from "../../server/baton-vis-guide";
 import { WIREFRAME_ICON_FILES } from "./kinds/wireframe/icons";
 
@@ -35,20 +35,44 @@ test("the share build carries every icon a drawing names: share/vis-icons.ts glo
   }
 });
 
-test("html, svg and the technical kinds, and a block that doesn't parse, show one quiet line and never their source", () => {
-  for (const [info, body] of [
-    ["vis html", "<script>alert(1)</script><p>secret layout</p>"],
-    ["vis svg", "<svg><text>secret</text></svg>"],
-    ["vis sequence", "a -> b: secret"],
-    ["vis code", "lang: js\nconst secret = 1"],
-    ["vis chart", "this is not a chart secret"],
-    ["vis", "secret"],
-  ]) {
-    const r = renderShareMarkdown(fence(info!, body!));
-    assert.equal(r.visuals.length, 0, info);
-    assert.equal(r.html.split("\n")[1], `<p class="share-vis-broken">${BROKEN_DRAWING}</p>`, `${info}: ${r.html}`);
-    assert.doesNotMatch(r.html, /secret|<pre|<script/, info);
+test("code always, html without interactive drawings, and a block that doesn't parse, show one quiet line and never their source", () => {
+  for (const html of [false, true])
+    for (const [info, body] of [
+      ...(html ? [] : [["vis html", "<script>alert(1)</script><p>secret layout</p>"]]),
+      ["vis code", "lang: js\nconst secret = 1"],
+      ["vis chart", "this is not a chart secret"],
+      ["vis svg", "<p>secret: not an svg</p>"],
+      ["vis withheld", ""],
+      ["vis", "secret"],
+    ]) {
+      const r = renderShareMarkdown(fence(info!, body!), false, batonKinds(html));
+      assert.equal(r.visuals.length, 0, info);
+      assert.equal(r.html.split("\n")[1], `<p class="share-vis-broken">${BROKEN_DRAWING}</p>`, `${info}: ${r.html}`);
+      assert.doesNotMatch(r.html, /secret|<pre|<script/, info);
+    }
+});
+
+test("a baton conversation draws state and sequence as figures, svg as an image, and html as a frame only with interactive drawings", () => {
+  for (const html of [false, true]) {
+    const k = batonKinds(html);
+    assert.equal(renderShareMarkdown(fence("vis state", "idle -> busy"), false, k).visuals[0]?.kind, "state");
+    assert.equal(renderShareMarkdown(fence("vis sequence", 'actor a "App"\nactor b "Bank"\na -> b "pay"'), false, k).visuals[0]?.kind, "sequence");
+    const svg = renderShareMarkdown(fence("vis svg", "title: Sketch\n<svg viewBox=\"0 0 9 9\"><script>alert(1)</script><text>hi</text></svg>"), false, k);
+    assert.equal(svg.visuals.length, 0, "an image, never a mounted drawing");
+    assert.match(svg.html, /<figure class="share-vis-image"><figcaption class="share-vis-caption">Sketch<\/figcaption><img src="data:image\/svg\+xml;charset=utf-8,[^"]+" alt="Sketch"><\/figure>/);
+    assert.doesNotMatch(svg.html, /<script|<svg/, "the svg is only ever inside the image's data URL");
+    assert.match(decodeURIComponent(/src="data:image\/svg\+xml;charset=utf-8,([^"]+)"/.exec(svg.html)![1]!), /^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg" viewBox=/, "an svg without its namespace gets it, or the image is broken");
+    const frame = renderShareMarkdown(fence("vis html", "title: Try it\n<button>Step</button><script>1</script>"), false, k);
+    if (html) {
+      assert.equal(frame.visuals[0]?.kind, "html");
+      assert.match(frame.html, /<div class="md-vis" data-vis="0"/);
+      assert.doesNotMatch(frame.html, /<script|<button/, "the document reaches the frame, never the page");
+    } else {
+      assert.equal(frame.visuals.length, 0);
+      assert.match(frame.html, new RegExp(`<p class="share-vis-broken">${BROKEN_DRAWING.replace(/[.']/g, "\\$&")}</p>`));
+    }
   }
+  assert.deepEqual(renderShareMarkdown(fence("vis html", "<p>x</p>")).visuals, [], "the default is without interactive drawings");
 });
 
 test("while the reply streams, an open fence is the Drawing… box; closed, it is drawn", () => {
@@ -86,6 +110,7 @@ test("a session share draws sequence and state, and shows svg as an image and co
   assert.match(html.html, /An interactive drawing, shown as its source\./);
   const code = renderShareMarkdown(fence("vis code", "lang: ts\n---\nconst a = '<b>';"), false, SESSION_VIS_KINDS);
   assert.match(code.html, /<figcaption class="share-vis-caption">Code<\/figcaption><pre><code>const a = &#39;&#60;b&#62;&#39;;<\/code><\/pre>/);
-  // The hand-off page's kinds are unchanged: the same fences are the quiet line there.
-  assert.match(renderShareMarkdown(fence("vis svg", "<svg></svg>")).html, /share-vis-broken/);
+  // The hand-off page never shows source: code is its quiet line, html too without interactive drawings.
+  assert.match(renderShareMarkdown(fence("vis code", "lang: ts\n---\nconst a = 1;")).html, /share-vis-broken/);
+  assert.match(renderShareMarkdown(fence("vis html", "<p>hi</p>")).html, /share-vis-broken/);
 });

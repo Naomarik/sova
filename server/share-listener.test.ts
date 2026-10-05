@@ -211,3 +211,51 @@ test("past the address limit the page shell answers a plain page asking to wait,
     server.closeAllConnections();
   }
 });
+
+// The frame host of interactive drawings (§app.baton/share-listener, §chat.markdown/visuals).
+test("the frame host is the one HTML asset: its own sandbox CSP and SAMEORIGIN; every other answer stays DENY", async () => {
+  const { createShareApp, PAGE_CSP } = await import("./share/routes");
+  const host = await import("../shared/vis-frame-host");
+  const { FRAME_MESSAGE } = await import("../src/vis/kinds/frame/srcdoc");
+  const dist = join(root, "dist-frame");
+  mkdirSync(join(dist, "assets"), { recursive: true });
+  appendFileSync(join(dist, "index.html"), "<!doctype html><p>page</p>");
+  appendFileSync(join(dist, "assets", host.FRAME_HOST_NAME), host.FRAME_HOST_HTML);
+  appendFileSync(join(dist, "assets", "page.html"), "<script>1</script>");
+  appendFileSync(join(dist, "assets", "a.js"), "1");
+  const was = process.env.SOVA_SHARE_DIST;
+  process.env.SOVA_SHARE_DIST = dist;
+  try {
+    const app = createShareApp();
+    assert.equal(shareMayReach("GET", host.FRAME_HOST_PATH), true, "the edge's asset shape already admits it");
+    const frame = await app.request(host.FRAME_HOST_PATH);
+    assert.equal(frame.status, 200);
+    assert.equal(frame.headers.get("content-type"), "text/html; charset=utf-8");
+    assert.equal(frame.headers.get("content-security-policy"), host.FRAME_HOST_CSP);
+    assert.equal(frame.headers.get("x-frame-options"), "SAMEORIGIN");
+    assert.equal(frame.headers.get("cache-control"), "no-store");
+    assert.equal(frame.headers.get("x-content-type-options"), "nosniff");
+    assert.equal(await frame.text(), host.FRAME_HOST_HTML);
+    for (const directive of ["sandbox allow-scripts", "default-src 'none'", "form-action 'none'", "base-uri 'none'", "frame-ancestors 'self'"]) assert.ok(host.FRAME_HOST_CSP.split("; ").includes(directive), directive);
+    assert.doesNotMatch(host.FRAME_HOST_CSP, /allow-same-origin|connect-src|https?:/);
+    // Any other .html asset is no HTML here, and nothing else may be framed.
+    const other = await app.request("/h/assets/page.html");
+    assert.equal(other.headers.get("content-type"), "application/octet-stream");
+    assert.equal(other.headers.get("x-frame-options"), "DENY");
+    assert.equal((await app.request("/h/assets/a.js")).headers.get("x-frame-options"), "DENY");
+    const page = await app.request(`/h/${TOKEN}`);
+    assert.equal(page.headers.get("x-frame-options"), "DENY");
+    assert.equal(page.headers.get("content-security-policy"), PAGE_CSP);
+    // The page frames only its own host, and still runs no inline script and no blob:/data: frame.
+    const csp = Object.fromEntries(PAGE_CSP.split("; ").map((d) => [d.split(" ")[0], d.split(" ").slice(1)]));
+    assert.deepEqual(csp["frame-src"], ["'self'"]);
+    assert.deepEqual(csp["script-src"], ["'self'"]);
+    assert.deepEqual(csp["frame-ancestors"], ["'none'"]);
+    assert.equal(host.FRAME_HOST_MESSAGE, FRAME_MESSAGE, "the page posts what the host takes");
+    assert.equal((host.FRAME_HOST_HTML.match(/<script>/g) ?? []).length, 1);
+    assert.match(host.FRAME_HOST_HTML, /delete window\.RTCPeerConnection;delete window\.webkitRTCPeerConnection/);
+  } finally {
+    if (was === undefined) delete process.env.SOVA_SHARE_DIST;
+    else process.env.SOVA_SHARE_DIST = was;
+  }
+});

@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import { defineConfig, type ProxyOptions } from "vite";
 import solid from "vite-plugin-solid";
+import { FRAME_HOST_HTML, FRAME_HOST_NAME } from "./shared/vis-frame-host";
 
 // The API server this dev server proxies to. `pnpm run dev:server` defaults to 4800; a second
 // checkout (git worktree) or a hermetic/experimental server runs elsewhere (PORT=4810 with
@@ -17,7 +18,18 @@ const apiHost = process.env.SOVA_HOST ?? "127.0.0.1";
 // src/share/ into dist-share/, served ONLY by the share listener at /h/ (server/share/). It never
 // sees the operator app's bundle, and the operator app's build never contains it.
 const share = defineConfig({
-  plugins: [solid()],
+  plugins: [
+    solid(),
+    // The frame host of a page's interactive drawings (shared/vis-frame-host.ts): one constant
+    // document, unhashed, beside the build's own assets.
+    {
+      name: "sova-vis-frame-host",
+      apply: "build",
+      generateBundle() {
+        this.emitFile({ type: "asset", fileName: `assets/${FRAME_HOST_NAME}`, source: FRAME_HOST_HTML });
+      },
+    },
+  ],
   root: resolve(import.meta.dirname, "src/share"),
   base: "/h/",
   publicDir: false,

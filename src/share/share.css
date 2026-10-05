@@ -35,27 +35,104 @@ body { margin: 0; background: var(--color-bg); color: var(--color-ink); }
 .share-note { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); }
 
 .share-thread { flex: 1; display: flex; flex-direction: column; gap: var(--space-3); }
+/* The baton page's title placeholder while the view loads (the loading words are status, not heading). */
+.share-title-skeleton { width: 60%; height: var(--fs-heading-m); margin: calc((var(--fs-heading-m) * var(--lh-heading-m) - var(--fs-heading-m)) / 2) 0; }
+
+/* The composer (§app.baton/outsider-view): one rounded field holding the pending photos and a row
+   of attach · text · Send. Folded, it stays at the bottom of the screen (the thumb arc); unfolded,
+   the thread no longer stretches, so it follows the conversation and pins only once the page
+   scrolls. */
 .share-composer {
   position: sticky;
   bottom: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-3) 0 var(--space-2);
+  gap: var(--space-1);
+  padding: var(--space-3) 0 max(var(--space-3), env(safe-area-inset-bottom));
   background: var(--color-bg);
 }
-.share-input { width: 100%; box-sizing: border-box; resize: vertical; }
-.share-composer-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+@media (min-width: 768px) {
+  .share-baton .share-thread { flex: none; }
+}
+.share-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  border: var(--stroke-icon) solid var(--color-border-strong);
+  border-radius: var(--r-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-1);
+  cursor: text;
+  transition: border-color var(--dur-fast) var(--ease-standard);
+}
+.share-field:hover { border-color: var(--color-ink-muted); }
+.share-field:focus-within { border-color: var(--color-accent); }
+/* The text's focus ring is drawn on the whole field it sits in; the buttons keep their own. */
+.share-field:has(.share-input:focus-visible) { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.share-compose-row { display: flex; align-items: flex-end; gap: var(--space-1); }
+.share-input {
+  flex: 1;
+  min-width: 0;
+  box-sizing: border-box;
+  /* One line tall to start, centred in a 44 px row; ShareApp sets the height as the text grows. */
+  min-height: var(--control-md);
+  max-height: min(40vh, 240px);
+  margin: 0;
+  padding: calc((var(--control-md) - var(--fs-body) * var(--lh-body)) / 2) var(--space-2);
+  border: 0;
+  background: transparent;
+  color: var(--color-ink);
+  font: inherit;
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  resize: none;
+  overflow-y: auto;
+}
+.share-input:first-child { padding-left: var(--space-3); }
+.share-input::placeholder { color: var(--color-ink-muted); }
+.share-input:focus-visible { outline: none; }
+.share-send {
+  flex: none;
+  border-radius: var(--r-md);
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-on-accent);
+  cursor: pointer;
+}
+.share-send:hover,
+.share-send:active { background: var(--color-accent-hover); border-color: var(--color-accent-hover); }
+/* Nothing to send yet: a recessed, still-legible button, not a faded accent. */
+.share-send[aria-disabled="true"],
+.share-send[aria-disabled="true"]:hover {
+  opacity: 1;
+  background: var(--color-sunken);
+  border-color: var(--color-sunken);
+  color: var(--color-ink-muted);
+}
+.share-icon-send { --icon: url("../../public/icons/arrow-right.svg"); }
+.share-composer .field-error { margin: 0; padding: 0 var(--space-3); }
+.share-composer-foot { display: flex; align-items: center; gap: var(--space-3); margin: 0; padding: 0 var(--space-3); }
+.share-composer-foot:empty { display: none; }
+/* The keys only where there is a keyboard and pointer to use them; touch screens don't show it. */
+.share-hint-keys { display: none; }
+@media (hover: hover) and (pointer: fine) {
+  .share-hint-keys { display: inline; }
+}
+.share-hint-count { margin-left: auto; font-variant-numeric: tabular-nums; }
+@media (max-width: 767px) {
+  /* 16 px keeps a phone from zooming into the field on focus. */
+  .share-input { font-size: var(--fs-heading-s); padding-block: calc((var(--control-md) - var(--fs-heading-s) * var(--lh-body)) / 2); }
+}
 
-/* Photos in the composer (§app.baton/images): the paperclip left of the textarea, and the pending
-   strip above it, which wraps and never squeezes the textarea at 320 px. */
+/* Photos in the composer (§app.baton/images): an icon-only paperclip inside the field, left of the
+   text (a 44 px target, no fill of its own), and the pending strip above the text inside the same
+   field, which wraps and never squeezes the textarea at 320 px. */
 .share-icon-attach { --icon: url("../../public/icons/attach.svg"); }
 .share-icon-alert { --icon: url("../../public/icons/alert-circle.svg"); }
-.share-compose-row { display: flex; align-items: flex-start; gap: var(--space-2); }
-.share-compose-row .share-input { flex: 1; min-width: 0; }
-.share-clip { flex: none; }
-.share-composer-drop { outline: var(--stroke-icon) dashed var(--color-accent); outline-offset: var(--space-1); border-radius: var(--r-lg); background: var(--color-accent-tint); }
-.share-atts { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+.share-clip { flex: none; border-radius: var(--r-md); }
+.share-field.share-composer-drop { border-style: dashed; border-color: var(--color-accent); background: var(--color-accent-tint); }
+.share-atts { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: 0; padding: var(--space-1) var(--space-1) 0; list-style: none; cursor: default; }
 .share-att {
   box-sizing: border-box;
   display: flex;

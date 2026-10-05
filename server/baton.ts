@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, readdirSync } from "node:fs";
 import { basename, join } from "node:path";
 import {
+  abilitiesOf,
   BATON_WRAPUP_ENTRY,
   LEASE_IDLE_MS,
   MESSAGES_CAP,
@@ -179,7 +180,7 @@ export function rowOf(dir: string, s: Pick<SessionInfo, "configuration" | "data"
     budget: { messagesMax: typeof budget.messagesMax === "number" ? budget.messagesMax : MESSAGES_DEFAULT, messagesUsed: typeof budget.messagesUsed === "number" ? budget.messagesUsed : 0 },
     ...(typeof d.model === "string" && d.model ? { model: d.model } : {}),
     ...(typeof d.thinking === "string" && d.thinking ? { thinking: d.thinking } : {}),
-    ...(isObj(d.abilities) ? { abilities: { draw: d.abilities.draw === true, readLinks: d.abilities.readLinks === true } } : {}),
+    ...(isObj(d.abilities) ? { abilities: { draw: d.abilities.draw === true, readLinks: d.abilities.readLinks === true, drawHtml: d.abilities.drawHtml === true } } : {}),
     createdAt: isoOf(d.createdAt),
     ...(iso(d.closedAt) ? { closedAt: iso(d.closedAt) } : {}),
     ...(d.hiddenFromOwner === true ? { hiddenFromOwner: true } : {}),
@@ -668,7 +669,7 @@ export async function setAbilities(sessionId: string, v: unknown, by?: OperatorB
   await batonAct(sessionId, "baton/abilities", "error" in next ? {} : { abilities: next }, (o, p) => ({ ...operatorEnvelope(o, p, by), ...("error" in next ? { invalid: next.error } : {}) }), { settle: true });
   return batonById(sessionId)!.row;
 }
-const abilitiesOfRow = (row: BatonSession): GatheringAbilities => row.abilities ?? { draw: false, readLinks: false };
+const abilitiesOfRow = (row: BatonSession): GatheringAbilities => abilitiesOf(row);
 
 /**
  * Raise a session's message limit by `by` (the operator, from the strip or the Needs-you item):

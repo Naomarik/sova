@@ -35,7 +35,8 @@ import {
   runProjectOverseer,
   startProjectCoding,
 } from "../lib/api";
-import { ABILITIES_KEYS, abilitiesKey, abilitiesLabel, abilitiesOfKey, abilitiesWords, type AbilitiesKey } from "../lib/gathering-abilities";
+import type { GatheringAbilities } from "../../shared/baton";
+import { ABILITIES_KEYS, abilitiesKey, abilitiesLabel, abilitiesOfKey, abilitiesWords, drawHtmlSavedToast, drawHtmlSettable, type AbilitiesKey } from "../lib/gathering-abilities";
 import { CODING_MODE_KEYS, codingModeKey, codingModeLabel, codingModeOf, folderNote, mergeGate, mergeNote, modeWords, offersMerge, offersRemove, removeGate, startedBy, worktreeOrder, type CodingModeKey } from "../lib/coding-worktrees";
 import { relativeTime, tildePath } from "../lib/format";
 import { hostLabel, projectHostOf } from "../lib/mesh";
@@ -287,7 +288,7 @@ export function OverseerSettings(props: { po: ProjectOverseer; /** An organizati
             <div class="project-models">
               <Show when={props.placed}>
                 <SessionModel info={i()} host={po().host()} kind="gathering" label="Gathering sessions" save={async (x) => po().info.set(await patch(x))}>
-                  <GatheringAbilitiesField info={i()} onSave={(key) => po().run(() => patch({ gatheringAbilities: abilitiesOfKey(key) }), `Gathering sessions: ${abilitiesLabel(key)}.`)} />
+                  <GatheringAbilitiesField info={i()} onSave={(set, done) => po().run(() => patch({ gatheringAbilities: set }), done)} />
                 </SessionModel>
               </Show>
               <SessionModel info={i()} host={po().host()} kind="coding" label="Coding sessions" save={async (x) => po().info.set(await patch(x))}>
@@ -803,33 +804,54 @@ function Limits(props: { info: ProjectOverseerInfo; host: string | null; placed:
 
 /**
  * What its gathering sessions can do (§app.baton/abilities): every start gets it unless it says
- * otherwise. Automatic is draw on, read links off; the overseer may never turn read links on beyond it.
+ * otherwise. Automatic is draw on, read links and interactive drawings off; the overseer may never
+ * turn read links or interactive drawings on beyond it. Interactive drawings is its own checkbox
+ * under the select: a select change carries its value over, so switching never silently clears it.
  */
-function GatheringAbilitiesField(props: { info: ProjectOverseerInfo; onSave(key: AbilitiesKey): Promise<boolean> }) {
-  const key = () => abilitiesKey(props.info.settings.gatheringAbilities ?? null);
+function GatheringAbilitiesField(props: { info: ProjectOverseerInfo; onSave(set: GatheringAbilities | null, done: string): Promise<boolean> }) {
+  const set = () => props.info.settings.gatheringAbilities ?? null;
+  const key = () => abilitiesKey(set());
   return (
-    <label class="field">
-      <span class="field-label">Gathering sessions can</span>
-      <select
-        class="select"
-        aria-describedby="project-gathering-abilities-hint"
-        onChange={async (e) => {
-          const el = e.currentTarget;
-          if (!(await props.onSave(el.value as AbilitiesKey))) el.value = key();
-        }}
-      >
-        <For each={ABILITIES_KEYS}>
-          {(k) => (
-            <option value={k} selected={k === key()}>
-              {abilitiesLabel(k)}
-            </option>
-          )}
-        </For>
-      </select>
-      <span class="field-hint" id="project-gathering-abilities-hint">
-        Every gathering session this project starts gets this, unless its start says otherwise. One started now: {abilitiesWords(props.info.gatheringAbilitiesNow)}.
-      </span>
-    </label>
+    <div class="project-abilities">
+      <label class="field">
+        <span class="field-label">Gathering sessions can</span>
+        <select
+          class="select"
+          aria-describedby="project-gathering-abilities-hint"
+          onChange={async (e) => {
+            const el = e.currentTarget;
+            const k = el.value as AbilitiesKey;
+            if (!(await props.onSave(abilitiesOfKey(k, set()?.drawHtml ?? false), `Gathering sessions: ${abilitiesLabel(k)}.`))) el.value = key();
+          }}
+        >
+          <For each={ABILITIES_KEYS}>
+            {(k) => (
+              <option value={k} selected={k === key()}>
+                {abilitiesLabel(k)}
+              </option>
+            )}
+          </For>
+        </select>
+        <span class="field-hint" id="project-gathering-abilities-hint">
+          Every gathering session this project starts gets this, unless its start says otherwise. One started now: {abilitiesWords(props.info.gatheringAbilitiesNow)}.
+        </span>
+      </label>
+      <label class="toggle">
+        <input
+          type="checkbox"
+          disabled={!drawHtmlSettable(key())}
+          checked={set()?.drawHtml ?? false}
+          onChange={async (e) => {
+            const el = e.currentTarget;
+            const on = el.checked;
+            const cur = set();
+            if (!cur || !(await props.onSave({ ...cur, drawHtml: on }, drawHtmlSavedToast(on)))) el.checked = !on;
+          }}
+        />
+        <span class="toggle-box" />
+        <span>Interactive drawings (HTML)</span>
+      </label>
+    </div>
   );
 }
 

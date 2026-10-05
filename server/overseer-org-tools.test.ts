@@ -348,7 +348,7 @@ describe("the organization tools (§app.overseer/org-tools)", async () => {
     // Its statechart records who started it, the Overseer's conversation and the why (§app.baton/goal-and-loadout).
     assert.deepEqual(hostOf(org.id).data(baton.batonSid(org.id, id))?.["started"], { by: "overseer", overseerId: OVERSEER_ID, why: "Nobody has said this yet." });
     assert.deepEqual(startedOf(row, batonData(row)), { who: "overseer", at: row.createdAt, why: "Nobody has said this yet.", overseer: { id: OVERSEER_ID, current: readOverseerState()?.current === OVERSEER_ID } });
-    assert.deepEqual(row.abilities, { draw: true, readLinks: false }, "the project's set: Automatic (§app.baton/abilities)");
+    assert.deepEqual(row.abilities, { draw: true, readLinks: false, drawHtml: false }, "the project's set: Automatic (§app.baton/abilities)");
     // Read links only when the project allows it: refused before the card, the cap or the session.
     const refused = await call("sova_gather", { ...start, abilities: { read_links: true } });
     assert.equal(refused.ok, false);

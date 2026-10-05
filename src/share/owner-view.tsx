@@ -540,7 +540,7 @@ function ConversationView(props: { conv: OwnerConversation; now: number; link: L
         </p>
       </header>
       <section class="owner-thread" aria-label="Conversation">
-        <For each={c().items}>{(it) => <Item item={it} reader />}</For>
+        <For each={c().items}>{(it) => <Item item={it} reader drawings={c().drawings} />}</For>
       </section>
     </>
   );

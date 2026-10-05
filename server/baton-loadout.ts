@@ -6,6 +6,7 @@ import { toolCtx, toPiTool } from "./harness/pi/tools";
 import { BATON, BATON_DECISION, BATON_DONE, BATON_EFFECT_KINDS, BATON_HANDOFF, BATON_LEASE, BATON_OFFER, BATON_PROPOSAL } from "./harness/state-kinds";
 import {
   abilitiesOf,
+  drawsHtml,
   LIMIT_QUESTION,
   OPERATOR,
   POOL,
@@ -105,7 +106,8 @@ export function renderBatonPrompt(sessionId: string, template = readFileSync(PRO
     PEOPLE: others.length ? others.map(participantLine).join("\n") : "(nobody else on the roster yet)",
     OWNERS: ownersBlock(roster, holder?.id),
     BROWSE: abilitiesOf(row).readLinks ? READ_LINKS : NO_BROWSE,
-    DRAWING: abilitiesOf(row).draw ? `\n${GATHERING_VIS_GUIDE()}\n` : "",
+    // The guide's tier: with interactive drawings it also teaches `vis html` (§app.baton/abilities).
+    DRAWING: abilitiesOf(row).draw ? `\n${GATHERING_VIS_GUIDE(drawsHtml(abilitiesOf(row)))}\n` : "",
     PHOTOS: photos ? PHOTOS_ON : PHOTOS_OFF,
     FORMER: former.length
       ? `\n# People who have left the organization\n\nNever hand to them or propose them as new people. If someone names one of them, say they have left and ask who covers their area now.\n\n${former.map((p) => `- ${p.name}${p.role ? ` — was ${p.role}` : ""}`).join("\n")}\n`

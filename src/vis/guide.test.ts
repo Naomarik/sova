@@ -209,27 +209,38 @@ test("the rules keep the '- The parser is strict:' line the gathering guide rewr
   assert.doesNotMatch(g, /shows the block as source/);
 });
 
-// A gathering session's guide (§app.baton/abilities): the business kinds' sections of this same
-// guide, so its examples are these; each must parse, and nothing else may be taught to it.
-test("the gathering guide teaches only the share page's kinds, and its examples parse", () => {
-  const g = gatheringVisGuide();
-  const taught = [...g.matchAll(/^## (.*)$/gm)].map((m) => m[1]!.trim());
-  assert.deepEqual(taught, ["Shared: emphasis", ...KIND_WORDS.filter((w) => (SHARE_VIS_KINDS as readonly string[]).includes(w))]);
-  assert.doesNotMatch(g, /<!--|vis html|vis svg|8K|16K/, "no owner notes, frames or their limits");
-  assert.match(g, /Never draw people, roles, the roster, who decides what/);
-  const fences = [...g.matchAll(/^```(vis [a-z]+)\n([\s\S]*?)^```$/gm)];
-  assert.ok(fences.length >= SHARE_VIS_KINDS.length);
-  for (const [, info, body] of fences) {
-    const word = visKindWord(info!)!;
-    assert.ok((SHARE_VIS_KINDS as readonly string[]).includes(word), info);
-    const r = parseVis(word, body!);
-    assert.ok(r.ok, `${info}: ${r.ok ? "" : `line ${r.line}: ${r.message}`}`);
-  }
-});
+// A gathering session's guide (§app.baton/abilities), in two tiers: the figure kinds' sections of
+// this same guide plus a static svg, and with interactive drawings an html section too. Its examples
+// must parse cleanly, and nothing else may be taught to it: never code.
+for (const html of [false, true]) {
+  test(`the gathering guide${html ? " with interactive drawings" : ""} teaches only the share page's kinds, and its examples parse`, () => {
+    const g = gatheringVisGuide(undefined, { html });
+    const taught = [...g.matchAll(/^## (.*)$/gm)].map((m) => m[1]!.trim());
+    assert.deepEqual(taught, ["Shared: emphasis", ...KIND_WORDS.filter((w) => (SHARE_VIS_KINDS as readonly string[]).includes(w)), "svg", ...(html ? ["html"] : [])]);
+    assert.doesNotMatch(g, /<!--|8K|16K|vis_check|## code|vis code/, "no owner notes, the chat's limits or tools, never code");
+    assert.match(g, /Never draw people, roles, the roster, who decides what/);
+    assert.match(g, /a sequence's actors are systems or steps .*never people or roles/);
+    assert.match(g, /It is shown as an image: no `<script>`, no animation, no buttons or links/);
+    if (html) {
+      for (const rule of [/Fit a phone first/, /Aim under 4K characters/, /Nothing external/, /Play or Step button/, /Never ask for a password, contact details/, /applies to all text in the markup and the script too/, /Fill anything that shows a value .* with `--color-accent` or a `--status-\*` colour/])
+        assert.match(g.slice(g.indexOf("## html")), rule);
+    } else assert.doesNotMatch(g, /vis html|## html/);
+    const fences = [...g.matchAll(/^```(vis [a-z]+)\n([\s\S]*?)^```$/gm)];
+    assert.ok(fences.length >= SHARE_VIS_KINDS.length + 1 + (html ? 1 : 0));
+    for (const [, info, body] of fences) {
+      const word = visKindWord(info!)!;
+      assert.ok([...SHARE_VIS_KINDS, "svg", ...(html ? ["html"] : [])].includes(word), info);
+      const r = parseVis(word, body!);
+      assert.ok(r.ok && r.warnings.length === 0, `${info}: ${r.ok ? r.warnings.join("; ") : `line ${r.line}: ${r.message}`}`);
+      if (word === "svg") assert.match(body!, /xmlns="http:\/\/www\.w3\.org\/2000\/svg"/, "an svg drawn as an image needs its namespace");
+    }
+  });
+}
 
 // The gathering guide as last reviewed (the split of vis-mode.md kept it byte for byte; the e2e
 // round's rule fixes then changed it). A deliberate edit to shared.md or a share kind's file changes
 // it: check the new text reads right for a gathering session, then put its hash here.
 test("the gathering guide is the text last reviewed", () => {
-  assert.equal(createHash("sha256").update(gatheringVisGuide()).digest("hex"), "841871f212813c20ca5607eaebf6f8f9017e49df0167054268ce38bd8fd90728");
+  assert.equal(createHash("sha256").update(gatheringVisGuide()).digest("hex"), "010b137f57e9284700d1022a020b19c71a6d603eaa17c35e43f67f03bcd377eb");
+  assert.equal(createHash("sha256").update(gatheringVisGuide(undefined, { html: true })).digest("hex"), "efe2c73178eb893a4e00fb103ab569b2436e5f322dbfc74826e0d4b7f99fdf58");
 });

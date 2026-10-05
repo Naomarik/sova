@@ -4,6 +4,9 @@
       "publicTitle": "Golden launch",
       "state": "active",
       "holder": "Alice",
+      "drawings": {
+        "html": false
+      },
       "items": [
         {
           "kind": "message",
@@ -28,6 +31,9 @@
       "publicTitle": "Golden launch",
       "state": "active",
       "holder": "Alice",
+      "drawings": {
+        "html": false
+      },
       "items": [
         {
           "kind": "message",
@@ -51,6 +57,9 @@
     "publicTitle": "Golden launch",
     "state": "active",
     "holder": null,
+    "drawings": {
+      "html": false
+    },
     "items": [
       {
         "kind": "message",

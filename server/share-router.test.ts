@@ -23,6 +23,7 @@ const { REFUSED_HEADER } = await import("./mesh/hello");
 const { clearPeerReach } = await import("./mesh/proxy");
 const { HOP_LOST_CLOSE, OFFLINE_PAGE } = await import("../shared/public-links");
 const { createWsHop } = await import("./share/ws-hop");
+const { FRAME_HOST_CSP, FRAME_HOST_NAME } = await import("../shared/vis-frame-host");
 type RegistrySnapshot = import("../shared/public-links").RegistrySnapshot;
 type PeerEntry = import("./mesh/peers").PeerEntry;
 
@@ -314,6 +315,26 @@ test("assets: own build first, else the listing host's, typed by extension, capp
   assert.equal(o.seen.length, before);
   const down = await gateway({ port: await deadPort(), assets: ["a.js"] });
   assert.equal((await get(`${down.base}/h/assets/a.js`)).status, 503, "an asset with no reachable source");
+});
+
+test("assets: the frame host is the one html name, passed with its own headers; no other html name ever leaves", async () => {
+  const doc = "<!doctype html><p>host</p>";
+  const o = await origin((req, res) => {
+    // The origin's own headers are never what the gateway answers with.
+    if (req.url === `/h/assets/${FRAME_HOST_NAME}` || req.url === "/h/assets/page.html") return void res.writeHead(200, { "Content-Type": "text/plain", "X-Frame-Options": "DENY", "Content-Length": String(doc.length) }).end(doc);
+    res.writeHead(404).end();
+  });
+  const g = await gateway({ port: o.port, assets: [FRAME_HOST_NAME, "page.html", "vis-frame.htm"] });
+  const host = await get(`${g.base}/h/assets/${FRAME_HOST_NAME}`);
+  assert.equal(host.status, 200);
+  assert.equal(host.body, doc);
+  assert.equal(host.headers["content-type"], "text/html; charset=utf-8");
+  assert.equal(host.headers["content-security-policy"], FRAME_HOST_CSP);
+  assert.equal(host.headers["x-frame-options"], "SAMEORIGIN");
+  assert.deepEqual([host.headers["cache-control"], host.headers["referrer-policy"], host.headers["x-content-type-options"]], ["no-store", "no-referrer", "nosniff"]);
+  const before = o.seen.length;
+  for (const name of ["page.html", "vis-frame.htm"]) assert.equal((await get(`${g.base}/h/assets/${name}`)).status, 404, name);
+  assert.equal(o.seen.length, before, "never asked of the host");
 });
 
 // ---- /ws/h ---------------------------------------------------------------------------------------

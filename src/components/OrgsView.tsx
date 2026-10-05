@@ -27,6 +27,7 @@ import {
   startBaton,
   getBatonSettings,
   getProjectOverseer,
+  listModels,
 } from "../lib/api";
 import { commitNowWords, reloadWords } from "../lib/commit-now";
 import { usd } from "../lib/costs";
@@ -507,7 +508,9 @@ function BatonSection(props: { org: OrgDetail; start?: string; act: Act; onLinks
   const [question, setQuestion] = createSignal("");
   const [briefing, setBriefing] = createSignal("");
   const [goal, setGoal] = createSignal("");
-  const [model, setModel] = createSignal("");
+  /** The operator's pick; undefined = not picked, so the project's gathering default shows. "" = Default. */
+  const [pickedModel, setPickedModel] = createSignal<string | undefined>();
+  const [pickedThinking, setPickedThinking] = createSignal<string | undefined>();
   /** This session's message limit; blank = Settings' default. */
   const [limit, setLimit] = createSignal("");
   const [defaults] = createResource(() => getBatonSettings().catch(() => null));
@@ -551,9 +554,29 @@ function BatonSection(props: { org: OrgDetail; start?: string; act: Act; onLinks
   // Read while the form is open, for the project it names.
   const [projectSet] = createResource(
     () => (starting() && pid() ? pid() : false),
-    (p) => getProjectOverseer(p).then((i) => i.gatheringAbilitiesNow).catch(() => null),
+    (p) => getProjectOverseer(p).catch(() => null),
   );
-  const ability = (k: keyof GatheringAbilities): boolean => chosen()[k] ?? projectSet()?.[k] ?? AUTOMATIC_ABILITIES[k];
+  const ability = (k: keyof GatheringAbilities): boolean => chosen()[k] ?? projectSet()?.gatheringAbilitiesNow?.[k] ?? AUTOMATIC_ABILITIES[k];
+  // The model picker's list (keys, favorites, policy), as the project's gathering-model select reads it.
+  const [models] = createResource(
+    () => starting(),
+    () => listModels().catch(() => []),
+  );
+  /** "" = Default: nothing sent, the new-session default. Unpicked: the project's gathering choice. */
+  const model = () => pickedModel() ?? projectSet()?.settings.gatheringModel ?? "";
+  const thinking = () => pickedThinking() ?? projectSet()?.settings.gatheringThinking ?? "";
+  const modelOptions = createMemo(() => {
+    const all = models() ?? [];
+    const refs = [...all.filter((m) => m.favorite), ...all.filter((m) => !m.favorite)].map((m) => m.ref);
+    const cur = model();
+    return cur && !refs.includes(cur) ? [cur, ...refs] : refs;
+  });
+  const levelsFor = (ref: string) => models()?.find((x) => x.ref === ref)?.thinkingLevels ?? ["off", "minimal", "low", "medium", "high"];
+  const levels = createMemo(() => {
+    const cur = thinking();
+    const ls = levelsFor(model());
+    return cur && !ls.includes(cur) ? [cur, ...ls] : ls;
+  });
   /** Nobody ticked = you start; 1 = a hand-off; 2 or more = an offer. */
   const target = (): string | string[] => (to().length === 0 ? OPERATOR : to().length === 1 ? to()[0]! : to());
   const nameOf = (id: string) => props.org.roster.find((p) => p.id === id)?.name ?? "Their";
@@ -570,10 +593,11 @@ function BatonSection(props: { org: OrgDetail; start?: string; act: Act; onLinks
         goal: goal().trim(),
         ...(question().trim() ? { question: question().trim() } : {}),
         ...(briefing().trim() ? { briefing: briefing().trim() } : {}),
-        ...(model().trim() ? { model: model().trim() } : {}),
+        ...(model() ? { model: model() } : {}),
+        ...(thinking() ? { thinking: thinking() } : {}),
         ...(limit().trim() ? { messagesMax: Number(limit()) } : {}),
         ...(parent() ? { parentSessionId: parent() } : {}),
-        abilities: { draw: ability("draw"), readLinks: ability("readLinks") },
+        abilities: { draw: ability("draw"), readLinks: ability("readLinks"), drawHtml: ability("drawHtml") },
       });
     }, Array.isArray(who) ? `Offered to ${who.length} people.` : "Hand-off session started.");
     if (!ok || !started) return;
@@ -594,6 +618,8 @@ function BatonSection(props: { org: OrgDetail; start?: string; act: Act; onLinks
     setGoal("");
     setLimit("");
     setChosen({});
+    setPickedModel(undefined);
+    setPickedThinking(undefined);
     setTo([]);
     closeForm();
   };
@@ -700,10 +726,41 @@ function BatonSection(props: { org: OrgDetail; start?: string; act: Act; onLinks
               <textarea class="input textarea" rows={4} value={goal()} onInput={(e) => setGoal(e.currentTarget.value)} maxlength={2000} required />
               <span class="field-hint">Private to the model. It works toward it and never shows it.</span>
             </label>
-            <label class="field">
-              <span class="field-label">Model</span>
-              <input class="input input-mono" value={model()} onInput={(e) => setModel(e.currentTarget.value)} placeholder="Default: the new-session default" />
-            </label>
+            <div class="orgs-fields">
+              <label class="field">
+                <span class="field-label">Model</span>
+                <select
+                  class="select"
+                  onChange={(e) => {
+                    const v = e.currentTarget.value;
+                    const before = thinking();
+                    setPickedModel(v);
+                    // A level the new model doesn't offer goes back to Default, and says so.
+                    if (before && !levelsFor(v).includes(before)) {
+                      setPickedThinking("");
+                      const words = `Thinking is now Default: ${v || "the default model"} doesn't offer ${before}.`;
+                      toast(words);
+                      announce(words);
+                    }
+                  }}
+                >
+                  <option value="" selected={!model()}>
+                    Default
+                  </option>
+                  <For each={modelOptions()}>{(ref) => <option value={ref} selected={ref === model()}>{ref}</option>}</For>
+                </select>
+              </label>
+              <label class="field">
+                <span class="field-label">Thinking</span>
+                <select class="select" onChange={(e) => setPickedThinking(e.currentTarget.value)}>
+                  <option value="" selected={!thinking()}>
+                    Default
+                  </option>
+                  <For each={levels()}>{(l) => <option value={l} selected={l === thinking()}>{l}</option>}</For>
+                </select>
+              </label>
+            </div>
+            <span class="field-hint">Default: the new-session default. Preset to the project's gathering choice when it has one.</span>
             <label class="field">
               <span class="field-label">Message limit</span>
               <input
@@ -724,6 +781,12 @@ function BatonSection(props: { org: OrgDetail; start?: string; act: Act; onLinks
                 <input type="checkbox" checked={ability("draw")} onChange={(e) => setChosen((c) => ({ ...c, draw: e.currentTarget.checked }))} />
                 <span class="toggle-box" />
                 <span>Draw</span>
+              </label>
+              {/* Counts only with Draw, so its box waits for Draw. */}
+              <label class="toggle">
+                <input type="checkbox" disabled={!ability("draw")} checked={ability("drawHtml")} onChange={(e) => setChosen((c) => ({ ...c, drawHtml: e.currentTarget.checked }))} />
+                <span class="toggle-box" />
+                <span>Interactive drawings (HTML)</span>
               </label>
               <label class="toggle">
                 <input type="checkbox" checked={ability("readLinks")} onChange={(e) => setChosen((c) => ({ ...c, readLinks: e.currentTarget.checked }))} />

@@ -1,5 +1,6 @@
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { appTheme } from "../../../lib/explain";
+import { visIcon } from "../../icons";
 import type { ViewProps } from "../../types";
 import { estimateHeight, MIN_FRAME_HEIGHT, rememberHeight } from "./height";
 import type { FrameSpec } from "./parse";
@@ -12,8 +13,12 @@ let frameSeq = 0;
  * `vis html` / `vis svg`: the model's own document in a sandboxed, network-less iframe. The frame
  * reports its height; the app sends it new theme tokens when the theme changes. Nothing from the
  * frame is trusted beyond a clamped number and a "a script threw" flag, which shows a fixed line.
+ *
+ * `host`: a share or owner page, whose CSP runs no inline script, so no srcdoc. The frame loads that
+ * static frame host (shared/vis-frame-host.ts) instead, still sandboxed, and is posted the same
+ * document once, on its first load; everything after that is as with srcdoc.
  */
-export default function FrameView(props: ViewProps<FrameSpec>) {
+export default function FrameView(props: ViewProps<FrameSpec> & { host?: string }) {
   const id = `f${++frameSeq}-${Math.random().toString(36).slice(2, 8)}`;
   const root = document.documentElement;
   // The frame element's color-scheme must match the document's inside it, or the browser paints the
@@ -26,6 +31,13 @@ export default function FrameView(props: ViewProps<FrameSpec>) {
   const [height, setHeight] = createSignal(MIN_FRAME_HEIGHT);
   const [failed, setFailed] = createSignal(false);
   let frame!: HTMLIFrameElement;
+  // The frame host takes the first document only: a later load (the frame navigating itself) gets none.
+  let posted = false;
+  const onHostLoad = () => {
+    if (posted || !props.host) return;
+    posted = true;
+    frame.contentWindow?.postMessage({ type: FRAME_MESSAGE, doc: srcdoc }, "*");
+  };
 
   onMount(() => {
     const onMessage = (e: MessageEvent) => {
@@ -63,12 +75,14 @@ export default function FrameView(props: ViewProps<FrameSpec>) {
         sandbox="allow-scripts"
         referrerpolicy="no-referrer"
         title={props.label}
-        srcdoc={srcdoc}
+        src={props.host}
+        srcdoc={props.host ? undefined : srcdoc}
+        onLoad={onHostLoad}
         style={{ height: `${height()}px`, "color-scheme": theme() }}
       />
       <Show when={failed()}>
         <p class="vis-frame-failed" role="status">
-          <span class="icon icon-sm" style={{ "--icon": "url(/icons/alert-circle.svg)" }} aria-hidden="true" />
+          <span class="icon icon-sm" style={{ "--icon": `url("${visIcon("alert-circle")}")` }} aria-hidden="true" />
           This visual's script failed, so parts of it may not respond. Source shows the code.
         </p>
       </Show>

@@ -2,7 +2,7 @@ import type { WebSocket } from "ws";
 import { OPERATOR, type BatonSession, type GoneWhy, type BatonView, type BatonViewItem, type PersonRef, type ShareServerMessage } from "../../shared/baton";
 import type { HEntry } from "../../shared/harness";
 import { batonById, linkAccess, namesOf, outsiderCut, sessionPathOf } from "../baton";
-import { batonView, conversationVocabulary, redactPhrases, secretPhrases } from "../baton-view";
+import { batonView, conversationVocabulary, markupBackstop, redactPhrases, secretPhrases } from "../baton-view";
 import { profileRedactTexts, publicTerms, readOrg, readRoster } from "../orgs";
 
 const orgName = (orgId: string): string => {
@@ -27,17 +27,28 @@ import { photosFor } from "../baton-images";
 /** Every string an outsider may see goes through the server's secret redactor (`redact`). What
     the model wrote also loses the roster's profile phrases (`said`), except those that are ordinary
     words of this org or conversation (`vocabulary`): no one sees anyone's profile or the org's
-    name, and no one's job title or decision area is blanked for it (§app.organizations/privacy). */
+    name, and no one's job title or decision area is blanked for it (§app.organizations/privacy).
+    A drawing's markup gets the backstop too (saidWith). */
 export function outsiderRedactor(orgId: string, vocabulary: readonly string[] = []) {
   const roster = readRoster(orgId);
   // The org's name too: the model is never told it, but a goal may carry it.
   const phrases = secretPhrases([...roster.flatMap(profileRedactTexts), orgName(orgId)], [...publicTerms(roster), ...vocabulary]).filter(Boolean);
   const secrets = serverRedactor();
-  return { redact: (text: string) => secrets.redact(text), said: (text: string) => redactPhrases(text, phrases), phrases };
+  return { redact: (text: string) => secrets.redact(text), said: saidWith(phrases, orgId), phrases };
 }
+
+/** What the model wrote, for an outsider: the phrases redacted (the plain pass), then the markup
+    backstop on its html and svg drawings, views and streaming text alike (§app.baton/outsider-view).
+    A drawing it withholds is noted in the operator's log, by org and kind only. */
+const saidWith =
+  (phrases: readonly string[], orgId: string) =>
+  (text: string): string =>
+    markupBackstop(redactPhrases(text, phrases), phrases, (kind) => console.warn(`[share] withheld a vis ${kind} drawing in org ${orgId}: its markup carried a profile phrase the plain pass missed`));
 
 /** The phrases each session's last view hid, for its streaming text between views. */
 const streamPhrases = new Map<string, string[]>();
+/** Sessions whose streaming text already left a drawing out (logged once). */
+const streamWithheld = new Set<string>();
 
 /** The filtered view of a baton session for `viewer` (a person id), or with no viewer (the project
     overseer's reads: every briefing). */
@@ -207,7 +218,14 @@ export function streamShare(sessionId: string, text: string): void {
   if (!hit) return;
   const r = outsiderRedactor(hit.row.orgId, [hit.row.publicTitle]);
   const cached = streamPhrases.get(sessionId);
-  const redacted = cached ? redactPhrases(r.redact(text), cached) : r.said(r.redact(text));
+  // The backstop drops an unclosed drawing's tail that carries a phrase, so it never rides the
+  // socket; noted once per session here (the view that follows notes the closed one).
+  const phrases = cached ?? r.phrases;
+  const redacted = markupBackstop(redactPhrases(r.redact(text), phrases), phrases, (kind) => {
+    if (streamWithheld.has(sessionId)) return;
+    streamWithheld.add(sessionId);
+    console.warn(`[share] left a streaming vis ${kind} drawing out in org ${hit.row.orgId}: its markup carried a profile phrase the plain pass missed`);
+  });
   // An invitee who never held the offer sees the conversation only up to it: not its replies either.
   for (const w of set) if (!offerOutsider(w.token)) send(w, { type: "streaming", text: redacted });
 }

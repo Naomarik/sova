@@ -1,8 +1,10 @@
 // The Views a share or owner page draws (src/share/vis.tsx), in one chunk of the share build: the
-// business kinds, and for session shares sequence and state (flow's View). Never the code kind (it
-// brings the chat's highlighter) or frames (the share page's CSP runs no inline script).
+// business kinds, sequence and state (flow's View), and the html frame, which on a share page loads
+// the static frame host (the page's CSP runs no inline script, so no srcdoc). Never the code kind
+// (it brings the chat's highlighter).
 export { default as chart } from "./kinds/chart/View";
 export { default as flow } from "./kinds/flow/View";
+export { default as html } from "./kinds/frame/View";
 export { default as state } from "./kinds/flow/View";
 export { default as layers } from "./kinds/layers/View";
 export { default as matrix } from "./kinds/matrix/View";

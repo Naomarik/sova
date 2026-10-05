@@ -429,13 +429,29 @@ async function claudeSession(ctx, repo, steps) {
   return notes;
 }
 
-export async function hookNoise(ctx) {
-  const rows = [];
-  for (const [hook, run] of [["pi", piSession], ["claude", claudeSession]]) {
+/**
+ * One hook's session, run in fresh repositories until two runs give the same notes (paths aside), at most 5. The
+ * hooks bound each git and census call with a timeout (TOOL_TIMEOUT_MS) and add an "incomplete check" note when
+ * one runs out; on a loaded machine that adds notes the tree didn't cause. Notes that never repeat are an error.
+ */
+async function stableSession(ctx, hook, run) {
+  const seen = new Map();
+  for (let attempt = 1; attempt <= 5; attempt++) {
     const repo = standard(ctx, `c-${hook}`);
     const outside = ctx.ws.dir("outside");
     const steps = sessionScript(outside);
     const notes = await run(ctx, repo, steps);
+    const key = JSON.stringify(notes.map((n) => n.split(repo.root).join("<repo>").split(outside).join("<outside>")));
+    if (seen.has(key)) return { repo, steps, notes };
+    seen.set(key, attempt);
+  }
+  throw new Error(`c.${hook}: no two of 5 sessions gave the same notes (hook timeouts under load?)`);
+}
+
+export async function hookNoise(ctx) {
+  const rows = [];
+  for (const [hook, run] of [["pi", piSession], ["claude", claudeSession]]) {
+    const { repo, steps, notes } = await stableSession(ctx, hook, run);
     const c = classify(notes, repo.root);
     const f = flagged(notes);
     const guards = [

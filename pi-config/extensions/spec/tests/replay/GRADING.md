@@ -12,8 +12,12 @@ mechanically.
   `.sova/spec/claims/` in the pinned spec.
 - **What the arm read:** a set of passages whose exact text arrived, plus, in the agent arm only, line
   ranges of claim files read with the file tool.
-- **What the arm named:** ids it was shown without their text: `toc` lines, `read` footers' `named`,
-  and packet frontier ids that were not delivered.
+- **What the arm named:** ids it was shown without their text: `toc` lines, `read` footers' `named`
+  and `about`, and packet frontier ids that were not delivered. The agent arm reads both forms: `--json`
+  (`lines`, `footer`), and the text form (indented `  §id — ` contents lines; the footer lines
+  "named here, not delivered by this call:" and "notes about it, not delivered by this call:").
+- **The frame** (`read`'s first page, M5): its items count as read like any `read` item, in `--json`
+  (`frame.items`) and in text (the passage text is printed verbatim).
 
 ## What counts as read (delivered)
 

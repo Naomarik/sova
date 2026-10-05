@@ -3,17 +3,17 @@
 import "../../../claude-code/tests/hermetic-env.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cpSync, mkdtempSync, readFileSync, writeFileSync, rmSync, existsSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync, existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runArm, diffCards, summary } from "./run.mjs";
 import { makeTree } from "./make-tree.mjs";
 import { baselineText, BASELINE_PATH, DATA, extractPinned } from "./scenario-g.mjs";
-import { grade } from "./agent-arm.mjs";
+import { grade, agentInput, NOT_MEASURED } from "./agent-arm.mjs";
 import { specIndex } from "./fullness.mjs";
-import { Tools } from "./lib.mjs";
+import { Tools, seedSpec } from "./lib.mjs";
 
 const TREE = fileURLToPath(new URL("../../../", import.meta.url));
 /** The ref g's baseline was recorded from (its `tree` field), and the commit it names. */
@@ -138,6 +138,16 @@ test("pull checks run where toc exists: held by a faithful contents view, each f
   assert.ok(failed(thin).includes("g.pull.shown-floor"), `the ratchet trips (shown ${shown(thin)}; failed: ${failed(thin).join(", ")})`);
 
   const T = "spec/core/toc-stub.mjs";
+  // A what cut at the end of its first source line (the 70d6696e toc) reads as a what; the whole-sentence guards catch it.
+  const cut = await runArm(sabotaged([STUB, [T, "const body = (units[0] ?? \"\").replace(", "const body = (units[0] ?? \"\").split(\"\\n\")[0].replace("]], STUB_FILES), { label: "stub-cut", only: ["f", "g"] });
+  for (const name of ["f.pull.what-whole", "g.pull.what-whole"]) assert.ok(failed(cut).includes(name), `${name} trips on a what cut at the line end (failed: ${failed(cut).join(", ")})`);
+  // Every what blanked, as prose and as "none" (no prose sentence) alike: never a whole sentence.
+  const WHAT = "what: body.split(/(?<=[.:])\\s/)[0] || \"(no text)\",";
+  for (const [label, patches] of [["blank", [[T, WHAT, "what: \"\","]]], ["blank-none", [[T, WHAT, "what: \"\","], [T, "whatSource: body ? \"prose\" : \"none\"", "whatSource: \"none\""]]]]) {
+    const blank = await runArm(sabotaged([STUB, ...patches], STUB_FILES), { label: `stub-${label}`, only: ["f", "g"] });
+    for (const name of ["f.pull.what-whole", "g.pull.what-whole"]) assert.ok(failed(blank).includes(name), `${name} trips when every what is blank (${label}; failed: ${failed(blank).join(", ")})`);
+  }
+
   const bad = await runArm(sabotaged([STUB,
     [T, "out: () => claims[id].requires ?? [],", "out: () => [],"],                                  // out-links hidden
     [T, "what: body.split(/(?<=[.:])\\s/)[0] || \"(no text)\",", "what: \"\","],                      // lines say nothing
@@ -154,6 +164,17 @@ test("pull checks run where toc exists: held by a faithful contents view, each f
   const names = failed(bad);
   for (const name of ["f.ran", "f.pull.items-shown", "f.pull.what-and-why", "f.pull.unrelated-only-in", "f.pull.read-exact", "f.pull.read-names-links", "g.packet.ran", "g.pull.toc-answers", "f.near.true-consumer-kept", "f.near.unrelated-off-frontier", "g.where.all-listed", "g.impact-near.answers", "g.where.file-read", "g.where.ranked-file-read"])
     assert.ok(names.includes(name), `${name} fails on the sabotaged stub (failed: ${names.join(", ")})`);
+});
+
+/** read's embed line (M5); the test below runs once this tree's read delivers embeds. */
+const EMBED_LINE = "for (const k of [t, ...childrenInOrder(ctx, t)])";
+test("an embed delivered as its lede only is not whole: the target says so and read-names-links trips", { timeout: 600_000, skip: !readFileSync(join(TREE, "spec/core/read.mjs"), "utf8").includes(EMBED_LINE) && "this tree's read does not deliver embeds (M5)" }, async () => {
+  const value = (card) => card.rows.find((r) => r.metric === "f.pull.target.unasked")?.value ?? "";
+  const whole = await runArm(sabotaged([]), { label: "whole", only: ["f"] });
+  assert.match(value(whole), /§f\/panel:delivered whole/);
+  const lede = await runArm(sabotaged([["spec/core/read.mjs", EMBED_LINE, "for (const k of [t])"]]), { label: "lede", only: ["f"] });
+  assert.match(value(lede), /§f\/panel:delivered, not whole/);
+  assert.ok(failed(lede).includes("f.pull.read-names-links"), `failed: ${failed(lede).join(", ")}`);
 });
 
 test("h's guards trip when doc-only evidence covers any behavior, code and all", { timeout: 600_000 }, async () => {
@@ -206,6 +227,63 @@ test("agent arm grading: what came back in tool results is what was read; leavin
   const empty = grade(index, c, "", root);
   assert.equal(empty.answered, 0);
   assert.equal(empty.lostVsPacket.length, JSON.parse(readFileSync(BASELINE_PATH, "utf8")).comparisons.C18.values.filter((v) => v > 0).length);
+});
+
+test("agent arm input: two trees' agents are told the same task; only the tree's own mode text differs", () => {
+  const a = sabotaged([]), b = sabotaged([["mode/spec-mode.md", "Every behavior change is spec'd.", "Every behavior change is spec'd. Start with toc."]]);
+  for (const c of DATA.comparisons) {
+    const [x, y] = [agentInput(c, a), agentInput(c, b)];
+    assert.equal(x.prompt, y.prompt, `${c.id}: the task prompt never depends on the tree or arm`);
+    assert.doesNotMatch(x.prompt, /\b(toc|read|packet|scope|impact|map|where)\b '|--dir|--part|Start with/, `${c.id}: the prompt names no command or reading strategy`);
+  }
+  const strip = (t) => t.replace(/^core=.*$/m, "");
+  const raw = (tree) => strip(readFileSync(join(tree, "mode/spec-mode.md"), "utf8"));
+  assert.equal(strip(agentInput(DATA.comparisons[0], a).instructions), raw(a));
+  assert.equal(strip(agentInput(DATA.comparisons[0], b).instructions), raw(b));
+  assert.notEqual(agentInput(DATA.comparisons[0], a).instructions, agentInput(DATA.comparisons[0], b).instructions);
+  // The guard the arm can't measure: outside any repository, as the agent works, census --changed lists nothing to read.
+  const work = mkdtempSync(join(tmpdir(), "spec-replay-armwork-"));
+  temps.push(work);
+  seedSpec({ write: (rel, text) => { mkdirSync(dirname(join(work, rel)), { recursive: true }); writeFileSync(join(work, rel), text); } }, {
+    claims: { "§w/one": { kind: "surface", authority: "accepted" } }, files: { ".sova/spec/claims/w/one.md": "# §w/one — One\n\nA surface.\n" },
+  });
+  const r = new Tools(TREE).spec(work, work, ["census", "--changed"]);
+  assert.ok(r.json?.exit === 2 && r.json.census === null, `census --changed in a work directory: ${r.stdout.slice(0, 400)}`);
+  assert.ok(NOT_MEASURED.some((s) => s.startsWith("every census --changed claim read")));
+});
+
+test("agent arm grading: a passage the frame carries is read, JSON or text; toc lines and footer names in text are seen", { skip: spawnSync("git", ["-C", TREE, "cat-file", "-e", `${PINNED_REV}^{commit}`]).status !== 0 && "the pinned revision is not in this checkout" }, () => {
+  const root = mkdtempSync(join(tmpdir(), "spec-replay-agent-"));
+  temps.push(root);
+  extractPinned(root);
+  const index = specIndex(root);
+  // The first comparison with a packet-answered need whose passage is not the seed's own.
+  const recorded = JSON.parse(readFileSync(BASELINE_PATH, "utf8")).comparisons;
+  const other = (cc) => recorded[cc.id].values.findIndex((v, k) => v > 0 && recorded[cc.id].passageOf[k] && recorded[cc.id].passageOf[k] !== cc.seed);
+  const c = DATA.comparisons.find((cc) => other(cc) >= 0);
+  const base = recorded[c.id], i = other(c);
+  const p = index.passages.get(base.passageOf[i]);
+  const call = (n, command, text) => [
+    { type: "tool_execution_start", toolCallId: `c${n}`, toolName: "bash", args: { command } },
+    { type: "tool_execution_end", toolCallId: `c${n}`, toolName: "bash", isError: false, result: { content: [{ type: "text", text }] } },
+  ];
+  const run = (...calls) => grade(index, c, calls.flat().map((e) => JSON.stringify(e)).join("\n"), root);
+  // The need's passage arrives only as a frame item on read's first page.
+  const json = run(call(1, `node tools/sova-spec.mjs read '${c.seed}' --json`, JSON.stringify({ command: "read", items: [], footer: { named: [] }, frame: { passages: 1, items: [{ id: p.id, text: p.text }] } })));
+  assert.equal(json.values[i], base.values[i], `${p.id} carried by the frame (JSON) answers need ${i}`);
+  const text = run(call(1, `node tools/sova-spec.mjs read '${c.seed}'`, `── frame: always applies\n── ${p.id} — x [behavior] ${p.file}:${p.lines[0]}-${p.lines[1]} (1 KB) · frame\n${p.text.replace(/\n$/, "")}\nexit 0`));
+  assert.equal(text.values[i], base.values[i], `${p.id} carried by the frame (text) answers need ${i}`);
+  // Text toc: every packet-answered passage shown as a contents line or named in read's footer; nothing read.
+  const shownIds = [...new Set(base.passageOf.filter((x, k) => x && base.values[k] > 0))];
+  const [half, rest] = [shownIds.slice(0, Math.ceil(shownIds.length / 2)), shownIds.slice(Math.ceil(shownIds.length / 2))];
+  const seen = run(
+    call(1, `node tools/sova-spec.mjs toc '${c.seed}' --dir out`, [`${c.seed} — Seed  behavior · 1 KB`, "  what: x", "OUT: requires (1)", ...half.flatMap((id) => [`  ${id} — T  behavior · 1 KB`, "    what: y"]), "exit 0"].join("\n")),
+    call(2, `node tools/sova-spec.mjs read '${c.seed}'`, `── ${c.seed} — Seed [behavior]\nbody\nnamed here, not delivered by this call: ${rest.join(", ") || "none"}\nexit 0`),
+  );
+  assert.equal(seen.answered, 0);
+  assert.deepEqual(seen.lostVsPacket, [], "a need whose passage was seen is not lost");
+  assert.ok(shownIds.every((id) => seen.shown.includes(id)), `seen: ${seen.shown.join(", ")}`);
+  assert.equal(seen.contentsLines, half.length);
 });
 
 test("make-tree: a ref's pi-config/extensions, with its commit recorded for the scorecard", { skip: spawnSync("git", ["-C", TREE, "rev-parse", "HEAD"]).status !== 0 && "not in a Git checkout" }, async () => {

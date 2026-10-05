@@ -100,6 +100,7 @@
     "shared/overseer-card.ts": {"calls": 0, "shapes": 1, "reaches": 0},
     "shared/overseer-grants.ts": {"calls": 0, "shapes": 2, "reaches": 0},
     "shared/row-counts.ts": {"calls": 0, "shapes": 3, "reaches": 0},
+    "shared/wire-v1.ts": {"calls": 0, "shapes": 22, "reaches": 0},
     "src/components/Thread.tsx": {"calls": 0, "shapes": 7, "reaches": 0},
     "src/lib/change-rows.ts": {"calls": 0, "shapes": 1, "reaches": 0},
     "src/lib/context.ts": {"calls": 0, "shapes": 3, "reaches": 0},

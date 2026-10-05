@@ -141,8 +141,11 @@ test("pull checks run where toc exists: held by a faithful contents view, each f
   // A what cut at the end of its first source line (the 70d6696e toc) reads as a what; the whole-sentence guards catch it.
   const cut = await runArm(sabotaged([STUB, [T, "const body = (units[0] ?? \"\").replace(", "const body = (units[0] ?? \"\").split(\"\\n\")[0].replace("]], STUB_FILES), { label: "stub-cut", only: ["f", "g"] });
   for (const name of ["f.pull.what-whole", "g.pull.what-whole"]) assert.ok(failed(cut).includes(name), `${name} trips on a what cut at the line end (failed: ${failed(cut).join(", ")})`);
+  // A sentence ended at a colon inside parentheses (the b1843900 toc): "(one row per heading:" is cut.
+  const paren = await runArm(sabotaged([STUB, [T, "else if (depth === 0 && \".:!?\".includes(c)", "else if (\".:!?\".includes(c)"]], STUB_FILES), { label: "stub-paren", only: ["f", "g"] });
+  for (const name of ["f.pull.what-whole", "g.pull.what-whole"]) assert.ok(failed(paren).includes(name), `${name} trips on a what ended inside an open bracket (failed: ${failed(paren).join(", ")})`);
   // Every what blanked, as prose and as "none" (no prose sentence) alike: never a whole sentence.
-  const WHAT = "what: body.split(/(?<=[.:])\\s/)[0] || \"(no text)\",";
+  const WHAT = "what: firstOf(body) || \"(no text)\",";
   for (const [label, patches] of [["blank", [[T, WHAT, "what: \"\","]]], ["blank-none", [[T, WHAT, "what: \"\","], [T, "whatSource: body ? \"prose\" : \"none\"", "whatSource: \"none\""]]]]) {
     const blank = await runArm(sabotaged([STUB, ...patches], STUB_FILES), { label: `stub-${label}`, only: ["f", "g"] });
     for (const name of ["f.pull.what-whole", "g.pull.what-whole"]) assert.ok(failed(blank).includes(name), `${name} trips when every what is blank (${label}; failed: ${failed(blank).join(", ")})`);
@@ -150,7 +153,7 @@ test("pull checks run where toc exists: held by a faithful contents view, each f
 
   const bad = await runArm(sabotaged([STUB,
     [T, "out: () => claims[id].requires ?? [],", "out: () => [],"],                                  // out-links hidden
-    [T, "what: body.split(/(?<=[.:])\\s/)[0] || \"(no text)\",", "what: \"\","],                      // lines say nothing
+    [T, WHAT, "what: \"\","],                      // lines say nothing
     [T, "mentions: () => all.filter((x) => x !== id && mentions(index.passages.get(x).text, id)),", "mentions: () => all.filter((x) => x !== id),"], // everything "mentions"
     [T, "up: () => (parentOf(id) ? [parentOf(id)] : []),", ""],                                      // one direction refuses
     [T, "lines: hits.map((x) => ({ id: x }))", "lines: hits.slice(1).map((x) => ({ id: x }))"],              // where drops a claim
@@ -250,6 +253,35 @@ test("agent arm input: two trees' agents are told the same task; only the tree's
   const r = new Tools(TREE).spec(work, work, ["census", "--changed"]);
   assert.ok(r.json?.exit === 2 && r.json.census === null, `census --changed in a work directory: ${r.stdout.slice(0, 400)}`);
   assert.ok(NOT_MEASURED.some((s) => s.startsWith("every census --changed claim read")));
+});
+
+test("agent arm grading: this tree's own toc and read in text are seen exactly as their JSON says", { skip: (spawnSync("git", ["-C", TREE, "cat-file", "-e", `${PINNED_REV}^{commit}`]).status !== 0 && "the pinned revision is not in this checkout") || (!existsSync(join(TREE, "spec/core/read.mjs")) && "this tree has no read") }, () => {
+  const root = mkdtempSync(join(tmpdir(), "spec-replay-agent-"));
+  temps.push(root);
+  extractPinned(root);
+  const index = specIndex(root);
+  const tools = new Tools(TREE);
+  // The first comparison whose seed's read names links it doesn't deliver, so the footer is exercised.
+  const c = DATA.comparisons.find((x) => (tools.spec(root, root, ["read", x.seed]).json?.footer?.named ?? []).length > 0);
+  assert.ok(c, "some seed's read names a link");
+  const events = [], lines = new Set(), named = new Set();
+  let n = 0;
+  const call = (args) => {
+    const json = tools.spec(root, root, args).json, text = tools.run(root, root, args, { json: false }).stdout;
+    events.push({ type: "tool_execution_start", toolCallId: `c${++n}`, toolName: "bash", args: { command: `node tools/sova-spec.mjs ${args.map((a) => `'${a}'`).join(" ")} --root .` } });
+    events.push({ type: "tool_execution_end", toolCallId: `c${n}`, toolName: "bash", isError: false, result: { content: [{ type: "text", text }] } });
+    return json;
+  };
+  for (const dir of ["out", "in", "down", "up", "mentions"]) for (const l of call(["toc", c.seed, "--dir", dir])?.lines ?? []) lines.add(l.id);
+  const g = grade(index, c, events.map((e) => JSON.stringify(e)).join("\n"), root);
+  assert.equal(g.contentsLines, lines.size, "every toc line in text is a contents line seen, and nothing else is");
+  for (const id of lines) assert.ok(g.shown.includes(id), `${id} (a toc line) is seen from the text form`);
+  // read alone, so only its footer can make an id seen.
+  events.length = 0;
+  const r = call(["read", c.seed]);
+  for (const id of [...(r.footer?.named ?? []), ...(r.footer?.about ?? [])]) named.add(id);
+  const gr = grade(index, c, events.map((e) => JSON.stringify(e)).join("\n"), root);
+  for (const id of named) assert.ok(gr.shown.includes(id), `${id}, named in read's footer, is seen from the text form (seen: ${gr.shown.join(", ") || "none"})`);
 });
 
 test("agent arm grading: a passage the frame carries is read, JSON or text; toc lines and footer names in text are seen", { skip: spawnSync("git", ["-C", TREE, "cat-file", "-e", `${PINNED_REV}^{commit}`]).status !== 0 && "the pinned revision is not in this checkout" }, () => {

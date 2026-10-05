@@ -1,5 +1,5 @@
 import { createSignal } from "solid-js";
-import { AUTO_TITLE_MAX_PATHS, type AutoTitleOutcome, type AutoTitleResponse, type SessionSummary } from "../../shared/protocol";
+import { AUTO_TITLE_MAX_PATHS, SESSION_TITLE_LABEL_MAX, type AutoTitleOutcome, type AutoTitleResponse, type AutoTitleSkip, type SessionSummary } from "../../shared/protocol";
 
 // The section heads' Name sessions button (§app.session-list/auto-titles): which rows it counts,
 // and how a press reaches each host. Silent by design: no toast and no undo — the rows' titles
@@ -77,4 +77,65 @@ export function setNaming(key: string, on: boolean): void {
     else next.delete(key);
     return next;
   });
+}
+
+// ── One open session's Regenerate title, and Settings' Shorten long titles ────────────────────
+
+/** Why a regenerate or shorten left a title as it was, as the second sentence of its message. Pure. */
+export function skipReason(reason: AutoTitleSkip): string {
+  switch (reason) {
+    case "explicit":
+      return "The title changed while it was being named, so that one stays.";
+    case "no-model":
+      return "Neither title model can run right now. Check Settings → Summaries.";
+    case "no-input":
+      return "There's nothing in the session to name it from yet.";
+    case "not-listed":
+      return "Sova doesn't name this kind of session.";
+    case "not-found":
+      return "The session file wasn't found.";
+    case "short":
+      return "Its title is already short.";
+    case "failed":
+      return "The title models failed or gave no usable title.";
+  }
+}
+
+/** A regenerate's one result: the new title, or the toast that says why the title stayed. Pure. */
+export function regenerateOutcome(res: AutoTitleResponse | Error): { title: string } | { error: string } {
+  if (res instanceof Error) return { error: `Couldn't regenerate the title. ${res.message.replace(/\.?$/, ".")}` };
+  const r = res.results[0];
+  if (r?.outcome === "named") return { title: r.title };
+  return { error: `Couldn't regenerate the title. ${r?.outcome === "skipped" ? skipReason(r.reason) : "Nothing was changed."}` };
+}
+
+/** Which open sessions are regenerating, by path: module state, so a head rebuilt mid-run still shows the press. */
+const [regenerating, setRegeneratingSet] = createSignal<ReadonlySet<string>>(new Set());
+export const regeneratingTitle = (path: string): boolean => regenerating().has(path);
+export function setRegeneratingTitle(path: string, on: boolean): void {
+  setRegeneratingSet((cur) => {
+    const next = new Set(cur);
+    if (on) next.add(path);
+    else next.delete(path);
+    return next;
+  });
+}
+
+const titles = (n: number) => `${n} ${n === 1 ? "title" : "titles"}`;
+
+/** Shorten long titles' line before a press: how many a dry run found. Pure. */
+export const shortenCountLine = (n: number): string =>
+  n === 0
+    ? `No title is longer than ${SESSION_TITLE_LABEL_MAX} characters.`
+    : `${titles(n)} ${n === 1 ? "is" : "are"} longer than ${SESSION_TITLE_LABEL_MAX} characters.`;
+
+/** The button while it runs: "Shortening 3 titles…". Pure. */
+export const shorteningLabel = (n: number): string => `Shortening ${titles(n)}…`;
+
+/** Shorten long titles' line after a press: "Shortened 4 of 5 titles. 1 couldn't be shortened." Pure. */
+export function shortenDoneLine(results: readonly AutoTitleOutcome[]): string {
+  const done = results.filter((r) => r.outcome === "named").length;
+  const left = results.length - done;
+  const head = `Shortened ${done} of ${titles(results.length)}.`;
+  return left ? `${head} ${left} couldn't be shortened.` : head;
 }

@@ -15,11 +15,11 @@ mkdirSync(join(agentDir, "sova"), { recursive: true });
 const s = await import("./session-titles-settings");
 const file = join(agentDir, "sova", "session-titles-settings.json");
 
-test("defaults: off, 5 and 5 minutes, pi deepseek-v4.1-flash then Claude Code sonnet at low — never haiku", () => {
+test("defaults: on, 5 and 5 minutes, pi deepseek-v4.1-flash then Claude Code sonnet at low — never haiku", () => {
   const d = s.sessionTitleDefaults();
   assert.deepEqual(d, {
     version: 1,
-    enabled: false,
+    enabled: true,
     intervalMinutes: 5,
     quietMinutes: 5,
     primary: { backend: "pi", model: "ollama-cloud/deepseek-v4.1-flash", effort: "off" },
@@ -31,7 +31,7 @@ test("defaults: off, 5 and 5 minutes, pi deepseek-v4.1-flash then Claude Code so
 });
 
 test("the PUT is strict: every field, in range, a valid tuple, and a fallback that isn't the primary", () => {
-  const good = { ...s.sessionTitleDefaults(), enabled: true };
+  const good = { ...s.sessionTitleDefaults(), enabled: false };
   assert.deepEqual(s.parseSessionTitleSettings(good), good);
   assert.deepEqual(s.parseSessionTitleSettings({ ...good, fallback: null }), { ...good, fallback: null });
   const bad: [unknown, RegExp][] = [
@@ -66,8 +66,19 @@ test("the read is tolerant: a field that doesn't parse is its default, a broken 
   assert.equal(s.readSessionTitleSettings().fallback, null); // a fallback equal to the primary is none
 });
 
+test("the sweep is on by default, and a file that says enabled: false keeps it off", () => {
+  writeFileSync(file, JSON.stringify({ version: 1 }));
+  assert.equal(s.readSessionTitleSettings().enabled, true);
+  writeFileSync(file, JSON.stringify({ version: 1, enabled: "nope" }));
+  assert.equal(s.readSessionTitleSettings().enabled, true);
+  writeFileSync(file, JSON.stringify({ version: 1, enabled: false }));
+  assert.equal(s.readSessionTitleSettings().enabled, false);
+  writeFileSync(file, JSON.stringify({ ...s.sessionTitleDefaults(), enabled: false }));
+  assert.equal(s.readSessionTitleSettings().enabled, false);
+});
+
 test("the write is whole and atomic, and the next read sees it", () => {
-  const next = { ...s.sessionTitleDefaults(), enabled: true, intervalMinutes: 15, fallback: null };
+  const next = { ...s.sessionTitleDefaults(), enabled: false, intervalMinutes: 15, fallback: null };
   s.writeSessionTitleSettings(next);
   assert.deepEqual(s.readSessionTitleSettings(), next);
   assert.ok(existsSync(file));

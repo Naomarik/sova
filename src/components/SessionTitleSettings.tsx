@@ -1,6 +1,7 @@
-import { createEffect, createResource, on, Show } from "solid-js";
+import { createEffect, createResource, createSignal, on, Show } from "solid-js";
 import type { SessionTitleSettingsInfo } from "../../shared/protocol";
-import { getDelegateOptions, getSessionTitleSettings } from "../lib/api";
+import { getDelegateOptions, getSessionTitleSettings, shortenSessionTitles } from "../lib/api";
+import { shortenCountLine, shortenDoneLine, shorteningLabel } from "../lib/auto-title";
 import { fallbackFor, type DraftChoice, type Slot } from "../lib/delegate-form";
 import { tildePath } from "../lib/format";
 import {
@@ -172,11 +173,62 @@ export function SessionTitleSettingsSection() {
         <Show when={titleSettingsSaveError()}>
           {(e) => <Banner tone="error" title="Couldn't save the session title settings." body={`${sentence(e().message)} Your saved choice is unchanged.`} />}
         </Show>
+        <ShortenLongTitles />
         <p class="settings-delegate-file">
           Stored in <code>{tildePath(loaded()!.file, home())}</code>. Each host names its own sessions with its own settings.
         </p>
       </Show>
     </section>
+  );
+}
+
+/**
+ * Shorten long titles (§app.settings-dialog/summaries): a one-shot outside the saved form. A dry
+ * run counts this host's long automatic, Overseer and older titles; a press renames them with the
+ * saved models through the namer's race-safe writer. A title typed by hand is never counted or
+ * changed — the server decides that, not this list.
+ */
+function ShortenLongTitles() {
+  const [count, { refetch }] = createResource(async () => (await shortenSessionTitles(true)).results.length);
+  const [running, setRunning] = createSignal(0);
+  const [done, setDone] = createSignal<string | null>(null);
+  const [error, setError] = createSignal<string | null>(null);
+  const press = async () => {
+    const n = count() ?? 0;
+    if (running() || n === 0) return;
+    setRunning(n);
+    setDone(null);
+    setError(null);
+    try {
+      setDone(shortenDoneLine((await shortenSessionTitles()).results));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRunning(0);
+      void refetch();
+    }
+  };
+  return (
+    <div class="field">
+      <div>
+        <button
+          type="button"
+          class="button button-sm"
+          disabled={running() > 0 || !count()}
+          aria-busy={running() ? "true" : undefined}
+          aria-describedby="session-titles-shorten-hint"
+          onClick={() => void press()}
+        >
+          {running() ? shorteningLabel(running()) : "Shorten Long Titles"}
+        </button>
+      </div>
+      <p class="field-hint" id="session-titles-shorten-hint" aria-live="polite">
+        <Show when={done()}>{(line) => <>{line()} </>}</Show>
+        <Show when={count.state === "ready"}>{shortenCountLine(count()!)} </Show>
+        Renames automatic, Overseer and older titles with the saved models. Titles you typed are never changed.
+      </p>
+      <Show when={error()}>{(e) => <Banner tone="error" title="Couldn't shorten the titles." body={sentence(e())} />}</Show>
+    </div>
   );
 }
 

@@ -3,35 +3,45 @@ import { createInterface } from "node:readline";
 import type { HEntry } from "../shared/harness";
 import { isLinkMessage } from "../shared/link-message";
 import { isTopicBatch } from "../shared/topic-message";
-import type { AutoTitleOutcome, AutoTitleSkip, DecisionFailure, SessionSummary, SessionTitleSettings, WorkerChoice } from "../shared/protocol";
+import { SESSION_TITLE_LABEL_MAX, type AutoTitleOutcome, type AutoTitleSkip, type DecisionFailure, type SessionSummary, type SessionTitleSettings, type WorkerChoice } from "../shared/protocol";
 import { parseWakeNudge } from "../shared/wake";
 import { DecisionError, extractJsonObject, failureMessage } from "./decide";
 import { claudeRun, LLM_TIMEOUT_MS, parseClaudeEnvelope, piText, type LlmProviderDeps } from "./decide-llm";
 import { firstText, lineEntry, lineMay } from "./harness/pi/reader";
-import { cleanSessionTitle, writeAutoTitle } from "./session-titles";
+import { cleanSessionTitle, readSessionTitleRecords, replaceAutoTitle, type StoredTitle, writeAutoTitle } from "./session-titles";
 import { withUsageContext } from "../pi-config/extensions/llm-inflight/attribution.ts";
 
 // Sova names sessions itself (§app.session-list/auto-titles): one short title per session from
 // what it became, stored as an `auto` title in Sova's own title store — never in the .jsonl, and
-// never over an explicit title (a user's, the Overseer's, or any pre-provenance one). Two ways in:
-// the background sweep (off by default, Settings → Summaries → Session titles) and the section
-// heads' button (POST /api/sessions/auto-title). Both go through `nameSession` below.
+// never over an explicit title automatically (a user's, the Overseer's, or any pre-provenance
+// one). Four ways in: the background sweep (on by default, Settings → Summaries → Session titles),
+// the section heads' button (POST /api/sessions/auto-title), Settings' Shorten long titles
+// (POST /api/sessions/shorten-titles: long auto, Overseer and pre-provenance titles, never a
+// typed one) and an open session's Regenerate title (the auto-title route with `redo`: any title
+// of that one session). All go through `nameSession` below.
 
 /**
- * The title rules, and the whole system prompt: no Sova or agent prompt goes with them. Tested
- * against hand-set titles (deepseek-v4.1-flash scored best among the cheap models).
+ * The title rules, and the whole system prompt: no Sova or agent prompt goes with them. Judged
+ * against hand-written ideal titles for 55 real sessions on deepseek-v4.1-flash: the subject the
+ * whole session is about, never the summary line again, releases told apart by what landed.
  */
-export const TITLE_SYSTEM_PROMPT = `You title coding-agent chat sessions for a sidebar list. Reply with one JSON object only: {"title": "..."}
-Rules:
-- 2 to 7 words, at most 60 characters, sentence case, no quotes, no trailing period.
-- Name the work (the feature, bug or question), not the user's wording and not the process (planning, discussing, testing, rerun, round N).
-- Two things: "X: Y" (subject: aspect) or "X + Y".
-- A question reads as its subject: "How X works (A vs B)". A bug reads "X fix" or "Fix: symptom".
-- Name what the session became (summary line, topics); the first message tells what the user came for.
-- State only what the input says. Never name the app every session belongs to (Sova).`;
+export const TITLE_SYSTEM_PROMPT = `You name a coding-agent chat session for a narrow sidebar list. Reply with one JSON object only: {"title": "..."}
+Each row shows the title, then the session's summary line under it. The title is the label the user scans and searches for; the summary line already explains it.
+- Name the subject the whole session is about: the thing built, fixed or decided. The first message usually names it in the user's words; topics show where it went. Later topics are often follow-ups: don't title a late side topic or a single step.
+- Add what the summary line lacks. Never reuse its wording or its first words. Use the user's own name for the thing, or the concrete cause, mechanism, model or round.
+- A subject, never a status: no merged, shipped, landed, done, restart; no counts or commit ids.
+- Merges, releases, pushes: name the first one or two branches or features that landed (from the first message or topics). Never only "branches", "merge", "release", "push", "fast-forward" or "restart".
+- A rerun, round or repeat of earlier work: say which one (round 2, the model it ran on).
+- Use the user's nouns (feature, branch, project, tool names). No generic words: feature, work, changes, session, investigation, process.
+- 2 to 5 words, at most 36 characters; count them (a number or hyphenated word counts as one word). Four words is usually enough. Sentence case noun phrase. No "X: Y", lists, parentheses, quotes or trailing period. Never name Sova.
+Examples (summary line → title):
+"Merging two branches into master, then a restart" → "Push badges and voice merge"
+"Fixing usage monitor percentages" → "Claude meter stuck at 100%"
+"Scroll position lost when switching sessions" → "Queued-message scroll jump"`;
 
-export const TITLE_MAX_CHARS = 60;
-export const TITLE_WORDS = { min: 2, max: 9 } as const;
+/** The sidebar's title line holds about 32 characters; a title is a label that fits it. */
+export const TITLE_MAX_CHARS = SESSION_TITLE_LABEL_MAX;
+export const TITLE_WORDS = { min: 2, max: 5 } as const;
 export const FIRST_MESSAGE_MAX = 600;
 export const MAX_BULLETS = 2;
 export const CLAUDE_TITLE_BUDGET_USD = 0.05;
@@ -103,20 +113,22 @@ export async function readTitleInput(path: string): Promise<TitleInput> {
 }
 
 /**
- * The user message of the title call. With a summary line: the first message (≤600 characters),
- * the summary line, and the topics with their first bullets. Without one: the first 3 user
- * messages. Pure; its argument has no field for the current title, so none can reach the model.
+ * The user message of the title call. With a summary line: the summary line, labelled as what the
+ * row already shows (so the title won't repeat it), the topics in order with their first bullets,
+ * then the first message (≤600 characters). Without one: the first 3 user messages. Pure; its
+ * argument has no field for the current title, so none can reach the model.
  */
 export function buildTitlePrompt(input: TitleInput): string {
   if (input.summaryLine) {
-    const lines = ["FIRST MESSAGE:", cut(input.userMessages[0] ?? "", FIRST_MESSAGE_MAX), "", "SUMMARY LINE:", input.summaryLine];
+    const lines = ["SUMMARY LINE (already shown under the title; do not repeat it):", input.summaryLine];
     if (input.topics.length) {
-      lines.push("", "TOPICS:");
+      lines.push("", "TOPICS (in order):");
       for (const t of input.topics) {
         lines.push(`- ${t.heading}`);
         for (const b of t.bullets) lines.push(`  - ${b}`);
       }
     }
+    lines.push("", "FIRST MESSAGE (what the user came for; the session may have moved on):", cut(input.userMessages[0] ?? "", FIRST_MESSAGE_MAX));
     return lines.join("\n");
   }
   const lines = ["FIRST MESSAGES:"];
@@ -126,7 +138,7 @@ export function buildTitlePrompt(input: TitleInput): string {
 
 /**
  * A model's `title` as the store will keep it, or null: a string that, with wrapping quotes and a
- * trailing period dropped and cleaned like a typed title, is 2–9 words and ≤60 characters. Pure.
+ * trailing period dropped and cleaned like a typed title, is 2–5 words and ≤36 characters. Pure.
  */
 export function validateTitle(raw: unknown): string | null {
   if (typeof raw !== "string") return null;
@@ -136,8 +148,20 @@ export function validateTitle(raw: unknown): string | null {
   t = t.replace(/\.$/, "").trim();
   const clean = cleanSessionTitle(t);
   if (!clean || clean.length > TITLE_MAX_CHARS) return null;
-  const words = clean.split(" ").filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
+  const words = countWords(clean);
   return words >= TITLE_WORDS.min && words <= TITLE_WORDS.max ? clean : null;
+}
+
+const countWords = (t: string) => t.split(" ").filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
+
+/**
+ * The one corrective ask after a reply with no usable title: the same input, then why the answer
+ * was refused (its length in words and characters, or that no title came back). Pure.
+ */
+export function retryTitlePrompt(prompt: string, raw: unknown): string {
+  const t = typeof raw === "string" ? oneLine(raw) : "";
+  const why = t ? `"${cut(t, 80)}" is ${countWords(t)} words and ${t.length} characters` : "no title came back";
+  return `${prompt}\n\nYOUR LAST ANSWER WAS NOT USABLE: ${why}. Reply again with one JSON object {"title": "..."}: 2 to 5 words, at most 36 characters.`;
 }
 
 // ── The model call ────────────────────────────────────────────────────────────────────────────
@@ -166,9 +190,17 @@ export interface TitleDeps extends LlmProviderDeps {
   trace?: (entry: { model: string; payload: unknown }) => void;
 }
 
-/** One title model, one attempt: the parsed `title` field of its JSON reply (unvalidated). */
+/**
+ * One pi title ask's deadline. A title reply takes about 1–3 s (p99 under 9 s over 440 calls on
+ * deepseek-v4.1-flash); a rare provider stall ran past 45 s, so a stalled ask is cut here and asked
+ * once more (titleFromChain), in less time than the old single 45 s wait. Claude Code keeps
+ * LLM_TIMEOUT_MS: its CLI start-up alone takes seconds.
+ */
+export const TITLE_PI_TIMEOUT_MS = 20_000;
+
+/** One title model, one ask: the parsed `title` field of its JSON reply (unvalidated). */
 export async function callTitleModel(choice: WorkerChoice, prompt: string, deps: TitleDeps): Promise<unknown> {
-  const timeoutMs = deps.timeoutMs ?? LLM_TIMEOUT_MS;
+  const timeoutMs = deps.timeoutMs ?? (choice.backend === "pi" ? TITLE_PI_TIMEOUT_MS : LLM_TIMEOUT_MS);
   const fail = (failure: DecisionFailure, message: string) => new DecisionError(failure, message.slice(0, 300));
   const denied = deps.denial?.(choice);
   if (denied) throw fail("unavailable", denied);
@@ -190,9 +222,10 @@ const BACKOFF: readonly DecisionFailure[] = ["quota", "rate-limit", "auth"];
 export type ChainResult = { title: string } | { failure: "no-model" | "failed"; detail: string; backoff: boolean };
 
 /**
- * The primary, then the fallback: one attempt each, no retry loop. A model that can't run at all
- * (deps.problem) is skipped without a call. `backoff` when every model that was tried failed for
- * quota, a rate limit or auth.
+ * The primary, then the fallback. Each is asked at most twice: a reply with no usable title (empty,
+ * no JSON, or a title the validator refuses) is asked once more with the reason (retryTitlePrompt),
+ * a timed-out ask once more as it was; any other error is not retried. A model that can't run at all (deps.problem) is skipped without a
+ * call. `backoff` when every model that was tried failed for quota, a rate limit or auth.
  */
 export async function titleFromChain(settings: Pick<SessionTitleSettings, "primary" | "fallback">, prompt: string, deps: TitleDeps): Promise<ChainResult> {
   const slots = settings.fallback ? [settings.primary, settings.fallback] : [settings.primary];
@@ -208,7 +241,22 @@ export async function titleFromChain(settings: Pick<SessionTitleSettings, "prima
     }
     tried++;
     try {
-      const title = validateTitle(await callTitleModel(choice, prompt, deps));
+      let title: string | null = null;
+      let ask = prompt;
+      for (let attempt = 0; attempt < 2 && !title; attempt++) {
+        let raw: unknown;
+        try {
+          raw = await callTitleModel(choice, ask, deps);
+        } catch (err) {
+          // An empty or unparsable reply gets the corrective ask, a timed-out one the same ask
+          // again; any other failure (quota, rate limit, auth, unavailable) is not retried.
+          const failure = err instanceof DecisionError ? err.failure : undefined;
+          if (attempt > 0 || (failure !== "malformed-answer" && failure !== "timeout")) throw err;
+          if (failure === "timeout") continue;
+        }
+        title = validateTitle(raw);
+        ask = retryTitlePrompt(prompt, raw);
+      }
       if (title) return { title };
       why.push(`${label}: no usable title in the reply`);
     } catch (err) {
@@ -226,7 +274,22 @@ export interface NameDeps extends TitleDeps {
   settings: () => SessionTitleSettings;
   summary: (path: string) => Promise<SessionSummary | null>;
   input?: (path: string) => Promise<TitleInput>;
+  /** The session's stored title entry right now (a fresh read), for the redo and shorten writes. */
+  stored?: (id: string) => StoredTitle | undefined;
   now?: () => number;
+}
+
+/**
+ * How a session is being named. "sweep": no stored title at all, from its summary line. "button":
+ * no explicit title (may redo an auto one). "shorten": a stored title longer than TITLE_MAX_CHARS
+ * set by the namer, the Overseer or before provenance — never a typed one. "regenerate": an open
+ * session's own button, any title at all (the press is the explicit request).
+ */
+export type NameMode = "button" | "sweep" | "shorten" | "regenerate";
+
+/** May Shorten long titles rename this stored title? Long, and never typed by hand. Pure. */
+export function shortenable(t: StoredTitle | undefined): boolean {
+  return !!t && t.title.length > TITLE_MAX_CHARS && (t.by !== "user" || t.legacy === true);
 }
 
 /** Why the button won't name this session, before any model call, or null. Pure. */
@@ -242,17 +305,30 @@ export function buttonSkip(s: SessionSummary | null): AutoTitleSkip | null {
 export type NameResult = { outcome: "named"; title: string } | { outcome: "would-name" } | { outcome: "skipped"; reason: AutoTitleSkip; detail?: string; backoff?: boolean };
 
 /**
- * Name one session. `mode` "button" may redo an auto title and needs no summary line (then the
- * first 3 user messages are the input); "sweep" names a session that has no stored title at all,
- * from its summary line. The write re-reads the store and is refused when an explicit title
- * appeared meanwhile (writeAutoTitle), which is reported as `explicit`.
+ * Name one session (NameMode). "button", "shorten" and "regenerate" need no summary line (then
+ * the first 3 user messages are the input); "sweep" names from its summary line. The sweep's and
+ * the button's write re-reads the store and is refused when an explicit title appeared meanwhile
+ * (writeAutoTitle); "shorten" and "regenerate" read the stored entry before the call and write
+ * only if it is unchanged at write time (replaceAutoTitle). A refused write reports `explicit`.
  */
-export async function nameSession(path: string, mode: "button" | "sweep", deps: NameDeps, opts: { dryRun?: boolean } = {}): Promise<NameResult> {
+export async function nameSession(path: string, mode: NameMode, deps: NameDeps, opts: { dryRun?: boolean } = {}): Promise<NameResult> {
   if (!existsSync(path)) return { outcome: "skipped", reason: "not-found" };
   const s = await deps.summary(path);
-  const skip = buttonSkip(s);
-  if (skip) return { outcome: "skipped", reason: skip };
-  if (mode === "sweep" && s!.titleBy) return { outcome: "skipped", reason: "explicit", detail: "already named" };
+  if (!s) return { outcome: "skipped", reason: "not-found" };
+  const replacing = mode === "shorten" || mode === "regenerate";
+  // Read when the call starts: the write goes through only over exactly this entry.
+  const seen = replacing ? (deps.stored ?? ((id: string) => readSessionTitleRecords()[id]))(s.id) : undefined;
+  if (mode === "regenerate") {
+    if (s.workerSession || s.overseer || s.projectOverseer) return { outcome: "skipped", reason: "not-listed" };
+  } else if (mode === "shorten") {
+    if (s.workerSession || s.overseer || s.projectOverseer) return { outcome: "skipped", reason: "not-listed" };
+    if (seen?.by === "user" && !seen.legacy) return { outcome: "skipped", reason: "explicit", detail: "typed by hand" };
+    if (!shortenable(seen)) return { outcome: "skipped", reason: "short" };
+  } else {
+    const skip = buttonSkip(s);
+    if (skip) return { outcome: "skipped", reason: skip };
+    if (mode === "sweep" && s.titleBy) return { outcome: "skipped", reason: "explicit", detail: "already named" };
+  }
   const input = await (deps.input ?? readTitleInput)(path);
   if (input.userMessages.length === 0) return { outcome: "skipped", reason: "no-input" };
   if (mode === "sweep" && !input.summaryLine) return { outcome: "skipped", reason: "no-input", detail: "no summary line" };
@@ -262,7 +338,10 @@ export async function nameSession(path: string, mode: "button" | "sweep", deps: 
     titleFromChain(deps.settings(), buildTitlePrompt(input), deps),
   );
   if ("failure" in result) return { outcome: "skipped", reason: result.failure, detail: result.detail, backoff: result.backoff };
-  if (!writeAutoTitle(s!.id, result.title, { redo: mode === "button", now: deps.now?.() })) return { outcome: "skipped", reason: "explicit" };
+  const written = replacing
+    ? replaceAutoTitle(s.id, result.title, seen, { now: deps.now?.() })
+    : writeAutoTitle(s.id, result.title, { redo: mode === "button", now: deps.now?.() });
+  if (!written) return { outcome: "skipped", reason: "explicit", ...(replacing ? { detail: "the title changed while it was being named" } : {}) };
   return { outcome: "named", title: result.title };
 }
 
@@ -280,15 +359,36 @@ export async function mapLimit<T, R>(items: readonly T[], limit: number, fn: (it
   return out;
 }
 
-/** POST /api/sessions/auto-title: every path, 4 at a time, in request order. */
-export async function autoTitlePaths(paths: readonly (string | null)[], raw: readonly string[], deps: NameDeps, dryRun = false): Promise<AutoTitleOutcome[]> {
+/** POST /api/sessions/auto-title: every path, 4 at a time, in request order. `mode` "regenerate" is its `redo` form. */
+export async function autoTitlePaths(
+  paths: readonly (string | null)[],
+  raw: readonly string[],
+  deps: NameDeps,
+  dryRun = false,
+  mode: "button" | "shorten" | "regenerate" = "button",
+): Promise<AutoTitleOutcome[]> {
   return mapLimit(paths, 4, async (path, i): Promise<AutoTitleOutcome> => {
     const reported = raw[i]!;
     if (!path) return { path: reported, outcome: "skipped", reason: "not-found" };
-    const r = await nameSession(path, "button", deps, { dryRun });
+    const r = await nameSession(path, mode, deps, { dryRun });
     if (r.outcome === "skipped") return { path: reported, outcome: "skipped", reason: r.reason, ...(r.detail ? { detail: r.detail } : {}) };
     return { path: reported, ...r };
   });
+}
+
+/** At most this many sessions per Shorten long titles call; a second press does the rest. */
+export const SHORTEN_MAX_PER_CALL = 200;
+
+/**
+ * Shorten long titles' picks: this host's listed sessions whose stored title is shortenable (long,
+ * and not typed by hand), most recently active first, at most SHORTEN_MAX_PER_CALL. Subagents' own
+ * sessions and Overseer files are left out; archived ones are not. Pure.
+ */
+export function shortenPicks(listed: readonly SessionSummary[], records: Readonly<Record<string, StoredTitle>>): SessionSummary[] {
+  return listed
+    .filter((s) => !s.workerSession && !s.overseer && !s.projectOverseer && shortenable(records[s.id]))
+    .sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt))
+    .slice(0, SHORTEN_MAX_PER_CALL);
 }
 
 // ── The sweep ─────────────────────────────────────────────────────────────────────────────────

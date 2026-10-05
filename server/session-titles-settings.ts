@@ -16,11 +16,11 @@ export const QUIET_RANGE = { min: 0, max: 1440 } as const;
 
 const BACKEND_LABELS = { pi: "pi", "claude-code": "Claude Code" } as const;
 
-/** Off; every 5 minutes after 5 quiet ones; pi deepseek-v4.1-flash, then Claude Code sonnet at low. */
+/** On (a file that says `enabled: false` keeps it off); every 5 minutes after 5 quiet ones; pi deepseek-v4.1-flash, then Claude Code sonnet at low. */
 export function sessionTitleDefaults(): SessionTitleSettings {
   return {
     version: 1,
-    enabled: false,
+    enabled: true,
     intervalMinutes: 5,
     quietMinutes: 5,
     primary: { backend: "pi", model: "ollama-cloud/deepseek-v4.1-flash", effort: "off" },

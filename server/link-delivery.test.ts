@@ -33,6 +33,7 @@ const { normalizeEntry } = await import("./transcript");
 const { getSessionSummary, onSessionArchived, archiveSession, cleanupSessions, idOf, isZeroInput, listSessions } = await import("./sessions-index");
 const { readTailTurn } = await import("./session-tags");
 const { turnQuestions, turnFacts } = await import("./attention-signals");
+const { historyOf } = await import("./harness/pi/reader");
 const { setArchived } = await import("./archived-sessions");
 const { addWebSession } = await import("./web-sessions");
 const orgs = await import("./orgs");
@@ -126,7 +127,7 @@ describe("§mesh.links/transcript: exclusions", () => {
     assert.deepEqual(Object.keys(turnQuestions(facts("please fix the build"))), ["asks_user"], "the user's own turn is asked (§app.decisions/asks-user): the tag makes the difference");
     // turnFacts reads the tagged message as the turn's opener, as the classifier needs.
     const branch = [msg("l1", null, "user", linkText()), msg("a1", "l1", "assistant", "Should I merge it?")];
-    assert.ok(turnFacts(branch as never)!.lastUser.startsWith("[link_msg "));
+    assert.ok(turnFacts(historyOf(branch))!.lastUser.startsWith("[link_msg "));
   });
 
   test("Regenerate refuses a reply to a link message, with its own reason", () => {

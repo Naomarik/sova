@@ -18,6 +18,7 @@ import type { SessionSummary, WorktreeCleanupKept, WorktreeCleanupPlan, Worktree
 import { runGit } from "../pi-config/extensions/worktrees/git.ts";
 import { canonical, isWithin, WORKTREES_ENTRY_TYPE } from "../pi-config/extensions/worktrees/state.ts";
 import { readStoredCwd } from "./git-summary";
+import { lineHeader } from "./harness/pi/reader";
 import { worktreesRemoved } from "./merge-readiness";
 import { appendLedger, mergedByContent, resetContentMerges, type RemovedWorktree } from "./removed-worktrees";
 import { sandboxInfo } from "./sandbox-state";
@@ -342,8 +343,8 @@ const READ_CONCURRENCY = 4;
 function headerCwd(buf: Buffer): string | null {
   try {
     const first = buf.subarray(0, 64 * 1024).toString("utf8").split("\n", 1)[0] ?? "";
-    const header = JSON.parse(first) as { type?: unknown; cwd?: unknown };
-    return header?.type === "session" && typeof header.cwd === "string" && header.cwd !== "" ? header.cwd : null;
+    const cwd = lineHeader(first)?.cwd;
+    return typeof cwd === "string" && cwd !== "" ? cwd : null;
   } catch {
     return null;
   }

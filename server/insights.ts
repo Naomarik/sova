@@ -30,6 +30,7 @@ import type {
   WorkerInfo,
   WorkerStatus,
 } from "../shared/protocol";
+import type { HEntry } from "../shared/harness";
 import type { LinkedAgentInfo } from "../shared/mesh-links";
 // The usage-status extension's fetch/cache core. Part of the sanctioned pi-config import
 // surface (node builtins only, like extensions/mode/state.ts) — see CLAUDE.md.
@@ -42,8 +43,8 @@ import { hasPage, listExplanations, sortExplanations } from "./explanations";
 import { readLiveRecords, type RawLiveRecord, workerCountsOf } from "./live";
 import { modelProvider, sharedWorkerWindowResolver } from "./models";
 import { resolveSessionPath } from "./paths";
-import { collectSkills, hasSkills } from "./skills";
-import { activeBranch, parseLines } from "./transcript";
+import { collectSkills, hasSkills, skillLinesOf } from "./skills";
+import { branchOf, parsePi, rawOf } from "./harness/pi/reader";
 import { describeWorktrees, worktreesOf } from "./worktrees-state";
 import { goneWorkOf, REMOVED_EMPTY, treeReadinessOf } from "./merge-readiness";
 import { LAST_KNOWN_REASON, lastKnownUsage, rememberUsage } from "./usage-last-known";
@@ -606,9 +607,9 @@ function contentText(content: unknown): string {
   return "";
 }
 
-function addReport(reports: SessionFacts["reports"], e: Rec): void {
+function addReport(reports: SessionFacts["reports"], e: { content: unknown; at?: unknown }): void {
   const text = contentText(e.content);
-  const at = str(e.timestamp) ?? "";
+  const at = str(e.at) ?? "";
   const m = REPORT_HEAD.exec(text);
   if (m?.[1] && m[2]) {
     reports.set(m[1], { status: m[2], ...(m[3] ? { outcome: m[3] } : {}), at });
@@ -660,10 +661,10 @@ const OUTLINE_SNAPSHOTS_MAX = 200;
 /** Adds one topic-outline entry to the series, validated by decodeOutline like the latest one. A
     malformed or older-version payload, one with no summary text, or a repeat of the previous
     accepted summary adds nothing: the axis should show each summary once. */
-function addOutlineSnapshot(list: OutlineSnapshot[], e: Rec): void {
+function addOutlineSnapshot(list: OutlineSnapshot[], e: { id: unknown; at?: unknown; data: unknown }): void {
   const o = decodeOutline(e.data);
   const id = str(e.id);
-  const timestamp = str(e.timestamp);
+  const timestamp = str(e.at);
   if (!o || !id || !timestamp || (!o.now && !o.overall)) return;
   const prev = list[list.length - 1];
   if (prev && prev.now === o.now && prev.overall === o.overall) return;
@@ -693,11 +694,11 @@ function decodeExplanation(data: unknown): ExplanationInfo | null {
   return x;
 }
 
-function decodeCompaction(e: Rec): CompactionInfo {
+function decodeCompaction(e: Extract<HEntry, { kind: "compaction" }>): CompactionInfo {
   const details = isRec(e.details) ? e.details : {};
   return {
     id: str(e.id) ?? "",
-    timestamp: str(e.timestamp) ?? "",
+    timestamp: str(e.at) ?? "",
     tokensBefore: num(e.tokensBefore) ?? null,
     summary: str(e.summary) ?? "",
     readFiles: strings(details.readFiles),
@@ -713,9 +714,9 @@ const REWIND_ENTRY = "sova-rewind";
 
 /** One rewind marker, as chat-manager wrote it: ids and a stamp, no text (the abandoned turns are
     not on this branch). An entry missing either half can't be placed on an axis, so it is dropped. */
-function decodeRewind(e: Rec): RewindInfo | null {
+function decodeRewind(e: { id: unknown; at?: unknown; data: unknown }): RewindInfo | null {
   const id = str(e.id);
-  const timestamp = str(e.timestamp);
+  const timestamp = str(e.at);
   if (!id || !timestamp) return null;
   const data = isRec(e.data) ? e.data : {};
   return { id, timestamp, targetId: str(data.targetId) ?? "", fromLeafId: str(data.fromLeafId) ?? "" };
@@ -754,34 +755,36 @@ export function extractFacts(text: string): SessionFacts {
   const rewinds: RewindInfo[] = [];
   const explanations: ExplanationInfo[] = [];
   const teamEvents: TeamEvent[] = [];
-  const entries = parseLines(text);
-  const header = entries.find((e) => e.type === "session");
-  const branch = activeBranch(entries);
-  const isWorkerRecord = (e: Rec) => e.type === "custom" && WORKER_RECORD_TYPES.has(e.customType);
-  const branchIds = new Set(branch.map((e) => e.id));
-  const allRecords = entries.filter(isWorkerRecord);
-  for (const e of branch) {
-    if (e.type === "custom" && e.customType === TEAM_ENTRY) addTeamEntry(teams, e.data);
-    else if (e.type === "custom" && e.customType === TEAM_EVENT_TYPE) {
-      const ev = teamEventOf(e);
+  const { header, entries } = parsePi(text);
+  const branch = branchOf(entries);
+  const isWorkerRecord = (h: HEntry) => h.kind === "state" && WORKER_RECORD_TYPES.has(h.key);
+  const branchIds = new Set(branch.map((h) => h.id));
+  const records = entries.filter(isWorkerRecord);
+  // State folds (worker records, team events, worktrees) still read the raw entries until state moves.
+  const raw = (hs: readonly HEntry[]): Rec[] => hs.map(rawOf);
+  for (const h of branch) {
+    if (h.kind === "state" && h.key === TEAM_ENTRY) addTeamEntry(teams, h.data);
+    else if (h.kind === "state" && h.key === TEAM_EVENT_TYPE) {
+      const ev = teamEventOf({ id: h.id ?? undefined, data: h.data });
       if (ev) teamEvents.push(ev);
     }
-    else if (e.type === "custom" && e.customType === "topic-outline") {
-      outlineData = e.data;
-      addOutlineSnapshot(outlines, e);
+    else if (h.kind === "state" && h.key === "topic-outline") {
+      outlineData = h.data;
+      addOutlineSnapshot(outlines, h);
     }
-    else if (e.type === "custom_message" && e.customType === "subagent-complete") addReport(reports, e);
-    else if (e.type === "compaction") compactions.push(decodeCompaction(e));
-    else if (e.type === "custom" && e.customType === REWIND_ENTRY) {
-      const r = decodeRewind(e);
+    else if (h.kind === "note" && !h.inMessage && h.noteType === "subagent-complete") addReport(reports, h);
+    else if (h.kind === "compaction") compactions.push(decodeCompaction(h));
+    else if (h.kind === "state" && h.key === REWIND_ENTRY) {
+      const r = decodeRewind(h);
       if (r) rewinds.push(r);
     }
-    else if (e.type === "custom" && e.customType === EXPLAIN_ENTRY) {
-      const x = decodeExplanation(e.data);
+    else if (h.kind === "state" && h.key === EXPLAIN_ENTRY) {
+      const x = decodeExplanation(h.data);
       if (x) explanations.push(x);
     }
   }
-  const activeRecords = allRecords.filter((e) => branchIds.has(e.id));
+  const allRecords = raw(records);
+  const activeRecords = raw(records.filter((h) => branchIds.has(h.id)));
   return {
     teams: [...teams.values()],
     reports,
@@ -792,11 +795,11 @@ export function extractFacts(text: string): SessionFacts {
     rewinds,
     explanations,
     sessionId: (header ? str(header.id) : undefined) ?? null,
-    skills: collectSkills(branch),
+    skills: collectSkills(skillLinesOf(branch)),
     workerRecords: { all: allRecords, active: activeRecords },
     teamEvents,
     settled: settledStates(activeRecords),
-    worktrees: worktreesOf(branch),
+    worktrees: worktreesOf(raw(branch)),
   };
 }
 

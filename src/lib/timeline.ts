@@ -15,6 +15,7 @@ import { SPAWN_TOOLS } from "./message";
 import { absoluteTime, firstLine, timelineEntries } from "./spend";
 import { isInput, isTurnStart } from "./turn";
 import { wakeTitle } from "../../shared/wake";
+import { rowFacts } from "../../shared/wire-v1";
 
 /** A row's shape on the axis; the `data-kind` the stylesheet keys off. */
 export type TimelineKind = "input" | "chapter" | "marker" | "density" | "gap";
@@ -248,8 +249,9 @@ export function markerRows(items: readonly TranscriptItem[], rewinds: readonly R
   for (const it of items) {
     const at = it.at;
     if (!at) continue;
-    if (it.kind === "info" && it.meta?.type === "compaction") {
-      const tokens = typeof it.meta.tokensBefore === "number" ? it.meta.tokensBefore : null;
+    const compaction = it.kind === "info" ? rowFacts(it)?.compaction : undefined;
+    if (compaction) {
+      const tokens = compaction.tokensBefore ?? null;
       const row: TimelineRow = {
         key: `marker:compaction:${it.id}`,
         kind: "marker",
@@ -259,7 +261,7 @@ export function markerRows(items: readonly TranscriptItem[], rewinds: readonly R
         title: tokens ? `Compacted · ${thousands(tokens)} tokens summarized` : MARKER_TITLE.compaction,
       };
       // The summary itself stays in the tooltip: a marker reports, the transcript tells.
-      const summary = firstLine(it.meta.summary ?? "", 200);
+      const summary = firstLine(compaction.summary ?? "", 200);
       if (summary) row.full = summary;
       out.push(row);
     } else if (it.kind === "tool-call" && SPAWN_TOOLS.has(it.text ?? "")) {

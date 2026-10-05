@@ -64,8 +64,9 @@ import { startSharedUsageHelper, stopSharedUsageHelper } from "./usage-helper/cl
 import { registerUsageRoutes } from "./usage-routes";
 import { archiveSession, cachedTitleOf, cleanupSessions, getSessionSummary, idOf, lastReplyOf, listCwds, listSessionFiles, listSessions, onSessionArchived, onSummaryLineChanged } from "./sessions-index";
 import { cleanSessionTitle, SESSION_TITLE_MAX, setSessionTitle } from "./session-titles";
-import { contextForBranch, normalizeEntries, readActiveBranch } from "./transcript";
-import { unknownEntries } from "./harness/pi/reader";
+import { contextForBranch, readActiveBranch, rowsOf } from "./transcript";
+import { liveRead, rawOf, readBranch, unknownEntries } from "./harness/pi/reader";
+import { contextOfBranch } from "./harness/pi/usage";
 import { checkTmpImage, deleteAttachment, MAX_ATTACHMENT_BYTES, readTmpImage, saveUploadedImage, sessionAttachmentsDir, UploadError } from "./attachments";
 import { listFolders } from "./folders";
 import { listProjectFiles } from "./files";
@@ -1056,8 +1057,8 @@ app.get("/api/transcript", async (c) => {
     if (r.status !== 200) return c.json({ error: r.error, code: r.code }, r.status);
     return c.body(r.body, 200, { "Content-Type": "application/json; charset=UTF-8" });
   }
-  const branch = await readActiveBranch(path);
-  return c.json({ items: normalizeEntries(branch), context: await resolveContext(contextForBranch(branch)) });
+  const branch = await readBranch(path);
+  return c.json({ items: rowsOf(branch), context: await resolveContext(contextOfBranch(branch)) });
 });
 
 // The whole content of tool rows (§chat.transcript/slim-rows): a row carries only what its folded
@@ -1075,7 +1076,10 @@ app.get("/api/transcript/tool", async (c) => {
   const path = resolveSessionPath(c.req.query("path"));
   if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
   if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
-  const items = await piToolContent(path, ids, () => heldChat(path)?.session.sessionManager.getBranch() as Record<string, any>[] | undefined);
+  const items = await piToolContent(path, ids, () => {
+    const chat = heldChat(path);
+    return chat ? liveRead(chat.session).branch().map(rawOf) : undefined;
+  });
   return c.json({ items } satisfies ToolContentResponse);
 });
 

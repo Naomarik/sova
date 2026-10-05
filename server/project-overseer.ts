@@ -36,8 +36,9 @@ import { baseCodingMode, codingModeChoice, describeCodingMode, PLAYBOOK_RUN_KIND
 import { baseAbilities } from "./gathering-abilities";
 import { gitRootOf, readWorktree } from "./project-worktrees";
 import { hostOf, isOrgHostOpen, onOrgHostOpened, setOrgClockForTest, type InvocationReport } from "./org-engine";
-import { cardsNoteMessage, pathOfId, sessionActivity, toolCatalogue } from "./session-prompt";
-import { CARDS_NOTE_MESSAGE, cardsNote, foldCards } from "../shared/overseer-card";
+import { pathOfId, sessionActivity, toolCatalogue } from "./session-prompt";
+import { CARDS_NOTE_MESSAGE, cardsNote } from "../shared/overseer-card";
+import { cardsOnBranch } from "./overseer-run-note";
 import { RootConfinement } from "./overseer-deny";
 import { sessionAttachmentsDir } from "./attachments";
 import { overseerFileTools } from "./overseer-file-tools";
@@ -61,7 +62,8 @@ import { heldActs, projectOfHold } from "./project-holds";
 import type { ActResult } from "./org-host";
 import type { Envelope, LedgerCounts } from "./org-envelope";
 import { ledgerOf } from "./org-stamp";
-import { normalizeEntries, readActiveBranch } from "./transcript";
+import { rowsOf } from "./transcript";
+import { liveRead, readBranch } from "./harness/pi/reader";
 import { UnreadReplies } from "./unread-replies";
 import { loadDefaults } from "./web-defaults";
 import { addWebSession } from "./web-sessions";
@@ -531,7 +533,7 @@ function toolHost(rt: Rt): PoToolHost {
     placed: () => isPlaced(projectId),
     contributed: (wrap) => contributedTools({ ...partCtx(rt, paths), ...wrap }),
     sessions: () => listSessions(),
-    transcript: async (path) => normalizeEntries(await readActiveBranch(path)),
+    transcript: async (path) => rowsOf(await readBranch(path)),
     codingMode(req) {
       const s = settings();
       return codingModeChoice(req, baseCodingMode(s.codingMode, projectOf(projectId).root), s.codingMode);
@@ -1016,10 +1018,11 @@ registerSpecialLoadout({
               pi.on("before_agent_start", (event, ctx) => {
                 event.systemPromptOptions.appendSystemPrompt = renderProjectOverseerPrompt(rt.projectId, tools, template);
                 // The open cards, hidden, as the Overseer's (§app.overseer/confirm).
-                return cardsNoteMessage(toolCtx(ctx).rawBranch());
+                const note = cardsNote(cardsOnBranch(toolCtx(ctx).branch()), false, sessionActivity());
+                return note ? { message: { customType: CARDS_NOTE_MESSAGE, content: note, display: false as const } } : undefined;
               });
               pi.on("session_compact", (_event, ctx) => {
-                const note = cardsNote(foldCards(toolCtx(ctx).rawBranch()), true, sessionActivity());
+                const note = cardsNote(cardsOnBranch(toolCtx(ctx).branch()), true, sessionActivity());
                 if (note) pi.sendMessage({ customType: CARDS_NOTE_MESSAGE, content: note, display: false });
               });
               pi.on("context", (event) => {
@@ -1299,15 +1302,15 @@ export const CUT_OFF_DETAIL = "The server restarted during the run.";
 
 /** How an unattended run ended, from its own part of the branch (entries past `from`). */
 function runEnd(chat: ChatSession, from: number, err?: unknown): { outcome: "finished" | "stopped" | "cut-off"; detail?: string } {
-  const mine = chat.session.sessionManager.getBranch().slice(from);
-  const last = [...mine].reverse().find((e) => e.type === "message" && e.message.role === "assistant") as { message: { stopReason?: string; errorMessage?: string } } | undefined;
-  const stop = last?.message.stopReason;
+  const mine = liveRead(chat.session).branch().slice(from);
+  const last = [...mine].reverse().find((e) => e.kind === "assistant");
+  const stop = last?.stop;
   const failed = !last || stop === "error" || stop === "aborted" || err !== undefined;
   if (!failed) return { outcome: "finished" };
   if (chat.lastStreamTrip) return { outcome: "stopped", detail: chat.lastStreamTrip.detail };
   if (shuttingDown()) return { outcome: "cut-off", detail: CUT_OFF_DETAIL };
   if (stop === "aborted") return { outcome: "stopped", detail: "Stopped." };
-  if (stop === "error") return { outcome: "stopped", detail: last?.message.errorMessage || "The model failed." };
+  if (stop === "error") return { outcome: "stopped", detail: last?.error || "The model failed." };
   if (err !== undefined) return { outcome: "stopped", detail: err instanceof Error ? err.message : String(err) };
   return { outcome: "stopped", detail: "The run ended without an answer." };
 }
@@ -1349,7 +1352,7 @@ async function runLook(projectId: string, text: string, report: InvocationReport
     if (!path) return report("not-started", "no conversation yet");
     const po = await acquireChat(path);
     po.assertModelAllowed();
-    const from = po.session.sessionManager.getBranch().length;
+    const from = liveRead(po.session).branch().length;
     const rt = rtOf(projectId);
     rt.lookStarting = true;
     const { queued, turn } = po.acceptPrompt(`${text}${lookAppendix(projectId)}`, undefined, "server");
@@ -1454,10 +1457,10 @@ export function noteCodingSettled(path: string): void {
 function lastTurnFailed(path: string): boolean {
   const chat = heldChat(path);
   if (!chat) return false;
-  const branch = chat.session.sessionManager.getBranch();
+  const branch = liveRead(chat.session).branch();
   for (let i = branch.length - 1; i >= 0; i--) {
-    const e = branch[i] as { type: string; message?: { role?: string; stopReason?: string } };
-    if (e.type === "message" && e.message?.role === "assistant") return e.message.stopReason === "error" || e.message.stopReason === "aborted";
+    const e = branch[i]!;
+    if (e.kind === "assistant") return e.stop === "error" || e.stop === "aborted";
   }
   return false;
 }

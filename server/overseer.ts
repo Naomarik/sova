@@ -85,13 +85,15 @@ import { isViewing, markSeen, readSeen } from "./seen";
 import { UnreadReplies } from "./unread-replies";
 import { cleanupSessions, getSessionSummary, idOf, indexedSessionPaths, lastReplyAtOf, listSessionFiles, listSessions } from "./sessions-index";
 import { getSessionInsight } from "./insights";
-import { branchLabels, runNote, runNoteSessionIds, type SessionNow, sessionsInPlay, sessionsInPlayText, type Touched } from "./overseer-run-note";
+import { branchLabels, cardsOnBranch, runNote, runNoteSessionIds, type SessionNow, sessionsInPlay, sessionsInPlayText, type Touched } from "./overseer-run-note";
 import { assistantText, ID_NOTE_MESSAGE, idCheckNote } from "./overseer-id-check";
 import { meshApi } from "./mesh";
 import { probePeer } from "./mesh/hello";
 import { meshLinks } from "./mesh/links";
 import type { PeerLinkRead } from "../shared/mesh-links";
-import { activeBranch, normalizeEntries, parseLines, readActiveBranch } from "./transcript";
+import { activeBranch, parseLines, readActiveBranch, rowsOf } from "./transcript";
+import { joinedText, liveRead, readBranch } from "./harness/pi/reader";
+import type { HEntry } from "../shared/harness";
 import { archiveWorktrees } from "./archive-worktrees";
 import { markOwned } from "./write-guard";
 import { signalTextOf, teamStallOf } from "./signals-store";
@@ -155,6 +157,10 @@ export function hasOverseerMarker(path: string): boolean {
   }
 }
 
+
+/** An entry that says the conversation was used: a message, or a model or thinking-level change. */
+const sentOrSet = (e: HEntry): boolean =>
+  e.kind === "setting" ? e.what === "model" || e.what === "thinking" : e.kind === "note" || e.kind === "summary" ? e.inMessage : ["user", "assistant", "tool-result", "shell", "system"].includes(e.kind);
 
 /** A new Overseer file: header + marker (and the rules a /clear carries, §app.overseer/approvals),
     written now (like every web session), ours. */
@@ -440,9 +446,7 @@ async function applySettingsNow(): Promise<void> {
   // record the new model — three info rows before the first message. A reopen seeds the runtime
   // from overseer.json directly (chat-manager createRuntime), so the file only ever records the
   // chosen model, at the first prompt. Open tabs get "reloaded" and reconnect.
-  const untouched = !chat.session.sessionManager
-    .getEntries()
-    .some((e) => e.type === "message" || e.type === "model_change" || e.type === "thinking_level_change");
+  const untouched = !liveRead(chat.session).entries().some(sentOrSet);
   if (untouched) {
     await disposeHeldChat(chat.path, "The Overseer's model changed; reopening it.");
     return;
@@ -553,7 +557,7 @@ const host: OverseerToolHost = {
     return getSessionSummary(path, rt ? (r) => contextWindow(r, rt) : undefined);
   },
   digest: () => attentionForWire(),
-  transcript: async (path) => normalizeEntries(await readActiveBranch(path)),
+  transcript: async (path) => rowsOf(await readBranch(path)),
   insight: (path) => getSessionInsight(path),
   checks: (path) => readinessChecksOf(path),
   held(path) {
@@ -614,7 +618,7 @@ const host: OverseerToolHost = {
   runningStarted: () => countRunning(started, running, promptedAt),
   counted: (path) => countRunning(started.has(path) ? [path] : [], running, promptedAt) > 0,
   attended: () => turns.attended(),
-  confirmed: () => confirmedItems(turns.confirmedCard(), overseerSession?.sessionManager.getBranch() ?? []),
+  confirmed: () => confirmedItems(turns.confirmedCard(), overseerSession ? liveRead(overseerSession).branch() : []),
   // Approvals and rules (§app.overseer/approvals): read from the current runtime's file each call,
   // so a revoke applies from the next act on.
   permit(tool, sessions) {
@@ -649,7 +653,7 @@ export async function renderPeerRead(
 ): Promise<PeerLinkRead> {
   const s = await getSessionSummary(path);
   const title = s?.title ?? "Untitled";
-  const items = normalizeEntries(await readActiveBranch(path));
+  const items = rowsOf(await readBranch(path));
   const text = renderTranscript(items, {
     from: opts.from === "start" || opts.from === "last_user" ? opts.from : "tail",
     items: Math.min(40, Math.max(1, Math.trunc(opts.items ?? 20) || 20)),
@@ -670,20 +674,14 @@ export async function renderPeerRead(
  * choice. Null otherwise: typed text, a closed card, a card id that matches nothing (a tool call id
  * from before card ids included). Pure over the branch, for the tests.
  */
-export function confirmedItems(card: string | null, branch: readonly unknown[]): SovaConfirmItem[] | null {
+export function confirmedItems(card: string | null, branch: readonly HEntry[]): SovaConfirmItem[] | null {
   if (!card) return null;
-  const entries = branch as { type?: string; message?: { role?: string } }[];
-  let last = -1;
-  for (let i = entries.length - 1; i >= 0; i--) {
-    if (entries[i]?.type === "message" && entries[i]!.message?.role === "user") {
-      last = i;
-      break;
-    }
-  }
+  let last = branch.length - 1;
+  while (last >= 0 && branch[last]!.kind !== "user") last--;
   if (last < 0) return null;
-  const c = foldCards(entries.slice(0, last)).find((x) => x.id === card);
+  const c = cardsOnBranch(branch.slice(0, last)).find((x) => x.id === card);
   if (!c || c.phase !== "open") return null;
-  const click = matchCardClick(c, userMessageText(entries[last]!.message)?.trim() ?? "");
+  const click = matchCardClick(c, joinedText(branch[last]!, { images: false }).trim());
   if (!click) return null;
   return clickItems(c, click).map(({ n: _n, default: _d, decided: _x, ...item }) => item as SovaConfirmItem);
 }
@@ -756,8 +754,8 @@ export async function revokePermit(id: string): Promise<{ ok: true } | { ok: fal
  * archived), then the open cards (§app.overseer/confirm). One message, so it stays the cards note
  * the attendance rule treats as state. A failure to read the sessions still sends the time and the cards.
  */
-export async function runNoteMessage(branch: readonly unknown[], now = new Date()): Promise<{ message: { customType: string; content: string; display: false; details?: unknown } }> {
-  const cardsText = cardsNote(foldCards(branch), false, sessionActivity());
+export async function runNoteMessage(branch: readonly HEntry[], now = new Date()): Promise<{ message: { customType: string; content: string; display: false; details?: unknown } }> {
+  const cardsText = cardsNote(cardsOnBranch(branch), false, sessionActivity());
   let note: { content: string; details: unknown };
   try {
     const prompted = touchedHere();
@@ -815,8 +813,8 @@ async function sessionsNow(ids: readonly string[]): Promise<Map<string, SessionN
  * The note written once after a compaction (§app.overseer/confirm, §app.overseer/sessions-in-play):
  * the sessions in play, then the exact open cards; undefined when there is neither.
  */
-export async function compactNoteMessage(branch: readonly unknown[], now = Date.now()): Promise<{ customType: string; content: string; display: false } | undefined> {
-  const cards = cardsNote(foldCards(branch), true, sessionActivity());
+export async function compactNoteMessage(branch: readonly HEntry[], now = Date.now()): Promise<{ customType: string; content: string; display: false } | undefined> {
+  const cards = cardsNote(cardsOnBranch(branch), true, sessionActivity());
   let play: string | undefined;
   try {
     const inPlay = sessionsInPlay(branch, now, touchedHere());
@@ -973,7 +971,7 @@ setOverseerRuntime({
               // and breaks the cache): persisted, so a restart or a fold keeps it.
               pi.on("before_agent_start", async (event, ctx) => {
                 event.systemPromptOptions.appendSystemPrompt = prompt.refresh();
-                return runNoteMessage(toolCtx(ctx).rawBranch());
+                return runNoteMessage(toolCtx(ctx).branch());
               });
               // The id check (§app.overseer/id-check): a run that linked a session id this host has no
               // file for leaves a hidden note naming the nearest real id. Sent while the run still
@@ -989,7 +987,7 @@ setOverseerRuntime({
               // A compaction summarizes the card results away: the exact open cards, once, after it.
               // The sessions in play go with them (§app.overseer/sessions-in-play), even with no card open.
               pi.on("session_compact", async (_event, ctx) => {
-                const note = await compactNoteMessage(toolCtx(ctx).rawBranch());
+                const note = await compactNoteMessage(toolCtx(ctx).branch());
                 if (note) pi.sendMessage(note);
               });
               // Worker reports and other extension messages reach the model redacted, like every tool's output.

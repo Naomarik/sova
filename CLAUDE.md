@@ -539,7 +539,9 @@ Sova speaks its own harness contract; pi is its one harness, behind one adapter 
   test pass; if a change seems to need it, stop and ask the user. A working-tree baseline that grew
   past `HEAD`'s fails too. `SOVA_BOUNDARY_OUT=<absolute path> pnpm test --
   server/harness-boundary.test.ts` writes the computed baseline for the diff; after a merge,
-  regenerate it on the merged tree.
+  regenerate it on the merged tree. One file entered the baseline by design: `shared/wire-v1.ts`,
+  the v1 wire shim, which must read pi's v1 event names to turn an older server's or peer's frames
+  into `SovaEvent`s; it stays pi-import-free, and no other file joins it.
 - New work is harness-neutral: a server feature imports `shared/harness.ts` and `server/harness/`,
   never pi; new per-session state goes through `SessionState`, never a raw custom entry with a new
   customType; history is read through the neutral reader, never `parseLines` plus a switch on

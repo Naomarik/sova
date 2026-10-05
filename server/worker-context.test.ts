@@ -8,8 +8,7 @@ import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import type { WorkerInfo } from "../shared/protocol";
 import { claudeContextOf, summarizeClaudeEntries } from "../pi-config/extensions/claude-code/transcript-adapter.ts";
-import { piContextOf, summarizePiEntries } from "../pi-config/extensions/subagents/adapters/pi.ts";
-import { contextForBranch, messageContextTokens } from "./transcript";
+import { contextForBranch, messageContextTokens, piContextOf } from "./harness/pi/usage";
 import { claudeContextWindow } from "../pi-config/extensions/claude-code/context-window.ts";
 import {
   claudeSpawnModel,
@@ -130,14 +129,7 @@ describe("per-line rules", () => {
   });
 
   test("summaries carry lastContextTokens: the last reply that reports one, null after a compaction", () => {
-    const ref = { v: 1 as const, backend: "pi", kind: "pi-session-file" as const, locator: "/x.jsonl" };
-    const header = { type: "session", version: 3, id: "s", timestamp: "2026-09-25T00:00:00Z", cwd: "/" };
-    const chain = (...es: Record<string, unknown>[]) => es.map((e, i) => ({ ...e, id: `e${i}`, parentId: i ? `e${i - 1}` : null }));
-    assert.equal(summarizePiEntries([header, ...chain(piReply(1), piReply(2), piReply(3, { stopReason: "error" }))], ref).lastContextTokens, 2 + 1010);
-    assert.equal(summarizePiEntries([header, ...chain(piReply(1), piCompaction)], ref).lastContextTokens, null);
-    assert.equal(summarizePiEntries([header, ...chain(piReply(1), piCompaction, piReply(7))], ref).lastContextTokens, 7 + 1010);
-    assert.ok(!("lastContextTokens" in summarizePiEntries([header], ref)), "no reply yet: absent, never 0");
-
+    // pi's half is the adapter's own test (server/harness/pi/usage.test.ts).
     const cref = { v: 1 as const, backend: "claude-code", kind: "claude-session-id" as const, locator: "x" };
     assert.equal(summarizeClaudeEntries([ccReply("a", 1), ccReply("b", 2), ccReply("s", 50, { isSidechain: true })], [], cref).lastContextTokens, 2 + 3200);
     assert.equal(summarizeClaudeEntries([ccReply("a", 1), ccCompact], [], cref).lastContextTokens, null);

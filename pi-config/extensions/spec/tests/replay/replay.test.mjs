@@ -3,17 +3,17 @@
 import "../../../claude-code/tests/hermetic-env.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cpSync, mkdtempSync, readFileSync, writeFileSync, rmSync, existsSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync, existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runArm, diffCards, summary } from "./run.mjs";
 import { makeTree } from "./make-tree.mjs";
 import { baselineText, BASELINE_PATH, DATA, extractPinned } from "./scenario-g.mjs";
-import { grade } from "./agent-arm.mjs";
+import { grade, agentInput, NOT_MEASURED } from "./agent-arm.mjs";
 import { specIndex } from "./fullness.mjs";
-import { Tools } from "./lib.mjs";
+import { Tools, seedSpec } from "./lib.mjs";
 
 const TREE = fileURLToPath(new URL("../../../", import.meta.url));
 /** The ref g's baseline was recorded from (its `tree` field), and the commit it names. */
@@ -221,6 +221,29 @@ test("agent arm grading: what came back in tool results is what was read; leavin
   const empty = grade(index, c, "", root);
   assert.equal(empty.answered, 0);
   assert.equal(empty.lostVsPacket.length, JSON.parse(readFileSync(BASELINE_PATH, "utf8")).comparisons.C18.values.filter((v) => v > 0).length);
+});
+
+test("agent arm input: two trees' agents are told the same task; only the tree's own mode text differs", () => {
+  const a = sabotaged([]), b = sabotaged([["mode/spec-mode.md", "Every behavior change is spec'd.", "Every behavior change is spec'd. Start with toc."]]);
+  for (const c of DATA.comparisons) {
+    const [x, y] = [agentInput(c, a), agentInput(c, b)];
+    assert.equal(x.prompt, y.prompt, `${c.id}: the task prompt never depends on the tree or arm`);
+    assert.doesNotMatch(x.prompt, /\b(toc|read|packet|scope|impact|map|where)\b '|--dir|--part|Start with/, `${c.id}: the prompt names no command or reading strategy`);
+  }
+  const strip = (t) => t.replace(/^core=.*$/m, "");
+  const raw = (tree) => strip(readFileSync(join(tree, "mode/spec-mode.md"), "utf8"));
+  assert.equal(strip(agentInput(DATA.comparisons[0], a).instructions), raw(a));
+  assert.equal(strip(agentInput(DATA.comparisons[0], b).instructions), raw(b));
+  assert.notEqual(agentInput(DATA.comparisons[0], a).instructions, agentInput(DATA.comparisons[0], b).instructions);
+  // The guard the arm can't measure: outside any repository, as the agent works, census --changed lists nothing to read.
+  const work = mkdtempSync(join(tmpdir(), "spec-replay-armwork-"));
+  temps.push(work);
+  seedSpec({ write: (rel, text) => { mkdirSync(dirname(join(work, rel)), { recursive: true }); writeFileSync(join(work, rel), text); } }, {
+    claims: { "§w/one": { kind: "surface", authority: "accepted" } }, files: { ".sova/spec/claims/w/one.md": "# §w/one — One\n\nA surface.\n" },
+  });
+  const r = new Tools(TREE).spec(work, work, ["census", "--changed"]);
+  assert.ok(r.json?.exit === 2 && r.json.census === null, `census --changed in a work directory: ${r.stdout.slice(0, 400)}`);
+  assert.ok(NOT_MEASURED.some((s) => s.startsWith("every census --changed claim read")));
 });
 
 test("agent arm grading: a passage the frame carries is read, JSON or text; toc lines and footer names in text are seen", { skip: spawnSync("git", ["-C", TREE, "cat-file", "-e", `${PINNED_REV}^{commit}`]).status !== 0 && "the pinned revision is not in this checkout" }, () => {

@@ -36,30 +36,28 @@ export const SAMPLE = ["C01", "C05", "C07", "C10", "C14", "C17", "C19", "C22"];
 const ALLOWED = [/^zai\/glm-5\.3(-flash|-highspeed)?(:[a-z]+)?$/, /^ollama-cloud\/deepseek-v4\.1-flash(:(low|medium))?$/];
 const PROVIDER_CAP = { zai: 2, "ollama-cloud": 3 };
 
-const TOOLS_LINE = {
-  packet: (seed) => [
-    `  node tools/sova-spec.mjs packet '${seed}' --root . --json`,
-    "    (the promise and everything it depends on, in pages; follow \"next\" with --cursor <token>, same id)",
-  ],
-  pull: (seed) => [
-    `  node tools/sova-spec.mjs toc '<§id>' --dir out|in|down|up|mentions --root . --json`,
-    "    (a contents view: one line per neighbouring promise, saying what it is, why it is linked and its size;",
-    "     out = what it depends on, in = what depends on it, down = what is inside it, up = its parent, mentions = prose naming it)",
-    `  node tools/sova-spec.mjs read '<§id>' --root . --json     (one promise's exact text; add --whole for a whole H1)`,
-    `  Start with toc on ${seed}, then open only what the work needs.`,
-  ],
-};
+/** Recorded in run.json and the scorecard; compare refuses two runs told different things. */
+export const PROMPT_VERSION = "neutral-1";
+/**
+ * Not measured by the agent arm, and why; compare reports it so a gate never counts it as held. The agent edits
+ * nothing and works outside any repository, where `census --changed` refuses (`not-git`, exit 2): a guard over
+ * the claims it lists would hold for an agent that read nothing.
+ */
+export const NOT_MEASURED = ["every census --changed claim read: the agent arm makes no edits and its work directory is in no repository (census --changed refuses: not-git, exit 2), so the guard would hold vacuously; dropped from M2's report"];
 
-/** The prompt: the same words for every arm except the tool lines. */
-export function prompt(c, arm) {
+/**
+ * The task prompt: the same words in every arm. It names no command and no reading strategy, so how the agent
+ * reads comes only from the instructions (the tree's own mode/spec-mode.md); `arm` is a label for the run.
+ */
+export function prompt(c) {
   return [
     `You are about to change one part of a product called Sova: "${c.title}", whose spec id is ${c.seed}.`,
     "Before any code, find out from the product's spec what a builder of this part must know: the promises it",
     "must keep, the exact names, states, shapes and messages involved, the neighbouring promises it could break,",
     "and what is not its job or not decided.",
     "",
-    "The spec is in .sova/spec. Read it only through these commands, run from this directory:",
-    ...TOOLS_LINE[arm](c.seed),
+    "The spec is in .sova/spec. Read it only through the spec tools, run from this directory as",
+    "`node tools/sova-spec.mjs <command> … --root .`; your instructions say which commands to use.",
     "",
     "Do not open files directly and do not leave this directory. Stop reading when you have what a builder needs.",
     "Then reply with a brief of at most 25 bullet points: the facts you will rely on, each with the § id it came from.",
@@ -91,6 +89,11 @@ export function instructionsFor(tree, o = {}) {
   if (text === raw && /^core=/m.test(raw)) throw new Error("the instructions' core= line has an unexpected form; adapt the harness, not the text");
   const sha = (s) => createHash("sha256").update(s).digest("hex");
   return { source: o.instructions ? source : "<tree>/mode/spec-mode.md", sha256: sha(raw), adaptedSha256: sha(text), text };
+}
+
+/** Everything an agent is told for comparison `c` on `tree`: the task prompt and the instructions. */
+export function agentInput(c, tree, o = {}) {
+  return { prompt: prompt(c), instructions: instructionsFor(tree, o)?.text ?? null };
 }
 
 const agentDir = () => {
@@ -269,13 +272,13 @@ async function cmdRun(o) {
   const index = specIndex(pinnedRoot);
   const instr = instructionsFor(tree, o);
   if (instr) writeFileSync(join(out, "instructions.md"), instr.text);
-  const meta = { runId, arm: o.arm, model: o.model, instructions: instr ? { source: instr.source, sha256: instr.sha256, adaptedSha256: instr.adaptedSha256 } : null, tree, treeSource: readSource(tree), pinned: DATA.pinned, comparisons: ids, concurrency, timeoutMin: Number(o["timeout-min"] ?? 20), extensions, pi: o.pi ?? "pi", started: new Date().toISOString(), dryRun: Boolean(o.dryRun) };
+  const meta = { runId, arm: o.arm, model: o.model, prompt: PROMPT_VERSION, instructions: instr ? { source: instr.source, sha256: instr.sha256, adaptedSha256: instr.adaptedSha256 } : null, tree, treeSource: readSource(tree), pinned: DATA.pinned, comparisons: ids, concurrency, timeoutMin: Number(o["timeout-min"] ?? 20), extensions, pi: o.pi ?? "pi", started: new Date().toISOString(), dryRun: Boolean(o.dryRun) };
   writeFileSync(join(out, "run.json"), JSON.stringify(meta, null, 2) + "\n");
   await pool(comps, concurrency, async (c) => {
     const dir = join(out, c.id);
     mkdirSync(join(dir, "sessions"), { recursive: true });
     const work = workDir(join(workBase, c.id), tree, pinnedRoot);
-    const text = prompt(c, o.arm);
+    const text = agentInput(c, tree, o).prompt;
     writeFileSync(join(dir, "prompt.txt"), text + "\n");
     if (o.dryRun) { writeFileSync(join(dir, "dry-run.json"), JSON.stringify({ work, cwdFiles: readdirSync(work).sort() }, null, 2) + "\n"); return; }
     const r = await runPi({ pi: meta.pi, model: o.model, work, sessions: join(dir, "sessions"), extensions, text, instructions: instr ? join(out, "instructions.md") : null, events: join(dir, "events.jsonl"), stderr: join(dir, "stderr.txt"), timeoutMs: meta.timeoutMin * 60_000 });
@@ -307,7 +310,7 @@ export function gradeDir(out, index) {
     lostVsPacket: done.reduce((s, r) => s + r.lostVsPacket.length, 0), outside: done.reduce((s, r) => s + r.outside.length, 0),
     directSpec: done.reduce((s, r) => s + (r.directSpec?.length ?? 0), 0), scratch: done.reduce((s, r) => s + (r.scratch?.length ?? 0), 0),
   };
-  const card = { arm: meta.arm, model: meta.model, instructions: meta.instructions ?? null, tree: meta.treeSource ?? meta.tree, pinned: meta.pinned, runId: meta.runId, total, rows };
+  const card = { arm: meta.arm, model: meta.model, prompt: meta.prompt ?? "arm-specific (before neutral-1)", instructions: meta.instructions ?? null, tree: meta.treeSource ?? meta.tree, pinned: meta.pinned, runId: meta.runId, total, rows };
   writeFileSync(join(out, "agent-scorecard.json"), JSON.stringify(card, null, 2) + "\n");
   const lines = [`agent arm: ${meta.arm} · model ${meta.model} · tree ${meta.treeSource ? `${meta.treeSource.ref} @ ${meta.treeSource.commit.slice(0, 12)}` : meta.tree}`, ""];
   for (const r of rows) lines.push(r.missing ? `  ${r.id}  (no events)` : `  ${r.id}  answered ${r.answered}/${r.of} (packet ${packet[r.id]})  bytes ${r.bytes}  calls ${r.calls}  read ${r.passagesRead}  lines ${r.contentsLines}  lost-vs-packet ${r.lostVsPacket.length}  outside ${r.outside.length}  direct-spec ${r.directSpec.length}  scratch ${r.scratch.length}  exit ${r.exit}${r.signal ? ` ${r.signal}` : ""}`);
@@ -326,6 +329,7 @@ export function compareRuns(baseDir, candDir) {
   const cand = JSON.parse(readFileSync(join(candDir, "agent-scorecard.json"), "utf8"));
   if (base.model !== cand.model) throw new Error(`models differ: ${base.model} vs ${cand.model}; compare only at one model and level`);
   if (Boolean(base.instructions) !== Boolean(cand.instructions)) throw new Error("one run had instructions and the other not; both arms get their own tree's spec-mode text, or neither");
+  if (base.prompt !== cand.prompt) throw new Error(`task prompts differ (${base.prompt} vs ${cand.prompt}); re-run both arms at one harness`);
   const rows = [], lost = [];
   for (const r of cand.rows.filter((x) => !x.missing)) {
     const b = base.rows.find((x) => x.id === r.id && !x.missing);
@@ -336,7 +340,7 @@ export function compareRuns(baseDir, candDir) {
     rows.push({ id: r.id, answered: r.answered, agentPacket: b.answered, computedPacket: BASELINE.comparisons[r.id].values.reduce((s, v) => s + v, 0), bytes: r.bytes, packetBytes: b.bytes, calls: r.calls, packetCalls: b.calls });
   }
   const sum = (k) => rows.reduce((s, x) => s + (x[k] ?? 0), 0);
-  return { baseline: base.runId, candidate: cand.runId, model: cand.model, total: { answered: sum("answered"), agentPacket: sum("agentPacket"), computedPacket: sum("computedPacket"), lostUnseen: lost.length, bytesMedian: median(rows.map((x) => x.bytes)), packetBytesMedian: median(rows.map((x) => x.packetBytes)), callsMax: Math.max(0, ...rows.map((x) => x.calls ?? 0)) }, lost, rows };
+  return { baseline: base.runId, candidate: cand.runId, model: cand.model, total: { answered: sum("answered"), agentPacket: sum("agentPacket"), computedPacket: sum("computedPacket"), lostUnseen: lost.length, bytesMedian: median(rows.map((x) => x.bytes)), packetBytesMedian: median(rows.map((x) => x.packetBytes)), callsMax: Math.max(0, ...rows.map((x) => x.calls ?? 0)) }, notMeasured: NOT_MEASURED, lost, rows };
 }
 
 async function main(argv) {

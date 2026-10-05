@@ -138,6 +138,10 @@ test("pull checks run where toc exists: held by a faithful contents view, each f
   assert.ok(failed(thin).includes("g.pull.shown-floor"), `the ratchet trips (shown ${shown(thin)}; failed: ${failed(thin).join(", ")})`);
 
   const T = "spec/core/toc-stub.mjs";
+  // A what cut at the end of its first source line (the 70d6696e toc) reads as a what; the whole-sentence guards catch it.
+  const cut = await runArm(sabotaged([STUB, [T, "const body = (units[0] ?? \"\").replace(", "const body = (units[0] ?? \"\").split(\"\\n\")[0].replace("]], STUB_FILES), { label: "stub-cut", only: ["f", "g"] });
+  for (const name of ["f.pull.what-whole", "g.pull.what-whole"]) assert.ok(failed(cut).includes(name), `${name} trips on a what cut at the line end (failed: ${failed(cut).join(", ")})`);
+
   const bad = await runArm(sabotaged([STUB,
     [T, "out: () => claims[id].requires ?? [],", "out: () => [],"],                                  // out-links hidden
     [T, "what: body.split(/(?<=[.:])\\s/)[0] || \"(no text)\",", "what: \"\","],                      // lines say nothing

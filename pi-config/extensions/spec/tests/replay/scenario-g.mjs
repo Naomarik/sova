@@ -11,7 +11,7 @@ import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync, existsSync, realpathSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { specIndex, scoreNeed, readStream, proseTexts, median, pool, idsIn, parentOf, capability, readToc, accepts, readLines } from "./fullness.mjs";
+import { specIndex, scoreNeed, readStream, proseTexts, median, pool, idsIn, parentOf, capability, readToc, accepts, readLines, cutWhat } from "./fullness.mjs";
 import { Tools, workspace, scrubProcessEnv } from "./lib.mjs";
 import { DATA, extractPinned } from "./pinned.mjs";
 
@@ -174,7 +174,20 @@ export async function fullness(ctx) {
   if (toc === "absent") {
     rows.push(row("g.pull.total", "n/a: this tree has no toc", [guard("g.pull.toc-answers", true, "n/a: this tree has no toc", true), guard("g.pull.shown-floor", true, "n/a: this tree has no toc", true)]));
     for (const h1 of WHY_FAMILIES) rows.push(row(`g.pull.why.${h1.slice(1).replace("/", "-")}`, "n/a"));
+    rows.push(row("g.pull.what-whole", "n/a: this tree has no toc", [guard("g.pull.what-whole", true, "n/a: this tree has no toc", true)]));
   } else {
+    // Every passage's what, read as `toc <H1> --dir down` shows it (the H1 and its H2s): a whole sentence, or
+    // marked "…". A line cut at the end of its first source line reads as a what; this counts it as cut.
+    const sweeps = await pool([...index.passages.values()].filter((p) => p.level === 1).map((p) => p.id), 8, (h1) => readToc(ctx.tools, root, ctx.ws.home, h1, "down"));
+    const seen = new Map();
+    for (const t of sweeps) for (const l of [t.seed, ...t.lines]) if (l && typeof l.id === "string" && l.whatSource !== "none" && typeof l.what === "string") seen.set(l.id, l.what);
+    const verdicts = [...seen].map(([id, what]) => ({ id, what, v: cutWhat(what, index.passages.get(id)?.text ?? "") }));
+    const bad = verdicts.filter((x) => x.v !== "whole");
+    const sweepBroken = sweeps.filter((t) => !t.ok).length;
+    rows.push(row("g.pull.what-whole", {
+      whats: verdicts.length, cut: bad.filter((x) => x.v === "cut").length, unlocated: bad.filter((x) => x.v === "unlocated").length,
+      first: bad.slice(0, 3).map((x) => `${x.id}: "${x.what}"`).join(" | ") || "none",
+    }, [guard("g.pull.what-whole", sweepBroken === 0 && verdicts.length > 0 && bad.length === 0, sweepBroken ? `toc --dir down failed on ${sweepBroken} H1s` : bad.length ? `${bad.length} of ${verdicts.length} whats are not a whole sentence, e.g. ${bad[0].id}: "${bad[0].what}"` : `all ${verdicts.length} whats are whole sentences`)]));
     // Contents-line quality: `--dir out` over each H2 of the family. "requires" lines are the declared edges
     // (the plan's "1 of 6"); a why found only in an HTML comment is counted apart.
     for (const h1 of WHY_FAMILIES) {

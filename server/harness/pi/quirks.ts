@@ -49,6 +49,7 @@ export interface PiQuirk {
 }
 
 const CM = "server/chat-manager.ts";
+const SESSION = "server/harness/pi/session.ts";
 
 export const PI_QUIRKS: readonly PiQuirk[] = [
   {
@@ -96,7 +97,10 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     kind: "error-text",
     relies: "A prompt that meets a running turn (the session's without streamingBehavior, or the agent's own after the streaming check passed) fails with a message matching /already processing/i; linkToSdk then steers into the turn that won.",
     pi: ["AgentSession.prompt", "Agent.prompt"],
-    where: [{ file: CM, symbol: "ChatSession.linkToSdk" }],
+    where: [
+      { file: SESSION, symbol: "isAlreadyProcessing" },
+      { file: CM, symbol: "ChatSession.linkToSdk" },
+    ],
     canary: "P4 already-processing: a prompt mid-run without streamingBehavior, and the agent's own prompt mid-run, fail /already processing/i",
     retireWhen: "pi throws a typed error",
   },
@@ -106,20 +110,27 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     kind: "private-read",
     relies: "_isEmittingAgentSettled is true while agent_settled is emitted, and a prompt() made then is deferred: it resolves at once and its turn runs after the emit. Topic delivery stays out of that window.",
     pi: ["AgentSession._isEmittingAgentSettled", "AgentSession.prompt", "AgentSession._emitAgentSettled"],
-    where: [{ file: CM, symbol: "ChatSession.deliverTopicBatch" }],
+    where: [
+      { file: SESSION, symbol: "PiHarnessSession.inSettleWindow" },
+      { file: CM, symbol: "ChatSession.deliverTopicBatch" },
+    ],
     canary: "P5 settle-window: inside an agent_settled emit _isEmittingAgentSettled is true and a prompt resolves at once, its turn running after",
     retireWhen: "pi exposes the settle window, or stops deferring a prompt made inside it",
   },
   {
     id: "P6",
     name: "refresh-context",
-    kind: "private-read",
-    relies: "A user entry appended outside a run (sessionManager.appendMessage) reaches the agent's context only after the session re-reads its projection; enterQueued calls the private _refreshFinalizedContext() for that.",
-    pi: ["AgentSession._refreshFinalizedContext", "AgentSession.refreshContext", "SessionManager.appendMessage"],
-    where: [{ file: CM, symbol: "ChatSession.enterQueued" }],
-    canary: "P6 refresh-context: a user entry appended outside a run reaches the agent's context after refreshContext() (and _refreshFinalizedContext, which enterQueued calls today)",
-    retireWhen: "enterQueued calls the public refreshContext() (M5); the canary then stays for the public method",
-    note: "pi 0.87.1 has the public equivalent refreshContext(), which calls _refreshFinalizedContext(); the swap is M5's (plan M5-T2), not done here.",
+    kind: "semantic",
+    relies: "A user entry appended outside a run (sessionManager.appendMessage) reaches the agent's context only after the session re-reads its projection, which the public refreshContext() does; enterQueued calls it once after its appends.",
+    pi: ["AgentSession.refreshContext", "SessionManager.appendMessage"],
+    where: [
+      { file: SESSION, symbol: "PiHarnessSession.appendUserMessage" },
+      { file: SESSION, symbol: "PiHarnessSession.refreshContext" },
+      { file: CM, symbol: "ChatSession.enterQueued" },
+    ],
+    canary: "P6 refresh-context: a user entry appended outside a run reaches the agent's context after refreshContext()",
+    retireWhen: "never: a contract worth keeping a canary for",
+    note: "Until M5-T2 enterQueued called the private _refreshFinalizedContext(), which refreshContext() wraps (pi 0.87.1); that private read is retired.",
   },
   {
     id: "P7",
@@ -127,7 +138,10 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     kind: "monkey-patch",
     relies: "AgentSession hands user input to this.agent.prompt/steer/followUp by property lookup, and the object it passes is the one later emitted in message_start, so wrapping those three tells a message the user sent from every other by identity.",
     pi: ["Agent.prompt", "Agent.steer", "Agent.followUp", "AgentSession.prompt", "AgentSession.steer", "AgentSession.followUp"],
-    where: [{ file: "server/user-turns.ts", symbol: "UserTurns.watch" }],
+    where: [
+      { file: "server/harness/pi/turns.ts", symbol: "watchUserMessages" },
+      { file: "server/user-turns.ts", symbol: "UserTurns.watch" },
+    ],
     canary: "P7 user-turns-wrap: prompt, steer and followUp reach the agent by property lookup, and the object passed is the one message_start carries",
     retireWhen: "pi offers an input-identity hook",
   },
@@ -149,6 +163,7 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
       "agent.hasQueuedMessages() is the real queue; the session's steering/follow-up mirror is spliced on message_start by text only, so an image-only steer stays in it after delivery; clearQueue() returns and clears both kinds; continue() drains steering before follow-ups. peekQueuedMessages() exists and is unused.",
     pi: ["Agent.hasQueuedMessages", "Agent.continue", "Agent.peekQueuedMessages", "AgentSession.getSteeringMessages", "AgentSession.getFollowUpMessages", "AgentSession.clearQueue"],
     where: [
+      { file: SESSION, symbol: "PiHarnessSession.queue" },
       { file: "server/queue.ts", symbol: "SdkQueueView" },
       { file: "server/queue.ts", symbol: "WebQueue.sdkHolds" },
     ],
@@ -188,6 +203,8 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     relies: "Session listeners get message_end before pi appends the message's entry, and the append follows in the same tick, so one microtask later the entry is the leaf; the sender and topic markers and the held broadcasts wait that microtask.",
     pi: ["AgentSession.subscribe", "AgentSession._handleAgentEvent", "SessionManager.appendMessage"],
     where: [
+      { file: SESSION, symbol: "PiHarnessSession.subscribe" },
+      { file: SESSION, symbol: "PiHarnessSession.persistedId" },
       { file: CM, symbol: "ChatSession.markSend" },
       { file: CM, symbol: "ChatSession.markTopic" },
       { file: CM, symbol: "ChatSession.holdForEntryId" },
@@ -234,9 +251,12 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     kind: "semantic",
     relies: "prompt() resolves when the turn ends, while preflightResult(true) fires when it is accepted (also for a handled extension command); a link delivery takes acceptance from the preflight.",
     pi: ["AgentSession.prompt", "PromptOptions.preflightResult"],
-    where: [{ file: CM, symbol: "ChatSession.linkToSdk" }],
+    where: [
+      { file: SESSION, symbol: "PiHarnessSession.send" },
+      { file: CM, symbol: "ChatSession.linkToSdk" },
+    ],
     canary: "P15 accept-vs-complete: prompt() resolves at turn end while preflightResult(true) fires at acceptance (and for a handled command)",
-    retireWhen: "never: HarnessSession.send/onAccepted mirror it (M5); keep the canary",
+    retireWhen: "never: HarnessSession.send and its onAccepted mirror it; keep the canary",
   },
   {
     id: "P16",
@@ -244,7 +264,10 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     kind: "semantic",
     relies: "sendCustomMessage(…, {triggerTurn:false}) on an idle session appends the custom_message entry at once and emits message_start then message_end, with no turn.",
     pi: ["AgentSession.sendCustomMessage"],
-    where: [{ file: CM, symbol: "ChatSession.appendNote" }],
+    where: [
+      { file: SESSION, symbol: "PiHarnessSession.appendNote" },
+      { file: CM, symbol: "ChatSession.appendNote" },
+    ],
     canary: "P16 custom-message-idle: sendCustomMessage with triggerTurn:false on an idle session appends at once and emits message_start then message_end",
     retireWhen: "never: a contract worth keeping a canary for",
   },

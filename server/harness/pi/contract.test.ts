@@ -373,19 +373,17 @@ describe("pi contract", () => {
     session.dispose();
   });
 
-  test("P6 refresh-context: a user entry appended outside a run reaches the agent's context after refreshContext() (and _refreshFinalizedContext, which enterQueued calls today)", async () => {
+  test("P6 refresh-context: a user entry appended outside a run reaches the agent's context after refreshContext()", async () => {
     const { session, model, sm } = await quirkSession();
     await session.prompt("first");
     const inContext = (t: string) => session.agent.state.messages.some((m: any) => m.role === "user" && userText(m) === t);
     const user = (text: string) => ({ role: "user", content: [{ type: "text", text }], timestamp: Date.now() });
     sm.appendMessage(user("queued one"));
     assert.equal(inContext("queued one"), false, "an append alone leaves the agent's context as it was");
-    assert.equal(typeof (session as any)._refreshFinalizedContext, "function", "the private method enterQueued calls is gone: switch it to refreshContext()");
-    (session as any)._refreshFinalizedContext();
-    assert.ok(inContext("queued one"));
     sm.appendMessage(user("queued two"));
+    assert.equal(inContext("queued two"), false);
     session.refreshContext();
-    assert.ok(inContext("queued two"), "the public refreshContext() does the same");
+    assert.ok(inContext("queued one") && inContext("queued two"), "refreshContext() re-reads both, as PiHarnessSession.refreshContext relies on");
     await session.prompt("next");
     const users = (model.calls[1]!.context as any).messages.filter((m: any) => m.role === "user").map(userText);
     assert.deepEqual(users.slice(-3), ["queued one", "queued two", "next"]);

@@ -3,6 +3,7 @@ import { CARDS_NOTE_MESSAGE } from "../shared/overseer-card";
 import { OVERSEER_BRIEF_PREFIX } from "../shared/protocol";
 import { parseWakeNudge } from "../shared/wake";
 import { ID_NOTE_MESSAGE } from "./overseer-id-check";
+import { watchUserMessages } from "./harness/pi/turns";
 
 // ---- who started the turn ----------------------------------------------------------------------
 
@@ -107,14 +108,7 @@ export class UserTurns {
   watch(agent: UserMessageSink): void {
     if (this.watched.has(agent)) return;
     this.watched.add(agent);
-    const sink = agent as unknown as Record<"prompt" | "steer" | "followUp", (...args: unknown[]) => unknown>;
-    for (const name of ["prompt", "steer", "followUp"] as const) {
-      const inner = sink[name]!;
-      sink[name] = (...args: unknown[]) => {
-        this.claim(args[0]);
-        return inner.apply(agent, args);
-      };
-    }
+    watchUserMessages(agent, (input) => this.claim(input));
   }
   private claim(input: unknown): void {
     const ctx = this.sending.getStore();

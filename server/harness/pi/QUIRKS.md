@@ -39,19 +39,19 @@ Paths in "Where" are under `server/`.
 | P1 open-writes-nothing | monkey-patch | `openSession` (chat-manager.ts), `ChatSession.flushDeferredAppends` (chat-manager.ts), `restatesRecordedModel` (chat-manager.ts) | `createAgentSession`, `SessionManager.appendModelChange`, `SessionManager.appendThinkingLevelChange` | pi stops appending at construction, or offers an open that writes nothing |
 | P2 compaction-write-wrap | monkey-patch | `compactSession` (chat-manager.ts) | `AgentSession.compact`, `SessionManager.appendCompaction` | pi offers a pre-write hook for a compaction |
 | P3 compaction-error-text | error-text | `compactSession` (chat-manager.ts), `isCompactionInProgress` (chat-manager.ts) | `AgentSession.compact`, `AgentSession.prompt` | pi throws typed errors |
-| P4 already-processing | error-text | `ChatSession.linkToSdk` (chat-manager.ts) | `AgentSession.prompt`, `Agent.prompt` | pi throws a typed error |
-| P5 settle-window | private-read | `ChatSession.deliverTopicBatch` (chat-manager.ts) | `AgentSession._isEmittingAgentSettled`, `AgentSession.prompt`, `AgentSession._emitAgentSettled` | pi exposes the settle window, or stops deferring a prompt made inside it |
-| P6 refresh-context | private-read | `ChatSession.enterQueued` (chat-manager.ts) | `AgentSession._refreshFinalizedContext`, `AgentSession.refreshContext`, `SessionManager.appendMessage` | enterQueued calls the public refreshContext() (M5); the canary then stays for the public method |
-| P7 user-turns-wrap | monkey-patch | `UserTurns.watch` (user-turns.ts) | `Agent.prompt`, `Agent.steer`, `Agent.followUp`, `AgentSession.prompt`, `AgentSession.steer`, `AgentSession.followUp` | pi offers an input-identity hook |
+| P4 already-processing | error-text | `isAlreadyProcessing` (harness/pi/session.ts), `ChatSession.linkToSdk` (chat-manager.ts) | `AgentSession.prompt`, `Agent.prompt` | pi throws a typed error |
+| P5 settle-window | private-read | `PiHarnessSession.inSettleWindow` (harness/pi/session.ts), `ChatSession.deliverTopicBatch` (chat-manager.ts) | `AgentSession._isEmittingAgentSettled`, `AgentSession.prompt`, `AgentSession._emitAgentSettled` | pi exposes the settle window, or stops deferring a prompt made inside it |
+| P6 refresh-context | semantic | `PiHarnessSession.appendUserMessage` (harness/pi/session.ts), `PiHarnessSession.refreshContext` (harness/pi/session.ts), `ChatSession.enterQueued` (chat-manager.ts) | `AgentSession.refreshContext`, `SessionManager.appendMessage` | never: a contract worth keeping a canary for |
+| P7 user-turns-wrap | monkey-patch | `watchUserMessages` (harness/pi/turns.ts), `UserTurns.watch` (user-turns.ts) | `Agent.prompt`, `Agent.steer`, `Agent.followUp`, `AgentSession.prompt`, `AgentSession.steer`, `AgentSession.followUp` | pi offers an input-identity hook |
 | P8 stream-function | monkey-patch | `useSlicedProviderReads` (runtime-quirks.ts) | `Agent.streamFunction` | the fetch-read-size Bun quirk retires (docs/bun-quirks.md), or pi takes a fetch option |
-| P9 queue-one-bit | semantic | `SdkQueueView` (queue.ts), `WebQueue.sdkHolds` (queue.ts) | `Agent.hasQueuedMessages`, `Agent.continue`, `Agent.peekQueuedMessages`, `AgentSession.getSteeringMessages`, `AgentSession.getFollowUpMessages`, `AgentSession.clearQueue` | Sova adopts peekQueuedMessages(), or pi's mirror tracks delivery by identity |
+| P9 queue-one-bit | semantic | `PiHarnessSession.queue` (harness/pi/session.ts), `SdkQueueView` (queue.ts), `WebQueue.sdkHolds` (queue.ts) | `Agent.hasQueuedMessages`, `Agent.continue`, `Agent.peekQueuedMessages`, `AgentSession.getSteeringMessages`, `AgentSession.getFollowUpMessages`, `AgentSession.clearQueue` | Sova adopts peekQueuedMessages(), or pi's mirror tracks delivery by identity |
 | P10 leaf-is-last-line | semantic | `rewindSession` (chat-manager.ts), `activeBranchLines` (harness/pi/fork.ts) | `AgentSession.navigateTree`, `SessionManager.open`, `SessionManager.getLeafId` | pi persists the leaf |
 | P11 create-defers / open-flushed | semantic | `createSessionFile` (harness/pi/state.ts), `appendToClosedFile` (harness/pi/state.ts) | `SessionManager.create`, `SessionManager.open`, `SessionManager.appendCustomEntry` | never: the two creation paths depend on it; keep the canary |
-| P12 message-end-before-persist | ordering | `ChatSession.markSend` (chat-manager.ts), `ChatSession.markTopic` (chat-manager.ts), `ChatSession.holdForEntryId` (chat-manager.ts) | `AgentSession.subscribe`, `AgentSession._handleAgentEvent`, `SessionManager.appendMessage` | pi emits after persisting, or gives the entry id with message_end |
+| P12 message-end-before-persist | ordering | `PiHarnessSession.subscribe` (harness/pi/session.ts), `PiHarnessSession.persistedId` (harness/pi/session.ts), `ChatSession.markSend` (chat-manager.ts), `ChatSession.markTopic` (chat-manager.ts), `ChatSession.holdForEntryId` (chat-manager.ts) | `AgentSession.subscribe`, `AgentSession._handleAgentEvent`, `SessionManager.appendMessage` | pi emits after persisting, or gives the entry id with message_end |
 | P13 no-entry-appended | semantic | `ChatSession.setThinking` (chat-manager.ts), `ChatSession.refreshAfterCompaction` (chat-manager.ts) | `AgentSession.setThinkingLevel`, `AgentSession.compact`, `ExtensionAPI.appendEntry` | pi emits entry_appended for them (then drop the synthesized row) |
 | P14 command-direct-call | internal-API | `ChatSession.modeCommand` (chat-manager.ts), `ChatSession.claudeLoginCommand` (chat-manager.ts), `ChatSession.applyMode` (chat-manager.ts), `ChatSession.syncModePrompt` (chat-manager.ts), `ChatSession.applyLoginPick` (chat-manager.ts), `ChatSession.sandboxHost` (chat-manager.ts), `ChatSession.resumeWorker` (chat-manager.ts), `sandboxCommandOf` (sandbox-state.ts), `resumeCommandOf` (worker-resume.ts) | `ExtensionRunner.getCommand`, `ExtensionRunner.createCommandContext`, `ResolvedCommand.sourceInfo` | pi offers a public run-command API for embedders |
-| P15 accept-vs-complete | semantic | `ChatSession.linkToSdk` (chat-manager.ts) | `AgentSession.prompt`, `PromptOptions.preflightResult` | never: HarnessSession.send/onAccepted mirror it (M5); keep the canary |
-| P16 custom-message-idle | semantic | `ChatSession.appendNote` (chat-manager.ts) | `AgentSession.sendCustomMessage` | never: a contract worth keeping a canary for |
+| P15 accept-vs-complete | semantic | `PiHarnessSession.send` (harness/pi/session.ts), `ChatSession.linkToSdk` (chat-manager.ts) | `AgentSession.prompt`, `PromptOptions.preflightResult` | never: HarnessSession.send and its onAccepted mirror it; keep the canary |
+| P16 custom-message-idle | semantic | `PiHarnessSession.appendNote` (harness/pi/session.ts), `ChatSession.appendNote` (chat-manager.ts) | `AgentSession.sendCustomMessage` | never: a contract worth keeping a canary for |
 | P17 theme-global | private-read | `currentTheme` (chat-manager.ts) | `initTheme`, `Symbol.for("@earendil-works/pi-coding-agent:theme")` | pi exports the theme instance |
 | P18 warmup-shutdown | internal-API | `warmClaudeCodeProvider` (chat-manager.ts) | `AgentSession.bindExtensions`, `AgentSession.dispose`, `ExtensionRunner.emit`, `ExtensionRunner.hasHandlers` | dispose() emits session_shutdown (then the warm-up's own emit would double it) |
 | P19 rebuild-prompt | semantic | `LivePrompt.rebase` (overseer.ts) | `AgentSession.setActiveToolsByName`, `AgentSession._rebuildSystemPrompt`, `DefaultResourceLoader.appendSystemPromptOverride` | pi adds a public refreshSystemPrompt(), or re-reads the parts at each run |
@@ -80,27 +80,27 @@ Canary: `P3 compaction-error-text: pi's compaction refusals and its prompt-while
 
 ### P4 already-processing
 
-A prompt that meets a running turn (the session's without `streamingBehavior`, or the agent's own after the streaming check passed) fails with a message matching `/already processing/i`; `linkToSdk` then steers into the turn that won.
+A prompt that meets a running turn (the session's without `streamingBehavior`, or the agent's own after the streaming check passed) fails with a message matching `/already processing/i` (`isAlreadyProcessing`); `linkToSdk` then steers into the turn that won.
 
 Canary: `P4 already-processing: a prompt mid-run without streamingBehavior, and the agent's own prompt mid-run, fail /already processing/i`.
 
 ### P5 settle-window
 
-`_isEmittingAgentSettled` is true while `agent_settled` is emitted, and a `prompt()` made then is deferred: it resolves at once and its turn runs after the emit. Topic delivery stays out of that window.
+`_isEmittingAgentSettled` is true while `agent_settled` is emitted, and a `prompt()` made then is deferred: it resolves at once and its turn runs after the emit. The driving session reads it as `inSettleWindow()`; topic delivery stays out of that window.
 
 Canary: `P5 settle-window: inside an agent_settled emit _isEmittingAgentSettled is true and a prompt resolves at once, its turn running after`.
 
 ### P6 refresh-context
 
-A user entry appended outside a run (`sessionManager.appendMessage`) reaches the agent's context only after the session re-reads its projection; `enterQueued` calls the private `_refreshFinalizedContext()` for that.
+A user entry appended outside a run (`sessionManager.appendMessage`, the driving session's `appendUserMessage`) reaches the agent's context only after the session re-reads its projection, which the public `refreshContext()` does; `enterQueued` calls it once after its appends.
 
-pi 0.87.1 has the public equivalent `refreshContext()`, which calls `_refreshFinalizedContext()`; the swap is M5's (plan M5-T2), not done here.
+Until M5-T2 `enterQueued` called the private `_refreshFinalizedContext()`, which `refreshContext()` wraps (pi 0.87.1); that private read is retired.
 
-Canary: `P6 refresh-context: a user entry appended outside a run reaches the agent's context after refreshContext() (and _refreshFinalizedContext, which enterQueued calls today)`.
+Canary: `P6 refresh-context: a user entry appended outside a run reaches the agent's context after refreshContext()`.
 
 ### P7 user-turns-wrap
 
-`AgentSession` hands user input to `this.agent.prompt`/`steer`/`followUp` by property lookup, and the object it passes is the one later emitted in `message_start`, so wrapping those three tells a message the user sent from every other by identity.
+`AgentSession` hands user input to `this.agent.prompt`/`steer`/`followUp` by property lookup, and the object it passes is the one later emitted in `message_start`, so wrapping those three tells a message the user sent from every other by identity. `watchUserMessages` wraps them once per agent; claimers registered later see the input first, as nested wraps did.
 
 Canary: `P7 user-turns-wrap: prompt, steer and followUp reach the agent by property lookup, and the object passed is the one message_start carries`.
 
@@ -148,7 +148,7 @@ Canary: `P14 command-direct-call: getCommand finds an extension's command with i
 
 ### P15 accept-vs-complete
 
-`prompt()` resolves when the turn ends, while `preflightResult(true)` fires when it is accepted (also for a handled extension command); a link delivery takes acceptance from the preflight.
+`prompt()` resolves when the turn ends, while `preflightResult(true)` fires when it is accepted (also for a handled extension command); the driving session's `send` passes it as `onAccepted`, and a link delivery takes acceptance from it.
 
 Canary: `P15 accept-vs-complete: prompt() resolves at turn end while preflightResult(true) fires at acceptance (and for a handled command)`.
 

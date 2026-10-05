@@ -14327,7 +14327,9 @@
       "authority": "accepted",
       "evidence": "verified",
       "requires": [
-        "§tools.spec/contents-view"
+        "§tools.spec/contents-view",
+        "§tools.spec/record-fields",
+        "§tools.spec/agreed-promotion"
       ],
       "code": [
         "pi-config/extensions/spec/core/sova-spec.mjs",
@@ -14335,7 +14337,8 @@
         "pi-config/extensions/spec/tests/map-fixture.mjs",
         "pi-config/extensions/spec/core/README.md",
         "pi-config/extensions/spec/tests/map.test.mjs",
-        "pi-config/extensions/spec/README.md"
+        "pi-config/extensions/spec/README.md",
+        "pi-config/extensions/spec/tests/map-fields.test.mjs"
       ]
     },
     "§tools.spec/near-impact": {
@@ -14343,14 +14346,16 @@
       "authority": "accepted",
       "evidence": "verified",
       "requires": [
-        "§tools.spec/contents-view"
+        "§tools.spec/contents-view",
+        "§tools.spec/record-fields"
       ],
       "code": [
         "pi-config/extensions/spec/core/sova-spec.mjs",
         "pi-config/extensions/spec/core/graph.mjs",
         "pi-config/extensions/spec/tests/map-fixture.mjs",
         "pi-config/extensions/spec/core/README.md",
-        "pi-config/extensions/spec/tests/map.test.mjs"
+        "pi-config/extensions/spec/tests/map.test.mjs",
+        "pi-config/extensions/spec/tests/map-fields.test.mjs"
       ]
     },
     "§tools.spec/spec-map": {
@@ -14359,7 +14364,9 @@
       "evidence": "verified",
       "requires": [
         "§tools.spec/contents-view",
-        "§tools.spec/where-lookup"
+        "§tools.spec/where-lookup",
+        "§tools.spec/record-fields",
+        "§tools.spec/agreed-promotion"
       ],
       "code": [
         "pi-config/extensions/spec/core/map.mjs",
@@ -14368,7 +14375,8 @@
         "pi-config/extensions/spec/tests/map-fixture.mjs",
         "pi-config/extensions/spec/core/README.md",
         "pi-config/extensions/spec/tests/map.test.mjs",
-        "pi-config/extensions/spec/README.md"
+        "pi-config/extensions/spec/README.md",
+        "pi-config/extensions/spec/tests/map-fields.test.mjs"
       ]
     },
     "§tools.spec/where-lookup": {

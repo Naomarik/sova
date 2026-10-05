@@ -244,19 +244,23 @@ snapshotted. Refused inputs are not reopened merely to compute a fingerprint.
 The read-only `map` command is an orientation view computed from the manifest and the claim files.
 Without an argument it lists each namespace and, under it, each H1 area with its § id, its heading
 title, its lede's first sentence (the contents view's **what**), its number of claims, its counts by
-declared `authority` and `evidence` label, and how many `requires` edges leave it for other areas
-and arrive from them. After the areas come the hubs, the ten code files the most records list, each
+declared `authority` and `evidence` label, and how many `requires` and `embeds` edges leave it for
+other areas and arrive from them. After the areas come the hubs, the ten code files the most records list, each
 with that count, and the gap counts: behaviors with no `requires` key, records with no `code`,
 passages with no prose sentence, and records with no interface token (as §tools.spec/where-lookup
 defines one). `map <namespace>` limits all of it to one namespace; a namespace with no area is
 refused. `map '§ns/name'` shows one area: its H1, then its H2s in declaration order, each with kind,
 labels, code count, its declared `requires` count (or "uninvestigated" when it has no `requires` key)
-and how many claims require it; then every `requires` edge that crosses the area's boundary, out and
-in, by § id; then the interface tokens it defines, those in one of its claims' heading or first
+and how many claims require or embed it, with its agreement when it has one, as "agreed (decision) <at>
+by <by>", and whether it is built; then every `requires` or `embeds` edge that crosses the area's
+boundary, out and in, by § id with its kind; then the interface tokens it defines, those in one of its claims' heading or first
 sentence, with how many claims elsewhere use each. An H2 given to `map` shows its area, with a note
-saying so. A count of agreed but unbuilt claims is printed only when the spec records agreement;
-until then the map says "agreed-not-built: not available (no agreed field yet)", and the JSON
-leaves the count out, so it never reads as zero.
+saying so. Every view counts its claims whose record carries `agreed` and that are not built, built
+meaning a `code` list plus the `evidence` label `reviewed` or `verified` (the draft tool's rule), with
+the earliest and latest `agreed.at` among them as dates, never as ages, and how many claims carry
+`agreed` in all. `agreed` records who made the decision and when, never that anyone read the
+current words. When no record in view carries `agreed`, the map says so and the JSON has no count, so
+an absent count never reads as zero.
 
 `map`, `where` and `impact --near` are bounded and stateless like the contents view: compact JSON
 with `--json` and readable text without, explicit budgets from 1,024 to 32,768 bytes (`map` defaults
@@ -294,13 +298,17 @@ defining it, then the rest, as mentioning it; none found is exit 1.
 
 `impact '§id' --near` is a narrowed impact view; `impact` without the flag keeps its output and
 contract. It works on the seed's family: an H1 with its H2s, or an H2 alone together with the
-claims that require its parent H1, which bring it with them (marked as reached through the parent).
-It lists, in this order: the **consumers**, the claims outside the family whose `requires` names a
-family member, one hop only, each with title, kind, labels, size, what and the family members it
-requires, and the why of the first of those its text explains, as a contents line gives it; the
-sections whose `members` name a family member; the **frontier**, the behaviors with no `requires`
-key that belong to the family or whose text names a family member; the **next hop**, the claims that
-require a consumer, by id only; the claims whose text names a family member, by id only; and the
+claims that require or embed its parent H1, which bring it with them (marked as reached through the
+parent).
+It lists, in this order: the **consumers**, the claims outside the family whose `requires` or
+`embeds` names a family member, one hop only, each with title, kind, labels, size, what, the family
+members it requires or embeds with the edge's kind, and the why of the first of those its text
+explains, as a contents line gives it; the sections whose `members` name a family member; the notes
+whose `about` names a family member (or, for an H2 seed, its parent H1, marked as reached through
+it), by id with the claim each serves; the **frontier**, the behaviors with no `requires` key that
+belong to the family or whose text names a family member; the **next hop**, the claims that require
+or embed a consumer, by id only; the claims whose text names a family member and that are not on
+the frontier, by id only, so no claim is listed twice; and the
 **code neighbours**, one line per file the family lists that other records list too, fewest other
 records first, with up to twelve of their ids and the count of the rest, named with `where` for the
 whole list. A claim's text names a § in its prose, masked as in the contents view, or in its heading
@@ -314,8 +322,10 @@ The read-only `graph --json` command prints the spec graph as one deterministic 
 machine consumers such as a static page: a node per declared claim, in id order (id, kind, level,
 namespace, area, title, what and its source, declared labels, passage bytes and, for an H1 with
 H2s, the whole file's bytes, file and lines, the declared `requires` count or null when the key is
-absent, and the number of `code` paths), then the edges, each with its kind: `requires`, `member`,
-`contains` (an H1 to each of its H2s), `mentions` (a claim's text naming another §, as
+absent, the number of `code` paths, `core: true` when the record sets it, and the record's
+`agreed` (who made the decision and when) when it has one), then the edges, each with its kind:
+`requires`, `embeds` (a claim to a surface drawn inside it), `member`, `contains` (an H1 to each of
+its H2s), `about` (a note to the claim it serves), `mentions` (a claim's text naming another §, as
 §tools.spec/near-impact reads it) and `code` (a claim to a file it lists); an edge to an id with no
 record or span is marked dangling. It is computed on each call from the manifest and the claim files
 and never written into the spec. It is paged under a whole-response budget, 32,768 bytes by default

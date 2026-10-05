@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import { resizeImage } from "@earendil-works/pi-coding-agent";
 import { BATON_OFFER_ENTRY, BATON_SENT_ENTRY, BATON_WRAPUP_ENTRY, MB, OPERATOR, PHOTO_DEFAULTS, type BatonView } from "../shared/baton";
+import { historyOf } from "./harness/pi/reader";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-baton-images-")));
 process.on("exit", () => rmSync(root, { recursive: true, force: true }));
@@ -373,7 +374,7 @@ describe("sending photos", () => {
 describe("the view and the photo route", () => {
   const img = (tag: string) => ({ type: "image", data: Buffer.from(tag).toString("base64"), mimeType: "image/png" });
   const user = (id: string, content: unknown[]) => ({ type: "message", id, timestamp: "2026-09-30T00:00:00.000Z", message: { role: "user", content, timestamp: 1 } });
-  const branch = [
+  const branch = historyOf([
     user("u1", [{ type: "text", text: "two of them\n\n[Image: original 4000x3000, displayed at 2000x1500. Multiply coordinates by 2.00 to map to original image.]" }, img("a"), img("b")]),
     { type: "custom", id: "s1", customType: BATON_SENT_ENTRY, data: { targetId: "u1", by: tony.id } },
     { type: "custom", id: "o1", customType: BATON_OFFER_ENTRY, data: { n: 2, from: tony.id, to: [tony.id, maria.id], question: "q" } },
@@ -381,7 +382,7 @@ describe("the view and the photo route", () => {
     { type: "custom", id: "s2", customType: BATON_SENT_ENTRY, data: { targetId: "u2", by: maria.id } },
     { type: "custom", id: "w1", customType: BATON_WRAPUP_ENTRY, data: {} },
     user("u3", [img("d")]),
-  ];
+  ]);
   const view = (untilOffer?: number) => {
     const collect: { data: string; mimeType: string }[] = [];
     const v = batonView({ row: { publicTitle: "T", state: "open", holder: maria.id }, branch, names: { [tony.id]: "Tony", [maria.id]: "Maria" }, viewer: tony.id, redact: (t) => t, collect, ...(untilOffer ? { untilOffer } : {}) });

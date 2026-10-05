@@ -1,4 +1,4 @@
-import type { ToolSpec } from "../shared/harness";
+import type { HEntry, ToolSpec } from "../shared/harness";
 import {
   BATON_SENT_ENTRY,
   BATON_WRAPUP_ENTRY,
@@ -11,7 +11,7 @@ import {
 import type { Person } from "../shared/orgs";
 import { batonById, sessionPathOf } from "./baton";
 import { acquireChat } from "./chat-manager";
-import { readActiveBranch } from "./transcript";
+import { liveRead } from "./harness/pi/reader";
 import { aboutSomeoneElse, detectLanguage } from "./baton-guards";
 import { withoutAuthorNotes } from "./baton-view";
 import { applyChange, operatorName, readHistory, readRoster } from "./orgs";
@@ -48,8 +48,6 @@ export function beginWrapupRun(sessionId: string): Run {
 }
 export const endWrapupRun = (sessionId: string): void => void active.delete(sessionId);
 
-type Entry = Record<string, any>;
-
 const textOf = (content: unknown): string =>
   typeof content === "string"
     ? content
@@ -63,17 +61,20 @@ const textOf = (content: unknown): string =>
 const norm = (t: string) => t.replace(/\s+/g, " ").trim().toLowerCase();
 
 /** Each person's own messages before the wrap-up began: [entryId, text]. Pure over a branch. */
-export function messagesByPerson(branch: readonly Entry[]): Map<string, { id: string; text: string }[]> {
+export function messagesByPerson(branch: readonly HEntry[]): Map<string, { id: string; text: string }[]> {
   const by = new Map<string, string>();
-  for (const e of branch) if (e.type === "custom" && e.customType === BATON_SENT_ENTRY && typeof e.data?.targetId === "string") by.set(e.data.targetId, e.data.by);
+  for (const h of branch) {
+    const d = h.kind === "state" && h.key === BATON_SENT_ENTRY ? (h.data as Record<string, any> | null | undefined) : undefined;
+    if (typeof d?.targetId === "string") by.set(d.targetId, d.by);
+  }
   const out = new Map<string, { id: string; text: string }[]>();
-  for (const e of branch) {
-    if (e.type === "custom" && e.customType === BATON_WRAPUP_ENTRY) break;
-    if (e.type !== "message" || e.message?.role !== "user") continue;
-    const who = by.get(e.id);
+  for (const h of branch) {
+    if (h.kind === "state" && h.key === BATON_WRAPUP_ENTRY) break;
+    if (h.kind !== "user" || h.id === null) continue;
+    const who = by.get(h.id);
     if (!who || who === OPERATOR) continue;
     const list = out.get(who) ?? [];
-    list.push({ id: e.id, text: textOf(e.message.content) });
+    list.push({ id: h.id, text: textOf(h.blocks) });
     out.set(who, list);
   }
   return out;
@@ -199,7 +200,7 @@ export function wrapupTool(sessionId: string): ToolSpec {
       const hit = batonById(sessionId);
       if (!hit) throw new Error("This conversation is no longer registered.");
       const { row } = hit;
-      const mine = messagesByPerson((ctx?.rawBranch() ?? []) as Entry[]);
+      const mine = messagesByPerson(ctx?.branch() ?? []);
       const updates: any[] = Array.isArray(params?.updates) ? params.updates.slice(0, 40) : [];
       for (const u of updates) {
         const personId = String(u?.personId ?? "");
@@ -263,7 +264,7 @@ export function wrapupTool(sessionId: string): ToolSpec {
  * wrap-up history line quoting the start of their longest message (§app.organizations/wrap-up).
  * Nothing when their words don't show one clearly.
  */
-export async function inferLanguages(sessionId: string, row: Pick<BatonSession, "orgId" | "participants">, branch: readonly Entry[], run: Pick<Run, "applied" | "refused">): Promise<void> {
+export async function inferLanguages(sessionId: string, row: Pick<BatonSession, "orgId" | "participants">, branch: readonly HEntry[], run: Pick<Run, "applied" | "refused">): Promise<void> {
   const mine = messagesByPerson(branch);
   for (const person of readRoster(row.orgId)) {
     const own = mine.get(person.id);
@@ -306,17 +307,21 @@ export async function runWrapup(sessionId: string, normalTools: readonly string[
     chat.session.setActiveToolsByName([WRAPUP_TOOL]);
     // The usage ledger records this turn's calls as the session's wrap-up (the project card's split).
     setUsageSessionPurpose(chat.session.sessionManager.getSessionId(), "wrapup");
-    const from = chat.session.sessionManager.getBranch().length;
+    const from = liveRead(chat.session).branch().length;
     const { turn } = chat.acceptPrompt(wrapupPrompt(row, readRoster(row.orgId)), undefined, "server");
     await turn;
     // Only this turn's answer counts: a stop that wrote none must not read as the session's own
     // earlier turn (goal_done, an ordinary tool call).
-    const last = [...chat.session.sessionManager.getBranch().slice(from)].reverse().find((e: any) => e.type === "message" && e.message?.role === "assistant") as any;
-    const stop = last?.message?.stopReason;
+    const last = liveRead(chat.session)
+      .branch()
+      .slice(from)
+      .reverse()
+      .find((h): h is HEntry & { kind: "assistant" } => h.kind === "assistant");
+    const stop = last?.stop;
     if (!last || stop === "error" || stop === "aborted") {
       if (chat.lastStreamTrip) error = `${chat.lastStreamTrip.detail.replace(/^./, (c) => c.toUpperCase())}, so the stream guard ended the turn.`;
       else if (shuttingDown()) error = "The server shut down during the wrap-up.";
-      else error = last?.message?.errorMessage ? String(last.message.errorMessage) : "The wrap-up turn ended without an answer.";
+      else error = last?.error ? String(last.error) : "The wrap-up turn ended without an answer.";
     }
   } catch (err) {
     error = err instanceof Error ? err.message : String(err);
@@ -325,7 +330,7 @@ export async function runWrapup(sessionId: string, normalTools: readonly string[
     setUsageSessionPurpose(chat.session.sessionManager.getSessionId(), undefined);
     chat.session.setActiveToolsByName([...normalTools]);
   }
-  await inferLanguages(sessionId, row, chat.session.sessionManager.getBranch() as Entry[], run);
+  await inferLanguages(sessionId, row, liveRead(chat.session).branch(), run);
   try {
     chat.appendSpecialEntry(BATON_WRAPUP_ENTRY, {
       v: 1,

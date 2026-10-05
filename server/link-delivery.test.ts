@@ -33,7 +33,6 @@ const { normalizeEntry } = await import("./transcript");
 const { getSessionSummary, onSessionArchived, archiveSession, cleanupSessions, idOf, isZeroInput, listSessions } = await import("./sessions-index");
 const { readTailTurn } = await import("./session-tags");
 const { turnQuestions, turnFacts } = await import("./attention-signals");
-const { historyOf } = await import("./harness/pi/reader");
 const { setArchived } = await import("./archived-sessions");
 const { addWebSession } = await import("./web-sessions");
 const orgs = await import("./orgs");

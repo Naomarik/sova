@@ -207,8 +207,8 @@ and again when the count changes, at most once a second. When there are none, an
   message, with the optimistic bubble.
 - **Local commands.** A few commands Sova answers itself and never sends: a bare `/new`
   (below), and a bare `/agents` / `/subagents`, which opens the session pane (§app.subagents-pane/trigger).
-  Those two are still listed and inserted like any other command — the runtime registers them —
-  but Enter runs them here, clears the draft, and adds no row to the thread: the pane opening is
+  Those two are left out of the menu (§chat.slash-commands/commands-that-need-the-terminal-ui),
+  and typed, Enter runs them here, clears the draft, and adds no row to the thread: the pane opening is
   the result. Once the whole text is a bare local command the menu closes, and Enter runs it
   when Enter would send (in touch mode it adds a line, and Send runs it) rather than inserting a match (`/new` would otherwise pick `btw:new`); a partial token like
   `/ne` still opens it. Anything with arguments belongs to the runtime and goes through
@@ -331,12 +331,26 @@ command isn't left waiting), replace the "Ran" row with:
 Nothing in the contract says ahead of time which commands are TUI-only, so the client keeps
 its own table of them: `palette`, `sessions`, `sessions-back`, `codefold`, `usage`,
 `usage-refresh`, `working-count`, `extensions`, `websearch` (it opens a browser on the server
-machine) and `subagents` (its models picker drops the pick here). These never appear in the
-menu. `team`, and every `team:…` or `team-…` form, is hidden from the menu too, though it is
+machine), and `subagents` and `agents` (each only opens the terminal's subagent monitor). These
+never appear in the menu. `team`, and every `team:…` or `team-…` form, is hidden from the menu too, though it is
 not TUI-only. Hiding is the menu's alone: the full list still decides whether a typed `/word`
 is a command. Sending a TUI-only command typed in full with no arguments (`/sessions`) shows
-the row above in place of "Ran" right away, without waiting on the server; a bare `/subagents`
-still opens the session pane instead (§app.subagents-pane/trigger).
+the row above in place of "Ran" right away, without waiting on the server; a bare `/agents` or
+`/subagents` still opens the session pane instead (§app.subagents-pane/trigger).
+
+## §chat.slash-commands/tui-subagents-command — `/subagents` and `/agents` in the terminal
+
+In pi's terminal UI, `/subagents` and its twin `/agents` open the subagent monitor, and that is
+all they do: they have no subcommands and offer no argument completions, and any text after the
+name is ignored — the monitor opens. Choosing a worker's model is the parent agent's job, through
+`agent_models`, not a command's.
+
+## §chat.slash-commands/tui-palette-commands — Commands in the terminal palette
+
+pi's `Ctrl+P` palette lists the installed extensions' commands under **Extensions**, each with
+**Run command** and **With arguments…**, both of which send the command. Skills and prompt
+templates have no root in the palette: they start model work, so they are typed in the editor,
+where the text can be read before it is sent.
 
 ## §chat.slash-commands/tokens — Tokens
 

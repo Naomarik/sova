@@ -17,13 +17,13 @@ subagents row, and `/agents`.
 
 **`/agents` (and `/subagents`), bare, opens the pane.** It is a local command (§chat/slash-commands): Sova runs
 it itself and sends nothing to the runtime, whose own `/agents` monitor is a TUI overlay and
-answers a web session with "requires Pi's interactive TUI". `/agents` is listed in the "/" menu like any
-other command, because the runtime registers it; `/subagents` is hidden from it
-(§chat.slash-commands/commands-that-need-the-terminal-ui) but still works typed. Picking `/agents` there inserts `/agents`, and Enter
+answers a web session with "requires Pi's interactive TUI". Both are hidden from the "/" menu
+(§chat.slash-commands/commands-that-need-the-terminal-ui) but work typed, and Enter on either
 opens the pane instead of sending. The draft clears, the pane takes focus, and a live region says
 "Subagents open." An already-open pane stays open (the command opens, it doesn't toggle) and says
-"Subagents already open." **With arguments** — `/subagents models haiku` — it is the runtime's
-command and goes through untouched, and so does `/agents` with images attached.
+"Subagents already open." **With arguments** — `/agents now` — it is the runtime's
+command and goes through untouched, and so does `/agents` with images attached; the runtime
+ignores the arguments and opens its terminal monitor (§chat.slash-commands/tui-subagents-command).
 
 The subagents row was plain text: `.run-status`, shown whenever at least 1 worker runs — the
 parent's own turn included (§chat/transcript "Run status") — and, once the parent is idle, also when the

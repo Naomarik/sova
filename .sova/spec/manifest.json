@@ -1006,7 +1006,8 @@
       "code": [
         "src/lib/slash.ts",
         "src/components/Composer.tsx",
-        "src/components/ChatView.tsx"
+        "src/components/ChatView.tsx",
+        "src/lib/slash.test.ts"
       ]
     },
     "§chat.slash-commands/contrast": {
@@ -14177,6 +14178,32 @@
       "requires": [
         "§app.insights/token-velocity",
         "§app.session-list/drop-overlay"
+      ]
+    },
+    "§chat.slash-commands/tui-palette-commands": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "pi-config/extensions/command-palette/index.ts",
+        "pi-config/extensions/command-palette/test.mjs",
+        "pi-config/extensions/command-palette/README.md",
+        "pi-config/README.md"
+      ]
+    },
+    "§chat.slash-commands/tui-subagents-command": {
+      "kind": "behavior",
+      "requires": [
+        "§app.subagents-pane/trigger"
+      ],
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "pi-config/extensions/subagents/index.ts",
+        "pi-config/extensions/subagents/index.test.ts",
+        "pi-config/extensions/subagents/README.md",
+        "pi-config/extensions/claude-code/README.md"
       ]
     }
   },

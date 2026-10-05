@@ -87,7 +87,7 @@ questions about every provider and every model:
   browser's picker, the TUI's `/model` puts your previous model back and says why, a session
   already sitting on it refuses its next message until you switch — every message, skills and
   prompt templates included, and a turn nobody typed is stopped before the request leaves — and no
-  subagent or team member can be given it — hidden from `agent_models` and the `/subagents models` picker, and rejected at
+  subagent or team member can be given it — hidden from `agent_models`, and rejected at
   spawn with a reason the orchestrator can act on, whether the pick was explicit, agentType-defined
   or inherited from the parent.
 - **Subagents** — may a worker be given it, out of the models that are still enabled. A model can

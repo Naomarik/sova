@@ -32,6 +32,38 @@
 .share-card-quiet { background: transparent; border: 1px solid var(--color-border); }
 .share-card-head { font-size: var(--fs-caption); font-weight: var(--fw-semibold); color: var(--color-ink-2); }
 .share-brief { display: flex; flex-direction: column; gap: var(--space-1); margin-top: var(--space-2); padding-top: var(--space-2); border-top: 1px solid var(--color-border); }
+.share-brief .share-text { color: var(--color-ink-2); }
+
+/* A hand-off: the question the reader came for, raised on a card and set a step larger. */
+.share-card-ask { background: var(--color-surface); border: 1px solid var(--color-border); box-shadow: var(--shadow-1); }
+.share-question { font-size: var(--fs-heading-s); line-height: var(--lh-heading-s); font-weight: var(--fw-medium); }
+
+/* A decision: an event in the conversation, not a turn in it — centred, recessed, marked by its
+   icon and its words ("Noted · area"), never by hue alone. */
+.share-card-decision {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: var(--space-3);
+  align-self: center;
+  box-sizing: border-box;
+  width: min(100%, 60ch);
+  border: 1px dashed var(--color-border-strong);
+  background: var(--color-sunken);
+}
+.share-card-main { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.share-icon-noted { --icon: url("../../public/icons/check-circle.svg"); margin-top: 1px; color: var(--color-ink-2); }
+
+/* The baton page's own thread: the facilitator's replies are plain prose on the page at full
+   width, the viewer's messages a tinted bubble on the right, anyone else's a card on the left.
+   Scoped, so the shared-session page and the owner page keep their bubbles. */
+.share-baton .share-thread { gap: var(--space-4); }
+.share-baton .share-msg { max-width: min(85%, 60ch); }
+.share-baton .share-msg-own { border-radius: var(--r-lg) var(--r-lg) var(--r-xs) var(--r-lg); }
+.share-baton .share-msg-reply { align-self: stretch; max-width: none; padding: 0 var(--space-1); background: transparent; border-color: transparent; }
+.share-baton .share-msg-reply .share-who,
+.share-baton .share-who-sending { font-weight: var(--fw-medium); color: var(--color-ink-muted); }
+.share-baton .share-md :is(ul, ol) { padding-left: 1.4em; }
+.share-baton .share-md li + li { margin-top: var(--space-1); }
 
 /* Drawings in a reply (§app.baton/outsider-view): vis.css draws the figure and the "Drawing…" box;
    these are the share page's own lines. */

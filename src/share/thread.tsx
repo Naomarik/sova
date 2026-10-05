@@ -122,8 +122,10 @@ export function MessagePhotos(props: { srcs: string[]; from: string }) {
 
 /** `reader`: whoever reads without holding a turn (the owner page) sees an offer as the count it
     went to, not as an invitation to them. `photo`: where a message's photo `n` is served (the
-    share page); without it a message's photos show as their count (the owner page). */
-export function Item(props: { item: BatonViewItem; reader?: boolean; photo?: (n: number) => string }) {
+    share page); without it a message's photos show as their count (the owner page). `viewer`: the
+    name of whoever reads (the share page): the first hand-off to them is "Your question", since the
+    status line above already names them. */
+export function Item(props: { item: BatonViewItem; reader?: boolean; photo?: (n: number) => string; viewer?: string }) {
   const it = props.item;
   const photos = (m: { images?: BatonViewImage[] }) => m.images ?? [];
   return (
@@ -131,7 +133,10 @@ export function Item(props: { item: BatonViewItem; reader?: boolean; photo?: (n:
       <Match when={it.kind === "message" && it}>
         {(m) => (
           <article class="share-msg" classList={{ "share-msg-own": m().by === "you" }} aria-label={`${m().by === "you" ? "You" : m().name}`}>
-            <span class="share-who">{m().by === "you" ? "You" : m().name}</span>
+            {/* The viewer's own rows are marked by side and fill; "You" stays for screen readers. */}
+            <span class="share-who" classList={{ "visually-hidden": m().by === "you" }}>
+              {m().by === "you" ? "You" : m().name}
+            </span>
             <Show when={photos(m()).length}>
               <Show when={props.photo} fallback={<p class="share-photo-count">{photoCount(photos(m()).length)}</p>}>
                 {(url) => <MessagePhotos srcs={photos(m()).map((p) => url()(p.n))} from={m().by === "you" ? "you" : m().name} />}
@@ -156,11 +161,13 @@ export function Item(props: { item: BatonViewItem; reader?: boolean; photo?: (n:
       </Match>
       <Match when={it.kind === "handoff" && it}>
         {(h) => (
-          <aside class="share-card" aria-label={`Passed to ${h().to}`}>
+          <aside class="share-card share-card-ask" aria-label={`Passed to ${h().to}`}>
             <span class="share-card-head">
-              {h().n === 1 ? `For ${h().to}` : `Passed from ${h().from} to ${h().to}`}
+              {h().n === 1 ? (props.viewer && h().to === props.viewer ? "Your question" : `For ${h().to}`) : `Passed from ${h().from} to ${h().to}`}
             </span>
-            <LinkedText text={h().question} />
+            <div class="share-question">
+              <LinkedText text={h().question} />
+            </div>
             <Show when={h().briefing}>
               <div class="share-brief">
                 <span class="share-card-head">What you need to know</span>
@@ -189,9 +196,12 @@ export function Item(props: { item: BatonViewItem; reader?: boolean; photo?: (n:
       </Match>
       <Match when={it.kind === "decision" && it}>
         {(d) => (
-          <aside class="share-card share-card-quiet" aria-label="Noted">
-            <span class="share-card-head">Noted · {d().area}</span>
-            <LinkedText text={d().statement} />
+          <aside class="share-card share-card-decision" aria-label="Noted">
+            <span class="icon share-icon-noted" aria-hidden="true" />
+            <div class="share-card-main">
+              <span class="share-card-head">Noted · {d().area}</span>
+              <LinkedText text={d().statement} />
+            </div>
           </aside>
         )}
       </Match>

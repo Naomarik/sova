@@ -58,6 +58,49 @@ took their location from their own note ("… (chat/changes.md:4)"), marked `atF
 purpose: `node scenario-g.mjs --record <tree made from the baseline ref>`. `data/rubric.json` holds the
 15-task rubric (wording, seeds, a–d scores) for the agent arm.
 
+## Milestone gates measured here
+
+| Milestone | Gate (against the pinned baseline tree) |
+| --- | --- |
+| M0 | the baseline tree against itself: zero diff, every guard held; a sabotaged tree trips every guard |
+| M1 (`toc`, `read`) | computed run, no agent: `packet` and `scope` unchanged (g's packet rows, d's exactness), f's pull guards hold; g's pull proxy rows give bytes and calls per comparison; the 21 needs packet answers but no `toc` line shows one hop out are listed by id |
+| M1 onward | ratchet: g's needs shown one hop out (`g.pull.total.shown`, 86/138 at M1) never drops |
+| M2 (spec-mode text) | agent arm, all 24 comparisons, on the M1+M5 tree: no need packet answers lost unless its passage was seen; answered ≥ packet's; calls per comparison within today's 7–18; the 21 checked one by one |
+| M4 (span promotion) | a.diff-h2.hand-reapply 1 → 0; `a.target.same-spot` both orders land, byte-identical; a's guards hold |
+| M5, M6 | the f/g target rows they claim (embed read whole, core arrives unasked, about note travels; answered-or-named), and which of the 21 come into view |
+
+## The agent arm (opt-in, not deterministic)
+
+`agent-arm.mjs` measures how a builder actually reads: headless pi agents read the pinned spec through
+one tool tree, and the harness grades what came back to them. It is never part of `node --test` or of
+`run.mjs`'s exit code.
+
+```sh
+node agent-arm.mjs run --tree <extensions dir> --arm packet|pull --model zai/glm-5.3:medium --out <dir> \
+  [--comparisons sample|all|C01,C05] [--concurrency N] [--timeout-min 20] [--work <dir>] [--extension <dir>]… [--dry-run]
+node agent-arm.mjs grade --out <run dir>     # grade a finished run again; starts no agent
+```
+
+- **Models:** only `zai/glm-5.3`, `-flash` or `-highspeed` (any thinking level) and
+  `ollama-cloud/deepseek-v4.1-flash` (low or medium). At most 2 runs at once on zai, 3 on ollama-cloud.
+  Compare arms only at one model and level: the model alone moves tokens about 2.7×.
+- **What the agent sees:** a work directory (default under the OS temp dir, outside any repository)
+  holding only the pinned manifest and claims and `tools/`, the tree's `spec/core`. pi runs with
+  `-p --mode json --tools bash,read`, no discovered extensions, context files, skills or prompt
+  templates, and `-e` for provider-limits and llm-inflight from the pi agent directory (one must be
+  provider-limits). The prompt (the same for both arms but for the tool lines) names the surface and
+  its § id, says what a builder must find, and asks for a brief.
+- **Output:** `<out>/<arm>-<model>-<time>/` with `run.json`, and per comparison `prompt.txt`,
+  `events.jsonl`, `stderr.txt`, `exit.json` and `sessions/`; then `agent-scorecard.json` and
+  `summary.txt`.
+- **Grading:** a passage counts as read when its exact text came back (packet or read items, fragments
+  joined, or verbatim output of a file read); a claims file read by line range counts those lines.
+  Needs score as in g. Rows per comparison: needs answered, named, bytes received, tool calls, passages
+  read, contents lines seen, tokens, commands that reach outside the work directory. The guard,
+  reported: no need the recorded packet baseline answers is lost unless the agent saw its passage in a
+  toc line or a footer.
+- **The 8-comparison sample:** C01, C05, C07, C10, C14, C17, C19, C22 (`SAMPLE` in the script).
+
 ## Determinism
 
 Scratch repos live under a temp dir; every commit has a fixed author and a date from a per-repo counter,

@@ -7,15 +7,15 @@
 //
 //   node scenario-g.mjs --record <extensions tree>   rewrite data/g-baseline.json from that tree's packet arm
 import "../../../claude-code/tests/hermetic-env.mjs";
-import { spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync, existsSync, realpathSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { specIndex, scoreNeed, readStream, proseTexts, median, pool, idsIn, parentOf, capability, readToc } from "./fullness.mjs";
 import { Tools, workspace, scrubProcessEnv } from "./lib.mjs";
+import { DATA, extractPinned } from "./pinned.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-export const DATA = JSON.parse(readFileSync(join(HERE, "data/comparisons.json"), "utf8"));
+export { DATA, extractPinned };
 const BASELINE_FILE = join(HERE, "data/g-baseline.json");
 export const FRAME_CAP = 12000;
 export const DIRS = ["out", "in", "down", "up", "mentions"];
@@ -25,17 +25,6 @@ const WHY_FAMILIES = ["§chat/composer", "§chat/sandbox"];
 
 const row = (metric, value, guards = []) => ({ scenario: "g", metric, value, guards });
 const guard = (name, ok, detail = "", na = false) => ({ name, ok: Boolean(ok), detail, ...(na ? { na: true } : {}) });
-
-/** `git archive <rev> .sova/spec` from the checkout holding this harness, into `dest`. → dest */
-export function extractPinned(dest, rev = DATA.pinned.rev) {
-  const top = spawnSync("git", ["-C", HERE, "rev-parse", "--show-toplevel"], { encoding: "utf8" });
-  if (top.status !== 0) throw new Error(`the harness is not in a Git checkout, so the pinned spec ${rev} can't be extracted`);
-  const archive = spawnSync("git", ["-C", top.stdout.trim(), "archive", "--format=tar", rev, DATA.pinned.path], { maxBuffer: 256 * 1024 * 1024 });
-  if (archive.status !== 0) throw new Error(`git archive ${rev} ${DATA.pinned.path} failed: ${archive.stderr}`);
-  const tar = spawnSync("tar", ["-x", "-C", dest], { input: archive.stdout });
-  if (tar.status !== 0) throw new Error(`tar failed: ${tar.stderr}`);
-  return dest;
-}
 
 /** The pinned spec root for this arm: `ctx.pinned` when the caller gave one, else extracted into the workspace. */
 export function pinnedRoot(ctx) {

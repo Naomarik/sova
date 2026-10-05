@@ -95,16 +95,17 @@ export function parentOf(id) {
 
 /**
  * Score one need against a slice.
- * - `delivered`: Set of ids whose exact text the arm handed over; `named`: Set of ids it named without text.
+ * - `delivered`: Set of ids whose exact text the arm handed over; `named`: Set of ids it named without text;
+ *   `extraSpans`: line ranges [{rel, from, to}] read some other way (a file read by line).
  * - A hand verdict's status `n/a` skips the need; `absent` scores 0. A verdict location is checked against the
  *   slice; otherwise the probe regex is searched in it. Partial verdicts score 0.5.
  * → { status: in|partial|missed|absent|n/a, value, at, passage, named }
  */
-export function scoreNeed(index, need, delivered, named) {
+export function scoreNeed(index, need, delivered, named, extraSpans = []) {
   const v = need.verdict;
   if (v?.status === "n/a" || !need.probe) return { status: "n/a", value: 0 };
   const re = new RegExp(need.probe.source, need.probe.flags);
-  const spans = spansOf(index, delivered);
+  const spans = [...spansOf(index, delivered), ...extraSpans];
   const where = v?.at ?? search(index, wholeTree(index), re);
   const passage = where ? passageAt(index, where) : null;
   if (v?.status === "absent") return { status: "absent", value: 0, at: null, passage: null, named: false };

@@ -10,7 +10,10 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runArm, diffCards, summary } from "./run.mjs";
 import { makeTree } from "./make-tree.mjs";
-import { baselineText, BASELINE_PATH, DATA } from "./scenario-g.mjs";
+import { baselineText, BASELINE_PATH, DATA, extractPinned } from "./scenario-g.mjs";
+import { grade } from "./agent-arm.mjs";
+import { specIndex } from "./fullness.mjs";
+import { Tools } from "./lib.mjs";
 
 const TREE = fileURLToPath(new URL("../../../", import.meta.url));
 /** The ref g's baseline was recorded from (its `tree` field), and the commit it names. */
@@ -145,6 +148,38 @@ test("g's recorded baseline is what the pinned revision's tools produce, byte fo
   temps.push(dest);
   const tree = makeTree(PINNED_REF, join(dest, "t"), TREE);
   assert.equal(await baselineText(tree), readFileSync(BASELINE_PATH, "utf8"), "regenerate with `node scenario-g.mjs --record <tree>` only on purpose");
+});
+
+test("agent arm grading: what came back in tool results is what was read; leaving the work directory is flagged", { timeout: 120_000, skip: spawnSync("git", ["-C", TREE, "cat-file", "-e", `${PINNED_REV}^{commit}`]).status !== 0 && "the pinned revision is not in this checkout" }, async () => {
+  const root = mkdtempSync(join(tmpdir(), "spec-replay-agent-"));
+  temps.push(root);
+  extractPinned(root);
+  const index = specIndex(root);
+  const tools = new Tools(join(TREE, "."));
+  const c = DATA.comparisons.find((x) => x.id === "C18");
+  // Every packet page of the seed, as an agent following `next` would get them.
+  const events = [];
+  let args = ["packet", c.seed], n = 0;
+  for (;;) {
+    const r = tools.spec(root, root, args);
+    const id = `call-${++n}`;
+    events.push({ type: "tool_execution_start", toolCallId: id, toolName: "bash", args: { command: `node tools/sova-spec.mjs ${args.join(" ")} --root . --json` } });
+    events.push({ type: "tool_execution_end", toolCallId: id, toolName: "bash", isError: false, result: { content: [{ type: "text", text: r.stdout }] } });
+    if (!r.json?.next) break;
+    args = ["packet", c.seed, "--cursor", r.json.next];
+  }
+  events.push({ type: "tool_execution_start", toolCallId: "x", toolName: "bash", args: { command: "cat ../../src/server.ts" } });
+  events.push({ type: "tool_execution_end", toolCallId: "x", toolName: "bash", isError: true, result: { content: [{ type: "text", text: "No such file" }] } });
+  const g = grade(index, c, events.map((e) => JSON.stringify(e)).join("\n"), root);
+  const recorded = JSON.parse(readFileSync(BASELINE_PATH, "utf8")).comparisons.C18.values.reduce((s, v) => s + v, 0);
+  assert.equal(g.answered, recorded, "the packet pages answer what the recorded packet arm answered");
+  assert.equal(g.calls, n + 1);
+  assert.deepEqual(g.outside, ["cat ../../src/server.ts"]);
+  assert.deepEqual(g.lostVsPacket, []);
+  // Nothing read: every need the packet answered is lost, and none was shown.
+  const empty = grade(index, c, "", root);
+  assert.equal(empty.answered, 0);
+  assert.equal(empty.lostVsPacket.length, JSON.parse(readFileSync(BASELINE_PATH, "utf8")).comparisons.C18.values.filter((v) => v > 0).length);
 });
 
 test("make-tree: a ref's pi-config/extensions, with its commit recorded for the scorecard", { skip: spawnSync("git", ["-C", TREE, "rev-parse", "HEAD"]).status !== 0 && "not in a Git checkout" }, async () => {

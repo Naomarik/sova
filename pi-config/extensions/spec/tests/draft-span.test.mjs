@@ -142,6 +142,17 @@ test("the same new H2 added identically on both sides is taken once; differently
   assert.ok(codes(diff.w).includes("conflict"));
 });
 
+test("a merge that would not read back as its declarations is refused: an unclosed fence would swallow the next H2", () => {
+  // current appends §a.top/alpha ending in an unclosed fence (legal at the end of a file); the draft appends
+  // §a.top/zeta at the same spot. Ordered alpha, zeta, the fence would hide zeta's heading.
+  const add = (id, prose) => `${TOP}\n## ${id}\n\n${prose}\n`;
+  const r = race(TOP, add("§a.top/zeta", "Zeta."), add("§a.top/alpha", "Alpha.\n\n```\nunclosed"), { draftIds: ["§a.top/zeta"], curIds: ["§a.top/alpha"], select: ["§a.top/zeta"] });
+  assert.equal(r.w.exit, 1);
+  assert.match(r.w.refusals.map((x) => `${x.code} ${x.message}`).join("\n"), /conflict claims\/a\/top\.md: the per-declaration merge does not read back/);
+  assert.deepEqual(tree(r.root, ".sova/spec/claims"), r.before.cur);
+  assert.deepEqual(tree(r.root, ".sova/spec/drafts"), r.before.drafts);
+});
+
 test("an H2 added after one the other side deleted is a conflict", () => {
   const gone = TOP.replace("## §a.top/one\n\nOne does X.\n\n### Detail\n\nPlain H3 prose.\n\n", "");
   const r = race(TOP, insertAfterOne(TOP, "§a.top/alpha", "Alpha."), gone.replace("Two does Y.", "Two does Y2."), { draftIds: ["§a.top/alpha"], curGone: ["§a.top/one"], select: ["§a.top/alpha"] });

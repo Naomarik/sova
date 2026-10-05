@@ -69,7 +69,7 @@ import { BUILTIN_ALLOWED, overseerTools, type OverseerToolHost, renderTranscript
 import { userMessageText, UserTurns } from "./user-turns";
 import { OVERSEER_SENDER_HEADER, overseerSender, senderSecret } from "./overseer-sender";
 
-import { cardsNoteMessage, onSessionPrompted, pathOfId, promptSession, sessionActivity, toolCatalogue, type PromptDelivery, type PromptResult } from "./session-prompt";
+import { onSessionPrompted, pathOfId, promptSession, sessionActivity, toolCatalogue, type PromptDelivery, type PromptResult } from "./session-prompt";
 import { contactRedactor } from "./overseer-org-view";
 import { CARDS_NOTE_MESSAGE, cardsNote, clickItems, foldCards, matchCardClick } from "../shared/overseer-card";
 import { actsText, carriedRules, clickWrote, coveringPermit, foldPermits, type Permit, permitFromClick, REVOKE_ENTRY, RULE_ENTRY, type RuleEntry, sessionsText, USE_ENTRY } from "../shared/overseer-grants";

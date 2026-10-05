@@ -125,6 +125,19 @@ or an explicit pending transaction; it never silently publishes without its rece
 revalidation checks required implementation inputs and retained logs. Superseded evidence stays
 in history but does not remain an active orphan warning after a valid replacement.
 
+## §tools.spec/span-promotion — Promotion merges per declaration, not per file
+
+Promotion compares base, current and draft per declaration (an H1 lede or an H2 span), not per
+claim file. When current and the draft both changed one claim file, the draft's changed
+declarations are applied and current's other changes are kept, unless a declaration was changed
+on both sides differently, or deleted on one side and changed on the other: that still stops as a
+conflict, and neither side's prose is dropped. Bytes outside every declaration (text before the
+lede, blank lines after a span) merge as the gap they sit in; a gap changed differently on both
+sides is a conflict. New declarations that both sides inserted after the same kept declaration
+are placed in a fixed order: each side's run stays together, and the run whose first identifier
+sorts first comes first, so the bytes don't depend on which side landed first. A file whose kept
+declarations were reordered, or that holds a carriage return, is still compared as a whole file.
+
 ## §tools.spec/inspection-safety — Refused inputs are not inspected
 
 The core, draft, and review commands validate path configuration before traversing it. Invalid

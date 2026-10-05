@@ -500,9 +500,11 @@ is a separate install and may be another version — a fact read there is not a 
   into webapp-owned session files. `navigateTree(id, {summarize:false})` only moves the in-memory
   leaf and `SessionManager.open()` takes the file's LAST entry as the leaf, so without this marker a
   reload or restart reverts a rewind. It is invisible (normalizeEntry renders unknown custom types as
-  nothing; the TUI ignores it too), never LLM context, no usage. Written by `rewindSession` in
-  `server/chat-manager.ts`, parented on the new leaf; the open-time deferred appends are flushed
-  AFTER navigating (before, they would land on the abandoned branch).
+  nothing; the TUI ignores it too), never LLM context, no usage. It is the `REWIND` kind of the
+  registry `server/harness/state-kinds.ts`, written through `SessionState` (pi adapter:
+  `server/harness/pi/state.ts`) by `rewindSession` (`server/chat-manager.ts`), parented on the new
+  leaf; the open-time deferred appends are flushed AFTER navigating (before, they would land on the
+  abandoned branch). Every other Sova custom entry works the same way (§app.harness/state).
 - SDK: `createAgentSession`, `createAgentSessionRuntime`, `SessionManager.open(path)/create(cwd)`,
   `ModelRuntime.create()` (no args → reuses `~/.pi/agent` auth). Events via `session.subscribe`.
   Docs: `docs/sdk.md`; examples: `examples/sdk/11-sessions.ts`, `13-session-runtime.ts`.
@@ -543,8 +545,9 @@ Sova speaks its own harness contract; pi is its one harness, behind one adapter 
   the v1 wire shim, which must read pi's v1 event names to turn an older server's or peer's frames
   into `SovaEvent`s; it stays pi-import-free, and no other file joins it.
 - New work is harness-neutral: a server feature imports `shared/harness.ts` and `server/harness/`,
-  never pi; new per-session state goes through `SessionState`, never a raw custom entry with a new
-  customType; history is read through the neutral reader, never `parseLines` plus a switch on
+  never pi; new per-session state is a `StateKind` registered in `server/harness/state-kinds.ts` and
+  written through `SessionState` (`ToolCtx.state()` / `StateView` to read), never `appendCustomEntry`
+  or a raw custom entry with a new customType; history is read through the neutral reader, never `parseLines` plus a switch on
   `entry.type`; wire additions use `SovaEvent`/`RowFacts`, and `src/` never branches on pi entry or
   event names. A new Sova agent feature is never a new pi-config extension and never a new call to
   an extension's command handler; existing extensions are grandfathered, and the pi-config files
@@ -552,12 +555,13 @@ Sova speaks its own harness contract; pi is its one harness, behind one adapter 
 - History is `HEntry`s (`shared/harness-history.ts`) from `server/harness/pi/reader.ts`
   (`readBranch`, `parsePi` + `branchOf`, the line scanners, `ctx.branch()`, `liveRead`), rows from
   `rowsOf(history)`. `parseLines`/`activeBranch`/`readActiveBranch` and `rawOf` are adapter-internal:
-  outside it they are counted raw reads, left only at state folds until M4 (§app.harness/reader).
+  outside it they are counted raw reads, left only at the baseline's few sites until M5 (§app.harness/reader).
+  State is read through a `StateView` (`stateView(history)`, `ToolCtx.state()`), never a fold over raw entries.
 - Paths under the agent directory come from `agentRoot()` (`server/state-root.ts`), never
   `getAgentDir` (§app.harness/agent-root). A Sova tool is a `ToolSpec` (`shared/harness-tools.ts`);
   register it with `toPiTool`, read pi's context in a Sova hook only through `toolCtx(ctx)` (a
   `HookCtx`), and hand a pi tool to Sova code with `fromPiTool` (`server/harness/pi/tools.ts`,
-  §app.harness/tools). `ToolCtx.rawBranch()` is temporary and counts as a raw read.
+  §app.harness/tools).
 - A test that pins pi behaviour lives in `server/harness/pi/` (`contract.test.ts`), imports pi only
   through `server/harness/pi/testing/load-pi.ts`, and runs against another pi with
   `PI_PACKAGE_DIR="$(npm root -g)/@earendil-works/pi-coding-agent" pnpm test --

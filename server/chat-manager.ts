@@ -30,7 +30,7 @@ import { inputSourceOf, type QueueImage, type QueueKind, WebQueue, type WebQueue
 import { decodeWorkers } from "./insights";
 import { readLive, readOwnLiveRecords, workerCountsOf } from "./live";
 import { sessionsChanged } from "./list-generation";
-import { appliesAfter, defaultPatchOf, mergeMode, MINOR_MODES, modeApplyPlan, modeInfo, pinEntryFor, readMode, resolveChatMode, writeMode, type ModePatch, type ModeState } from "./mode-state";
+import { appliesAfter, type BranchEntries, chatModeOf, defaultPatchOf, mergeMode, MINOR_MODES, modeApplyPlan, modeInfo, pinEntryFor, readMode, writeMode, type ModePatch, type ModeState } from "./mode-state";
 import { loadDefaults, saveDefaults } from "./web-defaults";
 import { subagentProfilesInfo, requireSubagentProfile, saveSubagentProfileDefault } from "./subagent-profiles";
 import { restorePick, pickEntryFor } from "../pi-config/extensions/subagents/subagent-profiles.ts";
@@ -42,12 +42,12 @@ import { applySandbox, onSandboxAppend, sandboxCommandOf, sandboxInfo, sandboxMe
 import type { SandboxState } from "../pi-config/extensions/sandbox/state.ts";
 import { chatClaudeLogin, claudeLoginAfterHello, claudeLoginMessage, isClaudeLoginEntry, LoginPick, loginName } from "./claude-login-state";
 import { rowsOf, rowsOfEntry } from "./transcript";
-import { endsMessage, v1Frame, writtenEntryId } from "./harness/pi/wire";
 import { onWire, withRows } from "./wire-rows";
-import type { HEntry, SessionState, SessionStateWriter, StateKind } from "../shared/harness";
-import { historyOf, liveRead, toHEntry } from "./harness/pi/reader";
+import type { HarnessEvent, HarnessSession, HEntry, ImageInput, SessionState, SessionStateWriter, StateKind } from "../shared/harness";
+import { historyOf } from "./harness/pi/reader";
 import { contextOfBranch } from "./harness/pi/usage";
-import { piSessionState } from "./harness/pi/state";
+import { extensionEntries, piSessionState } from "./harness/pi/state";
+import { isAlreadyProcessing, PiHarnessSession } from "./harness/pi/session";
 import { BATON_SENT, LOADOUT, MODE, OVERSEER_DIALOG_ANSWER, OVERSEER_SENT, PROFILE, REWIND, SESSION_SENT, SUBAGENT_PROFILE, TOPIC_DELIVERED } from "./harness/state-kinds";
 import { cutTail, type HistoryPart, pullFields } from "./tail-hello";
 import { isOverseerId } from "./overseer-store";
@@ -842,28 +842,11 @@ function imageBlocks(content: unknown): QueueImage[] | undefined {
   return out.length ? out : undefined;
 }
 
-/** pi SourceInfo.scope → rpc get_commands `location` ("temporary" = explicit CLI/settings path). */
-function sourceLocation(info: { scope: string } | undefined): string | undefined {
-  if (!info) return undefined;
-  return info.scope === "temporary" ? "path" : info.scope;
-}
-
-/** Same enumeration as pi's rpc get_commands (rpc-mode.js "get_commands"), per runtime/cwd. */
-function listCommands(session: AgentSession): SlashCommand[] {
+/** The runtime's commands as pi's rpc get_commands lists them, per runtime/cwd. */
+function listCommands(harness: HarnessSession): SlashCommand[] {
   // Sova's own `compact` leads; an extension command of that name could never run from here,
   // because the text is intercepted before pi sees it (ChatSession.handle), so it is not offered.
-  const out: SlashCommand[] = [COMPACT_COMMAND];
-  for (const c of session.extensionRunner.getRegisteredCommands()) {
-    if (c.invocationName === COMPACT_COMMAND.name) continue;
-    out.push({ name: c.invocationName, description: c.description, source: "extension", path: c.sourceInfo?.path });
-  }
-  for (const t of session.promptTemplates) {
-    out.push({ name: t.name, description: t.description, source: "prompt", location: sourceLocation(t.sourceInfo), path: t.filePath });
-  }
-  for (const s of session.resourceLoader.getSkills().skills) {
-    out.push({ name: `skill:${s.name}`, description: s.description, source: "skill", location: sourceLocation(s.sourceInfo), path: s.filePath });
-  }
-  return out;
+  return [COMPACT_COMMAND, ...harness.commands().filter((c) => !(c.source === "extension" && c.name === COMPACT_COMMAND.name))];
 }
 
 /** A session's title as the list would say it: its name, else its first message, else "Untitled". */
@@ -905,11 +888,11 @@ export function isCompactionInProgress(err: unknown): boolean {
   return err instanceof Error && err.message.startsWith("Cannot submit a prompt while compaction is in progress");
 }
 
-/** SDK events after which Sova's queue re-reads the SDK's own queue lengths. `agent_settled` and
-    `agent_end` are here because a turn that ends with our queue non-empty must start the next one;
-    without them the queue would wait for an event that never comes. `compaction_end` likewise
+/** Session events after which Sova's queue re-reads the SDK's own queue lengths. `run.settled` and
+    `run.end` are here because a turn that ends with our queue non-empty must start the next one;
+    without them the queue would wait for an event that never comes. `compaction.end` likewise
     releases what the queue held while a compaction ran (its `paused`). */
-const QUEUE_WAKE_EVENTS = new Set(["queue_update", "message_start", "turn_end", "agent_settled", "agent_end", "compaction_end"]);
+const QUEUE_WAKE_EVENTS = new Set<HarnessEvent["type"]>(["queue", "message.start", "turn.end", "run.settled", "run.end", "compaction.end"]);
 
 /** Who a marked message is from: the Overseer (`sova-overseer-sent`, §app.overseer/sent-marker) or a
     baton session's participant (`sova-baton-sent`, §app.baton/attribution). */
@@ -1081,26 +1064,17 @@ class ChatSession {
    */
   readonly queue: WebQueue = new WebQueue({
     sdk: {
-      // The REAL queues, through public API: `AgentSession.agent` is public
-      // (agent-session.d.ts:196) and so is `hasQueuedMessages()` (pi-agent-core agent.d.ts:96).
-      // Nothing private is read, and nothing is mutated — `Agent.steeringQueue.messages.length`
-      // would answer per kind, but it is private in the types and reading it is the reach-in this
-      // design was chosen to avoid.
-      //
-      // Delivery is read from THESE, not from getSteeringMessages(): that mirror is spliced on
-      // `message_start`, which is later than the loop's drain, and the splice is skipped entirely
-      // for empty text — so an image-only send never leaves it and a mirror-watching queue stalls
-      // for the session's life. server/queue.ts's header has the full account.
-      hasQueued: () => this.session.agent.hasQueuedMessages(),
-      // The mirror, read ONLY as a change detector against our own earlier reading of it
-      // (server/queue.ts sdkHolds). `peekQueuedMessages()` would answer more precisely; it arrived
-      // with the 0.87.1 pin and is deliberately not used yet (server/queue.ts's header).
-      mirrorTotal: () => this.session.getSteeringMessages().length + this.session.getFollowUpMessages().length,
-      mirrorFor: (kind) => (kind === "steer" ? this.session.getSteeringMessages() : this.session.getFollowUpMessages()).length,
-      // Same public pair; a read of the live array's current contents, never a copy anyone mutates.
-      mirrorHas: (kind, text) => (kind === "steer" ? this.session.getSteeringMessages() : this.session.getFollowUpMessages()).includes(text),
+      // The REAL queue (`hasQueued`, the agent's own) and the mirror, through the driving session
+      // (P9 queue-one-bit, server/harness/pi/QUIRKS.md). Delivery is read from the real queue, never
+      // the mirror: the mirror is spliced late and skips empty text, so an image-only send never
+      // leaves it. The mirror is read ONLY as a change detector against our own earlier reading of
+      // it (server/queue.ts sdkHolds); server/queue.ts's header has the full account.
+      hasQueued: () => this.harness.queue.hasQueued(),
+      mirrorTotal: () => this.harness.queue.mirrorTotal(),
+      mirrorFor: (kind) => this.harness.queue.mirrorFor(kind),
+      mirrorHas: (kind, text) => this.harness.queue.mirrorHas(kind, text),
     },
-    streaming: () => this.session.isStreaming,
+    streaming: () => this.harness.isRunning(),
     // A Claude login switch landing holds it too, so the next turn starts on the new login.
     paused: () => this.isCompacting() || this.starting !== null || this.loginApplying,
     // Every clear of the SDK's queue (Stop, the Overseer's stop, a removal) keeps the link messages
@@ -1131,23 +1105,36 @@ class ChatSession {
       // line between. `queue_item_gone{reason:"failed"}` is now the single departure signal, which
       // also makes "failed" and "dropped" symmetric, and leaves `queue_cleared` meaning Stop and
       // nothing else.
-      this.broadcast({ type: "error", code, message, ...(item.origin === "client" ? { clientId: item.id } : {}), ...(this.session.model?.provider ? { provider: this.session.model.provider } : {}) });
+      const provider = this.harness.model()?.provider;
+      this.broadcast({ type: "error", code, message, ...(item.origin === "client" ? { clientId: item.id } : {}), ...(provider ? { provider } : {}) });
     },
   });
+
+  /** The driving session (§app.harness/session): the runtime's current session, looked up at each call. */
+  readonly harness: HarnessSession;
 
   constructor(
     readonly path: string,
     readonly runtime: AgentSessionRuntime,
     private readonly onDisposed: () => void,
-  ) {}
+  ) {
+    this.harness = new PiHarnessSession(runtime);
+  }
 
+  /** @internal pi's AgentSession, for what still reaches pi directly and for tests. */
   get session(): AgentSession {
     return this.runtime.session;
   }
 
   /** This session's state (§app.harness/state), on the runtime's current session each time. */
   get state(): SessionState {
-    return piSessionState(this.session.sessionManager);
+    return this.harness.state;
+  }
+
+  /** The branch's state entries as pi wrote them, for the pi-config cores that fold pi's own entry
+      shape (the subagent-profile pick, the mode pin). */
+  private extensionBranch(): BranchEntries {
+    return extensionEntries(this.harness.branch()) as unknown as BranchEntries;
   }
 
   /** Throws BusyError if a foreign writer was detected (now or earlier). */
@@ -1203,7 +1190,7 @@ class ChatSession {
     this.assertNoForeignWrites();
     this.assertModelAllowed();
     this.flushDeferredAppends();
-    const images = item.images as Parameters<AgentSession["steer"]>[1];
+    const images = item.images as ImageInput[] | undefined;
     const toSdk = <T>(send: () => T) => this.toSdk(item.origin, send, item.confirm);
     // What the extensions' input handlers are told: a person's input, or Sova's own (§app.overseer/input-source).
     const source = inputSourceOf(item);
@@ -1218,7 +1205,7 @@ class ChatSession {
       // Idle: this starts a turn. Its own failure belongs in this session's pane, like every other
       // turn nobody is awaiting, and must not be reported as a hand-off failure (which would hand
       // the text back to the composer for a message that HAS been sent).
-      const turn = toSdk(() => this.session.prompt(item.text, { images, source }));
+      const turn = toSdk(() => this.harness.send(item.text, { images, source }));
       this.noteStarting(turn);
       turn.catch((err) => {
         if (mark) this.dropSenderMark(mark);
@@ -1233,10 +1220,10 @@ class ChatSession {
     // steer() throws on extension commands; prompt() runs them immediately (even mid-stream) and
     // otherwise queues with the same skill/template expansion. Same split as the direct path.
     if (item.kind === "steer" && !item.text.startsWith("/")) {
-      await toSdk(() => this.session.steer(item.text, images, { source }));
+      await toSdk(() => this.harness.steer(item.text, images, { source }));
       return;
     }
-    await toSdk(() => this.session.prompt(item.text, { images, streamingBehavior: item.kind, source })).catch((err) => {
+    await toSdk(() => this.harness.send(item.text, { images, delivery: item.kind, source })).catch((err) => {
       if (!this.heldForCompaction(err, { ...item, id: undefined })) throw err;
     });
   }
@@ -1293,7 +1280,7 @@ class ChatSession {
    * make every later rewind refuse for the life of the session.
    */
   hasPendingSends(): boolean {
-    return this.queue.size > 0 || this.session.agent.hasQueuedMessages();
+    return this.queue.size > 0 || this.harness.queue.hasQueued();
   }
 
   /**
@@ -1316,8 +1303,8 @@ class ChatSession {
   private waking = false;
 
   private wakeQueuedRun(): void {
-    if (this.disposed || this.session.isStreaming || this.isCompacting() || this.loginApplying) return;
-    if (!this.session.agent.hasQueuedMessages()) return;
+    if (this.disposed || this.harness.isRunning() || this.isCompacting() || this.loginApplying) return;
+    if (!this.harness.queue.hasQueued()) return;
     try {
       assertNotLive(this.path);
       this.assertNoForeignWrites();
@@ -1337,7 +1324,7 @@ class ChatSession {
     // still queued and Stop still drains them.
     if (this.waking) return;
     this.waking = true;
-    this.session.agent
+    this.harness.queue
       .continue()
       .catch((err) => this.reportTurnFailure(err))
       .finally(() => {
@@ -1374,7 +1361,7 @@ class ChatSession {
       this.linkHeld.push(text);
       return "delivered";
     }
-    const starts = !this.session.isStreaming && !this.starting && this.linkPending === 0;
+    const starts = !this.harness.isRunning() && !this.starting && this.linkPending === 0;
     this.handLinkToAgent(text);
     return starts ? "started" : "delivered";
   }
@@ -1393,19 +1380,19 @@ class ChatSession {
   deliverTopicBatch(mark: TopicBatchMark): "started" | "busy" | "paused" | "closed" {
     if (this.disposed) return "closed";
     if (this.topicsPaused) return "paused";
-    if (this.session.isStreaming || this.starting || this.isCompacting() || this.loginApplying || this.waking) return "busy";
-    if (this.queue.size > 0 || this.session.agent.hasQueuedMessages() || this.linkPending > 0 || this.linkHeld.length) return "busy";
+    if (this.harness.isRunning() || this.starting || this.isCompacting() || this.loginApplying || this.waking) return "busy";
+    if (this.queue.size > 0 || this.harness.queue.hasQueued() || this.linkPending > 0 || this.linkHeld.length) return "busy";
     assertNotLive(this.path);
     this.assertNoForeignWrites();
     this.assertModelAllowed();
     this.flushDeferredAppends();
     this.topicMarks.push(mark);
-    // Inside an agent_settled emit the SDK defers the prompt and resolves it at once (CLAUDE.md);
+    // Inside the settle emit the harness defers the prompt and resolves it at once (P5 settle-window);
     // delivery stays out of that window, and if it ever didn't, the settle sweep owns the mark.
-    const deferred = (this.session as unknown as { _isEmittingAgentSettled?: boolean })._isEmittingAgentSettled === true;
+    const deferred = this.harness.inSettleWindow();
     let turn: Promise<void>;
     try {
-      turn = this.session.prompt(mark.text, { expandPromptTemplates: false, source: "extension" });
+      turn = this.harness.send(mark.text, { expand: false, source: "system" });
       this.noteStarting(turn);
     } catch (err) {
       // A synchronous throw would otherwise orphan the mark (gone() never runs) and leave the
@@ -1438,18 +1425,16 @@ class ChatSession {
 
   /** A user message ended: if it is a batch handed over here, write its invisible marker on its
       entry (one microtask later, when the SDK has persisted it: markSend's timing) and acknowledge it. */
-  private markTopic(message: { content?: unknown }): void {
-    const text = typeof message.content === "string" ? message.content : textBlocks(message.content);
+  private markTopic(text: string): void {
     const i = this.topicMarks.findIndex((m) => m.text === text);
     if (i < 0) return;
     const [mark] = this.topicMarks.splice(i, 1);
     queueMicrotask(() => {
       if (this.disposed || this.foreignWrite) return mark!.gone();
-      const sm = this.session.sessionManager;
-      const leaf = sm.getLeafId();
-      const entry = leaf ? sm.getEntry(leaf) : undefined;
-      if (entry?.type !== "message" || entry.message.role !== "user") return mark!.gone();
-      piSessionState(sm).append(TOPIC_DELIVERED, { v: 1, targetId: entry.id, topic: mark!.topic, batch: mark!.batch, items: mark!.items });
+      const leaf = this.harness.leafId();
+      const entry = leaf ? this.harness.entry(leaf) : undefined;
+      if (entry?.kind !== "user") return mark!.gone();
+      this.harness.state.append(TOPIC_DELIVERED, { v: 1, targetId: entry.id!, topic: mark!.topic, batch: mark!.batch, items: mark!.items });
       markOwned(this.path);
       mark!.entered();
     });
@@ -1506,24 +1491,24 @@ class ChatSession {
       const i = this.linkInSdk.indexOf(text);
       if (i >= 0) this.linkInSdk.splice(i, 1);
     };
-    if (this.session.isStreaming) {
-      await this.session.steer(text, undefined, { source: "extension" }).catch((err) => {
+    if (this.harness.isRunning()) {
+      await this.harness.steer(text, undefined, { source: "system" }).catch((err) => {
         untrack();
         throw err;
       });
       // The run can end while pi runs the steer's input handlers; the steer then sits in the SDK's
       // queue with no run to drain it. Wake one (wakeQueuedRun is guarded: not streaming, not
       // compacting, one at a time).
-      if (!this.session.isStreaming && this.linkInSdk.includes(text)) this.wakeQueuedRun();
+      if (!this.harness.isRunning() && this.linkInSdk.includes(text)) this.wakeQueuedRun();
       return;
     }
-    // Idle. `streamingBehavior: "steer"` covers a turn that started while the input handlers ran;
-    // prompt() resolves at TURN end, so acceptance is its preflight (or its settling, when pi
-    // defers it inside an agent_settled or refuses it).
+    // Idle. A `steer` delivery covers a turn that started while the input handlers ran; send()
+    // resolves at TURN end, so acceptance is `onAccepted` (P15 accept-vs-complete), or its settling,
+    // when pi defers it inside an agent_settled or refuses it.
     // It is a turn starting like any prompt (noteStarting): a user's send in the gap queues instead
     // of being refused by pi.
     await new Promise<void>((accepted) => {
-      const turn = this.session.prompt(text, { expandPromptTemplates: false, source: "extension", streamingBehavior: "steer", preflightResult: () => accepted() });
+      const turn = this.harness.send(text, { expand: false, source: "system", delivery: "steer", onAccepted: () => accepted() });
       this.noteStarting(turn);
       turn.then(
         () => accepted(),
@@ -1532,7 +1517,7 @@ class ChatSession {
           untrack();
           if (this.disposed) return;
           // Another turn won the race after the streaming check: steer into it instead.
-          if (err instanceof Error && /already processing/i.test(err.message)) this.handLinkToAgent(text);
+          if (isAlreadyProcessing(err)) this.handLinkToAgent(text);
           else if (isCompactionInProgress(err)) this.linkHeld.push(text);
           else this.reportTurnFailure(err);
         },
@@ -1547,7 +1532,7 @@ class ChatSession {
     const texts = [...this.linkHeld.splice(0), ...(stopped ? this.linkStopped.splice(0) : [])];
     if (!texts.length) return;
     const onBranch = new Set<string>();
-    for (const h of liveRead(this.session).branch()) {
+    for (const h of this.harness.branch()) {
       if (h.kind !== "user") continue;
       const link = parseLinkMessage(textBlocks(h.blocks));
       if (link) onBranch.add(link.messageId);
@@ -1562,7 +1547,7 @@ class ChatSession {
   /** The SDK's clearQueue(), minus the link messages in it, which go back on this chat's own hold
       for the next turn: whoever cleared (Stop, above all) never hands them to a composer. */
   private clearSdkQueue(): { steering: string[]; followUp: string[] } {
-    const cleared = this.session.clearQueue();
+    const cleared = this.harness.queue.clear();
     const keep = (texts: string[]) =>
       texts.filter((t) => {
         const i = this.linkInSdk.indexOf(t);
@@ -1577,7 +1562,7 @@ class ChatSession {
   /** A compaction is running on this runtime: a /compact of ours, pi's automatic one, or an
       extension's `ctx.compact()`. Every send is held in the queue meanwhile. */
   isCompacting(): boolean {
-    return this.compactRunning || this.session.isCompacting;
+    return this.compactRunning || this.harness.isCompacting();
   }
 
   hasForeignWrites(): boolean {
@@ -1595,7 +1580,7 @@ class ChatSession {
   visCheckHost(): VisCheckHost {
     return {
       visOn: () => this.modeState.minorModes.includes("vis"),
-      queued: () => this.queue.size > 0 || this.session.agent.hasQueuedMessages(),
+      queued: () => this.queue.size > 0 || this.harness.queue.hasQueued(),
       writable: () => {
         if (this.disposed || this.foreignWrite) return false;
         try {
@@ -1615,7 +1600,7 @@ class ChatSession {
    * spend a turn on a model the user didn't pick, and the transcript would not say so.
    */
   assertModelAllowed(): void {
-    const ref = modelLabel(this.session);
+    const ref = this.harness.model()?.ref;
     if (!ref) return; // no model yet: the SDK's own error is the useful one
     const denial = modelDenial(readModelPolicy(), ref);
     if (denial) throw new Error(denial);
@@ -1627,8 +1612,8 @@ class ChatSession {
 
   async bind(): Promise<void> {
     const session = this.session;
-    const sm = session.sessionManager;
-    this.guard = new ForeignWriteGuard(this.path, (id) => sm.getEntry(id) !== undefined);
+    const harness = this.harness;
+    this.guard = new ForeignWriteGuard(this.path, (id) => harness.hasEntry(id));
     this.guardTimer = setInterval(() => {
       if (this.foreignWrite) return;
       // A TUI that grabs the file mid-run: stop writing now (busy: force must never help).
@@ -1641,7 +1626,7 @@ class ChatSession {
           message: `Session was opened in another pi process (pid ${live.pid}) while held here; stopped writing. Use watch instead.`,
         });
         // abort() also stops a compaction, whose entry would otherwise be written into a TUI's file.
-        if (this.session.isStreaming || this.session.isCompacting) this.session.abort().catch(() => {});
+        if (this.harness.isRunning() || this.harness.isCompacting()) this.harness.abort().catch(() => {});
         return;
       }
       if (this.clients.size === 0) {
@@ -1676,21 +1661,23 @@ class ChatSession {
         this.broadcast({ type: "error", code: "internal", message: `Extension error (${err.extensionPath}): ${err.error}` }),
     });
     this.unsubscribe?.();
-    this.unsubscribe = session.subscribe((event) => {
+    // Through the driving session: one pi listener, registered here, after the stream guard and the
+    // extensions, as before; each event arrives once, in pi's tick (P12 message-end-before-persist).
+    this.unsubscribe = harness.subscribe((event) => {
       // A turn starting or settling, and a tool call ending (the Overseer's tools write stores in
       // process), start the next session listing afresh (§app.session-list/listing-reuse).
-      if (event.type === "tool_execution_end" || event.type === "agent_start" || event.type === "agent_settled") sessionsChanged();
+      if (event.type === "tool.end" || event.type === "run.start" || event.type === "run.settled") sessionsChanged();
       // A Claude login picked during the reply goes in now, before the queue wake below can start
       // the next turn: applyLoginPick holds the web queue until it has landed
       // (§app.claude-logins/switch-queue).
-      if (event.type === "agent_settled" && this.loginPending && !this.loginApplying) void this.applyLoginPick();
-      if (this.starting && this.session.isStreaming) {
+      if (event.type === "run.settled" && this.loginPending && !this.loginApplying) void this.applyLoginPick();
+      if (this.starting && this.harness.isRunning()) {
         this.startedNow(); // the run has begun: a send now queues on isStreaming
         this.queue.onSdkEvent();
       }
       try {
-        const wire = v1Frame(event);
-        if (endsMessage(event)) this.holdForEntryId(wire, (event as { message?: unknown }).message);
+        const wire = event.frame();
+        if (event.type === "message.end") this.holdForEntryId(wire, event.handle);
         else this.broadcast(wire);
       } catch (err) {
         console.error("[chat] failed to forward event", err);
@@ -1704,7 +1691,7 @@ class ChatSession {
       // precise one, because the cost of a spurious wake is a re-read of two lengths while the
       // cost of a MISSED one is a queue that stops handing messages over until the next turn
       // boundary — and `rowsOfEntry` below is not in a try.
-      if (event.type === "queue_update") {
+      if (event.type === "queue") {
         // The mirror's own totals, straight from the SDK. The queue reads GROWTH out of the
         // sequence of these — the only way to tell "an extension queued something" from "our item
         // was delivered", which a single total cannot distinguish (one in, one out, total unmoved).
@@ -1713,61 +1700,60 @@ class ChatSession {
       // pi's AUTOMATIC compaction emits compaction_end before its finally clears the controller
       // `isCompacting` reads, so the wake above can still find the queue paused: look again once
       // that has unwound. (The manual path clears first, so this one is a no-op there.)
-      if (event.type === "compaction_end")
+      if (event.type === "compaction.end")
         setImmediate(() => {
           if (this.disposed) return;
           this.queue.onSdkEvent();
           this.releaseLinks(false);
         });
-      if (event.type === "agent_start") {
+      if (event.type === "run.start") {
         this.releaseLinks(true);
         startedTurn(this.path);
         // The runs in flight, for resuming what a restart cuts off (§app.overseer/auto-resume).
         runLedger.started(this.path);
       }
-      if (event.type === "agent_settled") runLedger.settled(this.path);
-      if (event.type === "message_start" && this.linkInSdk.length && (event as { message?: { role?: unknown } }).message?.role === "user") {
-        const content = (event as { message: { content?: unknown } }).message.content;
-        const i = this.linkInSdk.indexOf(typeof content === "string" ? content : textBlocks(content));
+      if (event.type === "run.settled") runLedger.settled(this.path);
+      if (event.type === "message.start" && this.linkInSdk.length && event.role === "user") {
+        const i = this.linkInSdk.indexOf(event.text!);
         if (i >= 0) this.linkInSdk.splice(i, 1);
       }
-      if (event.type === "entry_appended" && (event as { entry?: unknown }).entry) {
+      if (event.type === "entry.appended") {
         // Display entries an extension appended outside a turn (mode markers, align docs, …)
         // reach the pane now instead of at the next hello/resync. rowsOfEntry returns []
         // for entries with nothing to show, so most appends broadcast nothing.
-        const appended = toHEntry((event as { entry: unknown }).entry);
+        const appended = event.entry;
         const items = appended ? rowsOfEntry(appended) : [];
         if (items.length) this.broadcast({ type: "append", items });
-        onSandboxAppend(this.sandboxHost, (event as { entry: unknown }).entry);
-        if (isClaudeLoginEntry((event as { entry: unknown }).entry)) this.broadcast(this.loginMessage());
+        onSandboxAppend(this.sandboxHost, appended);
+        if (isClaudeLoginEntry(appended)) this.broadcast(this.loginMessage());
       }
-      if (event.type === "message_end" && this.senderMarks.length && (event as { message?: { role?: unknown } }).message?.role === "user") {
-        this.markSend((event as { message: { content?: unknown } }).message);
+      if (event.type === "message.end" && this.senderMarks.length && event.role === "user") {
+        this.markSend(event.text!);
       }
-      if (event.type === "message_end" && this.topicMarks.length && (event as { message?: { role?: unknown } }).message?.role === "user") {
-        this.markTopic((event as { message: { content?: unknown } }).message);
+      if (event.type === "message.end" && this.topicMarks.length && event.role === "user") {
+        this.markTopic(event.text!);
       }
-      if (event.type === "agent_settled" && this.topicMarks.length) {
+      if (event.type === "run.settled" && this.topicMarks.length) {
         // A batch whose message never entered this run is gone (its notes stay undelivered).
         // Deferred like the sender sweep: a batch handed over inside this settle runs in it.
         const stale = [...this.topicMarks];
         setTimeout(() => {
-          if (!this.session.isStreaming && !this.starting) for (const m of stale) this.dropTopicMark(m);
+          if (!this.harness.isRunning() && !this.starting) for (const m of stale) this.dropTopicMark(m);
         }, 0);
       }
-      if (event.type === "agent_settled" || event.type === "compaction_end") receiverIdle(this.path);
-      if (event.type === "agent_settled" && this.senderMarks.length) {
+      if (event.type === "run.settled" || event.type === "compaction.end") receiverIdle(this.path);
+      if (event.type === "run.settled" && this.senderMarks.length) {
         // A mark that never found its message this run (the prompt was swallowed or failed early)
         // is stale. Deferred, so a mark for a prompt made while this event is being emitted (it
         // runs in this same settle window) is not dropped before its message ends. A mark whose
         // queue item has not departed yet is not stale: its message is still on its way.
         const stale = this.senderMarks.filter((s) => !s.held);
         setTimeout(() => {
-          if (!this.session.isStreaming) this.senderMarks = this.senderMarks.filter((s) => !stale.includes(s));
+          if (!this.harness.isRunning()) this.senderMarks = this.senderMarks.filter((s) => !stale.includes(s));
         }, 0);
       }
-      if (event.type === "agent_settled") settledTurn(this.path);
-      if (event.type === "agent_settled" && this.modeApplies === "after-turn") {
+      if (event.type === "run.settled") settledTurn(this.path);
+      if (event.type === "run.settled" && this.modeApplies === "after-turn") {
         // A mid-turn switch reaches the next prompt from here on.
         this.modeApplies = "now";
         this.broadcast(this.modeMessage());
@@ -1776,7 +1762,7 @@ class ChatSession {
     this.broadcast(this.commands()); // extension commands exist only after bindExtensions
     this.sendSandbox((m) => this.broadcast(m));
     // The same rule the extension's own session_start runs, so both agree on this session's mode.
-    this.modeState = resolveChatMode(session.sessionManager.getBranch());
+    this.modeState = chatModeOf(harness.state.branch());
     this.modeApplies = this.modeCommand() ? "now" : "new-chats";
     await this.syncModePrompt();
   }
@@ -1811,7 +1797,7 @@ class ChatSession {
   /** The chat socket's `profile` message (§chat.profiles/applying). */
   profileMessage(): Extract<ChatServerMessage, { type: "profile" }> {
     const data = this.profileState?.data ?? null;
-    const active = this.session.getActiveToolNames();
+    const active = this.harness.activeTools();
     const grants = data?.profile?.grant ?? [];
     const granted = grants.flatMap((g) => GRANT_TOOLS[g]).filter((t) => active.includes(t));
     let live = false;
@@ -1827,7 +1813,7 @@ class ChatSession {
       locked: !this.isPristine(),
       pickable: !this.special && !live,
       tools: active,
-      removed: [...(this.profileState?.excluded ?? [])].filter((t) => this.session.extensionRunner.getAllRegisteredTools().some((r) => r.definition.name === t) || ["bash", "edit", "write"].includes(t)),
+      removed: [...(this.profileState?.excluded ?? [])].filter((t) => this.harness.registeredTools().includes(t) || ["bash", "edit", "write"].includes(t)),
       granted,
     };
   }
@@ -1842,7 +1828,7 @@ class ChatSession {
     assertNotLive(this.path);
     this.assertNoForeignWrites();
     if (!this.isPristine()) throw new RefusedError("The profile is fixed once a message is sent.");
-    if (this.session.isStreaming || this.isCompacting() || this.starting) throw new BusyError("Wait for the reply to finish first.", "busy");
+    if (this.harness.isRunning() || this.isCompacting() || this.starting) throw new BusyError("Wait for the reply to finish first.", "busy");
     this.flushDeferredAppends(); // open-time entries go first, as in pinMode
     this.state.append(PROFILE, data);
     markOwned(this.path);
@@ -1858,7 +1844,7 @@ class ChatSession {
     assertNotLive(this.path);
     this.assertNoForeignWrites();
     if (!this.isPristine()) throw new RefusedError("Context files and skills are fixed once a message is sent.");
-    if (this.session.isStreaming || this.isCompacting() || this.starting) throw new BusyError("Wait for the reply to finish first.", "busy");
+    if (this.harness.isRunning() || this.isCompacting() || this.starting) throw new BusyError("Wait for the reply to finish first.", "busy");
     this.flushDeferredAppends(); // open-time entries go first, as in writeProfile
     this.state.append(LOADOUT, data);
     markOwned(this.path);
@@ -1895,7 +1881,7 @@ class ChatSession {
    * sent message stops it being new.
    */
   private isPristine(): boolean {
-    return !liveRead(this.session).branch().some((h) => h.kind === "user");
+    return !this.harness.branch().some((h) => h.kind === "user");
   }
 
   /**
@@ -1926,7 +1912,7 @@ class ChatSession {
    * it too from its next start or reopen. "Unchanged" is true now, not forever.
    */
   subagentProfileInfo() {
-    return subagentProfilesInfo(restorePick(this.session.sessionManager.getBranch()));
+    return subagentProfilesInfo(restorePick(this.extensionBranch()));
   }
 
   async switchSubagentProfile(id: unknown) {
@@ -1935,11 +1921,10 @@ class ChatSession {
     const profile = requireSubagentProfile(id);
     if (!this.modeCommand()) throw new ModeRefusedError("The mode extension isn't loaded in this chat.");
     this.flushDeferredAppends();
-    const sm = this.session.sessionManager;
-    const entry = pickEntryFor(sm.getBranch(), profile);
-    if (entry) piSessionState(sm).append(SUBAGENT_PROFILE, entry.data);
+    const entry = pickEntryFor(this.extensionBranch(), profile);
+    if (entry) this.harness.state.append(SUBAGENT_PROFILE, entry.data);
     markOwned(this.path);
-    return { ...this.subagentProfileInfo(), applies: this.session.isStreaming ? "after-turn" as const : "now" as const };
+    return { ...this.subagentProfileInfo(), applies: this.harness.isRunning() ? "after-turn" as const : "now" as const };
   }
 
   async saveModeDefault(): Promise<ModeInfo> {
@@ -1973,7 +1958,7 @@ class ChatSession {
   async applyMode(state: ModeState): Promise<"skip" | "unsupported" | "command"> {
     if (this.disposed) return "skip"; // a disposed runtime took nothing
     const session = this.session;
-    const streaming = session.isStreaming;
+    const streaming = this.harness.isRunning();
     let live = false;
     try {
       assertNotLive(this.path);
@@ -2031,11 +2016,10 @@ class ChatSession {
     } catch {
       return false;
     }
-    const sm = this.session.sessionManager;
-    const pin = pinEntryFor(sm.getBranch(), this.modeState);
+    const pin = pinEntryFor(this.extensionBranch(), this.modeState);
     if (!pin) return true;
     this.flushDeferredAppends(); // open-time entries go before the mode entry, as in applyMode
-    piSessionState(sm).append(MODE, pin.data);
+    this.harness.state.append(MODE, pin.data);
     markOwned(this.path);
     return true;
   }
@@ -2052,7 +2036,7 @@ class ChatSession {
 
   /** This chat's Claude login with its waiting pick, as every tab is told it. */
   loginMessage(): ChatServerMessage {
-    return claudeLoginMessage(this.session.sessionManager.getBranch(), undefined, { pending: this.loginPending });
+    return claudeLoginMessage(this.harness.branch(), undefined, { pending: this.loginPending });
   }
 
   /**
@@ -2063,13 +2047,13 @@ class ChatSession {
   setClaudeLogin(login: string | null): void {
     assertNotLive(this.path);
     this.assertNoForeignWrites();
-    const current = chatClaudeLogin(this.session.sessionManager.getBranch())?.id;
+    const current = chatClaudeLogin(this.harness.branch())?.id;
     if (login !== null && login !== current) {
       if (!/^(default|l-[0-9a-f]{8})$/.test(login)) throw new Error("There's no such Claude login.");
-      if (!(modelLabel(this.session) ?? "").startsWith("claude-code-cli/")) throw new Error("This chat isn't on a Claude Code model.");
+      if (!(this.harness.model()?.ref ?? "").startsWith("claude-code-cli/")) throw new Error("This chat isn't on a Claude Code model.");
       if (!this.claudeLoginCommand()) throw new Error("This chat's runtime has no /claude-login command. Turn on Claude Code models, then reopen the chat.");
     }
-    const busy = this.session.isStreaming || this.isCompacting() || !!this.starting;
+    const busy = this.harness.isRunning() || this.isCompacting() || !!this.starting;
     const outcome = this.loginPick.choose(login === null ? null : { id: login, name: loginName(login) }, current, busy);
     if (outcome === "landing") throw new Error("A switch of Claude login is already landing. Pick again once it has.");
     if (outcome === "cancelled" || outcome === "queued") this.broadcast(this.loginMessage());
@@ -2115,14 +2099,14 @@ class ChatSession {
    * write (a foreign writer, the TUI) or is mid-turn.
    */
   async appendNote(customType: string, text: string): Promise<boolean> {
-    if (this.disposed || this.foreignWrite || this.hasForeignWrites() || this.session.isStreaming) return false;
+    if (this.disposed || this.foreignWrite || this.hasForeignWrites() || this.harness.isRunning()) return false;
     try {
       assertNotLive(this.path);
     } catch {
       return false;
     }
     this.flushDeferredAppends(); // open-time entries go first, as in pinMode
-    await this.session.sendCustomMessage({ customType, content: text, display: true }, { triggerTurn: false });
+    await this.harness.appendNote(customType, text);
     markOwned(this.path);
     return true;
   }
@@ -2134,12 +2118,12 @@ class ChatSession {
 
   /** This chat's sandbox now (§chat.sandbox/states), or null when its runtime has no sandbox extension. */
   sandboxInfo(): SandboxInfo | null {
-    return this.sandboxCommand() ? sandboxInfo(this.session.sessionManager.getBranch()) : null;
+    return this.sandboxCommand() ? sandboxInfo(this.harness.branch()) : null;
   }
 
   /** This chat's "sandbox" message, only when the extension is loaded: without it, nothing is sent. */
   private sendSandbox(send: (msg: ChatServerMessage) => void): void {
-    if (this.sandboxCommand()) send(sandboxMessage(this.session.sessionManager.getBranch()));
+    if (this.sandboxCommand()) send(sandboxMessage(this.harness.branch()));
   }
 
   private get sandboxHost(): SandboxHost {
@@ -2158,7 +2142,7 @@ class ChatSession {
       afterCommand: () => {
         if (!this.foreignWrite) markOwned(this.path); // the extension's entry is our write
       },
-      branch: () => this.session.sessionManager.getBranch(),
+      branch: () => this.harness.branch(),
       broadcast: (msg) => this.broadcast(msg),
     };
   }
@@ -2196,7 +2180,7 @@ class ChatSession {
 
   commands(): ChatServerMessage {
     try {
-      return { type: "commands", commands: listCommands(this.session) };
+      return { type: "commands", commands: listCommands(this.harness) };
     } catch (err) {
       console.error("[chat] listing commands failed", err);
       return { type: "commands", commands: [] };
@@ -2204,15 +2188,15 @@ class ChatSession {
   }
 
   hello(): Extract<ChatServerMessage, { type: "hello" }> {
-    const session = this.session;
-    const branch = liveRead(session).branch();
+    const harness = this.harness;
+    const branch = harness.branch();
     return {
       type: "hello",
       items: rowsOf(branch),
-      isStreaming: session.isStreaming,
+      isStreaming: harness.isRunning(),
       isCompacting: this.isCompacting(),
-      model: modelLabel(session),
-      thinking: session.thinkingLevel,
+      model: harness.model()?.ref ?? null,
+      thinking: harness.thinking(),
       context: toContextInfo(contextOfBranch(branch), this.runtime.services.modelRuntime),
     };
   }
@@ -2233,7 +2217,7 @@ class ChatSession {
     this.sendSandbox((m) => client.send(m));
     // Only when there is something to show: a profile, or a session still before its first message.
     if (this.profileState?.data?.profile || this.isPristine()) client.send(this.profileMessage());
-    const login = claudeLoginAfterHello(this.session.sessionManager.getBranch(), undefined, { pending: this.loginPending });
+    const login = claudeLoginAfterHello(this.harness.branch(), undefined, { pending: this.loginPending });
     if (login) client.send(login);
     const snap = this.workersSnapshot();
     if (snap) client.send(snap);
@@ -2301,7 +2285,7 @@ class ChatSession {
     // a queue that some messages could skip would not be a queue.
     // A compaction running is the same: pi refuses every prompt until it ends, so the message is
     // held, and the queue hands it over (as a fresh turn) at compaction_end.
-    if (this.session.isStreaming || this.isCompacting() || this.starting) {
+    if (this.harness.isRunning() || this.isCompacting() || this.starting) {
       const overseer = opts?.sentByOverseer ? { overseer: opts.sentByOverseer } : {};
       const baton = opts?.sentByBaton ? { baton: opts.sentByBaton } : {};
       const fromSession = opts?.sentBySession ? { session: opts.sentBySession } : {};
@@ -2325,7 +2309,7 @@ class ChatSession {
     if (send) this.senderMarks.push(send);
     if (opts?.sentBySession) this.profileState?.run?.expectHop(text, opts.sentBySession.hop);
     const source = inputSourceOf({ origin, ...(opts?.sentByOverseer ? { overseer: opts.sentByOverseer } : {}), ...(opts?.sentByBaton ? { baton: opts.sentByBaton } : {}), ...(opts?.byPerson ? { byPerson: true as const } : {}) });
-    const turn = this.toSdk(origin, () => this.session.prompt(text, { images, source, ...(opts?.replay ? { expandPromptTemplates: false } : {}) }), opts?.confirm);
+    const turn = this.toSdk(origin, () => this.harness.send(text, { images, source, ...(opts?.replay ? { expand: false } : {}) }), opts?.confirm);
     this.noteStarting(turn);
     if (send)
       turn.catch(() => {
@@ -2371,20 +2355,18 @@ class ChatSession {
    * the reply is then parented on the marker: rewind (to the user entry's parent) and regenerate
    * (walking back past custom entries to the user entry) behave exactly as on any user turn.
    */
-  private markSend(message: { content?: unknown }): void {
-    const text = typeof message.content === "string" ? message.content : textBlocks(message.content);
+  private markSend(text: string): void {
     const i = this.senderMarks.findIndex((s) => s.text === text);
     if (i < 0) return;
     const [send] = this.senderMarks.splice(i, 1);
     queueMicrotask(() => {
       if (this.disposed || this.foreignWrite) return;
-      const sm = this.session.sessionManager;
-      const leaf = sm.getLeafId();
-      const entry = leaf ? sm.getEntry(leaf) : undefined;
-      if (entry?.type !== "message" || entry.message.role !== "user") return;
-      const markerId = appendSenderMarker(piSessionState(sm), entry.id, send?.sender ?? { kind: "overseer" });
+      const leaf = this.harness.leafId();
+      const entry = leaf ? this.harness.entry(leaf) : undefined;
+      if (entry?.kind !== "user") return;
+      const markerId = appendSenderMarker(this.harness.state, entry.id!, send?.sender ?? { kind: "overseer" });
       markOwned(this.path);
-      const marker = toHEntry(sm.getEntry(markerId));
+      const marker = this.harness.entry(markerId);
       if (marker) {
         const items = rowsOfEntry(marker);
         if (items.length) this.broadcast({ type: "append", items });
@@ -2399,7 +2381,7 @@ class ChatSession {
   async stopRun(keep: (item: WebQueueItem) => boolean): Promise<WebQueueItem[]> {
     const { steering, followUp, kept } = await this.queue.drain(keep);
     if (steering.length || followUp.length) this.broadcast({ type: "queue_cleared", steering, followUp });
-    await this.session.abort();
+    await this.harness.abort();
     return kept;
   }
 
@@ -2412,7 +2394,7 @@ class ChatSession {
 
   /** The current leaf, the point `enterQueued` looks back to for messages the run took itself. */
   leafId(): string | null {
-    return this.session.sessionManager.getLeafId();
+    return this.harness.leafId();
   }
 
   /**
@@ -2426,9 +2408,8 @@ class ChatSession {
     if (!items.length) return 0;
     assertNotLive(this.path);
     this.assertNoForeignWrites();
-    if (this.session.isStreaming || this.isCompacting()) throw new BusyError("Wait for the reply to finish first.", "busy");
-    const sm = this.session.sessionManager;
-    const branch = historyOf(sm.getBranch());
+    if (this.harness.isRunning() || this.isCompacting()) throw new BusyError("Wait for the reply to finish first.", "busy");
+    const branch = this.harness.branch();
     const from = since ? branch.findIndex((h) => h.id === since) + 1 : 0;
     const taken = branch
       .slice(from)
@@ -2444,11 +2425,11 @@ class ChatSession {
       }
       const marks = this.senderMarks.filter((m) => m.itemId === item.id);
       for (const m of marks) this.dropSenderMark(m);
-      const id = sm.appendMessage({ role: "user", content: [{ type: "text", text: item.text }, ...(item.images ?? [])], timestamp: Date.now() });
+      const id = this.harness.appendUserMessage(item.text, item.images);
       const sender = senderOfItem(item);
-      const markerId = sender ? appendSenderMarker(piSessionState(sm), id, sender) : null;
+      const markerId = sender ? appendSenderMarker(this.harness.state, id, sender) : null;
       const items = [id, markerId].flatMap((eid) => {
-        const entry = eid ? toHEntry(sm.getEntry(eid)) : null;
+        const entry = eid ? this.harness.entry(eid) : null;
         return entry ? rowsOfEntry(entry) : [];
       });
       if (items.length) this.broadcast({ type: "append", items });
@@ -2457,8 +2438,8 @@ class ChatSession {
     if (n) {
       markOwned(this.path);
       // The agent's context is the session's projection, re-read after a write outside a run, as
-      // the SDK does for its own (agent-session.js _refreshFinalizedContext, 0.87.1).
-      (this.session as unknown as { _refreshFinalizedContext(): void })._refreshFinalizedContext();
+      // the SDK does for its own (P6 refresh-context).
+      this.harness.refreshContext();
     }
     return n;
   }
@@ -2471,11 +2452,10 @@ class ChatSession {
   appendStateRow<T>(kind: StateKind<T>, data: T): string {
     assertNotLive(this.path);
     this.assertNoForeignWrites();
-    if (this.session.isStreaming || this.isCompacting()) throw new BusyError("Wait for the reply to finish first.", "busy");
-    const sm = this.session.sessionManager;
-    const id = piSessionState(sm).append(kind, data);
+    if (this.harness.isRunning() || this.isCompacting()) throw new BusyError("Wait for the reply to finish first.", "busy");
+    const id = this.harness.state.append(kind, data);
     markOwned(this.path);
-    const entry = toHEntry(sm.getEntry(id));
+    const entry = this.harness.entry(id);
     if (entry) {
       const items = rowsOfEntry(entry);
       if (items.length) this.broadcast({ type: "append", items });
@@ -2520,7 +2500,7 @@ class ChatSession {
     const data: OverseerDialogAnswerData = { v: 1, title, answer, ...(overseerId ? { overseerId } : {}) };
     const markerId = this.state.append(OVERSEER_DIALOG_ANSWER, data);
     markOwned(this.path);
-    const marker = liveRead(this.session).entry(markerId);
+    const marker = this.harness.entry(markerId);
     if (marker) {
       const items = rowsOfEntry(marker);
       if (items.length) this.broadcast({ type: "append", items });
@@ -2536,34 +2516,30 @@ class ChatSession {
   async setModelRef(ref: string, opts: { save?: boolean } = {}): Promise<void> {
     assertNotLive(this.path);
     this.assertNoForeignWrites();
-    if (this.session.isStreaming) throw new Error("Cannot switch models while the agent is running; wait or abort first");
-    const available = await this.runtime.services.modelRuntime.getAvailable();
+    if (this.harness.isRunning()) throw new Error("Cannot switch models while the agent is running; wait or abort first");
+    const found = await this.harness.findModel(ref);
     // The user's own policy first: a model turned off in Settings → Models is refused
     // whether or not it has credentials, and nothing is written (server/model-policy.ts).
     const denial = modelDenial(readModelPolicy(), ref);
     if (denial) throw new Error(denial);
-    const model = available.find((m) => `${m.provider}/${m.id}` === ref);
-    if (!model) {
-      const known = this.runtime.services.modelRuntime.getModel(ref.split("/")[0] ?? "", ref.slice(ref.indexOf("/") + 1));
-      throw new Error(known ? `No credentials configured for ${ref}` : `Unknown model: ${ref || "(empty ref)"}`);
-    }
+    if (!found.ok) throw new Error(found.error);
     // Re-check after the async lookup: a TUI/foreign writer may have appeared meanwhile.
     // BusyError propagates to `fail`, which maps it to its busy/recent code.
     assertNotLive(this.path);
     this.assertNoForeignWrites();
-    if (this.session.isStreaming) throw new Error("Cannot switch models while the agent is running; wait or abort first");
+    if (this.harness.isRunning()) throw new Error("Cannot switch models while the agent is running; wait or abort first");
     this.flushDeferredAppends(); // keep open-time entries before this model_change
-    await this.session.setModel(model);
-    this.broadcast({ type: "model", model: modelLabel(this.session) ?? ref });
+    await this.harness.setModel(found.model);
+    this.broadcast({ type: "model", model: this.harness.model()?.ref ?? ref });
     // setModel re-clamps the level to the new model's ladder; the pane needs that too.
-    this.broadcast({ type: "thinking", level: this.session.thinkingLevel });
+    this.broadcast({ type: "thinking", level: this.harness.thinking() });
     // Only the user's pick saves: the Overseer's own chat records it in overseer.json, and a session
     // with no messages yet makes it the next new session's default. A programmatic switch (the
     // Overseer acting on a session, Settings → Overseer) never becomes anyone's default.
     if (opts.save !== true) return;
     // The level too: setModel re-clamped it, and the next conversation is seeded from the file.
-    if (this.overseer) overseerRuntime?.saveChoice({ model: ref, thinking: this.session.thinkingLevel });
-    else if (this.specialEntry?.saveChoice) this.specialEntry.saveChoice(this.path, { model: ref, thinking: this.session.thinkingLevel });
+    if (this.overseer) overseerRuntime?.saveChoice({ model: ref, thinking: this.harness.thinking() });
+    else if (this.specialEntry?.saveChoice) this.specialEntry.saveChoice(this.path, { model: ref, thinking: this.harness.thinking() });
     // Another special kind (a baton) keeps the pick in its own file only: never the host's default.
     else if (!this.specialEntry && this.isPristine()) saveDefaults({ model: ref });
   }
@@ -2574,13 +2550,13 @@ class ChatSession {
     // setThinkingLevel appends a thinking_level_change entry: same write guards as set_model.
     assertNotLive(this.path);
     this.assertNoForeignWrites();
-    if (this.session.isStreaming) throw new Error("Cannot change thinking while the agent is running; wait or abort first");
+    if (this.harness.isRunning()) throw new Error("Cannot change thinking while the agent is running; wait or abort first");
     if (!(THINKING_LEVELS as readonly string[]).includes(level)) throw new Error(`Unknown thinking level: ${level || "(empty)"}`);
     this.flushDeferredAppends(); // keep open-time entries before this thinking_level_change
     // The SDK clamps to what the model supports, so the echo is the effective level.
-    const before = this.session.thinkingLevel;
-    this.session.setThinkingLevel(level as Parameters<AgentSession["setThinkingLevel"]>[0]);
-    const after = this.session.thinkingLevel;
+    const before = this.harness.thinking();
+    this.harness.setThinking(level);
+    const after = this.harness.thinking();
     this.broadcast({ type: "thinking", level: after });
     // The SDK's appendThinkingLevelChange emits no entry_appended (only the extension
     // appendEntry API does), so the "Thinking: X" row is synthesized here; the next
@@ -2604,7 +2580,8 @@ class ChatSession {
     const code = errorCode(err);
     // The turn failed on this session's model: name its provider (this session's model cannot move
     // mid-turn — switches are idle-only), so the limit row never has to read the provider out of text.
-    this.broadcast({ type: "error", code, message: err instanceof Error ? err.message : String(err), ...(this.session.model?.provider ? { provider: this.session.model.provider } : {}) });
+    const provider = this.harness.model()?.provider;
+    this.broadcast({ type: "error", code, message: err instanceof Error ? err.message : String(err), ...(provider ? { provider } : {}) });
   }
 
   handle(client: ChatClient, msg: ChatClientMessage): void {
@@ -2802,11 +2779,10 @@ class ChatSession {
    * live rows and would wipe the turn being streamed. That refresh runs before the settle's own
    * queue wake.
    */
-  private onCompactionEvent(event: { type: string }): boolean {
+  private onCompactionEvent(event: HarnessEvent): boolean {
     try {
-      const result = (event as { result?: unknown }).result;
-      if (event.type === "compaction_end" && !this.compactRunning && typeof result === "object" && result !== null) {
-        if (this.session.isStreaming) {
+      if (event.type === "compaction.end" && !this.compactRunning && event.wrote) {
+        if (this.harness.isRunning()) {
           this.refreshAtSettle = true;
           return false;
         }
@@ -2821,7 +2797,7 @@ class ChatSession {
         });
         return true;
       }
-      if (event.type === "agent_settled" && this.refreshAtSettle) {
+      if (event.type === "run.settled" && this.refreshAtSettle) {
         this.refreshAtSettle = false;
         this.refreshAfterCompaction()();
       }
@@ -2853,14 +2829,14 @@ class ChatSession {
     // there is nothing to queue behind, so it starts its turn straight away (and the
     // extension-command split lives in handOffQueued, which both paths reach). While a
     // compaction runs it is held the same way, and goes in when the compaction ends.
-    if (this.session.isStreaming || this.isCompacting()) {
+    if (this.harness.isRunning() || this.isCompacting()) {
       this.queue.enqueue({ kind: "steer", text, images: images as QueueImage[] | undefined, origin: "client", id: clientId });
       if (clientId) client.send({ type: "send_ack", clientId, queued: true });
       return;
     }
     this.flushDeferredAppends();
     if (clientId) client.send({ type: "send_ack", clientId, queued: false });
-    this.toSdk("client", () => this.session.prompt(text, { images }))
+    this.toSdk("client", () => this.harness.send(text, { images }))
       .catch((err) => {
         if (!this.heldForCompaction(err, { kind: "steer", text, images: images as QueueImage[] | undefined, origin: "client", id: clientId })) throw err;
       })
@@ -2950,7 +2926,7 @@ class ChatSession {
   private async regenerate(client: ChatClient, id: string, entryId: string): Promise<void> {
     const refuse = (reason: RegenerateRefusal, message: string) =>
       client.send({ type: "regenerate_refused", id, entryId, reason, message });
-    const target = resolveRegenerate(liveRead(this.session).branch(), entryId);
+    const target = resolveRegenerate(this.harness.branch(), entryId);
     if (!target.ok) return refuse(target.reason, target.message);
     try {
       this.assertModelAllowed();
@@ -3006,10 +2982,10 @@ class ChatSession {
       this.lastWorkersJson = JSON.stringify(workers);
       this.broadcast(workers);
     }
-    this.modeState = resolveChatMode(this.session.sessionManager.getBranch());
+    this.modeState = chatModeOf(this.harness.state.branch());
     this.broadcast(this.modeMessage());
     this.sendSandbox((m) => this.broadcast(m)); // the extension re-restores on session_tree too
-    const login = claudeLoginAfterHello(this.session.sessionManager.getBranch(), undefined, { pending: this.loginPending }); // the new branch's newest entry
+    const login = claudeLoginAfterHello(this.harness.branch(), undefined, { pending: this.loginPending }); // the new branch's newest entry
     if (login) this.broadcast(login);
     pushLinks(this); // after every hello, as attach() does
     return () => sendHistory(cut, tails, (c) => this.clients.has(c));
@@ -3047,8 +3023,8 @@ class ChatSession {
     this.held = [wire];
     queueMicrotask(() => {
       try {
-        const id = writtenEntryId(this.session, message);
-        if (id !== undefined) wire.entryId = id;
+        const id = this.harness.persistedId(message);
+        if (id !== null) wire.entryId = id;
       } catch {
         // untagged: a client falls back to the rows it can see
       }
@@ -3076,8 +3052,8 @@ class ChatSession {
   /** A claude-code worker's spawn model from this session's manifests, folded once per entry count. */
   private spawnModels: { count: number; of: (id: string) => string | undefined } | null = null;
   private claudeSpawnModel(id: string): string | undefined {
-    const entries = this.session.sessionManager.getEntries();
-    if (this.spawnModels?.count !== entries.length) this.spawnModels = { count: entries.length, of: claudeSpawnModels(entries) };
+    const entries = this.harness.entries();
+    if (this.spawnModels?.count !== entries.length) this.spawnModels = { count: entries.length, of: claudeSpawnModels(extensionEntries(entries)) };
     return this.spawnModels.of(id);
   }
 
@@ -3229,7 +3205,7 @@ export function setLinksSource(fn: LinksSource | null): void {
 function pushLinks(chat: ChatSession, client?: ChatClient): void {
   const source = linksSource;
   if (!source) return;
-  source(chat.session.sessionId, chat.path)
+  source(chat.harness.id, chat.path)
     .then((links) => {
       if (chat.disposed) return;
       const msg: ChatServerMessage = { type: "links", links };
@@ -3246,7 +3222,7 @@ export function notifyLinksChanged(sessionIds: readonly string[]): void {
   const ids = new Set(sessionIds);
   for (const chat of heldChats()) {
     if (!chat.clients.size) continue;
-    if (chat.overseer || ids.has(chat.session.sessionId)) pushLinks(chat);
+    if (chat.overseer || ids.has(chat.harness.id)) pushLinks(chat);
   }
 }
 
@@ -3331,7 +3307,7 @@ export function pendingDialogCount(path: string): number {
 /** SessionSummary.busy: this server holds the runtime and an agent run is in progress. */
 export function isSessionBusy(path: string): boolean {
   const chat = held.get(path);
-  return !!chat && !chat.disposed && chat.session.isStreaming;
+  return !!chat && !chat.disposed && chat.harness.isRunning();
 }
 
 /** A model as the runtime resolves it, without naming pi-ai's `Model` (not re-exported by the SDK entry). */

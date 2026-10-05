@@ -88,13 +88,13 @@ const client = {
 };
 
 describe("input source (§app.overseer/input-source)", () => {
-  test("inputSourceOf: interactive only for what a person typed", () => {
-    assert.equal(inputSourceOf({ origin: "client" }), "interactive");
-    assert.equal(inputSourceOf({ origin: "server", byPerson: true }), "interactive", "a group batch");
-    assert.equal(inputSourceOf({ origin: "server", baton: { by: "p1" } }), "interactive", "a baton participant");
-    assert.equal(inputSourceOf({ origin: "server" }), "rpc", "a brief, a schedule, another session");
-    assert.equal(inputSourceOf({ origin: "server", overseer: {} }), "rpc", "sova_send");
-    assert.equal(inputSourceOf({ origin: "client", overseer: {} }), "rpc", "a project overseer's prompt");
+  test("inputSourceOf: user (pi's interactive) only for what a person typed", () => {
+    assert.equal(inputSourceOf({ origin: "client" }), "user");
+    assert.equal(inputSourceOf({ origin: "server", byPerson: true }), "user", "a group batch");
+    assert.equal(inputSourceOf({ origin: "server", baton: { by: "p1" } }), "user", "a baton participant");
+    assert.equal(inputSourceOf({ origin: "server" }), "queued", "a brief, a schedule, another session");
+    assert.equal(inputSourceOf({ origin: "server", overseer: {} }), "queued", "sova_send");
+    assert.equal(inputSourceOf({ origin: "client", overseer: {} }), "queued", "a project overseer's prompt");
   });
 
   test("a server prompt (a brief, auto-resume's report), sova_send and a group batch reach the extensions as rpc, rpc and interactive; a typed one as interactive", async () => {

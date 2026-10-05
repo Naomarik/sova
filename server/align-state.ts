@@ -1,4 +1,5 @@
 import { open } from "node:fs/promises";
+import type { HBlock } from "../shared/harness";
 import type { SessionAlign } from "../shared/protocol";
 import {
   alignResultOf,
@@ -16,7 +17,7 @@ import { restoreActive } from "../pi-config/extensions/mode/state.ts";
 import { isLinkMessage } from "../shared/link-message";
 import { isTopicBatch } from "../shared/topic-message";
 import { parseWakeNudge } from "../shared/wake";
-import { activeBranch, type Entry } from "./transcript";
+import { BranchScan, lineHead, lineMay, toHEntry } from "./harness/pi/reader";
 
 /**
  * The session list's side of alignments (§chat.alignment/session-mark): the mode extension's
@@ -172,22 +173,23 @@ async function hasMarker(path: string, from: number, size: number): Promise<bool
   }
 }
 
-/** pi writes type, id and parentId first; most lines need nothing more, so most are never JSON-parsed. */
-const HEAD = /^\{"type":"([^"]+)","id":"([^"]+)","parentId":(?:null|"([^"]*)")/;
-
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
-/** A line as a ScanEntry, or null for a blank or malformed one. */
+/** A block's text as the waiting rule joins a prompt: any block's `text` string, else "" (an unknown
+    block is read as it was written). */
+const blockText = (b: HBlock): string => {
+  const raw: unknown = b.type === "unknown" ? b.raw : b;
+  return isRecord(raw) && typeof raw.text === "string" ? raw.text : "";
+};
+
+/** A line as a ScanEntry, or null for a blank or malformed one. Most lines need only their place in
+    the tree (lineHead), so most are never JSON-parsed. */
 function compactLine(line: string): ScanEntry | null {
-  const head = HEAD.exec(line);
-  const wanted =
-    line.includes('"toolName":"align"') ||
-    line.includes('"customType":"align-doc"') ||
-    line.includes('"customType":"mode"') ||
-    line.includes('"message":{"role":"user"');
-  if (head && !wanted) return { type: head[1]!, id: head[2]!, parentId: head[3] ?? null };
+  const head = lineHead(line);
+  const wanted = lineMay(line, { tool: "align" }) || lineMay(line, { state: "align-doc" }) || lineMay(line, { state: "mode" }) || lineMay(line, "user");
+  if (head && !wanted) return { type: head.type, id: head.id, parentId: head.parentId };
   let v: unknown;
   try {
     v = JSON.parse(line);
@@ -198,17 +200,12 @@ function compactLine(line: string): ScanEntry | null {
   const e: ScanEntry = { type: v.type };
   if (typeof v.id === "string") e.id = v.id;
   if (typeof v.parentId === "string" || v.parentId === null) e.parentId = v.parentId as string | null;
-  if (v.type === "custom" && (v.customType === "align-doc" || v.customType === "mode")) {
-    e.customType = v.customType;
-    e.data = v.data;
-  }
-  const m = v.message;
-  if (v.type === "message" && isRecord(m)) {
-    if (m.role === "toolResult" && m.toolName === "align") e.message = { role: "toolResult", toolName: "align", isError: m.isError === true, details: m.details };
-    if (m.role === "user") {
-      const text = typeof m.content === "string" ? m.content : Array.isArray(m.content) ? m.content.map((b) => (isRecord(b) && typeof b.text === "string" ? b.text : "")).join("\n") : "";
-      if (parseWakeNudge(text) === null && !isLinkMessage(text) && !isTopicBatch(text)) e.userPrompt = true;
-    }
+  const h = toHEntry(v);
+  if (h?.kind === "state" && (h.key === "align-doc" || h.key === "mode")) Object.assign(e, { customType: h.key, data: h.data });
+  if (h?.kind === "tool-result" && h.tool === "align") e.message = { role: "toolResult", toolName: "align", isError: h.isError === true, details: h.details };
+  if (h?.kind === "user") {
+    const text = h.blocks.map(blockText).join("\n");
+    if (parseWakeNudge(text) === null && !isLinkMessage(text) && !isTopicBatch(text)) e.userPrompt = true;
   }
   return e;
 }
@@ -233,51 +230,6 @@ export function waitingAlignOf(branch: readonly ScanEntry[]): SessionAlign | und
   return sessionAlignOf(foldAlignments(branch).docs);
 }
 
-/** Reads [from, size) of the file and appends its complete lines to `into`; returns where they end. */
-async function appendLines(path: string, from: number, size: number, into: ScanEntry[]): Promise<number> {
-  const fh = await open(path, "r");
-  try {
-    const buf = Buffer.alloc(CHUNK);
-    let pos = from;
-    let carry = Buffer.alloc(0);
-    let consumed = from;
-    while (pos < size) {
-      const { bytesRead } = await fh.read(buf, 0, Math.min(buf.length, size - pos), pos);
-      if (bytesRead <= 0) break;
-      pos += bytesRead;
-      const data = carry.length > 0 ? Buffer.concat([carry, buf.subarray(0, bytesRead)]) : buf.subarray(0, bytesRead);
-      let start = 0;
-      for (let nl = data.indexOf(10, start); nl !== -1; nl = data.indexOf(10, start)) {
-        const line = data.toString("utf8", start, nl);
-        if (line.trim() !== "") {
-          const e = compactLine(line);
-          if (e) into.push(e);
-        }
-        start = nl + 1;
-      }
-      consumed += start;
-      carry = Buffer.from(data.subarray(start));
-    }
-    // A trailing partial line is left for the next read, which starts at its first byte.
-    return consumed;
-  } finally {
-    await fh.close();
-  }
-}
-
-/** Whether `offset` is still a line start in the file (the byte before it is a newline). */
-async function atLineStart(path: string, offset: number): Promise<boolean> {
-  if (offset === 0) return true;
-  const fh = await open(path, "r");
-  try {
-    const b = Buffer.alloc(1);
-    const { bytesRead } = await fh.read(b, 0, 1, offset - 1);
-    return bytesRead === 1 && b[0] === 10;
-  } finally {
-    await fh.close();
-  }
-}
-
 /**
  * A session file's alignments for the list, read incrementally. Until an `align` result appears the
  * file is only searched for the marker, resuming where the last search stopped. From then on its
@@ -293,17 +245,14 @@ export async function readAlignScan(path: string, size: number, prev: AlignScan 
       const found = await hasMarker(path, grown ? prev.size : 0, size);
       if (!found) return { size, found: false, summary: undefined };
     }
-    let entries: ScanEntry[];
-    let from: number;
-    if (grown && prev.found && prev.entries && (await atLineStart(path, prev.size))) {
-      entries = prev.entries;
-      from = prev.size;
-    } else {
-      entries = [];
-      from = 0;
+    // Carried on from the last read (BranchScan starts over itself when that no longer ends at a line start).
+    const scan = new BranchScan<ScanEntry>(compactLine);
+    if (grown && prev.found && prev.entries) {
+      scan.size = prev.size;
+      scan.items = prev.entries;
     }
-    const end = from === size ? size : await appendLines(path, from, size, entries);
-    return { size: end, found: true, summary: waitingAlignOf(activeBranch(entries as Entry[]) as ScanEntry[]), entries };
+    await scan.grow(path, size);
+    return { size: scan.size, found: true, summary: waitingAlignOf(scan.branch()), entries: scan.items };
   } catch {
     return { size, found: false, summary: undefined };
   }

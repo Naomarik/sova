@@ -2,6 +2,7 @@ import { existsSync, statSync } from "node:fs";
 import { open } from "node:fs/promises";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { HBlock } from "../shared/harness";
 import type { AttentionItem, AttentionKind, AttentionTier, ReadinessState, SessionReadiness, SessionSummary, WorktreeReadiness } from "../shared/protocol";
 import { parseWakeNudge } from "../shared/wake";
 import { isLinkMessage } from "../shared/link-message";
@@ -9,7 +10,7 @@ import { isTopicBatch } from "../shared/topic-message";
 import { canonical, normalizeMergeDetails, restoreActive, type TrackedWorktree, WORKTREE_MERGE_MESSAGE, WORKTREES_ENTRY_TYPE } from "../pi-config/extensions/worktrees/state.ts";
 import { deferredOf, followUpFor, type FollowUpInput, type MergeFollowUps } from "./merge-followup";
 import { asksUserOf } from "./signals-store";
-import { activeBranch, type Entry } from "./transcript";
+import { atLineStart, BranchScan, lineHead, lineMay, toHEntry } from "./harness/pi/reader";
 import { DIRTY_TTL_MS, execGit, type GitRunner, worktreeInsights, type WorktreeInsights, worktreeStamp } from "./worktrees";
 import { goneTreeState, type GoneState } from "./removed-worktrees";
 
@@ -295,22 +296,19 @@ interface ScanEntry {
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
-const textOf = (content: unknown): string =>
-  typeof content === "string" ? content : Array.isArray(content) ? content.map((b) => (isRecord(b) && b.type === "text" && typeof b.text === "string" ? b.text : "")).join("\n") : "";
+const textOf = (blocks: readonly HBlock[]): string => blocks.map((b) => (b.type === "text" && typeof b.text === "string" ? b.text : "")).join("\n");
 const timeOf = (v: unknown): number | undefined => (typeof v === "string" ? Date.parse(v) || undefined : typeof v === "number" ? v : undefined);
-
-const HEAD = /^\{"type":"([^"]+)","id":"([^"]+)","parentId":(?:null|"([^"]*)")/;
 
 /** A line as a ScanEntry. `checkIds` are the check calls seen so far (their results come after). */
 export function scanLine(line: string, checkIds: Set<string>): ScanEntry | null {
-  const head = HEAD.exec(line);
+  const head = lineHead(line);
   const wanted =
-    line.includes(`"customType":"${WORKTREES_ENTRY_TYPE}"`) ||
-    line.includes(`"customType":"${WORKTREE_MERGE_MESSAGE}"`) ||
-    line.includes('"role":"assistant"') ||
-    line.includes('"role":"user"') ||
-    (line.includes('"role":"toolResult"') && [...checkIds].some((id) => line.includes(id)));
-  if (head && !wanted) return { type: head[1]!, id: head[2]!, parentId: head[3] ?? null };
+    lineMay(line, { state: WORKTREES_ENTRY_TYPE }) ||
+    lineMay(line, { note: WORKTREE_MERGE_MESSAGE }) ||
+    lineMay(line, "assistant") ||
+    lineMay(line, "user") ||
+    (lineMay(line, "toolResult") && [...checkIds].some((id) => line.includes(id)));
+  if (head && !wanted) return { type: head.type, id: head.id, parentId: head.parentId };
   let v: unknown;
   try {
     v = JSON.parse(line);
@@ -323,41 +321,36 @@ export function scanLine(line: string, checkIds: Set<string>): ScanEntry | null 
   if (typeof v.parentId === "string" || v.parentId === null) e.parentId = v.parentId as string | null;
   const at = timeOf(v.timestamp);
   if (at !== undefined) e.at = at;
-  if (v.type === "custom" && v.customType === WORKTREES_ENTRY_TYPE) {
-    e.customType = v.customType;
-    e.data = v.data;
-  }
-  if (v.type === "custom_message" && v.customType === WORKTREE_MERGE_MESSAGE) {
-    const d = normalizeMergeDetails(v.details);
+  const h = toHEntry(v);
+  if (h?.kind === "state" && h.key === WORKTREES_ENTRY_TYPE) Object.assign(e, { customType: h.key, data: h.data });
+  if (h?.kind === "note" && !h.inMessage && h.noteType === WORKTREE_MERGE_MESSAGE) {
+    const d = normalizeMergeDetails(h.details);
     if (d) e.merge = { path: d.path, branch: d.branch, target: d.target, sha: d.sha, commits: d.commits, added: d.added, removed: d.removed, fastForward: d.fastForward };
   }
-  const m = v.message;
-  if (v.type === "message" && isRecord(m)) {
-    if (m.role === "assistant") {
-      // The closing spec lines go BEFORE the tail is kept, so a long one never crowds out the body;
-      // a Deferred: line rides after the tail for the follow-up check's cue.
-      const text = textOf(m.content);
-      const body = replyBody(text);
-      const kept = body.length > REPLY_KEEP ? body.slice(-REPLY_KEEP) : body;
-      const deferred = body.length < text.trimEnd().length ? deferredOf(text.slice(body.length)) : undefined;
-      e.reply = { stop: m.stopReason === "stop", text: deferred ? `${kept}\n${deferred.slice(0, DEFERRED_KEEP)}` : kept };
-      if (e.at === undefined) e.at = timeOf(m.timestamp);
-      const calls: string[] = [];
-      for (const b of Array.isArray(m.content) ? m.content : []) {
-        if (!isRecord(b) || b.type !== "toolCall" || typeof b.id !== "string" || b.name !== "bash") continue;
-        const cmd = isRecord(b.arguments) && typeof b.arguments.command === "string" ? b.arguments.command : "";
-        if (CHECK_RE.test(cmd)) calls.push(b.id);
-      }
-      if (calls.length) {
-        e.checkCalls = calls;
-        for (const c of calls) checkIds.add(c);
-      }
-    } else if (m.role === "toolResult" && typeof m.toolCallId === "string" && checkIds.has(m.toolCallId)) {
-      e.check = { toolCallId: m.toolCallId, ok: !checkFailed(m.isError === true, textOf(m.content).slice(-4000)) };
-    } else if (m.role === "user") {
-      const text = textOf(m.content);
-      if (parseWakeNudge(text) === null && !isLinkMessage(text) && !isTopicBatch(text)) e.userPrompt = true;
+  if (h?.kind === "assistant") {
+    // The closing spec lines go BEFORE the tail is kept, so a long one never crowds out the body;
+    // a Deferred: line rides after the tail for the follow-up check's cue.
+    const text = textOf(h.blocks);
+    const body = replyBody(text);
+    const kept = body.length > REPLY_KEEP ? body.slice(-REPLY_KEEP) : body;
+    const deferred = body.length < text.trimEnd().length ? deferredOf(text.slice(body.length)) : undefined;
+    e.reply = { stop: h.stop === "stop", text: deferred ? `${kept}\n${deferred.slice(0, DEFERRED_KEEP)}` : kept };
+    if (e.at === undefined) e.at = timeOf(h.sentAt);
+    const calls: string[] = [];
+    for (const b of h.blocks) {
+      if (b.type !== "toolCall" || typeof b.id !== "string" || b.name !== "bash") continue;
+      const cmd = isRecord(b.arguments) && typeof b.arguments.command === "string" ? b.arguments.command : "";
+      if (CHECK_RE.test(cmd)) calls.push(b.id);
     }
+    if (calls.length) {
+      e.checkCalls = calls;
+      for (const c of calls) checkIds.add(c);
+    }
+  } else if (h?.kind === "tool-result" && typeof h.callId === "string" && checkIds.has(h.callId)) {
+    e.check = { toolCallId: h.callId, ok: !checkFailed(h.isError === true, textOf(h.blocks).slice(-4000)) };
+  } else if (h?.kind === "user") {
+    const text = textOf(h.blocks);
+    if (parseWakeNudge(text) === null && !isLinkMessage(text) && !isTopicBatch(text)) e.userPrompt = true;
   }
   return e;
 }
@@ -412,48 +405,6 @@ async function hasMarker(path: string, from: number, size: number): Promise<bool
   }
 }
 
-async function appendLines(path: string, from: number, size: number, into: ScanEntry[], checkIds: Set<string>): Promise<number> {
-  const fh = await open(path, "r");
-  try {
-    const buf = Buffer.alloc(CHUNK);
-    let pos = from;
-    let carry = Buffer.alloc(0);
-    let consumed = from;
-    while (pos < size) {
-      const { bytesRead } = await fh.read(buf, 0, Math.min(buf.length, size - pos), pos);
-      if (bytesRead <= 0) break;
-      pos += bytesRead;
-      const data = carry.length > 0 ? Buffer.concat([carry, buf.subarray(0, bytesRead)]) : buf.subarray(0, bytesRead);
-      let start = 0;
-      for (let nl = data.indexOf(10, start); nl !== -1; nl = data.indexOf(10, start)) {
-        const line = data.toString("utf8", start, nl);
-        if (line.trim() !== "") {
-          const e = scanLine(line, checkIds);
-          if (e) into.push(e);
-        }
-        start = nl + 1;
-      }
-      consumed += start;
-      carry = Buffer.from(data.subarray(start));
-    }
-    return consumed;
-  } finally {
-    await fh.close();
-  }
-}
-
-async function atLineStart(path: string, offset: number): Promise<boolean> {
-  if (offset === 0) return true;
-  const fh = await open(path, "r");
-  try {
-    const b = Buffer.alloc(1);
-    const { bytesRead } = await fh.read(b, 0, 1, offset - 1);
-    return bytesRead === 1 && b[0] === 10;
-  } finally {
-    await fh.close();
-  }
-}
-
 /**
  * A session file's readiness facts, read incrementally like the align read (server/align-state.ts):
  * a file that never wrote a `worktrees` entry is only searched for the marker; once one is seen,
@@ -466,20 +417,17 @@ export async function readReadinessScan(path: string, size: number, prev: Readin
       const found = await hasMarker(path, grown ? prev.size : 0, size);
       if (!found) return { scan: { size, found: false }, facts: null };
     }
-    let entries: ScanEntry[];
-    let checkIds: Set<string>;
-    let from: number;
-    if (grown && prev.found && prev.entries && prev.checkIds && (await atLineStart(path, prev.size))) {
-      entries = [...prev.entries];
-      checkIds = new Set(prev.checkIds);
-      from = prev.size;
-    } else {
-      entries = [];
-      checkIds = new Set();
-      from = 0;
+    // Carried on from a copy of the last read while it still ends at a line start; else read again
+    // from the beginning, with no check ids carried.
+    const resume = grown && prev.found && prev.entries && prev.checkIds && (await atLineStart(path, prev.size));
+    const checkIds = new Set(resume ? prev.checkIds : []);
+    const scan = new BranchScan<ScanEntry>((line) => scanLine(line, checkIds));
+    if (resume) {
+      scan.size = prev.size;
+      scan.items = [...prev.entries!];
     }
-    const end = from === size ? size : await appendLines(path, from, size, entries, checkIds);
-    return { scan: { size: end, found: true, entries, checkIds }, facts: factsOf(activeBranch(entries as Entry[]) as ScanEntry[]) };
+    await scan.grow(path, size);
+    return { scan: { size: scan.size, found: true, entries: scan.items, checkIds }, facts: factsOf(scan.branch()) };
   } catch {
     return { scan: { size, found: false }, facts: null };
   }

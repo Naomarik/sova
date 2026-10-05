@@ -17,7 +17,9 @@ The run: one process, a throwaway `PI_CODING_AGENT_DIR`, the server imported (PO
 (`scripted`, and `scripted-think` with a thinking ladder), the repo's mode extension by path, a fixture
 extension whose tool opens a `select`, and `../../testing/compact-fixture-ext.ts`, which makes pi's real
 compaction write a summary it supplies (with a fixed `tokensBefore`). The links source is replaced by one
-that answers `[]` in a microtask, so each `links` frame stays at its call site.
+that answers `[]` in a microtask, so each `links` frame stays at its call site. `PI_PACKAGE_DIR` points pi
+at a link under the throwaway root, so the README/docs/examples paths in pi's system prompt (which the
+compaction's `estimatedTokensAfter` counts) do not carry the checkout's path length.
 
 Each scenario leaves two files:
 
@@ -60,3 +62,10 @@ Not covered: an extension's follow-up sharing the SDK queue (`shared_queue` refu
 extension's `ctx.compact()`, the `already processing` link retry, `/claude-login`, `/sandbox` and
 `agent-resume` (their extensions are not loaded here), and a turn-2 error that rejects turn 1's `prompt()`
 (a scripted provider error never rejects: pi records it as an assistant error message).
+
+## Re-records
+
+- 2026-10-05 S7, S8 (`.jsonl`, `.trace`): pi's package dir moved from `<REPO>/node_modules/.pnpm/…` to the
+  fixed-length `<DIR>/pi` (`PI_PACKAGE_DIR`). The system prompt's three pi paths had made
+  `estimatedTokensAfter` depend on the checkout's path length (S7/S8 failed in other worktrees); it is now
+  2815 in S8. Recorded on feat/harness-integration f59cc66; no other fixture changed.

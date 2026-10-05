@@ -26,7 +26,7 @@
 // One process, one throwaway PI_CODING_AGENT_DIR (models.json registers the scripted models), the
 // server imported (PORT=0) so the Overseer and the baton are wired. ~/.pi is never read or written.
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
@@ -50,6 +50,12 @@ mkdirSync(sessionsDir, { recursive: true });
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 const cwd = join(root, "cwd");
 mkdirSync(cwd, { recursive: true });
+// pi's system prompt names its README, docs and examples by the package's path, and the compaction's
+// `estimatedTokensAfter` counts the system prompt's characters: from node_modules, that path's length
+// is the checkout's. PI_PACKAGE_DIR (pi's own override) points pi at a link under the root instead.
+const piPackage = realpathSync(join(REPO, "node_modules/@earendil-works/pi-coding-agent"));
+symlinkSync(piPackage, join(root, "pi"));
+process.env.PI_PACKAGE_DIR = join(root, "pi");
 // The scripted model, and a second one with a thinking ladder for the model/thinking switch (S14).
 const models = scriptedModelsJson();
 models.providers.scripted.models.push({ id: "scripted-think", reasoning: true, contextWindow: SCRIPTED_MODEL.contextWindow, maxTokens: SCRIPTED_MODEL.maxTokens } as never);

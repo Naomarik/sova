@@ -69,7 +69,7 @@ B {"type":"queue","items":[{"id":"c3","kind":"followUp","state":"queued","text":
 B {"type":"send_ack","clientId":"c3","queued":true}
 step release the summary
 write {"id":"00000008","type":"compaction"}
-A {"type":"event","event":{"type":"compaction_end","reason":"manual","result":{"summary":"Two greetings.","firstKeptEntryId":"00000007","tokensBefore":1234,"estimatedTokensAfter":2913},"aborted":false,"willRetry":false}}
+A {"type":"event","event":{"type":"compaction_end","reason":"manual","result":{"summary":"Two greetings.","firstKeptEntryId":"00000007","tokensBefore":1234,"estimatedTokensAfter":2812},"aborted":false,"willRetry":false}}
 B {"type":"event","v":2,"event":{"type":"activity","what":"compaction","phase":"end","wrote":true}}
 A {"type":"hello","isStreaming":false,"isCompacting":false,"model":"scripted/scripted","thinking":"off","items":["00000001 info","00000002 info","00000004 user","00000005:0 assistant-text","00000006 user","00000007:0 assistant-text","00000008 info"]}
 B {"type":"hello","isStreaming":false,"isCompacting":false,"model":"scripted/scripted","thinking":"off","items":["00000001 info","00000002 info","00000004 user","00000005:0 assistant-text","00000006 user","00000007:0 assistant-text","00000008 info"]}

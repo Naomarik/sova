@@ -3063,6 +3063,43 @@ a.group-option { color: inherit; text-decoration: none; }
 .toolcard-code-del { border-left: calc(var(--stroke-icon) * 2) solid var(--diff-del-ink); }
 .toolcard-code-add { border-left: calc(var(--stroke-icon) * 2) solid var(--diff-add-ink); }
 
+/* codemode (§chat.transcript/codemode-card): the folded line's "4 calls · 1 failed", and the
+   script's calls, one row each. The plain body inside its body gives way to it. */
+.toolcard-calls { flex: none; white-space: nowrap; color: var(--color-ink-muted); }
+.toolcard-body .toolcard-body { display: contents; }
+.codemode-calls {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-sm);
+  background: var(--color-surface);
+}
+.codemode-call { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-2) var(--space-3); }
+.codemode-call + .codemode-call { border-top: var(--stroke-thin) solid var(--color-border); }
+.codemode-call-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  color: var(--color-ink-2);
+}
+.codemode-call-name { flex: none; font-weight: var(--fw-semibold); color: var(--color-ink); }
+.codemode-call-kind { flex: none; font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.codemode-call-args { flex: 1 1 12ch; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-ink-muted); }
+.codemode-call-meta { flex: none; color: var(--color-ink-muted); font-variant-numeric: tabular-nums; }
+.codemode-call-error {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  color: var(--status-error);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 
 /* ---- INFO ROW. Model change, compaction, labels, branch summaries: a quiet
    centred line between rules. Facts in mono. ---------------------------- */

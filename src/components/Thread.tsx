@@ -994,6 +994,7 @@ export function HistoryItems(props: {
                       args={toolCallArgs(item)}
                       summary={item.tool?.summary}
                       stats={(item.text === "edit" || item.text === "write") && item.toolCallId ? results().get(item.toolCallId)?.tool?.stats : undefined}
+                      calls={item.toolCallId ? results().get(item.toolCallId)?.tool?.calls : undefined}
                       lazy={lazy()}
                       details={resultDetails()}
                       status={status()}

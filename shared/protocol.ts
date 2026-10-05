@@ -269,6 +269,9 @@ export interface ToolRowInfo {
   /** tool-result whose details record a patch: its "+n −m" (src/lib/tool-diff-stats.ts summaryStats,
       counted as for an edit). The card shows it only when its call is an edit or a write. */
   stats?: { added: number; removed: number };
+  /** tool-result of a codemode script (§chat.transcript/codemode-card): its calls, failed and still running
+      as recorded, for the folded line's "4 calls · 1 failed" before the card's content is fetched. */
+  calls?: { total: number; failed: number; running: number };
   /** EAGER_TOOLS only: the call's arguments as recorded. */
   args?: unknown;
   /** EAGER_TOOLS only: the result's output (its text blocks joined, as the card shows it). */

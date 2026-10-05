@@ -115,7 +115,7 @@ an H1's lede) and `whole` (an H1's lede plus all its H2s), `what` and `whatSourc
 (`prose|blockquote|none`), and, for `out`, `in` and `mentions`, `why` and `whySource`
 (`prose|comment|declared|none`; `declared` is a note's `about` field when its prose names nothing). A record with
 `agreed` adds `agreed: {by, at, built}` (built: `code` plus evidence `reviewed` or `verified`), and
-the text reads `agreed <at> by <by>, not built` (or `, built`); `read` items carry it too. What is the first prose sentence after the heading: fences, comments,
+the text reads `agreed (decision) <at> by <by>, not built` (or `, built`); `read` items carry it too. What is the first prose sentence after the heading: fences, comments,
 tables, thematic breaks and headings skipped, a blockquote only when nothing else is prose, at least 20 and at most
 200 characters, never code. Why is the first visible-prose sentence of the linking claim naming the
 other, else an HTML comment naming it, else exactly `not mentioned in this claim's text`. Mentions

@@ -328,7 +328,7 @@ export function agreedOf(rec) {
   if (!a || typeof a !== "object" || typeof a.by !== "string" || typeof a.at !== "string") return {};
   return { agreed: { by: a.by, at: a.at, built: !!rec.code?.length && ["reviewed", "verified"].includes(rec.evidence) } };
 }
-export const agreedText = (x) => (x.agreed ? ` · agreed ${x.agreed.at} by ${x.agreed.by}, ${x.agreed.built ? "built" : "not built"}` : "");
+export const agreedText = (x) => (x.agreed ? ` · agreed (decision) ${x.agreed.at} by ${x.agreed.by}, ${x.agreed.built ? "built" : "not built"}` : "");
 
 function line(ctx, n) {
   const d = ctx.decls.get(n.id), rec = ctx.claims.get(n.id), w = n.src ? whyOf(n.src, n.target) : null;

@@ -340,11 +340,11 @@ test("agreed records show who agreed and when, and whether built, in toc and rea
   assert.deepEqual(l["§c/quiet"].agreed, { by: "pm", at: "2026-10-01", built: true });
   assert.equal(l["§b/dep"].agreed, undefined, "no agreed field, no agreed key");
   const text = cli(root, ["toc", "§a.top/seed", "--dir", "out"], { json: false }).r.stdout;
-  assert.match(text, /§a\.top\/hint — Hint .* · agreed 2026-10-05 by operator, not built$/m);
-  assert.match(text, /§c\/quiet — Quiet .* · agreed 2026-10-01 by pm, built$/m);
+  assert.match(text, /§a\.top\/hint — Hint .* · agreed \(decision\) 2026-10-05 by operator, not built$/m);
+  assert.match(text, /§c\/quiet — Quiet .* · agreed \(decision\) 2026-10-01 by pm, built$/m);
   assert.deepEqual(toc(root, "§a.top/hint", "up").seed.agreed, { by: "operator", at: "2026-10-05", built: false });
   assert.deepEqual(read(root, ["§a.top/hint"]).items[0].agreed, { by: "operator", at: "2026-10-05", built: false });
-  assert.match(cli(root, ["read", "§a.top/hint"], { json: false }).r.stdout, /^── §a\.top\/hint — Hint .* · agreed 2026-10-05 by operator, not built$/m);
+  assert.match(cli(root, ["read", "§a.top/hint"], { json: false }).r.stdout, /^── §a\.top\/hint — Hint .* · agreed \(decision\) 2026-10-05 by operator, not built$/m);
 });
 
 test("read names the claim's own code files (12, then a count, missing marked); toc's seed counts them", () => {

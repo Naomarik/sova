@@ -41,6 +41,26 @@ export const SM_MEMBERS = [
 /** Temporary bridges out of the adapter, counted as reaches by import binding. */
 export const BRIDGES = ["liveRead", "stateOf"];
 export const WRITERS = ["appendCustomEntry", "appendEntry", "appendSpecialEntry"];
+/** pi's AgentSession members (`agent-session.d.ts`), counted when read through a `.session` property in
+    server/ (§app.harness/session-reaches). `sessionId` and `sessionFile` are left out: Sova's own records
+    use those names (a queue item's `session.sessionId`, a live record's `session.sessionFile`). */
+export const AGENT_SESSION_MEMBERS = [
+  "abort", "abortBash", "abortBranchSummary", "abortCompaction", "abortRetry", "agent", "autoCompactionEnabled", "autoRetryEnabled",
+  "bindExtensions", "cacheWarmingStatus", "clearQueue", "compact", "createReplacedSessionContext", "cycleModel", "cycleThinkingLevel",
+  "dispose", "executeBash", "exportToHtml", "exportToJsonl", "extensionRunner", "followUp", "followUpMode", "getActiveToolNames",
+  "getAllTools", "getAvailableThinkingLevels", "getContextUsage", "getFollowUpMessages", "getLastAssistantText", "getSessionStats",
+  "getSteeringMessages", "getToolDefinition", "getUserMessagesForForking", "hasExtensionHandlers", "hasPendingBashMessages",
+  "isBashRunning", "isCompacting", "isIdle", "isRetrying", "isStreaming", "messages", "model", "modelRuntime", "navigateTree",
+  "pendingMessageCount", "prompt", "promptTemplates", "recordBashResult", "refreshContext", "reload", "resourceLoader", "retryAttempt",
+  "scopedModels", "sendCustomMessage", "sendUserMessage", "sessionManager", "sessionName", "setActiveToolsByName",
+  "setAutoCompactionEnabled", "setAutoRetryEnabled", "setCacheWarmingMode", "setFollowUpMode", "setModel", "setScopedModels",
+  "setSessionName", "setSteeringMode", "setThinkingLevel", "settingsManager", "state", "steer", "steeringMode", "subscribe",
+  "summarizeForBugReport", "supportsThinking", "systemPrompt", "thinkingLevel", "waitForIdle",
+];
+/** pi's AgentSessionRuntime members, counted when read through a `.runtime` property in server/. */
+export const RUNTIME_MEMBERS = ["session", "services"];
+/** The hosted chat, which holds pi's agent session until M5 ends (its reaches are counted as `reaches`). */
+export const SESSION_REACH_EXEMPT = ["server/chat-manager.ts"];
 /** The one file only the adapter may import (it reads pi worker transcripts). */
 export const PI_ADAPTER_FILE = "pi-config/extensions/subagents/adapters/pi.ts";
 
@@ -60,6 +80,8 @@ export interface FileScan {
   shapes: Hit[];
   reaches: Hit[];
   writers: Hit[];
+  /** pi agent-session members read through `.session` (or runtime members through `.runtime`). */
+  sessionReaches: Hit[];
   /** Functions that forward their own parameter as a written entry's type, by name. */
   wrappers: { name: string; line: number }[];
   violations: Violation[];
@@ -167,7 +189,7 @@ export function zoneOf(path: string): { scanned: boolean; counted: boolean; uiRu
 
 /** Scans one file's text as if it sat at `path` (repo-relative). */
 export function scanText(path: string, text: string): FileScan {
-  const out: FileScan = { path, imports: null, importHits: [], calls: [], shapes: [], reaches: [], writers: [], wrappers: [], violations: [], edges: [], imported: [] };
+  const out: FileScan = { path, imports: null, importHits: [], calls: [], shapes: [], reaches: [], writers: [], sessionReaches: [], wrappers: [], violations: [], edges: [], imported: [] };
   const zone = zoneOf(path);
   if (!zone.scanned) return out;
   const rawLayer = RAW_SOURCES.some((r) => sameModule(path, r));
@@ -241,6 +263,9 @@ export function scanText(path: string, text: string): FileScan {
         }
 
   const counted = zone.counted;
+  const sessionCounted = counted && path.startsWith("server/") && !SESSION_REACH_EXEMPT.includes(path);
+  /** `x.session` / `x?.session` / `x["session"]` (or `runtime`): the receiver of a member read. */
+  const throughProp = (e: ts.Node | undefined, name: string) => !!e && memberRead(e) === name && !ts.isBindingElement(e);
   const visit = (n: ts.Node): void => {
     // ---- pi imports, in every form beyond the declarations above.
     if (ts.isImportTypeNode(n) && ts.isLiteralTypeNode(n.argument) && ts.isStringLiteral(n.argument.literal)) {
@@ -305,6 +330,12 @@ export function scanText(path: string, text: string): FileScan {
       if (ts.isStringLiteral(n) && n.text === "sessionManager" && n.parent && ((ts.isElementAccessExpression(n.parent) && n.parent.argumentExpression === n) || (ts.isPropertyAssignment(n.parent) && n.parent.name === n)))
         hit(out.reaches, '"sessionManager"', n);
       if (member !== null && SM_MEMBERS.includes(member)) hit(out.reaches, `${member} (pi SessionManager member)`, n);
+      // ---- agent-session reaches
+      if (sessionCounted && member !== null) {
+        const recv = ts.isBindingElement(n) ? (ts.isVariableDeclaration(n.parent.parent) ? n.parent.parent.initializer : undefined) : (n as ts.PropertyAccessExpression | ts.ElementAccessExpression).expression;
+        if (AGENT_SESSION_MEMBERS.includes(member) && throughProp(recv, "session")) hit(out.sessionReaches, `.session.${member} (pi AgentSession)`, n);
+        if (RUNTIME_MEMBERS.includes(member) && throughProp(recv, "runtime")) hit(out.sessionReaches, `.runtime.${member} (pi AgentSessionRuntime)`, n);
+      }
       // ---- writers
       if (member !== null && WRITERS.includes(member)) hit(out.writers, member, n);
       if (ts.isCallExpression(n) && n.arguments[0] && ts.isIdentifier(n.arguments[0])) {
@@ -398,17 +429,20 @@ export interface Baseline {
   writers: Record<string, number>;
   wrappers: string[];
   piAdapter: string[];
+  /** pi agent-session reaches through `.session` per file (§app.harness/session-reaches). */
+  session: Record<string, number>;
 }
 
 export const BASELINE_NOTE = "Shrink-only (§app.harness/boundary). Never add a file, raise a count or list a wrapper; lower it in the change that removes a hit. Regenerate with SOVA_BOUNDARY_OUT=<abs path> pnpm test -- server/harness-boundary.test.ts.";
 
 export function baselineOf(repo: RepoScan): Baseline {
-  const b: Baseline = { v: 1, note: BASELINE_NOTE, imports: {}, readers: {}, writers: {}, wrappers: [], piAdapter: [...repo.adapterImporters] };
+  const b: Baseline = { v: 1, note: BASELINE_NOTE, imports: {}, readers: {}, writers: {}, wrappers: [], piAdapter: [...repo.adapterImporters], session: {} };
   for (const f of [...repo.zoneA, ...repo.zoneB].sort()) {
     const s = repo.scans.get(f)!;
     if (s.imports) b.imports[f] = s.imports;
     if (s.calls.length || s.shapes.length || s.reaches.length) b.readers[f] = { calls: s.calls.length, shapes: s.shapes.length, reaches: s.reaches.length };
     if (s.writers.length) b.writers[f] = s.writers.length;
+    if (s.sessionReaches.length) b.session[f] = s.sessionReaches.length;
     for (const w of s.wrappers) b.wrappers.push(`${f}:${w.name}`);
   }
   b.wrappers = [...new Set(b.wrappers)].sort();
@@ -422,7 +456,7 @@ export function formatBaseline(b: Baseline): string {
     return keys.length ? `{\n${keys.map((k) => `    ${JSON.stringify(k)}: ${JSON.stringify(o[k]).replace(/,"/g, ', "').replace(/":/g, '": ')}`).join(",\n")}\n  }` : "{}";
   };
   const arr = (a: string[]) => (a.length ? `[\n${[...a].sort().map((x) => `    ${JSON.stringify(x)}`).join(",\n")}\n  ]` : "[]");
-  return `{\n  "v": 1,\n  "note": ${JSON.stringify(b.note)},\n  "imports": ${obj(b.imports)},\n  "readers": ${obj(b.readers)},\n  "writers": ${obj(b.writers)},\n  "wrappers": ${arr(b.wrappers)},\n  "piAdapter": ${arr(b.piAdapter)}\n}\n`;
+  return `{\n  "v": 1,\n  "note": ${JSON.stringify(b.note)},\n  "imports": ${obj(b.imports)},\n  "readers": ${obj(b.readers)},\n  "writers": ${obj(b.writers)},\n  "wrappers": ${arr(b.wrappers)},\n  "piAdapter": ${arr(b.piAdapter)},\n  "session": ${obj(b.session)}\n}\n`;
 }
 
 /** Growth from `before` to `after`: a new key, a higher count, a type entry turned runtime. */
@@ -443,6 +477,12 @@ export function growth(before: Baseline, after: Baseline): string[] {
   }
   for (const w of after.wrappers) if (!before.wrappers.includes(w)) out.push(`wrappers: ${w} added`);
   for (const w of after.piAdapter ?? []) if (!(before.piAdapter ?? []).includes(w)) out.push(`piAdapter: ${w} added`);
+  // A baseline from before the session ratchet has no list to grow past.
+  if (before.session)
+    for (const [f, n] of Object.entries(after.session ?? {})) {
+      if (!(f in before.session)) out.push(`session: ${f} added`);
+      else if (n > before.session[f]!) out.push(`session: ${f} ${before.session[f]} → ${n}`);
+    }
   return out;
 }
 

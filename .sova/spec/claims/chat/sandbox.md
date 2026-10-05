@@ -301,7 +301,9 @@ and tmp, so the worker keeps its network after the parent restarts.
 The sandbox is built on a platform-neutral backend interface (probe, confine) with one shared
 contract test suite that asserts real host-side effects. Two backends are implemented: Linux
 (bubblewrap) and macOS (Seatbelt, through `/usr/bin/sandbox-exec -f` with a profile file
-generated from the policy, never an inline profile). On any other platform the probe refuses, so
+generated from the policy, never an inline profile). On macOS a hidden path under a
+TCC-protected directory still gets its canonical spelling (resolved one component at a time when
+realpath is refused), so the Seatbelt profile builds. On any other platform the probe refuses, so
 the tools refuse as above; there is never a passthrough. Remote sessions run their tools on the target, so the extension registers
 no confined tools there: an on state is recorded with enforcement `none` and the reason "not
 enforced on remote", and reads "Sandbox on · not enforced on remote" (§chat.sandbox/toggle).

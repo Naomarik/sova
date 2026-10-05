@@ -1866,7 +1866,9 @@
         "pi-config/extensions/sandbox/backend.ts",
         "pi-config/extensions/sandbox/backends/linux-bwrap.ts",
         "pi-config/extensions/sandbox/backends/darwin-seatbelt.ts",
-        "pi-config/extensions/sandbox/backends/unsupported.ts"
+        "pi-config/extensions/sandbox/backends/unsupported.ts",
+        "pi-config/extensions/sandbox/realpath.ts",
+        "pi-config/extensions/sandbox/tests/unit/backend.unit.test.ts"
       ]
     },
     "§chat.sandbox/fail-closed": {

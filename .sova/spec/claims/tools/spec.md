@@ -330,22 +330,27 @@ The read-only `toc '§id' --dir out|in|down|up|mentions` command is a contents v
 claims one hop from the requested one in a single direction, so the reader picks what to open
 instead of receiving a whole dependency chain. `out` lists the claim's declared `requires`, then, in
 a group of their own, the claims its prose names without requiring them; `in` lists the claims whose
-`requires` name it; `down` lists an H1's H2 children, or a section's members, in declaration order;
-`up` gives the parent of an H2; `mentions` lists the claims whose prose names it. It never follows a
-second hop and never prints a neighbour's passage.
+`requires` name it, and for an H2, in a group of their own headed "required through its H1", the
+claims that require its H1, since requiring an H1 brings all of its H2s; `down` lists an H1's H2
+children, or a section's members, in declaration order; `up` gives the parent of an H2; `mentions`
+lists the claims whose prose names it. It never follows a second hop and never prints a neighbour's
+passage. On an H1 with H2s, `out` also says how many of its H2s require claims outside it and how
+many distinct claims those are, pointing at `toc` on each H2 and at `map` on the area, so an H1 whose
+own record requires nothing never reads as an area that needs nothing.
 
 The output starts with the requested claim itself: its id, title, kind, labels, size and its own
 "what". Then each neighbour gets one line, grouped under a heading per kind of link and ordered by id
 (`down` keeps declaration order): the § id and its heading title; **what**; for `out`, `in` and
 `mentions`, **why**; and **size** in UTF-8 bytes, which is what reading it alone costs, and for an H1
 its lede's bytes and its whole file's bytes. **What** is the passage's first prose sentence after its
-heading, verbatim with whitespace collapsed: fenced code, HTML comments, tables and headings are
-skipped, list markers are dropped, a sentence ends at `.`, `?`, `!` or `:` followed by a space (never
+heading, verbatim with whitespace collapsed: fenced code, HTML comments, tables, thematic breaks and
+headings are skipped, list markers are dropped, a sentence ends at `.`, `?`, `!` or `:` followed by a space (never
 inside a code span) and runs on until it has 20 characters, and anything past 200 characters is cut
 with `…`. A blockquote is used only when the passage has no other prose; a passage with none says
 "no prose sentence", with its code's size when it has code, and never quotes code. **Why** is the
 first visible-prose sentence of the linking claim's text that names the other one (the requested
-claim's for `out`, the neighbour's for `in` and `mentions`); failing that, an HTML comment naming it,
+claim's for `out`, the neighbour's for `in` and `mentions`, naming the H1 for a line required through
+it); failing that, an HTML comment naming it,
 labelled as a comment; failing that, exactly "not mentioned in this claim's text". The JSON says
 which (`whatSource`, `whySource`).
 
@@ -378,8 +383,8 @@ and any declared labels, and a passage larger than the budget arrives as exact U
 as packet prose does, whose concatenation recovers it.
 
 After the passage, a footer names the § it declares through `requires` and the § its prose names
-(masked as in the contents view) that this call did not deliver, so a link left unopened is still
-named; for an H1 read as its lede it also gives the number of H2s left out and the whole file's
+(masked as in the contents view) that this read does not deliver on any of its pages, so a link
+left unopened is still named; for an H1 read as its lede it also gives the number of H2s left out and the whole file's
 size, with the flag that reads it. The default budget is 32,768 bytes, so any single passage of
 ordinary size arrives in one call; explicit budgets are 1,024 to 32,768. The cursor and
 stored-nothing rules are the contents view's, with compact JSON with `--json` and readable text

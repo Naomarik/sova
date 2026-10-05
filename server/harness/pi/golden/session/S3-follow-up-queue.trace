@@ -1,0 +1,99 @@
+step attach A, B
+A {"type":"hello","isStreaming":false,"isCompacting":false,"model":"scripted/scripted","thinking":"off","items":[]}
+A {"type":"commands"}
+A {"type":"queue","items":[]}
+A {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now"}
+A {"type":"profile","profile":null,"locked":false,"pickable":true,"tools":"<elided>","removed":[],"granted":[]}
+B {"type":"hello","isStreaming":false,"isCompacting":false,"model":"scripted/scripted","thinking":"off","items":[]}
+B {"type":"commands"}
+B {"type":"queue","items":[]}
+B {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now"}
+B {"type":"profile","profile":null,"locked":false,"pickable":true,"tools":"<elided>","removed":[],"granted":[]}
+step A sends {"type":"prompt","text":"work","clientId":"c1"}
+write {"id":"00000001","type":"model_change"}
+write {"id":"00000002","type":"thinking_level_change"}
+sdk prompt ["work",{"source":"interactive"}]
+A {"type":"send_ack","clientId":"c1","queued":false}
+A {"type":"links","links":[]}
+B {"type":"links","links":[]}
+A {"type":"event","event":{"type":"agent_start"}}
+B {"type":"event","v":2,"event":{"type":"run.start"}}
+A {"type":"event","event":{"type":"turn_start"}}
+A {"type":"event","event":{"type":"message_start","message":{"role":"system","elided":true}}}
+write {"id":"00000003","type":"message","role":"system"}
+A {"type":"event","event":{"type":"message_end","message":{"role":"system","elided":true}},"entryId":"00000003"}
+A {"type":"event","event":{"type":"message_start","message":{"role":"user","content":[{"type":"text","text":"work"}],"timestamp":1000000000000}}}
+B {"type":"event","v":2,"event":{"type":"message.start","role":"user","text":"work","images":[]}}
+write {"id":"00000004","type":"message","role":"user"}
+A {"type":"event","event":{"type":"message_end","message":{"role":"user","content":[{"type":"text","text":"work"}],"timestamp":1000000000000}},"entryId":"00000004"}
+B {"type":"event","v":2,"event":{"type":"message.end","role":"user","entryId":"00000004"}}
+step A sends {"type":"prompt","text":"follow one","clientId":"f1"}
+A {"type":"queue","items":[{"id":"f1","kind":"followUp","state":"queued","text":"follow one","origin":"client"}]}
+B {"type":"queue","items":[{"id":"f1","kind":"followUp","state":"queued","text":"follow one","origin":"client"}]}
+A {"type":"queue","items":[{"id":"f1","kind":"followUp","state":"sending","text":"follow one","origin":"client"}]}
+B {"type":"queue","items":[{"id":"f1","kind":"followUp","state":"sending","text":"follow one","origin":"client"}]}
+sdk prompt ["follow one",{"streamingBehavior":"followUp","source":"interactive"}]
+A {"type":"send_ack","clientId":"f1","queued":true}
+step A sends {"type":"prompt","text":"follow two","clientId":"f2"}
+A {"type":"queue","items":[{"id":"f1","kind":"followUp","state":"sending","text":"follow one","origin":"client"},{"id":"f2","kind":"followUp","state":"queued","text":"follow two","origin":"client"}]}
+B {"type":"queue","items":[{"id":"f1","kind":"followUp","state":"sending","text":"follow one","origin":"client"},{"id":"f2","kind":"followUp","state":"queued","text":"follow two","origin":"client"}]}
+A {"type":"send_ack","clientId":"f2","queued":true}
+step B sends {"type":"prompt","text":"follow three","clientId":"f3"}
+A {"type":"queue","items":[{"id":"f1","kind":"followUp","state":"sending","text":"follow one","origin":"client"},{"id":"f2","kind":"followUp","state":"queued","text":"follow two","origin":"client"},{"id":"f3","kind":"followUp","state":"queued","text":"follow three","origin":"client"}]}
+B {"type":"queue","items":[{"id":"f1","kind":"followUp","state":"sending","text":"follow one","origin":"client"},{"id":"f2","kind":"followUp","state":"queued","text":"follow two","origin":"client"},{"id":"f3","kind":"followUp","state":"queued","text":"follow three","origin":"client"}]}
+B {"type":"send_ack","clientId":"f3","queued":true}
+A {"type":"event","event":{"type":"queue_update","steering":[],"followUp":["follow one"]}}
+step B sends {"type":"queue_remove","id":"rm1","itemId":"f2"}
+A {"type":"queue_item_gone","itemId":"f2","reason":"removed","text":"follow two"}
+B {"type":"queue_item_gone","itemId":"f2","reason":"removed","text":"follow two"}
+A {"type":"queue","items":[{"id":"f1","kind":"followUp","state":"sending","text":"follow one","origin":"client"},{"id":"f3","kind":"followUp","state":"queued","text":"follow three","origin":"client"}]}
+B {"type":"queue","items":[{"id":"f1","kind":"followUp","state":"sending","text":"follow one","origin":"client"},{"id":"f3","kind":"followUp","state":"queued","text":"follow three","origin":"client"}]}
+B {"type":"queue_removed","id":"rm1","itemId":"f2","text":"follow two"}
+step release the reply
+A {"type":"event","event":{"type":"message_start","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop"}}}
+B {"type":"event","v":2,"event":{"type":"message.start","role":"assistant","model":"scripted/scripted","parts":[{"kind":"text","text":"ok"}]}}
+write {"id":"00000005","type":"message","role":"assistant"}
+A {"type":"event","event":{"type":"message_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop"}},"entryId":"00000005"}
+B {"type":"event","v":2,"event":{"type":"message.end","role":"assistant","entryId":"00000005","model":"scripted/scripted","parts":[{"kind":"text","text":"ok"}],"stop":"ok"}}
+A {"type":"event","event":{"type":"turn_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop"},"toolResults":[]}}
+A {"type":"event","event":{"type":"turn_start"}}
+A {"type":"event","event":{"type":"queue_update","steering":[],"followUp":[]}}
+A {"type":"queue_item_gone","itemId":"f1","reason":"delivered"}
+B {"type":"queue_item_gone","itemId":"f1","reason":"delivered"}
+A {"type":"queue","items":[{"id":"f3","kind":"followUp","state":"queued","text":"follow three","origin":"client"}]}
+B {"type":"queue","items":[{"id":"f3","kind":"followUp","state":"queued","text":"follow three","origin":"client"}]}
+A {"type":"queue","items":[{"id":"f3","kind":"followUp","state":"sending","text":"follow three","origin":"client"}]}
+B {"type":"queue","items":[{"id":"f3","kind":"followUp","state":"sending","text":"follow three","origin":"client"}]}
+sdk prompt ["follow three",{"streamingBehavior":"followUp","source":"interactive"}]
+A {"type":"event","event":{"type":"queue_update","steering":[],"followUp":["follow three"]}}
+A {"type":"event","event":{"type":"message_start","message":{"role":"user","content":[{"type":"text","text":"follow one"}],"timestamp":1000000000000}}}
+B {"type":"event","v":2,"event":{"type":"message.start","role":"user","text":"follow one","images":[]}}
+write {"id":"00000006","type":"message","role":"user"}
+A {"type":"event","event":{"type":"message_end","message":{"role":"user","content":[{"type":"text","text":"follow one"}],"timestamp":1000000000000}},"entryId":"00000006"}
+B {"type":"event","v":2,"event":{"type":"message.end","role":"user","entryId":"00000006"}}
+A {"type":"event","event":{"type":"message_start","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop"}}}
+B {"type":"event","v":2,"event":{"type":"message.start","role":"assistant","model":"scripted/scripted","parts":[{"kind":"text","text":"ok"}]}}
+write {"id":"00000007","type":"message","role":"assistant"}
+A {"type":"event","event":{"type":"message_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop"}},"entryId":"00000007"}
+B {"type":"event","v":2,"event":{"type":"message.end","role":"assistant","entryId":"00000007","model":"scripted/scripted","parts":[{"kind":"text","text":"ok"}],"stop":"ok"}}
+A {"type":"event","event":{"type":"turn_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop"},"toolResults":[]}}
+A {"type":"event","event":{"type":"turn_start"}}
+A {"type":"event","event":{"type":"queue_update","steering":[],"followUp":[]}}
+A {"type":"queue_item_gone","itemId":"f3","reason":"delivered"}
+B {"type":"queue_item_gone","itemId":"f3","reason":"delivered"}
+A {"type":"queue","items":[]}
+B {"type":"queue","items":[]}
+A {"type":"event","event":{"type":"message_start","message":{"role":"user","content":[{"type":"text","text":"follow three"}],"timestamp":1000000000000}}}
+B {"type":"event","v":2,"event":{"type":"message.start","role":"user","text":"follow three","images":[]}}
+write {"id":"00000008","type":"message","role":"user"}
+A {"type":"event","event":{"type":"message_end","message":{"role":"user","content":[{"type":"text","text":"follow three"}],"timestamp":1000000000000}},"entryId":"00000008"}
+B {"type":"event","v":2,"event":{"type":"message.end","role":"user","entryId":"00000008"}}
+A {"type":"event","event":{"type":"message_start","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop"}}}
+B {"type":"event","v":2,"event":{"type":"message.start","role":"assistant","model":"scripted/scripted","parts":[{"kind":"text","text":"ok"}]}}
+write {"id":"00000009","type":"message","role":"assistant"}
+A {"type":"event","event":{"type":"message_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop"}},"entryId":"00000009"}
+B {"type":"event","v":2,"event":{"type":"message.end","role":"assistant","entryId":"00000009","model":"scripted/scripted","parts":[{"kind":"text","text":"ok"}],"stop":"ok"}}
+A {"type":"event","event":{"type":"turn_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop"},"toolResults":[]}}
+A {"type":"event","event":{"type":"agent_end","messages":[{"role":"system","elided":true},{"role":"user","content":[{"type":"text","text":"work"}],"timestamp":1000000000000},{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop"},{"role":"user","content":[{"type":"text","text":"follow one"}],"timestamp":1000000000000},{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop"},{"role":"user","content":[{"type":"text","text":"follow three"}],"timestamp":1000000000000},{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop"}],"willRetry":false}}
+A {"type":"event","event":{"type":"agent_settled"}}
+B {"type":"event","v":2,"event":{"type":"run.settled"}}

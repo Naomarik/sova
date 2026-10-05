@@ -245,6 +245,20 @@ writer**).
     fields update as usual.
 
   See `../spec/README.md`.
+- **codemode** — gives the model pi's `codemode` tool (pi's `docs/codemode.md`):
+  a JavaScript script that calls the session's other tools in parallel and
+  filters their output. It has no prompt block and no mode note
+  (`MINOR_PROMPTLESS` in `minor.ts`): the tool's own description is the guide.
+  The extension keeps the tool in the loadout exactly while the mode is on
+  (`syncCodemodeTool`, where `vis_guide` syncs, and right after a switch made
+  between runs; a switch during a run applies when it settles), removing it
+  even when `defaultTools` or a restored transcript activated it, except while
+  a registered tool has `codemode` or `deferred` exposure (MCP). Where the tool
+  isn't registered (an SDK runtime without the factory) it does nothing. A host
+  that keeps the tool's activation itself (Sova in a Claude Code chat) pins it
+  with `codemode:host` (`CODEMODE_HOST_EVENT`). Never reaches workers. With
+  spec on, a census or guard note for a call a script made is repeated on the
+  script's own result, the one the model reads.
 
 Like the major mode, the prompt is read per turn, so toggles apply from the
 next prompt. The active triple (`mode`, `strict`, `minorModes`) is published

@@ -2,10 +2,10 @@
 
 import { readdirSync, readFileSync } from "node:fs";
 
-export type MinorMode = "align" | "spec" | "vis";
+export type MinorMode = "align" | "spec" | "vis" | "codemode";
 
 /** Registry order: the canonical order for state, status, and prompt composition. */
-export const MINOR_MODES: readonly MinorMode[] = ["align", "spec", "vis"];
+export const MINOR_MODES: readonly MinorMode[] = ["align", "spec", "vis", "codemode"];
 
 export function isMinorMode(value: unknown): value is MinorMode {
 	return typeof value === "string" && (MINOR_MODES as readonly string[]).includes(value);
@@ -15,20 +15,68 @@ export const MINOR_DESCRIPTIONS: Record<MinorMode, string> = {
 	align: "Align with the user on what to build (architecture, UX, scope) before building",
 	spec: "Scope work from the project's .sova/spec documentation, propose changes in drafts, and promote them once implemented",
 	vis: "Draw small inline visuals (vis fences: flow, sequence, tree, timeline, chart, …) when a picture explains faster than prose",
+	codemode: "Let the model run JavaScript that calls tools in parallel and filters their output (pi's codemode tool)",
 };
+
+/** The tool the codemode minor mode puts in the loadout: pi's own `codemode` (builtin:codemode in the CLI). */
+export const CODEMODE_TOOL = "codemode";
+
+/**
+ * The codemode minor mode's host, on the extension bus (§chat.mode-menu/codemode). A host that keeps the
+ * `codemode` tool's activation itself (Sova's adapter in a chat on the Claude Code provider, where the tool
+ * stays declared whatever the mode says) emits `codemode:host` with `pinned: true`, and `pinned: false` when
+ * it hands activation back, and again whenever someone emits the discover event. While pinned, the mode
+ * extension neither adds nor removes the tool. No host (the TUI) = never pinned. Here rather than in
+ * events.ts because the server's adapter is the host, and the server imports this file already.
+ */
+export const CODEMODE_HOST_EVENT = "codemode:host";
+export const CODEMODE_HOST_DISCOVER_EVENT = "codemode:host-discover";
+
+export interface CodemodeHostEvent {
+	version: 1;
+	pinned: boolean;
+}
+
+/** The pin as a listener should trust it, or undefined for anything malformed or of another version. */
+export function parseCodemodeHostEvent(data: unknown): CodemodeHostEvent | undefined {
+	if (typeof data !== "object" || data === null) return undefined;
+	const e = data as Record<string, unknown>;
+	return e.version === 1 && typeof e.pinned === "boolean" ? { version: 1, pinned: e.pinned } : undefined;
+}
+
+/** Tool exposures that only codemode scripts reach (pi's ToolExposure): while one is registered, codemode stays. */
+export const SCRIPT_ONLY_EXPOSURES: ReadonlySet<string> = new Set(["codemode", "deferred"]);
 
 /**
  * Whether each minor mode reaches the workers a session starts (§chat.mode-menu/workers). A record over
  * the union, so a new minor mode cannot compile without deciding. align is a conversation with the user,
  * which a worker doesn't have; spec is a discipline a worker's edits need too; vis draws for the user, and a
- * worker's replies are read by its parent session, not rendered for the user. Major modes never reach a
- * worker: workers spawn no workers, so Delegate has nothing to route there.
+ * worker's replies are read by its parent session, not rendered for the user; codemode changes the chat's
+ * own tool set, and a worker's tools are its brief's. Major modes never reach a worker: workers spawn no
+ * workers, so Delegate has nothing to route there.
  */
 export const MINOR_WORKER: Record<MinorMode, boolean> = {
 	align: false,
 	spec: true,
 	vis: false,
+	codemode: false,
 };
+
+/**
+ * Minor modes with no prompt block and no mode note (§chat.mode-menu/codemode): the tool they put in the
+ * loadout is the whole mode, and its own description is the guide. A record over the union, like MINOR_WORKER.
+ */
+export const MINOR_PROMPTLESS: Record<MinorMode, boolean> = {
+	align: false,
+	spec: false,
+	vis: false,
+	codemode: true,
+};
+
+/** The minor modes of `minorModes` that carry a prompt block, in their order. */
+export function promptedMinorModes(minorModes: readonly MinorMode[]): MinorMode[] {
+	return minorModes.filter((mode) => !MINOR_PROMPTLESS[mode]);
+}
 
 /** The worker-scope subset of `minorModes`, in registry order. */
 export function workerMinorModes(minorModes: readonly MinorMode[]): MinorMode[] {
@@ -134,6 +182,8 @@ const MINOR_INSTRUCTIONS: Record<MinorMode, string> = {
 	align: ALIGN_INSTRUCTIONS,
 	spec: SPEC_INSTRUCTIONS,
 	vis: VIS_INSTRUCTIONS,
+	// Promptless (MINOR_PROMPTLESS): never composed.
+	codemode: "",
 };
 
 export function buildMinorPrompt(mode: MinorMode): string {

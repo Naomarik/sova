@@ -395,6 +395,8 @@ export function sessionPowersTools(ctx: PowersContext, actionsFile?: () => strin
   tools.push({
     name: "session_send",
     label: "Send to session",
+    // Its card reads the recorded result (EAGER_TOOLS): never a codemode script's call.
+    exposure: "model-only",
     description:
       "Send a message to another session you can see, as its composer would. Idle, it starts a turn; mid-turn it is queued as a follow-up (or as a steer with delivery=steer). It arrives tagged with this session's title and a hop count. Never a terminal-owned, archived or special session. Limited: hops, sends per user message, per day on its own, sessions per run, and per session per 10 minutes; a refusal takes nothing.",
     promptSnippet: "send a message to another session (tagged as from this session)",

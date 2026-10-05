@@ -226,6 +226,8 @@ export function registerAlignTool(pi: ExtensionAPI, host: AlignToolHost, review 
 	pi.registerTool({
 		name: ALIGN_TOOL,
 		label: "Align",
+		// Alignments are folded from this tool's recorded results, which a codemode script's call never has.
+		exposure: "model-only",
 		description: review ? `${ALIGN_TOOL_DESCRIPTION}\n\n${ALIGN_REVIEW_DESCRIPTION}` : ALIGN_TOOL_DESCRIPTION,
 		promptSnippet: ALIGN_PROMPT_SNIPPET,
 		promptGuidelines: review ? [...ALIGN_TOOL_GUIDELINES, ALIGN_REVIEW_GUIDELINE] : ALIGN_TOOL_GUIDELINES,

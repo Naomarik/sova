@@ -87,6 +87,8 @@ export function linkTools(d: LinkToolDeps): Tool[] {
     {
       name: "sova_link",
       label: "Link sessions",
+      // Its card reads the recorded result (EAGER_TOOLS): never a codemode script's call.
+      exposure: "model-only",
       description:
         "Link two or more sessions on different mesh hosts, so their agents can message each other (link_send, link_inbox, link_members in those sessions). Each member is a session id and its host (a peer id from the Mesh page; leave host out for this host), one member per host. Refused for a terminal-owned, archived, subagent, baton, project-overseer or other organization session, your own, a host that is down or on another protocol, and two sessions on one host. Linking changes no session and sends nothing. Counts against the per-turn link cap. You are never a member, and you never send into a link: to tell a local member something, sova_send it.",
       promptSnippet: "link sessions on different mesh hosts (one per host) so their agents can message each other",
@@ -124,6 +126,7 @@ export function linkTools(d: LinkToolDeps): Tool[] {
     {
       name: "sova_unlink",
       label: "End link",
+      exposure: "model-only",
       description:
         "End a link on every member host. Its members stay as they are; the link stays listed as ended, and its tools refuse to use it. A host that is down gets the end when it next comes up.",
       promptSnippet: "end a link on every member host",

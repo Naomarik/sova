@@ -61,6 +61,10 @@ export interface ToolSpec<P = any, D = any> {
       with its message (record_decision's owner area). */
   prepareArguments?(args: unknown): unknown;
   executionMode?: "sequential" | "parallel";
+  /** How the model reaches the tool. `model-only`: declared to the model, never callable from a codemode
+      script (§chat.mode-menu/codemode), for a tool whose state Sova reads back from its own recorded
+      result. Absent: a direct tool, callable both ways. */
+  exposure?: "model-only";
   /** pi's positional order, kept so a ToolSpec is a type swap for every existing tool and wrapper. */
   execute(
     toolCallId: string,

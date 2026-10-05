@@ -1,4 +1,4 @@
-// What pi loads for a session's prompt (§app.harness/session-reaches), in the contract's shape
+// What pi loads for a session's prompt (§app.harness/session), in the contract's shape
 // (HarnessResources): a held runtime's own loader, through the driving session (session.ts), or pi's loader
 // without extensions for a folder no runtime holds (server/session-setup.ts). Paths only: the contents are
 // pi's business.

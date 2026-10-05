@@ -1,9 +1,9 @@
 // The harness contract, the driving session (§app/harness, §app.harness/session). Types only: imports
 // nothing but its siblings, emits nothing. What a hosted chat (server/chat-manager.ts) drives its agent
 // through instead of pi's AgentSession; pi's implementation is server/harness/pi/session.ts. Sized to the
-// chat's real call sites, and the dialog bridge its extensions' UI calls reach it through
-// (§app.harness/session-open), and what the special loadouts and the stream guard watch a session through
-// (§app.harness/session-special): history surgery (rewind, compaction) and extension commands are not here yet.
+// chat's real call sites (history surgery and extension commands included, §app.harness/session-history), the
+// dialog bridge its extensions' UI calls reach it through (§app.harness/session-open), and what the special
+// loadouts and the stream guard watch a session through (§app.harness/session-special).
 import type { EntryId, ModelRef } from "./harness-core";
 import type { HEntry, SessionRead } from "./harness-history";
 import type { SessionState } from "./harness-state";

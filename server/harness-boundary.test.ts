@@ -150,7 +150,7 @@ describe("the ratchets hold exactly at the baseline", () => {
     fail(problems);
   });
 
-  test("pi agent-session reaches through .session, outside the chat (§app.harness/session-reaches)", () => {
+  test("pi agent-session reaches through .session (§app.harness/boundary)", () => {
     const problems: string[] = [];
     for (const f of new Set([...Object.keys(actual.session), ...Object.keys(baseline.session ?? {})])) {
       const now = actual.session[f] ?? 0;

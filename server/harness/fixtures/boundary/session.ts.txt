@@ -1,6 +1,6 @@
-// Session-reach ratchet fixtures (§app.harness/session-reaches): pi AgentSession members read through a
-// `.session` property (and AgentSessionRuntime members through `.runtime`), counted in server/ outside
-// server/chat-manager.ts, tests exempt. Each block is scanned as its own file at `path` (default
+// Session-reach ratchet fixtures (§app.harness/boundary): pi AgentSession members read through a
+// `.session` property (and AgentSessionRuntime members through `.runtime`), counted in server/ (the hosted
+// chat included), tests exempt. Each block is scanned as its own file at `path` (default
 // server/fixture.ts) and must give exactly `expect`.
 // ---- S1 a member read expect={"session":1}
 if (chat.session.isStreaming) return;
@@ -20,7 +20,7 @@ it.session.sessionId; rec.session.sessionFile; plan.session.path; server.session
 session.isStreaming; drain(chat.session, broadcast); const sess = chat.session;
 // ---- S9 the driving session expect={}
 chat.harness.isRunning(); chat.harness.model()?.ref; chat.harness.queue.hasQueued();
-// ---- S10 the hosted chat is exempt path=server/chat-manager.ts expect={}
+// ---- S10 the hosted chat counts too path=server/chat-manager.ts expect={"session":2}
 this.session.isStreaming; this.runtime.services.modelRuntime;
 // ---- S11 tests are exempt path=server/chat.test.ts expect={}
 chat.session.isStreaming;

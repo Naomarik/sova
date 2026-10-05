@@ -42,7 +42,7 @@ export const SM_MEMBERS = [
 export const BRIDGES = ["liveRead", "stateOf"];
 export const WRITERS = ["appendCustomEntry", "appendEntry", "appendSpecialEntry"];
 /** pi's AgentSession members (`agent-session.d.ts`), counted when read through a `.session` property in
-    server/ (§app.harness/session-reaches). `sessionId` and `sessionFile` are left out: Sova's own records
+    server/ (§app.harness/boundary). `sessionId` and `sessionFile` are left out: Sova's own records
     use those names (a queue item's `session.sessionId`, a live record's `session.sessionFile`). */
 export const AGENT_SESSION_MEMBERS = [
   "abort", "abortBash", "abortBranchSummary", "abortCompaction", "abortRetry", "agent", "autoCompactionEnabled", "autoRetryEnabled",
@@ -59,8 +59,6 @@ export const AGENT_SESSION_MEMBERS = [
 ];
 /** pi's AgentSessionRuntime members, counted when read through a `.runtime` property in server/. */
 export const RUNTIME_MEMBERS = ["session", "services"];
-/** The hosted chat, which holds pi's agent session until M5 ends (its reaches are counted as `reaches`). */
-export const SESSION_REACH_EXEMPT = ["server/chat-manager.ts"];
 /** The one file only the adapter may import (it reads pi worker transcripts). */
 export const PI_ADAPTER_FILE = "pi-config/extensions/subagents/adapters/pi.ts";
 
@@ -263,7 +261,7 @@ export function scanText(path: string, text: string): FileScan {
         }
 
   const counted = zone.counted;
-  const sessionCounted = counted && path.startsWith("server/") && !SESSION_REACH_EXEMPT.includes(path);
+  const sessionCounted = counted && path.startsWith("server/");
   /** `x.session` / `x?.session` / `x["session"]` (or `runtime`): the receiver of a member read. */
   const throughProp = (e: ts.Node | undefined, name: string) => !!e && memberRead(e) === name && !ts.isBindingElement(e);
   const visit = (n: ts.Node): void => {
@@ -429,7 +427,7 @@ export interface Baseline {
   writers: Record<string, number>;
   wrappers: string[];
   piAdapter: string[];
-  /** pi agent-session reaches through `.session` per file (§app.harness/session-reaches). */
+  /** pi agent-session reaches through `.session` per file (§app.harness/boundary). */
   session: Record<string, number>;
 }
 

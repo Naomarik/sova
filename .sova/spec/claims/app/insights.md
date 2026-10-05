@@ -193,6 +193,10 @@ Usage glance needs the room.
     agents` truncates first; line 2, aligned under the text, is the 30-minute column chart, full
     width, then a muted `30m`. `–` and the bare baseline while unknown, so the row never changes
     height.
+  - **The scrub** (§app.insights/velocity-scrub): hovering the chart with a mouse, or holding the
+    row still for 500ms with a thumb or pen and then dragging, reads one column out in a card
+    above the pointer. While a mouse scrubs, the row's `title` is dropped and comes back when it
+    leaves the chart; a click still opens Agents, and a hold never does.
   - The LLM calls in flight (§app.insights/llm-inflight) are not on the row, in its words or
     anywhere else in the sidebar.
 - **The row's full sentence** lives in its `title` and `aria-label`: the destination, the working
@@ -215,7 +219,9 @@ returns to the bar) holding the foot's columns **exactly as §app.insights/sideb
 them** — the host filter row (§mesh.remote-sessions/host-filter, only while the mesh is on), the
 Usage glance row with its monitor button, and the Agents row with its Settings gear; it has no
 Shares row (the Shares page is the overview's Shares card's, §chat.transcript/landing-page).
-Nothing in them is rewritten, only re-homed. At ≥768 the bar never shows and the foot
+Nothing in them is rewritten, only re-homed: the Agents row's chart scrubs in the sheet
+too, by a 500ms hold on the row and then a drag, and the sheet never scrolls under that drag
+(§app.insights/velocity-scrub). At ≥768 the bar never shows and the foot
 is §app.insights/sidebar-foot as drawn there; the spine is untouched by either. The sheet's
 accessible name is "Hosts, usage and agents".
 
@@ -393,7 +399,8 @@ host and every connected host.**
   as their tops, and a different shape (dashed, horizontal), so it never rests on the hue alone;
   the sentence names the figure in words. It is a reference, not a status, so it takes neither
   the accent (kept for the primary action and the live-run mark) nor a warn or error tone. No
-  gradient, and nothing moves.
+  gradient, and nothing moves, except the Agents row's scrub card as it lifts in
+  (§app.insights/velocity-scrub).
 - **Dense format**, for the readout: under 1,000 the whole number (`840`); 1,000
   to 9,999 one decimal and `k` (`8.4k`); 10,000 and up no decimal (`48k`, `120k`); a million and up
   one decimal and `M` (`1.2M`). A value is rounded once, to the whole token, before it is formatted,
@@ -491,6 +498,63 @@ which shows this device's spend at API prices from the usage ledger (§app.insig
   it never shows another count.
 - **This device.** The tab says it counts this device only.
 - Works at phone widths: tables stack under 560px of page width.
+
+## §app.insights/velocity-scrub — Scrubbing the token chart: one minute's figures
+
+**The Agents row's 30-minute chart (§app.insights/token-velocity) reads out any one of its
+columns: the pointer picks a column, the column stands out, a 1px cursor line runs through it, and
+a small card floats above the pointer with that minute's figures.** Only the Agents row's chart
+scrubs — on the desktop foot and inside the phone foot sheet (§app.insights/sidebar-foot,
+§app.insights/sidebar-foot-phone); the phone bar's 60px chart and the usage meters never do.
+Browser data only: the card reads the same `tokenVelocityView()` the chart draws from, so the two
+can't disagree, and nothing is fetched, sent or stored.
+
+- **Picking a column.** With a mouse, hovering the chart's line picks the column under the
+  pointer (`columnAtX()` in `src/lib/llm-inflight.ts`: the x from the chart's left edge ÷ the
+  pitch, clamped to the first and last column, so the pixels the pitch leaves over and the `30m`
+  label pick the newest). Leaving the chart, or Escape, ends it; Escape keeps it hidden until the
+  pointer leaves the chart. A click still opens Agents. With a thumb or a pen, holding the Agents
+  row still for 500ms (the session rows' hold, `createHoldGesture`, 10px of drift allowed) starts
+  it, with a short buzz where the phone has one (`navigator.vibrate(10)`); then dragging left and
+  right moves the pick, the row keeping the pointer and the sheet not scrolling under the finger
+  until it lifts. A touch that moves before the hold is a scroll, and a quick tap still opens
+  Agents. Letting go, or a cancelled touch, ends it, and the click and context menu the hold
+  leaves behind are swallowed, so a scrub never navigates. The row takes no long-press callout or
+  text selection. While the ring is unknown nothing scrubs.
+- **The chart while picking.** The picked column is drawn in `--color-ink` (the hollow newest
+  column as an `--color-ink` outline) while every other column dims to 40% opacity, and a 1px
+  `--color-ink` cursor line runs the chart's height through the picked column's centre, on whole
+  pixels; an empty column shows the line alone. The baseline and the dashed 30-minute mean keep
+  their look. The pick is a line and a fill, never a hue alone. With nothing picked the chart is
+  exactly §app.insights/token-velocity's.
+- **The card's words**, three lines (`velocityColumnAt()` in `src/lib/llm-inflight.ts`):
+  1. The column's time span, mono, on a 24-hour clock in whole minutes, each end rounded down to
+     its minute, never seconds: `14:06–14:07`, a column starting on the half minute included;
+     the hollow newest column reads `Now`.
+  2. Its rate in the row's figure style, the figure semibold ink and the unit muted:
+     `38k tok/min` (`denseCount`), prefixed `at least` while the ring is partial.
+  3. A muted caption: `3.1× the 30-min average` (the column's rate ÷ the 30-minute mean, one
+     decimal); for a column with no tokens `No output`. The hollow newest column is a minute not
+     yet over, whose replies count when they finish: with tokens its caption reads as partial,
+     `So far this minute · 1.2× the 30-min average`; with none, `Nothing yet this minute`. It
+     never claims replies are in progress.
+- **The card's look** is the drag ghost's (§app.session-list/drop-overlay): surface fill,
+  `--r-lg`, `--shadow-3` and the same 120ms lift (scale .96 to 1), but a neutral 1.5px
+  `--color-border-strong` edge, never the accent. The two share one stylesheet rule, so they
+  can't drift apart. It is fixed to the window over everything (the sheet and the toasts
+  included), placed by a transform, and never takes the pointer.
+- **Always above the pointer.** The card is centred on the pointer's x and its bottom edge sits
+  14px above a mouse pointer's tip, or 40px above a finger or pen, so the finger never covers it.
+  It stays 8px inside the window's left and right edges, and only when there is no room above
+  (the window's top) does it go the same distance below. It follows with no transition.
+- **Time passing.** The 30 s tick that slides the chart re-reads the picked column too: the
+  pointer stays on its column index and the card follows what is now there.
+- **Reduced motion.** The lift collapses under the global reduced-motion rule; the card reads
+  completely from its end state.
+- **Accessibility.** The card and the cursor line are `aria-hidden`, and nothing is announced per
+  step: the scrub is an accelerator for the pointer, and the row's `aria-label` keeps the
+  velocity's full sentence. While a mouse scrubs, the row's `title` is dropped, so the browser's
+  tooltip never covers the card, and it comes back when the pointer leaves the chart.
 
 ## §app.insights/aggregate-chips-live-vs-working — Aggregate chips: "Live" vs "Working"
 
@@ -1377,7 +1441,9 @@ of `$HOME`.
 - **Tokens.** One new token: `--outline-max` (40vh). **No new colors.** Neutrals and the status
   tokens cover everything, and accent appears only on live-sourced Working/Starting chips and
   focus.
-- **Motion.** Nothing new animates. The pulse is reused as the skill's live indicator. Meters
+- **Motion.** Nothing new animates but the token chart's scrub card, which lifts in (scale .96 to
+  1, 120ms) like the drag ghost and collapses to its end state under reduced motion
+  (§app.insights/velocity-scrub). The pulse is reused as the skill's live indicator. Meters
   never animate their fill.
 - **Accessibility.**
   - The meter's number is its accessible value, and the track is `aria-hidden`.

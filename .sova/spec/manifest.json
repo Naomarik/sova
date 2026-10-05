@@ -120,7 +120,7 @@
     },
     "§app.insights/tokens-motion-and-accessibility": {
       "kind": "behavior",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§app.insights/usage-cards": {
@@ -14147,6 +14147,23 @@
         "shared/harness-wire.ts",
         "shared/harness-state.ts",
         "shared/harness-session.ts"
+      ]
+    },
+    "§app.insights/velocity-scrub": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/lib/llm-inflight.ts",
+        "src/lib/llm-inflight.test.ts",
+        "src/lib/float-card.ts",
+        "src/lib/float-card.test.ts",
+        "src/components/Sidebar.tsx",
+        "src/design/base.css"
+      ],
+      "requires": [
+        "§app.insights/token-velocity",
+        "§app.session-list/drop-overlay"
       ]
     }
   },

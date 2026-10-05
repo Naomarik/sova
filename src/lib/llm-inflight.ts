@@ -34,6 +34,10 @@ export interface TokenVelocityView {
   sentence: string;
   /** The ring holds a token in its last 30 minutes by `now`: only then does the sidebar tick. */
   active: boolean;
+  /** A slot's length in ms, and the epoch slot `now` fell in (the series' last): what the scrub
+      card's time span is read from, so it can't disagree with the chart at a slot boundary. */
+  slotMs: number;
+  slot: number;
 }
 
 /**
@@ -68,7 +72,8 @@ export function tokenVelocityView(inflight: LlmInflight | null, now: number): To
   const t = inflight?.tokens;
   if (!usable(t)) {
     const series = Array.from({ length: VELOCITY_SLOTS }, () => 0);
-    return { state: "unknown", perMinute: null, readout: "–", series, mean30: 0, scale: VELOCITY_SCALE_FLOOR, sentence: "Output tokens a minute: not known yet.", active: false };
+    const slotMs = 30_000;
+    return { state: "unknown", perMinute: null, readout: "–", series, mean30: 0, scale: VELOCITY_SCALE_FLOOR, sentence: "Output tokens a minute: not known yet.", active: false, slotMs, slot: Math.floor(now / slotMs) };
   }
   const cur = Math.floor(now / t.bucketMs);
   const perSlotMin = 60_000 / t.bucketMs;
@@ -95,7 +100,79 @@ export function tokenVelocityView(inflight: LlmInflight | null, now: number): To
     scale: Math.max(VELOCITY_SCALE_FLOOR, ...series),
     sentence,
     active,
+    slotMs: t.bucketMs,
+    slot: cur,
   };
+}
+
+/** One chart column as the scrub card reads it out (§app.insights/velocity-scrub). */
+export interface VelocityColumnReading {
+  /** Its span, epoch ms: from its oldest slot's start to its newest slot's end. */
+  from: number;
+  to: number;
+  /** The mean rate of its slots, tokens a minute, and the tokens they hold. */
+  perMinute: number;
+  tokens: number;
+  /** It holds the newest minute, whose replies are still landing (the chart draws it hollow). */
+  hollow: boolean;
+  /** Its rate ÷ the 30-minute mean; null with no mean to compare with. */
+  vsMean: number | null;
+  /** The ring is partial: the rate is a floor. */
+  partial: boolean;
+}
+
+/**
+ * Column `index` of the chart `velocityChart` draws from the same view (`group` slots a column,
+ * oldest 0), or null while the ring is unknown or for an index off the chart. Read from the view
+ * alone, so the card and the chart can't disagree.
+ */
+export function velocityColumnAt(v: TokenVelocityView, group: 2 | 4, index: number): VelocityColumnReading | null {
+  const count = Math.floor(v.series.length / group);
+  if (v.state === "unknown" || !Number.isInteger(index) || index < 0 || index >= count) return null;
+  let rate = 0;
+  for (let j = 0; j < group; j++) rate += v.series[index * group + j] ?? 0;
+  const perMinute = rate / group;
+  const minutes = (group * v.slotMs) / 60_000;
+  const first = v.slot - (v.series.length - 1) + index * group;
+  return {
+    from: first * v.slotMs,
+    to: (first + group) * v.slotMs,
+    perMinute,
+    tokens: Math.round(perMinute * minutes),
+    hollow: (count - 1 - index) * group < 2,
+    vsMean: v.mean30 > 0 ? perMinute / v.mean30 : null,
+    partial: v.state === "partial",
+  };
+}
+
+/** A local time on the 24-hour clock, rounded down to its minute: `14:06`, never seconds. */
+function clock24(ms: number): string {
+  const d = new Date(ms);
+  const two = (n: number) => String(n).padStart(2, "0");
+  return `${two(d.getHours())}:${two(d.getMinutes())}`;
+}
+
+/** The scrub card's three lines: the span (`14:06–14:07`, the hollow column `Now`), the rate
+    (`38k`, `at least` while partial) and a caption comparing it with the 30-minute mean. */
+export function velocityScrubCard(r: VelocityColumnReading): { span: string; atLeast: boolean; figure: string; caption: string } {
+  let caption: string;
+  // The hollow column is a minute not yet over: say so, never that replies are in progress.
+  if (!(r.tokens > 0) || r.vsMean === null) caption = r.hollow ? "Nothing yet this minute" : "No output";
+  else caption = `${r.vsMean < 0.1 ? "<0.1" : r.vsMean.toFixed(1)}× the 30-min average`;
+  if (r.hollow && r.tokens > 0 && r.vsMean !== null) caption = `So far this minute · ${caption}`;
+  return {
+    span: r.hollow ? "Now" : `${clock24(r.from)}–${clock24(r.to)}`,
+    atLeast: r.partial,
+    figure: denseCount(r.perMinute),
+    caption,
+  };
+}
+
+/** The column under `x` pixels from the chart's left edge at `pitch`: clamped to the first and the
+    last, so the pixels the pitch leaves over pick the newest; null for a chart with no columns. */
+export function columnAtX(x: number, pitch: number, count: number): number | null {
+  if (!(count > 0) || !(pitch > 0) || !Number.isFinite(x)) return null;
+  return Math.max(0, Math.min(count - 1, Math.floor(x / pitch)));
 }
 
 export interface VelocityColumn {

@@ -32,7 +32,7 @@
     "server/vis-check.ts": "type"
   },
   "readers": {
-    "server/chat-manager.ts": {"calls": 2, "shapes": 2, "reaches": 9},
+    "server/chat-manager.ts": {"calls": 0, "shapes": 1, "reaches": 0},
     "server/org-test-fixtures.ts": {"calls": 0, "shapes": 1, "reaches": 0},
     "server/user-turns.ts": {"calls": 0, "shapes": 1, "reaches": 0},
     "shared/wire-v1.ts": {"calls": 0, "shapes": 22, "reaches": 0},

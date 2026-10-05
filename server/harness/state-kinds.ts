@@ -68,7 +68,7 @@ function kind<T>(type: string, fold: StateFold, parse: (data: unknown) => T | nu
 
 // ---- Sova's own -------------------------------------------------------------------------------------
 
-/** A rewind's marker (chat-manager `rewindSession`): pi's leaf on reopen, and insights' rewinds. Any body
+/** A rewind's marker (harness/pi/history-ops `rewindSession`): pi's leaf on reopen, and insights' rewinds. Any body
     reads (insights keeps a marker with neither id; it drops one with no entry id or time). */
 export interface RewindData {
   targetId: string;

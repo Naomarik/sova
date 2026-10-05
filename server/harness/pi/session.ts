@@ -5,6 +5,9 @@
 // subscribe, one pi listener per Sova listener, mapped inside it: same order, same tick.
 import type { AgentSession, AgentSessionRuntime } from "@earendil-works/pi-coding-agent";
 import type {
+  CommandOwner,
+  CompactHooks,
+  CompactOutcome,
   EntryId,
   HarnessCommand,
   HarnessEvent,
@@ -16,10 +19,15 @@ import type {
   HEntry,
   ImageInput,
   InputSource,
+  OwnedCommand,
+  RewindHooks,
+  RewindOutcome,
   SendOptions,
   SessionState,
   ToolSpec,
 } from "../../../shared/harness";
+import { commandContextOf, ownedCommand } from "./commands";
+import { compactSession, rewindSession } from "./history-ops";
 import { historyOf, toHEntry } from "./reader";
 import { resourcesOf } from "./resources";
 import { piSessionState } from "./state";
@@ -215,6 +223,15 @@ export class PiHarnessSession implements HarnessSession {
     return this.s.abort();
   }
 
+  /** P10: navigateTree, then the marker (history-ops.ts rewindSession). */
+  rewindTo(entryId: EntryId, hooks: RewindHooks): Promise<RewindOutcome> {
+    return rewindSession(this.s, entryId, hooks);
+  }
+  /** P2/P3: pi's compact() with its write wrapped (history-ops.ts compactSession). */
+  compact(instructions: string | undefined, hooks: CompactHooks): Promise<CompactOutcome> {
+    return compactSession(this.s, instructions, hooks);
+  }
+
   async findModel(ref: string): Promise<{ ok: true; model: HarnessModel } | { ok: false; error: string }> {
     const models = this.runtime.services.modelRuntime;
     const found = (await models.getAvailable()).find((m) => `${m.provider}/${m.id}` === ref);
@@ -265,6 +282,13 @@ export class PiHarnessSession implements HarnessSession {
     return out;
   }
 
+  /** P14: the owner's own command, found by its source path (commands.ts). */
+  command(owner: CommandOwner): OwnedCommand | undefined {
+    return ownedCommand(this.s.extensionRunner, owner);
+  }
+  commandContext(): unknown {
+    return commandContextOf(this.s.extensionRunner);
+  }
   resources(): HarnessResources {
     return resourcesOf(this.s.resourceLoader);
   }

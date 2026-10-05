@@ -217,7 +217,7 @@ describe("someone marked left", () => {
     assert.ok(prompt.includes("# People who have left the organization"), prompt);
     assert.doesNotMatch(prompt, /\bGate\b/, "the model is never given the org name (§app.organizations/privacy)");
     assert.match(block.slice(0, block.indexOf("# How to work")), /- Gus Gone — was Staff/);
-    const tool = loadout.batonTools(c.sessionId, () => {}).find((t) => t.name === "propose_roster_edit")!;
+    const tool = loadout.batonTools(c.sessionId, { append: () => "" }).find((t) => t.name === "propose_roster_edit")!;
     await assert.rejects(
       tool.execute("tc", { name: "gus gone", role: "IT", contact: { email: "gus@example.com" }, why: "knows it", quote: "ask Gus" }, undefined, undefined, undefined as never),
       /Gus Gone has left the organization/,

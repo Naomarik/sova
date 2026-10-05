@@ -301,7 +301,7 @@ describe("offers and leases", async () => {
 describe("referrals", async () => {
   const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Bank", goal: "g" });
   const appended: { type: string; data: any }[] = [];
-  const tools = batonTools(c.sessionId, (type, data) => appended.push({ type, data }));
+  const tools = batonTools(c.sessionId, { append: (kind, data: any) => (appended.push({ type: kind.type, data }), "") });
   const propose = tools.find((t) => t.name === "propose_roster_edit")!;
   const call = (params: unknown) => propose.execute("id", params as never, undefined, undefined, undefined as never);
 

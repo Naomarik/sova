@@ -14267,6 +14267,45 @@
         "pi-config/extensions/spec/tests/toc.test.mjs",
         "pi-config/extensions/spec/core/README.md"
       ]
+    },
+    "§tools.spec/frame": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/record-fields",
+        "§tools.spec/context-packets",
+        "§tools.spec/single-read"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/fields.mjs",
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/core/packet.mjs",
+        "pi-config/extensions/spec/core/read.mjs",
+        "pi-config/extensions/spec/tests/frame.test.mjs",
+        "pi-config/extensions/spec/core/toc.mjs",
+        "pi-config/extensions/spec/core/README.md"
+      ]
+    },
+    "§tools.spec/record-fields": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/context-packets",
+        "§tools.spec/contents-view",
+        "§tools.spec/single-read"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/fields.mjs",
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/core/toc.mjs",
+        "pi-config/extensions/spec/core/read.mjs",
+        "pi-config/extensions/spec/tests/frame.test.mjs",
+        "pi-config/extensions/spec/core/packet.mjs",
+        "pi-config/extensions/spec/core/README.md",
+        "pi-config/extensions/spec/README.md"
+      ]
     }
   },
   "boundary": {

@@ -186,7 +186,7 @@ machine inspection and review. No new mandatory assessment or release gate is in
 ### Reading a packet
 
 `packet '§ns/name'` starts the prose stream. `--part inventory|frontier|code|findings` starts a
-detailed inventory independently; `--cursor` continues the chosen stream, and the budget may be
+detailed inventory independently, and `--part frame` the always-on frame (§tools.spec/frame); `--cursor` continues the chosen stream, and the budget may be
 changed between pages. Counts name the whole streams; `remaining` and `next` describe only the
 selected stream. An empty stream terminates without a cursor. `packet --help` also returns small
 bounded JSON. The global help and the existing graph commands keep their existing formats.
@@ -213,8 +213,9 @@ claims one hop from the requested one in a single direction, so the reader picks
 instead of receiving a whole dependency chain. `out` lists the claim's declared `requires`, then, in
 a group of their own, the claims its prose names without requiring them; `in` lists the claims whose
 `requires` name it; `down` lists an H1's H2 children, or a section's members, in declaration order;
-`up` gives the parent of an H2; `mentions` lists the claims whose prose names it. It never follows a
-second hop and never prints a neighbour's passage.
+`up` gives the parent of an H2; `mentions` lists the claims whose prose names it. Records carrying
+the optional `embeds` and `about` fields add groups of their own to `out` and `in`
+(§tools.spec/record-fields). It never follows a second hop and never prints a neighbour's passage.
 
 The output starts with the requested claim itself: its id, title, kind, labels, size and its own
 "what". Then each neighbour gets one line, grouped under a heading per kind of link and ordered by id
@@ -253,7 +254,10 @@ project code is run, and the `packet` and `scope` outputs are unchanged.
 ## §tools.spec/single-read — `read` returns one passage at its own size
 
 The read-only `read '§id'` command returns exactly one declared passage and nothing it requires,
-contains or mentions. For an H1 that passage is its lede, the text before its first H2; `--whole`
+contains or mentions, except the surfaces its record `embeds`: those are drawn inside it, so each
+follows as further passages, whole (lede and every H2), in the same stream; and its first page
+carries the always-on frame outside the budget (§tools.spec/frame). For an H1 that passage
+is its lede, the text before its first H2; `--whole`
 returns the lede and then every H2 of the file in declaration order, each as its own passage. The
 text is byte-for-byte the passage the `scope` API supplies, with its id, kind, title, file, lines
 and any declared labels, and a passage larger than the budget arrives as exact UTF-8 fragments,
@@ -267,3 +271,50 @@ ordinary size arrives in one call; explicit budgets are 1,024 to 32,768. The cur
 stored-nothing rules are the contents view's, with compact JSON with `--json` and readable text
 without; exit 0 when the stream is done, 1 when more remains, 2 on a refusal such as an unknown id
 or an untrusted graph.
+
+## §tools.spec/record-fields — Optional `embeds`, `core` and `about` record fields
+
+A manifest record may carry three optional fields, each project flagging its own records; none is a
+new kind, label value or top-level key, so a core that predates them reads the same manifest and
+ignores them. `embeds: [§id]` names surfaces drawn inside this claim, which a reader of it needs
+whole. `core: true` marks a claim, typically an H2, as part of the always-on frame (see
+§tools.spec/frame). `about: [§id]` on a note names the surface or behavior the note serves, so the
+note is written once and its target's record is never edited to link it.
+
+An `embeds` edge is a dependency like `requires`: `scope` and `packet` follow it with the reason
+`embeds`, reverse `impact` walks it back to the embedding claim, and the contents view lists it under
+`out` in an "embeds" group of its own and under `in` as "embedded by". `read` of a claim also
+delivers each surface it embeds, whole (see §tools.spec/single-read).
+
+An `about` note shows in the contents view under `out` for its target, in an "about" group, and also
+for each H2 of a target H1, marked as reached through that H1. `read` names the notes about the
+passage it delivers, and `packet` adds to its prose the notes about the requested claim, its H1 and
+the surfaces it embeds, each with the reason `about`. On a spec whose records carry none of these
+fields, every existing output is unchanged.
+
+`check` validates them. A value of the wrong shape is a record error, like a malformed `requires`:
+`embeds` or `about` not an array of § ids, or `core` not a boolean. A misuse is a warning naming the
+record, so one misplaced field never makes the whole graph untrusted: `about` on a record that is
+not a note, a target with no record, an `embeds` target that is not a surface, and an `about` target
+that is a note or section.
+
+## §tools.spec/frame — The always-on frame is its own stream, at most 12,000 bytes
+
+The frame is the passages of every record flagged `core: true`, in file and line order, each the
+exact text `scope` supplies (an H1 gives its lede only, never its H2s). It is never mixed into what a
+reader asked for, and the page budget of the requested claim is spent on that claim alone.
+`packet '§id' --part frame` pages it as a stream of its own, and `read --frame`, with no § id, reads
+it under read's budget and cursor rules. So that it arrives unasked, the first page of `read '§id'`
+also carries the whole frame as items of their own, outside that page's budget, leaving out any
+passage the page already delivers; continuation pages never carry it, and `--no-frame` drops it
+for a reader that already has it.
+
+Whenever the spec flags at least one core record, every `packet`, `toc` and `read` page (refusals
+aside) names the frame with its passage count, its byte count (the sum of its passages' UTF-8 bytes)
+and the cap, packet's counts include the `frame` stream, and the readable text of `toc` and `read`
+says how to read it, so the frame is always named even when it is not delivered. A
+spec with no core record prints nothing about a frame, and its outputs are unchanged.
+
+The cap is 12,000 decimal bytes. A frame over it is still delivered whole, never cut: the summary
+marks it over the cap, and `check` and `packet` report a `frame-over-cap` warning with its size, so
+the project moves a record out of the frame or accepts the cost in plain view.

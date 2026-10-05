@@ -42,9 +42,11 @@ export const scriptedModelsJson = () => ({
   },
 });
 
-/** One reply: text (the default "ok"), one or more tool calls, or a provider error. */
+/** One reply: text (the default "ok"), one or more tool calls, or a provider error. A text reply may
+    report usage (the default is all zeros), e.g. a context near the window to drive pi's threshold
+    compaction. */
 export type ScriptedReply =
-  | { text: string }
+  | { text: string; usage?: { input?: number; output?: number; totalTokens?: number } }
   | { toolCall: { name: string; arguments: Record<string, unknown> } }
   | { toolCalls: { name: string; arguments: Record<string, unknown> }[] }
   | { error: string };
@@ -141,7 +143,8 @@ export class ScriptedModel {
       ? tools.map((t) => ({ type: "toolCall", id: `call-${++this.toolCalls}`, name: t.name, arguments: t.arguments }))
       : [{ type: "text", text: reply && "text" in reply ? reply.text : "ok" }];
     const reason = tools.length ? "toolUse" : "stop";
-    const message = { ...base, content, stopReason: reason };
+    const usage = reply && "usage" in reply && reply.usage ? { ...USAGE, ...reply.usage } : USAGE;
+    const message = { ...base, usage, content, stopReason: reason };
     return stream({ type: "done", reason, message }, message);
   }
 }

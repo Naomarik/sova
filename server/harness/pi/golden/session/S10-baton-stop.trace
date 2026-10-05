@@ -1,0 +1,91 @@
+step attach A, B
+A {"type":"hello","isStreaming":false,"isCompacting":false,"model":"scripted/scripted","thinking":"off","items":["00000002 info"]}
+A {"type":"commands"}
+A {"type":"queue","items":[]}
+A {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"new-chats"}
+A {"type":"profile","profile":null,"locked":false,"pickable":false,"tools":"<elided>","removed":[],"granted":[]}
+B {"type":"hello","isStreaming":false,"isCompacting":false,"model":"scripted/scripted","thinking":"off","items":["00000002 info"]}
+B {"type":"commands"}
+B {"type":"queue","items":[]}
+B {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"new-chats"}
+B {"type":"profile","profile":null,"locked":false,"pickable":false,"tools":"<elided>","removed":[],"granted":[]}
+step Bob says "first"
+write {"id":"00000003","type":"model_change"}
+write {"id":"00000004","type":"thinking_level_change"}
+sdk prompt ["first",{"source":"interactive"}]
+A {"type":"links","links":[]}
+B {"type":"links","links":[]}
+A {"type":"event","event":{"type":"agent_start"}}
+B {"type":"event","v":2,"event":{"type":"run.start"}}
+A {"type":"event","event":{"type":"turn_start"}}
+A {"type":"event","event":{"type":"message_start","message":{"role":"system","elided":true}}}
+write {"id":"00000005","type":"message","role":"system"}
+A {"type":"event","event":{"type":"message_end","message":{"role":"system","elided":true}},"entryId":"00000005"}
+A {"type":"event","event":{"type":"message_start","message":{"role":"user","content":[{"type":"text","text":"first"}],"timestamp":1000000000000}}}
+B {"type":"event","v":2,"event":{"type":"message.start","role":"user","text":"first","images":[]}}
+write {"id":"00000006","type":"message","role":"user"}
+A {"type":"event","event":{"type":"message_end","message":{"role":"user","content":[{"type":"text","text":"first"}],"timestamp":1000000000000}},"entryId":"00000006"}
+B {"type":"event","v":2,"event":{"type":"message.end","role":"user","entryId":"00000006"}}
+write {"id":"00000007","type":"custom","customType":"sova-baton-sent"}
+A {"type":"append","items":[{"id":"00000007","kind":"info","at":"2000-01-01T00:00:00.000Z","batonMark":{"kind":"sent","targetId":"00000006","by":"<BOB>"},"meta":{"type":"custom","customType":"sova-baton-sent"}}]}
+B {"type":"append","items":[{"id":"00000007","kind":"info","at":"2000-01-01T00:00:00.000Z","batonMark":{"kind":"sent","targetId":"00000006","by":"<BOB>"},"facts":{}}]}
+step Bob says "second"
+A {"type":"queue","items":[{"id":"00000000-0000-7000-8000-000000000002","kind":"followUp","state":"queued","text":"second","origin":"server"}]}
+B {"type":"queue","items":[{"id":"00000000-0000-7000-8000-000000000002","kind":"followUp","state":"queued","text":"second","origin":"server"}]}
+A {"type":"queue","items":[{"id":"00000000-0000-7000-8000-000000000002","kind":"followUp","state":"sending","text":"second","origin":"server"}]}
+B {"type":"queue","items":[{"id":"00000000-0000-7000-8000-000000000002","kind":"followUp","state":"sending","text":"second","origin":"server"}]}
+sdk prompt ["second",{"streamingBehavior":"followUp","source":"interactive"}]
+step Bob says "third"
+A {"type":"queue","items":[{"id":"00000000-0000-7000-8000-000000000002","kind":"followUp","state":"sending","text":"second","origin":"server"},{"id":"00000000-0000-7000-8000-000000000003","kind":"followUp","state":"queued","text":"third","origin":"server"}]}
+B {"type":"queue","items":[{"id":"00000000-0000-7000-8000-000000000002","kind":"followUp","state":"sending","text":"second","origin":"server"},{"id":"00000000-0000-7000-8000-000000000003","kind":"followUp","state":"queued","text":"third","origin":"server"}]}
+A {"type":"event","event":{"type":"queue_update","steering":[],"followUp":["second"]}}
+step A sends {"type":"abort"}
+sdk clearQueue []
+A {"type":"event","event":{"type":"queue_update","steering":[],"followUp":[]}}
+A {"type":"queue_item_gone","itemId":"00000000-0000-7000-8000-000000000002","reason":"delivered"}
+B {"type":"queue_item_gone","itemId":"00000000-0000-7000-8000-000000000002","reason":"delivered"}
+A {"type":"queue_item_gone","itemId":"00000000-0000-7000-8000-000000000003","reason":"delivered"}
+B {"type":"queue_item_gone","itemId":"00000000-0000-7000-8000-000000000003","reason":"delivered"}
+A {"type":"queue","items":[]}
+B {"type":"queue","items":[]}
+sdk abort []
+A {"type":"event","event":{"type":"message_start","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":""}],"stopReason":"aborted","errorMessage":"Request was aborted"}}}
+B {"type":"event","v":2,"event":{"type":"message.start","role":"assistant","model":"scripted/scripted","parts":[{"kind":"text","text":""}]}}
+write {"id":"00000008","type":"message","role":"assistant"}
+A {"type":"event","event":{"type":"message_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":""}],"stopReason":"aborted","errorMessage":"Request was aborted"}},"entryId":"00000008"}
+B {"type":"event","v":2,"event":{"type":"message.end","role":"assistant","entryId":"00000008","model":"scripted/scripted","parts":[{"kind":"text","text":""}],"stop":"aborted"}}
+A {"type":"event","event":{"type":"turn_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":""}],"stopReason":"aborted","errorMessage":"Request was aborted"},"toolResults":[]}}
+A {"type":"event","event":{"type":"agent_end","messages":[{"role":"system","elided":true},{"role":"user","content":[{"type":"text","text":"first"}],"timestamp":1000000000000},{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":""}],"stopReason":"aborted","errorMessage":"Request was aborted"}],"willRetry":false}}
+A {"type":"event","event":{"type":"agent_settled"}}
+B {"type":"event","v":2,"event":{"type":"run.settled"}}
+write {"id":"00000009","type":"message","role":"user"}
+write {"id":"00000010","type":"custom","customType":"sova-baton-sent"}
+A {"type":"append","items":[{"id":"00000009","kind":"user","at":"2000-01-01T00:00:00.000Z","text":"second","meta":{"type":"message","role":"user"}},{"id":"00000010","kind":"info","at":"2000-01-01T00:00:00.000Z","batonMark":{"kind":"sent","targetId":"00000009","by":"<BOB>"},"meta":{"type":"custom","customType":"sova-baton-sent"}}]}
+B {"type":"append","items":[{"id":"00000009","kind":"user","at":"2000-01-01T00:00:00.000Z","text":"second","facts":{}},{"id":"00000010","kind":"info","at":"2000-01-01T00:00:00.000Z","batonMark":{"kind":"sent","targetId":"00000009","by":"<BOB>"},"facts":{}}]}
+write {"id":"00000011","type":"message","role":"user"}
+write {"id":"00000012","type":"custom","customType":"sova-baton-sent"}
+A {"type":"append","items":[{"id":"00000011","kind":"user","at":"2000-01-01T00:00:00.000Z","text":"third","meta":{"type":"message","role":"user"}},{"id":"00000012","kind":"info","at":"2000-01-01T00:00:00.000Z","batonMark":{"kind":"sent","targetId":"00000011","by":"<BOB>"},"meta":{"type":"custom","customType":"sova-baton-sent"}}]}
+B {"type":"append","items":[{"id":"00000011","kind":"user","at":"2000-01-01T00:00:00.000Z","text":"third","facts":{}},{"id":"00000012","kind":"info","at":"2000-01-01T00:00:00.000Z","batonMark":{"kind":"sent","targetId":"00000011","by":"<BOB>"},"facts":{}}]}
+step Bob says "fourth"
+sdk prompt ["fourth",{"source":"interactive"}]
+A {"type":"event","event":{"type":"agent_start"}}
+B {"type":"event","v":2,"event":{"type":"run.start"}}
+A {"type":"event","event":{"type":"turn_start"}}
+A {"type":"event","event":{"type":"message_start","message":{"role":"user","content":[{"type":"text","text":"fourth"}],"timestamp":1000000000000}}}
+B {"type":"event","v":2,"event":{"type":"message.start","role":"user","text":"fourth","images":[]}}
+write {"id":"00000013","type":"message","role":"user"}
+A {"type":"event","event":{"type":"message_end","message":{"role":"user","content":[{"type":"text","text":"fourth"}],"timestamp":1000000000000}},"entryId":"00000013"}
+B {"type":"event","v":2,"event":{"type":"message.end","role":"user","entryId":"00000013"}}
+write {"id":"00000014","type":"custom","customType":"sova-baton-sent"}
+A {"type":"append","items":[{"id":"00000014","kind":"info","at":"2000-01-01T00:00:00.000Z","batonMark":{"kind":"sent","targetId":"00000013","by":"<BOB>"},"meta":{"type":"custom","customType":"sova-baton-sent"}}]}
+B {"type":"append","items":[{"id":"00000014","kind":"info","at":"2000-01-01T00:00:00.000Z","batonMark":{"kind":"sent","targetId":"00000013","by":"<BOB>"},"facts":{}}]}
+A {"type":"event","event":{"type":"message_start","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"seen"}],"stopReason":"stop"}}}
+B {"type":"event","v":2,"event":{"type":"message.start","role":"assistant","model":"scripted/scripted","parts":[{"kind":"text","text":"seen"}]}}
+write {"id":"00000015","type":"message","role":"assistant"}
+A {"type":"event","event":{"type":"message_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"seen"}],"stopReason":"stop"}},"entryId":"00000015"}
+B {"type":"event","v":2,"event":{"type":"message.end","role":"assistant","entryId":"00000015","model":"scripted/scripted","parts":[{"kind":"text","text":"seen"}],"stop":"ok"}}
+A {"type":"event","event":{"type":"turn_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"seen"}],"stopReason":"stop"},"toolResults":[]}}
+A {"type":"event","event":{"type":"agent_end","messages":[{"role":"user","content":[{"type":"text","text":"fourth"}],"timestamp":1000000000000},{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"seen"}],"stopReason":"stop"}],"willRetry":false}}
+A {"type":"event","event":{"type":"agent_settled"}}
+B {"type":"event","v":2,"event":{"type":"run.settled"}}
+got next request's messages ["system: ","user: [The conversation passed from Operator (the operator) to Bob Golden]\n[From Bob Golden]\n first","assistant: ","user: [From Bob Golden]\n second","user: [From Bob Golden]\n third","user: [From Bob Golden]\n fourth"]

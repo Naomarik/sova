@@ -17,8 +17,8 @@ import {
   type Theme,
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import { LOGIN_UNCHANGED, OVERSEER_DIALOG_ANSWER_ENTRY, OVERSEER_ENTRY, OVERSEER_SENT_ENTRY } from "../shared/protocol";
-import { BATON_SENT_ENTRY, type BatonSentData, OPERATOR } from "../shared/baton";
+import { LOGIN_UNCHANGED, OVERSEER_ENTRY } from "../shared/protocol";
+import { type BatonSentData, OPERATOR } from "../shared/baton";
 import type { ChatClientMessage, ChatModeResult, ChatServerMessage, CompactRefusal, V1EventFrame, V2EventFrame, ModeApplies, ModeInfo, OverseerDialogAnswerData, OverseerSentMarkerData, QueueItem, RegenerateRefusal, RewindRefusal, SandboxApplyResult, SandboxInfo, SlashCommand, TranscriptItem, WorkerInfo } from "../shared/protocol";
 import { COMPACT_COMMAND, COMPACT_IMAGES_REFUSAL, compactCommand } from "../shared/compact";
 import type { LinkedAgentInfo } from "../shared/mesh-links";
@@ -44,9 +44,11 @@ import { chatClaudeLogin, claudeLoginAfterHello, claudeLoginMessage, isClaudeLog
 import { rowsOf, rowsOfEntry } from "./transcript";
 import { endsMessage, v1Frame, writtenEntryId } from "./harness/pi/wire";
 import { onWire, withRows } from "./wire-rows";
-import type { HEntry } from "../shared/harness";
+import type { HEntry, SessionState, SessionStateWriter, StateKind } from "../shared/harness";
 import { historyOf, liveRead, toHEntry } from "./harness/pi/reader";
 import { contextOfBranch } from "./harness/pi/usage";
+import { piSessionState } from "./harness/pi/state";
+import { BATON_SENT, LOADOUT, MODE, OVERSEER_DIALOG_ANSWER, OVERSEER_SENT, PROFILE, REWIND, SESSION_SENT, stateKindOf, SUBAGENT_PROFILE, TOPIC_DELIVERED } from "./harness/state-kinds";
 import { cutTail, type HistoryPart, pullFields } from "./tail-hello";
 import { isOverseerId } from "./overseer-store";
 import { attachStreamGuard, capsFor, type StreamTrip } from "./stream-guard";
@@ -60,10 +62,10 @@ import { applyForkCacheRouting, forkCacheExtension } from "../pi-config/extensio
 import { visCheckExtension, type VisCheckHost } from "./vis-check";
 import { projectEngine } from "./project-services/routes";
 import { projectVerbsExtension } from "./project-services/tools";
-import { excludedTools, GRANT_TOOLS, keyOf, KNOWN_REMOVABLE_TOOLS, PROFILE_ENTRY, SESSION_SENT_ENTRY, singletonRaceText, type ProfileEntryData, type SessionSentData } from "../shared/profiles";
+import { excludedTools, GRANT_TOOLS, keyOf, KNOWN_REMOVABLE_TOOLS, singletonRaceText, type ProfileEntryData, type SessionSentData } from "../shared/profiles";
 import { profileOnBranch } from "./session-profile";
 import { agentRoot } from "./state-root";
-import { LOADOUT_ENTRY, loadoutOnBranch, loadoutOverrides, type LoadoutEntryData, type LoadoutState } from "./session-loadout";
+import { loadoutOnBranch, loadoutOverrides, type LoadoutEntryData, type LoadoutState } from "./session-loadout";
 import { RunState, SessionLimits, sessionPowersExtension } from "./session-powers";
 import { queuePushExtension, topicStore } from "./topics";
 import { instrumentModelRuntime } from "../pi-config/extensions/llm-inflight/runtime.ts";
@@ -628,7 +630,7 @@ export type RewindOutcome = { ok: true; editorText: string } | { ok: false; reas
 export interface RewindTarget {
   readonly isStreaming: boolean;
   readonly isCompacting: boolean;
-  readonly sessionManager: Pick<SessionManager, "getBranch" | "getLeafId" | "appendCustomEntry">;
+  readonly sessionManager: Pick<SessionManager, "getBranch" | "getLeafId" | "getEntries" | "appendCustomEntry">;
   navigateTree(targetId: string, options: { summarize: boolean }): Promise<{ editorText?: string; cancelled: boolean }>;
 }
 
@@ -681,7 +683,7 @@ export async function rewindSession(
     const late = check();
     if (late) return late;
     hooks.beforeMarker();
-    sm.appendCustomEntry(REWIND_ENTRY, { targetId: entryId, fromLeafId });
+    piSessionState(sm).append(REWIND, { targetId: entryId, fromLeafId: fromLeafId! }); // the target is on the branch, so a leaf exists
     // Without pi 0.87's image resize notes: the composer gets the text as typed, not the model's copy.
     return { ok: true, editorText: stripImageNotes(result.editorText ?? "", target.blocks) };
   } catch (err) {
@@ -944,11 +946,11 @@ const senderOfItem = (item: Pick<WebQueueItem, "overseer" | "baton" | "session">
         : null;
 
 /** Write a sender's invisible marker for the user entry `targetId`; returns the marker's id. */
-function appendSenderMarker(sm: SessionManager, targetId: string, sender: Sender): string {
-  if (sender.kind === "baton") return sm.appendCustomEntry(BATON_SENT_ENTRY, { v: 1, targetId, by: sender.by } satisfies BatonSentData);
+function appendSenderMarker(state: SessionStateWriter, targetId: string, sender: Sender): string {
+  if (sender.kind === "baton") return state.append(BATON_SENT, { v: 1, targetId, by: sender.by } satisfies BatonSentData);
   if (sender.kind === "session")
-    return sm.appendCustomEntry(SESSION_SENT_ENTRY, { v: 1, targetId, from: { sessionId: sender.sessionId, title: sender.title }, hop: sender.hop } satisfies SessionSentData);
-  return sm.appendCustomEntry(OVERSEER_SENT_ENTRY, { v: 1, targetId, ...(sender.overseerId ? { overseerId: sender.overseerId } : {}) } satisfies OverseerSentMarkerData);
+    return state.append(SESSION_SENT, { v: 1, targetId, from: { sessionId: sender.sessionId, title: sender.title }, hop: sender.hop } satisfies SessionSentData);
+  return state.append(OVERSEER_SENT, { v: 1, targetId, ...(sender.overseerId ? { overseerId: sender.overseerId } : {}) } satisfies OverseerSentMarkerData);
 }
 
 /** A runtime's profile (§chat.profiles/enforcement): the branch's snapshot when it was built, and,
@@ -1141,6 +1143,11 @@ class ChatSession {
 
   get session(): AgentSession {
     return this.runtime.session;
+  }
+
+  /** This session's state (§app.harness/state), on the runtime's current session each time. */
+  get state(): SessionState {
+    return piSessionState(this.session.sessionManager);
   }
 
   /** Throws BusyError if a foreign writer was detected (now or earlier). */
@@ -1442,7 +1449,7 @@ class ChatSession {
       const leaf = sm.getLeafId();
       const entry = leaf ? sm.getEntry(leaf) : undefined;
       if (entry?.type !== "message" || entry.message.role !== "user") return mark!.gone();
-      sm.appendCustomEntry(TOPIC_DELIVERED_ENTRY, { v: 1, targetId: entry.id, topic: mark!.topic, batch: mark!.batch, items: mark!.items });
+      piSessionState(sm).append(TOPIC_DELIVERED, { v: 1, targetId: entry.id, topic: mark!.topic, batch: mark!.batch, items: mark!.items });
       markOwned(this.path);
       mark!.entered();
     });
@@ -1837,7 +1844,7 @@ class ChatSession {
     if (!this.isPristine()) throw new RefusedError("The profile is fixed once a message is sent.");
     if (this.session.isStreaming || this.isCompacting() || this.starting) throw new BusyError("Wait for the reply to finish first.", "busy");
     this.flushDeferredAppends(); // open-time entries go first, as in pinMode
-    this.session.sessionManager.appendCustomEntry(PROFILE_ENTRY, data);
+    this.state.append(PROFILE, data);
     markOwned(this.path);
   }
 
@@ -1853,7 +1860,7 @@ class ChatSession {
     if (!this.isPristine()) throw new RefusedError("Context files and skills are fixed once a message is sent.");
     if (this.session.isStreaming || this.isCompacting() || this.starting) throw new BusyError("Wait for the reply to finish first.", "busy");
     this.flushDeferredAppends(); // open-time entries go first, as in writeProfile
-    this.session.sessionManager.appendCustomEntry(LOADOUT_ENTRY, data);
+    this.state.append(LOADOUT, data);
     markOwned(this.path);
   }
 
@@ -1930,7 +1937,7 @@ class ChatSession {
     this.flushDeferredAppends();
     const sm = this.session.sessionManager;
     const entry = pickEntryFor(sm.getBranch(), profile);
-    if (entry) sm.appendCustomEntry(entry.customType, entry.data);
+    if (entry) piSessionState(sm).append(SUBAGENT_PROFILE, entry.data);
     markOwned(this.path);
     return { ...this.subagentProfileInfo(), applies: this.session.isStreaming ? "after-turn" as const : "now" as const };
   }
@@ -2028,7 +2035,7 @@ class ChatSession {
     const pin = pinEntryFor(sm.getBranch(), this.modeState);
     if (!pin) return true;
     this.flushDeferredAppends(); // open-time entries go before the mode entry, as in applyMode
-    sm.appendCustomEntry(pin.customType, pin.data);
+    piSessionState(sm).append(MODE, pin.data);
     markOwned(this.path);
     return true;
   }
@@ -2375,7 +2382,7 @@ class ChatSession {
       const leaf = sm.getLeafId();
       const entry = leaf ? sm.getEntry(leaf) : undefined;
       if (entry?.type !== "message" || entry.message.role !== "user") return;
-      const markerId = appendSenderMarker(sm, entry.id, send?.sender ?? { kind: "overseer" });
+      const markerId = appendSenderMarker(piSessionState(sm), entry.id, send?.sender ?? { kind: "overseer" });
       markOwned(this.path);
       const marker = toHEntry(sm.getEntry(markerId));
       if (marker) {
@@ -2413,7 +2420,7 @@ class ChatSession {
    * messages (with the `sova-baton-sent` / `sova-overseer-sent` marker), with no turn: nothing
    * anyone sent is lost when a reply is cut short (§app.baton/hand-off). One the run did take
    * after `since` (a message in the transcript with its text) is not written twice. The model
-   * reads them with the next turn. Refused mid-turn, like appendSpecialEntry.
+   * reads them with the next turn. Refused mid-turn, like appendStateRow.
    */
   enterQueued(items: readonly WebQueueItem[], since: string | null): number {
     if (!items.length) return 0;
@@ -2439,7 +2446,7 @@ class ChatSession {
       for (const m of marks) this.dropSenderMark(m);
       const id = sm.appendMessage({ role: "user", content: [{ type: "text", text: item.text }, ...(item.images ?? [])], timestamp: Date.now() });
       const sender = senderOfItem(item);
-      const markerId = sender ? appendSenderMarker(sm, id, sender) : null;
+      const markerId = sender ? appendSenderMarker(piSessionState(sm), id, sender) : null;
       const items = [id, markerId].flatMap((eid) => {
         const entry = eid ? toHEntry(sm.getEntry(eid)) : null;
         return entry ? rowsOfEntry(entry) : [];
@@ -2461,12 +2468,12 @@ class ChatSession {
    * made with Take back). The same write guards as a prompt; refused mid-turn, where the entry
    * would land inside the run. Every client gets the row the entry renders as.
    */
-  appendSpecialEntry(customType: string, data: unknown): string {
+  appendStateRow<T>(kind: StateKind<T>, data: T): string {
     assertNotLive(this.path);
     this.assertNoForeignWrites();
     if (this.session.isStreaming || this.isCompacting()) throw new BusyError("Wait for the reply to finish first.", "busy");
     const sm = this.session.sessionManager;
-    const id = sm.appendCustomEntry(customType, data);
+    const id = piSessionState(sm).append(kind, data);
     markOwned(this.path);
     const entry = toHEntry(sm.getEntry(id));
     if (entry) {
@@ -2474,6 +2481,14 @@ class ChatSession {
       if (items.length) this.broadcast({ type: "append", items });
     }
     return id;
+  }
+
+  /** TEMPORARY (M4-T2 to M4-T3): appendStateRow for a caller that has only the type; the baton callers move
+      to appendStateRow with their kinds, and this goes. Every type they write is registered. */
+  appendSpecialEntry(customType: string, data: unknown): string {
+    const kind = stateKindOf(customType);
+    if (!kind) throw new Error(`${customType} is not a registered state kind`);
+    return this.appendStateRow(kind, data);
   }
 
   /** The extension dialogs waiting on an answer right now (live-pending: a browser is attached). */
@@ -2511,7 +2526,7 @@ class ChatSession {
     pending.resolve(value); // every tab drops the dialog (ui_resolved, from the dialog's own settle)
     this.flushDeferredAppends();
     const data: OverseerDialogAnswerData = { v: 1, title, answer, ...(overseerId ? { overseerId } : {}) };
-    const markerId = this.session.sessionManager.appendCustomEntry(OVERSEER_DIALOG_ANSWER_ENTRY, data);
+    const markerId = this.state.append(OVERSEER_DIALOG_ANSWER, data);
     markOwned(this.path);
     const marker = liveRead(this.session).entry(markerId);
     if (marker) {

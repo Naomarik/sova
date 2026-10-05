@@ -422,7 +422,9 @@ An `embeds` edge is a dependency like `requires`: `scope` and `packet` follow it
 delivers each surface it embeds, whole (see §tools.spec/single-read).
 
 An `about` note shows in the contents view under `out` for its target, in an "about" group, and also
-for each H2 of a target H1, marked as reached through that H1. `read` names the notes about the
+for each H2 of a target H1, marked as reached through that H1; it shows the same way under `in`, as a
+note about the claim or about its H1. When the note's prose doesn't name its target, its why is the
+declared field itself ("about §x (declared on the note)"), never "not mentioned". `read` names the notes about the
 passage it delivers, and `packet` adds to its prose the notes about the requested claim, its H1 and
 the surfaces it embeds, each with the reason `about`. On a spec whose records carry none of these
 fields, every existing output is unchanged except packet's help text and its new `frame` part.

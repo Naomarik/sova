@@ -1,12 +1,13 @@
 import { appendFileSync, createReadStream, existsSync } from "node:fs";
 import { createInterface } from "node:readline";
-import { stripImageNotes } from "../shared/image-note";
+import type { HEntry } from "../shared/harness";
 import { isLinkMessage } from "../shared/link-message";
 import { isTopicBatch } from "../shared/topic-message";
 import type { AutoTitleOutcome, AutoTitleSkip, DecisionFailure, SessionSummary, SessionTitleSettings, WorkerChoice } from "../shared/protocol";
 import { parseWakeNudge } from "../shared/wake";
 import { DecisionError, extractJsonObject, failureMessage } from "./decide";
 import { claudeRun, LLM_TIMEOUT_MS, parseClaudeEnvelope, piText, type LlmProviderDeps } from "./decide-llm";
+import { firstText, lineEntry, lineMay } from "./harness/pi/reader";
 import { cleanSessionTitle, writeAutoTitle } from "./session-titles";
 import { withUsageContext } from "../pi-config/extensions/llm-inflight/attribution.ts";
 
@@ -50,13 +51,7 @@ export interface TitleInput {
 const oneLine = (s: string) => s.replace(/\s+/g, " ").trim();
 const cut = (s: string, max: number) => (s.length > max ? `${s.slice(0, max - 1)}…` : s);
 
-function userText(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    for (const b of content) if (b?.type === "text" && typeof b.text === "string") return stripImageNotes(b.text, content);
-  }
-  return "";
-}
+const userText = (h: HEntry): string => firstText(h) ?? "";
 
 /** A user message that is not the user's own words: the derived title's rule (sessions-index.ts). */
 const notUsers = (text: string): boolean => parseWakeNudge(text) !== null || isLinkMessage(text) || isTopicBatch(text);
@@ -89,20 +84,15 @@ export async function readTitleInput(path: string): Promise<TitleInput> {
   const out: TitleInput = { userMessages: [], topics: [] };
   const rl = createInterface({ input: createReadStream(path, { encoding: "utf8" }), crlfDelay: Infinity });
   for await (const line of rl) {
-    const user = out.userMessages.length < 3 && line.includes('"role":"user"');
+    const user = out.userMessages.length < 3 && lineMay(line, "user");
     const outline = line.includes('"topic-outline"');
     if (!user && !outline) continue;
-    let e: any;
-    try {
-      e = JSON.parse(line);
-    } catch {
-      continue;
-    }
-    if (user && e?.type === "message" && e.message?.role === "user") {
-      const text = oneLine(userText(e.message.content));
+    const h = lineEntry(line); // null: not JSON, skipped
+    if (user && h?.kind === "user") {
+      const text = oneLine(userText(h));
       if (text && !notUsers(text)) out.userMessages.push(text);
-    } else if (outline && e?.type === "custom" && e.customType === "topic-outline") {
-      const o = outlineOf(e.data);
+    } else if (outline && h?.kind === "state" && h.key === "topic-outline") {
+      const o = outlineOf(h.data);
       if (o) {
         out.summaryLine = o.summaryLine;
         out.topics = o.topics;

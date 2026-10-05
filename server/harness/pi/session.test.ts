@@ -55,7 +55,14 @@ describe("PiHarnessSession (§app.harness/session)", () => {
     s.agent.continue = recorder(cont);
     s.agent.hasQueuedMessages = () => true;
     Object.defineProperty(s, "isStreaming", { get: () => true, configurable: true });
-    Object.defineProperty(s, "model", { get: () => ({ provider: "fake", id: "m1" }), configurable: true });
+    Object.defineProperty(s, "model", { get: () => ({ provider: "fake", id: "m1", input: ["text", "image"] }), configurable: true });
+    const loader = {
+      getAgentsFiles: () => ({ agentsFiles: [{ path: "/w/AGENTS.md", content: "x" }] }),
+      getSkills: () => ({ skills: [{ name: "a", filePath: "/w/a/SKILL.md", description: "does a" }] }),
+      getSystemPromptSource: () => undefined,
+      getAppendSystemPromptSources: () => [{ path: "/w/APPEND.md" }],
+    };
+    Object.defineProperty(s, "resourceLoader", { get: () => loader, configurable: true });
 
     await chat.harness.send("hello", { images: undefined, source: "user" });
     await chat.harness.steer("nudge", undefined, { source: "system" });
@@ -65,7 +72,13 @@ describe("PiHarnessSession (§app.harness/session)", () => {
     assert.equal(cont.length, 1);
     assert.equal(chat.harness.queue.hasQueued(), true);
     assert.equal(chat.harness.isRunning(), true);
-    assert.deepEqual(chat.harness.model(), { ref: "fake/m1", provider: "fake", id: "m1" });
+    assert.deepEqual(chat.harness.model(), { ref: "fake/m1", provider: "fake", id: "m1", images: true });
+    assert.deepEqual(chat.harness.resources(), {
+      context: [{ path: "/w/AGENTS.md" }],
+      skills: [{ name: "a", filePath: "/w/a/SKILL.md", description: "does a" }],
+      systemPrompt: undefined,
+      appendSystemPrompt: ["/w/APPEND.md"],
+    });
 
     // And through the chat's own path: a queued hand-off reaches the patched prompt, not pi's.
     Object.defineProperty(s, "isStreaming", { get: () => false, configurable: true });

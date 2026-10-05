@@ -441,7 +441,7 @@ async function writeEntry(sessionId: string, entry: BatonEntry): Promise<void> {
   const waiting = waitingEntries.get(path);
   if (waiting) return void waiting.push(entry);
   try {
-    chat.appendSpecialEntry(entry.kind.type, entry.data);
+    chat.appendStateRow(entry.kind, entry.data);
   } catch (err) {
     if (err instanceof BusyError) waitingEntries.set(path, [entry]);
     else throw err;
@@ -455,7 +455,7 @@ export async function flushEntries(path: string): Promise<void> {
   const chat = await acquireChat(path);
   if (chat.session.isStreaming || chat.isCompacting()) return; // the next settle writes them
   waitingEntries.delete(path);
-  for (const e of waiting) if (typeof e.data.key !== "string" || !hasEntry(chat, e.data.key)) chat.appendSpecialEntry(e.kind.type, e.data);
+  for (const e of waiting) if (typeof e.data.key !== "string" || !hasEntry(chat, e.data.key)) chat.appendStateRow(e.kind, e.data);
 }
 
 /** The statechart's `baton-entry` as the transcript's custom entry. */

@@ -343,8 +343,8 @@ prints a neighbour's passage. On an H1 with H2s, `out` also says how many of its
 outside it and how many distinct claims those are, pointing at `toc` on each H2 and at `map` on the
 area, so an H1 whose own record requires nothing never reads as an area that needs nothing.
 
-The output starts with the requested claim itself: its id, title, kind, labels, size and its own
-"what". Then each neighbour gets one line, grouped under a heading per kind of link and ordered by id
+The output starts with the requested claim itself: its id, title, kind, labels, size, the number of
+code files its record lists (which `read` names), and its own "what". Then each neighbour gets one line, grouped under a heading per kind of link and ordered by id
 (`down` keeps declaration order, and notes about an H2 come before the notes about its H1): the § id and its heading title; **what**; for `out`, `in` and
 `mentions`, **why**; and **size** in UTF-8 bytes, which is what reading it alone costs, and for an H1
 its lede's bytes and its whole file's bytes. **What** is the passage's first prose sentence after its
@@ -393,7 +393,9 @@ carries the always-on frame outside the budget (§tools.spec/frame). For an H1 t
 is its lede, the text before its first H2; `--whole`
 returns the lede and then every H2 of the file in declaration order, each as its own passage. The
 text is byte-for-byte the passage the `scope` API supplies, with its id, kind, title, file, lines,
-any declared labels and any `agreed` record, shown as in the contents view, and a passage larger than the budget arrives as exact UTF-8 fragments,
+any declared labels and any `agreed` record, shown as in the contents view, and the code files its
+record lists: the first 12 paths, each marked when it is missing or refused, then how many more there
+are, so a builder learns which files keep the promise without the whole closure's code list. A passage larger than the budget arrives as exact UTF-8 fragments,
 as packet prose does, whose concatenation recovers it.
 
 After the passage, a footer names the § it declares through `requires` and the § its prose names

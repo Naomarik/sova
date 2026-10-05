@@ -28,5 +28,10 @@
   "writers": {},
   "wrappers": [],
   "piAdapter": [],
-  "session": {}
+  "session": {},
+  "extension": {
+    "server/chat-manager.ts": 2,
+    "server/index.ts": 1,
+    "server/insights.ts": 2
+  }
 }

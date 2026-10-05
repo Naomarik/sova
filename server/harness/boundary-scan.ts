@@ -59,6 +59,14 @@ export const AGENT_SESSION_MEMBERS = [
 ];
 /** pi's AgentSessionRuntime members, counted when read through a `.runtime` property in server/. */
 export const RUNTIME_MEMBERS = ["session", "services"];
+/** The adapter's hand-out of raw custom entries for pi-config cores that fold pi's own entry shape: each
+    use is counted by import binding, in its own list (`extension`). */
+export const EXTENSION_SOURCE = "server/harness/pi/state.ts";
+export const EXTENSION_API = ["extensionEntries"];
+/** Adapter files only tests may import: the tests' handle on pi (`testing/`) and the runtime registry behind it. */
+export const TEST_ONLY = ["server/harness/pi/testing/", "server/harness/pi/host-registry.ts"];
+/** The one file that defines StateKinds (§app.harness/new-work). */
+export const STATE_REGISTRY = "server/harness/state-kinds.ts";
 /** The one file only the adapter may import (it reads pi worker transcripts). */
 export const PI_ADAPTER_FILE = "pi-config/extensions/subagents/adapters/pi.ts";
 
@@ -68,7 +76,7 @@ export const isExcluded = (path: string) => EXCLUDED.some((e) => (e.endsWith("/"
 
 export type ImportKind = "runtime" | "type";
 export interface Hit { rule: string; line: number }
-export interface Violation { code: "reexport" | "types-only"; line: number; message: string }
+export interface Violation { code: "reexport" | "types-only" | "test-only-import" | "harness-private" | "adhoc-state-kind"; line: number; message: string }
 
 export interface FileScan {
   path: string;
@@ -80,6 +88,8 @@ export interface FileScan {
   writers: Hit[];
   /** pi agent-session members read through `.session` (or runtime members through `.runtime`). */
   sessionReaches: Hit[];
+  /** Uses of the adapter's raw custom-entry hand-out (`extensionEntries`), by import binding. */
+  extension: Hit[];
   /** Functions that forward their own parameter as a written entry's type, by name. */
   wrappers: { name: string; line: number }[];
   violations: Violation[];
@@ -97,6 +107,7 @@ function specPath(from: string, spec: string): string | null {
 const stemOf = (p: string) => p.replace(/\.(ts|tsx|js|mjs|cjs|jsx)$/, "").replace(/\/index$/, "");
 const sameModule = (spec: string | null, file: string) => spec !== null && stemOf(spec) === stemOf(file);
 const fromAdapter = (spec: string | null) => spec !== null && spec.startsWith("server/harness/pi/");
+const testOnly = (spec: string | null) => spec !== null && TEST_ONLY.some((t) => (t.endsWith("/") ? spec.startsWith(t) : sameModule(spec, t)));
 
 /** A repo-relative import target's file on disk: as written, stem.{ts,tsx,js,mjs}, stem/index.ts. */
 export function resolveOnDisk(root: string, target: string): string | null {
@@ -173,6 +184,49 @@ function functionName(f: ts.FunctionLikeDeclaration, src: ts.SourceFile): string
   return `<anonymous>@${src.getLineAndCharacterOfPosition(f.getStart(src)).line + 1}`;
 }
 
+/** An expression without its parentheses, `!`, and type assertions. */
+function skipCasts(e: ts.Expression): ts.Expression {
+  while (ts.isParenthesizedExpression(e) || ts.isNonNullExpression(e) || ts.isAsExpression(e) || ts.isTypeAssertionExpression(e) || ts.isSatisfiesExpression(e)) e = e.expression;
+  return e;
+}
+const unwrap = (e: ts.Expression): ts.Expression => (ts.isParenthesizedExpression(e) || ts.isNonNullExpression(e) ? unwrap(e.expression) : e);
+
+/** The driving session or a part of it by member: `harness`, `x.harness`, `x?.harness.queue` (not a call's result). */
+function harnessRef(e: ts.Expression): boolean {
+  e = unwrap(e);
+  if (ts.isIdentifier(e)) return e.text === "harness";
+  if (ts.isPropertyAccessExpression(e)) return e.name.text === "harness" || harnessRef(e.expression);
+  return false;
+}
+
+/** A session's state writer: `state`, `x.state`, `x.state()`. */
+function stateRef(e: ts.Expression): boolean {
+  e = unwrap(e);
+  if (ts.isCallExpression(e)) e = unwrap(e.expression);
+  return (ts.isIdentifier(e) && e.text === "state") || (ts.isPropertyAccessExpression(e) && e.name.text === "state");
+}
+
+/** A kind passed by its binding (`MODE`, `kinds.MODE`, `this.kind`), not built or cast at the call. */
+function isPlainName(e: ts.Expression): boolean {
+  e = unwrap(e);
+  return ts.isIdentifier(e) || (ts.isPropertyAccessExpression(e) && isPlainName(e.expression)) || e.kind === ts.SyntaxKind.ThisKeyword;
+}
+
+/** A type that names StateKind (`StateKind<T>`, `harness.StateKind<T>`, inside a union or array). */
+function namesStateKind(t: ts.TypeNode): boolean {
+  let found = false;
+  const walk = (n: ts.Node): void => {
+    if (found) return;
+    if (ts.isTypeReferenceNode(n)) {
+      const name = ts.isIdentifier(n.typeName) ? n.typeName.text : n.typeName.right.text;
+      if (name === "StateKind") return void (found = true);
+    }
+    ts.forEachChild(n, walk);
+  };
+  walk(t);
+  return found;
+}
+
 /** Where a path sits: what the scan counts there. */
 export function zoneOf(path: string): { scanned: boolean; counted: boolean; uiRules: boolean; typesOnly: boolean } {
   const inA = /^(server|shared|src)\//.test(path) && !isExcluded(path);
@@ -187,7 +241,7 @@ export function zoneOf(path: string): { scanned: boolean; counted: boolean; uiRu
 
 /** Scans one file's text as if it sat at `path` (repo-relative). */
 export function scanText(path: string, text: string): FileScan {
-  const out: FileScan = { path, imports: null, importHits: [], calls: [], shapes: [], reaches: [], writers: [], sessionReaches: [], wrappers: [], violations: [], edges: [], imported: [] };
+  const out: FileScan = { path, imports: null, importHits: [], calls: [], shapes: [], reaches: [], writers: [], sessionReaches: [], extension: [], wrappers: [], violations: [], edges: [], imported: [] };
   const zone = zoneOf(path);
   if (!zone.scanned) return out;
   const rawLayer = RAW_SOURCES.some((r) => sameModule(path, r));
@@ -205,7 +259,14 @@ export function scanText(path: string, text: string): FileScan {
   const smLocals = new Set<string>();
   const bridgeLocals = new Set<string>();
   const bridgeNamespaces = new Set<string>();
+  const extensionLocals = new Set<string>();
+  const extensionNamespaces = new Set<string>();
   const specifiers = new Set<ts.Node>();
+  /** A production file importing what only tests may (any form, a type import included). */
+  const testOnlyImport = (target: string | null, n: ts.Node) => {
+    if (zone.counted && testOnly(target))
+      out.violations.push({ code: "test-only-import", line: lineOf(n), message: `imports ${target}, which only tests may: server code drives pi through chat.harness (server/harness/pi/testing/ hands tests the raw AgentSession)` });
+  };
 
   for (const st of src.statements) {
     if (ts.isImportDeclaration(st) && ts.isStringLiteral(st.moduleSpecifier)) {
@@ -215,6 +276,7 @@ export function scanText(path: string, text: string): FileScan {
       const target = specPath(path, spec);
       const typeOnly = !!c && (c.isTypeOnly || (!c.name && !!c.namedBindings && ts.isNamedImports(c.namedBindings) && c.namedBindings.elements.length > 0 && c.namedBindings.elements.every((e) => e.isTypeOnly)));
       if (target) out.imported.push(target);
+      testOnlyImport(target, st);
       if (PI.test(spec)) piHit(typeOnly ? "type" : "runtime", `import from "${spec}"`, st);
       if (target && !typeOnly) out.edges.push(target);
       const named = c?.namedBindings && ts.isNamedImports(c.namedBindings) ? c.namedBindings.elements : [];
@@ -227,6 +289,10 @@ export function scanText(path: string, text: string): FileScan {
         for (const e of named) if (BRIDGES.includes((e.propertyName ?? e.name).text)) bridgeLocals.add(e.name.text);
         if (ns) bridgeNamespaces.add(ns);
       }
+      if (sameModule(target, EXTENSION_SOURCE)) {
+        for (const e of named) if (EXTENSION_API.includes((e.propertyName ?? e.name).text) && !e.isTypeOnly && !c!.isTypeOnly) extensionLocals.add(e.name.text);
+        if (ns) extensionNamespaces.add(ns);
+      }
       if (PI.test(spec)) for (const e of named) if ((e.propertyName ?? e.name).text === "SessionManager") smLocals.add(e.name.text);
     } else if (ts.isExportDeclaration(st) && st.moduleSpecifier && ts.isStringLiteral(st.moduleSpecifier)) {
       const spec = st.moduleSpecifier.text;
@@ -234,11 +300,14 @@ export function scanText(path: string, text: string): FileScan {
       const target = specPath(path, spec);
       const typeOnly = st.isTypeOnly || (!!st.exportClause && ts.isNamedExports(st.exportClause) && st.exportClause.elements.every((e) => e.isTypeOnly));
       if (target) out.imported.push(target);
+      testOnlyImport(target, st);
       if (PI.test(spec)) piHit(typeOnly ? "type" : "runtime", `export from "${spec}"`, st);
       if (target && !typeOnly) out.edges.push(target);
       const names = st.exportClause && ts.isNamedExports(st.exportClause) ? st.exportClause.elements.map((e) => (e.propertyName ?? e.name).text) : null;
       if (zone.counted && !rawLayer && RAW_SOURCES.some((r) => sameModule(target, r)) && (names === null || names.some((n) => RAW_API.includes(n))))
         out.violations.push({ code: "reexport", line: lineOf(st), message: "re-exports the transcript's raw API, which would hide every downstream call: import it where it is used" });
+      if (zone.counted && sameModule(target, EXTENSION_SOURCE) && (names === null || names.some((n) => EXTENSION_API.includes(n))))
+        out.violations.push({ code: "reexport", line: lineOf(st), message: "re-exports extensionEntries, which would hide every downstream use: import it where it is used" });
       if (zone.counted && fromAdapter(target) && (names === null || names.some((n) => BRIDGES.includes(n))))
         out.violations.push({ code: "reexport", line: lineOf(st), message: "re-exports an adapter bridge (liveRead/stateOf), which would hide every downstream reach: import it where it is used" });
     } else if (ts.isImportEqualsDeclaration(st) && ts.isExternalModuleReference(st.moduleReference) && ts.isStringLiteral(st.moduleReference.expression)) {
@@ -247,6 +316,7 @@ export function scanText(path: string, text: string): FileScan {
       if (PI.test(spec)) piHit(st.isTypeOnly ? "type" : "runtime", `import = require("${spec}")`, st);
       const target = specPath(path, spec);
       if (target) out.imported.push(target);
+      testOnlyImport(target, st);
       if (target && !st.isTypeOnly) out.edges.push(target);
     }
   }
@@ -256,7 +326,7 @@ export function scanText(path: string, text: string): FileScan {
       if (ts.isExportDeclaration(st) && !st.moduleSpecifier && st.exportClause && ts.isNamedExports(st.exportClause))
         for (const e of st.exportClause.elements) {
           const local = (e.propertyName ?? e.name).text;
-          if (rawLocals.has(local) || bridgeLocals.has(local))
+          if (rawLocals.has(local) || bridgeLocals.has(local) || extensionLocals.has(local))
             out.violations.push({ code: "reexport", line: lineOf(st), message: `re-exports ${local}, which would hide every downstream call: import it where it is used` });
         }
 
@@ -269,6 +339,7 @@ export function scanText(path: string, text: string): FileScan {
     if (ts.isImportTypeNode(n) && ts.isLiteralTypeNode(n.argument) && ts.isStringLiteral(n.argument.literal)) {
       specifiers.add(n.argument.literal);
       if (PI.test(n.argument.literal.text)) piHit("type", `import("${n.argument.literal.text}") type`, n);
+      testOnlyImport(specPath(path, n.argument.literal.text), n);
     }
     if (ts.isCallExpression(n) && n.arguments[0]) {
       const a = stringText(n.arguments[0]);
@@ -279,6 +350,7 @@ export function scanText(path: string, text: string): FileScan {
         if (target) {
           out.imported.push(target);
           out.edges.push(target);
+          testOnlyImport(target, n);
         }
       }
     }
@@ -298,10 +370,26 @@ export function scanText(path: string, text: string): FileScan {
         if (smLocals.has(n.text)) hit(out.reaches, `${n.text} (pi SessionManager)`, n);
         if (bridgeLocals.has(n.text)) hit(out.reaches, `${n.text} (adapter bridge)`, n);
         if (WRITERS.includes(n.text)) hit(out.writers, n.text, n);
+        if (extensionLocals.has(n.text)) hit(out.extension, `${n.text} (raw custom entries)`, n);
       }
       if (ts.isPropertyAccessExpression(n) && ts.isIdentifier(n.expression)) {
         if (rawNamespaces.has(n.expression.text) && RAW_API.includes(n.name.text)) hit(out.calls, `${n.name.text} (transcript raw API)`, n);
         if (bridgeNamespaces.has(n.expression.text) && BRIDGES.includes(n.name.text)) hit(out.reaches, `${n.name.text} (adapter bridge)`, n);
+        if (extensionNamespaces.has(n.expression.text) && EXTENSION_API.includes(n.name.text)) hit(out.extension, `${n.name.text} (raw custom entries)`, n);
+      }
+      // ---- the driving session's privates: a cast of a harness object, or a member named by a string
+      if ((ts.isAsExpression(n) || ts.isTypeAssertionExpression(n)) && harnessRef(n.expression))
+        out.violations.push({ code: "harness-private", line: lineOf(n), message: "casts the driving session (or one of its parts), the way to its private pi session: use its HarnessSession members" });
+      if (ts.isElementAccessExpression(n) && stringText(n.argumentExpression) !== null && harnessRef(n.expression))
+        out.violations.push({ code: "harness-private", line: lineOf(n), message: `reads the driving session's ["${stringText(n.argumentExpression)}"] by string, past its type: use its HarnessSession members` });
+      // ---- StateKinds come from the registry
+      if (path !== STATE_REGISTRY) {
+        if ((ts.isAsExpression(n) || ts.isTypeAssertionExpression(n) || ts.isSatisfiesExpression(n)) && namesStateKind(n.type))
+          out.violations.push({ code: "adhoc-state-kind", line: lineOf(n), message: `asserts a StateKind: register the kind in ${STATE_REGISTRY} and import it` });
+        if (ts.isVariableDeclaration(n) && n.type && namesStateKind(n.type) && n.initializer && ts.isObjectLiteralExpression(skipCasts(n.initializer)))
+          out.violations.push({ code: "adhoc-state-kind", line: lineOf(n), message: `declares a StateKind outside the registry: register it in ${STATE_REGISTRY}` });
+        if (ts.isCallExpression(n) && memberRead(n.expression) === "append" && stateRef((n.expression as ts.PropertyAccessExpression).expression) && n.arguments[0] && !isPlainName(n.arguments[0]))
+          out.violations.push({ code: "adhoc-state-kind", line: lineOf(n), message: `appends state with a kind that is not a registered StateKind binding: import the kind from ${STATE_REGISTRY}` });
       }
       // ---- readers: shapes
       if (member === "customType") hit(out.shapes, "customType read", n);
@@ -429,18 +517,21 @@ export interface Baseline {
   piAdapter: string[];
   /** pi agent-session reaches through `.session` per file (§app.harness/boundary). */
   session: Record<string, number>;
+  /** Uses of the adapter's raw custom-entry hand-out (`extensionEntries`) per non-test file. */
+  extension: Record<string, number>;
 }
 
 export const BASELINE_NOTE = "Shrink-only (§app.harness/boundary). Never add a file, raise a count or list a wrapper; lower it in the change that removes a hit. Regenerate with SOVA_BOUNDARY_OUT=<abs path> pnpm test -- server/harness-boundary.test.ts.";
 
 export function baselineOf(repo: RepoScan): Baseline {
-  const b: Baseline = { v: 1, note: BASELINE_NOTE, imports: {}, readers: {}, writers: {}, wrappers: [], piAdapter: [...repo.adapterImporters], session: {} };
+  const b: Baseline = { v: 1, note: BASELINE_NOTE, imports: {}, readers: {}, writers: {}, wrappers: [], piAdapter: [...repo.adapterImporters], session: {}, extension: {} };
   for (const f of [...repo.zoneA, ...repo.zoneB].sort()) {
     const s = repo.scans.get(f)!;
     if (s.imports) b.imports[f] = s.imports;
     if (s.calls.length || s.shapes.length || s.reaches.length) b.readers[f] = { calls: s.calls.length, shapes: s.shapes.length, reaches: s.reaches.length };
     if (s.writers.length) b.writers[f] = s.writers.length;
     if (s.sessionReaches.length) b.session[f] = s.sessionReaches.length;
+    if (s.extension.length) b.extension[f] = s.extension.length;
     for (const w of s.wrappers) b.wrappers.push(`${f}:${w.name}`);
   }
   b.wrappers = [...new Set(b.wrappers)].sort();
@@ -454,7 +545,7 @@ export function formatBaseline(b: Baseline): string {
     return keys.length ? `{\n${keys.map((k) => `    ${JSON.stringify(k)}: ${JSON.stringify(o[k]).replace(/,"/g, ', "').replace(/":/g, '": ')}`).join(",\n")}\n  }` : "{}";
   };
   const arr = (a: string[]) => (a.length ? `[\n${[...a].sort().map((x) => `    ${JSON.stringify(x)}`).join(",\n")}\n  ]` : "[]");
-  return `{\n  "v": 1,\n  "note": ${JSON.stringify(b.note)},\n  "imports": ${obj(b.imports)},\n  "readers": ${obj(b.readers)},\n  "writers": ${obj(b.writers)},\n  "wrappers": ${arr(b.wrappers)},\n  "piAdapter": ${arr(b.piAdapter)},\n  "session": ${obj(b.session)}\n}\n`;
+  return `{\n  "v": 1,\n  "note": ${JSON.stringify(b.note)},\n  "imports": ${obj(b.imports)},\n  "readers": ${obj(b.readers)},\n  "writers": ${obj(b.writers)},\n  "wrappers": ${arr(b.wrappers)},\n  "piAdapter": ${arr(b.piAdapter)},\n  "session": ${obj(b.session)},\n  "extension": ${obj(b.extension)}\n}\n`;
 }
 
 /** Growth from `before` to `after`: a new key, a higher count, a type entry turned runtime. */
@@ -480,6 +571,12 @@ export function growth(before: Baseline, after: Baseline): string[] {
     for (const [f, n] of Object.entries(after.session ?? {})) {
       if (!(f in before.session)) out.push(`session: ${f} added`);
       else if (n > before.session[f]!) out.push(`session: ${f} ${before.session[f]} → ${n}`);
+    }
+  // Nor one from before the extensionEntries list.
+  if (before.extension)
+    for (const [f, n] of Object.entries(after.extension ?? {})) {
+      if (!(f in before.extension)) out.push(`extension: ${f} added`);
+      else if (n > before.extension[f]!) out.push(`extension: ${f} ${before.extension[f]} → ${n}`);
     }
   return out;
 }

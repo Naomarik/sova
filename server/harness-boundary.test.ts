@@ -1,8 +1,10 @@
 // Run: pnpm test -- server/harness-boundary.test.ts. The harness boundary (§app.harness/boundary): nothing
 // outside server/harness/pi/ reaches pi beyond server/harness/boundary-baseline.json, a list that only
-// shrinks. Four ratchets (pi imports; raw entry reads: calls, shapes, reaches; custom-entry writes and
-// their wrappers; pi agent-session reaches through `.session`), each exact per file, plus the contract's types-only rule and the runner's coverage of
-// every test file. The fixtures in server/harness/fixtures/boundary/ prove each rule's forms.
+// shrinks. Five ratchets (pi imports; raw entry reads: calls, shapes, reaches; custom-entry writes and
+// their wrappers; pi agent-session reaches through `.session`; uses of the adapter's raw custom-entry hand-out,
+// `extensionEntries`), each exact per file, plus rules with no baseline at all (re-exports, the contract's
+// types-only rule, test-only adapter imports, casts into the driving session, ad-hoc StateKinds) and the
+// runner's coverage of every test file. The fixtures in server/harness/fixtures/boundary/ prove each rule's forms.
 // SOVA_BOUNDARY_OUT=<absolute path> writes the computed baseline there (the assertions still run).
 // This file sits at server/ top level on purpose: the server/*.test.ts glob runs it even if the harness
 // glob were dropped, and the runner-coverage block asserts that glob.
@@ -57,15 +59,16 @@ const resultOf = (s: FileScan) => ({
   reaches: s.reaches.length,
   writers: s.writers.length,
   session: s.sessionReaches.length,
+  extension: s.extension.length,
   wrappers: s.wrappers.map((w) => w.name),
   violations: s.violations.map((v) => v.code),
 });
-const EMPTY = { imports: null, calls: 0, shapes: 0, reaches: 0, writers: 0, session: 0, wrappers: [], violations: [] };
+const EMPTY = { imports: null, calls: 0, shapes: 0, reaches: 0, writers: 0, session: 0, extension: 0, wrappers: [], violations: [] };
 
 describe("the boundary scanner, on fixtures", () => {
   const fixtureFiles = readdirSync(join(REPO, FIXTURES)).filter((f) => f.endsWith(".ts.txt")).sort();
   test("every rule has its fixture file, each with uniquely named blocks", () => {
-    assert.deepEqual(fixtureFiles, ["contract.ts.txt", "imports.ts.txt", "reaches.ts.txt", "readers.ts.txt", "session.ts.txt", "wrappers.ts.txt", "writers.ts.txt"]);
+    assert.deepEqual(fixtureFiles, ["contract.ts.txt", "escapes.ts.txt", "extension.ts.txt", "imports.ts.txt", "reaches.ts.txt", "readers.ts.txt", "session.ts.txt", "wrappers.ts.txt", "writers.ts.txt"]);
     for (const f of fixtureFiles) {
       const names = fixtureBlocks(f).map((b) => b.name);
       assert.ok(names.length >= 9, `${f}: ${names.length} blocks`);
@@ -163,6 +166,19 @@ describe("the ratchets hold exactly at the baseline", () => {
     fail(problems);
   });
 
+  test("raw custom entries handed out by extensionEntries (§app.harness/boundary)", () => {
+    const problems: string[] = [];
+    for (const f of new Set([...Object.keys(actual.extension), ...Object.keys(baseline.extension ?? {})])) {
+      const now = actual.extension[f] ?? 0;
+      const was = baseline.extension?.[f];
+      if (was === undefined) problems.push(`${f}: new use of extensionEntries${where(scanOf(f).extension)}. Read state through a StateView (stateView, ToolCtx.state()); raw entries are only for the pi-config cores already listed.`);
+      else if (now > was) problems.push(`${f}: extensionEntries ${was} → ${now}${where(scanOf(f).extension)}. Read state through a StateView instead.`);
+      else if (now === 0) problems.push(`${f}: stale, it no longer uses extensionEntries. Delete its entry from ${BASELINE}'s extension list.`);
+      else if (now < was) problems.push(`${f}: extensionEntries ${now}, below the baseline's ${was}. Lower it to ${now} in ${BASELINE} in this change.`);
+    }
+    fail(problems);
+  });
+
   test("only the adapter imports the pi worker-transcript adapter", () => {
     const problems: string[] = [];
     for (const f of actual.piAdapter) if (!baseline.piAdapter.includes(f)) problems.push(`${f}: imports pi-config/extensions/subagents/adapters/pi.ts. Only server/harness/pi/ may.`);
@@ -170,7 +186,7 @@ describe("the ratchets hold exactly at the baseline", () => {
     fail(problems);
   });
 
-  test("nothing re-exports a raw API, and shared/harness*.ts hold types only", () => {
+  test("nothing re-exports a raw API, shared/harness*.ts hold types only, and no file has a rule-only escape", () => {
     const contract = repo.zoneA.filter((f) => /^shared\/harness(-[a-z]+)?\.ts$/.test(f));
     assert.deepEqual(contract, ["shared/harness-core.ts", "shared/harness-history.ts", "shared/harness-session.ts", "shared/harness-state.ts", "shared/harness-tools.ts", "shared/harness-wire.ts", "shared/harness.ts"]);
     fail(repo.zoneA.flatMap((f) => scanOf(f).violations.map((v) => `${f}:${v.line}: ${v.message}`)));

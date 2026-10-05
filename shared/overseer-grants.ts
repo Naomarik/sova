@@ -165,12 +165,12 @@ export function normalizeRule(v: unknown): RuleEntry | undefined {
   return { ...base, id: v.id as string, text: v.text, acts: [...(v.acts as GrantableAct[])], sessions, ...(nonEmpty(v.from) ? { from: v.from } : {}) };
 }
 
-function normalizeRevoke(v: unknown): RevokeEntry | undefined {
+export function normalizeRevoke(v: unknown): RevokeEntry | undefined {
   if (!isRecord(v) || v.v !== 1 || !(GRANT_ID.test(String(v.id)) || RULE_ID.test(String(v.id))) || !isTime(v.at)) return undefined;
   return { v: 1, id: v.id as string, at: v.at, by: "user" };
 }
 
-function normalizeUse(v: unknown): UseEntry | undefined {
+export function normalizeUse(v: unknown): UseEntry | undefined {
   if (!isRecord(v) || v.v !== 1 || !(GRANT_ID.test(String(v.id)) || RULE_ID.test(String(v.id))) || !nonEmpty(v.tool) || !isTime(v.at)) return undefined;
   if (!Array.isArray(v.sessions) || !v.sessions.every(nonEmpty) || typeof v.toolCallId !== "string") return undefined;
   return { v: 1, id: v.id as string, tool: v.tool, sessions: [...(v.sessions as string[])], toolCallId: v.toolCallId, at: v.at };

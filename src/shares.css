@@ -128,7 +128,7 @@
 /* A recipient's own Visits (§mesh.public/visitor-log) folds out on a line of its own. */
 .shares-recipient > .share-visits, .previews-recipient > .share-visits { flex-basis: 100%; margin-top: 0; }
 .previews-recipient-name { font-weight: var(--fw-medium); color: var(--color-ink); }
-.previews-recipient-off.button-sm { min-height: 24px; padding: 0 var(--space-2); }
+.previews-recipient-off.button-sm, .previews-recipient-copy.button-sm { min-height: 24px; padding: 0 var(--space-2); }
 /* The row's buttons on a line under it: Start, Copy Link and Open at the left, the preview's own
    Delete at the right, apart from them, each as wide as its label. */
 .previews-row-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-top: var(--space-2); }

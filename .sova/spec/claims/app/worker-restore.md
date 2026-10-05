@@ -65,22 +65,11 @@ parent's `agent_list`, Sova's pane and `#/agents` — never parse a backend's fo
 
 ## §app.worker-restore/usage-from-transcripts — Usage rebuilt from transcripts
 
-After a restart, a worker's usage is **recounted from its transcript**, which is the canonical
-source; the record's snapshot is the fallback when the backend cannot read one.
-
-- **What counts** is everything the worker spent, once:
-  - pi: every assistant reply's usage and every `usage` entry (cache-warm calls included),
-    deduplicated by entry id, counting only entries after the worker's own
-    `subagents-worker-session` marker, so a forked worker never counts the parent history it was
-    started with. Cost is exact.
-  - claude-code: every assistant line's usage, deduplicated by message id, **including
-    its nested agents** (its own Task agents are its spend), whether they are logged inline as
-    sidechains or in their own files beside the session (`<session id>/subagents/*.jsonl`). The transcript carries no cost, so
-    a Claude worker's cost after a restart is the **last snapshot's**, and every place that shows
-    it says "as of {HH:MM}", the time of that snapshot. A worker with no snapshot shows no cost.
-- **It can differ from what the pane showed before the restart.** The live count and the
-  rebuilt one follow different policies (a live pi count leaves out cache-warm entries; a live
-  Claude count is the process's own cumulative figure), and the rebuilt one is the one kept.
+After a restart, a worker's usage is **not recounted** at all: what every Sova surface shows for
+a worker, restored or running, is its spend in the usage ledger (§app.insights/usage-ledger),
+recorded as each of its calls ended and kept on disk, so a restart changes no figure. Neither the
+worker's transcript nor the record's usage snapshot is read for a figure Sova shows; the
+snapshot stays in the record for the TUI's own views.
 
 ## §app.worker-restore/restore — Restored as idle entries, never restarted
 
@@ -91,8 +80,8 @@ is started, nothing is sent, and nothing is announced to the parent agent. A res
 settled: it takes no live slot, and a steer to it is refused with the way back (`agent_resume`,
 or why it can't be resumed).
 
-- **Which workers.** Records are read from **all branches** of the parent's file, because the
-  spend on an abandoned branch was still spent: the lifetime Σ counts them. The list — rows in
+- **Which workers.** Records are read from **all branches** of the parent's file, because a
+  worker started on an abandoned branch still ran. The list — rows in
   the pane, `agent_list`, `#/agents` — shows only the workers recorded on the **active branch**.
   Each worker counts once, and switching branches moves the list, never the Σ.
 - **Status.** A worker that had **ended** before the restart keeps its recorded final status —
@@ -105,20 +94,12 @@ or why it can't be resumed).
   when its backend's adapter declares native resume (§app.worker-restore/resume).
 - **Marked restored.** Each restored entry carries `restored`, whether it can be resumed
   (`resumable`: its adapter declares native resume, the record has a transcript reference, and
-  the backend is loaded), and where its usage came from (`usageSource`: `transcript`, `snapshot` or
-  none) with the snapshot's time. `agent_list` says "restored" beside the status, and names
+  the backend is loaded). `agent_list` says "restored" beside the status, and names
   the resume tool on each resumable worker or gives the reason it can't be resumed.
-- **Usage that can't be read is unavailable, never 0.** A worker whose transcript can't be read
-  and that has no snapshot shows "usage unavailable" where its tokens would be. The session
-  pane's Usage tab names the workers its totals leave out ("Usage unavailable for ag_04: we couldn't read its
-  transcript, so the totals above leave it out."). A cost with any snapshot part carries the time of
-  its **oldest** snapshot, the stalest part. In the usage table, such a cost reads `$0.41*`: a
-  muted `*` whose `title` is "As of {HH:MM}", and one note under the table, "* Cost as of {HH:MM},
-  the last report before the restart." (several times: "21:08 and 22:25"). The row stays one line,
-  and the Model, Where and Cost cells never wrap. The Subagent lifetime line keeps the time
-  inline: "$0.41 as of {HH:MM}".
-- **One row, one label, hosted or not.** A restored team member's spend is a Team row in the
-  session pane's Usage tab. A restored or resumed worker is named by the model it **ran under**: its
+- **Spend.** A restored worker's tokens and cost, on every Sova surface, are its spend in the usage
+  ledger (§app.worker-restore/usage-from-transcripts): never unavailable, never a snapshot.
+- **One row, one label, hosted or not.** A restored team member's spend is in the Subagents row of
+  the session pane's Usage tab. A restored or resumed worker is named by the model it **ran under**: its
   transcript's model, else its last snapshot's, else the model it was spawned with, and a Claude
   worker's name keeps the context variant it was spawned with (`[1m]`, read "1M"). So a Claude
   worker reads `haiku-4.5` running, restored and resumed alike, whether the session is hosted by
@@ -155,7 +136,7 @@ next prompt, and not for team members.
 - **It comes back idle** (`waiting`, the Idle chip). Resume sends no prompt and never continues the interrupted turn on
   its own. It never re-emits a completion, so the parent is not woken by a stale report. The
   parent gives it work with `agent_steer` or a team message, like any idle worker.
-- **Usage continues** from the rebuilt total; nothing is counted twice.
+- **Usage continues** in the usage ledger: its new calls add records; nothing is counted twice.
 - **Refusals are said, not guessed.** Resume answers with the reason and changes nothing for:
   a worker that is live (give it work with `agent_steer`), one already being resumed, an ID this
   session file has no record of, a cwd outside the session's cwd and its active worktrees, a backend whose adapter declares no resume or that is not

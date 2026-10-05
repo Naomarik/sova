@@ -1,6 +1,6 @@
 import type { Context, Hono } from "hono";
 import { OrgError } from "./org-error";
-import { projectCost } from "./project-costs";
+import { projectCostAnswer } from "./project-costs";
 
 /**
  * A project's cost at API prices (§app.project-costs/card). The operator's main listener only: the
@@ -22,5 +22,11 @@ const handle =
   };
 
 export function registerProjectCostRoutes(app: Hono<any>): void {
-  app.get("/api/projects/:pid/costs", handle(async (c) => c.json(await projectCost(c.req.param("pid") ?? ""), 200, NO_STORE)));
+  app.get(
+    "/api/projects/:pid/costs",
+    handle(async (c) => {
+      const a = await projectCostAnswer(c.req.param("pid") ?? "");
+      return new Response(new Uint8Array(a.body), { status: a.status, headers: { "Content-Type": "application/json; charset=utf-8", ...NO_STORE } });
+    }),
+  );
 }

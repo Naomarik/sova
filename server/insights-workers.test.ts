@@ -14,7 +14,7 @@ const liveDir = join(agentDir, "sessions", "live");
 mkdirSync(sessionsDir, { recursive: true });
 mkdirSync(liveDir, { recursive: true });
 
-const { decodeWorkers, getSessionInsight } = await import("./insights");
+const { decodeWorkers, getAgentsInsight, getSessionInsight } = await import("./insights");
 const { canonicalPath } = await import("./paths");
 
 after(() => rmSync(agentDir, { recursive: true, force: true }));
@@ -70,7 +70,7 @@ test("decodeWorkers carries a worker's turns (model replies): a non-negative int
   ] }) as WorkerInfo[];
   assert.deepEqual(workers.map((w) => w.turns), [12, 0, undefined, undefined, undefined, undefined, 3]);
   for (const w of workers.slice(2, 6)) assert.ok(!("turns" in w), `${w.id}: unknown is absent, never 0`);
-  assert.equal(workers[6]!.usage, undefined);
+  assert.ok(!("usage" in workers[6]!), "a record's usage is the TUI's, never decoded");
 });
 
 test("decodeWorkers names each worker's provider: the ref's, the catalog's, or claude code", () => {
@@ -115,7 +115,7 @@ test("a never-live session yields workers: []", async () => {
   assert.deepEqual(insight.workers, []);
 });
 
-test("usage: per-model main rows from the branch, workers joined by origin", async () => {
+test("no spend is counted here: a spent branch and a record with worker usage carry no usage, usageTotal", async () => {
   const path = session("usage-main");
   writeFileSync(path, [
     JSON.stringify({ type: "session", version: 3, id: "usage-main", timestamp: "2026-09-20T00:00:00.000Z", cwd: "/tmp" }),
@@ -152,24 +152,11 @@ test("usage: per-model main rows from the branch, workers joined by origin", asy
     },
   }));
   const insight = await getSessionInsight(own);
-  assert.ok(insight.usage);
-  // main rows first, then subagents; cost only when reported; same-model merged.
-  assert.deepEqual(insight.usage.models, [
-    { model: "anthropic/claude-opus-5", origin: "main", input: 201, output: 22, cacheRead: 0, cacheWrite: 7, cost: 0.5 },
-    { model: "zai/glm-5.3", origin: "main", input: 100, output: 10, cacheRead: 5, cacheWrite: 0, cost: 0.25 },
-    { model: "opus[1m]", origin: "subagents", input: 70, output: 8, cacheRead: 2, cacheWrite: 0 },
-    { model: "zai/glm-5.3", origin: "subagents", input: 50, output: 5, cacheRead: 0, cacheWrite: 0, cost: 0.1 },
-  ]);
-  assert.deepEqual(insight.usage.main, { input: 301, output: 32, cacheRead: 5, cacheWrite: 7, cost: 0.75 });
-  assert.deepEqual(insight.usage.workersTotal, { input: 120, output: 13, cacheRead: 2, cacheWrite: 0, workers: 3 });
-  // Branch-only session (no live record): main rows alone, no workersTotal.
-  const solo = await getSessionInsight(path);
-  assert.equal(solo.usage?.models.length, 2);
-  assert.equal(solo.usage?.models.every((m) => m.origin === "main"), true);
-  assert.equal(solo.usage?.workersTotal, undefined);
-});
-
-test("usage: absent when nothing was spent", async () => {
-  const insight = await getSessionInsight(session("usage-empty"));
-  assert.equal(insight.usage, undefined);
+  assert.equal(insight.workers?.length, 3, "the workers are still listed");
+  for (const i of [insight, await getSessionInsight(path)]) {
+    assert.equal("usage" in i, false, "spend is the usage ledger's: no branch tally");
+    assert.equal("usageTotal" in i, false, "nor the record's lifetime worker Σ");
+  }
+  const agents = await getAgentsInsight();
+  assert.equal(agents.sessions.some((s) => "usageTotal" in s), false);
 });

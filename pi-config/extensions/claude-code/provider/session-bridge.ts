@@ -37,6 +37,7 @@ import {
 } from "../accounts.ts";
 import type { ImageContent, Message, TextContent, Tool } from "@earendil-works/pi-ai";
 import { PiMcpHost, type HeldMcpCall, type McpContent, type McpToolResult } from "./mcp-host.ts";
+import { resolveUsageAttribution } from "../../llm-inflight/attribution.ts";
 import { createClaudeRequestObserver } from "../../llm-inflight/claude.ts";
 import {
 	parseClaudeFrame, parseToolInput, MCP_SERVER_NAME, MCP_TOOL_PREFIX,
@@ -1250,8 +1251,12 @@ class CliSession {
 			signalGroupImpl: this.options.signalGroupImpl,
 			...(this.login && this.options.logins?.forcedFailure?.(this.login.id) ? { simulateFailure: this.options.logins.forcedFailure(this.login.id) } : {}),
 			// The pi runtime counts this provider's calls (llm-inflight); the CLI's running turns, whose
-			// internal calls nothing sees, are reported from here.
-			requestObserver: createClaudeRequestObserver({ countRequests: false }),
+			// internal calls nothing sees, are reported from here. Their spend is recorded from here
+			// only (per Anthropic message, plus what the CLI's totals show beyond them), for this chat.
+			requestObserver: createClaudeRequestObserver({
+				countRequests: false,
+				usage: { bridge: true, model: request.model, fresh: !resume, who: () => resolveUsageAttribution(this.piSessionId) },
+			}),
 			hooks: {
 				onEvent: (event) => { if (current()) this.onEvent(event as unknown as Record<string, unknown>); },
 				onStderr: (text) => { if (stderr.length < 4096) stderr += text; },

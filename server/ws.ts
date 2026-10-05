@@ -16,7 +16,6 @@ import { idOf } from "./sessions-index";
 import { sessionsChanged } from "./list-generation";
 import { extensionSocketRoute, upgradeExtensionSocket } from "./extensions";
 import { meshUpgrade } from "./mesh";
-import { claudeUsageTally, type UsageTally } from "./transcript-usage";
 import { type Normalize, SessionTail } from "./watch";
 import { sharedWorkerWindowResolver } from "./models";
 import { contextTally, type Format, type WindowResolver } from "./worker-context";
@@ -100,14 +99,13 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
   for (const msg of early.splice(0)) chat.handle(client, msg);
 }
 
-function handleWatch(ws: WebSocket, path: string, ask: TailAsk, normalize?: Normalize, tally?: UsageTally, format: Format = "pi"): void {
+function handleWatch(ws: WebSocket, path: string, ask: TailAsk, normalize?: Normalize, format: Format = "pi"): void {
   // pi replies name their model, so the fill carries its window; the runtime is resolved first.
   let resolve: WindowResolver = () => null;
   const tail = new SessionTail(
     path,
     (msg) => sendJson(ws, msg),
     normalize,
-    tally,
     contextTally(format, (ref) => resolve(ref)),
     ask.tail && !ask.pull ? (json) => sendRaw(ws, json) : undefined,
     ask.tail && ask.pull ? { prefetch: ask.prefetch } : undefined,
@@ -222,7 +220,7 @@ function upgradeWith(server: typeof wss, req: IncomingMessage, socket: Duplex, h
         return;
       }
       // REST serves pi session files only: a Claude Code file's older rows are pushed, as with ?tail=1.
-      handleWatch(ws, file, tail.tail ? { tail: true, pull: false } : tail, normalizeClaudeText, claudeUsageTally(), "claude");
+      handleWatch(ws, file, tail.tail ? { tail: true, pull: false } : tail, normalizeClaudeText, "claude");
       return;
     }
     const path = resolveSessionPath(url.searchParams.get("path"));

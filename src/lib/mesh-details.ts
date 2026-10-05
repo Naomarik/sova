@@ -45,6 +45,13 @@ export function hostTone(state: PeerState | "self"): { tone: "up" | "skewed" | "
   return { tone: "down", word: state === "refused" ? "refused" : "down" };
 }
 
+/** A peer session's head mark: its dot tone and the words its title says; null while the state is unknown. */
+export function hostMark(name: string, state: PeerState | undefined, unavailable: string | null): { tone: "up" | "skewed" | "down"; title: string } | null {
+  if (!state) return null;
+  const { tone, word } = hostTone(state);
+  return { tone, title: `This session lives on ${name} · ${unavailable ?? word ?? "up"}` };
+}
+
 /** 1536 → "1.5 KB"; binary steps, one decimal under 10. */
 export function bytes(n: number): string {
   const units = ["B", "KB", "MB", "GB", "TB"];

@@ -5,6 +5,7 @@ import { localRequest } from "./mesh/proxy";
 import { OrgError } from "./org-error";
 import { sentToNameOf } from "./projects/contributions";
 import { engineOf } from "./projects/spaces";
+import { keptSiblingLink } from "./preview-kept";
 import { extendPreview, PreviewRefused, PreviewUnavailable, viewOf } from "./preview-links";
 import { makePreview, previewViews, resolvePreview, sovaPorts, turnOffPreview } from "./project-previews";
 import { previewAddress } from "./share/preview-address";
@@ -15,7 +16,8 @@ import { previewAddress } from "./share/preview-address";
  * A mint needs a preview address (§mesh.public/preview-address) and a port that is none of Sova's, or a
  * folder of one of the project's coding sessions' worktrees (§mesh.public/preview-serve). The list
  * carries each one's kept link: these operator routes are the only place it goes; the project
- * overseer names a preview by its id (§app.project-overseer/previews).
+ * overseer names a preview by its id (§app.project-overseer/previews). The two lists also carry an
+ * active sibling's person's kept link as `sentLink`, for the Sent to line alone; nothing else does.
  */
 
 const notFound = (c: Context) => c.json({ error: "Not found" }, 404);
@@ -56,17 +58,26 @@ function withSentToName(v: PreviewView): PreviewView {
   }
 }
 
+/** The operator's lists only: an active sibling's person's own link, when kept (§mesh.public/preview). */
+export function withSentLink(v: PreviewView): PreviewView {
+  if (!v.siblingOf || v.state !== "active") return v;
+  const link = keptSiblingLink(v.id);
+  return link ? { ...v, sentLink: link } : v;
+}
+
+const forOperator = (v: PreviewView): PreviewView => withSentLink(withSentToName(v));
+
 export function mountPreviewLinks(app: Hono): void {
   app.get("/api/previews", async (c) => {
     if (!local(c)) return notFound(c);
     const projectId = c.req.query("projectId");
-    const previews = (await previewViews(projectId ? { projectId } : {})).map(withSentToName);
+    const previews = (await previewViews(projectId ? { projectId } : {})).map(forOperator);
     return c.json({ previews, address: previewAddress() } satisfies PreviewList, 200, NO_STORE);
   });
 
   app.get("/api/projects/:pid/previews", async (c) => {
     if (!local(c)) return notFound(c);
-    const previews = (await previewViews({ projectId: c.req.param("pid") })).map(withSentToName);
+    const previews = (await previewViews({ projectId: c.req.param("pid") })).map(forOperator);
     return c.json({ previews, address: previewAddress() } satisfies PreviewList, 200, NO_STORE);
   });
 

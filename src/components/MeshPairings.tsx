@@ -2,11 +2,17 @@ import { createResource, createSignal, For, onCleanup, Show } from "solid-js";
 import type { LanStatus } from "../../shared/mesh-lan";
 import { addMeshLanPairing, createMeshLanKey, fetchMeshLan, putMeshLanRelay, removeMeshLanPairing } from "../lib/api";
 import { MESH_PRESETS, PRESET_HINT, PRESET_LABEL, type MeshPreset } from "../lib/mesh-access";
-import { pairingProblem, pairingState, relayLine, relayProblem, roleWord, type PairingDraft } from "../lib/mesh-lan";
+import { acceptorLine, acceptorReason, pairingProblem, pairingState, portWarning, relayLine, relayProblem, roleWord, type PairingDraft, type RelayExposure } from "../lib/mesh-lan";
 import { announce, copyText } from "../lib/ui-state";
 import { Banner, Chip, CopyButton, Icon } from "./ui";
 
-const EMPTY: PairingDraft = { role: "dial", fingerprint: "", id: "", label: "", host: "", port: "" };
+const EMPTY: PairingDraft = { role: "dial", fingerprint: "", id: "", label: "", host: "", port: "", internet: false };
+
+// What each internet choice means, said before it is saved (§mesh.lan/pairing).
+const RELAY_INTERNET_RISK =
+  "The port opens to the whole internet; the accept process answers it, not Sova. Whoever controls this host can reach every dial-out host paired with it, wherever it is, as far as that host's grant to this one allows.";
+const PAIR_INTERNET_RISK =
+  "This host keeps a connection open to that server from every network it joins, so whoever controls the server can reach this host as far as your grant to it allows. Networks that block the port or inspect TLS can't reach the relay. A work machine's policy may forbid this.";
 
 /**
  * The Mesh page's dial-out pairings (§mesh.lan/pairing): this host's fingerprint, this host as a
@@ -43,16 +49,22 @@ export function MeshPairings(props: { now: number; taken: readonly string[]; tic
 
   const [relayHost, setRelayHost] = createSignal<string | null>(null);
   const [relayPort, setRelayPort] = createSignal<string | null>(null);
+  const [relayExposure, setRelayExposure] = createSignal<RelayExposure | null>(null);
   const host = () => relayHost() ?? status()?.relay?.host ?? "";
   const port = () => relayPort() ?? String(status()?.relay?.port ?? "");
+  const exposure = () => relayExposure() ?? status()?.relay?.exposure ?? "lan";
+  const acceptorState = () => status()?.acceptor.state ?? "not configured";
+  // "The internet" is offered only while the accept process runs (or it is already the setting).
+  const internetBlocked = () => acceptorReason(acceptorState());
   const [relayTouched, setRelayTouched] = createSignal(false);
   const saveRelay = async (e: Event) => {
     e.preventDefault();
     setRelayTouched(true);
-    if (relayProblem(host(), port())) return;
-    if (await run(() => putMeshLanRelay({ host: host().trim(), port: Number(port()) }), "Relay address saved.")) {
+    if (relayProblem(host(), port(), exposure(), acceptorState())) return;
+    if (await run(() => putMeshLanRelay({ host: host().trim(), port: Number(port()), exposure: exposure() }), "Relay address saved.")) {
       setRelayHost(null);
       setRelayPort(null);
+      setRelayExposure(null);
       setRelayTouched(false);
     }
   };
@@ -73,7 +85,7 @@ export function MeshPairings(props: { now: number; taken: readonly string[]; tic
           ...(d.label.trim() ? { label: d.label.trim() } : {}),
           role: d.role,
           pin: d.fingerprint,
-          ...(d.role === "dial" ? { host: d.host.trim(), port: Number(d.port) } : {}),
+          ...(d.role === "dial" ? { host: d.host.trim(), port: Number(d.port), ...(d.internet ? { internet: true } : {}) } : {}),
           grant: preset(),
         }),
       `${d.label.trim() || d.id.trim()} paired.`,
@@ -127,23 +139,69 @@ export function MeshPairings(props: { now: number; taken: readonly string[]; tic
         <p class="list-meta mesh-pair-wrap" aria-live="polite">
           {status() ? relayLine(status()!) : ""}
         </p>
+        <Show when={status() && acceptorLine(status()!)}>{(line) => <p class="list-meta">{line()}</p>}</Show>
+        <Show when={status()?.acceptor.mismatchAt}>
+          {(at) => (
+            <Banner
+              tone="error"
+              title="The accept process vouched for a host its connection didn't prove."
+              body={`At ${new Date(at()).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}. Sova refused that connection, so nothing got in. The accept process may be compromised: check this server before you trust it again.`}
+            />
+          )}
+        </Show>
+        <label class="field mesh-add-preset">
+          <span class="field-label">Reached from</span>
+          <span class="select-wrap">
+            <select class="select" aria-describedby="mesh-relay-exposure-hint" onChange={(e) => setRelayExposure(e.currentTarget.value as RelayExposure)}>
+              <option value="lan" selected={exposure() === "lan"}>
+                A local network
+              </option>
+              <option value="internet" selected={exposure() === "internet"} disabled={!!internetBlocked() && status()?.relay?.exposure !== "internet"}>
+                The internet
+              </option>
+            </select>
+          </span>
+          <span class="field-hint" id="mesh-relay-exposure-hint">
+            <Show when={exposure() === "internet"} fallback={internetBlocked() ? `The internet isn't available: ${internetBlocked()}` : "The internet is available: this host's accept process is running."}>
+              {RELAY_INTERNET_RISK}
+            </Show>
+          </span>
+        </label>
         <div class="mesh-add-fields">
           <div class="field">
             <label class="field-label" for="mesh-relay-host">
               Address
             </label>
-            <input id="mesh-relay-host" class="input input-mono" autocomplete="off" spellcheck={false} placeholder="10.0.0.2" value={host()} onInput={(e) => setRelayHost(e.currentTarget.value)} />
-            <span class="field-hint">One local-network address of this host, never all of them.</span>
+            <input
+              id="mesh-relay-host"
+              class="input input-mono"
+              autocomplete="off"
+              spellcheck={false}
+              placeholder={exposure() === "internet" ? "203.0.113.10" : "10.0.0.2"}
+              value={host()}
+              onInput={(e) => setRelayHost(e.currentTarget.value)}
+            />
+            <span class="field-hint">
+              {exposure() === "internet" ? "One address of this host: its public one, or its private one behind a one-to-one NAT." : "One local-network address of this host, never all of them."}
+            </span>
           </div>
           <div class="field">
             <label class="field-label" for="mesh-relay-port">
               Port
             </label>
-            <input id="mesh-relay-port" class="input input-mono" inputmode="numeric" autocomplete="off" value={port()} onInput={(e) => setRelayPort(e.currentTarget.value)} />
+            <input
+              id="mesh-relay-port"
+              class="input input-mono"
+              inputmode="numeric"
+              autocomplete="off"
+              placeholder={exposure() === "internet" ? "4803" : undefined}
+              value={port()}
+              onInput={(e) => setRelayPort(e.currentTarget.value)}
+            />
           </div>
         </div>
-        <p class="field-hint">A relay on the internet isn't available yet: it needs a separate accept process that Sova doesn't have.</p>
-        <Show when={relayTouched() && relayProblem(host(), port())}>{(msg) => <p class="field-error">{msg()}</p>}</Show>
+        <Show when={portWarning(exposure(), port())}>{(msg) => <p class="mesh-host-warn">{msg()}</p>}</Show>
+        <Show when={relayTouched() && relayProblem(host(), port(), exposure(), acceptorState())}>{(msg) => <p class="field-error">{msg()}</p>}</Show>
         <div class="cluster">
           <button type="submit" class="button" aria-disabled={busy() ? "true" : undefined}>
             Save Relay
@@ -178,6 +236,7 @@ export function MeshPairings(props: { now: number; taken: readonly string[]; tic
                         <span class="text-mono">
                           {p.host!.includes(":") ? `[${p.host}]` : p.host}:{p.port}
                         </span>
+                        <Show when={p.internet}>{" · on the internet"}</Show>
                       </Show>
                     </p>
                     <p class="list-meta mesh-pair-wrap text-mono">{p.fingerprint}</p>
@@ -266,6 +325,14 @@ export function MeshPairings(props: { now: number; taken: readonly string[]; tic
               <input id="mesh-pair-port" class="input input-mono" inputmode="numeric" autocomplete="off" value={draft().port} onInput={(e) => setDraft((d) => ({ ...d, port: e.currentTarget.value }))} />
             </div>
           </div>
+          <label class="toggle mesh-pair-internet">
+            <input type="checkbox" checked={draft().internet} aria-describedby="mesh-pair-internet-hint" onChange={(e) => setDraft((d) => ({ ...d, internet: e.currentTarget.checked }))} />
+            <span class="toggle-box" />
+            <span>This relay is on the internet</span>
+          </label>
+          <span class="field-hint" id="mesh-pair-internet-hint">
+            {draft().internet ? PAIR_INTERNET_RISK : "Leave it unchecked for a relay on your own network: this host then dials only local-network addresses."}
+          </span>
         </Show>
         <label class="field mesh-add-preset">
           <span class="field-label">What it can see here</span>

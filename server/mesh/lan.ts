@@ -3,6 +3,10 @@
 // asks with, and the gate every pairing's requests go through. It follows peers.json: no pairing,
 // nothing runs; a removed pairing loses every connection at once.
 //
+// An internet relay never listens here: its accept process does, and hands verified connections
+// over the handoff socket (lan-handoff.ts, §mesh.lan/accept-process). Sova's own RelayListener is
+// LAN-only, and nothing ever falls back to it for an internet relay.
+//
 // Who calls is the pairing of the connection, from its pin, re-read from peers.json on every
 // request; requests then pass the same PeerGate as a tailnet peer's (listener.ts): what a peer may
 // reach, its grant, dispatch with `meshPeer`, revocation.
@@ -14,10 +18,10 @@ import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "n
 import type { Server } from "node:http";
 import { dirname, join } from "node:path";
 import type { Duplex } from "node:stream";
-import type { TLSSocket } from "node:tls";
-import type { LanStatus, LanPairingStatus, LanChannelStatus } from "../../shared/mesh-lan";
+import type { AcceptorStatus, LanStatus, LanPairingStatus, LanChannelStatus } from "../../shared/mesh-lan";
 import { stateRoot } from "../state-root";
-import { fingerprint, type LanIdentity, mintLanIdentity, spkiPin } from "./lan-cert";
+import { fingerprint, type LanIdentity, mintLanIdentity, samePin, spkiPin } from "./lan-cert";
+import { HandoffServer } from "./lan-handoff";
 import { LAN_PROFILE } from "./lan-admission";
 import { type DialerStatus, RelayDialer } from "./lan-dialer";
 import { RelayListener, type RelayPeer } from "./lan-relay";
@@ -77,6 +81,9 @@ export interface LanDeps extends GateDeps {
   pairingByNode: (nodeId: string) => PeerEntry | null;
   /** A pairing just reached this host or was reached: it is up. */
   sawPeer?: (peerId: string, up: boolean) => void;
+  /** An internet relay's handoff socket (SOVA_RELAY_HANDOFF) and the build its accept process must
+      be; absent: this host has no internet relay (§mesh.lan/accept-process). */
+  handoff?: { path: string; build: () => string; owner?: { uid: number; gid: number }; silentMs?: number };
 }
 
 interface DialPair {
@@ -95,14 +102,55 @@ export class LanRuntime {
   private readonly answerSessions = new RelaySessions<ReverseClient>({ replaced: (_id, l) => console.log(`[mesh] dial-out pairing ${l}: a newer connection replaced the older`), cloneSuspected: (_id, l) => console.warn(`[mesh] dial-out pairing ${l}: connections keep replacing each other; two machines may hold its key`) });
   private readonly askSessions = new RelaySessions<{ close(): void }>({ replaced: (_id, l) => console.log(`[mesh] dial-out pairing ${l}: a newer connection replaced the older`), cloneSuspected: (_id, l) => console.warn(`[mesh] dial-out pairing ${l}: connections keep replacing each other; two machines may hold its key`) });
   private listener: RelayListener | null = null;
+  /** "lan|host|port" or "internet|host|port" while the relay accepts a pairing, else "". */
   private listenerKey = "";
-  /** Every socket the relay listener handed on that is still open. */
-  private readonly relayed = new Set<TLSSocket>();
+  /** Every connection the relay listener, or for an internet relay the handoff socket, handed on
+      that is still open. */
+  private readonly relayed = new Set<Duplex>();
   private accepted: PeerEntry[] = [];
   private chain: Promise<void> = Promise.resolve();
+  /** An internet relay's handoff socket (§mesh.lan/accept-process): Sova's only way to take a
+      connection on a public address. Never a listener of Sova's own. */
+  private readonly handoff: HandoffServer | null;
 
   constructor(private readonly deps: LanDeps) {
     this.gate = new PeerGate(deps);
+    const h = deps.handoff;
+    this.handoff = h
+      ? new HandoffServer({
+          path: h.path,
+          build: h.build,
+          ...(h.owner ? { owner: h.owner } : {}),
+          ...(h.silentMs ? { silentMs: h.silentMs } : {}),
+          identity: () => readLanIdentity(),
+          acceptedByPin: (pin) => {
+            if (!this.listenerKey.startsWith("internet|")) return null; // not an internet relay now
+            const p = this.accepted.find((a) => samePin(a.lan!.pin, pin));
+            return p ? { id: p.id, label: p.label, pin: p.lan!.pin } : null;
+          },
+          onPeer: (sock, peer, channel) => this.accept(sock, peer, channel),
+          // Losing the accept process ends everything it carried, as Stop Relaying does.
+          onHealth: (up) => {
+            if (!up && this.listenerKey.startsWith("internet|")) this.endRelayed();
+          },
+        })
+      : null;
+    if (this.handoff) {
+      const handoff = this.handoff;
+      this.chain = this.chain.then(async () => {
+        await handoff.start();
+      });
+    }
+  }
+
+  /** Sova's own relay listener's port while it listens (a LAN relay only), else null. */
+  ownListenerPort(): number | null {
+    return this.listener?.listening ? (this.listener.address()?.port ?? null) : null;
+  }
+
+  /** The accept process runs now (connected, this build, heard from lately): an internet relay may be saved. */
+  acceptorRunning(): boolean {
+    return this.handoff?.healthy() ?? false;
   }
 
   /** Follow peers.json (null: the mesh is off). Serialized; resolves once the listener is in place. */
@@ -119,7 +167,7 @@ export class LanRuntime {
     this.accepted = id ? peers.filter((p) => p.lan?.role === "accept") : [];
 
     // Dial pairings: both channels each, restarted when what they dial changes.
-    const want = new Map(dial.map((p) => [p.id, `${p.lan!.pin}|${p.lan!.host}|${p.lan!.port}|${p.nodeId}`]));
+    const want = new Map(dial.map((p) => [p.id, `${p.lan!.pin}|${p.lan!.host}|${p.lan!.port}|${p.nodeId}|${p.lan!.internet === true}`]));
     for (const [peerId, d] of this.dials) {
       if (want.get(peerId) === d.key) continue;
       d.answer.stop();
@@ -129,7 +177,7 @@ export class LanRuntime {
     }
     for (const p of dial) {
       if (this.dials.has(p.id)) continue;
-      const target = { id: p.id, label: p.label, host: p.lan!.host!, port: p.lan!.port!, pin: p.lan!.pin };
+      const target = { id: p.id, label: p.label, host: p.lan!.host!, port: p.lan!.port!, pin: p.lan!.pin, internet: p.lan!.internet === true };
       const node = p.nodeId;
       const answer = new RelayDialer({ identity: id!, relay: target, channel: "answer", onStream: (d) => this.feed(node, d), onStatus: (s) => this.noteDial(p.id, s) });
       const ask = new RelayDialer({
@@ -150,18 +198,25 @@ export class LanRuntime {
     this.askSessions.keepOnly(keep);
     for (const peerId of [...this.clients.keys()]) if (!this.dials.has(peerId) && !keep.includes(peerId)) this.dropClient(peerId);
     const relay = config?.self.relay;
-    const key = relay && this.accepted.length ? `${relay.host}|${relay.port}` : "";
+    const internet = relay?.exposure === "internet";
+    const key = relay && this.accepted.length ? `${internet ? "internet" : "lan"}|${relay.host}|${relay.port}` : "";
     if (key !== this.listenerKey) {
       await this.listener?.close();
       this.listener = null;
-      // Stop Relaying, or another address or port: every connection the old listener let in ends
-      // now, on both channels, with every request and socket inside (§mesh.lan/pairing). A pairing
-      // kept as paired may dial the new listener; nothing of the old one stays up.
+      // Stop Relaying, another address or port, or a switch between LAN and internet: every
+      // connection the old listener let in ends now, on both channels, with every request and
+      // socket inside (§mesh.lan/pairing). A pairing kept as paired may dial the new listener;
+      // nothing of the old one stays up.
       if (this.listenerKey) this.endRelayed();
       this.listenerKey = key;
-      if (key) this.listener = this.startListener(id!, relay!);
+      // An internet relay never gets a listener of Sova's own, and nothing falls back to one: the
+      // accept process listens, on the word below, or nothing does.
+      if (key && !internet) this.listener = this.startListener(id!, relay!);
     }
     await this.listener?.setPaired(this.accepted.map((p): RelayPeer => ({ id: p.id, label: p.label, pin: p.lan!.pin })));
+    if (key && internet) this.handoff?.configure(this.accepted.map((p) => p.lan!.pin), { host: relay!.host, port: relay!.port });
+    else this.handoff?.configure([], null);
+    if (!config) await this.handoff?.stop(); // the mesh is off: this runtime is done
 
     // Every pairing no longer listed loses its streams' admitted connections.
     const nodes = new Set([...dial, ...this.accepted].map((p) => p.nodeId));
@@ -174,7 +229,7 @@ export class LanRuntime {
       host: relay.host,
       port: relay.port,
       identity: id,
-      profile: LAN_PROFILE, // the only exposure until the separate accept process exists
+      profile: LAN_PROFILE, // Sova's own listener is LAN only; an internet relay's runs in the accept process
       onPeer: (sock, peer, channel) => this.accept(sock, peer, channel),
       onEvent: (e) => {
         // Counts and bans only: never an address, a pin or what a connection carried.
@@ -197,8 +252,9 @@ export class LanRuntime {
     this.gate.revoke((n) => !accepted.has(n));
   }
 
-  /** A pinned connection from an accepted pairing, on one channel. */
-  private accept(sock: TLSSocket, rp: RelayPeer, channel: Channel): void {
+  /** A pinned connection from an accepted pairing, on one channel: from Sova's own listener (LAN),
+      or for an internet relay from the handoff socket once its inner pin checked. */
+  private accept(sock: Duplex, rp: RelayPeer, channel: Channel): void {
     const peer = this.accepted.find((p) => p.id === rp.id);
     if (!peer) {
       sock.destroy();
@@ -295,15 +351,26 @@ export class LanRuntime {
         label: p.label,
         role,
         fingerprint: fingerprint(p.lan!.pin),
-        ...(role === "dial" ? { host: p.lan!.host!, port: p.lan!.port! } : {}),
+        ...(role === "dial" ? { host: p.lan!.host!, port: p.lan!.port!, ...(p.lan!.internet ? { internet: true as const } : {}) } : {}),
         channels,
         ...(clone ? { cloneSuspected: true } : {}),
       };
     });
-    const addr = this.listener?.address();
+    const acceptor: AcceptorStatus = { state: this.handoff?.state() ?? "not configured", ...(this.handoff?.mismatchAt ? { mismatchAt: this.handoff.mismatchAt } : {}) };
+    let relayView: LanStatus["relay"];
+    if (relay?.exposure === "internet") {
+      // What the accept process last said, while it runs; never a listener of Sova's own.
+      const on = this.listenerKey.startsWith("internet|") ? this.handoff?.listening() : undefined;
+      const bound = on?.bound ?? null;
+      relayView = { host: relay.host, port: relay.port, exposure: "internet", listening: bound !== null, ...(bound !== null ? { boundPort: bound } : {}), ...(on?.counts ? { counts: on.counts } : {}) };
+    } else if (relay) {
+      const addr = this.listener?.address();
+      relayView = { host: relay.host, port: relay.port, exposure: "lan", listening: !!this.listener?.listening, ...(addr ? { boundPort: addr.port } : {}), ...(this.listener ? { counts: pick(this.listener.counts()) } : {}) };
+    }
     return {
       ...(id ? { fingerprint: fingerprint(id.pin) } : {}),
-      ...(relay ? { relay: { host: relay.host, port: relay.port, exposure: "lan" as const, listening: !!this.listener?.listening, ...(addr ? { boundPort: addr.port } : {}), ...(this.listener ? { counts: pick(this.listener.counts()) } : {}) } } : {}),
+      ...(relayView ? { relay: relayView } : {}),
+      acceptor,
       pairings,
     };
   }
@@ -315,7 +382,9 @@ export class LanRuntime {
     const idle: LanChannelStatus = { state: "not connected" };
     return {
       ...(id ? { fingerprint: fingerprint(id.pin) } : {}),
-      ...(relay ? { relay: { host: relay.host, port: relay.port, exposure: "lan" as const, listening: false } } : {}),
+      ...(relay ? { relay: { host: relay.host, port: relay.port, exposure: relay.exposure ?? "lan", listening: false } } : {}),
+      // The mesh is off, so nothing listens on the handoff socket either.
+      acceptor: { state: process.env.SOVA_RELAY_HANDOFF?.trim() ? "not running" : "not configured" },
       pairings: (config?.peers ?? [])
         .filter((p) => p.lan)
         .map((p) => ({
@@ -323,7 +392,7 @@ export class LanRuntime {
           label: p.label,
           role: p.lan!.role,
           fingerprint: fingerprint(p.lan!.pin),
-          ...(p.lan!.role === "dial" ? { host: p.lan!.host!, port: p.lan!.port! } : {}),
+          ...(p.lan!.role === "dial" ? { host: p.lan!.host!, port: p.lan!.port!, ...(p.lan!.internet ? { internet: true as const } : {}) } : {}),
           channels: { answer: idle, ask: idle },
         })),
     };

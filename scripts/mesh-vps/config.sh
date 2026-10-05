@@ -57,6 +57,14 @@ CADDY_SHA512_ARM64=${CADDY_SHA512_ARM64:-d5a7c423853c24a799765e0e8210d5c7c22a8f5
 # LAPTOP_ID, LAPTOP_NODE_ID, LAPTOP_DNS, LAPTOP_PEER_URL, LAPTOP_SERVE_URL (required by smoke.sh / laptop-forwarder.sh)
 LAPTOP_LABEL=${LAPTOP_LABEL:-${LAPTOP_ID:-}}
 
+# The internet relay (§mesh.vps/internet-relay): off (the default) | on. With on, each deploy bundles the accept process,
+# installs it in ~/$R/accept and points Sova at the handoff socket (SOVA_RELAY_HANDOFF); its system unit is installed once
+# by an admin (SUDO.md §5). VPS_RELAY_PORT is its public port (4803; 443 only if the share front doesn't hold it).
+VPS_RELAY=${VPS_RELAY:-off}
+case "$VPS_RELAY" in off|on) ;; *) printf '[mesh-vps] error: VPS_RELAY is %s: want off or on\n' "$VPS_RELAY" >&2; exit 1 ;; esac
+VPS_RELAY_PORT=${VPS_RELAY_PORT:-4803}
+case "$VPS_RELAY_PORT" in ''|*[!0-9]*) printf '[mesh-vps] error: VPS_RELAY_PORT is %s: want a port number\n' "$VPS_RELAY_PORT" >&2; exit 1 ;; esac
+
 # Public ports the exposure probe expects OPEN, a control that the probe itself works (e.g. "80 443"); empty = no control
 VPS_CONTROL_PORTS=${VPS_CONTROL_PORTS:-}
 # Units on the VPS whose state must be identical before and after anything we do; empty = the units check is skipped

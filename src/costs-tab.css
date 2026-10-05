@@ -1,0 +1,60 @@
+/* The Agents page's Costs tab (#/agents/costs). Token values only. It measures the `insights` pane
+   it lives in, never the window: one column when folded, the four stats in a row and the tables in
+   two columns from 768. Money and counts are mono with tabular digits (.cost-figure, projects.css). */
+
+.agents-tabs { flex: none; flex-wrap: nowrap; scrollbar-width: thin; }
+.agents-tabs > .tab { flex: none; }
+
+.costs { display: flex; flex-direction: column; gap: var(--space-4); }
+.costs-card { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-4); }
+.costs-h2 { margin: 0; font-size: var(--fs-heading-s); line-height: var(--lh-heading-s); font-weight: var(--fw-semibold); }
+.costs-error { color: var(--status-error); }
+
+/* ---- The bar: range chips, then the two pickers, wrapping as one line of controls ---- */
+.costs-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); }
+.costs-pick { display: inline-flex; }
+.costs-pick .action-menu-text { display: inline-flex; align-items: center; gap: var(--space-1); max-width: 16rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A set filter says so in words (its trigger names what's picked) and with the accent edge, never by tint alone. */
+.costs-pick-on { border-color: var(--color-accent); background: var(--color-accent-tint); }
+.costs-pick-empty { margin: 0; padding: var(--space-2) var(--space-3); color: var(--color-ink-muted); font-size: var(--fs-caption); }
+.costs-check { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border: var(--stroke-icon) solid var(--color-border-strong); border-radius: var(--r-xs); color: var(--color-accent); }
+.action-menu [role="menuitemcheckbox"] { cursor: pointer; }
+.action-menu [role="menuitemcheckbox"]:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); }
+
+/* ---- Stats: two by two when folded, four in a row from 768 ---- */
+.costs-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); margin: 0; }
+.costs-stat { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-3) var(--space-4); }
+.costs-stat dt { margin: 0; color: var(--color-ink-muted); }
+.costs-stat dd { margin: 0; font-size: var(--fs-heading-m); line-height: var(--lh-heading-m); font-weight: var(--fw-semibold); color: var(--color-ink); }
+@container insights (min-width: 768px) {
+  .costs-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+/* ---- The chart: a bar per day (or week), the tallest at full height; a zero day keeps its slot ---- */
+.costs-chart-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-2); }
+.costs-chart {
+  display: grid;
+  grid-template-columns: repeat(var(--bars), minmax(0, 1fr));
+  align-items: end;
+  gap: 2px;
+  height: 160px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-bottom: var(--stroke-thin) solid var(--color-border-strong);
+}
+.costs-bar-slot { position: relative; height: 100%; display: flex; align-items: flex-end; }
+.costs-bar-slot:hover { background: var(--color-sunken); }
+.costs-bar-fill { display: block; width: 100%; min-height: 0; background: var(--color-accent); border-radius: var(--r-xs) var(--r-xs) 0 0; }
+.costs-chart-axis { display: flex; justify-content: space-between; }
+
+/* ---- Tables: one column folded, two from 768 (the model table takes a whole row) ---- */
+.costs-tables { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4); }
+@container insights (min-width: 768px) {
+  .costs-tables { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .costs-tables > .costs-wide { grid-column: 1 / -1; }
+}
+.cost-table th[scope="row"] .cost-session-meta { font-weight: var(--fw-regular); }
+
+/* ---- The foot: this device, the prices, and the one action ---- */
+.costs-foot { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); }

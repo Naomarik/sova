@@ -1,5 +1,5 @@
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
-import type { OrgLinkRow, SessionShare, SessionShareVisit, SharesOverview } from "../../shared/session-share";
+import type { OrgLinkRow, SessionShare, SessionShareVisit } from "../../shared/session-share";
 import { projectHref } from "../lib/projects-route";
 import { relativeTime } from "../lib/format";
 import { absoluteTime } from "../lib/spend";
@@ -15,6 +15,9 @@ import {
   PREVIEW_DELETED,
   previewGroups,
   RECIPIENT_DELETE_LABEL,
+  recipientCopied,
+  recipientCopyLabel,
+  recipientCopyTip,
   recipientDeleteConfirm,
   recipientDeleted,
   recipientDeleteName,
@@ -25,8 +28,8 @@ import {
   sentToLine,
 } from "../lib/previews";
 import { DELETE_LINK, deleteLinkConfirm, LINK_DELETED, linkGone } from "../lib/link-delete";
-import { toast } from "../lib/ui-state";
-import { expiresWord, openedLine, presenceWord, revokeHandoff, revokeOwnerLink, sharesOverview, shareLine, shareLive, stopShare, visitLine, visitTitle } from "../lib/session-shares";
+import { copyText, toast } from "../lib/ui-state";
+import { expiresWord, type HostShares, openedLine, presenceWord, readShares, revokeHandoff, revokeOwnerLink, sharesOverview, shareLine, shareLive, stopShare, linksViewingNow, visitLine, visitTitle } from "../lib/session-shares";
 import { DeleteButton } from "./DeleteButton";
 import { InsightsPage } from "./InsightsPage";
 import { RecipientChip, ShareSheet } from "./ShareSheet";
@@ -35,12 +38,6 @@ import "../shares.css";
 
 /** Every host is read again this often while the page is visible. */
 const REFRESH_MS = 5_000;
-
-interface HostShares {
-  host: string | null;
-  overview: SharesOverview | null;
-  error: string | null;
-}
 
 const errText = (x: unknown) => (x instanceof Error ? x.message : String(x));
 const sessionLink = (sessionId: string) => `#/sid/${encodeURIComponent(sessionId)}`;
@@ -64,19 +61,10 @@ export function SharesPage(props: { now: number; titleRef(el: HTMLHeadingElement
     const mine = ++run;
     setRefreshing(true);
     const targets: (string | null)[] = [null, ...meshPeers().filter((p) => p.state === "up").map((p) => p.id)];
-    const answers = await Promise.all(
-      targets.map(async (host): Promise<HostShares> => {
-        try {
-          return { host, overview: await sharesOverview(host), error: null };
-        } catch (x) {
-          return { host, overview: null, error: errText(x) };
-        }
-      }),
-    );
-    const mineOnly = await getPreviews().then((l) => previewGroups(l.previews), () => null);
+    const r = await readShares(targets, { overview: sharesOverview, previews: () => getPreviews().then((l) => l.previews) });
     if (mine !== run) return;
-    if (mineOnly) setPreviews(mineOnly);
-    setHosts(answers);
+    if (r.previews) setPreviews(previewGroups(r.previews));
+    setHosts(r.hosts);
     setLoaded(true);
     setRefreshing(false);
   };
@@ -100,7 +88,7 @@ export function SharesPage(props: { now: number; titleRef(el: HTMLHeadingElement
   const down = () => hosts().filter((h) => h.error);
   /** This host's preview visits (§mesh.public/visitor-log), by preview id. */
   const previewVisits = (id: string) => hosts().find((h) => h.host === null)?.overview?.previewVisits?.[id] ?? [];
-  const viewing = () => live().reduce((n, s) => n + s.share.recipients.filter((r) => r.presence === "viewing").length, 0) + orgLinks().filter((l) => l.link.presence === "viewing").length;
+  const viewing = () => linksViewingNow(live().map((s) => s.share), orgLinks().map((l) => l.link));
 
   /** `done` is the toast once it went through. */
   const act = async (run: () => Promise<unknown>, done?: string) => {
@@ -219,6 +207,14 @@ export function SharesPage(props: { now: number; titleRef(el: HTMLHeadingElement
                                   <span class="previews-recipient-name" title={senderLine(r.createdBy) ?? undefined}>
                                     {recipientName(r)}
                                   </span>
+                                  {/* Their own link, while it is kept: Copy only, never Open. */}
+                                  <Show when={r.sentLink}>
+                                    {(link) => (
+                                      <button type="button" class="button button-sm previews-recipient-copy" title={recipientCopyTip(recipientName(r))} onClick={() => void copyText(link(), recipientCopied(recipientName(r)))}>
+                                        {recipientCopyLabel(recipientName(r))}
+                                      </button>
+                                    )}
+                                  </Show>
                                   <DeleteButton
                                     label={RECIPIENT_DELETE_LABEL}
                                     name={recipientDeleteName(recipientName(r))}
@@ -238,6 +234,13 @@ export function SharesPage(props: { now: number; titleRef(el: HTMLHeadingElement
                       <Visits id={`preview:${v.id}`} visits={previewVisits(v.id)} now={props.now} />
                     </div>
                     <div class="shares-row-actions">
+                      <Show when={v.siblingOf && v.sentLink}>
+                        {(link) => (
+                          <button type="button" class="button button-sm" title={recipientCopyTip(recipientName(v))} onClick={() => void copyText(link(), recipientCopied(recipientName(v)))}>
+                            {recipientCopyLabel(recipientName(v))}
+                          </button>
+                        )}
+                      </Show>
                       <Show
                         when={v.siblingOf}
                         fallback={

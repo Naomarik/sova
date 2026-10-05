@@ -197,7 +197,9 @@ of its own), with the reason line "Removed · not merged", "Removed · no record
 chip and adds Removed or Cleaned up. A row with a readiness
 (§chat.worktrees/readiness) adds a chip after the status chip — Ready to merge (the row's and
 the digest's words), Waiting for your OK, In progress, Blocked or Stale, with the reason as its
-`title` — and none while merged or removed, which the status chip already says. Under the facts, one visible
+`title` — and none while merged or removed, which the status chip already says. Its tone follows
+mergeability, as the list row's lit worktree count does (§app.session-list/content-rules): Ready
+to merge and Waiting for your OK are success, In progress neutral, Blocked and Stale warn. Under the facts, one visible
 muted line gives the reason, so a phone gets it without hover: the readiness's `reason` ("Ready to
 merge · checks passed · 19 commits ahead", "Conflicts with master · 17 files"), else the chip's
 word and the why joined by " · ", and no line when there is neither. It wraps; it never truncates. The section follows the

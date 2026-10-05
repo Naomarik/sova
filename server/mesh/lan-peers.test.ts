@@ -114,8 +114,34 @@ test("self.relay: one loopback, private or link-local IP; exposure lan only", ()
   ]) {
     assert.match(err({ self: { id: "h", relay } }), /self\.relay/, JSON.stringify(relay));
   }
-  assert.match(err({ self: { id: "h", relay: { host: "10.0.0.9", port: 1, exposure: "internet" } } }), /separate accept process/);
   assert.match(err({ self: { id: "h", relay: { host: "203.0.113.7", port: 1 } } }), /public address/);
+  assert.match(err({ self: { id: "h", relay: { host: "203.0.113.7", port: 1, exposure: "lan" } } }), /public address/, "LAN stays local-network only");
+});
+
+test("an internet relay setting: any one unicast address, valid whether or not the accept process runs", () => {
+  for (const host of ["203.0.113.7", "2001:db8::7", "10.0.0.9", "198.51.100.1", "::ffff:198.51.100.2"]) {
+    const c = ok({ self: { id: "h", relay: { host, port: 4803, exposure: "internet" } } });
+    assert.equal(c.self.relay?.exposure, "internet", host);
+  }
+  assert.equal(ok({ self: { id: "h", relay: { host: "::ffff:198.51.100.2", port: 1, exposure: "internet" } } }).self.relay?.host, "198.51.100.2");
+  for (const host of ["0.0.0.0", "::", "0::0", "::ffff:0.0.0.0", "224.0.0.1", "239.1.2.3", "255.255.255.255", "ff02::1", "relay.example", "203.0.113.7%eth0"]) {
+    assert.match(err({ self: { id: "h", relay: { host, port: 4803, exposure: "internet" } } }), /self\.relay/, host);
+  }
+  assert.equal(ok({ self: { id: "h", relay: { host: "10.0.0.9", port: 1 } } }).self.relay?.exposure, undefined, "LAN is written as no exposure, as before");
+});
+
+test("a dial pairing marked as on the internet may name a public relay; nothing else may", () => {
+  const link = (host: string, extra: Record<string, unknown> = {}) => ({ peers: [{ id: "x", lan: { role: "dial", pin: PIN, host, port: 4803, ...extra } }] });
+  for (const host of ["203.0.113.7", "2001:db8::7", "100.127.255.254", "198.51.100.9"]) {
+    assert.equal(ok(link(host, { internet: true })).peers[0]!.lan!.internet, true, host);
+    assert.match(err(link(host)), /public address/, `${host} without the mark`);
+  }
+  assert.equal(ok(link("relay.example", { internet: true })).peers[0]!.lan!.host, "relay.example");
+  for (const host of ["0.0.0.0", "::", "224.0.0.1", "255.255.255.255", "ff02::1"]) assert.match(err(link(host, { internet: true })), /host/, host);
+  assert.match(err(link("10.0.0.5", { internet: false })), /internet must be true/);
+  assert.match(err(link("10.0.0.5", { internet: "yes" })), /internet must be true/);
+  assert.match(err({ peers: [{ id: "x", lan: { role: "accept", pin: PIN, internet: true } }] }), /only a relay this host dials/);
+  assert.equal(ok(link("10.0.0.5")).peers[0]!.lan!.internet, undefined, "an unmarked pairing has no mark");
 });
 
 test("a dial pairing's relay: a public IP is refused when saved; a name is judged when dialed", () => {

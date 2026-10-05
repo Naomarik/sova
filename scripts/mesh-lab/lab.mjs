@@ -17,6 +17,11 @@ export const LAB_DIR = resolve(import.meta.dirname);
 export const ROOT = resolve(LAB_DIR, "../..");
 export const PROJECT = "sovamesh";
 export const NETWORK = `${PROJECT}_lab`;
+/** `lab up --wan`: a second network standing in for the internet (M9, the internet relay). A documentation
+    range, which Sova judges public; the first host and `plain` get fixed addresses on it. */
+export const WAN_NETWORK = `${PROJECT}_wan`;
+export const WAN_SUBNET = "198.51.100.0/24";
+export const WAN_IPS = { relay: "198.51.100.10", plain: "198.51.100.20" };
 export const STATE = process.env.LAB_STATE || join(homedir(), ".cache/sova-mesh/lab");
 export const DOMAIN = "mesh.lab";
 export const IMAGES = { host: "sovamesh-host:lab", plain: "sovamesh-plain:lab" };
@@ -50,7 +55,7 @@ const DNS = { dns: ["1.1.1.1", "9.9.9.9"], dns_search: ["."] };
 /** The lab CA certificate, trusted by every lab node (system store + NODE_EXTRA_CA_CERTS). */
 const CA_MOUNT = `${join(STATE, "tls/ca.pem")}:/run/lab-tls/ca.pem:ro`;
 
-const DEFAULTS = { hosts: ["a", "b", "c"], plain: true, stranger: true, frontdoor: true, publicfront: true, mock: true, auth: "all", seed: true, order: null };
+const DEFAULTS = { hosts: ["a", "b", "c"], plain: true, stranger: true, frontdoor: true, publicfront: true, mock: true, auth: "all", seed: true, order: null, wan: false };
 /** The host the public front sits in front of: the first host (a public-links gateway). */
 export const publicGateway = (cfg) => (cfg.publicfront ? (cfg.hosts[0] ?? null) : null);
 const MOCK_DIR = () => join(STATE, "mock-token");
@@ -240,7 +245,15 @@ export function composeFor(cfg) {
       labels: { "sova.mesh-lab": "1", "sova.mesh-lab.role": "publicfront" },
     };
   }
-  return { name: PROJECT, services, volumes, networks: { lab: { name: NETWORK, labels: { "sova.mesh-lab": "1" } } } };
+  const networks = { lab: { name: NETWORK, labels: { "sova.mesh-lab": "1" } } };
+  if (cfg.wan) {
+    // The "internet" for M9: the relay (the first host) and plain (the dial-out host) on a public range.
+    networks.wan = { name: WAN_NETWORK, ipam: { config: [{ subnet: WAN_SUBNET }] }, labels: { "sova.mesh-lab": "1" } };
+    const relay = cfg.hosts[0];
+    if (relay) services[relay].networks = { lab: {}, wan: { ipv4_address: WAN_IPS.relay } };
+    if (services.plain) services.plain.networks = { lab: {}, wan: { ipv4_address: WAN_IPS.plain } };
+  }
+  return { name: PROJECT, services, volumes, networks };
 }
 
 /** The public front's Caddyfile: plain http on :4880 (the lab has no public TLS) to the share port.
@@ -487,6 +500,8 @@ function parseUpArgs(args, cfg) {
     else if (a === "--no-plain") next.plain = false;
     else if (a === "--stranger") next.stranger = true;
     else if (a === "--no-stranger") next.stranger = false;
+    else if (a === "--wan") next.wan = true;
+    else if (a === "--no-wan") next.wan = false;
     else if (a === "--frontdoor") next.frontdoor = true;
     else if (a === "--no-frontdoor") next.frontdoor = false;
     else if (a === "--publicfront") next.publicfront = true;
@@ -640,6 +655,7 @@ function cmdDestroy(args) {
   const leftovers = docker(["ps", "-aq", "--filter", "label=sova.mesh-lab=1"]).out.split("\n").filter(Boolean);
   if (leftovers.length) docker(["rm", "-f", ...leftovers], { allowFail: true });
   docker(["network", "rm", NETWORK], { allowFail: true, quiet: true });
+  docker(["network", "rm", WAN_NETWORK], { allowFail: true, quiet: true });
   for (const img of Object.values(IMAGES)) docker(["image", "rm", "-f", img], { allowFail: true, quiet: true });
   docker(["image", "prune", "-f", "--filter", "label=sova.mesh-lab=1"], { allowFail: true, quiet: true });
   if (args.includes("--pulled")) for (const img of Object.values(PULLED)) docker(["image", "rm", img], { allowFail: true, quiet: true });
@@ -834,9 +850,11 @@ const HELP = `usage: scripts/mesh-lab/lab <command> [args]
 
 lifecycle
   up [--hosts N|a,b,..] [--auth all|none|a,b] [--no-plain] [--no-stranger] [--no-frontdoor] [--no-publicfront]
-     [--no-mock] [--no-seed] [--no-build] [--rev <rev>] [--dirty]
+     [--no-mock] [--no-seed] [--no-build] [--rev <rev>] [--dirty] [--wan]
                                   build images from git archive <rev> (default HEAD; --dirty: the
-                                  working tree as is), start/refresh the lab, wait until ready
+                                  working tree as is), start/refresh the lab, wait until ready;
+                                  --wan adds sovamesh_wan (198.51.100.0/24, "the internet") to the
+                                  first host and plain, for M9
   build [--rev <rev>] [--dirty]   build the images only
   down                            stop and remove containers (volumes kept)
   reset [up options]              wipe all lab volumes + Headscale DB + secrets, then up

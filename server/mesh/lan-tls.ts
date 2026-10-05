@@ -13,8 +13,10 @@
 //
 // INVARIANTS that keep "no application byte before the pin compare" true (reviewed and accepted;
 // break one and that guarantee is gone):
-// 1. The compare stays synchronous inside those two handlers (`connectPinnedAt`'s secureConnect,
-//    RelayListener.onSecure): no await, timer or callback between the event and the decision.
+// 1. The compare stays synchronous inside those handlers (`connectPinnedAt`'s secureConnect,
+//    RelayListener.onSecure, and for an internet relay the inner handshake's: the inner
+//    secureConnect in `connectThroughAcceptor` and `secure` in HandoffServer.onConn): no await,
+//    timer or callback between the event and the decision.
 // 2. Nothing reads the socket before it: no `data` listener, no `resume()`, no pipe, no HTTP/2
 //    session attached until the compare has passed (lan-dialer.ts and lan.ts attach theirs after).
 // 3. The dialer is never given a `session` option (no resumption offered), and a resumed session
@@ -32,7 +34,7 @@
 import crypto from "node:crypto";
 import dns from "node:dns/promises";
 import tls, { type ConnectionOptions, type TLSSocket, type TlsOptions } from "node:tls";
-import { parseIp, relayAddress } from "../../shared/mesh-lan";
+import { parseIp, relayAddress, relayBindAddress } from "../../shared/mesh-lan";
 import { type LanIdentity, samePin, spkiPin } from "./lan-cert";
 
 // Neutral tokens: the ClientHello carries them in the clear, so they name no product. They are still
@@ -109,7 +111,17 @@ export function pairedPeerOf<T extends { pin: string }>(sock: TLSSocket, paired:
   return null;
 }
 
-export type DialFailure = "refused" | "timed out" | "relay's pin didn't match" | "rejected by the relay" | "TLS version refused" | "relay address isn't private" | "closed";
+export type DialFailure =
+  | "refused"
+  | "timed out"
+  | "relay's pin didn't match"
+  | "rejected by the relay"
+  | "TLS version refused"
+  | "relay address isn't private"
+  | "accept process refused"
+  | "closed";
+
+export const DIAL_FAILURES: readonly DialFailure[] = ["refused", "timed out", "relay's pin didn't match", "rejected by the relay", "TLS version refused", "relay address isn't private", "accept process refused", "closed"];
 
 /** A fixed phrase for why a dial or session failed: never raw error text, a pin or an address. */
 export function dialFailure(err: unknown): DialFailure {
@@ -127,11 +139,13 @@ export function dialFailure(err: unknown): DialFailure {
 /**
  * Dial the relay pinned as `relayPin` on `channel`, and resolve with the socket once its pin
  * checked, before anything is written. Rejects with an Error whose message is a DialFailure phrase.
+ * `internet`: the pairing is marked as on the internet, so the relay may be public, and the pinned
+ * handshake runs inside the outer one with its accept process (connectThroughAcceptor).
  */
-export async function connectPinned(id: LanIdentity, relayPin: string, host: string, port: number, channel: Channel, timeoutMs = 10_000): Promise<TLSSocket> {
-  const at = await relayTarget(host);
+export async function connectPinned(id: LanIdentity, relayPin: string, host: string, port: number, channel: Channel, timeoutMs = 10_000, internet = false): Promise<TLSSocket> {
+  const at = await relayTarget(host, lookupAll, internet);
   if (!at) throw new Error("relay address isn't private" satisfies DialFailure);
-  return connectPinnedAt(id, relayPin, at, port, channel, timeoutMs);
+  return internet ? connectThroughAcceptor(id, relayPin, at, port, channel, timeoutMs) : connectPinnedAt(id, relayPin, at, port, channel, timeoutMs);
 }
 
 type LookupAll = (host: string) => Promise<Array<{ address: string }>>;
@@ -140,11 +154,13 @@ const lookupAll: LookupAll = (host) => dns.lookup(host, { all: true, verbatim: t
 /**
  * Where a dial-out host may dial `host` (§mesh.lan/pairing): itself when it is a loopback, private or
  * link-local IP; for a name, the first such address it resolves to; else null (a public relay is
- * never dialed). A name that doesn't resolve rejects as a DialFailure.
+ * never dialed). For a pairing marked as on the internet (`internet`), any one unicast address
+ * (relayBindAddress) instead. A name that doesn't resolve rejects as a DialFailure.
  */
-export async function relayTarget(host: string, lookup: LookupAll = lookupAll): Promise<string | null> {
+export async function relayTarget(host: string, lookup: LookupAll = lookupAll, internet = false): Promise<string | null> {
+  const judge = internet ? relayBindAddress : relayAddress;
   if (parseIp(host)) {
-    const ip = relayAddress(host);
+    const ip = judge(host);
     return "address" in ip ? ip.address : null;
   }
   let found: Array<{ address: string }>;
@@ -154,11 +170,77 @@ export async function relayTarget(host: string, lookup: LookupAll = lookupAll): 
     throw new Error(dialFailure(err));
   }
   for (const a of found) {
-    const ip = relayAddress(a.address);
+    const ip = judge(a.address);
     if ("address" in ip) return ip.address;
   }
   return null;
 }
+
+/**
+ * An internet relay (§mesh.lan/handshake, §mesh.lan/dialer): the OUTER TLS 1.3 handshake with its
+ * accept process (this host's certificate, the channel's token; the accept process's certificate is
+ * not this host's to check), then the INNER pinned handshake with the relay itself over it, judged
+ * exactly as connectPinnedAt judges a LAN relay: synchronously in the inner `secureConnect`, before
+ * anything is written. Resolves with the inner socket; closing either ends both.
+ */
+function connectThroughAcceptor(id: LanIdentity, relayPin: string, host: string, port: number, channel: Channel, timeoutMs: number): Promise<TLSSocket> {
+  return new Promise((resolve, reject) => {
+    let done = false;
+    let inner: TLSSocket | null = null;
+    const outer = tls.connect(dialOptions(id, host, port, channel));
+    const fail = (why: DialFailure) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      inner?.destroy();
+      outer.destroy();
+      reject(new Error(why));
+    };
+    const timer = setTimeout(() => fail("timed out"), timeoutMs);
+    timer.unref?.();
+    // Before the outer handshake: as for any relay. After it, until the inner one completed: the
+    // accept process (or the relay behind it) ended the connection.
+    const outerError = (err: Error) => fail(inner ? afterOuter(err) : dialFailure(err));
+    const outerClose = () => fail(inner ? "accept process refused" : "closed");
+    outer.on("error", outerError);
+    outer.once("close", outerClose);
+    outer.once("secureConnect", () => {
+      const { host: _h, port: _p, ...innerOpts } = dialOptions(id, host, port, channel);
+      const s = tls.connect({ ...innerOpts, socket: outer });
+      inner = s;
+      const innerError = (err: Error) => fail(afterOuter(err));
+      const innerClose = () => fail("accept process refused");
+      s.on("error", innerError);
+      s.once("close", innerClose);
+      s.once("secureConnect", () => {
+        const pin = livePeerPin(s);
+        if (!pin || !samePin(pin, relayPin) || channelOf(s) !== channel) {
+          // On Bun a nested handshake whose carrier closed still reports itself finished, as TLS 1.2
+          // with no certificate and no token: that is the accept process refusing, not a wrong pin.
+          return fail(!pin && (s.getProtocol() !== "TLSv1.3" || !channelOf(s)) ? "accept process refused" : "relay's pin didn't match");
+        }
+        done = true;
+        clearTimeout(timer);
+        outer.off("error", outerError);
+        outer.off("close", outerClose);
+        s.off("error", innerError);
+        s.off("close", innerClose);
+        // A later error must never be uncaught; the caller watches the inner socket's `close`.
+        outer.on("error", () => {});
+        s.on("error", () => {});
+        outer.once("close", () => s.destroy());
+        s.once("close", () => outer.destroy());
+        resolve(s);
+      });
+    });
+  });
+}
+
+/** Why a connection ended between the outer handshake and the inner one. */
+const afterOuter = (err: unknown): DialFailure => {
+  const why = dialFailure(err);
+  return why === "timed out" || why === "relay's pin didn't match" ? why : "accept process refused";
+};
 
 function connectPinnedAt(id: LanIdentity, relayPin: string, host: string, port: number, channel: Channel, timeoutMs: number): Promise<TLSSocket> {
   return new Promise((resolve, reject) => {

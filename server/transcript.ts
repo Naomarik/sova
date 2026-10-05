@@ -738,8 +738,8 @@ function entryRows(entry: Entry, fallbackId: string, state?: { model?: string })
       return [];
     case "usage":
       // pi 0.86.0+: model-attributed usage outside the conversation (e.g. kind
-      // "cache_warm"). It contributes to session totals only (see transcript-usage.ts),
-      // never to the conversation; unknown `kind` values are still usage.
+      // "cache_warm"). Never a row: what it spent is in the usage ledger (recorded when the
+      // call ended, llm-inflight), and unknown `kind` values are still usage.
       return [];
     case "context_edit":
       // pi 0.87.0+: an append-only edit (omit, or replace the content of) to what an earlier

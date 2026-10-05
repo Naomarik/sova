@@ -354,7 +354,8 @@ mesh off. Copy is §design.copy-deck/public-links.
   SHA-256 of the label and `createdBy` is `operator` or `session:<id>` (the project overseer's
   conversation, §app.project-overseer/previews). A **sibling** (`siblingOf`, `sentTo`) is a person's
   own link to another preview, made when it is sent to them (§app.outreach/links): same project and
-  port, expiring with it; its label is never stored, and the send carries its link once.
+  port, expiring with it; its label is never stored in this file, and the send carries its link
+  (from that send on the link is also kept for the operator, below).
 - **What else a preview has** is kept beside it, in `<stateRoot>/preview-kept.json` (0600, written
   atomically, host-local, never synced or committed), per preview id: its link, its target (`port`,
   or `static` with the folder Sova serves, §mesh.public/preview-serve, or `instance`: a running
@@ -366,7 +367,13 @@ mesh off. Copy is §design.copy-deck/public-links.
   secret kept for the operator: the project overseer never sees it, and names a preview by its id
   (§app.project-overseer/previews). A preview made before this file existed has no kept link, only
   its hash: its link was shown once, when it was made, and is never guessed. A sibling has no entry
-  of its own: it shows its original's target, session and purpose.
+  of its own among the previews: it shows its original's target, session and purpose. **Its
+  person's link** is kept in the same file but in a map of its own, `siblingLinks` (`{<sibling
+  id>: <link>}`), never as a previews entry, so nothing that reads a preview's target ever meets an
+  entry without one; it is kept when the send mints it (§app.outreach/links), read with the same
+  tolerance and the same link check, and redacted wherever a kept link is. It is dropped when the
+  sibling is turned off, expires or is gone (at its turn-off, and by the minute's sweep). A sibling
+  sent before links were kept this way has no kept link, and none is guessed.
 - **Mint** (`POST /api/previews {projectId, port | folder, sessionId?, purpose?, days?}`,
   main listener only, like the other local acts): exactly one of `port` and `folder`. `port` must
   be an integer 1–65535, not 4800, 4801, 4802 or 4810, and not a port this Sova process binds, its
@@ -387,9 +394,13 @@ mesh off. Copy is §design.copy-deck/public-links.
   from now (at most 30; a running copy's link at most 7; a sibling's, never past its original's). `GET /api/previews?projectId`
   lists a project's previews (every project's without it) with each one's port, target, expiry,
   state and whether something listens on its port now (`running`; for a folder, whether Sova
-  serves it now), its kept link (`url`, null when none is kept), purpose, coding session and branch
+  serves it now), its kept link (`url`, null when none is kept, and always null for a sibling),
+  purpose, coding session and branch
   (a recorded one, else the one matched by its worktree, §app.project-overseer/previews), with the
-  preview address's state; a sibling carries `siblingOf`, `sentTo` and `sentToName`, and the lists
+  preview address's state; a sibling carries `siblingOf`, `sentTo` and `sentToName`, and, only in
+  these two operator lists and only while it is active, its person's kept link as `sentLink`, for
+  the Sent to line alone. No other answer carries `sentLink`: not the mint's, nor any project
+  overseer, Overseer or links tool's (they read the previews without it), and the lists
   name it on its original's **Sent to** line, or as "sent to {name}" on a row of its own when its
   original isn't listed (§mesh.public/preview-card); a running copy's link also carries its
   `instance` and `endpoint`.
@@ -501,9 +512,16 @@ would have expired, and answers them 410 too.
   small **Delete Link** on that person's line (accessible name "Delete {name}'s Link"; tooltip
   "Deletes only {name}'s link."; a second click confirms: it reads "Delete {name}'s
   Link?" and a line under that person's line says "{name}'s link stops working for good."; done:
-  "{name}'s link deleted."), which turns off only that person's link, for good. A sibling whose original
+  "{name}'s link deleted."), which turns off only that person's link, for good. When that person's
+  link is kept (`sentLink`, §mesh.public/preview: a send from when links began to be kept), their
+  line has a small **Copy {name}'s Link** before the Delete Link (tooltip "Copies only {name}'s
+  link. A visit through it counts as theirs."; done: "{name}'s link copied."); with none kept it
+  has no Copy button and no line about it. A person's line never has **Open**: the row's Open is
+  the original's kept link, so opening the preview from the card never counts as that person's
+  visit. A sibling whose original
   is not listed (turned off, expired or gone) keeps a row of its own, with "sent to {name}" in its
-  last group, no Copy Link, no Open and no "Link shown only when it was made." line; its button
+  last group, no Copy Link, no Open and no "Link shown only when it was made." line, but the same
+  **Copy {name}'s Link** when that person's link is kept; its Delete button
   reads **Delete {name}'s Link** and confirms and reports like a recipient's. Turned-off and
   expired previews are not listed. Below 480px a row drops its own side padding, so its title
   lines up with the card's, its buttons keep their labels' width, and a long title or folder wraps
@@ -525,7 +543,9 @@ would have expired, and answers them 410 too.
   card says so and how to set it, and offers no New Preview.
 - The Shares page lists this host's live previews the same way, one row per original with the
   project, port, expiry and the card's **Delete Preview** (with its confirm, line and toasts), its
-  recipients on a **Sent to** line each with its own **Delete Link** (likewise), and a sibling whose original is not listed on a row of its own. A preview with recorded
+  recipients on a **Sent to** line each with its own **Copy {name}'s Link** when their link is
+  kept and **Delete Link** (likewise, and never an Open), and a sibling whose original is not
+  listed on a row of its own (with the same Copy when kept). A preview with recorded
   visits (§mesh.public/visitor-log) gets a **Visits** disclosure under its row, and a recipient
   with visits one beside their name.
 

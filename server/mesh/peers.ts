@@ -2,7 +2,7 @@ import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "n
 import { isIP } from "node:net";
 import { hostname } from "node:os";
 import { dirname, join } from "node:path";
-import { parseIp, relayAddress } from "../../shared/mesh-lan";
+import { parseIp, relayAddress, relayBindAddress } from "../../shared/mesh-lan";
 import type { SyncCategory } from "../../shared/protocol";
 import { stateRoot } from "../state-root";
 import { isLanNodeId, lanNodeId, parsePin } from "./lan-cert";
@@ -57,17 +57,23 @@ export interface LanLink {
   /** role "dial": where the relay listens. */
   host?: string;
   port?: number;
+  /** role "dial" only: the relay is on the internet, so `host` may be public (§mesh.lan/pairing).
+      Absent: the local-network rule. */
+  internet?: true;
 }
 
 /** This host as a relay for dial-out hosts: where it listens while it accepts any (§mesh.lan/pairing). */
 export interface RelaySetting {
-  /** One loopback, private or link-local IP address of this host (shared/mesh-lan.ts relayAddress). */
+  /** "lan": one loopback, private or link-local IP address of this host (shared/mesh-lan.ts
+      relayAddress). "internet": any one unicast address of this host (relayBindAddress), where the
+      accept process listens. */
   host: string;
   /** 1–65535; 0 picks a free port (tests). */
   port: number;
-  /** Only "lan" (a misbehaving address is banned for 5 min): "internet" waits for the separate
-      accept process, so it is refused. Absent: "lan". */
-  exposure?: "lan";
+  /** "lan" (Sova's own listener; absent means it) or "internet" (the accept process listens, on
+      Sova's word, §mesh.lan/accept-process). Valid whether or not the accept process runs: its
+      health is checked when the setting is saved, never on a read. */
+  exposure?: "lan" | "internet";
 }
 
 export const SYNC_CATEGORIES: readonly SyncCategory[] = ["settings", "themes", "extensions", "logins"];
@@ -270,34 +276,40 @@ function checkLan(raw: unknown): { link: LanLink } | { error: string } {
   if (r.role !== "dial" && r.role !== "accept") return { error: 'role must be "dial" or "accept"' };
   const pin = parsePin(r.pin);
   if (!pin) return { error: "pin must be 32 hex digits" };
+  if (r.internet !== undefined && r.internet !== true) return { error: "internet must be true, or absent" };
   if (r.role === "accept") {
     if (r.host !== undefined || r.port !== undefined) return { error: "an accepted pairing has no host or port" };
+    if (r.internet !== undefined) return { error: "only a relay this host dials can be marked as on the internet" };
     return { link: { role: "accept", pin } };
   }
+  const internet = r.internet === true;
   const host = text(r.host, 253);
   if (!host) return { error: "host must be the relay's name or IP" };
-  // An IP literal must be a relay address (never public, never every interface); a name is judged
-  // by what it resolves to, at each dial (lan-tls.ts).
-  const ip = relayAddress(host);
+  // An IP literal must be a relay address (never every interface, and never public unless the
+  // pairing is marked as on the internet); a name is judged by what it resolves to, at each dial
+  // (lan-tls.ts relayTarget), by the same rule.
+  const ip = internet ? relayBindAddress(host) : relayAddress(host);
   if (parseIp(host) || isIP(host)) {
     if ("error" in ip) return { error: `host ${JSON.stringify(host)}: ${ip.error}` };
   } else if (!NAME_RE.test(host) || host.includes(":") || /^[0-9.]+$/.test(host)) return { error: "host must be the relay's name or IP" };
   if (!isPort(r.port)) return { error: "port must be 1–65535" };
-  return { link: { role: "dial", pin, host: "address" in ip ? ip.address : host.replace(/\.$/, ""), port: r.port } };
+  return { link: { role: "dial", pin, host: "address" in ip ? ip.address : host.replace(/\.$/, ""), port: r.port, ...(internet ? { internet: true as const } : {}) } };
 }
 
-/** The relay setting (§mesh.lan/pairing): a loopback, private or link-local IP, never every interface
-    or a public address, and never "internet" until the separate accept process exists. */
+/** The relay setting (§mesh.lan/pairing). "lan" (or absent): a loopback, private or link-local IP,
+    never every interface or a public address. "internet": any one unicast IP, where the accept
+    process listens; whether that process runs is never judged here (a crash must not turn the mesh
+    off), only when the setting is saved (lan-routes.ts). */
 function checkRelay(raw: unknown): { relay: RelaySetting } | { error: string } {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return { error: "must be an object" };
   const r = raw as Record<string, unknown>;
-  if (r.exposure === "internet") return { error: 'exposure "internet" is not available: an internet relay needs the separate accept process, which Sova doesn\'t have yet' };
-  if (r.exposure !== undefined && r.exposure !== "lan") return { error: 'exposure must be "lan"' };
+  if (r.exposure !== undefined && r.exposure !== "lan" && r.exposure !== "internet") return { error: 'exposure must be "lan" or "internet"' };
+  const internet = r.exposure === "internet";
   if (typeof r.host !== "string") return { error: "host must be one IP address of this host" };
-  const host = relayAddress(r.host);
+  const host = internet ? relayBindAddress(r.host) : relayAddress(r.host);
   if ("error" in host) return { error: `host ${JSON.stringify(r.host)}: ${host.error}` };
   if (!isPort(r.port, true)) return { error: "port must be 0–65535" };
-  return { relay: { host: host.address, port: r.port } };
+  return { relay: { host: host.address, port: r.port, ...(internet ? { exposure: "internet" as const } : {}) } };
 }
 
 /** A list of host ids (absent/null → undefined), or why it isn't one. */

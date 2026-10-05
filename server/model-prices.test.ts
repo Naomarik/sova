@@ -1,10 +1,10 @@
 // Run: npx tsx --test server/model-prices.test.ts
-// A fake clock, fake timers and a fetch stub: nothing touches the network; the cache lives in a temp dir.
+// The pricing rule (shared/model-prices/prices.ts) on a tiny models.dev body; the price file's
+// refresh is server/usage-helper/price-book.test.ts. Nothing touches the network.
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { after, test } from "node:test";
+import { test } from "node:test";
 import {
   mergeFetched,
   normalizeModelsDev,
@@ -15,17 +15,10 @@ import {
   type PriceTable,
   type TokenUsage,
 } from "../shared/model-prices/prices";
-import { ALIASES_FILE, CHECK_MS, createPriceBook, fetchEnabled, MODELS_DEV_URL, SEED_FILE, STALE_MS } from "./model-prices";
+import { ALIASES_FILE, SEED_FILE } from "./usage-helper/price-book";
 
 const aliases = JSON.parse(readFileSync(ALIASES_FILE, "utf8")) as Aliases;
 const seed = JSON.parse(readFileSync(SEED_FILE, "utf8")) as PriceTable;
-const dirs: string[] = [];
-after(() => dirs.forEach((d) => rmSync(d, { recursive: true, force: true })));
-const tempCache = () => {
-  const d = mkdtempSync(join(tmpdir(), "model-prices-"));
-  dirs.push(d);
-  return join(d, "sova", "model-prices.json");
-};
 
 const use = (u: Partial<TokenUsage>): TokenUsage => ({ input: 0, output: 0, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0, ...u });
 const M = 1_000_000;
@@ -177,133 +170,17 @@ test("the checked-in seed covers every model Sova runs; the explicit unpriced on
   assert.ok("unpriced" in priced("zai", "glm-5.3-highspeed"));
 });
 
-/** A book on a temp cache, a fake clock and timers, and a fetch stub. */
-function harness(o: { cache?: PriceTable | string; seed?: PriceTable; enabled?: boolean } = {}) {
-  let clock = Date.parse("2026-09-28T00:00:00Z");
-  const cachePath = tempCache();
-  if (o.cache !== undefined) {
-    mkdirSync(join(cachePath, ".."), { recursive: true });
-    writeFileSync(cachePath, typeof o.cache === "string" ? o.cache : JSON.stringify(o.cache));
-  }
-  const logs: string[] = [];
-  const fetches: string[] = [];
-  let reply: () => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }> = async () => ({ ok: true, status: 200, json: async () => api() });
-  const timers: { fn: () => void; at: number; cleared: boolean }[] = [];
-  const book = createPriceBook({
-    seed: o.seed ?? table0(),
-    aliases,
-    cachePath,
-    enabled: o.enabled ?? true,
-    now: () => clock,
-    log: (l) => logs.push(l),
-    fetch: (url) => {
-      fetches.push(url);
-      return reply();
-    },
-    setTimer: (fn, ms) => {
-      const t = { fn, at: clock + ms, cleared: false };
-      timers.push(t);
-      return t;
-    },
-    clearTimer: (t) => ((t as { cleared: boolean }).cleared = true),
-  });
-  return {
-    book,
-    cachePath,
-    logs,
-    fetches,
-    timers,
-    advance: (ms: number) => (clock += ms),
-    reply: (r: typeof reply) => (reply = r),
-    /** Fire the due timers, then let the refresh they started settle. */
-    async fire() {
-      for (const t of timers.filter((t) => !t.cleared && t.at <= clock)) {
-        t.cleared = true;
-        t.fn();
-      }
-      await new Promise((r) => setImmediate(r));
-      await new Promise((r) => setImmediate(r));
-    },
-  };
-}
-test("refresh: a stale seed fetches in the background at start, writes the cache atomically, then re-checks every 6h", async () => {
-  const h = harness(); // seed fetched 2026-09-01: stale on 2026-09-28
-  const stop = h.book.start();
-  assert.equal(h.fetches.length, 0, "start never fetches synchronously");
-  await h.fire();
-  assert.deepEqual(h.fetches, [MODELS_DEV_URL]);
-  assert.equal(h.book.info().fetchedAt, "2026-09-28T00:00:00.000Z");
-  const onDisk = JSON.parse(readFileSync(h.cachePath, "utf8")) as PriceTable;
-  assert.equal(onDisk.fetchedAt, "2026-09-28T00:00:00.000Z");
-  assert.deepEqual(readdirSync(join(h.cachePath, "..")), ["model-prices.json"], "no temp file left behind");
-  // Fresh now: the 6h checks don't fetch until 3 days have passed.
-  h.advance(CHECK_MS);
-  await h.fire();
-  assert.equal(h.fetches.length, 1);
-  h.advance(STALE_MS);
-  await h.fire();
-  assert.equal(h.fetches.length, 2);
-  stop.stop();
-  assert.ok(h.timers.every((t) => t.cleared));
-});
-
-test("refresh: a failed fetch keeps the last good table and logs one line", async () => {
-  const h = harness();
-  h.reply(async () => ({ ok: false, status: 503, json: async () => ({}) }));
-  assert.equal(await h.book.refresh(), false);
-  assert.equal(h.logs.length, 1);
-  assert.match(h.logs[0]!, /refresh failed, keeping prices from 2026-09-01.*HTTP 503/);
-  assert.equal(h.book.info().fetchedAt, T0);
-  assert.equal(existsSync(h.cachePath), false);
-  h.reply(async () => ({ ok: true, status: 200, json: async () => ({ garbage: true }) }));
-  assert.equal(await h.book.refresh(), false);
-  assert.equal(h.logs.length, 2);
-  h.reply(() => Promise.reject(new Error("offline")));
-  assert.equal(await h.book.refresh(), false);
-  assert.match(h.logs[2]!, /offline/);
-  assert.equal(h.book.priceUsage({ provider: "anthropic", model: "claude-opus-5-5" }, use({ input: M }), Date.now()).status, "priced");
-});
-
-test("refresh: no host cache fetches at the first check even when the seed is fresh; a fresh cache doesn't", async () => {
-  const fresh = mergeFetched(EMPTY_TABLE, normalizeModelsDev(api(), aliases), "2026-09-27T23:00:00.000Z").table;
-  const none = harness({ seed: fresh });
-  none.book.start();
-  await none.fire();
-  assert.deepEqual(none.fetches, [MODELS_DEV_URL]);
-  assert.ok(existsSync(none.cachePath));
-  const has = harness({ seed: fresh, cache: fresh });
-  has.book.start();
-  await has.fire();
-  assert.deepEqual(has.fetches, []);
-});
-
-test("refresh: SOVA_PRICES_FETCH=off (enabled: false) never fetches, not even forced", async () => {
-  const h = harness({ enabled: false });
-  h.book.start();
-  await h.fire();
-  assert.equal(await h.book.refresh(true), false);
-  assert.deepEqual(h.fetches, []);
-  assert.deepEqual(h.logs, ["fetching off (SOVA_PRICES_FETCH=off)"]);
-});
-
-test("load: a newer cache wins; an older one takes the seed's prices on top of its history; a corrupt one falls back to the seed", async () => {
-  const later = mergeFetched(table0(), normalizeModelsDev(api(3), aliases), "2026-09-27T00:00:00.000Z").table;
-  const newer = harness({ cache: later });
-  assert.equal(newer.book.info().fetchedAt, "2026-09-27T00:00:00.000Z");
-  assert.equal(newer.fetches.length, 0);
-  // The seed (2026-09-27, opus at 3) is newer than the cache (2026-09-01, opus at 4).
-  const older = harness({ cache: table0(), seed: later });
-  const p = older.book.priceUsage({ provider: "anthropic", model: "claude-opus-5-5" }, use({ input: M }), "2026-09-28T00:00:00Z");
-  assert.ok(p.status === "priced" && p.usd.input === 3);
-  const corrupt = harness({ cache: "{not json" });
-  assert.equal(corrupt.book.info().fetchedAt, T0);
-});
-
-test("fetchEnabled: the env switch, and a test process never fetches unless told to", () => {
-  assert.equal(fetchEnabled({}), true);
-  for (const v of ["off", "0", "false", "OFF"]) assert.equal(fetchEnabled({ SOVA_PRICES_FETCH: v }), false);
-  assert.equal(fetchEnabled({ NODE_TEST_CONTEXT: "child-v8" }), false);
-  assert.equal(fetchEnabled({ NODE_TEST_CONTEXT: "child-v8", SOVA_PRICES_FETCH: "on" }), true);
-  assert.equal(fetchEnabled({ NODE_ENV: "test" }), false, "bun test sets NODE_ENV=test");
-  assert.equal(fetchEnabled(process.env), false, "this test run never fetches, under node --test or bun test");
+test("a forced tier: a sum of calls is priced in the band its calls were in, never by the sum's size", () => {
+  const t = table0();
+  const ref = { provider: "openai", model: "gpt-6-astra" };
+  const sum = use({ input: 400_000 });
+  const asSum = priceUsage(t, aliases, ref, sum, "2026-09-27T00:00:00Z");
+  const base = priceUsage(t, aliases, ref, sum, "2026-09-27T00:00:00Z", { tier: null });
+  const over = priceUsage(t, aliases, ref, sum, "2026-09-27T00:00:00Z", { tier: 272000 });
+  assert.ok(asSum.status === "priced" && base.status === "priced" && over.status === "priced");
+  if (asSum.status !== "priced" || base.status !== "priced" || over.status !== "priced") return;
+  assert.equal(asSum.tier, 272000);
+  assert.equal(base.tier, null);
+  assert.equal(base.usd.input, 4);
+  assert.equal(over.usd.input, 8);
 });

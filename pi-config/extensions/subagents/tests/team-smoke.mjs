@@ -24,6 +24,9 @@ import path from "node:path";
 import { cli, jiti, root } from "./runtime.mjs";
 
 const LIVE = process.argv.includes("--live");
+// Offline, never the host's agent dir (its team defaults, model registry) or Claude directory: a
+// throwaway home before anything under test loads. --live's paid member needs the real Claude login.
+if (!LIVE) await import("../../claude-code/tests/hermetic-env.mjs");
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function deadline(promise, ms, label) {

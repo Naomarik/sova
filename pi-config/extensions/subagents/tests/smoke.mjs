@@ -7,6 +7,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { cli, jiti, root } from "./runtime.mjs";
 
+// Offline, never the host's agent dir or Claude directory: a throwaway home before anything under
+// test loads (pi writes auth.json and models-store.json there). --live's model calls need the real one.
+if (!process.argv.includes("--live")) await import("../../claude-code/tests/hermetic-env.mjs");
+
 async function deadline(promise, ms, label) {
 	let timer;
 	try {

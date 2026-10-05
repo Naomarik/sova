@@ -122,6 +122,10 @@ export function harnessEventOf(event: { type: string; [k: string]: any }): Harne
       return { type, frame, wrote: typeof event.result === "object" && event.result !== null, willRetry: event.willRetry === true };
     case "entry.appended":
       return event.entry ? { type, frame, entry: toHEntry(event.entry) } : { type: "other", frame };
+    case "tool.start":
+    case "tool.update":
+    case "tool.end":
+      return typeof event.parentToolCallId === "string" ? { type, frame, nested: true } : { type, frame };
     default:
       return { type, frame } as HarnessEvent;
   }

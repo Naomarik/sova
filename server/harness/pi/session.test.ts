@@ -145,6 +145,11 @@ describe("PiHarnessSession (§app.harness/session)", () => {
     assert.ok(end.type === "message.end" && end.role === "user" && end.text === "a\nb" && end.handle === user);
     const asst = harnessEventOf({ type: "message_start", message: { role: "assistant", content: [] } });
     assert.ok(asst.type === "message.start" && asst.role === "assistant" && asst.text === undefined);
+    // A codemode script's own call is nested; a direct call isn't.
+    for (const type of ["tool_execution_start", "tool_execution_update", "tool_execution_end"]) {
+      assert.equal((harnessEventOf({ type, toolCallId: "c1/1", parentToolCallId: "c1" }) as { nested?: true }).nested, true, type);
+      assert.equal("nested" in harnessEventOf({ type, toolCallId: "c1" }), false, type);
+    }
     const q = harnessEventOf({ type: "queue_update", steering: ["s"], followUp: [] });
     assert.ok(q.type === "queue" && q.steering[0] === "s" && q.followUp.length === 0);
     assert.ok((harnessEventOf({ type: "compaction_end", result: {} }) as { wrote?: boolean }).wrote === true);

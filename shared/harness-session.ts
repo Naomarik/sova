@@ -120,9 +120,10 @@ export type HarnessEvent = { frame(): HarnessFrame } & (
   | { type: "message.update"; role: "user" | "assistant" | "other"; handle: object | undefined; stream?: HarnessStreamDelta }
   /** Listeners run before the message's entry is written; one microtask later it is (persistedId). */
   | ({ type: "message.end" } & HarnessMessageEvent)
-  | { type: "tool.start" }
-  | { type: "tool.update" }
-  | { type: "tool.end" }
+  /** `nested`: a call another tool made (a codemode script's), which writes no entry of its own. */
+  | { type: "tool.start"; nested?: true }
+  | { type: "tool.update"; nested?: true }
+  | { type: "tool.end"; nested?: true }
   /** The agent's queue mirror changed: its texts now. */
   | { type: "queue"; steering: readonly string[]; followUp: readonly string[] }
   | { type: "compaction.start" }

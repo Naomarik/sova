@@ -482,18 +482,24 @@ export function applyEvent(set: SetStoreFunction<LiveState>, event: LiveEvent, v
           else if (event.stop === "aborted") entry.stoppedAt = new Date().toISOString();
           break;
         }
+        // A call another tool made (a codemode script's) is no live tool and has no effects: its caller's
+        // updates and result record it (§chat.transcript/codemode-card).
         case "tool.start":
+          if (event.parentCallId) break;
           if (event.callId) s.tools[event.callId] = { name: event.name, args: event.args, status: "running", output: "", images: [] };
           break;
         case "tool.update": {
+          if (event.parentCallId) break;
           const t = event.callId ? s.tools[event.callId] : undefined;
           if (t) {
             t.output = event.output;
             t.images = event.images;
+            if (event.details !== undefined) t.details = event.details;
           }
           break;
         }
         case "tool.end": {
+          if (event.parentCallId) break;
           effects = toolEndEffects(event, view);
           const id = event.callId;
           if (!id) break;

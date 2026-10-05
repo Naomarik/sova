@@ -3,7 +3,7 @@
 // regenerate target and the rewind check for the same ids, and the chat's title. A batch edits only its own probes file, and only to follow a
 // moved function (README.md).
 import { resolveRegenerate, rewindSession, titleOf } from "../../../../chat-manager";
-import { activeBranchLines, forkPrefix, isFanoutSource, parseSourceDoc } from "../../../../session-fork";
+import { activeBranchLines, forkPrefix, isFanoutSource, parseSourceDoc } from "../../fork";
 import { activeBranch, parseLines } from "../../../../transcript";
 import { linesOrDigest, targetsOf, type Fixture, type Probe } from "../golden";
 

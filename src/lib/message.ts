@@ -2,6 +2,7 @@
 // Everything arrives as `unknown` over the wire, so nothing here trusts a shape.
 
 import type { TranscriptItem } from "../../shared/protocol";
+import { rowFacts } from "../../shared/wire-v1";
 
 export function isObj(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -34,7 +35,7 @@ export interface ToolResultView {
 
 /** A tool result row as its card reads it. A lazy row carries no output: its card fetches it. */
 export function toolResultView(row: TranscriptItem): ToolResultView {
-  return { output: row.tool?.output || row.text || "", isError: row.meta?.isError === true };
+  return { output: row.tool?.output || row.text || "", isError: rowFacts(row)?.tool?.isError === true };
 }
 
 /** A tool result row's `details`, when its row carries them (a card tool). */

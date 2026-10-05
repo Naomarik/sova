@@ -17,6 +17,19 @@ const claims = JSON.parse(readFileSync(join(root, ".sova/spec/manifest.json"), "
 const out = (value, exit = 0) => { process.stdout.write(JSON.stringify({ tool: "sova-spec", command: cmd, exit, ...value }) + "\n"); process.exitCode = exit; };
 const esc = (s) => s.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
 const mentions = (text, target) => new RegExp(`${esc(target)}(?![\\w./-])`).test(text);
+/** The first sentence: up to the first . : ! ? followed by a space, outside code spans and open ( or [. */
+const firstOf = (s) => {
+  let depth = 0, code = false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c === "`") code = !code;
+    else if (code) continue;
+    else if (c === "(" || c === "[") depth++;
+    else if ((c === ")" || c === "]") && depth > 0) depth--;
+    else if (depth === 0 && ".:!?".includes(c) && /\s/.test(s[i + 1] ?? "")) return s.slice(0, i + 1);
+  }
+  return s;
+};
 
 const seed = index.passages.get(id);
 if (cmd === "where") {
@@ -54,7 +67,7 @@ else {
       const units = index.passages.get(x).text.split("\n").slice(1).join("\n").replace(/^ {0,3}(`{3,}|~{3,})[^]*?^ {0,3}\1[ \t]*$/gm, "").replace(/<!--[^]*?-->/g, "").replace(/^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/gm, "")
         .split(/\n[ \t]*\n|\n(?=[ \t]*(?:[-*+]|\d+[.)])[ \t])/).map((u) => u.replace(/^[ \t]*>[ \t]?/gm, "").trim()).filter((u) => u && !/^[|#]/.test(u));
       const body = (units[0] ?? "").replace(/^(?:[-*+]|\d+[.)])[ \t]+/, "").replace(/\s+/g, " ");
-      return { what: body.split(/(?<=[.:])\s/)[0] || "(no text)", whatSource: body ? "prose" : "none" };
+      return { what: firstOf(body) || "(no text)", whatSource: body ? "prose" : "none" };
     };
     const lines = pick().filter((x) => index.passages.has(x)).map((x) => {
       const p = index.passages.get(x);

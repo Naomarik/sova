@@ -141,8 +141,11 @@ test("pull checks run where toc exists: held by a faithful contents view, each f
   // A what cut at the end of its first source line (the 70d6696e toc) reads as a what; the whole-sentence guards catch it.
   const cut = await runArm(sabotaged([STUB, [T, "const body = (units[0] ?? \"\").replace(", "const body = (units[0] ?? \"\").split(\"\\n\")[0].replace("]], STUB_FILES), { label: "stub-cut", only: ["f", "g"] });
   for (const name of ["f.pull.what-whole", "g.pull.what-whole"]) assert.ok(failed(cut).includes(name), `${name} trips on a what cut at the line end (failed: ${failed(cut).join(", ")})`);
+  // A sentence ended at a colon inside parentheses (the b1843900 toc): "(one row per heading:" is cut.
+  const paren = await runArm(sabotaged([STUB, [T, "else if (depth === 0 && \".:!?\".includes(c)", "else if (\".:!?\".includes(c)"]], STUB_FILES), { label: "stub-paren", only: ["f", "g"] });
+  for (const name of ["f.pull.what-whole", "g.pull.what-whole"]) assert.ok(failed(paren).includes(name), `${name} trips on a what ended inside an open bracket (failed: ${failed(paren).join(", ")})`);
   // Every what blanked, as prose and as "none" (no prose sentence) alike: never a whole sentence.
-  const WHAT = "what: body.split(/(?<=[.:])\\s/)[0] || \"(no text)\",";
+  const WHAT = "what: firstOf(body) || \"(no text)\",";
   for (const [label, patches] of [["blank", [[T, WHAT, "what: \"\","]]], ["blank-none", [[T, WHAT, "what: \"\","], [T, "whatSource: body ? \"prose\" : \"none\"", "whatSource: \"none\""]]]]) {
     const blank = await runArm(sabotaged([STUB, ...patches], STUB_FILES), { label: `stub-${label}`, only: ["f", "g"] });
     for (const name of ["f.pull.what-whole", "g.pull.what-whole"]) assert.ok(failed(blank).includes(name), `${name} trips when every what is blank (${label}; failed: ${failed(blank).join(", ")})`);
@@ -150,7 +153,7 @@ test("pull checks run where toc exists: held by a faithful contents view, each f
 
   const bad = await runArm(sabotaged([STUB,
     [T, "out: () => claims[id].requires ?? [],", "out: () => [],"],                                  // out-links hidden
-    [T, "what: body.split(/(?<=[.:])\\s/)[0] || \"(no text)\",", "what: \"\","],                      // lines say nothing
+    [T, WHAT, "what: \"\","],                      // lines say nothing
     [T, "mentions: () => all.filter((x) => x !== id && mentions(index.passages.get(x).text, id)),", "mentions: () => all.filter((x) => x !== id),"], // everything "mentions"
     [T, "up: () => (parentOf(id) ? [parentOf(id)] : []),", ""],                                      // one direction refuses
     [T, "lines: hits.map((x) => ({ id: x }))", "lines: hits.slice(1).map((x) => ({ id: x }))"],              // where drops a claim

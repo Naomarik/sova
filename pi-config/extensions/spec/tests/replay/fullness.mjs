@@ -99,15 +99,18 @@ export function parentOf(id) {
 
 /**
  * Is a contents line's "what" a whole sentence of its passage? Checked against the passage's own text, not the
- * tool's splitter: a what that ends in terminal punctuation (closing quotes, brackets or emphasis allowed) or in
- * "…" is whole. One that ends without it is whole only if its source unit (paragraph, list item, quote line) ends
+ * tool's splitter: a what that ends in terminal punctuation (closing quotes, brackets or emphasis allowed), with
+ * no ( or [ left open, or in "…" is whole. One that ends without it is whole only if its source unit (paragraph, list item, quote line) ends
  * right there too; if the unit runs on, the sentence was cut. A what found nowhere in the passage can't be
  * checked and counts against the tool, and so does an empty one. → "whole" | "cut" | "unlocated" | "empty"
  */
 export function cutWhat(what, text) {
   const w = typeof what === "string" ? what.replace(/\s+/g, " ").trim() : "";
   if (!w) return "empty";
-  if (w.endsWith("…") || /[.!?:;]["'”’)\]`*_]*$/.test(w)) return "whole";
+  // Punctuation inside a bracket still open ("(or its arguments:") ends no sentence; code spans don't count.
+  const bare = w.replace(/`[^`]*`/g, "");
+  const open = (a, b) => bare.split(a).length - bare.split(b).length > 0;
+  if (w.endsWith("…") || (/[.!?:;]["'”’)\]`*_]*$/.test(w) && !open("(", ")") && !open("[", "]"))) return "whole";
   // Quote markers drop; unit breaks (blank lines, list items, headings, table rows) become \0; other whitespace collapses.
   const body = text.split("\n").slice(1).map((ln) => ln.replace(/^[ \t]*>[ \t]?/, "")).join("\n")
     .replace(/\n[ \t]*(?:\n|(?=(?:[-*+]|\d+[.)])[ \t]|#|\|))/g, "\0")

@@ -7,7 +7,8 @@
 // - a core claim (§design.rules/voice, `core: true`), linked to nothing;
 // - an about note (§design.copy/editor, `about: [§f/seed]`, its heading names the surface);
 // - two uninvestigated behaviors: one that mentions the seed (the true consumer), one unrelated;
-// - a first sentence that wraps across source lines (§f.dep/rule), so a contents line cut at the line end shows.
+// - a first sentence that wraps across source lines (§f.dep/rule), so a contents line cut at the line end shows,
+//   and one with a colon inside parentheses (§f.other/uses-edit), so a line cut there shows too.
 // Rows measure; guards hold today and must keep holding; target rows record what today's tools miss by design.
 // The pull checks need `toc` (and `read`); a tree without them reports n/a, never a pass.
 import { Repo, seedSpec } from "./lib.mjs";
@@ -41,7 +42,7 @@ const FILES = {
   ".sova/spec/claims/f/deep.md": "# §f/deep — Write queue\n\nThe one queue every write goes through.\n\n## §f.deep/base — Queue order\n\nEvery write goes through one queue, in the order it was asked for.\n",
   ".sova/spec/claims/f/panel.md": "# §f/panel — Toolbar\n\nThe formatting toolbar, drawn inside a host surface.\n\n## §f.panel/bold — Bold\n\nBold wraps the selection in `**`.\n\n## §f.panel/italic — Italic\n\nItalic wraps the selection in `_`.\n\n## §f.panel/link — Link\n\nLink asks for an address and wraps the selection as a link.\n",
   ".sova/spec/claims/f/wander.md": `# §f/wander — Archive\n\nThe archive of old drafts, which asks before it overwrites anything.\n\n${WANDER_KIDS.map((id, i) => `## ${id} — Archive part ${i + 1}\n\n${filler(`part-${i + 1}`)}`).join("\n")}`,
-  ".sova/spec/claims/f/other.md": "# §f/other — Sidebar\n\nThe sidebar beside the editor.\n\n## §f.other/uses-edit — Outline\n\nThe outline shows the draft that §f.seed/edit saves, heading by heading.\n\n## §f.other/unrelated — Clock\n\nThe clock shows the time.\n",
+  ".sova/spec/claims/f/other.md": "# §f/other — Sidebar\n\nThe sidebar beside the editor.\n\n## §f.other/uses-edit — Outline\n\nThe outline shows the draft that §f.seed/edit saves (one row per heading: its title and level), as the writer types.\n\n## §f.other/unrelated — Clock\n\nThe clock shows the time.\n",
   ".sova/spec/claims/design/rules.md": "# §design/rules — Ground rules\n\nRules every surface follows.\n\n## §design.rules/voice — Voice\n\nEvery message says what happened and what to do next.\n",
   ".sova/spec/claims/design/copy.md": "# §design/copy — Copy deck\n\nThe exact words surfaces show.\n\n## §design.copy/editor — Editor copy (§f/seed)\n\nThe save hint reads \"Saved\"; the limit refusal reads \"Drafts stop at 200 lines.\"\n",
   "src/edit.txt": "edit\n", "src/limits.txt": "limits\n", "src/dep.txt": "dep\n", "src/deep.txt": "deep\n", "src/panel.txt": "panel\n", "src/other.txt": "other\n",

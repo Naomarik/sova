@@ -105,7 +105,6 @@
     "src/lib/change-rows.ts": {"calls": 0, "shapes": 1, "reaches": 0},
     "src/lib/context.ts": {"calls": 0, "shapes": 3, "reaches": 0},
     "src/lib/legacy-rows.ts": {"calls": 0, "shapes": 6, "reaches": 0},
-    "src/lib/live.ts": {"calls": 0, "shapes": 21, "reaches": 0},
     "src/lib/message.ts": {"calls": 0, "shapes": 1, "reaches": 0},
     "src/lib/tail-render.ts": {"calls": 0, "shapes": 2, "reaches": 0},
     "src/lib/timeline.ts": {"calls": 0, "shapes": 5, "reaches": 0}

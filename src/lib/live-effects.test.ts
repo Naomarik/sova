@@ -2,16 +2,18 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createStore } from "solid-js/store";
+import { fromV1 } from "../../shared/wire-v1";
 import { applyEvent, emptyLive, type LiveState } from "./live";
 import type { LiveEffectsContext } from "./live-effects";
 
 const PLAIN: LiveEffectsContext = { overseer: false, mine: false };
 const OVERSEER_MINE: LiveEffectsContext = { overseer: true, mine: true };
 
-/** The effects of each event, applied in order to one fresh store. */
+/** The effects of each pi event (through `fromV1`, as the browser reads either wire), applied in order to
+    one fresh store. */
 function effects(events: unknown[], view: LiveEffectsContext = PLAIN) {
   const [, set] = createStore<LiveState>(emptyLive());
-  return events.map((ev) => applyEvent(set, ev, view));
+  return events.map((ev) => fromV1({ event: ev }).flatMap((e) => applyEvent(set, e, view)));
 }
 
 const reply = (extra: Record<string, unknown>) => ({
@@ -84,5 +86,5 @@ test("every other event, and a non-object, has no effect", () => {
 
 test("applyEvent without a view decides as no one's: no navigate", () => {
   const [, set] = createStore<LiveState>(emptyLive());
-  assert.deepEqual(applyEvent(set, navigate()), []);
+  assert.deepEqual(fromV1({ event: navigate() }).flatMap((e) => applyEvent(set, e)), []);
 });

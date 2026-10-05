@@ -41,6 +41,14 @@ live-calls.ts, extract-live.ts   the live.test.ts extraction
 | `SOVA_GOLDEN_MODE=record SOVA_GOLDEN_ACCEPT=trace pnpm test -- …` | rewrite differing `trace` files (`frames` likewise), after a `../CHANGES.md` line saying why |
 | `bun server/harness/pi/golden/wire/extract-live.ts [--check]` | re-extract `inputs/live-test.json` from live.test.ts |
 
-The inputs are the record. Once milestone 3 rewrites live.test.ts, `extract-live.ts --check` may differ;
-`inputs/live-test.json` stays as recorded, and W3.2 replays it (the v1 events through `fromV1`, and their v2
-forms) against the same expected traces.
+The inputs are the record. Since W3.2 rewrote live.test.ts (its events now go through `feed`, on three
+paths), `extract-live.ts --check` differs; `inputs/live-test.json` stays as recorded.
+
+## Since the port (W3.2)
+
+`applyEvent` takes `SovaEvent`. Each recorded v1 event (a faux control frame, or a recorded input with its
+`entryId` moved back onto the frame) runs on two paths, each on its own store and in both views: (b) the v1
+frame as ChatView reads it (`liveEventsOf`, so `fromV1`), which is what the trace records, and (a) the wire-2
+frames a server makes of it (`{type:"event", v:2, event}` per `fromV1` event, through JSON). Both must give
+the recorded state and effects at every step, and the effects must still equal `flushEffectsBeforeW30` of the
+v1 event. The baton sender marker is client-local and is applied as it is on both.

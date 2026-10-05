@@ -28,7 +28,7 @@ import { BatonStrip } from "./BatonStrip";
 import { sandboxOffMissing, type SandboxState } from "../lib/sandbox";
 import { approveSchedule, forkSession, getChatClaudeAccounts, getOverseerAutonomy, getSubagentProfiles, revokeOverseerPermit, revokeSchedule, setSandbox, setSessionArchived, wsUrl } from "../lib/api";
 import { adversarialReview, NO_REVIEWER, reviewRequestMessage } from "../lib/align-review";
-import type { OverseerAutonomy, ScheduleInfo } from "../../shared/protocol";
+import type { OverseerAutonomy, ScheduleInfo, V1EventFrame, V2EventFrame } from "../../shared/protocol";
 import { LOGIN_UNCHANGED } from "../../shared/protocol";
 import { contextStateFor, windowOf } from "../lib/context";
 import {
@@ -37,6 +37,7 @@ import {
   BATON_SENT_EVENT,
   applyQueue,
   emptyLive,
+  liveEventsOf,
   markDelivered,
   markQueued,
   markRemoved,
@@ -45,6 +46,7 @@ import {
   runDetail,
   takeBackQueued,
   unsentRows,
+  type LiveEvent,
   type LiveState,
   type LiveUserState,
 } from "../lib/live";
@@ -494,7 +496,7 @@ export function ChatView(props: {
   };
 
   // Deltas arrive far faster than frames; apply them in one batch per animation frame.
-  let queue: unknown[] = [];
+  let queue: LiveEvent[] = [];
   let frame = 0;
   const flush = () => {
     frame = 0;
@@ -828,8 +830,9 @@ export function ChatView(props: {
           props.onClaudeLogin?.(msg.login);
           break;
         case "event":
-          // A message_end's entry id rides on the event itself, for applyEvent.
-          queue.push(msg.entryId && isObj(msg.event) ? { ...msg.event, entryId: msg.entryId } : msg.event);
+          // Wire 1 or 2 alike (an older server never sends 2): in the contract's words, the entry a
+          // message was written as inside its end.
+          queue.push(...liveEventsOf(msg as V1EventFrame | V2EventFrame));
           if (!frame) frame = requestAnimationFrame(flush);
           break;
         case "ui_request": {

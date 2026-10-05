@@ -7,7 +7,8 @@
 import { readFile, stat } from "node:fs/promises";
 import { TOOL_CONTENT_MAX_IDS, type ToolContent, type TranscriptItem } from "../shared/protocol";
 import { normalizeClaudeText } from "./claude-transcript";
-import { normalizeEntries, toolContents, type Entry } from "./transcript";
+import { historyOf } from "./harness/pi/reader";
+import { rowsOf as historyRows, toolContents, type Entry } from "./transcript";
 import { rowsOf } from "./transcript-rows";
 
 /** `ids=` as asked: comma-separated row ids, blanks dropped, at most TOOL_CONTENT_MAX_IDS. */
@@ -17,13 +18,13 @@ export function parseToolIds(raw: string | undefined): string[] | null {
 }
 
 /** A pi session's tool rows: from its file, and for ids the file doesn't hold yet, from `branch`
-    (the hosted runtime's, when there is one). */
+    (the hosted runtime's pi entries, when there is one). */
 export async function piToolContent(path: string, ids: readonly string[], branch?: () => Entry[] | undefined): Promise<Record<string, ToolContent>> {
   const out = toolContents((await rowsOf(path)).items, ids);
   const missing = ids.filter((id) => !(id in out));
   if (missing.length === 0) return out;
   const live = branch?.();
-  return live ? { ...out, ...toolContents(normalizeEntries(live), missing) } : out;
+  return live ? { ...out, ...toolContents(historyRows(historyOf(live)), missing) } : out;
 }
 
 /** Claude Code workers' files, parsed once per size and mtime (a worker's file only grows): at most

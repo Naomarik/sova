@@ -91,7 +91,8 @@ The machine can't tell which label is correct.
      `--snapshot` is refused in a Git project. A project root that an enclosing repository ignores
      and doesn't track, such as a home-directory dotfiles repo, counts as having no Git.
    - **No Git**: `--snapshot`. The exact input bytes are kept under `evidence/objects/`.
-   - `--doc-only` is accepted only for `note` and `section` kinds, which carry no implementation.
+   - `--doc-only` is accepted only for `note` and `section` kinds, which carry no implementation,
+     and for an agreed behavior or surface that is not built yet (see "Agreed, not built" below).
    - `--verification TEXT` says what was run or checked, and what it showed. `--log FILE` keeps
      a copy of a log as an object. Evidence becomes stale if that retained log is missing or its
      digest differs. Log paths may be outside the project, but every path component is checked
@@ -127,6 +128,7 @@ again **per declaration** (see "Per-declaration merge" below); only what that fi
 | `selection-incomplete` | A promoted file also carries changes to IDs you didn't select. Files move whole. |
 | `candidate-invalid` / `candidate-dangling` | The merged candidate graph (current plus the selected units) doesn't load in the core, or gains a dangling edge that current doesn't have. |
 | `candidate-label` / `authority-missing` | A selected ID that isn't being deleted is labelled `authority: "candidate"` in the draft, or declares no `authority`. This applies to a prose-only change too. |
+| `agreed-invalid` / `agreed-rewritten` | A selected record's `agreed` is malformed or sits on a note or section, or the draft changes or removes the `agreed` current already has (see "Agreed, not built"). |
 | `base-untrusted` | The draft's baseline graph doesn't load in the core (exit 2), so changes can't be attributed to IDs. Start a new draft from a fixed current. |
 | `draft-invalid` | The draft's own graph doesn't load (exit 2). Run `check NAME` and fix it. |
 | `not-changed`, `plan-changed`, `nothing-to-write`, `pending-transaction`, `lock-occupied`, `race` | These mean what they say. |
@@ -171,6 +173,27 @@ either side, that holds a carriage return, or whose graph on any side doesn't lo
 compared as whole-file bytes, as before. The selection rule is unchanged: files move whole, so every
 ID the draft changed in a merged file is selected (`selection-incomplete` otherwise). In the
 `promote` output a merged file shows `merge: "merge"`; `status` shows the merged bytes' hash.
+
+### Agreed, not built
+
+A requirements chat can end with its promises in current before any code exists. Put
+`"agreed": {"by": "<who agreed>", "at": "<ISO date>"}` on each behavior or surface record the person
+agreed to (`at` may carry a time: `2026-10-05T14:30Z`), with `authority: "accepted"` and no `code`.
+Then `evidence --doc-only` (the `--verification` text says where it was agreed) and promote. That
+records the decision, not that it was built.
+
+- **Built** means the record has `code` and the `evidence` label `reviewed` or `verified`. So
+  `--doc-only` is refused (`doc-only-refused`) for an agreed record that maps code or carries one of
+  those labels; a record with no `agreed` at all is refused as before.
+- **Written once.** The build edits the same record: it adds `code` (and its label), keeps `agreed`
+  as it is, and records commit or snapshot evidence of the code. A promotion that changes or removes
+  an `agreed` current already has is refused (`agreed-rewritten`). Deleting the whole record is an
+  ordinary deletion.
+- **Shape.** `agreed` must be an object with exactly a non-empty `by` and a real date `at`, on a
+  behavior or surface; anything else is refused (`agreed-invalid`) at `evidence` and at `promote`.
+- It is a record field, not a label value: the core ignores record fields it doesn't know, while an
+  unknown `authority` or `evidence` value makes it refuse the manifest (exit 2), so cores that
+  predate `agreed` still load a manifest carrying it.
 
 ## Transaction, rollback, recovery
 

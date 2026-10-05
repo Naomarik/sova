@@ -69,7 +69,8 @@ ${example}
 - Nothing moves until the person clicks or presses a key in it: give motion a Play or Step button. No \`setTimeout\` loops.
 - Never ask for a password, contact details or anything personal in an input.
 - Every rule about what you may say applies to all text in the markup and the script too: labels, attributes, strings and comments.
-${colours}`;
+${colours}
+- Fill anything that shows a value (a bar, a slice, a dot) with \`--color-accent\` or a \`--status-*\` colour, set on the element itself: \`--color-sunken\` and \`--color-accent-tint\` barely differ from the page.`;
 };
 
 /** The guide: the opening, the shared rules, the mark syntax, one `## <kind>` section per kind the

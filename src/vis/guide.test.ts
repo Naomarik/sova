@@ -222,7 +222,7 @@ for (const html of [false, true]) {
     assert.match(g, /a sequence's actors are systems or steps .*never people or roles/);
     assert.match(g, /It is shown as an image: no `<script>`, no animation, no buttons or links/);
     if (html) {
-      for (const rule of [/Fit a phone first/, /Aim under 4K characters/, /Nothing external/, /Play or Step button/, /Never ask for a password, contact details/, /applies to all text in the markup and the script too/])
+      for (const rule of [/Fit a phone first/, /Aim under 4K characters/, /Nothing external/, /Play or Step button/, /Never ask for a password, contact details/, /applies to all text in the markup and the script too/, /Fill anything that shows a value .* with `--color-accent` or a `--status-\*` colour/])
         assert.match(g.slice(g.indexOf("## html")), rule);
     } else assert.doesNotMatch(g, /vis html|## html/);
     const fences = [...g.matchAll(/^```(vis [a-z]+)\n([\s\S]*?)^```$/gm)];
@@ -242,5 +242,5 @@ for (const html of [false, true]) {
 // it: check the new text reads right for a gathering session, then put its hash here.
 test("the gathering guide is the text last reviewed", () => {
   assert.equal(createHash("sha256").update(gatheringVisGuide()).digest("hex"), "010b137f57e9284700d1022a020b19c71a6d603eaa17c35e43f67f03bcd377eb");
-  assert.equal(createHash("sha256").update(gatheringVisGuide(undefined, { html: true })).digest("hex"), "07f8d2ef46e01c583e794f094160e5a1c9f3bd1b07831cb6508f694fc48fc38f");
+  assert.equal(createHash("sha256").update(gatheringVisGuide(undefined, { html: true })).digest("hex"), "efe2c73178eb893a4e00fb103ab569b2436e5f322dbfc74826e0d4b7f99fdf58");
 });

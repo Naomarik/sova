@@ -18,7 +18,7 @@ import { availableParallelism, freemem, loadavg, platform, totalmem } from "node
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { loopDelaySampler, type LoopDelaySampler } from "./runtime-quirks";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { PiExtensionAPI } from "./harness/pi/extension-types";
 import { claudeSessionId } from "../pi-config/extensions/claude-code/provider/session-records.ts";
 import type {
   MonitorBucket, MonitorHistory, MonitorPointProc, MonitorProc, MonitorProcKind, MonitorResolution, MonitorScope,
@@ -92,7 +92,7 @@ export function decodeWorkerEvent(data: unknown): WorkerInfo[] | null {
  * tells the monitor which session the runtime hosts, its workers with their live pids (the
  * in-process `subagents:workers-snapshot` event; never on disk), and when its tools run.
  */
-export function monitorExtension(pi: ExtensionAPI): void {
+export function monitorExtension(pi: PiExtensionAPI): void {
   const token = {};
   let entry: HostedEntry | null = null;
   let workers: WorkerInfo[] = [];

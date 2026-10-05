@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { PiExtensionAPI } from "./harness/pi/extension-types";
 import type { ToolSpec } from "../shared/harness";
 import { toPiTool } from "./harness/pi/tools";
 import { existsSync } from "node:fs";
@@ -156,7 +156,7 @@ export function queuePushExtension(ctx: PusherContext) {
   return {
     name: "sova-topics",
     hidden: true,
-    factory: (pi: ExtensionAPI) => {
+    factory: (pi: PiExtensionAPI) => {
       pi.registerTool(toPiTool(queuePushTool(ctx)));
     },
   };

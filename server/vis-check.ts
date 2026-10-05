@@ -20,7 +20,7 @@
  */
 
 import MarkdownIt from "markdown-it";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { PiExtensionAPI } from "./harness/pi/extension-types";
 import type { HookCtx, StateView, ToolSpec } from "../shared/harness";
 import { FRAME_HARD_CHARS, FRAME_SOFT_CHARS } from "../src/vis/kinds/frame/parse";
 import { parseVis, visKindWord, type ParseResult } from "../src/vis/parse";
@@ -260,7 +260,7 @@ export function visCheckExtension(host: () => VisCheckHost | null) {
   return {
     name: "sova-vis-check",
     hidden: true,
-    factory: (pi: ExtensionAPI) => {
+    factory: (pi: PiExtensionAPI) => {
       const retry = new VisRetry();
       pi.registerTool(toPiTool(visCheckTool));
 

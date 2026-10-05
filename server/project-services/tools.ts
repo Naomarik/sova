@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { PiExtensionAPI } from "../harness/pi/extension-types";
 import { execFile } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
@@ -190,7 +190,7 @@ export function projectVerbsExtension(engine: () => ProjectEngine) {
   return {
     name: "sova-project-verbs",
     hidden: true,
-    factory: (pi: ExtensionAPI) => {
+    factory: (pi: PiExtensionAPI) => {
       pi.registerTool(
         toPiTool(projectVerbsTool({
           name: "project_verbs",

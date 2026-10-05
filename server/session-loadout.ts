@@ -1,4 +1,4 @@
-import type { ResourceDiagnostic, Skill } from "@earendil-works/pi-coding-agent";
+import type { PiResourceDiagnostic, PiSkill } from "./harness/pi/extension-types";
 import { stateViewOf } from "./harness/pi/state-view-of";
 import { LOADOUT } from "./harness/state-kinds";
 
@@ -74,7 +74,7 @@ export function loadoutOverrides(state: LoadoutState) {
       state.baseContext = base.agentsFiles.map((f) => f.path);
       return { agentsFiles: base.agentsFiles.filter((f) => !offContext.has(f.path)) };
     },
-    skillsOverride: (base: { skills: Skill[]; diagnostics: ResourceDiagnostic[] }) => {
+    skillsOverride: (base: { skills: PiSkill[]; diagnostics: PiResourceDiagnostic[] }) => {
       state.baseSkills = base.skills.map((s) => ({ name: s.name, filePath: s.filePath, ...(s.description !== undefined ? { description: s.description } : {}) }));
       return { skills: base.skills.filter((s) => !offSkills.has(s.name)), diagnostics: base.diagnostics };
     },

@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { PiExtensionAPI } from "../harness/pi/extension-types";
 import { createHash } from "node:crypto";
 import type { HEntry, HookCtx, StateView } from "../../shared/harness";
 import type { VerbResult } from "../../shared/project-contract";
@@ -111,7 +111,7 @@ export async function resultNote(engine: ProjectEngine, r: VerbResult, state: St
  * Deliver the note in a session (projectVerbsExtension): at a turn's start as a hidden message, only when
  * its text differs from the last one on the branch; after a compaction, again. Never in the system prompt.
  */
-export function registerInstanceNote(pi: ExtensionAPI, engine: () => ProjectEngine, own: (ctx: HookCtx) => Promise<string[]>): void {
+export function registerInstanceNote(pi: PiExtensionAPI, engine: () => ProjectEngine, own: (ctx: HookCtx) => Promise<string[]>): void {
   const render = async (ctx: HookCtx): Promise<string | null> => {
     try {
       return await currentNote(engine(), await own(ctx), ctx.state());

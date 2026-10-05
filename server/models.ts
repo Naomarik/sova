@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
+import type { PiModelRuntime } from "./harness/pi/extension-types";
 import type { ContextInfo, ModelInfo } from "../shared/protocol";
 import { getModelRuntime } from "./chat-manager";
 import { readFavorites } from "./model-favorites";
@@ -57,7 +57,7 @@ export function modelProvider(ref: string | null | undefined): string | null {
  * contextWindow for "provider/id": the SDK model registry first (includes custom models.json
  * providers such as ollama-cloud), then models-store.json. Cached per ref; unknown → null.
  */
-export function contextWindow(ref: string, modelRuntime: ModelRuntime): number | null {
+export function contextWindow(ref: string, modelRuntime: PiModelRuntime): number | null {
   const hit = windowCache.get(ref);
   if (hit !== undefined) return hit;
   const slash = ref.indexOf("/"); // provider has no "/", model ids may
@@ -73,7 +73,7 @@ export function contextWindow(ref: string, modelRuntime: ModelRuntime): number |
  * A worker's model → its context window, for a ref ("provider/id") or the bare id a worker's live
  * record usually carries (its provider found as modelProvider finds it). Unknown → null.
  */
-export function workerWindowResolver(modelRuntime: ModelRuntime): (ref: string) => number | null {
+export function workerWindowResolver(modelRuntime: PiModelRuntime): (ref: string) => number | null {
   return (ref) => {
     if (ref.indexOf("/") > 0) return contextWindow(ref, modelRuntime);
     const provider = modelProvider(ref);
@@ -91,7 +91,7 @@ export async function sharedWorkerWindowResolver(): Promise<(ref: string) => num
   }
 }
 
-export function toContextInfo(ctx: BranchContext | null, modelRuntime: ModelRuntime): ContextInfo | null {
+export function toContextInfo(ctx: BranchContext | null, modelRuntime: PiModelRuntime): ContextInfo | null {
   if (!ctx) return null;
   return { tokens: ctx.tokens, window: ctx.model ? contextWindow(ctx.model, modelRuntime) : null };
 }

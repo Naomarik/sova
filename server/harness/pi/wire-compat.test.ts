@@ -6,7 +6,8 @@
 // /api/transcript (whole branch, tail, light). A consumer that doesn't ask gets today's frames byte for byte
 // (the W3.0 control frames, golden/wire/expected/faux/*/frames.json) and today's rows; one that asks for
 // wire 2 gets every v1 event through fromV1 (pinned in golden/wire/v2/) and every row with `facts` in place
-// of `meta`, cut at the same rows. Record a missing v2 golden:
+// of `meta`, cut at the same rows; the browser's reducer (src/lib/live.ts) on those wire-2 frames reaches the
+// recorded live state and effects at every event. Record a missing v2 golden:
 // SOVA_GOLDEN_MODE=record pnpm test -- server/harness/pi/wire-compat.test.ts.
 import assert from "node:assert/strict";
 import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -36,6 +37,10 @@ const { factsFromMeta, fromV1 } = await import("../../../shared/wire-v1");
 const { rowsFor, withRows, onWire } = await import("../../wire-rows");
 const { v1Frame } = await import("./wire");
 const g = await import("./golden/golden");
+const w = await import("./golden/wire/wire");
+const live = await import("../../../src/lib/live");
+const { NO_VIEW } = await import("../../../src/lib/live-effects");
+const { createStore } = await import("solid-js/store");
 if (!server.listening) await new Promise((r) => server.once("listening", r));
 
 after(async () => {
@@ -91,6 +96,17 @@ function assertRows(v1: readonly TranscriptItem[], v2: readonly TranscriptItem[]
     const { facts: _f, ...rest2 } = r2;
     assert.deepEqual(rest2, rest1, `${where}: row ${i} is otherwise the same`);
   });
+}
+
+/** `fn` with `new Date()` at the traces' fixed time (golden/wire/wire.ts FIXED_NOW). */
+function atFixedNow<T>(fn: () => T): T {
+  const Real = globalThis.Date;
+  globalThis.Date = new Proxy(Real, { construct: (target, args) => (args.length ? Reflect.construct(target, args) : new target(w.FIXED_NOW)) });
+  try {
+    return fn();
+  } finally {
+    globalThis.Date = Real;
+  }
 }
 
 let n = 0;
@@ -149,6 +165,8 @@ describe("a chat's clients, per wire, on every faux stream", () => {
       let leaf: { type: "message"; id: string; message: unknown } | null = null;
       sm.getLeafId = () => (leaf ? leaf.id : leafId());
       sm.getEntry = (id: string) => (leaf && id === leaf.id ? leaf : entryOf(id));
+      // Where each event's frames end in the wire-2 client's log, so they replay per event.
+      const ends: number[] = [];
       try {
         for (const [i, ev] of events.entries()) {
           const entryId = (JSON.parse(control[i]!) as { entryId?: string }).entryId;
@@ -156,6 +174,7 @@ describe("a chat's clients, per wire, on every faux stream", () => {
           sdk._emit(ev);
           await new Promise((r) => setImmediate(r));
           leaf = null;
+          ends.push(two.got.length);
         }
       } finally {
         sm.getLeafId = leafId;
@@ -170,6 +189,23 @@ describe("a chat's clients, per wire, on every faux stream", () => {
       const want2 = control.flatMap((f) => fromV1(JSON.parse(f) as V1EventFrame).map((event) => ({ type: "event", v: 2, event })));
       assert.deepEqual(parsed(frames2), viaJson(want2), "wire 2: fromV1 of every control frame");
       check(name, "frames", frames2);
+      // The browser's reducer on what this server sent a wire-2 client, event by event: the same state and
+      // effects as the recorded trace of the control frames (golden/wire/wire.test.ts pins that trace).
+      const recorded = w.frameTrace(control);
+      const groups = ends.map((end, i) => two.got.slice(i === 0 ? 0 : ends[i - 1], end).filter(isEvent));
+      for (const [view, ctx] of [["no view", NO_VIEW], ["the Overseer's", w.OVERSEER_MINE]] as const) {
+        const steps = atFixedNow(() => {
+          const [state, set] = createStore<import("../../../src/lib/live").LiveState>(live.emptyLive());
+          return groups.map((frames) => {
+            const effects = frames.flatMap((f) => live.liveEventsOf(JSON.parse(f)).flatMap((e) => live.applyEvent(set, e, ctx)));
+            return { effects, state: JSON.parse(JSON.stringify(state)) as unknown };
+          });
+        });
+        steps.forEach((step, i) => {
+          assert.deepEqual(step.state, recorded[i]!.state, `${view}: the live state after event ${i} is the recorded one`);
+          assert.deepEqual(step.effects, (view === "no view" ? undefined : recorded[i]!.overseer) ?? recorded[i]!.effects, `${view}: event ${i}'s effects are the recorded ones`);
+        });
+      }
       // Everything else each client got is the same message, its rows mapped.
       const rest1 = parsed(one.got.filter((s) => !isEvent(s)));
       const rest2 = parsed(two.got.filter((s) => !isEvent(s)));

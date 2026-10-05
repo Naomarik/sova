@@ -121,6 +121,9 @@ test("pull checks run only where toc exists: n/a without it, held by a faithful 
   assert.ok(pullGuards.length >= 4 && pullGuards.every((g) => g.ok && !g.na), "with toc, the pull guards are evaluated and hold");
   const shown = (card) => card.rows.find((r) => r.metric === "g.pull.total")?.value?.shown;
   assert.ok(shown(good) > 0, "the pull proxy counts needs shown");
+  // A contents view that only shows containment (no out, in or mentions lines) falls under the ratchet.
+  const thin = await runArm(sabotaged([STUB, ["spec/core/toc-stub.mjs", "out: () => claims[id].requires ?? [],", "out: () => [],"], ["spec/core/toc-stub.mjs", "in: () => all.filter(", "in: () => [].filter("], ["spec/core/toc-stub.mjs", "mentions: () => all.filter(", "mentions: () => [].filter("]], STUB_FILES), { label: "stub-thin", only: ["g"] });
+  assert.ok(failed(thin).includes("g.pull.shown-floor"), `the ratchet trips (shown ${shown(thin)}; failed: ${failed(thin).join(", ")})`);
 
   const T = "spec/core/toc-stub.mjs";
   const bad = await runArm(sabotaged([STUB,

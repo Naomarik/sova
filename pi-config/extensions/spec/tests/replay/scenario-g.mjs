@@ -21,6 +21,8 @@ const BASELINE_FILE = join(HERE, "data/g-baseline.json");
 export const FRAME_CAP = 12000;
 export const DIRS = ["out", "in", "down", "up", "mentions"];
 const IMPACT_SEEDS = ["§chat/composer"];
+/** The ratchet (D18): needs shown one hop out by toc never drop below what M1 reached. */
+const SHOWN_FLOOR = 86;
 /** The families whose contents lines are graded for a written "why" (plan §5b.8). */
 const WHY_FAMILIES = ["§chat/composer", "§chat/sandbox"];
 
@@ -170,7 +172,7 @@ export async function fullness(ctx) {
   // The pull proxy: n/a only when the tree's sova-spec.mjs rejects `toc` as an unknown command.
   const toc = await capability(ctx.tools, root, ctx.ws.home, "toc");
   if (toc === "absent") {
-    rows.push(row("g.pull.total", "n/a: this tree has no toc", [guard("g.pull.toc-answers", true, "n/a: this tree has no toc", true)]));
+    rows.push(row("g.pull.total", "n/a: this tree has no toc", [guard("g.pull.toc-answers", true, "n/a: this tree has no toc", true), guard("g.pull.shown-floor", true, "n/a: this tree has no toc", true)]));
     for (const h1 of WHY_FAMILIES) rows.push(row(`g.pull.why.${h1.slice(1).replace("/", "-")}`, "n/a"));
   } else {
     // Contents-line quality: `--dir out` over each H2 of the family. "requires" lines are the declared edges
@@ -200,11 +202,15 @@ export async function fullness(ctx) {
     }
     const broken = pulls.flatMap(({ c, q }) => q.broken.map((b) => `${c.id} ${b}`));
     const lostUnshown = pulls.flatMap(({ c, q }) => q.lostUnshown.map((i) => `${c.id}:${i} ${c.needs[i].need}`));
+    const shown = pulls.reduce((s, { q }) => s + q.shown, 0);
     const L = pulls.reduce((s, { q }) => ({ total: s.total + q.lines.total, withWhat: s.withWhat + q.lines.withWhat, withWhy: s.withWhy + q.lines.withWhy }), { total: 0, withWhat: 0, withWhy: 0 });
     rows.push(row("g.pull.total", {
-      shown: pulls.reduce((s, { q }) => s + q.shown, 0), of, bytesMedian: median(pulls.map(({ q }) => q.bytes)), bytesTotal: pulls.reduce((s, { q }) => s + q.bytes, 0), callsTotal: pulls.reduce((s, { q }) => s + q.calls, 0),
+      shown, of, bytesMedian: median(pulls.map(({ q }) => q.bytes)), bytesTotal: pulls.reduce((s, { q }) => s + q.bytes, 0), callsTotal: pulls.reduce((s, { q }) => s + q.calls, 0),
       lines: L.total, linesWithWhat: L.withWhat, linesWithWhy: L.withWhy, answeredByPacketNotShown: lostUnshown.length,
-    }, [guard("g.pull.toc-answers", broken.length === 0, broken.length ? `toc failed: ${broken.slice(0, 5).join("; ")}` : "every toc call answered")]));
+    }, [
+      guard("g.pull.toc-answers", broken.length === 0, broken.length ? `toc failed: ${broken.slice(0, 5).join("; ")}` : "every toc call answered"),
+      guard("g.pull.shown-floor", shown >= SHOWN_FLOOR, `needs shown one hop out: ${shown}/${of}; floor ${SHOWN_FLOOR} (M1)`),
+    ]));
     // A row, not a guard: one hop is a proxy, and a need two hops out is a fair loss to report. The guard
     // "no need packet answers is lost unless shown" belongs to the agent arm, where the agent may take more hops.
     rows.push(row("g.pull.not-shown", lostUnshown.join("; ") || "none"));

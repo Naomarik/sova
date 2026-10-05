@@ -1,4 +1,5 @@
 import { ProfileShelf } from "./ProfileShelf";
+import type { ArchiveMutation } from "../lib/optimistic-archive";
 import { profileIconName } from "../lib/profiles";
 import { createEffect, createMemo, createResource, createSignal, For, type JSX, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
 import { Dynamic, Portal } from "solid-js/web";
@@ -1235,8 +1236,8 @@ export function Sidebar(props: {
   selected: string | null;
   now: number;
   onRefresh(): void;
-  /** After a row dropped on the drop overlay's Archive archives a session, or its Undo brings it back. */
-  onArchiveChanged(path: string, archived: boolean): void;
+  /** A row dropped on the drop overlay's Archive, or its Undo: moves the row now; the caller settles it. */
+  onArchiveStart(path: string, archived: boolean): ArchiveMutation;
   onNew(): void;
   usage: UsageInsight | undefined;
   /** The open chat's recorded Claude login, whose reading the glance's C shows; absent: the login
@@ -1309,35 +1310,39 @@ export function Sidebar(props: {
   };
   const archiveByDrag = async (d: DragInfo) => {
     if (d.archive.kind !== "archive") return; // the overlay refused it already
+    const mutation = props.onArchiveStart(d.path, true);
     let deleted: boolean;
     try {
       // A never-sent session is deleted rather than archived (lib/drag-archive); the answer says which.
       deleted = !!(await setSessionArchived(d.path, true)).deleted;
     } catch (err) {
+      mutation.rollback();
       const failed = `Couldn't archive this session. ${(err as Error).message}`;
       toast(failed);
       announce(failed);
       return;
     }
+    mutation.commit(deleted);
     const done = archivedDropToast(deleted, d.orgProject);
     // Keyed: the next archive's toast replaces this one, so only the latest Undo is on screen.
     toast(done.text, done.undo ? { key: "archive-undo", action: { label: "Undo", run: () => undoArchive(d.path, d.orgProject) } } : undefined);
     announce(done.text);
-    props.onArchiveChanged(d.path, true);
   };
   const undoArchive = async (path: string, org: string | null) => {
+    const mutation = props.onArchiveStart(path, false);
     try {
       await setSessionArchived(path, false);
     } catch (err) {
+      mutation.rollback();
       const failed = `Couldn't unarchive this session. ${(err as Error).message}`;
       toast(failed);
       announce(failed);
       return;
     }
+    mutation.commit();
     const done = unarchivedToast(org);
     toast(done);
     announce(done);
-    props.onArchiveChanged(path, false);
   };
 
   /** The pane as the spine on screen: the stored choice, where the viewport allows it. */

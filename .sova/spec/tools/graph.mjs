@@ -2,7 +2,7 @@
 // `graph` (one paged payload) and `impact --near` (one reverse hop). Node stdlib only; never writes.
 // map.mjs and where.mjs build on the index here.
 import { posix } from "node:path";
-import { mask, mentionsOf, whatOf, whyOf, titleOf, sizeOf, kb, fingerprintOf, tokenFor, decodeToken, boundedRefusal, emit, sizeIn }
+import { mask, namedIn, whatOf, whyOf, titleOf, sizeOf, kb, fingerprintOf, tokenFor, decodeToken, boundedRefusal, emit, sizeIn }
   from "./toc.mjs";
 
 const ID_RE = /^§[a-z][a-z-]*(?:\.[a-z][a-z-]*)?\/[a-z][a-z-]*$/;
@@ -84,7 +84,7 @@ export const labelText = (l) => (l ? [l.authority ?? "-", l.evidence ?? "-"].joi
 export function spansOf(decl) {
   const nl = decl.text.indexOf("\n");
   const head = nl < 0 ? decl.text : decl.text.slice(0, nl);
-  const body = mask(decl.text, { doubleTicks: false });
+  const body = mask(decl.text, { doubleTicks: false, heading: true });
   const out = [], seen = new Set();
   const take = (text, inHead) => {
     for (const m of text.matchAll(/(`+)([^`\n]*?[^`\n ][^`\n]*?)\1(?!`)/g)) {
@@ -103,16 +103,6 @@ const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 // Occurs with no letter, digit, _ or $ on either side.
 export const nameRe = (t) => new RegExp(`(?<![A-Za-z0-9_$])${esc(t)}(?![A-Za-z0-9_$])`);
 export const occurs = (text, t) => text.includes(t) && nameRe(t).test(text);
-
-// The § a passage names in prose (fences, comments and double-backtick spans masked) and in its heading
-// after its own id; never itself.
-export function mentionsIn(decl, self) {
-  const nl = decl.text.indexOf("\n");
-  const head = (nl < 0 ? decl.text : decl.text.slice(0, nl)).replace(/^ {0,3}#{1,2}[ \t]+\S+/, "");
-  const seen = new Set();
-  for (const { id } of [...mentionsOf(head.replace(/``[\s\S]*?``/g, " ")), ...mentionsOf(mask(decl.text))]) if (id !== self) seen.add(id);
-  return [...seen];
-}
 
 // One pass over the parsed graph. Every list is sorted, so every view built on it is deterministic.
 export function indexOf(ctx, parentOf) {
@@ -175,7 +165,7 @@ export function graphPayload(ix) {
     for (const to of [...new Set(rec.requires ?? [])].sort()) edges.push({ kind: "requires", from: id, to, ...known(to) });
     for (const to of [...new Set(rec.members ?? [])].sort()) edges.push({ kind: "member", from: id, to, ...known(to) });
     for (const to of ix.members.get(id) ?? []) if (to !== id) edges.push({ kind: "contains", from: id, to });
-    for (const to of mentionsIn(ctx.decls.get(id), id).sort()) edges.push({ kind: "mentions", from: id, to, ...known(to) });
+    for (const to of namedIn(ctx.decls.get(id), id).sort()) edges.push({ kind: "mentions", from: id, to, ...known(to) });
     for (const to of [...new Set(rec.code ?? [])].sort()) edges.push({ kind: "code", from: id, to });
   }
   const byKind = Object.fromEntries(EDGE_KINDS.map((k) => [k, edges.filter((e) => e.kind === k).length]));
@@ -240,7 +230,7 @@ export function nearImpact(ix, seed) {
   }
   for (const [id, rec] of [...ctx.claims].sort(([a], [b]) => (a < b ? -1 : 1)))
     if (rec.kind === "section" && (rec.members ?? []).some((m) => fam.has(m))) list.push({ group: "container", id, members: rec.members.filter((m) => fam.has(m)) });
-  const mentioners = ix.ids.filter((id) => !fam.has(id) && mentionsIn(ctx.decls.get(id), id).some((m) => fam.has(m)));
+  const mentioners = ix.ids.filter((id) => !fam.has(id) && namedIn(ctx.decls.get(id), id).some((m) => fam.has(m)));
   const open = ix.ids.filter((id) => ctx.claims.get(id).kind === "behavior" && ctx.claims.get(id).requires === undefined);
   const near = open.filter((id) => fam.has(id) || mentioners.includes(id));
   for (const id of near) list.push({ group: "frontier", ...line(id), reason: fam.has(id) ? "in-family" : "mentions-family" });

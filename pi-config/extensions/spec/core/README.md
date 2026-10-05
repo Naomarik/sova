@@ -168,7 +168,7 @@ record (`dangling-edge`), an `embeds` target that is not a surface (`embeds-not-
 ## Look: `map`, `where`, `impact --near`, `graph`
 
 Computed views over the whole graph, for orientation and lookup. `graph.mjs` holds the shared index
-(areas, interface tokens, code and reverse `requires` maps), `graph` and `impact --near`; `map.mjs`
+(areas, interface tokens, code and reverse `requires`/`embeds` maps, agreement counts), `graph` and `impact --near`; `map.mjs`
 and `where.mjs` hold the other two. Like `toc`, each parses its own flags (before or after the
 command word), prints compact JSON with `--json` or readable text, pages under one whole-response
 budget (1,024–32,768) with a stateless `--cursor` bound to the request and every computed line, and
@@ -177,14 +177,19 @@ refusal as small JSON. Nothing is stored.
 
 **`map [namespace | §ns/name]`** (default budget 32,768). Without an argument: `lines` of
 `type: "area"` (`id`, `namespace`, `title`, `what`, `claims`, `labels` as counts by `authority`,
-`evidence` and `unlabelled`, `requiresOut`, `requiresIn` across the area's boundary), then
+`evidence` and `unlabelled`, `requiresOut`, `requiresIn`: `requires` and `embeds` edges across the area's boundary), then
 `type: "hub"` (`path`, `records`: the ten code files the most records list). `counts` holds
-`namespaces`, `areas`, `claims`, `labels` and `gaps` (`uninvestigated`, `noCode`, `noProse`,
+`namespaces`, `areas`, `claims`, `labels`, `agreedNotBuilt` and `gaps` (`uninvestigated`, `noCode`, `noProse`,
 `noInterfaceToken`). A namespace limits all of it. A §id shows its area (an H2 shows its parent's):
 `type: "claim"` lines (H1 first, then declaration order; `requires` is `null` when the key is
-absent, `requiredBy`), `out` and `in` crossing edges (`from`, `to`), and `token` lines (`token`,
-`definedBy`, `usedElsewhere`): interface tokens in a claim's heading or first sentence. There is no
-agreed-not-built count yet: `notes` carries `agreed-not-recorded` and `counts` has no such key.
+absent, `requiredBy` counting requirers and embedders, `agreed` and `built` when the record carries
+`agreed`), `out` and `in` crossing edges (`from`, `to`, `kind` `requires|embeds`), and `token` lines
+(`token`, `definedBy`, `usedElsewhere`): interface tokens in a claim's heading or first sentence.
+`counts.agreedNotBuilt` is `{agreed, notBuilt, oldest, newest}` over the records in view that carry
+`agreed`: built is `code` plus `evidence` `reviewed` or `verified` (sova-spec-draft.mjs `BUILT_LABELS`), and
+`oldest`/`newest` are the not-built records' `agreed.at` dates, never ages. With no `agreed` record in
+view the key is absent and the text says so. `agreed` records who decided and when, not that anyone
+read the current words.
 
 **`where <path|token> [--token] [--all]`** (default 12,000). A path is a file some record's `code`
 lists or that exists under the root; it is read with the core's own refusal rules. `mode: "path"`:
@@ -198,17 +203,19 @@ a letter and a separator, bracket or sigil, an inner capital, or all capitals; i
 with no `[A-Za-z0-9_$]` on either side, and weighs `ln((records + 1) / records using it)`.
 
 **`impact §id --near`** (default 12,000). `impact` without `--near` is unchanged. The family is an
-H1 with its H2s, or an H2 alone (claims requiring its parent count, `via: "parent"`). `lines` by
-`group`, in order: `consumer` (one reverse hop, contents-line fields plus `requires` and `why`),
-`container` (sections with family `members`), `frontier` (behaviors with no `requires` key in the
-family or naming it: `reason` `in-family|mentions-family`), `next` (ids requiring a consumer),
-`mentioned` (ids naming the family in prose or in their heading after their own id), `code` (per
+H1 with its H2s, or an H2 alone (claims requiring or embedding its parent count, `via: "parent"`).
+`lines` by `group`, in order: `consumer` (one reverse hop over `requires` and `embeds`, contents-line
+fields plus `requires`, `embeds` when it embeds, and `why`), `container` (sections with family
+`members`), `about` (notes whose `about` names the family or, `via: "parent"`, an H2 seed's H1), `frontier` (behaviors with no `requires` key in the
+family or naming it: `reason` `in-family|mentions-family`), `next` (ids requiring or embedding a consumer),
+`mentioned` (ids naming the family in prose or in their heading after their own id, frontier ids left out), `code` (per
 shared file: `records`, up to 12 `ids`, `more`). `counts.uninvestigatedElsewhere` counts the
 behaviors with no `requires` key left to plain `impact`.
 
 **`graph --json`** (default 32,768). Pages of `nodes` (id order: `id`, `kind`, `level`,
 `namespace`, `area`, `title`, `what`, `whatSource`, `labels`, `bytes`, `whole`, `file`, `lines`,
-`requires` count or `null`, `code` count) and then `edges` (`kind` `requires|member|contains|mentions|code`,
+`requires` count or `null`, `code` count, `core: true` when set, `agreed` when present) and then `edges`
+(`kind` `requires|embeds|member|contains|about|mentions|code`,
 `from`, `to`, `dangling` when the target has no record or span). `counts` (`nodes`, `edges`,
 `byKind`) is on every page; concatenating `nodes` and `edges` across pages rebuilds one payload,
 whatever the budget. Without `--json`, only the counts.

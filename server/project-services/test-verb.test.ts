@@ -57,7 +57,8 @@ else {
     globalThis.keep = Buffer.alloc(16 * 1024 * 1024, 1);
     writeFileSync(process.env.SOVA_OUT, JSON.stringify({ passed, failed: failed.length, skipped: 1, failures: failed.map((n) => ({ name: n, message: "expected 1, got 2".repeat(200), file: "t.mjs", line: 3 })) }));
     console.log("ran " + passed + " passed " + failed.length + " failed");
-    setTimeout(() => process.exit(failed.length ? 1 : 0), 500);
+    // Held for the memory sampler (200 ms) only in the run whose peak is asserted; the rest exit at once.
+    setTimeout(() => process.exit(failed.length ? 1 : 0), sel.includes("unit/b:c*") ? 500 : 0);
   });
 }
 `;

@@ -14659,6 +14659,34 @@
       "requires": [
         "§chat.merge-round/driver"
       ]
+    },
+    "§app.insights/usage-burn": {
+      "kind": "behavior",
+      "requires": [
+        "§app.insights/usage-cards",
+        "§app.insights/usage-refresh",
+        "§app.insights/pace-tick",
+        "§app.insights/usage-reset-day",
+        "§app.insights/velocity-scrub",
+        "§app.claude-logins/registry"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/usage-history.ts",
+        "server/usage-history.test.ts",
+        "server/usage-poll.ts",
+        "server/usage-poll.test.ts",
+        "server/insights.ts",
+        "server/insights-usage.test.ts",
+        "server/index.ts",
+        "shared/protocol.ts",
+        "src/lib/usage-burn.ts",
+        "src/lib/usage-burn.test.ts",
+        "src/lib/api.ts",
+        "src/components/UsageView.tsx",
+        "src/design/base.css"
+      ]
     }
   },
   "boundary": {

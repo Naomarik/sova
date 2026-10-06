@@ -43,6 +43,8 @@ const DOC_ONLY_KINDS = new Set(["note", "section"]);
 // Kinds whose record may say who decided it, and when, before it is built (`agreed: {by, at}`); with no `code`
 // such a record may land on --doc-only evidence too. Built = `code` plus one of BUILT_LABELS as its `evidence`.
 const AGREED_KINDS = new Set(["behavior", "surface"]), BUILT_LABELS = new Set(["reviewed", "verified"]);
+// Record fields that only route reading (§ edges and the frame flag): a change to them alone may land on --doc-only.
+const FIELD_KEYS = ["about", "core", "embeds"];
 const AGREED_AT = /^(\d{4}-\d{2}-\d{2})(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2}))?$/;
 const STARTER = JSON.stringify({ formatVersion: 1, claims: {} }, null, 2) + "\n";
 const SECRET_DIRS = new Set([".git", ".hg", ".svn", ".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker"]);
@@ -511,13 +513,32 @@ function agreedProblem(rec) {
 }
 // Why a changed ID cannot take --doc-only evidence → null when it can: notes and sections carry no implementation;
 // an agreed behavior or surface may land before it is built, while nothing in its record says it was.
+// A behavior or surface without `agreed` whose only change is to its embeds/about/core fields rewires what a
+// reader is handed, not what the code does: doc-only too. Anything else changed on it as well is bundled.
+// Judged by both kinds: a behavior or surface the draft turns into a note or section is not thereby doc-only.
 function docOnlyRefusal(c) {
+  if (c.baseKind && !DOC_ONLY_KINDS.has(c.baseKind) && DOC_ONLY_KINDS.has(c.kind))
+    return `kind changed from ${c.baseKind} to ${c.kind}: doc-only is judged by the kind current has too`;
   if (DOC_ONLY_KINDS.has(c.kind)) return null;
+  if (c.agreed === undefined && c.fieldChange) return bundledOf(c);
   if (c.agreed === undefined) return `kind ${c.kind} without agreed`;
   if (c.agreedProblem) return `${c.kind}: ${c.agreedProblem}`;
   if (c.code.length) return `${c.kind} that maps code: an agreed record that is built takes commit or snapshot evidence`;
   if (BUILT_LABELS.has(c.evidenceLabel)) return `${c.kind} labelled evidence "${c.evidenceLabel}", which says it was built and checked`;
   return null;
+}
+const bundledOf = (c) => c.fieldChange?.others.length
+  ? `${c.kind} whose ${c.fieldChange.fields.join("/")} change is bundled with ${c.fieldChange.others.join(", ")}: only a field-only change takes --doc-only`
+  : null;
+// What changed on a behavior or surface record besides FIELD_KEYS, when any of those changed. → {fields, others} | null
+function fieldChangeOf(c, b, p) {
+  if (!AGREED_KINDS.has(c.kind)) return null;
+  const keys = uniqSorted([...Object.keys(b ?? {}), ...Object.keys(p ?? {})]), differs = (k) => canon(b?.[k]) !== canon(p?.[k]);
+  const fields = FIELD_KEYS.filter(differs);
+  if (!fields.length) return null;
+  const others = [...(!b ? ["a new record"] : !p ? ["a deletion"] : []), ...(c.text || c.files.length ? ["prose"] : []),
+    ...keys.filter((k) => !FIELD_KEYS.includes(k) && differs(k)).map((k) => (k === "code" ? "the code list" : ["authority", "evidence"].includes(k) ? `the ${k} label` : k))];
+  return { fields, others };
 }
 async function analyze(root, name, readPolicy, inputSources) {
   const draft = await loadDraft(root, name, inputSources, readPolicy);
@@ -564,11 +585,12 @@ async function analyze(root, name, readPolicy, inputSources) {
   for (const f of files) for (const id of f.ids) { const t = touch(id); t.files.push(f.path); if (bc.decls.get(id)?.textSha256 !== pc.decls.get(id)?.textSha256) t.text = true; }
   for (const c of changed.values()) {
     const rec = recOf(prop, c.id) ?? recOf(base, c.id);
-    c.kind = rec?.kind ?? null;
+    c.kind = rec?.kind ?? null; c.baseKind = recOf(base, c.id)?.kind ?? null;
     c.deleted = recOf(prop, c.id) === undefined && !pc.decls.has(c.id);
     c.binding = { recordSha: recOf(prop, c.id) === undefined ? null : sha(canon(recOf(prop, c.id))), textSha256: pc.decls.get(c.id)?.textSha256 ?? null };
     c.code = uniqSorted((rec?.code ?? []).filter((p) => typeof p === "string"));
     c.agreed = rec?.agreed; c.agreedProblem = agreedProblem(rec); c.evidenceLabel = rec?.evidence;
+    c.fieldChange = fieldChangeOf(c, recOf(base, c.id), recOf(prop, c.id));
   }
   return { ...draft, prop, cur, pc, bc, files, records, meta, changed };
 }
@@ -862,7 +884,11 @@ async function cmdEvidence(root, o) {
       if (!c) throw new Fail(1, "not-changed", `${id} is not changed by draft ${o.name}; evidence binds to a proposed change`);
       return c;
     });
-    if (o["doc-only"]) { const bad = targets.filter((c) => docOnlyRefusal(c)); if (bad.length) throw new Fail(1, "doc-only-refused", `--doc-only covers only ${[...DOC_ONLY_KINDS].join("/")} kinds and agreed ${[...AGREED_KINDS].join("/")} records with no code, not ${bad.map((c) => `${c.id} (${docOnlyRefusal(c)})`).join(", ")}`); }
+    if (o["doc-only"]) {
+      const bad = targets.filter((c) => docOnlyRefusal(c)), bundled = bad.filter((c) => docOnlyRefusal(c) === bundledOf(c));
+      if (bundled.length) throw new Fail(1, "doc-only-bundled", `--doc-only covers a change to ${FIELD_KEYS.join("/")} alone; ${bundled.map((c) => `${c.id} (${docOnlyRefusal(c)})`).join(", ")} — record --commit or --snapshot evidence, or split the field change into its own draft`);
+      if (bad.length) throw new Fail(1, "doc-only-refused", `--doc-only covers only ${[...DOC_ONLY_KINDS].join("/")} kinds, agreed ${[...AGREED_KINDS].join("/")} records with no code, and ${FIELD_KEYS.join("/")}-only changes, not ${bad.map((c) => `${c.id} (${docOnlyRefusal(c)})`).join(", ")}`);
+    }
     const malformed = targets.filter((c) => !c.deleted && c.agreedProblem);
     if (malformed.length) throw new Fail(1, "agreed-invalid", malformed.map((c) => `${c.id}: ${c.agreedProblem}`).join("; "));
     if (o.snapshot && g.git) throw new Fail(1, "git-requires-commit", "this is a Git project: name the implementation commit with --commit REV; without permission to commit, leave evidence pending and say so");

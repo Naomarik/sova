@@ -14460,6 +14460,22 @@
         "pi-config/extensions/spec/PROMOTE.md"
       ],
       "evidence": "verified"
+    },
+    "§tools.spec/field-promotion": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/promotion-integrity",
+        "§tools.spec/record-fields",
+        "§tools.spec/agreed-promotion"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+        "pi-config/extensions/spec/tests/draft-fields.test.mjs",
+        "pi-config/extensions/spec/DRAFTS.md",
+        "pi-config/extensions/spec/PROMOTE.md"
+      ]
     }
   },
   "boundary": {

@@ -92,7 +92,10 @@ The machine can't tell which label is correct.
      and doesn't track, such as a home-directory dotfiles repo, counts as having no Git.
    - **No Git**: `--snapshot`. The exact input bytes are kept under `evidence/objects/`.
    - `--doc-only` is accepted only for `note` and `section` kinds, which carry no implementation,
-     and for an agreed behavior or surface that is not built yet (see "Agreed, not built" below).
+     for an agreed behavior or surface that is not built yet (see "Agreed, not built" below), and
+     for a field-only change (see "Field-only changes" below). Anything else is refused
+     (`doc-only-refused`). The kind is judged as current has it too: a behavior or surface the
+     draft turns into a note or section still needs commit or snapshot evidence, as deleting it would.
    - `--verification TEXT` says what was run or checked, and what it showed. `--log FILE` keeps
      a copy of a log as an object. Evidence becomes stale if that retained log is missing or its
      digest differs. Log paths may be outside the project, but every path component is checked
@@ -196,6 +199,27 @@ records the decision, not that it was built.
 - It is a record field, not a label value: the core ignores record fields it doesn't know, while an
   unknown `authority` or `evidence` value makes it refuse the manifest (exit 2), so cores that
   predate `agreed` still load a manifest carrying it.
+
+### Field-only changes
+
+A change that only adds, changes or removes a behavior or surface record's `embeds`, `about` or
+`core` field rewires what a reader is handed, not what the code does, so it may take
+`evidence --doc-only`. Only means everything else about that record reads the same in the draft as
+in its base: its prose (its span, and any bytes outside spans attributed to it), its `code` list, its
+`authority` and `evidence` labels, and every other field. It must be an existing record: a new
+record or a deletion is not field-only.
+
+- **What `--verification` says.** What was read to decide the field: for an embed, both passages and
+  the code that renders the embedded surface inside the embedding one; for `about`, the note and its
+  target; for `core`, the passage and why every task needs it. The tool checks only that the text
+  is not empty (every `--verification` must have text), never what it says.
+- **Bundled changes.** A field change together with any other change to the same record is refused
+  for `--doc-only` as `doc-only-bundled`, naming what else changed (`prose`, `the code list`, `the
+  evidence label`, …). Record `--commit` or `--snapshot` evidence for the whole change, or move the
+  field change into a draft of its own. Field-only evidence binds to the record and prose as usual,
+  so a later prose edit makes it stale, and `promote` names the bundle.
+- **Agreed records** follow "Agreed, not built" alone: a field-only change to an agreed record that
+  maps code still needs commit or snapshot evidence. Notes and sections take `--doc-only` as before.
 
 ## Transaction, rollback, recovery
 

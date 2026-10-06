@@ -163,6 +163,24 @@ An `agreed` that is not an object with a non-empty `by` and a valid date `at`, o
 note or section, is refused at evidence and at promotion. `agreed` is a record field, not a label
 value, so a core that predates it still loads a manifest carrying it.
 
+## §tools.spec/field-promotion — A record-field-only change lands on doc-only evidence
+
+A promotion whose only change to an existing behavior or surface record is adding, changing or
+removing its `embeds`, `about` or `core` field may use doc-only evidence: such a change rewires what
+a reader is handed, not what the code does. Only means the record's prose (its span, and any bytes
+outside spans attributed to it), its `code` list, its labels (`authority`, `evidence`) and every
+other field read the same in the draft as in its base. The `--verification` text must say what was
+read to decide the field: for an embed, both passages and the code that renders the embedded surface
+inside the embedding one; for `about`, the note and its target; for `core`, the passage and why
+every task needs it. The tool enforces only that the text is not empty, never what it says. A field
+change bundled with any other change to the same record is refused for doc-only evidence
+(`doc-only-bundled`, naming what else changed) and needs commit or snapshot evidence, as any other
+behavior or surface change does. A record that carries `agreed` follows §tools.spec/agreed-promotion
+alone, and notes and sections take doc-only evidence as before. Doc-only eligibility is judged by
+the record's kind both in current (the draft's base) and in the draft: a record whose kind changes
+qualifies only if both kinds allow it, so turning a behavior or surface into a note or section while
+rewriting its prose still needs commit or snapshot evidence, as deleting it would.
+
 ## §tools.spec/inspection-safety — Refused inputs are not inspected
 
 The core, draft, and review commands validate path configuration before traversing it. Invalid

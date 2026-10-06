@@ -269,6 +269,12 @@ export class Ledger {
     const plain = files.filter((f) => FILE_RE.test(f));
     if (plain.length === 0 && only) return;
     const day = this.day(name, true)!;
+    // A sealed file the day's snapshot doesn't know (the snapshot lost, or removed so the day is
+    // folded again from its records): fold the whole day, sealed records included, or they'd be lost.
+    if (!only && files.some((f) => f.endsWith(".gz") && FILE_RE.test(f.slice(0, -3)) && !day.files.get(f.slice(0, -3))?.gz)) {
+      this.rebuild(day);
+      return;
+    }
     // A closed day with anything new is folded again from all its records, then closes again.
     if (day.closed) {
       const grown = plain.some((f) => {

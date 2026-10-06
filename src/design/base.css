@@ -3886,6 +3886,12 @@ a.group-option { color: inherit; text-decoration: none; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* A Claude model's row: its catalog name in the body face, its id after it in muted mono. */
+.model-option-name {
+  font-family: var(--font-body);
+  font-size: var(--fs-body);
+}
+.model-option-subid { color: var(--color-ink-muted); }
 /* "vision" on a model that accepts images (ModelInfo.input). Metadata, not status: the
    muted micro treatment, no border, no accent, and it shrinks before the id does. */
 .model-option-vision {

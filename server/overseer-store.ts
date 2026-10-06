@@ -10,7 +10,7 @@ import type {
   WorkerChoice,
 } from "../shared/protocol";
 import { parseChoice } from "../pi-config/extensions/mode/delegate.ts";
-import { latestClaude, resolveClaude } from "../pi-config/extensions/claude-code/catalog.ts";
+import { canonicalClaudeId, latestClaude, resolveClaude } from "../pi-config/extensions/claude-code/catalog.ts";
 import { type Redactor, serverRedactor } from "./overseer-redact";
 import { stateRoot } from "./state-root";
 import { sessionsChanged } from "./list-generation";
@@ -114,7 +114,8 @@ export function parseSettings(raw: unknown, strict: boolean): OverseerSettings |
   const fail = (error: string) => (strict ? { error } : null);
   const out = d;
   if (raw.model !== undefined && raw.model !== null) {
-    if (typeof raw.model === "string" && /^[^/\s]+\/\S+$/.test(raw.model.trim())) out.model = raw.model.trim();
+    // An old Claude Code id reads as its catalog model (§app.claude-code-provider/legacy-ids).
+    if (typeof raw.model === "string" && /^[^/\s]+\/\S+$/.test(raw.model.trim())) out.model = raw.model.trim().startsWith("claude-code-cli/") ? canonicalClaudeId(raw.model.trim()) : raw.model.trim();
     else {
       const e = fail('model must be "provider/model" or null');
       if (e) return e;

@@ -215,6 +215,24 @@ test("close: a day ended 2h ago is gzipped and keeps its rows; a file turning up
   assert.ok(!existsSync(join(w.usageRoot, "2026-10-04", "p1.jsonl")));
 });
 
+test("a closed day whose snapshot is gone is folded again from its sealed records, never lost", () => {
+  const w = world();
+  w.write({ key: "a", ts: at("10:00") });
+  w.write({ key: "b", ts: at("11:00") }, "p2");
+  w.clock.now = at("02:01", "2026-10-05");
+  const s = w.start(); // the catch-up closes the ended day at once
+  s.ledger.closeDays();
+  s.ledger.flush();
+  assert.deepEqual(readdirSync(join(w.usageRoot, "2026-10-04")).sort(), ["p1.jsonl.gz", "p2.jsonl.gz"]);
+  // The snapshots removed (a migration that rewrote the records does this, so no saved offset outlives them).
+  for (const f of readdirSync(join(w.stateDir, "days"))) rmSync(join(w.stateDir, "days", f));
+  const again = w.start();
+  assert.equal(again.queries.session({ sid: "s1" }).total.calls, 2);
+  close(again.queries.costs({ range: "all", providers: [], models: [], tz: "UTC" }).total.usd, perCall(table(), [{ ts: at("10:00"), input: 1_000_000 }, { ts: at("11:00"), input: 1_000_000 }]));
+  again.ledger.flush();
+  assert.equal(w.start().queries.session({ sid: "s1" }).total.calls, 2, "and counted once after the next start");
+});
+
 test("queries: kinds, workers at any depth, side calls, projects, local days, filters", () => {
   const w = world();
   w.clock.now = at("12:00", "2026-10-05");

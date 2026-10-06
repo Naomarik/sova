@@ -145,6 +145,43 @@ test("toc: an about note whose own text names nothing takes the requested claim'
   assert.deepEqual([plainSeed.why, plainSeed.whySource], ["about §s.seed/edit (declared on the note)", "declared"]);
 });
 
+test("toc down on an H1 lists the notes about its H2s, one hop, by the first H2 each serves then id", () => {
+  const files = { ...FILES, "design/copy.md": FILES["design/copy.md"]
+    + "\n## §design.copy/b-lim — Limit copy\n\nThe limit hint for §s.seed/limits reads \"Full\".\n"
+    + "\n## §design.copy/limits-a — Both\n\nCopy shared by two rules.\n"
+    + "\n## §design.copy/meta — Meta\n\nHow the copy notes are kept.\n" };
+  const claims = { ...CLAIMS,
+    "§design.copy/b-lim": { kind: "note", about: ["§s.seed/limits"] },
+    "§design.copy/limits-a": { kind: "note", about: ["§s.seed/limits", "§s.seed/edit"] },
+    "§design.copy/meta": { kind: "note", about: ["§design.copy/edit-only"] } };
+  const root = fixture(claims, files);
+  const down = json(root, ["toc", "§s/seed", "--dir", "down"]);
+  assert.deepEqual(down.lines.map((l) => [l.id, l.group]), [["§s.seed/edit", "children"], ["§s.seed/limits", "children"],
+    ["§design.copy/edit-only", "children-about"], ["§design.copy/limits-a", "children-about"], ["§design.copy/b-lim", "children-about"]],
+    "the note about the H1 itself and the note about a note stay out; a note serving two H2s is listed once, under the first");
+  const why = (id) => { const l = down.lines.find((x) => x.id === id); return [l.why, l.whySource]; };
+  assert.deepEqual(why("§design.copy/edit-only"), ["about §s.seed/edit (declared on the note)", "declared"]);
+  assert.deepEqual(why("§design.copy/b-lim"), ["The limit hint for §s.seed/limits reads \"Full\".", "prose"]);
+  assert.match(run(root, ["toc", "§s/seed", "--dir", "down"]).stdout, /DOWN: notes about its H2s \(3\)/);
+  // A note that is itself one of the H1's H2s stays a child only; an H2 seed gets no such group.
+  const copy = json(root, ["toc", "§design/copy", "--dir", "down"]);
+  assert.ok(!copy.lines.some((l) => l.group === "children-about"), JSON.stringify(copy.lines.map((l) => [l.id, l.group])));
+  assert.deepEqual(json(root, ["toc", "§s.seed/edit", "--dir", "down"]).lines, []);
+});
+
+test("toc down: a note's why falls back to the H2 it serves naming it, then to the H1's lede", () => {
+  const files = { ...FILES,
+    "s/seed.md": FILES["s/seed.md"].replace("The editor pane, where a draft is written.", "The editor pane, where a draft is written; §design.copy/pane holds its words.")
+      .replace("A draft holds at most 200 lines.", "A draft holds at most 200 lines, warned as §design.copy/edit-only says."),
+    "design/copy.md": FILES["design/copy.md"] + "\n## §design.copy/pane — Pane copy\n\nThe pane title reads \"Draft\".\n" };
+  const claims = { ...CLAIMS, "§design.copy/edit-only": { kind: "note", about: ["§s.seed/limits"] },
+    "§design.copy/pane": { kind: "note", about: ["§s.seed/edit"] } };
+  const down = json(fixture(claims, files), ["toc", "§s/seed", "--dir", "down"]);
+  const why = (id) => { const l = down.lines.find((x) => x.id === id && x.group === "children-about"); return [l.why, l.whySource]; };
+  assert.deepEqual(why("§design.copy/edit-only"), ["A draft holds at most 200 lines, warned as §design.copy/edit-only says.", "prose"], "the served H2 names it");
+  assert.deepEqual(why("§design.copy/pane"), ["The editor pane, where a draft is written; §design.copy/pane holds its words.", "prose"], "only the H1 names it");
+});
+
 test("a spec without the fields: packet, scope, toc and read outputs carry no frame and no new reasons", () => {
   const withF = fixture(), without = fixture(plain(CLAIMS));
   const j = json(without, ["packet", "§s.seed/edit"]);

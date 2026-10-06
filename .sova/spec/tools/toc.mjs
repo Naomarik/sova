@@ -291,11 +291,11 @@ export function boundedRefusal(command, budget, code, extra = {}) {
 
 // ---------------------------------------------------------------- toc
 const GROUPS = {
-  out: ["requires", "embeds", "about", "named"], in: ["required-by", "required-through-parent", "embedded-by", "embedded-through-parent", "about-it"], down: ["children", "members"], up: ["parent"], mentions: ["mentioned-by"],
+  out: ["requires", "embeds", "about", "named"], in: ["required-by", "required-through-parent", "embedded-by", "embedded-through-parent", "about-it"], down: ["children", "members", "children-about"], up: ["parent"], mentions: ["mentioned-by"],
 };
 const HEADS = { requires: "requires", embeds: "embeds (drawn inside it; read delivers them whole)", about: "about (notes that serve it)",
   named: "named in its text, not required", "required-by": "required by", "required-through-parent": "required through its H1", "embedded-by": "embedded by", "embedded-through-parent": "embedded through its H1", "about-it": "notes about it",
-  children: "children", members: "members", parent: "parent", "mentioned-by": "mentioned by" };
+  children: "children", "children-about": "notes about its H2s", members: "members", parent: "parent", "mentioned-by": "mentioned by" };
 function labelsOf(rec) {
   const l = {};
   if (rec.authority !== undefined) l.authority = rec.authority;
@@ -330,8 +330,15 @@ function neighbours(ctx, id, dir, parentOf) {
         .map((k) => ({ id: k, group: "embedded-through-parent", src: ctx.decls.get(k), target: p, via: p })),
       ...aboutLines(ctx, id, p)];
   }
-  if (dir === "down") return rec.kind === "section" ? (rec.members ?? []).map((m) => ({ id: m, group: "members" }))
-    : childrenInOrder(ctx, id).map((c) => ({ id: c, group: "children" }));
+  if (dir === "down") {
+    if (rec.kind === "section") return (rec.members ?? []).map((m) => ({ id: m, group: "members" }));
+    const kids = childrenInOrder(ctx, id);
+    // An H1 also names the notes about its H2s, one hop: by the first H2 each serves, then id.
+    const notes = seed.level === 1 ? aboutNotes(ctx, kids).filter((n) => !kids.includes(n.id))
+      .sort((a, b) => kids.indexOf(a.target) - kids.indexOf(b.target) || (a.id < b.id ? -1 : 1)) : [];
+    return [...kids.map((c) => ({ id: c, group: "children" })),
+      ...notes.map((n) => ({ id: n.id, group: "children-about", src: ctx.decls.get(n.id), target: n.target, back: [ctx.decls.get(n.target), seed], about: true }))];
+  }
   if (dir === "up") { const p = parentOf(id, ctx.dirKinds); return p && ctx.claims.has(p) ? [{ id: p, group: "parent" }] : []; }
   const alias = seed.level === 1 && /^§[a-z][a-z-]*\/[a-z][a-z-]*$/.test(id) ? id.replace("/", ".") : null, out = [];
   for (const from of [...ctx.decls.keys()].sort()) {
@@ -363,7 +370,8 @@ function line(ctx, n) {
   const d = ctx.decls.get(n.id), rec = ctx.claims.get(n.id);
   let w = n.src ? whyOf(n.src, n.target) : null;
   // A note linked by about: its own sentence naming what it serves, else the requested claim's sentence naming the note.
-  if (n.back && w?.whySource !== "prose") { const s = whyOf(n.back, n.id); if (s.whySource === "prose") w = s; }
+  // back may list several requested claims, tried in order (a note under down: the H2 it serves, then the H1).
+  if (w?.whySource !== "prose") for (const b of [n.back ?? []].flat()) { const s = whyOf(b, n.id); if (s.whySource === "prose") { w = s; break; } }
   const why = w ? { why: w.why, whySource: w.whySource } : {};
   // A note's about field is itself a written reason for the link.
   if ((n.about || n.group === "about") && why.whySource === "none") Object.assign(why, { why: `about ${n.target} (declared on the note)`, whySource: "declared" });

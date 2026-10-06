@@ -107,14 +107,14 @@ loader. Flags may come before or after the command word. `sova-spec --help` list
 |---|---|---|
 | `out` | the declared `requires`, the `embeds`, the notes `about` it or its H1, then the § the claim's prose names without requiring | `requires`, `embeds`, `about`, `named` |
 | `in` | the claims whose `requires` name it; the claims that `embeds` it; the notes `about` it; for an H2, also those that require or embed its H1 and the notes about its H1 (`via` names it) | `required-by`, `required-through-parent`, `embedded-by`, `embedded-through-parent`, `about-it` |
-| `down` | an H1's H2s, or a section's members, in declaration order | `children`, `members` |
+| `down` | an H1's H2s, or a section's members, in declaration order; for an H1, then the notes `about` its H2s (one hop, by the first, in declaration order, of the H2s each serves, then id) | `children`, `members`, `children-about` |
 | `up` | an H2's parent | `parent` |
 | `mentions` | the claims whose prose names it | `mentioned-by` |
 
 Each line has `id`, `title`, `kind`, `labels` (when declared), `bytes` (what `read` of it delivers;
 an H1's lede) and `whole` (an H1's lede plus all its H2s), `what` and `whatSource`
-(`prose|blockquote|none`), and, for `out`, `in` and `mentions`, `why` and `whySource`
-(`prose|comment|declared|none`; an `about` line takes the note's sentence naming its target, else the requested claim's sentence naming the note; `declared` is the `about` field when neither prose nor a comment names it). A record with
+(`prose|blockquote|none`), and, for `out`, `in`, `mentions` and `down`'s `children-about`, `why` and `whySource`
+(`prose|comment|declared|none`; an `about` or `children-about` line takes the note's sentence naming its target, else the requested claim's sentence naming the note (for `children-about`, the H2 it serves, then the H1); `declared` is the `about` field when neither prose nor a comment names it). A record with
 `agreed` adds `agreed: {by, at, built}` (built: `code` plus evidence `reviewed` or `verified`), and
 the text reads `agreed (decision) <at> by <by>, not built` (or `, built`); `read` items carry it too. What is the first prose sentence after the heading: fences, comments,
 tables, thematic breaks and headings skipped, a blockquote only when nothing else is prose, at least 20 and at most

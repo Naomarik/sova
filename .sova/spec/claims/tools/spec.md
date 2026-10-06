@@ -399,7 +399,12 @@ instead of receiving a whole dependency chain. `out` lists the claim's declared 
 a group of their own, the claims its prose names without requiring them; `in` lists the claims whose
 `requires` name it, and for an H2, in a group of their own headed "required through its H1", the
 claims that require its H1, since requiring an H1 brings all of its H2s; `down` lists an H1's H2
-children, or a section's members, in declaration order; `up` gives the parent of an H2; `mentions`
+children, or a section's members, in declaration order, and for an H1, in a group of their own
+headed "notes about its H2s", the notes whose `about` names one of those H2s, one hop only (never
+what a note names in turn, and on no other direction), each note once, ordered by the first, in declaration
+order, of the H2s it serves and then by id, a note that is itself one of the H2s left out, its why
+found as for any note linked by `about`, the H2 it serves standing for the requested claim and,
+failing that, the H1; `up` gives the parent of an H2; `mentions`
 lists the claims whose prose names it. Records carrying the optional `embeds` and `about` fields
 add groups of their own to `out` and `in` (§tools.spec/record-fields); `in` lists both the claims
 that embed it, or for an H2 its H1, and the notes about it or its H1, so a claim drawn inside another
@@ -499,8 +504,10 @@ delivers each surface it embeds, whole (see §tools.spec/single-read).
 
 An `about` note shows in the contents view under `out` for its target, in an "about" group, and also
 for each H2 of a target H1, marked as reached through that H1; it shows the same way under `in`, as a
-note about the claim or about its H1. When the note's prose doesn't name its target, its why is the
-declared field itself ("about §x (declared on the note)"), never "not mentioned". `read` names the notes about the
+note about the claim or about its H1; and under `down` for the H1 of an H2 it serves
+(§tools.spec/contents-view). Its why is found as §tools.spec/contents-view says; when neither prose
+nor a comment names the link, it is the declared field itself ("about §x (declared on the note)"),
+never "not mentioned". `read` names the notes about the
 passage it delivers, and `packet` adds to its prose, after the closure, the notes about any claim
 the packet delivers (the requested claim, its H1, the surfaces it embeds and every other claim its
 closure reaches), each once, in note id order, with the reason `about` naming each delivered claim

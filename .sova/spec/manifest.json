@@ -14866,7 +14866,8 @@
         "shared/model-prices/aliases.json",
         "server/models.ts",
         "server/models.test.ts",
-        "server/overseer-store.ts"
+        "server/overseer-store.ts",
+        "pi-config/extensions/claude-code/index.test.ts"
       ]
     },
     "§app.claude-code-provider/model-identity": {

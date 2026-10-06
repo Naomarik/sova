@@ -102,10 +102,11 @@ the playbook's turn plus the why (§chat.playbooks/what-gets-sent). The playbook
 `project-verbs` the project's folder lists, a user playbook of that id replacing the shipped one
 as everywhere (§chat.playbooks). Its model is the one asked for (with its thinking, medium unless
 given). Otherwise it is chosen from the models this host offers (the model picker's list), never a
-ref outside it: claude-code `opus` if listed, else claude-code `opus[1m]`, else openai-codex
-`gpt-6-astra`, each at medium thinking. When the list has none of them, or can't be read, nothing
-starts: "No model for the Project verbs playbook: this host offers neither Claude Code opus nor
-openai-codex gpt-6-astra. Pick a model to run it with." It counts like a coding session against the
+ref outside it: claude-code's current Opus in Sova's catalog (`claude-opus-5-5`,
+§app.claude-code-provider/catalog) if listed, else openai-codex `gpt-6-astra`, each at medium
+thinking. When the list has none of them, or can't be read, nothing starts: "No model for the
+Project verbs playbook: this host offers neither Claude Code Opus 5.5 nor openai-codex gpt-6-astra.
+Pick a model to run it with." It counts like a coding session against the
 project's limits, and the operator merges its branch; nothing else does.
 
 It needs L3 when the overseer starts it on its own, and it is refused when the project is

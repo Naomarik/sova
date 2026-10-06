@@ -1691,8 +1691,12 @@
     },
     "§workspace.groups/announcements": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "src/lib/session-groups.ts",
+        "src/lib/session-groups.test.ts"
+      ]
     },
     "§workspace.groups/classes": {
       "kind": "note",
@@ -3949,17 +3953,6 @@
         "server/claude-accounts.ts"
       ]
     },
-    "§app.settings-dialog/claude-long-context-listed": {
-      "kind": "behavior",
-      "requires": [
-        "§app.settings-dialog/modes"
-      ],
-      "authority": "accepted",
-      "evidence": "reviewed",
-      "code": [
-        "src/components/SubagentProfilesSettings.tsx"
-      ]
-    },
     "§app.settings-dialog/toggle-target": {
       "kind": "behavior",
       "requires": [
@@ -5274,19 +5267,6 @@
         "server/skills.ts",
         "server/skills.test.ts",
         "server/worker-skills.ts"
-      ]
-    },
-    "§app.settings-dialog/claude-long-context-offered": {
-      "kind": "behavior",
-      "requires": [
-        "§app.settings-dialog/modes",
-        "§app.settings-dialog/claude-long-context-listed"
-      ],
-      "authority": "accepted",
-      "evidence": "reviewed",
-      "code": [
-        "src/components/SubagentProfilesSettings.tsx",
-        "server/subagent-profiles.ts"
       ]
     },
     "§app.session-list/cleanup-org-guard": {
@@ -14789,6 +14769,198 @@
         "pi-config/extensions/model-levels/core.ts",
         "pi-config/extensions/model-levels/README.md",
         "pi-config/README.md"
+      ]
+    },
+    "§app.claude-code-provider/catalog": {
+      "kind": "behavior",
+      "requires": [
+        "§app/claude-code-provider",
+        "§app.claude-code-provider/always-on"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/claude-code/catalog.ts",
+        "pi-config/extensions/claude-code/catalog.test.ts",
+        "pi-config/extensions/claude-code/context-window.ts",
+        "pi-config/extensions/claude-code/context-window.test.ts",
+        "pi-config/extensions/claude-code/provider/index.ts",
+        "pi-config/extensions/claude-code/provider/registration.test.ts",
+        "pi-config/extensions/claude-code/index.ts",
+        "pi-config/extensions/claude-code/index.test.ts",
+        "pi-config/extensions/claude-code/policy.ts",
+        "pi-config/extensions/claude-code/policy.test.ts",
+        "pi-config/extensions/claude-code/README.md",
+        "pi-config/extensions/mode/delegate.ts",
+        "pi-config/extensions/mode/routing.ts",
+        "pi-config/extensions/subagents/team-defaults.ts",
+        "pi-config/extensions/subagents/subagent-profiles.ts",
+        "pi-config/extensions/subagents/index.ts",
+        "pi-config/extensions/topic-outline/config.ts",
+        "server/delegate.ts",
+        "server/delegate.test.ts",
+        "server/spec-settings.test.ts",
+        "server/team-defaults.test.ts",
+        "server/topic-outline-settings.ts",
+        "server/decide-settings.ts",
+        "server/session-titles-settings.ts",
+        "server/overseer-store.ts",
+        "server/projects/onboard.ts",
+        "src/lib/delegate-form.ts",
+        "src/lib/delegate-form.test.ts",
+        "src/lib/summarizer-form.ts",
+        "src/lib/summarizer-form.test.ts",
+        "src/components/WorkerSlotRow.tsx",
+        "src/components/SummarizerSettings.tsx",
+        "scripts/claude-catalog.mjs",
+        "scripts/prices-update.mjs",
+        "pi-config/extensions/mode/delegate.test.ts",
+        "pi-config/extensions/mode/routing.test.ts",
+        "pi-config/extensions/mode/spec.test.ts",
+        "pi-config/extensions/mode/spec.ts",
+        "pi-config/extensions/subagents/team-defaults.test.ts",
+        "pi-config/extensions/claude-code/provider/auto-compact.test.ts"
+      ]
+    },
+    "§app.claude-code-provider/catalog-drift": {
+      "kind": "behavior",
+      "requires": [
+        "§app.claude-code-provider/catalog"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/claude-code/catalog.ts",
+        "server/delegate.ts",
+        "server/delegate.test.ts",
+        "server/claude-models.ts",
+        "server/claude-models.test.ts",
+        "shared/protocol.ts",
+        "src/lib/delegate-form.ts",
+        "src/components/SubagentProfilesSettings.tsx"
+      ]
+    },
+    "§app.claude-code-provider/legacy-ids": {
+      "kind": "behavior",
+      "requires": [
+        "§app.claude-code-provider/catalog"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/claude-code/catalog.ts",
+        "pi-config/extensions/claude-code/catalog.test.ts",
+        "pi-config/extensions/claude-code/index.ts",
+        "pi-config/extensions/claude-code/policy.ts",
+        "pi-config/extensions/subagents/index.ts",
+        "pi-config/extensions/mode/delegate.ts",
+        "pi-config/extensions/subagents/team-defaults.ts",
+        "pi-config/extensions/topic-outline/config.ts",
+        "server/harness/pi/open.ts",
+        "server/chat-model.test.ts",
+        "server/web-defaults.ts",
+        "server/web-defaults.test.ts",
+        "server/model-favorites.ts",
+        "server/model-favorites.test.ts",
+        "server/topic-outline-settings.ts",
+        "shared/model-prices/aliases.json",
+        "server/models.ts",
+        "server/models.test.ts",
+        "server/overseer-store.ts"
+      ]
+    },
+    "§app.claude-code-provider/model-identity": {
+      "kind": "behavior",
+      "requires": [
+        "§app.claude-code-provider/catalog",
+        "§app.claude-code-provider/model-names"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/lib/format.ts",
+        "src/components/Thread.tsx",
+        "src/components/SubagentPane.tsx",
+        "server/transcript.ts",
+        "server/harness/pi/reader.ts",
+        "shared/harness-history.ts",
+        "shared/protocol.ts",
+        "server/worker-context.ts",
+        "server/worker-context.test.ts",
+        "server/worker-restore.ts"
+      ]
+    },
+    "§app.claude-code-provider/model-names": {
+      "kind": "behavior",
+      "requires": [
+        "§app.claude-code-provider/catalog",
+        "§app.claude-code-provider/legacy-ids"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/lib/format.ts",
+        "src/lib/format.test.ts",
+        "src/components/Thread.tsx",
+        "src/components/SessionView.tsx",
+        "src/components/Sidebar.tsx",
+        "src/components/OverseerView.tsx",
+        "src/components/Composer.tsx",
+        "src/components/ComposerMenu.tsx",
+        "src/components/SubagentPane.tsx",
+        "src/components/CostsTab.tsx",
+        "src/components/SessionUsage.tsx",
+        "src/lib/explain.ts",
+        "src/lib/session-groups.ts",
+        "src/lib/subagent-editor.ts",
+        "pi-config/extensions/subagents/subagent-profiles.ts",
+        "src/components/ModelMenu.tsx",
+        "src/design/base.css"
+      ]
+    },
+    "§app.claude-code-provider/pinned-model": {
+      "kind": "behavior",
+      "requires": [
+        "§app.claude-code-provider/catalog",
+        "§app.claude-code-provider/legacy-ids"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/claude-code/transport.ts",
+        "pi-config/extensions/claude-code/transport.test.ts",
+        "pi-config/extensions/claude-code/launch-pin.test.ts",
+        "pi-config/extensions/claude-code/provider/session-bridge.ts",
+        "pi-config/extensions/claude-code/provider/bridge.test.ts",
+        "pi-config/extensions/claude-code/runner.ts",
+        "pi-config/extensions/topic-outline/summarizers/claude-cli.ts",
+        "server/decide-llm.ts",
+        "server/session-autotitle.ts"
+      ]
+    },
+    "§app.insights/usage-model-rows": {
+      "kind": "behavior",
+      "requires": [
+        "§app.insights/usage-ledger",
+        "§app.insights/cost-history",
+        "§app.subagents-pane/tabs",
+        "§app.claude-code-provider/legacy-ids",
+        "§app.claude-code-provider/model-identity"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/usage-helper/query.ts",
+        "server/usage-helper/ledger.test.ts",
+        "shared/usage/wire.ts",
+        "src/components/CostsTab.tsx",
+        "src/components/SessionUsage.tsx",
+        "src/lib/format.ts",
+        "pi-config/extensions/llm-inflight/claude-usage.ts",
+        "pi-config/extensions/llm-inflight/claude-usage.test.ts",
+        "shared/model-prices/prices.ts",
+        "server/model-prices.test.ts",
+        "server/usage-helper/ledger.ts"
       ]
     }
   },

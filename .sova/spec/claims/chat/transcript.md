@@ -100,7 +100,9 @@ characters, and the extra width mostly goes to code, diffs, and tool output. Eve
 ```
 
 **assistant-text.** A left-aligned surface bubble. The author is the session's model id (short
-form), or `pi` when unknown. Consecutive assistant-text items in one turn share one head: render
+form), a Claude model by its catalog name, of the model that answered when the reply records it
+(§app.claude-code-provider/model-names, §app.claude-code-provider/model-identity), or `pi` when
+unknown. Consecutive assistant-text items in one turn share one head: render
 the head only on the first.
 
 ```html

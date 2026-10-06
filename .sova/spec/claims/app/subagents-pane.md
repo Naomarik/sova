@@ -268,7 +268,7 @@ list/detail. From 1280 the column is 40vw and asks its own box, so it's side by 
       <span class="subagent-row-meta meta-line">
         <span>claude code</span>
         <span class="meta-line-sep" aria-hidden="true">·</span>
-        <span class="text-mono meta-line-shrink" title="anthropic/claude-opus-5[1m]">opus-5 1M</span>
+        <span class="text-mono meta-line-shrink" title="claude-opus-5-5">Opus 5.5</span>
         <span class="meta-line-sep" aria-hidden="true">·</span>
         <span class="text-mono" title="18.4k in · 5.3k out · 242k cache read · 32.1k cache write · $0.41">23.7k</span>
       </span>
@@ -292,11 +292,13 @@ list/detail. From 1280 the column is 40vw and asks its own box, so it's side by 
   that has, the model is the one fact already known from elsewhere, and a provider that clipped
   would be the least useful half of `zai · glm-5.3`. A worker whose provider can't be derived shows
   none: the pane never guesses one. Separators are `.meta-line-sep` dots, `aria-hidden`.
-- **Model ids are shortened for display**: no provider, no dated build, a dotted version, and the
-  context variant spelled out — `anthropic/claude-haiku-4-5-20251001` → `haiku-4.5`,
-  `claude-opus-5[1m]` → `opus-5 1M`. An id that matches none of that is left as it is
-  (`gpt-5-mini`). The **full id is the `title`**, here and in the transcript view's head, so
-  nothing shortened is lost.
+- **Model ids are shortened for display**: a Claude model reads its catalog name
+  (§app.claude-code-provider/model-names) — `anthropic/claude-haiku-4-5-20251001` → `Haiku 4.5`,
+  `claude-opus-5[1m]` → `Opus 5`; any other id loses its provider and dated build and takes a
+  dotted version. An id that matches none of that is left as it is (`gpt-5-mini`). The **full id
+  is the `title`**, here and in the transcript view's head, so nothing shortened is lost. When the
+  model that answered is another catalog model than the one asked for, ⚠ follows the name
+  (§app.claude-code-provider/model-identity).
 - **Status** is §app/insights's member table, word for word. The chip always carries the word:
 
   | Worker | Chip | Meta |
@@ -401,7 +403,7 @@ webapp never writes to it (CLAUDE.md: no file locking).
     <div class="subagents-view-name"><h3 class="subagents-view-title">designer</h3> <span class="subagents-view-wid text-mono text-muted">ag_03</span></div>
     <span class="chip chip-count" title="The modes this worker was given when it started.">spec</span>   <!-- only when it was given modes -->
     <span class="chip chip-accent chip-live"><i class="chip-dot"></i>Working</span>
-    <p class="subagents-view-meta meta-line"><span class="text-mono meta-line-shrink" title="anthropic · anthropic/claude-opus-5">opus-5</span> <span class="text-mono" title="effort medium"><span class="meta-line-sep" aria-hidden="true">·</span> medium</span> <span class="text-mono" title="18.4k in · 5.3k out · 242k cache read · 32.1k cache write · $0.41"><span class="meta-line-sep" aria-hidden="true">·</span> 23.7k tok</span> <span class="subagents-view-context"><span class="context-readout"><span class="context-compact" title="{the sentence}"><span class="context-ring" title="{the sentence}">…</span><span class="context-pct" aria-hidden="true">6%</span></span><span class="visually-hidden">{the sentence}</span></span></span></p>
+    <p class="subagents-view-meta meta-line"><span class="text-mono meta-line-shrink" title="anthropic · anthropic/claude-opus-5">Opus 5</span> <span class="text-mono" title="effort medium"><span class="meta-line-sep" aria-hidden="true">·</span> medium</span> <span class="text-mono" title="18.4k in · 5.3k out · 242k cache read · 32.1k cache write · $0.41"><span class="meta-line-sep" aria-hidden="true">·</span> 23.7k tok</span> <span class="subagents-view-context"><span class="context-readout"><span class="context-compact" title="{the sentence}"><span class="context-ring" title="{the sentence}">…</span><span class="context-pct" aria-hidden="true">6%</span></span><span class="visually-hidden">{the sentence}</span></span></span></p>
   </header>
   <section class="subagents-transcript pane" tabindex="0" aria-label="designer transcript">
     <div class="subagents-banner stack-2">…banners, or nothing…</div>
@@ -501,15 +503,14 @@ nothing before its first such reply. Never 0 for unknown. It rides the wire as
 - **Restored workers** take it from their transcript summary: the worker-transcript protocol's
   additive `lastContextTokens` (a number, or `null` when a compaction followed it), read by each
   backend's adapter over the worker's own branch or main chain.
-- **The window** is the one the worker was **spawned** with. claude-code: the claude-code
-  extension's rule, 1,000,000 for a `[1m]` alias or a model the CLI's own catalog runs natively at
-  1M (`opus`, `sonnet`, `claude-opus-5-5`, `claude-fable-5-1`, `claude-sonnet-5`, …, as the CLI's
-  own result reports), anything else 200,000 (haiku, the 4.5 and 4.6 models) — and the model is the
-  spawn model (the manifest's spec, else its last snapshot's biggest row), never the transcript's,
-  which is the bare id and would drop the `[1m]` of a model that isn't natively 1M. A live row's model already carries it; a restored or resumed one
-  names what it ran under, so the session's manifests supply it, and the row's model takes the spawn
-  model's variant too: a restored `opus[1m]` worker reads "opus-5.5 1M", like its 1M ring and head. pi: the model's catalog window,
-  and a fill takes its own reply's model's window when that differs.
+- **The window** is the one the worker was **spawned** with. claude-code: the window of its
+  catalog model (§app.claude-code-provider/catalog: 1,000,000 for a natively 1M model such as
+  `claude-opus-5-5`, `claude-sonnet-5-5` or `claude-fable-5-1`, 200,000 for Haiku 4.5 and the 4.6
+  models), an old id read as the catalog model it means and a `[1m]` id the CLI ran at 1M, else
+  200,000 for an id the catalog doesn't know — and the model is the spawn model (the manifest's
+  spec, else its last snapshot's biggest row). A restored or resumed row names what it ran under,
+  by its catalog name: a restored `opus[1m]` worker reads "Opus 5.5". pi: the model's catalog
+  window, and a fill takes its own reply's model's window when that differs.
 
 ## §app.subagents-pane/claude-code-workers — Claude Code workers
 

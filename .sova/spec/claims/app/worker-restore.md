@@ -101,8 +101,8 @@ or why it can't be resumed).
 - **One row, one label, hosted or not.** A restored team member's spend is in the Subagents row of
   the session pane's Usage tab. A restored or resumed worker is named by the model it **ran under**: its
   transcript's model, else its last snapshot's, else the model it was spawned with, and a Claude
-  worker's name keeps the context variant it was spawned with (`[1m]`, read "1M"). So a Claude
-  worker reads `haiku-4.5` running, restored and resumed alike, whether the session is hosted by
+  worker reads its catalog name (§app.claude-code-provider/model-names). So a Claude
+  worker reads `Haiku 4.5` running, restored and resumed alike, whether the session is hosted by
   this server or only read from its file. A team whose members are all
   restored is not counted as active.
 - **Transcripts stay readable.** The pane opens a restored worker's transcript from the record's

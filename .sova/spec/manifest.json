@@ -14867,7 +14867,9 @@
         "server/models.ts",
         "server/models.test.ts",
         "server/overseer-store.ts",
-        "pi-config/extensions/claude-code/index.test.ts"
+        "pi-config/extensions/claude-code/index.test.ts",
+        "pi-config/extensions/subagents/restore.test.ts",
+        "pi-config/extensions/subagents/index.test.ts"
       ]
     },
     "§app.claude-code-provider/model-identity": {

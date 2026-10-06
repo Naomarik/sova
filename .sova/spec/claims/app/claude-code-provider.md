@@ -130,10 +130,11 @@ of the alias's models; the date applies only to a record with no answer.
   summary line and the decision and title models read an old id as its catalog model, for what they
   show, check and start; the next save writes the catalog id. So an older Sova on a synced peer that
   saves an alias back changes nothing anyone sees.
-- **Typed as input, it is refused.** `agent_spawn` and `team_create` given any old id for a Claude
-  Code worker — an alias, or a `<catalog id>[1m]` form such as `claude-opus-5-5[1m]` — refuse it and
-  name the catalog id to use with its name: "opus[1m] is not a Claude model id; use
-  claude-opus-5-5 (Opus 5.5)." Only input is refused: stored ids still read through the table.
+- **Typed as input, it is resolved.** `agent_spawn` and `team_create` given any old id for a Claude
+  Code worker — an alias such as `opus`, `opus[1m]`, `sonnet` or `haiku`, or a `<catalog id>[1m]`
+  form such as `claude-opus-5-5[1m]` (or a pi worker's `claude-code-cli/` ref to one) — start the
+  worker on the catalog model the table maps it to (`claude-opus-5-5`), with no message and no
+  warning, and that catalog id is what the worker is given and what is recorded for it.
 - **History is labelled and priced by it.** A usage record or a worker whose model is an old id is
   named, grouped and priced as its catalog model.
 

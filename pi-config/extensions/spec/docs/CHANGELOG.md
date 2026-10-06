@@ -1,17 +1,28 @@
-# Changelog: the spec system on the integration branch
+# Changelog: the spec system, from a95768b7 to master 3239c26a
 
-One entry per merge into `feat/spec-integration`, oldest first, from the pinned baseline master
-`a95768b7`. Each entry gives:
-- **Merge:** the merge commit, the branch, and the branch tip it merged.
-- **§:** the § the merge changed or created, computed by `sova-spec.mjs foreign --base <first parent>
-  --head <merge>` ("+" marks a § created).
-- **Numbers:** any numbers it moved, with the scorecard that measured them (candidate @ harness).
-  [EVOLUTION.md](EVOLUTION.md) tells the story; this file is the ledger.
+One entry per change that reached master, oldest first, from the pinned baseline master `a95768b7`.
+[EVOLUTION.md](EVOLUTION.md) tells the story; this file is the ledger. Every hash here is a master
+commit, except in the "Integration → master" table and in harness data file names. The work reached
+master in two parts:
+- **Through 96ab3014.** The work branch `feat/spec-integration` up to 96ab3014 merged onto master as
+  83dd1240. Its merges and the branch tips they merged are part of master's history, so the entries
+  in "Integration history" keep those hashes.
+- **After 96ab3014.** Every later integration merge was re-applied on `feat/spec-landing`, one commit
+  each, and master fast-forwarded to it (3239c26a). Those entries cite the master commit. The
+  integration merges they came from are not on master; "Integration → master" maps them.
 
-**The master merge must be a real merge, never a squash or a rebase.** Every hash below names a
-commit that exists only on this branch. Squashing or rebasing would orphan all of them.
+Each entry gives:
+- **Merge** or **Commit:** the master commit, and the branch it brought in.
+- **§:** the § it changed or created, computed by `sova-spec.mjs foreign --base <first parent>
+  --head <commit>` ("+" marks a § created).
+- **Numbers:** any numbers it moved, with the scorecard that measured them (candidate @ harness). A
+  number marked **pre-landing** was measured on the integration branch, with the harness of the time,
+  and was not re-measured on master. Where the landing card of record (scorecard landing-3239c26a,
+  harness as at 3239c26a) measured the same thing, its figure is the current one.
 
-## 2026-10-05
+## Integration history, through 96ab3014
+
+### 2026-10-05
 
 - **M0, the yardstick.**
   - Merge: 0db6e4cc ← `feat/spec-replay` @ 56c93084.
@@ -44,7 +55,7 @@ commit that exists only on this branch. Squashing or rebasing would orphan all o
     - the agent arm reads the tree's own spec-mode text.
   - §: none.
 
-## 2026-10-06
+### 2026-10-06
 
 - **Harness fix.**
   - Merge: a03caa87 ← `feat/spec-replay` @ c8fa9c3e.
@@ -121,87 +132,135 @@ commit that exists only on this branch. Squashing or rebasing would orphan all o
   - Merge: 96ab3014 ← `feat/spec-toc` @ cc388538.
   - Changed: `read --frame` says the frame is empty when no record is core.
   - §: §tools.spec/frame text.
-- **Master into integration.**
-  - Merge: b1de66b1 ← master @ ea969499.
-  - Changed: the current product spec text before the content work. Master had no spec-tool changes
-    since a95768b7.
-  - §: product claims only:
-    - +§app.baton/strip-layout, +§chat.composer/known-on-switch;
-    - text in §app.baton/goal-and-loadout, /goal-on-strip, /links and /told;
-    - text in §app.claude-logins/switch-login, §app.outreach/send, §app.owner-page/controls and
-      §app.session-list/listing-reuse;
-    - text in §chat.composer/behavior and /disabled-states;
-    - text in §chat.mode-menu/states and /trigger;
-    - text in §chat.transcript/rendering and /states;
-    - a new child each in §app/baton and §chat/composer.
+
+## Landing on master, 2026-10-06
+
+- **Integration through 96ab3014.**
+  - Merge: 83dd1240 ← `feat/spec-integration` @ 96ab3014, onto master d0bee4d3. 96ab3014 is the work
+    branch just before it merged pre-scrub master; it carries none of the commits the scrub removed.
+  - Changed: everything in "Integration history" above.
+  - §: +§tools.spec/agreed-promotion, +§tools.spec/contents-view, +§tools.spec/frame,
+    +§tools.spec/graph-payload, +§tools.spec/near-impact, +§tools.spec/record-fields,
+    +§tools.spec/single-read, +§tools.spec/span-promotion, +§tools.spec/spec-map,
+    +§tools.spec/where-lookup; §tools.spec/context-packets text; §tools/spec text.
 - **Field-only promotion rule.**
-  - Merge: 3c41e48b ← `feat/spec-span-promotion` @ 0a36b781.
+  - Commit: 56d0609b ← `feat/spec-span-promotion`.
   - Changed: an `embeds`/`about`/`core`-only record change lands on doc-only evidence.
   - §: +§tools.spec/field-promotion.
-  - Numbers: field-only doc-only 0 → 1 (368f408a @ 49f66d1a).
+  - Numbers: field-only doc-only 0 → 1 (pre-landing). Landing card: the h target is 1.
 - **Harness update.**
-  - Merge: 51883b8b ← `feat/spec-replay` @ 49f66d1a.
+  - Commit: 3facc0b6 ← `feat/spec-replay`.
   - Changed:
     - field-only rule rows;
     - a copy-deck pull row;
-    - the baseline re-recorded on b1de66b1.
+    - the M6 rows' baseline recorded on the spec of the time (the harness data file
+      `g-baseline-b1de66b1.json`).
   - §: none.
 - **Harness update.**
-  - Merge: a3bb64ab ← `feat/spec-replay` @ 64323c6c.
+  - Commit: 792b2578 ← `feat/spec-replay`.
   - Changed:
     - the M6 measurement: per-arm specs, anchored needs, a moved-answer guard, frame and copy-deck rows,
       and the what-sheet;
     - named refusal codes.
   - §: none.
 - **M2, the spec-mode reading path.**
-  - Merge: 63a00591 ← `feat/spec-mode-text` @ 1d574a1b.
+  - Commit: 604ff3fb ← `feat/spec-mode-text`.
   - Changed:
     - `spec-mode.md` reads by `map`/`where` → `toc` → `impact --near` → `read`, with `--no-frame` after
       the first read;
     - the worker brief, the census note and USAGE.md follow;
     - the docs agree with the tools.
   - §: +§tools.spec/mode-reading; §tools.spec/context-packets text; §tools/spec text.
-  - Numbers, agent arm on all 24, run 1 / run 2:
+  - Numbers, agent arm on all 24, run 1 / run 2 (pre-landing; not re-measured on master):
     - pull answered 96 / 97.5, agent packet 90 / 89.5;
     - bytes median 98,626 / 107,852.5 against 134,459 / 156,301.
+  - **Post-landing agent arm on master 3239c26a: pending (referee-5).**
 - **DRAFTS.md summary.**
-  - Merge: afb105f2 ← `feat/spec-span-promotion` @ bf36cade.
+  - Commit: 9b4a7042 ← `feat/spec-span-promotion`.
   - Changed: the three doc-only routes in the summary.
   - §: none.
 - **M2 field-only doc batch.**
-  - Merge: 0d019e32 ← `feat/spec-mode-text` @ 5ab6b792.
+  - Commit: 28065b1d ← `feat/spec-mode-text`.
   - Changed:
     - spec-mode names the `embeds`/`about`/`core`-only doc-only case;
     - a test checks the guide's doc-only cases against the draft tool.
   - §: §tools.spec/mode-reading text and record.
 - **D43 docs batch.**
-  - Merge: 4d239376 ← `feat/spec-mode-text` @ 685eb43e.
+  - Commit: 14d1aa6e ← `feat/spec-mode-text`.
   - Changed:
     - the acceptance playbook's rows match the tools;
     - the spec review playbook reads with toc, then read;
     - the docs agree with the tools.
   - §: §tools.spec/review-playbook text and record.
 - **Field-promotion wording.**
-  - Merge: ded67a56 ← `feat/spec-span-promotion` @ addc9796.
+  - Commit: c7b55e1d ← `feat/spec-span-promotion`.
   - Changed: `embeds`/`core`-only takes doc-only; `about` belongs on notes; an agreed record that maps
     code is refused.
   - §: §tools.spec/field-promotion text.
 - **TEST-PLAYBOOK CORE-BUD-5.**
-  - Merge: e55553cb ← `feat/spec-mode-text` @ b4490ade.
+  - Commit: adbcb194 ← `feat/spec-mode-text`.
   - Changed: the row checks page bytes and refuses out-of-range budgets.
   - §: none.
 - **Map: rule A.**
-  - Merge: 31719760 ← `feat/spec-map` @ 2414e554.
+  - Commit: 558a816a ← `feat/spec-map`.
   - Changed: packet carries the `about` notes of every claim it delivers; toc why fixes; the core's
     usage text lists every command.
-  - §: §tools.spec/contents-view, §tools.spec/context-packets and §tools.spec/record-fields.
+  - §: §tools.spec/contents-view text and record, §tools.spec/context-packets text and record,
+    §tools.spec/record-fields text.
 - **M6 slice 1, spec content.**
-  - Merge: 9d74f690 ← `feat/spec-content` @ 888e9a2a.
+  - Commit: f9069bbb ← `feat/spec-content`.
   - Changed: code lists, `about` links, ledes and whats, the frame with voice, and fixes.
-  - §: 73 product § changed and +§chat.model-menu/favorites (`foreign --base 31719760 --head 9d74f690`).
-  - Note: this merge broke the real-spec packet acceptance test (packet prose count 428 against scope's
-    417) because rule A carried M6's 11 `about` notes. Neither branch failed alone. See EVOLUTION.md,
-    "Lessons".
+  - §: 73 product § changed and +§chat.model-menu/favorites.
+  - Note: with rule A, this broke the real-spec check in `packet-acceptance.test.mjs` (428 against
+    417 when first merged). That equality was only the old test's assertion: no claim promised it. Rule
+    A carried M6's `about` notes into packet. 85f4e788 fixed the test. See EVOLUTION.md, "Lessons".
+- **R1 and the seam fix.**
+  - Commit: 85f4e788 ← `feat/spec-map`.
+  - Changed:
+    - `toc --dir down` lists the notes about an H1's H2s;
+    - `packet-acceptance.test.mjs` expects scope's passages plus the `about` notes of the claims packet
+      delivers.
+  - §: §tools.spec/contents-view text, §tools.spec/record-fields text.
+- **Harness update.**
+  - Commit: 3239c26a ← `feat/spec-replay`.
+  - Changed:
+    - the about-growth guard;
+    - the blind rubric runner;
+    - the C23:0 family-rule test;
+    - the D49 copy-deck needs;
+    - per-arm spec grading;
+    - R1 rows.
+  - §: none.
+  - Numbers: the landing card of record (landing-3239c26a, harness as at 3239c26a), against a95768b7:
+    - packet answered 93.5 → 99.5 / 138 on master's own spec, unchanged at 93.5 on the pinned spec;
+    - C23 0.5 → 2.5/6: C23 2.5/6 (41.7%): meets the plan's 2.5/6 benchmark (42% was that number
+      rounded);
+    - the frame 4,526 B in 5 passages (cap 12,000);
+    - pull shown one hop out 110 / 138 (floor 106);
+    - copy-deck needs (D49) 4/5 in packet and 4/5 in pull: not met.
+  - **Final comparison of master against a95768b7 (rubric and agent arm): pending (referee-5).**
+
+## Integration → master
+
+The integration merges after 96ab3014 and the master commits that re-applied them. The integration
+hashes are not on master; they are listed only to map old references.
+
+| Integration merge | Master commit | What |
+|---|---|---|
+| b1de66b1 | none | pre-scrub master into integration; master already has its own changes |
+| 3c41e48b | 56d0609b | field-only promotion rule |
+| 51883b8b | 3facc0b6 | harness update |
+| a3bb64ab | 792b2578 | harness update |
+| 63a00591 | 604ff3fb | M2 |
+| afb105f2 | 9b4a7042 | DRAFTS.md summary |
+| 0d019e32 | 28065b1d | M2 field-only doc batch |
+| 4d239376 | 14d1aa6e | D43 docs batch |
+| ded67a56 | c7b55e1d | field-promotion wording |
+| e55553cb | adbcb194 | TEST-PLAYBOOK CORE-BUD-5 |
+| 31719760 | 558a816a | map rule A |
+| 9d74f690 | f9069bbb | M6 slice 1 |
+| c8b27686 | 85f4e788 | R1 and the seam fix |
+| 30175581 | 3239c26a | harness update |
 
 ## UPGRADING another project
 

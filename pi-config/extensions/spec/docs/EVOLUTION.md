@@ -1,12 +1,20 @@
 # How the spec system changed: from push to pull
 
-**Status: draft.** It is finished after the final comparison of the whole integration branch against
-the baseline. Until then, the "Open" section is live and the last milestones are marked unmerged.
+**Status: landed on master 3239c26a; the final comparison is still to run.** Its results go where
+this file says **pending (referee-5)**. Until then, those places hold no numbers.
 
-Every hash here is a commit on the integration branch (`feat/spec-integration`) or on the branch a
-milestone was built on. "Scorecard" means the replay harness's output for one candidate tree against
-the pinned baseline, named by the candidate commit and the harness commit that scored it. Need ids
-(`C01:0`) are comparison:need in the harness's data.
+Every hash here is a master commit, except that "the b1de66b1 record" names a harness data file
+(`g-baseline-b1de66b1.json`, the M6 rows' baseline), not a commit. Work up to 96ab3014 reached master as one merge (83dd1240), so its
+merges, branch tips and scorecard candidates are in master's history. Later work was re-applied one
+commit per merge on a landing branch, so it is cited by its master commit; the
+[CHANGELOG](CHANGELOG.md) maps the old integration merges to them. A number marked **pre-landing** was
+measured on the work branch with the harness of the time and was not re-measured on master; it carries
+no hash, because the commit it was measured on is not on master. Where the landing card of record
+(scorecard landing-3239c26a) measured the same thing, its figure is given as the current one.
+
+"Scorecard" means the replay harness's output for one candidate tree against the pinned baseline,
+named by the candidate commit and the harness commit that scored it. Need ids (`C01:0`) are
+comparison:need in the harness's data.
 
 ## Where it started: a95768b7
 
@@ -55,7 +63,8 @@ the one this work moved.
 
 ## Milestones
 
-Each row gives the merge into integration, the branch tip it merged, and what its scorecard measured.
+Up to the M1 batch, each row gives the merge into the work branch and the branch tip it merged (both
+in master's history through 83dd1240). From the field-only rule on, it gives the master commit.
 
 | Milestone | Merge (tip) | What changed | Measured (candidate @ harness) |
 |---|---|---|---|
@@ -68,10 +77,11 @@ Each row gives the merge into integration, the branch tip it merged, and what it
 | M1 fix: whole whats | 4f7f4d3f (e95409f1) | toc's "what" is the whole first sentence; a thematic break is never a what | 70d6696e @ 488b4da3: 413 of 800 whats cut mid-sentence. e95409f1 @ 1873fb86: 0 of 797. |
 | toc/read batch 2 | 8b0cb323 (f5a22d88) | in/out reach through H1s and follow embeds; unknown dependencies stay unknown; read names code files; agreed display | f5a22d88 @ 3927b08a: 0 whats cut; impact --near lines 99 → 83, frontier 19. |
 | M3 follow-up (D32) | 207c80b7 (0986e979) | near, map and graph read embeds and about edges; agreed-not-built counts; no duplicate frontier claim | Gated by the coordinator; no scorecard row moved on the pinned spec, which has no field records. |
-| Field-only promotion | 3c41e48b (0a36b781) | A change to `embeds`, `about` or `core` alone lands on doc-only evidence; bundled with any other change it is refused | 368f408a @ 49f66d1a: field-only doc-only target 0 → 1; the bundled case is refused `doc-only-bundled`. |
-| M2 spec-mode text | 63a00591 (1d574a1b) | The guide reads by `map`/`where` → `toc` → `impact --near` → `read`, with `--no-frame` after the first read; packet and scope stay for whole chains | Agent arm, all 24, both arms on the same model, text 091a5eb7, regraded at 2be5d3ab (see below). |
+| Field-only promotion | 56d0609b | A change to `embeds`, `about` or `core` alone lands on doc-only evidence; bundled with any other change it is refused | Pre-landing: field-only doc-only target 0 → 1; the bundled case is refused `doc-only-bundled`. Landing card: the h target is 1. |
+| M2 spec-mode text | 604ff3fb | The guide reads by `map`/`where` → `toc` → `impact --near` → `read`, with `--no-frame` after the first read; packet and scope stay for whole chains | Agent arm, all 24, both arms on the same model, pre-landing (see below). |
+| Rule A, M6 content, R1 | 558a816a, f9069bbb, 85f4e788 | Packet carries the notes about every claim it delivers; the product spec gains code lists, `about` links, ledes, whats and the frame; `toc --dir down` lists the notes about an H1's H2s | See "Rule A and M6 content" below. |
 
-The rest are merges of harness updates, follow-ups and docs; see [CHANGELOG.md](CHANGELOG.md).
+The rest are re-applied harness updates and docs; see [CHANGELOG.md](CHANGELOG.md).
 
 ### M2 in the agent arm
 
@@ -81,6 +91,9 @@ A headless agent answered each comparison twice per arm:
 
 The model, the budget and a neutral prompt were the same in both arms. Answers were graded by content
 read, not by route.
+
+These numbers were **measured on the integration branch before landing (harness of the time); not
+re-measured on master.** The operator accepted M2 on them.
 
 | | run 1 | run 2 | mean |
 |---|---|---|---|
@@ -102,7 +115,12 @@ read, not by route.
   - C14, C18, C20, C21, C24: +1 each.
 - **Calls.** Both arms leave the 7–18 calls band on some comparisons: pull on 7 and 10, packet on 6 and 7.
 
+**Post-landing agent arm on master 3239c26a: pending (referee-5).**
+
 ## Tried and rejected
+
+These were **measured on the integration branch before landing; never on master.** They carry no
+hashes.
 
 - **Lede-only H1s.** An H1 reached through `requires` would read as its lede only. This was never
   shipped.
@@ -118,8 +136,8 @@ read, not by route.
     went from 14,325 B (1 page, 1 passage) to 87,316 B (3 pages, 26 passages), about ×6. The hold was
     decided on that figure; on the baseline spec's prose the read was 9,370 B.
   - Not promoted.
-- **Rule B for copy-deck notes** (map, ef671fe0). Packet would also carry the notes about every claim of
-  the seed's H1 area (that H1 and its H2s), delivered or not.
+- **Rule B for copy-deck notes** (map). Packet would also carry the notes about every claim of the
+  seed's H1 area (that H1 and its H2s), delivered or not.
   - It reached 17 / 17 copy-deck sections, in packet only. Builders on `toc`/`read` saw none: pull stayed
     at 6 / 17 shown.
   - Over all 861 seeds of the M6 spec:
@@ -132,40 +150,53 @@ read, not by route.
   - On g's 24 comparisons:
     - Rule B's own cost over rule A was a median of +0 B per packet, with one comparison over +12 KB
       (C21, +27,891 B).
-    - Against the b1de66b1 record, slice 1, rule A and rule B together cost a median of +8,984.5 B, with
-      9 of the 24 over +12 KB.
-  - Measured and rejected. It was tried on rule A's branch and removed before rule A's landing head.
+    - Against the b1de66b1 record (the harness data file `g-baseline-b1de66b1.json`), slice 1, rule A
+      and rule B together cost a median of +8,984.5 B, with 9 of the 24 over +12 KB.
+  - Measured and rejected. It was tried on rule A's branch and removed before rule A landed.
 
-## Rule A and M6 content (merged late, numbers still being recorded)
+## Rule A and M6 content
 
-This section moves until the final comparison. Rule A and M6 merged after this draft began, and their
-numbers on the merged tree are recorded with it.
-
-- **Rule A for copy-deck notes** (merged as 31719760 from map @ 2414e554: rule A, toc fixes and the
-  core's usage text). Packet adds the notes about any claim it delivers (the whole closure). Before rule A, it
-  carried only the notes about the requested claim, its H1 and the surfaces it embeds (M5).
-  - Scored on its first head (fb460779) on the M6 candidate spec:
+- **Rule A for copy-deck notes** (558a816a: rule A, toc fixes and the core's usage text). Packet adds
+  the notes about any claim it delivers (the whole closure). Before rule A, it carried only the notes
+  about the requested claim, its H1 and the surfaces it embeds (M5).
+  - Pre-landing, on its first head, on the M6 candidate spec:
     - copy-deck sections 6 → 8 / 17 in packet;
     - pull unchanged at 6 / 17 shown;
     - packet median 84,169 → 89,538.5 B;
     - the median about-bytes guard holds.
-- **M6 content** (merged as 9d74f690 from the content branch @ 888e9a2a). It was first promoted at
-  6e858a97; the merged head adds the frame and voice records and follow-ups.
-  - These are the records: H1 ledes, `about` notes for the copy deck, code lists.
-  - Measured on its first candidate against b1de66b1:
+- **M6 content** (f9069bbb). These are the records: H1 ledes, `about` notes for the copy deck, code
+  lists, and the frame and voice records.
+  - Pre-landing, on its first candidate against the b1de66b1 record:
     - packet answered 93.5 → 97.5;
-    - needs shown 106 → 108 (target 109, not met);
+    - needs shown 106 → 108 (target 109, not met then);
     - copy-deck sections 0 → 6 / 17 in packet;
     - "what" right on the composer surface 40% → 100%.
-  - The first proposed frame (4 core passages, 3,707 B) answered 0 of 138 needs on the slice-1 card's
-    harness (e2b64e6b).
-  - The frame-voice card (core f6dd02b4 plus voice 79adf90c, harness 0031aea8) measures:
-    - C23 1.5 → 2.5/6. C23 2.5/6 (41.7%): meets the plan's 2.5/6 benchmark (42% was that number
-      rounded).
-    - Needs answered by the frame 1 → 2.
-    - Pull shown 109 → 110.
-  - **Not yet of record.** C23:0's frame count rests on the harness's family rule (11a0d180), and that
-    rule's positive test is still pending.
+  - Pre-landing, the first proposed frame (4 core passages, 3,707 B) answered 0 of 138 needs.
+  - Pre-landing, the frame-voice card measured C23 1.5 → 2.5/6, needs answered by the frame 1 → 2, and
+    pull shown 109 → 110. Its C23:0 count rested on the harness's family rule, whose positive test was
+    then pending. That test landed in 3239c26a, and the landing card counts the frame's answers with
+    it, so the frame figures below are of record.
+- **R1** (85f4e788). `toc --dir down` lists the notes about an H1's H2s.
+- **Current figures, landing card of record** (landing-3239c26a; candidate 3239c26a, harness as at
+  3239c26a). Master's tools on the b1de66b1 record's spec against master's own spec:
+
+  | | b1de66b1 record's spec | master 3239c26a's spec | target |
+  |---|---|---|---|
+  | guards | 17 ok | 17 ok, 0 failed | |
+  | packet answered | 93.5 / 138 | 99.5 / 138 | never drops ✓ |
+  | C23 | 0.5/6 | 2.5/6 (41.7%) | 2.5/6 ✓ |
+  | frame | 0 B | 4,526 B in 5 passages; answers 2 needs (C23:0, C23:2) | ≤ 12,000 ✓ |
+  | pull shown one hop out (floor 106) | 106 | 110 | ≥ 109 ✓ |
+  | copy-deck needs (D49), packet / pull / both | 0/5, 2/5, 0/5 | 4/5, 4/5, 4/5 | 5/5, not met |
+  | copy-deck sections (information), packet / pull | 0/17, 2/17 | 8/17, 8/17 | information |
+  | about-bytes median increase | 0 | +5,589 B; max +31,846 B (C01) | ≤ 12,000 ✓ |
+  | what right, composer / sandbox | 40% / 66.7% | 90% measured / 100% | ≥ 90% ✓ |
+
+  C23 2.5/6 (41.7%): meets the plan's 2.5/6 benchmark (42% was that number rounded). Against
+  a95768b7 on master's own spec, the landing card measures packet answered 93.5 → 99.5 / 138 and the
+  packet median 79,737.5 → 91,611.5 B. On the pinned a95768b7 spec, packet answered is unchanged at
+  93.5: the gain is M6's content with rule A, not the tools. On the composer's "what right", one stale
+  what (§chat.composer/known-on-switch) was hand-graded right, which makes it 100%.
 - **The copy-deck target (D49).** The original target was ≥ 14 / 17 copy-deck sections. It was **not
   met: 8 / 17**.
   - It was replaced by a needs-based target, because a section count can be satisfied by listing names
@@ -173,31 +204,40 @@ numbers on the merged tree are recorded with it.
   - The new target names the copy-deck needs in g by id: C07:3, C10:2, C21:2, C24:3, and any need whose
     verdict passage is a copy-deck section.
   - Each must be answered by packet and shown one hop out by pull, with none lost in either arm.
+  - It is **not met: 4 / 5 in packet and 4 / 5 in pull.** C23:4, "the shared state vocabulary" in
+    §design.copy-deck/main-pane, is neither answered nor shown. A fix through `about` notes on the main
+    pane was proposed and dropped by the operator (D55), so it stays 4 / 5.
   - The 17-section count stays as information.
 
 ## Lessons
 
-- **A seam only a trial merge shows.** Rule A (2414e554) and M6 (888e9a2a) each passed their tests
-  alone. Merged into integration (9d74f690), `packet-acceptance.test.mjs`'s real-spec check failed:
-  packet's prose count must equal scope's passage count, and it was 428 against 417. Rule A carried
-  M6's 11 real `about` notes, which neither branch had alongside the other.
+- **A seam only a trial merge shows.** Rule A and M6 each passed their tests alone. Merged together
+  on the work branch, `packet-acceptance.test.mjs`'s real-spec check failed: it asserted that packet's
+  prose count equals scope's passage count, and it was 428 against 417. That equality was only the old
+  test's assertion; no claim promised it. Rule A carried M6's 11 real `about` notes into packet, as
+  rule A intends, and neither branch had had both. 85f4e788 fixed the test: it expects scope's
+  passages plus the `about` notes of the claims packet delivers.
   - The gate rule since (D51): a ready-to-merge report requires a trial merge of the current
     integration head plus every other head landing in the same batch, in landing order, with both test
     globs run on that tree.
+- **Never merge master into a long-lived work branch.** The work branch merged master once, mid-work,
+  to take the current product spec. A later scrub rewrote master's history and removed commits that
+  merge had carried in. From then on, the work branch and every branch that had merged it held
+  commits master no longer had, so none of them could ever merge to master. The fix was to re-apply
+  each later merge, one commit each, on a fresh landing branch cut from the scrubbed master, and
+  fast-forward master to it. Master goes into the landing branch only, never into a work branch.
+- **Run the full suite with TMPDIR outside any git repository.** Tests that create their own git
+  repositories under TMPDIR, run with TMPDIR inside a git worktree, wrote commits and branches into
+  the real repository. The spec and replay test globs are not affected; the full Sova suite is.
 
 ## Open
 
-- **Copy deck.** The original ≥ 14 / 17 sections target was not met (8 / 17) and was replaced by the
-  needs-based target above (D49). Whether that one is met is recorded on the merged tree.
+- **The final comparison.** Master against a95768b7, with the rubric and the agent arm: **pending
+  (referee-5).**
 - **Three needs packet answers that toc never shows one hop out.** C01:0 is the frame around the tab,
   and C01:4 is the tab's address; both are in the `§app/shell` lede. C01:2 is "Stop ends the turn", in
-  `§chat.composer/behavior`. Neither agent arm read them.
-- **The frame.** The frame-voice card's gain (above) is not of record until the family rule's positive
-  test lands. Its cost is paid on every first read.
-- **The field-only doc-only wording.** The two exceptions, an agreed record that maps code and `about`
-  on a behavior, are stated in DRAFTS.md and §tools.spec/field-promotion (merged as ded67a56
-  from addc9796) and mirrored in USAGE.md, the spec READMEs and the acceptance playbook on
-  feat/spec-mode-text, not yet merged.
+  `§chat.composer/behavior`. Neither pre-landing agent arm read them. Their state on master: **pending
+  (referee-5).**
+- **The frame's cost.** It is paid on every first read: 4,526 B on master's spec.
 - **The census-read guard.** "Every `census --changed` claim read" is not measured: the agent arm makes
   no edits.
-- **The final comparison.** The whole integration branch against a95768b7 is still to run.

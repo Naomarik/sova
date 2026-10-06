@@ -14285,6 +14285,181 @@
         "server/session-summary-chat.test.ts",
         "server/claude-login-state.ts"
       ]
+    },
+    "§tools.spec/span-promotion": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/promotion-integrity"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+        "pi-config/extensions/spec/tests/draft-span.test.mjs",
+        "pi-config/extensions/spec/DRAFTS.md",
+        "pi-config/extensions/spec/PROMOTE.md",
+        "pi-config/extensions/spec/README.md"
+      ]
+    },
+    "§tools.spec/contents-view": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/context-packets",
+        "§tools.spec/inspection-safety"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/toc.mjs",
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/tests/toc.test.mjs",
+        "pi-config/extensions/spec/core/README.md",
+        "pi-config/extensions/spec/README.md"
+      ]
+    },
+    "§tools.spec/single-read": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/contents-view",
+        "§tools.spec/context-packets"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/read.mjs",
+        "pi-config/extensions/spec/core/toc.mjs",
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/tests/toc.test.mjs",
+        "pi-config/extensions/spec/core/README.md"
+      ]
+    },
+    "§tools.spec/frame": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/record-fields",
+        "§tools.spec/context-packets",
+        "§tools.spec/single-read"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/fields.mjs",
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/core/packet.mjs",
+        "pi-config/extensions/spec/core/read.mjs",
+        "pi-config/extensions/spec/tests/frame.test.mjs",
+        "pi-config/extensions/spec/core/toc.mjs",
+        "pi-config/extensions/spec/core/README.md"
+      ]
+    },
+    "§tools.spec/record-fields": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/context-packets",
+        "§tools.spec/contents-view",
+        "§tools.spec/single-read"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/fields.mjs",
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/core/toc.mjs",
+        "pi-config/extensions/spec/core/read.mjs",
+        "pi-config/extensions/spec/tests/frame.test.mjs",
+        "pi-config/extensions/spec/core/packet.mjs",
+        "pi-config/extensions/spec/core/README.md",
+        "pi-config/extensions/spec/README.md"
+      ]
+    },
+    "§tools.spec/graph-payload": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/contents-view",
+        "§tools.spec/record-fields",
+        "§tools.spec/agreed-promotion"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/core/graph.mjs",
+        "pi-config/extensions/spec/tests/map-fixture.mjs",
+        "pi-config/extensions/spec/core/README.md",
+        "pi-config/extensions/spec/tests/map.test.mjs",
+        "pi-config/extensions/spec/README.md",
+        "pi-config/extensions/spec/tests/map-fields.test.mjs"
+      ]
+    },
+    "§tools.spec/near-impact": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/contents-view",
+        "§tools.spec/record-fields"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/core/graph.mjs",
+        "pi-config/extensions/spec/tests/map-fixture.mjs",
+        "pi-config/extensions/spec/core/README.md",
+        "pi-config/extensions/spec/tests/map.test.mjs",
+        "pi-config/extensions/spec/tests/map-fields.test.mjs"
+      ]
+    },
+    "§tools.spec/spec-map": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/contents-view",
+        "§tools.spec/where-lookup",
+        "§tools.spec/record-fields",
+        "§tools.spec/agreed-promotion"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/map.mjs",
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/core/graph.mjs",
+        "pi-config/extensions/spec/tests/map-fixture.mjs",
+        "pi-config/extensions/spec/core/README.md",
+        "pi-config/extensions/spec/tests/map.test.mjs",
+        "pi-config/extensions/spec/README.md",
+        "pi-config/extensions/spec/tests/map-fields.test.mjs"
+      ]
+    },
+    "§tools.spec/where-lookup": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/contents-view",
+        "§tools.spec/inspection-safety"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/where.mjs",
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/core/graph.mjs",
+        "pi-config/extensions/spec/tests/map-fixture.mjs",
+        "pi-config/extensions/spec/core/README.md",
+        "pi-config/extensions/spec/tests/where.test.mjs",
+        "pi-config/extensions/spec/README.md"
+      ]
+    },
+    "§tools.spec/agreed-promotion": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "requires": [
+        "§tools.spec/promotion-integrity"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+        "pi-config/extensions/spec/tests/agreed.test.mjs",
+        "pi-config/extensions/spec/DRAFTS.md",
+        "pi-config/extensions/spec/PROMOTE.md"
+      ],
+      "evidence": "verified"
     }
   },
   "boundary": {

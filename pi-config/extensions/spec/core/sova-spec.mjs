@@ -10,6 +10,12 @@ import { createHash } from "node:crypto";
 import { join, resolve, dirname, relative, posix } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PACKET_PARTS, PACKET_HELP, packetBudget, packetError, packetOrder, packetPage, serializePacket } from "./packet.mjs";
+import { tocMain, pullCommand } from "./toc.mjs";
+import { readMain } from "./read.mjs";
+import { fieldShape, checkFields, frameOf, frameFinding, aboutNotes } from "./fields.mjs";
+import { lookCommand, graphMain, nearMain } from "./graph.mjs";
+import { mapMain } from "./map.mjs";
+import { whereMain } from "./where.mjs";
 
 const ID_SRC = String.raw`§[a-z][a-z-]*(?:\.[a-z][a-z-]*)?/[a-z][a-z-]*`;
 const ID_RE = new RegExp(`^${ID_SRC}$`);
@@ -67,7 +73,7 @@ function parseArgs(argv) {
       const budget = packetBudget(o.budget);
       if (budget === null) o.usage = "packet --budget takes an integer from 1024 to 32768";
       else o.budget = budget;
-    } else if (cmd !== "scope") o.usage = "--budget applies to scope and packet only";
+    } else if (cmd !== "scope") o.usage = "--budget applies to scope, packet, toc, read, map, where, impact --near and graph only";
     else if (!/^\d+$/.test(o.budget) || !Number.isSafeInteger(Number(o.budget))) o.usage = "--budget takes a non-negative integer byte count";
     else o.budget = Number(o.budget);
   }
@@ -249,6 +255,7 @@ function validateRecords(ctx) {
     if (rec.kind === "surface" && idToFile(id, dirKinds).level !== 1) bad("kind-mismatch", "a surface must be an H1 identifier", id);
     idList(rec, "requires", id);
     idList(rec, "members", id);
+    fieldShape(rec, id, bad, ID_RE);
     if (rec.members !== undefined && rec.kind !== "section") bad("record-invalid", "only sections have members", id);
     if (rec.code !== undefined && !(Array.isArray(rec.code) && rec.code.every((c) => typeof c === "string")))
       bad("record-invalid", "code must be an array of path strings", id);
@@ -444,6 +451,7 @@ function scope(ctx, seed, budget) {
       addFrontier({ id, reason: "requires-uninvestigated" });
     }
     for (const r of [...(rec.requires ?? [])].sort()) edge(r, { reason: "requires", of: id });
+    for (const e of [...(rec.embeds ?? [])].sort()) edge(e, { reason: "embeds", of: id });
   };
   visit(seed, { reason: "requested" });
   let list = [...passages.values()];
@@ -483,7 +491,7 @@ function containersOf(ctx, ids) {
 // Reverse requires index: target → the ids that require it.
 function reverseOf(ctx) {
   const rev = new Map();
-  for (const [id, r] of ctx.claims) for (const t of r.requires ?? []) rev.set(t, [...(rev.get(t) ?? []), id]);
+  for (const [id, r] of ctx.claims) for (const t of [...(r.requires ?? []), ...(r.embeds ?? [])]) if (!(rev.get(t) ?? []).includes(id)) rev.set(t, [...(rev.get(t) ?? []), id]);
   return rev;
 }
 
@@ -527,6 +535,7 @@ function check(ctx) {
     }
     provenance(ctx, id);
   }
+  checkFields(ctx, add);
   const code = codeUnion(ctx, [...ctx.claims.keys()]);
   const kinds = {}, labels = { authority: {}, evidence: {}, unlabeled: 0 };
   for (const r of ctx.claims.values()) {
@@ -686,7 +695,7 @@ function relatedOf(ctx, hits, related, own = () => false) {
     if (rec.kind === "behavior" && rec.requires === undefined)
       add("note", "touched-uninvestigated", `${id} is touched and has no requires key: dependencies not investigated`, { id });
     if (cur.has(id))
-      add("note", "touched-foreign", `${id} is foreign (the task didn't create it) and ${files.get(id).join(", ")} changed: read it with scope; flag it if a user sees a change there, even one your new claim describes; a gap it already had never flags, even one you now rely on`, { id });
+      add("note", "touched-foreign", `${id} is foreign (the task didn't create it) and ${files.get(id).join(", ")} changed: read it with read '${id}'; flag it if a user sees a change there, even one your new claim describes; a gap it already had never flags, even one you now rely on`, { id });
     return { id, kind: rec.kind, ...labelsOf(rec), created: !cur.has(id), file: d?.file, lines: d?.lines, files: files.get(id),
       requires: rec.requires ?? null, consumers: consumersOf(ctx, rev, id).map((c) => ({ id: c.id, depth: c.depth })) };
   });
@@ -1112,11 +1121,35 @@ function packetMain(opt) {
   if (opt.alias) add("note", "id-alias", `${opt.alias} is not a § identifier; read as ${opt.id} (did you mean ${opt.id}?)`, { id: opt.id });
   const result = scope(ctx, opt.id);
   const passages = packetOrder(ctx, opt.id, result.passages, parentOf);
+  // Notes about the seed, its H1 and the surfaces it embeds travel with it, after the closure.
+  const parent = parentOf(opt.id, ctx.dirKinds);
+  for (const { id, target } of aboutNotes(ctx, [opt.id, ...(parent ? [parent] : []), ...(ctx.claims.get(opt.id).embeds ?? [])])) {
+    const known = passages.find((p) => p.id === id), reason = { reason: "about", of: target };
+    if (known) { if (!known.reasons.some((r) => r.reason === "about")) known.reasons.push(reason); continue; }
+    const d = ctx.decls.get(id), rec = ctx.claims.get(id);
+    const p = { id, kind: rec.kind, ...labelsOf(rec), file: d.file, lines: d.lines, reasons: [reason], text: d.text, provenance: provenance(ctx, id) };
+    passages.push(p); result.passages.push(p);
+  }
+  const frame = frameOf(ctx);
+  frameFinding(frame, add);
   return write(packetPage({ identity: { root, spec: opt.spec, id: opt.id, readPolicy: reviewPolicy ? "review" : "default" },
-    inputs: packetInputs, result, findings, passages, part: opt.part, cursor: opt.cursor, budget }));
+    inputs: packetInputs, result, findings, passages, part: opt.part, cursor: opt.cursor, budget, frame }));
 }
 
+// The pull commands (toc, read) live in their own modules and reach the graph only through the core's own loader.
+const pullCore = () => ({ findSpec, load, specDir, parentOf, exitOf, findings: () => findings, DEFAULT_SPEC, codeState: (root, p) => safePath(root, p).state });
+// The look commands (map, where, graph, impact --near) also read one source file, through the core's refusal rules.
+const lookCore = () => ({ ...pullCore(), readSource: (root, rel) => readInput(root, rel) });
+
 function main(argv) {
+  const pull = pullCommand(argv);
+  if (pull?.command === "toc") return tocMain(pull.rest, pullCore());
+  if (pull?.command === "read") return readMain(pull.rest, pullCore());
+  const look = lookCommand(argv);
+  if (look?.command === "map") return mapMain(look.rest, lookCore());
+  if (look?.command === "where") return whereMain(look.rest, lookCore());
+  if (look?.command === "graph") return graphMain(look.rest, lookCore());
+  if (look?.command === "impact-near") return nearMain(look.rest, lookCore());
   const opt = parseArgs(argv);
   packetInvocation = argv[0] === "packet" || opt.pos[0] === "packet";
   reviewPolicy = opt["read-policy"] === "review"; assessmentPolicy = false;

@@ -91,7 +91,8 @@ The machine can't tell which label is correct.
      `--snapshot` is refused in a Git project. A project root that an enclosing repository ignores
      and doesn't track, such as a home-directory dotfiles repo, counts as having no Git.
    - **No Git**: `--snapshot`. The exact input bytes are kept under `evidence/objects/`.
-   - `--doc-only` is accepted only for `note` and `section` kinds, which carry no implementation.
+   - `--doc-only` is accepted only for `note` and `section` kinds, which carry no implementation,
+     and for an agreed behavior or surface that is not built yet (see "Agreed, not built" below).
    - `--verification TEXT` says what was run or checked, and what it showed. `--log FILE` keeps
      a copy of a log as an object. Evidence becomes stale if that retained log is missing or its
      digest differs. Log paths may be outside the project, but every path component is checked
@@ -117,15 +118,17 @@ The machine can't tell which label is correct.
 
 Promotion takes a **three-way** view, comparing base, current and proposed for each unit. A unit
 is a claim file (compared as whole-file bytes), a manifest record (compared as canonical JSON per
-ID), or a top-level manifest key.
+ID), or a top-level manifest key. A claim file that both current and the draft changed is compared
+again **per declaration** (see "Per-declaration merge" below); only what that finds is a conflict.
 
 | Refusal (exit 1) | Meaning |
 |---|---|
 | `evidence-missing` / `evidence-stale` | A selected ID has no applicable evidence. The reasons are listed. |
-| `conflict` | Both current and the draft changed the same file or record, differently. Prose is never auto-merged. Update the draft by hand, or start a new draft. |
+| `conflict` | Both current and the draft changed the same declaration, gap or record, differently (or a file that can't be cut per declaration). The message names each one. Conflicting prose is never merged as text. Start a new draft from current. |
 | `selection-incomplete` | A promoted file also carries changes to IDs you didn't select. Files move whole. |
 | `candidate-invalid` / `candidate-dangling` | The merged candidate graph (current plus the selected units) doesn't load in the core, or gains a dangling edge that current doesn't have. |
 | `candidate-label` / `authority-missing` | A selected ID that isn't being deleted is labelled `authority: "candidate"` in the draft, or declares no `authority`. This applies to a prose-only change too. |
+| `agreed-invalid` / `agreed-rewritten` | A selected record's `agreed` is malformed or sits on a note or section, or the draft removes the `agreed` current already has, or replaces it without rewording the prose or with an earlier `at` (see "Agreed, not built"). |
 | `base-untrusted` | The draft's baseline graph doesn't load in the core (exit 2), so changes can't be attributed to IDs. Start a new draft from a fixed current. |
 | `draft-invalid` | The draft's own graph doesn't load (exit 2). Run `check NAME` and fix it. |
 | `not-changed`, `plan-changed`, `nothing-to-write`, `pending-transaction`, `lock-occupied`, `race` | These mean what they say. |
@@ -141,9 +144,58 @@ Other rules:
 - `--all` selects every change. Each ID still needs evidence.
 
 A promoted file can carry changed bytes outside every declaration span. Examples are a pre-lede
-blank line, trailing blank lines, and a CRLF-only change, since hashes use `\n`. Such a change
-is attributed to every ID in that file. The one exception is a file where some span also changed:
-there the change goes along with the changed IDs.
+blank line, trailing blank lines, and a CRLF-only change, since hashes use `\n`. For selection and
+evidence, such a change is attributed to every ID in that file. The one exception is a file where
+some span also changed: there the change goes along with the changed IDs.
+
+### Per-declaration merge
+
+When current and the draft both changed one claim file, the file is cut at the core's declaration
+spans (an H1 lede, or an H2 up to its last non-blank line) in base, current and draft, and each
+piece is merged three-way on its own:
+
+- **A declaration's span.** Changed on one side only: that side's text. Changed on both, differently:
+  `conflict`. Deleted on one side and changed on the other: `conflict`.
+- **Bytes outside every span** belong to the gap they sit in: the bytes before the lede, or the blank
+  lines after one declaration (the file's tail after the last). Each gap merges like a span; the
+  same gap changed differently on both sides is a `conflict`.
+- **New declarations** hang off the nearest declaration before them that base already had. When
+  both sides add after the same one, each side's run stays together and the run whose first ID
+  sorts first goes first, so the result is the same bytes whichever side landed first. A new
+  declaration that follows one the other side deleted is a `conflict`, and so is one ID added on
+  both sides unless both runs there are identical (then it is taken once). A declaration that ends
+  up followed by one it never preceded on any side gets a blank line before it.
+
+The merged file must read back, through the core, as exactly the declarations it was built from,
+byte for byte, or it is refused as a `conflict`. If the draft's changes already read the same in
+current, the file is `same` (nothing to write). A file whose kept declarations were reordered on
+either side, that holds a carriage return, or whose graph on any side doesn't load, isn't cut: it is
+compared as whole-file bytes, as before. The selection rule is unchanged: files move whole, so every
+ID the draft changed in a merged file is selected (`selection-incomplete` otherwise). In the
+`promote` output a merged file shows `merge: "merge"`; `status` shows the merged bytes' hash.
+
+### Agreed, not built
+
+A requirements chat can end with its promises in current before any code exists. Put
+`"agreed": {"by": "<who agreed>", "at": "<ISO date>"}` on each behavior or surface record the person
+agreed to (`at` may carry a time: `2026-10-05T14:30Z`), with `authority: "accepted"` and no `code`.
+Then `evidence --doc-only` (the `--verification` text says where it was agreed) and promote. That
+records the decision, not that it was built.
+
+- **Built** means the record has `code` and the `evidence` label `reviewed` or `verified`. So
+  `--doc-only` is refused (`doc-only-refused`) for an agreed record that maps code or carries one of
+  those labels; a record with no `agreed` at all is refused as before.
+- **It names who decided.** The build edits the same record: it adds `code` (and its label), keeps
+  `agreed` as it is, and records commit or snapshot evidence of the code. A rewording may keep
+  `agreed`; a change of meaning goes back to the person, and their new agreement replaces it, in
+  the same promotion as the reworded prose, with an `at` not earlier than the old one. Changing
+  `agreed` on unchanged prose, an earlier `at`, or removing `agreed` is refused (`agreed-rewritten`).
+  Deleting the whole record is an ordinary deletion.
+- **Shape.** `agreed` must be an object with exactly a non-empty `by` and a real date `at`, on a
+  behavior or surface; anything else is refused (`agreed-invalid`) at `evidence` and at `promote`.
+- It is a record field, not a label value: the core ignores record fields it doesn't know, while an
+  unknown `authority` or `evidence` value makes it refuse the manifest (exit 2), so cores that
+  predate `agreed` still load a manifest carrying it.
 
 ## Transaction, rollback, recovery
 
@@ -205,8 +257,9 @@ draft. Keys keep ours' order; the output is 2-space JSON, as promotion writes it
 - **No semantic verification.** The tool checks commits, ancestry, bytes and graph structure.
   Whether the code implements the prose is the recorder's claim. So is what `--verification`
   says. A hand-edited evidence entry is still held to the same byte and revision checks.
-- **Conflicts are coarse.** Two different edits to one claim file conflict, even when they touch
-  different sections. The tool doesn't rebase or merge text.
+- **Conflicts are per declaration, not per line.** Two different edits to one declaration conflict,
+  even when they touch different sentences. The tool doesn't rebase or merge text inside a span, and
+  falls back to whole-file comparison for reordered or CRLF files.
 - **The `claimsRoot` can't move** in a draft, and the tool refuses one that differs between base,
   current and draft.
 - **Promotion rewrites `manifest.json` as JSON with 2-space indentation** whenever a record or

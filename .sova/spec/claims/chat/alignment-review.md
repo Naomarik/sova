@@ -67,8 +67,9 @@ refused while any review is running or any blocker is open, with the open ones n
 same way implementing is refused while a question is open. A reviewer that can't run or fails
 leaves the entry `incomplete`, and the work continues.
 
-The change line names what a review op did: "plan review running", "diff review: 2 blocking",
-"plan review skipped", "diff b1 closed".
+The change line names what a review op did, calling the `diff` phase "implementation" (the user
+decides about the implementation; the diff is only what the reviewer reads): "plan review
+running", "implementation review: blocking", "plan review skipped", "implementation b1 closed".
 
 ## §chat.alignment-review/rules — When the session reviews
 
@@ -129,27 +130,37 @@ that finds every profile keyed writes nothing.
 
 ## §chat.alignment-review/card — On the card
 
-With the flag on, each alignment card shows one line per recorded phase in its body ("Plan review
-skipped: routine change", "Reviewing plan", "Plan reviewed · 1 constraint added", "Diff: NO
-BLOCKING", "Diff: 2 blocking", "Diff review incomplete: …"), and each open blocker with its id,
-title and check. On an answerable card (the chat view, align on, newest revision; never a watch,
+With the flag on, each alignment card shows one line per recorded phase in its body, its phase as a
+chip ("Plan" or "Implementation"; `diff` stays the phase's id in the op, the record and the
+message): "Plan review skipped: routine change", "Reviewing the plan", "Plan reviewed · 1
+constraint added", "Plan review: 2 blocking", "Plan review incomplete: …", and for the diff phase
+"Reviewing the implementation", "Implementation review: no blocking issues", "Implementation
+review: 2 blocking" ("Implementation review: 2 blocking (1 open)" once some are closed),
+"Implementation review skipped: …", "Implementation review incomplete: …". Each open blocker
+shows with its id, title and check. The extension's own lines (the TUI's result card and
+markdown) use the same words. On an answerable card (the chat view, align on, newest revision; never a watch,
 an Overseer or an older revision) the foot also shows while every question is answered and while
 implementing, not only while a question is open:
 
-- **Review Plan** while the alignment is aligning or confirmed, **Review Diff** while implementing
-  (and after done when the diff review was skipped), each only while its phase is missing or
-  skipped. A click sends one ordinary message naming the alignment and the phase, as Go With
-  Recommendations does, blocked the same way. Once a phase ran, its verdict line shows in place of
-  its button; no button grants a second round.
+- **Review Plan** while the alignment is aligning or confirmed, **Review Implementation**
+  while implementing (and after done when the implementation review was skipped), each only while
+  its phase is missing or skipped. A click sends one ordinary message naming the alignment and the
+  phase ("al_3: run the adversarial implementation review now (align review, phase diff), whatever
+  the rule says."), as Go With Recommendations does, blocked the same way. Once a phase ran, its
+  verdict line shows in place of its button; no button grants a second round.
 - While the plan review runs, the card shows only its header and one status line, led by the live
   dot: "Plan review in progress — the alignment may change; it shows once the review finishes.",
   with the reviewer's model beside it when recorded. The summary, approach, questions with their
   options, the folded sections and the whole foot stay hidden until the review records its
   verdict, because the review may still change any of them.
 - With no reviewer set for the chat's profile, the button is disabled with that reason.
+- Under a review button, one line says what a review is: "An independent reviewer reads it and
+  reports problems. It can't change code or run anything." It shows only with the button, so never
+  with the flag off.
 
 ## §chat.alignment-review/tui — In the TUI
 
-With the flag on, `/review plan|diff [al_N]` sends the same message the card's button sends (the
-open alignment when it is the only one), and the TUI's result card and markdown show the record's
-lines. With the flag off, `/review` is not registered.
+With the flag on, `/review plan|implementation [al_N]` sends the same message the card's button
+sends (the open alignment when it is the only one); `implementation` and `diff` both name the
+`diff` phase, and its completions offer `plan` and `implementation`. The TUI's result card and
+markdown show the record's lines, each open blocker as "implementation b1 open: …". With the flag off, `/review` is not registered.

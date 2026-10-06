@@ -331,7 +331,7 @@ an `align` call: it is the message, not its working.
   `accept` of exactly those questions, and each option ("2b": q2's option b) and typed answer as a
   `decide`.
 - **Go With Recommendations.** The card's foot has one button (secondary, `button-sm`; with
-  adversarial review switched on, also Review Plan or Review Diff, §chat.alignment-review/card), with the
+  adversarial review switched on, also Review Plan or Review Implementation, §chat.alignment-review/card), with the
   hint "Or pick some answers and type the rest below." beside it. It sends only its own message:
   `{al_N}: go with your recommendations for every open question, and go ahead.` — which the agent
   reads as `accept_all` then status `implementing`. It is `aria-disabled`, with the reason as its

@@ -11,7 +11,7 @@ const runs: R[] = fs
   .readdirSync(dir)
   .filter((f) => f.endsWith(".json"))
   .map((f) => JSON.parse(fs.readFileSync(path.join(dir, f), "utf8")) as R);
-const ORDER = ["idle", "steady", "x10", "x100", "burst", "rollover", "catchup"];
+const ORDER = ["idle", "steady", "x10", "x100", "burst", "rollover", "catchup", "quick"];
 runs.sort((a, b) => ORDER.indexOf(a.scenario) - ORDER.indexOf(b.scenario) || a.helper.localeCompare(b.helper));
 
 const q = (r: R, k: string) => r.load?.queryMs?.[k];
@@ -31,10 +31,10 @@ for (const r of runs) {
   const f = (k: string) => (c[k] ? `${c[k].first} / ${c[k].p50}` : "–");
   lines.push(`| ${r.scenario} | ${r.helper} | ${f("costs:7d")} | ${f("costs:30d")} | ${f("costs:all")} | ${f("today")} | ${f("session")} |`);
 }
-lines.push("", "Memory over time (RSS MB; slope fitted after each phase's first 10 s; series = every 5th second):", "", "| scenario | helper | phase | s | slope MB/min | min–max MB | CPU % | verdict | series |", "|---|---|---|---|---|---|---|---|---|");
+lines.push("", "Memory over time (RSS MB; slope and climb fitted after each phase's first 20 s; series = every 5th second):", "", "| scenario | helper | phase | s | slope MB/min | climb MB | min–max MB | CPU % | verdict | series |", "|---|---|---|---|---|---|---|---|---|---|");
 for (const r of runs) {
   for (const [name, p] of Object.entries(r.memory ?? {}) as [string, R][]) {
-    lines.push(`| ${r.scenario} | ${r.helper} | ${name} | ${p.seconds} | ${p.slopeMbMin} | ${p.minMb}–${p.maxMb} | ${p.cpuPct} | ${p.verdict ?? ""} | ${p.series.join(" ")} |`);
+    lines.push(`| ${r.scenario} | ${r.helper} | ${name} | ${p.seconds} | ${p.slopeMbMin} | ${p.climbMb ?? ""} | ${p.minMb}–${p.maxMb} | ${p.cpuPct} | ${p.verdict ?? ""} | ${p.series.join(" ")} |`);
   }
 }
 process.stdout.write(`${lines.join("\n")}\n`);

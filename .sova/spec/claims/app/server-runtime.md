@@ -72,3 +72,24 @@ fixes the bug.
 - **The unit suite runs on Bun** through `pnpm test` (§app.server-runtime/choice). Each test file runs in its own
   process with a throwaway home set in the environment before Bun starts. The test preload refuses
   to run where `os.homedir()` doesn't follow the HOME it set.
+
+## §app.server-runtime/test-repo-fence — Tests never reach a repository they didn't create
+
+A test may commit, branch or add worktrees only in a repository it made itself. A plain folder a
+test makes in its temp dir stays plain: Git never finds an enclosing repository from it, so a
+project registered there is that folder, not the checkout around it.
+
+- **The runner refuses a temp dir inside a repository.** `pnpm test` (`scripts/run-tests.mjs`, on
+  either runtime) exits 2 before running anything when the folder its temp roots go in (`TMPDIR`
+  on Bun, `/tmp` on Node) is inside a Git work tree or Git directory, with one line naming that
+  repository and the fix: a `TMPDIR` outside every repository.
+- **Discovery stops at the temp root.** Every test process (`pnpm test`'s and each extension
+  runner's, through the shared preload) has `GIT_CEILING_DIRECTORIES` set to its temp dir and the
+  folder above it, and none of the variables that point Git at a repository (`GIT_DIR`,
+  `GIT_WORK_TREE`, `GIT_INDEX_FILE`, `GIT_COMMON_DIR`, `GIT_OBJECT_DIRECTORY`,
+  `GIT_ALTERNATE_OBJECT_DIRECTORIES`, `GIT_NAMESPACE`, `GIT_PREFIX`), so Git started from a test's
+  temp folder never looks above it, whatever `TMPDIR` the run inherited.
+- **A suite test proves both** against a scratch repository with a linked worktree, `TMPDIR` inside
+  the worktree: the runner's refusal, given the files that once leaked, leaves the repository's
+  refs, worktrees and files as they were; and a folder made under the preload's temp root
+  registers as itself, not as the repository's main checkout.

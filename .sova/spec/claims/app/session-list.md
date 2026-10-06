@@ -612,10 +612,11 @@ label a person reads says "sessions pane".
     full list of carriers is tone, form and word, motion, `title`, `aria-label`, and the row
     link's hidden suffix.
 - **Worker count.** `.session-rail-item.session-rail-count`, under the state, only when
-  `live?.workers?.working ≥ 1`: a tabular `--fs-micro` figure and an 11px `worker` icon in
-  `--color-ink-muted`, 16px tall, no pill and no border — it is an aggregate, not a state, and it
-  must not read as a second status. `aria-label` and `title` both "{n} subagents working now". `.session-rail-count-live` pulses **the icon only**, never the figure: a moving
-  numeral can't be read. Still at most **one** moving thing per row, so the count pulses only on
+  `live?.workers?.working ≥ 1`: a bare tabular `--fs-micro` figure in `--color-ink-muted`, with
+  no icon, 16px tall, no pill and no border — it is an aggregate, not a state, and it
+  must not read as a second status. `aria-label` and `title` both "{n} subagents working now".
+  `.session-rail-count-live` pulses **the figure** (`.text-num`), on the same `live-pulse` as
+  every other pulse. Still at most **one** moving thing per row, so the count pulses only on
   rows without Busy, and a Busy row's count sits still. Alone in the rail, the count centres on
   the title's first line like the TUI chip; under a state it takes `−--space-1` of margin, which
   cancels the rail's gap, so it tucks up against the state.
@@ -2278,9 +2279,9 @@ for this one chip**, at the user's request: the scale bottoms out at `--fs-micro
 token below it would be a system-wide claim rather than a local one; the button's `aria-label`
 and `title` carry the meaning, not the glyph size. The count is
 borderless, 16px tall, `--font-mono` `--fs-micro` tabular in `--color-ink-muted`
-(`--color-ink` on hover), with an 11px `worker` icon; as the rail's first item it takes the TUI
+(`--color-ink` on hover), a bare figure with no icon; as the rail's first item it takes the TUI
 chip's `margin-top`, and after a state `margin-top: −--space-1`. `live-pulse` runs on the Busy
-dot and on `.session-rail-count-live .icon`, nothing else in the row; the folder head's
+dot and on `.session-rail-count-live .text-num`, nothing else in the row; the folder head's
 `.session-group-active` (`--status-info`, inline-flex, `flex: none`) pulses the same
 `.session-rail-dot`.
 
@@ -2434,7 +2435,8 @@ A change a caller makes through this server is never missed that way. Any reques
 read (a REST call that is not `GET` or `HEAD`, a peer's included, before it runs and again when it
 answers), any message a chat socket sends, every write this server makes to a session file, a
 hosted chat's turn starting or settling and each of its tool calls ending (the Overseer's tools
-write in process), and every write to the stores a row reads (archived, titles, seen and the open
+write in process), a chat being opened by this server and a held chat's model, thinking level or
+mode changing (its row carries the held chat's `chat` state), and every write to the stores a row reads (archived, titles, seen and the open
 panes, drafts, groups, tags, attention signals, Sova's own sessions, the Decisions settings, the
 organizations registry, the Overseer's and project overseers' state, kept preview links) start the
 next listing afresh: no caller joins or reuses a list built before them. So a caller that archives,

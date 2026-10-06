@@ -27,7 +27,6 @@
 // server imported (PORT=0) so the Overseer and the baton are wired. ~/.pi is never read or written.
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 import type { ChatClientMessage } from "../../../shared/protocol";
@@ -41,7 +40,8 @@ const REPO = resolve(import.meta.dirname, "../../..");
 const GOLDEN = join(import.meta.dirname, "golden/session");
 const RECORD = process.env.SOVA_GOLDEN_RECORD;
 
-const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-session-golden-")));
+// A fixed base, not tmpdir(): the goldens' token estimate counts this path's length, so it must not move with TMPDIR.
+const root = realpathSync(mkdtempSync("/tmp/sova-session-golden-"));
 process.on("exit", () => rmSync(root, { recursive: true, force: true }));
 const agentDir = join(root, "agent");
 process.env.PI_CODING_AGENT_DIR = agentDir;

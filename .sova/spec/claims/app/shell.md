@@ -56,10 +56,13 @@ unfolded (≥768)                                  folded (<768)
   its own `.spine*` classes.
 - **Dialogs** follow the skill's modal pattern and become a bottom sheet under 768px
   automatically (`.modal` restyles itself).
-- **Toasts** go in one `.toast-stack` portal. Use them only for "Copied path." / "Copied output."
-  A toast is never the only record of a fact, so errors go in banners. One exception is the
-  remote extension's connection notices (below): the chips hold the fact, so the toast is just the
-  event.
+- **Toasts** go in one `.toast-stack` portal. A toast carries a transient event: the confirmation
+  of an action ("Copied path.", "Deleted {n} sessions."), the failure of an action you just took and
+  what it left ("Couldn't open that session. …", "Couldn't delete sessions. Some may be gone; the
+  list is refreshed."), or, on touch, the sentence of a status you tapped, which a pointer gets as its
+  `title`. A toast is never the only record of a lasting state: a lasting error (a lost connection,
+  a session that can't load) goes in the sticky banner. So the remote extension's connection
+  notices (below) may toast: the chips hold the lasting fact, and the toast is just the event.
 
 ## §app.shell/viewport — The shell fills the visible viewport
 

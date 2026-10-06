@@ -975,7 +975,7 @@ test("census --related --spec: a touched § the draft didn't create is created:f
   assert.equal(rest.length, 0, "the created § gets no note");
   assert.equal(n.severity, "note");
   assert.equal(n.id, "§core/net");
-  assert.match(n.message, /§core\/net is foreign .*app\.txt changed: read it with scope; flag it if a user sees a change there, even one your new claim describes/);
+  assert.match(n.message, /§core\/net is foreign .*app\.txt changed: read it with read '§core\/net'; flag it if a user sees a change there, even one your new claim describes/);
   assert.equal(j.exit, 0, "notes never change the exit");
 });
 

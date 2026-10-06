@@ -1,5 +1,5 @@
 import { archivedDropToast, orgProjectOf } from "../lib/drag-archive";
-import { batch, createEffect, createMemo, createResource, createSignal, For, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js";
+import { batch, createEffect, createMemo, createResource, createSignal, For, Match, on, onCleanup, Show, Switch, untrack, type JSX } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
 import type {
@@ -56,6 +56,7 @@ import { ensureModelPolicy, modelEnabled, modelPolicy } from "../lib/model-polic
 import { HOST_MOVE_GRACE_MS, hostOf, mayBeHostMove, meshOn, recheckHost, sessionHrefOn, sessionViewKey } from "../lib/mesh";
 import { cachedTranscript, cacheItems, cacheSpot, keptOlder, transcripts } from "../lib/transcript-cache";
 import { inputsPending, knownInputs, knownWorkers, workersShown } from "../lib/known-before-mount";
+import { composerSeen, knownComposer, listFetchedAt, rememberComposer, sameKnown } from "../lib/composer-known";
 import { openFailureView } from "../lib/open-failure";
 import {
   closeRemoteStatus,
@@ -93,7 +94,7 @@ import {
 } from "../lib/ui-state";
 import { usePaneAnnounce, usePaneId, usePaneScope } from "../lib/pane-scope";
 import { visibleCount } from "../lib/hidden-rows";
-import { isChangeRow, isProfileRow } from "../lib/change-rows";
+import { isChangeRow, isProfileRow, isLoginNoteRow } from "../lib/change-rows";
 import { ProfilePicker } from "./ProfilePicker";
 import { playbookTurnText } from "../../shared/playbooks";
 import type { RewindControl, RewindResult } from "../lib/inputs";
@@ -279,7 +280,24 @@ export function ChatView(props: {
   );
   /** Whether the running turn is this tab's: only then does a navigate result move this tab. */
   const owner = createTurnOwner((id) => sentHere(props.path, id));
-  const [live, setLive] = createStore<LiveState>(emptyLive());
+  /** The composer's model, thinking level, mode and running state before the socket says each
+      (lib/composer-known): the newer of the list's row and this tab's last visit. Gated on the
+      values, so a list refresh that changes none of them re-runs nothing. */
+  const known = createMemo(
+    () => {
+      const row = props.summary?.();
+      return knownComposer(composerSeen(cacheKey), row, listFetchedAt(row));
+    },
+    undefined,
+    { equals: sameKnown },
+  );
+  // A turn known to run shows as one from the first frame (Steer, Stop, the status row); until the
+  // hello the known value follows the list, and the hello then replaces the whole state.
+  const [live, setLive] = createStore<LiveState>({ ...emptyLive(), running: untrack(known).running });
+  createEffect(() => {
+    const running = known().running;
+    if (!untrack(helloed)) setLive("running", running);
+  });
   /** This run's align results, in call order (§chat.alignment/chip counts them before the run settles). */
   const liveAligns = createMemo(() =>
     Object.values(live.tools)
@@ -394,12 +412,23 @@ export function ChatView(props: {
   /** Run Playbook sent the message box's text: the composer empties (§chat.profiles/playbook). */
   const [taken, setTaken] = createSignal<{ at: number } | null>(null);
   const [everOpened, setEverOpened] = createSignal(false);
-  const [model, setModel] = createSignal<string | null>(null);
+  /** The model this visit's socket said (hello, "model"); undefined until it has. */
+  const [saidModel, setModel] = createSignal<string | null | undefined>(undefined);
+  /** The model shown: the socket's once it has said, else the known one (lib/composer-known). */
+  const model = (): string | null => {
+    const said = saidModel();
+    return said !== undefined ? said : known().model;
+  };
   const [pendingModel, setPendingModel] = createSignal<string | null>(null);
   const [modelError, setModelError] = createSignal<{ target: string; from: string | null; body: string | { noCredentials: string } } | null>(null);
   /** The session's thinking level (WS "thinking"; seeded by hello). The server is the authority:
-      it clamps to the model's ladder, and re-sends after every model switch. */
-  const [thinking, setThinking] = createSignal<string | null>(null);
+      it clamps to the model's ladder, and re-sends after every model switch. Undefined until it has
+      said; `thinking` shows the known level until then. */
+  const [saidThinking, setThinking] = createSignal<string | null | undefined>(undefined);
+  const thinking = (): string | null => {
+    const said = saidThinking();
+    return said !== undefined ? said : known().thinking;
+  };
   /** Level asked for, until the echo. A refusal ends it and leaves the level as it was. */
   const [pendingThinking, setPendingThinking] = createSignal<string | null>(null);
   const [thinkingError, setThinkingError] = createSignal<{ target: string; from: string | null; body: string } | null>(null);
@@ -412,17 +441,48 @@ export function ChatView(props: {
 
   /** This session's slash commands (sent after hello, and again after a runtime reload). */
   const [commands, setCommands] = createSignal<SlashCommand[]>([]);
-  /** The global mode and how it applies to this chat (WS "mode"). */
-  const [modeState, setModeState] = createSignal<ModeState | null>(null);
-  /** This chat's sandbox (WS "sandbox"), null while its runtime has no sandbox extension. */
-  const [sandbox, setSandboxState] = createSignal<SandboxInfo | null>(null);
+  /** This chat's mode and how a switch applies to it, as the socket said (WS "mode"). */
+  const [saidMode, setModeState] = createSignal<ModeState | null>(null);
+  /** The mode the foot shows: the socket's, else the known one, which may carry no `applies`. */
+  const modeState = (): ModeState | null => saidMode() ?? known().mode;
+  /** This chat's sandbox as this visit's socket said it (WS "sandbox"; null: the `commands` list
+      has no /sandbox, so no extension); undefined until it has. A hello leaves it as it was. */
+  const [saidSandbox, setSandboxState] = createSignal<SandboxInfo | null | undefined>(undefined);
+  /** The sandbox the shield shows: the socket's once it has said, else the known one. */
+  const sandbox = createMemo((): SandboxInfo | null => {
+    const said = saidSandbox();
+    return said !== undefined ? said : known().sandbox;
+  });
   /** The socket's `profile` message (§chat.profiles/applying); null until one arrives. */
   const [profileInfo, setProfileInfo] = createSignal<ChatProfileInfo | null>(null);
   /** A One at a time race at Send (§chat.profiles/singleton): the session that has it. */
   const [profileRace, setProfileRace] = createSignal<{ label: string; running: { id: string; path: string; title: string } } | null>(null);
   const [sandboxPending, setSandboxPending] = createSignal<SandboxState | null>(null);
-  /** This chat's Claude login (WS "claude_login"), null until told or when the host can't name one. */
-  const [claudeLogin, setClaudeLogin] = createSignal<ChatClaudeLogin | null>(null);
+  /** This chat's Claude login as this visit's socket said it (WS "claude_login"; null: none to
+      show); undefined until it has. A hello leaves it as it was. */
+  const [saidLogin, setClaudeLogin] = createSignal<ChatClaudeLogin | null | undefined>(undefined);
+  /** The login shown: the socket's once it has said, else the known one (with no waiting pick). */
+  const claudeLogin = createMemo(
+    (): ChatClaudeLogin | null => {
+      const said = saidLogin();
+      return said !== undefined ? said : known().login;
+    },
+    null,
+    { equals: (a, b) => a === b || JSON.stringify(a) === JSON.stringify(b) },
+  );
+  /** An older server or peer sends no "claude_login" after a hello on a device with one login: the
+      known login then gives way to none this long after the hello's burst went quiet: each message
+      that arrives meanwhile restarts the wait, so a slow link can't end it mid-burst. */
+  const LOGIN_UNSAID_MS = 2000;
+  let loginUnsaid: ReturnType<typeof setTimeout> | undefined;
+  const awaitLogin = () => {
+    clearTimeout(loginUnsaid);
+    loginUnsaid = setTimeout(() => {
+      loginUnsaid = undefined;
+      setClaudeLogin(null);
+    }, LOGIN_UNSAID_MS);
+  };
+  onCleanup(() => clearTimeout(loginUnsaid));
   /** Local "Ran /name args" rows; `tui` marks one that asked for a UI Sova can't show, `note` one
       that was refused (a /compact), whose row then says why instead of "Ran". */
   const [commandRows, setCommandRows] = createSignal<{ label: string; tui: boolean; note?: string }[]>([]);
@@ -610,6 +670,7 @@ export function ChatView(props: {
       if (isReconnect) setDialogs([]);
     },
     onMessage(msg) {
+      if (loginUnsaid !== undefined && msg.type !== "claude_login") awaitLogin();
       switch (msg.type) {
         case "hello":
           dropNotFound();
@@ -630,10 +691,10 @@ export function ChatView(props: {
             setCompacting(!!msg.isCompacting);
           });
           setModel(msg.model);
-          setSandboxState(null); // a "sandbox" message follows when the runtime has the extension
+          // The shield and the login stay as shown until the messages after the hello settle them
+          // ("commands", "sandbox", "claude_login"), so neither blinks out and back.
           setProfileInfo(null); // a "profile" message follows for a profile or a session before its first message
-          setClaudeLogin(null); // a "claude_login" message follows when this host has several logins
-          props.onClaudeLogin?.(null);
+          awaitLogin();
           batch(() => {
             setThinking(msg.thinking);
             setPendingThinking(null);
@@ -792,6 +853,8 @@ export function ChatView(props: {
           break;
         case "commands":
           setCommands(msg.commands);
+          // No /sandbox command: no extension, and no "sandbox" message is coming.
+          if (!msg.commands.some((c) => c.source === "extension" && c.name === "sandbox")) setSandboxState(null);
           // A runtime that outlived its last socket won't report again until something happens,
           // and setStatus isn't replayed: ask it to re-publish (no ssh, no toast), once per hello.
           if (statusAsker.commands(msg.commands)) socket.send({ type: "prompt", text: REMOTE_STATUS_TEXT });
@@ -833,8 +896,9 @@ export function ChatView(props: {
           break;
         }
         case "claude_login":
+          clearTimeout(loginUnsaid);
+          loginUnsaid = undefined;
           setClaudeLogin(msg.login);
-          props.onClaudeLogin?.(msg.login);
           break;
         case "event":
           // Wire 1 or 2 alike (an older server never sends 2): in the contract's words, the entry a
@@ -1217,14 +1281,14 @@ export function ChatView(props: {
     if (baton) return baton;
     switch (socket.status()) {
       case "connecting":
-        return everOpened() ? { icon: "clock", text: "Reconnecting. Your draft is kept." } : { icon: "clock", text: "Connecting…" };
+        return everOpened() ? { icon: "clock", text: "Reconnecting. Your draft is kept." } : { icon: "clock", text: "Connecting…", soft: true };
       case "reconnecting":
         return { icon: "clock", text: "Reconnecting. Your draft is kept." };
       case "failed":
       case "closed":
         return { icon: "clock", text: "Not connected." };
     }
-    if (!listHere()) return { icon: "clock", text: "Connecting…" };
+    if (!listHere()) return { icon: "clock", text: "Connecting…", soft: true };
     if (syncing()) return { icon: "clock", text: "Saving this turn…" };
     if (pendingModel()) return { icon: "clock", text: "Switching model…" };
     // Any compaction: this chat's /compact (asked, or already running), pi's automatic one, or an
@@ -1235,9 +1299,10 @@ export function ChatView(props: {
 
   // ---- Taking recommendations from an alignment card (§chat.alignment/card) --------------
   /** The card takes ticks, option picks and its button only with align on, in a chat whose mode the user sets
-      (not the Overseer's, a project overseer's or a baton session's). */
+      (not the Overseer's, a project overseer's or a baton session's). Only the socket's own mode
+      counts: a mode known before it says (lib/composer-known) never arms answering. */
   const alignAnswerable = () =>
-    !props.overseer && !props.projectOverseer && !props.summary?.()?.baton && !props.summary?.()?.projectOverseer && !!modeState()?.minorModes.includes("align");
+    !props.overseer && !props.projectOverseer && !props.summary?.()?.baton && !props.summary?.()?.projectOverseer && !!saidMode()?.minorModes.includes("align");
   /** This session's picks that still apply: open questions of each alignment's newest revision. */
   const picks = createMemo(() => (alignAnswerable() ? prunePicks(picksOf(props.path), aligns()) : {}), {}, { equals: samePicks });
   /** Whether the composer holds typed text or an attachment: the card's button then waits. */
@@ -1459,13 +1524,27 @@ export function ChatView(props: {
   // The sidebar's Busy chip falls back to the server's `busy`, which is only as fresh as the last
   // list fetch — refresh it when a run STARTS, so the row keeps its dot after you navigate away.
   // (The settle refresh already exists.)
-  let wasRunning = false;
+  // A turn known before the socket says is no turn starting here: the seed sets `wasRunning`, and
+  // only a start this visit's socket (or a send) makes refreshes the list. setMine mirrors the
+  // known value too, so the sidebar's Busy mark doesn't drop out until the hello.
+  let wasRunning = untrack(() => live.running);
   createEffect(() => {
     const running = live.running;
     setMine(running);
-    if (running && !wasRunning) props.onStarted();
+    if (running && !wasRunning && (untrack(helloed) || !untrack(known).running)) props.onStarted();
     wasRunning = running;
   });
+
+  // What the socket says is what this tab remembers of the chat for its next visit
+  // (lib/composer-known); a value only known, never said, is not written back.
+  createEffect(() => rememberComposer(cacheKey, { model: saidModel() }));
+  createEffect(() => rememberComposer(cacheKey, { thinking: saidThinking() }));
+  createEffect(() => rememberComposer(cacheKey, { mode: saidMode() }));
+  createEffect(() => helloed() && rememberComposer(cacheKey, { running: live.running }));
+  createEffect(() => rememberComposer(cacheKey, { sandbox: saidSandbox() }));
+  createEffect(() => rememberComposer(cacheKey, { login: saidLogin() }));
+  // The usage readouts follow the login shown, known or said (§app.insights/sidebar-foot).
+  createEffect(() => props.onClaudeLogin?.(claudeLogin()));
   onCleanup(() => {
     setMine(undefined);
     setLocalWorking(props.path, undefined);
@@ -1816,13 +1895,13 @@ export function ChatView(props: {
                 )}
               </For>
               {/* Only while the thread has no rendered row. Settings-change rows (model, thinking,
-                  mode) draw nothing, so they don't count; local rows such as "Ran /cmd" still do.
+                  mode), the profile entry and a Claude login note draw nothing, so they don't count; local rows such as "Ran /cmd" still do.
                   The Overseer's also while it holds only machine notes (its model and thinking
                   rows): nothing has been said yet. */}
               <Show
                 when={
                   whole() &&
-                  (props.overseer ? list().every((it) => it.kind === "info") : list().every((it) => isChangeRow(it) || isProfileRow(it))) &&
+                  (props.overseer ? list().every((it) => it.kind === "info") : list().every((it) => isChangeRow(it) || isProfileRow(it) || isLoginNoteRow(it))) &&
                   live.entries.length === 0 &&
                   commandRows().length === 0
                 }
@@ -1885,6 +1964,7 @@ export function ChatView(props: {
         running={live.running}
         compacting={compacting()}
         stopping={live.stopping}
+        stopBlocked={socket.status() !== "open"}
         activity={live.activity ?? waitWords()}
         detail={runDetail(live)}
         workersWorking={workersWorking()}

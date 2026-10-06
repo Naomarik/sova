@@ -1,7 +1,21 @@
 # §chat/composer — Composer
 > Part of the Sova design spec · [overview](../design/overview.md)
 
+The composer is the form pinned to the foot of a chat where you write its next message, with Send,
+Steer and Stop beside the textarea and the model indicator and mode switch in the foot below it.
+
+Owns: its markup, the textarea's keys and placeholder, sending, steering and stopping, drafts, the
+disabled reasons, the `plus` flyout that holds the panels, the sandbox shield, the @ menu's folder read,
+and what the foot shows from a switch's first frame. Not here: the mode menu (§chat/mode-menu), the
+model picker (§chat/model-menu), the slash menu (§chat/slash-commands), attaching images
+(§chat.images/composer-attachments), dictation (§chat/voice), staged alignment answers
+(§chat.alignment/card), the Overseer's Quick Actions (§app.overseer/quick-actions), and a
+workspace's group composer (§workspace/groups).
+
 ## §chat.composer/anatomy — Anatomy
+
+The composer is one `<footer>` form holding the run status, staged answers, dictation strip and
+pending attachments, then the input row (mic, `plus` trigger, textarea, Send, Stop), then the foot.
 
 ```html
 <footer class="composer" data-drop="active|reject (only while dragging over it)">
@@ -119,6 +133,9 @@ button in flow and drops the rest (the disabled reason stays for assistive techn
 
 ## §chat.composer/behavior — Behavior
 
+How the textarea grows, which keys send, what Send, Steer and Stop do, where focus goes, how drafts
+are kept, and what the foot and its model indicator show.
+
 - **Auto-grow.** The textarea grows from 1 line (44px) up to `--composer-max` (40vh), then
   scrolls. `field-sizing: content` handles it in Chromium. As a fallback, on input set
   `style.height = "auto"` and then `style.height = scrollHeight + "px"`.
@@ -159,7 +176,8 @@ button in flow and drops the rest (the disabled reason stays for assistive techn
   accidental stops. While a dictation is recording, `Esc` cancels the recording and nothing else
   (§chat.voice/states).
 - **After Stop.** The status reads "Stopping…" until the turn settles. Then the run status
-  disappears, and an info row says "Stopped by you at `14:08`."
+  disappears, and an info row says "Stopped by you at `1:43 PM`." (the transcript's stamp: a
+  12-hour clock, with the date in front on another day).
 - **Focus.** Returns to the textarea after Send, Steer, or Stop. The mic never moves focus: its
   press keeps the textarea's focus and selection, and dictated text lands at the caret
   (§chat.voice/insertion) as part of the draft.
@@ -186,7 +204,7 @@ button in flow and drops the rest (the disabled reason stays for assistive techn
   on its **model panel**, anchored above itself, which holds exactly those two controls (§chat/images).
   The thinking
   segment is omitted when the model's ladder has one level or none, exactly as the flyout's group
-  is. While a switch is pending it shows the **target** with a `.live-dot`, the model's and the
+  is; until the model catalog brings that ladder, a known level other than "off" shows. While a switch is pending it shows the **target** with a `.live-dot`, the model's and the
   level's each before their own value; with no model yet it reads "Choose model". The full
   `provider/id` is in `title`. It carries `aria-haspopup="menu"`,
   `aria-controls="composer-flyout"` and an `aria-expanded` that is true only while the flyout is
@@ -198,14 +216,16 @@ button in flow and drops the rest (the disabled reason stays for assistive techn
 
 ## §chat.composer/disabled-states — Disabled states
 
-The reason goes in `.composer-reason` and the control is disabled. The reason is one line, per
+While the composer can't send (the session is open in a TUI, the socket is connecting or dropped,
+or a model switch is pending), the reason goes in `.composer-reason` and the control is disabled.
+The reason is one line, per
 the skill's copy ladder.
 
 | Condition | Textarea | Buttons | Reason (with icon) |
 |---|---|---|---|
 | Session is live in a TUI | `disabled` | Send hidden | `attention` — "Read only while this session is open in the TUI." |
-| Chat socket connecting (first connect) | enabled (typing is fine) | Send `aria-disabled` | `clock` — "Connecting…" |
-| Chat socket dropped | enabled | Send `aria-disabled` | `clock` — "Reconnecting. Your draft is kept." |
+| Chat socket connecting (first connect) | enabled (typing is fine) | Send and Stop `aria-disabled` | `clock` — "Connecting…" |
+| Chat socket dropped | enabled | Send and Stop `aria-disabled` | `clock` — "Reconnecting. Your draft is kept." |
 | Model switch pending (§chat/model-menu) | enabled | Send `aria-disabled` until `{type:"model"}` or an error | `clock` — "Switching model…" |
 | Server `error` with `code:"busy"` (the session reopens read only) | `disabled` | Send hidden | `attention` — "Read only while this session is open in the TUI." |
 
@@ -213,6 +233,11 @@ The mic (§chat.voice/button) follows the textarea, not Send: it is hidden when 
 in a TUI, and works in every other row above, because dictating is typing. On its own it is
 `aria-disabled` only where the browser can't record (not a secure context, or no microphone API),
 with that reason in its `title` rather than in `.composer-reason`.
+
+The first connect's "Connecting…" reason (the socket's first connect, or the session's list not
+here yet) fades in after a short delay, about 300 ms, so a quick switch never flashes it; under
+reduced motion it appears after the same delay without the fade. "Reconnecting" and every other
+reason show at once, and the controls are disabled from the first frame either way.
 
 Send is enabled by typed text, an attachment, **or answers picked on an alignment card alone**
 (§chat.alignment/card): with picks and no text it sends just their line. With picks staged, a
@@ -414,12 +439,16 @@ same Sandbox group as the `plus` menu (§chat.composer/composer-flyout); clickin
   the runtime has no sandbox extension, and when the composer is collapsed.
 - **Source.** The server sends `{type:"sandbox", on, state, enforcement, status}` after the hello,
   after a rewind and on every `sandbox` entry, and only when the runtime has the `/sandbox`
-  command. No such message means no shield and no Sandbox group.
+  command. Until this visit's socket has said, the shield is the known one
+  (§chat.composer/known-on-switch); the `commands` list after a hello settles it: without the
+  `/sandbox` command there is no shield and no Sandbox group, and with it the `sandbox` message
+  does.
 - **Transcript.** Sova's transcript renders the `sandbox` entry as nothing: the shield and the
   toast are the web's only sandbox signals.
 
 ## §chat.composer/tokens — Tokens
 
+The tokens the composer's ground, textarea, Send, Stop, reason and model indicator are drawn with.
 Composer ground is `--color-surface` with a top border in `--color-border`, and padding
 `--space-3` / `--space-4` plus `env(safe-area-inset-bottom)`. The textarea uses `.input`: 44px
 min, `--r-md`, `--color-border-strong` border, and an accent focus border. Its block padding is what's
@@ -441,6 +470,9 @@ menu keeps its own 360px cap.
 
 ## §chat.composer/accessibility — Accessibility
 
+The composer has a real label, measured contrast, a named mic button and a Stop that reads as the
+smaller, secondary action.
+
 - **Label.** The textarea has a real (visually hidden) `<label>`. The placeholder is never the
   label.
 - **Contrast.** On-accent on accent (Send) is 5.61 (dark) and 6.81 (light). The control border
@@ -458,6 +490,9 @@ menu keeps its own 360px cap.
 
 ## §chat.composer/file-index-deadline — The @ menu's folder read has a time limit
 
+Reading the folder for the @ menu has a 6-second budget, and a read that runs out answers as too slow
+or as a partial list, never as a whole or empty one.
+
 The @ menu lists the session folder's files from `GET /api/files?cwd=…` (`server/files.ts`). One
 request spends one budget of 6 seconds on every stat, git call and directory read. When the budget
 runs out:
@@ -471,3 +506,42 @@ runs out:
 Neither answer is cached. A listing is cached for 30 seconds only when it was read within the
 budget, and a read that finishes after the budget ran out never reaches the cache, so the next
 open reads the folder again.
+
+## §chat.composer/known-on-switch — Known from the first frame on a switch
+
+Opening a chat, by a switch or after a reload, shows its model and thinking level, its mode,
+whether a turn is running, its sandbox shield (§chat.composer/sandbox-shield) and its Claude login
+(§app.claude-logins/active-login) from the view's first frame, never a placeholder that a known
+value then replaces, and never a shield or login that blinks out and back. Each fact comes from the
+first of these that knows it:
+
+1. **This visit's socket**, once it has said (the hello, a `model`, `thinking`, `mode`, `sandbox`
+   or `claude_login` message, a turn's start or end). What it says wins for the rest of the visit.
+   A hello doesn't clear the shield or the login: the shield is settled by the `commands` list
+   that follows it (no `/sandbox` command: none; else the `sandbox` message), the login by the
+   `claude_login` message; from an older server or peer that sends none after a hello, the
+   remembered login stays until about 2 seconds pass with no further message, then none shows.
+2. **The newer of two remembered sources**: the session list's row and what this tab last saw of
+   the session. The tab remembers each chat's model, thinking level, mode, running state, sandbox
+   and Claude login in memory only (gone on reload), updated whenever its socket says one; a
+   sandbox or login the socket said there is none of is remembered too, as known none. A
+   remembered login carries no waiting pick (the pick lives in the server's memory; the row's own
+   login says it). A remembered value written after the list was last fetched wins; otherwise the
+   list's row does. The row carries the model, whether a turn is running (`busy`, or its activity
+   reads working) and, for a chat this server holds open, the chat's own model, thinking level and
+   mode, and, once its socket messages have been built, its sandbox and Claude login as they said
+   them, null for none (`SessionSummary.chat`, read from memory with no file reads). That field is
+   absent for a chat the server doesn't hold, and from older servers and peers, and its sandbox and
+   login are absent until known; the composer then goes by the rest alone.
+
+The placeholders ("Choose model", "Mode") show only when none of them knows. A known thinking level
+shows before the model catalog has brought the model's ladder, unless it is "off" (a one-level
+ladder's only level), so it doesn't pop in with the catalog; once the ladder is known the model
+indicator's rule for omitting the segment applies. A remembered mode
+says nothing about when a switch applies: until the socket's `mode` message the trigger makes no
+"applies after this turn" promise and the menu shows neither the mid-turn nor the can't-switch
+banner. A remembered running turn shows as one (Steer, Stop, the run status, and the sidebar's
+Busy mark stays on), but until the socket is open Send and Stop are both `aria-disabled` with the
+"Connecting…" reason, so nothing goes into a closed socket, and it counts as no turn starting (no
+list refresh). Answering an alignment card, "Switching model…" and the other pending states still
+wait for the socket's own word.

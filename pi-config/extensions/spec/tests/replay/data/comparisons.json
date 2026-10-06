@@ -1,0 +1,1572 @@
+{
+ "about": "Scenario g: the 24 needs comparisons, Sova side only. Each need is a fact an agent editing the seed surface must have; probe is a regex for where the pinned spec states it; verdict is a hand reading that corrects a probe hit (at = claims-relative file:line in the pinned spec; partial counts 0.5).",
+ "source": "spec-slice research, 2026-10-05: comparisons.mjs (sv probes) and verdicts.mjs (sv verdicts), measured against master at the pinned revision",
+ "pinned": {
+  "rev": "a95768b79d9cb7dedf3d32f00b4f6724d483334b",
+  "path": ".sova/spec"
+ },
+ "comparisons": [
+  {
+   "id": "C01",
+   "kind": "screen",
+   "title": "The chat tab (main pane)",
+   "seed": "§chat/transcript",
+   "needs": [
+    {
+     "cat": "around",
+     "need": "The frame around the tab (shell, panes, header)",
+     "probe": {
+      "source": "^# §app\\/shell",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "around",
+     "need": "Where a question the agent asks sits in the stream",
+     "probe": {
+      "source": "^# §app\\/extension-dialogs",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "guard",
+     "need": "Stop ends the turn, never the session",
+     "probe": {
+      "source": "Stopped by you at",
+      "flags": ""
+     },
+     "verdict": {
+      "status": "partial",
+      "note": "only the info row 'Stopped by you at…'; that the session survives is not stated"
+     }
+    },
+    {
+     "cat": "guard",
+     "need": "Messages sent during a turn wait, in order, and go when it ends",
+     "probe": {
+      "source": "^## §chat\\.transcript\\/a-queued-message",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "names",
+     "need": "The tab's address / route",
+     "probe": {
+      "source": "#\\/s\\/|#\\/session\\/",
+      "flags": ""
+     },
+     "verdict": {
+      "status": "in",
+      "note": "the shell lede states the tab route (Routing: keep the selected session in the URL, #/s/<path>); the probe alone also matches passing #/s/ mentions such as a person page link (reviewer-3, M2 card)",
+      "at": "app/shell.md:43",
+      "anchor": {
+       "passage": "§app/shell",
+       "snippet": "Keep the selected session in the URL"
+      }
+     }
+    },
+    {
+     "cat": "shape",
+     "need": "The turn state vocabulary (working, waiting, stopped…)",
+     "probe": {
+      "source": "^## §chat\\.transcript\\/states",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "shape",
+     "need": "The stored turn / message record",
+     "probe": {
+      "source": "message_end|\"role\":|entry types?",
+      "flags": ""
+     },
+     "verdict": {
+      "status": "absent",
+      "note": "pi's session entry format is not specified; `message_end` is named in passing (chat/transcript.md:762)"
+     }
+    },
+    {
+     "cat": "stop",
+     "need": "Reasoning is not shown in the transcript",
+     "probe": {
+      "source": "thinking (blocks?|is) (hidden|collapsed|not shown)|Thinking",
+      "flags": ""
+     }
+    }
+   ]
+  },
+  {
+   "id": "C02",
+   "kind": "screen",
+   "title": "Projects",
+   "seed": "§app/projects",
+   "needs": [
+    {
+     "cat": "around",
+     "need": "Where the projects list sits in navigation",
+     "probe": {
+      "source": "sidebar's Projects region",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "guard",
+     "need": "Adding a project never happens on its own / duplicate refused",
+     "probe": {
+      "source": "is already the project",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "names",
+     "need": "Where a project comes from (GitHub, clone URL)",
+     "probe": {
+      "source": "^## §app\\.projects\\/clone",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "shape",
+     "need": "A project's states",
+     "probe": {
+      "source": "project'?s? (states|state)\\b|statechart",
+      "flags": "i"
+     },
+     "verdict": {
+      "status": "partial",
+      "note": "states exist as a statechart (app/projects.md:38) but are not listed",
+      "at": "app/projects.md:38",
+      "atFrom": "note",
+      "anchor": {
+       "passage": "§app.projects/registration",
+       "snippet": "standalone projects only, written atomically), creates its dir and starts its statechart, which"
+      }
+     }
+    },
+    {
+     "cat": "shape",
+     "need": "Where a project is recorded (stored shape)",
+     "probe": {
+      "source": "projects\\.json|\\.sova\\/project\\.json",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "stop",
+     "need": "What leaving / removing a project does not do",
+     "probe": {
+      "source": "(remove|unregister)[^.]*(never|not) (deletes?|touch)",
+      "flags": "i"
+     },
+     "verdict": {
+      "status": "absent",
+      "note": "no removal rule in §app/projects (the hit was about session groups)"
+     }
+    }
+   ]
+  },
+  {
+   "id": "C03",
+   "kind": "screen",
+   "title": "Worktrees",
+   "seed": "§chat/worktrees",
+   "needs": [
+    {
+     "cat": "around",
+     "need": "Who owns a worktree (project / session)",
+     "probe": {
+      "source": "^## §chat\\.worktrees\\/entry",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "guard",
+     "need": "Removing a worktree never loses unmerged work",
+     "probe": {
+      "source": "^## §chat\\.worktrees\\/cleanup",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "names",
+     "need": "The branch name a worktree gets",
+     "probe": {
+      "source": "branch (name|is named)|sova\\/",
+      "flags": ""
+     },
+     "verdict": {
+      "status": "partial",
+      "note": "the record holds its branch (chat/worktrees.md:21); how it is named is not stated",
+      "at": "chat/worktrees.md:21",
+      "atFrom": "note",
+      "anchor": {
+       "passage": "§chat.worktrees/entry",
+       "snippet": "Each worktree records its path, its branch, the commit it was based on, its status (`active`,"
+      }
+     }
+    },
+    {
+     "cat": "shape",
+     "need": "Worktree states (incomplete, merged, dirty…)",
+     "probe": {
+      "source": "^## §chat\\.worktrees\\/merged-state",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "shape",
+     "need": "Readiness to merge, as a computed fact",
+     "probe": {
+      "source": "^## §chat\\.worktrees\\/readiness",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "stop",
+     "need": "Preparation (install, setup) is someone else's job",
+     "probe": {
+      "source": "project-services|setup (script|task)",
+      "flags": ""
+     },
+     "verdict": {
+      "status": "absent",
+      "note": "chat/worktrees doesn't say who prepares a worktree (the hit was in overseer)"
+     }
+    }
+   ]
+  },
+  {
+   "id": "C04",
+   "kind": "screen",
+   "title": "The app frame / shell",
+   "seed": "§app/shell",
+   "needs": [
+    {
+     "cat": "around",
+     "need": "Which panes exist and how they collapse on a phone",
+     "probe": {
+      "source": "^## §app\\.shell\\/viewport|phone",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "guard",
+     "need": "One address per view (deep link / back)",
+     "probe": {
+      "source": "#\\/overview",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "names",
+     "need": "Exact pane widths / breakpoints",
+     "probe": {
+      "source": "\\b768px|320px",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "shape",
+     "need": "Layout state kept across reloads (pane width, open panes)",
+     "probe": {
+      "source": "^## §app\\.shell\\/resizing-the-sessions-pane",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "stop",
+     "need": "What the shell never renders itself",
+     "probe": {
+      "source": "never (renders|draws)|not the shell'?s",
+      "flags": "i"
+     },
+     "verdict": {
+      "status": "absent",
+      "note": "no statement of what the shell leaves to other surfaces (the hit was session groups)"
+     }
+    }
+   ]
+  },
+  {
+   "id": "C05",
+   "kind": "screen",
+   "title": "Changed files / review what changed",
+   "seed": "§chat/changes",
+   "needs": [
+    {
+     "cat": "around",
+     "need": "Where the change view opens from",
+     "probe": {
+      "source": "^## §chat\\.changes\\/entry",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "guard",
+     "need": "Changed is measured against a written-down base revision",
+     "probe": {
+      "source": "against HEAD|first parent",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "guard",
+     "need": "The explorer / viewer is read-only",
+     "probe": {
+      "source": "read-only|never (writes|edits)",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "names",
+     "need": "Unified / split, hunk keys",
+     "probe": {
+      "source": "Unified \\/ Split",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "shape",
+     "need": "The diff endpoint / data shape",
+     "probe": {
+      "source": "^## §chat\\.changes\\/endpoint",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "stop",
+     "need": "Committing is an instruction to the agent, not a button here",
+     "probe": {
+      "source": "no commit button|never commits|commit.*(agent|instruction)",
+      "flags": "i"
+     },
+     "verdict": {
+      "status": "partial",
+      "note": "read-only, never a working-tree write (chat/changes.md:4); committing is not discussed",
+      "at": "chat/changes.md:4",
+      "atFrom": "note",
+      "anchor": {
+       "passage": "§chat/changes",
+       "snippet": "Sova shows what a session changed on disk as a diff, read-only: never a working-tree write, never"
+      }
+     }
+    }
+   ]
+  },
+  {
+   "id": "C06",
+   "kind": "component",
+   "title": "Model picker",
+   "seed": "§chat/model-menu",
+   "needs": [
+    {
+     "cat": "around",
+     "need": "Where the picker opens from (composer control / shortcut)",
+     "probe": {
+      "source": "Ctrl\\+P",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "around",
+     "need": "Where the model list comes from (settings inventory)",
+     "probe": {
+      "source": "§app\\.settings-dialog\\/models|models\\.json|enabledModels",
+      "flags": ""
+     },
+     "verdict": {
+      "status": "in",
+      "at": "chat/model-menu.md:111",
+      "note": "lists only models switched on in Settings → Models",
+      "anchor": {
+       "passage": "§chat.model-menu/content-and-order",
+       "snippet": "in a muted caption, and a chevron. A provider whose models are all turned off in Settings →"
+      }
+     }
+    },
+    {
+     "cat": "guard",
+     "need": "Changing the model mid-session clears no context",
+     "probe": {
+      "source": "(keeps|clears no|doesn't clear) (the )?context|same session",
+      "flags": "i"
+     },
+     "verdict": {
+      "status": "absent",
+      "note": "the hit was a baton passage; the picker never says a change keeps the context"
+     }
+    },
+    {
+     "cat": "guard",
+     "need": "Unavailable vs ineligible are different, and why is shown",
+     "probe": {
+      "source": "^## §chat\\.model-menu\\/errors",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "names",
+     "need": "Exact labels / copy of the picker",
+     "probe": {
+      "source": "Search models",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "names",
+     "need": "The picker's own address (deep link)",
+     "probe": {
+      "source": "#\\/.*model|overlay=model",
+      "flags": ""
+     },
+     "verdict": {
+      "status": "n/a",
+      "note": "Sova's picker is a popover with no address"
+     }
+    },
+    {
+     "cat": "shape",
+     "need": "Thinking level: per model, absent when none",
+     "probe": {
+      "source": "thinking level|effort",
+      "flags": "i"
+     },
+     "verdict": {
+      "status": "partial",
+      "note": "the Thinking ladder re-renders per model (chat/model-menu.md:169); absent-vs-disabled is not stated",
+      "at": "chat/model-menu.md:169",
+      "atFrom": "note",
+      "anchor": {
+       "passage": "§chat.model-menu/states",
+       "snippet": "| **Switched** (`{type:\"model\"}` arrives) | The row shows the echoed model, and the dot is removed | The Thinking group re-renders for the new model's ladder (§chat.composer/composer-flyout) |"
+      }
+     }
+    },
+    {
+     "cat": "shape",
+     "need": "Where the session's model is stored",
+     "probe": {
+      "source": "setModel|model_change|\"model\"",
+      "flags": ""
+     },
+     "verdict": {
+      "status": "partial",
+      "note": "only the wire echo {type:\"model\"}; where a session keeps its model is not stated"
+     }
+    },
+    {
+     "cat": "stop",
+     "need": "Where the default for new sessions lives (not here)",
+     "probe": {
+      "source": "^## §chat\\.model-menu\\/saved-default",
+      "flags": ""
+     }
+    }
+   ]
+  },
+  {
+   "id": "C07",
+   "kind": "component",
+   "title": "Composer",
+   "seed": "§chat/composer",
+   "needs": [
+    {
+     "cat": "around",
+     "need": "Controls that sit on the composer (model, mode, attach)",
+     "probe": {
+      "source": "^## §chat\\.composer\\/anatomy",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "guard",
+     "need": "The composer stays live during a turn (queue / steer)",
+     "probe": {
+      "source": "Steer the current turn",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "guard",
+     "need": "A refused send keeps the text in the composer",
+     "probe": {
+      "source": "(keeps|stays in) the (composer|draft)|text (stays|is kept)",
+      "flags": "i"
+     },
+     "verdict": {
+      "status": "absent",
+      "note": "no statement that a refused send keeps the text (the hit was baton link text)"
+     }
+    },
+    {
+     "cat": "names",
+     "need": "Exact placeholder and button copy",
+     "probe": {
+      "source": "Placeholder, streaming",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "shape",
+     "need": "Disabled states and their reasons",
+     "probe": {
+      "source": "^## §chat\\.composer\\/disabled-states",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "shape",
+     "need": "The queued-message record",
+     "probe": {
+      "source": "queue(d)? (message|record)|followUp|steer\\(",
+      "flags": "i"
+     },
+     "verdict": {
+      "status": "missed",
+      "at": "chat/transcript.md:470",
+      "note": "§chat.transcript/a-queued-message, outside the composer slice",
+      "anchor": {
+       "passage": "§chat.transcript/a-queued-message",
+       "snippet": "## §chat.transcript/a-queued-message — A queued message (§chat/composer, sending)"
+      }
+     }
+    },
+    {
+     "cat": "stop",
+     "need": "Sessions start by typing, never in a dialog",
+     "probe": {
+      "source": "^# §app\\/new-session-dialog",
+      "flags": ""
+     }
+    }
+   ]
+  },
+  {
+   "id": "C08",
+   "kind": "component",
+   "title": "Session list",
+   "seed": "§app/session-list",
+   "needs": [
+    {
+     "cat": "around",
+     "need": "What reads the list (attention, notifications)",
+     "probe": {
+      "source": "§app\\/notifications|§app\\.decisions",
+      "flags": ""
+     },
+     "verdict": {
+      "status": "partial",
+      "note": "the list hosts the Needs-you region itself; nothing says what else reads it"
+     }
+    },
+    {
+     "cat": "guard",
+     "need": "Stopped-and-waiting is distinguished in the list",
+     "probe": {
+      "source": "waiting on you|Needs you|needs-you",
+      "flags": "i"
+     }
+    },
+    {
+     "cat": "names",
+     "need": "Exact row / search copy",
+     "probe": {
+      "source": "Search sessions",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "shape",
+     "need": "Row facts and their source (busy, model, title)",
+     "probe": {
+      "source": "^## §app\\.session-list\\/anatomy",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "shape",
+     "need": "The stored session document",
+     "probe": {
+      "source": "sessions\\/.*\\.jsonl|~\\/\\.pi\\/agent\\/sessions",
+      "flags": ""
+     },
+     "verdict": {
+      "status": "partial",
+      "note": "session-titles.json only; the session file itself is pi's"
+     }
+    },
+    {
+     "cat": "stop",
+     "need": "Starting a session is a composer, not this list",
+     "probe": {
+      "source": "New Session",
+      "flags": ""
+     }
+    }
+   ]
+  },
+  {
+   "id": "C09",
+   "kind": "component",
+   "title": "Fork / context operations",
+   "seed": "§chat/session-fork",
+   "needs": [
+    {
+     "cat": "around",
+     "need": "A fork appears in the list beside its source",
+     "probe": {
+      "source": "forked from|Fork of|beside its (source|parent)",
+      "flags": "i"
+     },
+     "verdict": {
+      "status": "absent",
+      "note": "the fork's place in the list is not stated"
+     }
+    },
+    {
+     "cat": "guard",
+     "need": "A fork never overwrites the source history",
+     "probe": {
+      "source": "source (session|file) (is )?(unchanged|untouched|never)|leaves the source",
+      "flags": "i"
+     },
+     "verdict": {
+      "status": "in",
+      "at": "chat/session-fork.md:10",
+      "note": "the source session is not modified, navigated, prompted or notified",
+      "anchor": {
+       "passage": "§chat.session-fork/from-reply",
+       "snippet": "selected assistant response. Later conversation and abandoned branches are excluded. The source"
+      }
+     }
+    },
+    {
+     "cat": "names",
+     "need": "Exact action label",
+     "probe": {
+      "source": "Fork (from here|Here|conversation)",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "shape",
+     "need": "What a fresh context / fork carries over",
+     "probe": {
+      "source": "^## §chat\\.session-fork\\/from-reply",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "shape",
+     "need": "The stored link to the source session",
+     "probe": {
+      "source": "parentSession|forkedFrom|parent session",
+      "flags": ""
+     },
+     "verdict": {
+      "status": "in",
+      "at": "chat/session-fork.md:16",
+      "note": "own session id and a parent-session reference",
+      "anchor": {
+       "passage": "§chat.session-fork/from-reply",
+       "snippet": "The fork has its own session id and a parent-session reference. It inherits the selected branch's"
+      }
+     }
+    },
+    {
+     "cat": "stop",
+     "need": "Compaction is a different operation",
+     "probe": {
+      "source": "compact",
+      "flags": "i"
+     },
+     "verdict": {
+      "status": "partial",
+      "note": "compaction appears only as an unsupported fork source"
+     }
+    }
+   ]
+  },
+  {
+   "id": "C10",
+   "kind": "overlay",
+   "title": "New worktree / new session dialog",
+   "seed": "§app/new-session-dialog",
+   "needs": [
+    {
+     "cat": "around",
+     "need": "Where the dialog opens from",
+     "probe": {
+      "source": "New Session",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "guard",
+     "need": "The choice is picked, never typed (no free typing)",
+     "probe": {
+      "source": "No free typing",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "names",
+     "need": "Exact dialog copy",
+     "probe": {
+      "source": "^## §design\\.copy-deck\\/new-session-dialog",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "shape",
+     "need": "What is prefilled, and when",
+     "probe": {
+      "source": "The prefill is decided",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "stop",
+     "need": "It is a panel, not a nested dialog",
+     "probe": {
+      "source": "an in-place panel, not a nested dialog",
+      "flags": ""
+     }
+    }
+   ]
+  },
+  {
+   "id": "C11",
+   "kind": "overlay",
+   "title": "A question the agent asks (typed request / ui_request)",
+   "seed": "§app/extension-dialogs",
+   "needs": [
+    {
+     "cat": "around",
+     "need": "Where it appears (in the stream, and from attention)",
+     "probe": {
+      "source": "ui_request",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "guard",
+     "need": "Nothing asks permission (or: what does)",
+     "probe": {
+      "source": "permission|approve",
+      "flags": "i"
+     },
+     "verdict": {
+      "status": "absent",
+      "note": "extension dialogs carry no permission rule (the hit was CORS)"
+     }
+    },
+    {
+     "cat": "names",
+     "need": "The request kinds and their actions",
+     "probe": {
+      "source": "select|confirm|input|editor",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "shape",
+     "need": "The request's wire / stored form",
+     "probe": {
+      "source": "ui_request|extension_ui",
+      "flags": ""
+     },
+     "verdict": {
+      "status": "partial",
+      "note": "ui_request / ui_response named; no fields beyond value:null"
+     }
+    },
+    {
+     "cat": "stop",
+     "need": "What happens when nobody answers (timeout / cancel)",
+     "probe": {
+      "source": "timeout|cancel",
+      "flags": "i"
+     },
+     "verdict": {
+      "status": "partial",
+      "note": "Esc or Cancel answers value:null; no timeout"
+     }
+    }
+   ]
+  },
+  {
+   "id": "C12",
+   "kind": "overlay",
+   "title": "Document viewer",
+   "seed": "§app/markdown-viewer",
+   "needs": [
+    {
+     "cat": "around",
+     "need": "Where it opens from, and its address",
+     "probe": {
+      "source": "#\\/|opens? from",
+      "flags": ""
+     },
+     "verdict": {
+      "status": "partial",
+      "note": "one viewer at a time, opened by callers (app/markdown-viewer.md:6); no address",
+      "at": "app/markdown-viewer.md:6",
+      "atFrom": "note",
+      "anchor": {
+       "passage": "§app/markdown-viewer",
+       "snippet": "`closeMarkdown()`. There is only ever one: a second `openMarkdown` while it is open replaces the"
+      }
+     }
+    },
+    {
+     "cat": "guard",
+     "need": "Rendered documents are sandboxed",
+     "probe": {
+      "source": "sanitiz|sandbox",
+      "flags": "i"
+     }
+    },
+    {
+     "cat": "names",
+     "need": "Exact controls and toasts",
+     "probe": {
+      "source": "Copied markdown\\.",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "shape",
+     "need": "Phone vs desktop layout",
+     "probe": {
+      "source": "Phone \\(under 768px\\)",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "stop",
+     "need": "Editing is not offered",
+     "probe": {
+      "source": "read-only|no edit",
+      "flags": "i"
+     },
+     "verdict": {
+      "status": "absent",
+      "note": "editing is not mentioned"
+     }
+    }
+   ]
+  },
+  {
+   "id": "C13",
+   "kind": "background",
+   "title": "Machines on the mesh (fleet / peers)",
+   "seed": "§mesh/peers",
+   "needs": [
+    {
+     "cat": "around",
+     "need": "How a machine joins",
+     "probe": {
+      "source": "pair|join|invite",
+      "flags": "i"
+     }
+    },
+    {
+     "cat": "guard",
+     "need": "What the mesh is trusted for (and not)",
+     "probe": {
+      "source": "^# §mesh\\/front-door|trust",
+      "flags": "i"
+     }
+    },
+    {
+     "cat": "names",
+     "need": "Health / reachability words",
+     "probe": {
+      "source": "online|offline|unreachable",
+      "flags": "i"
+     },
+     "verdict": {
+      "status": "partial",
+      "note": "'reachable' is used in resync and grants (mesh/peers.md:147); no health vocabulary",
+      "at": "mesh/peers.md:147",
+      "atFrom": "note",
+      "anchor": {
+       "passage": "§mesh.peers/health",
+       "snippet": "answers, so it counts as reachable wherever this host acts on a peer coming back up: every"
+      }
+     }
+    },
+    {
+     "cat": "shape",
+     "need": "The stored peer / node record",
+     "probe": {
+      "source": "peers\\.json",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "shape",
+     "need": "Resync / what is fetched from a peer",
+     "probe": {
+      "source": "^## §mesh\\.peers\\/resync",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "stop",
+     "need": "When the fleet is empty / off",
+     "probe": {
+      "source": "^## §mesh\\.peers\\/off",
+      "flags": ""
+     }
+    }
+   ]
+  },
+  {
+   "id": "C14",
+   "kind": "background",
+   "title": "Workers across a restart",
+   "seed": "§app/worker-restore",
+   "needs": [
+    {
+     "cat": "around",
+     "need": "What else dies with this component (roster)",
+     "probe": {
+      "source": "^## §app\\.worker-restore\\/restore",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "guard",
+     "need": "What is held across the restart",
+     "probe": {
+      "source": "keeps its id|Same worker",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "guard",
+     "need": "No automatic resume / what is lost",
+     "probe": {
+      "source": "no automatic resume",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "names",
+     "need": "The note shown on a restored worker",
+     "probe": {
+      "source": "Not running since a server restart",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "shape",
+     "need": "The stored worker record",
+     "probe": {
+      "source": "^## §app\\.worker-restore\\/worker-record",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "stop",
+     "need": "Restart budget / how long there is",
+     "probe": {
+      "source": "budget|seconds|timeout",
+      "flags": "i"
+     }
+    }
+   ]
+  },
+  {
+   "id": "C15",
+   "kind": "background",
+   "title": "Attention / notifications",
+   "seed": "§app/notifications",
+   "needs": [
+    {
+     "cat": "around",
+     "need": "Where the waiting items come from",
+     "probe": {
+      "source": "attention-signals|asks-user",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "guard",
+     "need": "A notification only on a device that opted in",
+     "probe": {
+      "source": "opted in|turn(ed)? on|subscri",
+      "flags": "i"
+     }
+    },
+    {
+     "cat": "names",
+     "need": "Exact notification text",
+     "probe": {
+      "source": "title|body",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "shape",
+     "need": "When one is sent (trigger, dedupe)",
+     "probe": {
+      "source": "^## §app\\.notifications\\/delivery",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "stop",
+     "need": "The empty state",
+     "probe": {
+      "source": "nothing|empty",
+      "flags": "i"
+     },
+     "verdict": {
+      "status": "n/a",
+      "note": "a phone notification has no empty state"
+     }
+    }
+   ]
+  },
+  {
+   "id": "C16",
+   "kind": "background",
+   "title": "Project runtime (services, cells)",
+   "seed": "§app/project-runtime",
+   "needs": [
+    {
+     "cat": "around",
+     "need": "Who starts and stops it",
+     "probe": {
+      "source": "^## §app\\.project-runtime\\/|start|stop",
+      "flags": ""
+     },
+     "verdict": {
+      "status": "partial",
+      "note": "the registry passage, not who starts and stops"
+     }
+    },
+    {
+     "cat": "guard",
+     "need": "Boundaries of what it can reach",
+     "probe": {
+      "source": "never|refus",
+      "flags": ""
+     },
+     "verdict": {
+      "status": "absent",
+      "note": "the hit was 'never stored in it'"
+     }
+    },
+    {
+     "cat": "names",
+     "need": "Lifecycle words / verbs",
+     "probe": {
+      "source": "verb",
+      "flags": "i"
+     }
+    },
+    {
+     "cat": "shape",
+     "need": "The declared environment / registry file",
+     "probe": {
+      "source": "\\.sova\\/project\\.json|registry",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "stop",
+     "need": "What is not decided",
+     "probe": {
+      "source": "open question|not decided",
+      "flags": "i"
+     },
+     "verdict": {
+      "status": "absent",
+      "note": "the hit was a job's open questions, not undecided spec"
+     }
+    }
+   ]
+  },
+  {
+   "id": "C17",
+   "kind": "protocol",
+   "title": "The wire between server and agent runtime",
+   "seed": "§app/harness",
+   "needs": [
+    {
+     "cat": "around",
+     "need": "Who is on each end",
+     "probe": {
+      "source": "adapter|pi",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "guard",
+     "need": "What never crosses the wire",
+     "probe": {
+      "source": "Nothing outside the adapter reaches pi",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "names",
+     "need": "The operation / event names",
+     "probe": {
+      "source": "^## §app\\.harness\\/wire",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "shape",
+     "need": "What an operation carries (fields)",
+     "probe": {
+      "source": "protocol\\.ts|SessionState",
+      "flags": ""
+     },
+     "verdict": {
+      "status": "partial",
+      "note": "SessionState is named; the wire's shapes live in shared/protocol.ts, not the spec"
+     }
+    },
+    {
+     "cat": "shape",
+     "need": "Unknown / newer entries",
+     "probe": {
+      "source": "^## §app\\.harness\\/unknown-entries",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "stop",
+     "need": "The live channel is separate",
+     "probe": {
+      "source": "socket|live events",
+      "flags": "i"
+     },
+     "verdict": {
+      "status": "partial",
+      "note": "live events named in the lede only"
+     }
+    }
+   ]
+  },
+  {
+   "id": "C18",
+   "kind": "protocol",
+   "title": "Streaming a reply into the transcript",
+   "seed": "§chat.transcript/streaming",
+   "needs": [
+    {
+     "cat": "around",
+     "need": "What the transcript shows besides text (tools, status)",
+     "probe": {
+      "source": "tool (call|card)",
+      "flags": "i"
+     },
+     "verdict": {
+      "status": "missed",
+      "at": "chat/transcript.md:69",
+      "note": "tool cards are in the transcript H1, outside the streaming H2 slice",
+      "anchor": {
+       "passage": "§chat.transcript/transcript-items",
+       "snippet": "centred at `--measure` plus 96px (`--space-9`). Messages, tool cards, thinking, and thumbnails"
+      }
+     }
+    },
+    {
+     "cat": "guard",
+     "need": "Attribution: the model that answered",
+     "probe": {
+      "source": "model that (answered|replied)|attribut",
+      "flags": "i"
+     },
+     "verdict": {
+      "status": "missed",
+      "at": "chat/transcript.md:51",
+      "note": "the failed assistant's own producing model, never the chat's current model",
+      "anchor": {
+       "passage": "§chat.transcript/anatomy",
+       "snippet": "failed assistant's own producing model, never the chat's current model. The error feed yields"
+      }
+     }
+    },
+    {
+     "cat": "guard",
+     "need": "A runaway stream is cut",
+     "probe": {
+      "source": "^## §chat\\.transcript\\/runaway-stream",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "names",
+     "need": "Event / delta names",
+     "probe": {
+      "source": "message_update|text_delta|delta",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "shape",
+     "need": "Durable transcript records",
+     "probe": {
+      "source": "session file|jsonl",
+      "flags": "i"
+     },
+     "verdict": {
+      "status": "absent",
+      "note": "the session file is pi's; Sova specifies no durable record"
+     }
+    },
+    {
+     "cat": "stop",
+     "need": "Reasoning is not shown",
+     "probe": {
+      "source": "thinking",
+      "flags": "i"
+     }
+    }
+   ]
+  },
+  {
+   "id": "C19",
+   "kind": "persistence",
+   "title": "The stored session document",
+   "seed": "§app.harness/reader",
+   "needs": [
+    {
+     "cat": "around",
+     "need": "Who writes it, who reads it",
+     "probe": {
+      "source": "One reader for pi's session files",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "guard",
+     "need": "Unknown entries / newer versions are kept",
+     "probe": {
+      "source": "^## §app\\.harness\\/unknown-entries",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "names",
+     "need": "The file path",
+     "probe": {
+      "source": "~\\/\\.pi\\/agent\\/sessions|sessions dir",
+      "flags": ""
+     },
+     "verdict": {
+      "status": "missed",
+      "at": "app/harness.md:71",
+      "note": "agentRoot() is §app.harness/agent-root, outside the reader slice",
+      "anchor": {
+       "passage": "§app.harness/agent-root",
+       "snippet": "Every path the server builds under the agent directory comes from one function, `agentRoot()`"
+      }
+     }
+    },
+    {
+     "cat": "shape",
+     "need": "The fields, as a schema",
+     "probe": {
+      "source": "\"properties\"|\\| field \\|",
+      "flags": "i"
+     }
+    },
+    {
+     "cat": "stop",
+     "need": "No status cache is stored",
+     "probe": {
+      "source": "never (cached|stored)|no cache",
+      "flags": "i"
+     },
+     "verdict": {
+      "status": "absent",
+      "note": "the hit was about Claude logins"
+     }
+    }
+   ]
+  },
+  {
+   "id": "C20",
+   "kind": "persistence",
+   "title": "The server's own store",
+   "seed": "§app.organizations/workspace-repo",
+   "needs": [
+    {
+     "cat": "around",
+     "need": "Who writes and reads the store",
+     "probe": {
+      "source": "^## §app\\.organizations\\/workspace-repo",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "guard",
+     "need": "What the store never holds",
+     "probe": {
+      "source": "never holds",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "names",
+     "need": "Exact file names",
+     "probe": {
+      "source": "\\.json`",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "shape",
+     "need": "Record shapes",
+     "probe": {
+      "source": "\"properties\"|\\| Field \\|",
+      "flags": "i"
+     }
+    },
+    {
+     "cat": "stop",
+     "need": "Migration of old records",
+     "probe": {
+      "source": "^## §app\\.organizations\\/statechart-migration",
+      "flags": ""
+     }
+    }
+   ]
+  },
+  {
+   "id": "C21",
+   "kind": "settings",
+   "title": "Models settings",
+   "seed": "§app.settings-dialog/models",
+   "needs": [
+    {
+     "cat": "around",
+     "need": "Who reads the switched-on list (the picker)",
+     "probe": {
+      "source": "§chat\\/model-menu|model menu",
+      "flags": "i"
+     }
+    },
+    {
+     "cat": "guard",
+     "need": "A model switched off is not offered",
+     "probe": {
+      "source": "(hidden|not offered|unlisted|not listed)",
+      "flags": "i"
+     }
+    },
+    {
+     "cat": "names",
+     "need": "Exact settings copy",
+     "probe": {
+      "source": "^## §design\\.copy-deck\\/settings-models",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "shape",
+     "need": "Where the setting is stored",
+     "probe": {
+      "source": "settings\\.json|models\\.json|enabledModels",
+      "flags": ""
+     },
+     "verdict": {
+      "status": "in",
+      "at": "app/settings-dialog.md:82",
+      "note": "model-policy.json, inside §app.settings-dialog/models",
+      "anchor": {
+       "passage": "§app.settings-dialog/models",
+       "snippet": "is shared: `~/.pi/agent/model-policy.json`, written here and read by"
+      }
+     }
+    },
+    {
+     "cat": "stop",
+     "need": "Save model (when a change takes effect)",
+     "probe": {
+      "source": "^## §app\\.settings-dialog\\/save-bar",
+      "flags": ""
+     }
+    }
+   ]
+  },
+  {
+   "id": "C22",
+   "kind": "settings",
+   "title": "Credentials / logins",
+   "seed": "§app/claude-logins",
+   "needs": [
+    {
+     "cat": "around",
+     "need": "Which session uses which credential",
+     "probe": {
+      "source": "^## §app\\.claude-logins\\/active-login",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "guard",
+     "need": "A session never changes credential silently",
+     "probe": {
+      "source": "A chat never changes login silently",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "names",
+     "need": "Exact settings tab copy",
+     "probe": {
+      "source": "Settings → Accounts",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "shape",
+     "need": "Stored credential shape / where it lives",
+     "probe": {
+      "source": "\\.credentials\\.json",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "stop",
+     "need": "Failover on a limit",
+     "probe": {
+      "source": "^## §app\\.claude-logins\\/failover",
+      "flags": ""
+     }
+    }
+   ]
+  },
+  {
+   "id": "C23",
+   "kind": "cross-cutting",
+   "title": "Rules that hold everywhere (look, words, states)",
+   "seed": "§chat/composer",
+   "needs": [
+    {
+     "cat": "guard",
+     "need": "Product-wide principles",
+     "probe": {
+      "source": "^# §design\\/ground-rules|^## §design\\.ground-rules\\/",
+      "flags": ""
+     },
+     "rule": true
+    },
+    {
+     "cat": "guard",
+     "need": "Completeness bar for a surface",
+     "probe": {
+      "source": "complete|every state",
+      "flags": "i"
+     },
+     "verdict": {
+      "status": "absent",
+      "note": "no completeness bar; the hit was an unrelated 'every state'"
+     }
+    },
+    {
+     "cat": "names",
+     "need": "Word / casing rules for buttons",
+     "probe": {
+      "source": "Buttons use \\*\\*Title Case\\*\\*",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "names",
+     "need": "Design tokens / colors",
+     "probe": {
+      "source": "^# §design\\/token-index",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "shape",
+     "need": "The shared state vocabulary",
+     "probe": {
+      "source": "Report chips",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "stop",
+     "need": "Non-goals",
+     "probe": {
+      "source": "rejected|non-goal",
+      "flags": "i"
+     },
+     "verdict": {
+      "status": "partial",
+      "note": "per-surface rejected notes (e.g. §chat.mode-menu/rejected), no product non-goals"
+     }
+    }
+   ]
+  },
+  {
+   "id": "C24",
+   "kind": "screen",
+   "title": "Sharing (public URL / share link)",
+   "seed": "§app/session-share",
+   "needs": [
+    {
+     "cat": "around",
+     "need": "What is behind the link",
+     "probe": {
+      "source": "^## §app\\.session-share\\/content",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "guard",
+     "need": "What is never shared",
+     "probe": {
+      "source": "^## §app\\.session-share\\/never",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "names",
+     "need": "The address shape",
+     "probe": {
+      "source": "^## §app\\.session-share\\/link",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "names",
+     "need": "Exact share copy",
+     "probe": {
+      "source": "^## §design\\.copy-deck\\/session-share",
+      "flags": ""
+     }
+    },
+    {
+     "cat": "shape",
+     "need": "Revoke / expiry",
+     "probe": {
+      "source": "revoke",
+      "flags": "i"
+     }
+    },
+    {
+     "cat": "stop",
+     "need": "When the host is gone",
+     "probe": {
+      "source": "offline|host (is )?down",
+      "flags": "i"
+     }
+    }
+   ]
+  }
+ ]
+}

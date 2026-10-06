@@ -151,7 +151,7 @@
   ],
   [],
   [
-    "{\"id\":\"a0000034\",\"kind\":\"info\",\"text\":\"Switched to Work: Personal hit its limit.\",\"at\":\"2026-09-01T10:00:52.000Z\",\"meta\":{\"type\":\"custom\",\"customType\":\"claude-login\"}}"
+    "{\"id\":\"a0000034\",\"kind\":\"info\",\"text\":\"Switched to Work: Personal hit its limit.\",\"at\":\"2026-09-01T10:00:52.000Z\",\"loginNote\":true,\"meta\":{\"type\":\"custom\",\"customType\":\"claude-login\"}}"
   ],
   [],
   [

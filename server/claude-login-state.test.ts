@@ -22,7 +22,7 @@ const entry = (login: string, label?: string) => ({ type: "custom", customType: 
 
 test("with only Claude Code's own login: default, named by its email, and nothing to choose between", () => {
   assert.deepEqual(chatClaudeLogin([], logins), { id: "default", name: "own@example.com", email: "own@example.com", planLabel: "Pro", recorded: false, several: false });
-  assert.equal(claudeLoginAfterHello([], logins), null, "after a hello nothing is sent: a single-login host keeps its message sequence");
+  assert.deepEqual(claudeLoginAfterHello([], logins), { type: "claude_login", login: null }, "after a hello it is always sent: null, nothing to choose between");
 });
 
 test("the newest claude-login entry wins; before one, the login this host would start on", () => {

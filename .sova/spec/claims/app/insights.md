@@ -9,7 +9,7 @@ subagents (subagents + sessions live records), the LLM calls in flight and their
 per-session summaries (topic-outline, compaction). Data shapes are `UsageInsight`, `AgentsInsight`, and `SessionInsight` in
 `shared/protocol.ts`. **Every status says where it came from**: live-sourced states can pulse,
 while reported states (read from a session file after the fact) never pulse and carry
-"as of `14:06`". A live record lists at most 40 workers, live ones first and then the newest
+"as of `2:06 PM`". A live record lists at most 40 workers, live ones first and then the newest
 (§app.subagents-pane/hidden-workers), so a count is always read from its `workerCounts` and a
 working worker is never the one it leaves out.
 
@@ -122,7 +122,9 @@ Usage glance needs the room.
     passed) keeps its place as an empty track, so the meter's shape never jumps.
   - **Which Claude login.** A device can hold several Claude logins (§app/claude-logins), and `C`
     reads one of them: **the open chat's recorded login** (its newest `claude-login` entry, as the
-    chat's `claude_login` message names it, §app.claude-logins/active-login), else **the login in
+    chat's `claude_login` message names it, §app.claude-logins/active-login; before that message,
+    the login the composer shows as known, §chat.composer/known-on-switch, so the glance doesn't
+    jump on a switch), else **the login in
     use for new chats** (`claudeLogins[].inUse`: the first ready one in the device's order) — for a
     chat that has not recorded one yet, a TUI-watched session, a workspace pane that isn't a chat,
     and every page with no session open. Only with neither (an older server without
@@ -568,9 +570,9 @@ can't disagree, and nothing is fetched, sent or stored.
   which names the two apart: "2 sessions · 5 subagents working" (§app.session-list/working-now).
 - **Aggregates are neutral** `.chip.chip-count`, with no dot and no pulse, so each row has only
   one pulsing thing:
-  - **Session rows (§app/session-list):** no chip at all. The count is `{n}` + a `worker` icon in the row's
+  - **Session rows (§app/session-list):** no chip at all. The count is a bare `{n}`, with no icon, in the row's
     left rail (`.session-rail-count`), under the row's state, when `live?.workers?.working ≥ 1`.
-    Hidden at 0 or when absent. `.session-rail-count-live` pulses the icon only, and only on a
+    Hidden at 0 or when absent. `.session-rail-count-live` pulses the figure, and only on a
     row with no Busy dot, whose pulse would otherwise be a second moving thing.
   - **Session head:** no chip at all, working or not, team or not. The count is already the
     sidebar row's rail count, and the head's row goes to the title and

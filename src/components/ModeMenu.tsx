@@ -1,5 +1,5 @@
 import { createMemo, createSignal, For, Show, type Accessor } from "solid-js";
-import type { ChatServerMessage, ModeInfo } from "../../shared/protocol";
+import type { ChatServerMessage, ModeApplies, ModeInfo } from "../../shared/protocol";
 import { getMode, getSubagentProfiles, pickSubagentProfile, postMode, putSubagentProfiles, saveModeDefault } from "../lib/api";
 import type { SubagentProfilesInfo } from "../../shared/subagent-profiles";
 import { filterProfiles, FOOT_NOTE, isDefaultAll, isDefaultMode, modeSummary, noProfileMatch, nextSetup, savedAnnounce, saveLabel, saveTitle, type ShownMode } from "../lib/mode-menu";
@@ -9,8 +9,10 @@ import { openSettings, setSubagentSettingsPath } from "../lib/settings-nav";
 import { announce } from "../lib/ui-state";
 import { Banner, Icon } from "./ui";
 
-/** This chat's last WS "mode" message: the mode of THIS chat and how a switch applies here. */
-export type ModeState = Omit<Extract<ChatServerMessage, { type: "mode" }>, "type">;
+/** This chat's last WS "mode" message: the mode of THIS chat and how a switch applies here. Before
+    that message, the mode known from the list or this tab's last visit (lib/composer-known), whose
+    `applies` is absent unless its source said it: then nothing says when a switch applies. */
+export type ModeState = Omit<Extract<ChatServerMessage, { type: "mode" }>, "type" | "applies"> & { applies?: ModeApplies };
 
 /** What the chat view hands its composer so the foot can show and switch this chat's mode. */
 export interface ModeControl {
@@ -94,8 +96,9 @@ export function ModeMenu(props: { control: ModeControl }) {
   /** Save Current is for a chat ON something: Off configures nothing. A legacy or malformed file saves nothing server-side, and the refusal says so in place. */
   const canSaveCurrent = () => profiles() !== null && profiles()!.current.id !== "off";
 
-  // This chat's own state only. Before its WS "mode" message arrives there is nothing to show:
-  // the default in `info()` is not this chat's mode, so the label stays "Mode" and nothing is checked.
+  // This chat's own state only: its WS "mode" message, or before it the mode known from the list or
+  // this tab's last visit. With neither there is nothing to show: the default in `info()` is not
+  // this chat's mode, so the label stays "Mode" and nothing is checked.
   const current = () => props.control.state();
   const items = createMemo<Item[]>(() => {
     const i = info();

@@ -100,40 +100,104 @@
 .orgs-change-main { flex: 1; min-width: 0; overflow-wrap: anywhere; color: var(--color-ink-2); }
 .orgs-change-field { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink); }
 
-/* The baton strip above a baton session's transcript. */
+/* The baton strip above a baton session's transcript (§app.baton/strip-layout). A bounded region
+   of its own: as a flex item of the pane's column it would never shrink below its content, and the
+   transcript (flex: 1; min-height: 0) took the squeeze down to nothing while the pane's
+   overflow:hidden clipped the strip's end out of reach. So it doesn't grow, stops at
+   --baton-strip-max and scrolls inside. It is also the query container its rows ask: its width is
+   the pane's, so containment changes no layout. */
 .baton-strip {
+  flex: none;
+  max-height: var(--baton-strip-max);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  container: baton-strip / inline-size;
+  /* Focus moving under the pinned top scrolls it out from under it. */
+  scroll-padding-top: calc(var(--baton-strip-top, 0px) + var(--space-2));
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2) var(--space-3);
-  padding: var(--space-2) var(--space-4);
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: 0 var(--space-4) var(--space-2);
   border-bottom: 1px solid var(--color-border);
   background: var(--color-sunken);
 }
-.baton-strip-main { flex: 1; min-width: 12rem; display: flex; flex-direction: column; gap: 2px; }
-.baton-strip-title { font-weight: var(--fw-semibold); color: var(--color-ink); }
+/* Folded the window is short and the composer and head take a fixed share, so the cap is a
+   little taller in proportion; the transcript still keeps at least half of what the strip and it share. */
+@media (max-width: 767px) { .baton-strip { max-height: 40dvh; } }
+.baton-strip > * { flex: none; min-width: 0; }
+/* The pinned top: the title when renamed, the head row and the bar stay while the rest scrolls. */
+.baton-strip-top {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-top: var(--space-2);
+  background: var(--color-sunken);
+}
+/* A short window (a phone held sideways): the cap is too low for a pinned top to leave room for
+   anything else, so the top scrolls away with the rest and the strip's whole content stays reachable. */
+@media (max-height: 480px) {
+  .baton-strip { scroll-padding-top: 0; }
+  .baton-strip-top { position: static; }
+}
+.baton-strip-title { font-weight: var(--fw-semibold); color: var(--color-ink); overflow-wrap: anywhere; }
+/* Chip, where the baton is, the message count: one row, the phrase taking the room. */
+.baton-strip-head { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.baton-strip-head > .chip { flex: none; }
+.baton-strip-where { flex: 1; min-width: 0; font-size: var(--fs-caption); color: var(--color-ink-2); overflow-wrap: anywhere; }
+.baton-strip-count { flex: none; font-size: var(--fs-caption); color: var(--color-ink-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* One primary, Send on WhatsApp, and the menu at the far end. */
+.baton-strip-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.baton-strip-bar-end { margin-left: auto; display: flex; }
+/* The menu's destructive rows: last, set apart by the group rule, said in the error tone. */
+.baton-strip-menu-danger .mode-option-id { color: var(--status-error); }
+.baton-strip-menu-danger .mode-option .icon { color: var(--status-error); }
 .baton-strip-meta { font-size: var(--fs-caption); color: var(--color-ink-muted); }
-/* It can: one row of its own under the head, label then the three boxes, wrapping as a group on a
-   phone. Each box keeps its 44px row as the target; Interactive drawings follows Draw and reads as
-   off (its label muted with its box) while Draw is off. */
-.baton-strip-row.baton-strip-abilities { flex-wrap: nowrap; align-items: flex-start; gap: var(--space-2); font-size: var(--fs-caption); color: var(--color-ink-muted); }
+/* Org · project, then It can: and Started by on one line, wrapping when they must. */
+.baton-strip-facts { display: flex; flex-direction: column; gap: 0; }
+.baton-strip-facts-line { display: flex; flex-wrap: wrap; align-items: center; column-gap: var(--space-4); }
+/* It can:, then the three boxes, which wrap as their own group so a wrapped box lines up under Draw.
+   Each box keeps its 44px row as the target; Interactive drawings follows Draw and reads as off (its
+   label muted with its box) while Draw is off. */
+.baton-strip-abilities { display: flex; flex-wrap: nowrap; align-items: flex-start; gap: var(--space-2); min-width: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); }
 .baton-strip-abilities-label { flex: none; line-height: var(--tap-min); }
 .baton-strip-abilities-boxes { display: flex; flex-wrap: wrap; gap: 0 var(--space-4); min-width: 0; }
-.baton-strip-abilities .toggle { justify-content: flex-start; gap: var(--space-2); font-size: inherit; color: var(--color-ink); }
+.baton-strip-abilities .toggle { justify-content: flex-start; gap: var(--space-2); font-size: inherit; color: var(--color-ink-2); }
 .baton-strip-abilities .toggle input:disabled ~ span:last-child { color: var(--color-ink-muted); }
-.baton-strip-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
-.baton-strip-link { flex-basis: 100%; }
-/* Who started it: its own line under It can:, the overseer part a link. */
-.baton-strip-started { display: block; }
-/* The why and the goal: a full-width row of its own, the whole summary a 44px
-   target; opened, the goal as written, then the muted note, capped at a reading measure. */
-.baton-strip-goal { flex-basis: 100%; max-width: none; }
-.baton-strip-goal > .disclosure-summary { min-height: var(--tap-min); }
-.baton-strip-goal > .disclosure-body { max-width: var(--measure); display: flex; flex-direction: column; gap: var(--space-2); margin-top: 0; }
+.baton-strip-link { min-width: 0; }
+/* Details and Why and goal: full-width rows of their own, the whole summary a 44px target. */
+.baton-strip-fold { max-width: none; }
+.baton-strip-fold > .disclosure-summary { min-height: var(--tap-min); }
+.baton-strip-fold > .disclosure-body { margin-top: 0; }
+/* Opened, the goal as written, then the muted note, capped at a reading measure. */
+.baton-strip-goal > .disclosure-body { max-width: var(--measure); display: flex; flex-direction: column; gap: var(--space-2); }
 .baton-strip-goal-label { margin: 0; font-size: var(--fs-caption); font-weight: 600; color: var(--color-ink-muted); }
 .baton-strip-goal-label + .baton-strip-goal-text { margin-top: calc(-1 * var(--space-2) + var(--space-1)); }
-.baton-strip-goal-text { margin: 0; color: var(--color-ink); white-space: pre-wrap; }
+.baton-strip-goal-text { margin: 0; color: var(--color-ink); white-space: pre-wrap; overflow-wrap: anywhere; }
+/* A long goal: 8 lines until Show Full Goal (measured in BatonStrip.tsx, never guessed). */
+.baton-strip-goal-clamped {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 8;
+  line-clamp: 8;
+  overflow: hidden;
+}
 .baton-strip-goal-note { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); white-space: normal; }
+/* Folded: where the baton is takes at most 2 lines (its tooltip has it whole), Started by gets its
+   own line under It can:, and every button below the bar is a 44px target. */
+@container baton-strip (max-width: 767px) {
+  .baton-strip-where {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+  }
+  .baton-strip-facts-line { flex-direction: column; align-items: flex-start; }
+  .baton-strip .button-sm { min-height: var(--control-md); }
+}
 
 /* Baton cards in the operator's transcript, and the sender's name on a user row. */
 .baton-card {
@@ -158,13 +222,13 @@
 .baton-card-line { margin: 0; align-self: center; font-size: var(--fs-caption); color: var(--color-ink-muted); text-align: center; }
 
 /* The strip's second rows: invitees' links, a proposed person, a wrap-up line, the Hand On form. */
-.baton-strip-row { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.baton-strip-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 /* r12: an offer's invitees not reached yet, one line each (their name, then when their hours start). */
-.baton-strip-waiting { flex-basis: 100%; list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-1); }
+.baton-strip-waiting { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-1); }
 .baton-strip-card { padding: var(--space-2) var(--space-3); border-radius: var(--r-md); background: var(--color-surface); border: 1px solid var(--color-border); }
 .baton-strip-card-main { flex: 1; min-width: 12rem; display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
 .baton-extend-input { width: 6rem; }
-.baton-strip-form { flex-basis: 100%; padding: var(--space-3); border-radius: var(--r-md); background: var(--color-surface); border: 1px solid var(--color-border); }
+.baton-strip-form { padding: var(--space-3); border-radius: var(--r-md); background: var(--color-surface); border: 1px solid var(--color-border); }
 .baton-strip-people { margin: 0; padding: 0; border: 0; display: flex; flex-direction: column; }
 .baton-strip-people .toggle { justify-content: flex-start; }
 

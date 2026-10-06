@@ -298,8 +298,8 @@ describe("regenerate, seen by two tabs on one chat", () => {
 
     // Same order as a rewind, and for the same reason: every client's hello handler blanks its
     // worker list, so the mode (and workers, when there are any) must follow it.
-    assert.deepEqual(types(theirs).slice(0, 2), ["hello", "mode"]);
-    assert.deepEqual(types(mine).slice(0, 3), ["hello", "mode", "regenerated"]);
+    assert.deepEqual(types(theirs).slice(0, 3), ["hello", "mode", "claude_login"]);
+    assert.deepEqual(types(mine).slice(0, 4), ["hello", "mode", "claude_login", "regenerated"]);
     assert.deepEqual(mine.find((m) => m.type === "regenerated"), { type: "regenerated", id: "g1", entryId: "a2", userEntryId: "u2" });
     assert.ok(!theirs.some((m) => m.type === "regenerated"), "the other tab is not told about a request it did not make");
 

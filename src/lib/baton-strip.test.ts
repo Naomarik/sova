@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { describe, test } from "node:test";
 import type { BatonInfo, BatonSummaryField } from "../../shared/baton";
-import { batonComposerGate, goalShown, leaseMinutes, linkReplaced, linksStale, liveOffer, namesList, proposedAreasLine, whereLine, wrapupLine } from "./baton-strip";
+import { batonComposerGate, goalShown, leaseMinutes, linkReplaced, linksStale, liveOffer, namesList, proposedAreasLine, stripActions, whereLine, wrapupLine } from "./baton-strip";
 
 const NOW = Date.parse("2026-09-26T12:00:00Z");
 const info = (session: Partial<BatonInfo["session"]>, offer: BatonInfo["offer"] = null): Pick<BatonInfo, "offer" | "session" | "names"> => ({
@@ -119,4 +119,72 @@ test("the goal shows trimmed, and not at all when there is none", () => {
   assert.equal(goalShown({}), null, "an older row with no goal");
   assert.equal(goalShown({ goal: null }), null);
   assert.equal(goalShown(undefined), null);
+});
+
+describe("the strip's acts: one primary, the rest in the menu, the destructive ones last", () => {
+  const at = (
+    session: Partial<BatonInfo["session"]>,
+    extra: { offer?: BatonInfo["offer"]; liveLinks?: number; owner?: { name: string } | null } = {},
+  ): Pick<BatonInfo, "offer" | "session" | "liveLinks" | "owner"> => ({
+    session: { state: "open", holder: null, budget: { messagesUsed: 3, messagesMax: 30 }, ...session } as BatonInfo["session"],
+    offer: extra.offer ?? null,
+    liveLinks: extra.liveLinks ?? 0,
+    owner: extra.owner ?? null,
+  });
+
+  test("a person holds it, with a live link: Take Back, Get Link and Hand On in the menu, Delete Link and Close set apart", () => {
+    assert.deepEqual(stripActions(at({ holder: "p_1" }, { liveLinks: 1 })), {
+      primary: "take-back",
+      menu: ["get-link", "hand-on", "told"],
+      destructive: ["delete-link", "close"],
+    });
+  });
+
+  test("a person holds it with no live link: no Delete Link", () => {
+    assert.deepEqual(stripActions(at({ holder: "p_1" })), { primary: "take-back", menu: ["get-link", "hand-on", "told"], destructive: ["close"] });
+  });
+
+  test("a person holds it at the limit: still Take Back", () => {
+    assert.equal(stripActions(at({ holder: "p_1", budget: { messagesUsed: 30, messagesMax: 30 } })).primary, "take-back");
+  });
+
+  test("an offer is live (open or held by its taker): Withdraw Offer, no Get Link or Delete Link", () => {
+    const open = at({ offerId: "off_1" }, { offer: offer("open"), liveLinks: 3 });
+    assert.deepEqual(stripActions(open), { primary: "withdraw", menu: ["hand-on", "told"], destructive: ["close"] });
+    const held = at({ offerId: "off_1", holder: "p_2" }, { offer: offer("held", { holder: { id: "p_2", name: "Ana" } }), liveLinks: 3 });
+    assert.deepEqual(stripActions(held), { primary: "withdraw", menu: ["hand-on", "told"], destructive: ["close"] });
+  });
+
+  test("a withdrawn offer is not live: whoever holds it decides", () => {
+    assert.equal(stripActions(at({ offerId: "off_1", holder: "operator" }, { offer: offer("withdrawn") })).primary, "hand-on");
+  });
+
+  test("the operator holds it with messages left: Hand On is the primary and not repeated in the menu", () => {
+    for (const state of ["open", "needs-you"] as const) {
+      assert.deepEqual(stripActions(at({ holder: "operator", state })), { primary: "hand-on", menu: ["told"], destructive: ["close"] });
+    }
+  });
+
+  test("the operator holds it at the limit: no primary (Extend has its own row), Hand On stays in the menu", () => {
+    assert.deepEqual(stripActions(at({ holder: "operator", state: "needs-you", budget: { messagesUsed: 30, messagesMax: 30 } })), {
+      primary: null,
+      menu: ["hand-on", "told"],
+      destructive: ["close"],
+    });
+  });
+
+  test("done: only What It's Told and Close Session", () => {
+    assert.deepEqual(stripActions(at({ holder: "p_1", state: "done" }, { liveLinks: 1 })), { primary: null, menu: ["told"], destructive: ["close"] });
+  });
+
+  test("closed: only What It's Told", () => {
+    assert.deepEqual(stripActions(at({ holder: "p_1", state: "closed" }, { liveLinks: 1 })), { primary: null, menu: ["told"], destructive: [] });
+  });
+
+  test("an org with an owner adds Hide From / Show To, in every state", () => {
+    const owner = { name: "Owner Name" };
+    assert.deepEqual(stripActions(at({ holder: "p_1" }, { owner })).menu, ["get-link", "hand-on", "told", "owner"]);
+    assert.deepEqual(stripActions(at({ holder: "operator" }, { owner })).menu, ["told", "owner"]);
+    assert.deepEqual(stripActions(at({ state: "closed" }, { owner })).menu, ["told", "owner"]);
+  });
 });

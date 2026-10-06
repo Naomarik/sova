@@ -1,16 +1,17 @@
 // Run: node --test .sova/playbooks/merge-round/tests/round.test.mjs
 // The driver against a throwaway repository (a bare origin, a main checkout, one worktree per kind of
 // branch), a temp agent dir, and fakes for pnpm, the spec tools, systemctl and the health endpoint.
-// Nothing here reads or writes ~/.pi or the live tree.
+// Nothing here reads or writes ~/.pi or the live tree. HOME is the throwaway root, and its path and
+// basename are private names, as discover-names.mjs lists the real home's.
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { busyOf, dirtyPaths, expandArgs, failingTestFiles, needsRestart, parseBatch, parseReply, replyOf, suiteOf, tempCommitOf, timeoutFor } from "../scripts/round.mjs";
+import { busyOf, dirtyPaths, expandArgs, failingTestFiles, homeShown, needsRestart, parseBatch, parseReply, replyOf, shellPath, suiteOf, tempCommitOf, timeoutFor } from "../scripts/round.mjs";
 
 const ROUND = fileURLToPath(new URL("../scripts/round.mjs", import.meta.url));
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
@@ -27,12 +28,13 @@ const core = join(root, "spec-core");
 const pnpmLog = join(root, "pnpm.log");
 const systemctlLog = join(root, "systemctl.log");
 const settingsFile = join(agent, "sova", "merge-round.json");
+const SETTINGS = { privateNames: [PLANTED, root, basename(root)], kinds: { [PLANTED]: "user", [root]: "home", [basename(root)]: "home" }, restartUnit: "sova-runtime.service" };
 const stateFile = join(agent, "sova", "playbooks", "merge-round", "state.json");
 const outputs = [];
 
 const gitEnv = { GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: join(root, "gitconfig") };
 const baseEnv = () => {
-  const env = { ...process.env, ...gitEnv, PATH: `${bin}:${dirname(process.execPath)}:${process.env.PATH}`, PI_CODING_AGENT_DIR: agent, PI_SESSION_ID: ME, SOVA_ROUND_PNPM: join(bin, "pnpm"), SOVA_ROUND_SPEC_CORE: core, SOVA_ROUND_HEALTH_URL: "http://127.0.0.1:9/api/health", FAKE_PNPM_LOG: pnpmLog, CLAUDE_CONFIG_DIR: join(root, "claude-login") };
+  const env = { ...process.env, ...gitEnv, PATH: `${bin}:${dirname(process.execPath)}:${process.env.PATH}`, HOME: root, PI_CODING_AGENT_DIR: agent, PI_SESSION_ID: ME, SOVA_ROUND_PNPM: join(bin, "pnpm"), SOVA_ROUND_SPEC_CORE: core, SOVA_ROUND_HEALTH_URL: "http://127.0.0.1:9/api/health", FAKE_PNPM_LOG: pnpmLog, CLAUDE_CONFIG_DIR: join(root, "claude-login") };
   for (const k of ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"]) delete env[k];
   return env;
 };
@@ -151,6 +153,9 @@ test("pure rules: temporary subjects, restart files, dirty paths, timeouts, busy
   assert.deepEqual(dirtyPaths(" M a.ts\0?? pi-config/extensions/sandbox/tests/FIRST-RUN.txt\0R  new.ts\0old.ts\0?? pi-config/extensions/sandbox/tests/NAIVE-RUN.txt\0"), ["a.ts", "new.ts"]);
   assert.equal(timeoutFor(1000, []), 1000);
   assert.equal(timeoutFor(1000, [800, 900, 4000]), 1800);
+  assert.equal(homeShown("/h/u/w/x and /h/u, not /h/us or /x/h/u", "/h/u"), "~/w/x and ~, not /h/us or /x/h/u");
+  assert.equal(shellPath("/h/u/w/it's", "/h/u"), `"$HOME"'/w/it'\\''s'`);
+  assert.equal(shellPath("/srv/w", "/h/u"), "'/srv/w'");
   assert.ok(busyOf({ presence: { workerCounts: { working: 1 } } }) && busyOf({ presence: { activity: { state: "working" } } }) && !busyOf({ presence: { activity: { state: "idle" }, workerCounts: { working: 0 } } }));
   assert.deepEqual(failingTestFiles("✖ server/a.test.ts (3ms)\n  test at file:///r/src/lib/b.test.ts:1:2\n  test at /elsewhere/c.test.ts:1:1", "/r"), ["server/a.test.ts", "src/lib/b.test.ts"]);
   // scripts/run-tests.mjs on Bun: each failing file's FAIL line, then the summary's list.
@@ -277,7 +282,7 @@ test("start without settings turns the push hold on, and push refuses under it",
 
 test("status: each kind of branch, masked names, and the shared object store untouched", async () => {
   mkdirSync(dirname(settingsFile), { recursive: true });
-  writeFileSync(settingsFile, JSON.stringify({ privateNames: [PLANTED], restartUnit: "sova-runtime.service" }, null, 2));
+  writeFileSync(settingsFile, JSON.stringify(SETTINGS, null, 2));
   const objects = objectFiles();
   const r = await run(["status"]);
   assert.equal(r.code, 0, r.out);
@@ -424,7 +429,9 @@ test("land only at the checked head and master; landed records the restart", asy
   assert.equal((await run(["check", "feat/clean"])).code, 0);
   const land = await run(["land", "feat/clean"]);
   assert.equal(land.code, 0, land.out);
-  assert.ok(land.out.includes(`call: worktree {"action":"merge","path":"${wt("feat/clean")}"}`));
+  // The home path is a private name, yet the worktree under it lands: printed as ~/…, never the home path.
+  assert.ok(land.out.includes(`call: worktree {"action":"merge","path":"~/wt-feat-clean"}`), land.out);
+  assert.ok(!land.out.includes(root) && !land.out.includes("[private name]"), land.out);
   commit(main, "moved.txt", "m\n", "master: moves on");
   const masterMoved = await run(["land", "feat/clean"]);
   assert.equal(masterMoved.code, 1);
@@ -441,12 +448,14 @@ test("land only at the checked head and master; landed records the restart", asy
   git(main, "merge", "-q", "--ff-only", "feat/clean"); // what `worktree merge` does
   const landed = await run(["landed", "feat/clean"]);
   assert.equal(landed.code, 0, landed.out);
-  assert.match(landed.out, /a restart is needed/);
+  assert.match(landed.out, /can't be told \(the server's health can't be read\): a restart is treated as needed/);
+  assert.match(landed.out, /A restart is needed: round\.mjs restart-check/);
   assert.match(landed.out, new RegExp(`session_send to ${OWNER}, after the clean up:`));
   assert.equal(state().restart.pending, true);
   // The clean up is its next line: plain git from the main checkout, never --force.
   const next = landed.out.split("\n").find((l) => l.startsWith("next: "));
-  assert.ok(next.includes(`git -C '${main}' worktree remove -- '${wt("feat/clean")}' (never --force), then git -C '${main}' branch -d -- 'feat/clean'`), next);
+  assert.ok(next.includes(`git -C "$HOME"'/main' worktree remove -- "$HOME"'/wt-feat-clean' (never --force), then git -C "$HOME"'/main' branch -d -- 'feat/clean'`), next);
+  assert.ok(!next.includes(root), next);
   assert.ok(!/--force'|remove --force|-D /.test(next), next);
   assert.ok(next.endsWith("then round.mjs push"), next);
   assert.match(landed.out, /^Only when the remove succeeded, add: Its worktree folder was removed\.$/m);
@@ -462,6 +471,113 @@ test("land only at the checked head and master; landed records the restart", asy
   } finally {
     chmodSync(admin, 0o755);
   }
+});
+
+/** A stand-in /api/health answering with `head`, for the length of `fn`. */
+async function withHealth(head, fn) {
+  const server = createServer((_req, res) => {
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify({ ok: true, startedAt: new Date().toISOString(), head }));
+  });
+  await new Promise((res) => server.listen(0, "127.0.0.1", res));
+  try {
+    return await fn({ SOVA_ROUND_HEALTH_URL: `http://127.0.0.1:${server.address().port}/api/health` });
+  } finally {
+    server.close();
+  }
+}
+
+test("a private name in a worktree's path beyond the home prefix still refuses land and the clean up", async () => {
+  const branch = `feat/${PLANTED}-notes`;
+  // Merging master in writes the branch's name into a merge commit's message: the leak scan finds it.
+  const c = await run(["check", branch]);
+  assert.equal(c.code, 1, c.out);
+  assert.match(c.out, /message line 1 · private name #1/);
+  git(wt(branch), "reset", "-q", "--hard", "HEAD^1"); // the fixture's own branch, back before that merge
+  // A branch named after a private name keeps no state (its key is masked too), so land has no check
+  // for it; the path's own refusal is what stands, shown with a check put on record by hand.
+  assert.ok(!(branch in state().branches));
+  const st = state();
+  st.branches[branch] = { check: { ok: true, needs: [], head: git(main, "rev-parse", branch), masterSha: git(main, "rev-parse", "master"), at: Date.now() } };
+  writeFileSync(stateFile, JSON.stringify(st));
+  const land = await run(["land", branch]);
+  assert.equal(land.code, 2, land.out);
+  assert.match(land.out, /The worktree's path holds a private name/);
+  assert.doesNotMatch(land.out, /call: worktree/);
+  git(main, "merge", "-q", "--no-ff", "-m", "land the notes", branch);
+  const landed = await run(["landed", branch]);
+  assert.match(landed.out, /^Clean up: The worktree's path holds a private name/m);
+  assert.doesNotMatch(landed.out, /worktree remove/);
+});
+
+test("check and land scan the commits landing would publish: a scrubbed leak still in history is caught", async () => {
+  git(main, "worktree", "add", "-q", wt("feat/leaky"), "-b", "feat/leaky");
+  commit(wt("feat/leaky"), "notes/plan.md", `ssh to ${PLANTED}\n`, "leaky: a plan");
+  commit(wt("feat/leaky"), "notes/plan.md", "ssh to the box\n", "leaky: scrubbed in the tree, not in history");
+  const c = await run(["check", "feat/leaky"]);
+  assert.equal(c.code, 1, c.out);
+  assert.match(c.out, /notes\/plan\.md:1 · private name #1/);
+  assert.match(c.out, /needs: .*leak-scan hits in commits origin\/master doesn't have/);
+  assert.equal((await run(["land", "feat/leaky"])).code, 1);
+
+  // A green check, then a name the user adds: land scans again, and lands nothing.
+  git(main, "worktree", "add", "-q", wt("feat/later"), "-b", "feat/later");
+  commit(wt("feat/later"), "later.txt", "wallabyhost3 is fine\n", "later: a file");
+  assert.equal((await run(["check", "feat/later"])).code, 0);
+  writeFileSync(settingsFile, JSON.stringify({ ...SETTINGS, privateNames: [...SETTINGS.privateNames, "wallabyhost3"] }, null, 2));
+  try {
+    const land = await run(["land", "feat/later"]);
+    assert.equal(land.code, 1, land.out);
+    assert.match(land.out, /later\.txt:1 · private name #4/);
+    assert.match(land.out, /Land nothing: feat\/later carries a leak-scan hit/);
+    assert.doesNotMatch(land.out, /call: worktree|wallabyhost3/);
+  } finally {
+    writeFileSync(settingsFile, JSON.stringify(SETTINGS, null, 2));
+  }
+  assert.equal((await run(["land", "feat/later"])).code, 0);
+});
+
+test("landed needs only the head in master; the restart need is the live server's head against master", async () => {
+  // The owner merged it themselves: no check, no ask on record.
+  const before = git(main, "rev-parse", "master");
+  git(main, "worktree", "add", "-q", wt("feat/self"), "-b", "feat/self");
+  commit(wt("feat/self"), "server/self.ts", "export const s = 1;\n", "self: a server file");
+  assert.equal(state().branches["feat/self"], undefined);
+  const early = await run(["landed", "feat/self"]);
+  assert.equal(early.code, 1, early.out);
+  assert.match(early.out, /isn't in master yet/);
+  git(main, "merge", "-q", "--no-edit", "--no-ff", "feat/self");
+  const st = state();
+  delete st.restart;
+  writeFileSync(stateFile, JSON.stringify(st));
+  const landed = await withHealth(before, (env) => run(["landed", "feat/self"], { env }));
+  assert.equal(landed.code, 0, landed.out);
+  assert.match(landed.out, /^feat\/self is in master at /m);
+  assert.match(landed.out, new RegExp(`Restart needed: the server runs ${before.slice(0, 7)}, and master [0-9a-f]{7} changes 1 file that needs? one \\(server/self\\.ts\\)`));
+  assert.equal(state().restart.pending, true);
+  assert.deepEqual(state().restart.merges.map((m) => m.branch), ["feat/self"]);
+
+  // A merge no `landed` recorded counts too: start reads the server's head against master.
+  const st2 = state();
+  delete st2.restart;
+  writeFileSync(stateFile, JSON.stringify(st2));
+  commit(main, "server/direct.ts", "export const d = 1;\n", "an owner's merge, straight on master");
+  const master = git(main, "rev-parse", "master");
+  const s = await withHealth(git(main, "rev-parse", "master~1"), (env) => run(["start"], { env }));
+  assert.match(s.out, /Restart needed: the server runs [0-9a-f]{7}, and master [0-9a-f]{7} changes 1 file that needs? one \(server\/direct\.ts\)/);
+  assert.equal(state().restart.pending, true);
+  // A docs-only difference needs none, and confirms the pending one.
+  commit(main, "docs-only.md", "d\n", "master: docs");
+  const ok = await withHealth(master, (env) => run(["start"], { env }));
+  assert.match(ok.out, /Restart confirmed: the server runs [0-9a-f]{7}, with master [0-9a-f]{7}'s runtime code/);
+  assert.equal(state().restart.pending, false);
+  const none = await withHealth(master, (env) => run(["start"], { env }));
+  assert.match(none.out, /no restart needed/);
+  assert.equal(state().restart.pending, false);
+  // A head this repository doesn't have can't be told: nothing is made pending.
+  const unknown = await withHealth("f".repeat(40), (env) => run(["start"], { env }));
+  assert.match(unknown.out, /can't be told: the server's head fffffff isn't in this repository/);
+  assert.equal(state().restart.pending, false);
 });
 
 test("a hanging step is killed with its whole process group", async () => {
@@ -528,9 +644,14 @@ process.stdout.write(r.stdout);
 process.exitCode = r.status;
 `);
   const env = { LIVE_DIR: live, ROUND };
+  // A restart pending, and no health to read: it stays pending, so the line is printed.
+  const st = state();
+  st.restart = { pending: true, since: Date.now(), merges: [] };
+  writeFileSync(stateFile, JSON.stringify(st));
   const idle = await run([], { env, script: join(serverDir, "index.ts") });
   assert.equal(idle.code, 0, idle.out);
   assert.match(idle.out, /Every other hosted session is idle \(1,/);
+  assert.match(idle.out, /Restart pending since \d+s ago; the server's health can't be read, so it isn't confirmed\./);
   assert.match(idle.out, /^systemd-run --user --on-active=30s systemctl --user restart sova-runtime\.service$/m);
   for (const f of readdirSync(live)) rmSync(join(live, f));
   const busy = await run([], { env: { ...env, ADD_BUSY: "1" }, script: join(serverDir, "index.ts") });

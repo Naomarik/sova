@@ -116,3 +116,38 @@ export function goalShown(session: { goal?: string | null } | undefined): string
   const g = typeof session?.goal === "string" ? session.goal.trim() : "";
   return g || null;
 }
+
+/** The strip's one primary act for the state it is in (§app.baton/strip-layout). */
+export type StripPrimary = "take-back" | "withdraw" | "hand-on";
+/** A row of the strip's More actions menu, in the order it is drawn. */
+export type StripMenuRow = "get-link" | "hand-on" | "told" | "owner";
+/** A destructive row, set apart at the menu's end; each asks before it acts. */
+export type StripDestructive = "delete-link" | "close";
+
+/**
+ * Which acts the strip offers and where: at most one primary in the bar, the rest in the menu, the
+ * destructive ones last. Each act is reachable in exactly the states it was before the menu: Get
+ * Link, Delete Link (with a live link) and Take Back while a person holds it with no offer out,
+ * Withdraw Offer while an offer is live, Hand On… while the session is open, What It's Told always,
+ * Hide From / Show To while the org has an owner, and Close Session until it is closed.
+ */
+export function stripActions(
+  i: Pick<BatonInfo, "offer" | "session" | "liveLinks" | "owner">,
+): { primary: StripPrimary | null; menu: StripMenuRow[]; destructive: StripDestructive[] } {
+  const s = i.session;
+  const open = s.state === "open" || s.state === "needs-you";
+  const offer = liveOffer(i);
+  const personHolds = open && !offer && s.holder !== null && s.holder !== OPERATOR;
+  const spent = s.budget.messagesUsed >= s.budget.messagesMax;
+  // At the limit Hand On isn't the decision: Extend is, in its own row.
+  const primary: StripPrimary | null = personHolds ? "take-back" : offer ? "withdraw" : open && !spent ? "hand-on" : null;
+  const menu: StripMenuRow[] = [];
+  if (personHolds) menu.push("get-link");
+  if (open && primary !== "hand-on") menu.push("hand-on");
+  menu.push("told");
+  if (i.owner) menu.push("owner");
+  const destructive: StripDestructive[] = [];
+  if (personHolds && i.liveLinks > 0) destructive.push("delete-link");
+  if (s.state !== "closed") destructive.push("close");
+  return { primary, menu, destructive };
+}

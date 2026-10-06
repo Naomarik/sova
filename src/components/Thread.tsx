@@ -19,7 +19,7 @@ import { usePaneId } from "../lib/pane-scope";
 import { isHiddenBlock, liveHiddenCounts, splitHidden, thinkingHiddenLabel, toolsHiddenLabel, CARD_TOOLS } from "../lib/hidden-rows";
 import { chainRuns, type ChainRun } from "../lib/chain-rows";
 import { compressWork } from "../lib/work-compression";
-import { isChangeRow } from "../lib/change-rows";
+import { isChangeRow, isLoginNoteRow } from "../lib/change-rows";
 import { stripSessionHeader } from "../../shared/profiles";
 import { profileIconName } from "../lib/profiles";
 import { profileToolCard, ProfileToolCardView } from "./ProfileCards";
@@ -918,6 +918,8 @@ export function HistoryItems(props: {
               <Match when={item.kind === "info" && rowFacts(item)?.compaction}>
                 {(compaction) => <Compaction compaction={compaction()} />}
               </Match>
+              {/* A Claude login note waits for the first message, like the profile row. */}
+              <Match when={isLoginNoteRow(item) && !hasUserRow()}>{null}</Match>
               <Match when={item.kind === "info"}>
                 <>
                   <InfoRow>

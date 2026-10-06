@@ -24,6 +24,8 @@
 // mise's tool paths first (shims refuse an untrusted config in a throwaway HOME), and
 // SOVA_PRICES_FETCH=off (bun test sets no NODE_TEST_CONTEXT). bun test itself sets TZ=UTC and
 // NODE_ENV=test.
+// Both: a temp dir inside a git repository is refused (exit 2) before anything runs, and no test
+// process gets a GIT_DIR-like variable; git's search stops at its temp dir (GIT_CEILING_DIRECTORIES).
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -51,13 +53,36 @@ const GLOBS = [
 ];
 const isBrowserTest = (f) => f.endsWith(".browser.test.ts");
 
-// macOS: the default tmpdir (/var/folders/…) is reached through the /var -> /private/var symlink, so
-// a path built from tmpdir() differs from its realpath, and a unix socket under it passes the
-// 104-byte limit. On darwin both runtimes get a short, symlink-free TMPDIR of their own, removed at exit.
-if (process.platform === "darwin") {
-  const tmp = fs.realpathSync(fs.mkdtempSync("/tmp/sova-t-"));
-  process.env.TMPDIR = tmp;
-  process.on("exit", () => fs.rmSync(tmp, { recursive: true, force: true }));
+/** rm -rf that survives read-only dirs a test left behind, and never throws. */
+function removeTree(dir) {
+  try {
+    fs.rmSync(dir, { recursive: true, force: true });
+  } catch {
+    try {
+      execFileSync("chmod", ["-R", "u+w", dir], { stdio: "ignore" });
+      fs.rmSync(dir, { recursive: true, force: true });
+    } catch (err) {
+      console.error(`run-tests: could not remove ${dir}: ${err.message}`);
+    }
+  }
+}
+
+/** What points git at a repository whatever its cwd: never passed to a test (hermetic-env.mjs drops the same list). */
+const GIT_LOCATION_VARS = ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_NAMESPACE", "GIT_PREFIX"];
+
+/** The git repository `dir` is in (its work tree's top, else its git dir), by git's own search with
+    nothing inherited steering or stopping it; null when there is none (or no git). */
+function repoAround(dir) {
+  const env = { ...process.env };
+  for (const name of [...GIT_LOCATION_VARS, "GIT_CEILING_DIRECTORIES"]) delete env[name];
+  const ask = (flag) => {
+    try {
+      return execFileSync("git", ["rev-parse", flag], { cwd: dir, env, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim() || null;
+    } catch {
+      return null;
+    }
+  };
+  return ask("--show-toplevel") ?? ask("--absolute-git-dir");
 }
 
 const argv = process.argv.slice(2);
@@ -65,6 +90,16 @@ const at = argv.indexOf("--runtime");
 const runtime = at >= 0 ? argv[at + 1] : chosenRuntime();
 if (runtime !== "node" && runtime !== "bun") {
   console.error("usage: node scripts/run-tests.mjs [--runtime node|bun] [files] [-- flags]");
+  process.exit(2);
+}
+// Tests make plain folders in the temp dir and register them as projects; inside a checkout each one
+// would be that checkout, and promotions and coding worktrees would land in it (they once did, in
+// Sova's own). The preload stops git's search at the temp dir; refusing first says so. Each runtime
+// checks the dir its temp roots go in, before any test file runs.
+function refuseTmpInRepo(tmpBase) {
+  const enclosing = repoAround(tmpBase);
+  if (!enclosing) return;
+  console.error(`run-tests: the temp dir ${tmpBase} is inside the git repository ${enclosing}, where tests could commit, branch or add worktrees; run with a TMPDIR outside every repository (e.g. TMPDIR=/tmp pnpm test)`);
   process.exit(2);
 }
 const rest = argv.filter((a, i) => a !== "--" && (at < 0 || (i !== at && i !== at + 1)));
@@ -81,6 +116,15 @@ if (runtime === "node") {
   // but whose process never exits, under heavy load): its whole process group is killed and the run
   // FAILS, never hangs. Not --test-force-exit: that ends a file before tests it registers after a
   // top-level await, so the run would pass with tests silently missing.
+  // One short, symlink-free TMPDIR for the run, removed at exit (the signal handlers below exit
+  // too), so temp dirs tests make and never remove don't pile up in /tmp. Short, because a unix
+  // socket path has a limit (108 bytes on Linux, 104 on macOS). Symlink-free for macOS: its default
+  // tmpdir (/var/folders/…) is reached through the /var -> /private/var symlink, so a path built from
+  // tmpdir() differs from its realpath. (Bun: each file's TMPDIR is its throwaway root, hermeticEnv.)
+  refuseTmpInRepo("/tmp");
+  const tmp = fs.realpathSync(fs.mkdtempSync("/tmp/sova-t-"));
+  process.env.TMPDIR = process.env.TMP = process.env.TEMP = tmp;
+  process.on("exit", () => removeTree(tmp));
   const limitMs = Number(process.env.NODE_PASS_LIMIT_MS) || 15 * 60_000;
   let failed = false;
   for (const s of sets) {
@@ -105,6 +149,7 @@ if ("missing" in found) {
   console.error(`run-tests: bun not found (${found.missing}); install it with mise, or run pnpm run test:node`);
   process.exit(2);
 }
+refuseTmpInRepo(os.tmpdir());
 const bun = found.path;
 const FILE_LIMIT_MS = Number(process.env.TEST_FILE_LIMIT_MS) || 300_000;
 const bunFlags = [...["--timeout=60000"].filter((d) => !flags.some((f) => f.split("=")[0] === d.split("=")[0])), ...flags];
@@ -121,6 +166,9 @@ function hermeticEnv() {
   const home = path.join(root, "home");
   fs.mkdirSync(path.join(home, ".claude"), { recursive: true, mode: 0o700 });
   fs.mkdirSync(path.join(home, ".pi", "agent"), { recursive: true, mode: 0o700 });
+  // TMPDIR is the root itself, so the file's temp dirs go when it does; not a subdir of it, since
+  // tests check the home is inside tmpdir(). Short, for socket path limits.
+  const tmp = root;
   const env = {
     ...process.env,
     HOME: home,
@@ -128,12 +176,18 @@ function hermeticEnv() {
     SOVA_TEST_HOME: root,
     PATH: [path.dirname(process.execPath), misePaths, process.env.PATH ?? ""].filter(Boolean).join(path.delimiter),
     SOVA_PRICES_FETCH: "off",
+    TMPDIR: tmp,
+    TMP: tmp,
+    TEMP: tmp,
+    // Git's repository search stops at the root and the temp dir above it (the preload sets the same).
+    GIT_CEILING_DIRECTORIES: [fs.realpathSync(root), fs.realpathSync(path.dirname(root))].join(path.delimiter),
   };
   // The same list hermetic-env.mjs drops.
   for (const name of [
     "PI_CODING_AGENT_DIR", "PI_AGENT_DIR", "PI_SESSIONS_DIR", "CLAUDE_CONFIG_DIR", "SOVA_EXTENSIONS_FILE",
     "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME",
     "SOVA_DEVICE_ID", "SOVA_MESH_IDENTITY", "SOVA_CLAUDE_ACCOUNTS_DEV",
+    ...GIT_LOCATION_VARS,
   ]) delete env[name];
   return { root, env };
 }
@@ -155,7 +209,7 @@ function runFile(file, extra) {
     child.on("error", (err) => (out += `run-tests: could not start ${bun}: ${err.message}\n`));
     child.on("close", (code) => {
       clearTimeout(limit);
-      fs.rmSync(root, { recursive: true, force: true });
+      removeTree(root);
       const count = (what) => Number(out.match(new RegExp(`^\\s*(\\d+) ${what}$`, "m"))?.[1] ?? 0);
       resolve({ file, code: code ?? 1, out, pass: count("pass"), fail: count("fail"), skip: count("skip") });
     });

@@ -5,6 +5,7 @@ import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
 import type { ChatClaudeLogin, SessionSummary, WorkerInfo } from "../shared/protocol";
 import { reuseUnchanged } from "./lib/summary-diff";
+import { stampListRows } from "./lib/composer-known";
 import { OptimisticArchive, type ArchiveMutation } from "./lib/optimistic-archive";
 import { setAgentsFeedSource } from "./lib/agents-feed";
 import { setExplanationsFeedSource } from "./lib/explanations-feed";
@@ -166,9 +167,12 @@ export function App() {
   const [sessions, { refetch }] = createResource<SessionSummary[] | undefined>(async (_, { value }): Promise<SessionSummary[] | undefined> => {
     const revision = archiveChanges.revision;
     try {
+      // When it was asked for: what a row says is at least this fresh (lib/composer-known).
+      const at = Date.now();
       const answer = await listSessions();
       if (revision !== archiveChanges.revision) return sessions.latest;
       const next = reuseUnchanged(answer, value);
+      stampListRows(next, at);
       archiveChanges.observe(next, (path) => !hostOf(path));
       setSessionIndex(next);
       // An open never-sent session stays readable when a later list drops it: clearing its draft to
@@ -238,13 +242,17 @@ export function App() {
     if (!meshOn()) return;
     const revision = archiveChanges.revision;
     try {
+      const at = Date.now();
       const answer = await fetchMeshSessions();
       // An answer an archive change made stale is dropped whole: the kept lists stay the ones
       // `peersAnswered` describes.
       if (revision !== archiveChanges.revision) return;
       noteSessionsHidden(answer);
-      setPeersAnswered(answeredPeers(answer));
+      const answered = answeredPeers(answer);
+      setPeersAnswered(answered);
       const next = mergePeerLists(peerLists(), answer, meshPeers());
+      // A current answer's rows are as fresh as this read; a kept or stale list keeps its old stamp.
+      for (const id of answered) stampListRows(next.get(id) ?? [], at);
       for (const [host, rows] of next) archiveChanges.observe(rows, (path) => hostOf(path) === host);
       for (const p of meshPeers()) {
         const rows = next.get(p.id) ?? [];

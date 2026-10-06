@@ -221,8 +221,8 @@ describe("a rewind through a real chat runtime", () => {
     for (let i = 0; i < 50 && !mine.some((m) => m.type === "rewound" || m.type === "rewind_refused"); i++) await new Promise((r) => setTimeout(r, 20));
 
     // The worker set did not change, and still follows the hello that blanked it client-side.
-    assert.deepEqual(theirs.map((m) => m.type), ["hello", "workers", "mode"]);
-    assert.deepEqual(mine.map((m) => m.type), ["hello", "workers", "mode", "rewound"]);
+    assert.deepEqual(theirs.map((m) => m.type), ["hello", "workers", "mode", "claude_login"]);
+    assert.deepEqual(mine.map((m) => m.type), ["hello", "workers", "mode", "claude_login", "rewound"]);
     assert.deepEqual(talk(theirs[0]), ["u1", "a1:0"]);
     assert.equal((theirs[0] as Extract<ChatServerMessage, { type: "hello" }>).context?.tokens, 100); // fill follows the new branch
     assert.deepEqual(mine.at(-1), { type: "rewound", id: "r1", entryId: "u2", editorText: "second ask" });

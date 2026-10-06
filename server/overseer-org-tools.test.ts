@@ -6,15 +6,17 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { after, describe, test } from "node:test";
 import type { SovaConfirmItem } from "../shared/protocol";
 import type { OverseerToolHost } from "./overseer-tools";
 import { piSession } from "./harness/pi/testing/handle";
+import { scratchRoot } from "./test-scratch";
 
-const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-oorg-")));
+// In no repository: the plain project folders below are themselves, so a coding session cuts no worktree.
+const root = scratchRoot("sova-oorg-");
 // A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
 process.on("exit", () => rmSync(root, { recursive: true, force: true }));
 const agentDir = join(root, "agent");

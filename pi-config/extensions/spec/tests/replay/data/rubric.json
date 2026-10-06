@@ -1,0 +1,307 @@
+{
+ "about": "The 15-task rubric, Sova side: each task is stated once; a builder starting it gets the tools output for its seeds. Each of a-d is scored 0, 1 or 2 by a reader, blind to the arm where possible (sum /8 per task, /120 in total).",
+ "source": "spec-slice task study, 2026-10-05, master at a95768b7: packet prose pages (up to 4 of 12,000 B per seed, following next) plus frontier, code, findings and impact, scored by hand",
+ "rubric": {
+  "a": "The promises the edit must keep are present.",
+  "b": "The exact names, states, shapes and messages are present.",
+  "c": "The neighbouring promises it could break are present.",
+  "d": "The boundary: what the edit may ignore is named but not loaded.",
+  "e": "Bytes the agent is handed.",
+  "g": "Tool calls."
+ },
+ "baseline": {
+  "arm": "packet",
+  "total": 63,
+  "of": 120
+ },
+ "tasks": [
+  {
+   "n": "01",
+   "slug": "send-refused-reason",
+   "kind": "small UI",
+   "task": "Add one more condition under which the composer refuses Send, shown as a one-line reason on the composer; keep the draft.",
+   "seeds": [
+    "§chat.composer/disabled-states"
+   ],
+   "baseline": {
+    "a": 2,
+    "b": 2,
+    "c": 1,
+    "d": 1,
+    "sum": 6,
+    "packetBytes": 2184,
+    "packetBytesCapped": false,
+    "calls": 7
+   }
+  },
+  {
+   "n": "02",
+   "slug": "queued-message-edit",
+   "kind": "behaviour + stored shape",
+   "task": "A message sent while a turn is running waits under the turn. Let the user edit a waiting message in place (today they can only remove it).",
+   "seeds": [
+    "§chat.transcript/a-queued-message"
+   ],
+   "baseline": {
+    "a": 2,
+    "b": 2,
+    "c": 1,
+    "d": 1,
+    "sum": 6,
+    "packetBytes": 3295,
+    "packetBytesCapped": false,
+    "calls": 7
+   }
+  },
+  {
+   "n": "03",
+   "slug": "thinking-level-on-composer",
+   "kind": "UI + behaviour",
+   "task": "Show the thinking level beside the model on the composer, changeable mid-session; hide it when the model has no levels.",
+   "seeds": [
+    "§chat.composer/composer-flyout"
+   ],
+   "baseline": {
+    "a": 2,
+    "b": 2,
+    "c": 1,
+    "d": 0,
+    "sum": 5,
+    "packetBytes": 11670,
+    "packetBytesCapped": false,
+    "calls": 8
+   }
+  },
+  {
+   "n": "04",
+   "slug": "model-change-wire-field",
+   "kind": "wire shape",
+   "task": "The message/event that records a mid-session model change must also carry the model it replaced.",
+   "seeds": [
+    "§chat.model-menu/states"
+   ],
+   "baseline": {
+    "a": 1,
+    "b": 0,
+    "c": 0,
+    "d": 0,
+    "sum": 1,
+    "packetBytes": 3429,
+    "packetBytesCapped": false,
+    "calls": 7
+   }
+  },
+  {
+   "n": "05",
+   "slug": "default-model-setting",
+   "kind": "settings",
+   "task": "Add a setting that chooses which model (and level) new sessions start on.",
+   "seeds": [
+    "§chat.model-menu/saved-default",
+    "§app.settings-dialog/models"
+   ],
+   "baseline": {
+    "a": 2,
+    "b": 1,
+    "c": 1,
+    "d": 0,
+    "sum": 4,
+    "packetBytes": 50532,
+    "packetBytesCapped": true,
+    "calls": 17
+   }
+  },
+  {
+   "n": "06",
+   "slug": "rename-session",
+   "kind": "small UI",
+   "task": "Add a Rename action for a session in the sessions list.",
+   "seeds": [
+    "§app.session-list/anatomy"
+   ],
+   "baseline": {
+    "a": 0,
+    "b": 0,
+    "c": 0,
+    "d": 0,
+    "sum": 0,
+    "packetBytes": 15079,
+    "packetBytesCapped": false,
+    "calls": 8
+   }
+  },
+  {
+   "n": "07",
+   "slug": "collapse-tool-output",
+   "kind": "small UI",
+   "task": "Collapse long tool-call output in the transcript behind a 'show more' control.",
+   "seeds": [
+    "§chat.transcript/transcript-items"
+   ],
+   "baseline": {
+    "a": 2,
+    "b": 2,
+    "c": 1,
+    "d": 1,
+    "sum": 6,
+    "packetBytes": 20040,
+    "packetBytesCapped": false,
+    "calls": 8
+   }
+  },
+  {
+   "n": "08",
+   "slug": "fork-from-reply",
+   "kind": "behaviour",
+   "task": "Let the user fork a session from an earlier reply (not just the latest point).",
+   "seeds": [
+    "§chat.session-fork/from-reply"
+   ],
+   "baseline": {
+    "a": 2,
+    "b": 1,
+    "c": 1,
+    "d": 1,
+    "sum": 5,
+    "packetBytes": 12589,
+    "packetBytesCapped": false,
+    "calls": 8
+   }
+  },
+  {
+   "n": "09",
+   "slug": "session-pinned-field",
+   "kind": "stored shape",
+   "task": "Add a durable 'pinned' flag to the stored session record so it survives restart; old records without it must still load.",
+   "seeds": [
+    "§app.session-list/regions-top-and-archive"
+   ],
+   "baseline": {
+    "a": 1,
+    "b": 0,
+    "c": 0,
+    "d": 1,
+    "sum": 2,
+    "packetBytes": 14220,
+    "packetBytesCapped": false,
+    "calls": 8
+   }
+  },
+  {
+   "n": "10",
+   "slug": "credential-choice",
+   "kind": "auth",
+   "task": "Allow two credentials/logins for the same provider and let the user choose which one new sessions use.",
+   "seeds": [
+    "§app.claude-logins/spawn-selection"
+   ],
+   "baseline": {
+    "a": 2,
+    "b": 2,
+    "c": 2,
+    "d": 1,
+    "sum": 7,
+    "packetBytes": 10713,
+    "packetBytesCapped": false,
+    "calls": 7
+   }
+  },
+  {
+   "n": "11",
+   "slug": "share-revoke",
+   "kind": "behaviour + URL",
+   "task": "Let the owner revoke a public share link; the address must stop serving at once.",
+   "seeds": [
+    "§app.session-share/link"
+   ],
+   "baseline": {
+    "a": 2,
+    "b": 2,
+    "c": 1,
+    "d": 1,
+    "sum": 6,
+    "packetBytes": 39167,
+    "packetBytesCapped": false,
+    "calls": 10
+   }
+  },
+  {
+   "n": "12",
+   "slug": "deep-link-model-picker",
+   "kind": "routing",
+   "task": "Add an address that opens a given session with the model picker already open (shareable, survives reload, Back closes it).",
+   "seeds": [
+    "§app/shell",
+    "§chat.model-menu/menu"
+   ],
+   "baseline": {
+    "a": 1,
+    "b": 1,
+    "c": 0,
+    "d": 0,
+    "sum": 2,
+    "packetBytes": 61504,
+    "packetBytesCapped": true,
+    "calls": 18
+   }
+  },
+  {
+   "n": "13",
+   "slug": "worker-row-stop",
+   "kind": "behaviour",
+   "task": "Add a Stop action on a row of the workers list (the list of things doing work on the user's behalf).",
+   "seeds": [
+    "§app.subagents-pane/worker-rows"
+   ],
+   "baseline": {
+    "a": 1,
+    "b": 1,
+    "c": 1,
+    "d": 1,
+    "sum": 4,
+    "packetBytes": 27084,
+    "packetBytesCapped": false,
+    "calls": 9
+   }
+  },
+  {
+   "n": "14",
+   "slug": "errors-say-next-step",
+   "kind": "cross-cutting rule",
+   "task": "Every error the user sees in the chat must say what to do next. Apply the rule across the chat area.",
+   "seeds": [
+    "§design/ground-rules",
+    "§chat.model-menu/errors"
+   ],
+   "baseline": {
+    "a": 2,
+    "b": 1,
+    "c": 0,
+    "d": 0,
+    "sum": 3,
+    "packetBytes": 23428,
+    "packetBytesCapped": false,
+    "calls": 15
+   }
+  },
+  {
+   "n": "15",
+   "slug": "bug-composer-file",
+   "kind": "bug from code file",
+   "task": "Bug report against the composer source file: Enter sends twice when pressed during IME composition. Start from the file, find what it must keep.",
+   "seeds": [
+    "§chat.composer/behavior"
+   ],
+   "baseline": {
+    "a": 2,
+    "b": 2,
+    "c": 1,
+    "d": 1,
+    "sum": 6,
+    "packetBytes": 32718,
+    "packetBytesCapped": false,
+    "calls": 10
+   }
+  }
+ ]
+}

@@ -4,22 +4,23 @@
 //
 //   node scripts/round.mjs <command> [args] [--repo <dir>] [--json]
 //
-//   start                 this session's round begins (PI_SESSION_ID): interview?, push hold, restart confirmed?
+//   start                 this session's round begins (PI_SESSION_ID): interview?, push hold, restart needed or confirmed?
 //   names-answered        the user answered the start interview: lift the push hold
 //   status                every local branch ahead of master with a worktree, and the main checkout
 //   note <branch> owner=<id> chip=ready|waiting|none idle=yes|no [source=<word>]
 //   ask <branch> topic=<name>  the session_send text for an idle owner, asking it to answer on the round's topic
 //   reply <branch>        stdin = the delivered topic batch (or the owner's session_read output): READY at this head, NOT READY, stale, no answer
-//   check <branch>        merge master in (in the branch's worktree), typecheck, tests, suites, build, spec
-//   land <branch>         a green check at this head and master: the `worktree` merge call to make
-//   landed <branch>       verify it is in master, build the main checkout, record a restart; next: the clean up
+//   check <branch>        merge master in (in the branch's worktree), typecheck, tests, suites, build, spec, leak scan
+//   land <branch>         a green check at this head and master, and no leak-scan hit: the `worktree` merge call to make
+//   landed <branch>       verify its head is in master, build the main checkout, record the restart need; next: the clean up
 //   push                  leak-scan, then `git push origin master`, refused under the hold or if not a fast-forward
-//   restart-check         are this server's hosted sessions idle? prints the systemd-run line only when they are
+//   restart-check         is a restart needed, and are this server's hosted sessions idle? prints the systemd-run line only then
 //   report                the round report's skeleton
 //
 // Exit 0: go. Exit 1: something to act on or decide. Exit 2: couldn't tell; fail closed.
 // It never reads sessions (the captain records what the session tools showed with `note`), never
 // restarts anything, never force-pushes, and masks every private name in what it prints or stores.
+// A restart is needed when the live server's head (GET /api/health) lacks master's runtime code.
 // Every child runs by argv with no shell, in its own process group, under a timeout.
 import { spawn } from "node:child_process";
 import { accessSync, chmodSync, constants, createWriteStream, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
@@ -204,6 +205,35 @@ export const timeoutFor = (floorMs, passedMs = []) => Math.max(floorMs, Math.rou
 /** A hosted session with a turn in flight or a worker working (a live record, pi-config/extensions/sessions/schema.ts). */
 export const busyOf = (record) => (record?.presence?.workerCounts?.working ?? 0) > 0 || record?.presence?.activity?.state === "working";
 
+/** Text with the home directory written as `~`, so a local path never shows the home path and `~/…`
+ *  still resolves (the worktree tool expands it). Its real path too, when the home is a symlink. */
+export function homeShown(text, home = homedir()) {
+  const homes = homesOf(home);
+  if (!homes.length) return text;
+  const re = new RegExp(`(?<![A-Za-z0-9._/~-])(?:${homes.map(escapeRe).join("|")})(?=/|$|[^A-Za-z0-9._-])`, "g");
+  return text.replace(re, "~");
+}
+
+/** A local path as a shell argument: under the home directory `"$HOME"'/rest'`, else single-quoted. */
+export function shellPath(path, home = homedir()) {
+  const q = (s) => `'${s.replace(/'/g, `'\\''`)}'`;
+  for (const h of homesOf(home)) {
+    if (path === h) return `"$HOME"`;
+    if (path.startsWith(`${h}/`)) return `"$HOME"${q(path.slice(h.length))}`;
+  }
+  return q(path);
+}
+
+function homesOf(home) {
+  if (!home || !isAbsolute(home)) return [];
+  const h = home.replace(/\/+$/, "");
+  if (!h) return [];
+  let real = h;
+  try { real = realpathSync(h); } catch {}
+  return [...new Set([h, real])].sort((a, b) => b.length - a.length);
+}
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 /** Each name masked, case-insensitively, longest first. */
 export function maskerOf(names) {
   const list = [...new Set(names.map((n) => n.trim()).filter(Boolean))].sort((a, b) => b.length - a.length);
@@ -371,7 +401,9 @@ class Round {
 
   saveState() {
     mkdirSync(this.dir, { recursive: true, mode: 0o700 });
-    const masked = JSON.parse(JSON.stringify(this.state), (_k, v) => (typeof v === "string" ? this.mask(v) : v));
+    // Keys too: a branch named after a private name is stored masked (and so never found again).
+    const maskKeys = (v) => (v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).map(([k, x]) => [this.mask(k), x])) : v);
+    const masked = JSON.parse(JSON.stringify(this.state), (_k, v) => (typeof v === "string" ? this.mask(v) : maskKeys(v)));
     masked.events = masked.events.slice(-200);
     const tmp = join(this.dir, `.state.${process.pid}.tmp`);
     writeFileSync(tmp, `${JSON.stringify(masked, null, 2)}\n`, { mode: 0o600 });
@@ -391,6 +423,66 @@ class Round {
 
   floor(step) {
     return this.floorOverride || FLOORS[step];
+  }
+
+  /** A local path holding a private name beyond its home prefix (the home path is listed too, so
+   *  it is judged as printed: `~/…`). */
+  privateIn(path) {
+    const shown = homeShown(path);
+    return this.mask(shown) !== shown;
+  }
+
+  /** leak-scan.mjs over what landing `head` would publish: the commits origin/master doesn't have.
+   *  → {code: 0 clean | 1 hits | 2 couldn't scan, lines} */
+  async leakScanTo(head) {
+    const { main } = await this.repo();
+    const origin = await git(main, ["rev-parse", "--verify", "-q", "refs/remotes/origin/master^{commit}"]);
+    if (origin.code !== 0) return { code: 2, lines: ["leak-scan: no origin/master here, so what landing would publish can't be scanned."] };
+    const range = `${origin.stdout.trim()}..${head}`;
+    const scan = await run(process.execPath, [join(HERE, "leak-scan.mjs"), "--repo", main, "--range", range], { cwd: main, timeoutMs: 120_000 });
+    const lines = `${scan.stdout}${scan.stderr}`.split("\n").filter(Boolean);
+    return { code: scan.code === 0 || scan.code === 1 ? scan.code : 2, lines: lines.length ? lines : [`leak-scan: ${scan.timedOut ? "timed out" : `exit ${scan.code}`}.`] };
+  }
+
+  /** The restart need: whether the live server (GET /api/health, its `head`) lacks master's runtime
+   *  code, whoever merged it. → {known: false, why} | {known: true, needed, files, head, startedAt} */
+  async restartNeed() {
+    let health = null;
+    try {
+      const res = await fetch(this.healthUrl, { signal: AbortSignal.timeout(3000) });
+      health = res.ok ? await res.json() : null;
+    } catch {}
+    const master = await this.masterSha();
+    const head = typeof health?.head === "string" && /^[0-9a-f]{7,64}$/.test(health.head) ? health.head : null;
+    if (!head) return { known: false, master, why: health ? "the server's health names no head" : "the server's health can't be read" };
+    const { main } = await this.repo();
+    const d = await git(main, ["diff", "--name-only", head, master, "--"]);
+    if (d.code !== 0) return { known: false, master, why: `the server's head ${head.slice(0, 7)} isn't in this repository` };
+    const files = d.stdout.split("\n").filter(Boolean).filter(needsRestart);
+    return { known: true, needed: files.length > 0, files, head, master, startedAt: health.startedAt };
+  }
+
+  /** Records a restart need in the state: pending while needed, confirmed once none. One that can't
+   *  be told keeps a pending restart, and makes one only when `failClosed` (a merge just landed). */
+  applyNeed(st, need, { merge, failClosed = false } = {}) {
+    const was = st.restart?.pending ? st.restart : null;
+    const pend = (line) => {
+      st.restart = { pending: true, since: was?.since ?? this.now, merges: [...(was?.merges ?? []), ...(merge ? [merge] : [])], ...(need.known ? { serverHead: need.head } : {}) };
+      return line;
+    };
+    if (need.known && !need.needed) {
+      if (!was) return `The server runs ${need.head.slice(0, 7)}, with master ${need.master.slice(0, 7)}'s runtime code: no restart needed.`;
+      st.restart = { pending: false, confirmedAt: this.now, startedAt: need.startedAt, head: need.head };
+      this.event("restart-confirmed", { head: need.head });
+      return `Restart confirmed: the server runs ${need.head.slice(0, 7)}, with master ${need.master.slice(0, 7)}'s runtime code.`;
+    }
+    if (need.known) {
+      const n = need.files.length;
+      return pend(`Restart needed: the server runs ${need.head.slice(0, 7)}, and master ${need.master.slice(0, 7)} changes ${n} file${n === 1 ? "" : "s"} that need one (${need.files.slice(0, 3).join(", ")}${n > 3 ? ` and ${n - 3} more` : ""}).`);
+    }
+    if (was) return pend(`Restart pending since ${ago(this.now - was.since)} ago; ${need.why}, so it isn't confirmed.`);
+    if (failClosed) return pend(`Whether the server runs master's code can't be told (${need.why}): a restart is treated as needed.`);
+    return `Whether the server runs master's code can't be told: ${need.why}.`;
   }
 
   // --- the repository ---------------------------------------------------------------------
@@ -494,26 +586,9 @@ class Round {
     } else lines.push("Later round: run scripts/discover-names.mjs (no --show) to pick up new names.");
     if (!this.settings.exists && !first) lines.push("Settings missing: the leak scan can't run, so nothing can be pushed.");
     lines.push(`Push hold: ${sess.hold ? "on (the user hasn't answered the start interview)" : "off"}.`);
-    if (st.restart?.pending) lines.push(await this.confirmRestart(st));
+    lines.push(this.applyNeed(st, await this.restartNeed()));
     this.saveState();
     return { exit: first ? 1 : 0, lines, next: first ? "the start interview, then `round.mjs status`" : "round.mjs status" };
-  }
-
-  async confirmRestart(st) {
-    let health;
-    try {
-      const res = await fetch(this.healthUrl, { signal: AbortSignal.timeout(3000) });
-      health = res.ok ? await res.json() : null;
-    } catch {}
-    const started = Date.parse(health?.startedAt ?? "");
-    if (!health || !Number.isFinite(started)) return `Restart pending since ${ago(this.now - st.restart.since)} ago; the server's health can't be read, so it isn't confirmed.`;
-    const master = await this.masterSha();
-    if (started > st.restart.since && typeof health.head === "string" && health.head === master) {
-      st.restart = { pending: false, confirmedAt: this.now, startedAt: health.startedAt, head: master };
-      this.event("restart-confirmed", { head: master });
-      return `Restart confirmed: the server started ${ago(this.now - started)} ago, at master ${master.slice(0, 7)}.`;
-    }
-    return `Restart pending: the server started ${ago(this.now - started)} ago at ${String(health.head ?? "?").slice(0, 7)}, before the merge or not at master ${master.slice(0, 7)}.`;
   }
 
   async namesAnswered() {
@@ -731,6 +806,11 @@ class Round {
       if (b.code !== 0) needs.push(b.timedOut ? "build timed out" : "build fails");
     } else lines.push("build: skipped (the typecheck failed).");
     lines.push(...(await this.specChecks(tree, needs)));
+    // What landing would publish, scanned now: a scrubbed or leaky commit is caught before it lands.
+    const scan = await this.leakScanTo(head);
+    lines.push(...scan.lines);
+    if (scan.code === 1) needs.push("leak-scan hits in commits origin/master doesn't have");
+    else if (scan.code === 2) lines.push("The leak scan couldn't run here: landing doesn't wait on it, and push scans again.");
 
     const ok = needs.length === 0;
     (st.branches[branch] ??= {}).check = { head, masterSha: master, ok, needs, preexisting, at: this.now, logs: logDir };
@@ -809,16 +889,20 @@ class Round {
     if (!tree) stop(1, `${branch} has no worktree.`);
     const dirty = await this.dirtyIn(tree);
     if (dirty.length) stop(1, `${branch}'s worktree has ${dirty.length} uncommitted file${dirty.length === 1 ? "" : "s"} since its check.`);
-    if (this.mask(tree) !== tree) stop(2, "The worktree's path holds a private name: ask the user how to land it.");
-    const call = `worktree ${JSON.stringify({ action: "merge", path: tree })}`;
+    if (this.privateIn(tree)) stop(2, "The worktree's path holds a private name: ask the user how to land it.");
+    const scan = await this.leakScanTo(head);
+    if (scan.code === 1) return { exit: 1, lines: [...scan.lines, `Land nothing: ${branch} carries a leak-scan hit in commits origin/master doesn't have.`], next: "report the commit, file and line to the owner and the user; scrubbing unpushed commits is the user's call, case by case" };
+    const path = homeShown(tree);
+    const call = `worktree ${JSON.stringify({ action: "merge", path })}`;
     const owner = rec.answer?.kind === "ready" ? `Owner ${rec.owner} said READY at ${rec.answer.head.slice(0, 7)}.` : rec.owner ? `No READY recorded from ${rec.owner}: land only if the owner has said it's ready at this head.` : "UNOWNED: never land it without the user's OK.";
-    return { exit: 0, lines: [`landable at ${head.slice(0, 7)} on master ${master.slice(0, 7)} (checked ${ago(this.now - c.at)} ago).`, owner, `call: ${call}`], data: { call: { action: "merge", path: tree } }, next: `after the merge card, round.mjs landed ${branch}` };
+    const scanned = scan.code === 0 ? [] : [...scan.lines, "The leak scan couldn't run here: push scans again."];
+    return { exit: 0, lines: [`landable at ${head.slice(0, 7)} on master ${master.slice(0, 7)} (checked ${ago(this.now - c.at)} ago).`, ...scanned, owner, `call: ${call}`], data: { call: { action: "merge", path } }, next: `after the merge card, round.mjs landed ${branch}` };
   }
 
   /** The clean up's two commands for a landed branch's worktree, or why it can't run from here. */
   async cleanUp(main, branch, tree) {
     if (!tree) return { why: `${branch} has no worktree to remove.` };
-    if (this.mask(tree) !== tree || this.mask(main) !== main) return { why: "The worktree's path holds a private name: leave it, and ask the user to remove it." };
+    if (this.privateIn(tree) || this.privateIn(main)) return { why: "The worktree's path holds a private name: leave it, and ask the user to remove it." };
     // A sandboxed captain sees git's worktree records read-only: git would delete the folder's
     // files and then fail to unregister it, so it isn't started at all.
     const admin = await git(tree, ["rev-parse", "--path-format=absolute", "--git-dir"]);
@@ -830,37 +914,37 @@ class Round {
       return { why: "Git's record of this worktree is read-only here (a sandboxed session), so it can't be removed from this session: leave it, and say so in the report." };
     }
     const q = (s) => `'${s.replace(/'/g, `'\\''`)}'`;
-    return { commands: [`git -C ${q(main)} worktree remove -- ${q(tree)}`, `git -C ${q(main)} branch -d -- ${q(branch)}`] };
+    return { commands: [`git -C ${shellPath(main)} worktree remove -- ${shellPath(tree)}`, `git -C ${shellPath(main)} branch -d -- ${q(branch)}`] };
   }
 
   async landed() {
-    const { branch, tree } = await this.branchArg();
+    const { branch, head, tree } = await this.branchArg();
     const st = this.loadState();
-    const rec = st.branches[branch];
-    if (!rec?.check?.ok) stop(1, `${branch} has no green check on record.`);
+    // Its head in master is all it takes: a branch its owner merged has no check on record.
+    const rec = (st.branches[branch] ??= {});
     const { main } = await this.repo();
     const master = await this.masterSha();
-    const anc = await git(main, ["merge-base", "--is-ancestor", rec.check.head, master]);
-    if (anc.code === 1) stop(1, `${rec.check.head.slice(0, 7)} isn't in master yet: land it with the worktree tool first.`, `round.mjs land ${branch}`);
+    const anc = await git(main, ["merge-base", "--is-ancestor", head, master]);
+    if (anc.code === 1) stop(1, `${branch} at ${head.slice(0, 7)} isn't in master yet: land it with the worktree tool first.`, `round.mjs land ${branch}`);
     if (anc.code !== 0) stop(2, `git merge-base failed: ${firstLine(anc)}`);
     const m = await this.mainFacts();
     const mainHead = (await git(main, ["rev-parse", "HEAD"])).stdout.trim();
     if (!m.onMaster || mainHead !== master) stop(2, "The main checkout isn't on master at its tip, so it can't be built.");
-    const changed = (await gitOut(main, ["diff", "--name-only", `${rec.check.masterSha}..${master}`], "diff")).split("\n").filter(Boolean);
-    const restart = changed.some(needsRestart);
+    const restartLine = this.applyNeed(st, await this.restartNeed(), { merge: { branch, sha: master }, failClosed: true });
+    const restart = !!st.restart?.pending;
     const env = { ...process.env };
     delete env.CLAUDE_CONFIG_DIR;
     mkdirSync(join(this.dir, "logs"), { recursive: true, mode: 0o700 });
     const logFile = join(this.dir, "logs", `${new Date(this.now).toISOString().replace(/[:.]/g, "-")}-main-build.log`);
     const b = await run(this.pnpm, ["run", "build"], { cwd: main, env, timeoutMs: timeoutFor(this.floor("build"), st.timings.build), logFile });
     rec.landed = { sha: master, at: this.now };
-    if (restart) st.restart = { pending: true, since: st.restart?.pending ? st.restart.since : this.now, merges: [...(st.restart?.pending ? st.restart.merges ?? [] : []), { branch, sha: master }] };
     this.event("landed", { branch, sha: master, restart, built: b.code === 0 });
     this.saveState();
     const lines = [
       `${branch} is in master at ${master.slice(0, 7)}.`,
       `Main checkout build: ${b.code === 0 ? "ok" : b.timedOut ? "TIMED OUT" : `FAILED (exit ${b.code})`} (log ${logFile}).`,
-      restart ? "It changes server-side code: a restart is needed (round.mjs restart-check)." : "No restart needed: only the build.",
+      restartLine,
+      restart ? "A restart is needed: round.mjs restart-check." : "No restart needed: only the build.",
     ];
     const clean = await this.cleanUp(main, branch, tree);
     if (clean.why) lines.push(`Clean up: ${clean.why}`);
@@ -943,18 +1027,19 @@ class Round {
     if (!fresh.length) stop(2, `No live record of server pid ${server.pid} (found by ${server.how}) has a heartbeat in the last 30 s: can't tell who is busy. Restart nothing.`);
     const others = fresh.filter((r) => r.session.sessionId !== sid);
     const busy = others.filter(busyOf);
+    const needLine = this.applyNeed(st, await this.restartNeed());
     const pending = !!st.restart?.pending;
     this.event("restart-check", { busy: busy.length, hosted: others.length });
     this.saveState();
     if (busy.length) {
-      const lines = [`${busy.length} of ${others.length} other hosted session${others.length === 1 ? "" : "s"} busy (server pid ${server.pid}):`];
+      const lines = [needLine, `${busy.length} of ${others.length} other hosted session${others.length === 1 ? "" : "s"} busy (server pid ${server.pid}):`];
       for (const r of busy) {
         const why = [r.presence?.activity?.state === "working" ? "turn in flight" : "", (r.presence?.workerCounts?.working ?? 0) > 0 ? `${r.presence.workerCounts.working} worker(s) working` : ""].filter(Boolean);
         lines.push(`- ${r.session.sessionId ?? r.session.id}${r.session.name ? ` "${r.session.name}"` : ""}: ${why.join(", ")}`);
       }
       return { exit: 1, lines: [...lines, "Restart only with the user's OK; put this list in the report."], data: { busy: busy.map((r) => r.session.sessionId ?? r.session.id) }, next: "the report, with the busy list" };
     }
-    const lines = [`Every other hosted session is idle (${others.length}, server pid ${server.pid}).`];
+    const lines = [needLine, `Every other hosted session is idle (${others.length}, server pid ${server.pid}).`];
     if (!pending) return { exit: 0, lines: [...lines, "No restart pending."], next: "round.mjs report" };
     lines.push("As your turn's LAST tool call, then end the turn:", `systemd-run --user --on-active=30s systemctl --user restart ${unit}`, "If it fails, ask the user to restart; never another way.");
     return { exit: 0, lines, next: "the report, then that call as your last" };
@@ -976,7 +1061,7 @@ class Round {
     const checks = of("check");
     lines.push(`- Checks: ${checks.map((e) => `${e.branch} ${e.ok ? "landable" : `needs: ${st.branches[e.branch]?.check?.needs?.join("; ") ?? "?"}`}`).join(" · ") || "none run"}`);
     const rc = of("restart-check").at(-1);
-    lines.push(`- Restart: ${st.restart?.pending ? `pending (${(st.restart.merges ?? []).map((m) => m.branch).join(", ")})${rc ? `, ${rc.busy} busy at the last check` : ", not checked"}` : st.restart?.confirmedAt >= since ? "done and confirmed" : "none needed"}`);
+    lines.push(`- Restart: ${st.restart?.pending ? `pending (${(st.restart.merges ?? []).map((m) => m.branch).join(", ") || `the server runs ${String(st.restart.serverHead ?? "?").slice(0, 7)}`})${rc ? `, ${rc.busy} busy at the last check` : ", not checked"}` : st.restart?.confirmedAt >= since ? "done and confirmed" : "none needed"}`);
     lines.push(`- Unowned: ${st.lastStatus?.unowned?.join(", ") || "none"}`);
     lines.push(`- Owners asked: ${of("asked").map((e) => { const a = ev.find((x) => x.kind === "answer" && x.branch === e.branch && x.at >= e.at); return `${e.owner} about ${e.branch}: ${a ? a.answer : "no answer yet"}`; }).join(" · ") || "none"}`);
     lines.push("- Handed back: (fill in: branch, owner, why)");
@@ -1003,7 +1088,7 @@ export async function main(argv = process.argv.slice(2)) {
   const text = round?.json
     ? JSON.stringify({ command: round.args[0] ?? null, exit: result.exit, lines: result.lines, ...(result.data ?? {}), next: next ?? null })
     : [...result.lines, ...(next ? [`next: ${next}`] : [])].join("\n");
-  process.stdout.write(`${mask(text)}\n`);
+  process.stdout.write(`${mask(homeShown(text))}\n`);
   return result.exit;
 }
 

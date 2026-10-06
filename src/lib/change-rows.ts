@@ -18,3 +18,10 @@ export function isChangeRow(item: TranscriptItem): boolean {
 export function isProfileRow(item: TranscriptItem): boolean {
   return item.kind === "info" && item.profileMark !== undefined;
 }
+
+/** A Claude login switch note (§app.claude-logins/switch-login): like the profile entry it never
+    counts toward the empty state, and the thread draws it where it sits once a message is sent.
+    The server marks it (`loginNote`). */
+export function isLoginNoteRow(item: TranscriptItem): boolean {
+  return item.kind === "info" && item.loginNote === true;
+}

@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { after, describe, test } from "node:test";
 import { ClaudeAccountsService } from "./claude-accounts";
 import { normalizeEntry } from "./transcript";
+import { rowFor } from "./wire-rows";
 import type { ClaudeAccountsInfo, ClaudeLoginFlowState } from "../shared/protocol";
 
 const FAKE = fileURLToPath(new URL("../scripts/fake-claude.mjs", import.meta.url));
@@ -128,12 +129,17 @@ describe("Settings → Accounts service", () => {
 });
 
 describe("claude-login entries in the transcript", () => {
-  test("a switch is one info row with its notice; the plain record renders nothing", () => {
+  test("a switch is one info row with its notice, marked loginNote on both wires; the plain record renders nothing", () => {
     const text = "Claude: switched a@example.com → b@example.com (5h limit, resets 15:00)";
     const [row, ...rest] = normalizeEntry({ type: "custom", id: "e1", customType: "claude-login", data: { v: 1, login: "l-0000000b", from: "l-0000000a", reason: "limit", text } } as any);
     assert.equal(rest.length, 0);
     assert.equal(row?.kind, "info");
     assert.equal(row?.text, text);
+    assert.equal(row?.loginNote, true, "the server marks the switch note (§app.claude-logins/switch-login)");
+    const w2 = rowFor(row!, 2);
+    assert.equal(w2.meta, undefined);
+    assert.ok(w2.facts);
+    assert.equal(w2.loginNote, true, "the mark survives wire 2, where facts replace meta");
     assert.deepEqual(normalizeEntry({ type: "custom", id: "e2", customType: "claude-login", data: { v: 1, login: "l-0000000a" } } as any), []);
   });
 });

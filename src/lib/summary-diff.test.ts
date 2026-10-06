@@ -23,6 +23,7 @@ const full = (): Required<SessionSummary> => ({
   workers: { working: 0, total: 1 },
   workerSession: true,
   busy: false,
+  chat: { model: "zai/glm-5.3", thinking: "high", mode: "delegate", minorModes: ["align"], strict: false, applies: "now" },
   origin: "web",
   archived: false,
   align: { openDocs: 2, openQuestions: 3, questionDocs: 1, lead: { id: "al_1", title: "Export" } },

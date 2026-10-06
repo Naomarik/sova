@@ -1,10 +1,15 @@
 // Run: npx tsx --test server/usage-poll.test.ts
-// A fake clock and timers, and an injected refresh: nothing is fetched, nothing touches disk.
+// A fake clock and timers, and an injected refresh: nothing is fetched, and nothing touches disk
+// but the usage-history test's own temp directory.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { CacheFile, RefreshResult } from "../pi-config/extensions/usage-status/fetch.ts";
 import { FAILURE_RETRY_MS } from "../pi-config/extensions/usage-status/fetch.ts";
 import { FIRST_TICK_MS, FIRST_TICK_JITTER_MS, JITTER_MS, MAX_TICK_MS, MIN_TICK_MS, nextDelay, startUsagePoller, type UsagePollerOptions } from "./usage-poll";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { readingsOf, UsageHistory } from "./usage-history";
 
 /** One pending timer at a time (the poller chains), advanced by hand. */
 function harness(opts: Partial<UsagePollerOptions> & { random?: () => number } = {}) {
@@ -134,6 +139,26 @@ test("onFetched only when this tick fetched and wrote the cache", async () => {
   await h.fire();
   assert.deepEqual(seen, [fetched]);
   h.poller.stop();
+});
+
+test("onCache on every tick that yields a cache: an adopted one (a TUI fetched it) is sampled into the history", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "sova-usage-poll-history-"));
+  try {
+    const history = new UsageHistory({ dir, now: () => 1_000_000 });
+    const h = harness({ onCache: (c) => history.record(readingsOf(c, { accounts: {} })) });
+    const zai = (pct: number) => ({ state: "ok" as const, fiveHour: { label: "5h", pct, resetsAt: new Date(2_000_000_000).toISOString() } });
+    // Neither tick fetched: the first adopted a TUI's write, the second found the file fresh.
+    h.results.push(ok({ ...cache(h.now() + 100_000), zai: zai(12) } as CacheFile, false), ok({ ...cache(h.now() + 400_000, h.now() + 200_000), zai: zai(15) } as CacheFile, false));
+    await h.fire();
+    await h.fire();
+    assert.deepEqual(
+      history.samples("zai", "5h").map((s) => s.pct),
+      [12, 15],
+    );
+    h.poller.stop();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("a tick is skipped while Refresh Usage is in flight, and the chain goes on", async () => {

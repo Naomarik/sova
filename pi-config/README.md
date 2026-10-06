@@ -29,7 +29,7 @@ installs with `install.sh` alone, without the web app.
 | `extensions/provider-limits/` | How many model requests each provider runs at once on this device (`provider-limits.json`, written by Sova's Settings → Models); requests over the limit wait instead of failing. Every pi worker loads it. Its `gate.ts` (builtins only) is imported by Sova |
 | `extensions/llm-inflight/` | Counts this process's logical LLM calls in flight (issue to end; queue waits, cooldowns and tool time never count) at its model runtime and from the Claude Code CLI's stream; the session's live record carries the count (`presence.llm`), and a pi worker reports its count to the session running it. Every pi worker loads it. Its `tracker.ts` and `runtime.ts` (builtins only) are imported by Sova |
 | `extensions/mode/` | Per-session normal ↔ delegate mode switcher plus minor modes (`alt+m`, `ctrl+p` → Mode, `/mode`). Delegate orchestrates workers by four profiles — planning, investigation, routine and complex implementation — each a configurable backend/model/effort with an optional fallback (`mode-delegate.json`); the `spec` minor mode can hand its spec writing to one such worker (`mode-spec.json`) |
-| `extensions/spec/` | Not a pi extension (no `index.ts`; pi skips it): standalone `.sova/spec` tools that the `spec` minor mode in `extensions/mode/` tells the agent to run. `core/sova-spec.mjs` is read-only; `core/sova-spec-draft.mjs` keeps proposed documentation in full-copy drafts and promotes the implemented, verified part, writing only with `--write`; `core/sova-spec-review.mjs` records review evidence, and writes only under `.sova/spec/reviews/` and only with `--write` or `record` |
+| `extensions/spec/` | Not a pi extension (no `index.ts`; pi skips it): standalone `.sova/spec` tools that the `spec` minor mode in `extensions/mode/` tells the agent to run. `core/sova-spec.mjs` is read-only; `core/sova-spec-draft.mjs` keeps proposed documentation in full-copy drafts and promotes the implemented, verified part, plus decisions (notes, sections, agreed records not built yet) and `embeds`/`core`-only changes (not on an agreed record that maps code) on doc-only evidence, writing only with `--write`; `core/sova-spec-review.mjs` records review evidence, and writes only under `.sova/spec/reviews/` and only with `--write` or `record` |
 | `extensions/sessions/` | Live pi sessions on this machine find each other through a filesystem presence registry; ships the `pi-sessions` CLI (`bin/pi-sessions.ts`) and the record schema (`public/SCHEMA.md`) |
 | `extensions/link/` | The tools of a session Sova has linked with sessions on other mesh hosts (`link_members`, `link_send`, `link_inbox`, and the file tools `link_offer`, `link_accept`, `link_decline`, `link_offers`): always registered, inert without Sova's `sova-link` flag, and every call goes to the session's own Sova host, which moves the files |
 | `extensions/remote/` | `--target <name>`: runs the session's tools on an ssh / AWS-SSM / docker / incus target from `targets.json`; inert without the flag. Its `argv.ts` is imported by Sova |
@@ -179,13 +179,13 @@ cd extensions/subagents && node tests/run.mjs && node tests/smoke.mjs && node te
 cd extensions/claude-code && node tests/run.mjs && node tests/smoke.mjs && node tests/ui-permissions.mjs
 cd extensions/extension-toggle && node --test index.test.ts
 cd extensions/compact-handoff && node tests/run.mjs
-cd extensions/mode && node --test index.test.ts delegate.test.ts routing.test.ts align.test.ts review.test.ts spec.test.ts spec-guard.test.ts also-changes.test.ts && node tests/smoke.mjs && node tests/review-smoke.mjs && node tests/wake-turn.mjs && node tests/align-turn.mjs && node tests/note-turn.mjs && node tests/spec-turn.mjs && node tests/spec-worker.mjs
+cd extensions/mode && node --test index.test.ts delegate.test.ts routing.test.ts align.test.ts review.test.ts spec.test.ts spec-guard.test.ts also-changes.test.ts spec-turn.test.ts && node tests/smoke.mjs && node tests/review-smoke.mjs && node tests/wake-turn.mjs && node tests/align-turn.mjs && node tests/note-turn.mjs && node tests/spec-turn.mjs && node tests/spec-card-turn.mjs && node tests/spec-worker.mjs
 cd extensions/model-policy && node --test policy.test.ts index.test.ts
 cd extensions/provider-limits && node tests/run.mjs
 cd extensions/llm-inflight && node tests/run.mjs
 cd extensions/command-palette && node --test test.mjs
 cd extensions/sessions && node --test test.mjs
-cd extensions/spec && node --test tests/*.test.mjs
+cd extensions/spec && node --test --test-concurrency=4 tests/*.test.mjs
 cd extensions/codefold && node tests/run.mjs
 cd extensions/stamp && node --test format.test.ts index.test.ts
 cd extensions/usage-status && node --test fetch.test.ts windows.test.ts index.test.ts

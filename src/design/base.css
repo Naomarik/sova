@@ -577,6 +577,32 @@ input.input { text-overflow: ellipsis; }
 .setup-oid         { flex: none; font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-muted); }
 .setup-subject     { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-ink); }
 .setup-ago         { flex: none; color: var(--color-ink-muted); white-space: nowrap; }
+/* The Tools group (§chat.transcript/setup-card-tools): a disclosure of disclosures, closed by
+   default. Each summary is the whole 44px target; the twist turns when it opens. The heading keeps
+   the section's eyebrow, the total its mono figures, so a closed group reads like the others. */
+.setup-tools > summary,
+.setup-tool > summary { list-style: none; cursor: pointer; min-height: 44px; }
+.setup-tools > summary::-webkit-details-marker,
+.setup-tool > summary::-webkit-details-marker { display: none; }
+.setup-tools > summary { align-items: center; }
+.setup-tool > summary { align-items: center; }
+.setup-tools > summary:focus-visible,
+.setup-tool > summary:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); border-radius: var(--r-xs); }
+.setup-tools-title { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.setup-tools .icon-twist { flex: none; color: var(--color-ink-muted); transition: transform var(--dur-fast) var(--ease-standard); }
+.setup-tools[open] > summary .icon-twist,
+.setup-tool[open] > summary .icon-twist { transform: rotate(90deg); }
+.setup-tool > summary .setup-name { align-items: center; }
+.setup-tool > summary:hover .setup-path { color: var(--color-accent); }
+.setup-tools-body { display: flex; flex-direction: column; gap: var(--space-2); }
+.setup-tool-desc {
+  margin: 0 0 var(--space-2) calc(16px + var(--space-2));
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--color-ink-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 /* A narrow card (its own container, above): every row puts its figures on their own line under
    the name, rather than squeezing the name to an ellipsis — all rows alike, so the list stays even.
    The query reads the card's CONTENT box: 417.98px here is a card under 420px across its 1px borders. */
@@ -3063,6 +3089,43 @@ a.group-option { color: inherit; text-decoration: none; }
 .toolcard-code-del { border-left: calc(var(--stroke-icon) * 2) solid var(--diff-del-ink); }
 .toolcard-code-add { border-left: calc(var(--stroke-icon) * 2) solid var(--diff-add-ink); }
 
+/* codemode (§chat.transcript/codemode-card): the folded line's "4 calls · 1 failed", and the
+   script's calls, one row each. The plain body inside its body gives way to it. */
+.toolcard-calls { flex: none; white-space: nowrap; color: var(--color-ink-muted); }
+.toolcard-body .toolcard-body { display: contents; }
+.codemode-calls {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-sm);
+  background: var(--color-surface);
+}
+.codemode-call { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-2) var(--space-3); }
+.codemode-call + .codemode-call { border-top: var(--stroke-thin) solid var(--color-border); }
+.codemode-call-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  color: var(--color-ink-2);
+}
+.codemode-call-name { flex: none; font-weight: var(--fw-semibold); color: var(--color-ink); }
+.codemode-call-kind { flex: none; font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.codemode-call-args { flex: 1 1 12ch; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-ink-muted); }
+.codemode-call-meta { flex: none; color: var(--color-ink-muted); font-variant-numeric: tabular-nums; }
+.codemode-call-error {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  color: var(--status-error);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 
 /* ---- INFO ROW. Model change, compaction, labels, branch summaries: a quiet
    centred line between rules. Facts in mono. ---------------------------- */
@@ -4963,6 +5026,50 @@ a.group-option { color: inherit; text-decoration: none; }
 .usage-logins-row:last-child { padding-bottom: 0; }
 .usage-logins-name { color: var(--color-ink); font-weight: var(--fw-medium); overflow-wrap: anywhere; min-width: 0; }
 .usage-note code { font-family: var(--font-mono); font-size: var(--fs-mono); }
+/* Usage burn (§app.insights/usage-burn): the lines under a meter's reset line, in ink-2 (they are
+   the answer, not metadata); a run-out's warn chip ends its line. */
+.usage-burn-line { color: var(--color-ink-2); }
+.usage-burn-line .chip { margin-left: var(--space-1); vertical-align: 1px; }
+/* A mono time or span ("1h 59m", "Fri 3:15 AM"): the mono space is a full cell, which reads as a
+   double space beside proportional text, so its word gaps narrow to about the body's. */
+.usage-burn-mono { word-spacing: -0.3em; }
+/* The chart: a 64px plot the meter's width, a labelled day axis, a "now" row and a legend. Lines
+   differ in shape as well as tone: this period solid ink, the last dashed muted, the pace dotted. */
+.usage-burn-chart { display: flex; flex-direction: column; gap: var(--space-1); margin-top: var(--space-1); }
+.usage-burn-figure { position: relative; display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-micro); line-height: var(--lh-micro); color: var(--color-ink-muted); }
+.usage-burn-chart-pinned { padding-top: calc(var(--fs-micro) * 1.3 + 2px); }
+/* The period stepper: "‹ Week of Sep 25 ›", 44px targets, the name between them. */
+.usage-burn-stepper { display: flex; align-items: center; gap: var(--space-1); margin: 0 calc(-1 * var(--space-2)); }
+.usage-burn-period { flex: 1; min-width: 0; text-align: center; font-size: var(--fs-caption); font-weight: var(--fw-medium); color: var(--color-ink-2); }
+.usage-burn-step[aria-disabled="true"] { opacity: .4; cursor: default; }
+/* The 5-hour strip: one bar per past window, ink-2, warn at 100%; the picked one outlined in accent. */
+.usage-burn-strip { display: flex; flex-direction: column; gap: 2px; }
+.usage-burn-strip .usage-burn-strip-plot { height: 24px; }
+.usage-burn-bar { fill: var(--color-ink-2); }
+.usage-burn-bar-hit { fill: var(--status-warn); }
+.usage-burn-bar-picked { stroke: var(--color-accent); stroke-width: 1; }
+.usage-burn-plot { position: relative; height: 64px; touch-action: pan-y; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+.usage-burn-svg { display: block; overflow: visible; }
+.usage-burn-grid { stroke: var(--color-border); stroke-width: 1; }
+.usage-burn-guide { stroke: var(--color-border-strong); stroke-width: 1; stroke-dasharray: 1 3; }
+.usage-burn-base { stroke: var(--color-border-strong); stroke-width: 1; }
+.usage-burn-this { fill: none; stroke: var(--color-ink); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
+.usage-burn-last { fill: none; stroke: var(--color-ink-muted); stroke-width: 1.5; stroke-dasharray: 4 3; stroke-linejoin: round; }
+.usage-burn-pace { stroke: var(--color-ink); stroke-width: 1.5; stroke-dasharray: 1 3; stroke-linecap: round; }
+.usage-burn-now { stroke: var(--color-ink); stroke-width: 1; }
+.usage-burn-pin { fill: var(--status-warn); stroke: var(--color-surface); stroke-width: 1.5; }
+/* The readout's cursor follows the pointer: the accent, a line, never the only signal (the card says it). */
+.usage-burn-cursor { fill: var(--color-accent); }
+.usage-burn-pin-label { position: absolute; top: 0; white-space: nowrap; font-size: var(--fs-micro); color: var(--status-warn); }
+.usage-burn-axis,
+.usage-burn-nowrow { position: relative; height: calc(var(--fs-micro) * 1.3); white-space: nowrap; }
+.usage-burn-tick { position: absolute; top: 0; transform: translateX(-50%); }
+.usage-burn-tick-start { transform: none; }
+.usage-burn-tick-end { transform: translateX(-100%); }
+.usage-burn-nowrow > span { position: absolute; top: 0; font-weight: var(--fw-semibold); color: var(--color-ink); }
+.usage-burn-legend { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-3); margin: 2px 0 0; }
+.usage-burn-legend > span { display: inline-flex; align-items: center; gap: var(--space-1); }
+.usage-burn-legend svg { flex: none; overflow: visible; }
 
 /* Deep link #/agents/<teamId> focuses the team's group (tabindex -1); ring on :focus,
    since programmatic focus after a click doesn't match :focus-visible. Inset: the group

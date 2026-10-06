@@ -1,16 +1,10 @@
 step attach A, B
 A {"type":"hello","isStreaming":false,"isCompacting":false,"model":"scripted/scripted","thinking":"off","items":["00000002 info"]}
-A {"type":"commands"}
 A {"type":"queue","items":[]}
 A {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"new-chats"}
-A {"type":"profile","profile":null,"locked":false,"pickable":false,"tools":"<elided>","removed":[],"granted":[]}
-A {"type":"claude_login","login":null}
 B {"type":"hello","isStreaming":false,"isCompacting":false,"model":"scripted/scripted","thinking":"off","items":["00000002 info"]}
-B {"type":"commands"}
 B {"type":"queue","items":[]}
 B {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"new-chats"}
-B {"type":"profile","profile":null,"locked":false,"pickable":false,"tools":"<elided>","removed":[],"granted":[]}
-B {"type":"claude_login","login":null}
 step Bob says "first"
 write {"id":"00000003","type":"model_change"}
 write {"id":"00000004","type":"thinking_level_change"}
@@ -51,13 +45,13 @@ B {"type":"queue_item_gone","itemId":"00000000-0000-7000-8000-000000000003","rea
 A {"type":"queue","items":[]}
 B {"type":"queue","items":[]}
 sdk abort []
-A {"type":"event","event":{"type":"message_start","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":""}],"stopReason":"aborted","errorMessage":"Request was aborted"}}}
+A {"type":"event","event":{"type":"message_start","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":""}],"stopReason":"aborted","errorMessage":"Request was aborted","thinkingLevel":"off"}}}
 B {"type":"event","v":2,"event":{"type":"message.start","role":"assistant","model":"scripted/scripted","parts":[{"kind":"text","text":""}]}}
 write {"id":"00000008","type":"message","role":"assistant"}
-A {"type":"event","event":{"type":"message_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":""}],"stopReason":"aborted","errorMessage":"Request was aborted"}},"entryId":"00000008"}
+A {"type":"event","event":{"type":"message_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":""}],"stopReason":"aborted","errorMessage":"Request was aborted","thinkingLevel":"off"}},"entryId":"00000008"}
 B {"type":"event","v":2,"event":{"type":"message.end","role":"assistant","entryId":"00000008","model":"scripted/scripted","parts":[{"kind":"text","text":""}],"stop":"aborted"}}
-A {"type":"event","event":{"type":"turn_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":""}],"stopReason":"aborted","errorMessage":"Request was aborted"},"toolResults":[]}}
-A {"type":"event","event":{"type":"agent_end","messages":[{"role":"system","elided":true},{"role":"user","content":[{"type":"text","text":"first"}],"timestamp":1000000000000},{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":""}],"stopReason":"aborted","errorMessage":"Request was aborted"}],"willRetry":false}}
+A {"type":"event","event":{"type":"turn_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":""}],"stopReason":"aborted","errorMessage":"Request was aborted","thinkingLevel":"off"},"toolResults":[]}}
+A {"type":"event","event":{"type":"agent_end","messages":[{"role":"system","elided":true},{"role":"user","content":[{"type":"text","text":"first"}],"timestamp":1000000000000},{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":""}],"stopReason":"aborted","errorMessage":"Request was aborted","thinkingLevel":"off"}],"willRetry":false}}
 A {"type":"event","event":{"type":"agent_settled"}}
 B {"type":"event","v":2,"event":{"type":"run.settled"}}
 write {"id":"00000009","type":"message","role":"user"}
@@ -81,13 +75,13 @@ B {"type":"event","v":2,"event":{"type":"message.end","role":"user","entryId":"0
 write {"id":"00000014","type":"custom","customType":"sova-baton-sent"}
 A {"type":"append","items":[{"id":"00000014","kind":"info","at":"2000-01-01T00:00:00.000Z","batonMark":{"kind":"sent","targetId":"00000013","by":"<BOB>"},"meta":{"type":"custom","customType":"sova-baton-sent"}}]}
 B {"type":"append","items":[{"id":"00000014","kind":"info","at":"2000-01-01T00:00:00.000Z","batonMark":{"kind":"sent","targetId":"00000013","by":"<BOB>"},"facts":{}}]}
-A {"type":"event","event":{"type":"message_start","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"seen"}],"stopReason":"stop"}}}
+A {"type":"event","event":{"type":"message_start","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"seen"}],"stopReason":"stop","thinkingLevel":"off"}}}
 B {"type":"event","v":2,"event":{"type":"message.start","role":"assistant","model":"scripted/scripted","parts":[{"kind":"text","text":"seen"}]}}
 write {"id":"00000015","type":"message","role":"assistant"}
-A {"type":"event","event":{"type":"message_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"seen"}],"stopReason":"stop"}},"entryId":"00000015"}
+A {"type":"event","event":{"type":"message_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"seen"}],"stopReason":"stop","thinkingLevel":"off"}},"entryId":"00000015"}
 B {"type":"event","v":2,"event":{"type":"message.end","role":"assistant","entryId":"00000015","model":"scripted/scripted","parts":[{"kind":"text","text":"seen"}],"stop":"ok"}}
-A {"type":"event","event":{"type":"turn_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"seen"}],"stopReason":"stop"},"toolResults":[]}}
-A {"type":"event","event":{"type":"agent_end","messages":[{"role":"user","content":[{"type":"text","text":"fourth"}],"timestamp":1000000000000},{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"seen"}],"stopReason":"stop"}],"willRetry":false}}
+A {"type":"event","event":{"type":"turn_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"seen"}],"stopReason":"stop","thinkingLevel":"off"},"toolResults":[]}}
+A {"type":"event","event":{"type":"agent_end","messages":[{"role":"user","content":[{"type":"text","text":"fourth"}],"timestamp":1000000000000},{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"seen"}],"stopReason":"stop","thinkingLevel":"off"}],"willRetry":false}}
 A {"type":"event","event":{"type":"agent_settled"}}
 B {"type":"event","v":2,"event":{"type":"run.settled"}}
 got next request's messages ["system: ","user: [The conversation passed from Operator (the operator) to Bob Golden]\n[From Bob Golden]\n first","assistant: ","user: [From Bob Golden]\n second","user: [From Bob Golden]\n third","user: [From Bob Golden]\n fourth"]

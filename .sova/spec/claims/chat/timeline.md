@@ -511,7 +511,7 @@ refetch or an armed Rewind never remounts the row under focus.
   model/thinking/mode change markers are `span`s, so a screen reader reads them as the lines of
   text they are and they never appear in the tab order — a control that could only fail is worse
   announced than absent.
-- **Times are paired.** The visible clock is the 24-hour mono form (§chat/transcript timestamps); the `title`
+- **Times are paired.** The visible clock is the 12-hour mono form (§chat/transcript timestamps); the `title`
   on `.timeline-time` carries the absolute time *and* the relative one ("2026-09-19T14:06:11Z ·
   2d ago"), so neither reading is lost. See §design/deviations for why the clock leads here and the relative form
   follows, which inverts the ground rule for lists.

@@ -9,7 +9,7 @@ subagents (subagents + sessions live records), the LLM calls in flight and their
 per-session summaries (topic-outline, compaction). Data shapes are `UsageInsight`, `AgentsInsight`, and `SessionInsight` in
 `shared/protocol.ts`. **Every status says where it came from**: live-sourced states can pulse,
 while reported states (read from a session file after the fact) never pulse and carry
-"as of `14:06`". A live record lists at most 40 workers, live ones first and then the newest
+"as of `2:06 PM`". A live record lists at most 40 workers, live ones first and then the newest
 (§app.subagents-pane/hidden-workers), so a count is always read from its `workerCounts` and a
 working worker is never the one it leaves out.
 
@@ -505,9 +505,11 @@ which shows this device's spend at API prices from the usage ledger (§app.insig
 
 **The Agents row's 30-minute chart (§app.insights/token-velocity) reads out any one of its
 columns: the pointer picks a column, the column stands out, a 1px cursor line runs through it, and
-a small card floats above the pointer with that minute's figures.** Only the Agents row's chart
-scrubs — on the desktop foot and inside the phone foot sheet (§app.insights/sidebar-foot,
-§app.insights/sidebar-foot-phone); the phone bar's 60px chart and the usage meters never do.
+a small card floats above the pointer with that minute's figures.** Of the token charts, only the
+Agents row's scrubs — on the desktop foot and inside the phone foot sheet (§app.insights/sidebar-foot,
+§app.insights/sidebar-foot-phone); the phone bar's 60px chart never does, and nor do the usage
+meters' bars. The Usage page's burn charts have a readout of their own in this same card
+(§app.insights/usage-burn).
 Browser data only: the card reads the same `tokenVelocityView()` the chart draws from, so the two
 can't disagree, and nothing is fetched, sent or stored.
 
@@ -570,9 +572,9 @@ can't disagree, and nothing is fetched, sent or stored.
   which names the two apart: "2 sessions · 5 subagents working" (§app.session-list/working-now).
 - **Aggregates are neutral** `.chip.chip-count`, with no dot and no pulse, so each row has only
   one pulsing thing:
-  - **Session rows (§app/session-list):** no chip at all. The count is `{n}` + a `worker` icon in the row's
+  - **Session rows (§app/session-list):** no chip at all. The count is a bare `{n}`, with no icon, in the row's
     left rail (`.session-rail-count`), under the row's state, when `live?.workers?.working ≥ 1`.
-    Hidden at 0 or when absent. `.session-rail-count-live` pulses the icon only, and only on a
+    Hidden at 0 or when absent. `.session-rail-count-live` pulses the figure, and only on a
     row with no Busy dot, whose pulse would otherwise be a second moving thing.
   - **Session head:** no chip at all, working or not, team or not. The count is already the
     sidebar row's rail count, and the head's row goes to the title and
@@ -775,6 +777,9 @@ Both pages share one shell: a `.session-head` and a `.insights.pane` containing
     `.meter-fill-error` at ≥100%. That matches the extension's own footer threshold, and it
     always pairs with the head chip. The foot's pace tones (§app.insights/pace-tick) are not
     used here: on a card the pace is the tick and the context line.
+  - **Burn.** Under the context line, a meter may carry its burn lines (rate, run-out or the
+    percent at reset, last period) and, for a window of a day or more, a history chart
+    (§app.insights/usage-burn). The DeepSeek balance may carry its spend line the same way.
 - **Head chip.** The worst window decides it. A window whose reset has already passed (the meter
   is a ghost) decides nothing. The words follow the skill's model-availability severities:
 
@@ -894,7 +899,9 @@ due (sooner after a failed fetch, never more often than the extension itself wou
   the chain but shutdown. While a Refresh Usage is in flight it skips its turn. Each distinct
   failure is logged once, not on every tick. `SOVA_USAGE_POLL=off` in the server's environment
   switches it off (say, a second test server that shouldn't double the provider calls); every
-  other value leaves it on. It never keeps the process alive, and it stops on shutdown.
+  other value leaves it on. It never keeps the process alive, and it stops on shutdown. Each
+  tick that yields a cache, fetched or adopted, hands it to the usage history, which also reads
+  the file once at server start (§app.insights/usage-burn).
 - **Refresh Usage** (§app.insights/usage-cards): a forced refresh, now.
 - **A TUI pi**, unchanged: its own timer and after each turn.
 
@@ -953,6 +960,201 @@ seven days, else `pri`; the secondary window, which reads `5h` when it sends no 
 `CACHE_SCHEMA` is unchanged, since the field is additive. The server sends `resetsAt − seconds` as
 the window's `startsAt` (§app.insights/pace-tick). Ollama's reset is never in the cache: the server
 derives it from `usage-windows.json` as it reads (§app.insights/usage-reset-day).
+
+## §app.insights/usage-burn — Usage burn: how fast a subscription is going
+
+**Each Usage card meter says how fast its window is being used, how that compares with the last
+period, and when it runs out at this pace. The figures come from the provider's own percent, recorded
+over time on this device.**
+
+```html
+<div class="meter">
+  <p class="meter-head">…7-day … 58% used</p>
+  <div class="meter-track-wrap">…</div>
+  <div class="meter-context">Resets Oct 9 · day 4 of 7</div>
+  <p class="meter-context usage-burn-line">≈16%/day · at this pace used up <span class="text-mono">Wed 10:48 PM</span>,
+    <span class="text-mono">19h</span> before reset <span class="chip chip-warn"><i class="chip-dot"></i>Runs out</span></p>
+  <p class="meter-context usage-burn-line">Last 24h ≈22%/day · last week 81% (40% by this point)</p>
+  <div class="usage-burn-chart">…</div>
+</div>
+```
+
+- **What is recorded.** Only what the providers report in the usage cache
+  (§app.insights/usage-refresh): each `ok` window's percent with its `resetsAt` and, when known,
+  its `startsAt` (OpenAI's own length; Ollama's declared month, §app.insights/usage-reset-day),
+  and DeepSeek's balance total. Ledger tokens are never used. A **series** is `claude:<accountUuid>` for
+  each Claude account, then `openai`, `zai`, `ollama` and `deepseek`. Logins of one account feed one
+  series. A login whose identity this device doesn't know yet is skipped, never filed under its
+  login id. A window is keyed by its label plus its scope. A sample is stamped with the
+  reading's own time: a Claude login's own `fetchedAt` (`default`: the cache's `claudeFetchedAt`),
+  any other provider's with the cache's `fetchedAt`. A provider whose `errors` entry is set is not
+  recorded, because a failed fetch keeps the old value under a fresh cache time. A reading no newer
+  than the last one recorded for its series and window is skipped.
+- **When.** Each tick of the server's poller that yields a cache, whether it fetched it or adopted
+  another process's (a TUI's), and once at server start from the file as it is. Nothing is
+  recorded while the server is off, so history has gaps. Figures a pool holder published are not
+  recorded.
+- **Storage.** Append-only `<state root>/usage-history/v1/<UTC day>.jsonl`, one JSON line per
+  sample, written by this server alone. Samples of closed periods older than 30 days are deleted
+  at start and once a day. A period still open keeps all its samples until it closes and its
+  summary is written: a 31-day month keeps its first day. A day file goes only once nothing in it
+  is kept.
+  - History is per device and never synced over the mesh. Lines are parsed strictly, and a bad
+    line is skipped. The files are read into memory once.
+  - Only changes are written: a reading whose percent or period differs from the last one
+    written, plus a period's first reading and its last. The newest reading of an unchanged run
+    is held back. It is written before the next change, once it is an hour newer than the last
+    line (so a restart loses at most an hour of a plateau), and at the server's shutdown.
+- **Period summaries.** When a period closes, one summary line is appended to
+  `<state root>/usage-history/periods/v1.jsonl`, once. A period closes when a reading of the next
+  period is recorded, or when its reset has passed. A window with no reset closes only when its
+  percent drops.
+  - A window's summary is `{series, window, startsAt, resetsAt, finalPct, hitLimitAt?, avgRate,
+    tenths, firstAt, lastAt}`:
+    - `tenths` is the percent at each tenth of the span: 11 numbers, from 0% to 100% of the way
+      through. A tenth before the first recorded reading is `null`.
+    - `avgRate` is the final percent ÷ the hours from the span's start to the 100% mark, or to
+      its end when it never got there.
+    - A window with no reset spans from its first recorded reading to its last.
+  - DeepSeek's balance writes `{series, window: "balance", firstAt, lastAt, startTotal, endTotal,
+    spent, perDay, currency}` for each run a top-up ends.
+  - Summaries are kept for a year, judged by `lastAt`. Older lines are dropped at start and once
+    a day by rewriting the file atomically.
+  - Lines are parsed strictly, and a bad line is skipped.
+  - A period still open when the server stops gets its summary once it closes, derived from its
+    samples, whether that happens at the next start or later. A period whose time range overlaps
+    an existing summary of its series and window already has one, so it is never written twice.
+- **Periods.** A reading belongs to the open period when its reset (for a declared Ollama month,
+  its start) is within a tolerance of the period's: 2 minutes or 1% of the window's span,
+  whichever is larger. Sub-second jitter and OpenAI's moving reset never split a period, and
+  rounded keys are never compared. A new period starts when the reset moves forward past the
+  tolerance, or when the percent drops. A window with no reset starts one only when the percent
+  drops. DeepSeek's balance starts a new run whenever its total rises (a top-up).
+- **The rates.**
+  - **Window average:** the percent ÷ the time gone in the window's span
+    (§app.insights/pace-tick), per hour for a window shorter than a day, else per day. It drives
+    the projection, and it needs no history.
+  - **Recent:** the change in percent over the last T inside the current period (T is 1 hour for
+    a window under a day, 24 hours up to 8 days, 3 days beyond). It shows only when this period's
+    recorded history reaches back T.
+  - **Projection,** at the window average. When it reaches 100% before the reset, the time it does
+    ("used up"); otherwise the percent at the reset (the percent ÷ the share gone, rounded). It is
+    never a reset and never a tick, and it is always said with "≈" and "at this pace".
+  - **Silence.** Nothing is said for a window at 0%, at 100% or more, a ghost (its reset has
+    passed), or one with under 5% of its span gone.
+- **Last period.** The previous period of the same series and window: its final percent (the last
+  recorded, a lower bound when this device stopped recording before it ended), the time it
+  reached 100% if it did, and its percent at the same share of its span as now. That last figure
+  is left out when its recording starts after that point. For a window of a day or more, the
+  previous period counts only when it ended within 10% of a span before this one began. For a
+  shorter window it is the previous recorded window, whenever it was. The previous period is read
+  from its samples while they reach back to within 10% of its span's start. Otherwise (its samples
+  are older than 30 days) it is read from its summary: its tenths as the points, and its own final
+  percent and 100% time. That is how "Last month 72% (27% by this point)" survives the 30 days.
+- **Wire.** Each `UsageWindow` may carry `burn` (`UsageBurn`, filled by `GET
+  /api/insights/usage`; older clients ignore it, older servers send none): the window-average
+  rate, the recent rate and its span, the run-out time or the percent at reset, the last period's
+  figures, when recording began, and the series and window keys. The balance carries its own
+  `burn` (spend per day, its span, days left). Every window with a series also carries `history`
+  (`{series, window}`), even with no burn.
+  - The charts' periods come from a separate `GET /api/insights/usage/history?series=&window=&at=`:
+    - the current period's samples;
+    - every closed period of the last year, newest first, each with its span, final percent, 100%
+      time and average rate. Its points are its samples while those cover it, else its summary's
+      tenths, marked `coarse`.
+  - The 5-hour strip comes from the same route with `strip=1`: the summaries of the last 30 days
+    only, with no points.
+  - Only the Usage page asks for them, so the payload the sidebar polls every 60 seconds stays
+    small. The sidebar foot is unchanged.
+- **The lines.** Under the meter's reset line, `.meter-context.usage-burn-line` lines in
+  `--color-ink-2`, with times and durations in mono:
+  - The rate: "≈21%/h" or "≈16%/day", with one decimal under 1.
+  - Runs out before the reset: "at this pace used up `Wed 10:48 PM`, `19h` before reset",
+    followed by a `.chip.chip-warn` "Runs out". A window under a day says "used up in `1h 58m`,
+    `19m` before reset", and one longer than 8 days gives the date ("`Oct 28`").
+  - Otherwise: "on pace for 23% at reset".
+  - The recent rate: "last hour ≈25%/h", "last 24h ≈22%/day", "last 3 days ≈4%/day".
+  - The last period: "last window 64% (35% by this point)", "last week …" for 7-day windows,
+    "last month …" for monthly ones. One that hit 100% reads "last week hit 100% at `Tue 3:10
+    PM` (40% by this point)".
+  - Arrangement: the first line is the rate and the projection. With a run-out its chip ends that
+    line, and a second line holds the recent rate and the last period. Without one, the recent rate
+    joins the first line, and the last period does too unless a recent rate is there, in which case
+    the last period takes the second line. A second line starts with a capital.
+  - **No span** (Z.ai's MCP uses, Ollama with no reset day, a window of no stated length): the
+    rate over the recorded part of the current period, at most its last 7 days and at least 6
+    hours, in uses when the window sends `used` and `limit`: "≈30 uses/day over 7 days · no reset
+    reported, so no run-out estimate".
+  - **DeepSeek's balance:** the spend over the run since the last top-up, at most 14 days and at
+    least 6 hours: "≈$1.20/day over 14 days · about `15 days` left at this pace". Nothing shows
+    while it isn't going down.
+- **The chart.** A meter with a `history` key whose window is a day or more, with a known span,
+  its reset ahead and any period recorded, gets a chart under its lines, the meter's full width,
+  with a 64px plot. It is `aria-hidden`, because the lines carry its figures in words; the
+  stepper's buttons are the one control in it.
+  - The y axis runs 0–100%, with a dotted 100% guide.
+  - **This period:** a solid ink line of the recorded steps from the window start to now, ending
+    at the current reading.
+  - **Last period:** a dashed muted line across the window, aligned by the share of its span.
+  - **At this pace:** a dotted ink line from now toward the reset at the window-average rate. It
+    stops where it reaches 100%, or else runs to the reset at the projected percent.
+  - **Now:** a thin vertical ink line.
+  - **X axis, labelled.** Faint gridlines at each day from the window start. A 7-day window labels
+    them by weekday, and its last label is the reset with its time ("Thu 6:00 PM"). A monthly
+    window labels dated ticks about a week apart ("Oct 8") and its reset. A second row puts "now
+    Mon 8:24 AM" (semibold ink) under the now line.
+  - **Run-out pin:** when the projection reaches 100% before the reset, a `--status-warn` dot sits
+    at that point, labelled above it in mono "used up Wed 10:48 PM".
+  - **Legend** under the chart: "this week", "last week", "at this pace" (month or window for other
+    lengths), each beside a sample of its line (solid, dashed, dotted).
+  - **Readout.** A mouse hovering the chart, or a finger or pen pressing and dragging along it,
+    puts a 1px accent line at the pointer and a floating card above it: the velocity scrub's
+    card (§app.insights/velocity-scrub: `.float-card.float-card-neutral`, fixed to the window and
+    placed by `floatAbove`, so it stays 8px inside the window's edges and is never cut off by the
+    card, never taking the pointer). It sits at the pointer's x, just above the plot and its run-out
+    pin's label, so it hides neither: its bottom edge is 14px above that top, or, when that is
+    lower, 14px above a mouse and 40px above a finger. The chart takes
+    horizontal drags and leaves vertical scrolling to the page. The card reads, in order: the time
+    at the pointer, in mono ("Sun 2:30 PM"; for a monthly window, "Oct 9"). Then, before now, "**46%**
+    used"; after now, "at this pace ≈**78%** used"; past the run-out, "used up by then, at this
+    pace"; before the period's first recorded reading, "Not recorded". Then, when a last period was recorded there, "last week 31% by this point". The number
+    comes first and is semibold. The card and the line hide when the pointer leaves, and when a
+    touch ends or is cancelled. Both are `aria-hidden`.
+  - **Stepper.** Above the plot, a row with buttons "‹" and "›" (`aria-label` "Earlier week" and
+    "Later week", or month or window) around the shown period's name. A 7-day span reads "Week of
+    Sep 25". A declared month that starts on the 1st reads "Month of Sep"; any other declared
+    month, or any other length, reads its date range, "Sep 25 – Oct 25". The name sits in a
+    polite live region.
+    - The newest step is the current period, exactly as above. "›" is disabled there, and "‹" is
+      disabled at the oldest recorded period.
+    - Stepping back shows that period as the solid line against the one before it as the dashed
+      line (aligned the same way, and only when it counts as its last period). The axis is
+      labelled for the shown period's span.
+    - The projection, the now line and row, and the run-out pin show only on the current period.
+    - A past period gets its own line above the plot, in the burn lines' style:
+      - "hit 100% at `Wed 2:00 PM` · ≈12%/day" when it reached 100%;
+      - else "peaked at 81% · ≈12%/day".
+
+      The rate is its `avgRate`.
+    - A period drawn from its summary adds a muted "Older than 30 days, so drawn at tenths of the
+      week." (month or window).
+    - The legend reads "week of Sep 25" and "week before".
+    - The readout works the same on a past period: the time, "**46%** used" ("Not recorded" where
+      nothing is), and "week before 31% by this point".
+    - The meter's burn lines above still describe the current window.
+- **The 5-hour strip.** A meter whose window is under a day gets no chart. When it has a `history`
+  key and its series has summaries from the last 30 days, it gets a strip instead: one bar per
+  past window, oldest left, each as tall as its final percent (of a 24px strip). A window that
+  reached 100% is drawn in `--status-warn`; the others in `--color-ink-2`.
+  - Bars share one pitch, the width ÷ the count rounded down, never under 3px with a 1px gap.
+    When they don't all fit, the newest that fit are drawn.
+  - A muted caption under it reads "Last 30 days · 47 windows · 6 hit 100%". The hit count is
+    left out at 0.
+  - **Readout.** Hovering or touch-dragging the strip picks a bar and shows the same floating card
+    (same placement, above the strip): the window's time range in mono ("Oct 3 9:00 AM – 2:00
+    PM"), "**64%** used" (or "**100%** used"), "≈21%/h", and "hit 100% at `1:12 PM`" when it did.
+    The picked bar gets a 1px accent outline. The strip is `aria-hidden`, and its caption
+    carries the facts.
 
 ## §app.insights/team-cards — Agents board
 

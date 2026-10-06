@@ -44,7 +44,9 @@ import { sovaToken } from "./auth";
 import { ForeignWriteGuard, markOwned, markOwnedStat, recentForeignWriteAgeSec } from "./write-guard";
 import { monitorExtension } from "./resource-monitor";
 import { forkCacheExtension } from "../pi-config/extensions/subagents/fork/cache.ts";
-import { visCheckExtension, type VisCheckHost } from "./vis-check";
+import { codemodeFactory } from "./harness/pi/codemode";
+import { claimSessionSlot, holdingSlot } from "./provider-limits";
+import { VIS_CHECK_TOOL, visCheckExtension, type VisCheckHost } from "./vis-check";
 import { projectEngine } from "./project-services/routes";
 import { projectVerbsExtension } from "./project-services/tools";
 import { excludedTools, GRANT_TOOLS, keyOf, KNOWN_REMOVABLE_TOOLS, singletonRaceText, type ProfileEntryData, type SessionSentData } from "../shared/profiles";
@@ -104,12 +106,19 @@ export function extensionFlagsFor(cwd: string, outline: boolean, noExtensions: b
   return noExtensions ? new Map() : extensionFlagValues(sessionFlags(cwd, outline));
 }
 
-/** The extensions every ordinary session loads beyond pi-config's: resource monitoring and
-    inherited fork-cache affinity. Neither changes prompt sections or tool declarations.
-    A caller that passes its own list for an ordinary session starts from this one. */
+/** The extensions every ordinary session loads beyond pi-config's: resource monitoring, inherited
+    fork-cache affinity, and pi's codemode tool (registered inactive: the codemode minor mode turns it
+    on, §chat.mode-menu/codemode; in a Claude Code chat it is a fixed stub). None changes prompt
+    sections or tool declarations by loading. A caller that passes its own list for an ordinary session
+    starts from this one; the special loadouts keep exactly their own. */
 const DEFAULT_EXTENSION_FACTORIES = [
   { name: "sova-resource-monitor", factory: monitorExtension },
   { name: "sova-fork-cache", factory: forkCacheExtension },
+  codemodeFactory({
+    allowed: (ref) => modelAllowed(readModelPolicy(), ref),
+    acquire: (provider, opts) => claimSessionSlot(provider, opts),
+    holding: holdingSlot,
+  }),
 ];
 
 /** Register the Claude Code provider without waiting for the user to open a session: a throwaway
@@ -1416,8 +1425,9 @@ class ChatSession {
     // extensions, as before; each event arrives once, in pi's tick (P12 message-end-before-persist).
     this.unsubscribe = harness.subscribe((event) => {
       // A turn starting or settling, and a tool call ending (the Overseer's tools write stores in
-      // process), start the next session listing afresh (§app.session-list/listing-reuse).
-      if (event.type === "tool.end" || event.type === "run.start" || event.type === "run.settled") sessionsChanged();
+      // process), start the next session listing afresh (§app.session-list/listing-reuse). A codemode
+      // script's own calls don't: its result's end does, once.
+      if ((event.type === "tool.end" && !event.nested) || event.type === "run.start" || event.type === "run.settled") sessionsChanged();
       // A Claude login picked during the reply goes in now, before the queue wake below can start
       // the next turn: applyLoginPick holds the web queue until it has landed
       // (§app.claude-logins/switch-queue).
@@ -1745,10 +1755,29 @@ class ChatSession {
       }
       if (!this.foreignWrite) markOwned(this.path); // the marker entry is our write
       this.modeState = state; // the runtime took it: this is now this chat's mode
+      this.syncVisCheckTool();
     }
     this.modeApplies = applies;
     this.broadcast(this.modeMessage());
     return plan;
+  }
+
+  /**
+   * Between runs, vis_check follows this chat's vis mode at once, as the mode extension's vis_guide does
+   * (§chat.mode-menu/minor-toggle-keeps-prompt): called after both /mode handlers ran and modeState took the
+   * new state, so a major switch's restored tool set (leaving strict delegate puts back a snapshot that never
+   * saw vis_check change) is corrected too. Never from a MODE_STATE_EVENT listener, which fires inside the
+   * handler while visOn still reads the old state. Mid-run the run keeps its tools; the vis-check
+   * extension syncs when it settles.
+   */
+  private syncVisCheckTool(): void {
+    if (this.disposed || this.harness.isRunning()) return;
+    if (!this.harness.registeredTools().includes(VIS_CHECK_TOOL)) return;
+    const want = this.modeState.minorModes.includes("vis");
+    const current = this.harness.activeTools();
+    const has = current.includes(VIS_CHECK_TOOL);
+    if (want && !has) this.harness.setActiveTools([...current, VIS_CHECK_TOOL]);
+    else if (!want && has) this.harness.setActiveTools(current.filter((t) => t !== VIS_CHECK_TOOL));
   }
 
   /**

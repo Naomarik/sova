@@ -58,8 +58,11 @@ import { addWebSession } from "./web-sessions";
 import { draftForClient, setDraft } from "./drafts";
 import { worktreeInsights } from "./worktrees";
 import { DiffError, gitDiffs, scopeFromQuery } from "./git-diff";
-import { decodeWorkers, teamDuties, getAgentsInsight, getHiddenWorkers, getSessionInsight, setInsightLinks, getUsageInsight, invalidateUsageMemo, refreshUsageInsight, setUsageResetDay, usageRefreshBusy } from "./insights";
+import { specClaim, SpecClaimError } from "./spec-claim";
+import { decodeWorkers, teamDuties, getAgentsInsight, getHiddenWorkers, getSessionInsight, setInsightLinks, getUsageHistory, getUsageInsight, getUsageStrip, invalidateUsageMemo, recordUsage, refreshUsageInsight, setUsageResetDay, usageRefreshBusy } from "./insights";
 import { startUsagePoller } from "./usage-poll";
+import { usageHistory } from "./usage-history";
+import { readCache } from "../pi-config/extensions/usage-status/fetch.ts";
 import { startSharedUsageHelper, stopSharedUsageHelper } from "./usage-helper/client";
 import { registerUsageRoutes } from "./usage-routes";
 import { archiveSession, cachedTitleOf, cleanupSessions, getSessionSummary, idOf, lastReplyOf, listCwds, listSessionFiles, listSessions, onSessionArchived, onSummaryLineChanged } from "./sessions-index";
@@ -75,6 +78,7 @@ import { listProjectFiles } from "./files";
 import { getGitSummary } from "./git-summary";
 import { cleanupPlan, cleanupRemove, configureCleanup, worktreesSummary } from "./worktree-cleanup";
 import { applyLoadout, getSessionSetup } from "./session-setup";
+import { getSessionTools } from "./session-tools";
 import { isOrgSession, ORG_NOT_GROUPED } from "./org-sessions";
 import { assignSession, cleanGroupLabel, createGroup, deleteGroup, GROUP_LABEL_MAX, readGroups, updateGroup } from "./session-groups";
 import { promptGroup } from "./group-prompt";
@@ -278,7 +282,7 @@ async function createWebSession(c: Context, cwd: string, start?: { profile: Prof
 }
 
 async function createWebSessionFile(c: Context, cwd: string) {
-  // pi defers writing until the first assistant reply; the header is written now so the session
+  // pi defers writing until the first user or assistant message; the header is written now so the session
   // exists on disk (listable, watchable, openable by path).
   let made: { path: string; id: string };
   try {
@@ -753,6 +757,16 @@ app.get("/api/sessions/context", async (c) => {
   return c.json(await getSessionSetup(path, { fresh: c.req.query("fresh") === "1" }));
 });
 
+// The tools a held chat declares to its model now (server/session-tools.ts, §chat.transcript/setup-card-tools).
+// Same 400/404 as the context route above; a session this server doesn't hold (or a terminal's, or a
+// special one) is a 200 whose `state` says so. Never cached.
+app.get("/api/sessions/tools", async (c) => {
+  const path = resolveSessionPath(c.req.query("path"));
+  if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
+  if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+  return c.json(await getSessionTools(path), 200, { "Cache-Control": "no-store" });
+});
+
 // Switch a new session's context files and skills off or on (§chat.transcript/setup-card-toggles):
 // the whole off set, written as the session's hidden `sova-loadout` entry; the runtime is rebuilt
 // and the answer is the card's fresh read. 409 once a message is sent, mid-turn, TUI-live, etc.
@@ -1173,6 +1187,18 @@ app.post(
 // by the refresh route below, and by the usage poller started with the server.
 app.get("/api/insights/usage", async (c) => c.json(await getUsageInsight()));
 
+// One Usage chart's recorded readings (§app.insights/usage-burn): only the Usage page asks, so
+// the payload the sidebar polls stays small.
+app.get("/api/insights/usage/history", (c) => {
+  const series = c.req.query("series") ?? "";
+  const window = c.req.query("window") ?? "";
+  if (!series || !window || series.length > 200 || window.length > 200) return c.json({ error: "series and window are required" }, 400);
+  // The 5-hour strip: the last 30 days' window summaries only.
+  if (c.req.query("strip") === "1") return c.json(getUsageStrip(series, window));
+  const at = Number(c.req.query("at"));
+  return c.json(getUsageHistory(series, window, c.req.query("at") && Number.isFinite(at) ? at : null));
+});
+
 app.post("/api/insights/usage/refresh", async (c) => {
   try {
     return c.json(await refreshUsageInsight());
@@ -1258,6 +1284,18 @@ app.get(
     gitDiffs.patch(scopeFromQuery((n) => c.req.query(n)), c.req.query("file") ?? "", c.req.query("old"), { context: c.req.query("context") === "1" }),
   ),
 );
+
+// The spec card's claim sheet (server/spec-claim.ts, §chat.spec-card/claim-sheet): one claim's text as
+// of the run that changed it, read only from a `spec-turn` record in the named session's file. Read-only.
+app.get("/api/spec-turn/claim", async (c) => {
+  try {
+    const q = { session: c.req.query("session"), entry: c.req.query("entry"), id: c.req.query("id") };
+    return c.json(await specClaim(q), 200, { "Cache-Control": "no-store" });
+  } catch (err) {
+    if (err instanceof SpecClaimError) return c.json({ error: err.message }, err.status, { "Cache-Control": "no-store" });
+    throw err;
+  }
+});
 
 // /explain artifacts (server/explanations.ts). The store is read-only here: listing never fails,
 // a missing or corrupt entry is simply absent. ?session=<sessionId> filters by parentSessionId.
@@ -1782,7 +1820,10 @@ void (async () => {
 })();
 
 // Keeps the shared usage cache fresh without an open TUI (SOVA_USAGE_POLL=off switches it off).
-const usagePoller = startUsagePoller({ busy: usageRefreshBusy, onFetched: invalidateUsageMemo });
+const usagePoller = startUsagePoller({ busy: usageRefreshBusy, onFetched: invalidateUsageMemo, onCache: recordUsage });
+// The usage history also takes the cache as it is at start: a reading taken while this server was
+// down still counts (§app.insights/usage-burn).
+void readCache().then((cache) => cache && recordUsage(cache), () => {});
 // The usage helper child: reads the usage ledger, keeps its rollup, pulls models.dev prices every
 // 6 hours and answers every spend query off this loop (§app.insights/usage-ledger).
 startSharedUsageHelper();
@@ -1811,6 +1852,12 @@ async function shutdown() {
   runLedger.freeze();
   for (const chat of heldChats()) if (chat.harness.isRunning()) chat.harness.abort().catch(() => {});
   usagePoller.stop();
+  // A plateau's held-back last reading is written, so the next start knows how long it lasted.
+  try {
+    usageHistory().flush();
+  } catch (err) {
+    console.warn("[usage-history] flush on shutdown failed:", err instanceof Error ? err.message : String(err));
+  }
   void stopSharedUsageHelper();
   autoTitleSweep.stop();
   stopResourceMonitor();

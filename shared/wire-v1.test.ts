@@ -129,7 +129,7 @@ describe("fromV1: the table", () => {
     const result = { content: [{ type: "text", text: "out" }, { type: "text", text: "put" }, PNG], details: { diff: "d" } };
     assert.deepEqual(v1({ type: "tool_execution_start", toolCallId: "c1", toolName: "bash", args: { cmd: "ls" } }), [{ type: "tool.start", callId: "c1", name: "bash", args: { cmd: "ls" } }]);
     assert.deepEqual(v1({ type: "tool_execution_start", toolCallId: "c1" }), [{ type: "tool.start", callId: "c1", name: "tool", args: undefined }]);
-    assert.deepEqual(v1({ type: "tool_execution_update", toolCallId: "c1", partialResult: result }), [{ type: "tool.update", callId: "c1", output: "out\nput", images: [PNG_URL] }]);
+    assert.deepEqual(v1({ type: "tool_execution_update", toolCallId: "c1", partialResult: result }), [{ type: "tool.update", callId: "c1", output: "out\nput", images: [PNG_URL], details: { diff: "d" } }]);
     assert.deepEqual(v1({ type: "tool_execution_update", toolCallId: "c1", partialResult: "raw" }), [{ type: "tool.update", callId: "c1", output: "raw", images: [] }]);
     assert.deepEqual(v1({ type: "tool_execution_end", toolCallId: "c1", toolName: "bash", args: { cmd: "ls" }, result, isError: false }), [
       { type: "tool.end", callId: "c1", name: "bash", args: { cmd: "ls" }, isError: false, output: "out\nput", images: [PNG_URL], details: { diff: "d" } },
@@ -141,6 +141,21 @@ describe("fromV1: the table", () => {
     for (const type of ["tool_execution_start", "tool_execution_update"]) assert.deepEqual(v1({ type, toolName: "bash" }), [], type);
     // An end without a call id still ends a tool: its effects (the Overseer's navigate) don't need one.
     assert.deepEqual(v1({ type: "tool_execution_end", toolName: "bash" }), [{ type: "tool.end", callId: "", name: "bash", args: undefined, isError: false, output: "", images: [] }]);
+  });
+
+  test("a call another tool made (a codemode script's) names its caller on start, update and end; an update keeps its details", () => {
+    const nested = { toolCallId: "c1/1", toolName: "read", parentToolCallId: "c1" };
+    assert.deepEqual(v1({ type: "tool_execution_start", ...nested, args: { path: "a" } }), [{ type: "tool.start", callId: "c1/1", name: "read", args: { path: "a" }, parentCallId: "c1" }]);
+    assert.deepEqual(v1({ type: "tool_execution_update", ...nested, partialResult: { content: [] } }), [{ type: "tool.update", callId: "c1/1", output: "", images: [], parentCallId: "c1" }]);
+    assert.deepEqual(v1({ type: "tool_execution_end", ...nested, args: { path: "a" }, result: { content: [{ type: "text", text: "x" }] }, isError: false }), [
+      { type: "tool.end", callId: "c1/1", name: "read", args: { path: "a" }, isError: false, output: "x", images: [], parentCallId: "c1" },
+    ]);
+    // The script's own progress: its calls so far, on the caller's update.
+    const calls = { calls: [{ id: "c1/1", name: "read", args: "{}", status: "running" }] };
+    assert.deepEqual(v1({ type: "tool_execution_update", toolCallId: "c1", toolName: "codemode", partialResult: { content: [], details: calls } }), [
+      { type: "tool.update", callId: "c1", output: "", images: [], details: calls },
+    ]);
+    assert.equal("parentCallId" in v1({ type: "tool_execution_start", toolCallId: "c1", toolName: "codemode", parentToolCallId: 3 })[0]!, false, "only a string names a caller");
   });
 
   test("retry and compaction activity; a compaction that wrote one says so", () => {

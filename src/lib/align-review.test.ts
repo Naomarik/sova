@@ -10,7 +10,7 @@ const { importSsr } = await import("./align-card-ssr.mjs");
 const solid = await import("solid-js");
 const { renderToString } = await import("solid-js/web");
 const { AlignAnswerContext, AlignDocCard } = await importSsr(new URL("../components/AlignDocCard.tsx", import.meta.url), (s: string) => import.meta.resolve(s));
-const { adversarialReview, planReviewRunning, reviewFoot, reviewLinesOf, reviewPhaseName, reviewRequestMessage, reviewVerdictLine, setAdversarialReview, NO_REVIEWER, PLAN_REVIEW_WAIT, REVIEW_ABOUT } = await import("./align-review");
+const { adversarialReview, planReviewRunning, reviewFoot, reviewLinesOf, reviewPhaseName, reviewRequestMessage, reviewVerdictLine, setAdversarialReview, NO_REVIEWER, REVIEW_ABOUT } = await import("./align-review");
 import type { AlignAnswer } from "../components/AlignDocCard";
 import type { AlignDocInfo, AlignReviewEntryInfo } from "../../shared/protocol";
 
@@ -143,15 +143,20 @@ test("card, feature on: body lines everywhere; the foot only on the answerable n
     const none = draw(d, answer({ current: () => d, reviewBlocked: () => NO_REVIEWER }));
     assert.match(none, /aria-disabled="true"[^>]*title="No reviewer is set/);
     assert.match(none, /<span class="align-doc-foot-hint">No reviewer is set for this chat's subagent profile/, "the reason beside it");
-    // Running: the body says so, the foot shows the verdict line, Go waits.
+    // Running: the card holds to its header and one status line; nothing to read, tick or press.
     const open = doc({ questions: [{ ...d.questions[0]!, decision: undefined }], review: { plan: entry("running", { model: "pi · sol · high" }) } });
-    const running = draw(open, answer({ current: () => open }));
-    assert.match(running, /class="align-review"/);
-    assert.match(running, /Reviewing the plan/);
-    assert.ok(!running.includes(">Review Plan<"), "no second start");
-    assert.ok(!running.includes("align-review-about"), "the explainer goes with the button only");
-    assert.match(running, /aria-disabled="true"[^>]*title="Wait for the plan review\."/);
-    assert.ok(running.includes(PLAN_REVIEW_WAIT));
+    for (const running of [draw(open, answer({ current: () => open })), draw(open)]) {
+      assert.match(running, /<p class="align-review-running" role="status"><span class="live-dot" aria-hidden="true"><\/span>/);
+      assert.ok(running.includes("Plan review in progress — the alignment may change; it shows once the review finishes."));
+      assert.match(running, /class="align-review-model"> · pi · sol · high</);
+      assert.ok(running.includes("Queue"), "the header stays");
+      assert.ok(!running.includes("Persist the queue."), "no summary");
+      assert.ok(!running.includes("Go With Recommendations") && !running.includes(">Review Plan<"));
+      assert.ok(!running.includes("card-foot"), "no foot");
+      assert.ok(!running.includes("align-review-about"), "so no explainer either: it goes with the button");
+      assert.ok(!running.includes("align-q-options") && !running.includes('type="radio"'), "no options to pick");
+      assert.ok(!running.includes('class="align-review"'), "no review lines");
+    }
     // Implementing with a blocker: the body lists it with its check; the foot shows the verdict.
     const impl = doc({ phase: "implementing", review: { plan: entry("clear", { reason: "ok" }), diff: entry("blocking", { blockers: [{ id: "b1", title: "reload drops the tail", check: "node --test q.test.ts" }] }) } });
     const blocked = draw(impl, answer({ current: () => impl }));

@@ -1,7 +1,7 @@
 import { createContext, For, Show, useContext } from "solid-js";
 import type { AlignDocInfo, AlignQuestionInfo, AlignRowInfo } from "../../shared/protocol";
 import { ALIGN_STATUS_CHIP, alignStatusOf, cardSections, isOpenDoc, openCount, openLabel, optionLetter, QUESTION_CHIP, questionStateOf, recommendedOption, type AlignCardSection } from "../lib/align";
-import { adversarialReview, PLAN_REVIEW_WAIT, planReviewRunning, REVIEW_ABOUT, reviewFoot, reviewLinesOf, reviewPhaseName } from "../lib/align-review";
+import { adversarialReview, planReviewRunning, REVIEW_ABOUT, reviewFoot, reviewLinesOf, reviewPhaseName } from "../lib/align-review";
 import { Chip, Icon } from "./ui";
 import "../design/align-viewer.css";
 
@@ -112,10 +112,13 @@ export function AlignDocCard(props: { doc: AlignDocInfo; line?: string }) {
     return r?.kind === "line" ? r.text : null;
   };
   const reviewBlocked = () => ctx?.reviewBlocked?.() ?? null;
-  const goBlocked = () => {
-    const a = answer();
-    if (!a) return null;
-    return adversarialReview() && planReviewRunning(props.doc) ? PLAN_REVIEW_WAIT : a.goBlocked();
+  const goBlocked = () => answer()?.goBlocked() ?? null;
+  /** The plan review is running on this alignment's newest revision (or with no context to tell):
+      the review may still change anything, so the card holds to its header and one status line. */
+  const planHeld = () => {
+    if (!adversarialReview() || !planReviewRunning(props.doc)) return false;
+    const cur = ctx?.current(props.doc.id);
+    return !cur || cur.rev === props.doc.rev;
   };
   // "Aligning" is every open document's default: only a later status earns a chip.
   const status = () => {
@@ -141,52 +144,67 @@ export function AlignDocCard(props: { doc: AlignDocInfo; line?: string }) {
           </Show>
         </p>
       </header>
-      <AlignDocBody doc={props.doc} answer={answer()} />
-      <Show when={answer() || review()}>
-        <div class="card-foot align-doc-foot">
-          <Show when={answer()}>
-            {(a) => (
-              <>
+      <Show
+        when={!planHeld()}
+        fallback={
+          <p class="align-review-running" role="status">
+            <span class="live-dot" aria-hidden="true" />
+            <span>
+              Plan review in progress — the alignment may change; it shows once the review finishes.
+              <Show when={props.doc.review?.plan?.model}>
+                {(m) => <span class="align-review-model"> · {m()}</span>}
+              </Show>
+            </span>
+          </p>
+        }
+      >
+        <AlignDocBody doc={props.doc} answer={answer()} />
+        <Show when={answer() || review()}>
+          <div class="card-foot align-doc-foot">
+            <Show when={answer()}>
+              {(a) => (
+                <>
+                  <button
+                    type="button"
+                    class="button button-sm"
+                    aria-disabled={goBlocked() ? "true" : undefined}
+                    aria-describedby={hintId}
+                    title={goBlocked() ?? undefined}
+                    onClick={() => !goBlocked() && a().goWithRecommendations(props.doc.id)}
+                  >
+                    Go With Recommendations
+                  </button>
+                  <span class="align-doc-foot-hint" id={hintId}>
+                    {goBlocked() ?? "Or pick some answers and type the rest below."}
+                  </span>
+                </>
+              )}
+            </Show>
+            {/* Adversarial review (§chat.alignment-review/card): its phase's button while that phase
+                is missing or skipped, else its verdict line; a click only sends a message. */}
+            <Show when={reviewButton()}>
+              {(b) => (
                 <button
                   type="button"
-                  class="button button-sm"
-                  aria-disabled={goBlocked() ? "true" : undefined}
-                  aria-describedby={hintId}
-                  title={goBlocked() ?? undefined}
-                  onClick={() => !goBlocked() && a().goWithRecommendations(props.doc.id)}
+                  class="button button-sm align-review-button"
+                  aria-disabled={reviewBlocked() ? "true" : undefined}
+                  title={reviewBlocked() ?? undefined}
+                  onClick={() => !reviewBlocked() && ctx?.requestReview?.(props.doc.id, b().phase)}
                 >
-                  Go With Recommendations
+                  {b().label}
                 </button>
-                <span class="align-doc-foot-hint" id={hintId}>
-                  {goBlocked() ?? "Or pick some answers and type the rest below."}
-                </span>
-              </>
-            )}
-          </Show>
-          {/* Adversarial review (§chat.alignment-review/card): its phase's button while that phase
-              is missing or skipped, else its verdict line; a click only sends a message. */}
-          <Show when={reviewButton()}>
-            {(b) => (
-              <button
-                type="button"
-                class="button button-sm align-review-button"
-                aria-disabled={reviewBlocked() ? "true" : undefined}
-                title={reviewBlocked() ?? undefined}
-                onClick={() => !reviewBlocked() && ctx?.requestReview?.(props.doc.id, b().phase)}
-              >
-                {b().label}
-              </button>
-            )}
-          </Show>
-          <Show when={reviewVerdict()}>{(text) => <span class="align-doc-foot-hint align-review-verdict">{text()}</span>}</Show>
-          <Show when={reviewButton() && !answer() && reviewBlocked()}>
-            <span class="align-doc-foot-hint">{reviewBlocked()}</span>
-          </Show>
-          {/* What a review is, on its own line under the button. */}
-          <Show when={reviewButton()}>
-            <span class="align-doc-foot-hint align-review-about">{REVIEW_ABOUT}</span>
-          </Show>
-        </div>
+              )}
+            </Show>
+            <Show when={reviewVerdict()}>{(text) => <span class="align-doc-foot-hint align-review-verdict">{text()}</span>}</Show>
+            <Show when={reviewButton() && !answer() && reviewBlocked()}>
+              <span class="align-doc-foot-hint">{reviewBlocked()}</span>
+            </Show>
+            {/* What a review is, on its own line under the button. */}
+            <Show when={reviewButton()}>
+              <span class="align-doc-foot-hint align-review-about">{REVIEW_ABOUT}</span>
+            </Show>
+          </div>
+        </Show>
       </Show>
     </article>
   );

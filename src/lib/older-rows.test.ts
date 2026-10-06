@@ -104,6 +104,8 @@ function harness(opts: { at?: number; slowMs?: number; delay?: number; answer?: 
   let older: Older | null = olderAt(opts.at ?? 90);
   const asks: { ask: RowsAsk; leaf: string | null }[] = [];
   const slow: boolean[] = [];
+  /** Per apply: whether it was handed a hook to run in the same update. */
+  const withHook: boolean[] = [];
   let moved = 0;
   const serve = (ask: RowsAsk): TranscriptRows | { code: "moved" | "missing" } => {
     if ("tail" in ask) throw new Error("not here");
@@ -127,9 +129,11 @@ function harness(opts: { at?: number; slowMs?: number; delay?: number; answer?: 
       },
       list: () => list,
       older: () => older,
-      apply: (items, o) => {
+      apply: (items, o, also) => {
         list = items;
         older = o;
+        withHook.push(!!also);
+        also?.();
       },
       moved: () => void moved++,
       slow: (on) => void slow.push(on),
@@ -141,6 +145,7 @@ function harness(opts: { at?: number; slowMs?: number; delay?: number; answer?: 
     loader,
     asks,
     slow,
+    withHook,
     list: () => list!,
     older: () => older!,
     moved: () => moved,
@@ -235,6 +240,19 @@ test("refresh: the rows held, again from their first, and what's above them", as
   assert.deepEqual(h.asks[0]!.ask, { from: whole[60]!.id });
   assert.deepEqual(ids(h.list()), ids(whole.slice(60)));
   assert.deepEqual(h.older(), olderAt(60));
+  assert.deepEqual(h.withHook, [false], "no hook asked for, none handed on");
+});
+
+test("refresh(also): the hook goes to the same apply as the rows (one update), and only when they land", async () => {
+  const h = harness({ at: 60 });
+  const order: string[] = [];
+  await h.loader.refresh(() => order.push(`hook with ${h.list().length} rows`));
+  assert.deepEqual(h.withHook, [true]);
+  assert.deepEqual(order, [`hook with ${whole.length - 60} rows`], "run once, inside apply, after the rows are set");
+  const moved = harness({ at: 60, answer: () => ({ code: "moved" }) });
+  let ran = false;
+  assert.equal(await moved.loader.refresh(() => (ran = true)), "stale");
+  assert.equal(ran, false, "rows that don't land don't run it: the caller clears on its own");
 });
 
 test("the cards open above the list: a hello keeps them, and kept rows take theirs (as aligns)", async () => {

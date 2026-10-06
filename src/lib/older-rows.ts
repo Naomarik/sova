@@ -106,8 +106,9 @@ export interface LoaderDeps {
   list(): TranscriptItem[] | null;
   /** Null until this connection's hello or snapshot. */
   older(): Older | null;
-  /** Rows the loader fetched, as the list and what's above it now. */
-  apply(items: TranscriptItem[], older: Older): void;
+  /** Rows the loader fetched, as the list and what's above it now; `also` runs in the same update
+      (one batch), so nothing renders or lays out between them. */
+  apply(items: TranscriptItem[], older: Older, also?: () => void): void;
   /** The branch moved under the list (or rows didn't add up): start again from a fresh tail. */
   moved(): void;
   /** A fetch (scrolling up, a jump's range) has been pending SLOW_MS (true), or is over (false). */
@@ -226,8 +227,9 @@ export class OlderLoader {
   }
 
   /** The rows the list holds, again (a turn ended: rows may have changed), and what's above them.
-      Resolves to the answer (its `context` included), once applied. */
-  refresh(): Promise<TranscriptRows | "stale"> {
+      Resolves to the answer (its `context` included), once applied. `also` runs in the same update
+      as the rows landing (a turn's streamed rows leaving as its saved rows come), only if they land. */
+  refresh(also?: () => void): Promise<TranscriptRows | "stale"> {
     const gen = this.gen;
     return this.run(async (): Promise<TranscriptRows | "stale"> => {
       const list = this.d.list();
@@ -239,7 +241,7 @@ export class OlderLoader {
         this.d.moved();
         return "stale";
       }
-      this.d.apply(reconcileItems(this.d.list(), r.items), { left: r.older, summary: r.olderSummary });
+      this.d.apply(reconcileItems(this.d.list(), r.items), { left: r.older, summary: r.olderSummary }, also);
       return r;
     });
   }

@@ -31,6 +31,7 @@ trust.json
 models-store.json
 model-favorites.json
 tmp/
+.cache/
 
 # OS cruft
 .DS_Store

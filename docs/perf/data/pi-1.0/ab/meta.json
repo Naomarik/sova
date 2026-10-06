@@ -1,0 +1,77 @@
+{
+ "startedAt": "2026-10-05T22:01:13.441Z",
+ "base": {
+  "tree": ".agent/perf-base",
+  "label": "16ca9baf",
+  "pi": "0.87.1"
+ },
+ "after": {
+  "tree": ".agent/perf-after",
+  "label": "2b19b824",
+  "pi": "1.0.3"
+ },
+ "cli": {
+  "base": {
+   "pkg": "~/.local/share/mise/installs/node/25.2.1/lib/node_modules/@earendil-works/pi-coding-agent",
+   "version": "0.87.0"
+  },
+  "after": {
+   "pkg": ".agent/pi-cli/1.0.3/node_modules/@earendil-works/pi-coding-agent",
+   "version": "1.0.3"
+  },
+  "layout": {
+   "pkg": ".agent/pi-cli/0.87.0/node_modules/@earendil-works/pi-coding-agent",
+   "version": "0.87.0"
+  }
+ },
+ "rounds": 10,
+ "phases": [
+  "server",
+  "cli"
+ ],
+ "options": {
+  "turns": 5,
+  "steers": 3,
+  "chunks": 8,
+  "gapMs": 15
+ },
+ "machine": {
+  "cpus": 32,
+  "cpuModel": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+  "memGb": 121,
+  "kernel": "7.0.5-arch1-1-g14",
+  "node": "v25.2.1",
+  "bun": "1.4.2"
+ },
+ "sessions": {
+  "real-small": {
+   "entries": 35,
+   "bytes": 169235
+  },
+  "real-medium": {
+   "entries": 99,
+   "bytes": 1079696
+  },
+  "real-large": {
+   "entries": 3778,
+   "bytes": 10936584
+  },
+  "synth-50": {
+   "entries": 50
+  },
+  "synth-500": {
+   "entries": 502
+  },
+  "synth-2000": {
+   "entries": 2002
+  },
+  "synth-5000": {
+   "entries": 5002
+  },
+  "synth-compact": {
+   "entries": 502
+  }
+ },
+ "listed": 79,
+ "endedAt": "2026-10-05T22:19:21.315Z"
+}

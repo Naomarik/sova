@@ -10,7 +10,8 @@ import type { DialogBridge } from "../../../shared/harness";
 const THEME_KEY = Symbol.for("@earendil-works/pi-coding-agent:theme");
 export function currentTheme(): Theme {
   const g = globalThis as Record<symbol, Theme | undefined>;
-  if (!g[THEME_KEY]) initTheme(undefined, false);
+  // "dark", as 0.87.1's headless default was: pi 1.0 defaults to "system" (the terminal's ANSI palette).
+  if (!g[THEME_KEY]) initTheme("dark", false);
   return g[THEME_KEY] as Theme;
 }
 

@@ -22,7 +22,7 @@ mkdirSync(cwd, { recursive: true });
 
 const { acquireChat, disposeAllChats } = await import("../../chat-manager");
 const { canonicalPath } = await import("../../paths");
-const { PiHarnessSession, harnessEventOf, isAlreadyProcessing } = await import("./session");
+const { PiHarnessSession, harnessEventOf, isAlreadyProcessing, toolSource } = await import("./session");
 const { watchUserMessages } = await import("./turns");
 
 after(async () => {
@@ -134,7 +134,7 @@ describe("PiHarnessSession (§app.harness/session)", () => {
       ["plain", undefined],
     ]);
     assert.deepEqual(calls.map((c) => (c[1] as { source?: string } | undefined)?.source), ["extension", "rpc", "interactive", undefined]);
-    (calls[0]![1] as { preflightResult(ok: boolean): void }).preflightResult(true);
+    (calls[0]![1] as { preflightResult(disposition: string): void }).preflightResult("started");
     assert.equal(accepted, 1);
   });
 
@@ -145,6 +145,11 @@ describe("PiHarnessSession (§app.harness/session)", () => {
     assert.ok(end.type === "message.end" && end.role === "user" && end.text === "a\nb" && end.handle === user);
     const asst = harnessEventOf({ type: "message_start", message: { role: "assistant", content: [] } });
     assert.ok(asst.type === "message.start" && asst.role === "assistant" && asst.text === undefined);
+    // A codemode script's own call is nested; a direct call isn't.
+    for (const type of ["tool_execution_start", "tool_execution_update", "tool_execution_end"]) {
+      assert.equal((harnessEventOf({ type, toolCallId: "c1/1", parentToolCallId: "c1" }) as { nested?: true }).nested, true, type);
+      assert.equal("nested" in harnessEventOf({ type, toolCallId: "c1" }), false, type);
+    }
     const q = harnessEventOf({ type: "queue_update", steering: ["s"], followUp: [] });
     assert.ok(q.type === "queue" && q.steering[0] === "s" && q.followUp.length === 0);
     assert.ok((harnessEventOf({ type: "compaction_end", result: {} }) as { wrote?: boolean }).wrote === true);
@@ -206,5 +211,36 @@ describe("PiHarnessSession (§app.harness/session)", () => {
     assert.ok(isAlreadyProcessing(new Error("Agent is already processing a prompt")));
     assert.ok(!isAlreadyProcessing(new Error("Cannot submit a prompt while compaction is in progress")));
     assert.ok(!isAlreadyProcessing("already processing"));
+  });
+
+  test("toolSource names where a tool comes from by its pi source path (P22)", () => {
+    assert.deepEqual(toolSource("builtin:read"), { source: "builtin" });
+    assert.deepEqual(toolSource("<inline:sova-vis-check>"), { source: "sova", origin: "sova-vis-check" });
+    assert.deepEqual(toolSource("<inline:3>"), { source: "sova" }, "an unnamed factory has no name to show");
+    assert.deepEqual(toolSource("<sdk:overseer_read>"), { source: "sova" });
+    assert.deepEqual(toolSource("/x/pi-config/extensions/mode/index.ts"), { source: "extension", origin: "mode" });
+    assert.deepEqual(toolSource("/x/.pi/extensions/btw.ts"), { source: "extension", origin: "btw" });
+    assert.deepEqual(toolSource(undefined), { source: "extension" });
+  });
+
+  test("declaredTools: the agent's declared tools in order, the loadout's descriptions, hidden declarations left out, each with its source (P22)", async () => {
+    const chat = await acquireChat(sessionFile("01b0-declared"), true);
+    const s = piSession(chat) as any;
+    const params = { type: "object", properties: {} };
+    s.agent.state.tools = [
+      { name: "read", description: "Read a file.", parameters: params },
+      { name: "echo", description: "Echo.\n\nCodemode: `tools.echo(args)` resolves to a string.", parameters: params },
+      { name: "hidden", description: "Hidden.", parameters: params },
+    ];
+    s._hiddenDeclarations = new Set(["hidden"]);
+    s.getAllTools = () => [
+      { name: "read", description: "Read a file.", sourceInfo: { path: "builtin:read" } },
+      { name: "echo", description: "Echo.", sourceInfo: { path: "/x/extensions/echo/index.ts" } },
+      { name: "hidden", description: "Hidden.", sourceInfo: { path: "<inline:sova-x>" } },
+    ];
+    assert.deepEqual(chat.harness.declaredTools(), [
+      { name: "read", description: "Read a file.", parameters: params, source: "builtin" },
+      { name: "echo", description: "Echo.\n\nCodemode: `tools.echo(args)` resolves to a string.", parameters: params, source: "extension", origin: "echo" },
+    ]);
   });
 });

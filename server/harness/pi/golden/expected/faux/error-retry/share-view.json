@@ -41,9 +41,9 @@
           "usage": {
             "input": 0,
             "output": 5,
-            "cacheRead": 1371,
+            "cacheRead": 1401,
             "cacheWrite": 0,
-            "totalTokens": 1376,
+            "totalTokens": 1406,
             "cost": {
               "input": 0,
               "output": 0,
@@ -54,7 +54,8 @@
           },
           "stopReason": "stop",
           "responseId": "faux-resp-1",
-          "timestamp": 1788350402000
+          "timestamp": 1788350402000,
+          "thinkingLevel": "medium"
         }
       },
       "role": "assistant",

@@ -7,7 +7,7 @@
 import type { EntryId, ModelRef } from "./harness-core";
 import type { HEntry, SessionRead } from "./harness-history";
 import type { SessionState } from "./harness-state";
-import type { ToolSpec } from "./harness-tools";
+import type { JsonSchema, ToolSpec } from "./harness-tools";
 
 /** Who an input is from, as the extensions' input handlers are told: a person (`user`), Sova's own queue
     or a server-started message (`queued`), or Sova acting for itself (`system`: a link, a topic batch).
@@ -69,6 +69,18 @@ export interface HarnessCommand {
   path?: string;
 }
 
+/** A tool the session declares to its model now: its name, the description as declared (after any
+    change the loadout makes to it), its parameters' schema, and where it comes from: the harness
+    itself (`builtin`), an extension (`origin`: its name), or Sova's own runtime (`sova`; `origin`: the
+    name Sova registered it under, when it has one). */
+export interface HarnessToolInfo {
+  name: string;
+  description: string;
+  parameters: JsonSchema;
+  source: "builtin" | "extension" | "sova";
+  origin?: string;
+}
+
 /** What a runtime loaded for its prompt, as paths: the context files, the skills, the system prompt's
     source file and the files appended to it. */
 export interface HarnessResources {
@@ -120,9 +132,10 @@ export type HarnessEvent = { frame(): HarnessFrame } & (
   | { type: "message.update"; role: "user" | "assistant" | "other"; handle: object | undefined; stream?: HarnessStreamDelta }
   /** Listeners run before the message's entry is written; one microtask later it is (persistedId). */
   | ({ type: "message.end" } & HarnessMessageEvent)
-  | { type: "tool.start" }
-  | { type: "tool.update" }
-  | { type: "tool.end" }
+  /** `nested`: a call another tool made (a codemode script's), which writes no entry of its own. */
+  | { type: "tool.start"; nested?: true }
+  | { type: "tool.update"; nested?: true }
+  | { type: "tool.end"; nested?: true }
   /** The agent's queue mirror changed: its texts now. */
   | { type: "queue"; steering: readonly string[]; followUp: readonly string[] }
   | { type: "compaction.start" }
@@ -225,6 +238,9 @@ export interface HarnessSession extends SessionRead {
       refreshed prompt at a run's start). */
   refreshSystemPrompt(): void;
   registeredTools(): string[];
+  /** The tools the next request declares to the model, in its order, as declared: the active tools less
+      any declaration the loadout keeps out of requests, each with the description the loadout gave it. */
+  declaredTools(): HarnessToolInfo[];
   /** An extension's registered tool, by name, as a Sova tool (the Overseer's subagent tools). */
   registeredTool(name: string): ToolSpec | undefined;
   commands(): HarnessCommand[];

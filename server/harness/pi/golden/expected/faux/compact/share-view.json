@@ -39,11 +39,11 @@
           "provider": "faux",
           "model": "faux-1",
           "usage": {
-            "input": 1371,
+            "input": 1401,
             "output": 13,
             "cacheRead": 0,
-            "cacheWrite": 1371,
-            "totalTokens": 2755,
+            "cacheWrite": 1401,
+            "totalTokens": 2815,
             "cost": {
               "input": 0,
               "output": 0,
@@ -54,7 +54,8 @@
           },
           "stopReason": "stop",
           "responseId": "faux-resp-0",
-          "timestamp": 1788350401000
+          "timestamp": 1788350401000,
+          "thinkingLevel": "medium"
         }
       },
       "role": "assistant",
@@ -102,9 +103,9 @@
           "usage": {
             "input": 21,
             "output": 4,
-            "cacheRead": 1371,
+            "cacheRead": 1401,
             "cacheWrite": 21,
-            "totalTokens": 1417,
+            "totalTokens": 1447,
             "cost": {
               "input": 0,
               "output": 0,
@@ -115,7 +116,8 @@
           },
           "stopReason": "stop",
           "responseId": "faux-resp-1",
-          "timestamp": 1788350402000
+          "timestamp": 1788350402000,
+          "thinkingLevel": "medium"
         }
       },
       "role": "assistant",

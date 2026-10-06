@@ -5,7 +5,7 @@
 // faux provider, registered through the public ModelRuntime API: no network, no private fields.
 // C1 the session manager's append* methods (the entry union), C2 the custom entry's line, C3 the event
 // names and fields chat-manager's bind() reads, C5 image content as prompt/steer take and store it.
-// P1-P20 and T1 are the quirk canaries (QUIRKS.md, quirks.ts): each asserts that a pi behaviour a Sova
+// P1-P22 and T1 are the quirk canaries (QUIRKS.md, quirks.ts): each asserts that a pi behaviour a Sova
 // workaround or assumption rests on still holds. Their turns run on testing/scripted-model.ts (a held
 // reply makes the mid-turn windows deterministic). When one fails, triage it by its QUIRKS.md row.
 import assert from "node:assert/strict";
@@ -96,6 +96,8 @@ interface QuirkSessionOptions {
   appendSystemPrompt?: (base: string[]) => string[];
   /** Hand the session manager over before construction (P1 patches it there). */
   beforeBuild?: (sm: any) => void;
+  /** Keep pi's built-in tools (default: none). */
+  builtinTools?: boolean;
 }
 
 /** A real pi session the way Sova builds one (a resource loader, extensions bound), its turns on a
@@ -125,7 +127,7 @@ async function quirkSession(o: QuirkSessionOptions = {}) {
     sessionManager,
     settingsManager,
     resourceLoader,
-    noTools: "builtin",
+    ...(o.builtinTools ? {} : { noTools: "builtin" as const }),
   });
   await session.bindExtensions({});
   const model = new ScriptedModel().attach(session);
@@ -483,7 +485,7 @@ describe("pi contract", () => {
     session.dispose();
   });
 
-  test("P11 create-defers / open-flushed: a created session's appends stay unwritten until an assistant message; an opened header-only file writes each append at once", () => {
+  test("P11 create-defers / open-flushed: a created session's appends stay unwritten until a user or assistant message; an opened header-only file writes each append at once", () => {
     const created = SessionManager.create(dir, join(dir, "p11-sessions"));
     created.appendCustomEntry("sova-contract", { n: 1 });
     const file = created.getSessionFile();
@@ -550,20 +552,23 @@ describe("pi contract", () => {
     session.dispose();
   });
 
-  test("P15 accept-vs-complete: prompt() resolves at turn end while preflightResult(true) fires at acceptance (and for a handled command)", async () => {
+  test("P15 accept-vs-complete: prompt() resolves at turn end while preflightResult(\"started\") fires at acceptance (\"handled\" for a handled command, no call for a refused prompt)", async () => {
     const { session, model, events } = await quirkSession({ extensions: [(api) => api.registerCommand("contract", { description: "fixture", handler: async () => {} })] });
     const order: string[] = [];
     const release = model.hold();
-    const run = session.prompt("one", { preflightResult: (ok: boolean) => void order.push(`preflight ${ok}`) }).then(() => void order.push("resolved"));
+    const run = session.prompt("one", { preflightResult: (d) => void order.push(`preflight ${d}`) }).then(() => void order.push("resolved"));
     await until(() => model.calls.length === 1, "the model call");
-    assert.deepEqual(order, ["preflight true"], "accepted, not yet complete");
+    assert.deepEqual(order, ["preflight started"], "accepted, not yet complete");
     assert.equal(events.some((e) => e.type === "agent_end"), false);
+    const refused: string[] = [];
+    await assert.rejects(session.prompt("two", { preflightResult: (d) => void refused.push(d) }), /already processing/);
+    assert.deepEqual(refused, [], "a refused prompt gets no preflight call (0.87.1: false); linkToSdk settles on the rejection");
     release();
     await run;
-    assert.deepEqual(order, ["preflight true", "resolved"]);
-    const handled: boolean[] = [];
-    await session.prompt("/contract", { preflightResult: (ok: boolean) => void handled.push(ok) });
-    assert.deepEqual(handled, [true]);
+    assert.deepEqual(order, ["preflight started", "resolved"]);
+    const handled: string[] = [];
+    await session.prompt("/contract", { preflightResult: (d) => void handled.push(d) });
+    assert.deepEqual(handled, ["handled"]);
     assert.equal(model.calls.length, 1, "a handled command makes no model call");
     session.dispose();
   });
@@ -638,6 +643,94 @@ describe("pi contract", () => {
     const b = await quirkSession({ file: used, model: null, settings });
     assert.equal(b.session.model?.id, "faux-2", "with messages the recorded model is restored");
     b.session.dispose();
+  });
+
+  test("P21 codemode-definition: the factory registers one inactive codemode tool, its models.* reach ctx.modelRegistry, nested calls carry parentToolCallId", async () => {
+    const registered: any[] = [];
+    let registryAsked = 0;
+    const capture = (api: any) => {
+      const caught = new Proxy(api, { get: (t, k) => (k === "registerTool" ? (def: any) => void registered.push(def) : Reflect.get(t, k)) });
+      pi.agent.createCodemodeExtension()(caught);
+      const def = registered[0];
+      // As Sova's scriptRegistry does: the context's registry, seen through a wrapper.
+      api.registerTool({
+        ...def,
+        execute: (id: string, params: unknown, signal: unknown, onUpdate: unknown, ctx: any) =>
+          def.execute(id, params, signal, onUpdate, new Proxy(ctx, {
+            get: (t, k) => {
+              // Members as they are (a Proxy must return pi's read-only executeTool unchanged).
+              if (k !== "modelRegistry") return Reflect.get(t, k);
+              return new Proxy(t.modelRegistry, { get: (r, m) => { if (m === "classify") registryAsked++; const v = Reflect.get(r, m); return typeof v === "function" ? v.bind(r) : v; } });
+            },
+          })),
+      });
+      api.registerTool({ name: "echo", label: "echo", description: "echo", parameters: Type.Object({ word: Type.String() }), execute: async (_id: string, p: { word: string }) => ({ content: [{ type: "text", text: p.word }], details: {} }) });
+    };
+    const { session, model, events, runtime, sm } = await quirkSession({ extensions: [capture] });
+    assert.deepEqual(registered.map((d) => [d.name, d.defaultActive]), [["codemode", false]], "one tool, codemode, registered inactive");
+    assert.ok(!session.getActiveToolNames().includes("codemode"), "inactive after the build");
+    session.setActiveToolsByName([...session.getActiveToolNames(), "codemode"]);
+    assert.ok(session.getActiveToolNames().includes("codemode"), "setActiveTools activates it");
+    (runtime as any).registerProvider("cls", {
+      apiKey: "test",
+      models: [{ type: "classifier", id: "cls-1", name: "cls-1", api: "test-classifier", baseUrl: "http://127.0.0.1:9", input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 1000 }],
+      classifiers: { "test-classifier": { classify: async () => ({ provider: "cls", model: "cls-1", answers: { q: { type: "bool", probability: 1 } }, stopReason: "stop" }) } },
+    });
+    const code = `const w = await tools.echo({ word: "hi" });
+const r = await models.classify({ provider: "cls", id: "cls-1" }, { state: {}, questions: { q: { type: "bool", instructions: "?", criteria: { true: "y", false: "n" } } } });
+return w + ":" + r.stopReason;`;
+    model.reply({ toolCall: { name: "codemode", arguments: { code } } }, { text: "done" });
+    await session.prompt("go");
+    const nested = events.filter((e) => e.type?.startsWith("tool_execution_") && e.parentToolCallId);
+    assert.ok(nested.length >= 2, "the nested call's events carry parentToolCallId");
+    assert.ok(nested.every((e) => e.parentToolCallId === "call-1" && e.toolCallId === "call-1/1"), "and the id <parent>/<n>");
+    assert.equal(registryAsked, 1, "the script's models.classify went through ctx.modelRegistry");
+    const results = sm.getEntries().filter((e: any) => e.type === "message" && e.message.role === "toolResult");
+    assert.deepEqual(results.map((e: any) => e.message.toolName), ["codemode"], "nested calls write no entries");
+    assert.match(results[0].message.content.map((b: any) => b.text ?? "").join(""), /hi:stop/);
+    assert.deepEqual(results[0].message.details.calls.map((c: any) => c.name), ["echo", "models.classify"]);
+    session.dispose();
+  });
+
+  test("P22 declared-tools: agent.state.tools is the declared set with the loadout's descriptions, _hiddenDeclarations what requests leave out, sourceInfo.path names the source", async () => {
+    /** The tools a request declared: its system messages' toolsAdded, less toolsRemoved, in order. */
+    const declaredIn = (call: { context: unknown }) => {
+      const tools = new Map<string, string>();
+      for (const m of (call.context as { messages: any[] }).messages) {
+        if (m.role !== "system") continue;
+        for (const r of m.toolsRemoved ?? []) tools.delete(typeof r === "string" ? r : r.name);
+        for (const t of m.toolsAdded ?? []) tools.set(t.name, t.description);
+      }
+      return tools;
+    };
+    for (const mode of ["on", "only"] as const) {
+      const tools = (api: any) => {
+        pi.agent.createCodemodeExtension({ mode })(api);
+        api.registerTool({ name: "echo", label: "echo", description: "Echo a word.", parameters: Type.Object({ word: Type.String() }), execute: async () => ({ content: [], details: {} }) });
+      };
+      const { session, model } = await quirkSession({ extensions: [{ name: "contract-tools", factory: tools } as never], builtinTools: true });
+      const s = session as any;
+      session.setActiveToolsByName(["read", "echo", "codemode"]);
+      const state = s.agent.state.tools as { name: string; description: string }[];
+      assert.deepEqual(state.map((t) => t.name), ["read", "echo", "codemode"], "the active tools, in order");
+      const registry = new Map(session.getAllTools().map((t: any) => [t.name, t]));
+      const echo = state.find((t) => t.name === "echo")!;
+      if (mode === "on") {
+        assert.equal((registry.get("echo") as any).description, "Echo a word.", "the registry keeps the tool's own description");
+        assert.match(echo.description, /^Echo a word\.\n\nCodemode: `tools\.echo\(args\)`/, "the loadout's description is on agent.state.tools");
+      }
+      assert.ok(s._hiddenDeclarations instanceof Set, "_hiddenDeclarations is a Set");
+      assert.equal(s._hiddenDeclarations.has("echo"), mode === "only", "codemode's only mode hides direct tools' declarations");
+      assert.equal((registry.get("read") as any).sourceInfo.path, "builtin:read");
+      assert.equal((registry.get("echo") as any).sourceInfo.path, "<inline:contract-tools>");
+      model.reply({ text: "ok" });
+      await session.prompt("go");
+      const sent = declaredIn(model.calls[0]!);
+      const expected = state.filter((t) => !s._hiddenDeclarations.has(t.name));
+      assert.deepEqual([...sent.keys()].sort(), expected.map((t) => t.name).sort(), "the request declares agent.state.tools less the hidden ones");
+      for (const t of expected) assert.equal(sent.get(t.name), t.description, `${t.name}: the request's description is agent.state.tools'`);
+      session.dispose();
+    }
   });
 
   test("T1 scripted-model: the members the test double replaces exist, and it runs a turn", async () => {

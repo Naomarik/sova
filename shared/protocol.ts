@@ -213,6 +213,7 @@ export type EntryKind =
   | "report" // subagent reports and other long extension messages (custom_message); see `report`
   | "worktree-merge" // a merge the session recorded (pi-config worktrees extension); see `worktreeMerge`
   | "align" // an `align` tool result that changed an alignment, or an exemption (pi-config mode extension); see `align`
+  | "spec-turn" // the spec check's record of a run that changed something (pi-config mode extension); see `specTurn`
   | "unknown";
 
 /**
@@ -269,6 +270,9 @@ export interface ToolRowInfo {
   /** tool-result whose details record a patch: its "+n −m" (src/lib/tool-diff-stats.ts summaryStats,
       counted as for an edit). The card shows it only when its call is an edit or a write. */
   stats?: { added: number; removed: number };
+  /** tool-result of a codemode script (§chat.transcript/codemode-card): its calls, failed and still running
+      as recorded, for the folded line's "4 calls · 1 failed" before the card's content is fetched. */
+  calls?: { total: number; failed: number; running: number };
   /** EAGER_TOOLS only: the call's arguments as recorded. */
   args?: unknown;
   /** EAGER_TOOLS only: the result's output (its text blocks joined, as the card shows it). */
@@ -386,6 +390,11 @@ export interface TranscriptItem {
       call, whose tool-call row renders nothing once this row is there. A failed call, a `get`, or
       details that don't check out stay an ordinary tool-result. */
   align?: AlignRowInfo;
+  /** kind "spec-turn" only: the mode extension's `spec-turn` custom entry, checked by its own
+      `normalizeSpecTurnDetails` (pi-config/extensions/mode/spec-turn.ts, §chat.spec-card/record),
+      without the claim text it captured (GET /api/spec-turn/claim serves that). Never model
+      context. Details that don't check out give no row. */
+  specTurn?: SpecTurnInfo;
   /** The entry's timestamp (ISO), on every row whose entry has one. */
   at?: string;
   /** The entry's facts, on its first row only (EntryMeta). Absent on rows to a consumer that asked
@@ -472,6 +481,48 @@ export interface AlignRowInfo {
 }
 
 /** A merge the session recorded: by its `worktree merge` tool, or detected after one of its turns. */
+/** The spec card's record (§chat.spec-card/record): the extension's SpecTurnDetails without `prose`. */
+export interface SpecTurnInfo {
+  v: 1;
+  ops: { kind: "commit" | "merge" | "ff" | "promote" | "rebase" | "reset"; tree: string; branch?: string; actor: string; before: string; after: string }[];
+  /** The § the reply's `Also changes:` line named, with its words. */
+  own: SpecTurnItemInfo[];
+  /** The other § the check computed for the run, with an earlier record's words when one had them. */
+  landed: SpecTurnItemInfo[];
+  /** § that came in from the default branch (`from`), counted per area. */
+  arrived?: { from: string; count: number; byArea: { area: string; count: number }[] };
+  created: string[];
+  gate: {
+    unmapped: { path: string; status?: string; plumbing?: string }[];
+    unpromoted: { draft?: string; ids: string[]; deferred?: string }[];
+    stale: string[];
+    handResolved: string[];
+  };
+  check: { ok: boolean; problem?: string; override?: string; reprompts: number; incomplete?: string };
+}
+
+export interface SpecTurnItemInfo {
+  id: string;
+  change?: string;
+  what?: string;
+  /** Index in `ops`. */
+  op?: number;
+}
+
+/** GET /api/spec-turn/claim: one claim's text for the claim sheet (§chat.spec-card/claim-sheet). */
+export interface SpecClaimText {
+  id: string;
+  /** Where the text came from: a commit of the run, the record's capture at settle, or the current spec. */
+  source: "commit" | "captured" | "current";
+  /** The text as of the turn (source "commit" | "captured"), or now (source "current"); absent when the
+      claim didn't exist there (deleted). */
+  after?: string;
+  /** The text as of the commit before the turn's operation, when it existed then. */
+  before?: string;
+  /** The commit `after` was read at (source "commit"). */
+  rev?: string;
+}
+
 export interface WorktreeMergeInfo {
   path: string;
   branch: string;
@@ -1365,6 +1416,40 @@ export type SessionSetup =
   | { state: "remote"; where: { kind: "remote"; target: string }; cwd: string; checkedAt: number }
   /** Nothing could be read: `reason` is a sentence for the user. Never cached. */
   | { state: "unavailable"; where: GitWhere; cwd: string; reason: string; checkedAt: number };
+
+// GET /api/sessions/tools?path=<session file> -> SessionTools   (server/session-tools.ts,
+//                                  §chat.transcript/setup-card-tools: the tools the HELD chat declares
+//                                  to its model now, in its order, with the descriptions as declared.
+//                                  Never cached: read again whenever the chat's model or modes change.
+//                                  A session this server doesn't hold, one open in a terminal and a
+//                                  special session answer `state: "unavailable"` with the sentence to
+//                                  show. 400 a bad path, 404 a missing session file.)
+// ---------------------------------------------------------------------------
+/** One tool the session declares to its model. */
+export interface SessionTool {
+  /** The tool's own name (pi's). */
+  name: string;
+  /** The name the model calls it by: `name`, or `mcp__sova__<name>` on a Claude Code model. */
+  callName: string;
+  /** The description as the model is given it (after any change the loadout makes). */
+  description: string;
+  /** pi's own tool, an extension's (`origin`: the extension's name), or one Sova's runtime adds. */
+  source: "builtin" | "extension" | "sova";
+  origin?: string;
+  /** What its declaration costs, estimated: ceil((description + JSON of its parameters) / CHARS_PER_TOKEN). */
+  tokens: number;
+}
+
+export type SessionTools =
+  | {
+      state: "ok";
+      /** Whose naming `callName` follows: pi's, or Claude Code's MCP facade. */
+      backend: "pi" | "claude-code";
+      tools: SessionTool[];
+      checkedAt: number;
+    }
+  /** Not listed: `reason` is the sentence to show. */
+  | { state: "unavailable"; reason: string; checkedAt: number };
 
 // POST /api/sessions/loadout {path, offContext, offSkills} -> SessionSetup
 //                                  (§chat.transcript/setup-card-toggles: the session's whole off set
@@ -2286,9 +2371,54 @@ export interface UsageWindow { label: string; pct: number; resetsAt?: string; /*
   active?: boolean; /** When the window began, when its own data says (OpenAI: resetsAt minus its length; Ollama: the
       user's reset day). Absent: its length is its label's, if the label states one (§app.insights/pace-tick). */
   startsAt?: string; /** The reset is the user's declared day (usage-windows.json), not the provider's answer. */
-  declared?: true }
+  declared?: true; /** How fast it is going, from this device's recorded readings (§app.insights/usage-burn). Absent from an older server. */
+  burn?: UsageBurn; /** Its keys in the usage history, whenever it has a series (even with no burn): the charts and the 5-hour strip ask the history route with them. */
+  history?: { series: string; window: string } }
+/**
+ * A window's burn (§app.insights/usage-burn), from the provider's own percent as this device
+ * recorded it. Rates are percentage points per hour. A projection is an estimate at this pace,
+ * never a reset.
+ */
+export interface UsageBurn {
+  /** The history keys, for `GET /api/insights/usage/history`: `claude:<accountUuid>`, `openai`, …; the window's label plus scope. */
+  series: string;
+  window: string;
+  /** Window average (percent ÷ time gone in its span); for a window with no span, the rate over `over`. */
+  rate: number;
+  /** No span: the ms of recorded history the rate covers (6 hours to 7 days). */
+  over?: number;
+  /** The recent rate, over the last `ms` of this period. */
+  recent?: { rate: number; ms: number };
+  /** At the window average, when it reaches 100% before the reset (ms epoch)… */
+  runsOutAt?: number;
+  /** …otherwise the percent it is on pace for at the reset. */
+  atReset?: number;
+  /** The previous period: its final percent, when it reached 100% (ms epoch), its percent at the same share of its span. */
+  last?: { pct: number; hitAt?: number; byNow?: number };
+  /** The first recorded reading of this series and window (ms epoch). */
+  since?: number;
+}
+/** A balance's burn: spend per day over `over` ms since the last top-up, and the days left at that pace. */
+export interface UsageBalanceBurn { perDay: number; over: number; daysLeft: number; since?: number }
 /** Prepaid credit balance, for a provider that reports money left instead of usage windows (DeepSeek). */
-export interface UsageBalance { currency: string; total: number; granted: number; toppedUp: number; available: boolean }
+export interface UsageBalance { currency: string; total: number; granted: number; toppedUp: number; available: boolean; burn?: UsageBalanceBurn }
+/** One recorded reading on a usage chart. */
+export interface UsageHistoryPoint { t: number; pct: number }
+/**
+ * One period's recorded readings, with its span when its readings say it (ms epochs). A closed
+ * period adds its final percent, when it reached 100% and its average rate (percent per hour);
+ * `coarse`: drawn from its summary's tenths, its samples being older than the kept 30 days.
+ */
+export interface UsageHistoryPeriod { startsAt?: number; resetsAt?: number; points: UsageHistoryPoint[]; final?: number; hitAt?: number; rate?: number; coarse?: true }
+/**
+ * `GET /api/insights/usage/history?series=&window=&at=`, for the Usage page's charts: the current
+ * period, and every closed period of the last year, newest first (`previous` is `past[0]`).
+ */
+export interface UsageHistory { series: string; window: string; current: UsageHistoryPeriod | null; previous: UsageHistoryPeriod | null; past: UsageHistoryPeriod[] }
+/** One past window on the 5-hour strip: its span, final percent, 100% time and average rate. */
+export interface UsageStripWindow { startsAt: number; resetsAt: number; final: number; hitAt?: number; rate: number }
+/** `GET /api/insights/usage/history?series=&window=&strip=1`: the last 30 days' closed windows, oldest first, summaries only. */
+export interface UsageHistoryStrip { series: string; window: string; windows: UsageStripWindow[] }
 export interface UsageProvider {
   id: "claude" | "openai" | "ollama" | "zai" | "deepseek";
   state: "ok" | "nologin" | "expired" | "nokey" | "badkey" | "na" | "error";

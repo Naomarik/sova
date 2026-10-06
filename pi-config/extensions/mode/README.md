@@ -122,18 +122,20 @@ writer**).
   and trade-offs), then stops and waits for the user's answers. Questions,
   explicit commands, pointed-at one-liners and confirmations are exempt. Text
   in `minor.ts`; see **Alignments**.
-- **spec** — every behavior change is spec'd: the agent reads bounded exact
-  task packets from the project's `.sova/spec/` documentation, finishes relevant
-  contiguous fragments and inspects the stated frontier; full `scope`/`impact`
-  remain available for deliberate machine inspection and review. A page's success
+- **spec** — every behavior change is spec'd: the agent finds its roots in the
+  project's `.sova/spec/` documentation with `map` and `where`, looks at their
+  contents with `toc`, runs `impact --near` on what it will change, and `read`s
+  each root and each passage it needs, exact, finishing fragments at
+  `end == total`; whole-chain `packet` and `scope` remain available for
+  deliberate machine inspection and review. A page's success
   or `done` status is not complete context or proof of reading. It writes a claim for behavior no claim
   covers in a feature draft before coding, claims only the files the task
   changed, checks with `census --changed` before finishing that none of them is
   left unclaimed, and promotes what it verified (or says why it could not).
   Work that changes no behavior — refactors, tests, tooling — is exempt, and
   the agent says it is claiming the exemption. The documentation changes only
-  through drafts; a promotion `conflict` is whole-file, so it is re-applied in
-  a new draft from current. The discipline itself
+  through drafts; a promotion `conflict` is per declaration, and it is
+  re-applied in a new draft from current. The discipline itself
   is [`spec-mode.md`](spec-mode.md), and nowhere else. `minor.ts` reads it at
   load: the injected block is that file byte for byte, minus trailing
   whitespace, and its one `sh` block is the shell prefix `minor.ts` exports as
@@ -201,14 +203,31 @@ writer**).
       (checked with the next run); and its workers' from the ledger
       (`SOVA_SPEC_LEDGER`, one JSONL file per parent session, appended by
       `spec-worker.ts` and the Claude Code hooks), taken in a run that relays
-      a worker or changes something itself. A merge that only brought the
-      default branch into another branch is absorbed, not landed.
+      a worker (a completion, `agent_wait`, an inbox; never `agent_spawn`,
+      `agent_list` or `agent_transcript`) or changes something itself. Each
+      entry is charged to one run only: the keys it took go to
+      `<session>.charged` beside the ledger at settle, read back at every
+      `session_start` (a session without the file starts with its whole
+      ledger charged). The line is required only when the session itself
+      edited, committed, promoted or merged (`TurnTally.self`); worker ops
+      alone are charged to the run's spec-turn record and never re-prompted
+      (`TallyVerdict.charged`). A merge that only brought the
+      default branch into another branch is absorbed, not landed. On such a
+      branch, whatever the op (merge, commit, promote; a merge of master still
+      in progress included), a § or changed file whose content equals the
+      default branch's newest side the range brought in has arrived: it is out
+      of the list and the gate (`withoutArrivals`: compared by content, never
+      by id, so a § both sides changed stays) and kept on the verdict
+      (`tallyCheck`'s `arrived`, `arrivedFiles`) for the spec card.
     - **The list** is the union of their `sova-spec.mjs foreign` lists, the
       task's own claims out (`--own-base`: absent at the default tip at run
       start and at the fork point), plus the session tree's uncommitted
       changes and edited drafts. Tracked worktrees join only in a relay run,
       from where the last run that took them left them; a Q&A run leaves them
       (and the ledger) for later, so a background promotion forces no line.
+    - **Already described**: `checkAlsoChanges`' `described` (the caller's ids
+      this session already described) are neither required nor extras, and the
+      re-prompt lists only the rest; the Claude Code Stop hook passes none.
     - **The landing gate** (`foreign --landing`): each changed file no claim
       maps needs a `Plumbing: <path> — <why>` line, each unpromoted draft
       record's § a `Deferred: §X — <why>` line, except at a landing on the
@@ -243,6 +262,19 @@ writer**).
     fields update as usual.
 
   See `../spec/README.md`.
+- **codemode** — gives the model pi's `codemode` tool (pi's `docs/codemode.md`):
+  a JavaScript script that calls the session's other tools in parallel and
+  filters their output. It has no prompt block and no mode note
+  (`MINOR_PROMPTLESS` in `minor.ts`): the tool's own description is the guide.
+  The extension keeps the tool in the loadout exactly while the mode is on
+  (`syncCodemodeTool`, where `vis_guide` syncs, and right after a switch made
+  between runs; a switch during a run applies when it settles), removing it
+  even when `defaultTools` or a restored transcript activated it, except while
+  a registered tool has `codemode` or `deferred` exposure (MCP). Where the tool
+  isn't registered (an SDK runtime without the factory) it does nothing. Every
+  chat alike, a Claude Code one included. Never reaches workers. With
+  spec on, a census or guard note for a call a script made is repeated on the
+  script's own result, the one the model reads.
 
 Like the major mode, the prompt is read per turn, so toggles apply from the
 next prompt. The active triple (`mode`, `strict`, `minorModes`) is published

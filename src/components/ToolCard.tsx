@@ -1,5 +1,5 @@
 import { createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch, type JSX } from "solid-js";
-import { argsSummary, isObj, str } from "../lib/message";
+import { argsSummary, CODEMODE_TOOL, codemodeDetails, codemodeTally, codemodeTallyText, isObj, str, type CodemodeCall, type CodemodeTally } from "../lib/message";
 import { prettyJson } from "../lib/format";
 import { highlightByPath } from "../lib/markdown";
 import {
@@ -26,6 +26,7 @@ const MAX_LINES = 400;
 const HEAD_LINES = 200;
 
 function toolIcon(name: string): IconName {
+  if (name === CODEMODE_TOOL) return "code";
   if (name === "bash") return "terminal";
   if (["read", "write", "edit"].includes(name)) return "file";
   if (["grep", "find", "ls"].includes(name)) return "search";
@@ -111,6 +112,8 @@ interface ToolCardProps {
   summary?: string;
   /** "+n −m" as the row carries it (with `lazy`, in place of counting `details`). */
   stats?: { added: number; removed: number } | null;
+  /** A codemode script's calls as the row carries them (with `lazy`, in place of counting `details`). */
+  calls?: CodemodeTally | null;
   /** The arguments, output and details aren't on the row: they come from here, asked for before
       the card is opened (lib/tool-content). */
   lazy?: LazyContent;
@@ -188,7 +191,13 @@ export function ToolCard(props: ToolCardProps) {
   const failed = () => props.status === "error";
   // Images the tool returned itself show under the summary row, open or closed.
   const hasImages = () => (props.images?.length ?? 0) > 0;
-  const summary = () => props.summary ?? argsSummary(props.args);
+  const summary = () => props.summary ?? argsSummary(props.args, props.name);
+  // A codemode script's calls: live from its updates' details, else as its row carries them.
+  const tally = createMemo(() => {
+    if (props.name !== CODEMODE_TOOL) return "";
+    const d = codemodeDetails(props.details);
+    return codemodeTallyText(d ? codemodeTally(d.calls) : (props.calls ?? { total: 0, failed: 0, running: 0 }));
+  });
   // Counted off the recorded patch only, never a diff of the arguments (a closed card runs none).
   // A lazy row brings its count with it.
   const stats = createMemo(() =>
@@ -224,6 +233,9 @@ export function ToolCard(props: ToolCardProps) {
           <span class="toolcard-arg" title={summary()}>
             {summary()}
           </span>
+          <Show when={tally()}>
+            <span class="toolcard-calls">{tally()}</span>
+          </Show>
           <Show when={stats()}>{(st) => <DiffStat added={st().added} removed={st().removed} />}</Show>
           {props.action}
           <Switch>
@@ -312,18 +324,104 @@ function LazyBody(props: { card: ToolCardProps; lazy: LazyContent; live: boolean
   );
 }
 
+/** A codemode script's own body, else the tool card's. */
+function ToolCardBody(props: ToolCardProps & { live: boolean }) {
+  const script = () => (props.name === CODEMODE_TOOL && isObj(props.args) ? str(props.args.code) : undefined);
+  return (
+    <Show when={script() !== undefined} fallback={<PlainBody {...props} />}>
+      <CodemodeBody {...props} script={script()!} />
+    </Show>
+  );
+}
+
+/** The words of a script call's status, as the tool card's chip says them. */
+const CALL_CHIP: Record<CodemodeCall["status"], { tone?: "accent" | "success" | "error" | "warn"; word: string }> = {
+  running: { tone: "accent", word: "Running" },
+  ok: { tone: "success", word: "Done" },
+  error: { tone: "error", word: "Failed" },
+  cancelled: { tone: "warn", word: "Cancelled" },
+};
+
+const seconds = (ms: number) => (ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(1)} s`);
+const usd = (n: number) => (n > 0 && n < 0.01 ? "<$0.01" : `$${n.toFixed(2)}`);
+
+/**
+ * A codemode call's body (§chat.transcript/codemode-card): the script, highlighted, with Copy; each call it
+ * made, from its result's details (pi's record of them), live while it runs; then its output as any tool
+ * card shows it, and the file holding all of a cut output. Its images are the card's media strip.
+ */
+export function CodemodeBody(props: ToolCardProps & { live: boolean; script: string }) {
+  const details = createMemo(() => codemodeDetails(props.details));
+  const calls = () => details()?.calls ?? [];
+  const code = createMemo<Code | null>((prev) => (!props.live ? prev : highlightByPath(props.script, "script.js")), null);
+  return (
+    <div class="toolcard-body">
+      <div class="toolcard-section">
+        <div class="toolcard-section-label">
+          Script
+          <CopyButton label="Copy Script" text={() => props.script} onCopy={(t) => copyText(t, "Copied script.")} />
+        </div>
+        <pre class="toolcard-output toolcard-code">
+          <Show when={code()?.lang} fallback={props.script}>
+            <code class={codeClass(code()!.lang)} innerHTML={code()!.html} />
+          </Show>
+        </pre>
+      </div>
+      <div class="toolcard-section">
+        <div class="toolcard-section-label">Calls</div>
+        <Show when={calls().length > 0} fallback={<p class="toolcard-note">{props.status === "running" ? "No calls yet." : "No calls."}</p>}>
+          <ol class="codemode-calls">
+            <For each={calls()}>
+              {(c) => (
+                <li class="codemode-call">
+                  <div class="codemode-call-head">
+                    <span class="codemode-call-name">{c.name}</span>
+                    <Show when={c.name.startsWith("models.")}>
+                      <span class="codemode-call-kind">model call</span>
+                    </Show>
+                    <span class="codemode-call-args" title={c.args}>
+                      {c.args}
+                    </span>
+                    <Show when={c.durationMs !== undefined}>
+                      <span class="codemode-call-meta">{seconds(c.durationMs!)}</span>
+                    </Show>
+                    <Show when={c.cost !== undefined}>
+                      <span class="codemode-call-meta">{usd(c.cost!)}</span>
+                    </Show>
+                    <Chip tone={CALL_CHIP[c.status].tone} live={c.status === "running"}>
+                      {CALL_CHIP[c.status].word}
+                    </Chip>
+                  </div>
+                  <Show when={c.error}>
+                    <p class="codemode-call-error">{c.error}</p>
+                  </Show>
+                </li>
+              )}
+            </For>
+          </ol>
+        </Show>
+      </div>
+      {/* The tool card's own Output and attachments (its body box gives way to this one: base.css). */}
+      <PlainBody {...props} outputOnly />
+      <Show when={details()?.fullOutputPath}>
+        {(path) => <p class="toolcard-path">Full output: {path()}</p>}
+      </Show>
+    </div>
+  );
+}
+
 /** Arguments and Output, built once the card is first opened; they follow a streaming call from
     then on while the card is open, and hold still (no diff, no highlighting) while it is closed. */
-function ToolCardBody(props: ToolCardProps & { live: boolean }) {
+function PlainBody(props: ToolCardProps & { live: boolean; outputOnly?: boolean }) {
   const [showAll, setShowAll] = createSignal(false);
-  const hasArgs = () => props.args !== undefined || !!props.argsText;
+  const hasArgs = () => !props.outputOnly && (props.args !== undefined || !!props.argsText);
   const failed = () => props.status === "error";
   const lines = () => (props.output ?? "").split("\n");
   const shown = () => (showAll() || lines().length <= MAX_LINES ? props.output : lines().slice(0, HEAD_LINES).join("\n"));
   // Highlighting is string work; memos keep it off unrelated re-renders. Streaming args
   // (props.args still undefined) stay plain JSON text.
   // Each keeps its last value while the card is closed: an update to a closed card waits for it to open.
-  const file = createMemo<FileView | null>((prev) => (!props.live ? prev : props.args === undefined ? null : fileView(props.name, props.args, props.details)), null);
+  const file = createMemo<FileView | null>((prev) => (!props.live ? prev : props.outputOnly || props.args === undefined ? null : fileView(props.name, props.args, props.details)), null);
   const readPath = () => (props.name === "read" && !failed() && isObj(props.args) ? str(props.args.path) : undefined);
   const readCode = createMemo((prev: Code | null): Code | null => {
     if (!props.live) return prev;

@@ -20,6 +20,7 @@ import type {
   ContextInfo,
   ExtensionInfo,
   ExplanationInfo,
+  SpecClaimText,
   FileIndex,
   FolderListing,
   GitSummary,
@@ -50,6 +51,7 @@ import type {
   SessionHiddenWorkers,
   SessionInsight,
   SessionSetup,
+  SessionTools,
   SessionSummary,
   ThemeList,
   TmpAttachment,
@@ -57,6 +59,8 @@ import type {
   ToolContentResponse,
   TranscriptRows,
   UploadResult,
+  UsageHistory,
+  UsageHistoryStrip,
   UsageInsight,
   UsageResetDayRequest,
   WebSettings,
@@ -853,6 +857,12 @@ export const fetchUsage =() => request<UsageInsight>("/api/insights/usage");
 
 /** Fetch every provider's usage now and rewrite the shared cache; resolves to the new insight. */
 export const refreshUsage = () => request<UsageInsight>("/api/insights/usage/refresh", { method: "POST" });
+/** One Usage chart's recorded readings (§app.insights/usage-burn); `at` is the window's anchor (its declared start, else its reset). */
+export const fetchUsageHistory = (series: string, window: string, at: number | null) =>
+  request<UsageHistory>(`/api/insights/usage/history?series=${encodeURIComponent(series)}&window=${encodeURIComponent(window)}${at !== null ? `&at=${at}` : ""}`);
+/** A 5-hour meter's strip: its last 30 days of closed windows, summaries only (§app.insights/usage-burn). */
+export const fetchUsageStrip = (series: string, window: string) =>
+  request<UsageHistoryStrip>(`/api/insights/usage/history?series=${encodeURIComponent(series)}&window=${encodeURIComponent(window)}&strip=1`);
 /** Ollama Cloud's declared reset day (1..31, or null to clear; §app.insights/usage-reset-day): answers with the whole usage payload. */
 export const putUsageResetDay = (day: number | null) =>
   request<UsageInsight>("/api/insights/usage/reset-day", { method: "PUT", body: JSON.stringify({ provider: "ollama", day } satisfies UsageResetDayRequest) });
@@ -868,6 +878,10 @@ export const fetchExtensions = () => request<ExtensionInfo[]>("/api/extensions")
 
 /** Every /explain artifact in the store, newest first (they're kept forever). */
 export const fetchExplanations = () => request<ExplanationInfo[]>("/api/explanations");
+
+/** One claim's text for the spec card's claim sheet (§chat.spec-card/claim-sheet), read from the session's own record. */
+export const fetchSpecClaim = (session: string, entry: string, id: string) =>
+  request<SpecClaimText>(`/api/spec-turn/claim?${new URLSearchParams({ session, entry, id })}`);
 
 export const fetchSessionInsight = (path: string) =>
   request<SessionInsight>(`/api/insights/session?path=${encodeURIComponent(path)}`);
@@ -885,6 +899,8 @@ export const fetchGitSummary = (path: string, fresh = false) =>
     folder. `fresh` skips the server's cache. */
 export const fetchSessionSetup = (path: string, fresh = false) =>
   request<SessionSetup>(`/api/sessions/context?path=${encodeURIComponent(path)}${fresh ? "&fresh=1" : ""}`);
+/** The tools a held chat declares to its model now (§chat.transcript/setup-card-tools). Never cached. */
+export const fetchSessionTools = (path: string) => request<SessionTools>(`/api/sessions/tools?path=${encodeURIComponent(path)}`);
 /** Switch a new session's context files and skills (§chat.transcript/setup-card-toggles): the
     whole off set; the answer is the card's fresh read of the rebuilt runtime. */
 export const setSessionLoadout = (path: string, offContext: string[], offSkills: string[]) =>

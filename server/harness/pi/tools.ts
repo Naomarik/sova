@@ -2,7 +2,7 @@
 // shape minus pi's types (TypeBox parameters, ExtensionContext), so the conversion is a spread: every
 // field (and marker, such as overseer-redact's REDACTING) reaches pi as written; only execute's context
 // is mapped. Hooks in Sova's own inline extensions read pi's context through `toolCtx` too.
-import type { ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { ExtensionContext, ExtensionToolContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { HarnessNative, HookCtx, ToolSpec } from "../../../shared/harness";
 import { canonicalPath } from "../../paths";
 import { historyOf } from "./reader";
@@ -42,9 +42,12 @@ export function toPiTool(spec: ToolSpec): ToolDefinition<any, any> {
 }
 
 /** A pi tool as a ToolSpec, for Sova code that calls one (the Overseer's subagent tools): the tool gets
-    its own pi context back from `native`. */
+    its own pi context back from `native`. pi 1.0 types that context as an ExtensionToolContext; Sova
+    supplies no `tools` or `executeTool` of its own: `native` is the context pi gave the calling Sova
+    tool, so they are pi's for that call (a nested call is the caller's), and a context that came from
+    a hook (toolCtx of a plain ExtensionContext) has neither. No tool Sova calls this way uses them. */
 export function fromPiTool(def: ToolDefinition<any, any>): ToolSpec {
   const execute: ToolSpec["execute"] = (toolCallId, params, signal, onUpdate, ctx) =>
-    def.execute(toolCallId, params, signal, onUpdate as never, ctx?.native as unknown as ExtensionContext);
+    def.execute(toolCallId, params, signal, onUpdate as never, ctx?.native as unknown as ExtensionToolContext);
   return { ...def, execute } as unknown as ToolSpec;
 }

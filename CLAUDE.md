@@ -1,6 +1,6 @@
 # Sova
 
-Webapp interface for the pi coding agent (npm: `@earendil-works/pi-coding-agent`, pinned **0.87.1**).
+Webapp interface for the pi coding agent (npm: `@earendil-works/pi-coding-agent`, pinned **1.0.3**).
 Single local user. Goals: list all sessions, view transcripts, chat in webapp-owned sessions,
 live-watch sessions that are open in the CLI/TUI, spawn new sessions.
 
@@ -113,6 +113,9 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   whole snapshot, newest per id on the branch wins), read by Sova for the card, the composer chip
   and the session list, and its hidden `align-state` / `align-nudge` custom messages, which Sova
   must keep hidden (`display: false`); an older session's `align-doc` custom entries are read-only;
+  mode's `spec-turn` custom entry (`{v: 1, ops, own, landed, arrived?, created, gate, check,
+  prose?}`, one per changing run, mode/spec-turn.ts), read by Sova for the spec card and its claim
+  sheet, and by the check itself for the § earlier runs described;
   show-changes' `show_changes` tool: each result's `details` (`{v: 1, scope, title?, paths?,
   steps?}`), read by Sova for the card that opens the changes viewer; provider-limits
   (`pi-config/extensions/provider-limits/gate.ts`, builtins only): the request limits
@@ -193,6 +196,11 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   `pi-config/extensions/mode/align.ts` (builtins only: the `align` tool's details shape, its strict
   check `normalizeAlignDetails` and the one fold `foldAlignments` — the transcript's align row and
   the session list's `SessionSummary.align` read what the extension writes, with its own code),
+  `server/transcript.ts` and `server/spec-claim.ts` import `pi-config/extensions/mode/spec-turn.ts`
+  (imports nothing: the spec check's per-run `spec-turn` record — a plain custom entry the mode
+  extension appends at the check's final verdict, never a custom message, so never model context —
+  its shape, its strict check `normalizeSpecTurnDetails` and its builder; the transcript's spec card
+  and the claim sheet read what the extension writes, with its own code, §chat.spec-card/record),
   the server's one-shot paths (`server/decide-llm.ts`, `server/decide-jev.ts`,
   `server/session-autotitle.ts`) and its usage helper (`server/usage-helper/`) import
   `pi-config/extensions/llm-inflight/usage-record.ts` (builtins only: the ledger record's shape,
@@ -292,6 +300,12 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   that login's directory down as `CLAUDE_CONFIG_DIR`, and tests falling back to the host's agent dir
   once wrote leases into it. A new runner imports it too; `node scripts/test-sentinel.mjs -- <cmd>`
   runs a suite against a sentinel HOME / agent dir / login dir and fails if anything there changed.
+  The same preload stops git's repository search at the temp dir (`GIT_CEILING_DIRECTORIES`) and
+  drops `GIT_DIR`-like variables, and `pnpm test` exits 2 when its temp dir is inside any git
+  repository: tests register plain temp folders as projects, and a `TMPDIR` inside a worktree once
+  made them Sova's own checkout, so tests committed promotions on master and cut `sova/*` worktrees.
+  A test that needs a plain folder makes its temp root with `scratchRoot` (`server/test-scratch.ts`);
+  one that needs a repository runs `git init` under it.
 - `pnpm run typecheck` — must pass. `pnpm run build` — must pass.
 - `pnpm run prices:update` — regenerate the checked-in price seed `shared/model-prices/seed.json` from models.dev and print
   the changes and any unpriced model (`--from <api.json>` offline, `--check` writes nothing). Aliases are hand-kept in
@@ -304,12 +318,14 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   reads `run-tests (bun): …`). One runner, `scripts/run-tests.mjs` (`pnpm test`, the project's
   `test.run`), holds the file list; `*.browser.test.ts` files need Solid's browser build and run in
   a second pass with `--conditions=browser`; `pnpm test -- <files>` runs only those, each routed to
-  its pass. Verify your work with `pnpm test` and `pnpm run dev:hermetic`, which are Bun, the
+  its pass. On Bun it runs files longest first by the times it recorded last in the worktree's
+  gitignored `.cache/test-durations.json`, and ends with the 10 slowest. Verify your work with `pnpm test` and `pnpm run dev:hermetic`, which are Bun, the
   runtime the user runs; never switch to Node unless the user asks. Node only on request:
   `pnpm run test:node` (`--runtime node`, `tsx --test`; plain `node --test <file>` fails with
   ERR_MODULE_NOT_FOUND on the extensionless imports) or `SOVA_RUNTIME=node pnpm test`; an explicit
   `--runtime` wins. No Bun found: the runner exits 2 naming `pnpm run test:node`, never a quiet
   Node pass. `pnpm run test:bun` is kept as an explicit Bun alias.
+- The spec replay suite (`pi-config/extensions/spec/tests/replay`) is a landing gate the merge round runs; never run it while working.
 - `pi-config/install.sh` links `pi-config/` into `~/.pi/agent`, except `settings.json`: that is a seed
   deep-merged into a real `~/.pi/agent/settings.json` (seed keys win, runtime keys such as the chosen
   model stay there and never in the repo). `--check` verifies links and seed keys without changing
@@ -448,6 +464,8 @@ before you claim a feature.
   already includes the `# Minor mode: spec` block, follow it without rereading. Otherwise read
   `pi-config/extensions/mode/spec-mode.md`, the same text, and follow it. It applies in Sova
   whether or not that mode is on; don't turn any mode on. Commands are in `.sova/spec/USAGE.md`.
+- A change to the spec tools themselves names the goal it serves in
+  `pi-config/extensions/spec/docs/GOALS.md` and is measured against today's tools by the replay harness.
 
 ## Method
 
@@ -483,7 +501,7 @@ branch (the full reasoning lives in that branch's commit messages and `§workspa
   props.group.id)`) so equality gating happens where you can see it. The green build catches
   none of this: the bug is between two re-runs, not inside either.
 
-## pi SDK facts (verified against the installed package, 0.87.1)
+## pi SDK facts (verified against the installed package, 1.0.3)
 
 Pi package on disk: the repo-pinned copy Sova runs, `node_modules/@earendil-works/pi-coding-agent/`
 (docs/ and examples/sdk/ there are authoritative — read them, not your memory). Under pnpm it is a
@@ -601,20 +619,22 @@ Frontend is SolidJS (NOT React): signals/stores, `<For>/<Show>`, `onCleanup` for
 
 - Never keep secrets or machine-specific details in the repo (it is public): no keys, tokens, real IPs, hostnames, tailnet names, device IDs or home paths in code, scripts, tests, docs or commit messages. Read them from a gitignored env file (e.g. `local.env`, with a committed `local.env.example` of placeholders); when you create one, tell the user so they can fill it in.
 
-## Backend notes (SDK surprises, pi 0.87.1)
+## Backend notes (SDK surprises, pi 1.0.3)
 
 - `SessionManager.open(path)` is NOT read-only: `loadEntriesFromFile` appends `"\n"` to a trailing
   partial line (`dist/core/session-manager.js:367`) and `_rewriteFile()` (`:754`) rewrites the whole
   file when migrating old versions (`:722`). Never call it on a file a TUI may own —
   transcript/watch use our own parser (`server/harness/pi/reader.ts`); `open()` only for webapp-owned chats.
-- `SessionManager.create(cwd)` defers writing the file until the first assistant reply
-  (`_persist()`, `dist/core/session-manager.js:785` — body byte-identical from 0.85.1 through 0.87.1).
+- `SessionManager.create(cwd)` defers writing the file until the first user or assistant message
+  (`_persist()`/`_hasConversation()`, `dist/core/session-manager.js:791-800`, since 0.99.0; through 0.87.1
+  it waited for the first assistant reply; quirk P11).
   `POST /api/sessions` writes the header line itself so the new session exists on disk immediately.
 - pi's `theme` singleton is not re-exported from the package entry (`dist/index.d.ts` exports
   `initTheme`/`Theme` only, though `theme` exists on `modes/interactive/theme/theme.ts`). The
   ExtensionUIContext bridge (`currentTheme`, `server/harness/pi/ui-bridge.ts`, quirk P17) calls `initTheme()` and reads
   `globalThis[Symbol.for("@earendil-works/pi-coding-agent:theme")]` — same key pi sets in
-  `dist/modes/interactive/theme/theme.js:536`.
+  `dist/modes/interactive/theme/theme.js:524`. It asks for `"dark"`: pi 1.0 (0.99.0) defaults
+  `initTheme()` to `system` (the terminal's ANSI palette), and its `dark` is 0.99.0's revised palette.
 - The sessions extension also loads inside our embedded runtimes and writes `live/*.json` with the
   server's own pid. `server/live.ts` ignores own-pid and dead-pid records, otherwise every
   webapp-owned session would look TUI-busy.
@@ -655,11 +675,11 @@ Frontend is SolidJS (NOT React): signals/stores, `<For>/<Show>`, `onCleanup` for
   Writes re-read + merge (safe with several servers); reads use the startup copy plus this
   server's own adds, so ids another running server adds show as "web" here only after a restart.
 - Opening a chat runtime must not write: the SDK appends model_change/thinking_level_change at
-  construction (empty sessions, or no thinking entry on the branch — `dist/core/sdk.js:261-272`,
+  construction (empty sessions, or no thinking entry on the branch — `dist/core/sdk.js:281-289`,
   the same appends since 0.85.1). `openPiSession` (`server/harness/pi/open.ts`, quirk P1) defers those two
   appends and the chat replays them right before its first write (`ChatSession.flushDeferredAppends`);
   a never-prompted session stays untouched.
-- Images: 0.87.1 `ImageContent` is still `{type:"image", data, mimeType}` (pi-ai `dist/types.d.ts:256`)
+- Images: 1.0.3 `ImageContent` is still `{type:"image", data, mimeType}` (pi-ai `dist/types.d.ts:277`)
   for prompt/steer/followUp AND storage
   (sdk.md's `source:{type:"base64"}` example is stale). Model favorites are the
   command-palette's `~/.pi/agent/model-favorites.json` (`{version:1, models:[{provider,id}]}`), read
@@ -692,5 +712,19 @@ Frontend is SolidJS (NOT React): signals/stores, `<For>/<Show>`, `onCleanup` for
   `ChatSession.deliverTopicBatch`) stay out of that window on purpose: a settle only schedules a
   drain on a timer, after the web queue's own hand-off, and a batch counts as delivered at its user
   entry's `message_end` (the `sova-topic-delivered` marker), never when its `prompt()` resolves.
-- `Agent.peekQueuedMessages()` exists from 0.87.0 (pi-agent-core `agent.d.ts:100`) but Sova's queue
+- `Agent.peekQueuedMessages()` exists from 0.87.0 (pi-agent-core `agent.d.ts:102`) but Sova's queue
   deliberately does not use it; `server/chat-queue-clients.test.ts` pins its presence.
+- pi 1.0 `PromptOptions.preflightResult` gets a disposition, `"started" | "queued" | "handled"`
+  (`PromptDisposition`), not a boolean, and a refused prompt (already processing, compaction, no model or
+  auth) gets no call at all; through 0.87.1 it was `preflightResult(false)`. The adapter drops the
+  disposition: `SendOptions.onAccepted` stays `() => void` (quirk P15).
+- pi 1.0 `steer()`/`followUp()` resolve to a `QueuedInputDisposition` (`"queued" | "handled"`,
+  `agent-session.js:1680`); `PiHarnessSession.steer` drops it and stays `Promise<void>`.
+- pi 1.0's built-in extensions (`builtin:codemode`, `builtin:tool-search`, `builtin:mcp`,
+  `builtin:llama.cpp`, `dist/extensions/index.js`) load only in the CLI (`dist/main.js` adds them);
+  SDK runtimes such as Sova's do not get them (docs/sdk.md "codemode-mcp"), so no MCP,
+  tool_search or llama.cpp provider in webapp-owned sessions unless Sova adds the factories. Sova adds
+  one: codemode (`server/harness/pi/codemode.ts`, in `DEFAULT_EXTENSION_FACTORIES`, quirk P21), registered
+  inactive and switched by the mode extension's `codemode` minor mode (§chat.mode-menu/codemode), the
+  same in Claude Code chats (off: nowhere in the loadout; a toggle restarts the CLI). Its scripts run in a `node:worker_threads` Worker with QuickJS; nested calls carry `parentToolCallId`
+  (`HarnessEvent` `nested`, `SovaEvent` `parentCallId`) and are no rows or live tools.

@@ -56,6 +56,8 @@ Paths in "Where" are under `server/`.
 | P18 warmup-shutdown | internal-API | `warmClaudeCodeProvider` (harness/pi/open.ts) | `AgentSession.bindExtensions`, `AgentSession.dispose`, `ExtensionRunner.emit`, `ExtensionRunner.hasHandlers` | dispose() emits session_shutdown (then the warm-up's own emit would double it) |
 | P19 rebuild-prompt | semantic | `PiHarnessSession.refreshSystemPrompt` (harness/pi/session.ts), `LivePrompt.rebase` (overseer.ts) | `AgentSession.setActiveToolsByName`, `AgentSession._rebuildSystemPrompt`, `DefaultResourceLoader.appendSystemPromptOverride` | pi adds a public refreshSystemPrompt(), or re-reads the parts at each run |
 | P20 model-restore-gate | semantic | `recordedModelForEmptyBranch` (harness/pi/open.ts), `modelForSessionOpen` (harness/pi/open.ts) | `createAgentSession`, `SessionManager.buildSessionContext` | pi restores a recorded model on any branch |
+| P21 codemode-definition | semantic | `captureCodemode` (harness/pi/codemode.ts), `scriptRegistry` (harness/pi/codemode.ts) | `createCodemodeExtension`, `ExtensionAPI.registerTool`, `ExtensionContext.modelRegistry`, `ExtensionToolContext.executeTool` | pi exports the codemode tool definition and a model hook for scripts |
+| P22 declared-tools | private-read | `PiHarnessSession.declaredTools` (harness/pi/session.ts), `toolSource` (harness/pi/session.ts) | `Agent.state.tools`, `AgentSession._hiddenDeclarations`, `AgentSession._applyToolLoadout`, `AgentSession.getAllTools`, `SourceInfo.path` | pi offers a public read of the declared tools as a request will send them |
 | T1 scripted-model (test-only) | private-write | `ScriptedModel.attach` (harness/pi/testing/scripted-model.ts) | `AgentSession._modelRuntime`, `Agent.getApiKey`, `Agent.streamFunction` | pi offers a public test model hook |
 
 ## What each one relies on
@@ -124,9 +126,9 @@ Canary: `P10 leaf-is-last-line: navigateTree({summarize:false}) writes nothing a
 
 ### P11 create-defers / open-flushed
 
-A session `SessionManager.create()` makes stays unwritten until its first assistant message, so Sova's creators write `[header, ...seed]` themselves; a file `SessionManager.open()` reads takes each append at once.
+A session `SessionManager.create()` makes stays unwritten until its first user or assistant message (pi 0.99.0+; through 0.87.1, its first assistant message), so Sova's creators write `[header, ...seed]` themselves; a file `SessionManager.open()` reads takes each append at once.
 
-Canary: `P11 create-defers / open-flushed: a created session's appends stay unwritten until an assistant message; an opened header-only file writes each append at once`.
+Canary: `P11 create-defers / open-flushed: a created session's appends stay unwritten until a user or assistant message; an opened header-only file writes each append at once`.
 
 ### P12 message-end-before-persist
 
@@ -148,9 +150,9 @@ Canary: `P14 command-direct-call: getCommand finds an extension's command with i
 
 ### P15 accept-vs-complete
 
-`prompt()` resolves when the turn ends, while `preflightResult(true)` fires when it is accepted (also for a handled extension command); the driving session's `send` passes it as `onAccepted`, and a link delivery takes acceptance from it.
+`prompt()` resolves when the turn ends, while `preflightResult("started")` fires when it is accepted (`"handled"` for a handled extension command or an input handler that swallows it, `"queued"` for a mid-run delivery); the driving session's `send` passes it as `onAccepted`, dropping the disposition, and a link delivery takes acceptance from it. A refused prompt ("already processing", a compaction in progress, no model or auth) gets no call, and `linkToSdk` settles on the rejection instead. pi 1.0.0 made the argument a disposition (`PromptDisposition`); through 0.87.1 it was a boolean, `preflightResult(false)` on a refusal, which the adapter ignored too, so `onAccepted` fired then as well.
 
-Canary: `P15 accept-vs-complete: prompt() resolves at turn end while preflightResult(true) fires at acceptance (and for a handled command)`.
+Canary: `P15 accept-vs-complete: prompt() resolves at turn end while preflightResult("started") fires at acceptance ("handled" for a handled command, no call for a refused prompt)`.
 
 ### P16 custom-message-idle
 
@@ -160,7 +162,7 @@ Canary: `P16 custom-message-idle: sendCustomMessage with triggerTurn:false on an
 
 ### P17 theme-global
 
-`initTheme()` registers the theme on `globalThis[Symbol.for("@earendil-works/pi-coding-agent:theme")]`, which Sova reads to hand extensions `ctx.ui.theme` (pi does not export the instance).
+`initTheme()` registers the theme on `globalThis[Symbol.for("@earendil-works/pi-coding-agent:theme")]`, which Sova reads to hand extensions `ctx.ui.theme` (pi does not export the instance). Sova names the theme, `initTheme("dark", false)`: pi 1.0 (0.99.0) defaults to `system`, a theme built from the terminal's ANSI palette, where 0.87.1 detected `dark` or `light` from the environment (`dark` on a server). The built-in `dark` is pi's revised palette since 0.99.0, so its escape codes differ from 0.87.1's `dark` (accent 256-colour 140, was 109).
 
 Canary: `P17 theme-global: initTheme registers the theme on globalThis under pi's Symbol.for key`.
 
@@ -181,6 +183,18 @@ Canary: `P19 rebuild-prompt: setActiveToolsByName(getActiveToolNames()) re-reads
 `createAgentSession` restores the branch's recorded model only when the branch has messages; for a message-less session it builds (and appends) another model unless Sova passes the recorded one.
 
 Canary: `P20 model-restore-gate: the SDK restores a recorded model only when the branch has messages`.
+
+### P21 codemode-definition
+
+`createCodemodeExtension()`'s factory registers exactly one tool, `codemode`, with `defaultActive: false`, through the API it is handed, so Sova runs it against its own extension's API with `registerTool` caught and registers the definition itself (§chat.mode-menu/codemode). A script's `models.classify` / `models.generateImages` reach the tool context's `modelRegistry`, where Sova's wrapper applies the model policy, the provider-limits slot and the chat's usage context. Nested calls go through `ctx.executeTool`: their `tool_execution_*` events carry `parentToolCallId` and ids `<parent>/<n>`, and they write no transcript entries (the result keeps `details.calls`).
+
+Canary: `P21 codemode-definition: the factory registers one inactive codemode tool, its models.* reach ctx.modelRegistry, nested calls carry parentToolCallId`.
+
+### P22 declared-tools
+
+`agent.state.tools` is the set the next request declares, in its order, with the descriptions a `prepareLoadout` hook gave them (codemode's "Codemode: `tools.x(args)` resolves to …" line); `getAllTools()` keeps the registry's own descriptions. The private `_hiddenDeclarations` names the declarations requests leave out (codemode's `only` mode). A tool's `sourceInfo.path` is `builtin:<name>` for pi's own tools, `<inline:<name>>` for an extension factory (`<sdk:<name>>` for a custom tool), else the extension's file. The driving session's `declaredTools()` reads the three for the setup card's Tools group (§chat.transcript/setup-card-tools).
+
+Canary: `P22 declared-tools: agent.state.tools is the declared set with the loadout's descriptions, _hiddenDeclarations what requests leave out, sourceInfo.path names the source`.
 
 ### T1 scripted-model (test-only)
 

@@ -230,11 +230,16 @@ async function filled(page) {
 }
 const now = (page) => page.evaluate(() => window.__follow.log.at(-1));
 const frames = (page) => page.evaluate(() => window.__follow.log);
-const toEnd = (page) =>
-  page.evaluate(() => {
+/** Back to the end the way a reader goes: Jump to Latest when it shows, since a scroll the reader
+    didn't make never follows again (§chat.transcript/turn-end-keeps-reader). */
+const toEnd = async (page) => {
+  const pill = page.locator(".jump-latest[data-shown]").first();
+  if (await pill.count()) await pill.click({ timeout: 2000 }).catch(() => {});
+  await page.evaluate(() => {
     const t = document.getElementById("transcript");
     t.scrollTop = t.scrollHeight;
   });
+};
 
 try {
   console.log(`transcript-follow e2e against ${BASE} (agent dir ${AGENT})`);
@@ -547,6 +552,63 @@ try {
     const s = await now(page);
     assert(s.pill && s.gap >= 80, `after Page Up: ${JSON.stringify(s)}`);
     await page.locator(".jump-latest").click();
+    await sleep(300);
+  });
+
+  await check("a view the browser takes to the end (rows below leave) doesn't follow again; a wheel down there does", async () => {
+    // Rows below the reader leaving, as a turn's streamed rows do at its end: the browser clamps
+    // the view to the end with no input of the reader's.
+    await page.evaluate(() => {
+      const last = [...document.querySelectorAll("#transcript .thread > .entry")].at(-1);
+      const d = document.createElement("div");
+      d.id = "e2e-below";
+      d.style.height = "3000px";
+      last.append(d);
+    });
+    await toEnd(page);
+    await sleep(300);
+    const box = await page.locator("#transcript").boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.wheel(0, -600);
+    await sleep(1600); // past the reader's input
+    let s = await now(page);
+    assert(s.pill && s.gap >= 80, `after the wheel: ${JSON.stringify(s)}`);
+    await page.evaluate(() => document.getElementById("e2e-below").remove());
+    await sleep(1000); // a lower end counts for the reader's moves once it has stood 600 ms
+    s = await now(page);
+    assert(s.gap < 2 && s.pill, `clamped to the end, Jump to Latest must stay: ${JSON.stringify(s)}`);
+    // Not following: content landing below leaves the view where it is.
+    const grow = () =>
+      page.evaluate(() => {
+        const d = document.createElement("div");
+        d.className = "e2e-grow";
+        d.style.height = "300px";
+        [...document.querySelectorAll("#transcript .thread > .entry")].at(-1).append(d);
+      });
+    await grow();
+    await sleep(400);
+    s = await now(page);
+    assert(s.gap >= 290 && s.pill, `followed content it wasn't following: ${JSON.stringify(s)}`);
+    // The reader's own scroll down to the end follows again; a wheel down there too. By key: after
+    // the clamp, headless Chrome scrolls a wheel down nowhere until the view has moved once.
+    await page.locator("#transcript").focus();
+    await page.keyboard.press("End");
+    await sleep(800);
+    s = await now(page);
+    assert(s.gap < 2 && !s.pill, `the reader's wheel down to the end: ${JSON.stringify(s)}`);
+    await page.mouse.wheel(0, -200);
+    await sleep(1600);
+    await page.evaluate(() => document.querySelectorAll(".e2e-grow").forEach((d) => d.remove()));
+    await sleep(1000);
+    s = await now(page);
+    assert(s.gap < 2 && s.pill, `clamped again: ${JSON.stringify(s)}`);
+    await page.mouse.wheel(0, 200);
+    await sleep(400);
+    await grow();
+    await sleep(400);
+    s = await now(page);
+    assert(s.gap < 2 && !s.pill, `a wheel down at the end follows again: ${JSON.stringify(s)}`);
+    await page.evaluate(() => document.querySelectorAll(".e2e-grow").forEach((d) => d.remove()));
     await sleep(300);
   });
 

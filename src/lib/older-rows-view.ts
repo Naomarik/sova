@@ -28,12 +28,14 @@ export function createOlderRows(o: {
   /** Loads asked for before the hello: they go once it has said what's above. */
   let waiting: (() => void)[] = [];
 
-  /** The newest rows (`items`, with `count` rows above them) onto the list on screen. */
-  const land = (items: TranscriptItem[], count?: number, summary?: OlderSummary) => {
+  /** The newest rows (`items`, with `count` rows above them) onto the list on screen; `also` in the
+      same update. */
+  const land = (items: TranscriptItem[], count?: number, summary?: OlderSummary, also?: () => void) => {
     const next = helloRows(o.items(), items, count, summary);
     batch(() => {
       o.setItems(next.items);
       setOlder(next.older);
+      also?.();
     });
     return next.older;
   };
@@ -55,10 +57,11 @@ export function createOlderRows(o: {
     fetch: (ask, leaf) => fetchTranscriptRows(o.path, ask, leaf),
     list: o.items,
     older,
-    apply: (items, next) =>
+    apply: (items, next, also) =>
       batch(() => {
         o.setItems(items);
         setOlder(next);
+        also?.();
       }),
     moved: () => void reload(),
     slow: setSlow,
@@ -92,12 +95,13 @@ export function createOlderRows(o: {
       if (msg.prefetch && o.prefetch !== false && next.left > 0) void loader.prefetch();
     },
     /** The rows held, again from the file (a turn ended), with the context fill; the newest rows
-        when it holds none (a new session's first turn). Throws when the server can't be reached. */
-    refresh: async (): Promise<TranscriptRows | "stale"> => {
-      if (o.items()?.length) return loader.refresh();
+        when it holds none (a new session's first turn). `also` runs in the same update as the rows
+        landing, only if they land. Throws when the server can't be reached. */
+    refresh: async (also?: () => void): Promise<TranscriptRows | "stale"> => {
+      if (o.items()?.length) return loader.refresh(also);
       const r = await fetchTranscriptRows(o.path, { tail: true });
       if ("code" in r) return "stale";
-      land(r.items, r.older, r.olderSummary);
+      land(r.items, r.older, r.olderSummary, also);
       return r;
     },
   };

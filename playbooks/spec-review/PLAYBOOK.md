@@ -11,7 +11,7 @@ You answer one question the operator asked about a project's spec, then stop. Ei
 ## The run is the operator's
 - It runs because the operator sent it, once. Set no schedule, start no team, monitor, loop or timer, and leave nothing running when you report.
 - You write nothing: no files, no assessment receipts, no workers. The chat's own history is the record. Model runs beyond this session only if the brief allows them, one-shot, finished before your report; when your token use so far is unknown, stop and ask before starting one.
-- **The limits are cooperative.** You keep them; nothing here enforces them. Report each one as observed, or as unknown when you couldn't see it (tokens, CPU). A packet's `--budget` bounds the bytes of the page it returns, not the CPU or the reads behind it.
+- **The limits are cooperative.** You keep them; nothing here enforces them. Report each one as observed, or as unknown when you couldn't see it (tokens, CPU). A read's `--budget` bounds the bytes of the page it returns, apart from the always-on frame on the first read, not the CPU or the reads behind it.
 - The scope is frozen once the operator approves the brief. Never widen it or raise a limit, and never start a second brief to get around one: propose it in the report. Reaching a limit, or evidence that can't settle the question, ends collection; report what stays unknown and the exact read that would settle it.
 
 ## Every command starts fresh
@@ -53,10 +53,11 @@ Census maps changed files to claims, and foreign lists claims whose text changed
 ```sh
 core="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"; case $core in "~"|"~/"*) core="$HOME${core#\~}";; esac; core="$core/extensions/spec/core"
 R='<root>'
-node "$core/sova-spec.mjs" packet '<§id>' --budget 12000 --root "$R" --json
+node "$core/sova-spec.mjs" toc '<§id>' --dir out --root "$R" --json
+node "$core/sova-spec.mjs" read '<§id>' --budget 12000 --root "$R" --json   # the first read; every later read adds --no-frame
 ```
 
-`--budget` takes 1024 to 32768 bytes per page. Add `--part` and `--cursor` as the spec discipline uses them, and follow `next` only while the question needs it.
+`toc` lists the claim's neighbours one hop out, a line each with what it is and why it is linked, and delivers no passage; `read` returns the claim's own passage, exact. The first `read` also carries the always-on frame (the project's core records; its cap is 12,000 B) outside its budget; every later `read` adds `--no-frame`. Read a neighbour the question needs the same way, one at a time; `--dir in` lists what requires the claim, and `impact '<§id>' --near` what a change to it could reach. `--budget` takes 1024 to 32768 bytes per page. Follow `next` with `--cursor` only while the question needs it, and finish a passage at `end == total`. Whole-chain `packet` and `scope` are machine inspection, not this playbook's reading step.
 
 **Source.** `git -C "$R" -c core.fsmonitor=false diff --no-ext-diff --no-textconv "$B" -- <path>` for a scoped path, and the scoped files themselves through your file-reading tool. A supporting read (a file a scoped claim cites) only inside the root, the scope and the limits, and named under Coverage: no silent new targets.
 

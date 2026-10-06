@@ -245,3 +245,59 @@ test("the note's hand-resolution warning: a landing merge commit whose § differ
 		r.done();
 	}
 });
+
+test("into a feature branch: what the merged branch brought from master unchanged is counted, not named; a § both sides changed stays", async () => {
+	const r = repo();
+	const worker = join(dirname(r.tree), "worker");
+	try {
+		put(r.main, "src/other.ts", "x\n");
+		sh(r.main, "add", "-A");
+		sh(r.main, "commit", "-qm", "an unmapped file");
+		sh(r.tree, "merge", "-q", "--no-edit", "master");
+		sh(r.tree, "worktree", "add", "-q", "-b", "feat/x-w", worker);
+		// Another task on master: §app/list's lede, and the unmapped file.
+		put(r.main, ".sova/spec/claims/app/list.md", LIST.replace("The list.", "The list, by master."));
+		put(r.main, "src/other.ts", "by master\n");
+		sh(r.main, "commit", "-qam", "master's task");
+		// The worker syncs master in, then changes §app.list/mark and a file of its own.
+		sh(worker, "merge", "-q", "--no-edit", "master");
+		put(worker, ".sova/spec/claims/app/list.md", readFileSync(join(worker, ".sova/spec/claims/app/list.md"), "utf8").replace("A speech bubble and the count.", "The count."));
+		put(worker, "src/own.ts", "the worker's\n");
+		sh(worker, "add", "-A");
+		sh(worker, "commit", "-qm", "worker");
+		const m = await mergeWorktree(runGit, { tree: { path: worker, branch: "feat/x-w" }, target: "feat/x" });
+		const rep = await mergeSpecReport(runGit, { path: worker, branch: "feat/x-w", before: m.before, after: m.sha, branchSha: m.branchSha, defaultBranch: "master" });
+		assert.ok(rep);
+		assert.deepEqual(rep.foreign, ["§app.list/mark"], "master's §app/list arrived unchanged");
+		assert.deepEqual(rep.arrived, { from: "master", ids: ["§app/list"], files: ["src/other.ts"] });
+		assert.deepEqual(rep.landing?.unmappedChanged.map((u) => u.path), ["src/own.ts"]);
+		assert.deepEqual(specLines(rep).slice(0, 2), ["Foreign § this merge changes: §app.list/mark", "Arrived from master: 1 §"]);
+
+		// Without the default branch named (the target is the default, or unknown), nothing is counted apart.
+		const plain = await mergeSpecReport(runGit, { path: worker, branch: "feat/x-w", before: m.before, after: m.sha, branchSha: m.branchSha });
+		assert.deepEqual(plain?.foreign, ["§app.list/mark", "§app/list"]);
+		assert.equal(plain?.arrived, undefined);
+	} finally {
+		r.done();
+	}
+});
+
+test("into a feature branch: a § master changed that the branch changed differently stays named", async () => {
+	const r = repo();
+	const worker = join(dirname(r.tree), "worker");
+	try {
+		sh(r.tree, "worktree", "add", "-q", "-b", "feat/x-w", worker);
+		put(r.main, ".sova/spec/claims/app/list.md", LIST.replace("The list.", "The list, by master."));
+		sh(r.main, "commit", "-qam", "master's task");
+		sh(worker, "merge", "-q", "--no-edit", "master");
+		put(worker, ".sova/spec/claims/app/list.md", readFileSync(join(worker, ".sova/spec/claims/app/list.md"), "utf8").replace("The list, by master.", "The list, by both."));
+		sh(worker, "commit", "-qam", "worker");
+		const m = await mergeWorktree(runGit, { tree: { path: worker, branch: "feat/x-w" }, target: "feat/x" });
+		const rep = await mergeSpecReport(runGit, { path: worker, branch: "feat/x-w", before: m.before, after: m.sha, branchSha: m.branchSha, defaultBranch: "master" });
+		assert.deepEqual(rep?.foreign, ["§app/list"]);
+		assert.equal(rep?.arrived, undefined);
+		assert.ok(!specLines(rep!).some((l) => l.startsWith("Arrived")));
+	} finally {
+		r.done();
+	}
+});

@@ -16,9 +16,11 @@ import type {
   HarnessResources,
   HarnessSession,
   HarnessStreamDelta,
+  HarnessToolInfo,
   HEntry,
   ImageInput,
   InputSource,
+  JsonSchema,
   OwnedCommand,
   RewindHooks,
   RewindOutcome,
@@ -49,7 +51,8 @@ function piOptions(o: SendOptions): Record<string, unknown> {
     const name = PI_OPTION[key];
     if (!name) continue;
     if (key === "source") out[name] = value === undefined ? undefined : PI_SOURCE[value as InputSource];
-    else if (key === "onAccepted") out[name] = value === undefined ? undefined : () => (value as () => void)();
+    // P15: pi 1.0 passes a disposition ("started" | "queued" | "handled"); the contract drops it.
+    else if (key === "onAccepted") out[name] = value === undefined ? undefined : (_disposition: unknown) => (value as () => void)();
     else out[name] = value;
   }
   return out;
@@ -121,6 +124,10 @@ export function harnessEventOf(event: { type: string; [k: string]: any }): Harne
       return { type, frame, wrote: typeof event.result === "object" && event.result !== null, willRetry: event.willRetry === true };
     case "entry.appended":
       return event.entry ? { type, frame, entry: toHEntry(event.entry) } : { type: "other", frame };
+    case "tool.start":
+    case "tool.update":
+    case "tool.end":
+      return typeof event.parentToolCallId === "string" ? { type, frame, nested: true } : { type, frame };
     default:
       return { type, frame } as HarnessEvent;
   }
@@ -142,6 +149,23 @@ const piModels = new WeakMap<HarnessModel, unknown>();
 function sourceLocation(info: { scope: string } | undefined): string | undefined {
   if (!info) return undefined;
   return info.scope === "temporary" ? "path" : info.scope;
+}
+
+/** Where a tool comes from, by its pi source path: `builtin:<name>` is pi's own; an angle-bracket path
+    (`<inline:name>`, an extension factory, or `<sdk:name>`, a custom tool) is Sova's runtime's; a file is an
+    extension, named by its folder (`…/mode/index.ts` → `mode`) or its file (`…/btw.ts` → `btw`). */
+export function toolSource(path: string | undefined): Pick<HarnessToolInfo, "source" | "origin"> {
+  if (!path) return { source: "extension" };
+  if (path.startsWith("builtin:")) return { source: "builtin" };
+  if (path.startsWith("<") && path.endsWith(">")) {
+    const [kind, name] = path.slice(1, -1).split(":");
+    return kind === "inline" && name && !/^\d+$/.test(name) ? { source: "sova", origin: name } : { source: "sova" };
+  }
+  const parts = path.split(/[\\/]/).filter(Boolean);
+  const file = parts.at(-1) ?? "";
+  const stem = file.replace(/\.[cm]?[jt]s$/, "");
+  const origin = stem === "index" ? parts.at(-2) : stem;
+  return origin ? { source: "extension", origin } : { source: "extension" };
 }
 
 type Runtime = Pick<AgentSessionRuntime, "session" | "services">;
@@ -208,8 +232,9 @@ export class PiHarnessSession implements HarnessSession {
   send(text: string, o?: SendOptions): Promise<void> {
     return o ? this.s.prompt(text, piOptions(o) as Parameters<AgentSession["prompt"]>[1]) : this.s.prompt(text);
   }
-  steer(text: string, images?: ImageInput[], o?: { source?: InputSource }): Promise<void> {
-    return o ? this.s.steer(text, images, piOptions(o) as Parameters<AgentSession["steer"]>[2]) : this.s.steer(text, images);
+  /** pi 1.0's steer resolves to a disposition ("queued" | "handled"); the contract drops it. */
+  async steer(text: string, images?: ImageInput[], o?: { source?: InputSource }): Promise<void> {
+    await (o ? this.s.steer(text, images, piOptions(o) as Parameters<AgentSession["steer"]>[2]) : this.s.steer(text, images));
   }
   /** P9: `hasQueued` is the agent's real queue, the rest the session's mirror. */
   get queue(): HarnessQueue {
@@ -268,6 +293,17 @@ export class PiHarnessSession implements HarnessSession {
   }
   registeredTools(): string[] {
     return this.s.extensionRunner.getAllRegisteredTools().map((r) => r.definition.name);
+  }
+  /** P22: the agent's tools are the declared set as the loadout left it (descriptions a `prepareLoadout` hook
+      changed included); the loadout's hidden declarations never reach a request. Each one's source is the
+      registry's (getAllTools). */
+  declaredTools(): HarnessToolInfo[] {
+    const s = this.s;
+    const hidden = (s as unknown as { _hiddenDeclarations?: ReadonlySet<string> })._hiddenDeclarations;
+    const paths = new Map(s.getAllTools().map((t) => [t.name, t.sourceInfo?.path]));
+    return s.agent.state.tools
+      .filter((t) => !hidden?.has(t.name))
+      .map((t) => ({ name: t.name, description: t.description, parameters: t.parameters as JsonSchema, ...toolSource(paths.get(t.name)) }));
   }
   registeredTool(name: string): ToolSpec | undefined {
     const def = this.s.extensionRunner?.getToolDefinition(name);

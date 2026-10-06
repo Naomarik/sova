@@ -78,6 +78,11 @@ function partsOf(content: unknown): SovaPart[] {
 
 const toolOutput = (result: unknown) => (isObj(result) ? contentText(result.content) : typeof result === "string" ? result : "");
 const toolImages = (result: unknown) => (isObj(result) ? imagesFromContent(result.content) : []);
+/** A call another tool made (pi's `parentToolCallId`, a codemode script's call): its caller's id. */
+const nestedIn = (event: Record<string, unknown>): { parentCallId?: string } => {
+  const parent = str(event.parentToolCallId);
+  return parent ? { parentCallId: parent } : {};
+};
 
 // ---- Events
 
@@ -182,11 +187,14 @@ export function fromV1(frame: Pick<V1EventFrame, "event" | "entryId">): SovaEven
     }
     case "tool_execution_start": {
       const callId = str(event.toolCallId);
-      return callId ? [{ type: "tool.start", callId, name: str(event.toolName) ?? "tool", args: event.args }] : [];
+      return callId ? [{ type: "tool.start", callId, name: str(event.toolName) ?? "tool", args: event.args, ...nestedIn(event) }] : [];
     }
     case "tool_execution_update": {
       const callId = str(event.toolCallId);
-      return callId ? [{ type: "tool.update", callId, output: toolOutput(event.partialResult), images: toolImages(event.partialResult) }] : [];
+      const details = isObj(event.partialResult) ? event.partialResult.details : undefined;
+      return callId
+        ? [{ type: "tool.update", callId, output: toolOutput(event.partialResult), images: toolImages(event.partialResult), ...(details !== undefined ? { details } : {}), ...nestedIn(event) }]
+        : [];
     }
     case "tool_execution_end": {
       // No call id still ends a tool (the Overseer's navigate is decided from the end alone).
@@ -203,6 +211,7 @@ export function fromV1(frame: Pick<V1EventFrame, "event" | "entryId">): SovaEven
           output: toolOutput(event.result),
           images: toolImages(event.result),
           ...(details !== undefined ? { details } : {}),
+          ...nestedIn(event),
         },
       ];
     }

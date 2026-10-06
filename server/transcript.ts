@@ -44,9 +44,10 @@ import { inlineTmpImages } from "./attachments";
 import { isReport, parseReport, parseTeamMessage, previewLine, TEAM_EVENT_TYPE, teamEventOf } from "./reports";
 import { mergeInfoOf, WORKTREE_MERGE_MESSAGE } from "./worktrees-state";
 import { alignResultOf } from "../pi-config/extensions/mode/align.ts";
+import { normalizeSpecTurnDetails, SPEC_TURN_ENTRY } from "../pi-config/extensions/mode/spec-turn.ts";
 // The folded tool card's own readers (src/lib/message.ts, src/lib/tool-diff-stats.ts, both DOM- and
 // import-free): a slim row's line and "+n −m" are what the card would compute from the whole entry.
-import { argsSummary, contentText as cardText, isObj, SPAWN_TOOLS, spawnName } from "../src/lib/message";
+import { argsSummary, CODEMODE_TOOL, codemodeDetails, codemodeTally, contentText as cardText, isObj, SPAWN_TOOLS, spawnName } from "../src/lib/message";
 import { summaryStats } from "../src/lib/tool-diff-stats";
 
 // The parse, the branch rule and the context rule live in the pi adapter's reader and usage modules
@@ -198,7 +199,7 @@ function slimTool(it: TranscriptItem, h: HEntry | undefined): void {
     const name = it.text ?? "tool";
     const args = callBlock(h, it.toolCallId)?.arguments;
     const tool: ToolRowInfo = {};
-    const summary = argsSummary(args);
+    const summary = argsSummary(args, name);
     // Whole: the folded line's tooltip shows all of it (a heredoc's, at times, many KB).
     if (summary) tool.summary = summary;
     if (SPAWN_TOOLS.has(name)) {
@@ -224,6 +225,8 @@ function slimTool(it: TranscriptItem, h: HEntry | undefined): void {
   // shows it only on an edit or write call, as it would have counted it.
   const stats = summaryStats("edit", details);
   if (stats) tool.stats = stats;
+  const script = name === CODEMODE_TOOL ? codemodeDetails(details) : null;
+  if (script) tool.calls = codemodeTally(script.calls);
   if (EAGER_TOOLS.has(name)) {
     tool.output = output;
     if (details !== undefined) tool.details = details;
@@ -782,8 +785,8 @@ function entryRows(h: HEntry, fallbackId: string, state?: { model?: string }): T
 /** Extension state, not displayable (docs/session-format.md). Exceptions: the mode extension's switch
     marker, which the TUI draws in the transcript too; and pi-btw's thread entries, which the TUI shows in
     its overlay but the web can only show here; and the align document, which the TUI opens in its viewer
-    overlay; a finished /explain, whose page the TUI can only point at but the web can open inline; and a
-    team event. */
+    overlay; a finished /explain, whose page the TUI can only point at but the web can open inline; a
+    team event; and the spec check's per-run record, the spec card. */
 function stateRows(id: string, h: StateEntry): TranscriptItem[] {
   if (h.key === "mode") return modeMarker(h, id);
   if (h.key === "btw-thread-entry") return btwRow(id, h);
@@ -796,8 +799,21 @@ function stateRows(id: string, h: StateEntry): TranscriptItem[] {
   if (h.key === OVERSEER_DIALOG_ANSWER_ENTRY) return overseerAnswerRow(id, h);
   if (h.key === TEAM_EVENT_TYPE) return teamEventRow(id, h);
   if (h.key === "claude-login") return claudeLoginRow(id, h);
+  if (h.key === SPEC_TURN_ENTRY) return specTurnRow(id, h);
   if (BATON_ROWS.has(h.key)) return batonRow(id, h);
   return [];
+}
+
+/** The spec check's per-run record (§chat.spec-card/record): the spec card, its data checked by the
+    extension's own `normalizeSpecTurnDetails`. The claim text it captured stays in the file (the claim
+    route reads it); unreadable data gives no row. */
+function specTurnRow(id: string, h: StateEntry): TranscriptItem[] {
+  const d = normalizeSpecTurnDetails(h.data);
+  if (!d) return [];
+  const { prose: _prose, ...info } = d;
+  const it = item(id, "spec-turn", h);
+  it.specTurn = info;
+  return [it];
 }
 
 /** The rows of a run of history; `line(i)` is the position an id-less entry's rows are keyed by. */

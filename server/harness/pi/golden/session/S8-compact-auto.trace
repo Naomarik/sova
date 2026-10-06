@@ -1,16 +1,10 @@
 step attach A, B
 A {"type":"hello","isStreaming":false,"isCompacting":false,"model":"scripted/scripted","thinking":"off","items":[]}
-A {"type":"commands"}
 A {"type":"queue","items":[]}
 A {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now"}
-A {"type":"profile","profile":null,"locked":false,"pickable":true,"tools":"<elided>","removed":[],"granted":[]}
-A {"type":"claude_login","login":null}
 B {"type":"hello","isStreaming":false,"isCompacting":false,"model":"scripted/scripted","thinking":"off","items":[]}
-B {"type":"commands"}
 B {"type":"queue","items":[]}
 B {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now"}
-B {"type":"profile","profile":null,"locked":false,"pickable":true,"tools":"<elided>","removed":[],"granted":[]}
-B {"type":"claude_login","login":null}
 step A sends {"type":"prompt","text":"one","clientId":"c1"}
 write {"id":"00000001","type":"model_change"}
 write {"id":"00000002","type":"thinking_level_change"}
@@ -29,13 +23,13 @@ B {"type":"event","v":2,"event":{"type":"message.start","role":"user","text":"on
 write {"id":"00000004","type":"message","role":"user"}
 A {"type":"event","event":{"type":"message_end","message":{"role":"user","content":[{"type":"text","text":"one"}],"timestamp":1000000000000}},"entryId":"00000004"}
 B {"type":"event","v":2,"event":{"type":"message.end","role":"user","entryId":"00000004"}}
-A {"type":"event","event":{"type":"message_start","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop"}}}
+A {"type":"event","event":{"type":"message_start","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop","thinkingLevel":"off"}}}
 B {"type":"event","v":2,"event":{"type":"message.start","role":"assistant","model":"scripted/scripted","parts":[{"kind":"text","text":"ok"}]}}
 write {"id":"00000005","type":"message","role":"assistant"}
-A {"type":"event","event":{"type":"message_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop"}},"entryId":"00000005"}
+A {"type":"event","event":{"type":"message_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop","thinkingLevel":"off"}},"entryId":"00000005"}
 B {"type":"event","v":2,"event":{"type":"message.end","role":"assistant","entryId":"00000005","model":"scripted/scripted","parts":[{"kind":"text","text":"ok"}],"stop":"ok"}}
-A {"type":"event","event":{"type":"turn_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop"},"toolResults":[]}}
-A {"type":"event","event":{"type":"agent_end","messages":[{"role":"system","elided":true},{"role":"user","content":[{"type":"text","text":"one"}],"timestamp":1000000000000},{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop"}],"willRetry":false}}
+A {"type":"event","event":{"type":"turn_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop","thinkingLevel":"off"},"toolResults":[]}}
+A {"type":"event","event":{"type":"agent_end","messages":[{"role":"system","elided":true},{"role":"user","content":[{"type":"text","text":"one"}],"timestamp":1000000000000},{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop","thinkingLevel":"off"}],"willRetry":false}}
 A {"type":"event","event":{"type":"agent_settled"}}
 B {"type":"event","v":2,"event":{"type":"run.settled"}}
 step A sends {"type":"prompt","text":"two","clientId":"c2"}
@@ -58,17 +52,17 @@ sdk prompt ["after",{"streamingBehavior":"followUp","source":"interactive"}]
 B {"type":"send_ack","clientId":"c3","queued":true}
 A {"type":"event","event":{"type":"queue_update","steering":[],"followUp":["after"]}}
 step release the reply
-A {"type":"event","event":{"type":"message_start","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":90000,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":90000,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"big"}],"stopReason":"stop"}}}
+A {"type":"event","event":{"type":"message_start","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":90000,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":90000,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"big"}],"stopReason":"stop","thinkingLevel":"off"}}}
 B {"type":"event","v":2,"event":{"type":"message.start","role":"assistant","model":"scripted/scripted","parts":[{"kind":"text","text":"big"}]}}
 write {"id":"00000007","type":"message","role":"assistant"}
-A {"type":"event","event":{"type":"message_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":90000,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":90000,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"big"}],"stopReason":"stop"}},"entryId":"00000007"}
+A {"type":"event","event":{"type":"message_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":90000,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":90000,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"big"}],"stopReason":"stop","thinkingLevel":"off"}},"entryId":"00000007"}
 B {"type":"event","v":2,"event":{"type":"message.end","role":"assistant","entryId":"00000007","model":"scripted/scripted","parts":[{"kind":"text","text":"big"}],"stop":"ok","contextTokens":90000}}
-A {"type":"event","event":{"type":"turn_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":90000,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":90000,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"big"}],"stopReason":"stop"},"toolResults":[]}}
+A {"type":"event","event":{"type":"turn_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":90000,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":90000,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"big"}],"stopReason":"stop","thinkingLevel":"off"},"toolResults":[]}}
 A {"type":"event","event":{"type":"compaction_start","reason":"threshold"}}
 B {"type":"event","v":2,"event":{"type":"activity","what":"compaction","phase":"start"}}
 got compaction handler {"reason":"threshold","firstKeptEntryId":"00000007"}
 write {"id":"00000008","type":"compaction"}
-A {"type":"event","event":{"type":"compaction_end","reason":"threshold","result":{"summary":"One turn, then a big one.","firstKeptEntryId":"00000007","tokensBefore":1234,"estimatedTokensAfter":2815},"aborted":false,"willRetry":false}}
+A {"type":"event","event":{"type":"compaction_end","reason":"threshold","result":{"summary":"One turn, then a big one.","firstKeptEntryId":"00000007","tokensBefore":1234,"estimatedTokensAfter":2845},"aborted":false,"willRetry":false}}
 B {"type":"event","v":2,"event":{"type":"activity","what":"compaction","phase":"end","wrote":true}}
 A {"type":"queue_item_gone","itemId":"c3","reason":"delivered"}
 B {"type":"queue_item_gone","itemId":"c3","reason":"delivered"}
@@ -81,21 +75,19 @@ B {"type":"event","v":2,"event":{"type":"message.start","role":"user","text":"af
 write {"id":"00000009","type":"message","role":"user"}
 A {"type":"event","event":{"type":"message_end","message":{"role":"user","content":[{"type":"text","text":"after"}],"timestamp":1000000000000}},"entryId":"00000009"}
 B {"type":"event","v":2,"event":{"type":"message.end","role":"user","entryId":"00000009"}}
-A {"type":"event","event":{"type":"message_start","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop"}}}
+A {"type":"event","event":{"type":"message_start","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop","thinkingLevel":"off"}}}
 B {"type":"event","v":2,"event":{"type":"message.start","role":"assistant","model":"scripted/scripted","parts":[{"kind":"text","text":"ok"}]}}
 write {"id":"00000010","type":"message","role":"assistant"}
-A {"type":"event","event":{"type":"message_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop"}},"entryId":"00000010"}
+A {"type":"event","event":{"type":"message_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop","thinkingLevel":"off"}},"entryId":"00000010"}
 B {"type":"event","v":2,"event":{"type":"message.end","role":"assistant","entryId":"00000010","model":"scripted/scripted","parts":[{"kind":"text","text":"ok"}],"stop":"ok"}}
-A {"type":"event","event":{"type":"turn_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop"},"toolResults":[]}}
-A {"type":"event","event":{"type":"agent_end","messages":[{"role":"user","content":[{"type":"text","text":"two"}],"timestamp":1000000000000},{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":90000,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":90000,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"big"}],"stopReason":"stop"},{"role":"user","content":[{"type":"text","text":"after"}],"timestamp":1000000000000},{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop"}],"willRetry":false}}
+A {"type":"event","event":{"type":"turn_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop","thinkingLevel":"off"},"toolResults":[]}}
+A {"type":"event","event":{"type":"agent_end","messages":[{"role":"user","content":[{"type":"text","text":"two"}],"timestamp":1000000000000},{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":90000,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":90000,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"big"}],"stopReason":"stop","thinkingLevel":"off"},{"role":"user","content":[{"type":"text","text":"after"}],"timestamp":1000000000000},{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop","thinkingLevel":"off"}],"willRetry":false}}
 A {"type":"event","event":{"type":"agent_settled"}}
 B {"type":"event","v":2,"event":{"type":"run.settled"}}
 A {"type":"hello","isStreaming":false,"isCompacting":false,"model":"scripted/scripted","thinking":"off","items":["00000001 info","00000002 info","00000004 user","00000005:0 assistant-text","00000006 user","00000007:0 assistant-text","00000008 info","00000009 user","00000010:0 assistant-text"]}
 B {"type":"hello","isStreaming":false,"isCompacting":false,"model":"scripted/scripted","thinking":"off","items":["00000001 info","00000002 info","00000004 user","00000005:0 assistant-text","00000006 user","00000007:0 assistant-text","00000008 info","00000009 user","00000010:0 assistant-text"]}
 A {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now"}
 B {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now"}
-A {"type":"claude_login","login":null}
-B {"type":"claude_login","login":null}
 A {"type":"queue","items":[]}
 B {"type":"queue","items":[]}
 A {"type":"links","links":[]}

@@ -100,11 +100,11 @@ branch. A held session is read live through the same entries, and a Sova tool or
 session's active branch as neutral entries too. Format-agnostic JSONL (Claude Code transcripts)
 is parsed by `server/jsonl.ts`, outside the adapter.
 
-Moving a reader onto it changes no output: golden tests (`server/harness/pi/golden/`) run every
-reader's probe over committed synthetic, recorded pi 0.87.1 and Claude Code fixtures, a generated
-large session and, where present, a local corpus of real sessions, and compare each output with the
-one recorded on the readers before the move, byte for byte for transcript rows. An expected output
-changes only with a line in the golden `CHANGES.md` naming the probe, the fixture and the reason.
+Golden tests (`server/harness/pi/golden/`) characterize the readers: they run every reader's probe
+over committed synthetic, recorded pi 0.87.1 and Claude Code fixtures and, where present, a local
+corpus of real sessions, and compare each output with the recorded one, byte for byte for
+transcript rows. An intended output change re-records the expected outputs with one command, and
+their diff is reviewed with the change that caused it.
 
 ## §app.harness/unknown-entries — An entry this version can't read
 
@@ -172,8 +172,9 @@ session the chat's runtime holds at that moment, and any method replaced on it s
 used. Each pi event reaches the chat once, in pi's own listener, in the order and tick pi emits it,
 named in Sova's words and carrying the wire-1 frame the chat forwards. Moving the chat onto it
 changes nothing a client, a session file or an extension sees: the session goldens
-(`server/harness/pi/golden/session/`, S1–S15) record each scenario's frames to two clients, the
-session file and pi's calls, and compare them byte for byte.
+(`server/harness/pi/golden/session/`, S1–S15) record each scenario's session file, pi's calls in
+order and the frames it exercises to two clients (a hello cut to its state and rows; a frame type no
+scenario exercises left out, so a new one re-records nothing), and compare them byte for byte.
 
 The chat imports nothing from pi and never holds pi's session or runtime: the adapter holds the
 runtime for it (`server/harness/pi/host.ts`), binding its extensions to the chat's dialogs, giving
@@ -227,7 +228,8 @@ editor, notify, status, the theme — into bridge requests). The chat keeps the 
 their broadcast, answer, timeout, abort and fallback. A session's title (its name, else its first
 message's text, else "Untitled") is read from the neutral history; a first message stored as a bare
 string, as legacy files keep it, still titles "Untitled". None of this changes what a client, a
-session file or an extension sees: the session goldens and the reader goldens compare byte for byte.
+session file or an extension sees: the session goldens pin the session file, pi's calls and the
+frames their scenarios exercise, and the reader goldens the readers' outputs.
 
 ## §app.harness/session-history — Rewind, compaction and the extension commands go through the driving session
 

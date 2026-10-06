@@ -125,12 +125,13 @@ import { Composer, type ComposerReason } from "./Composer";
 import { FlyoutSession, type LoginControl, type SandboxControl, type ThinkingControl, type UndoControl } from "./ComposerMenu";
 import { ConnectionBanner } from "./ConnectionBanner";
 import { SessionSetupCard } from "./SessionSetup";
+import { toolsKeyOf } from "../lib/session-tools";
 import { EmptyWorktrees } from "./EmptyWorktrees";
 import { PlaybooksDialog } from "./PlaybooksDialog";
 import type { ModeControl, ModeState } from "./ModeMenu";
 import type { ModelControl } from "./ModelMenu";
 import { ChangesSession } from "./ChangesViewer";
-import { HistoryItems, LiveEntries, type MessageActionsProvider, ThreadScroller, ToolSourceContext, TranscriptSkeleton, TurnError } from "./Thread";
+import { HistoryItems, holdReaderAcrossSwap, LiveEntries, type MessageActionsProvider, ThreadScroller, ToolSourceContext, TranscriptSkeleton, TurnError } from "./Thread";
 import { SubagentLimitRow } from "./SubagentLimitRow";
 import { failureHasRow } from "../lib/subagent-limit";
 import { Banner, Icon } from "./ui";
@@ -272,6 +273,8 @@ export function ChatView(props: {
   const [newFrom, setNewFrom] = createSignal<string | null>(null);
   /** This connection's hello has come: the rows shown are no longer only the ones kept. */
   const [helloed, setHelloed] = createSignal(false);
+  /** Hellos this visit has had: each (re)connect, a rebuilt runtime's included. */
+  const [hellos, setHellos] = createSignal(0);
   // "Open in Session" from an Explanations card: once the transcript is here (hello), land on that
   // explanation's row. Only a jump waiting for this session is claimed, and only once; one whose
   // row isn't here is fetched, down to it.
@@ -540,13 +543,20 @@ export function ChatView(props: {
     try {
       // The rows the list holds, from disk (lib/older-rows): rows whose entry didn't change keep
       // their DOM (open cards, focus), so the turn's own rows are the only new ones. Rows above the
-      // list stay unfetched.
-      const next = await olderRows.refresh();
-      if (next !== "stale") setSessionContext(props.path, contextStateFor(next.context ?? null, next.items)); // authoritative after each turn
-      batch(() => {
+      // list stay unfetched. The streamed rows leave in the same update as the saved rows land: a
+      // row mounting between the two (a drawing reading its width) laid out both copies of the
+      // turn, and the browser's scroll anchoring then took a reader scrolled up to the end. A
+      // reader scrolled up keeps their place through it (the page still holds the streamed rows).
+      let cleared = false;
+      const clearLive = () => {
+        cleared = true;
+        holdReaderAcrossSwap(props.path);
         setLive(reconcile(emptyLive()));
         setCommandRows([]); // local only; the persisted entries now tell the story
-      });
+      };
+      const next = await olderRows.refresh(clearLive);
+      if (next !== "stale") setSessionContext(props.path, contextStateFor(next.context ?? null, next.items)); // authoritative after each turn
+      if (!cleared) batch(clearLive);
     } catch (err) {
       // Keep the streamed turn on screen; it's accurate, just not re-normalized.
       setErrors((e) => [...e, { message: `Couldn't reload the transcript after this run: ${(err as Error).message}` }]);
@@ -679,6 +689,7 @@ export function ChatView(props: {
             olderRows.hello(msg);
             setNewFrom(msg.items[0]?.id ?? null);
             setHelloed(true);
+            setHellos((n) => n + 1);
             // A client that connects mid-compaction shows it, as the compaction_start it missed would.
             setLive(reconcile({ ...emptyLive(), running: msg.isStreaming, activity: msg.isCompacting ? "Compacting context" : null }));
             setCompacting(!!msg.isCompacting);
@@ -1485,6 +1496,10 @@ export function ChatView(props: {
   };
   /** The composer foot's mode switch: this chat's WS "mode" state and its session file. */
   const modeControl: ModeControl = { state: modeState, path: props.path };
+  /** What the setup card's Tools group re-reads on (§chat.transcript/setup-card-tools): the model, the
+      mode triple and each (re)connect, as one string, so only a change of value re-reads (the mode
+      signal's objects are new on every "mode" message). */
+  const toolsKey = createMemo(() => toolsKeyOf(model(), modeState(), hellos()));
   /** The flyout's Sandbox group and the shield's panel: the extension answers with a toast and a
       "sandbox" message. */
   const sandboxControl: SandboxControl = {
@@ -1847,6 +1862,7 @@ export function ChatView(props: {
                 older={olderRows.api}
                 liveAlignIds={liveAlignIds()}
                 liveCardIds={liveCardIds()}
+                specMode={!!modeState()?.minorModes.includes("spec")}
               />
               </ChangesSession.Provider>
               <LiveEntries
@@ -1927,7 +1943,7 @@ export function ChatView(props: {
                           />
                         )}
                       </Show>
-                      <SessionSetupCard path={props.path} editable={!!profileInfo()?.pickable && !profileInfo()?.locked} />
+                      <SessionSetupCard path={props.path} editable={!!profileInfo()?.pickable && !profileInfo()?.locked} toolsKey={toolsKey()} />
                       <p class="empty-body">Your first message becomes its title.</p>
                       <EmptyWorktrees path={props.path} />
                     </div>

@@ -712,6 +712,9 @@
       "evidence": "verified",
       "code": [
         "src/design/base.css"
+      ],
+      "about": [
+        "§chat.composer/anatomy"
       ]
     },
     "§chat.context-window/exact-numbers": {
@@ -812,12 +815,26 @@
         "§design.copy-deck/images"
       ],
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/Composer.tsx",
+        "src/lib/images.ts",
+        "server/attachments.ts",
+        "server/index.ts",
+        "src/design/base.css",
+        "server/drafts.ts"
+      ]
     },
     "§chat.images/lightbox": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/Lightbox.tsx",
+        "src/design/base.css",
+        "src/components/ImageStrip.tsx",
+        "src/lib/ui-state.ts"
+      ]
     },
     "§chat.images/path-attachments": {
       "kind": "behavior",
@@ -896,8 +913,12 @@
     },
     "§chat.mode-menu/rejected": {
       "kind": "note",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "about": [
+        "§chat.mode-menu/trigger",
+        "§chat.mode-menu/how-a-switch-reaches-the-chat"
+      ]
     },
     "§chat.mode-menu/states": {
       "kind": "behavior",
@@ -909,8 +930,12 @@
     },
     "§chat.mode-menu/tokens": {
       "kind": "note",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "about": [
+        "§chat.mode-menu/trigger",
+        "§chat.mode-menu/menu"
+      ]
     },
     "§chat.mode-menu/trigger": {
       "kind": "behavior",
@@ -934,8 +959,12 @@
     },
     "§chat.model-menu/contrast": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/design/tokens.css",
+        "src/design/base.css"
+      ]
     },
     "§chat.model-menu/errors": {
       "kind": "behavior",
@@ -984,8 +1013,11 @@
     },
     "§chat.model-menu/tokens": {
       "kind": "note",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "about": [
+        "§chat.model-menu/menu"
+      ]
     },
     "§chat.model-menu/trigger": {
       "kind": "behavior",
@@ -1015,8 +1047,12 @@
     },
     "§chat.slash-commands/contrast": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/design/tokens.css",
+        "src/design/base.css"
+      ]
     },
     "§chat.slash-commands/filtering-and-order": {
       "kind": "behavior",
@@ -1056,13 +1092,20 @@
     },
     "§chat.slash-commands/tokens": {
       "kind": "note",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "about": [
+        "§chat.slash-commands/markup"
+      ]
     },
     "§chat.slash-commands/when-the-menu-opens": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/lib/slash.ts",
+        "src/components/Composer.tsx"
+      ]
     },
     "§chat.timeline/accessibility": {
       "kind": "behavior",
@@ -1294,7 +1337,10 @@
     "§chat/composer": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/Composer.tsx"
+      ]
     },
     "§chat/context-window": {
       "kind": "surface",
@@ -1337,12 +1383,24 @@
     "§chat/model-menu": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/ModelMenu.tsx",
+        "src/components/ComposerMenu.tsx",
+        "src/components/SessionView.tsx"
+      ]
     },
     "§chat/slash-commands": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "code": [
+        "server/chat-manager.ts",
+        "shared/protocol.ts",
+        "src/lib/slash.ts",
+        "src/components/SlashMenu.tsx",
+        "src/components/ChatView.tsx"
+      ]
     },
     "§chat/timeline": {
       "kind": "surface",
@@ -1365,6 +1423,9 @@
         "src/components/ChatView.tsx",
         "src/components/SessionView.tsx",
         "src/lib/placeholder-fit.ts"
+      ],
+      "about": [
+        "§chat/composer"
       ]
     },
     "§design.copy-deck/composer-flyout": {
@@ -1373,6 +1434,9 @@
       "evidence": "verified",
       "code": [
         "src/components/ComposerMenu.tsx"
+      ],
+      "about": [
+        "§chat.composer/composer-flyout"
       ]
     },
     "§design.copy-deck/connection": {
@@ -1392,7 +1456,10 @@
     "§design.copy-deck/images": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "about": [
+        "§chat/images"
+      ]
     },
     "§design.copy-deck/insights": {
       "kind": "note",
@@ -1421,32 +1488,52 @@
     "§design.copy-deck/message-actions": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "about": [
+        "§chat.transcript/message-actions"
+      ]
     },
     "§design.copy-deck/mode-menu": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "verified"
+      "evidence": "verified",
+      "about": [
+        "§chat/mode-menu"
+      ]
     },
     "§design.copy-deck/model-menu": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "about": [
+        "§chat/model-menu"
+      ]
     },
     "§design.copy-deck/new-session-dialog": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "verified"
+      "evidence": "verified",
+      "about": [
+        "§app/new-session-dialog"
+      ]
     },
     "§design.copy-deck/settings-modes-delegate": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "reviewed"
+      "evidence": "reviewed",
+      "about": [
+        "§app.settings-dialog/modes",
+        "§chat.subagent-profiles/settings",
+        "§app.settings-dialog/save-bar"
+      ]
     },
     "§design.copy-deck/settings-themes": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "about": [
+        "§app.settings-dialog/themes"
+      ]
     },
     "§design.copy-deck/sidebar": {
       "kind": "note",
@@ -1465,7 +1552,10 @@
     "§design.copy-deck/slash-commands": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "about": [
+        "§chat/slash-commands"
+      ]
     },
     "§design.copy-deck/subagents-pane": {
       "kind": "note",
@@ -1491,7 +1581,8 @@
     "§design.ground-rules/color-budget": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "reviewed"
+      "evidence": "reviewed",
+      "core": true
     },
     "§design.ground-rules/icons": {
       "kind": "note",
@@ -1537,8 +1628,9 @@
     },
     "§design.ground-rules/voice": {
       "kind": "note",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "core": true
     },
     "§design.overview/class-index": {
       "kind": "note",
@@ -1913,6 +2005,10 @@
         "pi-config/extensions/sandbox/tools.ts",
         "pi-config/extensions/sandbox/backends/linux-bwrap.ts",
         "pi-config/extensions/sandbox/backends/darwin-seatbelt.ts"
+      ],
+      "about": [
+        "§chat.sandbox/what-on-enforces",
+        "§chat.sandbox/claude-state"
       ]
     },
     "§chat.sandbox/off-is-today": {
@@ -3380,7 +3476,10 @@
     "§design.copy-deck/settings-decisions": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "reviewed"
+      "evidence": "reviewed",
+      "about": [
+        "§app.settings-dialog/decisions"
+      ]
     },
     "§chat.model-menu/saved-default": {
       "kind": "behavior",
@@ -3911,7 +4010,10 @@
     "§design.copy-deck/settings-experimental": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "reviewed"
+      "evidence": "reviewed",
+      "about": [
+        "§app.settings-dialog/save-bar"
+      ]
     },
     "§design.copy-deck/settings-mesh": {
       "kind": "note",
@@ -3921,7 +4023,10 @@
     "§design.copy-deck/settings-models": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "reviewed"
+      "evidence": "reviewed",
+      "about": [
+        "§app.settings-dialog/models"
+      ]
     },
     "§app.settings-dialog/summaries": {
       "kind": "behavior",
@@ -4186,7 +4291,6 @@
         "src/vis/share-markdown.test.ts",
         "src/vis/share-views.ts",
         "src/share/vis-icons.ts",
-        "server/harness/pi/golden/CHANGES.md",
         "server/harness/pi/golden/expected/faux/abort/baton-view.json",
         "server/harness/pi/golden/expected/faux/compact/baton-view.json",
         "server/harness/pi/golden/expected/faux/error-retry/baton-view.json",
@@ -4195,7 +4299,6 @@
         "server/harness/pi/golden/expected/faux/steer-followup/baton-view.json",
         "server/harness/pi/golden/expected/faux/thinking/baton-view.json",
         "server/harness/pi/golden/expected/faux/tool-read/baton-view.json",
-        "server/harness/pi/golden/expected/large/large-10mb/baton-view.json",
         "server/harness/pi/golden/expected/synthetic/align-merge/baton-view.json",
         "server/harness/pi/golden/expected/synthetic/all-types/baton-view.json",
         "server/harness/pi/golden/expected/synthetic/baton/baton-view.json",
@@ -5455,6 +5558,10 @@
       "code": [
         "src/components/ProjectPage.tsx",
         "src/components/ProjectOverseerPanel.tsx"
+      ],
+      "about": [
+        "§app.organizations/stakeholder",
+        "§app.project-overseer/identity"
       ]
     },
     "§app.insights/summary-sections": {
@@ -7953,6 +8060,12 @@
         "src/components/VoiceModels.tsx",
         "src/components/VoiceCalibration.tsx",
         "src/lib/voice/voice.test.ts"
+      ],
+      "about": [
+        "§app.settings-dialog/voice",
+        "§app.settings-dialog/voice-models",
+        "§app.settings-dialog/voice-calibration",
+        "§app.settings-dialog/voice-clip-check"
       ]
     },
     "§chat.composer/file-index-deadline": {
@@ -8708,6 +8821,9 @@
         "src/components/SharesPage.tsx",
         "src/components/SessionDetails.tsx",
         "src/lib/session-shares.ts"
+      ],
+      "about": [
+        "§app/session-share"
       ]
     },
     "§chat.sandbox/claude-state": {
@@ -9286,7 +9402,11 @@
     "§design.copy-deck/settings-overseer": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "reviewed"
+      "evidence": "reviewed",
+      "about": [
+        "§app.settings-dialog/overseer",
+        "§app.notifications/settings"
+      ]
     },
     "§mesh.public/listener-failure": {
       "kind": "behavior",
@@ -11456,7 +11576,8 @@
         "pi-config/extensions/mode/index.test.ts",
         "pi-config/extensions/mode/README.md",
         "pi-config/extensions/spec/README.md",
-        "pi-config/extensions/spec/core/README.md"
+        "pi-config/extensions/spec/core/README.md",
+        "pi-config/extensions/spec/tests/usage.test.mjs"
       ]
     },
     "§app.session-list/group-picker": {
@@ -11567,7 +11688,8 @@
       ],
       "requires": [],
       "authority": "accepted",
-      "evidence": "verified"
+      "evidence": "verified",
+      "core": true
     },
     "§mesh.public/visitor-log": {
       "kind": "behavior",
@@ -12882,7 +13004,11 @@
     "§design.copy-deck/worktree-cleanup": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "verified"
+      "evidence": "verified",
+      "about": [
+        "§chat.transcript/empty-worktrees",
+        "§chat.worktrees/cleanup"
+      ]
     },
     "§app.session-list/listing-reuse": {
       "kind": "behavior",
@@ -12941,7 +13067,9 @@
       "evidence": "verified",
       "requires": [
         "§chat.playbooks/bundles",
-        "§tools.spec/assessment-observations"
+        "§tools.spec/assessment-observations",
+        "§tools.spec/mode-reading",
+        "§tools.spec/frame"
       ],
       "code": [
         "playbooks/spec-review/PLAYBOOK.md",
@@ -13771,28 +13899,6 @@
         "src/app.css"
       ]
     },
-    "§app.baton/strip-layout": {
-      "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "reviewed",
-      "code": [
-        "src/components/BatonStrip.tsx",
-        "src/components/SendOnWhatsApp.tsx",
-        "src/lib/baton-strip.ts",
-        "src/lib/baton-strip.test.ts",
-        "src/orgs.css",
-        "src/design/tokens.css"
-      ],
-      "requires": [
-        "§app.baton/goal-and-loadout",
-        "§app.baton/abilities",
-        "§app.baton/goal-on-strip",
-        "§app.baton/told",
-        "§app.baton/links",
-        "§app.outreach/send",
-        "§app.owner-page/controls"
-      ]
-    },
     "§app.harness/agent-root": {
       "kind": "behavior",
       "authority": "accepted",
@@ -13837,7 +13943,8 @@
     "§app.harness/new-work": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "reviewed"
+      "evidence": "reviewed",
+      "core": true
     },
     "§app.harness/reader": {
       "kind": "behavior",
@@ -13853,7 +13960,6 @@
         "server/harness/pi/golden/golden.ts",
         "server/harness/pi/golden/golden.test.ts",
         "server/harness/pi/golden/README.md",
-        "server/harness/pi/golden/CHANGES.md",
         "server/harness/pi/golden/probes/reader.ts",
         "server/harness/pi/golden/probes/rows.ts",
         "server/harness/pi/golden/probes/usage.ts",
@@ -13889,6 +13995,21 @@
         "server/harness/pi/session-golden.test.ts",
         "server/harness/pi/testing/compact-fixture-ext.ts",
         "server/harness/pi/golden/session/README.md",
+        "server/harness/pi/golden/session/S1-open-first-prompt.trace",
+        "server/harness/pi/golden/session/S10-baton-stop.trace",
+        "server/harness/pi/golden/session/S11-overseer.trace",
+        "server/harness/pi/golden/session/S12-link-delivery.trace",
+        "server/harness/pi/golden/session/S13-dialog-bridge.trace",
+        "server/harness/pi/golden/session/S14-model-thinking.trace",
+        "server/harness/pi/golden/session/S15-mode-command.trace",
+        "server/harness/pi/golden/session/S2-steer-mid-turn.trace",
+        "server/harness/pi/golden/session/S3-follow-up-queue.trace",
+        "server/harness/pi/golden/session/S4-abort.trace",
+        "server/harness/pi/golden/session/S5-rewind.trace",
+        "server/harness/pi/golden/session/S6-regenerate.trace",
+        "server/harness/pi/golden/session/S7-compact-manual.trace",
+        "server/harness/pi/golden/session/S8-compact-auto.trace",
+        "server/harness/pi/golden/session/S9-deferred-in-settle.trace",
         "server/harness/pi/host.ts",
         "server/harness/pi/host-registry.ts",
         "server/harness/pi/testing/handle.ts",
@@ -14027,7 +14148,8 @@
       "requires": [
         "§app.harness/reader",
         "§app.harness/boundary"
-      ]
+      ],
+      "core": true
     },
     "§app.harness/tools": {
       "kind": "behavior",
@@ -14151,53 +14273,7 @@
         "server/harness/pi/golden/wire/expected/faux/thinking/trace.json",
         "server/harness/pi/golden/wire/expected/faux/tool-read/frames.json",
         "server/harness/pi/golden/wire/expected/faux/tool-read/trace.json",
-        "server/harness/pi/golden/wire/expected/live/a-baton-sender-marker-names-the-live-row-it-follows-the-newest-started-row-no-marker-has-named/trace.json",
-        "server/harness/pi/golden/wire/expected/live/a-chat-wide-refusal-still-returns-every-message-no-departure-spoke-for/trace.json",
-        "server/harness/pi/golden/wire/expected/live/a-departure-that-arrives-twice-removes-the-row-once-and-stays-idempotent/trace.json",
-        "server/harness/pi/golden/wire/expected/live/a-failed-hand-off-returns-its-text-once-in-either-order-of-its-two-messages-1/trace.json",
-        "server/harness/pi/golden/wire/expected/live/a-failed-hand-off-returns-its-text-once-in-either-order-of-its-two-messages-2/trace.json",
-        "server/harness/pi/golden/wire/expected/live/a-link-message-s-start-draws-no-row-and-claims-none-of-this-tab-s-pending-rows/trace.json",
-        "server/harness/pi/golden/wire/expected/live/a-message-end-s-entry-id-names-the-live-row-it-becomes-the-reply-and-the-prompt-its-start-claimed-ne/trace.json",
-        "server/harness/pi/golden/wire/expected/live/a-message-sent-mid-turn-is-one-row-once-delivered-in-either-order-of-its-departure-and-its-start-1/trace.json",
-        "server/harness/pi/golden/wire/expected/live/a-message-sent-mid-turn-is-one-row-once-delivered-in-either-order-of-its-departure-and-its-start-2/trace.json",
-        "server/harness/pi/golden/wire/expected/live/a-message-sent-while-a-reply-streams-doesn-t-split-the-reply-in-two/trace.json",
-        "server/harness/pi/golden/wire/expected/live/a-noted-message-start-claims-the-row-whose-typed-text-it-carries-not-the-first-open-one/trace.json",
-        "server/harness/pi/golden/wire/expected/live/a-pending-prompt-carries-its-uploads-as-available-attachments-until-delivered/trace.json",
-        "server/harness/pi/golden/wire/expected/live/a-pending-prompt-without-uploads-has-no-attachments/trace.json",
-        "server/harness/pi/golden/wire/expected/live/a-queued-message-the-overseer-sent-is-flagged-as-the-overseer-s-a-server-row-without-the-flag-is-not/trace.json",
-        "server/harness/pi/golden/wire/expected/live/a-queued-row-knows-its-own-text-so-a-departure-can-hand-it-back-without-a-body/trace.json",
-        "server/harness/pi/golden/wire/expected/live/a-queued-row-missing-from-the-next-snapshot-is-not-called-delivered/trace.json",
-        "server/harness/pi/golden/wire/expected/live/a-reconnect-rebuilds-the-queue-from-the-snapshot-alone-this-tab-s-rows-and-other-clients/trace.json",
-        "server/harness/pi/golden/wire/expected/live/a-refused-removal-leaves-the-row-in-the-state-the-refusal-reports-already-sent/trace.json",
-        "server/harness/pi/golden/wire/expected/live/a-removal-broadcast-for-a-message-this-client-never-had-changes-nothing/trace.json",
-        "server/harness/pi/golden/wire/expected/live/a-removal-reaches-every-client-the-tab-that-didn-t-ask-drops-the-row-from-the-broadcast-1/trace.json",
-        "server/harness/pi/golden/wire/expected/live/a-removal-reaches-every-client-the-tab-that-didn-t-ask-drops-the-row-from-the-broadcast-2/trace.json",
-        "server/harness/pi/golden/wire/expected/live/a-row-the-server-never-acknowledged-stays-sending-and-is-never-offered-as-removable/trace.json",
-        "server/harness/pi/golden/wire/expected/live/a-snapshot-turns-our-sent-rows-into-queued-ones-by-id/trace.json",
-        "server/harness/pi/golden/wire/expected/live/a-start-whose-row-was-already-delivered-doesn-t-take-the-queued-message-behind-it/trace.json",
-        "server/harness/pi/golden/wire/expected/live/a-start-whose-text-was-rewritten-on-the-way-claims-the-row-the-server-delivered-not-the-first-one-wa/trace.json",
-        "server/harness/pi/golden/wire/expected/live/a-stop-pressed-during-a-compact-no-turn-clears-at-compaction-end-inside-a-turn-the-turn-s-settle-sti/trace.json",
-        "server/harness/pi/golden/wire/expected/live/a-thinking-block-stops-streaming-once-a-later-block-starts-so-only-the-reply-s-head-pulses/trace.json",
-        "server/harness/pi/golden/wire/expected/live/a-topic-batch-s-start-claims-none-of-this-tab-s-pending-rows-and-adds-its-own/trace.json",
-        "server/harness/pi/golden/wire/expected/live/a-user-message-start-no-row-waits-for-shows-the-text-without-pi-s-image-resize-notes/trace.json",
-        "server/harness/pi/golden/wire/expected/live/an-image-only-queued-message-is-a-row-like-any-other-removable-by-its-id/trace.json",
-        "server/harness/pi/golden/wire/expected/live/events-without-provider-model-leave-the-entry-s-model-unset/trace.json",
-        "server/harness/pi/golden/wire/expected/live/message-end-is-authoritative-and-can-override-the-model/trace.json",
-        "server/harness/pi/golden/wire/expected/live/message-start-attributes-the-streaming-message-to-its-model/trace.json",
-        "server/harness/pi/golden/wire/expected/live/message-start-delivers-the-row-with-that-text-not-whichever-came-first/trace.json",
-        "server/harness/pi/golden/wire/expected/live/removal-is-by-id-so-a-middle-duplicate-goes-and-its-twins-stay/trace.json",
-        "server/harness/pi/golden/wire/expected/live/rundetail-names-the-step-the-run-status-row-draws-as-an-icon-with-its-words/trace.json",
-        "server/harness/pi/golden/wire/expected/live/send-ack-queues-the-row-it-names-and-leaves-the-others-alone/trace.json",
-        "server/harness/pi/golden/wire/expected/live/stop-returns-the-drained-text-exactly-once-whichever-order-its-two-messages-arrive-in-1/trace.json",
-        "server/harness/pi/golden/wire/expected/live/stop-returns-the-drained-text-exactly-once-whichever-order-its-two-messages-arrive-in-2/trace.json",
-        "server/harness/pi/golden/wire/expected/live/takebackqueued-drops-the-drained-prompts-pending-rows-and-hands-their-text-back/trace.json",
-        "server/harness/pi/golden/wire/expected/live/takebackqueued-keeps-unrelated-and-already-delivered-rows-with-the-same-text/trace.json",
-        "server/harness/pi/golden/wire/expected/live/takebackqueued-with-nothing-drained-changes-nothing/trace.json",
-        "server/harness/pi/golden/wire/expected/live/the-same-words-twice-are-two-messages-one-start-per-row-and-a-start-no-row-is-waiting-for-is-a-new-m/trace.json",
-        "server/harness/pi/golden/wire/extract-live.ts",
         "server/harness/pi/golden/wire/inputs/effects.json",
-        "server/harness/pi/golden/wire/inputs/live-test.json",
-        "server/harness/pi/golden/wire/live-calls.ts",
         "server/harness/pi/golden/wire/wire.test.ts"
       ],
       "requires": [
@@ -14261,6 +14337,46 @@
         "pi-config/extensions/claude-code/README.md"
       ]
     },
+    "§chat.transcript/turn-end-keeps-reader": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.transcript/live-watch",
+        "§chat.transcript/rendering"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/Thread.tsx",
+        "src/components/ChatView.tsx",
+        "src/lib/older-rows.ts",
+        "src/lib/older-rows-view.ts",
+        "src/lib/older-rows.test.ts",
+        "src/lib/older-rows-view.browser.test.ts",
+        "scripts/e2e/transcript-follow.mjs"
+      ]
+    },
+    "§app.baton/strip-layout": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "src/components/BatonStrip.tsx",
+        "src/components/SendOnWhatsApp.tsx",
+        "src/lib/baton-strip.ts",
+        "src/lib/baton-strip.test.ts",
+        "src/orgs.css",
+        "src/design/tokens.css"
+      ],
+      "requires": [
+        "§app.baton/goal-and-loadout",
+        "§app.baton/abilities",
+        "§app.baton/goal-on-strip",
+        "§app.baton/told",
+        "§app.baton/links",
+        "§app.outreach/send",
+        "§app.owner-page/controls"
+      ]
+    },
     "§chat.composer/known-on-switch": {
       "kind": "behavior",
       "requires": [
@@ -14284,6 +14400,292 @@
         "server/chat-manager.ts",
         "server/session-summary-chat.test.ts",
         "server/claude-login-state.ts"
+      ]
+    },
+    "§tools.spec/span-promotion": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/promotion-integrity"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+        "pi-config/extensions/spec/tests/draft-span.test.mjs",
+        "pi-config/extensions/spec/DRAFTS.md",
+        "pi-config/extensions/spec/PROMOTE.md",
+        "pi-config/extensions/spec/README.md"
+      ]
+    },
+    "§tools.spec/contents-view": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/context-packets",
+        "§tools.spec/inspection-safety"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/toc.mjs",
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/tests/toc.test.mjs",
+        "pi-config/extensions/spec/core/README.md",
+        "pi-config/extensions/spec/README.md",
+        "pi-config/extensions/spec/tests/frame.test.mjs"
+      ]
+    },
+    "§tools.spec/single-read": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/contents-view",
+        "§tools.spec/context-packets"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/read.mjs",
+        "pi-config/extensions/spec/core/toc.mjs",
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/tests/toc.test.mjs",
+        "pi-config/extensions/spec/core/README.md"
+      ]
+    },
+    "§tools.spec/frame": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/record-fields",
+        "§tools.spec/context-packets",
+        "§tools.spec/single-read"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/fields.mjs",
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/core/packet.mjs",
+        "pi-config/extensions/spec/core/read.mjs",
+        "pi-config/extensions/spec/tests/frame.test.mjs",
+        "pi-config/extensions/spec/core/toc.mjs",
+        "pi-config/extensions/spec/core/README.md"
+      ]
+    },
+    "§tools.spec/record-fields": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/context-packets",
+        "§tools.spec/contents-view",
+        "§tools.spec/single-read"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/fields.mjs",
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/core/toc.mjs",
+        "pi-config/extensions/spec/core/read.mjs",
+        "pi-config/extensions/spec/tests/frame.test.mjs",
+        "pi-config/extensions/spec/core/packet.mjs",
+        "pi-config/extensions/spec/core/README.md",
+        "pi-config/extensions/spec/README.md"
+      ]
+    },
+    "§tools.spec/graph-payload": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/contents-view",
+        "§tools.spec/record-fields",
+        "§tools.spec/agreed-promotion"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/core/graph.mjs",
+        "pi-config/extensions/spec/tests/map-fixture.mjs",
+        "pi-config/extensions/spec/core/README.md",
+        "pi-config/extensions/spec/tests/map.test.mjs",
+        "pi-config/extensions/spec/README.md",
+        "pi-config/extensions/spec/tests/map-fields.test.mjs"
+      ]
+    },
+    "§tools.spec/near-impact": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/contents-view",
+        "§tools.spec/record-fields"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/core/graph.mjs",
+        "pi-config/extensions/spec/tests/map-fixture.mjs",
+        "pi-config/extensions/spec/core/README.md",
+        "pi-config/extensions/spec/tests/map.test.mjs",
+        "pi-config/extensions/spec/tests/map-fields.test.mjs"
+      ]
+    },
+    "§tools.spec/spec-map": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/contents-view",
+        "§tools.spec/where-lookup",
+        "§tools.spec/record-fields",
+        "§tools.spec/agreed-promotion"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/map.mjs",
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/core/graph.mjs",
+        "pi-config/extensions/spec/tests/map-fixture.mjs",
+        "pi-config/extensions/spec/core/README.md",
+        "pi-config/extensions/spec/tests/map.test.mjs",
+        "pi-config/extensions/spec/README.md",
+        "pi-config/extensions/spec/tests/map-fields.test.mjs"
+      ]
+    },
+    "§tools.spec/where-lookup": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/contents-view",
+        "§tools.spec/inspection-safety"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/where.mjs",
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/core/graph.mjs",
+        "pi-config/extensions/spec/tests/map-fixture.mjs",
+        "pi-config/extensions/spec/core/README.md",
+        "pi-config/extensions/spec/tests/where.test.mjs",
+        "pi-config/extensions/spec/README.md"
+      ]
+    },
+    "§tools.spec/agreed-promotion": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "requires": [
+        "§tools.spec/promotion-integrity"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+        "pi-config/extensions/spec/tests/agreed.test.mjs",
+        "pi-config/extensions/spec/DRAFTS.md",
+        "pi-config/extensions/spec/PROMOTE.md"
+      ],
+      "evidence": "verified"
+    },
+    "§tools.spec/field-promotion": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/promotion-integrity",
+        "§tools.spec/record-fields",
+        "§tools.spec/agreed-promotion"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+        "pi-config/extensions/spec/tests/draft-fields.test.mjs",
+        "pi-config/extensions/spec/DRAFTS.md",
+        "pi-config/extensions/spec/PROMOTE.md"
+      ]
+    },
+    "§tools.spec/mode-reading": {
+      "kind": "behavior",
+      "requires": [
+        "§tools.spec/contents-view",
+        "§tools.spec/single-read",
+        "§tools.spec/near-impact",
+        "§tools.spec/spec-map",
+        "§tools.spec/where-lookup",
+        "§tools.spec/frame",
+        "§tools.spec/context-packets",
+        "§tools.spec/field-promotion"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/mode/spec-mode.md",
+        "pi-config/extensions/mode/spec-guard.ts",
+        "pi-config/extensions/subagents/spec-brief.ts",
+        "pi-config/extensions/subagents/spec-brief.test.ts",
+        "pi-config/extensions/mode/index.test.ts"
+      ]
+    },
+    "§chat.model-menu/favorites": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.model-menu/content-and-order"
+      ],
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/ModelMenu.tsx",
+        "src/lib/models.ts",
+        "server/model-favorites.ts",
+        "src/design/base.css"
+      ]
+    },
+    "§app.server-runtime/test-repo-fence": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "scripts/run-tests.mjs",
+        "pi-config/extensions/claude-code/tests/hermetic-env.mjs",
+        "server/test-scratch.ts",
+        "server/test-repo-fence.test.ts",
+        "server/reconcile.test.ts",
+        "server/project-coding-runtime.test.ts",
+        "server/overseer-org-tools.test.ts",
+        "server/org-about-privacy.test.ts",
+        "CLAUDE.md"
+      ],
+      "requires": [
+        "§app.server-runtime/choice"
+      ]
+    },
+    "§chat.merge-round/landing-suites": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        ".sova/playbooks/merge-round/scripts/round.mjs",
+        ".sova/playbooks/merge-round/tests/round.test.mjs"
+      ],
+      "requires": [
+        "§chat.merge-round/driver"
+      ]
+    },
+    "§app.insights/usage-burn": {
+      "kind": "behavior",
+      "requires": [
+        "§app.insights/usage-cards",
+        "§app.insights/usage-refresh",
+        "§app.insights/pace-tick",
+        "§app.insights/usage-reset-day",
+        "§app.insights/velocity-scrub",
+        "§app.claude-logins/registry"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/usage-history.ts",
+        "server/usage-history.test.ts",
+        "server/usage-poll.ts",
+        "server/usage-poll.test.ts",
+        "server/insights.ts",
+        "server/insights-usage.test.ts",
+        "server/index.ts",
+        "shared/protocol.ts",
+        "src/lib/usage-burn.ts",
+        "src/lib/usage-burn.test.ts",
+        "src/lib/api.ts",
+        "src/components/UsageView.tsx",
+        "src/design/base.css"
       ]
     }
   },

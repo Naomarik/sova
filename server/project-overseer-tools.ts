@@ -640,6 +640,8 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
     {
       name: "sova_create_session",
       label: "Start coding session",
+      // Its card reads the recorded result (EAGER_TOOLS): never a codemode script's call.
+      exposure: "model-only",
       description:
         "Start an ordinary coding session in the project (its root, or a folder inside it) with a first prompt. When the project root is in git it runs in its own worktree and branch, cut from the root's HEAD; the operator merges it back. It starts in the project's coding mode (normal, with spec on when the project has a spec, unless the operator set another); `mode`/`minor_modes` ask for another, within the operator's setting: delegate only if the operator chose it, align never, spec never off when the project has it on. Counts against your coding caps.",
       promptSnippet: "start a coding session in the project with a first prompt",

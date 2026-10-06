@@ -197,13 +197,13 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     id: "P11",
     name: "create-defers / open-flushed",
     kind: "semantic",
-    relies: "A session SessionManager.create() makes stays unwritten until its first assistant message, so Sova's creators write [header, ...seed] themselves; a file SessionManager.open() reads takes each append at once.",
+    relies: "A session SessionManager.create() makes stays unwritten until its first user or assistant message (pi 0.99.0+; through 0.87.1, its first assistant message), so Sova's creators write [header, ...seed] themselves; a file SessionManager.open() reads takes each append at once.",
     pi: ["SessionManager.create", "SessionManager.open", "SessionManager.appendCustomEntry"],
     where: [
       { file: "server/harness/pi/state.ts", symbol: "createSessionFile" },
       { file: "server/harness/pi/state.ts", symbol: "appendToClosedFile" },
     ],
-    canary: "P11 create-defers / open-flushed: a created session's appends stay unwritten until an assistant message; an opened header-only file writes each append at once",
+    canary: "P11 create-defers / open-flushed: a created session's appends stay unwritten until a user or assistant message; an opened header-only file writes each append at once",
     retireWhen: "never: the two creation paths depend on it; keep the canary",
   },
   {
@@ -259,13 +259,13 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     id: "P15",
     name: "accept-vs-complete",
     kind: "semantic",
-    relies: "prompt() resolves when the turn ends, while preflightResult(true) fires when it is accepted (also for a handled extension command); a link delivery takes acceptance from the preflight.",
+    relies: 'prompt() resolves when the turn ends, while preflightResult("started") fires when it is accepted ("handled" for a handled extension command, "queued" mid-run; a refused prompt gets no call); the adapter drops the disposition, and a link delivery takes acceptance from the preflight or, refused, from the rejection.',
     pi: ["AgentSession.prompt", "PromptOptions.preflightResult"],
     where: [
       { file: SESSION, symbol: "PiHarnessSession.send" },
       { file: CM, symbol: "ChatSession.linkToSdk" },
     ],
-    canary: "P15 accept-vs-complete: prompt() resolves at turn end while preflightResult(true) fires at acceptance (and for a handled command)",
+    canary: "P15 accept-vs-complete: prompt() resolves at turn end while preflightResult(\"started\") fires at acceptance (\"handled\" for a handled command, no call for a refused prompt)",
     retireWhen: "never: HarnessSession.send and its onAccepted mirror it; keep the canary",
   },
   {
@@ -323,6 +323,31 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     ],
     canary: "P20 model-restore-gate: the SDK restores a recorded model only when the branch has messages",
     retireWhen: "pi restores a recorded model on any branch",
+  },
+  {
+    id: "P21",
+    name: "codemode-definition",
+    kind: "semantic",
+    relies:
+      "createCodemodeExtension's factory registers exactly one tool, `codemode`, inactive, through the API it is handed (so Sova catches the definition and registers it itself); a script's models.classify / generateImages reach the tool context's modelRegistry; and its nested calls emit tool_execution_* with parentToolCallId and ids <parent>/<n>, writing no transcript entries.",
+    pi: ["createCodemodeExtension", "ExtensionAPI.registerTool", "ExtensionContext.modelRegistry", "ExtensionToolContext.executeTool"],
+    where: [
+      { file: "server/harness/pi/codemode.ts", symbol: "captureCodemode" },
+      { file: "server/harness/pi/codemode.ts", symbol: "scriptRegistry" },
+    ],
+    canary: "P21 codemode-definition: the factory registers one inactive codemode tool, its models.* reach ctx.modelRegistry, nested calls carry parentToolCallId",
+    retireWhen: "pi exports the codemode tool definition and a model hook for scripts",
+  },
+  {
+    id: "P22",
+    name: "declared-tools",
+    kind: "private-read",
+    relies:
+      "agent.state.tools is the set the next request declares, with the descriptions a prepareLoadout hook gave them (getAllTools() keeps the registry's); the private _hiddenDeclarations names the declarations requests leave out; a tool's sourceInfo.path is `builtin:<name>` for pi's own, `<inline:<name>>` for an extension factory, else the extension's file.",
+    pi: ["Agent.state.tools", "AgentSession._hiddenDeclarations", "AgentSession._applyToolLoadout", "AgentSession.getAllTools", "SourceInfo.path"],
+    where: [{ file: SESSION, symbol: "PiHarnessSession.declaredTools" }, { file: SESSION, symbol: "toolSource" }],
+    canary: "P22 declared-tools: agent.state.tools is the declared set with the loadout's descriptions, _hiddenDeclarations what requests leave out, sourceInfo.path names the source",
+    retireWhen: "pi offers a public read of the declared tools as a request will send them",
   },
   {
     id: "T1",

@@ -132,7 +132,11 @@ try {
 		request = requests.at(-1);
 		assert.equal(request.prompt, head);
 		assert.equal(request.midSystem, 0);
-		assert.deepEqual(request.toolChanges, [{ added: ["vis_guide"], removed: [] }], "a run no prompt starts keeps the tool set it had; it changes when that run settles");
+		assert.deepEqual(
+			request.toolChanges,
+			[{ added: ["vis_guide"], removed: [] }, { added: [], removed: ["vis_guide"] }],
+			"a switch made between runs changes the tool set at once, so the run a worker's report starts goes without vis_guide",
+		);
 		assert.match(request.users.at(-1), /^Mode change: the user turned the vis minor mode off\. Its instructions \(the "# Minor mode: vis" block given earlier in this conversation\) no longer apply/);
 		assert.equal(systemEntries(session).length, 1);
 
@@ -150,7 +154,11 @@ try {
 		const request = requests.at(-1);
 		assert.equal(request.prompt, head, "a reopened session rebuilds the head it started with");
 		assert.equal(request.midSystem, 0);
-		assert.deepEqual(request.toolChanges, [{ added: ["vis_guide"], removed: [] }], "off then on again before any request: no net tool change");
+		assert.deepEqual(
+			request.toolChanges,
+			[{ added: ["vis_guide"], removed: [] }, { added: [], removed: ["vis_guide"] }, { added: ["vis_guide"], removed: [] }],
+			"the worker's run went without vis_guide; on again, the reopened session's run has it back",
+		);
 		assert.equal(systemEntries(session).length, 1, "and records no patch for it");
 		assert.match(request.users.at(-1), /^Mode change: the user turned the vis minor mode back on\. Its instructions \(the "# Minor mode: vis" block given earlier in this conversation\) apply again/);
 		assert.equal(request.users.filter((u) => u.startsWith("Mode change:")).length, 3, "every note so far is in the request");

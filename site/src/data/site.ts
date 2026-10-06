@@ -11,6 +11,9 @@ export const contributing = `${repo}/blob/master/CONTRIBUTING.md`;
 export const gettingStarted = `${repo}/blob/master/docs/getting-started.md`;
 export const customization = `${repo}/blob/master/docs/customization.md`;
 export const meshDoc = `${repo}/blob/master/docs/mesh.md`;
+export const publicLinksDoc = `${repo}/blob/master/docs/public-links.md`;
+export const modeExtension = `${repo}/blob/master/pi-config/extensions/mode/README.md`;
+export const subagentsExtension = `${repo}/blob/master/pi-config/extensions/subagents/README.md`;
 export const piConfig = `${repo}/tree/master/pi-config`;
 export const pi = "https://pi.dev";
 

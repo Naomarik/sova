@@ -1,0 +1,36 @@
+---
+// An alignment card in a session with align on: the plan the agent recorded, one question still
+// open with its options and recommendation.
+import Frame from "../Frame.astro";
+import Icon from "../Icon.astro";
+
+const steps = [
+  { t: "Retry only idempotent calls", n: "finalize() keeps 1 try and reports its error." },
+  { t: "Cap the backoff at 30s", n: "Clamp where the delay is computed." },
+  { t: "Rejected: retry everything", n: "A retried finalize can commit twice." },
+];
+---
+<Frame path="demo-app" class="m-frame" caption="An alignment card in a session transcript: the plan's 3 entries, including one rejected alternative with why, and an open question with 2 lettered options and the agent's recommendation.">
+  <div class="m-session">
+    <header class="m-head">
+      <span class="m-head-title">Upload retries</span>
+      <span class="m-head-sub m-mono">delegate · align</span>
+      <span class="m-head-end"><span class="chip chip-info"><span class="chip-dot"></span>Aligning</span></span>
+    </header>
+    <div class="m-thread">
+      <div class="m-msg-user">Add retries to the upload client. Plan it with me first.</div>
+      <div class="m-tool"><div class="m-tool-sum"><Icon name="chevron-right" size={12} /><span class="m-tool-name">read</span><span class="m-tool-arg">src/upload/client.ts</span><span class="m-ok">✓</span></div></div>
+      <div class="m-confirm">
+        <div class="m-confirm-head">al_1 · Retry policy for uploads</div>
+        {steps.map((s) => (
+          <div class="m-confirm-item"><span class="m-check"><Icon name="check" size={10} /></span><div><b>{s.t}</b><span>{s.n}</span></div></div>
+        ))}
+      </div>
+      <div class="m-ask">
+        <div class="m-ask-q">q1 · Use ky's built-in retry, or write the loop by hand?</div>
+        <div class="m-ask-opts"><span class="m-btn">a · ky's Retry</span><span class="m-btn">b · Own Loop</span></div>
+        <span class="m-muted" style="font-size:11.5px">Recommended: a, it already honors Retry-After.</span>
+      </div>
+    </div>
+  </div>
+</Frame>

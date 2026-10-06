@@ -1,0 +1,49 @@
+---
+// The read-only changes viewer: what a merged worktree brought in, files on the left, one diff open.
+import Frame from "../Frame.astro";
+import Icon from "../Icon.astro";
+
+const files = [
+  { path: "src/upload/retry.ts", add: 3, del: 1, sel: true },
+  { path: "src/upload/client.ts", add: 12, del: 4 },
+  { path: "test/upload/retry.test.ts", add: 28, del: 0 },
+];
+---
+<Frame path="demo-app · changes" class="m-frame" caption="The changes viewer for a merged worktree: 3 changed files with their line counts on the left, and one file's diff open on the right.">
+  <div class="m-workers">
+    <div class="m-wlist">
+      <div class="m-group-label">Files <span class="m-sep">·</span> 3</div>
+      {files.map((f) => (
+        <div class:list={["m-wrow", f.sel && "m-wrow-sel"]}>
+          <Icon name="file" size={14} />
+          <div class="m-row-main">
+            <div class="m-row-title"><span class="m-mono">{f.path.split("/").pop()}</span></div>
+            <div class="m-row-meta"><span class="m-add">+{f.add}</span><span class="m-del">−{f.del}</span></div>
+          </div>
+        </div>
+      ))}
+      <div class="m-wtree">
+        <div class="m-wt"><Icon name="branch" size={13} /><span>feat/retry-backoff</span><span class="chip chip-success"><span class="chip-dot"></span>Merged</span></div>
+      </div>
+    </div>
+    <div class="m-wdetail m-session">
+      <header class="m-head" style="height:44px">
+        <span class="m-head-title m-mono">src/upload/retry.ts</span>
+        <span class="m-head-end m-mono"><span class="m-add">+3</span>&nbsp;<span class="m-del">−1</span></span>
+      </header>
+      <div class="m-thread">
+        <div class="m-tool">
+          <div class="diff">
+            <div class="diff-hunk">@@ -18,6 +18,8 @@ export async function backoff(n, err)</div>
+            <div class="diff-line"><span class="diff-gutter">18</span><span>  if (isClientError(err)) throw err</span></div>
+            <div class="diff-line diff-del"><span class="diff-gutter">19</span><span>  const ms = 500 * 2 ** (n - 1)</span></div>
+            <div class="diff-line diff-add"><span class="diff-gutter">19</span><span>  const ms = Math.min(500 * 2 ** (n - 1), MAX_DELAY)</span></div>
+            <div class="diff-line diff-add"><span class="diff-gutter">20</span><span>  log.debug(`retry $&#123;n&#125; in $&#123;ms&#125;ms`, err)</span></div>
+            <div class="diff-line diff-add"><span class="diff-gutter">21</span><span>  </span></div>
+            <div class="diff-line"><span class="diff-gutter">22</span><span>  await sleep(ms)</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</Frame>

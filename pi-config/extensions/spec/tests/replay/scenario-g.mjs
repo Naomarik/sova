@@ -11,7 +11,8 @@ import { createHash } from "node:crypto";
 import { cpSync, readFileSync, writeFileSync, existsSync, realpathSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { specIndex, scoreNeed, readStream, proseTexts, median, pool, idsIn, parentOf, capability, readToc, accepts, readLines, cutWhat } from "./fullness.mjs";
+import { specIndex, scoreNeed, readStream, proseTexts, median, pool, idsIn, parentOf, capability, readToc, accepts, readLines, cutWhat, carriesRule } from "./fullness.mjs";
+export { carriesRule };
 import { Tools, workspace, scrubProcessEnv } from "./lib.mjs";
 import { DATA, extractPinned, PINNED_SOURCES } from "./pinned.mjs";
 
@@ -19,6 +20,17 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 export { DATA, extractPinned };
 const BASELINE_FILE = join(HERE, "data/g-baseline.json");
 export const FRAME_CAP = 12000;
+/** Plan §5c, M5 `about` (plan.md:391): the MEDIAN per-comparison increase in packet bytes (frame excluded, it has its own cap) over the recorded arm ≤ this. */
+export const ABOUT_BYTES_SLACK = 12000;
+/** reviewer-4's about-growth guard: no packet (frame excluded) more than doubles (+100%) over its recorded size, counted
+ *  only when the increase is also over 4,000 B (the smallest recorded packet is 707 B). A median can be won by bloating
+ *  fewer than half the comparisons; this catches one small packet swamped by notes it never asked for (rejected rule B). */
+export const ABOUT_GROWTH_MAX = 1, ABOUT_GROWTH_FLOOR = 4000;
+/** D49: the copy-deck target counts needs, not sections. The needs named by the decision, plus any need whose recorded
+ *  passage is a copy-deck section (on the pinned and b1de66b1 records that adds C23:4). */
+export const COPY_DECK_NEEDS = ["C07:3", "C10:2", "C21:2", "C24:3"];
+export const copyDeckNeeds = (baseline) => [...new Set([...COPY_DECK_NEEDS, ...Object.entries(baseline?.comparisons ?? {}).flatMap(([id, b]) => (b.passageOf ?? []).map((p, i) => (p?.startsWith("§design.copy-deck/") ? `${id}:${i}` : null)).filter(Boolean))])].sort();
+const textHash = (text) => createHash("sha256").update(text).digest("hex").slice(0, 12);
 export const DIRS = ["out", "in", "down", "up", "mentions"];
 const IMPACT_SEEDS = ["§chat/composer"];
 /** The ratchet (D18): needs shown one hop out by toc never drop below what M1 reached (106/138 at its gated head c67a1ae2). */
@@ -105,11 +117,12 @@ async function packetArm(ctx, root, index, c) {
     frame: frame.refused ? "no frame stream" : "stream",
     calls: prose.calls,
     unknown: frontier.items.length,
-    groundRules: [...delivered].some((id) => id === "§design/ground-rules" || id.startsWith("§design.ground-rules/")),
+    groundRules: [...delivered].some((id) => (id === "§design/ground-rules" || id.startsWith("§design.ground-rules/")) && carriesRule(index.passages.get(id).text)),
     copyDeck: { matching: deck.length, reached: deck.filter((id) => delivered.has(id)).length },
     core: [...coreIds(root)].filter((id) => delivered.has(id)).length,
     needs: needs.map((x) => (x.status === "missed" && x.named ? "named" : x.status)),
     passageOf: needs.map((x) => x.passage ?? null),
+    textOf: needs.map((x) => (x.passage && index.passages.has(x.passage) ? textHash(index.passages.get(x.passage).text) : null)),
     values: needs.map((x) => x.value),
     inexact,
     refused: prose.refused,
@@ -117,15 +130,19 @@ async function packetArm(ctx, root, index, c) {
 }
 
 /** One comparison under the pull proxy: the ids `toc` shows one hop from the seed (its lines), in every direction. */
+/** A `rule` need (C23:0) is met by any rule-carrying passage of its passage's H1 family: another such passage is no moved answer. */
+const ruleFamily = (index, need, a, b) => Boolean(need?.rule && a && b && (parentOf(a) ?? a) === (parentOf(b) ?? b) && carriesRule(index.passages.get(b)?.text ?? ""));
+
 async function pullArm(ctx, root, c, baseline, index = specIndex(root)) {
   const shown = new Set([c.seed]);
   let bytes = 0, calls = 0;
   const lines = { total: 0, withWhat: 0, withWhy: 0 };
-  const broken = [];
+  const broken = [], byDir = {};
   for (const dir of DIRS) {
     const t = await readToc(ctx.tools, root, ctx.ws.home, c.seed, dir);
     calls += t.calls;
     bytes += t.bytes;
+    byDir[dir] = { lines: t.lines.length, bytes: t.bytes, notes: t.lines.filter((l) => l.group === "children-about").length };
     if (!t.ok) broken.push(`${dir}: ${t.refused}`);
     for (const l of t.lines) {
       if (typeof l.id === "string") shown.add(l.id);
@@ -140,15 +157,16 @@ async function pullArm(ctx, root, c, baseline, index = specIndex(root)) {
   const framed = new Set((first.json?.frame?.items ?? []).map((it) => it?.id).filter((id) => typeof id === "string"));
   const frameBytes = (first.json?.frame?.items ?? []).reduce((s, it) => s + (typeof it?.text === "string" ? Buffer.byteLength(it.text) : 0), 0);
   const passages = baseline?.passageOf ?? [];
-  const isShown = (p) => Boolean(p && (shown.has(p) || framed.has(p)));
+  const via = (set, i, p) => Boolean(p && (set.has(p) || (c.needs[i]?.rule && [...set].some((id) => ruleFamily(index, c.needs[i], p, id)))));
+  const isShown = (i, p) => via(shown, i, p) || via(framed, i, p);
   const scored = c.needs.map((n, i) => ({ i, na: n.verdict?.status === "n/a" || !n.probe, p: passages[i] })).filter((x) => !x.na);
-  const frameOnly = scored.filter((x) => x.p && !shown.has(x.p) && framed.has(x.p)).map((x) => x.i);
+  const frameOnly = scored.filter((x) => !via(shown, x.i, x.p) && via(framed, x.i, x.p)).map((x) => x.i);
   // The copy-deck sections for the seed's surface (M6: `about` notes): shown as a contents line, or delivered by that read.
   const deck = copyDeckFor(index, c.seed);
   const readIds = new Set((first.json?.items ?? []).map((it) => it?.id));
   const copyDeck = { matching: deck.length, shown: deck.filter((id) => shown.has(id)).length, read: deck.filter((id) => readIds.has(id) || framed.has(id)).length, which: deck.filter((id) => shown.has(id)).map((id) => `${c.id}:${id}`) };
-  const lost = (baseline?.values ?? []).map((v, i) => (v > 0 && !isShown(passages[i]) ? i : null)).filter((i) => i !== null);
-  return { shown: scored.filter((x) => isShown(x.p)).length, of: scored.length, bytes, calls, lines, lostUnshown: lost, frameOnly, copyDeck, frameBytes, broken };
+  const lost = (baseline?.values ?? []).map((v, i) => (v > 0 && !isShown(i, passages[i]) ? i : null)).filter((i) => i !== null);
+  return { byDir, shownNeeds: scored.filter((x) => isShown(x.i, x.p)).map((x) => x.i), shown: scored.filter((x) => isShown(x.i, x.p)).length, of: scored.length, bytes, calls, lines, lostUnshown: lost, frameOnly, copyDeck, frameBytes, broken };
 }
 
 export async function fullness(ctx) {
@@ -173,7 +191,7 @@ export async function fullness(ctx) {
   const refused = results.filter((r) => r.p.refused).map((r) => `${r.c.id}:${r.p.refused}`);
   // No need answered at the recorded baseline is lost unless this arm names its passage.
   // A hand verdict whose quoted line is gone is listed apart (it needs a new verdict), never counted as lost or kept.
-  const lost = [], moved = [], viaMoved = [], unconfirmed = [];
+  const lost = [], moved = [], viaMoved = [], unconfirmed = [], textChanged = [];
   const unanchored = results.flatMap((r) => r.p.needs.map((s, i) => (s === "unanchored" ? `${r.c.id}:${i} ${r.c.needs[i].need}` : null)).filter(Boolean));
   if (baseline) for (const r of results) {
     const b = baseline.comparisons[r.c.id];
@@ -181,7 +199,9 @@ export async function fullness(ctx) {
     // Where each need's answer lives, against the recorded arm: a probe that now hits another passage is listed for a hand check.
     b?.passageOf.forEach((was, i) => {
       const now = r.p.passageOf[i];
-      if (was === now || r.p.needs[i] === "unanchored") return;
+      // Same passage, new text: the probe may still hit a line that no longer carries the fact. Listed for a hand check.
+      if (was === now && now && r.p.values[i] > 0 && b.textOf && b.textOf[i] !== r.p.textOf[i]) textChanged.push(`${r.c.id}:${i} ${now}${r.c.needs[i].verdict?.anchor || r.c.needs[i].verdict?.anchors ? " (anchored)" : " (probe only)"}`);
+      if (was === now || r.p.needs[i] === "unanchored" || ruleFamily(index, r.c.needs[i], was, now)) return;
       moved.push(`${r.c.id}:${i} ${was ?? "none"} → ${now ?? "none"}`);
       // Still answered, but somewhere else: counted apart, and kept only if a hand verdict anchored in the new passage says so.
       if (now && r.p.values[i] > 0) {
@@ -193,13 +213,23 @@ export async function fullness(ctx) {
   }
   const deck = results.reduce((s, r) => ({ matching: s.matching + (r.p.copyDeck.matching ? 1 : 0), reached: s.reached + (r.p.copyDeck.reached ? 1 : 0), sections: s.sections + r.p.copyDeck.matching, sectionsReached: s.sectionsReached + r.p.copyDeck.reached }), { matching: 0, reached: 0, sections: 0, sectionsReached: 0 });
   const frameMax = Math.max(...results.map((r) => r.p.frameBytes));
+  const bytesNoFrame = median(results.map((r) => r.p.bytes - r.p.frameBytes)), bytesBase = baseline?.total?.bytesMedian;
+  // Per comparison, packet bytes without the frame against the recorded arm: the guard holds the MEDIAN increase
+  // (plan.md:391), and g.packet.about-growth holds the ratio (no packet more than doubles by over 4,000 B); the largest
+  // increase in bytes and as a ratio, how many exceed the slack and how many grow by half are reported as information.
+  const deltas = results.filter((r) => typeof baseline?.comparisons[r.c.id]?.bytes === "number").map((r) => { const was = baseline.comparisons[r.c.id].bytes, d = r.p.bytes - r.p.frameBytes - was; return { id: r.c.id, d, ratio: was ? Math.round(((d + was) / was) * 100) / 100 : null }; });
+  const missingBytes = baseline ? results.filter((r) => typeof baseline.comparisons[r.c.id]?.bytes !== "number").map((r) => r.c.id) : [];
+  const deltaOk = baseline && deltas.length === results.length, deltaMedian = deltaOk ? median(deltas.map((x) => x.d)) : null;
+  const deltaMax = deltaOk ? deltas.reduce((m, x) => (x.d > m.d ? x : m), deltas[0]) : null;
+  const swamped = deltaOk ? deltas.filter((x) => x.d > ABOUT_GROWTH_FLOOR && x.d > ABOUT_GROWTH_MAX * baseline.comparisons[x.id].bytes) : [];
+  const ratioMax = deltaOk ? deltas.filter((x) => x.ratio !== null).reduce((m, x) => (x.ratio > m.ratio ? x : m), { ratio: 0 }) : null;
   rows.push(row("g.packet.total", {
     answered, of, pct: Math.round((answered / of) * 1000) / 10, named, answeredOrNamed: answered + named,
     // The research's "median" was the upper middle of 24 (the 13th smallest); both are kept.
     bytesMedian: median(results.map((r) => r.p.bytes)), bytesUpperMiddle: [...results.map((r) => r.p.bytes)].sort((a, b) => a - b)[Math.floor(results.length / 2)], bytesTotal: sum((p) => p.bytes), bytesMax: Math.max(...results.map((r) => r.p.bytes)),
     callsMedian: median(results.map((r) => r.p.calls)), callsTotal: sum((p) => p.calls), callsMax: Math.max(...results.map((r) => r.p.calls)),
     seedShareUnder20: results.filter((r) => r.p.seedShare < 0.2).length,
-    frameBytesMax: frameMax, frame: results[0]?.p.frame,
+    bytesMedianNoFrame: bytesNoFrame, frameBytesMax: frameMax, frame: results[0]?.p.frame,
     groundRules: `${results.filter((r) => r.p.groundRules).length}/${results.length}`,
     copyDeck: `${deck.sectionsReached}/${deck.sections}`,
     viaChangedPassage: viaMoved.length,
@@ -209,10 +239,15 @@ export async function fullness(ctx) {
     guard("g.packet.no-need-lost", baseline && lost.length === 0, !baseline ? "no recorded baseline (data/g-baseline.json)" : lost.length ? `lost, not named: ${lost.slice(0, 6).join("; ")}${lost.length > 6 ? ` … ${lost.length - 6} more` : ""}` : `every need answered at ${baseline.tree} is still answered or named`),
     guard("g.packet.total-never-drops", baseline && answered >= baseline.total.answered, baseline ? `${answered}${viaMoved.length ? ` (of which ${viaMoved.length} via a changed passage: hand-check g.packet.passage-changed)` : ""} vs ${baseline.total.answered} recorded at ${baseline.tree}` : "no recorded baseline"),
     guard("g.frame-cap", frameMax <= FRAME_CAP, `largest frame ${frameMax} B, cap ${FRAME_CAP} B`),
+    guard("g.packet.about-bytes", deltaOk && deltaMedian <= ABOUT_BYTES_SLACK, deltaOk ? `median increase per comparison in packet bytes without the frame ${deltaMedian} B (cap ${ABOUT_BYTES_SLACK} B) against ${baseline.tree}; median ${bytesNoFrame} B vs ${bytesBase} B` : baseline ? `no recorded bytes for ${missingBytes.join(", ")} (re-record the baseline)` : "no recorded baseline"),
+    guard("g.packet.about-growth", deltaOk && swamped.length === 0, !deltaOk ? (baseline ? `no recorded bytes for ${missingBytes.join(", ")} (re-record the baseline)` : "no recorded baseline") : swamped.length ? `more than doubled (+${ABOUT_GROWTH_MAX * 100}%, increase over ${ABOUT_GROWTH_FLOOR} B): ${swamped.map((x) => `${x.id} +${x.d} B (×${x.ratio})`).join("; ")}` : `no packet more than doubles by over ${ABOUT_GROWTH_FLOOR} B; largest ratio ×${ratioMax.ratio} (${ratioMax.id})`),
     guard("g.packet.moved-confirmed", unconfirmed.length === 0, unconfirmed.length ? `answered in another passage than at the recorded baseline, no anchored verdict confirms it (hand-check, then add an anchor in the new passage): ${unconfirmed.join("; ")}` : "every need answered elsewhere than at the recorded baseline is confirmed by an anchored verdict"),
     guard("g.packet.anchored", unanchored.length === 0, unanchored.length ? `hand verdicts whose quoted line is gone (re-read and re-verdict): ${unanchored.join("; ")}` : "every hand verdict's quoted line is found"),
   ]));
+  rows.push(row("g.packet.about-bytes-delta", deltaOk ? { median: deltaMedian, max: deltaMax.d, maxAt: deltaMax.id, maxRatio: ratioMax.ratio, maxRatioAt: ratioMax.id ?? null, overHalf: deltas.filter((x) => x.ratio !== null && x.ratio > 1.5).length, overSlack: deltas.filter((x) => x.d > ABOUT_BYTES_SLACK).length, which: deltas.filter((x) => x.d > ABOUT_BYTES_SLACK).map((x) => `${x.id} +${x.d}`).join(" ") || "none" } : baseline ? `no recorded bytes for ${missingBytes.join(", ")}` : "no recorded baseline"));
   rows.push(row("g.packet.passage-changed", baseline ? moved.join("; ") || "none" : "no recorded baseline"));
+  // An answer that stayed in its passage while the passage's text changed: a probe-only one is the hand check.
+  rows.push(row("g.packet.answer-text-changed", !baseline ? "no recorded baseline" : !Object.values(baseline.comparisons).some((b) => b.textOf) ? "n/a: the recorded baseline holds no passage hashes" : textChanged.join("; ") || "none"));
   // Target, not a guard (today's packet fails it by design): needs whose passage is read or named, one hop.
   rows.push(row("g.packet.target.answered-or-named", `${answered + named}/${of}`));
 
@@ -226,6 +261,7 @@ export async function fullness(ctx) {
 
   // The pull proxy: n/a only when the tree's sova-spec.mjs rejects `toc` as an unknown command.
   const toc = await capability(ctx.tools, root, ctx.ws.home, "toc");
+  let pullsOut = null;
   if (toc === "absent") {
     rows.push(row("g.pull.total", "n/a: this tree has no toc", [guard("g.pull.toc-answers", true, "n/a: this tree has no toc", true), guard("g.pull.shown-floor", true, "n/a: this tree has no toc", true)]));
     for (const h1 of WHY_FAMILIES) rows.push(row(`g.pull.why.${h1.slice(1).replace("/", "-")}`, "n/a"));
@@ -239,6 +275,8 @@ export async function fullness(ctx) {
     const verdicts = [...seen].map(([id, what]) => ({ id, what, v: cutWhat(what, index.passages.get(id)?.text ?? "") }));
     const bad = verdicts.filter((x) => x.v !== "whole");
     const sweepBroken = sweeps.filter((t) => !t.ok).length;
+    // `toc --dir down` over every H1: its lines and bytes, and the notes about its H2s it lists (D49 R1).
+    rows.push(row("g.pull.down-sweep", { h1s: sweeps.length, lines: sweeps.reduce((s, t) => s + t.lines.length, 0), bytes: sweeps.reduce((s, t) => s + t.bytes, 0), notesAboutH2s: sweeps.reduce((s, t) => s + t.lines.filter((l) => l.group === "children-about").length, 0), h1sWithNotes: sweeps.filter((t) => t.lines.some((l) => l.group === "children-about")).length }));
     rows.push(row("g.pull.what-whole", {
       whats: verdicts.length, cut: bad.filter((x) => x.v === "cut").length, unlocated: bad.filter((x) => x.v === "unlocated").length, empty: bad.filter((x) => x.v === "empty").length,
       first: bad.slice(0, 3).map((x) => `${x.id}: "${x.what}"`).join(" | ") || "none",
@@ -272,6 +310,7 @@ export async function fullness(ctx) {
       rows.push(row(`g.pull.why.${h1.slice(1).replace("/", "-")}`, { h2s: kids.length, ...w }));
     }
     const pulls = await pool(results, 8, async ({ c }) => ({ c, q: await pullArm(ctx, root, c, baseline?.comparisons[c.id], index) }));
+    pullsOut = pulls;
     for (const { c, q } of pulls) {
       rows.push(row(`g.pull.${c.id}`, { shown: q.shown, of: q.of, bytes: q.bytes, frameBytes: q.frameBytes, calls: q.calls, lines: q.lines.total, lost: q.lostUnshown.length }));
     }
@@ -291,12 +330,16 @@ export async function fullness(ctx) {
     // A row, not a guard: one hop is a proxy, and a need two hops out is a fair loss to report. The guard
     // "no need packet answers is lost unless shown" belongs to the agent arm, where the agent may take more hops.
     rows.push(row("g.pull.not-shown", lostUnshown.join("; ") || "none"));
+    // Lines and bytes per direction over the 24 seeds: lines added in one direction show as lines there; a change in
+    // another direction's bytes with the same lines is its footer counting them (counts, not new lines).
+    rows.push(row("g.pull.dirs", Object.fromEntries(DIRS.map((d) => [d, { lines: pulls.reduce((s, { q }) => s + q.byDir[d].lines, 0), bytes: pulls.reduce((s, { q }) => s + q.byDir[d].bytes, 0), ...(d === "down" ? { notesAboutH2s: pulls.reduce((s, { q }) => s + q.byDir[d].notes, 0) } : {}) }]))));
     const frameOnly = pulls.flatMap(({ c, q }) => q.frameOnly.map((i) => `${c.id}:${i} ${c.needs[i].need}`));
     rows.push(row("g.pull.frame-answered", { needs: frameOnly.length, which: frameOnly.join("; ") || "none" }));
     // Copy-deck sections matching each seed's surface, as g.packet.total's copyDeck counts them (17 on the pinned spec).
     const deckSum = (k) => pulls.reduce((s, { q }) => s + q.copyDeck[k], 0);
     rows.push(row("g.pull.copy-deck", { shown: `${deckSum("shown")}/${deckSum("matching")}`, read: `${deckSum("read")}/${deckSum("matching")}`, which: pulls.flatMap(({ q }) => q.copyDeck.which).join(" ") || "none" }));
   }
+  rows.push(copyDeckNeedsRow(results, toc === "absent" ? null : pullsOut, baseline));
   rows.push(...(await frameRead(ctx, root)));
   return rows;
 }
@@ -371,6 +414,27 @@ async function mapRows(ctx, root) {
   return rows;
 }
 
+/**
+ * D49's target: every copy-deck need answered by packet AND shown one hop out by pull (a toc line or the frame), per
+ * arm. A target, never a guard; the 17-section area count stays beside it as information (`g.packet.total.copyDeck`).
+ */
+function copyDeckNeedsRow(results, pulls, baseline) {
+  const ids = copyDeckNeeds(baseline), n = ids.length;
+  const per = ids.map((key) => {
+    const [id, i] = [key.split(":")[0], Number(key.split(":")[1])];
+    const p = results.find((r) => r.c.id === id)?.p, q = pulls?.find((x) => x.c.id === id)?.q;
+    const value = p?.values[i] ?? 0, was = baseline?.comparisons[id]?.values[i] ?? 0;
+    return { key, packet: value, pull: pulls ? Boolean(q?.shownNeeds.includes(i)) : null, packetLost: value < was };
+  });
+  const count = (f) => `${per.filter(f).length}/${n}`;
+  return row("g.target.copy-deck-needs", {
+    needs: ids.join(" "), packet: count((x) => x.packet > 0), pull: pulls ? count((x) => x.pull) : "n/a: this tree has no toc",
+    // No pullLost: the record keeps the pull arm as a total only (pull.shown), so g.pull.shown-floor is that check.
+    both: pulls ? count((x) => x.packet > 0 && x.pull) : "n/a", pullLost: "not recorded per need (the record keeps pull.shown only; see g.pull.shown-floor)", packetLost: per.filter((x) => x.packetLost).map((x) => x.key).join(" ") || "none",
+    which: per.map((x) => `${x.key} packet ${x.packet}${pulls ? `, pull ${x.pull ? "shown" : "not shown"}` : ""}`).join("; "),
+  });
+}
+
 /** Record the packet arm of `tree` as the per-need baseline the guards compare against. */
 export async function recordBaseline(tree, { pinned, source, specLabel } = {}) {
   scrubProcessEnv();
@@ -382,9 +446,10 @@ export async function recordBaseline(tree, { pinned, source, specLabel } = {}) {
     const index = specIndex(root);
     const comparisons = {};
     let answered = 0, of = 0;
-    const unanchored = [];
+    const unanchored = [], bytes = [];
     for (const { c, p } of await pool(DATA.comparisons, 8, async (c) => ({ c, p: await packetArm(ctx, root, index, c) }))) {
-      comparisons[c.id] = { values: p.values, needs: p.needs, passageOf: p.passageOf };
+      comparisons[c.id] = { values: p.values, needs: p.needs, passageOf: p.passageOf, textOf: p.textOf, bytes: p.bytes - p.frameBytes };
+      bytes.push(p.bytes - p.frameBytes);
       answered += p.answered; of += p.of;
       p.needs.forEach((s, i) => { if (s === "unanchored") unanchored.push(`${c.id}:${i} ${c.needs[i].need}`); });
     }
@@ -396,7 +461,7 @@ export async function recordBaseline(tree, { pinned, source, specLabel } = {}) {
       const qs = await pool(DATA.comparisons, 8, (c) => pullArm(ctx, root, c, comparisons[c.id]));
       pull = { shown: qs.reduce((s, q) => s + q.shown, 0), of: qs.reduce((s, q) => s + q.of, 0) };
     }
-    return { about: "Scenario g's recorded packet arm: per need, the value (1 in, 0.5 partial) and the passage it lives in. Generated by `node scenario-g.mjs --record <tree>`; never edited by hand.", tree: source ?? "unknown", pinned: specLabel ? { spec: specLabel } : DATA.pinned, total: { answered, of }, ...(pull ? { pull } : {}), comparisons };
+    return { about: "Scenario g's recorded packet arm: per need, the value (1 in, 0.5 partial), the passage it lives in and a hash of that passage's text; per comparison, packet bytes without the frame. Generated by `node scenario-g.mjs --record <tree>`; never edited by hand.", tree: source ?? "unknown", pinned: specLabel ? { spec: specLabel } : DATA.pinned, total: { answered, of, bytesMedian: median(bytes) }, ...(pull ? { pull } : {}), comparisons };
   } finally { ws.dispose(); }
 }
 

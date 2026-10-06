@@ -62,6 +62,31 @@ mechanically.
   first matches inside the read set answers it. This is the weak spot: a bare probe can match an
   unrelated line (see "Hand-reading jobs").
 
+## Ground rules reached (g's `groundRules`, x/24)
+
+A comparison reaches the ground rules when its packet delivers (frame included) a `§design/ground-rules`
+or `§design.ground-rules/*` passage that **carries a rule**: a body line (the heading line excluded,
+list items included) holding one of the words must, never, always, don't or do not
+(case-insensitive; `carriesRule` in `fullness.mjs`). Only prose lines count: fenced code, HTML comments,
+table rows and blockquotes are skipped, and inline code and quoted strings are removed first, so a copy
+string or a code sample never makes a rule. "only" is not a rule word (it is common in plain description).
+On b1de66b1's spec 603 of 861 passages carry a rule, and all six ground-rules H2s do. A breadcrumb or a lede with no such line counts
+for nothing: the 99-byte `§design/ground-rules` lede at a95768b7 and b1de66b1 carries none. This counts
+reach, not usefulness; whether a frame answers needs is `g.pull.frame-answered` and C23's score.
+
+C23:0 "Product-wide principles" follows the same rule. Its probe was the H1 heading alone
+(`^# §design/ground-rules`), which the breadcrumb satisfied. It is now `rule: true` in
+`data/comparisons.json` with the probe `^# §design/ground-rules|^## §design\.ground-rules/`: a need marked
+`rule` is answered only in a delivered passage that carries a rule (`carriesRule`, `fullness.mjs`), and is
+located in the first such passage in the index's order (file, then line), which is `/theme`. It counts whole
+passages only: an agent's line-range read of a claims file (the read tool with an offset) never answers it,
+while a passage delivered whole or arriving verbatim in any output does; this under-counts both arms alike. **No recorded number moved**: both g baselines re-recorded with the same
+values and totals (93.5/138, pull floor 106); only C23:0's located passage moved, from the H1 lede to
+`§design.ground-rules/theme`. A breadcrumb-only frame leaves C23 at 0.5/6 (replay.test.mjs). Since any
+rule-carrying passage of the family answers it, an answer found in another one is no moved answer
+(`g.packet.moved-confirmed` skips it), and the pull proxy counts it shown when any rule-carrying passage of
+the family is a contents line or in the frame.
+
 ## Reaching around the tools (the same rule in every arm)
 
 The score counts content, not route. A passage the agent saw counts as read whichever way it came
@@ -78,7 +103,8 @@ classed (`accessesOf` in `agent-arm.mjs`):
   reported. Ordinary pipe targets such as `/dev/null` are not reads.
 
 A path is a word of at least two segments starting with `/`, `~/` or `../`. Regex literals and
-tokens in a script don't count. First run (packet arm, 8 comparisons): 0 outside, 0 directSpec,
+tokens in a script don't count. `where` and `map` arguments are lookups, not reads (up to a shell
+separator, a redirect or the end of the line); a `--root` or `--spec` value is still a path. First run (packet arm, 8 comparisons): 0 outside, 0 directSpec,
 33 scratch. The 22 "outside" an earlier grader reported were `/dev/null` and these scratch files.
 
 ## The agent arm's guard (reported, not an exit code)
@@ -86,7 +112,31 @@ tokens in a script don't count. First run (packet arm, 8 comparisons): 0 outside
 For each need the recorded packet baseline answers (`data/g-baseline.json` `values[i] > 0`): it is
 **lost** when the agent's value is lower and the baseline's passage (`passageOf[i]`) appeared in no
 `toc` line or `read` footer the agent saw. A need the agent was shown but chose not to open isn't lost.
-It counts against "answered", and the pull design accepts that.
+It counts against "answered", and the pull design accepts that. A `map` (or `where`) line is no
+sighting: `map` lists every area on one page, so it would excuse every H1-located answer; `where` lists
+every claim whose `code` names a file, by file and not by what the task needs, so a claim listed there was
+matched to a path, not shown to the agent as the place an answer lives. Such a loss
+is also listed apart (`lostSeenOnlyInMap` in compare.json; the scorecard's `mapShown`).
+
+Every agent scorecard records its grader (`grader`: a hash of the grading code and data, the harness
+commit, and whether those files were uncommitted). `compare` refuses two scorecards whose grading-code
+hashes differ (or one without a grader): re-grade both with `grade --out`.
+
+## Each arm on its own spec
+
+An arm may read another spec than a95768b7 (`run --pinned <dir> [--spec-label <name>]`; the final comparison's
+candidate reads the final head's spec). The run keeps that spec in `<run>/spec/` with its hash in run.json, and
+`grade` scores against it (refusing a snapshot whose hash changed); runs made before this are graded on a95768b7 and
+labelled so. Every scorecard and `compare` names each arm's spec. Scoring is the same on any spec: an anchored verdict
+finds its quoted line wherever it moved, a probe matches in that spec. "Lost unless seen" looks for the recorded
+answering passage on the arm's spec: the same id, or, when the id is gone (renamed or merged), the passage there whose
+body lines match at least half of the recorded one's (`relocate`); only when neither exists, where the need's probe or
+anchor lands in that spec. A need whose verdict is unanchored on an arm's spec (its quoted line is gone) is listed per
+arm (`unanchored` in the scorecard and in compare) for a re-verdict, and left out of BOTH arms: never lost, never in
+either answered total. `compare` lists,
+for needs both arms answered: `moved` (answered in another passage; `movedUnconfirmed` when no anchored verdict names
+the new one) and `answerTextChanged` (same passage, different text). Both are hand checks, not scores. On one spec a
+move means a probe met in two places (M2: 4 and 6, all probe-only).
 
 ## Hand-reading jobs for a reviewer (rules, then output format)
 

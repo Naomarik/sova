@@ -6,6 +6,11 @@
 // - a sibling H2 that answers a need (§f.seed/limits; nothing links it);
 // - a core claim (§design.rules/voice, `core: true`), linked to nothing;
 // - an about note (§design.copy/editor, `about: [§f/seed]`, its heading names the surface);
+// - a note about the true dependency (§design.copy/save-rule, `about: [§f.dep/rule]`), a claim the packet delivers
+//   that is neither the seed, its H1 nor an embed (D40 rule A carries it), and a note about the unrelated behavior
+//   (§design.copy/clock, `about: [§f.other/unrelated]`), outside the closure, which no rule may carry; and a note
+//   about the unlinked sibling (§design.copy/limits, `about: [§f.seed/limits]`): in the seed's H1 area but outside its
+//   closure, so only a rule that carries notes about the whole area (rejected rule B) would read it;
 // - two uninvestigated behaviors: one that mentions the seed (the true consumer), one unrelated;
 // - a first sentence that wraps across source lines (§f.dep/rule), so a contents line cut at the line end shows,
 //   and one with a colon inside parentheses (§f.other/uses-edit), so a line cut there shows too.
@@ -21,7 +26,7 @@ const guard = (name, ok, detail = "", na = false) => ({ name, ok: Boolean(ok), d
 const SEED = "§f.seed/edit";
 const P = {
   dep: "§f.dep/rule", deep: "§f.deep/base", panel: "§f/panel", panelKids: ["§f.panel/bold", "§f.panel/italic", "§f.panel/link"],
-  wander: "§f/wander", sibling: "§f.seed/limits", core: "§design.rules/voice", about: "§design.copy/editor",
+  wander: "§f/wander", sibling: "§f.seed/limits", core: "§design.rules/voice", about: "§design.copy/editor", aboutDep: "§design.copy/save-rule", aboutOff: "§design.copy/clock", aboutArea: "§design.copy/limits",
   consumer: "§f.other/uses-edit", unrelated: "§f.other/unrelated",
 };
 /** Did read hand over the embedded surface whole: its H1 and every H2, each byte-exact? (A lede alone is not.) */
@@ -44,7 +49,7 @@ const FILES = {
   ".sova/spec/claims/f/wander.md": `# §f/wander — Archive\n\nThe archive of old drafts, which asks before it overwrites anything.\n\n${WANDER_KIDS.map((id, i) => `## ${id} — Archive part ${i + 1}\n\n${filler(`part-${i + 1}`)}`).join("\n")}`,
   ".sova/spec/claims/f/other.md": "# §f/other — Sidebar\n\nThe sidebar beside the editor.\n\n## §f.other/uses-edit — Outline\n\nThe outline shows the draft that §f.seed/edit saves (one row per heading: its title and level), as the writer types.\n\n## §f.other/unrelated — Clock\n\nThe clock shows the time.\n",
   ".sova/spec/claims/design/rules.md": "# §design/rules — Ground rules\n\nRules every surface follows.\n\n## §design.rules/voice — Voice\n\nEvery message says what happened and what to do next.\n",
-  ".sova/spec/claims/design/copy.md": "# §design/copy — Copy deck\n\nThe exact words surfaces show.\n\n## §design.copy/editor — Editor copy (§f/seed)\n\nThe save hint reads \"Saved\"; the limit refusal reads \"Drafts stop at 200 lines.\"\n",
+  ".sova/spec/claims/design/copy.md": "# §design/copy — Copy deck\n\nThe exact words surfaces show.\n\n## §design.copy/editor — Editor copy (§f/seed)\n\nThe save hint reads \"Saved\"; the limit refusal reads \"Drafts stop at 200 lines.\"\n\n## §design.copy/save-rule — Save rule copy (§f.dep/rule)\n\nWhile another save is in flight the hint reads \"Saving…\".\n\n## §design.copy/clock — Clock copy (§f.other/unrelated)\n\nThe clock reads \"HH:MM\", 24-hour.\n\n## §design.copy/limits — Limits copy (§f.seed/limits)\n\nThe line counter reads \"{n} of 200 lines\".\n",
   "src/edit.txt": "edit\n", "src/limits.txt": "limits\n", "src/dep.txt": "dep\n", "src/deep.txt": "deep\n", "src/panel.txt": "panel\n", "src/other.txt": "other\n",
 };
 const CLAIMS = {
@@ -66,10 +71,13 @@ const CLAIMS = {
   [P.core]: { kind: "note", authority: "accepted", core: true },
   "§design/copy": { kind: "note", authority: "accepted" },
   [P.about]: { kind: "note", authority: "accepted", about: ["§f/seed"] },
+  [P.aboutDep]: { kind: "note", authority: "accepted", about: [P.dep] },
+  [P.aboutOff]: { kind: "note", authority: "accepted", about: [P.unrelated] },
+  [P.aboutArea]: { kind: "note", authority: "accepted", about: [P.sibling] },
 };
 
-/** What a builder of the seed needs: the seed and its orientation, the true dependencies, the embedded H1, the frame, the about note. */
-const RELEVANT = [SEED, "§f/seed", "§f/dep", P.dep, "§f/deep", P.deep, P.panel, ...P.panelKids, P.core, P.about, P.sibling];
+/** What a builder of the seed needs: the seed and its orientation, the true dependencies, the embedded H1, the frame, the about notes. */
+const RELEVANT = [SEED, "§f/seed", "§f/dep", P.dep, "§f/deep", P.deep, P.panel, ...P.panelKids, P.core, P.about, P.aboutDep, P.sibling];
 
 export async function sliceQuality(ctx) {
   const repo = new Repo(ctx.ws.dir("f-synthetic"), ctx.ws.home);
@@ -99,6 +107,7 @@ export async function sliceQuality(ctx) {
     guard("f.deps-read-whole", missingDeps.length === 0, missingDeps.length ? `not read whole: ${missingDeps.join(", ")}` : "the true dependency, its dependency and the embedded H1 with its 3 H2s are read whole"),
     guard("f.mention-not-absent", status(P.wander) !== "absent", `the contrast-only target is ${status(P.wander)}`),
     guard("f.frame-cap", frameBytes <= FRAME_CAP, `frame ${frameBytes} B, cap ${FRAME_CAP} B`),
+    guard("f.about-outside-closure", status(P.aboutOff) !== "read" && status(P.aboutArea) !== "read", `notes about claims outside the closure: ${P.aboutOff} (outside the H1 area) is ${status(P.aboutOff)}, ${P.aboutArea} (the unlinked sibling) is ${status(P.aboutArea)}`),
   ]));
   rows.push(row("f", "f.packet.precision", bytes ? Math.round((bytesOf(RELEVANT) / bytes) * 100) / 100 : 0));
   rows.push(row("f", "f.packet.wander-bytes", bytesOf([P.wander, ...WANDER_KIDS])));
@@ -108,6 +117,7 @@ export async function sliceQuality(ctx) {
   // Targets: today's packet misses these by design; a candidate moves them.
   rows.push(row("f", "f.target.sibling", status(P.sibling)));
   rows.push(row("f", "f.target.about-note", status(P.about)));
+  rows.push(row("f", "f.target.about-closure", status(P.aboutDep)));
   rows.push(row("f", "f.target.core-unasked", status(P.core)));
 
   // ── Reverse impact ──

@@ -89,6 +89,25 @@ export function search(index, spans, re) {
   return null;
 }
 
+/** GRADING.md, "Ground rules reached": a passage carries a rule when a prose body line (its heading excluded, list
+ *  items included; fenced code, HTML comments, table rows and blockquotes skipped; inline code and quoted strings
+ *  removed) holds must, never, always, don't or do not. A breadcrumb or a bare lede carries none. */
+export function carriesRule(text) {
+  let fence = false, comment = false;
+  for (const raw of text.split("\n").slice(1)) {
+    if (/^\s*(```|~~~)/.test(raw)) { fence = !fence; continue; }
+    if (fence) continue;
+    let l = raw;
+    if (comment) { if (!l.includes("-->")) continue; l = l.slice(l.indexOf("-->") + 3); comment = false; }
+    l = l.replace(/<!--[\s\S]*?-->/g, "");
+    if (l.includes("<!--")) { comment = true; l = l.slice(0, l.indexOf("<!--")); }
+    if (/^\s*[|>]/.test(l)) continue;
+    l = l.replace(/`[^`]*`/g, "").replace(/"[^"]*"|“[^”]*”/g, "");
+    if (/\b(?:must|never|always|don['’]t|do not)\b/i.test(l)) return true;
+  }
+  return false;
+}
+
 export const wholeTree = (index) => [...index.files.entries()].map(([rel, lines]) => ({ rel, from: 1, to: lines.length }));
 
 /** The parent H1 of an H2 id (`§a.b/c` → `§a/b`), or null for an H1. */
@@ -143,12 +162,14 @@ export function scoreNeed(index, need, delivered, named, extraSpans = []) {
   const v = need.verdict;
   if (v?.status === "n/a" || !need.probe) return { status: "n/a", value: 0 };
   const re = new RegExp(need.probe.source, need.probe.flags);
-  const spans = [...spansOf(index, delivered), ...extraSpans];
+  // A need marked `rule` is answered only in a passage that carries a rule (GRADING.md), so a heading alone never meets it.
+  const ruled = (ids) => [...ids].filter((id) => !need.rule || carriesRule(index.passages.get(id)?.text ?? ""));
+  const spans = [...spansOf(index, ruled(delivered)), ...(need.rule ? [] : extraSpans)];
   // `anchors` lists every place the verdict holds (a re-verdict adds the draft's line and keeps the base's); any one found counts.
   const anchors = v?.anchors ?? (v?.anchor ? [v.anchor] : null);
   const vat = anchors ? anchors.map((a) => anchorAt(index, a)).find(Boolean) ?? null : v?.at;
   if (anchors && !vat) return { status: "unanchored", value: 0, at: null, passage: anchors[0].passage, named: false };
-  const where = vat ?? search(index, wholeTree(index), re);
+  const where = vat ?? search(index, need.rule ? spansOf(index, ruled(index.passages.keys())) : wholeTree(index), re);
   const passage = where ? passageAt(index, where) : null;
   if (v?.status === "absent") return { status: "absent", value: 0, at: null, passage: null, named: false };
   const hit = vat ? (inSpans(spans, vat) ? vat : null) : search(index, spans, re);

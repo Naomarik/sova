@@ -54,6 +54,15 @@
      "probe": {
       "source": "#\\/s\\/|#\\/session\\/",
       "flags": ""
+     },
+     "verdict": {
+      "status": "in",
+      "note": "the shell lede states the tab route (Routing: keep the selected session in the URL, #/s/<path>); the probe alone also matches passing #/s/ mentions such as a person page link (reviewer-3, M2 card)",
+      "at": "app/shell.md:43",
+      "anchor": {
+       "passage": "§app/shell",
+       "snippet": "Keep the selected session in the URL"
+      }
      }
     },
     {
@@ -1448,9 +1457,10 @@
      "cat": "guard",
      "need": "Product-wide principles",
      "probe": {
-      "source": "^# §design\\/ground-rules",
+      "source": "^# §design\\/ground-rules|^## §design\\.ground-rules\\/",
       "flags": ""
-     }
+     },
+     "rule": true
     },
     {
      "cat": "guard",

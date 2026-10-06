@@ -67,7 +67,8 @@ export function renderRead(out) {
   if (out.frame?.items) {
     L.push(`── frame: always applies, delivered once on this first page (${out.frame.passages} passage(s), ${out.frame.bytes} B of the ${out.frame.cap} B cap${out.frame.overCap ? ", OVER the cap" : ""}; --no-frame drops it)`);
     for (const p of out.frame.items) L.push(`── ${p.id} — ${p.title} [${p.kind}] ${p.file}:${p.lines[0]}-${p.lines[1]} (${kb(Buffer.byteLength(p.text))}) · frame`, p.text.replace(/\n$/, ""));
-  } else if (out.frame && !out.frameRead) L.push(frameLine(out.frame));
+  } else if (out.frame?.empty) L.push("frame: no core records in this spec (empty)");
+  else if (out.frame && !out.frameRead) L.push(frameLine(out.frame));
   if (out.next) L.push(`${out.remaining} passage(s) not finished: read ${out.frameRead ? "--frame" : `'${out.id}'`}${out.whole ? " --whole" : ""} --cursor ${out.next}`);
   L.push(`exit ${out.exit}`);
   return L.join("\n") + "\n";
@@ -106,7 +107,7 @@ export function readMain(argv, core) {
     return { tool: "sova-spec", command: "read", exit: more ? 1 : 0, status: more ? "more" : "done", budget, id: o.frame ? null : o.id, whole,
       ...(o.frame ? { frameRead: true } : {}), ...(o.alias ? { alias: o.alias } : {}), counts: { passages: records.length }, remaining: records.length - at, items,
       footer: { named: namedNotRead(ctx, shown, delivered), ...(about.length ? { about } : {}), ...(kids.length && !whole ? { children: kids.length, wholeBytes: sizeOf(ctx, o.id).whole } : {}) },
-      ...(frame ? { frame: rides ? { ...frame, items: rides } : frame } : {}), next: more ? tokenFor(fp, "read", at, byteOffset) : null, notice: READ_NOTICE };
+      ...(frame ? { frame: rides ? { ...frame, items: rides } : frame } : o.frame ? { frame: { passages: 0, empty: true } } : {}), next: more ? tokenFor(fp, "read", at, byteOffset) : null, notice: READ_NOTICE };
   };
   const size = (out) => sizeIn(out.frame?.items ? { ...out, frame } : out, o.json, renderRead);
   const items = [];

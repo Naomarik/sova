@@ -266,6 +266,16 @@ test("read: oversized passages arrive as exact fragments within the budget, JSON
   assert.equal(r.status, 1, "more remains");
 });
 
+test("read --frame on a spec with no core record says the frame is empty, exit 0; other reads say nothing of it", () => {
+  const root = fixture(), { r, j } = cli(root, ["read", "--frame"]);
+  assert.equal(r.status, 0);
+  assert.deepEqual([j.items, j.frame], [[], { passages: 0, empty: true }]);
+  const text = cli(root, ["read", "--frame"], { json: false }).r.stdout;
+  assert.match(text, /^frame: no core records in this spec \(empty\)$/m);
+  assert.equal(read(root, ["§a.top/seed"]).frame, undefined, "an ordinary read stays unchanged");
+  assert.doesNotMatch(cli(root, ["read", "§a.top/seed"], { json: false }).r.stdout, /frame/);
+});
+
 test("read: refusals are coded and bounded", () => {
   const root = fixture();
   assert.equal(read(root, ["§q/none"]).code, "unknown-id");

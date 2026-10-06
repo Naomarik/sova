@@ -15,6 +15,8 @@ and labels. [USAGE.md](USAGE.md) has the commands.
   behavior. Only what has been implemented and verified is promoted, and only explicitly,
   except a decision: notes, sections, and behaviors or surfaces marked `agreed` and not built yet, land on
   doc-only evidence as decisions, never as built (pi-config/extensions/spec/DRAFTS.md, "Agreed, not built").
+  A change to a record's `embeds`, `about` or `core` field alone also lands on doc-only evidence: it
+  rewires what a reader is handed, not what the code does (DRAFTS.md, "Field-only changes").
 - **Baseline and feature stay apart.** Correcting the docs to match what the code already does
   is a change of its own. It is not mixed into a feature draft.
 

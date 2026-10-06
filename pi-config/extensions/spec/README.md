@@ -166,8 +166,9 @@ node core/sova-spec-draft.mjs merge-manifest --root DIR [--write] [--json]
    behavior or surface needs at least one implementation file, from the
    record's `code` or `--path` (unless it is agreed and not built yet), and every `code` path must exist. In a Git project it needs `--commit`, an existing commit, ancestor
    of `HEAD`, whose files match the working tree for the mapped code. Without Git, `--snapshot` keeps the
-   exact bytes. `--doc-only` covers `note` and `section` records, and an `agreed` behavior or
-   surface with no code (DRAFTS.md, "Agreed, not built").
+   exact bytes. `--doc-only` covers `note` and `section` records, an `agreed` behavior or
+   surface with no code (DRAFTS.md, "Agreed, not built"), and a change to an existing behavior's or
+   surface's `embeds`, `about` or `core` field alone (DRAFTS.md, "Field-only changes").
    Evidence binds to the record and prose as they are now, so a later edit
    stales it.
 4. **`promote`** previews the plan and prints its hash. Then

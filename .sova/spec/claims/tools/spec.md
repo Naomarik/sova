@@ -137,8 +137,10 @@ reading step. Every command the guide spells is one the shipped tools parse, wit
 guide pairs with it.
 
 The guide's promotion lines agree with the draft tool: a conflict is per declaration
-(§tools.spec/span-promotion), and doc-only evidence covers notes, sections and agreed records without
-code (§tools.spec/agreed-promotion). The exemption from drafts is decided from passages read, and the
+(§tools.spec/span-promotion), and doc-only evidence covers notes, sections, agreed records without
+code (§tools.spec/agreed-promotion) and a change to `embeds`, `about` or `core` alone
+(§tools.spec/field-promotion); a test drives the draft tool's doc-only rule, so the guide fails its
+test when that rule gains a case the guide doesn't name or drops one it does. The exemption from drafts is decided from passages read, and the
 census note's `No draft yet` line says the same. A worker's spec brief lists `toc`, `read` and
 `impact --near` among its read-only commands. The guide rides every turn, so a test caps its word
 count a few words above its length, and growing it is a deliberate change.

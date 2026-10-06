@@ -140,7 +140,9 @@ A draft is a proposal. Agreeing on it approves the intent, and makes nothing cur
    ```
 
    Without Git, use `--snapshot`, which keeps the exact bytes. `--doc-only` covers `note` and
-   `section` records, and agreed behaviors or surfaces with no code (DRAFTS.md, "Agreed, not built").
+   `section` records, agreed behaviors or surfaces with no code (DRAFTS.md, "Agreed, not built"), and
+   a change to an existing behavior's or surface's `embeds`, `about` or `core` field alone (DRAFTS.md,
+   "Field-only changes").
 4. Promote. The preview prints a plan hash, and `--write` applies exactly that plan:
 
    ```sh

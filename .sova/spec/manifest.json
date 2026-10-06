@@ -14486,7 +14486,8 @@
         "§tools.spec/spec-map",
         "§tools.spec/where-lookup",
         "§tools.spec/frame",
-        "§tools.spec/context-packets"
+        "§tools.spec/context-packets",
+        "§tools.spec/field-promotion"
       ],
       "authority": "accepted",
       "evidence": "verified",

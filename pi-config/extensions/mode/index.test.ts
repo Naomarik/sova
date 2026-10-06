@@ -475,7 +475,7 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	assert.match(spec, /- Read `\$core\/\.\.\/PROMOTE\.md`; promote what you verified, or say in your reply why not\./);
 	assert.doesNotMatch(spec, /Before `git commit`, if/, "the old conditional is gone");
 	assert.match(spec, /A `conflict` is per declaration: re-apply in a new draft from current\./);
-	assert.match(spec, /`--doc-only` \(notes, sections, agreed records without code\)/, "doc-only evidence as the draft tool takes it");
+	// The `--doc-only` cases are checked against the draft tool itself: see "the guide's doc-only cases are the draft tool's".
 	assert.match(spec, /A Git merge conflict in `manifest\.json`: run `merge-manifest --write` first; if it refuses, take master's manifest and matching claims \(`git checkout master -- …`\), re-apply the branch's spec changes in a new draft, and promote\. Never take a side before it has run\./);
 	assert.match(usage("sova-spec-draft.mjs", "--no-such-flag"), /merge-manifest/, "merge-manifest is a draft command");
 	assert.match(spec, /never put `§` IDs or spec annotations in source code/);
@@ -501,6 +501,58 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	assert.match(spec, /editing one in your draft flags\. Read it with `read`;/, "a foreign § is read alone, not with its chain");
 	assert.ok(spec.split(/\s+/).length <= 1063, "short enough to ride every turn: growing it is a deliberate change");
 	assert.match(spec, /and no changed file outside it that no claim maps unless a "Plumbing: <path> — <why>" line above the last line names it \(never UI text, colour, CLI output or footer rendering\)/, "the boundary is not an exemption");
+});
+
+test("spec: the guide's doc-only cases are the draft tool's: each one it names is accepted, and every case the tool's rule lists is named", () => {
+	const guide = buildMinorPrompt("spec");
+	const named = guide.match(/`--doc-only` \(([^)]*)\)/)?.[1]?.split(", ");
+	assert.ok(named, "the guide names the doc-only cases in one parenthesis");
+	const draftTool = fileURLToPath(new URL("../spec/core/sova-spec-draft.mjs", import.meta.url));
+	const dir = tmp();
+	try {
+		mkdirSync(join(dir, ".sova/spec/claims/g"), { recursive: true });
+		mkdirSync(join(dir, "src"));
+		writeFileSync(join(dir, "src/b.ts"), "export const b = 1;\n");
+		const doc = (v: string) => `# §g/doc — Doc\n\nThe doc ${v}.\n\n${["note", "sec", "agreed", "field", "view", "built"].map((h) => `## §g.doc/${h} — ${h}\n\nThe ${h} ${h === "field" || h === "view" ? "stays" : v}.\n`).join("\n")}`;
+		writeFileSync(join(dir, ".sova/spec/claims/g/doc.md"), doc("one"));
+		const built = { kind: "behavior", requires: [], code: ["src/b.ts"], authority: "accepted", evidence: "verified" };
+		const claims: Record<string, object> = {
+			"§g/doc": { ...built, kind: "surface" },
+			"§g.doc/note": { kind: "note", authority: "accepted" },
+			"§g.doc/sec": { kind: "section", members: ["§g.doc/note"], authority: "accepted" },
+			"§g.doc/agreed": { kind: "behavior", requires: [], authority: "accepted", agreed: { by: "op", at: "2026-10-06" } },
+			"§g.doc/field": built,
+			"§g.doc/view": { ...built, kind: "surface" },
+			"§g.doc/built": built,
+		};
+		writeFileSync(join(dir, ".sova/spec/manifest.json"), JSON.stringify({ formatVersion: 1, claims }));
+		const draft = (...args: string[]) => {
+			const r = spawnSync(process.execPath, [draftTool, ...args, "--root", dir, "--json"], { encoding: "utf8" });
+			return { status: r.status, out: JSON.parse(r.stdout) };
+		};
+		assert.equal(draft("new", "d", "--write").status, 0);
+		const spec = join(dir, ".sova/spec/drafts/d/spec");
+		writeFileSync(join(spec, "claims/g/doc.md"), doc("two"));
+		const manifest = JSON.parse(readFileSync(join(spec, "manifest.json"), "utf8"));
+		manifest.claims["§g.doc/field"].embeds = ["§g.doc/view"];
+		writeFileSync(join(spec, "manifest.json"), JSON.stringify(manifest));
+		const docOnly = (id: string) => draft("evidence", "d", "--id", id, "--by", "t", "--verification", "read both passages", "--doc-only");
+		// The refusal for a built behavior states the tool's whole doc-only rule: its kinds, agreed kinds and field keys.
+		const refused = docOnly("§g.doc/built");
+		assert.equal(refused.status, 1, "a built behavior's prose change is not doc-only");
+		const rule = JSON.stringify(refused.out).match(/--doc-only covers only ([a-z/]+) kinds, agreed ([a-z/]+) records with no code, and ([a-z/]+)-only changes, not /);
+		assert.ok(rule, "the tool's doc-only rule has the three parts the guide names: if it gains a part, revisit the guide");
+		const [, kinds, agreedKinds, fields] = rule;
+		assert.deepEqual(agreedKinds!.split("/").sort(), ["behavior", "surface"], "agreed records: behaviors and surfaces");
+		// Each case the guide names is one the tool accepts, driven on its own record.
+		const cases: Record<string, string> = { notes: "§g.doc/note", sections: "§g.doc/sec", "agreed records without code": "§g.doc/agreed" };
+		cases[`${fields!.split("/").sort((a, b) => ["embeds", "about", "core"].indexOf(a) - ["embeds", "about", "core"].indexOf(b)).map((f) => `\`${f}\``).join("/")}-only changes`] = "§g.doc/field";
+		for (const kind of kinds!.split("/")) assert.ok(`${kind}s` in cases, `the tool's doc-only kind ${kind} has a case here`);
+		assert.deepEqual([...named].sort(), Object.keys(cases).sort(), "the guide names exactly the tool's doc-only cases");
+		for (const [label, id] of Object.entries(cases)) assert.equal(docOnly(id).status, 0, `the tool takes --doc-only for ${label} (${id})`);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
 });
 
 test("spec: shipped task-reading argv lists contents, then delivers one passage in exact fragments, to parents and workers", () => {

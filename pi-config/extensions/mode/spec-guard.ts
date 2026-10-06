@@ -1525,6 +1525,11 @@ export async function judgeOp(op: OpLanding, core: string, io: SpecIO = localIO,
 export interface TurnTally {
 	changed: boolean;
 	landing: boolean;
+	/**
+	 * The session itself edited, committed, promoted or merged (its own ops, its own tree): only then is the
+	 * `Also changes:` line required. Worker ops a run takes are charged to it (its record) without that.
+	 */
+	self: boolean;
 	ids: Set<string>;
 	advisory: Set<string>;
 	unmapped: Set<string>;
@@ -1552,6 +1557,7 @@ export interface TurnTally {
 export const freshTally = (changed = false, landing = false): TurnTally => ({
 	changed,
 	landing,
+	self: changed || landing,
 	ids: new Set(),
 	advisory: new Set(),
 	unmapped: new Set(),
@@ -1651,6 +1657,7 @@ export async function tallyOps(t: TurnTally, ops: readonly OpLanding[], defaultT
 			continue;
 		}
 		t.changed = true;
+		if (!op.actor || op.actor === "self") t.self = true;
 		if (j.foreign === undefined || (j.landing && (!j.lists || j.lists.complete === false))) {
 			t.exact = false;
 			t.errors.push(`${op.top}: incomplete check (${j.lists?.incomplete?.join(", ") || "foreign/landing lists unavailable"})`);
@@ -1673,13 +1680,17 @@ export async function tallyOps(t: TurnTally, ops: readonly OpLanding[], defaultT
 	}
 }
 
-/** One tree against a baseline (treeTurn) into the tally; a current spec that changed there is a landing unless `promoted` covers it. */
-export async function tallyTree(t: TurnTally, start: TreeStart, core: string, io: SpecIO = localIO, options: { commits?: boolean; promoted?: boolean; label?: string } = {}): Promise<void> {
+/**
+ * One tree against a baseline (treeTurn) into the tally; a current spec that changed there is a landing unless
+ * `promoted` covers it. Its change is the session's own unless `worker` (a worker wrote there) or a `label` says so.
+ */
+export async function tallyTree(t: TurnTally, start: TreeStart, core: string, io: SpecIO = localIO, options: { commits?: boolean; promoted?: boolean; label?: string; worker?: boolean } = {}): Promise<void> {
 	const r = await treeTurn(start, core, io, { commits: options.commits });
 	if (r.error) { t.exact = false; t.errors.push(r.error); }
 	if (r.conflict) t.conflicts.push(r.conflict);
 	if (!r.changed) return;
 	t.changed = true;
+	if (!options.worker && !options.label) t.self = true;
 	tallyForeign(t, r.foreign);
 	tallyArrivals(t, r.arrivals, r.changes);
 	if (r.specChanged && !options.promoted) {
@@ -1693,7 +1704,10 @@ export interface TallyVerdict {
 	check: AlsoChangesCheck;
 	/** Every foreign § the run changed (arrivals out), sorted. */
 	foreign: string[];
+	/** The line is required: the session itself changed something (TurnTally.self). */
 	required: boolean;
+	/** The run took operations or changes, its own or its workers': it has a record, required line or not. */
+	charged: boolean;
 	/** § that arrived from the default branch unchanged and are in no op's foreign list, sorted. */
 	arrived: string[];
 	/** Changed files that arrived from it unchanged and are in no landing's unmapped list, sorted. */
@@ -1711,10 +1725,12 @@ export interface TallyVerdict {
  */
 export function tallyCheck(t: TurnTally, reply: string, options: { relay?: boolean; described?: readonly string[] } = {}): TallyVerdict {
 	const foreign = [...t.ids].sort();
-	const required = t.changed || t.landing;
+	const charged = t.changed || t.landing;
+	// Only the session's own edits, commits, promotions and merges require the line; workers' alone never do.
+	const required = charged && t.self;
 	const check = checkAlsoChanges(reply, {
 		required,
-		forbidden: !required && !options.relay,
+		forbidden: !charged && !options.relay,
 		foreign,
 		exact: t.exact && t.gitBased,
 		advisory: [...t.advisory],
@@ -1724,7 +1740,7 @@ export function tallyCheck(t: TurnTally, reply: string, options: { relay?: boole
 	const arrived = [...t.arrived].filter((id) => !t.ids.has(id)).sort();
 	const arrivedFiles = [...t.arrivedFiles].filter((p) => !t.unmapped.has(p)).sort();
 	const changes = Object.fromEntries(foreign.filter((id) => t.changes.has(id)).map((id) => [id, t.changes.get(id)!]));
-	return { check, foreign, required, arrived, arrivedFiles, ...(t.arrivedFrom && (arrived.length || arrivedFiles.length) ? { arrivedFrom: t.arrivedFrom } : {}), changes };
+	return { check, foreign, required, charged, arrived, arrivedFiles, ...(t.arrivedFrom && (arrived.length || arrivedFiles.length) ? { arrivedFrom: t.arrivedFrom } : {}), changes };
 }
 
 /** Re-prompts a run gets: landings as the Claude Code Stop hook's MERGE_BLOCKS; a Q&A line once. */
@@ -1742,6 +1758,15 @@ const textOf = (content: unknown): string =>
  * subagent's completion, a team report) or the result of a tool that runs workers. Returns the §
  * they name, or undefined when none named one ("none" reports no change). Not the user's words, and not other tools' output.
  */
+/**
+ * A worker tool's result that carries a worker's report (a wait, an inbox): never one that starts, lists, sizes up
+ * or reads workers (agent_spawn, agent_list, agent_models, agent_transcript, team_roster, …).
+ */
+export function workerReportTool(toolName: string | undefined): boolean {
+	const name = toolName ?? "";
+	return /agent|team|subagent|worker/i.test(name) && !/(spawn|_list|_models|_transcript|roster|_members|_offers)$/i.test(name);
+}
+
 export function reportedAlsoChanges(entries: readonly unknown[]): string[] | undefined {
 	let found = false;
 	const ids = new Set<string>();
@@ -1749,7 +1774,7 @@ export function reportedAlsoChanges(entries: readonly unknown[]): string[] | und
 		const e = entry as { type?: string; customType?: string; content?: unknown; message?: { role?: string; toolName?: string; content?: unknown } };
 		let text = "";
 		if (e.type === "custom_message" && e.customType !== "spec-check") text = textOf(e.content);
-		else if (e.type === "message" && e.message?.role === "toolResult" && /agent|team|subagent|worker/i.test(e.message.toolName ?? "")) text = textOf(e.message.content);
+		else if (e.type === "message" && e.message?.role === "toolResult" && workerReportTool(e.message.toolName)) text = textOf(e.message.content);
 		for (const line of text.split("\n")) {
 			const named = parseAlsoChanges(line.trim());
 			// "Also changes: none" (a planning worker's, say) makes no change turn; a named § does.
@@ -1769,7 +1794,7 @@ export function workerReported(entries: readonly unknown[]): boolean {
 	return entries.some((entry) => {
 		const e = entry as { type?: string; customType?: string; message?: { role?: string; toolName?: string } };
 		if (e.type === "custom_message") return /subagent|team|worker/i.test(e.customType ?? "") && e.customType !== "spec-check";
-		return e.type === "message" && e.message?.role === "toolResult" && /agent|team|subagent|worker/i.test(e.message.toolName ?? "");
+		return e.type === "message" && e.message?.role === "toolResult" && workerReportTool(e.message.toolName);
 	});
 }
 
@@ -2010,6 +2035,44 @@ export function ledgerPath(agentDir: string, parentSessionId: string): string {
 export function workerLedgerPath(agentDir: string, parentSessionId: string, workerKey: string): string {
 	return join(dirname(ledgerPath(agentDir, parentSessionId)), `${parentSessionId.replace(/[^\w.-]/g, "_")}.workers`, `${workerKey.replace(/[^\w.-]/g, "_")}.jsonl`);
 }
+/** A ledger entry's identity: when, where, and the HEAD it left. */
+export const ledgerEntryKey = (e: { at: number; top: string; after: string }): string => `${e.at}:${e.top}:${e.after}`;
+
+/** The file of ledger entries a parent session already charged to a run, one ledgerEntryKey per line, beside its ledger. */
+export function ledgerChargedPath(agentDir: string, parentSessionId: string): string {
+	return join(dirname(ledgerPath(agentDir, parentSessionId)), `${parentSessionId.replace(/[^\w.-]/g, "_")}.charged`);
+}
+
+/**
+ * The ledger entries a parent session already charged, surviving reloads, restarts and a reopened session. A
+ * session without the file (one from before it existed) starts with every entry its ledger holds now counted as
+ * charged, and the file is written then. Never throws: an unreadable or unwritable file reads as what it could read.
+ */
+export function loadLedgerCharged(agentDir: string, parentSessionId: string): Set<string> {
+	const path = ledgerChargedPath(agentDir, parentSessionId);
+	try {
+		return new Set(readFileSync(path, "utf8").split("\n").filter(Boolean));
+	} catch {
+		const keys = new Set(ledgerFiles(agentDir, parentSessionId).flatMap((file) => readLedger(file)).map(ledgerEntryKey));
+		try {
+			mkdirSync(dirname(path), { recursive: true });
+			appendFileSync(path, [...keys].map((k) => `${k}\n`).join(""));
+		} catch { /* charged in memory only */ }
+		return keys;
+	}
+}
+
+/** Record ledger entries as charged to a settled run (loadLedgerCharged). Never throws. */
+export function markLedgerCharged(agentDir: string, parentSessionId: string, keys: Iterable<string>): void {
+	const lines = [...keys].map((k) => `${k}\n`).join("");
+	if (!lines) return;
+	try {
+		const path = ledgerChargedPath(agentDir, parentSessionId);
+		mkdirSync(dirname(path), { recursive: true });
+		appendFileSync(path, lines);
+	} catch { /* charged in memory only */ }
+}
+
 /** Every ledger file of a parent session: its own, then each confined worker's (workerLedgerPath). */
 export function ledgerFiles(agentDir: string, parentSessionId: string): string[] {
 	const own = ledgerPath(agentDir, parentSessionId);

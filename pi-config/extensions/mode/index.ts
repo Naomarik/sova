@@ -105,6 +105,8 @@ import {
 	LANDING_REPROMPTS,
 	LEDGER_ENV,
 	ledgerFiles,
+	loadLedgerCharged,
+	markLedgerCharged,
 	type OpLanding,
 	promoteWrites,
 	readLedger,
@@ -1223,6 +1225,8 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	let carriedOps: OpLanding[] = [];
 	/** Ledger entries already checked (or already landed by a merge this session checked), by at:top:after. */
 	const ledgerSeen = new Set<string>();
+	/** The session whose ledger `ledgerSeen` charges: persisted beside its ledger (loadLedgerCharged), so a restart never charges an op again. */
+	let chargedSession: string | undefined;
 	const ledgerKey = (e: { at: number; top: string; after: string }) => `${e.at}:${e.top}:${e.after}`;
 	function freshSpecRun(): typeof specRun {
 		return { trees: [], branchAt: 0, pending: [], ops: [], workerOps: [], ledgerKeys: new Set(), completed: false, opening: new Map(), changed: false, tools: false, merged: false, promoted: false, mergeForeign: [], mergeRanges: 0, taken: new Set() };
@@ -1368,7 +1372,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 			const cwdStart = specRun.trees.find((tree) => tree.view.top === specRun.cwdTop);
 			if (cwdStart) specRun.taken.add(cwdStart.view.top);
 			for (const op of ops) specRun.taken.add(op.top);
-			if (cwdStart && (specRun.tools || relay)) await tallyTree(t, relay ? (settledTrees.get(cwdStart.view.top) ?? cwdStart) : cwdStart, SPEC_CORE, undefined, { commits: false, promoted: specRun.promoted });
+			if (cwdStart && (specRun.tools || relay)) await tallyTree(t, relay ? (settledTrees.get(cwdStart.view.top) ?? cwdStart) : cwdStart, SPEC_CORE, undefined, { commits: false, promoted: specRun.promoted, worker: !specRun.tools });
 			// 3. Its workers' operations from the ledger, taken in a run that relays one or changed something
 			// itself; a Q&A run leaves them for later, so a background promotion never forces a line on it. A
 			// run that merged is pinned to its merges (M5): a worker's wake that extends it adds no other
@@ -1448,6 +1452,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	pi.on("agent_settled", async () => {
 		if (specRun.completed) {
 			for (const key of specRun.ledgerKeys) ledgerSeen.add(key);
+			if (chargedSession) markLedgerCharged(getAgentDir(), chargedSession, specRun.ledgerKeys);
 			carriedOps = [];
 		}
 		if (!specOn()) return;
@@ -1550,6 +1555,8 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		running = false;
 		specCensus.reset();
 		ledgerSeen.clear();
+		chargedSession = ctx.sessionManager.getSessionId?.();
+		if (chargedSession) for (const key of loadLedgerCharged(getAgentDir(), chargedSession)) ledgerSeen.add(key);
 		carriedOps = [];
 		settledTrees.clear();
 		toldWriter = undefined;

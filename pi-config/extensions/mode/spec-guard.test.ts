@@ -49,6 +49,10 @@ import {
 	appendLedger,
 	readLedger,
 	ledgerPath,
+	ledgerChargedPath,
+	ledgerEntryKey,
+	loadLedgerCharged,
+	markLedgerCharged,
 	ledgerFiles,
 	workerLedgerPath,
 	driftNote,
@@ -427,8 +431,11 @@ test("reportedAlsoChanges: a worker's line in a custom message or a worker tool'
 	const complete = { type: "custom_message", customType: "subagent-complete", content: "Worker done.\nAlso changes: §chat.sandbox/toggle — new wording" };
 	assert.deepEqual(reportedAlsoChanges([complete]), ["§chat.sandbox/toggle"]);
 	assert.equal(reportedAlsoChanges([{ type: "custom_message", customType: "team-report", content: [{ type: "text", text: "ok\nAlso changes: none" }] }]), undefined, "a planning worker's none is no change turn");
-	const spawn = { type: "message", message: { role: "toolResult", toolName: "agent_spawn", content: [{ type: "text", text: "report\nAlso changes: §a/b — x" }] } };
-	assert.deepEqual(reportedAlsoChanges([spawn, complete]), ["§a/b", "§chat.sandbox/toggle"]);
+	const wait = { type: "message", message: { role: "toolResult", toolName: "agent_wait", content: [{ type: "text", text: "report\nAlso changes: §a/b — x" }] } };
+	assert.deepEqual(reportedAlsoChanges([wait, complete]), ["§a/b", "§chat.sandbox/toggle"]);
+	// Starting, listing or reading a worker is no report: a transcript quoting its line names nothing.
+	for (const toolName of ["agent_spawn", "agent_list", "agent_transcript", "team_roster"])
+		assert.equal(reportedAlsoChanges([{ ...wait, message: { ...wait.message, toolName } }]), undefined, toolName);
 	const bash = { type: "message", message: { role: "toolResult", toolName: "bash", content: [{ type: "text", text: "Also changes: §x/y — grep hit" }] } };
 	assert.equal(reportedAlsoChanges([bash]), undefined);
 	assert.equal(reportedAlsoChanges([{ type: "custom_message", customType: "spec-check", content: "x\nAlso changes: §x/y — z" }]), undefined);
@@ -620,7 +627,10 @@ test("treeTurn reports a comparison that failed instead of staying silent; worke
 	assert.equal(turn.changed, false);
 	assert.match(turn.error ?? "", /\/r: git exploded/);
 	assert.ok(workerReported([{ type: "custom_message", customType: "subagent-complete", content: "done" }]));
-	assert.ok(workerReported([{ type: "message", message: { role: "toolResult", toolName: "agent_spawn" } }]));
+	assert.ok(workerReported([{ type: "message", message: { role: "toolResult", toolName: "agent_wait" } }]));
+	assert.ok(workerReported([{ type: "message", message: { role: "toolResult", toolName: "team_inbox" } }]));
+	// A run that only starts workers relays nothing (§tools.spec/ledger-once): it takes no ledger op.
+	assert.ok(!workerReported([{ type: "message", message: { role: "toolResult", toolName: "agent_spawn" } }, { type: "message", message: { role: "toolResult", toolName: "agent_list" } }]));
 	assert.ok(!workerReported([{ type: "custom_message", customType: "spec-check", content: "x" }, { type: "message", message: { role: "toolResult", toolName: "bash" } }]));
 });
 
@@ -1176,7 +1186,8 @@ test("sync-merge replay: workers' promotes mid-merge of master: the check asks f
 			{ top: r.wt, before, after: before, kind: "promote" as const, actor: "ag_01" },
 			{ top: r.wt, before, after: before, kind: "promote" as const, actor: "ag_02" },
 		];
-		const t = freshTally();
+		// The parent merged master itself (its own change: the line is required); the workers' promotes ride along.
+		const t = freshTally(true, true);
 		await tallyOps(t, ops, () => undefined, CORE, localIO);
 		assert.equal(t.landing, true);
 		assert.deepEqual([...t.ids], [], "master's §app/b and §app/c arrived; §app/d is the branch's own");
@@ -1240,4 +1251,40 @@ test("checkAlsoChanges `described`: a § already described this session needn't 
 	assert.match(text, /computed from Git: §a\/y \(1 more already described this session need no repeat\)\./);
 	assert.match(text, /"Also changes: §a\/y — <what changed>"/);
 	assert.doesNotMatch(text, /§a\/x/);
+});
+
+test("the line is required only of a run whose session itself changed something; worker ops alone are charged, never required", async () => {
+	const workerOnly = freshTally();
+	workerOnly.changed = workerOnly.landing = true; // what tallyOps leaves after a worker's landing
+	workerOnly.ids.add("§a/x");
+	const v = tallyCheck(workerOnly, "The worker finished.", { relay: true });
+	assert.deepEqual([v.required, v.charged, v.check.ok], [false, true, true], "no line, no re-prompt; still charged (its record)");
+	const named = tallyCheck(workerOnly, "Done.\nAlso changes: §a/x — the worker's wording", { relay: true });
+	assert.equal(named.check.ok, true, "the line may still be written");
+	const own = freshTally(true);
+	own.ids.add("§a/x");
+	const o = tallyCheck(own, "Edited.");
+	assert.deepEqual([o.required, o.check.ok, o.check.problem], [true, false, "missing"]);
+	const qa = tallyCheck(freshTally(), "An answer.\nAlso changes: none");
+	assert.equal(qa.check.problem, "forbidden", "a run that took nothing still takes no line");
+});
+
+test("loadLedgerCharged: charged ops survive a restart; a session from before starts with its whole ledger charged", () => {
+	mkdirSync(scratchRoot, { recursive: true });
+	const agentDir = mkdtempSync(join(scratchRoot, "ledger-charged-"));
+	try {
+		const e1 = { v: 1 as const, at: 1, top: "/r", before: "a", after: "b", kind: "commit" as const };
+		const e2 = { ...e1, at: 2, after: "c" };
+		appendLedger(ledgerPath(agentDir, "old"), e1);
+		const seeded = loadLedgerCharged(agentDir, "old");
+		assert.deepEqual([...seeded], [ledgerEntryKey(e1)], "no file yet: what the ledger holds now counts as charged");
+		appendLedger(ledgerPath(agentDir, "old"), e2);
+		assert.deepEqual([...loadLedgerCharged(agentDir, "old")], [ledgerEntryKey(e1)], "the file exists now: a new op stays uncharged");
+		markLedgerCharged(agentDir, "old", [ledgerEntryKey(e2)]);
+		assert.deepEqual([...loadLedgerCharged(agentDir, "old")].sort(), [ledgerEntryKey(e1), ledgerEntryKey(e2)], "after a restart, both read as charged");
+		assert.ok(ledgerChargedPath(agentDir, "old").endsWith("spec-ledger/old.charged"));
+		assert.deepEqual([...loadLedgerCharged(agentDir, "fresh")], [], "a new session starts empty");
+	} finally {
+		rmSync(agentDir, { recursive: true, force: true });
+	}
 });

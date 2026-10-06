@@ -203,7 +203,15 @@ writer**).
       (checked with the next run); and its workers' from the ledger
       (`SOVA_SPEC_LEDGER`, one JSONL file per parent session, appended by
       `spec-worker.ts` and the Claude Code hooks), taken in a run that relays
-      a worker or changes something itself. A merge that only brought the
+      a worker (a completion, `agent_wait`, an inbox; never `agent_spawn`,
+      `agent_list` or `agent_transcript`) or changes something itself. Each
+      entry is charged to one run only: the keys it took go to
+      `<session>.charged` beside the ledger at settle, read back at every
+      `session_start` (a session without the file starts with its whole
+      ledger charged). The line is required only when the session itself
+      edited, committed, promoted or merged (`TurnTally.self`); worker ops
+      alone are charged to the run's spec-turn record and never re-prompted
+      (`TallyVerdict.charged`). A merge that only brought the
       default branch into another branch is absorbed, not landed. On such a
       branch, whatever the op (merge, commit, promote; a merge of master still
       in progress included), a § or changed file whose content equals the

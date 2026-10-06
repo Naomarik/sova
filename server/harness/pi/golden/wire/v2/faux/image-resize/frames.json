@@ -7,6 +7,6 @@
   "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"part.delta\",\"index\":0,\"kind\":\"text\",\"delta\":\"A solid blue rec\"}}",
   "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"part.delta\",\"index\":0,\"kind\":\"text\",\"delta\":\"tangle.\"}}",
   "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"part.end\",\"index\":0,\"kind\":\"text\",\"text\":\"A solid blue rectangle.\"}}",
-  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"message.end\",\"role\":\"assistant\",\"entryId\":\"00000005\",\"model\":\"faux/faux-1\",\"parts\":[{\"kind\":\"text\",\"text\":\"A solid blue rectangle.\"}],\"stop\":\"ok\",\"contextTokens\":2816}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"message.end\",\"role\":\"assistant\",\"entryId\":\"00000005\",\"model\":\"faux/faux-1\",\"parts\":[{\"kind\":\"text\",\"text\":\"A solid blue rectangle.\"}],\"stop\":\"ok\",\"contextTokens\":2876}}",
   "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"run.settled\"}}"
 ]

@@ -10,7 +10,7 @@
   "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"part.delta\",\"index\":1,\"kind\":\"toolCall\",\"delta\":\"{\\\"path\\\":\\\"notes.t\"}}",
   "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"part.delta\",\"index\":1,\"kind\":\"toolCall\",\"delta\":\"xt\\\"}\"}}",
   "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"part.end\",\"index\":1,\"kind\":\"toolCall\",\"id\":\"call_read_1\",\"name\":\"read\",\"args\":{\"path\":\"notes.txt\"}}}",
-  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"message.end\",\"role\":\"assistant\",\"entryId\":\"00000005\",\"model\":\"faux/faux-1\",\"parts\":[{\"kind\":\"text\",\"text\":\"Reading it.\"},{\"kind\":\"toolCall\",\"id\":\"call_read_1\",\"name\":\"read\",\"args\":{\"path\":\"notes.txt\"}}],\"stop\":\"ok\",\"contextTokens\":2746}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"message.end\",\"role\":\"assistant\",\"entryId\":\"00000005\",\"model\":\"faux/faux-1\",\"parts\":[{\"kind\":\"text\",\"text\":\"Reading it.\"},{\"kind\":\"toolCall\",\"id\":\"call_read_1\",\"name\":\"read\",\"args\":{\"path\":\"notes.txt\"}}],\"stop\":\"ok\",\"contextTokens\":2806}}",
   "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"tool.start\",\"callId\":\"call_read_1\",\"name\":\"read\",\"args\":{\"path\":\"notes.txt\"}}}",
   "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"tool.end\",\"callId\":\"call_read_1\",\"name\":\"read\",\"isError\":false,\"output\":\"line one\\nline two\\n\",\"images\":[]}}",
   "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"message.start\",\"role\":\"assistant\",\"model\":\"faux/faux-1\",\"parts\":[]}}",
@@ -18,6 +18,6 @@
   "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"part.delta\",\"index\":0,\"kind\":\"text\",\"delta\":\"It has two lines\"}}",
   "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"part.delta\",\"index\":0,\"kind\":\"text\",\"delta\":\".\"}}",
   "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"part.end\",\"index\":0,\"kind\":\"text\",\"text\":\"It has two lines.\"}}",
-  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"message.end\",\"role\":\"assistant\",\"entryId\":\"00000007\",\"model\":\"faux/faux-1\",\"parts\":[{\"kind\":\"text\",\"text\":\"It has two lines.\"}],\"stop\":\"ok\",\"contextTokens\":1417}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"message.end\",\"role\":\"assistant\",\"entryId\":\"00000007\",\"model\":\"faux/faux-1\",\"parts\":[{\"kind\":\"text\",\"text\":\"It has two lines.\"}],\"stop\":\"ok\",\"contextTokens\":1447}}",
   "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"run.settled\"}}"
 ]

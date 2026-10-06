@@ -11,7 +11,7 @@
     "{\"id\":\"00000004\",\"kind\":\"user\",\"at\":\"2026-09-03T08:00:00.012Z\",\"text\":\"Can you think first?\",\"meta\":{\"type\":\"message\",\"role\":\"user\"}}"
   ],
   [
-    "{\"id\":\"00000005:0\",\"kind\":\"thinking\",\"text\":\"The user wants a short answer.\",\"at\":\"2026-09-03T08:00:00.013Z\",\"model\":\"faux/faux-1\",\"meta\":{\"type\":\"message\",\"role\":\"assistant\",\"provider\":\"faux\",\"model\":\"faux-1\",\"usage\":{\"input\":1373,\"output\":13,\"cacheRead\":0,\"cacheWrite\":1373,\"totalTokens\":2759,\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"total\":0}},\"stopReason\":\"stop\"}}",
+    "{\"id\":\"00000005:0\",\"kind\":\"thinking\",\"text\":\"The user wants a short answer.\",\"at\":\"2026-09-03T08:00:00.013Z\",\"model\":\"faux/faux-1\",\"meta\":{\"type\":\"message\",\"role\":\"assistant\",\"provider\":\"faux\",\"model\":\"faux-1\",\"usage\":{\"input\":1403,\"output\":13,\"cacheRead\":0,\"cacheWrite\":1403,\"totalTokens\":2819,\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"total\":0}},\"stopReason\":\"stop\"}}",
     "{\"id\":\"00000005:1\",\"kind\":\"assistant-text\",\"text\":\"Short answer: yes.\",\"at\":\"2026-09-03T08:00:00.013Z\",\"model\":\"faux/faux-1\"}"
   ]
 ]

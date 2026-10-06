@@ -1854,6 +1854,7 @@ export function ChatView(props: {
                 older={olderRows.api}
                 liveAlignIds={liveAlignIds()}
                 liveCardIds={liveCardIds()}
+                specMode={!!modeState()?.minorModes.includes("spec")}
               />
               </ChangesSession.Provider>
               <LiveEntries

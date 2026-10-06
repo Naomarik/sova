@@ -58,6 +58,7 @@ import { addWebSession } from "./web-sessions";
 import { draftForClient, setDraft } from "./drafts";
 import { worktreeInsights } from "./worktrees";
 import { DiffError, gitDiffs, scopeFromQuery } from "./git-diff";
+import { specClaim, SpecClaimError } from "./spec-claim";
 import { decodeWorkers, teamDuties, getAgentsInsight, getHiddenWorkers, getSessionInsight, setInsightLinks, getUsageHistory, getUsageInsight, getUsageStrip, invalidateUsageMemo, recordUsage, refreshUsageInsight, setUsageResetDay, usageRefreshBusy } from "./insights";
 import { startUsagePoller } from "./usage-poll";
 import { usageHistory } from "./usage-history";
@@ -1272,6 +1273,18 @@ app.get(
     gitDiffs.patch(scopeFromQuery((n) => c.req.query(n)), c.req.query("file") ?? "", c.req.query("old"), { context: c.req.query("context") === "1" }),
   ),
 );
+
+// The spec card's claim sheet (server/spec-claim.ts, §chat.spec-card/claim-sheet): one claim's text as
+// of the run that changed it, read only from a `spec-turn` record in the named session's file. Read-only.
+app.get("/api/spec-turn/claim", async (c) => {
+  try {
+    const q = { session: c.req.query("session"), entry: c.req.query("entry"), id: c.req.query("id") };
+    return c.json(await specClaim(q), 200, { "Cache-Control": "no-store" });
+  } catch (err) {
+    if (err instanceof SpecClaimError) return c.json({ error: err.message }, err.status, { "Cache-Control": "no-store" });
+    throw err;
+  }
+});
 
 // /explain artifacts (server/explanations.ts). The store is read-only here: listing never fails,
 // a missing or corrupt entry is simply absent. ?session=<sessionId> filters by parentSessionId.

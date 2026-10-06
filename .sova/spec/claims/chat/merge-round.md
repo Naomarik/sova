@@ -221,9 +221,10 @@ or the other sessions on a busy machine:
   timeout is a need. Otherwise it prints why it skipped the replay (no such file), or nothing when
   no such path changed.
 - **One replay at a time on this machine.** The run holds `<agent dir>/locks/spec-replay.lock`
-  (`{pid, at}`, created exclusively). A lock whose process is gone, or older than 6 hours, is
-  stale and taken over; a live one is waited for, never a failure, and the line says how long
-  `check` waited.
+  (`{pid, at}`, created exclusively), rewriting its `at` every 30 seconds while it holds it. A lock
+  whose `at` is older than 3 minutes is stale and taken over, whatever its pid (a holder in a
+  sandbox's own PID namespace looks gone to this one); a fresher one is waited for, never a
+  failure, and the line says how long `check` waited.
 
 ## §chat.merge-round/private-names — Finding the private names, and the leak scan
 

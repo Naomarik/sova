@@ -8,8 +8,9 @@ Like the other tools here, it needs only the Node standard library.
 - A draft is a **proposal**. Agreeing on a draft (alignment) approves intent. It doesn't make
   anything current.
 - Promotion requires recorded evidence for each selected `§` ID: of its implementation and
-  verification, or, for a decision (a note, a section, or an agreed record not built yet), doc-only
-  evidence that records the decision, not a build.
+  verification, or doc-only evidence that records a decision, not a build. Doc-only evidence covers
+  three cases: a note or section; an agreed record not built yet; and a change to a behavior or
+  surface record's `embeds`, `about` or `core` field alone ("Field-only changes").
 
 ```sh
 d=core/sova-spec-draft.mjs   # or the installed copy; see README.md for the path rule

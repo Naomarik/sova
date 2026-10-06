@@ -10,7 +10,8 @@ Like the other tools here, it needs only the Node standard library.
 - Promotion requires recorded evidence for each selected `§` ID: of its implementation and
   verification, or doc-only evidence that records a decision, not a build. Doc-only evidence covers
   three cases: a note or section; an agreed record not built yet; and a change to a behavior or
-  surface record's `embeds`, `about` or `core` field alone ("Field-only changes").
+  surface record's `embeds` or `core` field alone, unless it is agreed and maps code ("Field-only
+  changes"; `about` belongs on notes).
 
 ```sh
 d=core/sova-spec-draft.mjs   # or the installed copy; see README.md for the path rule
@@ -205,9 +206,11 @@ records the decision, not that it was built.
 
 ### Field-only changes
 
-A change that only adds, changes or removes a behavior or surface record's `embeds`, `about` or
-`core` field rewires what a reader is handed, not what the code does, so it may take
-`evidence --doc-only`. Only means everything else about that record reads the same in the draft as
+A change that only adds, changes or removes a behavior or surface record's `embeds` or `core` field
+rewires what a reader is handed, not what the code does, so it may take `evidence --doc-only`.
+`about` belongs on notes (`check` warns when it sits elsewhere), and a note's `about` change takes
+`--doc-only` as any note change does; a misplaced `about` on a behavior or surface counts like the
+other two fields. Only means everything else about that record reads the same in the draft as
 in its base: its prose (its span, and any bytes outside spans attributed to it), its `code` list, its
 `authority` and `evidence` labels, and every other field. It must be an existing record: a new
 record or a deletion is not field-only.
@@ -222,7 +225,8 @@ record or a deletion is not field-only.
   field change into a draft of its own. Field-only evidence binds to the record and prose as usual,
   so a later prose edit makes it stale, and `promote` names the bundle.
 - **Agreed records** follow "Agreed, not built" alone: a field-only change to an agreed record that
-  maps code still needs commit or snapshot evidence. Notes and sections take `--doc-only` as before.
+  maps code is refused for `--doc-only` (`doc-only-refused`) and needs commit or snapshot evidence.
+  Notes and sections take `--doc-only` as before.
 
 ## Transaction, rollback, recovery
 

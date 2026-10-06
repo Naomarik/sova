@@ -193,8 +193,10 @@ value, so a core that predates it still loads a manifest carrying it.
 ## §tools.spec/field-promotion — A record-field-only change lands on doc-only evidence
 
 A promotion whose only change to an existing behavior or surface record is adding, changing or
-removing its `embeds`, `about` or `core` field may use doc-only evidence: such a change rewires what
-a reader is handed, not what the code does. Only means the record's prose (its span, and any bytes
+removing its `embeds` or `core` field may use doc-only evidence: such a change rewires what a reader
+is handed, not what the code does. `about` belongs on notes (`check` warns when it sits elsewhere),
+and a note's `about` change takes doc-only evidence as any note change does; a misplaced `about` on
+a behavior or surface counts like the other two fields. Only means the record's prose (its span, and any bytes
 outside spans attributed to it), its `code` list, its labels (`authority`, `evidence`) and every
 other field read the same in the draft as in its base. The `--verification` text must say what was
 read to decide the field: for an embed, both passages and the code that renders the embedded surface
@@ -203,7 +205,9 @@ every task needs it. The tool enforces only that the text is not empty, never wh
 change bundled with any other change to the same record is refused for doc-only evidence
 (`doc-only-bundled`, naming what else changed) and needs commit or snapshot evidence, as any other
 behavior or surface change does. A record that carries `agreed` follows §tools.spec/agreed-promotion
-alone, and notes and sections take doc-only evidence as before. Doc-only eligibility is judged by
+alone: a field-only change to an agreed record that maps code is refused for doc-only evidence
+(`doc-only-refused`) and needs commit or snapshot evidence. Notes and sections take doc-only
+evidence as before. Doc-only eligibility is judged by
 the record's kind both in current (the draft's base) and in the draft: a record whose kind changes
 qualifies only if both kinds allow it, so turning a behavior or surface into a note or section while
 rewriting its prose still needs commit or snapshot evidence, as deleting it would.

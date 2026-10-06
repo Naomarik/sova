@@ -14790,6 +14790,21 @@
         "pi-config/extensions/model-levels/README.md",
         "pi-config/README.md"
       ]
+    },
+    "§mesh.remote-sessions/row-host-state": {
+      "kind": "behavior",
+      "requires": [
+        "§mesh.remote-sessions/list",
+        "§mesh.remote-sessions/host-filter"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/lib/mesh-details.ts",
+        "src/lib/mesh-details.test.ts",
+        "src/components/Sidebar.tsx",
+        "src/mesh.css"
+      ]
     }
   },
   "boundary": {

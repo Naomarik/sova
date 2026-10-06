@@ -464,7 +464,7 @@ test("treeTurn: a worker's commit of a promotion in a tracked tree is a change t
 		put(".sova/spec/claims/app/shell.md", "# §app/shell\n\nShell, v2.\n");
 		git("commit", "-qam", "spec");
 		const landed = await treeTurn(start!, CORE);
-		assert.deepEqual(landed, { changed: true, specChanged: true, foreign: ["§app/shell"] });
+		assert.deepEqual(landed, { changed: true, specChanged: true, foreign: ["§app/shell"], changes: [{ id: "§app/shell", change: "text" }] });
 
 		const before = await treeStart(tree);
 		const draft = spawnSync(process.execPath, [join(CORE, "sova-spec-draft.mjs"), "new", "feat", "--root", tree, "--write", "--json"], { encoding: "utf8" });
@@ -1077,4 +1077,167 @@ test("q14: the same shape merged into a non-default branch (a team integration b
 	} finally {
 		rmSync(base, { recursive: true, force: true });
 	}
+});
+
+// ── What arrives from master (sync merges) ───────────────────────────────────
+
+/** A repo whose master changed §app/b, §app/c and lib/master.ts after feat/x forked into a worktree. */
+function syncMergeRepo(prefix: string) {
+	mkdirSync(scratchRoot, { recursive: true });
+	const dir = mkdtempSync(join(scratchRoot, prefix));
+	const main = join(dir, "main");
+	const wt = join(dir, "wt");
+	const put = (at: string, rel: string, text: string) => {
+		mkdirSync(dirname(join(at, rel)), { recursive: true });
+		writeFileSync(join(at, rel), text);
+	};
+	const git = (at: string, ...args: string[]) => {
+		const r = spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-C", at, ...args], { encoding: "utf8" });
+		assert.equal(r.status, 0, `git ${args.join(" ")}: ${r.stderr}`);
+		return r.stdout.trim();
+	};
+	const claims = { "§app/a": { kind: "surface", code: ["src/a.ts"] }, "§app/b": { kind: "surface", code: ["src/b.ts"] }, "§app/c": { kind: "surface", code: ["src/c.ts"] } };
+	put(main, ".sova/spec/manifest.json", JSON.stringify({ formatVersion: 1, grammar: { claimsRoot: "claims/", directoryKinds: ["section"] }, boundary: { include: ["src"], exclude: [] }, claims }));
+	for (const x of ["a", "b", "c"]) {
+		put(main, `.sova/spec/claims/app/${x}.md`, `# §app/${x}\n\n${x.toUpperCase()}.\n`);
+		put(main, `src/${x}.ts`, `${x}\n`);
+	}
+	put(main, ".sova/spec/.gitignore", "/drafts/\n");
+	put(main, "lib/keep.ts", "keep\n");
+	git(main, "init", "-q", "-b", "master");
+	git(main, "add", "-A");
+	git(main, "commit", "-qm", "base");
+	git(main, "worktree", "add", "-q", "-b", "feat/x", wt);
+	// Another task on master: §app/b and §app/c, and a file no claim maps.
+	put(main, ".sova/spec/claims/app/b.md", "# §app/b\n\nB, by master.\n");
+	put(main, ".sova/spec/claims/app/c.md", "# §app/c\n\nC, by master.\n");
+	put(main, "lib/master.ts", "from master\n");
+	git(main, "add", "-A");
+	git(main, "commit", "-qm", "master's task");
+	const cleanup = () => {
+		spawnSync("git", ["-C", main, "worktree", "remove", "--force", wt]);
+		rmSync(dir, { recursive: true, force: true });
+	};
+	return { main, wt, put, git, cleanup };
+}
+
+test("a promote while a merge of master is in progress: master's § and files arrive, never land; a § both sides changed stays foreign", async () => {
+	const r = syncMergeRepo("spec-sync-both-");
+	try {
+		const before = r.git(r.wt, "rev-parse", "HEAD");
+		const start = await treeStart(r.wt);
+		r.git(r.wt, "merge", "--no-commit", "--no-ff", "master");
+		// The worker promotes its own, different edit to §app/b mid-merge, and changes a file no claim maps.
+		r.put(r.wt, ".sova/spec/claims/app/b.md", "# §app/b\n\nB, by the worker.\n");
+		r.put(r.wt, "lib/own.ts", "the worker's\n");
+		const promote = await judgeOp({ top: r.wt, before, after: before, kind: "promote", actor: "ag_01" }, CORE, localIO);
+		assert.equal(promote.landing, true);
+		assert.deepEqual(promote.foreign, ["§app/b"], "§app/c is master's, unchanged: arrived; §app/b both sides changed: stays");
+		assert.deepEqual(promote.arrivals, { from: "master", ids: ["§app/c"], files: ["lib/master.ts"] });
+		assert.deepEqual(promote.lists?.unmappedChanged.map((u) => u.path), ["lib/own.ts"], "master's unmapped file isn't the gate's");
+
+		// The session's own tree, seen across the merge in progress: the same.
+		const tree = await treeTurn(start!, CORE);
+		assert.deepEqual(tree.foreign, ["§app/b"]);
+		assert.equal(tree.specChanged, true);
+		assert.deepEqual(tree.arrivals?.ids, ["§app/c"]);
+
+		// The merge committed (`git commit` ends it): a commit op over the merge commit lands only §app/b.
+		r.git(r.wt, "add", "-A");
+		r.git(r.wt, "commit", "-q", "--no-edit");
+		const after = r.git(r.wt, "rev-parse", "HEAD");
+		const commit = await judgeOp({ top: r.wt, before, after, kind: "commit", actor: "self" }, CORE, localIO);
+		assert.equal(commit.landing, true);
+		assert.deepEqual(commit.foreign, ["§app/b"]);
+		assert.deepEqual(commit.arrivals?.ids, ["§app/c"]);
+		assert.deepEqual(commit.lists?.unmappedChanged.map((u) => u.path), ["lib/own.ts"]);
+		assert.deepEqual(commit.changes, [{ id: "§app/b", change: "text" }]);
+
+		// And the uncommitted promote, judged after the merge was committed: still only §app/b.
+		const late = await judgeOp({ top: r.wt, before, after: before, kind: "promote", actor: "ag_01" }, CORE, localIO);
+		assert.deepEqual(late.foreign, ["§app/b"]);
+	} finally {
+		r.cleanup();
+	}
+});
+
+test("sync-merge replay: workers' promotes mid-merge of master: the check asks for none of master's §, and its re-prompt lists none", async () => {
+	const r = syncMergeRepo("spec-sync-replay-");
+	try {
+		const before = r.git(r.wt, "rev-parse", "HEAD");
+		r.git(r.wt, "merge", "--no-commit", "--no-ff", "master");
+		// Two workers promote mid-merge: one a new claim of the branch's own, one nothing new (a re-run).
+		r.put(r.wt, ".sova/spec/claims/app/d.md", "# §app/d\n\nD, the branch's own.\n");
+		const m = JSON.parse(readFileSync(join(r.wt, ".sova/spec/manifest.json"), "utf8"));
+		m.claims["§app/d"] = { kind: "surface", code: ["src/d.ts"] };
+		r.put(r.wt, ".sova/spec/manifest.json", JSON.stringify(m));
+		r.put(r.wt, "src/d.ts", "d\n");
+		const ops = [
+			{ top: r.wt, before, after: before, kind: "promote" as const, actor: "ag_01" },
+			{ top: r.wt, before, after: before, kind: "promote" as const, actor: "ag_02" },
+		];
+		const t = freshTally();
+		await tallyOps(t, ops, () => undefined, CORE, localIO);
+		assert.equal(t.landing, true);
+		assert.deepEqual([...t.ids], [], "master's §app/b and §app/c arrived; §app/d is the branch's own");
+		assert.deepEqual([...t.unmapped], [], "master's lib/master.ts arrived");
+		const v = tallyCheck(t, "Merged and promoted.\nAlso changes: none");
+		assert.equal(v.check.ok, true, describeProblem(v.check));
+		assert.deepEqual(v.arrived, ["§app/b", "§app/c"]);
+		assert.deepEqual(v.arrivedFiles, ["lib/master.ts"]);
+		assert.equal(v.arrivedFrom, "master");
+		// A reply without the line is re-prompted for the line only, with no list of master's § to copy.
+		const bad = tallyCheck(t, "Merged and promoted.");
+		assert.equal(bad.check.ok, false);
+		const text = repromptText(bad.check, bad.foreign, "promoted");
+		assert.doesNotMatch(text, /§app\/[bc]/);
+		assert.match(text, /"Also changes: none"/);
+	} finally {
+		r.cleanup();
+	}
+});
+
+test("a merge of master with nothing of the branch's: nothing lands; a hand resolution that differs from master stays foreign", async () => {
+	const r = syncMergeRepo("spec-sync-plain-");
+	try {
+		const before = r.git(r.wt, "rev-parse", "HEAD");
+		r.git(r.wt, "merge", "-q", "--no-edit", "master");
+		const after = r.git(r.wt, "rev-parse", "HEAD");
+		const plain = await judgeOp({ top: r.wt, before, after, kind: "merge", actor: "self" }, CORE, localIO);
+		assert.equal(plain.landing, false);
+		assert.deepEqual(plain.foreign, []);
+		assert.deepEqual(plain.arrivals?.ids, ["§app/b", "§app/c"]);
+		// A later commit rewrites master's §app/c: the branch's change, so it is foreign again.
+		r.put(r.wt, ".sova/spec/claims/app/c.md", "# §app/c\n\nC, resolved by the branch.\n");
+		r.git(r.wt, "commit", "-qam", "branch c");
+		const both = await judgeOp({ top: r.wt, before, after: r.git(r.wt, "rev-parse", "HEAD"), kind: "commit", actor: "self" }, CORE, localIO);
+		assert.deepEqual(both.foreign, ["§app/c"]);
+		assert.deepEqual(both.arrivals?.ids, ["§app/b"]);
+	} finally {
+		r.cleanup();
+	}
+});
+
+test("checkAlsoChanges `described`: a § already described this session needn't be named again, nor is it an extra; without it the line omits", () => {
+	const reply = (line: string) => `Done.\n${line}`;
+	const described = checkAlsoChanges(reply("Also changes: none"), { required: true, foreign: ["§a/x"], described: ["§a/x"], exact: true });
+	assert.equal(described.ok, true);
+	assert.deepEqual(described.described, ["§a/x"]);
+	const bare = checkAlsoChanges(reply("Also changes: none"), { required: true, foreign: ["§a/x"], exact: true });
+	assert.deepEqual([bare.ok, bare.problem, bare.missing], [false, "none-but-changed", ["§a/x"]]);
+	const partial = checkAlsoChanges(reply("Also changes: §a/y — its own"), { required: true, foreign: ["§a/x", "§a/y"], described: ["§a/x"], exact: true });
+	assert.equal(partial.ok, true);
+	const omits = checkAlsoChanges(reply("Also changes: §a/y — its own"), { required: true, foreign: ["§a/x", "§a/y"], exact: true });
+	assert.deepEqual([omits.ok, omits.problem, omits.missing], [false, "omits", ["§a/x"]]);
+	const named = checkAlsoChanges(reply("Also changes: §a/x — again; §a/z — said before"), { required: true, foreign: ["§a/x"], described: ["§a/x", "§a/z"], exact: true });
+	assert.deepEqual([named.ok, named.extra], [true, []], "naming a described § is never an extra");
+	const empty = checkAlsoChanges(reply("Also changes: none"), { required: true, foreign: ["§a/x"], described: [] });
+	assert.equal(empty.ok, false, "an empty list keeps today's rule");
+	// The re-prompt lists only what is still to be named.
+	const missing = checkAlsoChanges("Done.", { required: true, foreign: ["§a/x", "§a/y"], described: ["§a/x"] });
+	assert.deepEqual(missing.missing, ["§a/y"]);
+	const text = repromptText(missing, ["§a/x", "§a/y"], "merged");
+	assert.match(text, /computed from Git: §a\/y \(1 more already described this session need no repeat\)\./);
+	assert.match(text, /"Also changes: §a\/y — <what changed>"/);
+	assert.doesNotMatch(text, /§a\/x/);
 });

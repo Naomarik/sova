@@ -31,8 +31,10 @@ Spec report (`spec.ts`): when the project has `.sova/spec/manifest.json` before 
 and the spec tools sit beside this extension (`../spec/core`), every recorded merge's model note
 (the card's content and the tool result; never the card's details, so the card looks the same)
 gains `Foreign § this merge changes: §a, §b` (or `none`), computed by
-`sova-spec.mjs foreign --base <target before> --head <target after> --landing --drafts <worktree>`,
-then `Deleted § (still foreign): §x, §y → §z` when the merge deleted or renamed §, `Code changed
+`sova-spec.mjs foreign --base <target before> --head <target after> --landing --drafts <worktree>`;
+into a branch other than the default, § and unmapped files that arrived from the default branch
+unchanged (equal to its newest commit the merge brought in, by content) leave that line and the
+warnings for one count, `Arrived from master: N §`, then `Deleted § (still foreign): §x, §y → §z` when the merge deleted or renamed §, `Code changed
 under unchanged §: §a (files); …` (advisory), then one `Spec warning: …` line each for: changed
 files no claim maps (each needs a claim or a `Plumbing: <path> — <why>` line), a draft with
 unpromoted records in the merged worktree or a worktree whose branch the merge brings in (`pending`,

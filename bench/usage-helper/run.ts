@@ -7,7 +7,9 @@
 //
 // Scenarios: idle, steady (real peak, ~17 records/s), x10, x100, burst (x10 plus 5000 at once
 // every 10 s), rollover (x10 across UTC midnight), catchup (30 days written while the helper was
-// down, 40k records a day, then a start). Results: one JSON object (stdout and --out).
+// down, 40k records a day, then a start), quick (the short Bun vs Rust comparison, ~2 min a helper:
+// a 3-day catch-up, 30 s idle, 60 s at the real peak then 20 s at 10x, the settled queries; no
+// unread or second idle phase). Results: one JSON object (stdout and --out).
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -85,7 +87,10 @@ async function waitReady(h: UsageHelper, ms = 600_000): Promise<number> {
 
 const result: Record<string, unknown> = { helper: which, scenario, at: new Date().toISOString(), runtime: process.versions.bun ? `bun ${process.versions.bun}` : `node ${process.version}` };
 
-const live: Record<string, string[]> = {
+const live: Record<string, string[][]> = {
+  quick: [["--rate", "17", "--seconds", "60"], ["--rate", "170", "--seconds", "20", "--tag", "b"]],
+};
+const single: Record<string, string[]> = {
   idle: [],
   steady: ["--rate", "17", "--seconds", "60"],
   x10: ["--rate", "170", "--seconds", "60"],
@@ -93,9 +98,11 @@ const live: Record<string, string[]> = {
   burst: ["--rate", "170", "--seconds", "60", "--burst", "5000"],
   rollover: ["--rate", "170", "--seconds", "60", "--clock", new Date(Math.floor(Date.now() / 86_400_000 + 1) * 86_400_000 - 30_000).toISOString()],
 };
+for (const [k, v] of Object.entries(single)) live[k] = v.length ? [v] : [];
+const quick = scenario === "quick";
 
 // A history to query against: 30 days of real-peak volume (also the cold catch-up's input).
-const historyDays = Number(opt("history-days", scenario === "catchup" ? "30" : "7"));
+const historyDays = Number(opt("history-days", scenario === "catchup" ? "30" : quick ? "3" : "7"));
 const perDay = Number(opt("per-day", "40000"));
 if (historyDays > 0) result.history = await gen(["--backfill-days", String(historyDays), "--per-day", String(perDay), "--tag", "h"]);
 
@@ -105,7 +112,7 @@ const h = startUsageHelper({ env, command, log: (l) => console.error(l) });
 // The leak watch (tmp/usage-team/standing-bench-requirements.md): RSS and CPU every second for the
 // whole run, tagged by phase; a hard RSS cap and wall-time cap kill the helper and fail the run.
 const RSS_CAP_MB = Number(opt("rss-cap-mb", "3072"));
-const WALL_CAP_MS = Number(opt("wall-cap-min", "20")) * 60_000;
+const WALL_CAP_MS = Number(opt("wall-cap-min", quick ? "5" : "20")) * 60_000;
 let phase = "start";
 const series: { t: number; phase: string; rssMb: number; cpuMs: number }[] = [];
 const failures: string[] = [];
@@ -128,10 +135,10 @@ const readyMs = await waitReady(h);
 const pid = h.pid()!;
 const afterStart = procStat(pid)!;
 result.start = { readyMs: Math.round(readyMs), cpuMs: afterStart.cpuMs, rssMb: r1(afterStart.rssKb / 1024), peakRssMb: r1(afterStart.hwmKb / 1024), records: (await stats(h)).records };
-if (scenario === "catchup") result.catchup = { recordsPerSec: Math.round(((result.start as { records: number }).records / readyMs) * 1000), spawnToReadyMs: Math.round(performance.now() - spawnAt) };
+if (scenario === "catchup" || quick) result.catchup = { recordsPerSec: Math.round(((result.start as { records: number }).records / readyMs) * 1000), spawnToReadyMs: Math.round(performance.now() - spawnAt) };
 
 // Idle after start: no writes and no queries.
-const IDLE_MS = Number(opt("idle-s", "60")) * 1000;
+const IDLE_MS = Number(opt("idle-s", quick ? "30" : "60")) * 1000;
 phase = "idle-start";
 const idle0 = procStat(pid)!;
 await new Promise((r) => setTimeout(r, IDLE_MS));
@@ -180,7 +187,12 @@ if (live[scenario]?.length) {
   }, 500);
   eld.enable();
   const t0 = performance.now();
-  const g = await gen(live[scenario]!);
+  const g = { written: 0, dupes: 0 };
+  for (const a of live[scenario]!) {
+    const x = await gen(a);
+    g.written += x.written!;
+    g.dupes += x.dupes!;
+  }
   const genMs = performance.now() - t0;
   // Until the helper has folded everything the generator wrote.
   const expect = before.records + before.duplicates + g.written + g.dupes;
@@ -211,13 +223,14 @@ if (live[scenario]?.length) {
     helperCpuPct: { mean: r1(((cpu1.cpuMs - cpu0.cpuMs) / (genMs + settleMs)) * 100), p95: r1(pct(perSec, 95)), max: r1(Math.max(0, ...perSec)) },
     cpuUsPerRecord: r1(((cpu1.cpuMs - cpu0.cpuMs) * 1000) / Math.max(1, folded)),
     rssMb: { steady: r1(pct(samples.map((s) => s.rssKb), 50) / 1024), peak: r1(cpu1.hwmKb / 1024) },
+    queryAllMs: { p50: r1(pct(Object.values(lat).flat(), 50)), p95: r1(pct(Object.values(lat).flat(), 95)) },
     queryMs: Object.fromEntries(Object.entries(lat).map(([k, xs]) => [k, { n: xs.length, p50: r1(pct(xs, 50)), p95: r1(pct(xs, 95)), max: r1(Math.max(...xs)) }])),
     serverLoop: { eldP50Ms: r1(eld.percentile(50) / 1e6), eldP99Ms: r1(eld.percentile(99) / 1e6), eldMaxMs: r1(eld.max / 1e6), appendUsP50: r1(pct(appendUs, 50)), appendUsP99: r1(pct(appendUs, 99)) },
   };
 }
 
 // Idle again after the load: memory must stop growing once the writes stop.
-if (live[scenario]?.length) {
+if (live[scenario]?.length && !quick) {
   phase = "idle-after";
   await new Promise((r) => setTimeout(r, IDLE_MS));
 }
@@ -226,7 +239,7 @@ if (live[scenario]?.length) {
 phase = "unread";
 h.pauseOutput(true);
 const unread: Promise<unknown>[] = [];
-for (let i = 0; i < 300; i++) {
+for (let i = 0; i < (quick ? 0 : 300); i++) {
   unread.push(h.request("costs", { range: "all", tz: "UTC" }));
   await new Promise((r) => setTimeout(r, 100));
 }
@@ -256,13 +269,14 @@ for (const [name, op, p] of [
 result.queries = cold;
 clearInterval(watcher);
 clearTimeout(wall);
-// Per phase: RSS slope (least squares, MB/min, the first 10 s of a phase left out as warm-up),
+// Per phase: RSS slope (least squares, MB/min, the first 20 s of a phase left out as warm-up),
 // min/max, CPU %, and a compact series (every 5th second). Growth limits per phase kind.
 const LIMIT: Record<string, number> = { "idle-start": 2, "idle-after": 2, unread: 5, load: 30 };
 const phases: Record<string, unknown> = {};
 for (const name of [...new Set(series.map((s) => s.phase))]) {
   const xs = series.filter((s) => s.phase === name);
-  const fit = xs.length > 20 ? xs.slice(10) : xs;
+  // A helper warms up in a phase's first seconds (GC, caches): the plateau is judged after 20 s.
+  const fit = xs.length > 30 ? xs.slice(20) : xs;
   const n = fit.length;
   let slopeMbMin = 0;
   if (n >= 3) {
@@ -275,9 +289,11 @@ for (const name of [...new Set(series.map((s) => s.phase))]) {
   const secs = xs.length > 1 ? xs[xs.length - 1]!.t - xs[0]!.t : 0;
   const cpuPct = secs ? ((xs[xs.length - 1]!.cpuMs - xs[0]!.cpuMs) / (secs * 1000)) * 100 : 0;
   const limit = LIMIT[name];
-  const grows = limit !== undefined && n >= 20 && slopeMbMin > limit;
+  const step = n ? Math.max(...fit.map((s) => s.rssMb)) - fit[0]!.rssMb : 0;
+  // Growth = a rising trend AND a real climb (one GC sawtooth tooth is neither).
+  const grows = limit !== undefined && n >= 10 && slopeMbMin > limit && step > 8;
   if (grows) failures.push(`${name}: RSS grows ${r1(slopeMbMin)} MB/min (limit ${limit})`);
-  phases[name] = { seconds: secs, slopeMbMin: r1(slopeMbMin), minMb: Math.min(...xs.map((s) => s.rssMb)), maxMb: Math.max(...xs.map((s) => s.rssMb)), cpuPct: r1(cpuPct), series: xs.filter((_, i) => i % 5 === 0).map((s) => Math.round(s.rssMb)), ...(limit !== undefined ? { verdict: grows ? "FAIL" : "flat" } : {}) };
+  phases[name] = { seconds: secs, slopeMbMin: r1(slopeMbMin), climbMb: r1(step), minMb: Math.min(...xs.map((s) => s.rssMb)), maxMb: Math.max(...xs.map((s) => s.rssMb)), cpuPct: r1(cpuPct), series: xs.filter((_, i) => i % 5 === 0).map((s) => Math.round(s.rssMb)), ...(limit !== undefined ? { verdict: grows ? "FAIL" : "flat" } : {}) };
 }
 result.memory = phases;
 result.verdict = failures.length ? { fail: failures } : "pass";

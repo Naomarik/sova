@@ -102,13 +102,14 @@ pairs or unlinks it.
   send to that person in that project goes, or 7 days pass.
 
 - **On the strip.** The baton strip (which the Organizations region's Needs you row "Send {name}
-  their link" opens) shows **Send on WhatsApp** beside Get Link while a person holds the baton, and
-  one per reached invitee while an offer is open. `GET /api/baton/:sid/outreach` says, per person it
+  their link" opens) shows **Send on WhatsApp** in its bar, after the primary action (Take Back;
+  Get Link is in its More actions menu, §app.baton/strip-layout), while a person holds the baton, and
+  one per reached invitee while an offer is open, in a row under the invitees' links. `GET /api/baton/:sid/outreach` says, per person it
   could go to, whether it is ready and why not; a button that isn't ready is disabled with its
   reason as its title ("No WhatsApp number on the roster.", "Outreach is off: set it up in Settings
   → Outreach.", "Outreach is paused."); while outreach is off, **Set Up Outreach** beside it opens
   Settings → Outreach. Sent: a toast "Sent {name} their link on WhatsApp.".
-- **Fallback.** After a failure or a refusal the strip shows a warn banner with the why and three
+- **Fallback.** After a failure or a refusal the strip shows, below its bar, a warn banner with the why and three
   ways on: **Retry** (the same act), **Open in WhatsApp** (mints a fresh link through Get Link and
   opens `https://wa.me/<digits>?text=<the same message>` in a new tab, so the operator sends it from
   their own WhatsApp; only when the person has a number) and **Copy Link** (Get Link, shown once as

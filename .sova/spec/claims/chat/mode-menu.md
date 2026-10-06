@@ -54,8 +54,11 @@ this slot (§app.overseer/quick-actions).
   no fixed cap: whatever fits reads in full, with the full text in `title` either way. Only real
   pressure in the foot shrinks it, and it shares that squeeze with the model indicator's 24ch cap
   beside it. The minors are their own span, so they ellipsize first and the major mode last.
-  Before the chat's first `mode` message arrives it reads just "Mode" and no row is checked: the
-  default is not this chat's state.
+  Until this chat's mode is known it reads just "Mode" and no row is checked: the default is not
+  this chat's state. It is known once the chat's `mode` message arrives, and before that from the
+  session list's row for a chat the server holds, or from what this tab last saw of the chat
+  (§chat.composer/known-on-switch). The list's row says how a switch applies, as the message
+  does; a mode known only from what this tab last saw makes no promise about when a switch applies.
 - **Name.** `aria-label` repeats the label with "Mode: " in front, so it survives when the label
   hides. A pending switch adds ", applies after this turn".
 - **Every width.** It never hides and never goes icon-only: the label is the fact. It narrows the
@@ -337,7 +340,8 @@ nothing.
 | State | Shows |
 |---|---|
 | Idle | Trigger label, and this chat's rows checked |
-| No `mode` message yet | Trigger reads "Mode", nothing checked (the default isn't this chat's state) |
+| Mode not known yet (no `mode` message, nothing in the list's row, nothing this tab saw) | Trigger reads "Mode", nothing checked (the default isn't this chat's state) |
+| Known before the `mode` message (§chat.composer/known-on-switch) | Trigger label and rows checked as Idle; from the list's row, the name and banners follow how it says a switch applies; from what this tab last saw, no "applies after this turn" in the name and neither switch banner until the message says |
 | Saving | Rows `aria-disabled` (the cursor is `progress`) |
 | Mid-turn switch | Info banner "Applies after this turn." (trigger name adds it too) |
 | Chat can't switch | Warn banner "This chat can't switch." |

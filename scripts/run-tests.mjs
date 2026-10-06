@@ -51,13 +51,18 @@ const GLOBS = [
 ];
 const isBrowserTest = (f) => f.endsWith(".browser.test.ts");
 
-// macOS: the default tmpdir (/var/folders/…) is reached through the /var -> /private/var symlink, so
-// a path built from tmpdir() differs from its realpath, and a unix socket under it passes the
-// 104-byte limit. On darwin both runtimes get a short, symlink-free TMPDIR of their own, removed at exit.
-if (process.platform === "darwin") {
-  const tmp = fs.realpathSync(fs.mkdtempSync("/tmp/sova-t-"));
-  process.env.TMPDIR = tmp;
-  process.on("exit", () => fs.rmSync(tmp, { recursive: true, force: true }));
+/** rm -rf that survives read-only dirs a test left behind, and never throws. */
+function removeTree(dir) {
+  try {
+    fs.rmSync(dir, { recursive: true, force: true });
+  } catch {
+    try {
+      execFileSync("chmod", ["-R", "u+w", dir], { stdio: "ignore" });
+      fs.rmSync(dir, { recursive: true, force: true });
+    } catch (err) {
+      console.error(`run-tests: could not remove ${dir}: ${err.message}`);
+    }
+  }
 }
 
 const argv = process.argv.slice(2);
@@ -81,6 +86,14 @@ if (runtime === "node") {
   // but whose process never exits, under heavy load): its whole process group is killed and the run
   // FAILS, never hangs. Not --test-force-exit: that ends a file before tests it registers after a
   // top-level await, so the run would pass with tests silently missing.
+  // One short, symlink-free TMPDIR for the run, removed at exit (the signal handlers below exit
+  // too), so temp dirs tests make and never remove don't pile up in /tmp. Short, because a unix
+  // socket path has a limit (108 bytes on Linux, 104 on macOS). Symlink-free for macOS: its default
+  // tmpdir (/var/folders/…) is reached through the /var -> /private/var symlink, so a path built from
+  // tmpdir() differs from its realpath. (Bun: each file's TMPDIR is its throwaway root, hermeticEnv.)
+  const tmp = fs.realpathSync(fs.mkdtempSync("/tmp/sova-t-"));
+  process.env.TMPDIR = process.env.TMP = process.env.TEMP = tmp;
+  process.on("exit", () => removeTree(tmp));
   const limitMs = Number(process.env.NODE_PASS_LIMIT_MS) || 15 * 60_000;
   let failed = false;
   for (const s of sets) {
@@ -121,6 +134,9 @@ function hermeticEnv() {
   const home = path.join(root, "home");
   fs.mkdirSync(path.join(home, ".claude"), { recursive: true, mode: 0o700 });
   fs.mkdirSync(path.join(home, ".pi", "agent"), { recursive: true, mode: 0o700 });
+  // TMPDIR is the root itself, so the file's temp dirs go when it does; not a subdir of it, since
+  // tests check the home is inside tmpdir(). Short, for socket path limits.
+  const tmp = root;
   const env = {
     ...process.env,
     HOME: home,
@@ -128,6 +144,9 @@ function hermeticEnv() {
     SOVA_TEST_HOME: root,
     PATH: [path.dirname(process.execPath), misePaths, process.env.PATH ?? ""].filter(Boolean).join(path.delimiter),
     SOVA_PRICES_FETCH: "off",
+    TMPDIR: tmp,
+    TMP: tmp,
+    TEMP: tmp,
   };
   // The same list hermetic-env.mjs drops.
   for (const name of [
@@ -155,7 +174,7 @@ function runFile(file, extra) {
     child.on("error", (err) => (out += `run-tests: could not start ${bun}: ${err.message}\n`));
     child.on("close", (code) => {
       clearTimeout(limit);
-      fs.rmSync(root, { recursive: true, force: true });
+      removeTree(root);
       const count = (what) => Number(out.match(new RegExp(`^\\s*(\\d+) ${what}$`, "m"))?.[1] ?? 0);
       resolve({ file, code: code ?? 1, out, pass: count("pass"), fail: count("fail"), skip: count("skip") });
     });

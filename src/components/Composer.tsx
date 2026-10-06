@@ -98,6 +98,8 @@ function WorkersRing(props: { working: number; total: number }) {
 export interface ComposerReason {
   icon: IconName;
   text: string;
+  /** Fades in after a short delay, so a quick connect never flashes it (§chat.composer/disabled-states). */
+  soft?: boolean;
 }
 
 /** `KB` under 1 MB, rounded; otherwise one decimal. */
@@ -119,6 +121,9 @@ export function Composer(props: {
   /** A compaction runs (§chat.slash-commands/compact): Stop and the status row, but no Steer. */
   compacting?: boolean;
   stopping: boolean;
+  /** The socket isn't open: a turn known before it says (§chat.composer/known-on-switch) shows its
+      Stop, `aria-disabled` with `blocked`'s reason, so no abort goes into a closed socket. */
+  stopBlocked?: boolean;
   /** What the turn is doing: the row shows its icon, the words go to the tooltip and the name. */
   detail: RunDetail | null;
   /** A rare state that keeps its words on the row: "Compacting context", "Retrying after a provider error". */
@@ -327,11 +332,16 @@ export function Composer(props: {
   // the second trigger for the flyout that changes them. -----------------------------------
   /** What the session runs, or the target it's switching to — the flyout's Model row, shortened. */
   const modelRef = () => props.model?.pending() ?? props.model?.model() ?? null;
-  /** The level to show, or null when this model's ladder isn't a choice. */
+  /** The level to show, or null when this model's ladder isn't a choice. Until the catalog brings
+      the ladder, a known level other than "off" shows (§chat.composer/known-on-switch): one-level
+      ladders are "off", so it doesn't pop in with the catalog. */
   const levelShown = () => {
     const thinking = props.thinking;
-    if (!thinking || thinkingLevelsFor(props.model?.model(), hostOf(props.path)).length <= 1) return null;
-    return thinking.pending() ?? thinking.level();
+    if (!thinking) return null;
+    const level = thinking.pending() ?? thinking.level();
+    if (!modelList(hostOf(props.path))) return level && level !== "off" ? level : null;
+    if (thinkingLevelsFor(props.model?.model(), hostOf(props.path)).length <= 1) return null;
+    return level;
   };
   // The thinking ladder decides whether the level is worth showing, and it only arrives with the
   // model catalog — load it as soon as a session has a thinking control, not when the flyout opens.
@@ -1264,9 +1274,10 @@ export function Composer(props: {
                 class="button button-destructive button-icon"
                 aria-label="Stop"
                 title="Stop"
-                aria-disabled={props.stopping ? "true" : undefined}
+                aria-disabled={props.stopping || props.stopBlocked ? "true" : undefined}
+                aria-describedby={props.stopBlocked ? paneId("composer-reason") : undefined}
                 onClick={() => {
-                  if (!props.stopping) props.onAbort();
+                  if (!props.stopping && !props.stopBlocked) props.onAbort();
                   input.focus();
                 }}
               >
@@ -1335,7 +1346,7 @@ export function Composer(props: {
               </button>
             )}
           </Show>
-          <span class="composer-reason" id={paneId("composer-reason")}>
+          <span class="composer-reason" id={paneId("composer-reason")} data-soft={shownReason()?.soft ? "" : undefined}>
             <Show when={shownReason()}>
               {(r) => (
                 <>

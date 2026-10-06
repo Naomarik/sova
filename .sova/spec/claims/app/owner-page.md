@@ -237,8 +237,9 @@ copy is §design.copy-deck/owner-page, and its list of words never used there is
   route's for the same org.
 - **Project page: an Owner Page card** (only while the org has an owner): the `Show this project
   on {first name}'s page` switch and the updates log with `Take Down` (§app.owner-page/updates).
-- **Baton strip**: `Hide From {first name}` / `Show To {first name}` on each conversation of an org
-  with an owner, and a line while it is hidden (§app.owner-page/conversations).
+- **Baton strip**: `Hide From {first name}` / `Show To {first name}`, a row of the strip's More
+  actions menu (§app.baton/strip-layout), on each conversation of an org with an owner, and a line
+  while it is hidden (§app.owner-page/conversations).
 - **Person page**: an `Owner` chip beside the owner's status, their owner link among their links
   (state, made, expires, Delete), and their visits to the owner page as "Opened the owner page"
   rows (§app.organizations/person-page).

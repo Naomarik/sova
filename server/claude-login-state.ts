@@ -18,6 +18,11 @@ function newestLoginEntry(branch: readonly unknown[]): { login: string; label?: 
 
 let hostLogins: ClaudeLogins | null = null;
 
+/** Tests only: the registry chatClaudeLogin and loginName read when given none (null: this host's). */
+export function setHostLogins(logins: ClaudeLogins | null): void {
+  hostLogins = logins;
+}
+
 /** The pool's logins (mesh on) that are not in `order`, i.e. not on this device; none while the mesh is off. */
 function othersInPool(order: readonly string[]): number {
   const doc = poolAgent()?.doc();
@@ -57,16 +62,16 @@ export function chatClaudeLogin(branch: readonly unknown[], logins: ClaudeLogins
   }
 }
 
-export const claudeLoginMessage = (branch: readonly unknown[], logins?: ClaudeLogins, extra?: ChatLoginExtra): ChatServerMessage => ({ type: "claude_login", login: chatClaudeLogin(branch, logins, extra) });
+export const claudeLoginMessage = (branch: readonly unknown[], logins?: ClaudeLogins, extra?: ChatLoginExtra): Extract<ChatServerMessage, { type: "claude_login" }> => ({ type: "claude_login", login: chatClaudeLogin(branch, logins, extra) });
 
 /**
- * After a hello: the chat's login only when this host has several to choose between, as the
- * sandbox message is sent only with its extension. Without one nothing is sent, and the client's
- * hello already cleared what it showed.
+ * After a hello, always: the chat's login when this host has several to choose between, else null,
+ * whatever the chat's model, so a client never waits on a message that doesn't come
+ * (§chat.composer/known-on-switch).
  */
-export function claudeLoginAfterHello(branch: readonly unknown[], logins?: ClaudeLogins, extra?: ChatLoginExtra): ChatServerMessage | null {
+export function claudeLoginAfterHello(branch: readonly unknown[], logins?: ClaudeLogins, extra?: ChatLoginExtra): Extract<ChatServerMessage, { type: "claude_login" }> {
   const login = chatClaudeLogin(branch, logins, extra);
-  return login?.several ? { type: "claude_login", login } : null;
+  return { type: "claude_login", login: login?.several ? login : null };
 }
 
 /**

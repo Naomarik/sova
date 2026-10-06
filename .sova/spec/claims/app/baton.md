@@ -57,7 +57,9 @@ once), **lease** (an offer's lock on its first taker).
   different one (a renamed session): otherwise it would say the title twice — who started it and
   when (§app.baton/told), its why and goal, folded under **Why and goal** (§app.baton/goal-on-strip),
   What It's Told (§app.baton/told), and Get Link / Delete Link / Take Back / Close
-  Session, and, while the org has an owner, Hide From / Show To the owner (§app.owner-page/conversations); the strip never shows a profile. Each strip action re-reads the session list at once,
+  Session, and, while the org has an owner, Hide From / Show To the owner (§app.owner-page/conversations),
+  laid out as §app.baton/strip-layout says (a bounded strip, one primary action, the rest in its More
+  actions menu); the strip never shows a profile. Each strip action re-reads the session list at once,
   so the ` · <holder>` suffix moves without waiting for the list's next poll.
 - **Loadout.** No pi-config extension, skill, prompt template or context file is loaded; the only
   extension is Sova's inline baton extension. The SDK tool list is exactly `hand_to`, `goal_done`,
@@ -119,21 +121,74 @@ once), **lease** (an offer's lock on its first taker).
 ## §app.baton/goal-on-strip — The why and the goal, folded on the strip
 
 - The strip (§app.baton/goal-and-loadout) shows the session's why and goal to the operator under a
-  **Why and goal** disclosure, below the org, project, **It can:** and **Started by** lines. It is
+  **Why and goal** disclosure, below the org, project, **It can:** and **Started by** lines (on a
+  strip under 768 px wide, below their **Details** fold, §app.baton/strip-layout). It is
   folded each time the session opens (no open state is kept), and its summary says only "Why and
-  goal", with no preview of the text; the whole summary row is a 44px target.
+  goal", with no preview of the text; the whole summary row is a 44px target. Opened, it scrolls
+  with the rest of the strip inside the strip's height cap, so its last line can always be reached.
 - Opened, it shows **Why**: the reason the overseer that started it gave (§app.baton/told), as
   written; "Not recorded: you started it." for a session the operator started, and "Not recorded."
   for an overseer's session from before a reason was asked. Then **Goal**: the goal as written
-  (line breaks kept), left out when it is empty. Then one muted line: "Only you see this. It's
-  never on their page."
+  (line breaks kept), left out when it is empty; a goal longer than 8 lines shows its first 8 with
+  **Show Full Goal** under it (then **Show Less**), the button there only when the text is
+  measured to overflow. Then one muted line: "Only you see this. It's never on their page.", and a
+  **What It's Told** button (§app.baton/told), a second way to the same document.
 - The why and the goal reach only the operator app: `GET /api/baton` (`BatonInfo.session.goal`,
   `BatonInfo.started.why`) and What It's Told (§app.baton/told). They never reach the person's page
   (§app.baton/outsider-view), the owner page (§app.owner-page/never) or any share.
 
+## §app.baton/strip-layout — The strip's shape: bounded, one primary, the rest in a menu
+
+- **Bounded.** The strip sits above the transcript and never takes over its pane: it is at most
+  `--baton-strip-max` tall (35% of the window's height, 40% below 768 px wide), and whatever it holds
+  past that scrolls inside the strip, so the transcript and the composer keep the rest of the pane:
+  at its cap the transcript still gets at least as much height as the strip.
+  Anything the strip shows (an opened Why and goal, the Hand On form, a proposal, a link) can always
+  be scrolled to inside it. The top rows stay pinned while the strip scrolls, except in a window at
+  most 480 px tall (a phone held sideways), where the cap leaves no room under them and they scroll
+  away with the rest; opening Hand On, or a freshly minted link, scrolls it into view (under the
+  pinned rows when they are pinned).
+- **The head row**: the state chip first ("Open", "Offered", "Needs you", "Done", "Closed"), then
+  where the baton is (the same phrase as before; under 768 px at most 2 lines, the full phrase as
+  its tooltip), then "{used} of {max} messages". The public title, when the session head shows a
+  different one, stays above it.
+- **The bar**: at most one primary action, the one the state is about: **Take Back** while a person
+  holds the baton, **Withdraw Offer** while an offer is live, **Hand On…** while the operator holds
+  it with messages left; none otherwise (at the limit, Extend is in its own row). Then the holder's
+  **Send on WhatsApp** (§app.outreach/send; an offer's, one per reached invitee, are in a row of
+  their own under the invitees' links, so the pinned rows stay short), then a "⋯" **More actions**
+  menu (its name: "More actions · {public title}") at the bar's end. The chip never sits beside the
+  checkboxes.
+- **The menu** holds every other act, each row naming the session it acts on: Get Link / New Link
+  (New Link's row says "Makes a new link and deletes the one you sent before" under its label),
+  Hand On… when it isn't the primary, What It's Told (§app.baton/told) and, while the org has an
+  owner, Hide From / Show To {first name} (§app.owner-page/controls). Below a separator, last: Delete
+  Link (while the holder has a live link) and Close Session (until the session is closed). Neither
+  acts on one press: each opens the menu's confirm screen with its words: Delete Link's "The link
+  stops working for good." with **Delete?** and **Cancel** (§app.baton/links); Close Session's
+  "Every link stops working. The transcript stays in the workspace repo." with **Close — Links Stop
+  Working** and **Cancel**. Escape or Cancel leaves without acting. No destructive act is in the bar.
+- **Details, under 768 px.** When the strip is narrower than 768 px, org · project, **It can:**, the
+  no-photos note and **Started by** fold under a **Details** disclosure (folded each time the session
+  opens, no preview, a 44 px summary), above Why and goal, each on a line of its own. From 768 px
+  they are shown, under the bar: one line "{org} · {project}", then It can: with its checkboxes and
+  Started by on one line (wrapping only when it must).
+- **It can:** has three checkboxes in one order: `Draw`, then `Interactive drawings (HTML)` right
+  after it, then `Read links` (§app.baton/abilities). Interactive drawings counts only with Draw: while
+  Draw is off its box is disabled and its label muted with it. Each box is a 44 px target, and the
+  boxes wrap as their own group beside "It can:", so a wrapped box lines up under Draw.
+- **Below**: after Why and goal and the hidden-from-owner line, the rows keep one order: the error
+  banner, the links banner, the message limit, the public-links warning, the Send on WhatsApp
+  fallback, the offer's invitees' links, their Send on WhatsApp row and the invitees not reached
+  yet, the Hand On form, proposed people,
+  the just-approved rows and the wrap-up line. Under 768 px their buttons are 44 px tall.
+- **A long goal** (§app.baton/goal-on-strip) shows at most 8 lines; only when it is longer, as
+  measured on screen, **Show Full Goal** under it shows the rest, and then reads **Show Less**.
+
 ## §app.baton/told — Who started it, and what it is told
 
-- **Started by.** The strip always shows one line under **It can:**: "Started by you · {relative
+- **Started by.** The strip always has one line after **It can:** (beside it from 768 px wide,
+  under it inside the strip's **Details** fold below that, §app.baton/strip-layout): "Started by you · {relative
   time}", "Started by the {project} overseer · {relative time}" or "Started by you, via the
   Overseer · {relative time}" (the time is the session's start). The overseer part links to that
   overseer: the project's overseer page, or the Overseer (its current conversation, else that
@@ -143,7 +198,8 @@ once), **lease** (an offer's lock on its first taker).
   (`"overseer"`: you, via the Overseer), else you; the Overseer's conversation, when the statechart lacks
   it, from the session's start row in the transition log (§app.project-overseer/statecharts). Nothing
   else is inferred: a part not recorded reads "Not recorded.".
-- **What It's Told**, a strip button at every width, opens the markdown viewer (§app/markdown-viewer) on one read-only
+- **What It's Told**, a row of the strip's More actions menu at every width (and a button at the end
+  of the opened Why and goal, §app.baton/goal-on-strip), opens the markdown viewer (§app/markdown-viewer) on one read-only
   document titled "What It's Told", with the public title under it, fetched when opened from
   `GET /api/baton/:sid/told` (404 for a session that isn't a gathering session). Its sections:
   - **Started by**: who, with the strip's link, and when; and what it was started for: the gap (its id
@@ -280,10 +336,11 @@ once), **lease** (an offer's lock on its first taker).
   offer, with its fallback after a failure (§app.outreach/send).
 - The operator can get the current link (`GET /api/baton/:sid/link` mints a fresh one for the
   current hand-off and turns off the older ones for it: the host cannot show a token it no longer
-  has, the strip's **New Link** with the tooltip "Makes a new link and deletes the one you sent
-  before") and delete it (`POST /api/baton/:sid/revoke`): **Delete Link**, asked twice like every
-  link's Delete ("Delete?", with "The link stops working for good." under it while it
-  waits; done: "Link deleted."). A link is shown once, with a Copy Link
+  has: the strip's **Get Link**, then **New Link**, rows of its More actions menu, New Link's saying
+  "Makes a new link and deletes the one you sent before" under its label) and delete it (`POST
+  /api/baton/:sid/revoke`): **Delete Link**, set apart at the end of that menu and asked twice like
+  every link's Delete (its confirm screen: "The link stops working for good." with **Delete?**;
+  done: "Link deleted."; §app.baton/strip-layout). A link is shown once, with a Copy Link
   button; it stays on the strip until the operator dismisses it or a later hand-off exists (a
   reload of the strip's own data never clears it), and once a Get Link elsewhere (another tab)
   turned it off, the strip says "Replaced by a newer link." in place of its Copy Link. During an offer, `GET /api/baton/:sid/link?person=<id>` re-mints one invitee's link and

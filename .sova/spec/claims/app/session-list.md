@@ -2434,7 +2434,8 @@ A change a caller makes through this server is never missed that way. Any reques
 read (a REST call that is not `GET` or `HEAD`, a peer's included, before it runs and again when it
 answers), any message a chat socket sends, every write this server makes to a session file, a
 hosted chat's turn starting or settling and each of its tool calls ending (the Overseer's tools
-write in process), and every write to the stores a row reads (archived, titles, seen and the open
+write in process), a chat being opened by this server and a held chat's model, thinking level or
+mode changing (its row carries the held chat's `chat` state), and every write to the stores a row reads (archived, titles, seen and the open
 panes, drafts, groups, tags, attention signals, Sova's own sessions, the Decisions settings, the
 organizations registry, the Overseer's and project overseers' state, kept preview links) start the
 next listing afresh: no caller joins or reuses a list built before them. So a caller that archives,

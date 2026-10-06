@@ -122,7 +122,9 @@ Usage glance needs the room.
     passed) keeps its place as an empty track, so the meter's shape never jumps.
   - **Which Claude login.** A device can hold several Claude logins (§app/claude-logins), and `C`
     reads one of them: **the open chat's recorded login** (its newest `claude-login` entry, as the
-    chat's `claude_login` message names it, §app.claude-logins/active-login), else **the login in
+    chat's `claude_login` message names it, §app.claude-logins/active-login; before that message,
+    the login the composer shows as known, §chat.composer/known-on-switch, so the glance doesn't
+    jump on a switch), else **the login in
     use for new chats** (`claudeLogins[].inUse`: the first ready one in the device's order) — for a
     chat that has not recorded one yet, a TUI-watched session, a workspace pane that isn't a chat,
     and every page with no session open. Only with neither (an older server without

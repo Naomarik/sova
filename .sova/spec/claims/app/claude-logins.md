@@ -229,9 +229,12 @@ its first usable login in the device's order.
 - **Wire.** `/ws/chat` sends `{type: "claude_login", login}` (`ChatClaudeLogin`: `id`, `name`,
   `email?`, `planLabel?`, `recorded`, `several`, `pending?` — the waiting pick's `id` and `name` —
   or `null` when the registry can't name one) after
-  every hello, only on a device with several logins (a hello clears the last one), and whenever a
-  `claude-login` entry is appended or the waiting pick changes, so a failover moves the indicator in
-  the same turn. A switch still shows its note row.
+  every hello, whatever the chat's model: the login on a device with several logins, else `null`;
+  and whenever a `claude-login` entry is appended or the waiting pick changes, so a failover moves
+  the indicator in the same turn. A hello doesn't clear the indicator: it shows the known login
+  (§chat.composer/known-on-switch) until that message replaces it; from an older server or peer,
+  which sends it only with several logins, the known login stays until about 2 seconds pass with
+  no further message after the hello, then none shows. A switch still shows its note row.
 - **TUI.** The usage-status footer shows the Claude usage of the session's login: its newest
   `claude-login` entry, else — before the session's first Claude turn — the login this device
   would start it on now (its first usable login, as above; Claude Code's own only when the
@@ -277,7 +280,9 @@ chat to another Claude login at any time.
   turn starts one on the picked login the way a model change restarts it (the history folded into
   one message, so that turn has no prompt cache). The session gets a `claude-login` entry with
   `reason: "manual"`, `from`, `fromLabel` and the text `Claude: switched {from} → {to} (chosen by
-  you)`; the chat shows it as a note row and the label moves at once. A chat that has no Claude
+  you)`; the chat shows it as a note row and the label moves at once. Before the chat's first
+  message the note waits (§chat.transcript/states): the empty screen stays and the composer's
+  label carries the pick. A chat that has no Claude
   process yet only records the pick, and its first turn starts there. The pick keeps the login on
   this device for the chat: it is never returned for idleness while the chat is on it
   (§app.claude-logins/idle-pin); only the user's **Return** or a pin to another device takes it

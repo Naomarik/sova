@@ -1,4 +1,4 @@
-import { createResource, createSignal, For, Show } from "solid-js";
+import { createEffect, createResource, createSignal, For, Show } from "solid-js";
 import { linkMessage, type BatonOutreach } from "../../shared/outreach";
 import { ApiError, batonLink, batonOutreach, inviteeLink, sendBatonLink } from "../lib/api";
 import { firstName } from "../lib/person-page";
@@ -15,29 +15,35 @@ type Person = BatonOutreach["people"][number];
  * per reached invitee of an open offer, disabled with why when outreach can't send to them. After a
  * failure: the why, Retry, Open in WhatsApp (a fresh link through Get Link, sent from the operator's
  * own WhatsApp via wa.me) and Copy Link (Get Link, shown on the strip as today).
+ *
+ * One state, two places (§app.baton/strip-layout): the buttons sit in the strip's bar, the fallback
+ * banner in the rows below it. `enabled` false reads nothing and draws nothing.
  */
-export function SendOnWhatsApp(props: {
-  sid: string;
+export function createSendOnWhatsApp(props: {
+  enabled(): boolean;
+  sid(): string;
   /** Changes whenever the strip's data moves (re-reads who may be sent to). */
-  version: string;
-  offer: boolean;
+  version(): string;
+  offer(): boolean;
   /** Show a freshly minted link on the strip, as Get Link does. */
   onLink(personId: string, name: string, r: { link: string; n: number; at?: string; linkWarning?: string }): void;
   /** After a send: the strip and the list re-read. */
   onSent(): void;
 }) {
   const [reach, { refetch }] = createResource(
-    () => ({ sid: props.sid, v: props.version }),
+    () => props.enabled() && { sid: props.sid(), v: props.version() },
     (k) => batonOutreach(k.sid).catch(() => null),
   );
   const [busy, setBusy] = createSignal<string | null>(null);
   const [failed, setFailed] = createSignal<{ person: Person; why: string } | null>(null);
-  const mint = (p: Person) => (props.offer ? inviteeLink(props.sid, p.id) : batonLink(props.sid));
+  // Leaving the states it is offered in drops a failure, as unmounting it did when it was its own row.
+  createEffect(() => props.enabled() || setFailed(null));
+  const mint = (p: Person) => (props.offer() ? inviteeLink(props.sid(), p.id) : batonLink(props.sid()));
 
   const send = async (p: Person) => {
     setBusy(p.id);
     try {
-      const r = await sendBatonLink(props.sid, props.offer ? p.id : undefined);
+      const r = await sendBatonLink(props.sid(), props.offer() ? p.id : undefined);
       if (r.outcome === "sent") {
         setFailed(null);
         const said = `Sent ${r.name} their link on WhatsApp.`;
@@ -85,53 +91,68 @@ export function SendOnWhatsApp(props: {
     }
   };
 
+  /** Who it could go to, while the strip offers it at all. */
+  const people = () => (props.enabled() ? (reach()?.people ?? []) : []);
+  return { people, busy, failed, offer: props.offer, send, openInWhatsApp, copyLink };
+}
+
+export type SendOnWhatsAppState = ReturnType<typeof createSendOnWhatsApp>;
+
+/** The bar's part: a button per person it could go to, and Set Up Outreach while outreach is off. */
+export function SendOnWhatsAppButtons(props: { s: SendOnWhatsAppState }) {
+  const s = props.s;
   return (
-    <Show when={(reach()?.people.length ?? 0) > 0}>
-      <div class="baton-strip-row baton-strip-outreach" role="group" aria-label="Send on WhatsApp">
-        <For each={reach()!.people}>
-          {(p) => (
-            <button
-              type="button"
-              class="button button-sm"
-              disabled={!p.ready || busy() !== null}
-              title={p.ready ? `Sends ${p.name} a fresh link on WhatsApp; their older one stops working` : p.why}
-              onClick={() => void send(p)}
-            >
-              {busy() === p.id ? "Sending…" : props.offer || reach()!.people.length > 1 ? `Send ${firstName(p.name)} on WhatsApp` : "Send on WhatsApp"}
-            </button>
-          )}
-        </For>
-        <Show when={reach()!.people.find((p) => !p.ready && p.why?.includes("Settings → Outreach"))}>
-          <button type="button" class="button button-sm button-ghost" onClick={() => openSettings("outreach")}>
-            Set Up Outreach
+    <Show when={s.people().length > 0}>
+      <For each={s.people()}>
+        {(p) => (
+          <button
+            type="button"
+            class="button"
+            disabled={!p.ready || s.busy() !== null}
+            title={p.ready ? `Sends ${p.name} a fresh link on WhatsApp; their older one stops working` : p.why}
+            onClick={() => void s.send(p)}
+          >
+            {s.busy() === p.id ? "Sending…" : s.offer() || s.people().length > 1 ? `Send ${firstName(p.name)} on WhatsApp` : "Send on WhatsApp"}
           </button>
-        </Show>
-      </div>
-      <Show when={failed()}>
-        {(f) => (
-          <div class="baton-strip-link">
-            <Banner
-              tone="warn"
-              title={`Not sent to ${f().person.name}: ${f().why}`}
-              action={
-                <span class="baton-strip-outreach-fallback">
-                  <button type="button" class="button button-sm" disabled={busy() !== null || !f().person.ready} onClick={() => void send(f().person)}>
-                    Retry
-                  </button>
-                  <Show when={f().person.wa}>
-                    <button type="button" class="button button-sm button-ghost" onClick={() => void openInWhatsApp(f().person)}>
-                      Open in WhatsApp
-                    </button>
-                  </Show>
-                  <button type="button" class="button button-sm button-ghost" onClick={() => void copyLink(f().person)}>
-                    Copy Link
-                  </button>
-                </span>
-              }
-            />
-          </div>
         )}
+      </For>
+      <Show when={s.people().find((p) => !p.ready && p.why?.includes("Settings → Outreach"))}>
+        <button type="button" class="button button-ghost" onClick={() => openSettings("outreach")}>
+          Set Up Outreach
+        </button>
       </Show>
+    </Show>
+  );
+}
+
+/** The rows' part, after a failure or a refusal: the why and three ways on. */
+export function SendOnWhatsAppFallback(props: { s: SendOnWhatsAppState }) {
+  const s = props.s;
+  return (
+    <Show when={s.failed()}>
+      {(f) => (
+        <div class="baton-strip-link">
+          <Banner
+            tone="warn"
+            title={`Not sent to ${f().person.name}: ${f().why}`}
+            action={
+              <span class="baton-strip-outreach-fallback">
+                <button type="button" class="button button-sm" disabled={s.busy() !== null || !f().person.ready} onClick={() => void s.send(f().person)}>
+                  Retry
+                </button>
+                <Show when={f().person.wa}>
+                  <button type="button" class="button button-sm button-ghost" onClick={() => void s.openInWhatsApp(f().person)}>
+                    Open in WhatsApp
+                  </button>
+                </Show>
+                <button type="button" class="button button-sm button-ghost" onClick={() => void s.copyLink(f().person)}>
+                  Copy Link
+                </button>
+              </span>
+            }
+          />
+        </div>
+      )}
     </Show>
   );
 }

@@ -18,7 +18,7 @@ import { dropGroupAssignments, readAssignments } from "./session-groups";
 import { draftCounts, draftPreview, dropDrafts, readDrafts } from "./drafts";
 import { dropSessionTitles, memoSessionTitleRecords, readSessionTitleRecords, type StoredTitle } from "./session-titles";
 import { removeSessionAttachments } from "./attachments";
-import { cwdOverride, disposeHeldChat, getModelRuntime, isSessionBusy, pendingDialogCount } from "./chat-manager";
+import { cwdOverride, disposeHeldChat, getModelRuntime, heldChatState, isSessionBusy, pendingDialogCount } from "./chat-manager";
 import { isUnread, isViewing, readSeen, turnErrorShows } from "./seen";
 import { contextWindow } from "./models";
 import { parseTargetCwd } from "./targets";
@@ -79,6 +79,12 @@ function keptBy(path: string): string | null {
 }
 
 type BaseSummary = Omit<SessionSummary, "live" | "workers" | "origin" | "archived" | "busy">;
+
+/** SessionSummary.chat, only while this server holds the chat: an in-memory read, like `busy`. */
+const heldChatField = (path: string): Pick<SessionSummary, "chat"> => {
+  const chat = heldChatState(path);
+  return chat ? { chat } : {};
+};
 
 const CHUNK = 16 * 1024;
 const MAX_HEAD = 256 * 1024;
@@ -927,6 +933,7 @@ async function buildSessions(): Promise<SessionSummary[]> {
       ...(workers.has(s.path) ? { workerSession: true as const } : {}),
       ...(groups[s.id] !== undefined ? { groupId: groups[s.id] } : {}),
       busy: isSessionBusy(s.path),
+      ...heldChatField(s.path),
       ...attentionFields(s, l, ownRec, seen),
       ...decisionFields(s, l, ownRec, seen, attention),
       ...(preview !== undefined ? { draftPreview: preview } : {}),
@@ -975,6 +982,7 @@ export async function getSessionSummary(path: string, resolveWindow?: WindowReso
     ...(worker ? { workerSession: true as const } : {}),
     ...(groupId !== undefined ? { groupId } : {}),
     busy: isSessionBusy(s.path),
+    ...heldChatField(s.path),
     ...attentionFields(s, l, ownRec, readSeen()),
     ...decisionFields(s, l, ownRec, readSeen(), readDecisionSettings().features.attention),
     ...fieldLookup()(s.path, s.id),

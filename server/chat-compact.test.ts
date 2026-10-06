@@ -229,8 +229,8 @@ describe("/compact through a real chat runtime", () => {
 
     assert.deepEqual(t.prompts, [], "the literal /compact is never sent to the model");
     assert.deepEqual(t.mine[0], { type: "send_ack", clientId: "k1", queued: false });
-    assert.deepEqual(t.mine.map((m) => m.type), ["send_ack", "hello", "mode", "queue", "compacted"]);
-    assert.deepEqual(t.theirs.map((m) => m.type), ["hello", "mode", "queue"]);
+    assert.deepEqual(t.mine.map((m) => m.type), ["send_ack", "hello", "mode", "claude_login", "queue", "compacted"]);
+    assert.deepEqual(t.theirs.map((m) => m.type), ["hello", "mode", "claude_login", "queue"]);
     const done = t.mine.at(-1) as Extract<ChatServerMessage, { type: "compacted" }>;
     const written = t.lines();
     assert.equal(written.at(-1).type, "compaction");
@@ -332,11 +332,11 @@ describe("/compact through a real chat runtime", () => {
     session._emit({ type: "compaction_end", reason: "manual", result: { summary: "hook summary", tokensBefore: 300 }, aborted: false, willRetry: false });
     await t.until(() => t.prompts.length === 1);
     const types = t.theirs.map((m) => m.type);
-    assert.deepEqual(types.slice(0, 4), ["event", "hello", "mode", "queue"]);
+    assert.deepEqual(types.slice(0, 5), ["event", "hello", "mode", "claude_login", "queue"]);
     assert.ok(promptedAt > types.indexOf("hello"), `turn started at ${promptedAt}, hello at ${types.indexOf("hello")}`);
     const hello = t.theirs[1] as Extract<ChatServerMessage, { type: "hello" }>;
     assert.equal(hello.items.at(-1)?.kind, "info", "the compaction row is on the pane, live");
-    assert.deepEqual((t.theirs[3] as Extract<ChatServerMessage, { type: "queue" }>).items.map((i) => i.id), ["h1"]);
+    assert.deepEqual((t.theirs[4] as Extract<ChatServerMessage, { type: "queue" }>).items.map((i) => i.id), ["h1"]);
   });
 
   test("a compaction that lands mid-turn refreshes at that turn's agent_settled, never inside it", async () => {

@@ -3,7 +3,7 @@ import { runLedger } from "./auto-resume";
 import { closeSync, existsSync, openSync, readSync } from "node:fs";
 import { LOGIN_UNCHANGED } from "../shared/protocol";
 import { type BatonSentData, OPERATOR } from "../shared/baton";
-import type { ChatClientMessage, ChatModeResult, ChatServerMessage, V1EventFrame, V2EventFrame, ModeApplies, ModeInfo, OverseerDialogAnswerData, OverseerSentMarkerData, QueueItem, RegenerateRefusal, SandboxApplyResult, SandboxInfo, SlashCommand, TranscriptItem, WorkerInfo } from "../shared/protocol";
+import type { ChatClaudeLogin, ChatClientMessage, ChatModeResult, ChatServerMessage, HeldChatState, V1EventFrame, V2EventFrame, ModeApplies, ModeInfo, OverseerDialogAnswerData, OverseerSentMarkerData, QueueItem, RegenerateRefusal, SandboxApplyResult, SandboxInfo, SlashCommand, TranscriptItem, WorkerInfo } from "../shared/protocol";
 import { COMPACT_COMMAND, COMPACT_IMAGES_REFUSAL, compactCommand } from "../shared/compact";
 import type { LinkedAgentInfo } from "../shared/mesh-links";
 import { isLinkMessage, parseLinkMessage } from "../shared/link-message";
@@ -786,6 +786,32 @@ class ChatSession {
       also set while an idle pick is landing. Kept in memory only: a server restart drops it. */
   private readonly loginPick = new LoginPick();
   private get loginPending() { return this.loginPick.pending; }
+
+  /** What this chat's last `sandbox` and `claude_login` messages said (undefined: none built yet),
+      for SessionSummary.chat (heldChatState): kept as each is built, so the list reads no file. */
+  private saidSandbox: SandboxInfo | null | undefined;
+  private saidLogin: ChatClaudeLogin | null | undefined;
+  /** The one way saidSandbox changes: a new value bumps the list generation, a re-send of the same doesn't. */
+  private noteSandbox(sandbox: SandboxInfo | null): void {
+    if (this.saidSandbox !== undefined && JSON.stringify(this.saidSandbox) === JSON.stringify(sandbox)) return;
+    this.saidSandbox = sandbox;
+    sessionsChanged();
+  }
+  /** The one way saidLogin changes, as noteSandbox. A login only the composer would hide (one login
+      on this device) is kept as null, as the message after a hello says it. */
+  private noteLogin(login: ChatClaudeLogin | null): void {
+    const kept = login?.several ? login : null;
+    if (this.saidLogin !== undefined && JSON.stringify(this.saidLogin) === JSON.stringify(kept)) return;
+    this.saidLogin = kept;
+    sessionsChanged();
+  }
+  /** HeldChatState's sandbox and login: only those already said. */
+  saidState(): Pick<HeldChatState, "sandbox" | "login"> {
+    return {
+      ...(this.saidSandbox !== undefined ? { sandbox: this.saidSandbox } : {}),
+      ...(this.saidLogin !== undefined ? { login: this.saidLogin } : {}),
+    };
+  }
   /** A pick is landing (a borrow can take up to 30 s): the web queue holds its items meanwhile. */
   private get loginApplying() { return this.loginPick.applying; }
 
@@ -1758,7 +1784,16 @@ class ChatSession {
 
   /** This chat's Claude login with its waiting pick, as every tab is told it. */
   loginMessage(): ChatServerMessage {
-    return claudeLoginMessage(this.harness.branch(), undefined, { pending: this.loginPending });
+    const msg = claudeLoginMessage(this.harness.branch(), undefined, { pending: this.loginPending });
+    this.noteLogin(msg.login);
+    return msg;
+  }
+
+  /** The `claude_login` message every hello is followed by (claudeLoginAfterHello). */
+  private loginAfterHello(): ChatServerMessage {
+    const msg = claudeLoginAfterHello(this.harness.branch(), undefined, { pending: this.loginPending }); // the branch's newest entry
+    this.noteLogin(msg.login);
+    return msg;
   }
 
   /**
@@ -1843,9 +1878,19 @@ class ChatSession {
     return this.sandboxCommand() ? sandboxInfo(this.harness.branch()) : null;
   }
 
-  /** This chat's "sandbox" message, only when the extension is loaded: without it, nothing is sent. */
+  /** This chat's "sandbox" message, only when the extension is loaded: without it, nothing is sent
+      (and the list's `chat` says null). */
   private sendSandbox(send: (msg: ChatServerMessage) => void): void {
-    if (this.sandboxCommand()) send(sandboxMessage(this.harness.branch()));
+    if (!this.sandboxCommand()) return this.noteSandbox(null);
+    const msg = sandboxMessage(this.harness.branch());
+    this.noteSandboxMessage(msg);
+    send(msg);
+  }
+
+  private noteSandboxMessage(msg: ChatServerMessage): void {
+    if (msg.type !== "sandbox") return;
+    const { type: _type, ...sandbox } = msg;
+    this.noteSandbox(sandbox);
   }
 
   private get sandboxHost(): SandboxHost {
@@ -1865,7 +1910,10 @@ class ChatSession {
         if (!this.foreignWrite) markOwned(this.path); // the extension's entry is our write
       },
       branch: () => this.harness.branch(),
-      broadcast: (msg) => this.broadcast(msg),
+      broadcast: (msg) => {
+        this.noteSandboxMessage(msg);
+        this.broadcast(msg);
+      },
     };
   }
 
@@ -1939,8 +1987,7 @@ class ChatSession {
     this.sendSandbox((m) => client.send(m));
     // Only when there is something to show: a profile, or a session still before its first message.
     if (this.profileState?.data?.profile || this.isPristine()) client.send(this.profileMessage());
-    const login = claudeLoginAfterHello(this.harness.branch(), undefined, { pending: this.loginPending });
-    if (login) client.send(login);
+    client.send(this.loginAfterHello());
     const snap = this.workersSnapshot();
     if (snap) client.send(snap);
     pushLinks(this, client);
@@ -2710,8 +2757,7 @@ class ChatSession {
     this.modeState = chatModeOf(this.harness.state.branch());
     this.broadcast(this.modeMessage());
     this.sendSandbox((m) => this.broadcast(m)); // the extension re-restores on session_tree too
-    const login = claudeLoginAfterHello(this.harness.branch(), undefined, { pending: this.loginPending }); // the new branch's newest entry
-    if (login) this.broadcast(login);
+    this.broadcast(this.loginAfterHello()); // the new branch's newest entry
     pushLinks(this); // after every hello, as attach() does
     return () => sendHistory(cut, tails, (c) => this.clients.has(c));
   }
@@ -2719,6 +2765,8 @@ class ChatSession {
   /** `msg` to every client, on its wire (server/wire-rows.ts): wire 1 the message itself, wire 2 its
       mapping, made once for all the wire-2 clients. */
   broadcast(msg: ChatServerMessage): void {
+    // The list's `chat` field says these (heldChatState): the next listing is built afresh.
+    if (msg.type === "model" || msg.type === "thinking" || msg.type === "mode") sessionsChanged();
     if (this.held) {
       this.held.push(msg);
       return;
@@ -3000,6 +3048,23 @@ export function isSessionBusy(path: string): boolean {
   return !!chat && !chat.disposed && chat.harness.isRunning();
 }
 
+/** SessionSummary.chat: a held chat's model, thinking level and mode, as its hello and `mode`
+    message would say them, and its sandbox and Claude login as its last such messages did. From memory only; undefined when this server doesn't hold the chat. */
+export function heldChatState(path: string): HeldChatState | undefined {
+  const chat = held.get(path);
+  if (!chat || chat.disposed) return undefined;
+  const s = chat.modeState;
+  return {
+    model: chat.harness.model()?.ref ?? null,
+    thinking: chat.harness.thinking(),
+    mode: s.mode,
+    minorModes: [...s.minorModes],
+    strict: s.strict,
+    applies: chat.modeApplies,
+    ...chat.saidState(),
+  };
+}
+
 async function overseerLoadout(path: string) {
   if (!overseerRuntime) throw new Error("The Overseer is not available on this server.");
   return overseerRuntime.loadout(path);
@@ -3158,6 +3223,7 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
       await overseerRuntime?.opened(chat);
     }
     held.set(path, chat);
+    sessionsChanged(); // its row now carries `chat` (heldChatState)
     return chat;
   } catch (err) {
     const config = asConfigError(err, sessionCwd);

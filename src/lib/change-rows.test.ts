@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { EntryKind, EntryMeta, TranscriptItem } from "../../shared/protocol";
-import { isChangeRow } from "./change-rows";
+import { isChangeRow, isLoginNoteRow } from "./change-rows";
 
 /** The facts a row carries of its entry (`meta`), as the server takes them from the entry. */
 const metaOf = (raw: unknown): EntryMeta | undefined => {
@@ -50,4 +50,15 @@ test("change rows: an unknown or missing entry type is not one", () => {
   assert.equal(isChangeRow(change("n1", null, "x")), false);
   assert.equal(isChangeRow(change("n2", "model_change", "x")), false);
   assert.equal(isChangeRow(change("n3", { type: "mystery" }, "x")), false);
+});
+
+test("login notes: an info row the server marked (loginNote) is the login note; other rows are not", () => {
+  const raw = { type: "custom", customType: "claude-login", data: { from: "a", text: "Claude: switched a → b (chosen by you)" } };
+  const note = (r: TranscriptItem): TranscriptItem => ({ ...r, loginNote: true });
+  assert.equal(isLoginNoteRow(note(change("l1", raw, "Claude: switched a → b (chosen by you)"))), true);
+  assert.equal(isLoginNoteRow({ id: "l1w2", kind: "info", text: "Claude: switched a → b", facts: {}, loginNote: true }), true, "a wire-2 row: facts, no meta");
+  assert.equal(isLoginNoteRow(change("l0", raw, "Claude: switched a → b (chosen by you)")), false, "the entry's shape alone is not the mark");
+  assert.equal(isLoginNoteRow(change("l2", { type: "custom", customType: "mode" }, "Mode → delegate")), false);
+  assert.equal(isLoginNoteRow(note(row("l3", "user", raw, "x"))), false);
+  assert.equal(isChangeRow(note(change("l4", raw, "x"))), false);
 });

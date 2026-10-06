@@ -4,11 +4,13 @@ A {"type":"commands"}
 A {"type":"queue","items":[]}
 A {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now"}
 A {"type":"profile","profile":null,"locked":false,"pickable":true,"tools":"<elided>","removed":[],"granted":[]}
+A {"type":"claude_login","login":null}
 B {"type":"hello","isStreaming":false,"isCompacting":false,"model":"scripted/scripted","thinking":"off","items":["00000001 info"]}
 B {"type":"commands"}
 B {"type":"queue","items":[]}
 B {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now"}
 B {"type":"profile","profile":null,"locked":false,"pickable":true,"tools":"<elided>","removed":[],"granted":[]}
+B {"type":"claude_login","login":null}
 step detach A, B; dispose
 step reopen
 step attach A, B
@@ -17,11 +19,13 @@ A {"type":"commands"}
 A {"type":"queue","items":[]}
 A {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now"}
 A {"type":"profile","profile":null,"locked":false,"pickable":true,"tools":"<elided>","removed":[],"granted":[]}
+A {"type":"claude_login","login":null}
 B {"type":"hello","isStreaming":false,"isCompacting":false,"model":"scripted/scripted","thinking":"off","items":["00000001 info"]}
 B {"type":"commands"}
 B {"type":"queue","items":[]}
 B {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now"}
 B {"type":"profile","profile":null,"locked":false,"pickable":true,"tools":"<elided>","removed":[],"granted":[]}
+B {"type":"claude_login","login":null}
 step A sends {"type":"prompt","text":"hello","clientId":"c1"}
 write {"id":"00000002","type":"thinking_level_change"}
 sdk prompt ["hello",{"source":"interactive"}]

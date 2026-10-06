@@ -3285,6 +3285,10 @@ a.group-option { color: inherit; text-decoration: none; }
   color: var(--color-ink-muted);
 }
 .composer-reason { display: inline-flex; align-items: center; gap: var(--space-2); min-width: 0; color: var(--color-ink-2); }
+/* First connect's "Connecting…": held back 300ms so a quick switch never flashes it. Reduced motion
+   collapses the duration globally but keeps the delay. */
+.composer-reason[data-soft] { animation: composer-reason-in var(--dur-base) var(--ease-standard) 300ms both; }
+@keyframes composer-reason-in { from { opacity: 0; } to { opacity: 1; } }
 
 /* The model indicator: this session's model and thinking level, and the
    flyout's second trigger. First in the foot, and it stays at every width.

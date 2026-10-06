@@ -81,6 +81,11 @@ export interface SessionSummary {
       The sidebar shows a "Busy" marker. false when idle/closed or not held by this server.
       Never pulsing (design rule). */
   busy: boolean;
+  /** While this server holds the session's chat runtime: that chat's own model, thinking level
+      and mode, and its sandbox and Claude login once its socket messages said them, read from memory (no file I/O), so a composer opening it shows them before its
+      socket's hello (§chat.composer/known-on-switch). The model supersedes the file-tail `model`.
+      Absent for a session the server doesn't hold, and from older servers and peers. */
+  chat?: HeldChatState;
   /** "web" if spawned via this webapp's POST /api/sessions (tracked persistently by the server,
       survives restarts); "external" for anything else. Pane rule: top region shows
       live!=null || (origin==="web" && !archived); everything else goes to the bottom archive section. */
@@ -363,6 +368,10 @@ export interface TranscriptItem {
   /** The session's `sova-profile` entry (§chat.profiles/after-first-message): kind "info", drawn as
       the muted "Profile: {label}" row only once a user message is on the branch; null = Default. */
   profileMark?: { profile: SessionProfileField | null };
+  /** kind "info" only: a Claude login switch note (§app.claude-logins/switch-login), the `claude-login`
+      entry of a switch; `text` is its notice. Like the profile row it never counts toward the empty
+      state, and the thread draws it where it sits once a message is sent. */
+  loginNote?: true;
   /** kind "info" only: a subagents-team-event-v1 entry; `text` is `Team: ` + its sentence. */
   teamEvent?: TeamEvent;
   /** kind "info" only: a /compact-handoff run's `compact-handoff-run` entry
@@ -1652,6 +1661,24 @@ export interface SpecSaveResult extends SpecSettingsInfo {
     "new-chats" = this chat can't take a switch at all (the mode extension isn't loaded in it, or
     a foreign writer was seen), so only the default applies — to sessions started later. */
 export type ModeApplies = "now" | "after-turn" | "new-chats";
+
+/** `SessionSummary.chat`: what a held chat would say in its hello and `mode` message. */
+export interface HeldChatState {
+  /** "provider/id", as the hello's `model`; null while the runtime has none. */
+  model: string | null;
+  /** As the hello's `thinking`. */
+  thinking: string;
+  mode: string;
+  minorModes: string[];
+  strict: boolean;
+  applies: ModeApplies;
+  /** As the chat's last `sandbox` message said it; null: its runtime has no `/sandbox` command.
+      Absent until a message was built for it, and from older servers. */
+  sandbox?: SandboxInfo | null;
+  /** As the chat's last `claude_login` message said it, `pending` included; null: not a device with
+      several logins, or the registry can't name one. Absent until one was built, and from older servers. */
+  login?: ChatClaudeLogin | null;
+}
 
 /** POST /api/mode?path=…: the chat's mode after the switch, plus how it took (ModeApplies).
     The same values reach every client of that chat as a "mode" server message. */

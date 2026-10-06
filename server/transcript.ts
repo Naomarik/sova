@@ -680,11 +680,14 @@ function batonRow(id: string, h: StateEntry): TranscriptItem[] {
 
 /** The claude-code provider's `claude-login` entry (§app.claude-logins/failover): the login a
     session runs on. Only a switch (it names the login it left) is a row, its notice as written;
-    the plain record renders nothing. */
+    the plain record renders nothing. The row carries `loginNote` (§app.claude-logins/switch-login),
+    so the client knows it without reading the entry's shape. */
 function claudeLoginRow(id: string, h: StateEntry): TranscriptItem[] {
   const d = h.data as { from?: unknown; text?: unknown } | undefined;
   if (!d || typeof d.from !== "string" || typeof d.text !== "string" || !d.text.trim()) return [];
-  return [item(id, "info", h, d.text.slice(0, 300))];
+  const it = item(id, "info", h, d.text.slice(0, 300));
+  it.loginNote = true;
+  return [it];
 }
 
 /** A subagents team event (handover, retire, pause, resume, wrap-up): one machine row, like a

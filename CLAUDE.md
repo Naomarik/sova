@@ -446,8 +446,8 @@ launcher):
 
 ## Working rules
 
-- Never use Opus 5 (`claude-opus-5`). "opus" means Opus 5.5: claude-code `claude-opus-5-5` (the aliases
-  `opus` / `opus[1m]` are refused as input; Sova's Claude catalog, `claude-code/catalog.ts`, names every model).
+- Never use Opus 5 (`claude-opus-5`). "opus" means Opus 5.5: claude-code `claude-opus-5-5` (an old alias
+  such as `opus[1m]` typed as input runs as its catalog id; Sova's Claude catalog, `claude-code/catalog.ts`, names every model).
 - Throwaway test sessions run on `zai/glm-5.3`. New web sessions default to a costlier model, so set
   the model before the first prompt, and archive the session afterwards.
 - Never `git stash`, `checkout`, `reset` or `restore` in a worktree others share. Take baselines with

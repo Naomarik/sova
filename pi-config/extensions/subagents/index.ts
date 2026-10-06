@@ -103,7 +103,7 @@ import { specHookSettings, withClaudeSettings } from "../claude-code/spec-hooks.
 import { LEDGER_ENV, ledgerPath, workerLedgerPath } from "../mode/spec-guard.ts";
 import { ASSESSMENT_OWNER_ENV, ASSESSMENT_WORKER_ENV, ASSESSMENT_TEAM_ENV } from "../mode/spec-assessment.ts";
 import { DEFAULT_CLAUDE_TOOLS } from "../claude-code/transport.ts";
-import { legacyClaudeRefusal, unverifiedClaudeNote } from "../claude-code/catalog.ts";
+import { canonicalClaudeId, unverifiedClaudeNote } from "../claude-code/catalog.ts";
 import { USAGE_PARENT_ENV } from "../llm-inflight/attribution.ts";
 import { workerSpecBrief, writesCode } from "./spec-brief.ts";
 import { restoreActive as restoreWorktrees, treeOf, workerCwdRefusal as worktreeCwdRefusal, type WorktreesActive } from "../worktrees/state.ts";
@@ -427,6 +427,13 @@ type RunnerFactory = WorkerFactory;
 type WorkspaceKind = "agents" | "team";
 /** Contract shared by AgentsModal and the future team workspace. */
 interface WorkspaceView { invalidate(): void; dispose(): void }
+/** A spec's Claude model as the catalog names it: a claude-code worker's id, a pi worker's claude-code-cli/ ref. */
+function withCatalogClaudeModel(spec: Spec): Spec {
+	if (typeof spec.model !== "string") return spec;
+	const claude = spec.backend === "claude-code" || ((spec.backend ?? "pi") === "pi" && spec.model.startsWith("claude-code-cli/"));
+	const model = claude ? canonicalClaudeId(spec.model) : spec.model;
+	return model === spec.model ? spec : { ...spec, model };
+}
 interface BatchRequest {
 	specs: Spec[];
 	groupLabel?: string;
@@ -1218,7 +1225,9 @@ export function registerSubagents(
 	 * published. Callers keep context(), abort and tool-shape checks.
 	 */
 	const spawnBatch = async (ctx: ExtensionContext, request: BatchRequest, signal?: AbortSignal): Promise<AgentGroup> => {
-		const { specs } = request;
+		// An old Claude id (opus[1m], sonnet, claude-opus-5-5[1m], …) is resolved through the catalog's
+		// read-only legacy table, quietly: the catalog id is what runs and what is recorded.
+		const specs = request.specs.map(withCatalogClaudeModel);
 		const parentId = ctx.sessionManager.getSessionId?.() || unsavedSessionKey;
 		/** A worker's session-qualified id: the sandbox's owner of its scope and the name of its Claude state dir. */
 		const workerKey = (id: string) => `${sessionDirKey(ctx.sessionManager.getSessionId?.(), unsavedSessionKey).slice(0, 112)}-${id}`;
@@ -1403,9 +1412,6 @@ export function registerSubagents(
 				const denied = policyDenial(readPolicy(options.policyFile), "pi", model);
 				if (denied) throw new Error(denied);
 				const slash = model.indexOf("/");
-				// An old Claude alias (`claude-code-cli/opus[1m]`) names no model: refused with the id to use.
-				const legacy = model.slice(0, slash) === "claude-code-cli" ? legacyClaudeRefusal(model.slice(slash + 1)) : undefined;
-				if (legacy) throw new Error(legacy);
 				if (slash < 1 || !ctx.modelRegistry.find(model.slice(0, slash), model.slice(slash + 1))) {
 					throw new Error(`Unknown model ${model}; use agent_models to discover exact provider/model IDs from this session's registry.`);
 				}
@@ -2684,7 +2690,7 @@ export function registerSubagents(
 			"For Pi workers, pass extensions: [\"npm:pi-web-access\"] for web tools or fork: true for conversation history; these options are not supported by Claude workers.",
 			"A worker starts only in this session's cwd or inside an active worktree the session tracks (the worktree tool); a pi worker started inside a worktree can write only there. useWorktreeConfig: true runs a pi worker on that worktree's own .agent.",
 			"While this session's spec minor mode is on, every worker you start (a team's monitor excepted) gets the spec block and a worker note in its system prompt: brief it with the relevant passages, not the discipline.",
-			"Use agent_spawn with backend: \"claude-code\" to delegate to Claude Code when its extension is installed. Claude uses Sova's Claude model IDs (agent_models lists them, e.g. claude-opus-5-5, claude-sonnet-5-5; an alias such as opus or opus[1m] is refused), native tools, and backendOptions permission/settings policy; it does not inherit Pi's model, effort, tools, or history.",
+			"Use agent_spawn with backend: \"claude-code\" to delegate to Claude Code when its extension is installed. Claude uses Sova's Claude model IDs (agent_models lists them, e.g. claude-opus-5-5, claude-sonnet-5-5), native tools, and backendOptions permission/settings policy; it does not inherit Pi's model, effort, tools, or history.",
 			"Claude workers default to bypassPermissions (no permission prompts); set backendOptions.permissionMode to acceptEdits, manual, dontAsk, or plan for a restrictive policy. Do not assume a queued follow-up has executed; inspect agent_list or agent_transcript.",
 		],
 		parameters: Type.Object(

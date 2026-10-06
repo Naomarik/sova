@@ -1,5 +1,5 @@
 /** Deliberately small, explicit launch policy. Never translates Pi tool names silently. */
-import { canonicalClaudeId, isClaudeIdShape, latestClaude, legacyClaudeRefusal } from "./catalog.ts";
+import { canonicalClaudeId, isClaudeIdShape, latestClaude } from "./catalog.ts";
 
 export const DEFAULT_CLAUDE_TOOLS = ["Bash", "Read", "Edit", "Write", "Glob", "Grep"];
 export const CLAUDE_PERMISSION_MODES = ["bypassPermissions", "acceptEdits", "manual", "dontAsk", "plan"] as const;
@@ -50,11 +50,6 @@ export function validateClaudeModel(model: string | undefined): string {
 		throw new Error("Claude model must be a Claude model ID (agent_models lists them), not a Pi provider/model ID.");
 	}
 	return canonicalClaudeId(selected);
-}
-/** A model typed as input: an old alias is refused, naming the id to use (§app.claude-code-provider/legacy-ids). */
-export function refuseLegacyClaudeModel(model: string | undefined): void {
-	const refusal = legacyClaudeRefusal(model);
-	if (refusal) throw new Error(refusal);
 }
 export function validateClaudeEffort(effort: string | undefined): string {
 	const selected = effort ?? "medium";

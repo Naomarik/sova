@@ -176,15 +176,6 @@ export function claudeContextWindow(id: string, resolvedModel?: string): number 
 	return m ? m.window : CLAUDE_DEFAULT_WINDOW;
 }
 
-/**
- * Why a Claude Code worker id typed as input is refused, or undefined: an old id (an alias, or a
- * `<catalog id>[1m]` form) never starts one. Stored ids still read through the table.
- */
-export function legacyClaudeRefusal(id: string | null | undefined): string | undefined {
-	if (!id || !isLegacyClaudeId(id)) return undefined;
-	const m = resolveClaude(id);
-	return m ? `${id} is not a Claude model id; use ${m.id} (${m.name}).` : undefined;
-}
 /** The note for an id the catalog doesn't know (§app.claude-code-provider/catalog). */
 export function unverifiedClaudeNote(id: string): string | undefined {
 	return resolveClaude(id) ? undefined : `Not verified: ${id} is not in Sova's Claude catalog. It will still be used.`;

@@ -741,7 +741,7 @@ test("model policy disables providers and models for spawns, teams and discovery
 		await assert.rejects(h.call("agent_spawn", { prompt: "default model", backend: "claude-code", wake: false }), /Backend claude-code is disabled/);
 		await assert.rejects(h.call("agent_spawn", { prompt: "explicit model", backend: "claude-code", model: "claude-sonnet-5-5", wake: false }), /Backend claude-code is disabled/);
 		writePolicy([], ["claude-code/claude-opus-5-5"]);
-		await assert.rejects(h.call("agent_spawn", { prompt: "opus gone", backend: "claude-code", model: "Claude-Opus-5-5", wake: false }), /Claude-Opus-5-5 is disabled/);
+		await assert.rejects(h.call("agent_spawn", { prompt: "opus gone", backend: "claude-code", model: "Claude-Opus-5-5", wake: false }), /claude-opus-5-5 is disabled/i, "the policy matches whatever the case; the catalog id runs");
 		await h.call("agent_spawn", { prompt: "sonnet stays", backend: "claude-code", model: "claude-sonnet-5-5", wake: false });
 		models = await h.call("agent_models", { backend: "claude-code" });
 		assert.deepEqual(models.details.models.map((m: any) => m.id), ["claude-sonnet-5-5"]);

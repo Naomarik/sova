@@ -13,7 +13,6 @@ import {
 	claudeOffer,
 	isLegacyClaudeId,
 	latestClaude,
-	legacyClaudeRefusal,
 	resolveClaude,
 	resolveLegacyClaude,
 	unverifiedClaudeNote,
@@ -90,14 +89,7 @@ test("windows: the catalog's; an unknown id 1M only with [1m]", () => {
 	assert.equal(claudeContextWindow("default", "claude-haiku-4-5-20251001"), CLAUDE_DEFAULT_WINDOW, "what the CLI says it resolves to wins");
 });
 
-test("input: an old alias is refused naming the id; an unknown id is only noted", () => {
-	assert.equal(legacyClaudeRefusal("opus[1m]"), "opus[1m] is not a Claude model id; use claude-opus-5-5 (Opus 5.5).");
-	assert.equal(legacyClaudeRefusal("haiku"), "haiku is not a Claude model id; use claude-haiku-4-5 (Haiku 4.5).");
-	assert.equal(legacyClaudeRefusal("claude-opus-5-5[1m]"), "claude-opus-5-5[1m] is not a Claude model id; use claude-opus-5-5 (Opus 5.5).");
-	assert.equal(legacyClaudeRefusal("claude-fable-5-1[1m]"), "claude-fable-5-1[1m] is not a Claude model id; use claude-fable-5-1 (Fable 5.1).");
-	assert.equal(legacyClaudeRefusal("claude-opus-5-5"), undefined);
-	assert.equal(legacyClaudeRefusal("claude-opus-6[1m]"), undefined, "an id the catalog doesn't know runs, noted");
-	assert.equal(legacyClaudeRefusal("claude-opus-6"), undefined);
+test("an id the catalog doesn't know is only noted", () => {
 	assert.equal(unverifiedClaudeNote("claude-opus-6"), "Not verified: claude-opus-6 is not in Sova's Claude catalog. It will still be used.");
 	assert.equal(unverifiedClaudeNote("claude-opus-5-5"), undefined);
 });

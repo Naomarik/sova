@@ -4,19 +4,14 @@ import { randomUUID } from "node:crypto";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { BACKEND_DIALOG_EVENT, registerBackend, type BackendRegistration, type BackendSpec, type BackendModel } from "../subagents/contracts.ts";
 import { ClaudeRunner, MAX_CLAUDE_INPUT_CHARS, type ClaudePermissionDecision, type ClaudePermissionRequest, type ClaudeSpawnOptions } from "./runner.ts";
-import { parseClaudePolicy, refuseLegacyClaudeModel, validateClaudeEffort, validateClaudeModel, validateClaudeTools } from "./policy.ts";
+import { parseClaudePolicy, validateClaudeEffort, validateClaudeModel, validateClaudeTools } from "./policy.ts";
 import { claudeOffer } from "./catalog.ts";
 import { PermissionQueue } from "./permissions.ts";
 import { registerClaudeCodeProvider } from "./provider/index.ts";
 import { hostLogins, type ClaudeLoginChoice } from "./accounts.ts";
 
-/** A spec as given (agent_spawn, team_create): an old Claude alias is refused, naming the id to use. */
+/** What a launch needs. An old Claude id passes: it runs, and is recorded, as its catalog id (policy.ts). */
 function validate(spec: BackendSpec): void {
-	refuseLegacyClaudeModel(spec.model);
-	validateSpec(spec);
-}
-/** What a launch needs, for a new spec and a recorded one alike (an adopted worker's may name an old id). */
-function validateSpec(spec: BackendSpec): void {
 	// The runner would otherwise fail this asynchronously, after the batch started.
 	if (spec.prompt.length > MAX_CLAUDE_INPUT_CHARS) {
 		throw new Error(`Claude prompt is ${spec.prompt.length} characters; the limit is ${MAX_CLAUDE_INPUT_CHARS}. Put large context in a file and reference it.`);
@@ -75,7 +70,7 @@ export function registerClaudeCode(pi: ExtensionAPI): void {
 		},
 		validate,
 		prepare(spec, ctx) {
-			validateSpec(spec);
+			validate(spec);
 			const options: Partial<ClaudeSpawnOptions> = {
 				model: validateClaudeModel(spec.model),
 				effort: validateClaudeEffort(spec.effort),

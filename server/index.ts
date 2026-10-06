@@ -58,8 +58,10 @@ import { addWebSession } from "./web-sessions";
 import { draftForClient, setDraft } from "./drafts";
 import { worktreeInsights } from "./worktrees";
 import { DiffError, gitDiffs, scopeFromQuery } from "./git-diff";
-import { decodeWorkers, teamDuties, getAgentsInsight, getHiddenWorkers, getSessionInsight, setInsightLinks, getUsageInsight, invalidateUsageMemo, refreshUsageInsight, setUsageResetDay, usageRefreshBusy } from "./insights";
+import { decodeWorkers, teamDuties, getAgentsInsight, getHiddenWorkers, getSessionInsight, setInsightLinks, getUsageHistory, getUsageInsight, getUsageStrip, invalidateUsageMemo, recordUsage, refreshUsageInsight, setUsageResetDay, usageRefreshBusy } from "./insights";
 import { startUsagePoller } from "./usage-poll";
+import { usageHistory } from "./usage-history";
+import { readCache } from "../pi-config/extensions/usage-status/fetch.ts";
 import { startSharedUsageHelper, stopSharedUsageHelper } from "./usage-helper/client";
 import { registerUsageRoutes } from "./usage-routes";
 import { archiveSession, cachedTitleOf, cleanupSessions, getSessionSummary, idOf, lastReplyOf, listCwds, listSessionFiles, listSessions, onSessionArchived, onSummaryLineChanged } from "./sessions-index";
@@ -1173,6 +1175,18 @@ app.post(
 // by the refresh route below, and by the usage poller started with the server.
 app.get("/api/insights/usage", async (c) => c.json(await getUsageInsight()));
 
+// One Usage chart's recorded readings (§app.insights/usage-burn): only the Usage page asks, so
+// the payload the sidebar polls stays small.
+app.get("/api/insights/usage/history", (c) => {
+  const series = c.req.query("series") ?? "";
+  const window = c.req.query("window") ?? "";
+  if (!series || !window || series.length > 200 || window.length > 200) return c.json({ error: "series and window are required" }, 400);
+  // The 5-hour strip: the last 30 days' window summaries only.
+  if (c.req.query("strip") === "1") return c.json(getUsageStrip(series, window));
+  const at = Number(c.req.query("at"));
+  return c.json(getUsageHistory(series, window, c.req.query("at") && Number.isFinite(at) ? at : null));
+});
+
 app.post("/api/insights/usage/refresh", async (c) => {
   try {
     return c.json(await refreshUsageInsight());
@@ -1782,7 +1796,10 @@ void (async () => {
 })();
 
 // Keeps the shared usage cache fresh without an open TUI (SOVA_USAGE_POLL=off switches it off).
-const usagePoller = startUsagePoller({ busy: usageRefreshBusy, onFetched: invalidateUsageMemo });
+const usagePoller = startUsagePoller({ busy: usageRefreshBusy, onFetched: invalidateUsageMemo, onCache: recordUsage });
+// The usage history also takes the cache as it is at start: a reading taken while this server was
+// down still counts (§app.insights/usage-burn).
+void readCache().then((cache) => cache && recordUsage(cache), () => {});
 // The usage helper child: reads the usage ledger, keeps its rollup, pulls models.dev prices every
 // 6 hours and answers every spend query off this loop (§app.insights/usage-ledger).
 startSharedUsageHelper();
@@ -1811,6 +1828,12 @@ async function shutdown() {
   runLedger.freeze();
   for (const chat of heldChats()) if (chat.harness.isRunning()) chat.harness.abort().catch(() => {});
   usagePoller.stop();
+  // A plateau's held-back last reading is written, so the next start knows how long it lasted.
+  try {
+    usageHistory().flush();
+  } catch (err) {
+    console.warn("[usage-history] flush on shutdown failed:", err instanceof Error ? err.message : String(err));
+  }
   void stopSharedUsageHelper();
   autoTitleSweep.stop();
   stopResourceMonitor();

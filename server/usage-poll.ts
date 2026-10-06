@@ -30,6 +30,8 @@ export interface UsagePollerOptions {
   busy?: () => boolean;
   /** Called after a tick that fetched and wrote the cache itself. */
   onFetched?(cache: CacheFile): void;
+  /** Called after every tick that yields a cache, fetched or adopted (the usage history, §app.insights/usage-burn). */
+  onCache?(cache: CacheFile): void;
   now?: () => number;
   random?: () => number;
   setTimer?: (fn: () => void, ms: number) => Timer;
@@ -91,6 +93,7 @@ export function startUsagePoller(opts: UsagePollerOptions = {}): UsagePoller {
       if (result) {
         prev = result.cache;
         if (result.fetched) opts.onFetched?.(result.cache);
+        opts.onCache?.(result.cache);
         const failed = describeErrors(result.errors);
         if (failed) logOnce(`fetch failed: ${failed}`);
       }

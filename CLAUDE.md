@@ -201,6 +201,13 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   extension appends at the check's final verdict, never a custom message, so never model context —
   its shape, its strict check `normalizeSpecTurnDetails` and its builder; the transcript's spec card
   and the claim sheet read what the extension writes, with its own code, §chat.spec-card/record),
+  `server/harness/pi/open.ts` imports `pi-config/extensions/model-levels/core.ts` (builtins only:
+  the thinking levels of models.json providers pi has no catalog for, from Ollama's `/api/show` and
+  models.dev, cached in `<agent dir>/model-levels.json`; the shared runtime gets them at boot, and
+  the extension, which every pi worker also loads, at each session start and turn, §app/model-levels;
+  one rule, `modelFetchEnabled` there, governs every metadata fetch, the server's boot fetches and
+  each hosted session's extension alike: `PI_OFFLINE` or `SOVA_MODELS_FETCH=off` stops them, and a
+  test process never fetches unless `SOVA_MODELS_FETCH=on`),
   the server's one-shot paths (`server/decide-llm.ts`, `server/decide-jev.ts`,
   `server/session-autotitle.ts`) and its usage helper (`server/usage-helper/`) import
   `pi-config/extensions/llm-inflight/usage-record.ts` (builtins only: the ledger record's shape,

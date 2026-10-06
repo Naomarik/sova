@@ -1,0 +1,260 @@
+{
+	"v": 1,
+	"providers": {
+		"ollama-cloud": {
+			"fetchedAt": 1791303044688,
+			"baseUrl": "https://ollama.com/v1",
+			"models": {
+				"glm-5.2": {
+					"source": "ollama",
+					"values": [
+						false,
+						"high",
+						"max"
+					],
+					"default": "high",
+					"capabilities": [
+						"thinking",
+						"completion",
+						"tools"
+					]
+				},
+				"gpt-oss:20b": {
+					"source": "ollama",
+					"values": [
+						"low",
+						"medium",
+						"high"
+					],
+					"default": "medium",
+					"capabilities": [
+						"completion",
+						"tools",
+						"thinking"
+					]
+				},
+				"kimi-k2.6": {
+					"source": "ollama",
+					"values": [
+						false,
+						true
+					],
+					"default": true,
+					"capabilities": [
+						"vision",
+						"thinking",
+						"completion",
+						"tools"
+					]
+				},
+				"kimi-k3": {
+					"source": "ollama",
+					"values": [
+						false,
+						"low",
+						"high",
+						"max"
+					],
+					"default": "max",
+					"capabilities": [
+						"vision",
+						"thinking",
+						"completion",
+						"tools"
+					]
+				},
+				"minimax-m3": {
+					"source": "models.dev",
+					"reasoning": true,
+					"options": [
+						{
+							"type": "toggle"
+						},
+						{
+							"type": "effort",
+							"values": [
+								"low",
+								"medium",
+								"high",
+								"max"
+							]
+						}
+					]
+				},
+				"kimi-k2.7-code": {
+					"source": "ollama",
+					"values": [
+						false,
+						true
+					],
+					"default": true,
+					"capabilities": [
+						"vision",
+						"thinking",
+						"completion",
+						"tools"
+					]
+				},
+				"gpt-oss:120b": {
+					"source": "ollama",
+					"values": [
+						"low",
+						"medium",
+						"high"
+					],
+					"default": "medium",
+					"capabilities": [
+						"completion",
+						"tools",
+						"thinking"
+					]
+				},
+				"deepseek-v4.1-flash": {
+					"source": "ollama",
+					"values": [
+						false,
+						"low",
+						"high",
+						"max"
+					],
+					"default": "high",
+					"capabilities": [
+						"completion",
+						"thinking",
+						"tools",
+						"vision"
+					]
+				},
+				"glm-5.3": {
+					"source": "ollama",
+					"values": [
+						"low",
+						"high",
+						"max"
+					],
+					"default": "max",
+					"capabilities": [
+						"completion",
+						"thinking",
+						"tools"
+					]
+				},
+				"deepseek-v4-flash:0731": {
+					"source": "ollama",
+					"retired": true
+				},
+				"deepseek-v4-pro:0813": {
+					"source": "ollama",
+					"values": [
+						false,
+						"low",
+						"high",
+						"max"
+					],
+					"default": "low",
+					"capabilities": [
+						"completion",
+						"tools",
+						"thinking"
+					]
+				},
+				"gemma4:31b": {
+					"source": "ollama",
+					"values": [
+						false,
+						true
+					],
+					"default": false,
+					"capabilities": [
+						"completion",
+						"thinking",
+						"tools",
+						"vision"
+					]
+				},
+				"glm-5.3-flash": {
+					"source": "ollama",
+					"values": [
+						"low",
+						"high",
+						"max"
+					],
+					"default": "max",
+					"capabilities": [
+						"completion",
+						"thinking",
+						"tools",
+						"vision"
+					]
+				},
+				"minimax-m2.7": {
+					"source": "ollama",
+					"values": [
+						true
+					],
+					"default": true,
+					"capabilities": [
+						"completion",
+						"tools",
+						"thinking"
+					]
+				},
+				"glm-5.1": {
+					"source": "ollama",
+					"retired": true
+				},
+				"nemotron-3-super": {
+					"source": "ollama",
+					"values": [
+						false,
+						true
+					],
+					"default": true,
+					"capabilities": [
+						"completion",
+						"thinking",
+						"tools"
+					]
+				},
+				"nemotron-3-nano:30b": {
+					"source": "ollama",
+					"values": [
+						false,
+						true
+					],
+					"default": true,
+					"capabilities": [
+						"completion",
+						"tools",
+						"thinking"
+					]
+				},
+				"nemotron-3-ultra": {
+					"source": "ollama",
+					"values": [
+						false,
+						true
+					],
+					"default": true,
+					"capabilities": [
+						"completion",
+						"thinking",
+						"tools"
+					]
+				},
+				"mistral-large-3:675b": {
+					"source": "ollama",
+					"capabilities": [
+						"completion",
+						"tools",
+						"vision"
+					]
+				},
+				"qwen3.5:397b": {
+					"source": "ollama",
+					"retired": true
+				}
+			}
+		}
+	}
+}

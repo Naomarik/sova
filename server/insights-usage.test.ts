@@ -17,7 +17,7 @@ assert.ok(process.env.SOVA_TEST_HOME && home.startsWith(process.env.SOVA_TEST_HO
 const usageFile = join(agentDir, "cache", "usage-status.json");
 mkdirSync(join(agentDir, "cache"), { recursive: true });
 
-const { getUsageInsight } = await import("./insights");
+const { getUsageHistory, getUsageInsight, recordUsage } = await import("./insights");
 const { LAST_KNOWN_REASON, lastKnownUsage, rememberUsage, resetLastKnownCache } = await import("./usage-last-known");
 const lastKnownFile = join(agentDir, "sova", "usage-last-known.json");
 
@@ -356,11 +356,143 @@ test("Ollama's month takes its span from the declared reset day as usage is read
     assert.ok("error" in (await setUsageResetDay(bad)), JSON.stringify(bad));
 });
 
+test("burn (§app.insights/usage-burn): each window's rates, projection and last period from the recorded history; the chart's periods from the history route", async () => {
+  const H = 3_600_000;
+  const D = 24 * H;
+  const now = Date.now();
+  const reset = now + 3.5 * D; // half of the week gone
+  const start = reset - 7 * D;
+  const week = (pct: number, resetsAt: number) => ({ state: "ok", windows: [{ label: "7d", pct, resetsAt: new Date(resetsAt).toISOString(), seconds: 604_800 }] });
+  const at = (fetchedAt: number, openai: object, errors: Record<string, string> = {}) => ({ schemaVersion: 3, fetchedAt, nextFetchAt: fetchedAt + 150_000, openai, errors }) as never;
+  // The previous week, then this one; a failed fetch in between records nothing.
+  recordUsage(at(now - 7.5 * D, week(10, start)));
+  recordUsage(at(now - 4 * D, week(60, start)));
+  recordUsage(at(now - 30 * H, week(20, reset)));
+  recordUsage(at(now - 25 * H, week(99, reset), { openai: "timeout" }));
+  recordUsage(at(now - 20 * H, week(30, reset)));
+  writeCache({ openai: week(40, reset) });
+  const insight = await getUsageInsight();
+  const w = byId(insight.providers, "openai").windows[0]!;
+  const b = w.burn!;
+  assert.equal(b.series, "openai");
+  assert.equal(b.window, "7d");
+  const gone = (Date.now() - start) / H;
+  assert.ok(Math.abs(b.rate - 40 / gone) < 1e-3, `rate ${b.rate}`);
+  assert.equal(b.runsOutAt, undefined);
+  assert.ok(Math.abs(b.atReset! - 80) < 0.1, `atReset ${b.atReset}`);
+  // 24h ago it stood at 26 (between 20 at −30h and 30 at −20h).
+  assert.equal(b.recent?.ms, D);
+  assert.ok(Math.abs(b.recent!.rate - 14 / 24) < 1e-3, `recent ${b.recent?.rate}`);
+  // Last week: 60 at the end; at half its span (−7d) it stood between 10 (−7.5d) and 60 (−4d).
+  assert.equal(b.last?.pct, 60);
+  assert.ok(Math.abs(b.last!.byNow! - (10 + (50 * 0.5) / 3.5)) < 0.1, `byNow ${b.last?.byNow}`);
+  assert.equal(b.since, now - 7.5 * D);
+  // Providers with nothing recorded and no span say nothing; nor does a window at 0%.
+  assert.equal(byId(insight.providers, "zai").windows.find((x) => x.label === "mcp")!.burn, undefined);
+
+  const h = getUsageHistory("openai", "7d", start);
+  assert.deepEqual(
+    h.current?.points.map((p) => p.pct),
+    [20, 30],
+  );
+  assert.equal(h.current?.resetsAt, reset);
+  assert.equal(h.current?.startsAt, start);
+  assert.deepEqual(
+    h.previous?.points.map((p) => p.pct),
+    [10, 60],
+  );
+  assert.equal(h.previous?.resetsAt, start);
+  // Asked with a newer period's anchor: the newest recorded one is its previous.
+  const next = getUsageHistory("openai", "7d", start + 7 * D);
+  assert.equal(next.current, null);
+  assert.deepEqual(
+    next.previous?.points.map((p) => p.pct),
+    [20, 30],
+  );
+  assert.deepEqual(getUsageHistory("nobody", "7d", null), { series: "nobody", window: "7d", current: null, previous: null, past: [] });
+});
+
 test("an OpenAI window with its own length sends its start", async () => {
   writeCache({ openai: { state: "ok", windows: [{ label: "7d", pct: 97, resetsAt: "2026-10-08T17:30:59.000Z", seconds: 604_800 }, { label: "pri", pct: 5, seconds: 3600 }] } });
   const insight = await getUsageInsight();
-  assert.deepEqual(byId(insight.providers, "openai").windows, [
+  // `burn` and `history` (§app.insights/usage-burn) ride along with a live, recorded window; not this test's subject.
+  assert.deepEqual(byId(insight.providers, "openai").windows.map(({ burn: _, history: __, ...w }) => w), [
     { label: "7d", pct: 97, resetsAt: "2026-10-08T17:30:59.000Z", startsAt: "2026-10-01T17:30:59.000Z" },
     { label: "pri", pct: 5 },
   ]);
+});
+
+test("past periods (§app.insights/usage-burn): the last month falls back to its summary when its samples are older than 30 days; the stepper's periods and the 5-hour strip from the history route", async () => {
+  const { UsageHistory, useUsageHistoryForTests } = await import("./usage-history");
+  const { withBurn, getUsageStrip } = await import("./insights");
+  const H = 3_600_000;
+  const D = 24 * H;
+  const now = Date.now();
+  const dir = join(agentDir, "burn-past", "usage-history", "v1");
+  const periods = join(agentDir, "burn-past", "usage-history", "periods");
+  mkdirSync(dir, { recursive: true });
+  mkdirSync(periods, { recursive: true });
+  // Ollama: this month began 11 days ago; last month's summary (72% at the end, 27% at this share),
+  // and only its last 9 days still in samples.
+  const start = now - 11 * D;
+  const end = start + 30 * D;
+  const prev = start - 30 * D;
+  const share = (now - start) / (end - start);
+  const tenths = Array.from({ length: 11 }, (_, k) => Math.round(((k / 10) * 27) / share * 10) / 10).map((v) => Math.min(72, v));
+  const summary = { v: 1, series: "ollama", window: "month", startsAt: prev, resetsAt: start, finalPct: 72, avgRate: 0.1, tenths, firstAt: prev + H, lastAt: start - H };
+  // A 5-hour window from 40 days ago (outside the strip), and two from the last 30 days, one that hit 100%.
+  const five = (endsAt: number, final: number, hit?: number) => ({ v: 1, series: "claude:acct-s", window: "5h", startsAt: endsAt - 5 * H, resetsAt: endsAt, finalPct: final, ...(hit ? { hitLimitAt: hit } : {}), avgRate: final / 5, tenths: Array(11).fill(final), firstAt: endsAt - 5 * H + 60_000, lastAt: endsAt - 60_000 });
+  writeFileSync(join(periods, "v1.jsonl"), [summary, five(now - 40 * D, 30), five(now - 10 * D, 64), five(now - 2 * D, 100, now - 2 * D - H)].map((l) => JSON.stringify(l)).join("\n") + "\n");
+  const lines = [
+    { v: 1, s: "ollama", w: "month", t: start - 9 * D, pct: 50, resetsAt: start, startsAt: prev },
+    { v: 1, s: "ollama", w: "month", t: start - H, pct: 72, resetsAt: start, startsAt: prev },
+    { v: 1, s: "ollama", w: "month", t: start + H, pct: 0.2, resetsAt: end, startsAt: start },
+    { v: 1, s: "ollama", w: "month", t: now - 3 * D, pct: 22, resetsAt: end, startsAt: start },
+  ];
+  writeFileSync(join(dir, `${new Date(now).toISOString().slice(0, 10)}.jsonl`), lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
+  useUsageHistoryForTests(new UsageHistory({ dir }));
+  try {
+    const p = withBurn({ id: "ollama", state: "ok", windows: [{ label: "month", pct: 34, startsAt: new Date(start).toISOString(), resetsAt: new Date(end).toISOString(), declared: true }] }, "ollama", now);
+    const w = p.windows[0]!;
+    assert.deepEqual(w.history, { series: "ollama", window: "month" });
+    assert.equal(w.burn?.last?.pct, 72, "last month's final, from its summary");
+    assert.ok(Math.abs(w.burn!.last!.byNow! - 27) < 0.5, `byNow ${w.burn?.last?.byNow}: its tenths at this share`);
+
+    // The stepper's data: the current period, then every closed one newest first.
+    const h = getUsageHistory("ollama", "month", start);
+    assert.deepEqual(
+      h.current?.points.map((x) => x.pct),
+      [0.2, 22],
+    );
+    assert.equal(h.past.length, 1);
+    assert.equal(h.past[0]!.coarse, true, "its samples don't reach back to its start: drawn from the summary");
+    assert.equal(h.past[0]!.points.length, 11);
+    assert.equal(h.past[0]!.final, 72);
+    assert.equal(h.past[0]!.startsAt, prev);
+    assert.deepEqual(h.previous, h.past[0]);
+
+    // The strip: the last 30 days' 5-hour windows only, oldest first, no points.
+    const strip = getUsageStrip("claude:acct-s", "5h", now);
+    assert.deepEqual(strip.windows, [
+      { startsAt: now - 10 * D - 5 * H, resetsAt: now - 10 * D, final: 64, rate: 64 / 5 },
+      { startsAt: now - 2 * D - 5 * H, resetsAt: now - 2 * D, final: 100, hitAt: now - 2 * D - H, rate: 20 },
+    ]);
+    // A week drawn from samples: its own final, 100% time and rate.
+    const weekStart = now - 10 * D;
+    const history2 = new UsageHistory({ dir: join(agentDir, "burn-week", "v1"), now: () => now });
+    history2.record([
+      { series: "openai", window: "7d", label: "7d", t: weekStart + H, pct: 1, resetsAt: weekStart + 7 * D, startsAt: weekStart },
+      { series: "openai", window: "7d", label: "7d", t: weekStart + 4 * D, pct: 100, resetsAt: weekStart + 7 * D, startsAt: weekStart },
+      { series: "openai", window: "7d", label: "7d", t: now - H, pct: 5, resetsAt: weekStart + 14 * D, startsAt: weekStart + 7 * D },
+    ]);
+    useUsageHistoryForTests(history2);
+    const weeks = getUsageHistory("openai", "7d", weekStart + 7 * D);
+    assert.equal(weeks.past.length, 1);
+    assert.deepEqual(
+      { final: weeks.past[0]!.final, hitAt: weeks.past[0]!.hitAt, rate: weeks.past[0]!.rate, coarse: weeks.past[0]!.coarse, start: weeks.past[0]!.startsAt },
+      { final: 100, hitAt: weekStart + 4 * D, rate: 100 / 96, coarse: undefined, start: weekStart },
+    );
+  } finally {
+    useUsageHistoryForTests(null);
+  }
 });

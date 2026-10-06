@@ -23,6 +23,9 @@ import type {
   ClaudePoolInfo,
   ClaudePoolLogin,
   UsageClaudeLogin,
+  UsageHistory,
+  UsageHistoryPeriod,
+  UsageHistoryStrip,
   UsageInsight,
   UsageBalance,
   UsageProvider,
@@ -34,7 +37,9 @@ import type { HEntry } from "../shared/harness";
 import type { LinkedAgentInfo } from "../shared/mesh-links";
 // The usage-status extension's fetch/cache core. Part of the sanctioned pi-config import
 // surface (node builtins only, like extensions/mode/state.ts) — see CLAUDE.md.
-import { claudeLoginIds, forceRefresh } from "../pi-config/extensions/usage-status/fetch.ts";
+import { claudeLoginIds, forceRefresh, type CacheFile } from "../pi-config/extensions/usage-status/fetch.ts";
+import { balanceBurn, type BurnHistory, windowBurn } from "../src/lib/usage-burn";
+import { type PeriodSummary, readingsOf, samePeriod, splitPeriods, splitRuns, summarizePeriod, type UsageSample, usageHistory, type WindowSummary, windowKey } from "./usage-history";
 // Ollama's declared reset day (usage-windows.json), the same sanctioned surface (builtins only).
 import { monthlyWindow, readUsageWindows, setOllamaResetDay } from "../pi-config/extensions/usage-status/windows.ts";
 import { ownClaudeLoginUnreadable, readAuthStatus, readClaudeLoginAuth } from "./auth-status";
@@ -420,12 +425,161 @@ export async function getUsageInsight(): Promise<UsageInsight> {
   // Ollama's month is derived from the declared day now, never cached: a changed day or a month
   // rollover shows at once (§app.insights/usage-reset-day).
   const ollamaResetDay = readUsageWindows(agentRoot()).ollama?.resetDay ?? null;
-  const providers = read.map((p) => withDeclaredReset(auth[p.id] ? { ...p, auth: auth[p.id] } : p, ollamaResetDay, Date.now()));
-  const own = providers.find((p) => p.id === "claude");
-  const claudeLogins = own ? await readClaudeLogins(own, ownFetchedAt, claudeAccounts) : undefined;
+  const now = Date.now();
+  const declared = read.map((p) => withDeclaredReset(auth[p.id] ? { ...p, auth: auth[p.id] } : p, ollamaResetDay, now));
+  const own = declared.find((p) => p.id === "claude");
+  const logins = own ? await readClaudeLogins(own, ownFetchedAt, claudeAccounts) : undefined;
+  // How fast each window is going, from this device's recorded readings (§app.insights/usage-burn).
+  const ownAccount = logins?.find((l) => l.id === "default")?.accountUuid;
+  const providers = declared.map((p) => withBurn(p, p.id === "claude" ? (ownAccount ? `claude:${ownAccount}` : null) : p.id, now));
+  const claudeLogins = logins?.map((l) => (l.accountUuid ? { ...l, usage: withBurn(l.usage, `claude:${l.accountUuid}`, now) } : l));
   // macOS only: Claude Code's own login in neither its file nor a readable keychain (§app.claude-logins/macos-keychain).
   const ownUnreadable = await ownClaudeLoginUnreadable();
-  return { ...d, providers, ...(claudeLogins ? { claudeLogins } : {}), ollamaResetDay, ...(ownUnreadable ? { claudeOwnLoginUnreadable: true as const } : {}), stale: d.fetchedAt !== null && Date.now() - d.fetchedAt > USAGE_STALE_MS };
+  return { ...d, providers, ...(claudeLogins ? { claudeLogins } : {}), ollamaResetDay, ...(ownUnreadable ? { claudeOwnLoginUnreadable: true as const } : {}), stale: d.fetchedAt !== null && now - d.fetchedAt > USAGE_STALE_MS };
+}
+
+// ---------------------------------------------------------------------------
+// Usage burn (§app.insights/usage-burn): the history server/usage-history.ts records, read back
+// for each window's `burn` and for the Usage page's charts.
+
+const ms = (iso: string | undefined): number | undefined => {
+  const t = iso ? Date.parse(iso) : NaN;
+  return Number.isNaN(t) ? undefined : t;
+};
+
+/** A live window as a sample at `now`, anchored the way its recorded readings are. */
+function liveSample(w: UsageWindow, now: number): UsageSample {
+  const resetsAt = ms(w.resetsAt);
+  const startsAt = ms(w.startsAt);
+  return { t: now, pct: w.pct, ...(resetsAt !== undefined ? { resetsAt } : {}), ...(startsAt !== undefined ? { startsAt } : {}) };
+}
+
+const points = (samples: readonly UsageSample[]) => samples.map((s) => ({ t: s.t, pct: s.pct }));
+const periodOf = (samples: readonly UsageSample[]): UsageHistoryPeriod => {
+  const end = samples[samples.length - 1];
+  return { points: points(samples), ...(end?.startsAt !== undefined ? { startsAt: end.startsAt } : {}), ...(end?.resetsAt !== undefined ? { resetsAt: end.resetsAt } : {}) };
+};
+
+/** A closed period from its own samples, with the figures its summary would carry. */
+function closedFromSamples(s: WindowSummary, samples: readonly UsageSample[]): UsageHistoryPeriod {
+  return { points: points(samples), startsAt: s.startsAt, resetsAt: s.resetsAt, final: s.finalPct, ...(s.hitLimitAt !== undefined ? { hitAt: s.hitLimitAt } : {}), rate: s.avgRate };
+}
+
+/** A closed period from its summary alone: its tenths as the points (`coarse`). */
+function closedFromSummary(s: WindowSummary): UsageHistoryPeriod {
+  const len = s.resetsAt - s.startsAt;
+  const pts = s.tenths.flatMap((v, k) => (v === null ? [] : [{ t: s.startsAt + (len * k) / 10, pct: v }]));
+  return { points: pts, startsAt: s.startsAt, resetsAt: s.resetsAt, final: s.finalPct, ...(s.hitLimitAt !== undefined ? { hitAt: s.hitLimitAt } : {}), rate: s.avgRate, coarse: true };
+}
+
+const isWindowSummary = (s: PeriodSummary): s is WindowSummary => "tenths" in s;
+
+/**
+ * One window's periods against a live reading (`live`; null: the newest recorded period is the
+ * current one): `current`, the recorded readings of the period the reading belongs to (empty when
+ * nothing of it is recorded yet), and `past`, every closed period, newest first. A closed period
+ * is drawn from its samples while they reach back to within 10% of its span's start, else from
+ * its summary; one whose samples are all gone, from its summary alone.
+ */
+function windowPeriods(series: string, window: string, label: string, live: UsageSample | null): { current: UsageSample[]; past: UsageHistoryPeriod[]; since: number | null } {
+  const history = usageHistory();
+  const samples = history.samples(series, window);
+  const summaries = history.summaries(series, window).filter(isWindowSummary);
+  const periods = splitPeriods(samples, label);
+  const newest = periods[periods.length - 1];
+  const open = newest !== undefined && (live === null || samePeriod(newest[newest.length - 1]!, live, label));
+  const closed = open ? periods.slice(0, -1) : periods;
+  const past: UsageHistoryPeriod[] = [];
+  const used = new Set<WindowSummary>();
+  for (const p of closed) {
+    const from = p[0]!.t;
+    const to = p[p.length - 1]!.t;
+    const summary = summaries.find((s) => s.firstAt <= to && s.lastAt >= from);
+    if (summary) used.add(summary);
+    const own = summarizePeriod(series, window, label, p)!;
+    const covered = from <= own.startsAt + 0.1 * (own.resetsAt - own.startsAt);
+    // The summary stands in only for samples that no longer cover the period's start, and only
+    // when it knows the period's end at least as late as they do.
+    past.push(!covered && summary && summary.lastAt >= to ? closedFromSummary(summary) : closedFromSamples(own, p));
+  }
+  for (const s of summaries) if (!used.has(s) && !(open && newest && s.firstAt <= newest[newest.length - 1]!.t && s.lastAt >= newest[0]!.t)) past.push(closedFromSummary(s));
+  past.sort((a, b) => (b.resetsAt ?? 0) - (a.resetsAt ?? 0));
+  const firsts = [samples[0]?.t, summaries[0]?.firstAt].filter((t): t is number => t !== undefined);
+  return { current: open ? newest : [], past, since: firsts.length ? Math.min(...firsts) : null };
+}
+
+function windowHistory(series: string, window: string, label: string, live: UsageSample | null): BurnHistory {
+  const r = windowPeriods(series, window, label, live);
+  return { current: points(r.current), previous: r.past[0] ?? null, since: r.since };
+}
+
+/** A provider with each window's burn (and the balance's), from series `series`; as it is without one. */
+export function withBurn(p: UsageProvider, series: string | null, now: number): UsageProvider {
+  if (!series || p.state !== "ok") return p;
+  try {
+    if (p.balance) {
+      const all = usageHistory().balances(series);
+      const runs = splitRuns(all);
+      const run = runs[runs.length - 1] ?? [];
+      const end = run[run.length - 1];
+      const open = end && end.currency === p.balance.currency && p.balance.total <= end.total + 0.005 ? run : [];
+      const burn = balanceBurn(p.balance, now, open, all[0]?.t ?? null);
+      return burn ? { ...p, balance: { ...p.balance, burn } } : p;
+    }
+    const windows = p.windows.map((w) => {
+      const window = windowKey(w.label, w.scope);
+      const h = windowHistory(series, window, w.label, liveSample(w, now));
+      const burn = windowBurn(w, now, h, { series, window });
+      // The keys only once something is recorded: nothing else could draw a chart or a strip.
+      return { ...w, ...(burn ? { burn } : {}), ...(h.since !== null ? { history: { series, window } } : {}) };
+    });
+    return { ...p, windows };
+  } catch (err) {
+    warnOnce("usage-burn", `usage burn unavailable: ${(err as Error).message}`);
+    return p;
+  }
+}
+
+/**
+ * `GET /api/insights/usage/history?series=&window=&at=`: one chart's periods, the current one and
+ * every closed one of the last year, newest first. `at` is the live window's anchor (its reset, or
+ * a declared month's start): when the newest recorded period isn't that one, it is closed and the
+ * current one has nothing recorded yet.
+ */
+export function getUsageHistory(series: string, window: string, at: number | null): UsageHistory {
+  const label = window.split("/")[0]!;
+  usageHistory().closePeriods();
+  // Anchored like a recorded reading: its declared start or its reset, whichever it carries.
+  const live: UsageSample | null = at === null ? null : { t: Date.now(), pct: Infinity, resetsAt: at, startsAt: at };
+  const r = windowPeriods(series, window, label, live);
+  return { series, window, current: r.current.length ? periodOf(r.current) : null, previous: r.past[0] ?? null, past: r.past };
+}
+
+/** `…&strip=1`: the 5-hour strip, the closed windows of the last 30 days from their summaries alone, oldest first. */
+export function getUsageStrip(series: string, window: string, now = Date.now()): UsageHistoryStrip {
+  const history = usageHistory();
+  history.closePeriods();
+  const since = now - 30 * 86_400_000;
+  const windows = history
+    .summaries(series, window)
+    .filter(isWindowSummary)
+    .filter((s) => s.resetsAt >= since)
+    .sort((a, b) => a.resetsAt - b.resetsAt)
+    .map((s) => ({ startsAt: s.startsAt, resetsAt: s.resetsAt, final: s.finalPct, ...(s.hitLimitAt !== undefined ? { hitAt: s.hitLimitAt } : {}), rate: s.avgRate }));
+  return { series, window, windows };
+}
+
+/** Records one cache's readings in the usage history (§app.insights/usage-burn). Never throws. */
+export function recordUsage(cache: CacheFile): void {
+  try {
+    claudeAccountsService ??= new ClaudeAccountsService();
+    const accounts: Record<string, string | undefined> = {};
+    for (const l of claudeAccountsService.info().logins) accounts[l.id] = l.identity?.accountUuid ?? undefined;
+    const resetDay = readUsageWindows(agentRoot()).ollama?.resetDay ?? null;
+    usageHistory().record(readingsOf(cache, { accounts, ollamaMonth: (t) => (resetDay === null ? null : monthlyWindow(resetDay, t)) }));
+  } catch (err) {
+    warnOnce("usage-history", `usage history not recorded: ${(err as Error).message}`);
+  }
 }
 
 /**

@@ -4963,6 +4963,50 @@ a.group-option { color: inherit; text-decoration: none; }
 .usage-logins-row:last-child { padding-bottom: 0; }
 .usage-logins-name { color: var(--color-ink); font-weight: var(--fw-medium); overflow-wrap: anywhere; min-width: 0; }
 .usage-note code { font-family: var(--font-mono); font-size: var(--fs-mono); }
+/* Usage burn (§app.insights/usage-burn): the lines under a meter's reset line, in ink-2 (they are
+   the answer, not metadata); a run-out's warn chip ends its line. */
+.usage-burn-line { color: var(--color-ink-2); }
+.usage-burn-line .chip { margin-left: var(--space-1); vertical-align: 1px; }
+/* A mono time or span ("1h 59m", "Fri 3:15 AM"): the mono space is a full cell, which reads as a
+   double space beside proportional text, so its word gaps narrow to about the body's. */
+.usage-burn-mono { word-spacing: -0.3em; }
+/* The chart: a 64px plot the meter's width, a labelled day axis, a "now" row and a legend. Lines
+   differ in shape as well as tone: this period solid ink, the last dashed muted, the pace dotted. */
+.usage-burn-chart { display: flex; flex-direction: column; gap: var(--space-1); margin-top: var(--space-1); }
+.usage-burn-figure { position: relative; display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-micro); line-height: var(--lh-micro); color: var(--color-ink-muted); }
+.usage-burn-chart-pinned { padding-top: calc(var(--fs-micro) * 1.3 + 2px); }
+/* The period stepper: "‹ Week of Sep 25 ›", 44px targets, the name between them. */
+.usage-burn-stepper { display: flex; align-items: center; gap: var(--space-1); margin: 0 calc(-1 * var(--space-2)); }
+.usage-burn-period { flex: 1; min-width: 0; text-align: center; font-size: var(--fs-caption); font-weight: var(--fw-medium); color: var(--color-ink-2); }
+.usage-burn-step[aria-disabled="true"] { opacity: .4; cursor: default; }
+/* The 5-hour strip: one bar per past window, ink-2, warn at 100%; the picked one outlined in accent. */
+.usage-burn-strip { display: flex; flex-direction: column; gap: 2px; }
+.usage-burn-strip .usage-burn-strip-plot { height: 24px; }
+.usage-burn-bar { fill: var(--color-ink-2); }
+.usage-burn-bar-hit { fill: var(--status-warn); }
+.usage-burn-bar-picked { stroke: var(--color-accent); stroke-width: 1; }
+.usage-burn-plot { position: relative; height: 64px; touch-action: pan-y; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+.usage-burn-svg { display: block; overflow: visible; }
+.usage-burn-grid { stroke: var(--color-border); stroke-width: 1; }
+.usage-burn-guide { stroke: var(--color-border-strong); stroke-width: 1; stroke-dasharray: 1 3; }
+.usage-burn-base { stroke: var(--color-border-strong); stroke-width: 1; }
+.usage-burn-this { fill: none; stroke: var(--color-ink); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
+.usage-burn-last { fill: none; stroke: var(--color-ink-muted); stroke-width: 1.5; stroke-dasharray: 4 3; stroke-linejoin: round; }
+.usage-burn-pace { stroke: var(--color-ink); stroke-width: 1.5; stroke-dasharray: 1 3; stroke-linecap: round; }
+.usage-burn-now { stroke: var(--color-ink); stroke-width: 1; }
+.usage-burn-pin { fill: var(--status-warn); stroke: var(--color-surface); stroke-width: 1.5; }
+/* The readout's cursor follows the pointer: the accent, a line, never the only signal (the card says it). */
+.usage-burn-cursor { fill: var(--color-accent); }
+.usage-burn-pin-label { position: absolute; top: 0; white-space: nowrap; font-size: var(--fs-micro); color: var(--status-warn); }
+.usage-burn-axis,
+.usage-burn-nowrow { position: relative; height: calc(var(--fs-micro) * 1.3); white-space: nowrap; }
+.usage-burn-tick { position: absolute; top: 0; transform: translateX(-50%); }
+.usage-burn-tick-start { transform: none; }
+.usage-burn-tick-end { transform: translateX(-100%); }
+.usage-burn-nowrow > span { position: absolute; top: 0; font-weight: var(--fw-semibold); color: var(--color-ink); }
+.usage-burn-legend { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-3); margin: 2px 0 0; }
+.usage-burn-legend > span { display: inline-flex; align-items: center; gap: var(--space-1); }
+.usage-burn-legend svg { flex: none; overflow: visible; }
 
 /* Deep link #/agents/<teamId> focuses the team's group (tabindex -1); ring on :focus,
    since programmatic focus after a click doesn't match :focus-visible. Inset: the group

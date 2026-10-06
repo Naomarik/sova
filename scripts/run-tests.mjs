@@ -28,6 +28,8 @@
 // the worktree itself: a worktree's node_modules is a symlink into the main checkout, which a
 // sandboxed session can't write) and the next run sorts by it; a file never timed falls back to KNOWN_SLOW, then to its alphabetical place. The run ends
 // with the 10 slowest files.
+// Both: a temp dir inside a git repository is refused (exit 2) before anything runs, and no test
+// process gets a GIT_DIR-like variable; git's search stops at its temp dir (GIT_CEILING_DIRECTORIES).
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -90,11 +92,39 @@ function removeTree(dir) {
   }
 }
 
+/** What points git at a repository whatever its cwd: never passed to a test (hermetic-env.mjs drops the same list). */
+const GIT_LOCATION_VARS = ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_NAMESPACE", "GIT_PREFIX"];
+
+/** The git repository `dir` is in (its work tree's top, else its git dir), by git's own search with
+    nothing inherited steering or stopping it; null when there is none (or no git). */
+function repoAround(dir) {
+  const env = { ...process.env };
+  for (const name of [...GIT_LOCATION_VARS, "GIT_CEILING_DIRECTORIES"]) delete env[name];
+  const ask = (flag) => {
+    try {
+      return execFileSync("git", ["rev-parse", flag], { cwd: dir, env, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim() || null;
+    } catch {
+      return null;
+    }
+  };
+  return ask("--show-toplevel") ?? ask("--absolute-git-dir");
+}
+
 const argv = process.argv.slice(2);
 const at = argv.indexOf("--runtime");
 const runtime = at >= 0 ? argv[at + 1] : chosenRuntime();
 if (runtime !== "node" && runtime !== "bun") {
   console.error("usage: node scripts/run-tests.mjs [--runtime node|bun] [files] [-- flags]");
+  process.exit(2);
+}
+// Tests make plain folders in the temp dir and register them as projects; inside a checkout each one
+// would be that checkout, and promotions and coding worktrees would land in it (they once did, in
+// Sova's own). The preload stops git's search at the temp dir; refusing first says so. Each runtime
+// checks the dir its temp roots go in, before any test file runs.
+function refuseTmpInRepo(tmpBase) {
+  const enclosing = repoAround(tmpBase);
+  if (!enclosing) return;
+  console.error(`run-tests: the temp dir ${tmpBase} is inside the git repository ${enclosing}, where tests could commit, branch or add worktrees; run with a TMPDIR outside every repository (e.g. TMPDIR=/tmp pnpm test)`);
   process.exit(2);
 }
 const rest = argv.filter((a, i) => a !== "--" && (at < 0 || (i !== at && i !== at + 1)));
@@ -116,6 +146,7 @@ if (runtime === "node") {
   // socket path has a limit (108 bytes on Linux, 104 on macOS). Symlink-free for macOS: its default
   // tmpdir (/var/folders/…) is reached through the /var -> /private/var symlink, so a path built from
   // tmpdir() differs from its realpath. (Bun: each file's TMPDIR is its throwaway root, hermeticEnv.)
+  refuseTmpInRepo("/tmp");
   const tmp = fs.realpathSync(fs.mkdtempSync("/tmp/sova-t-"));
   process.env.TMPDIR = process.env.TMP = process.env.TEMP = tmp;
   process.on("exit", () => removeTree(tmp));
@@ -143,6 +174,7 @@ if ("missing" in found) {
   console.error(`run-tests: bun not found (${found.missing}); install it with mise, or run pnpm run test:node`);
   process.exit(2);
 }
+refuseTmpInRepo(os.tmpdir());
 const bun = found.path;
 const FILE_LIMIT_MS = Number(process.env.TEST_FILE_LIMIT_MS) || 300_000;
 const bunFlags = [...["--timeout=60000"].filter((d) => !flags.some((f) => f.split("=")[0] === d.split("=")[0])), ...flags];
@@ -172,12 +204,15 @@ function hermeticEnv() {
     TMPDIR: tmp,
     TMP: tmp,
     TEMP: tmp,
+    // Git's repository search stops at the root and the temp dir above it (the preload sets the same).
+    GIT_CEILING_DIRECTORIES: [fs.realpathSync(root), fs.realpathSync(path.dirname(root))].join(path.delimiter),
   };
   // The same list hermetic-env.mjs drops.
   for (const name of [
     "PI_CODING_AGENT_DIR", "PI_AGENT_DIR", "PI_SESSIONS_DIR", "CLAUDE_CONFIG_DIR", "SOVA_EXTENSIONS_FILE",
     "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME",
     "SOVA_DEVICE_ID", "SOVA_MESH_IDENTITY", "SOVA_CLAUDE_ACCOUNTS_DEV",
+    ...GIT_LOCATION_VARS,
   ]) delete env[name];
   return { root, env };
 }

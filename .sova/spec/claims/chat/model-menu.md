@@ -5,6 +5,11 @@ A searchable model picker, like pi's Ctrl+P palette. It exists only for **chat**
 watched (TUI-owned) session keeps the model as plain mono text in `.session-head-meta`, because it
 can't be changed from here.
 
+Owns: the picker panel's two steps, its order and search, its keys, states and errors, and which
+pick becomes the default for new sessions. Not here: the flyout that holds the panel, the model
+indicator that opens it and the Thinking group (§chat.composer/composer-flyout, §chat/composer),
+and which models are turned off (§app/settings-dialog).
+
 ## §chat.model-menu/trigger — Trigger
 
 **It has no trigger of its own.** The picker is the composer flyout's third panel (§chat.composer/composer-flyout), opened from the Model row on the flyout's model panel — which the composer's model
@@ -14,7 +19,7 @@ Model row carries the label ({id} in mono, the provider beside it, the full `pro
 
 ## §chat.model-menu/menu — Menu
 
-The picker has two steps in one panel: **Providers** (what the Model row and `Ctrl+P` open) and
+The picker has two steps in one panel, **Providers** (what the Model row and `Ctrl+P` open) and
 **one provider** (its models). Typing on either step searches instead (Content and order).
 
 ```html
@@ -103,6 +108,9 @@ The picker has two steps in one panel: **Providers** (what the Model row and `Ct
 
 ## §chat.model-menu/content-and-order — Content and order
 
+Step 1 lists the favorites and then one row per provider, step 2 one provider's models, and typing
+searches instead.
+
 - **Step 1, Providers.**
   - **Favorites** (`favorite: true`) come first, sorted by `ref`, as model rows you can choose
     right here, each with its provider in a muted caption.
@@ -136,6 +144,8 @@ The picker has two steps in one panel: **Providers** (what the Model row and `Ct
 
 ## §chat.model-menu/keyboard — Keyboard
 
+Keys open the picker, move through it, open a provider, choose a model or close the flyout.
+
 | Key | Where | Does |
 |---|---|---|
 | `Ctrl+P` / `⌘P` | anywhere while a **chat** session is open | Opens the flyout on this panel's first step, and closes it if that panel is already open. Call `preventDefault()` so print never fires. In watch sessions and on the list view it isn't bound, and the browser prints as usual |
@@ -155,6 +165,9 @@ When the flyout closes without a choice, focus returns to its trigger; after a c
 the textarea, where the next thing you do is type.
 
 ## §chat.model-menu/states — States
+
+What the flyout's Model row and the panel show while models load, when there are none, while
+changing is blocked, and while a switch is pending or done.
 
 | State | Flyout's Model row | Panel |
 |---|---|---|
@@ -228,7 +241,36 @@ conversation. The Overseer's own composer saves to `overseer.json` instead, neve
 §app/baton, §app/project-overseer) never saves this default either: its pick stays that session's
 own, or goes where that kind keeps it.
 
+## §chat.model-menu/favorites — Starring a favorite
+
+A model row's star adds the model to Favorites, or takes it out, without choosing it: a click on
+the star, or `Ctrl+F` on the active model row.
+
+- **The star.** A ghost icon button at the right end of each model row. It is the option's sibling,
+  not its child, because an option's content is presentational. It is out of the tab order: focus
+  stays in the input or the listbox, and `Ctrl+F` is its keyboard path. `aria-pressed` says whether
+  the model is a favorite, its `aria-label` is "Favorite {provider/id}", and its `title` is "Add to
+  favorites (Ctrl+F)" or "Remove from favorites (Ctrl+F)". Starred, it is accent and always shown.
+  Not starred, it is muted, and on a pointer device it shows only on the hovered or active row.
+  Starred rows are also the Favorites group, so the state never rests on the accent alone.
+- **`Ctrl+F`** (Ctrl only; `⌘F` stays the browser's find) stars or unstars the active row from the
+  input or the listbox, with `preventDefault()`. On a provider row it does nothing.
+- **What happens.** The row moves between groups at once and stays the active option, scrolled to
+  where it landed. Hovering is ignored until the pointer really moves, so the row that slides under
+  a still pointer doesn't take the active option. The shared model cache flips first, so every
+  picker agrees, then `PUT /api/models/favorite` saves it to `model-favorites.json` in the agent
+  directory, the file the terminal palette's `Ctrl+F` uses. On success it announces "Added {id} to
+  favorites." or "Removed {id} from favorites." On failure the row moves back, and an error banner
+  says "Couldn't add {id} to favorites." or "Couldn't remove {id} from favorites.", then the reason
+  and "Your favorites are unchanged.", until Dismiss or the next star.
+- **The foot** (768px and wider) adds a line of its own: "`Ctrl`+`F` to add or remove a favorite".
+- **Contrast.** The starred star in accent is 4.67 (dark) and 6.81 (light) on the surface, 5.08
+  and 5.63 on the sunken active row, and 4.76 and 5.55 on the accent-tint current row. The unstarred
+  star is muted, measured as the provider caption is.
+
 ## §chat.model-menu/tokens — Tokens
+
+The tokens the picker, its rows and the Model row are drawn with.
 
 - **Trigger.** The flyout's `plus` `.button-icon.button-ghost` at 44px, `--color-sunken` while
   open. Its Model row carries the id in `--font-mono` / `--fs-mono` in `--color-ink-2`.
@@ -243,6 +285,8 @@ own, or goes where that kind keeps it.
 - **Foot.** `--fs-caption` in `--color-ink-muted`.
 
 ## §chat.model-menu/contrast — Contrast
+
+The picker's ids, captions and active marker measured against each ground, in dark and light.
 
 | Pair | Dark | Light |
 |---|---|---|

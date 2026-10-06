@@ -1,6 +1,14 @@
 # §chat/mode-menu — Mode menu
 > Part of the Sova design spec · [overview](../design/overview.md)
 
+The mode menu is the control in a chat's composer foot that switches that chat's major and minor
+modes, picks its subagent profile, and saves them as the default for new sessions.
+
+Owns: the trigger and the menu, how a switch reaches one chat, the mode prompt holding across turn
+starters and minor toggles, and which minor modes reach workers. Not here: the profiles and their
+routing (§chat/subagent-profiles, §app/settings-dialog), what align does (§chat/alignment), and the
+Overseer's Quick Actions in this slot (§app.overseer/quick-actions).
+
 pi's mode extension (`pi-config/extensions/mode`) has one **major mode**, `normal` or
 `delegate`, and any set of **minor modes** (today `align`, `spec` and `vis`, which teaches the inline visuals of §chat.markdown/visuals). What Delegate routes where is
 Settings → Subagents (§app/settings-dialog), through this chat's subagent profile
@@ -27,6 +35,8 @@ next, and the state that made it look like one (an empty session) was invisible 
 switching.
 
 ## §chat.mode-menu/trigger — Trigger
+
+The trigger is a ghost button that names this chat's modes and opens the menu.
 
 In chat sessions it sits in the composer foot (§chat/composer), at the right end: the foot reads the model
 indicator, the disabled reason, then this. It's in reach of the message it affects, next to the
@@ -68,6 +78,9 @@ this slot (§app.overseer/quick-actions).
   `--tap-min` target stretched over it by a `::after`, mirrored to the right edge.
 
 ## §chat.mode-menu/menu — Menu
+
+The menu is a popover above the trigger with the major modes, the minor modes and the Subagents
+picker, and a foot whose button saves this chat's modes as the default.
 
 It uses the model menu's popover shell (`.model-menu`): a `[popover="auto"]` right-aligned
 **above** the trigger (the composer is pinned to the pane's bottom edge, so it grows upward, like
@@ -299,6 +312,9 @@ and after it. The model draws `vis` fences after turning it on and none after tu
 
 ## §chat.mode-menu/workers — What a chat's workers get of its modes
 
+Of its parent chat's modes, a worker gets only the minor modes that declare they reach workers
+(today `spec`), as they are when it starts or resumes.
+
 A worker is not a chat: it has no mode menu, and its parent's major mode never reaches it
 (workers spawn no workers, so Delegate has nothing to route there). Each **minor mode declares
 whether it reaches workers** (`MINOR_WORKER` in `pi-config/extensions/mode/minor.ts`, a record
@@ -337,6 +353,8 @@ nothing.
 
 ## §chat.mode-menu/states — States
 
+What the trigger and the menu show in each state, from a mode not known yet to a failed save.
+
 | State | Shows |
 |---|---|
 | Idle | Trigger label, and this chat's rows checked |
@@ -353,6 +371,8 @@ nothing.
 
 ## §chat.mode-menu/tokens — Tokens
 
+The tokens the trigger, the menu's rows and its foot are drawn with.
+
 Trigger: `--font-mono`, `--fs-mono`, `--color-ink-2`, sunken fill while open, icons
 `--color-ink-muted`. Rows: `--control-md` min height, `--space-2` / `--space-3`
 padding, id in `--font-mono` `--color-ink`, description `--fs-caption` `--color-ink-muted`,
@@ -360,6 +380,9 @@ checked `--color-accent-tint`, focus `--focus-ring` inset. Foot: `--fs-caption`
 `--color-ink-muted` over a `--color-border` rule.
 
 ## §chat.mode-menu/rejected — Rejected
+
+Other places for the switch, and other ways for it to reach a chat, that were turned down, each with
+why.
 
 - **A segmented control in the composer.** It reads as a per-message option, not a per-chat
   one, and every mode as a segment costs composer width at 320px. The menu trigger that sits in

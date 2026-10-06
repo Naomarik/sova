@@ -2,14 +2,15 @@
 // client project in the OS temp dir, deleted after; ~/.pi is never read or written. The decide seam
 // is a fake; the spec tools are the real ones this tree ships (run as child processes).
 import assert from "node:assert/strict";
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, before, describe, test } from "node:test";
 import { BATON_DECISION_ENTRY, OPERATOR } from "../shared/baton";
 import type { DecisionProvider, DecisionRequest } from "./decide";
+import { scratchRoot } from "./test-scratch";
 
-const tmp = realpathSync(mkdtempSync(join(tmpdir(), "sova-reconcile-")));
+// In no repository: each spec-only client below is a plain folder, so promotions commit nowhere.
+const tmp = scratchRoot("sova-reconcile-");
 process.env.PI_CODING_AGENT_DIR = join(tmp, "agent");
 mkdirSync(join(tmp, "agent", "sessions"), { recursive: true });
 

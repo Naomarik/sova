@@ -5,9 +5,15 @@ library. There is no install step and no config import, and it never writes a fi
 
 ```sh
 node sova-spec.mjs check                [--root DIR] [--spec DIR] [--json]
-node sova-spec.mjs packet §ns/name      [--part prose|inventory|frontier|code|findings] [--cursor TOKEN] [--budget BYTES] [--root DIR] [--spec DIR] [--read-policy review]
+node sova-spec.mjs packet §ns/name      [--part prose|inventory|frontier|code|findings|frame] [--cursor TOKEN] [--budget BYTES] [--root DIR] [--spec DIR] [--read-policy review]
+node sova-spec.mjs toc    §ns/name --dir out|in|down|up|mentions [--json] [--budget BYTES] [--cursor TOKEN] [--root DIR] [--spec DIR]
+node sova-spec.mjs read   §ns/name      [--whole] [--no-frame] | read --frame [--json] [--budget BYTES] [--cursor TOKEN] [--root DIR] [--spec DIR]
 node sova-spec.mjs scope  §ns/name      [--root DIR] [--spec DIR] [--json] [--budget BYTES]
 node sova-spec.mjs impact §ns/name      [--root DIR] [--spec DIR] [--json]
+node sova-spec.mjs impact §ns/name --near [--json] [--budget BYTES] [--cursor TOKEN] [--root DIR] [--spec DIR]
+node sova-spec.mjs map    [namespace | §ns/name] [--json] [--budget BYTES] [--cursor TOKEN] [--root DIR] [--spec DIR]
+node sova-spec.mjs where  <path|token>  [--token] [--all] [--json] [--budget BYTES] [--cursor TOKEN] [--root DIR] [--spec DIR]
+node sova-spec.mjs graph                [--json] [--budget BYTES] [--cursor TOKEN] [--root DIR] [--spec DIR]
 node sova-spec.mjs census               [--root DIR] [--spec DIR] [--json]
 node sova-spec.mjs census --changed [--base REV] [--related] [--own-base REV]... [--root DIR] [--spec DIR] [--json]
 node sova-spec.mjs foreign --base REV [--head REV | --spec DIR] [--own-base REV]... [--landing [--drafts DIR]...] [--root DIR] [--json]
@@ -31,16 +37,17 @@ parent.
 | 1 | Relevant unknown, stale, unresolved, or unread content: dangling edge, missing `requires`, a code path that is missing, refused (absolute, outside the root, through a symlink), unreadable or not a regular file, provenance moved/changed/missing/refused/unreadable, budget left passages unread (including the requested one), no census boundary, unreadable census directory, a changed file in the boundary that no record claims (`changed-unclaimed`, one per file). |
 | 2 | Output can't be trusted: usage error, unreadable or unsupported manifest, malformed record, bad declaration, a symlink anywhere on the claims path or in the claims tree, an unreadable claims file or directory, an unknown seed, or an internal error. For `census --changed`: no Git work tree, or an enclosing repository that ignores the project (`not-git`), a `--base` that doesn't name a commit (`bad-rev`), or a failed Git command (`git-failed`). Scope and impact return no passages while the graph is malformed. A malformed record never enters the graph. |
 
-For commands other than `packet`, `--json` prints one object: `tool: "sova-spec"`, `command`, `spec` (the normalized graph
+For `check`, `census`, `foreign`, `scope` and plain `impact`, `--json` prints one object: `tool: "sova-spec"`, `command`, `spec` (the normalized graph
 directory), `root`, `exit` (equal to the process status), and `findings[]` (`severity`
 error|warn|note, `code`, `message`, and `id`/`file`/`line` where known). It also holds the
-command's results. A `note` never changes the exit code. Every `file` in the output is relative
+command's results. A `note` never changes the exit code. The pull and look views (`toc`, `read`, `map`,
+`where`, `impact --near`, `graph`) print their own envelopes, described in their sections below. Every `file` in the output is relative
 to the project root. New fields are only ever added. Other tools read this output:
 `sova-spec-review.mjs` uses `scope`, and the draft tool uses `check`.
 
 ## Bounded task packets
 
-`packet` is the task-reading path; `scope` remains the complete-graph API for deliberate machine
+`packet` is the bounded full-closure path (the reading path is `toc` and `read`, below); `scope` remains the complete-graph API for deliberate machine
 inspection and review, with its existing prose-only budget unchanged. Packets always print compact
 JSON (also with `--json`), with no stderr side channel or writes. The default whole-response budget
 is 12,000 UTF-8 bytes; explicit integer budgets are 1,024–32,768. The bound includes all metadata,
@@ -58,7 +65,7 @@ Unicode-scalar-safe). Join contiguous fragments to recover the passage. `complet
 item contains the WHOLE passage (`start == 0 && end == total`); even the final fragment of an
 oversized passage remains false. Finish at `end == total`, not by waiting for `complete: true`.
 
-Each response exposes `items`, `next`, `counts` for all five streams, `remaining` for the selected
+Each response exposes `items`, `next`, `counts` for all five streams (six with a frame), `remaining` for the selected
 stream (including a partially delivered record), and `status`. Repeat the same ID and part with
 `--cursor` set to the returned `next` until the relevant fragments are finished. Start
 `--part frontier` separately to inspect declared dependency unknowns, and `--part findings` for
@@ -85,6 +92,140 @@ reported provenance/code-readability state invalidate them; restart the stream r
 versions. Code-content-only changes need not invalidate a cursor when only code locations and
 readability were reported. A continuation may change the supported budget. No session, cursor
 store or source snapshot is written, and no project code is run.
+
+## Pull: `toc` and `read`
+
+`packet` pushes a claim's whole declared closure. `toc` and `read` let the reader choose instead:
+look at the contents one hop out, then read the passages the task needs, one at a time. Both live in
+their own modules (`toc.mjs`, `read.mjs`), parse their own flags, and read the graph with this core's
+loader. Flags may come before or after the command word. `sova-spec --help` lists them with the other commands;
+`toc --help` and `read --help` print their own bounded JSON help.
+
+**`toc §id --dir DIR`** lists the neighbours one hop away in one direction:
+
+| `--dir` | Lines | Groups |
+|---|---|---|
+| `out` | the declared `requires`, the `embeds`, the notes `about` it or its H1, then the § the claim's prose names without requiring | `requires`, `embeds`, `about`, `named` |
+| `in` | the claims whose `requires` name it; the claims that `embeds` it; the notes `about` it; for an H2, also those that require or embed its H1 and the notes about its H1 (`via` names it) | `required-by`, `required-through-parent`, `embedded-by`, `embedded-through-parent`, `about-it` |
+| `down` | an H1's H2s, or a section's members, in declaration order; for an H1, then the notes `about` its H2s (one hop, by the first, in declaration order, of the H2s each serves, then id) | `children`, `members`, `children-about` |
+| `up` | an H2's parent | `parent` |
+| `mentions` | the claims whose prose names it | `mentioned-by` |
+
+Each line has `id`, `title`, `kind`, `labels` (when declared), `bytes` (what `read` of it delivers;
+an H1's lede) and `whole` (an H1's lede plus all its H2s), `what` and `whatSource`
+(`prose|blockquote|none`), and, for `out`, `in`, `mentions` and `down`'s `children-about`, `why` and `whySource`
+(`prose|comment|declared|none`; an `about` or `children-about` line takes the note's sentence naming its target, else the requested claim's sentence naming the note (for `children-about`, the H2 it serves, then the H1); `declared` is the `about` field when neither prose nor a comment names it). A record with
+`agreed` adds `agreed: {by, at, built}` (built: `code` plus evidence `reviewed` or `verified`), and
+the text reads `agreed (decision) <at> by <by>, not built` (or `, built`); `read` items carry it too. What is the first prose sentence after the heading: fences, comments,
+tables, thematic breaks and headings skipped, a blockquote only when nothing else is prose, at least 20 and at most
+200 characters, never code. Why is the first visible-prose sentence of the linking claim naming the
+other, led by a short run-in label right before it in the same paragraph (1-3 plain words ending in
+`:`, such as `Not here:`), else an HTML comment naming it, else exactly `not mentioned in this claim's text`. Mentions
+mask fenced code, HTML comments and double-backtick spans; single backticks count, and `§a.b` reads
+as `§a/b`. A line for an id with no record or span is `dangling: true`.
+
+`seed` describes the requested claim the same way, plus `codeFiles` (how many code files its record
+lists; `read` names them); for `out` on an H1 with H2s it adds
+`childRequires: {h2s, claims, of, uninvestigated}`, how many of its `of` H2s require or embed claims outside the H1, how many distinct claims, and how many H2s are behaviors with no `requires` key (also a `requires-uninvestigated` unknown, so exit 1). `footer` holds `delivered` (always empty: a
+contents line is never the passage), `listed` and `notListed` for this response, `otherDirections`
+(the line count of each direction not asked) and `unknowns` (`requires-uninvestigated` for a
+behavior with no `requires` key, or for `in` the behaviors that could also require it; `unknown` for
+dangling targets). Exit 0 is done without unknowns, 1 is more lines or an unknown, 2 a refusal.
+
+**`read §id [--whole]`** returns one passage, exact, with no closure: `items: [{index, id, kind,
+labels?, agreed?, code?, codeMore?, title, file, lines, text, fragment}]`, where `code` is the record's
+first 12 code paths as `{path, state}` (`present`, `missing`, `refused`, …) and `codeMore` counts the rest, where `text` is byte-for-byte the passage `scope`
+returns. An H1 gives its lede; `--whole` gives the lede and then each H2 in declaration order. The
+`footer` names (`named`) the passage's `requires` and prose mentions that this read does not deliver on any of its pages,
+and for an H1 read as its lede, `children` and `wholeBytes`. Exit 0 is done, 1 more, 2 a refusal.
+
+Both take `--json` (compact JSON) or print readable text, under one whole-response budget either
+way: integers 1,024–32,768, default 12,000 for `toc` and 32,768 for `read`, so one passage of
+ordinary size is one call. What doesn't fit is paged with `--cursor`, as packet pages: `read`
+splits an oversized passage into exact UTF-8 fragments (finish at `end == total`). Cursors bind the
+root, spec, request and the whole computed stream, so a spec change that alters it makes them stale. Refusals
+(`usage`, `unknown-id`, `graph-untrusted` with `cause: manifest-not-found` when there's no
+manifest, `token-malformed`, `token-mismatch-or-stale`, `token-range`, `budget-refused`) are small
+JSON within the budget. Nothing is stored.
+
+## Optional record fields: `embeds`, `core`, `about`
+
+Three optional manifest record fields, handled in their own module (`fields.mjs`). None is a kind,
+a label value or a top-level key, so an older core reads the manifest and ignores them. A spec whose
+records carry none of them gets exactly the output it got before.
+
+| Field | On | Means | Read by |
+|---|---|---|---|
+| `embeds: [§id]` | any record | surfaces drawn inside this one, needed whole | `scope`/`packet` follow it (reason `embeds`); `impact` walks it back; `toc --dir out` group `embeds`, `--dir in` group `embedded-by`; `read` delivers each target whole after the passage, items marked `embeddedIn` |
+| `core: true` | any record, usually an H2 | part of the always-on frame | the frame stream: `packet §id --part frame`, `read --frame`, and `frame.items` on the first page of `read §id` (outside its budget; `--no-frame` drops it) |
+| `about: [§id]` | notes only | the surface or behavior the note serves | `toc --dir out` group `about` (also for an H2 of the target H1, marked `via`); `read` footer `about`; `packet` prose, after the closure, reason `about` (one per delivered target), for every claim the packet delivers |
+
+**The frame** is every `core: true` record's passage in file and line order (an H1 gives its lede).
+It is never part of another stream or of the requested claim's page budget. When the spec flags at
+least one core record, every `packet`, `toc` and `read` response carries `frame: {passages, bytes,
+cap, overCap}`, and its text form says how to read it; `packet` counts then include `frame`. The cap
+is 12,000 bytes (the sum of the passages' UTF-8 bytes). Over it, the frame is still delivered whole,
+and `check` and `packet` report a `frame-over-cap` warning.
+
+`check` errors (exit 2) when `embeds` or `about` is not an array of § ids, or `core` is not a
+boolean. It warns on `about` on a record that is not a note (`about-not-note`), a target with no
+record (`dangling-edge`), an `embeds` target that is not a surface (`embeds-not-surface`), and an
+`about` target that is a note or section (`about-wrong-kind`).
+
+## Look: `map`, `where`, `impact --near`, `graph`
+
+Computed views over the whole graph, for orientation and lookup. `graph.mjs` holds the shared index
+(areas, interface tokens, code and reverse `requires`/`embeds` maps, agreement counts), `graph` and `impact --near`; `map.mjs`
+and `where.mjs` hold the other two. Like `toc`, each parses its own flags (before or after the
+command word), prints compact JSON with `--json` or readable text, pages under one whole-response
+budget (1,024–32,768) with a stateless `--cursor` bound to the request and every computed line, and
+prints its own bounded JSON with `--help`. Exit 0 is done, 1 more lines or a named unknown, 2 a
+refusal as small JSON. Nothing is stored.
+
+**`map [namespace | §ns/name]`** (default budget 32,768). Without an argument: `lines` of
+`type: "area"` (`id`, `namespace`, `title`, `what`, `claims`, `labels` as counts by `authority`,
+`evidence` and `unlabelled`, `requiresOut`, `requiresIn`: `requires` and `embeds` edges across the area's boundary), then
+`type: "hub"` (`path`, `records`: the ten code files the most records list). `counts` holds
+`namespaces`, `areas`, `claims`, `labels`, `agreedNotBuilt` and `gaps` (`uninvestigated`, `noCode`, `noProse`,
+`noInterfaceToken`). A namespace limits all of it. A §id shows its area (an H2 shows its parent's):
+`type: "claim"` lines (H1 first, then declaration order; `requires` is `null` when the key is
+absent, `requiredBy` counting requirers and embedders, `agreed` and `built` when the record carries
+`agreed`), `out` and `in` crossing edges (`from`, `to`, `kind` `requires|embeds`), and `token` lines
+(`token`, `definedBy`, `usedElsewhere`): interface tokens in a claim's heading or first sentence.
+`counts.agreedNotBuilt` is `{agreed, notBuilt, oldest, newest}` over the records in view that carry
+`agreed`: built is `code` plus `evidence` `reviewed` or `verified` (sova-spec-draft.mjs `BUILT_LABELS`), and
+`oldest`/`newest` are the not-built records' `agreed.at` dates, never ages. With no `agreed` record in
+view the key is absent and the text says so. `agreed` records who decided and when, not that anyone
+read the current words.
+
+**`where <path|token> [--token] [--all]`** (default 12,000). A path is a file some record's `code`
+lists or that exists under the root; it is read with the core's own refusal rules. `mode: "path"`:
+`file: {path, state, mapped}`, then `ranked` lines (`score`, `shared` tokens, rarest first), then
+`unranked` lines (claims listing the file that share no token), top 10 unless `--all` (`total`,
+`shown`). An unmapped file lists up to 10 `candidate` lines (a name match, never a mapping), exit 1;
+an unreadable file keeps its claims unranked, exit 1. `mode: "token"`: `defines` lines (the token in
+the claim's heading or first sentence) then `mentions` lines, each with the matching backticked
+`spans`. An interface token is a backticked span (fences and comments masked) of 3+ characters with
+a letter and a separator, bracket or sigil, an inner capital, or all capitals; it occurs in a file
+with no `[A-Za-z0-9_$]` on either side, and weighs `ln((records + 1) / records using it)`.
+
+**`impact §id --near`** (default 12,000). `impact` without `--near` is unchanged. The family is an
+H1 with its H2s, or an H2 alone (claims requiring or embedding its parent count, `via: "parent"`).
+`lines` by `group`, in order: `consumer` (one reverse hop over `requires` and `embeds`, contents-line
+fields plus `requires`, `embeds` when it embeds, and `why`), `container` (sections with family
+`members`), `about` (notes whose `about` names the family or, `via: "parent"`, an H2 seed's H1), `frontier` (behaviors with no `requires` key in the
+family or naming it: `reason` `in-family|mentions-family`), `next` (ids requiring or embedding a consumer),
+`mentioned` (ids naming the family in prose or in their heading after their own id, frontier ids left out), `code` (per
+shared file: `records`, up to 12 `ids`, `more`). `counts.uninvestigatedElsewhere` counts the
+behaviors with no `requires` key left to plain `impact`.
+
+**`graph --json`** (default 32,768). Pages of `nodes` (id order: `id`, `kind`, `level`,
+`namespace`, `area`, `title`, `what`, `whatSource`, `labels`, `bytes`, `whole`, `file`, `lines`,
+`requires` count or `null`, `code` count, `core: true` when set, `agreed` when present) and then `edges`
+(`kind` `requires|embeds|member|contains|about|mentions|code`,
+`from`, `to`, `dangling` when the target has no record or span). `counts` (`nodes`, `edges`,
+`byKind`) is on every page; concatenating `nodes` and `edges` across pages rebuilds one payload,
+whatever the budget. Without `--json`, only the counts.
 
 ## Format read (version 1)
 

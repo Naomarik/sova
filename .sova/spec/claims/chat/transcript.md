@@ -643,7 +643,7 @@ runaway reply there is capped: it can't write a line too long to read back or to
   here now." It's a one-time transition with an action, not a persistent card. Its `.banner-action` is `<button class="button button-sm">Open for Chat</button>`,
   which reconnects with `/ws/chat`.
 - **Watch socket drops.** `.banner.banner-warn` with `alert-circle`. Title: "Stopped watching.
-  The connection dropped." Body: "What's shown is up to `14:06`. Reconnecting…" When it
+  The connection dropped." Body: "What's shown is up to `2:06 PM`. Reconnecting…" When it
   reconnects, the banner goes away. The snapshot replaces the list, and scroll position is
   kept if the user wasn't following. Older rows are fetched when wanted, as in a chat
   (§chat.transcript/rendering). While the rows held have no reply to read the context fill from,

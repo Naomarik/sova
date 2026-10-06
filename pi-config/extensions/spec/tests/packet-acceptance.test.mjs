@@ -296,7 +296,7 @@ for (const kind of ["hardlink", "oversize"]) test(`review read policy refuses ${
 
 test("draft/no-Git support and isolated shipped core + sibling helper, without project runtime imports", () => {
   const root = fixture(), standalone = temporary(), draft = ".sova/spec/drafts/copy/spec";
-  for (const name of ["sova-spec.mjs", "packet.mjs"]) if (existsSync(join(dirname(CLI), name))) write(standalone, name, readFileSync(join(dirname(CLI), name)));
+  for (const name of ["sova-spec.mjs", "packet.mjs", "toc.mjs", "read.mjs", "fields.mjs", "graph.mjs", "map.mjs", "where.mjs"]) if (existsSync(join(dirname(CLI), name))) write(standalone, name, readFileSync(join(dirname(CLI), name)));
   for (const file of ["manifest.json", ...readdirSync(join(root, ".sova/spec/claims"), { recursive: true }).filter((f) => f.endsWith(".md")).map((f) => `claims/${f}`)])
     write(root, `${draft}/${file}`, readFileSync(join(root, ".sova/spec", file)));
   assert.equal(existsSync(join(root, ".git")), false);
@@ -379,11 +379,31 @@ test("real a-pane packet12k smoke delivers exact useful seed/orientation fragmen
   const ids = ["§workspace.groups/a-pane", "§workspace/groups"], full = scope(projectRoot, ids[0]);
   const requested = ids.map((id) => full.passages.find((p) => p.id === id));
   for (const p of requested) assert.ok(p, "current corpus contains the requested seed and orientation");
+  // Packet delivers scope's closure plus what it embeds, then the notes whose `about` names a delivered claim.
+  // Computed here from the manifest, not from packet's code.
+  const claims = JSON.parse(readFileSync(join(projectRoot, ".sova/spec/manifest.json"), "utf8")).claims;
+  const delivered = new Set(full.passages.map((p) => p.id));
+  for (const id of delivered) for (const e of claims[id]?.embeds ?? []) {
+    const whole = [e, ...Object.keys(claims).filter((k) => k.startsWith(`${e.replace("/", ".")}/`))];
+    assert.ok(whole.every((k) => delivered.has(k)), `${id} embeds ${e}, which scope lacks: extend the expected set before trusting this count`);
+  }
+  const notes = Object.entries(claims).filter(([n, r]) => Array.isArray(r.about) && !delivered.has(n) && r.about.some((t) => delivered.has(t))).map(([n]) => n);
+  const expected = [...delivered, ...notes].sort();
+  // A record cut at a page edge arrives as text fragments: join them by index.
+  const records = new Map();
+  for (let c, page = 0; page === 0 || c; page++) {
+    const p = packet(projectRoot, ids[0], { part: "inventory", budget: 32768, cursor: c });
+    assert.notEqual(p.exit, 2); c = p.next;
+    for (const i of p.items) records.set(i.index, "value" in i ? i.value : (records.get(i.index) ?? "") + i.json);
+  }
+  const inventory = [...records.values()].map((v) => (typeof v === "string" ? JSON.parse(v) : v));
+  assert.deepEqual(inventory.map((v) => v.id).sort(), expected, "packet's passages are scope's plus the about notes of what it delivers, no more, no fewer");
+  for (const n of notes) assert.ok(inventory.find((v) => v.id === n).reasons.every((r) => r.reason === "about" && delivered.has(r.of)), `${n} travels as an about note`);
   const accumulated = new Map(ids.map((id) => [id, ""]));
   let cursor;
   for (let page = 0; page < 500; page++) {
     const j = packet(projectRoot, ids[0], { cursor });
-    assert.notEqual(j.exit, 2); assert.equal(j.counts.prose, full.passages.length); assert.equal(j.counts.code, full.code.length);
+    assert.notEqual(j.exit, 2); assert.equal(j.counts.prose, expected.length); assert.equal(j.counts.code, full.code.length);
     if (page === 0) { assert.equal(j.items[0].id, ids[0]); assert.ok(bytes(j.items[0].text) > 0, "bounded response starts with useful requested prose"); }
     for (const item of j.items) {
       if (!accumulated.has(item.id)) continue;

@@ -1,8 +1,10 @@
 // Bounded stateless navigation over exact scope results. Node stdlib only; never reads or writes.
 import { createHash } from "node:crypto";
 
-export const PACKET_PARTS = ["prose", "inventory", "frontier", "code", "findings"];
-export const PACKET_HELP = "packet §ns/name [--part prose|inventory|frontier|code|findings] [--cursor TOKEN] [--budget BYTES] [--root DIR] [--spec DIR] [--read-policy review]; default budget 12000, supported integers 1024..32768";
+export const PACKET_PARTS = ["prose", "inventory", "frontier", "code", "findings", "frame"];
+// The frame part is counted only when the spec flags a core record (or it is the part asked for).
+const BASE_PARTS = PACKET_PARTS.slice(0, 5);
+export const PACKET_HELP = "packet §ns/name [--part prose|inventory|frontier|code|findings|frame] [--cursor TOKEN] [--budget BYTES] [--root DIR] [--spec DIR] [--read-policy review]; default budget 12000, supported integers 1024..32768";
 const NOTICE = "Declared labels and closure only; done is this stream, not completeness or proof of earlier reading. Code locations and provenance are not specifications or semantic coverage.";
 const digest = (value) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 export const serializePacket = (value) => JSON.stringify(value) + "\n";
@@ -27,7 +29,7 @@ export function packetOrder(ctx, seed, passages, parentOf) {
     else { emit(parent); emit(id); }
     const rec = ctx.claims.get(id);
     const nearby = rec.kind === "section" ? rec.members ?? [] : ctx.children.get(id) ?? [];
-    for (const to of [...[...nearby].sort(), ...[...(rec.requires ?? [])].sort()]) {
+    for (const to of [...[...nearby].sort(), ...[...(rec.requires ?? [])].sort(), ...[...(rec.embeds ?? [])].sort()]) {
       if (!ctx.claims.has(to) || queued.has(to)) continue;
       queued.add(to); queue.push(to);
     }
@@ -52,16 +54,20 @@ function decodeToken(raw) {
 const boundary = (bytes, n) => n === 0 || n === bytes.length || (bytes[n] & 0xc0) !== 0x80;
 const floorBoundary = (bytes, n) => { while (n > 0 && !boundary(bytes, n)) n--; return n; };
 
-export function packetPage({ identity, inputs, result, findings, passages, part = "prose", cursor, budget }) {
+export function packetPage({ identity, inputs, result, findings, passages, part = "prose", cursor, budget, frame = null }) {
   if (!PACKET_PARTS.includes(part)) return packetError("usage", budget);
   const streams = {
     prose: passages,
     inventory: passages.map(({ text, ...metadata }) => ({ ...metadata, bytes: Buffer.byteLength(text) })),
-    frontier: result.frontier, code: result.code, findings,
+    frontier: result.frontier, code: result.code, findings, frame: frame ? frame.passages : [],
   };
-  const counts = Object.fromEntries(PACKET_PARTS.map((key) => [key, streams[key].length]));
+  const counted = frame || part === "frame" ? PACKET_PARTS : BASE_PARTS;
+  const counts = Object.fromEntries(counted.map((key) => [key, streams[key].length]));
+  // The frame is its own stream: never inside another part, named with its bytes in every response.
+  const frameNamed = frame ? { frame: { passages: frame.passages.length, bytes: frame.bytes, cap: frame.cap, overCap: frame.overCap } } : {};
+  if (!frame) delete streams.frame;
   const fingerprint = digest({ identity, inputs, result, findings, streams });
-  const records = streams[part], isProse = part === "prose";
+  const records = streams[part] ?? [], isProse = part === "prose" || part === "frame";
   const source = (i) => Buffer.from(isProse ? records[i].text : JSON.stringify(records[i]));
   let index = 0, offset = 0;
   if (cursor !== undefined) {
@@ -77,7 +83,7 @@ export function packetPage({ identity, inputs, result, findings, passages, part 
   const envelope = (items, at, byteOffset) => {
     const more = at < records.length;
     return { tool: "sova-spec", command: "packet", exit: more || warned ? 1 : 0, status: more ? "more" : "done",
-      budget, id: identity.id, part, counts, remaining: records.length - at, items,
+      budget, id: identity.id, part, counts, ...frameNamed, remaining: records.length - at, items,
       next: more ? tokenFor(fingerprint, part, at, byteOffset) : null, notice: NOTICE };
   };
   const items = [];

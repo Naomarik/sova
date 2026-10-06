@@ -14687,6 +14687,109 @@
         "src/components/UsageView.tsx",
         "src/design/base.css"
       ]
+    },
+    "§app.model-levels/cache": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/model-levels/core.ts",
+        "pi-config/extensions/model-levels/core.test.ts",
+        "pi-config/extensions/model-levels/index.ts"
+      ],
+      "requires": []
+    },
+    "§app.model-levels/mapping": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/model-levels/core.ts",
+        "pi-config/extensions/model-levels/core.test.ts",
+        "pi-config/extensions/model-levels/tests/seam.mjs",
+        "server/harness/pi/model-levels.test.ts",
+        "pi-config/extensions/model-levels/tests/fixture-cache.json",
+        "pi-config/extensions/model-levels/tests/run.mjs"
+      ],
+      "requires": [
+        "§app.model-levels/sources",
+        "§chat.composer/composer-flyout"
+      ]
+    },
+    "§app.model-levels/precedence": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/model-levels/core.ts",
+        "pi-config/extensions/model-levels/core.test.ts",
+        "pi-config/extensions/model-levels/index.ts"
+      ],
+      "requires": [
+        "§app.model-levels/mapping"
+      ]
+    },
+    "§app.model-levels/retired": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/model-levels/core.ts",
+        "pi-config/extensions/model-levels/core.test.ts"
+      ],
+      "requires": [
+        "§app.model-levels/sources"
+      ]
+    },
+    "§app.model-levels/scope": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/model-levels/core.ts",
+        "pi-config/extensions/model-levels/core.test.ts",
+        "pi-config/extensions/model-levels/tests/seam.mjs",
+        "server/harness/pi/model-levels.test.ts"
+      ],
+      "requires": []
+    },
+    "§app.model-levels/sources": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/model-levels/core.ts",
+        "pi-config/extensions/model-levels/core.test.ts"
+      ],
+      "requires": [
+        "§app.model-levels/cache"
+      ]
+    },
+    "§app.model-levels/sova-boot": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/harness/pi/open.ts",
+        "server/harness/pi/model-levels.test.ts",
+        "pi-config/extensions/subagents/index.ts",
+        "pi-config/extensions/subagents/index.test.ts"
+      ],
+      "requires": [
+        "§app.model-levels/cache",
+        "§app.harness/session-open"
+      ]
+    },
+    "§app/model-levels": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/model-levels/index.ts",
+        "pi-config/extensions/model-levels/core.ts",
+        "pi-config/extensions/model-levels/README.md",
+        "pi-config/README.md"
+      ]
     }
   },
   "boundary": {

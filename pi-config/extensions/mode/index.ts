@@ -558,6 +558,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		}
 		// Between runs the tool follows at once; a run under way keeps its tools, and agent_settled syncs.
 		if (minor === "codemode" && !running) syncCodemodeTool();
+		if (minor === "vis" && !running) syncVisGuideTool();
 		ctx.ui.notify(`Minor mode: ${minor} ${on ? "on" : "off"}`, "info");
 		// Spec on probes its writer's backends (and announces a writer that can't run); off, and
 		// outside delegate, there is nothing left to probe.
@@ -661,8 +662,8 @@ export default function modeExtension(pi: ExtensionAPI): void {
 
 	/**
 	 * The vis_guide tool is in the loadout exactly while vis is on, synced where Sova's vis_check is (at
-	 * session start, when a user's prompt starts a run, and when a run settles), so a toggle changes the
-	 * tool set once, for both.
+	 * session start, right after a switch made between runs, when a user's prompt starts a run, and when a
+	 * run settles), so a toggle changes the tool set once, for both.
 	 */
 	function syncVisGuideTool(): void {
 		syncTool(VIS_GUIDE_TOOL, hasMinor(active, "vis"));

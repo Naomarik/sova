@@ -1153,7 +1153,7 @@ await commands.get("mode").handler("normal", ctx);
 
 	await session.mode("vis on");
 	assert.deepEqual(branch.at(-1).data.head, ["spec"], "the switch records the head it leaves in place");
-	assert.ok(!hasGuideTool(), "the tool set changes when the next run starts, not at the switch");
+	assert.ok(hasGuideTool(), "between runs the tool set follows the switch at once (a new session's card lists it)");
 	let turn = await session.userTurn();
 	assert.ok(hasGuideTool(), "vis on: the run that carries the note has vis_guide");
 	assert.equal(turn.section, head, "a minor toggle leaves the prompt's mode section byte-identical");
@@ -1167,10 +1167,15 @@ await commands.get("mode").handler("normal", ctx);
 	assert.deepEqual(onNote.message.details, { v: 1, minorModes: ["spec", "vis"], guides: ["vis"] });
 	assert.deepEqual((await session.userTurn()).notes, [], "told once: the next run sends nothing");
 
+	// Off during a run: that run keeps its tools, and they follow when it settles.
+	await session.fire("agent_start");
 	await session.mode("vis off");
 	assert.ok(!("head" in branch.at(-1).data), "no head recorded while it equals the active minor modes");
+	assert.ok(hasGuideTool(), "a switch during a run leaves that run's tools alone");
+	await session.fire("agent_settled");
+	assert.ok(!hasGuideTool(), "the run settling brings the tool set in step");
 	turn = await session.userTurn();
-	assert.ok(!hasGuideTool(), "vis off: the next run drops vis_guide");
+	assert.ok(!hasGuideTool(), "vis off: the next run has no vis_guide");
 	assert.equal(turn.section, head);
 	assert.equal(
 		turn.notes[0].message.content,

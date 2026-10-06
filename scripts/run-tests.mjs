@@ -24,6 +24,10 @@
 // mise's tool paths first (shims refuse an untrusted config in a throwaway HOME), and
 // SOVA_PRICES_FETCH=off (bun test sets no NODE_TEST_CONTEXT). bun test itself sets TZ=UTC and
 // NODE_ENV=test.
+// Bun's queue runs longest first: each file's wall time is recorded in DURATIONS (gitignored, in
+// the worktree itself: a worktree's node_modules is a symlink into the main checkout, which a
+// sandboxed session can't write) and the next run sorts by it; a file never timed falls back to KNOWN_SLOW, then to its alphabetical place. The run ends
+// with the 10 slowest files.
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -50,6 +54,27 @@ const GLOBS = [
   "src/vis/**/*.test.ts",
 ];
 const isBrowserTest = (f) => f.endsWith(".browser.test.ts");
+const DURATIONS = path.join(ROOT, ".cache", "test-durations.json");
+/** The files measured at 5-60 s (spawned services, real ports, git fixtures, timers), slowest
+ *  first: the order when no duration was recorded yet. */
+const KNOWN_SLOW = [
+  "server/statecharts-replay.test.ts",
+  "server/usage-helper/memory.test.ts",
+  "server/reconcile.test.ts",
+  "server/project-services/test-verb.test.ts",
+  "server/mesh/mesh.test.ts",
+  "server/org-host/kill9.test.ts",
+  "server/project-services/ports-grace.test.ts",
+  "server/worktree-cleanup.test.ts",
+  "server/project-services/confine.test.ts",
+  "server/outreach.test.ts",
+  "server/stream-guard-runtime.test.ts",
+  "server/worktrees.test.ts",
+  "server/project-overseer.test.ts",
+  "server/project-services/deploy-run.test.ts",
+  "server/voice/runtime.test.ts",
+  /^server\/mesh\/lan-[^/]+\.test\.ts$/,
+];
 
 /** rm -rf that survives read-only dirs a test left behind, and never throws. */
 function removeTree(dir) {
@@ -161,6 +186,7 @@ function runFile(file, extra) {
   const { root, env } = hermeticEnv();
   const target = file.startsWith("/") || file.startsWith("./") ? file : `./${file}`;
   return new Promise((resolve) => {
+    const started = Date.now();
     const child = spawn(bun, ["test", "--preload", PRELOAD, ...extra, ...bunFlags, target], { cwd: ROOT, env, stdio: ["ignore", "pipe", "pipe"] });
     let out = "";
     // A file still running after FILE_LIMIT_MS is stuck (a hang, or tests done with a handle left
@@ -174,14 +200,55 @@ function runFile(file, extra) {
     child.on("error", (err) => (out += `run-tests: could not start ${bun}: ${err.message}\n`));
     child.on("close", (code) => {
       clearTimeout(limit);
+      const ms = Date.now() - started;
       removeTree(root);
       const count = (what) => Number(out.match(new RegExp(`^\\s*(\\d+) ${what}$`, "m"))?.[1] ?? 0);
-      resolve({ file, code: code ?? 1, out, pass: count("pass"), fail: count("fail"), skip: count("skip") });
+      resolve({ file, code: code ?? 1, out, ms, pass: count("pass"), fail: count("fail"), skip: count("skip") });
     });
   });
 }
 
-const queue = sets.flatMap((s) => s.files.map((f) => ({ file: f, extra: s.extra })));
+/** The recorded wall times, `{ v: 1, files: { <file>: { ms, at } } }`; none or unreadable = {}. */
+function readDurations() {
+  try {
+    const d = JSON.parse(fs.readFileSync(DURATIONS, "utf8"));
+    return d?.v === 1 && d.files && typeof d.files === "object" ? d.files : {};
+  } catch {
+    return {};
+  }
+}
+
+/** This run's times merged into the file (re-read first: other runs may have written since), by
+ *  atomic rename. Best effort: a read-only tree only loses the ordering. */
+function writeDurations(results) {
+  try {
+    const files = readDurations();
+    const at = new Date().toISOString();
+    for (const r of results) files[r.file] = { ms: r.ms, at };
+    // A deleted or renamed file's entry goes.
+    for (const f of Object.keys(files)) if (!fs.existsSync(path.resolve(ROOT, f))) delete files[f];
+    fs.mkdirSync(path.dirname(DURATIONS), { recursive: true });
+    const tmp = `${DURATIONS}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, `${JSON.stringify({ v: 1, files })}\n`);
+    fs.renameSync(tmp, DURATIONS);
+  } catch (err) {
+    console.error(`run-tests: could not record durations in ${DURATIONS}: ${err.message}`);
+  }
+}
+
+const recorded = readDurations();
+/** A file's expected wall time: its last recorded one, else a guess from KNOWN_SLOW (above every
+ *  untimed file, in the list's order), else 0. */
+const expectedMs = (file) => {
+  const ms = recorded[file]?.ms;
+  if (Number.isFinite(ms)) return ms;
+  const i = KNOWN_SLOW.findIndex((p) => (typeof p === "string" ? p === file : p.test(file)));
+  return i < 0 ? 0 : 20_000 - i;
+};
+// Longest first across both passes (each entry keeps its pass's flags); ties keep their order.
+const queue = sets
+  .flatMap((s) => s.files.map((f) => ({ file: f, extra: s.extra, expect: expectedMs(f) })))
+  .sort((a, b) => b.expect - a.expect);
 const jobs = Math.max(1, Number(process.env.TEST_BUN_JOBS) || Math.floor(os.availableParallelism() / 2));
 const results = [];
 let next = 0;
@@ -198,8 +265,13 @@ await Promise.all(
     }
   }),
 );
+writeDurations(results);
 const failed = results.filter((r) => r.code !== 0);
 const sum = (k) => results.reduce((n, r) => n + r[k], 0);
+if (results.length > 1) {
+  console.log("\nslowest files:");
+  for (const r of [...results].sort((a, b) => b.ms - a.ms).slice(0, 10)) console.log(`  ${(r.ms / 1000).toFixed(1).padStart(6)} s  ${r.file}`);
+}
 console.log(`\nrun-tests (bun): ${results.length} files, ${sum("pass")} pass, ${sum("fail")} fail, ${sum("skip")} skip, ${failed.length} failing files, ${((Date.now() - t0) / 1000).toFixed(1)} s`);
 for (const r of failed) console.log(`  FAIL ${r.file}`);
 process.exit(failed.length ? 1 : 0);

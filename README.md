@@ -154,21 +154,40 @@ then `bootout` and `bootstrap` again.
 
 ## More work, less window switching
 
-- **Try several approaches at once.** Start parallel sessions with different models, send a shared
-  prompt, and compare answers side by side. Fork from the same conversation or start fresh.
-- **Change direction without starting over.** Fork a conversation, rewind to an earlier message,
-  or steer a running web chat. Switch models, attach files, and keep going with the context you built.
-- **Keep your terminal. Get another window.** Browse existing sessions without importing them;
-  watch terminal sessions live and read-only in your browser or on your phone.
+- **Hand the work to subagents.** In Delegate mode the agent orchestrates: it sends planning,
+  investigation, routine changes, and complex changes each to the model you routed it to, with a
+  fallback. A subagent profile keeps those routes under one name, set in Settings → Subagents. The
+  shipped routes use Claude Code models, so install the `claude` CLI or pick your own. From the
+  [mode](pi-config/extensions/mode/README.md) and [subagents](pi-config/extensions/subagents/README.md)
+  extensions, which the installer links.
+- **Follow every worker.** Workers and coordinated teams open in a side pane, each with its own
+  transcript and how full its context is.
+- **Agree on the plan before anything gets built.** With align on, the agent records each agreement
+  as an alignment: findings, approach, rejected alternatives, and open questions with its
+  recommendations. An experimental adversarial review (Settings → Experimental) has a fresh,
+  read-only reviewer check the plan and the finished diff.
+- **Work in worktrees. Read every change.** A session tracks the git worktrees it works in; ask it to
+  create, merge, or drop one, and each merge lands as a card. The changes viewer shows what a session
+  or worktree changed, read-only. [worktrees extension](pi-config/extensions/worktrees/README.md).
+- **One session that watches the rest.** The Overseer tells you which sessions need you, and starts,
+  prompts, or tidies them when you ask, confirming first when a request is risky.
+- **Try several approaches at once.** Send one prompt to several models and compare answers side by
+  side, forked from the same conversation or started fresh.
+- **Change direction without starting over.** Fork, rewind, or steer a running web chat, and switch
+  models mid-session.
+- **Keep your terminal. Get another window.** Existing sessions are listed without importing them;
+  terminal sessions stream live and read-only, in your browser or on your phone.
   [Terminal presence and phone access](docs/getting-started.md#terminal-and-phone-access) need setup.
-- **See what your agents are doing.** Follow workers and coordinated teams down to their individual
-  transcripts with the optional [subagents extension](pi-config/extensions/subagents/README.md).
-- **Work beyond your laptop.** The optional [remote extension](pi-config/extensions/remote/README.md)
-  runs session tools on your configured SSH, AWS SSM, Docker, or Incus targets.
 - **Use several machines as one.** The [mesh](docs/mesh.md) lists and drives sessions on every Sova
-  host on your tailnet from any one page. Every host in a mesh must be reachable by the same devices.
+  host on your tailnet from any one page, and links sessions across hosts so they can message each
+  other. Every host in a mesh must be reachable by the same devices.
 - **Share a session with anyone.** Send a read-only link to a whole session or just part of it, with
   [public links](docs/public-links.md) on an address you set up. Recipients need no account or tailnet.
+- **And more.** A [sandbox](pi-config/extensions/sandbox/README.md) per session; playbooks and
+  schedules; several [Claude logins](pi-config/extensions/claude-code/README.md) with failover on a
+  usage limit; local voice input (set up in Settings → Voice); a resource monitor that charges load
+  to the session that caused it; and session tools on your SSH, AWS SSM, Docker, or Incus targets
+  with the [remote extension](pi-config/extensions/remote/README.md).
 
 Single-user and loopback by default; every browser unlocks once, per address it uses, with the
 install's token — read from the token file `~/.pi/agent/sova/auth-token` on the machine Sova runs

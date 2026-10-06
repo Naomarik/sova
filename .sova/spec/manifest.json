@@ -14647,6 +14647,18 @@
       "requires": [
         "§app.server-runtime/choice"
       ]
+    },
+    "§chat.merge-round/landing-suites": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        ".sova/playbooks/merge-round/scripts/round.mjs",
+        ".sova/playbooks/merge-round/tests/round.test.mjs"
+      ],
+      "requires": [
+        "§chat.merge-round/driver"
+      ]
     }
   },
   "boundary": {

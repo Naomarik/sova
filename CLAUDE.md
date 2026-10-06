@@ -310,12 +310,14 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   reads `run-tests (bun): …`). One runner, `scripts/run-tests.mjs` (`pnpm test`, the project's
   `test.run`), holds the file list; `*.browser.test.ts` files need Solid's browser build and run in
   a second pass with `--conditions=browser`; `pnpm test -- <files>` runs only those, each routed to
-  its pass. Verify your work with `pnpm test` and `pnpm run dev:hermetic`, which are Bun, the
+  its pass. On Bun it runs files longest first by the times it recorded last in the worktree's
+  gitignored `.cache/test-durations.json`, and ends with the 10 slowest. Verify your work with `pnpm test` and `pnpm run dev:hermetic`, which are Bun, the
   runtime the user runs; never switch to Node unless the user asks. Node only on request:
   `pnpm run test:node` (`--runtime node`, `tsx --test`; plain `node --test <file>` fails with
   ERR_MODULE_NOT_FOUND on the extensionless imports) or `SOVA_RUNTIME=node pnpm test`; an explicit
   `--runtime` wins. No Bun found: the runner exits 2 naming `pnpm run test:node`, never a quiet
   Node pass. `pnpm run test:bun` is kept as an explicit Bun alias.
+- The spec replay suite (`pi-config/extensions/spec/tests/replay`) is a landing gate the merge round runs; never run it while working.
 - `pi-config/install.sh` links `pi-config/` into `~/.pi/agent`, except `settings.json`: that is a seed
   deep-merged into a real `~/.pi/agent/settings.json` (seed keys win, runtime keys such as the chosen
   model stay there and never in the repo). `--check` verifies links and seed keys without changing

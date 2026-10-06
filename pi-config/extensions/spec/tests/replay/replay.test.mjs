@@ -1,7 +1,7 @@
 // The replay harness's own checks: a tree against itself shows no difference and holds every guard; a
 // candidate that "fixes" a row by dropping what the guard protects is caught; make-tree records its commit.
 import "../../../claude-code/tests/hermetic-env.mjs";
-import { test } from "node:test";
+import { test as nodeTest } from "node:test";
 import assert from "node:assert/strict";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync, rmSync, existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
@@ -16,6 +16,11 @@ import { grade, agentInput, NOT_MEASURED, accessesOf, compareRuns, graderId, gra
 import { specIndex, scoreNeed, parentOf } from "./fullness.mjs";
 import { RUBRIC, RUBRIC_PROMPT_VERSION, rubricPrompt, blind, leaks, unblind, insideRepo } from "./rubric-arm.mjs";
 import { Tools, seedSpec } from "./lib.mjs";
+
+// A landing gate: the merge round runs this file with SOVA_SPEC_REPLAY=1 when a landing touches the
+// spec tools or hooks. Anywhere else every test is skipped, visibly, so working never pays for it.
+const GATE = process.env.SOVA_SPEC_REPLAY === "1" ? null : "landing gate: the merge round runs it with SOVA_SPEC_REPLAY=1";
+const test = (name, opts, fn) => (typeof opts === "function" ? nodeTest(name, GATE ? { skip: GATE } : {}, opts) : nodeTest(name, GATE ? { ...opts, skip: GATE } : opts, fn));
 
 const TREE = fileURLToPath(new URL("../../../", import.meta.url));
 /** The ref g's baseline was recorded from (its `tree` field), and the commit it names. */

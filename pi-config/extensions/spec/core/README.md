@@ -98,7 +98,7 @@ store or source snapshot is written, and no project code is run.
 `packet` pushes a claim's whole declared closure. `toc` and `read` let the reader choose instead:
 look at the contents one hop out, then read the passages the task needs, one at a time. Both live in
 their own modules (`toc.mjs`, `read.mjs`), parse their own flags, and read the graph with this core's
-loader. Flags may come before or after the command word. `sova-spec --help` doesn't list them;
+loader. Flags may come before or after the command word. `sova-spec --help` lists them with the other commands;
 `toc --help` and `read --help` print their own bounded JSON help.
 
 **`toc §id --dir DIR`** lists the neighbours one hop away in one direction:
@@ -114,12 +114,13 @@ loader. Flags may come before or after the command word. `sova-spec --help` does
 Each line has `id`, `title`, `kind`, `labels` (when declared), `bytes` (what `read` of it delivers;
 an H1's lede) and `whole` (an H1's lede plus all its H2s), `what` and `whatSource`
 (`prose|blockquote|none`), and, for `out`, `in` and `mentions`, `why` and `whySource`
-(`prose|comment|declared|none`; `declared` is a note's `about` field when its prose names nothing). A record with
+(`prose|comment|declared|none`; an `about` line takes the note's sentence naming its target, else the requested claim's sentence naming the note; `declared` is the `about` field when neither prose nor a comment names it). A record with
 `agreed` adds `agreed: {by, at, built}` (built: `code` plus evidence `reviewed` or `verified`), and
 the text reads `agreed (decision) <at> by <by>, not built` (or `, built`); `read` items carry it too. What is the first prose sentence after the heading: fences, comments,
 tables, thematic breaks and headings skipped, a blockquote only when nothing else is prose, at least 20 and at most
 200 characters, never code. Why is the first visible-prose sentence of the linking claim naming the
-other, else an HTML comment naming it, else exactly `not mentioned in this claim's text`. Mentions
+other, led by a short run-in label right before it in the same paragraph (1-3 plain words ending in
+`:`, such as `Not here:`), else an HTML comment naming it, else exactly `not mentioned in this claim's text`. Mentions
 mask fenced code, HTML comments and double-backtick spans; single backticks count, and `§a.b` reads
 as `§a/b`. A line for an id with no record or span is `dangling: true`.
 
@@ -157,7 +158,7 @@ records carry none of them gets exactly the output it got before.
 |---|---|---|---|
 | `embeds: [§id]` | any record | surfaces drawn inside this one, needed whole | `scope`/`packet` follow it (reason `embeds`); `impact` walks it back; `toc --dir out` group `embeds`, `--dir in` group `embedded-by`; `read` delivers each target whole after the passage, items marked `embeddedIn` |
 | `core: true` | any record, usually an H2 | part of the always-on frame | the frame stream: `packet §id --part frame`, `read --frame`, and `frame.items` on the first page of `read §id` (outside its budget; `--no-frame` drops it) |
-| `about: [§id]` | notes only | the surface or behavior the note serves | `toc --dir out` group `about` (also for an H2 of the target H1, marked `via`); `read` footer `about`; `packet` prose, reason `about`, for the seed, its H1 and the surfaces it embeds |
+| `about: [§id]` | notes only | the surface or behavior the note serves | `toc --dir out` group `about` (also for an H2 of the target H1, marked `via`); `read` footer `about`; `packet` prose, after the closure, reason `about` (one per delivered target), for every claim the packet delivers |
 
 **The frame** is every `core: true` record's passage in file and line order (an H1 gives its lede).
 It is never part of another stream or of the requested claim's page budget. When the spec flags at

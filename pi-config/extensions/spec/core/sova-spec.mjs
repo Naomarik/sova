@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 import { PACKET_PARTS, PACKET_HELP, packetBudget, packetError, packetOrder, packetPage, serializePacket } from "./packet.mjs";
 import { tocMain, pullCommand } from "./toc.mjs";
 import { readMain } from "./read.mjs";
-import { fieldShape, checkFields, frameOf, frameFinding, aboutNotes } from "./fields.mjs";
+import { fieldShape, checkFields, frameOf, frameFinding, aboutDelivered } from "./fields.mjs";
 import { lookCommand, graphMain, nearMain } from "./graph.mjs";
 import { mapMain } from "./map.mjs";
 import { whereMain } from "./where.mjs";
@@ -91,7 +91,8 @@ function parseArgs(argv) {
   if (!o.usage && o.ownBase.length && !(cmd === "foreign" || o.changed)) o.usage = "--own-base applies to foreign and census --changed only";
   return o;
 }
-const USAGE = "usage: sova-spec <check | packet §id [--part prose|inventory|frontier|code|findings] [--cursor TOKEN] | scope §id | impact §id | census [--changed [--base REV] [--related] [--own-base REV]...] | foreign --base REV [--head REV | --spec DIR] [--own-base REV]... [--landing [--drafts DIR]...]> [--root DIR] [--spec DIR] [--json] [--budget BYTES]";
+const USAGE = "usage: sova-spec <map [namespace | §id] | where <path|token> [--token] [--all] | toc §id --dir out|in|down|up|mentions | read §id [--whole] [--no-frame] | read --frame | impact §id --near | graph | " +
+  `packet §id [--part ${PACKET_PARTS.join("|")}] | scope §id | impact §id | check | census [--changed [--base REV] [--related] [--own-base REV]...] | foreign --base REV [--head REV | --spec DIR] [--own-base REV]... [--landing [--drafts DIR]...]> [--root DIR] [--spec DIR] [--json] [--budget BYTES] [--cursor TOKEN]`;
 
 // --spec: a project-relative directory holding manifest.json (default .sova/spec). → {rel} | {why}
 function specDir(raw) {
@@ -1121,13 +1122,12 @@ function packetMain(opt) {
   if (opt.alias) add("note", "id-alias", `${opt.alias} is not a § identifier; read as ${opt.id} (did you mean ${opt.id}?)`, { id: opt.id });
   const result = scope(ctx, opt.id);
   const passages = packetOrder(ctx, opt.id, result.passages, parentOf);
-  // Notes about the seed, its H1 and the surfaces it embeds travel with it, after the closure.
-  const parent = parentOf(opt.id, ctx.dirKinds);
-  for (const { id, target } of aboutNotes(ctx, [opt.id, ...(parent ? [parent] : []), ...(ctx.claims.get(opt.id).embeds ?? [])])) {
-    const known = passages.find((p) => p.id === id), reason = { reason: "about", of: target };
-    if (known) { if (!known.reasons.some((r) => r.reason === "about")) known.reasons.push(reason); continue; }
+  // Notes about any claim the closure delivers travel with it, after the closure, each once.
+  for (const { id, targets } of aboutDelivered(ctx, new Set(passages.map((p) => p.id)))) {
+    const reasons = targets.map((t) => ({ reason: "about", of: t })), known = passages.find((p) => p.id === id);
+    if (known) { for (const r of reasons) if (!known.reasons.some((k) => k.reason === "about" && k.of === r.of)) known.reasons.push(r); continue; }
     const d = ctx.decls.get(id), rec = ctx.claims.get(id);
-    const p = { id, kind: rec.kind, ...labelsOf(rec), file: d.file, lines: d.lines, reasons: [reason], text: d.text, provenance: provenance(ctx, id) };
+    const p = { id, kind: rec.kind, ...labelsOf(rec), file: d.file, lines: d.lines, reasons, text: d.text, provenance: provenance(ctx, id) };
     passages.push(p); result.passages.push(p);
   }
   const frame = frameOf(ctx);

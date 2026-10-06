@@ -273,7 +273,13 @@ machine inspection and review. No new mandatory assessment or release gate is in
 detailed inventory independently, and `--part frame` the always-on frame (§tools.spec/frame); `--cursor` continues the chosen stream, and the budget may be
 changed between pages. Counts name the whole streams; `remaining` and `next` describe only the
 selected stream. An empty stream terminates without a cursor. `packet --help` also returns small
-bounded JSON. The global help and the existing graph commands keep their existing formats.
+bounded JSON. The global help (`sova-spec --help`) is one usage line naming every command the core
+runs, the reading commands (`map`, `where`, `toc`, `read`, `impact --near`, `graph`) included, and
+every `--part` of `packet`. The usage errors of `check`, `census`, `scope`, `impact` without
+`--near` and `foreign`, and of an unknown or missing command, end with that same line; `packet`,
+`toc`, `read`, `map`, `where`, `graph` and `impact --near` keep their own small bounded refusals,
+which don't carry it (`packet`'s carries no message). The existing graph commands keep their
+existing formats.
 
 Prose fragments carry exclusive UTF-8 byte ranges. Their `complete` flag means that this one item
 contains the whole passage; the final piece of a previously fragmented passage is still partial.
@@ -419,9 +425,14 @@ with `…`. A blockquote is used only when the passage has no other prose; a pas
 "no prose sentence", with its code's size when it has code, and never quotes code. **Why** is the
 first visible-prose sentence of the linking claim's text that names the other one (the requested
 claim's for `out`, the neighbour's for `in` and `mentions`, naming the H1 for a line reached through
-it), cut to 240 characters around its own mention of the link, with `…` where it is cut; failing
-that, an HTML comment naming it, labelled as a comment; failing that, for a note linked
-by its `about` field, "about §x (declared on the note)", since the field itself is the written reason;
+it; for a note linked by its `about` field, the note's text naming the claim it serves, and failing
+that the requested claim's text naming the note), led by the short run-in label that directly
+precedes it in the same paragraph or list item when there is one (at most three plain words, no code
+or brackets, ending in a colon, such as "Not here:"), its emphasis kept as written. The label is
+always shown whole; the sentence is cut to fit what is left of 240 characters, around its own
+mention of the link, at word boundaries, with `…` where it is cut; failing that, an HTML comment naming it, labelled as a comment;
+failing that, for a note linked by its `about` field, "about §x (declared on the note)", since the
+field itself is the written reason;
 failing that, exactly "not mentioned in this claim's text". The JSON says which (`whatSource`, and
 `whySource` `prose`, `comment`, `declared` or `none`). A line, and the requested claim, whose record
 carries `agreed` shows who made the decision and when, never that they read its current words, and
@@ -490,8 +501,10 @@ An `about` note shows in the contents view under `out` for its target, in an "ab
 for each H2 of a target H1, marked as reached through that H1; it shows the same way under `in`, as a
 note about the claim or about its H1. When the note's prose doesn't name its target, its why is the
 declared field itself ("about §x (declared on the note)"), never "not mentioned". `read` names the notes about the
-passage it delivers, and `packet` adds to its prose the notes about the requested claim, its H1 and
-the surfaces it embeds, each with the reason `about`. On a spec whose records carry none of these
+passage it delivers, and `packet` adds to its prose, after the closure, the notes about any claim
+the packet delivers (the requested claim, its H1, the surfaces it embeds and every other claim its
+closure reaches), each once, in note id order, with the reason `about` naming each delivered claim
+it serves. On a spec whose records carry none of these
 fields, every existing output is unchanged except packet's help text and its new `frame` part.
 
 `check` validates them. A value of the wrong shape is a record error, like a malformed `requires`:

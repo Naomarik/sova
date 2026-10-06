@@ -11456,7 +11456,8 @@
         "pi-config/extensions/mode/index.test.ts",
         "pi-config/extensions/mode/README.md",
         "pi-config/extensions/spec/README.md",
-        "pi-config/extensions/spec/core/README.md"
+        "pi-config/extensions/spec/core/README.md",
+        "pi-config/extensions/spec/tests/usage.test.mjs"
       ]
     },
     "§app.session-list/group-picker": {
@@ -14316,7 +14317,8 @@
         "pi-config/extensions/spec/core/sova-spec.mjs",
         "pi-config/extensions/spec/tests/toc.test.mjs",
         "pi-config/extensions/spec/core/README.md",
-        "pi-config/extensions/spec/README.md"
+        "pi-config/extensions/spec/README.md",
+        "pi-config/extensions/spec/tests/frame.test.mjs"
       ]
     },
     "§tools.spec/single-read": {

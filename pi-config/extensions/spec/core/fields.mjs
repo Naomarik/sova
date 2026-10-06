@@ -52,6 +52,18 @@ export function aboutNotes(ctx, targets) {
   return out;
 }
 
+// Notes whose about names any id in delivered (a Set): [{id: note, targets}], by note id, each note once,
+// its targets the delivered ids it serves in its own about order.
+export function aboutDelivered(ctx, delivered) {
+  const out = [];
+  for (const [id, r] of [...ctx.claims].sort(([a], [b]) => (a < b ? -1 : 1))) {
+    if (!Array.isArray(r.about) || !ctx.decls.has(id)) continue;
+    const targets = [...new Set(r.about)].filter((t) => delivered.has(t));
+    if (targets.length) out.push({ id, targets });
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------- the frame
 // Every core: true record with a span, in file and line order; an H1 gives its own span (its lede).
 // → null when the spec flags none, else {passages, bytes, cap, overCap}.

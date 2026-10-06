@@ -180,8 +180,12 @@ function clip(s, max, around = -1, len = 0) {
   if (s.length <= max) return s;
   const cut = s.lastIndexOf(" ", max - 1) > max / 2 ? s.lastIndexOf(" ", max - 1) : max - 1;
   if (around < 0 || around + len <= cut) return s.slice(0, cut) + "…";
-  const from = Math.max(0, around + len - (max - 2), Math.min(around - Math.floor(max / 3), s.length - max + 2));
-  return "…" + s.slice(from, from + max - 2) + "…";
+  let from = Math.max(0, around + len - (max - 2), Math.min(around - Math.floor(max / 3), s.length - max + 2));
+  let end = Math.min(s.length, from + max - 2);
+  // Cut at word boundaries, never into the mention: start after a space, end before one.
+  if (from > 0 && s[from - 1] !== " ") { const sp = s.indexOf(" ", from); if (sp >= 0 && sp < around) from = sp + 1; }
+  if (end < s.length && s[end] !== " ") { const sp = s.lastIndexOf(" ", end); if (sp >= around + len) end = sp; }
+  return (from > 0 ? "…" : "") + s.slice(from, end) + (end < s.length ? "…" : "");
 }
 // Where text names target (its own id, else the §a.b alias of an H1): [index, length], or [-1, 0].
 function spanOf(text, target) {
@@ -218,15 +222,29 @@ export function whatOf(decl) {
   return { what: /^ {0,3}(?:`{3,}|~{3,})/m.test(code) ? `no prose sentence: ${Buffer.byteLength(code.trim())} B of code` : "no prose sentence", whatSource: "none" };
 }
 
+// A short run-in label ("**Not here:**", at most 3 plain words ending in a colon) right before a sentence, in the same
+// paragraph or list item, belongs to it: the why-side twin of the what rule for short run-ins. A long sentence
+// that ends in a colon ("It holds:") does not.
+const LABEL_WORDS = 3;
+function runInLabel(text, [a, b], next) {
+  if (/\n[ \t]*\n|\n[ \t]*(?:[-*+]|\d+[.)])\s|\n[ \t]*[|>#]/.test(text.slice(b, next))) return false;
+  const label = stripMarker(squash(text.slice(a, b))).replace(/[*_]/g, "").trim();
+  // Plain words only: a fragment with code, brackets or a table pipe is not a label.
+  if (!/^[\p{L}\p{N}][\p{L}\p{N}'’ -]*:$/u.test(label)) return false;
+  return label.slice(0, -1).trim().split(/\s+/).length <= LABEL_WORDS;
+}
+
 // Why: the first visible-prose sentence of a passage naming target (fences, comments, double-backtick
 // spans masked), else an HTML comment naming it (author-facing, so labelled), else none.
 export function whyOf(decl, target) {
   const m = mask(decl.text);
   const hit = mentionsOf(m).find((x) => x.id === target);
   if (hit) {
-    const s = sentences(m).find(([a, b]) => hit.index >= a && hit.index < b);
-    const text = stripMarker(squash(decl.text.slice(s[0], s[1])));
-    return { why: clip(text, WHY_MAX, ...spanOf(text, target)), whySource: "prose" };
+    const ss = sentences(m), k = ss.findIndex(([a, b]) => hit.index >= a && hit.index < b);
+    const s = ss[k], text = stripMarker(squash(decl.text.slice(s[0], s[1])));
+    // The label always shows in full; the sentence is cut to what is left of the 240 characters.
+    const label = k > 0 && runInLabel(decl.text, ss[k - 1], s[0]) ? stripMarker(squash(decl.text.slice(ss[k - 1][0], ss[k - 1][1]))) + " " : "";
+    return { why: label + clip(text, WHY_MAX - label.length, ...spanOf(text, target)), whySource: "prose" };
   }
   const body = blank(decl.text.split("\n", 1)[0]) + decl.text.slice(Math.max(0, decl.text.indexOf("\n")));
   for (const c of body.matchAll(/<!--([\s\S]*?)(?:-->|$)/g))
@@ -296,7 +314,7 @@ function neighbours(ctx, id, dir, parentOf) {
     const named = namedIn(seed, id).filter((x) => !req.includes(x) && !emb.includes(x) && !about.some((a) => a.id === x)).sort();
     return [...req.map((to) => ({ id: to, group: "requires", src: seed, target: to })),
       ...emb.map((to) => ({ id: to, group: "embeds", src: seed, target: to })),
-      ...about.map((n) => ({ id: n.id, group: "about", src: ctx.decls.get(n.id), target: n.target, ...(n.via ? { via: n.via } : {}) })),
+      ...about.map((n) => ({ id: n.id, group: "about", src: ctx.decls.get(n.id), target: n.target, back: seed, ...(n.via ? { via: n.via } : {}) })),
       ...named.map((to) => ({ id: to, group: "named", src: seed, target: to }))];
   }
   if (dir === "in") {
@@ -327,7 +345,7 @@ function neighbours(ctx, id, dir, parentOf) {
 function aboutLines(ctx, id, p) {
   const about = aboutNotes(ctx, [id]);
   if (p) for (const n of aboutNotes(ctx, [p])) if (!about.some((a) => a.id === n.id)) about.push({ ...n, via: p });
-  return about.map((n) => ({ id: n.id, group: "about-it", src: ctx.decls.get(n.id), target: n.target, about: true, ...(n.via ? { via: n.via } : {}) }));
+  return about.map((n) => ({ id: n.id, group: "about-it", src: ctx.decls.get(n.id), target: n.target, back: ctx.decls.get(id), about: true, ...(n.via ? { via: n.via } : {}) }));
 }
 
 // Built = code plus evidence reviewed or verified: the draft tool's BUILT_LABELS rule. The one copy the views share.
@@ -342,7 +360,10 @@ export function agreedOf(rec) {
 export const agreedText = (x) => (x.agreed ? ` · agreed (decision) ${x.agreed.at} by ${x.agreed.by}, ${x.agreed.built ? "built" : "not built"}` : "");
 
 function line(ctx, n) {
-  const d = ctx.decls.get(n.id), rec = ctx.claims.get(n.id), w = n.src ? whyOf(n.src, n.target) : null;
+  const d = ctx.decls.get(n.id), rec = ctx.claims.get(n.id);
+  let w = n.src ? whyOf(n.src, n.target) : null;
+  // A note linked by about: its own sentence naming what it serves, else the requested claim's sentence naming the note.
+  if (n.back && w?.whySource !== "prose") { const s = whyOf(n.back, n.id); if (s.whySource === "prose") w = s; }
   const why = w ? { why: w.why, whySource: w.whySource } : {};
   // A note's about field is itself a written reason for the link.
   if ((n.about || n.group === "about") && why.whySource === "none") Object.assign(why, { why: `about ${n.target} (declared on the note)`, whySource: "declared" });

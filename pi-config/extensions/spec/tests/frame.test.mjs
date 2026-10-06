@@ -108,6 +108,43 @@ test("packet: embeds is followed whole, about notes travel, the frame is its own
   assert.ok(items.every((i) => i.text !== undefined));
 });
 
+test("packet: the notes about any claim it delivers travel with it, once each, naming every delivered claim they serve", () => {
+  const files = { ...FILES, "design/copy.md": FILES["design/copy.md"] + "\n## §design.copy/save-copy — Save copy\n\nThe busy hint reads \"Saving…\".\n\n## §design.copy/stray — Stray copy\n\nCopy for a claim this packet never reaches.\n" };
+  const claims = { ...CLAIMS, "§design.copy/save-copy": { kind: "note", about: ["§s.dep/rule", "§s.seed/limits"] }, "§design.copy/stray": { kind: "note", about: ["§s.panel/link"] } };
+  const root = fixture(claims, files);
+  // The H1 seed delivers its H2s, so the note about §s.seed/edit and the note about a dependency's H2 come too.
+  const inv = stream(root, ["packet", "§s/seed", "--part", "inventory"]).items.map((i) => i.value);
+  const ids = inv.map((p) => p.id);
+  for (const id of ["§design.copy/editor", "§design.copy/edit-only", "§design.copy/save-copy", "§design.copy/stray"]) assert.equal(ids.filter((x) => x === id).length, 1, id);
+  assert.deepEqual(inv.find((p) => p.id === "§design.copy/save-copy").reasons, [{ reason: "about", of: "§s.dep/rule" }, { reason: "about", of: "§s.seed/limits" }]);
+  assert.deepEqual(inv.find((p) => p.id === "§design.copy/stray").reasons, [{ reason: "about", of: "§s.panel/link" }], "reached through the embedded panel");
+  const notes = ids.slice(ids.indexOf("§design.copy/edit-only"));
+  assert.deepEqual(notes, ["§design.copy/edit-only", "§design.copy/editor", "§design.copy/save-copy", "§design.copy/stray"], "after the closure, in note id order");
+  // An H2 seed: notes about claims outside its closure stay out, a sibling H2 it does not deliver included.
+  const limits = stream(root, ["packet", "§s.seed/limits", "--part", "inventory"]).items.map((i) => i.value.id);
+  assert.ok(limits.includes("§design.copy/save-copy") && limits.includes("§design.copy/editor"));
+  assert.ok(!limits.includes("§s.seed/edit"), "the sibling H2 is not delivered");
+  assert.ok(!limits.includes("§design.copy/edit-only"), `a note about an undelivered sibling H2 is not carried: ${limits.join(" ")}`);
+  assert.ok(!limits.includes("§design.copy/stray"), limits.join(" "));
+});
+
+test("toc: an about note whose own text names nothing takes the requested claim's sentence naming it as its why", () => {
+  const files = { ...FILES, "s/seed.md": FILES["s/seed.md"].replace("A draft holds at most 200 lines.", "A draft holds at most 200 lines. The words it shows are in §design.copy/edit-only, the inventory.") };
+  const claims = { ...CLAIMS, "§design.copy/edit-only": { kind: "note", about: ["§s.seed/limits"] } };
+  const root = fixture(claims, files);
+  const out = json(root, ["toc", "§s.seed/limits", "--dir", "out"]).lines.find((l) => l.id === "§design.copy/edit-only");
+  assert.equal(out.group, "about");
+  assert.deepEqual([out.why, out.whySource], ["The words it shows are in §design.copy/edit-only, the inventory.", "prose"]);
+  const into = json(root, ["toc", "§s.seed/limits", "--dir", "in"]).lines.find((l) => l.id === "§design.copy/edit-only");
+  assert.deepEqual([into.why, into.whySource], ["The words it shows are in §design.copy/edit-only, the inventory.", "prose"]);
+  // A note that names its target keeps its own sentence; one named by nobody keeps the declared field.
+  const editor = json(root, ["toc", "§s/seed", "--dir", "out"]).lines.find((l) => l.id === "§design.copy/editor");
+  assert.equal(editor.whySource, "prose");
+  assert.match(editor.why, /the copy for §s\/seed lives here/);
+  const plainSeed = json(fixture(), ["toc", "§s.seed/edit", "--dir", "out"]).lines.find((l) => l.id === "§design.copy/edit-only");
+  assert.deepEqual([plainSeed.why, plainSeed.whySource], ["about §s.seed/edit (declared on the note)", "declared"]);
+});
+
 test("a spec without the fields: packet, scope, toc and read outputs carry no frame and no new reasons", () => {
   const withF = fixture(), without = fixture(plain(CLAIMS));
   const j = json(without, ["packet", "§s.seed/edit"]);

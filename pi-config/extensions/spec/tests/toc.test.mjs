@@ -454,6 +454,41 @@ test("why: a long sentence is clipped around the target's own mention, never ano
   assert.ok(why.includes("§a.top/seed"), `the printed why names the target: ${why}`);
 });
 
+test("why: a short run-in label before the sentence stays with it; a long colon sentence, code or another paragraph does not", () => {
+  const root = fixture();
+  const filler = (n) => Array.from({ length: n }, (_, i) => `word${i}`).join(" ");
+  write(root, ".sova/spec/claims/c/quiet.md", [
+    "# §c/quiet — Quiet", "",
+    "**Owns:** the quiet parts. **Not here:** the seed (§a.top/seed).", "",
+    "It holds everything listed below this sentence: the hint (§a.top/hint).", "",
+    "`code: x`: the open one (§a.top/open).", "",
+    "Other paragraph:", "", "the fenced one (§a.top/fenced).", "",
+    `Not here: ${filler(60)} and at the end the dep (§b/dep).`, "",
+  ].join("\n"));
+  const k = byId(toc(root, "§c/quiet", "out"));
+  assert.equal(k["§a.top/seed"].why, "**Not here:** the seed (§a.top/seed).");
+  assert.equal(k["§a.top/hint"].why, "the hint (§a.top/hint).", "a long sentence ending in a colon is not a label");
+  assert.equal(k["§a.top/open"].why, "the open one (§a.top/open).", "a fragment with code is not a label");
+  assert.equal(k["§a.top/fenced"].why, "the fenced one (§a.top/fenced).", "a label in another paragraph stays there");
+  const long = k["§b/dep"].why;
+  assert.ok(long.startsWith("Not here: …") && long.length <= 240 && long.includes("§b/dep"), `the label shows in full, the sentence is cut: ${long}`);
+});
+
+test("why: a clipped sentence is cut at word boundaries, and carries no trailing … once it reaches the sentence's end", () => {
+  const root = fixture();
+  const words = Array.from({ length: 70 }, (_, i) => `w${"x".repeat(i % 5)}${i}`);
+  write(root, ".sova/spec/claims/c/quiet.md", `# §c/quiet — Quiet\n\n**Not here:** ${words.slice(0, 50).join(" ")} the seed (§a.top/seed) ${words.slice(50).join(" ")}.\n\nThen ${words.join(" ")} ends with the hint (§a.top/hint).\n`);
+  const k = byId(toc(root, "§c/quiet", "out"));
+  for (const id of ["§a.top/seed", "§a.top/hint"]) {
+    const why = k[id].why;
+    assert.ok(why.length <= 240 && why.includes(id), why);
+    const body = why.replace(/^\*\*Not here:\*\* /, "").replace(/^…/, "").replace(/…$/, "");
+    for (const w of body.split(" ")) assert.ok(words.includes(w.replace(/[.,]$/, "")) || /§|seed|the|hint|with|ends|\(/.test(w), `no word is cut: "${w}" in ${why}`);
+  }
+  assert.ok(k["§a.top/seed"].why.startsWith("**Not here:** …"), "the label is whole, emphasis kept");
+  assert.ok(k["§a.top/hint"].why.endsWith("(§a.top/hint)."), `a window that reaches the end has no trailing …: ${k["§a.top/hint"].why}`);
+});
+
 // Over the project's own spec: a what that ends mid-sentence (no "…", no sentence end) while the
 // passage's text runs on to the next line of the same paragraph is a cut, never a whole sentence.
 const SPEC_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");

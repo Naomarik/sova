@@ -185,7 +185,7 @@ cd extensions/provider-limits && node tests/run.mjs
 cd extensions/llm-inflight && node tests/run.mjs
 cd extensions/command-palette && node --test test.mjs
 cd extensions/sessions && node --test test.mjs
-cd extensions/spec && node --test tests/*.test.mjs
+cd extensions/spec && node --test --test-concurrency=4 tests/*.test.mjs
 cd extensions/codefold && node tests/run.mjs
 cd extensions/stamp && node --test format.test.ts index.test.ts
 cd extensions/usage-status && node --test fetch.test.ts windows.test.ts index.test.ts

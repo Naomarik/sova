@@ -10,7 +10,7 @@
 //   note <branch> owner=<id> chip=ready|waiting|none idle=yes|no [source=<word>]
 //   ask <branch> topic=<name>  the session_send text for an idle owner, asking it to answer on the round's topic
 //   reply <branch>        stdin = the delivered topic batch (or the owner's session_read output): READY at this head, NOT READY, stale, no answer
-//   check <branch>        merge master in (in the branch's worktree), typecheck, tests, suites, build, spec, leak scan
+//   check <branch>        merge master in (in the branch's worktree), typecheck, tests, suites (niced), spec replay, build, spec, leak scan
 //   land <branch>         a green check at this head and master, and no leak-scan hit: the `worktree` merge call to make
 //   landed <branch>       verify its head is in master, build the main checkout, record the restart need; next: the clean up
 //   push                  leak-scan, then `git push origin master`, refused under the hold or if not a fast-forward
@@ -23,7 +23,7 @@
 // A restart is needed when the live server's head (GET /api/health) lacks master's runtime code.
 // Every child runs by argv with no shell, in its own process group, under a timeout.
 import { spawn } from "node:child_process";
-import { accessSync, chmodSync, constants, createWriteStream, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { accessSync, chmodSync, constants, createWriteStream, existsSync, linkSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -268,13 +268,55 @@ export function expandArgs(argv, cwd) {
   });
 }
 
+/** A changed file that makes `check` run the spec replay suite (a landing gate, never run while working). */
+export const touchesSpecReplay = (file) =>
+  /^pi-config\/extensions\/spec\/(?:core|tests\/replay)\//.test(file) || file === "pi-config/extensions/mode/spec-guard.ts" || file === "pi-config/extensions/claude-code/spec-hooks.ts";
+
+/** A machine-wide lock file `{pid, at}`, created exclusively and whole (a hard link of a written
+ *  file). A holder that is gone, or older than `staleMs`, is taken over; a live one is waited for.
+ *  Resolves to `{ release, waitedMs }`. */
+export async function acquireLock(file, { pollMs = 5000, staleMs = 6 * 3600_000, now = Date.now } = {}) {
+  mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
+  const started = now();
+  const mine = JSON.stringify({ pid: process.pid, at: new Date(started).toISOString() });
+  const draft = `${file}.${process.pid}.new`;
+  writeFileSync(draft, mine, { mode: 0o600 });
+  for (;;) {
+    try {
+      linkSync(draft, file);
+      rmSync(draft, { force: true });
+      const release = () => { try { if (readFileSync(file, "utf8") === mine) rmSync(file, { force: true }); } catch {} };
+      return { release, waitedMs: now() - started };
+    } catch (e) {
+      if (e.code !== "EEXIST") { rmSync(draft, { force: true }); throw e; }
+    }
+    let held = "";
+    try { held = readFileSync(file, "utf8"); } catch { continue; }
+    let holder = null;
+    try { holder = JSON.parse(held); } catch {}
+    const alive = Number.isInteger(holder?.pid) && (() => { try { process.kill(holder.pid, 0); return true; } catch (e) { return e.code === "EPERM"; } })();
+    const old = !(now() - Date.parse(holder?.at) < staleMs);
+    if (!alive || old) {
+      // Moved aside first, so a fresh lock taken meanwhile by another waiter is put back, not lost.
+      const aside = `${file}.${process.pid}.stale`;
+      try {
+        renameSync(file, aside);
+        if (readFileSync(aside, "utf8") !== held) linkSync(aside, file);
+      } catch {}
+      rmSync(aside, { force: true });
+      continue;
+    }
+    await new Promise((r) => setTimeout(r, pollMs));
+  }
+}
+
 export const ago = (ms) => (ms < 90_000 ? `${Math.round(ms / 1000)}s` : ms < 90 * 60_000 ? `${Math.round(ms / 60_000)}m` : ms < 48 * 3600_000 ? `${Math.round(ms / 3600_000)}h` : `${Math.round(ms / 86400_000)}d`);
 
 // ---------------------------------------------------------------------------------------------
 // The CLI.
 
 const MIN = 60_000;
-const FLOORS = { typecheck: 5 * MIN, test: 20 * MIN, build: 10 * MIN, ext: 10 * MIN, master: 10 * MIN };
+const FLOORS = { typecheck: 5 * MIN, test: 20 * MIN, build: 10 * MIN, ext: 10 * MIN, replay: 30 * MIN, master: 10 * MIN };
 const NOTE_FRESH_MS = 15 * MIN;
 const ASK_GAP_MS = 10 * MIN;
 /** Note ids `reply` remembers per branch, so a batch piped again never counts twice. */
@@ -372,6 +414,7 @@ class Round {
     this.pnpm = process.env.SOVA_ROUND_PNPM || "pnpm";
     this.healthUrl = process.env.SOVA_ROUND_HEALTH_URL || "http://127.0.0.1:4800/api/health";
     this.floorOverride = Number(process.env.SOVA_ROUND_FLOOR_MS) || 0;
+    this.lockPollMs = Number(process.env.SOVA_ROUND_LOCK_POLL_MS) || 5000;
     this.settings = this.readSettings();
     this.mask = maskerOf(this.settings.names);
     this.now = Date.now();
@@ -758,11 +801,13 @@ class Round {
     mkdirSync(logDir, { recursive: true, mode: 0o700 });
     const env = { ...process.env };
     delete env.CLAUDE_CONFIG_DIR;
+    // Inherited from a node --test above us, it makes a suite's node --test skip every file and pass.
+    delete env.NODE_TEST_CONTEXT;
     const needs = [];
     const preexisting = [];
-    const step = async (key, floorKey, label, cmd, args, cwd) => {
+    const step = async (key, floorKey, label, cmd, args, cwd, extraEnv = {}) => {
       const timeoutMs = timeoutFor(this.floor(floorKey), st.timings[key]);
-      const r = await run(cmd, args, { cwd, env, timeoutMs, logFile: join(logDir, `${key.replace(/[^A-Za-z0-9._-]/g, "_")}.log`) });
+      const r = await run(cmd, args, { cwd, env: { ...env, ...extraEnv }, timeoutMs, logFile: join(logDir, `${key.replace(/[^A-Za-z0-9._-]/g, "_")}.log`) });
       if (r.code === 0) st.timings[key] = [...(st.timings[key] ?? []), r.ms].slice(-9);
       const said = r.timedOut ? `TIMED OUT at ${Math.round(timeoutMs / 1000)}s (process group killed)` : r.code === 0 ? "ok" : `FAILED (exit ${r.code})`;
       lines.push(`${label}: ${said}, ${Math.round(r.ms / 1000)}s.`);
@@ -784,6 +829,10 @@ class Round {
         lines.push(`  failing files: ${files.map((x) => `${x} (${verdicts[x]})`).join(", ")}.`);
       }
     }
+    // Extension suites at the branch's own lowered priority (scripts/nice.mjs, as pnpm test runs);
+    // a tree without it runs them unchanged.
+    const nice = join(tree, "scripts", "nice.mjs");
+    const niced = (cmd, args) => (existsSync(nice) ? [process.execPath, [nice, cmd, ...args]] : [cmd, args]);
     const exts = [...new Set(changed.map((p) => /^pi-config\/extensions\/([^/]+)\//.exec(p)?.[1]).filter(Boolean))].sort();
     if (exts.length) {
       let readme = "";
@@ -795,10 +844,29 @@ class Round {
         let failed = null;
         for (const argv of suite.commands) {
           const [cmd, ...rest] = expandArgs(argv, cwd);
-          const r = await step(`ext:${ext}`, "ext", `pi-config ${ext}: ${argv.join(" ")}`, cmd === "node" ? process.execPath : cmd, rest, cwd);
+          const r = await step(`ext:${ext}`, "ext", `pi-config ${ext}: ${argv.join(" ")}`, ...niced(cmd === "node" ? process.execPath : cmd, rest), cwd);
           if (r.code !== 0) { failed = r.timedOut ? "timed out" : "fails"; break; }
         }
         if (failed) needs.push(`pi-config ${ext} suite ${failed}`);
+      }
+    }
+    // The spec replay suite: a landing gate, run only here, one at a time on this machine.
+    if (changed.some(touchesSpecReplay)) {
+      const specDir = join(tree, "pi-config", "extensions", "spec");
+      if (!existsSync(join(specDir, "tests", "replay", "replay.test.mjs"))) lines.push("spec replay: skipped (no tests/replay/replay.test.mjs in this tree).");
+      else {
+        const lock = await acquireLock(join(this.agent, "locks", "spec-replay.lock"), { pollMs: this.lockPollMs });
+        const release = () => lock.release();
+        process.once("exit", release);
+        try {
+          if (lock.waitedMs >= 1000) lines.push(`spec replay: waited ${Math.round(lock.waitedMs / 1000)}s for another landing's replay.`);
+          const argv = ["--test", ...expandArgs(["tests/replay/*.test.mjs"], specDir)];
+          const r = await step("spec-replay", "replay", "spec replay: node --test tests/replay/*.test.mjs", ...niced(process.execPath, argv), specDir, { SOVA_SPEC_REPLAY: "1" });
+          if (r.code !== 0) needs.push(`spec replay ${r.timedOut ? "timed out" : "fails"}`);
+        } finally {
+          release();
+          process.removeListener("exit", release);
+        }
       }
     }
     if (tc.code === 0) {

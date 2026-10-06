@@ -1,7 +1,21 @@
 # §chat/composer — Composer
 > Part of the Sova design spec · [overview](../design/overview.md)
 
+The composer is the form pinned to the foot of a chat where you write its next message, with Send,
+Steer and Stop beside the textarea and the model indicator and mode switch in the foot below it.
+
+Owns: its markup, the textarea's keys and placeholder, sending, steering and stopping, drafts, the
+disabled reasons, the `plus` flyout that holds the panels, the sandbox shield, the @ menu's folder read,
+and what the foot shows from a switch's first frame. Not here: the mode menu (§chat/mode-menu), the
+model picker (§chat/model-menu), the slash menu (§chat/slash-commands), attaching images
+(§chat.images/composer-attachments), dictation (§chat/voice), staged alignment answers
+(§chat.alignment/card), the Overseer's Quick Actions (§app.overseer/quick-actions), and a
+workspace's group composer (§workspace/groups).
+
 ## §chat.composer/anatomy — Anatomy
+
+The composer is one `<footer>` form holding the run status, staged answers, dictation strip and
+pending attachments, then the input row (mic, `plus` trigger, textarea, Send, Stop), then the foot.
 
 ```html
 <footer class="composer" data-drop="active|reject (only while dragging over it)">
@@ -119,6 +133,9 @@ button in flow and drops the rest (the disabled reason stays for assistive techn
 
 ## §chat.composer/behavior — Behavior
 
+How the textarea grows, which keys send, what Send, Steer and Stop do, where focus goes, how drafts
+are kept, and what the foot and its model indicator show.
+
 - **Auto-grow.** The textarea grows from 1 line (44px) up to `--composer-max` (40vh), then
   scrolls. `field-sizing: content` handles it in Chromium. As a fallback, on input set
   `style.height = "auto"` and then `style.height = scrollHeight + "px"`.
@@ -159,7 +176,8 @@ button in flow and drops the rest (the disabled reason stays for assistive techn
   accidental stops. While a dictation is recording, `Esc` cancels the recording and nothing else
   (§chat.voice/states).
 - **After Stop.** The status reads "Stopping…" until the turn settles. Then the run status
-  disappears, and an info row says "Stopped by you at `14:08`."
+  disappears, and an info row says "Stopped by you at `1:43 PM`." (the transcript's stamp: a
+  12-hour clock, with the date in front on another day).
 - **Focus.** Returns to the textarea after Send, Steer, or Stop. The mic never moves focus: its
   press keeps the textarea's focus and selection, and dictated text lands at the caret
   (§chat.voice/insertion) as part of the draft.
@@ -198,7 +216,9 @@ button in flow and drops the rest (the disabled reason stays for assistive techn
 
 ## §chat.composer/disabled-states — Disabled states
 
-The reason goes in `.composer-reason` and the control is disabled. The reason is one line, per
+While the composer can't send (the session is open in a TUI, the socket is connecting or dropped,
+or a model switch is pending), the reason goes in `.composer-reason` and the control is disabled.
+The reason is one line, per
 the skill's copy ladder.
 
 | Condition | Textarea | Buttons | Reason (with icon) |
@@ -428,6 +448,7 @@ same Sandbox group as the `plus` menu (§chat.composer/composer-flyout); clickin
 
 ## §chat.composer/tokens — Tokens
 
+The tokens the composer's ground, textarea, Send, Stop, reason and model indicator are drawn with.
 Composer ground is `--color-surface` with a top border in `--color-border`, and padding
 `--space-3` / `--space-4` plus `env(safe-area-inset-bottom)`. The textarea uses `.input`: 44px
 min, `--r-md`, `--color-border-strong` border, and an accent focus border. Its block padding is what's
@@ -449,6 +470,9 @@ menu keeps its own 360px cap.
 
 ## §chat.composer/accessibility — Accessibility
 
+The composer has a real label, measured contrast, a named mic button and a Stop that reads as the
+smaller, secondary action.
+
 - **Label.** The textarea has a real (visually hidden) `<label>`. The placeholder is never the
   label.
 - **Contrast.** On-accent on accent (Send) is 5.61 (dark) and 6.81 (light). The control border
@@ -465,6 +489,9 @@ menu keeps its own 360px cap.
 ---
 
 ## §chat.composer/file-index-deadline — The @ menu's folder read has a time limit
+
+Reading the folder for the @ menu has a 6-second budget, and a read that runs out answers as too slow
+or as a partial list, never as a whole or empty one.
 
 The @ menu lists the session folder's files from `GET /api/files?cwd=…` (`server/files.ts`). One
 request spends one budget of 6 seconds on every stat, git call and directory read. When the budget

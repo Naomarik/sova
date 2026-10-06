@@ -60,10 +60,14 @@ purpose: `node scenario-g.mjs --record <tree made from the baseline ref>`. `data
 15-task rubric (wording, seeds, a–d scores) for the agent arm.
 
 **Measuring a spec change (M6).** A verdict's location is kept as an anchor too (`verdict.anchor`: its
-passage id and the quoted line), found again wherever the line moves; a verdict whose line is gone is
-`unanchored` (guard `g.packet.anchored`, listed for a new hand verdict, never re-scored by the probe).
+passage id and the quoted line; `verdict.anchors` lists several, any one holds), found again wherever the
+line moves; a verdict whose line is gone is `unanchored` (guard `g.packet.anchored`, listed for a new hand
+verdict, never re-scored by the probe), and `--record` refuses a spec where any verdict is unanchored (a
+re-verdict adds the new spec's line to `anchors` and keeps the old one, so both arms place it).
 `g.packet.passage-changed` lists needs whose answer now lives in another passage than at the recorded
-baseline, for a hand check. To measure a draft against the spec it drafts from:
+baseline. Those still answered are counted apart (`g.packet.total.viaChangedPassage`, and in the
+`total-never-drops` detail), and guard `g.packet.moved-confirmed` fails until each is hand-checked and an
+anchored verdict in its new passage confirms it. To measure a draft against the spec it drafts from:
 
 ```sh
 node scenario-g.mjs --record <tree> --pinned <spec dir> --spec "<label>" --out data/g-baseline-<rev>.json   # once, on the base spec
@@ -76,8 +80,8 @@ node scenario-g.mjs --what-sheet <tree> --pinned <draft spec dir> > sheet.json  
 shown 106/138); a recording with toc also holds the pull floor (`pull.shown`), which `g.pull.shown-floor`
 uses with `--g-baseline`. A given spec dir is copied into the workspace with the pinned `where` sources
 beside it. New rows: `g.pull.frame-answered` (needs shown only because the seed's first `read` page
-carries their passage in its frame; the frame counts as shown), `g.read.frame-bytes` (`read --frame`,
-guard `g.read.frame-cap` ≤ 12,000 B), `g.target.what-right.<family>` (a reviewer's verdicts
+carries their passage in its frame; the frame counts as shown), `g.read.frame-bytes` (`read --frame`; the first read's frame bytes also sit beside each comparison's toc bytes, `g.pull.C*.frameBytes` and `bytesWithFrame*` in `g.pull.total`,
+guard `g.read.frame-cap` ≤ 12,000 B), `g.target.what-right.<family>` (pct = right over ALL the family's lines; a reviewer's verdicts
 `{verdicts: {id: {what, right, note}}}`, default `data/what-verdicts.json`: right/graded, and verdicts
 on a what no longer shown counted stale), `g.pull.copy-deck` (copy-deck sections matching each seed's surface, the 17 that `g.packet.total.copyDeck` counts: shown as a toc line, delivered by the seed's first read, and which; M6's `about` on copy-deck notes moves both).
 

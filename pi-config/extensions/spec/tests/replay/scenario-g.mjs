@@ -28,7 +28,7 @@ const WHY_FAMILIES = ["§chat/composer", "§chat/sandbox"];
 const WHAT_VERDICTS_FILE = join(HERE, "data/what-verdicts.json");
 /** An H1 and its H2s, in file order. */
 const familyIds = (index, h1) => [h1, ...[...index.passages.values()].filter((p) => parentOf(p.id) === h1).map((p) => p.id)];
-/** A family's lines against reviewer verdicts {id: {what, right, note}} → counts; right/graded is the target. */
+/** A family's lines against reviewer verdicts {id: {what, right, note}} → counts; pct is right over ALL lines (ungraded and stale count as not right). */
 export function whatGrade(ids, shown, verdicts) {
   const out = { lines: ids.length, graded: 0, right: 0, stale: 0, ungraded: 0 };
   for (const id of ids) {
@@ -37,7 +37,7 @@ export function whatGrade(ids, shown, verdicts) {
     else if (v.what !== shown.get(id)) out.stale++;
     else { out.graded++; if (v.right === true) out.right++; }
   }
-  return { ...out, pct: out.graded ? Math.round((out.right / out.graded) * 1000) / 10 : null };
+  return { ...out, pct: out.lines ? Math.round((out.right / out.lines) * 1000) / 10 : null };
 }
 
 const row = (metric, value, guards = []) => ({ scenario: "g", metric, value, guards });
@@ -138,6 +138,7 @@ async function pullArm(ctx, root, c, baseline, index = specIndex(root)) {
   // Its bytes are reported by g.read.frame-bytes, not added to the toc bytes.
   const first = await ctx.tools.runAsync(root, ctx.ws.home, ["read", c.seed]);
   const framed = new Set((first.json?.frame?.items ?? []).map((it) => it?.id).filter((id) => typeof id === "string"));
+  const frameBytes = (first.json?.frame?.items ?? []).reduce((s, it) => s + (typeof it?.text === "string" ? Buffer.byteLength(it.text) : 0), 0);
   const passages = baseline?.passageOf ?? [];
   const isShown = (p) => Boolean(p && (shown.has(p) || framed.has(p)));
   const scored = c.needs.map((n, i) => ({ i, na: n.verdict?.status === "n/a" || !n.probe, p: passages[i] })).filter((x) => !x.na);
@@ -147,7 +148,7 @@ async function pullArm(ctx, root, c, baseline, index = specIndex(root)) {
   const readIds = new Set((first.json?.items ?? []).map((it) => it?.id));
   const copyDeck = { matching: deck.length, shown: deck.filter((id) => shown.has(id)).length, read: deck.filter((id) => readIds.has(id) || framed.has(id)).length, which: deck.filter((id) => shown.has(id)).map((id) => `${c.id}:${id}`) };
   const lost = (baseline?.values ?? []).map((v, i) => (v > 0 && !isShown(passages[i]) ? i : null)).filter((i) => i !== null);
-  return { shown: scored.filter((x) => isShown(x.p)).length, of: scored.length, bytes, calls, lines, lostUnshown: lost, frameOnly, copyDeck, broken };
+  return { shown: scored.filter((x) => isShown(x.p)).length, of: scored.length, bytes, calls, lines, lostUnshown: lost, frameOnly, copyDeck, frameBytes, broken };
 }
 
 export async function fullness(ctx) {
@@ -172,13 +173,23 @@ export async function fullness(ctx) {
   const refused = results.filter((r) => r.p.refused).map((r) => `${r.c.id}:${r.p.refused}`);
   // No need answered at the recorded baseline is lost unless this arm names its passage.
   // A hand verdict whose quoted line is gone is listed apart (it needs a new verdict), never counted as lost or kept.
-  const lost = [], moved = [];
+  const lost = [], moved = [], viaMoved = [], unconfirmed = [];
   const unanchored = results.flatMap((r) => r.p.needs.map((s, i) => (s === "unanchored" ? `${r.c.id}:${i} ${r.c.needs[i].need}` : null)).filter(Boolean));
   if (baseline) for (const r of results) {
     const b = baseline.comparisons[r.c.id];
     b?.values.forEach((v, i) => { if (v > 0 && r.p.values[i] < v && !["named", "unanchored"].includes(r.p.needs[i])) lost.push(`${r.c.id}:${i} ${r.c.needs[i].need}`); });
     // Where each need's answer lives, against the recorded arm: a probe that now hits another passage is listed for a hand check.
-    b?.passageOf.forEach((was, i) => { const now = r.p.passageOf[i]; if (was !== now && r.p.needs[i] !== "unanchored") moved.push(`${r.c.id}:${i} ${was ?? "none"} → ${now ?? "none"}`); });
+    b?.passageOf.forEach((was, i) => {
+      const now = r.p.passageOf[i];
+      if (was === now || r.p.needs[i] === "unanchored") return;
+      moved.push(`${r.c.id}:${i} ${was ?? "none"} → ${now ?? "none"}`);
+      // Still answered, but somewhere else: counted apart, and kept only if a hand verdict anchored in the new passage says so.
+      if (now && r.p.values[i] > 0) {
+        viaMoved.push(`${r.c.id}:${i}`);
+        const v = r.c.needs[i].verdict, anchors = v?.anchors ?? (v?.anchor ? [v.anchor] : []);
+        if (!anchors.some((a) => a.passage === now)) unconfirmed.push(`${r.c.id}:${i} ${was ?? "none"} → ${now}`);
+      }
+    });
   }
   const deck = results.reduce((s, r) => ({ matching: s.matching + (r.p.copyDeck.matching ? 1 : 0), reached: s.reached + (r.p.copyDeck.reached ? 1 : 0), sections: s.sections + r.p.copyDeck.matching, sectionsReached: s.sectionsReached + r.p.copyDeck.reached }), { matching: 0, reached: 0, sections: 0, sectionsReached: 0 });
   const frameMax = Math.max(...results.map((r) => r.p.frameBytes));
@@ -191,12 +202,14 @@ export async function fullness(ctx) {
     frameBytesMax: frameMax, frame: results[0]?.p.frame,
     groundRules: `${results.filter((r) => r.p.groundRules).length}/${results.length}`,
     copyDeck: `${deck.sectionsReached}/${deck.sections}`,
+    viaChangedPassage: viaMoved.length,
   }, [
     guard("g.packet.ran", refused.length === 0, refused.length ? `refused: ${refused.join(", ")}` : "every seed's packet answered"),
     guard("g.packet.text-exact", inexact.length === 0, inexact.length ? `not byte-equal to the source span: ${inexact.slice(0, 5).join(", ")}${inexact.length > 5 ? ` … ${inexact.length - 5} more` : ""}` : "every delivered passage equals its source span"),
     guard("g.packet.no-need-lost", baseline && lost.length === 0, !baseline ? "no recorded baseline (data/g-baseline.json)" : lost.length ? `lost, not named: ${lost.slice(0, 6).join("; ")}${lost.length > 6 ? ` … ${lost.length - 6} more` : ""}` : `every need answered at ${baseline.tree} is still answered or named`),
-    guard("g.packet.total-never-drops", baseline && answered >= baseline.total.answered, baseline ? `${answered} vs ${baseline.total.answered} recorded at ${baseline.tree}` : "no recorded baseline"),
+    guard("g.packet.total-never-drops", baseline && answered >= baseline.total.answered, baseline ? `${answered}${viaMoved.length ? ` (of which ${viaMoved.length} via a changed passage: hand-check g.packet.passage-changed)` : ""} vs ${baseline.total.answered} recorded at ${baseline.tree}` : "no recorded baseline"),
     guard("g.frame-cap", frameMax <= FRAME_CAP, `largest frame ${frameMax} B, cap ${FRAME_CAP} B`),
+    guard("g.packet.moved-confirmed", unconfirmed.length === 0, unconfirmed.length ? `answered in another passage than at the recorded baseline, no anchored verdict confirms it (hand-check, then add an anchor in the new passage): ${unconfirmed.join("; ")}` : "every need answered elsewhere than at the recorded baseline is confirmed by an anchored verdict"),
     guard("g.packet.anchored", unanchored.length === 0, unanchored.length ? `hand verdicts whose quoted line is gone (re-read and re-verdict): ${unanchored.join("; ")}` : "every hand verdict's quoted line is found"),
   ]));
   rows.push(row("g.packet.passage-changed", baseline ? moved.join("; ") || "none" : "no recorded baseline"));
@@ -260,14 +273,16 @@ export async function fullness(ctx) {
     }
     const pulls = await pool(results, 8, async ({ c }) => ({ c, q: await pullArm(ctx, root, c, baseline?.comparisons[c.id], index) }));
     for (const { c, q } of pulls) {
-      rows.push(row(`g.pull.${c.id}`, { shown: q.shown, of: q.of, bytes: q.bytes, calls: q.calls, lines: q.lines.total, lost: q.lostUnshown.length }));
+      rows.push(row(`g.pull.${c.id}`, { shown: q.shown, of: q.of, bytes: q.bytes, frameBytes: q.frameBytes, calls: q.calls, lines: q.lines.total, lost: q.lostUnshown.length }));
     }
     const broken = pulls.flatMap(({ c, q }) => q.broken.map((b) => `${c.id} ${b}`));
     const lostUnshown = pulls.flatMap(({ c, q }) => q.lostUnshown.map((i) => `${c.id}:${i} ${c.needs[i].need}`));
     const shown = pulls.reduce((s, { q }) => s + q.shown, 0);
     const L = pulls.reduce((s, { q }) => ({ total: s.total + q.lines.total, withWhat: s.withWhat + q.lines.withWhat, withWhy: s.withWhy + q.lines.withWhy }), { total: 0, withWhat: 0, withWhy: 0 });
     rows.push(row("g.pull.total", {
-      shown, of, bytesMedian: median(pulls.map(({ q }) => q.bytes)), bytesTotal: pulls.reduce((s, { q }) => s + q.bytes, 0), callsTotal: pulls.reduce((s, { q }) => s + q.calls, 0),
+      shown, of, bytesMedian: median(pulls.map(({ q }) => q.bytes)), bytesTotal: pulls.reduce((s, { q }) => s + q.bytes, 0),
+      // The frame rides on each first read: its bytes beside the toc bytes, so a frame full of answers is not free.
+      bytesWithFrameMedian: median(pulls.map(({ q }) => q.bytes + q.frameBytes)), bytesWithFrameTotal: pulls.reduce((s, { q }) => s + q.bytes + q.frameBytes, 0), callsTotal: pulls.reduce((s, { q }) => s + q.calls, 0),
       lines: L.total, linesWithWhat: L.withWhat, linesWithWhy: L.withWhy, answeredByPacketNotShown: lostUnshown.length,
     }, [
       guard("g.pull.toc-answers", broken.length === 0, broken.length ? `toc failed: ${broken.slice(0, 5).join("; ")}` : "every toc call answered"),
@@ -367,10 +382,14 @@ export async function recordBaseline(tree, { pinned, source, specLabel } = {}) {
     const index = specIndex(root);
     const comparisons = {};
     let answered = 0, of = 0;
+    const unanchored = [];
     for (const { c, p } of await pool(DATA.comparisons, 8, async (c) => ({ c, p: await packetArm(ctx, root, index, c) }))) {
       comparisons[c.id] = { values: p.values, needs: p.needs, passageOf: p.passageOf };
       answered += p.answered; of += p.of;
+      p.needs.forEach((s, i) => { if (s === "unanchored") unanchored.push(`${c.id}:${i} ${c.needs[i].need}`); });
     }
+    // A base recorded with a verdict it can't place would score that need 0 and hand any candidate a gain from nothing.
+    if (unanchored.length) throw new Error(`refusing to record: hand verdicts whose quoted line this spec lacks (add this spec's line to the verdict's anchors): ${unanchored.join("; ")}`);
     // A tree with toc also records its pull proxy, the floor a candidate on the same spec must hold.
     let pull;
     if ((await capability(ctx.tools, root, ws.home, "toc")) !== "absent") {

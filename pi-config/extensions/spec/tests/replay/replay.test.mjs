@@ -12,7 +12,7 @@ import { runArm, diffCards, summary } from "./run.mjs";
 import { makeTree } from "./make-tree.mjs";
 import { baselineText, BASELINE_PATH, DATA, extractPinned, whatSheet } from "./scenario-g.mjs";
 import { grade, agentInput, NOT_MEASURED } from "./agent-arm.mjs";
-import { specIndex } from "./fullness.mjs";
+import { specIndex, scoreNeed } from "./fullness.mjs";
 import { Tools, seedSpec } from "./lib.mjs";
 
 const TREE = fileURLToPath(new URL("../../../", import.meta.url));
@@ -333,6 +333,29 @@ test("g's integration-spec baseline is what that revision's tools record on its 
   assert.equal(text.replace(/"tree": "[^"]*"/, ""), readFileSync(INT_BASELINE, "utf8").replace(/"tree": "[^"]*"/, ""), "regenerate with `node scenario-g.mjs --record <tree> --pinned <spec> --spec <label> --out <file>` only on purpose");
 });
 
+test("a base is never recorded with a verdict it can't place; a verdict anchored in both specs scores in both", { timeout: 600_000, skip: !hasRev(INT_REV) && "the integration revision is not in this checkout" }, async () => {
+  const dest = mkdtempSync(join(tmpdir(), "spec-replay-anchor-"));
+  temps.push(dest);
+  mkdirSync(join(dest, "base"));
+  mkdirSync(join(dest, "draft"));
+  const base = extractPinned(join(dest, "base"), INT_REV, [".sova/spec"]), draft = extractPinned(join(dest, "draft"), INT_REV, [".sova/spec"]);
+  const old = DATA.comparisons.find((c) => c.id === "C21").needs[3].verdict.anchor;
+  const reworded = { passage: old.passage, snippet: old.snippet.replace("is shared", "is common") };
+  const rel = specIndex(draft).passages.get(old.passage).rel, file = join(draft, ".sova/spec/claims", rel);
+  writeFileSync(file, readFileSync(file, "utf8").replace(old.snippet, reworded.snippet));
+  // --record on the reworded spec refuses, naming the verdict, instead of recording that need as 0.
+  await assert.rejects(baselineText(TREE, { pinned: draft, specLabel: "reworded" }), /refusing to record: .*C21:3/);
+  // A re-verdict lists both lines: it holds on the base spec and on the draft.
+  // Only the anchors place it: no `at`, and a probe that matches nothing.
+  const need = { ...DATA.comparisons.find((c) => c.id === "C21").needs[3], probe: { source: "never-matches-anything-\\d{9}", flags: "" } };
+  need.verdict = { status: need.verdict.status, anchors: [old, reworded] };
+  for (const root of [base, draft]) {
+    const index = specIndex(root);
+    const s = scoreNeed(index, need, new Set([old.passage]), new Set());
+    assert.equal(s.status, need.verdict.status, `${root === base ? "base" : "draft"}: ${JSON.stringify(s)}`);
+  }
+});
+
 test("g on a draft spec against the spec it drafts from: anchors follow moved lines, a lost one is flagged, a moved answer is listed, the frame answers, what verdicts count", { timeout: 600_000, skip: (!hasRev(INT_REV) && "the integration revision is not in this checkout") || (!existsSync(join(TREE, "spec/core/fields.mjs")) && "this tree has no frame (M5)") }, async () => {
   const dest = mkdtempSync(join(tmpdir(), "spec-replay-draft-"));
   temps.push(dest);
@@ -384,7 +407,13 @@ test("g on a draft spec against the spec it drafts from: anchors follow moved li
   assert.match(value("g.packet.passage-changed"), new RegExp(`${pick.c.id}:${pick.i} ${pick.p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} → `));
   assert.match(value("g.pull.frame-answered").which, /C01:0 /);
   assert.ok(value("g.read.frame-bytes").bytes > 0 && guardOf("g.read.frame-cap").ok, JSON.stringify(value("g.read.frame-bytes")));
-  assert.deepEqual(value("g.target.what-right.chat-composer"), { lines: lines.length, graded: 2, right: 1, stale: 1, ungraded: lines.length - 3, pct: 50 });
+  assert.ok(value("g.pull.C01").frameBytes > 0 && value("g.pull.total").bytesWithFrameTotal > value("g.pull.total").bytesTotal, "the frame's bytes count beside the toc bytes");
+  // A need still answered, but in another passage, is counted apart and fails until an anchored verdict there confirms it.
+  assert.equal(value("g.packet.total").viaChangedPassage, 1);
+  assert.match(guardOf("g.packet.total-never-drops").detail, /of which 1 via a changed passage/);
+  assert.ok(!guardOf("g.packet.moved-confirmed").ok && guardOf("g.packet.moved-confirmed").detail.includes(`${pick.c.id}:${pick.i}`), guardOf("g.packet.moved-confirmed").detail);
+  // pct over all lines: grading fewer lines never raises it.
+  assert.deepEqual(value("g.target.what-right.chat-composer"), { lines: lines.length, graded: 2, right: 1, stale: 1, ungraded: lines.length - 3, pct: Math.round(1000 / lines.length) / 10 });
   assert.equal(value("g.target.what-right.chat-sandbox").graded, 0);
   assert.equal(value("g.packet.total").copyDeck, "1/17", "packet delivers the copy-deck note that is about the seed");
   assert.match(value("g.pull.copy-deck").which, /C06:§design\.copy-deck\/model-menu/, "toc shows it as a line");

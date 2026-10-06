@@ -135,7 +135,7 @@ export function anchorAt(index, { passage, snippet }) {
  *   `extraSpans`: line ranges [{rel, from, to}] read some other way (a file read by line).
  * - A hand verdict's status `n/a` skips the need; `absent` scores 0. A verdict location is checked against the
  *   slice; otherwise the probe regex is searched in it. Partial verdicts score 0.5.
- * - A verdict location is found by its anchor (passage id and a quoted line), so it survives lines moving; one
+ * - A verdict location is found by its anchor (passage id and a quoted line; `anchors` lists several, any one holds), so it survives lines moving; one
  *   whose line is gone is `unanchored` (0, listed for a new hand verdict), never re-scored by the probe.
  * → { status: in|partial|missed|absent|unanchored|n/a, value, at, passage, named }
  */
@@ -144,8 +144,10 @@ export function scoreNeed(index, need, delivered, named, extraSpans = []) {
   if (v?.status === "n/a" || !need.probe) return { status: "n/a", value: 0 };
   const re = new RegExp(need.probe.source, need.probe.flags);
   const spans = [...spansOf(index, delivered), ...extraSpans];
-  const vat = v?.anchor ? anchorAt(index, v.anchor) : v?.at;
-  if (v?.anchor && !vat) return { status: "unanchored", value: 0, at: null, passage: v.anchor.passage, named: false };
+  // `anchors` lists every place the verdict holds (a re-verdict adds the draft's line and keeps the base's); any one found counts.
+  const anchors = v?.anchors ?? (v?.anchor ? [v.anchor] : null);
+  const vat = anchors ? anchors.map((a) => anchorAt(index, a)).find(Boolean) ?? null : v?.at;
+  if (anchors && !vat) return { status: "unanchored", value: 0, at: null, passage: anchors[0].passage, named: false };
   const where = vat ?? search(index, wholeTree(index), re);
   const passage = where ? passageAt(index, where) : null;
   if (v?.status === "absent") return { status: "absent", value: 0, at: null, passage: null, named: false };

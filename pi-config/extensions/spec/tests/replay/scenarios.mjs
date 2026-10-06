@@ -613,11 +613,48 @@ export async function agreement(ctx) {
   const built = attempt("talk-built", "§a.top/built-rule", "The built rule maps code.", { code: ["src/one.txt"] });
   const current = JSON.parse(repo.read(".sova/spec/manifest.json")).claims;
   const readsBuilt = (id) => current[id] && ((current[id].code ?? []).length > 0 || ["reviewed", "verified"].includes(current[id].evidence));
-  return [row("h", "h.target.agreed-promoted", unbuilt === "promoted" ? 1 : 0), row("h", "h.agreed", { unbuilt, built }, [
+  return [...fieldOnly(ctx), row("h", "h.target.agreed-promoted", unbuilt === "promoted" ? 1 : 0), row("h", "h.agreed", { unbuilt, built }, [
     // Nothing that landed on doc-only evidence reads as built (no code, no reviewed/verified label).
     guard("h.unbuilt-not-built", !readsBuilt("§a.top/agreed-rule") && !readsBuilt("§a.top/built-rule"), ["§a.top/agreed-rule", "§a.top/built-rule"].map((id) => current[id] ? `${id}: code ${JSON.stringify(current[id].code ?? [])}, evidence ${current[id].evidence ?? "none"}` : `${id}: not current`).join("; ")),
     guard("h.doc-only-refuses-code", built !== "promoted" && !current["§a.top/built-rule"], `an agreed record that maps code, on doc-only evidence: ${built}`),
   ])];
+}
+
+/**
+ * M6's field records: a change that only sets embeds/about/core on a built behavior may land on doc-only evidence
+ * (a target: 0 until the drafts rule exists); the same field change bundled with a prose, code-list or label change
+ * never does (a guard: it must still be verified against code). Each case in its own repo, on §a.top/one (maps code).
+ */
+function fieldOnly(ctx) {
+  const id = "§a.top/one";
+  const cases = {
+    "field-only": () => {},
+    "with-prose": (repo, d) => replaceIn(repo, draftClaim(d, id), "One does X.", "One does X, and now W."),
+    "with-code": (repo, d) => editDraftRecord(repo, d, id, (r) => { r.code = [...r.code, "src/two.txt"]; }),
+    "with-label": (repo, d) => editDraftRecord(repo, d, id, (r) => { r.authority = "migrated"; }),
+  };
+  const out = {};
+  for (const [name, extra] of Object.entries(cases)) {
+    const repo = standard(ctx, `h-field-${name}`);
+    const draft = `field-${name}`;
+    ctx.tools.draft(repo.root, ctx.ws.home, ["new", draft, "--write"]);
+    editDraftRecord(repo, draft, id, (r) => { r.core = true; });
+    extra(repo, draft);
+    const ev = docOnly(ctx, repo, draft, id);
+    // A refusal by its code: the bundled-change one (doc-only-bundled) apart from doc-only's plain refusal.
+    const codes = [...new Set([ev.json?.code, ...(ev.json?.findings ?? []).map((f) => f.code)].filter(Boolean))].sort();
+    const p = /^exit0$/.test(outcome(ev)) ? promote(ctx, repo, draft, id) : { refused: [`evidence:${codes.join(",") || outcome(ev)}`] };
+    const current = JSON.parse(repo.read(".sova/spec/manifest.json")).claims[id];
+    out[name] = { outcome: p.refused.join("+") || "promoted", landed: current.core === true };
+  }
+  const bundled = ["with-prose", "with-code", "with-label"];
+  return [
+    row("h", "h.target.field-only-doc-only", out["field-only"].outcome === "promoted" && out["field-only"].landed ? 1 : 0),
+    row("h", "h.field-doc-only", Object.fromEntries(Object.entries(out).map(([k, v]) => [k, v.outcome])), [
+      guard("h.field-bundle-refused", bundled.every((k) => out[k].outcome !== "promoted" && !out[k].landed),
+        bundled.map((k) => `${k}: ${out[k].outcome}`).join("; ")),
+    ]),
+  ];
 }
 
 export const SCENARIOS = { a: merging, b: evidenceDrift, c: hookNoise, d: invocations, e: leftovers, f: sliceQuality, g: fullness, h: agreement };

@@ -59,6 +59,28 @@ took their location from their own note ("… (chat/changes.md:4)"), marked `atF
 purpose: `node scenario-g.mjs --record <tree made from the baseline ref>`. `data/rubric.json` holds the
 15-task rubric (wording, seeds, a–d scores) for the agent arm.
 
+**Measuring a spec change (M6).** A verdict's location is kept as an anchor too (`verdict.anchor`: its
+passage id and the quoted line), found again wherever the line moves; a verdict whose line is gone is
+`unanchored` (guard `g.packet.anchored`, listed for a new hand verdict, never re-scored by the probe).
+`g.packet.passage-changed` lists needs whose answer now lives in another passage than at the recorded
+baseline, for a hand check. To measure a draft against the spec it drafts from:
+
+```sh
+node scenario-g.mjs --record <tree> --pinned <spec dir> --spec "<label>" --out data/g-baseline-<rev>.json   # once, on the base spec
+node run.mjs --baseline <tree> --candidate <tree> --only g --baseline-pinned <base spec dir> --candidate-pinned <draft spec dir> \
+  --g-baseline data/g-baseline-<rev>.json [--what-verdicts <file>]
+node scenario-g.mjs --what-sheet <tree> --pinned <draft spec dir> > sheet.json   # the lines a reviewer grades
+```
+
+`data/g-baseline-b1de66b1.json` is integration b1de66b1's spec (master merged), recorded with its tools (93.5/138, pull
+shown 106/138); a recording with toc also holds the pull floor (`pull.shown`), which `g.pull.shown-floor`
+uses with `--g-baseline`. A given spec dir is copied into the workspace with the pinned `where` sources
+beside it. New rows: `g.pull.frame-answered` (needs shown only because the seed's first `read` page
+carries their passage in its frame; the frame counts as shown), `g.read.frame-bytes` (`read --frame`,
+guard `g.read.frame-cap` ≤ 12,000 B), `g.target.what-right.<family>` (a reviewer's verdicts
+`{verdicts: {id: {what, right, note}}}`, default `data/what-verdicts.json`: right/graded, and verdicts
+on a what no longer shown counted stale), `g.pull.copy-deck` (copy-deck sections matching each seed's surface, the 17 that `g.packet.total.copyDeck` counts: shown as a toc line, delivered by the seed's first read, and which; M6's `about` on copy-deck notes moves both).
+
 ## Milestone gates measured here
 
 | Milestone | Gate (against the pinned baseline tree) |
@@ -71,6 +93,7 @@ purpose: `node scenario-g.mjs --record <tree made from the baseline ref>`. `data
 | M4 (span promotion) | a.diff-h2.hand-reapply 1 → 0; `a.target.same-spot` both orders land, byte-identical; a's guards hold |
 | M3 (`map`, `where`, `impact --near`) | f: `impact §f/seed --near` keeps the true consumer and keeps the unrelated one off its frontier (guards); g: `g.target.impact-near.chat-composer` frontier 143 → ≤ 25, `g.where.all` lists every claim whose code names server/chat-manager.ts (guard, 74), `g.target.where-ranked` for shared/protocol.ts (107, top 10); `g.digest.scope` and `g.digest.impact` (plain impact) unchanged |
 | M8 (`agreed`, draft tool) | `h.target.agreed-promoted` 0 → 1; guards `h.unbuilt-not-built`, `h.doc-only-refuses-code` hold; `a.stacked.relisted-at-master` stays a target (needs the own-rule change) |
+| M6 (field records) | g on the draft spec against `data/g-baseline-<integration rev>.json` (above): shown ≥ 109 with `g.pull.frame-answered`, `g.read.frame-bytes` ≤ 12,000, copy deck 0/17 → ≥ 14/17 (`g.packet.total.copyDeck`, `g.pull.copy-deck`), `g.target.what-right.*` ≥ 90%; `h.target.field-only-doc-only` 0 → 1 (a field-only embeds/about/core change on a built behavior lands on doc-only evidence) while guard `h.field-bundle-refused` holds (the same change bundled with prose, a code list or a label is refused) |
 | M5, M6 | the f/g target rows they claim (embed read whole, core arrives unasked, about note travels; answered-or-named), and which of the 21 come into view |
 
 ## The agent arm (opt-in, not deterministic)

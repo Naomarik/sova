@@ -10,7 +10,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runArm, diffCards, summary } from "./run.mjs";
 import { makeTree } from "./make-tree.mjs";
-import { baselineText, BASELINE_PATH, DATA, extractPinned } from "./scenario-g.mjs";
+import { baselineText, BASELINE_PATH, DATA, extractPinned, whatSheet } from "./scenario-g.mjs";
 import { grade, agentInput, NOT_MEASURED } from "./agent-arm.mjs";
 import { specIndex } from "./fullness.mjs";
 import { Tools, seedSpec } from "./lib.mjs";
@@ -184,7 +184,7 @@ test("h's guards trip when doc-only evidence covers any behavior, code and all",
   const tree = sabotaged([["spec/core/sova-spec-draft.mjs", 'const DOC_ONLY_KINDS = new Set(["note", "section"]);', 'const DOC_ONLY_KINDS = new Set(["note", "section", "behavior"]);']]);
   const card = await runArm(tree, { label: "sabotaged", only: ["h"] });
   assert.equal(card.errors, undefined, JSON.stringify(card.errors));
-  for (const name of ["h.unbuilt-not-built", "h.doc-only-refuses-code"]) assert.ok(failed(card).includes(name), `${name} (failed: ${failed(card).join(", ")})`);
+  for (const name of ["h.unbuilt-not-built", "h.doc-only-refuses-code", "h.field-bundle-refused"]) assert.ok(failed(card).includes(name), `${name} (failed: ${failed(card).join(", ")})`);
 });
 
 test("the manifest-merge guard trips when the driver refuses every merge", { timeout: 600_000 }, async () => {
@@ -316,6 +316,80 @@ test("agent arm grading: a passage the frame carries is read, JSON or text; toc 
   assert.deepEqual(seen.lostVsPacket, [], "a need whose passage was seen is not lost");
   assert.ok(shownIds.every((id) => seen.shown.includes(id)), `seen: ${seen.shown.join(", ")}`);
   assert.equal(seen.contentsLines, half.length);
+});
+
+/** The integration revision whose spec data/g-baseline-<rev>.json was recorded on, and its file. */
+const INT_BASELINE = join(fileURLToPath(new URL(".", import.meta.url)), "data/g-baseline-b1de66b1.json");
+const INT_REV = JSON.parse(readFileSync(INT_BASELINE, "utf8")).tree.split(" @ ")[1];
+const hasRev = (rev) => spawnSync("git", ["-C", TREE, "cat-file", "-e", `${rev}^{commit}`]).status === 0;
+
+test("g's integration-spec baseline is what that revision's tools record on its spec, byte for byte", { timeout: 600_000, skip: !hasRev(INT_REV) && "the integration revision is not in this checkout" }, async () => {
+  const dest = mkdtempSync(join(tmpdir(), "spec-replay-int-"));
+  temps.push(dest);
+  const tree = makeTree(INT_REV, join(dest, "t"), TREE);
+  mkdirSync(join(dest, "s"));
+  const spec = extractPinned(join(dest, "s"), INT_REV, [".sova/spec"]);
+  const text = await baselineText(tree, { pinned: spec, specLabel: JSON.parse(readFileSync(INT_BASELINE, "utf8")).pinned.spec });
+  assert.equal(text.replace(/"tree": "[^"]*"/, ""), readFileSync(INT_BASELINE, "utf8").replace(/"tree": "[^"]*"/, ""), "regenerate with `node scenario-g.mjs --record <tree> --pinned <spec> --spec <label> --out <file>` only on purpose");
+});
+
+test("g on a draft spec against the spec it drafts from: anchors follow moved lines, a lost one is flagged, a moved answer is listed, the frame answers, what verdicts count", { timeout: 600_000, skip: (!hasRev(INT_REV) && "the integration revision is not in this checkout") || (!existsSync(join(TREE, "spec/core/fields.mjs")) && "this tree has no frame (M5)") }, async () => {
+  const dest = mkdtempSync(join(tmpdir(), "spec-replay-draft-"));
+  temps.push(dest);
+  mkdirSync(join(dest, "draft"));
+  const draft = extractPinned(join(dest, "draft"), INT_REV, [".sova/spec"]);
+  const base = JSON.parse(readFileSync(INT_BASELINE, "utf8"));
+  const index = specIndex(draft);
+  const file = (rel) => join(draft, ".sova/spec/claims", rel);
+  const edit = (rel, fn) => writeFileSync(file(rel), fn(readFileSync(file(rel), "utf8")));
+  const verdict = (id, i) => DATA.comparisons.find((c) => c.id === id).needs[i].verdict.anchor;
+  // 1. The shell is a core record: the frame carries its lede (C01:0, "the frame around the tab").
+  const manifest = JSON.parse(readFileSync(join(draft, ".sova/spec/manifest.json"), "utf8"));
+  manifest.claims["§app/shell"].core = true;
+  // 1b. A copy-deck note says which surface it serves (C06's seed): the copy-deck rows count it.
+  manifest.claims["§design.copy-deck/model-menu"].about = ["§chat/model-menu"];
+  writeFileSync(join(draft, ".sova/spec/manifest.json"), JSON.stringify(manifest, null, 2) + "\n");
+  // 2. C21:3's quoted line is reworded: its hand verdict no longer applies.
+  const c21 = verdict("C21", 3);
+  edit(index.passages.get(c21.passage).rel, (t) => t.replace(c21.snippet, c21.snippet.replace("is shared", "is common")));
+  // 3. Two lines go in above C09's verdicts: they move, and their anchors follow.
+  const fork = index.passages.get(verdict("C09", 1).passage);
+  edit(fork.rel, (t) => { const L = t.split("\n"); L.splice(fork.lines[0], 0, "", "A draft note, inserted above the verdicts."); return L.join("\n"); });
+  // 4. A probe-answered need loses its matching lines: its answer moves to another passage, or to none.
+  const anchored = new Set(DATA.comparisons.flatMap((c) => c.needs.map((n) => n.verdict?.anchor?.passage)).filter(Boolean));
+  // Its body lines that match go; the heading stays, so pick one whose passage then matches nowhere, even across two lines.
+  const strip = (p, re) => p.text.split("\n").map((l, k) => (k > 0 && re.test(l) ? "(removed in the draft)" : l));
+  const pick = DATA.comparisons.flatMap((c) => c.needs.map((n, i) => ({ c, n, i, p: base.comparisons[c.id].passageOf[i], v: base.comparisons[c.id].values[i] })))
+    .find((x) => {
+      if (["C01", "C09", "C21"].includes(x.c.id) || x.p === "§app/shell" || x.n.verdict || x.v !== 1 || !x.p || anchored.has(x.p) || index.passages.get(x.p).rel === fork.rel) return false;
+      const re = new RegExp(x.n.probe.source, x.n.probe.flags);
+      const kept = strip(index.passages.get(x.p), re);
+      return kept.every((l, k) => !re.test(`${l} ${(kept[k + 1] ?? "").trim()}`));
+    });
+  const re = new RegExp(pick.n.probe.source, pick.n.probe.flags), pp = index.passages.get(pick.p);
+  edit(pp.rel, (t) => { const L = t.split("\n"); L.splice(pp.lines[0] - 1, pp.lines[1] - pp.lines[0] + 1, ...strip(pp, re)); return L.join("\n"); });
+  // 5. Verdicts on the composer family: one right, one wrong, one judged on a what no longer shown.
+  const sheet = await whatSheet(TREE, { pinned: draft, families: ["§chat/composer"] });
+  const lines = sheet.families["§chat/composer"];
+  const verdicts = join(dest, "what-verdicts.json");
+  writeFileSync(verdicts, JSON.stringify({ verdicts: { [lines[0].id]: { what: lines[0].what, right: true }, [lines[1].id]: { what: lines[1].what, right: false }, [lines[2].id]: { what: "an older what", right: true } } }));
+
+  const card = await runArm(TREE, { label: "draft", only: ["g"], pinned: draft, gBaseline: INT_BASELINE, whatVerdicts: verdicts });
+  assert.equal(card.errors, undefined, JSON.stringify(card.errors));
+  const value = (m) => card.rows.find((r) => r.metric === m)?.value;
+  const guardOf = (name) => card.rows.flatMap((r) => r.guards).find((g) => g.name === name);
+  assert.match(guardOf("g.packet.total-never-drops").detail, new RegExp(`recorded at ${INT_REV.slice(0, 8)}`), "the guards compare against the given baseline");
+  assert.ok(!guardOf("g.packet.anchored").ok && /C21:3/.test(guardOf("g.packet.anchored").detail), guardOf("g.packet.anchored").detail);
+  assert.equal(value("g.packet.C09").needs, base.comparisons.C09.needs.join(" "), "C09's verdicts moved two lines and still score as recorded");
+  assert.match(value("g.packet.passage-changed"), new RegExp(`${pick.c.id}:${pick.i} ${pick.p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} → `));
+  assert.match(value("g.pull.frame-answered").which, /C01:0 /);
+  assert.ok(value("g.read.frame-bytes").bytes > 0 && guardOf("g.read.frame-cap").ok, JSON.stringify(value("g.read.frame-bytes")));
+  assert.deepEqual(value("g.target.what-right.chat-composer"), { lines: lines.length, graded: 2, right: 1, stale: 1, ungraded: lines.length - 3, pct: 50 });
+  assert.equal(value("g.target.what-right.chat-sandbox").graded, 0);
+  assert.equal(value("g.packet.total").copyDeck, "1/17", "packet delivers the copy-deck note that is about the seed");
+  assert.match(value("g.pull.copy-deck").which, /C06:§design\.copy-deck\/model-menu/, "toc shows it as a line");
+  console.log(JSON.stringify(Object.fromEntries(["g.packet.passage-changed", "g.pull.frame-answered", "g.read.frame-bytes", "g.target.what-right.chat-composer", "g.pull.total", "g.pull.copy-deck"].map((m) => [m, value(m)]))));
+  console.log(guardOf("g.packet.anchored").detail, "|", guardOf("g.packet.no-need-lost").detail, "|", guardOf("g.pull.shown-floor").detail);
 });
 
 test("make-tree: a ref's pi-config/extensions, with its commit recorded for the scorecard", { skip: spawnSync("git", ["-C", TREE, "rev-parse", "HEAD"]).status !== 0 && "not in a Git checkout" }, async () => {

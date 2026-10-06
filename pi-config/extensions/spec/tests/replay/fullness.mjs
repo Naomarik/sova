@@ -122,23 +122,34 @@ export function cutWhat(what, text) {
   return !rest || rest.startsWith("\0") ? "whole" : "cut";
 }
 
+/** A hand verdict's anchor {passage, snippet} → its claims-relative `file:line` in this spec, or null when the line is gone. */
+export function anchorAt(index, { passage, snippet }) {
+  const p = index.passages.get(passage);
+  const k = p ? p.text.split("\n").findIndex((l) => l.includes(snippet)) : -1;
+  return k < 0 ? null : `${p.rel}:${p.lines[0] + k}`;
+}
+
 /**
  * Score one need against a slice.
  * - `delivered`: Set of ids whose exact text the arm handed over; `named`: Set of ids it named without text;
  *   `extraSpans`: line ranges [{rel, from, to}] read some other way (a file read by line).
  * - A hand verdict's status `n/a` skips the need; `absent` scores 0. A verdict location is checked against the
  *   slice; otherwise the probe regex is searched in it. Partial verdicts score 0.5.
- * → { status: in|partial|missed|absent|n/a, value, at, passage, named }
+ * - A verdict location is found by its anchor (passage id and a quoted line), so it survives lines moving; one
+ *   whose line is gone is `unanchored` (0, listed for a new hand verdict), never re-scored by the probe.
+ * → { status: in|partial|missed|absent|unanchored|n/a, value, at, passage, named }
  */
 export function scoreNeed(index, need, delivered, named, extraSpans = []) {
   const v = need.verdict;
   if (v?.status === "n/a" || !need.probe) return { status: "n/a", value: 0 };
   const re = new RegExp(need.probe.source, need.probe.flags);
   const spans = [...spansOf(index, delivered), ...extraSpans];
-  const where = v?.at ?? search(index, wholeTree(index), re);
+  const vat = v?.anchor ? anchorAt(index, v.anchor) : v?.at;
+  if (v?.anchor && !vat) return { status: "unanchored", value: 0, at: null, passage: v.anchor.passage, named: false };
+  const where = vat ?? search(index, wholeTree(index), re);
   const passage = where ? passageAt(index, where) : null;
   if (v?.status === "absent") return { status: "absent", value: 0, at: null, passage: null, named: false };
-  const hit = v?.at ? (inSpans(spans, v.at) ? v.at : null) : search(index, spans, re);
+  const hit = vat ? (inSpans(spans, vat) ? vat : null) : search(index, spans, re);
   if (hit) {
     const partial = v?.status === "partial";
     return { status: partial ? "partial" : "in", value: partial ? 0.5 : 1, at: hit, passage: passageAt(index, hit), named: false };
@@ -186,7 +197,9 @@ export async function capability(tools, root, home, cmd) {
 export async function accepts(tools, root, home, args) {
   const r = await tools.runAsync(root, home, args);
   if (!r.json) return "broken";
-  const unknown = (r.json.findings ?? []).some((f) => f.code === "usage" && /^unknown (command|flag) /.test(f.message ?? ""));
+  // The refusal names it in a finding (sova-spec.mjs) or at the top level (the toc/read modules).
+  const said = (x) => x?.code === "usage" && /^unknown (command|flag) /.test(x.message ?? "");
+  const unknown = said(r.json) || (r.json.findings ?? []).some(said);
   return r.json.exit === 2 && unknown ? "absent" : "present";
 }
 

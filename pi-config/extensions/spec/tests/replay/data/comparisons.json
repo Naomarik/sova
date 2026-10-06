@@ -127,7 +127,11 @@
       "status": "partial",
       "note": "states exist as a statechart (app/projects.md:38) but are not listed",
       "at": "app/projects.md:38",
-      "atFrom": "note"
+      "atFrom": "note",
+      "anchor": {
+       "passage": "§app.projects/registration",
+       "snippet": "standalone projects only, written atomically), creates its dir and starts its statechart, which"
+      }
      }
     },
     {
@@ -185,7 +189,11 @@
       "status": "partial",
       "note": "the record holds its branch (chat/worktrees.md:21); how it is named is not stated",
       "at": "chat/worktrees.md:21",
-      "atFrom": "note"
+      "atFrom": "note",
+      "anchor": {
+       "passage": "§chat.worktrees/entry",
+       "snippet": "Each worktree records its path, its branch, the commit it was based on, its status (`active`,"
+      }
      }
     },
     {
@@ -327,7 +335,11 @@
       "status": "partial",
       "note": "read-only, never a working-tree write (chat/changes.md:4); committing is not discussed",
       "at": "chat/changes.md:4",
-      "atFrom": "note"
+      "atFrom": "note",
+      "anchor": {
+       "passage": "§chat/changes",
+       "snippet": "Sova shows what a session changed on disk as a diff, read-only: never a working-tree write, never"
+      }
      }
     }
    ]
@@ -356,7 +368,11 @@
      "verdict": {
       "status": "in",
       "at": "chat/model-menu.md:111",
-      "note": "lists only models switched on in Settings → Models"
+      "note": "lists only models switched on in Settings → Models",
+      "anchor": {
+       "passage": "§chat.model-menu/content-and-order",
+       "snippet": "in a muted caption, and a chevron. A provider whose models are all turned off in Settings →"
+      }
      }
     },
     {
@@ -410,7 +426,11 @@
       "status": "partial",
       "note": "the Thinking ladder re-renders per model (chat/model-menu.md:169); absent-vs-disabled is not stated",
       "at": "chat/model-menu.md:169",
-      "atFrom": "note"
+      "atFrom": "note",
+      "anchor": {
+       "passage": "§chat.model-menu/states",
+       "snippet": "| **Switched** (`{type:\"model\"}` arrives) | The row shows the echoed model, and the dot is removed | The Thinking group re-renders for the new model's ladder (§chat.composer/composer-flyout) |"
+      }
      }
     },
     {
@@ -495,7 +515,11 @@
      "verdict": {
       "status": "missed",
       "at": "chat/transcript.md:470",
-      "note": "§chat.transcript/a-queued-message, outside the composer slice"
+      "note": "§chat.transcript/a-queued-message, outside the composer slice",
+      "anchor": {
+       "passage": "§chat.transcript/a-queued-message",
+       "snippet": "## §chat.transcript/a-queued-message — A queued message (§chat/composer, sending)"
+      }
      }
     },
     {
@@ -600,7 +624,11 @@
      "verdict": {
       "status": "in",
       "at": "chat/session-fork.md:10",
-      "note": "the source session is not modified, navigated, prompted or notified"
+      "note": "the source session is not modified, navigated, prompted or notified",
+      "anchor": {
+       "passage": "§chat.session-fork/from-reply",
+       "snippet": "selected assistant response. Later conversation and abandoned branches are excluded. The source"
+      }
      }
     },
     {
@@ -629,7 +657,11 @@
      "verdict": {
       "status": "in",
       "at": "chat/session-fork.md:16",
-      "note": "own session id and a parent-session reference"
+      "note": "own session id and a parent-session reference",
+      "anchor": {
+       "passage": "§chat.session-fork/from-reply",
+       "snippet": "The fork has its own session id and a parent-session reference. It inherits the selected branch's"
+      }
      }
     },
     {
@@ -771,7 +803,11 @@
       "status": "partial",
       "note": "one viewer at a time, opened by callers (app/markdown-viewer.md:6); no address",
       "at": "app/markdown-viewer.md:6",
-      "atFrom": "note"
+      "atFrom": "note",
+      "anchor": {
+       "passage": "§app/markdown-viewer",
+       "snippet": "`closeMarkdown()`. There is only ever one: a second `openMarkdown` while it is open replaces the"
+      }
      }
     },
     {
@@ -845,7 +881,11 @@
       "status": "partial",
       "note": "'reachable' is used in resync and grants (mesh/peers.md:147); no health vocabulary",
       "at": "mesh/peers.md:147",
-      "atFrom": "note"
+      "atFrom": "note",
+      "anchor": {
+       "passage": "§mesh.peers/health",
+       "snippet": "answers, so it counts as reachable wherever this host acts on a peer coming back up: every"
+      }
      }
     },
     {
@@ -1122,7 +1162,11 @@
      "verdict": {
       "status": "missed",
       "at": "chat/transcript.md:69",
-      "note": "tool cards are in the transcript H1, outside the streaming H2 slice"
+      "note": "tool cards are in the transcript H1, outside the streaming H2 slice",
+      "anchor": {
+       "passage": "§chat.transcript/transcript-items",
+       "snippet": "centred at `--measure` plus 96px (`--space-9`). Messages, tool cards, thinking, and thumbnails"
+      }
      }
     },
     {
@@ -1135,7 +1179,11 @@
      "verdict": {
       "status": "missed",
       "at": "chat/transcript.md:51",
-      "note": "the failed assistant's own producing model, never the chat's current model"
+      "note": "the failed assistant's own producing model, never the chat's current model",
+      "anchor": {
+       "passage": "§chat.transcript/anatomy",
+       "snippet": "failed assistant's own producing model, never the chat's current model. The error feed yields"
+      }
      }
     },
     {
@@ -1208,7 +1256,11 @@
      "verdict": {
       "status": "missed",
       "at": "app/harness.md:71",
-      "note": "agentRoot() is §app.harness/agent-root, outside the reader slice"
+      "note": "agentRoot() is §app.harness/agent-root, outside the reader slice",
+      "anchor": {
+       "passage": "§app.harness/agent-root",
+       "snippet": "Every path the server builds under the agent directory comes from one function, `agentRoot()`"
+      }
      }
     },
     {
@@ -1321,7 +1373,11 @@
      "verdict": {
       "status": "in",
       "at": "app/settings-dialog.md:82",
-      "note": "model-policy.json, inside §app.settings-dialog/models"
+      "note": "model-policy.json, inside §app.settings-dialog/models",
+      "anchor": {
+       "passage": "§app.settings-dialog/models",
+       "snippet": "is shared: `~/.pi/agent/model-policy.json`, written here and read by"
+      }
      }
     },
     {

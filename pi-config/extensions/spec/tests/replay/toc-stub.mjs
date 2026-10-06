@@ -47,7 +47,9 @@ if (cmd === "where") {
     return [];
   });
   out({ id, near: true, counts: { groups: { consumer: lines.filter((l) => l.group === "consumer").length, frontier: lines.filter((l) => l.group === "frontier").length } }, lines });
-} else if (!seed || !claims[id]) out({ status: "refused", code: "unknown-id" }, 2);
+// read --frame: the core records' passages, in id order (a stand-in; the real order is file then line).
+} else if (cmd === "read" && argv.includes("--frame")) out({ id: null, frameRead: true, items: Object.keys(claims).filter((x) => claims[x].core === true && index.passages.has(x)).sort().map((x, i) => ({ index: i, id: x, text: index.passages.get(x).text })), footer: { named: [] } });
+else if (!seed || !claims[id]) out({ status: "refused", code: "unknown-id" }, 2);
 else if (cmd === "read") out({ id, items: [{ index: 0, id, text: seed.text }], footer: { named: [...(claims[id].requires ?? [])].filter((x) => x !== id) } });
 else {
   const dir = flag("--dir");

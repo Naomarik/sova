@@ -8,12 +8,12 @@
 //   node scenario-g.mjs --record <extensions tree>   rewrite data/g-baseline.json from that tree's packet arm
 import "../../../claude-code/tests/hermetic-env.mjs";
 import { createHash } from "node:crypto";
-import { readFileSync, writeFileSync, existsSync, realpathSync } from "node:fs";
+import { cpSync, readFileSync, writeFileSync, existsSync, realpathSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { specIndex, scoreNeed, readStream, proseTexts, median, pool, idsIn, parentOf, capability, readToc, accepts, readLines, cutWhat } from "./fullness.mjs";
 import { Tools, workspace, scrubProcessEnv } from "./lib.mjs";
-import { DATA, extractPinned } from "./pinned.mjs";
+import { DATA, extractPinned, PINNED_SOURCES } from "./pinned.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export { DATA, extractPinned };
@@ -23,16 +23,39 @@ export const DIRS = ["out", "in", "down", "up", "mentions"];
 const IMPACT_SEEDS = ["§chat/composer"];
 /** The ratchet (D18): needs shown one hop out by toc never drop below what M1 reached (106/138 at its gated head c67a1ae2). */
 const SHOWN_FLOOR = 106;
-/** The families whose contents lines are graded for a written "why" (plan §5b.8). */
+/** The families whose contents lines are graded for a written "why" (plan §5b.8) and, by a reviewer, for their "what". */
 const WHY_FAMILIES = ["§chat/composer", "§chat/sandbox"];
+const WHAT_VERDICTS_FILE = join(HERE, "data/what-verdicts.json");
+/** An H1 and its H2s, in file order. */
+const familyIds = (index, h1) => [h1, ...[...index.passages.values()].filter((p) => parentOf(p.id) === h1).map((p) => p.id)];
+/** A family's lines against reviewer verdicts {id: {what, right, note}} → counts; right/graded is the target. */
+export function whatGrade(ids, shown, verdicts) {
+  const out = { lines: ids.length, graded: 0, right: 0, stale: 0, ungraded: 0 };
+  for (const id of ids) {
+    const v = verdicts[id];
+    if (!v) out.ungraded++;
+    else if (v.what !== shown.get(id)) out.stale++;
+    else { out.graded++; if (v.right === true) out.right++; }
+  }
+  return { ...out, pct: out.graded ? Math.round((out.right / out.graded) * 1000) / 10 : null };
+}
 
 const row = (metric, value, guards = []) => ({ scenario: "g", metric, value, guards });
 const guard = (name, ok, detail = "", na = false) => ({ name, ok: Boolean(ok), detail, ...(na ? { na: true } : {}) });
 
-/** The pinned spec root for this arm: `ctx.pinned` when the caller gave one, else extracted into the workspace. */
+/**
+ * The spec root for this arm: `ctx.pinned` when the caller gave one (a candidate or another revision's spec), else
+ * the pinned revision extracted into the workspace. A given spec without the `where` source files is copied into the
+ * workspace with the pinned revision's sources beside it, so `where` reads the same files; the caller's dir is never written.
+ */
 export function pinnedRoot(ctx) {
-  if (ctx.pinned) return ctx.pinned;
-  if (!ctx.pinnedCache) ctx.pinnedCache = extractPinned(ctx.ws.dir("g-pinned"));
+  if (ctx.pinnedCache) return ctx.pinnedCache;
+  if (ctx.pinned && PINNED_SOURCES.every((f) => existsSync(join(ctx.pinned, f)))) ctx.pinnedCache = ctx.pinned;
+  else if (ctx.pinned) {
+    const dir = ctx.ws.dir("g-given");
+    cpSync(join(ctx.pinned, ".sova/spec"), join(dir, ".sova/spec"), { recursive: true });
+    ctx.pinnedCache = extractPinned(dir, DATA.pinned.rev, PINNED_SOURCES);
+  } else ctx.pinnedCache = extractPinned(ctx.ws.dir("g-pinned"));
   return ctx.pinnedCache;
 }
 
@@ -94,7 +117,7 @@ async function packetArm(ctx, root, index, c) {
 }
 
 /** One comparison under the pull proxy: the ids `toc` shows one hop from the seed (its lines), in every direction. */
-async function pullArm(ctx, root, c, baseline) {
+async function pullArm(ctx, root, c, baseline, index = specIndex(root)) {
   const shown = new Set([c.seed]);
   let bytes = 0, calls = 0;
   const lines = { total: 0, withWhat: 0, withWhy: 0 };
@@ -111,17 +134,30 @@ async function pullArm(ctx, root, c, baseline) {
       if (l.whySource === "prose" || l.whySource === "comment") lines.withWhy++;
     }
   }
+  // What the frame (core records) delivers on the seed's first `read` page is in hand too: shown, and counted apart.
+  // Its bytes are reported by g.read.frame-bytes, not added to the toc bytes.
+  const first = await ctx.tools.runAsync(root, ctx.ws.home, ["read", c.seed]);
+  const framed = new Set((first.json?.frame?.items ?? []).map((it) => it?.id).filter((id) => typeof id === "string"));
   const passages = baseline?.passageOf ?? [];
-  const isShown = (p) => Boolean(p && (shown.has(p)));
+  const isShown = (p) => Boolean(p && (shown.has(p) || framed.has(p)));
   const scored = c.needs.map((n, i) => ({ i, na: n.verdict?.status === "n/a" || !n.probe, p: passages[i] })).filter((x) => !x.na);
+  const frameOnly = scored.filter((x) => x.p && !shown.has(x.p) && framed.has(x.p)).map((x) => x.i);
+  // The copy-deck sections for the seed's surface (M6: `about` notes): shown as a contents line, or delivered by that read.
+  const deck = copyDeckFor(index, c.seed);
+  const readIds = new Set((first.json?.items ?? []).map((it) => it?.id));
+  const copyDeck = { matching: deck.length, shown: deck.filter((id) => shown.has(id)).length, read: deck.filter((id) => readIds.has(id) || framed.has(id)).length, which: deck.filter((id) => shown.has(id)).map((id) => `${c.id}:${id}`) };
   const lost = (baseline?.values ?? []).map((v, i) => (v > 0 && !isShown(passages[i]) ? i : null)).filter((i) => i !== null);
-  return { shown: scored.filter((x) => isShown(x.p)).length, of: scored.length, bytes, calls, lines, lostUnshown: lost, broken };
+  return { shown: scored.filter((x) => isShown(x.p)).length, of: scored.length, bytes, calls, lines, lostUnshown: lost, frameOnly, copyDeck, broken };
 }
 
 export async function fullness(ctx) {
   const root = pinnedRoot(ctx);
   const index = specIndex(root);
-  const baseline = existsSync(BASELINE_FILE) ? JSON.parse(readFileSync(BASELINE_FILE, "utf8")) : null;
+  // The recorded packet arm the guards compare against: the pinned revision's, or one recorded on the spec under
+  // test (`--g-baseline`, e.g. integration's spec when the candidate is a draft of it).
+  const baselineFile = ctx.gBaseline ?? BASELINE_FILE;
+  const baseline = existsSync(baselineFile) ? JSON.parse(readFileSync(baselineFile, "utf8")) : null;
+  const floor = ctx.gBaseline ? baseline?.pull?.shown ?? null : SHOWN_FLOOR;
   const rows = [];
   const results = await pool(DATA.comparisons, 8, async (c) => ({ c, p: await packetArm(ctx, root, index, c) }));
   for (const { c, p } of results) {
@@ -135,10 +171,14 @@ export async function fullness(ctx) {
   const inexact = results.flatMap((r) => r.p.inexact.map((id) => `${r.c.id}:${id}`));
   const refused = results.filter((r) => r.p.refused).map((r) => `${r.c.id}:${r.p.refused}`);
   // No need answered at the recorded baseline is lost unless this arm names its passage.
-  const lost = [];
+  // A hand verdict whose quoted line is gone is listed apart (it needs a new verdict), never counted as lost or kept.
+  const lost = [], moved = [];
+  const unanchored = results.flatMap((r) => r.p.needs.map((s, i) => (s === "unanchored" ? `${r.c.id}:${i} ${r.c.needs[i].need}` : null)).filter(Boolean));
   if (baseline) for (const r of results) {
     const b = baseline.comparisons[r.c.id];
-    b?.values.forEach((v, i) => { if (v > 0 && r.p.values[i] < v && r.p.needs[i] !== "named") lost.push(`${r.c.id}:${i} ${r.c.needs[i].need}`); });
+    b?.values.forEach((v, i) => { if (v > 0 && r.p.values[i] < v && !["named", "unanchored"].includes(r.p.needs[i])) lost.push(`${r.c.id}:${i} ${r.c.needs[i].need}`); });
+    // Where each need's answer lives, against the recorded arm: a probe that now hits another passage is listed for a hand check.
+    b?.passageOf.forEach((was, i) => { const now = r.p.passageOf[i]; if (was !== now && r.p.needs[i] !== "unanchored") moved.push(`${r.c.id}:${i} ${was ?? "none"} → ${now ?? "none"}`); });
   }
   const deck = results.reduce((s, r) => ({ matching: s.matching + (r.p.copyDeck.matching ? 1 : 0), reached: s.reached + (r.p.copyDeck.reached ? 1 : 0), sections: s.sections + r.p.copyDeck.matching, sectionsReached: s.sectionsReached + r.p.copyDeck.reached }), { matching: 0, reached: 0, sections: 0, sectionsReached: 0 });
   const frameMax = Math.max(...results.map((r) => r.p.frameBytes));
@@ -155,9 +195,11 @@ export async function fullness(ctx) {
     guard("g.packet.ran", refused.length === 0, refused.length ? `refused: ${refused.join(", ")}` : "every seed's packet answered"),
     guard("g.packet.text-exact", inexact.length === 0, inexact.length ? `not byte-equal to the source span: ${inexact.slice(0, 5).join(", ")}${inexact.length > 5 ? ` … ${inexact.length - 5} more` : ""}` : "every delivered passage equals its source span"),
     guard("g.packet.no-need-lost", baseline && lost.length === 0, !baseline ? "no recorded baseline (data/g-baseline.json)" : lost.length ? `lost, not named: ${lost.slice(0, 6).join("; ")}${lost.length > 6 ? ` … ${lost.length - 6} more` : ""}` : `every need answered at ${baseline.tree} is still answered or named`),
-    guard("g.packet.total-never-drops", baseline && answered >= baseline.total.answered, baseline ? `${answered} vs recorded ${baseline.total.answered}` : "no recorded baseline"),
+    guard("g.packet.total-never-drops", baseline && answered >= baseline.total.answered, baseline ? `${answered} vs ${baseline.total.answered} recorded at ${baseline.tree}` : "no recorded baseline"),
     guard("g.frame-cap", frameMax <= FRAME_CAP, `largest frame ${frameMax} B, cap ${FRAME_CAP} B`),
+    guard("g.packet.anchored", unanchored.length === 0, unanchored.length ? `hand verdicts whose quoted line is gone (re-read and re-verdict): ${unanchored.join("; ")}` : "every hand verdict's quoted line is found"),
   ]));
+  rows.push(row("g.packet.passage-changed", baseline ? moved.join("; ") || "none" : "no recorded baseline"));
   // Target, not a guard (today's packet fails it by design): needs whose passage is read or named, one hop.
   rows.push(row("g.packet.target.answered-or-named", `${answered + named}/${of}`));
 
@@ -188,6 +230,13 @@ export async function fullness(ctx) {
       whats: verdicts.length, cut: bad.filter((x) => x.v === "cut").length, unlocated: bad.filter((x) => x.v === "unlocated").length, empty: bad.filter((x) => x.v === "empty").length,
       first: bad.slice(0, 3).map((x) => `${x.id}: "${x.what}"`).join(" | ") || "none",
     }, [guard("g.pull.what-whole", sweepBroken === 0 && verdicts.length > 0 && bad.length === 0, sweepBroken ? `toc --dir down failed on ${sweepBroken} H1s` : bad.length ? `${bad.length} of ${verdicts.length} whats are not a whole sentence, e.g. ${bad[0].id}: "${bad[0].what}"` : `all ${verdicts.length} whats are whole sentences`)]));
+    // "What" graded by a reviewer (data/what-verdicts.json, or --what-verdicts), per family: a verdict counts only
+    // while the what it judged is still the one shown; a changed what is stale until graded again.
+    const shownWhat = new Map();
+    for (const t of sweeps) for (const l of [t.seed, ...t.lines]) if (l && typeof l.id === "string") shownWhat.set(l.id, typeof l.what === "string" ? l.what : "");
+    const verdictFile = ctx.whatVerdicts ?? WHAT_VERDICTS_FILE;
+    const graded = existsSync(verdictFile) ? JSON.parse(readFileSync(verdictFile, "utf8")).verdicts ?? {} : null;
+    for (const h1 of WHY_FAMILIES) rows.push(row(`g.target.what-right.${h1.slice(1).replace("/", "-")}`, graded ? whatGrade(familyIds(index, h1), shownWhat, graded) : "no verdicts"));
     // Contents-line quality: `--dir out` over each H2 of the family. "requires" lines are the declared edges
     // (the plan's "1 of 6"); a why found only in an HTML comment is counted apart.
     for (const h1 of WHY_FAMILIES) {
@@ -209,7 +258,7 @@ export async function fullness(ctx) {
       }
       rows.push(row(`g.pull.why.${h1.slice(1).replace("/", "-")}`, { h2s: kids.length, ...w }));
     }
-    const pulls = await pool(results, 8, async ({ c }) => ({ c, q: await pullArm(ctx, root, c, baseline?.comparisons[c.id]) }));
+    const pulls = await pool(results, 8, async ({ c }) => ({ c, q: await pullArm(ctx, root, c, baseline?.comparisons[c.id], index) }));
     for (const { c, q } of pulls) {
       rows.push(row(`g.pull.${c.id}`, { shown: q.shown, of: q.of, bytes: q.bytes, calls: q.calls, lines: q.lines.total, lost: q.lostUnshown.length }));
     }
@@ -222,13 +271,37 @@ export async function fullness(ctx) {
       lines: L.total, linesWithWhat: L.withWhat, linesWithWhy: L.withWhy, answeredByPacketNotShown: lostUnshown.length,
     }, [
       guard("g.pull.toc-answers", broken.length === 0, broken.length ? `toc failed: ${broken.slice(0, 5).join("; ")}` : "every toc call answered"),
-      guard("g.pull.shown-floor", shown >= SHOWN_FLOOR, `needs shown one hop out: ${shown}/${of}; floor ${SHOWN_FLOOR} (M1)`),
+      guard("g.pull.shown-floor", floor !== null && shown >= floor, floor === null ? "the given baseline records no pull arm to hold" : `needs shown one hop out: ${shown}/${of}; floor ${floor} (${ctx.gBaseline ? "the given baseline" : "M1"})`),
     ]));
     // A row, not a guard: one hop is a proxy, and a need two hops out is a fair loss to report. The guard
     // "no need packet answers is lost unless shown" belongs to the agent arm, where the agent may take more hops.
     rows.push(row("g.pull.not-shown", lostUnshown.join("; ") || "none"));
+    const frameOnly = pulls.flatMap(({ c, q }) => q.frameOnly.map((i) => `${c.id}:${i} ${c.needs[i].need}`));
+    rows.push(row("g.pull.frame-answered", { needs: frameOnly.length, which: frameOnly.join("; ") || "none" }));
+    // Copy-deck sections matching each seed's surface, as g.packet.total's copyDeck counts them (17 on the pinned spec).
+    const deckSum = (k) => pulls.reduce((s, { q }) => s + q.copyDeck[k], 0);
+    rows.push(row("g.pull.copy-deck", { shown: `${deckSum("shown")}/${deckSum("matching")}`, read: `${deckSum("read")}/${deckSum("matching")}`, which: pulls.flatMap(({ q }) => q.copyDeck.which).join(" ") || "none" }));
   }
+  rows.push(...(await frameRead(ctx, root)));
   return rows;
+}
+
+/** The frame as `read --frame` delivers it (every page): its bytes and passages, under the cap; n/a when read has no --frame. */
+async function frameRead(ctx, root) {
+  if ((await accepts(ctx.tools, root, ctx.ws.home, ["read", "--frame"])) === "absent") return [row("g.read.frame-bytes", "n/a: this tree's read has no --frame", [guard("g.read.frame-cap", true, "n/a: no read --frame", true)])];
+  let r = await ctx.tools.runAsync(root, ctx.ws.home, ["read", "--frame"]), calls = 1;
+  const items = [];
+  while (r.json && r.json.status !== "refused" && Array.isArray(r.json.items)) {
+    items.push(...r.json.items);
+    if (!r.json.next || calls >= 50) break;
+    r = await ctx.tools.runAsync(root, ctx.ws.home, ["read", "--frame", "--cursor", r.json.next]);
+    calls++;
+  }
+  const ok = Boolean(r.json && r.json.status !== "refused" && Array.isArray(r.json.items));
+  const texts = proseTexts(items), bytes = [...texts.values()].reduce((s, t) => s + Buffer.byteLength(t), 0);
+  return [row("g.read.frame-bytes", ok ? { bytes, passages: texts.size, calls } : `refused: ${r.json?.code ?? r.status}`, [
+    guard("g.read.frame-cap", ok && bytes <= FRAME_CAP, ok ? `read --frame ${bytes} B in ${texts.size} passage(s), cap ${FRAME_CAP} B` : "read --frame failed"),
+  ])];
 }
 
 /** Files whose claims `where` must list (every claim whose `code` names the file), and one to rank. */
@@ -284,7 +357,7 @@ async function mapRows(ctx, root) {
 }
 
 /** Record the packet arm of `tree` as the per-need baseline the guards compare against. */
-export async function recordBaseline(tree, { pinned, source } = {}) {
+export async function recordBaseline(tree, { pinned, source, specLabel } = {}) {
   scrubProcessEnv();
   const abs = realpathSync(resolve(tree));
   const ws = workspace("g-record");
@@ -298,24 +371,59 @@ export async function recordBaseline(tree, { pinned, source } = {}) {
       comparisons[c.id] = { values: p.values, needs: p.needs, passageOf: p.passageOf };
       answered += p.answered; of += p.of;
     }
-    return { about: "Scenario g's recorded packet arm: per need, the value (1 in, 0.5 partial) and the passage it lives in. Generated by `node scenario-g.mjs --record <tree>`; never edited by hand.", tree: source ?? "unknown", pinned: DATA.pinned, total: { answered, of }, comparisons };
+    // A tree with toc also records its pull proxy, the floor a candidate on the same spec must hold.
+    let pull;
+    if ((await capability(ctx.tools, root, ws.home, "toc")) !== "absent") {
+      const qs = await pool(DATA.comparisons, 8, (c) => pullArm(ctx, root, c, comparisons[c.id]));
+      pull = { shown: qs.reduce((s, q) => s + q.shown, 0), of: qs.reduce((s, q) => s + q.of, 0) };
+    }
+    return { about: "Scenario g's recorded packet arm: per need, the value (1 in, 0.5 partial) and the passage it lives in. Generated by `node scenario-g.mjs --record <tree>`; never edited by hand.", tree: source ?? "unknown", pinned: specLabel ? { spec: specLabel } : DATA.pinned, total: { answered, of }, ...(pull ? { pull } : {}), comparisons };
+  } finally { ws.dispose(); }
+}
+
+/** The "what" sheet a reviewer grades: each family's H1 and H2s as `toc --dir down` shows them, with the passage text. */
+export async function whatSheet(tree, { pinned, families = WHY_FAMILIES } = {}) {
+  scrubProcessEnv();
+  const ws = workspace("g-what");
+  try {
+    const ctx = { tools: new Tools(realpathSync(resolve(tree))), ws, pinned };
+    const root = pinnedRoot(ctx);
+    const index = specIndex(root);
+    const out = {};
+    for (const h1 of families) {
+      const t = await readToc(ctx.tools, root, ws.home, h1, "down");
+      if (!t.ok) throw new Error(`toc ${h1} --dir down: ${t.refused}`);
+      out[h1] = [t.seed, ...t.lines].map((l) => ({ id: l.id, what: l.what ?? "", whatSource: l.whatSource ?? null, text: index.passages.get(l.id)?.text ?? null }));
+    }
+    return { about: "Grade each line: is its what a true, whole account of the passage? Return {verdicts: {id: {what, right, note}}}, copying what verbatim; a verdict counts only while that what is still shown.", families: out };
   } finally { ws.dispose(); }
 }
 
 /** The bytes `--record` writes for `tree` (a make-tree.mjs tree names its ref and commit). */
-export async function baselineText(tree) {
+export async function baselineText(tree, { pinned, specLabel } = {}) {
   let source = null;
   try { source = JSON.parse(readFileSync(join(tree, "../../replay-source.json"), "utf8")); } catch { /* a working tree */ }
-  return JSON.stringify(await recordBaseline(tree, { source: source ? `${source.ref} @ ${source.commit}` : "working tree" }), null, 1) + "\n";
+  return JSON.stringify(await recordBaseline(tree, { pinned, specLabel, source: source ? `${source.ref} @ ${source.commit}` : "working tree" }), null, 1) + "\n";
 }
 
 export const BASELINE_PATH = BASELINE_FILE;
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2);
-  if (args[0] !== "--record" || !args[1]) { console.error("usage: node scenario-g.mjs --record <extensions tree>"); process.exit(2); }
-  const text = await baselineText(args[1]);
-  writeFileSync(BASELINE_FILE, text);
-  const out = JSON.parse(text);
-  console.log(`recorded ${out.total.answered}/${out.total.of} from ${out.tree} → data/g-baseline.json`);
+  const opt = (name) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : undefined; };
+  const pinned = opt("--pinned") && realpathSync(resolve(opt("--pinned")));
+  if (args[0] === "--record" && args[1]) {
+    // Another spec (`--pinned <dir holding .sova/spec>`, named by `--spec <label>`) records to `--out`, never over the pinned baseline.
+    if (pinned && (!opt("--out") || !opt("--spec"))) { console.error("a --pinned spec records with --spec <label> --out <file>"); process.exit(2); }
+    const file = opt("--out") ? resolve(opt("--out")) : BASELINE_FILE;
+    const text = await baselineText(args[1], { pinned, specLabel: opt("--spec") });
+    writeFileSync(file, text);
+    const out = JSON.parse(text);
+    console.log(`recorded ${out.total.answered}/${out.total.of}${out.pull ? `, pull shown ${out.pull.shown}/${out.pull.of}` : ""} from ${out.tree} → ${file}`);
+  } else if (args[0] === "--what-sheet" && args[1]) {
+    console.log(JSON.stringify(await whatSheet(args[1], { pinned, ...(opt("--families") ? { families: opt("--families").split(",") } : {}) }), null, 1));
+  } else {
+    console.error("usage: node scenario-g.mjs --record <extensions tree> [--pinned <dir> --spec <label> --out <file>]\n       node scenario-g.mjs --what-sheet <extensions tree> [--pinned <dir>] [--families §a/b,§c/d]");
+    process.exit(2);
+  }
 }

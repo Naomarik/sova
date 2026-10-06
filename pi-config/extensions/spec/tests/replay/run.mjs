@@ -23,13 +23,14 @@ export function treeSource(tree) {
 }
 
 /** One arm: every selected scenario against `tree`, in a fresh workspace. Paths in values are normalized. */
-export async function runArm(tree, { label, only, pinned } = {}) {
+export async function runArm(tree, { label, only, pinned, gBaseline, whatVerdicts } = {}) {
   scrubProcessEnv();
   const abs = realpathSync(resolve(tree));
   for (const need of ["spec/core/sova-spec.mjs", "mode/spec-guard.ts", "claude-code/spec-hooks.ts"])
     if (!existsSync(join(abs, need))) throw new Error(`${tree} is not an extensions tree: no ${need}`);
   const ws = workspace(label ?? "arm");
-  const ctx = { tools: new Tools(abs), ws, module: moduleLoader(abs), ...(pinned ? { pinned: realpathSync(resolve(pinned)) } : {}) };
+  const ctx = { tools: new Tools(abs), ws, module: moduleLoader(abs), ...(pinned ? { pinned: realpathSync(resolve(pinned)) } : {}),
+    ...(gBaseline ? { gBaseline: realpathSync(resolve(gBaseline)) } : {}), ...(whatVerdicts ? { whatVerdicts: realpathSync(resolve(whatVerdicts)) } : {}) };
   const rows = [];
   const errors = [];
   try {
@@ -111,14 +112,20 @@ async function main(argv) {
   const opt = {};
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (["--baseline", "--candidate", "--out", "--only", "--pinned"].includes(a) && i + 1 < argv.length) opt[a.slice(2)] = argv[++i];
+    if (["--baseline", "--candidate", "--out", "--only", "--pinned", "--baseline-pinned", "--candidate-pinned", "--g-baseline", "--what-verdicts"].includes(a) && i + 1 < argv.length) opt[a.slice(2)] = argv[++i];
     else if (a === "--json") opt.json = true;
     else { console.error(`unknown argument ${a}`); return 2; }
   }
-  if (!opt.baseline || !opt.candidate) { console.error("usage: node run.mjs --baseline <extensions dir> --candidate <extensions dir> [--out <dir>] [--only a,b,…,g] [--pinned <dir holding .sova/spec>] [--json]"); return 2; }
+  if (!opt.baseline || !opt.candidate || (opt.pinned && (opt["baseline-pinned"] || opt["candidate-pinned"]))) {
+    console.error("usage: node run.mjs --baseline <extensions dir> --candidate <extensions dir> [--out <dir>] [--only a,b,…,g] [--json]\n" +
+      "  [--pinned <dir holding .sova/spec> | --baseline-pinned <dir> --candidate-pinned <dir>] [--g-baseline <recorded g file>] [--what-verdicts <file>]");
+    return 2;
+  }
   const only = opt.only?.split(",");
-  const baseline = await runArm(opt.baseline, { label: "baseline", only, pinned: opt.pinned });
-  const candidate = await runArm(opt.candidate, { label: "candidate", only, pinned: opt.pinned });
+  // g's spec per arm (a draft against the spec it drafts from), with the recorded arm both compare against.
+  const shared = { only, gBaseline: opt["g-baseline"], whatVerdicts: opt["what-verdicts"] };
+  const baseline = await runArm(opt.baseline, { label: "baseline", ...shared, pinned: opt["baseline-pinned"] ?? opt.pinned });
+  const candidate = await runArm(opt.candidate, { label: "candidate", ...shared, pinned: opt["candidate-pinned"] ?? opt.pinned });
   const diff = diffCards(baseline, candidate);
   const out = opt.out ? resolve(opt.out) : mkdtempSync(join(tmpdir(), "spec-replay-out-"));
   mkdirSync(out, { recursive: true });

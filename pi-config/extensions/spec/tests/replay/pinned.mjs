@@ -10,11 +10,11 @@ export const DATA = JSON.parse(readFileSync(join(HERE, "data/comparisons.json"),
 /** Source files the `where` rows read, archived from the pinned revision beside its spec. */
 export const PINNED_SOURCES = ["server/chat-manager.ts", "shared/protocol.ts"];
 
-/** `git archive <rev> .sova/spec` and PINNED_SOURCES from the checkout holding this harness, into `dest`. → dest */
-export function extractPinned(dest, rev = DATA.pinned.rev) {
+/** `git archive <rev> .sova/spec` and PINNED_SOURCES (or just `paths`) from the checkout holding this harness, into `dest`. → dest */
+export function extractPinned(dest, rev = DATA.pinned.rev, paths = [DATA.pinned.path, ...PINNED_SOURCES]) {
   const top = spawnSync("git", ["-C", HERE, "rev-parse", "--show-toplevel"], { encoding: "utf8" });
   if (top.status !== 0) throw new Error(`the harness is not in a Git checkout, so the pinned spec ${rev} can't be extracted`);
-  const archive = spawnSync("git", ["-C", top.stdout.trim(), "archive", "--format=tar", rev, DATA.pinned.path, ...PINNED_SOURCES], { maxBuffer: 256 * 1024 * 1024 });
+  const archive = spawnSync("git", ["-C", top.stdout.trim(), "archive", "--format=tar", rev, ...paths], { maxBuffer: 256 * 1024 * 1024 });
   if (archive.status !== 0) throw new Error(`git archive ${rev} ${DATA.pinned.path} failed: ${archive.stderr}`);
   const tar = spawnSync("tar", ["-x", "-C", dest], { input: archive.stdout });
   if (tar.status !== 0) throw new Error(`tar failed: ${tar.stderr}`);

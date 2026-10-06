@@ -1369,6 +1369,40 @@ export type SessionSetup =
   /** Nothing could be read: `reason` is a sentence for the user. Never cached. */
   | { state: "unavailable"; where: GitWhere; cwd: string; reason: string; checkedAt: number };
 
+// GET /api/sessions/tools?path=<session file> -> SessionTools   (server/session-tools.ts,
+//                                  §chat.transcript/setup-card-tools: the tools the HELD chat declares
+//                                  to its model now, in its order, with the descriptions as declared.
+//                                  Never cached: read again whenever the chat's model or modes change.
+//                                  A session this server doesn't hold, one open in a terminal and a
+//                                  special session answer `state: "unavailable"` with the sentence to
+//                                  show. 400 a bad path, 404 a missing session file.)
+// ---------------------------------------------------------------------------
+/** One tool the session declares to its model. */
+export interface SessionTool {
+  /** The tool's own name (pi's). */
+  name: string;
+  /** The name the model calls it by: `name`, or `mcp__sova__<name>` on a Claude Code model. */
+  callName: string;
+  /** The description as the model is given it (after any change the loadout makes). */
+  description: string;
+  /** pi's own tool, an extension's (`origin`: the extension's name), or one Sova's runtime adds. */
+  source: "builtin" | "extension" | "sova";
+  origin?: string;
+  /** What its declaration costs, estimated: ceil((description + JSON of its parameters) / CHARS_PER_TOKEN). */
+  tokens: number;
+}
+
+export type SessionTools =
+  | {
+      state: "ok";
+      /** Whose naming `callName` follows: pi's, or Claude Code's MCP facade. */
+      backend: "pi" | "claude-code";
+      tools: SessionTool[];
+      checkedAt: number;
+    }
+  /** Not listed: `reason` is the sentence to show. */
+  | { state: "unavailable"; reason: string; checkedAt: number };
+
 // POST /api/sessions/loadout {path, offContext, offSkills} -> SessionSetup
 //                                  (§chat.transcript/setup-card-toggles: the session's whole off set
 //                                  — context files by absolute path, skills by name — written as its

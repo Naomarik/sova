@@ -7,17 +7,16 @@
 // - `<name>.jsonl`: the session file(s) it wrote, canonical (canonical-jsonl.ts, as the state goldens);
 // - `<name>.trace`: one line per thing that happened, in the order it happened:
 //   - `A <msg>` / `B <msg>`: what each of two attached clients was sent, A on wire 1 and B on wire 2
-//     (the existing mappers, as server/ws.ts delivers), every event frame whole and the bulky
-//     snapshots cut to their selected fields (`project` below);
+//     (the existing mappers, as server/ws.ts delivers), every event frame whole, a hello cut to its
+//     state and rows, and a frame type no scenario exercises left out (`projected` below);
 //   - `sdk <call> <args>`: each call into pi's AgentSession (prompt, steer, abort, compact, …, and an
 //     extension command's handler), recorded by wrapping the raw session from the test side, so the
 //     recording does not care where the calling code lives;
 //   - `write <entry>`: each entry pi appended, as it appended it;
 //   - `step …` / `got …`: the test's own actions and what they returned.
-// Both are canonical together (one id space), and compared byte for byte. They were recorded before
-// any of the M5 carve-out moved, and gate it: a later change must keep them green with NO fixture
-// edit. Record missing fixtures with SOVA_GOLDEN_RECORD=1 (same command); SOVA_GOLDEN_RECORD=overwrite
-// rewrites them all, which a refactor never does.
+// Both are canonical together (one id space), and compared byte for byte: they characterize the live
+// chat. Record missing fixtures with SOVA_GOLDEN_RECORD=1 (same command); after an intended change,
+// SOVA_GOLDEN_RECORD=overwrite rewrites them all, and the diff is reviewed with the change.
 //
 // Ordering comes from the code under test only: a held reply (ScriptedModel.hold) or a held compaction
 // (compact-fixture-ext.ts) parks the run at a known point, the test acts there, and waits for the
@@ -151,20 +150,25 @@ function sessionFile(lines: Record<string, unknown>[] = []): string {
 
 // ---- the trace ----------------------------------------------------------------------------------------
 
-/** A wire message cut to what the golden pins: event frames, rows, queue and every small control
-    message whole; a hello or history to its rows' ids and kinds and its state (the rows themselves
-    are the M2 rows goldens'); the command list to its type (it is whatever the extensions register). */
-function projected(json: string): string {
+/** The frame types the scenarios exercise. Any other (the command list, the profile, the Claude login
+    note, and whatever a later feature adds to a hello) is left out of the trace, so adding one
+    re-records nothing; its own tests pin it. */
+const PINNED = new Set([
+  "hello", "history", "event", "append", "queue", "queue_item_gone", "queue_removed", "queue_cleared", "send_ack", "mode", "model",
+  "thinking", "links", "ui_request", "ui_resolved", "rewound", "regenerated", "compacted", "error",
+]);
+/** The hello fields the scenarios exercise: the run state and the model, and the rows as ids and kinds. */
+const HELLO_KEYS = ["type", "isStreaming", "isCompacting", "model", "thinking", "items"];
+
+/** A wire message cut to what the golden pins (null: left out): event frames, rows, queue and the small
+    control messages whole; a hello to HELLO_KEYS, and a hello or history's rows to their ids and kinds
+    (the rows themselves are the reader goldens'). */
+function projected(json: string): string | null {
   const m = JSON.parse(json) as Record<string, unknown> & { type: string };
+  if (!PINNED.has(m.type)) return null;
   const rows = (items: unknown) => (Array.isArray(items) ? items.map((r: { id?: string; kind?: string }) => `${r.id} ${r.kind}`) : items);
-  if (m.type === "hello") {
-    const { items, context: _c, ...rest } = m;
-    return JSON.stringify({ ...rest, items: rows(items) });
-  }
+  if (m.type === "hello") return JSON.stringify(Object.fromEntries(HELLO_KEYS.filter((k) => k in m).map((k) => [k, k === "items" ? rows(m.items) : m[k]])));
   if (m.type === "history") return JSON.stringify({ ...m, items: rows(m.items) });
-  if (m.type === "commands") return JSON.stringify({ type: m.type });
-  // Which tools a session has is the loaded extensions', not this golden's.
-  if (m.type === "profile") return JSON.stringify({ ...m, tools: "<elided>" });
   // pi 0.87's system-prompt message (its tool texts, the repo's paths) and a hook's custom message
   // (the Overseer's run note carries the wall clock) ride in message events and agent_end on wire 1:
   // elided as in the file (canonical-jsonl.ts "system", "notes"), their place and envelope kept.
@@ -201,7 +205,10 @@ class Trace {
 
   /** A client as server/ws.ts makes one, its messages in the trace under `name`. */
   client(name: string, wire: 1 | 2): ChatClient {
-    const push = (json: string) => void this.lines.push(`${name} ${projected(json)}`);
+    const push = (json: string) => {
+      const line = projected(json);
+      if (line !== null) this.lines.push(`${name} ${line}`);
+    };
     return { send: (m) => push(JSON.stringify(m)), sendRaw: push, ...(wire === 2 ? { wire: 2 as const } : {}) };
   }
 

@@ -1,6 +1,5 @@
-// The `large` golden set: one ~10 MB pi session, generated (not committed) so every pnpm test proves the
-// goldens stay compact on a real-sized file: per-entry probes sample their targets, large outputs are stored
-// as digests (golden.ts). Deterministic: no clock, no randomness beyond a seeded generator.
+// One ~10 MB pi session, generated (not committed) once per reader.test.ts run, so the reader is checked on
+// a real-sized file. Deterministic: no clock, no randomness beyond a seeded generator.
 const T0 = Date.parse("2026-09-04T09:00:00.000Z");
 
 /** mulberry32, so the filler text is the same on every run. */

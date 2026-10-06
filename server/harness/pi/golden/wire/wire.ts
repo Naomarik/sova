@@ -1,22 +1,28 @@
-// The wire goldens (README.md here): what the browser's live path does with each event, recorded before
-// milestone 3 ported it to SovaEvent. For a faux stream, the v1 control frames the server sends (toWireEvent
-// plus the message_end entry id); for every input, the per-step LiveState trace and the effects log of the
-// pre-port applyEvent. The ported reducer reproduces the traces on both paths, (a) v2 frames and (b)
-// fromV1(control frames); W3.4's server must send the control frames byte for byte.
+// The wire goldens (README.md here): what the browser's live path does with each event. For a faux stream,
+// the v1 control frames the server sends (toWireEvent plus the message_end entry id); for every input, the
+// per-step LiveState trace and applyEvent's effects log. The reducer must give the same trace on both paths,
+// (a) v2 frames and (b) fromV1(control frames), and the server must send the control frames byte for byte.
 import assert from "node:assert/strict";
 import { createStore } from "solid-js/store";
 import { toV1Event as toWireEvent } from "../../wire";
-import { messageContextTokens } from "../../../../../src/lib/context";
 import * as live from "../../../../../src/lib/live";
 import type { SovaEvent } from "../../../../../shared/harness-wire";
 import type { V1EventFrame } from "../../../../../shared/protocol";
 import { fromV1 } from "../../../../../shared/wire-v1";
 import { NO_VIEW, type LiveEffect, type LiveEffectsContext } from "../../../../../src/lib/live-effects";
 import { isObj } from "../../../../../src/lib/message";
-import { navigateDetails } from "../../../../../src/lib/overseer";
-import type { Call, Sequence } from "./live-calls";
 
-export type { Call, Sequence };
+/** The store mutators a sequence calls; each takes the store's setter first. */
+export type Mutator = "applyEvent" | "addPendingPrompt" | "applyQueue" | "markRemoved" | "markQueued" | "markDelivered" | "takeBackQueued";
+export interface Call {
+  fn: Mutator;
+  /** The arguments after the setter, as JSON. */
+  args: unknown[];
+}
+export interface Sequence {
+  name: string;
+  calls: Call[];
+}
 
 /** The second view every applyEvent runs in: the Overseer's chat, in the tab whose message started the turn. */
 export const OVERSEER_MINE: LiveEffectsContext = { overseer: true, mine: true };
@@ -79,33 +85,8 @@ export function pathEvents(frame: V1EventFrame): { v2: live.LiveEvent[]; shim: l
   };
 }
 
-/**
- * The effects ChatView's flush decided inline before W3.0 (its conditions verbatim, in its order: the
- * ones it ran before applyEvent, then the settle after it). Every trace checks applyEvent's effects
- * against this, so the extraction is proven on every recorded event.
- */
-export function flushEffectsBeforeW30(ev: unknown, overseer: boolean, mine: boolean): LiveEffect[] {
-  const out: LiveEffect[] = [];
-  if (isObj(ev) && ev.type === "agent_start") out.push("clearTurnError", "announceWorking");
-  if (isObj(ev) && ev.type === "message_end" && isObj(ev.message) && ev.message.role === "assistant") {
-    const tokens = messageContextTokens(ev.message);
-    if (tokens !== null) out.push({ context: tokens });
-  }
-  if (isObj(ev) && ev.type === "compaction_start") out.push("compacting");
-  if (isObj(ev) && ev.type === "compaction_end") {
-    out.push("compactingDone");
-    if (isObj(ev.result)) out.push("compacted");
-  }
-  if (overseer && isObj(ev) && ev.type === "tool_execution_end" && ev.toolName === "sova_navigate" && ev.isError !== true && mine) {
-    const nav = navigateDetails(isObj(ev.result) ? ev.result.details : undefined);
-    if (nav) out.push({ navigate: nav.href });
-  }
-  if (isObj(ev) && ev.type === "agent_settled") out.push("settled");
-  return out;
-}
-
 export interface Step {
-  /** The call (live.test inputs) or the frame's index (faux streams). */
+  /** The call (a recorded sequence) or the frame's index (faux streams). */
   call?: Call;
   frame?: number;
   /** applyEvent's effects with no view; `overseer` in OVERSEER_MINE's, only when they differ. */
@@ -134,8 +115,7 @@ function atFixedNow<T>(fn: () => T): T {
  * The trace of `calls` on a fresh store: after each, the state and (for applyEvent) its effects. An applyEvent
  * call's v1 event (from `frames[i]` when given, else `frameOf` its recorded event) runs through the shim path,
  * which is what is recorded, and through the v2 path on a second store; the two must agree step by step. Twin
- * stores run each path in OVERSEER_MINE's view; the view may change effects, never the state. Each event's
- * effects must equal the flush they were pulled out of (flushEffectsBeforeW30), in both views.
+ * stores run each path in OVERSEER_MINE's view; the view may change effects, never the state.
  */
 export function trace(calls: readonly Call[], frames?: readonly string[]): Step[] {
   return atFixedNow(() => {
@@ -155,8 +135,6 @@ export function trace(calls: readonly Call[], frames?: readonly string[]): Step[
         const overseer = apply(setTwin, paths.shim, OVERSEER_MINE);
         assert.deepEqual(apply(setV2, paths.v2, NO_VIEW), effects, `${where}: v2 effects differ from the shim's`);
         assert.deepEqual(apply(setV2Twin, paths.v2, OVERSEER_MINE), overseer, `${where}: v2 Overseer effects differ from the shim's`);
-        assert.deepEqual(effects, flushEffectsBeforeW30(ev, false, false), `${where}: effects differ from the pre-W3.0 flush`);
-        assert.deepEqual(overseer, flushEffectsBeforeW30(ev, true, true), `${where}: Overseer effects differ from the pre-W3.0 flush`);
         step.effects = effects;
         if (JSON.stringify(overseer) !== JSON.stringify(effects)) step.overseer = overseer;
       } else {

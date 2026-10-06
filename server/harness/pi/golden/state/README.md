@@ -1,14 +1,16 @@
 # State goldens: the bytes Sova's session writers leave
 
-Milestone 4 of the harness-boundary refactor (§app/harness) moves every pi-session write Sova makes outside
-pi-config behind `SessionState`. These fixtures were recorded on the code **before any writer moved**
-(feat/harness-integration at 99791bc), by `../../state-golden.test.ts` driving today's real code paths. A
-later change must keep them green with **no fixture edit**: a diff here in a refactor is a review stop.
+The exact bytes Sova's session writers leave in a pi session file (§app.harness/state), driven by
+`../../state-golden.test.ts` through the real code paths. First recorded before milestone 4 moved every
+writer behind `SessionState` (feat/harness-integration at 99791bc), where they proved the move
+byte-identical. Session files are durable user data that older and newer Sovas both read, so a diff here is
+a change to what lands on disk: re-record only when that change is intended, and review it as a format
+change.
 
 ```
 pnpm test -- server/harness/pi/state-golden.test.ts                       # compare (part of every pnpm test)
 SOVA_GOLDEN_RECORD=1 pnpm test -- server/harness/pi/state-golden.test.ts  # write fixtures that are missing
-SOVA_GOLDEN_RECORD=overwrite …                                            # rewrite all: never in a refactor
+SOVA_GOLDEN_RECORD=overwrite …                                            # rewrite all, for an intended on-disk change
 ```
 
 The run: one process, a throwaway `PI_CODING_AGENT_DIR`, the server imported (PORT=0) so routes, the

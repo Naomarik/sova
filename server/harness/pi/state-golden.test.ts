@@ -2,10 +2,10 @@
 //
 // The state goldens (§app/harness, milestone 4): every session write Sova makes outside pi-config, driven
 // through today's real code paths, and the file each scenario leaves compared byte for byte (after
-// canonical-jsonl.ts takes out ids, times and temp paths) with golden/state/<scenario>.jsonl. They were
-// recorded before any writer moved to SessionState; a later change must keep them green with NO fixture
-// edit. Record missing fixtures with SOVA_GOLDEN_RECORD=1 (same command); it never overwrites one that
-// exists unless SOVA_GOLDEN_RECORD=overwrite, and a fixture diff in a refactor is a review stop.
+// canonical-jsonl.ts takes out ids, times and temp paths) with golden/state/<scenario>.jsonl. A diff is a
+// change to what lands on disk (durable user data): re-record only an intended one, and review it as a
+// format change. Record missing fixtures with SOVA_GOLDEN_RECORD=1 (same command); it never overwrites one
+// that exists unless SOVA_GOLDEN_RECORD=overwrite.
 //
 // One process, one throwaway PI_CODING_AGENT_DIR, the server imported (PORT=0) so routes, the Overseer and
 // the baton's statechart are wired as in production. The model is a ScriptedModel; models.json registers it

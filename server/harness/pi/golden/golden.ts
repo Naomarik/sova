@@ -1,7 +1,6 @@
-// The golden harness (README.md here): fixtures × probes → expected outputs recorded on today's code, so a
-// refactor of the readers (milestone 2 on, §app/harness) proves its output byte-identical. golden.test.ts
-// compares; `node scripts/harness-golden.mjs record` writes what is missing (and, with --accept <probe>,
-// rewrites that probe's files after a CHANGES.md line says why). Nothing here imports pi.
+// The golden harness (README.md here): fixtures × probes → recorded outputs that characterize the readers.
+// golden.test.ts compares; `node scripts/harness-golden.mjs record` re-records them (missing and differing
+// files alike), and the diff is reviewed with the change that caused it. Nothing here imports pi.
 import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
@@ -241,7 +240,7 @@ export function workspaceFixture(set: FixtureSet, fx: FixtureSet["fixtures"][num
 export type Mode = "compare" | "record";
 
 export interface Outcome {
-  status: "same" | "differs" | "missing" | "written" | "accepted";
+  status: "same" | "differs" | "missing" | "written" | "rewritten";
   path: string;
   /** For "differs": the first JSON path and, for a committed fixture, both values there. */
   where?: string;
@@ -249,10 +248,10 @@ export interface Outcome {
 }
 
 /**
- * Compares (or records) one probe's output against its expected file. Record writes a missing file, and
- * rewrites a differing one only when the probe is in `accept`; anything else that differs stays a failure.
+ * Compares (or records) one probe's output against its expected file. Record writes a missing file and
+ * rewrites a differing one, unless `keep` (a contract file: a difference stays a failure even in record).
  */
-export function settle(set: FixtureSet, fixture: string, probe: string, output: unknown, mode: Mode, accept: ReadonlySet<string>): Outcome {
+export function settle(set: FixtureSet, fixture: string, probe: string, output: unknown, mode: Mode, opts: { keep?: boolean } = {}): Outcome {
   const path = join(set.expected, fixture, `${probe}.json`);
   const fresh = serialize(output);
   if (!existsSync(path)) {
@@ -271,9 +270,9 @@ export function settle(set: FixtureSet, fixture: string, probe: string, output: 
   }
   const where = firstDiff(expected, JSON.parse(fresh));
   if (where === null) return { status: "same", path };
-  if (mode === "record" && accept.has(probe)) {
+  if (mode === "record" && !opts.keep) {
     writeFileSync(path, fresh);
-    return { status: "accepted", path, where };
+    return { status: "rewritten", path, where };
   }
   const detail = set.private
     ? undefined

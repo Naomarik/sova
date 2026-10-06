@@ -292,6 +292,12 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   that login's directory down as `CLAUDE_CONFIG_DIR`, and tests falling back to the host's agent dir
   once wrote leases into it. A new runner imports it too; `node scripts/test-sentinel.mjs -- <cmd>`
   runs a suite against a sentinel HOME / agent dir / login dir and fails if anything there changed.
+  The same preload stops git's repository search at the temp dir (`GIT_CEILING_DIRECTORIES`) and
+  drops `GIT_DIR`-like variables, and `pnpm test` exits 2 when its temp dir is inside any git
+  repository: tests register plain temp folders as projects, and a `TMPDIR` inside a worktree once
+  made them Sova's own checkout, so tests committed promotions on master and cut `sova/*` worktrees.
+  A test that needs a plain folder makes its temp root with `scratchRoot` (`server/test-scratch.ts`);
+  one that needs a repository runs `git init` under it.
 - `pnpm run typecheck` — must pass. `pnpm run build` — must pass.
 - `pnpm run prices:update` — regenerate the checked-in price seed `shared/model-prices/seed.json` from models.dev and print
   the changes and any unpriced model (`--from <api.json>` offline, `--check` writes nothing). Aliases are hand-kept in

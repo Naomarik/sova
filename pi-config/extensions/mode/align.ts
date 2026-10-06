@@ -234,12 +234,19 @@ export function openBlockersOf(doc: Pick<AlignDocument, "review">): { phase: Ali
 export const runningReviewsOf = (doc: Pick<AlignDocument, "review">): AlignReviewPhase[] => ALIGN_REVIEW_PHASES.filter((phase) => doc.review?.[phase]?.state === "running");
 
 /**
- * The message the card's Review Plan / Review Diff button and the TUI's `/review` send: an ordinary
- * user message the session acts on with the review op. Sova's card composes the same text
- * (src/lib/align-review.ts; both tests pin it).
+ * A phase as the user reads it: "Plan" or "Implementation". `diff` stays the id (ops, record,
+ * messages); the user decides about the implementation, the diff is only what the reviewer reads.
+ * Sova's card has the same helper (src/lib/align-review.ts).
+ */
+export const reviewPhaseName = (phase: AlignReviewPhase): string => (phase === "plan" ? "Plan" : "Implementation");
+
+/**
+ * The message the card's Review Plan / Review Implementation button and the TUI's
+ * `/review` send: an ordinary user message the session acts on with the review op, its phase
+ * token always the id. Sova's card composes the same text (src/lib/align-review.ts; both tests pin it).
  */
 export const reviewRequestMessage = (doc: string, phase: AlignReviewPhase): string =>
-	`${doc}: run the adversarial ${phase} review now (align review, phase ${phase}), whatever the rule says.`;
+	`${doc}: run the adversarial ${reviewPhaseName(phase).toLowerCase()} review now (align review, phase ${phase}), whatever the rule says.`;
 
 /** A phase is used once it ran in any way; a skip leaves it usable. */
 export const reviewUsed = (entry: AlignReviewEntry | undefined): boolean => entry !== undefined && entry.state !== "skipped";
@@ -696,7 +703,7 @@ export function applyAlignCall(docs: readonly AlignDocument[], input: unknown, e
 		const where = `ops[${i}] (${o.op})`;
 		if (o.op === "get") continue;
 		const d = doc!;
-		// A late diff review may run on a done alignment (the card's Review Diff after a skip).
+		// A late diff review may run on a done alignment (the card's Review Implementation after a skip).
 		const lateReview = o.op === "review" && o.phase === "diff" && d.phase === "done";
 		if (isTerminal(d) && !(o.op === "status" && o.to === "open") && !lateReview) {
 			throw new AlignError(`${where}: ${d.id} is ${d.phase}; move it back with {op: "status", to: "open"} first`);
@@ -1252,23 +1259,23 @@ export function docLine(doc: AlignDocument): string {
 	return `${doc.id} "${doc.title}" · ${alignStatusWord(alignStatus(doc))} · ${openText(doc)}`;
 }
 
-/** "Diff: 2 blocking", "Plan reviewed · 1 constraint added", …: one phase's verdict line, as the card reads it. */
+/** "Implementation review: 2 blocking", "Plan reviewed · 1 constraint added", …: one phase's verdict line, as the card reads it. */
 export function reviewVerdictLine(phase: AlignReviewPhase, entry: AlignReviewEntry): string {
-	const Phase = phase === "plan" ? "Plan" : "Diff";
+	const Phase = reviewPhaseName(phase);
 	switch (entry.state) {
 		case "skipped":
 			return `${Phase} review skipped: ${entry.reason}`;
 		case "running":
-			return `Reviewing ${phase}`;
+			return `Reviewing the ${Phase.toLowerCase()}`;
 		case "incomplete":
 			return `${Phase} review incomplete: ${entry.reason}`;
 		case "clear":
-			return phase === "plan" ? `Plan reviewed · ${entry.reason}` : "Diff: NO BLOCKING";
+			return phase === "plan" ? `Plan reviewed · ${entry.reason}` : `${Phase} review: no blocking issues`;
 		case "blocking": {
 			const n = entry.blockers?.length ?? 0;
 			if (phase === "plan" && n === 0) return `Plan reviewed · ${entry.reason}`;
 			const open = entry.blockers?.filter((b) => !b.closed).length ?? 0;
-			return `${Phase}: ${n} blocking${open < n ? ` (${open} open)` : ""}`;
+			return `${Phase} review: ${n} blocking${open < n ? ` (${open} open)` : ""}`;
 		}
 	}
 }
@@ -1280,7 +1287,7 @@ export function reviewLines(doc: Pick<AlignDocument, "review">): string[] {
 		const entry = doc.review?.[phase];
 		if (!entry) continue;
 		out.push(`${reviewVerdictLine(phase, entry)}${entry.model ? ` (${entry.model})` : ""}`);
-		for (const b of entry.blockers ?? []) if (!b.closed) out.push(`  ${phase} ${b.id} open: ${b.title} — check: ${b.check}`);
+		for (const b of entry.blockers ?? []) if (!b.closed) out.push(`  ${reviewPhaseName(phase).toLowerCase()} ${b.id} open: ${b.title} — check: ${b.check}`);
 	}
 	return out;
 }
@@ -1381,11 +1388,13 @@ export function changeLine(changes: readonly AlignChange[]): string {
 			case "dropped":
 				parts.push("dropped");
 				break;
-			case "review":
-				parts.push(c.state === "running" ? `${c.phase} review running` : c.state === "skipped" ? `${c.phase} review skipped` : `${c.phase} review: ${c.state === "clear" ? "no blocking" : c.state}`);
+			case "review": {
+				const phase = reviewPhaseName(c.phase).toLowerCase();
+				parts.push(c.state === "running" ? `${phase} review running` : c.state === "skipped" ? `${phase} review skipped` : `${phase} review: ${c.state === "clear" ? "no blocking" : c.state}`);
 				break;
+			}
 			case "blocker-closed":
-				parts.push(`${c.phase} ${c.id} closed`);
+				parts.push(`${reviewPhaseName(c.phase).toLowerCase()} ${c.id} closed`);
 				break;
 		}
 	}

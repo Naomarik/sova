@@ -6,7 +6,7 @@
  *
  * Builtins-free and pi-free: imports only align.ts's types and helpers.
  */
-import { optionLetter, questionState, recommendedOption, workerLine, type AlignDocument, type AlignReviewerSlot, type AlignReviewPhase, type AlignWorker } from "./align.ts";
+import { optionLetter, questionState, recommendedOption, reviewPhaseName, workerLine, type AlignDocument, type AlignReviewerSlot, type AlignReviewPhase, type AlignWorker } from "./align.ts";
 
 /** The reviewer's tools: read and search only, enforced by the spawn's `tools` allowlist. */
 export const REVIEWER_TOOLS: Record<string, readonly string[]> = {
@@ -91,5 +91,5 @@ export function reviewStartText(doc: AlignDocument, phase: AlignReviewPhase, slo
 		phase === "plan"
 			? `When it reports: fold its findings into ${doc.id} with ordinary ops (fix findings, adjust approach steps, add rejected items marked "(review)", add a question only for a real choice, and one finding "Review (plan, <model>): …"), record {op: "review", phase: "plan", state: "clear" | "blocking" | "incomplete", reason: "<one line, e.g. 1 constraint added>"}, then reply once. Ask the user for no extra approval.`
 			: `When it reports: record {op: "review", phase: "diff", state: "clear" | "blocking" | "incomplete", reason, blockers: [{title, check}] for blocking}. For each blocker, run its check to confirm it fails; send all accepted fixes in ONE batch to whoever implemented (a worker, or yourself); re-run each check, and close each blocker with close_blocker (by check, evidence, or the user's explicit waiver in their words). A blocker that needs a different approach becomes a question, with status back to open. No second review.`;
-	return [`${phase === "plan" ? "Plan" : "Diff"} review of ${doc.id} reserved. ${who} Never give it your transcript or a worker's. ${fill}`, after, `Reviewer prompt:\n<<<\n${reviewerPrompt(doc, phase)}\n>>>`].join("\n\n");
+	return [`${reviewPhaseName(phase)} review of ${doc.id} reserved. ${who} Never give it your transcript or a worker's. ${fill}`, after, `Reviewer prompt:\n<<<\n${reviewerPrompt(doc, phase)}\n>>>`].join("\n\n");
 }

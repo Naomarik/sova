@@ -131,7 +131,7 @@ test("verdicts: only for a running review; blocking diff needs blockers; others 
 	assert.throws(() => applyAlignCall(running.docs, { ops: [{ op: "review", phase: "diff", state: "blocking", reason: "x", blockers: [{ title: "t" }] }] }, env()), /check must be a non-empty string/);
 	const fallbackRan = applyAlignCall(running.docs, { ops: [{ op: "review", phase: "diff", state: "clear", reason: "nothing found", model: "claude-code · opus[1m] · high" }] }, env());
 	assert.equal(fallbackRan.details.doc?.review?.diff?.model, "claude-code · opus[1m] · high", "the verdict can name the fallback that ran");
-	assert.equal(fallbackRan.details.line, "diff review: no blocking");
+	assert.equal(fallbackRan.details.line, "implementation review: no blocking");
 });
 
 test("done guard: refused while a review runs or a blocker is open; closed only by check, evidence or waiver", () => {
@@ -162,7 +162,7 @@ test("done guard: refused while a review runs or a blocker is open; closed only 
 		blocked.docs,
 	);
 	assert.deepEqual(verdict.doc.review?.diff?.blockers?.map((b) => b.id), ["b1", "b2"]);
-	assert.equal(verdict.last.details.line, "diff review: blocking");
+	assert.equal(verdict.last.details.line, "implementation review: blocking");
 	assert.throws(() => applyAlignCall(verdict.docs, { ops: [{ op: "status", to: "done" }] }, env()), /2 open blockers \(diff b1, diff b2\): close each with close_blocker/);
 	assert.throws(() => applyAlignCall(verdict.docs, { ops: [{ op: "close_blocker", phase: "diff", id: "b1", by: "opinion", evidence: "x" }] }, env()), /by must be check/);
 	assert.throws(() => applyAlignCall(verdict.docs, { ops: [{ op: "close_blocker", phase: "diff", id: "b9", by: "check", evidence: "x" }] }, env()), /has no blocker b9 \(it has b1, b2\)/);
@@ -185,7 +185,7 @@ test("done guard: refused while a review runs or a blocker is open; closed only 
 		verdict.docs,
 	);
 	assert.equal(done.doc.phase, "done");
-	assert.equal(done.last.details.line, "diff b1 closed · diff b2 closed · → done");
+	assert.equal(done.last.details.line, "implementation b1 closed · implementation b2 closed · → done");
 	assert.throws(() => applyAlignCall(done.docs, { doc: "al_1", ops: [{ op: "close_blocker", phase: "diff", id: "b1", by: "check", evidence: "x" }] }, env()), /is done; move it back/);
 });
 
@@ -207,7 +207,7 @@ test("a late diff review after done: allowed only when skipped, and a blocker re
 		done.docs,
 	);
 	assert.equal(late.doc.phase, "implementing");
-	assert.equal(late.last.details.line, "diff review: blocking · → implementing");
+	assert.equal(late.last.details.line, "implementation review: blocking · → implementing");
 	const clean = run(
 		[
 			{ doc: "al_1", ops: [{ op: "review", phase: "diff", state: "running", reason: "user asked" }] },
@@ -256,22 +256,30 @@ test("normalization is strict about the record", () => {
 test("verdict lines, change line and markdown say the record the card shows", () => {
 	const at = NOW;
 	assert.equal(reviewVerdictLine("plan", { state: "skipped", reason: "routine change", at }), "Plan review skipped: routine change");
-	assert.equal(reviewVerdictLine("plan", { state: "running", reason: "r", at }), "Reviewing plan");
+	assert.equal(reviewVerdictLine("plan", { state: "running", reason: "r", at }), "Reviewing the plan");
 	assert.equal(reviewVerdictLine("plan", { state: "clear", reason: "1 constraint added", at }), "Plan reviewed · 1 constraint added");
-	assert.equal(reviewVerdictLine("diff", { state: "clear", reason: "x", at }), "Diff: NO BLOCKING");
+	assert.equal(reviewVerdictLine("plan", { state: "incomplete", reason: "spawn failed", at }), "Plan review incomplete: spawn failed");
+	assert.equal(reviewVerdictLine("diff", { state: "running", reason: "r", at }), "Reviewing the implementation");
+	assert.equal(reviewVerdictLine("diff", { state: "clear", reason: "x", at }), "Implementation review: no blocking issues");
+	assert.equal(reviewVerdictLine("diff", { state: "skipped", reason: "one-line change", at }), "Implementation review skipped: one-line change");
 	const two = [
 		{ id: "b1", title: "a", check: "c" },
 		{ id: "b2", title: "b", check: "d", closed: { by: "check" as const, evidence: "e", at } },
 	];
-	assert.equal(reviewVerdictLine("diff", { state: "blocking", reason: "x", at, blockers: two }), "Diff: 2 blocking (1 open)");
-	assert.equal(reviewVerdictLine("diff", { state: "incomplete", reason: "spawn failed", at }), "Diff review incomplete: spawn failed");
-	assert.equal(changeLine([{ kind: "review", phase: "plan", state: "skipped" }, { kind: "blocker-closed", phase: "diff", id: "b1" }]), "plan review skipped · diff b1 closed");
+	const twoOpen = two.map(({ closed: _, ...b }) => b);
+	assert.equal(reviewVerdictLine("diff", { state: "blocking", reason: "x", at, blockers: twoOpen }), "Implementation review: 2 blocking");
+	assert.equal(reviewVerdictLine("diff", { state: "blocking", reason: "x", at, blockers: two }), "Implementation review: 2 blocking (1 open)");
+	assert.equal(reviewVerdictLine("plan", { state: "blocking", reason: "x", at, blockers: twoOpen }), "Plan review: 2 blocking");
+	assert.equal(reviewVerdictLine("diff", { state: "incomplete", reason: "spawn failed", at }), "Implementation review incomplete: spawn failed");
+	assert.equal(changeLine([{ kind: "review", phase: "plan", state: "skipped" }, { kind: "blocker-closed", phase: "diff", id: "b1" }]), "plan review skipped · implementation b1 closed");
+	assert.equal(changeLine([{ kind: "review", phase: "diff", state: "running" }]), "implementation review running");
 	const doc = { review: { diff: { state: "blocking" as const, reason: "x", at, model: "pi · m · high", blockers: two } } };
-	assert.deepEqual(reviewLines(doc), ["Diff: 2 blocking (1 open) (pi · m · high)", "  diff b1 open: a — check: c"]);
+	assert.deepEqual(reviewLines(doc), ["Implementation review: 2 blocking (1 open) (pi · m · high)", "  implementation b1 open: a — check: c"]);
 });
 
-test("the request message the card and /review send", () => {
-	assert.equal(reviewRequestMessage("al_3", "diff"), "al_3: run the adversarial diff review now (align review, phase diff), whatever the rule says.");
+test("the request message the card and /review send: the user's word in the prose, the id in the token", () => {
+	assert.equal(reviewRequestMessage("al_3", "diff"), "al_3: run the adversarial implementation review now (align review, phase diff), whatever the rule says.");
+	assert.equal(reviewRequestMessage("al_3", "plan"), "al_3: run the adversarial plan review now (align review, phase plan), whatever the rule says.");
 });
 
 test("reviewer prompt: fixed stance, hunt order, output shape, budget; plan and diff variants", () => {

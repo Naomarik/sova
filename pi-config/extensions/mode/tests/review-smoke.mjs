@@ -130,10 +130,15 @@ writeFileSync(path.join(agentDir, "subagent-profiles-default.json"), JSON.string
 
 	const exec = (params) => tool.execute("x", params, undefined, undefined, on.ctx);
 	await exec({ ops: [{ op: "create", title: "Queue", summary: "Persist the queue.", approach: ["Write it to disk"] }] });
-	await on.commands.get("review").handler("diff", on.ctx);
-	assert.deepEqual(on.userMessages.at(-1), { text: "al_1: run the adversarial diff review now (align review, phase diff), whatever the rule says.", options: undefined });
+	// "implementation" is the user's word for the diff phase; the message's phase token is always the id.
+	const implMessage = { text: "al_1: run the adversarial implementation review now (align review, phase diff), whatever the rule says.", options: undefined };
+	await on.commands.get("review").handler("implementation", on.ctx);
+	assert.deepEqual(on.userMessages.at(-1), implMessage);
+	await on.commands.get("review").handler("diff al_1", on.ctx);
+	assert.deepEqual(on.userMessages.at(-1), implMessage, "/review diff keeps working");
+	assert.deepEqual(on.commands.get("review").getArgumentCompletions("").map((i) => i.value), ["plan", "implementation"]);
 	await on.commands.get("review").handler("bogus", on.ctx);
-	assert.match(on.store.notices.at(-1).message, /^Usage: \/review plan\|diff \[al_N\]$/);
+	assert.match(on.store.notices.at(-1).message, /^Usage: \/review plan\|implementation \[al_N\]$/);
 
 	// The reviewer is the profile's: primary unverified (never probed) is used, its fallback offered for a retry.
 	const started = await exec({ ops: [{ op: "review", phase: "plan", state: "running", reason: "persistence format" }] });

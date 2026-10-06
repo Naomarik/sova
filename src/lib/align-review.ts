@@ -1,8 +1,8 @@
 /**
  * Adversarial review on the alignment card (§chat.alignment-review/card): whether the feature is
  * on, the per-phase lines the card body shows, and what the card's foot offers — a Review Plan /
- * Review Diff button, or the phase's verdict line once it ran. The words match the extension's
- * own (pi-config/extensions/mode/align.ts `reviewVerdictLine`, `reviewRequestMessage`); both
+ * Review Implementation button, or the phase's verdict line once it ran. The words match the extension's
+ * own (pi-config/extensions/mode/align.ts `reviewPhaseName`, `reviewVerdictLine`, `reviewRequestMessage`); both
  * sides' tests pin them.
  */
 import { createSignal } from "solid-js";
@@ -15,27 +15,33 @@ import type { AlignDocInfo, AlignReviewEntryInfo, AlignReviewPhaseInfo } from ".
 const [adversarialReview, setAdversarialReview] = createSignal(false);
 export { adversarialReview, setAdversarialReview };
 
-/** The message the card's button sends: the same words as the TUI's /review. */
-export const reviewRequestMessage = (doc: string, phase: AlignReviewPhaseInfo): string =>
-  `${doc}: run the adversarial ${phase} review now (align review, phase ${phase}), whatever the rule says.`;
+/**
+ * A phase as the user reads it: "Plan" or "Implementation" (the chip, the lines, the button). `diff`
+ * stays the id; the user decides about the implementation, the diff is only what the reviewer reads.
+ */
+export const reviewPhaseName = (phase: AlignReviewPhaseInfo): string => (phase === "plan" ? "Plan" : "Implementation");
 
-/** One phase's verdict line ("Diff: 2 blocking (1 open)", "Plan reviewed · 1 constraint added"). */
+/** The message the card's button sends: the same words as the TUI's /review, its phase token always the id. */
+export const reviewRequestMessage = (doc: string, phase: AlignReviewPhaseInfo): string =>
+  `${doc}: run the adversarial ${reviewPhaseName(phase).toLowerCase()} review now (align review, phase ${phase}), whatever the rule says.`;
+
+/** One phase's verdict line ("Implementation review: 2 blocking (1 open)", "Plan reviewed · 1 constraint added"). */
 export function reviewVerdictLine(phase: AlignReviewPhaseInfo, entry: AlignReviewEntryInfo): string {
-  const Phase = phase === "plan" ? "Plan" : "Diff";
+  const Phase = reviewPhaseName(phase);
   switch (entry.state) {
     case "skipped":
       return `${Phase} review skipped: ${entry.reason}`;
     case "running":
-      return `Reviewing ${phase}`;
+      return `Reviewing the ${Phase.toLowerCase()}`;
     case "incomplete":
       return `${Phase} review incomplete: ${entry.reason}`;
     case "clear":
-      return phase === "plan" ? `Plan reviewed · ${entry.reason}` : "Diff: NO BLOCKING";
+      return phase === "plan" ? `Plan reviewed · ${entry.reason}` : `${Phase} review: no blocking issues`;
     case "blocking": {
       const n = entry.blockers?.length ?? 0;
       if (phase === "plan" && n === 0) return `Plan reviewed · ${entry.reason}`;
       const open = entry.blockers?.filter((b) => !b.closed).length ?? 0;
-      return `${Phase}: ${n} blocking${open < n ? ` (${open} open)` : ""}`;
+      return `${Phase} review: ${n} blocking${open < n ? ` (${open} open)` : ""}`;
     }
   }
 }
@@ -83,11 +89,13 @@ export function reviewFoot(doc: Pick<AlignDocInfo, "phase" | "review">): { kind:
   if (phase === null) return null;
   const entry = doc.review?.[phase];
   if (doc.phase === "done" && entry?.state !== "skipped") return null;
-  if (!used(entry)) return { kind: "button", phase, label: phase === "plan" ? "Review Plan" : "Review Diff" };
+  if (!used(entry)) return { kind: "button", phase, label: `Review ${reviewPhaseName(phase)}` };
   return { kind: "line", phase, text: reviewVerdictLine(phase, entry!) };
 }
 
 /** While the plan review runs, Go With Recommendations waits. */
 export const planReviewRunning = (doc: Pick<AlignDocInfo, "review">): boolean => doc.review?.plan?.state === "running";
 export const PLAN_REVIEW_WAIT = "Wait for the plan review.";
+/** Under a review button: what a review is. */
+export const REVIEW_ABOUT = "An independent reviewer reads it and reports problems. It can't change code or run anything.";
 export const NO_REVIEWER = "No reviewer is set for this chat's subagent profile (Settings → Subagents → Reviewer).";

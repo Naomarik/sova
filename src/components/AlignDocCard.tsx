@@ -1,7 +1,7 @@
 import { createContext, For, Show, useContext } from "solid-js";
 import type { AlignDocInfo, AlignQuestionInfo, AlignRowInfo } from "../../shared/protocol";
 import { ALIGN_STATUS_CHIP, alignStatusOf, cardSections, isOpenDoc, openCount, openLabel, optionLetter, QUESTION_CHIP, questionStateOf, recommendedOption, type AlignCardSection } from "../lib/align";
-import { adversarialReview, PLAN_REVIEW_WAIT, planReviewRunning, reviewFoot, reviewLinesOf } from "../lib/align-review";
+import { adversarialReview, PLAN_REVIEW_WAIT, planReviewRunning, REVIEW_ABOUT, reviewFoot, reviewLinesOf, reviewPhaseName } from "../lib/align-review";
 import { Chip, Icon } from "./ui";
 import "../design/align-viewer.css";
 
@@ -29,7 +29,7 @@ export interface AlignAnswer {
   /** Why "Go With Recommendations" can't send now, else null. */
   goBlocked(): string | null;
   goWithRecommendations(doc: string): void;
-  /** Adversarial review is on in this chat (§chat.alignment-review/card): the foot offers Review Plan / Review Diff. */
+  /** Adversarial review is on in this chat (§chat.alignment-review/card): the foot offers Review Plan / Review Implementation. */
   review?(): boolean;
   /** Why a review button can't send now (no reviewer for the chat's profile, or Go's own blocks), else null. */
   reviewBlocked?(): string | null;
@@ -182,6 +182,10 @@ export function AlignDocCard(props: { doc: AlignDocInfo; line?: string }) {
           <Show when={reviewButton() && !answer() && reviewBlocked()}>
             <span class="align-doc-foot-hint">{reviewBlocked()}</span>
           </Show>
+          {/* What a review is, on its own line under the button. */}
+          <Show when={reviewButton()}>
+            <span class="align-doc-foot-hint align-review-about">{REVIEW_ABOUT}</span>
+          </Show>
         </div>
       </Show>
     </article>
@@ -219,7 +223,7 @@ function AlignReviewLines(props: { doc: AlignDocInfo }) {
         <For each={lines()}>
           {(l) => (
             <li class="align-review-line">
-              <Chip tone={l.tone}>{l.phase === "plan" ? "Plan" : "Diff"}</Chip>
+              <Chip tone={l.tone}>{reviewPhaseName(l.phase)}</Chip>
               <span class="align-review-text">
                 {l.text}
                 <Show when={l.model}>

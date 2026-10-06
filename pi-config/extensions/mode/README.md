@@ -339,8 +339,9 @@ they are listed, and a recommendation that names an option by its label reads
   from `session_start` the tool is re-registered with two more ops — `review
   {phase: plan | diff, state, reason, model?, blockers?}` and `close_blocker
   {phase, id, by: check | evidence | waiver, evidence}` — and the rules for when
-  to review in its description and guidelines, and `/review plan|diff [al_N]`
-  asks for one. Each alignment then carries a `review` record (a `plan` and a
+  to review in its description and guidelines, and `/review plan|implementation [al_N]`
+  asks for one (`diff` still names the implementation phase, the id the op and
+  the record use). Each alignment then carries a `review` record (a `plan` and a
   `diff` entry: state, reason, model, blockers), so it folds, resumes and
   rewinds with the document. Starting a phase reserves it before the reviewer
   spawns and never runs twice; `status implementing` waits for a running plan

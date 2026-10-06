@@ -814,26 +814,27 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		reviewRegistered = true;
 		registerAlignTool(pi, alignHost, true);
 		pi.registerCommand("review", {
-			description: "Ask for an alignment's adversarial review: /review plan|diff [al_N]",
+			description: "Ask for an alignment's adversarial review: /review plan|implementation [al_N]",
 			getArgumentCompletions: (argumentPrefix) => {
-				const items = ["plan", "diff"].filter((value) => value.startsWith(argumentPrefix.trim())).map((value) => ({ value, label: value }));
+				const items = ["plan", "implementation"].filter((value) => value.startsWith(argumentPrefix.trim())).map((value) => ({ value, label: value }));
 				return items.length > 0 ? items : null;
 			},
 			handler: async (args, ctx) => {
-				const m = /^(plan|diff)(?:\s+(al_[1-9]\d*))?$/.exec(args.trim());
+				const m = /^(plan|implementation|diff)(?:\s+(al_[1-9]\d*))?$/.exec(args.trim());
 				if (!m) {
-					ctx.ui.notify("Usage: /review plan|diff [al_N]", "warning");
+					ctx.ui.notify("Usage: /review plan|implementation [al_N]", "warning");
 					return;
 				}
 				if (!hasMinor(active, "align")) {
 					ctx.ui.notify("Review needs the align minor mode on (/align on)", "warning");
 					return;
 				}
-				const phase = m[1] as AlignReviewPhase;
+				// "implementation" is the user's word for the diff phase; the message carries the id.
+				const phase: AlignReviewPhase = m[1] === "plan" ? "plan" : "diff";
 				const open = openDocsOf(alignDocs);
 				const id = m[2] ?? (open.length === 1 ? open[0]!.id : undefined);
 				if (!id) {
-					ctx.ui.notify(open.length === 0 ? "No open alignment to review" : `Name the alignment: /review ${phase} ${open.map((d) => d.id).join(" | ")}`, "warning");
+					ctx.ui.notify(open.length === 0 ? "No open alignment to review" : `Name the alignment: /review ${m[1]} ${open.map((d) => d.id).join(" | ")}`, "warning");
 					return;
 				}
 				if (!alignDocs.some((d) => d.id === id)) {

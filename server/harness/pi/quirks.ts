@@ -339,6 +339,17 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     retireWhen: "pi exports the codemode tool definition and a model hook for scripts",
   },
   {
+    id: "P22",
+    name: "declared-tools",
+    kind: "private-read",
+    relies:
+      "agent.state.tools is the set the next request declares, with the descriptions a prepareLoadout hook gave them (getAllTools() keeps the registry's); the private _hiddenDeclarations names the declarations requests leave out; a tool's sourceInfo.path is `builtin:<name>` for pi's own, `<inline:<name>>` for an extension factory, else the extension's file.",
+    pi: ["Agent.state.tools", "AgentSession._hiddenDeclarations", "AgentSession._applyToolLoadout", "AgentSession.getAllTools", "SourceInfo.path"],
+    where: [{ file: SESSION, symbol: "PiHarnessSession.declaredTools" }, { file: SESSION, symbol: "toolSource" }],
+    canary: "P22 declared-tools: agent.state.tools is the declared set with the loadout's descriptions, _hiddenDeclarations what requests leave out, sourceInfo.path names the source",
+    retireWhen: "pi offers a public read of the declared tools as a request will send them",
+  },
+  {
     id: "T1",
     name: "scripted-model (test-only)",
     kind: "private-write",

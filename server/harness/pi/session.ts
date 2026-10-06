@@ -16,9 +16,11 @@ import type {
   HarnessResources,
   HarnessSession,
   HarnessStreamDelta,
+  HarnessToolInfo,
   HEntry,
   ImageInput,
   InputSource,
+  JsonSchema,
   OwnedCommand,
   RewindHooks,
   RewindOutcome,
@@ -149,6 +151,23 @@ function sourceLocation(info: { scope: string } | undefined): string | undefined
   return info.scope === "temporary" ? "path" : info.scope;
 }
 
+/** Where a tool comes from, by its pi source path: `builtin:<name>` is pi's own; an angle-bracket path
+    (`<inline:name>`, an extension factory, or `<sdk:name>`, a custom tool) is Sova's runtime's; a file is an
+    extension, named by its folder (`…/mode/index.ts` → `mode`) or its file (`…/btw.ts` → `btw`). */
+export function toolSource(path: string | undefined): Pick<HarnessToolInfo, "source" | "origin"> {
+  if (!path) return { source: "extension" };
+  if (path.startsWith("builtin:")) return { source: "builtin" };
+  if (path.startsWith("<") && path.endsWith(">")) {
+    const [kind, name] = path.slice(1, -1).split(":");
+    return kind === "inline" && name && !/^\d+$/.test(name) ? { source: "sova", origin: name } : { source: "sova" };
+  }
+  const parts = path.split(/[\\/]/).filter(Boolean);
+  const file = parts.at(-1) ?? "";
+  const stem = file.replace(/\.[cm]?[jt]s$/, "");
+  const origin = stem === "index" ? parts.at(-2) : stem;
+  return origin ? { source: "extension", origin } : { source: "extension" };
+}
+
 type Runtime = Pick<AgentSessionRuntime, "session" | "services">;
 
 export class PiHarnessSession implements HarnessSession {
@@ -274,6 +293,17 @@ export class PiHarnessSession implements HarnessSession {
   }
   registeredTools(): string[] {
     return this.s.extensionRunner.getAllRegisteredTools().map((r) => r.definition.name);
+  }
+  /** P22: the agent's tools are the declared set as the loadout left it (descriptions a `prepareLoadout` hook
+      changed included); the loadout's hidden declarations never reach a request. Each one's source is the
+      registry's (getAllTools). */
+  declaredTools(): HarnessToolInfo[] {
+    const s = this.s;
+    const hidden = (s as unknown as { _hiddenDeclarations?: ReadonlySet<string> })._hiddenDeclarations;
+    const paths = new Map(s.getAllTools().map((t) => [t.name, t.sourceInfo?.path]));
+    return s.agent.state.tools
+      .filter((t) => !hidden?.has(t.name))
+      .map((t) => ({ name: t.name, description: t.description, parameters: t.parameters as JsonSchema, ...toolSource(paths.get(t.name)) }));
   }
   registeredTool(name: string): ToolSpec | undefined {
     const def = this.s.extensionRunner?.getToolDefinition(name);

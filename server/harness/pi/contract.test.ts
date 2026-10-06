@@ -5,7 +5,7 @@
 // faux provider, registered through the public ModelRuntime API: no network, no private fields.
 // C1 the session manager's append* methods (the entry union), C2 the custom entry's line, C3 the event
 // names and fields chat-manager's bind() reads, C5 image content as prompt/steer take and store it.
-// P1-P21 and T1 are the quirk canaries (QUIRKS.md, quirks.ts): each asserts that a pi behaviour a Sova
+// P1-P22 and T1 are the quirk canaries (QUIRKS.md, quirks.ts): each asserts that a pi behaviour a Sova
 // workaround or assumption rests on still holds. Their turns run on testing/scripted-model.ts (a held
 // reply makes the mid-turn windows deterministic). When one fails, triage it by its QUIRKS.md row.
 import assert from "node:assert/strict";
@@ -96,6 +96,8 @@ interface QuirkSessionOptions {
   appendSystemPrompt?: (base: string[]) => string[];
   /** Hand the session manager over before construction (P1 patches it there). */
   beforeBuild?: (sm: any) => void;
+  /** Keep pi's built-in tools (default: none). */
+  builtinTools?: boolean;
 }
 
 /** A real pi session the way Sova builds one (a resource loader, extensions bound), its turns on a
@@ -125,7 +127,7 @@ async function quirkSession(o: QuirkSessionOptions = {}) {
     sessionManager,
     settingsManager,
     resourceLoader,
-    noTools: "builtin",
+    ...(o.builtinTools ? {} : { noTools: "builtin" as const }),
   });
   await session.bindExtensions({});
   const model = new ScriptedModel().attach(session);
@@ -688,6 +690,47 @@ return w + ":" + r.stopReason;`;
     assert.match(results[0].message.content.map((b: any) => b.text ?? "").join(""), /hi:stop/);
     assert.deepEqual(results[0].message.details.calls.map((c: any) => c.name), ["echo", "models.classify"]);
     session.dispose();
+  });
+
+  test("P22 declared-tools: agent.state.tools is the declared set with the loadout's descriptions, _hiddenDeclarations what requests leave out, sourceInfo.path names the source", async () => {
+    /** The tools a request declared: its system messages' toolsAdded, less toolsRemoved, in order. */
+    const declaredIn = (call: { context: unknown }) => {
+      const tools = new Map<string, string>();
+      for (const m of (call.context as { messages: any[] }).messages) {
+        if (m.role !== "system") continue;
+        for (const r of m.toolsRemoved ?? []) tools.delete(typeof r === "string" ? r : r.name);
+        for (const t of m.toolsAdded ?? []) tools.set(t.name, t.description);
+      }
+      return tools;
+    };
+    for (const mode of ["on", "only"] as const) {
+      const tools = (api: any) => {
+        pi.agent.createCodemodeExtension({ mode })(api);
+        api.registerTool({ name: "echo", label: "echo", description: "Echo a word.", parameters: Type.Object({ word: Type.String() }), execute: async () => ({ content: [], details: {} }) });
+      };
+      const { session, model } = await quirkSession({ extensions: [{ name: "contract-tools", factory: tools } as never], builtinTools: true });
+      const s = session as any;
+      session.setActiveToolsByName(["read", "echo", "codemode"]);
+      const state = s.agent.state.tools as { name: string; description: string }[];
+      assert.deepEqual(state.map((t) => t.name), ["read", "echo", "codemode"], "the active tools, in order");
+      const registry = new Map(session.getAllTools().map((t: any) => [t.name, t]));
+      const echo = state.find((t) => t.name === "echo")!;
+      if (mode === "on") {
+        assert.equal((registry.get("echo") as any).description, "Echo a word.", "the registry keeps the tool's own description");
+        assert.match(echo.description, /^Echo a word\.\n\nCodemode: `tools\.echo\(args\)`/, "the loadout's description is on agent.state.tools");
+      }
+      assert.ok(s._hiddenDeclarations instanceof Set, "_hiddenDeclarations is a Set");
+      assert.equal(s._hiddenDeclarations.has("echo"), mode === "only", "codemode's only mode hides direct tools' declarations");
+      assert.equal((registry.get("read") as any).sourceInfo.path, "builtin:read");
+      assert.equal((registry.get("echo") as any).sourceInfo.path, "<inline:contract-tools>");
+      model.reply({ text: "ok" });
+      await session.prompt("go");
+      const sent = declaredIn(model.calls[0]!);
+      const expected = state.filter((t) => !s._hiddenDeclarations.has(t.name));
+      assert.deepEqual([...sent.keys()].sort(), expected.map((t) => t.name).sort(), "the request declares agent.state.tools less the hidden ones");
+      for (const t of expected) assert.equal(sent.get(t.name), t.description, `${t.name}: the request's description is agent.state.tools'`);
+      session.dispose();
+    }
   });
 
   test("T1 scripted-model: the members the test double replaces exist, and it runs a turn", async () => {

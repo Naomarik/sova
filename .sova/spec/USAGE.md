@@ -129,7 +129,8 @@ A draft is a proposal. Agreeing on it approves the intent, and makes nothing cur
    exactly as ported: it records provenance, not verification. `evidence` says what you did:
    `reviewed` or `verified`.
 3. Record evidence. A behavior or surface needs at least one implementation file, unless it is
-   agreed and not built yet (`--doc-only`), and every path in its `code` must exist. The migrated records map no `code`, so add the files to the draft
+   agreed and not built yet, or the change is to its `embeds`, `about` or `core` field alone (both
+   `--doc-only`, below), and every path in its `code` must exist. The migrated records map no `code`, so add the files to the draft
    record's `code`, which binds them to the evidence, or pass `--path`. This repo uses Git, so name an existing commit that holds the
    implementation, and never commit unrelated changes to get one:
 

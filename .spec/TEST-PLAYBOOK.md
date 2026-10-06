@@ -1,7 +1,7 @@
 # Acceptance playbook: the Sova spec system
 
 This file is a complete brief for an orchestrating agent. It tells you how to drive every advertised claim
-of the Sova spec system (the `.sova/spec` documentation, its three tools, the `spec` minor mode and the
+of the Sova spec system (the `.sova/spec` documentation, its four tools (`sova-spec`, `sova-spec-draft`, `sova-spec-review`, `sova-spec-assess`), the `spec` minor mode and the
 Sova instruction that points at it) through isolated scenarios, have independent observers score them,
 and hand back a report in which every claim is accounted for. You need nothing from the conversation that
 produced this file.
@@ -57,8 +57,11 @@ The system in one paragraph each:
   surface/behavior/section/note, `requires`, `members`, `code`, `incumbent`, labels `authority`
   candidate/migrated/accepted and `evidence` unreviewed/reviewed/verified) plus `claims/<ns>/<name>.md` prose
   whose H1/H2 headings declare the IDs. Labels are declared, never derived and never proof.
-- **Core** (`sova-spec.mjs`, never writes): `check`, `census`, `scope '<§id>' [--budget BYTES]`,
-  `impact '<§id>'`, with `--root`, `--spec` (a draft graph), `--json`. Exit 0 = the declared closure was
+- **Core** (`sova-spec.mjs`, never writes): `check`, `census`, `foreign`, the reading path `map`, `where`,
+  `toc '<§id>' --dir …`, `read '<§id>'` and `impact '<§id>' --near` (§tools.spec/spec-map, /where-lookup,
+  /contents-view, /single-read, /near-impact), the whole-chain views `packet`, `scope '<§id>' [--budget BYTES]`
+  and plain `impact '<§id>'` (§tools.spec/context-packets), and `graph --json` (§tools.spec/graph-payload), with
+  `--root`, `--spec` (a draft graph), `--json`. Exit 0 = the declared closure was
   delivered (never completeness), 1 = something relevant is unknown/stale/unread, 2 = untrustworthy.
   `scope` returns the requested passage first, then a child's parent lede as orientation, then children or
   members, then `requires` depth-first; `--budget` keeps whole passages and names the rest `unread-budget`,
@@ -67,7 +70,8 @@ The system in one paragraph each:
   starts an empty one), you edit `drafts/NAME/spec/`, agreement approves intent only, then after
   implementation you relabel (`authority` accepted/migrated, never candidate), record `evidence`
   (`--commit` in Git, an existing ancestor of HEAD whose bytes equal the working tree; `--snapshot` without
-  Git; `--doc-only` for note/section), `promote` previews a plan hash and `--plan SHA --write` applies it
+  Git; `--doc-only` for notes, sections, agreed behaviors/surfaces with no code, and `embeds`/`about`/`core`-only
+  changes: §tools.spec/agreed-promotion, §tools.spec/field-promotion), `promote` previews a plan hash and `--plan SHA --write` applies it
   in a journalled transaction; `recover` rolls back an interrupted one.
 - **Review companion** (`sova-spec-review.mjs`): `prepare` (preview, or `--write` a packet with the exact
   input bytes), `record` (a reviewer's conclusion; blocked closures can only be `unresolved`), `status`
@@ -75,9 +79,11 @@ The system in one paragraph each:
   correctness).
 - **Mode.** The `spec` minor mode injects `spec-mode.md` (trimEnd, byte for byte) once per turn when on,
   after `align` when both are on. Its one `sh` block sets `$core` to
-  `${PI_CODING_AGENT_DIR:-~/.pi/agent}/extensions/spec/core`, where `install.sh` links the tools. Nothing in
-  pi or Sova runs the tools by itself. In a generic project with the mode off there is no automatic
-  workflow. In Sova, `CLAUDE.md` makes the same text policy regardless of the toggle, without turning
+  `${PI_CODING_AGENT_DIR:-~/.pi/agent}/extensions/spec/core`, where `install.sh` links the tools. With the mode
+  on, its hooks run `census --changed` after a tool call that can change the tree (§tools.spec/census-note); in any
+  project with a spec, mode on or off, a recorded worktree merge names the foreign § it changes
+  (§chat.worktrees/merge-card); nothing else runs the tools by itself. In a generic project with no spec and the
+  mode off there is no automatic workflow. In Sova, `CLAUDE.md` makes the same text policy regardless of the toggle, without turning
   anything on.
 - **No tool checks meaning.** A clean check, recorded evidence, a review record or a promotion is never
   evidence that code does what the prose says. No row in this playbook asserts semantic correctness, and
@@ -743,7 +749,7 @@ Fixture notes: a base graph `§chat/input` (surface) with children `§chat.input
 | CORE-BUD-2 | The requested passage is counted first, so orientation never takes its room | M | Requested child fits the budget, child + parent lede does not | Child returned; parent named `unread-budget`; exit 1 |
 | CORE-BUD-3 | A seed larger than the budget returns nothing and says so | M | Budget smaller than the seed | `passages` empty; seed in frontier `unread-budget`; exit 1 |
 | CORE-BUD-4 | `code` and provenance findings cover the whole pre-budget closure, including unread passages | M | An unread (budget-cut) passage maps a missing code path and a changed incumbent span | `code` lists that path with state `missing`; `code-missing` and `provenance-stale` findings present though the passage is unread |
-| CORE-BUD-5 | `--budget` is only for `scope` and only a non-negative integer | M | `check --budget 10`; `scope … --budget -1`, `1.5`, `abc` | Each `usage`, exit 2 |
+| CORE-BUD-5 | `--budget` is taken only by the commands that page, and only as a supported integer (§tools.spec/context-packets, /contents-view, /single-read, /spec-map, /where-lookup, /near-impact, /graph-payload) | M | `check --budget 10`; `census --budget 2000`; plain `impact '<§id>' --budget 2000`; `scope … --budget -1`, `1.5`, `abc`; then `--budget 2000` on each of `scope`, `packet`, `toc --dir out`, `read`, `map`, `where`, `impact --near`, `graph --json`; then `toc … --budget 1023` and `read … --budget 40000` | The first six: each `usage`, exit 2. The eight `--budget 2000` runs: none exits 2, and each JSON `budget` is 2000 (for `scope`, `budget.bytes`: scope budgets passage bytes and keeps whole passages, so it takes any non-negative integer). The last two: `usage`, exit 2 (the paging commands other than `scope` take 1,024–32,768). A tool that accepts a budget on `check`/`census`/plain `impact`, accepts `-1`, `1.5` or `abc` on `scope`, refuses 2000 on a paging command, reports a budget other than 2000, or accepts `toc` 1023 or `read` 40000, FAILS |
 | CORE-FRONT-1 | A behavior without `requires` is uninvestigated; `[]` is declared none; other kinds never warn | M | Behavior without the key; with `[]`; a surface and a note without it | Only the first yields `requires-uninvestigated` (warn + frontier), exit 1 |
 | CORE-FRONT-2 | A dangling edge is named, never dropped | M | `requires` to an ID with no record; `check` and `scope` | `dangling-edge` warn, frontier reason `dangling` with `of`; exit 1 |
 | CORE-FRONT-3 | An uninvestigated dependency reached transitively is on the frontier | M | seed requires X; X is a behavior without `requires` | Frontier has X `requires-uninvestigated`; exit 1 |
@@ -774,7 +780,7 @@ plus the files its records map.
 |---|---|---|---|---|
 | LIVE-1 | The current docs load, and what `check` reports matches the files | M | `check --root "$CO"`; the observer recounts from `manifest.json` and `claims/` | Exit 1 and every warning is `requires-uninvestigated`; no errors; `records` = `declarations` = manifest keys; claim file count = `.md` files under `claims/`; `labels` equal the recount (all records `migrated`/`unreviewed` if the recount says so); warnings = behaviors without a `requires` key; `requiresEdges` = the sum of `requires` lengths. Numbers recorded, not compared to section 1 |
 | LIVE-2 | A surface's scope returns every section of its document, subsections included | M | `scope '§chat/composer'` | First passage is the seed; **every** H2 declared in `claims/chat/composer.md` appears as a passage (including `…/disabled-states` and `…/accessibility`), each with reason `child` and text equal to the file's lines for its span. Passages from other files, reached through `requires`, may follow and are allowed; the oracle is "all own H2s present", not "only own H2s" |
-| LIVE-4 | USAGE.md's commands behave as documented | M | `check`; `scope '§workspace/groups' --budget 4000`; `scope '§workspace.groups/decisions'`; `impact '§chat.composer/behavior'`; `census` | Exits as USAGE says (check 1; census 1 `boundary-missing`); budget run: `used` ≤ 4000 and every omitted passage named; impact frontier non-empty |
+| LIVE-4 | USAGE.md's commands behave as documented (§tools.spec/spec-map, /where-lookup, /contents-view, /single-read, /near-impact, /context-packets) | M | Every command in USAGE.md's "Reading the docs" block but the draft `check --spec`, in order: `check`; `map`; `where server/chat-manager.ts`; `toc '§workspace.groups/decisions' --dir out`; `read '§workspace.groups/decisions'`; `read … --no-frame --cursor <next>` (with `--budget 1024` on both reads so a `next` exists); `impact '§chat.composer/behavior' --near`; `packet '§workspace.groups/decisions'`; `scope '§workspace/groups' --budget 4000`; `impact '§chat.composer/behavior'`; and `census` | No command exits 2. `check` exits 1 and every warning is `requires-uninvestigated`; `census` has no `boundary-missing` (the manifest declares a boundary); `toc` lines are listed and `footer.delivered` is empty; each `read` page's items all carry the one requested id, the continuation starts where the first page ended (`fragment.start` = the previous `end`), and the last fragment ends at `end == total`; `where` lists at least one claim that maps the file; the budget run's `used` ≤ 4000 with every omitted passage named; plain `impact`'s frontier is non-empty |
 | LIVE-5 | A review preview of a current closure writes nothing and shows its blockers | M | `sova-spec-review.mjs prepare '§chat/composer' --root "$CO" --name acc-live` (no `--write`) | Exit 0, `written: false`; `blockers` include `requires-uninvestigated`; no write in `$CO` |
 | LIVE-6 | A draft preview of the current docs writes nothing and would copy everything | M | `sova-spec-draft.mjs new acc-live --root "$CO"` (no `--write`) | Exit 0, `written: false`; `files` = manifest + every file under `claims/`; no write in `$CO` |
 
@@ -804,14 +810,14 @@ the fixture first. Relabel means editing the draft record's `authority`.
 | DR-EV-1 | Evidence binds to the proposed record and prose | M | Record evidence; edit the draft prose; separately edit the record | Promote preview `evidence-stale` with "prose changed" / "record changed" |
 | DR-EV-2 | Snapshot evidence binds to the implementation bytes | M | No-Git; snapshot; edit the input; separately corrupt the retained object | `evidence-stale` naming the working-tree difference; "retained snapshot … missing or corrupt" |
 | DR-EV-3 | Mapped code must exist; `--path` cannot stand in; a record mapping nothing needs a present `--path`; deletions may be absent | M | Map `lib/gone.txt`; add `--path lib/one.txt`; a behavior with no `code` and no `--path`; delete a record+heading and record evidence for it | `evidence-code-missing`; `evidence-no-code`; deletion evidence accepted with absent inputs |
-| DR-EV-4 | Docs are never implementation evidence; `--doc-only` only covers notes and sections | M | `--path .sova/spec/manifest.json`; `code: [".sova/x"]`; `--doc-only` on a behavior; `--doc-only --path x` | `path-refused` (twice); `doc-only-refused`; `usage` exit 2 |
+| DR-EV-4 | Docs are never implementation evidence; `--doc-only` covers notes, sections, agreed behaviors/surfaces with no code, and `embeds`/`about`/`core`-only changes, and nothing else (§tools.spec/agreed-promotion, §tools.spec/field-promotion) | M | `--path .sova/spec/manifest.json`; `code: [".sova/spec/x"]`; `--doc-only` on a prose change to a behavior that maps code; `--doc-only` on an existing behavior whose only change is a new `embeds` entry; the same `embeds` change plus a prose edit to that record; `--doc-only` on an agreed behavior with no `code`; `--doc-only --path x` | `path-refused` (twice); the prose change `doc-only-refused`; the `embeds`-only change accepted; the bundled one `doc-only-bundled`, naming `prose`; the agreed record accepted; `usage` exit 2. A tool that accepts either docs path, the plain behavior or the bundled change, or refuses the field-only or agreed one, FAILS |
 | DR-EV-5 | Evidence only for IDs the draft changes | M | `evidence --id` of an unchanged record | `not-changed` exit 1 |
 | DR-EV-6 | Documented boundary: a draft's evidence binds per ID, not transitively | M | A requires B; record valid evidence for a change to A; then change B's mapped code (not A's input) | A's evidence stays `valid` (limit as documented); the row PASSES when behavior matches DRAFTS.md, and the report lists it under limits |
 | DR-PR-1 | Promotion applies exactly the previewed plan | M | Preview (writes nothing, prints `plan`); `--plan <64 zeros> --write`; `--plan abc`; correct `--plan` | Mismatch `plan-changed` exit 1, nothing written; `abc` `usage` exit 2; correct plan exit 0 |
 | DR-PR-2 | A promoted record must say explicitly that it is not a proposal, prose-only changes included | M | Changed record labelled `candidate`; one without `authority`; a prose-only change on a record without `authority` | `candidate-label`; `authority-missing` (both cases); nothing written |
 | DR-PR-3 | Files move whole | M | One claim file with changes to two IDs; select one | `selection-incomplete` naming the other |
 | DR-PR-4 | Partial promotion promotes only the selection | M | Changes to IDs in two different files, evidence for both; promote one | Only that file (and its records) written; `status` still shows the other `pending` |
-| DR-PR-5 | Both-sides changes conflict and preserve both; identical changes are no-ops | M | Change the same claim file (and, separately, the same record) differently in current and draft; then identically | `conflict` exit 1, current and draft bytes unchanged; identical: merge `same`, no write for that unit |
+| DR-PR-5 | Both-sides changes conflict per declaration and preserve both; changes to different declarations of one file merge; identical changes are no-ops (§tools.spec/span-promotion) | M | (a) Change the same H2 span of one claim file differently in current and draft; (b) separately, the same record differently; (c) change two different H2 spans of one file, one in current and one in the draft; (d) the same change on both sides | (a) and (b): `conflict` exit 1, current and draft bytes unchanged, the refusal names the declaration or record. (c): promotes, and the file holds both changes byte for byte. (d): merge `same`, no write for that unit. A tool that conflicts on (c), or merges (a), FAILS |
 | DR-PR-6 | Current changes the draft did not touch survive; records merge per ID | M | After `new`, edit another current file and another current record; promote the draft's unit | Those current edits byte-identical after promotion |
 | DR-PR-7 | A plan drifts if anything moves between preview and write | M | Preview; then edit an affected current file (and, separately, a target) | `--plan` write refused `plan-changed` (or `race`), nothing written |
 | DR-PR-8 | Deletions are explicit, evidenced changes, and cannot leave dangling edges | M | Delete a record+heading in the draft with evidence and promote; separately delete one that another current record requires | First: gone from current; second: `candidate-dangling` |
@@ -926,7 +932,7 @@ repeat an ACT with the actual CLI. "Before editing source" means before the firs
 
 | ID | Claim | Tier | Scenario | Oracle |
 |---|---|---|---|---|
-| AG-1 | Before behavior work the agent scopes from the docs and works from the returned passages | A | ACT-1 | Transcript: a `scope` (and `impact` where the root is required by others) on a named root ID before editing source; the reply names the root and why |
+| AG-1 | Before behavior work the agent reads contents first, then the passages, and works from them (§tools.spec/mode-reading) | A | ACT-1 | Transcript, before the first source edit: the root found (`map`/`where`, or named in the reply with why); `toc` on it (`--dir out`, or `--dir down` for an area); `read` of the root and of each `requires` line the task relies on; `impact --near` on a claim it then changes. Missing any of these before the first source edit FAILS; so does reading only through `packet`/`scope` |
 | AG-2 | Unknowns stay visible; exit 0 is not presented as completeness | A | ACT-1 | Reply names at least the `requires-uninvestigated` item it met (`§app.notes/remove` if touched) or states the closure had none; never claims the docs are complete |
 | AG-3 | Docs change only through a draft | A | ACT-1 | `current` manifest/claims change only via a `promote --write` command in the transcript; a draft exists |
 | AG-4 | Baseline documentation is its own draft | A | ACT-8 | Two drafts: one documents the existing usage message, the other the new command; no draft mixes both |
@@ -940,8 +946,8 @@ repeat an ACT with the actual CLI. "Before editing source" means before the firs
 | AG-12 | No `§` IDs or spec annotations in source | A | ACT-1, ACT-7, ACT-8 | `grep -r "§" src/ test/` in the after-tree finds nothing new |
 | AG-13 | `requires: []` only after investigation; a test found by name is candidate evidence | A | ACT-1 | Any new `"requires": []` is preceded in the transcript by reading the code it covers; the reply does not cite a test as proof without having read its assertions (observer judgement, stated as such) |
 | AG-14 | A generic project with the mode off gets no spec workflow | A | ACT-9 | No `.sova` created; no spec tool invoked |
-| AG-15 | In a project whose instructions point at `spec-mode.md`, the discipline applies with the mode off, and no mode is turned on | A | ACT-10 | Transcript reads `docs/spec-mode.md` (or shows it in context) and runs `scope` before editing source; no attempt to toggle a mode or edit settings |
-| AG-16 | A delegated worker gets only the passages and unknowns relevant to its part, quoted literally | A | Only with `authorize.delegateSlicing`: an orchestrating actor in delegate style that spawns one sub-worker | Sub-worker prompt contains quoted passage text from `scope`, not the whole graph; else UNTESTED "not authorized" |
+| AG-15 | In a project whose instructions point at `spec-mode.md`, the discipline applies with the mode off, and no mode is turned on (§tools.spec/mode-reading) | A | ACT-10 | Transcript reads `docs/spec-mode.md` (or shows it in context), and runs `toc` and `read` on a root before editing source; no attempt to toggle a mode or edit settings. Missing `toc` or `read` before the first source edit FAILS, and so does any attempt to toggle a mode or edit settings |
+| AG-16 | A delegated worker gets only the passages and unknowns relevant to its part, quoted literally (§tools.spec/mode-reading) | A | Only with `authorize.delegateSlicing`: an orchestrating actor in delegate style that spawns one sub-worker | The sub-worker prompt contains passage text byte-identical to a `read` page (or a `toc` line) in the orchestrator's transcript, and no whole `packet` or `scope` output; else UNTESTED "not authorized". A prompt with paraphrased passages, or a whole chain, FAILS |
 | INT-1 | AG-1, AG-3, AG-6 hold with the actual pi CLI and the real mode | L | ACT-1 through `pi --minor spec` from `$RUN/agent` | Same oracles, transcript from `$RUN/sessions` |
 | INT-2 | AG-15 holds with the actual pi CLI, mode off | L | ACT-10 through `pi --minor none` (context files load the fixture's pointer) | Same oracles |
 | INT-3 | AG-14 holds with the actual pi CLI | L | ACT-9 through `pi --minor none` | Same oracles |
@@ -1709,7 +1715,9 @@ console.log(JSON.stringify({ dir, canary, sentinels, flags }));
   is integration, and L depends on caller credentials.
 - **Documented tool limits not exercised as failures:** a parent directory swapped for a symlink between
   check and open, and hostile writers on the same machine, are out of scope by the tools' own statement;
-  draft evidence is per ID, not transitive (DR-EV-6); conflicts are whole-file; the manifest is reformatted
+  draft evidence is per ID, not transitive (DR-EV-6); a conflict is a declaration, or the gap
+  after one, changed differently on both sides, except a file whose kept declarations were reordered, that holds a
+  carriage return, or whose graph on any side doesn't load, which is compared whole (§tools.spec/span-promotion); the manifest is reformatted
   on promotion (DR-PR-12).
 - **Model variance.** One ACT run per row detects defect classes, not rates. Repeat a failing ACT once
   with a fresh actor before calling it FAIL; report both runs.

@@ -91,14 +91,17 @@ and an ancestor of HEAD, before it lists anything; otherwise it prints the full 
 lines of the files changed since it. The approved scope is frozen: a file changed later is reported
 as outside it and never read, and a supporting read stays inside the root, scope and limits and is
 named in the report. The limits are cooperative: nothing enforces them, the report gives each as
-observed or unknown, a packet budget bounds only the bytes of the page it returns, and while token
+observed or unknown, a read budget bounds only the bytes of the page it returns, apart from the
+always-on frame the first read carries (§tools.spec/frame), and while token
 use is unknown the run asks before any further model run.
 
 A run writes nothing beyond its chat: no files, no assessment receipts, no workers, no cleanup. It
 reads with git, with the helpers known to apply turned off (fsmonitor, external diff, textconv;
 not a sandbox), with the trusted spec tools at the declared base, and with the agent's own file
 reading. Each published command re-establishes the tools' location, root and base itself, never
-relying on an earlier call. A request for a durable assessment receipt is reported as needing a
+relying on an earlier call. It reads a claim as spec mode does (§tools.spec/mode-reading): `toc`
+for the claim's neighbours, then `read` for one exact passage at a time, the first read bringing the frame and every later one
+adding `--no-frame`, keeping whole-chain `packet` and `scope` out of its reading step. A request for a durable assessment receipt is reported as needing a
 separate opt-in method, since the companion has no bounded view of its capture. The report has
 fixed sections within the report length and keeps observed, inferred and proposed apart; changes to
 the playbook's own method appear there only as proposed diffs, never applied by the run.

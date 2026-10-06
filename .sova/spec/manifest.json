@@ -12941,7 +12941,9 @@
       "evidence": "verified",
       "requires": [
         "§chat.playbooks/bundles",
-        "§tools.spec/assessment-observations"
+        "§tools.spec/assessment-observations",
+        "§tools.spec/mode-reading",
+        "§tools.spec/frame"
       ],
       "code": [
         "playbooks/spec-review/PLAYBOOK.md",

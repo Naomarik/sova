@@ -164,7 +164,8 @@ node core/sova-spec-draft.mjs merge-manifest --root DIR [--write] [--json]
    or rewritten prose becomes `accepted`, adopted under the task's go-ahead;
    `migrated` stays only on text still as ported, as provenance. Then run **`evidence`**. A
    behavior or surface needs at least one implementation file, from the
-   record's `code` or `--path` (unless it is agreed and not built yet), and every `code` path must exist. In a Git project it needs `--commit`, an existing commit, ancestor
+   record's `code` or `--path` (unless it is agreed and not built yet, or the change is to its
+   `embeds`, `about` or `core` field alone: both take `--doc-only`, below), and every `code` path must exist. In a Git project it needs `--commit`, an existing commit, ancestor
    of `HEAD`, whose files match the working tree for the mapped code. Without Git, `--snapshot` keeps the
    exact bytes. `--doc-only` covers `note` and `section` records, an `agreed` behavior or
    surface with no code (DRAFTS.md, "Agreed, not built"), and a change to an existing behavior's or

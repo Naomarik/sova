@@ -577,6 +577,32 @@ input.input { text-overflow: ellipsis; }
 .setup-oid         { flex: none; font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-muted); }
 .setup-subject     { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-ink); }
 .setup-ago         { flex: none; color: var(--color-ink-muted); white-space: nowrap; }
+/* The Tools group (§chat.transcript/setup-card-tools): a disclosure of disclosures, closed by
+   default. Each summary is the whole 44px target; the twist turns when it opens. The heading keeps
+   the section's eyebrow, the total its mono figures, so a closed group reads like the others. */
+.setup-tools > summary,
+.setup-tool > summary { list-style: none; cursor: pointer; min-height: 44px; }
+.setup-tools > summary::-webkit-details-marker,
+.setup-tool > summary::-webkit-details-marker { display: none; }
+.setup-tools > summary { align-items: center; }
+.setup-tool > summary { align-items: center; }
+.setup-tools > summary:focus-visible,
+.setup-tool > summary:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); border-radius: var(--r-xs); }
+.setup-tools-title { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.setup-tools .icon-twist { flex: none; color: var(--color-ink-muted); transition: transform var(--dur-fast) var(--ease-standard); }
+.setup-tools[open] > summary .icon-twist,
+.setup-tool[open] > summary .icon-twist { transform: rotate(90deg); }
+.setup-tool > summary .setup-name { align-items: center; }
+.setup-tool > summary:hover .setup-path { color: var(--color-accent); }
+.setup-tools-body { display: flex; flex-direction: column; gap: var(--space-2); }
+.setup-tool-desc {
+  margin: 0 0 var(--space-2) calc(16px + var(--space-2));
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--color-ink-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 /* A narrow card (its own container, above): every row puts its figures on their own line under
    the name, rather than squeezing the name to an ellipsis — all rows alike, so the list stays even.
    The query reads the card's CONTENT box: 417.98px here is a card under 420px across its 1px borders. */

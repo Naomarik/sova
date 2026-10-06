@@ -125,6 +125,7 @@ import { Composer, type ComposerReason } from "./Composer";
 import { FlyoutSession, type LoginControl, type SandboxControl, type ThinkingControl, type UndoControl } from "./ComposerMenu";
 import { ConnectionBanner } from "./ConnectionBanner";
 import { SessionSetupCard } from "./SessionSetup";
+import { toolsKeyOf } from "../lib/session-tools";
 import { EmptyWorktrees } from "./EmptyWorktrees";
 import { PlaybooksDialog } from "./PlaybooksDialog";
 import type { ModeControl, ModeState } from "./ModeMenu";
@@ -272,6 +273,8 @@ export function ChatView(props: {
   const [newFrom, setNewFrom] = createSignal<string | null>(null);
   /** This connection's hello has come: the rows shown are no longer only the ones kept. */
   const [helloed, setHelloed] = createSignal(false);
+  /** Hellos this visit has had: each (re)connect, a rebuilt runtime's included. */
+  const [hellos, setHellos] = createSignal(0);
   // "Open in Session" from an Explanations card: once the transcript is here (hello), land on that
   // explanation's row. Only a jump waiting for this session is claimed, and only once; one whose
   // row isn't here is fetched, down to it.
@@ -679,6 +682,7 @@ export function ChatView(props: {
             olderRows.hello(msg);
             setNewFrom(msg.items[0]?.id ?? null);
             setHelloed(true);
+            setHellos((n) => n + 1);
             // A client that connects mid-compaction shows it, as the compaction_start it missed would.
             setLive(reconcile({ ...emptyLive(), running: msg.isStreaming, activity: msg.isCompacting ? "Compacting context" : null }));
             setCompacting(!!msg.isCompacting);
@@ -1485,6 +1489,10 @@ export function ChatView(props: {
   };
   /** The composer foot's mode switch: this chat's WS "mode" state and its session file. */
   const modeControl: ModeControl = { state: modeState, path: props.path };
+  /** What the setup card's Tools group re-reads on (§chat.transcript/setup-card-tools): the model, the
+      mode triple and each (re)connect, as one string, so only a change of value re-reads (the mode
+      signal's objects are new on every "mode" message). */
+  const toolsKey = createMemo(() => toolsKeyOf(model(), modeState(), hellos()));
   /** The flyout's Sandbox group and the shield's panel: the extension answers with a toast and a
       "sandbox" message. */
   const sandboxControl: SandboxControl = {
@@ -1927,7 +1935,7 @@ export function ChatView(props: {
                           />
                         )}
                       </Show>
-                      <SessionSetupCard path={props.path} editable={!!profileInfo()?.pickable && !profileInfo()?.locked} />
+                      <SessionSetupCard path={props.path} editable={!!profileInfo()?.pickable && !profileInfo()?.locked} toolsKey={toolsKey()} />
                       <p class="empty-body">Your first message becomes its title.</p>
                       <EmptyWorktrees path={props.path} />
                     </div>

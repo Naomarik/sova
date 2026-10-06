@@ -50,6 +50,7 @@ import type {
   SessionHiddenWorkers,
   SessionInsight,
   SessionSetup,
+  SessionTools,
   SessionSummary,
   ThemeList,
   TmpAttachment,
@@ -885,6 +886,8 @@ export const fetchGitSummary = (path: string, fresh = false) =>
     folder. `fresh` skips the server's cache. */
 export const fetchSessionSetup = (path: string, fresh = false) =>
   request<SessionSetup>(`/api/sessions/context?path=${encodeURIComponent(path)}${fresh ? "&fresh=1" : ""}`);
+/** The tools a held chat declares to its model now (§chat.transcript/setup-card-tools). Never cached. */
+export const fetchSessionTools = (path: string) => request<SessionTools>(`/api/sessions/tools?path=${encodeURIComponent(path)}`);
 /** Switch a new session's context files and skills (§chat.transcript/setup-card-toggles): the
     whole off set; the answer is the card's fresh read of the rebuilt runtime. */
 export const setSessionLoadout = (path: string, offContext: string[], offSkills: string[]) =>

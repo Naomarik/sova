@@ -430,29 +430,39 @@ test("touchesSpecReplay: the spec core, its replay tests, spec-guard and spec-ho
   for (const f of ["pi-config/extensions/spec/tests/core.test.mjs", "pi-config/extensions/spec/README.md", "pi-config/extensions/mode/spec.ts", "server/spec-settings.ts", "x/pi-config/extensions/spec/core/a.mjs"]) assert.ok(!touchesSpecReplay(f), f);
 });
 
-test("acquireLock: a gone or too old holder is taken over, a live one is waited for", async () => {
+test("acquireLock: a fresh lock is waited for whatever its pid, a stale one taken over, the holder's beat keeps it fresh", async () => {
   const file = join(root, "locks-unit", "x.lock");
-  const dead = spawn("true");
-  await new Promise((r) => dead.on("close", r));
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   mkdirSync(dirname(file), { recursive: true });
-  writeFileSync(file, JSON.stringify({ pid: dead.pid, at: new Date().toISOString() }));
-  const a = await acquireLock(file, { pollMs: 20 });
-  assert.equal(JSON.parse(readFileSync(file, "utf8")).pid, process.pid);
-  // Held by this live process now: a second waiter waits until it is released.
+  // A pid this namespace can't see (another sandbox's holder), with a fresh `at`: waited for.
+  writeFileSync(file, JSON.stringify({ pid: 999999, at: new Date().toISOString() }));
   let got = null;
-  const b = acquireLock(file, { pollMs: 20 }).then((l) => (got = l));
-  await new Promise((r) => setTimeout(r, 150));
-  assert.equal(got, null, "took a live holder's lock");
-  a.release();
-  await b;
-  assert.ok(got.waitedMs >= 100, `waited ${got.waitedMs}`);
+  const w = acquireLock(file, { pollMs: 20, staleMs: 5000 }).then((l) => (got = l));
+  await sleep(150);
+  assert.equal(got, null, "took a fresh lock of an unseen pid");
+  // Once its `at` is old, it is taken over.
+  writeFileSync(file, JSON.stringify({ pid: 999999, at: new Date(Date.now() - 10_000).toISOString() }));
+  await w;
+  assert.equal(JSON.parse(readFileSync(file, "utf8")).pid, process.pid);
   got.release();
   assert.ok(!existsSync(file));
-  // A live pid, but a lock older than staleMs.
-  writeFileSync(file, JSON.stringify({ pid: process.pid, at: new Date(Date.now() - 10_000).toISOString() }));
-  const c = await acquireLock(file, { pollMs: 20, staleMs: 5000 });
-  assert.ok(c.waitedMs < 1000);
-  c.release();
+  // The holder's beat refreshes `at`, so a waiter with a short window still waits.
+  const a = await acquireLock(file, { pollMs: 20, beatMs: 30 });
+  const first = JSON.parse(readFileSync(file, "utf8")).at;
+  await sleep(120);
+  assert.ok(Date.parse(JSON.parse(readFileSync(file, "utf8")).at) > Date.parse(first), "at not refreshed");
+  got = null;
+  const b = acquireLock(file, { pollMs: 20, staleMs: 100 }).then((l) => (got = l));
+  await sleep(300);
+  assert.equal(got, null, "took a beating holder's lock");
+  a.release();
+  await b;
+  assert.ok(got.waitedMs >= 250, `waited ${got.waitedMs}`);
+  got.release();
+  assert.ok(!existsSync(file));
+  // The beat stops at release.
+  await sleep(100);
+  assert.ok(!existsSync(file), "a beat after release rewrote the lock");
   assert.deepEqual(readdirSync(dirname(file)), [], "a draft or aside file was left behind");
 });
 
@@ -503,8 +513,8 @@ test("check runs a touched extension's suite and the spec replay under the tree'
   assert.match(n.out, /^spec replay: skipped \(no tests\/replay\/replay\.test\.mjs in this tree\)\.$/m);
   assert.equal(readFileSync(replayLog, "utf8"), "1\n");
 
-  // A dead holder's lock is taken over at once; a failing replay is a need.
-  writeFileSync(lockFile, JSON.stringify({ pid: 2 ** 22 + 7, at: new Date().toISOString() }));
+  // A stale lock (its `at` past the window) is taken over at once; a failing replay is a need.
+  writeFileSync(lockFile, JSON.stringify({ pid: 2 ** 22 + 7, at: new Date(Date.now() - 10 * 60_000).toISOString() }));
   commit(wt("feat/replay"), "pi-config/extensions/spec/tests/replay/replay.test.mjs", replayJs.replace('"1") throw', '"1" || true) throw'), "replay: fail");
   const f = await run(["check", "feat/replay"], { env });
   assert.equal(f.code, 1, f.out);

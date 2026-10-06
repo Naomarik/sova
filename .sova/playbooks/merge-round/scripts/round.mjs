@@ -273,19 +273,31 @@ export const touchesSpecReplay = (file) =>
   /^pi-config\/extensions\/spec\/(?:core|tests\/replay)\//.test(file) || file === "pi-config/extensions/mode/spec-guard.ts" || file === "pi-config/extensions/claude-code/spec-hooks.ts";
 
 /** A machine-wide lock file `{pid, at}`, created exclusively and whole (a hard link of a written
- *  file). A holder that is gone, or older than `staleMs`, is taken over; a live one is waited for.
- *  Resolves to `{ release, waitedMs }`. */
-export async function acquireLock(file, { pollMs = 5000, staleMs = 6 * 3600_000, now = Date.now } = {}) {
+ *  file). The holder rewrites `at` every `beatMs` while it holds it; a lock whose `at` is older
+ *  than `staleMs` is taken over, a fresher one is waited for. Never judged by pid: a holder in
+ *  another PID namespace looks gone to `kill(pid, 0)`. Resolves to `{ release, waitedMs }`. */
+export async function acquireLock(file, { pollMs = 5000, beatMs = 30_000, staleMs = 3 * 60_000, now = Date.now } = {}) {
   mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
   const started = now();
-  const mine = JSON.stringify({ pid: process.pid, at: new Date(started).toISOString() });
+  let mine = JSON.stringify({ pid: process.pid, at: new Date(started).toISOString() });
   const draft = `${file}.${process.pid}.new`;
   writeFileSync(draft, mine, { mode: 0o600 });
   for (;;) {
     try {
       linkSync(draft, file);
       rmSync(draft, { force: true });
-      const release = () => { try { if (readFileSync(file, "utf8") === mine) rmSync(file, { force: true }); } catch {} };
+      const beat = setInterval(() => {
+        // Rewritten whole beside the lock and renamed over it, only while it is still ours.
+        try {
+          if (readFileSync(file, "utf8") !== mine) return;
+          const next = JSON.stringify({ pid: process.pid, at: new Date(now()).toISOString() });
+          writeFileSync(`${file}.${process.pid}.beat`, next, { mode: 0o600 });
+          renameSync(`${file}.${process.pid}.beat`, file);
+          mine = next;
+        } catch { rmSync(`${file}.${process.pid}.beat`, { force: true }); }
+      }, beatMs);
+      beat.unref();
+      const release = () => { clearInterval(beat); try { if (readFileSync(file, "utf8") === mine) rmSync(file, { force: true }); } catch {} };
       return { release, waitedMs: now() - started };
     } catch (e) {
       if (e.code !== "EEXIST") { rmSync(draft, { force: true }); throw e; }
@@ -294,9 +306,7 @@ export async function acquireLock(file, { pollMs = 5000, staleMs = 6 * 3600_000,
     try { held = readFileSync(file, "utf8"); } catch { continue; }
     let holder = null;
     try { holder = JSON.parse(held); } catch {}
-    const alive = Number.isInteger(holder?.pid) && (() => { try { process.kill(holder.pid, 0); return true; } catch (e) { return e.code === "EPERM"; } })();
-    const old = !(now() - Date.parse(holder?.at) < staleMs);
-    if (!alive || old) {
+    if (!(now() - Date.parse(holder?.at) < staleMs)) {
       // Moved aside first, so a fresh lock taken meanwhile by another waiter is put back, not lost.
       const aside = `${file}.${process.pid}.stale`;
       try {

@@ -31,15 +31,30 @@ Ship all `core/*.mjs`, including `packet.mjs`; copying only the four entrypoints
 
 ```sh
 node pi-config/extensions/spec/core/sova-spec.mjs check
-node pi-config/extensions/spec/core/sova-spec.mjs packet '§workspace.groups/decisions' --budget 12000
-node pi-config/extensions/spec/core/sova-spec.mjs packet '§workspace.groups/decisions' --cursor '<returned next token>'
-node pi-config/extensions/spec/core/sova-spec.mjs packet '§workspace.groups/decisions' --part frontier
+node pi-config/extensions/spec/core/sova-spec.mjs map                              # every area on one page
+node pi-config/extensions/spec/core/sova-spec.mjs where server/chat-manager.ts    # the claims for a file or a name
+node pi-config/extensions/spec/core/sova-spec.mjs toc '§workspace.groups/decisions' --dir out
+node pi-config/extensions/spec/core/sova-spec.mjs read '§workspace.groups/decisions'
+node pi-config/extensions/spec/core/sova-spec.mjs read '§workspace.groups/decisions' --no-frame --cursor '<returned next token>'
+node pi-config/extensions/spec/core/sova-spec.mjs impact '§chat.composer/behavior' --near
+node pi-config/extensions/spec/core/sova-spec.mjs packet '§workspace.groups/decisions' # the whole chain, in pages
 node pi-config/extensions/spec/core/sova-spec.mjs scope '§workspace/groups' --budget 4000 # deliberate full-graph inspection
 node pi-config/extensions/spec/core/sova-spec.mjs impact '§chat.composer/behavior'
 node pi-config/extensions/spec/core/sova-spec.mjs check --spec .sova/spec/drafts/NAME/spec   # a draft; local only
 ```
 
-- **`packet §id`** is the task-reading path: exact text, never summaries, in compact JSON.
+The reading path is contents first, then one passage, as spec mode teaches it:
+- **`map`** and **`where <path|name>`** find the roots for a task.
+- **`toc §id --dir out|in|down|up|mentions`** lists the claims one hop away in one direction, a
+  line each saying what it is, why it is linked and what reading it costs, and delivers no passage.
+- **`read §id`** returns one passage without its chain (an H1 gives its lede unless `--whole`).
+  The first read carries the frame; later reads add `--no-frame`.
+- **`impact §id --near`** lists what a change to it could reach, one hop at a time.
+
+[core/README.md](../../pi-config/extensions/spec/core/README.md) has their output and flags.
+The rest are whole-chain views:
+
+- **`packet §id`** delivers the whole closure in bounded pages: exact text, never summaries, in compact JSON.
   Each prose fragment carries its declared kind and any authority/evidence labels; absent labels
   stay absent, and labels are not a tool's verification verdict. Its default 12,000-byte budget includes all UTF-8 output, metadata, cursor and newline;
   explicit budgets are integers 1,024–32,768. Follow `next` using `--cursor`, same ID/part,
@@ -54,7 +69,7 @@ node pi-config/extensions/spec/core/sova-spec.mjs check --spec .sova/spec/drafts
   lede and every child. A child gives its parent lede for orientation, and not its siblings. A
   section gives its members. Then everything they `requires`, depth-first. `--budget BYTES` keeps
   whole passages and names the rest as unread.
-- **`impact §id`** lists what `requires` it, directly or indirectly.
+- **`impact §id`** lists what `requires` or `embeds` it, directly or indirectly.
 - **`check`** validates the whole graph. **`census`** needs a `boundary` in the manifest; this one
   includes `server`, `shared`, `src` and `vite.config.ts`. **`census --changed [--base REV]`** checks only the
   files your task changed: the ones that differ from `REV` (default `HEAD`), plus untracked files.
@@ -69,11 +84,6 @@ Exit `1` means something relevant is unknown, stale or unread, or the packet str
 Exit `2` means refused/untrusted, including a packet budget that cannot make progress. Packet errors
 also fit supported budgets and have no stderr side channel. This adds no assessment or release gate.
 
-**Current state, 2026-09-26:** 318 records (228 behaviors). `check` exits 1 with 130
-`requires-uninvestigated` warnings and nothing else. 98 records declare `requires` (27 of them
-`[]`), 137 edges in all. `impact` can't rule out the other behaviors, and it lists them as unknown.
-`census` finds 463 files in the boundary: 218 claimed, 245 unclaimed.
-
 **While coding**, exempt work included, run `census --changed` right after the first code edit, before the
 second, and again whenever the edit set reaches a new file; it lists the foreign § a changed file
 lands in (`census.foreign`), with the rule, and on one stderr line. Adding `--related` lists every
@@ -82,7 +92,7 @@ lands in (`census.foreign`), with the rule, and on one stderr line. Adding `--re
 (`child-under-foreign`). The notes are reminders to read and judge, not flags. Where you put your
 claim changes nothing: the parent is foreign either way and the flag is owed either way. Any § the task didn't create is foreign, even one your draft edits, and
 even the parent your new claim nests under; editing it in the draft (a row, a sub-claim, a sketch
-line) is itself a flag. Read a foreign § with `packet` and stay silent while its text holds;
+line) is itself a flag. Read a foreign § with `read` and stay silent while its text holds;
 plumbing (an added request, hook, helper, CSS class or types) never flags. Otherwise flag only a contradiction of its text, or
 something a user would see there that its own text doesn't describe; that your new claim describes
 it, in the parent's document or its own, does not remove the flag. A gap the foreign § already had (a field its prose never named) is not
@@ -118,8 +128,8 @@ A draft is a proposal. Agreeing on it approves the intent, and makes nothing cur
    task adopts it, and is still not permission to commit. `migrated` stays only on text still
    exactly as ported: it records provenance, not verification. `evidence` says what you did:
    `reviewed` or `verified`.
-3. Record evidence. A behavior or surface needs at least one implementation file, and every path
-   in its `code` must exist. The migrated records map no `code`, so add the files to the draft
+3. Record evidence. A behavior or surface needs at least one implementation file, unless it is
+   agreed and not built yet (`--doc-only`), and every path in its `code` must exist. The migrated records map no `code`, so add the files to the draft
    record's `code`, which binds them to the evidence, or pass `--path`. This repo uses Git, so name an existing commit that holds the
    implementation, and never commit unrelated changes to get one:
 
@@ -129,8 +139,8 @@ A draft is a proposal. Agreeing on it approves the intent, and makes nothing cur
      --commit HEAD --path src/components/Composer.tsx --root . --write
    ```
 
-   Without Git, use `--snapshot`, which keeps the exact bytes. `--doc-only` covers only `note`
-   and `section` records.
+   Without Git, use `--snapshot`, which keeps the exact bytes. `--doc-only` covers `note` and
+   `section` records, and agreed behaviors or surfaces with no code (DRAFTS.md, "Agreed, not built").
 4. Promote. The preview prints a plan hash, and `--write` applies exactly that plan:
 
    ```sh
@@ -138,7 +148,7 @@ A draft is a proposal. Agreeing on it approves the intent, and makes nothing cur
    node $d promote composer-paste --id '§chat.composer/behavior' --plan <printed hash> --root . --write
    ```
 
-   It refuses when evidence is missing or stale, when a file changed differently in both places,
+   It refuses when evidence is missing or stale, when a declaration, gap or record changed differently in both places,
    or when a promoted file carries other changes you didn't select. Resolve the refusal. Never
    work around it. After an interrupted promotion, run `node $d recover --root .`, then again with
    `--write`.

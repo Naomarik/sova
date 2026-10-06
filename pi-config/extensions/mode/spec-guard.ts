@@ -354,7 +354,7 @@ export const unmappedNote = (file: string): string =>
 	`${file} is outside the boundary and no claim maps it: if it changes user-visible behavior, spec it (a claim that lists it in \`code\`), else say it's plumbing.`;
 
 export const NO_DRAFT_NOTE =
-	"No draft yet: a behaviour change needs its claim sentence in a draft before code (`sova-spec-draft.mjs new <name> --write`, then edit the claim); work that changes no behaviour: say you claim the exemption, decided from `scope` output.";
+	"No draft yet: a behaviour change needs its claim sentence in a draft before code (`sova-spec-draft.mjs new <name> --write`, then edit the claim); work that changes no behaviour: say you claim the exemption, decided from passages you read.";
 
 /**
  * The digest for the files new since the last look, or undefined when there is nothing to say: a first

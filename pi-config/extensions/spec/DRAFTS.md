@@ -7,7 +7,9 @@ Like the other tools here, it needs only the Node standard library.
 - `.sova/spec/manifest.json` and the claims tree are the **current** documentation.
 - A draft is a **proposal**. Agreeing on a draft (alignment) approves intent. It doesn't make
   anything current.
-- Promotion requires recorded implementation and verification evidence for each selected `§` ID.
+- Promotion requires recorded evidence for each selected `§` ID: of its implementation and
+  verification, or, for a decision (a note, a section, or an agreed record not built yet), doc-only
+  evidence that records the decision, not a build.
 
 ```sh
 d=core/sova-spec-draft.mjs   # or the installed copy; see README.md for the path rule
@@ -104,7 +106,7 @@ The machine can't tell which label is correct.
      `stale`, and so does changing an input in the working tree or at the commit.
    - Every `code` path the ID's record maps must exist (`evidence-code-missing`). `--path` adds
      inputs, but it can't stand in for a mapped path. An ID that maps nothing needs at least one
-     present `--path`. For a deletion, the inputs may be absent.
+     present `--path`, except with `--doc-only`, which takes no paths. For a deletion, the inputs may be absent.
 4. **`promote`** previews the change and prints a `plan` hash. Then run
    `promote … --plan <hash> --write`. `--write` without `--plan` is allowed, but `--plan`
    refuses the write (`plan-changed`) if anything moved since you looked. Preview and write both

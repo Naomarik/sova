@@ -12,8 +12,9 @@ and labels. [USAGE.md](USAGE.md) has the commands.
   it, so it is not evidence that a feature works.
 - **Proposals are drafts.** A proposed change is written in a full copy under `drafts/NAME/`,
   and never in `claims/` or `manifest.json`. An agreed draft is approved intent, not current
-  behavior. Only the part that has been implemented and verified is promoted, and only
-  explicitly.
+  behavior. Only what has been implemented and verified is promoted, and only explicitly,
+  except a decision: notes, sections, and behaviors or surfaces marked `agreed` and not built yet, land on
+  doc-only evidence as decisions, never as built (pi-config/extensions/spec/DRAFTS.md, "Agreed, not built").
 - **Baseline and feature stay apart.** Correcting the docs to match what the code already does
   is a change of its own. It is not mixed into a feature draft.
 
@@ -21,7 +22,7 @@ and labels. [USAGE.md](USAGE.md) has the commands.
 
 | Path | What |
 |---|---|
-| `manifest.json` | One record per ID: `kind` (`surface`, `behavior`, `section`, `note`), `requires`, `members`, `code`, and the labels `authority` and `evidence`. Relations only; prose never. |
+| `manifest.json` | One record per ID: `kind` (`surface`, `behavior`, `section`, `note`), `requires`, `members`, `code`, the labels `authority` and `evidence`, and the optional fields `agreed` (who decided, and when), `embeds`, `core` and `about` (pi-config/extensions/spec/core/README.md). Relations only; prose never. |
 | `claims/<ns>/<name>.md` | One document. The H1 `# §ns/name — Title` is its lede, and each H2 `## §ns.name/slug — Title` is a child. Plain H3 and deeper are prose inside that child. |
 | `drafts/` | Proposed changes, one full copy per draft. Local only. |
 | `reviews/` | Review packets and records. Local only. |

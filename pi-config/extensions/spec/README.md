@@ -21,7 +21,7 @@ to assert that those decisions have been implemented.
 
 | Path | What it is |
 | --- | --- |
-| `core/sova-spec.mjs` | The read-only core: `packet`, `toc`, `read`, `check`, `census`, `foreign`, `scope`, `impact` |
+| `core/sova-spec.mjs` | The read-only core: `map`, `where`, `toc`, `read`, `impact` (and `impact --near`), `packet`, `scope`, `graph`, `check`, `census`, `foreign` |
 | `core/packet.mjs` | The standalone core's bounded packet serialization and stateless navigation module |
 | `core/toc.mjs`, `core/read.mjs` | Pull: `toc`, a one-hop contents view (what, why, size per line), and `read`, one exact passage without its chain |
 | `core/fields.mjs` | The optional record fields `embeds`, `core` (the always-on frame stream, capped at 12,000 bytes) and `about` |
@@ -38,11 +38,17 @@ to assert that those decisions have been implemented.
 ## Core (read-only)
 
 ```sh
-node core/sova-spec.mjs packet '<§id>' [--part prose|inventory|frontier|code|findings] [--cursor TOKEN] [--budget BYTES] [--root DIR] [--spec DIR]
+node core/sova-spec.mjs <map [namespace | '<§id>'] | where <path|name> [--token] [--all] | graph --json> [--cursor TOKEN] [--budget BYTES] [--root DIR] [--spec DIR] [--json]
+node core/sova-spec.mjs toc '<§id>' --dir out|in|down|up|mentions [--cursor TOKEN] [--budget BYTES] [--root DIR] [--spec DIR] [--json]
+node core/sova-spec.mjs <read '<§id>' [--whole] [--no-frame] | read --frame> [--cursor TOKEN] [--budget BYTES] [--root DIR] [--spec DIR] [--json]
+node core/sova-spec.mjs impact '<§id>' --near [--cursor TOKEN] [--budget BYTES] [--root DIR] [--spec DIR] [--json]
+node core/sova-spec.mjs packet '<§id>' [--part prose|inventory|frontier|code|findings|frame] [--cursor TOKEN] [--budget BYTES] [--root DIR] [--spec DIR]
 node core/sova-spec.mjs <check | census [--changed [--base <rev>] [--related]] | foreign --base <rev> [--head <rev>] | scope '<§id>' [--budget <bytes>] | impact '<§id>'> [--root DIR] [--spec DIR] [--json]
 ```
 
-`packet` is the bounded task-reading path: compact JSON, exact text (not summaries), default
+The reading path is contents first, then one passage: `map` and `where` find the roots, `toc`
+lists one hop of neighbours, `read` returns one passage, and `impact --near` lists what a change
+could reach (`core/README.md`, "Pull" and "Look"). `packet` is the bounded full-closure path: compact JSON, exact text (not summaries), default
 12,000 UTF-8 bytes for the entire response including metadata and newline. Explicit budgets
 are integers 1,024–32,768. Follow `next` with `--cursor`, keeping the same ID and part, to
 finish relevant contiguous prose fragments; finish a passage at `fragment.end == fragment.total`.
@@ -84,7 +90,7 @@ keeps it, which a `grep` or JSON key-pick of stdout
 doesn't touch. With `--spec` only, each new id whose H1 parent already exists
 gets a `child-under-foreign` note. With `--related`, each `touched` entry also
 carries `created: true|false`, and each foreign touched § gets a
-`touched-foreign` note (read it with `packet`; flag it if a user sees a change
+`touched-foreign` note (read it with `read '<id>'`; flag it if a user sees a change
 there, even one the new claim describes; a gap it already had never flags, even one you now rely on). Human output prints the summary
 before the touched list. Notes are reminders, not flags: the exit code is
 unchanged. The rule counts a request, hook, helper or CSS class as plumbing, and
@@ -102,9 +108,10 @@ a new child, minus the § created in that range. It is the list a merge or
 promote turn's `Also changes:` line must name; `worktree merge` and
 `promote --write` print it for their own range.
 
-Quote IDs, because `§` is not a shell word character. `scope` and `impact` read a
-bare namespace like `§app.shell` as `§app/shell`, with an `id-alias` note. `--budget` is accepted by
-`scope` and `packet`; with any other command it's a usage error. Scope budgets prose only;
+Quote IDs, because `§` is not a shell word character. Every command that takes a § id reads a
+bare namespace like `§app.shell` as `§app/shell`, and says so (an `id-alias` note, or `alias` in the
+pull and look views). `--budget` is accepted by `scope`, `packet`, `toc`, `read`, `map`, `where`,
+`impact --near` and `graph`; with any other command it's a usage error. Scope budgets prose only;
 packet budgets the whole response. `--spec` reads another
 spec directory, given relative to the project root (default `.sova/spec`), such
 as a draft. Code and incumbent paths stay relative to the root. The core never
@@ -157,15 +164,16 @@ node core/sova-spec-draft.mjs merge-manifest --root DIR [--write] [--json]
    or rewritten prose becomes `accepted`, adopted under the task's go-ahead;
    `migrated` stays only on text still as ported, as provenance. Then run **`evidence`**. A
    behavior or surface needs at least one implementation file, from the
-   record's `code` or `--path`, and every `code` path must exist. In a Git project it needs `--commit`, an existing commit, ancestor
+   record's `code` or `--path` (unless it is agreed and not built yet), and every `code` path must exist. In a Git project it needs `--commit`, an existing commit, ancestor
    of `HEAD`, whose files match the working tree for the mapped code. Without Git, `--snapshot` keeps the
-   exact bytes. `--doc-only` covers only `note` and `section` records.
+   exact bytes. `--doc-only` covers `note` and `section` records, and an `agreed` behavior or
+   surface with no code (DRAFTS.md, "Agreed, not built").
    Evidence binds to the record and prose as they are now, so a later edit
    stales it.
 4. **`promote`** previews the plan and prints its hash. Then
    `promote … --plan SHA --write` applies exactly that plan. It refuses when
-   evidence is missing or stale, when a file or record changed differently in
-   both the draft and the current docs, or when the merged graph would not
+   evidence is missing or stale, when a declaration, gap or record changed
+   differently in both the draft and the current docs, or when the merged graph would not
    load. Prose is compared per declaration (an H1 lede or H2 span): edits to
    different declarations of one file merge, and one declaration changed on both
    sides is a conflict, never merged as text. Current changes the draft doesn't

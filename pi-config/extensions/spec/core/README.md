@@ -37,16 +37,17 @@ parent.
 | 1 | Relevant unknown, stale, unresolved, or unread content: dangling edge, missing `requires`, a code path that is missing, refused (absolute, outside the root, through a symlink), unreadable or not a regular file, provenance moved/changed/missing/refused/unreadable, budget left passages unread (including the requested one), no census boundary, unreadable census directory, a changed file in the boundary that no record claims (`changed-unclaimed`, one per file). |
 | 2 | Output can't be trusted: usage error, unreadable or unsupported manifest, malformed record, bad declaration, a symlink anywhere on the claims path or in the claims tree, an unreadable claims file or directory, an unknown seed, or an internal error. For `census --changed`: no Git work tree, or an enclosing repository that ignores the project (`not-git`), a `--base` that doesn't name a commit (`bad-rev`), or a failed Git command (`git-failed`). Scope and impact return no passages while the graph is malformed. A malformed record never enters the graph. |
 
-For commands other than `packet`, `--json` prints one object: `tool: "sova-spec"`, `command`, `spec` (the normalized graph
+For `check`, `census`, `foreign`, `scope` and plain `impact`, `--json` prints one object: `tool: "sova-spec"`, `command`, `spec` (the normalized graph
 directory), `root`, `exit` (equal to the process status), and `findings[]` (`severity`
 error|warn|note, `code`, `message`, and `id`/`file`/`line` where known). It also holds the
-command's results. A `note` never changes the exit code. Every `file` in the output is relative
+command's results. A `note` never changes the exit code. The pull and look views (`toc`, `read`, `map`,
+`where`, `impact --near`, `graph`) print their own envelopes, described in their sections below. Every `file` in the output is relative
 to the project root. New fields are only ever added. Other tools read this output:
 `sova-spec-review.mjs` uses `scope`, and the draft tool uses `check`.
 
 ## Bounded task packets
 
-`packet` is the task-reading path; `scope` remains the complete-graph API for deliberate machine
+`packet` is the bounded full-closure path (the reading path is `toc` and `read`, below); `scope` remains the complete-graph API for deliberate machine
 inspection and review, with its existing prose-only budget unchanged. Packets always print compact
 JSON (also with `--json`), with no stderr side channel or writes. The default whole-response budget
 is 12,000 UTF-8 bytes; explicit integer budgets are 1,024–32,768. The bound includes all metadata,
@@ -64,7 +65,7 @@ Unicode-scalar-safe). Join contiguous fragments to recover the passage. `complet
 item contains the WHOLE passage (`start == 0 && end == total`); even the final fragment of an
 oversized passage remains false. Finish at `end == total`, not by waiting for `complete: true`.
 
-Each response exposes `items`, `next`, `counts` for all five streams, `remaining` for the selected
+Each response exposes `items`, `next`, `counts` for all five streams (six with a frame), `remaining` for the selected
 stream (including a partially delivered record), and `status`. Repeat the same ID and part with
 `--cursor` set to the returned `next` until the relevant fragments are finished. Start
 `--part frontier` separately to inspect declared dependency unknowns, and `--part findings` for

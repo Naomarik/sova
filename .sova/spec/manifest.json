@@ -14476,6 +14476,27 @@
         "pi-config/extensions/spec/DRAFTS.md",
         "pi-config/extensions/spec/PROMOTE.md"
       ]
+    },
+    "§tools.spec/mode-reading": {
+      "kind": "behavior",
+      "requires": [
+        "§tools.spec/contents-view",
+        "§tools.spec/single-read",
+        "§tools.spec/near-impact",
+        "§tools.spec/spec-map",
+        "§tools.spec/where-lookup",
+        "§tools.spec/frame",
+        "§tools.spec/context-packets"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/mode/spec-mode.md",
+        "pi-config/extensions/mode/spec-guard.ts",
+        "pi-config/extensions/subagents/spec-brief.ts",
+        "pi-config/extensions/subagents/spec-brief.test.ts",
+        "pi-config/extensions/mode/index.test.ts"
+      ]
     }
   },
   "boundary": {

@@ -122,18 +122,20 @@ writer**).
   and trade-offs), then stops and waits for the user's answers. Questions,
   explicit commands, pointed-at one-liners and confirmations are exempt. Text
   in `minor.ts`; see **Alignments**.
-- **spec** — every behavior change is spec'd: the agent reads bounded exact
-  task packets from the project's `.sova/spec/` documentation, finishes relevant
-  contiguous fragments and inspects the stated frontier; full `scope`/`impact`
-  remain available for deliberate machine inspection and review. A page's success
+- **spec** — every behavior change is spec'd: the agent finds its roots in the
+  project's `.sova/spec/` documentation with `map` and `where`, looks at their
+  contents with `toc`, runs `impact --near` on what it will change, and `read`s
+  each root and each passage it needs, exact, finishing fragments at
+  `end == total`; whole-chain `packet` and `scope` remain available for
+  deliberate machine inspection and review. A page's success
   or `done` status is not complete context or proof of reading. It writes a claim for behavior no claim
   covers in a feature draft before coding, claims only the files the task
   changed, checks with `census --changed` before finishing that none of them is
   left unclaimed, and promotes what it verified (or says why it could not).
   Work that changes no behavior — refactors, tests, tooling — is exempt, and
   the agent says it is claiming the exemption. The documentation changes only
-  through drafts; a promotion `conflict` is whole-file, so it is re-applied in
-  a new draft from current. The discipline itself
+  through drafts; a promotion `conflict` is per declaration, and it is
+  re-applied in a new draft from current. The discipline itself
   is [`spec-mode.md`](spec-mode.md), and nowhere else. `minor.ts` reads it at
   load: the injected block is that file byte for byte, minus trailing
   whitespace, and its one `sh` block is the shell prefix `minor.ts` exports as

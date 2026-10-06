@@ -6,12 +6,15 @@ was checked against particular inputs. Their checks establish structure and appl
 semantic correctness. The minor mode adds task reminders and change accounting; response wording
 is not proof that implementation and requirements agree.
 
-Complete graph queries remain available to machine consumers. Task-facing packets deliver exact
+Complete graph queries remain available to machine consumers. Bounded packets deliver exact
 requirements within an explicit whole-response budget, with continuation and unknowns kept visible.
 Beside the full-closure packet, a contents view (`toc`) lists a claim's one-hop neighbours with what
 each is and why it is linked, and single-passage reads (`read`) return one claim without its chain,
 so the agent chooses what it reads.
 A map (`map`) shows every area on one page, and `where` finds the claims for a source file or a name.
+Records may also declare `embeds` (surfaces drawn inside a claim), `core` and `about` (the target a
+note serves), and an `agreed` decision (who decided and when); the claims flagged `core` form an
+always-on frame that arrives with the first page of a `read`.
 They change context delivery, not release policy. Structured observation-only assessments are separately
 recorded input-bound comparisons, not proof of requirements truth or mandatory release policy.
 A shipped playbook runs these tools for a review the operator starts, inside limits the operator
@@ -120,6 +123,25 @@ team_list, team_inbox, team_roster, link_inbox, link_members and link_offers; in
 own read-only tools and the team tools team_inbox, team_msg, team_ask, team_roster, team_report and
 wake_nudge. A skipped call neither looks at the tree nor moves the census's baseline, so the next
 call that can write reports every change since. Shell commands are never skipped.
+
+## §tools.spec/mode-reading — Spec mode teaches contents first, then one passage
+
+The spec minor mode's guide teaches the pull path. The agent finds its roots with `map` and `where`,
+looks at a root's neighbours with `toc` (`--dir out`, or `--dir down` for an area) before reading
+them, and runs `impact --near` on any claim it will change. It then reads each root, and each passage it
+needs, with `read`: every `requires` line whose "what" doesn't rule it out, and any other line
+touching the task. The first `read` brings the frame; later reads add `--no-frame`. A link it didn't read is
+unread, never absent, and "uninvestigated" is unknown, not none. A foreign § its change touched is
+read with `read`. `packet` and `scope` stay listed for whole-chain machine inspection, not as a
+reading step. Every command the guide spells is one the shipped tools parse, with the flags the
+guide pairs with it.
+
+The guide's promotion lines agree with the draft tool: a conflict is per declaration
+(§tools.spec/span-promotion), and doc-only evidence covers notes, sections and agreed records without
+code (§tools.spec/agreed-promotion). The exemption from drafts is decided from passages read, and the
+census note's `No draft yet` line says the same. A worker's spec brief lists `toc`, `read` and
+`impact --near` among its read-only commands. The guide rides every turn, so a test caps its word
+count a few words above its length, and growing it is a deliberate change.
 
 ## §tools.spec/promotion-integrity — Publication and its receipt recover together
 
@@ -232,8 +254,8 @@ read. The actual ordered streams and serialized inventory data also participate 
 so changing the records or order being navigated invalidates an old token. The command stores no
 sessions, cursors, or source snapshots and runs no project code.
 
-The minor-mode guide uses bounded packets for task reading and tells the agent to finish relevant
-fragments and inspect the stated frontier and findings, including warnings about missing code. Full graph tools remain available for deliberate
+The minor-mode guide lists packets beside `scope` for whole-chain machine inspection; its reading
+path is contents first, then one passage (§tools.spec/mode-reading). Full graph tools remain available for deliberate
 machine inspection and review. No new mandatory assessment or release gate is introduced here.
 
 ### Reading a packet

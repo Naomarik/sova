@@ -22,7 +22,7 @@ import { approve, defHashOf } from "./trust";
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-ports-grace-agent-"));
 
 const op: Caller = { kind: "operator" };
-const LATE_MS = 2_500;
+const LATE_MS = 1_000;
 const isFree = (port: number) => new Promise<boolean>((done) => { const s = createServer(); s.once("error", () => done(false)); s.listen(port, "127.0.0.1", () => s.close(() => done(true))); });
 const listens = (port: number) => new Promise<boolean>((done) => { const s = connect(port, "127.0.0.1"); s.once("connect", () => (s.destroy(), done(true))); s.once("error", () => done(false)); });
 async function pickBase(): Promise<number> {

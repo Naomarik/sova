@@ -141,7 +141,11 @@ implementing, not only while a question is open:
   skipped. A click sends one ordinary message naming the alignment and the phase, as Go With
   Recommendations does, blocked the same way. Once a phase ran, its verdict line shows in place of
   its button; no button grants a second round.
-- While the plan review runs, Go With Recommendations is disabled ("Wait for the plan review.").
+- While the plan review runs, the card shows only its header and one status line, led by the live
+  dot: "Plan review in progress — the alignment may change; it shows once the review finishes.",
+  with the reviewer's model beside it when recorded. The summary, approach, questions with their
+  options, the folded sections and the whole foot stay hidden until the review records its
+  verdict, because the review may still change any of them.
 - With no reviewer set for the chat's profile, the button is disabled with that reason.
 
 ## §chat.alignment-review/tui — In the TUI

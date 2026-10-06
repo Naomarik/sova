@@ -89,5 +89,4 @@ export function reviewFoot(doc: Pick<AlignDocInfo, "phase" | "review">): { kind:
 
 /** While the plan review runs, Go With Recommendations waits. */
 export const planReviewRunning = (doc: Pick<AlignDocInfo, "review">): boolean => doc.review?.plan?.state === "running";
-export const PLAN_REVIEW_WAIT = "Wait for the plan review.";
 export const NO_REVIEWER = "No reviewer is set for this chat's subagent profile (Settings → Subagents → Reviewer).";

@@ -10,7 +10,6 @@ import {
   createRowPress,
   type DragInfo,
   dropAction,
-  dropHint,
   DROP_LIST_FIT,
   dropListLayout,
   dropTiles,
@@ -194,8 +193,6 @@ test("a grouped row: its group is Current and inert, and Remove names the group"
   assert.deepEqual(dropAction("g1", t), { kind: "none" }, "a drop on the group it is in does nothing");
   assert.deepEqual(dropAction(REMOVE_TILE, t), { kind: "group", groupId: null });
   assert.deepEqual(dropAction("g2", t), { kind: "group", groupId: "g2" });
-  assert.equal(dropHint("g2", info({ groupId: "g1" })), "Drop to move here");
-  assert.equal(dropHint("g2", info()), "Drop to add here");
 });
 
 test("an organization session: groups and New group refused once, in words; out of a group still works", () => {

@@ -12,7 +12,6 @@ import {
   autoScrollStep,
   CANCEL_TILE,
   type DragInfo,
-  dropHint,
   DROP_LIST_FIT,
   dropListLayout,
   dropTiles,
@@ -217,9 +216,6 @@ export function DropOverlay(props: {
       <Show when={drag()}>
         {(d) => {
           const t = () => tiles()!;
-          /** The second line: what a drop does while the tile is under the pointer, else its resting words. */
-          const line = (id: TileId, resting: string | null, disabled: string | null) =>
-            over() === id ? (disabled ?? dropHint(id, d())) : resting;
           // The list is its own size, centred: session-row targets in one column, then 2 and 3,
           // then shorter rows, then a scroll (dropListLayout). The room it may take is the window
           // less the overlay's margins and the panel's own head, bar and padding.
@@ -285,7 +281,7 @@ export function DropOverlay(props: {
                       title={t().newDisabled ?? undefined}
                     >
                       <Icon name="plus" class="drop-tile-icon" />
-                      <Words name="New group" line={line(NEW_TILE, t().groups.length === 0 && !t().newDisabled ? NO_GROUPS_LINE : null, t().newDisabled)} />
+                      <Words name="New group" line={t().groups.length === 0 && !t().newDisabled ? NO_GROUPS_LINE : null} />
                     </div>
                     <Show when={t().remove}>
                       {(r) => (
@@ -296,7 +292,7 @@ export function DropOverlay(props: {
                           title={`Remove from ${quoted(r().name)}`}
                         >
                           <Icon name="close" class="drop-tile-icon" />
-                          <Words name={<>Remove from {quoted(r().name)}</>} line={line(REMOVE_TILE, null, null)} />
+                          <Words name={<>Remove from {quoted(r().name)}</>} line={null} />
                         </div>
                       )}
                     </Show>
@@ -313,7 +309,7 @@ export function DropOverlay(props: {
                           <Words
                             name={<bdi>{g.name}</bdi>}
                             badge={g.current ? <span class="chip drop-tile-chip">Current</span> : undefined}
-                            line={g.current ? groupCountLabel(g.count) : line(g.id, groupCountLabel(g.count), g.disabled)}
+                            line={groupCountLabel(g.count)}
                           />
                         </div>
                       )}
@@ -329,7 +325,7 @@ export function DropOverlay(props: {
                       onClick={() => finish(null)}
                     >
                       <Icon name="close" class="drop-tile-icon" />
-                      <Words name="Cancel" line={over() === CANCEL_TILE ? dropHint(CANCEL_TILE, d()) : null} />
+                      <Words name="Cancel" line={null} />
                     </button>
                     <div
                       class="drop-tile drop-tile-archive"
@@ -338,7 +334,7 @@ export function DropOverlay(props: {
                       aria-disabled={t().archiveDisabled ? "true" : undefined}
                     >
                       <Icon name="archive" class="drop-tile-icon" />
-                      <Words name="Archive" line={t().archiveDisabled ?? (over() === ARCHIVE_TILE ? dropHint(ARCHIVE_TILE, d()) : null)} />
+                      <Words name="Archive" line={t().archiveDisabled} />
                     </div>
                   </div>
                 </div>

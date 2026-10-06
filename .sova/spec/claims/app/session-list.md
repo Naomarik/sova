@@ -1238,10 +1238,10 @@ is the same gesture with a mouse and a thumb: one Pointer Events path. The pure 
   go to cancel" over nothing. The card has `pointer-events: none`, and hit-testing reads the
   tiles' own rectangles at the pointer, so the card never stands between the pointer and a tile.
   The tile hit is the one under the pointer, never the one under the card's centre.
-- **The target under the pointer** takes the accent tint, an accent border and a 1.5px accent outline, and its second
-  line changes to what a drop does ("Drop to move here", "Drop to add here", "Drop to remove",
-  "Drop to name a new group"). Hue is never the only sign of it. Archive under the pointer is
-  outlined in error with the error tint and reads "Drop to archive"; `Cancel` reads "Drop to cancel".
+- **The target under the pointer** takes the accent tint, an accent border and a 1.5px accent outline; Archive
+  takes the error tint and an error outline, and `Cancel` the sunken look. Its words never change
+  and it doesn't move or resize by a pixel: what a drop does is the floating card's line. Hue is
+  never the only sign of it: the outline and that line say it too.
 - **The row's current group** is marked `Current` and inert: a drop there does nothing.
 - **Tiles that can't take the row are disabled, and say why in words.** The overlay always
   opens. An organization session can't join a group: the new-group and group tiles are disabled,

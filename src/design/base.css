@@ -2068,8 +2068,9 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
   gap: var(--space-3);           /* the destructive target never touches Cancel */
 }
 
-/* A target: a session row's shape — an icon, the name on the first line, what it holds (or, under
-   the pointer, what a drop does) on the second, each one line. The full name is its title. */
+/* A target: a session row's shape — an icon, the name on the first line, what it holds on the
+   second, each one line. The full name is its title. Under the pointer only colour and outline
+   change, never the words or the box: what a drop does is the floating card's line. */
 .drop-tile {
   display: flex;
   align-items: center;
@@ -2123,9 +2124,9 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
 /* Unavailable or current: quiet, and the words say which. */
 .drop-tile[aria-disabled="true"] { border-color: var(--color-border); background: var(--color-sunken); color: var(--color-ink-muted); }
 .drop-tile[aria-disabled="true"] .drop-tile-icon { color: var(--color-ink-muted); }
-/* The bar's targets: 48px, over the 44px floor, with room for a label and one line, so a
-   line appearing under the pointer doesn't move the bar. Archive's reason is there from the
-   start and is read whole: it wraps, and the bar is as tall as it needs. */
+/* The bar's targets: 48px, over the 44px floor, with room for a label and one line.
+   Archive's reason is there from the start and is read whole: it wraps, and the bar is as
+   tall as it needs. */
 .drop-tile-archive,
 .drop-tile-cancel { min-height: 48px; justify-content: center; padding-block: var(--space-1); cursor: default; }
 .drop-tile-archive .drop-tile-words,

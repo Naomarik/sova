@@ -204,15 +204,6 @@ export function dropAction(tile: TileId | null, t: DropTiles): DropAction {
   return g.disabled ? { kind: "refused", reason: g.disabled } : { kind: "group", groupId: g.id };
 }
 
-/** The second line a tile shows under the pointer: what a drop does, in words, never hue alone. */
-export function dropHint(tile: TileId, d: DragInfo): string {
-  if (tile === NEW_TILE) return "Drop to name a new group";
-  if (tile === REMOVE_TILE) return "Drop to remove";
-  if (tile === ARCHIVE_TILE) return "Drop to archive";
-  if (tile === CANCEL_TILE) return "Drop to cancel";
-  return d.groupId && !d.peer ? "Drop to move here" : "Drop to add here";
-}
-
 /** `+ New group`'s resting second line when there is no group yet: the live fact, then what to do. */
 export const NO_GROUPS_LINE = "No groups yet. Drop here to start one.";
 

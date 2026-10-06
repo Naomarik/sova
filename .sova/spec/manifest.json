@@ -712,6 +712,9 @@
       "evidence": "verified",
       "code": [
         "src/design/base.css"
+      ],
+      "about": [
+        "§chat.composer/anatomy"
       ]
     },
     "§chat.context-window/exact-numbers": {
@@ -812,12 +815,26 @@
         "§design.copy-deck/images"
       ],
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/Composer.tsx",
+        "src/lib/images.ts",
+        "server/attachments.ts",
+        "server/index.ts",
+        "src/design/base.css",
+        "server/drafts.ts"
+      ]
     },
     "§chat.images/lightbox": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/Lightbox.tsx",
+        "src/design/base.css",
+        "src/components/ImageStrip.tsx",
+        "src/lib/ui-state.ts"
+      ]
     },
     "§chat.images/path-attachments": {
       "kind": "behavior",
@@ -896,8 +913,12 @@
     },
     "§chat.mode-menu/rejected": {
       "kind": "note",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "about": [
+        "§chat.mode-menu/trigger",
+        "§chat.mode-menu/how-a-switch-reaches-the-chat"
+      ]
     },
     "§chat.mode-menu/states": {
       "kind": "behavior",
@@ -909,8 +930,12 @@
     },
     "§chat.mode-menu/tokens": {
       "kind": "note",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "about": [
+        "§chat.mode-menu/trigger",
+        "§chat.mode-menu/menu"
+      ]
     },
     "§chat.mode-menu/trigger": {
       "kind": "behavior",
@@ -934,8 +959,12 @@
     },
     "§chat.model-menu/contrast": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/design/tokens.css",
+        "src/design/base.css"
+      ]
     },
     "§chat.model-menu/errors": {
       "kind": "behavior",
@@ -984,8 +1013,11 @@
     },
     "§chat.model-menu/tokens": {
       "kind": "note",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "about": [
+        "§chat.model-menu/menu"
+      ]
     },
     "§chat.model-menu/trigger": {
       "kind": "behavior",
@@ -1015,8 +1047,12 @@
     },
     "§chat.slash-commands/contrast": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/design/tokens.css",
+        "src/design/base.css"
+      ]
     },
     "§chat.slash-commands/filtering-and-order": {
       "kind": "behavior",
@@ -1056,13 +1092,20 @@
     },
     "§chat.slash-commands/tokens": {
       "kind": "note",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "about": [
+        "§chat.slash-commands/markup"
+      ]
     },
     "§chat.slash-commands/when-the-menu-opens": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/lib/slash.ts",
+        "src/components/Composer.tsx"
+      ]
     },
     "§chat.timeline/accessibility": {
       "kind": "behavior",
@@ -1294,7 +1337,10 @@
     "§chat/composer": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/Composer.tsx"
+      ]
     },
     "§chat/context-window": {
       "kind": "surface",
@@ -1337,12 +1383,24 @@
     "§chat/model-menu": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/ModelMenu.tsx",
+        "src/components/ComposerMenu.tsx",
+        "src/components/SessionView.tsx"
+      ]
     },
     "§chat/slash-commands": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "code": [
+        "server/chat-manager.ts",
+        "shared/protocol.ts",
+        "src/lib/slash.ts",
+        "src/components/SlashMenu.tsx",
+        "src/components/ChatView.tsx"
+      ]
     },
     "§chat/timeline": {
       "kind": "surface",
@@ -1365,6 +1423,9 @@
         "src/components/ChatView.tsx",
         "src/components/SessionView.tsx",
         "src/lib/placeholder-fit.ts"
+      ],
+      "about": [
+        "§chat/composer"
       ]
     },
     "§design.copy-deck/composer-flyout": {
@@ -1373,6 +1434,9 @@
       "evidence": "verified",
       "code": [
         "src/components/ComposerMenu.tsx"
+      ],
+      "about": [
+        "§chat.composer/composer-flyout"
       ]
     },
     "§design.copy-deck/connection": {
@@ -1392,7 +1456,10 @@
     "§design.copy-deck/images": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "about": [
+        "§chat/images"
+      ]
     },
     "§design.copy-deck/insights": {
       "kind": "note",
@@ -1421,32 +1488,52 @@
     "§design.copy-deck/message-actions": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "about": [
+        "§chat.transcript/message-actions"
+      ]
     },
     "§design.copy-deck/mode-menu": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "verified"
+      "evidence": "verified",
+      "about": [
+        "§chat/mode-menu"
+      ]
     },
     "§design.copy-deck/model-menu": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "about": [
+        "§chat/model-menu"
+      ]
     },
     "§design.copy-deck/new-session-dialog": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "verified"
+      "evidence": "verified",
+      "about": [
+        "§app/new-session-dialog"
+      ]
     },
     "§design.copy-deck/settings-modes-delegate": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "reviewed"
+      "evidence": "reviewed",
+      "about": [
+        "§app.settings-dialog/modes",
+        "§chat.subagent-profiles/settings",
+        "§app.settings-dialog/save-bar"
+      ]
     },
     "§design.copy-deck/settings-themes": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "about": [
+        "§app.settings-dialog/themes"
+      ]
     },
     "§design.copy-deck/sidebar": {
       "kind": "note",
@@ -1465,7 +1552,10 @@
     "§design.copy-deck/slash-commands": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "about": [
+        "§chat/slash-commands"
+      ]
     },
     "§design.copy-deck/subagents-pane": {
       "kind": "note",
@@ -1491,7 +1581,8 @@
     "§design.ground-rules/color-budget": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "reviewed"
+      "evidence": "reviewed",
+      "core": true
     },
     "§design.ground-rules/icons": {
       "kind": "note",
@@ -1537,8 +1628,9 @@
     },
     "§design.ground-rules/voice": {
       "kind": "note",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "core": true
     },
     "§design.overview/class-index": {
       "kind": "note",
@@ -1913,6 +2005,10 @@
         "pi-config/extensions/sandbox/tools.ts",
         "pi-config/extensions/sandbox/backends/linux-bwrap.ts",
         "pi-config/extensions/sandbox/backends/darwin-seatbelt.ts"
+      ],
+      "about": [
+        "§chat.sandbox/what-on-enforces",
+        "§chat.sandbox/claude-state"
       ]
     },
     "§chat.sandbox/off-is-today": {
@@ -3380,7 +3476,10 @@
     "§design.copy-deck/settings-decisions": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "reviewed"
+      "evidence": "reviewed",
+      "about": [
+        "§app.settings-dialog/decisions"
+      ]
     },
     "§chat.model-menu/saved-default": {
       "kind": "behavior",
@@ -3911,7 +4010,10 @@
     "§design.copy-deck/settings-experimental": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "reviewed"
+      "evidence": "reviewed",
+      "about": [
+        "§app.settings-dialog/save-bar"
+      ]
     },
     "§design.copy-deck/settings-mesh": {
       "kind": "note",
@@ -3921,7 +4023,10 @@
     "§design.copy-deck/settings-models": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "reviewed"
+      "evidence": "reviewed",
+      "about": [
+        "§app.settings-dialog/models"
+      ]
     },
     "§app.settings-dialog/summaries": {
       "kind": "behavior",
@@ -5455,6 +5560,10 @@
       "code": [
         "src/components/ProjectPage.tsx",
         "src/components/ProjectOverseerPanel.tsx"
+      ],
+      "about": [
+        "§app.organizations/stakeholder",
+        "§app.project-overseer/identity"
       ]
     },
     "§app.insights/summary-sections": {
@@ -7953,6 +8062,12 @@
         "src/components/VoiceModels.tsx",
         "src/components/VoiceCalibration.tsx",
         "src/lib/voice/voice.test.ts"
+      ],
+      "about": [
+        "§app.settings-dialog/voice",
+        "§app.settings-dialog/voice-models",
+        "§app.settings-dialog/voice-calibration",
+        "§app.settings-dialog/voice-clip-check"
       ]
     },
     "§chat.composer/file-index-deadline": {
@@ -8708,6 +8823,9 @@
         "src/components/SharesPage.tsx",
         "src/components/SessionDetails.tsx",
         "src/lib/session-shares.ts"
+      ],
+      "about": [
+        "§app/session-share"
       ]
     },
     "§chat.sandbox/claude-state": {
@@ -9286,7 +9404,11 @@
     "§design.copy-deck/settings-overseer": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "reviewed"
+      "evidence": "reviewed",
+      "about": [
+        "§app.settings-dialog/overseer",
+        "§app.notifications/settings"
+      ]
     },
     "§mesh.public/listener-failure": {
       "kind": "behavior",
@@ -11456,7 +11578,8 @@
         "pi-config/extensions/mode/index.test.ts",
         "pi-config/extensions/mode/README.md",
         "pi-config/extensions/spec/README.md",
-        "pi-config/extensions/spec/core/README.md"
+        "pi-config/extensions/spec/core/README.md",
+        "pi-config/extensions/spec/tests/usage.test.mjs"
       ]
     },
     "§app.session-list/group-picker": {
@@ -11567,7 +11690,8 @@
       ],
       "requires": [],
       "authority": "accepted",
-      "evidence": "verified"
+      "evidence": "verified",
+      "core": true
     },
     "§mesh.public/visitor-log": {
       "kind": "behavior",
@@ -12882,7 +13006,11 @@
     "§design.copy-deck/worktree-cleanup": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "verified"
+      "evidence": "verified",
+      "about": [
+        "§chat.transcript/empty-worktrees",
+        "§chat.worktrees/cleanup"
+      ]
     },
     "§app.session-list/listing-reuse": {
       "kind": "behavior",
@@ -12941,7 +13069,9 @@
       "evidence": "verified",
       "requires": [
         "§chat.playbooks/bundles",
-        "§tools.spec/assessment-observations"
+        "§tools.spec/assessment-observations",
+        "§tools.spec/mode-reading",
+        "§tools.spec/frame"
       ],
       "code": [
         "playbooks/spec-review/PLAYBOOK.md",
@@ -13837,7 +13967,8 @@
     "§app.harness/new-work": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "reviewed"
+      "evidence": "reviewed",
+      "core": true
     },
     "§app.harness/reader": {
       "kind": "behavior",
@@ -14027,7 +14158,8 @@
       "requires": [
         "§app.harness/reader",
         "§app.harness/boundary"
-      ]
+      ],
+      "core": true
     },
     "§app.harness/tools": {
       "kind": "behavior",
@@ -14284,6 +14416,252 @@
         "server/chat-manager.ts",
         "server/session-summary-chat.test.ts",
         "server/claude-login-state.ts"
+      ]
+    },
+    "§tools.spec/span-promotion": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/promotion-integrity"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+        "pi-config/extensions/spec/tests/draft-span.test.mjs",
+        "pi-config/extensions/spec/DRAFTS.md",
+        "pi-config/extensions/spec/PROMOTE.md",
+        "pi-config/extensions/spec/README.md"
+      ]
+    },
+    "§tools.spec/contents-view": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/context-packets",
+        "§tools.spec/inspection-safety"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/toc.mjs",
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/tests/toc.test.mjs",
+        "pi-config/extensions/spec/core/README.md",
+        "pi-config/extensions/spec/README.md",
+        "pi-config/extensions/spec/tests/frame.test.mjs"
+      ]
+    },
+    "§tools.spec/single-read": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/contents-view",
+        "§tools.spec/context-packets"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/read.mjs",
+        "pi-config/extensions/spec/core/toc.mjs",
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/tests/toc.test.mjs",
+        "pi-config/extensions/spec/core/README.md"
+      ]
+    },
+    "§tools.spec/frame": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/record-fields",
+        "§tools.spec/context-packets",
+        "§tools.spec/single-read"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/fields.mjs",
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/core/packet.mjs",
+        "pi-config/extensions/spec/core/read.mjs",
+        "pi-config/extensions/spec/tests/frame.test.mjs",
+        "pi-config/extensions/spec/core/toc.mjs",
+        "pi-config/extensions/spec/core/README.md"
+      ]
+    },
+    "§tools.spec/record-fields": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/context-packets",
+        "§tools.spec/contents-view",
+        "§tools.spec/single-read"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/fields.mjs",
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/core/toc.mjs",
+        "pi-config/extensions/spec/core/read.mjs",
+        "pi-config/extensions/spec/tests/frame.test.mjs",
+        "pi-config/extensions/spec/core/packet.mjs",
+        "pi-config/extensions/spec/core/README.md",
+        "pi-config/extensions/spec/README.md"
+      ]
+    },
+    "§tools.spec/graph-payload": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/contents-view",
+        "§tools.spec/record-fields",
+        "§tools.spec/agreed-promotion"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/core/graph.mjs",
+        "pi-config/extensions/spec/tests/map-fixture.mjs",
+        "pi-config/extensions/spec/core/README.md",
+        "pi-config/extensions/spec/tests/map.test.mjs",
+        "pi-config/extensions/spec/README.md",
+        "pi-config/extensions/spec/tests/map-fields.test.mjs"
+      ]
+    },
+    "§tools.spec/near-impact": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/contents-view",
+        "§tools.spec/record-fields"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/core/graph.mjs",
+        "pi-config/extensions/spec/tests/map-fixture.mjs",
+        "pi-config/extensions/spec/core/README.md",
+        "pi-config/extensions/spec/tests/map.test.mjs",
+        "pi-config/extensions/spec/tests/map-fields.test.mjs"
+      ]
+    },
+    "§tools.spec/spec-map": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/contents-view",
+        "§tools.spec/where-lookup",
+        "§tools.spec/record-fields",
+        "§tools.spec/agreed-promotion"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/map.mjs",
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/core/graph.mjs",
+        "pi-config/extensions/spec/tests/map-fixture.mjs",
+        "pi-config/extensions/spec/core/README.md",
+        "pi-config/extensions/spec/tests/map.test.mjs",
+        "pi-config/extensions/spec/README.md",
+        "pi-config/extensions/spec/tests/map-fields.test.mjs"
+      ]
+    },
+    "§tools.spec/where-lookup": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/contents-view",
+        "§tools.spec/inspection-safety"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/where.mjs",
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/core/graph.mjs",
+        "pi-config/extensions/spec/tests/map-fixture.mjs",
+        "pi-config/extensions/spec/core/README.md",
+        "pi-config/extensions/spec/tests/where.test.mjs",
+        "pi-config/extensions/spec/README.md"
+      ]
+    },
+    "§tools.spec/agreed-promotion": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "requires": [
+        "§tools.spec/promotion-integrity"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+        "pi-config/extensions/spec/tests/agreed.test.mjs",
+        "pi-config/extensions/spec/DRAFTS.md",
+        "pi-config/extensions/spec/PROMOTE.md"
+      ],
+      "evidence": "verified"
+    },
+    "§tools.spec/field-promotion": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/promotion-integrity",
+        "§tools.spec/record-fields",
+        "§tools.spec/agreed-promotion"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+        "pi-config/extensions/spec/tests/draft-fields.test.mjs",
+        "pi-config/extensions/spec/DRAFTS.md",
+        "pi-config/extensions/spec/PROMOTE.md"
+      ]
+    },
+    "§tools.spec/mode-reading": {
+      "kind": "behavior",
+      "requires": [
+        "§tools.spec/contents-view",
+        "§tools.spec/single-read",
+        "§tools.spec/near-impact",
+        "§tools.spec/spec-map",
+        "§tools.spec/where-lookup",
+        "§tools.spec/frame",
+        "§tools.spec/context-packets",
+        "§tools.spec/field-promotion"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/mode/spec-mode.md",
+        "pi-config/extensions/mode/spec-guard.ts",
+        "pi-config/extensions/subagents/spec-brief.ts",
+        "pi-config/extensions/subagents/spec-brief.test.ts",
+        "pi-config/extensions/mode/index.test.ts"
+      ]
+    },
+    "§chat.model-menu/favorites": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.model-menu/content-and-order"
+      ],
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/ModelMenu.tsx",
+        "src/lib/models.ts",
+        "server/model-favorites.ts",
+        "src/design/base.css"
+      ]
+    },
+    "§app.server-runtime/test-repo-fence": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "scripts/run-tests.mjs",
+        "pi-config/extensions/claude-code/tests/hermetic-env.mjs",
+        "server/test-scratch.ts",
+        "server/test-repo-fence.test.ts",
+        "server/reconcile.test.ts",
+        "server/project-coding-runtime.test.ts",
+        "server/overseer-org-tools.test.ts",
+        "server/org-about-privacy.test.ts",
+        "CLAUDE.md"
+      ],
+      "requires": [
+        "§app.server-runtime/choice"
       ]
     }
   },

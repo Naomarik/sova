@@ -6,15 +6,16 @@
 // session was created, its worktree cut and its mode set — which is what is checked.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, describe, test } from "node:test";
 import { piSession } from "./harness/pi/testing/handle";
+import { scratchRoot } from "./test-scratch";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const tmp = realpathSync(mkdtempSync(join(tmpdir(), "sova-po-coding-")));
+// In no repository: the Plain project's coding sessions cut no worktree, and Portal's go in its own repo.
+const tmp = scratchRoot("sova-po-coding-");
 // A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
 process.on("exit", () => rmSync(tmp, { recursive: true, force: true }));
 const agentDir = join(tmp, "agent");

@@ -4,11 +4,22 @@
 // falls back to "the host's" agent dir or Claude directory (hostLogins(), leases, the state file,
 // usage readers) would read or write the real ones. Importing this module first points HOME at a
 // fresh temp dir per process (removed at exit) and drops every variable naming a real directory, so
-// the agent dir and `~/.claude` resolve inside it. Runners import it (`tests/run.mjs`, `test.mjs`),
+// the agent dir and `~/.claude` resolve inside it, and stops git's repository search at the temp dir,
+// so no test reaches a repository it didn't create. Runners import it (`tests/run.mjs`, `test.mjs`),
 // and `pnpm test` loads it with `--import`. `scripts/test-sentinel.mjs` proves it holds.
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+
+/** What points git at a repository whatever its cwd. `scripts/run-tests.mjs` drops the same list. */
+const GIT_LOCATION_VARS = ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_NAMESPACE", "GIT_PREFIX"];
+
+/** GIT_CEILING_DIRECTORIES: the temp dir and the folder above it (real paths, never `/`), then any inherited. */
+function gitCeilings(inherited) {
+	const tmp = fs.realpathSync(os.tmpdir());
+	const dirs = [tmp, path.dirname(tmp), ...(inherited ?? "").split(path.delimiter)].filter((d) => d && d !== path.parse(d).root);
+	return [...new Set(dirs)].join(path.delimiter);
+}
 
 // A launcher that already made the throwaway home and put it in the ENVIRONMENT before the runtime
 // started (`scripts/run-tests.mjs --runtime bun`, for runtimes whose os.homedir() ignores a later HOME change)
@@ -31,7 +42,14 @@ for (const name of [
 	"XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME",
 	// Not the host's device, mesh identity or login dev switch either.
 	"SOVA_DEVICE_ID", "SOVA_MESH_IDENTITY", "SOVA_CLAUDE_ACCOUNTS_DEV",
+	// Nor a repository: these point every git a test starts at one (a run from a git hook sets them).
+	...GIT_LOCATION_VARS,
 ]) delete process.env[name];
+// Git started from a test's temp folder never looks above the temp dir: a plain folder a test makes
+// stays plain, wherever TMPDIR is. Without this, a TMPDIR inside a checkout made every such folder that
+// checkout's, and tests promoted decisions and cut coding worktrees in it. Listing the folder above
+// too stops a git started in the temp dir itself.
+process.env.GIT_CEILING_DIRECTORIES = gitCeilings(process.env.GIT_CEILING_DIRECTORIES);
 process.env.SOVA_TEST_HOME = root;
 if (!inherited) process.on("exit", () => {
 	try { fs.rmSync(root, { recursive: true, force: true }); } catch { /* best effort */ }

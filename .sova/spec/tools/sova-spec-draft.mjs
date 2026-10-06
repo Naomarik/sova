@@ -17,8 +17,8 @@
 //       selection incomplete, lock held, pending transaction, race); 2 cannot (usage, corrupt draft,
 //       symlink, core contract, Git unusable).
 // Limits, stated honestly: the machine checks bytes, revisions and graph structure, never that code
-// implements prose; evidence text is the recorder's claim. Prose is merged by whole file: a file changed
-// on both sides is a conflict, never auto-merged. The lock and the before-hash checks keep COOPERATING
+// implements prose; evidence text is the recorder's claim. Prose is merged per declaration (H1 lede or H2
+// span): one changed on both sides, differently, is a conflict, never merged as text. The lock and the before-hash checks keep COOPERATING
 // writers apart; a writer racing between a check and a rename, or a parent directory swapped for a
 // symlink, is not fully prevented with portable fs calls.
 import { open, lstat, mkdir, writeFile, rename, link, unlink, rm, readdir, rmdir, mkdtemp } from "node:fs/promises";
@@ -40,6 +40,12 @@ const ID_RE = /^§[a-z][a-z-]*(?:\.[a-z][a-z-]*)?\/[a-z][a-z-]*$/;
 const HEX = /^[0-9a-f]{64}$/;
 // Kinds that carry no implementation: their prose may be promoted on --doc-only evidence.
 const DOC_ONLY_KINDS = new Set(["note", "section"]);
+// Kinds whose record may say who decided it, and when, before it is built (`agreed: {by, at}`); with no `code`
+// such a record may land on --doc-only evidence too. Built = `code` plus one of BUILT_LABELS as its `evidence`.
+const AGREED_KINDS = new Set(["behavior", "surface"]), BUILT_LABELS = new Set(["reviewed", "verified"]);
+// Record fields that only route reading (§ edges and the frame flag): a change to them alone may land on --doc-only.
+const FIELD_KEYS = ["about", "core", "embeds"];
+const AGREED_AT = /^(\d{4}-\d{2}-\d{2})(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2}))?$/;
 const STARTER = JSON.stringify({ formatVersion: 1, claims: {} }, null, 2) + "\n";
 const SECRET_DIRS = new Set([".git", ".hg", ".svn", ".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker"]);
 // Credential data by name (secrets.json, .env, id_rsa…), not source or docs named after secrets (secrets.ts, secrets.md).
@@ -424,7 +430,116 @@ function merge3(b, c, p) {
   if (c === b) return "apply";        // only the draft changed it
   return "conflict";                  // both changed it, differently
 }
+// One claim file cut at its declarations' spans (the core's lines): the bytes before the first one, then each
+// declaration's span and the gap after it (the blank lines up to the next one, or the file's tail). The pieces
+// concatenate back to the file exactly. → {pre, spans: [{id, text, gap}]} | null (not cut: CR, no or overlapping spans)
+function cutFile(buf, decls, path) {
+  const s = buf.toString("utf8");
+  if (s.includes("\r") || !Buffer.from(s, "utf8").equals(buf)) return null;
+  const ds = [...decls].filter(([, d]) => d.file === path && Array.isArray(d.lines)).map(([id, d]) => ({ id, a: d.lines[0], b: d.lines[1] })).sort((x, y) => x.a - y.a);
+  if (!ds.length || ds.some((d, k) => !(d.a >= 1 && d.b >= d.a && (k === 0 || ds[k - 1].b < d.a)))) return null;
+  const off = [0];
+  for (const l of s.split("\n")) off.push(Math.min(off.at(-1) + l.length + 1, s.length));
+  if (ds.at(-1).b >= off.length) return null;
+  const spans = ds.map((d, k) => ({ id: d.id, text: s.slice(off[d.a - 1], off[d.b]), gap: s.slice(off[d.b], k + 1 < ds.length ? off[ds[k + 1].a - 1] : s.length) }));
+  const pre = s.slice(0, off[ds[0].a - 1]);
+  return pre + spans.map((x) => x.text + x.gap).join("") === s ? { pre, spans } : null;
+}
+// Three-way merge of one claim file per declaration. Each declaration's span and the gap after it merge as their
+// own units; the bytes before the lede are one more. Declarations new on either side hang off the nearest kept
+// declaration before them; when both sides add after the same one, each side's run stays whole and the run whose
+// first id sorts first goes first. → {text, ids: Map id→span text} | {conflicts: [what]} | null (whole-file conflict)
+function mergeSpans(B, C, P) {
+  const conflicts = [];
+  const m3 = (b, c, p, what) => { if (p === b || c === p) return c; if (c === b) return p; conflicts.push(what); return c; };
+  const byId = (x) => new Map(x.spans.map((s, k) => [s.id, { ...s, next: x.spans[k + 1]?.id ?? null }]));
+  const b = byId(B), c = byId(C), p = byId(P);
+  const pre = m3(B.pre, C.pre, P.pre, "the bytes before the lede");
+  const kept = new Map(); // base id → merged {text, gap}
+  for (const { id } of B.spans) {
+    const x = b.get(id), y = c.get(id), z = p.get(id);
+    if (y && z) kept.set(id, { text: m3(x.text, y.text, z.text, id), gap: m3(x.gap, y.gap, z.gap, `the blank lines after ${id}`) });
+    else if (y && y.text !== x.text) conflicts.push(`${id} (changed in current, deleted in the draft)`);
+    else if (z && z.text !== x.text) conflicts.push(`${id} (deleted in current, changed in the draft)`);
+  }
+  // Kept declarations must keep base order on both sides; a reorder is merged as a whole file.
+  const order = (x) => x.spans.map((s) => s.id).filter((id) => kept.has(id)).join("\n");
+  if (order(C) !== order(B) || order(P) !== order(B)) return null;
+  // Runs of new declarations, keyed by the kept (base) declaration they follow ("" = file start).
+  const runs = (x, side) => {
+    const out = new Map(); let anchor = "";
+    for (const s of x.spans) {
+      if (b.has(s.id)) { anchor = s.id; continue; }
+      if (anchor && !kept.has(anchor)) conflicts.push(`${s.id} (added after ${anchor}, which the other side deleted)`);
+      out.set(anchor, [...(out.get(anchor) ?? []), { ...s, side }]);
+    }
+    return out;
+  };
+  const rc = runs(C, "c"), rp = runs(P, "p");
+  const same = (u, v) => u.length === v.length && u.every((s, k) => s.id === v[k].id && s.text === v[k].text && s.gap === v[k].gap);
+  const both = new Set([...rc.values()].flat().map((s) => s.id).filter((id) => p.has(id) && !b.has(id)));
+  for (const id of both) {
+    const anchor = [...rc].find(([, r]) => r.some((s) => s.id === id))[0];
+    if (!rp.has(anchor) || !same(rc.get(anchor), rp.get(anchor))) conflicts.push(`${id} (added on both sides, differently)`);
+  }
+  if (conflicts.length) return { conflicts: uniqSorted(conflicts) };
+  const out = [];
+  for (const anchor of ["", ...B.spans.map((s) => s.id).filter((id) => kept.has(id))]) {
+    if (anchor) out.push({ id: anchor, ...kept.get(anchor), side: "k" });
+    const u = rc.get(anchor) ?? [], v = rp.get(anchor) ?? [];
+    if (same(u, v)) out.push(...u);
+    else out.push(...[u, v].filter((r) => r.length).sort((r1, r2) => (r1[0].id < r2[0].id ? -1 : 1)).flat());
+  }
+  // A declaration followed by one it was not followed by on any side gets a blank line before it.
+  const followed = (s, nextId) => s.side === "k" ? [b, c, p].some((m) => m.get(s.id)?.next === nextId) : (s.side === "c" ? c : p).get(s.id).next === nextId;
+  let text = pre;
+  out.forEach((s, k) => {
+    let piece = s.text + s.gap;
+    if (k + 1 < out.length && !followed(s, out[k + 1].id) && !piece.endsWith("\n\n")) piece += piece.endsWith("\n") ? "\n" : "\n\n";
+    text += piece;
+  });
+  return { text, ids: new Map(out.map((s) => [s.id, s.text])) };
+}
 const recOf = (t, id) => (t.manifest?.claims ?? {})[id];
+// A record's `agreed: {by, at}`: who made the decision, and when. → null (absent or well-formed) | what is wrong
+function agreedProblem(rec) {
+  if (rec?.agreed === undefined) return null;
+  const x = rec.agreed, day = obj(x) && typeof x.at === "string" ? AGREED_AT.exec(x.at)?.[1] : undefined;
+  if (!AGREED_KINDS.has(rec.kind)) return `agreed sits on a ${rec.kind}; only behavior and surface records are agreed before they are built`;
+  if (!obj(x) || Object.keys(x).some((k) => k !== "by" && k !== "at") || typeof x.by !== "string" || !x.by.trim() || !day ||
+      Number.isNaN(Date.parse(x.at)) || new Date(`${day}T00:00:00Z`).toISOString().slice(0, 10) !== day)
+    return `agreed must be {"by": "<who agreed>", "at": "<ISO date, optionally with a time>"}`;
+  return null;
+}
+// Why a changed ID cannot take --doc-only evidence → null when it can: notes and sections carry no implementation;
+// an agreed behavior or surface may land before it is built, while nothing in its record says it was.
+// A behavior or surface without `agreed` whose only change is to its embeds/about/core fields rewires what a
+// reader is handed, not what the code does: doc-only too. Anything else changed on it as well is bundled.
+// Judged by both kinds: a behavior or surface the draft turns into a note or section is not thereby doc-only.
+function docOnlyRefusal(c) {
+  if (c.baseKind && !DOC_ONLY_KINDS.has(c.baseKind) && DOC_ONLY_KINDS.has(c.kind))
+    return `kind changed from ${c.baseKind} to ${c.kind}: doc-only is judged by the kind current has too`;
+  if (DOC_ONLY_KINDS.has(c.kind)) return null;
+  if (c.agreed === undefined && c.fieldChange) return bundledOf(c);
+  if (c.agreed === undefined) return `kind ${c.kind} without agreed`;
+  if (c.agreedProblem) return `${c.kind}: ${c.agreedProblem}`;
+  if (c.code.length) return `${c.kind} that maps code: an agreed record that is built takes commit or snapshot evidence`;
+  if (BUILT_LABELS.has(c.evidenceLabel)) return `${c.kind} labelled evidence "${c.evidenceLabel}", which says it was built and checked`;
+  return null;
+}
+const bundledOf = (c) => c.fieldChange?.others.length
+  ? `${c.kind} whose ${c.fieldChange.fields.join("/")} change is bundled with ${c.fieldChange.others.join(", ")}: only a field-only change takes --doc-only`
+  : null;
+// What changed on a behavior or surface record besides FIELD_KEYS, when any of those changed. → {fields, others} | null
+function fieldChangeOf(c, b, p) {
+  if (!AGREED_KINDS.has(c.kind)) return null;
+  const keys = uniqSorted([...Object.keys(b ?? {}), ...Object.keys(p ?? {})]), differs = (k) => canon(b?.[k]) !== canon(p?.[k]);
+  const fields = FIELD_KEYS.filter(differs);
+  if (!fields.length) return null;
+  const others = [...(!b ? ["a new record"] : !p ? ["a deletion"] : []), ...(c.text || c.files.length ? ["prose"] : []),
+    ...keys.filter((k) => !FIELD_KEYS.includes(k) && differs(k)).map((k) => (k === "code" ? "the code list" : ["authority", "evidence"].includes(k) ? `the ${k} label` : k))];
+  return { fields, others };
+}
 async function analyze(root, name, readPolicy, inputSources) {
   const draft = await loadDraft(root, name, inputSources, readPolicy);
   const { d, rel, base } = draft;
@@ -443,6 +558,19 @@ async function analyze(root, name, readPolicy, inputSources) {
     if (b !== p && !changedIds.length) changedIds = ids; // bytes moved outside any span: every declaration in the file owns it
     return { path, base: b, current: c, proposed: p, merge: merge3(b, c, p), ids: b === p ? [] : changedIds };
   });
+  // A file both sides changed merges per declaration when all three graphs load and every side cuts cleanly.
+  const both = files.filter((f) => f.merge === "conflict" && f.base && f.current && f.proposed);
+  const cc = both.length && bc.exit !== 2 && pc.exit !== 2 ? await declsOf(root, SPEC, readPolicy, inputSources) : null;
+  for (const f of both) {
+    if (!cc || cc.exit === 2) continue;
+    const cuts = [[base, bc], [cur, cc], [prop, pc]].map(([t, x]) => cutFile(t.files.get(f.path).buf, x.decls, f.path));
+    const m = cuts.every(Boolean) ? mergeSpans(...cuts) : null;
+    if (!m) continue;
+    if (m.conflicts) { f.spanConflicts = m.conflicts; continue; }
+    const buf = Buffer.from(m.text, "utf8");
+    if (sha(buf) === f.current) { f.merge = "same"; continue; }
+    Object.assign(f, { merge: "merge", merged: { buf, sha256: sha(buf), ids: m.ids } });
+  }
   const records = uniqSorted([base, cur, prop].flatMap((t) => Object.keys(t.manifest?.claims ?? {}))).map((id) => {
     const b = canon(recOf(base, id)), c = canon(recOf(cur, id)), p = canon(recOf(prop, id));
     return { id, merge: merge3(b, c, p), base: b && sha(b), current: c && sha(c), proposed: p && sha(p) };
@@ -457,10 +585,12 @@ async function analyze(root, name, readPolicy, inputSources) {
   for (const f of files) for (const id of f.ids) { const t = touch(id); t.files.push(f.path); if (bc.decls.get(id)?.textSha256 !== pc.decls.get(id)?.textSha256) t.text = true; }
   for (const c of changed.values()) {
     const rec = recOf(prop, c.id) ?? recOf(base, c.id);
-    c.kind = rec?.kind ?? null;
+    c.kind = rec?.kind ?? null; c.baseKind = recOf(base, c.id)?.kind ?? null;
     c.deleted = recOf(prop, c.id) === undefined && !pc.decls.has(c.id);
     c.binding = { recordSha: recOf(prop, c.id) === undefined ? null : sha(canon(recOf(prop, c.id))), textSha256: pc.decls.get(c.id)?.textSha256 ?? null };
     c.code = uniqSorted((rec?.code ?? []).filter((p) => typeof p === "string"));
+    c.agreed = rec?.agreed; c.agreedProblem = agreedProblem(rec); c.evidenceLabel = rec?.evidence;
+    c.fieldChange = fieldChangeOf(c, recOf(base, c.id), recOf(prop, c.id));
   }
   return { ...draft, prop, cur, pc, bc, files, records, meta, changed };
 }
@@ -508,7 +638,8 @@ async function evidenceState(root, a, g, c) {
   const reasons = [];
   if (bound.recordSha !== c.binding.recordSha) reasons.push("the proposed record changed after evidence was recorded");
   if (bound.textSha256 !== c.binding.textSha256) reasons.push("the proposed prose changed after evidence was recorded");
-  if (e.mode === "doc-only" && !DOC_ONLY_KINDS.has(c.kind)) reasons.push(`--doc-only evidence does not cover kind ${c.kind}`);
+  const docOnly = e.mode === "doc-only" && docOnlyRefusal(c);
+  if (docOnly) reasons.push(`--doc-only evidence does not cover ${docOnly}`);
   if (e.mode !== "doc-only" && !c.deleted && !e.inputs.some((i) => i.state === "present"))
     reasons.push("evidence has no present implementation file");
   for (const p of c.code) if (e.mode !== "doc-only" && !e.inputs.some((i) => i.path === p && (c.deleted || i.state === "present")))
@@ -576,7 +707,7 @@ async function statusOut(root, a) {
     proposedGraph: { exit: a.pc.exit, errors: a.pc.findings.filter((f) => f.severity === "error") },
     ids, undeclaredFiles: undeclared,
     meta: a.meta.filter((m) => m.merge !== "unchanged"),
-    files: a.files.filter((f) => f.merge !== "unchanged" || f.base !== f.current),
+    files: a.files.filter((f) => f.merge !== "unchanged" || f.base !== f.current).map(({ merged, ...f }) => (merged ? { ...f, merged: merged.sha256 } : f)),
     currentMoved: a.files.filter((f) => f.base !== f.current).map((f) => f.path).concat(a.records.filter((r) => r.base !== r.current).map((r) => r.id)),
     promotions: a.d.promotions,
   };
@@ -753,7 +884,13 @@ async function cmdEvidence(root, o) {
       if (!c) throw new Fail(1, "not-changed", `${id} is not changed by draft ${o.name}; evidence binds to a proposed change`);
       return c;
     });
-    if (o["doc-only"]) { const bad = targets.filter((c) => !DOC_ONLY_KINDS.has(c.kind)); if (bad.length) throw new Fail(1, "doc-only-refused", `--doc-only covers only ${[...DOC_ONLY_KINDS].join("/")} kinds, not ${bad.map((c) => `${c.id} (${c.kind})`).join(", ")}`); }
+    if (o["doc-only"]) {
+      const bad = targets.filter((c) => docOnlyRefusal(c)), bundled = bad.filter((c) => docOnlyRefusal(c) === bundledOf(c));
+      if (bundled.length) throw new Fail(1, "doc-only-bundled", `--doc-only covers a change to ${FIELD_KEYS.join("/")} alone; ${bundled.map((c) => `${c.id} (${docOnlyRefusal(c)})`).join(", ")} — record --commit or --snapshot evidence, or split the field change into its own draft`);
+      if (bad.length) throw new Fail(1, "doc-only-refused", `--doc-only covers only ${[...DOC_ONLY_KINDS].join("/")} kinds, agreed ${[...AGREED_KINDS].join("/")} records with no code, and ${FIELD_KEYS.join("/")}-only changes, not ${bad.map((c) => `${c.id} (${docOnlyRefusal(c)})`).join(", ")}`);
+    }
+    const malformed = targets.filter((c) => !c.deleted && c.agreedProblem);
+    if (malformed.length) throw new Fail(1, "agreed-invalid", malformed.map((c) => `${c.id}: ${c.agreedProblem}`).join("; "));
     if (o.snapshot && g.git) throw new Fail(1, "git-requires-commit", "this is a Git project: name the implementation commit with --commit REV; without permission to commit, leave evidence pending and say so");
     if (o.commit !== undefined && !g.git) throw new Fail(1, "not-git", "this is not a Git project: use --snapshot to retain the implementation bytes");
     const paths = o["doc-only"] ? [] : uniqSorted([...targets.flatMap((c) => c.code), ...o.path]);
@@ -834,7 +971,7 @@ async function plan(root, o) {
   for (const f of files) { const missing = f.ids.filter((id) => !ids.has(id)); if (missing.length) refuse("selection-incomplete", `${f.path} also carries unselected changes to ${missing.join(", ")}; files move whole, so select them too (with their evidence) or revert them in the draft`); }
   const records = a.records.filter((r) => r.merge !== "unchanged" && ids.has(r.id));
   const meta = a.meta.filter((m) => m.merge !== "unchanged" && metaSel.has(m.key));
-  for (const u of [...files.map((f) => ({ what: f.path, merge: f.merge })), ...records.map((r) => ({ what: `record ${r.id}`, merge: r.merge })), ...meta.map((m) => ({ what: `manifest ${m.key}`, merge: m.merge }))])
+  for (const u of [...files.map((f) => ({ what: f.spanConflicts ? `${f.path}: ${f.spanConflicts.join(", ")}` : f.path, merge: f.merge })), ...records.map((r) => ({ what: `record ${r.id}`, merge: r.merge })), ...meta.map((m) => ({ what: `manifest ${m.key}`, merge: m.merge }))])
     if (u.merge === "conflict") refuse("conflict", `${u.what} changed in current since the draft was made, differently; current and draft are left as they are — bring the draft up to date by hand (or start a new draft) and retry`);
 
   // Every selected ID that stays current must say, explicitly, that it is not a proposal.
@@ -842,6 +979,15 @@ async function plan(root, o) {
     const auth = recOf(a.prop, id)?.authority;
     if (auth === "candidate") refuse("candidate-label", `${id} is still labelled authority "candidate" in the draft; a promoted record is current, so relabel it ("accepted" once the user adopted it) before recording evidence`);
     else if (auth !== "accepted" && auth !== "migrated") refuse("authority-missing", `${id} declares no authority label; set "authority": "accepted" (or keep "migrated" for ported text) in the draft record before recording evidence`);
+    const bad = agreedProblem(recOf(a.prop, id));
+    if (bad) refuse("agreed-invalid", `${id}: ${bad}`);
+    // `agreed` names who decided: the build and a rewording keep it; a new agreement replaces it only with reworded prose.
+    const was = recOf(a.cur, id)?.agreed, now = recOf(a.prop, id)?.agreed, r = a.records.find((x) => x.id === id);
+    if (was !== undefined && r?.merge === "apply" && canon(now) !== canon(was)) {
+      if (now === undefined) refuse("agreed-rewritten", `${id} was agreed ${JSON.stringify(was)} in current; agreed is removed only by deleting the whole record`);
+      else if (!a.changed.get(id).text) refuse("agreed-rewritten", `${id} was agreed ${JSON.stringify(was)} in current and its prose is unchanged; agreed is replaced only when the promotion rewords the prose it was given for`);
+      else if (!bad && obj(was) && typeof was.at === "string" && Date.parse(now.at) < Date.parse(was.at)) refuse("agreed-rewritten", `${id}: the new agreed at ${now.at} is earlier than current's ${was.at}`);
+    }
   }
   const evidence = [];
   for (const id of [...ids].filter((x) => a.changed.has(x)).sort()) {
@@ -855,6 +1001,7 @@ async function plan(root, o) {
   // Candidate = current tree with only the selected units replaced.
   const cand = new Map([...a.cur.files].filter(([p]) => p !== "manifest.json").map(([p, f]) => [p, f.buf]));
   for (const f of files) if (f.merge === "apply") { if (f.proposed === null) cand.delete(f.path); else cand.set(f.path, a.prop.files.get(f.path).buf); }
+    else if (f.merge === "merge") cand.set(f.path, f.merged.buf);
   let manifestBuf = a.cur.files.get("manifest.json")?.buf ?? null;
   if (records.some((r) => r.merge === "apply") || meta.some((m) => m.merge === "apply")) {
     const m = structuredClone(a.cur.manifest ?? {});
@@ -880,6 +1027,14 @@ async function plan(root, o) {
       candidate = { exit: cj.exit, errors, newDangling: dangling, warnings: cj.findings.filter((f) => f.severity === "warn" && !/^code-|^provenance-/.test(f.code)).length };
       if (errors.length) refuse("candidate-invalid", `the merged graph would not load: ${errors.slice(0, 5).map((f) => `${f.code} ${f.message}`).join("; ")}`);
       if (dangling.length) refuse("candidate-dangling", `the merged graph would gain dangling edges: ${dangling.map((f) => f.message).join("; ")}; select the targets too`);
+      // A per-declaration merge must read back as exactly the declarations it was built from, byte for byte.
+      const got = new Map((cj.declarations ?? []).map((d) => [d.id, d]));
+      for (const f of files.filter((x) => x.merge === "merge")) {
+        const back = [...got].filter(([, d]) => d.file === `${SPEC}/${f.path}`).map(([id]) => id).sort().join(",");
+        const lost = [...f.merged.ids].filter(([id, t]) => got.get(id)?.textSha256 !== sha(t.endsWith("\n") ? t : `${t}\n`)).map(([id]) => id);
+        if (lost.length || back !== [...f.merged.ids.keys()].sort().join(","))
+          refuse("conflict", `${f.path}: the per-declaration merge does not read back as the declarations it was built from (${lost.join(", ") || "declarations differ"}); merge it by hand in a new draft from current`);
+      }
     } finally { await rm(tmp, { recursive: true, force: true }); }
   }
   const planSha = sha(JSON.stringify({ draft: o.name, targets }));

@@ -5,7 +5,16 @@ pi's slash commands, offered while you type. The server sends the list once per 
 `{type:"commands", commands}`. Names come without the slash (`sessions`, `skill:omarchy`).
 Sending `/name args` as a normal prompt runs the command.
 
+Owns: when the menu opens, its markup, filtering, keys and announcements, the flyout's Commands row,
+what a sent command leaves in the thread, the bare commands Sova answers itself, `/compact-handoff`,
+the commands that need the terminal UI, and the terminal's own `/subagents` and palette. Not here:
+the composer it opens in (§chat/composer), the dialogs a command may raise
+(§app/extension-dialogs), and the session pane that `/agents` and `/tree` open (§app/subagents-pane).
+
 ## §chat.slash-commands/when-the-menu-opens — When the menu opens
+
+The menu opens while the caret is in a `/` token and closes when the token ends; it never opens
+without a command list or while the composer is disabled.
 
 - **Trigger.** A `/` at the very start of the text, or right after whitespace, opens the menu.
   The **token** is everything from that `/` up to the caret, and it can't contain whitespace.
@@ -91,6 +100,8 @@ The textarea gains these attributes, and keeps them only while the menu is open:
 
 ## §chat.slash-commands/filtering-and-order — Filtering and order
 
+The menu filters the commands it offers by the token and orders them in three tiers.
+
 - **Query.** The query is the token without its `/`, matched case-insensitively against `name`
   of the commands the menu offers (§chat.slash-commands/commands-that-need-the-terminal-ui hides some).
 - **Order.**
@@ -107,6 +118,9 @@ The textarea gains these attributes, and keeps them only while the menu is open:
   what `Enter` does in the composer.
 
 ## §chat.slash-commands/keyboard-and-mouse — Keyboard and mouse
+
+Keys and clicks move through the menu, insert a command or close the menu, while focus stays in the
+textarea.
 
 | Input | Does |
 |---|---|
@@ -166,6 +180,9 @@ and again when the count changes, at most once a second. When there are none, an
 "0 commands match."
 
 ## §chat.slash-commands/in-the-thread — In the thread
+
+A sent command leaves a local "Ran" row instead of a user bubble, and a few bare commands are
+answered by Sova itself and never sent.
 
 - **Sending.** A command goes as a normal `prompt` with the text `/{name} {args}`, or as a
   `steer` while streaming.
@@ -354,6 +371,8 @@ where the text can be read before it is sent.
 
 ## §chat.slash-commands/tokens — Tokens
 
+The tokens the slash menu, its head, rows and source chip are drawn with.
+
 - **Menu.** `--color-surface` with a `--color-border` edge, `--r-md`, `--shadow-2`, and
   `max-height: min(320px, 40vh)`. It sits `--space-3 + --space-1` above the composer's content,
   on `z-index: 5` inside the composer's own stacking context.
@@ -366,6 +385,8 @@ where the text can be read before it is sent.
   edge.
 
 ## §chat.slash-commands/contrast — Contrast
+
+The slash menu's text and focus ring measured against their grounds, in dark and light.
 
 | Pair | Dark | Light |
 |---|---|---|

@@ -21,29 +21,6 @@ export const MINOR_DESCRIPTIONS: Record<MinorMode, string> = {
 /** The tool the codemode minor mode puts in the loadout: pi's own `codemode` (builtin:codemode in the CLI). */
 export const CODEMODE_TOOL = "codemode";
 
-/**
- * The codemode minor mode's host, on the extension bus (§chat.mode-menu/codemode). A host that keeps the
- * `codemode` tool's activation itself (Sova's adapter in a chat on the Claude Code provider, where the tool
- * stays declared whatever the mode says) emits `codemode:host` with `pinned: true`, and `pinned: false` when
- * it hands activation back, and again whenever someone emits the discover event. While pinned, the mode
- * extension neither adds nor removes the tool. No host (the TUI) = never pinned. Here rather than in
- * events.ts because the server's adapter is the host, and the server imports this file already.
- */
-export const CODEMODE_HOST_EVENT = "codemode:host";
-export const CODEMODE_HOST_DISCOVER_EVENT = "codemode:host-discover";
-
-export interface CodemodeHostEvent {
-	version: 1;
-	pinned: boolean;
-}
-
-/** The pin as a listener should trust it, or undefined for anything malformed or of another version. */
-export function parseCodemodeHostEvent(data: unknown): CodemodeHostEvent | undefined {
-	if (typeof data !== "object" || data === null) return undefined;
-	const e = data as Record<string, unknown>;
-	return e.version === 1 && typeof e.pinned === "boolean" ? { version: 1, pinned: e.pinned } : undefined;
-}
-
 /** Tool exposures that only codemode scripts reach (pi's ToolExposure): while one is registered, codemode stays. */
 export const SCRIPT_ONLY_EXPOSURES: ReadonlySet<string> = new Set(["codemode", "deferred"]);
 

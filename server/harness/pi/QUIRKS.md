@@ -185,7 +185,7 @@ Canary: `P20 model-restore-gate: the SDK restores a recorded model only when the
 
 ### P21 codemode-definition
 
-`createCodemodeExtension()`'s factory registers exactly one tool, `codemode`, with `defaultActive: false`, through the API it is handed, so Sova runs it against its own extension's API with `registerTool` caught and registers the definition (or its Claude Code form) itself (§chat.mode-menu/codemode). A script's `models.classify` / `models.generateImages` reach the tool context's `modelRegistry`, where Sova's wrapper applies the model policy, the provider-limits slot and the chat's usage context. Nested calls go through `ctx.executeTool`: their `tool_execution_*` events carry `parentToolCallId` and ids `<parent>/<n>`, and they write no transcript entries (the result keeps `details.calls`).
+`createCodemodeExtension()`'s factory registers exactly one tool, `codemode`, with `defaultActive: false`, through the API it is handed, so Sova runs it against its own extension's API with `registerTool` caught and registers the definition itself (§chat.mode-menu/codemode). A script's `models.classify` / `models.generateImages` reach the tool context's `modelRegistry`, where Sova's wrapper applies the model policy, the provider-limits slot and the chat's usage context. Nested calls go through `ctx.executeTool`: their `tool_execution_*` events carry `parentToolCallId` and ids `<parent>/<n>`, and they write no transcript entries (the result keeps `details.calls`).
 
 Canary: `P21 codemode-definition: the factory registers one inactive codemode tool, its models.* reach ctx.modelRegistry, nested calls carry parentToolCallId`.
 

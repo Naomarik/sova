@@ -715,8 +715,6 @@ Frontend is SolidJS (NOT React): signals/stores, `<For>/<Show>`, `onCleanup` for
   SDK runtimes such as Sova's do not get them (docs/sdk.md "codemode-mcp"), so no MCP,
   tool_search or llama.cpp provider in webapp-owned sessions unless Sova adds the factories. Sova adds
   one: codemode (`server/harness/pi/codemode.ts`, in `DEFAULT_EXTENSION_FACTORIES`, quirk P21), registered
-  inactive and switched by the mode extension's `codemode` minor mode (§chat.mode-menu/codemode); in a
-  chat on the Claude Code provider it is a fixed always-declared stub told on/off by hidden
-  `codemode-note` messages (the mode extension yields through the `codemode:host` bus pin, `minor.ts`).
-  Its scripts run in a `node:worker_threads` Worker with QuickJS; nested calls carry `parentToolCallId`
+  inactive and switched by the mode extension's `codemode` minor mode (§chat.mode-menu/codemode), the
+  same in Claude Code chats (off: nowhere in the loadout; a toggle restarts the CLI). Its scripts run in a `node:worker_threads` Worker with QuickJS; nested calls carry `parentToolCallId`
   (`HarnessEvent` `nested`, `SovaEvent` `parentCallId`) and are no rows or live tools.

@@ -254,9 +254,8 @@ writer**).
   between runs; a switch during a run applies when it settles), removing it
   even when `defaultTools` or a restored transcript activated it, except while
   a registered tool has `codemode` or `deferred` exposure (MCP). Where the tool
-  isn't registered (an SDK runtime without the factory) it does nothing. A host
-  that keeps the tool's activation itself (Sova in a Claude Code chat) pins it
-  with `codemode:host` (`CODEMODE_HOST_EVENT`). Never reaches workers. With
+  isn't registered (an SDK runtime without the factory) it does nothing. Every
+  chat alike, a Claude Code one included. Never reaches workers. With
   spec on, a census or guard note for a call a script made is repeated on the
   script's own result, the one the model reads.
 

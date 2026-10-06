@@ -11,13 +11,12 @@ import { fileURLToPath } from "node:url";
 import { after, test } from "node:test";
 import type { ChatServerMessage } from "../shared/protocol";
 import { piSession } from "./harness/pi/testing/handle";
-import { CODEMODE_OFF_NOTE, CODEMODE_STUB_DESCRIPTION, CODEMODE_NOTE_TYPE } from "./harness/pi/codemode";
 import { holdsSlot } from "../pi-config/extensions/provider-limits/gate.ts";
 
-const agentDir = realpathSync(mkdtempSync(join(tmpdir(), "sova-codemode-")));
+const agentDir = realpathSync(mkdtempSync(join(tmpdir(), "sova-cm-")));
 process.on("exit", () => rmSync(agentDir, { recursive: true, force: true }));
 process.env.PI_CODING_AGENT_DIR = agentDir; // before chat-manager computes its paths
-const sessionsDir = join(agentDir, "sessions", "--tmp-codemode--");
+const sessionsDir = join(agentDir, "sessions", "--tmp-cm--");
 mkdirSync(sessionsDir, { recursive: true });
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 const cwd = join(agentDir, "cwd");
@@ -237,52 +236,28 @@ test("off keeps codemode while a tool only scripts reach is registered (MCP's de
   await disposeHeldChat(path, "test done");
 });
 
-test("a Claude Code chat: one fixed codemode tool, the same tool list and prompt across toggles, the guide by note once, refusal while off", async () => {
+test("a Claude Code chat is like any other: off, codemode is nowhere in its tools or prompt; on, it is declared from the next run", async () => {
   const { path } = sessionFile();
   const chat = await acquireChat(path);
   const s = stub(chat, "claude-code-cli");
   await turn(chat, s, "one");
-  const first = s.seen.at(-1)!;
-  const stubTool = first.tools.find((t) => t.name === "codemode");
-  assert.equal(stubTool?.description, CODEMODE_STUB_DESCRIPTION, "declared at all times, with the fixed description");
-  assert.ok(!first.tools.some((t) => t.description.includes("Codemode: `tools.")), "no other tool carries a script line");
-
-  await turn(chat, s, "two", { tool: "codemode", args: { code: "return 1" } }, { text: "done" });
-  assert.equal(s.seen.at(-1)!.results.get("tc-1"), CODEMODE_OFF_NOTE, "off: the call is refused with the off note");
+  const off = s.seen.at(-1)!;
+  assert.ok(!toolNames(off).includes("codemode"), "off: not declared, not even a stub");
+  assert.ok(!off.tools.some((t) => /codemode|Codemode/.test(t.description)), "no tool description mentions it");
+  // pi's base prompt names docs/codemode.md in every chat; the tool's own line and guideline are what a toggle adds.
+  assert.doesNotMatch(off.system, /- codemode:|Run JavaScript that calls other tools|Use codemode to batch/, "nor does the prompt");
 
   await chat.applyMode({ ...chat.modeState, minorModes: ["codemode"] });
-  await turn(chat, s, "three", { tool: "codemode", args: { code: SCRIPT } }, { text: "done" });
+  await turn(chat, s, "two", { tool: "codemode", args: { code: SCRIPT } }, { text: "done" });
   const on = s.seen.at(-2)!;
-  assert.deepEqual(on.tools, first.tools, "the tool list is the same, byte for byte, after turning it on");
-  assert.equal(on.system, first.system, "and so is the system prompt: the CLI is not restarted");
-  assert.equal(on.systems, first.systems, "no system message (prompt patch or tool-set change) since the first request");
-  const guides = (seen: Seen) => seen.texts.filter((t) => t.startsWith("Codemode is now ON"));
-  assert.equal(guides(on).length, 1, "the guide arrives as a note");
-  assert.match(guides(on)[0]!, /echo/, "with the listing of the tools a script can call");
-  assert.match(s.seen.at(-1)!.results.get("tc-2") ?? "", /^Script completed[\s\S]*echo:a,echo:b,echo:c/);
-  await turn(chat, s, "four");
-  assert.equal(guides(s.seen.at(-1)!).length, 1, "told once: the history replays it, nothing new");
+  assert.ok(toolNames(on).includes("codemode"), "on: declared at the next run");
+  assert.notEqual(on.tools.find((t) => t.name === "codemode")!.description.length, 0);
+  assert.match(s.seen.at(-1)!.results.get("tc-1") ?? "", /^Script completed[\s\S]*echo:a,echo:b,echo:c/);
+  assert.equal(lines(path).filter((e) => e.type === "custom_message" && e.customType === "codemode-note").length, 0, "no hidden notes");
 
   await chat.applyMode({ ...chat.modeState, minorModes: [] });
-  await turn(chat, s, "five");
-  const off = s.seen.at(-1)!;
-  assert.deepEqual(off.tools, first.tools);
-  assert.equal(off.system, first.system);
-  assert.equal(off.systems, first.systems);
-  assert.equal(off.texts.filter((t) => t === CODEMODE_OFF_NOTE).length, 1, "the off note");
-  const notes = lines(path).filter((e) => e.type === "custom_message" && e.customType === CODEMODE_NOTE_TYPE);
-  assert.deepEqual(notes.map((e) => [e.display, e.details?.on]), [[false, true], [false, false]], "hidden notes, one per switch");
-
-  // The chat leaves the Claude Code provider: pi's own form from the next run, off as the mode says.
-  (piSession(chat) as unknown as { agent: { state: { model: unknown } } }).agent.state.model = stubModel("stub");
-  await turn(chat, s, "six");
-  assert.ok(!toolNames(s.seen.at(-1)).includes("codemode"), "off: pi's form, not declared");
-  await chat.applyMode({ ...chat.modeState, minorModes: ["codemode"] });
-  await turn(chat, s, "seven");
-  const real = s.seen.at(-1)!.tools.find((t) => t.name === "codemode");
-  assert.ok(real && real.description !== CODEMODE_STUB_DESCRIPTION, "on: pi's own description");
-  const loadout = (piSession(chat) as unknown as { agent: { state: { tools: { name: string; description: string }[] } } }).agent.state.tools;
-  assert.match(loadout.find((t) => t.name === "echo")?.description ?? "", /Codemode: `tools\.echo\(args\)`/, "and pi's script line on the other tools");
+  await turn(chat, s, "three");
+  assert.ok(!toolNames(s.seen.at(-1)).includes("codemode"), "off again: gone from the next run");
   await disposeHeldChat(path, "test done");
 });
 
@@ -332,25 +307,6 @@ return JSON.stringify([on.stopReason, on.answers.q && on.answers.q.probability, 
   assert.equal(result.message.toolName, "codemode");
   await disposeHeldChat(a.path, "test done");
   await disposeHeldChat(b.path, "test done");
-});
-
-test("a Claude Code chat keeps its stub declared after navigating back before the switch to Claude Code", async () => {
-  const { path } = sessionFile();
-  const chat = await acquireChat(path);
-  const s = stub(chat);
-  await turn(chat, s, "on pi");
-  assert.ok(!toolNames(s.seen.at(-1)).includes("codemode"), "pi's form, off: not declared");
-  const firstReply = lines(path).filter((e) => e.type === "message" && e.message.role === "assistant").at(-1)!.id as string;
-  (piSession(chat) as unknown as { agent: { state: { model: unknown } } }).agent.state.model = stubModel("claude-code-cli");
-  await turn(chat, s, "on claude code");
-  const claude = s.seen.at(-1)!.tools;
-  assert.ok(claude.some((t) => t.name === "codemode" && t.description === CODEMODE_STUB_DESCRIPTION));
-  // Back to before the switch: pi restores that branch's loadout, which has no codemode.
-  await (piSession(chat) as unknown as { navigateTree(id: string, o: { summarize: boolean }): Promise<unknown> }).navigateTree(firstReply, { summarize: false });
-  await turn(chat, s, "after navigating");
-  assert.ok(toolNames(s.seen.at(-1)).includes("codemode"), "the stub is declared again");
-  assert.deepEqual(s.seen.at(-1)!.tools, claude, "the same tool list the CLI had");
-  await disposeHeldChat(path, "test done");
 });
 
 test("with spec on, what the spec guard tells a script's write reaches the model on the codemode result", async () => {

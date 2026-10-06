@@ -82,13 +82,10 @@ import { DELEGATE_PROFILE_INFO, DELEGATE_PROFILES, delegateKey, type DelegateBac
 import { WorkerProbe } from "./discovery.ts";
 import { MODE_WORKER_DISCOVER_EVENT, MODE_WORKER_EVENT, WORKER_ROLE_DISCOVER_EVENT, WORKER_ROLE_EVENT, type ModeWorkerEvent } from "./events.ts";
 import {
-	CODEMODE_HOST_DISCOVER_EVENT,
-	CODEMODE_HOST_EVENT,
 	CODEMODE_TOOL,
 	isMinorMode,
 	MINOR_MODES,
 	normalizeMinorModes,
-	parseCodemodeHostEvent,
 	parseMinorFlag,
 	SCRIPT_ONLY_EXPOSURES,
 	workerMinorModes,
@@ -289,19 +286,6 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		if ((data as { version?: unknown } | null)?.version === 1) workerRole = true;
 	});
 	pi.events?.emit(WORKER_ROLE_DISCOVER_EVENT, { version: 1 });
-
-	/**
-	 * A host keeps the codemode tool's activation itself (minor.ts CODEMODE_HOST_EVENT: Sova in a Claude Code
-	 * chat). Handing it back syncs the tool to the mode at once.
-	 */
-	let codemodePinned = false;
-	pi.events?.on(CODEMODE_HOST_EVENT, (data: unknown) => {
-		const e = parseCodemodeHostEvent(data);
-		if (!e || e.pinned === codemodePinned) return;
-		codemodePinned = e.pinned;
-		if (!e.pinned) syncCodemodeTool();
-	});
-	pi.events?.emit(CODEMODE_HOST_DISCOVER_EVENT, { version: 1 });
 
 	pi.registerFlag("major", { description: "Start in a mode: normal | delegate", type: "string" });
 	// Adversarial review of alignments (§chat.alignment-review/flag). Its value is visible from
@@ -689,10 +673,9 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	 * where vis_guide is and right after a switch made between runs. Off removes it even when something
 	 * else activated it (defaultTools, the transcript's restored tool set), except while a registered tool
 	 * is reachable only from scripts (MCP's codemode/deferred exposure). Nothing to do where the tool isn't
-	 * registered (an SDK runtime without the factory) or while a host pins it.
+	 * registered (an SDK runtime without the factory). Every chat alike, a Claude Code one included.
 	 */
 	function syncCodemodeTool(): void {
-		if (codemodePinned) return;
 		let tools: { name: string; exposure?: string }[];
 		try {
 			tools = pi.getAllTools() as { name: string; exposure?: string }[];

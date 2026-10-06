@@ -37,7 +37,7 @@ const entries = [
     },
   },
   { type: "custom", id: "s1", parentId: "r1", timestamp: T, customType: "codemode-store", data: { set: { cursor: 3 }, delete: [] } },
-  { type: "custom_message", id: "n1", parentId: "s1", timestamp: T, customType: "codemode-note", content: "Codemode is now OFF in this conversation", display: false, details: { v: 1, on: false } },
+  { type: "custom_message", id: "n1", parentId: "s1", timestamp: T, customType: "mode-note", content: "Mode change: the user turned the vis minor mode off.", display: false, details: { v: 1, minorModes: [], guides: [] } },
 ];
 
 test("one call row and one result row; the store entry and the hidden note draw nothing", () => {

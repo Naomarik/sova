@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
-import { ALIGN_INSTRUCTIONS, buildMinorPrompt, CODEMODE_TOOL, isMinorMode, MINOR_DESCRIPTIONS, MINOR_MODES, MINOR_PROMPTLESS, MINOR_WORKER, type MinorMode, normalizeMinorModes, parseCodemodeHostEvent, parseMinorFlag, promptedMinorModes, SCRIPT_ONLY_EXPOSURES, SPEC_CORE_SHELL, SPEC_INSTRUCTIONS, stripVisComments, VIS_FILES, VIS_INSTRUCTIONS, VIS_KIND_FILES, VIS_KINDS, visGuide, visOverview, workerMinorModes } from "./minor.ts";
+import { ALIGN_INSTRUCTIONS, buildMinorPrompt, CODEMODE_TOOL, isMinorMode, MINOR_DESCRIPTIONS, MINOR_MODES, MINOR_PROMPTLESS, MINOR_WORKER, type MinorMode, normalizeMinorModes, parseMinorFlag, promptedMinorModes, SCRIPT_ONLY_EXPOSURES, SPEC_CORE_SHELL, SPEC_INSTRUCTIONS, stripVisComments, VIS_FILES, VIS_INSTRUCTIONS, VIS_KIND_FILES, VIS_KINDS, visGuide, visOverview, workerMinorModes } from "./minor.ts";
 import { parseModeWorkerEvent } from "./events.ts";
 import { MODE_CATEGORY_ID, modeCategoryItems } from "./palette.ts";
 import { ALIGN_FILE_SCHEMA, ALIGN_NUDGE_TEXT, ALIGN_OPS } from "./align.ts";
@@ -1054,8 +1054,6 @@ test("codemode: a minor mode with no prompt block, no mode note and no worker re
 	assert.equal(composeWorkerPrompt({ minorModes: ["codemode"] }), undefined);
 	// The status line names it like any minor mode.
 	assert.deepEqual(statusLabel("normal", ALL_OK, false, ["codemode"]), { text: "normal · codemode", tone: "accent" });
-	assert.deepEqual(parseCodemodeHostEvent({ version: 1, pinned: true }), { version: 1, pinned: true });
-	for (const bad of [null, {}, { version: 2, pinned: true }, { version: 1, pinned: "yes" }]) assert.equal(parseCodemodeHostEvent(bad), undefined);
 	assert.ok(SCRIPT_ONLY_EXPOSURES.has("codemode") && SCRIPT_ONLY_EXPOSURES.has("deferred") && !SCRIPT_ONLY_EXPOSURES.has("direct") && !SCRIPT_ONLY_EXPOSURES.has("model-only"));
 });
 

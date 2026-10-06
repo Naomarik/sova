@@ -203,14 +203,31 @@ writer**).
       (checked with the next run); and its workers' from the ledger
       (`SOVA_SPEC_LEDGER`, one JSONL file per parent session, appended by
       `spec-worker.ts` and the Claude Code hooks), taken in a run that relays
-      a worker or changes something itself. A merge that only brought the
-      default branch into another branch is absorbed, not landed.
+      a worker (a completion, `agent_wait`, an inbox; never `agent_spawn`,
+      `agent_list` or `agent_transcript`) or changes something itself. Each
+      entry is charged to one run only: the keys it took go to
+      `<session>.charged` beside the ledger at settle, read back at every
+      `session_start` (a session without the file starts with its whole
+      ledger charged). The line is required only when the session itself
+      edited, committed, promoted or merged (`TurnTally.self`); worker ops
+      alone are charged to the run's spec-turn record and never re-prompted
+      (`TallyVerdict.charged`). A merge that only brought the
+      default branch into another branch is absorbed, not landed. On such a
+      branch, whatever the op (merge, commit, promote; a merge of master still
+      in progress included), a § or changed file whose content equals the
+      default branch's newest side the range brought in has arrived: it is out
+      of the list and the gate (`withoutArrivals`: compared by content, never
+      by id, so a § both sides changed stays) and kept on the verdict
+      (`tallyCheck`'s `arrived`, `arrivedFiles`) for the spec card.
     - **The list** is the union of their `sova-spec.mjs foreign` lists, the
       task's own claims out (`--own-base`: absent at the default tip at run
       start and at the fork point), plus the session tree's uncommitted
       changes and edited drafts. Tracked worktrees join only in a relay run,
       from where the last run that took them left them; a Q&A run leaves them
       (and the ledger) for later, so a background promotion forces no line.
+    - **Already described**: `checkAlsoChanges`' `described` (the caller's ids
+      this session already described) are neither required nor extras, and the
+      re-prompt lists only the rest; the Claude Code Stop hook passes none.
     - **The landing gate** (`foreign --landing`): each changed file no claim
       maps needs a `Plumbing: <path> — <why>` line, each unpromoted draft
       record's § a `Deferred: §X — <why>` line, except at a landing on the

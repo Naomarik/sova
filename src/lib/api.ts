@@ -20,6 +20,7 @@ import type {
   ContextInfo,
   ExtensionInfo,
   ExplanationInfo,
+  SpecClaimText,
   FileIndex,
   FolderListing,
   GitSummary,
@@ -877,6 +878,10 @@ export const fetchExtensions = () => request<ExtensionInfo[]>("/api/extensions")
 
 /** Every /explain artifact in the store, newest first (they're kept forever). */
 export const fetchExplanations = () => request<ExplanationInfo[]>("/api/explanations");
+
+/** One claim's text for the spec card's claim sheet (§chat.spec-card/claim-sheet), read from the session's own record. */
+export const fetchSpecClaim = (session: string, entry: string, id: string) =>
+  request<SpecClaimText>(`/api/spec-turn/claim?${new URLSearchParams({ session, entry, id })}`);
 
 export const fetchSessionInsight = (path: string) =>
   request<SessionInsight>(`/api/insights/session?path=${encodeURIComponent(path)}`);

@@ -435,7 +435,8 @@ export async function landOps(command: string, cwd: string, response: unknown, c
 		const promoted = op.kind === "promote" ? landingOf((response as { stdout?: unknown } | undefined)?.stdout) : undefined;
 		(turn.landings ??= []).push({
 			top: op.top, before: op.before, after: op.after, kind: op.kind, root: await findSpecRoot(op.top, (p) => ctx.io.exists(p)),
-			unmapped: [...new Set([...l.unmappedChanged.map((u) => u.path), ...(promoted?.unmapped ?? [])])].sort(),
+			// The promote's own lists run from the fork point: files that arrived from master unchanged stay out.
+			unmapped: [...new Set([...l.unmappedChanged.map((u) => u.path), ...(promoted?.unmapped ?? []).filter((p) => !j.arrivals?.files.includes(p))])].sort(),
 			unpromoted: [...l.unpromotedDrafts, ...(promoted?.unpromoted ?? [])],
 			advisory: [...new Set([...l.mappedUntouched.map((m) => m.id), ...(promoted?.advisory ?? [])])].sort(),
 			...(j.onDefault ? { onDefault: true } : {}),
@@ -565,7 +566,8 @@ export async function onStop(input: HookInput, ctx: HookContext): Promise<HookOu
 		const foreign = union(turn.foreign, drafted ?? []);
 		if (turn.blocks >= MERGE_BLOCKS) return undefined;
 		const gate = await gateNow(turn.landings ?? [], ctx.core, ctx.io);
-		const check = checkAlsoChanges(reply, { required: true, foreign, exact: !turn.partial, advisory: gate.advisory, unmapped: gate.unmapped, unpromoted: gate.unpromoted, unpromotedAtDefault: gate.unpromotedAtDefault });
+		// A worker keeps no record of what it described before: nothing is excused (described: []); only arrivals from master are out.
+		const check = checkAlsoChanges(reply, { required: true, foreign, exact: !turn.partial, advisory: gate.advisory, unmapped: gate.unmapped, unpromoted: gate.unpromoted, unpromotedAtDefault: gate.unpromotedAtDefault, described: [] });
 		if (check.ok) return turn.partial ? { systemMessage: `${CHECK_TAG} incomplete check: some operation or tree lists were unavailable; inspect foreign/landing lists by hand.` } : undefined;
 		return block([repromptText(check, foreign, "promoted or merged"), turn.partial ? `${CHECK_TAG} incomplete check: inspect foreign/landing lists by hand.` : ""].filter(Boolean).join("\n"));
 	}

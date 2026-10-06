@@ -145,8 +145,9 @@ export default function worktrees(pi: ExtensionAPI, options: WorktreesOptions = 
 
 	/** The spec report of a merge; best-effort, so a failure never fails the merge. */
 	async function reportOf(path: string, branch: string, before: string, after: string, branchSha: string, target: string): Promise<MergeSpecReport | undefined> {
-		const onDefault = target === (await defaultTarget(git, path).catch(() => undefined));
-		return specReport(git, { path, branch, before, after, branchSha, onDefault }).catch(() => undefined);
+		const main = await defaultTarget(git, path).catch(() => undefined);
+		const onDefault = target === main;
+		return specReport(git, { path, branch, before, after, branchSha, onDefault, ...(main && !onDefault ? { defaultBranch: main } : {}) }).catch(() => undefined);
 	}
 
 	/** The note the model reads: the merge line, then the spec lines when the project has a spec. */

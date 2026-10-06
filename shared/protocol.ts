@@ -213,6 +213,7 @@ export type EntryKind =
   | "report" // subagent reports and other long extension messages (custom_message); see `report`
   | "worktree-merge" // a merge the session recorded (pi-config worktrees extension); see `worktreeMerge`
   | "align" // an `align` tool result that changed an alignment, or an exemption (pi-config mode extension); see `align`
+  | "spec-turn" // the spec check's record of a run that changed something (pi-config mode extension); see `specTurn`
   | "unknown";
 
 /**
@@ -389,6 +390,11 @@ export interface TranscriptItem {
       call, whose tool-call row renders nothing once this row is there. A failed call, a `get`, or
       details that don't check out stay an ordinary tool-result. */
   align?: AlignRowInfo;
+  /** kind "spec-turn" only: the mode extension's `spec-turn` custom entry, checked by its own
+      `normalizeSpecTurnDetails` (pi-config/extensions/mode/spec-turn.ts, §chat.spec-card/record),
+      without the claim text it captured (GET /api/spec-turn/claim serves that). Never model
+      context. Details that don't check out give no row. */
+  specTurn?: SpecTurnInfo;
   /** The entry's timestamp (ISO), on every row whose entry has one. */
   at?: string;
   /** The entry's facts, on its first row only (EntryMeta). Absent on rows to a consumer that asked
@@ -475,6 +481,48 @@ export interface AlignRowInfo {
 }
 
 /** A merge the session recorded: by its `worktree merge` tool, or detected after one of its turns. */
+/** The spec card's record (§chat.spec-card/record): the extension's SpecTurnDetails without `prose`. */
+export interface SpecTurnInfo {
+  v: 1;
+  ops: { kind: "commit" | "merge" | "ff" | "promote" | "rebase" | "reset"; tree: string; branch?: string; actor: string; before: string; after: string }[];
+  /** The § the reply's `Also changes:` line named, with its words. */
+  own: SpecTurnItemInfo[];
+  /** The other § the check computed for the run, with an earlier record's words when one had them. */
+  landed: SpecTurnItemInfo[];
+  /** § that came in from the default branch (`from`), counted per area. */
+  arrived?: { from: string; count: number; byArea: { area: string; count: number }[] };
+  created: string[];
+  gate: {
+    unmapped: { path: string; status?: string; plumbing?: string }[];
+    unpromoted: { draft?: string; ids: string[]; deferred?: string }[];
+    stale: string[];
+    handResolved: string[];
+  };
+  check: { ok: boolean; problem?: string; override?: string; reprompts: number; incomplete?: string };
+}
+
+export interface SpecTurnItemInfo {
+  id: string;
+  change?: string;
+  what?: string;
+  /** Index in `ops`. */
+  op?: number;
+}
+
+/** GET /api/spec-turn/claim: one claim's text for the claim sheet (§chat.spec-card/claim-sheet). */
+export interface SpecClaimText {
+  id: string;
+  /** Where the text came from: a commit of the run, the record's capture at settle, or the current spec. */
+  source: "commit" | "captured" | "current";
+  /** The text as of the turn (source "commit" | "captured"), or now (source "current"); absent when the
+      claim didn't exist there (deleted). */
+  after?: string;
+  /** The text as of the commit before the turn's operation, when it existed then. */
+  before?: string;
+  /** The commit `after` was read at (source "commit"). */
+  rev?: string;
+}
+
 export interface WorktreeMergeInfo {
   path: string;
   branch: string;

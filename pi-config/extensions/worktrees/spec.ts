@@ -36,6 +36,12 @@ export interface MergeSpecReport {
 	landing?: MergeLanding;
 	/** The target's top level (its checkout), when git lists one. */
 	top?: string;
+	/**
+	 * Into a branch other than the default: what the merge brought in from the default branch unchanged (each §'s
+	 * record and text, each file's content, equal to the default branch's side), kept out of `foreign`, `deleted`
+	 * and the landing lists.
+	 */
+	arrived?: { from: string; ids: string[]; files: string[] };
 }
 
 export interface MergeSpecRequest {
@@ -48,6 +54,8 @@ export interface MergeSpecRequest {
 	branchSha: string;
 	/** The target is the repo's default branch: its unpromoted records can't be deferred. */
 	onDefault?: boolean;
+	/** The repo's default branch, when the target is another: what arrives from it unchanged is counted, not named. */
+	defaultBranch?: string;
 }
 
 type Node = (args: string[], cwd: string) => Promise<{ code: number; stdout: string }>;
@@ -81,13 +89,21 @@ export async function mergeSpecReport(git: Git, req: MergeSpecRequest, opts: { c
 	// The target before vs after, with the landing lists; the merged worktree's drafts are read whatever its HEAD.
 	const f = json((await node([core, "foreign", "--base", req.before, "--head", req.after, "--landing", "--drafts", req.path, "--root", top, "--json"], top)).stdout);
 	const warnings: string[] = [];
-	const foreign = Array.isArray(f?.foreign) ? (f.foreign as string[]) : [];
+	const arrived = Array.isArray(f?.foreign) ? await arrivals(git, node, core, top, req, f.foreign as string[], Array.isArray(f?.unmappedChanged) ? f.unmappedChanged : []) : undefined;
+	const gone = new Set(arrived?.ids ?? []);
+	const goneFiles = new Set(arrived?.files ?? []);
+	const foreign = Array.isArray(f?.foreign) ? (f.foreign as string[]).filter((id) => !gone.has(id)) : [];
 	if (!Array.isArray(f?.foreign)) warnings.push(`the foreign § of this merge could not be computed (${(f?.findings as { message?: string }[] | undefined)?.map((x) => x.message).join("; ") || "no output"}); name them from the spec diff yourself`);
 	const deleted = ((Array.isArray(f?.changes) ? f.changes : []) as { id: string; change: string; renamedTo?: string }[])
-		.filter((c) => c.change.split("+").includes("deleted"))
+		.filter((c) => c.change.split("+").includes("deleted") && !gone.has(c.id))
 		.map((c) => ({ id: c.id, ...(c.renamedTo ? { renamedTo: c.renamedTo } : {}) }));
 	const landing: MergeLanding | undefined = Array.isArray(f?.unmappedChanged)
-		? { unmappedChanged: f.unmappedChanged, mappedUntouched: f.mappedUntouched ?? [], unpromotedDrafts: f.unpromotedDrafts ?? [], handResolved: f.handResolved ?? [] }
+		? {
+				unmappedChanged: (f.unmappedChanged as MergeLanding["unmappedChanged"]).filter((u) => !goneFiles.has(u.path)),
+				mappedUntouched: ((f.mappedUntouched ?? []) as MergeLanding["mappedUntouched"]).filter((m) => !m.files?.length || m.files.some((p) => !goneFiles.has(p))),
+				unpromotedDrafts: f.unpromotedDrafts ?? [],
+				handResolved: f.handResolved ?? [],
+			}
 		: undefined;
 	if (landing) {
 		if (landing.unmappedChanged.length)
@@ -127,7 +143,31 @@ export async function mergeSpecReport(git: Git, req: MergeSpecRequest, opts: { c
 	if (after.length)
 		warnings.push(`${after.length} code commit${after.length === 1 ? "" : "s"} after the last spec commit ${short(kinds[last]!.sha)} (${after.map((k) => short(k.sha)).join(", ")}): spec what they changed, or say they change no behavior`);
 	const targetTop = await checkoutOf(git, top, req.after);
-	return { foreign, deleted, warnings, ...(landing ? { landing } : {}), ...(targetTop ? { top: targetTop } : {}) };
+	return { foreign, deleted, warnings, ...(landing ? { landing } : {}), ...(targetTop ? { top: targetTop } : {}), ...(arrived && (arrived.ids.length || arrived.files.length) ? { arrived } : {}) };
+}
+
+/**
+ * Into a branch other than the default: the foreign § and unmapped files the merge brought in from the default
+ * branch unchanged. The side is the newest default-branch commit `after` contains (its merge base with the default
+ * tip) when `before` lacks it; a § arrived when the core finds no change of it from that side to `after` (record and
+ * text equal: a content comparison, never id subtraction), a file when git finds none. A § both sides changed stays
+ * the merge's. undefined when nothing arrived or it can't be compared (then everything stays named).
+ */
+async function arrivals(git: Git, node: Node, core: string, top: string, req: MergeSpecRequest, foreign: string[], unmapped: { path: string }[]): Promise<MergeSpecReport["arrived"]> {
+	if (req.onDefault || !req.defaultBranch) return undefined;
+	const tip = (await git(["rev-parse", "--verify", "--quiet", `refs/heads/${req.defaultBranch}`], top)).stdout.trim();
+	const side = tip ? (await git(["merge-base", req.after, tip], top)).stdout.trim() : "";
+	if (!side || (await git(["merge-base", "--is-ancestor", side, req.before], top)).code === 0) return undefined;
+	const d = json((await node([core, "foreign", "--base", side, "--head", req.after, "--root", top, "--json"], top)).stdout);
+	if (!Array.isArray(d?.changes) || !Array.isArray(d?.created) || d.complete === false) return undefined;
+	const differs = new Set<string>([...(d.changes as { id: string }[]).map((c) => c.id), ...(d.created as string[])]);
+	const diff = await git(["diff", "--name-only", "-z", "--no-renames", "--no-ext-diff", "--no-textconv", side, req.after, "--"], top);
+	const changedFiles = diff.code === 0 ? new Set(diff.stdout.split("\0").filter(Boolean)) : undefined;
+	return {
+		from: req.defaultBranch,
+		ids: foreign.filter((id) => !differs.has(id)).sort(),
+		files: changedFiles ? unmapped.map((u) => u.path).filter((p) => !changedFiles.has(p)).sort() : [],
+	};
 }
 
 /** The worktree whose checkout is at `sha` on a branch (the merge's target), from `git worktree list`. */
@@ -172,6 +212,7 @@ export function specLines(r: MergeSpecReport): string[] {
 	const untouched = r.landing?.mappedUntouched ?? [];
 	return [
 		`Foreign § this merge changes: ${r.foreign.length ? r.foreign.join(", ") : "none"}`,
+		...(r.arrived?.ids.length ? [`Arrived from ${r.arrived.from}: ${r.arrived.ids.length} §`] : []),
 		...(r.deleted?.length ? [`Deleted § (still foreign): ${r.deleted.map((d) => (d.renamedTo ? `${d.id} → ${d.renamedTo}` : d.id)).join(", ")}`] : []),
 		...(untouched.length ? [`Code changed under unchanged §: ${untouched.map((u) => `${u.id} (${u.files.join(", ")})`).join("; ")}: read each; name one on your last line only if its behavior changed`] : []),
 		...r.warnings.map((w) => `Spec warning: ${w}`),

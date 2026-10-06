@@ -2,8 +2,8 @@
 // Run: bun server/harness/pi/golden/fixtures/make-synthetic.ts [--check]
 // The committed .jsonl files are the fixtures; this is how they were written, kept so a reader can see
 // what each line is for and a new fixture is written the same way. A changed fixture changes its expected
-// outputs: re-record with `node scripts/harness-golden.mjs record --accept <probe>` and add a CHANGES.md
-// line. `--check` writes nothing and exits 1 when a committed file differs from what this would write.
+// outputs: re-record with `node scripts/harness-golden.mjs record` and review the diff with the fixture's.
+// `--check` writes nothing and exits 1 when a committed file differs from what this would write.
 // Every line is compact JSON (the line prefilters in the readers match `"role":"user"`), no real content.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";

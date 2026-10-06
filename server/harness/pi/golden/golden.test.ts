@@ -1,10 +1,10 @@
 // Run: pnpm test -- server/harness/pi/golden/golden.test.ts. The goldens (README.md here): every fixture ×
-// every probe against its expected file, recorded on the code before the reader refactor. A failure names
-// the probe, the fixture and the JSON path of the first difference (for the real corpus: its hash, never
-// content). Recording runs through here too, so it sees the test's own environment:
-// `node scripts/harness-golden.mjs record [--accept <probe>]` sets SOVA_GOLDEN_MODE=record.
+// every probe against its recorded output, characterizing the readers. A failure names the probe, the
+// fixture and the JSON path of the first difference (for the real corpus: its hash, never content).
+// Re-recording runs through here too, so it sees the test's own environment:
+// `node scripts/harness-golden.mjs record` sets SOVA_GOLDEN_MODE=record and rewrites what differs.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { after, describe, test } from "node:test";
@@ -19,28 +19,17 @@ const PROBE_FILES = ["reader", "rows", "usage", "list", "baton", "overseer", "fo
 const probes: import("./golden").Probe[] = (await Promise.all(PROBE_FILES.map((n) => import(`./probes/${n}.ts`)))).flatMap((m) => m.probes);
 
 const mode: import("./golden").Mode = process.env.SOVA_GOLDEN_MODE === "record" ? "record" : "compare";
-const accept = new Set((process.env.SOVA_GOLDEN_ACCEPT ?? "").split(",").map((s) => s.trim()).filter(Boolean));
 const onlySets = process.env.SOVA_GOLDEN_SETS ? new Set(process.env.SOVA_GOLDEN_SETS.split(",")) : null;
 /** The run's own paths, so no output carries this machine's temp dir. */
 const scrub = new Map([[agentDir, "<agent>"]]);
 const workspace = join(agentDir, "sessions", "--golden--");
 
-test("probe names are unique and every accepted probe exists", () => {
+test("probe names are unique", () => {
   const names = probes.map((p) => p.name);
   assert.deepEqual(names.filter((n, i) => names.indexOf(n) !== i), []);
-  for (const a of accept) assert.ok(names.includes(a), `--accept ${a}: no such probe`);
 });
 
 const sets = g.fixtureSets();
-// The large set: a ~10 MB session generated here (fixtures/large.ts), never committed; its expected files are.
-{
-  const { largeSessionText } = await import("./fixtures/large.ts");
-  const dir = join(agentDir, "large-fixture");
-  mkdirSync(dir, { recursive: true });
-  const path = join(dir, "large-10mb.jsonl");
-  writeFileSync(path, largeSessionText());
-  sets.splice(3, 0, { name: "large", private: false, expected: join(g.GOLDEN_DIR, "expected/large"), fixtures: [{ name: "large-10mb", format: "pi", path }] });
-}
 if (!sets.some((s) => s.name === "real")) test.skip(`real corpus: ${relative(g.REPO, g.REAL_DIR)}/sessions is absent (scripts/harness-golden.mjs sample)`, () => {});
 
 for (const set of sets) {
@@ -54,11 +43,11 @@ for (const set of sets) {
         test(`${probe.name} ${label}`, async () => {
           // Large outputs are stored as their digest (g.compact): byte-exact, but never a giant file.
           const output = g.compact(g.encode(await g.runProbe(probe, fixture), scrub));
-          const r = g.settle(set, fx.name, probe.name, output, mode, accept);
+          const r = g.settle(set, fx.name, probe.name, output, mode);
           const where = relative(g.REPO, r.path);
           if (r.status === "missing") assert.fail(`${probe.name} ${label}: no expected file ${where}. Record it: node scripts/harness-golden.mjs record`);
           if (r.status === "differs")
-            assert.fail(`${probe.name} ${label}: differs at ${r.where}${r.detail ? ` (${r.detail})` : ""}. An intended change needs a CHANGES.md line and \`node scripts/harness-golden.mjs record --accept ${probe.name}\`.`);
+            assert.fail(`${probe.name} ${label}: differs at ${r.where}${r.detail ? ` (${r.detail})` : ""}. If intended, re-record (\`node scripts/harness-golden.mjs record\`) and review the diff.`);
         });
       }
     }

@@ -8,7 +8,7 @@
 //   golden wire README);
 // - the baton view (§app.baton/outsider-view) for the operator and for a person: no such key either (its
 //   content is pinned by golden.test's baton-view probe, recorded before M3).
-// Record a missing golden: SOVA_GOLDEN_MODE=record pnpm test -- server/share-wire.test.ts. A throwaway
+// Re-record (missing and differing files; review the diff): SOVA_GOLDEN_MODE=record pnpm test -- server/share-wire.test.ts. A throwaway
 // PI_CODING_AGENT_DIR in the OS temp dir, deleted after; no model is called.
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -47,7 +47,6 @@ after(() => {
 
 const SHARE = join(g.GOLDEN_DIR, "wire/share");
 const mode: import("./harness/pi/golden/golden").Mode = process.env.SOVA_GOLDEN_MODE === "record" ? "record" : "compare";
-const accept = new Set((process.env.SOVA_GOLDEN_ACCEPT ?? "").split(",").map((s) => s.trim()).filter(Boolean));
 const produced = new Set<string>();
 const sets = g.fixtureSets().filter((s) => s.fixtures.some((f) => f.format === "pi"));
 
@@ -93,7 +92,7 @@ for (const set of sets)
         const view = await sessionShareView(src);
         const frame = view ? { type: "view", view } : null;
         if (!set.private) {
-          const r = g.settle({ ...set, expected: join(SHARE, set.name) }, fx.name, "session-share-view", frame, mode, accept);
+          const r = g.settle({ ...set, expected: join(SHARE, set.name) }, fx.name, "session-share-view", frame, mode);
           produced.add(r.path);
           const where = relative(g.REPO, r.path);
           if (r.status === "missing") assert.fail(`no expected file ${where}. Record it: SOVA_GOLDEN_MODE=record pnpm test -- server/share-wire.test.ts`);

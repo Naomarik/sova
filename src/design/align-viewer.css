@@ -84,6 +84,8 @@
 .align-doc-meta { margin: 0; font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); }
 .align-doc-summary { margin: 0; color: var(--color-ink); }
 .align-doc-dropped { margin: 0; color: var(--color-ink); }
+/* While the plan review runs, the card's only line below its header (§chat.alignment-review/card). */
+.align-review-running { display: flex; align-items: center; gap: var(--space-2); margin: 0; color: var(--color-ink-2); }
 
 /* Body text is --fs-body in ink, for legibility; ink-2 is only for a settled question's ask and
    recommendation, and muted only for ids, eyebrow, meta and the decision's "· you" tail. The

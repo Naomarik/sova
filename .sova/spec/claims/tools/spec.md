@@ -466,7 +466,10 @@ Whenever the spec flags at least one core record, every `packet`, `toc` and `rea
 aside) names the frame with its passage count, its byte count (the sum of its passages' UTF-8 bytes)
 and the cap, packet's counts include the `frame` stream, and the readable text of `toc` and `read`
 says how to read it, so the frame is always named even when it is not delivered. A
-spec with no core record prints nothing about a frame, and its outputs are unchanged.
+spec with no core record prints nothing about a frame, and its outputs are unchanged, except that
+`read --frame`, which asks for the frame itself, says it is empty ("frame: no core records in this
+spec (empty)", and `frame: {passages: 0, empty: true}` in its JSON) with exit 0, so an empty frame
+never reads as one that went unread.
 
 The cap is 12,000 decimal bytes. A frame over it is still delivered whole, never cut: the summary
 marks it over the cap, and `check` and `packet` report a `frame-over-cap` warning with its size, so

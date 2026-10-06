@@ -175,12 +175,14 @@ hashes.
   - Pre-landing, the frame-voice card measured C23 1.5 → 2.5/6, needs answered by the frame 1 → 2, and
     pull shown 109 → 110. Its C23:0 count rested on the harness's family rule, whose positive test was
     then pending. That test landed in 3239c26a, and the landing card counts the frame's answers with
-    it, so the frame figures below are of record.
+    it, so the frame figures below are of record. The test runs only where commit b1de66b1 is present;
+    a clone of master alone skips it.
 - **R1** (85f4e788). `toc --dir down` lists the notes about an H1's H2s.
 - **Current figures, landing card of record** (landing-3239c26a; candidate 3239c26a, harness as at
-  3239c26a). Master's tools on the b1de66b1 record's spec against master's own spec:
+  3239c26a). Master's tools on the spec the b1de66b1 record was made on (a pre-landing work-branch
+  spec, not on master) against master's own spec:
 
-  | | b1de66b1 record's spec | master 3239c26a's spec | target |
+  | | the spec the b1de66b1 record was made on (a pre-landing work-branch spec, not on master) | master 3239c26a's spec | target |
   |---|---|---|---|
   | guards | 17 ok | 17 ok, 0 failed | |
   | packet answered | 93.5 / 138 | 99.5 / 138 | never drops ✓ |
@@ -226,9 +228,10 @@ hashes.
   commits master no longer had, so none of them could ever merge to master. The fix was to re-apply
   each later merge, one commit each, on a fresh landing branch cut from the scrubbed master, and
   fast-forward master to it. Master goes into the landing branch only, never into a work branch.
-- **Run the full suite with TMPDIR outside any git repository.** Tests that create their own git
-  repositories under TMPDIR, run with TMPDIR inside a git worktree, wrote commits and branches into
-  the real repository. The spec and replay test globs are not affected; the full Sova suite is.
+- **Run the full suite with TMPDIR outside any git repository.** The server tests run git in
+  temporary directories. With TMPDIR inside a git worktree, git found the enclosing repository instead
+  of a fresh one, and the tests wrote commits, branches and worktrees into the real repository. The
+  spec and replay test globs are not affected; the full Sova suite is.
 
 ## Open
 

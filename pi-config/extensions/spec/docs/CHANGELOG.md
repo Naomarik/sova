@@ -142,11 +142,12 @@ Each entry gives:
   - §: +§tools.spec/agreed-promotion, +§tools.spec/contents-view, +§tools.spec/frame,
     +§tools.spec/graph-payload, +§tools.spec/near-impact, +§tools.spec/record-fields,
     +§tools.spec/single-read, +§tools.spec/span-promotion, +§tools.spec/spec-map,
-    +§tools.spec/where-lookup; §tools.spec/context-packets text; §tools/spec text.
+    +§tools.spec/where-lookup; §tools.spec/context-packets text; §tools/spec text; §tools/spec gains
+    a child.
 - **Field-only promotion rule.**
   - Commit: 56d0609b ← `feat/spec-span-promotion`.
   - Changed: an `embeds`/`about`/`core`-only record change lands on doc-only evidence.
-  - §: +§tools.spec/field-promotion.
+  - §: +§tools.spec/field-promotion; §tools/spec gains a child.
   - Numbers: field-only doc-only 0 → 1 (pre-landing). Landing card: the h target is 1.
 - **Harness update.**
   - Commit: 3facc0b6 ← `feat/spec-replay`.
@@ -170,7 +171,8 @@ Each entry gives:
       the first read;
     - the worker brief, the census note and USAGE.md follow;
     - the docs agree with the tools.
-  - §: +§tools.spec/mode-reading; §tools.spec/context-packets text; §tools/spec text.
+  - §: +§tools.spec/mode-reading; §tools.spec/context-packets text; §tools/spec text; §tools/spec
+    gains a child.
   - Numbers, agent arm on all 24, run 1 / run 2 (pre-landing; not re-measured on master):
     - pull answered 96 / 97.5, agent packet 90 / 89.5;
     - bytes median 98,626 / 107,852.5 against 134,459 / 156,301.

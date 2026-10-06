@@ -16,6 +16,7 @@ import type { HarnessSession, SessionRead, StateView } from "../../../shared/har
 import { applyForkCacheRouting } from "../../../pi-config/extensions/subagents/fork/cache.ts";
 import { instrumentModelRuntime } from "../../../pi-config/extensions/llm-inflight/runtime.ts";
 import { markDegraded } from "../../../pi-config/extensions/llm-inflight/tracker.ts";
+import { applyModelLevels, type ComposedModel, modelFetchEnabled, onLevelsUpdated, refreshStale } from "../../../pi-config/extensions/model-levels/core.ts";
 import { installWorkerNice, lowerToolCommands } from "../../process-priority";
 import { agentRoot } from "../../state-root";
 import type { PiExtensionFactory, PiLoaderOptions, PiToolDefinition } from "./extension-types";
@@ -60,6 +61,35 @@ export function extensionFlagValues(f: OpenFlags): Map<string, boolean | string>
   return flags;
 }
 
+/**
+ * The model-levels extension's levels for models.json providers pi has no catalog for, applied to the
+ * shared runtime straight from its cache (pi-config/extensions/model-levels/core.ts), so GET /api/models
+ * is right before any chat binds the extension. Re-applied whenever fresh metadata lands; a hosted
+ * session's own copy of the extension then finds nothing to change.
+ */
+export function applyModelLevelsAtBoot(runtime: ModelRuntime, agentDir: string, fetch = modelFetchEnabled(process.env)): string[] {
+  const apply = () => {
+    try {
+      return applyModelLevels(
+        {
+          models: () => runtime.getModels() as unknown as ComposedModel[],
+          register: (provider, models) => runtime.registerProvider(provider, { models } as unknown as Parameters<ModelRuntime["registerProvider"]>[1]),
+        },
+        { agentDir },
+      );
+    } catch {
+      return [];
+    }
+  };
+  onLevelsUpdated(apply);
+  if (fetch) void refreshStale({ agentDir });
+  return apply();
+}
+
+/** Whether model metadata may be fetched (model levels, pi's built-in catalogs): the extension's own
+    rule (core.ts), so the server's boot fetches and every hosted session's extension follow one switch. */
+export { modelFetchEnabled };
+
 let modelRuntimePromise: Promise<ModelRuntime> | null = null;
 /** The one pi model runtime this process shares across every session. */
 export function getModelRuntime(): Promise<ModelRuntime> {
@@ -69,6 +99,11 @@ export function getModelRuntime(): Promise<ModelRuntime> {
       // this one runtime: count it here, before anything can call it. One that can't be
       // instrumented leaves this host's count partial, never a silent 0.
       if (instrumentModelRuntime(runtime) === "unsupported") markDegraded("server-runtime");
+      const fetch = modelFetchEnabled(process.env);
+      applyModelLevelsAtBoot(runtime, agentRoot(), fetch);
+      // pi's own built-in catalogs, from pi.dev in the background, as pi's TUI does at its start
+      // (its own 4-hour rule decides whether anything is fetched).
+      if (fetch) void runtime.refresh().catch(() => {});
       return runtime;
     },
     (err) => {

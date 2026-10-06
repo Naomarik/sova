@@ -292,10 +292,20 @@ export const PROVIDER_LIMITS_EXTENSION = realpathOr(path.join(SELF_DIR, "..", "p
  * worker: the worker reports its calls in flight to this process's runner, which counts them here.
  */
 export const LLM_INFLIGHT_EXTENSION = realpathOr(path.join(SELF_DIR, "..", "llm-inflight", "index.ts"));
-/** The spawn summary names the extensions a worker was given; the marker, the limits, the counter and the spec hook are plumbing, not among them. */
+/**
+ * The thinking levels of models pi has no catalog for (model-levels/, a sibling extension), loaded
+ * after the counter into every pi worker: a worker on such a model offers and sends its real levels.
+ */
+export const MODEL_LEVELS_EXTENSION = realpathOr(path.join(SELF_DIR, "..", "model-levels", "index.ts"));
+/** The spawn summary names the extensions a worker was given; the marker, the limits, the counter, the levels and the spec hook are plumbing, not among them. */
 const listedExtensions = (worker: Worker): string[] =>
 	worker.extensions.filter(
-		(source) => source !== MARKER_EXTENSION && source !== PROVIDER_LIMITS_EXTENSION && source !== LLM_INFLIGHT_EXTENSION && source !== SPEC_WORKER_EXTENSION,
+		(source) =>
+			source !== MARKER_EXTENSION &&
+			source !== PROVIDER_LIMITS_EXTENSION &&
+			source !== LLM_INFLIGHT_EXTENSION &&
+			source !== MODEL_LEVELS_EXTENSION &&
+			source !== SPEC_WORKER_EXTENSION,
 	);
 /**
  * The same member tools as a stdio MCP server for claude-code members (the CLI
@@ -1415,7 +1425,7 @@ export function registerSubagents(
 			// Spec on: a code-writing worker gets the brief (below) and the census hook; a worktree-config worker
 			// already loads the whole mode extension, and a remote one runs its tools elsewhere.
 			const specWorker = specOn && !remote && !treeConfig && writesCode(tools);
-			const sources = [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, ...(remote ? [REMOTE_EXTENSION] : []), ...(treeConfig ? [treeConfig.modeExtension] : []), ...(specWorker ? [SPEC_WORKER_EXTENSION] : []), ...(own ?? [])];
+			const sources = [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, ...(remote ? [REMOTE_EXTENSION] : []), ...(treeConfig ? [treeConfig.modeExtension] : []), ...(specWorker ? [SPEC_WORKER_EXTENSION] : []), ...(own ?? [])];
 			const modeFlags = treeConfig ? { major: "normal", minor: "spec" } : undefined;
 			// The sandbox's answer for a pi worker: its extension and flags (the parent's scope while on; in a
 			// tracked worktree, narrowed to it, or write-only while off).

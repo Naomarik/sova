@@ -54,6 +54,8 @@ const GLOBS = [
   "src/lib/*.test.ts",
   "src/lib/voice/*.test.ts",
   "src/vis/**/*.test.ts",
+  // The model-levels core (builtins only) that Sova's pi adapter imports.
+  "pi-config/extensions/model-levels/*.test.ts",
 ];
 const isBrowserTest = (f) => f.endsWith(".browser.test.ts");
 const DURATIONS = path.join(ROOT, ".cache", "test-durations.json");

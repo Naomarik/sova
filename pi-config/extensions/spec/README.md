@@ -33,7 +33,7 @@ to assert that those decisions have been implemented.
 | `core/sova-spec-review.mjs` | The review companion: `prepare`, `record`, `status`. It keeps the exact bytes a review compared |
 | `core/sova-spec-assess.mjs` | Observation-only input-bound dispositions and metadata-only receipts: `prepare`, `record`, `status` |
 | `tests/*.test.mjs` | Black-box fixture tests that spawn the CLIs against temporary projects |
-| [`GOALS.md`](GOALS.md) | What the spec system is for: its goals and constraints. A change to these tools names the goal it serves and is measured against today's tools (`tests/replay/`) |
+| [`docs/GOALS.md`](docs/GOALS.md) | What the spec system is for: its goals and constraints. A change to these tools names the goal it serves and is measured against today's tools (`tests/replay/`) |
 
 ## Core (read-only)
 
@@ -165,11 +165,14 @@ node core/sova-spec-draft.mjs merge-manifest --root DIR [--write] [--json]
    `migrated` stays only on text still as ported, as provenance. Then run **`evidence`**. A
    behavior or surface needs at least one implementation file, from the
    record's `code` or `--path` (unless it is agreed and not built yet, or the change is to its
-   `embeds`, `about` or `core` field alone: both take `--doc-only`, below), and every `code` path must exist. In a Git project it needs `--commit`, an existing commit, ancestor
+   `embeds` or `core` field alone and it is not an agreed record that maps code: both take
+   `--doc-only`, below), and every `code` path must exist. In a Git project it needs `--commit`, an existing commit, ancestor
    of `HEAD`, whose files match the working tree for the mapped code. Without Git, `--snapshot` keeps the
    exact bytes. `--doc-only` covers `note` and `section` records, an `agreed` behavior or
    surface with no code (DRAFTS.md, "Agreed, not built"), and a change to an existing behavior's or
-   surface's `embeds`, `about` or `core` field alone (DRAFTS.md, "Field-only changes").
+   surface's `embeds` or `core` field alone, unless the record is agreed and maps code: that is
+   refused (`doc-only-refused`) and needs `--commit` or `--snapshot` (DRAFTS.md, "Field-only
+   changes"). `about` belongs on notes, which take `--doc-only` anyway.
    Evidence binds to the record and prose as they are now, so a later edit
    stales it.
 4. **`promote`** previews the plan and prints its hash. Then

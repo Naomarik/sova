@@ -129,8 +129,8 @@ A draft is a proposal. Agreeing on it approves the intent, and makes nothing cur
    exactly as ported: it records provenance, not verification. `evidence` says what you did:
    `reviewed` or `verified`.
 3. Record evidence. A behavior or surface needs at least one implementation file, unless it is
-   agreed and not built yet, or the change is to its `embeds`, `about` or `core` field alone (both
-   `--doc-only`, below), and every path in its `code` must exist. The migrated records map no `code`, so add the files to the draft
+   agreed and not built yet, or the change is to its `embeds` or `core` field alone and it is not an
+   agreed record that maps code (both `--doc-only`, below), and every path in its `code` must exist. The migrated records map no `code`, so add the files to the draft
    record's `code`, which binds them to the evidence, or pass `--path`. This repo uses Git, so name an existing commit that holds the
    implementation, and never commit unrelated changes to get one:
 
@@ -142,8 +142,9 @@ A draft is a proposal. Agreeing on it approves the intent, and makes nothing cur
 
    Without Git, use `--snapshot`, which keeps the exact bytes. `--doc-only` covers `note` and
    `section` records, agreed behaviors or surfaces with no code (DRAFTS.md, "Agreed, not built"), and
-   a change to an existing behavior's or surface's `embeds`, `about` or `core` field alone (DRAFTS.md,
-   "Field-only changes").
+   a change to an existing behavior's or surface's `embeds` or `core` field alone, unless the record is
+   agreed and maps code: that is refused (`doc-only-refused`) and needs `--commit` or `--snapshot`
+   (DRAFTS.md, "Field-only changes"). `about` belongs on notes, which take `--doc-only` anyway.
 4. Promote. The preview prints a plan hash, and `--write` applies exactly that plan:
 
    ```sh

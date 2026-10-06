@@ -1,17 +1,21 @@
 # Session goldens: what a live chat does, S1-S15
 
-Milestone 5 of the harness-boundary refactor (§app/harness) carves the live pi session out of
-`chat-manager.ts` behind `HarnessSession`. These fixtures were recorded on the code **before anything
-moved** (feat/harness-integration at 76a4513, M4-T0's state goldens and M4-T1's SessionState API in), by
-`../../session-golden.test.ts` driving today's real code paths. A later change must keep them green with
-**no fixture edit**: a diff here in a refactor is a review stop.
+Characterization tests for a live chat (§app.harness/session): what it sends two clients, what it writes
+and the order of its calls into pi, driven by `../../session-golden.test.ts` through the real code paths.
+First recorded before milestone 5 moved the live pi session behind `HarnessSession` (feat/harness-integration
+at 76a4513), where they proved the move changed nothing; they now pin the current behaviour, above all the
+SDK call order the quirk rows P1, P2, P5, P6, P7, P9, P10, P13, P15 and P20 rely on, end to end. An
+unintended diff is a bug; an intended one is re-recorded and its diff reviewed with the change.
 
 ```
 pnpm test -- server/harness/pi/session-golden.test.ts                       # compare (part of every pnpm test)
 SOVA_GOLDEN_RECORD=1 pnpm test -- server/harness/pi/session-golden.test.ts  # write fixtures that are missing
-SOVA_GOLDEN_RECORD=overwrite …                                              # rewrite all: never in a refactor
+SOVA_GOLDEN_RECORD=overwrite …                                              # re-record all, after an intended change
 … --test-name-pattern='^S7:'                                                 # one scenario (each stands alone)
 ```
+
+The root is a fixed-length `/tmp/sova-session-golden-XXXXXX`, not `TMPDIR`: S7/S8's `estimatedTokensAfter`
+counts the system prompt, which names paths under it. Where `/tmp` is not writable the test can't run.
 
 The run: one process, a throwaway `PI_CODING_AGENT_DIR`, the server imported (PORT=0), two scripted models
 (`scripted`, and `scripted-think` with a thinking ladder), the repo's mode extension by path, a fixture
@@ -27,9 +31,12 @@ Each scenario leaves two files:
 - `<name>.trace`: everything that happened, in order, canonical with the same numbering (and a known entry
   id replaced wherever it appears, e.g. a row's `<id>:0`):
   - `A …` / `B …`: what each attached client was sent, A on wire 1 and B on wire 2 (the server's own
-    mappers). Event frames, rows, queue and control messages whole. Cut down: a hello or history to its
-    rows' `id kind` and its state (no `context`); `commands` to its type; `profile`'s tool list. pi's
-    system-prompt message and a hook's custom-message content are elided inside events, as in the file.
+    mappers), for the frame types the scenarios exercise (`PINNED` in the test): event frames, rows, queue
+    and those control messages whole; a hello cut to its run state, model, thinking and rows' `id kind`
+    (`HELLO_KEYS`), a history to its rows' `id kind`. Any other frame type (the command list, the profile,
+    the Claude login note, whatever a later feature adds to a hello or an attach) is left out, so adding one
+    re-records nothing; its own tests pin it. pi's system-prompt message and a hook's custom-message content
+    are elided inside events, as in the file.
   - `sdk <call> <args>`: each call into pi's `AgentSession` (prompt, steer, followUp, abort, clearQueue,
     compact, navigateTree, setModel, setThinkingLevel, sendCustomMessage, `agent.continue`, an extension
     command's handler), recorded by wrapping the raw session from the test side; `(settling)` marks a call
@@ -69,3 +76,5 @@ extension's `ctx.compact()`, the `already processing` link retry, `/claude-login
   fixed-length `<DIR>/pi` (`PI_PACKAGE_DIR`). The system prompt's three pi paths had made
   `estimatedTokensAfter` depend on the checkout's path length (S7/S8 failed in other worktrees); it is now
   2815 in S8. Recorded on feat/harness-integration f59cc66; no other fixture changed.
+- 2026-10-06 all traces: frame types no scenario exercises (`commands`, `profile`, `claude_login`) left
+  out, and a hello cut to `HELLO_KEYS`; every remaining line unchanged (feat/golden-slim).

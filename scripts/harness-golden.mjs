@@ -2,13 +2,13 @@
 // The golden harness's commands (server/harness/pi/golden/README.md):
 //
 //   node scripts/harness-golden.mjs compare [--set <a,b>] [--real]   # = the golden test (pnpm test runs it too)
-//   node scripts/harness-golden.mjs record [--accept <probe,…>] [--set <a,b>] [--real]
+//   node scripts/harness-golden.mjs record [--set <a,b>] [--real]
 //   node scripts/harness-golden.mjs census [--extra <dir>]…           # counts of entry types, roles, customTypes
 //   node scripts/harness-golden.mjs sample [--out <dir>] [--extra <dir>]… [--seed <n>] [--random <n>] [--cap-mb <n>]
 //
-// record writes the expected files that are missing; one that exists and differs is rewritten only for a probe
-// named by --accept, and only once CHANGES.md (beside golden.test.ts) has a line added since HEAD naming that
-// probe. Both run golden.test.ts through scripts/run-tests.mjs, so they see exactly the test's environment.
+// record re-records: it writes the expected files that are missing and rewrites the ones that differ; review
+// the diff with the change that caused it. Both run golden.test.ts through scripts/run-tests.mjs, so they see
+// exactly the test's environment.
 // --real is the local corpus `sample` wrote (default .agent/golden-real, or SOVA_GOLDEN_REAL_DIR).
 //
 // census and sample read session files (the agent dir's sessions/ without live/, every sessions/ dir under its
@@ -16,7 +16,7 @@
 // copies up to 3 smallest files per feature, plus --random others (seeded), under --cap-mb, into <out>/sessions
 // named by their content's sha256[:12], and writes <out>/report.json with hashes, sizes, features and JSON field
 // paths: never a source path or any content. It refuses an output dir git does not ignore.
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -24,7 +24,6 @@ import path from "node:path";
 
 const ROOT = path.join(import.meta.dirname, "..");
 const TEST = "server/harness/pi/golden/golden.test.ts";
-const CHANGES = "server/harness/pi/golden/CHANGES.md";
 const DEFAULT_REAL = path.join(ROOT, ".agent/golden-real");
 const PI_TYPES = new Set(["session", "message", "model_change", "thinking_level_change", "usage", "compaction", "session_info", "label", "branch_summary", "context_edit", "custom", "custom_message"]);
 
@@ -46,18 +45,6 @@ function die(message, code = 2) {
 
 function runGolden(mode) {
   const env = { ...process.env, SOVA_GOLDEN_MODE: mode };
-  const accept = opt("--accept", "");
-  if (accept) {
-    if (mode !== "record") die("--accept goes with record");
-    if (!flag("--real")) {
-      const added = addedChangeLines();
-      for (const probe of accept.split(",").map((s) => s.trim()).filter(Boolean)) {
-        if (!added.some((l) => new RegExp(`(^|[^\\w-])${probe.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^\\w-]|$)`).test(l)))
-          die(`--accept ${probe}: add a line to ${CHANGES} first (probe, fixture, reason, reviewer); none added since HEAD names it`);
-      }
-    }
-    env.SOVA_GOLDEN_ACCEPT = accept;
-  }
   const sets = opt("--set", "");
   if (flag("--real")) {
     const dir = process.env.SOVA_GOLDEN_REAL_DIR ?? DEFAULT_REAL;
@@ -66,25 +53,6 @@ function runGolden(mode) {
   } else if (sets) env.SOVA_GOLDEN_SETS = sets;
   const r = spawnSync(process.execPath, [path.join(ROOT, "scripts/run-tests.mjs"), TEST], { cwd: ROOT, stdio: "inherit", env });
   process.exit(r.status ?? 1);
-}
-
-/** Lines of CHANGES.md added since HEAD (the whole file when HEAD has none). */
-function addedChangeLines() {
-  let diff = "";
-  try {
-    diff = execFileSync("git", ["diff", "--no-color", "-U0", "HEAD", "--", CHANGES], { cwd: ROOT, encoding: "utf8" });
-  } catch {
-    return [];
-  }
-  if (!diff.trim() && fs.existsSync(path.join(ROOT, CHANGES))) {
-    try {
-      execFileSync("git", ["cat-file", "-e", `HEAD:${CHANGES}`], { cwd: ROOT, stdio: "ignore" });
-      return [];
-    } catch {
-      return fs.readFileSync(path.join(ROOT, CHANGES), "utf8").split("\n");
-    }
-  }
-  return diff.split("\n").filter((l) => l.startsWith("+") && !l.startsWith("+++")).map((l) => l.slice(1));
 }
 
 // ---- census / sample: reading session files -------------------------------------------------------------

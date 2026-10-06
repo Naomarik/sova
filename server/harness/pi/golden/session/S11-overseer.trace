@@ -1,16 +1,10 @@
 step attach A, B
 A {"type":"hello","isStreaming":false,"isCompacting":false,"model":"scripted/scripted","thinking":"off","items":[]}
-A {"type":"commands"}
 A {"type":"queue","items":[]}
 A {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now"}
-A {"type":"profile","profile":null,"locked":false,"pickable":false,"tools":"<elided>","removed":[],"granted":[]}
-A {"type":"claude_login","login":null}
 B {"type":"hello","isStreaming":false,"isCompacting":false,"model":"scripted/scripted","thinking":"off","items":[]}
-B {"type":"commands"}
 B {"type":"queue","items":[]}
 B {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now"}
-B {"type":"profile","profile":null,"locked":false,"pickable":false,"tools":"<elided>","removed":[],"granted":[]}
-B {"type":"claude_login","login":null}
 step A sends {"type":"prompt","text":"how are the sessions?","clientId":"c1"}
 write {"id":"00000002","type":"model_change"}
 write {"id":"00000003","type":"thinking_level_change"}

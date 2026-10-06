@@ -7,8 +7,8 @@
 // (the W3.0 control frames, golden/wire/expected/faux/*/frames.json) and today's rows; one that asks for
 // wire 2 gets every v1 event through fromV1 (pinned in golden/wire/v2/) and every row with `facts` in place
 // of `meta`, cut at the same rows; the browser's reducer (src/lib/live.ts) on those wire-2 frames reaches the
-// recorded live state and effects at every event. Record a missing v2 golden:
-// SOVA_GOLDEN_MODE=record pnpm test -- server/harness/pi/wire-compat.test.ts.
+// recorded live state and effects at every event. Re-record the v2 goldens (never the wire-1 frames, which
+// this test only reads): SOVA_GOLDEN_MODE=record pnpm test -- server/harness/pi/wire-compat.test.ts.
 import assert from "node:assert/strict";
 import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -56,16 +56,15 @@ const WIRE = join(g.GOLDEN_DIR, "wire");
 const V2 = join(WIRE, "v2");
 const FAUX = join(g.GOLDEN_DIR, "fixtures/faux");
 const mode: import("./golden/golden").Mode = process.env.SOVA_GOLDEN_MODE === "record" ? "record" : "compare";
-const accept = new Set((process.env.SOVA_GOLDEN_ACCEPT ?? "").split(",").map((s) => s.trim()).filter(Boolean));
 const produced = new Set<string>();
 
 function check(fixture: string, probe: string, output: unknown) {
   const set: import("./golden/golden").FixtureSet = { name: "faux", private: false, expected: join(V2, "faux"), fixtures: [] };
-  const r = g.settle(set, fixture, probe, g.compact(g.encode(output)), mode, accept);
+  const r = g.settle(set, fixture, probe, g.compact(g.encode(output)), mode);
   produced.add(r.path);
   const where = relative(g.REPO, r.path);
   if (r.status === "missing") assert.fail(`no expected file ${where}. Record it: SOVA_GOLDEN_MODE=record pnpm test -- server/harness/pi/wire-compat.test.ts`);
-  if (r.status === "differs") assert.fail(`${where}: differs at ${r.where}${r.detail ? ` (${r.detail})` : ""}. An intended change needs a CHANGES.md line and SOVA_GOLDEN_ACCEPT=${probe}.`);
+  if (r.status === "differs") assert.fail(`${where}: differs at ${r.where}${r.detail ? ` (${r.detail})` : ""}. If intended, re-record (SOVA_GOLDEN_MODE=record) and review the diff.`);
 }
 
 /** A client as server/ws.ts makes one: every message as the JSON string the socket would carry. */
@@ -232,18 +231,25 @@ describe("a chat's clients, per wire, on every faux stream", () => {
 });
 
 describe("v2 frames are fromV1 of v1 frames, on every recorded input", () => {
-  for (const file of ["live-test.json", "effects.json"]) {
-    test(file, () => {
-      const seqs = JSON.parse(readFileSync(join(WIRE, "inputs", file), "utf8")) as { calls: { fn: string; args: unknown[] }[] }[];
+  const inputs: [string, () => unknown[]][] = [
+    [
+      "inputs/effects.json",
+      () =>
+        (JSON.parse(readFileSync(join(WIRE, "inputs/effects.json"), "utf8")) as { calls: { fn: string; args: unknown[] }[] }[]).flatMap((seq) =>
+          seq.calls.filter((call) => call.fn === "applyEvent").map((call) => call.args[0]),
+        ),
+    ],
+    ...faux.map((name): [string, () => unknown[]] => [`faux/${name}`, () => JSON.parse(readFileSync(join(FAUX, name, "events.json"), "utf8")) as unknown[]]),
+  ];
+  for (const [label, events] of inputs) {
+    test(label, () => {
       let count = 0;
-      for (const seq of seqs)
-        for (const call of seq.calls) {
-          if (call.fn !== "applyEvent") continue;
-          const frame = v1Frame(call.args[0]) as ChatServerMessage;
-          assert.deepEqual(onWire(frame, 2), fromV1(frame as V1EventFrame).map((event) => ({ type: "event", v: 2, event })));
-          assert.deepEqual(onWire(frame, 1), [frame], "wire 1: the frame itself");
-          count++;
-        }
+      for (const event of events()) {
+        const frame = v1Frame(event) as ChatServerMessage;
+        assert.deepEqual(onWire(frame, 2), fromV1(frame as V1EventFrame).map((event) => ({ type: "event", v: 2, event })));
+        assert.deepEqual(onWire(frame, 1), [frame], "wire 1: the frame itself");
+        count++;
+      }
       assert.ok(count > 0);
     });
   }

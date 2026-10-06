@@ -144,11 +144,11 @@ describe("the stream guard against a runaway stream (real provider path, local s
     assert.ok(best.worstMs < 250, `loop delay max ${best.maxDelayMs} ms, 10 ms interval's longest gap ${best.maxGapMs} ms (best of 3)`);
   });
 
-  test("control, with the caps raised: the same stub, finite (384 K), makes the loop materially worse", async () => {
+  test("control, with the caps raised: the same stub, finite (192 K), makes the loop materially worse", async () => {
     assert.ok(guarded, "runs after the guarded case");
     setStreamCapsForTest({ whitespaceRunChars: Infinity, toolArgChars: Infinity, starvedMs: Infinity });
     try {
-      stub.reset({ payload: "whitespace", perDelta: 128, limit: 384 * 1024, tool: "no_such_tool" });
+      stub.reset({ payload: "whitespace", perDelta: 128, limit: 192 * 1024, tool: "no_such_tool" });
       const chat = await acquireChat(ordinarySession(), true);
       await chat.setModelRef("stub/runaway");
       const r = await liveness(async () => {

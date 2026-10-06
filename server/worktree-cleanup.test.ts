@@ -69,8 +69,10 @@ before(() => {
   git(main, "commit", "-q", "-m", "squash feat/squash");
   add("empty", 0);
   add("unmerged");
-  for (const n of ["dirty", "locked", "gone", "cwd", "live-tui", "running", "sandboxed", "idle", "proc", "liverec", "changed"]) add(n);
-  for (const n of ["dirty", "locked", "gone", "cwd", "live-tui", "running", "sandboxed", "idle", "proc", "liverec", "changed"]) git(main, "merge", "-q", "--no-edit", `feat/${n}`);
+  const merged = ["dirty", "locked", "gone", "cwd", "live-tui", "running", "sandboxed", "idle", "proc", "liverec", "changed"];
+  for (const n of merged) add(n);
+  // One octopus merge: each branch is an ancestor of master, as with a merge apiece, for one git call.
+  git(main, "merge", "-q", "--no-edit", ...merged.map((n) => `feat/${n}`));
   writeFileSync(join(wt("dirty"), "notes.md"), "untracked\n");
   git(main, "worktree", "lock", wt("locked"));
   rmSync(wt("gone"), { recursive: true, force: true });
@@ -86,7 +88,11 @@ before(() => {
   sleepers.push(sleeper);
   mkdirSync(join(wt("liverec"), ".agent", "sessions", "live"), { recursive: true });
   writeFileSync(join(wt("liverec"), ".agent", "sessions", "live", `p${process.pid}-x.json`), JSON.stringify({ session: { pid: process.pid } }));
+  // The real /proc scan, taken once (the sleeper already runs) and shared: nothing here starts or stops a
+  // process after it, and a scan reads every fd of every process this user has, seconds each on a busy host.
+  let scan: ReturnType<typeof c.scanProcesses> | null = null;
   c.configureCleanup({
+    processes: () => (scan ??= c.scanProcesses()),
     summary: async (p) => sessions.find((s) => s.path === p) ?? null,
     sessionFiles: async () => [...new Set([...sessions.map((s) => s.path), join(root, "sessions", "01a1026f-c64e-70a4.jsonl"), HOME_SESSION()])],
     readBranch: async (p) => (reads.branch.push(p), branches.get(p) ?? []),

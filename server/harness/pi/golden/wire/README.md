@@ -1,19 +1,20 @@
 # Wire goldens: what the browser's live path does with each event
 
-Milestone 3 (§app/harness, the wire) ports the browser's live reducer (`src/lib/live.ts` `applyEvent`) from pi's
-events to `SovaEvent`, and the server's frames to an opt-in v2. These goldens record, **before** the port
-(W3.0), what today's code does, so W3.2 and W3.4 prove theirs identical. They run in `pnpm test`.
+Characterization tests for the live wire (§app.harness/wire): the frames the server sends for recorded pi
+event streams, and what the browser's live reducer (`src/lib/live.ts` `applyEvent`) does with them. First
+recorded before milestone 3 ported the reducer to `SovaEvent` (W3.0), they now pin the current behaviour.
+They run in `pnpm test`. The live reducer's own cases are `src/lib/live.test.ts` and its effects
+`src/lib/live-effects.test.ts`.
 
 ```
-inputs/live-test.json        every store sequence src/lib/live.test.ts drives, as calls (extract-live.ts wrote it)
-inputs/effects.json          hand-written event sequences for the effects the other inputs never reach
+inputs/effects.json          hand-written event sequences for the effects the faux streams never reach
                              (the Overseer's navigate, compaction results, replies that measure nothing)
 expected/faux/<scenario>/    frames.json: the v1 control frames for ../fixtures/faux/<scenario>/events.json
+                             (the wire-1 contract: wire-compat, proxy-wire and share-ws-hop compare against it)
                              trace.json:  those frames through ChatView's unwrapping and applyEvent
-expected/live/<seq>/trace.json, expected/effects/<seq>/trace.json
-wire.ts                      control frames, the trace runner, the pre-W3.0 flush oracle
+expected/effects/<seq>/trace.json
+wire.ts                      control frames, the trace runner
 wire.test.ts                 inputs vs expected
-live-calls.ts, extract-live.ts   the live.test.ts extraction
 ```
 
 ## What is recorded
@@ -26,9 +27,7 @@ live-calls.ts, extract-live.ts   the live.test.ts extraction
   `applyEvent` its effects (`src/lib/live-effects.ts`) with no view, plus `overseer` (the Overseer's view, in
   the tab that started the turn) only where they differ; a mutator's return value as `returned`. `new Date()`
   reads 2026-01-01T00:00:00Z while a trace runs (an aborted reply's `stoppedAt`).
-- Every trace also checks, without recording it, that each `applyEvent`'s effects equal the inline decisions
-  ChatView's flush made before W3.0 (`flushEffectsBeforeW30`, in both views), and that the view never changes
-  the state.
+- Every trace also checks, without recording it, that the view never changes the state.
 - Comparison and storage are `../golden.ts`'s: by value, the first differing JSON path named; an output over
   256 KiB is stored as its digest (`image-resize`'s trace, which carries the image in every step).
 
@@ -37,12 +36,10 @@ live-calls.ts, extract-live.ts   the live.test.ts extraction
 | | |
 |---|---|
 | `pnpm test -- server/harness/pi/golden/wire/wire.test.ts` | compare (also part of every `pnpm test`) |
-| `SOVA_GOLDEN_MODE=record pnpm test -- server/harness/pi/golden/wire/wire.test.ts` | write the missing expected files |
-| `SOVA_GOLDEN_MODE=record SOVA_GOLDEN_ACCEPT=trace pnpm test -- …` | rewrite differing `trace` files (`frames` likewise), after a `../CHANGES.md` line saying why |
-| `bun server/harness/pi/golden/wire/extract-live.ts [--check]` | re-extract `inputs/live-test.json` from live.test.ts |
+| `SOVA_GOLDEN_MODE=record pnpm test -- server/harness/pi/golden/wire/wire.test.ts` | re-record: write missing files, rewrite differing traces; review the diff |
 
-The inputs are the record. Since W3.2 rewrote live.test.ts (its events now go through `feed`, on three
-paths), `extract-live.ts --check` differs; `inputs/live-test.json` stays as recorded.
+Recording never rewrites an existing `frames.json`: those are what older clients and peers read, so a
+difference there is a protocol change to fix in the server, not a file to re-record.
 
 ## Since the port (W3.2)
 
@@ -50,8 +47,8 @@ paths), `extract-live.ts --check` differs; `inputs/live-test.json` stays as reco
 `entryId` moved back onto the frame) runs on two paths, each on its own store and in both views: (b) the v1
 frame as ChatView reads it (`liveEventsOf`, so `fromV1`), which is what the trace records, and (a) the wire-2
 frames a server makes of it (`{type:"event", v:2, event}` per `fromV1` event, through JSON). Both must give
-the recorded state and effects at every step, and the effects must still equal `flushEffectsBeforeW30` of the
-v1 event. The baton sender marker is client-local and is applied as it is on both.
+the recorded state and effects at every step. The baton sender marker is client-local and is applied as it is
+on both.
 
 ## Wire 2 (W3.4)
 
@@ -59,8 +56,9 @@ v1 event. The baton sender marker is client-local and is applied as it is on bot
 (`server/harness/pi/wire-compat.test.ts`, which also writes them): `frames.json`, each frame a `ChatSession`
 client with `wire: 2` receives for the scenario's events (every control frame through `fromV1`, one frame per
 event), and `rows.json`, that client's hello rows (`facts` in place of `meta`). The same test holds the wire-1
-client to `expected/faux/<scenario>/frames.json` byte for byte. Record a missing one with
-`SOVA_GOLDEN_MODE=record pnpm test -- server/harness/pi/wire-compat.test.ts`; never re-record the wire-1 files.
+client to `expected/faux/<scenario>/frames.json` byte for byte, and checks that every wire-2 frame is `fromV1`
+of its v1 frame over `inputs/effects.json` and every faux stream. Re-record the v2 files with
+`SOVA_GOLDEN_MODE=record pnpm test -- server/harness/pi/wire-compat.test.ts` (it only reads the wire-1 files).
 
 ## The hops (W3.5)
 

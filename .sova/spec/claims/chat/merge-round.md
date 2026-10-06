@@ -204,6 +204,27 @@ The two rules it shares with the server, which subjects are temporary and which 
 restart, are copies, held equal to `server/merge-readiness.ts`'s by a test over an enumerated table;
 so are the topic batch's format and the topic name's rule, held equal to `shared/topic-message.ts`'s.
 
+## §chat.merge-round/landing-suites — Extension suites and the spec replay at landing
+
+`check`'s extension suites run at lowered CPU priority, so a landing never starves the live server
+or the other sessions on a busy machine:
+
+- **Each command of a touched extension's Tests line** runs through the branch's own
+  `scripts/nice.mjs`, the same lowering `pnpm test` gets; a tree without that script runs it
+  unchanged.
+- **The spec replay suite is a landing gate.** When the commits `check` would land touch
+  `pi-config/extensions/spec/core/`, `pi-config/extensions/mode/spec-guard.ts`,
+  `pi-config/extensions/claude-code/spec-hooks.ts` or `pi-config/extensions/spec/tests/replay/`,
+  and the branch's tree has `pi-config/extensions/spec/tests/replay/replay.test.mjs`, `check` runs
+  `node --test tests/replay/*.test.mjs` in `pi-config/extensions/spec`, through `scripts/nice.mjs`
+  and with `SOVA_SPEC_REPLAY=1`, as a step like the others (its log, its timeout); a failure or a
+  timeout is a need. Otherwise it prints why it skipped the replay (no such file), or nothing when
+  no such path changed.
+- **One replay at a time on this machine.** The run holds `<agent dir>/locks/spec-replay.lock`
+  (`{pid, at}`, created exclusively). A lock whose process is gone, or older than 6 hours, is
+  stale and taken over; a live one is waited for, never a failure, and the line says how long
+  `check` waited.
+
 ## §chat.merge-round/private-names — Finding the private names, and the leak scan
 
 - **`discover-names.mjs`** collects candidates by kind from this machine: the hostname and home

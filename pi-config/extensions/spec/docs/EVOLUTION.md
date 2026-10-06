@@ -1,7 +1,7 @@
 # How the spec system changed: from push to pull
 
-**Status: landed on master 3239c26a; the final comparison is still to run.** Its results go where
-this file says **pending (referee-5)**. Until then, those places hold no numbers.
+**Status: landed on master 3239c26a.** The final comparison's computed part is recorded below. The
+agent arm and the rubric were deferred: not re-run after landing.
 
 Every hash here is a master commit, except that "the b1de66b1 record" names a harness data file
 (`g-baseline-b1de66b1.json`, the M6 rows' baseline), not a commit. Work up to 96ab3014 reached master as one merge (83dd1240), so its
@@ -115,7 +115,7 @@ re-measured on master.** The operator accepted M2 on them.
   - C14, C18, C20, C21, C24: +1 each.
 - **Calls.** Both arms leave the 7–18 calls band on some comparisons: pull on 7 and 10, packet on 6 and 7.
 
-**Post-landing agent arm on master 3239c26a: pending (referee-5).**
+**Post-landing agent arm on master 3239c26a: deferred: not re-run after landing.**
 
 ## Tried and rejected
 
@@ -173,8 +173,8 @@ hashes.
     - "what" right on the composer surface 40% → 100%.
   - Pre-landing, the first proposed frame (4 core passages, 3,707 B) answered 0 of 138 needs.
   - Pre-landing, the frame-voice card measured C23 1.5 → 2.5/6, needs answered by the frame 1 → 2, and
-    pull shown 109 → 110. Its C23:0 count rested on the harness's family rule, whose positive test was
-    then pending. That test landed in 3239c26a, and the landing card counts the frame's answers with
+    pull shown 109 → 110. Its C23:0 count rested on the harness's family rule, whose positive test had
+    not landed yet. That test landed in 3239c26a, and the landing card counts the frame's answers with
     it, so the frame figures below are of record. The test runs only where commit b1de66b1 is present;
     a clone of master alone skips it.
 - **R1** (85f4e788). `toc --dir down` lists the notes about an H1's H2s.
@@ -211,6 +211,42 @@ hashes.
     pane was proposed and dropped by the operator (D55), so it stays 4 / 5.
   - The 17-section count stays as information.
 
+## The final comparison: master 3239c26a against a95768b7
+
+Scorecard final-3239c26a holds the computed part: deterministic runs with no model calls. Its harness
+is a later replay-harness commit, which the card names; that commit is not on master. The agent arm
+and the rubric were **deferred: not re-run after landing**. The pre-landing M2 agent-arm figures
+above stay as history.
+
+- **Green.** Both spec test globs on a full archive of 3239c26a: 544 tests, 542 pass, 0 fail, 2 skips,
+  both allowed.
+- **Guards.** 0 failed in every arm of both scorecards:
+  - (a), primary: each arm on its own spec;
+  - (b), control: the a95768b7 spec in both arms.
+
+| | (b) control: a95768b7 spec in both arms | (a) primary: each arm on its own spec |
+|---|---|---|
+| packet answered | 93.5 → 93.5 / 138 | 93.5 → 99.5 / 138 (67.8% → 72.1%) |
+| packet bytes, median | 79,737.5 → 79,737.5 B | 79,737.5 → 91,611.5 B |
+| packet calls, median / total | 8 / 536 → 8 / 536 | 8 / 536 → 9 / 588 |
+| frame | 0 B | 4,526 B in 5 passages (cap 12,000 B) |
+| ground rules / copy-deck sections in packet | 0/24, 0/17 | 24/24, 8/17 |
+| pull shown one hop out | n/a → 106 / 138 | n/a → 110 / 138 |
+| pull bytes, median | n/a → 10,860 B | n/a → 11,180 B |
+| copy-deck needs (D49), packet / pull / both | 0/5 → 0/5 / 2/5 / 0/5 | 0/5 → 4/5 / 4/5 / 4/5: not met |
+
+- **C23** (in (a)): 0.5 → 2.5/6. C23 2.5/6 (41.7%): meets the plan's 2.5/6 benchmark (42% was that
+  number rounded).
+- **Copy deck.** The "≥ 14 / 17 sections" target was not met (8 / 17), and the needs target that
+  replaced it was not met either (4 / 5 per arm).
+- **Moved needs** (in (a)): C07 3 → 4, C10 4 → 5, C21 2 → 3, C23 0.5 → 2.5, C24 5 → 6 (+6). None was
+  lost.
+- **About-bytes.** In (a), the median increase is 5,687.5 B against a95768b7, so it includes spec text
+  added before M6. The largest jumps are mostly that text: C02 +182,137 B and C08 +121,197 B. What
+  M6's notes cost is the landing card's figure: a median of +5,589 B, largest +31,846 B (C01).
+- **Agreement with the landing card.** The card's g rows equal the landing card's, apart from one new
+  information-only row.
+
 ## Lessons
 
 - **A seam only a trial merge shows.** Rule A and M6 each passed their tests alone. Merged together
@@ -235,12 +271,11 @@ hashes.
 
 ## Open
 
-- **The final comparison.** Master against a95768b7, with the rubric and the agent arm: **pending
-  (referee-5).**
+- **The agent arm and the rubric on master.** Deferred: not re-run after landing.
 - **Three needs packet answers that toc never shows one hop out.** C01:0 is the frame around the tab,
   and C01:4 is the tab's address; both are in the `§app/shell` lede. C01:2 is "Stop ends the turn", in
-  `§chat.composer/behavior`. Neither pre-landing agent arm read them. Their state on master: **pending
-  (referee-5).**
+  `§chat.composer/behavior`. Neither pre-landing agent arm read them. No agent arm has run on master:
+  deferred, not re-run after landing.
 - **The frame's cost.** It is paid on every first read: 4,526 B on master's spec.
 - **The census-read guard.** "Every `census --changed` claim read" is not measured: the agent arm makes
   no edits.

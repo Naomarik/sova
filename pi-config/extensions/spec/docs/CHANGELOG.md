@@ -176,7 +176,7 @@ Each entry gives:
   - Numbers, agent arm on all 24, run 1 / run 2 (pre-landing; not re-measured on master):
     - pull answered 96 / 97.5, agent packet 90 / 89.5;
     - bytes median 98,626 / 107,852.5 against 134,459 / 156,301.
-  - **Post-landing agent arm on master 3239c26a: pending (referee-5).**
+  - **Post-landing agent arm on master 3239c26a: deferred: not re-run after landing.**
 - **DRAFTS.md summary.**
   - Commit: 9b4a7042 ← `feat/spec-span-promotion`.
   - Changed: the three doc-only routes in the summary.
@@ -240,7 +240,14 @@ Each entry gives:
     - the frame 4,526 B in 5 passages (cap 12,000);
     - pull shown one hop out 110 / 138 (floor 106);
     - copy-deck needs (D49) 4/5 in packet and 4/5 in pull: not met.
-  - **Final comparison of master against a95768b7 (rubric and agent arm): pending (referee-5).**
+  - Final comparison of master 3239c26a against a95768b7, computed part (scorecard final-3239c26a):
+    - green: 544 tests, 542 pass, 0 fail, 2 allowed skips; 0 guards failed in the primary and control
+      scorecards;
+    - packet answered 93.5 → 99.5 / 138, packet median 79,737.5 → 91,611.5 B;
+    - pull shown 110 / 138; the frame 4,526 B; C23 2.5/6 (41.7%): meets the plan's 2.5/6 benchmark
+      (42% was that number rounded);
+    - copy-deck needs 4/5 per arm and sections 8 / 17: neither target met.
+    - The agent arm and the rubric: deferred: not re-run after landing.
 
 ## Integration → master
 

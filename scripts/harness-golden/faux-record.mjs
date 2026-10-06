@@ -8,7 +8,7 @@
 //   node scripts/harness-golden/faux-record.mjs --check     # record twice into temp dirs; exit 1 unless identical
 //
 // PI_PACKAGE_DIR=<a pi-coding-agent dir> records against that pi instead of the pinned one. A re-record that
-// changes a committed fixture changes its expected outputs: re-record them and add a CHANGES.md line.
+// changes a committed fixture changes its expected outputs: re-record them and review the diff.
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";

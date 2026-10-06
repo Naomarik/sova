@@ -31,6 +31,8 @@ test("Claude preparation has backend-specific defaults and rejects Pi-only optio
 	assert.equal(prepared.model, "claude-sonnet-5-5");
 	assert.throws(() => b.validate({ prompt: "test", model: "opus[1m]" }, ctx), /use claude-opus-5-5 \(Opus 5\.5\)/, "an old alias typed as input is refused, naming the id");
 	assert.doesNotThrow(() => b.validate({ prompt: "test", model: "claude-opus-6" }, ctx), "an id the catalog does not know is still used");
+	assert.throws(() => b.validate({ backend: "claude-code", model: "claude-opus-5-5[1m]", prompt: "x" }, ctx), (e: Error) => e.message.includes("claude-opus-5-5 (Opus 5.5)"), "a [1m] form is an old id too");
+	assert.equal(b.prepare({ prompt: "x", model: "claude-opus-5-5[1m]" }, ctx).model, "claude-opus-5-5", "a recorded old id still resolves (adoption, restore)");
 	assert.equal(prepared.effort, "medium");
 	assert.deepEqual(prepared.tools, []);
 	assert.equal(prepared.permissionMode, "bypassPermissions");

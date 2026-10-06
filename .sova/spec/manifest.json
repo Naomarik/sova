@@ -14645,6 +14645,24 @@
         "server/model-favorites.ts",
         "src/design/base.css"
       ]
+    },
+    "§app.server-runtime/test-repo-fence": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "scripts/run-tests.mjs",
+        "pi-config/extensions/claude-code/tests/hermetic-env.mjs",
+        "server/test-scratch.ts",
+        "server/test-repo-fence.test.ts",
+        "server/reconcile.test.ts",
+        "server/project-coding-runtime.test.ts",
+        "server/overseer-org-tools.test.ts",
+        "server/org-about-privacy.test.ts",
+        "CLAUDE.md"
+      ],
+      "requires": [
+        "§app.server-runtime/choice"
+      ]
     }
   },
   "boundary": {

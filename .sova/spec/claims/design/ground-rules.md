@@ -198,7 +198,7 @@ Four pillars, all at once: calm, concrete, warm, and candid. The rules that matt
 - Buttons use **Title Case** and name their object: `New Session`, `Create Session`, `Stop`,
   `Copy Session Path`. All other text is sentence case.
 - Use digits, never spelled-out numbers ("3 sessions"). Relative time in lists ("2h ago",
-  "yesterday", then "Mar 4"). A 24-hour clock in mono inside the transcript (`14:06`).
+  "yesterday", then "Mar 4"). A 12-hour clock in mono inside the transcript (`1:43 PM`).
 - No exclamation marks, no apologies, no "Oops". An error has three beats: what happened · what it
   means for your work · what to do next.
 - "We" means the product. Refer to the agent by its model id (for example `claude-opus-5`), and
@@ -226,7 +226,7 @@ fade in over `--dur-base`. Only two things loop:
 
 - The `live-pulse` on `.chip-live .chip-dot` and `.live-dot`. It means work is happening now.
   In the sidebar's row rail that is `.session-rail-state.chip-live .session-rail-dot` (Busy) and
-  `.session-rail-count-live .icon`, at most one of them per row; a folder head holding an agent
+  `.session-rail-count-live .text-num` (the worker count's figure), at most one of them per row; a folder head holding an agent
   at work pulses the same dot (`.session-group-active .session-rail-dot`). In the collapsed pane
   (the spine, §app/session-list) it is `.spine-dot-busy` and `.spine-dot-working`, one dot per tile, and nothing
   else in the spine moves.

@@ -14,6 +14,12 @@ can.
 It is local containment of an agent's mistakes on a single-user machine. It is not a boundary
 for hostile code and has not been security-audited (§chat.sandbox/limits).
 
+Owns: the three states, the `/sandbox` toggle, what On enforces on Linux and macOS, failing closed,
+the policy file and per-project tightening, what workers inherit, a confined Claude Code worker's
+own state, and what it does not cover. Not here: the composer's shield and Sandbox group
+(§chat.composer/sandbox-shield, §chat.composer/composer-flyout), a worktree worker's write-only
+confinement (§chat.worktrees/workers), and what the Overseer may set (§app.overseer/tools).
+
 ## §chat.sandbox/states — Three states: Off, Subagents only, On
 
 A session's sandbox is in one of three states. Each says what is confined: the session's own
@@ -55,6 +61,9 @@ no state confines the main thread and leaves its workers loose.
   (§chat.sandbox/backends), and none confines its workers.
 
 ## §chat.sandbox/toggle — The toggle
+
+The `/sandbox` command, or the `--sandbox` flag at start, sets a session's state, which reaches its
+tools from their next call and is recorded in a `sandbox` entry.
 
 - **Where.** In pi, `/sandbox on`, `/sandbox subagents` and `/sandbox off` set On, Subagents only
   and Off (§chat.sandbox/states), and bare `/sandbox` (or `/sandbox status`) reports the current
@@ -111,6 +120,9 @@ uses: no policy, no backend, no wrapper. The only visible difference until the s
 opened is that pi reports those tools' source as the extension rather than built-in.
 
 ## §chat.sandbox/what-on-enforces — What on enforces
+
+On makes the filesystem read-only outside a few writable roots, hides credentials and host
+services, and sends the network through an allowlisting proxy, on Linux and on macOS.
 
 On means the policy file's `level`: `workspace-write` by default, `read-only` if the file says
 so. It is not a choice in the UI. Under `workspace-write`:
@@ -191,6 +203,9 @@ so. It is not a choice in the UI. Under `workspace-write`:
 
 ## §chat.sandbox/fail-closed — Fail closed
 
+When the sandbox can't be set up, the tools refuse instead of running unconfined, and an effect it
+can't govern marks enforcement `partial`.
+
 Before confining, the backend probes the exact profile it will use. If the probe fails, or the
 platform has no backend, the tools **refuse** with an error naming the sandbox and the reason,
 and the state reads `unavailable: {reason}`. They never fall back to running unconfined. The
@@ -224,6 +239,8 @@ is the workspace. `install.sh --check` reports drift from the template and never
   differently on macOS (§chat.sandbox/what-on-enforces).
 
 ## §chat.sandbox/project-tightening — Per-project config only tightens
+
+A project's own config can tighten the sandbox, never loosen it.
 
 A project may carry `<cwd>/.sova/sandbox.json`. It may only **tighten**: lower the level to
 `read-only`, add hidden paths, remove proxy hosts, remove writable roots, remove shadowed
@@ -309,6 +326,8 @@ no confined tools there: an on state is recorded with enforcement `none` and the
 enforced on remote", and reads "Sandbox on · not enforced on remote" (§chat.sandbox/toggle).
 
 ## §chat.sandbox/limits — What it does not cover
+
+These are the gaps the sandbox leaves, each named so that nobody relies on it there.
 
 - **The file tools are policy-enforced, not OS-enforced.** `read`, `write`, `edit`, `ls`, `find`
   and `grep` run inside the agent process and check canonical paths against the policy; only

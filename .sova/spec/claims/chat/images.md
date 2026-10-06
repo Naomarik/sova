@@ -15,7 +15,14 @@ outlives a reboot, so a sent image keeps its thumbnail in the transcript. Deleti
 removes its folder, and then the unit reads "No longer on disk", as a cleaned-up `/tmp` paste
 does. Old base64 rows keep their inline thumbnails.
 
+Owns: uploading at attach, thumbnails in the thread, image paths shown as attachments and chips,
+hiding pi's resize notes, the lightbox, and the composer's pending list. Not here: the draft that
+keeps pending images across reloads (§chat.composer/behavior), the flyout row that opens the picker
+(§chat.composer/composer-flyout), and the words (§design.copy-deck/images).
+
 ## §chat.images/thread-thumbnails — Thread thumbnails
+
+Images a user row or a tool result carries show as thumbnails that open the lightbox.
 
 On a **user row**, the images go under the head, right-aligned, and *above* the text bubble
 (the images are what the text talks about). If the row has no text, leave out
@@ -113,6 +120,9 @@ images. There is no separate count: the summary has no image badge, and the body
 alt. `aria-haspopup="dialog"` tells AT that it opens something.
 
 ## §chat.images/path-attachments — Path attachments
+
+An image path in a row's text (a terminal paste in `/tmp`, or a Sova upload) shows as a collapsed
+attachment on a user row, and as a chip or a tool-card section everywhere else.
 
 When you paste an image into pi's terminal UI, pi writes it to `/tmp/pi-clipboard-<uuid>.png`
 (`/tmp/pi-wsl-clip-<uuid>.png` under WSL) and puts that **path in the message text**. A Sova
@@ -259,6 +269,9 @@ touched.
 
 ## §chat.images/lightbox — Lightbox
 
+Clicking an image opens it full size in a modal lightbox that steps only through its own row's
+images.
+
 **There is a lightbox.** Clicking or pressing Enter/Space on a `.thumb` opens that image full
 size. It's one native `<dialog>`, opened with `showModal()`. That puts it in the top layer (it
 isn't trapped by a `.pane`, and it needs no Portal), makes the page behind it inert, and gives
@@ -316,6 +329,9 @@ untouched.
   the 3:1 `--color-border-strong` edge, so they read against the scrim.
 
 ## §chat.images/composer-attachments — Composer attachments
+
+Images attach to the next message by paste, drop or the flyout's Attach images row, upload at once,
+and wait in a pending list above the textarea.
 
 There are three ways in, and all three feed the same pending list.
 

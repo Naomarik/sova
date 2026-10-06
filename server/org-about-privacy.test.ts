@@ -4,16 +4,17 @@
 // dir, deleted after; ~/.pi is never touched. Every model is a stub that records what it was sent.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { appendFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
-import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { after, describe, test } from "node:test";
 import { BATON_DECISION_ENTRY, BATON_SENT_ENTRY } from "../shared/baton";
 import type { DecisionProvider, DecisionRequest } from "./decide";
 import { piSession } from "./harness/pi/testing/handle";
+import { scratchRoot } from "./test-scratch";
 
-const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-about-")));
+// In no repository: the Ledger project is a plain folder, so its coding session cuts no worktree.
+const root = scratchRoot("sova-about-");
 // A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
 process.on("exit", () => rmSync(root, { recursive: true, force: true }));
 const agentDir = join(root, "agent");

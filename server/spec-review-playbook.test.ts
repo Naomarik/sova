@@ -2,7 +2,7 @@
 // operator-run bundle the real catalog loader lists with no schedule, whose published shell blocks run
 // as written with their placeholders filled: the preflight refuses a bad root or base before it lists
 // anything and caps its list, the metadata block's known-base flags are accepted by the trusted tools,
-// and a packet page stays within its budget. Throwaway repositories and agent dir only.
+// and the reading call lists the contents, then reads one passage within its budget. Throwaway repositories and agent dir only.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
@@ -16,7 +16,7 @@ const PLAYBOOK = fileURLToPath(new URL("../playbooks/spec-review/", import.meta.
 const TEXT = readFileSync(join(PLAYBOOK, "PLAYBOOK.md"), "utf8");
 const CORE = fileURLToPath(new URL("../pi-config/extensions/spec/core", import.meta.url));
 const SPEC_MODE = fileURLToPath(new URL("../pi-config/extensions/mode/spec-mode.md", import.meta.url));
-/** The playbook's shell blocks, in order: the preflight, the metadata call, the packet call. */
+/** The playbook's shell blocks, in order: the preflight, the metadata call, the reading call (toc, then read). */
 const BLOCKS = [...TEXT.matchAll(/^```sh\n([\s\S]*?)^```$/gm)].map((m) => m[1]!);
 
 const tmp = realpathSync(mkdtempSync(join(tmpdir(), "spec-review-playbook-")));
@@ -36,8 +36,11 @@ function project() {
   const R = join(tmp, `project-${n++}`);
   write(R, ".sova/spec/manifest.json", JSON.stringify({ formatVersion: 1, boundary: { include: ["lib"], exclude: [] }, claims: {
     "§app/rule": { kind: "behavior", requires: [], authority: "accepted", evidence: "verified", code: ["lib/rule.js"] },
+    // An always-on frame of ~5.7 KB: the first read carries it outside its budget (§tools.spec/frame).
+    "§app/ground": { kind: "note", authority: "accepted", core: true },
   } }));
   write(R, ".sova/spec/claims/app/rule.md", `# §app/rule\n\n${"Meter fill warns at ≥80%. ".repeat(200)}\n`);
+  write(R, ".sova/spec/claims/app/ground.md", `# §app/ground\n\n${"Every task keeps the ground rules. ".repeat(160)}\n`);
   write(R, "lib/rule.js", "export const threshold = 80;\n");
   write(R, ".gitignore", ".sova/spec/drafts/\n");
   git(R, "init");
@@ -74,7 +77,7 @@ test("the real loader lists it as a Sova playbook with no schedule, its frontmat
   assert.equal(p.schedule, undefined, "no schedule");
   assert.deepEqual(Object.keys(parseFrontmatter(TEXT).fields).sort(), ["description", "promptHint", "title"]);
   assert.deepEqual(readdirSync(PLAYBOOK), ["PLAYBOOK.md"], "no script or state of its own");
-  assert.equal(BLOCKS.length, 3, "the preflight, the metadata call and the packet call");
+  assert.equal(BLOCKS.length, 3, "the preflight, the metadata call and the reading call");
   const coreLine = readFileSync(SPEC_MODE, "utf8").split("\n").find((l) => l.startsWith('core="${PI_CODING_AGENT_DIR'));
   for (const b of BLOCKS.slice(1)) assert.equal(b.split("\n")[0], coreLine, "each call resolves the tools with spec-mode.md's own line");
 });
@@ -111,7 +114,7 @@ test("preflight: the change list stops at 201 lines, one past the 200 a brief ma
   assert.equal(r.out.trim().split("\n").length, 1 + 201);
 });
 
-test("the metadata call's known-base flags are accepted by git and the trusted tools, and a packet page stays within its budget", () => {
+test("the metadata call's known-base flags are accepted by git and the trusted tools, and the reading call lists contents, then reads one exact passage within its budget", () => {
   const { R, B } = project();
   const r = sh(fill(BLOCKS[1]!, { root: R, base: B, paths: "lib/rule.js" }));
   assert.match(r.out, /^ lib\/rule\.js \| 2 \+-$/m, "diff --stat against the base, scoped");
@@ -122,11 +125,36 @@ test("the metadata call's known-base flags are accepted by git and the trusted t
   assert.equal(docs[0].census.base.commit, B);
   assert.deepEqual(docs[0].census.claimed.map((c: { path: string }) => c.path), ["lib/rule.js"]);
 
+  assert.doesNotMatch(BLOCKS[2]!, /\b(packet|scope)\b/, "whole-chain packet and scope are not the reading step");
+  const passage = readFileSync(join(R, ".sova/spec/claims/app/rule.md"), "utf8");
   for (const budget of ["12000", "1024"]) {
     const p = sh(fill(BLOCKS[2]!, { root: R, "§id": "§app/rule" }).replace("--budget 12000", `--budget ${budget}`));
-    const page = JSON.parse(p.out);
-    assert.notEqual(page.exit, 2, p.out);
-    assert.equal(page.budget, Number(budget));
-    assert.ok(Buffer.byteLength(p.out.trimEnd()) <= Number(budget), `${Buffer.byteLength(p.out)} bytes over a ${budget} budget`);
+    const [toc, page, ...rest] = p.out.trimEnd().split("\n");
+    assert.deepEqual(rest, [], "one line per call");
+    const contents = JSON.parse(toc!), read = JSON.parse(page!);
+    assert.deepEqual([contents.command, contents.dir, read.command], ["toc", "out", "read"]);
+    assert.notEqual(contents.exit, 2, toc);
+    assert.deepEqual(contents.footer.delivered, [], "contents only: no passage");
+    assert.notEqual(read.exit, 2, page);
+    assert.equal(read.budget, Number(budget));
+    // The first read carries the always-on frame outside its budget: the page without the frame's passages fits.
+    assert.deepEqual(read.frame.items.map((i: { id: string }) => i.id), ["§app/ground"], "the first read brings the frame");
+    const { items: frameItems, ...frameSummary } = read.frame;
+    const withoutFrame = JSON.stringify({ ...read, frame: frameSummary });
+    assert.ok(Buffer.byteLength(withoutFrame) + 1 <= Number(budget), `${Buffer.byteLength(withoutFrame)} bytes, the frame aside, over a ${budget} budget`);
+    assert.ok(Buffer.byteLength(page!) > Buffer.byteLength(withoutFrame) + Buffer.byteLength(frameItems[0].text), "the frame's passage is on the page too");
+    assert.deepEqual([...new Set(read.items.map((i: { id: string }) => i.id))], ["§app/rule"], "one passage, nothing it links");
+    const item = read.items[0];
+    assert.equal(item.fragment.start, 0);
+    assert.ok(passage.startsWith(item.text), "the passage, exact");
+    assert.equal(read.next === null, item.fragment.end === item.fragment.total, "a cut passage names its continuation");
+    // Every later read adds --no-frame, as the block says: then the whole page is within the budget.
+    assert.match(BLOCKS[2]!, /every later read adds --no-frame/);
+    const later = sh(fill(BLOCKS[2]!, { root: R, "§id": "§app/rule" }).replace("--budget 12000", `--budget ${budget} --no-frame`));
+    const laterPage = later.out.trimEnd().split("\n")[1]!;
+    const laterRead = JSON.parse(laterPage);
+    assert.notEqual(laterRead.exit, 2, laterPage);
+    assert.equal(laterRead.frame?.items, undefined, "--no-frame drops the frame");
+    assert.ok(Buffer.byteLength(laterPage) + 1 <= Number(budget), `${Buffer.byteLength(laterPage)} bytes over a ${budget} budget`);
   }
 });

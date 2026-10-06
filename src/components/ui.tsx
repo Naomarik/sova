@@ -9,7 +9,7 @@ export type IconName =
   | "alert-circle" | "archive" | "arrow-right" | "attach" | "branch" | "command" | "image" | "attention" | "chat" | "check" | "chevron-down" | "chevron-left"
   | "chevron-right" | "bell" | "clock" | "close" | "copy" | "external" | "eye" | "file" | "folder" | "info" | "more" | "stop"
   | "panel-collapse" | "panel-expand" | "pencil" | "plus" | "refresh" | "search" | "shield" | "shield-on" | "shield-partial" | "shield-off" | "star" | "trash" | "undo" | "settings" | "sliders" | "terminal" | "gauge" | "worker" | "network" | "grid" | "building" | "activity"
-  | "bulb" | "wrench" | "mic" | "share";
+  | "bulb" | "wrench" | "mic" | "share" | "code";
 
 /** A shipped SVG as a mask over currentColor (base.css `span.icon`). Decorative unless labelled. */
 export function Icon(props: { name: IconName; small?: boolean; class?: string }) {

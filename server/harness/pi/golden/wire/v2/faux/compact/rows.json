@@ -31,7 +31,7 @@
     "at": "2026-09-03T08:00:00.013Z",
     "model": "faux/faux-1",
     "facts": {
-      "contextTokens": 2742
+      "contextTokens": 2802
     }
   },
   {
@@ -48,18 +48,18 @@
     "at": "2026-09-03T08:00:00.017Z",
     "model": "faux/faux-1",
     "facts": {
-      "contextTokens": 1413
+      "contextTokens": 1443
     }
   },
   {
     "id": "00000008",
     "kind": "info",
-    "text": "Compacted (1417 tokens): ## Summary\nTwo questions were answered.\n\n---\n\n**Turn Context (split turn):**\n\n## Summary\nTwo questions were answered.",
+    "text": "Compacted (1447 tokens): ## Summary\nTwo questions were answered.\n\n---\n\n**Turn Context (split turn):**\n\n## Summary\nTwo questions were answered.",
     "at": "2026-09-03T08:00:00.022Z",
     "facts": {
       "resetsContext": true,
       "compaction": {
-        "tokensBefore": 1417,
+        "tokensBefore": 1447,
         "summary": "## Summary\nTwo questions were answered.\n\n---\n\n**Turn Context (split turn):**\n\n## Summary\nTwo questions were answered.",
         "details": {
           "readFiles": [],

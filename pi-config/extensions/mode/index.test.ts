@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
-import { ALIGN_INSTRUCTIONS, buildMinorPrompt, isMinorMode, MINOR_DESCRIPTIONS, MINOR_MODES, MINOR_WORKER, type MinorMode, normalizeMinorModes, parseMinorFlag, SPEC_CORE_SHELL, SPEC_INSTRUCTIONS, stripVisComments, VIS_FILES, VIS_INSTRUCTIONS, VIS_KIND_FILES, VIS_KINDS, visGuide, visOverview, workerMinorModes } from "./minor.ts";
+import { ALIGN_INSTRUCTIONS, buildMinorPrompt, CODEMODE_TOOL, isMinorMode, MINOR_DESCRIPTIONS, MINOR_MODES, MINOR_PROMPTLESS, MINOR_WORKER, type MinorMode, normalizeMinorModes, parseMinorFlag, promptedMinorModes, SCRIPT_ONLY_EXPOSURES, SPEC_CORE_SHELL, SPEC_INSTRUCTIONS, stripVisComments, VIS_FILES, VIS_INSTRUCTIONS, VIS_KIND_FILES, VIS_KINDS, visGuide, visOverview, workerMinorModes } from "./minor.ts";
 import { parseModeWorkerEvent } from "./events.ts";
 import { MODE_CATEGORY_ID, modeCategoryItems } from "./palette.ts";
 import { ALIGN_FILE_SCHEMA, ALIGN_NUDGE_TEXT, ALIGN_OPS } from "./align.ts";
@@ -303,7 +303,7 @@ test("vis_guide: the shared rules then the kind's file, for the listed kinds onl
 });
 
 test("spec: a registered minor mode, composed after align and never bridged", () => {
-	assert.deepEqual(MINOR_MODES, ["align", "spec", "vis"], "registry order is prompt and status order");
+	assert.deepEqual(MINOR_MODES, ["align", "spec", "vis", "codemode"], "registry order is prompt and status order");
 	assert.deepEqual(Object.keys(MINOR_DESCRIPTIONS), [...MINOR_MODES], "one description per minor mode, nothing else");
 	assert.deepEqual(parseMinorFlag("spec,align"), { minorModes: ["align", "spec"], unknown: [] });
 	const spec = buildMinorPrompt("spec");
@@ -1032,6 +1032,29 @@ test("composeWorkerPrompt: the spec block byte for byte, then the worker note; n
 	assert.equal(composeWorkerPrompt({ minorModes: ["align"] }), undefined, "align alone reaches no worker");
 	assert.equal(composeWorkerPrompt({ minorModes: ["vis"] }), undefined, "vis alone reaches no worker");
 	assert.equal(composeWorkerPrompt({ minorModes: [] }), undefined);
+});
+
+test("codemode: a minor mode with no prompt block, no mode note and no worker reach; its tool and host contract", () => {
+	assert.equal(MINOR_DESCRIPTIONS.codemode, "Let the model run JavaScript that calls tools in parallel and filters their output (pi's codemode tool)");
+	assert.equal(MINOR_WORKER.codemode, false, "workers never get it");
+	assert.equal(CODEMODE_TOOL, "codemode");
+	assert.deepEqual(Object.keys(MINOR_PROMPTLESS), [...MINOR_MODES], "every minor mode decides");
+	assert.deepEqual(promptedMinorModes(["align", "spec", "vis", "codemode"]), ["align", "spec", "vis"]);
+	// No block: alone it composes nothing, beside others it adds nothing.
+	assert.equal(composePrompt(withMinor(defaults(), "codemode", true), ALL_OK), undefined);
+	const vis = withMinor(defaults(), "vis", true);
+	assert.equal(composePrompt(withMinor(vis, "codemode", true), ALL_OK), composePrompt(vis, ALL_OK));
+	assert.doesNotMatch(composePrompt({ ...defaults(), mode: "delegate", minorModes: ["codemode"] }, ALL_OK)!, /codemode/);
+	// No note, on or off; a real switch beside it is still told.
+	assert.equal(buildModeNote([], ["codemode"], { head: [], guides: [] }), undefined, "turning codemode on tells nothing");
+	assert.equal(buildModeNote(["codemode"], [], { head: ["codemode"], guides: [] }), undefined, "nor does turning it off");
+	const both = buildModeNote([], ["vis", "codemode"], { head: [], guides: [] })!;
+	assert.deepEqual(both.guides, ["vis"]);
+	assert.doesNotMatch(both.text, /codemode/);
+	assert.equal(composeWorkerPrompt({ minorModes: ["codemode"] }), undefined);
+	// The status line names it like any minor mode.
+	assert.deepEqual(statusLabel("normal", ALL_OK, false, ["codemode"]), { text: "normal · codemode", tone: "accent" });
+	assert.ok(SCRIPT_ONLY_EXPOSURES.has("codemode") && SCRIPT_ONLY_EXPOSURES.has("deferred") && !SCRIPT_ONLY_EXPOSURES.has("direct") && !SCRIPT_ONLY_EXPOSURES.has("model-only"));
 });
 
 test("SPEC_WORKER_NOTE: the parent promotes, the brief is the go-ahead, and the reply ends on the Also changes line spec-mode.md names", () => {

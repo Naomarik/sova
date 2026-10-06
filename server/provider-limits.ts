@@ -2,6 +2,7 @@ import { agentRoot } from "./state-root";
 // The provider-limits extension's own file and gate (node builtins only): the shape, the strict
 // parse, the atomic write, the defaults a missing file stands for, and the queue files. See CLAUDE.md.
 import {
+  acquireSlot,
   DEFAULT_PROVIDER_LIMITS,
   MAX_LIMIT,
   MIN_LIMIT,
@@ -10,9 +11,21 @@ import {
   readLowered,
   readProviderLimits,
   waitingBySession,
+  whileHolding,
   writeProviderLimits,
+  type Slot,
 } from "../pi-config/extensions/provider-limits/gate.ts";
 import type { ProviderLimitsInfo, ProviderWaiting } from "../shared/provider-limits";
+
+/** One of `provider`'s request slots for a call a session makes outside its stream (a codemode script's model
+    call, §chat.mode-menu/codemode): an interactive request of that session, waiting in the queue while the
+    provider is full; null when the provider has no limit. */
+export function claimSessionSlot(provider: string, opts: { sessionId?: string; signal?: AbortSignal }, agentDir = agentRoot()): Promise<Slot | null> {
+  return acquireSlot(provider, { agentDir, kind: "interactive", ...opts });
+}
+
+/** Run `fn` as holding `provider`'s slot, so a gated request inside it never claims a second. */
+export const holdingSlot = whileHolding;
 
 // Settings → Models' "At once" field (§app.provider-limits/setting) and the web's waiting state
 // (§app.provider-limits/waiting-shown). The file (~/.pi/agent/provider-limits.json) is read by every

@@ -2656,6 +2656,9 @@ export function registerSubagents(
 	pi.registerTool({
 		name: "agent_spawn",
 		label: "Spawn Subagents",
+		// Spawns are read back from this tool's recorded calls and results (the timeline, the worker cards):
+		// a codemode script's call has none.
+		exposure: "model-only",
 		description:
 			"Start independent background agents (backend defaults to pi; claude-code uses the installed Claude extension); returns IDs without waiting for tasks. Use agent_list/agent_transcript to inspect, agent_steer to redirect or queue follow-ups, agent_kill to stop, agent_wait when results are needed. Settled workers wake you when idle (wake=true, default). Workers share the filesystem. Pi-only: fork=true copies conversation history; extensions loads listed Pi extensions. Claude starts fresh and uses backendOptions for permission/settings policy.",
 		promptSnippet: "Spawn background subagents (non-blocking) and manage them by id",
@@ -3218,6 +3221,7 @@ export function registerSubagents(
 	pi.registerTool({
 		name: "team_create",
 		label: "Create Team",
+		exposure: "model-only",
 		description:
 			"Create a named team of background workers with one unique role each, a shared objective and declared (advisory) ownership. Each member's prompt gets a fixed team header prepended. Members get team tools: team_msg (message a teammate by role; delivered by this extension), team_inbox, team_ask (question to you/the user, surfaced as a team-question message that starts your turn when idle; answer with agent_steer). A member with orchestrator: true also gets team_roster and team_steer over its own team only; no member can spawn, add or stop workers. pi members load them as a Pi extension, Claude members as MCP tools (mcp__team__<tool>). Starts all members through the same path as agent_spawn (validated before any start, rolled back together on failure) and returns exact worker IDs without waiting. Members default to the pi backend unless defaults.backend or the member sets another.",
 		promptSnippet: "Create a team of role-based background workers with declared ownership",

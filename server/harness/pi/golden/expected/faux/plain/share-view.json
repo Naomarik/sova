@@ -39,11 +39,11 @@
           "provider": "faux",
           "model": "faux-1",
           "usage": {
-            "input": 1367,
+            "input": 1397,
             "output": 7,
             "cacheRead": 0,
-            "cacheWrite": 1367,
-            "totalTokens": 2741,
+            "cacheWrite": 1397,
+            "totalTokens": 2801,
             "cost": {
               "input": 0,
               "output": 0,
@@ -54,7 +54,8 @@
           },
           "stopReason": "stop",
           "responseId": "faux-resp-0",
-          "timestamp": 1788350401000
+          "timestamp": 1788350401000,
+          "thinkingLevel": "medium"
         }
       },
       "role": "assistant",

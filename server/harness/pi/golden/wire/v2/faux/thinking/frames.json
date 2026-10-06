@@ -11,6 +11,6 @@
   "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"part.delta\",\"index\":1,\"kind\":\"text\",\"delta\":\"Short answer: ye\"}}",
   "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"part.delta\",\"index\":1,\"kind\":\"text\",\"delta\":\"s.\"}}",
   "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"part.end\",\"index\":1,\"kind\":\"text\",\"text\":\"Short answer: yes.\"}}",
-  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"message.end\",\"role\":\"assistant\",\"entryId\":\"00000005\",\"model\":\"faux/faux-1\",\"parts\":[{\"kind\":\"thinking\",\"text\":\"The user wants a short answer.\"},{\"kind\":\"text\",\"text\":\"Short answer: yes.\"}],\"stop\":\"ok\",\"contextTokens\":2746}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"message.end\",\"role\":\"assistant\",\"entryId\":\"00000005\",\"model\":\"faux/faux-1\",\"parts\":[{\"kind\":\"thinking\",\"text\":\"The user wants a short answer.\"},{\"kind\":\"text\",\"text\":\"Short answer: yes.\"}],\"stop\":\"ok\",\"contextTokens\":2806}}",
   "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"run.settled\"}}"
 ]

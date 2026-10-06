@@ -11,13 +11,13 @@
     "{\"id\":\"00000004\",\"kind\":\"user\",\"at\":\"2026-09-03T08:00:00.012Z\",\"text\":\"What is in notes.txt?\",\"meta\":{\"type\":\"message\",\"role\":\"user\"}}"
   ],
   [
-    "{\"id\":\"00000005:0\",\"kind\":\"assistant-text\",\"text\":\"Reading it.\",\"at\":\"2026-09-03T08:00:00.013Z\",\"model\":\"faux/faux-1\",\"meta\":{\"type\":\"message\",\"role\":\"assistant\",\"provider\":\"faux\",\"model\":\"faux-1\",\"usage\":{\"input\":1373,\"output\":10,\"cacheRead\":0,\"cacheWrite\":1373,\"totalTokens\":2756,\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"total\":0}},\"stopReason\":\"toolUse\"}}",
+    "{\"id\":\"00000005:0\",\"kind\":\"assistant-text\",\"text\":\"Reading it.\",\"at\":\"2026-09-03T08:00:00.013Z\",\"model\":\"faux/faux-1\",\"meta\":{\"type\":\"message\",\"role\":\"assistant\",\"provider\":\"faux\",\"model\":\"faux-1\",\"usage\":{\"input\":1403,\"output\":10,\"cacheRead\":0,\"cacheWrite\":1403,\"totalTokens\":2816,\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"total\":0}},\"stopReason\":\"toolUse\"}}",
     "{\"id\":\"00000005:1\",\"kind\":\"tool-call\",\"text\":\"read\",\"toolCallId\":\"call_read_1\",\"at\":\"2026-09-03T08:00:00.013Z\",\"model\":\"faux/faux-1\",\"tool\":{\"summary\":\"notes.txt\",\"lazy\":true,\"bytes\":20}}"
   ],
   [
     "{\"id\":\"00000006\",\"kind\":\"tool-result\",\"toolCallId\":\"call_read_1\",\"at\":\"2026-09-03T08:00:00.015Z\",\"meta\":{\"type\":\"message\",\"role\":\"toolResult\",\"toolName\":\"read\",\"toolCallId\":\"call_read_1\",\"isError\":false},\"tool\":{\"lazy\":true,\"bytes\":18}}"
   ],
   [
-    "{\"id\":\"00000007:0\",\"kind\":\"assistant-text\",\"text\":\"It has two lines.\",\"at\":\"2026-09-03T08:00:00.017Z\",\"model\":\"faux/faux-1\",\"meta\":{\"type\":\"message\",\"role\":\"assistant\",\"provider\":\"faux\",\"model\":\"faux-1\",\"usage\":{\"input\":22,\"output\":5,\"cacheRead\":1373,\"cacheWrite\":22,\"totalTokens\":1422,\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"total\":0}},\"stopReason\":\"stop\"}}"
+    "{\"id\":\"00000007:0\",\"kind\":\"assistant-text\",\"text\":\"It has two lines.\",\"at\":\"2026-09-03T08:00:00.017Z\",\"model\":\"faux/faux-1\",\"meta\":{\"type\":\"message\",\"role\":\"assistant\",\"provider\":\"faux\",\"model\":\"faux-1\",\"usage\":{\"input\":22,\"output\":5,\"cacheRead\":1403,\"cacheWrite\":22,\"totalTokens\":1452,\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"total\":0}},\"stopReason\":\"stop\"}}"
   ]
 ]

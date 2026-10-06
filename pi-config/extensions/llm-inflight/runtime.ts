@@ -3,7 +3,8 @@
  * pi request of a process goes through: the agent's turns and their retries, compaction and branch
  * summaries, prompt-cache warming, and an extension's ctx.modelRegistry.stream/streamSimple/complete.
  * Its `complete*` and `fetchDeferred` call `this.stream*`, so wrapping the stream methods on the
- * instance counts each call once.
+ * instance counts each call once. Its `classify` and `generateImages` (a codemode script's `models.*`)
+ * stream nothing and are wrapped on their own: one call and one record each.
  *
  * Duck-typed and builtins only: Sova's server instruments the runtime it owns with this, and the
  * extension instruments the one `ctx.modelRegistry` fronts. The instance is marked, so a second
@@ -132,6 +133,27 @@ function recordReply(message: unknown, asked: Asked | undefined): void {
 			// A registered session's reply carries its stream-start time, persisted with it.
 			...(asked.who.routed && asked.who.owner && ts ? { key: `pi:${asked.who.owner}:${ts}:${provider}/${model}` } : {}),
 			...(typeof m.stopReason === "string" ? { stop: m.stopReason } : {}),
+		});
+	} catch {
+		// Recording only.
+	}
+}
+
+/** One usage record for a classifier or image answer (its `usage`: input and output only). Never throws. */
+function recordAnswer(value: unknown, asked: Asked | undefined): void {
+	try {
+		if (!asked) return;
+		const v = value as { provider?: unknown; model?: unknown; stopReason?: unknown; usage?: { input?: unknown; output?: unknown } } | undefined;
+		if (!v?.usage) return;
+		const provider = typeof v.provider === "string" && v.provider ? v.provider : asked.provider;
+		if (usageProviderClaimed(provider)) return;
+		recordUsage({
+			src: "pi",
+			provider,
+			model: typeof v.model === "string" && v.model ? v.model : asked.model,
+			tokens: { input: v.usage.input as number, output: v.usage.output as number, cacheRead: 0, cacheWrite: 0 },
+			who: asked.who,
+			...(typeof v.stopReason === "string" ? { stop: v.stopReason } : {}),
 		});
 	} catch {
 		// Recording only.
@@ -306,8 +328,42 @@ export function instrumentModelRuntime(runtime: unknown): Instrumented {
 				}
 				return result;
 			};
+		/**
+		 * A classifier or image call (pi 1.0's ModelRuntime.classify / generateImages: a codemode script's
+		 * `models.*`): no stream, one promise. In flight from the call to its settling, and one usage record
+		 * (purpose `classify` / `image`) for whoever the caller's usage context names.
+		 */
+		const answered = (original: Method, purpose: string): Method =>
+			function (this: unknown, ...args: unknown[]) {
+				let call: LlmCallEnd | undefined;
+				let asked: Asked | undefined;
+				try {
+					call = beginLlmCall({ source: "runtime" });
+					const m = args[0] as { provider?: unknown; id?: unknown } | undefined;
+					asked = { provider: typeof m?.provider === "string" ? m.provider : "", model: typeof m?.id === "string" ? m.id : "", who: resolveUsageAttribution(undefined, { purpose }) };
+				} catch {
+					// Bookkeeping only: the call runs as it would.
+				}
+				let result: unknown;
+				try {
+					result = call ? withinLlmCall(call, () => original.apply(this, args)) : original.apply(this, args);
+				} catch (error) {
+					call?.();
+					throw error;
+				}
+				Promise.resolve(result).then(
+					(value) => {
+						call?.();
+						recordAnswer(value, asked);
+					},
+					() => call?.(),
+				);
+				return result;
+			};
 		define("stream", counted(stream as Method));
 		define("streamSimple", counted(streamSimple as Method));
+		if (typeof rt.classify === "function") define("classify", answered(rt.classify as Method, "classify"));
+		if (typeof rt.generateImages === "function") define("generateImages", answered(rt.generateImages as Method, "image"));
 		if (typeof rt.streamDeferred === "function")
 			define("streamDeferred", retiring(rt.streamDeferred as Method, (m) => (m as { stopReason?: unknown } | undefined)?.stopReason !== "deferred", true));
 		if (typeof rt.cancelDeferred === "function") define("cancelDeferred", retiring(rt.cancelDeferred as Method, () => true));

@@ -1,0 +1,244 @@
+{
+  "stamp": "2026-10-06T06-22-09",
+  "model": "zai/glm-5.3",
+  "runs": 6,
+  "arms": [
+    "off",
+    "on",
+    "hint"
+  ],
+  "attempts": [
+    {
+      "id": "2026-10-06T06-22-09-01-off",
+      "arm": "off",
+      "ok": true,
+      "error": null
+    },
+    {
+      "id": "2026-10-06T06-22-09-01-on",
+      "arm": "on",
+      "ok": true,
+      "error": null
+    },
+    {
+      "id": "2026-10-06T06-22-09-01-hint",
+      "arm": "hint",
+      "ok": true,
+      "error": null
+    },
+    {
+      "id": "2026-10-06T06-22-09-02-on",
+      "arm": "on",
+      "ok": true,
+      "error": null
+    },
+    {
+      "id": "2026-10-06T06-22-09-02-hint",
+      "arm": "hint",
+      "ok": true,
+      "error": null
+    },
+    {
+      "id": "2026-10-06T06-22-09-02-off",
+      "arm": "off",
+      "ok": true,
+      "error": null
+    },
+    {
+      "id": "2026-10-06T06-22-09-03-hint",
+      "arm": "hint",
+      "ok": true,
+      "error": null
+    },
+    {
+      "id": "2026-10-06T06-22-09-03-off",
+      "arm": "off",
+      "ok": true,
+      "error": null
+    },
+    {
+      "id": "2026-10-06T06-22-09-03-on",
+      "arm": "on",
+      "ok": true,
+      "error": null
+    },
+    {
+      "id": "2026-10-06T06-22-09-04-off",
+      "arm": "off",
+      "ok": true,
+      "error": null
+    },
+    {
+      "id": "2026-10-06T06-22-09-04-on",
+      "arm": "on",
+      "ok": true,
+      "error": null
+    },
+    {
+      "id": "2026-10-06T06-22-09-04-hint",
+      "arm": "hint",
+      "ok": true,
+      "error": null
+    },
+    {
+      "id": "2026-10-06T06-22-09-05-on",
+      "arm": "on",
+      "ok": true,
+      "error": null
+    },
+    {
+      "id": "2026-10-06T06-22-09-05-hint",
+      "arm": "hint",
+      "ok": true,
+      "error": null
+    },
+    {
+      "id": "2026-10-06T06-22-09-05-off",
+      "arm": "off",
+      "ok": true,
+      "error": null
+    },
+    {
+      "id": "2026-10-06T06-22-09-06-hint",
+      "arm": "hint",
+      "ok": true,
+      "error": null
+    },
+    {
+      "id": "2026-10-06T06-22-09-06-off",
+      "arm": "off",
+      "ok": true,
+      "error": null
+    },
+    {
+      "id": "2026-10-06T06-22-09-06-on",
+      "arm": "on",
+      "ok": true,
+      "error": null
+    }
+  ],
+  "stats": {
+    "off": {
+      "n": 6,
+      "turns": {
+        "median": 5,
+        "mean": 5.333333333333333
+      },
+      "toolCalls": {
+        "median": 11.5,
+        "mean": 11.333333333333334
+      },
+      "nestedCalls": {
+        "median": 0,
+        "mean": 0
+      },
+      "inputTokens": {
+        "median": 74804,
+        "mean": 78781.83333333333
+      },
+      "uncachedInput": {
+        "median": 3669.5,
+        "mean": 5736.5
+      },
+      "outputTokens": {
+        "median": 1606.5,
+        "mean": 1600.1666666666667
+      },
+      "cost": {
+        "median": 0.0308075,
+        "mean": 0.034063666666666666
+      },
+      "wallS": {
+        "median": 41.908,
+        "mean": 42.165333333333336
+      },
+      "correct": 6
+    },
+    "on": {
+      "n": 6,
+      "turns": {
+        "median": 5.5,
+        "mean": 5.5
+      },
+      "toolCalls": {
+        "median": 9.5,
+        "mean": 9.5
+      },
+      "nestedCalls": {
+        "median": 0,
+        "mean": 0
+      },
+      "inputTokens": {
+        "median": 86764.5,
+        "mean": 86273.33333333333
+      },
+      "uncachedInput": {
+        "median": 3838.5,
+        "mean": 3862.6666666666665
+      },
+      "outputTokens": {
+        "median": 1786,
+        "mean": 1779.8333333333333
+      },
+      "cost": {
+        "median": 0.0347435,
+        "mean": 0.034665666666666664
+      },
+      "wallS": {
+        "median": 39.911,
+        "mean": 40.92583333333334
+      },
+      "correct": 6
+    },
+    "hint": {
+      "n": 6,
+      "turns": {
+        "median": 4.5,
+        "mean": 4.333333333333333
+      },
+      "toolCalls": {
+        "median": 3.5,
+        "mean": 4.333333333333333
+      },
+      "nestedCalls": {
+        "median": 19.5,
+        "mean": 21
+      },
+      "inputTokens": {
+        "median": 72129.5,
+        "mean": 72305.16666666667
+      },
+      "uncachedInput": {
+        "median": 6174.5,
+        "mean": 6715.833333333333
+      },
+      "outputTokens": {
+        "median": 4456,
+        "mean": 5004.5
+      },
+      "cost": {
+        "median": 0.0442085,
+        "mean": 0.04847516666666666
+      },
+      "wallS": {
+        "median": 70.233,
+        "mean": 81.89466666666668
+      },
+      "correct": 6
+    }
+  },
+  "key": {
+    "callers": [
+      "src/api/users.js:getUser",
+      "src/api/orders.js:createOrder",
+      "src/jobs/cleanup.js:runCleanup",
+      "src/jobs/report.js:formatRow",
+      "src/jobs/report.js:buildReport",
+      "src/util/retry.js:withRetry",
+      "src/auth/session.js:login",
+      "src/auth/tokens.js:rotate"
+    ],
+    "total": 12,
+    "unusedKey": "archiveAfterDays"
+  }
+}

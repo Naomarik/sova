@@ -77,6 +77,7 @@ import { listProjectFiles } from "./files";
 import { getGitSummary } from "./git-summary";
 import { cleanupPlan, cleanupRemove, configureCleanup, worktreesSummary } from "./worktree-cleanup";
 import { applyLoadout, getSessionSetup } from "./session-setup";
+import { getSessionTools } from "./session-tools";
 import { isOrgSession, ORG_NOT_GROUPED } from "./org-sessions";
 import { assignSession, cleanGroupLabel, createGroup, deleteGroup, GROUP_LABEL_MAX, readGroups, updateGroup } from "./session-groups";
 import { promptGroup } from "./group-prompt";
@@ -280,7 +281,7 @@ async function createWebSession(c: Context, cwd: string, start?: { profile: Prof
 }
 
 async function createWebSessionFile(c: Context, cwd: string) {
-  // pi defers writing until the first assistant reply; the header is written now so the session
+  // pi defers writing until the first user or assistant message; the header is written now so the session
   // exists on disk (listable, watchable, openable by path).
   let made: { path: string; id: string };
   try {
@@ -753,6 +754,16 @@ app.get("/api/sessions/context", async (c) => {
   if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
   if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
   return c.json(await getSessionSetup(path, { fresh: c.req.query("fresh") === "1" }));
+});
+
+// The tools a held chat declares to its model now (server/session-tools.ts, §chat.transcript/setup-card-tools).
+// Same 400/404 as the context route above; a session this server doesn't hold (or a terminal's, or a
+// special one) is a 200 whose `state` says so. Never cached.
+app.get("/api/sessions/tools", async (c) => {
+  const path = resolveSessionPath(c.req.query("path"));
+  if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
+  if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+  return c.json(await getSessionTools(path), 200, { "Cache-Control": "no-store" });
 });
 
 // Switch a new session's context files and skills off or on (§chat.transcript/setup-card-toggles):

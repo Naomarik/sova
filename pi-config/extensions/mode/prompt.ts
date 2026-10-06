@@ -1,7 +1,7 @@
 /** The delegate system-prompt text, prompt composition, and status labels. Pure functions: unit-testable. */
 import { DELEGATE_PROFILE_INFO, DELEGATE_PROFILES, delegateDefaults, type DelegateProfileId, type WorkerChoice } from "./delegate.ts";
 import { ALIGN_FILE_SCHEMA } from "./align.ts";
-import { buildMinorPrompt, MINOR_MODES, workerMinorModes, type MinorMode } from "./minor.ts";
+import { buildMinorPrompt, MINOR_MODES, promptedMinorModes, workerMinorModes, type MinorMode } from "./minor.ts";
 import { routeAll, usable, type ProfileRoute, type SlotRoute } from "./routing.ts";
 import type { Mode, ModeState } from "./state.ts";
 
@@ -110,7 +110,7 @@ export function composePrompt(
 		const delegate = buildDelegatePrompt(routes);
 		blocks.push(state.minorModes.includes("align") ? `${delegate}\n\n${DELEGATE_ALIGN_BRIDGE}` : delegate);
 	}
-	for (const minor of headMinors) blocks.push(minorBlock(minor, writer));
+	for (const minor of promptedMinorModes(headMinors)) blocks.push(minorBlock(minor, writer));
 	return blocks.length > 0 ? blocks.join("\n\n") : undefined;
 }
 
@@ -128,7 +128,8 @@ function minorBlock(minor: MinorMode, writer: SlotRoute | null, worker = false):
  * in an earlier note since the last compaction (`guides`), when a pointer to it is enough. A mode
  * turned off gets a line saying its instructions no longer apply. Undefined when nothing changed.
  * `guides` in the result: the modes whose whole block this note carries. `worker`: a block goes in
- * its worker form (composeWorkerPrompt), and the caller passes only worker-scope modes.
+ * its worker form (composeWorkerPrompt), and the caller passes only worker-scope modes. A promptless mode
+ * (MINOR_PROMPTLESS: codemode) is never told: its tool is the whole switch.
  */
 export function buildModeNote(
 	told: readonly MinorMode[],
@@ -140,12 +141,13 @@ export function buildModeNote(
 	const where = (minor: MinorMode) => (known.head.includes(minor) ? "in your system prompt" : "given earlier in this conversation");
 	const parts: string[] = [];
 	const guides: MinorMode[] = [];
-	for (const minor of MINOR_MODES) {
+	const minors = promptedMinorModes(MINOR_MODES);
+	for (const minor of minors) {
 		if (told.includes(minor) && !now.includes(minor)) {
 			parts.push(`Mode change: the user turned the ${minor} minor mode off. Its instructions (the "# Minor mode: ${minor}" block ${where(minor)}) no longer apply; do not follow them unless a later note turns it back on.`);
 		}
 	}
-	for (const minor of MINOR_MODES) {
+	for (const minor of minors) {
 		if (now.includes(minor) && !told.includes(minor)) {
 			if (known.head.includes(minor) || known.guides.includes(minor)) {
 				parts.push(`Mode change: the user turned the ${minor} minor mode back on. Its instructions (the "# Minor mode: ${minor}" block ${where(minor)}) apply again from now on.`);
@@ -177,7 +179,7 @@ function buildWorkerMinorPrompt(mode: MinorMode): string {
  * writer. undefined when none applies.
  */
 export function composeWorkerPrompt(state: Pick<ModeState, "minorModes">): string | undefined {
-	const blocks = workerMinorModes(state.minorModes).map(buildWorkerMinorPrompt);
+	const blocks = promptedMinorModes(workerMinorModes(state.minorModes)).map(buildWorkerMinorPrompt);
 	return blocks.length > 0 ? blocks.join("\n\n") : undefined;
 }
 

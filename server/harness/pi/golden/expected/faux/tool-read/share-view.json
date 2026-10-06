@@ -47,11 +47,11 @@
           "provider": "faux",
           "model": "faux-1",
           "usage": {
-            "input": 1373,
+            "input": 1403,
             "output": 10,
             "cacheRead": 0,
-            "cacheWrite": 1373,
-            "totalTokens": 2756,
+            "cacheWrite": 1403,
+            "totalTokens": 2816,
             "cost": {
               "input": 0,
               "output": 0,
@@ -62,7 +62,8 @@
           },
           "stopReason": "toolUse",
           "responseId": "faux-resp-0",
-          "timestamp": 1788350401000
+          "timestamp": 1788350401000,
+          "thinkingLevel": "medium"
         }
       },
       "role": "assistant",
@@ -89,9 +90,9 @@
           "usage": {
             "input": 22,
             "output": 5,
-            "cacheRead": 1373,
+            "cacheRead": 1403,
             "cacheWrite": 22,
-            "totalTokens": 1422,
+            "totalTokens": 1452,
             "cost": {
               "input": 0,
               "output": 0,
@@ -102,7 +103,8 @@
           },
           "stopReason": "stop",
           "responseId": "faux-resp-1",
-          "timestamp": 1788350402000
+          "timestamp": 1788350402000,
+          "thinkingLevel": "medium"
         }
       },
       "role": "assistant",

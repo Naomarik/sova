@@ -265,3 +265,32 @@ describe("record_decision's quote entry over the branch (baton-loadout quoteEntr
     assert.equal(check(), u1, "another branch: its own parents");
   });
 });
+
+describe("exposure (§chat.mode-menu/codemode)", () => {
+  test("a model-only ToolSpec reaches pi model-only: declared to the model, never among the tools another tool may call", async () => {
+    const spec: ToolSpec = { ...echoSpec(), name: "sova_card_like", exposure: "model-only" };
+    assert.equal((toPiTool(spec) as any).exposure, "model-only");
+    assert.equal("exposure" in (toPiTool(echoSpec()) as any), false, "none given, none passed: a direct tool");
+    const faux = createFauxCore({ provider: "faux", models: [{ id: "faux-1", input: ["text"] }] });
+    const runtime = await ModelRuntime.create({ authPath: join(dir, "auth.json"), modelsPath: null, refreshOnCreate: false });
+    runtime.registerProvider("faux", { name: "Faux", baseUrl: "http://127.0.0.1:9", apiKey: "stub", api: faux.api, streamSimple: faux.streamSimple, models: [{ id: "faux-1", name: "Faux 1", input: ["text"], reasoning: false, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 200_000, maxTokens: 4_000 }] } as never);
+    const cwd = join(dir, "exposure");
+    mkdirSync(cwd, { recursive: true });
+    let callable: string[] = [];
+    const probe = { name: "probe", label: "probe", description: "probe", parameters: { type: "object", properties: {} }, execute: async (_i: string, _p: unknown, _s: unknown, _u: unknown, ctx: any) => { callable = ctx.tools.map((t: any) => t.name); return { content: [{ type: "text", text: "ok" }], details: {} }; } };
+    const resourceLoader = new DefaultResourceLoader({ cwd, agentDir: dir, noExtensions: true, extensionFactories: [(api: any) => { api.registerTool(toPiTool(spec)); api.registerTool(toPiTool(echoSpec())); api.registerTool(probe); }] });
+    await resourceLoader.reload();
+    const { session } = await createAgentSession({ cwd, agentDir: dir, modelRuntime: runtime, model: runtime.getModel("faux", "faux-1"), resourceLoader, sessionManager: SessionManager.inMemory(cwd), settingsManager: SettingsManager.inMemory({ cacheWarming: "off" } as never), noTools: "builtin" });
+    try {
+      await session.bindExtensions({ mode: "rpc" } as never);
+      assert.ok(session.getActiveToolNames().includes("sova_card_like"), "declared: active like any tool");
+      faux.setResponses([fauxAssistantMessage([fauxToolCall("probe", {})], { stopReason: "toolUse" }), fauxAssistantMessage("done")]);
+      await session.prompt("go");
+      await session.waitForIdle();
+      assert.ok(callable.includes("sova_echo"), "a direct tool is callable from another tool");
+      assert.ok(!callable.includes("sova_card_like"), "a model-only one is not");
+    } finally {
+      session.dispose();
+    }
+  });
+});

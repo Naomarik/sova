@@ -11,7 +11,7 @@ import { noteUsageSession, registerUsageSession, resolveUsageAttribution, setUsa
 import { createClaudeRequestObserver } from "./claude.ts";
 import { recordClaudeEnvelope } from "./record.ts";
 import { instrumentModelRuntime } from "./runtime.ts";
-import { producerId } from "./tracker.ts";
+import { producerId, snapshot } from "./tracker.ts";
 import { parseUsageLine, usageFilePath, type UsageRecord } from "./usage-record.ts";
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "llm-inflight-usage-"));
@@ -235,4 +235,35 @@ test("a `claude -p` envelope: one record per model, keyed by its session; garbag
 	const env = { type: "result", is_error: true, subtype: "error_max_budget_usd", session_id: "e-9", modelUsage: { "claude-haiku-4-5": { inputTokens: 30, outputTokens: 2, cacheReadInputTokens: 0, cacheCreationInputTokens: 0 } } };
 	assert.equal(recordClaudeEnvelope(JSON.stringify(env), who, "haiku"), 1, "a failed run spent its tokens too");
 	assert.deepEqual(read().map((r) => [r.key, r.model, r.responseModel, r.input, r.output, r.purpose, r.owner, r.stop]), [["cp:e-9:claude-haiku-4-5", "haiku", "claude-haiku-4-5", 30, 2, "outline", "sess-o", "error_max_budget_usd"]]);
+});
+
+test("a classifier or image call (a codemode script's models.*) is one counted call and one record for the session its caller names", async () => {
+	const read = ledger();
+	const gates: (() => void)[] = [];
+	// Duck-typed like pi 1.0's ModelRuntime: stream methods, plus the two promise calls.
+	const rt: Record<string, unknown> = {
+		stream: () => undefined,
+		streamSimple: () => undefined,
+		classify: (model: { provider: string; id: string }) => new Promise((r) => gates.push(() => r({ provider: model.provider, model: model.id, answers: {}, usage: { input: 11, output: 2, totalTokens: 13, cost: { total: 0 } }, stopReason: "stop" }))),
+		generateImages: async (model: { provider: string; id: string }) => ({ provider: model.provider, model: model.id, output: [], usage: { input: 3, output: 900, totalTokens: 903, cost: { total: 0.04 } }, stopReason: "stop" }),
+	};
+	assert.equal(instrumentModelRuntime(rt), "instrumented");
+	const unregisterA = registerUsageSession("sess-a", { kind: "main" });
+	const unregisterB = registerUsageSession("sess-b", { kind: "main" });
+	try {
+		const before = snapshot().active;
+		const pending = withUsageContext({ owner: "sess-b" }, () => (rt.classify as (m: unknown) => Promise<unknown>)({ provider: "cls", id: "c1" }));
+		assert.equal(snapshot().active, before + 1, "in flight while it runs");
+		gates.shift()!();
+		await pending;
+		await tick();
+		assert.equal(snapshot().active, before, "and done when it settles");
+		await withUsageContext({ owner: "sess-a" }, () => (rt.generateImages as (m: unknown) => Promise<unknown>)({ provider: "img", id: "i1" }));
+		await tick();
+		const records = read().filter((r) => r.provider === "cls" || r.provider === "img");
+		assert.deepEqual(records.map((r) => [r.provider, r.model, r.owner, r.purpose, r.input, r.output]), [["cls", "c1", "sess-b", "classify", 11, 2], ["img", "i1", "sess-a", "image", 3, 900]], "one record each, owned by the session the caller named, never the other");
+	} finally {
+		unregisterA();
+		unregisterB();
+	}
 });

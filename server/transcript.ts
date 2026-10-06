@@ -46,7 +46,7 @@ import { mergeInfoOf, WORKTREE_MERGE_MESSAGE } from "./worktrees-state";
 import { alignResultOf } from "../pi-config/extensions/mode/align.ts";
 // The folded tool card's own readers (src/lib/message.ts, src/lib/tool-diff-stats.ts, both DOM- and
 // import-free): a slim row's line and "+n −m" are what the card would compute from the whole entry.
-import { argsSummary, contentText as cardText, isObj, SPAWN_TOOLS, spawnName } from "../src/lib/message";
+import { argsSummary, CODEMODE_TOOL, codemodeDetails, codemodeTally, contentText as cardText, isObj, SPAWN_TOOLS, spawnName } from "../src/lib/message";
 import { summaryStats } from "../src/lib/tool-diff-stats";
 
 // The parse, the branch rule and the context rule live in the pi adapter's reader and usage modules
@@ -198,7 +198,7 @@ function slimTool(it: TranscriptItem, h: HEntry | undefined): void {
     const name = it.text ?? "tool";
     const args = callBlock(h, it.toolCallId)?.arguments;
     const tool: ToolRowInfo = {};
-    const summary = argsSummary(args);
+    const summary = argsSummary(args, name);
     // Whole: the folded line's tooltip shows all of it (a heredoc's, at times, many KB).
     if (summary) tool.summary = summary;
     if (SPAWN_TOOLS.has(name)) {
@@ -224,6 +224,8 @@ function slimTool(it: TranscriptItem, h: HEntry | undefined): void {
   // shows it only on an edit or write call, as it would have counted it.
   const stats = summaryStats("edit", details);
   if (stats) tool.stats = stats;
+  const script = name === CODEMODE_TOOL ? codemodeDetails(details) : null;
+  if (script) tool.calls = codemodeTally(script.calls);
   if (EAGER_TOOLS.has(name)) {
     tool.output = output;
     if (details !== undefined) tool.details = details;

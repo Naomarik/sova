@@ -81,7 +81,16 @@ import { policyDenial, readPolicy } from "../subagents/policy.ts";
 import { DELEGATE_PROFILE_INFO, DELEGATE_PROFILES, delegateKey, type DelegateBackend } from "./delegate.ts";
 import { WorkerProbe } from "./discovery.ts";
 import { MODE_WORKER_DISCOVER_EVENT, MODE_WORKER_EVENT, WORKER_ROLE_DISCOVER_EVENT, WORKER_ROLE_EVENT, type ModeWorkerEvent } from "./events.ts";
-import { isMinorMode, MINOR_MODES, normalizeMinorModes, parseMinorFlag, workerMinorModes, type MinorMode } from "./minor.ts";
+import {
+	CODEMODE_TOOL,
+	isMinorMode,
+	MINOR_MODES,
+	normalizeMinorModes,
+	parseMinorFlag,
+	SCRIPT_ONLY_EXPOSURES,
+	workerMinorModes,
+	type MinorMode,
+} from "./minor.ts";
 import { MODE_CATEGORY_ID, modeCategoryItems } from "./palette.ts";
 import { applyModeSection, buildModeNote, buildSpecWriterPrompt, composePrompt, composeWorkerPrompt, DEFAULT_ROUTES, statusLabel } from "./prompt.ts";
 import { backendsOf, describeChoice, routeAll, routeNotice, routeWriter, slotNotice, usable, type Discovery, type ProfileRoute, type SlotRoute } from "./routing.ts";
@@ -547,6 +556,9 @@ export default function modeExtension(pi: ExtensionAPI): void {
 			syncAlignTool();
 			syncAlignWidget(ctx);
 		}
+		// Between runs the tool follows at once; a run under way keeps its tools, and agent_settled syncs.
+		if (minor === "codemode" && !running) syncCodemodeTool();
+		if (minor === "vis" && !running) syncVisGuideTool();
 		ctx.ui.notify(`Minor mode: ${minor} ${on ? "on" : "off"}`, "info");
 		// Spec on probes its writer's backends (and announces a writer that can't run); off, and
 		// outside delegate, there is nothing left to probe.
@@ -630,6 +642,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		else restoreTools();
 		syncAlignTool();
 		syncVisGuideTool();
+		syncCodemodeTool();
 		recomputeRoutes();
 		syncHostSection();
 		renderStatus(ctx);
@@ -649,11 +662,31 @@ export default function modeExtension(pi: ExtensionAPI): void {
 
 	/**
 	 * The vis_guide tool is in the loadout exactly while vis is on, synced where Sova's vis_check is (at
-	 * session start, when a user's prompt starts a run, and when a run settles), so a toggle changes the
-	 * tool set once, for both.
+	 * session start, right after a switch made between runs, when a user's prompt starts a run, and when a
+	 * run settles), so a toggle changes the tool set once, for both.
 	 */
 	function syncVisGuideTool(): void {
 		syncTool(VIS_GUIDE_TOOL, hasMinor(active, "vis"));
+	}
+
+	/**
+	 * pi's codemode tool is in the loadout exactly while codemode is on (§chat.mode-menu/codemode), synced
+	 * where vis_guide is and right after a switch made between runs. Off removes it even when something
+	 * else activated it (defaultTools, the transcript's restored tool set), except while a registered tool
+	 * is reachable only from scripts (MCP's codemode/deferred exposure). Nothing to do where the tool isn't
+	 * registered (an SDK runtime without the factory). Every chat alike, a Claude Code one included.
+	 */
+	function syncCodemodeTool(): void {
+		let tools: { name: string; exposure?: string }[];
+		try {
+			tools = pi.getAllTools() as { name: string; exposure?: string }[];
+		} catch {
+			return; // Before the session exists; session_start syncs it.
+		}
+		if (!tools.some((tool) => tool.name === CODEMODE_TOOL)) return;
+		const want = hasMinor(active, "codemode") && !workerRole;
+		if (!want && tools.some((tool) => tool.exposure !== undefined && SCRIPT_ONLY_EXPOSURES.has(tool.exposure))) return;
+		syncTool(CODEMODE_TOOL, want);
 	}
 
 	function syncTool(tool: string, want: boolean): void {
@@ -1136,6 +1169,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		runUserAsked = false;
 		nudged = false;
 		syncVisGuideTool();
+		syncCodemodeTool();
 	});
 
 	// A compaction summarizes the align results away, and the next run may be one no user prompt
@@ -1227,9 +1261,16 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	function freshSpecRun(): typeof specRun {
 		return { trees: [], branchAt: 0, pending: [], ops: [], workerOps: [], ledgerKeys: new Set(), completed: false, opening: new Map(), changed: false, tools: false, merged: false, promoted: false, mergeForeign: [], mergeRanges: 0, taken: new Set() };
 	}
+	/**
+	 * Notes for calls a codemode script made, by the script's own call id: a nested result reaches only the
+	 * script, so what the census or the guard told it is told again on the script's result, the one the
+	 * model reads (§chat.mode-menu/codemode).
+	 */
+	const hoistedNotes = new Map<string, string[]>();
 	const resetSpecRun = () => {
 		specRun = freshSpecRun();
 		specReprompts = 0;
+		hoistedNotes.clear();
 	};
 	/**
 	 * This session's ledger: its workers append their git operations (SOVA_SPEC_LEDGER, set by the spawn
@@ -1341,7 +1382,16 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		if (failure && ctx.hasUI) ctx.ui.notify(failure, "warning");
 		// A failure reaches the model too (F12): a census it expected and didn't get must not read as "all clear".
 		const text = [forbidden, driftNote(event.toolName, event.input, event.content), census, failure ? `${DIGEST_TAG} ${failure}` : undefined].filter(Boolean).join("\n");
-		if (text) return { content: [...event.content, { type: "text" as const, text }] };
+		const parent = (event as { parentToolCallId?: unknown }).parentToolCallId;
+		if (typeof parent === "string" && text) hoistedNotes.set(parent, [...(hoistedNotes.get(parent) ?? []), text]);
+		const hoisted = hoistedNotes.get(event.toolCallId);
+		hoistedNotes.delete(event.toolCallId);
+		// The script's calls' notes, each line once, then the result's own.
+		const all = [[...new Set((hoisted ?? []).flatMap((t) => t.split("\n")))].join("\n"), text].filter(Boolean).join("\n");
+		if (!all) return;
+		// Replacing the content alone would drop a structured result (bash's, which a script reads): keep it.
+		const structured = (event as { structuredContent?: unknown }).structuredContent;
+		return { content: [...event.content, { type: "text" as const, text: all }], ...(structured !== undefined ? { structuredContent: structured as never } : {}) };
 	});
 
 	pi.on("agent_before_settle", async (event, ctx) => {
@@ -1500,6 +1550,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		// in a hidden note beside this prompt, about minor modes switched since.
 		fixHead();
 		syncVisGuideTool();
+		syncCodemodeTool();
 		const modeNote = takeNote();
 		if (modeNote) pi.sendMessage(modeNote, { deliverAs: "nextTurn" });
 		const block = modeBlock();

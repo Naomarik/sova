@@ -1,6 +1,6 @@
 import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch } from "solid-js";
 import type { GitSummary, SessionSetup } from "../../shared/protocol";
-import { fetchSessionSetup, setSessionLoadout } from "../lib/api";
+import { fetchSessionSetup, fetchSessionTools, setSessionLoadout } from "../lib/api";
 import { loadGitSummary, UPSTREAM_TITLE } from "../lib/git-summary";
 import {
   CONTEXT_NONE,
@@ -25,6 +25,8 @@ import {
   SYSTEM_CONTEXT_TITLE,
   systemContextSum,
 } from "../lib/session-setup";
+import type { ToolsView } from "../lib/session-tools";
+import { createToolsReads } from "../lib/tools-reads";
 import { home, toast } from "../lib/ui-state";
 import { Icon } from "./ui";
 
@@ -43,7 +45,7 @@ type Answer<T> = { ok: T } | { error: string };
  * is open (the Profile picker's: pickable and not locked). A flip sends the whole off set and draws
  * the server's fresh read in place.
  */
-export function SessionSetupCard(props: { path: string; editable?: boolean }) {
+export function SessionSetupCard(props: { path: string; editable?: boolean; toolsKey?: string }) {
   const [setup, setSetup] = createSignal<Answer<SessionSetup> | null>(null);
   const [git, setGit] = createSignal<Answer<GitSummary> | null>(null);
   const [landed, setLanded] = createSignal(false);
@@ -53,6 +55,9 @@ export function SessionSetupCard(props: { path: string; editable?: boolean }) {
   let run = 0;
   let rev = 0;
   const settle = <T,>(p: Promise<T>): Promise<Answer<T>> => p.then((ok) => ({ ok }), (err: Error) => ({ error: err.message }));
+  // The Tools group's reads (§chat.transcript/setup-card-tools): the first is one of the card's three;
+  // later ones redraw only the group, an older answer never over a newer one.
+  const tools = createToolsReads(fetchSessionTools);
   // A memo, so a new props object for the same session never reads as a new session.
   const path = createMemo(() => props.path);
   createEffect(
@@ -60,7 +65,8 @@ export function SessionSetupCard(props: { path: string; editable?: boolean }) {
       const mine = ++run;
       const seen = rev;
       setLanded(false);
-      void Promise.all([settle(fetchSessionSetup(p)), settle(loadGitSummary(p))]).then(([s, g]) => {
+      tools.reset();
+      void Promise.all([settle(fetchSessionSetup(p)), settle(loadGitSummary(p)), tools.read(p)]).then(([s, g]) => {
         if (mine !== run) return;
         if (seen === rev) setSetup(s);
         setGit(g);
@@ -68,7 +74,15 @@ export function SessionSetupCard(props: { path: string; editable?: boolean }) {
       });
     }),
   );
-  onCleanup(() => run++); // an answer that lands after the empty state went writes to nothing
+  onCleanup(() => {
+    run++; // an answer that lands after the empty state went writes to nothing
+    tools.reset();
+  });
+
+  // The chat's model, mode, minor modes, strict flag or connection changed: the declared tools may
+  // have, so the Tools group (only) reads again. A memo of a string, so only a new VALUE re-reads.
+  const toolsKey = createMemo(() => props.toolsKey);
+  createEffect(on(toolsKey, () => void tools.read(path()), { defer: true }));
 
   // The chat says the window opened after the card read (the runtime wasn't held yet, or it was
   // rebuilt by a flip from another tab): read again, so the switches the server allows appear.
@@ -234,11 +248,75 @@ export function SessionSetupCard(props: { path: string; editable?: boolean }) {
             )}
           </Match>
         </Switch>
+        <Show when={tools.view()}>
+          {(v) => (
+            <div class="setup-group">
+              <ToolsGroup view={v()} open={tools.groupOpen()} onToggle={tools.setGroupOpen} isOpen={tools.isOpen} onToggleRow={tools.flip} />
+            </div>
+          )}
+        </Show>
         <div class="setup-group">
           <h2 class="text-eyebrow setup-label">Repository</h2>
           <GitFacts answer={git()!} />
         </div>
       </section>
+    </Show>
+  );
+}
+
+/** The Tools group (§chat.transcript/setup-card-tools): a disclosure, closed by default, of one
+    disclosure per tool; or, when they aren't listed, the plain heading and one line. */
+function ToolsGroup(props: {
+  view: ToolsView;
+  open: boolean;
+  onToggle: (open: boolean) => void;
+  isOpen: (key: string) => boolean;
+  onToggleRow: (key: string, open: boolean) => void;
+}) {
+  const list = () => (props.view.kind === "list" ? props.view : null);
+  return (
+    <Show
+      when={list()}
+      fallback={
+        <>
+          <h2 class="text-eyebrow setup-label">{props.view.heading}</h2>
+          <p class="setup-note">{(props.view as { text: string }).text}</p>
+        </>
+      }
+    >
+      {(v) => (
+        <details class="setup-tools" open={props.open} onToggle={(e) => props.onToggle(e.currentTarget.open)}>
+          <summary class="setup-head setup-tools-head">
+            <span class="setup-tools-title">
+              <Icon name="chevron-right" small class="icon-twist" />
+              <h2 class="text-eyebrow setup-label">{v().heading}</h2>
+            </span>
+            <span class="setup-total">{v().total}</span>
+          </summary>
+          <div class="setup-tools-body">
+            <p class="setup-note">{v().note}</p>
+            <ul class="setup-list">
+              <For each={v().rows}>
+                {(r) => (
+                  <li>
+                    <details class="setup-tool" open={props.isOpen(r.key)} onToggle={(e) => props.onToggleRow(r.key, e.currentTarget.open)}>
+                      <summary class="setup-row setup-tool-head">
+                        <span class="setup-name">
+                          <Icon name="chevron-right" small class="icon-twist" />
+                          <span class="setup-path">{r.name}</span>
+                          <span class="setup-role">{r.source}</span>
+                        </span>
+                        <span class="setup-facts">{r.facts}</span>
+                      </summary>
+                      <p class="setup-tool-desc">{r.description}</p>
+                    </details>
+                  </li>
+                )}
+              </For>
+            </ul>
+          </div>
+        </details>
+      )}
     </Show>
   );
 }

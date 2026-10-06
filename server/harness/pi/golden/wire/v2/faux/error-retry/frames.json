@@ -14,7 +14,7 @@
   "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"part.delta\",\"index\":0,\"kind\":\"text\",\"delta\":\"Worked on the re\"}}",
   "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"part.delta\",\"index\":0,\"kind\":\"text\",\"delta\":\"try.\"}}",
   "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"part.end\",\"index\":0,\"kind\":\"text\",\"text\":\"Worked on the retry.\"}}",
-  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"message.end\",\"role\":\"assistant\",\"entryId\":\"00000007\",\"model\":\"faux/faux-1\",\"parts\":[{\"kind\":\"text\",\"text\":\"Worked on the retry.\"}],\"stop\":\"ok\",\"contextTokens\":1371}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"message.end\",\"role\":\"assistant\",\"entryId\":\"00000007\",\"model\":\"faux/faux-1\",\"parts\":[{\"kind\":\"text\",\"text\":\"Worked on the retry.\"}],\"stop\":\"ok\",\"contextTokens\":1401}}",
   "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"activity\",\"what\":\"retry\",\"phase\":\"end\"}}",
   "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"run.settled\"}}"
 ]

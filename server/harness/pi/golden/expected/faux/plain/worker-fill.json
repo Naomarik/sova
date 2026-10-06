@@ -1,10 +1,10 @@
 {
   "tail": {
-    "tokens": 2734,
+    "tokens": 2794,
     "model": "faux/faux-1"
   },
   "tally": {
-    "tokens": 2734,
+    "tokens": 2794,
     "window": 200000
   }
 }

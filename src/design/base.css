@@ -577,6 +577,32 @@ input.input { text-overflow: ellipsis; }
 .setup-oid         { flex: none; font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-muted); }
 .setup-subject     { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-ink); }
 .setup-ago         { flex: none; color: var(--color-ink-muted); white-space: nowrap; }
+/* The Tools group (§chat.transcript/setup-card-tools): a disclosure of disclosures, closed by
+   default. Each summary is the whole 44px target; the twist turns when it opens. The heading keeps
+   the section's eyebrow, the total its mono figures, so a closed group reads like the others. */
+.setup-tools > summary,
+.setup-tool > summary { list-style: none; cursor: pointer; min-height: 44px; }
+.setup-tools > summary::-webkit-details-marker,
+.setup-tool > summary::-webkit-details-marker { display: none; }
+.setup-tools > summary { align-items: center; }
+.setup-tool > summary { align-items: center; }
+.setup-tools > summary:focus-visible,
+.setup-tool > summary:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); border-radius: var(--r-xs); }
+.setup-tools-title { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.setup-tools .icon-twist { flex: none; color: var(--color-ink-muted); transition: transform var(--dur-fast) var(--ease-standard); }
+.setup-tools[open] > summary .icon-twist,
+.setup-tool[open] > summary .icon-twist { transform: rotate(90deg); }
+.setup-tool > summary .setup-name { align-items: center; }
+.setup-tool > summary:hover .setup-path { color: var(--color-accent); }
+.setup-tools-body { display: flex; flex-direction: column; gap: var(--space-2); }
+.setup-tool-desc {
+  margin: 0 0 var(--space-2) calc(16px + var(--space-2));
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--color-ink-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 /* A narrow card (its own container, above): every row puts its figures on their own line under
    the name, rather than squeezing the name to an ellipsis — all rows alike, so the list stays even.
    The query reads the card's CONTENT box: 417.98px here is a card under 420px across its 1px borders. */
@@ -3062,6 +3088,43 @@ a.group-option { color: inherit; text-decoration: none; }
 /* edit: the label says which side it is; the rule only speeds the scan */
 .toolcard-code-del { border-left: calc(var(--stroke-icon) * 2) solid var(--diff-del-ink); }
 .toolcard-code-add { border-left: calc(var(--stroke-icon) * 2) solid var(--diff-add-ink); }
+
+/* codemode (§chat.transcript/codemode-card): the folded line's "4 calls · 1 failed", and the
+   script's calls, one row each. The plain body inside its body gives way to it. */
+.toolcard-calls { flex: none; white-space: nowrap; color: var(--color-ink-muted); }
+.toolcard-body .toolcard-body { display: contents; }
+.codemode-calls {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-sm);
+  background: var(--color-surface);
+}
+.codemode-call { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-2) var(--space-3); }
+.codemode-call + .codemode-call { border-top: var(--stroke-thin) solid var(--color-border); }
+.codemode-call-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  color: var(--color-ink-2);
+}
+.codemode-call-name { flex: none; font-weight: var(--fw-semibold); color: var(--color-ink); }
+.codemode-call-kind { flex: none; font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.codemode-call-args { flex: 1 1 12ch; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-ink-muted); }
+.codemode-call-meta { flex: none; color: var(--color-ink-muted); font-variant-numeric: tabular-nums; }
+.codemode-call-error {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  color: var(--status-error);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 
 
 /* ---- INFO ROW. Model change, compaction, labels, branch summaries: a quiet

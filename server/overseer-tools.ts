@@ -1070,6 +1070,8 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
     {
       name: "sova_create_session",
       label: "Create session",
+      // Its card reads the recorded result (EAGER_TOOLS): never a codemode script's call.
+      exposure: "model-only",
       description:
         "Start a new session in a local folder (cwd) or on a remote target (target + remote_cwd), optionally with a model, thinking level, mode, minor modes, title, group and a first prompt. The mode and minor modes are set before the first prompt is sent, so its first turn already runs in them; they apply to that session only. With host (a mesh peer's id) the session is made on that host (cwd is a folder there; no group). Counts against the per-turn cap on new sessions (and on prompts, when it has one). The first prompt runs with no browser attached: any extension dialog it raises falls back to its default.",
       promptSnippet: "start a session (folder, target or mesh peer; model, mode, minor modes, title, group, first prompt)",
@@ -1434,6 +1436,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
     {
       name: "sova_navigate",
       label: "Navigate",
+      exposure: "model-only",
       description:
         "Move the user's browser tab (only the tab that sent the current message; never on a brief or wake-up) to a session, a group workspace, the usage or agents page, the Overseer, a Settings tab, the Organizations page, or an organization, project or person page. Validates the target and returns its link. Make it the LAST call of a turn: the view changes when it lands.",
       promptSnippet: "open a session, workspace, page or Settings tab in the user's tab (last call)",

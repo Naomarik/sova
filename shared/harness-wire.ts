@@ -46,10 +46,13 @@ export type SovaEvent =
       error?: string;
       contextTokens?: number;
     }
-  | { type: "tool.start"; callId: string; name: string; args?: unknown }
-  /** The tool's output so far: its text blocks joined, and its images as data URLs. */
-  | { type: "tool.update"; callId: string; output: string; images: string[] }
-  | { type: "tool.end"; callId: string; name?: string; args?: unknown; isError: boolean; output: string; images: string[]; details?: unknown }
+  /** `parentCallId` (on tool.start, .update and .end): a call another tool made (a codemode script's), by the
+      calling tool's id. It has no row and no live tool of its own: its caller's result records it. */
+  | { type: "tool.start"; callId: string; name: string; args?: unknown; parentCallId?: string }
+  /** The tool's output so far: its text blocks joined, and its images as data URLs; `details`, the partial
+      result's details when it has some (a codemode script's calls so far). */
+  | { type: "tool.update"; callId: string; output: string; images: string[]; details?: unknown; parentCallId?: string }
+  | { type: "tool.end"; callId: string; name?: string; args?: unknown; isError: boolean; output: string; images: string[]; details?: unknown; parentCallId?: string }
   /** A retry after a provider error, or a compaction. `wrote` (compaction end only): one was written. */
   | { type: "activity"; what: "retry" | "compaction"; phase: "start" | "end"; wrote?: boolean };
 

@@ -2,10 +2,10 @@
 
 import { readdirSync, readFileSync } from "node:fs";
 
-export type MinorMode = "align" | "spec" | "vis";
+export type MinorMode = "align" | "spec" | "vis" | "codemode";
 
 /** Registry order: the canonical order for state, status, and prompt composition. */
-export const MINOR_MODES: readonly MinorMode[] = ["align", "spec", "vis"];
+export const MINOR_MODES: readonly MinorMode[] = ["align", "spec", "vis", "codemode"];
 
 export function isMinorMode(value: unknown): value is MinorMode {
 	return typeof value === "string" && (MINOR_MODES as readonly string[]).includes(value);
@@ -15,20 +15,45 @@ export const MINOR_DESCRIPTIONS: Record<MinorMode, string> = {
 	align: "Align with the user on what to build (architecture, UX, scope) before building",
 	spec: "Scope work from the project's .sova/spec documentation, propose changes in drafts, and promote them once implemented",
 	vis: "Draw small inline visuals (vis fences: flow, sequence, tree, timeline, chart, …) when a picture explains faster than prose",
+	codemode: "Let the model run JavaScript that calls tools in parallel and filters their output (pi's codemode tool)",
 };
+
+/** The tool the codemode minor mode puts in the loadout: pi's own `codemode` (builtin:codemode in the CLI). */
+export const CODEMODE_TOOL = "codemode";
+
+/** Tool exposures that only codemode scripts reach (pi's ToolExposure): while one is registered, codemode stays. */
+export const SCRIPT_ONLY_EXPOSURES: ReadonlySet<string> = new Set(["codemode", "deferred"]);
 
 /**
  * Whether each minor mode reaches the workers a session starts (§chat.mode-menu/workers). A record over
  * the union, so a new minor mode cannot compile without deciding. align is a conversation with the user,
  * which a worker doesn't have; spec is a discipline a worker's edits need too; vis draws for the user, and a
- * worker's replies are read by its parent session, not rendered for the user. Major modes never reach a
- * worker: workers spawn no workers, so Delegate has nothing to route there.
+ * worker's replies are read by its parent session, not rendered for the user; codemode changes the chat's
+ * own tool set, and a worker's tools are its brief's. Major modes never reach a worker: workers spawn no
+ * workers, so Delegate has nothing to route there.
  */
 export const MINOR_WORKER: Record<MinorMode, boolean> = {
 	align: false,
 	spec: true,
 	vis: false,
+	codemode: false,
 };
+
+/**
+ * Minor modes with no prompt block and no mode note (§chat.mode-menu/codemode): the tool they put in the
+ * loadout is the whole mode, and its own description is the guide. A record over the union, like MINOR_WORKER.
+ */
+export const MINOR_PROMPTLESS: Record<MinorMode, boolean> = {
+	align: false,
+	spec: false,
+	vis: false,
+	codemode: true,
+};
+
+/** The minor modes of `minorModes` that carry a prompt block, in their order. */
+export function promptedMinorModes(minorModes: readonly MinorMode[]): MinorMode[] {
+	return minorModes.filter((mode) => !MINOR_PROMPTLESS[mode]);
+}
 
 /** The worker-scope subset of `minorModes`, in registry order. */
 export function workerMinorModes(minorModes: readonly MinorMode[]): MinorMode[] {
@@ -134,6 +159,8 @@ const MINOR_INSTRUCTIONS: Record<MinorMode, string> = {
 	align: ALIGN_INSTRUCTIONS,
 	spec: SPEC_INSTRUCTIONS,
 	vis: VIS_INSTRUCTIONS,
+	// Promptless (MINOR_PROMPTLESS): never composed.
+	codemode: "",
 };
 
 export function buildMinorPrompt(mode: MinorMode): string {

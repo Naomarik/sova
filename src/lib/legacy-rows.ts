@@ -66,7 +66,7 @@ export function upgradeLegacyRows<T>(items: T[]): T[] {
     if (out.kind === "tool-call") {
       const block = Array.isArray(m?.content) ? m.content.find((c) => isObj(c) && c.type === "toolCall" && c.id === out.toolCallId) : undefined;
       const args = isObj(block) ? block.arguments : undefined;
-      out.tool = { summary: argsSummary(args), ...(args !== undefined ? { args } : {}) };
+      out.tool = { summary: argsSummary(args, out.text), ...(args !== undefined ? { args } : {}) };
       const spawn = SPAWN_TOOLS.has(out.text ?? "") ? spawnName(args) : "";
       if (spawn) out.tool.spawn = spawn;
     } else if (out.kind === "tool-result" && m) {

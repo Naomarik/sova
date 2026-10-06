@@ -7,8 +7,13 @@ a **baseline** and a **candidate**, and reports each row's value and guards side
 ```sh
 node make-tree.mjs master /tmp/replay/base          # prints /tmp/replay/base/pi-config/extensions
 node run.mjs --baseline /tmp/replay/base/pi-config/extensions --candidate ../../.. [--out DIR] [--only a,c]
-node --test replay.test.mjs                         # the harness's own checks (about two minutes)
+SOVA_SPEC_REPLAY=1 node --test replay.test.mjs     # the harness's own checks (about two minutes)
 ```
+
+`replay.test.mjs` is a landing gate: the merge round runs it (under `scripts/nice.mjs`, one replay at
+a time on the machine) when a landing touches `spec/core`, `mode/spec-guard.ts`, `claude-code/spec-hooks.ts`
+or `tests/replay/`. Without `SOVA_SPEC_REPLAY=1` every test in it is skipped, and `pi-config/README.md`'s
+Tests line leaves `tests/replay` out: never run it while working.
 
 A tree is a copy of `pi-config/extensions` holding `spec/`, `mode/` and `claude-code/`. `make-tree.mjs`
 extracts one from a ref with `git archive` and records the commit in `replay-source.json`, which the

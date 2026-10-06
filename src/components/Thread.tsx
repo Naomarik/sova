@@ -5,7 +5,7 @@ import { rowFacts } from "../../shared/wire-v1";
 import type { BatonMark } from "../../shared/baton";
 import { wrapupRowIds } from "../lib/wrapup-rows";
 import { blockStreams, type LiveBlock, type LiveEntry, type LiveState, type LiveUserState } from "../lib/live";
-import { agoTime, prettyJson, shortModel, stampTime, thousands, tildePath } from "../lib/format";
+import { agoTime, modelLabel, modelMismatch, prettyJson, stampTime, thousands, tildePath } from "../lib/format";
 import { useMinuteNow } from "../lib/minute-clock";
 import { isObj, resultDetails as detailsOf, str, toolCallArgs, toolResultView } from "../lib/message";
 import { toolContent, type ToolSource } from "../lib/tool-content";
@@ -899,8 +899,8 @@ export function HistoryItems(props: {
               <Match when={item.kind === "assistant-text"}>
                 <AssistantText
                   text={replyText(item)}
-                  author={shortModel(item.model) ?? props.author}
-                  model={item.model}
+                  author={modelLabel(item.model, item.answered) ?? props.author}
+                  model={[item.model, modelMismatch(item.model, item.answered)].filter(Boolean).join(" · ") || undefined}
                   time={item.at}
                   showHead={
                     rows()[index() - 1]?.kind !== "assistant-text" || rows()[index() - 1]?.model !== item.model
@@ -1308,7 +1308,7 @@ export function LiveEntries(props: {
                         <LiveBlockView
                           block={block}
                           live={props.live}
-                          author={shortModel(e().model) ?? props.author}
+                          author={modelLabel(e().model) ?? props.author}
                           model={e().model}
                           streaming={blockStreams(e(), i())}
                           showHead={shownBefore(e().blocks, i())?.type !== "text"}

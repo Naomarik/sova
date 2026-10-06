@@ -18,6 +18,7 @@ import type { AgentStatus, AgentUsage, TaskOutcome, TranscriptItem, TranscriptKi
 import type { Worker, WorkerHandlers, SteerMode, SpawnOptions } from "../subagents/contracts.ts";
 import { usageParentFromEnv } from "../llm-inflight/attribution.ts";
 import { createClaudeRequestObserver, type ClaudeRequestObserver } from "../llm-inflight/claude.ts";
+import { claudeCliId } from "./catalog.ts";
 
 /**
  * Lower a launched worker to the niceness its hosting server asks for (Sova: §app.load-priority/workers,
@@ -307,7 +308,7 @@ export class ClaudeRunner implements Worker {
 					cwd: this.cwd,
 					routed: false,
 				}),
-				...(this.model ? { model: this.model } : {}),
+				...(this.model ? { model: claudeCliId(this.model) } : {}),
 				fresh: !this.options.adopt && !this.options.resume && this.transport === undefined,
 			},
 		});

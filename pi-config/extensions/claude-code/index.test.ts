@@ -28,7 +28,9 @@ test("Claude preparation has backend-specific defaults and rejects Pi-only optio
 	const b = harness().registrations[0];
 	const ctx = { hasUI: false };
 	const prepared = b.prepare({ prompt: "test", tools: [] }, ctx);
-	assert.equal(prepared.model, "sonnet");
+	assert.equal(prepared.model, "claude-sonnet-5-5");
+	assert.throws(() => b.validate({ prompt: "test", model: "opus[1m]" }, ctx), /use claude-opus-5-5 \(Opus 5\.5\)/, "an old alias typed as input is refused, naming the id");
+	assert.doesNotThrow(() => b.validate({ prompt: "test", model: "claude-opus-6" }, ctx), "an id the catalog does not know is still used");
 	assert.equal(prepared.effort, "medium");
 	assert.deepEqual(prepared.tools, []);
 	assert.equal(prepared.permissionMode, "bypassPermissions");

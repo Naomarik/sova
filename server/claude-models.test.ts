@@ -47,7 +47,7 @@ describe("Claude model discovery (server)", () => {
     assert.deepEqual([...CLAUDE_DISCOVERY_ARGV], buildDiscoveryArgv());
   });
 
-  test("initialize-only handshake: ids, names and efforts; nothing else retained", async () => {
+  test("initialize-only handshake: ids, names, efforts and the resolved model (drift); nothing else retained", async () => {
     const fake = fakeClaude((request) => [
       "not json at all",
       { type: "system", subtype: "init" },
@@ -60,7 +60,7 @@ describe("Claude model discovery (server)", () => {
     ]);
     const models = await discoverClaudeModels({ spawnImpl: fake.spawnImpl, executable: "claude-test" });
     assert.deepEqual(models, [
-      { id: "opus[1m]", name: "Opus", efforts: ["low", "high"] },
+      { id: "opus[1m]", name: "Opus", efforts: ["low", "high"], resolvedModel: "claude-opus-5" },
       { id: "haiku", name: "Haiku" },
     ]);
     assert.equal(fake.calls[0]!.command, "claude-test");

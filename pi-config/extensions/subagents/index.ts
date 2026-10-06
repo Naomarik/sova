@@ -103,6 +103,7 @@ import { specHookSettings, withClaudeSettings } from "../claude-code/spec-hooks.
 import { LEDGER_ENV, ledgerPath, workerLedgerPath } from "../mode/spec-guard.ts";
 import { ASSESSMENT_OWNER_ENV, ASSESSMENT_WORKER_ENV, ASSESSMENT_TEAM_ENV } from "../mode/spec-assessment.ts";
 import { DEFAULT_CLAUDE_TOOLS } from "../claude-code/transport.ts";
+import { legacyClaudeRefusal, unverifiedClaudeNote } from "../claude-code/catalog.ts";
 import { USAGE_PARENT_ENV } from "../llm-inflight/attribution.ts";
 import { workerSpecBrief, writesCode } from "./spec-brief.ts";
 import { restoreActive as restoreWorktrees, treeOf, workerCwdRefusal as worktreeCwdRefusal, type WorktreesActive } from "../worktrees/state.ts";
@@ -1402,6 +1403,9 @@ export function registerSubagents(
 				const denied = policyDenial(readPolicy(options.policyFile), "pi", model);
 				if (denied) throw new Error(denied);
 				const slash = model.indexOf("/");
+				// An old Claude alias (`claude-code-cli/opus[1m]`) names no model: refused with the id to use.
+				const legacy = model.slice(0, slash) === "claude-code-cli" ? legacyClaudeRefusal(model.slice(slash + 1)) : undefined;
+				if (legacy) throw new Error(legacy);
 				if (slash < 1 || !ctx.modelRegistry.find(model.slice(0, slash), model.slice(slash + 1))) {
 					throw new Error(`Unknown model ${model}; use agent_models to discover exact provider/model IDs from this session's registry.`);
 				}
@@ -2646,7 +2650,7 @@ export function registerSubagents(
 	pi.registerTool({
 		name: "agent_models",
 		label: "Subagent Models",
-		description: "Discover loaded worker backends and their exact model IDs. Pi models come from this session's active registry, including extension/cloud providers; Claude models come from its CLI. Search natural names such as 'deepseek 4.1 flash'. No model task is started. Returns up to limit matches and backend discovery errors explicitly. Rows marked 'vision' accept image input; a worker on a model without that marker cannot look at images.",
+		description: "Discover loaded worker backends and their exact model IDs. Pi models come from this session's active registry, including extension/cloud providers; Claude models are Sova's Claude catalog. Search natural names such as 'deepseek 4.1 flash'. No model task is started. Returns up to limit matches and backend discovery errors explicitly. Rows marked 'vision' accept image input; a worker on a model without that marker cannot look at images.",
 		promptSnippet: "Discover subagent backends, model IDs, and Claude effort options",
 		promptGuidelines: ["Use agent_models to resolve requested subagent model names; do not guess IDs or search a separate Pi CLI registry."],
 		parameters: Type.Object({ query: Type.Optional(Type.String()), backend: Type.Optional(Nonempty), limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })) }),
@@ -2680,7 +2684,7 @@ export function registerSubagents(
 			"For Pi workers, pass extensions: [\"npm:pi-web-access\"] for web tools or fork: true for conversation history; these options are not supported by Claude workers.",
 			"A worker starts only in this session's cwd or inside an active worktree the session tracks (the worktree tool); a pi worker started inside a worktree can write only there. useWorktreeConfig: true runs a pi worker on that worktree's own .agent.",
 			"While this session's spec minor mode is on, every worker you start (a team's monitor excepted) gets the spec block and a worker note in its system prompt: brief it with the relevant passages, not the discipline.",
-			"Use agent_spawn with backend: \"claude-code\" to delegate to Claude Code when its extension is installed. Claude uses its own model IDs (e.g. sonnet, opus), native tools, and backendOptions permission/settings policy; it does not inherit Pi's model, effort, tools, or history.",
+			"Use agent_spawn with backend: \"claude-code\" to delegate to Claude Code when its extension is installed. Claude uses Sova's Claude model IDs (agent_models lists them, e.g. claude-opus-5-5, claude-sonnet-5-5; an alias such as opus or opus[1m] is refused), native tools, and backendOptions permission/settings policy; it does not inherit Pi's model, effort, tools, or history.",
 			"Claude workers default to bypassPermissions (no permission prompts); set backendOptions.permissionMode to acceptEdits, manual, dontAsk, or plan for a restrictive policy. Do not assume a queued follow-up has executed; inspect agent_list or agent_transcript.",
 		],
 		parameters: Type.Object(
@@ -2725,6 +2729,7 @@ export function registerSubagents(
 				[
 					`Started ${group.agents.length} background subagent(s) in ${groupId} (${label}). Task acceptance is asynchronous; inspect status for startup failures.`,
 					remoteNotice(ctx),
+					...unverifiedClaudeModels(group.agents),
 					...group.agents.map(
 						(a) =>
 							`${a.id}  ${a.name}  ${a.status}  backend=${a.backend ?? "pi"}  model=${a.model ?? "child default"}  effort=${a.effort ?? "default"}${a.forked ? "  forked" : ""}${listedExtensions(a).length ? `  extensions=${listedExtensions(a).join(",")}` : ""}${a.wake ? "" : "  wake=false"}`,
@@ -2739,6 +2744,10 @@ export function registerSubagents(
 		},
 	});
 
+	/** A Claude Code worker started on an id Sova's Claude catalog doesn't know: still used, and said so. */
+	const unverifiedClaudeModels = (started: readonly Worker[]): string[] => [
+		...new Set(started.filter((a) => a.backend === "claude-code" && a.model).map((a) => unverifiedClaudeNote(a.model!)).filter((n): n is string => !!n)),
+	];
 	const listUsage = (a: Worker) => {
 		if (isRestored(a) && a.usageSource === "none") return "usage unavailable";
 		const u = lifetimeUsage(a);
@@ -2998,6 +3007,7 @@ export function registerSubagents(
 			[
 				headline,
 				...extra,
+				...unverifiedClaudeModels(group.agents),
 				...group.agents.map((a, i) =>
 					`${a.id}  ${members[i].role}${dutyMark(members[i])}  ${a.status}  backend=${a.backend ?? "pi"}  model=${a.model ?? "child default"}  effort=${a.effort ?? "default"}  owns=${members[i].ownedPaths.join(",") || "none declared"}${a.wake ? "" : "  wake=false"}`,
 				),

@@ -1,7 +1,7 @@
 import { createEffect, createMemo, createResource, createSignal, For, on, Show } from "solid-js";
 import type { OverseerInfo, OverseerProactivity, SessionSummary } from "../../shared/protocol";
 import { clearOverseer, getOverseer, getOverseerIdeas, getOverseerSettings, getOverseerTodos, putOverseerSettings } from "../lib/api";
-import { relativeTime, shortModel } from "../lib/format";
+import { modelLabel, relativeTime } from "../lib/format";
 import { nextProactivity, OVERSEER_HASH, overseerHistoryHref, PROACTIVITY, PROACTIVITY_HINT, PROACTIVITY_LABEL } from "../lib/overseer";
 import { isMainThread } from "../lib/regions";
 import { settingsOpenAt } from "../lib/settings-nav";
@@ -396,7 +396,7 @@ export function OverseerView(props: {
                   <Head earlier={e()} />
                   <WatchView
                     path={path}
-                    author={shortModel(summaryFor(path, e().id, e().title).model) ?? "pi"}
+                    author={modelLabel(summaryFor(path, e().id, e().title).model) ?? "pi"}
                     streaming={false}
                     stateBanner={<></>}
                     readOnly={{ icon: "clock", text: "An earlier conversation. Read only." }}

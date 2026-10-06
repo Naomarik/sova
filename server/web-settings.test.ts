@@ -118,7 +118,7 @@ test("saving it off writes nothing to the profiles", () => {
 
 test("the first save that turns it on seeds keyless profiles once; None and own routes stay; off and on again seeds nothing", () => {
   rmSync(FILE, { force: true });
-  const own = { primary: { backend: "claude-code", model: "sonnet", effort: "high" }, fallback: null };
+  const own = { primary: { backend: "claude-code", model: "claude-sonnet-5-5", effort: "high" }, fallback: null };
   writeSubagentProfiles(agentDir, { version: 1, profiles: [profile("bare"), profile("none", { reviewer: null }), profile("own", { reviewer: own })] });
   assert.deepEqual(writeWebSettings({ experimental: { adversarialReview: true } }), { experimental: { adversarialReview: true } });
   const [bare, none, mine] = library();

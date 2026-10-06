@@ -1,7 +1,8 @@
 /**
  * Delegate mode's routing preferences: which worker (backend · model · effort) each kind of work
- * goes to. Pure: node:fs/node:path only, no pi imports — unit-testable with node --test, and
- * imported by Sova's server beside state.ts and minor.ts, so it must stay runtime-free.
+ * goes to. Pure: node:fs/node:path and the Claude catalog (claude-code/catalog.ts, which imports
+ * nothing) only, no pi imports — unit-testable with node --test, and imported by Sova's server
+ * beside state.ts and minor.ts, so it must stay runtime-free.
  *
  * One JSON file, `~/.pi/agent/mode-delegate.json`, separate from mode.json on purpose: mode.json's
  * normalizeState rebuilds that file from known fields only, so anything stored there would be
@@ -11,8 +12,8 @@
  * next prompt. Normal mode never reads it.
  *
  *     { "version": 1, "profiles": {
- *         "planning": { "primary":  {"backend":"claude-code","model":"claude-fable-5-1[1m]","effort":"medium"},
- *                       "fallback": {"backend":"claude-code","model":"opus[1m]","effort":"high"} },
+ *         "planning": { "primary":  {"backend":"claude-code","model":"claude-fable-5-1","effort":"medium"},
+ *                       "fallback": {"backend":"claude-code","model":"claude-opus-5-5","effort":"high"} },
  *         "investigation": { "primary": {...}, "fallback": null }, "routine": {...}, "complex": {...} } }
  *
  * `fallback: null` means "no fallback": when the primary is unavailable the orchestrator asks the
@@ -22,6 +23,7 @@
  */
 import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { canonicalClaudeId, latestClaude } from "../claude-code/catalog.ts";
 
 export const DELEGATE_FILE_NAME = "mode-delegate.json";
 
@@ -98,7 +100,8 @@ export interface DelegateSettings {
 const claude = (model: string, effort: string): WorkerChoice => ({ backend: "claude-code", model, effort });
 
 /**
- * The built-in routing. Planning is fable at medium with an opus/high fallback; Routine and Complex
+ * The built-in routing, each its family's current model in the Claude catalog (a catalog change moves
+ * them all). Planning is Fable at medium with an Opus/high fallback; Routine and Complex
  * are opus low for mechanical work, medium where precision matters.
  * Investigation is new and deliberately conservative: opus at low — read-only work on the same
  * model the implementation profiles use, at their cheapest effort. None but Planning has a
@@ -108,10 +111,10 @@ export function delegateDefaults(): DelegateSettings {
 	return {
 		version: 1,
 		profiles: {
-			planning: { primary: claude("claude-fable-5-1[1m]", "medium"), fallback: claude("opus[1m]", "high") },
-			investigation: { primary: claude("opus[1m]", "low"), fallback: null },
-			routine: { primary: claude("opus[1m]", "low"), fallback: null },
-			complex: { primary: claude("opus[1m]", "medium"), fallback: null },
+			planning: { primary: claude(latestClaude("fable").id, "medium"), fallback: claude(latestClaude("opus").id, "high") },
+			investigation: { primary: claude(latestClaude("opus").id, "low"), fallback: null },
+			routine: { primary: claude(latestClaude("opus").id, "low"), fallback: null },
+			complex: { primary: claude(latestClaude("opus").id, "medium"), fallback: null },
 		},
 	};
 }
@@ -151,7 +154,9 @@ export function parseChoice(value: unknown): WorkerChoice | { error: string } {
 	const efforts = backendEfforts(record.backend);
 	if (typeof record.effort !== "string" || !efforts.includes(record.effort))
 		return { error: `effort for ${record.backend} must be one of: ${efforts.join(", ")}` };
-	return { backend: record.backend, model: record.model, effort: record.effort };
+	// An old Claude id reads as its catalog model, so the next save writes that (§app.claude-code-provider/legacy-ids).
+	const model = record.backend === "claude-code" ? canonicalClaudeId(record.model) : record.model;
+	return { backend: record.backend, model, effort: record.effort };
 }
 
 export function sameChoice(a: WorkerChoice | null | undefined, b: WorkerChoice | null | undefined): boolean {

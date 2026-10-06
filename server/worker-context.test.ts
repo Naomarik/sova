@@ -11,12 +11,12 @@ import { claudeContextOf, summarizeClaudeEntries } from "../pi-config/extensions
 import { contextForBranch, messageContextTokens, piContextOf } from "./harness/pi/usage";
 import { claudeContextWindow } from "../pi-config/extensions/claude-code/context-window.ts";
 import {
+  askedOtherModel,
   claudeSpawnModel,
   claudeSpawnModels,
   contextTally,
   readTailFill,
   WorkerContextReader,
-  withSpawnVariant,
   withWorkerContext,
   workerWindow,
 } from "./worker-context";
@@ -50,14 +50,14 @@ const ccReply = (id: string, input: number, extra: Record<string, unknown> = {},
 const ccCompact = { type: "system", subtype: "compact_boundary", uuid: "cb" };
 
 describe("the claude-code window rule", () => {
-  test("is the extension's own rule (context-window.ts): [1m] or a natively 1M model is 1M, else 200k", () => {
+  test("is the extension's own rule (the catalog's window; an old [1m] id ran at 1M; else 200k)", () => {
     const resolve = () => null;
     const cc = (model: string) => workerWindow({ backend: "claude-code", model }, resolve);
     for (const id of ["opus[1m]", "claude-opus-4-6[1m]", "opus", "claude-opus-5-5", "claude-fable-5-1", "sonnet", "claude-sonnet-5"]) {
       assert.equal(cc(id), 1_000_000, id);
       assert.equal(cc(id), claudeContextWindow(id), id);
     }
-    for (const id of ["haiku", "claude-haiku-4-5-20251001", "claude-sonnet-4-6", "claude-opus-4-6", "opus[1M]"]) {
+    for (const id of ["haiku", "claude-haiku-4-5", "claude-haiku-4-5-20251001", "claude-sonnet-4-6", "claude-opus-4-6", "claude-opus-6"]) {
       assert.equal(cc(id), 200_000, id);
       assert.equal(cc(id), claudeContextWindow(id), id);
     }
@@ -186,13 +186,14 @@ describe("the tail read", () => {
   });
 });
 
-describe("withSpawnVariant", () => {
-  test("adds the spawn model's variant to an id that names none; never changes the id", () => {
-    assert.equal(withSpawnVariant("claude-opus-5-5", "opus[1m]"), "claude-opus-5-5[1m]");
-    assert.equal(withSpawnVariant("claude-opus-5-5", "claude-opus-5-5[1m]"), "claude-opus-5-5[1m]");
-    assert.equal(withSpawnVariant("claude-opus-5-5", "opus"), "claude-opus-5-5", "no variant spawned: none added");
-    assert.equal(withSpawnVariant("claude-opus-5-5[1m]", "opus[1m]"), "claude-opus-5-5[1m]", "never twice");
-    assert.equal(withSpawnVariant("claude-haiku-4-5", undefined), "claude-haiku-4-5");
+describe("askedOtherModel", () => {
+  test("names the catalog model asked for only when another one answered (§app.claude-code-provider/model-identity)", () => {
+    assert.equal(askedOtherModel("claude-opus-5-5", "opus[1m]"), undefined, "an old id of the same model: no mismatch");
+    assert.equal(askedOtherModel("claude-opus-5-5", "claude-opus-5-5[1m]"), undefined);
+    assert.equal(askedOtherModel("claude-haiku-4-5-20251001", "claude-haiku-4-5"), undefined, "an answer id of the same model");
+    assert.equal(askedOtherModel("claude-opus-4-8", "opus[1m]"), "claude-opus-5-5", "Opus 4.8 answered a request for Opus 5.5");
+    assert.equal(askedOtherModel("claude-opus-5-5", undefined), undefined);
+    assert.equal(askedOtherModel("claude-opus-6", "claude-opus-5-5"), undefined, "an answer the catalog doesn't know says nothing");
   });
 });
 

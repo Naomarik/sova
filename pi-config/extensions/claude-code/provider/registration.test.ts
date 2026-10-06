@@ -18,6 +18,7 @@ import {
 	toProviderModel,
 } from "./index.ts";
 import { claudeContextWindow } from "../context-window.ts";
+import { claudeOffer } from "../catalog.ts";
 
 // Registration is deliberately once-per-process; clear that marker per test.
 beforeEach(() => {
@@ -105,7 +106,7 @@ test("flag on registers the provider with a literal key and static models", () =
 	assert.ok(config.baseUrl, "baseUrl is mandatory when models are given");
 	assert.equal(config.api, CLAUDE_PROVIDER_ID);
 	assert.equal(typeof config.streamSimple, "function");
-	assert.deepEqual(config.models?.map((model) => model.id), ["claude-fable-5-1[1m]", "opus[1m]", "sonnet", "haiku"]);
+	assert.deepEqual(config.models?.map((model) => model.id), claudeOffer().map((m) => m.id));
 });
 
 test("registration happens once per process, and is never undone", () => {
@@ -134,38 +135,22 @@ test("static models are zero cost, cache-free, and sized by the shared window ru
 		assert.equal(model.contextWindow, claudeContextWindow(model.id));
 		assert.ok(model.maxTokens > 0);
 	}
-	assert.equal(STATIC_MODELS.find((m) => m.id === "haiku")?.contextWindow, 200_000);
-	assert.equal(STATIC_MODELS.find((m) => m.id === "opus[1m]")?.contextWindow, 1_000_000);
+	assert.equal(STATIC_MODELS.find((m) => m.id === "claude-haiku-4-5")?.contextWindow, 200_000);
+	assert.equal(STATIC_MODELS.find((m) => m.id === "claude-opus-5-5")?.contextWindow, 1_000_000);
 });
 
-test("discovered models: natively 1M ids are 1M bare, resolvedModel decides an alias, and the [1m] forms are added back", async () => {
-	const discovered = [
-		{ id: "default", name: "Default", resolvedModel: "claude-opus-5-5" },
-		{ id: "opus", name: "Opus 5.5", resolvedModel: "claude-opus-5-5", efforts: ["low", "max"] },
-		{ id: "claude-fable-5-1", name: "Fable 5.1", resolvedModel: "claude-fable-5-1", efforts: ["high"] },
-		{ id: "best", name: "Best", resolvedModel: "claude-fable-5-1" },
-		{ id: "haiku", name: "Haiku 4.5", resolvedModel: "claude-haiku-4-5-20251001" },
-		{ id: "claude-sonnet-4-6", name: "Sonnet 4.6", resolvedModel: "claude-sonnet-4-6" },
-	];
-	const models = await refreshClaudeModels({ allowNetwork: true, signal: new AbortController().signal }, async () => discovered);
-	assert.deepEqual(models.map((m) => [m.id, m.name, m.contextWindow]), [
-		["opus", "Opus 5.5", 1_000_000],
-		["opus[1m]", "Opus 5.5 (1M context)", 1_000_000],
-		["claude-fable-5-1", "Fable 5.1", 1_000_000],
-		["claude-fable-5-1[1m]", "Fable 5.1 (1M context)", 1_000_000],
-		["best", "Best", 1_000_000],
-		["haiku", "Haiku 4.5", 200_000],
-		["claude-sonnet-4-6", "Sonnet 4.6", 200_000],
-	]);
-	assert.deepEqual(models.find((m) => m.id === "opus[1m]")?.thinkingLevelMap, models.find((m) => m.id === "opus")?.thinkingLevelMap, "the variant keeps the base's efforts");
+test("the registered models are the catalog, by name and window, with no aliases", async () => {
+	const models = await refreshClaudeModels({ allowNetwork: true, signal: new AbortController().signal });
+	assert.deepEqual(models.map((m) => [m.id, m.name, m.contextWindow]), claudeOffer().map((m) => [m.id, m.name, m.window]));
+	for (const alias of ["opus", "opus[1m]", "sonnet", "haiku", "claude-fable-5-1[1m]", "default"]) assert.ok(!models.some((m) => m.id === alias), alias);
 });
 
 test("thinking levels follow the CLI's effort list", () => {
-	const sonnet = STATIC_MODELS.find((model) => model.id === "sonnet") as ProviderModelConfig;
+	const sonnet = STATIC_MODELS.find((model) => model.id === "claude-sonnet-5-5") as ProviderModelConfig;
 	assert.equal(sonnet.reasoning, true);
 	assert.deepEqual(sonnet.thinkingLevelMap, { minimal: null, low: "low", medium: "medium", high: "high", xhigh: "xhigh", max: "max" });
-	const haiku = STATIC_MODELS.find((model) => model.id === "haiku") as ProviderModelConfig;
-	assert.equal(haiku.reasoning, false, "the CLI reports no effort levels for haiku");
+	const haiku = STATIC_MODELS.find((model) => model.id === "claude-haiku-4-5") as ProviderModelConfig;
+	assert.equal(haiku.reasoning, false, "Haiku 4.5 takes no effort");
 	assert.equal(haiku.thinkingLevelMap, undefined);
 	const partial = toProviderModel({ id: "someday", name: "Someday", efforts: ["low", "high"] });
 	assert.deepEqual(partial.thinkingLevelMap, { minimal: null, low: "low", medium: null, high: "high", xhigh: null, max: null });
@@ -176,8 +161,7 @@ test("refreshModels stays offline until pi allows network work", async () => {
 	assert.equal(models, STATIC_MODELS);
 });
 
-test("refreshModels falls back to the static list when discovery fails", async () => {
-	// An aborted signal makes discoverClaudeModels reject without spawning.
+test("refreshModels never asks the CLI: the same list with an aborted signal", async () => {
 	const models = await refreshClaudeModels({ allowNetwork: true, signal: AbortSignal.abort() });
 	assert.equal(models, STATIC_MODELS);
 });

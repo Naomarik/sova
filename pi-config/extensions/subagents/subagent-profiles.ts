@@ -28,6 +28,7 @@ import {
 	type DelegateSettings,
 	type WorkerChoice,
 } from "../mode/delegate.ts";
+import { claudeName, latestClaude } from "../claude-code/catalog.ts";
 import { loadSpec, parseSpec, SPEC_FILE_NAME, SPEC_WRITER_LABEL, specDefaults, type SpecSettings, type SpecWriter } from "../mode/spec.ts";
 import {
 	parseTeamDefaults,
@@ -364,7 +365,7 @@ export function writeProfilesDefault(agentDir: string, value: unknown): Subagent
 /** The reviewer the seeding writes: Sol on pi, with Claude Code's Opus as its fallback. */
 export const DEFAULT_REVIEWER: ReviewerRoute = {
 	primary: { backend: "pi", model: "openai-codex/gpt-6.1-sol", effort: "high" },
-	fallback: { backend: "claude-code", model: "opus[1m]", effort: "high" },
+	fallback: { backend: "claude-code", model: latestClaude("opus").id, effort: "high" },
 };
 
 /**
@@ -564,13 +565,11 @@ export function profilesReader(agentDir: string): () => { profiles: ProfilesStat
 
 // ── Footprints ───────────────────────────────────────────────────────────────
 
-/** A model's shortest readable form: `opus[1m]` → opus, `claude-fable-5-1[1m]` → fable, `zai/glm-5.3` → glm-5.3. */
+/** A model's shortest readable form: a Claude model's catalog name (`opus[1m]` → Opus 5.5), else the id: `zai/glm-5.3` → glm-5.3. */
 export function shortModel(model: string): string {
-	let m = model.includes("/") ? model.slice(model.lastIndexOf("/") + 1) : model;
-	m = m.replace(/\[1m\]$/i, "");
-	const claude = /^claude-(opus|sonnet|haiku|fable)\b/i.exec(m);
-	if (claude) return claude[1]!.toLowerCase();
-	return m;
+	const name = claudeName(model);
+	if (name) return name;
+	return model.includes("/") ? model.slice(model.lastIndexOf("/") + 1) : model;
 }
 
 /** Every slot a profile declares, for save validation — including a disabled coordinator's or monitor's tuples. */

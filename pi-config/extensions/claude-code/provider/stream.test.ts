@@ -40,7 +40,7 @@ const tools: Tool[] = [
 	{ name: "bash", description: "Run a command", parameters: Type.Object({ command: Type.String() }) },
 ];
 
-function model(id = "sonnet"): Model<Api> {
+function model(id = "claude-sonnet-5-5"): Model<Api> {
 	const definition = STATIC_MODELS.find((candidate) => candidate.id === id) ?? toProviderModel({ id, name: id });
 	return { ...definition, provider: "claude-code-cli", api: "claude-code-cli", baseUrl: "claude-code-cli://local" } as Model<Api>;
 }
@@ -111,7 +111,7 @@ test("a text turn maps to start, text events, and done/stop", async () => {
 	assert.equal(terminal.type === "done" && terminal.reason, "stop");
 	const message = finalMessage(terminal);
 	assert.deepEqual(message.content, [{ type: "text", text: "Hello, world" }]);
-	assert.equal(message.model, "sonnet");
+	assert.equal(message.model, "claude-sonnet-5-5");
 	assert.equal(message.provider, "claude-code-cli");
 	// The whole-message `assistant` frame must not duplicate the streamed text.
 	assert.equal(message.content.length, 1);
@@ -677,11 +677,12 @@ test("onPayload and onResponse are both called, and a replacement payload is use
 });
 
 test("the model's context window and output cap reach the bridge, so the fold can be sized from them", async () => {
-	for (const [id, window] of [["claude-sonnet-4-6", 200_000], ["sonnet", 1_000_000], ["opus[1m]", 1_000_000]] as const) {
+	// The catalog's window and output cap (catalog.ts).
+	for (const [id, window, cap] of [["claude-sonnet-4-6", 200_000, 32_000], ["claude-sonnet-5-5", 1_000_000, 128_000], ["claude-fable-5-1", 1_000_000, 64_000], ["claude-haiku-4-5", 200_000, 32_000]] as const) {
 		const { bridge, state } = fakeBridge(load("text-turn.ndjson"));
 		await collect(streamClaudeCode(bridge, model(id), context()));
 		assert.equal(state.request?.contextWindow, window, id);
-		assert.equal(state.request?.maxTokens, 64_000, id);
+		assert.equal(state.request?.maxTokens, cap, id);
 	}
 });
 
@@ -690,7 +691,7 @@ test("thinking level maps to the CLI effort ladder, and off means no effort", ()
 	assert.equal(resolveClaudeEffort(model(), "low"), "low");
 	assert.equal(resolveClaudeEffort(model(), "max"), "max");
 	assert.equal(resolveClaudeEffort(model(), "minimal"), undefined, "the CLI has no minimal effort");
-	assert.equal(resolveClaudeEffort(model("haiku"), "high"), undefined, "haiku reports no effort levels");
+	assert.equal(resolveClaudeEffort(model("claude-haiku-4-5"), "high"), undefined, "Haiku 4.5 takes no effort");
 });
 
 test("redacted thinking keeps its opaque signature and emits no empty deltas", async () => {

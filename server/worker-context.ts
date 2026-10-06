@@ -14,6 +14,7 @@ import { closeSync, openSync, readSync, statSync } from "node:fs";
 import { isAbsolute, sep } from "node:path";
 import type { ContextInfo, WatchContext, WorkerInfo } from "../shared/protocol";
 import { claudeContextWindow } from "../pi-config/extensions/claude-code/context-window.ts";
+import { claudeByAnswer, resolveClaude } from "../pi-config/extensions/claude-code/catalog.ts";
 import type { HEntry } from "../shared/harness";
 import { claudeContextOf } from "../pi-config/extensions/claude-code/transcript-adapter.ts";
 import { readWorkerManifests, type WorkerManifest } from "../pi-config/extensions/subagents/worker-transcript.ts";
@@ -201,19 +202,23 @@ export function toWorkerContext(fill: TailFill, w: Pick<WorkerInfo, "backend">, 
   return { tokens: fill.tokens, window: own ?? window };
 }
 
-/** A model id with the spawn model's context variant (`[1m]`) when it names none itself:
-    "claude-opus-5-5" spawned as "opus[1m]" → "claude-opus-5-5[1m]". The id stays the row's own. */
-export function withSpawnVariant(model: string, spawn: string | undefined): string {
-  const variant = spawn ? /\[[^\]]+\]\s*$/.exec(spawn)?.[0].trim() : undefined;
-  return variant && !/\[[^\]]*\]\s*$/.test(model) ? `${model}${variant}` : model;
+/**
+ * The catalog model a Claude Code worker was asked for, when another one answered (its row's model,
+ * the transcript's): "claude-opus-5-5" asked, "claude-opus-4-8" answered → "claude-opus-5-5"
+ * (§app.claude-code-provider/model-identity). Undefined when they agree or either is unknown.
+ */
+export function askedOtherModel(model: string, spawn: string | undefined): string | undefined {
+  const asked = resolveClaude(spawn);
+  const answered = claudeByAnswer(model);
+  return asked && answered && asked.id !== answered.id ? asked.id : undefined;
 }
 
 /**
  * Stamps `contextWindow` and `context` on each worker in place and returns the list. A worker that
  * already carries a `context` (a restored one, from its summary) keeps it. `spawnModel` names a
  * worker's spawn model when the session's manifests know it (claude-code windows need it: a
- * restored claude-code row's model has lost its `[1m]`). The same spawn model gives such a row's
- * model its variant back, so its label says 1M where its window is.
+ * restored claude-code row's model has lost its `[1m]`). The same spawn model says when another
+ * model answered than the one asked for (`asked`).
  */
 export function withWorkerContext(
   workers: WorkerInfo[],
@@ -223,7 +228,8 @@ export function withWorkerContext(
 ): WorkerInfo[] {
   for (const w of workers) {
     const spawn = w.backend === "claude-code" ? spawnModel(w.id) : undefined;
-    if (w.model && spawn) w.model = withSpawnVariant(w.model, spawn);
+    const asked = w.model && spawn ? askedOtherModel(w.model, spawn) : undefined;
+    if (asked) w.asked = asked;
     const window = w.contextWindow ?? workerWindow(w, resolve, spawn);
     if (window) w.contextWindow = window;
     if (w.context !== undefined) continue;

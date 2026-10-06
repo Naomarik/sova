@@ -170,7 +170,7 @@ test("host permission prompts add the stdio prompt tool, model/effort/budget are
 	const host = argvFor({ permissionMode: "manual", hostPermissions: true, model: "sonnet", effort: "high", maxBudgetUsd: 1.5 }).args!;
 	assert.equal(host[host.indexOf("--permission-prompts") + 1], "host");
 	assert.equal(host[host.indexOf("--permission-prompt-tool") + 1], "stdio");
-	assert.equal(host[host.indexOf("--model") + 1], "sonnet");
+	assert.equal(host[host.indexOf("--model") + 1], "claude-sonnet-5-5", "an old id is passed as its catalog id");
 	assert.equal(host[host.indexOf("--effort") + 1], "high");
 	assert.equal(host[host.indexOf("--max-budget-usd") + 1], "1.5");
 	assert.deepEqual(argvFor({ maxBudgetUsd: 0 }), { error: "maxBudgetUsd must be positive" });

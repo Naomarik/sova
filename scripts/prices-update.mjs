@@ -9,6 +9,7 @@
 import { readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { mergeFetched, normalizeModelsDev, parseTable, resolvePriceRef, EMPTY_TABLE } from "../shared/model-prices/prices.ts";
+import { claudeOffer } from "../pi-config/extensions/claude-code/catalog.ts";
 
 const ROOT = join(import.meta.dirname, "..");
 const DIR = join(ROOT, "shared", "model-prices");
@@ -50,7 +51,8 @@ for (const k of Object.keys(base.models)) if (!fetched[k]) lines.push(`- ${k}: n
 console.log(lines.length ? lines.join("\n") : "No price changes.");
 
 // Every model Sova can run today, and what it resolves to now.
-const known = new Set(["claude-code-cli/opus", "claude-code-cli/opus[1m]", "claude-code-cli/sonnet", "claude-code-cli/haiku", "claude-code-cli/claude-fable-5-1[1m]"]);
+// Sova's Claude catalog (claude-code/catalog.ts): every Claude model a chat or worker can be given.
+const known = new Set(claudeOffer().map((m) => `claude-code-cli/${m.id}`));
 try {
   const models = readJson(join(ROOT, "pi-config", "models.json"));
   for (const [p, cfg] of Object.entries(models.providers ?? {})) for (const m of cfg.models ?? []) known.add(`${p}/${m.id}`);

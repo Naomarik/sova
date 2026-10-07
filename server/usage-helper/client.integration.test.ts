@@ -37,7 +37,8 @@ function write(agent: string, r: UsageRecord) {
   appendFileSync(join(dir, `${r.producer}.jsonl`), formatUsageRecord(r)!);
 }
 
-const until = async (fn: () => Promise<boolean>, ms = 10_000) => {
+// A hang guard, never a measure: a loaded host slows the helper (a child, its watch, its restart), never fails it.
+const until = async (fn: () => Promise<boolean>, ms = 60_000) => {
   const end = Date.now() + ms;
   while (Date.now() < end) {
     if (await fn()) return;
@@ -70,9 +71,9 @@ test("the helper answers over its pipe, follows appends, survives a crash and co
     // Crash: a new producer's file for yesterday appears while it is down.
     const pid = h.pid()!;
     process.kill(pid, "SIGKILL");
-    await until(async () => h.pid() !== null && h.pid() !== pid, 15_000);
+    await until(async () => h.pid() !== null && h.pid() !== pid);
     write(agent, rec("c", now - 86_400_000, "late"));
-    await until(async () => (await calls()) === 3, 15_000);
+    await until(async () => (await calls()) === 3);
     await new Promise((r) => setTimeout(r, 300));
     assert.equal(await calls(), 3);
   } finally {

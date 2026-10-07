@@ -22,7 +22,7 @@ const { offerOutsider, viewForToken } = await import("./share/hub");
 const { registerOrgRoutes } = await import("./org-routes");
 const { createShareApp } = await import("./share/routes");
 const { stateRoot } = await import("./state-root");
-const { hostOf } = await import("./org-engine");
+const { hostOf, setOrgClockForTest } = await import("./org-engine");
 
 after(async () => {
   await disposeAllChats();
@@ -45,10 +45,11 @@ const entriesOf = (path: string) =>
     .split("\n")
     .map((l) => JSON.parse(l));
 
-async function until(cond: () => boolean, ms = 3000): Promise<void> {
+/** Poll until `cond` holds; the guard only stops a hang. */
+async function until(cond: () => boolean, ms = 30_000): Promise<void> {
   const end = Date.now() + ms;
   while (!cond()) {
-    if (Date.now() > end) throw new Error("timed out");
+    if (Date.now() > end) throw new Error(`still waiting after ${ms} ms`);
     await new Promise((r) => setTimeout(r, 5));
   }
 }
@@ -114,28 +115,37 @@ describe("a lease never lapses while the reply to its holder is being written", 
   test("mid-reply a lapsed lease stays with its holder; the reply's end renews it; a lease entry waits for the reply", async () => {
     const maria = await person("Maria Lopez");
     const tony = await person("Tony Reyes");
-    // A one-second lease (hermetic tests only): the statechart's own timer would lapse it mid-reply.
-    process.env.SOVA_BATON_LEASE_MS = "1000";
-    const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: [maria.id, tony.id], publicTitle: "Invoices", goal: "g" }).finally(() => delete process.env.SOVA_BATON_LEASE_MS);
-    const tonyTok = c.links!.find((l) => l.personId === tony.id)!.token;
-    const { chat, release } = await heldChat(c.path);
-    says(chat, c.sessionId, maria.id, "two decisions, then a question");
-    await until(() => piSession(chat).isStreaming);
-    // Her lease's time passes while the model is still answering her.
-    await new Promise((r) => setTimeout(r, 1300));
-    assert.equal(baton.batonById(c.sessionId)!.row.holder, maria.id, "mid-reply a lapsed lease stays with its holder");
-    assert.throws(() => baton.noteMessage(c.sessionId, tony.id), /Someone else is answering/, "Tony can't take over mid-reply");
-    assert.equal((baton.linkAccess(tonyTok) as { reason?: string }).reason, "taken");
-    const before = Date.now();
-    assert.equal(hostOf(org.id).data(`baton/${org.id}/${c.sessionId}`)?.["reply"], "writing", "the runtime took the turn: the reply is being written");
-    release();
-    await until(() => !piSession(chat).isStreaming);
-    // The claim's entry, which met the reply, is written after it, not lost.
-    await until(() => entriesOf(c.path).some((e) => e.customType === BATON_LEASE_ENTRY && e.data.event === "claimed"));
-    const o = baton.currentOffer(baton.batonById(c.sessionId)!.row)!;
-    assert.equal(o.holder, maria.id);
-    assert.ok(Date.parse(o.leaseUntil!) >= before + 1000, "the reply's end restarted the lease");
-    assert.throws(() => baton.noteMessage(c.sessionId, tony.id), /Someone else is answering/);
+    // On the org's clock, moved by hand: the lease's time passes without waiting for it.
+    const t0 = Date.now();
+    let now = t0;
+    setOrgClockForTest(() => now);
+    try {
+      // A one-second lease (hermetic tests only): the statechart's own timer would lapse it mid-reply.
+      process.env.SOVA_BATON_LEASE_MS = "1000";
+      const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: [maria.id, tony.id], publicTitle: "Invoices", goal: "g" }).finally(() => delete process.env.SOVA_BATON_LEASE_MS);
+      const tonyTok = c.links!.find((l) => l.personId === tony.id)!.token;
+      const { chat, release } = await heldChat(c.path);
+      says(chat, c.sessionId, maria.id, "two decisions, then a question");
+      await until(() => piSession(chat).isStreaming);
+      // Her lease's time passes while the model is still answering her: its timer fires.
+      now = t0 + 1300;
+      hostOf(org.id).fireDue();
+      assert.equal(baton.batonById(c.sessionId)!.row.holder, maria.id, "mid-reply a lapsed lease stays with its holder");
+      assert.throws(() => baton.noteMessage(c.sessionId, tony.id), /Someone else is answering/, "Tony can't take over mid-reply");
+      assert.equal((baton.linkAccess(tonyTok) as { reason?: string }).reason, "taken");
+      const before = now;
+      assert.equal(hostOf(org.id).data(`baton/${org.id}/${c.sessionId}`)?.["reply"], "writing", "the runtime took the turn: the reply is being written");
+      release();
+      await until(() => !piSession(chat).isStreaming);
+      // The claim's entry, which met the reply, is written after it, not lost.
+      await until(() => entriesOf(c.path).some((e) => e.customType === BATON_LEASE_ENTRY && e.data.event === "claimed"));
+      const o = baton.currentOffer(baton.batonById(c.sessionId)!.row)!;
+      assert.equal(o.holder, maria.id);
+      assert.ok(Date.parse(o.leaseUntil!) >= before + 1000, "the reply's end restarted the lease");
+      assert.throws(() => baton.noteMessage(c.sessionId, tony.id), /Someone else is answering/);
+    } finally {
+      setOrgClockForTest(null);
+    }
   });
 });
 

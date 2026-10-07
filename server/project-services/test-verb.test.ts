@@ -1,34 +1,28 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { exitOf, httpStatusOf, isVerbResult, parseDefinition, type VerbResult } from "../../shared/project-contract";
 import { conformer } from "./conform";
-import { DetachedDriver } from "./drivers";
 import { ProjectEngine, type Caller } from "./engine";
+import { FakeHost, type FakeDriver } from "./fake-host";
 import { conformDir, readRegistry } from "./store";
 import { approve, defHashOf } from "./trust";
 
 /**
- * The test verb and on-demand services (§app.project-services/test, /up, /down, /conform suite 2), on
- * real processes (detached driver): a REPL-style on-demand service the test command needs, a runner that
- * talks to it on the instance's own port and writes SOVA_OUT.
+ * The test verb and on-demand services (§app.project-services/test, /up, /down, /conform suite 2), on a
+ * host in memory (fake-host.ts): a REPL-style on-demand service the test command needs, a runner that
+ * dials it on the instance's own port and writes SOVA_OUT. test-verb.integration.test.ts runs the real
+ * runner, its memory sampling, and its timeout and cancel killing it.
  */
 
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-testverb-agent-"));
 
 const op: Caller = { kind: "operator" };
-let BASE = 0;
-const isFree = (port: number) => new Promise<boolean>((done) => { const s = createServer(); s.once("error", () => done(false)); s.listen(port, "127.0.0.1", () => s.close(() => done(true))); });
-async function pickBase(): Promise<number> {
-  for (;;) {
-    const b = 20_000 + Math.floor(Math.random() * 12_000);
-    if ((await Promise.all(Array.from({ length: 15 }, (_, o) => isFree(b + o)))).every(Boolean)) return b;
-  }
-}
+const BASE = 21_000;
+const host = new FakeHost();
 
 const def = (over: { test?: object | null; timeout?: number } = {}) => ({
   version: 1,
@@ -63,6 +57,28 @@ else {
 }
 `;
 
+/** runner.mjs (in the integration test) as the fake driver runs it: the same selections, output and SOVA_OUT. */
+const runner: FakeDriver["once"] = async (spec, print) => {
+  const sel = spec.argv.slice(2);
+  print(`runner select ${JSON.stringify(sel)} env ${spec.env.SOVA_TEST_SELECT} verb ${spec.env.SOVA_VERB}`);
+  if (sel.includes("slow")) {
+    // Never ends of itself: the driver's timeout, or the caller's abort, stops it.
+    if (!spec.signal) return { code: 128, timedOut: true, ms: spec.timeoutSec * 1000 };
+    if (!spec.signal.aborted) await new Promise((r) => spec.signal!.addEventListener("abort", r, { once: true }));
+    return { code: 128, aborted: true, ms: 5 };
+  }
+  if (sel.includes("raw3")) return { code: 3, ms: 5 };
+  if (!host.listeners.has(Number(spec.env.SOVA_PORT_REPL_NREPL))) {
+    print("no repl");
+    return { code: 2, ms: 5 };
+  }
+  const failed = sel.filter((x) => x.startsWith("fail"));
+  const passed = (sel.length || 4) - failed.length;
+  writeFileSync(spec.env.SOVA_OUT!, JSON.stringify({ passed, failed: failed.length, skipped: 1, failures: failed.map((n) => ({ name: n, message: "expected 1, got 2".repeat(200), file: "t.mjs", line: 3 })) }));
+  print(`ran ${passed} passed ${failed.length} failed`);
+  return { code: failed.length ? 1 : 0, ms: 5, peakBytes: 32 * 1024 * 1024 };
+};
+
 let parent = "";
 let project = "";
 let engine: ProjectEngine;
@@ -79,7 +95,6 @@ const unitLive = async (id: string, svc: string) => ["active", "activating"].inc
 const svc = (r: VerbResult, name: string) => r.services.find((s) => s.name === name)!;
 
 before(async () => {
-  BASE = await pickBase();
   parent = realpathSync(mkdtempSync(join(tmpdir(), "sova-testverb-proj-")));
   project = join(parent, "demo");
   mkdirSync(join(project, ".sova"), { recursive: true });
@@ -91,7 +106,8 @@ before(async () => {
   git(["init", "-q", "-b", "main"]);
   git(["add", "-A"]);
   git(["commit", "-q", "-m", "fixture"]);
-  engine = new ProjectEngine({ driver: new DetachedDriver(3_000), pollMs: 100 });
+  host.driver.once = runner;
+  engine = new ProjectEngine(host.deps());
   engine.conformer = conformer(engine);
 });
 
@@ -123,7 +139,7 @@ test("up leaves an on-demand service stopped; the first test starts it, runs the
   const tests = t.tests!;
   assert.deepEqual([tests.select, tests.pass, tests.passed, tests.failed, tests.errors, tests.skipped, tests.exit, tests.timedOut], [["unit/a", "unit/b:c*"], true, 2, 0, 0, 1, 0, false]);
   assert.ok(tests.ms > 0);
-  assert.ok((tests.peakBytes ?? 0) > 16 * 1024 * 1024, `the run's sampled memory peak: ${tests.peakBytes}`);
+  assert.equal(tests.peakBytes, 32 * 1024 * 1024, "the run's memory peak, as the driver read it");
   const out = (t.lines ?? []).map((l) => l.text).join("\n");
   assert.match(out, /runner select \["unit\/a","unit\/b:c\*"\] env \["unit\/a","unit\/b:c\*"\] verb test/, "selectors appended as argv, and in SOVA_TEST_SELECT");
   assert.ok((t.lines ?? []).every((l) => l.service === "test"));
@@ -163,14 +179,12 @@ test("a failing selection, a runner with no SOVA_OUT, a timeout and a cancelled 
   define(def(), checkout);
 
   const ac = new AbortController();
-  setTimeout(() => ac.abort(), 600);
-  const t0 = Date.now();
-  const cut = await engine.run("test", { instance: wt, select: ["slow"] }, op, { signal: ac.signal });
+  const running = engine.run("test", { instance: wt, select: ["slow"] }, op, { signal: ac.signal });
+  ac.abort();
+  const cut = await running;
   assert.equal(cut.error?.code, "tests-failed");
   assert.match(cut.error!.message, /cancelled/);
-  assert.ok(Date.now() - t0 < 10_000, "the run was stopped, not waited out");
-  const left = execFileSync("ps", ["-eo", "args"], { encoding: "utf8" }).split("\n").filter((l) => l.includes(join(checkout, "runner.mjs")) || (l.includes("runner.mjs") && l.includes("slow")));
-  assert.deepEqual(left, [], "nothing of the run is left");
+  assert.equal(host.driver.onceRuns.at(-1)!.signal, ac.signal, "the caller's abort reaches the run");
 });
 
 test("select is checked; a definition with no test is unsupported and makes nothing", async () => {

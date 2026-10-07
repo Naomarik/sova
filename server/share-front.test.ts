@@ -1,8 +1,7 @@
-// Run: pnpm exec tsx --test server/share-front.test.ts. The gateway front's guides (snapshots) and
-// Verify against loopback stub servers; https is rewritten to the stub's http by an injected fetch.
+// Run: node scripts/run-tests.mjs server/share-front.test.ts. The gateway front's guides (snapshots)
+// and Verify's judging in process, with a fetch stand-in that answers as a front would. Verify against
+// loopback stub servers and the real share edge is share-front.integration.test.ts.
 import assert from "node:assert/strict";
-import { createServer, type Server } from "node:http";
-import type { AddressInfo } from "node:net";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -15,7 +14,6 @@ mkdirSync(join(root, "agent", "sessions"), { recursive: true });
 after(() => rmSync(root, { recursive: true, force: true }));
 
 const { frontGuide, verifyPublicUrl } = await import("./share/front");
-const { createShareServer } = await import("./share/edge");
 
 const setting = (front: ShareFront) => ({ publicUrl: "https://share.example.com", front, sharePort: 4802, acceptFrom: "all" as const });
 
@@ -70,46 +68,24 @@ test("guides: every front forwards to the share port, root steps marked", () => 
   assert.ok(cf.notes?.some((n) => n.startsWith("Preview:") && n.includes("X-Forwarded-For") && n.includes("isn't confirmed yet")), "cloudflared carries its preview warning");
 });
 
-const servers: Server[] = [];
-after(() => servers.forEach((s) => s.close()));
-async function stub(handler: Parameters<typeof createServer>[1]): Promise<typeof fetch> {
-  const s = createServer(handler);
-  servers.push(s);
-  await new Promise<void>((r) => s.listen(0, "127.0.0.1", r));
-  const port = (s.address() as AddressInfo).port;
-  return (input, init) => fetch(String(input).replace("https://share.example.com", `http://127.0.0.1:${port}`), init);
-}
-const sovaNotFound = (_req: unknown, res: import("node:http").ServerResponse) => {
-  res.writeHead(404, { "content-type": "application/json", "x-content-type-options": "nosniff" });
-  res.end(JSON.stringify({ error: "Unknown link.", code: "not-found" }));
-};
+
+/** A fetch stand-in: every request is answered by `answer`, with nothing on the wire. */
+const answering = (answer: (url: string) => Response): typeof fetch => (async (input: unknown) => answer(String(input))) as typeof fetch;
+/** The share edge's own 404 for an unknown link: the signature Verify looks for. */
+const sovaNotFound = () =>
+  new Response(JSON.stringify({ error: "Unknown link.", code: "not-found" }), { status: 404, headers: { "content-type": "application/json", "x-content-type-options": "nosniff" } });
 
 test("verify: passes only on the gateway's 404 signature, at /api/h/<random>", async () => {
   let path = "";
-  const f = await stub((req, res) => {
-    path = req.url ?? "";
-    sovaNotFound(req, res);
+  const f = answering((url) => {
+    path = new URL(url).pathname;
+    return sovaNotFound();
   });
   assert.deepEqual(await verifyPublicUrl("https://share.example.com", { fetch: f }), { ok: true, status: 404 });
   assert.match(path, /^\/api\/h\/[A-Za-z0-9_-]{43}$/);
   assert.deepEqual(await verifyPublicUrl("https://share.example.com/", { fetch: f }), { ok: true, status: 404 });
 });
 
-test("verify: another server's 404, a 200 and a redirect fail", async () => {
-  const other = await stub((_q, res) => res.writeHead(404).end("nope"));
-  assert.equal((await verifyPublicUrl("https://share.example.com", { fetch: other })).ok, false);
-  const ok200 = await stub((_q, res) => res.writeHead(200).end("hi"));
-  assert.deepEqual(await verifyPublicUrl("https://share.example.com", { fetch: ok200 }), { ok: false, status: 200, error: "Got 200, not Sova's answer" });
-  let followed = false;
-  const redirect = await stub((req, res) => {
-    if (req.url === "/elsewhere") followed = true;
-    res.writeHead(302, { location: "/elsewhere" }).end();
-  });
-  const r = await verifyPublicUrl("https://share.example.com", { fetch: redirect });
-  assert.equal(r.ok, false);
-  assert.equal(r.status, 302);
-  assert.equal(followed, false);
-});
 
 test("verify: http, a path and garbage are refused without a request", async () => {
   let called = false;
@@ -123,15 +99,8 @@ test("verify: http, a path and garbage are refused without a request", async () 
 });
 
 test("verify: a stalled front times out", async () => {
-  const f = await stub(() => {}); // never answers
+  // Never answers: only the timeout's abort ends the request.
+  const f = ((_input: unknown, init?: RequestInit) =>
+    new Promise<Response>((_resolve, reject) => init?.signal?.addEventListener("abort", () => reject(init.signal!.reason)))) as typeof fetch;
   assert.deepEqual(await verifyPublicUrl("https://share.example.com", { fetch: f, timeoutMs: 200 }), { ok: false, error: "Timed out" });
-});
-
-test("verify: the real share edge answers the signature", async () => {
-  const s = createShareServer();
-  servers.push(s);
-  await new Promise<void>((r) => s.listen(0, "127.0.0.1", r));
-  const port = (s.address() as AddressInfo).port;
-  const f: typeof fetch = (input, init) => fetch(String(input).replace("https://share.example.com", `http://127.0.0.1:${port}`), init);
-  assert.deepEqual(await verifyPublicUrl("https://share.example.com", { fetch: f }), { ok: true, status: 404 });
 });

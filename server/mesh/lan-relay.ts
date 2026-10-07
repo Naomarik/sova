@@ -36,6 +36,8 @@ export interface RelayListenerOptions {
   onPeer: (sock: TLSSocket, peer: RelayPeer, channel: Channel) => void;
   onEvent?: (e: RelayEvent) => void;
   now?: () => number;
+  /** Tests: a shorter deadline for the TLS handshake than HANDSHAKE_MS. */
+  handshakeMs?: number;
 }
 
 interface Pending {
@@ -112,7 +114,7 @@ export class RelayListener {
   }
 
   private async startServer(): Promise<void> {
-    const server = tls.createServer(relayServerOptions(this.opts.identity));
+    const server = tls.createServer(relayServerOptions(this.opts.identity, this.opts.handshakeMs));
     server.prependListener("connection", (raw: Socket) => this.onRaw(raw));
     server.on("tlsClientError", (_err: Error, sock: TLSSocket) => {
       this.settle(sock, false);

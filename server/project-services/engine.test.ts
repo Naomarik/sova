@@ -1,29 +1,32 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { exitOf, isVerbResult, type VerbResult } from "../../shared/project-contract";
-import { staticServes, stopStaticServe } from "../preview-serve";
-import { conformer } from "./conform";
 import { SelectedDriver } from "./adapters";
 import { DetachedDriver, SystemdDriver } from "./drivers";
 import { ProjectEngine, type Caller } from "./engine";
-import { readRegistry, sharedIdOf } from "./store";
+import { FakeHost } from "./fake-host";
+import { readRegistry } from "./store";
 import { approve, defHashOf } from "./trust";
 import { parseDefinition } from "../../shared/project-contract";
+
+/**
+ * The verbs' decisions on a host in memory (fake-host.ts): no process starts and no port opens. The real
+ * services, readiness probes, signals, static serves and conform run in engine.integration.test.ts.
+ */
 
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-engine-agent-"));
 
 const op: Caller = { kind: "operator" };
-// Below the kernel's ephemeral range (32768+), where any outgoing connection on the box can hold a port.
-const BASE = 20_000 + Math.floor(Math.random() * 10_000);
-const PORTS = { site: BASE, web: BASE + 20, bus: BASE + 40 };
+const BASE = 21_000;
+const PORTS = { web: BASE + 20, bus: BASE + 40 };
 
 let parent = "";
 let project = "";
+let host: FakeHost;
 let engine: ProjectEngine;
 const git = (args: string[], cwd = project) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd, encoding: "utf8" });
 
@@ -36,44 +39,47 @@ const DEF = {
   services: {
     bus: { cmd: ["node", "bus.mjs"], scope: "shared", ports: { tcp: { fixed: PORTS.bus } } },
     web: { cmd: ["node", "web.mjs"], env: { STORE: "${data.store}" }, ports: { http: { base: PORTS.web } }, requires: ["bus"], ready: { http: "http", path: "/health", timeout: 20 }, reload: { signal: "HUP" } },
-    site: { static: "public", ports: { http: { base: PORTS.site } } },
   },
   hooks: { probe: { run: ["node", "probe.mjs"] } },
-  share: { endpoints: ["web.http", "site.http"] },
+  share: { endpoints: ["web.http"] },
   open: { endpoint: "web.http", path: "/home" },
 };
 
 const FILES: Record<string, string> = {
-  "setup.mjs": `import { mkdirSync, writeFileSync } from "node:fs"; mkdirSync(process.env.SOVA_DATA, { recursive: true }); writeFileSync(process.env.SOVA_DATA + "/setup-ran", "yes");`,
-  "bus.mjs": `import { createServer } from "node:net"; createServer((s) => s.end()).listen(Number(process.env.SOVA_PORT_TCP), "127.0.0.1"); console.log("bus up");`,
-  "web.mjs": `import { createServer } from "node:http"; process.on("SIGHUP", () => console.log("reloaded")); createServer((q, r) => { if (q.url === "/home") { r.setHeader("content-type", "text/html"); return r.end("<h1>home</h1>"); } r.end(q.url === "/health" ? "ok" : "web " + process.env.SOVA_INSTANCE); }).listen(Number(process.env.SOVA_PORT_HTTP), "127.0.0.1", () => console.log("web up on", process.env.SOVA_PORT_HTTP));`,
-  "probe.mjs": `import { existsSync, writeFileSync } from "node:fs"; const [op, token] = process.argv.slice(2); const f = process.env.SOVA_DATA + "/store/" + token; if (op === "write") writeFileSync(f, "1"); else process.exit(existsSync(f) ? 0 : 1);`,
-  "public/index.html": "<h1>site</h1>",
+  "setup.mjs": "// run by the fake driver's runOnce, never by node",
+  "bus.mjs": "",
+  "web.mjs": "",
+  "probe.mjs": "",
   ".gitignore": ".agent/\n",
 };
+
+/** probe.mjs as the fake driver runs it: `write <token>` writes it in the store, `read <token>` exits 0 when it is there. */
+function fakeOnce(spec: { argv: string[]; env: Record<string, string> }) {
+  if (spec.argv[1] !== "probe.mjs") return { code: 0 };
+  const [op, token] = spec.argv.slice(2);
+  const f = join(spec.env.SOVA_DATA!, "store", token!);
+  if (op === "write") {
+    writeFileSync(f, "1");
+    return { code: 0 };
+  }
+  return { code: existsSync(f) ? 0 : 1 };
+}
 
 before(() => {
   parent = realpathSync(mkdtempSync(join(tmpdir(), "sova-engine-proj-")));
   project = join(parent, "demo");
   mkdirSync(join(project, ".sova"), { recursive: true });
-  mkdirSync(join(project, "public"), { recursive: true });
   for (const [f, body] of Object.entries(FILES)) writeFileSync(join(project, f), body);
   writeFileSync(join(project, ".sova", "project.json"), JSON.stringify(DEF, null, 2));
   git(["init", "-q", "-b", "main"]);
   git(["add", "-A"]);
   git(["commit", "-q", "-m", "fixture"]);
-  engine = new ProjectEngine({ driver: new DetachedDriver(3_000), pollMs: 100 });
-  engine.conformer = conformer(engine);
+  host = new FakeHost();
+  host.driver.once = fakeOnce;
+  engine = new ProjectEngine(host.deps());
 });
 
-after(async () => {
-  // Nothing may outlive the tests: every instance torn down, the shared bus stopped.
-  for (const i of readRegistry().instances) if (i.slot !== 0) await engine.run("teardown", { instance: i.id }, op);
-  for (const main of readRegistry().instances.filter((i) => i.slot === 0))
-    await engine.run("down", main.project === project ? { instance: main.id, services: ["web", "site", "bus"], confirm: true } : { instance: main.id }, op);
-  for (const s of staticServes()) await stopStaticServe(s.id);
-  // Whatever failed above: the project's shared bus is stopped by its unit.
-  await engine.driver.stop(engine.unitOf(sharedIdOf(project), "bus"));
+after(() => {
   rmSync(parent, { recursive: true, force: true });
   rmSync(process.env.PI_CODING_AGENT_DIR!, { recursive: true, force: true });
 });
@@ -89,6 +95,7 @@ test("nothing runs before the operator approves the definition's hash", async ()
   assert.equal(exitOf(r), 2);
   assert.equal(readRegistry().instances.length, 0, "nothing was made");
   assert.ok(!existsSync(join(parent, ".worktrees")), "no worktree was cut");
+  assert.deepEqual(host.driver.running(), [], "nothing started");
   const d = shaped(await engine.run("doctor", { project }, op));
   assert.equal(d.ok, false);
   assert.equal(d.checks?.find((c) => c.id === "approved")?.ok, false);
@@ -107,33 +114,37 @@ test("create cuts a worktree, allocates a slot, provisions data and runs setup; 
   assert.equal(a.state, "stopped");
   assert.ok(existsSync(join(a.checkout!, "web.mjs")));
   assert.deepEqual(a.steps.map((s) => [s.id, s.result]), [["slot", "done"], ["worktree", "done"], ["data:store", "done"], ["data:cache", "done"], ["setup:mark", "done"]]);
+  assert.deepEqual(host.driver.onceRuns.map((r) => [r.argv.join(" "), r.cwd]), [["node setup.mjs", a.checkout]], "setup ran once, in the copy");
   assert.equal(a.data.find((d) => d.name === "cache")?.ref, join(a.checkout!, ".agent"));
   assert.ok(a.data.every((d) => d.exists));
   const again = shaped(await engine.run("create", { project, branch: "sova/a" }, op));
   assert.equal(again.instance, a.instance);
   assert.equal(again.changed, false);
   assert.ok(again.steps.every((s) => s.result === "skipped"), JSON.stringify(again.steps));
+  assert.equal(host.driver.onceRuns.length, 1, "setup did not run again");
 });
 
 test("up starts shared services first, waits for readiness; again leaves the same pids", async () => {
+  // web answers its health path only after two polls: up waits for it.
+  let polls = 0;
+  host.httpOk = (_port, path) => path === "/health" && ++polls > 2;
   const up = shaped(await engine.run("up", { instance: a.instance }, op));
+  host.httpOk = () => true;
   assert.equal(up.ok, true, JSON.stringify(up.error));
   assert.equal(up.state, "running");
   assert.equal(up.generation, 1);
-  assert.deepEqual(up.steps.filter((s) => s.kind === "start").map((s) => s.id), ["start:bus", "start:web", "start:site"]);
+  assert.deepEqual(up.steps.filter((s) => s.kind === "start").map((s) => s.id), ["start:bus", "start:web"]);
+  assert.deepEqual(up.steps.filter((s) => s.kind === "ready").map((s) => [s.id, s.result, s.detail]), [["ready:bus", "done", `tcp :${PORTS.bus}`], ["ready:web", "done", `http :${PORTS.web + 1}/health`]]);
+  assert.ok(polls >= 3, `web's health was asked until it answered (${polls})`);
   const web = up.services.find((s) => s.name === "web")!;
   assert.deepEqual(web.ports, { http: PORTS.web + 1 });
-  assert.equal((await (await fetch(`http://127.0.0.1:${PORTS.web + 1}/`)).text()), `web ${a.instance}`);
-  assert.equal(await (await fetch(`http://127.0.0.1:${PORTS.site + 1}/`)).text(), "<h1>site</h1>");
+  assert.equal(host.portOwner(PORTS.web + 1) !== "none" && (host.portOwner(PORTS.web + 1) as { pid: number }).pid, web.pid, "web listens on its slot's port");
   const again = shaped(await engine.run("up", { instance: a.instance }, op));
   assert.equal(again.changed, false);
   assert.equal(again.generation, 1);
   assert.deepEqual(again.services.map((s) => s.pid), up.services.map((s) => s.pid));
   const st = shaped(await engine.run("status", { instance: a.instance }, op));
-  assert.deepEqual(st.services.map((s) => [s.name, s.state]), [["bus", "ready"], ["web", "ready"], ["site", "ready"]]);
-  // A running process service's resident memory; a static one, served in the server, has none of its own.
-  assert.ok((st.services.find((s) => s.name === "web")!.rssBytes ?? 0) > 1024 * 1024, JSON.stringify(st.services));
-  assert.equal(st.services.find((s) => s.name === "site")!.rssBytes, undefined);
+  assert.deepEqual(st.services.map((s) => [s.name, s.state]), [["bus", "ready"], ["web", "ready"]]);
   const all = shaped(await engine.run("status", { project }, op));
   assert.deepEqual(all.instances?.map((i) => [i.instance, i.state]), [[a.instance, "running"]]);
 });
@@ -151,38 +162,38 @@ test("a second verb on a busy instance answers busy at once", async () => {
 });
 
 test("apply signals a service whose reload is a signal, and waits for readiness again", async () => {
-  const before = shaped(await engine.run("status", { instance: a.instance }, op)).services.find((s) => s.name === "web")!.pid;
+  const web = shaped(await engine.run("status", { instance: a.instance }, op)).services.find((s) => s.name === "web")!;
+  host.driver.onSignal = (unit, sig) => host.driver.log(unit, sig === "HUP" ? "reloaded" : `got ${sig}`);
   const r = shaped(await engine.run("apply", { instance: a.instance, services: ["web"] }, op));
   assert.equal(r.ok, true, JSON.stringify(r.error));
   assert.deepEqual(r.steps.map((s) => [s.id, s.result]), [["reload:web", "done"], ["ready:web", "done"]]);
-  assert.equal(r.services.find((s) => s.name === "web")!.pid, before, "a signal keeps the process");
+  assert.equal(r.services.find((s) => s.name === "web")!.pid, web.pid, "a signal keeps the process");
+  assert.deepEqual(host.driver.signalsOf(web.unit!), ["HUP"]);
   const logs = shaped(await engine.run("logs", { instance: a.instance, services: ["web"] }, op));
-  for (let i = 0; i < 20 && !logs.lines?.some((l) => l.text === "reloaded"); i++) {
-    await new Promise((res) => setTimeout(res, 100));
-    logs.lines = (await engine.run("logs", { instance: a.instance, services: ["web"] }, op)).lines;
-  }
   assert.ok(logs.lines?.some((l) => l.text === "reloaded"), JSON.stringify(logs.lines));
 });
 
 test("a port something else holds refuses the start and is never touched", async () => {
   const b = shaped(await engine.run("create", { project, branch: "sova/b" }, op));
   assert.equal(b.slot, 2);
-  const squatter: Server = createServer();
-  await new Promise<void>((r) => squatter.listen(PORTS.web + 2, "127.0.0.1", r));
+  const squatter = { pid: 4_242, cwd: "/elsewhere" };
+  host.listen(PORTS.web + 2, squatter.pid, squatter.cwd);
   try {
     const up = shaped(await engine.run("up", { instance: b.instance }, op));
     assert.equal(up.error?.code, "port-held");
-    assert.match(up.error!.message, new RegExp(`pid ${process.pid}`));
+    assert.match(up.error!.message, /pid 4242 \(\/elsewhere\)/);
     assert.equal(exitOf(up), 2);
-    assert.ok(squatter.listening, "the holder still listens");
+    assert.deepEqual(host.listeners.get(PORTS.web + 2), squatter, "the holder still listens");
+    assert.ok(!up.steps.some((s) => s.id === "start:web" && s.result === "done"), "web never started");
   } finally {
-    await new Promise((r) => squatter.close(r));
+    host.close(PORTS.web + 2);
   }
   const up = shaped(await engine.run("up", { instance: b.instance }, op));
   assert.equal(up.ok, true, JSON.stringify(up.error));
   assert.equal(up.steps.find((s) => s.id === "start:bus")?.result, "skipped", "the shared bus is already up");
   const td = shaped(await engine.run("teardown", { instance: b.instance }, op));
   assert.equal(td.ok, true);
+  assert.equal(host.portOwner(PORTS.web + 2), "none", "its process is gone with it");
 });
 
 test("who may call what", async () => {
@@ -220,14 +231,14 @@ test("who may call what", async () => {
   assert.equal((await engine.run("teardown", { instance: a.instance }, { kind: "overseer", id: "o" })).error?.code, "needs-confirm");
   assert.equal((await engine.run("down", { instance: a.instance, services: ["bus"] }, op)).error?.code, "needs-confirm", "a shared service needs the operator's confirm");
   assert.equal((await engine.run("down", { instance: a.instance, services: ["bus"] }, po())).error?.code, "needs-confirm");
-  const d = await engine.run("down", { instance: a.instance, services: ["site"] }, po());
+  const d = await engine.run("down", { instance: a.instance, services: ["web"] }, po());
   assert.equal(d.ok, true, JSON.stringify(d.error));
   assert.deepEqual(acts, [`down:${a.instance}`]);
   assert.equal((await engine.run("up", { instance: a.instance }, op)).ok, true);
 });
 
-test("with no supervisor reachable, process verbs are unsupported and change nothing; static folders still serve", async () => {
-  const bare = new ProjectEngine({ driver: new SystemdDriver(async () => ({ code: 1, stdout: "", stderr: "Failed to connect to bus" })), pollMs: 100 });
+test("with no supervisor reachable, process verbs are unsupported and change nothing", async () => {
+  const bare = new ProjectEngine(host.deps({ driver: new SystemdDriver(async () => ({ code: 1, stdout: "", stderr: "Failed to connect to bus" })) }));
   const before = readRegistry().instances.length;
   const r = shaped(await bare.run("up", { project, branch: "sova/nobus" }, op));
   assert.equal(r.error?.code, "unsupported");
@@ -235,25 +246,11 @@ test("with no supervisor reachable, process verbs are unsupported and change not
   assert.equal(exitOf(r), 2);
   assert.equal(readRegistry().instances.length, before, "nothing was made");
   assert.ok(!existsSync(join(parent, ".worktrees", "demo-nobus")));
-  // A static-only project needs no supervisor.
-  const site = join(parent, "site");
-  mkdirSync(join(site, ".sova"), { recursive: true });
-  writeFileSync(join(site, "index.html"), "static");
-  const def = { version: 1, services: { site: { static: ".", ports: { http: { base: PORTS.site + 10 } } } } };
-  writeFileSync(join(site, ".sova", "project.json"), JSON.stringify(def));
-  git(["init", "-q", "-b", "main"], site);
-  git(["add", "-A"], site);
-  git(["commit", "-q", "-m", "site"], site);
-  const h = defHashOf(parseDefinition(JSON.stringify(def)));
-  approve(site, h, h);
-  const up = shaped(await bare.run("up", { project: site }, op));
-  assert.equal(up.ok, true, JSON.stringify(up.error));
-  assert.equal(await (await fetch(`http://127.0.0.1:${PORTS.site + 10}/`)).text(), "static");
-  assert.equal(shaped(await bare.run("down", { instance: up.instance }, op)).state, "stopped");
 });
 
 test("doctor and status name the supervisor adapter and why; a reserved adapter leaves process verbs unsupported", async () => {
-  const sel = new ProjectEngine({ driver: new SelectedDriver({ env: { SOVA_PROJECT_NO_SYSTEMD: "1" }, detached: () => engine.driver }), pollMs: 100 });
+  // The detached driver is only asked whether it is available: nothing starts.
+  const sel = new ProjectEngine(host.deps({ driver: new SelectedDriver({ env: { SOVA_PROJECT_NO_SYSTEMD: "1" }, detached: () => new DetachedDriver() }) }));
   const doc = shaped(await sel.run("doctor", { project }, op));
   const sup = doc.checks!.find((c) => c.id === "supervisor")!;
   assert.equal(sup.ok, true);
@@ -262,7 +259,7 @@ test("doctor and status name the supervisor adapter and why; a reserved adapter 
   assert.match(sup.detail, new RegExp(`^detached: detached sessions, processes read from ${reads}; chosen because systemd treated as absent \\(SOVA_PROJECT_NO_SYSTEMD=1\\)$`));
   const st = shaped(await sel.run("status", { project }, op));
   assert.deepEqual(st.checks, [sup], "status carries the same check");
-  const launchd = new ProjectEngine({ driver: new SelectedDriver({ env: { SOVA_PROJECT_DRIVER: "launchd" } }), pollMs: 100 });
+  const launchd = new ProjectEngine(host.deps({ driver: new SelectedDriver({ env: { SOVA_PROJECT_DRIVER: "launchd" } }) }));
   const before = readRegistry().instances.length;
   const r = shaped(await launchd.run("up", { project, branch: "sova/launchd" }, op));
   assert.equal(r.error?.code, "unsupported");
@@ -288,16 +285,15 @@ test("deploy verbs without a deployer, and malformed requests", async () => {
 test("reconcile brings an instance back to what it should be doing", async () => {
   const st = shaped(await engine.run("status", { instance: a.instance }, op));
   const web = st.services.find((s) => s.name === "web")!;
-  const site = st.services.find((s) => s.name === "site")!;
-  // What a server restart loses: the in-process static serve; and a process that died meanwhile.
-  await stopStaticServe(site.unit!);
-  await engine.driver.stop(web.unit!);
+  // A process that died meanwhile.
+  host.driver.crash(web.unit!);
   assert.equal(shaped(await engine.run("status", { instance: a.instance }, op)).state, "degraded");
   const gen = st.generation!;
   const did = await engine.reconcile();
-  assert.ok(did.some((d) => d.includes("started web")) && did.some((d) => d.includes("started site")), JSON.stringify(did));
+  assert.ok(did.some((d) => d.includes("started web")), JSON.stringify(did));
   const back = shaped(await engine.run("status", { instance: a.instance }, op));
   assert.equal(back.state, "running");
+  assert.notEqual(back.services.find((s) => s.name === "web")!.pid, web.pid, "a new process");
   assert.equal(back.generation, gen + 1, "nothing of A ran (the shared bus is the project's): a start from nothing is a new generation");
   assert.deepEqual(await engine.reconcile(), [], "a second reconcile has nothing to do");
 });
@@ -329,21 +325,4 @@ test("reset gives fresh data; down keeps it; teardown deletes it and keeps the b
   const m = shaped(await engine.run("create", { project }, op));
   assert.equal(m.slot, 0);
   assert.equal((await engine.run("teardown", { instance: m.instance }, op)).error?.code, "refused-slot0");
-});
-
-test("conform passes on the fixture: two copies, every verb twice, isolation, nothing left", async () => {
-  const r = shaped(await engine.run("conform", { project }, op));
-  assert.equal(r.ok, true, `${r.error?.message}\n${JSON.stringify(r.conform?.checks, null, 1)}`);
-  assert.equal(r.conform?.pass, true);
-  assert.deepEqual(r.conform?.leaks, []);
-  const ids = r.conform!.checks.map((c) => c.id);
-  for (const id of ["create-a", "create-a-again", "setup-twice", "doctor", "up-a", "ports-owned", "up-a-again", "status-a", "up-b-parallel", "lock-busy", "disjoint", "isolation", "apply-a", "logs-a", "reset-a", "down-a", "down-a-again", "teardown", "teardown-again", "no-leaks"])
-    assert.ok(ids.includes(id), `check ${id} ran`);
-  assert.match(r.conform!.checks.find((c) => c.id === "isolation")!.detail, /read in B 1/);
-  // Suite 3: each share endpoint answers through the preview proxy's request path, no link minted.
-  assert.match(r.conform!.checks.find((c) => c.id === "share-endpoints")!.detail, /^web\.http \(port \d+\): GET \/ through the preview proxy answered 200; site\.http \(port \d+\): GET \/ through the preview proxy answered 200$/);
-  // Suite 4: the entry point answers in A, its content type named (a page, not the web's plain-text root).
-  assert.equal(r.conform!.suiteVersion, 4);
-  assert.match(r.conform!.checks.find((c) => c.id === "open")!.detail, /^web\.http \(port \d+\): GET \/home answered 200 \(text\/html\)$/);
-  assert.equal(git(["branch", "--list", "sova/conform-*"]).trim(), "", "scratch branches are gone");
 });

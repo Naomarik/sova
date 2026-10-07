@@ -5,7 +5,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { appendFileSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import type { AddressInfo } from "node:net";
 import { join, relative, resolve } from "node:path";
 import { after, describe, test } from "node:test";
 import { BATON_DECISION_ENTRY, BATON_SENT_ENTRY } from "../shared/baton";
@@ -32,7 +31,7 @@ const decisions = await import("./decisions");
 const overseer = await import("./overseer");
 const { acquireChat, disposeAllChats, disposeHeldChat } = await import("./chat-manager");
 const { readView, viewForToken } = await import("./share/hub");
-const { createShareServer } = await import("./share/listener");
+const { createShareApp } = await import("./share/routes");
 const { listSessions } = await import("./sessions-index");
 const { hostOf } = await import("./org-engine");
 const { settled } = await import("./workspace-git");
@@ -47,10 +46,9 @@ const ABOUT = `${MARK}. They pay late; keep Maria out of pricing.`;
 /** Neither the marker nor a phrase of the text. */
 const leaks = (s: string) => s.includes(MARK) || s.includes("pay late");
 
-const server = createShareServer();
+// The share routes in-process; the same answers over the share listener: org-about-privacy.integration.test.ts.
+const share = createShareApp();
 after(async () => {
-  server.close();
-  server.closeAllConnections();
   await disposeAllChats();
   await settled(join(root, "ws"));
   rmSync(root, { recursive: true, force: true });
@@ -104,7 +102,7 @@ async function turn(path: string, text: string, by?: { sessionId: string; person
   return got;
 }
 
-async function until(cond: () => boolean, ms = 3000): Promise<void> {
+async function until(cond: () => boolean, ms = 30_000): Promise<void> {
   const end = Date.now() + ms;
   while (!cond()) {
     if (Date.now() > end) throw new Error("timed out");
@@ -176,8 +174,6 @@ describe("the About text reaches the project overseer's prompt and nothing else"
   const ana = await orgs.addPerson(org.id, { name: "Ana Ruiz", role: "Sales" });
   await orgs.patchOrg(org.id, { about: ABOUT });
   await po.ensureProjectOverseer(project.id);
-  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
-  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
   /** Every hand-off session this test ran, with a token for its share page when it has one. */
   const handoffs: { label: string; sessionId: string; path: string; token?: string; person: string }[] = [];
@@ -250,7 +246,7 @@ describe("the About text reaches the project overseer's prompt and nothing else"
     }
   });
 
-  test("share pages: the view, the token's view and the share listener's HTTP answers never carry it", async () => {
+  test("share pages: the view, the token's view and the share routes' answers never carry it", async () => {
     assert.ok(handoffs.length >= 4);
     for (const h of handoffs) {
       const hit = baton.batonById(h.sessionId)!;
@@ -258,7 +254,7 @@ describe("the About text reaches the project overseer's prompt and nothing else"
       if (!h.token) continue;
       assert.ok(!leaks(JSON.stringify(await viewForToken(h.token))), `${h.label}: viewForToken`);
       for (const p of [`/api/h/${h.token}`, `/h/${h.token}`]) {
-        const res = await fetch(base + p);
+        const res = await share.request(p);
         assert.ok(!leaks(await res.text()), `${h.label}: GET ${p} (${res.status})`);
       }
     }

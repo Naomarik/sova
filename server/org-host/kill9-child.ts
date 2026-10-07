@@ -1,4 +1,4 @@
-// The kill-9 fuzz's child (kill9.test.ts): opens a durable host on the given dirs, answers "write"
+// The kill-9 fuzz's child (kill9.integration.test.ts): opens a durable host on the given dirs, answers "write"
 // effects (recording each run), and makes random acts until it is killed. Prints "ready <problems>"
 // once open, and "acted" once it has committed 5 acts (the parent kills only after that line, so every
 // round adds rows whatever the machine's load). The very first round opens with a scripted prologue:

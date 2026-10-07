@@ -2,7 +2,7 @@
 // unmerged, every reason a tree stays, the dry run, `expect`, git's own remove and `branch -d`, the
 // ledger, and readiness's gone-folder reader (server/removed-worktrees.ts).
 import assert from "node:assert/strict";
-import { execFileSync, spawn, type ChildProcess } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -33,7 +33,6 @@ const sessions: SessionSummary[] = [];
 const reads = { file: [] as string[], branch: [] as string[] };
 const branches = new Map<string, unknown[]>();
 let ledger: RemovedWorktree[] = [];
-const sleepers: ChildProcess[] = [];
 
 /** A session file whose `worktrees` entry tracks `path` active, with its sandbox on or off. */
 function tracker(id: string, path: string, over: Partial<SessionSummary> = {}, sandbox = false): void {
@@ -84,15 +83,14 @@ before(() => {
   tracker("run", wt("running"), { busy: true });
   tracker("sbx", wt("sandboxed"), {}, true);
   tracker("idl", wt("idle"));
-  const sleeper = spawn("sleep", ["60"], { cwd: wt("proc"), stdio: "ignore" });
-  sleepers.push(sleeper);
   mkdirSync(join(wt("liverec"), ".agent", "sessions", "live"), { recursive: true });
   writeFileSync(join(wt("liverec"), ".agent", "sessions", "live", `p${process.pid}-x.json`), JSON.stringify({ session: { pid: process.pid } }));
-  // The real /proc scan, taken once (the sleeper already runs) and shared: nothing here starts or stops a
-  // process after it, and a scan reads every fd of every process this user has, seconds each on a busy host.
+  // The real /proc scan, taken once and shared (a scan reads every fd of every process this user has,
+  // seconds each on a busy host), plus a process inside wt-proc as the scan reads one: a real child
+  // whose cwd is there is worktree-cleanup.integration.test.ts.
   let scan: ReturnType<typeof c.scanProcesses> | null = null;
   c.configureCleanup({
-    processes: () => (scan ??= c.scanProcesses()),
+    processes: () => (scan ??= c.scanProcesses().then((ps) => [...ps, { pid: process.ppid, command: "sleep", paths: [wt("proc")] }])),
     summary: async (p) => sessions.find((s) => s.path === p) ?? null,
     sessionFiles: async () => [...new Set([...sessions.map((s) => s.path), join(root, "sessions", "01a1026f-c64e-70a4.jsonl"), HOME_SESSION()])],
     readBranch: async (p) => (reads.branch.push(p), branches.get(p) ?? []),
@@ -103,7 +101,6 @@ before(() => {
 });
 
 after(() => {
-  for (const s of sleepers) s.kill("SIGKILL");
   rmSync(root, { recursive: true, force: true });
 });
 

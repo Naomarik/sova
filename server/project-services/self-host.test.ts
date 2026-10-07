@@ -1,13 +1,11 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { parseDefinition } from "../../shared/project-contract";
-import { staticServes, stopStaticServe } from "../preview-serve";
-import { DetachedDriver } from "./drivers";
+import { FakeHost } from "./fake-host";
 import { ProjectEngine, type Caller, type VerbAct } from "./engine";
 import { readRegistry } from "./store";
 import { approve, defHashOf } from "./trust";
@@ -16,12 +14,12 @@ import { approve, defHashOf } from "./trust";
  * Sova hosting itself (§app.project-services/self-host): on the server's own checkout, apply, down,
  * reset and teardown of slot 0 need the operator's confirm for every caller, and are refused while a
  * hosted session is busy; a worktree's instance of the same project, and another project, stay free.
+ * On a host in memory (fake-host.ts): the rules are the engine's, whatever runs.
  */
 
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-selfhost-agent-"));
 
-const free = (port: number) => new Promise<boolean>((done) => { const s = createServer(); s.once("error", () => done(false)); s.listen(port, "127.0.0.1", () => s.close(() => done(true))); });
-let BASE = 0;
+const BASE = 21_000;
 
 let parent = "";
 let project = "";
@@ -33,9 +31,8 @@ const taken: VerbAct = async () => undefined;
 
 function makeProject(dir: string, base: number) {
   mkdirSync(join(dir, ".sova"), { recursive: true });
-  mkdirSync(join(dir, "public"), { recursive: true });
-  writeFileSync(join(dir, "public", "index.html"), "<h1>x</h1>");
-  const def = { version: 1, slots: { cap: 2 }, services: { site: { static: "public", ports: { http: { base } } } }, data: { db: { kind: "dir" } } };
+  writeFileSync(join(dir, "site.mjs"), "");
+  const def = { version: 1, slots: { cap: 2 }, services: { site: { cmd: ["node", "site.mjs"], ports: { http: { base } } } }, data: { db: { kind: "dir" } } };
   writeFileSync(join(dir, ".sova", "project.json"), JSON.stringify(def));
   const git = (args: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd: dir });
   git(["init", "-q", "-b", "main"]);
@@ -47,20 +44,15 @@ function makeProject(dir: string, base: number) {
 }
 
 before(async () => {
-  for (;;) {
-    BASE = 20_000 + Math.floor(Math.random() * 12_000);
-    if ((await Promise.all([0, 1, 2, 3, 4, 10, 11, 12].map((o) => free(BASE + o)))).every(Boolean)) break;
-  }
   parent = realpathSync(mkdtempSync(join(tmpdir(), "sova-selfhost-proj-")));
   project = join(parent, "sova");
   other = join(parent, "other");
   makeProject(project, BASE);
   makeProject(other, BASE + 10);
-  engine = new ProjectEngine({ driver: new DetachedDriver(3_000), pollMs: 50, selfCheckout: () => project, hostBusy: () => busy });
+  engine = new ProjectEngine(new FakeHost().deps({ selfCheckout: () => project, hostBusy: () => busy }));
 });
 
 after(async () => {
-  for (const s of staticServes()) await stopStaticServe(s.id);
   rmSync(parent, { recursive: true, force: true });
   rmSync(process.env.PI_CODING_AGENT_DIR!, { recursive: true, force: true });
 });

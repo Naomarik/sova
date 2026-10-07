@@ -1,13 +1,12 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { parseDefinition } from "../../shared/project-contract";
-import { DetachedDriver } from "./drivers";
 import { ProjectEngine, type Caller } from "./engine";
+import { FakeHost } from "./fake-host";
 import { mainMoved, onMergeNotes, SYSTEM_ON_MERGE, withOnMerge, type OnMergeDeps } from "./on-merge";
 import { readRegistry } from "./store";
 import { approve, defHashOf } from "./trust";
@@ -16,13 +15,14 @@ import { approve, defHashOf } from "./trust";
  * onMerge (§app.project-services/on-merge): when main's HEAD moves, the main checkout's copy (slot 0)
  * reloads the running services that declare `onMerge: "reload"`, as the system caller, others untouched;
  * a first sight only records HEAD; a stopped service stays stopped; never on Sova's own checkout; each
- * outcome is a note in the project's feed. Real processes under the detached driver, a real git repo.
+ * outcome is a note in the project's feed. On a host in memory (fake-host.ts), a real git repo;
+ * on-merge.integration.test.ts reloads a real running service.
  */
 
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-onmerge-agent-"));
 
-const free = (port: number) => new Promise<boolean>((done) => { const s = createServer(); s.once("error", () => done(false)); s.listen(port, "127.0.0.1", () => s.close(() => done(true))); });
-let BASE = 0;
+const BASE = 21_000;
+const host = new FakeHost();
 let parent = "";
 let project = "";
 let engine: ProjectEngine;
@@ -58,14 +58,15 @@ function writeDef(def: object, approved: boolean): void {
     approve(project, h, h);
   }
 }
-const pidOn = async (port: number): Promise<string> => (await (await fetch(`http://127.0.0.1:${port}/`)).text()).trim();
+/** The pid listening on `port` (as the real test's server answers its own). */
+const pidOn = async (port: number): Promise<string> => {
+  const o = host.portOwner(port);
+  assert.ok(typeof o === "object", `something listens on ${port}`);
+  return String(o.pid);
+};
 const deps = (): Partial<OnMergeDeps> => ({ run: (verb, body, caller) => engine.run(verb, body, caller), selfCheckout: () => self, file });
 
 before(async () => {
-  for (;;) {
-    BASE = 20_000 + Math.floor(Math.random() * 12_000);
-    if ((await Promise.all([0, 1, 2, 3, 10, 11, 12, 13].map((o) => free(BASE + o)))).every(Boolean)) break;
-  }
   parent = realpathSync(mkdtempSync(join(tmpdir(), "sova-onmerge-proj-")));
   project = join(parent, "shop");
   file = join(parent, "on-merge.json");
@@ -74,7 +75,7 @@ before(async () => {
   writeDef(defOf(), true);
   git(["init", "-q", "-b", "main"]);
   commit(".gitignore", "");
-  engine = new ProjectEngine({ driver: new DetachedDriver(3_000), pollMs: 50, selfCheckout: () => self, hostBusy: () => null });
+  engine = new ProjectEngine(host.deps({ selfCheckout: () => self }));
 });
 
 after(async () => {

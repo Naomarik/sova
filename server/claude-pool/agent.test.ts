@@ -1,9 +1,10 @@
-// Run: pnpm exec tsx --test server/claude-pool/agent.test.ts (or pnpm test). Everything is under a
-// mkdtemp dir: synthetic credentials (`fake-…` tokens, example.com emails), no network, no `claude`.
-// Devices are PoolAgents wired to each other in-process; a crash is an agent that throws at a named
-// step and is replaced by a fresh one over the same directories (which replays the journal).
+// Run: pnpm test -- server/claude-pool/agent.test.ts. Everything is under a mkdtemp dir: synthetic
+// credentials (`fake-…` tokens, example.com emails), no network, no `claude`, no process of its own.
+// Devices are PoolAgents wired to each other in-process (pool-test-fixtures.ts); a crash is an agent
+// that throws at a named step and is replaced by a fresh one over the same directories (which replays
+// the journal). Processes on a login are faked pids here; with real ones: agent.integration.test.ts.
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { isAbsolute, join, relative } from "node:path";
 import { after, describe, test } from "node:test";
@@ -19,14 +20,12 @@ import {
   writeLoginPick,
   type ClaudeAccountsFile,
 } from "../../pi-config/extensions/claude-code/accounts.ts";
-import { spawn, spawnSync } from "node:child_process";
 import { keychainService, resetKeychainMtimes, type KeychainOptions } from "../../pi-config/extensions/claude-code/keychain.ts";
-import { clearPicksOf, PoolAgent, scanClaudeProcs, type PoolPeer } from "./agent";
-import { INCOMING_DIR_NAME } from "./creds";
+import { clearPicksOf } from "./agent";
 import { emptyDoc, mergeDocs, newPoolLogin, poolOrder, reg } from "./doc";
 import { readJournal } from "./journal";
+import { copies, credentialsOf, credsPath, holder, invariant, L1, L2, L3, makeWorld, MIN, pool, root, seedLogin, usableOn, want, type Device, type ProcView } from "./pool-test-fixtures";
 
-const root = mkdtempSync(join(tmpdir(), "sova-claude-pool-test-"));
 after(() => rmSync(root, { recursive: true, force: true }));
 
 // `pnpm test` loads pi-config/extensions/claude-code/tests/hermetic-env.mjs with `--import`: every
@@ -40,152 +39,6 @@ test("unit tests run in a throwaway home, whatever they inherited", () => {
   assert.ok(inside(homedir(), home), "HOME is outside the throwaway home");
   for (const name of ["CLAUDE_CONFIG_DIR", "PI_CODING_AGENT_DIR", "PI_AGENT_DIR", "SOVA_DEVICE_ID"]) assert.equal(process.env[name], undefined, `${name} is inherited`);
 });
-
-const L1 = "l-000000a1";
-const L2 = "l-000000a2";
-const L3 = "l-000000a3";
-const MIN = 60_000;
-
-interface Device {
-  id: string;
-  agentDir: string;
-  stateDir: string;
-  claudeDir: string;
-  agent: PoolAgent;
-  offline: boolean;
-  crashAt?: string;
-}
-
-let world = 0;
-function makeWorld(ids: string[], clock: { now: number }, procScan: () => Map<string, number[]> = () => new Map(), apiKeysOnly: string[] = [], keychains: Record<string, KeychainOptions> = {}) {
-  const base = join(root, `w${++world}`);
-  const devices = new Map<string, Device>();
-  const killed: number[] = [];
-  const crashed = new Set<string>();
-  const build = (d: Omit<Device, "agent"> & { agent?: PoolAgent }): PoolAgent =>
-    new PoolAgent({
-      agentDir: d.agentDir,
-      stateDir: d.stateDir,
-      self: () => d.id,
-      selfLabel: () => d.id.toUpperCase(),
-      peers: () => ids.filter((x) => x !== d.id).map((x) => direct(d.id, x)),
-      peerInfo: () => ids.filter((x) => x !== d.id).map((x) => ({ id: x, label: x.toUpperCase(), up: !devices.get(x)!.offline })),
-      defaultClaudeDir: d.claudeDir,
-      now: () => clock.now,
-      tickMs: 0,
-      syncMs: 0,
-      kill: (pid) => killed.push(pid),
-      procScan,
-      canHold: () => !apiKeysOnly.includes(d.id),
-      ...(keychains[d.id] ? { keychain: keychains[d.id] } : {}),
-      crash: (step) => {
-        if (devices.get(d.id)?.crashAt === step) { crashed.add(step); throw new Error(`crash at ${step}`); }
-      },
-      log: process.env.POOL_TEST_LOG ? (m: string) => console.log(`[${d.id}] ${m}`) : () => {},
-    });
-  // A peer as `from` reaches it: JSON on the wire, and an offline device answers nothing.
-  const wire = <T>(v: T): T => JSON.parse(JSON.stringify(v));
-  function direct(from: string, to: string): PoolPeer {
-    const target = () => {
-      const d = devices.get(to)!;
-      const me = devices.get(from)!;
-      if (d.offline || me.offline) throw new Error(`${to} unreachable`);
-      return d.agent;
-    };
-    return {
-      id: to,
-      doc: async () => wire(target().doc()),
-      pushDoc: async (doc) => wire(target().receiveDoc(wire(doc))!),
-      lend: async (req) => wire(await target().lend(from, wire(req))),
-      commit: async (req) => wire(await target().commit(from, wire(req))),
-      giveBack: async (req) => wire(await target().receiveReturn(from, wire(req))),
-    };
-  }
-  for (const id of ids) {
-    const agentDir = join(base, id, "agent");
-    const claudeDir = join(base, id, "claude");
-    mkdirSync(join(agentDir, "sova"), { recursive: true });
-    mkdirSync(join(claudeDir, "projects"), { recursive: true });
-    // The mesh is on: peers.json lists the others (accounts.ts poolActive reads exactly this).
-    writeFileSync(join(agentDir, "sova", "peers.json"), JSON.stringify({ version: 1, self: { id, label: id }, peers: ids.filter((x) => x !== id).map((x) => ({ id: x, label: x, nodeId: `n-${x}`, dnsName: `${x}.example.invalid` })) }));
-    const d = { id, agentDir, stateDir: join(agentDir, "sova"), claudeDir, offline: false } as Device;
-    d.agent = build(d);
-    devices.set(id, d);
-  }
-  const dev = (id: string) => devices.get(id)!;
-  return {
-    devices,
-    dev,
-    killed,
-    crashed,
-    /** The process on `id` died and started again: a fresh agent, the same files. */
-    restart(id: string) {
-      const d = dev(id);
-      d.crashAt = undefined;
-      d.agent = build(d);
-      d.agent.migrate();
-    },
-    async tickAll(rounds = 1) {
-      for (let i = 0; i < rounds; i++) for (const d of devices.values()) if (!d.offline) await d.agent.tick();
-    },
-    async syncAll() {
-      for (const d of devices.values()) if (!d.offline) await d.agent.syncAll();
-    },
-  };
-}
-
-function credentialsOf(tag: string): string {
-  return JSON.stringify({ claudeAiOauth: { accessToken: `fake-access-token-${tag}`, refreshToken: `fake-refresh-token-${tag}`, expiresAt: 4102444800000, scopes: ["user:inference"] } });
-}
-/** A login signed in on `d` (as phase 1 leaves it): its directory and a registry entry `device`. */
-function seedLogin(d: Device, id: string, account: string, device: string | null = d.id, tag = id): void {
-  const dir = join(d.agentDir, "claude-accounts", id);
-  mkdirSync(dir, { recursive: true, mode: 0o700 });
-  writeFileSync(join(dir, ".credentials.json"), credentialsOf(tag), { mode: 0o600 });
-  writeFileSync(join(dir, ".claude.json"), JSON.stringify({ oauthAccount: { accountUuid: account, emailAddress: `${account}@example.com` }, projects: { "/somewhere": {} } }));
-  const read = readAccounts(d.agentDir).value;
-  read.logins.push({ id, addedAt: read.logins.length + 1, enabled: true, device, identity: { accountUuid: account, email: `${account}@example.com` } });
-  writeAccounts(d.agentDir, read);
-}
-const credsPath = (d: Device, id: string) => join(d.agentDir, "claude-accounts", id, ".credentials.json");
-const stagedPath = (d: Device, id: string) => join(d.agentDir, "claude-accounts", INCOMING_DIR_NAME, id, ".credentials.json");
-/** Devices where a `claude` spawn could run on `id` now (the pool is on everywhere here). */
-function usableOn(w: ReturnType<typeof makeWorld>, id: string): string[] {
-  return [...w.devices.values()].filter((d) => {
-    const logins = new ClaudeLogins({ agentDir: d.agentDir, env: { HOME: d.agentDir, CLAUDE_CONFIG_DIR: d.claudeDir } });
-    return logins.order().includes(id) && existsSync(credsPath(d, id)) && !logins.leaving(id);
-  }).map((d) => d.id);
-}
-/** Copies of `id`'s credentials anywhere (active or staged). */
-function copies(w: ReturnType<typeof makeWorld>, id: string): number {
-  let n = 0;
-  for (const d of w.devices.values()) {
-    if (existsSync(credsPath(d, id))) n++;
-    if (existsSync(stagedPath(d, id))) n++;
-  }
-  return n;
-}
-function invariant(w: ReturnType<typeof makeWorld>, id: string, where: string): void {
-  assert.ok(usableOn(w, id).length <= 1, `${where}: ${id} usable on ${usableOn(w, id).join(", ")}`);
-  assert.ok(copies(w, id) >= 1, `${where}: ${id} lost`);
-}
-const want = (d: Device, extra: Record<string, unknown> = {}) => {
-  mkdirSync(join(d.agentDir, "claude-pool", "wants"), { recursive: true });
-  writeFileSync(join(d.agentDir, "claude-pool", "wants", `${process.pid}-${Math.random().toString(16).slice(2, 10)}.json`), JSON.stringify({ v: 1, at: 1, pid: process.pid, ...extra }));
-};
-const holder = (d: Device, id: string) => d.agent.doc().logins[id]?.holder;
-
-/** Keeper `k` with L1 (and L2) kept free, `d` and `e` with nothing; everything in sync. */
-async function pool(ids = ["k", "d", "e"], logins: Array<[string, string]> = [[L1, "acct-one"], [L2, "acct-two"]], procScan?: () => Map<string, number[]>) {
-  const clock = { now: 1_000_000 };
-  const w = makeWorld(ids, clock, procScan);
-  const k = w.dev(ids[0]!);
-  for (const [id, account] of logins) seedLogin(k, id, account, null);
-  k.agent.migrate();
-  k.agent.setKeeper(k.id);
-  await w.syncAll();
-  return { w, clock, k };
-}
 
 describe("pool document", () => {
   test("edits of different fields on two devices both survive; the holder with the larger seq wins", () => {
@@ -374,8 +227,8 @@ describe("borrowing", () => {
 });
 
 describe("returning", () => {
-  async function borrowed() {
-    const p = await pool();
+  async function borrowed(procs: ProcView = {}) {
+    const p = await pool(undefined, undefined, undefined, procs);
     const d = p.w.dev("d");
     want(d);
     await d.agent.tick();
@@ -432,48 +285,42 @@ describe("returning", () => {
     });
   }
 
-  test("a login is not handed over while a process runs on it; at the cut its claude is stopped", async () => {
-    const { w, d, k, clock } = await borrowed();
-    // A live process (this test's) with a busy user on L1 and its claude child: its lease, which
-    // the owner rewrites every few seconds.
-    const dir = join(d.agentDir, "claude-accounts", L1);
-    const leases = join(dir, ".sova-leases");
+  test("a login is not handed over while a process runs on it; at the cut its claude is stopped (the process faked)", async () => {
+    // The claude child is a pid no process has: whether it lives and runs claude on L1 is this
+    // test's say. With a real process named claude: agent.integration.test.ts.
+    const CLAUDE = 2 ** 30;
+    let running = true;
+    const { w, d, k, clock } = await borrowed({ pidAlive: (pid) => pid === process.pid || (pid === CLAUDE && running), runsOn: (pid) => pid === CLAUDE && running });
+    const leases = join(d.agentDir, "claude-accounts", L1, ".sova-leases");
     mkdirSync(leases, { recursive: true });
-    // A process named claude (macOS reads no other process's environment, only its name and age): sleep, through a link.
-    const bin = join(d.agentDir, "bin");
-    mkdirSync(bin, { recursive: true });
-    symlinkSync(spawnSync("sh", ["-c", "command -v sleep"], { encoding: "utf8" }).stdout.trim(), join(bin, "claude"));
-    const claude = spawn(join(bin, "claude"), ["60"], { env: { ...process.env, CLAUDE_CONFIG_DIR: dir }, stdio: "ignore" });
-    const lease = () => writeFileSync(join(leases, `${process.pid}.json`), JSON.stringify({ v: 1, owner: process.pid, users: 1, busy: 1, children: [claude.pid], lastActiveAt: clock.now, at: clock.now }));
-    try {
-      await new Promise((r) => setTimeout(r, 100));
-      lease();
-      k.agent.askReturn(L1);
-      await w.syncAll();
-      await d.agent.tick();
-      assert.equal(readLeaving(d.agentDir, L1)?.reason, "user");
-      assert.ok(existsSync(credsPath(d, L1)), "still here: a process runs on it");
-      assert.deepEqual(usableOn(w, L1), [], "but no new process may take it");
-      clock.now += 16 * MIN;
-      lease();
-      await d.agent.tick();
-      assert.deepEqual(w.killed, [claude.pid], "the cut stops the claude process still on it");
-    } finally {
-      claude.kill();
-    }
+    const lease = () => writeFileSync(join(leases, `${process.pid}.json`), JSON.stringify({ v: 1, owner: process.pid, users: 1, busy: 1, children: [CLAUDE], lastActiveAt: clock.now, at: clock.now }));
+    lease();
+    k.agent.askReturn(L1);
+    await w.syncAll();
+    await d.agent.tick();
+    assert.equal(readLeaving(d.agentDir, L1)?.reason, "user");
+    assert.ok(existsSync(credsPath(d, L1)), "still here: a process runs on it");
+    assert.deepEqual(usableOn(w, L1), [], "but no new process may take it");
+    clock.now += 16 * MIN;
+    lease();
+    await d.agent.tick();
+    assert.deepEqual(w.killed, [CLAUDE], "the cut stops the claude process still on it");
+    running = false;
     rmSync(leases, { recursive: true });
     await d.agent.tick();
     assert.equal(existsSync(credsPath(d, L1)), false, "then it goes");
     assert.equal(holder(k, L1)!.free, true);
   });
 
-  test("a stale lease (its owner gone, its child pid reused by another process) holds nothing and nothing is stopped", async () => {
-    const { w, d, k, clock } = await borrowed();
+  test("a stale lease (its owner gone, its child pid reused by another process) holds nothing and nothing is stopped (the pids faked)", async () => {
+    // The owner is a pid no process has, and this test's own pid runs no claude: as the real checks
+    // find them (agent.integration.test.ts).
+    const { w, d, k, clock } = await borrowed({ pidAlive: (pid) => pid === process.pid, runsOn: () => false });
     const leases = join(d.agentDir, "claude-accounts", L1, ".sova-leases");
     mkdirSync(leases, { recursive: true });
     // A dead owner whose recorded child pid now belongs to an unrelated live process (this test's),
     // and a live pid as owner that stopped rewriting its lease long ago (a reused owner pid).
-    const dead = spawnSync(process.execPath, ["-e", "0"]).pid!;
+    const dead = 2 ** 30;
     writeFileSync(join(leases, `${dead}.json`), JSON.stringify({ v: 1, owner: dead, users: 1, busy: 1, children: [process.pid, process.pid], lastActiveAt: clock.now, at: clock.now }));
     writeFileSync(join(leases, `${process.pid}.json`), JSON.stringify({ v: 1, owner: process.pid, users: 1, busy: 1, children: [], lastActiveAt: clock.now - 5 * MIN, at: clock.now - 5 * MIN }));
     k.agent.askReturn(L1);
@@ -635,14 +482,17 @@ describe("accounts.ts in the pool", () => {
     const logins = new ClaudeLogins({ agentDir: d.agentDir, env, wantPollMs: 20, wantWaitMs: 5_000, now: () => clock.now });
     // The agent heartbeat (this process) and a ticking agent.
     await d.agent.tick();
-    const ticking = setInterval(() => void d.agent.tick(), 30);
+    let inflight = Promise.resolve();
+    const ticking = setInterval(() => (inflight = d.agent.tick()), 30);
     try {
       const first = await logins.acquire();
       assert.equal(first.id, L1);
       assert.equal(first.env.CLAUDE_CONFIG_DIR, join(d.agentDir, "claude-accounts", L1));
       const next = await logins.failoverAsync(first, { kind: "limit", resetsAt: clock.now + 60 * MIN, window: "five_hour" });
       assert.equal(next?.id, L2, "the next login of another account, borrowed");
-      await new Promise((r) => setTimeout(r, 150));
+      // A tick already running makes another a no-op: stop the ticking, let the last one end, then tick.
+      clearInterval(ticking);
+      await inflight;
       await d.agent.tick();
       assert.equal(existsSync(credsPath(d, L1)), false, "the limited login went back");
       assert.equal(holder(k, L1)?.device, "k");
@@ -665,21 +515,6 @@ describe("accounts.ts in the pool", () => {
 void ({} as ClaudeAccountsFile);
 
 describe("processes without a lease (started before this version, or by hand)", () => {
-  test("/proc: a claude process is found by its CLAUDE_CONFIG_DIR; a tool's shell under it is not", { skip: process.platform !== "linux" }, async () => {
-    const dir = join(root, "proc-scan", "claude-accounts", L1);
-    mkdirSync(dir, { recursive: true });
-    const env = { ...process.env, CLAUDE_CONFIG_DIR: dir };
-    const claude = spawn(process.execPath, ["-e", "setTimeout(() => {}, 20000)", "fake-claude"], { env, stdio: "ignore" });
-    const shell = spawn(process.execPath, ["-e", "setTimeout(() => {}, 20000)", "a-tool-shell"], { env, stdio: "ignore" });
-    try {
-      await new Promise((r) => setTimeout(r, 200));
-      const found = scanClaudeProcs().get(dir) ?? [];
-      assert.deepEqual(found, [claude.pid]);
-    } finally {
-      claude.kill();
-      shell.kill();
-    }
-  });
 
   test("a login with such a process is never lent, never returned for idleness, and at the cut it is stopped", async () => {
     let pids: number[] = [];
@@ -750,11 +585,17 @@ describe("the keeper, removal, and a device that holds no subscription login", (
     const leases = join(k.agentDir, "claude-accounts", L1, ".sova-leases");
     mkdirSync(leases, { recursive: true });
     writeFileSync(join(leases, `${process.pid}.json`), JSON.stringify({ v: 1, owner: process.pid, users: 1, busy: 0, children: [], lastActiveAt: clock.now - 45 * MIN, at: clock.now }));
+    // The child lets go once it sees the login marked leaving (the lend waits up to 8 s for that).
     let markedFirst = false;
-    const release = setTimeout(() => { markedFirst = readLeaving(k.agentDir, L1)?.reason === "idle"; rmSync(leases, { recursive: true, force: true }); }, 300);
+    const release = setInterval(() => {
+      if (readLeaving(k.agentDir, L1)?.reason !== "idle") return;
+      markedFirst = true;
+      rmSync(leases, { recursive: true, force: true });
+      clearInterval(release);
+    }, 10);
     want(d);
     await d.agent.tick();
-    clearTimeout(release);
+    clearInterval(release);
     assert.ok(markedFirst, "its idle children were asked to let go first");
     assert.deepEqual(usableOn(w, L1), ["d"], "d borrowed L1, the keeper's idle login");
     assert.equal(existsSync(credsPath(k, L1)), false);
@@ -910,6 +751,6 @@ test("off Linux a lease's child counts only as a `claude` started no later than 
   assert.equal(claudeRunsOn(me, "/l", at, now, "darwin", ps("claude", 30)), false, "started after the lease: a reused pid");
   assert.equal(claudeRunsOn(me, "/l", at, now, "darwin", ps("bun", 120)), false, "not claude");
   assert.equal(claudeRunsOn(me, "/l", at, now, "darwin", () => null), false, "ps can't read it");
-  const dead = spawnSync(process.execPath, ["-e", "0"]).pid!;
+  const dead = 2 ** 30; // no process has it
   assert.equal(claudeRunsOn(dead, "/l", at, now, "darwin", ps("claude", 120)), false, "not alive");
 });

@@ -1,4 +1,4 @@
-// The import's world for its tests (project-import.test.ts) and the kill tests' child (project-import-kill.test.ts):
+// The import's world for its tests (project-import.test.ts) and the kill tests' child (project-import-kill.integration.test.ts):
 // an org "Acme" with one project of its own placed, and a standalone project "Solo" with an overseer conversation,
 // its log rows and a cost file, in a throwaway PI_CODING_AGENT_DIR (set by the caller before this module loads).
 //

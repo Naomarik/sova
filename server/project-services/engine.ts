@@ -282,6 +282,20 @@ export function readTestOut(file: string): { passed: number; failed: number; err
 
 // ---- the engine -----------------------------------------------------------------------------------
 
+/** How a readiness probe reaches a port of this host: its loopback by default; tests fake it. */
+export interface Readiness {
+  tcp(port: number): Promise<boolean>;
+  http(port: number, path: string): Promise<boolean>;
+}
+export const hostReadiness: Readiness = { tcp: (port) => tcpOpen(port), http: (port, path) => httpOk(port, path) };
+
+/** The time readiness and port-release waits count in: the wall clock by default; tests step a fake one. */
+export interface EngineClock {
+  now(): number;
+  sleep(ms: number): Promise<void>;
+}
+export const wallClock: EngineClock = { now: () => Date.now(), sleep: async (ms) => void (await sleep(ms)) };
+
 export interface EngineDeps {
   driver: Driver;
   git?: GitRun;
@@ -292,6 +306,12 @@ export interface EngineDeps {
   containerQuery?: ContainerQuery;
   /** Poll interval for readiness waits. */
   pollMs?: number;
+  /** The readiness probes on this host (a confined run's go through its anchor); tests fake them. */
+  readiness?: Readiness;
+  /** The clock of readiness and port-release waits; tests fake it. */
+  clock?: EngineClock;
+  /** Whether a shared endpoint's process port takes a connection (default: share.ts's loopback dial); tests fake it. */
+  dial?: (port: number) => Promise<boolean>;
   /** The checkout the running server was loaded from (§app.project-services/self-host); tests set it. */
   selfCheckout?: () => string | null;
   /** Why this server's hosted sessions are busy, or null; tests fake it. */
@@ -367,6 +387,9 @@ export class ProjectEngine {
   private readonly containerExec: (engine: string, args: string[]) => Promise<number>;
   private readonly containerQuery: ContainerQuery;
   private readonly pollMs: number;
+  private readonly readiness: Readiness;
+  private readonly clock: EngineClock;
+  private readonly dial: ((port: number) => Promise<boolean>) | undefined;
   private readonly selfCheckout: () => string | null;
   private readonly hostBusy: () => string | null;
   private readonly projectIdOf: (root: string) => Promise<string | null>;
@@ -398,6 +421,9 @@ export class ProjectEngine {
           );
         }));
     this.pollMs = deps.pollMs ?? 250;
+    this.readiness = deps.readiness ?? hostReadiness;
+    this.clock = deps.clock ?? wallClock;
+    this.dial = deps.dial;
     this.selfCheckout = deps.selfCheckout ?? serverCheckout;
     this.hostBusy = deps.hostBusy ?? (() => hostedBusy());
     this.projectIdOf =
@@ -1111,12 +1137,12 @@ export class ProjectEngine {
     const c = scope.confine && scope.confine !== "ended" ? scope.confine : null;
     if (s.ready && "http" in s.ready) {
       const port = ports[s.ready.http]!;
-      return { probe: `http :${port}${s.ready.path}`, ok: c ? await c.http(port, s.ready.path) : await httpOk(port, s.ready.path), ms: Date.now() - t0 };
+      return { probe: `http :${port}${s.ready.path}`, ok: c ? await c.http(port, s.ready.path) : await this.readiness.http(port, s.ready.path), ms: Date.now() - t0 };
     }
     const portName = s.ready && "tcp" in s.ready ? s.ready.tcp : Object.keys(ports)[0];
     if (portName !== undefined) {
       const port = ports[portName]!;
-      return { probe: `tcp :${port}`, ok: c ? await c.tcp(port) : await tcpOpen(port), ms: Date.now() - t0 };
+      return { probe: `tcp :${port}`, ok: c ? await c.tcp(port) : await this.readiness.tcp(port), ms: Date.now() - t0 };
     }
     const st = await this.driver.status(unit);
     return { probe: "running", ok: st.state === "active", ms: Date.now() - t0 };
@@ -1125,9 +1151,9 @@ export class ProjectEngine {
   private async waitReady(run: Run, def: ProjectDef, scope: Scope, s: ServiceDecl, unit: string): Promise<void> {
     const timeoutSec = s.ready?.timeout ?? 60;
     await this.step(run, `ready:${s.name}`, "ready", async () => {
-      const until = Date.now() + timeoutSec * 1000;
+      const until = this.clock.now() + timeoutSec * 1000;
       const bare = !s.ready && !Object.keys(s.ports).length && s.static === undefined;
-      const started = Date.now();
+      const started = this.clock.now();
       for (;;) {
         if (s.static === undefined) {
           const st = await this.driver.status(unit);
@@ -1141,10 +1167,10 @@ export class ProjectEngine {
         // the HTTP server) is waited for; one a foreign process holds fails at once.
         const ports = p.ok ? await this.portsUnheld(def, scope, s) : { foreign: null, waiting: [] };
         if (ports.foreign) throw new VerbFailure("port-held", `${ports.foreign}; Sova never stops it`, { service: s.name });
-        if (p.ok && !ports.waiting.length && (!bare || Date.now() - started >= 1_000)) return { result: "done", detail: p.probe };
-        if (Date.now() > until)
+        if (p.ok && !ports.waiting.length && (!bare || this.clock.now() - started >= 1_000)) return { result: "done", detail: p.probe };
+        if (this.clock.now() > until)
           throw new VerbFailure("not-ready", `${s.name} was not ready within ${timeoutSec}s (${p.probe}${p.ok ? ` answered, but nothing listens on ${ports.waiting.join(", ")}` : ""})`, { service: s.name });
-        await sleep(this.pollMs);
+        await this.clock.sleep(this.pollMs);
       }
     });
   }
@@ -1309,7 +1335,7 @@ export class ProjectEngine {
       await this.step(run, `stop:${name}`, "stop", async () => {
         if (st.state !== "missing") await this.driver.stop(unit);
         // As after any stop: its ports released before anything starts on them (at most 5 s).
-        for (const until = Date.now() + 5_000; ports.some((p) => this.portOwner(p) !== "none") && Date.now() < until; ) await sleep(50);
+        for (const until = this.clock.now() + 5_000; ports.some((p) => this.portOwner(p) !== "none") && this.clock.now() < until; ) await this.clock.sleep(50);
         return { result: "done", detail: `shared, no longer in any definition: ${alive ? unit : "marked stopped"}` };
       });
       out.push(name);
@@ -1385,12 +1411,12 @@ export class ProjectEngine {
   private async portsReleased(def: ProjectDef, scope: Scope, s: ServiceDecl): Promise<void> {
     const ports = Object.values(this.allPorts(def, scope)[s.name] ?? {});
     const mine = this.containerOf(def, scope, s);
-    const until = Date.now() + 5_000;
+    const until = this.clock.now() + 5_000;
     for (;;) {
       const published = mine ? await publishedPorts(this.containerQuery, mine.engine, mine.name) : new Set<number>();
       const owner = this.ownerIn(scope, s);
-      if (!ports.some((p) => published.has(p) || owner(p) !== "none") || Date.now() >= until) return;
-      await sleep(50);
+      if (!ports.some((p) => published.has(p) || owner(p) !== "none") || this.clock.now() >= until) return;
+      await this.clock.sleep(50);
     }
   }
 
@@ -1739,6 +1765,7 @@ export class ProjectEngine {
       // preview-links.json keeps `operator` or `session:<id>` (the project overseer's conversation), strictly.
       createdBy: run.caller.kind === "operator" ? "operator" : `session:${run.caller.id}`,
       serveOf: (s: ServiceDecl) => this.unitOf(rec.id, s.name),
+      ...(this.dial ? { dial: this.dial } : {}),
     };
   }
 
@@ -1949,10 +1976,10 @@ export class ProjectEngine {
     const tcp = s.ready && "tcp" in s.ready ? s.ready.tcp : Object.keys(ports)[0];
     if (s.ready && "http" in s.ready) {
       probe = `http :${ports[s.ready.http]}${s.ready.path}`;
-      ok = await httpOk(ports[s.ready.http]!, s.ready.path);
+      ok = await this.readiness.http(ports[s.ready.http]!, s.ready.path);
     } else if (tcp !== undefined) {
       probe = `tcp :${ports[tcp]}`;
-      ok = await tcpOpen(ports[tcp]!);
+      ok = await this.readiness.tcp(ports[tcp]!);
     }
     return { ...base, state: ok ? "ready" : st.state === "activating" ? "starting" : "degraded", ready: { probe, ok, ms: Date.now() - t0 }, detail: about, ...(st.rssBytes !== null ? { rssBytes: st.rssBytes } : {}) };
   }

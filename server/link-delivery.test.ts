@@ -7,6 +7,7 @@
 // own transcript kind, never a title, never tag evidence, never "asks you", never regenerated, and
 // Stop never hands it to the composer.
 import assert from "node:assert/strict";
+import { until as waitUntil } from "./test-wait";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -70,10 +71,7 @@ function sessionFile(entries: Array<Record<string, unknown>>, id = `01a0-ld${n}`
 /** u1 → a1: an ordinary finished session. */
 const plainSession = () => sessionFile([msg("u1", null, "user", "first ask"), msg("a1", "u1", "assistant", "first answer")], `01a0-ld${n}`);
 
-const until = async (ready: () => boolean) => {
-  for (let i = 0; i < 100 && !ready(); i++) await new Promise((r) => setTimeout(r, 10));
-  assert.ok(ready(), "condition never became true");
-};
+const until = (ready: () => boolean) => waitUntil(ready);
 
 describe("§mesh.links/transcript: the tag and its classification", () => {
   test("a link message is its own kind, carrying the parsed tag; the text stays whole", () => {

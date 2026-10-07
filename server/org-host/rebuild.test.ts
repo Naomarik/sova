@@ -1,6 +1,7 @@
 // Run: pnpm exec tsx --test server/org-host/rebuild.test.ts. `statecharts rebuild --verify` (r9): an
 // org's log, written by the host, replays to every snapshot; a hand-edited snapshot is reported;
 // nothing is written.
+// The rebuild CLI run as a program: rebuild.integration.test.ts.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -112,11 +113,4 @@ describe("statecharts rebuild --verify", () => {
     );
   });
 
-  test("the command: only --verify exists, a usage error is exit 2", () => {
-    const run = (...args: string[]) => spawnSync(process.execPath, ["--import", "tsx", "scripts/statecharts.ts", ...args], { encoding: "utf8" });
-    const plain = run("rebuild", "o1");
-    assert.equal(plain.status, 2);
-    assert.match(plain.stderr, /Only `rebuild --verify` exists/);
-    assert.equal(run("nothing").status, 2);
-  });
 });

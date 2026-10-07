@@ -1,6 +1,6 @@
 // Run: npx tsx --test server/explanations.test.ts
 // Uses a throwaway PI_CODING_AGENT_DIR in the OS temp dir; ~/.pi is never read or written, and
-// the server is imported with PORT=0 so it binds an ephemeral port instead of the dev port.
+// the server's app is built in-process (server/app.ts): no listener.
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -10,7 +10,6 @@ import type { ExplanationInfo } from "../shared/protocol";
 
 const agentDir = mkdtempSync(join(tmpdir(), "sova-explain-test-"));
 process.env.PI_CODING_AGENT_DIR = agentDir; // before the modules below compute their paths
-process.env.PORT = "0";
 const storeDir = join(agentDir, "explanations");
 const sessionsDir = join(agentDir, "sessions", "--tmp-explain-test--");
 mkdirSync(storeDir, { recursive: true });
@@ -21,10 +20,10 @@ const { explanationsDir, hasPage, isExplanationId, listExplanations, readExplana
 const { normalizeEntries, normalizeEntry } = await import("./transcript");
 const { getSessionInsight } = await import("./insights");
 const { canonicalPath } = await import("./paths");
-const { app, server } = await import("./index");
+const { buildApp } = await import("./app");
+const { app } = buildApp({ extensionEntriesOf: async () => [] });
 
 after(() => {
-  server.close();
   rmSync(agentDir, { recursive: true, force: true });
 });
 

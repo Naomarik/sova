@@ -73,7 +73,9 @@ process.env.RD_TEST_PLAIN = PLAIN.envPlain;
 process.env.GIT_AUTHOR_EMAIL = PLAIN.author;
 
 const { REDACTED, REDACTING, Redactor, redactingTool, isSecretEnvName, modelsJsonValues, redactPatterns, serverRedactor } = await import("./overseer-redact");
-const { overseerFileTools } = await import("./overseer-file-tools");
+const { overseerFileTools, setSearchSpawnForTest } = await import("./overseer-file-tools");
+// fd and rg in-process (server/search-tools-fake.ts; overseer-file-tools.integration.test.ts runs the real ones).
+setSearchSpawnForTest((await import("./search-tools-fake")).fakeSearchSpawn());
 const { briefText, buildOverseerTools, renderOverseerPrompt, extraInstructions } = await import("./overseer");
 const { logAction, overseerActionsFile, overseerNotesFile, readNotes, readOverseerSettings, writeNotes } = await import("./overseer-store");
 const { disposeAllChats } = await import("./chat-manager");

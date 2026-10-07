@@ -1,4 +1,4 @@
-// Run: pnpm exec tsx --test server/project-previews.test.ts. A project's preview links
+// Run: pnpm exec tsx --test server/project-previews.integration.test.ts. A project's preview links
 // (§app.project-overseer/previews, §mesh.public/preview, /preview-serve) against the real engine host and
 // routes: the overseer's guard (L1, the hold, the operator's turn), the target checks, the kept link and
 // where it may go, the worktree match, and folder previews across a restart. Throwaway workspace and

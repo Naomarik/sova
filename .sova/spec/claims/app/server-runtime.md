@@ -102,7 +102,9 @@ The suite has two tiers, told apart by file name alone, so a file's tier can't d
 - **The unit tier** is every test file the runner's patterns match except `*.integration.test.ts`:
   in-process tests. They may run Git (Sova's own org store is a Git repository), but no other
   program, no socket (bound or connected, TCP or unix), no network fetch, and they never import
-  `server/index.ts`. `pnpm test` runs this tier; it is the everyday run.
+  `server/index.ts`. `pnpm test` runs this tier; it is the everyday run. Each unit file starts
+  with `SOVA_PROJECT_NO_SYSTEMD=1` unless the environment already sets it, so a project engine it
+  builds takes the detached driver without probing systemd; integration files keep the real probe.
 - **The integration tier** is `*.integration.test.ts`, a sibling beside the unit file it splits
   from: real processes, ports, the whole server, and time measured. `pnpm test:int` runs it, at a
   quarter of the cores (`TEST_INT_JOBS=<n>` sets the width; the unit tier's is `TEST_BUN_JOBS`),

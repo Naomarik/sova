@@ -28,13 +28,13 @@ import {
 } from "../lib/person-page";
 import { createPoll } from "../lib/poll";
 import { STATUS_CHIP, valueText, writerWord } from "../lib/profile-changes";
-import { announce, toast } from "../lib/ui-state";
+import { announce, copyText, toast } from "../lib/ui-state";
 import { InsightsPage } from "./InsightsPage";
 import { LinksBanner } from "./LinksBanner";
 import { allDeleted, DELETE_ASK, DELETE_LINK, DELETE_OWNER_LINK, deleteAllConfirm, deleteAllLabel, deleteAllLine, LINK_DELETED, LINK_GONE, NEW_LINK_TIP, OWNER_LINK_DELETED } from "../lib/link-delete";
 import { DeleteButton } from "./DeleteButton";
 import { PersonForm } from "./PersonForm";
-import { Banner, Chip, Icon, trapFocus } from "./ui";
+import { Banner, Chip, CopyButton, Icon, trapFocus } from "./ui";
 import type { OfferLink } from "../../shared/baton";
 import "../orgs.css";
 import "../projects.css";
@@ -525,12 +525,16 @@ function LinksAndVisits(props: { data: PersonPageData; now: number; act: Act; on
   const summary = () => visitsSummary({ opened: props.data.opened, lastOpenedAt: props.data.lastOpenedAt, linksEver: props.data.links.length }, props.now);
   const shown = createMemo(() => (all() ? props.data.visits : props.data.visits.slice(0, VISITS_FOLDED)));
   const otherHostVisits = () => props.data.visits.some((v) => v.otherHost);
-  /** A new link for this person on the row's session (the current hand-off, or its open offer). */
-  const newLink = (sid: string, offer: boolean) =>
-    props.act(async () => {
-      const r = offer ? await inviteeLink(sid, p().id) : await batonLink(sid);
-      props.onLinks([{ personId: p().id, name: p().name, link: r.link }], r.linkWarning);
-    }, `New link for ${p().name} ready above.`);
+  /** A link for this person on the row's session (the current hand-off, or its open offer): `keep`
+      (Get Link) the kept live one when there is one, else a new one; without it (New Link) a new one. */
+  const newLink = (sid: string, offer: boolean, keep: boolean) =>
+    props.act(
+      async () => {
+        const r = offer ? await inviteeLink(sid, p().id, keep) : await batonLink(sid, keep);
+        props.onLinks([{ personId: p().id, name: p().name, link: r.link }], r.linkWarning);
+      },
+      keep ? `Link for ${p().name} ready above.` : `New link for ${p().name} ready above.`,
+    );
   return (
     <section class="card orgs-section" aria-labelledby="person-links">
       <div class="orgs-head">
@@ -578,13 +582,15 @@ function LinksAndVisits(props: { data: PersonPageData; now: number; act: Act; on
             {(l) => {
               const st = () => LINK_STATE[l.state];
               const session = () => props.data.sessions.find((s) => s.sessionId === l.sessionId);
-              /** Get New Link: the current hand-off while they hold it, or the current offer that
-                  includes them (a link for anyone else would be the holder's), while they're active. */
+              /** New Link (and Get Link): the current hand-off while they hold it, or the current offer
+                  that includes them (a link for anyone else would be the holder's), while they're active. */
               const renew = (): "holder" | "offer" | null => {
                 if (!l.current || l.state === "closed" || p().status !== "active") return null;
                 if (session()?.holdsNow) return "holder";
                 return session()?.offer?.includesThem ? "offer" : null;
               };
+              /** They have a kept live link of this session's current round: Copy Link stands in for Get Link. */
+              const keptHere = () => props.data.links.some((x) => x.sessionId === l.sessionId && x.current && !!x.link);
               return (
                 <li class="person-row">
                   <div class="person-row-head">
@@ -614,9 +620,17 @@ function LinksAndVisits(props: { data: PersonPageData; now: number; act: Act; on
                   </span>
                   <Show when={linkLive(l.state) || renew()}>
                     <div class="button-row person-row-actions">
+                      <Show when={l.link}>
+                        {(u) => <CopyButton label="Copy Link" title={`Copy ${p().name}'s link`} text={u} onCopy={(t) => copyText(t, "Link copied.")} />}
+                      </Show>
+                      <Show when={renew() && !keptHere()}>
+                        <button type="button" class="button button-sm" onClick={() => void newLink(l.sessionId, renew() === "offer", true)}>
+                          Get Link
+                        </button>
+                      </Show>
                       <Show when={renew()}>
-                        <button type="button" class="button button-sm" title={NEW_LINK_TIP} onClick={() => void newLink(l.sessionId, renew() === "offer")}>
-                          Get New Link
+                        <button type="button" class="button button-sm" title={NEW_LINK_TIP} onClick={() => void newLink(l.sessionId, renew() === "offer", false)}>
+                          New Link
                         </button>
                       </Show>
                       <Show when={linkLive(l.state)}>
@@ -662,6 +676,9 @@ function LinksAndVisits(props: { data: PersonPageData; now: number; act: Act; on
                   </span>
                   <Show when={l.state === "live"}>
                     <div class="button-row person-row-actions">
+                      <Show when={l.link}>
+                        {(u) => <CopyButton label="Copy Link" title={`Copy ${p().name}'s owner link`} text={u} onCopy={(t) => copyText(t, "Link copied.")} />}
+                      </Show>
                       <DeleteButton label={DELETE_OWNER_LINK} confirm={DELETE_ASK} note={LINK_GONE} onRun={() => void props.act(() => revokeOwnerLink(props.data.org.id), OWNER_LINK_DELETED)} />
                     </div>
                   </Show>

@@ -29,11 +29,11 @@ import {
 } from "../lib/previews";
 import { DELETE_LINK, deleteLinkConfirm, LINK_DELETED, linkGone } from "../lib/link-delete";
 import { copyText, toast } from "../lib/ui-state";
-import { expiresWord, type HostShares, openedLine, presenceWord, readShares, revokeHandoff, revokeOwnerLink, sharesOverview, shareLine, shareLive, stopShare, linksViewingNow, visitLine, visitTitle } from "../lib/session-shares";
+import { copyableLink, expiresWord, type HostShares, openedLine, presenceWord, readShares, revokeHandoff, revokeOwnerLink, sharesOverview, shareLine, shareLive, stopShare, linksViewingNow, visitLine, visitTitle } from "../lib/session-shares";
 import { DeleteButton } from "./DeleteButton";
 import { InsightsPage } from "./InsightsPage";
 import { RecipientChip, ShareSheet } from "./ShareSheet";
-import { Icon } from "./ui";
+import { CopyButton, Icon } from "./ui";
 import "../shares.css";
 
 /** Every host is read again this often while the page is visible. */
@@ -331,6 +331,9 @@ function ShareRow(props: { host: string | null; share: SessionShare; now: number
                   {openedLine(r.opened, r.lastAt, (iso) => relativeTime(iso, props.now))}
                   <Show when={r.state === "live"}> · {expiresWord(r.expiresAt, props.now)}</Show>
                 </span>
+                <Show when={copyableLink(r)}>
+                  {(link) => <CopyButton label="Copy Link" title={r.anyone ? "Copy this link" : `Copy ${r.label}'s link`} text={link} onCopy={(t) => copyText(t, "Link copied.")} />}
+                </Show>
                 <Visits id={`share:${props.host ?? ""}:${r.id}`} visits={r.visits ?? []} now={props.now} />
               </li>
             )}
@@ -414,6 +417,9 @@ function OrgLinkItem(props: { link: OrgLinkRow; now: number; hostName: string | 
         <Visits id={`org:${l().orgId}:${l().kind}:${l().sessionId ?? ""}:${l().n ?? ""}`} visits={l().visits} now={props.now} />
       </div>
       <div class="shares-row-actions">
+        <Show when={l().link}>
+          {(link) => <CopyButton label="Copy Link" title={`Copy ${l().personName}'s link`} text={link} onCopy={(t) => copyText(t, "Link copied.")} />}
+        </Show>
         <DeleteButton label={DELETE_LINK} confirm={deleteLinkConfirm(l().personName)} note={linkGone(l().personName)} onRun={() => props.onRevoke()} />
       </div>
     </li>

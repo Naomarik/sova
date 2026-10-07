@@ -176,7 +176,7 @@
 .project-abilities { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
 .project-abilities .toggle { justify-content: flex-start; }
 
-/* Links shown once: one row per person. */
+/* Links just made or got: one row per person. */
 .project-links { display: flex; flex-direction: column; gap: var(--space-1); }
 .project-link-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 .project-link-name { font-weight: var(--fw-semibold); }

@@ -32,7 +32,19 @@ export function ownerChangeLine(history: OwnerChange[] | undefined, now = Date.n
   return last && last.why === "operator" ? `Set by you${last.via === "overseer" ? ", via the Overseer" : ""} ${relativeTime(last.at, now)}.` : "";
 }
 
-/** The confirm under Get Owner Link while a link is live: minting turns that one off. */
+/**
+ * The owner card's link buttons (§app.owner-page/controls), from the card's own data: Copy Owner
+ * Link (its URL) while the live owner link is kept, else Get Owner Link, which asks first while a
+ * live link that can't be shown again would be replaced; Get New Owner Link and Delete Owner Link
+ * while one is live. Nothing without an owner but a disabled Get Owner Link.
+ */
+export function ownerLinkActions(info: Pick<OwnerPageInfo, "person" | "link"> | undefined): { copy?: string; get: "now" | "ask" | null; rotate: boolean; remove: boolean } {
+  const live = !!info?.person && info.link?.state === "live";
+  const copy = live ? info!.link!.url : undefined;
+  return { ...(copy ? { copy } : {}), get: copy ? null : live ? "ask" : "now", rotate: live, remove: live };
+}
+
+/** The confirm under Get New Owner Link (and Get Owner Link while the live link is not kept): minting turns that one off. */
 export const rotateLine = (name: string) => `${firstName(name)}'s current link stops working at once. The new one works from now.`;
 export const deleteOwnerLine = (name: string) => `${firstName(name)}'s owner link stops working for good. The conversations and updates stay.`;
 

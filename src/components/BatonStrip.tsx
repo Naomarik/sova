@@ -9,7 +9,7 @@ import { goalShown, linkReplaced, linksStale, liveOffer, proposedAreasLine, stri
 import { requestListRefresh } from "../lib/list-refresh";
 import { useMinuteNow } from "../lib/minute-clock";
 import { orgHref, rememberStartParent, startForHref } from "../lib/orgs-route";
-import { announce, toast } from "../lib/ui-state";
+import { announce, copyText, toast } from "../lib/ui-state";
 import { LinksBanner } from "./LinksBanner";
 import { createSendOnWhatsApp, SendOnWhatsAppButtons, SendOnWhatsAppFallback } from "./SendOnWhatsApp";
 import { getBatonTold, retryWrapup, setBatonAbilities, setBatonHiddenFromOwner } from "../lib/api";
@@ -20,7 +20,7 @@ import { openMarkdown } from "../lib/markdown-viewer";
 import { relativeTime } from "../lib/format";
 import { DELETE_ASK, DELETE_LINK, LINK_DELETED, LINK_GONE, NEW_LINK_TIP, newLinkFor } from "../lib/link-delete";
 import { ActionMenu } from "./ActionMenu";
-import { Banner, Chip, Icon } from "./ui";
+import { Banner, Chip, CopyButton, Icon } from "./ui";
 import "../orgs.css";
 
 const errText = (err: unknown) => (err instanceof ApiError || err instanceof Error ? err.message : String(err));
@@ -51,8 +51,8 @@ function revealInStrip(el: HTMLElement, align: "start" | "nearest" = "nearest") 
 
 /**
  * The baton strip (§app/baton) above a baton session's transcript: where the baton is (a person,
- * you, or an offer to several people and who took it), links (minted on demand — the host keeps
- * no token it could show again), Hand On (to one person, or offered to several), Take Back and
+ * you, or an offer to several people and who took it), links (minted on demand, and copied again
+ * from BatonInfo.links while live and kept), Hand On (to one person, or offered to several), Take Back and
  * Close; people this session proposed for the roster, with Approve and Decline; and the wrap-up's
  * outcome. Profiles never appear here — an outsider could be looking at this screen — so a
  * proposed person shows name, role and why only; contact details are on the org page. `onNames`
@@ -80,7 +80,7 @@ export function BatonStrip(props: {
     }),
   );
   const now = useMinuteNow();
-  /** Links shown once, and the hand-off they belong to: they stay until dismissed or a later hand-off. */
+  /** Links just minted or got, and the hand-off they belong to: they stay until dismissed or a later hand-off. */
   const [shown, setShown] = createSignal<{ links: OfferLink[]; at: number; warning?: string } | null>(null);
   const links = () => shown()?.links ?? null;
   const showLinks = (l: OfferLink[], at: number, warning?: string) => setShown(l.length ? { links: l, at, ...(warning ? { warning } : {}) } : null);
@@ -135,6 +135,7 @@ export function BatonStrip(props: {
     sid: () => info.latest!.session.sessionId,
     version: () => key().v,
     offer: () => !!(info.latest && liveOffer(info.latest)),
+    kept: (personId) => info.latest?.links?.[personId]?.link,
     onLink: (personId, name, r) => showLinks([{ personId, name, link: r.link, ...(r.at ? { at: r.at } : {}) }], r.n, r.linkWarning),
     onSent: () => {
       void refetch();
@@ -143,12 +144,21 @@ export function BatonStrip(props: {
   });
 
   // The acts, each a function so the bar, the menu and its confirm screens share one handler.
-  const getLink = (i: BatonInfo) =>
-    void act(async () => {
-      const r = await batonLink(sid());
-      const holder = i.session.holder!;
-      showLinks([{ personId: holder, name: nameOf(i, holder), link: r.link, ...(r.at ? { at: r.at } : {}) }], r.n, r.linkWarning);
-    }, "New link ready below.");
+  /** Get Link (`keep`: the kept live link, if another tab made one meanwhile) or New Link (a new one; the older ones stop). */
+  const getLink = (i: BatonInfo, keep: boolean) =>
+    void act(
+      async () => {
+        const r = await batonLink(sid(), keep);
+        const holder = i.session.holder!;
+        showLinks([{ personId: holder, name: nameOf(i, holder), link: r.link, ...(r.at ? { at: r.at } : {}) }], r.n, r.linkWarning);
+      },
+      keep ? "Link ready below." : "New link ready below.",
+    );
+  /** Copy Link: the holder's live kept link, from the strip's own data (synchronous in the click). */
+  const copyHolderLink = (i: BatonInfo) => {
+    const link = i.links?.[i.session.holder!]?.link;
+    if (link) void copyText(link, "Link copied.");
+  };
   const takeBack = () => void act(() => takeBaton(sid()), "You hold the baton now.");
   const withdraw = () => void act(() => withdrawOffer(sid()), "Offer withdrawn. The baton is with you.");
   const deleteLink = () => void act(() => revokeBatonLink(sid()), LINK_DELETED);
@@ -292,13 +302,29 @@ export function BatonStrip(props: {
                         fallback={
                           <div class="model-menu-list" role="menu" aria-label={`More actions · ${title()}`}>
                             <div class="model-menu-group" role="group" aria-label="This session">
+                              <Show when={acts().menu.includes("copy-link")}>
+                                <menu.Item
+                                  label="Copy Link"
+                                  aria={`Copy the link for ${nameOf(i(), i().session.holder!)} · ${title()}`}
+                                  icon={<Icon name="copy" small />}
+                                  onRun={() => copyHolderLink(i())}
+                                />
+                              </Show>
                               <Show when={acts().menu.includes("get-link")}>
                                 <menu.Item
-                                  label={i().liveLinks ? "New Link" : "Get Link"}
-                                  aria={`${i().liveLinks ? "New link" : "Get a link"} for ${nameOf(i(), i().session.holder!)} · ${title()}`}
-                                  description={i().liveLinks ? NEW_LINK_TIP : undefined}
+                                  label="Get Link"
+                                  aria={`Get a link for ${nameOf(i(), i().session.holder!)} · ${title()}`}
                                   icon={<Icon name="share" small />}
-                                  onRun={() => getLink(i())}
+                                  onRun={() => getLink(i(), true)}
+                                />
+                              </Show>
+                              <Show when={acts().menu.includes("new-link")}>
+                                <menu.Item
+                                  label="New Link"
+                                  aria={`New link for ${nameOf(i(), i().session.holder!)} · ${title()}`}
+                                  description={NEW_LINK_TIP}
+                                  icon={<Icon name="refresh" small />}
+                                  onRun={() => getLink(i(), false)}
                                 />
                               </Show>
                               <Show when={acts().menu.includes("hand-on")}>
@@ -436,8 +462,18 @@ export function BatonStrip(props: {
                 // r12: an invitee is reached (their link made) only in their own working hours; a waiting one has no link yet.
                 const reached = () => o().to.filter((p) => p.reach?.state !== "waiting");
                 const waiting = () => o().to.filter((p) => p.reach?.state === "waiting");
+                // Each reached invitee whose live link is kept: Copy Link from the strip's own data (§app.baton/links).
+                const copyable = () => reached().filter((p) => i().links?.[p.id]);
                 return (
                   <>
+                    <Show when={copyable().length > 0}>
+                      <div class="baton-strip-row baton-strip-invitees" role="group" aria-label="Invitees' links to copy">
+                        <span class="baton-strip-meta">Copy link for</span>
+                        <For each={copyable()}>
+                          {(p) => <CopyButton label={p.name} title={`Copy ${p.name}'s link`} text={() => i().links?.[p.id]?.link ?? ""} onCopy={(t) => copyText(t, "Link copied.")} />}
+                        </For>
+                      </div>
+                    </Show>
                     <Show when={reached().length > 0}>
                       <div class="baton-strip-row baton-strip-invitees" role="group" aria-label="Invitees' links">
                         <span class="baton-strip-meta">{waiting().length ? "Reached · new link for" : "New link for"}</span>

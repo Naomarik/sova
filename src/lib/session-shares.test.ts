@@ -5,11 +5,13 @@ import type { PreviewView } from "../../shared/preview-links";
 import type { OrgLinkRow, SessionShare, SessionSharePresence, SharesOverview } from "../../shared/session-share";
 import {
   cleanLabels,
+  copyableLink,
   createBlocked,
   expiresWord,
   imagesBlocked,
   isShareChanged,
   isStalePreview,
+  linkMoved,
   modeLine,
   openedLine,
   presenceWord,
@@ -24,6 +26,18 @@ import {
   viewingNow,
   visitLine,
 } from "./session-shares";
+
+test("Copy Link: only a live row's own link, and none once its activity says the newest link is another (§app.session-share/sheet)", () => {
+  const row = { state: "live" as const, createdAt: "2026-10-01T00:00:00.000Z", link: "https://share.example.invalid/s/aaa" };
+    assert.equal(copyableLink(row), row.link);
+    assert.equal(copyableLink(row, { createdAt: row.createdAt }), row.link, "activity agrees");
+    assert.equal(copyableLink(row, {}), row.link, "an older host's activity carries no time: nothing moved");
+    assert.equal(copyableLink(row, { createdAt: "2026-10-02T00:00:00.000Z" }), undefined, "relinked elsewhere: hidden until the share is read again");
+    assert.equal(linkMoved(row, { createdAt: "2026-10-02T00:00:00.000Z" }), true);
+    assert.equal(copyableLink({ ...row, state: "expired" }), undefined);
+    assert.equal(copyableLink({ ...row, state: "off" }), undefined);
+    assert.equal(copyableLink({ state: "live", createdAt: row.createdAt }), undefined, "a link made before tokens were kept: no Copy Link");
+});
 
 test("labels are trimmed, capped, deduplicated case-insensitively, and never the anyone row's label", () => {
   assert.deepEqual(cleanLabels([" Ana ", "ana", "", "Ben", "Anyone with the link", "x".repeat(80)]), ["Ana", "Ben", "x".repeat(60)]);

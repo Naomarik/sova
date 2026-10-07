@@ -279,7 +279,8 @@ export function SharePage(props: { route: ShareRoute; titleRef(el: HTMLHeadingEl
           {(m) => (
             <div ref={top} class="share-page-col stack-2">
               <p class="usage-note">
-                <strong>{rangeLabel(span())}.</strong> {m().links.length === 1 ? "The link shows only once, here." : "Each link shows only once, here."}
+                <strong>{rangeLabel(span())}.</strong>{" "}
+                {m().links.length === 1 ? "Copy it again any time from Manage, in the session's Sharing tab." : "Copy them again any time from Manage, in the session's Sharing tab."}
               </p>
               <MintedLinks links={m().links} warning={m().linkWarning} />
               <div class="share-page-done">

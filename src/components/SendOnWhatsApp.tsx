@@ -3,7 +3,7 @@ import { linkMessage, type BatonOutreach } from "../../shared/outreach";
 import { ApiError, batonLink, batonOutreach, inviteeLink, sendBatonLink } from "../lib/api";
 import { firstName } from "../lib/person-page";
 import { openSettings } from "../lib/settings-nav";
-import { announce, toast } from "../lib/ui-state";
+import { announce, copyText, toast } from "../lib/ui-state";
 import { Banner } from "./ui";
 
 const errText = (err: unknown) => (err instanceof ApiError || err instanceof Error ? err.message : String(err));
@@ -13,8 +13,9 @@ type Person = BatonOutreach["people"][number];
 /**
  * Send on WhatsApp (§app.outreach/send-link), on the baton strip: one button for the holder, or one
  * per reached invitee of an open offer, disabled with why when outreach can't send to them. After a
- * failure: the why, Retry, Open in WhatsApp (a fresh link through Get Link, sent from the operator's
- * own WhatsApp via wa.me) and Copy Link (Get Link, shown on the strip as today).
+ * failure: the why, Retry, Open in WhatsApp (the person's kept live link, else one Get Link makes,
+ * sent from the operator's own WhatsApp via wa.me) and Copy Link (the kept live link, copied at once,
+ * else the one Get Link makes, shown on the strip).
  *
  * One state, two places (§app.baton/strip-layout): the buttons sit in the strip's bar, the fallback
  * banner in the rows below it. `enabled` false reads nothing and draws nothing.
@@ -25,6 +26,8 @@ export function createSendOnWhatsApp(props: {
   /** Changes whenever the strip's data moves (re-reads who may be sent to). */
   version(): string;
   offer(): boolean;
+  /** The person's live kept link, from the strip's data (BatonInfo.links), or undefined. */
+  kept(personId: string): string | undefined;
   /** Show a freshly minted link on the strip, as Get Link does. */
   onLink(personId: string, name: string, r: { link: string; n: number; at?: string; linkWarning?: string }): void;
   /** After a send: the strip and the list re-read. */
@@ -38,7 +41,8 @@ export function createSendOnWhatsApp(props: {
   const [failed, setFailed] = createSignal<{ person: Person; why: string } | null>(null);
   // Leaving the states it is offered in drops a failure, as unmounting it did when it was its own row.
   createEffect(() => props.enabled() || setFailed(null));
-  const mint = (p: Person) => (props.offer() ? inviteeLink(props.sid(), p.id) : batonLink(props.sid()));
+  // Get Link (keep): the kept live link if another tab made one meanwhile, else a new one.
+  const mint = (p: Person) => (props.offer() ? inviteeLink(props.sid(), p.id, true) : batonLink(props.sid(), true));
 
   const send = async (p: Person) => {
     setBusy(p.id);
@@ -65,9 +69,14 @@ export function createSendOnWhatsApp(props: {
     // Opened now, inside the click, so a popup blocker lets it through; pointed at wa.me once the link exists.
     const w = window.open("", "_blank");
     try {
-      const l = await mint(p);
-      props.onLink(p.id, p.name, l);
-      const url = `https://wa.me/${p.wa}?text=${encodeURIComponent(linkMessage(r.operatorName, r.publicTitle, l.link))}`;
+      const kept = props.kept(p.id);
+      let link = kept;
+      if (!link) {
+        const l = await mint(p);
+        props.onLink(p.id, p.name, l);
+        link = l.link;
+      }
+      const url = `https://wa.me/${p.wa}?text=${encodeURIComponent(linkMessage(r.operatorName, r.publicTitle, link))}`;
       if (w) {
         w.opener = null;
         w.location.href = url;
@@ -80,10 +89,16 @@ export function createSendOnWhatsApp(props: {
   };
 
   const copyLink = async (p: Person) => {
+    // The kept live link: copied inside the click, from data in hand.
+    const kept = props.kept(p.id);
+    if (kept) {
+      if (await copyText(kept, "Link copied.")) setFailed(null);
+      return;
+    }
     try {
       props.onLink(p.id, p.name, await mint(p));
       setFailed(null);
-      const said = `New link for ${p.name} ready below.`;
+      const said = `Link for ${p.name} ready below.`;
       toast(said);
       announce(said);
     } catch (err) {

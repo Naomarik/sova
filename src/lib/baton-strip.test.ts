@@ -124,20 +124,28 @@ test("the goal shows trimmed, and not at all when there is none", () => {
 describe("the strip's acts: one primary, the rest in the menu, the destructive ones last", () => {
   const at = (
     session: Partial<BatonInfo["session"]>,
-    extra: { offer?: BatonInfo["offer"]; liveLinks?: number; owner?: { name: string } | null } = {},
-  ): Pick<BatonInfo, "offer" | "session" | "liveLinks" | "owner"> => ({
+    extra: { offer?: BatonInfo["offer"]; liveLinks?: number; owner?: { name: string } | null; links?: BatonInfo["links"] } = {},
+  ): Pick<BatonInfo, "offer" | "session" | "liveLinks" | "owner" | "links"> => ({
     session: { state: "open", holder: null, budget: { messagesUsed: 3, messagesMax: 30 }, ...session } as BatonInfo["session"],
     offer: extra.offer ?? null,
     liveLinks: extra.liveLinks ?? 0,
     owner: extra.owner ?? null,
+    ...(extra.links ? { links: extra.links } : {}),
   });
 
-  test("a person holds it, with a live link: Take Back, Get Link and Hand On in the menu, Delete Link and Close set apart", () => {
+  test("a person holds it, with a live link not kept: Take Back; Get Link, New Link and Hand On in the menu; Delete Link and Close set apart", () => {
     assert.deepEqual(stripActions(at({ holder: "p_1" }, { liveLinks: 1 })), {
       primary: "take-back",
-      menu: ["get-link", "hand-on", "told"],
+      menu: ["get-link", "new-link", "hand-on", "told"],
       destructive: ["delete-link", "close"],
     });
+  });
+
+  test("a person holds it, with a live kept link: Copy Link in place of Get Link, then New Link (§app.baton/links)", () => {
+    const links = { p_1: { link: "https://share.example.invalid/h/x", at: "2026-10-01T00:00:00.000Z" } };
+    assert.deepEqual(stripActions(at({ holder: "p_1" }, { liveLinks: 1, links })).menu, ["copy-link", "new-link", "hand-on", "told"]);
+    // Another person's kept link (an older round's holder) is not the holder's.
+    assert.deepEqual(stripActions(at({ holder: "p_2" }, { liveLinks: 1, links })).menu, ["get-link", "new-link", "hand-on", "told"]);
   });
 
   test("a person holds it with no live link: no Delete Link", () => {

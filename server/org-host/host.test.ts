@@ -99,6 +99,27 @@ describe("org host", () => {
     await host.close();
   });
 
+  test("a big org opens in chunks: loading and resume each give the event loop a turn every `chunk` sessions (C09; timed in bench.integration)", async () => {
+    const at = place();
+    const host = await open(at);
+    for (let i = 0; i < 60; i++) await host.start(`p/${i}`, "host-probe", {}, operator);
+    await host.close();
+    // Counts the event loop's turns while open runs: one per setImmediate the boot yields with.
+    let turns = 0;
+    let counting = true;
+    const count = () => {
+      if (!counting) return;
+      turns++;
+      setImmediate(count);
+    };
+    setImmediate(count);
+    const again = await open(at, { chunk: 10 });
+    counting = false;
+    assert.equal(again.sessions().length, 60);
+    assert.ok(turns >= 12, `${turns} turns: 6 loading chunks and 6 resume chunks each yield`);
+    await again.close();
+  });
+
   test("idle waits for the effects and invocation reports in flight, not for a run still going", async () => {
     const at = place();
     const host = await open(at);

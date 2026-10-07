@@ -1,4 +1,4 @@
-// A small JS statechart for the host's tests (host.test.ts, kill9.test.ts): registered at runtime, never
+// A small JS statechart for the host's tests (host.test.ts, kill9.integration.test.ts): registered at runtime, never
 // shipped. It emits an effect and waits for its answer, holds an act (`gather/start`, `hold`), runs a
 // look invocation, arms a timer and keeps a counter.
 type Data = Record<string, unknown>;

@@ -1,4 +1,4 @@
-// Run: pnpm exec tsx --test server/org-host/kill9.test.ts (KILL9_ROUNDS=1000 for the lab bar).
+// Run: pnpm exec tsx --test server/org-host/kill9.integration.test.ts (KILL9_ROUNDS=1000 for the lab bar).
 // A child host (kill9-child.ts, durable: journals and snapshots fsynced) is SIGKILLed at random
 // moments, again and again. After every kill the next open must load every session with no workspace
 // problem; at the end, once every pending effect ran, each effect key was answered exactly once (the

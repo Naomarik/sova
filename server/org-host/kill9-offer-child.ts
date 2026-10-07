@@ -1,4 +1,4 @@
-// The kill-9 fuzz's offer child (kill9.test.ts, r12): a durable host on the shipped org, person and baton
+// The kill-9 fuzz's offer child (kill9.integration.test.ts, r12): a durable host on the shipped org, person and baton
 // statecharts, on a virtual clock kept in a file (so time survives kills). It offers batons to three people in
 // three zones (Ana 22:00–23:30 UTC, Bo 03:00–11:00, Cy no hours), moves the clock on by up to ~2 h a step
 // and fires what is due, recording every per-invitee mint-link the host runs. Prints "ready <problems>"

@@ -1,4 +1,4 @@
-// Run: pnpm test -- server/test-repo-fence.test.ts. No test reaches a repository it didn't make: a
+// Run: pnpm test -- server/test-repo-fence.integration.test.ts. No test reaches a repository it didn't make: a
 // TMPDIR inside a checkout once let tests register plain temp folders as that checkout's project and
 // commit decision promotions on its master and cut sova/* worktrees beside it. Here a scratch
 // repository (a main checkout and a linked worktree, as Sova's own are) holds TMPDIR, and must come out

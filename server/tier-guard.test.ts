@@ -12,7 +12,8 @@ import { describe, test } from "node:test";
 
 interface Guard { file: string; tier: string; mode: string; trial(fn: () => unknown): Promise<Error | null> }
 const guard = (globalThis as Record<symbol, unknown>)[Symbol.for("sova:test-tier-guard")] as Guard | undefined;
-const bun = (globalThis as { Bun?: Record<string, (...a: unknown[]) => unknown> }).Bun;
+type Call = (...a: unknown[]) => unknown;
+const bun = (globalThis as { Bun?: { connect: Call; listen: Call; serve: Call; spawn: Call; spawnSync: Call } }).Bun;
 const RENAME = /tier guard: server\/tier-guard\.test\.ts is a unit test file and .*rename it \(or split those cases into\) server\/tier-guard\.integration\.test\.ts/;
 
 /** `fn` run under the trial: refused, with the rename message. */

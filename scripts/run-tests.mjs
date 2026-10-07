@@ -48,6 +48,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { chosenRuntime, resolveBun } from "../server/runtime-choice.ts";
+import { affected, changedSince } from "./test-changed.mjs";
 
 const ROOT = path.join(import.meta.dirname, "..");
 const PRELOAD = "./pi-config/extensions/claude-code/tests/hermetic-env.mjs";
@@ -186,58 +187,20 @@ if (!sets.length) {
   process.exit(0);
 }
 
-/** The repository-relative files changed since the merge base with `base`: committed, uncommitted and untracked. */
-function changedSince(base) {
-  const git = (...args) => execFileSync("git", args, { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
-  let from;
+/** `files` narrowed to those a change since `base` may break (scripts/test-changed.mjs). */
+function changedOnly(files, base) {
+  let changed;
   try {
-    from = git("merge-base", base, "HEAD").trim();
+    changed = changedSince(ROOT, base);
   } catch (err) {
     console.error(`run-tests: --changed: no merge base with ${base} (${String(err.stderr ?? err.message).trim().split("\n")[0]})`);
     process.exit(2);
   }
-  const list = (out) => out.split("\n").filter(Boolean);
-  return [...new Set([...list(git("diff", "--name-only", from)), ...list(git("ls-files", "--others", "--exclude-standard"))])];
-}
-
-/** The repository file a relative import names, as the runtimes resolve it (extensionless, .js for .ts, index files); null when none. */
-function resolveImport(fromFile, spec) {
-  const base = path.resolve(path.dirname(path.join(ROOT, fromFile)), spec.replace(/[?#].*$/, ""));
-  const tries = [base, `${base}.ts`, `${base}.tsx`, `${base}.mjs`, `${base}.js`, base.replace(/\.js$/, ".ts"), base.replace(/\.mjs$/, ".mts"), path.join(base, "index.ts"), path.join(base, "index.tsx")];
-  const hit = tries.find((p) => p.startsWith(ROOT + path.sep) && fs.statSync(p, { throwIfNoEntry: false })?.isFile());
-  return hit ? path.relative(ROOT, hit) : null;
-}
-
-/** `files` narrowed to those a change since `base` may break: their import closure holds a changed file, or they share its folder. */
-function changedOnly(files, base) {
-  const changed = changedSince(base);
-  const changedSet = new Set(changed);
-  const changedDirs = new Set(changed.map((f) => path.dirname(f)));
-  // Static and dynamic imports, re-exports and requires of a relative path (a package import can't name a changed file).
-  const IMPORT_RE = /(?:\bfrom\s*|\bimport\s*\(?\s*|\brequire\s*\(\s*)["'`](\.{1,2}\/[^"'`$]+)["'`]/g;
-  const imports = new Map();
-  const importsOf = (f) => {
-    if (!imports.has(f)) {
-      let text = "";
-      try { text = fs.readFileSync(path.join(ROOT, f), "utf8"); } catch { /* deleted: imports nothing */ }
-      imports.set(f, [...text.matchAll(IMPORT_RE)].map((m) => resolveImport(f, m[1])).filter(Boolean));
-    }
-    return imports.get(f);
-  };
-  const reaches = (start) => {
-    const seen = new Set([start]);
-    const todo = [start];
-    while (todo.length) {
-      const f = todo.pop();
-      if (changedSet.has(f)) return true;
-      for (const g of importsOf(f)) if (!seen.has(g)) { seen.add(g); todo.push(g); }
-    }
-    return false;
-  };
-  const chosen = files.filter((f) => changedDirs.has(path.dirname(f)) || reaches(f));
+  const chosen = affected(ROOT, files, changed);
   console.log(`run-tests: --changed (${changed.length} file${changed.length === 1 ? "" : "s"} changed since the merge base with ${base}): ${chosen.length} of ${files.length} test files.`);
   return chosen;
 }
+
 // The temp dir every test file shares (server/test-ports.ts keeps its cross-process port locks there):
 // this runner's own, before each runtime gives the files a throwaway TMPDIR. An outer runner's wins.
 process.env.SOVA_TEST_SHARED_TMP ||= os.tmpdir();

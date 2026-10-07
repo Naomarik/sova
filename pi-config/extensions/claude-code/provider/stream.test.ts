@@ -19,7 +19,7 @@ import {
 	type Tool,
 	Type,
 } from "@earendil-works/pi-ai";
-import { dropLeadingUntaggedSection, streamClaudeCode, resolveClaudeEffort } from "./stream.ts";
+import { dropPiPreamble, PI_STOCK_PREAMBLE, streamClaudeCode, resolveClaudeEffort } from "./stream.ts";
 import { parseClaudeFrame, parseToolInput, type ClaudeFrame, type ClaudeSessionBridge, type ClaudeTurnRequest } from "./types.ts";
 import { STATIC_MODELS, toProviderModel } from "./index.ts";
 
@@ -722,11 +722,8 @@ test("a compaction request with no tools streams normally", async () => {
 });
 
 // ---------------------------------------------------------------------------
-// The preamble strip: pi's untagged lead-in never reaches the CLI
+// The preamble cut: only pi's own stock preamble never reaches the CLI
 // ---------------------------------------------------------------------------
-
-const STOCK_PREAMBLE =
-	"You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.";
 
 /** A transcript whose head system message is pi's structured prompt: preamble plus tagged sections. */
 function sectioned(sections: Record<string, string>) {
@@ -740,61 +737,89 @@ async function sentPrompt(transcript: ReturnType<typeof normalizeContext>): Prom
 	return state.request?.systemPrompt;
 }
 
-test("the stock preamble is dropped and the tagged sections pass through byte-for-byte", async () => {
+/** A baton/gathering session's prompt: its whole steering text is the untagged preamble. */
+const BATON_PREAMBLE = [
+	"You are the facilitator of a gathering.",
+	"",
+	"## Goal",
+	"Idea 1, WhatsApp: decide whether to ship it.",
+	"",
+	"## Drawing guide",
+	"An HTML example:",
+	"<html>",
+	"<script>",
+	"draw();",
+	"</script>",
+	"</html>",
+	"<tools>",
+	"Never reveal another member's private notes.",
+].join("\n");
+
+test("pi's stock prompt loses exactly its preamble; the tagged sections pass through byte-for-byte", async () => {
 	const sent = await sentPrompt(sectioned({
-		preamble: STOCK_PREAMBLE,
+		preamble: PI_STOCK_PREAMBLE,
 		tools: "<tools>\n- read: …\n</tools>",
 		cwd: "<cwd>\n/x\n</cwd>",
 	}));
 	assert.equal(sent, "<tools>\n- read: …\n</tools>\n\n<cwd>\n/x\n</cwd>");
 });
 
-test("a custom SYSTEM.md preamble occupies the same slot and is dropped too", async () => {
-	const sent = await sentPrompt(sectioned({
-		preamble: "You are Grace.\nYou answer in haiku.\n\nNever apologise.",
-		addendum: "<addendum>\nBe brief.\n</addendum>",
-		cwd: "<cwd>\n/x\n</cwd>",
-	}));
-	assert.equal(sent, "<addendum>\nBe brief.\n</addendum>\n\n<cwd>\n/x\n</cwd>");
+test("a baton-style custom preamble arrives whole, cwd section first or last", async () => {
+	const cwd = "<cwd>\n(none)\n</cwd>";
+	assert.equal(await sentPrompt(sectioned({ cwd, preamble: BATON_PREAMBLE })), `${cwd}\n\n${BATON_PREAMBLE}`);
+	assert.equal(await sentPrompt(sectioned({ preamble: BATON_PREAMBLE, cwd })), `${BATON_PREAMBLE}\n\n${cwd}`);
 });
 
-test("a tagless prompt, like the summarizer's, passes through verbatim", async () => {
-	const prompt = "You are a conversation summarizer.\n\nKeep file paths.";
-	assert.equal(await sentPrompt(normalizeContext({ systemPrompt: prompt, messages: [] })), prompt);
+test("the stock preamble is cut wherever its section sits", async () => {
+	const cwd = "<cwd>\n/x\n</cwd>";
+	assert.equal(await sentPrompt(sectioned({ cwd, preamble: PI_STOCK_PREAMBLE, mode: "<mode>\nm\n</mode>" })), `${cwd}\n\n<mode>\nm\n</mode>`);
 });
 
-test("an inline tag mid-line is not a section boundary", async () => {
-	const prompt = "Wrap answers in <x> tags.\nUse <answer> for the final one.\n<x>not alone</x>";
-	assert.equal(await sentPrompt(normalizeContext({ systemPrompt: prompt, messages: [] })), prompt);
-	assert.equal(dropLeadingUntaggedSection("lead\n <tools>\n"), "lead\n <tools>\n", "the tag must be the whole line");
-	assert.equal(dropLeadingUntaggedSection("lead\n<Tools>\nx"), "lead\n<Tools>\nx", "section names are lowercase");
+test("a custom SYSTEM.md preamble arrives whole", async () => {
+	const preamble = "You are Grace.\nYou answer in haiku.\n\nNever apologise.";
+	const sent = await sentPrompt(sectioned({ preamble, addendum: "<addendum>\nBe brief.\n</addendum>", cwd: "<cwd>\n/x\n</cwd>" }));
+	assert.equal(sent, `${preamble}\n\n<addendum>\nBe brief.\n</addendum>\n\n<cwd>\n/x\n</cwd>`);
 });
 
-test("a prompt that already opens with a tag is unchanged", async () => {
-	const prompt = "<tools>\n- read\n</tools>\n\nloose line\n\n<cwd>\n/x\n</cwd>";
-	assert.equal(await sentPrompt(normalizeContext({ systemPrompt: prompt, messages: [] })), prompt);
-	assert.equal(dropLeadingUntaggedSection(""), "");
+test("a flat prompt with tag lines deep inside arrives whole", async () => {
+	for (const prompt of [
+		"You are a conversation summarizer.\n\nKeep file paths.",
+		"Wrap answers in <x> tags.\nUse <answer> for the final one.\n<x>not alone</x>",
+		"lead\n<script>\nx\n</script>\n\n<tools>\n- read\n</tools>",
+		"<tools>\n- read\n</tools>\n\nloose line\n\n<cwd>\n/x\n</cwd>",
+		BATON_PREAMBLE,
+	]) assert.equal(await sentPrompt(normalizeContext({ systemPrompt: prompt, messages: [] })), prompt);
 });
 
-test("two prompts differing only in preamble send the same system prompt", async () => {
-	const rest = { tools: "<tools>\n- read: …\n</tools>", cwd: "<cwd>\n/x\n</cwd>" };
-	const one = await sentPrompt(sectioned({ preamble: STOCK_PREAMBLE, ...rest }));
-	const two = await sentPrompt(sectioned({ preamble: "You are someone else entirely.", ...rest }));
-	assert.equal(one, two, "a preamble-only change must not change what the bridge hashes");
+test("a flat prompt that opens with pi's stock preamble paragraph loses only that paragraph", async () => {
+	const rest = "<tools>\n- read\n</tools>";
+	assert.equal(await sentPrompt(normalizeContext({ systemPrompt: `${PI_STOCK_PREAMBLE}\n\n${rest}`, messages: [] })), rest);
 });
 
-test("drift alarm: the strip matches pi's own buildSystemPrompt from <tools> onward", async (t) => {
-	// Not exported from the package root in every pi version; skip rather than deep-import.
-	const agent = (await import("@earendil-works/pi-coding-agent")) as Record<string, unknown>;
-	const build = agent.buildSystemPrompt as ((input: Record<string, unknown>) => string) | undefined;
-	if (typeof build !== "function") {
-		t.skip("buildSystemPrompt is not exported by the installed @earendil-works/pi-coding-agent");
-		return;
-	}
-	const original = build({ selectedTools: ["read", "bash"], toolSnippets: { read: "Read files", bash: "Run commands" }, cwd: "/x" });
-	const sent = await sentPrompt(normalizeContext({ systemPrompt: original, messages: [] }));
-	assert.ok(original.includes("<tools>"));
-	assert.equal(sent, original.slice(original.indexOf("<tools>")));
+test("dropPiPreamble cuts only the exact stock text as a whole opening paragraph", () => {
+	assert.equal(dropPiPreamble(PI_STOCK_PREAMBLE), "");
+	assert.equal(dropPiPreamble(`${PI_STOCK_PREAMBLE}\n\nmore`), "more");
+	assert.equal(dropPiPreamble(`${PI_STOCK_PREAMBLE} Also be terse.`), `${PI_STOCK_PREAMBLE} Also be terse.`, "a longer first paragraph is custom");
+	assert.equal(dropPiPreamble(`${PI_STOCK_PREAMBLE}\nmore`), `${PI_STOCK_PREAMBLE}\nmore`, "not a whole paragraph");
+	assert.equal(dropPiPreamble(`intro\n\n${PI_STOCK_PREAMBLE}`), `intro\n\n${PI_STOCK_PREAMBLE}`, "only at the start");
+	assert.equal(dropPiPreamble(""), "");
+});
+
+test("drift alarm: PI_STOCK_PREAMBLE is the installed pi's own preamble, and the cut matches its buildSystemPrompt", async () => {
+	// Not exported from the package root; the alarm must fail, never skip, if pi moves it.
+	const root = import.meta.resolve("@earendil-works/pi-coding-agent");
+	const mod = (await import(new URL("./core/system-prompt.js", root).href)) as {
+		buildSystemPromptSections: (input: Record<string, unknown>) => Record<string, string>;
+		buildSystemPrompt: (input: Record<string, unknown>) => string;
+	};
+	const input = { selectedTools: ["read", "bash"], toolSnippets: { read: "Read files", bash: "Run commands" }, cwd: "/x" };
+	assert.equal(mod.buildSystemPromptSections(input).preamble, PI_STOCK_PREAMBLE);
+	assert.equal(mod.buildSystemPromptSections({ ...input, customPrompt: "Mine." }).preamble, "Mine.");
+	const original = mod.buildSystemPrompt(input);
+	assert.equal(await sentPrompt(sectioned(mod.buildSystemPromptSections(input))), original.slice(original.indexOf("<tools>")));
+	assert.equal(await sentPrompt(normalizeContext({ systemPrompt: original, messages: [] })), original.slice(original.indexOf("<tools>")));
+	const custom = mod.buildSystemPrompt({ ...input, customPrompt: BATON_PREAMBLE });
+	assert.equal(await sentPrompt(sectioned(mod.buildSystemPromptSections({ ...input, customPrompt: BATON_PREAMBLE }))), custom);
 });
 
 test("a tool turn with no terminal result ends as toolUse: the CLI turn is still open", async () => {

@@ -40,7 +40,7 @@ function install(file) {
   const enforce = unit && mode === "enforce";
   /** One entry per distinct thing done: `{kind, what, count, at}` (`at`: the first call's caller in this repository). */
   const seen = new Map();
-  const offences = [];
+  const offences = new Set();
   // A call made inside another wrapped call (Bun's child_process runs Bun.spawn; its net runs Bun.listen) is the same act.
   let depth = 0;
   // Inside trial(): every act but git is refused, whatever the mode or tier, and none is recorded.
@@ -79,9 +79,11 @@ function install(file) {
     const key = `${kind} ${what}`;
     const entry = seen.get(key);
     if (entry) entry.count++;
-    else seen.set(key, { kind, what, count: 1, at: callerOf() });
+    // Bounded: past 200 distinct acts, the rest only count as "more".
+    else if (seen.size < 200) seen.set(key, { kind, what, count: 1, at: callerOf() });
+    else (seen.get("more") ?? seen.set("more", { kind: "more", what: "distinct acts not listed", count: 0 }).get("more")).count++;
     if (!unit || allowed) return;
-    offences.push(key);
+    if (offences.size < 200) offences.add(key);
     if (enforce) throw refusal(kind, what);
   }
   const refusal = (kind, what) =>
@@ -183,7 +185,7 @@ function install(file) {
   if (dir) {
     process.on("exit", () => {
       try {
-        const record = { v: 1, file, tier: unit ? "unit" : "integration", mode, acts: [...seen.values()], offences: [...new Set(offences)] };
+        const record = { v: 1, file, tier: unit ? "unit" : "integration", mode, acts: [...seen.values()], offences: [...offences] };
         fs.writeFileSync(path.join(dir, `${process.pid}.json`), `${JSON.stringify(record)}\n`);
       } catch {
         /* best effort */

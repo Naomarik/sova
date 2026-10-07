@@ -318,6 +318,10 @@ test("kept: a relinked row carries the new link and its activity row the new cre
   const ben = await rowOf(m.share.id, "Ben");
   assert.equal(ben.state, "off");
   assert.equal(ben.link, undefined, "turned off: none");
+  const act3 = (await op(`/api/session-shares/${m.share.id}/activity`)).body as { recipients: { recipientId: string; createdAt?: string; state?: string }[] };
+  const benAct = act3.recipients.find((r) => r.recipientId === id("Ben"))!;
+  assert.equal(benAct.state, "off", "activity says the same link is off, so a sheet still showing it live sees it moved");
+  assert.equal(act3.recipients.find((r) => r.recipientId === id("Ana"))!.state, "live");
 
   // Expired: the stored expiry moved into the past (the strict parse still holds).
   const doc = JSON.parse(readFileSync(sharesFile(), "utf8"));

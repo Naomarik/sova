@@ -471,14 +471,16 @@ export function registerSessionShareRoutes(app: Hono): void {
     try {
       const hit = getShare(c.req.param("id"));
       if (!hit) throw new ShareError(404, "not-found", "No such share.");
-      // Each recipient's newest link: its createdAt tells an open sheet when the row it shows was relinked elsewhere.
+      // Each recipient's newest link: its createdAt and state tell an open sheet when the row it shows
+      // was relinked, turned off or stopped elsewhere.
       const newest = new Map<string, ShareLinkRecord>();
       for (const l of hit.links) newest.set(l.recipientId, l);
+      const now = Date.now();
       const activity: SessionShareActivity = {
         shareId: hit.share.id,
         recipients: [...newest.values()].map((l) => {
           const visits = readSessionVisits(hit.share.id, l.recipientId);
-          return { recipientId: l.recipientId, presence: presenceOf(hit.share.id, l.recipientId), ...visitSummary(visits), visits, createdAt: l.createdAt };
+          return { recipientId: l.recipientId, presence: presenceOf(hit.share.id, l.recipientId), ...visitSummary(visits), visits, createdAt: l.createdAt, state: linkState(l, hit.share, now) };
         }),
       };
       return c.json(activity, 200, NO_STORE);

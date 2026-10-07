@@ -315,6 +315,9 @@ export interface SessionShareRecipientActivity {
   /** When the recipient's newest link was made: a sheet whose row says otherwise reads the share
       again before it offers Copy Link (an older host omits it). */
   createdAt?: string;
+  /** That link's state now: a sheet whose row says otherwise (turned off or stopped elsewhere)
+      hides Copy Link and reads the share again (an older host omits it). */
+  state?: SessionShareLinkState;
   presence: SessionSharePresence;
   opened: number;
   lastAt?: string;

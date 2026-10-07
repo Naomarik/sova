@@ -309,7 +309,7 @@ function ManageShare(props: {
     try {
       const a = await shareActivity(props.host, s().id);
       setActivity(new Map(a.recipients.map((r) => [r.recipientId, r])));
-      // A row whose newest link is not the one it shows was relinked elsewhere: read the share again at once.
+      // A row whose newest link is not the one it shows (relinked, turned off or stopped elsewhere): read the share again at once.
       if (s().recipients.some((r) => linkMoved(r, a.recipients.find((x) => x.recipientId === r.id)))) void rereadShare();
     } catch {
       // the rows keep the share's own presence and counts

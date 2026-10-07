@@ -88,14 +88,16 @@ export const visitTitle = (v: SessionShareVisit, abs: string): string => [abs, .
 /** A share's live links, and whether any recipient is looking now. */
 export const liveRecipients = (s: SessionShare): SessionShareRecipient[] => s.recipients.filter((r) => r.state === "live");
 
-/** Whether the recipient's newest link (its activity row's `createdAt`) is no longer the one the row
-    shows: relinked elsewhere. The row then offers no Copy Link until the share is read again
-    (§app.session-share/sheet). An older host's activity carries no time: nothing moved. */
-export const linkMoved = (r: Pick<SessionShareRecipient, "createdAt">, a?: Pick<SessionShareRecipientActivity, "createdAt">): boolean => !!a?.createdAt && a.createdAt !== r.createdAt;
+/** Whether the recipient's newest link, as its activity row reads it, is no longer what the row
+    shows: relinked elsewhere (a newer `createdAt`), or the same link turned off or run out (its
+    `state`). The row then offers no Copy Link until the share is read again
+    (§app.session-share/sheet). An older host's activity omits either: that part didn't move. */
+export const linkMoved = (r: Pick<SessionShareRecipient, "createdAt" | "state">, a?: Pick<SessionShareRecipientActivity, "createdAt" | "state">): boolean =>
+  (!!a?.createdAt && a.createdAt !== r.createdAt) || (!!a?.state && a.state !== r.state);
 
 /** What a recipient row's Copy Link copies: its own `link`, only while it is live and still the
-    recipient's newest (no activity read says otherwise); else nothing, and the row has no Copy Link. */
-export const copyableLink = (r: Pick<SessionShareRecipient, "state" | "createdAt" | "link">, a?: Pick<SessionShareRecipientActivity, "createdAt">): string | undefined =>
+    recipient's newest live link (no activity read says otherwise); else nothing, and the row has no Copy Link. */
+export const copyableLink = (r: Pick<SessionShareRecipient, "state" | "createdAt" | "link">, a?: Pick<SessionShareRecipientActivity, "createdAt" | "state">): string | undefined =>
   r.state === "live" && !linkMoved(r, a) ? r.link : undefined;
 export const viewingCount = (s: SessionShare): number => s.recipients.filter((r) => r.presence === "viewing").length;
 /** A share still serving at least one link. */

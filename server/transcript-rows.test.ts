@@ -1,49 +1,36 @@
-// Run: pnpm exec tsx --test server/transcript-rows.test.ts. Older rows on demand: `?tail=rest` on
-// both sockets (the newest rows, a summary of the rest, nothing pushed) and GET /api/transcript's
-// rows (server/transcript-rows.ts): chunks, ranges and the moved/missing answers, put back together
-// against the whole branch. A throwaway PI_CODING_AGENT_DIR in the OS temp dir and an ephemeral
-// loopback port; ~/.pi untouched.
+// Run: node scripts/run-tests.mjs server/transcript-rows.test.ts. Older rows on demand: GET
+// /api/transcript's rows (server/transcript-rows.ts): chunks, ranges and the moved/missing answers,
+// put back together against the whole branch, the alignments open above each answer, and
+// view=light, through the app built in-process (server/app.ts, no listener). The sockets' `?tail=rest`
+// is transcript-rows.integration.test.ts. A throwaway PI_CODING_AGENT_DIR in the OS temp dir; ~/.pi
+// untouched.
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import type { AddressInfo } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
-import WebSocket from "ws";
 import type { TranscriptItem, TranscriptRows } from "../shared/protocol";
-import { piSession } from "./harness/pi/testing/handle";
 
 const agentDir = realpathSync(mkdtempSync(join(tmpdir(), "sova-rows-")));
 process.env.PI_CODING_AGENT_DIR = agentDir;
-process.env.PORT = "0";
 const sessionsDir = join(agentDir, "sessions", "--tmp-rows--");
 mkdirSync(sessionsDir, { recursive: true });
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 const cwd = join(agentDir, "cwd");
 mkdirSync(cwd, { recursive: true });
 
-const { app, server } = await import("./index");
+const { buildApp } = await import("./app");
+const { app } = buildApp({ extensionEntriesOf: async () => [] });
 const { chunkStart, rangeStart, tailStart } = await import("./tail-hello");
 const { normalizeEntries } = await import("./transcript");
 const { activeBranch, parseLines } = await import("./harness/pi/reader");
 const { summarize, isInput } = await import("../shared/row-counts");
-const { acquireChat, disposeAllChats } = await import("./chat-manager");
 const { canonicalPath } = await import("./paths");
-if (!server.listening) await new Promise((r) => server.once("listening", r));
-const wsBase = `ws://127.0.0.1:${(server.address() as AddressInfo).port}`;
-const { AUTH_COOKIE, sovaToken } = await import("./auth");
-// The sockets below pass the main listener's gate as a browser's would: with the cookie.
-const AUTH = { Cookie: `${AUTH_COOKIE}=${sovaToken()}` };
 
-const closing: Promise<void>[] = [];
-after(async () => {
-  await Promise.all(closing);
-  await new Promise((r) => setTimeout(r, 100));
-  await disposeAllChats();
-  server.close();
-  server.closeAllConnections?.();
+after(() => {
   rmSync(agentDir, { recursive: true, force: true });
 });
+
 
 const T = "2026-09-28T00:00:00.000Z";
 const header = (id: string) => ({ type: "session", version: 3, id, timestamp: T, cwd });
@@ -218,30 +205,6 @@ describe("GET /api/transcript rows", () => {
   });
 });
 
-// ---- The sockets --------------------------------------------------------------------------
-
-async function frames(route: string, until: (got: string[]) => boolean, headers: Record<string, string> = {}, quietMs = 300, onFirst?: () => void): Promise<string[]> {
-  const ws = new WebSocket(`${wsBase}${route}`, { headers: { ...AUTH, ...headers } });
-  const got: string[] = [];
-  await new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`timed out; got ${got.map((g) => JSON.parse(g).type).join(",")}`)), 15_000);
-    ws.on("message", (data) => {
-      got.push(data.toString());
-      if (got.length === 1) onFirst?.();
-      if (until(got)) {
-        clearTimeout(timer);
-        resolve();
-      }
-    });
-    ws.on("error", reject);
-  });
-  await new Promise((r) => setTimeout(r, quietMs)); // anything else on its way
-  closing.push(new Promise((r) => ws.once("close", () => r())));
-  ws.close();
-  return got;
-}
-const types = (got: string[]) => got.map((g) => JSON.parse(g).type as string);
-
 describe("the alignments open above each answer", async () => {
   const { applyAlignCall } = await import("../pi-config/extensions/mode/align.ts");
   const { foldAlignRows, isOpenDoc } = await import("../src/lib/align");
@@ -287,93 +250,6 @@ describe("the alignments open above each answer", async () => {
     assert.deepEqual(below.olderSummary.aligns?.map((a) => a.rowId), ["al5", "al20"]);
     const above = (await get(path, { before: whole[at]!.id, chars: String(1024) })).body as TranscriptRows;
     assert.deepEqual(above.olderSummary.aligns?.map((a) => [a.doc.id, a.rowId]).sort(), [["al_1", "al5"], ["al_2", "al10"], ["al_3", "al12"]]);
-  });
-});
-
-describe("/ws/chat?tail=rest", () => {
-  const path = bigSession("chat1");
-  const q = `path=${encodeURIComponent(path)}&force=1`;
-  const whole = wholeOf(path);
-
-  test("the newest rows, a summary of the rest, prefetch for a direct local client, and no history", async () => {
-    const got = await frames(`/ws/chat?${q}&tail=rest`, (g) => types(g).includes("mode"));
-    assert.ok(!types(got).includes("history"), types(got).join(","));
-    const hello = JSON.parse(got[0]!);
-    assert.equal(hello.type, "hello");
-    assert.ok(hello.older > 0);
-    assert.deepEqual(hello.items, whole.slice(hello.older));
-    assert.deepEqual(hello.olderSummary, summarize(whole.slice(0, hello.older)));
-    assert.equal(hello.prefetch, true);
-  });
-
-  test("through a proxy (X-Forwarded-Host): no prefetch", async () => {
-    const got = await frames(`/ws/chat?${q}&tail=rest`, (g) => types(g).includes("mode"), { "X-Forwarded-Host": "example.test" });
-    const hello = JSON.parse(got[0]!);
-    assert.ok(hello.older > 0 && hello.olderSummary);
-    assert.equal("prefetch" in hello, false);
-  });
-
-  test("the runtime's hello and the file's rows concatenate to the legacy hello", async () => {
-    const legacy = JSON.parse((await frames(`/ws/chat?${q}`, (g) => g.length >= 1, {}, 50))[0]!);
-    const hello = JSON.parse((await frames(`/ws/chat?${q}&tail=rest`, (g) => g.length >= 1, {}, 50))[0]!);
-    let list: TranscriptItem[] = hello.items;
-    let older: number = hello.older;
-    while (older > 0) {
-      const r = (await get(path, { before: list[0]!.id, leaf: list.at(-1)!.id.split(":")[0]! })).body as TranscriptRows;
-      list = [...r.items, ...list];
-      older = r.older;
-    }
-    assert.deepEqual(list, legacy.items);
-  });
-});
-
-describe("chat: a rewind with a pull client, a push client and a whole client", () => {
-  test("the pull client gets a cut hello with its summary and nothing after its ack; the push client its history", async () => {
-    const path = bigSession("chat2");
-    const chat = await acquireChat(path, true);
-    const pull: any[] = [];
-    const push: any[] = [];
-    const legacy: any[] = [];
-    const p = { send: (m: any) => void pull.push(m), tail: true, pull: { prefetch: false } };
-    chat.attach(p);
-    chat.attach({ send: (m: any) => void push.push(m), tail: true });
-    chat.attach({ send: (m: any) => void legacy.push(m) });
-    assert.equal(pull.filter((m) => m.type === "history").length, 0);
-    assert.ok(push.at(-1).type === "history" && push.at(-1).left === 0);
-    for (const l of [pull, push, legacy]) l.length = 0;
-    chat.handle(p, { type: "rewind", id: "r1", entryId: "u140" });
-    for (let i = 0; i < 100 && !pull.some((m) => m.type === "rewound" || m.type === "rewind_refused"); i++) await new Promise((r) => setTimeout(r, 20));
-    const branch = normalizeEntries(piSession(chat).sessionManager.getBranch());
-    const ph = pull.find((m) => m.type === "hello");
-    assert.ok(ph.older > 0);
-    assert.deepEqual(ph.items, branch.slice(ph.older));
-    assert.deepEqual(ph.olderSummary, summarize(branch.slice(0, ph.older)));
-    assert.equal(ph.prefetch, undefined);
-    assert.equal(pull.filter((m) => m.type === "history").length, 0);
-    assert.ok(pull.some((m) => m.type === "rewound"));
-    const hh = push.find((m) => m.type === "hello");
-    assert.equal(hh.olderSummary, undefined, "a push client's hello is as before");
-    assert.deepEqual(push.filter((m) => m.type === "history").reduce((l: TranscriptItem[], c: any) => [...c.items, ...l], hh.items), branch);
-    const lh = legacy.find((m) => m.type === "hello");
-    assert.deepEqual(lh.items, branch);
-    assert.equal(lh.older, undefined);
-  });
-});
-
-describe("/ws/watch?tail=rest", () => {
-  test("a cut snapshot with its summary, no history, and an append comes straight after it", async () => {
-    const path = bigSession("watch1");
-    const whole = wholeOf(path);
-    const got = await frames(`/ws/watch?path=${encodeURIComponent(path)}&tail=rest`, (g) => types(g).includes("append"), {}, 100, () => {
-      const extra = { type: "message", id: "late", parentId: "a149", timestamp: T, message: { role: "user", content: [{ type: "text", text: "late" }], timestamp: 0 } };
-      writeFileSync(path, readFileSync(path, "utf8") + JSON.stringify(extra) + "\n");
-    });
-    assert.deepEqual(types(got), ["snapshot", "append"]);
-    const snap = JSON.parse(got[0]!);
-    assert.ok(snap.older > 0);
-    assert.deepEqual(snap.items, whole.slice(snap.older));
-    assert.deepEqual(snap.olderSummary, summarize(whole.slice(0, snap.older)));
-    assert.equal(snap.prefetch, true);
   });
 });
 

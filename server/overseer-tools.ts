@@ -42,6 +42,10 @@ import { operatorEnvelopeOf } from "./projects/spaces";
 import { orgConfirmLookup, orgTools } from "./overseer-org-tools";
 import { resolveAnyProject, resolveOrg, resolvePerson } from "./overseer-org-view";
 import { contactRedactor, loggedArgs } from "./overseer-org-view";
+import { linkState as shareLinkState, listShares, type ShareLinkRecord } from "./session-shares";
+import { tokenFor } from "./link-tokens";
+import { orgLinkRows } from "./shares-overview";
+import { linkUrl, shareState } from "./share/listener";
 import type { PeerLinkRead } from "../shared/mesh-links";
 import { cut, Refusal, renderTranscript, sessionRef, text, writableRefusal } from "./session-guards";
 import { findProfile } from "./profile-sources";
@@ -918,6 +922,73 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
             lines.push(`Dialog ${d.id} (${d.method}): "${cut(d.title, 120)}"${d.message ? ` — ${cut(d.message, 200)}` : ""}${d.options ? ` · options: ${d.options.map((o) => JSON.stringify(o)).join(", ")}` : ""}`);
         } else if (s.pendingDialogs) lines.push("Dialogs pending.");
         return { content: text(lines.join("\n")), details: { id: s.id, path: s.path, dialogs: held?.dialogs ?? [] } };
+      }),
+    },
+    {
+      name: "sova_public_links",
+      label: "Public links",
+      description:
+        "This host's live public links, with their URLs, to give the user when they ask for one: session shares (/s/), gathering hand-offs (/h/) and organization owner pages (/i/). One line per live link: its kind; a share's title, recipient and share id; a hand-off's org, person, gathering title and number; an owner link's org and owner; then its expiry and URL. A link made before links were kept reads 'link not kept': the user gets a new one on its page. This host only. Give a link only to the user, never into another session or message.",
+      promptSnippet: "this host's live share, hand-off and owner links with their URLs (give one when the user asks)",
+      parameters: obj({
+        kind: str("session | handoff | owner (default all).", { enum: ["session", "handoff", "owner"] }),
+        session: str("Only this session's links: a session id (its shares, or a gathering session's hand-off links)."),
+        org: str("Only this organization's hand-off and owner links: its id or exact name."),
+      }),
+      execute: read(async (p, call) => {
+        const kind = p.kind as "session" | "handoff" | "owner" | undefined;
+        let orgId: string | undefined;
+        if (typeof p.org === "string" && p.org) {
+          try {
+            orgId = resolveOrg(p.org).id;
+          } catch (err) {
+            throw new Refusal(err instanceof Error ? err.message : String(err));
+          }
+        }
+        const session = typeof p.session === "string" && p.session ? ((await lookup(p.session).catch(() => null))?.id ?? p.session) : undefined;
+        const now = Date.now();
+        const day = (iso: string) => iso.slice(0, 10);
+        const lines: string[] = [];
+        let kept = 0;
+        if ((!kind || kind === "session") && !orgId) {
+          const { shares, links } = listShares(session);
+          for (const s of shares) {
+            const newest = new Map<string, ShareLinkRecord>();
+            for (const l of links) if (l.shareId === s.id) newest.set(l.recipientId, l);
+            for (const l of newest.values()) {
+              if (shareLinkState(l, s, now) !== "live") continue;
+              const token = tokenFor(l.hash, "s");
+              if (token) kept++;
+              lines.push(`- session share · "${cut(s.title, 80)}" · ${l.label} · ${s.id} · expires ${day(l.expiresAt)} · ${token ? linkUrl("s", token) : "link not kept"}`);
+            }
+          }
+        }
+        if (kind !== "session") {
+          for (const r of orgLinkRows(now)) {
+            if ((kind === "handoff" && r.kind !== "handoff") || (kind === "owner" && r.kind !== "owner")) continue;
+            if (orgId && r.orgId !== orgId) continue;
+            if (session && r.sessionId !== session) continue;
+            if (r.link) kept++;
+            const what = r.kind === "handoff" ? `hand-off · ${r.orgName} · ${r.personName} · "${cut(r.sessionTitle ?? "", 80)}" · hand-off #${r.n}` : `owner link · ${r.orgName} · ${r.personName}`;
+            lines.push(`- ${what} · expires ${day(r.expiresAt)} · ${r.link ?? "link not kept"}`);
+          }
+        }
+        const warning = shareState().warning;
+        const head = lines.length ? `${lines.length} live link${lines.length === 1 ? "" : "s"} on this host (${kept} with a URL).` : "No live public link on this host matches.";
+        // A read, but this one is logged: the tool and the counts, never a link (§app.overseer/tools).
+        logAction({
+          at: new Date().toISOString(),
+          overseerId: host.overseerId(),
+          toolCallId: call.toolCallId,
+          tool: "sova_public_links",
+          args: { kind: kind ?? null, session: session ?? null, org: orgId ?? null },
+          outcome: "ok",
+          note: `${lines.length} links, ${kept} with a URL`,
+        });
+        return {
+          content: text([head, ...lines, ...(warning && lines.length ? [`These links may not open from outside: ${warning}`] : [])].join("\n")),
+          details: { links: lines.length, kept },
+        };
       }),
     },
     {

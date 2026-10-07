@@ -73,7 +73,8 @@ test("explainCaption reads '<when> · <model>', dropping the provider and an abs
   const now = Date.parse("2026-09-20T12:00:00Z");
   const createdAt = "2026-09-20T10:00:00Z";
   assert.equal(explainCaption({ createdAt, model: "zai/glm-5.3" }, now), "2h ago · glm-5.3");
-  assert.equal(explainCaption({ createdAt, model: "claude-opus-5" }, now), "2h ago · claude-opus-5", "an id with no provider is left alone");
+  assert.equal(explainCaption({ createdAt, model: "claude-opus-5" }, now), "2h ago · Opus 5", "a Claude model by its catalog name");
+  assert.equal(explainCaption({ createdAt, model: "openai/gpt-x" }, now), "2h ago · gpt-x");
   assert.equal(explainCaption({ createdAt }, now), "2h ago", "no model, no separator");
   assert.equal(explainCaption({ createdAt, model: "" }, now), "2h ago", "an empty model reads as absent");
 });

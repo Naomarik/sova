@@ -149,11 +149,11 @@ The workspace is a third value of `.app`'s `data-view`, and it takes the whole m
     <div class="workspace-row" aria-label="Members">
       <section class="workspace-pane" id="pane-p1" role="region" aria-labelledby="pane-p1-name" tabindex="-1">
         <header class="workspace-pane-head">
-          <span class="workspace-pane-name" id="pane-p1-name">control · claude-opus-5</span>
+          <span class="workspace-pane-name" id="pane-p1-name">control · Opus 5</span>
           <span class="context-gauge" title="…">…§chat/context-window…</span>
           <span class="chip chip-accent"><i class="chip-dot"></i>TUI</span>   <!-- state chips, see below -->
           <button class="button button-icon button-ghost workspace-pane-tools"
-                  aria-haspopup="menu" aria-label="Pane actions · control · claude-opus-5">…more…</button>
+                  aria-haspopup="menu" aria-label="Pane actions · control · Opus 5">…more…</button>
         </header>
         <div class="workspace-pane-body">…§chat/transcript transcript, with pane-scoped ids…</div>
         <!-- mounted always; not displayed while Send to All is on -->
@@ -285,7 +285,7 @@ apply verbatim. What changes is scoping and chrome:
   (§chat/context-window, the percent-only step — a pane is never a 720px head), its state chips, and the tools.
   The name is `{label} · {model}` when a label exists, else `{title} · {model}` — and for
   members that share a title with no label (three `opus` members of one comparison) the model with its
-  `#n` ALONE: `claude-opus-5 #2`. The suffix is numbered in member order and is **the same rule
+  `#n` ALONE: `Opus 5 #2` (a Claude model by its catalog name, §app.claude-code-provider/model-names). The suffix is numbered in member order and is **the same rule
   the tab strip reads** (`paneNames` in `session-groups.ts`, one implementation), because the tab
   strip and the pane head naming the same member differently — or the pane names omitting the
   suffix while the tabs kept it, which is where this was caught — makes `#2` mean two things at
@@ -303,7 +303,7 @@ apply verbatim. What changes is scoping and chrome:
   (Announcements), so a name assembled differently in tabs than in split makes the prefix
   byte-for-byte right in one mode and merely similar in the other. `aria-controls` on the tab
   already ties the two together. Three regions called "Transcript" would be useless; "control ·
-  claude-opus-5" is what the user is actually distinguishing.
+  Opus 5" is what the user is actually distinguishing.
 - **A tab's visible text has to distinguish it inside this group**, which the title alone often
   won't: every member of a fork **shares** the source's title, so a strip of 5 tabs reading
   "Retry with jitter" five times names nothing. The rule is the first of these that tells members
@@ -702,12 +702,12 @@ but never writes:
 string its `aria-label` carries** — `{label or title} · {model}` — not the model alone and not
 anything recomputed: a prefix naming something that isn't on screen is worse than no prefix,
 because it sounds like a different pane. The separator between name and fact is **an em dash**,
-not the `·` the name already contains, so "Retry with jitter · opus-5 — replied." reads as a
+not the `·` the name already contains, so "Retry with jitter · Opus 5 — replied." reads as a
 name and a fact rather than three things in a list:
 
-- "control · claude-opus-5 — replied."
+- "control · Opus 5 — replied."
 - "glm-5.3 #2 — working."
-- "haiku-4.5 #3 — stopped by you."
+- "Haiku 4.5 #3 — stopped by you."
 - Group-level facts have no prefix: "Sent to 4 members." · "Nothing was sent. 2 members can't
   take a message right now."
 

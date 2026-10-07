@@ -63,7 +63,7 @@ describe("decisions.json", () => {
     assert.deepEqual(n, { version: 1, jev: { enabled: false }, fallback: null, features: { attention: true, tags: false }, exclusions: ["/a"], neverSendTui: true });
   });
   test("atomic write round-trips", () => {
-    const s = { ...decisionDefaults(), features: { attention: true, tags: false }, fallback: { backend: "claude-code" as const, model: "haiku", effort: "low" } };
+    const s = { ...decisionDefaults(), features: { attention: true, tags: false }, fallback: { backend: "claude-code" as const, model: "claude-haiku-4-5", effort: "low" } };
     writeDecisionSettings(s);
     assert.deepEqual(readDecisionSettings(), s);
   });
@@ -134,7 +134,7 @@ function fakeJev(opts: { goodKey?: string; decideStatus?: number } = {}) {
 const noLlm = { runtime: async () => { throw new Error("no runtime in tests"); } };
 const sources = {
   piModels: async () => [{ ref: "prov/m", id: "m", provider: "prov", thinkingLevels: ["off", "low"] }],
-  claudeModels: async () => [{ id: "haiku", name: "Haiku", efforts: ["low", "medium"] }],
+  claudeModels: async () => [{ id: "claude-haiku-4-5", name: "Haiku", efforts: ["low", "medium"] }],
   policy: () => ({ disabledProviders: [], disabledModels: [], subagentDisabledProviders: [], subagentDisabledModels: [] }),
 } as unknown as import("./delegate").DelegateSources;
 
@@ -195,7 +195,7 @@ describe("routes", () => {
     const info = decisionsInfo(rt);
     assert.equal(JSON.stringify(info).includes(KEY), false);
     assert.equal(info.key.present, true);
-    assert.deepEqual(info.suggestions.map((s) => s.model), ["sonnet", "ollama-cloud/deepseek-v4.1-flash"]);
+    assert.deepEqual(info.suggestions.map((s) => s.model), ["claude-sonnet-5-5", "ollama-cloud/deepseek-v4.1-flash"]);
     assert.equal(info.settings.fallback, null);
   });
   test("PUT key: a rejected key is not stored (422, DecisionKeyInfo body); a good one is, status ok", async () => {

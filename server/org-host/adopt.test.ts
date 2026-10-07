@@ -11,6 +11,7 @@ import type { EngineOptions } from "../statecharts";
 import { OrgHost, type OrgHostOptions } from "./index";
 import { scanSnapshots } from "./store";
 import { HOST_STATECHARTS } from "./test-statechart";
+import { until as waitUntil } from "../test-wait";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -77,12 +78,12 @@ test("adopted sessions run as booted ones: loaded, resumed, the pending effect a
   await org.adopt(["p/1", "l/1", "l/2"]);
   assert.ok(heard.some((s) => ["p/1", "l/1", "l/2"].every((sid) => s.includes(sid))), "the change listeners hear every adopted session");
   assert.equal(org.data("p/1")?.["n"], 1, "the counter came with it");
-  for (let i = 0; i < 20 && org.data("p/1")?.["done"] !== 1; i++) await tick(5);
+  await waitUntil(() => org.data("p/1")?.["done"] === 1);
   assert.equal(ran.length, 1, "the pending effect ran once");
   assert.equal(org.data("p/1")?.["done"], 1);
   assert.deepEqual(org.data("p/1")?.["sova/pending"], {});
   // the source's tick was due at its own clock + 50 ms, long past: the adopted timer fires
-  for (let i = 0; i < 40 && !org.configuration("l/1")?.includes("idle"); i++) await tick(5);
+  await waitUntil(() => org.configuration("l/1")?.includes("idle"));
   assert.deepEqual(org.configuration("l/1"), ["top", "idle"]);
   // the imported rows read as the org's, and a new row's `at` is past every one of them
   const all = org.log.rows();
@@ -116,7 +117,7 @@ test("a restart after adopt opens everything adopted, with nothing lost", async 
   org.effects.register("write", async (e) => ({ wrote: e.key }));
   copyIn(at);
   await org.adopt(["p/1", "l/1", "l/2"]);
-  for (let i = 0; i < 20 && org.data("p/1")?.["done"] !== 1; i++) await tick(5);
+  await waitUntil(() => org.data("p/1")?.["done"] === 1);
   await org.act("p/1", "count", {}, operator);
   const before = org.log.rows().length;
   await org.close();

@@ -3,7 +3,7 @@ import test from "node:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { compactProcessed, execBounded, INDEX_TTL_MS, listProjectFiles, MAX_INDEX_FILES, REQUEST_BUDGET_MS, type FilesDeps } from "./files";
+import { compactProcessed, INDEX_TTL_MS, listProjectFiles, MAX_INDEX_FILES, REQUEST_BUDGET_MS, type FilesDeps } from "./files";
 import { targetsRoot } from "./targets";
 
 /** A small tree: files at the root, one nested dir, ignored dirs at two depths. */
@@ -161,9 +161,8 @@ test("a folder that never answers is a 504, and the late result never reaches th
         late = () => res([{ name: "late.ts", dir: false }]);
       }),
   };
-  const started = Date.now();
+  // The listDir never answers: any answer at all is the deadline's.
   const r = await listProjectFiles(root, hung);
-  assert.ok(Date.now() - started < 2_000, "the deadline answered; it did not wait for the filesystem");
   assert.equal(r.ok, false);
   if (r.ok) return;
   assert.equal(r.status, 504);
@@ -181,13 +180,16 @@ test("a folder that never answers is a 504, and the late result never reaches th
 test("a walk the deadline cuts short keeps what it has, flags it partial, and is not cached", async () => {
   const root = fakeRoot();
   let listed = 0;
+  let clock = 1_000_000;
   const slow: FilesDeps = {
     ...synthetic,
     budgetMs: 120,
-    // Each level costs 30ms and offers another level: the budget runs out long before the walk does.
+    now: () => clock,
+    // Each level costs 30ms (of the request's clock) and offers another level: the budget runs out
+    // long before the walk does.
     listDir: async () => {
       listed++;
-      await new Promise((res) => setTimeout(res, 30));
+      clock += 30;
       return [{ name: "a.ts", dir: false }, { name: "deeper", dir: true }];
     },
   };
@@ -322,42 +324,6 @@ test("the index is cached for the TTL and recomputed once stale", async () => {
 });
 
 // ---------------------------------------------------------------------------
-// execBounded itself — a real subprocess, because a stubbed exec proves none of this
-
-const node = process.execPath;
-
-test("execBounded decodes one character split across two stdout chunks", async () => {
-  // "…" is 3 bytes; the child writes the first byte of it in one chunk and the rest in another,
-  // which is what a decode-per-chunk implementation turns into replacement characters.
-  const src = `const b = Buffer.from("a…b", "utf8");
-    process.stdout.write(b.subarray(0, 2));
-    setTimeout(() => process.stdout.write(b.subarray(2)), 30);`;
-  const r = await execBounded([node, "-e", src], { timeoutMs: 5_000, byteCap: 1024 });
-  assert.equal(r.code, 0);
-  assert.equal(r.stdout, "a…b");
-  assert.equal(r.truncated, false);
-});
-
-test("execBounded caps stdout by bytes before storing it, and says so", async () => {
-  const r = await execBounded([node, "-e", `process.stdout.write("x".repeat(200_000))`], { timeoutMs: 5_000, byteCap: 1_000 });
-  assert.equal(Buffer.byteLength(r.stdout), 1_000, "exactly the cap was kept — the over-limit chunk was never stored whole");
-  assert.equal(r.truncated, true);
-});
-
-test("execBounded kills a child that outruns its timeout and rejects", async () => {
-  const started = Date.now();
-  await assert.rejects(
-    execBounded([node, "-e", "setTimeout(() => {}, 30_000)"], { timeoutMs: 150, byteCap: 1024 }),
-    /timed out/,
-  );
-  assert.ok(Date.now() - started < 5_000, "it answered at its timeout, not at the child's");
-});
-
-test("execBounded rejects when the binary isn't there", async () => {
-  await assert.rejects(execBounded(["definitely-not-a-binary-xyz"], { timeoutMs: 1_000, byteCap: 16 }));
-});
-
-// ---------------------------------------------------------------------------
 // the bounds the review found holes in
 
 test("a root that stats as a folder but won't open is the answer, not an empty index", async () => {
@@ -434,7 +400,7 @@ test("the depth limit omits everything below it, and the index says it is partia
 test("a git that never answers can't hold the request open, and its late answer is dropped", async () => {
   const root = fakeRoot();
   let settleGit: ((r: { code: number; stdout: string; truncated: boolean }) => void) | null = null;
-  const started = Date.now();
+  // git never answers: any answer at all is the request deadline's.
   const r = await listProjectFiles(root, {
     remoteOf: () => null,
     isDirectory: async () => true,
@@ -445,7 +411,6 @@ test("a git that never answers can't hold the request open, and its late answer 
       }),
     listDir: async () => [{ name: "walked.ts", dir: false }],
   });
-  assert.ok(Date.now() - started < 2_000, "the request deadline answered, not git's own timer");
   assert.equal(r.ok, false);
   if (!r.ok) assert.equal(r.status, 504);
 

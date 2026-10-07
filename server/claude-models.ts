@@ -29,6 +29,8 @@ export interface ClaudeModel {
   name: string;
   /** As the CLI reports them; absent when it reports none. */
   efforts?: string[];
+  /** The model an alias resolves to, as the CLI says (drift only: §app.claude-code-provider/catalog-drift). */
+  resolvedModel?: string;
 }
 
 export interface ClaudeDiscoveryOptions {
@@ -40,7 +42,20 @@ export interface ClaudeDiscoveryOptions {
   spawnImpl?: (command: string, args: string[], options: SpawnOptions) => ChildProcess;
   /** The login's environment (CLAUDE_CONFIG_DIR); default: this host's first usable Claude login. */
   loginEnv?: Record<string, string>;
+  /** Where its timers run (the deadline and the escalation); default setTimeout/clearTimeout. */
+  timers?: ClaudeDiscoveryTimers;
 }
+
+export interface ClaudeDiscoveryTimers {
+  setTimeout(fn: () => void, ms: number): unknown;
+  clearTimeout(handle: unknown): void;
+}
+
+const GLOBAL_TIMERS: ClaudeDiscoveryTimers = {
+  setTimeout: (fn, ms) => setTimeout(fn, ms),
+  clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+};
+const unref = (handle: unknown) => (handle as { unref?: () => void }).unref?.();
 
 const MAX_OUTPUT = 4 * 1024 * 1024;
 const record = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
@@ -62,6 +77,7 @@ export function parseClaudeModels(value: unknown): ClaudeModel[] {
     if (seen.has(item.value)) continue;
     seen.add(item.value);
     const model: ClaudeModel = { id: item.value, name: item.displayName };
+    if (typeof item.resolvedModel === "string") model.resolvedModel = item.resolvedModel;
     if (Array.isArray(item.supportedEffortLevels)) {
       if (!item.supportedEffortLevels.every((effort) => typeof effort === "string" && effort.trim() !== ""))
         throw new Error("The Claude Code CLI returned invalid effort levels");
@@ -82,6 +98,7 @@ export function discoverClaudeModels(options: ClaudeDiscoveryOptions = {}): Prom
   const group = process.platform !== "win32";
   const eofGraceMs = options.eofGraceMs ?? 500;
   const termGraceMs = options.termGraceMs ?? 1000;
+  const timers = options.timers ?? GLOBAL_TIMERS;
   let child: ChildProcess;
   try {
     child = (options.spawnImpl ?? spawn)(options.executable ?? "claude", [...CLAUDE_DISCOVERY_ARGV], {
@@ -98,11 +115,11 @@ export function discoverClaudeModels(options: ClaudeDiscoveryOptions = {}): Prom
   // has already exited (and might have been reused): every signal checks it, and exit clears the
   // escalation timers whichever order exit and our own cleanup happen in.
   let exited = false;
-  let termTimer: ReturnType<typeof setTimeout> | undefined;
-  let killTimer: ReturnType<typeof setTimeout> | undefined;
+  let termTimer: unknown;
+  let killTimer: unknown;
   const clearEscalation = () => {
-    clearTimeout(termTimer);
-    clearTimeout(killTimer);
+    if (termTimer !== undefined) timers.clearTimeout(termTimer);
+    if (killTimer !== undefined) timers.clearTimeout(killTimer);
     termTimer = killTimer = undefined;
   };
   const markExited = () => {
@@ -135,17 +152,17 @@ export function discoverClaudeModels(options: ClaudeDiscoveryOptions = {}): Prom
       /* escalate */
     }
     if (exited) return;
-    termTimer = setTimeout(() => {
+    termTimer = timers.setTimeout(() => {
       termTimer = undefined;
       if (exited) return;
       kill("SIGTERM");
-      killTimer = setTimeout(() => {
+      killTimer = timers.setTimeout(() => {
         killTimer = undefined;
         kill("SIGKILL");
       }, termGraceMs);
-      killTimer.unref?.();
+      unref(killTimer);
     }, eofGraceMs);
-    termTimer.unref?.();
+    unref(termTimer);
   };
   return new Promise<ClaudeModel[]>((resolve, reject) => {
     let settled = false;
@@ -155,12 +172,12 @@ export function discoverClaudeModels(options: ClaudeDiscoveryOptions = {}): Prom
     const finish = (error: Error | null, models?: ClaudeModel[]) => {
       if (settled) return;
       settled = true;
-      clearTimeout(deadline);
+      timers.clearTimeout(deadline);
       stop();
       if (error) reject(error);
       else resolve(models!);
     };
-    const deadline = setTimeout(
+    const deadline = timers.setTimeout(
       () => finish(new Error(`The Claude Code CLI did not list its models within ${Math.round((options.timeoutMs ?? 15000) / 1000)}s`)),
       options.timeoutMs ?? 15000,
     );

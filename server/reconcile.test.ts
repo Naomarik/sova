@@ -1,6 +1,7 @@
 // Run: pnpm exec tsx --test server/reconcile.test.ts. A throwaway PI_CODING_AGENT_DIR, workspace and
 // client project in the OS temp dir, deleted after; ~/.pi is never read or written. The decide seam
-// is a fake; the spec tools are the real ones this tree ships (run as child processes).
+// is a fake, and so is the spec draft tool (server/spec-tool-fake.ts, in-process: Sova's own writing into
+// the draft and current spec is real); reconcile.integration.test.ts runs the real tool.
 import assert from "node:assert/strict";
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -8,6 +9,7 @@ import { after, before, describe, test } from "node:test";
 import { BATON_DECISION_ENTRY, OPERATOR } from "../shared/baton";
 import type { DecisionProvider, DecisionRequest } from "./decide";
 import { scratchRoot } from "./test-scratch";
+import { until } from "./test-wait";
 
 // In no repository: each spec-only client below is a plain folder, so promotions commit nowhere.
 const tmp = scratchRoot("sova-reconcile-");
@@ -20,6 +22,7 @@ const decisions = await import("./decisions");
 const reconcile = await import("./reconcile");
 const { recordDecision, seedConflicts } = await import("./org-test-fixtures");
 const writer = await import("./spec-draft-writer");
+writer.setDraftToolForTest((await import("./spec-tool-fake")).fakeDraftTool());
 const { settled } = await import("./workspace-git");
 
 after(async () => {
@@ -138,6 +141,26 @@ async function asARunWould(orgId: string, projectId: string, rows: { id: string;
 }
 
 const specManifest = (root: string) => JSON.parse(readFileSync(join(root, ".sova", "spec", "manifest.json"), "utf8"));
+
+/** The reconciler's 2 s wait (a settle session's request), passed on the org clock so its due run fires at once;
+    then what `find` picks once no run is going (undefined when it never does). */
+async function afterTheWait<T>(orgId: string, projectId: string, find: (info: ReturnType<typeof reconcile.listDecisions>) => T | undefined): Promise<T | undefined> {
+  const { hostOf, setOrgClockForTest } = await import("./org-engine");
+  const t = Date.now() + 2_500;
+  setOrgClockForTest(() => t);
+  try {
+    hostOf(orgId).fireDue();
+    let got: T | undefined;
+    await until(() => {
+      const now = reconcile.listDecisions(orgId, projectId);
+      got = now.running ? undefined : find(now);
+      return got !== undefined;
+    }, "the reconciler's run");
+    return got;
+  } finally {
+    setOrgClockForTest(null);
+  }
+}
 
 // ---- pure parts ----------------------------------------------------------------------------------------------
 
@@ -459,13 +482,8 @@ describe("decisions → conflicts → draft → promotion", async () => {
       const file = baton.sessionPathOf(orgs.orgDir(org.id), baton.batonById(c.batonSessionId!)!.row);
       outcome = "a";
       const m = (await say(file, OPERATOR, "Two days.", { area: "bank access", statement: "Bank access requests are answered in 2 days.", quote: "Two days." })).markerId!;
-      let done;
-      for (let i = 0; i < 100 && !done; i++) {
-        await new Promise((r) => setTimeout(r, 50));
-        const now = reconcile.listDecisions(org.id, project.id);
-        // Resolved is written before the same run rewrites the draft: wait for the run to end.
-        done = now.running ? undefined : now.conflicts.find((k) => k.id === c.id && k.state === "resolved");
-      }
+      // Resolved is written before the same run rewrites the draft: wait for the run to end.
+      const done = await afterTheWait(org.id, project.id, (now) => now.conflicts.find((k) => k.id === c.id && k.state === "resolved"));
       assert.ok(done, "resolved by the watcher");
       assert.equal(done!.outcome, "a");
       const res = `${c.batonSessionId}:${m}`;
@@ -712,12 +730,7 @@ describe("decisions → conflicts → draft → promotion", async () => {
       await say(f1, maria.id, "w", { area: "window cleaning", statement: "Windows are cleaned every 14 days.", quote: "14 days" });
       await say(f2, tony.id, "w", { area: "window cleaning", statement: "Windows are cleaned every 40 days.", quote: "40 days" });
       await settleSessionAsks(settle.batonSessionId!);
-      let c;
-      for (let i = 0; i < 100 && !c; i++) {
-        await new Promise((r) => setTimeout(r, 50));
-        const now = reconcile.listDecisions(org.id, project.id);
-        c = now.running ? undefined : now.conflicts.find((k) => k.areaKey === "window-cleaning" && k.batonSessionId);
-      }
+      const c = await afterTheWait(org.id, project.id, (now) => now.conflicts.find((k) => k.areaKey === "window-cleaning" && k.batonSessionId));
       assert.ok(c, "the watcher's run found and routed it");
       const row = baton.batonById(c!.batonSessionId!)!.row;
       assert.deepEqual([row.model, row.thinking], ["prov/gather", "low"]);
@@ -746,12 +759,7 @@ describe("decisions → conflicts → draft → promotion", async () => {
       await say(f1, maria.id, "g", { area: "gritting", statement: "Paths are gritted every 3 days.", quote: "3 days" });
       await say(f2, tony.id, "g", { area: "gritting", statement: "Paths are gritted every 8 days.", quote: "8 days" });
       await settleSessionAsks(trigger.batonSessionId!);
-      let c;
-      for (let i = 0; i < 100 && !c; i++) {
-        await new Promise((r) => setTimeout(r, 50));
-        const now = reconcile.listDecisions(org.id, project.id);
-        c = now.running ? undefined : now.conflicts.find((k) => k.areaKey === "gritting" && k.batonSessionId);
-      }
+      const c = await afterTheWait(org.id, project.id, (now) => now.conflicts.find((k) => k.areaKey === "gritting" && k.batonSessionId));
       assert.ok(c, "the watcher's run found and routed it");
       assert.deepEqual(baton.batonById(c!.batonSessionId!)!.row.owner, overseer, "still the overseer's, not the operator's");
       // The automatic post-resolution session is a settle session like any other.
@@ -874,12 +882,7 @@ describe("restatements, confirmations and resolutions that say something else", 
       assert.equal(c.state, "resolved");
       const m = (await say(settleFile(c), owner.id, "Confirmed, 30 days.", { area: "terms", statement: "Suppliers are paid within 30 days, confirmed. [same]", quote: "Confirmed, 30 days." })).markerId!;
       const id = `${c.batonSessionId}:${m}`;
-      let row;
-      for (let i = 0; i < 100 && !row?.supersededBy; i++) {
-        await new Promise((r) => setTimeout(r, 50));
-        const now = reconcile.listDecisions(org.id, project.id);
-        row = now.running ? undefined : now.decisions.find((x) => x.id === id);
-      }
+      const row = await afterTheWait(org.id, project.id, (now) => now.decisions.find((x) => x.id === id && x.supersededBy));
       assert.equal(row?.supersededBy, t30, "folded by the watcher, no Reconcile click");
       const d = byId();
       assert.ok(d.get(t30)!.folded?.includes(id));

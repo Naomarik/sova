@@ -1,52 +1,36 @@
-// Run: pnpm exec tsx --test server/mesh/resync.test.ts
-// Mesh version resync (§mesh.peers/resync): relation by a throwaway git repo's history, recipe
-// parsing, and the job service with every outside part injected: a fake mesh, a fake probe, a
-// fake peer details endpoint and a fake deploy script (node). No network, no ssh, no real peer.
+// Run: pnpm test -- server/mesh/resync.test.ts
+// Mesh version resync (§mesh.peers/resync), in-process: relation over an in-memory history (the
+// questions relationOf asks git, answered as git would), recipe parsing, and the job service with
+// every outside part injected: a fake mesh, a fake probe, a fake peer details endpoint and a fake
+// deploy script (a child in-process). No network, no ssh, no real peer, no process. With a real
+// checkout and the script as a real child: resync.integration.test.ts.
 import assert from "node:assert/strict";
-import { execFileSync, spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import { Hono } from "hono";
 import type { ResyncJob } from "../../shared/mesh-resync";
-import type { BootBuild } from "./build-id";
-import { realGit } from "./build-id";
-import type { ProbeResult } from "./hello";
-import type { PeerEntry, PeersConfig } from "./peers";
-import { mountResync, parseRecipes, readRecipes, type Recipe, recipeArgv, recipeProblem, relationOf, ResyncService } from "./resync";
+import { mountResync, parseRecipes, readRecipes, recipeArgv, recipeProblem, relationOf } from "./resync";
+import { config, fakeScript, memoryHistory, PROTO, resyncKit, skewed, until, type World } from "./resync-test-fixtures";
 
 const tmp = mkdtempSync(join(tmpdir(), "sova-resync-test-"));
 after(() => rmSync(tmp, { recursive: true, force: true }));
 
-// ---- a repo: a - b - c on main, d branching from a ----------------------------------------------
-
 const repo = join(tmp, "repo");
-mkdirSync(repo);
-const git = (...args: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", ...args], { cwd: repo, encoding: "utf8" }).trim();
-git("init", "-q", "-b", "main");
-const commitFile = (name: string) => {
-  writeFileSync(join(repo, name), name);
-  git("add", name);
-  git("commit", "-q", "-m", name);
-  return git("rev-parse", "HEAD");
-};
-const A = commitFile("a");
-const B = commitFile("b");
-const C = commitFile("c");
-git("checkout", "-q", "-b", "side", A);
-const D = commitFile("d");
+const history = memoryHistory(repo);
+const { A, B, C, D, git } = history;
 const MISSING = "f".repeat(40);
 
 describe("relation", () => {
-  test("behind, ahead, same, diverged and unknown, by this checkout's history", async () => {
-    assert.deepEqual(await relationOf(C, A, repo, realGit), { relation: "behind", distance: 2 });
-    assert.deepEqual(await relationOf(A, C, repo, realGit), { relation: "ahead", distance: 2 });
-    assert.deepEqual(await relationOf(B, B, repo, realGit), { relation: "same" });
-    assert.deepEqual(await relationOf(C, D, repo, realGit), { relation: "diverged" });
-    assert.deepEqual(await relationOf(C, MISSING, repo, realGit), { relation: "unknown" }, "a commit this checkout lacks");
-    assert.deepEqual(await relationOf(C, undefined, repo, realGit), { relation: "unknown" }, "a peer that says no commit");
-    assert.deepEqual(await relationOf(undefined, A, repo, realGit), { relation: "unknown" }, "no boot commit here");
+  test("behind, ahead, same, diverged and unknown, by the history git reports", async () => {
+    assert.deepEqual(await relationOf(C, A, repo, git), { relation: "behind", distance: 2 });
+    assert.deepEqual(await relationOf(A, C, repo, git), { relation: "ahead", distance: 2 });
+    assert.deepEqual(await relationOf(B, B, repo, git), { relation: "same" });
+    assert.deepEqual(await relationOf(C, D, repo, git), { relation: "diverged" });
+    assert.deepEqual(await relationOf(C, MISSING, repo, git), { relation: "unknown" }, "a commit this checkout lacks");
+    assert.deepEqual(await relationOf(C, undefined, repo, git), { relation: "unknown" }, "a peer that says no commit");
+    assert.deepEqual(await relationOf(undefined, A, repo, git), { relation: "unknown" }, "no boot commit here");
   });
 
   test("only 40-hex commits reach git: an option-shaped commit is unknown, and git is never asked", async () => {
@@ -128,80 +112,8 @@ describe("recipes", () => {
 
 // ---- the service ------------------------------------------------------------------------------
 
-const PROTO = "1111111111111111";
-const peer = (id: string, port: number): PeerEntry => ({ id, label: id.toUpperCase(), nodeId: `n${id}`, dnsName: `${id}.lab`, url: `http://127.0.0.1:${port}` });
-const config: PeersConfig = { self: { id: "desk", label: "Desk" }, peers: [peer("vps", 1), peer("phone", 2), peer("new", 3), peer("gone", 4)], sync: {}, frontDoor: null };
-
-interface World {
-  build: BootBuild | null;
-  /** Each peer's hello answer. */
-  probes: Record<string, ProbeResult>;
-  /** Each peer's details commit and activity. */
-  details: Record<string, { commit?: string; turnsRunning: number; workers: number }>;
-  recipes: Map<string, Recipe>;
-  spawned: string[][];
-  /** The fake deploy script's exit code, and whether it hangs. */
-  exit: number;
-  hang?: boolean;
-}
-
-const skewed = (commit?: string): ProbeResult => ({ state: "skewed", hello: { mesh: 1, id: "x", label: "X", hostname: "x", version: "0.1.0", protocol: "0000000000000000", pi: "0", now: 0, ...(commit ? { commit } : {}) } });
-
-function world(over: Partial<World> = {}): World {
-  return {
-    build: { commit: C, protocol: PROTO, dirty: false, verified: true },
-    probes: { vps: skewed(), phone: skewed(A), new: skewed(), gone: { state: "down", error: "ECONNREFUSED" } },
-    details: { vps: { commit: A, turnsRunning: 1, workers: 2 }, phone: { commit: B, turnsRunning: 0, workers: 0 }, new: { commit: D, turnsRunning: 0, workers: 0 } },
-    recipes: new Map<string, Recipe>([
-      ["vps", { kind: "vps", args: [] }],
-      ["phone", { kind: "termux", args: [], ssh: "u@p" }],
-    ]),
-    spawned: [],
-    exit: 0,
-    ...over,
-  };
-}
-
-function service(w: World, logDir = join(tmp, "logs")) {
-  const byUrl = (url: string) => config.peers.find((p) => p.url === url)!.id;
-  return new ResyncService({
-    mesh: {
-      enabled: () => true,
-      config: () => config,
-      self: () => ({ id: "desk", label: "Desk" }),
-      peerFetch: async (id: string) => {
-        const d = w.details[id];
-        if (!d) throw new Error("ECONNREFUSED");
-        const body = { details: 1, identity: {}, versions: { sova: "0.1.0", ...(d.commit ? { commit: d.commit } : {}), pi: "0", node: "v22", protocol: "0" }, activity: { sessions: 1, turnsRunning: d.turnsRunning, workers: d.workers } };
-        return new Response(JSON.stringify(body), { status: 200 });
-      },
-    } as never,
-    root: repo,
-    git: realGit,
-    build: () => w.build,
-    buildChecked: async () => w.build,
-    probe: async (p) => w.probes[p.id]!,
-    hello: async (url) => w.probes[byUrl(url)]!,
-    protocol: () => PROTO,
-    recipes: () => ({ recipes: w.recipes }),
-    logDir: () => logDir,
-    exists: () => true,
-    spawn: (argv) => {
-      w.spawned.push(argv);
-      const script = w.hang ? "setInterval(() => {}, 1000)" : `console.log("deploying"); console.error("to stderr"); process.exit(${w.exit})`;
-      return spawn(process.execPath, ["-e", script], { stdio: ["ignore", "pipe", "pipe"] });
-    },
-    timeouts: { vps: 2_000, termux: 2_000, wait: 300, poll: 20 },
-  });
-}
-
-const until = async (f: () => boolean, ms = 3000) => {
-  const end = Date.now() + ms;
-  while (!f()) {
-    if (Date.now() > end) throw new Error("timed out");
-    await new Promise((r) => setTimeout(r, 10));
-  }
-};
+const { world, service: kitService } = resyncKit(history, fakeScript);
+const service = (w: ReturnType<typeof world>, logDir = join(tmp, "logs"), timeouts?: Parameters<typeof kitService>[2]) => kitService(w, logDir, timeouts);
 
 const json = "application/json";
 
@@ -290,7 +202,10 @@ describe("the service", () => {
     const job = s.job("vps")!;
     assert.match(job.tail, /deploying/);
     assert.match(job.tail, /to stderr/);
-    const log = readFileSync(join(logs, "vps.log"), "utf8");
+    // The log is written through a stream: its last line lands just after the job reads done.
+    const logFile = join(logs, "vps.log");
+    await until(() => readFileSync(logFile, "utf8").includes("# done"));
+    const log = readFileSync(logFile, "utf8");
     assert.match(log, new RegExp(`# resync vps to ${C}`));
     assert.match(log, /deploying/);
     assert.match(log, /# done/);
@@ -318,9 +233,10 @@ describe("the service", () => {
     assert.match(s1.job("vps")!.error!, /exit 3/);
 
     const w2 = world({ hang: true });
-    const s2 = service(w2);
+    // A script that never finishes meets the recipe's limit (shortened here; the reason is the check).
+    const s2 = service(w2, undefined, { vps: 50 });
     await s2.start("vps", { commit: C }, json);
-    await until(() => s2.job("vps")!.state === "failed", 5000);
+    await until(() => s2.job("vps")!.state === "failed");
     assert.match(s2.job("vps")!.error!, /ran past/);
 
     const w3 = world();

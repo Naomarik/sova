@@ -1,22 +1,22 @@
+// Run: pnpm test -- server/mesh/lan-fetch.test.ts
+// agentFetch, fetch over an http.Agent (§mesh.lan/as-a-peer), against an in-process HTTP server that
+// never listens: each connection is an in-process stream pair, as the reverse channel's streams are
+// plain Duplexes in production. Plus which paths the L5 response cap covers. The cap cutting an
+// endless body (it needs a socket's bounded buffers), a connection nobody answers and a real pinned
+// channel's agent: lan-fetch.integration.test.ts.
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
-import { once } from "node:events";
 import http, { type IncomingMessage, type ServerResponse } from "node:http";
-import net, { type AddressInfo } from "node:net";
 import { after, before, test } from "node:test";
-import tls, { type TLSSocket } from "node:tls";
-import { mintLanIdentity } from "./lan-cert";
 import { LIST_MAX_BYTES, PROBE_MAX_BYTES, responseCap } from "./dial";
+import { duplexPair } from "./duplex-pair-test-fixtures";
 import { agentFetch, LAN_HOST } from "./lan-fetch";
-import { connectReverse, serveReverse } from "./lan-reverse";
-import { connectPinned, relayServerOptions } from "./lan-tls";
 
 let server: http.Server;
 let agent: http.Agent;
 let seen: { host?: string; method?: string; len?: number } = {};
-let endlessSent = 0;
 
-before(async () => {
+before(() => {
   server = http.createServer((req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url ?? "/", "http://x");
     seen = { host: req.headers.host, method: req.method };
@@ -40,35 +40,24 @@ before(async () => {
       return; // never ends
     }
     if (url.pathname === "/hang") return;
-    if (url.pathname === "/endless") {
-      res.writeHead(200, { "content-type": "application/json" });
-      const chunk = Buffer.alloc(64 * 1024, 32);
-      const pump = () => {
-        while (!res.destroyed && endlessSent < 64 * 1024 * 1024) {
-          endlessSent += chunk.length;
-          if (!res.write(chunk)) return void res.once("drain", pump);
-        }
-        res.end();
-      };
-      res.on("close", () => {});
-      return pump();
-    }
     res.statusCode = 404;
     res.end();
   });
-  server.listen(0, "127.0.0.1");
-  await once(server, "listening");
-  const port = (server.address() as AddressInfo).port;
-  class To extends http.Agent {
+  // Every connection the agent makes is one end of a pair; the server gets the other, never listening.
+  class InProcess extends http.Agent {
     override createConnection() {
-      return net.connect(port, "127.0.0.1");
+      const [client, served] = duplexPair();
+      Object.assign(served, { remoteAddress: undefined, setTimeout: () => served, setNoDelay: () => served, setKeepAlive: () => served, ref: () => served, unref: () => served });
+      Object.assign(client, { setTimeout: () => client, setNoDelay: () => client, setKeepAlive: () => client, ref: () => client, unref: () => client });
+      server.emit("connection", served);
+      return client as never;
     }
   }
-  agent = new To();
+  agent = new InProcess();
 });
 
 after(() => {
-  server.close();
+  agent.destroy();
   server.closeAllConnections();
 });
 
@@ -111,47 +100,10 @@ test("aborts reject as fetch does: before the answer, and in the middle of a bod
   await assert.rejects(agentFetch(agent, "/json", { signal: pre.signal }), (e: Error) => e.name === "AbortError");
 });
 
-test("L5: a capped body: a declared length past the cap rejects, an endless one is cut at the cap", async () => {
-  // /big declares 4 MiB.
-  await assert.rejects(agentFetch(agent, "/big", undefined, { maxBytes: 1024 * 1024 }), (e: TypeError & { cause?: { code?: string } }) => e instanceof TypeError && e.cause?.code === "too large");
-  // /endless streams chunked with no length, without end.
-  const res = await agentFetch(agent, "/endless", undefined, { maxBytes: 256 * 1024 });
-  assert.equal(res.status, 200);
-  await assert.rejects(res.arrayBuffer(), (e: TypeError & { cause?: { code?: string } }) => e.cause?.code === "too large");
-  assert.ok(endlessSent < 64 * 1024 * 1024, "the stream was cut, not read to the end");
-  // Under the cap, whole.
-  assert.equal((await (await agentFetch(agent, "/big", undefined, { maxBytes: 4 * 1024 * 1024 })).arrayBuffer()).byteLength, 4 * 1024 * 1024);
-});
-
 test("L5: a pairing's probes and session lists are capped; other paths aren't", () => {
   assert.equal(responseCap("/api/peer/hello"), PROBE_MAX_BYTES);
   assert.equal(responseCap("/api/peer/details?x=1"), PROBE_MAX_BYTES);
   assert.equal(responseCap("/api/sessions"), LIST_MAX_BYTES);
   assert.equal(responseCap("/api/sessions", { SOVA_MESH_LIST_MAX_BYTES: "1000" }), 1000);
   assert.equal(responseCap("/api/peer/sync/doc"), undefined);
-});
-
-test("nobody there: a TypeError, as fetch's", async () => {
-  class Dead extends http.Agent {
-    override createConnection() {
-      return net.connect(1, "127.0.0.1");
-    }
-  }
-  await assert.rejects(agentFetch(new Dead(), "/json"), TypeError);
-});
-
-test("over a real pinned channel's agent", async () => {
-  const relayId = mintLanIdentity();
-  const host = mintLanIdentity();
-  const srv = tls.createServer(relayServerOptions(relayId));
-  const client = new Promise<Awaited<ReturnType<typeof connectReverse>>>((resolve) => srv.once("secureConnection", (s: TLSSocket) => void connectReverse(s).then(resolve)));
-  srv.listen(0, "127.0.0.1");
-  await once(srv, "listening");
-  const sock = await connectPinned(host, relayId.pin, "127.0.0.1", (srv.address() as AddressInfo).port, "answer");
-  const side = serveReverse(sock, (d) => server.emit("connection", d));
-  const c = await client;
-  assert.deepEqual(await (await agentFetch(c.agent, "/json?q=via")).json(), { q: "via" });
-  c.close();
-  await side.closed;
-  srv.close();
 });

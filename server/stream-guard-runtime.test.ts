@@ -1,16 +1,18 @@
 // Run: pnpm exec tsx --test server/stream-guard-runtime.test.ts. A throwaway PI_CODING_AGENT_DIR
-// whose models.json registers a local stub endpoint (server/stream-stub.ts) through pi's real
-// openai-completions provider; ~/.pi is never read or written and no real model is called.
+// whose models.json registers a stub endpoint (server/stream-stub.ts, in-process: fetch answers its
+// URL, no socket) through pi's real openai-completions provider; ~/.pi is never read or written and
+// no real model is called. What the guard costs the loop is measured over a real socket in
+// stream-guard-runtime.integration.test.ts; here, the mechanism: where it trips, what it stops.
 import assert from "node:assert/strict";
 import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { monitorEventLoopDelay } from "node:perf_hooks";
 import { after, before, describe, test } from "node:test";
 import { Hono } from "hono";
 import { BATON_SENT_ENTRY } from "../shared/baton";
-import { startStreamStub, stubModelsJson } from "./stream-stub";
+import { inProcessStreamStub, stubModelsJson } from "./stream-stub";
 import { piSession } from "./harness/pi/testing/handle";
+import { until } from "./test-wait";
 
 // Only the stub may answer: no provider key from the environment makes a real model available.
 for (const k of Object.keys(process.env)) if (/_API_KEY$|_AUTH_TOKEN$/.test(k)) delete process.env[k];
@@ -22,8 +24,8 @@ const agentDir = join(root, "agent");
 process.env.PI_CODING_AGENT_DIR = agentDir;
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 // Before the model runtime exists (it is memoised): the stub is the only model there is.
-const stub = await startStreamStub({ payload: "whitespace", perDelta: 6 });
-writeFileSync(join(agentDir, "models.json"), JSON.stringify(stubModelsJson(stub.port)));
+const stub = inProcessStreamStub({ payload: "whitespace", perDelta: 6 });
+writeFileSync(join(agentDir, "models.json"), JSON.stringify(stubModelsJson(stub.baseUrl)));
 
 const orgs = await import("./orgs");
 const { replyEnded } = await import("./org-test-fixtures");
@@ -55,47 +57,11 @@ function ordinarySession(): string {
   return canonicalPath(file);
 }
 
-/**
- * Loop liveness while `fn` runs: the loop-delay histogram's max, the longest gap of a 10 ms
- * interval, and `worstMs`, the larger of the two. The histogram samples on its own timer and can
- * miss a short window entirely (max 0); the interval's gap can't.
- */
-async function liveness<T>(fn: () => Promise<T>): Promise<{ value: T; maxDelayMs: number; maxGapMs: number; worstMs: number; ticks: number; ms: number }> {
-  const h = monitorEventLoopDelay({ resolution: 10 });
-  let last = performance.now();
-  let maxGap = 0;
-  let ticks = 0;
-  const iv = setInterval(() => {
-    const now = performance.now();
-    maxGap = Math.max(maxGap, now - last);
-    last = now;
-    ticks++;
-  }, 10);
-  h.enable();
-  const t0 = performance.now();
-  try {
-    const value = await fn();
-    const now = performance.now();
-    maxGap = Math.max(maxGap, now - last);
-    return { value, maxDelayMs: h.max / 1e6, maxGapMs: maxGap, worstMs: Math.max(h.max / 1e6, maxGap), ticks, ms: now - t0 };
-  } finally {
-    h.disable();
-    clearInterval(iv);
-  }
-}
-
 const lastAssistant = (chat: Awaited<ReturnType<typeof acquireChat>>) =>
   [...piSession(chat).sessionManager.getBranch()].reverse().find((e: any) => e.type === "message" && e.message?.role === "assistant") as any;
 
-/** Numbers for the report, printed once. */
-const evidence: Record<string, unknown> = {};
-after(() => console.log(`[stream-guard evidence] ${JSON.stringify(evidence)}`));
-
-describe("the stream guard against a runaway stream (real provider path, local stub)", () => {
-  let guarded: { worstMs: number } | null = null;
-
-  // One ordinary turn first: the provider's modules load lazily on the first request, and that
-  // one-time stall is not the stream's.
+describe("the stream guard against a runaway stream (real provider path, in-process stub)", () => {
+  // One ordinary turn first: the provider's modules load lazily on the first request.
   before(async () => {
     stub.reset({ payload: "letters", perDelta: 16, limit: 64, tool: "no_such_tool" });
     const chat = await acquireChat(ordinarySession(), true);
@@ -104,65 +70,38 @@ describe("the stream guard against a runaway stream (real provider path, local s
     assert.equal(stub.stats.finished, true);
   });
 
-  test("an ordinary chat: endless whitespace in a tool call is stopped at the whitespace cap, and the loop stays live", async () => {
-    // Three runs, each a fresh session. Every run must stop exactly so; the loop's liveness is the
-    // best of the three, because a parallel test run only ever adds delay (a guard that didn't
-    // trip stalls for seconds in every run). The stall that remains is pi's own parse up to the
-    // cap (O(cap²/delta), measured ~50 ms of a ~100 ms block at 16 characters per delta) and the
-    // abort itself; the guard's own work is a few ms.
-    const runs: Awaited<ReturnType<typeof liveness>>[] = [];
-    for (let attempt = 0; attempt < 3; attempt++) {
-      stub.reset({ payload: "whitespace", perDelta: 16 });
-      const chat = await acquireChat(ordinarySession(), true);
-      await chat.setModelRef("stub/runaway");
-      const errors: string[] = [];
-      chat.clients.add({ send: (m: any) => m.type === "error" && errors.push(m.message) } as never);
-      const r = await liveness(async () => {
-        const { turn } = chat.acceptPrompt("go");
-        await Promise.race([turn, new Promise((_, rej) => setTimeout(() => rej(new Error("turn did not settle in 5 s")), 5000))]);
-      });
-      // The socket closes a moment after the turn settles (the SDK's reader cancels on abort).
-      for (let i = 0; i < 100 && stub.stats.closedAt === null; i++) await new Promise((res) => setTimeout(res, 20));
-      runs.push(r);
-      assert.ok(r.ms < 5000, `settled in ${r.ms} ms`);
-      assert.equal(lastAssistant(chat)?.message?.stopReason, "aborted");
-      assert.equal(chat.lastStreamTrip?.kind, "whitespace");
-      assert.equal(chat.lastStreamTrip?.chars, 8192);
-      assert.deepEqual(errors, ["Stopped the turn: the model streamed 8,192 whitespace characters in a row into a tool call."]);
-      assert.equal(stub.stats.requests, 1, "no automatic retry after the stop");
-      assert.notEqual(stub.stats.closedAt, null, "the abort reached the stub's socket");
-      assert.equal(stub.stats.finished, false);
-      const sent = stub.stats.argChars;
-      await new Promise((res) => setTimeout(res, 200));
-      assert.equal(stub.stats.argChars, sent, "and the stub stopped sending");
-      assert.ok(sent < 4 * 1024 * 1024, `bounded: ${sent} characters sent (socket buffers included)`);
-      evidence.guarded ??= [];
-      (evidence.guarded as unknown[]).push({ turnMs: Math.round(r.ms), argCharsSent: sent, maxDelayMs: +r.maxDelayMs.toFixed(1), maxGapMs: +r.maxGapMs.toFixed(1), ticks: r.ticks });
-    }
-    const best = runs.reduce((a, b) => (b.worstMs < a.worstMs ? b : a));
-    guarded = best;
-    assert.ok(best.worstMs < 250, `loop delay max ${best.maxDelayMs} ms, 10 ms interval's longest gap ${best.maxGapMs} ms (best of 3)`);
+  test("an ordinary chat: endless whitespace in a tool call is stopped at exactly the whitespace cap, and the stub stops sending", async () => {
+    stub.reset({ payload: "whitespace", perDelta: 16 });
+    const chat = await acquireChat(ordinarySession(), true);
+    await chat.setModelRef("stub/runaway");
+    const errors: string[] = [];
+    chat.clients.add({ send: (m: any) => m.type === "error" && errors.push(m.message) } as never);
+    await chat.acceptPrompt("go").turn;
+    await stub.closed(); // the abort reached the stub (its body was cancelled)
+    assert.equal(lastAssistant(chat)?.message?.stopReason, "aborted");
+    assert.equal(chat.lastStreamTrip?.kind, "whitespace");
+    assert.equal(chat.lastStreamTrip?.chars, 8192);
+    assert.deepEqual(errors, ["Stopped the turn: the model streamed 8,192 whitespace characters in a row into a tool call."]);
+    assert.equal(stub.stats.requests, 1, "no automatic retry after the stop");
+    assert.equal(stub.stats.finished, false);
+    const sent = stub.stats.argChars;
+    await new Promise((r) => setImmediate(r));
+    assert.equal(stub.stats.argChars, sent, "and the stub stopped sending");
+    // The stub makes its body only as the reader pulls it: what was sent is what pi read, so the
+    // stall pi's parse can cause is bounded by the cap's work, not by the stream's length.
+    assert.ok(sent < 64 * 1024, `bounded: ${sent} characters sent`);
   });
 
-  test("control, with the caps raised: the same stub, finite (192 K), makes the loop materially worse", async () => {
-    assert.ok(guarded, "runs after the guarded case");
+  test("control, with the caps raised: the same stub, finite (16 K), runs to its end untripped", async () => {
     setStreamCapsForTest({ whitespaceRunChars: Infinity, toolArgChars: Infinity, starvedMs: Infinity });
     try {
-      stub.reset({ payload: "whitespace", perDelta: 128, limit: 192 * 1024, tool: "no_such_tool" });
+      stub.reset({ payload: "whitespace", perDelta: 128, limit: 16 * 1024, tool: "no_such_tool" });
       const chat = await acquireChat(ordinarySession(), true);
       await chat.setModelRef("stub/runaway");
-      const r = await liveness(async () => {
-        const { turn } = chat.acceptPrompt("go");
-        await turn;
-      });
-      evidence.control = { turnMs: Math.round(r.ms), argCharsSent: stub.stats.argChars, maxDelayMs: +r.maxDelayMs.toFixed(1), maxGapMs: +r.maxGapMs.toFixed(1), ticks: r.ticks };
+      await chat.acceptPrompt("go").turn;
       assert.equal(stub.stats.finished, true, "the stream ran to its end: nothing stopped it");
+      assert.ok(stub.stats.argChars >= 16 * 1024, "past the cap that would have tripped");
       assert.equal(chat.lastStreamTrip, null);
-      assert.ok(guarded!.worstMs > 0);
-      // Against the guarded runs' worst, not their best: the ratio can't come from picking.
-      const guardedWorst = Math.max(...(evidence.guarded as { maxDelayMs: number; maxGapMs: number }[]).map((g) => Math.max(g.maxDelayMs, g.maxGapMs)));
-      assert.ok(r.worstMs >= 4 * guardedWorst, `control's worst stall ${r.worstMs} ms vs guarded runs' worst ${guardedWorst} ms`);
-      assert.ok(r.worstMs >= 500, `the stub reproduces the harm: ${r.worstMs} ms`);
     } finally {
       setStreamCapsForTest(null);
     }
@@ -191,7 +130,7 @@ describe("the stream guard against a runaway stream (real provider path, local s
     });
     /** The statechart's wrap-up row once its run ended. */
     const settled = async () => {
-      for (let i = 0; i < 800 && baton.batonById(c.sessionId)!.row.wrapup?.state !== "failed" && baton.batonById(c.sessionId)!.row.wrapup?.state !== "done"; i++) await new Promise((r) => setTimeout(r, 10));
+      await until(() => ["failed", "done"].includes(baton.batonById(c.sessionId)!.row.wrapup?.state ?? ""), "the wrap-up's run to end");
       return baton.batonById(c.sessionId)!.row.wrapup;
     };
 
@@ -201,7 +140,6 @@ describe("the stream guard against a runaway stream (real provider path, local s
       await baton.markDone(c.sessionId);
       const info = await settled();
       const chat = await acquireChat(c.path);
-      evidence.baton = { argCharsSent: stub.stats.argChars, trip: chat.lastStreamTrip, wrapup: info };
       assert.equal(chat.lastStreamTrip?.kind, "tool-args");
       assert.equal(info?.state, "failed", "never left running");
       assert.equal(info?.error, "A tool call's arguments passed 65,536 characters, so the stream guard ended the turn.");
@@ -216,11 +154,8 @@ describe("the stream guard against a runaway stream (real provider path, local s
       assert.equal(res.status, 200);
       const body = (await res.json()) as { session: { wrapup?: { state: string } } };
       assert.ok(body.session.wrapup && body.session.wrapup.state !== "failed", `answers with the new run (${body.session.wrapup?.state})`);
-      let row = baton.batonById(c.sessionId)!.row;
-      for (let i = 0; i < 200 && row.wrapup?.state === "running"; i++) {
-        await new Promise((r) => setTimeout(r, 25));
-        row = baton.batonById(c.sessionId)!.row;
-      }
+      await until(() => baton.batonById(c.sessionId)!.row.wrapup?.state !== "running", "the retried run to end");
+      const row = baton.batonById(c.sessionId)!.row;
       // The stub's update names no roster person, so it is refused: the run itself ended normally.
       assert.equal(row.wrapup?.state, "done");
       assert.equal(row.wrapup?.refused.length, 1);
@@ -243,11 +178,11 @@ describe("the stream guard against a runaway stream (real provider path, local s
     const row = () => baton.batonById(c.sessionId)!.row;
     /** Resolve once the wrap-up's request reached the stub. */
     const requested = async () => {
-      for (let i = 0; i < 400 && stub.stats.requests === 0; i++) await new Promise((r) => setTimeout(r, 10));
+      await until(() => stub.stats.requests > 0, "the wrap-up's request");
       assert.equal(stub.stats.requests, 1, "the wrap-up's request reached the model");
     };
     const settledRow = async () => {
-      for (let i = 0; i < 400 && row().wrapup?.state === "running"; i++) await new Promise((r) => setTimeout(r, 10));
+      await until(() => row().wrapup?.state !== "running", "the wrap-up's run to end");
       return row().wrapup;
     };
 
@@ -305,7 +240,7 @@ describe("the stream guard against a runaway stream (real provider path, local s
       stub.reset({ payload: "letters", perDelta: 16, pauseMs: 20 });
       const res = await app.request(`/api/baton/${c.sessionId}/wrapup/retry`, { method: "POST" });
       assert.equal(res.status, 200);
-      for (let i = 0; i < 400 && stub.stats.startedAt === null; i++) await new Promise((r) => setTimeout(r, 10));
+      await until(() => stub.stats.startedAt !== null, "the stream's start");
       recovery.markShutdown();
       await piSession(await acquireChat(c.path)).abort();
       const w = await settledRow();

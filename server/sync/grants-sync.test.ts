@@ -171,8 +171,11 @@ test("logins: a key a host takes from one peer goes on to another at its next ex
     await a.key("lab-held", "sk-held");
     await a.sync.syncWith(a.peerTo(c));
     assert.equal(c.auth()["lab-keep"]?.key, "sk-keep");
-    await new Promise((r) => setTimeout(r, 400)); // C's watcher and any debounced sync have fired
-    assert.equal(b.auth()["lab-keep"], undefined, "taking a key schedules no onward push");
+    // What C's watcher does on its own write, run here rather than waited for: it finds nothing new,
+    // so no onward sync is scheduled.
+    await c.sync.observe("pi");
+    assert.equal((c.sync as unknown as { syncTimer?: unknown }).syncTimer, undefined, "taking a key schedules no onward push");
+    assert.equal(b.auth()["lab-keep"], undefined, "B has nothing from it");
     await c.sync.syncAll(); // C's next exchange
     assert.equal(b.auth()["lab-keep"]?.key, "sk-keep");
     await converge(hosts);

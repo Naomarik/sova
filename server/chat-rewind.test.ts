@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import type { ChatServerMessage } from "../shared/protocol";
+import { until as waitUntil } from "./test-wait";
 
 const agentDir = realpathSync(mkdtempSync(join(tmpdir(), "sova-rewind-test-")));
 // A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
@@ -218,7 +219,7 @@ describe("a rewind through a real chat runtime", () => {
     theirs.length = 0;
 
     chat.handle(me, { type: "rewind", id: "r1", entryId: "u2" });
-    for (let i = 0; i < 50 && !mine.some((m) => m.type === "rewound" || m.type === "rewind_refused"); i++) await new Promise((r) => setTimeout(r, 20));
+    await waitUntil(() => mine.some((m) => m.type === "rewound" || m.type === "rewind_refused"));
 
     // The worker set did not change, and still follows the hello that blanked it client-side.
     assert.deepEqual(theirs.map((m) => m.type), ["hello", "workers", "mode", "claude_login"]);
@@ -257,7 +258,7 @@ describe("a rewind through a real chat runtime", () => {
     chat.attach(me);
     sent.length = 0;
     chat.handle(me, { type: "rewind", id: "r2", entryId: "u1" });
-    for (let i = 0; i < 50 && !sent.some((m) => m.type === "rewound" || m.type === "rewind_refused"); i++) await new Promise((r) => setTimeout(r, 20));
+    await waitUntil(() => sent.some((m) => m.type === "rewound" || m.type === "rewind_refused"));
 
     assert.deepEqual(sent.at(-1), { type: "rewound", id: "r2", entryId: "u1", editorText: "first ask" });
     assert.deepEqual(talk(sent[0]), []); // nothing left to say

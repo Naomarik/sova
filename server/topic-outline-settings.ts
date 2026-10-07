@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { agentRoot } from "./state-root";
+import { canonicalClaudeId, latestClaude } from "../pi-config/extensions/claude-code/catalog.ts";
 import type { SummarizerBackend, SummarizerChoice, SummarizerSettings, SummarizerSettingsInfo } from "../shared/protocol";
 
 /**
@@ -10,8 +11,8 @@ import type { SummarizerBackend, SummarizerChoice, SummarizerSettings, Summarize
  * the file's other keys (trigger, limits, claudeBin, share*, and each kept summarizer's timeoutMs
  * / maxBudgetUsd) belong to the user and are written back exactly as they were.
  *
- * Nothing here is imported from pi-config: the extension's rules are small, and mirrored below
- * with a pointer to the original. The extension reads `join(homedir(), ".pi/agent")`; this uses
+ * Only the Claude catalog is imported from pi-config (claude-code/catalog.ts, which imports
+ * nothing): the extension's other rules are small, and mirrored below with a pointer to the original. The extension reads `join(homedir(), ".pi/agent")`; this uses
  * the agent dir, which is the same folder unless PI_CODING_AGENT_DIR isolates a test server.
  */
 export const topicOutlineFile = () => join(agentRoot(), "topic-outline.json");
@@ -26,7 +27,7 @@ const BACKENDS: readonly SummarizerBackend[] = ["claude-code", "pi"];
  */
 const DEFAULT_SUMMARIZERS: Record<string, unknown>[] = [
   { backend: "pi", model: "ollama-cloud/deepseek-v4.1-flash", timeoutMs: 60_000 },
-  { backend: "claude-code", model: "sonnet", timeoutMs: 45_000, maxBudgetUsd: 0.05 },
+  { backend: "claude-code", model: latestClaude("sonnet").id, timeoutMs: 45_000, maxBudgetUsd: 0.05 },
 ];
 
 const isRecord = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
@@ -46,9 +47,12 @@ function usableEntries(value: unknown): Record<string, unknown>[] | undefined {
   return out.length ? out : undefined;
 }
 
+/** An entry's model, an old Claude id read as its catalog model. */
+const modelOf = (entry: Record<string, unknown>): string =>
+  entry.backend === "claude-code" ? canonicalClaudeId(entry.model as string) : (entry.model as string);
 const choiceOf = (entry: Record<string, unknown>): SummarizerChoice => ({
   backend: entry.backend as SummarizerBackend,
-  model: entry.model as string,
+  model: modelOf(entry),
 });
 
 const toSettings = (chain: Record<string, unknown>[]): SummarizerSettings => ({
@@ -130,7 +134,8 @@ function parseChoice(raw: unknown, slot: string): SummarizerChoice | { error: st
   } else if (model.includes("/") || model.startsWith("-")) {
     return { error: `${slot}.model must be a Claude Code model alias or id (no "/", no leading "-")` };
   }
-  return { backend: backend as SummarizerBackend, model };
+  // An old Claude id reads as its catalog model, and a save writes that (§app.claude-code-provider/legacy-ids).
+  return { backend: backend as SummarizerBackend, model: backend === "claude-code" ? canonicalClaudeId(model) : model };
 }
 
 /**
@@ -150,12 +155,12 @@ export function writeSummarizerSettings(raw: unknown, file = topicOutlineFile())
 
   const { chain: current } = effectiveChain(stored);
   const used = new Set<Record<string, unknown>>();
-  const match = (e: Record<string, unknown>, choice: SummarizerChoice) => e.backend === choice.backend && e.model === choice.model;
+  const match = (e: Record<string, unknown>, choice: SummarizerChoice) => e.backend === choice.backend && modelOf(e) === choice.model;
   const entryFor = (choice: SummarizerChoice): Record<string, unknown> => {
     const kept = current.find((e) => !used.has(e) && match(e, choice));
     if (kept) {
       used.add(kept);
-      return { ...kept };
+      return { ...kept, model: choice.model };
     }
     // A default model picked back (Reset to Defaults, or by hand) comes back as the default entry.
     const builtIn = DEFAULT_SUMMARIZERS.find((e) => match(e, choice));

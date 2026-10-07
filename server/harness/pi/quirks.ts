@@ -320,6 +320,7 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     where: [
       { file: OPEN, symbol: "recordedModelForEmptyBranch" },
       { file: OPEN, symbol: "modelForSessionOpen" },
+      { file: OPEN, symbol: "legacyClaudeModelForOpen" },
     ],
     canary: "P20 model-restore-gate: the SDK restores a recorded model only when the branch has messages",
     retireWhen: "pi restores a recorded model on any branch",

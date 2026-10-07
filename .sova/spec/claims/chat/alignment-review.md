@@ -122,7 +122,7 @@ alignments with a reviewer", off = None, "No review.").
 
 **Seeding.** The first time Settings → Experimental saves the switch on, every library profile with
 no `reviewer` key gets the default: primary pi · `openai-codex/gpt-6.1-sol` · high, fallback
-claude-code · `opus[1m]` · high. A profile with `reviewer: null` (None) or a route of its own is
+claude-code · `claude-opus-5-5` (Opus 5.5, the catalog's current Opus) · high. A profile with `reviewer: null` (None) or a route of its own is
 never touched. It is written through the library's own atomic writer, so the mesh syncs it like any
 save; a malformed library is left alone and the seeding waits for a later save. Sova's settings
 remember that it ran (`seeded`), so turning the switch off and on again seeds nothing, and a run

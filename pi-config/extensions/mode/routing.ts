@@ -6,12 +6,10 @@
  * apart on purpose:
  * - Discovery that FAILED (CLI missing, timeout, unauthenticated) says nothing about a model, so
  *   the tuple stays in use as "unverified"; only a successful discovery that does not list the
- *   model, or lists it without that effort, makes it unavailable. One exception, claude-code: the
- *   CLI's initialize model list is remote and account-gated, and alternates within minutes between
- *   a shape that carries the `[1m]` aliases and one that does not, while the CLI accepts a valid
- *   alias at runtime either way. So a shape-valid Claude alias missing from a successful list is
- *   weak evidence: "unverified", used as is, never "absent". pi's registry is local and reliable:
- *   there a missing model stays absent.
+ *   model, or lists it without that effort, makes it unavailable. One exception, claude-code: its
+ *   list is Sova's Claude catalog (claude-code/catalog.ts), and a shape-valid Claude id the catalog
+ *   doesn't know is "unverified", used as is, never "absent" (a model can ship before the catalog
+ *   lists it). pi's registry is local and reliable: there a missing model stays absent.
  * - The model policy (model-policy.json) is still enforced by subagents at spawn. Here it only
  *   decides that a denied tuple is not the one to name, and the denial is carried through to the
  *   status and the prompt so the reroute is never silent.
@@ -63,7 +61,7 @@ export function assess(choice: WorkerChoice, discovery: Discovery | undefined, d
 	}
 	const model = discovery.models.find((m) => m.id === choice.model);
 	if (!model && choice.backend === "claude-code" && modelShapeError(choice.backend, choice.model) === null)
-		return { choice, availability: "unverified", reason: `${choice.model} is not in the Claude Code CLI's current model list (the list varies; the CLI accepts a valid alias at runtime)` };
+		return { choice, availability: "unverified", reason: `${choice.model} is not in Sova's Claude catalog; it will still be used` };
 	if (!model) return { choice, availability: "absent", reason: `${choice.model} is not offered by ${choice.backend}` };
 	const efforts = effectiveEfforts(choice.backend, model.efforts);
 	if (!efforts.includes(choice.effort))

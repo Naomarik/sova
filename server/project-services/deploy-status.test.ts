@@ -8,15 +8,17 @@ import { parseDefinition, type VerbResult } from "../../shared/project-contract"
 import { approveDeployRecipe, Deployer, deployAttention, deployNotes } from "./deploy";
 import { deployItems } from "./deploy-attention";
 import { deployReview } from "./deploy-trust";
-import { DetachedDriver } from "./drivers";
 import { ProjectEngine, type Caller } from "./engine";
+import { FakeHost } from "./fake-host";
 import { hostVarsFile } from "./store";
 
 /**
  * deploy.status, deploy.logs, deploy.rollback and deploy.request (§app.project-services/deploy-status):
  * the history per target, the redacted log, a rollback the way the target declares it, an overseer's
  * request, and the act-tier attention items a failed deploy and a request make. Fake target: a local
- * folder; a bare local remote; no verify server needed (these targets declare none).
+ * folder; a bare local remote; no verify server needed (these targets declare none). The request on a
+ * host in memory (fake-host.ts: its plan's checks are the fake driver's runs); the deploys themselves run
+ * in deploy-status.integration.test.ts.
  */
 
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-deploy-status-agent-"));
@@ -86,61 +88,9 @@ before(async () => {
   writeFileSync(hostVarsFile(), JSON.stringify({ version: 1, projects: { [project]: { TARGET_DIR: target, DEPLOY_TOKEN: TOKEN } } }));
   const review = deployReview(project, parseDefinition(JSON.stringify(DEF)).deploy!, "main");
   await approveDeployRecipe(project, review.deployHash, "HEAD", review.keys);
-  deployer = new Deployer(new ProjectEngine({ driver: new DetachedDriver() }), { watchMs: 50 });
+  deployer = new Deployer(new ProjectEngine(new FakeHost().deps()), { watchMs: 50 });
 });
 after(() => rmSync(parent, { recursive: true, force: true }));
-
-test("status keeps each target's history; logs read the redacted log; redeploy-previous ships the last verified commit before", async () => {
-  const v1 = commitPush("v1");
-  await ship("prod");
-  const v2 = commitPush("v2");
-  await ship("prod");
-  assert.equal(readFileSync(join(target, "version"), "utf8"), v2);
-  const st = await deployer.run("deploy.status", { project, target: "prod" }, { kind: "session", id: "s", root: project, own: [] });
-  assert.equal(st.error, undefined, "a session reads its project's deploys");
-  const prod = st.deploy!.targets![0]!;
-  assert.deepEqual([prod.last!.commit, prod.last!.state, prod.verifiedCommit, prod.standing], [v2, "succeeded", v2, "approved"]);
-  assert.deepEqual(st.deploy!.history!.map((h) => h.commit), [v2, v1]);
-  const logs = await deployer.run("deploy.logs", { project, target: "prod" }, op);
-  assert.ok(logs.lines!.some((l) => l.service === "steps.ship" && l.text === "using [redacted:DEPLOY_TOKEN]"), JSON.stringify(logs.lines));
-  assert.ok(!JSON.stringify(logs).includes(TOKEN));
-  assert.equal((await deployer.run("deploy.rollback", { project, target: "prod" }, op)).error?.code, "needs-confirm");
-  assert.equal((await deployer.run("deploy.rollback", { project, target: "prod", confirm: true }, overseer)).error?.code, "forbidden");
-  const back = await deployer.run("deploy.rollback", { project, target: "prod", confirm: true }, op);
-  assert.equal(back.error, undefined, back.error?.message);
-  assert.equal(back.deploy!.record!.kind, "rollback");
-  assert.equal(back.deploy!.record!.commit, v1);
-  assert.equal((await deployer.settled(back.deploy!.record!.id, 30_000))!.state, "succeeded");
-  assert.equal(readFileSync(join(target, "version"), "utf8"), v1, "the previous verified commit is live again");
-  // The note is the watcher's, a tick after the record ends.
-  for (let i = 0; i < 100 && !deployNotes(project)[0]!.line.startsWith("Rolled back"); i++) await new Promise((ok) => setTimeout(ok, 50));
-  assert.match(deployNotes(project)[0]!.line, new RegExp(`^Rolled back ${v1.slice(0, 7)} to prod\\.$`));
-});
-
-test("rollback: a target's own steps run at the commit it runs; one that can't be undone says why", async () => {
-  await ship("undo");
-  const r = await deployer.run("deploy.rollback", { project, target: "undo", confirm: true }, op);
-  assert.equal(r.error, undefined, r.error?.message);
-  assert.deepEqual(r.deploy!.plan!.steps.map((s) => s.key), ["rollback.back"]);
-  await deployer.settled(r.deploy!.record!.id, 30_000);
-  assert.ok(existsSync(join(target, "rolled-back")));
-  const never = await deployer.run("deploy.rollback", { project, target: "never", confirm: true }, op);
-  assert.equal(never.error?.code, "unsupported");
-  assert.equal(never.error!.message, "never can't be rolled back: The schema migrates forward only.");
-});
-
-test("a failed deploy is an act-tier item until a later deploy of the target succeeds", async () => {
-  const r = await ship("bad");
-  const rec = (await deployer.run("deploy.status", { project, target: "bad" }, op)).deploy!.targets![0]!.last!;
-  assert.deepEqual([rec.state, rec.detail], ["failed", "steps.ship exited with 3"]);
-  assert.equal(rec.id, r.deploy!.record!.id);
-  const facts = deployAttention().filter((a) => a.root === project);
-  assert.deepEqual(facts.map((f) => [f.kind, f.target]), [["deploy-failed", "bad"]]);
-  const items = deployItems(facts, () => ({ id: "p1", name: "Site" }));
-  assert.deepEqual([items[0]!.tier, items[0]!.kind, items[0]!.path, items[0]!.href], ["act", "deploy-failed", "", "#/projects/p1"]);
-  assert.match(items[0]!.detail!, /^Deploy of [0-9a-f]{7} to bad failed: steps\.ship exited with 3$/);
-  assert.match((await deployer.run("deploy.logs", { project, deploy: rec.id }, op)).lines!.map((l) => l.text).join("\n"), /the target refused/);
-});
 
 test("deploy.request: an overseer's ask (never a deploy), one per target; the operator's plan or dismiss clears it", async () => {
   const session: Caller = { kind: "session", id: "s", root: project, own: [] };

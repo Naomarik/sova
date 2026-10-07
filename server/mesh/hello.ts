@@ -6,7 +6,7 @@ import { DENIED, type PeerStateView } from "../../shared/mesh-access";
 import type { MeshBuildHello } from "../../shared/mesh-resync";
 import type { AdvertisedGateway, MeshHelloPublic, ShareGatewayHello } from "../../shared/public-links";
 import { gatewayPublicUrl, isPublicUrl } from "../share/registry";
-import { fetchPeer, peerKey } from "./dial";
+import { fetchPeer, peerKey, urlFetch } from "./dial";
 import { type PeerEntry, readPeers } from "./peers";
 
 // Hello: who a Sova host is and which wire contract it speaks. The fingerprint and the package
@@ -122,7 +122,7 @@ export const answered = (probe: ProbeResult): boolean => probe.state === "up" ||
 /** GET <base>/api/peer/hello, classified (`base` a URL, or how to fetch a path from the peer). Never throws. */
 export async function probeHello(base: string | ((path: string, init: RequestInit) => Promise<Response>)): Promise<ProbeResult> {
   const t0 = performance.now();
-  const get = typeof base === "string" ? (path: string, init: RequestInit) => fetch(`${base}${path}`, init) : base;
+  const get = typeof base === "string" ? (path: string, init: RequestInit) => urlFetch(`${base}${path}`, init) : base;
   try {
     const res = await get("/api/peer/hello", { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
     if (res.status === 403 && res.headers.get(REFUSED_HEADER) === "refused") {

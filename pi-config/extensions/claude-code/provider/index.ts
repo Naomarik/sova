@@ -15,10 +15,8 @@
  */
 import type { ExtensionAPI, ProviderModelConfig } from "@earendil-works/pi-coding-agent";
 import type { ThinkingLevelMap } from "@earendil-works/pi-ai";
-import { claudeContextWindow, withLongContextVariants } from "../context-window.ts";
-import { discoverClaudeModels } from "../models.ts";
+import { claudeContextWindow, claudeModel, claudeOffer, resolveClaude } from "../catalog.ts";
 import { CLAUDE_LOGIN_ENTRY, hostLogins, recordedLogin } from "../accounts.ts";
-import type { BackendModel } from "../../subagents/contracts.ts";
 import { registerAutoCompact } from "./auto-compact.ts";
 import { CLAUDE_LOGIN_COMMAND, pickChatLogin } from "./login-command.ts";
 import { getSessionBridge } from "./session-bridge.ts";
@@ -31,9 +29,6 @@ export const CLAUDE_PROVIDER_ID = "claude-code-cli";
 export const CLAUDE_PROVIDER_BASE_URL = "claude-code-cli://local";
 /** registerProvider throws without a key; a literal resolves as configured. */
 export const CLAUDE_PROVIDER_API_KEY = "unused";
-
-/** The CLI's own `--effort` ladder, as reported by its initialize response. */
-const CLI_EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
 
 /** pi's thinking ladder mapped onto `--effort`; unsupported levels are null. */
 function thinkingLevelMap(efforts: readonly string[]): ThinkingLevelMap {
@@ -49,13 +44,14 @@ function thinkingLevelMap(efforts: readonly string[]): ThinkingLevelMap {
 	};
 }
 
+/** The catalog's output cap; 64k for an id it doesn't know. */
 function maxTokensFor(id: string): number {
-	return id.startsWith("haiku") ? 32_000 : 64_000;
+	return resolveClaude(id)?.maxOutput ?? 64_000;
 }
 
-/** One model definition, shared by the static list and refreshModels. */
-export function toProviderModel(model: { id: string; name: string; efforts?: string[]; resolvedModel?: string }): ProviderModelConfig {
-	const efforts = model.efforts ?? [];
+/** One model definition: a catalog entry's, or (tests) any id's. */
+export function toProviderModel(model: { id: string; name: string; efforts?: readonly string[]; resolvedModel?: string }): ProviderModelConfig {
+	const efforts = [...(model.efforts ?? claudeModel(model.id)?.efforts ?? [])];
 	return {
 		id: model.id,
 		name: model.name,
@@ -72,34 +68,15 @@ export function toProviderModel(model: { id: string; name: string; efforts?: str
 }
 
 /**
- * Baked-in catalog, matching the ids and names the installed CLI reports from
- * `initialize` (probed 2026-09-22, claude 2.1.278). No subprocess runs at load;
- * `refreshModels` replaces this with the live list when pi allows network work.
- * The `default` alias is deliberately left out: it silently changes model.
+ * Sova's Claude catalog (catalog.ts, §app.claude-code-provider/catalog): one model per real model,
+ * named as the CLI names it, with no aliases and no `[1m]` forms. No subprocess runs, ever: the CLI's
+ * own list never adds, removes or renames one.
  */
-export const STATIC_MODELS: ProviderModelConfig[] = [
-	toProviderModel({ id: "claude-fable-5-1[1m]", name: "Fable", efforts: [...CLI_EFFORTS] }),
-	toProviderModel({ id: "opus[1m]", name: "Opus (1M context)", efforts: [...CLI_EFFORTS] }),
-	toProviderModel({ id: "sonnet", name: "Sonnet", efforts: [...CLI_EFFORTS] }),
-	toProviderModel({ id: "haiku", name: "Haiku" }),
-];
+export const STATIC_MODELS: ProviderModelConfig[] = claudeOffer().map((m) => toProviderModel(m));
 
-/** Live catalog from the installed CLI; falls back to the baked-in list. `discover` is a test seam. */
-export async function refreshClaudeModels(
-	context: { allowNetwork: boolean; signal: AbortSignal },
-	discover: (signal: AbortSignal) => Promise<BackendModel[]> = discoverClaudeModels,
-): Promise<ProviderModelConfig[]> {
-	// allowNetwork is false during offline startup; never spawn the CLI then.
-	if (!context.allowNetwork) return STATIC_MODELS;
-	let discovered: BackendModel[];
-	try {
-		discovered = await discover(context.signal);
-	} catch {
-		return STATIC_MODELS; // Discovery failure must not empty the picker.
-	}
-	// The CLI's list may omit the `[1m]` forms it still accepts; the rule adds them back.
-	const models = withLongContextVariants(discovered.filter((model) => model.id !== "default")).map(toProviderModel);
-	return models.length > 0 ? models : STATIC_MODELS;
+/** The catalog, for pi's refreshModels: the same list online and offline. */
+export async function refreshClaudeModels(_context: { allowNetwork: boolean; signal: AbortSignal }): Promise<ProviderModelConfig[]> {
+	return STATIC_MODELS;
 }
 
 /**

@@ -283,19 +283,18 @@ describe("statecharts engine (vendored ESM)", () => {
   });
 
   test("an eventless cycle throws a typed step-limit error, fast, and the call changes nothing", () => {
+    // (fast: the typed error is the evidence that it stopped; the runner's per-test timeout guards a loop)
     // The probe's gate holds mutant M34's shape: merged and running cycles working ⇄ merged forever.
     const e = probe({ maxMicrosteps: 50 }, { tickMs: 60_000 });
     e.send("p", "next", {}, { now: T0 });
     e.send("p", "next", {}, { now: T0 });
     const before = { config: e.configuration("p"), data: e.dump("p"), gen: e.generation("p"), due: e.nextDueAt() };
-    const t = performance.now();
     let caught: unknown = null;
     try {
       e.send("p", "spin/facts", { merged: true, running: true }, { now: T0 + 5 });
     } catch (err) {
       caught = err;
     }
-    assert.ok(performance.now() - t < 5_000, "it throws, it does not loop");
     assert.ok(caught instanceof StatechartsStepLimitError, `a typed error, got ${String(caught)}`);
     assert.equal(caught.code, "sova/step-limit");
     assert.match(caught.message, /^Step limit: session p took more than 50 microsteps on spin\/facts/);

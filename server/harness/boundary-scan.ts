@@ -464,6 +464,12 @@ export function scanText(path: string, text: string): FileScan {
 
 /** Tracked and untracked-but-not-ignored files, so a new file counts before it is committed. */
 export function listFiles(root: string): string[] {
+  // An archive copy has no work tree: say what the ratchet needs, not git's "not a git repository".
+  try {
+    execFileSync("git", ["rev-parse", "--is-inside-work-tree"], { cwd: root, stdio: "ignore" });
+  } catch {
+    throw new Error("the harness boundary ratchet measures git's file set (tracked + untracked-not-ignored); run it in a git checkout, or `git init && git add -A` in an archive copy");
+  }
   const out = execFileSync("git", ["ls-files", "-co", "--exclude-standard", "-z"], { cwd: root, encoding: "utf8", maxBuffer: 64 << 20 });
   return [...new Set(out.split("\0").filter(Boolean))].filter((f) => existsSync(join(root, f))).sort();
 }

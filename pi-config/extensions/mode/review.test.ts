@@ -22,7 +22,7 @@ import { alignmentBrief, reviewerPrompt, reviewStartText, REVIEWER_TOOLS } from 
 
 const NOW = "2026-10-03T12:00:00.000Z";
 const SOL = { backend: "pi", model: "openai-codex/gpt-6.1-sol", effort: "high" };
-const OPUS = { backend: "claude-code", model: "opus[1m]", effort: "high" };
+const OPUS = { backend: "claude-code", model: "claude-opus-5-5", effort: "high" };
 
 function env(slot: AlignReviewerSlot | null = { use: SOL, via: "primary", retry: OPUS }): AlignEnv {
 	return {
@@ -76,7 +76,7 @@ test("plan review: start reserves the slot before the spawn and returns the work
 	assert.deepEqual(last.details.changes, [{ kind: "review", phase: "plan", state: "running" }]);
 	assert.equal(last.details.line, "plan review running");
 	assert.match(last.text, /backend "pi", model "openai-codex\/gpt-6\.1-sol", effort "high", tools \["read","grep","find","ls"\]/);
-	assert.match(last.text, /retry once with backend "claude-code", model "opus\[1m\]", effort "high", tools \["Read","Grep","Glob"\]/);
+	assert.match(last.text, /retry once with backend "claude-code", model "claude-opus-5-5", effort "high", tools \["Read","Grep","Glob"\]/);
 	assert.match(last.text, /Never give it your transcript/);
 	assert.match(last.text, /Reviewer prompt:\n<<<\n/);
 	assert.ok(last.text.includes(reviewerPrompt(doc, "plan")), "the prompt is the module's, filled from the alignment");
@@ -110,7 +110,7 @@ test("no reviewer configured refuses the start; neither runnable records incompl
 test("the fallback is named and disclosed when the primary can't run", () => {
 	const { last } = run([CREATE, START_PLAN], env({ use: OPUS, via: "fallback", retry: null, reason: "gpt-6.1-sol is not offered by pi" }));
 	assert.match(last.text, /configured FALLBACK — the primary is unavailable \(gpt-6\.1-sol is not offered by pi\); say so once/);
-	assert.equal(last.details.doc?.review?.plan?.model, "claude-code · opus[1m] · high");
+	assert.equal(last.details.doc?.review?.plan?.model, "claude-code · claude-opus-5-5 · high");
 });
 
 test("implementing is refused while the plan review runs; the phases follow the lifecycle", () => {

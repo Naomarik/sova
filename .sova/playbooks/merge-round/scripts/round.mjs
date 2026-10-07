@@ -199,6 +199,15 @@ export const median = (xs) => {
   const s = [...xs].sort((a, b) => a - b);
   return s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2;
 };
+/** Whether the package.json in `tree` has the script `name` (none, or unreadable: no). */
+export function hasScript(tree, name) {
+  try {
+    return typeof JSON.parse(readFileSync(join(tree, "package.json"), "utf8"))?.scripts?.[name] === "string";
+  } catch {
+    return false;
+  }
+}
+
 /** A step's timeout: the larger of its floor and twice the median of its earlier passing runs. */
 export const timeoutFor = (floorMs, passedMs = []) => Math.max(floorMs, Math.round(2 * median(passedMs)));
 
@@ -825,20 +834,26 @@ class Round {
     };
     const tc = await step("typecheck", "typecheck", "typecheck", this.pnpm, ["run", "typecheck"], tree);
     if (tc.code !== 0) needs.push(tc.timedOut ? "typecheck timed out" : "typecheck fails");
-    const t = await step("test", "test", "pnpm test", this.pnpm, ["test"], tree);
-    if (t.timedOut) needs.push("pnpm test timed out");
-    else if (t.code !== 0) {
-      const files = failingTestFiles(`${t.stdout}\n${t.stderr}`, tree);
-      if (!files.length) needs.push("pnpm test fails (no failing file named; see the log)");
-      else {
-        const verdicts = await this.onMaster(files, master, env, st);
-        for (const [file, v] of Object.entries(verdicts)) {
-          if (v === "pre-existing") preexisting.push(file);
-          else needs.push(v === "new" ? `new test failure: ${file}` : `test failure in ${file} (${v})`);
+    // The unit tier, then the integration tier (each its own timings, the same floor and rules).
+    const suite = async (key, label, args) => {
+      const t = await step(key, "test", label, this.pnpm, args, tree);
+      if (t.timedOut) needs.push(`${label} timed out`);
+      else if (t.code !== 0) {
+        const files = failingTestFiles(`${t.stdout}\n${t.stderr}`, tree);
+        if (!files.length) needs.push(`${label} fails (no failing file named; see the log)`);
+        else {
+          const verdicts = await this.onMaster(files, master, env, st);
+          for (const [file, v] of Object.entries(verdicts)) {
+            if (v === "pre-existing") preexisting.push(file);
+            else needs.push(v === "new" ? `new test failure: ${file}` : `test failure in ${file} (${v})`);
+          }
+          lines.push(`  failing files: ${files.map((x) => `${x} (${verdicts[x]})`).join(", ")}.`);
         }
-        lines.push(`  failing files: ${files.map((x) => `${x} (${verdicts[x]})`).join(", ")}.`);
       }
-    }
+    };
+    await suite("test", "pnpm test", ["test"]);
+    if (hasScript(tree, "test:int")) await suite("test-int", "pnpm test:int", ["test:int"]);
+    else lines.push("pnpm test:int: skipped (this tree's package.json has no test:int script).");
     // Extension suites at the branch's own lowered priority (scripts/nice.mjs, as pnpm test runs);
     // a tree without it runs them unchanged.
     const nice = join(tree, "scripts", "nice.mjs");

@@ -48,6 +48,8 @@ export type HEntry = HBase & (
   | { kind: "user"; blocks: HBlock[]; sentAt?: number }
   | {
       kind: "assistant"; blocks: HBlock[]; provider?: string; model?: string; usage?: HUsage;
+      /** The model the provider says answered (pi's `responseModel`), when it differs from `model`. */
+      responseModel?: string;
       /** Tokens in context after this reply (the fill rule, applied by the reader); absent when the reply
           says nothing about it: an error or aborted reply, no usage, or a usage of zero. */
       contextTokens?: number;

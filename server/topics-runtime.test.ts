@@ -109,10 +109,11 @@ function fakeRuns(chat: Chat): void {
     return { async *[Symbol.asyncIterator]() { yield { type: "done", reason: call ? "toolUse" : "stop", message }; }, result: async () => message };
   };
 }
-async function until(cond: () => boolean, ms = 4000): Promise<void> {
+/** Poll until `cond` holds; the guard only stops a hang. */
+async function until(cond: () => boolean, ms = 30_000): Promise<void> {
   const end = Date.now() + ms;
   while (!cond()) {
-    if (Date.now() > end) throw new Error("timed out");
+    if (Date.now() > end) throw new Error(`still waiting after ${ms} ms`);
     await new Promise((r) => setTimeout(r, 5));
   }
 }
@@ -144,7 +145,7 @@ async function held(path: string): Promise<Chat> {
 }
 /** The delivery the server runs, bound to these runtimes, with short waits; `log` is what its
     drain observer was told. */
-const delivery = () => {
+const delivery = (waits: { debounceMs?: number; maxWaitMs?: number } = {}) => {
   const log: { topic: string; outcome: string }[] = [];
   const d = new TopicDelivery(
     {
@@ -161,7 +162,7 @@ const delivery = () => {
       onIdle: onReceiverIdle,
       onArchived: onSessionArchived,
     },
-    { debounceMs: 40, settleMs: 20, maxWaitMs: 120, onDrain: (topic, outcome) => void log.push({ topic, outcome }) },
+    { debounceMs: 40, settleMs: 20, maxWaitMs: 120, ...waits, onDrain: (topic, outcome) => void log.push({ topic, outcome }) },
   );
   return Object.assign(d, { log });
 };
@@ -402,24 +403,23 @@ describe("delivery (§chat.topics/delivery, §chat.topics/row)", () => {
 
   test("a steady stream still delivers: the first waiting push's deadline caps the debounce", async () => {
     const { ownPath, capPath, name, oid } = await pair();
-    running = delivery(); // debounce 40ms, one stretch of pushes capped at 120ms
+    // A debounce 500x the cap: while the stream runs, each push resets it, so only the cap can drain.
+    running = delivery({ debounceMs: 60_000, maxWaitMs: 120 });
     running.start();
-    // Push faster than the debounce, each push resetting it: without the cap nothing would drain until
-    // the stream ends. The fake clock steps past the rate-limit window so the stream itself is what
-    // the test measures.
+    // The fake clock steps past the rate-limit window so the stream itself is what the test checks.
     let t = Date.now();
     const pusher = { sessionId: () => oid, title: () => "owner", now: () => (t += 150_000) };
-    const startedAt = Date.now();
-    let deliveredAt = 0;
     let pushes = 0;
-    while (Date.now() - startedAt < 260 && !deliveredAt) {
+    // Three at once (the debounce reset before the deadline, however slow the machine), then on.
+    for (let i = 0; i < 3; i++) pushNote(pusher, { topic: name, text: `n${pushes++}` });
+    const guard = Date.now() + 30_000; // under the debounce: a delivery before it is the cap's
+    while (!batchesIn(capPath).length) {
+      assert.ok(Date.now() < guard, `no delivery after ${pushes} pushes`);
       pushNote(pusher, { topic: name, text: `n${pushes++}` });
       await sleep(25);
-      if (batchesIn(capPath).length) deliveredAt = Date.now();
     }
     assert.ok(pushes > 3, `the stream ran (${pushes} pushes)`);
-    assert.ok(deliveredAt > 0, "delivered although pushes kept resetting the debounce");
-    assert.ok(deliveredAt - startedAt < 240, `first batch after ${deliveredAt - startedAt}ms of a still-running stream (cap 120ms)`);
+    assert.ok(running.log.some((l) => l.topic === name && l.outcome === "started"), "delivered although pushes kept resetting the debounce");
     await until(() => entries(capPath).some((e) => e.customType === TOPIC_DELIVERED_ENTRY));
   });
 
@@ -465,14 +465,14 @@ describe("delivery (§chat.topics/delivery, §chat.topics/row)", () => {
     cap.handle(client, { type: "prompt", text: "long merge" });
     await until(() => piSession(cap).isStreaming);
     await turn(own, ownPath, [() => push(name, "READY feat/x 0123456")]);
-    await sleep(200); // past the debounce: the drain found it busy
-    assert.ok(running.log.some((l) => l.topic === name && l.outcome === "busy"), JSON.stringify(running.log));
+    await until(() => running!.log.some((l) => l.topic === name && l.outcome === "busy")); // past the debounce: the drain found it busy
     assert.equal(batchesIn(capPath).length, 0, "nothing went into the running turn");
     assert.equal(cap.queue.size, 0, "nothing in Sova's web queue");
     release();
     await until(() => batchesIn(capPath).length === 1);
     await piSession(cap).waitForIdle();
-    await sleep(150);
+    await until(() => topicStore().pending(name).length === 0);
+    assert.equal((running as unknown as { timers: Map<string, unknown> }).timers.size, 0, "nothing pending and no drain waiting: no second batch can come");
     assert.equal(batchesIn(capPath).length, 1, "exactly one batch");
     const texts = userTexts(capPath);
     assert.ok(texts.indexOf("long merge") < texts.findIndex((t) => parseTopicBatch(t)), "after the running turn");
@@ -491,9 +491,9 @@ describe("delivery (§chat.topics/delivery, §chat.topics/row)", () => {
     cap.handle(client, { type: "prompt", text: "typed while busy" });
     await until(() => cap.queue.size === 1);
     await turn(own, ownPath, [() => push(name, "NOT READY: docs")]);
-    await sleep(120);
+    await until(() => running!.log.some((l) => l.topic === name && l.outcome === "busy"));
     release();
-    await until(() => batchesIn(capPath).length === 1, 6000);
+    await until(() => batchesIn(capPath).length === 1);
     await piSession(cap).waitForIdle();
     const texts = userTexts(capPath);
     const at = (t: string) => texts.indexOf(t);
@@ -507,13 +507,12 @@ describe("delivery (§chat.topics/delivery, §chat.topics/row)", () => {
     running.start();
     const { client } = sink();
     cap.handle(client, { type: "abort" });
-    await sleep(20);
+    await until(() => topicStore().receiverPaused(capPath));
     // A blank prompt is a no-op: it is not the user's next message, so the pause stays.
     cap.handle(client, { type: "prompt", text: "   " });
     await sleep(20);
     await turn(own, ownPath, [() => push(name, "READY feat/x 0123456")]);
-    await sleep(200);
-    assert.ok(running.log.some((l) => l.outcome === "paused"));
+    await until(() => running!.log.some((l) => l.outcome === "paused"));
     assert.equal(batchesIn(capPath).length, 0);
     // A fresh runtime of the same file — what a restart reopens — is still paused: the store holds it.
     assert.ok(await disposeHeldChat(capPath, "test reopen"));
@@ -559,7 +558,7 @@ describe("delivery (§chat.topics/delivery, §chat.topics/row)", () => {
     calls.set(oid, [() => undefined]);
     await turn(own, ownPath, [() => push(name, "READY feat/x 0123456")]);
     // The pair's own ask is the first send (an attended turn); this one is the second.
-    await until(() => toolResults(capPath, "session_send").length === 2, 6000);
+    await until(() => toolResults(capPath, "session_send").length === 2);
     assert.equal(toolResults(capPath, "session_send")[1]!.isError, false, toolResults(capPath, "session_send")[1]!.text);
     assert.equal(ownDay(), before + 1);
   });
@@ -600,7 +599,7 @@ describe("delivery (§chat.topics/delivery, §chat.topics/row)", () => {
       throw new Error("provider down");
     };
     assert.equal(await running.drain(name), "started");
-    await sleep(50);
+    await until(() => (cap as unknown as { topicMarks: unknown[] }).topicMarks.length === 0); // the failed turn dropped its mark
     assert.equal(topicStore().pending(name).length, 1);
     assert.equal(await running.drain(name), "started", "not stuck in flight: tried again");
   });
@@ -613,8 +612,7 @@ describe("delivery (§chat.topics/delivery, §chat.topics/row)", () => {
     // What the SDK does when an input handler returns "handled": resolves, no events, no run.
     (piSession(cap) as unknown as { prompt: () => Promise<void> }).prompt = async () => {};
     assert.equal(await running.drain(name), "started");
-    await sleep(20);
-    assert.equal(marks(), 0, "the mark is dropped");
+    await until(() => marks() === 0); // the mark is dropped
     assert.equal(topicStore().pending(name).length, 1, "stays undelivered");
     assert.equal(batchesIn(capPath).length, 0);
     (piSession(cap) as unknown as { prompt: typeof real }).prompt = real;

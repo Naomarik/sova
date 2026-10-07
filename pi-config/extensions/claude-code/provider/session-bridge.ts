@@ -39,6 +39,7 @@ import type { ImageContent, Message, TextContent, Tool } from "@earendil-works/p
 import { PiMcpHost, type HeldMcpCall, type McpContent, type McpToolResult } from "./mcp-host.ts";
 import { resolveUsageAttribution } from "../../llm-inflight/attribution.ts";
 import { createClaudeRequestObserver } from "../../llm-inflight/claude.ts";
+import { claudeCliId } from "../catalog.ts";
 import {
 	parseClaudeFrame, parseToolInput, MCP_SERVER_NAME, MCP_TOOL_PREFIX,
 	type ClaudeFrame, type ClaudeSessionBridge, type ClaudeTurnRequest,
@@ -361,7 +362,8 @@ export function isPrefix(recorded: readonly string[], next: readonly string[]): 
  */
 export function turnMeta(request: ClaudeTurnRequest, cwd: string): string {
 	const tools = request.tools.map((tool) => `${tool.name}\u0001${tool.description}\u0001${JSON.stringify(tool.parameters ?? {})}`).join("\u0002");
-	return sha(request.model, request.effort ?? "", request.systemPrompt ?? "", tools, cwd);
+	// The id the child is given: an old id and its catalog id are one launch.
+	return sha(claudeCliId(request.model), request.effort ?? "", request.systemPrompt ?? "", tools, cwd);
 }
 
 // ---------------------------------------------------------------------------
@@ -1255,7 +1257,7 @@ class CliSession {
 			// only (per Anthropic message, plus what the CLI's totals show beyond them), for this chat.
 			requestObserver: createClaudeRequestObserver({
 				countRequests: false,
-				usage: { bridge: true, model: request.model, fresh: !resume, who: () => resolveUsageAttribution(this.piSessionId) },
+				usage: { bridge: true, model: claudeCliId(request.model), fresh: !resume, who: () => resolveUsageAttribution(this.piSessionId) },
 			}),
 			hooks: {
 				onEvent: (event) => { if (current()) this.onEvent(event as unknown as Record<string, unknown>); },

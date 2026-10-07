@@ -9,6 +9,7 @@ import type { ModelPolicy, WorkerChoice } from "../shared/protocol";
 import type { TeamDefaults } from "../shared/team-defaults";
 import type { DelegateSources } from "./delegate";
 import { saveTeamDefaults, teamDefaultsFile, teamDefaultsInfo, teamDefaultsOff, teamOptions } from "./team-defaults";
+import { claudeOffer } from "../pi-config/extensions/claude-code/catalog.ts";
 
 const root = mkdtempSync(join(tmpdir(), "sova-team-defaults-test-"));
 after(() => rmSync(root, { recursive: true, force: true }));
@@ -28,15 +29,15 @@ const sources = (over: Partial<DelegateSources> = {}): DelegateSources => ({
     { ref: "ollama-cloud/deepseek-v4.1-flash", id: "deepseek-v4.1-flash", provider: "ollama-cloud", thinkingLevels: ["off", "low", "medium", "high"] },
   ],
   claudeModels: async () => [
-    { id: "opus[1m]", name: "Opus", efforts: ALL_CLAUDE },
-    { id: "haiku", name: "Haiku", efforts: ALL_CLAUDE },
-    { id: "sonnet", name: "Sonnet", efforts: ["low", "medium"] },
+    { id: "claude-opus-5-5", name: "Opus", efforts: ALL_CLAUDE },
+    { id: "claude-haiku-4-5", name: "Haiku", efforts: ALL_CLAUDE },
+    { id: "claude-sonnet-5-5", name: "Sonnet", efforts: ["low", "medium"] },
   ],
   policy: () => EMPTY,
   ...over,
 });
 const glm: WorkerChoice = { backend: "pi", model: "zai/glm-5.3", effort: "high" };
-const sonnet: WorkerChoice = { backend: "claude-code", model: "sonnet", effort: "medium" };
+const sonnet: WorkerChoice = { backend: "claude-code", model: "claude-sonnet-5-5", effort: "medium" };
 const copy = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 /** The pinned defaults with both members on, as a save body. */
 const on = (): TeamDefaults => copy(DEFAULT_TEAM_DEFAULTS as TeamDefaults);
@@ -64,12 +65,12 @@ describe("GET /api/settings/team", () => {
   test("the pinned built-in values", () => {
     assert.deepEqual(DEFAULT_TEAM_DEFAULTS, {
       version: 1,
-      coordinator: { enabled: true, role: "coordinator", primary: { backend: "claude-code", model: "opus[1m]", effort: "medium" }, fallback: null, instructions: "" },
+      coordinator: { enabled: true, role: "coordinator", primary: { backend: "claude-code", model: "claude-opus-5-5", effort: "medium" }, fallback: null, instructions: "" },
       monitor: {
         enabled: true,
         role: "monitor",
         primary: { backend: "pi", model: "ollama-cloud/deepseek-v4.1-flash", effort: "low" },
-        fallback: { backend: "claude-code", model: "sonnet", effort: "low" },
+        fallback: { backend: "claude-code", model: "claude-sonnet-5-5", effort: "low" },
         contextPct: 60,
         everyMinutes: 10,
         usage: { enabled: true, pausePct: 90, resumeMarginMinutes: 5 },
@@ -96,13 +97,13 @@ describe("GET /api/settings/team", () => {
 });
 
 describe("GET /api/settings/team/options", () => {
-  test("is Delegate's discovery, policy included", async () => {
-    const options = await teamOptions(sources({ policy: () => ({ ...EMPTY, subagentDisabledModels: ["haiku"] }) }));
+  test("is Delegate's (pi's registry, Sova's Claude catalog), policy included", async () => {
+    const options = await teamOptions(sources({ policy: () => ({ ...EMPTY, subagentDisabledModels: ["claude-haiku-4-5"] }) }));
     assert.deepEqual(options.backends.map((b) => [b.id, b.models?.map((m) => m.id)]), [
       ["pi", ["ollama-cloud/deepseek-v4.1-flash", "zai/glm-5.3"]],
-      ["claude-code", ["opus[1m]", "haiku", "sonnet"]],
+      ["claude-code", claudeOffer().map((m) => m.id)],
     ]);
-    assert.match(options.backends[1]!.models!.find((m) => m.id === "haiku")!.denied!, /off for subagents/);
+    assert.match(options.backends[1]!.models!.find((m) => m.id === "claude-haiku-4-5")!.denied!, /off for subagents/);
   });
 });
 
@@ -145,7 +146,7 @@ describe("PUT /api/settings/team", () => {
   test("a row without an effort is refused: the screen always names one", async () => {
     const dir = agentDir();
     const body = on() as unknown as { coordinator: { fallback: unknown } };
-    body.coordinator.fallback = { backend: "claude-code", model: "sonnet" };
+    body.coordinator.fallback = { backend: "claude-code", model: "claude-sonnet-5-5" };
     const result = await saveTeamDefaults(body, sources(), dir);
     assert.equal(result.status, 400);
     assert.equal((result.body as { error: string }).error, "Coordinator fallback: choose an effort");
@@ -155,10 +156,10 @@ describe("PUT /api/settings/team", () => {
   test("a changed row its backend can't run is refused, naming the slot", async () => {
     const dir = agentDir();
     const body = on();
-    body.coordinator.primary = { backend: "claude-code", model: "sonnet", effort: "max" };
+    body.coordinator.primary = { backend: "claude-code", model: "claude-sonnet-4-6", effort: "xhigh" };
     const result = await saveTeamDefaults(body, sources(), dir);
     assert.equal(result.status, 400);
-    assert.match((result.body as { error: string }).error, /^Coordinator primary: sonnet doesn't take effort "max"/);
+    assert.match((result.body as { error: string }).error, /^Coordinator primary: claude-sonnet-4-6 doesn't take effort "xhigh"/);
     assert.ok(!existsSync(teamDefaultsFile(dir)));
   });
 
@@ -175,7 +176,7 @@ describe("PUT /api/settings/team", () => {
     const dir = agentDir();
     const body = on();
     body.monitor.enabled = false;
-    body.monitor.primary = { backend: "claude-code", model: "sonnet", effort: "max" };
+    body.monitor.primary = { backend: "claude-code", model: "claude-sonnet-4-6", effort: "xhigh" };
     const result = await saveTeamDefaults(body, sources(), dir);
     assert.equal(result.status, 400);
     assert.match((result.body as { error: string }).error, /^Monitor primary:/);
@@ -185,12 +186,12 @@ describe("PUT /api/settings/team", () => {
     const dir = agentDir();
     const body = on();
     body.coordinator.fallback = sonnet;
-    const policy: ModelPolicy = { ...EMPTY, disabledModels: ["opus[1m]"], subagentDisabledModels: ["ollama-cloud/deepseek-v4.1-flash"] };
+    const policy: ModelPolicy = { ...EMPTY, disabledModels: ["claude-opus-5-5"], subagentDisabledModels: ["ollama-cloud/deepseek-v4.1-flash"] };
     const result = await saveTeamDefaults(body, sources({ policy: () => policy }), dir);
     assert.equal(result.status, 200, JSON.stringify(result.body));
     if (result.status !== 200) return;
     assert.deepEqual(result.body.warnings, [
-      "Coordinator primary: opus[1m] is turned off in Settings → Models; the team uses the fallback or isn't created",
+      "Coordinator primary: claude-opus-5-5 is turned off in Settings → Models; the team uses the fallback or isn't created",
       "Monitor primary: ollama-cloud/deepseek-v4.1-flash is off for subagents in Settings → Models; the team uses the fallback or isn't created",
     ]);
     assert.ok(existsSync(teamDefaultsFile(dir)));
@@ -221,11 +222,15 @@ describe("PUT /api/settings/team", () => {
     assert.equal(readFileSync(teamDefaultsFile(dir), "utf8"), "{ nope");
   });
 
-  test("a backend that couldn't list its models saves unverified, one note for the backend", async () => {
+  test("a backend that couldn't list its models saves unverified, one note for the backend; the Claude CLI's list is never asked", async () => {
     const dir = agentDir();
-    const result = await saveTeamDefaults(on(), sources({ claudeModels: async () => { throw new Error("CLI missing"); } }), dir);
+    const cli = await saveTeamDefaults(on(), sources({ claudeModels: async () => { throw new Error("CLI missing"); } }), dir);
+    assert.equal(cli.status, 200, JSON.stringify(cli.body));
+    if (cli.status !== 200) return;
+    assert.deepEqual(cli.body.warnings, [], "Claude Code's list is the catalog");
+    const result = await saveTeamDefaults(on(), sources({ piModels: async () => { throw new Error("no registry"); } }), agentDir());
     assert.equal(result.status, 200, JSON.stringify(result.body));
     if (result.status !== 200) return;
-    assert.deepEqual(result.body.warnings, ["Not verified, because Claude Code couldn't list its models (CLI missing): Coordinator primary, Monitor fallback"]);
+    assert.deepEqual(result.body.warnings, ["Not verified, because pi couldn't list its models (no registry): Monitor primary"]);
   });
 });

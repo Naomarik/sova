@@ -16,24 +16,3 @@ test("the cp argv: GNU's --reflink=auto off macOS, BSD's -c on macOS, never both
   assert.deepEqual(copyContentsArgv("/s", "/d", "linux"), ["-a", "--reflink=auto", "/s/.", "/d"]);
   assert.deepEqual(copyContentsArgv("/s", "/d", "darwin"), ["-a", "-c", "/s/.", "/d"]);
 });
-
-test("this host's cp copies the contents, symlinks as symlinks, into an existing folder, twice", () => {
-  const src = join(tmp, "src");
-  const dst = join(tmp, "dst");
-  mkdirSync(join(src, "sub"), { recursive: true });
-  writeFileSync(join(src, "sub", "f.txt"), "hello");
-  symlinkSync("sub/f.txt", join(src, "link"));
-  mkdirSync(dst);
-  for (let i = 0; i < 2; i++) execFileSync("cp", copyContentsArgv(src, dst));
-  assert.equal(readFileSync(join(dst, "sub", "f.txt"), "utf8"), "hello");
-  assert.equal(readlinkSync(join(dst, "link")), "sub/f.txt");
-});
-
-test("scripts/copy-tree.mjs makes the folder and copies into it", () => {
-  const src = join(tmp, "src2");
-  mkdirSync(src);
-  writeFileSync(join(src, "a"), "1");
-  const dst = join(tmp, "made", "here");
-  execFileSync(process.execPath, [join(import.meta.dirname, "..", "..", "scripts", "copy-tree.mjs"), src, dst]);
-  assert.equal(readFileSync(join(dst, "a"), "utf8"), "1");
-});

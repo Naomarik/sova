@@ -1,6 +1,6 @@
 import type { SenderState, SenderStatus } from "../../shared/outreach";
 import { meshPeers, peerFetch } from "../mesh";
-import { SenderClient, SenderUncertain, SenderUnreachable, type Frame, type SenderEvent } from "./ipc-client";
+import { SenderClient, SenderUncertain, SenderUnreachable, type Frame, type SenderClientOptions, type SenderEvent } from "./ipc-client";
 import { localSocket, noteAuthDir, readOutreach } from "./settings";
 import type { Channel, ChannelSend, Receipt } from "./types";
 
@@ -15,6 +15,7 @@ const STATES: ReadonlySet<string> = new Set(["unpaired", "linking", "connecting"
 const RING = 500;
 
 let local: { path: string; client: SenderClient } | null = null;
+let clientOptions: SenderClientOptions = {};
 const listeners: ((r: Receipt) => void)[] = [];
 /** Receipt events the local sender sent, for the relay to hand each caller its own (newest last). */
 const ring: SenderEvent[] = [];
@@ -44,9 +45,15 @@ export function localClient(): SenderClient | null {
   }
   if (local?.path !== path) {
     local?.client.close();
-    local = { path, client: new SenderClient(path, onSenderEvent) };
+    local = { path, client: new SenderClient(path, onSenderEvent, clientOptions) };
   }
   return local.client;
+}
+
+/** Tests: how the next local client connects (an in-memory sender, no retry gap); {} restores the socket. */
+export function setSenderClientOptionsForTest(o: SenderClientOptions): void {
+  clientOptions = o;
+  resetLocalClient();
 }
 
 /** Drop the local connection (a save of the setting): the next use makes it afresh. */

@@ -60,8 +60,8 @@ function conversation(chars: number): Message[] {
 	return out;
 }
 
-/** A 200K-window Claude model (bare `sonnet` is natively 1M). */
-const SMALL = "claude-sonnet-4-6";
+/** A 200K-window Claude model with a 64K output cap (catalog.ts). */
+const SMALL = "claude-opus-4-6";
 
 function model(id: string, provider = CLAUDE_PROVIDER_ID) {
 	return { ...(STATIC_MODELS.find((m) => m.id === id) ?? toProviderModel({ id, name: id })), provider, api: provider, baseUrl: "x" };
@@ -114,7 +114,7 @@ test("the budget follows the model's window: what compacts a 200K model does not
 	const { pi, settle } = fakePi();
 	registerAutoCompact(pi, CLAUDE_PROVIDER_ID, () => true);
 	const messages = conversation(600_000);
-	const large = fakeCtx(messages, { model: model("opus[1m]") });
+	const large = fakeCtx(messages, { model: model("claude-opus-5-5") });
 	await settle(large.ctx);
 	assert.equal(large.calls.length, 0);
 	const small = fakeCtx(messages, { model: model(SMALL), leaf: "leaf-2" });

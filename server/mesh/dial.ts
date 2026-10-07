@@ -20,6 +20,28 @@ export function setLanClients(clients: LanClients | null): void {
   lan = clients;
 }
 
+/** How a tailnet peer's URL is reached: the network, unless a test answers in-process. */
+export interface PeerWire {
+  fetch(req: Request): Promise<Response>;
+  /** The bare TCP check before a hop (proxy.ts's preflight and stall watch). */
+  reachable(url: string): Promise<boolean>;
+}
+
+let wire: PeerWire | null = null;
+
+/** Tests: answer tailnet peers in-process; null is the network again. */
+export function setPeerWire(w: PeerWire | null): void {
+  wire = w;
+}
+
+/** The wire a test set, or null (the network). */
+export const peerWire = (): PeerWire | null => wire;
+
+/** fetch(url, init) to a tailnet peer's URL, over the test's wire when one is set. */
+export function urlFetch(url: string, init?: RequestInit): Promise<Response> {
+  return wire ? wire.fetch(new Request(url, init)) : fetch(url, init);
+}
+
 /** A pairing with no live connection: what fetch's own failures look like, with a fixed reason. */
 export class NotConnected extends TypeError {
   constructor() {
@@ -57,7 +79,7 @@ export function responseCap(path: string, env: NodeJS.ProcessEnv = process.env):
 /** fetch(<peer>/<path>, init). `path` starts with "/". A pairing's answers to probes and lists are
     capped (responseCap): it may roam anywhere, and nothing else bounds a body it streams. */
 export function fetchPeer(peer: PeerEntry, path: string, init?: RequestInit): Promise<Response> {
-  if (!peer.lan) return fetch(`${peerUrl(peer)}${path}`, init);
+  if (!peer.lan) return urlFetch(`${peerUrl(peer)}${path}`, init);
   const agent = lanAgent(peer);
   const maxBytes = responseCap(path);
   return agent ? agentFetch(agent, path, init, maxBytes === undefined ? {} : { maxBytes }) : Promise.reject(new NotConnected());
@@ -65,7 +87,7 @@ export function fetchPeer(peer: PeerEntry, path: string, init?: RequestInit): Pr
 
 /** A Request the proxy built for `peer`, sent the same way. */
 export function fetchPeerRequest(peer: PeerEntry, req: Request): Promise<Response> {
-  if (!peer.lan) return fetch(req);
+  if (!peer.lan) return wire ? wire.fetch(req) : fetch(req);
   const agent = lanAgent(peer);
   return agent ? agentFetch(agent, req) : Promise.reject(new NotConnected());
 }

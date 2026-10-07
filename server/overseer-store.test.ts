@@ -75,8 +75,8 @@ describe("overseer settings", () => {
     assert.ok(!("error" in ok) && ok.model === "p/m" && ok.proactivity === "brief" && ok.extraSystemPrompt === "Be terse.");
   });
 
-  test("the exploratory agent defaults to Claude Code on Opus 5.5 (1M) at medium; a bad one falls back on read and is refused on PUT", () => {
-    assert.deepEqual(store.readOverseerSettings(join(agentDir, "none.json")).explorer, { backend: "claude-code", model: "opus[1m]", effort: "medium" });
+  test("the exploratory agent defaults to Claude Code on the catalog's current Opus (Opus 5.5) at medium; a bad one falls back on read and is refused on PUT", () => {
+    assert.deepEqual(store.readOverseerSettings(join(agentDir, "none.json")).explorer, { backend: "claude-code", model: "claude-opus-5-5", effort: "medium" });
     const tolerant = store.parseSettings({ explorer: { backend: "pi", model: "no-slash", effort: "low" } }, false);
     assert.ok(!("error" in tolerant));
     assert.deepEqual(tolerant.explorer, store.DEFAULT_EXPLORER);
@@ -91,7 +91,11 @@ describe("overseer settings", () => {
     }
     assert.match((store.parseSettings({ explorer: { backend: "pi", model: "anthropic/claude-opus-5", effort: "low" } }, true) as { error: string }).error, /not allowed/);
     const ok55 = store.parseSettings({ explorer: { backend: "claude-code", model: "claude-opus-5-5[1m]", effort: "high" } }, true);
-    assert.ok(!("error" in ok55), "Opus 5.5 by its full id is fine");
+    assert.ok(!("error" in ok55), "Opus 5.5 by its old [1m] id is fine");
+    assert.equal((ok55 as { explorer: { model: string } }).explorer.model, "claude-opus-5-5", "and reads as its catalog id");
+    const old = store.parseSettings({ explorer: { backend: "claude-code", model: "opus[1m]", effort: "medium" } }, false) as { explorer: { model: string } };
+    assert.equal(old.explorer.model, "claude-opus-5-5", "an old alias reads as the catalog model it means");
+    assert.match((store.parseSettings({ explorer: { backend: "claude-code", model: "claude-opus-5", effort: "medium" } }, true) as { error: string }).error, /use claude-opus-5-5 \(Opus 5\.5\)/);
     const file = join(agentDir, "ov-explorer.json");
     store.writeOverseerSettings(ok, file);
     assert.deepEqual(store.readOverseerSettings(file).explorer, ok.explorer, "it persists");

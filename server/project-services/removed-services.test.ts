@@ -1,14 +1,13 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, beforeEach, test } from "node:test";
 import { parseDefinition, type VerbResult } from "../../shared/project-contract";
 import { staticServes, stopStaticServe } from "../preview-serve";
 import type { ContainerQuery } from "./container-ports";
-import { DetachedDriver } from "./drivers";
+import { FakeHost } from "./fake-host";
 import { ProjectEngine, type Caller } from "./engine";
 import { readRegistry } from "./store";
 import { approve, defHashOf } from "./trust";
@@ -17,28 +16,22 @@ import { approve, defHashOf } from "./trust";
  * A service that left `.sova/project.json` (§app.project-services/down, /up, /apply, /teardown,
  * /reconcile): down and teardown stop it by unit and by its recorded container, up and apply stop
  * it and say so, and reconcile never starts it again, even once a later definition declares it.
- * Detached driver; the container engine is faked (`box` is a plain process standing in for one).
+ * On a host in memory (fake-host.ts), `site` a process service here; the container engine is faked. The real
+ * run (detached driver, a static `site`, `box` a plain process standing in for a container) is in
+ * removed-services.integration.test.ts.
  */
 
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-removed-agent-"));
 
 const op: Caller = { kind: "operator" };
-/** Below the kernel's ephemeral range (32768+), and free now: a random port there can be any outgoing socket's. */
-let BASE = 0;
-const isFree = (port: number) => new Promise<boolean>((done) => { const s = createServer(); s.once("error", () => done(false)); s.listen(port, "127.0.0.1", () => s.close(() => done(true))); });
-async function pickBase(): Promise<number> {
-  for (;;) {
-    const b = 20_000 + Math.floor(Math.random() * 12_000);
-    if ((await Promise.all([0, 1, 20, 21, 40, 41].map((o) => isFree(b + o)))).every(Boolean)) return b;
-  }
-}
+const BASE = 21_000;
 const ENGINE = "podman";
 
 const full = () => ({
   version: 1,
   slots: { cap: 2 },
   services: {
-    site: { static: "public", ports: { http: { base: BASE } } },
+    site: { cmd: ["node", "api.mjs"], ports: { http: { base: BASE } }, ready: { tcp: "http", timeout: 10 } },
     api: { cmd: ["node", "api.mjs"], ports: { http: { base: BASE + 20 } }, ready: { tcp: "http", timeout: 10 } },
     box: { cmd: ["node", "api.mjs"], container: { name: "rbox-${instance}", engine: ENGINE }, ports: { http: { base: BASE + 40 } }, ready: { tcp: "http", timeout: 10 } },
   },
@@ -69,7 +62,6 @@ const live = (s: string) => s === "active" || s === "activating";
 const stepOf = (r: VerbResult, id: string) => r.steps.find((s) => s.id === id);
 
 before(async () => {
-  BASE = await pickBase();
   parent = realpathSync(mkdtempSync(join(tmpdir(), "sova-removed-proj-")));
   project = join(parent, "demo");
   mkdirSync(join(project, ".sova"), { recursive: true });
@@ -81,7 +73,7 @@ before(async () => {
   git(["init", "-q", "-b", "main"]);
   git(["add", "-A"]);
   git(["commit", "-q", "-m", "fixture"]);
-  engine = new ProjectEngine({ driver: new DetachedDriver(3_000), pollMs: 100, containerQuery: fakeQuery, containerExec: fakeExec });
+  engine = new ProjectEngine(new FakeHost().deps({ containerQuery: fakeQuery, containerExec: fakeExec }));
 });
 
 beforeEach(() => {

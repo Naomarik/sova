@@ -210,6 +210,14 @@ describe("the test runner runs every test file", () => {
     const missed = tests.filter((f) => !res.some((r) => r.test(f)));
     assert.deepEqual(missed, [], `these test files never run: add a glob for them to scripts/run-tests.mjs GLOBS`);
   });
+  test("every test file is in exactly one tier: *.integration.test.ts is the integration tier, every other one the unit tier", () => {
+    const runner = readFileSync(join(REPO, "scripts/run-tests.mjs"), "utf8");
+    assert.match(runner, /^const INTEGRATION_SUFFIX = "\.integration\.test\.ts";$/m, "the runner tells the tiers apart by this suffix");
+    const tests = files.filter((f) => /^(server|shared|src)\/.*\.test\.ts$/.test(f));
+    // A file whose name says integration any other way (foo.int.test.ts, foo-integration.test.ts) would run in the unit tier.
+    const misnamed = tests.filter((f) => /(^|[./_-])(int|integration)([./_-]|$)/i.test(f.replace(/\.integration\.test\.ts$/, ".test.ts").replace(/^.*\//, "")));
+    assert.deepEqual(misnamed, [], "these look like integration tests but aren't named *.integration.test.ts, so they run in the unit tier: rename them");
+  });
 });
 
 // ---- 7. HEAD growth guard ----------------------------------------------------------------------------

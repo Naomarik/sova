@@ -41,8 +41,17 @@ export interface ToolResult {
   json: Record<string, any>;
 }
 
+/** What runs the draft tool's commands for a project root. */
+export type DraftToolRunner = (root: string, args: string[]) => Promise<ToolResult>;
+let draftToolForTest: DraftToolRunner | null = null;
+/** Tests: run the draft tool's commands with `run` instead of the real tool (null: the real one again). */
+export function setDraftToolForTest(run: DraftToolRunner | null): void {
+  draftToolForTest = run;
+}
+
 /** Run the draft tool: argv only, `--root` and `--json` appended. Never throws on exit 1/2. */
 export function runDraftTool(root: string, args: string[], tool = DRAFT_TOOL): Promise<ToolResult> {
+  if (draftToolForTest && tool === DRAFT_TOOL) return draftToolForTest(root, args);
   return new Promise((resolve, reject) => {
     execFile(process.execPath, [tool, ...args, "--root", root, "--json"], { timeout: TOOL_TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024, env: { ...process.env, NO_COLOR: "1" } }, (err, stdout) => {
       let json: Record<string, any>;

@@ -1,12 +1,10 @@
-// Run: pnpm exec tsx --test server/share-ingress.test.ts. A routed host's side of public links
-// (§mesh.public/ingress, §mesh.public/registry push side, §mesh.public/gateway): the gateway
-// client, the registry push (snapshot, seq, outbox, the mint's ack outcome) and the ingress (the
-// gate, the admitted client key, closing what it admitted when `via` changes). Hermetic: a
-// throwaway PI_CODING_AGENT_DIR, a fake LocalAPI (setIdentity), fake gateway deps, loopback only.
+// Run: node scripts/run-tests.mjs server/share-ingress.test.ts. A routed host's side of public links
+// (§mesh.public/registry push side, §mesh.public/gateway), in process: the gateway client and the
+// registry push (snapshot, seq, outbox, the mint's ack outcome). Hermetic: a throwaway
+// PI_CODING_AGENT_DIR, a fake LocalAPI (setIdentity), fake gateway deps, no sockets. The ingress over
+// real loopback sockets is share-ingress.integration.test.ts.
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { Agent, request } from "node:http";
-import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, afterEach, beforeEach, describe, test } from "node:test";
@@ -15,6 +13,10 @@ const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-share-ingress-")));
 process.env.PI_CODING_AGENT_DIR = join(root, "agent");
 delete process.env.SOVA_SHARE_PUBLIC_URL;
 mkdirSync(join(root, "agent", "sessions"), { recursive: true });
+// A stub share page: with no built dist-share/ the share listener answers 503 (share/routes.ts).
+process.env.SOVA_SHARE_DIST = join(root, "dist-share");
+mkdirSync(process.env.SOVA_SHARE_DIST, { recursive: true });
+writeFileSync(join(process.env.SOVA_SHARE_DIST, "index.html"), "<!doctype html><title>Shared</title>");
 after(() => rmSync(root, { recursive: true, force: true }));
 
 const { stateRoot } = await import("./state-root");
@@ -328,19 +330,21 @@ test("every pushed snapshot is valid and carries the minted hash", async () => {
 test("an ack covering the mint confirms it: no warning, well within the wait", async () => {
   clearStores();
   push.startRegistryPush();
-  const { outcome, ms } = await mintH();
+  const { outcome } = await mintH();
+  // Confirmed and not timed out: the ack ended the wait, not MINT_ACK_TIMEOUT_MS.
   assert.deepEqual(outcome, { warning: null, timedOut: false, failed: false });
-  assert.ok(ms < 1000, `${ms} ms`);
 });
 
 test("a missing ack: the mint returns within MINT_ACK_TIMEOUT_MS, unconfirmed, and the outbox stays dirty", async () => {
   clearStores();
   // The gateway answers only after the mint's wait (a real push has its own timeout).
   let late!: Promise<null>;
-  answer = () => (late = new Promise((r) => setTimeout(() => r(null), MINT_ACK_TIMEOUT_MS + 300)));
+  let answered = false;
+  answer = () => (late = new Promise<null>((r) => setTimeout(() => r(null), MINT_ACK_TIMEOUT_MS + 300)).then((v) => ((answered = true), v)));
   push.startRegistryPush();
-  const { outcome, ms } = await mintH();
-  assert.ok(ms < MINT_ACK_TIMEOUT_MS + 500, `${ms} ms`);
+  const { outcome } = await mintH();
+  // Back before the gateway's answer, which comes only after the mint's wait: the wait ended it.
+  assert.equal(answered, false, "the mint returned before the late answer");
   assert.ok(outcome.timedOut || outcome.warning === warn("unconfirmed"), JSON.stringify(outcome));
   assert.equal(JSON.parse(readFileSync(push.outboxFile(), "utf8")).dirty, true);
   // Settle the late answer before the next test, then let a good send drain the outbox.
@@ -353,8 +357,9 @@ test("an unreachable gateway answers at once with a warning, never confirmed; th
   clearStores();
   answer = async () => null;
   push.startRegistryPush();
-  const { outcome, ms } = await mintH();
-  assert.ok(ms < 1000, `${ms} ms`);
+  const { outcome } = await mintH();
+  // At once: the failed send ended the wait, not MINT_ACK_TIMEOUT_MS.
+  assert.equal(outcome.timedOut, false, JSON.stringify(outcome));
   assert.ok([warn("unreachable"), warn("unconfirmed")].includes(outcome.warning!), JSON.stringify(outcome));
   assert.equal(JSON.parse(readFileSync(push.outboxFile(), "utf8")).dirty, true);
 });
@@ -422,10 +427,13 @@ test("concurrent mints in one batch are each confirmed by the ack that covers th
   clearStores();
   let release!: () => void;
   const gate = new Promise<void>((r) => (release = r));
-  answer = async (s) => (await gate, { ok: true, seq: s.seq, publicUrl: PUBLIC_URL });
+  let sent = 0;
+  answer = async (s) => (sent++, await gate, { ok: true, seq: s.seq, publicUrl: PUBLIC_URL });
   push.startRegistryPush();
   const mints = [mintH(), mintH(), mintH()];
-  setTimeout(() => release(), 50);
+  // The batch is at the gateway, its answer held: let it answer.
+  for (const end = Date.now() + 10_000; sent === 0; await new Promise((r) => setTimeout(r, 5))) assert.ok(Date.now() < end, "the push reached the gateway");
+  release();
   const done = await Promise.all(mints);
   for (const d of done) assert.equal(d.outcome.warning, null, JSON.stringify(d.outcome));
   const last = pushed.at(-1)!;
@@ -467,165 +475,6 @@ test("stopRegistryPush unsubscribes: a later mint pushes nothing", async () => {
   await mintH();
   await new Promise((r) => setTimeout(r, 50));
   assert.equal(pushed.length, before);
-});
-
-// ---- the ingress --------------------------------------------------------------------------------
-
-let expected: { nodeId: string; addresses?: string[] } | null = { nodeId: "nGW" };
-
-async function openIngress() {
-  const ing = ingress.createIngress({ expected: () => expected, addresses: async () => ["127.0.0.1"], port: 0, recheckMs: 60_000 });
-  await ing.start();
-  const port = ing.info().port;
-  assert.ok(port > 0, "bound");
-  return { ing, port };
-}
-
-function get(port: number, path: string, opts: { headers?: Record<string, string>; agent?: Agent } = {}) {
-  return new Promise<{ status: number; headers: Record<string, string | string[] | undefined>; socketClosed: Promise<void> }>((resolve, reject) => {
-    const r = request({ host: "127.0.0.1", port, path, headers: opts.headers, agent: opts.agent ?? false }, (res) => {
-      res.resume();
-      const sock = res.socket;
-      const socketClosed = new Promise<void>((done) => (sock.destroyed ? done() : sock.once("close", () => done())));
-      res.on("end", () => resolve({ status: res.statusCode ?? 0, headers: res.headers, socketClosed }));
-    });
-    r.on("error", reject);
-    r.end();
-  });
-}
-
-test("ingress: the gateway gets the share app; a stranger or another peer gets 403 with the marker", async () => {
-  expected = { nodeId: "nGW" };
-  const { ing, port } = await openIngress();
-  try {
-    whoisNode = "nGW";
-    assert.equal((await get(port, `/h/${TOKEN}`)).status, 200, "the page shell (it asks the API)");
-    assert.equal((await get(port, `/api/h/${TOKEN}`)).status, 404, "an unknown token: the share app's own 404");
-    assert.equal((await get(port, "/api/sessions")).status, 404, "not a share path");
-    for (const who of ["nDESK", "nSTRANGER", null]) {
-      whoisNode = who;
-      const r = await get(port, `/h/${TOKEN}`);
-      assert.equal(r.status, 403, String(who));
-      assert.equal(r.headers[REFUSED_HEADER.toLowerCase()], "refused");
-    }
-  } finally {
-    ing.close();
-  }
-});
-
-test("ingress: no expected gateway refuses everyone", async () => {
-  expected = null;
-  const { ing, port } = await openIngress();
-  try {
-    whoisNode = "nGW";
-    assert.equal((await get(port, `/h/${TOKEN}`)).status, 403);
-  } finally {
-    ing.close();
-    expected = { nodeId: "nGW" };
-  }
-});
-
-test("ingress: the gateway's single X-Forwarded-For is the rate-limit key; a stranger's never counts", async () => {
-  expected = { nodeId: "nGW" };
-  const { ing, port } = await openIngress();
-  try {
-    whoisNode = "nGW";
-    for (let i = 0; i < 65; i++) assert.notEqual((await get(port, `/h/${TOKEN}`, { headers: { "x-forwarded-for": `203.0.113.${i}` } })).status, 429, `client ${i}`);
-    let last = 0;
-    for (let i = 0; i < 61; i++) last = (await get(port, `/h/${TOKEN}`, { headers: { "x-forwarded-for": "198.51.100.1" } })).status;
-    assert.equal(last, 429, "one client past the limit");
-  } finally {
-    ing.close();
-  }
-});
-
-test("ingress: a via change closes the gateway's kept-alive socket; recheck with the same gateway keeps it", async () => {
-  expected = { nodeId: "nGW" };
-  whoisNode = "nGW";
-  const { ing, port } = await openIngress();
-  const agent = new Agent({ keepAlive: true, maxSockets: 1 });
-  try {
-    const r = await get(port, `/h/${TOKEN}`, { agent });
-    assert.equal(ing.admittedCount(), 1);
-    await ing.recheck();
-    assert.equal(ing.admittedCount(), 1, "the same gateway stays");
-    expected = { nodeId: "nNEW" };
-    await ing.recheck();
-    await r.socketClosed;
-    assert.equal(ing.admittedCount(), 0);
-  } finally {
-    agent.destroy();
-    ing.close();
-    expected = { nodeId: "nGW" };
-  }
-});
-
-test("ingress: removing the gateway closes admitted sockets on the next poll, without a recheck call", async () => {
-  expected = { nodeId: "nGW" };
-  whoisNode = "nGW";
-  const ing = ingress.createIngress({ expected: () => expected, addresses: async () => ["127.0.0.1"], port: 0, recheckMs: 50 });
-  await ing.start();
-  const agent = new Agent({ keepAlive: true, maxSockets: 1 });
-  try {
-    const r = await get(ing.info().port, `/h/${TOKEN}`, { agent });
-    expected = null;
-    await r.socketClosed;
-    assert.equal(ing.admittedCount(), 0);
-  } finally {
-    agent.destroy();
-    ing.close();
-    expected = { nodeId: "nGW" };
-  }
-});
-
-test("ingress: a raw kept-alive connection the gate admitted is destroyed when via changes", async () => {
-  expected = { nodeId: "nGW" };
-  whoisNode = "nGW";
-  const { ing, port } = await openIngress();
-  const { connect } = await import("node:net");
-  const s = connect(port, "127.0.0.1");
-  try {
-    await new Promise((r) => s.once("connect", r));
-    const closed = new Promise<void>((r) => s.once("close", () => r()));
-    // A kept-alive HTTP request on the raw socket, admitted, then via changes.
-    s.write(`GET /h/${TOKEN} HTTP/1.1\r\nHost: x\r\n\r\n`);
-    await new Promise((r) => s.once("data", r));
-    expected = { nodeId: "nNEW" };
-    await ing.recheck();
-    await closed;
-  } finally {
-    s.destroy();
-    ing.close();
-    expected = { nodeId: "nGW" };
-  }
-});
-
-test("ingress: close() unbinds", async () => {
-  const { ing, port } = await openIngress();
-  ing.close();
-  await assert.rejects(get(port, `/h/${TOKEN}`));
-});
-
-test("startIngress: not routed binds nothing; routed never binds loopback or a wildcard", async () => {
-  setting = { version: 1, route: "off" };
-  await ingress.startIngress();
-  assert.equal(ingress.ingressInfo(), null);
-  ingress.stopIngress();
-  const prev = process.env.SOVA_PEER_HOST;
-  setting = VIA;
-  process.env.SOVA_PEER_HOST = "127.0.0.1";
-  const quiet = console.warn;
-  console.warn = () => {};
-  try {
-    await ingress.startIngress();
-    const info = ingress.ingressInfo();
-    for (const a of info?.addresses ?? []) assert.ok(!/^(127\.|::1$|0\.0\.0\.0$|::$)/.test(a), `bound ${a}`);
-  } finally {
-    ingress.stopIngress();
-    console.warn = quiet;
-    if (prev === undefined) delete process.env.SOVA_PEER_HOST;
-    else process.env.SOVA_PEER_HOST = prev;
-  }
 });
 
 // =================================================================================================
@@ -734,149 +583,6 @@ test("B1(iv) control: an earlier ack's collision on another hash doesn't unconfi
   assert.equal(later.outcome.warning, null, JSON.stringify(later.outcome));
 });
 
-// ---- B2: established sockets are re-judged by the whole gate -----------------------------------
-
-async function keptAlive(port: number) {
-  const agent = new Agent({ keepAlive: true, maxSockets: 1 });
-  const r = await get(port, `/api/h/${TOKEN}`, { agent });
-  return { agent, closed: r.socketClosed };
-}
-
-test("B2 the same nodeId with pins that no longer include the source: recheck closes it", async () => {
-  whoisNode = "nGW";
-  expected = { nodeId: "nGW", addresses: ["127.0.0.1"] };
-  const { ing, port } = await openIngress();
-  const k = await keptAlive(port);
-  try {
-    assert.equal(ing.admittedCount(), 1);
-    expected = { nodeId: "nGW", addresses: ["100.64.0.77"] };
-    await ing.recheck();
-    assert.equal(await settlesWithin(k.closed, 1000), true, "closed");
-  } finally {
-    k.agent.destroy();
-    ing.close();
-    expected = { nodeId: "nGW" };
-  }
-});
-
-test("B2 pins changed to [] (explicitly none): recheck closes it", async () => {
-  whoisNode = "nGW";
-  expected = { nodeId: "nGW", addresses: ["127.0.0.1"] };
-  const { ing, port } = await openIngress();
-  const k = await keptAlive(port);
-  try {
-    expected = { nodeId: "nGW", addresses: [] };
-    await ing.recheck();
-    assert.equal(await settlesWithin(k.closed, 1000), true, "closed");
-  } finally {
-    k.agent.destroy();
-    ing.close();
-    expected = { nodeId: "nGW" };
-  }
-});
-
-describe("B2 with the real address-identity adapter", () => {
-  let idPeers: PeerEntry[] = [];
-  beforeEach(() => {
-    idPeers = [{ ...GATEWAY, dnsName: "100.64.0.2" }];
-    const adapter = addressIdentity(() => idPeers, { SOVA_PEER_HOST: "100.64.0.9" });
-    // The ingress binds loopback here: its callers appear at the gateway's tailnet address.
-    setIdentity({ status: adapter.status, whois: (addr: string) => adapter.whois(addr.replace(/^127\.0\.0\.1:/, "100.64.0.2:")) });
-    expected = { nodeId: "nGW" };
-  });
-  let quiet: typeof console.warn;
-  beforeEach(() => {
-    quiet = console.warn;
-    console.warn = () => {};
-  });
-  afterEach(() => {
-    console.warn = quiet;
-    setIdentity(fakeIdentity);
-  });
-
-  test("unique → ambiguous: recheck closes the kept-alive socket", async () => {
-    const { ing, port } = await openIngress();
-    const k = await keptAlive(port);
-    try {
-      assert.equal(ing.admittedCount(), 1, "admitted while unique");
-      idPeers.push({ ...OTHER, dnsName: "100.64.0.2" });
-      await ing.recheck();
-      assert.equal(await settlesWithin(k.closed, 1000), true, "closed");
-    } finally {
-      k.agent.destroy();
-      ing.close();
-    }
-  });
-
-  test("unique → unmapped: recheck closes the kept-alive socket", async () => {
-    const { ing, port } = await openIngress();
-    const k = await keptAlive(port);
-    try {
-      idPeers = [{ ...GATEWAY, dnsName: "vps.example.ts.net" }];
-      await ing.recheck();
-      assert.equal(await settlesWithin(k.closed, 1000), true, "closed");
-    } finally {
-      k.agent.destroy();
-      ing.close();
-    }
-  });
-});
-
-test("B2 expected() changing during admission: the request is refused and nothing is admitted", async () => {
-  const A = { nodeId: "nGW" };
-  const B = { nodeId: "nNEW" };
-  let armed = false;
-  let readsSinceArmed = 0;
-  // A until the gate has read it once after whois answered; B from then on (the setting changed
-  // between the gate's read and whatever the ingress reads next).
-  const ing = ingress.createIngress({
-    expected: () => (armed && readsSinceArmed++ >= 1 ? B : A),
-    addresses: async () => ["127.0.0.1"],
-    port: 0,
-    recheckMs: 60_000,
-  });
-  setIdentity({ status: fakeIdentity.status, whois: async () => ((armed = true), { nodeId: "nGW", name: "x", tags: [], login: "me" }) });
-  await ing.start();
-  try {
-    const r = await get(ing.info().port, `/api/h/${TOKEN}`);
-    assert.equal(r.status, 403, "refused");
-    assert.equal(ing.admittedCount(), 0, "nothing admitted");
-  } finally {
-    ing.close();
-  }
-});
-
-test("B2 an upgraded socket is closed by recheck after a via change", async () => {
-  whoisNode = "nGW";
-  expected = { nodeId: "nGW" };
-  const ing = ingress.createIngress({
-    expected: () => expected,
-    addresses: async () => ["127.0.0.1"],
-    port: 0,
-    recheckMs: 60_000,
-    dispatch: (_q, r) => void r.writeHead(299).end(),
-    // A 101 by hand, and the socket kept: an upgraded connection the ingress admitted.
-    upgrade: (_q, socket) => void socket.write("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n"),
-  });
-  await ing.start();
-  const { connect } = await import("node:net");
-  const s = connect(ing.info().port, "127.0.0.1");
-  try {
-    await new Promise((r) => s.once("connect", r));
-    const closed = new Promise<void>((r) => s.once("close", () => r()));
-    s.write(`GET /ws/h?token=${TOKEN} HTTP/1.1\r\nHost: x\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n`);
-    const first = await new Promise<string>((r) => s.once("data", (d) => r(d.toString("latin1"))));
-    assert.match(first, /^HTTP\/1\.1 101/, "upgraded");
-    expected = { nodeId: "nNEW" };
-    await ing.recheck();
-    assert.equal(await settlesWithin(closed, 1000), true, "the upgraded socket was closed");
-  } finally {
-    s.destroy();
-    ing.close();
-    expected = { nodeId: "nGW" };
-  }
-});
-
 // ---- B3: a gateway change invalidates the old gateway's pending answers --------------------------
 
 test("B3 A's late ok ack after via moved to B confirms nothing; B gets a snapshot, and B's ack confirms", async () => {
@@ -893,7 +599,8 @@ test("B3 A's late ok ack after via moved to B confirms nothing; B gets a snapsho
   await push.pushNow(); // A is current and idle
   holdA = true;
   const p = mintH(WAIT); // its snapshot goes to A, and A's answer is held
-  await new Promise((r) => setTimeout(r, 20));
+  for (const end = Date.now() + 10_000; !((pushed.at(-1)?.links.length ?? 0) > 0 && pushedTo.at(-1) === "nGW"); await new Promise((r) => setTimeout(r, 5)))
+    assert.ok(Date.now() < end, "the mint's snapshot reached A");
   assert.ok(pushed.at(-1)!.links.length > 0 && pushedTo.at(-1) === "nGW", "premise: the mint rides A's held send");
   setting = { version: 1, route: { via: { nodeId: "nDESK" } } };
   push.registryRouteChanged();
@@ -903,7 +610,7 @@ test("B3 A's late ok ack after via moved to B confirms nothing; B gets a snapsho
   for (let i = 0; i < 20; i++) await tick();
   assert.equal(await settlesWithin(p, 200), false, "the mint still waits for B");
   assert.notEqual(gw.viaGatewayStatus()?.publicUrl, PUBLIC_URL, "the status is not A's");
-  await new Promise((r) => setTimeout(r, 50));
+  for (const end = Date.now() + 10_000; !pushedTo.includes("nDESK"); await new Promise((r) => setTimeout(r, 5))) assert.ok(Date.now() < end, "B's snapshot");
   assert.ok(pushedTo.includes("nDESK"), "B received a snapshot");
   heldB.resolve();
   const { outcome } = await p;
@@ -1193,7 +900,8 @@ function holdEndpoint(node: string) {
   };
 }
 const callsTo = (pattern: RegExp, from = 0) => calls.slice(from).filter((u) => pattern.test(u));
-async function until(cond: () => boolean, what: string, ms = 2000) {
+/** Resolves once `cond` holds; throws after `ms` (a hang guard, not a bound). */
+async function until(cond: () => boolean, what: string, ms = 10_000) {
   const end = Date.now() + ms;
   while (!cond()) {
     if (Date.now() > end) throw new Error(`timed out waiting for ${what}`);
@@ -1217,6 +925,7 @@ test("B3v2(a) via A → B while A's endpoint resolves: zero calls to A, B gets t
   const mark = calls.length;
   held.resolve();
   await p;
+  await until(() => pushedTo.includes("nDESK"), "B's snapshot");
   await settleAll();
   assert.deepEqual(callsTo(/gw-nGW\./, mark), [], "nothing went to A after it was withdrawn");
   assert.ok(pushedTo.includes("nDESK"), "B got a snapshot");
@@ -1441,7 +1150,7 @@ test("a gateway whose info lists `s` gets the session rows; one that starts list
   // The gateway is updated: the next refresh learns `s` and owes it the session rows.
   infoReply = async (n) => infoWithKinds(n, ["h", "i", "s", "x"]);
   push.registryRouteChanged();
-  await new Promise((r) => setTimeout(r, 50));
+  await until(() => push.gatewayRoutesSessions(), "the refresh learnt `s`");
   await push.pushNow();
   assert.equal(push.gatewayRoutesSessions(), true);
   assert.ok(pushed.at(-1)!.links.some((l) => l.h === s.hash && l.kind === "s"), "the session row is sent");
@@ -1464,8 +1173,10 @@ test("M0-B1 a same-node endpoint change forgets `s`: until the new endpoint stat
   peers = [{ ...GATEWAY, dnsName: "100.64.0.99" }, OTHER];
   let release!: () => void;
   const held = new Promise<void>((r) => (release = r));
+  let heldAnswered = false;
   infoReply = async (n) => {
     await held;
+    heldAnswered = true;
     return infoOk(n);
   };
   gw.bumpRouteGeneration?.();
@@ -1480,7 +1191,9 @@ test("M0-B1 a same-node endpoint change forgets `s`: until the new endpoint stat
   assert.equal(h.outcome.warning, null, "h still confirms");
   assert.notEqual(s.outcome.warning, null, "the session mint is not confirmed");
   release();
-  await new Promise((r) => setTimeout(r, 20));
+  // The held info answered, and what it runs has run (the loop turned once after it).
+  await until(() => heldAnswered, "the held info answered");
+  await new Promise((r) => setImmediate(r));
   assert.equal(push.gatewayRoutesSessions(), false, "the old-shaped info never lent it s");
 });
 
@@ -1504,7 +1217,7 @@ test("M0-B1 support withdrawn between building a snapshot and sending it: the s-
   };
   const before = pushed.length;
   const minting = mintS(WAIT);
-  await new Promise((r) => setTimeout(r, 30));
+  await until(() => !holding, "the send is at its endpoint, held");
   endpointHook = null;
   infoReply = async (n) => infoOk(n);
   await gw.refreshGateway();
@@ -1633,7 +1346,7 @@ test("through a gateway comeback the preview address never reads unset, and the 
   try {
     const c = comeback((n) => infoWithPreview(n, ALL_KINDS));
     seen.push(addressNow().url); // right after the comeback, before anything answered
-    for (let i = 0; i < 50 && !c.asked(); i++) await pause(2);
+    await until(() => c.asked() > 0, "the comeback asks the gateway again");
     assert.ok(c.asked() > 0, "the comeback asks the gateway again");
     await pause(20); // the gateway takes its time
     seen.push(addressNow().url);
@@ -1653,7 +1366,7 @@ test("a gateway that comes back without the preview kind clears the address (gat
   const c = comeback((n) => infoWithKinds(n, ["h", "i", "s", "x"]));
   assert.equal(addressNow().url, PREVIEW_URL, "kept until it answers");
   await c.answer();
-  for (let i = 0; i < 50 && addressNow().url; i++) await pause(2);
+  await until(() => !addressNow().url, "the address cleared");
   const a = addressNow();
   assert.deepEqual([a.url, a.reason], [null, "gateway-old"]);
   assert.ok(!pushed.at(-1)!.links.some((l) => l.kind === "p"), "no p row to a gateway that no longer lists it");
@@ -1663,7 +1376,7 @@ test("a gateway whose info goes unanswered still loses its statement: the addres
   await previewGateway();
   const c = comeback(() => null);
   await c.answer();
-  for (let i = 0; i < 50 && addressNow().url; i++) await pause(2);
+  await until(() => !addressNow().url, "the address cleared");
   const a = addressNow();
   assert.deepEqual([a.url, a.reason], [null, "no-address"]);
   // and without any comeback: the 60 s refresh finding it unreachable clears it the same way

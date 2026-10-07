@@ -12,8 +12,9 @@ The rules:
   canaries below are the only code that reads it.)
 - **Fixed by design where possible.** When renaming a file or changing a test removes the
   dependency, no runtime code is involved.
-- **Every quirk has a canary** in `server/bun-quirks-canary.test.ts`. It asserts that the bug
-  still exists, runs only under Bun (`pnpm test`) and is skipped on Node. When a Bun
+- **Every quirk has a canary** in `server/bun-quirks-canary.test.ts`, or in
+  `server/bun-quirks-canary.integration.test.ts` when it starts a Bun child, opens sockets or
+  measures time. It asserts that the bug still exists, runs only under Bun and is skipped on Node. When a Bun
   upgrade fixes a bug, its canary fails. Then delete the workaround named below, the canary and
   this row.
 - **Every quirk has a repro** in `bun-quirks/repros/`. It is standalone and ready to file

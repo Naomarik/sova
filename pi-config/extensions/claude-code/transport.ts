@@ -15,6 +15,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { claudeBaseEnv, type ClaudeAccountFailure } from "./accounts.ts";
+import { claudeCliId } from "./catalog.ts";
 import type { ClaudeRequestObserver } from "../llm-inflight/claude.ts";
 
 // ---------------------------------------------------------------------------
@@ -451,7 +452,8 @@ export function buildClaudeArgv(o: ClaudeArgvOptions): ClaudeArgvResult {
 		settings = parsed as Record<string, unknown>;
 	}
 	args.push("--settings", JSON.stringify({ ...settings, ...NO_ATTRIBUTION }));
-	if (o.model) args.push("--model", o.model);
+	// A catalog id, an old id read as the catalog model it means (§app.claude-code-provider/pinned-model).
+	if (o.model) args.push("--model", claudeCliId(o.model));
 	if (o.effort) args.push("--effort", o.effort);
 	args.push("--tools", (o.tools ?? DEFAULT_CLAUDE_TOOLS).join(","));
 	const mcpServers = Object.entries(o.mcpServers ?? {});

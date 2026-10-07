@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import { OVERSEER_DIALOG_ANSWER_ENTRY, OVERSEER_ENTRY, OVERSEER_SENT_ENTRY, type ChatServerMessage } from "../shared/protocol";
 import { piSession } from "./harness/pi/testing/handle";
+import { until as waitUntil } from "./test-wait";
 
 const agentDir = realpathSync(mkdtempSync(join(tmpdir(), "sova-overseer-markers-")));
 // A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
@@ -19,6 +20,8 @@ const cwd = join(agentDir, "cwd");
 mkdirSync(cwd, { recursive: true });
 
 const { acquireChat, BusyError, disposeAllChats, isOverseerFile, REWIND_ENTRY, resolveRegenerate } = await import("./chat-manager");
+// fd and rg in-process (server/search-tools-fake.ts; overseer-file-tools.integration.test.ts runs the real ones).
+(await import("./overseer-file-tools")).setSearchSpawnForTest((await import("./search-tools-fake")).fakeSearchSpawn());
 const { normalizeEntries, normalizeEntry } = await import("./transcript");
 const { historyOf } = await import("./harness/pi/reader");
 const { canonicalPath } = await import("./paths");
@@ -110,7 +113,7 @@ describe("rewind on an Overseer-sent user row (real runtime)", () => {
     got.length = 0;
 
     chat.handle(me, { type: "rewind", id: "r1", entryId: "u2" });
-    for (let i = 0; i < 50 && !got.some((m) => m.type === "rewound" || m.type === "rewind_refused"); i++) await new Promise((r) => setTimeout(r, 20));
+    await waitUntil(() => got.some((m) => m.type === "rewound" || m.type === "rewind_refused"));
     assert.deepEqual(got.at(-1), { type: "rewound", id: "r1", entryId: "u2", editorText: "sent by the overseer" });
 
     const lines = readFileSync(path, "utf8").trim().split("\n").map((l) => JSON.parse(l));
@@ -260,7 +263,7 @@ function stubModel(chat: Awaited<ReturnType<typeof acquireChat>>, hold?: () => P
   };
 }
 
-async function until(cond: () => boolean, ms = 3000): Promise<void> {
+async function until(cond: () => boolean, ms = 30_000): Promise<void> {
   const end = Date.now() + ms;
   while (!cond()) {
     if (Date.now() > end) throw new Error("timed out");

@@ -49,12 +49,12 @@ test("defaults: fable planning, opus implementation, and a conservative Investig
 	assert.deepEqual(Object.keys(d.profiles), [...DELEGATE_PROFILES]);
 	assert.deepEqual(DELEGATE_PROFILES, ["planning", "investigation", "routine", "complex"]);
 	assert.deepEqual(d.profiles.planning, {
-		primary: { backend: "claude-code", model: "claude-fable-5-1[1m]", effort: "medium" },
-		fallback: { backend: "claude-code", model: "opus[1m]", effort: "high" },
+		primary: { backend: "claude-code", model: "claude-fable-5-1", effort: "medium" },
+		fallback: { backend: "claude-code", model: "claude-opus-5-5", effort: "high" },
 	});
-	assert.deepEqual(d.profiles.routine, { primary: { backend: "claude-code", model: "opus[1m]", effort: "low" }, fallback: null });
-	assert.deepEqual(d.profiles.complex, { primary: { backend: "claude-code", model: "opus[1m]", effort: "medium" }, fallback: null });
-	assert.deepEqual(d.profiles.investigation, { primary: { backend: "claude-code", model: "opus[1m]", effort: "low" }, fallback: null });
+	assert.deepEqual(d.profiles.routine, { primary: { backend: "claude-code", model: "claude-opus-5-5", effort: "low" }, fallback: null });
+	assert.deepEqual(d.profiles.complex, { primary: { backend: "claude-code", model: "claude-opus-5-5", effort: "medium" }, fallback: null });
+	assert.deepEqual(d.profiles.investigation, { primary: { backend: "claude-code", model: "claude-opus-5-5", effort: "low" }, fallback: null });
 	assert.notEqual(delegateDefaults(), delegateDefaults(), "a fresh object each time");
 	assert.notEqual(delegateDefaults().profiles.planning.primary, d.profiles.planning.primary, "never aliased");
 	assert.deepEqual(
@@ -65,18 +65,18 @@ test("defaults: fable planning, opus implementation, and a conservative Investig
 
 test("parseChoice is backend-aware", () => {
 	assert.deepEqual(parseChoice({ backend: "pi", model: "zai/glm-5.3", effort: "high" }), { backend: "pi", model: "zai/glm-5.3", effort: "high" });
-	assert.deepEqual(parseChoice({ backend: "claude-code", model: "opus[1m]", effort: "max", extra: 1 }), { backend: "claude-code", model: "opus[1m]", effort: "max" });
+	assert.deepEqual(parseChoice({ backend: "claude-code", model: "claude-opus-5-5", effort: "max", extra: 1 }), { backend: "claude-code", model: "claude-opus-5-5", effort: "max" });
 	// pi efforts are pi's thinking ladder; claude's are the CLI's.
 	assert.deepEqual(PI_EFFORTS, ["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 	assert.deepEqual(CLAUDE_EFFORTS, ["low", "medium", "high", "xhigh", "max"]);
-	assert.ok("error" in parseChoice({ backend: "claude-code", model: "opus", effort: "off" }), "claude has no off");
-	assert.ok("error" in parseChoice({ backend: "claude-code", model: "opus", effort: "minimal" }));
+	assert.ok("error" in parseChoice({ backend: "claude-code", model: "claude-opus-5-5", effort: "off" }), "claude has no off");
+	assert.ok("error" in parseChoice({ backend: "claude-code", model: "claude-opus-5-5", effort: "minimal" }));
 	assert.ok(!("error" in parseChoice({ backend: "pi", model: "a/b", effort: "off" })), "pi does");
 	for (const bad of [
 		null,
 		[],
-		"opus",
-		{ model: "opus", effort: "low" },
+		"claude-opus-5-5",
+		{ model: "claude-opus-5-5", effort: "low" },
 		{ backend: "codex", model: "x", effort: "low" },
 		{ backend: "pi", model: "glm-5.3", effort: "low" }, // pi needs provider/model
 		{ backend: "pi", model: "/glm", effort: "low" },
@@ -86,8 +86,8 @@ test("parseChoice is backend-aware", () => {
 		{ backend: "claude-code", model: "opus 1m", effort: "low" },
 		{ backend: "claude-code", model: " opus", effort: "low" },
 		{ backend: "claude-code", model: "", effort: "low" },
-		{ backend: "claude-code", model: "opus", effort: "LOW" },
-		{ backend: "claude-code", model: "opus" },
+		{ backend: "claude-code", model: "claude-opus-5-5", effort: "LOW" },
+		{ backend: "claude-code", model: "claude-opus-5-5" },
 	]) {
 		assert.ok("error" in parseChoice(bad), `rejected: ${JSON.stringify(bad)}`);
 	}
@@ -158,7 +158,7 @@ test("save/load round-trips canonically; missing and corrupt files read as defau
 		const path = join(dir, "nested", DELEGATE_FILE_NAME);
 		assert.deepEqual(loadDelegate(path), delegateDefaults(), "missing");
 		const settings: DelegateSettings = delegateDefaults();
-		settings.profiles.investigation = { primary: { backend: "pi", model: "zai/glm-5.3", effort: "minimal" }, fallback: { backend: "claude-code", model: "sonnet", effort: "low" } };
+		settings.profiles.investigation = { primary: { backend: "pi", model: "zai/glm-5.3", effort: "minimal" }, fallback: { backend: "claude-code", model: "claude-sonnet-5-5", effort: "low" } };
 		saveDelegate(path, settings);
 		assert.deepEqual(loadDelegate(path), settings);
 		const onDisk = JSON.parse(readFileSync(path, "utf8"));
@@ -211,7 +211,7 @@ test("delegateKey identifies a routing", () => {
 	const a = delegateDefaults();
 	const b = delegateDefaults();
 	assert.equal(delegateKey(a), delegateKey(b));
-	b.profiles.complex.fallback = { backend: "claude-code", model: "sonnet", effort: "high" };
+	b.profiles.complex.fallback = { backend: "claude-code", model: "claude-sonnet-5-5", effort: "high" };
 	assert.notEqual(delegateKey(a), delegateKey(b));
 	const c = delegateDefaults();
 	c.profiles.planning.primary.effort = "high";

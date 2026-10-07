@@ -6,15 +6,16 @@ import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { parseDefinition } from "../../shared/project-contract";
 import { conformer } from "./conform";
-import { DetachedDriver } from "./drivers";
 import { ProjectEngine, type Caller } from "./engine";
+import { FakeHost } from "./fake-host";
 import { readRegistry } from "./store";
 import { approve, defHashOf } from "./trust";
 
 /**
  * Conformance cleans up after itself on every outcome (§app.project-services/conform): the scratch
  * worktrees and `sova/conform-*` branches it cut are gone after a failed setup too, even one that left
- * files behind in its worktree.
+ * files behind in its worktree. On a host in memory (fake-host.ts) with real git: the setups are the fake
+ * driver's runs (one writes into its worktree, as setup.mjs in the integration test does).
  */
 
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-conform-cleanup-agent-"));
@@ -60,7 +61,16 @@ after(async () => {
 });
 
 before(() => {
-  engine = new ProjectEngine({ driver: new DetachedDriver(3_000), pollMs: 100 });
+  const host = new FakeHost();
+  // setup.mjs leaves an untracked file in its worktree, then fails; fail.mjs just fails.
+  host.driver.once = (spec) => {
+    if (spec.argv[1] === "setup.mjs") {
+      writeFileSync(join(spec.cwd, "local.edn"), "{}");
+      return { code: 3 };
+    }
+    return { code: spec.argv[1] === "fail.mjs" ? 2 : 0 };
+  };
+  engine = new ProjectEngine(host.deps());
   engine.conformer = conformer(engine);
 });
 

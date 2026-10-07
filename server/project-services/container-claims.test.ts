@@ -1,15 +1,13 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { parseDefinition, type VerbResult } from "../../shared/project-contract";
 import type { ContainerQuery } from "./container-ports";
-import { DetachedDriver } from "./drivers";
 import { ProjectEngine, type Caller } from "./engine";
-import { hostPortOwner } from "./proctable";
+import { FakeHost } from "./fake-host";
 import { readRegistry } from "./store";
 import { approve, defHashOf } from "./trust";
 
@@ -17,14 +15,16 @@ import { approve, defHashOf } from "./trust";
  * A container service whose engine publishes its port through a listener the unit doesn't own
  * (rootful docker-proxy, rootlessport, pasta, Docker Desktop) or through no listener at all. The
  * engine is faked: `published` is what `<engine> port` / `ps` report, and every listener reads as
- * an unreadable process, as root's docker-proxy does. The service itself is a plain node process.
+ * an unreadable process, as root's docker-proxy does. On a host in memory (fake-host.ts) whose clock the
+ * waits step; container-claims.integration.test.ts refuses a start against real listeners.
  */
 
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-container-agent-"));
 
 const op: Caller = { kind: "operator" };
-// Below the kernel's ephemeral range (32768+), where any outgoing connection on the box can hold a port.
-const BASE = 20_000 + Math.floor(Math.random() * 10_000);
+const BASE = 21_000;
+/** The pid a container's proxy listens as (nobody's unit). */
+const PROXY = 4_343;
 const ENGINE = "podman";
 
 const DEF = {
@@ -41,12 +41,24 @@ let engine: ProjectEngine;
 /** Container name → the host ports the fake engine says it publishes. */
 const published = new Map<string, number[]>();
 const queries: string[] = [];
-/** Milliseconds a fake `rm -f` takes to free the container's ports. */
+/** Milliseconds (on the host's clock) a fake `rm -f` takes to free the container's ports. */
 let rmDelay = 0;
-/** Listeners standing in for a container's proxy, closed by its `rm -f`. */
-const proxies = new Map<string, Server>();
+/** The port of the listener standing in for a container's proxy, closed by its `rm -f`. */
+const proxies = new Map<string, number>();
+/** Container name → when its `rm -f` is done. */
+const freeing = new Map<string, number>();
+const host = new FakeHost();
+
+const free = (name: string) => {
+  published.delete(name);
+  const port = proxies.get(name);
+  if (port !== undefined) host.close(port);
+  proxies.delete(name);
+  freeing.delete(name);
+};
 
 const fakeQuery: ContainerQuery = async (eng, args) => {
+  for (const [name, at] of freeing) if (host.clock.now() >= at) free(name);
   queries.push(`${eng} ${args.join(" ")}`);
   assert.equal(eng, ENGINE, "only the declared engine is asked");
   const [verb, name] = args;
@@ -59,18 +71,17 @@ const fakeQuery: ContainerQuery = async (eng, args) => {
 const fakeExec = async (eng: string, args: string[]) => {
   assert.equal(eng, ENGINE);
   const name = args[args.length - 1]!;
-  const free = () => {
-    published.delete(name);
-    proxies.get(name)?.close();
-    proxies.delete(name);
-  };
-  if (rmDelay) setTimeout(free, rmDelay);
-  else free();
+  if (rmDelay) freeing.set(name, host.clock.now() + rmDelay);
+  else free(name);
   return 0;
 };
 
-const listen = (port: number) => new Promise<Server>((res) => { const s = createServer(); s.listen(port, "127.0.0.1", () => res(s)); });
-const close = (s: Server) => new Promise((r) => s.close(r));
+/** A listener of nobody's unit on `port`; closing it frees the port. */
+const listen = (port: number) => {
+  host.listen(port, PROXY);
+  return { port, get listening() { return host.listeners.get(port)?.pid === PROXY; } };
+};
+const close = (s: { port: number }) => host.close(s.port);
 const recOf = (id: string | null) => readRegistry().instances.find((i) => i.id === id)!;
 const def = () => parseDefinition(readFileSync(join(project, ".sova/project.json"), "utf8"));
 
@@ -86,20 +97,19 @@ before(() => {
   git(["commit", "-q", "-m", "fixture"]);
   const hash = defHashOf(def());
   approve(project, hash, hash);
-  engine = new ProjectEngine({
-    driver: new DetachedDriver(3_000),
-    pollMs: 100,
-    // Every listener is unreadable, as root's docker-proxy is to the user.
-    portOwner: (p) => (hostPortOwner(p) === "none" ? "none" : "unknown"),
-    containerQuery: fakeQuery,
-    containerExec: fakeExec,
-  });
+  engine = new ProjectEngine(
+    host.deps({
+      // Every listener is unreadable, as root's docker-proxy is to the user.
+      portOwner: (p) => (host.portOwner(p) === "none" ? "none" : "unknown"),
+      containerQuery: fakeQuery,
+      containerExec: fakeExec,
+    }),
+  );
 });
 
 after(async () => {
   rmDelay = 0;
   for (const i of readRegistry().instances) if (i.slot !== 0) await engine.run("teardown", { instance: i.id }, op);
-  for (const s of proxies.values()) await close(s);
   rmSync(parent, { recursive: true, force: true });
   rmSync(process.env.PI_CODING_AGENT_DIR!, { recursive: true, force: true });
 });
@@ -125,17 +135,18 @@ test("a port its own container publishes is the instance's own, whoever listens;
 test("down waits until the engine has released its container's ports", async () => {
   published.set("tbox-1", [BASE + 1]);
   rmDelay = 600;
-  const t0 = Date.now();
+  const t0 = host.clock.now();
   const down = await engine.run("down", { instance: a.instance }, op);
   rmDelay = 0;
   assert.equal(down.ok, true, JSON.stringify(down.error));
   assert.ok(!published.has("tbox-1"), "down returned only after the container stopped publishing");
-  assert.ok(Date.now() - t0 >= 550, `waited ${Date.now() - t0} ms`);
+  assert.ok(host.clock.now() - t0 >= 600, `waited ${host.clock.now() - t0} ms`);
+  assert.ok(host.clock.now() - t0 < 5_000, "and no longer: never the 5 s bound");
 });
 
 test("a leftover of its own container does not refuse the start: it is removed, then the service starts", async () => {
   const port = BASE + 1;
-  proxies.set("tbox-1", await listen(port));
+  proxies.set("tbox-1", listen(port).port);
   published.set("tbox-1", [port]);
   const up = await engine.run("up", { instance: a.instance }, op);
   assert.equal(up.ok, true, JSON.stringify(up.error));
@@ -147,7 +158,7 @@ test("a leftover of its own container does not refuse the start: it is removed, 
 
 test("another container publishing the port refuses the start, named, whether or not a listener shows", async () => {
   const port = BASE + 1;
-  const holder = await listen(port);
+  const holder = listen(port);
   published.set("someone-else", [port]);
   try {
     const up = await engine.run("up", { instance: a.instance }, op);
@@ -156,7 +167,7 @@ test("another container publishing the port refuses the start, named, whether or
     assert.ok(holder.listening, "never touched");
     assert.ok(published.has("someone-else"), "never removed");
   } finally {
-    await close(holder);
+    close(holder);
   }
   // Published by firewall rules alone: no listener at all, still refused and named.
   queries.length = 0;
@@ -166,13 +177,13 @@ test("another container publishing the port refuses the start, named, whether or
   assert.ok(queries.includes(`${ENGINE} ps --format {{.Names}}\t{{.Ports}}`), JSON.stringify(queries));
   published.delete("someone-else");
   // And a plain process holding it is refused as before.
-  const squat = await listen(port);
+  const squat = listen(port);
   try {
     const up2 = await engine.run("up", { instance: a.instance }, op);
     assert.equal(up2.error?.code, "port-held");
     assert.match(up2.error!.message, /which a process this user can't read holds/);
   } finally {
-    await close(squat);
+    close(squat);
   }
   const ok = await engine.run("up", { instance: a.instance }, op);
   assert.equal(ok.ok, true, JSON.stringify(ok.error));

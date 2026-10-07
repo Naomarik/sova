@@ -10,18 +10,17 @@ import { after, test } from "node:test";
 
 const agentDir = mkdtempSync(join(tmpdir(), "sova-session-titles-"));
 process.env.PI_CODING_AGENT_DIR = agentDir; // before the modules below compute their paths
-process.env.PORT = "0"; // an ephemeral listener: the route tests use app.request, not the socket
 const sessionsDir = join(agentDir, "sessions", "--tmp-titles--");
 mkdirSync(sessionsDir, { recursive: true });
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 
-const { app, server } = await import("./index");
+const { buildApp } = await import("./app");
+const { app } = buildApp({ extensionEntriesOf: async () => [] });
 const { cleanSessionTitle, dropSessionTitles, readSessionTitles, SESSION_TITLE_MAX, setSessionTitle } = await import("./session-titles");
 const { getSessionSummary, listSessions } = await import("./sessions-index");
 const { canonicalPath } = await import("./paths");
 
 after(async () => {
-  await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
   rmSync(agentDir, { recursive: true, force: true });
 });
 

@@ -346,6 +346,9 @@ export interface TranscriptItem {
       tool-call rows; absent on other kinds and entries with neither (renderers fall back to
       the session's current model). */
   model?: string;
+  /** assistant-text only: the model the provider says answered (pi's `responseModel`), when the
+      reply records one; the author line names it (§app.claude-code-provider/model-identity). */
+  answered?: string;
   /** Overseer markers, both invisible `custom` entries (never LLM context, ignored by the TUI):
       - `sent`: `customType:"sova-overseer-sent"`, data `OverseerSentMarkerData`. The row itself
         renders NOTHING; the client tags the user row whose id is `targetId` with an "Overseer" tag.
@@ -1704,6 +1707,15 @@ export interface DelegateBackendOptions {
       provider, `claude-code-cli`, registered only in sessions started with it on). A model of one
       of these that `models` doesn't list is NOT VERIFIED, never "not offered". */
   sessionScopedProviders?: string[];
+  /** claude-code only: what the CLI's own list says that Sova's Claude catalog doesn't (models it
+      names that the catalog doesn't know; a family alias it now runs as another model). Absent when
+      the list agrees or couldn't be read. Never changes `models`. */
+  drift?: ClaudeCatalogDrift;
+}
+
+export interface ClaudeCatalogDrift {
+  unknown: { id: string; name?: string }[];
+  moved: { family: string; id: string; current: string }[];
 }
 
 export interface DelegateOptions {
@@ -2523,6 +2535,9 @@ export interface TokenUsage { input: number; output: number; cacheRead: number; 
 export interface WorkerInfo {
   id: string; name: string; status: WorkerStatus; working: boolean;
   model?: string; backend?: string; preview?: string;
+  /** claude-code: the Claude catalog model it was asked for, when `model` (the one that answered)
+      is another one (§app.claude-code-provider/model-identity). */
+  asked?: string;
   /** Who serves this worker's model, lower-case, leading the pane's meta line: the ref's own
       provider (`zai` for `zai/glm-5.3`), a bare id's provider from pi's cached catalogs, or
       `claude code` for a claude-code worker (its own sub/route). Derived server-side in

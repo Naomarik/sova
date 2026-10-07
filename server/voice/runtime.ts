@@ -73,6 +73,8 @@ export interface TranscribeRequest {
 export interface RuntimeDeps {
   spawn?: typeof nodeSpawn;
   fetchImpl?: typeof fetch;
+  /** Tests: the port the child is started on (default: a free loopback port, freePort). */
+  port?: () => Promise<number>;
   /** Where the child's output goes, appended; truncated at each start. */
   logFile: string;
   /** The pid file a later boot reads to kill a leftover child. */
@@ -326,7 +328,7 @@ export class WhisperRuntime {
     const backoff = this.deps.backoffMs ?? [1000, 2000, 4000];
     const n = this.crashes.length;
     if (n > 0) await new Promise((r) => setTimeout(r, backoff[Math.min(n, backoff.length) - 1]));
-    const port = await freePort();
+    const port = await (this.deps.port ?? freePort)();
     const threads = Math.max(1, Math.min(8, cpus().length));
     const args = ENGINES[cfg.engine ?? "whisper"].args(cfg, port, threads);
     mkdirSync(dirname(this.deps.logFile), { recursive: true });

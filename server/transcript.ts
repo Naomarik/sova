@@ -316,9 +316,11 @@ function item(
   return withSource(it, h);
 }
 
-/** Set `model` (the producing "provider/model") on an assistant-derived row, when known. */
-function withModel(it: TranscriptItem, model: string | undefined): TranscriptItem {
+/** Set `model` (the producing "provider/model") on an assistant-derived row, when known, and
+    `answered` (the model the provider says answered), when the reply records one. */
+function withModel(it: TranscriptItem, model: string | undefined, answered?: string): TranscriptItem {
   if (model !== undefined) it.model = model;
+  if (answered !== undefined) it.answered = answered;
   return it;
 }
 
@@ -389,13 +391,14 @@ function assistantRows(id: string, h: Extract<HEntry, { kind: "assistant" }>, st
   const out: TranscriptItem[] = [];
   // This row's producer: the message's own provider/model, else the last model change seen.
   const model = (typeof h.provider === "string" && typeof h.model === "string" ? `${h.provider}/${h.model}` : undefined) ?? state?.model;
+  const answered = typeof h.responseModel === "string" && h.responseModel ? h.responseModel : undefined;
   // A reply whose content pi wrote as a string (it never does) has had no block rows; the reader reads
   // such content as one text block.
   const blocks: any[] = typeof rawOf(h)?.message?.content === "string" ? [] : h.blocks;
   blocks.forEach((b, i) => {
     const bid = `${id}:${i}`;
     if (b?.type === "text") {
-      if (b.text?.trim()) out.push(withModel(withPaths(item(bid, "assistant-text", h, b.text), b.text), model));
+      if (b.text?.trim()) out.push(withModel(withPaths(item(bid, "assistant-text", h, b.text), b.text), model, answered));
     } else if (b?.type === "thinking") {
       if (b.thinking?.trim()) out.push(withModel(item(bid, "thinking", h, b.thinking), model));
     } else if (b?.type === "toolCall") {

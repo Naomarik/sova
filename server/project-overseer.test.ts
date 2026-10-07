@@ -20,6 +20,8 @@ symlinkSync(resolve(import.meta.dirname, "..", "pi-config", "extensions"), join(
 
 const orgs = await import("./orgs");
 const po = await import("./project-overseer");
+// The spec draft tool in-process (server/spec-tool-fake.ts; reconcile.integration.test.ts runs the real one).
+(await import("./spec-draft-writer")).setDraftToolForTest((await import("./spec-tool-fake")).fakeDraftTool());
 const store = await import("./project-overseer-store");
 const { PO_BUILTINS, TOOL_NEEDS } = await import("./project-overseer-tools");
 const { acquireChat, disposeAllChats, ModeRefusedError, BusyError } = await import("./chat-manager");

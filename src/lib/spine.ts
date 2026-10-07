@@ -64,7 +64,7 @@ export function rememberedWidth(): number {
 }
 
 /** Pre-paint (`main.tsx`), like the theme: the stored choice goes on now, so a reload of a
-    collapsed window never flashes the 320px pane first. The token write happens only where the
+    collapsed window never flashes the 300px pane first. The token write happens only where the
     spine can show; App.tsx keeps it in step with the viewport afterwards. */
 export function applyStoredSpine(): void {
   let on = false;

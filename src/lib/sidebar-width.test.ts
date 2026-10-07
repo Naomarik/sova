@@ -13,6 +13,7 @@ import {
 const WIDE = 1920;
 
 test("the default width sits inside the range", () => {
+  assert.equal(DEFAULT_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH);
   assert.ok(DEFAULT_SIDEBAR_WIDTH >= MIN_SIDEBAR_WIDTH && DEFAULT_SIDEBAR_WIDTH <= MAX_SIDEBAR_WIDTH);
   assert.equal(clampSidebarWidth(DEFAULT_SIDEBAR_WIDTH, WIDE), DEFAULT_SIDEBAR_WIDTH);
 });

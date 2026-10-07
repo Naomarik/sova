@@ -8,7 +8,7 @@ import { rememberedWidth, rememberExpandedWidth } from "../lib/spine";
 
 /** Drag handle on the right edge of the sessions pane (≥768px; CSS hides it below that).
  *  It writes `--sidebar-width` on <html> directly — no signal, no persistence, so every
- *  load starts at 320px. Mouse and touch only: there is deliberately no keyboard path.
+ *  load starts at the 300px floor. Mouse and touch only: there is deliberately no keyboard path.
  *  Unmounted while the pane is collapsed to the spine (App.tsx): its resize listener would
  *  re-clamp the 64px token up to the floor. Every write is remembered so expanding restores it. */
 export function SidebarResizer() {

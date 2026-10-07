@@ -310,6 +310,8 @@ export interface EngineDeps {
   readiness?: Readiness;
   /** The clock of readiness and port-release waits; tests fake it. */
   clock?: EngineClock;
+  /** Whether a shared endpoint's process port takes a connection (default: share.ts's loopback dial); tests fake it. */
+  dial?: (port: number) => Promise<boolean>;
   /** The checkout the running server was loaded from (§app.project-services/self-host); tests set it. */
   selfCheckout?: () => string | null;
   /** Why this server's hosted sessions are busy, or null; tests fake it. */
@@ -387,6 +389,7 @@ export class ProjectEngine {
   private readonly pollMs: number;
   private readonly readiness: Readiness;
   private readonly clock: EngineClock;
+  private readonly dial: ((port: number) => Promise<boolean>) | undefined;
   private readonly selfCheckout: () => string | null;
   private readonly hostBusy: () => string | null;
   private readonly projectIdOf: (root: string) => Promise<string | null>;
@@ -420,6 +423,7 @@ export class ProjectEngine {
     this.pollMs = deps.pollMs ?? 250;
     this.readiness = deps.readiness ?? hostReadiness;
     this.clock = deps.clock ?? wallClock;
+    this.dial = deps.dial;
     this.selfCheckout = deps.selfCheckout ?? serverCheckout;
     this.hostBusy = deps.hostBusy ?? (() => hostedBusy());
     this.projectIdOf =
@@ -1761,6 +1765,7 @@ export class ProjectEngine {
       // preview-links.json keeps `operator` or `session:<id>` (the project overseer's conversation), strictly.
       createdBy: run.caller.kind === "operator" ? "operator" : `session:${run.caller.id}`,
       serveOf: (s: ServiceDecl) => this.unitOf(rec.id, s.name),
+      ...(this.dial ? { dial: this.dial } : {}),
     };
   }
 

@@ -1,7 +1,8 @@
 // Share links to a running copy (§app.project-services/share, §mesh.public/preview): share, revoke, who may,
 // the link's life (down, teardown, siblings), the refusals, a static copy's dial guard and the sensitive rule on
-// the port-preview path. Real processes under the detached driver in the OS temp dir; a temp PI_CODING_AGENT_DIR;
-// the preview address pinned by env; ~/.pi untouched.
+// the port-preview path. On a host in memory (fake-host.ts), `site` a process service here; a temp
+// PI_CODING_AGENT_DIR; the preview address pinned by env; ~/.pi untouched. A static copy's dial guard and conform's
+// share-endpoint check, over real sockets, are in share.integration.test.ts.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
@@ -9,27 +10,23 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { DefinitionError, isVerbResult, parseDefinition, type VerbResult } from "../../shared/project-contract";
-import { reservePorts } from "../test-ports";
 
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-share-agent-"));
 process.env.SOVA_SHARE_PREVIEW_URL = "https://*.preview.example.invalid";
 
-const { staticServes, stopStaticServe } = await import("../preview-serve");
-const { DetachedDriver } = await import("./drivers");
+const { FakeHost } = await import("./fake-host");
 const { ProjectEngine } = await import("./engine");
 type Caller = import("./engine").Caller;
 const { readRegistry, sharedIdOf } = await import("./store");
 const { approve, defHashOf } = await import("./trust");
 const links = await import("../preview-links");
 const { keptPreview } = await import("../preview-kept");
-const { previewDialable } = await import("../share/preview-proxy");
 const { sensitivePortRefusal } = await import("./sensitive");
-const { endpointAnswers, linksOf } = await import("./share");
+const { linksOf } = await import("./share");
 const { renderResult } = await import("./tools");
 
 const op: Caller = { kind: "operator" };
-// Below the kernel's ephemeral range (32768+), where any outgoing connection on the box can hold a port.
-const BASE = await reservePorts(50);
+const BASE = 21_000;
 const PORTS = { web: BASE, site: BASE + 20, db: BASE + 40 };
 const PID = "prj_sharetst";
 
@@ -38,7 +35,7 @@ const DEF = {
   services: {
     db: { cmd: ["node", "db.mjs"], scope: "shared", ports: { tcp: { fixed: PORTS.db } } },
     web: { cmd: ["node", "web.mjs"], ports: { http: { base: PORTS.web }, admin: { base: PORTS.web + 10 } }, ready: { http: "http", timeout: 20 } },
-    site: { static: "public", ports: { http: { base: PORTS.site } } },
+    site: { cmd: ["node", "site.mjs"], ports: { http: { base: PORTS.site } } },
   },
   share: { endpoints: ["web.http", "site.http"], maxDays: 5 },
 };
@@ -52,7 +49,7 @@ const FILES: Record<string, string> = {
 let parent = "";
 let project = "";
 let registered: string | null = PID;
-const engine = new ProjectEngine({ driver: new DetachedDriver(3_000), pollMs: 100, projectIdOf: async () => registered, sovaPorts: async () => new Set<number>() });
+const engine = new ProjectEngine(new FakeHost().deps({ projectIdOf: async () => registered }));
 const git = (args: string[], cwd = project) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd, encoding: "utf8" });
 const shaped = (r: VerbResult) => {
   assert.ok(isVerbResult(r), `result shape: ${JSON.stringify(r).slice(0, 400)}`);
@@ -79,7 +76,6 @@ before(() => {
 
 after(async () => {
   for (const i of readRegistry().instances) if (i.slot !== 0) await engine.run("teardown", { instance: i.id, confirm: true }, op);
-  for (const s of staticServes()) await stopStaticServe(s.id);
   await engine.driver.stop(engine.unitOf(sharedIdOf(project), "db"));
   rmSync(parent, { recursive: true, force: true });
   rmSync(process.env.PI_CODING_AGENT_DIR!, { recursive: true, force: true });
@@ -168,7 +164,7 @@ test("who shares: the operator confirmed, the project overseer through its act; 
   assert.equal(made.ok, true, JSON.stringify(made.error));
   assert.equal(made.links[0]?.createdBy, "session:po1", "preview-links.json keeps the overseer as its conversation");
   assert.equal(made.links[0]?.url, undefined);
-  assert.deepEqual(keptPreview(made.links[0]!.id)?.target, { kind: "instance", instance: a.instance, endpoint: "site.http", generation: 1, serve: engine.unitOf(a.instance!, "site") });
+  assert.deepEqual(keptPreview(made.links[0]!.id)?.target, { kind: "instance", instance: a.instance, endpoint: "site.http", generation: 1 });
   // Status lists each copy's links; the url only for the operator, and no tool result carries one.
   const mine = shaped(await engine.run("status", { project }, op)).instances!.find((i) => i.instance === a.instance)!;
   assert.deepEqual(mine.links.map((l) => [l.endpoint, !!l.url]), [["web.http", true], ["site.http", true]]);
@@ -177,16 +173,6 @@ test("who shares: the operator confirmed, the project overseer through its act; 
   const text = renderResult(theirs);
   assert.ok(!/preview\.example\.invalid/.test(text), "no URL in a tool result");
   assert.equal(theirs.instances!.find((i) => i.instance === a.instance)!.links.length, 2);
-});
-
-test("a static copy's link dials only while its own serve holds the port", async () => {
-  const site = linksOf(a.instance!).find((l) => l.endpoint === "site.http")!;
-  const record = links.listPreviews({}).find((v) => v.id === site.id)! as unknown as Parameters<typeof previewDialable>[0];
-  assert.equal(previewDialable(record), true);
-  await stopStaticServe(engine.unitOf(a.instance!, "site"));
-  assert.equal(previewDialable(record), false);
-  assert.equal(shaped(await engine.run("up", { instance: a.instance }, op)).ok, true);
-  assert.equal(previewDialable(record), true);
 });
 
 test("down of a linked copy needs the operator's confirm; its links stay and a visit starts nothing", async () => {
@@ -261,24 +247,4 @@ test("refused shares: unregistered, no share key, allow false, sensitive data, a
   assert.equal(sensitivePortRefusal(1), null);
   writeFileSync(join(c.checkout!, ".sova", "project.json"), JSON.stringify(DEF));
   assert.equal(sensitivePortRefusal(c.services.find((s) => s.name === "web")!.ports.http!), null);
-});
-
-test("conform's share-endpoint check: an answer below 500 through the proxy's request path; a 5xx, nothing listening or a Sova port fails", async () => {
-  const { createServer } = await import("node:http");
-  const serve = (handler: (res: import("node:http").ServerResponse) => void) =>
-    new Promise<{ port: number; close: () => Promise<void> }>((ok) => {
-      const srv = createServer((_q, res) => handler(res));
-      srv.listen(0, "127.0.0.1", () => ok({ port: (srv.address() as { port: number }).port, close: () => new Promise((d) => srv.close(() => d())) }));
-    });
-  const good = await serve((res) => res.end("hi"));
-  const bad = await serve((res) => ((res.statusCode = 500), res.end()));
-  const sova = await serve((res) => (res.setHeader("X-Sova-Server", "1"), res.end("sova")));
-  try {
-    assert.deepEqual(await endpointAnswers(good.port), { ok: true, detail: "GET / through the preview proxy answered 200" });
-    assert.equal((await endpointAnswers(bad.port)).ok, false);
-    assert.deepEqual(await endpointAnswers(sova.port), { ok: false, detail: "GET / through the preview proxy answered 502" });
-  } finally {
-    await Promise.all([good.close(), bad.close(), sova.close()]);
-  }
-  assert.equal((await endpointAnswers(good.port)).ok, false, "nothing listens any more");
 });

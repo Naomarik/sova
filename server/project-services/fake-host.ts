@@ -189,6 +189,7 @@ export class FakeHost {
       portOwner: this.portOwner,
       readiness: this.readiness,
       clock: this.clock,
+      dial: async (port) => this.listeners.has(port),
       pollMs: 100,
       containerExec: async () => 0,
       containerQuery: async () => ({ code: 1, stdout: "" }),

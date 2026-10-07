@@ -326,8 +326,7 @@ describe("its gathering sessions, as the person sees them", async () => {
     const settledAt = async (path: string, at: number) => {
       po.setClockForTest(() => at);
       try {
-        po.noteCodingSettled(path);
-        await new Promise((r) => setTimeout(r, 20));
+        await po.noteCodingSettled(path);
       } finally {
         po.setClockForTest(null);
       }
@@ -406,7 +405,7 @@ describe("its gathering sessions, as the person sees them", async () => {
     po.setClockForTest(() => Date.now() + 3 * 3_600_000);
     try {
       hostOf(org.id).fireDue();
-      await new Promise((r) => setTimeout(r, 20));
+      await hostOf(org.id).idle();
     } finally {
       po.setClockForTest(null);
     }
@@ -550,7 +549,7 @@ describe("limits through PATCH, held items and their retry", async () => {
     try {
       hostOf(org.id).fireDue();
       const out = await f();
-      await new Promise((r) => setTimeout(r, 20));
+      await hostOf(org.id).idle();
       return out;
     } finally {
       po.setClockForTest(null);
@@ -702,7 +701,7 @@ describe("a project with no overseer conversation never looks", async () => {
     po.setClockForTest(() => Date.now() + 86_400_000);
     try {
       hostOf(org.id).fireDue();
-      await new Promise((r) => setTimeout(r, 20));
+      await hostOf(org.id).idle();
     } finally {
       po.setClockForTest(null);
     }
@@ -732,7 +731,7 @@ describe("the watch loop's decision, on its watch statechart", async () => {
     po.setClockForTest(() => t);
     try {
       hostOf(org.id).fireDue();
-      await new Promise((r) => setTimeout(r, 20));
+      await hostOf(org.id).idle();
     } finally {
       po.setClockForTest(null);
     }

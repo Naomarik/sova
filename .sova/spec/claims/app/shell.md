@@ -29,7 +29,7 @@ unfolded (≥768)                                  folded (<768)
   `.workspace` instead of `.app-main`, holding N panes and one group composer. The sidebar,
   the resizer and the portals are unchanged, the second column keeps the same width and floor,
   and below 768px the workspace is the one column, tabs-only.
-- **Columns.** `.app` is `height: 100%`, the window's height (§app.shell/viewport). At 768px and up the grid is `--sidebar-width` (320px
+- **Columns.** `.app` is `height: 100%`, the window's height (§app.shell/viewport). At 768px and up the grid is `--sidebar-width` (300px
   by default, 64px while the sessions pane is collapsed into the spine — §app.shell/spine-column)
   plus `1fr`, with a border between the columns. Below 768px it's one column, and `data-view`
   decides which one shows: `list` when no session is selected, `session` when one is (or a page,
@@ -261,13 +261,14 @@ sidebar list escapes `.app`'s clip and makes the document scroll) — and it wri
   column** (≥1280px), because below that it overlays the main pane and reserves nothing. The
   clamp is re-applied on `resize` and `orientationchange`, so shrinking the window pulls an
   over-wide pane back rather than squeezing the transcript out.
-- **Default 320px on every load, and the width is not persisted.** This is a decision, not an
+- **Default 300px — the floor — on every load and on every screen, desktop included, and the
+  width is not persisted.** This is a decision, not an
   omission: a width is a posture for the task in front of you, not a preference, and a
   remembered one is a setting you have to notice and undo. Double-clicking the handle resets to
-  320 for the same reason — the way back is always one gesture. **Collapsed or expanded is
+  300 for the same reason — the way back is always one gesture. **Collapsed or expanded is
   persisted** (§app.session-list/spine): that is a standing choice about the screen, not a posture, and it
   is undone by the same one gesture that made it. Expanding restores the width the pane had
-  when it collapsed, within the load; a reload expands to 320.
+  when it collapsed, within the load; a reload expands to 300.
 - **One knob, three consumers.** `--sidebar-width` (while collapsed, holding `--spine-width`,
   §app.shell/spine-column) feeds the `.app` grid's first column, the
   session pane's `width: min(--subagents-width, 100% − --sidebar-width − --space-8)`, and
@@ -278,7 +279,7 @@ sidebar list escapes `.app`'s clip and makes the document scroll) — and it wri
   reachable by Tab, and it carries no `aria-valuenow`/`valuemin`/`valuemax` — the `role="separator"`
   is there to name the thing, not to make it a slider. **A keyboard-only user cannot resize the
   sessions pane at all.** It is a layout preference with no content behind it: everything the
-  pane holds is fully readable at the 320px default, every row truncates rather than hides, and
+  pane holds is fully readable at the 300px default, every row truncates rather than hides, and
   no fact is reachable only by widening. Nothing is lost but the adjustment itself. The right
   fix, if this is revisited, is `tabindex="0"` plus arrow keys and the three `aria-value*`
   attributes; until then this is written down rather than unnoticed.

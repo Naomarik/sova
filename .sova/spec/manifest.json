@@ -396,10 +396,11 @@
         "§app.session-list/spine"
       ],
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "unreviewed",
       "code": [
         "src/components/SidebarResizer.tsx",
-        "src/lib/sidebar-width.ts"
+        "src/lib/sidebar-width.ts",
+        "src/lib/sidebar-width.test.ts"
       ]
     },
     "§app.shell/the-open-failure-banner": {

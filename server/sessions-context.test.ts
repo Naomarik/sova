@@ -1,7 +1,6 @@
 // Run: npx tsx --test server/sessions-context.test.ts
 // Uses a throwaway PI_CODING_AGENT_DIR in the OS temp dir; ~/.pi is never read or written.
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
 import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -19,9 +18,9 @@ const { sessionsChanged } = await import("./list-generation");
 const { canonicalPath } = await import("./paths");
 
 /** A live pid that isn't this process: a terminal holding a session, as far as the registry knows. */
-const sleeper = spawn("sleep", ["60"], { stdio: "ignore" });
+// The runner that started this file, alive for all of it, stands in for another live process.
+const otherPid = process.ppid;
 after(() => {
-  sleeper.kill();
   rmSync(agentDir, { recursive: true, force: true });
 });
 
@@ -265,7 +264,7 @@ test("a hosted chat's row takes its outline from this server's own live record, 
 test("a foreign writer's outline is preferred to this server's own", async () => {
   const p = session("outline-both-records", []);
   liveRecord(`p${process.pid}-own00002`, p, process.pid, { now: "ours", overall: "This server's view", topics: [], generatedAt: 5000 });
-  liveRecord(`p${sleeper.pid}-tui00002`, p, sleeper.pid!, { now: "theirs", overall: "The terminal's view", topics: [], generatedAt: 5000 });
+  liveRecord(`p${otherPid}-tui00002`, p, otherPid, { now: "theirs", overall: "The terminal's view", topics: [], generatedAt: 5000 });
   sessionsChanged(); // the records stand for writers outside this server: step past the listing's reuse window
   assert.equal((await getSessionSummary(p))?.outlineGist, "The terminal's view");
   assert.equal((await listSessions()).find((x) => x.path === p)?.outlineGist, "The terminal's view");

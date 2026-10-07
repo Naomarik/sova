@@ -6,7 +6,6 @@
 // seen store decides whether it still shows (server/seen.ts turnErrorShows), next to `unread`.
 // The second half pins pi's side of that contract against the package the repo actually resolves.
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -25,9 +24,9 @@ const seen = await import("./seen");
 const { canonicalPath } = await import("./paths");
 
 // A live record's pid must be alive for readLive to see it.
-const sleeper = spawn("sleep", ["60"], { stdio: "ignore" });
+// The runner that started this file, alive for all of it, stands in for another live process.
+const otherPid = process.ppid;
 after(() => {
-  sleeper.kill();
   rmSync(agentDir, { recursive: true, force: true });
 });
 
@@ -173,7 +172,7 @@ describe("SessionSummary.turnError, end to end through the list's own read", () 
   test("running (a live record says working) hides it: pi may be mid-retry", async () => {
     const { path } = session([user("u1", null, T0), reply("a1", "u1", T0 + 1000, "error")]);
     const rec = join(liveDir, "p-turn-error.json");
-    writeFileSync(rec, JSON.stringify({ session: { pid: sleeper.pid, sessionFile: path, mode: "tui" }, presence: { status: "working", activity: { state: "working", since: T0 } } }));
+    writeFileSync(rec, JSON.stringify({ session: { pid: otherPid, sessionFile: path, mode: "tui" }, presence: { status: "working", activity: { state: "working", since: T0 } } }));
     try {
       assert.equal((await getSessionSummary(path))?.turnError, undefined);
     } finally {

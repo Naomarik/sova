@@ -11,7 +11,7 @@ import { activeModel, dirBytes, ensureFile, freeBytes, modelPresent, readInstall
 import { VoiceModels } from "./models";
 import { HOTWORDS, VAD_MODEL } from "./pins";
 import { packageCommand, systemProbe, voicePath, type Probe } from "./platform";
-import { RuntimeError, WhisperRuntime, type RuntimeConfig } from "./runtime";
+import { RuntimeError, WhisperRuntime, type RuntimeConfig, type RuntimeDeps } from "./runtime";
 import { decodeFields, decodeFor, readSettings, updateSettings, validDeviceId } from "./settings";
 import { cleanTranscript, hintWord, inspectWav } from "./wav";
 
@@ -30,6 +30,8 @@ export interface VoiceServiceOptions {
   backoffMs?: number[];
   /** Tests: a stand-in self-test for model switches. */
   selfTest?: ConstructorParameters<typeof VoiceModels>[0]["selfTest"];
+  /** Tests: how the speech server's child is started and reached (default: a real child on a free port). */
+  runtime?: Pick<RuntimeDeps, "spawn" | "fetchImpl" | "port">;
 }
 
 /** Stand-ins for tests and hermetic runs, each a path used only when it exists. */
@@ -67,6 +69,7 @@ export class VoiceService {
     });
     const paths = this.pathsOf();
     this.runtime = new WhisperRuntime(() => this.runtimeConfig(), {
+      ...o.runtime,
       logFile: join(paths.logs, "whisper-server.log"),
       runtimeFile: paths.runtimeFile,
       idleMs: o.idleMs ?? envMs("SOVA_VOICE_IDLE_MS"),

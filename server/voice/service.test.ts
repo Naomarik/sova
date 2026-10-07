@@ -1,3 +1,6 @@
+// Run: pnpm test -- server/voice/service.test.ts
+// Voice through its routes, in-process: the speech server is the in-process stand-in (no child, no
+// port). The same routes over a real stand-in child: service.integration.test.ts.
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -8,6 +11,7 @@ import { Hono } from "hono";
 import type { VoiceStatus } from "../../shared/protocol";
 import { NeedsPackages, voicePaths } from "./install";
 import type { Probe } from "./platform";
+import { fakeWhisper } from "./fake-whisper-test-fixtures";
 import { registerVoiceRoutes, VoiceService } from "./service";
 
 const FAKE = fileURLToPath(new URL("../../scripts/fake-whisper-server.mjs", import.meta.url));
@@ -27,7 +31,8 @@ const probe = (): Probe => ({
 
 function app(o: ConstructorParameters<typeof VoiceService>[0] = {}) {
   const paths = voicePaths(mkdtempSync(join(tmpdir(), "voice-svc-")));
-  const service = new VoiceService({ paths: () => paths, probe, ...o });
+  // The speech server is the in-process stand-in (fake-whisper-test-fixtures.ts): no child, no port.
+  const service = new VoiceService({ paths: () => paths, probe, runtime: fakeWhisper().deps, ...o });
   const a = new Hono();
   registerVoiceRoutes(a, () => service);
   return { a, service, paths };
@@ -64,11 +69,15 @@ describe("voice routes", () => {
   });
 
   it("install: 202 and installing; a second press is 409; needs-packages carries the command", async () => {
-    const { a, service } = app({ steps: { packages: async () => new NeedsPackages(["cmake"], "sudo pacman -S --needed cmake"), detect: () => new Promise((r) => setTimeout(() => r("done"), 100)) } });
+    // detect runs until the test lets it end, so the second press lands while the job runs.
+    let detected!: () => void;
+    const detect = new Promise<"done">((r) => (detected = () => r("done")));
+    const { a, service } = app({ steps: { packages: async () => new NeedsPackages(["cmake"], "sudo pacman -S --needed cmake"), detect: () => detect } });
     const res = await a.request("/api/voice/install", { method: "POST", body: JSON.stringify({ backend: "gpu" }), headers: { "Content-Type": "application/json" } });
     assert.equal(res.status, 202);
     assert.equal(((await res.json()) as VoiceStatus).state, "installing");
     assert.equal((await a.request("/api/voice/install", { method: "POST" })).status, 409);
+    detected();
     await service.installer.whenDone();
     const s = (await (await a.request("/api/voice?since=0")).json()) as VoiceStatus;
     assert.equal(s.state, "needs-packages");

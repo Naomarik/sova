@@ -321,8 +321,25 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   the seed is copied there only when the file is missing; `SOVA_PRICES_FETCH=off` stops pulling.
 - The share listener serves the share page (`/h/`, `/i/`, `/h/assets/`) from `dist-share/` (`vite build --mode share`);
   `SOVA_SHARE_DIST=<dir>` names another build, read per request (tests point it at a stub page). With no built page it answers 503.
-- `pnpm test` — unit tests (`server/*.test.ts`, `src/lib/*.test.ts`), **on Bun** (the summary line
-  reads `run-tests (bun): …`). One runner, `scripts/run-tests.mjs` (`pnpm test`, the project's
+- Two test tiers, by file name (§app.server-runtime/test-tiers):
+  - `pnpm test` — the **unit tier**: every `*.test.ts` the runner's GLOBS match except
+    `*.integration.test.ts`. In-process only: git is fine (Sova's org store is a repository), but no
+    other program, no socket (TCP or unix), no http(s) fetch, no import of `server/index.ts`. Run it
+    constantly while working; it must stay fast and never depend on wall-clock speed.
+  - `pnpm test:int` — the **integration tier**, `*.integration.test.ts` (a sibling beside the unit file
+    it splits from): real processes, ports, the whole server, time measured. Runs at a quarter of the
+    cores (`TEST_INT_JOBS=<n>`), with its own durations (`.cache/test-durations-integration.json`).
+    While working run `pnpm test:int --changed` (files whose relative-import closure holds a file
+    changed since the merge base with `--base <rev>`, default master, committed or not, plus files in
+    a changed file's folder) before asking to land; the merge round runs the whole tier at landing,
+    after `pnpm test`. `pnpm test:all` runs both tiers. Named files run whatever their tier.
+  - The tier guard (`scripts/test-tier-guard.mjs`, the runner's second preload) records what each file
+    starts, binds, connects to, fetches and whether it imports `server/index.ts`
+    (`.cache/test-audit.json`) and lists, after the run, the unit files that did any of it but git.
+    `SOVA_TEST_GUARD=enforce` refuses the call instead and fails the file ("rename to
+    .integration.test.ts"); `=off` turns it off. A test that needs one real thing: split those cases
+    into the `.integration.test.ts` sibling, keep the logic in the unit file.
+- The runner, **on Bun** (the summary line reads `run-tests (bun): …`). One runner, `scripts/run-tests.mjs` (`pnpm test`, the project's
   `test.run`), holds the file list; `*.browser.test.ts` files need Solid's browser build and run in
   a second pass with `--conditions=browser`; `pnpm test -- <files>` runs only those, each routed to
   its pass. On Bun it runs files longest first by the times it recorded last in the worktree's
@@ -408,8 +425,8 @@ launcher):
   and no Settings picker: a `runtime.json` in the state root is ignored.
 - **Who follows it:** `scripts/start-server.sh` (the launcher, also `pnpm start`; it `exec`s the
   server, so a unit's MainPID is the server), `pnpm run dev:server` (each watcher restart decides
-  again), `pnpm run dev:hermetic` (`dev:hermetic:node` = the same on Node), and the unit tests
-  (`pnpm test`, the project's test verb, merge-round's master re-runs). Helper scripts the server
+  again), `pnpm run dev:hermetic` (`dev:hermetic:node` = the same on Node), and both test tiers
+  (`pnpm test`, `pnpm test:int`, the project's test verb, merge-round's master re-runs). Helper scripts the server
   spawns follow `process.execPath`, so on Bun they run on Bun. `dev:server:tsx` is Node by name.
 - **Bun binary:** `$SOVA_BUN`, else `bun` on PATH, else `mise which bun`. `SOVA_NODE` names the
   node binary the launcher uses (default `node` on PATH). Installed copies (install.sh, mesh-vps,
@@ -431,7 +448,7 @@ launcher):
   workaround, canary and repro). Workarounds live only in `server/runtime-quirks.ts`, probe the
   behaviour and never name a runtime. Every WebSocket in `server/` is built with its
   `cappedWebSocketServer` / `cappedWebSocket` (ws `maxPayload` and `handshakeTimeout` aren't
-  enforced on Bun; Sova enforces both itself). Tests on Bun only through `pnpm test`: it
+  enforced on Bun; Sova enforces both itself). Tests on Bun only through the runner (`pnpm test`, `test:int`): it
   sets HOME before bun starts (Bun's `os.homedir()` ignores an in-process change), puts the real
   node and `mise bin-paths` first on PATH (shims refuse in a throwaway HOME; tests spawn `node` and
   `python3`), and sets `SOVA_PRICES_FETCH=off`. `bun test` itself runs with TZ=UTC and
@@ -584,7 +601,8 @@ Sova speaks its own harness contract; pi is its one harness, behind one adapter 
   outside `server/harness/state-kinds.ts`.
   Above the baseline fails, and so does
   below it — lower the baseline in the change that removes the hit. It also fails when a test file
-  under `server/`, `shared/` or `src/` is matched by no glob in `scripts/run-tests.mjs`.
+  under `server/`, `shared/` or `src/` is matched by no glob in `scripts/run-tests.mjs`, or names
+  itself an integration test other than `*.integration.test.ts` (each file is in exactly one tier).
 - **The baseline only shrinks.** Never add a file, raise a count or list a new wrapper to make the
   test pass; if a change seems to need it, stop and ask the user. A working-tree baseline that grew
   past `HEAD`'s fails too. `SOVA_BOUNDARY_OUT=<absolute path> pnpm test --

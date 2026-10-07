@@ -294,7 +294,7 @@ export interface EngineClock {
   now(): number;
   sleep(ms: number): Promise<void>;
 }
-export const wallClock: EngineClock = { now: () => Date.now(), sleep };
+export const wallClock: EngineClock = { now: () => Date.now(), sleep: async (ms) => void (await sleep(ms)) };
 
 export interface EngineDeps {
   driver: Driver;

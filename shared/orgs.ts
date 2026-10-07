@@ -211,8 +211,9 @@ export interface OwnerChange {
 export interface OwnerPageInfo {
   /** The owner now, or null. */
   person: NamedRef | null;
-  /** Their newest owner link on this host: live, expired, or off (turned off, replaced); null: none yet. */
-  link: { state: "live" | "expired" | "off"; createdAt: string; expiresAt: string } | null;
+  /** Their newest owner link on this host: live, expired, or off (turned off, replaced); null: none yet.
+      `url`: the link itself, while it is live and its token is kept (Copy Owner Link). */
+  link: { state: "live" | "expired" | "off"; createdAt: string; expiresAt: string; url?: string } | null;
   /** Visits to the Owner page by a person (not scanners or previews), all time. */
   opened: number;
   lastOpenedAt?: string;
@@ -439,7 +440,8 @@ export interface PersonConflict {
     session is done; off: turned off (revoked, rotated, left, withdrawn); expired; closed: the session was closed. */
 export type LinkState = "writes" | "reads" | "off" | "expired" | "closed";
 
-/** One /h/ link of theirs minted on THIS host (tokens and hashes never leave the host's link store). */
+/** One /h/ link of theirs minted on THIS host (hashes never leave the host's link store; the token
+    rides as `link` only while the link can open and its token is kept, §app.session-share/link). */
 export interface PersonLinkRow {
   sessionId: string;
   publicTitle: string;
@@ -457,6 +459,8 @@ export interface PersonLinkRow {
   /** Visits through it (scanners and previews not counted). */
   visits: number;
   lastVisitAt?: string;
+  /** The link, while it can still open and its token is kept: Copy Link copies exactly this. */
+  link?: string;
 }
 
 /**
@@ -517,7 +521,7 @@ export interface PersonPage {
   /** They are the org's owner (the `Owner` chip). */
   owner?: boolean;
   /** Their owner links on this host, newest first (no token, no hash). */
-  ownerLinks?: { createdAt: string; expiresAt: string; revokedAt?: string; state: "live" | "expired" | "off"; visits: number; lastVisitAt?: string }[];
+  ownerLinks?: { createdAt: string; expiresAt: string; revokedAt?: string; state: "live" | "expired" | "off"; visits: number; lastVisitAt?: string; link?: string }[];
   /** Their links sent outside Sova (§app.outreach/log), newest first; absent: an older server. */
   sends?: PersonSendRow[];
 }

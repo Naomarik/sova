@@ -2,7 +2,7 @@ import { OPERATOR } from "../../shared/baton";
 import { LINK_WARNINGS } from "../../shared/public-links";
 import { handoffLine, type LinkKind, type LinkRef, type LinkRefusal, type OutreachLogLine } from "../../shared/outreach";
 import { linksOfKey, mintLink, revokeLinks } from "../baton-links";
-import { batonById, currentOffer, reachedBy } from "../baton";
+import { batonById, currentOffer, keptLinks, reachedBy } from "../baton";
 import { operatorName, readProjects, readRoster } from "../orgs";
 import { dropSiblingLinks, keepSiblingLink } from "../preview-kept";
 import { listPreviews, mintSibling, revokePreview } from "../preview-links";
@@ -38,7 +38,8 @@ export interface Resolved {
   line?: string;
   /** Ids for the send log (no token, no URL). */
   log: Partial<Pick<OutreachLogLine, "sessionId" | "n" | "offerId" | "previewId">>;
-  /** What was made in this step, to turn off again on a definite failure or after a restart. */
+  /** What was made in this step, to turn off again on a definite failure or after a restart (empty
+      when it sent a kept link and made nothing). */
   minted: Record<string, string>;
 }
 
@@ -91,6 +92,16 @@ const handoff: LinkResolver = {
     const row = batonById(ref.session)!.row;
     const offer = currentOffer(row);
     const n = offer ? offer.n : row.handoffs[row.handoffs.length - 1]!.n;
+    // Their live link of this round when its token is kept, as Get Link gives it: the send makes
+    // nothing, so neither a failure nor a success turns anything off (no linkKey).
+    const kept = keptLinks(row)[personId];
+    if (kept && kept.n === n)
+      return {
+        url: linkUrl("h", kept.token),
+        line: handoffLine(operatorName(), row.publicTitle),
+        log: { sessionId: row.sessionId, n, ...(offer ? { offerId: offer.id } : {}) },
+        minted: {},
+      };
     const { result: token } = await awaitShareLinks(() => mintLink({ orgId, sessionId: row.sessionId, n, personId, ...(offer ? { offerId: offer.id } : {}), key }));
     return {
       url: linkUrl("h", token),

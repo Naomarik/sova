@@ -271,3 +271,84 @@ test("B2 a view read in flight when the start moves answers the narrowed view", 
   assert.equal(r.status, 200);
   assert.deepEqual(texts(r.body), ["FLIGHT-NEW"], "and the route answers the narrowed view");
 });
+
+// ---- kept links (§app.session-share/link: Kept tokens, Copyable; /sheet; /never) ---------------------
+
+const { dropTokens } = await import("./link-tokens");
+const { hashToken, mintLink: mintHandoffLink } = await import("./baton-links");
+const sharesOf = async () => (await op(`/api/session-shares?session=${SID}`)).body as SessionShare[];
+const rowOf = async (shareId: string, label: string) => (await sharesOf()).find((s) => s.id === shareId)!.recipients.find((r) => r.label === label)!;
+
+test("kept: each live recipient row carries its link, on the address as it is now; the share in an act's answer too", async () => {
+  const created = await op("/api/session-shares", { method: "POST", body: { sessionId: SID, title: "Kept", mode: "live", expiresInDays: 30, recipients: ["Ana", "Ben"], anyone: true } });
+  const m = created.body as SessionShareMinted;
+  for (const l of m.links) assert.equal(m.share.recipients.find((r) => r.id === l.recipientId)!.link, l.link, `the mint's own share: ${l.label}`);
+  const ana = m.links.find((l) => l.label === "Ana")!;
+  assert.equal((await rowOf(m.share.id, "Ana")).link, ana.link, "a later read: the same link");
+  process.env.SOVA_SHARE_PUBLIC_URL = "https://share-two.example.invalid";
+  try {
+    assert.equal((await rowOf(m.share.id, "Ana")).link, `https://share-two.example.invalid/s/${tokenOf(ana.link)}`, "built on the address when it answers");
+  } finally {
+    delete process.env.SOVA_SHARE_PUBLIC_URL;
+  }
+  // The store itself never holds a token and keeps its keys.
+  const raw = readFileSync(sharesFile(), "utf8");
+  for (const l of m.links) assert.ok(!raw.includes(tokenOf(l.link)));
+  assert.ok(!("why" in store.validateSharesFile(JSON.parse(raw))));
+});
+
+test("kept: a relinked row carries the new link and its activity row the new createdAt; turned off, expired or made before tokens were kept: no link", async () => {
+  const created = await op("/api/session-shares", { method: "POST", body: { sessionId: SID, title: "Rows", mode: "live", expiresInDays: 30, recipients: ["Ana", "Ben", "Cy"], anyone: false } });
+  const m = created.body as SessionShareMinted;
+  const id = (label: string) => m.links.find((l) => l.label === label)!.recipientId;
+  const before = await rowOf(m.share.id, "Ana");
+  const act1 = (await op(`/api/session-shares/${m.share.id}/activity`)).body as { recipients: { recipientId: string; createdAt?: string }[] };
+  assert.equal(act1.recipients.find((r) => r.recipientId === id("Ana"))!.createdAt, before.createdAt);
+  await new Promise((r) => setTimeout(r, 5));
+  const relinked = (await op(`/api/session-shares/${m.share.id}/recipients/${id("Ana")}/relink`, { method: "POST" })).body as SessionShareMinted;
+  const after = await rowOf(m.share.id, "Ana");
+  assert.equal(after.link, relinked.links[0]!.link, "the row carries the new link");
+  assert.notEqual(after.link, before.link);
+  const act2 = (await op(`/api/session-shares/${m.share.id}/activity`)).body as { recipients: { recipientId: string; createdAt?: string }[] };
+  const anaAct = act2.recipients.find((r) => r.recipientId === id("Ana"))!;
+  assert.equal(anaAct.createdAt, after.createdAt, "activity says the newest link's createdAt");
+  assert.notEqual(anaAct.createdAt, before.createdAt, "so a sheet still showing the old row sees it moved");
+
+  await op(`/api/session-shares/${m.share.id}/recipients/${id("Ben")}/revoke`, { method: "POST" });
+  const ben = await rowOf(m.share.id, "Ben");
+  assert.equal(ben.state, "off");
+  assert.equal(ben.link, undefined, "turned off: none");
+
+  // Expired: the stored expiry moved into the past (the strict parse still holds).
+  const doc = JSON.parse(readFileSync(sharesFile(), "utf8"));
+  for (const l of doc.links) if (l.shareId === m.share.id && l.recipientId === id("Cy")) l.expiresAt = new Date(Date.now() - 1000).toISOString();
+  writeFileSync(sharesFile(), JSON.stringify(doc));
+  const cy = await rowOf(m.share.id, "Cy");
+  assert.equal(cy.state, "expired");
+  assert.equal(cy.link, undefined, "expired: none");
+
+  // Made before tokens were kept: a live link with no kept token carries none.
+  dropTokens([hashToken(tokenOf(after.link!))]);
+  const legacy = await rowOf(m.share.id, "Ana");
+  assert.equal(legacy.state, "live");
+  assert.equal(legacy.link, undefined, "legacy: none");
+});
+
+test("never: a kept /s/, /h/ or /i/ link in a message or the title reads [share link] in the view, the outline and the preview; one not kept stays", async () => {
+  const handoff = mintHandoffLink({ orgId: "o-x", sessionId: "s-x", n: 1, personId: "p-x" });
+  const created = await op("/api/session-shares", { method: "POST", body: { sessionId: SID, title: "Links", mode: "live", expiresInDays: 30, recipients: ["Ana"], anyone: false } });
+  const m = created.body as SessionShareMinted;
+  const own = m.links[0]!.link;
+  const unkept = `https://share.example.invalid/h/${"Z".repeat(43)}`;
+  append("user", `KEPT-LINKS https://share.example.invalid/h/${handoff} and ${own} and ${unkept}`);
+  const r = await view(tokenOf(own));
+  assert.equal(r.status, 200);
+  const line = texts(r.body).find((t) => t.startsWith("KEPT-LINKS"))!;
+  assert.equal(line, `KEPT-LINKS [share link] and [share link] and ${unkept}`);
+  const pv = JSON.stringify((await op(`/api/session-shares/preview?session=${SID}`)).body);
+  const outline = JSON.stringify((await op(`/api/session-shares/preview?session=${SID}&outline=1`)).body);
+  for (const [what, s] of [["preview", pv], ["outline", outline]] as const) {
+    assert.ok(s.includes("KEPT-LINKS"), `control: ${what} has the message`);
+    assert.ok(!s.includes(handoff) && !s.includes(tokenOf(own)), `${what}: no kept token`);
+  }
+});

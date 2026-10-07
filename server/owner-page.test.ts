@@ -176,6 +176,29 @@ describe("the owner (§app.owner-page/owner)", () => {
     assert.equal(orgs.readOrg(org.id).ownerCleared, undefined);
   });
 
+  test("kept (§app.owner-page/link): keep=1 answers the live kept link, no keep rotates; the card, the person page and the Shares page carry it; one made before tokens were kept rotates under keep", async () => {
+    const { dropTokens } = await import("./link-tokens");
+    const { orgLinkRows } = await import("./shares-overview");
+    const { personPage } = await import("./person-page");
+    const a = await call<OwnerLinkResult>("GET", `/api/orgs/${org.id}/owner/link?keep=1`);
+    const b = await call<OwnerLinkResult>("GET", `/api/orgs/${org.id}/owner/link?keep=1`);
+    assert.deepEqual([b.body.link, b.body.createdAt, b.body.expiresAt], [a.body.link, a.body.createdAt, a.body.expiresAt], "the same link twice");
+    const detail = await call<OrgDetail>("GET", `/api/orgs/${org.id}`);
+    assert.equal(detail.body.ownerPage!.link!.url, a.body.link, "Copy Owner Link's data");
+    const ownerId = detail.body.ownerPage!.person!.id;
+    assert.equal(personPage(org.id, ownerId).ownerLinks!.find((l) => l.state === "live")!.link, a.body.link, "the person page's owner row");
+    assert.equal(orgLinkRows().find((r) => r.kind === "owner" && r.orgId === org.id)!.link, a.body.link, "the Shares page's row");
+    const c = await call<OwnerLinkResult>("GET", `/api/orgs/${org.id}/owner/link`);
+    assert.notEqual(c.body.link, a.body.link, "Get New Owner Link rotates");
+    assert.equal(owner.ownerAccess(tokenOf(a.body.link)).ok, false);
+    assert.equal(personPage(org.id, ownerId).ownerLinks!.filter((l) => l.link).length, 1, "only the live one carries a link");
+    dropTokens([plinks.findPersonLink(tokenOf(c.body.link))!.hash]);
+    assert.equal((await call<OrgDetail>("GET", `/api/orgs/${org.id}`)).body.ownerPage!.link!.url, undefined, "a legacy live link carries none");
+    const d = await call<OwnerLinkResult>("GET", `/api/orgs/${org.id}/owner/link?keep=1`);
+    assert.notEqual(d.body.link, c.body.link, "keep=1 with nothing kept makes one");
+    assert.equal(owner.ownerAccess(tokenOf(c.body.link)).ok, false, "and turns the legacy one off");
+  });
+
   test("Turn Off Owner Link", async () => {
     const { body } = await call<OwnerLinkResult>("GET", `/api/orgs/${org.id}/owner/link`);
     const r = await call<OrgDetail>("POST", `/api/orgs/${org.id}/owner/revoke`);

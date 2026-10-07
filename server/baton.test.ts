@@ -2,7 +2,7 @@
 // dir in the OS temp dir, deleted after; ~/.pi is never read or written.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
@@ -106,6 +106,56 @@ describe("baton sessions", async () => {
     assert.equal(baton.batonSummaryField(c.path)?.linkAt, res.at, "so the list's field moves and a strip reads again");
     baton.revokeCurrent(c.sessionId);
     assert.deepEqual(batonInfo(row()).linkAt, {}, "a link turned off is no newer link");
+  });
+
+  test("kept links (§app.baton/links): BatonInfo.links; Get Link (keep=1) answers the kept one, New Link rotates, a link made before tokens were kept rotates; Needs you", async () => {
+    const { batonInfo, registerOrgRoutes } = await import("./org-routes");
+    const { dropTokens } = await import("./link-tokens");
+    const { Hono } = await import("hono");
+    const app = new Hono();
+    registerOrgRoutes(app);
+    const get = async (path: string) => (await (await app.request(path)).json()) as { link: string; n: number; at: string };
+    // Started with no link: Needs you asks for one.
+    const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Kept", goal: "g" }, { mintLink: false });
+    const row = () => baton.batonById(c.sessionId)!.row;
+    assert.ok(baton.batonSummaryField(c.path)?.sendLink, "control: Needs you asks for the link");
+    assert.deepEqual(batonInfo(row()).links, {});
+    const first = await get(`/api/baton/${c.sessionId}/link?keep=1`);
+    assert.equal(baton.batonSummaryField(c.path)?.sendLink, undefined, "a keep mint clears Needs you");
+    assert.deepEqual(batonInfo(row()).links, { [tony.id]: { link: first.link, at: first.at } }, "the strip's Copy Link");
+    const again = await get(`/api/baton/${c.sessionId}/link?keep=1`);
+    assert.deepEqual([again.link, again.at, again.n], [first.link, first.at, first.n], "keep=1 again: the same link and time");
+    assert.equal(links.liveLinks(c.sessionId, first.n).length, 1, "nothing new minted");
+    assert.equal(baton.batonSummaryField(c.path)?.sendLink, undefined, "and Needs you stays clear");
+    await new Promise((r) => setTimeout(r, 5));
+    const rotated = await get(`/api/baton/${c.sessionId}/link`);
+    assert.notEqual(rotated.link, first.link, "no keep: New Link mints");
+    assert.equal(links.findLink(first.link.split("/h/")[1]!)!.revokedAt !== undefined, true, "and turns the older one off");
+    assert.equal(batonInfo(row()).links?.[tony.id]?.link, rotated.link);
+    // A live link with no kept token (made before tokens were kept): keep=1 mints, turning it off.
+    dropTokens([links.hashToken(rotated.link.split("/h/")[1]!)]);
+    assert.deepEqual(batonInfo(row()).links, {}, "a legacy live link carries none");
+    const fresh = await get(`/api/baton/${c.sessionId}/link?keep=1`);
+    assert.notEqual(fresh.link, rotated.link);
+    assert.deepEqual(links.liveLinks(c.sessionId, fresh.n).map((l) => l.hash), [links.hashToken(fresh.link.split("/h/")[1]!)], "the legacy one is off");
+  });
+
+  test("a hand-off page is never filtered: a kept /s/ link in its conversation reads as written", async () => {
+    const { viewForToken } = await import("./share/hub");
+    const shares = await import("./session-shares");
+    const { linkUrl } = await import("./share/listener");
+    const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "As written", goal: "g" });
+    const { tokens } = shares.createShare({ sessionId: "elsewhere", sessionPath: "/tmp/elsewhere.jsonl", title: "T", mode: "live", cut: null, days: 30, labels: ["Ana"], anyone: false });
+    const sLink = linkUrl("s", tokens[0]!.token);
+    const lines = readFileSync(c.path, "utf8").trim().split("\n");
+    const last = JSON.parse(lines.at(-1)!).id;
+    const ts = new Date().toISOString();
+    appendFileSync(c.path, `${JSON.stringify({ type: "message", id: "kk000001", parentId: last, timestamp: ts, message: { role: "assistant", content: [{ type: "text", text: `Read it here: ${sLink}` }], timestamp: Date.parse(ts) } })}\n`);
+    const view = await viewForToken(c.token!);
+    assert.ok(!("status" in view), JSON.stringify(view));
+    const text = JSON.stringify(view);
+    assert.ok(text.includes(tokens[0]!.token), "the kept link as written");
+    assert.ok(!text.includes("[share link]"));
   });
 
   test("the state machine: holder writes, the baton moves, old links read, the operator's answer clears Needs you, done ends writing", async () => {

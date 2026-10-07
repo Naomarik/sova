@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { redactPreviewLinks, redactPreviewLinksDeep } from "./preview-kept";
+import { redactShareLinks, redactShareLinksDeep } from "./link-tokens";
 import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import type { HBlock, HEntry } from "../shared/harness";
@@ -246,8 +247,9 @@ export function shownEntries(branch: HEntry[]): Shown[] {
   for (const e of branch) {
     if (e.kind !== "user" && e.kind !== "assistant") continue;
     const role = e.kind;
-    // A kept preview link never reaches a share (§app.session-share/never): redacted before any cut.
-    const raw = cutAtToken(redactPreviewLinks(textBlocks(e.blocks)), SESSION_SHARE_TEXT_CEILING);
+    // A kept preview link, or a kept /s/, /h/ or /i/ link of this host, never reaches a share
+    // (§app.session-share/never): redacted before any cut.
+    const raw = cutAtToken(redactShareLinks(redactPreviewLinks(textBlocks(e.blocks))), SESSION_SHARE_TEXT_CEILING);
     // Not the user's words: a wake nudge, a link partner's message, a topic batch.
     if (role === "user" && (parseWakeNudge(raw) || parseLinkMessage(raw) || isTopicBatch(raw))) continue;
     const text = withoutImagePaths(typedText(raw, e)).trim();
@@ -331,9 +333,9 @@ export async function sessionShareView(src: ShareSource, opts: { before?: number
   const before = opts.before;
   const end = typeof before === "number" && Number.isSafeInteger(before) ? Math.max(0, Math.min(before, b.items.length)) : b.items.length;
   const start = Math.max(0, end - SESSION_SHARE_PAGE);
-  // Every view (the page's, the API's, each live frame) passes the kept-preview-link filter as a whole.
-  return redactPreviewLinksDeep({
-    title: redactPreviewLinks(serverRedactor().redact(src.title)),
+  // Every view (the page's, the API's, each live frame) passes the kept-link filters as a whole.
+  return redactShareLinksDeep(redactPreviewLinksDeep({
+    title: redactShareLinks(redactPreviewLinks(serverRedactor().redact(src.title))),
     sharedAt: src.sharedAt,
     mode: src.mode,
     through: b.through,
@@ -342,7 +344,7 @@ export async function sessionShareView(src: ShareSource, opts: { before?: number
     images: b.images.length,
     ...(b.earlier ? { earlier: true as const } : {}),
     ...(b.lineage ? { lineage: b.lineage } : {}),
-  });
+  }));
 }
 
 /**
@@ -352,7 +354,7 @@ export async function sessionShareView(src: ShareSource, opts: { before?: number
 export async function sessionShareOutline(src: Pick<ShareSource, "sessionPath"> & { cutEntryId: string }): Promise<SessionShareOutline | null> {
   const b = await built({ sessionPath: src.sessionPath, cutEntryId: src.cutEntryId, from: null });
   if (!b) return null;
-  return redactPreviewLinksDeep({
+  return redactShareLinksDeep(redactPreviewLinksDeep({
     cut: src.cutEntryId,
     items: b.items.map((it, i) => ({
       id: b.ids[i]!,
@@ -362,7 +364,7 @@ export async function sessionShareOutline(src: Pick<ShareSource, "sessionPath"> 
       excerpt: cutAtToken(it.text.replace(/\s+/g, " ").trim(), SESSION_SHARE_EXCERPT_MAX),
       images: it.images?.length ?? 0,
     })),
-  });
+  }));
 }
 
 /**

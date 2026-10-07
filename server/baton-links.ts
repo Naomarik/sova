@@ -1,15 +1,18 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { dropTokens, keepTokens } from "./link-tokens";
 import { nudgeMarks } from "./session-feed";
 import { shareLinksChanged } from "./share/links-events";
 import { stateRoot } from "./state-root";
 
 /**
- * Hand-off links (§app.baton/links). A link is `/h/<token>`: 32 random bytes, base64url. The host
- * keeps only the token's SHA-256, bound to (org, session, hand-off, person), in
+ * Hand-off links (§app.baton/links). A link is `/h/<token>`: 32 random bytes, base64url. This store
+ * keeps the token's SHA-256, bound to (org, session, hand-off, person), in
  * `<stateRoot>/baton-links.json` (0600) — NEVER in the org's workspace repo, so a restored repo
- * carries no capability and a new host mints new links. Lookup hashes the presented token and
+ * carries no capability and a new host mints new links. The token itself is kept host-local in
+ * link-tokens.json (server/link-tokens.ts) from its mint until it is turned off, so the operator can
+ * copy it again; this file's keys never change. Lookup hashes the presented token and
  * compares in constant time against every stored hash (the list is small).
  */
 
@@ -63,7 +66,7 @@ function write(links: LinkRecord[]): void {
   nudgeMarks();
 }
 
-/** Mint a link for hand-off `n` of a session to `personId`. Returns the token (shown once). */
+/** Mint a link for hand-off `n` of a session to `personId`. Returns the token (kept, server/link-tokens.ts). */
 export function mintLink(input: { orgId: string; sessionId: string; n: number; personId: string; offerId?: string; key?: string }, now = Date.now()): string {
   const token = randomBytes(32).toString("base64url");
   const rec: LinkRecord = {
@@ -73,6 +76,7 @@ export function mintLink(input: { orgId: string; sessionId: string; n: number; p
     expiresAt: new Date(now + LINK_TTL_MS).toISOString(),
   };
   write([...read(), rec]);
+  keepTokens("h", [token]);
   shareLinksChanged({ kind: "h", cause: "mint" });
   return token;
 }
@@ -102,15 +106,17 @@ export function deadWhy(l: LinkRecord, now = Date.now()): "expired" | "withdrawn
 /** Revoke every live link matching `match`. Returns how many were revoked. */
 export function revokeLinks(match: (l: LinkRecord) => boolean, now = Date.now(), why?: "withdrawn"): number {
   const links = read();
-  let n = 0;
+  const off: string[] = [];
   for (const l of links)
     if (!l.revokedAt && match(l)) {
       l.revokedAt = new Date(now).toISOString();
       if (why) l.revokedWhy = why;
-      n++;
+      off.push(l.hash);
     }
+  const n = off.length;
   if (n) {
     write(links);
+    dropTokens(off);
     shareLinksChanged({ kind: "h", cause: "revoke" });
   }
   return n;

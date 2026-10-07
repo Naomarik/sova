@@ -5,8 +5,11 @@
  * Operator routes (main listener):
  * POST /api/baton                    body BatonStartInput -> 201 BatonStartResult
  * GET  /api/baton?path=<session>     -> BatonInfo
- * GET  /api/baton/:sid/link          -> { link: string (as BatonStartResult.link); n: number } (mints a fresh link for the current
- *                                    hand-off and revokes that hand-off's older links; 409 when the operator holds it)
+ * GET  /api/baton/:sid/link[?keep=1][&person=<id>] -> { link: string (as BatonStartResult.link); n: number; at? }
+ *                                    New Link: mints a fresh link for the current hand-off (or that invitee of
+ *                                    the open offer) and revokes the older ones; 409 when the operator holds it.
+ *                                    keep=1 (Get Link): the person's live link when its token is kept, else the
+ *                                    same as without it (an older host ignores keep and mints).
  * POST /api/baton/:sid/revoke        -> BatonInfo (revokes every link of the current hand-off)
  * POST /api/baton/:sid/take          -> BatonInfo (Take back: a hand-off to the operator)
  * POST /api/baton/:sid/close         -> BatonInfo
@@ -445,11 +448,15 @@ export interface BatonInfo {
   names: Record<string, string>;
   /** Active roster people, for Take back / the operator's pickers. */
   active: { id: string; name: string; role: string; tz?: string; hoursNow?: Person["hoursNow"] }[];
-  /** Links of the current hand-off that still write (count only: the host keeps hashes, never tokens). */
+  /** Links of the current hand-off that still write (a count; the links themselves are in `links`). */
   liveLinks: number;
   /** personId → when their newest live link of the current hand-off (or open offer) was minted (ISO):
       a strip still showing an older one says "Replaced by a newer link." */
   linkAt: Record<string, string>;
+  /** personId → their newest live link of the current round when its token is kept, and when it was
+      minted (§app.baton/links): the strip's Copy Link. Absent from an older host; a person whose live
+      link was made before tokens were kept has no entry. */
+  links?: Record<string, { link: string; at: string }>;
   /** Whether a share listener is bound on this host, and the effective public address (for
       building a full URL); `state`: where links point and whether they open from outside. */
   share: { bound: boolean; publicUrl: string | null; state?: ShareState };

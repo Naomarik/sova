@@ -19,7 +19,8 @@
  *
  * Operator routes (main listener only):
  * PUT  /api/orgs/:id/owner                    body { personId: string | null } -> OrgDetail (null: no owner)
- * GET  /api/orgs/:id/owner/link               -> OwnerLinkResult (mints; the older link stops at once)
+ * GET  /api/orgs/:id/owner/link[?keep=1]      -> OwnerLinkResult (mints; the older link stops at once.
+ *                                               keep=1: the live link when its token is kept, else as without it)
  * POST /api/orgs/:id/owner/revoke             -> OrgDetail (Turn Off Owner Link)
  * GET  /api/orgs/:id/owner/preview            -> OwnerHome (as the owner sees it; no token, no visit)
  * GET  /api/orgs/:id/owner/preview?project=q_ -> OwnerProject
@@ -188,7 +189,8 @@ export interface OwnerConversation extends BatonView {
 
 // ---- operator side ---------------------------------------------------------------------------------
 
-/** GET /api/orgs/:id/owner/link. Shown once: the host keeps only the token's hash. */
+/** GET /api/orgs/:id/owner/link. The token is kept (§app.owner-page/link), so the owner card's
+    `ownerPage.link.url` carries it too while it is live. */
 export interface OwnerLinkResult {
   /** The share listener's public address + "/i/<token>" (just the path when none is known). */
   link: string;

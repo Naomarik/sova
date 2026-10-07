@@ -7,7 +7,7 @@ import { join } from "node:path";
 import type { CommitNowOutcome, OrgDetail, OrgNeedsYou, OrgsInfo, PersonInput } from "../shared/orgs";
 import { attentionChanged } from "./attention-memo";
 import { unroutedConflicts } from "./decisions";
-import { allBatons, batonById, batonOfPath, batonSummaryField, closeBaton, createBaton, extendBudget, handoffTo, linkTimes, liveLinkCount, nameOf, namesOf, offerTo, revokeCurrent, rotateLink, sessionPathOf, setAbilities, setHiddenFromOwner, takeBack, withdrawOffer } from "./baton";
+import { allBatons, batonById, batonOfPath, batonSummaryField, closeBaton, createBaton, extendBudget, handoffTo, keepLink, keptLinks, linkTimes, liveLinkCount, nameOf, namesOf, offerTo, revokeCurrent, rotateLink, sessionPathOf, setAbilities, setHiddenFromOwner, takeBack, withdrawOffer } from "./baton";
 import { readBatonSettings, writeBatonSettings } from "./baton-settings";
 import { sessionSeesImages } from "./baton-images";
 import { BusyError } from "./chat-manager";
@@ -59,7 +59,7 @@ import { personPage, previewAs } from "./person-page";
 import { findLink, linksOfOrg, revokePersonLinks } from "./baton-links";
 import { lastVisits } from "./visits";
 import type { OwnerLinkResult } from "../shared/owner";
-import { mintOwnerLinkFor, ownerLinkNeeds, ownerPageInfo, revokeOwnerLinks, setOwner } from "./owner";
+import { ownerLinkFor, ownerLinkNeeds, ownerPageInfo, revokeOwnerLinks, setOwner } from "./owner";
 import { ownerView } from "./owner-page";
 import { readUpdates, withdrawUpdate } from "./project-updates";
 import { setRemote } from "./workspace-git";
@@ -110,6 +110,7 @@ export function batonInfo(row: BatonSession): BatonInfo {
     active: roster.filter((p) => p.status === "active").map((p) => ({ id: p.id, name: p.name, role: p.role, ...(p.tz ? { tz: p.tz } : {}), ...(p.hoursNow ? { hoursNow: p.hoursNow } : {}) })),
     liveLinks: liveLinkCount(row),
     linkAt: linkTimes(row),
+    links: Object.fromEntries(Object.entries(keptLinks(row)).map(([pid, k]) => [pid, { link: linkUrl(k.token), at: k.at }])),
     share: { ...shareInfo(), state: shareState() },
     offer,
     proposed: roster
@@ -616,7 +617,9 @@ export function registerOrgRoutes(app: Hono<any>): void {
   app.get(
     "/api/orgs/:id/owner/link",
     handle(async (c) => {
-      const { result: rec, outcome } = await awaitShareLinks(() => mintOwnerLinkFor(p(c, "id")));
+      // ?keep=1 (Get Owner Link): the live kept link when there is one; without it (Get New Owner Link) a new one.
+      const keep = c.req.query("keep") === "1";
+      const { result: rec, outcome } = await awaitShareLinks(() => ownerLinkFor(p(c, "id"), { keep }));
       const out: OwnerLinkResult = { link: shareLinkUrl("i", rec.token), createdAt: rec.createdAt, expiresAt: rec.expiresAt, ...linkWarning(outcome) };
       return c.json(out);
     }),
@@ -729,7 +732,9 @@ export function registerOrgRoutes(app: Hono<any>): void {
     "/api/baton/:sid/link",
     handle(async (c) => {
       const person = c.req.query("person");
-      const { result, outcome } = await awaitShareLinks(() => rotateLink(p(c, "sid"), person || undefined));
+      // ?keep=1 (Get Link): the person's live kept link when there is one; without it (New Link) a new one.
+      const keep = c.req.query("keep") === "1";
+      const { result, outcome } = await awaitShareLinks(() => (keep ? keepLink : rotateLink)(p(c, "sid"), person || undefined));
       const { token, n } = result;
       return c.json({ link: linkUrl(token), n, ...mintedAt(token), ...linkWarning(outcome) });
     }),

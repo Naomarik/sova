@@ -12,6 +12,7 @@ import {
   type SessionShareMode,
 } from "../shared/session-share";
 import { hashToken, TOKEN_RE } from "./baton-links";
+import { dropTokens, keepTokens } from "./link-tokens";
 import { shareLinksChanged } from "./share/links-events";
 import { stateRoot } from "./state-root";
 
@@ -19,9 +20,10 @@ import { stateRoot } from "./state-root";
  * Session shares (§app.session-share/link): `<stateRoot>/session-shares.json` (0600, atomic),
  * host-local, never synced or committed. A share names a session file and a cut (snapshot) or
  * none (Follow live), and optionally a start (`from`, §app.session-share/slice); each recipient has its own `/s/<token>` link, built like a hand-off link (32
- * random bytes, base64url; only the SHA-256 is kept, compared in constant time). The link rows keep
+ * random bytes, base64url; the store keeps the SHA-256, compared in constant time). The link rows keep
  * the baton store's shape (`hash`, `expiresAt`, `revokedAt`), so the registry push reads them as
- * kind `s` rows unchanged.
+ * kind `s` rows unchanged. The token itself is kept in link-tokens.json (server/link-tokens.ts),
+ * never here: this file's keys never change.
  *
  * The file is parsed strictly: one that fails serves no link, and no mutation overwrites it
  * (StoreUnavailable) until the operator fixes or removes it.
@@ -280,6 +282,7 @@ export function createShare(input: CreateInput, now = Date.now()): { share: Shar
   const tokens = input.labels.map((label) => mintLink(store, share.id, { label }, expiresAt, now));
   if (input.anyone) tokens.push(mintLink(store, share.id, { label: ANYONE_LABEL, anyone: true }, expiresAt, now));
   write(store);
+  keepTokens("s", tokens.map((t) => t.token));
   shareLinksChanged({ kind: "s", cause: "mint", hashes: tokens.map((t) => hashToken(t.token)) });
   return { share, tokens };
 }
@@ -320,6 +323,7 @@ export function addRecipient(shareId: string, who: { label: string } | { anyone:
   if (conflict) throw conflict;
   const minted = mintLink(store, share.id, recipient, expiryForNew(store, share, now), now);
   write(store);
+  keepTokens("s", [minted.token]);
   shareLinksChanged({ kind: "s", cause: "mint", hashes: [hashToken(minted.token)] });
   return minted;
 }
@@ -346,13 +350,17 @@ export function relinkRecipient(shareId: string, recipientId: string, now = Date
   );
   if (conflict) throw conflict;
   const expiresAt = Date.parse(old.expiresAt) > now ? old.expiresAt : expiryForNew(store, share, now);
+  const off: string[] = [];
   for (const l of store.links)
     if (l.shareId === shareId && l.recipientId === recipientId && !l.revokedAt) {
       l.revokedAt = iso(now);
       l.revokedWhy = "relinked";
+      off.push(l.hash);
     }
   const minted = mintLink(store, share.id, { id: recipientId, label: old.label, ...(old.anyone ? { anyone: true as const } : {}) }, expiresAt, now);
   write(store);
+  dropTokens(off);
+  keepTokens("s", [minted.token]);
   shareLinksChanged({ kind: "s", cause: "mint", hashes: [hashToken(minted.token)] });
   return minted;
 }
@@ -371,6 +379,7 @@ export function revokeRecipient(shareId: string, recipientId: string, now = Date
     }
   if (off.length) {
     write(store);
+    dropTokens(off);
     shareLinksChanged({ kind: "s", cause: "revoke" });
   }
   return off;
@@ -395,6 +404,7 @@ function stopWhere(match: (s: ShareRecord) => boolean, why: ShareLinkWhy, now: n
     }
   if (shares.length) {
     write(store);
+    dropTokens(hashes);
     shareLinksChanged({ kind: "s", cause: "revoke" });
   }
   return { shares, hashes };

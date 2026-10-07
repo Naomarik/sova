@@ -3,15 +3,17 @@ import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "n
 import { dirname, join } from "node:path";
 import { OWNER_LINK_DAYS } from "../shared/owner";
 import { hashToken, TOKEN_RE } from "./baton-links";
+import { dropTokens, keepTokens } from "./link-tokens";
 import { shareLinksChanged } from "./share/links-events";
 import { stateRoot } from "./state-root";
 
 /**
  * Person links (§app.owner-page/link): `/i/<token>`, one door per person. Today only the owner
  * scope: an org's owner reads the Owner page through it. The same shape and hashing as a hand-off
- * link (32 random bytes, base64url; the host keeps only the SHA-256, compared in constant time), in
+ * link (32 random bytes, base64url; this store keeps the SHA-256, compared in constant time), in
  * `<stateRoot>/person-links.json` (0600), NEVER in the workspace repo: a restored repo carries no
- * capability, and an attach elsewhere mints new links.
+ * capability, and an attach elsewhere mints new links. The token itself is kept in link-tokens.json
+ * (server/link-tokens.ts) until the link is turned off; this file's keys never change.
  *
  * One live owner link per org: minting turns the older one off at once. It lasts
  * OWNER_LINK_DAYS from minting, with no renewal. Turned off also when the owner changes, leaves,
@@ -101,17 +103,19 @@ export function personLinkState(l: PersonLinkRecord, now = Date.now()): "live" |
   return Date.parse(l.expiresAt) <= now ? "expired" : "live";
 }
 
-/** Mint the org's owner link for `personId`; every older owner link of the org stops working now. Returns the token (shown once). */
+/** Mint the org's owner link for `personId`; every older owner link of the org stops working now. Returns the token (kept, server/link-tokens.ts). */
 export function mintOwnerLink(orgId: string, personId: string, now = Date.now()): { token: string; record: PersonLinkRecord } {
   const store = read();
   const at = new Date(now).toISOString();
   let gen = 0;
+  const off: string[] = [];
   for (const l of store.links)
     if (l.orgId === orgId) {
       gen = Math.max(gen, l.gen || 0);
       if (!l.revokedAt) {
         l.revokedAt = at;
         l.revokedWhy = "rotated";
+        off.push(l.hash);
       }
     }
   const token = randomBytes(32).toString("base64url");
@@ -119,6 +123,8 @@ export function mintOwnerLink(orgId: string, personId: string, now = Date.now())
   store.links.push(record);
   if (!store.key) store.key = handleKey();
   write(store);
+  dropTokens(off);
+  keepTokens("i", [token]);
   shareLinksChanged({ kind: "i", cause: "mint" });
   return { token, record };
 }
@@ -138,15 +144,17 @@ export function findPersonLink(token: string): PersonLinkRecord | null {
 /** Turn off every live owner link matching; returns how many. */
 export function revokePersonLinks(match: (l: PersonLinkRecord) => boolean, why: PersonLinkWhy, now = Date.now()): number {
   const store = read();
-  let n = 0;
+  const off: string[] = [];
   for (const l of store.links)
     if (!l.revokedAt && match(l)) {
       l.revokedAt = new Date(now).toISOString();
       l.revokedWhy = why;
-      n++;
+      off.push(l.hash);
     }
+  const n = off.length;
   if (n) {
     write(store);
+    dropTokens(off);
     shareLinksChanged({ kind: "i", cause: "revoke" });
   }
   return n;

@@ -51,12 +51,18 @@
  *                                                         Shares page fans out to up peers)
  * Errors: 4xx { error, code }.
  *
+ * Kept links (§app.session-share/link): every answer that describes a live link whose token is
+ * kept carries its URL (SessionShareRecipient.link, OrgLinkRow.link), built on the public address
+ * as it is when it answers. A peer reading these routes reads working links; no other route has them.
+ *
  * Slices (§app.session-share/slice): a share may start at an entry (`from`) and end at its cut.
  * Entry ids go only to the operator (the outline, `from` on create, patch and preview); no
  * recipient answer, image, shell or frame carries one.
  *
  * Files (host-local, never synced or committed):
  *   <stateRoot>/session-shares.json         0600, atomic (server/session-shares.ts)
+ *   <stateRoot>/link-tokens.json            0600, atomic, read tolerantly: the kept tokens of every
+ *                                           /s/, /h/ and /i/ link (server/link-tokens.ts)
  *   <stateRoot>/session-share-visits.jsonl  the visit log of `via: "session"` links
  */
 
@@ -105,6 +111,9 @@ export interface SessionShareRecipient {
   lastAt?: string;
   /** Only on GET /api/shares-overview: the recipient's visits, newest first. */
   visits?: SessionShareVisit[];
+  /** The link, while it is live and its token is kept (absent for a link made before tokens were
+      kept, an expired or turned-off one, and on an older host). Copy Link copies exactly this. */
+  link?: string;
 }
 
 export interface SessionShare {
@@ -170,7 +179,7 @@ export interface SessionSharePatch {
 /** POST …/:id/recipients: a named label, or `{ anyone: true }` (409 when one is already live). */
 export type SessionShareAddRecipient = { label: string } | { anyone: true };
 
-/** A freshly minted link, shown once: only its hash is kept. */
+/** A freshly minted link (its token is kept, so its recipient row carries it too). */
 export interface SessionShareLink {
   recipientId: string;
   label: string;
@@ -303,6 +312,9 @@ export interface SessionShareVisit {
 
 export interface SessionShareRecipientActivity {
   recipientId: string;
+  /** When the recipient's newest link was made: a sheet whose row says otherwise reads the share
+      again before it offers Copy Link (an older host omits it). */
+  createdAt?: string;
   presence: SessionSharePresence;
   opened: number;
   lastAt?: string;
@@ -340,6 +352,8 @@ export interface OrgLinkRow {
   lastAt?: string;
   /** Newest first. */
   visits: SessionShareVisit[];
+  /** The link, when its token is kept (§app.session-share/link). */
+  link?: string;
 }
 
 /** GET /api/shares-overview: every live public link this host serves. */

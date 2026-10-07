@@ -15,6 +15,8 @@ import { inProcessSender } from "./outreach/sender-test-fixtures";
 const { mountOutreachRelay } = await import("./outreach/relay");
 const { resetLocalClient, setSenderClientOptionsForTest } = await import("./outreach/whatsapp");
 const { liveLinks } = await import("./baton-links");
+const { dropTokens, tokenFor } = await import("./link-tokens");
+const { RESOLVERS } = await import("./outreach/links");
 const { batonById } = await import("./baton");
 const { SecretGuard } = await import("./overseer-deny");
 const po = await import("./project-overseer");
@@ -60,12 +62,13 @@ describe("§app.outreach/send-link", () => {
     assert.equal(logOf().at(-1)!.event, "refused");
   });
 
-  test("sent: a fresh link replaces the older ones, the log holds no number, token or text; receipts follow", async () => {
+  test("sent, with no kept link (one made before tokens were kept): a fresh link replaces the older ones, the log holds no number, token or text; receipts follow", async () => {
     assert.equal((await json("PUT", "/api/outreach", { sender: { local: {} } })).status, 200);
     await senderOpen();
     const sid = await gathering(ann.id);
     const n = batonById(sid)!.row.handoffs.at(-1)!.n;
     const firstLinks = liveLinks(sid, n).map((l) => l.hash);
+    dropTokens(firstLinks);
     const r = await sendLink(sid);
     assert.deepEqual(r.body, { outcome: "sent", channel: "whatsapp", name: "Ann" });
     const now = liveLinks(sid, n);
@@ -85,6 +88,32 @@ describe("§app.outreach/send-link", () => {
     const page = await json("GET", `/api/orgs/${org.id}/people/${ann.id}`);
     assert.equal(page.body.sends?.[0]?.event, "read");
     assert.equal(page.body.sends?.[0]?.what, "Office hours");
+  });
+
+  test("sent, with a kept live link: that link goes, nothing is minted or turned off; a failed send of it turns nothing off", async () => {
+    const sid = await gathering(ann.id);
+    const n = batonById(sid)!.row.handoffs.at(-1)!.n;
+    const first = liveLinks(sid, n);
+    assert.equal(first.length, 1);
+    const token = tokenFor(first[0]!.hash, "h");
+    assert.ok(token, "control: the start's link is kept");
+    // The resolver itself: the kept link's URL, and nothing made (so neither revoke nor settle touches it).
+    const resolved = await RESOLVERS.handoff.resolve({ orgId: org.id, projectId: project.id, personId: ann.id, key: "k-test" }, { kind: "handoff", session: sid });
+    assert.ok(resolved.url.endsWith(`/h/${token}`), resolved.url);
+    assert.deepEqual(resolved.minted, {});
+    const r = await sendLink(sid);
+    assert.equal(r.body.outcome, "sent");
+    assert.deepEqual(liveLinks(sid, n).map((l) => l.hash), [first[0]!.hash], "the same one link, still live");
+    assert.equal(tokenFor(first[0]!.hash, "h"), token, "and still kept");
+
+    const sidG = await gathering(gone.id);
+    const ng = batonById(sidG)!.row.handoffs.at(-1)!.n;
+    const startG = liveLinks(sidG, ng).map((l) => l.hash);
+    assert.equal(startG.length, 1);
+    const rg = await sendLink(sidG);
+    assert.equal(rg.body.outcome, "failed");
+    assert.deepEqual(liveLinks(sidG, ng).map((l) => l.hash), startG, "a failed send of a kept link turns nothing off");
+    assert.ok(tokenFor(startG[0]!, "h"), "it stays kept");
   });
 
   test("no WhatsApp number, not on WhatsApp, paused: refused or failed, and the send-link wait comes back", async () => {

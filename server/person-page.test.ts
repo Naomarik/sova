@@ -152,7 +152,11 @@ describe("decisions, conflicts, links, visits", () => {
     assert.equal(bobHosting.state, "writes");
     assert.equal(bobHosting.current, true);
     assert.ok(!JSON.stringify(kimLinks).includes(kimS1.hash), "never a hash");
-    assert.ok(!JSON.stringify(personPage(org.id, bob.id)).includes(bobS1), "never a token");
+    // A link that can still open and whose token is kept carries it as its `link`, and nowhere else
+    // (§app.organizations/person-page); a closed session's link carries none.
+    assert.ok(bobHosting.link?.endsWith(`/h/${bobS1}`), bobHosting.link);
+    assert.equal(JSON.stringify(personPage(org.id, bob.id)).split(bobS1).length - 1, 1, "the token only as that row's link");
+    assert.equal(kimLinks.find((l) => l.sessionId === s4.sessionId)!.link, undefined, "closed: no link");
   });
 
   test("visits: folded newest first with session titles, counted per link; scanners not counted; another host's link flagged", () => {

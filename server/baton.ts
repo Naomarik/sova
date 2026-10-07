@@ -26,6 +26,7 @@ import {
 } from "../shared/baton";
 import type { Person } from "../shared/orgs";
 import { deadWhy, liveLinks, mintLink, revokeLinks, type LinkRecord, linkDead, findLink } from "./baton-links";
+import { tokenFor } from "./link-tokens";
 import { openedSessions } from "./visits";
 import { readBatonSettings } from "./baton-settings";
 import { heldAt, hostOf, isOrgHostOpen, refusalError, type ActResult, type OrgHostApi, type SessionInfo } from "./org-engine";
@@ -860,8 +861,7 @@ export function accessOf(link: LinkRecord, row: BatonSession, now = Date.now()):
   return { ok: true, canWrite: !reason, ...(reason ? { reason } : {}) };
 }
 
-/** A fresh link for the current hand-off (the host keeps no token to show again); older links of
-    that hand-off are revoked. */
+/** New Link: a fresh link for the current hand-off; older links of that hand-off are revoked. */
 export function rotateLink(sessionId: string, personId?: string): { token: string; n: number } {
   const hit = batonById(sessionId);
   if (!hit) throw new OrgError("Unknown baton session", 404);
@@ -884,6 +884,36 @@ export function rotateLink(sessionId: string, personId?: string): { token: strin
   return { token: mintLink({ orgId: row.orgId, sessionId, n: current.n, personId: row.holder }), n: current.n };
 }
 
+/** Get Link: the person's live link of the current round when its token is kept (another tab
+    made one meanwhile), else as rotateLink: a new one, the older ones off. */
+export function keepLink(sessionId: string, personId?: string): { token: string; n: number } {
+  const hit = batonById(sessionId);
+  if (!hit) throw new OrgError("Unknown baton session", 404);
+  const offer = currentOffer(hit.row);
+  const who = offer ? personId : hit.row.holder;
+  const kept = who ? keptLinks(hit.row)[who] : undefined;
+  return kept ? { token: kept.token, n: kept.n } : rotateLink(sessionId, personId);
+}
+
+/** personId → their newest live link of the current round (the open offer's while one is out, else
+    the current hand-off's), when its token is kept (§app.baton/links). A person whose newest live
+    link has no kept token (made before tokens were kept) has none. */
+export function keptLinks(row: BatonSession, now = Date.now()): Record<string, { token: string; at: string; n: number }> {
+  const out: Record<string, { token: string; at: string; n: number }> = {};
+  const n = roundOf(row);
+  if (n === undefined) return out;
+  const newest = new Map<string, LinkRecord>();
+  for (const l of liveLinks(row.sessionId, n, now)) {
+    const had = newest.get(l.personId);
+    if (!had || Date.parse(l.createdAt) >= Date.parse(had.createdAt)) newest.set(l.personId, l);
+  }
+  for (const [pid, l] of newest) {
+    const token = tokenFor(l.hash, "h");
+    if (token) out[pid] = { token, at: l.createdAt, n: l.n };
+  }
+  return out;
+}
+
 export function revokeCurrent(sessionId: string): number {
   const hit = batonById(sessionId);
   if (!hit) throw new OrgError("Unknown baton session", 404);
@@ -896,12 +926,18 @@ export const liveLinkCount = (row: BatonSession): number => {
   return current ? liveLinks(row.sessionId, current.n).length : 0;
 };
 
+/** The hand-off whose links are the current round's: the open offer's while one is out, else the
+    current hand-off's. */
+function roundOf(row: BatonSession): number | undefined {
+  const last = row.handoffs[row.handoffs.length - 1];
+  const offer = currentOffer(row);
+  return offer && offer.state === "open" && last?.offerId === offer.id ? offer.n : last?.n;
+}
+
 /** personId → when their newest live link of the current round was minted: the open offer's links
     while one is out, else the current hand-off's. */
 export function linkTimes(row: BatonSession): Record<string, string> {
-  const last = row.handoffs[row.handoffs.length - 1];
-  const offer = currentOffer(row);
-  const n = offer && offer.state === "open" && last?.offerId === offer.id ? offer.n : last?.n;
+  const n = roundOf(row);
   const out: Record<string, string> = {};
   if (n === undefined) return out;
   for (const l of liveLinks(row.sessionId, n)) if (!out[l.personId] || Date.parse(l.createdAt) > Date.parse(out[l.personId]!)) out[l.personId] = l.createdAt;

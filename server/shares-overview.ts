@@ -4,7 +4,9 @@ import { readIdentity, withIdentity, type IdentityLine } from "./visitor-identit
 import { allBatons, namesOf } from "./baton";
 import { linkDead, linksOfOrg } from "./baton-links";
 import { readIndex, readOrg } from "./orgs";
+import { tokenFor } from "./link-tokens";
 import { ownerLinksOf, personLinkDead } from "./person-links";
+import { linkUrl } from "./share/listener";
 import { watchedHashes } from "./share/hub";
 import { readPreviewVisits, readSessionVisits, readVisits, visitSummary, type FoldedVisit } from "./visits";
 
@@ -25,6 +27,12 @@ const foldedVisit = (v: FoldedVisit): SessionShareVisit => ({
   device: v.device,
   ...(v.bot ? { bot: true as const } : {}),
 });
+
+/** A live link's URL when its token is kept (§app.session-share/link). */
+const keptLink = (kind: "h" | "i", hash: string): { link?: string } => {
+  const token = tokenFor(hash, kind);
+  return token ? { link: linkUrl(kind, token) } : {};
+};
 
 /** Every live hand-off and owner link of every attached org, newest first. An org whose workspace
     can't be read is skipped (it serves nothing either). */
@@ -82,6 +90,7 @@ export function orgLinkRows(now = Date.now(), identity: Map<string, IdentityLine
         expiresAt: l.expiresAt,
         ...visitSummary(visits),
         visits,
+        ...keptLink("h", l.hash),
       });
     }
     for (const l of ownerLinksOf(o.id)) {
@@ -89,7 +98,7 @@ export function orgLinkRows(now = Date.now(), identity: Map<string, IdentityLine
       const visits = visitsOf(l.personId)
         .filter((v) => v.via === "owner" && v.gen === l.gen)
         .map(shareVisit);
-      rows.push({ kind: "owner", orgId: o.id, orgName, ...person(l.personId), state: "live", createdAt: l.createdAt, expiresAt: l.expiresAt, ...visitSummary(visits), visits });
+      rows.push({ kind: "owner", orgId: o.id, orgName, ...person(l.personId), state: "live", createdAt: l.createdAt, expiresAt: l.expiresAt, ...visitSummary(visits), visits, ...keptLink("i", l.hash) });
     }
   }
   return rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt));

@@ -104,8 +104,9 @@ Usage glance needs the room.
 - **Usage row, a glance at every provider:**
   - One segment per provider, in the fixed order Claude, OpenAI, Ollama Cloud, Z.ai, DeepSeek.
     The tags are exactly `C`, `O`, `OL`, `Z`, `DS`, each followed by a **pace meter**
-    (§app.insights/pace-tick): a `.pace` box 20px wide holding the provider's bars, with no number
-    beside it (the numbers are in the row's words, below). **A provider that reports a balance
+    (§app.insights/pace-tick): a `.pace` box holding the provider's bars, with no number
+    beside it; the meters share the glance row's free width, each at least 20px and at most
+    64px, so they grow as the pane widens, never with their readings (the numbers are in the row's words, below). **A provider that reports a balance
     instead of windows (DeepSeek) shows the money, not a meter**: `DS $4`, mono, in `.text-num`.
     It has no quota, so there is no percentage to invent; its segment goes last, like its card.
   - **Two precisions for the one balance.** The foot is a shorthand, so it rounds to **whole
@@ -174,9 +175,10 @@ Usage glance needs the room.
     segments sit `--space-2` apart (twice the tag-to-meter gap, so each still reads as one
     pair), and the link's right padding drops to `--space-2`, since the button carries its own
     air around its icon. Measured in the 320px sidebar at a 1440px viewport, the glance box is
-    215px, and the meters have a fixed width, so the row no longer grows with its readings: four
-    meter providers plus `DS $4` is 207px whatever the percentages (22px meters made it 215.3px,
-    a clip). A number beside each meter was rejected: about 30px more per provider overruns the
+    215px; four meter providers at the 20px floor plus `DS $4` is 207px whatever the
+    percentages. The meters' width comes from the pane, never from their readings: the glance
+    box's free width is shared among the meters (tags, `DS $4` and the button keep their
+    sizes), each between 20px and 64px: about 20px at the 320px pane, 64px at 560px. A number beside each meter was rejected: about 30px more per provider overruns the
     box. `.usage-glance` still clips
     (it never wraps) as a guard; the full reading stays in the row's `title` and `aria-label`.
 - **Agents row, what is working right now:** `{n} agents` and how fast the agents are writing, on

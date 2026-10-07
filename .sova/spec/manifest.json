@@ -11924,26 +11924,6 @@
         "pi-config/extensions/spec/DRAFTS.md"
       ]
     },
-    "§tools.spec/runtime-accounting": {
-      "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "verified",
-      "requires": [],
-      "code": [
-        "pi-config/extensions/mode/spec-guard.ts",
-        "pi-config/extensions/mode/index.ts",
-        "pi-config/extensions/mode/spec-worker.ts",
-        "pi-config/extensions/claude-code/spec-hooks.ts",
-        "pi-config/extensions/claude-code/spec-hooks.test.ts",
-        "pi-config/extensions/mode/tests/spec-turn.mjs",
-        "pi-config/extensions/mode/tests/ordinary-mapped.mjs",
-        "pi-config/extensions/mode/tests/smoke.mjs",
-        "pi-config/extensions/mode/tests/note-turn.mjs",
-        "pi-config/extensions/mode/README.md",
-        "pi-config/extensions/claude-code/README.md",
-        "pi-config/extensions/spec/README.md"
-      ]
-    },
     "§app.overseer/transcript-window": {
       "kind": "behavior",
       "authority": "accepted",
@@ -12316,8 +12296,7 @@
       "authority": "accepted",
       "evidence": "verified",
       "requires": [
-        "§tools.spec/change-assessments",
-        "§tools.spec/runtime-accounting"
+        "§tools.spec/change-assessments"
       ],
       "code": [
         "server/tests/spec-assessment.mjs",
@@ -15126,7 +15105,8 @@
         "§tools.spec/where-lookup",
         "§tools.spec/frame",
         "§tools.spec/context-packets",
-        "§tools.spec/field-promotion"
+        "§tools.spec/field-promotion",
+        "§tools.spec/census-note"
       ],
       "authority": "accepted",
       "evidence": "verified",
@@ -15560,6 +15540,29 @@
         "src/lib/mesh-details.test.ts",
         "src/components/Sidebar.tsx",
         "src/mesh.css"
+      ]
+    },
+    "§tools.spec/no-turn-end-check": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "code": [
+        "pi-config/extensions/mode/index.ts",
+        "pi-config/extensions/mode/spec-guard.ts",
+        "pi-config/extensions/mode/spec-worker.ts",
+        "pi-config/extensions/mode/spec-mode.md",
+        "pi-config/extensions/mode/prompt.ts",
+        "pi-config/extensions/claude-code/spec-hooks.ts",
+        "pi-config/extensions/subagents/spec-brief.ts",
+        "pi-config/extensions/subagents/index.ts",
+        "server/transcript.ts",
+        "server/app.ts",
+        "server/mesh/access.ts",
+        "shared/protocol.ts",
+        "src/components/Thread.tsx",
+        "src/components/ChatView.tsx",
+        "src/lib/api.ts",
+        "src/app.css"
       ]
     }
   },

@@ -293,8 +293,8 @@ is never deleted. A worker whose directory is gone starts a fresh one and still 
 conversation. Its
 transcript still lands in Claude Code's own `projects/` folder, where Sova reads it
 (§app.subagents-pane/claude-code-workers), through a writable view of that worker's project
-folder only. Its team mailbox, its own spec-hook state directory and its own spec ledger file
-(which the parent's spec mode also reads) are writable; nothing else of the agent dir, the
+folder only. Its team mailbox and its own spec-hook state directory are writable; it has no spec
+ledger file; nothing else of the agent dir, the
 login's directory or `~/.claude` is. Each worker has its own tmp, removed when it closes, and
 under the sandbox its own proxy, which also allows the Anthropic API hosts.
 
@@ -334,8 +334,8 @@ These are the gaps the sandbox leaves, each named so that nobody relies on it th
   `bash` is inside the OS sandbox. A bug in that check is not caught by the kernel. A Claude Code
   worker's file tools run inside its confined process, so for it they are OS-enforced too.
 - **A confined Claude Code worker's own state and network.** Its private config directory, its
-  transcript folder, its team mailbox and its spec-hook state and ledger are writable even under
-  `read-only` (§chat.sandbox/claude-state), so it can forge only its own spec ledger. Under
+  transcript folder, its team mailbox and its spec-hook state are writable even under
+  `read-only` (§chat.sandbox/claude-state); no spec ledger is among them. Under
   `read-only` its network is the Anthropic API rather than none, and under `workspace-write` its
   Bash can reach the API hosts too; each worker has its own proxy, so the parent's `bash` cannot.
   Stopping it with TERM ends the sandbox abruptly (closing its input stays graceful), a policy

@@ -127,6 +127,16 @@ export function liveLinks(sessionId: string, n: number, now = Date.now()): LinkR
   return read().filter((l) => l.sessionId === sessionId && l.n === n && !linkDead(l, now));
 }
 
+/** Keys of outreach sends still in flight in this process, held from before their link is made until
+    the send settles or its link is turned off again: a definite failure turns off every link of its
+    key, so a link minted under one is never handed out again until then (§app.outreach/links). A
+    restart drops them: a step run again after one turns nothing off. */
+const unsettled = new Set<string>();
+export const holdSendKey = (key: string): void => void unsettled.add(key);
+export const releaseSendKey = (key: string): void => void unsettled.delete(key);
+/** Whether a link may still be turned off by its own send's failure. */
+export const unsettledLink = (l: Pick<LinkRecord, "key">): boolean => !!l.key && unsettled.has(l.key);
+
 /** The links an effect (by its key) minted. */
 export function linksOfKey(key: string): LinkRecord[] {
   return read().filter((l) => l.key === key);

@@ -93,8 +93,9 @@ const handoff: LinkResolver = {
     const offer = currentOffer(row);
     const n = offer ? offer.n : row.handoffs[row.handoffs.length - 1]!.n;
     // Their live link of this round when its token is kept, as Get Link gives it: the send makes
-    // nothing, so neither a failure nor a success turns anything off (no linkKey).
-    const kept = keptLinks(row)[personId];
+    // nothing, so neither a failure nor a success turns anything off (no linkKey). A link another send
+    // still in flight made is never it: that send's failure would turn it off.
+    const kept = keptLinks(row, Date.now(), { reuse: true })[personId];
     if (kept && kept.n === n)
       return {
         url: linkUrl("h", kept.token),

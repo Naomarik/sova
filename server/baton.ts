@@ -25,7 +25,7 @@ import {
   type WrapupInfo,
 } from "../shared/baton";
 import type { Person } from "../shared/orgs";
-import { deadWhy, liveLinks, mintLink, revokeLinks, type LinkRecord, linkDead, findLink } from "./baton-links";
+import { deadWhy, liveLinks, mintLink, revokeLinks, type LinkRecord, linkDead, findLink, unsettledLink } from "./baton-links";
 import { tokenFor } from "./link-tokens";
 import { openedSessions } from "./visits";
 import { readBatonSettings } from "./baton-settings";
@@ -891,19 +891,22 @@ export function keepLink(sessionId: string, personId?: string): { token: string;
   if (!hit) throw new OrgError("Unknown baton session", 404);
   const offer = currentOffer(hit.row);
   const who = offer ? personId : hit.row.holder;
-  const kept = who ? keptLinks(hit.row)[who] : undefined;
+  const kept = who ? keptLinks(hit.row, Date.now(), { reuse: true })[who] : undefined;
   return kept ? { token: kept.token, n: kept.n } : rotateLink(sessionId, personId);
 }
 
 /** personId → their newest live link of the current round (the open offer's while one is out, else
     the current hand-off's), when its token is kept (§app.baton/links). A person whose newest live
-    link has no kept token (made before tokens were kept) has none. */
-export function keptLinks(row: BatonSession, now = Date.now()): Record<string, { token: string; at: string; n: number }> {
+    link has no kept token (made before tokens were kept) has none. `reuse`: for a link to hand out
+    again (Get Link kept, a send), so a link whose own send is still in flight doesn't count: that
+    send's failure would turn it off (§app.outreach/links). */
+export function keptLinks(row: BatonSession, now = Date.now(), opts: { reuse?: boolean } = {}): Record<string, { token: string; at: string; n: number }> {
   const out: Record<string, { token: string; at: string; n: number }> = {};
   const n = roundOf(row);
   if (n === undefined) return out;
   const newest = new Map<string, LinkRecord>();
   for (const l of liveLinks(row.sessionId, n, now)) {
+    if (opts.reuse && unsettledLink(l)) continue;
     const had = newest.get(l.personId);
     if (!had || Date.parse(l.createdAt) >= Date.parse(had.createdAt)) newest.set(l.personId, l);
   }

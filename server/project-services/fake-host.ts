@@ -56,7 +56,7 @@ export class FakeClock implements EngineClock {
 
 export class FakeDriver implements Driver {
   readonly id = "detached" as const;
-  readonly units_ = new Map<string, Unit>();
+  private readonly records = new Map<string, Unit>();
   /** Every run to completion, in order. */
   readonly onceRuns: OnceSpec[] = [];
   /** What a start does, per unit (default: listen on its own ports). */
@@ -65,7 +65,7 @@ export class FakeDriver implements Driver {
   once: (spec: OnceSpec, print: (line: string) => void) => Partial<RunOnceResult> | Promise<Partial<RunOnceResult>> = () => ({ code: 0 });
   /** Each run to completion's output, by its unit. */
   private readonly onceLogs = new Map<string, string[]>();
-  /** What a signal does (default: nothing beyond its log line). */
+  /** What a signal does beyond being recorded (default: nothing). */
   onSignal: (unit: string, sig: string) => void = () => undefined;
   private nextPid = FAKE_PID_BASE;
   constructor(private readonly host: FakeHost) {}
@@ -76,12 +76,12 @@ export class FakeDriver implements Driver {
     return { ok: true, detail: this.detail };
   }
   async start(spec: UnitSpec) {
-    const old = this.units_.get(spec.unit);
+    const old = this.records.get(spec.unit);
     if (old?.pid) return;
     const b = this.behave(spec);
     const pid = ++this.nextPid;
     const u: Unit = { spec, pid, logs: [...(old?.logs ?? []), `started: ${spec.argv.join(" ")}`, ...(b.logs ?? [])], late: [], signals: [] };
-    this.units_.set(spec.unit, u);
+    this.records.set(spec.unit, u);
     if (b.exit !== undefined) {
       u.pid = null;
       u.exit = b.exit;
@@ -92,7 +92,7 @@ export class FakeDriver implements Driver {
   }
   /** Open the late ports that are due. */
   tick() {
-    for (const u of this.units_.values()) {
+    for (const u of this.records.values()) {
       if (!u.pid) continue;
       for (const l of u.late.filter((x) => x.at <= this.host.clock.now())) if (!this.host.listeners.has(l.port)) this.host.listen(l.port, u.pid, u.spec.cwd);
       u.late = u.late.filter((x) => x.at > this.host.clock.now());
@@ -100,46 +100,46 @@ export class FakeDriver implements Driver {
   }
   /** The unit's process ends on its own (a crash) with `code`; its ports close. */
   crash(unit: string, code = 1) {
-    const u = this.units_.get(unit);
+    const u = this.records.get(unit);
     if (!u?.pid) return;
     this.host.closeAll(u.pid);
     u.pid = null;
     u.exit = code;
   }
   async stop(unit: string) {
-    const u = this.units_.get(unit);
+    const u = this.records.get(unit);
     if (u?.pid) this.host.closeAll(u.pid);
-    this.units_.delete(unit);
+    this.records.delete(unit);
   }
   async status(unit: string): Promise<UnitStatus> {
-    const u = this.units_.get(unit);
+    const u = this.records.get(unit);
     if (!u) return { state: "missing", pid: null };
     if (u.pid) return { state: "active", pid: u.pid };
     return { state: u.exit === 0 ? "inactive" : "failed", pid: null, exit: u.exit ?? null, detail: `exited with ${u.exit}` };
   }
   async signal(unit: string, sig: string) {
-    const u = this.units_.get(unit);
+    const u = this.records.get(unit);
     if (!u?.pid) throw new DriverError(`${unit} is not running`);
     u.signals.push(sig);
     this.onSignal(unit, sig);
   }
   /** The signals `unit` got, in order. */
   signalsOf(unit: string): string[] {
-    return this.units_.get(unit)?.signals ?? [];
+    return this.records.get(unit)?.signals ?? [];
   }
   /** Write a line to `unit`'s log. */
   log(unit: string, text: string) {
-    this.units_.get(unit)?.logs.push(text);
+    this.records.get(unit)?.logs.push(text);
   }
   owns(unit: string, pid: number) {
-    return this.units_.get(unit)?.pid === pid;
+    return this.records.get(unit)?.pid === pid;
   }
   pids(unit: string) {
-    const pid = this.units_.get(unit)?.pid;
+    const pid = this.records.get(unit)?.pid;
     return pid ? [pid] : [];
   }
   async logs(unit: string, lines: number) {
-    return (this.units_.get(unit)?.logs ?? this.onceLogs.get(unit) ?? []).slice(-lines).map((text) => ({ t: new Date(this.host.clock.now()).toISOString(), text }));
+    return (this.records.get(unit)?.logs ?? this.onceLogs.get(unit) ?? []).slice(-lines).map((text) => ({ t: new Date(this.host.clock.now()).toISOString(), text }));
   }
   async runOnce(spec: OnceSpec): Promise<RunOnceResult> {
     this.onceRuns.push(spec);
@@ -149,11 +149,11 @@ export class FakeDriver implements Driver {
     return { code: 0, timedOut: false, ms: 0, ...r };
   }
   async units(prefix: string) {
-    return [...this.units_.keys()].filter((u) => u.startsWith(prefix));
+    return [...this.records.keys()].filter((u) => u.startsWith(prefix));
   }
   /** The running units, by name. */
   running(): string[] {
-    return [...this.units_.entries()].filter(([, u]) => u.pid).map(([n]) => n);
+    return [...this.records.entries()].filter(([, u]) => u.pid).map(([n]) => n);
   }
 }
 

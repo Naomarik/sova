@@ -101,8 +101,11 @@ textarea. The textarea stays visible and editable throughout.
   batches and their RMS; where AudioWorklet is missing a ScriptProcessorNode does the same.
 - **Stop** keeps recording for 350 ms more (post-roll, so a stop tapped on the last syllable
   doesn't cut it), then flushes the worklet, stops every mic track (which releases the OS mic indicator), closes
-  the context, resamples to 16 kHz through an `OfflineAudioContext`, and encodes a 16-bit mono WAV
-  (32 KB per second).
+  the context, drops the knock of the finger tapping Stop, resamples to 16 kHz through an
+  `OfflineAudioContext`, and encodes a 16-bit mono WAV (32 KB per second). The knock is the first
+  burst after the stop moment: a 10 ms stretch above −45 dBFS and at least 15 dB louder than the
+  median of the 100 ms before it, staying that loud for no more than 80 ms. The clip ends where it
+  begins, with a 5 ms fade; with no such burst the whole post-roll is kept.
 - **Warm-up.** Starting a recording sends `POST /api/voice/warm`, so the model loads while you
   speak.
 

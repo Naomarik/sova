@@ -128,6 +128,10 @@ pairs or unlinks it.
   (§app.session-share/link), as Get Link does, and makes nothing. Else it mints a fresh link, and
   once the message went their older links of that hand-off (or of that offer) stop, as after Get
   Link. A send that fails turns off only a link it made, and leaves the older ones as they were.
+  A link minted by a send still in flight on this host is never handed out again, by another send
+  or by Get Link's kept link (`?keep=1`, §app.baton/links), until that send settles: either
+  passes it over for the person's newest other kept live link, else makes a new one as without a
+  kept link, so that send's failure never turns off a link someone else delivered.
 - `preview`: the preview is this project's and active. The host keeps only a preview's hash, so the
   person gets their own **sibling** of it (a new `pv_…`): the same organization, project and port,
   expiring when the original does and never later (an Extend of a sibling stops at the original's

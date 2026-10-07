@@ -248,9 +248,10 @@ gateway only routes by hash (§mesh/public). Wire shapes: `shared/session-share.
   open it reads the share's activity every 5 seconds while the page is visible.
 - **Copy Link copies the row's own link**, the `link` of the recipient row it sits on, never one
   remembered elsewhere, so it always belongs to the state and times shown beside it. Each
-  activity row carries its recipient's newest link's `createdAt`; when it differs from the row's,
-  that row hides Copy Link and the sheet reads the share again at once, so a link replaced from
-  another tab or host is never copied and the new one shows within one read.
+  activity row carries its recipient's newest link's `createdAt` and its state (`live`, `off`,
+  `expired`); when either differs from the row's, that row hides Copy Link and the sheet reads the
+  share again at once, so a link replaced, deleted or stopped from another tab or host is never
+  copied and the change shows within one read.
 - A share on a peer's session is read and changed on that peer, through the pane's host scope.
 
 ## §app.session-share/shares-page — The Shares page

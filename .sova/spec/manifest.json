@@ -9040,7 +9040,9 @@
         "src/components/SessionDetails.tsx",
         "src/lib/session-shares.ts",
         "src/shares.css",
-        "src/lib/session-shares.test.ts"
+        "src/lib/session-shares.test.ts",
+        "server/session-shares-routes.ts",
+        "shared/session-share.ts"
       ]
     },
     "§app.session-share/snapshot": {
@@ -10550,7 +10552,10 @@
         "server/project-previews.integration.test.ts",
         "server/outreach/sender-test-fixtures.ts",
         "server/outreach-test-fixtures.ts",
-        "server/outreach.integration.test.ts"
+        "server/outreach.integration.test.ts",
+        "server/outreach/core.ts",
+        "server/baton-links.ts",
+        "server/baton.ts"
       ],
       "requires": [
         "§app.baton/links",

@@ -70,8 +70,10 @@ export class FakeDriver implements Driver {
   private nextPid = FAKE_PID_BASE;
   constructor(private readonly host: FakeHost) {}
 
+  /** What `available` says of it. */
+  detail = "a fake host in memory";
   async available() {
-    return { ok: true, detail: "a fake host in memory" };
+    return { ok: true, detail: this.detail };
   }
   async start(spec: UnitSpec) {
     const old = this.units_.get(spec.unit);

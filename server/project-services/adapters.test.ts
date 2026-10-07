@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { ADAPTERS, SelectedDriver, selectDriver } from "./adapters";
-import { DetachedDriver, type Exec } from "./drivers";
+import { type Exec } from "./drivers";
+import { FakeHost } from "./fake-host";
 
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-adapters-"));
 after(() => rmSync(process.env.PI_CODING_AGENT_DIR!, { recursive: true, force: true }));
@@ -85,7 +86,10 @@ test("unforced: the portable detached driver when systemd is absent, unreachable
 });
 
 test("the selected driver says which adapter and why, and passes verbs through", async () => {
-  const d = new SelectedDriver({ env: { SOVA_PROJECT_NO_SYSTEMD: "1" }, platform: "linux", detached: () => new DetachedDriver(1_000) });
+  // The detached adapter as a driver in memory (fake-host.ts): the verbs pass through, no process starts.
+  const fake = new FakeHost().driver;
+  fake.detail = "detached sessions, processes read from /proc";
+  const d = new SelectedDriver({ env: { SOVA_PROJECT_NO_SYSTEMD: "1" }, platform: "linux", detached: () => fake });
   assert.equal(d.id, "none", "before the choice is made");
   assert.deepEqual(d.pids("x"), []);
   const a = await d.available();
@@ -97,6 +101,7 @@ test("the selected driver says which adapter and why, and passes verbs through",
   const st = await d.status(unit);
   assert.equal(st.state, "active");
   assert.ok(d.owns(unit, st.pid!));
+  assert.deepEqual(fake.running(), [unit], "the start reached the detached adapter");
   await d.stop(unit);
   assert.equal((await d.status(unit)).state, "missing");
 });

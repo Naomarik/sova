@@ -180,7 +180,7 @@ export function rowOf(dir: string, s: Pick<SessionInfo, "configuration" | "data"
     budget: { messagesMax: typeof budget.messagesMax === "number" ? budget.messagesMax : MESSAGES_DEFAULT, messagesUsed: typeof budget.messagesUsed === "number" ? budget.messagesUsed : 0 },
     ...(typeof d.model === "string" && d.model ? { model: d.model } : {}),
     ...(typeof d.thinking === "string" && d.thinking ? { thinking: d.thinking } : {}),
-    ...(isObj(d.abilities) ? { abilities: { draw: d.abilities.draw === true, readLinks: d.abilities.readLinks === true, drawHtml: d.abilities.drawHtml === true } } : {}),
+    ...(isObj(d.abilities) ? { abilities: { draw: d.abilities.draw === true, readLinks: d.abilities.readLinks === true, drawHtml: d.abilities.drawHtml === true, ...(d.abilities.files === true ? { files: true } : {}) } } : {}),
     createdAt: isoOf(d.createdAt),
     ...(iso(d.closedAt) ? { closedAt: iso(d.closedAt) } : {}),
     ...(d.hiddenFromOwner === true ? { hiddenFromOwner: true } : {}),

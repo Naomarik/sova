@@ -24,7 +24,7 @@ import { Banner, Chip, Icon } from "./ui";
 import "../orgs.css";
 
 const errText = (err: unknown) => (err instanceof ApiError || err instanceof Error ? err.message : String(err));
-const ABILITY_LABEL = { draw: "Draw", drawHtml: "Interactive drawings (HTML)", readLinks: "Read links" } as const;
+const ABILITY_LABEL = { draw: "Draw", drawHtml: "Interactive drawings (HTML)", readLinks: "Read links", files: "Receive files" } as const;
 
 /** The one width the strip branches on (the design system's folded/unfolded line), measured on the strip itself. */
 const NARROW_BELOW = 768;
@@ -205,13 +205,13 @@ export function BatonStrip(props: {
                 {/* Interactive drawings count only with Draw, so its box sits right after Draw and waits for
                     it. The boxes wrap as their own group, so a wrapped box lines up under Draw. */}
                 <span class="baton-strip-abilities-boxes">
-                  <For each={["draw", "drawHtml", "readLinks"] as const}>
+                  <For each={["draw", "drawHtml", "readLinks", "files"] as const}>
                     {(k) => (
                       <label class="toggle" classList={{ "baton-strip-ability-dependent": k === "drawHtml" }}>
                         <input
                           type="checkbox"
                           disabled={!open(i()) || (k === "drawHtml" && !abilitiesOf(i().session).draw)}
-                          checked={abilitiesOf(i().session)[k]}
+                          checked={abilitiesOf(i().session)[k] === true}
                           onChange={(e) => {
                             const el = e.currentTarget;
                             const on = el.checked;

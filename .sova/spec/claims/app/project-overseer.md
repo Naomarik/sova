@@ -365,7 +365,9 @@ user row.
   `sova_send_to_person` (L1: a WhatsApp message to a roster person — their gathering link, a preview
   link, a note, or a link with a note; §app.outreach/decisions),
   `sova_close_gathering`; `sova_start_gathering` and `sova_offer` take an optional `abilities`
-  within the project's ceiling (§app.baton/abilities) and a required `why`; `sova_preview` start
+  within the project's ceiling (§app.baton/abilities), an optional `files: true` (file intake,
+  §app.baton/files) and a required `why`; `sova_files` (list a read, copy L3 unattended, delete in
+  the operator's turns only, §app.project-overseer/files); `sova_preview` start
   (a preview link of a coding session's app; its `off` runs at any level,
   §app.project-overseer/previews). L2: `sova_promote`,
   `sova_roster` approve/decline (history records the overseer as the writer). L3:
@@ -675,6 +677,32 @@ user row.
   transition log, the overseer's activity log or the server's own logs. An owner update, or a
   gathering's `public_title`, `question`, `goal` or `why`, that holds a kept link is refused: "A
   preview link goes to people through the operator, never in {what}."
+
+## §app.project-overseer/files — Files people sent, into a coding session
+
+- **Asking for a file.** Its prompt says (while placed): people can send it files — start a
+  gathering with `files: true` and say in its goal what is needed and what a good file looks like
+  (for example a JSON export newer than a date, with given fields); then list them with
+  `sova_files` and copy one into a coding session's worktree. The `files` and `goal` parameter
+  descriptions say the same. In every project the prompt names `sova_files`.
+- **`sova_files {op, id?, session?}`** (§app/file-intake):
+  - `list` (a read): the project's files not deleted, newest first, each as `- {id} · {name} ·
+    from {person} · in "{gathering title}" · {time} · {size} · {kind} · Received|Confirmed`, plus
+    " · not on this host" when its bytes aren't here; none: "No files yet. People send them in a
+    gathering session with files on."
+  - `copy {id, session}`: into that coding session's worktree as `incoming/<name>`, a name taken
+    becoming `name (2).ext`, …; it answers the path it wrote. The session is one the project
+    started (`sova_list_sessions`), addressed as everywhere else, and must have its own worktree on
+    this host ("That coding session has no worktree of its own on this host: copy into one that
+    does."). Refused when `incoming` is a link or resolves outside the worktree, when the target
+    is under Sova's own state or sessions folders, or where that session's sandbox would refuse
+    the write (its reason). It adds `/incoming/` to the repository's `info/exclude` once, so the
+    copy never counts as an uncommitted change (Merge Branch and Remove Worktree stay possible). In
+    a turn the operator did not start it needs L3 ("Copying a file into a coding session needs L3
+    in a turn the operator didn't start."); it is never held (it reaches no person).
+  - `delete {id}`: only in a turn the operator started ("Deleting a file is the operator's: ask
+    with sova_card."); writes the `deleted` line and removes the bytes.
+  Every copy and delete is logged in its activity like any act.
 
 ## §app.project-overseer/watch-loop — Looking when something changes
 

@@ -15,6 +15,7 @@ import { ProjectServicesTab } from "./ProjectServicesTab";
 import { PlaybookReviewBanner } from "./PlaybookReview";
 import { ProjectDeployPanel } from "./ProjectDeployPanel";
 import { createRuntimePoll, ProjectSoftwareCard } from "./ProjectSoftwareCard";
+import { ProjectFilesCard } from "./ProjectFilesCard";
 import { ActivityCard, CodingSessionsCard, createProjectOverseer, IdeasCard, type ItemSendForm, OverseerSettings, OverseerSummary, type ProjectOverseer, TodosCard } from "./ProjectOverseerPanel";
 import { Banner, Icon } from "./ui";
 import "../orgs.css";
@@ -293,6 +294,8 @@ export function ProjectPage(props: {
                 <ProjectSoftwareCard projectId={projectId} archived={!!archived()} runtime={runtime} />
                 {/* Its deploy targets on this host: the deploy panel, which reads deploy.status itself. */}
                 <ProjectDeployPanel projectId={projectId} root={project().root} archived={!!archived()} />
+                {/* Files people sent it (§app.organizations/files-card): while placed, or once it holds one. */}
+                <ProjectFilesCard projectId={projectId} placed={!!org} tick={costTick} />
                 <ActivityCard po={po} />
                 <TodosCard po={po} send={org?.send} archived={!!archived()} />
                 {/* A placed project's ideas sit with its requirements; a standalone one's here. */}

@@ -1,9 +1,11 @@
 import { existsSync, readFileSync } from "node:fs";
 import { extname, join, resolve } from "node:path";
 import { Hono } from "hono";
-import { SHARE_TEXT_MAX, type GoneWhy } from "../../shared/baton";
+import { FILES_PER_MESSAGE, SHARE_TEXT_MAX, type GoneWhy } from "../../shared/baton";
 import { FRAME_HOST_NAME, FRAME_HOST_PATH, frameHostHeaders } from "../../shared/vis-frame-host";
-import { linkAccess, noteMessage, sessionPathOf, undoNote } from "../baton";
+import { linkAccess, nameOf, noteMessage, sessionPathOf, undoNote } from "../baton";
+import { filesFor } from "../baton-files";
+import { countFileUpload, ensureFilesSweep, FileRefusal, fileLine, receiveFiles, reserveUpload, stageFile, takeStagedFiles, type FileRecord } from "../project-files";
 import { findLink, hashToken, tokenTag } from "../baton-links";
 import { acquireChat } from "../chat-manager";
 import { OrgError } from "../orgs";
@@ -118,6 +120,8 @@ export function createShareApp(): Hono {
   const app = new Hono();
   // Staged photos of closed sessions and old ones go even when nobody uploads again.
   ensureSweep();
+  // And staged files no message sent (§app/file-intake).
+  ensureFilesSweep();
   app.use("*", async (c, next) => {
     await next();
     // The frame host alone may be framed, by its own host (frameHostHeaders): every other answer, never.
@@ -177,15 +181,20 @@ export function createShareApp(): Hono {
     } catch {
       return c.json(refusal("bad-request", "Expected JSON { text }."), 400);
     }
-    // Only { text, images? }: no sender, nothing else. The sender IS the token's person; images
-    // are ids of photos this link staged (§app.baton/images), never bytes.
-    if (typeof body !== "object" || body === null || Array.isArray(body) || Object.keys(body).some((k) => k !== "text" && k !== "images"))
-      return c.json(refusal("bad-request", "Only { text, images } is accepted."), 400);
+    // Only { text, images?, files? }: no sender, nothing else. The sender IS the token's person;
+    // images are ids of photos this link staged (§app.baton/images), files ids of files it staged
+    // (§app.baton/files), never bytes.
+    if (typeof body !== "object" || body === null || Array.isArray(body) || Object.keys(body).some((k) => k !== "text" && k !== "images" && k !== "files"))
+      return c.json(refusal("bad-request", "Only { text, images, files } is accepted."), 400);
     const ids = (body as { images?: unknown }).images;
     if (ids !== undefined && (!Array.isArray(ids) || ids.some((x) => typeof x !== "string"))) return c.json(refusal("bad-request", "images is a list of photo ids."), 400);
     const photoIds = (ids ?? []) as string[];
+    const fids = (body as { files?: unknown }).files;
+    if (fids !== undefined && (!Array.isArray(fids) || fids.some((x) => typeof x !== "string"))) return c.json(refusal("bad-request", "files is a list of file ids."), 400);
+    const fileIds = (fids ?? []) as string[];
+    if (fileIds.length > FILES_PER_MESSAGE) return c.json(refusal("too-many", `Up to ${FILES_PER_MESSAGE} files per message.`), 400);
     const text = typeof (body as { text?: unknown }).text === "string" ? (body as { text: string }).text.trim() : "";
-    if (!text && !photoIds.length) return c.json(refusal("bad-request", "Write something first."), 400);
+    if (!text && !photoIds.length && !fileIds.length) return c.json(refusal("bad-request", "Write something first."), 400);
     if (text.length > SHARE_TEXT_MAX) return c.json(refusal("too-long", `Messages are limited to ${SHARE_TEXT_MAX} characters.`), 413);
     if (text.startsWith("/")) return c.json(refusal("bad-request", "Messages can't start with /."), 400);
     const sessionId = access.row.sessionId;
@@ -199,6 +208,8 @@ export function createShareApp(): Hono {
     const photos = photoIds.length ? await photosFor(access.row, access.dir).catch(() => null) : null;
     if (photoIds.length && !photos) return c.json(refusal("no-photos", "This conversation can't take photos right now."), 409);
     if (photos && photoIds.length > photos.perMessage) return c.json(refusal("too-many", `Up to ${photos.perMessage} photos per message.`), 400);
+    // Files only while the session takes them (§app.baton/files); never a question of vision.
+    if (fileIds.length && !filesFor(access.row)) return c.json(refusal("no-files", "This conversation can't take files right now."), 409);
     const busy = (err: unknown) => {
       console.warn(`[share] message on ${tokenTag(token)} refused: ${err instanceof Error ? err.message : String(err)}`);
       return c.json(refusal("busy", "The conversation can't take a message right now. Try again in a moment."), 503);
@@ -223,6 +234,19 @@ export function createShareApp(): Hono {
         throw err;
       }
     }
+    // The files, read before anything is counted: one gone sends the page back to upload it.
+    let files: FileRecord[] = [];
+    if (fileIds.length) {
+      try {
+        files = takeStagedFiles(access.row.projectId, sessionId, by, fileIds);
+      } catch (err) {
+        if (err instanceof FileRefusal) return c.json(refusal(err.code, err.message), err.status);
+        throw err;
+      }
+    }
+    // One line per file after the person's text: what the model reads, never bytes.
+    const sender = nameOf(access.row.orgId, by);
+    const said = files.length ? [text, ...files.map((f) => fileLine(sender, f))].filter(Boolean).join("\n") : text;
     // From here to the hand-over, one synchronous stretch: nothing interleaves. The lock
     // (§app.baton/offers-and-leases): noteMessage decides whether this message may enter — and on
     // an open offer, that this sender now holds it; a runtime refusal then undoes exactly that.
@@ -239,7 +263,7 @@ export function createShareApp(): Hono {
       return busy(err);
     }
     try {
-      const r = chat.acceptPrompt(text, images, "server", undefined, { sentByBaton: { by } });
+      const r = chat.acceptPrompt(said, images, "server", undefined, { sentByBaton: { by } });
       void r.turn.catch((err) => chat.reportTurnFailure(err));
     } catch (err) {
       // Refused: its staged photos stay for the retry.
@@ -248,6 +272,13 @@ export function createShareApp(): Hono {
     }
     // In the transcript now, inline: the staged copies go.
     if (images) dropStaged(sessionId, photoIds);
+    // Its files are received now: their ledger lines, and the session's view (§app/file-intake).
+    if (files.length)
+      try {
+        receiveFiles(access.row.projectId, files);
+      } catch (err) {
+        console.warn(`[share] recording files on ${tokenTag(token)} failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
     // Its reply started with the accepted message (the statechart's reply region); the chat layer tells it the rest.
     refreshShare(sessionId);
     return c.json({ ok: true }, 202);
@@ -278,6 +309,52 @@ export function createShareApp(): Hono {
         return c.json(refusal(err.code, err.message), err.status);
       }
       throw err;
+    }
+  });
+
+  // ---- files (§app.baton/files): a route of its own, never the photo route's -------------------
+
+  app.post("/api/h/:token/file", async (c) => {
+    const token = c.req.param("token");
+    const access = linkAccess(token);
+    if (!access.ok) return c.json(deadLink(access.status, access.why), access.status);
+    if (access.reason === "budget") return c.json(refusal("budget", "This conversation has reached its message limit. The operator has been told."), 409);
+    if (!access.canWrite) return c.json(refusal(access.reason ?? "not-holder", "It's not your turn in this conversation right now."), 409);
+    const files = filesFor(access.row);
+    if (!files) return c.json(refusal("no-files", "This conversation can't take files right now."), 409);
+    const declared = Number(c.req.header("content-length"));
+    if (!Number.isFinite(declared) || declared > files.maxBytes) return c.json(refusal("too-large", `Over ${Math.round(files.maxBytes / (1024 * 1024))} MB.`), 413);
+    let name = "";
+    try {
+      name = decodeURIComponent(c.req.header("x-file-name") ?? "");
+    } catch {
+      name = "";
+    }
+    let release: (() => void) | undefined;
+    try {
+      countFileUpload(hashToken(token));
+      // Checked and reserved in one step, uploads in flight counted: parallel uploads can't all pass.
+      release = reserveUpload(access.row.projectId, access.row.sessionId, access.link.personId, declared);
+      const staged = await stageFile({
+        release,
+        projectId: access.row.projectId,
+        sessionId: access.row.sessionId,
+        personId: access.link.personId,
+        name,
+        type: (c.req.header("content-type") ?? "").split(";")[0]!.trim(),
+        body: c.req.raw.body as AsyncIterable<Uint8Array> | null,
+        maxBytes: files.maxBytes,
+      });
+      return c.json(staged, 201);
+    } catch (err) {
+      if (err instanceof FileRefusal) {
+        console.warn(`[share] file on ${tokenTag(token)} refused: ${err.code}`);
+        return c.json(refusal(err.code, err.message), err.status);
+      }
+      throw err;
+    } finally {
+      // stageFile releases it already; this covers a throw before it ran (idempotent).
+      release?.();
     }
   });
 

@@ -22,6 +22,7 @@ import { visKindWord } from "../src/vis/parse";
 import { canonicalKind } from "../src/vis/registry";
 import { typedText } from "./harness/pi/reader";
 import { REDACTED } from "./overseer-redact";
+import { FILE_LINE_RE } from "./project-files";
 
 /**
  * The outsider view (§app.baton/outsider-view): a baton session's active branch reduced to what a
@@ -240,6 +241,23 @@ export interface ViewInput {
   /** Receives each photo the view shows, in view order (index = its `n`): the image route serves
       bytes from exactly the view the viewer gets, cuts included. */
   collect?: { data: string; mimeType: string }[];
+  /** The files received in this session, by id (§app.baton/files): a message's line for one its
+      sender sent becomes a file row. Absent: every such line stays text. */
+  files?: ReadonlyMap<string, { name: string; size: number; personId: string }>;
+}
+
+/** A person's message text without the lines that announce files they sent, and those files. Pure. */
+export function splitFileLines(text: string, sender: string, files: ViewInput["files"]): { text: string; files: { name: string; size: number }[] } {
+  if (!files?.size || !text.includes("· file f_")) return { text, files: [] };
+  const found: { name: string; size: number }[] = [];
+  const kept = text.split("\n").filter((line) => {
+    const id = FILE_LINE_RE.exec(line.trim())?.[1];
+    const f = id ? files.get(id) : undefined;
+    if (!f || f.personId !== sender) return true;
+    found.push({ name: f.name, size: f.size });
+    return false;
+  });
+  return { text: kept.join("\n").trim(), files: found };
 }
 
 /** A user message's image blocks (pi's `{type: "image", data, mimeType}`). */
@@ -271,16 +289,17 @@ export function batonView(input: ViewInput): BatonView {
     if (h.kind === "user" || h.kind === "assistant") {
       if (h.kind === "user") {
         // Shown as typed: pi's resize notes are for the model (§chat.images/resize-notes).
-        const text = typedText(textOf(h.blocks), h).trim();
+        const sender = by.get(id) ?? "";
+        // A file's line becomes its row, only for a file this sender sent here (§app.baton/files).
+        const { text, files } = splitFileLines(typedText(textOf(h.blocks), h).trim(), sender, input.files);
         const blocks = imagesOf(h.blocks);
-        // A message of photos alone is still a row (§app.baton/images).
-        if (!text && !blocks.length) continue;
+        // A message of photos alone is still a row (§app.baton/images), and one of files alone.
+        if (!text && !blocks.length && !files.length) continue;
         const images = blocks.map((b) => {
           input.collect?.push(b);
           return { n: photos++, mime: b.mimeType };
         });
-        const sender = by.get(id) ?? "";
-        items.push({ kind: "message", id, by: sender, name: sender ? name(sender) : "Someone", text: redact(text), ...(at ? { at } : {}), ...(images.length ? { images } : {}) });
+        items.push({ kind: "message", id, by: sender, name: sender ? name(sender) : "Someone", text: redact(text), ...(at ? { at } : {}), ...(images.length ? { images } : {}), ...(files.length ? { files: files.map((f) => ({ name: redact(f.name), size: f.size })) } : {}) });
       } else {
         const text = textOf(h.blocks).trim();
         if (!text) continue;

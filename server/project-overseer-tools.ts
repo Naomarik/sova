@@ -26,6 +26,8 @@ import { projectEngine } from "./project-services/routes";
 import { projectOverseerVerbsTool } from "./project-services/tools";
 import type { VerbActOutcome } from "./project-services/engine";
 import { READ_VERBS } from "../shared/project-contract";
+import { copyIntoWorktree, deleteFile, fileListLine, namedFileRows } from "./project-files-tool";
+import { FileRefusal } from "./project-files";
 
 /**
  * The project overseer's tools (§app.project-overseer/tools, /autonomy-levels). Scoped to one
@@ -143,6 +145,7 @@ const PLAIN_NEEDS: Record<string, Need> = {
   sova_previews: "read",
   sova_hold: "L0", // hold/cancel, hold/approve: L0 corrections on every statechart that holds
   sova_set_state: "operator", // the engine takes it only in the operator's turn
+  sova_files: "read", // list; copy needs L3 and delete the operator's turn, checked per op (§app.project-overseer/files)
 };
 
 /**
@@ -715,6 +718,45 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
         const modeSaid = mode ? ` Its mode is now ${describeCodingMode(mode)}${r.modeApplies === "after-turn" ? " (from after its running turn)" : ""}.` : "";
         return { content: text(`${r.queued ? `Queued in ${link(s)} behind its running turn.` : `Sent to ${link(s)}.`}${modeSaid}`), details: { id: s.id, queued: r.queued, ...(mode ? { mode } : {}) } };
       }),
+    },
+    // ---- files people sent (§app.project-overseer/files) ---------------------------------------
+    {
+      name: "sova_files",
+      label: "Files",
+      description:
+        "The files people sent this project in gathering sessions with files on. list: each one's id, name, sender, gathering, time, size, kind and status (Received, or Confirmed once its gathering's model and the person agreed it is what's needed). " +
+        "copy {id, session}: into that coding session's worktree as incoming/<name> (needs L3 in a turn the operator didn't start), so the session can use it; tell the session where it is with sova_send. delete {id}: only in a turn the operator started.",
+      promptSnippet: "list files people sent; copy one into a coding session's worktree",
+      parameters: obj({ op: str("list | copy | delete", { enum: ["list", "copy", "delete"] }), id: str("For copy and delete: the file's id (f_…)."), session: str(`For copy: ${SESSION_PARAM}`) }, ["op"]),
+      execute: async (toolCallId: string, params: any) => {
+        const op = params?.op ?? "list";
+        if (op === "list") {
+          const rows = namedFileRows(host.project().id);
+          return { content: text(rows.length ? rows.map((r) => fileListLine(r)).join("\n") : "No files yet. People send them in a gathering session with files on."), details: { count: rows.length } };
+        }
+        return act("sova_files", async (q) => {
+          const id = typeof q.id === "string" ? q.id.trim() : "";
+          const pid = host.project().id;
+          try {
+            if (q.op === "delete") {
+              if (!host.attended()) throw new Refusal("Deleting a file is the operator's: ask with sova_card.");
+              const rec = deleteFile(pid, id, "overseer");
+              return { content: text(`Deleted ${rec.name}: its bytes are gone; the gathering's transcript keeps its line.`), details: { id, note: `Deleted ${rec.name}` } };
+            }
+            if (q.op !== "copy") throw new Refusal("op is list, copy or delete.");
+            if (!host.attended() && RANK[host.effective().autonomy] < RANK.L3) throw new Refusal("Copying a file into a coding session needs L3 in a turn the operator didn't start.");
+            const sid = sessionRef(q.session);
+            const w = (await host.builds()).find((b) => b.sessionId === sid);
+            if (!w) throw new Refusal(`No coding session "${String(q.session ?? "").trim()}" in this project: pass an id sova_list_sessions lists.`);
+            if (!w.worktree || w.state === "root" || w.state === "removed" || w.state === "missing") throw new Refusal("That coding session has no worktree of its own on this host: copy into one that does.");
+            const rel = await copyIntoWorktree(pid, id, sid, w.worktree);
+            return { content: text(`Copied to ${rel} in ${link({ id: sid, title: w.title || "the coding session" })}'s worktree (${w.worktree}). It is excluded from git there (info/exclude): tell the session where it is.`), details: { id, session: sid, path: rel, note: `Copied ${rel} into ${sid}` } };
+          } catch (err) {
+            if (err instanceof FileRefusal) throw new Refusal(err.message);
+            throw err;
+          }
+        })(toolCallId, params);
+      },
     },
     // ---- the statecharts: read, cancel or approve a held act, correct, set state (q2, q9, q10) ------------------
     {

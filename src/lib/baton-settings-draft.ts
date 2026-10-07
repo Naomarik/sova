@@ -1,4 +1,4 @@
-import { MB, MESSAGES_CAP, MESSAGES_MIN, PHOTO_MB, PHOTOS_PER_CONVERSATION, PHOTOS_PER_MESSAGE, type BatonSettings } from "../../shared/baton";
+import { FILE_MB, MB, MESSAGES_CAP, MESSAGES_MIN, PHOTO_MB, PHOTOS_PER_CONVERSATION, PHOTOS_PER_MESSAGE, type BatonSettings } from "../../shared/baton";
 import { putBatonSettings } from "./api";
 import { createDraftStore } from "./settings-draft";
 
@@ -20,7 +20,12 @@ export interface BatonDraft {
   perMessage: string;
   mb: string;
   perConversation: string;
+  /** The largest file, MB (§app.baton/files). */
+  fileMb: string;
 }
+
+/** A typed largest file, else null. */
+export const parseFileMb = (d: BatonDraft): number | null => parseWhole(d.fileMb, FILE_MB.min, FILE_MB.max);
 
 export const photoFields = {
   perMessage: (d: BatonDraft) => parseWhole(d.perMessage, PHOTOS_PER_MESSAGE.min, PHOTOS_PER_MESSAGE.max),
@@ -34,6 +39,7 @@ const toDraft = (s: BatonSettings): BatonDraft => ({
   perMessage: String(s.photos.perMessage),
   mb: String(Math.round(s.photos.maxBytes / MB)),
   perConversation: String(s.photos.perConversation),
+  fileMb: String(Math.round((s.files?.maxBytes ?? FILE_MB.default * MB) / MB)),
 });
 
 /** Settings → Organizations' unsaved edit (settings-draft.ts: module state, held on close, forgotten
@@ -45,18 +51,21 @@ const store = createDraftStore<BatonDraft, BatonSettings>({
   toDraft,
   same: (d, s) => {
     const t = toDraft(s);
-    return d.messagesMax.trim() === t.messagesMax && d.photosOn === t.photosOn && d.perMessage.trim() === t.perMessage && d.mb.trim() === t.mb && d.perConversation.trim() === t.perConversation;
+    return d.messagesMax.trim() === t.messagesMax && d.photosOn === t.photosOn && d.perMessage.trim() === t.perMessage && d.mb.trim() === t.mb && d.perConversation.trim() === t.perConversation && d.fileMb.trim() === t.fileMb;
   },
   problem: (d) =>
     parseLimit(d.messagesMax) === null
       ? `Organizations needs a message limit from ${MESSAGES_MIN} to ${MESSAGES_CAP.toLocaleString("en-US")}.`
       : Object.values(photoFields).some((f) => f(d) === null)
         ? "Organizations needs photo limits within their ranges."
-        : null,
+        : parseFileMb(d) === null
+          ? `Organizations needs a largest file from ${FILE_MB.min} to ${FILE_MB.max} MB.`
+          : null,
   write: async (d) => {
     const result = await putBatonSettings({
       messagesMax: parseLimit(d.messagesMax)!,
       photos: { enabled: d.photosOn, perMessage: photoFields.perMessage(d)!, maxBytes: photoFields.mb(d)! * MB, perConversation: photoFields.perConversation(d)! },
+      files: { maxBytes: parseFileMb(d)! * MB },
     });
     return { saved: result, result };
   },

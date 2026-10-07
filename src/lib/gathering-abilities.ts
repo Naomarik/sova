@@ -28,7 +28,7 @@ export const drawHtmlSettable = (key: AbilitiesKey): boolean => key === "draw" |
 export const abilitiesWords = (a: GatheringAbilities): string =>
   [a.draw ? (a.drawHtml ? "draw with interactive drawings" : "draw") : "", a.readLinks ? "read links" : ""].filter(Boolean).join(", ") || "nothing extra";
 
-const TOAST_WORD: Record<keyof GatheringAbilities, string> = { draw: "Drawing", drawHtml: "Interactive drawings", readLinks: "Reading links" };
+const TOAST_WORD: Record<keyof GatheringAbilities, string> = { draw: "Drawing", drawHtml: "Interactive drawings", readLinks: "Reading links", files: "Receiving files" };
 /** The strip's toast for one checkbox's change: it applies from the next reply. */
 export const abilityToast = (which: keyof GatheringAbilities, on: boolean): string => `${TOAST_WORD[which]} ${on ? "on" : "off"} from its next reply.`;
 

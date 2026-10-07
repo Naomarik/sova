@@ -1,7 +1,7 @@
 import { createEffect, createResource, Show } from "solid-js";
-import { MESSAGES_CAP, MESSAGES_MIN, PHOTO_MB, PHOTOS_PER_CONVERSATION, PHOTOS_PER_MESSAGE } from "../../shared/baton";
+import { FILE_MB, MESSAGES_CAP, MESSAGES_MIN, PHOTO_MB, PHOTOS_PER_CONVERSATION, PHOTOS_PER_MESSAGE } from "../../shared/baton";
 import { getBatonSettings } from "../lib/api";
-import { batonDraft, batonSaveError, batonSaving as saving, parseLimit, photoFields, setBatonDraft, setBatonSaved, type BatonDraft } from "../lib/baton-settings-draft";
+import { batonDraft, batonSaveError, batonSaving as saving, parseFileMb, parseLimit, photoFields, setBatonDraft, setBatonSaved, type BatonDraft } from "../lib/baton-settings-draft";
 import { Banner } from "./ui";
 import { RetryButton, sentence } from "./WorkerSlotRow";
 
@@ -87,6 +87,29 @@ export function BatonSettingsSection() {
           {photoField("Per conversation", "perConversation", PHOTOS_PER_CONVERSATION)}
         </div>
         <p class="field-hint">Applies to every gathering session on this host, from its next message.</p>
+        <h4 class="settings-type-title" id="settings-orgs-files">
+          Files in gathering chats
+        </h4>
+        <div class="orgs-fields" role="group" aria-labelledby="settings-orgs-files">
+          <label class="field">
+            <span class="field-label">Largest file, MB</span>
+            <input
+              class="input"
+              type="number"
+              min={FILE_MB.min}
+              max={FILE_MB.max}
+              step="1"
+              value={batonDraft()?.fileMb ?? ""}
+              disabled={saving()}
+              aria-invalid={batonDraft() ? parseFileMb(batonDraft()!) === null : false}
+              onInput={(e) => edit({ fileMb: e.currentTarget.value })}
+            />
+            <span class="field-hint">
+              {FILE_MB.min}–{FILE_MB.max}
+            </span>
+          </label>
+        </div>
+        <p class="field-hint">Applies to gathering sessions that take files, from the next upload.</p>
         <Show when={batonSaveError()}>{(e) => <Banner tone="error" title="Couldn't save the message limit." body={`${sentence(e().message)} Your saved limit is unchanged.`} />}</Show>
       </Show>
     </section>

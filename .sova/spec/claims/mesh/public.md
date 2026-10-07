@@ -206,7 +206,10 @@ links". When nothing answers in time, it replies with the state as it stands.
   the request is served in-process, which answers 404 for an unknown token's API and socket (the
   page shell answers 200 for any token). An unknown hash is never asked of any host.
 - **Kinds bind routes.** An `h` row serves `/h`, `/api/h` (its photo upload and photo reads
-  included, §app.baton/images) and `/ws/h`; an `i` row serves `/i` and
+  included, §app.baton/images, and its file upload, §app.baton/files) and `/ws/h`; an upload's hop
+  (a photo's or a file's) waits for the origin's answer as long as the edge lets that upload take
+  (120 s or 300 s) plus the header wait, and its body was already capped at the gateway's edge at
+  the setting's ceiling, since the gateway never knows the minting host's own setting; an `i` row serves `/i` and
   `/api/i`; an `s` row serves `/s`, `/api/s` (its image route included) and `/ws/s`; a `p` row
   serves only its own preview host, every path and websocket on it (§mesh.public/preview-address);
   an `x` row never routes. A socket's kind comes from its path.

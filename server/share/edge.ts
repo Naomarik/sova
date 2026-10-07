@@ -13,8 +13,9 @@ import { PREVIEW_LIMITS } from "../../shared/public-links";
 import { previewAnswer, previewUpgradeAnswer } from "./preview-pages";
 import { clientAddress, trustedClient } from "./security";
 import { noteShareClient } from "../visitor-identity";
-import { MB, PHOTO_MB } from "../../shared/baton";
+import { FILE_MB, MB, PHOTO_MB } from "../../shared/baton";
 import { UPLOAD_BODY_SLACK } from "../baton-images";
+import { FILE_BODY_SLACK } from "../project-files";
 import { cappedWebSocketServer } from "../runtime-quirks";
 
 // The old client-address rule lives with the other trust helpers; its old import path stays.
@@ -50,6 +51,8 @@ const ROUTES: { method: string; re: RegExp }[] = [
   // A person's photos (§app.baton/images): the upload, and one photo of the link's view.
   { method: "POST", re: new RegExp(`^/api/h/${TOKEN}/image$`) },
   { method: "GET", re: new RegExp(`^/api/h/${TOKEN}/img/(?:0|[1-9][0-9]{0,3})$`) },
+  // A person's files (§app.baton/files): the upload only; nothing reads a file back here.
+  { method: "POST", re: new RegExp(`^/api/h/${TOKEN}/file$`) },
   // The Owner page (§app.owner-page/link): read-only, GET only, no socket.
   { method: "GET", re: new RegExp(`^/i/${TOKEN}$`) },
   { method: "GET", re: new RegExp(`^/api/i/${TOKEN}$`) },
@@ -87,6 +90,9 @@ export const BODY_MAX = 16 * 1024;
     host that stages it refuses past its own setting (the edge may be a gateway, which never
     knows the minting host's setting). */
 export const UPLOAD_BODY_MAX = PHOTO_MB.max * MB + UPLOAD_BODY_SLACK;
+/** A file upload's body cap at the edge (§app.baton/files): the largest file any host may allow,
+    plus room; the host that keeps it refuses past its own setting. */
+export const FILE_BODY_MAX = FILE_MB.max * MB + FILE_BODY_SLACK;
 export const REQUESTS_PER_MINUTE = 60;
 /** Photo reads have a per-address bucket of their own: a thread full of photos must not use up
     the page's 60 a minute. */
@@ -97,11 +103,14 @@ export const IMAGE_REQUESTS_PER_MINUTE = 240;
 export const HEADERS_TIMEOUT_MS = 10_000;
 export const REQUEST_TIMEOUT_MS = 15_000;
 export const UPLOAD_TIMEOUT_MS = 120_000;
+/** A file upload's whole-request timer: 25 MB from a phone on a slow link. */
+export const FILE_UPLOAD_TIMEOUT_MS = 300_000;
 
 const UPLOAD_PATH = new RegExp(`^/api/h/${TOKEN}/image$`);
+const FILE_PATH = new RegExp(`^/api/h/${TOKEN}/file$`);
 const IMAGE_PATH = new RegExp(`^/api/h/${TOKEN}/img/`);
-/** The body cap for a judged path: the photo upload's own, 16 KB for everything else. */
-export const bodyMaxFor = (pathname: string): number => (UPLOAD_PATH.test(pathname) ? UPLOAD_BODY_MAX : BODY_MAX);
+/** The body cap for a judged path: the photo upload's own, the file upload's own, 16 KB for everything else. */
+export const bodyMaxFor = (pathname: string): number => (UPLOAD_PATH.test(pathname) ? UPLOAD_BODY_MAX : FILE_PATH.test(pathname) ? FILE_BODY_MAX : BODY_MAX);
 
 export class RateLimiter {
   private hits = new Map<string, number[]>();
@@ -207,8 +216,10 @@ export interface ShareServerOptions {
   headersMs?: number;
   /** The whole-request timer every request but a photo upload has. */
   requestMs?: number;
-  /** A photo upload's (Node's own request timeout, which it also bounds every request by). */
+  /** A photo upload's. */
   uploadMs?: number;
+  /** A file upload's (Node's own request timeout, which it also bounds every request by). */
+  fileUploadMs?: number;
   checkMs?: number;
   /** Runs first, on every request and every upgrade, before the allowlist: false, a throw or a
       rejection is 403 with REFUSED_HEADER and `Connection: close`. Absent (the default): every
@@ -399,11 +410,12 @@ export function createShareServer(opts: ShareServerOptions = {}): Server {
   };
   const requestTimeout = opts.requestMs ?? REQUEST_TIMEOUT_MS;
   const uploadTimeout = Math.max(opts.uploadMs ?? UPLOAD_TIMEOUT_MS, requestTimeout);
+  const fileTimeout = Math.max(opts.fileUploadMs ?? FILE_UPLOAD_TIMEOUT_MS, uploadTimeout);
   const options = {
     headersTimeout: Math.min(opts.headersMs ?? HEADERS_TIMEOUT_MS, requestTimeout),
-    // Node's own timer is the upload's; every other request gets the edge's shorter one (below),
-    // so slow-body protection is unchanged outside the upload route.
-    requestTimeout: uploadTimeout,
+    // Node's own timer is the file upload's, the longest; every other request gets the edge's
+    // shorter one (below), so slow-body protection is unchanged outside the upload routes.
+    requestTimeout: fileTimeout,
     // How often Node looks for requests past those limits (default 30 s).
     connectionsCheckingInterval: opts.checkMs ?? 1000,
   };
@@ -443,7 +455,8 @@ export function createShareServer(opts: ShareServerOptions = {}): Server {
         req.resume();
         return;
       }
-      if (!UPLOAD_PATH.test(url.pathname)) bodyTimer(req, res, requestTimeout);
+      if (UPLOAD_PATH.test(url.pathname)) bodyTimer(req, res, uploadTimeout);
+      else if (!FILE_PATH.test(url.pathname)) bodyTimer(req, res, requestTimeout);
     }
     guarded(() => dispatch(req, res, { url, client }), failed("dispatch"));
   };

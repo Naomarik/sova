@@ -147,7 +147,8 @@ body { margin: 0; background: var(--color-bg); color: var(--color-ink); }
 }
 .share-att-failed { background: var(--status-error-bg); border-color: var(--status-error); }
 .share-att-thumb { flex: none; width: 32px; height: 32px; object-fit: cover; border-radius: var(--r-sm); }
-.share-att-icon { flex: none; margin: 0 var(--space-1); color: var(--status-error); }
+.share-att-icon { flex: none; margin: 0 var(--space-1); color: var(--color-ink-muted); }
+.share-att-failed .share-att-icon { color: var(--status-error); }
 .share-att-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .share-att-name { font-size: var(--fs-caption); color: var(--color-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .share-att-meta { font-family: var(--font-mono); font-size: var(--fs-caption); color: var(--color-ink-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

@@ -144,6 +144,24 @@
 .share-photos-single .share-thumb img { width: auto; height: auto; max-width: min(320px, 100%); max-height: 240px; object-fit: contain; }
 .share-photo-count { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); }
 
+/* A message's files (§app.baton/files): a row each, icon · name · size; never a link. */
+.share-icon-file { --icon: url("../../public/icons/file.svg"); }
+.share-files { display: flex; flex-direction: column; gap: var(--space-1); margin: 0; padding: 0; list-style: none; min-width: 0; }
+.share-file {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-md);
+  background: var(--color-surface);
+}
+.share-file .icon { flex: none; color: var(--color-ink-muted); }
+.share-file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-body); color: var(--color-ink); }
+.share-file-size { flex: none; font-family: var(--font-mono); font-size: var(--fs-caption); color: var(--color-ink-muted); }
+
 .share-lightbox {
   box-sizing: border-box;
   width: 100vw;

@@ -15579,6 +15579,92 @@
         "src/lib/api.ts",
         "src/app.css"
       ]
+    },
+    "§app.baton/files": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app/file-intake",
+        "§app.baton/images",
+        "§app.baton/abilities",
+        "§app.baton/share-listener",
+        "§app.baton/goal-and-loadout"
+      ],
+      "code": [
+        "server/baton-files.ts",
+        "server/baton-files.test.ts",
+        "server/baton-files.integration.test.ts",
+        "server/baton-inspect.ts",
+        "server/baton-inspect.test.ts",
+        "server/baton-inspect.integration.test.ts",
+        "server/share/routes.ts",
+        "server/share/edge.ts",
+        "server/share/router.ts",
+        "server/share/hub.ts",
+        "server/baton-view.ts",
+        "server/baton-loadout.ts",
+        "server/baton-prompt.md",
+        "server/gathering-abilities.ts",
+        "shared/baton.ts",
+        "src/share/ShareApp.tsx",
+        "src/share/files.ts",
+        "src/share/thread.tsx",
+        "src/share/share.css",
+        "src/components/BatonStrip.tsx",
+        "src/share/thread.css",
+        "server/baton-settings.ts"
+      ]
+    },
+    "§app.organizations/files-card": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app/file-intake",
+        "§app.organizations/project-page"
+      ],
+      "code": [
+        "server/project-files-routes.ts",
+        "src/components/ProjectFilesCard.tsx",
+        "src/components/ProjectPage.tsx",
+        "src/lib/api.ts",
+        "shared/project-files.ts",
+        "src/projects.css"
+      ]
+    },
+    "§app.project-overseer/files": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app/file-intake",
+        "§app.project-overseer/tools",
+        "§app.project-overseer/coding-worktrees"
+      ],
+      "code": [
+        "server/project-files-tool.ts",
+        "server/project-files-tool.test.ts",
+        "server/project-overseer-tools.ts",
+        "server/overseer-org-part.ts",
+        "server/project-overseer-prompt.md",
+        "server/app.ts"
+      ]
+    },
+    "§app/file-intake": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/project-files.ts",
+        "server/project-files.test.ts",
+        "shared/project-files.ts"
+      ]
+    },
+    "§design.copy-deck/gathering-files": {
+      "kind": "note",
+      "authority": "accepted",
+      "evidence": "verified"
     }
   },
   "boundary": {

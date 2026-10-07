@@ -20,6 +20,8 @@ import { registerOrgRoutes } from "./org-routes";
 import { registerWrapupRoutes } from "./wrapup-routes";
 import { registerProjectOverseerRoutes } from "./project-overseer-routes";
 import { registerProjectCostRoutes } from "./project-costs-routes";
+import { registerProjectFileRoutes } from "./project-files-routes";
+import { setFileCopyGuards } from "./project-files-tool";
 import { registerProjectRoutes } from "./projects/routes";
 import { registerProjectServiceRoutes } from "./project-services/routes";
 import { registerServicesViewRoutes } from "./project-services/view-routes";
@@ -96,7 +98,7 @@ import { probePeer } from "./mesh/hello";
 import { meshLinks } from "./mesh/links";
 import { mountLinks } from "./mesh/links-routes";
 import { deliverLinkMessage, heldSessionPath, notifyLinksChanged, setLinksSource } from "./link-delivery";
-import { linkSandboxOf } from "./link-sandbox";
+import { linkSandbox, linkSandboxOf } from "./link-sandbox";
 import { mountSync } from "./sync";
 import { mountClaudePool } from "./claude-pool";
 import { clearPicksOf } from "./claude-pool/agent";
@@ -337,6 +339,7 @@ export function buildApp(deps: AppDeps) {
   registerWrapupRoutes(app);
   registerProjectOverseerRoutes(app);
   registerProjectCostRoutes(app);
+  registerProjectFileRoutes(app);
   // The usage ledger: every figure of spend, answered by the usage helper (§app.insights/usage-ledger).
   registerUsageRoutes(app);
   registerProjectRoutes(app);
@@ -1497,6 +1500,19 @@ export function buildApp(deps: AppDeps) {
     const path = await pathOfId(id);
     return path ? getSessionSummary(path) : null;
   };
+  // A session's sandbox as its own tools have it: what the server writes for it honours it (link
+  // transfers, and a file copied into a coding session's worktree, §app.project-overseer/files).
+  const sessionSandbox = (id: string) =>
+    linkSandboxOf(id, {
+      cwd: async (sid) => (await sessionById(sid))?.cwd ?? null,
+      branch: async (sid) => {
+        const path = await pathOfId(sid);
+        if (!path) return [];
+        return deps.extensionEntriesOf(path);
+      },
+      agentDir: agentRoot,
+    });
+  setFileCopyGuards(async (sid, canonical) => linkSandbox.write(await sessionSandbox(sid), canonical, { creating: true }), () => [stateRoot(), SESSIONS_DIR]);
   mountLinks(app, meshApi, {
     root: stateRoot,
     summary: sessionById,
@@ -1506,16 +1522,7 @@ export function buildApp(deps: AppDeps) {
     notify: notifyLinksChanged,
     renderPeerRead,
     // File transfers: a session's sandbox binds what the server packs and where it extracts.
-    sandboxOf: (id) =>
-      linkSandboxOf(id, {
-        cwd: async (sid) => (await sessionById(sid))?.cwd ?? null,
-        branch: async (sid) => {
-          const path = await pathOfId(sid);
-          if (!path) return [];
-          return deps.extensionEntriesOf(path);
-        },
-        agentDir: agentRoot,
-      }),
+    sandboxOf: sessionSandbox,
     homedir,
     protectedRoots: () => [stateRoot(), SESSIONS_DIR],
   });

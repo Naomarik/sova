@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import {
+  FILE_MB,
   MB,
   MESSAGES_CAP,
   MESSAGES_DEFAULT,
@@ -9,6 +10,7 @@ import {
   PHOTO_MB,
   PHOTOS_PER_CONVERSATION,
   PHOTOS_PER_MESSAGE,
+  type BatonFileSettings,
   type BatonPhotoSettings,
   type BatonSettings,
 } from "../shared/baton";
@@ -27,6 +29,22 @@ const file = () => join(stateRoot(), "baton-settings.json");
 const whole = (v: unknown, min: number, max: number): v is number => typeof v === "number" && Number.isInteger(v) && v >= min && v <= max;
 const validLimit = (v: unknown): v is number => whole(v, MESSAGES_MIN, MESSAGES_CAP);
 const validMaxBytes = (v: unknown): v is number => typeof v === "number" && v % MB === 0 && whole(v / MB, PHOTO_MB.min, PHOTO_MB.max);
+const validFileBytes = (v: unknown): v is number => typeof v === "number" && v % MB === 0 && whole(v / MB, FILE_MB.min, FILE_MB.max);
+export const FILE_DEFAULTS: BatonFileSettings = { maxBytes: FILE_MB.default * MB };
+
+/** The stored file settings (§app.baton/files): a bad value reads as its default. */
+function readFiles(raw: unknown): BatonFileSettings {
+  const f = typeof raw === "object" && raw !== null && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+  return { maxBytes: validFileBytes(f.maxBytes) ? f.maxBytes : FILE_DEFAULTS.maxBytes };
+}
+
+/** A PUT's `files`, or an error; absent keeps what is stored. */
+function filesOf(v: unknown): BatonFileSettings | { error: string } | undefined {
+  if (v === undefined) return undefined;
+  const f = typeof v === "object" && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
+  if (!f || !validFileBytes(f.maxBytes)) return { error: `files.maxBytes must be a whole number of MB from ${FILE_MB.min} to ${FILE_MB.max}` };
+  return { maxBytes: f.maxBytes };
+}
 
 /** The stored photo settings, each field on its own: a bad one reads as its default. */
 function readPhotos(raw: unknown): BatonPhotoSettings {
@@ -43,9 +61,9 @@ function readPhotos(raw: unknown): BatonPhotoSettings {
 export function readBatonSettings(path = file()): BatonSettings {
   try {
     const raw = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
-    return { messagesMax: validLimit(raw?.messagesMax) ? raw.messagesMax : MESSAGES_DEFAULT, photos: readPhotos(raw?.photos) };
+    return { messagesMax: validLimit(raw?.messagesMax) ? raw.messagesMax : MESSAGES_DEFAULT, photos: readPhotos(raw?.photos), files: readFiles(raw?.files) };
   } catch {
-    return { messagesMax: MESSAGES_DEFAULT, photos: { ...PHOTO_DEFAULTS } };
+    return { messagesMax: MESSAGES_DEFAULT, photos: { ...PHOTO_DEFAULTS }, files: { ...FILE_DEFAULTS } };
   }
 }
 
@@ -68,6 +86,8 @@ export function writeBatonSettings(body: unknown, path = file()): BatonSettings 
   if (!validLimit(v)) return { error: `messagesMax must be a whole number from ${MESSAGES_MIN} to ${MESSAGES_CAP}` };
   const photos = photosOf(b.photos);
   if (photos && "error" in photos) return photos;
+  const files = filesOf(b.files);
+  if (files && "error" in files) return files;
   let stored: Record<string, unknown> = {};
   try {
     const raw = JSON.parse(readFileSync(path, "utf8"));
@@ -76,9 +96,10 @@ export function writeBatonSettings(body: unknown, path = file()): BatonSettings 
     stored = {};
   }
   const nextPhotos = photos ?? readPhotos(stored.photos);
+  const nextFiles = files ?? readFiles(stored.files);
   mkdirSync(dirname(path), { recursive: true });
   const tmp = `${path}.${process.pid}.tmp`;
-  writeFileSync(tmp, `${JSON.stringify({ ...stored, version: 1, messagesMax: v, photos: nextPhotos }, null, 2)}\n`);
+  writeFileSync(tmp, `${JSON.stringify({ ...stored, version: 1, messagesMax: v, photos: nextPhotos, files: nextFiles }, null, 2)}\n`);
   renameSync(tmp, path);
-  return { messagesMax: v, photos: nextPhotos };
+  return { messagesMax: v, photos: nextPhotos, files: nextFiles };
 }

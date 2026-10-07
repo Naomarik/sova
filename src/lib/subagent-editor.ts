@@ -1,5 +1,6 @@
 import type { SubagentProfile, TeamsSetting } from "../../shared/subagent-profiles";
 import { profilesProblem } from "./subagent-profiles-draft";
+import { claudeModelName } from "./format";
 
 /**
  * Settings → Subagents' editor, the parts that are rules rather than markup: each collapsible
@@ -12,13 +13,13 @@ export type EditorSection = "delegate" | "teams" | "spec" | "reviewer";
 /**
  * A model's shortest readable form, the footprint's own rule (`shortModel` in
  * pi-config/extensions/subagents/subagent-profiles.ts, which the browser can't import), so a
- * summary and the list's footprint name a model alike: `opus[1m]` → opus, `zai/glm-5.3` → glm-5.3.
+ * summary and the list's footprint name a model alike: a Claude model by its catalog name
+ * (`opus[1m]` → Opus 5.5), else the id without its provider (`zai/glm-5.3` → glm-5.3).
  */
 export function footprintModel(model: string): string {
-  let m = model.includes("/") ? model.slice(model.lastIndexOf("/") + 1) : model;
-  m = m.replace(/\[1m\]$/i, "");
-  const claude = /^claude-(opus|sonnet|haiku|fable)\b/i.exec(m);
-  return claude ? claude[1]!.toLowerCase() : m;
+  const name = claudeModelName(model);
+  if (name) return name;
+  return model.includes("/") ? model.slice(model.lastIndexOf("/") + 1) : model;
 }
 const model = (m: string): string | null => (m ? footprintModel(m) : null);
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;

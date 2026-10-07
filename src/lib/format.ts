@@ -1,6 +1,10 @@
 // The clock, the stamp and the relative time are pi-config's `stamp` formatter, so the TUI's
 // transcript stamps and every time in Sova read the same ("1:43 PM", "Mar 4 1:43 PM", "5m ago").
 export { agoTime, clockTime, relativeTime, stampAgo, stampTime } from "../../pi-config/extensions/stamp/format.ts";
+// Claude model names and ids are Sova's Claude catalog (claude-code/catalog.ts, which imports
+// nothing): the one copy the extension, the server and the web app read.
+import { claudeByAnswer, claudeName, resolveClaude } from "../../pi-config/extensions/claude-code/catalog.ts";
+export { canonicalClaudeId, claudeModel, claudeName as claudeModelName, unverifiedClaudeNote } from "../../pi-config/extensions/claude-code/catalog.ts";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -55,12 +59,44 @@ export function modelProvider(model: string | null | undefined): string {
 }
 
 /**
- * A model id for a meta line, where the width belongs to the numbers beside it: no provider, no
- * dated build, a dotted version, and the context variant spelled out.
- * "anthropic/claude-haiku-4-5-20251001" → "haiku-4.5"; "claude-opus-5[1m]" → "opus-5 1M".
+ * A model's name for display (§app.claude-code-provider/model-names): a Claude model under any
+ * provider reads its catalog name, of the model that answered when that is known ("Opus 5.5",
+ * "Haiku 4.5", an old alias read through the frozen legacy table); anything else its short id.
+ */
+export function modelLabel(model: string | null | undefined, answered?: string | null): string | null {
+  return claudeName(answered) ?? claudeName(model) ?? shortModel(model);
+}
+
+/**
+ * "Asked for Opus 5.5; Opus 4.8 answered." when the model that answered is another Claude catalog
+ * model than the one asked for (§app.claude-code-provider/model-identity), else null.
+ */
+export function modelMismatch(asked: string | null | undefined, answered: string | null | undefined): string | null {
+  const a = resolveClaude(asked);
+  const b = claudeByAnswer(answered);
+  return a && b && a.id !== b.id ? `Asked for ${a.name}; ${b.name} answered.` : null;
+}
+
+/**
+ * What a by-model usage row's `title` adds to its id (§app.insights/usage-model-rows): the ids its
+ * calls asked for, and, for a row another model answered, the mismatch (its label then carries ⚠).
+ */
+export function usageModelNote(row: { model: string; requested?: string[]; asked?: string }): string {
+  const parts: string[] = [];
+  if (row.asked) parts.push(modelMismatch(row.asked, row.model) ?? `Asked for ${row.asked}.`);
+  if (row.requested?.length) parts.push(`Asked as ${row.requested.join(", ")}.`);
+  return parts.join(" ");
+}
+
+/**
+ * A model id for a meta line, where the width belongs to the numbers beside it: a Claude model's
+ * catalog name ("anthropic/claude-haiku-4-5-20251001" → "Haiku 4.5", "claude-opus-5[1m]" → "Opus 5");
+ * any other id without provider or dated build, with a dotted version ("openai/gpt-4-1" → "gpt-4.1").
  * Lossy on purpose: the full id belongs in the `title` next to it.
  */
 export function compactModel(model: string | null | undefined): string | null {
+  const name = claudeName(model);
+  if (name) return name;
   const short = shortModel(model);
   if (!short) return null;
   const variant = /\[([^\]]+)\]\s*$/.exec(short)?.[1];

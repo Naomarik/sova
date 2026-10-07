@@ -20,7 +20,7 @@ import {
   type WorkerUsage,
 } from "../pi-config/extensions/subagents/worker-transcript.ts";
 import { modelProvider } from "./models";
-import { claudeSpawnModel, type WindowResolver, withSpawnVariant, workerWindow } from "./worker-context";
+import { askedOtherModel, claudeSpawnModel, type WindowResolver, workerWindow } from "./worker-context";
 
 type Entry = Record<string, any>;
 
@@ -109,11 +109,13 @@ function workerInfo(m: FoldedWorkerManifest, summary: WorkerTranscriptSummary | 
   // The model it ran under, as its running record names it (haiku-4.5 in every state): the
   // protocol's one rule, shared with the subagents extension.
   const model = resolvedModel(m, summary ? { summary } : undefined);
-  // A claude-code transcript names the bare id; the spawn model keeps its `[1m]` variant, which
-  // both the label and the window below take from it.
+  // A claude-code transcript names the model that answered; the spawn model is what was asked for,
+  // which sizes the window below and says when another model answered.
   const spawn = m.backend === "claude-code" ? claudeSpawnModel(m) : undefined;
   const w: WorkerInfo = { id: m.workerId, name: m.name ?? m.workerId, status, working: false, backend: m.backend };
-  if (model) w.model = withSpawnVariant(model, spawn);
+  if (model) w.model = model;
+  const asked = model && spawn ? askedOtherModel(model, spawn) : undefined;
+  if (asked) w.asked = asked;
   const provider = m.backend === "claude-code" ? "claude code" : modelProvider(model);
   if (provider) w.provider = provider;
   const effort = m.spec?.effort ?? summary?.effort;

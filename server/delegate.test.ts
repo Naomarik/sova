@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { after, beforeEach, describe, test } from "node:test";
 import type { DelegateSettings, ModelPolicy } from "../shared/protocol";
 import type { ClaudeModel } from "./claude-models";
+import { claudeOffer } from "../pi-config/extensions/claude-code/catalog.ts";
 import {
   cachedClaudeModels,
   checkChoice,
@@ -24,13 +25,14 @@ const file = () => join(dir, `mode-delegate-${++n}.json`);
 
 const EMPTY: ModelPolicy = { disabledProviders: [], disabledModels: [], subagentDisabledProviders: [], subagentDisabledModels: [] };
 const ALL_CLAUDE = ["low", "medium", "high", "xhigh", "max"];
-const claudeModels: ClaudeModel[] = [
-  { id: "claude-fable-5-1[1m]", name: "Fable", efforts: ALL_CLAUDE },
-  { id: "opus[1m]", name: "Opus", efforts: ALL_CLAUDE },
-  { id: "sonnet", name: "Sonnet", efforts: ["low", "medium", "high", "future-effort"] },
-  { id: "legacy", name: "Legacy" }, // reports no efforts
-  { id: "bare", name: "Bare", efforts: [] }, // reports an empty list
-  { id: "future", name: "Future", efforts: ["future-effort"] }, // reports only efforts the backend refuses
+/** The CLI's initialize list (claude 2.1.289): read for drift only, never offered. */
+const cliList: ClaudeModel[] = [
+  { id: "default", name: "Default (recommended)", resolvedModel: "claude-opus-5-5", efforts: ALL_CLAUDE },
+  { id: "opus", name: "Opus", resolvedModel: "claude-opus-5-5", efforts: ALL_CLAUDE },
+  { id: "fable", name: "Fable", resolvedModel: "claude-fable-5-1", efforts: ALL_CLAUDE },
+  { id: "sonnet", name: "Sonnet", resolvedModel: "claude-sonnet-5-5", efforts: ALL_CLAUDE },
+  { id: "haiku", name: "Haiku", resolvedModel: "claude-haiku-4-5-20251001" },
+  { id: "claude-opus-4-8", name: "Opus 4.8", resolvedModel: "claude-opus-4-8", efforts: ALL_CLAUDE },
 ];
 const piModels = [
   { ref: "zai/glm-5.3", id: "glm-5.3", provider: "zai", thinkingLevels: ["off", "minimal", "low", "medium", "high"] },
@@ -38,31 +40,41 @@ const piModels = [
 ];
 const sources = (over: Partial<DelegateSources> = {}): DelegateSources => ({
   piModels: async () => piModels,
-  claudeModels: async () => claudeModels,
+  claudeModels: async () => cliList,
   policy: () => EMPTY,
   ...over,
 });
 const defaults = (): DelegateSettings => JSON.parse(JSON.stringify(delegateInfo(join(dir, "absent.json")).defaults));
 
 describe("GET /api/settings/delegate", () => {
-  test("a missing file reads as the defaults, and the screen gets everything it renders from", () => {
+  test("a missing file reads as the defaults, the catalog's current models, and the screen gets everything it renders from", () => {
     const info = delegateInfo(join(dir, "absent.json"));
     assert.deepEqual(info.settings, info.defaults);
     assert.deepEqual(info.defaults.profiles.planning, {
-      primary: { backend: "claude-code", model: "claude-fable-5-1[1m]", effort: "medium" },
-      fallback: { backend: "claude-code", model: "opus[1m]", effort: "high" },
+      primary: { backend: "claude-code", model: "claude-fable-5-1", effort: "medium" },
+      fallback: { backend: "claude-code", model: "claude-opus-5-5", effort: "high" },
     });
-    assert.deepEqual(info.defaults.profiles.investigation.primary, { backend: "claude-code", model: "opus[1m]", effort: "low" });
+    assert.deepEqual(info.defaults.profiles.investigation.primary, { backend: "claude-code", model: "claude-opus-5-5", effort: "low" });
     assert.deepEqual(info.profiles.map((p) => p.label), ["Planning & specs", "Investigation", "Routine implementation", "Complex implementation"]);
     assert.deepEqual(info.backends.map((b) => [b.id, b.efforts]), [
       ["pi", ["off", "minimal", "low", "medium", "high", "xhigh", "max"]],
       ["claude-code", ALL_CLAUDE],
     ]);
   });
+
+  test("a file naming old Claude ids reads them as their catalog models", () => {
+    const f = file();
+    const old = defaults();
+    old.profiles.planning = { primary: { backend: "claude-code", model: "claude-fable-5-1[1m]", effort: "medium" }, fallback: { backend: "claude-code", model: "opus[1m]", effort: "high" } };
+    old.profiles.routine.primary = { backend: "claude-code", model: "sonnet", effort: "low" };
+    writeFileSync(f, JSON.stringify(old));
+    const read = delegateInfo(f).settings;
+    assert.deepEqual([read.profiles.planning.primary.model, read.profiles.planning.fallback?.model, read.profiles.routine.primary.model], ["claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5-5"]);
+  });
 });
 
 describe("GET /api/settings/delegate/options", () => {
-  test("each backend's models with the efforts each takes", async () => {
+  test("pi's registry, and Sova's Claude catalog with each model's efforts", async () => {
     const options = await delegateOptions(sources());
     const [pi, claude] = options.backends;
     assert.equal(pi!.id, "pi");
@@ -71,48 +83,55 @@ describe("GET /api/settings/delegate/options", () => {
       { id: "zai/glm-5.3", name: "zai/glm-5.3", efforts: ["off", "minimal", "low", "medium", "high"] },
     ]);
     assert.equal(claude!.id, "claude-code");
-    assert.deepEqual(claude!.models!.find((m) => m.id === "sonnet")!.efforts, ["low", "medium", "high"], "an effort the backend would refuse is not offered");
-    assert.deepEqual(claude!.models!.find((m) => m.id === "legacy")!.efforts, ALL_CLAUDE, "unreported: what the backend accepts");
-    assert.deepEqual(claude!.models!.find((m) => m.id === "bare")!.efforts, ALL_CLAUDE, "an empty list constrains nothing — never an empty select");
-    assert.deepEqual(claude!.models!.find((m) => m.id === "future")!.efforts, ALL_CLAUDE, "nothing usable left after the cut: same");
+    assert.deepEqual(claude!.models!.map((m) => [m.id, m.name]), claudeOffer().map((m) => [m.id, m.name]));
+    assert.deepEqual(claude!.models!.find((m) => m.id === "claude-opus-4-6")!.efforts, ["low", "medium", "high", "max"]);
+    assert.deepEqual(claude!.models!.find((m) => m.id === "claude-haiku-4-5")!.efforts, ALL_CLAUDE, "a model taking no effort control: what the backend accepts");
+    for (const alias of ["opus", "opus[1m]", "sonnet", "haiku", "default"]) assert.ok(!claude!.models!.some((m) => m.id === alias), alias);
+    assert.equal(claude!.drift, undefined, "the CLI's list of today agrees with the catalog");
     assert.deepEqual(pi!.sessionScopedProviders, ["claude-code-cli"]);
   });
 
-  test("a failed discovery is models:null with the reason — never an empty list", async () => {
-    const options = await delegateOptions(sources({ claudeModels: async () => Promise.reject(new Error("The Claude Code CLI did not list its models within 15s.")) }));
-    const claude = options.backends.find((b) => b.id === "claude-code")!;
-    assert.equal(claude.models, null);
-    assert.equal(claude.error, "The Claude Code CLI did not list its models within 15s");
-    assert.ok(options.backends.find((b) => b.id === "pi")!.models!.length > 0, "one backend failing leaves the other");
+  test("the CLI's list never removes, adds or renames a model; it only reports drift", async () => {
+    for (const failing of [async () => Promise.reject(new Error("The Claude Code CLI did not list its models within 15s.")), async () => [] as ClaudeModel[]]) {
+      const claude = (await delegateOptions(sources({ claudeModels: failing }))).backends.find((b) => b.id === "claude-code")!;
+      assert.deepEqual(claude.models!.map((m) => m.id), claudeOffer().map((m) => m.id));
+      assert.equal(claude.error, undefined);
+      assert.equal(claude.drift, undefined);
+    }
+    const drifted = await delegateOptions(sources({ claudeModels: async () => [...cliList, { id: "claude-opus-6", name: "Opus 6" }, { id: "sonnet[1m]", name: "S", resolvedModel: "claude-sonnet-6" }] }));
+    const claude = drifted.backends.find((b) => b.id === "claude-code")!;
+    assert.deepEqual(claude.models!.map((m) => m.id), claudeOffer().map((m) => m.id), "a model it doesn't know is not offered");
+    assert.deepEqual(claude.drift, { unknown: [{ id: "claude-opus-6", name: "Opus 6" }], moved: [{ family: "sonnet", id: "claude-sonnet-6", current: "claude-sonnet-5-5" }] });
   });
 
   test("the policy marks models (shown, still selectable)", async () => {
-    const policy: ModelPolicy = { ...EMPTY, subagentDisabledModels: ["claude-code/claude-fable-5-1[1m]"], disabledProviders: ["ollama"] };
+    const policy: ModelPolicy = { ...EMPTY, subagentDisabledModels: ["claude-code/claude-fable-5-1"], disabledProviders: ["ollama"] };
     const options = await delegateOptions(sources({ policy: () => policy }));
     const claude = options.backends.find((b) => b.id === "claude-code")!.models!;
-    assert.equal(claude.find((m) => m.id === "claude-fable-5-1[1m]")!.denied, "claude-fable-5-1[1m] is off for subagents in Settings → Models");
-    assert.equal(claude.find((m) => m.id === "opus[1m]")!.denied, undefined);
+    assert.equal(claude.find((m) => m.id === "claude-fable-5-1")!.denied, "claude-fable-5-1 is off for subagents in Settings → Models");
+    assert.equal(claude.find((m) => m.id === "claude-opus-5-5")!.denied, undefined);
     assert.equal(options.backends.find((b) => b.id === "pi")!.models!.find((m) => m.id === "ollama/qwen3")!.denied, "ollama is turned off in Settings → Models");
   });
 
   test("workerDenial follows the subagent spawn rule", () => {
-    assert.equal(workerDenial(EMPTY, "claude-code", "opus[1m]"), null);
-    assert.match(workerDenial({ ...EMPTY, subagentDisabledProviders: ["claude-code"] }, "claude-code", "opus[1m]")!, /claude-code is off for subagents/);
-    assert.match(workerDenial({ ...EMPTY, disabledModels: ["opus[1m]"] }, "claude-code", "opus[1m]")!, /turned off/, "bare id");
+    assert.equal(workerDenial(EMPTY, "claude-code", "claude-opus-5-5"), null);
+    assert.match(workerDenial({ ...EMPTY, subagentDisabledProviders: ["claude-code"] }, "claude-code", "claude-opus-5-5")!, /claude-code is off for subagents/);
+    assert.match(workerDenial({ ...EMPTY, disabledModels: ["claude-opus-5-5"] }, "claude-code", "claude-opus-5-5")!, /turned off/, "bare id");
     assert.match(workerDenial({ ...EMPTY, subagentDisabledModels: ["ZAI/GLM-5.3"] }, "pi", "zai/glm-5.3")!, /off for subagents/, "case-insensitive");
     assert.equal(workerDenial({ ...EMPTY, disabledProviders: ["zai"] }, "claude-code", "zai"), null, "a pi provider never covers a Claude model");
   });
 
-  test("Claude discovery is cached, shared while in flight, and failures are not cached", async () => {
+  test("the CLI's list (drift only) is cached, shared while in flight, and failures are not cached", async () => {
     resetClaudeCache();
     let runs = 0;
     const discover = async () => {
       runs++;
-      return claudeModels;
+      return cliList;
     };
     await Promise.all([cachedClaudeModels(discover), cachedClaudeModels(discover)]);
     await cachedClaudeModels(discover);
     assert.equal(runs, 1);
+    assert.deepEqual(await cachedClaudeModels(discover), cliList, "kept as listed, resolvedModel included");
     resetClaudeCache();
     let fails = 0;
     const failing = async () => {
@@ -124,22 +143,6 @@ describe("GET /api/settings/delegate/options", () => {
     assert.equal(fails, 2);
     resetClaudeCache();
   });
-
-  test("the list gains the [1m] forms the CLI omits, by the extension's own rule (the shared fixture agent_models and the chat picker are tested against)", async () => {
-    type Case = { name: string; input: ClaudeModel[]; expected: [string, string, string[]?][] };
-    const fixture = new URL("../pi-config/extensions/claude-code/tests/fixtures/long-context-lists.json", import.meta.url);
-    const { cases } = JSON.parse(readFileSync(fixture, "utf8")) as { cases: Case[] };
-    assert.ok(cases.length >= 3);
-    for (const c of cases) {
-      resetClaudeCache();
-      const listed = await cachedClaudeModels(async () => structuredClone(c.input));
-      assert.deepEqual(listed.map((m) => (m.efforts ? [m.id, m.name, m.efforts] : [m.id, m.name])), c.expected, c.name);
-    }
-    resetClaudeCache();
-    const once = await cachedClaudeModels(async () => [{ id: "opus", name: "Opus" }]);
-    assert.ok(once.some((m) => m.id === "opus[1m]"), "no earlier sighting needed: a fresh server lists it at once");
-    resetClaudeCache();
-  });
 });
 
 describe("PUT /api/settings/delegate", () => {
@@ -148,13 +151,23 @@ describe("PUT /api/settings/delegate", () => {
   test("a valid routing is saved and read back; the file is the extension's shape", async () => {
     const f = file();
     const next = defaults();
-    next.profiles.investigation = { primary: { backend: "pi", model: "zai/glm-5.3", effort: "minimal" }, fallback: { backend: "claude-code", model: "sonnet", effort: "low" } };
+    next.profiles.investigation = { primary: { backend: "pi", model: "zai/glm-5.3", effort: "minimal" }, fallback: { backend: "claude-code", model: "claude-sonnet-5-5", effort: "low" } };
     const result = await saveDelegateSettings(next, sources(), f);
     assert.ok(!("error" in result), JSON.stringify(result));
     assert.deepEqual(result.settings, next);
     assert.deepEqual(result.warnings, []);
     assert.deepEqual(JSON.parse(readFileSync(f, "utf8")), next);
     assert.deepEqual(delegateInfo(f).settings, next);
+  });
+
+  test("an old Claude id in a save is written as its catalog id", async () => {
+    const f = file();
+    const next = defaults();
+    next.profiles.routine.primary = { backend: "claude-code", model: "opus[1m]", effort: "low" };
+    const result = await saveDelegateSettings(next, sources(), f);
+    assert.ok(!("error" in result), JSON.stringify(result));
+    assert.deepEqual(result.warnings, []);
+    assert.equal(JSON.parse(readFileSync(f, "utf8")).profiles.routine.primary.model, "claude-opus-5-5");
   });
 
   test("shape errors are refused with the slot named, and nothing is written", async () => {
@@ -164,7 +177,7 @@ describe("PUT /api/settings/delegate", () => {
       [{ ...defaults(), version: 2 }, /version must be 1/],
       [{ version: 1, profiles: { ...defaults().profiles, extra: defaults().profiles.routine } }, /Unknown profile: extra/],
       [{ ...defaults(), profiles: { ...defaults().profiles, routine: { primary: { backend: "pi", model: "glm-5.3", effort: "low" }, fallback: null } } }, /^Routine implementation primary: a pi model is "provider\/modelId"$/],
-      [{ ...defaults(), profiles: { ...defaults().profiles, complex: { primary: { backend: "claude-code", model: "opus[1m]", effort: "off" }, fallback: null } } }, /^Complex implementation primary: effort for claude-code must be one of/],
+      [{ ...defaults(), profiles: { ...defaults().profiles, complex: { primary: { backend: "claude-code", model: "claude-opus-5-5", effort: "off" }, fallback: null } } }, /^Complex implementation primary: effort for claude-code must be one of/],
       [{ ...defaults(), profiles: { ...defaults().profiles, planning: { primary: defaults().profiles.planning.primary, fallback: defaults().profiles.planning.primary } } }, /the same worker as the primary/],
     ] as const) {
       const result = await saveDelegateSettings(body, sources(), f);
@@ -174,7 +187,7 @@ describe("PUT /api/settings/delegate", () => {
     assert.ok(!existsSync(f));
   });
 
-  test("a changed tuple the backend answered it can't run is refused — model or effort", async () => {
+  test("a changed tuple the backend can't run is refused — model or effort", async () => {
     const f = file();
     const absent = defaults();
     absent.profiles.routine.primary = { backend: "pi", model: "zai/glm-9", effort: "low" };
@@ -182,10 +195,10 @@ describe("PUT /api/settings/delegate", () => {
     assert.ok("error" in r1);
     assert.equal(r1.error, "Routine implementation primary: zai/glm-9 isn't offered by pi.");
     const claudeEffort = defaults();
-    claudeEffort.profiles.routine.primary = { backend: "claude-code", model: "sonnet", effort: "max" };
+    claudeEffort.profiles.routine.primary = { backend: "claude-code", model: "claude-sonnet-4-6", effort: "xhigh" };
     const r0 = await saveDelegateSettings(claudeEffort, sources(), f);
     assert.ok("error" in r0);
-    assert.equal(r0.error, 'Routine implementation primary: sonnet doesn\'t take effort "max" (it takes low, medium, high).');
+    assert.equal(r0.error, 'Routine implementation primary: claude-sonnet-4-6 doesn\'t take effort "xhigh" (it takes low, medium, high, max).');
     const effort = defaults();
     effort.profiles.investigation.fallback = { backend: "pi", model: "ollama/qwen3", effort: "high" };
     const r2 = await saveDelegateSettings(effort, sources(), f);
@@ -194,67 +207,46 @@ describe("PUT /api/settings/delegate", () => {
     assert.ok(!existsSync(f), "nothing written");
   });
 
-  test("discovery failure is not absence: the save goes through, with a warning", async () => {
-    const f = file();
+  test("pi discovery failure is not absence: the save goes through, with a warning; the Claude CLI failing changes nothing", async () => {
     const next = defaults();
-    next.profiles.complex.primary = { backend: "claude-code", model: "some-new-alias", effort: "high" };
-    const result = await saveDelegateSettings(next, sources({ claudeModels: async () => Promise.reject(new Error("Could not run the Claude Code CLI; is it installed?")) }), f);
+    next.profiles.complex.primary = { backend: "pi", model: "zai/glm-5.3", effort: "high" };
+    const result = await saveDelegateSettings(next, sources({ piModels: async () => Promise.reject(new Error("no registry")) }), file());
     assert.ok(!("error" in result), JSON.stringify(result));
-    assert.equal(result.settings.profiles.complex.primary.model, "some-new-alias");
-    assert.deepEqual(
-      result.warnings,
-      [
-        "Not verified, because Claude Code couldn't list its models (Could not run the Claude Code CLI; is it installed?): Planning & specs primary, Planning & specs fallback, Investigation primary, Routine implementation primary, Complex implementation primary",
-      ],
-      "one sentence per backend that couldn't answer, naming every slot on it",
-    );
+    assert.deepEqual(result.warnings, ["Not verified, because pi couldn't list its models (no registry): Complex implementation primary"], "one sentence per backend that couldn't answer, naming every slot on it");
+    const cli = await saveDelegateSettings(defaults(), sources({ claudeModels: async () => Promise.reject(new Error("Could not run the Claude Code CLI; is it installed?")) }), file());
+    assert.ok(!("error" in cli), JSON.stringify(cli));
+    assert.deepEqual(cli.warnings, []);
   });
 
   test("a policy-denied tuple saves with a warning (spawn enforces, Delegate discloses)", async () => {
     const f = file();
-    const policy: ModelPolicy = { ...EMPTY, subagentDisabledModels: ["claude-code/claude-fable-5-1[1m]"] };
+    const policy: ModelPolicy = { ...EMPTY, subagentDisabledModels: ["claude-code/claude-fable-5-1"] };
     const result = await saveDelegateSettings(defaults(), sources({ policy: () => policy }), f);
     assert.ok(!("error" in result));
-    assert.deepEqual(result.warnings, ["Planning & specs primary: claude-fable-5-1[1m] is off for subagents in Settings → Models; Delegate uses the fallback or asks"]);
+    assert.deepEqual(result.warnings, ["Planning & specs primary: claude-fable-5-1 is off for subagents in Settings → Models; Delegate uses the fallback or asks"]);
   });
 
-  test("an untouched slot never blocks a save, even when its model has gone", async () => {
+  test("an untouched slot never blocks a save, even when the catalog doesn't know its model", async () => {
     const f = file();
     const stored = defaults();
-    stored.profiles.routine.primary = { backend: "claude-code", model: "retired-alias", effort: "low" };
+    stored.profiles.routine.primary = { backend: "claude-code", model: "retired-id", effort: "low" };
     writeFileSync(f, JSON.stringify(stored));
     const next: DelegateSettings = JSON.parse(JSON.stringify(stored));
     next.profiles.complex.primary.effort = "high";
     const result = await saveDelegateSettings(next, sources(), f);
     assert.ok(!("error" in result), JSON.stringify(result));
-    assert.deepEqual(result.warnings, ["Routine implementation primary: not verified — the Claude Code CLI's model list doesn't include retired-alias right now (the list varies); it will still be used"]);
+    assert.deepEqual(result.warnings, ["Routine implementation primary: not verified — retired-id is not in Sova's Claude catalog; it will still be used"]);
     assert.equal(JSON.parse(readFileSync(f, "utf8")).profiles.complex.primary.effort, "high");
   });
 
-  test("a Claude alias the CLI's list omits is saved with a note, never refused: the list varies and the CLI accepts it at runtime", async () => {
+  test("a Claude id the catalog doesn't know is saved with a note, never refused", async () => {
     const f = file();
     const next = defaults();
-    next.profiles.routine.primary = { backend: "claude-code", model: "gpt-9", effort: "low" };
+    next.profiles.routine.primary = { backend: "claude-code", model: "claude-opus-6", effort: "low" };
     const result = await saveDelegateSettings(next, sources(), f);
     assert.ok(!("error" in result), JSON.stringify(result));
-    assert.deepEqual(result.warnings, ["Routine implementation primary: not verified — the Claude Code CLI's model list doesn't include gpt-9 right now (the list varies); it will still be used"]);
-    assert.equal(result.settings.profiles.routine.primary.model, "gpt-9");
-    // The defaults themselves, against the shape of the list without the [1m] aliases: every slot saves, each with the note.
-    const flipped = sources({ claudeModels: async () => [{ id: "opus", name: "Opus", efforts: ALL_CLAUDE }, { id: "claude-fable-5-1", name: "Fable", efforts: ALL_CLAUDE }] });
-    const saved = await saveDelegateSettings(defaults(), flipped, file());
-    assert.ok(!("error" in saved), JSON.stringify(saved));
-    assert.equal(saved.warnings.length, 5);
-    assert.ok(saved.warnings.every((w) => /not verified — the Claude Code CLI's model list doesn't include (opus|claude-fable-5-1)\[1m\] right now/.test(w)), saved.warnings.join("\n"));
-  });
-
-  test("empty effort lists: the save accepts what routing would run", async () => {
-    const f = file();
-    const next = defaults();
-    next.profiles.routine.primary = { backend: "claude-code", model: "bare", effort: "max" };
-    next.profiles.complex.primary = { backend: "claude-code", model: "future", effort: "low" };
-    const result = await saveDelegateSettings(next, sources(), f);
-    assert.ok(!("error" in result), JSON.stringify(result));
-    assert.deepEqual(result.warnings, []);
+    assert.deepEqual(result.warnings, ["Routine implementation primary: not verified — claude-opus-6 is not in Sova's Claude catalog; it will still be used"]);
+    assert.equal(result.settings.profiles.routine.primary.model, "claude-opus-6");
   });
 
   test("Claude Code provider models (pi, session-scoped) are unverified when not listed, never refused", async () => {
@@ -273,10 +265,10 @@ describe("PUT /api/settings/delegate", () => {
 
   test("checkChoice", async () => {
     const options = await delegateOptions(sources());
-    assert.deepEqual(checkChoice({ backend: "claude-code", model: "opus[1m]", effort: "max" }, options), {});
-    assert.deepEqual(checkChoice({ backend: "claude-code", model: "legacy", effort: "xhigh" }, options), {});
-    assert.match(checkChoice({ backend: "claude-code", model: "sonnet", effort: "max" }, options).error!, /doesn't take effort "max"/);
-    assert.match(checkChoice({ backend: "claude-code", model: "unlisted-alias", effort: "low" }, options).warning!, /^not verified — the Claude Code CLI's model list doesn't include unlisted-alias right now/);
+    assert.deepEqual(checkChoice({ backend: "claude-code", model: "claude-opus-5-5", effort: "max" }, options), {});
+    assert.deepEqual(checkChoice({ backend: "claude-code", model: "claude-haiku-4-5", effort: "xhigh" }, options), {}, "no effort control: unconstrained");
+    assert.match(checkChoice({ backend: "claude-code", model: "claude-opus-4-6", effort: "xhigh" }, options).error!, /doesn't take effort "xhigh"/);
+    assert.match(checkChoice({ backend: "claude-code", model: "claude-opus-6", effort: "low" }, options).warning!, /^not verified — claude-opus-6 is not in Sova's Claude catalog/);
     assert.match(checkChoice({ backend: "pi", model: "zai/glm-9", effort: "low" }, options).error!, /isn't offered by pi/, "pi's registry is an answer");
   });
 });

@@ -84,6 +84,11 @@ test("claude-code-cli: [1m] dropped, the dated opus alias, responseModel beats i
   assert.equal(key("claude-haiku-4-5-20251001", "2026-09-27T00:00:00Z"), "anthropic/claude-haiku-4-5");
   assert.deepEqual(price(t, "claude", "<synthetic>", { output: 5 }), { status: "free", why: "synthetic" });
   assert.equal(key("claude-opus-5-5", "2026-09-27T00:00:00Z"), "anthropic/claude-opus-5-5");
+  // A Claude answer the table doesn't price is unpriced: never its alias's older sibling's price.
+  assert.equal(key("sonnet", "2026-10-05T00:00:00Z", "claude-sonnet-5-5"), "unpriced");
+  assert.equal(key("sonnet", "2026-10-05T00:00:00Z"), "unpriced", "the dated sonnet alias meant Sonnet 5.5 from 2026-10-01T18:00Z");
+  assert.equal(key("sonnet", "2026-09-30T10:00:00Z"), "anthropic/claude-sonnet-5");
+  assert.equal(key("claude-sonnet-5-5", "2026-10-05T00:00:00Z"), "unpriced");
 });
 
 test("openai-codex priced at OpenAI's API; the 272k tier applies to the whole request, above not at", () => {

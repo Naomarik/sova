@@ -24,7 +24,10 @@
       { "until": "2026-09-21T18:00:00Z", "to": "anthropic/claude-opus-5" },
       { "to": "anthropic/claude-opus-5-5" }
     ],
-    "claude-code-cli/sonnet": { "to": "anthropic/claude-sonnet-5" },
+    "claude-code-cli/sonnet": [
+      { "until": "2026-10-01T18:00:00Z", "to": "anthropic/claude-sonnet-5" },
+      { "to": "anthropic/claude-sonnet-5-5" }
+    ],
     "claude-code-cli/haiku": { "to": "anthropic/claude-haiku-4-5" },
     "openai-codex/gpt-5.3-codex-spark": { "unpriced": "Codex only: OpenAI lists no API price (models.dev repeats gpt-5.3-codex's)." },
     "openai/gpt-5.3-codex-spark": { "unpriced": "Codex only: OpenAI lists no API price (models.dev repeats gpt-5.3-codex's)." },

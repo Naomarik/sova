@@ -2,6 +2,7 @@ import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "no
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { parseChoice } from "../pi-config/extensions/mode/delegate.ts";
+import { latestClaude } from "../pi-config/extensions/claude-code/catalog.ts";
 import type { DecisionSettings, WorkerChoice } from "../shared/protocol";
 import { stateRoot } from "./state-root";
 import { sessionsChanged } from "./list-generation";
@@ -20,7 +21,7 @@ export function decisionDefaults(): DecisionSettings {
 
 /** Shown beside the fallback row as hints, never pre-selected. */
 export const DECISION_SUGGESTIONS: WorkerChoice[] = [
-  { backend: "claude-code", model: "sonnet", effort: "low" },
+  { backend: "claude-code", model: latestClaude("sonnet").id, effort: "low" },
   { backend: "pi", model: "ollama-cloud/deepseek-v4.1-flash", effort: "off" },
 ];
 

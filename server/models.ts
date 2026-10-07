@@ -6,6 +6,7 @@ import { getModelRuntime } from "./chat-manager";
 import { readFavorites } from "./model-favorites";
 import { agentRoot } from "./state-root";
 import type { BranchContext } from "./harness/pi/usage";
+import { canonicalClaudeId } from "../pi-config/extensions/claude-code/catalog.ts";
 
 /** pi's cached remote catalogs (READ-ONLY): {[provider]: {models: [{id, contextWindow}]}}. */
 const MODELS_STORE_FILE = join(agentRoot(), "models-store.json");
@@ -62,7 +63,9 @@ export function contextWindow(ref: string, modelRuntime: PiModelRuntime): number
   if (hit !== undefined) return hit;
   const slash = ref.indexOf("/"); // provider has no "/", model ids may
   if (slash <= 0) return null;
-  const [provider, id] = [ref.slice(0, slash), ref.slice(slash + 1)];
+  const provider = ref.slice(0, slash);
+  // An old Claude Code id (`opus[1m]`, a file from before the catalog) is its catalog model's window.
+  const id = provider === CLAUDE_CODE_PROVIDER ? canonicalClaudeId(ref.slice(slash + 1)) : ref.slice(slash + 1);
   const fromRegistry = modelRuntime.getModel(provider, id)?.contextWindow;
   const window = typeof fromRegistry === "number" && fromRegistry > 0 ? fromRegistry : storeWindow(provider, id);
   windowCache.set(ref, window);

@@ -3,7 +3,7 @@ import type { WorkerInfo } from "../../shared/protocol";
 import type { UsageSessionModelRow, UsageSessionSpend, UsageSpend } from "../../shared/usage/wire";
 import { getUsageSession } from "../lib/api";
 import { formatTokens } from "../lib/context";
-import { compactModel } from "../lib/format";
+import { compactModel, usageModelNote } from "../lib/format";
 import { createPoll, type Poll } from "../lib/poll";
 import { originLabel, spendTitle, spendUsd, spentAnything, spoken, usageTabRows } from "../lib/spend";
 import { Banner } from "./ui";
@@ -170,7 +170,8 @@ function Cells(props: { spend: UsageSpend }) {
 
 /** A model × origin row. The id is shortened; the full one, and how it was priced, stay in the `title`. */
 function SpendRow(props: { row: UsageSessionModelRow }) {
-  const title = () => {
+  const title = () => [priced(), usageModelNote(props.row)].filter(Boolean).join(". ");
+  const priced = () => {
     const id = `${props.row.provider}/${props.row.model}`;
     if (props.row.status === "unpriced") return `${id}: unpriced${props.row.why ? `, ${props.row.why}` : ""}`;
     return props.row.priceKey && props.row.priceKey !== id ? `${id}, priced as ${props.row.priceKey}` : id;
@@ -181,6 +182,7 @@ function SpendRow(props: { row: UsageSessionModelRow }) {
           scrolls sideways instead of rows growing taller, until the pane is narrow enough to stack. */}
       <td class="text-mono usage-table-model" style={oneLine} title={title()}>
         {compactModel(props.row.model) ?? props.row.model}
+        {props.row.asked ? " ⚠" : ""}
       </td>
       <td class="usage-table-where" style={oneLine}>
         {originLabel(props.row.origin)}

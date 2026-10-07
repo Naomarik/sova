@@ -23,12 +23,12 @@ const { readSummarizerSettings, writeSummarizerSettings, parseSummarizerSettings
 
 const DEFAULTS = {
   primary: { backend: "pi", model: "ollama-cloud/deepseek-v4.1-flash" },
-  fallback: { backend: "claude-code", model: "sonnet" },
+  fallback: { backend: "claude-code", model: "claude-sonnet-5-5" },
 };
 /** A file shaped like the user's real one, with keys this screen must never touch. */
 const FULL = {
   summarizers: [
-    { backend: "claude-code", model: "haiku", timeoutMs: 45000, maxBudgetUsd: 0.05 },
+    { backend: "claude-code", model: "claude-haiku-4-5", timeoutMs: 45000, maxBudgetUsd: 0.05 },
     { backend: "pi", model: "ollama-cloud/deepseek-v4.1-flash", timeoutMs: 60000, extra: { keep: true } },
   ],
   trigger: { debounceMs: 3000, minNewMessages: 2 },
@@ -58,7 +58,7 @@ test("a missing file reads as the extension's defaults", () => {
 });
 
 test("a file whose chain the extension would skip reads as the defaults, as the extension reads it", () => {
-  for (const summarizers of [undefined, [], "haiku", [{ backend: "openai", model: "x" }], [{ backend: "pi", model: "" }], [null, 3]]) {
+  for (const summarizers of [undefined, [], "claude-haiku-4-5", [{ backend: "openai", model: "x" }], [{ backend: "pi", model: "" }], [null, 3]]) {
     put({ summarizers, trigger: { debounceMs: 1 } });
     const info = readSummarizerSettings();
     assert.deepEqual(info.settings, DEFAULTS, JSON.stringify(summarizers));
@@ -67,9 +67,9 @@ test("a file whose chain the extension would skip reads as the defaults, as the 
 });
 
 test("unusable entries are skipped the way sanitizeSummarizers skips them", () => {
-  put({ summarizers: [{ backend: "nope", model: "x" }, { backend: "pi", model: "a/b" }, "junk", { backend: "claude-code", model: "sonnet" }] });
+  put({ summarizers: [{ backend: "nope", model: "x" }, { backend: "pi", model: "a/b" }, "junk", { backend: "claude-code", model: "claude-sonnet-5-5" }] });
   const info = readSummarizerSettings();
-  assert.deepEqual(info.settings, { primary: { backend: "pi", model: "a/b" }, fallback: { backend: "claude-code", model: "sonnet" } });
+  assert.deepEqual(info.settings, { primary: { backend: "pi", model: "a/b" }, fallback: { backend: "claude-code", model: "claude-sonnet-5-5" } });
   assert.equal(info.usingDefaults, false);
 });
 
@@ -135,16 +135,16 @@ test("an unreadable file is refused with 409 and left as it was", () => {
 
 test("a save changes the chain and nothing else", () => {
   put(FULL);
-  const result = writeSummarizerSettings({ primary: { backend: "pi", model: "openai/gpt-x" }, fallback: { backend: "claude-code", model: "haiku" } });
+  const result = writeSummarizerSettings({ primary: { backend: "pi", model: "openai/gpt-x" }, fallback: { backend: "claude-code", model: "claude-haiku-4-5" } });
   assert.ok(!("error" in result));
-  assert.deepEqual(result.settings, { primary: { backend: "pi", model: "openai/gpt-x" }, fallback: { backend: "claude-code", model: "haiku" } });
+  assert.deepEqual(result.settings, { primary: { backend: "pi", model: "openai/gpt-x" }, fallback: { backend: "claude-code", model: "claude-haiku-4-5" } });
   const { summarizers, ...rest } = stored();
   const { summarizers: _old, ...fullRest } = FULL;
   assert.deepEqual(rest, fullRest);
   // The new model is written bare; the kept one keeps its own timeout and budget, in its new slot.
   assert.deepEqual(summarizers, [
     { backend: "pi", model: "openai/gpt-x" },
-    { backend: "claude-code", model: "haiku", timeoutMs: 45000, maxBudgetUsd: 0.05 },
+    { backend: "claude-code", model: "claude-haiku-4-5", timeoutMs: 45000, maxBudgetUsd: 0.05 },
   ]);
   // Key order is kept too: the chain stays where it was in the file.
   assert.deepEqual(Object.keys(stored()), Object.keys(FULL));
@@ -158,16 +158,16 @@ test("a kept entry keeps fields this screen doesn't know", () => {
 
 test("saving what is already there leaves the file's values unchanged", () => {
   put(FULL);
-  writeSummarizerSettings({ primary: { backend: "claude-code", model: "haiku" }, fallback: { backend: "pi", model: "ollama-cloud/deepseek-v4.1-flash" } });
+  writeSummarizerSettings({ primary: { backend: "claude-code", model: "claude-haiku-4-5" }, fallback: { backend: "pi", model: "ollama-cloud/deepseek-v4.1-flash" } });
   assert.deepEqual(stored(), FULL);
 });
 
 test("with no file, keeping a default keeps the default's timeout and budget", () => {
-  const result = writeSummarizerSettings({ primary: { backend: "claude-code", model: "sonnet" }, fallback: { backend: "pi", model: "a/b" } });
+  const result = writeSummarizerSettings({ primary: { backend: "claude-code", model: "claude-sonnet-5-5" }, fallback: { backend: "pi", model: "a/b" } });
   assert.ok(!("error" in result));
   assert.equal(result.usingDefaults, false);
   assert.deepEqual(stored(), {
-    summarizers: [{ backend: "claude-code", model: "sonnet", timeoutMs: 45000, maxBudgetUsd: 0.05 }, { backend: "pi", model: "a/b" }],
+    summarizers: [{ backend: "claude-code", model: "claude-sonnet-5-5", timeoutMs: 45000, maxBudgetUsd: 0.05 }, { backend: "pi", model: "a/b" }],
   });
 });
 
@@ -191,7 +191,7 @@ test("Reset to Defaults after a change writes the default entries, timeout and b
   assert.ok(!("error" in result));
   assert.deepEqual(stored().summarizers, [
     { backend: "pi", model: "ollama-cloud/deepseek-v4.1-flash", timeoutMs: 60000 },
-    { backend: "claude-code", model: "sonnet", timeoutMs: 45000, maxBudgetUsd: 0.05 },
+    { backend: "claude-code", model: "claude-sonnet-5-5", timeoutMs: 45000, maxBudgetUsd: 0.05 },
   ]);
   assert.equal(stored().claudeBin, FULL.claudeBin);
 });

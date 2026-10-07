@@ -29,6 +29,8 @@ export interface ClaudeModel {
   name: string;
   /** As the CLI reports them; absent when it reports none. */
   efforts?: string[];
+  /** The model an alias resolves to, as the CLI says (drift only: §app.claude-code-provider/catalog-drift). */
+  resolvedModel?: string;
 }
 
 export interface ClaudeDiscoveryOptions {
@@ -75,6 +77,7 @@ export function parseClaudeModels(value: unknown): ClaudeModel[] {
     if (seen.has(item.value)) continue;
     seen.add(item.value);
     const model: ClaudeModel = { id: item.value, name: item.displayName };
+    if (typeof item.resolvedModel === "string") model.resolvedModel = item.resolvedModel;
     if (Array.isArray(item.supportedEffortLevels)) {
       if (!item.supportedEffortLevels.every((effort) => typeof effort === "string" && effort.trim() !== ""))
         throw new Error("The Claude Code CLI returned invalid effort levels");

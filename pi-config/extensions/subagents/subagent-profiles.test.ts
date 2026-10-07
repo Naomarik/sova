@@ -46,11 +46,11 @@ const file = (profiles: SubagentProfile[]): SubagentProfilesFile => ({ version: 
 test("subagent-profiles.ts imports only node built-ins and builtins-only siblings, so Sova's server can import it", () => {
 	const source = fs.readFileSync(fileURLToPath(new URL("./subagent-profiles.ts", import.meta.url)), "utf8");
 	const specifiers = [...source.matchAll(/^import\s[^;]*?from\s+"([^"]+)"/gm)].map((m) => m[1]);
-	assert.deepEqual([...new Set(specifiers.filter((s) => !s!.startsWith("node:")))].sort(), ["../mode/delegate.ts", "../mode/spec.ts", "./team-defaults.ts"]);
+	assert.deepEqual([...new Set(specifiers.filter((s) => !s!.startsWith("node:")))].sort(), ["../claude-code/catalog.ts", "../mode/delegate.ts", "../mode/spec.ts", "./team-defaults.ts"]);
 });
 
 test("parse: a valid file round-trips; every error is collected, not the first", () => {
-	const ok = parseSubagentProfiles(JSON.stringify(file([profile("a", "A", { members: claude("sonnet") })])));
+	const ok = parseSubagentProfiles(JSON.stringify(file([profile("a", "A", { members: claude("claude-sonnet-5-5") })])));
 	assert.equal(ok.ok, true);
 	const bad = parseSubagentProfiles({
 		version: 2,
@@ -116,7 +116,7 @@ test("the default as resolution uses it: file's choice; absent, malformed or dan
 test("seed: an absent library and default file are written once from the legacy files, never replacing newer files", () => {
 	const dir = tempDir();
 	fs.writeFileSync(path.join(dir, "mode-delegate.json"), JSON.stringify({ version: 1, profiles: { routine: { primary: pi("zai/glm-5.3"), fallback: null } } }));
-	fs.writeFileSync(path.join(dir, "mode-spec.json"), JSON.stringify({ version: 1, writer: { primary: claude("sonnet", "medium"), fallback: null } }));
+	fs.writeFileSync(path.join(dir, "mode-spec.json"), JSON.stringify({ version: 1, writer: { primary: claude("claude-sonnet-5-5", "medium"), fallback: null } }));
 	writeTeamDefaults(dir, DEFAULT_TEAM_DEFAULTS);
 	const state = loadSubagentProfiles(dir);
 	assert.equal(state.state, "ok");
@@ -124,7 +124,7 @@ test("seed: an absent library and default file are written once from the legacy 
 	assert.equal(seeded.profiles.length, 1);
 	assert.deepEqual(seeded.profiles[0]!.delegate.routine.primary, pi("zai/glm-5.3"));
 	assert.deepEqual(seeded.profiles[0]!.delegate.planning, delegateDefaults().profiles.planning, "a slot the legacy file leaves out takes its default, as Delegate read it");
-	assert.equal(seeded.profiles[0]!.specWriter?.primary.model, "sonnet");
+	assert.equal(seeded.profiles[0]!.specWriter?.primary.model, "claude-sonnet-5-5");
 	assert.equal(seeded.profiles[0]!.teams?.coordinator.role, "coordinator");
 	assert.equal(seeded.profiles[0]!.members, null);
 	assert.equal(readSubagentProfiles(dir).state, "ok", "the library seed is on disk");
@@ -179,7 +179,7 @@ test("pick: the newest valid entry on the branch wins; unknown shapes are skippe
 test("resolution order: the chat's pick, then this device's default, then the legacy files", () => {
 	const dir = tempDir();
 	fs.writeFileSync(path.join(dir, "mode-delegate.json"), JSON.stringify({ version: 1, profiles: { routine: { primary: pi("legacy/model"), fallback: null } } }));
-	const a = profile("a", "A", { members: claude("sonnet") });
+	const a = profile("a", "A", { members: claude("claude-sonnet-5-5") });
 	const b = profile("b", "B", { delegate: { ...delegateDefaults().profiles, routine: { primary: pi("zai/glm-5.3"), fallback: null } } });
 	writeSubagentProfiles(dir, file([a, b]));
 	writeProfilesDefault(dir, { version: 1, default: "a" });
@@ -189,7 +189,7 @@ test("resolution order: the chat's pick, then this device's default, then the le
 	const followed = resolveSubagents(dir, undefined);
 	assert.equal(followed.source, "default");
 	assert.equal(followed.id, "a");
-	assert.deepEqual(followed.members, claude("sonnet"));
+	assert.deepEqual(followed.members, claude("claude-sonnet-5-5"));
 	const dangling = resolveSubagents(dir, "gone");
 	assert.equal(dangling.id, "a", "a pick naming a deleted profile follows the default");
 	assert.match(dangling.note ?? "", /no longer exists/);
@@ -210,7 +210,7 @@ test("resolution order: the chat's pick, then this device's default, then the le
 test("Off configures nothing: no routing, no team members, no members default, no spec writer", () => {
 	const dir = tempDir();
 	writeTeamDefaults(dir, DEFAULT_TEAM_DEFAULTS);
-	writeSubagentProfiles(dir, file([profile("a", "A", { members: claude("sonnet"), specWriter: { primary: claude("opus"), fallback: null } })]));
+	writeSubagentProfiles(dir, file([profile("a", "A", { members: claude("claude-sonnet-5-5"), specWriter: { primary: claude("claude-opus-5-5"), fallback: null } })]));
 	writeProfilesDefault(dir, { version: 1, default: OFF_PROFILE_ID });
 	for (const r of [resolveSubagents(dir, undefined), resolveSubagents(dir, OFF_PROFILE_ID)]) {
 		assert.equal(r.id, OFF_PROFILE_ID);
@@ -243,7 +243,7 @@ test("profileSlots enumerates every slot — a disabled coordinator and monitor 
 		monitor: { ...DEFAULT_TEAM_DEFAULTS.monitor, enabled: false },
 		handover: { retireTimeoutMinutes: 10 },
 	};
-	const p = profile("a", "A", { teams, members: claude("sonnet"), specWriter: { primary: claude("opus"), fallback: pi("zai/glm-5.3") } });
+	const p = profile("a", "A", { teams, members: claude("claude-sonnet-5-5"), specWriter: { primary: claude("claude-opus-5-5"), fallback: pi("zai/glm-5.3") } });
 	const slots = profileSlots(p);
 	const labels = slots.map((s) => s.label);
 	for (const want of ["Planning & specs primary", "Planning & specs fallback", "Members default", "Coordinator primary", "Monitor primary", "Spec writer primary", "Spec writer fallback"])
@@ -252,12 +252,14 @@ test("profileSlots enumerates every slot — a disabled coordinator and monitor 
 });
 
 test("footprints and providers", () => {
-	assert.equal(shortModel("opus[1m]"), "opus");
-	assert.equal(shortModel("claude-fable-5-1[1m]"), "fable");
+	// A Claude model reads its catalog name, under any id it was stored as (§app.claude-code-provider/model-names).
+	assert.equal(shortModel("claude-opus-5-5"), "Opus 5.5");
+	assert.equal(shortModel("opus[1m]"), "Opus 5.5");
+	assert.equal(shortModel("claude-fable-5-1"), "Fable 5.1");
 	assert.equal(shortModel("zai/glm-5.3"), "glm-5.3");
-	assert.equal(shortModel("claude-code-cli/claude-sonnet-4-6"), "sonnet");
-	const p = profile("a", "A", { members: claude("sonnet"), specWriter: { primary: pi("zai/glm-5.3"), fallback: null } });
-	assert.equal(footprint(p), "fable · opus · sonnet · +1");
+	assert.equal(shortModel("claude-code-cli/claude-sonnet-4-6"), "Sonnet 4.6");
+	const p = profile("a", "A", { members: claude("claude-sonnet-5-5"), specWriter: { primary: pi("zai/glm-5.3"), fallback: null } });
+	assert.equal(footprint(p), "Fable 5.1 · Opus 5.5 · Sonnet 5.5 · +1");
 	assert.deepEqual(profileProviders(p).sort(), ["claude", "zai"]);
 	assert.deepEqual(profileProviders(profile("z", "Z", { delegate: Object.fromEntries(Object.entries(delegateDefaults().profiles).map(([k]) => [k, { primary: pi("zai/glm-5.3"), fallback: null }])) as SubagentProfile["delegate"] })), ["zai"]);
 });
@@ -270,7 +272,7 @@ test("idFor slugs a name and never takes off or a used id", () => {
 });
 
 test("reviewer (adversarial review): optional — an older profile without it parses and stays without it; null is None", () => {
-	const reviewer = { primary: pi("openai-codex/gpt-6.1-sol", "high"), fallback: claude("opus[1m]", "high") };
+	const reviewer = { primary: pi("openai-codex/gpt-6.1-sol", "high"), fallback: claude("claude-opus-5-5", "high") };
 	const parsed = parseSubagentProfiles(file([profile("old", "Old"), profile("none", "None", { reviewer: null }), profile("r", "R", { reviewer })]));
 	assert.ok(parsed.ok);
 	const [old, none, r] = parsed.value.profiles;
@@ -299,7 +301,7 @@ test("reviewer (adversarial review): optional — an older profile without it pa
 
 test("seedReviewer: the default goes only to profiles without the key; None and routes stay; a second run writes nothing", () => {
 	const dir = tempDir();
-	const mine = { primary: claude("sonnet", "high"), fallback: null };
+	const mine = { primary: claude("claude-sonnet-5-5", "high"), fallback: null };
 	writeSubagentProfiles(dir, file([profile("bare", "Bare"), profile("none", "None", { reviewer: null }), profile("mine", "Mine", { reviewer: mine })]));
 	const first = seedReviewer(dir);
 	assert.deepEqual(first, { ok: true, seeded: ["bare"] });
@@ -307,7 +309,7 @@ test("seedReviewer: the default goes only to profiles without the key; None and 
 	assert.ok(after.state === "ok");
 	const [bare, none, own] = after.value.profiles;
 	assert.deepEqual(bare!.reviewer, DEFAULT_REVIEWER);
-	assert.deepEqual(DEFAULT_REVIEWER, { primary: { backend: "pi", model: "openai-codex/gpt-6.1-sol", effort: "high" }, fallback: { backend: "claude-code", model: "opus[1m]", effort: "high" } });
+	assert.deepEqual(DEFAULT_REVIEWER, { primary: { backend: "pi", model: "openai-codex/gpt-6.1-sol", effort: "high" }, fallback: { backend: "claude-code", model: "claude-opus-5-5", effort: "high" } });
 	assert.equal(none!.reviewer, null, "an explicit None is never overwritten");
 	assert.deepEqual(own!.reviewer, mine, "an existing route is never overwritten");
 	const bytes = fs.readFileSync(subagentProfilesPath(dir), "utf8");

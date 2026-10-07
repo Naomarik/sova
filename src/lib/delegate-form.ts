@@ -7,6 +7,7 @@ import type {
   DelegateSettingsInfo,
   WorkerChoice,
 } from "../../shared/protocol";
+import { canonicalClaudeId, claudeModel } from "./format";
 
 /**
  * Worker-row form rules (first Delegate's, now Settings → Subagents' and others'). Pure, so the
@@ -70,12 +71,10 @@ export function sessionScoped(options: DelegateOptions | undefined, choice: Draf
 }
 
 /**
- * A Claude Code alias the CLI would accept at runtime, missing from a list it did answer. The
- * CLI's model list is remote and account-gated and has changed shape under us (it once listed the
- * `[1m]` aliases, then dropped them), so absence from it is weak evidence: the pick reads
- * "not verified", never "not offered". Same shape rule as the mode extension's modelShapeError
- * for claude-code (an alias: no "/", no leading "-", no whitespace); pi's registry is local and
- * reliable, so a pi model missing from its list stays an error.
+ * A Claude Code id Sova's catalog doesn't know that the CLI would still run: it reads "not
+ * verified", never "not offered" (a model can ship before the catalog lists it). Same shape rule as
+ * the mode extension's modelShapeError for claude-code (no "/", no leading "-", no whitespace);
+ * pi's registry is local and reliable, so a pi model missing from its list stays an error.
  */
 export function unlistedClaudeAlias(choice: DraftChoice): boolean {
   const model = choice.model;
@@ -83,15 +82,29 @@ export function unlistedClaudeAlias(choice: DraftChoice): boolean {
 }
 
 /**
- * The listed entry a pick stands for: its own id, or, for a Claude Code `<alias>[1m]`, the listed
- * `<alias>`. The server adds `<alias>[1m]` itself only for a few known aliases (claude-code
- * context-window.ts withLongContextVariants); the CLI accepts the 1M form of others it lists too.
+ * The listed entry a pick stands for: its own id, or, for Claude Code, the catalog model an old id
+ * (`opus[1m]`, `claude-opus-5-5[1m]`) means (§app.claude-code-provider/legacy-ids).
  */
 export function findListedModel<M extends { id: string }>(models: readonly M[], backend: string, model: string): M | undefined {
   const own = models.find((m) => m.id === model);
-  if (own || backend !== "claude-code" || !model.endsWith("[1m]")) return own;
-  const base = model.slice(0, -"[1m]".length);
-  return base ? models.find((m) => m.id === base) : undefined;
+  if (own || backend !== "claude-code") return own;
+  const id = canonicalClaudeId(model);
+  return id !== model ? models.find((m) => m.id === id) : undefined;
+}
+
+/**
+ * What the Claude Code CLI's own list says that Sova's catalog doesn't (§app.claude-code-provider/catalog-drift):
+ * one quiet sentence per model it names that the catalog doesn't know, and per family it now runs
+ * as another model. Nothing when it agrees, or couldn't be read.
+ */
+export function claudeDriftNotes(options: DelegateOptions | undefined): string[] {
+  const drift = options?.backends.find((b) => b.id === "claude-code")?.drift;
+  if (!drift) return [];
+  const current = (id: string) => claudeModel(id)?.name ?? id;
+  return [
+    ...drift.unknown.map((m) => `Claude Code offers ${m.name ?? m.id} (${m.id}), which Sova's catalog doesn't know yet.`),
+    ...drift.moved.map((m) => `Claude Code now runs ${m.family} as ${m.id}; Sova's catalog still says ${current(m.current)}.`),
+  ];
 }
 
 /** The efforts this model takes, or null when discovery can't say. */
@@ -104,6 +117,8 @@ export function modelEfforts(options: DelegateOptions | undefined, backend: Dele
 export interface SelectOption {
   value: string;
   label: string;
+  /** The id, where the label is a name (a Claude model). */
+  title?: string;
 }
 
 /**
@@ -113,14 +128,17 @@ export interface SelectOption {
  */
 export function modelSelectOptions(options: DelegateOptions | undefined, choice: DraftChoice): SelectOption[] {
   const models = backendModels(options, choice.backend);
-  const listed: SelectOption[] = (models ?? []).map((m) => ({
-    value: m.id,
-    // The id alone: it is what gets spawned, and "Opus (1M) · opus[1m]" said it twice in a select
-    // too narrow for both.
-    label: `${m.id}${m.denied ? " — off for subagents" : ""}`,
-  }));
+  const listed: SelectOption[] = (models ?? []).map((m) => {
+    // A Claude model by its catalog name, its id in the title (§app.claude-code-provider/model-names);
+    // a pi model by its id, which is what gets spawned.
+    const claude = choice.backend === "claude-code";
+    return { value: m.id, label: `${claude ? m.name : m.id}${m.denied ? " — off for subagents" : ""}`, ...(claude ? { title: m.id } : {}) };
+  });
   if (choice.model && !listed.some((o) => o.value === choice.model))
-    if (models && findListedModel(models, choice.backend, choice.model)) listed.unshift({ value: choice.model, label: choice.model });
+    if (models && findListedModel(models, choice.backend, choice.model)) {
+      const listedAs = findListedModel(models, choice.backend, choice.model)!;
+      listed.unshift({ value: choice.model, label: choice.backend === "claude-code" ? listedAs.name : choice.model, title: choice.model });
+    }
     else listed.unshift({ value: choice.model, label: `${choice.model} — ${models === null || sessionScoped(options, choice) || unlistedClaudeAlias(choice) ? "not verified" : "not offered"}` });
   return listed;
 }
@@ -166,7 +184,7 @@ export function slotIssue(
   if (!model && sessionScoped(options, choice))
     return { tone: "muted", text: `Not verified: ${choice.model.slice(0, choice.model.indexOf("/"))} models exist only in sessions started with that provider on.` };
   if (!model && unlistedClaudeAlias(choice))
-    return { tone: "muted", text: `Not verified: the Claude Code CLI's model list doesn't include ${choice.model} right now (the list varies). It will still be used.` };
+    return { tone: "muted", text: `Not verified: ${choice.model} is not in Sova's Claude catalog. It will still be used.` };
   if (!model) return { tone: "error", text: `${label} doesn't offer ${choice.model}.` };
   if (!model.efforts.includes(choice.effort)) return { tone: "error", text: `${choice.model} doesn't take ${choice.effort} effort.` };
   if (model.denied) return { tone: "warn", text: hasFallback ? `${model.denied}. ${owner} uses the fallback, or ${otherwise}.` : `${model.denied}.` };

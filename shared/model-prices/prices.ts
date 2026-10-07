@@ -139,8 +139,12 @@ export function resolvePriceRef(table: PriceTable, aliases: Aliases, ref: ModelR
     return null;
   };
   if (ref.responseModel) {
-    const hit = lookup(baseId(ref.responseModel));
+    const answered = baseId(ref.responseModel);
+    const hit = lookup(answered);
     if (hit && !("unpriced" in hit)) return hit;
+    // A Claude answer the table doesn't price (Sonnet 5.5 before models.dev lists it) is unpriced:
+    // the model asked for may be an alias of an older sibling, whose price is not its own.
+    if (/^claude-/i.test(answered) && rule?.to) return hit ?? { unpriced: `models.dev lists no price for ${rule.to}/${answered.replace(/-\d{8}$/, "")}` };
   }
   const id = baseId(ref.model);
   const hit = lookup(id);

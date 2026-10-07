@@ -125,6 +125,7 @@ function messageOf(m: Record<string, any>, base: Record<string, unknown>): HEntr
       h.blocks = blocksOf(m.content);
       put(h, "provider", m.provider);
       put(h, "model", m.model);
+      put(h, "responseModel", m.responseModel);
       put(h, "usage", usageOf(m.usage));
       put(h, "contextTokens", messageContextTokens(m) ?? undefined);
       put(h, "stop", m.stopReason);

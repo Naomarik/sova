@@ -1,7 +1,7 @@
 // Run: npx tsx --test server/models.test.ts
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { supportedThinkingLevels, toModelInfo } from "./models";
+import { contextWindow, supportedThinkingLevels, toModelInfo } from "./models";
 
 test("non-reasoning models support only off", () => {
   assert.deepEqual(supportedThinkingLevels({ reasoning: false }), ["off"]);
@@ -68,4 +68,10 @@ test("toModelInfo carries the context window, and leaves it out when nothing kno
     const info = toModelInfo({ provider: "ollama-cloud", id: "kimi-k3" }, favorites, unknown);
     assert.ok(!("contextWindow" in info), `window ${String(unknown)} is left out`);
   }
+});
+
+test("an old Claude Code id is its catalog model's window (a session from before the catalog)", () => {
+  const runtime = { getModel: (p: string, id: string) => (p === "claude-code-cli" && id === "claude-opus-5-5" ? { contextWindow: 1_000_000 } : undefined) } as never;
+  assert.equal(contextWindow("claude-code-cli/opus[1m]", runtime), 1_000_000);
+  assert.equal(contextWindow("claude-code-cli/claude-opus-5-5", runtime), 1_000_000);
 });

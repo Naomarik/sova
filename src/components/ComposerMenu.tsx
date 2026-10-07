@@ -1,5 +1,5 @@
 import { createContext, createMemo, createSignal, Index, Match, onCleanup, onMount, Show, Switch, useContext, type Accessor } from "solid-js";
-import { modelProvider, shortModel } from "../lib/format";
+import { modelLabel, modelProvider } from "../lib/format";
 import { ensureModels, thinkingLevelsFor } from "../lib/models";
 import { useHostScope } from "../lib/host-scope";
 import { confirmActivate, confirmReset } from "../lib/confirm-step";
@@ -286,7 +286,7 @@ export function ComposerMenu(props: {
       role: "menuitem",
       icon: "worker",
       label: "Model",
-      value: shortModel(ref) ?? "Choose model",
+      value: modelLabel(ref) ?? "Choose model",
       meta: ref ? modelProvider(ref) || undefined : undefined,
       chevron: true,
       busy: !!pending,

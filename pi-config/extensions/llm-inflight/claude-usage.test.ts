@@ -52,6 +52,28 @@ test("one call per message id: start, delta and assistant echoes merge by the ma
 	c.close();
 });
 
+test("a 1M request: modelUsage's `[1m]` key and the messages' bare id are one model, so nothing is counted twice", () => {
+	const dir = tmp();
+	const { c, calls, residuals } = collect(dir, true);
+	c.frame({ type: "system", subtype: "init", session_id: S });
+	c.frame(start("msg_1", usage(2, 2, 0, 13605)));
+	c.frame(delta(usage(2, 296, 0, 13605), "end_turn"));
+	c.frame(stop());
+	// The CLI keys a `[1m]` turn's cumulative total `claude-fable-5-1[1m]`; its messages say `claude-fable-5-1`.
+	c.frame(result({ "claude-fable-5-1[1m]": [2, 296, 0, 13605] }));
+	assert.equal(calls.length, 1);
+	assert.deepEqual(residuals, [], "the streamed message is the whole spend");
+	c.close();
+	// A later turn: only what no message showed is residual, keyed by the bare id.
+	const next = collect(dir, false);
+	next.c.frame({ type: "system", subtype: "init", session_id: S });
+	next.c.frame(start("msg_2", usage(1, 10, 13605, 0)));
+	next.c.frame(stop());
+	next.c.frame(result({ "claude-fable-5-1[1m]": [3 + 4, 306, 13605, 13605] }));
+	assert.deepEqual(next.residuals.map((r) => [r.model, r.tokens.i, r.tokens.o]), [["claude-fable-5-1", 4, 0]]);
+	next.c.close();
+});
+
 test("the result's cumulative totals beyond the streamed messages are one residual per model; a negative clamps to 0", () => {
 	const { c, calls, residuals } = collect(tmp(), true);
 	c.frame({ type: "system", subtype: "init", session_id: S });

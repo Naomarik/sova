@@ -6,6 +6,7 @@ import { initialActive, modelCount, modelKey, onlyProvider, pickerGroups, provid
 import { useHostScope } from "../lib/host-scope";
 import { usePaneId } from "../lib/pane-scope";
 import { announce } from "../lib/ui-state";
+import { claudeModelName } from "../lib/format";
 import { Banner, Icon } from "./ui";
 
 /** What the chat view exposes so the header can show and change its model. */
@@ -265,7 +266,16 @@ export function ModelPicker(props: {
         onClick={() => choose(p.item.model.ref)}
       >
         <Icon name="check" small class="model-option-check" />
-        <span class="model-option-id">{p.item.model.id}</span>
+        {/* A Claude model: its catalog name, then its id (§app.claude-code-provider/model-names). */}
+        <span class="model-option-id">
+          <Show when={claudeModelName(p.item.model.ref)} fallback={p.item.model.id}>
+            {(name) => (
+              <>
+                <span class="model-option-name">{name()}</span> <span class="model-option-subid">{p.item.model.id}</span>
+              </>
+            )}
+          </Show>
+        </span>
         {/* Metadata, not status: only for models that take images, and never when input is unknown. */}
         <Show when={p.item.model.input?.includes("image")}>
           <span class="model-option-vision" title="Accepts images">

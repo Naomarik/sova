@@ -123,7 +123,8 @@ searches instead.
 - **Step 2, one provider.** That provider's models, sorted by id, with no provider caption: the
   head names it.
 - **Rows.** Each row is 44px. A model row has a check mark (visible only on the current model),
-  the id in mono, and, where the step says so, the provider in a muted caption on the right. The
+  the id in mono (a Claude model: its catalog name, then its id in mono, muted,
+  §app.claude-code-provider/model-names), and, where the step says so, the provider in a muted caption on the right. The
   current model has `aria-selected="true"`, the check, and the accent-tint fill, so the mark isn't
   color alone. Every other row has `aria-selected="false"`.
 - **Search.**

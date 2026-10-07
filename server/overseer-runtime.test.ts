@@ -749,7 +749,7 @@ describe("the ideas backlog in the prompt, and explorers through the runtime's s
     assert.equal(spawns.length, 1);
     assert.equal(spawns[0]!.session, piSession(chat).sessionManager.getSessionId(), "the worker belongs to the Overseer's session");
     assert.equal(spawns[0]!.params.backend, "claude-code");
-    assert.equal(spawns[0]!.params.model, "opus[1m]");
+    assert.equal(spawns[0]!.params.model, "claude-opus-5-5");
     assert.match(String(spawns[0]!.params.prompt), /Seed text/);
     const idea = getIdea("rt/explore-me")!;
     assert.equal(idea.explorerId, "ag_09");

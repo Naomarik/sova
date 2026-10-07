@@ -10,6 +10,7 @@ import { beginLlmCall } from "../pi-config/extensions/llm-inflight/tracker.ts";
 // The usage ledger (builtins only): a pi call records itself in the runtime; a `claude -p` run here.
 import { resolveUsageAttribution, withUsagePurpose } from "../pi-config/extensions/llm-inflight/attribution.ts";
 import { recordClaudeEnvelope } from "../pi-config/extensions/llm-inflight/record.ts";
+import { claudeCliId } from "../pi-config/extensions/claude-code/catalog.ts";
 import type { ModelPolicy, WorkerChoice } from "../shared/protocol";
 import {
   DecisionError,
@@ -324,7 +325,7 @@ export function parseClaudeEnvelope(stdout: string, fail: Fail): RunOut {
 export function claudeArgs(choice: WorkerChoice, schema: Record<string, unknown>): string[] {
   return [
     "-p",
-    "--model", choice.model,
+    "--model", claudeCliId(choice.model),
     "--tools", "",
     "--setting-sources", "",
     "--strict-mcp-config",

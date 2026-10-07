@@ -201,8 +201,8 @@ Four pillars, all at once: calm, concrete, warm, and candid. The rules that matt
   "yesterday", then "Mar 4"). A 12-hour clock in mono inside the transcript (`1:43 PM`).
 - No exclamation marks, no apologies, no "Oops". An error has three beats: what happened · what it
   means for your work · what to do next.
-- "We" means the product. Refer to the agent by its model id (for example `claude-opus-5`), and
-  to the user as "you".
+- "We" means the product. Refer to the agent by its model: a Claude model by its name (for
+  example "Opus 5.5"), any other by its id (`glm-5.3`), and to the user as "you".
 - An empty state leads with a live fact and states the absence second.
 
 ## §design.ground-rules/color-budget — Color budget

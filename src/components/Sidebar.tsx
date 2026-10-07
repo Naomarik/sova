@@ -9,7 +9,7 @@ import { openOverview } from "../lib/overview-route";
 import { autoTitleSessions, fetchTargets, listProjects, sessionsDir as fetchSessionsDir, setSessionArchived } from "../lib/api";
 import { nameableRows, nameLabel, nameSessions, namingIn, setNaming } from "../lib/auto-title";
 import { type ArchiveGroupId, groupByArchiveDate, sessionsWord, startOfDay } from "../lib/archive";
-import { relativeTime, shortModel, tildePath } from "../lib/format";
+import { modelLabel, relativeTime, tildePath } from "../lib/format";
 import { agentsHref, type GlancePart, glanceLabel, glanceTitle, usageGlance, usageHref } from "../lib/insights";
 import { isMainThread, isOrdinarySession, isOrgSession, isTopSession } from "../lib/regions";
 import {
@@ -672,7 +672,7 @@ function SessionRow(props: {
                   <Show when={s().model}>
                     {" · "}
                     <span class="text-mono" title={s().model!}>
-                      {shortModel(s().model)}
+                      {modelLabel(s().model)}
                     </span>
                   </Show>
                 }
@@ -1080,7 +1080,7 @@ function UsageGlance(props: { parts: GlancePart[] }) {
 /** A spine tile's title and accessible name: "{title} · {folder} · {model}", then the clauses the
     row's own link carries, verbatim, so the two surfaces can't drift. */
 function tileLabel(s: SessionSummary): string {
-  const head = [s.title, cwdLabel(s, home()), s.model ? shortModel(s.model) : ""].filter(Boolean).join(" · ");
+  const head = [s.title, cwdLabel(s, home()), s.model ? modelLabel(s.model) : ""].filter(Boolean).join(" · ");
   const working = sessionWorking(s);
   const mark = remoteMarkOf(s);
   return (

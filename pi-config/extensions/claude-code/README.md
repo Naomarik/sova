@@ -20,20 +20,15 @@ directly, never a shell alias. No credentials are copied into configuration.
 
 ## Discover models
 
-Use `agent_models` with `backend: "claude-code"`.
-Choices and effort levels come from the installed CLI's initialize response,
-without a model request. Only model metadata is returned, never account details.
-The CLI's list no longer carries the 1M-context forms it still accepts, so
-`opus[1m]` and `claude-fable-5-1[1m]` are added right after `opus` and
-`claude-fable-5-1` whenever those are listed (`context-window.ts`
-`withLongContextVariants`; the provider's picker and Sova's Settings lists apply
-the same rule). A model's context window is `context-window.ts`
-`claudeContextWindow`: 1M for a `[1m]` id or a natively 1M model (bare `opus`,
-`sonnet`, `claude-fable-5-1`, …, per the CLI's own catalog), else 200k.
-Successful discovery is cached for 60 seconds; errors are surfaced explicitly.
-A discovery call returns within 15 seconds, and immediately when cancelled. The
-discovery process is still stopped (EOF, then SIGTERM, then SIGKILL) afterward,
-and reload/shutdown waits for it to close.
+Use `agent_models` with `backend: "claude-code"`. The models are Sova's own Claude catalog
+(`catalog.ts`): one entry per real model, by the CLI's catalog id (`claude-opus-5-5`,
+`claude-sonnet-5-5`, `claude-fable-5-1`, `claude-haiku-4-5`) and name ("Opus 5.5"), with its
+window, output cap and efforts. No aliases and no `[1m]` forms: an old id typed into `agent_spawn`
+or `team_create` (`opus[1m]`, `claude-opus-5-5[1m]`) quietly runs as its catalog id, and an id the
+catalog doesn't know still runs, with a note. Every `--model` is a catalog id; an old id from a file (`opus[1m]`) is read through the
+catalog's frozen legacy table. No CLI process runs to list them. `models.ts`'s initialize-only
+discovery (no model request, account details never kept) is used by Sova only to report drift;
+`pnpm run claude:catalog` (in Sova) diffs the catalog against an installed CLI's own table.
 
 ## Logins
 

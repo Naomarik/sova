@@ -254,7 +254,7 @@ function SlotRow(props: {
               </Show>
               <For each={models()}>
                 {(o) => (
-                  <option value={o.value} selected={o.value === props.choice.model}>
+                  <option value={o.value} selected={o.value === props.choice.model} title={o.title}>
                     {o.label}
                   </option>
                 )}

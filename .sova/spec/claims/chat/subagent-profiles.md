@@ -124,7 +124,8 @@ Delegate's row detail line reads "Profile: <name>".
 
 - **The picker**: a Back header, a search field, a radio list with Off first and then every
   profile, each with its short **footprint** — the distinct models it routes to, shortest form,
-  first-seen order, at most 3 and then "+N" (e.g. `opus · fable · sonnet`; Off reads "the agent
+  first-seen order, at most 3 and then "+N", a Claude model by its catalog name
+  (e.g. `Opus 5.5 · Fable 5.1 · Sonnet 5.5`, §app.claude-code-provider/model-names; Off reads "the agent
   picks") — then **Manage Profiles…**, which opens Settings → Subagents, and **Save Current as
   Profile**, which asks for a name inline and saves what this chat uses now as a new profile (not
   offered while the chat is on Off: it configures nothing). Picking a row switches this chat only,

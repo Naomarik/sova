@@ -23,9 +23,9 @@ test("defaults: on, 5 and 5 minutes, pi deepseek-v4.1-flash then Claude Code son
     intervalMinutes: 5,
     quietMinutes: 5,
     primary: { backend: "pi", model: "ollama-cloud/deepseek-v4.1-flash", effort: "off" },
-    fallback: { backend: "claude-code", model: "sonnet", effort: "low" },
+    fallback: { backend: "claude-code", model: "claude-sonnet-5-5", effort: "low" },
   });
-  assert.ok(!JSON.stringify(d).includes("haiku"));
+  assert.ok(!JSON.stringify(d).includes("claude-haiku-4-5"));
   assert.equal(s.sessionTitleSettingsFile(), file);
   assert.deepEqual(s.readSessionTitleSettings(), d); // no file yet
 });
@@ -44,7 +44,7 @@ test("the PUT is strict: every field, in range, a valid tuple, and a fallback th
     [{ ...good, quietMinutes: 1441 }, /quietMinutes/],
     [{ ...good, quietMinutes: -1 }, /quietMinutes/],
     [{ ...good, primary: { backend: "pi", model: "no-slash", effort: "off" } }, /primary/],
-    [{ ...good, primary: { backend: "claude-code", model: "sonnet", effort: "off" } }, /primary: effort/],
+    [{ ...good, primary: { backend: "claude-code", model: "claude-sonnet-5-5", effort: "off" } }, /primary: effort/],
     [(({ fallback: _, ...rest }) => rest)(good), /fallback is required/],
     [{ ...good, fallback: good.primary }, /same as the primary/],
   ];

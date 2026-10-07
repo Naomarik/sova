@@ -34,6 +34,8 @@ const { mayShareWith, NotShared, peerByNode, peerFetch, stopMesh } = await impor
 const { accessFile, allows, classifyRequest, classifyUpgrade, clearDenied } = await import("./access");
 const { clearProbes, ownProtocol } = await import("./hello");
 const { clearPeerReach } = await import("./proxy");
+// The mesh's link transfers probe tar when it starts: answered here, so no tar runs.
+(await import("./links-transfer")).setTarAvailableForTest(true);
 
 /** Who the next call on the peer gate comes from: a tailnet node, as whois would say, or nobody. */
 let whoisNode: string | null = null;

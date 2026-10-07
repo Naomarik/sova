@@ -33,6 +33,8 @@ const app = await testApp();
 const { listenerInfo, stopMesh } = await import("./index");
 const { mintLanIdentity, parsePin } = await import("./lan-cert");
 const { accessFile } = await import("./access");
+// The mesh's link transfers probe tar when it starts: answered here, so no tar runs.
+(await import("./links-transfer")).setTarAvailableForTest(true);
 
 after(() => {
   stopMesh();

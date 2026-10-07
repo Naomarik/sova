@@ -26,6 +26,8 @@ setIdentity({
 const app = await testApp();
 const { stopMesh } = await import("./index");
 const { mintLanIdentity } = await import("./lan-cert");
+// The mesh's link transfers probe tar when it starts: answered here, so no tar runs.
+(await import("./links-transfer")).setTarAvailableForTest(true);
 
 after(() => {
   stopMesh();

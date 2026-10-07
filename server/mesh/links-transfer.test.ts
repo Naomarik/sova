@@ -508,8 +508,8 @@ describe("Pulls", () => {
       }
       return undefined as unknown as Response;
     });
-    // A minute's wait for the down sender: only the kick ends it within the runner's per-test timeout.
-    p = pulls(s.fetchTar, { downWaitMs: 60_000 });
+    // Ten minutes' wait for the down sender: only the kick ends it within the runner's per-test timeout.
+    p = pulls(s.fetchTar, { downWaitMs: 600_000 });
     const j = job();
     await p.pull(j);
     assert.equal(s.log.length, 3);
@@ -592,7 +592,7 @@ describe("Pulls", () => {
       setTimeout(() => p.cancel(offerId), 20);
       throw new TypeError("fetch failed");
     });
-    p = pulls(s.fetchTar, { downWaitMs: 60_000 });
+    p = pulls(s.fetchTar, { downWaitMs: 600_000 }); // only the cancel ends the wait
     await assert.rejects(p.pull(job()), PullCancelled);
     assert.throws(() => statSync(partFile(rcvRoot, offerId)));
   });

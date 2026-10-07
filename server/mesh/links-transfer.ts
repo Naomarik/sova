@@ -86,6 +86,11 @@ export function tarAvailable(): Promise<boolean> {
   return tarProbe;
 }
 
+/** Tests: the probe's answer, without running tar. */
+export function setTarAvailableForTest(ok: boolean): void {
+  tarProbe = Promise.resolve(ok);
+}
+
 const tarEnv = () => ({ ...process.env, LC_ALL: "C" });
 
 /** How tar runs with `args` (default: `tar` on this host). Tests: an in-process stand-in. */

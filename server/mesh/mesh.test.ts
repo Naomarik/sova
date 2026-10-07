@@ -49,6 +49,8 @@ const settingsLog: string[] = [];
 meshApi.onSettingsChange((s) => settingsLog.push(s.hostLabel));
 const { clearProbes, ownProtocol } = await import("./hello");
 const { peersFile } = await import("./peers");
+// The mesh's link transfers probe tar when it starts: answered here, so no tar runs.
+(await import("./links-transfer")).setTarAvailableForTest(true);
 
 // ---- the fake peer, in-process ------------------------------------------------------------------
 

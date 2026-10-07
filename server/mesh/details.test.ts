@@ -52,6 +52,8 @@ const { allows } = await import("./access");
 const { clearProbes, ownProtocol } = await import("./hello");
 const { clearPeerReach } = await import("./proxy");
 const { peersFile, readPeers } = await import("./peers");
+// The mesh's link transfers probe tar when it starts: answered here, so no tar runs.
+(await import("./links-transfer")).setTarAvailableForTest(true);
 const fetches = () => networkFetches + wire.fetches;
 
 /** Who the next call on the peer gate comes from: a tailnet node, as whois would say, or nobody. */
@@ -617,6 +619,10 @@ describe("mesh on", () => {
     const [, d] = await call<MeshDetails>("GET", "/api/mesh/details");
     assert.equal(peerB().browserAccess, false, "the recorded, newer answer stands");
     assert.ok(d.hosts.find((h) => h.id === "b"));
+    // A far-ahead stamp is kept at a day ahead of the moment it comes in, as b's was: newer only once
+    // the clock has moved past b's moment (in the same millisecond it isn't). Wait for the clock.
+    const keptFrom = (peerB().browserAccessAt as number) - 86_400_000;
+    while (Date.now() <= keptFrom) await new Promise((r) => setTimeout(r, 1));
     fakeBrowserAt = Date.now() + 2 * 86_400_000;
     fresh();
     await call("GET", "/api/mesh/details");

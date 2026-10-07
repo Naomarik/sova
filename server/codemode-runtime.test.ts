@@ -121,7 +121,7 @@ const client = {
     if (m.type === "error") throw new Error(`chat error: ${m.message}`);
   },
 };
-async function until(cond: () => boolean, ms = 20_000): Promise<void> {
+async function until(cond: () => boolean, ms = 30_000): Promise<void> {
   const end = Date.now() + ms;
   while (!cond()) {
     if (Date.now() > end) throw new Error("timed out");

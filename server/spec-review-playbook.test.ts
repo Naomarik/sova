@@ -3,6 +3,7 @@
 // as written with their placeholders filled: the preflight refuses a bad root or base before it lists
 // anything and caps its list, the metadata block's known-base flags are accepted by the trusted tools,
 // and the reading call lists the contents, then reads one passage within its budget. Throwaway repositories and agent dir only.
+// The playbook's shell steps run against a real repository: spec-review-playbook.integration.test.ts.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
@@ -80,81 +81,4 @@ test("the real loader lists it as a Sova playbook with no schedule, its frontmat
   assert.equal(BLOCKS.length, 3, "the preflight, the metadata call and the reading call");
   const coreLine = readFileSync(SPEC_MODE, "utf8").split("\n").find((l) => l.startsWith('core="${PI_CODING_AGENT_DIR'));
   for (const b of BLOCKS.slice(1)) assert.equal(b.split("\n")[0], coreLine, "each call resolves the tools with spec-mode.md's own line");
-});
-
-test("preflight: an ancestor base prints itself and the change since it; a bad root or base is refused before anything is listed", () => {
-  const { R, B } = project();
-  let r = sh(fill(BLOCKS[0]!, { root: R, base: "master" }));
-  assert.equal(r.code, 0, r.err);
-  assert.deepEqual(r.out.trim().split("\n"), [`base ${B}`, "lib/new.js", "lib/rule.js"]);
-
-  git(R, "checkout", "-q", "-b", "side");
-  write(R, "lib/side.js", "1\n");
-  git(R, "add", "lib/side.js");
-  git(R, "commit", "-qm", "side");
-  git(R, "checkout", "-q", "master");
-  const refusals: [Record<string, string>, RegExp][] = [
-    [{ root: R, base: "side" }, /^refused: side is not an ancestor of HEAD$/],
-    [{ root: R, base: "no-such-rev" }, /^refused: no-such-rev is not a commit here$/],
-    [{ root: join(R, "lib"), base: "master" }, /^refused: .*\/lib is not a checkout's top folder$/],
-    [{ root: join(tmp, "absent"), base: "master" }, /is not a checkout's top folder$/],
-  ];
-  for (const [v, refusal] of refusals) {
-    r = sh(fill(BLOCKS[0]!, v));
-    assert.equal(r.code, 2, `${JSON.stringify(v)}: ${r.out}`);
-    assert.match(r.out.trim(), refusal, "one refusal line and nothing listed");
-  }
-});
-
-test("preflight: the change list stops at 201 lines, one past the 200 a brief may carry", () => {
-  const { R } = project();
-  for (let i = 0; i < 250; i++) write(R, `lib/many/f${String(i).padStart(3, "0")}.js`, `${i}\n`);
-  const r = sh(fill(BLOCKS[0]!, { root: R, base: "master" }));
-  assert.equal(r.code, 0, r.err);
-  assert.equal(r.out.trim().split("\n").length, 1 + 201);
-});
-
-test("the metadata call's known-base flags are accepted by git and the trusted tools, and the reading call lists contents, then reads one exact passage within its budget", () => {
-  const { R, B } = project();
-  const r = sh(fill(BLOCKS[1]!, { root: R, base: B, paths: "lib/rule.js" }));
-  assert.match(r.out, /^ lib\/rule\.js \| 2 \+-$/m, "diff --stat against the base, scoped");
-  assert.doesNotMatch(r.out, /lib\/new\.js \|/, "the stat carries only the scoped paths");
-  const docs = r.out.slice(r.out.indexOf("{")).split(/\n(?=\{)/).map((d) => JSON.parse(d));
-  assert.deepEqual(docs.map((d) => d.command), ["census", "foreign"]);
-  for (const d of docs) assert.notEqual(d.exit, 2, JSON.stringify(d.findings));
-  assert.equal(docs[0].census.base.commit, B);
-  assert.deepEqual(docs[0].census.claimed.map((c: { path: string }) => c.path), ["lib/rule.js"]);
-
-  assert.doesNotMatch(BLOCKS[2]!, /\b(packet|scope)\b/, "whole-chain packet and scope are not the reading step");
-  const passage = readFileSync(join(R, ".sova/spec/claims/app/rule.md"), "utf8");
-  for (const budget of ["12000", "1024"]) {
-    const p = sh(fill(BLOCKS[2]!, { root: R, "§id": "§app/rule" }).replace("--budget 12000", `--budget ${budget}`));
-    const [toc, page, ...rest] = p.out.trimEnd().split("\n");
-    assert.deepEqual(rest, [], "one line per call");
-    const contents = JSON.parse(toc!), read = JSON.parse(page!);
-    assert.deepEqual([contents.command, contents.dir, read.command], ["toc", "out", "read"]);
-    assert.notEqual(contents.exit, 2, toc);
-    assert.deepEqual(contents.footer.delivered, [], "contents only: no passage");
-    assert.notEqual(read.exit, 2, page);
-    assert.equal(read.budget, Number(budget));
-    // The first read carries the always-on frame outside its budget: the page without the frame's passages fits.
-    assert.deepEqual(read.frame.items.map((i: { id: string }) => i.id), ["§app/ground"], "the first read brings the frame");
-    const { items: frameItems, ...frameSummary } = read.frame;
-    const withoutFrame = JSON.stringify({ ...read, frame: frameSummary });
-    assert.ok(Buffer.byteLength(withoutFrame) + 1 <= Number(budget), `${Buffer.byteLength(withoutFrame)} bytes, the frame aside, over a ${budget} budget`);
-    assert.ok(Buffer.byteLength(page!) > Buffer.byteLength(withoutFrame) + Buffer.byteLength(frameItems[0].text), "the frame's passage is on the page too");
-    assert.deepEqual([...new Set(read.items.map((i: { id: string }) => i.id))], ["§app/rule"], "one passage, nothing it links");
-    const item = read.items[0];
-    assert.equal(item.fragment.start, 0);
-    assert.ok(passage.startsWith(item.text), "the passage, exact");
-    assert.equal(read.next === null, item.fragment.end === item.fragment.total, "a cut passage names its continuation");
-    // Every later read adds --no-frame, as the block says: then the whole page is within the budget.
-    assert.match(BLOCKS[2]!, /every later read adds --no-frame/);
-    const later = sh(fill(BLOCKS[2]!, { root: R, "§id": "§app/rule" }).replace("--budget 12000", `--budget ${budget} --no-frame`));
-    const laterPage = later.out.trimEnd().split("\n")[1]!;
-    const laterRead = JSON.parse(laterPage);
-    assert.notEqual(laterRead.exit, 2, laterPage);
-    assert.equal(laterRead.frame?.items, undefined, "--no-frame drops the frame");
-    assert.ok(Buffer.byteLength(laterPage) + 1 <= Number(budget), `${Buffer.byteLength(laterPage)} bytes over a ${budget} budget`);
-  }
 });

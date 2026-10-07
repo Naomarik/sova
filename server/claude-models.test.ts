@@ -77,7 +77,7 @@ describe("Claude model discovery (server)", () => {
     await assert.rejects(discoverClaudeModels({ spawnImpl: hangs.spawnImpl, timeoutMs: 50 }), /did not list its models within/);
     const broken = fakeClaude((r) => [success(r.request_id, "nope")]);
     await assert.rejects(discoverClaudeModels({ spawnImpl: broken.spawnImpl }), /no model list/);
-    await assert.rejects(discoverClaudeModels({ executable: "/nonexistent/claude-for-sova-test" }), /Could not run the Claude Code CLI/);
+    // (a real executable that isn't there: claude-models.integration.test.ts; a spawn error event: below)
   });
 
   test("parity: every shared fixture parses as the extension's parser parses it", () => {
@@ -133,50 +133,94 @@ function scriptedChild(opts: { answer?: boolean; closeOnEof?: boolean; closeOnTe
   });
   return { spawnImpl: (() => child) as never, signals };
 }
-const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+/** A stepped scheduler for discovery's deadline and escalation: its timers fire only when the test
+    runs them, in due order, each one's consequences (stream events, exit) landing before the next. */
+function steppedTimers() {
+  let now = 0;
+  let next = 0;
+  const pending = new Map<number, { at: number; fn: () => void }>();
+  const timers = {
+    setTimeout: (fn: () => void, ms: number) => {
+      pending.set(++next, { at: now + ms, fn });
+      return next;
+    },
+    clearTimeout: (handle: unknown) => void pending.delete(handle as number),
+  };
+  /** Fire every timer until none is left (a guard of 100 stops a loop). */
+  const runAll = async () => {
+    for (let i = 0; i < 100 && pending.size; i++) {
+      const [handle, t] = [...pending].sort((a, b) => a[1].at - b[1].at || a[0] - b[0])[0]!;
+      pending.delete(handle);
+      now = t.at;
+      t.fn();
+      await settle();
+    }
+    assert.equal(pending.size, 0, "the timers stop");
+  };
+  return { timers, runAll, pending: () => pending.size };
+}
+/** Let queued stream events, microtasks and the scripted child's exit land. */
+const settle = () => new Promise((resolve) => setImmediate(resolve));
 const graces = { eofGraceMs: 20, termGraceMs: 20 };
 
 describe("Claude discovery process cleanup", () => {
   test("a CLI that exits on EOF is never signalled", async () => {
     const c = scriptedChild({ closeOnEof: true });
-    assert.deepEqual(await discoverClaudeModels({ spawnImpl: c.spawnImpl, ...graces }), [{ id: "opus", name: "Opus" }]);
-    await wait(80);
+    const s = steppedTimers();
+    assert.deepEqual(await discoverClaudeModels({ spawnImpl: c.spawnImpl, timers: s.timers, ...graces }), [{ id: "opus", name: "Opus" }]);
+    await settle();
+    assert.equal(s.pending(), 0, "its exit cleared the escalation");
+    await s.runAll();
     assert.deepEqual(c.signals, []);
   });
 
   test("a CLI that exits before answering: the close that settles it also stops escalation", async () => {
     const c = scriptedChild({ closeBeforeAnswer: true });
-    await assert.rejects(discoverClaudeModels({ spawnImpl: c.spawnImpl, ...graces }), /exited before listing its models/);
-    await wait(80);
-    assert.deepEqual(c.signals, [], "no TERM/KILL scheduled for a process already gone");
+    const s = steppedTimers();
+    await assert.rejects(discoverClaudeModels({ spawnImpl: c.spawnImpl, timers: s.timers, ...graces }), /exited before listing its models/);
+    await settle();
+    assert.equal(s.pending(), 0, "no TERM/KILL scheduled for a process already gone");
+    await s.runAll();
+    assert.deepEqual(c.signals, []);
   });
 
   test("a CLI that ignores EOF gets TERM, and nothing after it exits", async () => {
     const c = scriptedChild({ closeOnTerm: true });
-    await discoverClaudeModels({ spawnImpl: c.spawnImpl, ...graces });
-    await wait(100);
+    const s = steppedTimers();
+    await discoverClaudeModels({ spawnImpl: c.spawnImpl, timers: s.timers, ...graces });
+    await settle();
+    assert.equal(s.pending(), 1, "TERM waits for its grace");
+    await s.runAll();
     assert.deepEqual(c.signals, ["SIGTERM"], "KILL is cancelled once TERM worked");
   });
 
   test("a CLI that ignores TERM gets KILL, once", async () => {
     const c = scriptedChild({});
-    await discoverClaudeModels({ spawnImpl: c.spawnImpl, ...graces });
-    await wait(120);
+    const s = steppedTimers();
+    await discoverClaudeModels({ spawnImpl: c.spawnImpl, timers: s.timers, ...graces });
+    await s.runAll();
     assert.deepEqual(c.signals, ["SIGTERM", "SIGKILL"]);
   });
 
   test("a timed-out CLI is escalated the same way, and a spawn error signals nothing", async () => {
     const c = scriptedChild({ answer: false, closeOnTerm: true });
-    await assert.rejects(discoverClaudeModels({ spawnImpl: c.spawnImpl, timeoutMs: 20, ...graces }), /did not list its models/);
-    await wait(100);
+    const s = steppedTimers();
+    const timedOut = discoverClaudeModels({ spawnImpl: c.spawnImpl, timeoutMs: 20, timers: s.timers, ...graces });
+    await settle();
+    assert.equal(s.pending(), 1, "only the deadline is armed");
+    const refused = assert.rejects(timedOut, /did not list its models/);
+    await s.runAll();
+    await refused;
     assert.deepEqual(c.signals, ["SIGTERM"]);
     const failed = new EventEmitter() as ChildProcess & EventEmitter;
     const signals: string[] = [];
     Object.assign(failed, { stdin: new PassThrough(), stdout: new PassThrough(), stderr: new PassThrough(), kill: (s: string) => (signals.push(s), true) });
-    const pending = discoverClaudeModels({ spawnImpl: (() => failed) as never, ...graces });
+    const f = steppedTimers();
+    const pending = discoverClaudeModels({ spawnImpl: (() => failed) as never, timers: f.timers, ...graces });
     failed.emit("error", new Error("ENOENT"));
     await assert.rejects(pending, /Could not run the Claude Code CLI/);
-    await wait(80);
+    await settle();
+    await f.runAll();
     assert.deepEqual(signals, []);
   });
 });

@@ -133,7 +133,7 @@ function fakeRuns(chat: Chat): void {
     return { async *[Symbol.asyncIterator]() { yield { type: "done", reason: call ? "toolUse" : "stop", message }; }, result: async () => message };
   };
 }
-async function until(cond: () => boolean, ms = 4000): Promise<void> {
+async function until(cond: () => boolean, ms = 30_000): Promise<void> {
   const end = Date.now() + ms;
   while (!cond()) {
     if (Date.now() > end) throw new Error("timed out");

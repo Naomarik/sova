@@ -1,4 +1,4 @@
-// Run: tsx --test server/projects/playbook-review.test.ts. A verb playbook run that ends proposed
+// Run: tsx --test server/projects/playbook-review.integration.test.ts. One story over a real repository: the merge starts the copy's static service on its real port, so the whole file is integration. A verb playbook run that ends proposed
 // (§app.project-runtime/review) and its one-gesture finish, Approve & Merge (§app.project-runtime/approve-merge):
 // a real repository and worktree, the run's build started through `verbs/onboard` with its setup seeded (no model,
 // no session runtime), its turn ended by hand, and a real Merge Branch. A throwaway PI_CODING_AGENT_DIR.

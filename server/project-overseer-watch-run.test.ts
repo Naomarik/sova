@@ -1,5 +1,5 @@
 // Run: pnpm exec tsx --test server/project-overseer-watch-run.test.ts. The project overseer's
-// unattended runs end to end on a local stub model (server/stream-stub.ts, through pi's real
+// unattended runs end to end on a stub model (server/stream-stub.ts, in-process: no socket, through pi's real
 // openai-completions provider): the last run records how it really ended. A throwaway
 // PI_CODING_AGENT_DIR; ~/.pi is never read or written and no real model is called.
 import assert from "node:assert/strict";
@@ -7,7 +7,8 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSy
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, test } from "node:test";
-import { startStreamStub, stubModelsJson } from "./stream-stub";
+import { inProcessStreamStub, stubModelsJson } from "./stream-stub";
+import { until } from "./test-wait";
 import { clockTime } from "../pi-config/extensions/stamp/format.ts";
 import { piSession } from "./harness/pi/testing/handle";
 
@@ -19,8 +20,8 @@ process.on("exit", () => rmSync(root, { recursive: true, force: true }));
 const agentDir = join(root, "agent");
 process.env.PI_CODING_AGENT_DIR = agentDir;
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
-const stub = await startStreamStub({ payload: "letters", perDelta: 16, limit: 64, tool: "no_such_tool" });
-writeFileSync(join(agentDir, "models.json"), JSON.stringify(stubModelsJson(stub.port)));
+const stub = inProcessStreamStub({ payload: "letters", perDelta: 16, limit: 64, tool: "no_such_tool" });
+writeFileSync(join(agentDir, "models.json"), JSON.stringify(stubModelsJson(stub.baseUrl)));
 
 const orgs = await import("./orgs");
 const { closeOrgHost, hostOf } = await import("./org-engine");
@@ -60,7 +61,7 @@ describe("the overseer's last run says how it ended", async () => {
     const r = await po.lookNow(project.id, true);
     assert.equal(r.started, true, r.why);
     assert.equal(store.readMemo(p).lastRun?.outcome, "started", "running while the turn runs");
-    for (let i = 0; i < 400 && store.readMemo(p).lastRun?.outcome === "started"; i++) await new Promise((res) => setTimeout(res, 25));
+    await until(() => store.readMemo(p).lastRun?.outcome !== "started", "the run's end");
     return store.readMemo(p).lastRun!;
   }
 
@@ -87,7 +88,7 @@ describe("the overseer's last run says how it ended", async () => {
     assert.equal(r.started, true, r.why);
     const at = store.readMemo(p).lastRun!.at;
     const chat = await acquireChat(path);
-    for (let i = 0; i < 200 && stub.stats.startedAt === null; i++) await new Promise((res) => setTimeout(res, 10));
+    await until(() => stub.stats.startedAt !== null, "the stream's start");
     recovery.markShutdown();
     try {
       await piSession(chat).abort();
@@ -128,7 +129,7 @@ describe("a story that needs 4 gathering sessions goes on by itself", async () =
     await chat.setModelRef("stub/runaway");
     const started = () => allBatons().filter((b) => b.projectId === project.id && typeof b.owner === "object" && b.owner.overseerOf === project.id).length;
     const settle = async () => {
-      for (let i = 0; i < 400 && store.readMemo(p).lastRun?.outcome === "started"; i++) await new Promise((res) => setTimeout(res, 25));
+      await until(() => store.readMemo(p).lastRun?.outcome !== "started", "the run's end");
     };
     /** One look on its own that calls sova_start_gathering once. */
     const look = async () => {

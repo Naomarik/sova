@@ -1,4 +1,4 @@
-// Run: pnpm exec tsx --test server/project-import-kill.test.ts. An import (§app.projects/import) SIGKILLed after
+// Run: pnpm exec tsx --test server/project-import-kill.integration.test.ts. An import (§app.projects/import) SIGKILLed after
 // the mark, mid-copy, after the adopt and before the place (the org-host/kill9-child.ts pattern: a child process,
 // project-import-child.ts), then a start as the server does it: the import finishes, never rolls back, and a
 // second start changes nothing. A throwaway agent dir per step in the OS temp dir; no model is called.

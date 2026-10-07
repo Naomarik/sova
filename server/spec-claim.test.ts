@@ -2,6 +2,7 @@
 // /claim-sheet): the transcript row a `spec-turn` record makes, and the claim sheet's text read from the
 // run's commits through the trusted spec tools, from the record's capture, or now. A throwaway agent dir
 // and git repository under a scratch root; nothing outside it.
+// Claims read from a real repository's commits with the real spec tools: spec-claim.integration.test.ts.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
@@ -81,46 +82,6 @@ test("a spec-turn record is a spec-turn row carrying the record without its capt
   // The record as a custom MESSAGE would be model context: the reader never takes it for the card.
   const asMessage = normalizeEntries([{ type: "custom_message", id: "x3", parentId: null, customType: SPEC_TURN_ENTRY, content: "x", display: false, details: d }]);
   assert.equal(asMessage.some((r) => r.kind === "spec-turn"), false);
-});
-
-test("a committed op's text is read at its commits, never from the work tree", async () => {
-  const s = session(record());
-  const r = await specClaim({ session: s.path, entry: s.entry, id: "§app.shell/head" });
-  assert.equal(r.source, "commit");
-  assert.equal(r.rev, v2);
-  assert.match(r.after ?? "", /The head, v2\./);
-  assert.match(r.before ?? "", /The head, v1\./);
-  assert.doesNotMatch(JSON.stringify(r), /v3 in the work tree/);
-});
-
-test("a promote whose worktree was merged and removed: the sheet returns the prose captured at settle", async () => {
-  const gone = join(root, "removed-worktree");
-  const d = record({
-    ops: [{ kind: "promote", tree: gone, branch: "feat/x", actor: "self", before: v2, after: v2 }],
-    prose: { "§app.shell/head": "## §app.shell/head — Head\n\nThe head, as promoted in the worktree.\n" },
-  });
-  const s = session(d);
-  const r = await specClaim({ session: s.path, entry: s.entry, id: "§app.shell/head" });
-  assert.equal(r.source, "captured");
-  assert.match(r.after ?? "", /as promoted in the worktree/);
-  assert.match(r.before ?? "", /The head, v2\./, "the commit before, read through the session's repository");
-});
-
-test("a § no operation landed: the current text, said as such", async () => {
-  const d = record({ ops: [], named: [{ ids: ["§app/shell"], text: "— the shell" }], foreign: [], changes: new Map() });
-  const s = session(d);
-  const r = await specClaim({ session: s.path, entry: s.entry, id: "§app/shell" });
-  assert.equal(r.source, "current");
-  assert.match(r.after ?? "", /The shell\./);
-});
-
-test("a deleted § has no text after; refusals name what's wrong", async () => {
-  const s = session(record({ named: [{ ids: ["§app.shell/gone"], text: "— removed" }], foreign: [] }));
-  const r = await specClaim({ session: s.path, entry: s.entry, id: "§app.shell/gone" });
-  assert.equal(r.after, undefined);
-  await assert.rejects(specClaim({ session: s.path, entry: s.entry, id: "not an id" }), SpecClaimError);
-  await assert.rejects(specClaim({ session: s.path, entry: "nope", id: "§app/shell" }), /No such spec record/);
-  await assert.rejects(specClaim({ session: join(root, "elsewhere.jsonl"), entry: s.entry, id: "§app/shell" }), /Unknown session/);
 });
 
 test("the card's collapsed line is the TUI's line, from the same record", async () => {

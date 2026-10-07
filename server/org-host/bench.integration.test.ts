@@ -1,4 +1,4 @@
-// Run: ORG_HOST_BENCH=1 pnpm exec tsx --test server/org-host/bench.test.ts. Design C09's resume gate:
+// Run: ORG_HOST_BENCH=1 pnpm exec tsx --test server/org-host/bench.integration.test.ts. Design C09's resume gate:
 // an org of 500 sessions opens (journal replay, load, resume in chunks, past-due timers) in < 2 s
 // wall, with no single blocking slice > 50 ms. Timing-sensitive, so off unless asked.
 import assert from "node:assert/strict";

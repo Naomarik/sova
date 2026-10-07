@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { appendFileSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
-import { after, describe, test } from "node:test";
+import { after, before, describe, test } from "node:test";
 import { PROJECT_OVERSEER_ENTRY, type ProjectOverseerSettings } from "../shared/project-overseer";
 import { stateView } from "./harness/state-view";
 import { piRuntime, piSession } from "./harness/pi/testing/handle";
@@ -20,6 +20,8 @@ symlinkSync(resolve(import.meta.dirname, "..", "pi-config", "extensions"), join(
 
 const orgs = await import("./orgs");
 const po = await import("./project-overseer");
+// The spec draft tool in-process (server/spec-tool-fake.ts; reconcile.integration.test.ts runs the real one).
+(await import("./spec-draft-writer")).setDraftToolForTest((await import("./spec-tool-fake")).fakeDraftTool());
 const store = await import("./project-overseer-store");
 const { PO_BUILTINS, TOOL_NEEDS } = await import("./project-overseer-tools");
 const { acquireChat, disposeAllChats, ModeRefusedError, BusyError } = await import("./chat-manager");
@@ -326,8 +328,7 @@ describe("its gathering sessions, as the person sees them", async () => {
     const settledAt = async (path: string, at: number) => {
       po.setClockForTest(() => at);
       try {
-        po.noteCodingSettled(path);
-        await new Promise((r) => setTimeout(r, 20));
+        await po.noteCodingSettled(path);
       } finally {
         po.setClockForTest(null);
       }
@@ -406,7 +407,7 @@ describe("its gathering sessions, as the person sees them", async () => {
     po.setClockForTest(() => Date.now() + 3 * 3_600_000);
     try {
       hostOf(org.id).fireDue();
-      await new Promise((r) => setTimeout(r, 20));
+      await hostOf(org.id).idle();
     } finally {
       po.setClockForTest(null);
     }
@@ -550,7 +551,7 @@ describe("limits through PATCH, held items and their retry", async () => {
     try {
       hostOf(org.id).fireDue();
       const out = await f();
-      await new Promise((r) => setTimeout(r, 20));
+      await hostOf(org.id).idle();
       return out;
     } finally {
       po.setClockForTest(null);
@@ -702,7 +703,7 @@ describe("a project with no overseer conversation never looks", async () => {
     po.setClockForTest(() => Date.now() + 86_400_000);
     try {
       hostOf(org.id).fireDue();
-      await new Promise((r) => setTimeout(r, 20));
+      await hostOf(org.id).idle();
     } finally {
       po.setClockForTest(null);
     }
@@ -732,7 +733,7 @@ describe("the watch loop's decision, on its watch statechart", async () => {
     po.setClockForTest(() => t);
     try {
       hostOf(org.id).fireDue();
-      await new Promise((r) => setTimeout(r, 20));
+      await hostOf(org.id).idle();
     } finally {
       po.setClockForTest(null);
     }
@@ -755,7 +756,9 @@ describe("the watch loop's decision, on its watch statechart", async () => {
       po.setClockForTest(null);
     }
   };
-  await to(t);
+  // When its cases start, not while the file collects: the clock is every engine's, and another
+  // describe's org may still be stepping its own setup.
+  before(() => to(t));
 
   test("runs on news, when idle, ≥ the gap after the last look, under the daily cap", async () => {
     const seen = looks.length;

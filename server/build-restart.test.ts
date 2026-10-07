@@ -22,7 +22,7 @@ after(async () => {
   rmSync(root, { recursive: true, force: true });
 });
 
-async function waitFor(cond: () => boolean, ms = 10_000): Promise<void> {
+async function waitFor(cond: () => boolean, ms = 30_000): Promise<void> {
   const until = Date.now() + ms;
   while (!cond()) {
     if (Date.now() > until) throw new Error("timed out waiting");

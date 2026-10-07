@@ -272,6 +272,10 @@ export class HandoffServer {
     if (this.inner.size >= MAX_INNER || samePinPending >= MAX_INNER_PER_PIN) return void s.destroy();
 
     const d = socketDuplex(s);
+    // The carrier's errors (EPIPE, ECONNRESET: the accept process gone mid-connection) arrive on d,
+    // which on Bun nothing else listens to (a TLS socket over a JS stream doesn't); kill() below
+    // runs on its close either way. Without this they are uncaught.
+    d.on("error", () => {});
     if (rest.length) d.unshift(rest);
     const inner = new tls.TLSSocket(d as never, { isServer: true, ...relayServerOptions(id!) } as never);
     // Ending the inner socket must end the unix connection under it: on Bun, destroying a TLS

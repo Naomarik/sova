@@ -8,7 +8,7 @@ import http from "node:http";
 import net from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Duplex } from "node:stream";
+import { Duplex } from "node:stream";
 import { after, test } from "node:test";
 import tls from "node:tls";
 import { Acceptor } from "./lan-accept";
@@ -293,6 +293,37 @@ test("a forged handoff: the attested pin isn't the one the connection proves, so
     for (const u of forged) u.destroy();
     for (const g of r.got) g.sock.destroy();
   }
+  await r.stop();
+});
+
+test("a handed-over connection whose carrier breaks mid-handshake ends quietly: no uncaught error", async () => {
+  const r = await rig();
+  await until(() => r.handoff.healthy(), "control");
+  r.configure();
+  // A real ClientHello for the answer channel, captured off a stream nobody reads.
+  const hello = await new Promise<Buffer>((resolve) => {
+    const cap = new Duplex({ read() {}, write: (c: Buffer, _e, cb) => (resolve(c), cb()) });
+    const { host: _h, port: _p, ...o } = dialOptions(mac, "", 0, "answer");
+    tls.connect({ ...o, socket: cap }).on("error", () => {});
+  });
+  const caught: unknown[] = [];
+  const onUncaught = (err: unknown) => caught.push(err);
+  process.on("uncaughtException", onUncaught);
+  try {
+    // The header and the hello arrive together, and this side is gone before Sova answers: its
+    // ServerHello meets a closed carrier (the accept process restarting mid-handshake does the same).
+    const u = net.connect(r.path);
+    u.on("error", () => {});
+    const gone = new Promise((res) => u.once("close", res));
+    u.once("connect", () => u.end(Buffer.concat([Buffer.from(headerLine({ kind: "conn", pin: mac.pin, channel: "answer" })), hello]), () => u.destroy()));
+    await gone;
+    await until(() => (r.handoff as unknown as { inner: Map<unknown, unknown> }).inner.size === 0, "Sova to drop the pending handshake");
+    await new Promise((res) => setImmediate(res));
+  } finally {
+    process.off("uncaughtException", onUncaught);
+  }
+  assert.deepEqual(caught.map(String), []);
+  assert.equal(r.got.length, 0);
   await r.stop();
 });
 

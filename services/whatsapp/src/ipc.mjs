@@ -18,14 +18,11 @@ export function socketAlive(path) {
 }
 
 /**
- * Serves `core` (a Sender) on `path`. `extraOps` adds ops (the fake sender's `fake`).
- * Refuses when another process already answers on the path; removes a stale socket file.
+ * The IPC of `core` (a Sender) on any stream with a socket's surface, with no listener: `attach`
+ * serves one connection, `close` stops events and ends every connection. serveIpc attaches each
+ * socket it accepts; Sova's tests attach an in-memory stream.
  */
-export async function serveIpc({ core, path, extraOps = {}, log = () => {} }) {
-  if (await socketAlive(path)) throw new Error(`another sender is already listening on ${path}`)
-  mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
-  if (existsSync(path)) unlinkSync(path)
-
+export function ipcSessions({ core, extraOps = {}, log = () => {} }) {
   const ops = {
     hello: (req, conn) => {
       if (req.v !== 1) return { ok: false, code: 'version', retryable: false, why: `This sender speaks IPC v1, not v${req.v}.` }
@@ -56,7 +53,7 @@ export async function serveIpc({ core, path, extraOps = {}, log = () => {} }) {
   }
   core.on('event', onEvent)
 
-  const server = net.createServer((sock) => {
+  function attach(sock) {
     sockets.add(sock)
     sock.on('close', () => sockets.delete(sock))
     const conn = {
@@ -105,7 +102,29 @@ export async function serveIpc({ core, path, extraOps = {}, log = () => {} }) {
         after()
       }
     }
-  })
+  }
+
+  return {
+    attach,
+    close() {
+      core.off('event', onEvent)
+      for (const c of conns) c.subscribed = false
+      for (const sock of sockets) sock.destroy()
+    },
+  }
+}
+
+/**
+ * Serves `core` (a Sender) on `path`. `extraOps` adds ops (the fake sender's `fake`).
+ * Refuses when another process already answers on the path; removes a stale socket file.
+ */
+export async function serveIpc({ core, path, extraOps = {}, log = () => {} }) {
+  if (await socketAlive(path)) throw new Error(`another sender is already listening on ${path}`)
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
+  if (existsSync(path)) unlinkSync(path)
+
+  const sessions = ipcSessions({ core, extraOps, log })
+  const server = net.createServer(sessions.attach)
 
   await new Promise((resolve, reject) => {
     server.once('error', reject)
@@ -120,10 +139,8 @@ export async function serveIpc({ core, path, extraOps = {}, log = () => {} }) {
     server,
     close: () =>
       new Promise((resolve) => {
-        core.off('event', onEvent)
         server.close(() => resolve())
-        for (const c of conns) c.subscribed = false
-        for (const sock of sockets) sock.destroy()
+        sessions.close()
         try {
           unlinkSync(path)
         } catch {}

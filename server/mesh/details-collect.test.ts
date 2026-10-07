@@ -130,13 +130,11 @@ describe("identity", () => {
 
   test("a phone's device type never waits on Termux:API", async () => {
     const phone = machine("android");
-    let settled = false;
     const run = phone.run;
+    // Termux:API never answers, not even at its own time limit: facts that waited on it would never
+    // come (the runner's per-test timeout is the hang guard).
     phone.run = (cmd, args, ms) => (cmd === "termux-battery-status" ? new Promise(() => {}) : run(cmd, args, ms));
-    const facts = fixedFacts(phone, new BatteryReader(phone)).then((f) => ((settled = true), f));
-    await new Promise((r) => setTimeout(r, 20));
-    assert.ok(settled);
-    assert.equal((await facts).device, "phone");
+    assert.equal((await fixedFacts(phone, new BatteryReader(phone))).device, "phone");
   });
 
   test("model: maker + model once, placeholders dropped", async () => {

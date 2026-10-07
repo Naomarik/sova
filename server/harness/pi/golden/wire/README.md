@@ -68,6 +68,6 @@ file), written by `server/share-wire.integration.test.ts`. They were recorded on
 server before wire 2 (`6088958a`, the tree W3.4 started from), so they are the share frames as they were. That
 test also holds both share sockets and `/api/s` to no `event`, `meta` or `facts` key, and to the same bytes
 whether or not the page asks for `wire=2`. The mesh hop is pinned without goldens of its own: in
-`server/mesh/proxy-wire.test.ts` a stand-in peer answers per wire with `expected/faux/*/frames.json` or
+`server/mesh/proxy-wire.integration.test.ts` a stand-in peer answers per wire with `expected/faux/*/frames.json` or
 `v2/faux/*/{frames,rows}.json`, and the browser behind `/peer/<id>/` must get them byte for byte with its
 query unchanged; `server/share-ws-hop.test.ts` does the same for the gateway's `/ws/h` hop.

@@ -118,7 +118,9 @@ if (setup.code !== 0) process.exit(1);
 console.log(`[mac-e2e] Mac: ${setup.out.split("\n").join(", ")}`);
 
 if (!args.has("--skip-tests")) {
-  const files = "server/mesh/lan-admission.test.ts server/mesh/lan-cert.test.ts server/mesh/lan-dialer.test.ts server/mesh/lan-fetch.test.ts server/mesh/lan-mesh.test.ts server/mesh/lan-peers.test.ts server/mesh/lan-relay-sessions.test.ts server/mesh/lan-relay.test.ts server/mesh/lan-reverse.test.ts server/mesh/lan-tls.test.ts";
+  const files = "server/mesh/lan-admission.test.ts server/mesh/lan-cert.test.ts server/mesh/lan-dialer.test.ts server/mesh/lan-fetch.test.ts server/mesh/lan-mesh.test.ts server/mesh/lan-peers.test.ts server/mesh/lan-relay-sessions.test.ts server/mesh/lan-relay.test.ts server/mesh/lan-reverse.test.ts server/mesh/lan-tls.test.ts" +
+    // The real-socket halves: named files run whatever their tier.
+    " server/mesh/lan-dialer.integration.test.ts server/mesh/lan-fetch.integration.test.ts server/mesh/lan-mesh.integration.test.ts server/mesh/lan-relay.integration.test.ts server/mesh/lan-reverse.integration.test.ts server/mesh/lan-tls.integration.test.ts";
   const bun = mac(`cd ~/${E.MAC_DIR} && pnpm test -- ${files} server/bun-quirks-canary.test.ts 2>&1 | tail -15`);
   check("transport unit tests on the Mac, Bun", /0 fail/.test(bun.out) && bun.code === 0, bun.out.split("\n").filter((l) => /FAIL|fail\)/.test(l)).join(" | "));
   const node = mac(`cd ~/${E.MAC_DIR} && pnpm run test:node -- ${files} 2>&1 | tail -15`);

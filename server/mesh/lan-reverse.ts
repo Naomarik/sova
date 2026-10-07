@@ -55,26 +55,42 @@ export const HEADER_MS = 10_000;
 export const REQUEST_MS = 300_000;
 export const IDLE_MS = 30_000;
 
+/** Where a deadline's timer runs: the real timers, unless a test steps its own. */
+export interface DeadlineTimers {
+  set(fire: () => void, ms: number): unknown;
+  clear(handle: unknown): void;
+}
+
+const realTimers: DeadlineTimers = {
+  set: (fire, ms) => {
+    const t = setTimeout(fire, ms);
+    t.unref?.();
+    return t;
+  },
+  clear: (t) => clearTimeout(t as NodeJS.Timeout),
+};
+
 export interface StreamDeadlines {
   headerMs?: number;
   requestMs?: number;
   idleMs?: number;
+  /** Tests: step the deadlines instead of waiting them out. */
+  timers?: DeadlineTimers;
 }
 
 const watched = new WeakSet<Server>();
-const timers = new WeakMap<Duplex, { timer: NodeJS.Timeout | null }>();
+const timers = new WeakMap<Duplex, { timer: unknown; via: DeadlineTimers }>();
 
 function arm(d: Duplex, ms: number): void {
   const t = timers.get(d);
   if (!t) return;
-  if (t.timer) clearTimeout(t.timer);
-  t.timer = setTimeout(() => d.destroy(), ms);
-  t.timer.unref?.();
+  if (t.timer) t.via.clear(t.timer);
+  t.timer = t.via.set(() => d.destroy(), ms);
 }
 
 function disarm(d: Duplex): void {
   const t = timers.get(d);
-  if (t?.timer) clearTimeout(t.timer);
+  if (t?.timer) t.via.clear(t.timer);
   if (t) t.timer = null;
 }
 
@@ -100,7 +116,7 @@ export function feedStream(server: Server, d: Duplex, opts: StreamDeadlines = {}
     });
     server.on("upgrade", (req: IncomingMessage) => disarm(req.socket as Duplex));
   }
-  timers.set(d, { timer: null });
+  timers.set(d, { timer: null, via: opts.timers ?? realTimers });
   arm(d, headerMs);
   d.once("close", () => disarm(d));
   server.emit("connection", d);

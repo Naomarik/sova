@@ -106,12 +106,15 @@ test("the peers' lists survive a restart (the file), and a down peer keeps its l
 test("server/extensions hook: unset, the listing and lookup are exactly the manifest's; set, peers' entries join", async () => {
   const dist = join(root, "hook-dist");
   mkdirSync(dist);
-  // A port nothing listens on (bound, then released).
-  const { createServer } = await import("node:net");
-  const probe = createServer();
-  await new Promise<void>((r) => probe.listen(0, "127.0.0.1", r));
-  const dead = (probe.address() as { port: number }).port;
-  await new Promise((r) => probe.close(r));
+  // A port nothing listens on: its health probe is refused, as fetch's own refusal reads (in-process,
+  // no socket).
+  const dead = 47041;
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input instanceof Request ? input.url : input);
+    if (url.startsWith(`http://127.0.0.1:${dead}/`)) throw Object.assign(new TypeError("fetch failed"), { code: "ECONNREFUSED", cause: { code: "ECONNREFUSED" } });
+    return realFetch(input, init);
+  }) as typeof fetch;
   writeFileSync(
     process.env.SOVA_EXTENSIONS_FILE!,
     JSON.stringify({ version: 1, extensions: [{ id: "local", title: "Local", dist, api: `http://127.0.0.1:${dead}` }] }),
@@ -142,6 +145,7 @@ test("server/extensions hook: unset, the listing and lookup are exactly the mani
   }
   assert.deepEqual({ list: await listExtensions(), local: findExtension("local"), peer: findExtension("peer-here") }, before);
   assert.equal(before.peer, undefined);
+  globalThis.fetch = realFetch;
 });
 
 test("a change to this host's manifest is pushed to peers by itself (no reconcile wait)", async () => {
@@ -171,7 +175,7 @@ test("a change to this host's manifest is pushed to peers by itself (no reconcil
   a.start(manifest, 30);
   try {
     writeFileSync(manifest, JSON.stringify({ version: 1, extensions: [entry("fresh", dist)] }));
-    const end = Date.now() + 3000;
+    const end = Date.now() + 15_000; // a hang guard: the watcher decides when
     while (!b.sync.peerEntries().some((p) => p.entry.id === "fresh") && Date.now() < end) await new Promise((r) => setTimeout(r, 20));
     assert.deepEqual(b.sync.peerEntries().map((p) => [p.entry.id, p.from]), [["fresh", "a"]]);
   } finally {

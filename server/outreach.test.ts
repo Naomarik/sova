@@ -1,100 +1,38 @@
-// Run: pnpm exec tsx --test server/outreach.test.ts. §app/outreach end to end against the fake
-// WhatsApp sender (scripts/fake-whatsapp-sender.mjs, the sender's real state machine over a fake
-// WhatsApp): Send on WhatsApp through the baton statechart's act, the send log, receipts, the refusals,
-// a sender that is down, the relay's gate, and the secret coverage. A throwaway PI_CODING_AGENT_DIR.
+// Run: pnpm test -- server/outreach.test.ts. §app/outreach end to end with the WhatsApp sender
+// in-process (outreach/sender-test-fixtures.ts: the sender's real state machine and IPC over a fake
+// WhatsApp, reached through an in-memory stream): Send on WhatsApp through the baton statechart's act,
+// the send log, receipts, the refusals, a sender that is down, the relay's gate, and the secret
+// coverage. A throwaway PI_CODING_AGENT_DIR (outreach-test-fixtures.ts). The sender as a real child on
+// its socket, a send's round trip, its going down and its restart: outreach.integration.test.ts.
 import assert from "node:assert/strict";
-import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, before, describe, test } from "node:test";
 import { Hono } from "hono";
+import { ABSENT, agent, ann, app, bob, cleanup, gathering, gone, json, logOf, org, project, root, senderOpen, sendLink } from "./outreach-test-fixtures";
+import { inProcessSender } from "./outreach/sender-test-fixtures";
 
-const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-outreach-")));
-const agent = join(root, "agent");
-process.env.PI_CODING_AGENT_DIR = agent;
-delete process.env.SOVA_WA_SOCKET;
-delete process.env.SOVA_WA_HOME;
-process.env.SOVA_SHARE_PUBLIC_URL = "https://share.example.com";
-process.env.SOVA_SHARE_PREVIEW_URL = "https://*.preview.example.com";
-mkdirSync(join(agent, "sessions"), { recursive: true });
-
-const orgs = await import("./orgs");
-const { registerOrgRoutes } = await import("./org-routes");
-const { mountOutreach } = await import("./outreach/routes");
 const { mountOutreachRelay } = await import("./outreach/relay");
-const { readSendLog } = await import("./outreach/log");
-const { resetLocalClient } = await import("./outreach/whatsapp");
+const { resetLocalClient, setSenderClientOptionsForTest } = await import("./outreach/whatsapp");
 const { liveLinks } = await import("./baton-links");
 const { batonById } = await import("./baton");
 const { SecretGuard } = await import("./overseer-deny");
-const { disposeAllChats } = await import("./chat-manager");
 const po = await import("./project-overseer");
 const { hostOf } = await import("./org-engine");
 const { listPreviews, mintPreview } = await import("./preview-links");
 
-const socket = join(agent, "sova", "whatsapp", "sender.sock");
-let fake: ChildProcess | null = null;
-async function startFake(): Promise<void> {
-  fake = spawn(process.execPath, [join(import.meta.dirname, "..", "scripts", "fake-whatsapp-sender.mjs")], {
-    env: { ...process.env, PI_CODING_AGENT_DIR: agent, SOVA_WA_FAKE_ABSENT: "15550000999" },
-    stdio: "ignore",
-  });
-  const end = Date.now() + 10_000;
-  while (!existsSync(socket)) {
-    if (Date.now() > end) throw new Error("the fake sender didn't start");
-    await new Promise((r) => setTimeout(r, 50));
-  }
-  await new Promise((r) => setTimeout(r, 200));
-}
-async function stopFake(): Promise<void> {
-  if (!fake) return;
-  const f = fake;
-  fake = null;
-  if (f.exitCode === null && f.signalCode === null) {
-    const gone = new Promise((r) => f.once("exit", r));
-    f.kill("SIGTERM");
-    const t = setTimeout(() => f.kill("SIGKILL"), 2000);
-    await gone;
-    clearTimeout(t);
-  }
-  rmSync(socket, { force: true });
+const sender = inProcessSender({ env: process.env, absent: [ABSENT] });
+setSenderClientOptionsForTest({ connect: sender.connect, retryMs: 0 });
+function stopSender(): void {
+  sender.stop();
   resetLocalClient();
 }
 
 after(async () => {
-  await stopFake();
-  await disposeAllChats();
-  rmSync(root, { recursive: true, force: true });
+  stopSender();
+  setSenderClientOptionsForTest({});
+  await cleanup();
 });
-process.on("exit", () => {
-  fake?.kill("SIGKILL");
-  rmSync(root, { recursive: true, force: true });
-});
-
-const org = await orgs.createOrg({ name: "Gate", dir: join(root, "ws") });
-mkdirSync(join(root, "proj"));
-const project = await orgs.addProject(org.id, { name: "Portal", root: join(root, "proj") });
-const ann = await orgs.addPerson(org.id, { name: "Ann", role: "Staff", contact: { whatsapp: "+1 555 000 0100" } });
-const bob = await orgs.addPerson(org.id, { name: "Bob", role: "Staff" });
-const gone = await orgs.addPerson(org.id, { name: "Gil", role: "Staff", contact: { whatsapp: "+1 555 000 0999" } });
-
-const app = new Hono();
-registerOrgRoutes(app);
-mountOutreach(app);
-const req = (method: string, path: string, body?: unknown) => app.request(path, { method, headers: { "Content-Type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) });
-const json = async (method: string, path: string, body?: unknown) => {
-  const r = await req(method, path, body);
-  return { status: r.status, body: (await r.json()) as Record<string, any> };
-};
-
-async function gathering(to: string): Promise<string> {
-  const r = await json("POST", "/api/baton", { orgId: org.id, projectId: project.id, to, publicTitle: "Office hours", goal: "g" });
-  assert.equal(r.status, 201, JSON.stringify(r.body));
-  return r.body.sessionId as string;
-}
-const sendLink = (sid: string, person?: string) => json("POST", `/api/baton/${sid}/send-link`, person ? { person } : {});
-const logOf = () => readSendLog(org.id);
 
 test("the operator's browser behind a reverse proxy (X-Forwarded-Host) is served; the peer listener and a peer's relay get 404", async () => {
   assert.equal((await app.request("/api/outreach", { headers: { "X-Forwarded-Host": "host.example.ts.net:8443" } })).status, 200);
@@ -105,8 +43,8 @@ test("the operator's browser behind a reverse proxy (X-Forwarded-Host) is served
 });
 
 describe("§app.outreach/send-link", () => {
-  before(async () => {
-    await startFake();
+  before(() => {
+    sender.start();
   });
 
   test("off: refused with its sentence, nothing minted, nothing sent", async () => {
@@ -124,12 +62,7 @@ describe("§app.outreach/send-link", () => {
 
   test("sent: a fresh link replaces the older ones, the log holds no number, token or text; receipts follow", async () => {
     assert.equal((await json("PUT", "/api/outreach", { sender: { local: {} } })).status, 200);
-    let info = await json("GET", "/api/outreach");
-    for (let i = 0; i < 50 && info.body.sender.state !== "open"; i++) {
-      await new Promise((r) => setTimeout(r, 200));
-      info = await json("GET", "/api/outreach");
-    }
-    assert.equal(info.body.sender.state, "open", JSON.stringify(info.body.sender));
+    await senderOpen();
     const sid = await gathering(ann.id);
     const n = batonById(sid)!.row.handoffs.at(-1)!.n;
     const firstLinks = liveLinks(sid, n).map((l) => l.hash);
@@ -143,7 +76,8 @@ describe("§app.outreach/send-link", () => {
     const sent = logOf().filter((l) => l.sessionId === sid);
     assert.deepEqual(sent.map((l) => l.event), ["sent"]);
     assert.equal(sent[0]!.by, "operator");
-    // the fake answers delivered then read
+    // the fake answers delivered then read, once let through
+    sender.flushReceipts();
     const end = Date.now() + 8000;
     while (logOf().filter((l) => l.sessionId === sid).length < 3 && Date.now() < end) await new Promise((r) => setTimeout(r, 100));
     assert.deepEqual(logOf().filter((l) => l.sessionId === sid).map((l) => l.event), ["sent", "delivered", "read"]);
@@ -184,7 +118,7 @@ describe("§app.outreach/send-link", () => {
   });
 
   test("the sender is down: failed, retryable, with why; nothing stays minted", async () => {
-    await stopFake();
+    stopSender();
     const sid = await gathering(ann.id);
     const n = batonById(sid)!.row.handoffs.at(-1)!.n;
     const before = liveLinks(sid, n).map((l) => l.hash);
@@ -200,9 +134,9 @@ describe("§app.outreach/send-link", () => {
 
 describe("§app.outreach/send: a note, a preview link, the project overseer through the hold", () => {
   before(async () => {
-    await startFake();
+    sender.start();
     await json("PUT", "/api/outreach", { sender: { local: {} }, paused: false });
-    for (let i = 0; i < 50 && (await json("GET", "/api/outreach")).body.sender.state !== "open"; i++) await new Promise((r) => setTimeout(r, 200));
+    await senderOpen();
   });
 
   test("a note alone; a note that repeats a contact is refused", async () => {
@@ -274,9 +208,9 @@ describe("§app.outreach/links, /log, /send: a preview send's address, its codes
   const lastBy = (by: string) => logOf().filter((l) => l.by === by).at(-1)!;
 
   before(async () => {
-    if (!fake || fake.exitCode !== null) await startFake(); // one fake sender at a time: the previous block's may still run
+    sender.start(); // one sender at a time: the previous block's still runs
     await json("PUT", "/api/outreach", { sender: { local: {} }, paused: false });
-    for (let i = 0; i < 50 && (await json("GET", "/api/outreach")).body.sender.state !== "open"; i++) await new Promise((r) => setTimeout(r, 200));
+    await senderOpen();
     await po.ensureProjectOverseer(project.id);
     await po.patchProjectOverseer(project.id, { autonomy: "L1", holdMin: 10 });
   });
@@ -379,6 +313,7 @@ describe("§app.outreach/links, /log, /send: a preview send's address, its codes
     // One more in the hold, so the status lists it as held.
     await run("sova_send_to_person", { person: "Ann", note: "One more thing soon." });
     const id = holdOf();
+    sender.flushReceipts();
     const end = Date.now() + 8000;
     while (!logOf().some((l) => l.by === "project-overseer" && l.previewId && (l.event === "delivered" || l.event === "read")) && Date.now() < end) await new Promise((r) => setTimeout(r, 100));
     const status = JSON.stringify((await run("sova_send_status", { person: "Ann", limit: 50 })).content);

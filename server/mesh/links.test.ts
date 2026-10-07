@@ -1,7 +1,8 @@
-// Run: pnpm exec tsx --test server/mesh/links.test.ts
+// Run: pnpm test -- server/mesh/links.test.ts
 // Linked sessions across hosts (§mesh/links) with no network: each fake host is a MeshLinks plus
 // its own Hono app with mountLinks, and a fake MeshApi whose peerFetch calls the other host's app
-// with the caller as the peer listener's verified peer. State lives in a throwaway dir, removed after.
+// with the caller as the peer listener's verified peer. File offers pack and land through tar
+// in-process (links-transfer-test-fixtures.ts). State lives in a throwaway dir, removed after.
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -27,6 +28,7 @@ import type { SessionSummary } from "../../shared/protocol";
 import { NotShared } from "./access";
 import { MeshLinks, MEMBER_CACHE_MS } from "./links";
 import { mountLinks } from "./links-routes";
+import { inProcessTar } from "./links-transfer-test-fixtures";
 import type { PeerEntry } from "./peers";
 
 const tmp = mkdtempSync(join(tmpdir(), "sova-links-test-"));
@@ -56,6 +58,8 @@ interface Host {
   sandbox: (sessionId: string) => LinkSandbox;
   /** The next tar body served to this host is cut after this many bytes (a dropped connection). */
   cutTarAt?: number;
+  /** This host's tar downloads wait for it (a pull still running while others finish). */
+  holdTar?: Promise<void>;
   /** Peers this host's grant withholds links from: its peerFetch refuses link sends to them, as the
       real outbound gate does (reads of the peer by id still go). */
   withholdLinks: Set<string>;
@@ -163,6 +167,7 @@ function makeHost(id: string, label: string, opts: Partial<Host> = {}): Host {
       if (h.withholdLinks.has(peerId) && /^\/api\/peer\/links(?:[/?]|$)/.test(path) && !/^\/api\/peer\/links\/(?:whoami|read)(?:\?|$)/.test(path)) throw new NotShared(peerId);
       const to = hosts[peerId];
       if (!to?.up) throw new TypeError("fetch failed");
+      if (h.holdTar && path.endsWith("/tar")) await h.holdTar;
       if (h.detachAnswer?.(peerId, path)) {
         h.detached.push(Promise.resolve(to.app.request(path, init, { meshPeer: entryOf(h, to) })).then(() => undefined));
         throw new TypeError("The operation timed out.");
@@ -198,6 +203,8 @@ function makeHost(id: string, label: string, opts: Partial<Host> = {}): Host {
     homedir: () => join(h.root, "home"),
     protectedRoots: () => [join(h.root, "state"), join(h.root, "sessions")],
     transferTimings: { idleMs: 2_000, downWaitMs: 100, maxBackoffMs: 50 },
+    // Packs and pulls through the in-process tar; the host's own: links-transfer.integration.test.ts.
+    tar: inProcessTar,
   };
   if (h.old) h.links.configure({ ...deps, mesh });
   else mountLinks(h.app, mesh as never, deps, h.links);
@@ -898,12 +905,16 @@ describe("file offers (§mesh.links/offers, §mesh.links/transfer)", () => {
     // B's sandbox reads as off at the accept and as unresolvable at the pre-scan: refused after it accepted.
     let calls = 0;
     B.sandbox = () => (calls++ === 0 ? { on: false } : { on: true, error: "policy gone" });
+    // C's download waits until B's failure has woken the sender: C is still moving then.
+    let releaseC!: () => void;
+    C.holdTar = new Promise((r) => (releaseC = r));
     const r = await offer({ paths: ["proj"], to: "all", dest: "in" });
     const id = r.json.offer.id;
     await until(() => rowFor(offerOf(A, id), B)?.state === "refused", 15_000, "b refused");
     assert.equal(rowFor(offerOf(A, id), B)!.reason, "not-writable");
     await until(() => wakes(A).length === 1, 3_000, "the first-failure wake");
     assert.match(parseLinkMessage(wakes(A)[0]!.framed)!.text, /failed for a recipient/);
+    releaseC();
     await until(() => rowFor(offerOf(A, id), C)?.state === "done", 15_000, "c done");
     await settle();
     assert.equal(wakes(A).length, 1);

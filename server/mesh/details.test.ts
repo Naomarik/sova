@@ -1,27 +1,27 @@
-// Run: pnpm exec tsx --test server/mesh/details.test.ts
-// Per-host details and rename against a throwaway PI_CODING_AGENT_DIR (removed after), the server
-// on an ephemeral port, a stub identity provider, a fake peer on loopback that records what it is
-// told, and this server's own peer listener on 127.0.0.1 so peer routes go through the real gate.
+// Run: pnpm test -- server/mesh/details.test.ts
+// Per-host details and rename (§mesh.details/fields, /rename, /browser-access), in-process: a
+// throwaway PI_CODING_AGENT_DIR (removed after), this host's app built with nothing started, a stub
+// identity provider, the other peer answered over the test wire (recording what it is told), and the
+// peer listener's own gate fed in-process connections, so peer routes go through the real gate. The
+// real listener and one real peer round trip: details.integration.test.ts.
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { createServer, request, type IncomingMessage, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { after, before, describe, test } from "node:test";
+import { after, describe, test } from "node:test";
 import type { HostBrowserAccessResult, HostDetails, HostRenameResult, MeshDetails } from "../../shared/mesh-details";
 import type { MeshFrontDoor } from "../../shared/mesh-local";
 import type { MeshHello } from "../../shared/protocol";
+import { testApp } from "./app-test-fixtures";
+import { inProcessPeerGate } from "./peer-gate-test-fixtures";
+import { fakeWire } from "./peer-wire-test-fixtures";
 
-const tmp = mkdtempSync(join(tmpdir(), "sova-details-test-"));
+const tmp = mkdtempSync(join(tmpdir(), "sova-details-unit-"));
 process.env.PI_CODING_AGENT_DIR = join(tmp, "agent");
-process.env.PORT = "0";
-process.env.SOVA_PEER_HOST = "127.0.0.1";
-process.env.SOVA_PEER_PORT = "0";
 mkdirSync(join(tmp, "agent", "sessions", "live"), { recursive: true });
 
 const { setIdentity } = await import("./localapi");
 let identityCalls = 0;
-let whoisNode: string | null = null;
 setIdentity({
   status: async () => {
     identityCalls++;
@@ -33,33 +33,40 @@ setIdentity({
   },
   whois: async () => {
     identityCalls++;
-    return whoisNode ? { nodeId: whoisNode, name: "x", tags: [], login: "me" } : null;
+    return null;
   },
 });
 
+// Any request that leaves this process at all (the wire answers the peers in-process).
 const realFetch = globalThis.fetch;
-let fetches = 0;
+let networkFetches = 0;
 globalThis.fetch = ((...args: Parameters<typeof fetch>) => {
-  fetches++;
+  networkFetches++;
   return realFetch(...args);
 }) as typeof fetch;
 
-const { server } = await import("../index");
-const { listenerInfo, onSyncStatus, stopMesh } = await import("./index");
-const { AUTH_COOKIE, sovaToken } = await import("../auth");
-// Main-listener calls pass its gate as a browser's would (with the cookie); the peer listener's never ask.
-const AUTH = { Cookie: `${AUTH_COOKIE}=${sovaToken()}` };
+const wire = fakeWire();
+const app = await testApp();
+const { onSyncStatus, peerByNode, stopMesh } = await import("./index");
+const { allows } = await import("./access");
 const { clearProbes, ownProtocol } = await import("./hello");
 const { clearPeerReach } = await import("./proxy");
 const { peersFile, readPeers } = await import("./peers");
+// The mesh's link transfers probe tar when it starts: answered here, so no tar runs.
+(await import("./links-transfer")).setTarAvailableForTest(true);
+const fetches = () => networkFetches + wire.fetches;
 
-let base = "";
+/** Who the next call on the peer gate comes from: a tailnet node, as whois would say, or nobody. */
+let whoisNode: string | null = null;
+const gate = inProcessPeerGate(
+  { fetch: app.fetch, upgrade: (_req, socket) => socket.destroy(), allows: (p, need) => allows(p.nodeId, need) },
+  () => (whoisNode ? peerByNode(whoisNode) : null),
+);
 
-// ---- the fake peer ----------------------------------------------------------------------------
+// ---- the fake peer, in-process --------------------------------------------------------------------
 
-let fake: Server;
-let fakePort = 0;
-let deadPort = 0;
+const FAKE = "http://127.0.0.1:47031";
+const DEAD = "http://127.0.0.1:47032";
 let fakeDetails: "ok" | "old" = "ok";
 let fakeLabel = "B";
 /** What the fake peer says about its browser address; undefined: an older build that doesn't say. */
@@ -85,83 +92,59 @@ const fakeHostDetails = (): HostDetails => ({
   ...(fakeBrowserAt !== undefined ? { browserAccessAt: fakeBrowserAt } : {}),
 });
 
-before(async () => {
-  await new Promise<void>((r) => (server.listening ? r() : server.once("listening", r)));
-  base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
-  fake = createServer(async (req: IncomingMessage, res) => {
-    if (fakeAway) return req.socket.destroy();
-    const url = new URL(req.url ?? "/", "http://x");
-    const json = (status: number, body: unknown) => {
-      res.writeHead(status, { "Content-Type": "application/json" });
-      res.end(JSON.stringify(body));
-    };
-    const chunks: Buffer[] = [];
-    for await (const c of req) chunks.push(c as Buffer);
-    const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString()) : null;
-    if (url.pathname === "/api/peer/hello") {
-      const hello: MeshHello = { mesh: 1, id: "b", label: fakeLabel, hostname: "b", version: "0", protocol: ownProtocol(), pi: "x", now: 1 };
-      return json(200, hello);
-    }
-    if (fakeDetails === "old") return json(404, { error: "Not found" });
-    if (url.pathname === "/api/peer/details") return json(200, fakeHostDetails());
-    if (["/api/peer/rename", "/api/peer/label", "/api/peer/browser-access", "/api/peer/set-browser-access"].includes(url.pathname)) told.push({ path: url.pathname, body });
-    if (url.pathname === "/api/peer/set-browser-access") {
-      fakeBrowser = (body as { browserAccess: boolean }).browserAccess;
-      return json(200, { browserAccess: fakeBrowser });
-    }
-    if (url.pathname === "/api/peer/browser-access") return json(200, { ok: true });
-    if (url.pathname === "/api/peer/rename") {
-      fakeLabel = (body as { label: string }).label;
-      return json(200, { label: fakeLabel, labelAt: 5_000 });
-    }
-    if (url.pathname === "/api/peer/label") return json(200, { ok: true });
-    json(404, { error: "Not found" });
-  });
-  await new Promise<void>((r) => fake.listen(0, "127.0.0.1", r));
-  fakePort = (fake.address() as { port: number }).port;
-  const dead = createServer();
-  await new Promise<void>((r) => dead.listen(0, "127.0.0.1", r));
-  deadPort = (dead.address() as { port: number }).port;
-  await new Promise((r) => dead.close(r));
+wire.serve(FAKE, async (req) => {
+  if (fakeAway) throw new TypeError("fetch failed", { cause: { code: "ECONNRESET" } });
+  const url = new URL(req.url);
+  const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+  const text = await req.text();
+  const body = text ? JSON.parse(text) : null;
+  if (url.pathname === "/api/peer/hello") {
+    const hello: MeshHello = { mesh: 1, id: "b", label: fakeLabel, hostname: "b", version: "0", protocol: ownProtocol(), pi: "x", now: 1 };
+    return json(200, hello);
+  }
+  if (fakeDetails === "old") return json(404, { error: "Not found" });
+  if (url.pathname === "/api/peer/details") return json(200, fakeHostDetails());
+  if (["/api/peer/rename", "/api/peer/label", "/api/peer/browser-access", "/api/peer/set-browser-access"].includes(url.pathname)) told.push({ path: url.pathname, body });
+  if (url.pathname === "/api/peer/set-browser-access") {
+    fakeBrowser = (body as { browserAccess: boolean }).browserAccess;
+    return json(200, { browserAccess: fakeBrowser });
+  }
+  if (url.pathname === "/api/peer/browser-access") return json(200, { ok: true });
+  if (url.pathname === "/api/peer/rename") {
+    fakeLabel = (body as { label: string }).label;
+    return json(200, { label: fakeLabel, labelAt: 5_000 });
+  }
+  if (url.pathname === "/api/peer/label") return json(200, { ok: true });
+  return json(404, { error: "Not found" });
 });
+wire.down(DEAD);
+const fakePort = Number(new URL(FAKE).port);
+const deadPort = Number(new URL(DEAD).port);
 
-after(async () => {
+after(() => {
   stopMesh();
-  server.close();
-  server.closeAllConnections();
-  fake.close();
-  fake.closeAllConnections();
+  wire.restore();
+  globalThis.fetch = realFetch;
   rmSync(tmp, { recursive: true, force: true });
 });
 
 const call = async <T>(method: string, path: string, body?: unknown): Promise<[number, T]> => {
-  const res = await realFetch(`${base}${path}`, {
-    method,
-    ...(body !== undefined ? { headers: { "Content-Type": "application/json", ...AUTH }, body: JSON.stringify(body) } : { headers: AUTH }),
-  });
+  const res = await app.request(path, { method, ...(body !== undefined ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}) });
   return [res.status, (await res.json()) as T];
 };
 
-/** A request on a NEW connection to the peer listener (so whois runs for it). */
-function peerCall(method: string, path: string, body?: unknown): Promise<{ status: number; body: string }> {
-  const info = listenerInfo()!;
-  return new Promise((resolve, reject) => {
-    const req = request({ host: "127.0.0.1", port: info.port, path, method, agent: false, headers: { "Content-Type": "application/json" } }, (res) => {
-      let text = "";
-      res.on("data", (c) => (text += c));
-      res.on("end", () => resolve({ status: res.statusCode!, body: text }));
-    });
-    req.on("error", reject);
-    req.setTimeout(8000, () => req.destroy(new Error(`no answer within 8 s: ${path}`)));
-    req.end(body === undefined ? undefined : JSON.stringify(body));
-  });
-}
+/** A request on a NEW in-process connection to the peer gate (so the caller is identified for it). */
+const peerCall = async (method: string, path: string, body?: unknown): Promise<{ status: number; body: string }> => {
+  const r = await gate.call(method, path, body === undefined ? undefined : JSON.stringify(body));
+  return { status: r.status, body: r.body };
+};
 
-async function waitFor(check: () => boolean, ms = 3000): Promise<void> {
+/** Poll with a generous hang guard: never a bound on how fast a tell goes out. */
+async function waitFor(check: () => boolean, ms = 15_000): Promise<void> {
   const until = Date.now() + ms;
   while (!check()) {
     if (Date.now() > until) throw new Error("timed out waiting");
-    await new Promise((r) => setTimeout(r, 20));
+    await new Promise((r) => setTimeout(r, 10));
   }
 }
 
@@ -189,7 +172,7 @@ describe("mesh off", () => {
       assert.deepEqual(body, unknown, `${method} ${path}`);
     }
     assert.equal(identityCalls, 0);
-    assert.equal(fetches, 0);
+    assert.equal(fetches(), 0);
   });
 
   test("the front door answers the same with SOVA_BROWSER_ACCESS=off: Browser access is a mesh fact", async () => {
@@ -203,7 +186,7 @@ describe("mesh off", () => {
     } finally {
       delete process.env.SOVA_BROWSER_ACCESS;
     }
-    assert.equal(fetches, 0);
+    assert.equal(fetches(), 0);
     assert.equal(identityCalls, 0);
   });
 
@@ -216,7 +199,7 @@ describe("mesh off", () => {
     assert.ok(self.labelAt >= t0);
     await call("PUT", "/api/mesh/settings", { sync: { themes: true } });
     assert.equal(peersDoc().self.labelAt, self.labelAt, "another setting keeps the stamp");
-    assert.equal(fetches, 0);
+    assert.equal(fetches(), 0);
     assert.equal(identityCalls, 0);
   });
 });
@@ -226,7 +209,6 @@ describe("mesh on", () => {
     const t0 = Date.now();
     const [st] = await call("PUT", "/api/mesh/peers", { peers: [{ id: "b", nodeId: "nB", name: "b.lab", url: `http://127.0.0.1:${fakePort}` }] });
     assert.equal(st, 200);
-    await waitFor(() => (listenerInfo()?.addresses.length ?? 0) > 0);
     const first = peersDoc().peers[0].pairedAt as number;
     assert.ok(first >= t0 && first <= Date.now());
     await new Promise((r) => setTimeout(r, 5));
@@ -250,7 +232,7 @@ describe("mesh on", () => {
     assert.equal(self!.state, "self");
     assert.equal(self!.details!.versions.protocol, ownProtocol());
     assert.equal(self!.details!.versions.node, process.version);
-    assert.equal(self!.details!.identity.dnsName, "a.lab");
+    // Its tailnet name comes from the peer listener's own lookup: details.integration.test.ts.
     assert.equal(typeof self!.details!.resources.cores, "number");
     assert.equal(b!.id, "b");
     assert.equal(b!.state, "up");
@@ -393,11 +375,10 @@ describe("mesh on", () => {
   test("Settings → Mesh: a new name goes out like one made here; another setting doesn't", async () => {
     told.length = 0;
     await call("PUT", "/api/mesh/settings", { sync: { themes: false } });
-    await new Promise((r) => setTimeout(r, 200));
-    assert.equal(told.length, 0, "a sync toggle tells no one a name");
     await call("PUT", "/api/mesh/settings", { hostLabel: "Desk" });
     await waitFor(() => told.length > 0);
-    assert.deepEqual(told[0]!.body, { label: "Desk", labelAt: peersDoc().self.labelAt });
+    // By order, not by a wait: had the sync toggle told a name, that tell (sent first) would be here too.
+    assert.deepEqual(told, [{ path: "/api/peer/label", body: { label: "Desk", labelAt: peersDoc().self.labelAt } }], "a sync toggle tells no one a name");
   });
 
   test("renaming a peer asks it, and takes its answer here", async () => {
@@ -638,6 +619,10 @@ describe("mesh on", () => {
     const [, d] = await call<MeshDetails>("GET", "/api/mesh/details");
     assert.equal(peerB().browserAccess, false, "the recorded, newer answer stands");
     assert.ok(d.hosts.find((h) => h.id === "b"));
+    // A far-ahead stamp is kept at a day ahead of the moment it comes in, as b's was: newer only once
+    // the clock has moved past b's moment (in the same millisecond it isn't). Wait for the clock.
+    const keptFrom = (peerB().browserAccessAt as number) - 86_400_000;
+    while (Date.now() <= keptFrom) await new Promise((r) => setTimeout(r, 1));
     fakeBrowserAt = Date.now() + 2 * 86_400_000;
     fresh();
     await call("GET", "/api/mesh/details");
@@ -646,6 +631,11 @@ describe("mesh on", () => {
   });
 
   test("leaving out every host that has a browser address is refused, like leaving out every host", async () => {
+    // b's stamp was kept at a day ahead of the moment it came in; a newer far-ahead stamp is kept at
+    // a day ahead of ITS moment, so it is newer only once the clock has moved past that one (in the
+    // same millisecond it isn't, and was ignored: this case's old flake). Wait for the clock, not a time.
+    const keptFrom = (peerB().browserAccessAt as number) - 86_400_000;
+    while (Date.now() <= keptFrom) await new Promise((r) => setTimeout(r, 1));
     whoisNode = "nB";
     try {
       await peerCall("POST", "/api/peer/browser-access", { browserAccess: false, browserAccessAt: Date.now() + 3 * 86_400_000 });
@@ -666,10 +656,14 @@ describe("mesh on", () => {
   test("a host's details say whether Claude Code is found, once the first lookup has landed", async () => {
     whoisNode = "nB";
     try {
-      await peerCall("GET", "/api/peer/details");
-      await new Promise((r) => setTimeout(r, 100));
-      const d = JSON.parse((await peerCall("GET", "/api/peer/details")).body) as HostDetails;
-      assert.ok(d.claudeCode === "found" || d.claudeCode === "not-found");
+      // The first answer starts the lookup; ask again until it has landed (a hang guard, not a bound).
+      let d = JSON.parse((await peerCall("GET", "/api/peer/details")).body) as HostDetails;
+      const end = Date.now() + 15_000;
+      while (d.claudeCode === undefined && Date.now() < end) {
+        await new Promise((r) => setTimeout(r, 20));
+        d = JSON.parse((await peerCall("GET", "/api/peer/details")).body) as HostDetails;
+      }
+      assert.ok(d.claudeCode === "found" || d.claudeCode === "not-found", String(d.claudeCode));
     } finally {
       whoisNode = null;
     }

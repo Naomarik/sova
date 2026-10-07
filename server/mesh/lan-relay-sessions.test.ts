@@ -70,6 +70,18 @@ test("unpairing closes the host's connection at once; keepOnly drops the rest", 
   assert.equal(b.closed, 1);
 });
 
+test("Stop Relaying (closeAll) ends every host's connection in the same step: closed and not connected before it returns", () => {
+  // The mechanism behind lan-mesh.integration.test.ts's M2 ("at once"), with no clock: nothing is
+  // left for a keepalive or a timeout to end later.
+  const r = new RelaySessions();
+  const held = [sess(), sess(), sess()];
+  held.forEach((s, i) => r.admit(`h${i}`, `H${i}`, s, 0));
+  r.closeAll();
+  assert.deepEqual(held.map((s) => s.closed), [1, 1, 1]);
+  assert.deepEqual(held.map((_, i) => r.status(`h${i}`, 0).connected), [false, false, false]);
+  assert.deepEqual(held.map((_, i) => r.get(`h${i}`)), [null, null, null]);
+});
+
 test("re-admitting the same connection is not a replacement", () => {
   const r = new RelaySessions();
   const a = sess();

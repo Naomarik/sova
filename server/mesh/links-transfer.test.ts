@@ -1,16 +1,16 @@
-// Run: pnpm exec tsx --test server/mesh/links-transfer.test.ts
-// The bytes of a file offer with the host's real tar and zstd: listing (counts, exclude, symlinks,
-// gitlinks, the sender's sandbox), packing into a spool, serving it with Range, the receiver's
-// dest checks, and pulls that resume, verify and extract. The sender is a fake fetch that answers
-// through serveTar. Every tree lives in a throwaway dir, removed after.
+// Run: pnpm test -- server/mesh/links-transfer.test.ts
+// The bytes of a file offer, in-process: listing (counts, exclude, symlinks, gitlinks, the sender's
+// sandbox), packing into a spool, serving it with Range, the receiver's dest checks, and pulls that
+// resume, verify and extract. tar is the in-process stand-in (links-transfer-test-fixtures.ts); the
+// sender is a fake fetch that answers through serveTar. With the host's real tar (its failures, a
+// pull that lands, extraction over a tree): links-transfer.integration.test.ts. Every tree lives in a
+// throwaway dir, removed after.
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { randomBytes } from "node:crypto";
-import { createReadStream, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { createHash, randomBytes } from "node:crypto";
+import { mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, test } from "node:test";
-import { createZstdDecompress } from "node:zlib";
 import {
   checkDest,
   excludeMatcher,
@@ -29,55 +29,13 @@ import {
 } from "./links-transfer";
 import { type ResolvedPolicy, writeDenial } from "../../pi-config/extensions/sandbox/policy.ts";
 import { prescan } from "../link-sandbox";
-import { tarMembers } from "./tar-list";
+import { inProcessTar, makeTree, refusal, snapshotTree, spoolMembers } from "./links-transfer-test-fixtures";
 
 const tmp = mkdtempSync(join(tmpdir(), "sova-links-transfer-test-"));
 after(() => rmSync(tmp, { recursive: true, force: true }));
 const home = join(tmp, "home");
 const work = join(home, "work");
 const quiet = { log: () => undefined };
-
-/** A tree from a spec: a string is a file's content, `{link}` a symlink, an object a directory. */
-type Spec = { [name: string]: string | { link: string } | Spec };
-function makeTree(dir: string, spec: Spec): void {
-  mkdirSync(dir, { recursive: true });
-  for (const [name, v] of Object.entries(spec)) {
-    const p = join(dir, name);
-    if (typeof v === "string") writeFileSync(p, v);
-    else if ("link" in v && typeof v.link === "string") symlinkSync(v.link, p);
-    else makeTree(p, v as Spec);
-  }
-}
-
-/** Every path under `dir` with its kind and content (file text, link target), sorted. */
-function snapshotTree(dir: string, base = ""): string[] {
-  const out: string[] = [];
-  for (const n of execFileSync("ls", ["-A", dir], { encoding: "utf8" }).split("\n").filter(Boolean)) {
-    const p = join(dir, n);
-    const rel = base ? `${base}/${n}` : n;
-    const st = lstatSync(p);
-    if (st.isSymbolicLink()) out.push(`${rel} -> ${readlinkSync(p)}`);
-    else if (st.isDirectory()) out.push(`${rel}/`, ...snapshotTree(p, rel));
-    else out.push(`${rel} = ${readFileSync(p, "utf8")}`);
-  }
-  return out.sort();
-}
-
-async function spoolMembers(file: string): Promise<string[]> {
-  const out: string[] = [];
-  for await (const m of tarMembers(createReadStream(file).pipe(createZstdDecompress()))) out.push(m.name.replace(/\/$/, ""));
-  return out;
-}
-
-async function refusal(p: Promise<unknown> | (() => unknown)): Promise<TransferError> {
-  try {
-    await (typeof p === "function" ? p() : p);
-  } catch (err) {
-    if (err instanceof TransferError) return err;
-    throw err;
-  }
-  assert.fail("expected a TransferError");
-}
 
 before(() => {
   makeTree(work, {
@@ -223,7 +181,7 @@ describe("listOffer", () => {
 
 describe("Spools", () => {
   const root = join(tmp, "state-sender");
-  const spools = new Spools({ root: () => root, ...quiet });
+  const spools = new Spools({ root: () => root, ...quiet, tar: inProcessTar });
 
   test("packs roots with different parents into one spool whose members are exactly the listing", async () => {
     const l = await listOffer({ cwd: work, home, paths: ["proj", "~/outside", "notes.md"], exclude: ["node_modules"], sandbox: null });
@@ -232,14 +190,14 @@ describe("Spools", () => {
     const file = spoolFile(root, "of_0000000000000001");
     assert.equal(statSync(file).size, r.size);
     assert.equal(statSync(file).mode & 0o777, 0o600);
-    assert.equal(r.sha256, execFileSync("sha256sum", [file], { encoding: "utf8" }).split(" ")[0]);
+    assert.equal(r.sha256, createHash("sha256").update(readFileSync(file)).digest("hex"));
     assert.ok(seen.length > 0 && seen.at(-1) === r.size);
     assert.deepEqual((await spoolMembers(file)).sort(), l.packList.flatMap((p) => p.members).sort());
     assert.deepEqual(spools.status("of_0000000000000001"), { state: "ready", written: r.size });
   });
 
   test("a spool on disk reads ready after a restart", async () => {
-    const again = new Spools({ root: () => root, ...quiet });
+    const again = new Spools({ root: () => root, ...quiet, tar: inProcessTar });
     assert.equal(again.status("of_0000000000000001")?.state, "ready");
     assert.equal(again.status("of_00000000000000ff"), null);
   });
@@ -251,26 +209,6 @@ describe("Spools", () => {
     assert.equal(packChanged(1, ""), false);
     assert.equal(packChanged(2, "tar: d/a.txt: file changed as we read it\n"), false);
     assert.equal(packChanged(0, ""), false);
-  });
-
-  test("a file that vanished before tar read it: tar-failed, no spool left", async () => {
-    makeTree(join(tmp, "vanish"), { d: { "gone.txt": "x" } });
-    const l = await listOffer({ cwd: tmp, home, paths: ["vanish"], sandbox: null });
-    rmSync(join(tmp, "vanish", "d", "gone.txt"));
-    const e = await refusal(spools.pack("of_0000000000000002", l));
-    assert.equal(e.reason, "tar-failed");
-    assert.equal(spools.status("of_0000000000000002")?.state, "failed");
-    assert.throws(() => statSync(spoolFile(root, "of_0000000000000002")));
-    assert.throws(() => statSync(`${spoolFile(root, "of_0000000000000002")}.part`));
-  });
-
-  test("a full disk fails the pack with a sentence (no-space)", { skip: !existsSync("/dev/full") && "no /dev/full on this host (macOS)" }, async () => {
-    const l = await listOffer({ cwd: work, home, paths: ["proj"], sandbox: null });
-    const part = `${spoolFile(root, "of_0000000000000003")}.part`;
-    symlinkSync("/dev/full", part);
-    const e = await refusal(spools.pack("of_0000000000000003", l));
-    assert.equal(e.reason, "no-space");
-    assert.match(e.message, /No room to pack/);
   });
 
   test("remove deletes the spool; sweep deletes what no open offer owns", async () => {
@@ -396,7 +334,7 @@ describe("resolveDest and checkDest", () => {
     const sb = { writeDenial: (c: string, o?: { creating?: boolean }) => writeDenial(policy, c, o) };
     const sendRoot = join(tmp, "locked-sender");
     const rcvRoot = join(tmp, "locked-receiver");
-    const spools = new Spools({ root: () => sendRoot, ...quiet });
+    const spools = new Spools({ root: () => sendRoot, ...quiet, tar: inProcessTar });
     before(() => {
       makeTree(join(dest, "pj", "locked"), { "keep.txt": "keep" });
       makeTree(join(tmp, "locked-src", "a"), { pj: { "new.txt": "new" } });
@@ -410,6 +348,7 @@ describe("resolveDest and checkDest", () => {
       const pulls = new Pulls({
         root: () => rcvRoot,
         ...quiet,
+        tar: inProcessTar,
         fetchTar: async ({ headers }) => serveTar({ file: spools.file(offerId), ...snap, range: headers.Range, ifRange: headers["If-Range"] }),
       });
       return pulls.pull({
@@ -449,7 +388,7 @@ describe("resolveDest and checkDest", () => {
 describe("Pulls", () => {
   const sendRoot = join(tmp, "pull-sender");
   const rcvRoot = join(tmp, "pull-receiver");
-  const spools = new Spools({ root: () => sendRoot, ...quiet });
+  const spools = new Spools({ root: () => sendRoot, ...quiet, tar: inProcessTar });
   let listing: OfferListing;
   let snap: { sha256: string; size: number };
   const offerId = "of_1000000000000000";
@@ -476,7 +415,7 @@ describe("Pulls", () => {
     return { fetchTar, log };
   }
   const pulls = (fetchTar: PullDeps["fetchTar"], timings?: PullDeps["timings"]) =>
-    new Pulls({ root: () => rcvRoot, fetchTar, ...quiet, timings: { idleMs: 500, downWaitMs: 200, maxBackoffMs: 50, ...timings } });
+    new Pulls({ root: () => rcvRoot, fetchTar, ...quiet, tar: inProcessTar, timings: { idleMs: 500, downWaitMs: 200, maxBackoffMs: 50, ...timings } });
   let n = 0;
   const job = (extra: Partial<Parameters<Pulls["pull"]>[0]> = {}) => ({
     offerId,
@@ -569,11 +508,10 @@ describe("Pulls", () => {
       }
       return undefined as unknown as Response;
     });
-    p = pulls(s.fetchTar, { downWaitMs: 60_000 });
-    const t0 = Date.now();
+    // Ten minutes' wait for the down sender: only the kick ends it within the runner's per-test timeout.
+    p = pulls(s.fetchTar, { downWaitMs: 600_000 });
     const j = job();
     await p.pull(j);
-    assert.ok(Date.now() - t0 < 10_000, "the kick ended the wait");
     assert.equal(s.log.length, 3);
     sameBin(j.resolvedDest);
   });
@@ -654,27 +592,9 @@ describe("Pulls", () => {
       setTimeout(() => p.cancel(offerId), 20);
       throw new TypeError("fetch failed");
     });
-    p = pulls(s.fetchTar, { downWaitMs: 60_000 });
+    p = pulls(s.fetchTar, { downWaitMs: 600_000 }); // only the cancel ends the wait
     await assert.rejects(p.pull(job()), PullCancelled);
     assert.throws(() => statSync(partFile(rcvRoot, offerId)));
   });
 
-  test("extraction overwrites what is at dest and fails tar-failed when it can't write", async () => {
-    const s = sender();
-    const dest = join(rcvRoot, "dest", "ro");
-    mkdirSync(join(dest, "proj"), { recursive: true });
-    writeFileSync(join(dest, "proj", "a.txt"), "old");
-    await pulls(s.fetchTar).pull(job({ resolvedDest: dest }));
-    assert.equal(readFileSync(join(dest, "proj", "a.txt"), "utf8"), "alpha");
-    if (process.getuid?.() === 0) return; // root writes anywhere
-    const ro = join(rcvRoot, "dest", "ro2");
-    mkdirSync(ro, { recursive: true });
-    execFileSync("chmod", ["555", ro]);
-    try {
-      const e = await refusal(pulls(s.fetchTar).pull(job({ resolvedDest: ro })));
-      assert.equal(e.reason, "tar-failed");
-    } finally {
-      execFileSync("chmod", ["755", ro]);
-    }
-  });
 });

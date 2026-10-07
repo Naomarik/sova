@@ -61,8 +61,10 @@ export class FakeDriver implements Driver {
   readonly onceRuns: OnceSpec[] = [];
   /** What a start does, per unit (default: listen on its own ports). */
   behave: (spec: UnitSpec) => Behaviour = () => ({});
-  /** A run to completion's result (default: exit 0). */
-  once: (spec: OnceSpec) => Partial<RunOnceResult> | Promise<Partial<RunOnceResult>> = () => ({ code: 0 });
+  /** A run to completion's result (default: exit 0); `print` writes a line of its output (each run's log starts fresh). */
+  once: (spec: OnceSpec, print: (line: string) => void) => Partial<RunOnceResult> | Promise<Partial<RunOnceResult>> = () => ({ code: 0 });
+  /** Each run to completion's output, by its unit. */
+  private readonly onceLogs = new Map<string, string[]>();
   /** What a signal does (default: nothing beyond its log line). */
   onSignal: (unit: string, sig: string) => void = () => undefined;
   private nextPid = FAKE_PID_BASE;
@@ -135,11 +137,13 @@ export class FakeDriver implements Driver {
     return pid ? [pid] : [];
   }
   async logs(unit: string, lines: number) {
-    return (this.units_.get(unit)?.logs ?? []).slice(-lines).map((text) => ({ t: new Date(this.host.clock.now()).toISOString(), text }));
+    return (this.units_.get(unit)?.logs ?? this.onceLogs.get(unit) ?? []).slice(-lines).map((text) => ({ t: new Date(this.host.clock.now()).toISOString(), text }));
   }
   async runOnce(spec: OnceSpec): Promise<RunOnceResult> {
     this.onceRuns.push(spec);
-    const r = await this.once(spec);
+    const out: string[] = [];
+    this.onceLogs.set(spec.unit, out);
+    const r = await this.once(spec, (line) => out.push(line));
     return { code: 0, timedOut: false, ms: 0, ...r };
   }
   async units(prefix: string) {

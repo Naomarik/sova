@@ -6,23 +6,23 @@ import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { exitOf, httpStatusOf, isVerbResult, parseDefinition, type VerbResult } from "../../shared/project-contract";
 import { conformer } from "./conform";
+import { DetachedDriver } from "./drivers";
 import { ProjectEngine, type Caller } from "./engine";
-import { FakeHost, type FakeDriver } from "./fake-host";
-import { conformDir, readRegistry } from "./store";
+import { conformDir, dataRootOf, readRegistry } from "./store";
 import { approve, defHashOf } from "./trust";
+import { reservePorts } from "../test-ports";
 
 /**
- * The test verb and on-demand services (§app.project-services/test, /up, /down, /conform suite 2), on a
- * host in memory (fake-host.ts): a REPL-style on-demand service the test command needs, a runner that
- * dials it on the instance's own port and writes SOVA_OUT. test-verb.integration.test.ts runs the real
- * runner, its memory sampling, and its timeout and cancel killing it.
+ * The test verb and on-demand services (§app.project-services/test, /up, /down, /conform suite 2), on
+ * real processes (detached driver): a REPL-style on-demand service the test command needs, a runner that
+ * talks to it on the instance's own port and writes SOVA_OUT; its timeout and a cancel kill it. The
+ * verb's other decisions, and conform suite 2, run on a host in memory in test-verb.test.ts.
  */
 
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-testverb-agent-"));
 
 const op: Caller = { kind: "operator" };
-const BASE = 21_000;
-const host = new FakeHost();
+let BASE = 0;
 
 const def = (over: { test?: object | null; timeout?: number } = {}) => ({
   version: 1,
@@ -39,7 +39,7 @@ import { connect } from "node:net";
 import { writeFileSync } from "node:fs";
 const sel = process.argv.slice(2);
 console.log("runner select " + JSON.stringify(sel) + " env " + process.env.SOVA_TEST_SELECT + " verb " + process.env.SOVA_VERB);
-if (sel.includes("slow")) setInterval(() => {}, 1000);
+if (sel.includes("slow")) { writeFileSync(process.env.SOVA_OUT + ".pid", String(process.pid)); setInterval(() => {}, 1000); }
 else if (sel.includes("raw3")) process.exit(3);
 else {
   const s = connect(Number(process.env.SOVA_PORT_REPL_NREPL), "127.0.0.1");
@@ -57,28 +57,6 @@ else {
 }
 `;
 
-/** runner.mjs (in the integration test) as the fake driver runs it: the same selections, output and SOVA_OUT. */
-const runner: FakeDriver["once"] = async (spec, print) => {
-  const sel = spec.argv.slice(2);
-  print(`runner select ${JSON.stringify(sel)} env ${spec.env.SOVA_TEST_SELECT} verb ${spec.env.SOVA_VERB}`);
-  if (sel.includes("slow")) {
-    // Never ends of itself: the driver's timeout, or the caller's abort, stops it.
-    if (!spec.signal) return { code: 128, timedOut: true, ms: spec.timeoutSec * 1000 };
-    if (!spec.signal.aborted) await new Promise((r) => spec.signal!.addEventListener("abort", r, { once: true }));
-    return { code: 128, aborted: true, ms: 5 };
-  }
-  if (sel.includes("raw3")) return { code: 3, ms: 5 };
-  if (!host.listeners.has(Number(spec.env.SOVA_PORT_REPL_NREPL))) {
-    print("no repl");
-    return { code: 2, ms: 5 };
-  }
-  const failed = sel.filter((x) => x.startsWith("fail"));
-  const passed = (sel.length || 4) - failed.length;
-  writeFileSync(spec.env.SOVA_OUT!, JSON.stringify({ passed, failed: failed.length, skipped: 1, failures: failed.map((n) => ({ name: n, message: "expected 1, got 2".repeat(200), file: "t.mjs", line: 3 })) }));
-  print(`ran ${passed} passed ${failed.length} failed`);
-  return { code: failed.length ? 1 : 0, ms: 5, peakBytes: 32 * 1024 * 1024 };
-};
-
 let parent = "";
 let project = "";
 let engine: ProjectEngine;
@@ -95,6 +73,7 @@ const unitLive = async (id: string, svc: string) => ["active", "activating"].inc
 const svc = (r: VerbResult, name: string) => r.services.find((s) => s.name === name)!;
 
 before(async () => {
+  BASE = await reservePorts(15);
   parent = realpathSync(mkdtempSync(join(tmpdir(), "sova-testverb-proj-")));
   project = join(parent, "demo");
   mkdirSync(join(project, ".sova"), { recursive: true });
@@ -106,8 +85,7 @@ before(async () => {
   git(["init", "-q", "-b", "main"]);
   git(["add", "-A"]);
   git(["commit", "-q", "-m", "fixture"]);
-  host.driver.once = runner;
-  engine = new ProjectEngine(host.deps());
+  engine = new ProjectEngine({ driver: new DetachedDriver(3_000), pollMs: 100 });
   engine.conformer = conformer(engine);
 });
 
@@ -117,6 +95,20 @@ after(async () => {
   rmSync(parent, { recursive: true, force: true });
   rmSync(process.env.PI_CODING_AGENT_DIR!, { recursive: true, force: true });
 });
+
+/** The slow runner's own pid, as it wrote it, gone: nothing of this run is left (never a scan of every process on the host). */
+function slowRunnerGone(): void {
+  const rec = readRegistry().instances.find((i) => i.id === wt)!;
+  const pid = Number(readFileSync(join(dataRootOf(rec.id), ".out", "test.json.pid"), "utf8"));
+  assert.ok(pid > 0);
+  let alive = true;
+  try {
+    process.kill(pid, 0);
+  } catch (e) {
+    alive = (e as NodeJS.ErrnoException).code === "EPERM";
+  }
+  assert.equal(alive, false, `the runner (pid ${pid}) is gone`);
+}
 
 let wt = "";
 let checkout = "";
@@ -139,7 +131,7 @@ test("up leaves an on-demand service stopped; the first test starts it, runs the
   const tests = t.tests!;
   assert.deepEqual([tests.select, tests.pass, tests.passed, tests.failed, tests.errors, tests.skipped, tests.exit, tests.timedOut], [["unit/a", "unit/b:c*"], true, 2, 0, 0, 1, 0, false]);
   assert.ok(tests.ms > 0);
-  assert.equal(tests.peakBytes, 32 * 1024 * 1024, "the run's memory peak, as the driver read it");
+  assert.ok((tests.peakBytes ?? 0) > 16 * 1024 * 1024, `the run's sampled memory peak: ${tests.peakBytes}`);
   const out = (t.lines ?? []).map((l) => l.text).join("\n");
   assert.match(out, /runner select \["unit\/a","unit\/b:c\*"\] env \["unit\/a","unit\/b:c\*"\] verb test/, "selectors appended as argv, and in SOVA_TEST_SELECT");
   assert.ok((t.lines ?? []).every((l) => l.service === "test"));
@@ -176,64 +168,14 @@ test("a failing selection, a runner with no SOVA_OUT, a timeout and a cancelled 
   assert.equal(slow.error?.code, "tests-failed");
   assert.equal(slow.error!.message, "timed out after 1s");
   assert.equal(slow.tests!.timedOut, true);
+  slowRunnerGone();
   define(def(), checkout);
 
   const ac = new AbortController();
-  const running = engine.run("test", { instance: wt, select: ["slow"] }, op, { signal: ac.signal });
-  ac.abort();
-  const cut = await running;
+  setTimeout(() => ac.abort(), 600);
+  const cut = await engine.run("test", { instance: wt, select: ["slow"] }, op, { signal: ac.signal });
   assert.equal(cut.error?.code, "tests-failed");
+  // Waited out, it would end "timed out after 20s": cancelled says the abort stopped it.
   assert.match(cut.error!.message, /cancelled/);
-  assert.equal(host.driver.onceRuns.at(-1)!.signal, ac.signal, "the caller's abort reaches the run");
-});
-
-test("select is checked; a definition with no test is unsupported and makes nothing", async () => {
-  for (const bad of [["--flag"], [""], ["a b"], Array.from({ length: 51 }, (_, i) => `t${i}`)]) {
-    const r = await engine.run("test", { instance: wt, select: bad }, op);
-    assert.equal(r.error?.code, "invalid-request", JSON.stringify(bad));
-  }
-  define(def({ test: null }), checkout);
-  const u = await engine.run("test", { instance: wt }, op);
-  assert.equal(u.error?.code, "unsupported");
-  assert.equal(u.error!.message, "This project declares no test command");
-  assert.equal(u.steps.length, 0);
-  // Nor is an instance made for a checkout that has none yet (the main checkout here).
-  define(def({ test: null }));
-  const before = readRegistry().instances.length;
-  const nb = await engine.run("test", { project }, op);
-  assert.equal(nb.error?.code, "unsupported", nb.error?.message);
-  assert.equal(readRegistry().instances.length, before);
-  define(def());
-  define(def(), checkout);
-});
-
-test("a session tests its own worktree's instance, never the main checkout's; down stops the on-demand service too", async () => {
-  const own: Caller = { kind: "session", id: "s1", root: project, own: [checkout, project] };
-  const t = await engine.run("test", { instance: wt }, own);
-  assert.equal(t.ok, true, t.error?.message);
-  const m = await engine.run("test", { project }, own);
-  assert.equal(m.error?.code, "forbidden");
-  assert.ok(!readRegistry().instances.some((i) => i.slot === 0), "nothing made for main");
-  const dn = await engine.run("down", { instance: wt }, op);
-  assert.equal(dn.state, "stopped", dn.error?.message);
-  assert.ok(!(await unitLive(wt, "repl")) && !(await unitLive(wt, "web")));
-});
-
-test("conform suite 2: on-demand stays stopped after up, the smoke selection passes twice alike in A, B untouched", async () => {
-  const r = await engine.run("conform", { project }, op);
-  assert.equal(r.ok, true, `${r.error?.message}\n${JSON.stringify(r.conform?.checks, null, 1)}`);
-  assert.equal(r.conform!.suiteVersion, 4);
-  const ids = r.conform!.checks.map((c) => c.id);
-  for (const id of ["on-demand-idle", "test-a", "test-a-again", "down-a", "no-leaks"]) assert.ok(ids.includes(id), `${id} in ${ids.join(",")}`);
-  assert.ok(!ids.includes("test-unsupported"));
-  const stamp = JSON.parse(readFileSync(join(conformDir(), "stamps.json"), "utf8")) as { stamps: Record<string, Record<string, { suiteVersion: number }>> };
-  assert.equal(Object.values(stamp.stamps[project]!)[0]!.suiteVersion, 4);
-});
-
-test("conform suite 2 without a test: test answers unsupported", async () => {
-  define(def({ test: null }));
-  execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qam", "no test"], { cwd: project });
-  const r = await engine.run("conform", { project }, op);
-  assert.equal(r.ok, true, `${r.error?.message}\n${JSON.stringify(r.conform?.checks, null, 1)}`);
-  assert.ok(r.conform!.checks.some((c) => c.id === "test-unsupported" && c.ok));
+  slowRunnerGone();
 });

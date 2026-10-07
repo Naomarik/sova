@@ -4,28 +4,10 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
 import http2 from "node:http2";
-import { Duplex } from "node:stream";
+import type { Duplex } from "node:stream";
 import { test } from "node:test";
+import { duplexPair } from "./duplex-pair-test-fixtures";
 import { serveReverse, streamDuplex } from "./lan-reverse";
-
-/** Two streams wired to each other: what one writes, the other reads. */
-function duplexPair(): [Duplex, Duplex] {
-  const ends: Duplex[] = [];
-  const end = (i: number) =>
-    new Duplex({
-      read() {},
-      write(c, _e, cb) {
-        ends[1 - i]!.push(c);
-        cb();
-      },
-      final(cb) {
-        ends[1 - i]!.push(null);
-        cb();
-      },
-    });
-  ends.push(end(0), end(1));
-  return [ends[0]!, ends[1]!];
-}
 
 test("streamDuplex carries no address", async () => {
   const [mac, relay] = duplexPair();

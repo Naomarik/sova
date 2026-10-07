@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
@@ -11,6 +10,7 @@ import { DetachedDriver } from "./drivers";
 import { ProjectEngine, type Caller } from "./engine";
 import { readRegistry } from "./store";
 import { approve, defHashOf } from "./trust";
+import { reservePorts } from "../test-ports";
 
 /**
  * Conform on a project whose `up` starts nothing that logs (§app.project-services/conform): a static
@@ -21,13 +21,6 @@ import { approve, defHashOf } from "./trust";
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-conform-static-agent-"));
 
 const op: Caller = { kind: "operator" };
-const isFree = (port: number) => new Promise<boolean>((done) => { const s = createServer(); s.once("error", () => done(false)); s.listen(port, "127.0.0.1", () => s.close(() => done(true))); });
-async function pickBase(): Promise<number> {
-  for (;;) {
-    const b = 20_000 + Math.floor(Math.random() * 12_000);
-    if ((await Promise.all(Array.from({ length: 15 }, (_, o) => isFree(b + o)))).every(Boolean)) return b;
-  }
-}
 
 const RUNNER = `
 import { connect } from "node:net";
@@ -42,7 +35,7 @@ let project = "";
 let engine: ProjectEngine;
 
 before(async () => {
-  const base = await pickBase();
+  const base = await reservePorts(15);
   parent = realpathSync(mkdtempSync(join(tmpdir(), "sova-conform-static-proj-")));
   project = join(parent, "demo");
   mkdirSync(join(project, ".sova"), { recursive: true });

@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createServer as httpServer, type Server } from "node:http";
-import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
@@ -11,6 +10,7 @@ import { DetachedDriver, type AdoptedStatus } from "./drivers";
 import { ProjectEngine, type Caller, type VerbAct } from "./engine";
 import { readRegistry } from "./store";
 import { approve, defHashOf } from "./trust";
+import { reservePorts } from "../test-ports";
 
 /**
  * Slot 0 adopts a unit Sova did not start (§app.project-services/adopt): read only, up, down, reset and
@@ -22,7 +22,6 @@ import { approve, defHashOf } from "./trust";
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-adopt-agent-"));
 
 const UNIT = "sova-gate-standin.service";
-const free = (port: number) => new Promise<boolean>((done) => { const s = createServer(); s.once("error", () => done(false)); s.listen(port, "127.0.0.1", () => s.close(() => done(true))); });
 let BASE = 0;
 let parent = "";
 let project = "";
@@ -36,10 +35,7 @@ const op: Caller = { kind: "operator" };
 const taken: VerbAct = async () => undefined;
 
 before(async () => {
-  for (;;) {
-    BASE = 20_000 + Math.floor(Math.random() * 12_000);
-    if ((await Promise.all([0, 10, 20, 30, 40, 50, 60].map((o) => free(BASE + o)))).every(Boolean)) break;
-  }
+  BASE = await reservePorts(61);
   parent = realpathSync(mkdtempSync(join(tmpdir(), "sova-adopt-proj-")));
   project = join(parent, "app");
   mkdirSync(join(project, ".sova"), { recursive: true });

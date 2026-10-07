@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
@@ -11,6 +10,7 @@ import { DetachedDriver } from "./drivers";
 import { ProjectEngine, type Caller } from "./engine";
 import { conformDir, readRegistry } from "./store";
 import { approve, defHashOf } from "./trust";
+import { reservePorts } from "../test-ports";
 
 /**
  * The test verb and on-demand services (§app.project-services/test, /up, /down, /conform suite 2), on
@@ -22,13 +22,6 @@ process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-testverb-agen
 
 const op: Caller = { kind: "operator" };
 let BASE = 0;
-const isFree = (port: number) => new Promise<boolean>((done) => { const s = createServer(); s.once("error", () => done(false)); s.listen(port, "127.0.0.1", () => s.close(() => done(true))); });
-async function pickBase(): Promise<number> {
-  for (;;) {
-    const b = 20_000 + Math.floor(Math.random() * 12_000);
-    if ((await Promise.all(Array.from({ length: 15 }, (_, o) => isFree(b + o)))).every(Boolean)) return b;
-  }
-}
 
 const def = (over: { test?: object | null; timeout?: number } = {}) => ({
   version: 1,
@@ -79,7 +72,7 @@ const unitLive = async (id: string, svc: string) => ["active", "activating"].inc
 const svc = (r: VerbResult, name: string) => r.services.find((s) => s.name === name)!;
 
 before(async () => {
-  BASE = await pickBase();
+  BASE = await reservePorts(15);
   parent = realpathSync(mkdtempSync(join(tmpdir(), "sova-testverb-proj-")));
   project = join(parent, "demo");
   mkdirSync(join(project, ".sova"), { recursive: true });

@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
@@ -11,6 +10,7 @@ import { ProjectEngine, type Caller } from "./engine";
 import { mainMoved, onMergeNotes, SYSTEM_ON_MERGE, withOnMerge, type OnMergeDeps } from "./on-merge";
 import { readRegistry } from "./store";
 import { approve, defHashOf } from "./trust";
+import { reservePorts } from "../test-ports";
 
 /**
  * onMerge (§app.project-services/on-merge): when main's HEAD moves, the main checkout's copy (slot 0)
@@ -21,7 +21,6 @@ import { approve, defHashOf } from "./trust";
 
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-onmerge-agent-"));
 
-const free = (port: number) => new Promise<boolean>((done) => { const s = createServer(); s.once("error", () => done(false)); s.listen(port, "127.0.0.1", () => s.close(() => done(true))); });
 let BASE = 0;
 let parent = "";
 let project = "";
@@ -62,10 +61,7 @@ const pidOn = async (port: number): Promise<string> => (await (await fetch(`http
 const deps = (): Partial<OnMergeDeps> => ({ run: (verb, body, caller) => engine.run(verb, body, caller), selfCheckout: () => self, file });
 
 before(async () => {
-  for (;;) {
-    BASE = 20_000 + Math.floor(Math.random() * 12_000);
-    if ((await Promise.all([0, 1, 2, 3, 10, 11, 12, 13].map((o) => free(BASE + o)))).every(Boolean)) break;
-  }
+  BASE = await reservePorts(14);
   parent = realpathSync(mkdtempSync(join(tmpdir(), "sova-onmerge-proj-")));
   project = join(parent, "shop");
   file = join(parent, "on-merge.json");

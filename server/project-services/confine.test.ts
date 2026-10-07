@@ -14,6 +14,7 @@ import { DetachedDriver } from "./drivers";
 import { ProjectEngine, type Caller } from "./engine";
 import { mutateRegistry, readRegistry, sharedIdOf } from "./store";
 import { defHashOf, isApproved } from "./trust";
+import { reservePorts } from "../test-ports";
 
 /**
  * Confined conformance (§app.project-services/confined) with the real sandbox: bwrap, nsenter and
@@ -28,7 +29,7 @@ const skip = canConfine ? false : "needs Linux with bwrap, nsenter, socat and un
 
 const op: Caller = { kind: "operator" };
 // Below the ephemeral range (32768+), so no probe's own client port can take a port a service is about to bind.
-const BASE = 20_000 + Math.floor(Math.random() * 12_000);
+const BASE = await reservePorts(410);
 const PORTS = { web: BASE, bus: BASE + 40, site: BASE + 80 };
 const git = (args: string[], cwd: string) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd, encoding: "utf8" });
 

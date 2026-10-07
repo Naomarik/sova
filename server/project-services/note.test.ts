@@ -14,6 +14,7 @@ import { instanceNote, lastNoteDigest, NOTE_MESSAGE, noteDigest, registerInstanc
 import { readRegistry } from "./store";
 import { renderResult } from "./tools";
 import { approve, defHashOf } from "./trust";
+import { reservePorts } from "../test-ports";
 
 /**
  * The instance note (§app.project-services/instance-note): rendered from the checkout's definition and the
@@ -25,7 +26,7 @@ import { approve, defHashOf } from "./trust";
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-note-agent-"));
 
 const op: Caller = { kind: "operator" };
-const BASE = 21_000 + Math.floor(Math.random() * 9_000);
+const BASE = await reservePorts(60);
 const def = (about = "Test REPL: node client.mjs ${ports.repl.nrepl}") => ({
   version: 1,
   slots: { cap: 2 },

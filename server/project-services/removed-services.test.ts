@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, beforeEach, test } from "node:test";
@@ -12,6 +11,7 @@ import { DetachedDriver } from "./drivers";
 import { ProjectEngine, type Caller } from "./engine";
 import { readRegistry } from "./store";
 import { approve, defHashOf } from "./trust";
+import { reservePorts } from "../test-ports";
 
 /**
  * A service that left `.sova/project.json` (§app.project-services/down, /up, /apply, /teardown,
@@ -25,13 +25,6 @@ process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-removed-agent
 const op: Caller = { kind: "operator" };
 /** Below the kernel's ephemeral range (32768+), and free now: a random port there can be any outgoing socket's. */
 let BASE = 0;
-const isFree = (port: number) => new Promise<boolean>((done) => { const s = createServer(); s.once("error", () => done(false)); s.listen(port, "127.0.0.1", () => s.close(() => done(true))); });
-async function pickBase(): Promise<number> {
-  for (;;) {
-    const b = 20_000 + Math.floor(Math.random() * 12_000);
-    if ((await Promise.all([0, 1, 20, 21, 40, 41].map((o) => isFree(b + o)))).every(Boolean)) return b;
-  }
-}
 const ENGINE = "podman";
 
 const full = () => ({
@@ -69,7 +62,7 @@ const live = (s: string) => s === "active" || s === "activating";
 const stepOf = (r: VerbResult, id: string) => r.steps.find((s) => s.id === id);
 
 before(async () => {
-  BASE = await pickBase();
+  BASE = await reservePorts(42);
   parent = realpathSync(mkdtempSync(join(tmpdir(), "sova-removed-proj-")));
   project = join(parent, "demo");
   mkdirSync(join(project, ".sova"), { recursive: true });

@@ -12,6 +12,7 @@ import { ProjectEngine, type Caller } from "./engine";
 import { hostPortOwner } from "./proctable";
 import { readRegistry } from "./store";
 import { approve, defHashOf } from "./trust";
+import { reservePorts } from "../test-ports";
 
 /**
  * A container service whose engine publishes its port through a listener the unit doesn't own
@@ -24,7 +25,7 @@ process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-container-age
 
 const op: Caller = { kind: "operator" };
 // Below the kernel's ephemeral range (32768+), where any outgoing connection on the box can hold a port.
-const BASE = 20_000 + Math.floor(Math.random() * 10_000);
+const BASE = await reservePorts(10);
 const ENGINE = "podman";
 
 const DEF = {

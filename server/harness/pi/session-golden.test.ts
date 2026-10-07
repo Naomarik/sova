@@ -33,7 +33,10 @@ import { Canonicalizer, firstDifference } from "./testing/canonical-jsonl";
 import { compactFixture } from "./testing/compact-fixture-ext";
 import { SCRIPTED_MODEL, ScriptedModel, scriptedModelsJson } from "./testing/scripted-model";
 import { piSession } from "./testing/handle";
+import { assertPinnedPi } from "./testing/load-pi";
 
+// Before PI_PACKAGE_DIR is set below: the link it names must be the pinned pi.
+assertPinnedPi();
 for (const k of Object.keys(process.env)) if (/_API_KEY$|_AUTH_TOKEN$/.test(k)) delete process.env[k];
 const REPO = resolve(import.meta.dirname, "../../..");
 const GOLDEN = join(import.meta.dirname, "golden/session");

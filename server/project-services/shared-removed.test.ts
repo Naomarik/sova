@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
@@ -10,6 +9,7 @@ import { DetachedDriver } from "./drivers";
 import { ProjectEngine, type Caller } from "./engine";
 import { readRegistry, sharedIdOf } from "./store";
 import { approve, defHashOf } from "./trust";
+import { reservePorts } from "../test-ports";
 
 /**
  * A shared service that left every definition (§app.project-services/down, /up, /reconcile) is stopped
@@ -22,13 +22,6 @@ process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-shrm-agent-")
 
 const op: Caller = { kind: "operator" };
 let BASE = 0;
-const isFree = (port: number) => new Promise<boolean>((done) => { const s = createServer(); s.once("error", () => done(false)); s.listen(port, "127.0.0.1", () => s.close(() => done(true))); });
-async function pickBase(): Promise<number> {
-  for (;;) {
-    const b = 20_000 + Math.floor(Math.random() * 12_000);
-    if ((await Promise.all([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((o) => isFree(b + o)))).every(Boolean)) return b;
-  }
-}
 
 const full = () => ({
   version: 1,
@@ -56,7 +49,7 @@ const stepOf = (r: VerbResult, id: string) => r.steps.find((s) => s.id === id);
 const sharedDesired = () => readRegistry().shared.find((x) => x.project === project)?.desired.cache;
 
 before(async () => {
-  BASE = await pickBase();
+  BASE = await reservePorts(11);
   parent = realpathSync(mkdtempSync(join(tmpdir(), "sova-shrm-proj-")));
   project = join(parent, "demo");
   mkdirSync(join(project, ".sova"), { recursive: true });

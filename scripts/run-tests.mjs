@@ -137,6 +137,9 @@ const sets = [
   { extra: [], files: files.filter((f) => !isBrowserTest(f)) },
   { extra: [BROWSER_CONDITION], files: files.filter(isBrowserTest) },
 ].filter((s) => s.files.length);
+// The temp dir every test file shares (server/test-ports.ts keeps its cross-process port locks there):
+// this runner's own, before each runtime gives the files a throwaway TMPDIR. An outer runner's wins.
+process.env.SOVA_TEST_SHARED_TMP ||= os.tmpdir();
 
 if (runtime === "node") {
   // A pass still running after NODE_PASS_LIMIT_MS is stuck (seen: a file whose tests all reported

@@ -10,6 +10,7 @@ import { DetachedDriver, SystemdDriver, type Exec } from "./drivers";
 import { ProjectEngine, type Caller } from "./engine";
 import { readRegistry } from "./store";
 import { approve, defHashOf } from "./trust";
+import { reservePorts } from "../test-ports";
 
 /**
  * A failed conformance run keeps its evidence (§app.project-services/conform): the last lines of every
@@ -20,7 +21,7 @@ process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-conform-logs-
 
 const op: Caller = { kind: "operator" };
 // Below the ephemeral range (32768+), so no probe's own client port can take a port a service is about to bind.
-const BASE = 20_000 + Math.floor(Math.random() * 12_000);
+const BASE = await reservePorts(60);
 let parent = "";
 let project = "";
 let engine: ProjectEngine;

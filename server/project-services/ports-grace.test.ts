@@ -11,6 +11,7 @@ import { DetachedDriver } from "./drivers";
 import { ProjectEngine, type Caller } from "./engine";
 import { readRegistry } from "./store";
 import { approve, defHashOf } from "./trust";
+import { reservePorts } from "../test-ports";
 
 /**
  * A service's second port opening after the one its readiness asks (MotorSaif's nREPL a few seconds
@@ -23,14 +24,7 @@ process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-ports-grace-a
 
 const op: Caller = { kind: "operator" };
 const LATE_MS = 1_000;
-const isFree = (port: number) => new Promise<boolean>((done) => { const s = createServer(); s.once("error", () => done(false)); s.listen(port, "127.0.0.1", () => s.close(() => done(true))); });
 const listens = (port: number) => new Promise<boolean>((done) => { const s = connect(port, "127.0.0.1"); s.once("connect", () => (s.destroy(), done(true))); s.once("error", () => done(false)); });
-async function pickBase(): Promise<number> {
-  for (;;) {
-    const b = 20_000 + Math.floor(Math.random() * 12_000);
-    if ((await Promise.all(Array.from({ length: 40 }, (_, o) => isFree(b + o)))).every(Boolean)) return b;
-  }
-}
 
 // HTTP at once; the second port after LATE (never, for LATE < 0); a refused listen is ignored, so a foreign holder stays foreign.
 const SERVER = `
@@ -54,7 +48,7 @@ const svc = (name: string, at: number, late: number, timeout: number, onDemand: 
 });
 
 before(async () => {
-  base = await pickBase();
+  base = await reservePorts(40);
   parent = realpathSync(mkdtempSync(join(tmpdir(), "sova-ports-grace-proj-")));
   project = join(parent, "demo");
   mkdirSync(join(project, ".sova"), { recursive: true });

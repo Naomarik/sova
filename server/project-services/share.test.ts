@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { DefinitionError, isVerbResult, parseDefinition, type VerbResult } from "../../shared/project-contract";
+import { reservePorts } from "../test-ports";
 
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-share-agent-"));
 process.env.SOVA_SHARE_PREVIEW_URL = "https://*.preview.example.invalid";
@@ -28,7 +29,7 @@ const { renderResult } = await import("./tools");
 
 const op: Caller = { kind: "operator" };
 // Below the kernel's ephemeral range (32768+), where any outgoing connection on the box can hold a port.
-const BASE = 20_000 + Math.floor(Math.random() * 10_000);
+const BASE = await reservePorts(50);
 const PORTS = { web: BASE, site: BASE + 20, db: BASE + 40 };
 const PID = "prj_sharetst";
 

@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
@@ -11,6 +10,7 @@ import { DetachedDriver } from "./drivers";
 import { ProjectEngine, type Caller, type VerbAct } from "./engine";
 import { readRegistry } from "./store";
 import { approve, defHashOf } from "./trust";
+import { reservePorts } from "../test-ports";
 
 /**
  * Sova hosting itself (§app.project-services/self-host): on the server's own checkout, apply, down,
@@ -20,7 +20,6 @@ import { approve, defHashOf } from "./trust";
 
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-selfhost-agent-"));
 
-const free = (port: number) => new Promise<boolean>((done) => { const s = createServer(); s.once("error", () => done(false)); s.listen(port, "127.0.0.1", () => s.close(() => done(true))); });
 let BASE = 0;
 
 let parent = "";
@@ -47,10 +46,7 @@ function makeProject(dir: string, base: number) {
 }
 
 before(async () => {
-  for (;;) {
-    BASE = 20_000 + Math.floor(Math.random() * 12_000);
-    if ((await Promise.all([0, 1, 2, 3, 4, 10, 11, 12].map((o) => free(BASE + o)))).every(Boolean)) break;
-  }
+  BASE = await reservePorts(13);
   parent = realpathSync(mkdtempSync(join(tmpdir(), "sova-selfhost-proj-")));
   project = join(parent, "sova");
   other = join(parent, "other");

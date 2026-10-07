@@ -20,6 +20,9 @@ import type { ChatServerMessage } from "../../../shared/protocol";
 import { Canonicalizer, firstDifference } from "./testing/canonical-jsonl";
 import { ScriptedModel, scriptedModelsJson } from "./testing/scripted-model";
 import { piSession } from "./testing/handle";
+import { assertPinnedPi } from "./testing/load-pi";
+
+assertPinnedPi();
 
 // Only the scripted model may answer: no provider key from the environment makes a real one available.
 for (const k of Object.keys(process.env)) if (/_API_KEY$|_AUTH_TOKEN$/.test(k)) delete process.env[k];

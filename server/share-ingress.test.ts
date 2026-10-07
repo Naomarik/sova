@@ -15,6 +15,10 @@ const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-share-ingress-")));
 process.env.PI_CODING_AGENT_DIR = join(root, "agent");
 delete process.env.SOVA_SHARE_PUBLIC_URL;
 mkdirSync(join(root, "agent", "sessions"), { recursive: true });
+// A stub share page: with no built dist-share/ the share listener answers 503 (share/routes.ts).
+process.env.SOVA_SHARE_DIST = join(root, "dist-share");
+mkdirSync(process.env.SOVA_SHARE_DIST, { recursive: true });
+writeFileSync(join(process.env.SOVA_SHARE_DIST, "index.html"), "<!doctype html><title>Shared</title>");
 after(() => rmSync(root, { recursive: true, force: true }));
 
 const { stateRoot } = await import("./state-root");

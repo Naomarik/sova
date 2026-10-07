@@ -53,18 +53,42 @@ function repo(name: string, def?: object): string {
   return r;
 }
 
-test("the playbook is listed as a verb playbook that approves deploy", async () => {
-  const cat = await listPlaybooks(dir);
-  const pb = cat.playbooks.find((p) => p.id === "project-deploy");
-  assert.ok(pb, "shipped");
-  assert.equal(pb!.title, "Project deploy");
-  assert.equal(pb!.approves, "deploy");
+// The cases here run real programs or read git behaviour; deploy-playbook.test.ts holds the in-process ones.
+test("candidates quote the repository's deploy entrypoints and run none of them", () => {
+  const r = repo("cand", DEF);
+  const res = run("candidates", "--root", r, "--json");
+  assert.equal(res.status, 0, res.stderr);
+  const j = JSON.parse(res.stdout);
+  assert.ok(j.entrypoints.some((d: string) => d === "package.json script deploy: touch RAN-DEPLOY && ./deploy.sh"), j.entrypoints.join("\n"));
+  assert.ok(j.entrypoints.includes("deploy.sh"));
+  assert.deepEqual(j.host, ["PROD_HOST"]);
+  assert.deepEqual(j.targets, ["prod"]);
+  assert.equal(existsSync(join(r, "RAN-DEPLOY")) || existsSync(join(r, "RAN-DEPLOY-SH")), false, "nothing ran");
 });
 
-test("its text: interview first, the only verbs it calls are the two that read, and it never runs a deploy", () => {
-  const text = readFileSync(join(PLAYBOOK, "PLAYBOOK.md"), "utf8");
-  const verbs = new Set([...text.matchAll(/verb: "(deploy\.[a-z]+)"/g)].map((m) => m[1]));
-  assert.deepEqual([...verbs].sort(), ["deploy.check", "deploy.status"]);
-  assert.match(text, /you write nothing until it is answered/);
-  assert.match(text, /## Never\n- Run a deploy, plan, build, rollback, verify or credential check/);
+test("check: Sova's parser, the canonical form, and no literal address, shell string or secret in a step", () => {
+  const clean = repo("clean", DEF);
+  assert.equal(run("fmt", "--root", clean).status, 0);
+  const ok = run("check", "--root", clean);
+  assert.equal(ok.status, 0, ok.stdout);
+  assert.match(ok.stdout, /ok — targets prod/);
+
+  const bad = structuredClone(DEF);
+  bad.deploy.targets.prod.steps = [
+    { id: "sync", run: ["rsync", "-a", "dist/", "deploy@203.0.113.7:/srv/site/"] },
+    { id: "restart", run: ["sh", "-c", "ssh admin@example.org service site restart"] },
+    { id: "notify", run: ["curl", "-H", "token=abcdef0123456789", "https://${host.PROD_HOST}/hook"] },
+  ];
+  const r = repo("bad", bad);
+  run("fmt", "--root", r);
+  const res = run("check", "--root", r);
+  assert.equal(res.status, 1);
+  assert.match(res.stdout, /prod\.steps\.sync: a literal IP address/);
+  assert.match(res.stdout, /prod\.steps\.restart: a shell string inside an argv/);
+  assert.match(res.stdout, /prod\.steps\.restart: a literal user@host/);
+  assert.match(res.stdout, /prod\.steps\.notify: a value that looks like a secret/);
+
+  const none = repo("none", { version: 1, services: DEF.services });
+  assert.match(run("check", "--root", none).stdout, /\$\.deploy: the definition declares no deploy/);
+  assert.deepEqual(pd.deployProblems({ deploy: { targets: { prod: { ...DEF.deploy.targets.prod, verify: { http: "https://example.org/health" } } } } }).problems, ["prod.verify.http: a literal address (https://example.org/health); use https://${host.NAME}/…"]);
 });

@@ -69,14 +69,33 @@ after(() => rmSync(parent, { recursive: true, force: true }));
 
 const byId = (r: { checks?: { id: string; ok: boolean; detail: string }[] }) => Object.fromEntries((r.checks ?? []).map((c) => [c.id, c]));
 
-test("a ref: a branch's recipe is checked; refusals for no deploy, an invalid one, no such ref", async () => {
-  git(["switch", "-q", "-c", "sova/deploy-x"]);
-  writeFileSync(join(project, ".sova", "project.json"), JSON.stringify({ version: 1, services: DEF.services }));
-  git(["commit", "-q", "-am", "no deploy"]);
-  git(["switch", "-q", "main"]);
-  assert.equal((await deployer.run("deploy.check", { project, ref: "sova/deploy-x" }, op)).error?.code, "not-found");
-  assert.equal((await deployer.run("deploy.check", { project, ref: "nope" }, op)).error?.code, "not-found");
-  const session: Caller = { kind: "session", id: "s1", root: project, own: [] };
-  assert.equal((await deployer.run("deploy.check", { project }, session)).error, undefined, "a playbook's session may check its project");
-  assert.equal((await deployer.run("deploy.check", { project }, { kind: "session", id: "s2", root: "/elsewhere", own: [] })).error?.code, "forbidden");
+// The cases here run real programs or read git behaviour; deploy-check.test.ts holds the in-process ones.
+test("each program resolves in a fresh checkout of the commit or on PATH; host names and env credentials by presence", async () => {
+  const r = await deployer.run("deploy.check", { project }, op);
+  assert.equal(r.error, undefined, r.error?.message);
+  assert.equal(r.ok, false, "a failed check makes ok false, like doctor");
+  const c = byId(r);
+  assert.match(c["schema"]!.detail, /parses: 1 target \(prod\)/);
+  assert.equal(c["program:prod/steps.ship"]!.ok, true);
+  assert.equal(c["program:prod/build.bundle"]!.ok, true, "deleted in main's working tree, there in the commit");
+  assert.deepEqual([c["program:prod/steps.local"]!.ok, c["program:prod/steps.local"]!.detail], [false, "./bin/uncommitted is not in a fresh checkout of the commit"]);
+  assert.deepEqual([c["program:prod/steps.tool"]!.ok, c["program:prod/steps.tool"]!.detail], [false, "definitely-not-a-program-sova is not on PATH"]);
+  assert.equal(c["program:prod/credentials.prod-ssh"]!.ok, true, "node, on PATH");
+  assert.deepEqual([c["host:PROD_HOST"]!.ok, c["credential:prod/DEPLOY_TOKEN"]!.ok], [false, false]);
+  assert.match(c["credential:prod/prod-ssh"]!.detail, /its check runs at plan, never here/);
+
+  mkdirSync(join(process.env.PI_CODING_AGENT_DIR!, "sova", "project-services"), { recursive: true });
+  writeFileSync(hostVarsFile(), JSON.stringify({ version: 1, projects: { [project]: { PROD_HOST: "deploy.example.test", DEPLOY_TOKEN: "s3cr3t-value" } } }));
+  const again = byId(await deployer.run("deploy.check", { project }, op));
+  assert.equal(again["host:PROD_HOST"]!.ok, true);
+  assert.equal(again["credential:prod/DEPLOY_TOKEN"]!.detail, "DEPLOY_TOKEN is set on this host (its value is never shown)");
+  assert.ok(!JSON.stringify(again).includes("s3cr3t-value"), "a credential's value never appears");
+});
+
+test("nothing ran, nothing was left: no marker, no checkout, no worktree", async () => {
+  await deployer.run("deploy.check", { project }, op);
+  for (const f of ["ship", "build", "check-token"]) assert.equal(existsSync(join(project, `RAN-${f}`)), false, f);
+  assert.equal(existsSync(join(project, "RAN-CHECK")), false);
+  assert.deepEqual(readdirSync(join(deployRoot(), "checkouts")), []);
+  assert.equal(git(["worktree", "list", "--porcelain"]).split("\n").filter((l) => l.startsWith("worktree ")).length, 1);
 });

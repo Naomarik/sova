@@ -1,5 +1,6 @@
 // The previews' sweep stops only ended previews' folder serves, never a copy's static service
-// (§app.project-services/supervisor, §mesh.public/preview-serve). A temp PI_CODING_AGENT_DIR; ~/.pi untouched.
+// (§app.project-services/supervisor, §mesh.public/preview-serve), over real serves on 127.0.0.1. A temp
+// PI_CODING_AGENT_DIR; ~/.pi untouched.
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";

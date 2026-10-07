@@ -119,11 +119,12 @@ The suite has two tiers, told apart by file name alone, so a file's tier can't d
   tier (§chat.merge-round/driver).
 - **The tier guard.** A second test preload (`scripts/test-tier-guard.mjs`) records, for each file
   in either tier, the programs it starts, the addresses it listens on or connects to, the URLs it
-  fetches and whether it imports `server/index.ts`, merged into `.cache/test-audit.json`. After the
-  run, the runner lists each unit file that did any of these except run Git. With
-  `SOVA_TEST_GUARD=enforce` the guard refuses the call itself, with an error naming the file and
-  telling to rename it (or split those cases into) `.integration.test.ts`, and the runner fails
-  the file even when the error was caught; `SOVA_TEST_GUARD=off` turns the guard off.
+  fetches and whether it imports `server/index.ts`, merged into `.cache/test-audit.json`. By
+  default it refuses, in a unit file, any of these except running Git: the call throws an error
+  naming the file and telling to rename it (or split those cases into) `.integration.test.ts`, the
+  runner fails the file even when the error was caught, and after the run it lists each such file.
+  `SOVA_TEST_GUARD=report` only records and lists them, failing nothing; `SOVA_TEST_GUARD=off`
+  turns the guard off.
   `server/tier-guard.test.ts` proves each refusal on both runtimes: an ESM named-import `spawn`,
   `execFileSync`, `net.connect`, `http.createServer().listen`, a `fetch` to localhost (and Bun's
   `Bun.connect`, `Bun.spawn`, `Bun.serve`), and a dynamic import of `server/index.ts`.

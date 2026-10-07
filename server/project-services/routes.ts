@@ -37,6 +37,16 @@ export function projectEngine(): ProjectEngine {
   return engine;
 }
 
+/**
+ * Tests only: the engine projectEngine() answers (with a deployer over it), e.g. one on fake-host.ts's host
+ * in memory, so a runtime that reaches the engine never asks this host's supervisor; null: the next use
+ * builds the server's own again.
+ */
+export function setProjectEngineForTest(e: ProjectEngine | null): void {
+  engine = e;
+  deployer = e ? new Deployer(e) : null;
+}
+
 /** The server's one deployer (§app.project-services/deploy), beside its engine. */
 export function projectDeployer(): Deployer {
   projectEngine();

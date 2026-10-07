@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import WebSocket, { WebSocketServer } from "ws";
+import { reservePorts } from "./test-ports";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-preview-proxy-")));
 process.env.PI_CODING_AGENT_DIR = join(root, "agent");
@@ -26,10 +27,10 @@ const store = await import("./preview-links");
 const ZONE_URL = "http://*.preview.test";
 const none = new Set<number>();
 
-async function listen(server: Server, host = "127.0.0.1"): Promise<number> {
+async function listen(server: Server, host = "127.0.0.1", port = 0): Promise<number> {
   await new Promise<void>((r, j) => {
     server.once("error", j);
-    server.listen(0, host, () => r());
+    server.listen(port, host, () => r());
   });
   after(() => {
     server.close();
@@ -39,7 +40,7 @@ async function listen(server: Server, host = "127.0.0.1"): Promise<number> {
 }
 
 /** A fake app: records what reached it; `handler` answers. */
-async function app(handler: (req: IncomingMessage, res: ServerResponse, body: Buffer) => void, host = "127.0.0.1") {
+async function app(handler: (req: IncomingMessage, res: ServerResponse, body: Buffer) => void, host = "127.0.0.1", port = 0) {
   const seen: { url?: string; headers: IncomingHttpHeaders; body: Buffer }[] = [];
   const server = createServer((req, res) => {
     const chunks: Buffer[] = [];
@@ -50,8 +51,8 @@ async function app(handler: (req: IncomingMessage, res: ServerResponse, body: Bu
       handler(req, res, body);
     });
   });
-  const port = await listen(server, host);
-  return { server, port, seen };
+  const bound = await listen(server, host, port);
+  return { server, port: bound, seen };
 }
 
 /** The share edge with only the preview split, over the real store's records. */
@@ -141,10 +142,15 @@ test("the share host keeps its allowlist: a non-preview Host never reaches an ap
 });
 
 test("the app on ::1 only is reached there; 127.0.0.1 is tried first", async (t) => {
+  // A port reserved for this process (below the ephemeral range, free on 127.0.0.1 when reserved, and
+  // locked against every other file's reservePorts): a random ::1 port was once some other server's
+  // on 127.0.0.1, which the proxy then reached first.
+  const port = await reservePorts(1);
   let a: Awaited<ReturnType<typeof app>>;
   try {
-    a = await app((_req, res) => void res.writeHead(200).end("v6"), "::1");
-  } catch {
+    a = await app((_req, res) => void res.writeHead(200).end("v6"), "::1", port);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "EADDRINUSE") throw e;
     t.skip("no IPv6 loopback here");
     return;
   }

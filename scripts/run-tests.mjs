@@ -23,8 +23,8 @@
 //
 // The tier guard (test-tier-guard.mjs, a second preload) records what each file starts, binds,
 // connects to, fetches and whether it imports server/index.ts, into .cache/test-audit.json; a unit
-// file doing any of it but git is listed at the end of the run. SOVA_TEST_GUARD=enforce fails it
-// instead ("rename to .integration.test.ts"); =off turns the guard off.
+// file doing any of it but git fails ("rename to .integration.test.ts") and is listed at the end of
+// the run. SOVA_TEST_GUARD=report only lists it; =off turns the guard off.
 //
 // Node: `tsx --test` with the hermetic-env.mjs preload, which gives each file's process its own
 // throwaway home.
@@ -278,7 +278,7 @@ function guardReport(dir) {
   }
   const offenders = [...byFile].filter(([, r]) => r.tier === "unit" && r.offences.length).sort(([a], [b]) => a.localeCompare(b));
   if (!offenders.length) return [];
-  const enforce = process.env.SOVA_TEST_GUARD === "enforce";
+  const enforce = (process.env.SOVA_TEST_GUARD || "enforce") === "enforce";
   console.log(`\ntier guard (${enforce ? "enforce" : "report"}): ${offenders.length} unit file${offenders.length === 1 ? "" : "s"} did what the unit tier refuses (each belongs in, or should split cases into, a .integration.test.ts sibling; details in ${path.relative(ROOT, AUDIT)}):`);
   for (const [file, r] of offenders) console.log(`  ${enforce ? "FAIL " : ""}${file}: ${[...new Set(r.offences)].slice(0, 4).join("; ")}${new Set(r.offences).size > 4 ? "; …" : ""}`);
   return enforce ? offenders.map(([f]) => f) : [];
@@ -336,7 +336,7 @@ function hermeticEnv() {
 // The tier guard's records, one per file process; gathered after the run (guardReport).
 const guardDir = fs.mkdtempSync(path.join(os.tmpdir(), "sova-test-guard-"));
 process.on("exit", () => removeTree(guardDir));
-const enforce = process.env.SOVA_TEST_GUARD === "enforce";
+const enforce = (process.env.SOVA_TEST_GUARD || "enforce") === "enforce";
 
 function runFile(file, extra) {
   const { root, env } = hermeticEnv();

@@ -1,4 +1,4 @@
-// Run: pnpm exec tsx --test server/preview-serve.test.ts
+// Run: node scripts/run-tests.mjs server/preview-serve.integration.test.ts (real sockets on 127.0.0.1).
 // Builds a throwaway tree in the OS temp dir and removes it afterwards.
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";

@@ -335,9 +335,9 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
     after `pnpm test`. `pnpm test:all` runs both tiers. Named files run whatever their tier.
   - The tier guard (`scripts/test-tier-guard.mjs`, the runner's second preload) records what each file
     starts, binds, connects to, fetches and whether it imports `server/index.ts`
-    (`.cache/test-audit.json`) and lists, after the run, the unit files that did any of it but git.
-    `SOVA_TEST_GUARD=enforce` refuses the call instead and fails the file ("rename to
-    .integration.test.ts"); `=off` turns it off. A test that needs one real thing: split those cases
+    (`.cache/test-audit.json`); in a unit file it refuses any of it but git and fails the file
+    ("rename to .integration.test.ts"), listing those files after the run.
+    `SOVA_TEST_GUARD=report` only lists them; `=off` turns it off. A test that needs one real thing: split those cases
     into the `.integration.test.ts` sibling, keep the logic in the unit file.
 - The runner, **on Bun** (the summary line reads `run-tests (bun): …`). One runner, `scripts/run-tests.mjs` (`pnpm test`, the project's
   `test.run`), holds the file list; `*.browser.test.ts` files need Solid's browser build and run in

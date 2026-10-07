@@ -6,9 +6,9 @@
 // in either tier, so one run of the suite shows what each file really touches.
 //
 // SOVA_TEST_FILE (set by the runner per bun process; under node --test, the file is the process's
-// argv[1]) names the file. SOVA_TEST_GUARD: `report` (the default) only records; `enforce` also
-// refuses the call with an error that says to rename the file, so the test fails where it happened;
-// `off` does nothing. SOVA_TEST_GUARD_DIR: where each process writes its record at exit
+// argv[1]) names the file. SOVA_TEST_GUARD: `enforce` (the default) also refuses the call in a unit
+// file with an error that says to rename the file, so the test fails where it happened; `report`
+// only records; `off` does nothing. SOVA_TEST_GUARD_DIR: where each process writes its record at exit
 // (`<dir>/<pid>.json`), for the runner to gather; unset, nothing is written.
 import cp from "node:child_process";
 import fs from "node:fs";
@@ -21,7 +21,7 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.join(import.meta.dirname, "..");
 const SERVER_INDEX = path.join(ROOT, "server", "index.ts");
-const mode = process.env.SOVA_TEST_GUARD || "report";
+const mode = process.env.SOVA_TEST_GUARD || "enforce";
 const isIntegration = (file) => file.endsWith(".integration.test.ts");
 
 /** The test file this process runs, relative to the root; null when it runs none (a runner's parent). */

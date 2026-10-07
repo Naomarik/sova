@@ -899,8 +899,14 @@ sentence step shows that sentence on its status line; nothing is kept:
   has digital silence inside speech — a system noise gate (like EasyEffects' RNNoise VAD) is
   cutting your voice. Turn it off and record again." A raw mic always carries some noise, so exact
   zeros only come from processing.
-- **Cut off** — the last 100 ms still above −45 dBFS: "This clip ends mid-word. Record it again and
-  stop a moment after the last word."
+- **Cut off** — speech still running in the last 160 ms, judged against the clip's own levels so a
+  phone's noisier raw mic and the knock of the finger tapping Stop don't count: the tail's level is
+  the 4th quietest of its eight 20 ms stretches (a knock up to about 60 ms can't move it, and 80 ms
+  of quiet after the last word passes), and it must
+  be above −45 dBFS, at least 12 dB above the clip's noise floor (its 10th-percentile 20 ms
+  stretch) and within 20 dB of its speech level (the 90th percentile of its stretches above −40
+  dBFS): "This clip ends mid-word. Record it again and stop a moment after the last word." A clip
+  less than a tenth of it quiet has its floor near its speech level, so it is rarely flagged.
 
 ## §app.settings-dialog/outreach — Outreach
 

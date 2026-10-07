@@ -57,6 +57,8 @@ export function summarizerDenial(policy: ModelPolicy | null, choice: SummarizerC
 export interface SelectOption {
   value: string;
   label: string;
+  /** The id, where the label is a name (a Claude model). */
+  title?: string;
 }
 
 /** The backend's list, or null when it couldn't list (or the options aren't in yet). */
@@ -81,13 +83,17 @@ export function summarizerModelOptions(
   policy: ModelPolicy | null,
   choice: SummarizerChoice,
 ): SelectOption[] {
+  // A Claude model by its catalog name, its id in the title (§app.claude-code-provider/model-names).
+  const claude = choice.backend === "claude-code";
   const out: SelectOption[] = (listed(options, choice.backend) ?? []).map((m) => ({
     value: m.id,
-    label: `${m.id}${summarizerDenial(policy, { backend: choice.backend, model: m.id }) ? " — turned off" : ""}`,
+    label: `${claude ? m.name : m.id}${summarizerDenial(policy, { backend: choice.backend, model: m.id }) ? " — turned off" : ""}`,
+    ...(claude ? { title: m.id } : {}),
   }));
   const models = listed(options, choice.backend);
+  const listedAs = models ? findListedModel(models, choice.backend, choice.model) : undefined;
   if (choice.model && !out.some((o) => o.value === choice.model))
-    if (models && findListedModel(models, choice.backend, choice.model)) out.unshift({ value: choice.model, label: choice.model });
+    if (listedAs) out.unshift({ value: choice.model, label: claude ? listedAs.name : choice.model, title: choice.model });
     else out.unshift({ value: choice.model, label: `${choice.model} — ${unverified(options, choice) ? "not verified" : "not offered"}` });
   return out;
 }
@@ -115,7 +121,7 @@ export function summarizerIssue(
       tone: "muted",
       text:
         choice.backend === "claude-code"
-          ? `Not verified: the Claude Code CLI's model list doesn't include ${choice.model} right now (the list varies).`
+          ? `Not verified: ${choice.model} is not in Sova's Claude catalog. It will still be used.`
           : `Not verified: ${choice.model.slice(0, choice.model.indexOf("/"))} models exist only in sessions started with that provider on.`,
     };
   return { tone: "error", text: `${choice.model} isn't offered by ${BACKEND_LABELS[choice.backend]}, so it's skipped.` };

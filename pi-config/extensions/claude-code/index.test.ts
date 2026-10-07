@@ -24,11 +24,19 @@ test("Claude extension registers versioned backend and handles discovery until s
 	h.events.emit(BACKEND_DISCOVER_EVENT, { version: 1 });
 	assert.equal(h.registrations.length, 2);
 });
+test("an old Claude id passes validate and yields its catalog id, quietly (§app.claude-code-provider/legacy-ids)", () => {
+	const b = harness().registrations[0];
+	const ctx = { hasUI: false };
+	const spec = { backend: "claude-code", model: "opus[1m]", prompt: "x" };
+	assert.doesNotThrow(() => b.validate(spec, ctx));
+	assert.equal(b.prepare(spec, ctx).model, "claude-opus-5-5");
+});
 test("Claude preparation has backend-specific defaults and rejects Pi-only options", () => {
 	const b = harness().registrations[0];
 	const ctx = { hasUI: false };
 	const prepared = b.prepare({ prompt: "test", tools: [] }, ctx);
-	assert.equal(prepared.model, "sonnet");
+	assert.equal(prepared.model, "claude-sonnet-5-5");
+	assert.doesNotThrow(() => b.validate({ prompt: "test", model: "claude-opus-6" }, ctx), "an id the catalog does not know is still used");
 	assert.equal(prepared.effort, "medium");
 	assert.deepEqual(prepared.tools, []);
 	assert.equal(prepared.permissionMode, "bypassPermissions");

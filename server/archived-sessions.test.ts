@@ -1,7 +1,6 @@
 // Run: npx tsx --test server/archived-sessions.test.ts
 // Uses a throwaway PI_CODING_AGENT_DIR in the OS temp dir; ~/.pi is never read or written.
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -20,9 +19,9 @@ const { archiveSession } = await import("./sessions-index");
 const { addWebSession } = await import("./web-sessions");
 const { canonicalPath } = await import("./paths");
 
-const sleeper = spawn("sleep", ["60"], { stdio: "ignore" });
+// The runner that started this file, alive for all of it, stands in for another live process.
+const otherPid = process.ppid;
 after(() => {
-  sleeper.kill();
   rmSync(agentDir, { recursive: true, force: true });
 });
 
@@ -84,12 +83,12 @@ test("archiveSession: refuses archiving a live session, still allows unarchiving
   setArchived("web-live", true); // archived before a TUI opened it
   writeFileSync(
     join(liveDir, "p-test.json"),
-    JSON.stringify({ session: { pid: sleeper.pid, sessionFile: path, mode: "tui" }, presence: { status: "idle" } }),
+    JSON.stringify({ session: { pid: otherPid, sessionFile: path, mode: "tui" }, presence: { status: "idle" } }),
   );
   try {
     const off = await archiveSession(path, false);
     assert.ok(off.ok);
-    assert.equal(off.summary.live?.pid, sleeper.pid);
+    assert.equal(off.summary.live?.pid, otherPid);
     const on = await archiveSession(path, true);
     assert.equal(on.ok, false);
     assert.ok(!on.ok && on.status === 409 && /open in a TUI/.test(on.error));

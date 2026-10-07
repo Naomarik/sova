@@ -206,7 +206,7 @@ test("restored workers carry their context fill; a claude-code window follows th
   ));
   const workers = byId((await getSessionInsight(path)).workers);
   const cc = workers.get("ag_11")!;
-  assert.equal(cc.model, "claude-opus-4-6[1m]", "the row names what it ran under, with the spawn model's variant (labelled \"opus-4.6 1M\")");
+  assert.equal(cc.model, "claude-opus-4-6", "the row names what it ran under (labelled \"Opus 4.6\"); the window is the spawn model's");
   assert.equal(cc.contextWindow, 1_000_000);
   assert.deepEqual(cc.context, { tokens: 707, window: 1_000_000 });
   assert.equal(workers.get("ag_12")!.context, "compacted");
@@ -240,7 +240,7 @@ test("live workers' fill comes off their transcripts' tails; a remote placeholde
     const workers = byId((await getSessionInsight(withSpawn)).workers);
     assert.equal((workers.get("ag_20")!.context as { tokens: number }).tokens, 100);
     assert.equal(workers.get("ag_21")!.contextWindow, 1_000_000, "the manifest's spawn model names the window");
-    assert.equal(workers.get("ag_21")!.model, "claude-opus-4-6[1m]", "and the label's variant");
+    assert.equal(workers.get("ag_21")!.model, "claude-opus-4-6", "the label is the model that answered, with no variant");
     assert.deepEqual(workers.get("ag_21")!.context, { tokens: 707, window: 1_000_000 });
     assert.ok(!("context" in workers.get("ag_22")!), "a remote target's placeholder is never read");
   } finally {

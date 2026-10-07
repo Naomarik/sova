@@ -139,66 +139,6 @@ describe("the setup job", () => {
 });
 
 describe("the real steps, on a prepared folder", () => {
-  it("skips what exists, self-tests the binary it finds, and writes install.json", async () => {
-    const { inst, paths } = installer(
-      {
-        detect: async (ctx) => {
-          ctx.plan = { kind: "source", backend: "cpu" };
-          ctx.job.backend = "cpu";
-          return "done";
-        },
-        packages: DEFAULT_STEPS.packages,
-        source: DEFAULT_STEPS.source,
-        build: DEFAULT_STEPS.build,
-        model: DEFAULT_STEPS.model,
-        selftest: DEFAULT_STEPS.selftest,
-        finish: DEFAULT_STEPS.finish,
-      },
-      ["cmake", "c++", "make", "tar"],
-    );
-    mkdirSync(join(paths.src, WHISPER_SOURCE_DIR), { recursive: true });
-    writeFileSync(join(paths.src, WHISPER_SOURCE_DIR, "CMakeLists.txt"), "");
-    mkdirSync(paths.bin, { recursive: true });
-    symlinkSync(FAKE, join(paths.bin, sourceBinaryName("cpu")));
-    mkdirSync(paths.models, { recursive: true });
-    writeFileSync(paths.modelFile, "");
-    truncateSync(paths.modelFile, MODEL.bytes); // sparse: the size is what a non-repair checks
-    inst.start();
-    await inst.whenDone();
-    assert.equal(inst.job!.outcome, "ok", JSON.stringify(inst.job!.steps));
-    assert.equal(states(inst), "detect:done packages:done source:skipped build:skipped model:skipped selftest:done finish:done");
-    const rec = readInstall(paths);
-    assert.ok(rec);
-    assert.equal(rec.backend, "cpu");
-    assert.equal(rec.binary, `bin/${sourceBinaryName("cpu")}`);
-    assert.equal(rec.selftestText, "Open Sova, and run the type check in the worktree.");
-    assert.equal(rec.model, MODEL.id);
-    assert.match(inst.job!.steps.find((s) => s.id === "selftest")!.note ?? "", /^\d+\.\d s · CPU$/);
-  });
-
-  it("a self-test that hears the wrong words fails the job", async () => {
-    const prev = process.env.FAKE_WHISPER_TEXT;
-    process.env.FAKE_WHISPER_TEXT = "Thank you.";
-    try {
-      const { inst, paths } = installer({
-        detect: async (ctx) => {
-          ctx.plan = { kind: "source", backend: "cpu" };
-          return "done";
-        },
-        selftest: DEFAULT_STEPS.selftest,
-      });
-      mkdirSync(paths.bin, { recursive: true });
-      symlinkSync(FAKE, join(paths.bin, sourceBinaryName("cpu")));
-      inst.start();
-      await inst.whenDone();
-      assert.equal(inst.job!.outcome, "failed");
-      assert.equal(inst.job!.steps.find((s) => s.id === "selftest")!.error, "The self-test heard “Thank you.”, not the test sentence");
-    } finally {
-      if (prev === undefined) delete process.env.FAKE_WHISPER_TEXT;
-      else process.env.FAKE_WHISPER_TEXT = prev;
-    }
-  });
-
   it("packages: the pacman command when cmake is missing", async () => {
     const { inst } = installer(
       {

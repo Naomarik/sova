@@ -9,7 +9,7 @@
 import { createSignal } from "solid-js";
 import type { AssignGroupResult, SessionGroup, SessionSummary } from "../../shared/protocol";
 import { assignSessionGroup, createSessionGroup, deleteSessionGroup, listSessionGroups, patchSessionGroup, renameSessionGroup } from "./api";
-import { shortModel } from "./format";
+import { modelLabel } from "./format";
 import { toast } from "./ui-state";
 
 /** One group and the sessions of it that the caller passed in (already the search hits). */
@@ -82,14 +82,14 @@ function memberTabs(members: readonly { title: string; model?: string | null; la
   const models = new Map<string, number>();
   for (const m of members) {
     titles.set(m.title, (titles.get(m.title) ?? 0) + 1);
-    const model = shortModel(m.model);
+    const model = modelLabel(m.model);
     if (model) models.set(model, (models.get(model) ?? 0) + 1);
   }
   // Numbered over the whole group, not over the title-sharers, so a member's suffix doesn't move
   // when an unrelated member joins or leaves.
   const seen = new Map<string, number>();
   return members.map((m) => {
-    const model = shortModel(m.model);
+    const model = modelLabel(m.model);
     const nth = model ? (seen.set(model, (seen.get(model) ?? 0) + 1), seen.get(model)!) : 0;
     if (m.label) return { text: m.label, fromModel: false };
     if ((titles.get(m.title) ?? 0) > 1 && model) {
@@ -116,7 +116,7 @@ export function tabLabels(members: readonly { title: string; model?: string | nu
  */
 export function paneNames(members: readonly { title: string; model?: string | null; label?: string | null }[]): string[] {
   return memberTabs(members).map((r, i) => {
-    const model = shortModel(members[i]?.model);
+    const model = modelLabel(members[i]?.model);
     return r.fromModel || !model ? r.text : `${r.text} · ${model}`;
   });
 }

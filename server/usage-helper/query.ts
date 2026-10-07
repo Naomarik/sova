@@ -1,4 +1,5 @@
 import type { PricedUsage } from "../../shared/model-prices/prices";
+import { claudeByAnswer, resolveClaude } from "../../pi-config/extensions/claude-code/catalog.ts";
 import {
   USAGE_KIND_ORDER,
   type CostTokens,
@@ -143,10 +144,48 @@ interface Entry {
   cwd: string | null;
   project: string | null;
   provider: string;
+  /** The model the row is grouped by (displayModel): the model that answered, for Claude. */
   model: string;
+  /** Asked for another catalog model than the one that answered. */
+  asked: string | null;
+  /** The ids the calls asked for. */
+  requested: Set<string>;
   acc: Acc;
   pricing: Pricing;
 }
+
+/** Providers whose models are Claude's, named by Sova's Claude catalog. */
+const CLAUDE_PROVIDERS = new Set(["claude-code-cli", "claude", "anthropic"]);
+const strip1m = (id: string) => id.replace(/\[1m\]$/i, "");
+
+/**
+ * The model a call is grouped by (§app.insights/usage-model-rows). Claude: the catalog model that
+ * answered (its answer ids, `[1m]` dropped), else the one asked for (through the catalog or the
+ * frozen legacy table, at the call's time); a call another model answered stays apart (`asked`);
+ * a Claude id the catalog doesn't know keeps its own row. Any other provider: the model asked for.
+ */
+export function displayModel(provider: string, model: string, responseModel: string | null | undefined, at: number): { model: string; asked: string | null } {
+  if (!CLAUDE_PROVIDERS.has(provider)) return { model, asked: null };
+  const answered = claudeByAnswer(responseModel);
+  const asked = resolveClaude(model, { at, answered: responseModel });
+  if (answered) return { model: answered.id, asked: asked && asked.id !== answered.id ? asked.id : null };
+  if (responseModel && responseModel !== "<synthetic>") return { model: strip1m(responseModel), asked: null };
+  return { model: asked?.id ?? model, asked: null };
+}
+
+/** A `models=` filter key as the rows now name it: `claude-code-cli/opus[1m]` → `claude-code-cli/claude-opus-5-5`. */
+export function modelFilterKey(key: string, at: number): string {
+  const slash = key.indexOf("/");
+  if (slash < 1) return key;
+  const provider = key.slice(0, slash);
+  return `${provider}/${displayModel(provider, key.slice(slash + 1), null, at).model}`;
+}
+
+/** A row's requested ids and mismatch, for the wire: omitted when they say nothing new. */
+const identity = (model: string, asked: string | null, requested: Set<string>) => {
+  const ids = [...requested].filter((r) => r !== model).sort();
+  return { ...(ids.length ? { requested: [...requested].sort() } : {}), ...(asked ? { asked } : {}) };
+};
 
 const KINDS = new Set<string>(USAGE_KIND_ORDER);
 const MAX_ZONES = 3;
@@ -243,9 +282,10 @@ export class Queries {
     const ld = this.localDay(tz);
     const by = new Map<string, Entry>();
     for (const row of rows) {
-      const [owner, , , kind, , cwd, project, , provider, model] = row.d;
+      const [owner, , , kind, , cwd, project, , provider, model, responseModel] = row.d;
       const local = ld(row.b);
-      const id = `${local}\u001f${owner}\u001f${kind}\u001f${cwd}\u001f${project}\u001f${provider}\u001f${model}`;
+      const shown = displayModel(provider!, model!, responseModel, row.a0);
+      const id = `${local}\u001f${owner}\u001f${kind}\u001f${cwd}\u001f${project}\u001f${provider}\u001f${shown.model}\u001f${shown.asked ?? ""}`;
       let e = by.get(id);
       if (!e) {
         e = {
@@ -255,12 +295,15 @@ export class Queries {
           cwd: cwd ?? null,
           project: project ?? null,
           provider: provider!,
-          model: model!,
+          model: shown.model,
+          asked: shown.asked,
+          requested: new Set(),
           acc: new Acc(),
           pricing: new Pricing(),
         };
         by.set(id, e);
       }
+      e.requested.add(model!);
       const price = this.priceRow(row);
       e.acc.add(row, price);
       e.pricing.add(price.p, row.a1);
@@ -291,14 +334,15 @@ export class Queries {
     const from = q.range === "all" ? null : addDays(today, q.range === "7d" ? -6 : -29);
     const days = q.range === "all" ? this.ledger.dayNames().filter((d) => d <= addDays(today, 1)) : this.utcDays(from!, today);
     const pset = new Set(q.providers);
-    const mset = new Set(q.models);
+    // An old key (`claude-code-cli/opus[1m]`) selects the row its calls are now grouped in.
+    const mset = new Set(q.models.map((k) => modelFilterKey(k, this.now())));
     const facetP = new Set<string>();
     const facetM = new Map<string, { provider: string; model: string }>();
     const total = new Acc();
     const kinds = new Map<UsageKind, Acc>();
     const daily = new Map<string, Acc>();
     const byProvider = new Map<string, Acc>();
-    const byModel = new Map<string, { provider: string; model: string; acc: Acc; pricing: Pricing }>();
+    const byModel = new Map<string, { provider: string; model: string; asked: string | null; requested: Set<string>; acc: Acc; pricing: Pricing }>();
     const byProject = new Map<string, { project: string | null; cwd: string | null; acc: Acc }>();
     const sessions = new Map<string, Acc>();
     let first: string | null = null;
@@ -316,7 +360,8 @@ export class Queries {
         get(kinds, e.kind, () => new Acc()).merge(e.acc);
         get(daily, e.ld, () => new Acc()).merge(e.acc);
         get(byProvider, e.provider, () => new Acc()).merge(e.acc);
-        const m = get(byModel, mk, () => ({ provider: e.provider, model: e.model, acc: new Acc(), pricing: new Pricing() }));
+        const m = get(byModel, `${mk}\u001f${e.asked ?? ""}`, () => ({ provider: e.provider, model: e.model, asked: e.asked, requested: new Set<string>(), acc: new Acc(), pricing: new Pricing() }));
+        for (const r of e.requested) m.requested.add(r);
         m.acc.merge(e.acc);
         m.pricing.merge(e.pricing);
         const pk = e.project ? `p:${e.project}` : `c:${e.cwd ?? ""}`;
@@ -371,7 +416,7 @@ export class Queries {
       oneshots: kindAcc("oneshot").spend(),
       daily: dailyOut,
       byProvider: [...byProvider.entries()].map(([provider, a]) => ({ provider, ...a.spend() })).sort(byUsd),
-      byModel: [...byModel.values()].map((m): UsageModelRow => ({ provider: m.provider, model: m.model, ...m.acc.spend(), ...m.pricing.out(this.name) })).sort(byUsd),
+      byModel: [...byModel.values()].map((m): UsageModelRow => ({ provider: m.provider, model: m.model, ...identity(m.model, m.asked, m.requested), ...m.acc.spend(), ...m.pricing.out(this.name) })).sort(byUsd),
       byKind: USAGE_KIND_ORDER.filter((k) => kinds.has(k)).map((kind) => ({ kind, ...kinds.get(kind)!.spend() })),
       byProject: [...byProject.values()].map((p) => ({ project: p.project, cwd: p.cwd, ...p.acc.spend() })).sort(byUsd),
       topSessions: top,
@@ -429,14 +474,15 @@ export class Queries {
     const own = new Acc();
     const oneshots = new Acc();
     const workers = new Acc();
-    const models = new Map<string, { origin: UsageSessionModelRow["origin"]; provider: string; model: string; acc: Acc; pricing: Pricing }>();
+    const models = new Map<string, { origin: UsageSessionModelRow["origin"]; provider: string; model: string; asked: string | null; requested: Set<string>; acc: Acc; pricing: Pricing }>();
     const perWorker = new Map<string, Acc>();
     this.eachEntry(fam, (e) => {
       const owner = e.owner!;
       const origin = owner !== q.sid ? "worker" : e.kind === "oneshot" ? "oneshot" : "main";
       (origin === "worker" ? workers : origin === "oneshot" ? oneshots : own).merge(e.acc);
       if (origin === "worker") get(perWorker, owner, () => new Acc()).merge(e.acc);
-      const m = get(models, `${origin}${e.provider}${e.model}`, () => ({ origin, provider: e.provider, model: e.model, acc: new Acc(), pricing: new Pricing() }));
+      const m = get(models, `${origin}${e.provider}${e.model}${e.asked ?? ""}`, () => ({ origin, provider: e.provider, model: e.model, asked: e.asked, requested: new Set<string>(), acc: new Acc(), pricing: new Pricing() }));
+      for (const r of e.requested) m.requested.add(r);
       m.acc.merge(e.acc);
       m.pricing.merge(e.pricing);
     });
@@ -464,7 +510,7 @@ export class Queries {
       oneshots: oneshots.spend(),
       workers: workers.spend(),
       models: [...models.values()]
-        .map((m): UsageSessionModelRow => ({ origin: m.origin, provider: m.provider, model: m.model, ...m.acc.spend(), ...m.pricing.out(this.name) }))
+        .map((m): UsageSessionModelRow => ({ origin: m.origin, provider: m.provider, model: m.model, ...identity(m.model, m.asked, m.requested), ...m.acc.spend(), ...m.pricing.out(this.name) }))
         .sort((a, b) => b.usd - a.usd),
       workerList,
       lastAt: total.lastAt || null,

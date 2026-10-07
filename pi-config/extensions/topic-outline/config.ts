@@ -4,12 +4,13 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+import { canonicalClaudeId, latestClaude } from "../claude-code/catalog.ts";
 import type { OutlineConfig, SummarizerSpec } from "./types.ts";
 
 export const DEFAULT_CONFIG: OutlineConfig = {
   summarizers: [
     { backend: "pi", model: "ollama-cloud/deepseek-v4.1-flash", timeoutMs: 60_000 },
-    { backend: "claude-code", model: "sonnet", timeoutMs: 45_000, maxBudgetUsd: 0.05 },
+    { backend: "claude-code", model: latestClaude("sonnet").id, timeoutMs: 45_000, maxBudgetUsd: 0.05 },
   ],
   trigger: { debounceMs: 3_000, minNewMessages: 2 },
   shareWithSessions: "now-only",
@@ -35,7 +36,8 @@ function sanitizeSummarizers(value: unknown): SummarizerSpec[] | undefined {
     if (!entry || typeof entry !== "object") continue;
     const raw = entry as Partial<SummarizerSpec>;
     if ((raw.backend !== "claude-code" && raw.backend !== "pi") || typeof raw.model !== "string" || !raw.model) continue;
-    const spec: SummarizerSpec = { backend: raw.backend, model: raw.model };
+    // An old Claude id reads as its catalog model (§app.claude-code-provider/legacy-ids).
+    const spec: SummarizerSpec = { backend: raw.backend, model: raw.backend === "claude-code" ? canonicalClaudeId(raw.model) : raw.model };
     if (typeof raw.timeoutMs === "number" && raw.timeoutMs > 0) spec.timeoutMs = raw.timeoutMs;
     if (typeof raw.maxBudgetUsd === "number" && raw.maxBudgetUsd > 0) spec.maxBudgetUsd = raw.maxBudgetUsd;
     out.push(spec);

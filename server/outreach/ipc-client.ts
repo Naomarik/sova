@@ -18,6 +18,14 @@ const RETRY_MS = 10_000;
 const REQUEST_MS = 30_000;
 const MAX_LINE = 64 * 1024;
 
+/** How a client reaches the sender, and how long it waits. Tests: an in-memory stream, no retry gap. */
+export interface SenderClientOptions {
+  retryMs?: number;
+  requestMs?: number;
+  /** Opens the connection (default: the Unix socket at the path). */
+  connect?: (path: string) => Socket;
+}
+
 export class SenderUnreachable extends Error {}
 /** The request went out but no answer came (a timeout, or the connection closed): what the sender did is unknown. */
 export class SenderUncertain extends SenderUnreachable {}
@@ -40,7 +48,7 @@ export class SenderClient {
   constructor(
     readonly socketPath: string,
     private readonly onEvent: (e: SenderEvent) => void = () => {},
-    private readonly opts: { retryMs?: number; requestMs?: number } = {},
+    private readonly opts: SenderClientOptions = {},
   ) {}
 
   /** Why the last connect failed, or null while connected (or never tried). */
@@ -76,7 +84,7 @@ export class SenderClient {
     if (this.closed) return Promise.reject(new SenderUnreachable("The sender connection is closed."));
     if (Date.now() - this.lastFail < retryMs) return Promise.reject(new SenderUnreachable(this.lastFailWhy));
     this.connecting = new Promise<Socket>((resolve, reject) => {
-      const s = createConnection(this.socketPath);
+      const s = (this.opts.connect ?? createConnection)(this.socketPath);
       let open = false;
       s.setEncoding("utf8");
       s.once("connect", () => {

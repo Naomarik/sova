@@ -14,24 +14,21 @@ import { summaryStats } from "../src/lib/tool-diff-stats";
 
 const agentDir = realpathSync(mkdtempSync(join(tmpdir(), "sova-tool-")));
 process.env.PI_CODING_AGENT_DIR = agentDir;
-process.env.PORT = "0";
 const sessionsDir = join(agentDir, "sessions", "--tmp-tool--");
 mkdirSync(sessionsDir, { recursive: true });
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 
-const { app, server } = await import("./index");
+const { buildApp } = await import("./app");
+const { app } = buildApp({ extensionEntriesOf: async () => [] });
 const { canonicalPath } = await import("./paths");
 const { disposeAllChats } = await import("./chat-manager");
 const { toV1Event: toWireEvent } = await import("./harness/pi/wire");
 const { claudeToolContent } = await import("./transcript-tool");
-if (!server.listening) await new Promise((r) => server.once("listening", r));
 const { AUTH_COOKIE, sovaToken } = await import("./auth");
 const AUTH = { Cookie: `${AUTH_COOKIE}=${sovaToken()}` };
 
 after(async () => {
   await disposeAllChats();
-  server.close();
-  server.closeAllConnections?.();
   rmSync(agentDir, { recursive: true, force: true });
 });
 

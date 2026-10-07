@@ -58,8 +58,9 @@ after each landing, since every other branch is then checked against the new mas
   reported to the owner and the user, never undone. A session that needs to reach the captain is
   told the topic's name by `session_send`, never given a second topic; the captain itself answers
   with `session_send`, since it can't push to its own topic.
-- **Each branch** is merged with master in its worktree, checked (typecheck, tests with timeouts
-  near their baseline, each touched pi-config extension's suite, build; a failure that also fails
+- **Each branch** is merged with master in its worktree, checked (typecheck, the unit tests and
+  then all the integration tests (§app.server-runtime/test-tiers), each with timeouts near their
+  baseline, each touched pi-config extension's suite, build; a failure that also fails
   on master is named as pre-existing; a new failing file that passes alone twice with the suite's
   runner is named flaky and doesn't hold the branch; an extension suite failing the same way on
   master is master's), leak-scanned over the commits landing would publish, its drafts promoted,
@@ -166,11 +167,13 @@ shell and under a timeout.
   TEMP-style subject. It merges master into the branch in its worktree, never on master. On
   conflicts it stops and leaves them to the captain, except that a conflicting
   `.sova/spec/manifest.json` first goes through the spec tool's `merge-manifest --write`. It then
-  runs the typecheck, `pnpm test` without `CLAUDE_CONFIG_DIR`, each touched pi-config extension's
+  runs the typecheck, `pnpm test` and then `pnpm test:int` (§app.server-runtime/test-tiers; a tree
+  whose package.json has no `test:int` script skips it and says so), both without
+  `CLAUDE_CONFIG_DIR`, each touched pi-config extension's
   line from `pi-config/README.md`'s Tests block, and the build, each in its own process group,
   killed whole at its timeout (the larger of a floor and twice the median of its earlier passing
   runs); then the spec tool's `check`, `census --changed --base master`, and each draft's status. A
-  test file that fails is run again on master, in the main checkout at master's sha (refused when
+  test file that fails, in either tier, is run again on master, in the main checkout at master's sha (refused when
   that file is dirty there), cached per master sha and file: one that fails there too is named
   pre-existing and doesn't block. It also runs `leak-scan.mjs` over the commits landing would
   publish (origin/master to the branch's head): a hit is a need, printed as the scan prints it; a

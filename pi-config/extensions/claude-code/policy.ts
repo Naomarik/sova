@@ -1,4 +1,6 @@
 /** Deliberately small, explicit launch policy. Never translates Pi tool names silently. */
+import { canonicalClaudeId, isClaudeIdShape, latestClaude } from "./catalog.ts";
+
 export const DEFAULT_CLAUDE_TOOLS = ["Bash", "Read", "Edit", "Write", "Glob", "Grep"];
 export const CLAUDE_PERMISSION_MODES = ["bypassPermissions", "acceptEdits", "manual", "dontAsk", "plan"] as const;
 export type ClaudePermissionMode = (typeof CLAUDE_PERMISSION_MODES)[number];
@@ -38,12 +40,16 @@ export function validateClaudeTools(tools: string[] | undefined): string[] {
 	}
 	return [...new Set(selected)];
 }
+/**
+ * The `--model` a worker is given: a catalog id (an old id read as the catalog model it means), or a
+ * shape-valid id the catalog doesn't know, as given. Default: the catalog's current Sonnet.
+ */
 export function validateClaudeModel(model: string | undefined): string {
-	const selected = model ?? "sonnet";
-	if (!selected.trim() || selected.startsWith("-") || /[\s/\0]/.test(selected)) {
-		throw new Error("Claude model must be a CLI alias or model ID, not a Pi provider/model ID.");
+	const selected = model ?? latestClaude("sonnet").id;
+	if (!isClaudeIdShape(selected)) {
+		throw new Error("Claude model must be a Claude model ID (agent_models lists them), not a Pi provider/model ID.");
 	}
-	return selected;
+	return canonicalClaudeId(selected);
 }
 export function validateClaudeEffort(effort: string | undefined): string {
 	const selected = effort ?? "medium";

@@ -382,7 +382,26 @@ export interface LlmInflightOptions {
   peerDeadMs?: number;
   /** Coalesces bursts of record writes and begin/end pairs. */
   debounceMs?: number;
+  /** Where its timers run (the sweep, the debounce, peer answers and retries); default the globals. */
+  timers?: HubTimers;
 }
+
+export interface HubTimers {
+  setTimeout(fn: () => void, ms: number): unknown;
+  clearTimeout(handle: unknown): void;
+  setInterval(fn: () => void, ms: number): unknown;
+  clearInterval(handle: unknown): void;
+}
+
+type Timer = ReturnType<typeof setTimeout>;
+const unref = (t: Timer): Timer => (t.unref?.(), t);
+/** The globals, each timer unref'd: the hub never keeps the process alive. */
+const GLOBAL_TIMERS: HubTimers = {
+  setTimeout: (fn, ms) => unref(setTimeout(fn, ms)),
+  clearTimeout: (handle) => clearTimeout(handle as Timer),
+  setInterval: (fn, ms) => unref(setInterval(fn, ms)),
+  clearInterval: (handle) => clearInterval(handle as Timer),
+};
 
 function pidAlive(pid: number): boolean {
   try {
@@ -397,8 +416,8 @@ interface PeerLink {
   url: string;
   socket: PeerSocket | null;
   state: PeerState;
-  answerTimer: ReturnType<typeof setTimeout> | null;
-  retryTimer: ReturnType<typeof setTimeout> | null;
+  answerTimer: unknown;
+  retryTimer: unknown;
   retryMs: number;
   /** When the peer was last heard from (a frame or a pong), once it has answered. */
   heard: number;
@@ -426,19 +445,21 @@ export class LlmInflightHub {
   /** Peers that have sent a count on some connection: one silent later is unreachable, not old. */
   private readonly supported = new Set<string>();
   private watcher: FSWatcher | null = null;
-  private sweep: ReturnType<typeof setInterval> | null = null;
+  private sweep: unknown = null;
   private sweeps = 0;
   private offOwn: (() => void) | null = null;
   private pendingFiles = new Set<string>();
-  private pending: ReturnType<typeof setTimeout> | null = null;
+  private pending: unknown = null;
   private lastLocal: LlmInflight | null = null;
   private lastTotal: LlmInflight | null = null;
   private readonly now: () => number;
   private readonly alive: (pid: number) => boolean;
+  private readonly timers: HubTimers;
 
   constructor(private readonly opts: LlmInflightOptions) {
     this.now = opts.now ?? Date.now;
     this.alive = opts.alive ?? pidAlive;
+    this.timers = opts.timers ?? GLOBAL_TIMERS;
   }
 
   /** A browser on the session feed: the total now, then each change. */
@@ -493,9 +514,9 @@ export class LlmInflightHub {
     this.closePeers();
     this.watcher?.close();
     this.watcher = null;
-    if (this.sweep) clearInterval(this.sweep);
+    if (this.sweep) this.timers.clearInterval(this.sweep);
     this.sweep = null;
-    if (this.pending) clearTimeout(this.pending);
+    if (this.pending) this.timers.clearTimeout(this.pending);
     this.pending = null;
     this.offOwn?.();
     this.offOwn = null;
@@ -517,7 +538,7 @@ export class LlmInflightHub {
     this.attachWatcher();
     this.offOwn = this.opts.own.subscribe(() => this.schedule());
     this.sweeps = 0;
-    this.sweep = setInterval(() => {
+    this.sweep = this.timers.setInterval(() => {
       // Without a watcher (no live dir yet, or the watch failed) each sweep tries to attach one
       // again, and rescans until it holds: the fallback lasts only as long as the cause.
       if (!this.watcher && this.attachWatcher()) this.rescan();
@@ -527,7 +548,6 @@ export class LlmInflightHub {
       this.checkPeers();
       this.emit();
     }, this.opts.sweepMs ?? SWEEP_MS);
-    this.sweep.unref?.();
   }
 
   private refreshWorkers(): void {
@@ -593,13 +613,12 @@ export class LlmInflightHub {
 
   private schedule(): void {
     if (this.pending) return;
-    this.pending = setTimeout(() => {
+    this.pending = this.timers.setTimeout(() => {
       this.pending = null;
       for (const name of this.pendingFiles) this.readFile(name);
       this.pendingFiles.clear();
       this.emit();
     }, this.opts.debounceMs ?? 50);
-    this.pending.unref?.();
   }
 
   private readFile(name: string): void {
@@ -664,8 +683,8 @@ export class LlmInflightHub {
     if (!link) return;
     this.links.delete(id);
     this.supported.delete(id);
-    if (link.answerTimer) clearTimeout(link.answerTimer);
-    if (link.retryTimer) clearTimeout(link.retryTimer);
+    if (link.answerTimer) this.timers.clearTimeout(link.answerTimer);
+    if (link.retryTimer) this.timers.clearTimeout(link.retryTimer);
     const s = link.socket;
     link.socket = null;
     try {
@@ -696,13 +715,12 @@ export class LlmInflightHub {
     link.socket = socket;
     let answered = false;
     // A Sova older than the count answers ?feed=llm with an error and a close, or not at all.
-    link.answerTimer = setTimeout(() => {
+    link.answerTimer = this.timers.setTimeout(() => {
       if (!answered && current()) {
         settle({ state: this.supported.has(id) ? "unreachable" : "unsupported" });
         socket.close(); // its close retries later: the peer may be updated meanwhile
       }
     }, this.opts.peerAnswerMs ?? 10_000);
-    link.answerTimer.unref?.();
     socket.on("pong", () => {
       if (current() && answered) link.heard = this.now();
     });
@@ -720,11 +738,11 @@ export class LlmInflightHub {
         this.supported.add(id);
         link.heard = this.now();
         link.retryMs = 0;
-        if (link.answerTimer) clearTimeout(link.answerTimer);
+        if (link.answerTimer) this.timers.clearTimeout(link.answerTimer);
         settle({ state: "ok", instance: (msg as any).instance, local: peerLocal((msg as any).local) });
       } else if (!answered && msg.type === "error") {
         answered = true;
-        if (link.answerTimer) clearTimeout(link.answerTimer);
+        if (link.answerTimer) this.timers.clearTimeout(link.answerTimer);
         settle({ state: "unsupported" });
       }
     });
@@ -732,7 +750,7 @@ export class LlmInflightHub {
     socket.on("close", () => {
       if (!current() || link.socket !== socket) return;
       link.socket = null;
-      if (link.answerTimer) clearTimeout(link.answerTimer);
+      if (link.answerTimer) this.timers.clearTimeout(link.answerTimer);
       if (link.state.state !== "unsupported") settle({ state: "unreachable" });
       this.retryLater(id, link);
     });
@@ -740,11 +758,10 @@ export class LlmInflightHub {
 
   private retryLater(id: string, link: PeerLink): void {
     const delay = Math.min(60_000, link.retryMs ? link.retryMs * 2 : (this.opts.peerRetryMs ?? 5_000));
-    link.retryTimer = setTimeout(() => {
+    link.retryTimer = this.timers.setTimeout(() => {
       if (this.links.get(id) !== link || this.browsers.size === 0) return;
       this.openLink(id, link.url, delay, link.state);
     }, delay);
-    link.retryTimer.unref?.();
   }
 }
 

@@ -501,6 +501,20 @@ which shows this device's spend at API prices from the usage ledger (§app.insig
 - **This device.** The tab says it counts this device only.
 - Works at phone widths: tables stack under 560px of page width.
 
+## §app.insights/usage-model-rows — One row per real model
+
+The by-model tables (the Costs tab's, and the session pane's Usage tab, one row per model × origin)
+group a Claude call by the catalog model that answered it (§app.claude-code-provider/catalog): its
+recorded answer mapped through the catalog's answer ids, with any `[1m]` dropped, else the model
+asked for, through the catalog or the legacy table (§app.claude-code-provider/legacy-ids). So
+`opus[1m]`, `opus` and `claude-opus-5-5[1m]` calls that Opus 5.5 answered are one "Opus 5.5" row,
+and a Haiku call inside an Opus session keeps its own "Haiku 4.5" row. The row's `title` lists the
+ids that were asked for. A call answered by another model than the one asked for stays apart
+(§app.claude-code-provider/model-identity), and a Claude id the catalog doesn't know keeps a row of
+its own. The Model filter offers the same rows; a link that names an old key
+(`claude-code-cli/opus[1m]`) selects the row it now belongs to. Every total is unchanged: only the
+grouping moves.
+
 ## §app.insights/velocity-scrub — Scrubbing the token chart: one minute's figures
 
 **The Agents row's 30-minute chart (§app.insights/token-velocity) reads out any one of its

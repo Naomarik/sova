@@ -7,7 +7,8 @@
 // format change. Record missing fixtures with SOVA_GOLDEN_RECORD=1 (same command); it never overwrites one
 // that exists unless SOVA_GOLDEN_RECORD=overwrite.
 //
-// One process, one throwaway PI_CODING_AGENT_DIR, the server imported (PORT=0) so routes, the Overseer and
+// One process, one throwaway PI_CODING_AGENT_DIR, the server's app built in-process (server/app.ts, no
+// listener) with the Overseer's dispatch wired as server/index.ts wires it, so routes, the Overseer and
 // the baton's statechart are wired as in production. The model is a ScriptedModel; models.json registers it
 // as a real authenticated model, so each session opens on it and pi records it (the deferred open-time
 // model/thinking entries are part of what the goldens pin). ~/.pi is never read or written.
@@ -20,6 +21,9 @@ import type { ChatServerMessage } from "../../../shared/protocol";
 import { Canonicalizer, firstDifference } from "./testing/canonical-jsonl";
 import { ScriptedModel, scriptedModelsJson } from "./testing/scripted-model";
 import { piSession } from "./testing/handle";
+import { assertPinnedPi } from "./testing/load-pi";
+
+assertPinnedPi();
 
 // Only the scripted model may answer: no provider key from the environment makes a real one available.
 for (const k of Object.keys(process.env)) if (/_API_KEY$|_AUTH_TOKEN$/.test(k)) delete process.env[k];
@@ -32,7 +36,6 @@ const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-state-golden-")));
 process.on("exit", () => rmSync(root, { recursive: true, force: true }));
 const agentDir = join(root, "agent");
 process.env.PI_CODING_AGENT_DIR = agentDir;
-process.env.PORT = "0";
 const sessionsDir = join(agentDir, "sessions", "--golden--");
 mkdirSync(sessionsDir, { recursive: true });
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
@@ -58,7 +61,10 @@ writeFileSync(
   JSON.stringify({ defaultProvider: "scripted", defaultModel: "scripted", retry: { baseDelayMs: 1 }, extensions: [join(REPO, "pi-config/extensions/mode")] }),
 );
 
-const { app, server } = await import("../../index");
+const { buildApp } = await import("../../app");
+const { app } = buildApp({ extensionEntriesOf: async () => [] });
+// The Overseer's tools call the routes in-process, wired as server/index.ts wires them.
+(await import("../../overseer")).setOverseerDispatch((path, init) => app.request(path, init));
 const { acquireChat, disposeAllChats, disposeHeldChat } = await import("../../chat-manager");
 const { canonicalPath } = await import("../../paths");
 const { markOwned } = await import("../../write-guard");
@@ -74,7 +80,6 @@ const baton = await import("../../baton");
 
 after(async () => {
   await disposeAllChats();
-  await new Promise<void>((res, rej) => server.close((err) => (err ? rej(err) : res())));
 });
 
 type Chat = Awaited<ReturnType<typeof acquireChat>>;

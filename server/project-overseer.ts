@@ -1442,9 +1442,10 @@ onWatchFactsChanged(syncWatchFacts);
 /**
  * A hosted session finished a turn: when it is one of the project's builds, its statechart hears the turn
  * end (the overseer's own coding session's is a reason to look soon, the statechart's `coding/settled`).
+ * Never rejects: the returned promise settles once that is done (callers may ignore it).
  */
-export function noteCodingSettled(path: string): void {
-  void noteBuildSettled(path, lastTurnFailed(path)).catch((err) => console.warn(`[project-overseer] a build's turn: ${err instanceof Error ? err.message : String(err)}`));
+export function noteCodingSettled(path: string): Promise<void> {
+  return noteBuildSettled(path, lastTurnFailed(path)).catch((err) => console.warn(`[project-overseer] a build's turn: ${err instanceof Error ? err.message : String(err)}`));
 }
 
 /** Whether the held chat's last assistant message ended in an error or an abort. */

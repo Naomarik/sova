@@ -72,6 +72,40 @@ export interface WsHopOptions {
   total?: number;
   dialMs?: number;
   upstreamMaxPayload?: number;
+  /** The clock a draining hop's grace runs on; absent: setTimeout (unref'd) and clearTimeout. */
+  timers?: HopTimers;
+}
+
+/** Arm and cancel one timer. */
+export interface HopTimers {
+  set(fn: () => void, ms: number): unknown;
+  clear(handle: unknown): void;
+}
+
+const realTimers: HopTimers = {
+  set: (fn, ms) => {
+    const t = setTimeout(fn, ms);
+    t.unref?.();
+    return t;
+  },
+  clear: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+};
+
+/** A draining hop's deadline: the first `arm` sets it, a later one keeps it; `cancel` drops it. */
+export function drainDeadline(timers: HopTimers = realTimers): { arm(graceMs: number, onEnd: () => void): void; cancel(): void; readonly armed: boolean } {
+  let handle: unknown = null;
+  return {
+    arm(graceMs, onEnd) {
+      if (handle !== null) return;
+      handle = timers.set(onEnd, graceMs);
+    },
+    cancel() {
+      if (handle !== null) timers.clear(handle);
+    },
+    get armed() {
+      return handle !== null;
+    },
+  };
 }
 
 export interface WsHop {
@@ -144,6 +178,7 @@ export function createWsHop(opts: WsHopOptions = {}): WsHop {
   const totalMax = opts.total ?? WS_HOPS_TOTAL;
   const dialMs = opts.dialMs ?? WS_HOP_DIAL_MS;
   const upstreamMaxPayload = opts.upstreamMaxPayload ?? WS_HOP_UPSTREAM_MAX_PAYLOAD;
+  const timers = opts.timers ?? realTimers;
   const wss = cappedWebSocketServer({ noServer: true, maxPayload: SHARE_WS_MAX_PAYLOAD });
   const hops = new Map<string, Set<Hop>>();
   let open = 0;
@@ -159,7 +194,7 @@ export function createWsHop(opts: WsHopOptions = {}): WsHop {
     let up: WebSocket | null = null;
     let page: WebSocket | null = null;
     let ended = false;
-    let draining: ReturnType<typeof setTimeout> | null = null;
+    const draining = drainDeadline(timers);
     const pending: { data: RawData; binary: boolean }[] = [];
     const early: Buffer[] = [];
     let earlySize = 0;
@@ -184,7 +219,7 @@ export function createWsHop(opts: WsHopOptions = {}): WsHop {
       end(how) {
         if (ended) return;
         ended = true;
-        if (draining) clearTimeout(draining);
+        draining.cancel();
         const set = hops.get(key);
         if (set?.delete(hop)) {
           open--;
@@ -208,10 +243,9 @@ export function createWsHop(opts: WsHopOptions = {}): WsHop {
         else socket.destroy();
       },
       drain(graceMs) {
-        if (ended || draining) return;
+        if (ended || draining.armed) return;
         if (!page) return hop.end("lost");
-        draining = setTimeout(() => hop.end("lost"), graceMs);
-        draining.unref?.();
+        draining.arm(graceMs, () => hop.end("lost"));
       },
     };
     let set = hops.get(key);
@@ -275,7 +309,7 @@ export function createWsHop(opts: WsHopOptions = {}): WsHop {
         socket.off("close", onGone);
         ws.on("error", () => {}); // an oversized frame: ws closes with 1009 by itself
         ws.on("message", (data: RawData, binary: boolean) => {
-          if (!draining && u.readyState === u.OPEN) u.send(data, { binary });
+          if (!draining.armed && u.readyState === u.OPEN) u.send(data, { binary });
         });
         ws.on("close", () => hop.end("gone"));
         for (const m of pending.splice(0)) ws.send(m.data, { binary: m.binary });

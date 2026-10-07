@@ -32,7 +32,7 @@ import {
   type PendingImage,
   type RejectedFile,
 } from "../lib/images";
-import { modelProvider, shortModel } from "../lib/format";
+import { modelLabel, modelProvider } from "../lib/format";
 import { fitPlaceholderNow, type FittedPlaceholder } from "../lib/placeholder-fit";
 import { ensureModels, modelList, thinkingLevelsFor } from "../lib/models";
 import {
@@ -1305,7 +1305,7 @@ export function Composer(props: {
               <Show when={props.model?.pending()}>
                 <span class="live-dot" />
               </Show>
-              <span class="composer-model-id">{shortModel(modelRef()) ?? "Choose model"}</span>
+              <span class="composer-model-id">{modelLabel(modelRef()) ?? "Choose model"}</span>
               <Show when={modelProvider(modelRef())}>
                 {(provider) => <span class="composer-model-meta">{provider()}</span>}
               </Show>

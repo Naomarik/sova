@@ -206,6 +206,8 @@ export class OrgHost {
   private readonly effectHandlers = new Map<string, (effect: Effect) => Promise<unknown>>();
   private readonly runners = new Map<string, InvocationRunner>();
   private readonly running = new Map<string, Promise<EffectOutcome>>();
+  /** Invocation reports on their way to a step. */
+  private readonly reporting = new Set<Promise<void>>();
   private readonly listeners: ((change: HostChange) => void)[] = [];
   private timer: ReturnType<typeof setTimeout> | null = null;
   private sweeper: ReturnType<typeof setInterval> | null = null;
@@ -574,7 +576,7 @@ export class OrgHost {
       return;
     }
     const report: InvocationReport = (outcome, detail, data) => {
-      void (async () => {
+      const p = (async () => {
         await this.ready();
         if (this.closed) return;
         try {
@@ -584,6 +586,8 @@ export class OrgHost {
           console.warn(`[org-host] ${this.orgId}: reporting ${inv.type}: ${message(err)}`);
         }
       })();
+      this.reporting.add(p);
+      void p.finally(() => this.reporting.delete(p));
     };
     if (!runner) {
       report("not-started", `Nothing runs ${rec.type} on this host.`);
@@ -632,6 +636,11 @@ export class OrgHost {
     const out = this.actNow(sid, event, payload, envelope);
     if (opts.settle && out.result) out.effects = await this.settle(out.result);
     return out;
+  }
+
+  /** Resolves once no effect and no invocation report is in flight, including those they started. */
+  async idle(): Promise<void> {
+    while (this.running.size || this.reporting.size) await Promise.allSettled([...this.running.values(), ...this.reporting]);
   }
 
   /** Every effect `r` emitted, answered. */

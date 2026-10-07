@@ -6,6 +6,7 @@ import { listModels } from "../models";
 import { listPlaybooks } from "../playbooks";
 import { OrgError } from "../org-error";
 import { readProject } from "./spaces";
+import { latestClaude } from "../../pi-config/extensions/claude-code/catalog.ts";
 
 /**
  * What the project act `verbs/onboard` starts (§app.project-runtime/onboard): the Project verbs
@@ -20,12 +21,12 @@ export interface ModelChoice {
   model: string;
   thinking: string;
 }
-/** The run's models in order of preference, each at medium: Opus 5.5 through Claude Code (plain, or the 1M-window ref a host may list instead), then the fallback. */
-export const ONBOARD_MODELS = ["claude-code-cli/opus", "claude-code-cli/opus[1m]", "openai-codex/gpt-6-astra"] as const;
+/** The run's models in order of preference, each at medium: the Claude catalog's current Opus through Claude Code, then the fallback. */
+export const ONBOARD_MODELS: readonly string[] = [`claude-code-cli/${latestClaude("opus").id}`, "openai-codex/gpt-6-astra"];
 export const ONBOARD_THINKING = "medium";
 
 export const NO_ONBOARD_MODEL =
-  "No model for the Project verbs playbook: this host offers neither Claude Code opus nor openai-codex gpt-6-astra. Pick a model to run it with.";
+  `No model for the Project verbs playbook: this host offers neither Claude Code ${latestClaude("opus").name} nor openai-codex gpt-6-astra. Pick a model to run it with.`;
 
 /**
  * The run's model: the one asked for (thinking as asked, else medium); else the first of

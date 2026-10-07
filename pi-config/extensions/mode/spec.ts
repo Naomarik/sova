@@ -8,7 +8,7 @@
  * snapshotted into a session: a session with spec on re-reads it (one stat) at every turn boundary,
  * under either major mode.
  *
- *     { "version": 1, "writer": { "primary":  {"backend":"claude-code","model":"opus[1m]","effort":"medium"},
+ *     { "version": 1, "writer": { "primary":  {"backend":"claude-code","model":"claude-opus-5-5","effort":"medium"},
  *                                 "fallback": null } }
  *
  * `writer: null` (the default, and what a missing file reads as) means no writer: the session

@@ -9,6 +9,7 @@ import { after, describe, test } from "node:test";
 import { BATON_DECISION_ENTRY, BATON_DONE_ENTRY, BATON_HANDOFF_ENTRY, BATON_SENT_ENTRY } from "../shared/baton";
 import type { SessionSummary } from "../shared/protocol";
 import { piRuntime, piSession } from "./harness/pi/testing/handle";
+import { until as waitUntil } from "./test-wait";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-baton-rt-")));
 // A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
@@ -73,7 +74,7 @@ describe("a baton session's runtime", async () => {
     const chat = await acquireChat(c.path);
     const got: { type: string; code?: string; message?: string; clientId?: string }[] = [];
     chat.handle({ send: (m: never) => got.push(m) } as never, { type: "prompt", text: "hello", clientId: "c1" } as never);
-    await new Promise((r) => setTimeout(r, 20));
+    await waitUntil(() => got.some((m) => m.type === "error"));
     const err = got.find((m) => m.type === "error");
     assert.equal(err?.code, "refused");
     assert.match(err?.message ?? "", /Tony holds the baton/);

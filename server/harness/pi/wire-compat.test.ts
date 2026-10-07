@@ -19,7 +19,6 @@ import { piSession } from "./testing/handle";
 
 const agentDir = realpathSync(mkdtempSync(join(tmpdir(), "sova-wire-compat-")));
 process.env.PI_CODING_AGENT_DIR = agentDir; // before any server module computes its paths
-process.env.PORT = "0";
 const sessionsDir = join(agentDir, "sessions", "--tmp-wire--");
 mkdirSync(sessionsDir, { recursive: true });
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
@@ -29,7 +28,8 @@ mkdirSync(cwd, { recursive: true });
 const { acquireChat, disposeAllChats } = await import("../../chat-manager");
 type ChatClient = import("../../chat-manager").ChatClient;
 const { canonicalPath } = await import("../../paths");
-const { app, server } = await import("../../index");
+const { buildApp } = await import("../../app");
+const { app } = buildApp({ extensionEntriesOf: async () => [] });
 const { AUTH_COOKIE, sovaToken } = await import("../../auth");
 const { SessionTail } = await import("../../watch");
 const { rowsOf } = await import("../../transcript");
@@ -42,12 +42,9 @@ const w = await import("./golden/wire/wire");
 const live = await import("../../../src/lib/live");
 const { NO_VIEW } = await import("../../../src/lib/live-effects");
 const { createStore } = await import("solid-js/store");
-if (!server.listening) await new Promise((r) => server.once("listening", r));
 
 after(async () => {
   await disposeAllChats();
-  server.close();
-  server.closeAllConnections?.();
   rmSync(agentDir, { recursive: true, force: true });
 });
 

@@ -4,6 +4,7 @@
 // hidden conversations and projects), the preview being the token route, the share listener's
 // /i/ shapes and dead-link answers, and Owner page visits. A throwaway PI_CODING_AGENT_DIR and
 // workspace in the OS temp dir, deleted after; no model is called.
+// The share listener's /i/ over real HTTP: owner-page.integration.test.ts.
 import assert from "node:assert/strict";
 import { appendFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
@@ -26,13 +27,10 @@ const owner = await import("./owner");
 const { ownerView } = await import("./owner-page");
 const { recordDecision, seedBuild, seedConflicts } = await import("./org-test-fixtures");
 const { registerOrgRoutes } = await import("./org-routes");
-const { createShareServer, shareMayReach } = await import("./share/listener");
+const { shareMayReach } = await import("./share/listener");
 const { stateRoot } = await import("./state-root");
 
-const server = createShareServer();
 after(() => {
-  server.close();
-  server.closeAllConnections();
   rmSync(root, { recursive: true, force: true });
 });
 
@@ -90,12 +88,6 @@ registerOrgRoutes(app);
 const call = async <T>(method: string, path: string, body?: unknown): Promise<{ status: number; body: T }> => {
   const res = await app.request(path, { method, ...(body !== undefined ? { body: JSON.stringify(body), headers: { "Content-Type": "application/json" } } : {}) });
   return { status: res.status, body: (await res.json()) as T };
-};
-await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
-const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-const share = async (path: string, ua = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1") => {
-  const res = await fetch(base + path, { headers: { "user-agent": ua } });
-  return { status: res.status, text: await res.text() };
 };
 const tokenOf = (link: string) => link.slice(link.indexOf("/i/") + 3);
 
@@ -320,90 +312,5 @@ describe("the share listener's /i/ (§app.owner-page/link)", () => {
       ["GET", `/api/i/${"A".repeat(42)}`],
     ] as const)
       assert.ok(!shareMayReach(m, p), `${m} ${p}`);
-  });
-
-  test("the preview's JSON is the token route's JSON, for home, a project and a conversation", async () => {
-    const { body } = await call<OwnerLinkResult>("GET", `/api/orgs/${org.id}/owner/link`);
-    const token = tokenOf(body.link);
-    const strip = (s: string) => s.replace(/"updatedAt":"[^"]+"/g, "");
-    const home = await share(`/api/i/${token}`);
-    assert.equal(home.status, 200);
-    const prev = await app.request(`/api/orgs/${org.id}/owner/preview`);
-    assert.equal(strip(await prev.text()), strip(home.text));
-    const q = plinks.handleOf("q", pa.id);
-    assert.equal(strip(await (await app.request(`/api/orgs/${org.id}/owner/preview?project=${q}`)).text()), strip((await share(`/api/i/${token}/p/${q}`)).text));
-    const k = plinks.handleOf("k", s1.sessionId);
-    assert.equal(strip(await (await app.request(`/api/orgs/${org.id}/owner/preview?c=${k}`)).text()), strip((await share(`/api/i/${token}/c/${k}`)).text));
-  });
-
-  test("dead and unknown links say nothing more; a hidden handle is 404 like a random one; headers", async () => {
-    const { body } = await call<OwnerLinkResult>("GET", `/api/orgs/${org.id}/owner/link`);
-    const token = tokenOf(body.link);
-    const hidden = await share(`/api/i/${token}/c/${plinks.handleOf("k", s3.sessionId)}`);
-    const random = await share(`/api/i/${token}/c/k_22222222`);
-    assert.deepEqual([hidden.status, hidden.text], [random.status, random.text]);
-    assert.equal(hidden.status, 404);
-    const res = await fetch(`${base}/api/i/${token}`);
-    for (const [k, v] of [
-      ["cache-control", "no-store"],
-      ["referrer-policy", "no-referrer"],
-      ["x-frame-options", "DENY"],
-    ] as const)
-      assert.equal(res.headers.get(k), v);
-    await call("POST", `/api/orgs/${org.id}/owner/revoke`);
-    const off = await share(`/api/i/${token}`);
-    assert.equal(off.status, 410);
-    assert.deepEqual(JSON.parse(off.text), { error: "This link is no longer active.", code: "gone" });
-    assert.equal((await call<{ error: string }>("PUT", `/api/orgs/${org.id}/owner`, { personId: null })).status, 200);
-    const none = await call<{ error: string }>("GET", `/api/orgs/${org.id}/owner/link`);
-    assert.deepEqual([none.status, none.body.error], [400, "Pick an owner first."]);
-    await call("PUT", `/api/orgs/${org.id}/owner`, { personId: alp.id });
-    const { token: old } = plinks.mintOwnerLink(org.id, alp.id, Date.now() - 91 * 86_400_000);
-    const expired = await share(`/api/i/${old}`);
-    assert.deepEqual([expired.status, JSON.parse(expired.text)], [410, { error: "This link has expired.", code: "gone", why: "expired" }]);
-    const unknown = await share(`/api/i/${"B".repeat(43)}`);
-    assert.deepEqual([unknown.status, JSON.parse(unknown.text)], [404, { error: "This link doesn't open anything.", code: "not-found" }]);
-    for (const t of [off.text, expired.text, unknown.text]) assert.ok(!t.includes("Gate") && !t.includes("Alperen"));
-  });
-
-  test("visits: an owner visit is logged via owner, continued by tab; the preview logs nothing; refusals once", async () => {
-    const { body } = await call<OwnerLinkResult>("GET", `/api/orgs/${org.id}/owner/link`);
-    const token = tokenOf(body.link);
-    const log = () => readFileSync(join(ws, "visits.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
-    const before = (() => {
-      try {
-        return log().length;
-      } catch {
-        return 0;
-      }
-    })();
-    const tab = "T".repeat(22);
-    await share(`/api/i/${token}?v=${tab}`);
-    await share(`/api/i/${token}/p/${plinks.handleOf("q", pa.id)}?v=${tab}`);
-    await app.request(`/api/orgs/${org.id}/owner/preview`);
-    const mine = log().slice(before);
-    const visits = mine.filter((l) => l.kind === "visit");
-    assert.equal(visits.length, 1, JSON.stringify(mine));
-    assert.deepEqual([visits[0].via, visits[0].personId, visits[0].device, "sessionId" in visits[0]], ["owner", alp.id, "Safari · iPhone", false]);
-    assert.ok(!JSON.stringify(mine).includes(token));
-    const page = await call<PersonPage>("GET", `/api/orgs/${org.id}/people/${alp.id}`);
-    assert.equal(page.body.owner, true);
-    assert.equal(page.body.visits.find((v) => v.via === "owner")!.otherHost, undefined);
-    assert.equal(page.body.ownerLinks![0]!.visits, 1);
-    const card = await call<OrgDetail>("GET", `/api/orgs/${org.id}`);
-    assert.equal(card.body.ownerPage!.opened >= 1, true);
-    await call("POST", `/api/orgs/${org.id}/owner/revoke`);
-    await share(`/api/i/${token}`);
-    await share(`/api/i/${token}`);
-    const gen = plinks.findPersonLink(token)!.gen;
-    assert.equal(log().filter((l) => l.kind === "refused" && l.via === "owner" && l.gen === gen).length, 1);
-  });
-
-  test("detaching the org turns its owner link off", async () => {
-    const { body } = await call<OwnerLinkResult>("GET", `/api/orgs/${org.id}/owner/link`);
-    const token = tokenOf(body.link);
-    assert.equal((await call("DELETE", `/api/orgs/${org.id}`)).status, 200);
-    assert.equal(plinks.findPersonLink(token)!.revokedWhy, "detached");
-    assert.equal((await share(`/api/i/${token}`)).status, 410);
   });
 });

@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import type { ChatServerMessage } from "../shared/protocol";
 import { piSession } from "./harness/pi/testing/handle";
+import { until as waitUntil } from "./test-wait";
 
 const agentDir = mkdtempSync(join(tmpdir(), "sova-compact-test-"));
 // A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
@@ -203,10 +204,7 @@ describe("/compact through a real chat runtime", () => {
     const prompts: string[] = [];
     session.prompt = async (text: string) => void prompts.push(text);
     const lines = () => readFileSync(path, "utf8").trim().split("\n").map((l) => JSON.parse(l));
-    const until = async (pred: () => boolean) => {
-      for (let i = 0; i < 100 && !pred(); i++) await new Promise((r) => setTimeout(r, 10));
-      assert.ok(pred(), "timed out");
-    };
+    const until = (pred: () => boolean) => waitUntil(pred);
     return { chat, me, mine, theirs, commands, released, compacts, prompts, lines, until, path };
   }
 

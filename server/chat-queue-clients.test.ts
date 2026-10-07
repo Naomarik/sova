@@ -8,6 +8,7 @@
 // every other test, and getting it wrong gives a second tab a thread that silently disagrees with
 // the first — pending rows that never resolve, or removals nobody else sees.
 import assert from "node:assert/strict";
+import { until as waitUntil } from "./test-wait";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -79,9 +80,7 @@ async function twoClients() {
   return { chat, path, me, them, mine, theirs };
 }
 
-const until = async (ready: () => boolean) => {
-  for (let i = 0; i < 100 && !ready(); i++) await new Promise((r) => setTimeout(r, 10));
-};
+const until = (ready: () => boolean) => waitUntil(ready);
 const types = (log: ChatServerMessage[]) => log.map((m) => m.type);
 
 describe("the SDK surface this feature stands on, in the copy the repo actually resolves", () => {

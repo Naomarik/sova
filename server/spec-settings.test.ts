@@ -7,6 +7,7 @@ import { after, describe, test } from "node:test";
 import type { ModelPolicy, SpecSettings, WorkerChoice } from "../shared/protocol";
 import type { DelegateSources } from "./delegate";
 import { saveSpecSettings, specInfo, specOptions } from "./spec-settings";
+import { claudeOffer } from "../pi-config/extensions/claude-code/catalog.ts";
 
 const dir = mkdtempSync(join(tmpdir(), "sova-spec-settings-test-"));
 after(() => rmSync(dir, { recursive: true, force: true }));
@@ -18,13 +19,13 @@ const ALL_CLAUDE = ["low", "medium", "high", "xhigh", "max"];
 const sources = (over: Partial<DelegateSources> = {}): DelegateSources => ({
   piModels: async () => [{ ref: "zai/glm-5.3", id: "glm-5.3", provider: "zai", thinkingLevels: ["off", "low", "medium", "high"] }],
   claudeModels: async () => [
-    { id: "opus[1m]", name: "Opus", efforts: ALL_CLAUDE },
-    { id: "sonnet", name: "Sonnet", efforts: ["low", "medium"] },
+    { id: "claude-opus-5-5", name: "Opus", efforts: ALL_CLAUDE },
+    { id: "claude-sonnet-5-5", name: "Sonnet", efforts: ["low", "medium"] },
   ],
   policy: () => EMPTY,
   ...over,
 });
-const opus: WorkerChoice = { backend: "claude-code", model: "opus[1m]", effort: "medium" };
+const opus: WorkerChoice = { backend: "claude-code", model: "claude-opus-5-5", effort: "medium" };
 const glm: WorkerChoice = { backend: "pi", model: "zai/glm-5.3", effort: "high" };
 const writer = (primary: WorkerChoice, fallback: WorkerChoice | null = null): SpecSettings => ({ version: 1, writer: { primary, fallback } });
 
@@ -49,11 +50,11 @@ describe("GET /api/settings/spec", () => {
 });
 
 describe("GET /api/settings/spec/options", () => {
-  test("is Delegate's discovery", async () => {
+  test("is Delegate's: pi's registry, and Sova's Claude catalog", async () => {
     const options = await specOptions(sources());
     assert.deepEqual(options.backends.map((b) => [b.id, b.models?.map((m) => m.id)]), [
       ["pi", ["zai/glm-5.3"]],
-      ["claude-code", ["opus[1m]", "sonnet"]],
+      ["claude-code", claudeOffer().map((m) => m.id)],
     ]);
   });
 });
@@ -96,10 +97,11 @@ describe("PUT /api/settings/spec", () => {
 
   test("a CHANGED tuple its backend can't run is refused; the same tuple already stored only warns", async () => {
     const f = file();
-    const sonnetHigh: WorkerChoice = { backend: "claude-code", model: "sonnet", effort: "high" };
+    // Opus 4.6 takes no xhigh (the catalog's efforts).
+    const sonnetHigh: WorkerChoice = { backend: "claude-code", model: "claude-opus-4-6", effort: "xhigh" };
     const refused = await saveSpecSettings(writer(sonnetHigh), sources(), f);
     assert.ok("error" in refused);
-    assert.match(refused.error, /^Spec writer primary: sonnet doesn't take effort "high"/);
+    assert.match(refused.error, /^Spec writer primary: claude-opus-4-6 doesn't take effort "xhigh"/);
     assert.ok(!existsSync(f));
     const piMissing = await saveSpecSettings(writer({ backend: "pi", model: "zai/gone", effort: "high" }), sources(), f);
     assert.ok("error" in piMissing);
@@ -108,16 +110,20 @@ describe("PUT /api/settings/spec", () => {
     writeFileSync(f, JSON.stringify(writer(sonnetHigh)));
     const kept = await saveSpecSettings(writer(sonnetHigh, glm), sources(), f);
     assert.ok(!("error" in kept), JSON.stringify(kept));
-    assert.match(kept.warnings.join(" "), /^Spec writer primary: sonnet doesn't take effort "high"/);
+    assert.match(kept.warnings.join(" "), /^Spec writer primary: claude-opus-4-6 doesn't take effort "xhigh"/);
   });
 
   test("unverifiable backends and policy denials save with a warning", async () => {
     const f = file();
-    const down = await saveSpecSettings(writer(opus, glm), sources({ claudeModels: async () => { throw new Error("CLI missing"); } }), f);
+    // The CLI's own list failing changes nothing: Claude Code's list is the catalog.
+    const cliDown = await saveSpecSettings(writer(opus, glm), sources({ claudeModels: async () => { throw new Error("CLI missing"); } }), f);
+    assert.ok(!("error" in cliDown));
+    assert.deepEqual(cliDown.warnings, []);
+    const down = await saveSpecSettings(writer(glm, opus), sources({ piModels: async () => { throw new Error("no registry"); } }), file());
     assert.ok(!("error" in down));
-    assert.deepEqual(down.warnings, ["Not verified, because Claude Code couldn't list its models (CLI missing): Spec writer primary"]);
-    const denied = await saveSpecSettings(writer(opus, glm), sources({ policy: () => ({ ...EMPTY, subagentDisabledModels: ["opus[1m]"] }) }), file());
+    assert.deepEqual(down.warnings, ["Not verified, because pi couldn't list its models (no registry): Spec writer primary"]);
+    const denied = await saveSpecSettings(writer(opus, glm), sources({ policy: () => ({ ...EMPTY, subagentDisabledModels: ["claude-opus-5-5"] }) }), file());
     assert.ok(!("error" in denied));
-    assert.deepEqual(denied.warnings, ["Spec writer primary: opus[1m] is off for subagents in Settings → Models; spec writing uses the fallback or asks"]);
+    assert.deepEqual(denied.warnings, ["Spec writer primary: claude-opus-5-5 is off for subagents in Settings → Models; spec writing uses the fallback or asks"]);
   });
 });

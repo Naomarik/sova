@@ -10,7 +10,6 @@
 // PI_CODING_AGENT_DIR and workspace in the OS temp dir, deleted after; no model is called.
 import assert from "node:assert/strict";
 import { appendFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
-import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { after, describe, test } from "node:test";
@@ -36,13 +35,12 @@ const { recordDecision, seedConflicts } = await import("./org-test-fixtures");
 const { listDecisions } = await import("./reconcile");
 const { appendUpdate } = await import("./project-updates");
 const { registerOrgRoutes } = await import("./org-routes");
-const { createShareServer } = await import("./share/listener");
+const { createShareApp } = await import("./share/routes");
 const { stateRoot } = await import("./state-root");
 
-const server = createShareServer();
+// The share routes in-process; the share listener's own answers: owner-page-privacy.integration.test.ts.
+const share = createShareApp();
 after(() => {
-  server.close();
-  server.closeAllConnections();
   rmSync(root, { recursive: true, force: true });
 });
 
@@ -193,8 +191,6 @@ visits.recordOpen(links.findLink(kimToken)!, { userAgent: "Mozilla/5.0 (X11; Lin
 
 const app = new Hono();
 registerOrgRoutes(app);
-await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
-const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 const ownerLink = (await (await app.request(`/api/orgs/${org.id}/owner/link`)).json()) as OwnerLinkResult;
 const token = ownerLink.link.slice(ownerLink.link.indexOf("/i/") + 3);
 
@@ -221,7 +217,7 @@ const ids = (): string[] => [
 async function everyAnswer(): Promise<[string, string][]> {
   const out: [string, string][] = [];
   const get = async (p: string) => {
-    const res = await fetch(base + p, { headers: { "user-agent": "Mozilla/5.0 (iPhone) Version/17.0 Safari/604.1" } });
+    const res = await share.request(p, { headers: { "user-agent": "Mozilla/5.0 (iPhone) Version/17.0 Safari/604.1" } });
     const text = await res.text();
     out.push([`${res.status} GET ${p}`, text]);
     return { status: res.status, text };

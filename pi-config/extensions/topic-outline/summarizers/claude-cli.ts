@@ -16,6 +16,7 @@ import type { Summarizer, SummarizeInput, SummarizerResult, SummarizerSpec } fro
 import { SummarizerError } from "../types.ts";
 import { buildPrompt, parseSummarizerJson } from "./chain.ts";
 import { claudeBaseEnv, hostLogins } from "../../claude-code/accounts.ts";
+import { claudeCliId } from "../../claude-code/catalog.ts";
 import { beginClaudeOneShot } from "../../llm-inflight/claude.ts";
 import { resolveUsageAttribution } from "../../llm-inflight/attribution.ts";
 import { recordClaudeEnvelope } from "../../llm-inflight/record.ts";
@@ -60,7 +61,7 @@ export function createClaudeCliSummarizer(spec: SummarizerSpec, claudeBin: strin
         Object.assign(env, loginEnv());
         const args = [
           "-p",
-          "--model", spec.model,
+          "--model", claudeCliId(spec.model),
           "--tools", "",
           "--setting-sources", "",
           "--strict-mcp-config",
@@ -109,7 +110,7 @@ export function createClaudeCliSummarizer(spec: SummarizerSpec, claudeBin: strin
         input.signal.addEventListener("abort", onAbort, { once: true });
         child.on("close", code => {
           // What it spent, from its envelope (a failed run's too), for the session the outline is for.
-          if (stdout) recordClaudeEnvelope(stdout, who, spec.model);
+          if (stdout) recordClaudeEnvelope(stdout, who, claudeCliId(spec.model));
           if (settled) return;
           if (code !== 0) {
             settle(new SummarizerError(`claude exited with code ${code}: ${stderr.slice(-400)}`));

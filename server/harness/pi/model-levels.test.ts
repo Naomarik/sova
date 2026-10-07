@@ -3,9 +3,9 @@
 // over a copy of pi-config/models.json, keeping the provider's compat; what /api/models reports per
 // model; and a hosted session (the extension loaded, on that same runtime) sends each level, its system
 // prompt as `system`. pi comes through testing/load-pi.ts, so PI_PACKAGE_DIR's pi is proved the same way.
+// A hosted session sending each level to a capture server on 127.0.0.1: model-levels.integration.test.ts.
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import http from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
@@ -24,23 +24,8 @@ const { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager,
 const PROVIDER = "ollama-cloud";
 const UNMAPPED = "seam-unmapped";
 
-// A capture server standing in for ollama.com: every body, one short streamed reply.
-const bodies: any[] = [];
-const server = http.createServer((req, res) => {
-  let body = "";
-  req.on("data", (d) => (body += d));
-  req.on("end", () => {
-    bodies.push(JSON.parse(body));
-    res.writeHead(200, { "content-type": "text/event-stream" });
-    const base = { id: "x", object: "chat.completion.chunk", created: 0, model: "m" };
-    res.write(`data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta: { role: "assistant", content: "ok" }, finish_reason: null }] })}\n\n`);
-    res.write(`data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } })}\n\n`);
-    res.end("data: [DONE]\n\n");
-  });
-});
-await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
-after(() => server.close());
-const baseUrl = `http://127.0.0.1:${(server.address() as { port: number }).port}/v1`;
+// The provider points nowhere: nothing here sends a request (the hosted session that does is the integration file).
+const baseUrl = "http://127.0.0.1:9/v1";
 
 const models = JSON.parse(readFileSync(join(REPO, "pi-config/models.json"), "utf8"));
 models.providers[PROVIDER].baseUrl = baseUrl;
@@ -90,43 +75,6 @@ test("boot: the cached levels over pi's composed models keep the provider's comp
   };
   for (const [id, levels] of Object.entries(want)) assert.deepEqual(supportedThinkingLevels(runtime.getModel(PROVIDER, id) as never), levels, id);
   assert.deepEqual(applyModelLevelsAtBoot(runtime as never, dir, false), [], "applied twice: nothing to change");
-});
-
-test("a hosted session on the shared runtime sends each level; the system prompt stays `system`", async () => {
-  const { runtime } = await bootRuntime(true);
-  const cwd = join(dir, "cwd");
-  mkdirSync(cwd, { recursive: true });
-  const settingsManager = SettingsManager.inMemory({ cacheWarming: "off", retry: { enabled: false } } as never);
-  const resourceLoader = new DefaultResourceLoader({ cwd, agentDir: dir, settingsManager, additionalExtensionPaths: [join(EXT, "index.ts")] });
-  await resourceLoader.reload();
-  const { session } = await createAgentSession({ cwd, agentDir: dir, modelRuntime: runtime, sessionManager: SessionManager.inMemory(cwd), settingsManager, resourceLoader, noTools: "builtin" });
-  await session.bindExtensions({});
-  const sent: Record<string, unknown> = {};
-  for (const [id, level] of [
-    ["deepseek-v4.1-flash", "off"],
-    ["deepseek-v4.1-flash", "low"],
-    ["deepseek-v4.1-flash", "max"],
-    ["glm-5.3", "high"],
-    ["nemotron-3-super", "off"],
-    [UNMAPPED, "high"],
-  ] as const) {
-    await session.setModel(runtime.getModel(PROVIDER, id)!);
-    session.setThinkingLevel(level);
-    assert.equal(session.thinkingLevel, level);
-    await session.prompt(`hi ${id} ${level}`);
-    const body = bodies.at(-1);
-    assert.equal(body.messages[0].role, "system", `${id}: never developer`);
-    sent[`${id} ${level}`] = body.reasoning_effort ?? null;
-  }
-  session.dispose();
-  assert.deepEqual(sent, {
-    "deepseek-v4.1-flash off": "none",
-    "deepseek-v4.1-flash low": "low",
-    "deepseek-v4.1-flash max": "max",
-    "glm-5.3 high": "high",
-    "nemotron-3-super off": "none",
-    [`${UNMAPPED} high`]: null,
-  });
 });
 
 test("boot fetches follow PI_OFFLINE, SOVA_MODELS_FETCH and the test-process rule", () => {

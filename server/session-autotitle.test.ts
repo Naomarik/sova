@@ -12,13 +12,13 @@ import type { SessionSummary, SessionTitleSettings } from "../shared/protocol";
 
 const agentDir = mkdtempSync(join(tmpdir(), "sova-autotitle-"));
 process.env.PI_CODING_AGENT_DIR = agentDir;
-process.env.PORT = "0";
 const sessionsDir = join(agentDir, "sessions", "--tmp-autotitle--");
 mkdirSync(sessionsDir, { recursive: true });
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 mkdirSync(join(agentDir, "sova"), { recursive: true });
 
-const { app, server } = await import("./index");
+const { buildApp } = await import("./app");
+const { app } = buildApp({ extensionEntriesOf: async () => [] });
 const { readSessionTitleRecords, replaceAutoTitle, setSessionTitle, writeAutoTitle } = await import("./session-titles");
 const { getSessionSummary } = await import("./sessions-index");
 const { canonicalPath } = await import("./paths");
@@ -27,7 +27,6 @@ const { DecisionError } = await import("./decide");
 type LlmRuntime = import("./decide-llm").LlmRuntime;
 
 after(async () => {
-  await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
   rmSync(agentDir, { recursive: true, force: true });
 });
 

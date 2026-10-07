@@ -3,8 +3,8 @@ import test from "node:test";
 import { delegateDefaults, type DelegateSettings, type WorkerChoice } from "./delegate.ts";
 import { assess, fromBackendModels, backendsOf, routeAll, routeNotice, routeProfile, routeWriter, slotNotice, usable, type Discovery } from "./routing.ts";
 
-const fable: WorkerChoice = { backend: "claude-code", model: "claude-fable-5-1[1m]", effort: "medium" };
-const opusHigh: WorkerChoice = { backend: "claude-code", model: "opus[1m]", effort: "high" };
+const fable: WorkerChoice = { backend: "claude-code", model: "claude-fable-5-1", effort: "medium" };
+const opusHigh: WorkerChoice = { backend: "claude-code", model: "claude-opus-5-5", effort: "high" };
 const glm: WorkerChoice = { backend: "pi", model: "zai/glm-5.3", effort: "high" };
 const claude = (...ids: string[]): Discovery => ({ models: ids.map((id) => ({ id, efforts: ["low", "medium", "high", "xhigh", "max"] })) });
 
@@ -21,15 +21,15 @@ test("assess: discovery failure is not absence", () => {
 });
 
 test("assess: a successful discovery decides model and effort", () => {
-	assert.equal(assess(fable, claude("claude-fable-5-1[1m]"), null).availability, "ok");
-	// claude-code: the CLI's list is remote and varies; a valid alias it omits is unverified, used as is.
-	const unlisted = assess(fable, claude("opus[1m]"), null);
+	assert.equal(assess(fable, claude("claude-fable-5-1"), null).availability, "ok");
+	// claude-code: a shape-valid id the catalog (its list) doesn't have is unverified, used as is.
+	const unlisted = assess(fable, claude("claude-opus-5-5"), null);
 	assert.equal(unlisted.availability, "unverified");
-	assert.equal(unlisted.reason, "claude-fable-5-1[1m] is not in the Claude Code CLI's current model list (the list varies; the CLI accepts a valid alias at runtime)");
+	assert.equal(unlisted.reason, "claude-fable-5-1 is not in Sova's Claude catalog; it will still be used");
 	assert.ok(usable(unlisted));
-	assert.equal(assess(fable, { models: [] }, null).availability, "unverified", "an empty CLI list is just the list of the moment");
+	assert.equal(assess(fable, { models: [] }, null).availability, "unverified", "a list without it never makes a shape-valid Claude id absent");
 	// Only a shape-invalid Claude id is refused by a successful list.
-	const malformed = assess({ backend: "claude-code", model: "bad/alias", effort: "low" }, claude("opus[1m]"), null);
+	const malformed = assess({ backend: "claude-code", model: "bad/alias", effort: "low" }, claude("claude-opus-5-5"), null);
 	assert.equal(malformed.availability, "absent");
 	assert.equal(malformed.reason, "bad/alias is not offered by claude-code");
 	// pi: its registry is local and reliable, so a missing model is an answer.
@@ -37,24 +37,24 @@ test("assess: a successful discovery decides model and effort", () => {
 	assert.equal(absent.availability, "absent");
 	assert.equal(absent.reason, "zai/glm-5.3 is not offered by pi");
 	assert.equal(assess(glm, { models: [] }, null).availability, "absent", "an empty pi list is an answer");
-	const effort = assess(fable, { models: [{ id: "claude-fable-5-1[1m]", efforts: ["low", "high"] }] }, null);
+	const effort = assess(fable, { models: [{ id: "claude-fable-5-1", efforts: ["low", "high"] }] }, null);
 	assert.equal(effort.availability, "effort");
 	assert.match(effort.reason ?? "", /does not support effort "medium" \(supports: low, high\)/);
-	assert.equal(assess(fable, { models: [{ id: "claude-fable-5-1[1m]" }] }, null).availability, "ok", "no reported efforts: nothing to check against");
+	assert.equal(assess(fable, { models: [{ id: "claude-fable-5-1" }] }, null).availability, "ok", "no reported efforts: nothing to check against");
 	assert.equal(assess(glm, { models: [{ id: "zai/glm-5.3", efforts: ["off"] }] }, null).availability, "effort", "a non-reasoning pi model supports only off");
 });
 
 test("assess: an empty or unusable reported effort list constrains nothing (as Sova's options read it)", () => {
 	for (const efforts of [[], ["new-effort"]]) {
-		assert.equal(assess(fable, { models: [{ id: "claude-fable-5-1[1m]", efforts }] }, null).availability, "ok", JSON.stringify(efforts));
+		assert.equal(assess(fable, { models: [{ id: "claude-fable-5-1", efforts }] }, null).availability, "ok", JSON.stringify(efforts));
 	}
-	const cut = assess(fable, { models: [{ id: "claude-fable-5-1[1m]", efforts: ["low", "new-effort"] }] }, null);
+	const cut = assess(fable, { models: [{ id: "claude-fable-5-1", efforts: ["low", "new-effort"] }] }, null);
 	assert.equal(cut.availability, "effort");
 	assert.match(cut.reason ?? "", /\(supports: low\)$/, "the reason lists what the backend would accept");
 });
 
 test("assess: policy denial wins over everything and carries its reason", () => {
-	const denied = assess(fable, claude("claude-fable-5-1[1m]"), "Backend claude-code is disabled for subagents by user settings.");
+	const denied = assess(fable, claude("claude-fable-5-1"), "Backend claude-code is disabled for subagents by user settings.");
 	assert.equal(denied.availability, "denied");
 	assert.match(denied.reason ?? "", /disabled for subagents/);
 	assert.equal(assess(fable, undefined, "nope").availability, "denied", "even unprobed");
@@ -64,28 +64,28 @@ test("routeProfile: primary, else disclosed fallback, else ask — never an arbi
 	const settings = delegateDefaults();
 	const offered = (d: Discovery) => (choice: WorkerChoice) => assess(choice, d, null);
 
-	const onPrimary = routeProfile("planning", settings, offered(claude("claude-fable-5-1[1m]", "opus[1m]")));
+	const onPrimary = routeProfile("planning", settings, offered(claude("claude-fable-5-1", "claude-opus-5-5")));
 	assert.equal(onPrimary.via, "primary");
 	assert.deepEqual(onPrimary.use, fable);
 	assert.equal(onPrimary.fallback?.availability, "ok");
 
 	// Unavailable for the CLI means: listed, but without the configured effort (absence from its varying list is not an answer).
-	const fableLowOnly = { id: "claude-fable-5-1[1m]", efforts: ["low"] };
-	const onFallback = routeProfile("planning", settings, offered({ models: [fableLowOnly, { id: "opus[1m]", efforts: ["high"] }] }));
+	const fableLowOnly = { id: "claude-fable-5-1", efforts: ["low"] };
+	const onFallback = routeProfile("planning", settings, offered({ models: [fableLowOnly, { id: "claude-opus-5-5", efforts: ["high"] }] }));
 	assert.equal(onFallback.via, "fallback");
 	assert.deepEqual(onFallback.use, opusHigh);
 	assert.equal(onFallback.primary.availability, "effort");
 
-	const nothing = routeProfile("planning", settings, offered({ models: [fableLowOnly, { id: "opus[1m]", efforts: ["low"] }, { id: "sonnet", efforts: ["high"] }] }));
+	const nothing = routeProfile("planning", settings, offered({ models: [fableLowOnly, { id: "claude-opus-5-5", efforts: ["low"] }, { id: "claude-sonnet-5-5", efforts: ["high"] }] }));
 	assert.equal(nothing.via, "none");
 	assert.equal(nothing.use, null, "offered models that were never configured are not used");
 
-	const noFallback = routeProfile("routine", settings, offered({ models: [{ id: "opus[1m]", efforts: ["high"] }] }));
+	const noFallback = routeProfile("routine", settings, offered({ models: [{ id: "claude-opus-5-5", efforts: ["high"] }] }));
 	assert.equal(noFallback.via, "none");
 	assert.equal(noFallback.fallback, null);
 
 	// A valid alias the CLI's list of the moment omits stays on the primary, unverified.
-	const unlisted = routeProfile("planning", settings, offered(claude("sonnet", "haiku")));
+	const unlisted = routeProfile("planning", settings, offered(claude("claude-sonnet-5-5", "claude-haiku-4-5")));
 	assert.equal(unlisted.via, "primary");
 	assert.deepEqual(unlisted.use, fable);
 	assert.equal(unlisted.primary.availability, "unverified");
@@ -99,16 +99,16 @@ test("routeProfile: primary, else disclosed fallback, else ask — never an arbi
 
 test("routeAll: policy reroutes to the configured fallback, disclosed, and never further", () => {
 	const settings = delegateDefaults();
-	const denyFable = (choice: WorkerChoice) => (choice.model === "claude-fable-5-1[1m]" ? "claude-fable-5-1[1m] is disabled as a subagent model by user settings." : null);
-	const routes = routeAll(settings, { "claude-code": claude("claude-fable-5-1[1m]", "opus[1m]") }, denyFable);
+	const denyFable = (choice: WorkerChoice) => (choice.model === "claude-fable-5-1" ? "claude-fable-5-1 is disabled as a subagent model by user settings." : null);
+	const routes = routeAll(settings, { "claude-code": claude("claude-fable-5-1", "claude-opus-5-5") }, denyFable);
 	const planning = routes.find((r) => r.profile === "planning")!;
 	assert.equal(planning.via, "fallback");
 	assert.deepEqual(planning.use, opusHigh);
 	assert.equal(planning.primary.availability, "denied");
-	assert.match(routeNotice(planning) ?? "", /^Planning & specs: fallback claude-code · opus\[1m\] · high \(claude-fable-5-1\[1m\] is disabled as a subagent model by user settings\.\)$/);
+	assert.match(routeNotice(planning) ?? "", /^Planning & specs: fallback claude-code · claude-opus-5-5 · high \(claude-fable-5-1 is disabled as a subagent model by user settings\.\)$/);
 
 	const denyAllClaude = () => "Backend claude-code is disabled for subagents by user settings.";
-	const blocked = routeAll(settings, { "claude-code": claude("claude-fable-5-1[1m]", "opus[1m]") }, denyAllClaude);
+	const blocked = routeAll(settings, { "claude-code": claude("claude-fable-5-1", "claude-opus-5-5") }, denyAllClaude);
 	assert.deepEqual(blocked.map((r) => r.via), ["none", "none", "none", "none"], "a denied provider is not routed around to another one");
 	assert.match(routeNotice(blocked[2]!) ?? "", /^Routine implementation: no available worker — Backend claude-code is disabled .*, and no fallback is set; the orchestrator will ask/);
 	assert.equal(routeNotice(routes.find((r) => r.profile === "routine")!), undefined, "nothing to say about a primary in use");
@@ -117,15 +117,15 @@ test("routeAll: policy reroutes to the configured fallback, disclosed, and never
 test("routeAll assesses each tuple against its own backend", () => {
 	const settings: DelegateSettings = delegateDefaults();
 	settings.profiles.investigation = { primary: glm, fallback: fable };
-	const routes = routeAll(settings, { pi: { models: [{ id: "zai/glm-5.3", efforts: ["low", "medium", "high"] }] }, "claude-code": claude("opus[1m]") }, () => null);
+	const routes = routeAll(settings, { pi: { models: [{ id: "zai/glm-5.3", efforts: ["low", "medium", "high"] }] }, "claude-code": claude("claude-opus-5-5") }, () => null);
 	const investigation = routes.find((r) => r.profile === "investigation")!;
 	assert.equal(investigation.via, "primary");
 	assert.equal(investigation.primary.availability, "ok");
 	assert.equal(investigation.fallback?.availability, "unverified", "the claude fallback checked against claude discovery: unlisted, so unverified");
-	const claudeEffort = routeAll(settings, { pi: { models: [{ id: "zai/glm-5.3", efforts: ["low", "medium", "high"] }] }, "claude-code": { models: [{ id: "claude-fable-5-1[1m]", efforts: ["low"] }] } }, () => null).find((r) => r.profile === "investigation")!;
+	const claudeEffort = routeAll(settings, { pi: { models: [{ id: "zai/glm-5.3", efforts: ["low", "medium", "high"] }] }, "claude-code": { models: [{ id: "claude-fable-5-1", efforts: ["low"] }] } }, () => null).find((r) => r.profile === "investigation")!;
 	assert.equal(claudeEffort.fallback?.availability, "effort", "listed without the effort: the claude discovery decides");
 	// pi not probed: its tuple is unverified, not absent.
-	const unprobedPi = routeAll(settings, { "claude-code": claude("opus[1m]") }, () => null).find((r) => r.profile === "investigation")!;
+	const unprobedPi = routeAll(settings, { "claude-code": claude("claude-opus-5-5") }, () => null).find((r) => r.profile === "investigation")!;
 	assert.equal(unprobedPi.primary.availability, "unverified");
 	assert.equal(unprobedPi.via, "primary");
 });
@@ -140,20 +140,20 @@ test("backendsOf lists every backend the routing names, fallbacks included", () 
 test("fromBackendModels keeps ids and reported efforts, nothing invented", () => {
 	assert.deepEqual(
 		fromBackendModels([
-			{ id: "opus[1m]", name: "Opus", efforts: ["low", "high"], resolvedModel: "claude-opus-5" },
-			{ id: "haiku", name: "Haiku" },
+			{ id: "claude-opus-5-5", name: "Opus", efforts: ["low", "high"], resolvedModel: "claude-opus-5" },
+			{ id: "claude-haiku-4-5", name: "Haiku" },
 		]),
-		{ models: [{ id: "opus[1m]", efforts: ["low", "high"] }, { id: "haiku" }] },
+		{ models: [{ id: "claude-opus-5-5", efforts: ["low", "high"] }, { id: "claude-haiku-4-5" }] },
 	);
 });
 
 test("routeWriter: the spec writer routes like a profile — primary, disclosed fallback, else ask; none set is null", () => {
-	assert.equal(routeWriter({ version: 1, writer: null }, { "claude-code": claude("opus[1m]") }, () => null), null);
+	assert.equal(routeWriter({ version: 1, writer: null }, { "claude-code": claude("claude-opus-5-5") }, () => null), null);
 	const settings = { version: 1 as const, writer: { primary: fable, fallback: glm } };
-	const onPrimary = routeWriter(settings, { "claude-code": claude("claude-fable-5-1[1m]") }, () => null)!;
+	const onPrimary = routeWriter(settings, { "claude-code": claude("claude-fable-5-1") }, () => null)!;
 	assert.equal(onPrimary.via, "primary");
 	assert.equal(onPrimary.fallback?.availability, "unverified", "pi not probed: kept in use");
-	const denied = routeWriter(settings, { "claude-code": claude("claude-fable-5-1[1m]"), pi: { models: [{ id: "zai/glm-5.3", efforts: ["high"] }] } }, (c) => (c.backend === "claude-code" ? "no claude for subagents" : null))!;
+	const denied = routeWriter(settings, { "claude-code": claude("claude-fable-5-1"), pi: { models: [{ id: "zai/glm-5.3", efforts: ["high"] }] } }, (c) => (c.backend === "claude-code" ? "no claude for subagents" : null))!;
 	assert.equal(denied.via, "fallback");
 	assert.deepEqual(denied.use, glm);
 	assert.equal(slotNotice("Spec writer", denied, "the agent"), "Spec writer: fallback pi · zai/glm-5.3 · high (no claude for subagents)");

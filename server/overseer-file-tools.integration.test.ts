@@ -5,7 +5,9 @@
 import assert from "node:assert/strict";
 import { join, resolve } from "node:path";
 import { after, describe, test } from "node:test";
+import { setSearchSpawnForTest } from "./overseer-file-tools";
 import { confinedBox, secretBox } from "./overseer-file-tools-fixture";
+import { fakeSearchSpawn } from "./search-tools-fake";
 
 const fx = secretBox();
 after(fx.dispose);
@@ -58,5 +60,30 @@ describe("the project overseer's find and grep stay inside the project root", ()
     const all = await pcall("grep", { pattern: "MARK" });
     assert.match(all, /^README\.md:1: MARK here$/m);
     assert.match(all, /^src\/a\.ts:1:/m);
+  });
+
+  // The unit files run fd and rg in-process (server/search-tools-fake.ts): here, held to the real ones.
+  test("the in-process fd and rg stand-in answers these searches as the real programs do", async () => {
+    const searches: [typeof pcall, string, Record<string, unknown>][] = [
+      [call, "find", { pattern: "*", path: root }],
+      [call, "find", { pattern: "*.json", path: join(home, ".pi") }],
+      [call, "find", { pattern: "auth.json", path: home }],
+      [call, "grep", { pattern: "TOKEN", path: home, context: 1 }],
+      [call, "grep", { pattern: "token", path: project, ignoreCase: true }],
+      [call, "grep", { pattern: "TOKEN=1", path: project, literal: true, glob: "*.ts" }],
+      [call, "grep", { pattern: "zzz-no-such-text", path: project }],
+      [pcall, "find", { pattern: "**/*" }],
+      [pcall, "find", { pattern: "src/*.ts" }],
+      [pcall, "grep", { pattern: "MARK", glob: "**" }],
+    ];
+    const lines = (s: string) => s.split("\n").sort();
+    const real: string[][] = [];
+    for (const [f, name, params] of searches) real.push(lines(await f(name, params)));
+    setSearchSpawnForTest(fakeSearchSpawn());
+    try {
+      for (const [i, [f, name, params]] of searches.entries()) assert.deepEqual(lines(await f(name, params)), real[i], `${name} ${JSON.stringify(params)}`);
+    } finally {
+      setSearchSpawnForTest(null);
+    }
   });
 });

@@ -119,6 +119,13 @@ function resolveArg(p: string, cwd: string): string {
   return isAbsolute(s) ? resolve(s) : resolve(cwd, s);
 }
 
+/** Starts fd and rg; tests run them in-process instead (setSearchSpawnForTest). */
+let spawnSearch: typeof spawn = spawn;
+/** Tests: start fd and rg with `fn` (server/search-tools-fake.ts); null: the real programs again. */
+export function setSearchSpawnForTest(fn: typeof spawn | null): void {
+  spawnSearch = fn ?? spawn;
+}
+
 /** The binary pi would run: its own download in the agent dir, else the one on PATH. */
 function toolBinary(name: "rg" | "fd"): string {
   const local = join(agentRoot(), "bin", name);
@@ -147,7 +154,7 @@ async function fdGlob(pattern: string, searchPath: string, ignore: string[], lim
   }
   args.push("--", effective, searchPath);
   return new Promise((done, fail) => {
-    const child = spawn(toolBinary("fd"), args, { stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawnSearch(toolBinary("fd"), args, { stdio: ["ignore", "pipe", "pipe"] });
     const out: string[] = [];
     let stderr = "";
     child.stderr.on("data", (c) => (stderr += String(c)));
@@ -187,7 +194,7 @@ async function guardedGrep(p: GrepParams, cwd: string, signal: AbortSignal | und
   const secret = new Map<string, boolean>();
   let limitReached = false;
   await new Promise<void>((done, fail) => {
-    const child = spawn(toolBinary("rg"), args, { stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawnSearch(toolBinary("rg"), args, { stdio: ["ignore", "pipe", "pipe"] });
     let stderr = "";
     let stopped = false;
     const onAbort = () => {

@@ -25,6 +25,8 @@ mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 symlinkSync(resolve(import.meta.dirname, "..", "pi-config", "extensions"), join(agentDir, "extensions"));
 
 const { Hono } = await import("hono");
+// fd and rg in-process (server/search-tools-fake.ts; overseer-file-tools.integration.test.ts runs the real ones).
+(await import("./overseer-file-tools")).setSearchSpawnForTest((await import("./search-tools-fake")).fakeSearchSpawn());
 const orgs = await import("./orgs");
 const { setProjectArchived } = await import("./projects/spaces");
 const baton = await import("./baton");

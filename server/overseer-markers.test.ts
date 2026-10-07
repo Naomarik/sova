@@ -20,6 +20,8 @@ const cwd = join(agentDir, "cwd");
 mkdirSync(cwd, { recursive: true });
 
 const { acquireChat, BusyError, disposeAllChats, isOverseerFile, REWIND_ENTRY, resolveRegenerate } = await import("./chat-manager");
+// fd and rg in-process (server/search-tools-fake.ts; overseer-file-tools.integration.test.ts runs the real ones).
+(await import("./overseer-file-tools")).setSearchSpawnForTest((await import("./search-tools-fake")).fakeSearchSpawn());
 const { normalizeEntries, normalizeEntry } = await import("./transcript");
 const { historyOf } = await import("./harness/pi/reader");
 const { canonicalPath } = await import("./paths");

@@ -46,7 +46,6 @@
   line-height: var(--lh-mono);
   max-height: 360px;
 }
-.share-msg-reply:has(.share-vis-source, .share-vis-image) { align-self: stretch; }
 .ss-note { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); }
 /* The thread's own column, so the Share sheet's Preview (which doesn't load share.css) lays out
    the same as the page. */

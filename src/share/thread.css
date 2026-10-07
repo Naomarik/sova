@@ -13,10 +13,63 @@
 }
 .share-msg-own { align-self: flex-end; background: var(--color-accent-tint); border-color: transparent; }
 .share-who { font-size: var(--fs-caption); font-weight: var(--fw-semibold); color: var(--color-ink); }
+/* Every reply card takes the column's width; user bubbles keep their cap, on the right. */
+.share-msg-reply { align-self: stretch; max-width: none; }
 .share-text { white-space: pre-wrap; overflow-wrap: anywhere; }
-.share-md { overflow-wrap: anywhere; }
+
+/* A reply's markdown, ported from base.css .md and set a step under the page: headings stop at
+   heading-m, below the page title, and every block shares one gap. */
+.share-md { overflow-wrap: anywhere; min-width: 0; }
+.share-md :is(p, ul, ol, blockquote, table, .md-vis) { margin: 0 0 var(--space-3); }
+.share-md :is(h1, h2) { margin: var(--space-5) 0 var(--space-2); font-weight: var(--fw-semibold); }
+.share-md h2 { margin-top: var(--space-4); }
+.share-md h1 { font-size: var(--fs-heading-m); line-height: var(--lh-heading-m); letter-spacing: var(--ls-heading); }
+.share-md h2 { font-size: var(--fs-heading-s); line-height: var(--lh-heading-s); letter-spacing: var(--ls-heading-s); }
+.share-md :is(h3, h4, h5, h6) {
+  margin: var(--space-4) 0 var(--space-1);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  letter-spacing: 0;
+  font-weight: var(--fw-semibold);
+}
 .share-md > :first-child { margin-top: 0; }
 .share-md > :last-child { margin-bottom: 0; }
+.share-md :is(ul, ol) { padding-left: var(--space-5); }
+.share-md li + li { margin-top: var(--space-1); }
+.share-md li > :is(ul, ol) { margin: var(--space-1) 0 0; }
+.share-md li > p { margin: 0; }
+.share-md blockquote {
+  padding: 0 0 0 var(--space-3);
+  border-left: var(--stroke-icon) solid var(--color-border-strong);
+  color: var(--color-ink-2);
+}
+.share-md hr { margin: var(--space-4) 0; }
+.share-md :is(strong, th) { font-weight: var(--fw-semibold); }
+
+/* Tables: ruled, a sunken header row, cells that wrap. The share markdown has no wrapper, so the
+   table is its own scroller — a guard, so the page never scrolls sideways at 390px. */
+.share-md table {
+  display: block;
+  max-width: 100%;
+  width: max-content;
+  overflow-x: auto;
+  border-collapse: collapse;
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+}
+.share-md :is(th, td) {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: var(--stroke-thin) solid var(--color-border);
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: break-word;
+}
+.share-md th { background: var(--color-sunken); color: var(--color-ink); }
+.share-md tr:last-child td { border-bottom: 0; }
+.share-md :is(td, th)[align="right"] { text-align: right; font-variant-numeric: tabular-nums; }
+.share-md :is(td, th)[align="center"] { text-align: center; }
 .share-cutoff { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); }
 .share-md a,
 .share-text a { color: var(--color-accent); }
@@ -62,16 +115,12 @@
 .share-baton .share-msg-reply { align-self: stretch; max-width: none; padding: 0 var(--space-1); background: transparent; border-color: transparent; }
 .share-baton .share-msg-reply .share-who,
 .share-baton .share-who-sending { font-weight: var(--fw-medium); color: var(--color-ink-muted); }
-.share-baton .share-md :is(ul, ol) { padding-left: 1.4em; }
-.share-baton .share-md li + li { margin-top: var(--space-1); }
 
 /* Drawings in a reply (§app.baton/outsider-view): vis.css draws the figure and the "Drawing…" box;
    these are the share page's own lines. */
 .share-md .md-vis-pending-line { display: flex; align-items: center; gap: var(--space-2); margin: 0; }
 .share-md .md-vis:last-child, .share-md .md-vis-pending:last-child { margin-bottom: 0; }
 .share-vis-broken { font-size: var(--fs-caption); color: var(--color-ink-muted); }
-/* A reply with a drawing takes the column's width, so the drawing isn't squeezed to its prose. */
-.share-msg-reply:has(.md-vis) { align-self: stretch; }
 
 /* A message's photos (§app.baton/images): one fitted in 320 × 240, more as 96 px tiles; a lightbox
    scoped to the message. The icons are bundled into the share build (the listener serves no /icons/). */

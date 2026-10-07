@@ -65,8 +65,30 @@ export function clipProblem(buf: Uint8Array, info: WavInfo): string | null {
   if (zeros > n * 0.1) return GATE;
   let run = 0;
   for (let i = loud[0]!; i < loud.at(-1)! + 320; i++) if ((run = x(i) === 0 ? run + 1 : 0) > 800) return GATE;
-  if (n >= 1600 && db(n - 1600, n) > -45) return "This clip ends mid-word. Record it again and stop a moment after the last word.";
+  if (cutOff(n, db)) return "This clip ends mid-word. Record it again and stop a moment after the last word.";
   return null;
+}
+
+/** Speech still running in the last 160 ms, judged against the clip's own levels. A fixed level
+    failed every phone clip: a raw phone mic's noise floor sits near −45 dBFS, and the post-roll
+    carries the knock of the finger tapping Stop. So the tail's level is the 4th quietest of its
+    eight 20 ms frames (a knock up to about 60 ms can't move it; 80 ms of quiet after the last word
+    passes), and it must be above −45 dBFS, 12 dB over the floor (the 10th-percentile frame: room
+    noise between words) and within 20 dB of speech (the 90th percentile of frames above −40 dBFS;
+    a word's quieter frames sit 6–15 dB under that). */
+function cutOff(n: number, db: (from: number, to: number) => number): boolean {
+  const F = 320;
+  const TAIL = 8;
+  if (n < TAIL * F) return false;
+  const frames: number[] = [];
+  for (let f = 0; f + F <= n; f += F) frames.push(db(f, f + F));
+  const pct = (xs: number[], p: number) => [...xs].sort((a, b) => a - b)[Math.floor(p * (xs.length - 1))]!;
+  const floor = pct(frames, 0.1);
+  const speech = pct(frames.filter((d) => d > -40), 0.9);
+  const tail: number[] = [];
+  for (let k = TAIL; k > 0; k--) tail.push(db(n - k * F, n - (k - 1) * F));
+  const level = pct(tail, 0.5);
+  return level > -45 && level >= floor + 12 && level >= speech - 20;
 }
 
 /** Sova's jargon as whisper misspells it (§chat.voice/jargon-fixes): whole words only, and only

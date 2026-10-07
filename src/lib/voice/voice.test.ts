@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import type { VoiceStatus } from "../../../shared/protocol";
 import { backgroundSentence, clock, etaSentence, jobPercent, languagesWord, micErrorSentence, modelName, percentWer, perClip, readyLine, recordingText, roughTime, settingsWords, stepFigure, unsupportedReason, wordDiff } from "./format";
 import { spacedInsert, splice, targetRange, wordCount } from "./insert";
-import { encodeWav, joinBatches, levelOf } from "./wav";
+import { encodeWav, joinBatches, levelOf, trimTapNoise } from "./wav";
 
 describe("insertion", () => {
   const ins = (value: string, at: number, text: string, end = at) => {
@@ -63,6 +63,41 @@ describe("wav", () => {
     const speech = levelOf(0.05);
     assert.ok(speech > 30 && speech < 70, `${speech}`);
     assert.equal(levelOf(4), 100);
+  });
+  describe("trimTapNoise", () => {
+    const RATE = 48000;
+    const STOP = RATE; // Stop pressed at 1 s, after 0.2 s of quiet and 0.8 s of speech
+    /** 1.35 s at 48 kHz: quiet room (±0.003, about −55 dBFS), speech from 0.2 s to `speechEnd` s, then `edit`. */
+    const clip = (speechEnd = 1, edit?: (s: Float32Array) => void) => {
+      let seed = 1;
+      const s = new Float32Array(Math.round(RATE * 1.35));
+      for (let i = 0; i < s.length; i++) {
+        seed = (seed * 1103515245 + 12345) % 2147483648;
+        s[i] = (seed / 2147483648 - 0.5) * 0.006 + (i >= RATE * 0.2 && i < RATE * speechEnd ? 0.1 * Math.sin(i / 5) : 0);
+      }
+      edit?.(s);
+      return s;
+    };
+    const knock = (at: number, ms = 30) => (s: Float32Array) => {
+      for (let i = 0; i < (RATE * ms) / 1000; i++) s[at + i] = i % 2 ? 0.5 : -0.5;
+    };
+    it("cuts the clip just before a knock in the post-roll, fading the cut", () => {
+      const out = trimTapNoise(clip(1, knock(STOP + RATE * 0.15)), RATE, STOP);
+      assert.equal(out.length, STOP + RATE * 0.15);
+      assert.equal(Math.abs(out.at(-1)!), 0);
+    });
+    it("keeps the whole clip when the post-roll is quiet, or holds speech longer than a knock", () => {
+      const quiet = clip();
+      assert.equal(trimTapNoise(quiet, RATE, STOP), quiet);
+      const word = clip(1, (s) => s.forEach((_, i) => i >= STOP + RATE * 0.1 && i < STOP + RATE * 0.3 && (s[i] = 0.1 * Math.sin(i / 5))));
+      assert.equal(trimTapNoise(word, RATE, STOP).length, word.length, "a word after Stop stays");
+      const lastSyllable = clip(1.2);
+      assert.equal(trimTapNoise(lastSyllable, RATE, STOP).length, lastSyllable.length, "speech running past Stop stays");
+    });
+    it("ignores a burst before the stop moment", () => {
+      const early = clip(1, knock(RATE * 0.1));
+      assert.equal(trimTapNoise(early, RATE, STOP).length, early.length);
+    });
   });
 });
 

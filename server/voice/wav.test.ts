@@ -73,8 +73,25 @@ describe("clipProblem", () => {
     assert.equal(clip(3000, (s) => s.fill(0, 8000, 8000 + 640)), null, "40 ms is under the limit");
     assert.match(clip(3000, (s) => s.fill(0, 0, 3000))!, /digital silence/, "over 10% zeros, even outside speech");
   });
+  /** Deterministic noise, uniform in ±amp (RMS amp/√3). */
+  const noise = (amp: number) => {
+    let seed = 1;
+    return () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648 * 2 - 1) * amp;
+  };
+  it("passes a phone's noisy raw mic: a −38 dBFS floor under and after the speech", () => {
+    const hiss = noise(715); // RMS ≈ 413 ≈ −38 dBFS
+    assert.equal(clip(3000, (s) => s.forEach((v, i) => (s[i] = Math.round(v + hiss())))), null);
+  });
+  it("passes the knock of the finger tapping Stop in the last 100 ms", () => {
+    const knock = noise(20000);
+    assert.equal(clip(3000, (s) => s.forEach((_, i) => i >= 23000 && i < 23480 && (s[i] = Math.round(knock())))), null);
+  });
   it("names a cut-off tail, a too-quiet clip and clipping", () => {
-    assert.match(clip(3000, (s) => s.fill(3000, 22800))!, /ends mid-word/);
+    assert.match(clip(3000, (s) => s.forEach((_, i) => i >= 19200 && (s[i] = Math.round(3000 * Math.sin(i / 3)))))!, /ends mid-word/, "speech running to the end");
+    const hiss = noise(715);
+    assert.match(clip(3000, (s) => s.forEach((v, i) => (s[i] = Math.round((i >= 19200 ? 3000 * Math.sin(i / 3) : v) + hiss()))))!, /ends mid-word/, "even over a noisy mic");
+    assert.equal(clip(3000, (s) => s.fill(3000, 23040)), null, "a 60 ms burst at the very end is a knock, not a word");
+    assert.match(clip(3000, (s) => s.fill(3000, 22400))!, /ends mid-word/, "100 ms of sound at the end is not");
     assert.match(clip(200)!, /too quiet/);
     assert.match(clip(32767)!, /clipping/);
   });

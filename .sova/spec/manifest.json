@@ -15665,6 +15665,29 @@
       "kind": "note",
       "authority": "accepted",
       "evidence": "verified"
+    },
+    "§design/menu-rows": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/design/base.css",
+        "src/lib/menu-rows.test.ts",
+        "src/components/ActionMenu.tsx",
+        "src/components/Groups.tsx",
+        "src/components/GroupView.tsx",
+        "src/components/ComposerMenu.tsx",
+        "src/components/ModeMenu.tsx",
+        "src/components/MeshHostMenu.tsx",
+        "src/components/AlignChip.tsx",
+        "src/components/OverseerCardChip.tsx",
+        "src/components/CostsTab.tsx",
+        "src/mesh.css",
+        "src/costs-tab.css",
+        "src/orgs.css",
+        "src/design/align-viewer.css"
+      ]
     }
   },
   "boundary": {

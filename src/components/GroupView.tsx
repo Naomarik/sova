@@ -1172,7 +1172,7 @@ function MenuRow(props: {
 }) {
   return (
     <div
-      class="mode-option group-option"
+      class="popover-item popover-item-mono"
       role={props.checked === undefined ? "menuitem" : "menuitemcheckbox"}
       aria-checked={props.checked === undefined ? undefined : props.checked}
       tabindex={0}
@@ -1190,7 +1190,7 @@ function MenuRow(props: {
       }}
     >
       {props.icon}
-      <span class="mode-option-text">{props.children}</span>
+      <span class="popover-item-text">{props.children}</span>
     </div>
   );
 }
@@ -1288,11 +1288,11 @@ function HeadActions(props: {
                 onRun={() => props.onSendAll(!props.sendAll)}
                 close={close}
               >
-                <span class="mode-option-id">Send to All</span>
+                <span class="popover-item-label">Send to All</span>
               </MenuRow>
             </Show>
             <MenuRow aria={`Dissolve ${quoted(props.groupName)}`} icon={<Icon name="close" small />} onRun={() => setAsking(true)}>
-              <span class="mode-option-id">Dissolve</span>
+              <span class="popover-item-label">Dissolve</span>
             </MenuRow>
           </div>
         </Show>

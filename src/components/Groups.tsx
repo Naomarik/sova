@@ -132,9 +132,14 @@ export function MoveToGroupMenu(props: {
     // which is compound so it wins the cascade). Both custom properties are always set; the class
     // and the media query decide which one applies, so the sheet band keeps owning the position
     // under 768px.
-    menu.classList.toggle("group-menu-up", innerHeight - r.bottom < 320);
+    const up = innerHeight - r.bottom < 320;
+    menu.classList.toggle("group-menu-up", up);
     menu.style.setProperty("--menu-top", `${Math.round(r.bottom + 4)}px`);
     menu.style.setProperty("--menu-bottom", `${Math.round(innerHeight - r.top + 4)}px`);
+    // The panel is as tall as its rows, up to the room on the side it opens towards (and 70dvh,
+    // base.css `.model-menu.group-menu`): eight groups fit a desktop window without a scrollbar.
+    const room = up ? r.top - 4 - 8 : innerHeight - r.bottom - 4 - 8;
+    menu.style.setProperty("--menu-max", `${Math.round(Math.max(room, 140))}px`);
     closedByChoice = false;
     tabbedAway = false;
     setError(null);
@@ -304,7 +309,7 @@ export function MoveToGroupMenu(props: {
               <For each={rows()}>
                 {(row, i) => (
                   <div
-                    class="mode-option group-option"
+                    class="popover-item popover-item-mono"
                     role="menuitemradio"
                     aria-checked={row.id === current() ? "true" : "false"}
                     aria-disabled={busy() ? "true" : undefined}
@@ -312,9 +317,9 @@ export function MoveToGroupMenu(props: {
                     onFocus={() => setActive(i())}
                     onClick={() => void choose(row.id)}
                   >
-                    <Icon name="check" small class="mode-option-check" />
-                    <span class="mode-option-text">
-                      <span class="mode-option-id">{row.name}</span>
+                    <Icon name="check" small class="popover-item-check" />
+                    <span class="popover-item-text">
+                      <span class="popover-item-label">{row.name}</span>
                     </span>
                   </div>
                 )}
@@ -322,7 +327,7 @@ export function MoveToGroupMenu(props: {
             </div>
             <div class="model-menu-group" role="group" aria-label="New group">
               <div
-                class="mode-option group-option"
+                class="popover-item popover-item-mono"
                 role="menuitem"
                 tabindex={active() === rows().length ? 0 : -1}
                 onFocus={() => setActive(rows().length)}
@@ -331,9 +336,9 @@ export function MoveToGroupMenu(props: {
                   setError(null);
                 }}
               >
-                <Icon name="plus" small class="group-option-icon" />
-                <span class="mode-option-text">
-                  <span class="mode-option-id">New group…</span>
+                <Icon name="plus" small />
+                <span class="popover-item-text">
+                  <span class="popover-item-label">New group…</span>
                 </span>
               </div>
             </div>

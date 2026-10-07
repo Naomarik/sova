@@ -471,7 +471,7 @@ export function ComposerMenu(props: {
 
   const Item = (p: { r: Row; index: number }) => (
     <div
-      class="mode-option composer-flyout-item"
+      class="popover-item composer-flyout-item"
       role={p.r.role}
       id={paneId(`composer-flyout-${p.r.id}`)}
       tabindex={active() === p.index ? 0 : -1}
@@ -487,8 +487,8 @@ export function ComposerMenu(props: {
       }}
       onFocus={() => setActive(p.index)}
     >
-      <Show when={p.r.role !== "menuitem"} fallback={<Icon name={p.r.icon ?? "more"} small class="composer-flyout-icon" />}>
-        <Icon name="check" small class="mode-option-check" />
+      <Show when={p.r.role !== "menuitem"} fallback={<Icon name={p.r.icon ?? "more"} small />}>
+        <Icon name="check" small class="popover-item-check" />
       </Show>
       <span class="composer-flyout-label">{p.r.label}</span>
       <Show when={p.r.busy}>
@@ -501,7 +501,7 @@ export function ComposerMenu(props: {
         <span class="composer-flyout-meta">{p.r.meta}</span>
       </Show>
       <Show when={p.r.chevron}>
-        <Icon name="chevron-right" small class="composer-flyout-chevron" />
+        <Icon name="chevron-right" small />
       </Show>
     </div>
   );
@@ -577,7 +577,7 @@ export function ComposerMenu(props: {
             <div class="model-menu-list composer-flyout-list" role="menu" aria-label="Model and thinking" onKeyDown={onListKeyDown}>
               <Index each={pick((r) => r.id === "model")}>{(x) => <Item r={x().r} index={x().index} />}</Index>
               <Show when={pick((r) => r.role === "menuitemradio").length > 0}>
-                <div class="composer-flyout-sep" role="separator" />
+                <div class="popover-sep" role="separator" />
                 <div class="model-menu-group" role="group" aria-labelledby={paneId("composer-flyout-thinking")}>
                   <div class="list-group-label" id={paneId("composer-flyout-thinking")}>
                     Thinking
@@ -600,7 +600,7 @@ export function ComposerMenu(props: {
                         Switching to {waiting().name} after this reply
                       </p>
                       <Index each={pick((r) => r.id === "login-cancel")}>{(x) => <Item r={x().r} index={x().index} />}</Index>
-                      <div class="composer-flyout-sep" role="separator" />
+                      <div class="popover-sep" role="separator" />
                     </>
                   )}
                 </Show>
@@ -619,7 +619,7 @@ export function ComposerMenu(props: {
                 <Show when={resendNote(control().context())}>
                   {(note) => (
                     <>
-                      <div class="composer-flyout-sep" role="separator" />
+                      <div class="popover-sep" role="separator" />
                       <p class="composer-flyout-note" title={note().title}>
                         {note().text}
                       </p>
@@ -641,15 +641,15 @@ export function ComposerMenu(props: {
               {/* The rows are picked by id, so a row that matches no section is built and never
                   rendered. */}
               <Show when={pick((r) => r.id.startsWith("hide-")).length > 0}>
-                <div class="composer-flyout-sep" role="separator" />
+                <div class="popover-sep" role="separator" />
                 <Index each={pick((r) => r.id.startsWith("hide-"))}>{(x) => <Item r={x().r} index={x().index} />}</Index>
               </Show>
               <Show when={pick((r) => r.id.startsWith("sandbox-")).length > 0}>
-                <div class="composer-flyout-sep" role="separator" />
+                <div class="popover-sep" role="separator" />
                 <SandboxGroup />
               </Show>
               <Show when={pick((r) => r.id === "undo").length > 0}>
-                <div class="composer-flyout-sep" role="separator" />
+                <div class="popover-sep" role="separator" />
                 <Index each={pick((r) => r.id === "undo")}>{(x) => <Item r={x().r} index={x().index} />}</Index>
               </Show>
             </div>

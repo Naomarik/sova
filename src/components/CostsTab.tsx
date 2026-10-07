@@ -285,7 +285,8 @@ function MultiPick(props: {
                   const on = () => props.picked.includes(o.id);
                   return (
                     <div
-                      class="mode-option group-option"
+                      class="popover-item"
+                      classList={{ "popover-item-detail": !!o.note }}
                       role="menuitemcheckbox"
                       tabindex="0"
                       aria-checked={on() ? "true" : "false"}
@@ -298,10 +299,10 @@ function MultiPick(props: {
                       }}
                     >
                       <CheckMark on={on()} />
-                      <span class="mode-option-text">
-                        <span class="mode-option-id">{o.label}</span>
+                      <span class="popover-item-text">
+                        <span class="popover-item-label">{o.label}</span>
                         <Show when={o.note}>
-                          <span class="mode-option-note">{o.note}</span>
+                          <span class="popover-item-desc">{o.note}</span>
                         </Show>
                       </span>
                     </div>
@@ -319,10 +320,12 @@ function MultiPick(props: {
 /** A check row's box: the check when on, an empty box of the same size when off. */
 function CheckMark(props: { on: boolean }) {
   return (
-    <span class="costs-check" aria-hidden="true">
-      <Show when={props.on}>
-        <Icon name="check" small />
-      </Show>
+    <span class="popover-item-icon" aria-hidden="true">
+      <span class="costs-check">
+        <Show when={props.on}>
+          <Icon name="check" small />
+        </Show>
+      </span>
     </span>
   );
 }

@@ -89,7 +89,7 @@ export function AlignChip(props: { entries: AlignEntry[]; onJump(entry: AlignEnt
             const tone = () => (decided() < live() ? "warn" : "success");
             return (
               <div
-                class="align-menu-item"
+                class="popover-item"
                 role="menuitem"
                 tabindex="0"
                 aria-label={alignMenuLabel(entry.doc)}

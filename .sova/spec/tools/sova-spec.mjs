@@ -708,7 +708,7 @@ function relatedOf(ctx, hits, related, own = () => false) {
   const foreign = ids.filter((id) => cur.has(id)), surface = (id) => ctx.claims.get(id).kind === "surface";
   return { touched, foreign: [...foreign.filter(surface), ...foreign.filter((id) => !surface(id))], childUnderForeign, touchedIds: ids };
 }
-const FOREIGN_RULE = "flag any where a user sees a change, even one your new claim describes, wherever you put it; plumbing (a request, hook, helper or CSS class) never flags, nor a gap it already had, even one you now rely on; the last line names these foreign §, never your new claims";
+const FOREIGN_RULE = "flag any where a user sees a change, even one your new claim describes, wherever you put it; plumbing (a request, hook, helper or CSS class) never flags, nor a gap it already had, even one you now rely on";
 // Pushed last, so a truncated tail of the findings still carries it; the rule leads, so a byte cut keeps it.
 const foreignSummary = (foreign) => foreign.length && add("note", "foreign-summary",
   `${FOREIGN_RULE.replace("any", "any foreign §")}: ${foreign.length} touched (${foreign.join(", ")})`, { ids: foreign });
@@ -899,7 +899,7 @@ const sortKeys = (v) => Array.isArray(v) ? v.map(sortKeys) : v && typeof v === "
 const canonRec = (v) => (v === undefined ? null : JSON.stringify(sortKeys(v)));
 
 // § whose prose or record changed from base to head (a revision, or the working tree), plus deletions and existing
-// H1s that gained an H2; minus § created in between. That list is what a reply's "Also changes:" line names.
+// H1s that gained an H2; minus § created in between. That list is the foreign § a change touched.
 function foreign(root, opt) {
   const prefix = gitPrefix(root, "foreign");
   if (prefix === null) return {};

@@ -93,8 +93,7 @@ carries `created: true|false`, and each foreign touched § gets a
 `touched-foreign` note (read it with `read '<id>'`; flag it if a user sees a change
 there, even one the new claim describes; a gap it already had never flags, even one you now rely on). Human output prints the summary
 before the touched list. Notes are reminders, not flags: the exit code is
-unchanged. The rule counts a request, hook, helper or CSS class as plumbing, and
-says the reply's last line names these foreign §, never the task's new claims.
+unchanged. The rule counts a request, hook, helper or CSS class as plumbing.
 Plain `census` and `check` are as before.
 
 `census --changed` also lists, as `mappedOutside`, changed files outside the
@@ -104,9 +103,8 @@ those § join `foreign`. The boundary itself is not widened.
 `foreign --base <rev>` lists the foreign § the current spec changed from
 `<rev>` to `--head <rev>` (default: the working tree, so an uncommitted
 promotion counts): each § whose prose or record changed, was deleted, or gained
-a new child, minus the § created in that range. It is the list a merge or
-promote turn's `Also changes:` line must name; `worktree merge` and
-`promote --write` print it for their own range.
+a new child, minus the § created in that range; `promote --write` prints it
+for its own range, and reviews read it.
 
 Quote IDs, because `§` is not a shell word character. Every command that takes a § id reads a
 bare namespace like `§app.shell` as `§app/shell`, and says so (an `id-alias` note, or `alias` in the
@@ -358,25 +356,17 @@ Changed inputs stale an assessment; they do not automatically mean broken produc
 
 With spec on, `../mode/spec-guard.ts` runs these tools for the agent (in pi
 from `../mode/index.ts`; in Claude Code workers from the hooks the subagents
-spawn path installs):
-
-- after any tool call, bash included, a `git status` delta that shows a first
-  changed file in the boundary, or a new one, runs `census --changed` and
-  appends a short `[spec census]` digest to that tool result, saying so when
-  the session has no draft yet;
-- at the end of a turn that edited, committed, promoted or merged, the reply's
-  last line is checked against the § `foreign` computes for the turn. Recognized
-  landing turns get at most two corrective continuations; unresolved replies
-  can still finish after that limit. Ordinary parent edit turns get a warning;
-  workers can receive one ordinary correction. An override records the author's
-  explanation, not machine verification that the computed list was wrong.
+spawn path installs): after any tool call, bash included, a `git status` delta
+that shows a first changed file in the boundary, or a new one, runs
+`census --changed` and appends a short `[spec census]` digest to that tool
+result, saying so when the session has no draft yet. Nothing runs at the end of
+a turn: a reply carries no spec lines, and a turn ends when the model stops.
 
 These are post-operation diagnostics, not a write barrier. An unchanged claim
-whose mapped code changed is advisory, so a successful reply check does not
-establish that the prose still matches the implementation. Review the affected
-behavior rather than treating `Also changes: none` as evidence of preservation.
+whose mapped code changed is advisory: review the affected behavior rather than
+treating a quiet census as evidence of preservation.
 
-`PI_SPEC_CENSUS_HOOK=0` and `PI_SPEC_CHECK=0` turn them off in pi.
+`PI_SPEC_CENSUS_HOOK=0` turns the census note off in pi.
 
 ## Where the minor mode finds them (path and trust)
 

@@ -1026,7 +1026,7 @@ await commands.get("mode").handler("normal", ctx);
 	assert.deepEqual(worker.getTools(), ["read", "bash", "edit", "write", "grep"], "strict never strips a worker's edit/write");
 	const block = (await worker.hooks.get("before_agent_start")[0]({ systemPrompt: "base" }, worker.ctx)).systemPrompt;
 	assert.equal(block, `base\n\n${composeWorkerPrompt({ minorModes: ["spec"] })}`, "the worker form, with no writer paragraph although one is set");
-	// The full worktree-config mode extension appends the supplied parent ledger, not just spec-worker.ts.
+	// The full worktree-config mode extension writes no spec ledger, even with an old parent's ledger env set.
 	const ledgerFixture = mkdtempSync(path.join(tmpdir(), "mode-worker-ledger-"));
 	const oldLedger = process.env.SOVA_SPEC_LEDGER;
 	try {
@@ -1037,7 +1037,6 @@ await commands.get("mode").handler("normal", ctx);
 		git("init", "-qb", "main");
 		writeFileSync(path.join(repo, "code.txt"), "before\n");
 		git("add", "."); git("commit", "-qm", "base");
-		const before = git("rev-parse", "HEAD");
 		worker.ctx.cwd = repo;
 		worker.ctx.sessionManager.getSessionId = () => "worker-fixture";
 		worker.ctx.sessionManager.getHeader = () => undefined;
@@ -1048,9 +1047,7 @@ await commands.get("mode").handler("normal", ctx);
 		for (const fn of worker.hooks.get("tool_call")) await fn(call, worker.ctx);
 		git("commit", "-qam", "work");
 		for (const fn of worker.hooks.get("tool_result")) await fn({ ...call, content: [], isError: false }, worker.ctx);
-		const rows = readFileSync(ledger, "utf8").trim().split("\n").map(JSON.parse);
-		assert.equal(rows.length, 1, "actual worker operation appended exactly once");
-		assert.deepEqual([rows[0].top, rows[0].before, rows[0].after, rows[0].kind, rows[0].actor.session], [repo, before, git("rev-parse", "HEAD"), "commit", "worker-fixture"]);
+		assert.ok(!existsSync(ledger), "a worker's commit is written to no ledger");
 	} finally { if (oldLedger === undefined) delete process.env.SOVA_SPEC_LEDGER; else process.env.SOVA_SPEC_LEDGER = oldLedger; rmSync(ledgerFixture, { recursive: true, force: true }); }
 	// The same branch and flags without the marker: the snapshot wins, as before (the regression's other side).
 	const parent = load(false);

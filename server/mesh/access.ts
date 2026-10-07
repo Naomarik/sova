@@ -235,7 +235,6 @@ const SESSION_PREFIXES = [
   "worktrees",
   "sandbox",
   "diff",
-  "spec-turn",
   "explanations",
   "insights",
   "links",

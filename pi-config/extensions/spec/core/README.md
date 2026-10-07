@@ -358,7 +358,7 @@ in refusal output. Git still runs with fsmonitor disabled and without a local sh
   findings are dropped). A claimed changed file's ids that are not created are *foreign*. The census
   object gets, right after `changed`, `foreignNote` (a fixed instruction string), `foreign: [id]`
   (surface ids first, then the rest, each in id order) and `childUnderForeign: [{id, parent}]`
-  (empty arrays when none). The instruction ends "plumbing (a request, hook, helper or CSS class) never flags, nor a gap it already had, even one you now rely on; the last line names these foreign §, never your new claims". With `--spec` only, each created
+  (empty arrays when none). The instruction ends "plumbing (a request, hook, helper or CSS class) never flags, nor a gap it already had, even one you now rely on". With `--spec` only, each created
   H2 id whose parent H1 is not created is a `child-under-foreign` note `{id, parent}`, touched or
   not. When `foreign` is non-empty, one `foreign-summary` note `{ids}` (message: the instruction, then
   `: N touched (ids)`) is the last finding, and, if
@@ -368,11 +368,11 @@ in refusal output. Git still runs with fsmonitor disabled and without a local sh
   Human output prints the summary before the touched list. Notes never change the exit code; plain
   `census` and `check` are unchanged. With `--own-base REV` (repeatable), the task's own ids (absent
   at every one of those revisions) are never foreign; the census gets `own` and `ownBases`.
-- **foreign --base REV [--head REV]**: the § a range of history changes, for a merge's or a
-  promotion's `Also changes:` line. It reads `.sova/spec` at each revision from Git objects
+- **foreign --base REV [--head REV]**: the § a range of history changes, the foreign § a merge or
+  promotion changes. It reads `.sova/spec` at each revision from Git objects
   (read-only `ls-tree` and `cat-file --batch`; no checkout), or from the working tree when
   `--head` is omitted; with `--spec DIR` (no `--head`) the working-tree head is that graph, a
-  draft's `spec/`, so a turn can name the foreign § its draft edits. An id is in `foreign` when its prose span's text or its canonical record
+  draft's `spec/`, so a session can see the foreign § its draft edits. An id is in `foreign` when its prose span's text or its canonical record
   differs, when it is deleted, or when it is an H1 on both sides that gains a new H2
   (`child-added`, with `children`), and it is not created in the range (an id head records and
   base does not). A revision without a spec is an empty graph. Output: `base: {rev, commit}`,

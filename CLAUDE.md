@@ -113,9 +113,6 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   whole snapshot, newest per id on the branch wins), read by Sova for the card, the composer chip
   and the session list, and its hidden `align-state` / `align-nudge` custom messages, which Sova
   must keep hidden (`display: false`); an older session's `align-doc` custom entries are read-only;
-  mode's `spec-turn` custom entry (`{v: 1, ops, own, landed, arrived?, created, gate, check,
-  prose?}`, one per changing run, mode/spec-turn.ts), read by Sova for the spec card and its claim
-  sheet, and by the check itself for the § earlier runs described;
   show-changes' `show_changes` tool: each result's `details` (`{v: 1, scope, title?, paths?,
   steps?}`), read by Sova for the card that opens the changes viewer; provider-limits
   (`pi-config/extensions/provider-limits/gate.ts`, builtins only): the request limits
@@ -196,11 +193,6 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   `pi-config/extensions/mode/align.ts` (builtins only: the `align` tool's details shape, its strict
   check `normalizeAlignDetails` and the one fold `foldAlignments` — the transcript's align row and
   the session list's `SessionSummary.align` read what the extension writes, with its own code),
-  `server/transcript.ts` and `server/spec-claim.ts` import `pi-config/extensions/mode/spec-turn.ts`
-  (imports nothing: the spec check's per-run `spec-turn` record — a plain custom entry the mode
-  extension appends at the check's final verdict, never a custom message, so never model context —
-  its shape, its strict check `normalizeSpecTurnDetails` and its builder; the transcript's spec card
-  and the claim sheet read what the extension writes, with its own code, §chat.spec-card/record),
   `server/harness/pi/open.ts` imports `pi-config/extensions/model-levels/core.ts` (builtins only:
   the thinking levels of models.json providers pi has no catalog for, from Ollama's `/api/show` and
   models.dev, cached in `<agent dir>/model-levels.json`; the shared runtime gets them at boot, and

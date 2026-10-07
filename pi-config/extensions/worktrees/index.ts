@@ -13,9 +13,9 @@
  * Merges: `worktree merge` records one directly; a merge made with plain git during one of this
  * session's turns is detected after the turn (the branch became an ancestor of its target) and
  * recorded as `detected`. Each recorded merge appends a `worktree-merge` extension message: one
- * line for the model, a card in the TUI and in Sova. In a project with a spec, the model's note also names the
- * foreign § the merge changes and warns about spec work left behind (spec.ts); the same goes out on the bus as
- * `worktrees:merged` for the spec mode's turn-end check.
+ * line for the model, a card in the TUI and in Sova. In a project with a spec, the model is also warned, once,
+ * about spec work the merge left behind (spec.ts): in the tool's answer for `worktree merge`, in the message for
+ * a detected merge.
  */
 import { StringEnum } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -49,27 +49,6 @@ const SANDBOX_DISCOVER_EVENT = "sandbox:discover";
 /** remote/workers.ts: a session on a target runs its tools there; worktrees are local only. */
 const REMOTE_SESSION_EVENT = "remote:session";
 const REMOTE_DISCOVER_EVENT = "remote:discover";
-/** Every recorded merge, with its spec report (`foreign`/`warnings` empty when the project has no spec). */
-export const WORKTREES_MERGED_EVENT = "worktrees:merged";
-export interface WorktreesMergedEvent {
-	version: 1;
-	path: string;
-	branch: string;
-	target: string;
-	sha: string;
-	how: "tool" | "detected";
-	/** False when the project has no spec or the spec tools are missing. */
-	spec: boolean;
-	foreign: string[];
-	warnings: string[];
-	/** The target's tip before and after the merge, its checkout's top level, and the merged worktree. */
-	before?: string;
-	after?: string;
-	top?: string;
-	worktree?: string;
-	/** The core's landing lists (unmapped files, code under unchanged §, unpromoted drafts, hand resolutions). */
-	landing?: MergeSpecReport["landing"];
-}
 
 const Action = StringEnum(["create", "attach", "detach", "merge", "list"] as const);
 
@@ -91,6 +70,8 @@ export default function worktrees(pi: ExtensionAPI, options: WorktreesOptions = 
 	let remote = false;
 	/** Each active worktree's merge state when the current run started; cleared when it settles. */
 	let turnStart: Map<string, MergeProbe> | undefined;
+	/** The once-a-session spec warnings already said (spec.ts `specLines`). */
+	let said = new Set<string>();
 
 	function emitState(): void {
 		const event: WorktreesStateEvent = { version: 1, active: activeTrees(set).map((t) => t.path) };
@@ -146,23 +127,15 @@ export default function worktrees(pi: ExtensionAPI, options: WorktreesOptions = 
 	/** The spec report of a merge; best-effort, so a failure never fails the merge. */
 	async function reportOf(path: string, branch: string, before: string, after: string, branchSha: string, target: string): Promise<MergeSpecReport | undefined> {
 		const main = await defaultTarget(git, path).catch(() => undefined);
-		const onDefault = target === main;
-		return specReport(git, { path, branch, before, after, branchSha, onDefault, ...(main && !onDefault ? { defaultBranch: main } : {}) }).catch(() => undefined);
+		return specReport(git, { path, branch, before, after, branchSha, onDefault: target === main }).catch(() => undefined);
 	}
 
-	/** The note the model reads: the merge line, then the spec lines when the project has a spec. */
-	function noteOf(d: Parameters<typeof mergeNote>[0], spec: MergeSpecReport | undefined): string {
-		return [mergeNote(d), ...(spec ? specLines(spec) : [])].join("\n");
-	}
-
-	function card(d: Omit<WorktreeMergeDetails, "version">, spec: MergeSpecReport | undefined, range?: { before: string; after: string }): void {
+	/** The card; its message is the merge line, then any spec warnings (a tool merge says those in its answer). */
+	function card(d: Omit<WorktreeMergeDetails, "version">, warnings: string[] = []): void {
 		const details: WorktreeMergeDetails = { version: 1, ...d };
 		// Not a turn of its own: while a run streams, pi holds it until the turn ends (never between a
 		// tool call and its result); after the run it is appended at once.
-		pi.sendMessage<WorktreeMergeDetails>({ customType: WORKTREE_MERGE_MESSAGE, content: noteOf(details, spec), display: true, details }, { triggerTurn: false });
-		const event: WorktreesMergedEvent = { version: 1, path: d.path, branch: d.branch, target: d.target, sha: d.sha, how: d.how, spec: !!spec, foreign: spec?.foreign ?? [], warnings: spec?.warnings ?? [],
-			...(range ? { before: range.before, after: range.after } : {}), ...(spec?.top ? { top: spec.top } : {}), worktree: d.path, ...(spec?.landing ? { landing: spec.landing } : {}) };
-		pi.events?.emit(WORKTREES_MERGED_EVENT, event);
+		pi.sendMessage<WorktreeMergeDetails>({ customType: WORKTREE_MERGE_MESSAGE, content: [mergeNote(details), ...warnings].join("\n"), display: true, details }, { triggerTurn: false });
 	}
 
 	/** A worktree tracked mid-run joins that run's merge detection from here. */
@@ -187,6 +160,7 @@ export default function worktrees(pi: ExtensionAPI, options: WorktreesOptions = 
 
 	pi.on("session_start", async (_event, ctx) => {
 		sessionId = ctx.sessionManager.getSessionId();
+		said = new Set();
 		pi.events?.emit(REMOTE_DISCOVER_EVENT, { version: 1 });
 		pi.events?.emit(SANDBOX_DISCOVER_EVENT, { version: 1 });
 		restore(ctx);
@@ -215,7 +189,8 @@ export default function worktrees(pi: ExtensionAPI, options: WorktreesOptions = 
 			try {
 				const { sha, ...stats } = await landedStats(git, t.path, was.targetSha, p.targetSha, p.branchSha);
 				markMerged(t, { target: p.target, sha, how: "detected" });
-				card({ path: t.path, branch: t.branch, target: p.target, sha, ...stats, how: "detected" }, await reportOf(t.path, t.branch, was.targetSha, p.targetSha, p.branchSha, p.target), { before: was.targetSha, after: p.targetSha });
+				const spec = await reportOf(t.path, t.branch, was.targetSha, p.targetSha, p.branchSha, p.target);
+				card({ path: t.path, branch: t.branch, target: p.target, sha, ...stats, how: "detected" }, spec ? specLines(spec, said) : []);
 			} catch {
 				// Best-effort: an unreadable merge is still shown as merged by the pane's own check.
 			}
@@ -292,8 +267,8 @@ export default function worktrees(pi: ExtensionAPI, options: WorktreesOptions = 
 						const { before, branchSha, ...m } = await mergeWorktree(git, { tree: t, target });
 						markMerged(t, { target: m.target, sha: m.sha, how: "tool" });
 						const spec = await reportOf(t.path, t.branch, before, m.sha, branchSha, target);
-						card({ ...m, how: "tool" }, spec, { before, after: m.sha });
-						const specText = spec ? `\n${specLines(spec).join("\n")}` : "";
+						card({ ...m, how: "tool" });
+						const specText = spec ? specLines(spec, said).map((l) => `\n${l}`).join("") : "";
 						return done(`${mergeNote(m)} (${m.fastForward ? "fast-forward" : "merge commit"}).${specText}\n${listing()}`, { merge: m, trees: set?.trees ?? [], ...(spec ? { spec } : {}) });
 					}
 				}

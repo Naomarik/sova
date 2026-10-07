@@ -115,7 +115,7 @@ The machine can't tell which label is correct.
    print `alsoChanges`: the foreign § the promotion changes, i.e. every selected ID current already
    has, plus each current H1 that gains a new H2 (`alsoChangesDetail: [{id, change, children?}]`,
    `change` one of `text`, `record`, `text+record`, `deleted`, `file`, `child-added`). That list,
-   not memory, is what the reply's `Also changes:` line names. They also print `driftWarnings`,
+   not memory, is what a flag names. They also print `driftWarnings`,
    the `check` warnings above (never a refusal), so drift shows even when nobody ran `check`.
    Evidence on a commit that is gone or not an ancestor of `HEAD` (a rebase after evidence) is
    refused as `evidence-not-ancestor`: never rebase after evidence; re-record evidence on the

@@ -593,6 +593,8 @@ export interface PullDeps {
   now?(): number;
   timings?: Partial<PullTimings>;
   log?(line: string): void;
+  /** The verified archive at `part` into `dest` (default: zstd → `tar -x`). Tests: in-process. */
+  extract?(part: string, dest: string): Promise<void>;
 }
 
 /** Waiting for a moment that `kick` or `cancel` can end early. */
@@ -727,7 +729,7 @@ export class Pulls {
               }
             }
             this.check(job.offerId);
-            await extract(part, job.resolvedDest);
+            await (this.deps.extract ?? extract)(part, job.resolvedDest);
           } finally {
             release();
           }

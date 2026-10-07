@@ -28,7 +28,7 @@ once), **lease** (an offer's lock on its first taker).
   links`, checked as the project's set, §app.baton/abilities). `POST /api/baton {orgId, projectId, to,
   publicTitle, goal, question?, briefing?, parentSessionId?, model?, thinking?, messagesMax?, abilities?}` answers 201 with the
   session's path and, when `to` is a person, that hand-off's link, or, when `to` is a list of two or
-  more people, one link per invitee (§app.baton/offers-and-leases); links are shown once.
+  more people, one link per invitee (§app.baton/offers-and-leases); each shows with Copy Link.
 - **Start a session for this person**: `parentSessionId` names the baton session it came from (a
   referral's approval card); the new session's statechart records it as `parent`, and the project
   defaults to the parent's. `briefing` is the first hand-off's briefing, for its addressee.
@@ -159,8 +159,9 @@ once), **lease** (an offer's lock on its first taker).
   their own under the invitees' links, so the pinned rows stay short), then a "⋯" **More actions**
   menu (its name: "More actions · {public title}") at the bar's end. The chip never sits beside the
   checkboxes.
-- **The menu** holds every other act, each row naming the session it acts on: Get Link / New Link
-  (New Link's row says "Makes a new link and deletes the one you sent before" under its label),
+- **The menu** holds every other act, each row naming the session it acts on: Copy Link while the
+  holder's live link is kept, else Get Link (§app.baton/links); New Link while the holder has a live
+  link (its row says "Makes a new link and deletes the one you sent before" under its label),
   Hand On… when it isn't the primary, What It's Told (§app.baton/told) and, while the org has an
   owner, Hide From / Show To {first name} (§app.owner-page/controls). Below a separator, last: Delete
   Link (while the holder has a live link) and Close Session (until the session is closed). Neither
@@ -308,9 +309,10 @@ once), **lease** (an offer's lock on its first taker).
   person, when the operator asks for one (Get Link, for the current hand-off), and when one is sent
   to the person outside Sova (Send on WhatsApp, or an overseer's send, §app.outreach/send); a `hand_to`
   mints none — the host could never show it — so until the operator gets one, the session needs
-  them (§app.baton/needs-you). The host stores only
+  them (§app.baton/needs-you). The host stores
   its SHA-256, bound to (org, session, hand-off, person), with an expiry of 14 days, in
-  `<stateRoot>/baton-links.json` (mode 0600) — never in the workspace repo. Tokens are compared in
+  `<stateRoot>/baton-links.json` (mode 0600) — never in the workspace repo — and keeps the token in
+  `link-tokens.json` (§app.session-share/link). Tokens are compared in
   constant time. Logs show at most 6 characters of a token.
 - A link **writes** only while its person holds the baton through that hand-off and the session is
   open. After the baton moves on, or once the session is **done**, the link still **reads** the
@@ -334,15 +336,21 @@ once), **lease** (an offer's lock on its first taker).
   the strip shows the `off` text as a warn banner with the same button.
 - The strip also offers **Send on WhatsApp** for the holder, or each reached invitee of an open
   offer, with its fallback after a failure (§app.outreach/send).
-- The operator can get the current link (`GET /api/baton/:sid/link` mints a fresh one for the
-  current hand-off and turns off the older ones for it: the host cannot show a token it no longer
-  has: the strip's **Get Link**, then **New Link**, rows of its More actions menu, New Link's saying
-  "Makes a new link and deletes the one you sent before" under its label) and delete it (`POST
+- The operator can copy the current link again: `BatonInfo.links` gives, per person (the current
+  hand-off's holder, or each reached invitee of the open offer), their newest live link of that
+  round when its token is kept, `{link, at}`, and the strip shows a Copy Link for each (the
+  holder's in its More actions menu, §app.baton/strip-layout; each invitee's on the invitees' row).
+  **Get Link** (`GET /api/baton/:sid/link?keep=1`) is offered only while the holder has no kept
+  live link: it answers the kept one if another tab made one meanwhile, else mints one for the
+  current hand-off and turns off the older ones for it, a live one made before tokens were kept
+  included. **New Link** (the same route without `keep`; an older host answers `keep` this way too)
+  always mints and turns off the older ones; its row says "Makes a new link and deletes the one you
+  sent before" under its label. The operator can also delete the link (`POST
   /api/baton/:sid/revoke`): **Delete Link**, set apart at the end of that menu and asked twice like
   every link's Delete (its confirm screen: "The link stops working for good." with **Delete?**;
-  done: "Link deleted."; §app.baton/strip-layout). A link is shown once, with a Copy Link
+  done: "Link deleted."; §app.baton/strip-layout). A new link shows with a Copy Link
   button; it stays on the strip until the operator dismisses it or a later hand-off exists (a
-  reload of the strip's own data never clears it), and once a Get Link elsewhere (another tab)
+  reload of the strip's own data never clears it), and once a New Link elsewhere (another tab)
   turned it off, the strip says "Replaced by a newer link." in place of its Copy Link. During an offer, `GET /api/baton/:sid/link?person=<id>` re-mints one invitee's link and
   turns off that invitee's older one (its button's tooltip: "Makes a new link for {name} and
   deletes their older one").
@@ -466,7 +474,7 @@ once), **lease** (an offer's lock on its first taker).
 ## §app.baton/offers-and-leases — One baton, several people, the first to answer
 
 - The operator offers a session to two or more active people at once (`POST /api/baton/:sid/offer
-  {to[], question?, briefing?}` → `{info, links}`, one link per invitee reached then, shown once; or `to` as a
+  {to[], question?, briefing?}` → `{info, links}`, one link per invitee reached then; or `to` as a
   list at start). An offer is a hand-off (it takes the next number) to the **pool**: nobody holds
   the baton (`holder: null`, state `open`) until someone answers. A `sova-baton-offer` entry
   `{v:1, n, offerId, from, to[], question, briefing}` records it. Starting a new offer withdraws
@@ -478,7 +486,7 @@ once), **lease** (an offer's lock on its first taker).
   always is. An invitee **reached** is one the offer is open to: those in hours when it opens get
   their links in its answer; for one reached after it opens (when their hours come, when a lease
   ends, or after an hours edit), no token is made by itself: Needs you asks the operator to send
-  their link, and the token is made when the operator does (shown once, as for a routed conflict).
+  their link, and the token is made when the operator does (as for a routed conflict).
   Needs you also lists the invitees still waiting. A waiting invitee's link is refused: "{name} is
   not reached yet: their link is made when their working hours start." The offer opens with those in
   hours then, and each of the rest is reached as their own window opens; one whose window opened and
@@ -526,7 +534,7 @@ once), **lease** (an offer's lock on its first taker).
   time (in {n})" after its own detail, joined by "; " and ending with ".". On an invitee's person
   page, the session row's who-has-it line adds " · not reached yet, waiting until {time} your time
   (in {n})" (or "…, waiting: nobody new is reached while {holder} is answering"), and there is no
-  Get New Link for them. The session list shows "N
+  New Link or Get Link for them. The session list shows "N
   invited" while it waits, then the holder's name.
 
 ## §app.baton/share-listener — The public entry point

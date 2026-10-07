@@ -46,8 +46,9 @@ copy is §design.copy-deck/owner-page, and its list of words never used there is
 ## §app.owner-page/link — One personal link, 90 days, one at a time
 
 - **Shape.** `/i/<token>` on the share listener's public address, built exactly like a hand-off
-  link (§app.baton/links): 32 random bytes, base64url; the host keeps only its SHA-256, compared
-  in constant time; logs show at most 6 characters. The `/i/` path is meant to become each
+  link (§app.baton/links): 32 random bytes, base64url; the store keeps its SHA-256, compared
+  in constant time, and the token is kept in `link-tokens.json` (§app.session-share/link); logs show
+  at most 6 characters. The `/i/` path is meant to become each
   person's one door later (their own inbox too), so the store is per person, not per page.
 - **Where it lives.** `<stateRoot>/person-links.json` (mode 0600), host-local, never in the
   workspace repo: `{hash, orgId, personId, scope: "owner", gen, createdAt, expiresAt, revokedAt?,
@@ -55,8 +56,11 @@ copy is §design.copy-deck/owner-page, and its list of words never used there is
   a new one there.
 - **90 days.** A link expires 90 days after it was made, absolutely; nothing renews it.
 - **One live link per org.** `GET /api/orgs/:id/owner/link` (main listener only) makes a new link
-  for the current owner and turns off every older one of that org at once, so the host never shows
-  a token it no longer has; the answer is `{link, expiresAt, linkWarning?}` (`linkWarning` as for
+  for the current owner and turns off every older one of that org at once (Get New Owner Link).
+  With `?keep=1` (Get Owner Link) it answers the owner's live link instead when its token is kept,
+  and makes one, as without it, only when none is live or the live one isn't kept; an older host
+  ignores `keep` and makes one. The owner card's data (`OrgDetail.ownerPage`) carries the live kept
+  link as `link.url`. The answer is `{link, createdAt, expiresAt, linkWarning?}` (`linkWarning` as for
   hand-off links when no share address is known). With no owner it is refused (400, "Pick an owner
   first."), and the preview answers 409.
 - **Turning it off.** `POST /api/orgs/:id/owner/revoke` turns the live link off. It is also turned
@@ -229,9 +233,12 @@ copy is §design.copy-deck/owner-page, and its list of words never used there is
   change ("Set by you {time}.", "Set by you, via the Overseer {time}." or, after a clearing, the
   person who left); the link's state (when
   it was made, when it expires, how many times it was opened, the expiry warned once under 14 days
-  are left); `Get Owner Link` (with a confirm while a live one exists), `Preview Owner Page`, and
-  `Delete Owner Link` set apart as destructive (its confirm: §design.copy-deck/owner-page). A new link is shown once, with Copy Link, as on
-  the baton strip.
+  are left); `Copy Owner Link` while the live owner link is kept (it copies `ownerPage.link.url`),
+  else `Get Owner Link` (`?keep=1`: the kept live link, or a new one when there is none to show;
+  over a live link that isn't kept it asks first, with Get New Owner Link's confirm);
+  `Get New Owner Link` while a live one exists (with a confirm: the current one stops);
+  `Preview Owner Page`; and `Delete Owner Link` set apart as destructive (its confirm:
+  §design.copy-deck/owner-page). A new link shows with Copy Link, as on the baton strip.
 - **Preview.** `Preview Owner Page` opens a modal that shows exactly what the owner sees, from the
   same function with no token (`GET /api/orgs/:id/owner/preview[?project=<q_handle>|?c=<k_handle>]`, main listener only); it
   records no visit and changes nothing. A test pins that the preview's data equals the token
@@ -242,7 +249,7 @@ copy is §design.copy-deck/owner-page, and its list of words never used there is
   actions menu (§app.baton/strip-layout), on each conversation of an org with an owner, and a line
   while it is hidden (§app.owner-page/conversations).
 - **Person page**: an `Owner` chip beside the owner's status, their owner link among their links
-  (state, made, expires, Delete), and their visits to the owner page as "Opened the owner page"
+  (state, made, expires, Copy Link while live and kept, Delete), and their visits to the owner page as "Opened the owner page"
   rows (§app.organizations/person-page).
 
 ## §app.owner-page/rejected — Considered and not done

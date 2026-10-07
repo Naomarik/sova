@@ -4147,7 +4147,7 @@
     "§app.baton/goal-and-loadout": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "server/baton.ts",
         "server/baton-loadout.ts",
@@ -4283,7 +4283,7 @@
     "§app.baton/offers-and-leases": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "server/baton.ts",
         "server/baton-links.ts",
@@ -4788,7 +4788,7 @@
     "§app.project-overseer/ideas-and-todos": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "server/project-overseer-routes.ts",
         "server/project-overseer.ts",
@@ -4801,7 +4801,8 @@
         "server/project-overseer.test.ts",
         "server/spec-tool-fake.ts",
         "server/project-overseer-prompt.md",
-        "server/project-overseer-tools.ts"
+        "server/project-overseer-tools.ts",
+        "src/components/LinksBanner.tsx"
       ],
       "requires": [
         "§app.overseer/ideas",
@@ -8926,7 +8927,9 @@
         "server/index.ts",
         "server/share/share-state.ts",
         "server/share-ingress.integration.test.ts",
-        "server/app.ts"
+        "server/app.ts",
+        "server/link-tokens.ts",
+        "server/link-tokens.test.ts"
       ]
     },
     "§app.session-share/never": {
@@ -8939,7 +8942,10 @@
         "server/session-share-privacy.test.ts",
         "server/session-share-privacy.integration.test.ts",
         "server/test-wait.ts",
-        "server/preview-kept.ts"
+        "server/preview-kept.ts",
+        "server/link-tokens.ts",
+        "server/session-shares.test.ts",
+        "server/baton.test.ts"
       ]
     },
     "§app.session-share/overview": {
@@ -8954,7 +8960,9 @@
       ],
       "code": [
         "server/shares-overview.ts",
-        "server/session-share-activity.test.ts"
+        "server/session-share-activity.test.ts",
+        "shared/session-share.ts",
+        "server/owner-page.test.ts"
       ]
     },
     "§app.session-share/page": {
@@ -8997,13 +9005,13 @@
     "§app.session-share/rejected": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": []
     },
     "§app.session-share/shares-page": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "requires": [
         "§app.session-share/sheet",
         "§app.insights/placement"
@@ -9514,7 +9522,7 @@
     "§app.session-share/share-page": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "requires": [
         "§app.session-share/slice",
         "§app.session-share/sheet"
@@ -10590,7 +10598,7 @@
     "§app.outreach/send": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "statecharts/src/sova/statecharts/proj.cljc",
         "server/statecharts-replay.ts",

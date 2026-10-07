@@ -114,7 +114,14 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   opened for writing); list groups, targets, models, subagent profiles and folders; the ideas backlog (`sova_ideas`: its table of contents,
   a search, one idea, an idea's scope and impact, an idea's explorer; §app.overseer/ideas); the
   user's todos (`sova_todos`: open, done or all; §app.overseer/todos); the links this host knows
-  (`sova_links`, §app.overseer/links-tools); this host's organizations, their projects and project
+  (`sova_links`, §app.overseer/links-tools); this host's live public links with their URLs
+  (`sova_public_links {kind?: "session" | "handoff" | "owner", session?, org?}`: one line per live
+  link, its kind, then a session share's title, recipient label and share id, a hand-off's org,
+  person, gathering title and hand-off number, or an owner link's org and owner, then its expiry
+  and URL, or "link not kept" for one made before tokens were kept, §app.session-share/link; the
+  address warning when links can't open from outside; this host only; its action-log line names
+  the tool and how many links it gave, never a link; the prompt says to give a link when the user
+  asks for one, and project overseers don't have it); this host's organizations, their projects and project
   overseers, and one roster person (`sova_orgs`, `sova_org_project`, `sova_org_person`,
   §app.overseer/org-reads), never a contact or a link (§app.overseer/org-projection).
 - **The transcript read reaches peers.** `sova_read_session` takes an optional `host`: with a
@@ -1483,8 +1490,10 @@ name is a `[title](sova://s/<id>)` link; every time is relative, as in `sova_ses
     call in a baton transcript (`sova_read_session` of an org session shows the call without its
     `contact`), a person's or a model's words in a transcript (below), and a write's own arguments
     once it has run (§app.overseer/org-writes);
-  - **links**: no `/h/` or `/i/` URL, no token, no part of one, no token hash; a link is a state
-    word, a hand-off number and its times;
+  - **links**: no `/s/`, `/h/` or `/i/` URL, no token, no part of one, no token hash; a link is a
+    state word, a hand-off number and its times. The module never names the `link` or `url`
+    fields the org answers carry. The one exception is `sova_public_links` (§app.overseer/tools),
+    the read that gives this host's live kept links;
   - the About text, except in `sova_orgs {org, about: true}`.
 - **Contact in transcripts is redacted, in every tool.** A contact value also reaches a transcript
   as words: a person types their own number, a referrer types someone else's, a model repeats one.
@@ -1501,7 +1510,8 @@ name is a `[title](sova://s/<id>)` link; every time is relative, as in `sova_ses
 - **Checked by test.** A marker test plants a contact value, a link token and an About text in a
   hermetic org, drives every org read and act, and `sova_read_session` and `sova_session` on its
   baton sessions (one whose person typed the contact value into their message), and finds none of
-  them in any result, error or action-log line, except the About text in that one read.
+  them in any result, error or action-log line, except the About text in that one read and the
+  live link's token in `sova_public_links`, where it checks the token is.
 
 ## §app.overseer/org-writes — Changing organizations
 

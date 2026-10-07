@@ -69,6 +69,15 @@ const until = async (what: string, ok: () => boolean | Promise<boolean>, ms = 15
   }
   assert.fail(`timed out waiting for ${what}`);
 };
+/** `p`, or a failure naming `what` after 10 s (its timer cleared either way). */
+async function within<T>(p: Promise<T>, what: string, ms = 10_000): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([p, new Promise<never>((_, no) => (timer = setTimeout(() => no(new Error(`timed out waiting for ${what}`)), ms)))]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 // ---- the stand-in's own Sova-like server: what the other host answers on its side ----------------
 const seen: Array<{ path: string; headers: IncomingMessage["headers"] }> = [];
@@ -368,9 +377,8 @@ describe("this host as the relay", () => {
     assert.deepEqual([p.channels.answer.state, p.channels.ask.state], ["not connected", "not connected"]);
     // The timing half: the far end sees its channel and the socket in it end promptly. The bound
     // is generous (the keepalive that would otherwise notice is 30 s or more away).
-    const within = (q: Promise<unknown>, what: string) => Promise.race([q, new Promise((_, no) => setTimeout(() => no(new Error(`${what} still open after 10 s`)), 10_000))]);
-    await within(client.closed, "the ask channel");
-    await within(wsClosed, "a WebSocket on the ask channel");
+    await within(client.closed, "the ask channel to end");
+    await within(wsClosed, "a WebSocket on the ask channel to end");
     const took = performance.now() - t0;
     assert.ok(took < 10_000, `both ended ${Math.round(took)} ms after Stop Relaying`);
     assert.equal((await lan()).relay, undefined, "not a relay");
@@ -390,7 +398,7 @@ describe("this host as the relay", () => {
     const client = askClient!;
     const [status] = await api("DELETE", "/api/mesh/lan/pairings/laptop");
     assert.equal(status, 200);
-    await Promise.race([client.closed, new Promise((_, no) => setTimeout(() => no(new Error("still open after 10 s")), 10_000))]);
+    await within(client.closed, "its ask channel to end");
     await until("the listener to stop", async () => (await lan()).relay?.listening === false);
     const [, access] = await api<{ peers: Array<{ id: string }> }>("GET", "/api/mesh/access");
     assert.equal(access.peers.length, 0, "its grant went with it");
@@ -458,7 +466,7 @@ describe("this host as the dial-out host", () => {
     const client = toUs!;
     const [status] = await api("DELETE", "/api/mesh/lan/pairings/relay");
     assert.equal(status, 200);
-    await Promise.race([client.closed, new Promise((_, no) => setTimeout(() => no(new Error("still open after 10 s")), 10_000))]);
+    await within(client.closed, "its ask channel to end");
     assert.deepEqual((await lan()).pairings, []);
     assert.equal(tailscaleAsked, 0, "nothing ever asked Tailscale");
   });

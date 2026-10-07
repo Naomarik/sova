@@ -11,6 +11,7 @@ import { after, describe, test } from "node:test";
 import WebSocket from "ws";
 import type { AlignDocInfo, TranscriptItem } from "../shared/protocol";
 import { piSession } from "./harness/pi/testing/handle";
+import { until as waitUntil } from "./test-wait";
 
 const agentDir = realpathSync(mkdtempSync(join(tmpdir(), "sova-tail-hello-")));
 process.env.PI_CODING_AGENT_DIR = agentDir;
@@ -304,7 +305,7 @@ describe("chat: a rewind with a tail client and a whole client", () => {
     tail.length = 0;
     legacy.length = 0;
     chat.handle(t, { type: "rewind", id: "r1", entryId: "u140" });
-    for (let i = 0; i < 100 && !tail.some((m) => m.type === "rewound" || m.type === "rewind_refused"); i++) await new Promise((r) => setTimeout(r, 20));
+    await waitUntil(() => tail.some((m) => m.type === "rewound" || m.type === "rewind_refused"));
     const tt = tail.map((m) => m.type);
     assert.equal(tt[0], "hello");
     assert.ok(tail[0].older > 0);

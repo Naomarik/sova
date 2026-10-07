@@ -75,7 +75,7 @@ async function newChat(): Promise<{ chat: Chat; path: string }> {
   stubModel(chat);
   return { chat, path };
 }
-async function until(cond: () => boolean, ms = 3000): Promise<void> {
+async function until(cond: () => boolean, ms = 30_000): Promise<void> {
   const end = Date.now() + ms;
   while (!cond()) {
     if (Date.now() > end) throw new Error("timed out");

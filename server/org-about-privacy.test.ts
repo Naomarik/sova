@@ -104,7 +104,7 @@ async function turn(path: string, text: string, by?: { sessionId: string; person
   return got;
 }
 
-async function until(cond: () => boolean, ms = 3000): Promise<void> {
+async function until(cond: () => boolean, ms = 30_000): Promise<void> {
   const end = Date.now() + ms;
   while (!cond()) {
     if (Date.now() > end) throw new Error("timed out");

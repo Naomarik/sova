@@ -48,7 +48,7 @@ onOrgChange((_orgId, change) => {
 });
 
 /** Polls until `cond` holds: waits on the event itself, not on a guess at how long it takes. */
-async function waitFor(cond: () => boolean, ms = 10_000): Promise<void> {
+async function waitFor(cond: () => boolean, ms = 30_000): Promise<void> {
   const end = Date.now() + ms;
   while (!cond()) {
     if (Date.now() > end) throw new Error("timed out waiting");

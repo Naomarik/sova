@@ -3,6 +3,7 @@
 // (review check b2: concurrent side calls with fresh routing ids never take each other's owner).
 // Fake runtime, fake spawn, fake fetch: no model is ever called.
 import assert from "node:assert/strict";
+import { until as waitUntil } from "./test-wait";
 import { EventEmitter } from "node:events";
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -88,10 +89,7 @@ function fakeClaude(envelope: (argv: string[]) => object) {
   return { spawn, children };
 }
 
-const until = async (cond: () => boolean) => {
-  for (let i = 0; i < 200 && !cond(); i++) await new Promise((r) => setTimeout(r, 5));
-  assert.ok(cond());
-};
+const until = (cond: () => boolean) => waitUntil(cond);
 
 describe("usage records of Sova's one-shots", () => {
   let dir: string;

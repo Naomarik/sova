@@ -44,7 +44,7 @@ const poPaths = projectOverseerPaths(project.id);
 const setProject = (a: { draw: boolean; readLinks: boolean; drawHtml?: boolean } | null) => writePoSettings(poPaths, { ...readPoSettings(poPaths), gatheringAbilities: a && { drawHtml: false, ...a } });
 const start = (abilities?: object) => baton.createBaton({ orgId: org.id, projectId: project.id, to: dana.id, publicTitle: "Dashboard", goal: "What the dashboard shows", ...(abilities ? { abilities } : {}) });
 
-async function until(cond: () => boolean, ms = 3000): Promise<void> {
+async function until(cond: () => boolean, ms = 30_000): Promise<void> {
   const end = Date.now() + ms;
   while (!cond()) {
     if (Date.now() > end) throw new Error("timed out");

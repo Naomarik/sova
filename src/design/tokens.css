@@ -352,7 +352,7 @@
   --control-lg: 52px;
 
   /* Sova layout sizes (extension; see the app shell). */
-  --sidebar-width: 320px;
+  --sidebar-width: 300px;
   --spine-width:    64px;   /* the collapsed sessions pane; JS writes it into --sidebar-width */
   --composer-max:  40vh;  /* textarea auto-grow ceiling */
   --tool-output-max: 320px;

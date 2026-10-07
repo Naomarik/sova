@@ -15535,6 +15535,17 @@
       "requires": [
         "§app.server-runtime/choice"
       ]
+    },
+    "§app.claude-code-provider/system-prompt": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/claude-code/provider/stream.ts",
+        "pi-config/extensions/claude-code/provider/auto-compact.ts",
+        "pi-config/extensions/claude-code/provider/stream.test.ts"
+      ]
     }
   },
   "boundary": {

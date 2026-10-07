@@ -1,4 +1,4 @@
-// Run: pnpm test -- server/mesh/proxy-wire.test.ts
+// Run: node scripts/run-tests.mjs server/mesh/proxy-wire.integration.test.ts
 // The wire through the /peer/<id>/ hop (§app.harness/wire, "Hops change nothing"): a browser that asks for
 // wire 2 and one that doesn't both reach the peer through this host's proxy (proxyPeer, upgradePeerSocket,
 // wired as server/mesh/index.ts wires them), and each gets exactly what the peer sent it. The peer is a

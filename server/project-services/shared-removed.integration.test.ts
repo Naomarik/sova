@@ -5,22 +5,23 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { parseDefinition, type VerbResult } from "../../shared/project-contract";
-import { FakeHost } from "./fake-host";
+import { DetachedDriver } from "./drivers";
 import { ProjectEngine, type Caller } from "./engine";
 import { readRegistry, sharedIdOf } from "./store";
 import { approve, defHashOf } from "./trust";
+import { reservePorts } from "../test-ports";
 
 /**
  * A shared service that left every definition (§app.project-services/down, /up, /reconcile) is stopped
  * and marked stopped; one a definition still declares, or while one is unreadable, is left alone. And
  * status lists what left the definition while its unit still runs (§app.project-services/status-logs).
- * On a host in memory (fake-host.ts); shared-removed.integration.test.ts stops a really running one.
+ * Detached driver, real processes; the other decisions run on a host in memory in shared-removed.test.ts.
  */
 
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-shrm-agent-"));
 
 const op: Caller = { kind: "operator" };
-const BASE = 21_000;
+let BASE = 0;
 
 const full = () => ({
   version: 1,
@@ -48,6 +49,7 @@ const stepOf = (r: VerbResult, id: string) => r.steps.find((s) => s.id === id);
 const sharedDesired = () => readRegistry().shared.find((x) => x.project === project)?.desired.cache;
 
 before(async () => {
+  BASE = await reservePorts(11);
   parent = realpathSync(mkdtempSync(join(tmpdir(), "sova-shrm-proj-")));
   project = join(parent, "demo");
   mkdirSync(join(project, ".sova"), { recursive: true });
@@ -57,7 +59,7 @@ before(async () => {
   git(["init", "-q", "-b", "main"]);
   git(["add", "-A"]);
   git(["commit", "-q", "-m", "fixture"]);
-  engine = new ProjectEngine(new FakeHost().deps());
+  engine = new ProjectEngine({ driver: new DetachedDriver(3_000), pollMs: 100 });
 });
 
 after(async () => {
@@ -67,43 +69,6 @@ after(async () => {
   await engine.driver.stop(cacheUnit());
   rmSync(parent, { recursive: true, force: true });
   rmSync(process.env.PI_CODING_AGENT_DIR!, { recursive: true, force: true });
-});
-
-test("status lists a removed service while its unit runs, as degraded, after the declared ones", async () => {
-  define(full());
-  const up = await engine.run("up", { project }, op);
-  assert.equal(up.state, "running", up.error?.message);
-  const id = up.instance!;
-  define({ ...full(), services: { cache: full().services.cache, api: full().services.api } });
-  const st = await engine.run("status", { instance: id }, op);
-  const extra = st.services.find((s) => s.name === "extra");
-  assert.ok(extra, `the removed service is listed: ${JSON.stringify(st.services.map((s) => s.name))}`);
-  assert.equal(extra.state, "degraded");
-  assert.equal(extra.detail, "no longer in the definition");
-  assert.ok(extra.pid, "with its pid");
-  assert.equal(st.services.at(-1)?.name, "extra", "after the declared ones");
-  // Once down stops it, status no longer lists it.
-  await engine.run("down", { instance: id, services: ["extra"] }, op);
-  const st2 = await engine.run("status", { instance: id }, op);
-  assert.ok(!st2.services.some((s) => s.name === "extra"), JSON.stringify(st2.services.map((s) => s.name)));
-  define(full());
-  await engine.run("down", { instance: id }, op);
-});
-
-test("a shared service another definition still declares is never stopped by an instance's down", async () => {
-  define(full());
-  const main = await engine.run("up", { project }, op);
-  assert.equal(main.state, "running", main.error?.message);
-  const wt = await engine.run("up", { project, branch: "feat-keep" }, op);
-  assert.equal(wt.state, "running", wt.error?.message);
-  // The branch drops the shared cache; main still declares it.
-  define(apiOnly(), readRegistry().instances.find((i) => i.id === wt.instance)!.checkout);
-  const dn = await engine.run("down", { instance: wt.instance }, op);
-  assert.equal(dn.ok, true, dn.error?.message);
-  assert.ok(!stepOf(dn, "stop:cache"), JSON.stringify(dn.steps));
-  assert.ok(await live(cacheUnit()), "main's definition still declares it");
-  await engine.run("teardown", { instance: wt.instance }, op);
-  await engine.run("down", { instance: main.instance }, op);
 });
 
 test("down stops a shared service no definition declares any more, marks it stopped, then is idempotent", async () => {
@@ -130,36 +95,4 @@ test("down stops a shared service no definition declares any more, marks it stop
   assert.ok(!did.some((d) => d.includes("started shared")), did.join("; "));
   assert.ok(!(await live(cacheUnit())));
   define(full());
-});
-
-test("up stops it too, and reconcile stops an orphan; an unreadable definition leaves it alone", async () => {
-  define(full());
-  const up = await engine.run("up", { project }, op);
-  assert.equal(up.state, "running", up.error?.message);
-  define(apiOnly());
-  const up2 = await engine.run("up", { instance: up.instance }, op);
-  assert.equal(up2.ok, true, up2.error?.message);
-  assert.equal(stepOf(up2, "stop:cache")?.result, "done");
-  assert.ok(!(await live(cacheUnit())));
-
-  // Back up, then the definition drops it while the server is away: reconcile stops it.
-  define(full());
-  const back = await engine.run("up", { instance: up.instance }, op);
-  assert.equal(back.state, "running", back.error?.message);
-  assert.ok(await live(cacheUnit()));
-  define(apiOnly());
-  const did = await engine.reconcile();
-  assert.ok(did.includes(`${sharedIdOf(project)}: stopped cache (shared, no longer in any definition)`), did.join("; "));
-  assert.ok(!(await live(cacheUnit())));
-
-  // With a definition unreadable, nothing can tell who still wants it: left running.
-  define(full());
-  const back2 = await engine.run("up", { instance: up.instance }, op);
-  assert.equal(back2.state, "running", back2.error?.message);
-  writeFileSync(join(project, ".sova", "project.json"), "{ not json");
-  const did2 = await engine.reconcile();
-  assert.ok(!did2.some((d) => d.includes("stopped cache")), did2.join("; "));
-  assert.ok(await live(cacheUnit()));
-  define(full());
-  await engine.run("down", { instance: up.instance }, op);
 });

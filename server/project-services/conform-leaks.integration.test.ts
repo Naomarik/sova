@@ -6,22 +6,24 @@ import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { parseDefinition, type VerbResult } from "../../shared/project-contract";
 import { conformer } from "./conform";
+import { DetachedDriver } from "./drivers";
 import { ProjectEngine, type Caller } from "./engine";
-import { FakeHost } from "./fake-host";
 import { readRegistry, servicesRoot } from "./store";
 import { approve, defHashOf } from "./trust";
+import { reservePorts } from "../test-ports";
 
 /**
  * conform's no-leaks check (§app.project-services/conform) while something else happens on the same
  * state root: another instance's unit that appears mid-run (a session's up, the server's reconcile)
- * is never a leak; a unit or data dir that belongs to no registered instance still is. On a host in
- * memory (fake-host.ts); conform-leaks.integration.test.ts finds a real orphan process.
+ * is never a leak; a unit or data dir that belongs to no registered instance still is. A real orphan
+ * process here; both cases run on a host in memory in conform-leaks.test.ts.
  */
 
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-conform-leaks-agent-"));
 
 const op: Caller = { kind: "operator" };
-const BASE = 21_000;
+/** Below the kernel's ephemeral range (32768+), and free now: a random port there can be any outgoing socket's. */
+let BASE = 0;
 
 const def = () => ({
   version: 1,
@@ -37,6 +39,7 @@ let mainId = "";
 let midRun: (() => Promise<void>) | null = null;
 
 before(async () => {
+  BASE = await reservePorts(4);
   parent = realpathSync(mkdtempSync(join(tmpdir(), "sova-conform-leaks-proj-")));
   project = join(parent, "demo");
   mkdirSync(join(project, ".sova"), { recursive: true });
@@ -48,7 +51,7 @@ before(async () => {
   git(["commit", "-q", "-m", "fixture"]);
   const hash = defHashOf(parseDefinition(readFileSync(join(project, ".sova/project.json"), "utf8")));
   approve(project, hash, hash);
-  engine = new ProjectEngine(new FakeHost().deps());
+  engine = new ProjectEngine({ driver: new DetachedDriver(3_000), pollMs: 100 });
   engine.conformer = conformer(engine);
   const real = engine.run.bind(engine);
   engine.run = async (verb, body, caller) => {
@@ -72,22 +75,6 @@ after(async () => {
 });
 
 const leaksOf = (r: VerbResult) => r.conform?.checks.find((c) => c.id === "no-leaks");
-
-test("another instance's unit that appears during the run is not a leak", async () => {
-  let mainUp = null as VerbResult | null;
-  midRun = async () => {
-    mainUp = await engine.run("up", { instance: mainId }, op);
-  };
-  const r = await engine.run("conform", { project }, op);
-  assert.ok(mainUp, "the main instance came up while conform ran");
-  assert.equal(mainUp!.state, "running");
-  assert.equal(r.ok, true, `${r.error?.message}\n${JSON.stringify(r.conform?.checks, null, 1)}`);
-  assert.deepEqual(r.conform?.leaks, []);
-  assert.equal(leaksOf(r)?.ok, true);
-  const st = await engine.run("status", { instance: mainId }, op);
-  assert.equal(st.state, "running", "conform left the main instance alone");
-  await engine.run("down", { instance: mainId }, op);
-});
 
 test("a unit and a data dir of no registered instance are still leaks", async () => {
   const orphanUnit = `${engine.unitPrefix()}gone-0badc0de-api`;

@@ -6,16 +6,16 @@ import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { parseDefinition } from "../../shared/project-contract";
 import { conformer } from "./conform";
+import { DetachedDriver } from "./drivers";
 import { ProjectEngine, type Caller } from "./engine";
-import { FakeHost } from "./fake-host";
 import { readRegistry } from "./store";
 import { approve, defHashOf } from "./trust";
 
 /**
  * Conformance cleans up after itself on every outcome (§app.project-services/conform): the scratch
  * worktrees and `sova/conform-*` branches it cut are gone after a failed setup too, even one that left
- * files behind in its worktree. On a host in memory (fake-host.ts) with real git: the setups are the fake
- * driver's runs (one writes into its worktree, as setup.mjs in the integration test does).
+ * files behind in its worktree. A passing run of real services here; every case runs on a host in memory
+ * in conform-cleanup.test.ts.
  */
 
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-conform-cleanup-agent-"));
@@ -61,34 +61,8 @@ after(async () => {
 });
 
 before(() => {
-  const host = new FakeHost();
-  // setup.mjs leaves an untracked file in its worktree, then fails; fail.mjs just fails.
-  host.driver.once = (spec) => {
-    if (spec.argv[1] === "setup.mjs") {
-      writeFileSync(join(spec.cwd, "local.edn"), "{}");
-      return { code: 3 };
-    }
-    return { code: spec.argv[1] === "fail.mjs" ? 2 : 0 };
-  };
-  engine = new ProjectEngine(host.deps());
+  engine = new ProjectEngine({ driver: new DetachedDriver(3_000), pollMs: 100 });
   engine.conformer = conformer(engine);
-});
-
-test("a setup that fails after writing into its worktree: no scratch worktree, folder or sova/conform-* branch is left", async () => {
-  commitDef({ version: 1, slots: { cap: 1 }, setup: [{ id: "locals", run: ["node", "setup.mjs"] }], services: { web: { cmd: ["node", "web.mjs"] } } });
-  const r = await engine.run("conform", { project }, op);
-  assert.equal(r.ok, false);
-  assert.equal(r.conform?.checks.find((c) => !c.ok)?.id, "create-a");
-  assert.deepEqual(leftovers(), []);
-  assert.deepEqual(r.conform?.leaks, []);
-  assert.equal(readRegistry().instances.length, 0);
-});
-
-test("a setup that fails cleanly: nothing is left either", async () => {
-  commitDef({ version: 1, slots: { cap: 1 }, setup: [{ id: "fail", run: ["node", "fail.mjs"] }], services: { web: { cmd: ["node", "web.mjs"] } } });
-  const r = await engine.run("conform", { project }, op);
-  assert.equal(r.ok, false);
-  assert.deepEqual(leftovers(), []);
 });
 
 test("a run that passes leaves nothing", async () => {

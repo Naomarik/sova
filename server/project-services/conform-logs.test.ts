@@ -6,22 +6,23 @@ import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { CONFORM_LOG_LINES, parseDefinition } from "../../shared/project-contract";
 import { conformer } from "./conform";
-import { DetachedDriver, SystemdDriver, type Exec } from "./drivers";
+import { SystemdDriver, type Exec } from "./drivers";
 import { ProjectEngine, type Caller } from "./engine";
+import { FakeHost } from "./fake-host";
 import { readRegistry } from "./store";
 import { approve, defHashOf } from "./trust";
-import { reservePorts } from "../test-ports";
 
 /**
  * A failed conformance run keeps its evidence (§app.project-services/conform): the last lines of every
  * service that was not ready (and of a failed step), read into the report before teardown removes them.
+ * On a host in memory (fake-host.ts) whose clock the ready wait steps; the systemd cases on a faked exec.
  */
 
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-conform-logs-agent-"));
 
 const op: Caller = { kind: "operator" };
-// Below the ephemeral range (32768+), so no probe's own client port can take a port a service is about to bind.
-const BASE = await reservePorts(60);
+const BASE = 21_000;
+const host = new FakeHost();
 let parent = "";
 let project = "";
 let engine: ProjectEngine;
@@ -43,7 +44,15 @@ before(() => {
   writeFileSync(join(project, "web.mjs"), `for (let i = 0; i < 200; i++) console.log("resolving dep " + i); console.log("Error building classpath: repo1.maven.org"); setInterval(() => {}, 1000);`);
   writeFileSync(join(project, "setup.mjs"), `console.log("setup says why"); process.exit(3);`);
   git(["init", "-q", "-b", "main"]);
-  engine = new ProjectEngine({ driver: new DetachedDriver(3_000), pollMs: 100 });
+  // web.mjs never listens: it prints its trouble, many lines of it, and keeps running; setup.mjs says why and fails.
+  host.driver.behave = (spec) =>
+    spec.argv[1] === "web.mjs" ? { ports: [], logs: [...Array.from({ length: 200 }, (_, i) => `resolving dep ${i}`), "Error building classpath: repo1.maven.org"] } : {};
+  host.driver.once = (spec, print) => {
+    if (spec.argv[1] !== "setup.mjs") return { code: 0 };
+    print("setup says why");
+    return { code: 3 };
+  };
+  engine = new ProjectEngine(host.deps());
   engine.conformer = conformer(engine);
 });
 
@@ -95,7 +104,7 @@ function onSystemd(hookRun: { code: number; stderr: string }, journal: string[])
     if (file === "systemctl" && args[1] === "show") return { code: 0, stdout: "LoadState=not-found\n", stderr: "" };
     return { code: 0, stdout: "", stderr: "" };
   };
-  const e = new ProjectEngine({ driver: new SystemdDriver(exec), pollMs: 100 });
+  const e = new ProjectEngine(host.deps({ driver: new SystemdDriver(exec) }));
   e.conformer = conformer(e);
   return { e, runs };
 }

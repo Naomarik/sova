@@ -83,8 +83,9 @@ export function instanceOfLink(id: string): string | null {
 }
 
 /** Whether the endpoint's service answers now: a static copy's own serve on its port, else a listener on it. */
-async function serving(serve: string | null, port: number): Promise<boolean> {
+async function serving(serve: string | null, port: number, dial?: (port: number) => Promise<boolean>): Promise<boolean> {
   if (serve) return staticServes().some((s) => s.id === serve && s.port === port);
+  if (dial) return dial(port);
   const { dialLoopback } = await import("../share/preview-proxy");
   const s = await dialLoopback(port);
   if (s === "refused") return false;
@@ -103,6 +104,8 @@ export interface ShareInput {
   createdBy: string;
   /** The serve a static service runs as (its unit name), or null for a process service. */
   serveOf: (service: ServiceDecl) => string | null;
+  /** Whether a process service's port takes a connection (default: a loopback dial, as the preview proxy dials); tests fake it. */
+  dial?: (port: number) => Promise<boolean>;
   /** Every port this Sova process binds or names (project-previews.ts sovaPorts). */
   sovaPorts: ReadonlySet<number>;
 }
@@ -120,7 +123,7 @@ export async function checkShare(i: Omit<ShareInput, "createdBy" | "sovaPorts">)
   const days = i.days ?? Math.min(SHARE_DAYS_DEFAULT, max);
   if (!Number.isInteger(days) || days < 1 || days > max) throw new ShareFailure("invalid-request", `a running copy's link lasts 1 to ${max} day${max === 1 ? "" : "s"}`);
   const serve = ep.service.static !== undefined ? i.serveOf(ep.service) : null;
-  if (i.rec.desired[ep.service.name] !== "running" || !(await serving(serve, ep.port)))
+  if (i.rec.desired[ep.service.name] !== "running" || !(await serving(serve, ep.port, i.dial)))
     throw new ShareFailure("share-denied", `This copy isn't running ${ep.service.name}: start it first (up); sharing never starts anything.`);
   return { ...ep, days, serve };
 }

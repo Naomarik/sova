@@ -1,20 +1,20 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { parseDefinition } from "../../shared/project-contract";
+import { DetachedDriver } from "./drivers";
 import { ProjectEngine, type Caller } from "./engine";
-import { FakeHost } from "./fake-host";
 import { readRegistry } from "./store";
 import { approve, defHashOf } from "./trust";
 
 /**
  * A `dir` resource copied from main (`"from": "${main}/<path>"` with `path` the same folder): on the main checkout it
  * is its own source, so create, up and reset keep main's folder as it is, never copying it onto itself or removing it
- * (§app.project-services/contract, /reset); a worktree's copy still gets main's data (in
- * data-own-source.integration.test.ts: it runs this host's `cp`). On a host in memory (fake-host.ts).
+ * (§app.project-services/contract, /reset); a worktree's copy still gets main's data. The copy is this host's
+ * `cp` under real services here; the main checkout's cases run on a host in memory in data-own-source.test.ts.
  */
 
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-data-own-agent-"));
@@ -45,7 +45,7 @@ before(() => {
   writeFileSync(join(project, "public", "corpus", "surah-1.json"), "main's data");
   const h = defHashOf(parseDefinition(JSON.stringify(DEF)));
   approve(project, h, h);
-  engine = new ProjectEngine(new FakeHost().deps());
+  engine = new ProjectEngine({ driver: new DetachedDriver(3_000), pollMs: 100 });
 });
 
 after(async () => {
@@ -59,18 +59,14 @@ after(async () => {
 
 const mainFile = () => join(project, "public", "corpus", "surah-1.json");
 
-test("up of the main checkout keeps its own data folder: nothing is copied onto itself", async () => {
-  const r = await engine.run("up", { project }, op);
+test("a worktree's copy still gets a copy of main's data, and its reset copies it again", async () => {
+  const w = await engine.run("up", { project, branch: "sova/w" }, op);
+  assert.equal(w.ok, true, JSON.stringify(w.error));
+  const copy = join(w.checkout!, "public", "corpus", "surah-1.json");
+  assert.equal(readFileSync(copy, "utf8"), "main's data");
+  writeFileSync(copy, "changed in the copy");
+  const r = await engine.run("reset", { instance: w.instance }, op);
   assert.equal(r.ok, true, JSON.stringify(r.error));
-  assert.equal(r.slot, 0);
-  assert.equal(r.data.find((d) => d.name === "corpus")?.ref, join(project, "public", "corpus"));
-  assert.equal(readFileSync(mainFile(), "utf8"), "main's data");
-});
-
-test("reset of the main checkout never removes its own data", async () => {
-  const main = readRegistry().instances.find((i) => i.slot === 0)!;
-  const r = await engine.run("reset", { instance: main.id }, op);
-  assert.equal(r.ok, true, JSON.stringify(r.error));
-  assert.match(r.steps.find((s) => s.id === "deprovision:corpus")?.detail ?? "", /kept .*public\/corpus: its from is the folder itself/);
-  assert.equal(readFileSync(mainFile(), "utf8"), "main's data");
+  assert.equal(readFileSync(copy, "utf8"), "main's data");
+  assert.ok(existsSync(mainFile()));
 });

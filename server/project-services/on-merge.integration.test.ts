@@ -5,24 +5,24 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { parseDefinition } from "../../shared/project-contract";
+import { DetachedDriver } from "./drivers";
 import { ProjectEngine, type Caller } from "./engine";
-import { FakeHost } from "./fake-host";
 import { mainMoved, onMergeNotes, SYSTEM_ON_MERGE, withOnMerge, type OnMergeDeps } from "./on-merge";
 import { readRegistry } from "./store";
 import { approve, defHashOf } from "./trust";
+import { reservePorts } from "../test-ports";
 
 /**
  * onMerge (§app.project-services/on-merge): when main's HEAD moves, the main checkout's copy (slot 0)
  * reloads the running services that declare `onMerge: "reload"`, as the system caller, others untouched;
  * a first sight only records HEAD; a stopped service stays stopped; never on Sova's own checkout; each
- * outcome is a note in the project's feed. On a host in memory (fake-host.ts), a real git repo;
- * on-merge.integration.test.ts reloads a real running service.
+ * outcome is a note in the project's feed. Real processes under the detached driver, a real git repo; the
+ * other cases run on a host in memory in on-merge.test.ts.
  */
 
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-onmerge-agent-"));
 
-const BASE = 21_000;
-const host = new FakeHost();
+let BASE = 0;
 let parent = "";
 let project = "";
 let engine: ProjectEngine;
@@ -58,15 +58,11 @@ function writeDef(def: object, approved: boolean): void {
     approve(project, h, h);
   }
 }
-/** The pid listening on `port` (as the real test's server answers its own). */
-const pidOn = async (port: number): Promise<string> => {
-  const o = host.portOwner(port);
-  assert.ok(typeof o === "object", `something listens on ${port}`);
-  return String(o.pid);
-};
+const pidOn = async (port: number): Promise<string> => (await (await fetch(`http://127.0.0.1:${port}/`)).text()).trim();
 const deps = (): Partial<OnMergeDeps> => ({ run: (verb, body, caller) => engine.run(verb, body, caller), selfCheckout: () => self, file });
 
 before(async () => {
+  BASE = await reservePorts(14);
   parent = realpathSync(mkdtempSync(join(tmpdir(), "sova-onmerge-proj-")));
   project = join(parent, "shop");
   file = join(parent, "on-merge.json");
@@ -75,7 +71,7 @@ before(async () => {
   writeDef(defOf(), true);
   git(["init", "-q", "-b", "main"]);
   commit(".gitignore", "");
-  engine = new ProjectEngine(host.deps({ selfCheckout: () => self }));
+  engine = new ProjectEngine({ driver: new DetachedDriver(3_000), pollMs: 50, selfCheckout: () => self, hostBusy: () => null });
 });
 
 after(async () => {
@@ -103,69 +99,4 @@ test("main moved: the main checkout's copy reloads only its running onMerge serv
   assert.equal(await pidOn(BASE + 10), api0, "api untouched");
   assert.equal(onMergeNotes(project, file)[0]?.line, line);
   assert.equal(await mainMoved(project, deps()), null, "the same move never reloads twice");
-});
-
-test("after Merge Branch, a HEAD never seen before counts as moved; the tick's first sight doesn't", async () => {
-  const other = join(parent, "other.json");
-  commit("merged.txt");
-  const web0 = await pidOn(BASE);
-  assert.equal(await mainMoved(project, { ...deps(), file: other }), null, "the tick: first sight");
-  commit("merged-2.txt");
-  rmSync(other);
-  assert.match((await mainMoved(project, { ...deps(), file: other }, { merged: true })) ?? "", /onMerge reloaded web/);
-  assert.notEqual(await pidOn(BASE), web0);
-  // The main file has not seen these moves: it catches up once, then stays quiet.
-  await mainMoved(project, deps());
-});
-
-test("the merge and the tick at once reload once", async () => {
-  commit("twice.txt");
-  const web0 = await pidOn(BASE);
-  const both = await Promise.all([mainMoved(project, deps()), mainMoved(project, deps())]);
-  assert.equal(both.filter(Boolean).length, 1, JSON.stringify(both));
-  assert.notEqual(await pidOn(BASE), web0);
-});
-
-test("a stopped onMerge service stays stopped; Sova's own checkout never reloads; a refused apply says why", async () => {
-  const main = (await engine.run("status", { project }, op)).instances!.find((i) => i.slot === 0)!.instance;
-  const dn = await engine.run("down", { instance: main, services: ["web"] }, op);
-  assert.equal(dn.ok, true, dn.error?.message);
-  commit("stopped.txt");
-  assert.equal(await mainMoved(project, deps()), null, "nothing running carries the key: no apply, no note");
-  const st = await engine.run("status", { instance: main }, op);
-  assert.equal(st.services.find((s) => s.name === "web")?.state, "stopped", "never started by onMerge");
-  assert.equal((await engine.run("up", { instance: main }, op)).ok, true);
-
-  self = project;
-  const web0 = await pidOn(BASE);
-  commit("self.txt");
-  const selfLine = await mainMoved(project, deps());
-  assert.match(selfLine ?? "", /onMerge never reloads the checkout this Sova runs from/);
-  assert.equal(await pidOn(BASE), web0, "Sova's own checkout: nothing reloaded");
-  self = null;
-
-  // main's definition changed and is not approved here: the reload is refused, and the note says so.
-  writeDef(defOf({ MODE: "new" }), false);
-  commit("def.txt", "x");
-  const refused = await mainMoved(project, deps());
-  assert.match(refused ?? "", /onMerge could not reload web: .*not approved/);
-  assert.equal(await pidOn(BASE), web0);
-});
-
-test("the system caller runs apply and reads, nothing else", async () => {
-  writeDef(defOf(), true);
-  commit("back.txt");
-  const main = (await engine.run("status", { project }, SYSTEM_ON_MERGE)).instances!.find((i) => i.slot === 0)!.instance;
-  for (const verb of ["down", "up", "reset", "teardown", "share"]) {
-    const r = await engine.run(verb, { instance: main, endpoint: "web.http" }, SYSTEM_ON_MERGE);
-    assert.equal(r.error?.code, "forbidden", `${verb}: ${r.error?.message}`);
-  }
-});
-
-test("the project's software feed shows the notes among its own lines, newest first", () => {
-  const feed = [{ at: "2026-10-03T10:00:00.000Z", line: "registered" }, { at: "2026-10-01T10:00:00.000Z", line: "approved" }];
-  const notes = [{ at: "2026-10-02T10:00:00.000Z", line: "Main moved to abc1234: onMerge reloaded web on the main checkout's copy." }];
-  assert.deepEqual(withOnMerge(feed, notes).map((l) => l.line), ["registered", notes[0]!.line, "approved"]);
-  assert.equal(withOnMerge(feed, []), feed);
-  assert.equal(withOnMerge(feed, notes, 2).length, 2);
 });

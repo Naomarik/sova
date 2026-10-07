@@ -1,7 +1,7 @@
 # §app/server-runtime — The server's runtime: Bun, or Node on request
 
 Sova's server runs on Bun. It runs on Node only when the operator asks for it explicitly
-(§app.server-runtime/choice), and the unit suite follows the same switch. A launcher starts the
+(§app.server-runtime/choice), and the test suite, both its tiers, follows the same switch. A launcher starts the
 server on that runtime; when Bun is wanted but missing or the server fails to start on it, that is
 an error, never a quiet start on Node (§app.server-runtime/fallback). The server says which
 runtime it is on in `GET /api/health` (§app.server-runtime/health). There is no picker in Settings
@@ -21,8 +21,9 @@ takes effect at the server's next start.
 - `pnpm run dev:server` (the gated watcher) and `pnpm run dev:hermetic` follow the same choice:
   each (re)start spawns `bun server/index.ts`, or the Node command when Node is asked for.
   `pnpm run dev:hermetic:node` is the hermetic server on Node.
-- The unit suite follows it too: `pnpm test` and the project's test verb run on Bun, and on Node
-  with `SOVA_RUNTIME=node` or through `pnpm run test:node`. The runner's own `--runtime node|bun`
+- The test suite follows it too: `pnpm test`, `pnpm test:int`, `pnpm test:all`
+  (§app.server-runtime/test-tiers) and the project's test verb run on Bun, and on Node with
+  `SOVA_RUNTIME=node` or through `pnpm run test:node`. The runner's own `--runtime node|bun`
   wins over the environment; `pnpm run test:bun` runs Bun whatever the environment says.
 - The Bun binary is `$SOVA_BUN` when set, else `bun` on `PATH`, else what `mise which bun`
   answers. The Node binary the launcher uses is `$SOVA_NODE`, else `node` on `PATH`.
@@ -69,7 +70,7 @@ fixes the bug.
 - **Imports are unambiguous.** No two module files or directories in one folder of `src/`,
   `server/`, `shared/` or `pi-config/extensions/` differ only by case once the extension is
   dropped; a repo test enforces it.
-- **The unit suite runs on Bun** through `pnpm test` (§app.server-runtime/choice). Each test file runs in its own
+- **The test suite runs on Bun** through `pnpm test` and `pnpm test:int` (§app.server-runtime/choice). Each test file runs in its own
   process with a throwaway home set in the environment before Bun starts. The test preload refuses
   to run where `os.homedir()` doesn't follow the HOME it set.
 
@@ -79,8 +80,8 @@ A test may commit, branch or add worktrees only in a repository it made itself. 
 test makes in its temp dir stays plain: Git never finds an enclosing repository from it, so a
 project registered there is that folder, not the checkout around it.
 
-- **The runner refuses a temp dir inside a repository.** `pnpm test` (`scripts/run-tests.mjs`, on
-  either runtime) exits 2 before running anything when the folder its temp roots go in (`TMPDIR`
+- **The runner refuses a temp dir inside a repository.** `pnpm test`, `pnpm test:int` and
+  `pnpm test:all` (`scripts/run-tests.mjs`, on either runtime, either tier) exit 2 before running anything when the folder its temp roots go in (`TMPDIR`
   on Bun, `/tmp` on Node) is inside a Git work tree or Git directory, with one line naming that
   repository and the fix: a `TMPDIR` outside every repository.
 - **Discovery stops at the temp root.** Every test process (`pnpm test`'s and each extension
@@ -93,3 +94,34 @@ project registered there is that folder, not the checkout around it.
   the worktree: the runner's refusal, given the files that once leaked, leaves the repository's
   refs, worktrees and files as they were; and a folder made under the preload's temp root
   registers as itself, not as the repository's main checkout.
+
+## §app.server-runtime/test-tiers — Two test tiers: in-process unit tests, and integration tests
+
+The suite has two tiers, told apart by file name alone, so a file's tier can't drift from a list.
+
+- **The unit tier** is every test file the runner's patterns match except `*.integration.test.ts`:
+  in-process tests. They may run Git (Sova's own org store is a Git repository), but no other
+  program, no socket (bound or connected, TCP or unix), no network fetch, and they never import
+  `server/index.ts`. `pnpm test` runs this tier; it is the everyday run.
+- **The integration tier** is `*.integration.test.ts`, a sibling beside the unit file it splits
+  from: real processes, ports, the whole server, and time measured. `pnpm test:int` runs it, at a
+  quarter of the cores (`TEST_INT_JOBS=<n>` sets the width; the unit tier's is `TEST_BUN_JOBS`),
+  longest first by its own recorded times (`.cache/test-durations-integration.json`, beside the
+  unit tier's `.cache/test-durations.json`). `pnpm test:all` runs both tiers, unit first, each at
+  its own width. Files named on the command line run whatever their tier.
+- **`pnpm test:int --changed`** runs only the integration files a change may break: those whose
+  import closure (relative imports, followed file to file) holds a file changed since the merge
+  base with `--base <rev>` (default `master`), committed, uncommitted or untracked, and those in the
+  same folder as a changed file. It prints how many files it chose of how many; when it chooses
+  none it runs nothing and exits 0. An agent runs it before asking to land; landing runs the whole
+  tier (§chat.merge-round/driver).
+- **The tier guard.** A second test preload (`scripts/test-tier-guard.mjs`) records, for each file
+  in either tier, the programs it starts, the addresses it listens on or connects to, the URLs it
+  fetches and whether it imports `server/index.ts`, merged into `.cache/test-audit.json`. After the
+  run, the runner lists each unit file that did any of these except run Git. With
+  `SOVA_TEST_GUARD=enforce` the guard refuses the call itself, with an error naming the file and
+  telling to rename it (or split those cases into) `.integration.test.ts`, and the runner fails
+  the file even when the error was caught; `SOVA_TEST_GUARD=off` turns the guard off.
+  `server/tier-guard.test.ts` proves each refusal on both runtimes: an ESM named-import `spawn`,
+  `execFileSync`, `net.connect`, `http.createServer().listen`, a `fetch` to localhost (and Bun's
+  `Bun.connect`, `Bun.spawn`, `Bun.serve`), and a dynamic import of `server/index.ts`.

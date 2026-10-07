@@ -47,7 +47,9 @@ nothing but its siblings and emits no code, so the server and the browser bundle
   runtime one compared with the committed baseline;
 - a `shared/harness*.ts` file imports anything but a sibling, or declares anything that emits code;
 - a test file under `server/`, `shared/` or `src/` is matched by none of the runner's file
-  patterns, which include every test under `server/harness/`.
+  patterns, which include every test under `server/harness/`, or names itself an integration test
+  other than as `*.integration.test.ts`, so every test file is in exactly one tier
+  (§app.server-runtime/test-tiers). This check is in the unit tier, which `pnpm test` runs.
 
 A contract suite in `server/harness/pi/` pins the pi behaviours Sova relies on (the `append*`
 methods of pi's session manager, the custom entry's line, the event names a run emits, image

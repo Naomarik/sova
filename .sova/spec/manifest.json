@@ -14791,6 +14791,24 @@
         "pi-config/extensions/model-levels/README.md",
         "pi-config/README.md"
       ]
+    },
+    "§app.server-runtime/test-tiers": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "scripts/run-tests.mjs",
+        "scripts/test-tier-guard.mjs",
+        "scripts/test-changed.mjs",
+        "scripts/test-changed.d.mts",
+        "server/tier-guard.test.ts",
+        "server/run-tests-changed.test.ts",
+        "server/harness-boundary.test.ts",
+        "package.json",
+        "CLAUDE.md"
+      ],
+      "requires": [
+        "§app.server-runtime/choice"
+      ]
     }
   },
   "boundary": {

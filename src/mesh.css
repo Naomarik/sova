@@ -53,8 +53,8 @@
 .mesh-sync-name { font-weight: var(--fw-medium); color: var(--color-ink); }
 .mesh-sync-meta { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); }
 
-/* A peer's session row: the host's name in mono beside the time, and a dot that says up or down.
-   Down is also said in a word: never by hue alone. */
+/* A peer's session row: the host's name in mono beside the time, and a dot and word for its state.
+   The state is always said in a word: never by hue alone. */
 .session-host {
   display: inline-flex;
   align-items: center;
@@ -67,7 +67,10 @@
 }
 .session-host-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .session-host .chip-dot { width: 6px; height: 6px; flex: none; }
-.session-host-down { color: var(--status-error); max-width: 18ch; }
+.session-host-word { flex: none; white-space: nowrap; }
+.session-host-warn, .session-host-error { max-width: 24ch; } /* room for "other version"; the name ellipsizes first */
+.session-host-warn { color: var(--status-warn); }
+.session-host-error { color: var(--status-error); }
 
 /* The session pane's host row, the first row of its foot: a foot row (.insights-row) that is the
    menu's trigger — the chosen host (or All) on the left, the connected count at the right end in

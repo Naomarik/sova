@@ -1,4 +1,4 @@
-// Run: pnpm test -- server/share-wire.test.ts. The share pages and the harness wire (§app.harness/wire,
+// Run: node scripts/run-tests.mjs server/share-wire.integration.test.ts. The share pages and the harness wire (§app.harness/wire,
 // "Hops change nothing"): a share page's socket and API carry no live events and no row facts, and a page
 // that asks for wire 2 gets exactly what one that doesn't gets. On every committed golden fixture (and the
 // local real corpus when present, assertions only, nothing recorded):
@@ -8,7 +8,7 @@
 //   golden wire README);
 // - the baton view (§app.baton/outsider-view) for the operator and for a person: no such key either (its
 //   content is pinned by golden.test's baton-view probe, recorded before M3).
-// Re-record (missing and differing files; review the diff): SOVA_GOLDEN_MODE=record pnpm test -- server/share-wire.test.ts. A throwaway
+// Re-record (missing and differing files; review the diff): SOVA_GOLDEN_MODE=record pnpm test -- server/share-wire.integration.test.ts. A throwaway
 // PI_CODING_AGENT_DIR in the OS temp dir, deleted after; no model is called.
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -29,7 +29,7 @@ writeFileSync(join(process.env.SOVA_SHARE_DIST, "index.html"), "<!doctype html><
 const g = await import("./harness/pi/golden/golden");
 const { sessionShareView, resetShareViewCache } = await import("./session-share-view");
 const { createShare } = await import("./session-shares");
-const { pushView } = await import("./session-share-presence");
+const { pushView, viewerCount } = await import("./session-share-presence");
 const { createShareServer } = await import("./share/listener");
 const { batonView } = await import("./baton-view");
 const { branchOf, parsePi } = await import("./harness/pi/reader");
@@ -67,9 +67,11 @@ async function socketFrames(token: string, shareId: string, view: unknown, ask: 
   const got: string[] = [];
   ws.on("message", (d) => got.push(String(d)));
   await new Promise<void>((ok, fail) => (ws.once("open", () => ok()), ws.once("error", fail)));
-  await new Promise((r) => setTimeout(r, 30));
+  // The page is among the share's viewers before the push (a hang guard, not a bound).
+  for (const end = Date.now() + 10_000; viewerCount(shareId) === 0; await new Promise((r) => setTimeout(r, 5)))
+    assert.ok(Date.now() < end, "the page registered as a viewer");
   pushView(shareId, view as never);
-  const end = Date.now() + 3000;
+  const end = Date.now() + 10_000;
   while (!got.some((f) => f.startsWith('{"type":"view"')) && Date.now() < end) await new Promise((r) => setTimeout(r, 10));
   ws.close();
   return got;
@@ -95,7 +97,7 @@ for (const set of sets)
           const r = g.settle({ ...set, expected: join(SHARE, set.name) }, fx.name, "session-share-view", frame, mode);
           produced.add(r.path);
           const where = relative(g.REPO, r.path);
-          if (r.status === "missing") assert.fail(`no expected file ${where}. Record it: SOVA_GOLDEN_MODE=record pnpm test -- server/share-wire.test.ts`);
+          if (r.status === "missing") assert.fail(`no expected file ${where}. Record it: SOVA_GOLDEN_MODE=record pnpm test -- server/share-wire.integration.test.ts`);
           if (r.status === "differs") assert.fail(`${where}: differs at ${r.where}${r.detail ? ` (${r.detail})` : ""}`);
         }
         assert.deepEqual(wireKeys(frame), [], "the view frame carries no event, meta or facts");

@@ -5,7 +5,7 @@ import type { Context } from "hono";
 import { proxy } from "hono/proxy";
 import { proxySocket, refuse } from "../extensions";
 import { streamWebSocket } from "../runtime-quirks";
-import { fetchPeerRequest, lanClient } from "./dial";
+import { fetchPeerRequest, lanClient, peerWire } from "./dial";
 import { LAN_HOST } from "./lan-fetch";
 import { DENIED } from "../../shared/mesh-access";
 import { REFUSED_HEADER } from "./hello";
@@ -59,6 +59,18 @@ export function setPeerHeadersTimeout(ms: number): void {
   headersTimeoutMs = ms;
 }
 
+let connectTimeoutMs = CONNECT_TIMEOUT_MS;
+let wsHandshakeMs = WS_HANDSHAKE_MS;
+
+/** Tests: shorten the bare TCP check and a socket hop's handshake wait (omitted: the default). */
+export function setPeerConnectTimeouts(o: { connectMs?: number; wsHandshakeMs?: number }): void {
+  connectTimeoutMs = o.connectMs ?? CONNECT_TIMEOUT_MS;
+  wsHandshakeMs = o.wsHandshakeMs ?? WS_HANDSHAKE_MS;
+}
+
+/** The waits in force, ms (tests: the defaults are what the spec promises). */
+export const peerTimeouts = () => ({ connectMs: connectTimeoutMs, headersMs: headersTimeoutMs, wsHandshakeMs, downMs: DOWN_MS });
+
 /** Tests: forget what is known. */
 export const clearPeerReach = (): void => reach.clear();
 
@@ -72,11 +84,14 @@ export function tcpReachable(url: string): Promise<boolean> {
       sock.destroy();
       resolve(ok);
     };
-    sock.setTimeout(CONNECT_TIMEOUT_MS, () => done(false));
+    sock.setTimeout(connectTimeoutMs, () => done(false));
     sock.once("connect", () => done(true));
     sock.once("error", () => done(false));
   });
 }
+
+/** tcpReachable, or a test's in-process wire (dial.ts). */
+const reachable = (url: string): Promise<boolean> => peerWire()?.reachable(url) ?? tcpReachable(url);
 
 /** Whether to try the hop at all: recent knowledge first, else a short TCP connect. "recent"
     means the hop goes ahead without a check, so it needs a stall watch (watchStall). */
@@ -85,7 +100,7 @@ export async function preflight(url: string): Promise<boolean | "recent"> {
   const age = known ? Date.now() - known.at : Infinity;
   if (known && !known.ok && age < DOWN_MS) return false;
   if (known?.ok && age < REACHED_MS) return "recent";
-  const ok = await tcpReachable(url);
+  const ok = await reachable(url);
   notePeerReach(url, ok);
   return ok;
 }
@@ -98,7 +113,7 @@ export async function preflight(url: string): Promise<boolean | "recent"> {
 export function watchStall(url: string, abort: () => void): () => void {
   let answered = false;
   const timer = setTimeout(() => {
-    void tcpReachable(url).then((ok) => {
+    void reachable(url).then((ok) => {
       if (ok || answered) return;
       notePeerReach(url, false);
       abort();
@@ -249,6 +264,7 @@ export async function proxyPeer(c: Context, peer: PeerEntry, tail: string, scrub
     res = await proxy(`${base}${tail}${incoming.search}`, {
       raw: c.req.raw,
       headers,
+      customFetch: (req: Request) => fetchPeerRequest(peer, req), // fetch(req), as proxy's own default
       signal: AbortSignal.any([c.req.raw.signal, stalled.signal, late.signal]),
     });
   } catch (err) {
@@ -296,7 +312,7 @@ export function upgradePeerSocket(req: IncomingMessage, socket: Duplex, head: Bu
     const stalled = new AbortController();
     const answered = go === "recent" ? watchStall(base, () => stalled.abort()) : () => {};
     proxySocket(req, socket, head, `${base.replace(/^http/, "ws")}${tail}${search}`, headers, {
-      handshakeTimeout: WS_HANDSHAKE_MS,
+      handshakeTimeout: wsHandshakeMs,
       signal: stalled.signal,
       onOpen: answered,
       onError: (err) => {
@@ -331,7 +347,7 @@ function upgradePairingSocket(req: IncomingMessage, socket: Duplex, head: Buffer
         return;
       }
       proxySocket(req, socket, head, `ws://${LAN_HOST}${tail}${search}`, headers, {
-        handshakeTimeout: WS_HANDSHAKE_MS,
+        handshakeTimeout: wsHandshakeMs,
         dial: (url, protocols, opts) => streamWebSocket(url, stream, protocols.length ? protocols : undefined, opts),
         onError: (err) => {
           console.warn(`[mesh] ${peer.id}: ws ${tail} failed: ${whyDown(err)}`);

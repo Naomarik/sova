@@ -1273,7 +1273,7 @@ for that idea that plans with the user and edits nothing.
 
 - **Launch** (`sova_idea explore`) only in a user turn, at most `explorePerTurn` per turn (default 2,
   §app.overseer/caps). Backend, model and effort come from Settings → Overseer → Advanced → Idea explorer
-  (default Claude Code, `opus[1m]`, effort medium). The explorer is seeded with the idea's text and
+  (default Claude Code, `claude-opus-5-5` (Opus 5.5), effort medium). The explorer is seeded with the idea's text and
   its scope (linked ideas), and has read-only tools and a prompt that forbids changing files. Its
   worker id and the Overseer conversation are recorded on the idea, and the status becomes
   `exploring`. An idea whose explorer is live refuses a second launch, and a done or dropped idea

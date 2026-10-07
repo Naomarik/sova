@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { CLAUDE_EFFORTS, DELEGATE_BACKENDS, parseChoice, PI_EFFORTS, sameChoice } from "../pi-config/extensions/mode/delegate.ts";
+import { latestClaude } from "../pi-config/extensions/claude-code/catalog.ts";
 import type { SessionTitleSettings, SessionTitleSettingsInfo, WorkerChoice } from "../shared/protocol";
 import { stateRoot } from "./state-root";
 
@@ -16,7 +17,7 @@ export const QUIET_RANGE = { min: 0, max: 1440 } as const;
 
 const BACKEND_LABELS = { pi: "pi", "claude-code": "Claude Code" } as const;
 
-/** On (a file that says `enabled: false` keeps it off); every 5 minutes after 5 quiet ones; pi deepseek-v4.1-flash, then Claude Code sonnet at low. */
+/** On (a file that says `enabled: false` keeps it off); every 5 minutes after 5 quiet ones; pi deepseek-v4.1-flash, then Claude Code's current Sonnet at low. */
 export function sessionTitleDefaults(): SessionTitleSettings {
   return {
     version: 1,
@@ -24,7 +25,7 @@ export function sessionTitleDefaults(): SessionTitleSettings {
     intervalMinutes: 5,
     quietMinutes: 5,
     primary: { backend: "pi", model: "ollama-cloud/deepseek-v4.1-flash", effort: "off" },
-    fallback: { backend: "claude-code", model: "sonnet", effort: "low" },
+    fallback: { backend: "claude-code", model: latestClaude("sonnet").id, effort: "low" },
   };
 }
 

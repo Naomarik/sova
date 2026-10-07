@@ -7,7 +7,6 @@
 // in cleanup.test.ts. The route's input validation is covered by the pieces it calls
 // (resolveSessionPath); these tests call cleanupSessions directly, which re-validates the same way.
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -28,9 +27,9 @@ const { setDraft } = await import("./drafts");
 const { canonicalPath } = await import("./paths");
 
 // A live record's pid must be alive for readLive to see it, like archived-sessions.test.ts fakes it.
-const sleeper = spawn("sleep", ["60"], { stdio: "ignore" });
+// The runner that started this file, alive for all of it, stands in for another live process.
+const otherPid = process.ppid;
 after(() => {
-  sleeper.kill();
   rmSync(agentDir, { recursive: true, force: true });
 });
 
@@ -92,7 +91,7 @@ test("paths: a live session is skipped as live, not deleted (archived before a T
   const a = session(ID_A, "live in a TUI");
   setArchived(ID_A, true);
   const rec = join(liveDir, "p-test.json");
-  writeFileSync(rec, JSON.stringify({ session: { pid: sleeper.pid, sessionFile: a, mode: "tui" }, presence: { status: "idle" } }));
+  writeFileSync(rec, JSON.stringify({ session: { pid: otherPid, sessionFile: a, mode: "tui" }, presence: { status: "idle" } }));
   try {
     const r = await cleanupSessions({ mode: "paths", paths: [a], dryRun: false });
     assert.equal(r.deletedCount, 0);

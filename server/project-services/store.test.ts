@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { mutateRegistry, pickSlot, readRegistry, tryLock, type InstanceRecord, type Registry } from "./store";
+import { pickSlot, tryLock, type InstanceRecord, type Registry } from "./store";
+
+/** Above any pid the kernel hands out (Linux's pid_max is at most 2^22): never a live process. */
+const DEAD_PID = 2 ** 22 + 1;
 
 const rec = (over: Partial<InstanceRecord>): InstanceRecord => ({
   id: "p-1",
@@ -53,37 +55,10 @@ test("a lock is held against this process and taken over from a dead one", () =>
   const c = tryLock(file);
   assert.ok("release" in c, "released: free again");
   c.release();
-  // A stale lock: its pid is gone.
-  const dead = spawnSync(process.execPath, ["-e", "process.stdout.write(String(process.pid))"]).stdout.toString();
-  writeFileSync(file, dead);
+  // A stale lock: its pid is gone. (Real writers in other processes: store.integration.test.ts.)
+  writeFileSync(file, String(DEAD_PID));
   const d = tryLock(file);
   assert.ok("release" in d, "a dead holder's lock is taken over");
   d.release();
-  rmSync(dir, { recursive: true, force: true });
-});
-
-test("mutateRegistry writes atomically and concurrent writers never lose an instance", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "sova-reg-"));
-  const file = join(dir, "registry.json");
-  // Eight processes each add one instance under the lock.
-  const writer = join(dir, "writer.mts");
-  writeFileSync(
-    writer,
-    `import { mutateRegistry } from ${JSON.stringify(new URL("./store.ts", import.meta.url).pathname)};
-     const n = Number(process.argv[2]);
-     mutateRegistry((r) => { r.instances.push({ id: "i-" + n, slot: n } as never); }, process.argv[3]);`,
-  );
-  const { spawn } = await import("node:child_process");
-  const tsx = join(process.cwd(), "node_modules", ".bin", "tsx");
-  await Promise.all(
-    Array.from({ length: 8 }, (_, n) => new Promise<void>((ok, fail) => {
-      const p = spawn(tsx, [writer, String(n), file], { stdio: "inherit" });
-      p.on("exit", (code) => (code === 0 ? ok() : fail(new Error(`writer ${n} exited ${code}`))));
-    })),
-  );
-  const ids = readRegistry(file).instances.map((i) => i.id).sort();
-  assert.deepEqual(ids, Array.from({ length: 8 }, (_, n) => `i-${n}`).sort());
-  mutateRegistry((r) => void (r.instances = []), file);
-  assert.equal(readRegistry(file).instances.length, 0);
   rmSync(dir, { recursive: true, force: true });
 });

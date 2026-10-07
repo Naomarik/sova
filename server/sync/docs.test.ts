@@ -325,7 +325,7 @@ test("a theme deleted inside a themes folder that did not exist at start is stil
   await a.sync.start();
   try {
     const until = async (cond: () => boolean) => {
-      const end = Date.now() + 3000;
+      const end = Date.now() + 15_000; // a hang guard
       while (!cond() && Date.now() < end) await new Promise((r) => setTimeout(r, 20));
       return cond();
     };
@@ -344,7 +344,7 @@ test("a local delete first noticed by a peer's request still reaches every other
   const [a, b, c] = mesh(3);
   for (const h of [a!, b!, c!]) await h.sync.start();
   const until = async (cond: () => boolean) => {
-    const end = Date.now() + 3000;
+    const end = Date.now() + 15_000; // a hang guard
     while (!cond() && Date.now() < end) await new Promise((r) => setTimeout(r, 20));
     return cond();
   };

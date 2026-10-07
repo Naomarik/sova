@@ -88,7 +88,7 @@ test("members sharing a title fall back to the model, numbered only when it repe
       { title: "Retry with jitter", model: "zai/glm-5.3" },
       { title: "Retry with jitter", model: "anthropic/claude-opus-5" },
     ]),
-    ["glm-5.3 #1", "glm-5.3 #2", "claude-opus-5"],
+    ["glm-5.3 #1", "glm-5.3 #2", "Opus 5"],
   );
 });
 
@@ -112,7 +112,7 @@ test("pane names carry the repeat suffix — three opus members are three names,
       { title: "Retry with jitter", model: "anthropic/claude-opus-5" },
       { title: "Retry with jitter", model: "anthropic/claude-opus-5" },
     ]),
-    ["claude-opus-5 #1", "claude-opus-5 #2", "claude-opus-5 #3"],
+    ["Opus 5 #1", "Opus 5 #2", "Opus 5 #3"],
   );
 });
 
@@ -125,7 +125,7 @@ test("pane names never say the model twice, and otherwise take the · model suff
       { title: "Cache warming", model: "zai/glm-5.3" }, // distinct title
       { title: "Retry with jitter", model: null }, // no model: the title alone
     ]),
-    ["control · glm-5.3", "glm-5.3 #2", "claude-opus-5", "Cache warming · glm-5.3", "Retry with jitter"],
+    ["control · glm-5.3", "glm-5.3 #2", "Opus 5", "Cache warming · glm-5.3", "Retry with jitter"],
   );
 });
 

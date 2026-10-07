@@ -10,6 +10,7 @@ import type {
   WorkerChoice,
 } from "../shared/protocol";
 import { parseChoice } from "../pi-config/extensions/mode/delegate.ts";
+import { canonicalClaudeId, latestClaude, resolveClaude } from "../pi-config/extensions/claude-code/catalog.ts";
 import { type Redactor, serverRedactor } from "./overseer-redact";
 import { stateRoot } from "./state-root";
 import { sessionsChanged } from "./list-generation";
@@ -42,11 +43,11 @@ const PROACTIVITY: readonly OverseerProactivity[] = ["off", "badge", "brief"];
 
 export const DEFAULT_CAPS: OverseerCaps = { createPerTurn: 5, promptsPerTurn: 10, archivesPerTurn: 50, concurrentSessions: 10, explorePerTurn: 2, linksPerTurn: 3, orgWritesPerTurn: 20, gatherPerTurn: 3 };
 
-/** Claude Opus 5 by any spelling (a CLI id, a 1M variant, a pi ref), never Opus 5.5 (`claude-opus-5-5`). */
-const OPUS_5 = /(^|\/)claude-opus-5(\[[^\]]*\])?$/i;
+/** Claude Opus 5 by any spelling (its catalog id, a 1M variant, a pi ref), never Opus 5.5 (`claude-opus-5-5`). */
+const isOpus5 = (model: string): boolean => resolveClaude(model)?.id === "claude-opus-5";
 
-/** The exploratory agent sova_idea `explore` launches: Claude Opus 5.5 (1M) through Claude Code. */
-export const DEFAULT_EXPLORER: WorkerChoice = { backend: "claude-code", model: "opus[1m]", effort: "medium" };
+/** The exploratory agent sova_idea `explore` launches: the Claude catalog's current Opus through Claude Code. */
+export const DEFAULT_EXPLORER: WorkerChoice = { backend: "claude-code", model: latestClaude("opus").id, effort: "medium" };
 
 export const DEFAULT_QUICK_ACTIONS: OverseerQuickAction[] = [
   { id: "needs-me", label: "What Needs Me", description: "Sessions waiting on you, with links.", prompt: "What needs my attention? Link each session." },
@@ -113,7 +114,8 @@ export function parseSettings(raw: unknown, strict: boolean): OverseerSettings |
   const fail = (error: string) => (strict ? { error } : null);
   const out = d;
   if (raw.model !== undefined && raw.model !== null) {
-    if (typeof raw.model === "string" && /^[^/\s]+\/\S+$/.test(raw.model.trim())) out.model = raw.model.trim();
+    // An old Claude Code id reads as its catalog model (§app.claude-code-provider/legacy-ids).
+    if (typeof raw.model === "string" && /^[^/\s]+\/\S+$/.test(raw.model.trim())) out.model = raw.model.trim().startsWith("claude-code-cli/") ? canonicalClaudeId(raw.model.trim()) : raw.model.trim();
     else {
       const e = fail('model must be "provider/model" or null');
       if (e) return e;
@@ -175,8 +177,9 @@ export function parseSettings(raw: unknown, strict: boolean): OverseerSettings |
   }
   if (raw.explorer !== undefined) {
     const parsed = parseChoice(raw.explorer);
-    // The user's rule: the explorer never runs Claude Opus 5. "opus" means Opus 5.5 (opus, opus[1m]).
-    const choice = "error" in parsed || !OPUS_5.test(parsed.model) ? parsed : { error: `${parsed.model} is not allowed for the exploratory agent; use opus or opus[1m] (Claude Opus 5.5)` };
+    // The user's rule: the explorer never runs Claude Opus 5.
+    const opus = latestClaude("opus");
+    const choice = "error" in parsed || !isOpus5(parsed.model) ? parsed : { error: `${parsed.model} is not allowed for the exploratory agent; use ${opus.id} (${opus.name})` };
     if (!("error" in choice)) out.explorer = choice;
     else if (strict) return { error: `explorer: ${choice.error}` };
   }

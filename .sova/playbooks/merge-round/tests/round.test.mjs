@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { acquireLock, busyOf, dirtyPaths, expandArgs, failingTestFiles, homeShown, needsRestart, parseBatch, parseReply, replyOf, shellPath, suiteOf, tempCommitOf, timeoutFor, touchesSpecReplay } from "../scripts/round.mjs";
+import { acquireLock, busyOf, dirtyPaths, expandArgs, failingTestFiles, hasScript, homeShown, needsRestart, parseBatch, parseReply, replyOf, shellPath, suiteOf, tempCommitOf, timeoutFor, touchesSpecReplay } from "../scripts/round.mjs";
 
 const ROUND = fileURLToPath(new URL("../scripts/round.mjs", import.meta.url));
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
@@ -84,6 +84,11 @@ const mode = process.env.FAKE_PNPM_MODE || "pass";
 if (args[0] === "test" && mode === "fail") {
   console.log("✖ server/new-fail.test.ts (3ms)");
   console.log("  test at server/pre-fail.test.ts:3:1");
+  process.exit(1);
+}
+if (args[0] === "test:int" && mode === "int-fail") {
+  console.log("FAIL server/new-int.integration.test.ts (exit 1, 0 pass, 1 fail)");
+  console.log("  FAIL server/pre-fail.test.ts");
   process.exit(1);
 }
 if (args[0] === "test" && mode === "hang") {
@@ -423,6 +428,39 @@ test("check: a failing test file is pre-existing when it fails on master too; pn
   assert.equal(rerun.cwd, main);
   // The same runner and runtime as the branch's pnpm test (Bun unless SOVA_RUNTIME=node).
   assert.deepEqual(rerun.args, ["exec", "node", "scripts/run-tests.mjs", "--runtime", process.env.SOVA_RUNTIME === "node" ? "node" : "bun", "server/pre-fail.test.ts"]);
+});
+
+test("check runs pnpm test:int after pnpm test, with the same pre-existing rule; a tree without the script skips it", async () => {
+  writeFileSync(pnpmLog, "");
+  const skipped = await run(["check", "feat/clean"]);
+  assert.match(skipped.out, /pnpm test:int: skipped \(this tree's package\.json has no test:int script\)\./);
+  assert.ok(!readFileSync(pnpmLog, "utf8").includes('"test:int"'), "ran test:int in a tree without the script");
+
+  git(main, "worktree", "add", "-q", wt("feat/int"), "-b", "feat/int");
+  commit(wt("feat/int"), "package.json", `${JSON.stringify({ scripts: { test: "x", "test:int": "y" } })}\n`, "int: the tiers' scripts");
+  writeFileSync(pnpmLog, "");
+  const r = await run(["check", "feat/int"], { env: { FAKE_PNPM_MODE: "int-fail" } });
+  assert.equal(r.code, 1, r.out);
+  assert.match(r.out, /^pnpm test: ok, \d+s\.$/m);
+  assert.match(r.out, /^pnpm test:int: FAILED \(exit 1\), \d+s\.$/m);
+  assert.match(r.out, /needs: new test failure: server\/new-int\.integration\.test\.ts$/m);
+  assert.match(r.out, /Pre-existing on master \(not blocking\): server\/pre-fail\.test\.ts/);
+  const calls = readFileSync(pnpmLog, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+  const order = calls.map((c) => c.args[0]).filter((a) => a === "test" || a === "test:int");
+  assert.deepEqual(order, ["test", "test:int"]);
+  const intCall = calls.find((c) => c.args[0] === "test:int");
+  assert.equal(intCall.claude, false);
+  assert.equal(intCall.cwd, wt("feat/int"));
+});
+
+test("hasScript: a package.json script by name; none, or unreadable, is no", () => {
+  const dir = mkdtempSync(join(root, "pkg-"));
+  assert.equal(hasScript(dir, "test:int"), false);
+  writeFileSync(join(dir, "package.json"), "{not json");
+  assert.equal(hasScript(dir, "test:int"), false);
+  writeFileSync(join(dir, "package.json"), JSON.stringify({ scripts: { test: "a", "test:int": "b" } }));
+  assert.equal(hasScript(dir, "test:int"), true);
+  assert.equal(hasScript(dir, "test:all"), false);
 });
 
 test("touchesSpecReplay: the spec core, its replay tests, spec-guard and spec-hooks only", () => {

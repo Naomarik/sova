@@ -40,13 +40,13 @@ function profile(over: Partial<SubagentProfile> = {}): SubagentProfile {
 }
 
 test("each closed section's summary says what is inside", () => {
-  assert.equal(delegateSummary(profile()), "fable · opus · 1 fallback");
+  assert.equal(delegateSummary(profile()), "Fable 5.1 · Opus 5.5 · 1 fallback");
   const none = profile();
   none.delegate.planning.fallback = null;
-  assert.equal(delegateSummary(none), "fable · opus · no fallbacks");
+  assert.equal(delegateSummary(none), "Fable 5.1 · Opus 5.5 · no fallbacks");
 
   assert.equal(teamsSummary(profile()), "No standing roles · members on the lead's model");
-  assert.equal(teamsSummary(profile({ teams: teams(), members: claude("sonnet") })), "Coordinator + monitor · members on sonnet");
+  assert.equal(teamsSummary(profile({ teams: teams(), members: claude("sonnet") })), "Coordinator + monitor · members on Sonnet 5.5");
   const lone = teams();
   lone.monitor.enabled = false;
   assert.equal(teamsSummary(profile({ teams: lone })), "Coordinator only · members on the lead's model");
@@ -56,8 +56,8 @@ test("each closed section's summary says what is inside", () => {
   assert.equal(teamsSummary(profile({ teams: off })), "No standing roles · members on the lead's model");
 
   assert.equal(specSummary(profile()), "Off · the session writes it");
-  assert.equal(specSummary(profile({ specWriter: { primary: claude("sonnet"), fallback: null } })), "sonnet");
-  assert.equal(specSummary(profile({ specWriter: { primary: claude("sonnet"), fallback: claude("opus[1m]") } })), "sonnet · 1 fallback");
+  assert.equal(specSummary(profile({ specWriter: { primary: claude("sonnet"), fallback: null } })), "Sonnet 5.5");
+  assert.equal(specSummary(profile({ specWriter: { primary: claude("sonnet"), fallback: claude("opus[1m]") } })), "Sonnet 5.5 · 1 fallback");
 
   // A profile without the key and one with None read alike: nothing reviews.
   assert.equal(reviewerSummary(profile()), "Off · no review");
@@ -66,12 +66,12 @@ test("each closed section's summary says what is inside", () => {
 });
 
 test("a summary names a model the way the list's footprint does", () => {
-  for (const [id, short] of ([["opus[1m]", "opus"], ["claude-fable-5-1[1m]", "fable"], ["claude-sonnet-4-5", "sonnet"], ["zai/glm-5.3", "glm-5.3"], ["ollama-cloud/deepseek-v4.1-flash", "deepseek-v4.1-flash"]] as [string, string][]))
+  for (const [id, short] of ([["opus[1m]", "Opus 5.5"], ["claude-fable-5-1[1m]", "Fable 5.1"], ["claude-sonnet-4-6", "Sonnet 4.6"], ["claude-code-cli/claude-haiku-4-5", "Haiku 4.5"], ["claude-opus-6", "claude-opus-6"], ["zai/glm-5.3", "glm-5.3"], ["ollama-cloud/deepseek-v4.1-flash", "deepseek-v4.1-flash"]] as [string, string][]))
     assert.equal(footprintModel(id), short, id);
   // The copy is the extension's rule: pin the two bodies together so neither drifts alone.
   const ext = readFileSync(new URL("../../pi-config/extensions/subagents/subagent-profiles.ts", import.meta.url), "utf8");
   const body = /export function shortModel\(model: string\): string \{([\s\S]*?)\n\}/.exec(ext)?.[1] ?? "";
-  for (const line of ['m.replace(/\\[1m\\]$/i, "")', "/^claude-(opus|sonnet|haiku|fable)\\b/i"]) assert.ok(body.includes(line), `the extension's shortModel still has ${line}`);
+  for (const line of ["const name = claudeName(model);", "if (name) return name;", 'model.includes("/") ? model.slice(model.lastIndexOf("/") + 1) : model']) assert.ok(body.includes(line), `the extension's shortModel still has ${line}`);
 });
 
 test("the coordinator switch: off stores no roles, on restores the seed with the coordinator on", () => {

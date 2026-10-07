@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { stateRoot } from "./state-root";
+import { canonicalClaudeId } from "../pi-config/extensions/claude-code/catalog.ts";
 
 /**
  * New-session defaults for model + thinking level: what a session with NO messages yet starts
@@ -30,7 +31,8 @@ export function loadDefaults(file = defaultsFile()): WebDefaults {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return {};
   const v = raw as Record<string, unknown>;
   const out: WebDefaults = {};
-  if (typeof v.model === "string" && v.model.includes("/")) out.model = v.model;
+  // An old Claude Code id reads as its catalog model (§app.claude-code-provider/legacy-ids).
+  if (typeof v.model === "string" && v.model.includes("/")) out.model = v.model.startsWith("claude-code-cli/") ? canonicalClaudeId(v.model) : v.model;
   if (typeof v.thinking === "string" && v.thinking.trim()) out.thinking = v.thinking;
   return out;
 }

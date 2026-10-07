@@ -3,7 +3,7 @@ import type { SubagentProfile, TeamsSetting } from "../../shared/subagent-profil
 import type { WorkerChoice } from "../../shared/protocol";
 import { getDelegateOptions, getDelegateSettings, getSubagentProfiles, getTeamDefaults } from "../lib/api";
 import { cloneProfiles, profilesDraft as store, savedOf } from "../lib/subagent-profiles-draft";
-import { fallbackFor } from "../lib/delegate-form";
+import { claudeDriftNotes, fallbackFor } from "../lib/delegate-form";
 import { filterProfiles, nextSetup } from "../lib/mode-menu";
 import { numberIssue, numberOf, TEAM_NUMBER_BOUNDS, type TeamNumberField } from "../lib/team-form";
 import { tildePath } from "../lib/format";
@@ -314,6 +314,7 @@ export function SubagentProfilesSettings() {
               </h3>
             </div>
             <p class="settings-intro">Which models your subagents use. A chat picks a profile in its mode menu; new chats start on the default.</p>
+            <For each={claudeDriftNotes(options.state === "ready" ? options() : undefined)}>{(note) => <p class="settings-intro">{note}</p>}</For>
           </>
         }
       >

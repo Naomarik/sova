@@ -215,6 +215,24 @@ test("close: a day ended 2h ago is gzipped and keeps its rows; a file turning up
   assert.ok(!existsSync(join(w.usageRoot, "2026-10-04", "p1.jsonl")));
 });
 
+test("a closed day whose snapshot is gone is folded again from its sealed records, never lost", () => {
+  const w = world();
+  w.write({ key: "a", ts: at("10:00") });
+  w.write({ key: "b", ts: at("11:00") }, "p2");
+  w.clock.now = at("02:01", "2026-10-05");
+  const s = w.start(); // the catch-up closes the ended day at once
+  s.ledger.closeDays();
+  s.ledger.flush();
+  assert.deepEqual(readdirSync(join(w.usageRoot, "2026-10-04")).sort(), ["p1.jsonl.gz", "p2.jsonl.gz"]);
+  // The snapshots removed (a migration that rewrote the records does this, so no saved offset outlives them).
+  for (const f of readdirSync(join(w.stateDir, "days"))) rmSync(join(w.stateDir, "days", f));
+  const again = w.start();
+  assert.equal(again.queries.session({ sid: "s1" }).total.calls, 2);
+  close(again.queries.costs({ range: "all", providers: [], models: [], tz: "UTC" }).total.usd, perCall(table(), [{ ts: at("10:00"), input: 1_000_000 }, { ts: at("11:00"), input: 1_000_000 }]));
+  again.ledger.flush();
+  assert.equal(w.start().queries.session({ sid: "s1" }).total.calls, 2, "and counted once after the next start");
+});
+
 test("queries: kinds, workers at any depth, side calls, projects, local days, filters", () => {
   const w = world();
   w.clock.now = at("12:00", "2026-10-05");
@@ -256,4 +274,42 @@ test("queries: kinds, workers at any depth, side calls, projects, local days, fi
   assert.equal(many.sessions.s1!.workers.calls, 2);
   assert.equal(many.sessions.nobody, undefined);
   void usageOf;
+});
+
+test("one row per real Claude model (§app.insights/usage-model-rows): grouped by the answer, an old id read through the legacy table, a mismatch apart", () => {
+  const w = world();
+  const cc = (key: string, model: string, responseModel: string | undefined, input: number, extra: Partial<UsageRecord> = {}) =>
+    w.write({ key, ts: at("10:00"), src: "claude", provider: "claude-code-cli", model, ...(responseModel ? { responseModel } : {}), input, ...extra });
+  cc("cc:1", "opus[1m]", "claude-opus-5-5", 100);
+  cc("cc:2", "claude-opus-5-5[1m]", "claude-opus-5-5", 200);
+  cc("cc:3", "opus", "claude-opus-5-5", 300);
+  cc("ccr:x:1:claude-opus-5-5[1m]", "claude-opus-5-5[1m]", undefined, 400, { src: "claude-residual" });
+  cc("cc:5", "claude-opus-5-5", undefined, 500);
+  cc("cc:6", "claude-haiku-4-5", "claude-haiku-4-5-20251001", 10);
+  cc("cc:7", "opus[1m]", "claude-opus-4-8", 7);
+  cc("cc:8", "claude-opus-6", undefined, 8);
+  w.write({ key: "pi:z", ts: at("10:00"), provider: "zai", model: "glm-5.3", input: 1 });
+  const s = w.start();
+  const c = s.queries.costs({ range: "7d", providers: [], models: [], tz: "UTC" });
+  const rows = Object.fromEntries(c.byModel.map((r) => [`${r.provider}/${r.model}${r.asked ? ` asked ${r.asked}` : ""}`, r]));
+  assert.deepEqual(Object.keys(rows).sort(), [
+    "claude-code-cli/claude-haiku-4-5",
+    "claude-code-cli/claude-opus-4-8 asked claude-opus-5-5",
+    "claude-code-cli/claude-opus-5-5",
+    "claude-code-cli/claude-opus-6",
+    "zai/glm-5.3",
+  ]);
+  const opus = rows["claude-code-cli/claude-opus-5-5"]!;
+  assert.equal(opus.tokens.input, 100 + 200 + 300 + 400 + 500, "every Opus 5.5 call in one row");
+  assert.deepEqual(opus.requested, ["claude-opus-5-5", "claude-opus-5-5[1m]", "opus", "opus[1m]"], "the ids asked for, for the title");
+  assert.equal(rows["claude-code-cli/claude-haiku-4-5"]!.tokens.input, 10, "a Haiku call keeps its own row");
+  assert.equal(rows["claude-code-cli/claude-opus-4-8 asked claude-opus-5-5"]!.tokens.input, 7, "another model answered: never merged");
+  assert.equal(c.total.tokens.input, 100 + 200 + 300 + 400 + 500 + 10 + 7 + 8 + 1, "only the grouping moves");
+  // The session pane's rows group the same way.
+  const sess = s.queries.session({ sid: "s1" });
+  assert.equal(sess.models.find((m) => m.model === "claude-opus-5-5")!.tokens.input, 1500);
+  // An old filter key selects the row its calls now belong to.
+  const filtered = s.queries.costs({ range: "7d", providers: [], models: ["claude-code-cli/opus[1m]"], tz: "UTC" });
+  assert.equal(filtered.total.tokens.input, 1500, "the Opus 5.5 row");
+  assert.ok(c.facets.models.some((m) => m.model === "claude-opus-5-5") && !c.facets.models.some((m) => m.model === "opus[1m]"));
 });

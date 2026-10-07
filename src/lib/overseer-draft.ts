@@ -254,16 +254,14 @@ export function moveQuickAction<T>(list: readonly T[], i: number, delta: number)
   return next;
 }
 
-/** Claude Opus 5 — never offered for the explorer (plain or `[1m]`, bare or as a pi ref's id). "Opus"
-    means Opus 5.5 (`opus`, `opus[1m]`); `claude-opus-5-5` is a different id and stays. */
+/** Claude Opus 5 — never offered for the explorer (plain or `[1m]`, bare or as a pi ref's id);
+    Opus 5.5 (`claude-opus-5-5`) is a different id and stays. */
 export const NEVER_EXPLORER_MODEL = /(^|\/)claude-opus-5(\[1m\])?$/;
 
 /**
- * The exploratory agent row's model lists: Delegate's discovery, minus Claude Opus 5, plus the
- * shipped default when discovery didn't list it. The Claude Code CLI's list is remote and
- * alternates between shapes with and without the `[1m]` aliases, so the out-of-the-box choice
- * would otherwise read "not verified" on a fresh install, although it launches. It is offered with
- * every effort its backend takes. A backend that couldn't list its models stays unlisted (null).
+ * The exploratory agent row's model lists: Delegate's (for Claude Code, Sova's Claude catalog), minus
+ * Claude Opus 5, plus the shipped default should a list not have it, offered with every effort its
+ * backend takes. A backend that couldn't list its models stays unlisted (null).
  */
 export function explorerOptions(options: DelegateOptions | undefined, info: BackendsInfo, shipped: WorkerChoice): DelegateOptions | undefined {
   if (!options) return undefined;

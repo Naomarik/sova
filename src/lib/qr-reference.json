@@ -1,0 +1,642 @@
+[
+ {
+  "text": "https://example.test/",
+  "version": 2,
+  "mask": 0,
+  "size": 25,
+  "digest": "fd27176efeaccdff685908a098e4bf198fa35eb7ad40828da89760390ceb7e1a",
+  "penalty": 768
+ },
+ {
+  "text": "https://example.test/",
+  "version": 2,
+  "mask": 1,
+  "size": 25,
+  "digest": "3ac0b569ba865f492e00c7db09590545286f9cbfecedfb656dfe0899f624477f",
+  "penalty": 459
+ },
+ {
+  "text": "https://example.test/",
+  "version": 2,
+  "mask": 2,
+  "size": 25,
+  "digest": "ad19fe4cbf5765a8a31df4b3ee4469eefa4feaa856fb6f4b347deb0ba6c0fb47",
+  "penalty": 379
+ },
+ {
+  "text": "https://example.test/",
+  "version": 2,
+  "mask": 3,
+  "size": 25,
+  "digest": "c1e65746ec8a6c6a8345a3ab1a7adbcc3859f20fdb251f58f7bce3e76a002e3c",
+  "penalty": 552
+ },
+ {
+  "text": "https://example.test/",
+  "version": 2,
+  "mask": 4,
+  "size": 25,
+  "digest": "a1e6add544300e23a8f75617fd6a13c638c083492d9b70cd3533092f325a9203",
+  "penalty": 526
+ },
+ {
+  "text": "https://example.test/",
+  "version": 2,
+  "mask": 5,
+  "size": 25,
+  "digest": "6fa0ba8974cdb23df90fbf98e7c0825bce403e2dca3652ce4ccddbf6105c05d2",
+  "penalty": 535
+ },
+ {
+  "text": "https://example.test/",
+  "version": 2,
+  "mask": 6,
+  "size": 25,
+  "digest": "c07bbe1f29339a6c13bb48e9e92e8553ab0419180520d8a4c112958161d53c5c",
+  "penalty": 516
+ },
+ {
+  "text": "https://example.test/",
+  "version": 2,
+  "mask": 7,
+  "size": 25,
+  "digest": "9668098eacbf3a77c528f208ae62ada4ea4669ce68f87fac88aa875086fbd11f",
+  "penalty": 748
+ },
+ {
+  "text": "https://pairing-example.ts.net:8443/#c=aB2_-aB2_-aB2_-aB2_-aB2_-aB2_-aB2_-aB2_-xyz",
+  "version": 5,
+  "mask": 0,
+  "size": 37,
+  "digest": "64641e26f27bf16f72c1700331325f0575218ed6ca25a67b846d0b9a0c3cf082",
+  "penalty": 990
+ },
+ {
+  "text": "https://pairing-example.ts.net:8443/#c=aB2_-aB2_-aB2_-aB2_-aB2_-aB2_-aB2_-aB2_-xyz",
+  "version": 5,
+  "mask": 1,
+  "size": 37,
+  "digest": "4427dce42b9f3a125c9dc3172aa8e1c49d69b059594fc3e59fe9947ca52fdded",
+  "penalty": 977
+ },
+ {
+  "text": "https://pairing-example.ts.net:8443/#c=aB2_-aB2_-aB2_-aB2_-aB2_-aB2_-aB2_-aB2_-xyz",
+  "version": 5,
+  "mask": 2,
+  "size": 37,
+  "digest": "26d3458748d7ab18be74b51e0e092b13cce06dd0adbca55a7debd3b5d9203229",
+  "penalty": 1079
+ },
+ {
+  "text": "https://pairing-example.ts.net:8443/#c=aB2_-aB2_-aB2_-aB2_-aB2_-aB2_-aB2_-aB2_-xyz",
+  "version": 5,
+  "mask": 3,
+  "size": 37,
+  "digest": "c1ff44f5aa713d4eda0e64dedf37453392980884e8555348e344cbee3cfd0f5b",
+  "penalty": 1206
+ },
+ {
+  "text": "https://pairing-example.ts.net:8443/#c=aB2_-aB2_-aB2_-aB2_-aB2_-aB2_-aB2_-aB2_-xyz",
+  "version": 5,
+  "mask": 4,
+  "size": 37,
+  "digest": "53d692b9f2265eebc85f9d6c1d8f69312e3eaf80d2181e1726d097026d3e2b2d",
+  "penalty": 965
+ },
+ {
+  "text": "https://pairing-example.ts.net:8443/#c=aB2_-aB2_-aB2_-aB2_-aB2_-aB2_-aB2_-aB2_-xyz",
+  "version": 5,
+  "mask": 5,
+  "size": 37,
+  "digest": "b3b84baa95bb3758740a1c924eb328abb65a212ee905250998738509187570d6",
+  "penalty": 1201
+ },
+ {
+  "text": "https://pairing-example.ts.net:8443/#c=aB2_-aB2_-aB2_-aB2_-aB2_-aB2_-aB2_-aB2_-xyz",
+  "version": 5,
+  "mask": 6,
+  "size": 37,
+  "digest": "272d84b754eabcfd966c326e915e57119c20599056498e7ff56f6e9f17c4cd25",
+  "penalty": 996
+ },
+ {
+  "text": "https://pairing-example.ts.net:8443/#c=aB2_-aB2_-aB2_-aB2_-aB2_-aB2_-aB2_-aB2_-xyz",
+  "version": 5,
+  "mask": 7,
+  "size": 37,
+  "digest": "abf917f6612e2ac60b56a353af0ed0240c854fa065d8e0bbdc3606fef925747b",
+  "penalty": 1231
+ },
+ {
+  "text": "https://example.test/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/#c=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "version": 18,
+  "mask": 0,
+  "size": 89,
+  "digest": "f71511aeb1f9e6e171508d24d456bea792541932864192859d905beee9c9ad65",
+  "penalty": 5756
+ },
+ {
+  "text": "https://example.test/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/#c=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "version": 18,
+  "mask": 1,
+  "size": 89,
+  "digest": "0afa97253391a463651e508499ff736b7d442f5f8515fea125420e77fcaf4868",
+  "penalty": 5569
+ },
+ {
+  "text": "https://example.test/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/#c=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "version": 18,
+  "mask": 2,
+  "size": 89,
+  "digest": "b7b3edc394b1f6f94c1899e02c97b0baa356ae07394e4bcf7fd3bf50152a9d12",
+  "penalty": 4565
+ },
+ {
+  "text": "https://example.test/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/#c=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "version": 18,
+  "mask": 3,
+  "size": 89,
+  "digest": "21139ef58d4ed2c5ee20238102d7f7f916c14b18e2e4e86c3e476399f19e5915",
+  "penalty": 5276
+ },
+ {
+  "text": "https://example.test/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/#c=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "version": 18,
+  "mask": 4,
+  "size": 89,
+  "digest": "b559901f8dd5e40ef4ed7c6175e9aa578acfb8505eceb4a9083a0aecb4ffe03b",
+  "penalty": 5616
+ },
+ {
+  "text": "https://example.test/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/#c=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "version": 18,
+  "mask": 5,
+  "size": 89,
+  "digest": "cf15a44598b2de0a419c52ae3b1068a483cd3bb2c4b1efcccf7e9c94f348124a",
+  "penalty": 5351
+ },
+ {
+  "text": "https://example.test/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/#c=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "version": 18,
+  "mask": 6,
+  "size": 89,
+  "digest": "c0a944253081082e881b141596952f928e06c1d3509631f212d04f98d9266c86",
+  "penalty": 5143
+ },
+ {
+  "text": "https://example.test/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/long-path/#c=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "version": 18,
+  "mask": 7,
+  "size": 89,
+  "digest": "ab35ce5630e0c28632ea0211717f91a3f797c2ac15ddf325a9a004b925c46b5b",
+  "penalty": 5725
+ },
+ {
+  "text": "https://example.test/é/手机",
+  "version": 3,
+  "mask": 0,
+  "size": 29,
+  "digest": "2918c1808d91288a03c74e249d68f41038003f70c41270b6964ed474a569f2cd",
+  "penalty": 590
+ },
+ {
+  "text": "https://example.test/é/手机",
+  "version": 3,
+  "mask": 1,
+  "size": 29,
+  "digest": "9ded18935d6be7e958548c601c768703967fb82b335e3a74dba4874374371270",
+  "penalty": 809
+ },
+ {
+  "text": "https://example.test/é/手机",
+  "version": 3,
+  "mask": 2,
+  "size": 29,
+  "digest": "c8f2d8d9489fd6ddb34a7717c560e0f3bebe68f256a26030d64cb574aa83884e",
+  "penalty": 674
+ },
+ {
+  "text": "https://example.test/é/手机",
+  "version": 3,
+  "mask": 3,
+  "size": 29,
+  "digest": "1b77f7de07f2b3f5316393faefcc624cdc463f5f6ebc1f3734654e250db6cc04",
+  "penalty": 666
+ },
+ {
+  "text": "https://example.test/é/手机",
+  "version": 3,
+  "mask": 4,
+  "size": 29,
+  "digest": "baa68e1d2b430db86ea3bd7b6ecc4844ae806a79f0be9bc5fd0f59ed50628547",
+  "penalty": 756
+ },
+ {
+  "text": "https://example.test/é/手机",
+  "version": 3,
+  "mask": 5,
+  "size": 29,
+  "digest": "0fa0b96aa19521fc0564f1b71c0e4da16ebb7bfdf20cd93b81479730f5188c47",
+  "penalty": 888
+ },
+ {
+  "text": "https://example.test/é/手机",
+  "version": 3,
+  "mask": 6,
+  "size": 29,
+  "digest": "b09fdffbfed0fa67d4df863ae696184688a4bd8c9df802ad673b35472a09791f",
+  "penalty": 761
+ },
+ {
+  "text": "https://example.test/é/手机",
+  "version": 3,
+  "mask": 7,
+  "size": 29,
+  "digest": "3f1062be43dde358483ccd8e35761ac64b1ecff9fa91bc3febbd249a6cb5f48e",
+  "penalty": 710
+ },
+ {
+  "text": "",
+  "version": 1,
+  "mask": 0,
+  "size": 21,
+  "digest": "ca94e0680d39d22543222265c03d2a52bf31d8b6d35e9e8b7e942954ef56a8c2",
+  "penalty": 415
+ },
+ {
+  "text": "",
+  "version": 1,
+  "mask": 1,
+  "size": 21,
+  "digest": "5da7cf09c803219c59f61f1861ad5871fd452023d01b1138eac85dc46d9696d1",
+  "penalty": 645
+ },
+ {
+  "text": "",
+  "version": 1,
+  "mask": 2,
+  "size": 21,
+  "digest": "77260a5162e1e4f9a554e138c8dbc68a9589c20cdd1a79ab0bee8365b1b6f079",
+  "penalty": 393
+ },
+ {
+  "text": "",
+  "version": 1,
+  "mask": 3,
+  "size": 21,
+  "digest": "c30ac51df3031a0d4219aac58b58f0b82efbdb32354c067967ff9db149b16f61",
+  "penalty": 316
+ },
+ {
+  "text": "",
+  "version": 1,
+  "mask": 4,
+  "size": 21,
+  "digest": "1cf832fe3e42ad2da1fed2a82c5a416cc4c7b98ae65a49e3bd2e9f6f013b65cf",
+  "penalty": 361
+ },
+ {
+  "text": "",
+  "version": 1,
+  "mask": 5,
+  "size": 21,
+  "digest": "002da10b22b05094dd0ca0a360cc65761dca3b0f4b2e1614726883fae52db8a5",
+  "penalty": 393
+ },
+ {
+  "text": "",
+  "version": 1,
+  "mask": 6,
+  "size": 21,
+  "digest": "e6551c4c35f5661e381824e8453a11ceb5a6f48173022609b07a2360bc1d587a",
+  "penalty": 429
+ },
+ {
+  "text": "",
+  "version": 1,
+  "mask": 7,
+  "size": 21,
+  "digest": "b00806744118e9b406a755f1306c362439fdd239246443e079cc988ce2ee9f77",
+  "penalty": 452
+ },
+ {
+  "text": "x",
+  "version": 1,
+  "mask": 1,
+  "size": 21,
+  "digest": "3597dfe51bab975ee911935017dcd5b801ce2d4def707f4faf3b237370a7e1e6",
+  "penalty": 538
+ },
+ {
+  "text": "x",
+  "version": 2,
+  "mask": 2,
+  "size": 25,
+  "digest": "2874631740b1ba15383198fc44687e2daecec1ce3750ffa6b47826ae9de20340",
+  "penalty": 527
+ },
+ {
+  "text": "x",
+  "version": 3,
+  "mask": 3,
+  "size": 29,
+  "digest": "ebc7213b255ed1644f79792499e9ed5414f4cab4a8657def0b69d30cc105fa9e",
+  "penalty": 557
+ },
+ {
+  "text": "x",
+  "version": 4,
+  "mask": 4,
+  "size": 33,
+  "digest": "96febbfb12058bf5d0ef184663d86cdae7b4bad515932df95472806ee8e9cecc",
+  "penalty": 692
+ },
+ {
+  "text": "x",
+  "version": 5,
+  "mask": 5,
+  "size": 37,
+  "digest": "99a258a45fbe8b8324e7c268ec3f74b5f21a9658fcff665db32ba3355d06d97a",
+  "penalty": 976
+ },
+ {
+  "text": "x",
+  "version": 6,
+  "mask": 6,
+  "size": 41,
+  "digest": "b227975ff0583c17c68d203dd0e88d1073c65e2ce08eb730aa2718abcfdf3707",
+  "penalty": 1347
+ },
+ {
+  "text": "x",
+  "version": 7,
+  "mask": 7,
+  "size": 45,
+  "digest": "c7c04ecd7ae873ae52fb559b1747a0dfa6a91b322ddf2bb1af26bc8e694b7b6d",
+  "penalty": 1570
+ },
+ {
+  "text": "x",
+  "version": 8,
+  "mask": 0,
+  "size": 49,
+  "digest": "7c12a45df087f603e5c58a8260031f33b5c44ef3cf295a9082d892e9b1c5a948",
+  "penalty": 1751
+ },
+ {
+  "text": "x",
+  "version": 9,
+  "mask": 1,
+  "size": 53,
+  "digest": "336c1af1ea3d3987c12ecb0b58f2ec73f45520220ec81be84b15d1e7acd8ffb4",
+  "penalty": 2423
+ },
+ {
+  "text": "x",
+  "version": 10,
+  "mask": 2,
+  "size": 57,
+  "digest": "b8ed373d438c9a2600313f2278be6a96b35d3b9b85395643a474e44d4172d981",
+  "penalty": 2006
+ },
+ {
+  "text": "x",
+  "version": 11,
+  "mask": 3,
+  "size": 61,
+  "digest": "4695162ec879012d19acf071c9764ab402e5afd73340d2713957da49eef676a0",
+  "penalty": 2497
+ },
+ {
+  "text": "x",
+  "version": 12,
+  "mask": 4,
+  "size": 65,
+  "digest": "a46a4267d691381be0bc2398afb4a79e436a00122ce390b3abfb8c788bfa444b",
+  "penalty": 2376
+ },
+ {
+  "text": "x",
+  "version": 13,
+  "mask": 5,
+  "size": 69,
+  "digest": "5a9ebd5121644ebbeff9a209055518c9928b79b09730878153be3d3eb81bd8fe",
+  "penalty": 2992
+ },
+ {
+  "text": "x",
+  "version": 14,
+  "mask": 6,
+  "size": 73,
+  "digest": "0c47316df0803d15fbb30c9ae11ad09ea13062c4483b2d0d779a6bfdec942de9",
+  "penalty": 3464
+ },
+ {
+  "text": "x",
+  "version": 15,
+  "mask": 7,
+  "size": 77,
+  "digest": "2fdf8e76f5e697ee287d9ba175e446dff241c7c8445aed21b537dd587aa54751",
+  "penalty": 4099
+ },
+ {
+  "text": "x",
+  "version": 16,
+  "mask": 0,
+  "size": 81,
+  "digest": "0416696c87ee43f9e6768c8e4811ed63a7e8934a5d6b59c958659c26b15de94c",
+  "penalty": 3926
+ },
+ {
+  "text": "x",
+  "version": 17,
+  "mask": 1,
+  "size": 85,
+  "digest": "769e6a45bada5ea01a0a7ea1793544d7fb7fd362476b688a2ac482287071bae3",
+  "penalty": 5765
+ },
+ {
+  "text": "x",
+  "version": 18,
+  "mask": 2,
+  "size": 89,
+  "digest": "3e495d7cb0c8c5e73e777ef6a68b2f1b2049106bfc009245cf7361e57efc9559",
+  "penalty": 4768
+ },
+ {
+  "text": "x",
+  "version": 19,
+  "mask": 3,
+  "size": 93,
+  "digest": "57ed130d2589798bc1f8a37c3a9b9aff25fd49b73e72ac148d4a505c4237477a",
+  "penalty": 5937
+ },
+ {
+  "text": "x",
+  "version": 20,
+  "mask": 4,
+  "size": 97,
+  "digest": "ee8275c8fbea2924a1e24bd3c459619d92fb4acd17bbd2101f33d54a31bbd230",
+  "penalty": 5317
+ },
+ {
+  "text": "x",
+  "version": 21,
+  "mask": 5,
+  "size": 101,
+  "digest": "0967e53535953630804a5943a7cc9c04bbe038a2b4685145db7c54ab30fc984c",
+  "penalty": 7971
+ },
+ {
+  "text": "x",
+  "version": 22,
+  "mask": 6,
+  "size": 105,
+  "digest": "527f9410483a3bd553041934c6bb231577e632ed20d04f1898c5bc2ab9e3e5a3",
+  "penalty": 8511
+ },
+ {
+  "text": "x",
+  "version": 23,
+  "mask": 7,
+  "size": 109,
+  "digest": "b647b65e6561a80844b4d18c7a2a91956bb24337c80b0fdf4dfa7199ca1987d6",
+  "penalty": 8145
+ },
+ {
+  "text": "x",
+  "version": 24,
+  "mask": 0,
+  "size": 113,
+  "digest": "179fe8ec50bf32fadf301e8ed34f694bbcb14d7c30ad3af77094fb5290ef1276",
+  "penalty": 7612
+ },
+ {
+  "text": "x",
+  "version": 25,
+  "mask": 1,
+  "size": 117,
+  "digest": "a1dff9022a282a0e3d44e39c8806a8b99a462fe1797a35c1db93a4b3c1144fe9",
+  "penalty": 11570
+ },
+ {
+  "text": "x",
+  "version": 26,
+  "mask": 2,
+  "size": 121,
+  "digest": "4a13b7dcbc8612d36273b4aec41bbc490827acb2b5297061164f5c5f9a731045",
+  "penalty": 8029
+ },
+ {
+  "text": "x",
+  "version": 27,
+  "mask": 3,
+  "size": 125,
+  "digest": "1f837eb9363e95d115a0587f327bbaf8c46f7fbe4283eb3bf7e0fa09b1c026ba",
+  "penalty": 10997
+ },
+ {
+  "text": "x",
+  "version": 28,
+  "mask": 4,
+  "size": 129,
+  "digest": "348934dd4dd6cb04339c567cd06a54332a77dfb3dc5609fb8c25e695bc604cfc",
+  "penalty": 8902
+ },
+ {
+  "text": "x",
+  "version": 29,
+  "mask": 5,
+  "size": 133,
+  "digest": "e981a6dec17c359bdb619dc7f5cc9578ce9ec6490b9cb68678a8ce514597d885",
+  "penalty": 12607
+ },
+ {
+  "text": "x",
+  "version": 30,
+  "mask": 6,
+  "size": 137,
+  "digest": "2bc392bdf4bbde1e1f4ef5a4dc0013a9900230686ef95149cab7156593e9cca6",
+  "penalty": 12826
+ },
+ {
+  "text": "x",
+  "version": 31,
+  "mask": 7,
+  "size": 141,
+  "digest": "50acad6ef874a9188a0b0e05e673dda3903c7a7136f57485aa82caea02ce5216",
+  "penalty": 13183
+ },
+ {
+  "text": "x",
+  "version": 32,
+  "mask": 0,
+  "size": 145,
+  "digest": "4fd5539ea50c7dc0a8c525aa8deb0069a77baec373e62185ba1159bf76f400c3",
+  "penalty": 12065
+ },
+ {
+  "text": "x",
+  "version": 33,
+  "mask": 1,
+  "size": 149,
+  "digest": "c8d4951cf2dc831f9a36fbe1a2ab073e01ef14d51f86d17d037b70bb813b4b41",
+  "penalty": 14323
+ },
+ {
+  "text": "x",
+  "version": 34,
+  "mask": 2,
+  "size": 153,
+  "digest": "1cb227b4164c26e9030f785518c5543ce16fd0741195c71860e0df893b209a69",
+  "penalty": 14235
+ },
+ {
+  "text": "x",
+  "version": 35,
+  "mask": 3,
+  "size": 157,
+  "digest": "91a6100ecd72bacc76611d3b19810ca31890ac29bbd37848c58c4d8f4b4e75da",
+  "penalty": 16830
+ },
+ {
+  "text": "x",
+  "version": 36,
+  "mask": 4,
+  "size": 161,
+  "digest": "572653b42485665d10b065148bcc04250ab83958b7ca0b87838c4325513eed92",
+  "penalty": 13452
+ },
+ {
+  "text": "x",
+  "version": 37,
+  "mask": 5,
+  "size": 165,
+  "digest": "28c44cd3d78952b5c0c5b721fec6992052eeb5cd2ebf1e86355e25ea3f99401d",
+  "penalty": 21052
+ },
+ {
+  "text": "x",
+  "version": 38,
+  "mask": 6,
+  "size": 169,
+  "digest": "8233d7464764125e4530515d297968d93868c3e715bf38d7125489827cd414d0",
+  "penalty": 19066
+ },
+ {
+  "text": "x",
+  "version": 39,
+  "mask": 7,
+  "size": 173,
+  "digest": "08ecdea2be05ef754431555d0eac59ee3699b84c69742441a04601f037bcd685",
+  "penalty": 20294
+ },
+ {
+  "text": "x",
+  "version": 40,
+  "mask": 0,
+  "size": 177,
+  "digest": "f6db5fd30115368defe5c8ad5a8fd933132832af8300ddda39617d168b83a367",
+  "penalty": 19021
+ }
+]

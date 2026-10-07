@@ -2,7 +2,7 @@
 // a held chat's model, thinking level and mode ride on its list row and its summary, read from
 // memory, and its sandbox and Claude login as its socket messages last said them; a session the
 // server doesn't hold has none. A throwaway PI_CODING_AGENT_DIR in the OS
-// temp dir; ~/.pi is never read or written. PORT=0 binds an ephemeral port.
+// temp dir; ~/.pi is never read or written. The app is built in-process (server/app.ts): no listener.
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -14,20 +14,19 @@ import { ClaudeLogins } from "../pi-config/extensions/claude-code/accounts.ts";
 const agentDir = realpathSync(mkdtempSync(join(tmpdir(), "sova-summary-chat-")));
 process.on("exit", () => rmSync(agentDir, { recursive: true, force: true }));
 process.env.PI_CODING_AGENT_DIR = agentDir;
-process.env.PORT = "0";
 const cwd = join(agentDir, "work");
 mkdirSync(cwd, { recursive: true });
 const sessionsDir = join(agentDir, "sessions", "--summary-chat--");
 mkdirSync(sessionsDir, { recursive: true });
 
-const { app, server } = await import("./index");
+const { buildApp } = await import("./app");
+const { app } = buildApp({ extensionEntriesOf: async () => [] });
 const { acquireChat, disposeAllChats, heldChatState } = await import("./chat-manager");
 const { setHostLogins } = await import("./claude-login-state");
 const { listGeneration } = await import("./list-generation");
 
 after(async () => {
   setHostLogins(null);
-  server.close();
   await disposeAllChats();
   rmSync(agentDir, { recursive: true, force: true });
 });

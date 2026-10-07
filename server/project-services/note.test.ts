@@ -7,9 +7,9 @@ import { after, before, test } from "node:test";
 import { parseDefinition } from "../../shared/project-contract";
 import { historyOf } from "../harness/pi/reader";
 import { stateView } from "../harness/state-view";
-import { staticServes, stopStaticServe } from "../preview-serve";
-import { DetachedDriver, parseMemoryPeak, systemdRunArgv } from "./drivers";
+import { parseMemoryPeak, systemdRunArgv } from "./drivers";
 import { ProjectEngine, type Caller } from "./engine";
+import { FakeHost } from "./fake-host";
 import { instanceNote, lastNoteDigest, NOTE_MESSAGE, noteDigest, registerInstanceNote, resultNote } from "./note";
 import { readRegistry } from "./store";
 import { renderResult } from "./tools";
@@ -20,12 +20,13 @@ import { approve, defHashOf } from "./trust";
  * registry, with no live state; delivered hidden at a turn's start only when it changed, again after a
  * compaction, and after single-instance results. Also the definition hash's treatment of `about`,
  * `start` and `test` (§app.project-services/trust), and the systemd memory peak (§app.project-services/test).
+ * On a host in memory (fake-host.ts); note.integration.test.ts starts a real static serve under the note.
  */
 
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-note-agent-"));
 
 const op: Caller = { kind: "operator" };
-const BASE = 21_000 + Math.floor(Math.random() * 9_000);
+const BASE = 21_000;
 const def = (about = "Test REPL: node client.mjs ${ports.repl.nrepl}") => ({
   version: 1,
   slots: { cap: 2 },
@@ -65,11 +66,10 @@ before(async () => {
   git(["init", "-q", "-b", "main"]);
   git(["add", "-A"]);
   git(["commit", "-q", "-m", "fixture"]);
-  engine = new ProjectEngine({ driver: new DetachedDriver(3_000), pollMs: 50 });
+  engine = new ProjectEngine(new FakeHost().deps());
 });
 
 after(async () => {
-  for (const s of staticServes()) await stopStaticServe(s.id);
   for (const i of readRegistry().instances) if (i.slot !== 0) await engine.run("teardown", { instance: i.id }, op);
   rmSync(parent, { recursive: true, force: true });
   rmSync(process.env.PI_CODING_AGENT_DIR!, { recursive: true, force: true });
@@ -108,8 +108,8 @@ test("a worktree's note: its own ports beside the main checkout's, abouts, data 
     ].join("\n"),
   );
   assert.match(instanceNote((await engine.noteFacts(checkout))!, true), /\nYour shell is sandboxed and cannot reach these ports: use project_verbs\.$/);
-  // Starting a service changes nothing in it.
-  const up = await engine.run("up", { instance: id, services: ["site"] }, op);
+  // Starting a service changes nothing in it (a process one here: the static serve is a real listener).
+  const up = await engine.run("up", { instance: id, services: ["api"] }, op);
   assert.equal(up.ok, true, up.error?.message);
   assert.equal(instanceNote((await engine.noteFacts(checkout))!, false), text);
 

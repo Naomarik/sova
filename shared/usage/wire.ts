@@ -61,9 +61,18 @@ export interface UsageProviderRow extends UsageSpend {
 }
 
 /** One model's row: the recorded `provider/model` (what the filter names), however it was priced. */
-export interface UsageModelRow extends UsageSpend, UsagePricing {
+export interface UsageModelRow extends UsageSpend, UsagePricing, UsageModelIdentity {
   provider: string;
   model: string;
+}
+
+/** How a by-model row was grouped (§app.insights/usage-model-rows): `model` is the model that
+    answered (a Claude catalog id); these say what was asked for. */
+export interface UsageModelIdentity {
+  /** The ids the calls asked for, when any differs from `model`. */
+  requested?: string[];
+  /** The calls asked for this other model and `model` answered (§app.claude-code-provider/model-identity). */
+  asked?: string;
 }
 
 export interface UsageKindRow extends UsageSpend {
@@ -170,7 +179,7 @@ export interface UsageToday {
 export type UsageOrigin = "main" | "oneshot" | "worker";
 
 /** One model × origin row of a session's spend. */
-export interface UsageSessionModelRow extends UsageSpend, UsagePricing {
+export interface UsageSessionModelRow extends UsageSpend, UsagePricing, UsageModelIdentity {
   origin: UsageOrigin;
   provider: string;
   model: string;

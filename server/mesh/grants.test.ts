@@ -1,161 +1,88 @@
 // Run: pnpm test -- server/mesh/grants.test.ts
-// Per-peer grants (§mesh.peers/grants) end to end in one process, like mesh.test.ts: the server on
-// an ephemeral port, a stub identity provider, a fake peer on loopback, and this server's own peer
-// listener on 127.0.0.1, so a request makes the whole trip through the identity check and then the
-// grant check. Also: every route a peer can reach has a class (the completeness check).
+// Per-peer grants (§mesh.peers/grants), in-process: this host's app built with nothing started, the
+// peer listener's own gate (PeerGate, with the runtime's peerByNode and allows) fed in-process
+// connections, a stub identity, and the other peers answered over the test wire. Every route a peer
+// can reach has a class (the completeness check). Sockets on the real peer listener, a lowered grant
+// cutting one, and a relayed browser over real hops: grants.integration.test.ts.
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { createServer, request, type IncomingMessage, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, test } from "node:test";
-import { WebSocket } from "ws";
 import type { MeshAccessView, MeshInfoView, MeshSessionsView } from "../../shared/mesh-access";
+import { testApp } from "./app-test-fixtures";
+import { inProcessPeerGate } from "./peer-gate-test-fixtures";
+import { fakeWire } from "./peer-wire-test-fixtures";
 
-const tmp = mkdtempSync(join(tmpdir(), "sova-grants-test-"));
+const tmp = mkdtempSync(join(tmpdir(), "sova-grants-unit-"));
 process.env.PI_CODING_AGENT_DIR = join(tmp, "agent");
-process.env.PORT = "0";
-process.env.SOVA_PEER_HOST = "127.0.0.1";
-process.env.SOVA_PEER_PORT = "0";
 mkdirSync(join(tmp, "agent", "sessions", "live"), { recursive: true });
 
 const { setIdentity } = await import("./localapi");
-/** What whois answers for the next NEW connection to the peer listener. */
-let whoisNode: string | null = null;
 setIdentity({
   status: async () => ({
     backendState: "Running",
     self: { nodeId: "nA", name: "a.lab", hostName: "a", os: "linux", online: true, tags: [], login: "me", addresses: ["127.0.0.1"] },
     peers: [],
   }),
-  whois: async () => (whoisNode ? { nodeId: whoisNode, name: "x", tags: [], login: "me" } : null),
+  whois: async () => null,
 });
 
-const { app, server } = await import("../index");
-const { listenerInfo, mayShareWith, NotShared, peerFetch, stopMesh } = await import("./index");
-const { accessFile, classifyRequest, classifyUpgrade, clearDenied } = await import("./access");
+const wire = fakeWire();
+const app = await testApp();
+const { mayShareWith, NotShared, peerByNode, peerFetch, stopMesh } = await import("./index");
+const { accessFile, allows, classifyRequest, classifyUpgrade, clearDenied } = await import("./access");
 const { clearProbes, ownProtocol } = await import("./hello");
 const { clearPeerReach } = await import("./proxy");
-const { AUTH_COOKIE, sovaToken } = await import("../auth");
-const AUTH = { Cookie: `${AUTH_COOKIE}=${sovaToken()}` };
-const mainFetch = (url: string, init: RequestInit = {}) => fetch(url, { ...init, headers: { ...AUTH, ...(init.headers as Record<string, string> | undefined) } });
+// The mesh's link transfers probe tar when it starts: answered here, so no tar runs.
+(await import("./links-transfer")).setTarAvailableForTest(true);
 
-let base = "";
+/** Who the next call on the peer gate comes from: a tailnet node, as whois would say, or nobody. */
+let whoisNode: string | null = null;
+const peer = inProcessPeerGate(
+  { fetch: app.fetch, upgrade: (_req, socket) => socket.destroy(), allows: (p, need) => allows(p.nodeId, need) },
+  () => (whoisNode ? peerByNode(whoisNode) : null),
+);
+const peerCall = peer.call;
 
-// ---- the fake peer: its hello and session list answer as `fakeMode` says; /api/echo reports the
-// headers a relayed request carried.
-let fake: Server;
-let fakePort = 0;
+// ---- the other peers, in-process: hello and session list answer as `fakeMode` says; /api/echo
+// reports the headers a relayed request carried.
+const FAKE = "http://127.0.0.1:47021";
 let fakeMode: "open" | "denied" | "sessions-denied" = "open";
-
-before(async () => {
-  await new Promise<void>((r) => (server.listening ? r() : server.once("listening", r)));
-  base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
-  fake = createServer((req: IncomingMessage, res) => {
-    const url = new URL(req.url ?? "/", "http://x");
-    const json = (status: number, body: unknown, headers: Record<string, string> = {}) => {
-      res.writeHead(status, { "Content-Type": "application/json", ...headers });
-      res.end(JSON.stringify(body));
-    };
-    const denied = () => json(403, { error: "not shared with this host" }, { "X-Sova-Mesh": "denied" });
-    if (url.pathname === "/api/peer/hello") {
-      if (fakeMode === "denied") return denied();
-      return json(200, { mesh: 1, id: "f", label: "F", hostname: "f", version: "0", protocol: ownProtocol(), pi: "x", now: Date.now() });
-    }
-    if (url.pathname === "/api/sessions") return fakeMode === "open" ? json(200, [{ id: "s1", path: "/far/s1.jsonl" }]) : denied();
-    const h = req.headers;
-    json(200, {
-      fwd: h["x-forwarded-host"] ?? null,
-      relayed: h["x-sova-relayed"] ?? null,
-      origin: h.origin ?? null,
-      referer: h.referer ?? null,
-      ua: h["user-agent"] ?? null,
-      lang: h["accept-language"] ?? null,
-      xff: h["x-forwarded-for"] ?? null,
-    });
-  });
-  await new Promise<void>((r) => fake.listen(0, "127.0.0.1", r));
-  fakePort = (fake.address() as { port: number }).port;
+const json = (status: number, body: unknown, headers: Record<string, string> = {}) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json", ...headers } });
+wire.serve(FAKE, (req) => {
+  const url = new URL(req.url);
+  const denied = () => json(403, { error: "not shared with this host" }, { "X-Sova-Mesh": "denied" });
+  if (url.pathname === "/api/peer/hello") {
+    if (fakeMode === "denied") return denied();
+    return json(200, { mesh: 1, id: "f", label: "F", hostname: "f", version: "0", protocol: ownProtocol(), pi: "x", now: Date.now() });
+  }
+  if (url.pathname === "/api/sessions") return fakeMode === "open" ? json(200, [{ id: "s1", path: "/far/s1.jsonl" }]) : denied();
+  const h = req.headers;
+  return json(200, { fwd: h.get("x-forwarded-host"), relayed: h.get("x-sova-relayed"), origin: h.get("origin"), referer: h.get("referer"), ua: h.get("user-agent"), lang: h.get("accept-language"), xff: h.get("x-forwarded-for") });
 });
 
-after(async () => {
+after(() => {
   stopMesh();
-  server.close();
-  server.closeAllConnections();
-  fake.close();
-  fake.closeAllConnections();
+  wire.restore();
   rmSync(tmp, { recursive: true, force: true });
 });
 
 const getJson = async <T>(path: string, headers: Record<string, string> = {}): Promise<[number, T]> => {
-  const res = await mainFetch(`${base}${path}`, { headers });
+  const res = await app.request(path, { headers });
   return [res.status, (await res.json()) as T];
 };
 const putJson = async <T>(path: string, body: unknown): Promise<[number, T]> => {
-  const res = await mainFetch(`${base}${path}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const res = await app.request(path, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   return [res.status, (await res.json()) as T];
 };
 
-/** A request on a NEW connection to the peer listener (whois runs again). */
-function peerCall(method: string, path: string, body?: string): Promise<{ status: number; marker: string | undefined; body: string }> {
-  const info = listenerInfo()!;
-  return new Promise((resolve, reject) => {
-    const req = request({ host: "127.0.0.1", port: info.port, path, method, agent: false, headers: body ? { "content-type": "application/json" } : {} }, (res) => {
-      let text = "";
-      res.on("data", (c) => (text += c));
-      res.on("end", () => resolve({ status: res.statusCode!, marker: res.headers["x-sova-mesh"] as string | undefined, body: text }));
-    });
-    req.on("error", reject);
-    req.setTimeout(8000, () => req.destroy(new Error(`no answer within 8 s: ${path}`)));
-    req.end(body);
-  });
-}
-
-/** An upgrade on the peer listener: its HTTP refusal (status + marker), or "open". */
-function peerSocket(path: string): Promise<{ open: true; ws: WebSocket; closed: Promise<number> } | { open: false; status: number; marker?: string }> {
-  return new Promise((resolve) => {
-    const ws = new WebSocket(`ws://127.0.0.1:${listenerInfo()!.port}${path}`);
-    const closed = new Promise<number>((r) => ws.on("close", (c) => r(c)));
-    ws.once("open", () => resolve({ open: true, ws, closed }));
-    ws.once("unexpected-response", (_req, res) => {
-      resolve({ open: false, status: res.statusCode!, marker: res.headers["x-sova-mesh"] as string | undefined });
-      ws.terminate();
-    });
-    ws.on("error", () => {});
-  });
-}
-
-async function within<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    return await Promise.race([p, new Promise<never>((_, j) => (timer = setTimeout(() => j(new Error(`timed out after ${ms} ms: ${what}`)), ms)))]);
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-function watchableSession(): string {
-  const dir = join(tmp, "agent", "sessions", "--grants--");
-  mkdirSync(dir, { recursive: true });
-  const id = "0197a000-0000-7000-8000-000000000002";
-  const file = join(dir, `2026-01-01T00-00-00-000Z_${id}.jsonl`);
-  writeFileSync(file, `${JSON.stringify({ type: "session", version: 3, id, timestamp: "2026-01-01T00:00:00.000Z", cwd: tmp })}\n`);
-  return file;
-}
-
-const grant = (peer: string, g: unknown) => putJson<MeshAccessView>("/api/mesh/access", { peer, grant: g });
+const grant = (peerId: string, g: unknown) => putJson<MeshAccessView>("/api/mesh/access", { peer: peerId, grant: g });
 const accessDoc = () => JSON.parse(readFileSync(accessFile(), "utf8")) as { version: 1; peers: Record<string, { preset: string; logins?: string[] }> };
-const waitFor = async (cond: () => boolean, ms = 3000) => {
-  const end = Date.now() + ms;
-  while (!cond()) {
-    if (Date.now() > end) throw new Error("timed out");
-    await new Promise((r) => setTimeout(r, 10));
-  }
-};
 
 const PEERS = () => [
-  { id: "b", label: "B", nodeId: "nB", name: "127.0.0.1", url: `http://127.0.0.1:${fakePort}` },
-  { id: "f", label: "F", nodeId: "nF", name: "127.0.0.1", url: `http://127.0.0.1:${fakePort}` },
+  { id: "b", label: "B", nodeId: "nB", name: "127.0.0.1", url: FAKE },
+  { id: "f", label: "F", nodeId: "nF", name: "127.0.0.1", url: FAKE },
 ];
 
 // ---- completeness: no route a peer reaches is left to the default ------------------------------
@@ -189,11 +116,10 @@ describe("classification", () => {
   });
 });
 
-describe("grants on the peer listener", () => {
+describe("grants on the peer gate", () => {
   before(async () => {
     const [s] = await putJson("/api/mesh/peers", { peers: PEERS() });
     assert.equal(s, 200);
-    await waitFor(() => (listenerInfo()?.addresses.length ?? 0) > 0);
   });
 
   test("no mesh-access.json: a peers PUT without grants writes none and every peer has everything", async () => {
@@ -224,7 +150,7 @@ describe("grants on the peer listener", () => {
     assert.equal((await putJson("/api/mesh/peers", { peers: [...PEERS(), { id: "c", nodeId: "nC", name: "127.0.0.1" }], grants: { c: "root" } }))[0], 400);
   });
 
-  test("presence: hello and details, nothing else; a denial is X-Sova-Mesh: denied, never refused", async () => {
+  test("presence: hello and details, nothing else; a denial is X-Sova-Mesh: denied, never refused (sockets: the integration file)", async () => {
     assert.equal((await grant("b", { preset: "presence" }))[0], 200);
     whoisNode = "nB";
     assert.equal((await peerCall("GET", "/api/peer/hello")).status, 200);
@@ -242,8 +168,6 @@ describe("grants on the peer listener", () => {
       assert.equal(r.status, 403, `${m} ${p}`);
       assert.equal(r.marker, "denied", `${m} ${p}`);
     }
-    const ws = await peerSocket("/ws/watch?feed=sessions");
-    assert.deepEqual(ws.open ? "open" : [ws.status, ws.marker], [403, "denied"]);
     // A node that is not a peer is still refused, not denied.
     whoisNode = "nStranger";
     assert.equal((await peerCall("GET", "/api/peer/hello")).marker, "refused");
@@ -257,7 +181,7 @@ describe("grants on the peer listener", () => {
     assert.equal(r.marker, "denied");
   });
 
-  test("sessions: drive sessions and the llm feed, but no settings write, sync or pool", async () => {
+  test("sessions: drive sessions, but no settings write, sync or pool (the llm feed: the integration file)", async () => {
     await grant("b", { preset: "sessions" });
     whoisNode = "nB";
     assert.equal((await peerCall("GET", "/api/sessions")).status, 200);
@@ -266,9 +190,6 @@ describe("grants on the peer listener", () => {
     assert.equal((await peerCall("GET", "/api/peer/sync/manifest")).marker, "denied");
     assert.equal((await peerCall("POST", "/api/peer/claude-pool/doc", "{}")).marker, "denied");
     assert.equal((await peerCall("POST", "/api/peer/rename", "{}")).marker, "denied");
-    const llm = await peerSocket("/ws/watch?feed=llm");
-    assert.equal(llm.open, true);
-    if (llm.open) llm.ws.terminate();
   });
 
   test("switches on top of a preset", async () => {
@@ -276,21 +197,6 @@ describe("grants on the peer listener", () => {
     whoisNode = "nB";
     assert.notEqual((await peerCall("GET", "/api/peer/sync/manifest")).marker, "denied");
     assert.equal((await peerCall("GET", "/api/peer/sync/extensions")).marker, "denied");
-  });
-
-  test("lowering a grant cuts the peer's open socket at once", async () => {
-    await grant("b", { preset: "full" });
-    const file = watchableSession();
-    whoisNode = "nB";
-    const ws = await peerSocket(`/ws/watch?path=${encodeURIComponent(file)}`);
-    assert.equal(ws.open, true);
-    if (!ws.open) return;
-    // Still open under a grant that keeps sessions.
-    await grant("b", { preset: "sessions" });
-    await new Promise((r) => setTimeout(r, 100));
-    assert.equal(ws.ws.readyState, WebSocket.OPEN);
-    await grant("b", { preset: "presence" });
-    await within(ws.closed, 2000, "the socket closes when sessions is taken away");
   });
 
   test("a hand edit that lowers a grant is enforced on the next call", async () => {
@@ -322,7 +228,9 @@ describe("grants on the peer listener", () => {
     assert.equal((await peerCall("GET", "/api/mesh/access")).status, 404);
     assert.equal((await peerCall("PUT", "/api/mesh/access", JSON.stringify({ peer: "b", grant: { preset: "full" } }))).status, 404);
     assert.equal((await getJson("/api/mesh/access", { "X-Sova-Relayed": "1" }))[0], 404);
-    assert.equal((await mainFetch(`${base}/peer/b/api/mesh/access`)).status, 404);
+    const sent = wire.fetches;
+    assert.equal((await app.request("/peer/b/api/mesh/access")).status, 404);
+    assert.equal(wire.fetches, sent, "never forwarded");
     assert.equal((await getJson("/api/mesh/access"))[0], 200);
     assert.equal((await grant("nobody", { preset: "full" }))[0], 404);
     assert.equal((await grant("b", { preset: "everything" }))[0], 400);
@@ -376,12 +284,12 @@ describe("this host's own calls", () => {
 
   test("a relayed browser request to a peer this host restricts carries nothing of this host or the browser", async () => {
     clearPeerReach();
-    const headers = { Origin: base, Referer: `${base}/`, "User-Agent": "sova-test-agent", "Accept-Language": "en-GB", "X-Forwarded-For": "198.51.100.7" };
-    const full = (await (await mainFetch(`${base}/peer/b/api/echo`, { headers })).json()) as Record<string, string | null>;
-    assert.equal(full.fwd, new URL(base).host);
+    const headers = { Host: "a.lab:4800", Origin: "http://a.lab:4800", Referer: "http://a.lab:4800/", "User-Agent": "sova-test-agent", "Accept-Language": "en-GB", "X-Forwarded-For": "198.51.100.7" };
+    const full = (await (await app.request("/peer/b/api/echo", { headers })).json()) as Record<string, string | null>;
+    assert.equal(full.fwd, "a.lab:4800");
     assert.equal(full.ua, "sova-test-agent");
     await grant("b", { preset: "sessions" });
-    const scrubbed = (await (await mainFetch(`${base}/peer/b/api/echo`, { headers })).json()) as Record<string, string | null>;
+    const scrubbed = (await (await app.request("/peer/b/api/echo", { headers })).json()) as Record<string, string | null>;
     assert.equal(scrubbed.fwd, "peer");
     assert.equal(scrubbed.relayed, "1");
     for (const k of ["origin", "referer", "lang", "xff"]) assert.equal(scrubbed[k], null, k);

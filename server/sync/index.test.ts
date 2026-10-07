@@ -84,7 +84,8 @@ function host(id: string, others: Map<string, FakeHost>): FakeHost {
   return h;
 }
 
-const until = async (cond: () => boolean, ms = 3000) => {
+// Poll with a generous hang guard: the hosts' own watchers and hooks decide when.
+const until = async (cond: () => boolean, ms = 15_000) => {
   const end = Date.now() + ms;
   while (!cond() && Date.now() < end) await new Promise((r) => setTimeout(r, 20));
   return cond();
@@ -183,7 +184,11 @@ test("two hosts over the real routes: start pulls, a change propagates, a logout
     assert.deepEqual(b.rt.credentials!.manifest().entries, {});
     assert.equal(b.status().find((r) => r.category === "logins")!.state, "off");
     writeAuth(a, { ...auth(a), fresh: { type: "api_key", key: "sk-fresh" } });
-    await new Promise((r) => setTimeout(r, 1200));
+    // Run the exchange itself rather than waiting for it: A has seen its change, and both have
+    // synced since; a B that ignored its switch would have pulled the key here.
+    await a.rt.credentials!.observe("pi");
+    await a.rt.credentials!.syncAll();
+    await b.rt.credentials!.syncAll();
     assert.equal(auth(b).fresh, undefined, "B took nothing while its switch is off");
     // Switched back on: the settings hook reconciles at once.
     b.settings.sync.logins = true;
@@ -250,7 +255,7 @@ test("login conflicts over the browser routes: listed without secrets, settled b
   try {
     const zai = async (h: FakeHost) => (await logins(h)).entries.find((e) => e.key === "pi:zai");
     let row = await zai(a);
-    for (const end = Date.now() + 3000; !row?.conflictWith && Date.now() < end; row = await zai(a)) await new Promise((r) => setTimeout(r, 20));
+    for (const end = Date.now() + 15_000; !row?.conflictWith && Date.now() < end; row = await zai(a)) await new Promise((r) => setTimeout(r, 20));
     assert.deepEqual(row?.conflictWith, ["b"], "A lists the conflict with B");
     assert.equal(row?.store, "pi");
     assert.equal(row?.state, "live");
@@ -313,7 +318,7 @@ test("api-keys mode over the real routes: set in settings or pinned by env; OAut
   try {
     for (const h of [b, c]) {
       assert.equal(await until(() => existsSync(join(h.agentDir, "auth.json")) && !!auth(h).zai), true, `${h.id} pulled the API key`);
-      await new Promise((r) => setTimeout(r, 300));
+      await h.rt.credentials!.syncAll(); // a full exchange more: had OAuth been taken, it would be here now
       assert.deepEqual(auth(h), { zai: { type: "api_key", key: "sk-a" } }, `${h.id} holds no OAuth login`);
     }
     // C's own OAuth login: unlisted, unclaimable, and never offered to A.
@@ -324,7 +329,9 @@ test("api-keys mode over the real routes: set in settings or pinned by env; OAut
     const claim = await c.app.request("/api/mesh/logins/claim", { method: "POST", body: JSON.stringify({ key: "pi:anthropic" }), headers: json });
     assert.equal(claim.status, 409);
     assert.match(((await claim.json()) as { error: string }).error, /API keys only/);
-    await new Promise((r) => setTimeout(r, 1200));
+    // The exchange itself, rather than a wait: C pushes and A pulls; neither moves C's OAuth login.
+    await c.rt.credentials!.syncAll();
+    await a.rt.credentials!.syncAll();
     assert.equal(auth(a).anthropic, undefined, "C's OAuth login stayed on C");
     // The pin lifted and settings back to "all": the next exchange brings the OAuth login over.
     process.env.SOVA_SYNC_LOGIN_KINDS = "";

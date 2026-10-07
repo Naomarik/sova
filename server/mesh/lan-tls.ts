@@ -55,8 +55,9 @@ export const HANDSHAKE_MS = 5_000;
 
 const VERSIONS = { minVersion: "TLSv1.3", maxVersion: "TLSv1.3" } as const;
 
-/** tls.createServer options for a relay: a client certificate is asked for, and judged by its pin alone. */
-export function relayServerOptions(id: LanIdentity): TlsOptions {
+/** tls.createServer options for a relay: a client certificate is asked for, and judged by its pin
+    alone. `handshakeMs`: tests shorten the handshake deadline. */
+export function relayServerOptions(id: LanIdentity, handshakeMs = HANDSHAKE_MS): TlsOptions {
   return {
     key: id.keyPem,
     cert: id.certPem,
@@ -65,7 +66,7 @@ export function relayServerOptions(id: LanIdentity): TlsOptions {
     ...VERSIONS,
     ALPNProtocols: [ALPN_ANSWER, ALPN_ASK],
     secureOptions: crypto.constants.SSL_OP_NO_TICKET,
-    handshakeTimeout: HANDSHAKE_MS,
+    handshakeTimeout: handshakeMs,
   };
 }
 

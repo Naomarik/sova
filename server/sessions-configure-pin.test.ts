@@ -21,12 +21,11 @@ process.on("exit", () => rmSync(cwd, { recursive: true, force: true }));
 writeFileSync(join(dir, "settings.json"), JSON.stringify({ extensions: [resolve(here, "../pi-config/extensions/mode")] }));
 writeFileSync(join(dir, "mode.json"), JSON.stringify({ version: 1, mode: "normal", strict: false, minorModes: [] }));
 process.env.PI_CODING_AGENT_DIR = dir;
-process.env.PORT = "0";
-const { app, server } = await import("./index");
+const { buildApp } = await import("./app");
+const { app } = buildApp({ extensionEntriesOf: async () => [] });
 const { acquireChat, disposeAllChats } = await import("./chat-manager");
 after(async () => {
   await disposeAllChats();
-  await new Promise<void>((res, rej) => server.close((err) => (err ? rej(err) : res())));
   rmSync(dir, { recursive: true, force: true });
   rmSync(cwd, { recursive: true, force: true });
 });

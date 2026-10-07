@@ -81,7 +81,12 @@ describe("the model", () => {
     const src = await profileSources(null);
     assert.deepEqual(src.builtins.map((p) => p.key), ["sova:default", "sova:mini-overseer", "sova:reviewer"]);
     assert.deepEqual(src.problems, []);
-    assert.ok(!JSON.stringify(src).toLowerCase().includes("merge"), "no Merge captain anywhere in what ships");
+    // Profile content only (ids, names, text): the file paths are left out, so the checkout's folder
+    // name (a worktree "…-merged") can neither trip nor satisfy it.
+    const paths = new Set(["file", "yoursFile"]);
+    const content = JSON.stringify(src, (k, v) => (paths.has(k) || (k === "project" && typeof v === "string") ? undefined : v));
+    for (const p of src.builtins) assert.ok(content.includes(`"label":${JSON.stringify(p.label)}`), p.id);
+    assert.ok(!content.toLowerCase().includes("merge"), "no Merge captain anywhere in what ships");
   });
 
   test("removals exclude exact names, and the * groups by every name they hold", () => {

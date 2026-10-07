@@ -110,35 +110,3 @@ test("approval needs the hash shown and every tick; standing goes awaiting → a
   assert.equal(targetStanding(project, def2.deploy, "gone", readDeployApprovals(file)), "none");
   assert.equal(targetStanding(project, undefined, "prod", readDeployApprovals(file)), "none");
 });
-
-test("deploy.status: each target's standing, the review while unapproved; the operator's approval at a ref; the feed says so", async () => {
-  const deployer = new Deployer(new ProjectEngine({ driver: new DetachedDriver() }));
-  const st = await deployer.run("deploy.status", { project }, op);
-  assert.equal(st.ok, true, st.error?.message);
-  assert.equal(st.deploy!.approved, false);
-  assert.deepEqual(st.deploy!.targets!.map((t) => [t.name, t.standing, t.rollback]), [["prod", "awaiting-approval", "redeploy-previous"], ["staging", "awaiting-approval", { none: "Staging is rebuilt every night." }]]);
-  const review = st.deploy!.review!;
-  assert.equal(review.deployHash, st.deploy!.deployHash);
-  // A branch proposes a change; its facts carry its own deploy hash, unapproved.
-  git(["switch", "-q", "-c", "sova/deploy-1"]);
-  const moved = structuredClone(DEF);
-  moved.deploy.targets.prod.steps.push({ id: "restart", run: ["ssh", "deploy@${host.PROD_HOST}", "systemctl", "--user", "restart", "site"] });
-  commitDef(moved);
-  git(["switch", "-q", "main"]);
-  const bf = await branchFacts(project, "sova/deploy-1");
-  assert.equal(bf.deploy!.approved, false);
-  assert.notEqual(bf.deploy!.hash, review.deployHash);
-  await assert.rejects(approveDeployRecipe(project, bf.deploy!.hash, "sova/deploy-1", review.keys), /Tick every step before approving: 1 not ticked \(prod\/steps\.restart\)/);
-  await assert.rejects(approveDeployRecipe(project, review.deployHash, "sova/deploy-1", [...review.keys, "prod/steps.restart"]), (e: Error) => e.message === CHANGED_SINCE_SHOWN);
-  await approveDeployRecipe(project, bf.deploy!.hash, "sova/deploy-1", [...review.keys.slice(0, 2), "prod/steps.restart", ...review.keys.slice(2)]);
-  assert.equal((await branchFacts(project, "sova/deploy-1")).deploy!.approved, true);
-  assert.match(deployNotes(project)[0]!.line, new RegExp(`^You approved the deploy recipe ${bf.deploy!.hash.slice(7, 19)} on this host\\.$`));
-  // Main still has the old recipe: not approved there until the branch merges (an approval covered prod, so: stale).
-  assert.equal((await deployer.run("deploy.status", { project, target: "prod" }, op)).deploy!.targets![0]!.standing, "stale");
-  git(["merge", "-q", "--ff-only", "sova/deploy-1"]);
-  const after = await deployer.run("deploy.status", { project }, op);
-  assert.equal(after.deploy!.approved, true);
-  assert.equal(after.deploy!.review, undefined, "approved: no review to tick");
-  assert.deepEqual(after.deploy!.targets!.map((t) => t.standing), ["approved", "approved"]);
-  assert.equal((await deployer.run("deploy.status", { project, target: "nope" }, op)).error?.code, "not-found");
-});

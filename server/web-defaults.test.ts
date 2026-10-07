@@ -31,6 +31,14 @@ test("saveDefaults merges per field instead of clobbering", () => {
   assert.deepEqual(loadDefaults(file), { model: "openai/gpt-6", thinking: "high" });
 });
 
+test("a stored old Claude Code id reads as its catalog model (§app.claude-code-provider/legacy-ids)", () => {
+  const old = join(agentDir, "old-defaults.json");
+  writeFileSync(old, JSON.stringify({ version: 1, model: "claude-code-cli/opus[1m]", thinking: "high" }));
+  assert.deepEqual(loadDefaults(old), { model: "claude-code-cli/claude-opus-5-5", thinking: "high" });
+  writeFileSync(old, JSON.stringify({ version: 1, model: "anthropic/opus" }));
+  assert.deepEqual(loadDefaults(old), { model: "anthropic/opus" }, "another provider's id is its own");
+});
+
 test("empty or non-string patch fields are dropped, keeping the stored default", () => {
   saveDefaults({ model: "", thinking: undefined }, file);
   assert.deepEqual(loadDefaults(file), { model: "openai/gpt-6", thinking: "high" });

@@ -2,7 +2,7 @@
 // need to know about them. No fetching here — the transcript carries `explain`, the app polls the store.
 
 import type { ExplanationInfo, ReportInfo, TranscriptItem } from "../../shared/protocol";
-import { relativeTime, shortModel } from "./format";
+import { modelLabel, relativeTime } from "./format";
 
 /** Inner width the standalone page is laid out at before a thumbnail scales it down. */
 export const THUMB_WIDTH = 1280;
@@ -81,7 +81,7 @@ export function appendItems(list: readonly TranscriptItem[], incoming: readonly 
  * Structural parameter, not `ExplanationInfo`: `model` is the newest field on that interface, and
  * this keeps the frontend compiling against a protocol that doesn't carry it yet.
  */
-export const explainModel = (info: { model?: string }): string | null => shortModel(info.model);
+export const explainModel = (info: { model?: string }): string | null => modelLabel(info.model);
 
 /** A card's caption: "2h ago · glm-5.3", the model dropped when the entry doesn't name one. */
 export const explainCaption = (info: { createdAt: string; model?: string }, now: number): string =>

@@ -9,7 +9,6 @@
 // cheap to test here: every case below refuses, so `accept` is never reached and no runtime is
 // ever opened. The 200 path is deliberately not attempted — it would have to prompt a model.
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -30,9 +29,9 @@ const { setArchived } = await import("./archived-sessions");
 const { canonicalPath } = await import("./paths");
 
 // readLive only trusts a record whose pid is alive, like archived-sessions.test.ts fakes it.
-const sleeper = spawn("sleep", ["60"], { stdio: "ignore" });
+// The runner that started this file, alive for all of it, stands in for another live process.
+const otherPid = process.ppid;
 after(() => {
-  sleeper.kill();
   rmSync(agentDir, { recursive: true, force: true });
 });
 
@@ -67,8 +66,8 @@ test("the real deps refuse a batch whose members are TUI-live, archived or gone 
   assignSession(ID_GONE, group.group.id);
   setArchived(ID_ARCHIVED, true);
   writeFileSync(
-    join(liveDir, `p${sleeper.pid}-wiring.json`),
-    JSON.stringify({ session: { pid: sleeper.pid, sessionFile: live, mode: "tui" }, presence: { status: "idle" } }),
+    join(liveDir, `p${otherPid}-wiring.json`),
+    JSON.stringify({ session: { pid: otherPid, sessionFile: live, mode: "tui" }, presence: { status: "idle" } }),
   );
 
   // realBatchDeps: the group store for membership, the listing for id→path, readLive, isArchived.

@@ -29,6 +29,14 @@ function open(where: { workspaceDir: string; stateDir: string }, more: Partial<O
 }
 
 const tick = (ms = 0) => new Promise((r) => setTimeout(r, ms));
+/** Poll until `ok` holds, for what runs on the host's own real timers; the guard only stops a hang. */
+async function until(ok: () => boolean, what: string, guardMs = 30_000): Promise<void> {
+  const end = Date.now() + guardMs;
+  while (!ok()) {
+    if (Date.now() > end) assert.fail(`still waiting after ${guardMs} ms: ${what}`);
+    await tick(5);
+  }
+}
 const operator = { by: "operator" };
 
 describe("org host", () => {
@@ -91,6 +99,52 @@ describe("org host", () => {
     await host.close();
   });
 
+  test("a big org opens in chunks: loading and resume each give the event loop a turn every `chunk` sessions (C09; timed in bench.integration)", async () => {
+    const at = place();
+    const host = await open(at);
+    for (let i = 0; i < 60; i++) await host.start(`p/${i}`, "host-probe", {}, operator);
+    await host.close();
+    // Counts the event loop's turns while open runs: one per setImmediate the boot yields with.
+    let turns = 0;
+    let counting = true;
+    const count = () => {
+      if (!counting) return;
+      turns++;
+      setImmediate(count);
+    };
+    setImmediate(count);
+    const again = await open(at, { chunk: 10 });
+    counting = false;
+    assert.equal(again.sessions().length, 60);
+    assert.ok(turns >= 12, `${turns} turns: 6 loading chunks and 6 resume chunks each yield`);
+    await again.close();
+  });
+
+  test("idle waits for the effects and invocation reports in flight, not for a run still going", async () => {
+    const at = place();
+    const host = await open(at);
+    let answer: () => void = () => {};
+    host.effects.register("write", () => new Promise((r) => (answer = () => r(null))));
+    let report: () => void = () => {};
+    host.invocations.register("sova/look", { start: (_inv, rep) => void (report = () => rep("finished")), stop: () => {} });
+    await host.start("p/1", "host-probe", {}, operator);
+    await host.start("p/2", "host-probe", {}, operator);
+    await host.act("p/1", "go", {}, operator);
+    await host.act("p/2", "look", {}, operator);
+    let idle = false;
+    const waited = host.idle().then(() => (idle = true));
+    await tick();
+    assert.equal(idle, false, "the effect's handler is still out");
+    answer();
+    await waited;
+    assert.deepEqual(host.configuration("p/1"), ["top", "idle"], "its answer stepped before idle resolved");
+    assert.deepEqual(host.configuration("p/2"), ["top", "looking"], "a look still running is not waited for");
+    report();
+    await host.idle();
+    assert.deepEqual(host.configuration("p/2"), ["top", "idle"], "the report's step happened before idle resolved");
+    await host.close();
+  });
+
   test("an effect left pending at a crash runs again at open, with the same key", async () => {
     const at = place();
     const host = await open(at);
@@ -105,7 +159,7 @@ describe("org host", () => {
       seen.push(e.key);
       return null;
     });
-    await tick(20);
+    await again.idle();
     assert.deepEqual(seen, [key]);
     assert.deepEqual(again.configuration("p/1"), ["top", "idle"]);
     await again.close();
@@ -127,7 +181,9 @@ describe("org host", () => {
   test("an unattended overseer act waits in a hold; at its end it is stamped afresh and goes ahead", async () => {
     const at = place();
     const stamps: unknown[] = [];
+    let now = 1_000_000;
     const host = await open(at, {
+      clock: () => now,
       stamp: (sid, event, _payload, who) => {
         stamps.push([sid, event, who]);
         return { by: "overseer", attended: false };
@@ -141,7 +197,8 @@ describe("org host", () => {
     assert.deepEqual(r.held, host.holds()[0]);
     assert.deepEqual(host.holds().map((h) => h.id), ["gather/start#0"]);
     assert.deepEqual(host.configuration("p/1"), ["top", "idle"]);
-    await tick(120);
+    now += 40;
+    host.fireDue();
     assert.deepEqual(stamps, [["p/1", "gather/start", { by: "overseer", overseerId: "po1", projectId: "prj1" }]]);
     assert.deepEqual(host.configuration("p/1"), ["top", "gathering"]);
     assert.deepEqual(host.holds(), []);
@@ -168,7 +225,7 @@ describe("org host", () => {
     });
     await host.start("p/1", "host-probe", {}, operator);
     await host.act("p/1", "look", {}, operator);
-    await tick(30);
+    await until(() => host.log.rows({ session: "p/1" }).some((r) => r.event === "look/finished"), "the report's step");
     const row = host.log.rows({ session: "p/1" }).find((r) => r.event === "look/finished");
     assert.deepEqual({ applied: (row?.envelope as Record<string, unknown>)["applied"], refused: (row?.envelope as Record<string, unknown>)["refused"] }, { applied: 2, refused: [{ field: "role" }] });
     await host.close();
@@ -189,7 +246,7 @@ describe("org host", () => {
     await host.act("p/1", "look", {}, operator);
     assert.equal(runs.length, 1);
     assert.match(runs[0]!, /^p\/1#look#\d+$/);
-    await tick(30);
+    await until(() => host.configuration("p/1")?.[1] === "idle", "the report's step");
     assert.deepEqual(host.configuration("p/1"), ["top", "idle"]);
     await host.close();
   });
@@ -215,7 +272,7 @@ describe("org host", () => {
     await host.start("p/1", "host-probe", {}, operator);
     await host.act("p/1", "wait", {}, operator);
     assert.deepEqual(host.configuration("p/1"), ["top", "timed"]);
-    await tick(120);
+    await until(() => host.configuration("p/1")?.[1] === "idle", "the host's own timer");
     assert.deepEqual(host.configuration("p/1"), ["top", "idle"]);
     await host.close();
   });
@@ -341,12 +398,13 @@ describe("org host", () => {
 
   test("a timer that came due while the host was closed fires during open, before any timer tick", async () => {
     const at = place();
-    const host = await open(at);
+    let now = 1_000_000;
+    const host = await open(at, { clock: () => now });
     await host.start("p/1", "host-probe", {}, operator);
     await host.act("p/1", "wait", {}, operator);
     await host.close();
-    await tick(80);
-    const again = await open(at);
+    now += 80;
+    const again = await open(at, { clock: () => now });
     assert.deepEqual(again.configuration("p/1"), ["top", "idle"], "fired inside open");
     assert.equal(again.log.rows({ session: "p/1" }).at(-1)?.event, "tick");
     await again.close();
@@ -398,13 +456,14 @@ describe("org host", () => {
 
   test("one session's resume that throws never aborts the org's boot: it is a problem, the rest resume", async () => {
     const at = place();
-    const host = await open(at);
+    let now = 1_000_000;
+    const host = await open(at, { clock: () => now });
     await host.start("p/1", "host-probe", { pingOnResume: "nobody/x" }, operator);
     await host.start("p/2", "host-probe", {}, operator);
     await host.act("p/2", "wait", {}, operator);
     await host.close();
-    await tick(80);
-    const again = await open(at);
+    now += 80;
+    const again = await open(at, { clock: () => now });
     assert.deepEqual(again.problems().map((p) => [p.kind, p.sessionId]), [["resume", "p/1"]]);
     assert.match(again.problems()[0]!.why, /Unknown session: nobody\/x/);
     assert.deepEqual(again.configuration("p/2"), ["top", "idle"], "the others resumed and their timers fired");
@@ -431,14 +490,17 @@ describe("org host", () => {
 
   test("a past-due timer that throws at open is a timer problem: the org opens, the others fire, it isn't retried until its session steps (H52)", async () => {
     const at = place();
-    const host = await open(at);
+    // On a virtual clock: both 50 ms timers are armed, and past due when the org opens again.
+    let now = 1_000_000;
+    const host = await open(at, { clock: () => now });
     await host.start("p/1", "host-probe", {}, operator);
     await host.start("p/2", "host-probe", {}, operator);
     await host.act("p/1", "arm-bomb", {}, operator);
     await host.act("p/2", "wait", {}, operator);
+    assert.equal(host.nextDueAt(), now + 50);
     await host.close();
-    await tick(120);
-    const again = await open(at);
+    now += 120;
+    const again = await open(at, { clock: () => now });
     assert.deepEqual(again.problems().map((p) => [p.kind, p.sessionId]), [["timer", "p/1"]]);
     assert.match(again.problems()[0]!.why, /Step limit/);
     assert.deepEqual(again.configuration("p/2"), ["top", "idle"], "the other past-due timer fired");
@@ -458,19 +520,20 @@ describe("org host", () => {
     await host.act("p/2", "wait", {}, operator);
     const rows = () => host.log.rows().length;
     // (the step limit's spin takes a while: wait for the outcome, not a fixed time)
-    for (let i = 0; i < 100 && (host.problems().length === 0 || host.configuration("p/2")?.[1] !== "idle"); i++) await tick(20);
+    await until(() => host.problems().length > 0 && host.configuration("p/2")?.[1] === "idle", "the timers fired");
     assert.deepEqual(host.problems().map((p) => [p.kind, p.sessionId]), [["timer", "p/1"]]);
     assert.deepEqual(host.configuration("p/2"), ["top", "idle"]);
+    assert.equal(host.nextDueAt(), null, "no timer is armed for it again");
     const n = rows();
     await tick(60);
     assert.equal(rows(), n, "nothing retried meanwhile");
-    assert.equal(host.nextDueAt(), null);
     await host.close();
   });
 
   test("reload resumes every problem session: one that failed only because another's snapshot was broken, and a stalled timer", async () => {
     const at = place();
-    const host = await open(at);
+    let now = 1_000_000;
+    const host = await open(at, { clock: () => now });
     // p/1 reaches p/2 when it resumes (as a person's link/moved reaches the org)
     await host.start("p/1", "host-probe", { pingOnResume: "p/2" }, operator);
     await host.start("p/2", "host-probe", {}, operator);
@@ -480,8 +543,8 @@ describe("org host", () => {
     const file = scanSnapshots(join(at.workspaceDir, "statecharts")).find((s) => s.sid === "p/2")!.file;
     const good = readFileSync(file, "utf8");
     writeFileSync(file, "<<<<<<< HEAD\n{:broken");
-    await tick(120);
-    const again = await open(at);
+    now += 120;
+    const again = await open(at, { clock: () => now });
     assert.deepEqual(again.problems().map((p) => [p.kind, p.sessionId]).sort(), [["resume", "p/1"], ["snapshot", "p/2"], ["timer", "p/3"]]);
     assert.match(again.problems().find((p) => p.sessionId === "p/1")!.why, /p%2F2\.edn can't be read/, "p/1's own file is fine: it failed on p/2's");
     // reload with p/2 still broken: p/1 stays a problem (retried, fails the same way), nothing else changes
@@ -499,7 +562,7 @@ describe("org host", () => {
     const host = await open(at);
     await host.start("p/3", "host-probe", {}, operator);
     await host.act("p/3", "arm-bomb", {}, operator);
-    for (let i = 0; i < 100 && host.problems().length === 0; i++) await tick(20);
+    await until(() => host.problems().length > 0, "the timer's problem");
     assert.deepEqual(host.problems().map((p) => [p.kind, p.sessionId]), [["timer", "p/3"]]);
     assert.deepEqual((await host.reload()).map((p) => [p.kind, p.sessionId]), [["timer", "p/3"]]);
     assert.equal(host.nextDueAt(), null, "set aside again");

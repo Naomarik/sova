@@ -32,6 +32,20 @@ test("a star is written in the palette's format, and read back by both the listi
   assert.equal(readFavorites(path)("zai", "glm-5.3"), false);
 });
 
+test("a favorite stored under an old Claude id stars its catalog model; unstarring drops the old id too", () => {
+  const path = fresh();
+  mkdirSync(join(path, ".."), { recursive: true });
+  writeFileSync(path, JSON.stringify({ version: 1, models: [{ provider: "claude-code-cli", id: "opus[1m]" }, { provider: "claude-code-cli", id: "claude-fable-5-1" }] }));
+  const has = readFavorites(path);
+  assert.equal(has("claude-code-cli", "claude-opus-5-5"), true, "opus[1m] meant Opus 5.5");
+  assert.equal(has("claude-code-cli", "claude-fable-5-1"), true);
+  assert.equal(has("claude-code-cli", "claude-sonnet-5-5"), false);
+  assert.equal(has("zai", "claude-opus-5-5"), false, "only under the Claude Code provider");
+  assert.equal(setFavorite({ ref: "claude-code-cli/claude-opus-5-5", favorite: false }, path).status, 200);
+  assert.deepEqual(onDisk(path), { version: 1, models: [{ provider: "claude-code-cli", id: "claude-fable-5-1" }] });
+  assert.equal(readFavorites(path)("claude-code-cli", "claude-opus-5-5"), false);
+});
+
 test("a write keeps favorites another writer saved after this server last read", () => {
   const path = fresh();
   const listing = readFavorites(path); // read before the palette writes

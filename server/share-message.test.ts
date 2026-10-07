@@ -1,16 +1,15 @@
-// Run: pnpm exec tsx --test server/share-message.test.ts. The share message path end to end, and the
-// share listener's hardening: a throwaway PI_CODING_AGENT_DIR and workspace in the OS temp dir, the
-// share server on an ephemeral loopback port; ~/.pi untouched. No model is called: `session.prompt`
-// is replaced by a stand-in that behaves like the SDK's around the start of a run (it awaits its
-// input handlers before the run is active, and refuses a second prompt once one is).
+// Run: node scripts/run-tests.mjs server/share-message.test.ts. The share message path end to end in
+// process: a throwaway PI_CODING_AGENT_DIR and workspace in the OS temp dir; ~/.pi untouched. No model
+// is called: `session.prompt` is replaced by a stand-in that behaves like the SDK's around the start of
+// a run (it awaits its input handlers before the run is active, and refuses a second prompt once one
+// is). The share listener's hardening over a real socket is share-message.integration.test.ts.
 import assert from "node:assert/strict";
 import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import { Hono } from "hono";
-import WebSocket from "ws";
+
 import { BATON_HANDOFF_ENTRY, BATON_SENT_ENTRY, MESSAGES_CAP, MESSAGES_DEFAULT, OPERATOR, PHOTO_DEFAULTS, type BatonViewItem } from "../shared/baton";
 import { piSession } from "./harness/pi/testing/handle";
 
@@ -28,7 +27,6 @@ const settings = await import("./baton-settings");
 const { LIMIT_QUESTION } = await import("./baton-loadout");
 const { acquireChat, BusyError, disposeAllChats } = await import("./chat-manager");
 const { createShareApp, tokenLimited, tokenWindowSize } = await import("./share/routes");
-const { createShareServer } = await import("./share/listener");
 const { opaqueSenders, sweepWatchers, viewForToken } = await import("./share/hub");
 const { registerOrgRoutes } = await import("./org-routes");
 const { LINK_WARNINGS } = await import("../shared/public-links");
@@ -53,7 +51,7 @@ const share = createShareApp();
 const post = (token: string, text: string) =>
   share.request(`/api/h/${token}/message`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
 
-const until = async (ready: () => boolean, ms = 2000) => {
+const until = async (ready: () => boolean, ms = 10_000) => {
   for (const t0 = Date.now(); !ready() && Date.now() - t0 < ms; ) await new Promise((r) => setTimeout(r, 10));
   return ready();
 };
@@ -196,14 +194,15 @@ describe("the operator's composer in a baton session", () => {
     const c = await start(OPERATOR);
     const chat = await acquireChat(c.path);
     const got = fakeSdk(chat);
-    const client = { send: () => {} } as never;
+    const sent: { type: string }[] = [];
+    const client = { send: (m: { type: string }) => void sent.push(m) } as never;
     const guard = chat.assertNoForeignWrites.bind(chat);
     chat.assertNoForeignWrites = () => {
       throw new BusyError("Someone else wrote this session.", "recent");
     };
     chat.handle(client, { type: "prompt", text: "hi", clientId: "i2" } as never);
     chat.assertNoForeignWrites = guard;
-    await new Promise((r) => setTimeout(r, 30));
+    assert.ok(await until(() => sent.some((m) => m.type === "error")), `the refusal reached the composer: ${JSON.stringify(sent)}`);
     const row = rowOf(c.sessionId);
     assert.equal(row.budget.messagesUsed, 0);
     assert.equal(row.state, "needs-you");
@@ -265,63 +264,7 @@ describe("the message limit is settable", () => {
   });
 });
 
-describe("the share listener", async () => {
-  const server = createShareServer({ headersMs: 300, requestMs: 300, checkMs: 50 });
-  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
-  const port = (server.address() as { port: number }).port;
-  after(() => {
-    server.close();
-    server.closeAllConnections();
-  });
-  const open = async (token: string) => {
-    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/h?token=${token}`);
-    const closed = new Promise<number>((r) => ws.on("close", (code) => r(code)));
-    ws.on("error", () => {});
-    await new Promise((r) => ws.on("open", r));
-    return { ws, closed };
-  };
-
-  test("an oversized frame closes the socket without an uncaught exception", async () => {
-    const caught: unknown[] = [];
-    const onUncaught = (err: unknown) => caught.push(err);
-    process.on("uncaughtException", onUncaught);
-    try {
-      const { ws, closed } = await open((await start(tony.id)).token!);
-      ws.send("x".repeat(5000));
-      assert.equal(await closed, 1009);
-      await new Promise((r) => setTimeout(r, 50));
-    } finally {
-      process.off("uncaughtException", onUncaught);
-    }
-    assert.deepEqual(caught, []);
-  });
-
-  test("a body that never arrives is answered 408 at the request timeout, not five minutes later", async () => {
-    const token = (await start(tony.id)).token!; // a real link: the route waits for the body
-    const t0 = Date.now();
-    const reply = await new Promise<string>((resolve, reject) => {
-      const sock = connect(port, "127.0.0.1", () => {
-        sock.write(`POST /api/h/${token}/message HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\nContent-Length: 5\r\n\r\n`);
-      });
-      let data = "";
-      sock.on("data", (d) => (data += d));
-      sock.on("close", () => resolve(data));
-      sock.on("error", reject);
-      setTimeout(() => (sock.destroy(), resolve(data)), 3000);
-    });
-    assert.match(reply, /^HTTP\/1\.1 408/);
-    assert.ok(Date.now() - t0 < 2500, `${Date.now() - t0} ms`);
-  });
-
-  test("an open socket on a link that stops reading is closed by the sweep, without waiting for a change", async () => {
-    const c = await start(tony.id);
-    const { closed } = await open(c.token!);
-    assert.equal(sweepWatchers(), 0, "a live link stays");
-    links.revokeLinks((l) => l.sessionId === c.sessionId);
-    assert.equal(sweepWatchers(), 1);
-    assert.equal(await closed, 4410);
-  });
-
+describe("the share view", () => {
   test("a share view carries no roster id: `by` is you, operator, or a label", async () => {
     const c = await start(tony.id);
     const lines = readFileSync(c.path, "utf8").trim().split("\n");

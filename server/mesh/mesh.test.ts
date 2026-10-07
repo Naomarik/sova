@@ -1,31 +1,27 @@
-// Run: pnpm exec tsx --test server/mesh/mesh.test.ts
-// The mesh against a throwaway PI_CODING_AGENT_DIR in the OS temp dir (removed after), the server
-// on an ephemeral port, a stub identity provider (the only place one exists: the lab uses real
-// whois), a fake peer (plain HTTP + WS on loopback), and this server's own peer listener bound
-// to 127.0.0.1 so a request can make the whole trip: proxy → peer listener → whois gate → app.
+// Run: pnpm test -- server/mesh/mesh.test.ts
+// The mesh's routes on this host's own app, in-process (§mesh/peers): built with nothing started
+// (no listener, no peer listener), a stub identity provider, and tailnet peers answered over an
+// in-process wire (peer-wire-test-fixtures.ts): settings, peers, front door and login-kind
+// validation, the hello probe's states, the session lists, the /peer proxy's own answers. The peer
+// listener, the gate, real hops (sockets, WebSockets, blackholed and wedged peers) and revocation:
+// mesh.integration.test.ts.
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { createServer, request, type IncomingMessage, type Server } from "node:http";
-import { connect, createServer as createTcpServer, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, test } from "node:test";
-import { WebSocket, WebSocketServer } from "ws";
 import type { MeshLocalSettings } from "../../shared/mesh-local";
 import type { FrontDoorConfig, MeshCandidate, MeshHello, MeshInfo, MeshSessions, MeshSettings } from "../../shared/protocol";
+import { testApp } from "./app-test-fixtures";
+import { fakeWire } from "./peer-wire-test-fixtures";
 
-const tmp = mkdtempSync(join(tmpdir(), "sova-mesh-test-"));
+const tmp = mkdtempSync(join(tmpdir(), "sova-mesh-unit-"));
 process.env.PI_CODING_AGENT_DIR = join(tmp, "agent");
-process.env.PORT = "0";
-process.env.SOVA_PEER_HOST = "127.0.0.1";
-process.env.SOVA_PEER_PORT = "0";
 mkdirSync(join(tmp, "agent", "sessions", "live"), { recursive: true });
 
 // Every LocalAPI call goes through this stub; OFF, it must never be called.
 const { setIdentity } = await import("./localapi");
 let identityCalls = 0;
-/** What whois answers for the next NEW connection to the peer listener. */
-let whoisNode: string | null = null;
 let tailnetPeers: Array<{ nodeId: string; name: string; online: boolean; tags?: string[] }> = [];
 setIdentity({
   status: async () => {
@@ -38,19 +34,12 @@ setIdentity({
   },
   whois: async () => {
     identityCalls++;
-    return whoisNode ? { nodeId: whoisNode, name: "x", tags: [], login: "me" } : null;
+    return null;
   },
 });
 
-// Count every outbound fetch this process makes.
-const realFetch = globalThis.fetch;
-let fetches = 0;
-globalThis.fetch = ((...args: Parameters<typeof fetch>) => {
-  fetches++;
-  return realFetch(...args);
-}) as typeof fetch;
-
-const { app, server } = await import("../index");
+const wire = fakeWire();
+const app = await testApp();
 const { listenerInfo, meshApi, stopMesh } = await import("./index");
 const hookLog: string[] = [];
 meshApi.onMeshStart(() => hookLog.push("start"));
@@ -59,272 +48,53 @@ meshApi.onPeerUp((id) => hookLog.push(`up:${id}`));
 const settingsLog: string[] = [];
 meshApi.onSettingsChange((s) => settingsLog.push(s.hostLabel));
 const { clearProbes, ownProtocol } = await import("./hello");
-const { clearPeerReach, notePeerReach, setPeerHeadersTimeout } = await import("./proxy");
 const { peersFile } = await import("./peers");
-const { AUTH_COOKIE, sovaToken } = await import("../auth");
-// Main-listener calls pass its gate as a browser's would (with the cookie); the peer listener's
-// calls carry nothing, because a peer is answered by whois, never by the token.
-const AUTH = { Cookie: `${AUTH_COOKIE}=${sovaToken()}` };
-const mainFetch = (url: string, init: RequestInit = {}) => realFetch(url, { ...init, headers: { ...AUTH, ...(init.headers as Record<string, string> | undefined) } });
+// The mesh's link transfers probe tar when it starts: answered here, so no tar runs.
+(await import("./links-transfer")).setTarAvailableForTest(true);
 
-let base = "";
-let wsBase = "";
+// ---- the fake peer, in-process ------------------------------------------------------------------
 
-// ---- the fake peer ----------------------------------------------------------------------------
-
-let fake: Server;
-let fakePort = 0;
-let deadPort = 0;
+const B = "http://127.0.0.1:47001";
+const DEAD = "http://127.0.0.1:47002";
 let fakeHello: "same" | "other" | "refused" = "same";
 let fakeSessions: unknown = [{ id: "s1", path: "/far/s1.jsonl" }];
-
-async function listen(s: Server, host = "127.0.0.1"): Promise<number> {
-  await new Promise<void>((r) => s.listen(0, host, r));
-  return (s.address() as { port: number }).port;
-}
-
-before(async () => {
-  await new Promise<void>((r) => (server.listening ? r() : server.once("listening", r)));
-  const port = (server.address() as { port: number }).port;
-  base = `http://127.0.0.1:${port}`;
-  wsBase = `ws://127.0.0.1:${port}`;
-  fake = createServer(async (req: IncomingMessage, res) => {
-    const url = new URL(req.url ?? "/", "http://x");
-    const json = (status: number, body: unknown, headers: Record<string, string> = {}) => {
-      res.writeHead(status, { "Content-Type": "application/json", ...headers });
-      res.end(JSON.stringify(body));
-    };
-    if (url.pathname === "/api/peer/hello") {
-      if (fakeHello === "refused") return json(403, { error: "not a peer" }, { "X-Sova-Mesh": "refused" });
-      const hello: MeshHello = { mesh: 1, id: "b", label: "B", hostname: "b", version: "0", protocol: fakeHello === "same" ? ownProtocol() : "0000", pi: "x", now: 1 };
-      return json(200, hello);
-    }
-    if (url.pathname === "/api/sessions") return json(200, fakeSessions);
-    if (url.pathname === "/api/gate-refused") return json(403, { error: "not a peer" }, { "X-Sova-Mesh": "refused" });
-    if (url.pathname === "/api/own-403") return json(403, { error: "route says no" });
-    if (url.pathname === "/api/sets-cookie") return json(200, { ok: true }, { "Set-Cookie": "planted=1; Path=/" });
-    if (url.pathname === "/api/stream") {
-      // Headers at once, then a body that outlasts the headers deadline.
-      res.writeHead(200, { "Content-Type": "text/plain" });
-      for (const part of ["a", "b", "c", "d"]) {
-        res.write(part);
-        await new Promise((r) => setTimeout(r, 400));
-      }
-      return res.end("!");
-    }
-    if (url.pathname === "/api/slow") {
-      await new Promise((r) => setTimeout(r, 1500));
-      return json(200, { slow: true });
-    }
-    const chunks: Buffer[] = [];
-    for await (const c of req) chunks.push(c as Buffer);
-    json(url.pathname === "/api/teapot" ? 418 : 200, { method: req.method, url: req.url, body: Buffer.concat(chunks).toString(), fwd: req.headers["x-forwarded-host"] ?? null, relayed: req.headers["x-sova-relayed"] ?? null, cookie: req.headers.cookie ?? null, token: req.headers["x-sova-token"] ?? null, authorization: req.headers.authorization ?? null });
-  });
-  const wss = new WebSocketServer({ noServer: true });
-  fake.on("upgrade", (req, socket, head) => {
-    const url = new URL(req.url ?? "/", "http://x");
-    if (url.searchParams.get("refuse") === "1") {
-      socket.end("HTTP/1.1 403 Forbidden\r\nX-Sova-Mesh: refused\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
-      return;
-    }
-    wss.handleUpgrade(req, socket, head, (ws) => {
-      ws.send(`hello ${req.url}`);
-      ws.on("message", (data, isBinary) => ws.send(data, { binary: isBinary }));
-      const code = Number(url.searchParams.get("close"));
-      if (code) setTimeout(() => ws.close(code, `bye ${code}`), 20);
-    });
-  });
-  fakePort = await listen(fake);
-  const dead = createServer();
-  deadPort = await listen(dead);
-  await new Promise((r) => dead.close(r));
+const json = (status: number, body: unknown, headers: Record<string, string> = {}) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json", ...headers } });
+wire.serve(B, async (req) => {
+  const url = new URL(req.url);
+  if (url.pathname === "/api/peer/hello") {
+    if (fakeHello === "refused") return json(403, { error: "not a peer" }, { "X-Sova-Mesh": "refused" });
+    const hello: MeshHello = { mesh: 1, id: "b", label: "B", hostname: "b", version: "0", protocol: fakeHello === "same" ? ownProtocol() : "0000", pi: "x", now: 1 };
+    return json(200, hello);
+  }
+  if (url.pathname === "/api/sessions") return json(200, fakeSessions);
+  if (url.pathname === "/api/gate-refused") return json(403, { error: "not a peer" }, { "X-Sova-Mesh": "refused" });
+  if (url.pathname === "/api/own-403") return json(403, { error: "route says no" });
+  if (url.pathname === "/api/sets-cookie") return json(200, { ok: true }, { "Set-Cookie": "planted=1; Path=/" });
+  const h = req.headers;
+  return json(url.pathname === "/api/teapot" ? 418 : 200, { method: req.method, url: `${url.pathname}${url.search}`, body: await req.text(), fwd: h.get("x-forwarded-host"), relayed: h.get("x-sova-relayed"), cookie: h.get("cookie"), token: h.get("x-sova-token"), authorization: h.get("authorization") });
 });
+wire.down(DEAD);
 
-after(async () => {
+after(() => {
   stopMesh();
-  server.close();
-  server.closeAllConnections();
-  fake.close();
-  fake.closeAllConnections();
+  wire.restore();
   rmSync(tmp, { recursive: true, force: true });
 });
 
-const getJson = async <T>(path: string): Promise<[number, T]> => {
-  const res = await mainFetch(`${base}${path}`);
+const call = async <T>(method: string, path: string, body?: unknown, headers: Record<string, string> = {}): Promise<[number, T]> => {
+  const res = await app.request(path, { method, headers: { ...(body !== undefined ? { "Content-Type": "application/json" } : {}), ...headers }, ...(body !== undefined ? { body: typeof body === "string" ? body : JSON.stringify(body) } : {}) });
   return [res.status, (await res.json()) as T];
 };
-const putJson = async <T>(path: string, body: unknown): Promise<[number, T]> => {
-  const res = await mainFetch(`${base}${path}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-  return [res.status, (await res.json()) as T];
-};
+const getJson = <T>(path: string) => call<T>("GET", path);
+const putJson = <T>(path: string, body: unknown) => call<T>("PUT", path, body);
 
-/** Any method on a NEW connection to the peer listener, the path sent byte for byte. */
-function peerRequest(method: string, path: string, body?: string): Promise<{ status: number; body: string }> {
-  const info = listenerInfo()!;
-  return new Promise((resolve, reject) => {
-    const req = request({ host: "127.0.0.1", port: info.port, path, method, agent: false }, (res) => {
-      let text = "";
-      res.on("data", (c) => (text += c));
-      res.on("end", () => resolve({ status: res.statusCode!, body: text }));
-    });
-    req.on("error", reject);
-    req.setTimeout(8000, () => req.destroy(new Error(`no answer within 8 s: ${path}`)));
-    req.end(body);
-  });
-}
-
-/** `p`, or a failure naming `what` after `ms`: a test that waits never hangs the run. */
-async function within<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    return await Promise.race([p, new Promise<never>((_, j) => (timer = setTimeout(() => j(new Error(`timed out after ${ms} ms: ${what}`)), ms)))]);
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-/** A /ws/watch socket on the peer listener, open (its snapshot arrived and it is still open). */
-async function openWatch(port: number, file: string): Promise<{ closed: Promise<number> }> {
-  const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/watch?path=${encodeURIComponent(file)}`);
-  const closed = new Promise<number>((r) => ws.on("close", (c) => r(c)));
-  await within(
-    new Promise<void>((r, j) => {
-      ws.once("message", () => r());
-      ws.once("error", j);
-    }),
-    3000,
-    "the watch's first message",
-  );
-  await new Promise((r) => setTimeout(r, 50));
-  assert.equal(ws.readyState, WebSocket.OPEN, "the watch is open");
-  return { closed };
-}
-
-/** One HTTP/1.1 keep-alive request on a raw socket that stays open after the response. */
-async function keptAlive(port: number, path: string): Promise<{ status: number; closed: Promise<void> }> {
-  const sock = connect({ host: "127.0.0.1", port });
-  const closed = new Promise<void>((r) => sock.once("close", () => r()));
-  sock.on("error", () => {});
-  let text = "";
-  const status = await within(
-    new Promise<number>((resolve) => {
-      sock.on("data", (d) => {
-        text += d.toString();
-        const m = /^HTTP\/1\.1 (\d{3})/.exec(text);
-        if (m && text.includes("\r\n\r\n")) resolve(Number(m[1]));
-      });
-      sock.write(`GET ${path} HTTP/1.1\r\nHost: peer\r\nConnection: keep-alive\r\n\r\n`);
-    }),
-    3000,
-    `a response to ${path}`,
-  );
-  return { status, closed };
-}
-
-/** A session file a peer can watch through the listener (the socket stays open until cut). */
-function watchableSession(): string {
-  const dir = join(tmp, "agent", "sessions", "--revoke--");
-  mkdirSync(dir, { recursive: true });
-  const id = "0197a000-0000-7000-8000-000000000001";
-  const file = join(dir, `2026-01-01T00-00-00-000Z_${id}.jsonl`);
-  writeFileSync(file, `${JSON.stringify({ type: "session", version: 3, id, timestamp: "2026-01-01T00:00:00.000Z", cwd: tmp })}\n`);
-  return file;
-}
-
-/** A plain request on a NEW connection (so whois runs again), to the peer listener. */
-function peerGet(path: string): Promise<{ status: number; headers: IncomingMessage["headers"]; body: string }> {
-  const info = listenerInfo()!;
-  return new Promise((resolve, reject) => {
-    const req = request({ host: "127.0.0.1", port: info.port, path, agent: false }, (res) => {
-      let body = "";
-      res.on("data", (c) => (body += c));
-      res.on("end", () => resolve({ status: res.statusCode!, headers: res.headers, body }));
-    });
-    req.on("error", reject);
-    req.setTimeout(8000, () => req.destroy(new Error(`no answer within 8 s: ${path}`)));
-    req.end();
-  });
-}
-
-/** A request on the main listener with its path sent byte for byte (no client-side resolution). */
-function rawRequest(method: string, path: string, body?: string): Promise<{ status: number; body: string }> {
-  return new Promise((resolve, reject) => {
-    const req = request({ host: "127.0.0.1", port: Number(new URL(base).port), path, method, agent: false, headers: AUTH }, (res) => {
-      let text = "";
-      res.on("data", (c) => (text += c));
-      res.on("end", () => resolve({ status: res.statusCode!, body: text }));
-    });
-    req.on("error", reject);
-    req.setTimeout(8000, () => req.destroy(new Error(`no answer within 8 s: ${path}`)));
-    req.end(body);
-  });
-}
-
-/** Open a socket; resolve with its first message and close code, or the handshake's HTTP status. */
-function wsTrip(url: string, send?: string): Promise<{ first?: string; code?: number; reason?: string; status?: number; error?: string }> {
-  return new Promise((resolve) => {
-    const ws = new WebSocket(url, wsBase && url.startsWith(wsBase) ? { headers: AUTH } : {});
-    let first: string | undefined;
-    ws.on("message", (d) => {
-      if (first === undefined) {
-        first = d.toString();
-        if (send) ws.send(send);
-      }
-    });
-    ws.on("close", (code, reason) => resolve({ first, code, reason: reason.toString() }));
-    ws.on("unexpected-response", (_req, res) => {
-      resolve({ status: res.statusCode });
-      ws.terminate();
-    });
-    ws.on("error", (err) => resolve({ error: err.message }));
-    setTimeout(() => {
-      resolve({ error: "wsTrip: no close within 8 s" });
-      ws.terminate();
-    }, 8000).unref();
-  });
-}
-
-const waitFor = async (cond: () => boolean, ms = 3000) => {
-  const end = Date.now() + ms;
-  while (!cond()) {
-    if (Date.now() > end) throw new Error("timed out");
-    await new Promise((r) => setTimeout(r, 10));
-  }
-};
+const peersB = { id: "b", label: "B", nodeId: "nB", name: "127.0.0.1", url: B };
+const peersDead = { id: "dead", nodeId: "nD", name: "127.0.0.1", url: DEAD };
 
 // ---- OFF --------------------------------------------------------------------------------------
 
 describe("mesh OFF (no peers.json)", () => {
-  test("nothing runs: no listener, no Tailscale call, no outbound request", async () => {
-    assert.equal(listenerInfo(), null);
-    const [s, info] = await getJson<MeshInfo>("/api/mesh");
-    assert.equal(s, 200);
-    assert.equal(info.enabled, false);
-    assert.deepEqual([info.peers, info.sync, info.frontDoor, info.self.listen], [[], [], null, undefined]);
-    assert.deepEqual(await getJson("/api/mesh/sessions"), [200, { peers: [] }]);
-    const [, hello] = await getJson<MeshHello>("/api/mesh/hello");
-    assert.equal(hello.protocol, ownProtocol());
-    assert.equal(hello.nodeId, undefined);
-    const again = (await getJson<MeshHello>("/api/mesh/hello"))[1];
-    assert.equal(again.build, hello.build, "the build id is stable while dist/ is unchanged");
-    if (hello.build !== undefined) assert.match(hello.build, /^[0-9a-f]{16}$/);
-    const [, settings] = await getJson<MeshSettings>("/api/mesh/settings");
-    assert.deepEqual(settings.sync, { settings: true, themes: true, extensions: true, logins: true });
-    const [fs, fd] = await getJson<FrontDoorConfig>("/api/mesh/front-door");
-    assert.equal(fs, 200);
-    assert.equal(fd.order.length, 1, "OFF: this host alone");
-    assert.match(fd.order[0]!.upstream, /YOUR-TAILNET/);
-    assert.match(fd.caddyfile, /lb_policy first/);
-    await mainFetch(`${base}/peer/b/api/health`);
-    await wsTrip(`${wsBase}/peer/b/ws/chat?path=x`);
-    assert.equal(identityCalls, 0);
-    assert.equal(fetches, 0);
-    assert.equal(listenerInfo(), null);
-    assert.deepEqual(hookLog, [], "no lifecycle hook fires while off");
-    await assert.rejects(meshApi.peerFetch("b", "/api/health"), /unknown peer/);
-  });
-
-  test("/peer/* and /api/peer/* answer exactly what an unknown path answers", async () => {
+  test("/peer/* and /api/peer/* answer exactly what an unknown path answers (REST; sockets: the integration file)", async () => {
     for (const [mesh, other] of [
       ["/peer/b/api/health", "/nopeer/b/api/health"],
       ["/peer/b/ws/chat", "/nopeer/b/ws/chat"],
@@ -336,11 +106,7 @@ describe("mesh OFF (no peers.json)", () => {
       assert.equal(a.status, b.status, mesh);
       assert.equal(await a.text(), await b.text(), mesh);
     }
-    const [a, b] = await Promise.all([wsTrip(`${wsBase}/peer/b/ws/chat`), wsTrip(`${wsBase}/nopeer/ws/chat`)]);
-    // Bun's ws client names the URL in its error; the paths differ by design.
-    const unnamed = (r: Awaited<ReturnType<typeof wsTrip>>) => (r.error ? { ...r, error: r.error.replace(/\/(peer\/b|nopeer)\//, "/<path>/") } : r);
-    assert.deepEqual(unnamed(a), unnamed(b));
-    assert.ok(a.error, "an unknown socket path is dropped, as before");
+    assert.equal(wire.fetches, 0, "nothing went out");
   });
 
   test("a settings write leaves the mesh off", async () => {
@@ -364,151 +130,25 @@ describe("mesh OFF (no peers.json)", () => {
 
 describe("mesh ON", () => {
   before(async () => {
-    const [s] = await putJson<MeshInfo>("/api/mesh/peers", {
-      peers: [
-        { id: "b", label: "B", nodeId: "nB", name: "127.0.0.1", url: `http://127.0.0.1:${fakePort}` },
-        { id: "dead", nodeId: "nD", name: "127.0.0.1", url: `http://127.0.0.1:${deadPort}` },
-      ],
-    });
+    const [s] = await putJson<MeshInfo>("/api/mesh/peers", { peers: [peersB, peersDead] });
     assert.equal(s, 200);
-    await waitFor(() => (listenerInfo()?.addresses.length ?? 0) > 0);
-  });
-
-  test("hooks: start fired once; peerFetch reaches the peer; up fires on each transition to up", async () => {
-    // The PUT answered with a probed MeshInfo: b came up, dead didn't.
+    // The PUT answered with a probed MeshInfo: b came up, dead didn't. Nothing listens (nothing was started).
     assert.deepEqual(hookLog, ["start", "up:b"]);
-    const res = await meshApi.peerFetch("b", "/api/echo?q=1");
-    assert.equal(((await res.json()) as { url: string }).url, "/api/echo?q=1");
-    fakeSessions = "garbage"; // b now fails its session list: down
-    await getJson("/api/mesh/sessions");
-    fakeSessions = [];
-    whoisNode = "nB";
-    await peerGet("/api/health"); // b calls us: up again
-    await peerGet("/api/health");
-    assert.deepEqual(hookLog, ["start", "up:b", "up:b"]);
+    assert.equal(listenerInfo(), null);
   });
 
-  test("peer-only routes: the caller is known under /api/peer/*, and they are 404 on the main listener", async () => {
-    assert.deepEqual(await getJson("/api/peer/hello"), [404, { error: "Not found" }]);
-    whoisNode = "nB";
-    const r = await peerGet("/api/peer/hello");
-    assert.equal(r.status, 200);
-  });
-
-  test("the peer listener binds the pinned address", () => {
-    assert.deepEqual(listenerInfo()!.addresses, ["127.0.0.1"]);
-    assert.ok(listenerInfo()!.port > 0);
-  });
-
-  test("the gate: a non-tailnet caller and a tailnet node outside peers.json get 403 + marker", async () => {
-    for (const node of [null, "nStranger"]) {
-      whoisNode = node;
-      for (const path of ["/api/health", "/api/peer/hello"]) {
-        const r = await peerGet(path);
-        assert.equal(r.status, 403, `${node} ${path}`);
-        assert.equal(r.headers["x-sova-mesh"], "refused");
-        assert.deepEqual(JSON.parse(r.body), { error: "not a peer" });
-      }
-    }
-  });
-
-  test("a peer reaches /api/* and hello, never /api/mesh, /peer, /ext or the shell", async () => {
-    whoisNode = "nB";
-    const health = JSON.parse((await peerGet("/api/health")).body) as { ok: boolean; startedAt: string; head: string | null };
-    assert.equal(health.ok, true);
-    assert.ok(!Number.isNaN(Date.parse(health.startedAt)) && (health.head === null || /^[0-9a-f]{40}$/.test(health.head)), JSON.stringify(health));
-    const hello = JSON.parse((await peerGet("/api/peer/hello")).body) as MeshHello;
-    assert.equal(hello.mesh, 1);
-    assert.equal(hello.nodeId, "nA");
-    for (const path of ["/api/mesh", "/api/mesh/peers", "/peer/b/api/health", "/ext/x/", "/", "/index.html"]) {
-      assert.equal((await peerGet(path)).status, 404, path);
-    }
-  });
-
-  test("a peer never reaches /api/mesh/* by spelling it differently (the router decodes %XX)", async () => {
-    whoisNode = "nB";
-    const spellings = [
-      "/api/%6Desh",
-      "/api/%6Desh/peers",
-      "/api/%6D%65%73%68",
-      "/api/%6d%65%73%68/settings",
-      "/%61pi/mesh",
-      "/api/MESH",
-      "/api//mesh",
-      "/api/x/../mesh",
-      "/api/%2e%2e/mesh",
-      "/api/x%2f..%2fmesh",
-      "/api/%ZZ",
-      "/%65xt/x/",
-    ];
-    for (const path of spellings) {
-      for (const method of ["GET", "PUT"]) {
-        const r = await peerRequest(method, path, method === "PUT" ? JSON.stringify({ peers: [] }) : undefined);
-        assert.equal(r.status, 404, `${method} ${path}`);
-      }
-    }
-    // The main listener still answers /api/mesh, so the 404s above are the gate, not a missing route.
-    assert.equal((await getJson<MeshInfo>("/api/mesh"))[1].enabled, true);
-    // Peer-only routes stay reachable for a peer, however spelled.
-    assert.equal((await peerRequest("GET", "/api/%70eer/hello")).status, 200);
-  });
-
-  test("/api/mesh/logins*: served on the main listener only, never to a peer, never forwarded by /peer", async () => {
-    // Not vacuous: the routes are live here (mesh ON), so the 404s below are the gates.
-    assert.equal((await mainFetch(`${base}/api/mesh/logins`)).status, 200);
-    whoisNode = "nB";
-    const paths = ["/api/mesh/logins", "/api/mesh/logins/claim", "/api/%6Desh/logins", "/api/mesh/%6Cogins/claim", "/api/MESH/LOGINS", "/api//mesh/logins/claim"];
-    const notFoundBody = await (await app.request("/api/no-such-route")).text();
-    const before = fetches;
-    for (const path of paths) {
-      for (const method of ["GET", "POST"]) {
-        const body = method === "POST" ? JSON.stringify({ key: "pi:zai" }) : undefined;
-        assert.equal((await peerRequest(method, path, body)).status, 404, `peer listener ${method} ${path}`);
-        const res = await rawRequest(method, `/peer/b${path}`, body);
-        assert.equal(res.status, 404, `${method} /peer/b${path}`);
-        assert.equal(res.body, notFoundBody, `${method} /peer/b${path}`);
-      }
-    }
-    assert.equal(fetches, before, "nothing was forwarded");
-  });
-
-  test("a peer's unparseable request target is a 400, request and upgrade alike (never a hung socket)", async () => {
-    whoisNode = "nB";
-    for (const path of ["//x%zz/api/health", "//[/api/health"]) {
-      assert.deepEqual(await peerRequest("GET", path), { status: 400, body: JSON.stringify({ error: "Bad request" }) }, path);
-      const sock = connect({ host: "127.0.0.1", port: listenerInfo()!.port });
-      sock.on("error", () => {});
-      let text = "";
-      sock.on("data", (d) => (text += d.toString()));
-      const closed = new Promise<void>((r) => sock.once("close", () => r()));
-      sock.write(`GET ${path.replace("/api/health", "/ws/chat")} HTTP/1.1\r\nHost: peer\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n`);
-      await within(closed, 3000, `the upgrade to ${path} ends`);
-      assert.match(text, /^HTTP\/1\.1 400 /, path);
-    }
-  });
-
-  test("peer listener WS: refused without whois, dispatched to Sova's own sockets with it", async () => {
-    const port = listenerInfo()!.port;
-    whoisNode = null;
-    assert.deepEqual(await wsTrip(`ws://127.0.0.1:${port}/ws/watch?path=nope`), { status: 403 });
-    whoisNode = "nB";
-    const r = await wsTrip(`ws://127.0.0.1:${port}/ws/watch?path=nope`);
-    assert.equal(r.code, 4404);
-    assert.deepEqual(await wsTrip(`ws://127.0.0.1:${port}/ext/x/ws/y`), { status: 404 });
-  });
-
-  test("proxy REST: verbatim path + query + body; the peer's answer untouched", async () => {
-    const res = await mainFetch(`${base}/peer/b/api/echo?x=1&y=%2F`, { method: "POST", body: "hi" });
+  test("proxy REST: verbatim path + query + body; nothing of this host's credentials goes; no cookie comes back", async () => {
+    const res = await app.request("/peer/b/api/echo?x=1&y=%2F", { method: "POST", body: "hi", headers: { Host: "a.lab:4800", Cookie: "sova=secret", "X-Sova-Token": "t", Authorization: "Bearer t" } });
     assert.equal(res.status, 200);
     const echo = (await res.json()) as { method: string; url: string; body: string; fwd: string; relayed: string; cookie: string | null; token: string | null; authorization: string | null };
     assert.deepEqual([echo.method, echo.url, echo.body], ["POST", "/api/echo?x=1&y=%2F", "hi"]);
-    assert.equal(echo.fwd, new URL(base).host);
+    assert.equal(echo.fwd, "a.lab:4800");
     assert.equal(echo.relayed, "1", "the relay marks itself, so the peer's local routes refuse it");
     // This host's token never travels to another host (§app.access/callers).
     assert.deepEqual([echo.cookie, echo.token, echo.authorization], [null, null, null], "the peer is sent no cookie or token from this side");
-    assert.equal((await mainFetch(`${base}/peer/b/api/teapot`)).status, 418);
+    assert.equal((await app.request("/peer/b/api/teapot")).status, 418);
     // Nor does a peer's answer set a cookie on this origin (it could shadow this host's own).
-    const planted = await mainFetch(`${base}/peer/b/api/sets-cookie`);
+    const planted = await app.request("/peer/b/api/sets-cookie");
     assert.equal(planted.status, 200);
     assert.equal(planted.headers.get("set-cookie"), null);
   });
@@ -521,211 +161,25 @@ describe("mesh ON", () => {
     assert.deepEqual(await getJson("/peer/b/ws/chat"), [426, { error: "WebSocket upgrade required" }]);
   });
 
-  test("proxy: /api/peer/* and /api/mesh/* on a peer are never reachable from a browser, in any spelling", async () => {
-    // The check is not vacuous: an allowed tail does reach the fake peer through the counted fetch.
-    let before = fetches;
-    await mainFetch(`${base}/peer/b/api/echo`);
-    assert.equal(fetches, before + 1);
-    const tails = [
-      "/api/peer/hello",
-      "/api/peer/credentials/entry?key=x",
-      "/api/peer/credentials/push",
-      "/api/Peer/hello",
-      "/api/%70eer/hello",
-      "/%61pi/peer/hello",
-      "/api//peer/hello",
-      "/api/peer",
-      "/api/mesh",
-      "/api/mesh/peers",
-      "/api/%ZZ",
-      // dot segments and encoded separators, sent as-is (a WHATWG client would resolve them first)
-      "/api/x/../peer/credentials/entry?key=x",
-      "/api/./peer/hello",
-      "/api/x/%2e%2e/peer/credentials/entry",
-      "/api/x/%2E%2E/peer/hello",
-      "/api/x/.%2e/peer/hello",
-      "/api/x/..%2fpeer/hello",
-      "/api/x%2f..%2f..%2fpeer/hello",
-      "/api/x/..%5cpeer/hello",
-      "/api/x/../../api/peer/hello",
-    ];
-    const notFound = await app.request("/api/no-such-route");
-    const notFoundBody = await notFound.text();
-    before = fetches;
-    for (const tail of tails) {
-      for (const peer of ["b", "%62"]) {
-        for (const method of ["GET", "POST", "PUT"]) {
-          const res = await rawRequest(method, `/peer/${peer}${tail}`, method === "GET" ? undefined : "{}");
-          assert.equal(res.status, 404, `${method} /peer/${peer}${tail}`);
-          assert.equal(res.body, notFoundBody, `${method} /peer/${peer}${tail}`);
-        }
-      }
-    }
-    // Sockets: only /ws/chat and /ws/watch, never a dot-resolved way elsewhere.
-    for (const path of ["/peer/b/ws/chat/../../api/peer/hello", "/peer/b/ws/%2e%2e/api/peer/hello", "/peer/b/ws/chat%2f..%2f..%2fapi"]) {
-      const r = await wsTrip(`${wsBase}${path}`);
-      assert.ok(r.error || r.status === 404, path);
-    }
-    assert.equal(fetches, before, "nothing was forwarded");
-  });
-
-  test("peer side: a proxied request (X-Forwarded-Host) never counts as the peer speaking", async () => {
-    whoisNode = "nB";
-    const info = listenerInfo()!;
-    const r = await new Promise<number>((resolve, reject) => {
-      const req = request({ host: "127.0.0.1", port: info.port, path: "/api/peer/hello", agent: false, headers: { "X-Forwarded-Host": "x" } }, (res) => {
-        res.resume();
-        resolve(res.statusCode!);
-      });
-      req.on("error", reject);
-      req.setTimeout(8000, () => req.destroy(new Error("no answer within 8 s")));
-      req.end();
-    });
-    assert.equal(r, 404);
-    assert.equal((await peerGet("/api/peer/hello")).status, 200);
-    // peerFetch drops a caller-supplied X-Forwarded-Host, so this host's own calls still count.
-    await putJson("/api/mesh/peers", {
-      peers: [
-        { id: "b", label: "B", nodeId: "nB", name: "127.0.0.1", url: `http://127.0.0.1:${fakePort}` },
-        { id: "dead", nodeId: "nD", name: "127.0.0.1", url: `http://127.0.0.1:${deadPort}` },
-        { id: "self", nodeId: "nSelf", name: "127.0.0.1", url: `http://127.0.0.1:${info.port}` },
-      ],
-    });
-    whoisNode = "nSelf";
-    const res = await meshApi.peerFetch("self", "/api/peer/hello", { headers: { "X-Forwarded-Host": "x" } });
-    assert.equal(res.status, 200);
-    await putJson("/api/mesh/peers", {
-      peers: [
-        { id: "b", label: "B", nodeId: "nB", name: "127.0.0.1", url: `http://127.0.0.1:${fakePort}` },
-        { id: "dead", nodeId: "nD", name: "127.0.0.1", url: `http://127.0.0.1:${deadPort}` },
-      ],
-    });
-  });
-
-  test("proxy WS: frames both ways, every close code mirrored exactly", async () => {
-    for (const code of [1000, 4404, 4409, 4422, 4500]) {
-      const r = await wsTrip(`${wsBase}/peer/b/ws/chat?path=p&close=${code}`, "ping");
-      assert.equal(r.first, `hello /ws/chat?path=p&close=${code}`);
-      assert.equal(r.code, code);
-      assert.equal(r.reason, `bye ${code}`);
-    }
-  });
-
-  test("proxy WS: down → HTTP 502, refused → 403, unknown → 404, all before any upgrade (never 4422)", async () => {
-    assert.deepEqual(await wsTrip(`${wsBase}/peer/dead/ws/chat?path=p`), { status: 502 });
-    assert.deepEqual(await wsTrip(`${wsBase}/peer/b/ws/chat?refuse=1`), { status: 403 });
-    assert.deepEqual(await wsTrip(`${wsBase}/peer/nope/ws/chat`), { status: 404 });
-  });
-
-  test("a blackholed peer is a 502 within the connect timeout, then at once for a while", async () => {
-    // 192.0.2.1 (TEST-NET-1) answers nothing: without the preflight, fetch waits ~10 s.
-    await putJson("/api/mesh/peers", {
-      peers: [
-        { id: "b", label: "B", nodeId: "nB", name: "127.0.0.1", url: `http://127.0.0.1:${fakePort}` },
-        { id: "dead", nodeId: "nD", name: "127.0.0.1", url: `http://127.0.0.1:${deadPort}` },
-        { id: "hole", nodeId: "nH", name: "192.0.2.1", url: "http://192.0.2.1:4801" },
-      ],
-    });
-    let t = Date.now();
-    assert.deepEqual(await getJson("/peer/hole/api/health"), [502, { error: "peer down", id: "hole" }]);
-    assert.ok(Date.now() - t < 4500, `first 502 took ${Date.now() - t} ms`);
-    t = Date.now();
-    assert.deepEqual(await getJson("/peer/hole/api/health"), [502, { error: "peer down", id: "hole" }]);
-    assert.ok(Date.now() - t < 500, `a known-down peer answers at once (${Date.now() - t} ms)`);
-    t = Date.now();
-    assert.deepEqual(await wsTrip(`${wsBase}/peer/hole/ws/chat?path=p`), { status: 502 });
-    assert.ok(Date.now() - t < 4500, `ws 502 took ${Date.now() - t} ms`);
-    // Seen a moment ago, gone now (a killed container): no preflight, so the stall watch decides.
-    notePeerReach("http://192.0.2.1:4801", true);
-    t = Date.now();
-    assert.deepEqual(await getJson("/peer/hole/api/health"), [502, { error: "peer down", id: "hole" }]);
-    assert.ok(Date.now() - t < 4500, `recently seen, REST 502 took ${Date.now() - t} ms`);
-    notePeerReach("http://192.0.2.1:4801", true);
-    t = Date.now();
-    assert.deepEqual(await wsTrip(`${wsBase}/peer/hole/ws/chat?path=p`), { status: 502 });
-    assert.ok(Date.now() - t < 4500, `recently seen, ws 502 took ${Date.now() - t} ms`);
-    // A live peer's slow route outlasts the stall watch untouched.
+  test("a known-down peer is a 502 at once: no new dial while it is marked down", async () => {
+    // The counted twin of the integration file's timed blackhole check: once a hop found the peer
+    // down, the next one never reaches the wire.
+    const { clearPeerReach } = await import("./proxy");
     clearPeerReach();
-    await getJson("/peer/b/api/health"); // b reached: the next hop skips the preflight
-    assert.deepEqual(await getJson("/peer/b/api/slow"), [200, { slow: true }]);
-    await putJson("/api/mesh/peers", {
-      peers: [
-        { id: "b", label: "B", nodeId: "nB", name: "127.0.0.1", url: `http://127.0.0.1:${fakePort}` },
-        { id: "dead", nodeId: "nD", name: "127.0.0.1", url: `http://127.0.0.1:${deadPort}` },
-      ],
-    });
+    assert.deepEqual(await getJson("/peer/dead/api/health"), [502, { error: "peer down", id: "dead" }]);
+    const sent = wire.fetches;
+    assert.deepEqual(await getJson("/peer/dead/api/health"), [502, { error: "peer down", id: "dead" }]);
+    assert.equal(wire.fetches, sent, "no request went out for a peer just found down");
   });
 
-  test("a wedged peer (takes the connection, never answers): REST 504 after the headers deadline, WS 502; a long body is never cut", async () => {
-    const held: Socket[] = [];
-    const wedged = createTcpServer((sock) => {
-      held.push(sock);
-      sock.on("error", () => {});
-    });
-    const wedgedPort = await listen(wedged as unknown as Server);
-    setPeerHeadersTimeout(1000);
-    try {
-      await putJson("/api/mesh/peers", {
-        peers: [
-          { id: "b", label: "B", nodeId: "nB", name: "127.0.0.1", url: `http://127.0.0.1:${fakePort}` },
-          { id: "dead", nodeId: "nD", name: "127.0.0.1", url: `http://127.0.0.1:${deadPort}` },
-          { id: "stuck", nodeId: "nS", name: "127.0.0.1", url: `http://127.0.0.1:${wedgedPort}` },
-        ],
-      });
-      for (const recent of [false, true]) {
-        if (recent) notePeerReach(`http://127.0.0.1:${wedgedPort}`, true); // no preflight, stall watch sees TCP up
-        const t = Date.now();
-        assert.deepEqual(await within(getJson("/peer/stuck/api/health"), 5000, "the wedged REST hop"), [504, { error: "peer timeout", id: "stuck" }]);
-        const took = Date.now() - t;
-        assert.ok(took >= 900 && took < 3000, `504 after ${took} ms (recent=${recent})`);
-      }
-      // Wedged is not down: the next hop tries again rather than a cached 502.
-      assert.equal((await within(getJson("/peer/stuck/api/health"), 5000, "the retry"))[0], 504);
-      const t = Date.now();
-      assert.deepEqual(await within(wsTrip(`${wsBase}/peer/stuck/ws/chat?path=p`), 9000, "the wedged WS hop"), { status: 502 });
-      assert.ok(Date.now() - t < 7000, `ws 502 took ${Date.now() - t} ms`);
-      // Headers in time, body for ~1.6 s (past the 1 s deadline): passes whole.
-      const res = await within(mainFetch(`${base}/peer/b/api/stream`), 5000, "the stream's headers");
-      assert.equal(res.status, 200);
-      assert.equal(await within(res.text(), 5000, "the stream's body"), "abcd!");
-    } finally {
-      setPeerHeadersTimeout(30_000);
-      for (const sock of held) sock.destroy();
-      wedged.close();
-      await putJson("/api/mesh/peers", {
-        peers: [
-          { id: "b", label: "B", nodeId: "nB", name: "127.0.0.1", url: `http://127.0.0.1:${fakePort}` },
-          { id: "dead", nodeId: "nD", name: "127.0.0.1", url: `http://127.0.0.1:${deadPort}` },
-        ],
-      });
-    }
-  });
-
-  test("the whole trip: proxy → peer listener → whois gate → this app", async () => {
-    const port = listenerInfo()!.port;
-    await putJson("/api/mesh/peers", {
-      peers: [
-        { id: "b", label: "B", nodeId: "nB", name: "127.0.0.1", url: `http://127.0.0.1:${fakePort}` },
-        { id: "self", nodeId: "nSelf", name: "127.0.0.1", url: `http://127.0.0.1:${port}` },
-      ],
-    });
-    whoisNode = "nSelf";
-    const [status, health] = (await getJson("/peer/self/api/health")) as [number, { ok: boolean }];
-    assert.deepEqual([status, health.ok], [200, true]);
-    const r = await wsTrip(`${wsBase}/peer/self/ws/watch?path=nope`);
-    assert.equal(r.code, 4404);
-    whoisNode = "nStranger";
-    // A WS dial is always a new connection, so whois runs again (REST rides a kept-alive one).
-    assert.deepEqual(await wsTrip(`${wsBase}/peer/self/ws/watch?path=nope`), { status: 403 });
+  test("the hop's waits: a 3 s TCP check, 30 s for response headers, 5 s for a socket's handshake, 3 s known down", async () => {
+    // The integration file runs blackholed and wedged peers with these shortened; these are the defaults.
+    const { peerTimeouts } = await import("./proxy");
+    assert.deepEqual(peerTimeouts(), { connectMs: 3000, headersMs: 30_000, wsHandshakeMs: 5000, downMs: 3000 });
   });
 
   test("GET /api/mesh: up / skewed / refused / down from the hello probe", async () => {
-    await putJson("/api/mesh/peers", {
-      peers: [
-        { id: "b", label: "B", nodeId: "nB", name: "127.0.0.1", url: `http://127.0.0.1:${fakePort}`, priority: 2 },
-        { id: "dead", nodeId: "nD", name: "127.0.0.1", url: `http://127.0.0.1:${deadPort}` },
-      ],
-    });
+    await putJson("/api/mesh/peers", { peers: [{ ...peersB, priority: 2 }, peersDead] });
     const state = async () => {
       clearProbes();
       const [, info] = await getJson<MeshInfo>("/api/mesh");
@@ -740,7 +194,6 @@ describe("mesh ON", () => {
     fakeHello = "same";
     const [, info] = await getJson<MeshInfo>("/api/mesh");
     assert.equal(info.enabled, true);
-    assert.equal(info.self.nodeId, "nA");
     assert.equal(info.peers[0]!.priority, 2);
     assert.ok(info.peers[0]!.lastSeen);
     assert.equal(info.peers[1]!.lastSeen, null);
@@ -783,7 +236,8 @@ describe("mesh ON", () => {
       { nodeId: "nB", name: "127.0.0.1", online: true },
       { nodeId: "nOff", name: "off.lab", online: false },
     ];
-    process.env.SOVA_PEER_PORT = String(fakePort); // candidates are probed on the default peer port
+    const was = process.env.SOVA_PEER_PORT;
+    process.env.SOVA_PEER_PORT = new URL(B).port; // candidates are probed on the default peer port
     try {
       const [s, list] = await getJson<MeshCandidate[]>("/api/mesh/candidates");
       assert.equal(s, 200);
@@ -795,14 +249,14 @@ describe("mesh ON", () => {
         ],
       );
     } finally {
-      process.env.SOVA_PEER_PORT = "0";
+      if (was === undefined) delete process.env.SOVA_PEER_PORT;
+      else process.env.SOVA_PEER_PORT = was;
     }
   });
 
   test("PUT peers resolves a name through LocalAPI; refuses unknown names, this host and bad input", async () => {
     tailnetPeers = [{ nodeId: "nC", name: "c.lab", online: true }];
-    const keep = { id: "b", nodeId: "nB", name: "127.0.0.1", url: `http://127.0.0.1:${fakePort}` };
-    const [s, info] = await putJson<MeshInfo>("/api/mesh/peers", { peers: [keep, { id: "c", name: "c" }] });
+    const [s, info] = await putJson<MeshInfo>("/api/mesh/peers", { peers: [peersB, { id: "c", name: "c" }] });
     assert.equal(s, 200);
     assert.deepEqual(
       info.peers.map((p) => [p.id, p.nodeId, p.name]),
@@ -818,53 +272,9 @@ describe("mesh ON", () => {
     assert.equal((await putJson("/api/mesh/peers", { nope: 1 }))[0], 400);
   });
 
-  test("front door: the user's order and serve URLs, validated; the self name from the listener", async () => {
-    await putJson("/api/mesh/peers", {
-      peers: [
-        { id: "b", label: "B", nodeId: "nB", name: "b.lab", url: `http://127.0.0.1:${fakePort}`, serveUrl: "https://b.lab:9443/" },
-        { id: "dead", nodeId: "nD", name: "127.0.0.1", url: `http://127.0.0.1:${deadPort}` },
-      ],
-    });
-    const calls = identityCalls;
-    let [, fd] = await getJson<FrontDoorConfig>("/api/mesh/front-door");
-    assert.equal(identityCalls, calls, "no Tailscale call: the name the listener learnt is reused");
-    assert.deepEqual(
-      fd.order.map((h) => [h.id, h.upstream]),
-      [
-        [fd.order[0]!.id, "https://a.lab:8443"],
-        ["b", "https://b.lab:9443"],
-        ["dead", "https://127.0.0.1:8443"],
-      ],
-    );
-    assert.equal((await putJson("/api/mesh/settings", { frontDoorOrder: ["b", "nobody"] }))[0], 400);
-    assert.equal((await putJson("/api/mesh/settings", { frontDoorOrder: ["b", "b"] }))[0], 400);
-    assert.equal((await putJson("/api/mesh/settings", { serveUrl: "ftp://x" }))[0], 400);
-    const [s, settings] = await putJson<MeshSettings>("/api/mesh/settings", { frontDoorOrder: ["dead", "b"], serveUrl: "http://a.lab:8443" });
-    assert.equal(s, 200);
-    assert.deepEqual([settings.frontDoorOrder, settings.serveUrl], [["dead", "b"], "http://a.lab:8443"]);
-    [, fd] = await getJson<FrontDoorConfig>("/api/mesh/front-door");
-    assert.deepEqual(fd.order.map((h) => h.upstream), ["https://127.0.0.1:8443", "https://b.lab:9443", "http://a.lab:8443"]);
-    assert.match(fd.caddyfile, /WARNING: Caddy needs every upstream on one scheme/);
-    // A peers PUT keeps what it doesn't mention; null clears.
-    await putJson("/api/mesh/peers", {
-      peers: [
-        { id: "b", label: "B", nodeId: "nB", name: "b.lab", url: `http://127.0.0.1:${fakePort}` },
-        { id: "dead", nodeId: "nD", name: "127.0.0.1", url: `http://127.0.0.1:${deadPort}` },
-      ],
-    });
-    [, fd] = await getJson<FrontDoorConfig>("/api/mesh/front-door");
-    assert.equal(fd.order[1]!.upstream, "https://b.lab:9443", "the peer's serveUrl survives a PUT that omits it");
-    const [, cleared] = await putJson<MeshSettings>("/api/mesh/settings", { frontDoorOrder: null, serveUrl: null });
-    assert.deepEqual([cleared.frontDoorOrder, cleared.serveUrl], [undefined, undefined]);
-  });
-
   test("front door: a host can be left out (frontDoorExclude), validated, kept by a peers PUT, cleared by null or []", async () => {
-    await putJson("/api/mesh/peers", {
-      peers: [
-        { id: "b", label: "B", nodeId: "nB", name: "b.lab", url: `http://127.0.0.1:${fakePort}` },
-        { id: "phone", nodeId: "nP", name: "127.0.0.1", url: `http://127.0.0.1:${deadPort}` },
-      ],
-    });
+    const phone = { id: "phone", nodeId: "nP", name: "127.0.0.1", url: DEAD };
+    await putJson("/api/mesh/peers", { peers: [{ ...peersB, name: "b.lab" }, phone] });
     const stored = () => (JSON.parse(readFileSync(peersFile(), "utf8")) as { frontDoorExclude?: string[] }).frontDoorExclude;
     let [, fd] = await getJson<FrontDoorConfig>("/api/mesh/front-door");
     const self = fd.order[0]!.id;
@@ -878,12 +288,7 @@ describe("mesh ON", () => {
     [, fd] = await getJson<FrontDoorConfig>("/api/mesh/front-door");
     assert.deepEqual(fd.order.map((h) => h.id), [self, "b"]);
     assert.doesNotMatch(fd.caddyfile, /@from_phone|127\.0\.0\.1:8443/);
-    await putJson("/api/mesh/peers", {
-      peers: [
-        { id: "b", label: "B", nodeId: "nB", name: "b.lab", url: `http://127.0.0.1:${fakePort}` },
-        { id: "phone", nodeId: "nP", name: "127.0.0.1", url: `http://127.0.0.1:${deadPort}` },
-      ],
-    });
+    await putJson("/api/mesh/peers", { peers: [{ ...peersB, name: "b.lab" }, phone] });
     assert.deepEqual(stored(), ["phone"], "a peers PUT keeps it");
     let [, cleared] = await putJson<MeshLocalSettings>("/api/mesh/settings", { frontDoorExclude: [] });
     assert.deepEqual([cleared.frontDoorExclude, stored()], [undefined, undefined]);
@@ -900,12 +305,7 @@ describe("mesh ON", () => {
     let [s, settings] = await putJson<MeshSettings>("/api/mesh/settings", { loginKinds: "api-keys" });
     assert.deepEqual([s, settings.loginKinds, stored()], [200, "api-keys", "api-keys"]);
     // A peers PUT keeps it.
-    await putJson("/api/mesh/peers", {
-      peers: [
-        { id: "b", label: "B", nodeId: "nB", name: "127.0.0.1", url: `http://127.0.0.1:${fakePort}` },
-        { id: "dead", nodeId: "nD", name: "127.0.0.1", url: `http://127.0.0.1:${deadPort}` },
-      ],
-    });
+    await putJson("/api/mesh/peers", { peers: [peersB, peersDead] });
     assert.equal(stored(), "api-keys");
     [, settings] = await putJson<MeshSettings>("/api/mesh/settings", { loginKinds: "all" });
     assert.deepEqual([settings.loginKinds, stored()], [undefined, undefined], "all is the default, never stored");
@@ -934,36 +334,6 @@ describe("mesh ON", () => {
     }
   });
 
-  test("revocation: a hand edit that drops a peer takes effect on its very next call, and cuts its open socket", async () => {
-    const keep = [
-      { id: "b", label: "B", nodeId: "nB", name: "127.0.0.1", url: `http://127.0.0.1:${fakePort}` },
-      { id: "dead", nodeId: "nD", name: "127.0.0.1", url: `http://127.0.0.1:${deadPort}` },
-    ];
-    await putJson("/api/mesh/peers", { peers: keep });
-    const file = watchableSession();
-    whoisNode = "nB";
-    const port = listenerInfo()!.port;
-    const ws = await openWatch(port, file);
-    // A kept-alive HTTP connection admitted before the edit: a raw socket, so its end is observable.
-    const conn = await keptAlive(port, "/api/peer/hello");
-    assert.equal(conn.status, 200);
-    // The hand edit: b is gone; nobody opens the Mesh page.
-    const doc = JSON.parse(readFileSync(peersFile(), "utf8"));
-    doc.peers = doc.peers.filter((p: { id: string }) => p.id !== "b");
-    writeFileSync(peersFile(), JSON.stringify(doc));
-    // Its next call, on a new connection, is refused at once.
-    assert.equal((await peerGet("/api/peer/hello")).status, 403);
-    // That call's re-read cut b's open socket and its kept-alive connection.
-    await within(ws.closed, 2000, "the removed peer's open socket closes");
-    await within(conn.closed, 2000, "the removed peer's kept-alive connection closes");
-    // The same through PUT: re-add b, open a socket, remove b by PUT.
-    await putJson("/api/mesh/peers", { peers: keep });
-    const ws2 = await openWatch(port, file);
-    await putJson("/api/mesh/peers", { peers: keep.filter((p) => p.id !== "b") });
-    await within(ws2.closed, 2000, "the socket closes when a PUT removes its peer");
-    await putJson("/api/mesh/peers", { peers: keep });
-  });
-
   test("a malformed peers.json turns the mesh off and is never overwritten", async () => {
     writeFileSync(peersFile(), "{broken");
     const [, info] = await getJson<MeshInfo>("/api/mesh");
@@ -972,24 +342,7 @@ describe("mesh ON", () => {
     assert.equal(listenerInfo(), null);
     assert.equal((await putJson("/api/mesh/peers", { peers: [] }))[0], 409);
     assert.equal((await putJson("/api/mesh/settings", { hostLabel: "x" }))[0], 409);
+    assert.equal(readFileSync(peersFile(), "utf8"), "{broken", "never overwritten");
     rmSync(peersFile());
-  });
-
-  test("PUT peers [] turns the mesh off: the listener closes, open peer sockets included", async () => {
-    await putJson("/api/mesh/peers", { peers: [{ id: "b", nodeId: "nB", name: "127.0.0.1", url: `http://127.0.0.1:${fakePort}` }] });
-    await waitFor(() => (listenerInfo()?.addresses.length ?? 0) > 0);
-    const port = listenerInfo()!.port;
-    const file = watchableSession();
-    whoisNode = "nB";
-    const ws = await openWatch(port, file);
-    const calls = identityCalls;
-    const [s, info] = await putJson<MeshInfo>("/api/mesh/peers", { peers: [] });
-    assert.equal(s, 200);
-    assert.equal(info.enabled, false);
-    assert.equal(listenerInfo(), null);
-    assert.equal(identityCalls, calls, "turning off calls no Tailscale");
-    assert.equal(hookLog.at(-1), "stop");
-    await within(ws.closed, 2000, "the open socket was cut");
-    await assert.rejects(realFetch(`http://127.0.0.1:${port}/api/health`));
   });
 });

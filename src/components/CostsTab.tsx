@@ -30,7 +30,7 @@ import {
   tokenSum,
 } from "../lib/cost-history";
 import { usd } from "../lib/costs";
-import { compactModel, shortDate } from "../lib/format";
+import { compactModel, shortDate, usageModelNote } from "../lib/format";
 import { createPoll } from "../lib/poll";
 import { tokens } from "../lib/project-overseer-view";
 import { announce } from "../lib/ui-state";
@@ -519,11 +519,14 @@ function ModelTable(props: { answer: UsageCosts }) {
         </>
       }
     >
-      <For each={byCost(props.answer.byModel, (r) => `${r.provider}/${r.model}`)}>
+      <For each={byCost(props.answer.byModel, (r) => `${r.provider}/${r.model}${r.asked ? `?asked=${r.asked}` : ""}`)}>
         {(r) => (
           <tr>
-            <th scope="row" title={r.priceKey && r.priceKey !== `${r.provider}/${r.model}` ? `${r.provider}/${r.model}, priced as ${r.priceKey}` : `${r.provider}/${r.model}`}>
-              <span class="text-mono">{compactModel(r.model) ?? r.model}</span>
+            <th
+              scope="row"
+              title={[r.priceKey && r.priceKey !== `${r.provider}/${r.model}` ? `${r.provider}/${r.model}, priced as ${r.priceKey}` : `${r.provider}/${r.model}`, usageModelNote(r)].filter(Boolean).join(". ")}
+            >
+              <span class="text-mono">{compactModel(r.model) ?? r.model}{r.asked ? " ⚠" : ""}</span>
               <span class="cost-session-meta">{providerName(r.provider)}</span>
             </th>
             <Num label="Input">

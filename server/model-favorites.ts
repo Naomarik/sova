@@ -5,6 +5,13 @@ import type { ModelFavoriteResult } from "../shared/protocol";
 // picker's star read and write one file through one implementation: the palette's lock, re-read
 // and atomic rename, and its refusal to overwrite a file it can't parse. See CLAUDE.md.
 import { ModelFavorites } from "../pi-config/extensions/command-palette/favorites.ts";
+import { LEGACY_CLAUDE_IDS, resolveLegacyClaude } from "../pi-config/extensions/claude-code/catalog.ts";
+
+/** The old Claude Code ids a favorite may still be stored under for this catalog id (`opus[1m]` for `claude-opus-5-5`). */
+function legacyIdsOf(provider: string, id: string): string[] {
+  if (provider !== "claude-code-cli") return [];
+  return [`${id}[1m]`, ...Object.keys(LEGACY_CLAUDE_IDS).filter((k) => resolveLegacyClaude(k)?.id === id)];
+}
 
 /** `~/.pi/agent/model-favorites.json`, or under PI_CODING_AGENT_DIR (read per call, for tests). */
 export const favoritesFile = () => join(agentRoot(), "model-favorites.json");
@@ -23,7 +30,8 @@ export function readFavorites(path = favoritesFile()): (provider: string, id: st
     console.warn(`[models] favorites unreadable, listing none: ${(error as Error).message}`);
     return () => false;
   }
-  return (provider, id) => store.has({ provider, id });
+  // A favorite stored under an old Claude id stars its catalog model (§app.claude-code-provider/legacy-ids).
+  return (provider, id) => store.has({ provider, id }) || legacyIdsOf(provider, id).some((old) => store.has({ provider, id: old }));
 }
 
 /** "provider/id" split at the FIRST slash (a provider has none, a model id may); null if either half is empty. */
@@ -53,6 +61,11 @@ export function setFavorite(body: unknown, path = favoritesFile()): FavoriteOutc
   try {
     // The constructor reads the file too, so a malformed one throws here, before any lock.
     new ModelFavorites(path).set(model, b.favorite);
+    // Unstarring a catalog model also drops the old ids it was starred under; starring writes the catalog id.
+    if (!b.favorite) for (const old of legacyIdsOf(model.provider, model.id)) {
+      const store = new ModelFavorites(path);
+      if (store.has({ provider: model.provider, id: old })) store.set({ provider: model.provider, id: old }, false);
+    }
   } catch (error) {
     // Invalid JSON reaches us as the parser's own SyntaxError, which doesn't name the file.
     const message = error instanceof SyntaxError ? `Invalid model favorites file: ${path}` : (error as Error).message;

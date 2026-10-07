@@ -10,6 +10,7 @@ import { join, resolve } from "node:path";
 import { after, describe, test } from "node:test";
 import { Hono } from "hono";
 import type { BatonInfo, BatonTold } from "../shared/baton";
+import { until as waitUntil } from "./test-wait";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-told-")));
 process.on("exit", () => rmSync(root, { recursive: true, force: true }));
@@ -137,7 +138,7 @@ describe("who started it (§app.baton/told)", () => {
     await po.toolsForTest(project.id, { attended: false }).find((x) => x.name === "sova_start_gathering")!
       .execute("c2", { gap: "§gap/vat", plan: true, person: "Toni Diaz", why: "Planned: the VAT rate is open.", public_title: "VAT rate", goal: "Which VAT rate", question: "Which VAT rate?" } as never, undefined, undefined, undefined as never);
     await po.patchProjectOverseer(project.id, { autonomy: "L1" });
-    await new Promise((r) => setTimeout(r, 100));
+    await waitUntil(() => baton.allBatons().some((b) => b.publicTitle === "VAT rate"));
     const planned = baton.allBatons().find((b) => b.publicTitle === "VAT rate");
     assert.ok(planned, "the statechart started the plan");
     assert.deepEqual(statechartStarted(planned.sessionId), { by: "project-overseer", overseerId: overseerId(), why: "Planned: the VAT rate is open." });

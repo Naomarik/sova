@@ -32,8 +32,11 @@ function testFile() {
   return main && /\.test\.[cm]?[jt]s$/.test(main) ? path.relative(ROOT, path.resolve(main)) : null;
 }
 
-const file = mode === "off" ? null : testFile();
-if (file) install(file);
+const file = testFile();
+// A unit file's project engine takes the detached driver rather than probing systemd (a
+// `systemctl` child); integration files keep the real probe. Set whatever the guard's mode.
+if (file && !isIntegration(file)) process.env.SOVA_PROJECT_NO_SYSTEMD ??= "1";
+if (file && mode !== "off") install(file);
 
 function install(file) {
   const unit = !isIntegration(file);

@@ -366,7 +366,7 @@ test("drainWhere: no close from the host within the grace is 4503; a second drai
     gw.hop.drainWhere((k) => k === KEY, 5000);
     assert.equal(await pageClosed, 4503);
     // Measured: the first grace (300 ms) ends it, not the second's 5 s. The bounds only tell the
-    // two apart, with room for a loaded machine.
+    // two apart, with room for a loaded machine; the stepped-clock twin is in share-ws-hop.test.ts.
     const took = Date.now() - t;
     assert.ok(took >= 280 && took < 4500, `closed after the first grace: ${took} ms`);
     await recovers(gw, up, mode);

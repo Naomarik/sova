@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { appendFileSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
-import { after, describe, test } from "node:test";
+import { after, before, describe, test } from "node:test";
 import { PROJECT_OVERSEER_ENTRY, type ProjectOverseerSettings } from "../shared/project-overseer";
 import { stateView } from "./harness/state-view";
 import { piRuntime, piSession } from "./harness/pi/testing/handle";
@@ -756,7 +756,9 @@ describe("the watch loop's decision, on its watch statechart", async () => {
       po.setClockForTest(null);
     }
   };
-  await to(t);
+  // When its cases start, not while the file collects: the clock is every engine's, and another
+  // describe's org may still be stepping its own setup.
+  before(() => to(t));
 
   test("runs on news, when idle, ≥ the gap after the last look, under the daily cap", async () => {
     const seen = looks.length;

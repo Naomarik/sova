@@ -45,6 +45,16 @@ export function hostTone(state: PeerState | "self"): { tone: "up" | "skewed" | "
   return { tone: "down", word: state === "refused" ? "refused" : "down" };
 }
 
+/**
+ * A peer session row's host word and its tone, in the host menu's words; null for a plain up peer.
+ * An up peer that keeps its sessions from this host reads "hidden".
+ */
+export function rowHostState(state: PeerState, sessionsHidden: boolean): { word: string; tone: "warn" | "error" } | null {
+  if (state === "up") return sessionsHidden ? { word: "hidden", tone: "warn" } : null;
+  const { tone, word } = hostTone(state);
+  return { word: word ?? state, tone: tone === "down" ? "error" : "warn" };
+}
+
 /** A peer session's head mark: its dot tone and the words its title says; null while the state is unknown. */
 export function hostMark(name: string, state: PeerState | undefined, unavailable: string | null): { tone: "up" | "skewed" | "down"; title: string } | null {
   if (!state) return null;

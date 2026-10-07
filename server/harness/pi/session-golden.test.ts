@@ -23,7 +23,8 @@
 // outcome it expects; no step depends on how long anything took.
 //
 // One process, one throwaway PI_CODING_AGENT_DIR (models.json registers the scripted models), the
-// server imported (PORT=0) so the Overseer and the baton are wired. ~/.pi is never read or written.
+// server's app built in-process (server/app.ts, no listener) with the Overseer's dispatch wired as
+// server/index.ts wires it, so the Overseer and the baton are wired. ~/.pi is never read or written.
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -47,7 +48,6 @@ const root = realpathSync(mkdtempSync("/tmp/sova-session-golden-"));
 process.on("exit", () => rmSync(root, { recursive: true, force: true }));
 const agentDir = join(root, "agent");
 process.env.PI_CODING_AGENT_DIR = agentDir;
-process.env.PORT = "0";
 const sessionsDir = join(agentDir, "sessions", "--golden--");
 mkdirSync(sessionsDir, { recursive: true });
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
@@ -89,7 +89,10 @@ writeFileSync(
   }),
 );
 
-const { server } = await import("../../index");
+const { buildApp } = await import("../../app");
+const { app } = buildApp({ extensionEntriesOf: async () => [] });
+// The Overseer's tools call the routes in-process, wired as server/index.ts wires them.
+(await import("../../overseer")).setOverseerDispatch((path, init) => app.request(path, init));
 const { acquireChat, disposeAllChats, disposeHeldChat, setLinksSource } = await import("../../chat-manager");
 type ChatClient = import("../../chat-manager").ChatClient;
 const { canonicalPath } = await import("../../paths");
@@ -108,7 +111,6 @@ setLinksSource(async () => []);
 
 after(async () => {
   await disposeAllChats();
-  await new Promise<void>((res, rej) => server.close((err) => (err ? rej(err) : res())));
 });
 
 type Chat = Awaited<ReturnType<typeof acquireChat>>;

@@ -64,7 +64,7 @@ of its v1 frame over `inputs/effects.json` and every faux stream. Re-record the 
 
 `share/<set>/<fixture>/session-share-view.json` pins the frame a session share page's socket gets for each
 committed fixture (`{type:"view", view}`, a live share titled "Golden share"; `null` where the share refuses the
-file), written by `server/share-wire.test.ts`. They were recorded on this branch and compare equal on the
+file), written by `server/share-wire.integration.test.ts`. They were recorded on this branch and compare equal on the
 server before wire 2 (`6088958a`, the tree W3.4 started from), so they are the share frames as they were. That
 test also holds both share sockets and `/api/s` to no `event`, `meta` or `facts` key, and to the same bytes
 whether or not the page asks for `wire=2`. The mesh hop is pinned without goldens of its own: in

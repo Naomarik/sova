@@ -1,6 +1,6 @@
 // Run: npx tsx --test server/session-summary-route.test.ts (or npm test). Uses a throwaway
-// PI_CODING_AGENT_DIR in the OS temp dir; ~/.pi is never read or written. The server is imported
-// with PORT=0 so it binds an ephemeral port instead of the dev port.
+// PI_CODING_AGENT_DIR in the OS temp dir; ~/.pi is never read or written. The server's app is built
+// in-process (server/app.ts): no listener.
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -11,15 +11,16 @@ const agentDir = realpathSync(mkdtempSync(join(tmpdir(), "sova-summary-route-"))
 // A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
 process.on("exit", () => rmSync(agentDir, { recursive: true, force: true }));
 process.env.PI_CODING_AGENT_DIR = agentDir;
-process.env.PORT = "0";
 const sessionsDir = join(agentDir, "sessions", "--tmp-summary--");
 mkdirSync(sessionsDir, { recursive: true });
 
-const { app, server } = await import("./index");
+const { buildApp } = await import("./app");
+const { app } = buildApp({ extensionEntriesOf: async () => [] });
+// The Overseer's tools call the routes in-process, wired as server/index.ts wires them.
+(await import("./overseer")).setOverseerDispatch((path, init) => app.request(path, init));
 const { disposeAllChats } = await import("./chat-manager");
 
 after(async () => {
-  server.close();
   await disposeAllChats();
   rmSync(agentDir, { recursive: true, force: true });
 });

@@ -25,14 +25,13 @@ writeFileSync(join(dir, "settings.json"), JSON.stringify({ extensions: [resolve(
 const DEFAULT = { version: 1, mode: "delegate", strict: false, minorModes: ["align", "spec"] };
 writeFileSync(join(dir, "mode.json"), JSON.stringify(DEFAULT));
 process.env.PI_CODING_AGENT_DIR = dir;
-process.env.PORT = "0";
-const { app, server } = await import("./index");
+const { buildApp } = await import("./app");
+const { app } = buildApp({ extensionEntriesOf: async () => [] });
 const { acquireChat, disposeAllChats, disposeHeldChat, ModeRefusedError } = await import("./chat-manager");
 const { ensureOverseer } = await import("./overseer");
 const { resolveChatMode } = await import("./mode-state");
 after(async () => {
   await disposeAllChats();
-  await new Promise<void>((res, rej) => server.close((err) => (err ? rej(err) : res())));
   rmSync(dir, { recursive: true, force: true });
   rmSync(cwd, { recursive: true, force: true });
 });

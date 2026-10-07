@@ -77,7 +77,7 @@ describe("Claude model discovery (server)", () => {
     await assert.rejects(discoverClaudeModels({ spawnImpl: hangs.spawnImpl, timeoutMs: 50 }), /did not list its models within/);
     const broken = fakeClaude((r) => [success(r.request_id, "nope")]);
     await assert.rejects(discoverClaudeModels({ spawnImpl: broken.spawnImpl }), /no model list/);
-    await assert.rejects(discoverClaudeModels({ executable: "/nonexistent/claude-for-sova-test" }), /Could not run the Claude Code CLI/);
+    // (a real executable that isn't there: claude-models.integration.test.ts; a spawn error event: below)
   });
 
   test("parity: every shared fixture parses as the extension's parser parses it", () => {

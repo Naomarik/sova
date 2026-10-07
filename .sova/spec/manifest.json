@@ -11135,7 +11135,8 @@
         "server/project-services/shared-removed.test.ts",
         "server/project-services/test-verb.test.ts",
         "server/project-services/adopt.test.ts",
-        "server/project-services/ports-grace.test.ts"
+        "server/project-services/ports-grace.test.ts",
+        "server/test-ports.ts"
       ]
     },
     "§app/project-services": {

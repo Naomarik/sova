@@ -15360,6 +15360,18 @@
       "requires": [
         "§app.server-runtime/choice"
       ]
+    },
+    "§app.session-share/reading": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.session-share/page",
+        "§app.owner-page/page"
+      ],
+      "code": [
+        "src/share/thread.css"
+      ]
     }
   },
   "boundary": {

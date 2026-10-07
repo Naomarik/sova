@@ -426,6 +426,7 @@ once), **lease** (an offer's lock on its first taker).
   `rel="noopener noreferrer nofollow"`). The page builds it as DOM nodes, never as HTML, so the
   text stays escaped. No other scheme is linked, nor an address without one (`www.x.com`, an
   e-mail address). The model's replies render as markdown, whose links open the same way.
+  A reply's markdown reads as §app.session-share/reading describes.
 - **Drawings.** A `vis` fence in a reply whose kind is `chart`, `flow`, `matrix`, `timeline`,
   `tree`, `steps`, `wireframe`, `layers`, `state` or `sequence` is drawn as in the chat
   (§chat.markdown/visuals): the same figure, title, notes and caption, with no Source or Copy. A

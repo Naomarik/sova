@@ -209,7 +209,8 @@ copy is §design.copy-deck/owner-page, and its list of words never used there is
 
 - One column at every width, at most 720px wide and centred; at 390px nothing scrolls sideways,
   every button and row is at least 44px tall, and lines wrap rather than being cut. It is part of
-  the share build (`dist-share/`), using its styles; dark only.
+  the share build (`dist-share/`), using its styles; dark only. A reply's markdown reads as
+  §app.session-share/reading describes.
 - **Read only.** The share listener has only GET routes for it: `GET /i/<token>` (the same page
   shell as `/h/`), `GET /api/i/<token>` (home), `GET /api/i/<token>/p/<q_handle>` and
   `GET /api/i/<token>/c/<k_handle>`. Any other `/i/` or `/api/i/` path, any other method, and a

@@ -1,4 +1,4 @@
-// Run: pnpm exec tsx --test server/owner-page-privacy.test.ts. §app.owner-page/never: a unique
+// Run: pnpm exec tsx --test server/owner-page-privacy.integration.test.ts. §app.owner-page/never: a unique
 // marker is planted in every private field the org holds (the About text, roles, voices, skills,
 // contacts, referrals, decision areas, goals, briefings to others, the wrap-up, thinking and tool
 // calls, the project overseer's notes, ideas, to-dos, actions, instructions and conversation,
@@ -10,6 +10,7 @@
 // PI_CODING_AGENT_DIR and workspace in the OS temp dir, deleted after; no model is called.
 import assert from "node:assert/strict";
 import { appendFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { after, describe, test } from "node:test";
@@ -35,12 +36,14 @@ const { recordDecision, seedConflicts } = await import("./org-test-fixtures");
 const { listDecisions } = await import("./reconcile");
 const { appendUpdate } = await import("./project-updates");
 const { registerOrgRoutes } = await import("./org-routes");
+const { createShareServer } = await import("./share/listener");
 const { createShareApp } = await import("./share/routes");
 const { stateRoot } = await import("./state-root");
 
-// The share routes in-process; the share listener's own answers: owner-page-privacy.integration.test.ts.
-const share = createShareApp();
+const server = createShareServer();
 after(() => {
+  server.close();
+  server.closeAllConnections();
   rmSync(root, { recursive: true, force: true });
 });
 
@@ -191,6 +194,8 @@ visits.recordOpen(links.findLink(kimToken)!, { userAgent: "Mozilla/5.0 (X11; Lin
 
 const app = new Hono();
 registerOrgRoutes(app);
+await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 const ownerLink = (await (await app.request(`/api/orgs/${org.id}/owner/link`)).json()) as OwnerLinkResult;
 const token = ownerLink.link.slice(ownerLink.link.indexOf("/i/") + 3);
 
@@ -217,7 +222,7 @@ const ids = (): string[] => [
 async function everyAnswer(): Promise<[string, string][]> {
   const out: [string, string][] = [];
   const get = async (p: string) => {
-    const res = await share.request(p, { headers: { "user-agent": "Mozilla/5.0 (iPhone) Version/17.0 Safari/604.1" } });
+    const res = await fetch(base + p, { headers: { "user-agent": "Mozilla/5.0 (iPhone) Version/17.0 Safari/604.1" } });
     const text = await res.text();
     out.push([`${res.status} GET ${p}`, text]);
     return { status: res.status, text };
@@ -247,80 +252,20 @@ function everyFile(): string {
   return [...files(ws), ...files(stateRoot())].map((f) => readFileSync(f, "utf8")).join("\n");
 }
 
-describe("nothing private reaches the owner (§app.owner-page/never)", async () => {
-  const answers = await everyAnswer();
-
-  test("positive control: every marker is really in the org's records, and the pages did answer", async () => {
-    const all = everyFile() + JSON.stringify(await (await app.request(`/api/orgs/${org.id}`)).json());
-    // Recorded nowhere any more (q1): a build's worktree folder is this host's, found by its branch; the
-    // legacy token count went with started.json. Both stay in the leak checks below.
-    const unrecorded = new Set(["worktree", "tokens"]);
-    for (const [field, mark] of Object.entries(M)) if (!unrecorded.has(field)) assert.ok(all.includes(mark), `${field} was planted`);
-    for (const field of unrecorded) assert.ok(!all.includes(M[field as keyof typeof M]), `${field} is recorded nowhere (q1: no started.json)`);
-    const ok = answers.filter(([label]) => label.startsWith("200"));
-    assert.ok(ok.some(([l]) => l.includes("/p/")) && ok.some(([l]) => l.includes("/c/")) && ok.some(([l]) => l.includes("preview")), answers.map(([l]) => l).join("\n"));
-    const home = JSON.parse(answers.find(([l]) => l === `200 GET /api/i/${token}`)![1]) as OwnerHome;
-    assert.equal(home.projects.length, 1);
-    assert.equal(home.waiting.length, 1, "the owner's own question shows");
-    assert.equal(home.projects[0]!.latestNews?.text.includes("Opening hours are agreed."), true, "the update shows");
-    assert.ok(
-      answers.some(([, t]) => t.includes("We open at nine.")),
-      "control: a person's own words in a shown conversation do reach the owner",
-    );
-    assert.ok(answers.some(([, t]) => t.includes("For Alperen: the budget question.")), "control: a briefing addressed to the owner shows");
-  });
-
-  test("no marker, id, token, hash or path in any answer", () => {
+// owner-page-privacy.test.ts reads every owner answer from the share routes in-process: here the share
+// listener gives the same answers, byte for byte, so its checks hold for what an owner really fetches.
+describe("the share listener's /i/ answers are the share routes' (§app.owner-page/never)", () => {
+  test("every owner answer over the listener is the in-process answer, and carries no marker", async () => {
+    const answers = (await everyAnswer()).filter(([label]) => label.includes(" GET "));
+    assert.ok(answers.length >= 5, answers.map(([l]) => l).join("\n"));
+    const inProcess = createShareApp();
     for (const [label, body] of answers) {
+      const path = label.slice(label.indexOf(" GET ") + 5);
+      const res = await inProcess.request(path, { headers: { "user-agent": "Mozilla/5.0 (iPhone) Version/17.0 Safari/604.1" } });
+      assert.equal(`${res.status} GET ${path}`, label);
+      const strip = (s: string) => s.replace(/"updatedAt":"[^"]+"/g, "");
+      assert.equal(strip(await res.text()), strip(body), label);
       for (const [field, mark] of Object.entries(M)) assert.ok(!body.includes(mark), `${field} leaked in ${label}`);
-      for (const id of ids()) assert.ok(!body.includes(id), `${id} leaked in ${label}`);
-      assert.ok(!body.includes(token), `the owner's own token echoed in ${label}`);
-      if (label.includes(" GET /i/")) continue; // the static shell: markers and ids only
-      // Keys that would carry a cost, a model, a visit or a profile field.
-      const keys = [...body.matchAll(/"([A-Za-z]+)":/g)].map((m) => m[1]!);
-      for (const bad of ["cost", "tokens", "model", "thinking", "device", "lastSeenAt", "language", "role", "voice", "contact", "skills", "decides", "competence", "goal", "sessionId", "personId", "path", "file", "branch", "routeReason"])
-        assert.ok(!keys.includes(bad), `key ${bad} in ${label}`);
     }
-  });
-
-  test("who started it and why stay on the operator's strip: never the session list's baton field or the org page's rows (§app.baton/told)", async () => {
-    const strip = await (await app.request(`/api/baton?path=${encodeURIComponent(s5.path)}`)).text();
-    assert.ok(strip.includes(M.why) && strip.includes(M.overseerId), "control: the operator's strip carries them");
-    const told = await (await app.request(`/api/baton/${s5.sessionId}/told`)).text();
-    assert.ok(told.includes(M.why), "control: What It's Told carries the why");
-    const toldS1 = await (await app.request(`/api/baton/${s1.sessionId}/told`)).text();
-    assert.ok(toldS1.includes(M.systemPreamble) && toldS1.includes(M.systemTool), "control: What It's Told carries the recorded prompt and tools");
-    const page = await (await app.request(`/api/orgs/${org.id}`)).text();
-    const summaries = JSON.stringify([s1, s2, s3, s4, s5].map((x) => baton.batonSummaryField(x.path)));
-    for (const [label, body] of [["the org page", page], ["the session list's baton field", summaries]] as const)
-      for (const mark of [M.why, M.overseerId, M.systemPreamble, M.systemTool]) assert.ok(!body.includes(mark), `${mark} in ${label}`);
-  });
-
-  test("hidden conversations and switched-off projects answer 404, the same as a random handle", () => {
-    const by = (p: string) => answers.find(([l]) => l.endsWith(`GET ${p}`))!;
-    const random = answers.find(([l]) => l.includes(`/c/${plinks.handleOf("k", s3.sessionId)}`) && l.includes("GET"))!;
-    assert.match(random[0], /^404/);
-    assert.match(by(`/api/i/${token}/c/${plinks.handleOf("k", s4.sessionId)}`)[0], /^404/);
-    assert.match(by(`/api/i/${token}/p/${plinks.handleOf("q", pb.id)}`)[0], /^404/);
-    assert.equal(random[1], by(`/api/i/${token}/p/${plinks.handleOf("q", pb.id)}`)[1]);
-  });
-});
-
-// ---- the structure: what the Owner page's code may read ------------------------------------------------
-
-describe("the Owner page's code never reads private stores", () => {
-  const serverDir = resolve(import.meta.dirname);
-  const read = (f: string) => readFileSync(join(serverDir, f), "utf8");
-  const files = ["owner-page.ts", "owner.ts", "person-links.ts", "project-updates.ts", ...readdirSync(join(serverDir, "share")).map((f) => `share/${f}`)];
-
-  test("no About text, overseer notes, ideas, to-dos, actions, settings or instructions reader; no coding titles, usage or costs", () => {
-    const forbidden = /\b(readOrgAbout|readOrgHistory|readNotes|readManifest|readProse|promptToc|readTodos|readPoSettings|readPoState|logAction|getSessionSummary|getSessionInsight|piUsageTally|projectCost|orgCosts|readCostLedger|readUsageLedger|appendUsage|priceMessage|readActions)\b|"\.\.?\/(overseer-(store|ideas|todos)|project-costs|model-prices)"|"\.\.\/shared\/(costs|model-prices)"|about\.md|notes\.md|actions\.jsonl|costs\.json|usage\.jsonl/;
-    for (const f of files) assert.doesNotMatch(read(f), forbidden, relative(serverDir, join(serverDir, f)));
-  });
-
-  test("the page never spreads a record into an answer", () => {
-    const text = read("owner-page.ts");
-    // A spread of a record itself (`...row`), not of a list drawn from one (`...row.handoffs.map(…)`).
-    assert.doesNotMatch(text, /\.\.\.(row|person|owner|project|org|d|c|p|u|l|r|link|view|hit)\b(?![.(\[])/);
   });
 });

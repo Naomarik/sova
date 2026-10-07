@@ -341,7 +341,8 @@ once), **lease** (an offer's lock on its first taker).
   round when its token is kept, `{link, at}`, and the strip shows a Copy Link for each (the
   holder's in its More actions menu, §app.baton/strip-layout; each invitee's on the invitees' row).
   **Get Link** (`GET /api/baton/:sid/link?keep=1`) is offered only while the holder has no kept
-  live link: it answers the kept one if another tab made one meanwhile, else mints one for the
+  live link: it answers the kept one if another tab made one meanwhile (never one a WhatsApp send
+  still in flight minted, §app.outreach/links), else mints one for the
   current hand-off and turns off the older ones for it, a live one made before tokens were kept
   included. **New Link** (the same route without `keep`; an older host answers `keep` this way too)
   always mints and turns off the older ones; its row says "Makes a new link and deletes the one you

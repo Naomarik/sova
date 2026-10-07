@@ -1,13 +1,13 @@
 // Run: pnpm test -- server/mesh/links-transfer.test.ts
 // The bytes of a file offer, in-process: listing (counts, exclude, symlinks, gitlinks, the sender's
-// sandbox), spools on disk, serving one with Range, the receiver's dest checks, and pulls that
-// resume, verify and pre-scan. The sender is a fake fetch that answers through serveTar; spools are
-// packed without tar (links-transfer-test-fixtures.ts), and extraction records what reached it. With
-// the host's real tar (packing, a pull that lands, extraction over a tree):
-// links-transfer.integration.test.ts. Every tree lives in a throwaway dir, removed after.
+// sandbox), packing into a spool, serving it with Range, the receiver's dest checks, and pulls that
+// resume, verify and extract. tar is the in-process stand-in (links-transfer-test-fixtures.ts); the
+// sender is a fake fetch that answers through serveTar. With the host's real tar (its failures, a
+// pull that lands, extraction over a tree): links-transfer.integration.test.ts. Every tree lives in a
+// throwaway dir, removed after.
 import assert from "node:assert/strict";
-import { randomBytes } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { createHash, randomBytes } from "node:crypto";
+import { mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, test } from "node:test";
@@ -29,7 +29,7 @@ import {
 } from "./links-transfer";
 import { type ResolvedPolicy, writeDenial } from "../../pi-config/extensions/sandbox/policy.ts";
 import { prescan } from "../link-sandbox";
-import { makeTree, packInProcess, refusal } from "./links-transfer-test-fixtures";
+import { inProcessTar, makeTree, refusal, snapshotTree, spoolMembers } from "./links-transfer-test-fixtures";
 
 const tmp = mkdtempSync(join(tmpdir(), "sova-links-transfer-test-"));
 after(() => rmSync(tmp, { recursive: true, force: true }));
@@ -181,17 +181,23 @@ describe("listOffer", () => {
 
 describe("Spools", () => {
   const root = join(tmp, "state-sender");
-  const spools = new Spools({ root: () => root, ...quiet });
+  const spools = new Spools({ root: () => root, ...quiet, tar: inProcessTar });
 
-  before(async () => {
-    // The spool the tests below find on disk (packing it with tar: links-transfer.integration.test.ts).
+  test("packs roots with different parents into one spool whose members are exactly the listing", async () => {
     const l = await listOffer({ cwd: work, home, paths: ["proj", "~/outside", "notes.md"], exclude: ["node_modules"], sandbox: null });
-    packInProcess(root, "of_0000000000000001", l);
+    const seen: number[] = [];
+    const r = await spools.pack("of_0000000000000001", l, (n) => seen.push(n));
+    const file = spoolFile(root, "of_0000000000000001");
+    assert.equal(statSync(file).size, r.size);
+    assert.equal(statSync(file).mode & 0o777, 0o600);
+    assert.equal(r.sha256, createHash("sha256").update(readFileSync(file)).digest("hex"));
+    assert.ok(seen.length > 0 && seen.at(-1) === r.size);
+    assert.deepEqual((await spoolMembers(file)).sort(), l.packList.flatMap((p) => p.members).sort());
+    assert.deepEqual(spools.status("of_0000000000000001"), { state: "ready", written: r.size });
   });
 
-
   test("a spool on disk reads ready after a restart", async () => {
-    const again = new Spools({ root: () => root, ...quiet });
+    const again = new Spools({ root: () => root, ...quiet, tar: inProcessTar });
     assert.equal(again.status("of_0000000000000001")?.state, "ready");
     assert.equal(again.status("of_00000000000000ff"), null);
   });
@@ -328,8 +334,7 @@ describe("resolveDest and checkDest", () => {
     const sb = { writeDenial: (c: string, o?: { creating?: boolean }) => writeDenial(policy, c, o) };
     const sendRoot = join(tmp, "locked-sender");
     const rcvRoot = join(tmp, "locked-receiver");
-    const spools = new Spools({ root: () => sendRoot, ...quiet });
-    const extracted: string[] = [];
+    const spools = new Spools({ root: () => sendRoot, ...quiet, tar: inProcessTar });
     before(() => {
       makeTree(join(dest, "pj", "locked"), { "keep.txt": "keep" });
       makeTree(join(tmp, "locked-src", "a"), { pj: { "new.txt": "new" } });
@@ -339,11 +344,11 @@ describe("resolveDest and checkDest", () => {
     async function offerAndPull(src: string, offerId: string) {
       const { scan } = checkDest({ resolvedDest: dest, rootNames: ["pj"], protectedRoots, sandbox: sb });
       const listing = await listOffer({ cwd: src, home, paths: ["pj"], sandbox: null });
-      const snap = packInProcess(sendRoot, offerId, listing);
+      const snap = await spools.pack(offerId, listing);
       const pulls = new Pulls({
         root: () => rcvRoot,
         ...quiet,
-        extract: async (_part, into) => void extracted.push(into),
+        tar: inProcessTar,
         fetchTar: async ({ headers }) => serveTar({ file: spools.file(offerId), ...snap, range: headers.Range, ifRange: headers["If-Range"] }),
       });
       return pulls.pull({
@@ -361,15 +366,16 @@ describe("resolveDest and checkDest", () => {
       });
     }
 
-    test("an archive that leaves the read-only path alone is accepted and reaches extraction", async () => {
+    test("an archive that leaves the read-only path alone is accepted and lands", async () => {
       await offerAndPull(join(tmp, "locked-src", "a"), "of_2000000000000001");
-      assert.deepEqual(extracted, [dest]);
+      assert.equal(readFileSync(join(dest, "pj", "new.txt"), "utf8"), "new");
+      assert.equal(readFileSync(join(dest, "pj", "locked", "keep.txt"), "utf8"), "keep");
     });
     test("an archive with a member in it passes the offer, then the pre-scan refuses naming it", async () => {
       const e = await refusal(offerAndPull(join(tmp, "locked-src", "b"), "of_2000000000000002"));
       assert.equal(e.reason, "not-writable");
       assert.match(e.message, /pj\/locked/);
-      assert.deepEqual(extracted, [dest], "nothing more extracted");
+      assert.throws(() => statSync(join(dest, "pj", "locked", "x")), "nothing extracted");
     });
     test("a root not there yet that would hold a protected path is still refused at the offer", async () => {
       const e = await refusal(() => checkDest({ resolvedDest: dest, rootNames: ["fresh"], protectedRoots, sandbox: sb }));
@@ -382,7 +388,7 @@ describe("resolveDest and checkDest", () => {
 describe("Pulls", () => {
   const sendRoot = join(tmp, "pull-sender");
   const rcvRoot = join(tmp, "pull-receiver");
-  const spools = new Spools({ root: () => sendRoot, ...quiet });
+  const spools = new Spools({ root: () => sendRoot, ...quiet, tar: inProcessTar });
   let listing: OfferListing;
   let snap: { sha256: string; size: number };
   const offerId = "of_1000000000000000";
@@ -392,7 +398,8 @@ describe("Pulls", () => {
     makeTree(join(tmp, "big"), { proj: { "a.txt": "alpha", sub: { "b.txt": "beta", "l": { link: "../a.txt" } } } });
     writeFileSync(join(tmp, "big", "proj", "random.bin"), randomBytes(3 * 1024 * 1024));
     listing = await listOffer({ cwd: join(tmp, "big"), home, paths: ["proj"], sandbox: null });
-    snap = packInProcess(sendRoot, offerId, listing);
+    const r = await spools.pack(offerId, listing);
+    snap = { sha256: r.sha256, size: r.size };
   });
 
   type Answer = (req: { headers: Record<string, string>; signal: AbortSignal; n: number }) => Promise<Response> | Response;
@@ -407,11 +414,8 @@ describe("Pulls", () => {
     };
     return { fetchTar, log };
   }
-  /** What reached extraction: each dest with the archive's bytes then (tar -x itself: the integration file). */
-  const extracted = new Map<string, Buffer>();
-  const extract: PullDeps["extract"] = async (part, dest) => void extracted.set(dest, readFileSync(part));
   const pulls = (fetchTar: PullDeps["fetchTar"], timings?: PullDeps["timings"]) =>
-    new Pulls({ root: () => rcvRoot, fetchTar, extract, ...quiet, timings: { idleMs: 500, downWaitMs: 200, maxBackoffMs: 50, ...timings } });
+    new Pulls({ root: () => rcvRoot, fetchTar, ...quiet, tar: inProcessTar, timings: { idleMs: 500, downWaitMs: 200, maxBackoffMs: 50, ...timings } });
   let n = 0;
   const job = (extra: Partial<Parameters<Pulls["pull"]>[0]> = {}) => ({
     offerId,
@@ -421,8 +425,8 @@ describe("Pulls", () => {
     rootNames: ["proj"],
     ...extra,
   });
-  /** The verified spool, byte for byte, went to extraction into dest. */
-  const sameBin = (dest: string) => assert.ok(extracted.get(dest)?.equals(readFileSync(spools.file(offerId))), `the spool reached extraction into ${dest}`);
+  const landed = (dest: string) => assert.deepEqual(snapshotTree(join(dest, "proj")).filter((l) => !l.startsWith("random.bin")), snapshotTree(join(tmp, "big", "proj")).filter((l) => !l.startsWith("random.bin")));
+  const sameBin = (dest: string) => assert.ok(readFileSync(join(dest, "proj", "random.bin")).equals(readFileSync(join(tmp, "big", "proj", "random.bin"))));
 
   test("learns the snapshot, downloads, verifies, extracts, deletes the .part", async () => {
     const s = sender();
@@ -433,7 +437,9 @@ describe("Pulls", () => {
     assert.equal(r.received, snap.size);
     assert.deepEqual(learnt, [snap]);
     assert.equal(extracting.length, 1);
+    landed(j.resolvedDest);
     sameBin(j.resolvedDest);
+    assert.equal(readlinkSync(join(j.resolvedDest, "proj", "sub", "l")), "../a.txt");
     assert.throws(() => statSync(partFile(rcvRoot, offerId)));
   });
 
@@ -529,7 +535,7 @@ describe("Pulls", () => {
     assert.equal(s.log.length, 2);
     assert.equal(s.log[1]!.range, undefined, "restarted from 0");
     assert.throws(() => statSync(partFile(rcvRoot, offerId)));
-    assert.equal(extracted.has(j.resolvedDest), false, "nothing extracted");
+    assert.throws(() => statSync(j.resolvedDest), "nothing extracted");
   });
 
   test("a spool re-packed under a resume (If-Range mismatch → 200) starts over", async () => {
@@ -563,7 +569,7 @@ describe("Pulls", () => {
     const e = await refusal(pulls(s.fetchTar).pull(j));
     assert.equal(e.reason, "not-writable");
     assert.ok(seen.includes("proj/sub/"));
-    assert.equal(extracted.has(j.resolvedDest), false, "nothing extracted");
+    assert.throws(() => statSync(j.resolvedDest));
     assert.throws(() => statSync(partFile(rcvRoot, offerId)));
   });
 

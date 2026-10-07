@@ -8,7 +8,7 @@
 // the receiver's download `<stateRoot>/mesh-links/incoming/<of>.tar.zst.part`. Never under /tmp.
 // The archive is one tar per offered root, concatenated, through zstd: every root has its own
 // parent (`tar -T` ignores `-C` lines), so the receiver extracts with `--ignore-zeros`.
-import { execFile, spawn } from "node:child_process";
+import { type ChildProcess, execFile, spawn, type StdioOptions } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createReadStream, createWriteStream, lstatSync, mkdirSync, readdirSync, realpathSync, renameSync, rmSync, statSync } from "node:fs";
 import { lstat, open, opendir, readFile } from "node:fs/promises";
@@ -87,6 +87,10 @@ export function tarAvailable(): Promise<boolean> {
 }
 
 const tarEnv = () => ({ ...process.env, LC_ALL: "C" });
+
+/** How tar runs with `args` (default: `tar` on this host). Tests: an in-process stand-in. */
+export type TarRunner = (args: string[], stdio: StdioOptions) => ChildProcess;
+const hostTar: TarRunner = (args, stdio) => spawn("tar", args, { env: tarEnv(), stdio });
 
 // ---- listing (the sender) ---------------------------------------------------------------------------
 
@@ -308,7 +312,7 @@ export class Spools {
   private readonly running = new Map<string, { kill(): void }>();
   private readonly removed = new Set<string>();
 
-  constructor(private readonly deps: { root(): string; now?(): number; log?(line: string): void }) {}
+  constructor(private readonly deps: { root(): string; now?(): number; log?(line: string): void; tar?: TarRunner }) {}
 
   private now(): number {
     return this.deps.now?.() ?? Date.now();
@@ -375,12 +379,12 @@ export class Spools {
     });
     sink.catch(() => undefined);
     let changed = "";
-    let child: ReturnType<typeof spawn> | null = null;
+    let child: ChildProcess | null = null;
     this.running.set(offerId, { kill: () => child?.kill("SIGKILL") });
     try {
       for (const root of listing.packList) {
         if (this.removed.has(offerId)) break;
-        const c = spawn("tar", ["-C", root.parent, "--null", "--no-recursion", "-T", "-", "-cf", "-"], { env: tarEnv(), stdio: ["pipe", "pipe", "pipe"] });
+        const c = (this.deps.tar ?? hostTar)(["-C", root.parent, "--null", "--no-recursion", "-T", "-", "-cf", "-"], ["pipe", "pipe", "pipe"]);
         child = c;
         let stderr = "";
         c.stderr!.on("data", (b: Buffer) => (stderr = (stderr + b.toString("utf8")).slice(-4096)));
@@ -593,8 +597,8 @@ export interface PullDeps {
   now?(): number;
   timings?: Partial<PullTimings>;
   log?(line: string): void;
-  /** The verified archive at `part` into `dest` (default: zstd → `tar -x`). Tests: in-process. */
-  extract?(part: string, dest: string): Promise<void>;
+  /** How tar extracts (default: `tar` on this host). */
+  tar?: TarRunner;
 }
 
 /** Waiting for a moment that `kick` or `cancel` can end early. */
@@ -729,7 +733,7 @@ export class Pulls {
               }
             }
             this.check(job.offerId);
-            await (this.deps.extract ?? extract)(part, job.resolvedDest);
+            await extract(part, job.resolvedDest, this.deps.tar ?? hostTar);
           } finally {
             release();
           }
@@ -889,7 +893,7 @@ async function sha256Of(file: string): Promise<string> {
 }
 
 /** The verified archive into dest: zstd → `tar -x --ignore-zeros`. tar-failed on any error. */
-async function extract(part: string, dest: string): Promise<void> {
+async function extract(part: string, dest: string, tar: TarRunner): Promise<void> {
   try {
     mkdirSync(dest, { recursive: true });
   } catch (err) {
@@ -898,7 +902,7 @@ async function extract(part: string, dest: string): Promise<void> {
     throw new TransferError("bad-dest", `${dest} can't be created (${code ?? (err as Error).message}).`);
   }
   if (!statSync(dest).isDirectory()) throw new TransferError("bad-dest", `${dest} exists and is not a directory.`);
-  const c = spawn("tar", ["-x", "--ignore-zeros", "--no-same-owner", "-C", dest, "-f", "-"], { env: tarEnv(), stdio: ["pipe", "ignore", "pipe"] });
+  const c = tar(["-x", "--ignore-zeros", "--no-same-owner", "-C", dest, "-f", "-"], ["pipe", "ignore", "pipe"]);
   let stderr = "";
   c.stderr!.on("data", (b: Buffer) => (stderr = (stderr + b.toString("utf8")).slice(-4096)));
   const exited = new Promise<number | null>((ok) => {

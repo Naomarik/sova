@@ -49,7 +49,7 @@ import type { LinkSandbox } from "../link-sandbox";
 import { NotShared, sharesWith } from "./access";
 import type { MeshApi } from "./index";
 import { LinkTransfers, newOfferId, OFFER_TTL_MS, type OfferListing, TransferError, type TransferEvent } from "./links-offers";
-import type { PullTimings } from "./links-transfer";
+import type { PullTimings, TarRunner } from "./links-transfer";
 import { isLanNodeId } from "./lan-cert";
 import type { PeerEntry } from "./peers";
 
@@ -95,6 +95,8 @@ export interface LinksDeps {
   protectedRoots?(): string[];
   /** Tests: the pulls' idle and retry timings. */
   transferTimings?: Partial<PullTimings>;
+  /** Tests: how tar runs for file offers (default: `tar` on this host). */
+  tar?: TarRunner;
 }
 
 /** A local act's refusal: the route answers `status` with `body`. */
@@ -231,6 +233,7 @@ export class MeshLinks {
       changed: (offer, ev) => this.onTransfer(offer, ev),
       now: () => this.now(),
       ...(deps.transferTimings ? { timings: deps.transferTimings } : {}),
+      ...(deps.tar ? { tar: deps.tar } : {}),
     });
     deps.mesh.onPeerUp((peerId) => {
       // After the outbox: a held accept reaches the sender before its pull asks for the bytes.

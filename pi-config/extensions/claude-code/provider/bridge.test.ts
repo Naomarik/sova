@@ -682,7 +682,7 @@ test("a model change restarts rather than continuing on a stale child", { timeou
 	});
 
 	assert.equal(children.length, 2);
-	assert.equal(children[1]!.argv[children[1]!.argv.indexOf("--model") + 1], "opus");
+	assert.equal(children[1]!.argv[children[1]!.argv.indexOf("--model") + 1], "claude-opus-5-5", "an old id reaches the CLI as its catalog id");
 	await bridge.disposeAll();
 });
 
@@ -926,7 +926,7 @@ function finalTextFrames(text: string): unknown[] {
 }
 
 function piModel(): Model<Api> {
-	const definition = STATIC_MODELS.find((candidate) => candidate.id === "sonnet")!;
+	const definition = STATIC_MODELS.find((candidate) => candidate.id === "claude-sonnet-5-5")!;
 	return { ...definition, provider: "claude-code-cli", api: "claude-code-cli", baseUrl: "claude-code-cli://local" } as Model<Api>;
 }
 
@@ -1940,7 +1940,7 @@ test("an oversized summary request fails loudly at once instead of hanging, and 
 
 test("an oversized message fails the turn through stream.ts as an error pi reports, not a hang", { timeout: 8000 }, async () => {
 	const { bridge } = harness({ limits: { maxLineBytes: 64 * 1024 } });
-	const model = { ...STATIC_MODELS.find((m) => m.id === "sonnet")!, provider: "claude-code-cli", api: "claude-code-cli", baseUrl: "x" } as Model<Api>;
+	const model = { ...STATIC_MODELS.find((m) => m.id === "claude-sonnet-5-5")!, provider: "claude-code-cli", api: "claude-code-cli", baseUrl: "x" } as Model<Api>;
 	const context = normalizeContext({ systemPrompt: "You are a context summarization assistant.", messages: [user(`Summarize ${"x".repeat(100_000)}`)] });
 	const events: AssistantMessageEvent[] = [];
 	for await (const event of streamClaudeCode(bridge, model, context, { sessionId: "0199b6e2-7c1a-7000-8000-000000000002" })) events.push(event);

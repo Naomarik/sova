@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { closeSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync, writeSync } from "node:fs";
+import { closeSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, unlinkSync, utimesSync, writeFileSync, writeSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, before, describe, it } from "node:test";
@@ -400,7 +400,7 @@ describe("dirty scope", () => {
     // Touch without changing content: stat-dirty, not a change.
     const t = statSync(join(tree, "keep.txt"));
     writeFileSync(join(tree, "keep.txt"), readFileSync(join(tree, "keep.txt")));
-    execFileSync("touch", ["-d", new Date(t.mtimeMs + 5000).toISOString(), join(tree, "keep.txt")]);
+    utimesSync(join(tree, "keep.txt"), t.atime, new Date(t.mtimeMs + 5000));
     writeFileSync(join(tree, "feature.ts"), "export const x = 2;\n");
     writeFileSync(join(tree, "staged.txt"), "s\n");
     git(tree, "add", "staged.txt");

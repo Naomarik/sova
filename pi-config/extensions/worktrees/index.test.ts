@@ -236,18 +236,22 @@ test("a merge made outside this session's turns gets no card", async () => {
 	}
 });
 
-test("in a spec project the merge note names the foreign § and warnings, and worktrees:merged carries them", async () => {
+test("in a spec project the warnings are said once: a tool merge's answer (its card is the merge line), a detected merge's message", async () => {
 	const r = repo();
 	try {
 		const seen: unknown[] = [];
 		const calls: unknown[] = [];
 		const f = fakePi();
 		f.pi.events.on("worktrees:merged", (d: unknown) => seen.push(d));
-		worktrees(f.pi, { specReport: async (_git, req) => (calls.push(req), { foreign: ["§app/list"], warnings: ["draft d has 1 unpromoted record (§a/b): promote what shipped, or say why not"] }) });
+		const draft = { text: "draft d has 1 unpromoted record (§a/b): promote what shipped", key: "d§a/b" };
+		let warnings = [draft, { text: "1 changed file no claim maps (x.txt): spec any whose change a user sees" }];
+		worktrees(f.pi, { specReport: async (_git, req) => (calls.push(req), { warnings }) });
 		const c = f.ctx(r.main);
 		await f.fire("session_start", c);
 		await f.call(c, { action: "create", name: "s" });
+		await f.call(c, { action: "create", name: "p" });
 		const t = join(r.root, ".worktrees", "repo-s");
+		const p = join(r.root, ".worktrees", "repo-p");
 		const before = sh(r.main, "rev-parse", "master");
 		writeFileSync(join(t, "s.txt"), "s\n");
 		sh(t, "add", "s.txt");
@@ -255,10 +259,31 @@ test("in a spec project the merge note names the foreign § and warnings, and wo
 		const out = await f.call(c, { action: "merge", path: t });
 		const tip = sh(r.main, "rev-parse", "master");
 		assert.deepEqual(calls, [{ path: t, branch: "feat/s", before, after: tip, branchSha: tip, onDefault: true }], "into master, the default branch (q14)");
-		assert.match(out.content[0].text, /\(fast-forward\)\.\nForeign § this merge changes: §app\/list\nSpec warning: draft d has 1 unpromoted record/);
-		assert.equal(f.messages[0]!.content, `Merged feat/s into master at ${tip.slice(0, 7)}, 1 commit, +1 −0\nForeign § this merge changes: §app/list\nSpec warning: draft d has 1 unpromoted record (§a/b): promote what shipped, or say why not`);
+		assert.match(out.content[0].text, /\(fast-forward\)\.\nSpec warning: draft d has 1 unpromoted record \(§a\/b\): promote what shipped\nSpec warning: 1 changed file no claim maps \(x\.txt\): spec any whose change a user sees\n/);
+		assert.doesNotMatch(out.content[0].text, /Foreign §|last line|Plumbing|Deferred/);
+		assert.equal(f.messages[0]!.content, `Merged feat/s into master at ${tip.slice(0, 7)}, 1 commit, +1 −0`, "the card's message is the merge line alone");
 		assert.deepEqual(Object.keys(f.messages[0]!.details as object).sort(), ["added", "branch", "commits", "fastForward", "how", "path", "removed", "sha", "target", "version"], "the card's details are unchanged");
-		assert.deepEqual(seen, [{ version: 1, path: t, branch: "feat/s", target: "master", sha: tip, how: "tool", spec: true, foreign: ["§app/list"], warnings: ["draft d has 1 unpromoted record (§a/b): promote what shipped, or say why not"], before, after: tip, worktree: t }]);
+
+		// A merge seen after a turn: its message carries the warnings, the draft already said left out.
+		await f.fire("agent_start", c);
+		writeFileSync(join(p, "p.txt"), "p\n");
+		sh(p, "add", "p.txt");
+		sh(p, "commit", "-q", "-m", "p");
+		sh(r.main, "merge", "-q", "--no-edit", "--no-ff", "feat/p");
+		await f.fire("agent_settled", c);
+		assert.equal(f.messages.length, 2);
+		assert.equal(f.messages[1]!.content, `Merged feat/p into master at ${sh(r.main, "rev-parse", "--short=7", "master")}, 1 commit, +1 −0\nSpec warning: 1 changed file no claim maps (x.txt): spec any whose change a user sees`);
+
+		// Its pending § changed: said again.
+		warnings = [{ ...draft, key: "d§a/b,§a/c" }];
+		await f.call(c, { action: "create", name: "q" });
+		const q = join(r.root, ".worktrees", "repo-q");
+		writeFileSync(join(q, "q.txt"), "q\n");
+		sh(q, "add", "q.txt");
+		sh(q, "commit", "-q", "-m", "q");
+		const again = await f.call(c, { action: "merge", path: q });
+		assert.match(again.content[0].text, /\nSpec warning: draft d has 1 unpromoted record/);
+		assert.deepEqual(seen, [], "no merge event on the bus");
 	} finally {
 		r.done();
 	}

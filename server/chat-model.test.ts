@@ -9,7 +9,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ModelRuntime, SessionManager } from "@earendil-works/pi-coding-agent";
-import { modelForSessionOpen, recordedModelForEmptyBranch, restatesRecordedModel } from "./harness/pi/open";
+import { legacyClaudeModelForOpen, modelForSessionOpen, recordedModelForEmptyBranch, restatesRecordedModel } from "./harness/pi/open";
 
 type Recorded = { provider: string; modelId: string } | null;
 type Message = { role: string };
@@ -96,4 +96,22 @@ test("only a message-less branch that already records that exact model calls the
   // Header-only and nothing recorded: the default append must land, which is how such a session
   // comes to record a model at all.
   assert.equal(restatesRecordedModel(context([], null), "ollama-cloud", "deepseek-v4.1-flash"), false, "nothing recorded, nothing restated");
+});
+
+test("an unmigrated chat recorded on an old Claude id reopens on the catalog model it means, never the default (§app.claude-code-provider/legacy-ids)", () => {
+  const OPUS = { provider: "claude-code-cli", id: "claude-opus-5-5", contextWindow: 1_000_000 };
+  const HAIKU = { provider: "claude-code-cli", id: "claude-haiku-4-5", contextWindow: 200_000 };
+  const rt = runtime({ "claude-code-cli/claude-opus-5-5": OPUS, "claude-code-cli/claude-haiku-4-5": HAIKU, "zai/glm-5.3": GLM }, ["claude-code-cli", "zai"]);
+  const saved = rt.getModel("zai", "glm-5.3")!;
+  for (const [id, model] of [["opus[1m]", OPUS], ["opus", OPUS], ["claude-opus-5-5[1m]", OPUS], ["haiku", HAIKU]] as const) {
+    const sm = manager([{ role: "user" }, { role: "assistant" }], { provider: "claude-code-cli", modelId: id });
+    assert.equal(legacyClaudeModelForOpen(sm, rt), model, id);
+    assert.equal(modelForSessionOpen(sm, rt, saved), model, `${id}: the catalog model outranks the default`);
+  }
+  // Only old ids the registry doesn't know: a registered or a non-Claude recording is the SDK's own restore.
+  assert.equal(legacyClaudeModelForOpen(manager([{ role: "user" }], { provider: "claude-code-cli", modelId: "claude-opus-5-5" }), rt), undefined);
+  assert.equal(legacyClaudeModelForOpen(manager([{ role: "user" }], { provider: "zai", modelId: "opus" }), rt), undefined);
+  assert.equal(legacyClaudeModelForOpen(manager([{ role: "user" }], { provider: "claude-code-cli", modelId: "claude-opus-6" }), rt), undefined, "an id the catalog doesn't know");
+  // The SDK's own guards: no auth, no model.
+  assert.equal(legacyClaudeModelForOpen(manager([{ role: "user" }], { provider: "claude-code-cli", modelId: "opus[1m]" }), runtime({ "claude-code-cli/claude-opus-5-5": OPUS }, [])), undefined);
 });

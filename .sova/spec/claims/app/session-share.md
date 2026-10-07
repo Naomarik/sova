@@ -132,8 +132,8 @@ gateway only routes by hash (§mesh/public). Wire shapes: `shared/session-share.
 - `/s/<token>` is the share build's session page (`src/share/SessionShareApp.tsx`): one column,
   phone first, like the hand-off page. The head is the public title and "Shared {date} · read
   only"; a snapshot adds "up to {date and time}" (its `through`), and a Follow live share carries
-  a `Live` chip. User messages are right-hand bubbles and replies left-hand ones; neither is
-  labelled with a name.
+  a `Live` chip. User messages are right-hand bubbles and each reply takes the column's width
+  (§app.session-share/reading); neither is labelled with a name.
 - **Drawings.** A reply's `vis` fences draw as on the hand-off page (§app.baton/outsider-view),
   plus `sequence` and `state`. `svg` draws as an image, which runs no script and fetches nothing;
   `code` and `html` show as their source, escaped, under a caption. Any other kind, or one that
@@ -155,6 +155,20 @@ gateway only routes by hash (§mesh/public). Wire shapes: `shared/session-share.
   only when it expired); an unknown token shows "This link doesn't open a shared session.". A
   public gateway's 503 or a 4503 close keeps what the page shows, says it is offline, and reads
   and reconnects, backing off from 5 to 60 seconds (§mesh.public/offline).
+
+## §app.session-share/reading — How a reply reads
+
+- A reply's markdown reads as the chat's does, a step under the page, on every share page (`/s/`,
+  `/h/` and `/i/`): headings are never larger than the page title — `#` at heading-m, `##` at
+  heading-s, `###` to `######` at body size, all semibold — with space above and below.
+  Paragraphs, lists, quotes, tables and drawings share one block gap; list items keep a small gap
+  between them, and a nested list sits just under its item.
+- **Tables** are ruled: one border round the table, a rule under each row, a sunken header row, and
+  cells aligned left (a column marked right or centre keeps it) whose text wraps. A table wider
+  than the column scrolls inside itself; at 390px the page never scrolls sideways.
+- **Quotes** carry a left rule and read in secondary ink. Bold text, and a table's header, is
+  semibold.
+- **Width.** A reply card takes the column's width; user bubbles stay narrow, on the right.
 
 ## §app.session-share/sheet — Sharing in Session detail, and the Share sheet
 

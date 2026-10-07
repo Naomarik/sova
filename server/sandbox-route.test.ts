@@ -24,12 +24,11 @@ process.on("exit", () => rmSync(cwd, { recursive: true, force: true }));
 mkdirSync(join(dir, "extensions"), { recursive: true });
 if (!absent) symlinkSync(resolve(here, "../pi-config/extensions/sandbox"), join(dir, "extensions", "sandbox"));
 process.env.PI_CODING_AGENT_DIR = dir;
-process.env.PORT = "0";
-const { app, server } = await import("./index");
+const { buildApp } = await import("./app");
+const { app } = buildApp({ extensionEntriesOf: async () => [] });
 const { acquireChat, disposeAllChats } = await import("./chat-manager");
 after(async () => {
   await disposeAllChats();
-  await new Promise<void>((res, rej) => server.close((err) => (err ? rej(err) : res())));
   rmSync(dir, { recursive: true, force: true });
   rmSync(cwd, { recursive: true, force: true });
 });

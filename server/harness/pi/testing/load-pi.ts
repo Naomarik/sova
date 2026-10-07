@@ -10,7 +10,22 @@ import { pathToFileURL } from "node:url";
 type PiAgent = typeof import("@earendil-works/pi-coding-agent");
 
 const REPO = resolve(import.meta.dirname, "../../../..");
-export const piPackageDir = realpathSync(process.env.PI_PACKAGE_DIR ?? join(REPO, "node_modules/@earendil-works/pi-coding-agent"));
+const PI_NAME = "@earendil-works/pi-coding-agent";
+export const piPackageDir = realpathSync(process.env.PI_PACKAGE_DIR ?? join(REPO, "node_modules", PI_NAME));
+/** Whether the caller named a pi (a canary run): read at load, before a test sets PI_PACKAGE_DIR itself. */
+const callerPi = process.env.PI_PACKAGE_DIR !== undefined;
+
+/**
+ * Throws unless the checkout's pi is the one package.json pins, so a node_modules from another checkout
+ * fails as that, never as behaviour diffs. A caller-set PI_PACKAGE_DIR (a canary run) is exempt.
+ */
+export function assertPinnedPi(): void {
+  if (callerPi) return;
+  const pinned = JSON.parse(readFileSync(join(REPO, "package.json"), "utf8")).dependencies?.[PI_NAME] as string | undefined;
+  const pkg = join(REPO, "node_modules", PI_NAME, "package.json");
+  const found = existsSync(pkg) ? (JSON.parse(readFileSync(pkg, "utf8")).version as string) : "none";
+  if (found !== pinned) throw new Error(`node_modules has pi ${found}, package.json pins ${pinned}: run pnpm install --frozen-lockfile (is node_modules from another checkout?)`);
+}
 
 /** `name`'s directory as Node resolves it from inside `from`: each ancestor's node_modules, nearest first. */
 function packageDirFrom(from: string, name: string): string {
@@ -43,6 +58,7 @@ export interface LoadedPi {
 let loaded: Promise<LoadedPi> | undefined;
 export function loadPi(): Promise<LoadedPi> {
   loaded ??= (async () => {
+    assertPinnedPi();
     const agent: PiAgent = process.env.PI_PACKAGE_DIR ? await import(entryOf(piPackageDir)) : await import("@earendil-works/pi-coding-agent");
     const ai = await import(entryOf(packageDirFrom(piPackageDir, "@earendil-works/pi-ai")));
     const typebox = await import(entryOf(packageDirFrom(piPackageDir, "typebox")));

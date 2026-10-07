@@ -213,7 +213,7 @@ export type EntryKind =
   | "report" // subagent reports and other long extension messages (custom_message); see `report`
   | "worktree-merge" // a merge the session recorded (pi-config worktrees extension); see `worktreeMerge`
   | "align" // an `align` tool result that changed an alignment, or an exemption (pi-config mode extension); see `align`
-  | "spec-turn" // the spec check's record of a run that changed something (pi-config mode extension); see `specTurn`
+  | "spec-turn" // legacy: the retired spec card; no longer produced, older mesh peers may still send it (renders nothing)
   | "unknown";
 
 /**
@@ -346,6 +346,9 @@ export interface TranscriptItem {
       tool-call rows; absent on other kinds and entries with neither (renderers fall back to
       the session's current model). */
   model?: string;
+  /** assistant-text only: the model the provider says answered (pi's `responseModel`), when the
+      reply records one; the author line names it (§app.claude-code-provider/model-identity). */
+  answered?: string;
   /** Overseer markers, both invisible `custom` entries (never LLM context, ignored by the TUI):
       - `sent`: `customType:"sova-overseer-sent"`, data `OverseerSentMarkerData`. The row itself
         renders NOTHING; the client tags the user row whose id is `targetId` with an "Overseer" tag.
@@ -390,11 +393,6 @@ export interface TranscriptItem {
       call, whose tool-call row renders nothing once this row is there. A failed call, a `get`, or
       details that don't check out stay an ordinary tool-result. */
   align?: AlignRowInfo;
-  /** kind "spec-turn" only: the mode extension's `spec-turn` custom entry, checked by its own
-      `normalizeSpecTurnDetails` (pi-config/extensions/mode/spec-turn.ts, §chat.spec-card/record),
-      without the claim text it captured (GET /api/spec-turn/claim serves that). Never model
-      context. Details that don't check out give no row. */
-  specTurn?: SpecTurnInfo;
   /** The entry's timestamp (ISO), on every row whose entry has one. */
   at?: string;
   /** The entry's facts, on its first row only (EntryMeta). Absent on rows to a consumer that asked
@@ -481,48 +479,6 @@ export interface AlignRowInfo {
 }
 
 /** A merge the session recorded: by its `worktree merge` tool, or detected after one of its turns. */
-/** The spec card's record (§chat.spec-card/record): the extension's SpecTurnDetails without `prose`. */
-export interface SpecTurnInfo {
-  v: 1;
-  ops: { kind: "commit" | "merge" | "ff" | "promote" | "rebase" | "reset"; tree: string; branch?: string; actor: string; before: string; after: string }[];
-  /** The § the reply's `Also changes:` line named, with its words. */
-  own: SpecTurnItemInfo[];
-  /** The other § the check computed for the run, with an earlier record's words when one had them. */
-  landed: SpecTurnItemInfo[];
-  /** § that came in from the default branch (`from`), counted per area. */
-  arrived?: { from: string; count: number; byArea: { area: string; count: number }[] };
-  created: string[];
-  gate: {
-    unmapped: { path: string; status?: string; plumbing?: string }[];
-    unpromoted: { draft?: string; ids: string[]; deferred?: string }[];
-    stale: string[];
-    handResolved: string[];
-  };
-  check: { ok: boolean; problem?: string; override?: string; reprompts: number; incomplete?: string };
-}
-
-export interface SpecTurnItemInfo {
-  id: string;
-  change?: string;
-  what?: string;
-  /** Index in `ops`. */
-  op?: number;
-}
-
-/** GET /api/spec-turn/claim: one claim's text for the claim sheet (§chat.spec-card/claim-sheet). */
-export interface SpecClaimText {
-  id: string;
-  /** Where the text came from: a commit of the run, the record's capture at settle, or the current spec. */
-  source: "commit" | "captured" | "current";
-  /** The text as of the turn (source "commit" | "captured"), or now (source "current"); absent when the
-      claim didn't exist there (deleted). */
-  after?: string;
-  /** The text as of the commit before the turn's operation, when it existed then. */
-  before?: string;
-  /** The commit `after` was read at (source "commit"). */
-  rev?: string;
-}
-
 export interface WorktreeMergeInfo {
   path: string;
   branch: string;
@@ -1704,6 +1660,15 @@ export interface DelegateBackendOptions {
       provider, `claude-code-cli`, registered only in sessions started with it on). A model of one
       of these that `models` doesn't list is NOT VERIFIED, never "not offered". */
   sessionScopedProviders?: string[];
+  /** claude-code only: what the CLI's own list says that Sova's Claude catalog doesn't (models it
+      names that the catalog doesn't know; a family alias it now runs as another model). Absent when
+      the list agrees or couldn't be read. Never changes `models`. */
+  drift?: ClaudeCatalogDrift;
+}
+
+export interface ClaudeCatalogDrift {
+  unknown: { id: string; name?: string }[];
+  moved: { family: string; id: string; current: string }[];
 }
 
 export interface DelegateOptions {
@@ -2523,6 +2488,9 @@ export interface TokenUsage { input: number; output: number; cacheRead: number; 
 export interface WorkerInfo {
   id: string; name: string; status: WorkerStatus; working: boolean;
   model?: string; backend?: string; preview?: string;
+  /** claude-code: the Claude catalog model it was asked for, when `model` (the one that answered)
+      is another one (§app.claude-code-provider/model-identity). */
+  asked?: string;
   /** Who serves this worker's model, lower-case, leading the pane's meta line: the ref's own
       provider (`zai` for `zai/glm-5.3`), a bare id's provider from pi's cached catalogs, or
       `claude code` for a claude-code worker (its own sub/route). Derived server-side in

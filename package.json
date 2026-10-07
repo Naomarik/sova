@@ -21,6 +21,7 @@
     "dev:hermetic": "node scripts/hermetic-agent-dir.mjs --unlock-url && PORT=${SOVA_PORT:-4810} PI_CODING_AGENT_DIR=\"$PWD/.agent\" scripts/start-server.sh",
     "dev:hermetic:node": "SOVA_RUNTIME=node pnpm run dev:hermetic",
     "prices:update": "tsx scripts/prices-update.mjs",
+    "claude:catalog": "node scripts/claude-catalog.mjs",
     "voice:install": "tsx scripts/voice.ts",
     "statecharts": "tsx scripts/statecharts.ts",
     "statecharts:watch": "node scripts/statecharts-watch.mjs",
@@ -30,7 +31,9 @@
     "start": "scripts/start-server.sh",
     "test:bun": "node scripts/nice.mjs node scripts/run-tests.mjs --runtime bun",
     "test:node": "node scripts/nice.mjs node scripts/run-tests.mjs --runtime node",
-    "test": "node scripts/nice.mjs node scripts/run-tests.mjs"
+    "test": "node scripts/nice.mjs node scripts/run-tests.mjs",
+    "test:int": "node scripts/nice.mjs node scripts/run-tests.mjs --integration",
+    "test:all": "node scripts/nice.mjs node scripts/run-tests.mjs --all"
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "1.0.3",

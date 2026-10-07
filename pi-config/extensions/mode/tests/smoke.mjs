@@ -98,8 +98,8 @@ function makeCtx(store) {
 
 // Fake claude-code backend; models list is swappable per scenario.
 let offered = [
-	{ id: "claude-fable-5-1[1m]", name: "Fable" },
-	{ id: "opus[1m]", name: "Opus" },
+	{ id: "claude-fable-5-1", name: "Fable" },
+	{ id: "claude-opus-5-5", name: "Opus" },
 ];
 
 const { api, hooks, commands, shortcuts, renderers, registeredTools, entries, sent, events, getTools } = makeApi();
@@ -178,7 +178,7 @@ assert.equal(store.status.get("mode"), "<accent>delegate</accent>", "heavy statu
 const heavyPrompt = await beforeAgentStart({ systemPrompt: "base" }, ctx);
 assert.match(heavyPrompt.systemPrompt, /^base\n/);
 assert.match(heavyPrompt.systemPrompt, /# Mode: delegate/);
-assert.match(heavyPrompt.systemPrompt, /claude-fable-5-1\[1m\]/);
+assert.match(heavyPrompt.systemPrompt, /claude-fable-5-1/);
 assert.ok(entries.some((e) => e.type === "mode" && e.data.mode === "delegate"), "transcript marker appended");
 const modeEntries = () => entries.filter((e) => e.type === "mode");
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -208,12 +208,12 @@ assert.equal(store.status.get("mode"), "<dim>normal</dim>");
 
 // Planner fallback: fable listed without medium → warning status + prompt names opus/high.
 // (An alias the CLI's varying list omits is unverified and stays in use; see the routing tests.)
-offered = [{ id: "claude-fable-5-1[1m]", name: "Fable", efforts: ["low"] }, { id: "opus[1m]", name: "Opus" }];
+offered = [{ id: "claude-fable-5-1", name: "Fable", efforts: ["low"] }, { id: "claude-opus-5-5", name: "Opus" }];
 await commands.get("mode").handler("delegate", ctx);
 assert.equal(store.status.get("mode"), "<warning>delegate · fallback:plan · strict</warning>", "fallback reflected in status (strict is still on from the previous scenario)");
 const fallbackPrompt = await beforeAgentStart({ systemPrompt: "base" }, ctx);
-assert.match(fallbackPrompt.systemPrompt, /- Planning & specs .* → backend "claude-code", model "opus\[1m\]", effort "high"\. This is the configured FALLBACK/);
-assert.match(store.notices.at(-1).message, /^Delegate routing:\nPlanning & specs: fallback claude-code · opus\[1m\] · high \(claude-fable-5-1\[1m\] does not support effort "medium" \(supports: low\)\)$/, "fallback is disclosed");
+assert.match(fallbackPrompt.systemPrompt, /- Planning & specs .* → backend "claude-code", model "claude-opus-5-5", effort "high"\. This is the configured FALLBACK/);
+assert.match(store.notices.at(-1).message, /^Delegate routing:\nPlanning & specs: fallback claude-code · claude-opus-5-5 · high \(claude-fable-5-1 does not support effort "medium" \(supports: low\)\)$/, "fallback is disclosed");
 assert.equal(store.notices.at(-1).level, "warning");
 
 // Toggling via the shortcut flips modes
@@ -240,8 +240,8 @@ assert.match(renderers.get("mode")({ data: { mode: "delegate" } }, {}, ctx.ui.th
 
 // Switching to heavy keeps align; the heavy block precedes the align block
 offered = [
-	{ id: "claude-fable-5-1[1m]", name: "Fable" },
-	{ id: "opus[1m]", name: "Opus" },
+	{ id: "claude-fable-5-1", name: "Fable" },
+	{ id: "claude-opus-5-5", name: "Opus" },
 ];
 await commands.get("mode").handler("delegate", ctx);
 assert.equal(store.status.get("mode"), "<accent>delegate · strict · align</accent>");
@@ -730,10 +730,10 @@ const reseed = () => { rmSync(profilesFile, { force: true }); rmSync(profilesDef
 const policyFile = path.join(process.env.PI_CODING_AGENT_DIR, "model-policy.json");
 const writeRouting = (mutate) => {
 	const settings = { version: 1, profiles: {
-		planning: { primary: { backend: "claude-code", model: "claude-fable-5-1[1m]", effort: "medium" }, fallback: { backend: "claude-code", model: "opus[1m]", effort: "high" } },
-		investigation: { primary: { backend: "claude-code", model: "opus[1m]", effort: "low" }, fallback: null },
-		routine: { primary: { backend: "claude-code", model: "opus[1m]", effort: "low" }, fallback: null },
-		complex: { primary: { backend: "claude-code", model: "opus[1m]", effort: "medium" }, fallback: null },
+		planning: { primary: { backend: "claude-code", model: "claude-fable-5-1", effort: "medium" }, fallback: { backend: "claude-code", model: "claude-opus-5-5", effort: "high" } },
+		investigation: { primary: { backend: "claude-code", model: "claude-opus-5-5", effort: "low" }, fallback: null },
+		routine: { primary: { backend: "claude-code", model: "claude-opus-5-5", effort: "low" }, fallback: null },
+		complex: { primary: { backend: "claude-code", model: "claude-opus-5-5", effort: "medium" }, fallback: null },
 	} };
 	mutate(settings);
 	// Atomic replace, the way Sova writes it: a new inode, so the per-turn stat sees the change.
@@ -742,8 +742,8 @@ const writeRouting = (mutate) => {
 	reseed();
 };
 offered = [
-	{ id: "claude-fable-5-1[1m]", name: "Fable", efforts: ["low", "medium", "high", "xhigh", "max"] },
-	{ id: "opus[1m]", name: "Opus", efforts: ["low", "medium", "high", "xhigh", "max"] },
+	{ id: "claude-fable-5-1", name: "Fable", efforts: ["low", "medium", "high", "xhigh", "max"] },
+	{ id: "claude-opus-5-5", name: "Opus", efforts: ["low", "medium", "high", "xhigh", "max"] },
 ];
 const delegateEntriesBefore = modeEntries().length;
 await commands.get("mode").handler("delegate", ctx);
@@ -752,8 +752,8 @@ assert.deepEqual(modeEntries().at(-1).data, { mode: "delegate", active: { versio
 assert.equal(modeEntries().length, delegateEntriesBefore + 1);
 assert.ok(!existsSync(delegateFile), "no switch writes the routing file");
 let turn = (await beforeAgentStart({ systemPrompt: "base" }, ctx)).systemPrompt;
-assert.match(turn, /- Routine implementation .* → backend "claude-code", model "opus\[1m\]", effort "low"; no fallback — if it fails, ask the user\./, "defaults without a file");
-assert.match(turn, /- Investigation .* → backend "claude-code", model "opus\[1m\]", effort "low"; no fallback — if it fails, ask the user\./);
+assert.match(turn, /- Routine implementation .* → backend "claude-code", model "claude-opus-5-5", effort "low"; no fallback — if it fails, ask the user\./, "defaults without a file");
+assert.match(turn, /- Investigation .* → backend "claude-code", model "claude-opus-5-5", effort "low"; no fallback — if it fails, ask the user\./);
 
 // An edit to the routing reaches this already-delegate session at its next turn boundary.
 const piCtx = {
@@ -761,14 +761,14 @@ const piCtx = {
 	modelRegistry: { getAvailable: () => [{ provider: "zai", id: "glm-5.3", name: "GLM", api: "openai-completions", reasoning: true, input: ["text"] }] },
 };
 writeRouting((s) => {
-	s.profiles.routine = { primary: { backend: "pi", model: "zai/glm-5.3", effort: "high" }, fallback: { backend: "claude-code", model: "opus[1m]", effort: "low" } };
+	s.profiles.routine = { primary: { backend: "pi", model: "zai/glm-5.3", effort: "high" }, fallback: { backend: "claude-code", model: "claude-opus-5-5", effort: "low" } };
 });
 turn = (await beforeAgentStart({ systemPrompt: "base" }, piCtx)).systemPrompt;
-assert.match(turn, /- Routine implementation .* → backend "pi", model "zai\/glm-5.3", effort "high"; fallback backend "claude-code", model "opus\[1m\]", effort "low"\./, "re-read at the turn boundary");
+assert.match(turn, /- Routine implementation .* → backend "pi", model "zai\/glm-5.3", effort "high"; fallback backend "claude-code", model "claude-opus-5-5", effort "low"\./, "re-read at the turn boundary");
 await flush();
 await flush();
 await commands.get("mode").handler("status", piCtx);
-assert.match(store.notices.at(-1).message, /^  Routine implementation: pi · zai\/glm-5.3 · high, fallback claude-code · opus\[1m\] · low — using primary$/m, "the background probe verified the pi tuple");
+assert.match(store.notices.at(-1).message, /^  Routine implementation: pi · zai\/glm-5.3 · high, fallback claude-code · claude-opus-5-5 · low — using primary$/m, "the background probe verified the pi tuple");
 assert.match(store.notices.at(-1).message, /^delegate routing:$/m);
 assert.match(store.notices.at(-1).message, /^subagent profile: My setup \(the default\)$/m, "the seeded profile is the default");
 
@@ -778,9 +778,9 @@ assert.equal(await beforeAgentStart({ systemPrompt: "base" }, ctx), undefined, "
 await commands.get("mode").handler("delegate", piCtx);
 
 // The subagent policy is re-read per turn too: a denied primary reroutes to the configured fallback, disclosed.
-writeFileSync(policyFile, JSON.stringify({ version: 1, disabledProviders: [], disabledModels: [], subagentDisabledProviders: [], subagentDisabledModels: ["claude-code/claude-fable-5-1[1m]"] }));
+writeFileSync(policyFile, JSON.stringify({ version: 1, disabledProviders: [], disabledModels: [], subagentDisabledProviders: [], subagentDisabledModels: ["claude-code/claude-fable-5-1"] }));
 turn = (await beforeAgentStart({ systemPrompt: "base" }, piCtx)).systemPrompt;
-assert.match(turn, /- Planning & specs .* → backend "claude-code", model "opus\[1m\]", effort "high"\. This is the configured FALLBACK: .* is disabled as a subagent model by user settings\./);
+assert.match(turn, /- Planning & specs .* → backend "claude-code", model "claude-opus-5-5", effort "high"\. This is the configured FALLBACK: .* is disabled as a subagent model by user settings\./);
 assert.equal(store.status.get("mode"), "<warning>delegate · fallback:plan</warning>");
 
 // With the provider denied outright nothing is routed around it: every claude-only profile asks.
@@ -801,14 +801,14 @@ await flush();
 await flush();
 assert.equal(store.status.get("mode"), "<accent>delegate</accent>", "a failed discovery degrades nothing");
 turn = (await beforeAgentStart({ systemPrompt: "base" }, piCtx)).systemPrompt;
-assert.match(turn, /- Planning & specs .* → backend "claude-code", model "claude-fable-5-1\[1m\]", effort "high"; fallback/);
+assert.match(turn, /- Planning & specs .* → backend "claude-code", model "claude-fable-5-1", effort "high"; fallback/);
 await commands.get("mode").handler("status", piCtx);
 assert.match(store.notices.at(-1).message, /^  Planning & specs: .* — using primary \(not verified\)$/m);
 
 // Discovered but without the configured effort: unavailable, so the fallback, disclosed.
 offered = [
-	{ id: "claude-fable-5-1[1m]", name: "Fable", efforts: ["low", "medium"] },
-	{ id: "opus[1m]", name: "Opus", efforts: ["low", "medium", "high"] },
+	{ id: "claude-fable-5-1", name: "Fable", efforts: ["low", "medium"] },
+	{ id: "claude-opus-5-5", name: "Opus", efforts: ["low", "medium", "high"] },
 ];
 writeRouting(() => {});
 writeRouting((s) => {
@@ -818,13 +818,13 @@ await beforeAgentStart({ systemPrompt: "base" }, piCtx);
 await flush();
 await flush();
 assert.equal(store.status.get("mode"), "<warning>delegate · fallback:plan</warning>", "an unsupported effort is not clamped silently");
-assert.match(store.notices.at(-1).message, /Planning & specs: fallback claude-code · opus\[1m\] · high \(claude-fable-5-1\[1m\] does not support effort "max"/, "a routing change that degrades a profile is announced");
+assert.match(store.notices.at(-1).message, /Planning & specs: fallback claude-code · claude-opus-5-5 · high \(claude-fable-5-1 does not support effort "max"/, "a routing change that degrades a profile is announced");
 rmSync(delegateFile);
 reseed();
 await commands.get("mode").handler("normal", ctx);
 
 // ── A turn during the entry probe joins it: no restart, and the entry's fallback notice survives ──
-offered = [{ id: "claude-fable-5-1[1m]", name: "Fable", efforts: ["low"] }, { id: "opus[1m]", name: "Opus" }]; // planning will be on its fallback
+offered = [{ id: "claude-fable-5-1", name: "Fable", efforts: ["low"] }, { id: "claude-opus-5-5", name: "Opus" }]; // planning will be on its fallback
 let releaseProbe;
 gate = new Promise((resolve) => (releaseProbe = resolve));
 listCalls = 0;
@@ -855,7 +855,7 @@ await commands.get("mode").handler("normal", ctx);
 	let loaded = false;
 	late.events.on("subagents:backend-discover", () => {
 		if (!loaded) return;
-		late.events.emit("subagents:backend-register", { version: 1, id: "claude-code", listModels: async () => [{ id: "claude-fable-5-1[1m]", name: "F" }, { id: "opus[1m]", name: "O" }], validate() {}, create() {} });
+		late.events.emit("subagents:backend-register", { version: 1, id: "claude-code", listModels: async () => [{ id: "claude-fable-5-1", name: "F" }, { id: "claude-opus-5-5", name: "O" }], validate() {}, create() {} });
 	});
 	const lateStore = { status: new Map(), notices: [], widgets: new Map(), branch: [], customCalls: [] };
 	const lateCtx = makeCtx(lateStore);
@@ -870,7 +870,7 @@ await commands.get("mode").handler("normal", ctx);
 	await lateStart({ systemPrompt: "base" }); // this turn re-asks in the background
 	await settle();
 	assert.equal(lateStore.status.get("mode"), "<accent>delegate</accent>", "the next turn found the backend");
-	assert.match((await lateStart({ systemPrompt: "base" })).systemPrompt, /- Routine implementation .* → backend "claude-code", model "opus\[1m\]", effort "low"/);
+	assert.match((await lateStart({ systemPrompt: "base" })).systemPrompt, /- Routine implementation .* → backend "claude-code", model "claude-opus-5-5", effort "low"/);
 }
 
 // ── Spec writer: re-read at the turn boundary and probed while spec is on, outside delegate too ──
@@ -882,7 +882,7 @@ await commands.get("mode").handler("normal", ctx);
 		reseed();
 	};
 	const all = ["low", "medium", "high", "xhigh", "max"];
-	offered = [{ id: "claude-fable-5-1[1m]", name: "Fable", efforts: all }, { id: "opus[1m]", name: "Opus", efforts: ["low"] }];
+	offered = [{ id: "claude-fable-5-1", name: "Fable", efforts: all }, { id: "claude-opus-5-5", name: "Opus", efforts: ["low"] }];
 	await commands.get("mode").handler("normal", ctx);
 	await commands.get("mode").handler("spec on", ctx);
 	await rebuildHead();
@@ -893,23 +893,23 @@ await commands.get("mode").handler("normal", ctx);
 	await flush();
 	assert.equal(listCalls, 0, "no writer, not in delegate: nothing to probe");
 
-	writeSpec({ version: 1, writer: { primary: { backend: "claude-code", model: "opus[1m]", effort: "medium" }, fallback: { backend: "claude-code", model: "claude-fable-5-1[1m]", effort: "high" } } });
+	writeSpec({ version: 1, writer: { primary: { backend: "claude-code", model: "claude-opus-5-5", effort: "medium" }, fallback: { backend: "claude-code", model: "claude-fable-5-1", effort: "high" } } });
 	const noticesBefore = store.notices.length;
 	prompt = (await beforeAgentStart({ systemPrompt: "base" }, ctx)).systemPrompt;
-	assert.match(prompt, /# Minor mode: spec\n[\s\S]*\n\nSpec writer: .* → backend "claude-code", model "opus\[1m\]", effort "medium";/, "re-read at the turn boundary, on the last discovery until this probe lands");
+	assert.match(prompt, /# Minor mode: spec\n[\s\S]*\n\nSpec writer: .* → backend "claude-code", model "claude-opus-5-5", effort "medium";/, "re-read at the turn boundary, on the last discovery until this probe lands");
 	assert.doesNotMatch(prompt, /# Mode: delegate/, "the writer needs no delegate");
 	await flush();
 	await flush();
 	assert.equal(listCalls, 1, "outside delegate, spec on probes the writer's backend");
 	assert.equal(store.status.get("mode"), "<warning>normal · spec · writer:fallback</warning>");
 	assert.ok(
-		store.notices.slice(noticesBefore).some((n) => n.level === "warning" && /^Spec writer: fallback claude-code · claude-fable-5-1\[1m\] · high \(opus\[1m\] does not support effort "medium"/.test(n.message)),
+		store.notices.slice(noticesBefore).some((n) => n.level === "warning" && /^Spec writer: fallback claude-code · claude-fable-5-1 · high \(claude-opus-5-5 does not support effort "medium"/.test(n.message)),
 		"a writer on its fallback is announced",
 	);
 	prompt = (await beforeAgentStart({ systemPrompt: "base" }, ctx)).systemPrompt;
-	assert.match(prompt, /Spec writer: .* → backend "claude-code", model "claude-fable-5-1\[1m\]", effort "high"\. This is the configured FALLBACK/);
+	assert.match(prompt, /Spec writer: .* → backend "claude-code", model "claude-fable-5-1", effort "high"\. This is the configured FALLBACK/);
 	await commands.get("mode").handler("status", ctx);
-	assert.match(store.notices.at(-1).message, /^spec writer: claude-code · opus\[1m\] · medium, fallback claude-code · claude-fable-5-1\[1m\] · high — using FALLBACK/m);
+	assert.match(store.notices.at(-1).message, /^spec writer: claude-code · claude-opus-5-5 · medium, fallback claude-code · claude-fable-5-1 · high — using FALLBACK/m);
 
 	// Spec off mid-session: the head keeps its spec block, writer paragraph included, byte for byte;
 	// the note says it no longer applies. Rebuilt (as after a compaction): no block, no paragraph.
@@ -1007,7 +1007,7 @@ await commands.get("mode").handler("normal", ctx);
 	// A worker on its worktree's own agent dir: the marker (loaded first) says so, and a fork copied
 	// the parent's delegate + strict + align snapshot onto its branch; mode-spec.json names a writer.
 	const specFile = path.join(process.env.PI_CODING_AGENT_DIR, "mode-spec.json");
-	writeFileSync(specFile, JSON.stringify({ version: 1, writer: { primary: { backend: "claude-code", model: "opus[1m]", effort: "medium" }, fallback: null } }));
+	writeFileSync(specFile, JSON.stringify({ version: 1, writer: { primary: { backend: "claude-code", model: "claude-opus-5-5", effort: "medium" }, fallback: null } }));
 	reseed();
 	const forkedBranch = [{ type: "custom", customType: "mode", data: { mode: "delegate", active: { version: 1, mode: "delegate", strict: true, minorModes: ["align", "vis"] } } }];
 	const saved = { ...flagValues };
@@ -1026,7 +1026,7 @@ await commands.get("mode").handler("normal", ctx);
 	assert.deepEqual(worker.getTools(), ["read", "bash", "edit", "write", "grep"], "strict never strips a worker's edit/write");
 	const block = (await worker.hooks.get("before_agent_start")[0]({ systemPrompt: "base" }, worker.ctx)).systemPrompt;
 	assert.equal(block, `base\n\n${composeWorkerPrompt({ minorModes: ["spec"] })}`, "the worker form, with no writer paragraph although one is set");
-	// The full worktree-config mode extension appends the supplied parent ledger, not just spec-worker.ts.
+	// The full worktree-config mode extension writes no spec ledger, even with an old parent's ledger env set.
 	const ledgerFixture = mkdtempSync(path.join(tmpdir(), "mode-worker-ledger-"));
 	const oldLedger = process.env.SOVA_SPEC_LEDGER;
 	try {
@@ -1037,7 +1037,6 @@ await commands.get("mode").handler("normal", ctx);
 		git("init", "-qb", "main");
 		writeFileSync(path.join(repo, "code.txt"), "before\n");
 		git("add", "."); git("commit", "-qm", "base");
-		const before = git("rev-parse", "HEAD");
 		worker.ctx.cwd = repo;
 		worker.ctx.sessionManager.getSessionId = () => "worker-fixture";
 		worker.ctx.sessionManager.getHeader = () => undefined;
@@ -1048,9 +1047,7 @@ await commands.get("mode").handler("normal", ctx);
 		for (const fn of worker.hooks.get("tool_call")) await fn(call, worker.ctx);
 		git("commit", "-qam", "work");
 		for (const fn of worker.hooks.get("tool_result")) await fn({ ...call, content: [], isError: false }, worker.ctx);
-		const rows = readFileSync(ledger, "utf8").trim().split("\n").map(JSON.parse);
-		assert.equal(rows.length, 1, "actual worker operation appended exactly once");
-		assert.deepEqual([rows[0].top, rows[0].before, rows[0].after, rows[0].kind, rows[0].actor.session], [repo, before, git("rev-parse", "HEAD"), "commit", "worker-fixture"]);
+		assert.ok(!existsSync(ledger), "a worker's commit is written to no ledger");
 	} finally { if (oldLedger === undefined) delete process.env.SOVA_SPEC_LEDGER; else process.env.SOVA_SPEC_LEDGER = oldLedger; rmSync(ledgerFixture, { recursive: true, force: true }); }
 	// The same branch and flags without the marker: the snapshot wins, as before (the regression's other side).
 	const parent = load(false);
@@ -1264,16 +1261,16 @@ await commands.get("mode").handler("normal", ctx);
 	const fire = async (name, event = {}) => { let out; for (const fn of host.hooks.get(name) ?? []) out = (await fn(event, c)) ?? out; return out; };
 	const route = (model) => Object.fromEntries(["planning", "investigation", "routine", "complex"].map((k) => [k, { primary: { backend: "claude-code", model, effort: "low" }, fallback: null }]));
 	const empty = { teams: null, members: null, specWriter: null };
-	writeFileSync(profilesFile, JSON.stringify({ version: 1, profiles: [{ id: "a", name: "A", delegate: route("opus[1m]"), ...empty }, { id: "b", name: "B", delegate: route("sonnet"), ...empty }] }));
+	writeFileSync(profilesFile, JSON.stringify({ version: 1, profiles: [{ id: "a", name: "A", delegate: route("claude-opus-5-5"), ...empty }, { id: "b", name: "B", delegate: route("claude-sonnet-5-5"), ...empty }] }));
 	writeFileSync(profilesDefaultFile, JSON.stringify({ version: 1, default: "a" }));
 	try {
 		await fire("session_start", { reason: "startup" });
 		let prompt = (await fire("before_agent_start", { systemPrompt: "base", prompt: "go" })).systemPrompt;
-		assert.match(prompt, /Routine implementation .* → backend "claude-code", model "opus\[1m\]"/, "no pick: the default profile routes");
+		assert.match(prompt, /Routine implementation .* → backend "claude-code", model "claude-opus-5-5"/, "no pick: the default profile routes");
 		await fire("agent_start"); await fire("agent_settled");
 		s.branch.push({ type: "custom", customType: "subagent-profile", data: { v: 1, profile: "b" } });
 		prompt = (await fire("before_agent_start", { systemPrompt: "base", prompt: "go" })).systemPrompt;
-		assert.match(prompt, /Routine implementation .* → backend "claude-code", model "sonnet"/, "a pick written into the branch applies from the next turn");
+		assert.match(prompt, /Routine implementation .* → backend "claude-code", model "claude-sonnet-5-5"/, "a pick written into the branch applies from the next turn");
 		await fire("agent_start"); await fire("agent_settled");
 		s.branch.push({ type: "custom", customType: "subagent-profile", data: { v: 1, profile: "off" } });
 		prompt = (await fire("before_agent_start", { systemPrompt: "base", prompt: "go" })).systemPrompt;

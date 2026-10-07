@@ -36,6 +36,7 @@
         "src/lib/outline-order.test.ts",
         "src/lib/jump.ts",
         "server/index.ts",
+        "server/app.ts",
         "src/lib/known-before-mount.ts",
         "src/lib/known-before-mount.test.ts",
         "src/lib/explanations-feed.ts",
@@ -231,6 +232,7 @@
         "src/components/Groups.tsx",
         "src/components/Sidebar.tsx",
         "server/index.ts",
+        "server/app.ts",
         "server/session-groups-index.test.ts",
         "src/lib/group-open.ts",
         "src/lib/group-open.test.ts",
@@ -262,6 +264,7 @@
         "server/sessions-index.ts",
         "src/lib/regions.test.ts",
         "server/index.ts",
+        "server/app.ts",
         "src/lib/session-actions.ts",
         "src/components/ChatView.tsx",
         "src/lib/api.ts",
@@ -297,6 +300,7 @@
         "server/session-titles.test.ts",
         "server/sessions-index.ts",
         "server/index.ts",
+        "server/app.ts",
         "server/overseer-tools.ts",
         "shared/protocol.ts",
         "src/lib/hold-select.ts",
@@ -310,6 +314,7 @@
       "code": [
         "src/components/Sidebar.tsx",
         "server/index.ts",
+        "server/app.ts",
         "shared/protocol.ts",
         "src/lib/api.ts"
       ]
@@ -592,7 +597,9 @@
         "src/lib/new-session.test.ts",
         "src/lib/hidden-folders.ts",
         "src/lib/hidden-folders.test.ts",
-        "server/targets.ts"
+        "server/targets.ts",
+        "server/targets.test.ts",
+        "server/targets.integration.test.ts"
       ]
     },
     "§app/session-list": {
@@ -684,6 +691,7 @@
       "code": [
         "server/chat-manager.ts",
         "server/index.ts",
+        "server/app.ts",
         "server/sandbox-state.ts",
         "shared/protocol.ts",
         "src/components/ChatView.tsx",
@@ -821,6 +829,7 @@
         "src/lib/images.ts",
         "server/attachments.ts",
         "server/index.ts",
+        "server/app.ts",
         "src/design/base.css",
         "server/drafts.ts"
       ]
@@ -896,6 +905,7 @@
       "code": [
         "server/chat-manager.ts",
         "server/index.ts",
+        "server/app.ts",
         "pi-config/extensions/mode/index.ts",
         "src/components/Thread.tsx"
       ]
@@ -1139,7 +1149,9 @@
         "src/lib/api.ts",
         "server/transcript-rows.ts",
         "server/transcript-rows.test.ts",
+        "server/transcript-rows.integration.test.ts",
         "server/index.ts",
+        "server/app.ts",
         "shared/protocol.ts",
         "src/components/InsightStrip.tsx"
       ]
@@ -1691,8 +1703,12 @@
     },
     "§workspace.groups/announcements": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "src/lib/session-groups.ts",
+        "src/lib/session-groups.test.ts"
+      ]
     },
     "§workspace.groups/classes": {
       "kind": "note",
@@ -1824,7 +1840,9 @@
       "evidence": "verified",
       "code": [
         "server/git-summary.ts",
-        "src/components/SessionDetails.tsx"
+        "src/components/SessionDetails.tsx",
+        "server/git-summary.test.ts",
+        "server/git-summary.integration.test.ts"
       ]
     },
     "§chat.transcript/setup-card-skills": {
@@ -2236,6 +2254,7 @@
         "server/chat-manager.ts",
         "server/worker-resume.ts",
         "server/index.ts",
+        "server/app.ts",
         "src/lib/api.ts",
         "src/components/SubagentPane.tsx",
         "pi-config/extensions/subagents/README.md",
@@ -2382,7 +2401,10 @@
         "server/mesh/index.ts",
         "server/mesh/hello.ts",
         "server/mesh/details.ts",
-        "server/mesh/mesh.test.ts"
+        "server/mesh/mesh.test.ts",
+        "server/mesh/peer-wire-test-fixtures.ts",
+        "server/mesh/app-test-fixtures.ts",
+        "server/mesh/mesh.integration.test.ts"
       ]
     },
     "§mesh.peers/hello": {
@@ -2413,7 +2435,8 @@
       "code": [
         "server/mesh/index.ts",
         "server/mesh/peers.ts",
-        "server/index.ts"
+        "server/index.ts",
+        "server/app.ts"
       ]
     },
     "§mesh/peers": {
@@ -2423,7 +2446,10 @@
       "code": [
         "server/mesh/index.ts",
         "server/mesh/peers.ts",
-        "server/mesh/mesh.test.ts"
+        "server/mesh/mesh.test.ts",
+        "server/mesh/peer-wire-test-fixtures.ts",
+        "server/mesh/app-test-fixtures.ts",
+        "server/mesh/mesh.integration.test.ts"
       ]
     },
     "§mesh.remote-sessions/host-filter": {
@@ -2517,7 +2543,9 @@
         "src/components/MeshView.tsx",
         "server/sync/logins-merge.test.ts",
         "server/sync/logins-stores.test.ts",
+        "server/sync/logins-stores.integration.test.ts",
         "server/sync/logins.test.ts",
+        "server/sync/logins.integration.test.ts",
         "server/sync/index.test.ts"
       ]
     },
@@ -2726,6 +2754,7 @@
       "evidence": "verified",
       "code": [
         "server/index.ts",
+        "server/app.ts",
         "public/sw.js",
         "vite.config.ts"
       ]
@@ -2740,6 +2769,7 @@
       "code": [
         "server/extensions.ts",
         "server/index.ts",
+        "server/app.ts",
         "shared/protocol.ts",
         "src/lib/api.ts"
       ]
@@ -2751,7 +2781,8 @@
       "evidence": "verified",
       "code": [
         "server/extensions.ts",
-        "server/extensions.test.ts"
+        "server/extensions.test.ts",
+        "server/extensions.integration.test.ts"
       ]
     },
     "§app.extensions/maximize": {
@@ -2797,10 +2828,12 @@
       "code": [
         "server/extensions.ts",
         "server/index.ts",
+        "server/app.ts",
         "server/ws.ts",
         "public/sw.js",
         "vite.config.ts",
-        "server/extensions.test.ts"
+        "server/extensions.test.ts",
+        "server/extensions.integration.test.ts"
       ]
     },
     "§app.extensions/trust": {
@@ -2867,6 +2900,7 @@
         "server/server-stop.ts",
         "server/server-stop.test.ts",
         "server/index.ts",
+        "server/app.ts",
         "server/outreach/log.ts",
         "server/projects/playbook-review.ts",
         "server/project-services/deploy-attention.ts"
@@ -2891,6 +2925,7 @@
         "server/overseer-store.test.ts",
         "src/components/OverseerSettings.tsx",
         "server/overseer-org-tools.test.ts",
+        "server/search-tools-fake.ts",
         "src/components/Composer.tsx",
         "src/lib/settings-nav.ts",
         "src/design/base.css",
@@ -2920,6 +2955,7 @@
         "src/lib/overseer.test.ts",
         "src/lib/hidden-rows.test.ts",
         "server/overseer-org-tools.test.ts",
+        "server/search-tools-fake.ts",
         "shared/overseer-card.ts",
         "shared/overseer-card.test.ts",
         "server/overseer-card-tool.ts",
@@ -2984,6 +3020,7 @@
         "server/overseer-redact.ts",
         "server/overseer-todos.ts",
         "server/index.ts",
+        "server/app.ts",
         "server/overseer-mode.test.ts"
       ],
       "requires": [
@@ -2998,6 +3035,7 @@
         "server/overseer.ts",
         "server/overseer-store.ts",
         "server/index.ts",
+        "server/app.ts",
         "server/sessions-index.ts",
         "src/App.tsx",
         "src/components/OverseerView.tsx",
@@ -3113,6 +3151,8 @@
         "shared/protocol.ts",
         "src/lib/live.ts",
         "server/overseer-markers.test.ts",
+        "server/search-tools-fake.ts",
+        "server/test-wait.ts",
         "server/project-overseer-routes.ts"
       ],
       "requires": [
@@ -3127,6 +3167,7 @@
         "server/overseer-store.ts",
         "server/overseer-tools.ts",
         "server/index.ts",
+        "server/app.ts",
         "server/overseer-redact.ts",
         "server/overseer.ts"
       ],
@@ -3152,6 +3193,8 @@
         "server/index.ts",
         "shared/protocol.ts",
         "server/overseer-markers.test.ts",
+        "server/search-tools-fake.ts",
+        "server/test-wait.ts",
         "server/overseer-todo-tools.ts",
         "server/overseer-tools.test.ts",
         "server/overseer-link-tools.ts",
@@ -3161,7 +3204,8 @@
         "server/archive-worktrees.ts",
         "server/archive-worktrees.test.ts",
         "server/project-services/tools.ts",
-        "server/project-services/checkout-teardown.ts"
+        "server/project-services/checkout-teardown.ts",
+        "server/app.ts"
       ],
       "requires": [
         "§app.overseer/caps",
@@ -3181,6 +3225,7 @@
         "src/lib/overseer-draft.ts",
         "src/lib/api.ts",
         "server/index.ts",
+        "server/app.ts",
         "server/overseer.ts",
         "src/components/WorkerSlotRow.tsx",
         "src/lib/delegate-form.ts",
@@ -3272,7 +3317,8 @@
         "src/lib/idea-graph.ts",
         "src/overseer-ideas.css",
         "src/lib/api.ts",
-        "server/index.ts"
+        "server/index.ts",
+        "server/app.ts"
       ],
       "requires": [
         "§app.overseer/ideas"
@@ -3325,7 +3371,9 @@
         "server/attention-signals.test.ts",
         "server/signals-store.test.ts",
         "shared/protocol.ts",
-        "server/link-delivery.test.ts"
+        "server/link-delivery.test.ts",
+        "server/test-wait.ts",
+        "server/app.ts"
       ],
       "requires": [
         "§app.decisions/interface",
@@ -3340,7 +3388,8 @@
       "code": [
         "server/tags-backfill.ts",
         "server/session-tags.ts",
-        "server/tags-backfill.test.ts"
+        "server/tags-backfill.test.ts",
+        "server/test-wait.ts"
       ],
       "requires": [
         "§app.decisions/session-tags"
@@ -3380,6 +3429,7 @@
         "server/overseer-redact.ts",
         "server/decide-settings.test.ts",
         "server/overseer-redact.test.ts",
+        "server/search-tools-fake.ts",
         "server/reconcile.ts",
         "shared/decisions.ts"
       ],
@@ -3494,7 +3544,8 @@
         "server/overseer.ts",
         "server/chat-config.test.ts",
         "server/overseer-runtime.test.ts",
-        "server/baton-runtime.test.ts"
+        "server/baton-runtime.test.ts",
+        "server/test-wait.ts"
       ]
     },
     "§app.overseer/todos": {
@@ -3510,6 +3561,7 @@
         "server/overseer-store.ts",
         "shared/protocol.ts",
         "server/index.ts",
+        "server/app.ts",
         "server/overseer-todos.test.ts",
         "server/overseer-todos-route.test.ts",
         "server/overseer-todo-tools.test.ts",
@@ -3531,6 +3583,7 @@
         "src/overseer-todos.css",
         "src/lib/api.ts",
         "server/index.ts",
+        "server/app.ts",
         "src/lib/todos.test.ts"
       ],
       "requires": [
@@ -3554,6 +3607,10 @@
         "server/mesh/peers.ts",
         "server/mesh/hello.ts",
         "server/mesh/details.test.ts",
+        "server/mesh/peer-wire-test-fixtures.ts",
+        "server/mesh/peer-gate-test-fixtures.ts",
+        "server/mesh/app-test-fixtures.ts",
+        "server/mesh/details.integration.test.ts",
         "server/mesh/details-collect.test.ts",
         "server/mesh/build-id.ts"
       ]
@@ -3573,7 +3630,11 @@
         "server/mesh/peers.ts",
         "shared/mesh-details.ts",
         "src/components/MeshDetails.tsx",
-        "server/mesh/details.test.ts"
+        "server/mesh/details.test.ts",
+        "server/mesh/peer-wire-test-fixtures.ts",
+        "server/mesh/peer-gate-test-fixtures.ts",
+        "server/mesh/app-test-fixtures.ts",
+        "server/mesh/details.integration.test.ts"
       ]
     },
     "§mesh.details/view": {
@@ -3902,6 +3963,10 @@
         "shared/mesh-details.ts",
         "src/components/MeshDetails.tsx",
         "server/mesh/details.test.ts",
+        "server/mesh/peer-wire-test-fixtures.ts",
+        "server/mesh/peer-gate-test-fixtures.ts",
+        "server/mesh/app-test-fixtures.ts",
+        "server/mesh/details.integration.test.ts",
         "scripts/mesh-termux/install.sh",
         "src/lib/api.ts",
         "scripts/mesh-termux/README.md"
@@ -3938,6 +4003,7 @@
         "server/auth-status.ts",
         "server/insights.ts",
         "server/index.ts",
+        "server/app.ts",
         "shared/protocol.ts",
         "src/components/UsageView.tsx",
         "src/lib/insights.ts",
@@ -3947,17 +4013,6 @@
         "pi-config/extensions/usage-status/fetch.ts",
         "pi-config/extensions/usage-status/fetch.test.ts",
         "server/claude-accounts.ts"
-      ]
-    },
-    "§app.settings-dialog/claude-long-context-listed": {
-      "kind": "behavior",
-      "requires": [
-        "§app.settings-dialog/modes"
-      ],
-      "authority": "accepted",
-      "evidence": "reviewed",
-      "code": [
-        "src/components/SubagentProfilesSettings.tsx"
       ]
     },
     "§app.settings-dialog/toggle-target": {
@@ -4069,6 +4124,7 @@
         "server/overseer.ts",
         "server/share/routes.ts",
         "server/baton-runtime.test.ts",
+        "server/test-wait.ts",
         "server/baton-loadout.ts",
         "server/baton.ts",
         "server/share-message.test.ts",
@@ -4081,7 +4137,8 @@
         "server/baton-wrapup.ts",
         "server/baton-prompt.md",
         "server/baton-handoff.test.ts",
-        "server/baton-guards.test.ts"
+        "server/baton-guards.test.ts",
+        "server/share-message.integration.test.ts"
       ],
       "requires": [
         "§app.overseer/sent-marker"
@@ -4103,6 +4160,8 @@
         "server/baton-runtime.test.ts",
         "server/org-routes.ts",
         "server/baton-offers.test.ts",
+        "server/baton-offers.integration.test.ts",
+        "server/test-wait.ts",
         "src/lib/list-refresh.ts",
         "server/baton-settings.ts",
         "server/share/routes.ts",
@@ -4116,8 +4175,10 @@
         "server/baton-guards.test.ts",
         "server/share/hub.ts",
         "server/baton-abilities.test.ts",
+        "server/baton-abilities.integration.test.ts",
         "server/baton-vis-guide.ts",
-        "server/baton-read-link.ts"
+        "server/baton-read-link.ts",
+        "server/share-message.integration.test.ts"
       ],
       "requires": [
         "§app.organizations/privacy"
@@ -4133,6 +4194,8 @@
         "server/org-routes.ts",
         "server/baton.test.ts",
         "server/baton-offers.test.ts",
+        "server/baton-offers.integration.test.ts",
+        "server/test-wait.ts",
         "server/baton-handoff.test.ts",
         "server/baton-guards.ts",
         "server/baton-guards.test.ts",
@@ -4141,7 +4204,8 @@
         "server/queue.ts",
         "server/queue.test.ts",
         "server/baton-recount.ts",
-        "server/index.ts"
+        "server/index.ts",
+        "server/app.ts"
       ],
       "requires": [
         "§app.baton/links"
@@ -4158,6 +4222,8 @@
         "src/components/BatonStrip.tsx",
         "server/baton.test.ts",
         "server/baton-offers.test.ts",
+        "server/baton-offers.integration.test.ts",
+        "server/test-wait.ts",
         "src/lib/baton-strip.ts",
         "src/lib/baton-strip.test.ts",
         "src/components/LinksBanner.tsx",
@@ -4179,7 +4245,9 @@
         "src/lib/link-delete.test.ts",
         "src/components/DeleteButton.tsx",
         "src/delete-button.css",
-        "src/lib/two-step.ts"
+        "src/lib/two-step.ts",
+        "server/share-message.integration.test.ts",
+        "server/public-links.integration.test.ts"
       ]
     },
     "§app.baton/needs-you": {
@@ -4201,6 +4269,8 @@
         "server/chat-manager.ts",
         "src/lib/needs-you.ts",
         "server/baton-offers.test.ts",
+        "server/baton-offers.integration.test.ts",
+        "server/test-wait.ts",
         "src/lib/org-region.ts",
         "server/baton-links.ts",
         "src/components/Sidebar.tsx",
@@ -4227,6 +4297,8 @@
         "src/share/ShareApp.tsx",
         "src/components/OrgsView.tsx",
         "server/baton-offers.test.ts",
+        "server/baton-offers.integration.test.ts",
+        "server/test-wait.ts",
         "server/share-listener.test.ts",
         "src/lib/baton-strip.ts",
         "src/lib/baton-strip.test.ts",
@@ -4254,7 +4326,9 @@
         "statecharts/src/sova/statecharts/proj.cljc",
         "statecharts/src/sova/statecharts/base.cljc",
         "server/org-host/kill9-offer-child.ts",
-        "server/org-host/offer-reach.test.ts"
+        "server/org-host/offer-reach.test.ts",
+        "server/share-listener.integration.test.ts",
+        "server/share-message.integration.test.ts"
       ],
       "requires": [
         "§app.baton/links",
@@ -4275,6 +4349,8 @@
         "src/share/index.html",
         "server/baton-view.test.ts",
         "server/baton-offers.test.ts",
+        "server/baton-offers.integration.test.ts",
+        "server/test-wait.ts",
         "server/baton-loadout.ts",
         "server/chat-manager.ts",
         "shared/baton.ts",
@@ -4315,7 +4391,8 @@
         "server/harness/pi/golden/expected/synthetic/unknown-noid/baton-view.json",
         "server/harness/pi/golden/expected/synthetic/unknown/baton-view.json",
         "server/harness/pi/golden/expected/synthetic/user-kinds/baton-view.json",
-        "server/harness/pi/golden/expected/synthetic/workers/baton-view.json"
+        "server/harness/pi/golden/expected/synthetic/workers/baton-view.json",
+        "server/share-message.integration.test.ts"
       ],
       "requires": [
         "§app.organizations/privacy"
@@ -4340,6 +4417,7 @@
         "server/share-message.test.ts",
         "server/visits.ts",
         "server/visits.test.ts",
+        "server/visits.integration.test.ts",
         "src/share/visit-tab.ts",
         "src/share/ShareApp.tsx",
         "server/share/edge.ts",
@@ -4347,7 +4425,12 @@
         "server/share/share-state.ts",
         "server/runtime-quirks.ts",
         "server/runtime-quirks.test.ts",
-        "shared/vis-frame-host.ts"
+        "server/runtime-quirks.integration.test.ts",
+        "shared/vis-frame-host.ts",
+        "server/app.ts",
+        "server/share-listener.integration.test.ts",
+        "server/share-message.integration.test.ts",
+        "server/public-links.integration.test.ts"
       ],
       "requires": [
         "§app.baton/links",
@@ -4367,6 +4450,8 @@
         "server/orgs.ts",
         "server/orgs.test.ts",
         "server/baton-offers.test.ts",
+        "server/baton-offers.integration.test.ts",
+        "server/test-wait.ts",
         "server/org-routes.ts",
         "statecharts/src/sova/statecharts/rules/person.cljc",
         "statecharts/src/sova/statecharts/person.cljc"
@@ -4385,6 +4470,8 @@
         "server/orgs.test.ts",
         "server/org-routes.ts",
         "server/baton-offers.test.ts",
+        "server/baton-offers.integration.test.ts",
+        "server/test-wait.ts",
         "src/lib/profile-changes.ts",
         "src/lib/profile-changes.test.ts",
         "src/components/PersonPage.tsx",
@@ -4514,7 +4601,8 @@
         "server/orgs.ts",
         "shared/orgs.ts",
         "src/components/OrgsView.tsx",
-        "server/project-overseer.test.ts"
+        "server/project-overseer.test.ts",
+        "server/spec-tool-fake.ts"
       ]
     },
     "§app.organizations/referrals": {
@@ -4531,6 +4619,8 @@
         "src/components/BatonStrip.tsx",
         "src/components/OrgsView.tsx",
         "server/baton-offers.test.ts",
+        "server/baton-offers.integration.test.ts",
+        "server/test-wait.ts",
         "server/baton-handoff.test.ts",
         "statecharts/src/sova/statecharts/person.cljc"
       ],
@@ -4589,6 +4679,7 @@
         "server/workspace-commits.ts",
         "server/workspace-commits.test.ts",
         "server/index.ts",
+        "server/app.ts",
         "shared/orgs.ts",
         "src/components/OrgsView.tsx",
         "server/reconcile.ts",
@@ -4619,6 +4710,8 @@
         "server/transcript.ts",
         "src/components/OrgsView.tsx",
         "server/baton-offers.test.ts",
+        "server/baton-offers.integration.test.ts",
+        "server/test-wait.ts",
         "src/lib/wrapup-rows.ts",
         "src/lib/wrapup-rows.test.ts",
         "src/components/Thread.tsx",
@@ -4628,10 +4721,12 @@
         "server/wrapup-recovery.test.ts",
         "server/wrapup-routes.ts",
         "server/stream-guard-runtime.test.ts",
+        "server/stream-guard-runtime.integration.test.ts",
         "server/baton.ts",
         "server/index.ts",
         "src/components/BatonStrip.tsx",
-        "src/lib/api.ts"
+        "src/lib/api.ts",
+        "server/app.ts"
       ],
       "requires": [
         "§app.organizations/field-authority",
@@ -4650,6 +4745,7 @@
         "server/overseer-tools.ts",
         "server/project-overseer-tools.test.ts",
         "server/project-overseer.test.ts",
+        "server/spec-tool-fake.ts",
         "server/orgs.ts",
         "server/project-overseer.ts",
         "src/components/ProjectOverseerPanel.tsx",
@@ -4663,6 +4759,7 @@
         "statecharts/src/sova/statecharts/proj.cljc",
         "server/project-overseer-prompt.md",
         "server/project-overseer-tools-statecharts.test.ts",
+        "server/project-overseer-tools-statecharts.integration.test.ts",
         "statecharts/test/sova/statecharts/refit/acts_golden.cljs",
         "statecharts/test/sova/statecharts/refit/registry_test.cljs",
         "statecharts/test/sova/statecharts/refit/general_projects_test.cljs",
@@ -4684,7 +4781,8 @@
         "server/project-overseer.ts",
         "statecharts/src/sova/statecharts/item.cljc",
         "statecharts/test/sova/statecharts/refit/item_test.cljc",
-        "server/project-overseer-tools-statecharts.test.ts"
+        "server/project-overseer-tools-statecharts.test.ts",
+        "server/project-overseer-tools-statecharts.integration.test.ts"
       ]
     },
     "§app.project-overseer/ideas-and-todos": {
@@ -4701,6 +4799,7 @@
         "src/lib/api.ts",
         "src/lib/project-overseer-view.test.ts",
         "server/project-overseer.test.ts",
+        "server/spec-tool-fake.ts",
         "server/project-overseer-prompt.md",
         "server/project-overseer-tools.ts"
       ],
@@ -4723,6 +4822,9 @@
         "server/project-overseer.test.ts",
         "server/overseer-deny.ts",
         "server/overseer-file-tools.test.ts",
+        "server/overseer-file-tools.integration.test.ts",
+        "server/overseer-file-tools-fixture.ts",
+        "server/search-tools-fake.ts",
         "server/orgs.ts",
         "server/project-overseer-tools.ts",
         "src/components/ProjectOverseerPanel.tsx",
@@ -4734,7 +4836,8 @@
         "server/project-overseer-routes.ts",
         "src/projects.css",
         "server/overseer-org-part.ts",
-        "server/overseer-org-part.test.ts"
+        "server/overseer-org-part.test.ts",
+        "server/spec-tool-fake.ts"
       ],
       "requires": [
         "§app.overseer/hosting",
@@ -4756,6 +4859,7 @@
         "server/chat-manager.ts",
         "server/project-coding-runtime.test.ts",
         "server/project-overseer-tools-statecharts.test.ts",
+        "server/project-overseer-tools-statecharts.integration.test.ts",
         "server/outreach/log.ts",
         "server/outreach.test.ts",
         "statecharts/src/sova/statecharts/proj.cljc",
@@ -4763,7 +4867,11 @@
         "server/vendor/statecharts.js",
         "server/overseer-org-part.ts",
         "server/orgs.ts",
-        "server/overseer-org-part.test.ts"
+        "server/overseer-org-part.test.ts",
+        "server/spec-tool-fake.ts",
+        "server/outreach/sender-test-fixtures.ts",
+        "server/outreach-test-fixtures.ts",
+        "server/outreach.integration.test.ts"
       ],
       "requires": [
         "§app.baton/goal-and-loadout",
@@ -4779,6 +4887,7 @@
         "server/project-overseer-routes.ts",
         "server/reconcile.ts",
         "server/project-overseer.test.ts",
+        "server/spec-tool-fake.ts",
         "server/orgs.ts",
         "src/lib/project-overseer-view.ts",
         "src/lib/project-overseer-view.test.ts",
@@ -4786,6 +4895,7 @@
         "server/overseer-todos.ts",
         "server/project-overseer-store.ts",
         "server/project-overseer-watch-run.test.ts",
+        "server/test-wait.ts",
         "server/wrapup-recovery.ts",
         "server/index.ts",
         "shared/project-overseer.ts",
@@ -4798,7 +4908,8 @@
         "statecharts/test/sova/statecharts/refit/asks_table.cljs",
         "statecharts/test/sova/statecharts/refit/asks_golden.cljs",
         "statecharts/test/sova/statecharts/refit/asks_rules_test.cljc",
-        "statecharts/test/sova/statecharts/refit/asks_test.cljs"
+        "statecharts/test/sova/statecharts/refit/asks_test.cljs",
+        "server/app.ts"
       ],
       "requires": [
         "§app.project-overseer/autonomy-levels"
@@ -4812,6 +4923,9 @@
         "server/decisions.ts",
         "server/reconcile.ts",
         "server/reconcile.test.ts",
+        "server/test-wait.ts",
+        "server/reconcile.integration.test.ts",
+        "server/spec-tool-fake.ts",
         "server/spec-draft-writer.ts",
         "shared/decisions.ts",
         "server/decisions-routes.ts",
@@ -4831,7 +4945,10 @@
       "evidence": "verified",
       "code": [
         "server/spec-draft-writer.ts",
-        "server/reconcile.test.ts"
+        "server/reconcile.test.ts",
+        "server/test-wait.ts",
+        "server/reconcile.integration.test.ts",
+        "server/spec-tool-fake.ts"
       ],
       "requires": [
         "§app.requirements/decisions"
@@ -4845,7 +4962,10 @@
         "server/reconcile.ts",
         "server/decisions-routes.ts",
         "server/decisions-routes.test.ts",
-        "server/reconcile.test.ts"
+        "server/reconcile.test.ts",
+        "server/test-wait.ts",
+        "server/reconcile.integration.test.ts",
+        "server/spec-tool-fake.ts"
       ],
       "requires": [
         "§app.organizations/projects",
@@ -4860,6 +4980,9 @@
         "server/reconcile.ts",
         "server/spec-draft-writer.ts",
         "server/reconcile.test.ts",
+        "server/test-wait.ts",
+        "server/reconcile.integration.test.ts",
+        "server/spec-tool-fake.ts",
         "server/project-worktrees.ts"
       ],
       "requires": [
@@ -4877,6 +5000,9 @@
         "server/decide-settings.ts",
         "shared/protocol.ts",
         "server/reconcile.test.ts",
+        "server/test-wait.ts",
+        "server/reconcile.integration.test.ts",
+        "server/spec-tool-fake.ts",
         "shared/decisions.ts",
         "src/lib/decisions-view.ts",
         "src/lib/decisions-view.test.ts",
@@ -4902,6 +5028,9 @@
         "server/reconcile.ts",
         "server/sessions-index.ts",
         "server/reconcile.test.ts",
+        "server/test-wait.ts",
+        "server/reconcile.integration.test.ts",
+        "server/spec-tool-fake.ts",
         "shared/decisions.ts",
         "server/project-overseer.ts",
         "server/baton.ts",
@@ -5020,6 +5149,7 @@
         "server/worktrees.ts",
         "server/worktrees.test.ts",
         "server/index.ts",
+        "server/app.ts",
         "shared/protocol.ts"
       ]
     },
@@ -5204,7 +5334,8 @@
         "src/lib/explain.ts",
         "src/lib/explain.test.ts",
         "src/lib/older-rows.ts",
-        "server/transcript-rows.ts"
+        "server/transcript-rows.ts",
+        "server/explanations.test.ts"
       ]
     },
     "§app.settings-dialog/organizations": {
@@ -5225,7 +5356,8 @@
         "src/lib/settings-nav.ts",
         "src/lib/api.ts",
         "shared/baton.ts",
-        "server/share-message.test.ts"
+        "server/share-message.test.ts",
+        "server/share-message.integration.test.ts"
       ]
     },
     "§chat.transcript/runaway-stream": {
@@ -5240,6 +5372,8 @@
         "server/chat-manager.ts",
         "server/stream-guard.test.ts",
         "server/stream-guard-runtime.test.ts",
+        "server/test-wait.ts",
+        "server/stream-guard-runtime.integration.test.ts",
         "server/stream-stub.ts"
       ]
     },
@@ -5274,19 +5408,6 @@
         "server/skills.ts",
         "server/skills.test.ts",
         "server/worker-skills.ts"
-      ]
-    },
-    "§app.settings-dialog/claude-long-context-offered": {
-      "kind": "behavior",
-      "requires": [
-        "§app.settings-dialog/modes",
-        "§app.settings-dialog/claude-long-context-listed"
-      ],
-      "authority": "accepted",
-      "evidence": "reviewed",
-      "code": [
-        "src/components/SubagentProfilesSettings.tsx",
-        "server/subagent-profiles.ts"
       ]
     },
     "§app.session-list/cleanup-org-guard": {
@@ -5333,7 +5454,9 @@
         "src/lib/visit-tab.test.ts",
         "src/share/ShareApp.tsx",
         "server/visits.test.ts",
-        "server/share/share-state.ts"
+        "server/visits.integration.test.ts",
+        "server/share/share-state.ts",
+        "server/app.ts"
       ]
     },
     "§app.organizations/person-page": {
@@ -5381,6 +5504,7 @@
         "server/project-overseer-store.ts",
         "server/attention.ts",
         "server/index.ts",
+        "server/app.ts",
         "shared/protocol.ts",
         "src/lib/org-region.ts",
         "src/lib/org-region.test.ts",
@@ -5497,7 +5621,8 @@
         "server/project-services/checkout-teardown.ts",
         "server/project-services/checkout-teardown.test.ts",
         "server/project-services/on-merge.ts",
-        "server/project-services/on-merge.test.ts"
+        "server/project-services/on-merge.test.ts",
+        "server/project-services/on-merge.integration.test.ts"
       ]
     },
     "§app.requirements/promotion-commit": {
@@ -5631,6 +5756,7 @@
         "server/push-store.ts",
         "server/push-routes.ts",
         "server/index.ts",
+        "server/app.ts",
         "public/sw.js",
         "src/lib/push-draft.test.ts",
         "src/lib/push.test.ts",
@@ -5679,7 +5805,8 @@
         "server/overseer-runtime.test.ts",
         "src/lib/hidden-rows.ts",
         "server/mesh/links.ts",
-        "server/mesh/links.test.ts"
+        "server/mesh/links.test.ts",
+        "server/mesh/links-transfer-test-fixtures.ts"
       ],
       "requires": [
         "§app.overseer/tools",
@@ -5732,6 +5859,7 @@
       "evidence": "verified",
       "code": [
         "server/index.ts",
+        "server/app.ts",
         "shared/protocol.ts"
       ],
       "requires": [
@@ -5745,6 +5873,7 @@
       "evidence": "verified",
       "code": [
         "server/index.ts",
+        "server/app.ts",
         "shared/protocol.ts",
         "server/sessions-configure.ts",
         "server/sessions-configure.test.ts",
@@ -5770,7 +5899,10 @@
         "shared/link-message.ts",
         "shared/mesh-links.ts",
         "server/link-delivery.ts",
-        "server/link-delivery.test.ts"
+        "server/link-delivery.test.ts",
+        "server/test-wait.ts",
+        "server/mesh/links-transfer-test-fixtures.ts",
+        "server/app.ts"
       ],
       "requires": [
         "§mesh.links/record",
@@ -5791,10 +5923,12 @@
       "code": [
         "server/mesh/links.ts",
         "server/mesh/links.test.ts",
+        "server/mesh/links-transfer-test-fixtures.ts",
         "server/mesh/links-routes.ts",
         "server/index.ts",
         "server/sessions-index.ts",
-        "shared/mesh-links.ts"
+        "shared/mesh-links.ts",
+        "server/app.ts"
       ],
       "requires": [
         "§mesh.peers/off",
@@ -5815,6 +5949,7 @@
         "pi-config/README.md",
         "server/chat-manager.ts",
         "server/index.ts",
+        "server/app.ts",
         "server/mesh/links-routes.ts",
         "pi-config/extensions/link/client.test.ts",
         "pi-config/extensions/link/index.test.ts",
@@ -5851,6 +5986,7 @@
         "src/lib/message-count.ts",
         "src/components/WatchView.tsx",
         "server/link-delivery.test.ts",
+        "server/test-wait.ts",
         "src/lib/input-count.test.ts",
         "src/lib/inputs.test.ts",
         "src/lib/message-actions.test.ts",
@@ -5875,7 +6011,8 @@
         "shared/mesh-links.ts",
         "shared/link-message.ts",
         "shared/protocol.ts",
-        "server/mesh/links.test.ts"
+        "server/mesh/links.test.ts",
+        "server/mesh/links-transfer-test-fixtures.ts"
       ]
     },
     "§chat.mode-menu/workers": {
@@ -5934,8 +6071,10 @@
         "src/orgs.css",
         "server/orgs.test.ts",
         "server/project-overseer.test.ts",
+        "server/spec-tool-fake.ts",
         "server/org-portable.test.ts",
         "server/org-about-privacy.test.ts",
+        "server/org-about-privacy.integration.test.ts",
         "src/lib/org-about.test.ts",
         "server/overseer-org-view.ts",
         "statecharts/src/sova/statecharts/org.cljc"
@@ -5965,7 +6104,8 @@
         "src/share/thread.tsx",
         "src/lib/owner-words.ts",
         "src/lib/owner-words.test.ts",
-        "server/owner-page.test.ts"
+        "server/owner-page.test.ts",
+        "server/owner-page.integration.test.ts"
       ]
     },
     "§app.owner-page/controls": {
@@ -6012,7 +6152,8 @@
         "shared/baton.ts",
         "src/components/BatonStrip.tsx",
         "src/components/OwnerProjectCard.tsx",
-        "server/owner-page.test.ts"
+        "server/owner-page.test.ts",
+        "server/owner-page.integration.test.ts"
       ]
     },
     "§app.owner-page/link": {
@@ -6036,6 +6177,7 @@
         "src/share/OwnerApp.tsx",
         "src/share/owner-view.tsx",
         "server/owner-page.test.ts",
+        "server/owner-page.integration.test.ts",
         "server/share/share-state.ts"
       ]
     },
@@ -6050,7 +6192,8 @@
       "code": [
         "server/owner-page.ts",
         "server/share/hub.ts",
-        "server/owner-page-privacy.test.ts"
+        "server/owner-page-privacy.test.ts",
+        "server/owner-page-privacy.integration.test.ts"
       ]
     },
     "§app.owner-page/owner": {
@@ -6069,6 +6212,7 @@
         "src/components/OwnerCard.tsx",
         "src/lib/owner-card.ts",
         "server/owner-page.test.ts",
+        "server/owner-page.integration.test.ts",
         "statecharts/src/sova/statecharts/org.cljc"
       ]
     },
@@ -6089,6 +6233,7 @@
         "server/share/listener.ts",
         "server/share/routes.ts",
         "server/owner-page.test.ts",
+        "server/owner-page.integration.test.ts",
         "src/design/tokens.css",
         "src/share/index.html",
         "server/share/share-state.ts"
@@ -6221,7 +6366,9 @@
         "src/projects.css",
         "server/project-overseer-tools.test.ts",
         "server/project-overseer.test.ts",
+        "server/spec-tool-fake.ts",
         "server/project-overseer-watch-run.test.ts",
+        "server/test-wait.ts",
         "server/stream-stub.ts",
         "src/lib/project-overseer-view.test.ts",
         "server/org-envelope.ts",
@@ -6268,6 +6415,8 @@
         "src/design/base.css",
         "server/tail-hello.ts",
         "server/tail-hello.test.ts",
+        "server/tail-hello.integration.test.ts",
+        "server/test-wait.ts",
         "server/ws.ts",
         "server/watch.ts",
         "server/chat-manager.ts",
@@ -6288,7 +6437,9 @@
         "src/lib/recent-preload.ts",
         "src/lib/live.ts",
         "src/lib/live.test.ts",
-        "server/chat-entry-id.test.ts"
+        "server/chat-entry-id.test.ts",
+        "server/transcript-rows.integration.test.ts",
+        "server/app.ts"
       ]
     },
     "§app.subagents-pane/hidden-workers": {
@@ -6303,6 +6454,7 @@
         "src/components/SubagentPane.tsx",
         "server/insights.ts",
         "server/index.ts",
+        "server/app.ts",
         "shared/protocol.ts",
         "src/lib/api.ts",
         "src/design/base.css",
@@ -6362,8 +6514,10 @@
       "code": [
         "server/ws.ts",
         "server/index.ts",
+        "server/app.ts",
         "server/compression.ts",
-        "server/compression.test.ts"
+        "server/compression.test.ts",
+        "server/compression.integration.test.ts"
       ]
     },
     "§chat.transcript/recent-preload": {
@@ -6402,6 +6556,7 @@
         "src/projects.css",
         "server/project-costs-routes.ts",
         "server/index.ts",
+        "server/app.ts",
         "shared/costs.ts"
       ],
       "evidence": "verified"
@@ -6478,6 +6633,7 @@
       ],
       "code": [
         "server/owner-page-privacy.test.ts",
+        "server/owner-page-privacy.integration.test.ts",
         "server/project-overseer-tools.ts",
         "server/project-overseer-prompt.md",
         "server/project-overseer.ts"
@@ -6493,6 +6649,9 @@
         "server/decide.ts",
         "server/decide-llm.ts",
         "server/reconcile.test.ts",
+        "server/test-wait.ts",
+        "server/reconcile.integration.test.ts",
+        "server/spec-tool-fake.ts",
         "server/decide-llm.test.ts",
         "pi-config/extensions/claude-code/provider/stream.ts",
         "pi-config/extensions/claude-code/provider/types.ts",
@@ -6748,6 +6907,9 @@
         "src/projects.css",
         "server/baton-owner-area.test.ts",
         "server/reconcile.test.ts",
+        "server/test-wait.ts",
+        "server/reconcile.integration.test.ts",
+        "server/spec-tool-fake.ts",
         "server/decisions-routes.test.ts",
         "server/baton-handoff.test.ts",
         "server/project-overseer-tools.ts"
@@ -6938,6 +7100,7 @@
         "src/components/ProjectPage.tsx",
         "src/lib/api.ts",
         "server/overseer-org-tools.test.ts",
+        "server/search-tools-fake.ts",
         "server/org-sessions.ts",
         "server/project-overseer-routes.ts",
         "shared/protocol.ts",
@@ -6977,6 +7140,7 @@
         "src/components/ProjectPage.tsx",
         "server/overseer-org-tools.ts",
         "server/overseer-org-tools.test.ts",
+        "server/search-tools-fake.ts",
         "src/lib/owner-card.ts",
         "src/lib/stakeholder.ts",
         "shared/project-overseer.ts",
@@ -7004,6 +7168,7 @@
         "server/baton.ts",
         "server/overseer-org-tools.ts",
         "server/overseer-org-tools.test.ts",
+        "server/search-tools-fake.ts",
         "server/overseer-tools.ts",
         "server/overseer.ts",
         "server/chat-manager.ts",
@@ -7036,6 +7201,7 @@
         "server/overseer.ts",
         "server/overseer-org-tools.ts",
         "server/overseer-org-tools.test.ts",
+        "server/search-tools-fake.ts",
         "shared/project-overseer.ts"
       ],
       "requires": [
@@ -7058,8 +7224,10 @@
         "server/overseer-org-view.ts",
         "server/overseer-org-tools.ts",
         "server/overseer-org-tools.test.ts",
+        "server/search-tools-fake.ts",
         "server/overseer.ts",
-        "server/org-about-privacy.test.ts"
+        "server/org-about-privacy.test.ts",
+        "server/org-about-privacy.integration.test.ts"
       ],
       "requires": [
         "§app.organizations/privacy",
@@ -7075,7 +7243,8 @@
         "server/overseer-tools.ts",
         "server/overseer-org-view.ts",
         "server/overseer-org-tools.ts",
-        "server/overseer-org-tools.test.ts"
+        "server/overseer-org-tools.test.ts",
+        "server/search-tools-fake.ts"
       ],
       "requires": [
         "§app.organizations/org-cards",
@@ -7097,6 +7266,7 @@
         "server/overseer-org-tools.ts",
         "server/overseer-org-view.ts",
         "server/overseer-org-tools.test.ts",
+        "server/search-tools-fake.ts",
         "server/overseer-runtime.test.ts"
       ],
       "requires": [
@@ -7114,7 +7284,8 @@
         "server/org-routes.ts",
         "server/decisions-routes.ts",
         "server/overseer-org-tools.ts",
-        "server/overseer-org-tools.test.ts"
+        "server/overseer-org-tools.test.ts",
+        "server/search-tools-fake.ts"
       ],
       "requires": [
         "§app.organizations/field-authority",
@@ -7247,6 +7418,7 @@
         "server/git-diff.ts",
         "pi-config/extensions/worktrees/git.ts",
         "server/index.ts",
+        "server/app.ts",
         "shared/protocol.ts",
         "server/git-diff.test.ts"
       ]
@@ -7390,6 +7562,7 @@
         "shared/project-overseer.ts",
         "server/baton-vis-guide.ts",
         "server/baton-abilities.test.ts",
+        "server/baton-abilities.integration.test.ts",
         "server/baton-loadout.ts",
         "server/baton-prompt.md",
         "server/baton.ts",
@@ -7407,7 +7580,8 @@
         "src/lib/api.ts",
         "src/orgs.css",
         "src/vis/guide.test.ts",
-        "server/overseer-org-tools.test.ts"
+        "server/overseer-org-tools.test.ts",
+        "server/search-tools-fake.ts"
       ],
       "evidence": "verified"
     },
@@ -7421,6 +7595,7 @@
       "code": [
         "server/baton-read-link.ts",
         "server/baton-abilities.test.ts",
+        "server/baton-abilities.integration.test.ts",
         "server/baton-loadout.ts",
         "server/baton-prompt.md"
       ],
@@ -7505,6 +7680,7 @@
         "server/resource-monitor-attrib.ts",
         "server/resource-monitor-history.ts",
         "server/index.ts",
+        "server/app.ts",
         "shared/protocol.ts",
         "server/resource-monitor-history.test.ts",
         "server/resource-monitor.test.ts",
@@ -7553,6 +7729,7 @@
         "src/design/base.css",
         "server/claude-accounts.ts",
         "server/index.ts",
+        "server/app.ts",
         "shared/protocol.ts",
         "src/lib/settings-nav.test.ts",
         "src/lib/claude-pool.ts",
@@ -7604,8 +7781,10 @@
         "src/components/AccountsSettings.tsx",
         "src/lib/api.ts",
         "server/claude-accounts.test.ts",
+        "server/claude-accounts.integration.test.ts",
         "scripts/fake-claude.mjs",
-        "server/claude-pool/agent.ts"
+        "server/claude-pool/agent.ts",
+        "server/app.ts"
       ]
     },
     "§app.claude-logins/device-order": {
@@ -7621,6 +7800,7 @@
         "src/components/AccountsSettings.tsx",
         "src/lib/api.ts",
         "server/claude-accounts.test.ts",
+        "server/claude-accounts.integration.test.ts",
         "pi-config/extensions/claude-code/accounts.test.ts",
         "server/insights-claude-logins.test.ts",
         "src/lib/claude-login-groups.ts",
@@ -7645,6 +7825,7 @@
         "pi-config/extensions/claude-code/provider/login-failover.test.ts",
         "pi-config/extensions/claude-code/runner-failover.test.ts",
         "server/claude-accounts.test.ts",
+        "server/claude-accounts.integration.test.ts",
         "pi-config/extensions/claude-code/tests/fixtures/failures/limit-rejected.ndjson",
         "server/claude-pool/agent.ts",
         "pi-config/extensions/claude-code/confined-launch.test.ts"
@@ -7664,7 +7845,9 @@
         "server/claude-pool/doc.ts",
         "src/lib/claude-login-groups.ts",
         "src/lib/claude-login-groups.test.ts",
-        "server/claude-pool/agent.test.ts"
+        "server/claude-pool/agent.test.ts",
+        "server/claude-pool/pool-test-fixtures.ts",
+        "server/claude-pool/agent.integration.test.ts"
       ]
     },
     "§app.claude-logins/spawn-selection": {
@@ -7689,7 +7872,9 @@
         "server/claude-status.ts",
         "pi-config/extensions/claude-code/provider/login-failover.test.ts",
         "pi-config/extensions/claude-code/transport.ts",
-        "pi-config/extensions/claude-code/accounts.test.ts"
+        "pi-config/extensions/claude-code/accounts.test.ts",
+        "server/claude-models.test.ts",
+        "server/claude-models.integration.test.ts"
       ]
     },
     "§app/claude-logins": {
@@ -7716,6 +7901,7 @@
         "server/session-autotitle.test.ts",
         "server/decide-llm.ts",
         "server/index.ts",
+        "server/app.ts",
         "shared/protocol.ts",
         "src/lib/auto-title.ts",
         "src/lib/auto-title.test.ts",
@@ -7766,6 +7952,8 @@
         "server/claude-pool/index.ts",
         "pi-config/extensions/claude-code/accounts.ts",
         "server/claude-pool/agent.test.ts",
+        "server/claude-pool/pool-test-fixtures.ts",
+        "server/claude-pool/agent.integration.test.ts",
         "scripts/claude-pool-e2e/run.mjs",
         "scripts/fake-claude.mjs"
       ]
@@ -7785,6 +7973,8 @@
         "pi-config/extensions/claude-code/runner.ts",
         "pi-config/extensions/topic-outline/summarizers/claude-cli.ts",
         "server/claude-pool/agent.test.ts",
+        "server/claude-pool/pool-test-fixtures.ts",
+        "server/claude-pool/agent.integration.test.ts",
         "server/claude-pool/agent.ts"
       ]
     },
@@ -7800,10 +7990,13 @@
         "server/claude-pool/index.ts",
         "src/components/AccountsSettings.tsx",
         "server/claude-pool/agent.test.ts",
+        "server/claude-pool/pool-test-fixtures.ts",
+        "server/claude-pool/agent.integration.test.ts",
         "pi-config/extensions/claude-code/accounts.ts",
         "pi-config/extensions/claude-code/accounts.test.ts",
         "scripts/claude-pool-e2e/run.mjs",
-        "server/index.ts"
+        "server/index.ts",
+        "server/app.ts"
       ]
     },
     "§app.claude-logins/keeper": {
@@ -7817,7 +8010,9 @@
         "server/claude-pool/agent.ts",
         "server/claude-pool/index.ts",
         "src/components/AccountsSettings.tsx",
-        "server/claude-pool/agent.test.ts"
+        "server/claude-pool/agent.test.ts",
+        "server/claude-pool/pool-test-fixtures.ts",
+        "server/claude-pool/agent.integration.test.ts"
       ]
     },
     "§app.claude-logins/migration": {
@@ -7831,7 +8026,9 @@
       "code": [
         "server/claude-pool/agent.ts",
         "pi-config/extensions/claude-code/accounts.ts",
-        "server/claude-pool/agent.test.ts"
+        "server/claude-pool/agent.test.ts",
+        "server/claude-pool/pool-test-fixtures.ts",
+        "server/claude-pool/agent.integration.test.ts"
       ]
     },
     "§app.claude-logins/pool": {
@@ -7849,7 +8046,10 @@
         "server/index.ts",
         "shared/protocol.ts",
         "server/claude-pool/agent.test.ts",
-        "scripts/claude-pool-e2e/run.mjs"
+        "server/claude-pool/pool-test-fixtures.ts",
+        "server/claude-pool/agent.integration.test.ts",
+        "scripts/claude-pool-e2e/run.mjs",
+        "server/app.ts"
       ]
     },
     "§app.claude-logins/stuck": {
@@ -7865,6 +8065,8 @@
         "src/lib/claude-pool.ts",
         "src/components/AccountsSettings.tsx",
         "server/claude-pool/agent.test.ts",
+        "server/claude-pool/pool-test-fixtures.ts",
+        "server/claude-pool/agent.integration.test.ts",
         "src/lib/claude-pool.test.ts"
       ]
     },
@@ -7886,7 +8088,10 @@
         "server/mesh/build-id.ts",
         "shared/mesh-resync.ts",
         "server/mesh/resync.test.ts",
+        "server/mesh/resync-test-fixtures.ts",
+        "server/mesh/resync.integration.test.ts",
         "server/mesh/build-id.test.ts",
+        "server/mesh/build-id.integration.test.ts",
         "src/components/MeshHostMenu.tsx",
         "src/components/MeshResyncSheet.tsx",
         "src/lib/mesh-resync.ts",
@@ -7895,7 +8100,8 @@
         "src/mesh.css",
         "scripts/mesh-vps/deploy.sh",
         "scripts/mesh-termux/deploy.sh",
-        "server/index.ts"
+        "server/index.ts",
+        "server/app.ts"
       ]
     },
     "§app.settings-dialog/voice": {
@@ -7905,10 +8111,12 @@
       "code": [
         "server/voice/install.ts",
         "server/voice/install.test.ts",
+        "server/voice/install.integration.test.ts",
         "server/voice/platform.ts",
         "server/voice/platform.test.ts",
         "server/voice/download.ts",
         "server/voice/download.test.ts",
+        "server/voice/download.integration.test.ts",
         "server/voice/pins.ts",
         "server/voice/selftest.wav",
         "server/voice/service.ts",
@@ -7995,12 +8203,17 @@
       "code": [
         "server/voice/runtime.ts",
         "server/voice/runtime.test.ts",
+        "server/voice/fake-whisper-test-fixtures.ts",
+        "server/voice/runtime.integration.test.ts",
         "scripts/fake-whisper-server.mjs",
         "server/voice/service.ts",
         "server/index.ts",
         "server/voice/transcribe-host.c",
         "server/voice/install.ts",
-        "server/voice/service-devices.test.ts"
+        "server/voice/service-devices.test.ts",
+        "server/voice/voice-devices-test-fixtures.ts",
+        "server/voice/service-devices.integration.test.ts",
+        "server/app.ts"
       ],
       "requires": []
     },
@@ -8029,12 +8242,17 @@
         "server/voice/wav.ts",
         "server/voice/wav.test.ts",
         "server/voice/service.test.ts",
+        "server/voice/service.integration.test.ts",
         "server/voice/pins.ts",
         "server/index.ts",
         "shared/protocol.ts",
         "server/voice/settings.ts",
         "server/voice/service-devices.test.ts",
-        "src/lib/api.ts"
+        "server/voice/voice-devices-test-fixtures.ts",
+        "server/voice/fake-whisper-test-fixtures.ts",
+        "server/voice/service-devices.integration.test.ts",
+        "src/lib/api.ts",
+        "server/app.ts"
       ],
       "requires": [
         "§chat.voice/runtime",
@@ -8075,7 +8293,8 @@
       "evidence": "verified",
       "code": [
         "server/files.ts",
-        "server/files.test.ts"
+        "server/files.test.ts",
+        "server/files.integration.test.ts"
       ]
     },
     "§design.copy-deck/public-links": {
@@ -8094,7 +8313,8 @@
         "server/share/edge.ts",
         "server/share/front.ts",
         "shared/public-links.ts",
-        "server/share-security.test.ts"
+        "server/share-security.test.ts",
+        "server/share-security.integration.test.ts"
       ]
     },
     "§mesh.public/front": {
@@ -8107,7 +8327,8 @@
       "code": [
         "server/share/front.ts",
         "server/public-links-routes.ts",
-        "server/share-front.test.ts"
+        "server/share-front.test.ts",
+        "server/share-front.integration.test.ts"
       ]
     },
     "§mesh.public/gateway": {
@@ -8124,7 +8345,8 @@
         "server/mesh/hello.ts",
         "server/public-links-routes.ts",
         "server/share-registry.test.ts",
-        "server/share-offline.test.ts"
+        "server/share-offline.test.ts",
+        "server/share-offline.integration.test.ts"
       ]
     },
     "§mesh.public/ingress": {
@@ -8142,7 +8364,9 @@
         "server/share/edge.ts",
         "server/share/gateway-client.ts",
         "server/share-ingress.test.ts",
-        "server/share-security.test.ts"
+        "server/share-ingress.integration.test.ts",
+        "server/share-security.test.ts",
+        "server/share-security.integration.test.ts"
       ]
     },
     "§mesh.public/offline": {
@@ -8160,7 +8384,9 @@
         "src/share/OwnerApp.tsx",
         "shared/public-links.ts",
         "server/share-offline.test.ts",
-        "server/share-router.test.ts"
+        "server/share-offline.integration.test.ts",
+        "server/share-router.test.ts",
+        "server/share-router.integration.test.ts"
       ]
     },
     "§mesh.public/panel": {
@@ -8198,8 +8424,11 @@
         "shared/public-links.ts",
         "server/share-registry.test.ts",
         "server/share-ingress.test.ts",
+        "server/share-ingress.integration.test.ts",
         "server/share-security.test.ts",
-        "server/share-edge.test.ts"
+        "server/share-security.integration.test.ts",
+        "server/share-edge.test.ts",
+        "server/share-edge.integration.test.ts"
       ]
     },
     "§mesh.public/routing": {
@@ -8221,7 +8450,11 @@
         "server/share-ws-hop.test.ts",
         "server/share-offline.test.ts",
         "server/runtime-quirks.ts",
-        "server/runtime-quirks.test.ts"
+        "server/runtime-quirks.test.ts",
+        "server/runtime-quirks.integration.test.ts",
+        "server/share-router.integration.test.ts",
+        "server/share-ws-hop.integration.test.ts",
+        "server/share-offline.integration.test.ts"
       ]
     },
     "§mesh.public/setting": {
@@ -8242,7 +8475,10 @@
         "server/public-links.test.ts",
         "server/share-edge.test.ts",
         "server/mesh/proxy-local.test.ts",
-        "server/share/share-state.ts"
+        "server/mesh/peer-wire-test-fixtures.ts",
+        "server/share/share-state.ts",
+        "server/public-links.integration.test.ts",
+        "server/share-edge.integration.test.ts"
       ]
     },
     "§mesh/public": {
@@ -8335,10 +8571,19 @@
         "server/mesh/links-offers.ts",
         "server/mesh/links-transfer.ts",
         "server/mesh/links-transfer.test.ts",
+        "server/mesh/links-transfer-test-fixtures.ts",
+        "server/mesh/links-transfer.integration.test.ts",
         "server/link-sandbox.ts",
         "server/link-sandbox.test.ts",
         "server/mesh/tar-list.ts",
         "server/mesh/tar-list.test.ts",
+        "server/fixtures/tar-list/ustar.tar",
+        "server/fixtures/tar-list/pax.tar",
+        "server/fixtures/tar-list/other-pax.tar",
+        "server/fixtures/tar-list/hard.tar",
+        "server/fixtures/tar-list/gnu.tar",
+        "server/mesh/tar-list-test-fixtures.ts",
+        "server/mesh/tar-list.integration.test.ts",
         "server/index.ts",
         "pi-config/extensions/sandbox/session-policy.ts",
         "pi-config/extensions/sandbox/index.ts",
@@ -8349,7 +8594,8 @@
         "pi-config/extensions/link/README.md",
         "pi-config/extensions/link/client.test.ts",
         "pi-config/extensions/link/index.test.ts",
-        "pi-config/README.md"
+        "pi-config/README.md",
+        "server/app.ts"
       ],
       "requires": [
         "§mesh.links/record",
@@ -8370,6 +8616,8 @@
         "server/mesh/links-offers.ts",
         "server/mesh/links-transfer.ts",
         "server/mesh/links-transfer.test.ts",
+        "server/mesh/links-transfer-test-fixtures.ts",
+        "server/mesh/links-transfer.integration.test.ts",
         "server/mesh/links.ts",
         "server/mesh/links.test.ts",
         "server/mesh/links-routes.ts",
@@ -8394,6 +8642,9 @@
         "server/voice/calibration.test.ts",
         "server/voice/service.ts",
         "server/voice/service-devices.test.ts",
+        "server/voice/voice-devices-test-fixtures.ts",
+        "server/voice/fake-whisper-test-fixtures.ts",
+        "server/voice/service-devices.integration.test.ts",
         "shared/protocol.ts",
         "src/lib/api.ts",
         "src/lib/voice/format.ts",
@@ -8425,6 +8676,9 @@
         "server/voice/download.ts",
         "server/voice/service.ts",
         "server/voice/service-devices.test.ts",
+        "server/voice/voice-devices-test-fixtures.ts",
+        "server/voice/fake-whisper-test-fixtures.ts",
+        "server/voice/service-devices.integration.test.ts",
         "server/voice/transcribe-host.c",
         "scripts/voice.ts",
         "shared/protocol.ts",
@@ -8452,6 +8706,9 @@
         "server/voice/runtime.ts",
         "server/voice/pins.ts",
         "server/voice/service-devices.test.ts",
+        "server/voice/voice-devices-test-fixtures.ts",
+        "server/voice/fake-whisper-test-fixtures.ts",
+        "server/voice/service-devices.integration.test.ts",
         "shared/protocol.ts",
         "src/lib/voice/device.ts",
         "src/lib/push.ts",
@@ -8473,7 +8730,8 @@
       "evidence": "verified",
       "code": [
         "server/share/front.ts",
-        "server/share-front.test.ts"
+        "server/share-front.test.ts",
+        "server/share-front.integration.test.ts"
       ]
     },
     "§mesh.phone/share-page": {
@@ -8497,7 +8755,8 @@
       "evidence": "unreviewed",
       "code": [
         "server/public-links-routes.ts",
-        "server/public-links.test.ts"
+        "server/public-links.test.ts",
+        "server/public-links.integration.test.ts"
       ]
     },
     "§mesh.public/withdrawn-hop": {
@@ -8513,7 +8772,9 @@
         "server/share/router.ts",
         "server/share/ws-hop.ts",
         "server/share-ws-hop.test.ts",
-        "server/share-router.test.ts"
+        "server/share-ws-hop.integration.test.ts",
+        "server/share-router.test.ts",
+        "server/share-router.integration.test.ts"
       ]
     },
     "§app.decisions/asks-user": {
@@ -8575,8 +8836,10 @@
       "code": [
         "server/merge-followup.ts",
         "server/merge-readiness.test.ts",
+        "server/merge-readiness.integration.test.ts",
         "server/decide.ts",
-        "server/index.ts"
+        "server/index.ts",
+        "server/app.ts"
       ],
       "requires": [
         "§app.decisions/interface",
@@ -8591,6 +8854,7 @@
       "code": [
         "server/merge-readiness.ts",
         "server/merge-readiness.test.ts",
+        "server/merge-readiness.integration.test.ts",
         "shared/protocol.ts",
         "src/lib/readiness.ts",
         "src/lib/readiness.test.ts",
@@ -8657,8 +8921,12 @@
         "server/share/router.ts",
         "server/share-ingress.test.ts",
         "server/session-shares.test.ts",
+        "server/session-shares.integration.test.ts",
+        "server/test-wait.ts",
         "server/index.ts",
-        "server/share/share-state.ts"
+        "server/share/share-state.ts",
+        "server/share-ingress.integration.test.ts",
+        "server/app.ts"
       ]
     },
     "§app.session-share/never": {
@@ -8669,6 +8937,8 @@
       "code": [
         "server/session-share-view.ts",
         "server/session-share-privacy.test.ts",
+        "server/session-share-privacy.integration.test.ts",
+        "server/test-wait.ts",
         "server/preview-kept.ts"
       ]
     },
@@ -8720,7 +8990,8 @@
         "server/share/session-routes.ts",
         "server/session-share-activity.test.ts",
         "server/runtime-quirks.ts",
-        "server/runtime-quirks.test.ts"
+        "server/runtime-quirks.test.ts",
+        "server/runtime-quirks.integration.test.ts"
       ]
     },
     "§app.session-share/rejected": {
@@ -8776,7 +9047,9 @@
         "server/session-shares-routes.ts",
         "server/session-share-view.ts",
         "server/share/session-live.ts",
-        "server/session-shares.test.ts"
+        "server/session-shares.test.ts",
+        "server/session-shares.integration.test.ts",
+        "server/test-wait.ts"
       ]
     },
     "§app.session-share/visits": {
@@ -8909,6 +9182,9 @@
         "shared/decisions.ts",
         "shared/project-overseer.ts",
         "server/reconcile.test.ts",
+        "server/test-wait.ts",
+        "server/reconcile.integration.test.ts",
+        "server/spec-tool-fake.ts",
         "src/lib/api.ts",
         "src/components/BatonStrip.tsx",
         "src/components/ProjectPage.tsx",
@@ -8943,6 +9219,7 @@
       "code": [
         "server/project-overseer-tools.ts",
         "server/project-overseer-tools-statecharts.test.ts",
+        "server/project-overseer-tools-statecharts.integration.test.ts",
         "server/project-overseer-prompt.md",
         "statecharts/src/sova/statecharts/item.cljc",
         "statecharts/src/sova/statecharts/build.cljc",
@@ -9001,6 +9278,7 @@
         "server/project-overseer.ts",
         "server/project-overseer-tools.ts",
         "server/project-overseer-tools-statecharts.test.ts",
+        "server/project-overseer-tools-statecharts.integration.test.ts",
         "server/baton.ts",
         "server/orgs.ts",
         "server/reconcile.ts",
@@ -9024,6 +9302,7 @@
         "server/org-host/index.ts",
         "scripts/statecharts.ts",
         "server/org-host/rebuild.test.ts",
+        "server/org-host/rebuild.integration.test.ts",
         "statecharts/src/sova/statecharts/engine/rebuild_test.cljs",
         "package.json"
       ],
@@ -9048,7 +9327,8 @@
         "statecharts/src/sova/statecharts/proj.cljc",
         "statecharts/test/sova/statecharts/refit/feed_golden.cljs",
         "statecharts/test/sova/statecharts/refit/feed_test.cljs",
-        "server/project-overseer-tools-statecharts.test.ts"
+        "server/project-overseer-tools-statecharts.test.ts",
+        "server/project-overseer-tools-statecharts.integration.test.ts"
       ],
       "requires": [
         "§app.project-overseer/statecharts",
@@ -9081,7 +9361,7 @@
         "statecharts/test/sova/statecharts/refit/feed_golden.cljs",
         "statecharts/src/sova/statecharts/base.cljc",
         "statecharts/src/sova/statecharts/reasons.cljc",
-        "server/project-previews.test.ts",
+        "server/project-previews.integration.test.ts",
         "src/lib/project-page.ts",
         "src/lib/project-page.test.ts"
       ],
@@ -9102,7 +9382,8 @@
         "server/provider-limits.ts",
         "server/provider-limits.test.ts",
         "shared/provider-limits.ts",
-        "server/index.ts"
+        "server/index.ts",
+        "server/app.ts"
       ],
       "requires": []
     },
@@ -9178,6 +9459,7 @@
         "src/lib/api.ts",
         "src/design/base.css",
         "server/index.ts",
+        "server/app.ts",
         "src/lib/provider-groups.ts"
       ],
       "requires": [
@@ -9263,7 +9545,10 @@
         "server/share/session-live.ts",
         "server/session-share-view.test.ts",
         "server/session-share-privacy.test.ts",
+        "server/session-share-privacy.integration.test.ts",
+        "server/test-wait.ts",
         "server/session-shares.test.ts",
+        "server/session-shares.integration.test.ts",
         "src/share/SessionShareApp.tsx"
       ]
     },
@@ -9282,6 +9567,7 @@
         "server/session-autotitle.ts",
         "server/session-autotitle.test.ts",
         "server/index.ts",
+        "server/app.ts",
         "shared/protocol.ts",
         "src/lib/session-groups.ts",
         "src/lib/session-groups.test.ts",
@@ -9299,6 +9585,7 @@
       "code": [
         "server/overseer-prompt.md",
         "server/index.ts",
+        "server/app.ts",
         "server/merge-routes.test.ts",
         "server/chat-model.test.ts",
         "src/components/GroupView.tsx",
@@ -9349,6 +9636,7 @@
         "server/overseer-prompt.md",
         "server/overseer-approvals.test.ts",
         "server/index.ts",
+        "server/app.ts",
         "src/lib/api.ts"
       ],
       "requires": [
@@ -9367,6 +9655,7 @@
         "server/auto-resume.test.ts",
         "server/chat-manager.ts",
         "server/index.ts",
+        "server/app.ts",
         "server/overseer-store.ts",
         "shared/protocol.ts",
         "src/components/OverseerSettings.tsx"
@@ -9424,6 +9713,7 @@
         "src/lib/public-links.ts",
         "src/components/PublicLinksSettings.tsx",
         "server/public-links.test.ts",
+        "server/public-links.integration.test.ts",
         "src/lib/public-links.test.ts",
         "server/share/share-state.ts"
       ]
@@ -9460,10 +9750,13 @@
         "server/share-preview-router.test.ts",
         "server/preview-kept.ts",
         "server/project-previews.ts",
-        "server/project-previews.test.ts",
+        "server/project-previews.integration.test.ts",
         "server/project-services/sensitive.ts",
         "server/share/preview-proxy.ts",
-        "server/project-services/share.test.ts"
+        "server/project-services/share.test.ts",
+        "server/project-services/share.integration.test.ts",
+        "server/app.ts",
+        "server/share-preview-router.integration.test.ts"
       ]
     },
     "§mesh.public/preview-address": {
@@ -9489,7 +9782,8 @@
         "src/lib/public-links.ts",
         "src/components/PublicLinksSettings.tsx",
         "server/share-preview-address.test.ts",
-        "server/share-preview-proxy.test.ts"
+        "server/share-preview-proxy.test.ts",
+        "server/share-preview-proxy.integration.test.ts"
       ]
     },
     "§mesh.public/preview-card": {
@@ -9510,7 +9804,7 @@
         "src/lib/preview-rows.ts",
         "src/lib/preview-rows.test.ts",
         "server/project-previews.ts",
-        "server/project-previews.test.ts",
+        "server/project-previews.integration.test.ts",
         "shared/preview-links.ts",
         "src/lib/two-step.ts"
       ]
@@ -9526,7 +9820,8 @@
         "server/share/preview-proxy.ts",
         "server/share/preview-hop.ts",
         "shared/public-links.ts",
-        "server/share-preview-proxy.test.ts"
+        "server/share-preview-proxy.test.ts",
+        "server/share-preview-proxy.integration.test.ts"
       ]
     },
     "§mesh.public/preview-offline": {
@@ -9544,7 +9839,9 @@
         "server/share/router.ts",
         "shared/public-links.ts",
         "server/share-preview-proxy.test.ts",
-        "server/share-preview-router.test.ts"
+        "server/share-preview-proxy.integration.test.ts",
+        "server/share-preview-router.test.ts",
+        "server/share-preview-router.integration.test.ts"
       ]
     },
     "§mesh.public/preview-proxy": {
@@ -9558,7 +9855,9 @@
         "server/share/preview-proxy.ts",
         "server/share/preview-hop.ts",
         "server/share-preview-proxy.test.ts",
-        "server/share-preview-router.test.ts"
+        "server/share-preview-proxy.integration.test.ts",
+        "server/share-preview-router.test.ts",
+        "server/share-preview-router.integration.test.ts"
       ]
     },
     "§chat.markdown/vis-lenience": {
@@ -9660,6 +9959,7 @@
         "server/session-profile-routes.ts",
         "server/chat-manager.ts",
         "server/index.ts",
+        "server/app.ts",
         "server/session-profiles-runtime.test.ts"
       ],
       "requires": [
@@ -9773,6 +10073,7 @@
         "src/components/ProfilePicker.tsx",
         "server/chat-manager.ts",
         "server/index.ts",
+        "server/app.ts",
         "server/overseer-tools.ts"
       ],
       "requires": [
@@ -9835,6 +10136,8 @@
         "pi-config/extensions/claude-code/provider/registration.test.ts",
         "pi-config/extensions/claude-code/accounts.test.ts",
         "server/claude-pool/agent.test.ts",
+        "server/claude-pool/pool-test-fixtures.ts",
+        "server/claude-pool/agent.integration.test.ts",
         "src/lib/claude-login.test.ts"
       ]
     },
@@ -9878,7 +10181,11 @@
       "evidence": "verified",
       "code": [
         "server/index.ts",
-        "server/mesh/mesh.test.ts"
+        "server/mesh/mesh.test.ts",
+        "server/mesh/peer-wire-test-fixtures.ts",
+        "server/mesh/app-test-fixtures.ts",
+        "server/mesh/mesh.integration.test.ts",
+        "server/app.ts"
       ],
       "requires": []
     },
@@ -9963,6 +10270,7 @@
       "code": [
         "server/baton-told.ts",
         "server/baton-told.test.ts",
+        "server/test-wait.ts",
         "server/harness/pi/system-replay.ts",
         "src/lib/baton-told.ts",
         "src/lib/baton-told.test.ts",
@@ -9974,9 +10282,13 @@
         "src/lib/api.ts",
         "server/baton-view.test.ts",
         "server/session-share-privacy.test.ts",
+        "server/session-share-privacy.integration.test.ts",
         "server/share-listener.test.ts",
         "server/owner-page-privacy.test.ts",
-        "server/overseer-org-tools.test.ts"
+        "server/owner-page-privacy.integration.test.ts",
+        "server/overseer-org-tools.test.ts",
+        "server/search-tools-fake.ts",
+        "server/share-listener.integration.test.ts"
       ],
       "requires": [
         "§app.baton/goal-and-loadout",
@@ -10015,6 +10327,7 @@
         "server/schedule-routes.ts",
         "server/overseer.ts",
         "server/index.ts",
+        "server/app.ts",
         "shared/schedules.ts",
         "shared/wake.ts",
         "server/schedules.test.ts"
@@ -10156,7 +10469,10 @@
         "server/outreach/types.ts",
         "server/outreach/whatsapp.ts",
         "server/outreach/core.ts",
-        "server/outreach.test.ts"
+        "server/outreach.test.ts",
+        "server/outreach/sender-test-fixtures.ts",
+        "server/outreach-test-fixtures.ts",
+        "server/outreach.integration.test.ts"
       ]
     },
     "§app.outreach/decisions": {
@@ -10166,11 +10482,15 @@
       "code": [
         "server/overseer-org-tools.ts",
         "server/overseer-org-tools.test.ts",
+        "server/search-tools-fake.ts",
         "server/project-overseer-tools.ts",
         "server/project-overseer.ts",
         "server/project-overseer-prompt.md",
         "server/project-overseer-tools.test.ts",
-        "server/outreach.test.ts"
+        "server/outreach.test.ts",
+        "server/outreach/sender-test-fixtures.ts",
+        "server/outreach-test-fixtures.ts",
+        "server/outreach.integration.test.ts"
       ],
       "requires": [
         "§app.overseer/org-people-facing",
@@ -10198,7 +10518,10 @@
       "code": [
         "server/outreach/settings.ts",
         "server/outreach/core.ts",
-        "server/outreach.test.ts"
+        "server/outreach.test.ts",
+        "server/outreach/sender-test-fixtures.ts",
+        "server/outreach-test-fixtures.ts",
+        "server/outreach.integration.test.ts"
       ]
     },
     "§app.outreach/links": {
@@ -10216,7 +10539,10 @@
         "src/components/SharesPage.tsx",
         "server/outreach.test.ts",
         "server/preview-kept.ts",
-        "server/project-previews.test.ts"
+        "server/project-previews.integration.test.ts",
+        "server/outreach/sender-test-fixtures.ts",
+        "server/outreach-test-fixtures.ts",
+        "server/outreach.integration.test.ts"
       ],
       "requires": [
         "§app.baton/links",
@@ -10232,7 +10558,10 @@
         "server/person-page.ts",
         "shared/orgs.ts",
         "src/components/PersonPage.tsx",
-        "server/outreach.test.ts"
+        "server/outreach.test.ts",
+        "server/outreach/sender-test-fixtures.ts",
+        "server/outreach-test-fixtures.ts",
+        "server/outreach.integration.test.ts"
       ],
       "requires": [
         "§app.organizations/workspace-repo"
@@ -10249,7 +10578,10 @@
         "server/overseer-prompt.md",
         "pi-config/sandbox-policy/linux/policy.json",
         "pi-config/sandbox-policy/darwin/policy.json",
-        "server/outreach.test.ts"
+        "server/outreach.test.ts",
+        "server/outreach/sender-test-fixtures.ts",
+        "server/outreach-test-fixtures.ts",
+        "server/outreach.integration.test.ts"
       ],
       "requires": [
         "§app.overseer/tools"
@@ -10263,6 +10595,9 @@
         "statecharts/src/sova/statecharts/proj.cljc",
         "server/statecharts-replay.ts",
         "server/outreach.test.ts",
+        "server/outreach/sender-test-fixtures.ts",
+        "server/outreach-test-fixtures.ts",
+        "server/outreach.integration.test.ts",
         "server/outreach/core.ts",
         "server/outreach/ipc-client.ts",
         "server/outreach/routes.ts",
@@ -10330,7 +10665,11 @@
         "server/outreach/routes.ts",
         "server/outreach/whatsapp.ts",
         "server/index.ts",
-        "server/outreach.test.ts"
+        "server/outreach.test.ts",
+        "server/outreach/sender-test-fixtures.ts",
+        "server/outreach-test-fixtures.ts",
+        "server/outreach.integration.test.ts",
+        "server/app.ts"
       ],
       "requires": [
         "§mesh.peers/listener"
@@ -10382,7 +10721,7 @@
         "server/preview-kept.ts",
         "server/sessions-index.ts",
         "shared/preview-links.ts",
-        "server/project-previews.test.ts",
+        "server/project-previews.integration.test.ts",
         "server/project-overseer-tools.test.ts",
         "statecharts/src/sova/statecharts/proj.cljc",
         "statecharts/src/sova/statecharts/rules/levels.cljc",
@@ -10390,6 +10729,7 @@
         "statecharts/EVENTS.md",
         "server/vendor/statecharts.js",
         "server/project-overseer-tools-statecharts.test.ts",
+        "server/project-overseer-tools-statecharts.integration.test.ts",
         "statecharts/test/sova/statecharts/refit/general_projects_test.cljs",
         "server/overseer-org-part.ts"
       ]
@@ -10405,13 +10745,14 @@
       ],
       "code": [
         "server/preview-serve.ts",
-        "server/preview-serve.test.ts",
+        "server/preview-serve.integration.test.ts",
         "server/project-previews.ts",
         "server/share/preview-proxy.ts",
         "server/index.ts",
         "server/preview-links-routes.ts",
-        "server/project-previews.test.ts",
-        "src/components/PreviewsCard.tsx"
+        "src/components/PreviewsCard.tsx",
+        "server/project-previews.integration.test.ts",
+        "server/app.ts"
       ]
     },
     "§app.overseer/project-card-clicks": {
@@ -10458,7 +10799,8 @@
       "authority": "accepted",
       "evidence": "verified",
       "code": [
-        "server/project-overseer-tools-statecharts.test.ts"
+        "server/project-overseer-tools-statecharts.test.ts",
+        "server/project-overseer-tools-statecharts.integration.test.ts"
       ],
       "requires": [
         "§app.project-overseer/statecharts",
@@ -10540,7 +10882,7 @@
         "server/fixtures/statecharts/syn-stall-after-days.json",
         "server/fixtures/statecharts/syn-two-hosts.json",
         "server/fixtures/statecharts/syn-watch-off-run-now.json",
-        "server/statecharts-replay.test.ts",
+        "server/statecharts-replay.integration.test.ts",
         "server/statecharts-replay.ts",
         "server/statecharts.test.ts",
         "server/statecharts.ts",
@@ -10582,14 +10924,14 @@
         "server/org-host/host.test.ts",
         "server/org-host/index.ts",
         "server/org-host/kill9-child.ts",
-        "server/org-host/kill9.test.ts",
+        "server/org-host/kill9.integration.test.ts",
         "server/org-host/log.ts",
         "server/org-host/privacy.test.ts",
         "server/org-host/store.ts",
         "server/org-host/test-statechart.ts",
         "statecharts/test/sova/statecharts/refit/holds_test.cljs",
         "server/org-error.ts",
-        "server/org-host/bench.test.ts",
+        "server/org-host/bench.integration.test.ts",
         "statecharts/test/sova/statecharts/refit/registry_test.cljs",
         "statecharts/test/sova/statecharts/refit/world_test.cljs",
         "statecharts/src/sova/statecharts/rules/hours.cljc",
@@ -10628,6 +10970,7 @@
       "code": [
         "server/baton-images.ts",
         "server/baton-images.test.ts",
+        "server/baton-images.integration.test.ts",
         "shared/baton.ts",
         "server/share/routes.ts",
         "server/share/edge.ts",
@@ -10652,7 +10995,10 @@
         "src/components/PersonPage.tsx",
         "server/share-router.test.ts",
         "server/share-message.test.ts",
-        "server/share-listener.test.ts"
+        "server/share-listener.test.ts",
+        "server/share-router.integration.test.ts",
+        "server/share-message.integration.test.ts",
+        "server/share-listener.integration.test.ts"
       ]
     },
     "§design.copy-deck/gathering-images": {
@@ -10809,8 +11155,11 @@
       "code": [
         "server/project-services/engine.ts",
         "server/project-services/engine.test.ts",
+        "server/project-services/engine.integration.test.ts",
         "server/project-services/removed-services.test.ts",
-        "server/project-services/adopt.test.ts"
+        "server/project-services/removed-services.integration.test.ts",
+        "server/project-services/adopt.test.ts",
+        "server/project-services/adopt.integration.test.ts"
       ]
     },
     "§app.project-services/callers": {
@@ -10837,11 +11186,17 @@
         "server/project-overseer.ts",
         "statecharts/src/sova/statecharts/proj.cljc",
         "server/project-overseer-tools-statecharts.test.ts",
+        "server/project-overseer-tools-statecharts.integration.test.ts",
         "server/project-overseer-tools.test.ts",
         "server/project-services/test-verb.test.ts",
         "server/project-services/share.test.ts",
         "server/project-services/on-merge.ts",
-        "server/project-services/on-merge.test.ts"
+        "server/project-services/on-merge.test.ts",
+        "server/project-services/engine.integration.test.ts",
+        "server/project-services/test-verb.integration.test.ts",
+        "server/project-services/share.integration.test.ts",
+        "server/project-services/on-merge.integration.test.ts",
+        "server/app.ts"
       ]
     },
     "§app.project-services/conform": {
@@ -10862,18 +11217,27 @@
         "server/project-services/conform.ts",
         "server/project-services/engine.ts",
         "server/project-services/engine.test.ts",
+        "server/project-services/engine.integration.test.ts",
         "server/project-services/container-claims.test.ts",
+        "server/project-services/container-claims.integration.test.ts",
         "server/project-services/conform-leaks.test.ts",
+        "server/project-services/conform-leaks.integration.test.ts",
         "server/project-services/test-verb.test.ts",
-        "server/project-services/conform-static-on-demand.test.ts",
+        "server/project-services/test-verb.integration.test.ts",
+        "server/project-services/conform-static-on-demand.integration.test.ts",
         "server/project-services/confine.test.ts",
+        "server/project-services/confine.integration.test.ts",
         "server/project-services/conform-logs.test.ts",
+        "server/project-services/conform-logs.integration.test.ts",
         "server/project-services/share.ts",
         "server/project-services/share.test.ts",
+        "server/project-services/share.integration.test.ts",
         "server/project-services/conform-cleanup.test.ts",
+        "server/project-services/conform-cleanup.integration.test.ts",
         "server/project-services/confine.ts",
         "server/project-services/netns-agent.mjs",
-        "server/project-services/ports-grace.test.ts"
+        "server/project-services/ports-grace.test.ts",
+        "server/project-services/ports-grace.integration.test.ts"
       ]
     },
     "§app.project-services/contract": {
@@ -10887,9 +11251,13 @@
         "server/project-services/engine.ts",
         "server/project-services/copy-tree.ts",
         "server/project-services/share.test.ts",
+        "server/project-services/share.integration.test.ts",
         "server/project-services/data-own-source.test.ts",
+        "server/project-services/data-own-source.integration.test.ts",
         "server/project-services/ports-grace.test.ts",
-        "server/project-services/copy-tree.test.ts"
+        "server/project-services/ports-grace.integration.test.ts",
+        "server/project-services/copy-tree.test.ts",
+        "server/project-services/copy-tree.integration.test.ts"
       ]
     },
     "§app.project-services/create": {
@@ -10907,7 +11275,9 @@
       "code": [
         "server/project-services/engine.ts",
         "server/project-services/engine.test.ts",
-        "server/project-services/adopt.test.ts"
+        "server/project-services/engine.integration.test.ts",
+        "server/project-services/adopt.test.ts",
+        "server/project-services/adopt.integration.test.ts"
       ]
     },
     "§app.project-services/doctor": {
@@ -10922,8 +11292,10 @@
       "code": [
         "server/project-services/engine.ts",
         "server/project-services/engine.test.ts",
+        "server/project-services/engine.integration.test.ts",
         "server/project-services/adapters.ts",
-        "server/project-services/container-claims.test.ts"
+        "server/project-services/container-claims.test.ts",
+        "server/project-services/container-claims.integration.test.ts"
       ]
     },
     "§app.project-services/down": {
@@ -10937,12 +11309,18 @@
       "code": [
         "server/project-services/engine.ts",
         "server/project-services/engine.test.ts",
+        "server/project-services/engine.integration.test.ts",
         "server/project-services/removed-services.test.ts",
+        "server/project-services/removed-services.integration.test.ts",
         "server/project-services/store.ts",
         "server/project-services/shared-removed.test.ts",
+        "server/project-services/shared-removed.integration.test.ts",
         "server/project-services/test-verb.test.ts",
+        "server/project-services/test-verb.integration.test.ts",
         "server/project-services/share.test.ts",
-        "server/project-services/adopt.test.ts"
+        "server/project-services/share.integration.test.ts",
+        "server/project-services/adopt.test.ts",
+        "server/project-services/adopt.integration.test.ts"
       ]
     },
     "§app.project-services/instances": {
@@ -10955,8 +11333,10 @@
       "code": [
         "server/project-services/store.ts",
         "server/project-services/store.test.ts",
+        "server/project-services/store.integration.test.ts",
         "server/project-services/engine.ts",
-        "server/project-services/engine.test.ts"
+        "server/project-services/engine.test.ts",
+        "server/project-services/engine.integration.test.ts"
       ]
     },
     "§app.project-services/lock": {
@@ -10969,8 +11349,10 @@
       "code": [
         "server/project-services/store.ts",
         "server/project-services/store.test.ts",
+        "server/project-services/store.integration.test.ts",
         "server/project-services/engine.ts",
         "server/project-services/engine.test.ts",
+        "server/project-services/engine.integration.test.ts",
         "server/project-services/conform.ts"
       ]
     },
@@ -10986,11 +11368,15 @@
       "code": [
         "server/project-services/engine.ts",
         "server/project-services/engine.test.ts",
+        "server/project-services/engine.integration.test.ts",
         "server/project-services/routes.ts",
         "server/index.ts",
         "server/project-services/removed-services.test.ts",
+        "server/project-services/removed-services.integration.test.ts",
         "server/project-services/shared-removed.test.ts",
-        "server/project-services/self-host.ts"
+        "server/project-services/shared-removed.integration.test.ts",
+        "server/project-services/self-host.ts",
+        "server/app.ts"
       ]
     },
     "§app.project-services/reserved": {
@@ -11003,7 +11389,8 @@
       "code": [
         "shared/project-contract.ts",
         "server/project-services/engine.ts",
-        "server/project-services/engine.test.ts"
+        "server/project-services/engine.test.ts",
+        "server/project-services/engine.integration.test.ts"
       ]
     },
     "§app.project-services/reset": {
@@ -11018,8 +11405,11 @@
       "code": [
         "server/project-services/engine.ts",
         "server/project-services/engine.test.ts",
+        "server/project-services/engine.integration.test.ts",
         "server/project-services/adopt.test.ts",
-        "server/project-services/data-own-source.test.ts"
+        "server/project-services/adopt.integration.test.ts",
+        "server/project-services/data-own-source.test.ts",
+        "server/project-services/data-own-source.integration.test.ts"
       ]
     },
     "§app.project-services/result": {
@@ -11034,7 +11424,8 @@
         "server/project-services/routes.ts",
         "scripts/sova-project.mjs",
         "server/project-services/tools.ts",
-        "server/project-services/share.test.ts"
+        "server/project-services/share.test.ts",
+        "server/project-services/share.integration.test.ts"
       ]
     },
     "§app.project-services/status-logs": {
@@ -11048,11 +11439,15 @@
       "code": [
         "server/project-services/engine.ts",
         "server/project-services/engine.test.ts",
+        "server/project-services/engine.integration.test.ts",
         "server/project-services/drivers.ts",
         "server/project-services/adapters.ts",
         "server/project-services/shared-removed.test.ts",
+        "server/project-services/shared-removed.integration.test.ts",
         "server/project-services/share.test.ts",
+        "server/project-services/share.integration.test.ts",
         "server/project-services/adopt.test.ts",
+        "server/project-services/adopt.integration.test.ts",
         "server/project-services/restart-gate.test.ts"
       ]
     },
@@ -11075,8 +11470,10 @@
         "server/project-services/proctable.test.ts",
         "server/project-services/routes.ts",
         "server/project-previews.ts",
-        "server/preview-sweep.test.ts",
-        "server/project-services/restart-gate.test.ts"
+        "server/preview-sweep.integration.test.ts",
+        "server/project-services/restart-gate.test.ts",
+        "server/project-services/drivers.integration.test.ts",
+        "server/project-services/engine.integration.test.ts"
       ]
     },
     "§app.project-services/teardown": {
@@ -11090,10 +11487,14 @@
       "code": [
         "server/project-services/engine.ts",
         "server/project-services/engine.test.ts",
+        "server/project-services/engine.integration.test.ts",
         "server/project-services/removed-services.test.ts",
+        "server/project-services/removed-services.integration.test.ts",
         "server/project-services/share.ts",
         "server/project-services/share.test.ts",
-        "server/project-services/adopt.test.ts"
+        "server/project-services/share.integration.test.ts",
+        "server/project-services/adopt.test.ts",
+        "server/project-services/adopt.integration.test.ts"
       ]
     },
     "§app.project-services/trust": {
@@ -11108,10 +11509,13 @@
         "server/project-services/routes.ts",
         "server/project-services/engine.ts",
         "server/project-services/engine.test.ts",
+        "server/project-services/engine.integration.test.ts",
         "server/project-services/note.test.ts",
+        "server/project-services/note.integration.test.ts",
         "server/project-services/observe.test.ts",
         "shared/project-contract.ts",
         "server/project-services/share.test.ts",
+        "server/project-services/share.integration.test.ts",
         "shared/project-contract.test.ts"
       ]
     },
@@ -11128,14 +11532,23 @@
       "code": [
         "server/project-services/engine.ts",
         "server/project-services/engine.test.ts",
+        "server/project-services/engine.integration.test.ts",
         "server/project-services/container-ports.ts",
         "server/project-services/container-ports.test.ts",
         "server/project-services/container-claims.test.ts",
+        "server/project-services/container-claims.integration.test.ts",
         "server/project-services/removed-services.test.ts",
+        "server/project-services/removed-services.integration.test.ts",
         "server/project-services/shared-removed.test.ts",
+        "server/project-services/shared-removed.integration.test.ts",
         "server/project-services/test-verb.test.ts",
+        "server/project-services/test-verb.integration.test.ts",
         "server/project-services/adopt.test.ts",
-        "server/project-services/ports-grace.test.ts"
+        "server/project-services/adopt.integration.test.ts",
+        "server/project-services/ports-grace.test.ts",
+        "server/project-services/ports-grace.integration.test.ts",
+        "server/test-ports.ts",
+        "server/project-services/fake-host.ts"
       ]
     },
     "§app/project-services": {
@@ -11231,8 +11644,10 @@
       "code": [
         "server/auth.ts",
         "server/index.ts",
+        "server/app.ts",
         "server/auth.test.ts",
-        "server/auth-gate.test.ts"
+        "server/auth-gate.test.ts",
+        "server/auth-gate.integration.test.ts"
       ]
     },
     "§app.access/token": {
@@ -11243,8 +11658,10 @@
       "code": [
         "server/auth.ts",
         "server/index.ts",
+        "server/app.ts",
         "server/auth.test.ts",
-        "server/auth-gate.test.ts"
+        "server/auth-gate.test.ts",
+        "server/auth-gate.integration.test.ts"
       ]
     },
     "§app.access/unlock": {
@@ -11277,6 +11694,7 @@
       "code": [
         "server/auth.ts",
         "server/index.ts",
+        "server/app.ts",
         "server/ws.ts",
         "src/lib/auth.ts",
         "src/components/Unlock.tsx"
@@ -11320,6 +11738,7 @@
       "code": [
         "server/merge-readiness.ts",
         "server/merge-readiness.test.ts",
+        "server/merge-readiness.integration.test.ts",
         "server/worktrees.ts"
       ],
       "requires": [
@@ -11350,6 +11769,7 @@
         "server/chat-manager.ts",
         "server/topic-delivery.ts",
         "server/index.ts",
+        "server/app.ts",
         "shared/topic-message.ts",
         "server/topics-runtime.test.ts"
       ],
@@ -11466,7 +11886,11 @@
         "src/components/Unlock.tsx",
         "src/lib/auth.ts",
         "src/lib/qr.test.ts",
-        "src/lib/qr.ts"
+        "src/lib/qr.integration.test.ts",
+        "src/lib/qr-reference.ts",
+        "src/lib/qr-reference.json",
+        "src/lib/qr.ts",
+        "server/app.ts"
       ]
     },
     "§tools.spec/inspection-safety": {
@@ -11498,26 +11922,6 @@
         "pi-config/extensions/spec/tests/milestone-integrity.test.mjs",
         "pi-config/extensions/spec/PROMOTE.md",
         "pi-config/extensions/spec/DRAFTS.md"
-      ]
-    },
-    "§tools.spec/runtime-accounting": {
-      "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "verified",
-      "requires": [],
-      "code": [
-        "pi-config/extensions/mode/spec-guard.ts",
-        "pi-config/extensions/mode/index.ts",
-        "pi-config/extensions/mode/spec-worker.ts",
-        "pi-config/extensions/claude-code/spec-hooks.ts",
-        "pi-config/extensions/claude-code/spec-hooks.test.ts",
-        "pi-config/extensions/mode/tests/spec-turn.mjs",
-        "pi-config/extensions/mode/tests/ordinary-mapped.mjs",
-        "pi-config/extensions/mode/tests/smoke.mjs",
-        "pi-config/extensions/mode/tests/note-turn.mjs",
-        "pi-config/extensions/mode/README.md",
-        "pi-config/extensions/claude-code/README.md",
-        "pi-config/extensions/spec/README.md"
       ]
     },
     "§app.overseer/transcript-window": {
@@ -11705,6 +12109,7 @@
         "server/visitor-logging.ts",
         "server/visitor-identity.ts",
         "server/visitor-identity.test.ts",
+        "server/visitor-identity.integration.test.ts",
         "server/visits.ts",
         "server/share/preview-proxy.ts",
         "server/share/edge.ts",
@@ -11723,7 +12128,9 @@
         "src/components/SharesPage.tsx",
         "src/lib/session-shares.ts",
         "src/shares.css",
-        "src/app.css"
+        "src/app.css",
+        "server/share-preview-router.integration.test.ts",
+        "server/app.ts"
       ]
     },
     "§chat.transcript/work-chain": {
@@ -11829,6 +12236,7 @@
         "server/overseer-tools.ts",
         "server/overseer-runtime.test.ts",
         "server/index.ts",
+        "server/app.ts",
         "server/sessions-configure.ts",
         "server/sessions-configure.test.ts"
       ]
@@ -11846,6 +12254,7 @@
         "pi-config/extensions/subagents/teams.ts",
         "server/chat-manager.ts",
         "server/index.ts",
+        "server/app.ts",
         "server/sessions-configure.ts",
         "shared/mesh-links.ts",
         "server/delegate.ts",
@@ -11887,8 +12296,7 @@
       "authority": "accepted",
       "evidence": "verified",
       "requires": [
-        "§tools.spec/change-assessments",
-        "§tools.spec/runtime-accounting"
+        "§tools.spec/change-assessments"
       ],
       "code": [
         "server/tests/spec-assessment.mjs",
@@ -11898,6 +12306,7 @@
         "src/lib/readiness.test.ts",
         "src/components/Sidebar.tsx",
         "server/merge-readiness.test.ts",
+        "server/merge-readiness.integration.test.ts",
         "pi-config/extensions/mode/spec-assessment.ts",
         "pi-config/extensions/mode/spec-assessment.test.ts",
         "pi-config/extensions/mode/tests/assessment-absence.mjs",
@@ -11954,6 +12363,7 @@
         "server/session-fork-routes.ts",
         "server/session-fork-routes.test.ts",
         "server/index.ts",
+        "server/app.ts",
         "server/merge-routes.test.ts",
         "src/lib/api.ts",
         "src/lib/message-actions.ts",
@@ -11980,7 +12390,8 @@
         "server/project-services/note.ts",
         "server/project-services/tools.ts",
         "server/project-services/engine.ts",
-        "server/project-services/note.test.ts"
+        "server/project-services/note.test.ts",
+        "server/project-services/note.integration.test.ts"
       ]
     },
     "§app.project-services/self-host": {
@@ -11995,7 +12406,8 @@
         "server/project-services/engine.ts",
         "server/project-services/self-host.ts",
         "server/project-services/self-host.test.ts",
-        "server/project-services/adopt.test.ts"
+        "server/project-services/adopt.test.ts",
+        "server/project-services/adopt.integration.test.ts"
       ]
     },
     "§app.project-services/test": {
@@ -12017,9 +12429,12 @@
         "server/project-services/tools.ts",
         "scripts/sova-project.mjs",
         "server/project-services/test-verb.test.ts",
+        "server/project-services/test-verb.integration.test.ts",
         "server/project-services/note.test.ts",
+        "server/project-services/note.integration.test.ts",
         "shared/project-contract.test.ts",
-        "server/project-services/adopt.test.ts"
+        "server/project-services/adopt.test.ts",
+        "server/project-services/adopt.integration.test.ts"
       ]
     },
     "§app/idle-git-cache": {
@@ -12030,7 +12445,8 @@
         "server/worktrees.ts",
         "server/worktrees.test.ts",
         "server/merge-readiness.ts",
-        "server/merge-readiness.test.ts"
+        "server/merge-readiness.test.ts",
+        "server/merge-readiness.integration.test.ts"
       ],
       "requires": [
         "§app.insights/worktrees-endpoint",
@@ -12068,6 +12484,7 @@
         "pi-config/extensions/usage-status/index.ts",
         "server/insights.ts",
         "server/index.ts",
+        "server/app.ts",
         "server/insights-usage.test.ts",
         "shared/protocol.ts",
         "src/lib/api.ts",
@@ -12119,6 +12536,7 @@
         "server/org-routes.ts",
         "server/overseer-org-part.ts",
         "server/overseer-org-part.test.ts",
+        "server/spec-tool-fake.ts",
         "src/components/ProjectOrgPart.tsx",
         "statecharts/src/sova/statecharts/placement.cljc"
       ],
@@ -12198,10 +12616,11 @@
       "code": [
         "server/project-import.ts",
         "server/project-import.test.ts",
-        "server/project-import-kill.test.ts",
+        "server/project-import-kill.integration.test.ts",
         "server/project-import-child.ts",
         "server/org-host/index.ts",
         "server/org-host/adopt.test.ts",
+        "server/test-wait.ts",
         "server/org-host/log.ts",
         "server/org-engine.ts",
         "server/org-routes.ts",
@@ -12209,7 +12628,9 @@
         "src/components/OrgsView.tsx",
         "src/lib/api.ts",
         "src/orgs.css",
-        "server/overseer-org-tools.test.ts"
+        "server/overseer-org-tools.test.ts",
+        "server/search-tools-fake.ts",
+        "server/app.ts"
       ],
       "requires": [
         "§app.projects/placement",
@@ -12225,6 +12646,7 @@
         "shared/protocol.ts",
         "server/llm-inflight.ts",
         "server/llm-inflight.test.ts",
+        "server/llm-inflight.integration.test.ts",
         "server/ws.ts",
         "server/index.ts",
         "server/chat-manager.ts",
@@ -12271,7 +12693,8 @@
         "pi-config/extensions/subagents/host.ts",
         "pi-config/extensions/subagents/host-transport.ts",
         "pi-config/extensions/subagents/workers-dir.ts",
-        "pi-config/extensions/llm-inflight/record.ts"
+        "pi-config/extensions/llm-inflight/record.ts",
+        "server/app.ts"
       ],
       "requires": [
         "§app.provider-limits/in-flight",
@@ -12311,7 +12734,7 @@
         "server/build-loadout.ts",
         "server/projects/runtime-feed.ts",
         "server/projects/runtime-feed.test.ts",
-        "server/projects/playbook-review.test.ts",
+        "server/projects/playbook-review.integration.test.ts",
         "statecharts/src/sova/statecharts/build.cljc",
         "statecharts/src/sova/statecharts/rules/runtime.cljc",
         "statecharts/EVENTS.md"
@@ -12335,7 +12758,8 @@
         "playbooks/project-verbs/references/examples/static.json",
         "playbooks/project-verbs/references/examples/node-app.json",
         "playbooks/project-verbs/references/examples/motorsaif-like.json",
-        "server/projects/onboard-playbook.test.ts"
+        "server/projects/onboard-playbook.test.ts",
+        "server/projects/onboard-playbook.integration.test.ts"
       ],
       "requires": [
         "§chat.playbooks/bundles",
@@ -12380,6 +12804,7 @@
         "server/projects/runtime.ts",
         "server/project-services/on-merge.ts",
         "server/project-services/on-merge.test.ts",
+        "server/project-services/on-merge.integration.test.ts",
         "src/components/PlaybookReview.tsx"
       ],
       "requires": [
@@ -12421,6 +12846,7 @@
         "server/project-services/engine.ts",
         "server/project-services/store.ts",
         "server/project-services/confine.test.ts",
+        "server/project-services/confine.integration.test.ts",
         "server/port-owner.ts",
         "server/port-owner.test.ts"
       ]
@@ -12494,6 +12920,7 @@
         "server/chat-manager.ts",
         "server/models.ts",
         "server/index.ts",
+        "server/app.ts",
         "shared/protocol.ts",
         "src/lib/experimental-draft.ts",
         "src/lib/api.ts",
@@ -12511,6 +12938,7 @@
         "src/components/SettingsDialog.tsx",
         "server/claude-status.ts",
         "server/index.ts",
+        "server/app.ts",
         "server/models.ts",
         "shared/protocol.ts"
       ]
@@ -12659,6 +13087,7 @@
         "server/session-setup.ts",
         "server/chat-manager.ts",
         "server/index.ts",
+        "server/app.ts",
         "shared/protocol.ts",
         "src/components/SessionSetup.tsx",
         "src/lib/session-setup.ts",
@@ -12689,6 +13118,7 @@
       "code": [
         "server/project-services/share.ts",
         "server/project-services/share.test.ts",
+        "server/project-services/share.integration.test.ts",
         "server/project-services/sensitive.ts",
         "server/project-services/engine.ts",
         "server/project-services/tools.ts",
@@ -12723,9 +13153,11 @@
         "src/projects.css",
         "server/project-services/engine.ts",
         "server/project-services/adopt.test.ts",
+        "server/project-services/adopt.integration.test.ts",
         "src/lib/link-delete.ts",
         "src/delete-button.css",
-        "src/lib/two-step.ts"
+        "src/lib/two-step.ts",
+        "server/app.ts"
       ]
     },
     "§app.project-services/adopt": {
@@ -12746,6 +13178,7 @@
         "server/project-services/self-host.ts",
         "scripts/sova-restart-gate.mjs",
         "server/project-services/adopt.test.ts",
+        "server/project-services/adopt.integration.test.ts",
         "server/project-services/restart-gate.test.ts",
         "CLAUDE.md"
       ]
@@ -12764,6 +13197,7 @@
       "code": [
         "server/project-services/on-merge.ts",
         "server/project-services/on-merge.test.ts",
+        "server/project-services/on-merge.integration.test.ts",
         "server/build-loadout.ts",
         "server/projects/runtime.ts",
         "server/project-services/engine.ts",
@@ -12839,6 +13273,7 @@
         "scripts/start-server.sh",
         "server/runtime-choice.ts",
         "server/runtime-choice.test.ts",
+        "server/runtime-choice.integration.test.ts",
         "scripts/dev-server.mjs",
         "package.json",
         "scripts/run-tests.mjs",
@@ -12857,6 +13292,7 @@
         "scripts/start-server.sh",
         "server/runtime-choice.ts",
         "server/runtime-choice.test.ts",
+        "server/runtime-choice.integration.test.ts",
         "scripts/dev-server.mjs",
         "scripts/run-tests.mjs"
       ],
@@ -12871,7 +13307,9 @@
       "code": [
         "server/index.ts",
         "server/runtime-choice.ts",
-        "server/runtime-choice.test.ts"
+        "server/runtime-choice.test.ts",
+        "server/runtime-choice.integration.test.ts",
+        "server/app.ts"
       ],
       "requires": [
         "§chat.profiles/live-commit",
@@ -12885,7 +13323,8 @@
       "code": [
         "scripts/start-server.sh",
         "server/runtime-choice.ts",
-        "server/runtime-choice.test.ts"
+        "server/runtime-choice.test.ts",
+        "server/runtime-choice.integration.test.ts"
       ]
     },
     "§app.server-runtime/quirks": {
@@ -12895,7 +13334,9 @@
       "code": [
         "server/runtime-quirks.ts",
         "server/runtime-quirks.test.ts",
+        "server/runtime-quirks.integration.test.ts",
         "server/bun-quirks-canary.test.ts",
+        "server/bun-quirks-canary.integration.test.ts",
         "server/sibling-case.test.ts",
         "docs/bun-quirks.md",
         "scripts/run-tests.mjs",
@@ -12922,6 +13363,7 @@
         "server/transcript-tool.ts",
         "server/chat-manager.ts",
         "server/index.ts",
+        "server/app.ts",
         "server/transcript-tool.test.ts",
         "server/transcript.test.ts",
         "src/lib/message.ts",
@@ -12992,9 +13434,12 @@
       "code": [
         "server/worktree-cleanup.ts",
         "server/worktree-cleanup.test.ts",
+        "server/worktree-cleanup.integration.test.ts",
+        "server/test-wait.ts",
         "server/removed-worktrees.ts",
         "server/index.ts",
-        "shared/protocol.ts"
+        "shared/protocol.ts",
+        "server/app.ts"
       ],
       "requires": [
         "§chat.worktrees/merged-state",
@@ -13021,6 +13466,7 @@
         "server/index.ts",
         "server/ws.ts",
         "server/archived-sessions.ts",
+        "server/archived-sessions.test.ts",
         "server/session-titles.ts",
         "server/seen.ts",
         "server/drafts.ts",
@@ -13037,7 +13483,8 @@
         "server/sessions-context.test.ts",
         "server/session-summary-route.test.ts",
         "server/session-profiles-runtime.test.ts",
-        "server/org-sessions.test.ts"
+        "server/org-sessions.test.ts",
+        "server/app.ts"
       ],
       "requires": [
         "§app/session-list",
@@ -13053,6 +13500,7 @@
         "server/worktrees.test.ts",
         "server/merge-readiness.ts",
         "server/merge-readiness.test.ts",
+        "server/merge-readiness.integration.test.ts",
         "server/worktree-cleanup.ts"
       ],
       "requires": [
@@ -13073,7 +13521,8 @@
       ],
       "code": [
         "playbooks/spec-review/PLAYBOOK.md",
-        "server/spec-review-playbook.test.ts"
+        "server/spec-review-playbook.test.ts",
+        "server/spec-review-playbook.integration.test.ts"
       ]
     },
     "§app.installer/bun": {
@@ -13165,6 +13614,7 @@
         "server/overseer-sender.ts",
         "server/overseer-prompt.md",
         "server/overseer-org-tools.test.ts",
+        "server/search-tools-fake.ts",
         "server/overseer-runtime.test.ts",
         "server/projects/routes.test.ts"
       ],
@@ -13208,11 +13658,14 @@
         "pi-config/extensions/claude-code/accounts.ts",
         "pi-config/extensions/claude-code/accounts.test.ts",
         "server/claude-accounts.test.ts",
+        "server/claude-accounts.integration.test.ts",
         "scripts/fake-claude.mjs",
         "server/claude-pool/agent.ts",
         "server/claude-pool/agent.test.ts",
         "src/lib/claude-pool.ts",
-        "src/lib/claude-pool.test.ts"
+        "src/lib/claude-pool.test.ts",
+        "server/claude-pool/pool-test-fixtures.ts",
+        "server/claude-pool/agent.integration.test.ts"
       ]
     },
     "§app.project-runtime/approve-merge": {
@@ -13222,7 +13675,7 @@
       "code": [
         "server/projects/runtime.ts",
         "server/projects/runtime-routes.ts",
-        "server/projects/playbook-review.test.ts",
+        "server/projects/playbook-review.integration.test.ts",
         "src/lib/api.ts",
         "src/components/PlaybookReview.tsx",
         "src/components/ProjectSoftwareCard.tsx"
@@ -13238,7 +13691,7 @@
       "evidence": "verified",
       "code": [
         "server/projects/playbook-review.ts",
-        "server/projects/playbook-review.test.ts",
+        "server/projects/playbook-review.integration.test.ts",
         "server/attention.ts",
         "server/overseer.ts",
         "server/push.ts",
@@ -13276,7 +13729,7 @@
         "src/lib/project-software.ts",
         "src/lib/project-software.test.ts",
         "server/projects/playbook-review.ts",
-        "server/projects/playbook-review.test.ts"
+        "server/projects/playbook-review.integration.test.ts"
       ],
       "requires": [
         "§app.project-runtime/onboard"
@@ -13359,7 +13812,8 @@
         "playbooks/project-deploy/PLAYBOOK.md",
         "playbooks/project-deploy/references/deploy.md",
         "playbooks/project-deploy/scripts/project-deploy.mjs",
-        "server/project-services/deploy-playbook.test.ts"
+        "server/project-services/deploy-playbook.test.ts",
+        "server/project-services/deploy-playbook.integration.test.ts"
       ]
     },
     "§app.project-runtime/deploy-standing": {
@@ -13372,7 +13826,8 @@
       "code": [
         "server/project-services/deploy-trust.ts",
         "server/project-services/deploy.ts",
-        "server/project-services/deploy-trust.test.ts"
+        "server/project-services/deploy-trust.test.ts",
+        "server/project-services/deploy-trust.integration.test.ts"
       ]
     },
     "§app.project-services/deploy": {
@@ -13390,6 +13845,7 @@
         "server/project-services/deploy.ts",
         "server/project-services/engine.ts",
         "server/project-services/engine.test.ts",
+        "server/project-services/engine.integration.test.ts",
         "playbooks/project-verbs/scripts/project-verbs.mjs",
         "playbooks/project-verbs/references/contract.md"
       ]
@@ -13406,6 +13862,7 @@
         "server/project-services/deploy.ts",
         "server/project-services/tools.ts",
         "server/project-services/deploy-callers.test.ts",
+        "server/project-services/deploy-callers.integration.test.ts",
         "scripts/sova-project.mjs"
       ]
     },
@@ -13418,7 +13875,8 @@
       ],
       "code": [
         "server/project-services/deploy.ts",
-        "server/project-services/deploy-check.test.ts"
+        "server/project-services/deploy-check.test.ts",
+        "server/project-services/deploy-check.integration.test.ts"
       ]
     },
     "§app.project-services/deploy-plan": {
@@ -13432,7 +13890,8 @@
       ],
       "code": [
         "server/project-services/deploy.ts",
-        "server/project-services/deploy-run.test.ts"
+        "server/project-services/deploy-run.test.ts",
+        "server/project-services/deploy-run.integration.test.ts"
       ]
     },
     "§app.project-services/deploy-run": {
@@ -13447,6 +13906,7 @@
         "server/project-services/deploy.ts",
         "server/project-services/deploy-runner.mjs",
         "server/project-services/deploy-run.test.ts",
+        "server/project-services/deploy-run.integration.test.ts",
         "server/project-services/routes.ts"
       ]
     },
@@ -13462,6 +13922,7 @@
         "server/project-services/deploy.ts",
         "server/project-services/deploy-attention.ts",
         "server/project-services/deploy-status.test.ts",
+        "server/project-services/deploy-status.integration.test.ts",
         "server/overseer.ts",
         "shared/protocol.ts",
         "server/project-services/routes.ts"
@@ -13478,6 +13939,7 @@
       "code": [
         "server/project-services/deploy-trust.ts",
         "server/project-services/deploy-trust.test.ts",
+        "server/project-services/deploy-trust.integration.test.ts",
         "server/project-services/trust.ts",
         "server/project-services/observe.ts",
         "server/project-services/routes.ts",
@@ -13513,10 +13975,15 @@
         "src/lib/mesh.ts",
         "server/mesh/access.test.ts",
         "server/mesh/grants.test.ts",
+        "server/mesh/peer-wire-test-fixtures.ts",
+        "server/mesh/peer-gate-test-fixtures.ts",
+        "server/mesh/app-test-fixtures.ts",
+        "server/mesh/grants.integration.test.ts",
         "server/sync/grants-sync.test.ts",
         "src/lib/mesh-access.test.ts",
         "scripts/mesh-lab/e2e/m7-grants.test.mjs",
         "server/mesh/lan-mesh.test.ts",
+        "server/mesh/lan-mesh.integration.test.ts",
         "server/overseer-link-tools.test.ts"
       ]
     },
@@ -13527,6 +13994,8 @@
         "server/mesh/dial.ts",
         "server/mesh/lan-fetch.ts",
         "server/mesh/lan-fetch.test.ts",
+        "server/mesh/duplex-pair-test-fixtures.ts",
+        "server/mesh/lan-fetch.integration.test.ts",
         "server/mesh/listener.ts",
         "server/mesh/index.ts",
         "server/mesh/proxy.ts",
@@ -13535,6 +14004,8 @@
         "server/extensions.ts",
         "server/mesh/lan.ts",
         "server/mesh/lan-mesh.test.ts",
+        "server/mesh/app-test-fixtures.ts",
+        "server/mesh/lan-mesh.integration.test.ts",
         "server/mesh/proxy-pairing.test.ts"
       ],
       "requires": [
@@ -13549,6 +14020,7 @@
       "code": [
         "server/mesh/lan-dialer.ts",
         "server/mesh/lan-dialer.test.ts",
+        "server/mesh/lan-dialer.integration.test.ts",
         "server/mesh/lan.ts"
       ],
       "requires": [
@@ -13561,7 +14033,8 @@
       "authority": "accepted",
       "code": [
         "server/mesh/lan-tls.ts",
-        "server/mesh/lan-tls.test.ts"
+        "server/mesh/lan-tls.test.ts",
+        "server/mesh/lan-tls.integration.test.ts"
       ],
       "requires": [
         "§mesh.lan/identity"
@@ -13588,6 +14061,8 @@
         "server/mesh/gate.ts",
         "server/mesh/lan-peers.test.ts",
         "server/mesh/lan-mesh.test.ts",
+        "server/mesh/app-test-fixtures.ts",
+        "server/mesh/lan-mesh.integration.test.ts",
         "server/mesh/resync.ts",
         "server/share/gateway-client.ts",
         "server/index.ts",
@@ -13605,7 +14080,8 @@
         "server/mesh/access.ts",
         "shared/mesh-access.ts",
         "server/mesh/access.test.ts",
-        "scripts/mesh-vps/local.env.example"
+        "scripts/mesh-vps/local.env.example",
+        "server/app.ts"
       ],
       "requires": [
         "§mesh.lan/identity",
@@ -13619,7 +14095,8 @@
         "server/mesh/lan-admission.ts",
         "server/mesh/lan-admission.test.ts",
         "server/mesh/lan-relay.ts",
-        "server/mesh/lan-relay.test.ts"
+        "server/mesh/lan-relay.test.ts",
+        "server/mesh/lan-relay.integration.test.ts"
       ],
       "requires": [
         "§mesh.lan/handshake"
@@ -13632,7 +14109,9 @@
         "server/mesh/lan-relay-sessions.ts",
         "server/mesh/lan-relay-sessions.test.ts",
         "server/mesh/lan.ts",
-        "server/mesh/lan-mesh.test.ts"
+        "server/mesh/lan-mesh.test.ts",
+        "server/mesh/app-test-fixtures.ts",
+        "server/mesh/lan-mesh.integration.test.ts"
       ],
       "requires": [
         "§mesh.lan/reverse-channel",
@@ -13645,9 +14124,14 @@
       "code": [
         "server/mesh/lan-reverse.ts",
         "server/mesh/lan-reverse.test.ts",
+        "server/mesh/duplex-pair-test-fixtures.ts",
+        "server/mesh/lan-reverse.integration.test.ts",
         "server/runtime-quirks.ts",
         "server/mesh/lan-mesh.test.ts",
+        "server/mesh/app-test-fixtures.ts",
+        "server/mesh/lan-mesh.integration.test.ts",
         "server/mesh/lan-h2-limits.test.ts",
+        "server/mesh/lan-h2-limits.integration.test.ts",
         "server/mesh/lan.ts"
       ],
       "requires": [
@@ -13702,6 +14186,7 @@
         "pi-config/extensions/sessions/public/SCHEMA.md",
         "pi-config/extensions/subagents/runner.ts",
         "server/llm-inflight.test.ts",
+        "server/llm-inflight.integration.test.ts",
         "pi-config/extensions/llm-inflight/tracker.test.ts",
         "pi-config/extensions/llm-inflight/runtime.test.ts",
         "pi-config/extensions/llm-inflight/claude.test.ts",
@@ -13741,8 +14226,11 @@
         "server/mesh/lan-handoff.ts",
         "server/mesh/lan-handoff-protocol.ts",
         "server/mesh/lan-accept.test.ts",
+        "server/mesh/lan-accept.integration.test.ts",
         "server/mesh/lan-handoff-protocol.test.ts",
         "server/mesh/lan-internet.test.ts",
+        "server/mesh/app-test-fixtures.ts",
+        "server/mesh/lan-internet.integration.test.ts",
         "scripts/mesh-lab/e2e/m9-internet-relay.test.mjs"
       ],
       "requires": [
@@ -13776,10 +14264,13 @@
       "code": [
         "server/mesh/links.ts",
         "server/mesh/links.test.ts",
+        "server/mesh/links-transfer-test-fixtures.ts",
         "server/mesh/links-offers.ts",
         "server/mesh/index.ts",
         "shared/mesh-links.ts",
-        "server/mesh/lan-mesh.test.ts"
+        "server/mesh/lan-mesh.test.ts",
+        "server/mesh/app-test-fixtures.ts",
+        "server/mesh/lan-mesh.integration.test.ts"
       ],
       "requires": [
         "§mesh.links/record",
@@ -13858,24 +14349,26 @@
         "server/merge-followup.ts",
         "server/baton-wrapup.ts",
         "server/usage-recording.test.ts",
+        "server/test-wait.ts",
         "server/usage-routes.ts",
         "server/index.ts",
         "server/mesh/access.ts",
         "shared/model-prices/prices.ts",
         "scripts/run-tests.mjs",
-        "server/usage-helper/client.test.ts",
+        "server/usage-helper/client.integration.test.ts",
         "server/usage-helper/client.ts",
         "server/usage-helper/cost-snapshots.ts",
         "server/usage-helper/ledger.test.ts",
         "server/usage-helper/ledger.ts",
         "server/usage-helper/main.ts",
-        "server/usage-helper/memory.test.ts",
+        "server/usage-helper/memory.integration.test.ts",
         "server/usage-helper/price-book.test.ts",
         "server/usage-helper/price-book.ts",
         "server/usage-helper/project.ts",
         "server/usage-helper/query.ts",
         "server/usage-helper/records.ts",
-        "server/usage-helper/service.ts"
+        "server/usage-helper/service.ts",
+        "server/app.ts"
       ],
       "requires": [
         "§app.insights/llm-inflight",
@@ -14029,9 +14522,11 @@
         "server/align-state.ts",
         "server/session-fork-routes.ts",
         "server/chat-queue-clients.test.ts",
+        "server/test-wait.ts",
         "server/harness/pi/package.ts",
         "server/mesh/hello.ts",
-        "server/sync/logins-stores.ts"
+        "server/sync/logins-stores.ts",
+        "server/app.ts"
       ],
       "requires": [
         "§app.harness/boundary",
@@ -14055,6 +14550,7 @@
         "server/harness/pi/QUIRKS.md",
         "server/chat-rewind.test.ts",
         "server/chat-compact.test.ts",
+        "server/test-wait.ts",
         "server/image-note.test.ts",
         "server/sandbox-state.test.ts",
         "server/insights-restored.test.ts",
@@ -14111,6 +14607,7 @@
         "server/stream-guard.test.ts",
         "server/overseer-id-check.test.ts",
         "server/overseer-org-tools.test.ts",
+        "server/search-tools-fake.ts",
         "server/session-profiles.test.ts",
         "server/harness/pi/session.test.ts",
         "server/vis-check.ts",
@@ -14171,7 +14668,9 @@
         "server/harness/pi/reader.test.ts",
         "server/harness/pi/insertion.test.ts",
         "server/index.ts",
-        "server/auth-gate.test.ts"
+        "server/app.ts",
+        "server/auth-gate.test.ts",
+        "server/auth-gate.integration.test.ts"
       ],
       "requires": [
         "§app.harness/reader",
@@ -14222,8 +14721,6 @@
         "src/lib/live-effects.test.ts",
         "src/components/ChatView.tsx",
         "src/lib/api.ts",
-        "server/mesh/proxy-wire.test.ts",
-        "server/share-wire.test.ts",
         "server/share-ws-hop.test.ts",
         "scripts/harness-wire-e2e.mjs",
         "scripts/harness-wire-e2e-mock-llm.mjs",
@@ -14274,7 +14771,11 @@
         "server/harness/pi/golden/wire/expected/faux/tool-read/frames.json",
         "server/harness/pi/golden/wire/expected/faux/tool-read/trace.json",
         "server/harness/pi/golden/wire/inputs/effects.json",
-        "server/harness/pi/golden/wire/wire.test.ts"
+        "server/harness/pi/golden/wire/wire.test.ts",
+        "server/mesh/proxy-wire.integration.test.ts",
+        "server/app.ts",
+        "server/share-wire.integration.test.ts",
+        "server/share-ws-hop.integration.test.ts"
       ],
       "requires": [
         "§chat.transcript/slim-rows"
@@ -14604,7 +15105,8 @@
         "§tools.spec/where-lookup",
         "§tools.spec/frame",
         "§tools.spec/context-packets",
-        "§tools.spec/field-promotion"
+        "§tools.spec/field-promotion",
+        "§tools.spec/census-note"
       ],
       "authority": "accepted",
       "evidence": "verified",
@@ -14637,11 +15139,16 @@
         "scripts/run-tests.mjs",
         "pi-config/extensions/claude-code/tests/hermetic-env.mjs",
         "server/test-scratch.ts",
-        "server/test-repo-fence.test.ts",
+        "server/test-repo-fence.integration.test.ts",
         "server/reconcile.test.ts",
+        "server/test-wait.ts",
+        "server/reconcile.integration.test.ts",
+        "server/spec-tool-fake.ts",
         "server/project-coding-runtime.test.ts",
         "server/overseer-org-tools.test.ts",
+        "server/search-tools-fake.ts",
         "server/org-about-privacy.test.ts",
+        "server/org-about-privacy.integration.test.ts",
         "CLAUDE.md"
       ],
       "requires": [
@@ -14680,6 +15187,7 @@
         "server/insights.ts",
         "server/insights-usage.test.ts",
         "server/index.ts",
+        "server/app.ts",
         "shared/protocol.ts",
         "src/lib/usage-burn.ts",
         "src/lib/usage-burn.test.ts",
@@ -14708,6 +15216,7 @@
         "pi-config/extensions/model-levels/core.test.ts",
         "pi-config/extensions/model-levels/tests/seam.mjs",
         "server/harness/pi/model-levels.test.ts",
+        "server/harness/pi/model-levels.integration.test.ts",
         "pi-config/extensions/model-levels/tests/fixture-cache.json",
         "pi-config/extensions/model-levels/tests/run.mjs"
       ],
@@ -14749,7 +15258,8 @@
         "pi-config/extensions/model-levels/core.ts",
         "pi-config/extensions/model-levels/core.test.ts",
         "pi-config/extensions/model-levels/tests/seam.mjs",
-        "server/harness/pi/model-levels.test.ts"
+        "server/harness/pi/model-levels.test.ts",
+        "server/harness/pi/model-levels.integration.test.ts"
       ],
       "requires": []
     },
@@ -14772,6 +15282,7 @@
       "code": [
         "server/harness/pi/open.ts",
         "server/harness/pi/model-levels.test.ts",
+        "server/harness/pi/model-levels.integration.test.ts",
         "pi-config/extensions/subagents/index.ts",
         "pi-config/extensions/subagents/index.test.ts"
       ],
@@ -14789,6 +15300,281 @@
         "pi-config/extensions/model-levels/core.ts",
         "pi-config/extensions/model-levels/README.md",
         "pi-config/README.md"
+      ]
+    },
+    "§app.server-runtime/test-tiers": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "scripts/run-tests.mjs",
+        "scripts/test-tier-guard.mjs",
+        "scripts/test-changed.mjs",
+        "scripts/test-changed.d.mts",
+        "server/tier-guard.test.ts",
+        "server/run-tests-changed.test.ts",
+        "server/harness-boundary.test.ts",
+        "package.json",
+        "CLAUDE.md"
+      ],
+      "requires": [
+        "§app.server-runtime/choice"
+      ]
+    },
+    "§app.session-share/reading": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.session-share/page",
+        "§app.owner-page/page"
+      ],
+      "code": [
+        "src/share/thread.css"
+      ]
+    },
+    "§app.claude-code-provider/catalog": {
+      "kind": "behavior",
+      "requires": [
+        "§app/claude-code-provider",
+        "§app.claude-code-provider/always-on"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/claude-code/catalog.ts",
+        "pi-config/extensions/claude-code/catalog.test.ts",
+        "pi-config/extensions/claude-code/context-window.ts",
+        "pi-config/extensions/claude-code/context-window.test.ts",
+        "pi-config/extensions/claude-code/provider/index.ts",
+        "pi-config/extensions/claude-code/provider/registration.test.ts",
+        "pi-config/extensions/claude-code/index.ts",
+        "pi-config/extensions/claude-code/index.test.ts",
+        "pi-config/extensions/claude-code/policy.ts",
+        "pi-config/extensions/claude-code/policy.test.ts",
+        "pi-config/extensions/claude-code/README.md",
+        "pi-config/extensions/mode/delegate.ts",
+        "pi-config/extensions/mode/routing.ts",
+        "pi-config/extensions/subagents/team-defaults.ts",
+        "pi-config/extensions/subagents/subagent-profiles.ts",
+        "pi-config/extensions/subagents/index.ts",
+        "pi-config/extensions/topic-outline/config.ts",
+        "server/delegate.ts",
+        "server/delegate.test.ts",
+        "server/spec-settings.test.ts",
+        "server/team-defaults.test.ts",
+        "server/topic-outline-settings.ts",
+        "server/decide-settings.ts",
+        "server/session-titles-settings.ts",
+        "server/overseer-store.ts",
+        "server/projects/onboard.ts",
+        "src/lib/delegate-form.ts",
+        "src/lib/delegate-form.test.ts",
+        "src/lib/summarizer-form.ts",
+        "src/lib/summarizer-form.test.ts",
+        "src/components/WorkerSlotRow.tsx",
+        "src/components/SummarizerSettings.tsx",
+        "scripts/claude-catalog.mjs",
+        "scripts/prices-update.mjs",
+        "pi-config/extensions/mode/delegate.test.ts",
+        "pi-config/extensions/mode/routing.test.ts",
+        "pi-config/extensions/mode/spec.test.ts",
+        "pi-config/extensions/mode/spec.ts",
+        "pi-config/extensions/subagents/team-defaults.test.ts",
+        "pi-config/extensions/claude-code/provider/auto-compact.test.ts"
+      ]
+    },
+    "§app.claude-code-provider/catalog-drift": {
+      "kind": "behavior",
+      "requires": [
+        "§app.claude-code-provider/catalog"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/claude-code/catalog.ts",
+        "server/delegate.ts",
+        "server/delegate.test.ts",
+        "server/claude-models.ts",
+        "server/claude-models.test.ts",
+        "shared/protocol.ts",
+        "src/lib/delegate-form.ts",
+        "src/components/SubagentProfilesSettings.tsx"
+      ]
+    },
+    "§app.claude-code-provider/legacy-ids": {
+      "kind": "behavior",
+      "requires": [
+        "§app.claude-code-provider/catalog"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/claude-code/catalog.ts",
+        "pi-config/extensions/claude-code/catalog.test.ts",
+        "pi-config/extensions/claude-code/index.ts",
+        "pi-config/extensions/claude-code/policy.ts",
+        "pi-config/extensions/subagents/index.ts",
+        "pi-config/extensions/mode/delegate.ts",
+        "pi-config/extensions/subagents/team-defaults.ts",
+        "pi-config/extensions/topic-outline/config.ts",
+        "server/harness/pi/open.ts",
+        "server/chat-model.test.ts",
+        "server/web-defaults.ts",
+        "server/web-defaults.test.ts",
+        "server/model-favorites.ts",
+        "server/model-favorites.test.ts",
+        "server/topic-outline-settings.ts",
+        "shared/model-prices/aliases.json",
+        "server/models.ts",
+        "server/models.test.ts",
+        "server/overseer-store.ts",
+        "pi-config/extensions/claude-code/index.test.ts",
+        "pi-config/extensions/subagents/restore.test.ts",
+        "pi-config/extensions/subagents/index.test.ts"
+      ]
+    },
+    "§app.claude-code-provider/model-identity": {
+      "kind": "behavior",
+      "requires": [
+        "§app.claude-code-provider/catalog",
+        "§app.claude-code-provider/model-names"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/lib/format.ts",
+        "src/components/Thread.tsx",
+        "src/components/SubagentPane.tsx",
+        "server/transcript.ts",
+        "server/harness/pi/reader.ts",
+        "shared/harness-history.ts",
+        "shared/protocol.ts",
+        "server/worker-context.ts",
+        "server/worker-context.test.ts",
+        "server/worker-restore.ts"
+      ]
+    },
+    "§app.claude-code-provider/model-names": {
+      "kind": "behavior",
+      "requires": [
+        "§app.claude-code-provider/catalog",
+        "§app.claude-code-provider/legacy-ids"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/lib/format.ts",
+        "src/lib/format.test.ts",
+        "src/components/Thread.tsx",
+        "src/components/SessionView.tsx",
+        "src/components/Sidebar.tsx",
+        "src/components/OverseerView.tsx",
+        "src/components/Composer.tsx",
+        "src/components/ComposerMenu.tsx",
+        "src/components/SubagentPane.tsx",
+        "src/components/CostsTab.tsx",
+        "src/components/SessionUsage.tsx",
+        "src/lib/explain.ts",
+        "src/lib/session-groups.ts",
+        "src/lib/subagent-editor.ts",
+        "pi-config/extensions/subagents/subagent-profiles.ts",
+        "src/components/ModelMenu.tsx",
+        "src/design/base.css"
+      ]
+    },
+    "§app.claude-code-provider/pinned-model": {
+      "kind": "behavior",
+      "requires": [
+        "§app.claude-code-provider/catalog",
+        "§app.claude-code-provider/legacy-ids"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/claude-code/transport.ts",
+        "pi-config/extensions/claude-code/transport.test.ts",
+        "pi-config/extensions/claude-code/launch-pin.test.ts",
+        "pi-config/extensions/claude-code/provider/session-bridge.ts",
+        "pi-config/extensions/claude-code/provider/bridge.test.ts",
+        "pi-config/extensions/claude-code/runner.ts",
+        "pi-config/extensions/topic-outline/summarizers/claude-cli.ts",
+        "server/decide-llm.ts",
+        "server/session-autotitle.ts"
+      ]
+    },
+    "§app.insights/usage-model-rows": {
+      "kind": "behavior",
+      "requires": [
+        "§app.insights/usage-ledger",
+        "§app.insights/cost-history",
+        "§app.subagents-pane/tabs",
+        "§app.claude-code-provider/legacy-ids",
+        "§app.claude-code-provider/model-identity"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/usage-helper/query.ts",
+        "server/usage-helper/ledger.test.ts",
+        "shared/usage/wire.ts",
+        "src/components/CostsTab.tsx",
+        "src/components/SessionUsage.tsx",
+        "src/lib/format.ts",
+        "pi-config/extensions/llm-inflight/claude-usage.ts",
+        "pi-config/extensions/llm-inflight/claude-usage.test.ts",
+        "shared/model-prices/prices.ts",
+        "server/model-prices.test.ts",
+        "server/usage-helper/ledger.ts"
+      ]
+    },
+    "§app.claude-code-provider/system-prompt": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/claude-code/provider/stream.ts",
+        "pi-config/extensions/claude-code/provider/auto-compact.ts",
+        "pi-config/extensions/claude-code/provider/stream.test.ts"
+      ]
+    },
+    "§mesh.remote-sessions/row-host-state": {
+      "kind": "behavior",
+      "requires": [
+        "§mesh.remote-sessions/list",
+        "§mesh.remote-sessions/host-filter"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/lib/mesh-details.ts",
+        "src/lib/mesh-details.test.ts",
+        "src/components/Sidebar.tsx",
+        "src/mesh.css"
+      ]
+    },
+    "§tools.spec/no-turn-end-check": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "code": [
+        "pi-config/extensions/mode/index.ts",
+        "pi-config/extensions/mode/spec-guard.ts",
+        "pi-config/extensions/mode/spec-worker.ts",
+        "pi-config/extensions/mode/spec-mode.md",
+        "pi-config/extensions/mode/prompt.ts",
+        "pi-config/extensions/claude-code/spec-hooks.ts",
+        "pi-config/extensions/subagents/spec-brief.ts",
+        "pi-config/extensions/subagents/index.ts",
+        "server/transcript.ts",
+        "server/app.ts",
+        "server/mesh/access.ts",
+        "shared/protocol.ts",
+        "src/components/Thread.tsx",
+        "src/components/ChatView.tsx",
+        "src/lib/api.ts",
+        "src/app.css"
       ]
     }
   },

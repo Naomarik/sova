@@ -20,37 +20,37 @@ const OPTIONS: DelegateOptions = {
         { id: "openai/gpt-x", name: "", efforts: [], denied: "openai/gpt-x is off for subagents in Settings → Models" },
       ],
     },
-    { id: "claude-code", label: "Claude Code", models: [{ id: "haiku", name: "Haiku", efforts: [] }] },
+    { id: "claude-code", label: "Claude Code", models: [{ id: "claude-haiku-4-5", name: "Haiku 4.5", efforts: [] }] },
   ],
 };
 
 test("off for subagents is not a summarizer denial; off outright is", () => {
   const subagentsOnly = { ...EMPTY_POLICY, subagentDisabledModels: ["openai/gpt-x"], subagentDisabledProviders: ["claude-code"] };
   assert.equal(summarizerDenial(subagentsOnly, { backend: "pi", model: "openai/gpt-x" }), null);
-  assert.equal(summarizerDenial(subagentsOnly, { backend: "claude-code", model: "haiku" }), null);
+  assert.equal(summarizerDenial(subagentsOnly, { backend: "claude-code", model: "claude-haiku-4-5" }), null);
   assert.equal(summarizerIssue(OPTIONS, subagentsOnly, { backend: "pi", model: "openai/gpt-x" }, null), null);
 
   assert.match(summarizerDenial({ ...EMPTY_POLICY, disabledModels: ["OpenAI/GPT-X"] }, { backend: "pi", model: "openai/gpt-x" }) ?? "", /turned off/);
   assert.match(summarizerDenial({ ...EMPTY_POLICY, disabledProviders: ["openai"] }, { backend: "pi", model: "openai/gpt-x" }) ?? "", /openai is turned off/);
   // A Claude Code model is off under its bare id, its prefixed ref, or the backend as a provider.
   for (const policy of [
-    { ...EMPTY_POLICY, disabledModels: ["haiku"] },
-    { ...EMPTY_POLICY, disabledModels: ["claude-code/haiku"] },
+    { ...EMPTY_POLICY, disabledModels: ["claude-haiku-4-5"] },
+    { ...EMPTY_POLICY, disabledModels: ["claude-code/claude-haiku-4-5"] },
     { ...EMPTY_POLICY, disabledProviders: ["claude-code"] },
   ])
-    assert.ok(summarizerDenial(policy, { backend: "claude-code", model: "haiku" }), JSON.stringify(policy));
+    assert.ok(summarizerDenial(policy, { backend: "claude-code", model: "claude-haiku-4-5" }), JSON.stringify(policy));
   // A bare model id never matches a pi ref's model half.
   assert.equal(summarizerDenial({ ...EMPTY_POLICY, disabledModels: ["gpt-x"] }, { backend: "pi", model: "openai/gpt-x" }), null);
 });
 
 test("a denied pick says it's skipped", () => {
-  const policy = { ...EMPTY_POLICY, disabledModels: ["haiku"] };
-  const issue = summarizerIssue(OPTIONS, policy, { backend: "claude-code", model: "haiku" }, null);
+  const policy = { ...EMPTY_POLICY, disabledModels: ["claude-haiku-4-5"] };
+  const issue = summarizerIssue(OPTIONS, policy, { backend: "claude-code", model: "claude-haiku-4-5" }, null);
   assert.equal(issue?.tone, "warn");
   assert.match(issue!.text, /skip it/);
   assert.deepEqual(
-    summarizerModelOptions(OPTIONS, policy, { backend: "claude-code", model: "haiku" }).map((o) => o.label),
-    ["haiku — turned off"],
+    summarizerModelOptions(OPTIONS, policy, { backend: "claude-code", model: "claude-haiku-4-5" }).map((o) => o.label),
+    ["Haiku 4.5 — turned off"],
   );
 });
 
@@ -59,27 +59,27 @@ test("the stored pick is always in the select, and absence reads per backend", (
     summarizerModelOptions(OPTIONS, EMPTY_POLICY, { backend, model }).map((o) => o.label);
   assert.equal(labels("pi", "gone/model")[0], "gone/model — not offered");
   assert.equal(labels("pi", "claude-code-cli/opus")[0], "claude-code-cli/opus — not verified");
-  assert.equal(labels("claude-code", "opus[1m]")[0], "opus[1m] — not verified");
+  assert.equal(labels("claude-code", "claude-opus-5-5")[0], "claude-opus-5-5 — not verified");
   assert.deepEqual(labels("pi", "ollama-cloud/deepseek-v4.1-flash"), ["ollama-cloud/deepseek-v4.1-flash", "openai/gpt-x"]);
   assert.equal(summarizerIssue(OPTIONS, EMPTY_POLICY, { backend: "pi", model: "gone/model" }, null)?.tone, "error");
-  assert.equal(summarizerIssue(OPTIONS, EMPTY_POLICY, { backend: "claude-code", model: "opus" }, null)?.tone, "muted");
+  assert.equal(summarizerIssue(OPTIONS, EMPTY_POLICY, { backend: "claude-code", model: "claude-opus-5-5" }, null)?.tone, "muted");
   // Before the options arrive nothing is claimed either way.
   assert.equal(summarizerIssue(undefined, EMPTY_POLICY, { backend: "pi", model: "gone/model" }, null), null);
 });
 
 test("a blank pick asks for a model; a fallback equal to the primary is refused", () => {
   assert.equal(summarizerIssue(OPTIONS, null, { backend: "pi", model: "" }, null)?.text, "Choose a model.");
-  const primary = { backend: "claude-code" as const, model: "haiku" };
+  const primary = { backend: "claude-code" as const, model: "claude-haiku-4-5" };
   assert.equal(summarizerIssue(OPTIONS, null, { ...primary }, primary)?.tone, "error");
 });
 
-test("a Claude Code <alias>[1m] counts as listed when the CLI lists <alias>", () => {
+test("an old Claude id counts as listed when the catalog lists the model it means", () => {
   const labels = (backend: "pi" | "claude-code", model: string) =>
     summarizerModelOptions(OPTIONS, EMPTY_POLICY, { backend, model }).map((o) => o.label);
-  assert.deepEqual(labels("claude-code", "haiku[1m]"), ["haiku[1m]", "haiku"]);
+  assert.deepEqual(labels("claude-code", "haiku"), ["Haiku 4.5", "Haiku 4.5"], "the stored old id and the catalog entry, both by name");
   assert.equal(summarizerIssue(OPTIONS, EMPTY_POLICY, { backend: "claude-code", model: "haiku[1m]" }, null), null);
-  // An unlisted base is unchanged: not verified.
-  assert.equal(summarizerIssue(OPTIONS, EMPTY_POLICY, { backend: "claude-code", model: "opus[1m]" }, null)?.tone, "muted");
+  // A model the list doesn't have: not verified.
+  assert.equal(summarizerIssue(OPTIONS, EMPTY_POLICY, { backend: "claude-code", model: "claude-opus-5-5" }, null)?.tone, "muted");
   // pi is unaffected.
   assert.equal(labels("pi", "ollama-cloud/deepseek-v4.1-flash[1m]")[0], "ollama-cloud/deepseek-v4.1-flash[1m] — not offered");
   assert.equal(summarizerIssue(OPTIONS, EMPTY_POLICY, { backend: "pi", model: "ollama-cloud/deepseek-v4.1-flash[1m]" }, null)?.tone, "error");

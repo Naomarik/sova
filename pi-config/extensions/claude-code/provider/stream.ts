@@ -10,9 +10,11 @@ import {
 	type Api,
 	calculateCost,
 	collapseSystemMessages,
+	contentText,
 	createAssistantMessageEventStream,
-	getCurrentSystemPrompt,
+	getCurrentSystemMessage,
 	getCurrentTools,
+	getSystemMessageText,
 	type JsonObject,
 	type Model,
 	type SimpleStreamOptions,
@@ -113,24 +115,42 @@ type Block = (ThinkingContent | TextContent | (ToolCall & { partialJson: string 
 
 type Diagnostic = NonNullable<AssistantMessage["diagnostics"]>[number];
 
-const SECTION_OPEN_TAG = /^<[a-z][a-z0-9_-]*>$/;
+/**
+ * pi's stock preamble, verbatim: the `preamble` section `buildSystemPromptSections`
+ * (pi-coding-agent `core/system-prompt`) writes when the session has no custom prompt.
+ * stream.test.ts pins it to the installed pi.
+ */
+export const PI_STOCK_PREAMBLE =
+	"You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.";
 
 /**
- * Drop the untagged block pi puts ahead of its tagged sections (the preamble).
+ * Drop pi's stock preamble when it is the whole opening paragraph of `text`: all of
+ * it, or followed by a blank line. Any other text comes back verbatim, so a custom
+ * prompt (SYSTEM.md, a baton or gathering session's own) is never cut.
  *
- * pi renders a structured prompt as a bare preamble followed by sections wrapped
- * `<name>\n…\n</name>`, joined with blank lines; section names follow pi's
- * `SYSTEM_PROMPT_SECTION_NAME` (`/^[a-z][a-z0-9_-]*$/`). This finds the first line,
- * at index > 0, that is exactly an opening tag (`<name>` alone on its line) and
- * returns everything from that line onward, joined with "\n" and otherwise
- * unchanged. When the first such line is line 0, or there is none (a tagless
- * prompt such as compaction's summarizer), the input comes back verbatim.
- * Nothing from the first tag line onward is ever altered.
+ * Applied to a rendered prompt, this relies on pi rendering the preamble first,
+ * as it does for every prompt it builds.
  */
-export function dropLeadingUntaggedSection(text: string): string {
-	const lines = text.split("\n");
-	const first = lines.findIndex((line) => SECTION_OPEN_TAG.test(line));
-	return first > 0 ? lines.slice(first).join("\n") : text;
+export function dropPiPreamble(text: string): string {
+	if (text === PI_STOCK_PREAMBLE) return "";
+	return text.startsWith(`${PI_STOCK_PREAMBLE}\n\n`) ? text.slice(PI_STOCK_PREAMBLE.length + 2) : text;
+}
+
+/**
+ * The prompt the CLI is given for this transcript: pi's replayed system prompt, rendered
+ * as pi renders it, minus pi's stock preamble. The cut is made per part (the message's
+ * flat `content` and its `preamble` section) before rendering, so it holds wherever the
+ * `preamble` section sits among the others, and no other section is read.
+ */
+export function claudeSystemPrompt(messages: TranscriptContext["messages"]): string {
+	const message = getCurrentSystemMessage(messages);
+	if (!message) return "";
+	const preamble = message.sections?.preamble;
+	return getSystemMessageText({
+		...message,
+		content: dropPiPreamble(contentText(message.content)),
+		...(typeof preamble === "string" ? { sections: { ...message.sections, preamble: dropPiPreamble(preamble) } } : {}),
+	});
 }
 
 /**
@@ -148,8 +168,8 @@ export function streamClaudeCode(
 	// The CLI takes one system prompt for the process, so fold later system
 	// messages into the leading one rather than sending them mid-conversation.
 	const transcript = collapseSystemMessages(context);
-	// pi's preamble names pi; this provider sends only the tagged sections.
-	const systemPrompt = dropLeadingUntaggedSection(getCurrentSystemPrompt(transcript.messages));
+	// pi's stock preamble names pi; every other prompt goes whole.
+	const systemPrompt = claudeSystemPrompt(transcript.messages);
 	const tools = getCurrentTools(transcript.messages);
 
 	(async () => {

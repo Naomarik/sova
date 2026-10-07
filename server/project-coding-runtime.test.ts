@@ -24,10 +24,16 @@ writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ extensions: [res
 const writeDefault = (mode: string, minorModes: string[]) => writeFileSync(join(agentDir, "mode.json"), JSON.stringify({ version: 1, mode, strict: false, minorModes }));
 writeDefault("delegate", ["align", "spec"]);
 process.env.PI_CODING_AGENT_DIR = agentDir;
-process.env.PORT = "0";
-const { server } = await import("./index");
+const { buildApp } = await import("./app");
+const { app } = buildApp({ extensionEntriesOf: async () => [] });
+// Wired as server/index.ts wires them: the Overseer's tools call the routes in-process, the link
+// extension's tools would call back at the listener's origin (none is bound here), and the
+// project overseer's listeners hear each build's turn start and end.
+(await import("./overseer")).setOverseerDispatch((path, init) => app.request(path, init));
+(await import("./link-delivery")).setLinkOrigin("http://127.0.0.1:47916");
 const orgs = await import("./orgs");
 const po = await import("./project-overseer");
+po.startProjectOverseerLoop();
 const store = await import("./project-overseer-store");
 const { acquireChat, disposeAllChats, disposeHeldChat, onAgentStarted } = await import("./chat-manager");
 const { addTodo } = await import("./overseer-todos");
@@ -44,7 +50,6 @@ const buildsOf = async (projectId: string, root: string) => Promise.all(readBuil
 
 after(async () => {
   await disposeAllChats();
-  await new Promise<void>((res, rej) => server.close((err) => (err ? rej(err) : res())));
   await settled(join(tmp, "ws"));
   rmSync(tmp, { recursive: true, force: true });
 });
@@ -349,7 +354,7 @@ describe("a project's coding sessions", async () => {
 
   test("a loadout that loads no extension is handed no extension flag (no \"Unknown option\" line)", async () => {
     const { currentLinkOrigin, extensionFlagsFor } = await import("./chat-manager");
-    assert.ok(currentLinkOrigin(), "the listener is bound, so ordinary runtimes get the link flag too");
+    assert.ok(currentLinkOrigin(), "the listener's origin is known, so ordinary runtimes get the link flag too");
     assert.deepEqual([...extensionFlagsFor(plainRoot, false, true)], [], "the project overseer and baton sessions: none, not even the always-on Claude Code provider");
     assert.deepEqual([...extensionFlagsFor(plainRoot, false, false).keys()], ["claude-code-provider", "sova-link", "sova-link-token"], "an ordinary session keeps them, the provider with no setting at all");
   });
@@ -441,7 +446,7 @@ describe("a project's coding sessions", async () => {
     (piSession(chat) as unknown as { _emit(e: unknown): void })._emit({ type: "agent_start" });
     off();
     assert.ok(seen.includes(row.path!), "agent_start reached the listener");
-    for (let i = 0; i < 100 && hostOf(org.id).data(sid)?.turn !== "working"; i++) await new Promise((r) => setTimeout(r, 20));
+    for (let i = 0; i < 750 && hostOf(org.id).data(sid)?.turn !== "working"; i++) await new Promise((r) => setTimeout(r, 20));
     assert.ok(hostOf(org.id).log.rows({ sessions: [sid] }).some((r) => r.event === "turn/started"), "its statechart heard the turn start");
     // Mid-turn (as agent_start leaves it): the Pipeline's turn is working, and a second build is over the cap.
     assert.equal(readBuild(project.id, row.sessionId)?.turn, "working");

@@ -33,6 +33,8 @@ export const VIA_ANSWER_WAIT_MS = 3000;
 export interface PublicLinksSources {
   routed: () => Promise<RoutedHost[] | null>;
   gateways: () => Promise<AdvertisedGateway[]>;
+  /** The longest a via PUT waits for the gateway's answer; absent: VIA_ANSWER_WAIT_MS. */
+  viaAnswerWait?: () => Promise<void>;
 }
 const SOURCES: PublicLinksSources = { routed: () => routedHosts(), gateways: () => advertisedGateways() };
 
@@ -65,7 +67,8 @@ export function mountPublicLinks(app: Hono, sources: PublicLinksSources = SOURCE
     await shareListenerSettled();
     if (typeof r.file.route === "object") {
       let timer: ReturnType<typeof setTimeout> | undefined;
-      await Promise.race([refreshGateway().catch(() => null), new Promise((res) => (timer = setTimeout(res, VIA_ANSWER_WAIT_MS)))]);
+      const waited = sources.viaAnswerWait?.() ?? new Promise<void>((res) => (timer = setTimeout(res, VIA_ANSWER_WAIT_MS)));
+      await Promise.race([refreshGateway().catch(() => null), waited]);
       clearTimeout(timer);
     }
     return c.json(await publicLinksInfo(r.file, sources), 200, NO_STORE);

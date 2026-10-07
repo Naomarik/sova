@@ -46,8 +46,11 @@ the org page's Projects tab. The owner page and the project overseer never do.
   million tokens, and a message's cost is the sum.
 - **Which model.** The model the provider says answered (pi's `responseModel`, a Claude Code
   transcript's `message.model`) wins; else the message's recorded model, resolved through the alias
-  table (§app.project-costs/price-table). An alias may be dated: `claude-code-cli/opus[1m]` is
-  priced as Claude Opus 5 before its switch date and as Claude Opus 5.5 from it.
+  table (§app.project-costs/price-table). A Claude model, answered or asked for, is priced by its
+  catalog entry's price key (§app.claude-code-provider/catalog); an answer the price table doesn't
+  list is unpriced, never priced through the model asked for. An alias may be dated:
+  `claude-code-cli/opus[1m]` is priced as Claude Opus 5 before its switch date and as Claude Opus
+  5.5 from it.
 - **Long context.** Where models.dev lists a context tier for a model, a message whose request
   input (input + cache read + both cache writes) is over the tier's size is priced wholly at the tier's
   rates.

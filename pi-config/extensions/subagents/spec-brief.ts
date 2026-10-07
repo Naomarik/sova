@@ -19,20 +19,19 @@ export const CARRIED_RULES: readonly CarriedRule[] = [
 	{ anchor: "never put `§` IDs", sentences: 1 },
 	{ anchor: "Every behavior change is spec'd.", sentences: 2 },
 	{ anchor: "Behavior no claim covers gets a new claim", sentences: 2 },
-	{ anchor: "While coding, exempt work included,", sentences: 1 },
+	{ anchor: "While coding, a `[spec census]` note", sentences: 1 },
 	{ anchor: "Any § the task didn't create is foreign", sentences: 1 },
 	{ anchor: "Flag only a contradiction", sentences: 1 },
-	{ anchor: "A `[spec census]` note on a tool result", sentences: 1 },
+	{ anchor: "Batch flags in the plan as one question", sentences: 1 },
 	{ anchor: "Documentation changes only through drafts", sentences: 1 },
 	{ anchor: "Documenting what the code already does", sentences: 1 },
-	{ anchor: "`node \"$core/sova-spec.mjs\" census --changed --root <project root> --json` must report", sentences: 2 },
-	{ anchor: "Your reply's last line", sentences: 7 },
+	{ anchor: "Run `node \"$core/sova-spec.mjs\" census --changed", sentences: 1 },
 	{ anchor: "The task's go-ahead authorizes", sentences: 2 },
 ];
 
 /**
  * The end of the sentence starting at `from`: a period followed by whitespace or the end of the
- * text, outside backticks and double quotes (so `"Also changes: none"` and `a.b` never end one).
+ * text, outside backticks and double quotes (so `"§X: <what>. OK?"` and `a.b` never end one).
  */
 function sentenceEnd(text: string, from: number): number {
 	let code = false, quote = false;
@@ -72,7 +71,7 @@ export function workerSpecBrief(coreDir: string, text: string = SPEC_INSTRUCTION
 	return [
 		"## Spec discipline (the spawning session has spec mode on)",
 		"This project documents behavior in `.sova/spec/`. The rules below are quoted from its spec mode; they bind your part of the task.",
-		`Trusted tools: start each bash command that runs them with exactly \`core=${shellQuote(coreDir)}\`. <project root> is \`git rev-parse --show-toplevel\` of your working directory. Read-only: \`node "$core/sova-spec.mjs" <command> --root <project root> --json\`, where <command> is \`toc '<§id>' --dir out|in|down|up|mentions\`, \`read '<§id>' [--whole] [--no-frame]\`, \`impact '<§id>' [--near]\`, \`check\`, \`census\`, \`scope '<§id>'\` or \`foreign --base <rev>\`.`,
+		`Trusted tools: start each bash command that runs them with exactly \`core=${shellQuote(coreDir)}\`. <project root> is \`git rev-parse --show-toplevel\` of your working directory. Read-only: \`node "$core/sova-spec.mjs" <command> --root <project root> --json\`, where <command> is \`toc '<§id>' --dir out|in|down|up|mentions\`, \`read '<§id>' [--whole] [--no-frame]\`, \`impact '<§id>' [--near]\`, \`check\`, \`census\` or \`scope '<§id>'\`.`,
 		...rules.map((rule) => `- ${rule}`),
 	].join("\n");
 }

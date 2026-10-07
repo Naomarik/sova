@@ -40,7 +40,7 @@ after each landing, since every other branch is then checked against the new mas
   files, recorded by its full session id. A branch ahead of master that no session reports is listed
   as **unowned** and never merged on the captain's own say: the user naming a branch to land is
   that say, and counts as its owner's READY. Commits on master the captain didn't land (an owner's
-  own merge) get typecheck, tests, build and census before they are pushed.
+  own merge) get typecheck, tests and build before they are pushed.
 - **Verify.** The chip can be wrong (it doesn't know intent, and its checks-passed isn't tied to
   the branch's head), so before accepting a branch the captain reads the owner's transcript
   (`session_read`) and the git state: commits ahead, a clean tree (the sandbox tests' own output
@@ -58,11 +58,12 @@ after each landing, since every other branch is then checked against the new mas
   reported to the owner and the user, never undone. A session that needs to reach the captain is
   told the topic's name by `session_send`, never given a second topic; the captain itself answers
   with `session_send`, since it can't push to its own topic.
-- **Each branch** is merged with master in its worktree, checked (typecheck, tests with timeouts
-  near their baseline, each touched pi-config extension's suite, build; a failure that also fails
+- **Each branch** is merged with master in its worktree, checked (typecheck, the unit tests and
+  then all the integration tests (§app.server-runtime/test-tiers), each with timeouts near their
+  baseline, each touched pi-config extension's suite, build; a failure that also fails
   on master is named as pre-existing; a new failing file that passes alone twice with the suite's
   runner is named flaky and doesn't hold the branch; an extension suite failing the same way on
-  master is master's), leak-scanned over the commits landing would publish, its drafts promoted,
+  master is master's), leak-scanned over the commits landing would publish,
   then landed with `worktree merge` and built in the main checkout. A step that fails in no time
   didn't run, and its log is read. A branch its owner already merged goes straight to `landed`. A
   branch with a leak in its history, or a commit a scrub cut out of master, never merges: its owner
@@ -70,12 +71,9 @@ after each landing, since every other branch is then checked against the new mas
   back to the owner, and the captain parks them outside the repo only with the owner's OK and
   restores them byte for byte; a symlinked `node_modules` is environment, which it may rebuild and
   report.
-- **Drafts.** The owner promotes its branch's drafts before the landing; records the landing's own
-  draft still leaves pending, the captain promotes on master, with evidence by the owner in the
-  owner's own verification words and never more. Another session's draft is never the captain's
-  to promote. After a landing the census of record is `census --changed --base <master before
-  it>`. A turn that landed or promoted ends with the `Also changes:` line copying the foreign §
-  list the merge or promote printed; a push-only or answer-only turn has none.
+- **No spec gate.** The round never refuses or holds a landing over the spec: not over drafts left
+  unpromoted, unclaimed files or a failing census. Drafts are their sessions' own to promote; the
+  captain promotes none.
 - **Clean up.** Once a branch is landed and its owner is done with the worktree, the captain removes its worktree from the main checkout
   with exactly the two commands `landed` prints: `git worktree remove -- <path>`, never `--force`,
   then `git branch -d -- <branch>`. Git's own refusals (uncommitted or untracked files, a lock, a
@@ -105,7 +103,7 @@ after each landing, since every other branch is then checked against the new mas
   `update-ref` on it outside a scrub the user approved for that case; a private name written inline
   in a command; another session's project instance touched, or its worktree changed beyond the
   check's master merge (and a rebuilt `node_modules`), without its OK.
-- **The report** each round: shas merged, push result, spec check, restart state (with the busy
+- **The report** each round: shas merged, push result, restart state (with the busy
   list), unowned branches, owners asked and their answers, anything handed back and why.
 
 ## §chat.merge-round/driver — The round's driver
@@ -166,11 +164,14 @@ shell and under a timeout.
   TEMP-style subject. It merges master into the branch in its worktree, never on master. On
   conflicts it stops and leaves them to the captain, except that a conflicting
   `.sova/spec/manifest.json` first goes through the spec tool's `merge-manifest --write`. It then
-  runs the typecheck, `pnpm test` without `CLAUDE_CONFIG_DIR`, each touched pi-config extension's
+  runs the typecheck, `pnpm test` and then `pnpm test:int` (§app.server-runtime/test-tiers; a tree
+  whose package.json has no `test:int` script skips it and says so), both without
+  `CLAUDE_CONFIG_DIR`, each touched pi-config extension's
   line from `pi-config/README.md`'s Tests block, and the build, each in its own process group,
   killed whole at its timeout (the larger of a floor and twice the median of its earlier passing
-  runs); then the spec tool's `check`, `census --changed --base master`, and each draft's status. A
-  test file that fails is run again on master, in the main checkout at master's sha (refused when
+  runs); then the spec tool's `check`, `census --changed --base master`, and each draft's status,
+  which it prints and which add no need: no spec result, draft or unclaimed file holds a branch. A
+  test file that fails, in either tier, is run again on master, in the main checkout at master's sha (refused when
   that file is dirty there), cached per master sha and file: one that fails there too is named
   pre-existing and doesn't block. It also runs `leak-scan.mjs` over the commits landing would
   publish (origin/master to the branch's head): a hit is a need, printed as the scan prints it; a

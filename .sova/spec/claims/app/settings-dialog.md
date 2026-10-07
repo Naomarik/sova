@@ -154,8 +154,9 @@ Where they sit and how they are labelled is §chat.subagent-profiles/editor-rows
 
 - **Choices, not free text.** Models come from what each backend offers
   (`GET /api/settings/delegate/options`: pi's credentialed models with the thinking levels each
-  supports; the Claude Code CLI's own list with the efforts each reports, from an initialize-only
-  call cached 60s). Effort lists what the chosen model takes.
+  supports; for Claude Code, Sova's Claude catalog with each model's efforts,
+  §app.claude-code-provider/catalog). Effort lists what the chosen model takes. A model option reads
+  its name (a Claude model's catalog name, "Opus 5.5"), with its id in the option's `title`.
 - **Nothing is picked for you.** Changing the backend blanks the model and the effort; changing the
   model keeps the effort only when the new model takes it. A blank row can't be saved.
 - **A stored pick is always shown.** When discovery doesn't list it, it stays in the select with
@@ -165,17 +166,14 @@ Where they sit and how they are labelled is §chat.subagent-profiles/editor-rows
   saves still go through, with one "not verified" note per backend naming every slot on it.
   A failed options request has a warning and Check Again; a successful response that cannot list
   one backend leaves that uncertainty in its rows and save notes.
-- **A Claude Code alias the CLI's list omits is not gone.** The `claude` initialize model list is
-  remote and account-gated and has changed shape under us: it once carried the `[1m]` aliases
-  (`opus[1m]`, `claude-fable-5-1[1m]`) and now does not, while the CLI accepts a valid alias at
-  runtime either way. So a shape-valid Claude Code model (an alias: no `/`, no leading
-  `-`, no whitespace) missing from a list the CLI did answer reads "— not verified" in the select
-  and, under its row, muted: "Not verified: the Claude Code CLI's model list doesn't include
-  {model} right now (the list varies). It will still be used." — the same soft state Delegate
-  routes it by. Only a shape-invalid Claude id, or a pi model its registry doesn't list, is "not
-  offered". The server's save check reads such a row the same way: never refused for absence from
-  the list, saved with that note; and its options list offers the known 1M forms itself
-  (§app.settings-dialog/claude-long-context-offered).
+- **A Claude Code model is judged by Sova's catalog**, never by the CLI's list. A catalog model is
+  offered; an old id (`opus[1m]`, §app.claude-code-provider/legacy-ids) reads as the catalog model
+  it means, and the next save writes that model's id. A shape-valid Claude Code id the catalog
+  doesn't know (no `/`, no leading `-`, no whitespace) reads "— not verified" in the select and,
+  under its row, muted: "Not verified: {model} is not in Sova's Claude catalog. It will still be
+  used." — the same soft state Delegate routes it by. Only a shape-invalid Claude id, or a pi model
+  its registry doesn't list, is "not offered". The server's save check reads such a row the same
+  way: never refused for not being in the catalog, saved with that note.
 - **Efforts.** A model's effort list is what its backend reported, cut to what the backend
   accepts; a model reporting none usable (no list, an empty one, or only efforts the backend
   refuses) takes every effort the backend accepts — the same rule Delegate routes by.
@@ -212,9 +210,10 @@ main model keep their models. `<agent dir>/subagent-profiles-default.json` is th
 choice and never syncs. Legacy `mode-delegate.json`, `mode-spec.json` and `team-defaults.json`
 remain for seeding and fallback, not as second editors.
 
-Built-in legacy Delegate values, used when seeding: Planning & specs Claude Code `claude-fable-5-1[1m]` medium, fallback
-`opus[1m]` high; Investigation `opus[1m]` low; Routine `opus[1m]` low; Complex `opus[1m]` medium;
-no fallbacks but Planning's.
+Built-in legacy Delegate values, used when seeding, each the catalog's current model of its family
+(§app.claude-code-provider/catalog): Planning & specs Claude Code `claude-fable-5-1` (Fable 5.1)
+medium, fallback `claude-opus-5-5` (Opus 5.5) high; Investigation `claude-opus-5-5` low; Routine
+`claude-opus-5-5` low; Complex `claude-opus-5-5` medium; no fallbacks but Planning's.
 
 ## §app.settings-dialog/summaries — Summaries
 
@@ -229,12 +228,12 @@ The file is `~/.pi/agent/topic-outline.json` (shown in the footnote), shared wit
 terminal. The TUI and every runtime read it once per session, at session start, so **a change
 applies to sessions started afterwards, here and in the terminal**, and the panel says so. A
 missing file, or one naming no usable summarizer, reads as the extension's built-in chain —
-pi `ollama-cloud/deepseek-v4.1-flash`, then Claude Code `sonnet` — and, while nothing is staged,
+pi `ollama-cloud/deepseek-v4.1-flash`, then Claude Code `claude-sonnet-5-5` (Sonnet 5.5) — and, while nothing is staged,
 the section heading says those are the built-in models, beside its Reset to Defaults.
 
 - **Choices, not free text.** Model lists are Delegate's (`GET /api/settings/delegate/options`).
   A stored pick the list omits stays in the select, "— not verified" (the backend couldn't
-  answer; a Claude Code alias, whose list varies; a pi provider whose models exist per session) or
+  answer; a Claude Code id not in Sova's catalog; a pi provider whose models exist per session) or
   "— not offered" (a pi model the registry doesn't list).
 - **The policy is shown.** A summarizer obeys only the model policy's global switch (Settings →
   Models "Enabled"): a model turned off there is skipped at the call and the next in line
@@ -283,7 +282,7 @@ the sweep's next run.
   but without Delegate's "off for subagents" marks (a title model is not a worker) — and the same
   Fallback switch as the summary line's; with it off, "No fallback: when the primary can't run,
   sessions keep their titles until it can." The defaults are pi
-  `ollama-cloud/deepseek-v4.1-flash` at effort `off`, then Claude Code `sonnet` at effort `low`.
+  `ollama-cloud/deepseek-v4.1-flash` at effort `off`, then Claude Code `claude-sonnet-5-5` (Sonnet 5.5) at effort `low`.
   **Reset to Defaults** in the section heading fills them in, with the switch and timing, and
   saves nothing; it is disabled while the form already shows them.
 - **When neither saved model can run**, a warning banner says so with each row's reason
@@ -460,9 +459,8 @@ the draft. Switch labels are in sentence case, like every other Settings switch.
   turn and can add to them. They survive /clear."
 - **Advanced**, folded, its head "Idea explorer, extra instructions, resume after a restart":
   - **Idea explorer**: backend, model and effort of the explorers `sova_idea explore` launches
-    (§app.overseer/explorer). Default Claude Code, `opus[1m]` (Claude Opus 5.5), effort medium; the
-    default is offered even when the Claude Code CLI's model list omits it, and `claude-opus-5` is
-    never offered; a save naming it for the explorer is refused, and a stored one reads back as the
+    (§app.overseer/explorer). Default Claude Code, `claude-opus-5-5` (Opus 5.5, the catalog's
+    current Opus), effort medium; `claude-opus-5` (Opus 5) is never offered; a save naming it for the explorer is refused, and a stored one reads back as the
     default.
   - **Extra instructions**: a textarea appended after the Overseer's own prompt. Its hint: "Added
     after the Overseer's own prompt. Applies from its next run." It and the standing notes reach the
@@ -508,7 +506,7 @@ In this order:
   on its own with a key from `SOVA_JEV_KEY`, and with Jev off — except while Remove Key asks; it is
   disabled while nothing can answer and while a change is being saved, and it tests what is saved,
   never unsaved changes. It runs one canned check with no session data and says, under
-  the row, who answered and how long it took ("Answered by haiku in 4.1 s, after Jev was
+  the row, who answered and how long it took ("Answered by Haiku 4.5 in 4.1 s, after Jev was
   rate-limited."), or why nothing could.
   The Jev line reflects the test at once — Working and "checked just now" when Jev answered,
   Rejected when it refused the key — and the tab then re-reads the settings so the server's key
@@ -524,7 +522,7 @@ In this order:
   model the server refuses stays in the row with the server's reason under it and "Your saved
   fallback model is unchanged." The server's notes on a saved fallback (not verified, off by
   policy) show in warn under the row until the next save that changes the fallback. The section ends with the saved chain in words
-  ("Asks Jev, then Claude Code · haiku.", a paused provider with when it retries, or the
+  ("Asks Jev, then Claude Code · Haiku 4.5.", a paused provider with when it retries, or the
   unavailable sentence).
 - **Features.** **Flag sessions that need you** and **Tag sessions**, both off by default. With a
   feature on while nothing can answer, the switch stays on and its hint is replaced, in warn, by
@@ -665,29 +663,6 @@ team**, members-default and spec-writer switches, Summaries' **Fallback** switch
 wide as its text and control: a click on the empty row beside it does nothing. A row that spreads
 its text and switch across the panel (General's **Summary line**, Mesh's
 sync rows, the Models policy switches) keeps the whole row as its target.
-
-## §app.settings-dialog/claude-long-context-listed — A Claude Code `[1m]` alias counts as listed
-
-The Claude Code CLI's model list names an alias such as `opus` but not always its 1M-context form
-`opus[1m]`, which the CLI accepts. So wherever a worker or summarizer row checks a Claude Code
-pick against that list (Settings → Subagents, Overseer, Summaries), a model
-`<alias>[1m]` counts as listed when `<alias>` is: no "not verified" note under the row, no
-"— not verified" in the select, and it takes `<alias>`'s efforts and policy marks. When `<alias>`
-is not listed either, the pick reads as before (§app.settings-dialog/modes). Only Claude Code: a pi
-model ending in `[1m]` is never read as its base.
-
-## §app.settings-dialog/claude-long-context-offered — The known Claude Code 1M forms are offered
-
-The CLI's list names `opus` and `claude-fable-5-1` but no longer their 1M-context forms, which it
-accepts. So wherever Sova or its extensions list Claude Code models — every Settings row that picks
-a Claude Code model (Subagents, Decisions, Overseer, Summaries), the chat
-model picker's `claude-code-cli/*` models, and `agent_models` — `opus[1m]` and
-`claude-fable-5-1[1m]` are offered right after `opus` and `claude-fable-5-1` whenever the CLI lists
-that base and not already its `[1m]` form: the base's efforts, named "{base name} (1M context)".
-Only those two: the list rule is fixed, not learned, so it holds from the first discovery after a
-restart and never depends on having seen the CLI list them. Nothing is removed or reordered, and
-a base the CLI doesn't list gains nothing. All three surfaces apply one rule (the claude-code
-extension's `context-window.ts`).
 
 ## §app.settings-dialog/voice — Voice
 

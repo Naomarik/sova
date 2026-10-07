@@ -10,13 +10,12 @@
 // §app.session-share/slice: a slice's text, image and vis source before its start, what came after
 // its end, and every entry id never reach a recipient, in either mode. A throwaway
 // PI_CODING_AGENT_DIR in the OS temp dir, deleted after; no model is called.
+// The share listener's answers (the shell, /api/s, the socket frames) and the text work's CPU time are session-share-privacy.integration.test.ts.
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import type { AddressInfo } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, describe, test } from "node:test";
-import { WebSocket } from "ws";
 import type { SessionShareView } from "../shared/session-share";
 import { formatLinkMessage } from "../shared/link-message";
 
@@ -31,18 +30,11 @@ process.env.SOVA_SHARE_DIST = join(root, "dist-share");
 mkdirSync(process.env.SOVA_SHARE_DIST, { recursive: true });
 writeFileSync(join(process.env.SOVA_SHARE_DIST, "index.html"), "<!doctype html><title>Shared</title>");
 
-const { sessionShareView, sessionShareImage, sourceReadable, currentLeaf, resetShareViewCache, SESSION_SHARE_TEXT_MAX, SESSION_SHARE_TEXT_CEILING, cutAtToken, withoutImagePaths } = await import("./session-share-view");
+const { sessionShareView, sessionShareImage, currentLeaf, resetShareViewCache, SESSION_SHARE_TEXT_MAX, SESSION_SHARE_TEXT_CEILING, cutAtToken, withoutImagePaths } = await import("./session-share-view");
 const { normalizeEntries, toolContents } = await import("./transcript");
 const { parseLines } = await import("./harness/pi/reader");
-const { createShare } = await import("./session-shares");
-const { pushView } = await import("./session-share-presence");
-const { pushShareView } = await import("./share/session-live");
-const { createShareServer } = await import("./share/listener");
 
-const server = createShareServer();
 after(() => {
-  server.close();
-  server.closeAllConnections();
   rmSync(root, { recursive: true, force: true });
 });
 
@@ -303,191 +295,9 @@ describe("nothing private reaches a session share (§app.session-share/never)", 
   });
 });
 
-describe("nothing private reaches a recipient through the share listener", async () => {
-  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
-  const port = (server.address() as AddressInfo).port;
-  const base = `http://127.0.0.1:${port}`;
-  const shares = (["snapshot", "live"] as const).map((mode) => {
-    const leaf = mode === "snapshot" ? { entryId: cut, at: null } : null;
-    const { share, tokens } = createShare({ sessionId: SESSION_ID, sessionPath, title: `Shared ${M.secret}`, mode, cut: leaf, days: 30, labels: [`Ana ${mode}`], anyone: true });
-    return { mode, share, tokens: tokens.map((t) => t.token), labels: tokens.map((t) => t.label) };
-  });
-
-  /** Every answer a holder can get: [label, status, body]. */
-  async function everyAnswer(): Promise<[string, number, string][]> {
-    const out: [string, number, string][] = [];
-    const get = async (p: string) => {
-      const res = await fetch(base + p, { headers: { "user-agent": "Mozilla/5.0 (iPhone) Version/17.0 Safari/604.1" } });
-      const body = Buffer.from(await res.arrayBuffer()).toString("latin1");
-      out.push([`GET ${p}`, res.status, body]);
-      return { status: res.status, body };
-    };
-    for (const { tokens } of shares)
-      for (const token of tokens) {
-        await get(`/s/${token}`);
-        let before: number | undefined;
-        do {
-          const r = await get(`/api/s/${token}${before === undefined ? "" : `?before=${before}`}`);
-          assert.equal(r.status, 200, r.body);
-          before = (JSON.parse(r.body) as SessionShareView).before;
-        } while (before !== undefined);
-        for (const n of [0, 1, 2, 3]) await get(`/api/s/${token}/img/${n}`);
-      }
-    return out;
-  }
-
-  /** The frames a socket receives when the operator pushes the share's view. */
-  async function frames(token: string, shareId: string, mode: "snapshot" | "live"): Promise<string[]> {
-    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/s?token=${token}`);
-    const got: string[] = [];
-    ws.on("message", (d) => got.push(String(d)));
-    await new Promise<void>((ok, fail) => (ws.once("open", () => ok()), ws.once("error", fail)));
-    ws.send(JSON.stringify({ t: "vis", on: true }));
-    await new Promise((r) => setTimeout(r, 50));
-    pushView(shareId, (await sessionShareView(src(mode)))!);
-    await new Promise((r) => setTimeout(r, 100));
-    ws.close();
-    return got;
-  }
-
-  /** An answer of the live share (its view rightly shows what came after the snapshot's cut). */
-  const isLive = (label: string) => label.startsWith("live") || shares[1]!.tokens.some((t) => label.includes(t));
-  const answers = await everyAnswer();
-  const sockets = await Promise.all(shares.map(async (s) => [s.mode, await frames(s.tokens[0]!, s.share.id, s.mode)] as const));
-
-  test("control: the pages, the image and the socket did answer", () => {
-    assert.ok(answers.some(([l, st, b]) => l.includes("/api/s/") && st === 200 && b.includes("VISIBLE-REPLY")));
-    assert.ok(answers.some(([l, st, b]) => l.endsWith("/img/0") && st === 200 && b === PNG.toString("latin1")));
-    assert.ok(answers.filter(([l]) => /\/img\/[123]$/.test(l)).every(([, st]) => st === 404), "no other image is served");
-    for (const [mode, got] of sockets) assert.ok(got.some((f) => f.includes("VISIBLE-REPLY")), `${mode}: the socket got the view`);
-  });
-
-  test("no marker, id, path, label or token in the shell, any /api/s answer or any socket frame", () => {
-    const all: [string, string][] = [...answers.map(([l, st, b]) => [`${st} ${l}`, b] as [string, string]), ...sockets.flatMap(([mode, got]) => got.map((f) => [`${mode} frame`, f] as [string, string]))];
-    for (const [label, body] of all) {
-      for (const [field, mark] of Object.entries(M)) {
-        if (field === "afterCut" && isLive(label)) continue;
-        assert.ok(!body.includes(mark), `${field} leaked in ${label}`);
-      }
-      for (const x of never()) assert.ok(!body.includes(x), `${x} leaked in ${label}`);
-      for (const { share, tokens, labels } of shares) {
-        for (const l of labels) assert.ok(!body.includes(l), `a recipient label leaked in ${label}`);
-        for (const t of tokens) assert.ok(!body.includes(t), `a token echoed in ${label}`);
-        assert.ok(!body.includes(share.id), `the share id leaked in ${label}`);
-      }
-    }
-  });
-});
-
-describe("a slice never reaches before its start or after its end (§app.session-share/slice)", async () => {
-  // Its own session: a marked user message with an image, a reply with a marked vis source, then
-  // the slice (start, end), then marked messages after the end. Entry ids are distinct words.
-  const S = { preText: "MK-PRETEXT-q7x", preImg: "MK-PREIMG-q7x", preVis: "MK-PREVIS-q7x", postText: "MK-POSTTEXT-q7x", postImg: "MK-POSTIMG-q7x", branchText: "MK-BRANCH-q7x" } as const;
-  /** A png the sniffer accepts, whose bytes carry `mark` (served byte for byte, so a leak shows). */
-  const png = (mark: string) => Buffer.concat([PNG.subarray(0, 8), Buffer.from(mark)]);
-  const IMG_IN = png("VISIBLE-IN-IMAGE");
-  const id = (name: string) => `slc-${name}-q7x`;
-  const slicePath = join(root, "agent", "sessions", "2026-09-30T02-00-00-000Z_0199bbbb-slice.jsonl");
-  const msg = (name: string, parent: string | null, role: string, text: string, image?: Buffer, t = 1) => ({
-    type: "message",
-    id: id(name),
-    parentId: parent === null ? null : id(parent),
-    timestamp: new Date(Date.UTC(2026, 8, 30, 2, 0, t)).toISOString(),
-    message: { role, content: [{ type: "text", text }, ...(image ? [{ type: "image", data: image.toString("base64"), mimeType: "image/png" }] : [])] },
-  });
-  const rows: Record<string, unknown>[] = [
-    { type: "session", version: 3, id: "0199bbbb-slice", timestamp: "2026-09-30T02:00:00.000Z", cwd },
-    msg("u1", null, "user", `before ${S.preText}`, png(S.preImg), 1),
-    msg("a1", "u1", "assistant", `\`\`\`vis\n{"kind":"steps","steps":["${S.preVis}","two"]}\n\`\`\``, undefined, 2),
-    msg("u2", "a1", "user", "VISIBLE-SLICE-START", IMG_IN, 3),
-    msg("a2", "u2", "assistant", "VISIBLE-SLICE-END", undefined, 4),
-    msg("u3", "a2", "user", `after ${S.postText}`, png(S.postImg), 5),
-    msg("a3", "u3", "assistant", "VISIBLE-LIVE-TAIL", undefined, 6),
-  ];
-  writeFileSync(slicePath, `${rows.map((r) => JSON.stringify(r)).join("\n")}\n`);
-  resetShareViewCache();
-  const ids = rows.map((r) => r.id).filter((x): x is string => typeof x === "string" && x.startsWith("slc-"));
-  const sliceSrc = (mode: "snapshot" | "live") => ({ sessionPath: slicePath, cutEntryId: mode === "snapshot" ? id("a2") : null, from: id("u2"), title: "Slice", sharedAt: "2026-09-30T03:00:00.000Z", mode });
-  /** What must not reach a holder of this mode's slice. */
-  const barred = (mode: "snapshot" | "live") => [S.preText, S.preImg, S.preVis, ...(mode === "snapshot" ? [S.postText, S.postImg, "VISIBLE-LIVE-TAIL"] : []), ...ids];
-
-  await new Promise<void>((r) => (server.listening ? r() : server.listen(0, "127.0.0.1", r)));
-  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  const shares = (["snapshot", "live"] as const).map((mode) => {
-    const { share, tokens } = createShare({ sessionId: "0199bbbb-slice", sessionPath: slicePath, title: "Slice", mode, cut: mode === "snapshot" ? { entryId: id("a2"), at: null } : null, from: { entryId: id("u2"), at: null }, days: 30, labels: [`Bo ${mode}`], anyone: false });
-    return { mode, share, token: tokens[0]!.token };
-  });
-  const answers: [string, "snapshot" | "live", number, string][] = [];
-  for (const { mode, token } of shares) {
-    // Operator-only parameters on a recipient's read change nothing: the token's bounds hold.
-    const probes = [`/api/s/${token}?outline=1`, `/api/s/${token}?from=${id("u1")}&cut=${id("a3")}`, `/api/s/${token}/img/0?from=${id("u1")}`];
-    for (const p of [`/s/${token}`, `/api/s/${token}`, ...probes, ...[0, 1, 2, 3].map((n) => `/api/s/${token}/img/${n}`)]) {
-      const res = await fetch(base + p);
-      answers.push([p, mode, res.status, Buffer.from(await res.arrayBuffer()).toString("latin1")]);
-    }
-  }
-  const frames: [string, "snapshot" | "live", string][] = [];
-  for (const { mode, share, token } of shares) {
-    const ws = new WebSocket(`ws://127.0.0.1:${(server.address() as AddressInfo).port}/ws/s?token=${token}`);
-    ws.on("message", (d) => frames.push([`${mode} frame`, mode, String(d)]));
-    await new Promise<void>((ok, fail) => (ws.once("open", () => ok()), ws.once("error", fail)));
-    await new Promise((r) => setTimeout(r, 50));
-    // Through the live push itself (its scheduling and lineage), not a hand-built frame.
-    await pushShareView(share.id);
-    await new Promise((r) => setTimeout(r, 100));
-    ws.close();
-  }
-
-  test("control: the slice is what shows, with its own image as image 0 and the earlier line's flag", async () => {
-    for (const mode of ["snapshot", "live"] as const) {
-      const v = (await sessionShareView(sliceSrc(mode)))!;
-      assert.deepEqual(v.items.map((i) => i.text), mode === "snapshot" ? ["VISIBLE-SLICE-START", "VISIBLE-SLICE-END"] : ["VISIBLE-SLICE-START", "VISIBLE-SLICE-END", `after ${S.postText}`, "VISIBLE-LIVE-TAIL"]);
-      assert.equal(v.items[0]!.n, 0);
-      assert.deepEqual(v.items[0]!.images, [{ n: 0, mime: "image/png" }]);
-      assert.equal(v.earlier, true);
-      assert.deepEqual(await sessionShareImage(sliceSrc(mode), 0), { mime: "image/png", bytes: IMG_IN });
-    }
-    assert.ok(answers.some(([p, , st, b]) => p.startsWith("/api/s/") && !p.includes("/img/") && st === 200 && b.includes("VISIBLE-SLICE-START")));
-    assert.ok(answers.some(([p, , st, b]) => p.endsWith("/img/0") && st === 200 && b.includes("VISIBLE-IN-IMAGE")));
-    for (const mode of ["snapshot", "live"] as const) assert.ok(frames.some(([, m, f]) => m === mode && f.includes("VISIBLE-SLICE-START")), `${mode}: the pushed view came`);
-    const plain = answers.find(([p, m]) => m === "snapshot" && /^\/api\/s\/[^/?]+$/.test(p))![3];
-    for (const [p, m, st, b] of answers) if (m === "snapshot" && /^\/api\/s\/[^/]+\?/.test(p)) assert.deepEqual([st, JSON.parse(b).items], [200, JSON.parse(plain).items], `${p} reads the same slice`);
-  });
-
-  test("no text, image or vis source before the start, nothing after a snapshot's end, and no entry id: every image index, the shell, /api/s and the frames", async () => {
-    for (const mode of ["snapshot", "live"] as const) {
-      // Every image index up to the whole session's image count (3), straight from the builder.
-      for (const n of [0, 1, 2, 3]) {
-        const img = await sessionShareImage(sliceSrc(mode), n);
-        const body = img ? img.bytes.toString("latin1") : "";
-        for (const x of barred(mode)) assert.ok(!body.includes(x), `${mode}: image ${n} carried ${x}`);
-      }
-      assert.equal(await sessionShareImage(sliceSrc(mode), mode === "snapshot" ? 1 : 2), null, `${mode}: no image past the slice's own`);
-    }
-    for (const [label, mode, , body] of [...answers, ...frames.map(([l, m, f]) => [l, m, 0, f] as const)]) {
-      for (const x of barred(mode)) assert.ok(!body.includes(x), `${x} leaked in ${mode} ${label}`);
-      // The other session in this store: none of its markers reach this share.
-      for (const [field, mark] of Object.entries(M)) assert.ok(!body.includes(mark), `${field} (another session) leaked in ${mode} ${label}`);
-    }
-  });
-
-  test("Follow live: a rewind above the start takes the start off the branch, and the link reads as gone", async () => {
-    const live = shares.find((s) => s.mode === "live")!;
-    // A rewind to u1: a new reply on u1 becomes the leaf, leaving u2 (the start) on an old branch.
-    rows.push(msg("b1", "u1", "assistant", `rewound ${S.branchText}`, undefined, 7));
-    writeFileSync(slicePath, `${rows.map((r) => JSON.stringify(r)).join("\n")}\n`);
-    resetShareViewCache();
-    assert.equal(await sessionShareView(sliceSrc("live")), null);
-    assert.equal(await sourceReadable(sliceSrc("live")), false);
-    const res = await fetch(`${base}/api/s/${live.token}`);
-    const body = await res.text();
-    assert.equal(res.status, 410);
-    for (const x of [...barred("live"), S.branchText]) assert.ok(!body.includes(x), `${x} leaked in the dead answer`);
-    assert.equal((await fetch(`${base}/api/s/${live.token}/img/0`)).status, 404, "no image once gone");
-  });
-});
-
 describe("the view's text work is linear: no recipient can make a read burn CPU", () => {
+  // The adversarial reads, unmeasured: each reads, caps every item and leaves the scrubber; their
+  // CPU time is session-share-privacy.integration.test.ts.
   const MB = 1024 * 1024;
   // Backtick runs of every length up to ~1400, none closed: a quadratic code-span matcher's worst case.
   const ticks = Array.from({ length: 1400 }, (_, i) => `${"`".repeat(i + 1)}a`).join("");
@@ -500,7 +310,7 @@ describe("the view's text work is linear: no recipient can make a read burn CPU"
     ["unclosed backtick runs with a /tmp path", `/tmp/x.png ${ticks}`],
   ];
   for (const [name, text] of cases)
-    test(`${name} (${Math.round(text.length / 1024)} KB) builds in well under a second`, async () => {
+    test(`${name} (${Math.round(text.length / 1024)} KB) reads, capped, and the scrubber returns`, async () => {
       const p = join(root, "big.jsonl");
       const rows = [
         { type: "session", version: 3, id: "big", cwd },
@@ -509,16 +319,11 @@ describe("the view's text work is linear: no recipient can make a read burn CPU"
       ];
       writeFileSync(p, `${rows.map((r) => JSON.stringify(r)).join("\n")}\n`);
       resetShareViewCache();
-      const t0 = performance.now();
       const v = await sessionShareView({ ...src("live"), sessionPath: p });
-      const ms = performance.now() - t0;
       assert.ok(v, "it reads (an item that is only a path is left out)");
-      assert.ok(ms < 1000, `${name}: ${Math.round(ms)} ms`);
       for (const it of v.items) assert.ok(it.text.length <= SESSION_SHARE_TEXT_MAX + 1, "each item's text is capped");
       // The scrubber itself, under no cap.
-      const t1 = performance.now();
-      withoutImagePaths(text);
-      assert.ok(performance.now() - t1 < 1000, `${name}: the path scrubber alone`);
+      assert.equal(typeof withoutImagePaths(text), "string");
     });
 
   test("a path crossing the read ceiling leaves nothing, even when the scrub shrinks the text below the cap", async () => {
@@ -548,63 +353,5 @@ describe("the view's code builds field by field", () => {
   test("never spreads an entry, a message or a block, and never uses the transcript's row builder", () => {
     assert.doesNotMatch(text, /\.\.\.(e|m|b|entry|message|block|msg|content)\b(?![.(\[])/);
     assert.doesNotMatch(text, /\bnormalizeEntr(y|ies)\b|\.raw\b/);
-  });
-});
-
-describe("a kept preview link never reaches a session share (§app.session-share/never, §app.project-overseer/previews)", async () => {
-  const { keepPreview, PREVIEW_LINK_REDACTED } = await import("./preview-kept");
-  const LABEL = "pvq7x".padEnd(52, "k");
-  const URL_ = `https://${LABEL}.preview.example.invalid/`;
-  keepPreview("pv_Q7XQ7XQ7XQ7XQ7XQ", { url: URL_, target: { kind: "port" } });
-  const pvPath = join(root, "agent", "sessions", "2026-09-30T04-00-00-000Z_0199cccc-preview.jsonl");
-  // A person typed the link; the model repeated it; one copy straddles the recipient's text cut.
-  const straddle = `${"word ".repeat(Math.floor((SESSION_SHARE_TEXT_MAX - 20) / 5))}${URL_} tail`;
-  const rows = [
-    { type: "session", version: 3, id: "0199cccc-preview", timestamp: "2026-09-30T04:00:00.000Z", cwd },
-    { type: "message", id: "pv-u1", parentId: null, timestamp: "2026-09-30T04:00:01.000Z", message: { role: "user", content: `Can you check ${URL_} for me? VISIBLE-PV-USER`, timestamp: 1 } },
-    { type: "message", id: "pv-a1", parentId: "pv-u1", timestamp: "2026-09-30T04:00:02.000Z", message: { role: "assistant", content: [{ type: "text", text: `Sure: ${URL_} opens the shop. VISIBLE-PV-REPLY` }], stopReason: "stop", timestamp: 2 } },
-    { type: "message", id: "pv-u2", parentId: "pv-a1", timestamp: "2026-09-30T04:00:03.000Z", message: { role: "user", content: straddle, timestamp: 3 } },
-  ];
-  writeFileSync(pvPath, `${rows.map((r) => JSON.stringify(r)).join("\n")}\n`);
-  resetShareViewCache();
-  await new Promise<void>((r) => (server.listening ? r() : server.listen(0, "127.0.0.1", r)));
-  const port = (server.address() as AddressInfo).port;
-  const shares = (["snapshot", "live"] as const).map((mode) => {
-    const { share, tokens } = createShare({ sessionId: "0199cccc-preview", sessionPath: pvPath, title: `Preview ${URL_}`, mode, cut: mode === "snapshot" ? { entryId: "pv-u2", at: null } : null, days: 30, labels: [`Cy ${mode}`], anyone: false });
-    return { mode, share, token: tokens[0]!.token };
-  });
-  const bodies: [string, string][] = [];
-  for (const { mode, token } of shares)
-    for (const p of [`/s/${token}`, `/api/s/${token}`, `/api/s/${token}?outline=1`]) {
-      const res = await fetch(`http://127.0.0.1:${port}${p}`);
-      bodies.push([`${mode} ${p}`, await res.text()]);
-    }
-  for (const { mode, share, token } of shares) {
-    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/s?token=${token}`);
-    ws.on("message", (d) => bodies.push([`${mode} frame`, String(d)]));
-    await new Promise<void>((ok, fail) => (ws.once("open", () => ok()), ws.once("error", fail)));
-    await new Promise((r) => setTimeout(r, 50));
-    await pushShareView(share.id);
-    await new Promise((r) => setTimeout(r, 100));
-    ws.close();
-  }
-  const view = await sessionShareView({ sessionPath: pvPath, cutEntryId: null, from: null, title: `Preview ${URL_}`, sharedAt: "2026-09-30T04:00:00.000Z", mode: "live" });
-
-  test("control: the link is in the file, and the view, the API and the frames did answer", () => {
-    assert.ok(readFileSync(pvPath, "utf8").includes(URL_));
-    assert.ok(bodies.some(([l, b]) => l.includes("/api/s/") && b.includes("VISIBLE-PV-REPLY")));
-    assert.ok(bodies.some(([l, b]) => l.endsWith("frame") && b.includes("VISIBLE-PV-REPLY")));
-  });
-
-  test("the view shows [preview link] in its place, in the title, the user's text and the reply", () => {
-    assert.ok(view);
-    assert.equal(view.title, `Preview ${PREVIEW_LINK_REDACTED}`);
-    assert.match(view.items[0]!.text, /Can you check \[preview link\] for me\?/);
-    assert.match(view.items[1]!.text, /Sure: \[preview link\] opens the shop\./);
-  });
-
-  test("no part of the label anywhere: a cut never leaves its first characters", () => {
-    const head = LABEL.slice(0, 12);
-    for (const [label, body] of [...bodies, ["view", JSON.stringify(view)] as [string, string]]) assert.ok(!body.includes(head), `a kept link (or its start) in ${label}`);
   });
 });

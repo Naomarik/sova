@@ -17,17 +17,19 @@ import {
 
 /** The pinned contract, byte for byte as the Settings side writes it. */
 const CONTRACT = `{"version":1,
- "coordinator":{"enabled":true,"role":"coordinator","primary":{"backend":"claude-code","model":"opus[1m]","effort":"medium"},"fallback":null,"instructions":""},
- "monitor":{"enabled":true,"role":"monitor","primary":{"backend":"pi","model":"ollama-cloud/deepseek-v4.1-flash","effort":"low"},"fallback":{"backend":"claude-code","model":"sonnet","effort":"low"},"contextPct":60,"everyMinutes":10,"usage":{"enabled":true,"pausePct":90,"resumeMarginMinutes":5},"instructions":""},
+ "coordinator":{"enabled":true,"role":"coordinator","primary":{"backend":"claude-code","model":"claude-opus-5-5","effort":"medium"},"fallback":null,"instructions":""},
+ "monitor":{"enabled":true,"role":"monitor","primary":{"backend":"pi","model":"ollama-cloud/deepseek-v4.1-flash","effort":"low"},"fallback":{"backend":"claude-code","model":"claude-sonnet-5-5","effort":"low"},"contextPct":60,"everyMinutes":10,"usage":{"enabled":true,"pausePct":90,"resumeMarginMinutes":5},"instructions":""},
  "handover":{"retireTimeoutMinutes":10}}`;
 
 const tempDir = () => fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-team-defaults-"));
 
-test("team-defaults.ts imports only node built-ins, so Sova's server can import it", () => {
+test("team-defaults.ts imports only node built-ins and the Claude catalog (which imports nothing), so Sova's server can import it", () => {
 	const source = fs.readFileSync(fileURLToPath(new URL("./team-defaults.ts", import.meta.url)), "utf8");
 	const specifiers = [...source.matchAll(/^import\s[^;]*?from\s+"([^"]+)"/gm)].map((m) => m[1]);
 	assert.ok(specifiers.length > 0);
-	for (const s of specifiers) assert.match(s, /^node:/, `${s} is not a node built-in`);
+	for (const s of specifiers) if (s !== "../claude-code/catalog.ts") assert.match(s, /^node:/, `${s} is not a node built-in`);
+	const catalog = fs.readFileSync(fileURLToPath(new URL("../claude-code/catalog.ts", import.meta.url)), "utf8");
+	assert.doesNotMatch(catalog, /^import\s/m, "the catalog imports nothing");
 });
 
 test("the pinned contract parses to exactly itself, and equals the built-in defaults", () => {
@@ -124,8 +126,8 @@ test("describeTeamDefaults says off, malformed (with every error) or the effecti
 	assert.match(malformed, /off — \/a\/t\.json is malformed/);
 	assert.match(malformed, /- x: bad\n {2}- y: worse$/);
 	const on = describeTeamDefaults({ state: "ok", file: "/a/t.json", value: DEFAULT_TEAM_DEFAULTS });
-	assert.match(on, /Coordinator: on — role "coordinator", primary claude-code · opus\[1m\] · medium, fallback none/);
-	assert.match(on, /Monitor: on — role "monitor", primary pi · ollama-cloud\/deepseek-v4\.1-flash · low, fallback claude-code · sonnet · low/);
+	assert.match(on, /Coordinator: on — role "coordinator", primary claude-code · claude-opus-5-5 · medium, fallback none/);
+	assert.match(on, /Monitor: on — role "monitor", primary pi · ollama-cloud\/deepseek-v4\.1-flash · low, fallback claude-code · claude-sonnet-5-5 · low/);
 	assert.match(on, /every 10 min · wrap-up at 60% context · usage pause at 90%, resume 5 min after reset/);
 	assert.match(on, /after 10 min/);
 	const off = describeTeamDefaults({ state: "ok", file: "/a/t.json", value: { ...DEFAULT_TEAM_DEFAULTS, coordinator: { ...DEFAULT_TEAM_DEFAULTS.coordinator, enabled: false } } });

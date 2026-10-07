@@ -11,8 +11,8 @@ import { piSession } from "./harness/pi/testing/handle";
 
 const dir = mkdtempSync(join(tmpdir(), "sova-fork-routes-"));
 process.env.PI_CODING_AGENT_DIR = dir;
-process.env.PORT = "0";
-const { app, server } = await import("./index");
+const { buildApp } = await import("./app");
+const { app } = buildApp({ extensionEntriesOf: async () => [] });
 const { canonicalPath } = await import("./paths");
 const { FORK_CACHE_ENTRY } = await import("../pi-config/extensions/subagents/fork/cache.ts");
 const { acquireChat, disposeAllChats } = await import("./chat-manager");
@@ -24,7 +24,6 @@ mkdirSync(liveDir, { recursive: true });
 
 after(async () => {
   await disposeAllChats();
-  await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
   rmSync(dir, { recursive: true, force: true });
 });
 

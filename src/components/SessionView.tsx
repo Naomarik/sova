@@ -3,7 +3,7 @@ import { shareHref } from "../lib/share-slice";
 import type { ChatClaudeLogin, SessionSummary, WorkerInfo } from "../../shared/protocol";
 import { agentsFeed } from "../lib/agents-feed";
 import { teamPulse } from "../lib/insights";
-import { relativeTime, shortModel } from "../lib/format";
+import { modelLabel, relativeTime } from "../lib/format";
 import { createPaneInsight } from "../lib/pane-insight";
 import { explanationsFeed } from "../lib/explanations-feed";
 import { knownExplanations, knownOutline, knownWorkers } from "../lib/known-before-mount";
@@ -202,7 +202,7 @@ export function SessionView(props: {
   });
 
   const model = () => (decision().mode === "chat" ? (chatModel() ?? s().model) : s().model);
-  const author = () => shortModel(model()) ?? "pi";
+  const author = () => modelLabel(model()) ?? "pi";
   /** This pane's scope: its id for every DOM id below, its model for what it announces. */
   const scope: PaneScope = { id: props.paneId ?? null, label: () => (props.paneId ? paneName() : null) };
 
@@ -230,7 +230,7 @@ export function SessionView(props: {
   const paneName = () => {
     if (props.name) return props.name();
     const name = props.label?.() || s().title;
-    const m = shortModel(model());
+    const m = modelLabel(model());
     return m ? `${name} · ${m}` : name;
   };
 
@@ -280,7 +280,7 @@ export function SessionView(props: {
           <Show when={model() && decision().mode !== "chat"}>
             <span aria-hidden="true">·</span>
             <span class="text-mono" title={model()!}>
-              {shortModel(model())}
+              {modelLabel(model())}
             </span>
           </Show>
         </p>

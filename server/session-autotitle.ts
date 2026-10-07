@@ -10,6 +10,7 @@ import { claudeRun, LLM_TIMEOUT_MS, parseClaudeEnvelope, piText, type LlmProvide
 import { firstText, lineEntry, lineMay } from "./harness/pi/reader";
 import { cleanSessionTitle, readSessionTitleRecords, replaceAutoTitle, type StoredTitle, writeAutoTitle } from "./session-titles";
 import { withUsageContext } from "../pi-config/extensions/llm-inflight/attribution.ts";
+import { claudeCliId } from "../pi-config/extensions/claude-code/catalog.ts";
 
 // Sova names sessions itself (§app.session-list/auto-titles): one short title per session from
 // what it became, stored as an `auto` title in Sova's own title store — never in the .jsonl, and
@@ -170,7 +171,7 @@ export function retryTitlePrompt(prompt: string, raw: unknown): string {
 export function titleClaudeArgs(choice: WorkerChoice): string[] {
   return [
     "-p",
-    "--model", choice.model,
+    "--model", claudeCliId(choice.model),
     "--tools", "",
     "--setting-sources", "",
     "--strict-mcp-config",

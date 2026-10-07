@@ -14,6 +14,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { canonicalClaudeId, latestClaude } from "../claude-code/catalog.ts";
 
 export const TEAM_DEFAULTS_FILE_NAME = "team-defaults.json";
 export const TEAM_DEFAULT_BACKENDS = ["pi", "claude-code"] as const;
@@ -65,10 +66,10 @@ export interface TeamDefaultsFile {
 
 export const DEFAULT_TEAM_DEFAULTS: TeamDefaultsFile = {
 	version: 1,
-	coordinator: { enabled: true, role: "coordinator", primary: { backend: "claude-code", model: "opus[1m]", effort: "medium" }, fallback: null, instructions: "" },
+	coordinator: { enabled: true, role: "coordinator", primary: { backend: "claude-code", model: latestClaude("opus").id, effort: "medium" }, fallback: null, instructions: "" },
 	monitor: {
 		enabled: true, role: "monitor", primary: { backend: "pi", model: "ollama-cloud/deepseek-v4.1-flash", effort: "low" },
-		fallback: { backend: "claude-code", model: "sonnet", effort: "low" },
+		fallback: { backend: "claude-code", model: latestClaude("sonnet").id, effort: "low" },
 		contextPct: 60, everyMinutes: 10, usage: { enabled: true, pausePct: 90, resumeMarginMinutes: 5 }, instructions: "",
 	},
 	handover: { retireTimeoutMinutes: 10 },
@@ -152,7 +153,9 @@ class Checker {
 		const effort = t.effort;
 		if (effort !== undefined && effort !== null && (typeof effort !== "string" || !(TEAM_DEFAULT_EFFORTS as readonly string[]).includes(effort)))
 			this.fail(`${at}.effort`, `must be one of ${TEAM_DEFAULT_EFFORTS.join(", ")}`);
-		const out: WorkerTuple = { backend: backend as TeamDefaultBackend, model: typeof model === "string" ? model.trim() : "" };
+		// An old Claude id reads as its catalog model (§app.claude-code-provider/legacy-ids).
+		const id = typeof model === "string" ? model.trim() : "";
+		const out: WorkerTuple = { backend: backend as TeamDefaultBackend, model: backend === "claude-code" ? canonicalClaudeId(id) : id };
 		if (typeof effort === "string") out.effort = effort as TeamDefaultEffort;
 		return out;
 	}

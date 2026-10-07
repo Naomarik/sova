@@ -24,6 +24,7 @@ import { liveRead } from "./reader";
 import { PiHarnessSession } from "./session";
 import { piSessionState } from "./state";
 import { currentTheme } from "./ui-bridge";
+import { isLegacyClaudeId, resolveLegacyClaude } from "../../../pi-config/extensions/claude-code/catalog.ts";
 
 export type { PiExtensionFactory, PiLoaderOptions, PiModelRuntime, PiToolDefinition } from "./extension-types";
 
@@ -215,6 +216,29 @@ export function recordedModelForEmptyBranch(
   return model && modelRuntime.hasConfiguredAuth(model.provider) ? model : undefined;
 }
 
+/** The providers whose recorded model ids may be old Claude ids. */
+const CLAUDE_PROVIDERS = new Set(["claude-code-cli", "claude"]);
+
+/**
+ * A session whose recorded model (its last model change or reply, as buildSessionContext reports
+ * it) is an old Claude id the registry no longer has (`claude-code-cli/opus[1m]`, from before Sova's
+ * Claude catalog): the catalog model it means (§app.claude-code-provider/legacy-ids), so the chat
+ * reopens on that and not on the server's default. Nothing is written: the SDK appends no model
+ * change for a session with messages, and the next reply records the catalog id itself. The same
+ * guards as the SDK's restore: undefined when the registry or auth can't give it.
+ */
+export function legacyClaudeModelForOpen(
+  sessionManager: Pick<SessionManager, "buildSessionContext">,
+  modelRuntime: Pick<ModelRuntime, "getModel" | "hasConfiguredAuth">,
+): ResolvedModel | undefined {
+  const recorded = sessionManager.buildSessionContext().model;
+  if (!recorded || !CLAUDE_PROVIDERS.has(recorded.provider) || !isLegacyClaudeId(recorded.modelId)) return undefined;
+  if (modelRuntime.getModel(recorded.provider, recorded.modelId)) return undefined;
+  const target = resolveLegacyClaude(recorded.modelId);
+  const model = target ? modelRuntime.getModel(recorded.provider, target.id) : undefined;
+  return model && modelRuntime.hasConfiguredAuth(model.provider) ? model : undefined;
+}
+
 /** The recorded choice outranks an eligible global default; undefined leaves the SDK
  *  to choose. savedDefault has already passed the pristine-session and available/auth checks. */
 export function modelForSessionOpen(
@@ -222,7 +246,7 @@ export function modelForSessionOpen(
   modelRuntime: Pick<ModelRuntime, "getModel" | "hasConfiguredAuth">,
   savedDefault: ResolvedModel | undefined,
 ): ResolvedModel | undefined {
-  return recordedModelForEmptyBranch(sessionManager, modelRuntime) ?? savedDefault;
+  return recordedModelForEmptyBranch(sessionManager, modelRuntime) ?? legacyClaudeModelForOpen(sessionManager, modelRuntime) ?? savedDefault;
 }
 
 /** A branch's resolved context, as buildSessionContext() reports it. */

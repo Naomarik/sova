@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import type { DecisionSettings, SessionSummary, TagsBackfillProgress } from "../shared/protocol";
+import { until as waitUntil } from "./test-wait";
 
 const agentDir = mkdtempSync(join(tmpdir(), "sova-tags-backfill-"));
 process.env.PI_CODING_AGENT_DIR = agentDir; // before the modules below compute their paths
@@ -208,7 +209,7 @@ test("routes: manual tags, backfill refusals and progress", async () => {
     assert.equal(res.status, 200);
     const started = (await res.json()) as TagsBackfillProgress;
     assert.equal(started.running, true);
-    for (let i = 0; i < 100 && ((await (await app.request("/api/sessions/tags/backfill")).json()) as TagsBackfillProgress).running; i++) await new Promise((r) => setTimeout(r, 10));
+    await waitUntil(async () => !(((await (await app.request("/api/sessions/tags/backfill")).json()) as TagsBackfillProgress).running));
     const done = (await (await app.request("/api/sessions/tags/backfill")).json()) as TagsBackfillProgress;
     assert.equal(done.running, false);
     assert.equal(done.total, 2);

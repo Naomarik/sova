@@ -15,6 +15,7 @@ const put = (root: string, rel: string, text: string) => {
 	writeFileSync(join(root, rel), text);
 };
 const LIST = "# §app/list\n\nThe list.\n\n## §app.list/mark\n\nA speech bubble and the count.\n";
+const texts = (r: { warnings: { text: string }[] } | undefined) => (r?.warnings ?? []).map((w) => w.text);
 
 function repo(withSpec = true) {
 	const root = realpathSync(mkdtempSync(join(tmpdir(), "worktrees-spec-")));
@@ -42,10 +43,10 @@ async function merge(r: { tree: string }, extra: { onDefault?: boolean } = {}) {
 	return mergeSpecReport(runGit, { path: r.tree, branch: "feat/x", before: m.before, after: m.sha, branchSha: m.branchSha, ...extra });
 }
 
-test("a merge's foreign §, code after the last spec commit, unpromoted drafts and orphaned evidence", async () => {
+test("a merge's unpromoted drafts and orphaned evidence; no foreign §, no code-after-spec warning", async () => {
 	const r = repo();
 	try {
-		// Code, then its spec (prose of a foreign § changed, a child added under a foreign surface), then more code.
+		// Code, then its spec, then more code: no longer a warning.
 		put(r.tree, "src/list.ts", "v2\n");
 		sh(r.tree, "commit", "-qam", "code");
 		put(r.tree, ".sova/spec/claims/app/list.md", `${LIST.replace("A speech bubble and", "Only")}\n## §app.list/filter\n\nA filter.\n`);
@@ -55,7 +56,6 @@ test("a merge's foreign §, code after the last spec commit, unpromoted drafts a
 		sh(r.tree, "commit", "-qam", "spec");
 		put(r.tree, "src/list.ts", "v3\n");
 		sh(r.tree, "commit", "-qam", "more code");
-		const late = sh(r.tree, "rev-parse", "--short=7", "HEAD");
 		// A draft with a change never promoted.
 		execFileSync(process.execPath, [DRAFT, "new", "left", "--write", "--root", r.tree]);
 		const cur = readFileSync(join(r.tree, ".sova/spec/claims/app/list.md"), "utf8");
@@ -71,34 +71,31 @@ test("a merge's foreign §, code after the last spec commit, unpromoted drafts a
 
 		const rep = await merge(r);
 		assert.ok(rep);
-		assert.deepEqual(rep.foreign, ["§app.list/mark", "§app/list"]);
-		assert.equal(rep.warnings.length, 3, rep.warnings.join("\n"));
-		assert.match(rep.warnings[0]!, /^draft left has 1 unpromoted record \(§app\/list\)/);
-		assert.match(rep.warnings[1]!, new RegExp(`^evidence commit ${gone.slice(0, 7)} \\(draft old\\) is not on feat/x`));
-		assert.match(rep.warnings[2]!, new RegExp(`^1 code commit after the last spec commit [0-9a-f]{7} \\(${late}\\)`));
-		assert.deepEqual(specLines(rep).slice(0, 2), ["Foreign § this merge changes: §app.list/mark, §app/list", `Spec warning: ${rep.warnings[0]}`]);
+		assert.equal(rep.warnings.length, 2, texts(rep).join("\n"));
+		assert.equal(rep.warnings[0]!.text, "draft left has 1 unpromoted record (§app/list): promote what shipped");
+		assert.match(rep.warnings[1]!.text, new RegExp(`^evidence commit ${gone.slice(0, 7)} \\(draft old\\) is not on feat/x`));
+		assert.deepEqual(specLines(rep), texts(rep).map((t) => `Spec warning: ${t}`));
+		assert.ok(!specLines(rep).some((l) => /Foreign §|last line|Deferred|Plumbing/.test(l)));
 	} finally {
 		r.done();
 	}
 });
 
-test("a clean spec'd merge reports its foreign § and no warnings; code-only branches get no code-after warning", async () => {
+test("a clean spec'd merge says nothing, code under an unchanged § included", async () => {
 	const r = repo();
 	try {
 		put(r.tree, "src/list.ts", "v2\n");
 		sh(r.tree, "commit", "-qam", "code only");
 		const rep = await merge(r);
-		assert.deepEqual([rep?.foreign, rep?.warnings, rep?.deleted], [[], [], []]);
-		// Code under an unchanged § is advisory: shown, never a warning.
-		assert.deepEqual(rep?.landing?.mappedUntouched, [{ id: "§app.list/mark", files: ["src/list.ts"] }]);
+		assert.deepEqual(rep?.warnings, []);
 		assert.equal(rep?.top, r.main);
-		assert.deepEqual(specLines(rep!), ["Foreign § this merge changes: none", "Code changed under unchanged §: §app.list/mark (src/list.ts): read each; name one on your last line only if its behavior changed"]);
+		assert.deepEqual(specLines(rep!), []);
 	} finally {
 		r.done();
 	}
 });
 
-test("B3: master changed other § and the branch merged master in; the note names only the branch's §", async () => {
+test("B3: master changed other § and the branch merged master in; nothing to warn about", async () => {
 	const r = repo();
 	try {
 		const m = JSON.parse(readFileSync(join(r.main, ".sova/spec/manifest.json"), "utf8"));
@@ -110,7 +107,7 @@ test("B3: master changed other § and the branch merged master in; the note name
 		sh(r.tree, "commit", "-qam", "feat: code and spec");
 		sh(r.tree, "merge", "-q", "--no-edit", "master");
 		const rep = await merge(r);
-		assert.deepEqual([rep?.foreign, rep?.warnings], [["§app.list/mark"], []]);
+		assert.deepEqual(rep?.warnings, []);
 	} finally {
 		r.done();
 	}
@@ -136,7 +133,7 @@ test("a project without a spec, or without the spec tools, gets no report", asyn
 	}
 });
 
-test("the landing gate's lists: an unmapped file, code under an unchanged §, an unpromoted draft (the public-links shape)", async () => {
+test("the landing lists: an unmapped file and an unpromoted draft, worded with no closing line", async () => {
 	const r = repo();
 	try {
 		execFileSync(process.execPath, [DRAFT, "new", "links", "--write", "--root", r.tree]);
@@ -148,16 +145,16 @@ test("the landing gate's lists: an unmapped file, code under an unchanged §, an
 		const rep = await merge(r);
 		assert.ok(rep?.landing);
 		assert.deepEqual(rep.landing.unmappedChanged, [{ path: "scripts/links.sh", status: "A", inBoundary: false }]);
-		assert.deepEqual(rep.landing.mappedUntouched, [{ id: "§app.list/mark", files: ["src/list.ts"] }]);
 		assert.deepEqual(rep.landing.unpromotedDrafts.map((d) => [d.draft, d.ids]), [["links", ["§app.list/mark"]]]);
-		assert.match(rep.warnings[0]!, /^1 changed file no claim maps \(scripts\/links\.sh\): .*"Plumbing: <path> — <why>"/);
-		assert.match(rep.warnings[1]!, /^draft links has 1 unpromoted record \(§app\.list\/mark\): .*"Deferred: §app\.list\/mark — <why>"/);
+		assert.equal(rep.warnings[0]!.text, "1 changed file no claim maps (scripts/links.sh): spec any whose change a user sees");
+		assert.equal(rep.warnings[1]!.text, "draft links has 1 unpromoted record (§app.list/mark): promote what shipped");
+		assert.ok(rep.warnings[1]!.key);
 	} finally {
 		r.done();
 	}
 });
 
-test("q14: into the default branch, an unpromoted draft's note asks for a promotion and no Deferred line", async () => {
+test("q14: into the default branch, the landing's own draft is to be promoted now", async () => {
 	const r = repo();
 	try {
 		execFileSync(process.execPath, [DRAFT, "new", "links", "--write", "--root", r.tree]);
@@ -165,12 +162,19 @@ test("q14: into the default branch, an unpromoted draft's note asks for a promot
 		put(r.tree, "src/list.ts", "v2 links\n");
 		sh(r.tree, "commit", "-qam", "links, spec deferred");
 		const rep = await merge(r, { onDefault: true });
-		const note = rep?.warnings.find((w) => w.startsWith("draft links"));
-		assert.match(note ?? "", /^draft links has 1 unpromoted record \(§app\.list\/mark\): this landed on the default branch, so promote it now .*a "Deferred:" line doesn't pass here$/);
-		assert.doesNotMatch(note ?? "", /"Deferred: §app/);
+		assert.deepEqual(texts(rep).filter((w) => w.startsWith("draft links")), ["draft links has 1 unpromoted record (§app.list/mark): this landed on the default branch, so promote it now"]);
 	} finally {
 		r.done();
 	}
+});
+
+test("a draft is said once a session, and again when its pending § change", () => {
+	const said = new Set<string>();
+	const rep = (key: string) => ({ warnings: [{ text: "draft d has 1 unpromoted record (§a/b): promote what shipped", key }, { text: "1 changed file no claim maps (x): spec any whose change a user sees" }] });
+	assert.equal(specLines(rep("d§a/b"), said).length, 2);
+	assert.deepEqual(specLines(rep("d§a/b"), said), ["Spec warning: 1 changed file no claim maps (x): spec any whose change a user sees"]);
+	assert.equal(specLines(rep("d§a/b,§a/c"), said).length, 2);
+	assert.equal(specLines(rep("d§a/b")).length, 2, "without a set, every warning");
 });
 
 test("F8: a draft already promoted is not 'unpromoted' when master later changed the same §", async () => {
@@ -193,16 +197,16 @@ test("F8: a draft already promoted is not 'unpromoted' when master later changed
 		assert.deepEqual(st.ids.map((i: { current: string }) => i.current), ["conflict"], "the old check counted this as unpromoted");
 		const rep = await merge(r);
 		assert.deepEqual(rep?.landing?.unpromotedDrafts, []);
-		assert.ok(!rep?.warnings.some((w) => /unpromoted/.test(w)), rep?.warnings.join("\n"));
+		assert.ok(!texts(rep).some((w) => /unpromoted/.test(w)), texts(rep).join("\n"));
 	} finally {
 		r.done();
 	}
 });
 
-test("a merge that deletes or renames § and resolves one by hand says so", async () => {
+test("a hand merge on the branch is no landing hand resolution", async () => {
 	const r = repo();
 	try {
-		// Master and the branch both reword §app.list/mark; the merge resolves it with a third text.
+		// Master and the branch both reword §app.list/mark; the branch's merge resolves it with a third text.
 		put(r.main, ".sova/spec/claims/app/list.md", LIST.replace("A speech bubble and the count.", "Master's words."));
 		sh(r.main, "commit", "-qam", "master: mark");
 		put(r.tree, ".sova/spec/claims/app/list.md", LIST.replace("A speech bubble and the count.", "The branch's words."));
@@ -215,11 +219,8 @@ test("a merge that deletes or renames § and resolves one by hand says so", asyn
 		sh(r.main, "merge", "-q", "--no-ff", "--no-edit", "feat/x");
 		const after = sh(r.main, "rev-parse", "HEAD");
 		const rep = await mergeSpecReport(runGit, { path: r.tree, branch: "feat/x", before, after, branchSha: sh(r.tree, "rev-parse", "HEAD") });
-		assert.deepEqual(rep?.foreign, ["§app.list/mark"]);
 		assert.deepEqual(rep?.landing?.handResolved, [], "the landing merge is clean; the hand merge is on the branch");
-		// A rename, as the note shows it: the old id stays foreign.
-		const lines = specLines({ foreign: ["§app/list"], deleted: [{ id: "§app/list", renamedTo: "§app/rows" }], warnings: [], landing: { unmappedChanged: [], mappedUntouched: [], unpromotedDrafts: [], handResolved: [{ commit: after, ids: ["§app.list/mark"] }] } });
-		assert.deepEqual(lines.slice(0, 2), ["Foreign § this merge changes: §app/list", "Deleted § (still foreign): §app/list → §app/rows"]);
+		assert.deepEqual(rep?.warnings, []);
 	} finally {
 		r.done();
 	}
@@ -240,63 +241,20 @@ test("the note's hand-resolution warning: a landing merge commit whose § differ
 		const after = sh(r.main, "rev-parse", "HEAD");
 		const rep = await mergeSpecReport(runGit, { path: r.tree, branch: "feat/x", before, after, branchSha: sh(r.tree, "rev-parse", "HEAD") });
 		assert.deepEqual(rep?.landing?.handResolved, [{ commit: after, ids: ["§app.list/mark"] }]);
-		assert.ok(rep?.warnings.some((w) => w.startsWith(`merge ${after.slice(0, 7)} resolved §app.list/mark by hand`) && w.includes(`git show --cc ${after.slice(0, 7)}`)), rep?.warnings.join("\n"));
+		assert.ok(texts(rep).some((w) => w.startsWith(`merge ${after.slice(0, 7)} resolved §app.list/mark by hand`) && w.includes(`git show --cc ${after.slice(0, 7)}`)), texts(rep).join("\n"));
 	} finally {
 		r.done();
 	}
 });
 
-test("into a feature branch: what the merged branch brought from master unchanged is counted, not named; a § both sides changed stays", async () => {
+test("when the core can't compute the landing, the note says so", async () => {
 	const r = repo();
-	const worker = join(dirname(r.tree), "worker");
 	try {
-		put(r.main, "src/other.ts", "x\n");
-		sh(r.main, "add", "-A");
-		sh(r.main, "commit", "-qm", "an unmapped file");
-		sh(r.tree, "merge", "-q", "--no-edit", "master");
-		sh(r.tree, "worktree", "add", "-q", "-b", "feat/x-w", worker);
-		// Another task on master: §app/list's lede, and the unmapped file.
-		put(r.main, ".sova/spec/claims/app/list.md", LIST.replace("The list.", "The list, by master."));
-		put(r.main, "src/other.ts", "by master\n");
-		sh(r.main, "commit", "-qam", "master's task");
-		// The worker syncs master in, then changes §app.list/mark and a file of its own.
-		sh(worker, "merge", "-q", "--no-edit", "master");
-		put(worker, ".sova/spec/claims/app/list.md", readFileSync(join(worker, ".sova/spec/claims/app/list.md"), "utf8").replace("A speech bubble and the count.", "The count."));
-		put(worker, "src/own.ts", "the worker's\n");
-		sh(worker, "add", "-A");
-		sh(worker, "commit", "-qm", "worker");
-		const m = await mergeWorktree(runGit, { tree: { path: worker, branch: "feat/x-w" }, target: "feat/x" });
-		const rep = await mergeSpecReport(runGit, { path: worker, branch: "feat/x-w", before: m.before, after: m.sha, branchSha: m.branchSha, defaultBranch: "master" });
-		assert.ok(rep);
-		assert.deepEqual(rep.foreign, ["§app.list/mark"], "master's §app/list arrived unchanged");
-		assert.deepEqual(rep.arrived, { from: "master", ids: ["§app/list"], files: ["src/other.ts"] });
-		assert.deepEqual(rep.landing?.unmappedChanged.map((u) => u.path), ["src/own.ts"]);
-		assert.deepEqual(specLines(rep).slice(0, 2), ["Foreign § this merge changes: §app.list/mark", "Arrived from master: 1 §"]);
-
-		// Without the default branch named (the target is the default, or unknown), nothing is counted apart.
-		const plain = await mergeSpecReport(runGit, { path: worker, branch: "feat/x-w", before: m.before, after: m.sha, branchSha: m.branchSha });
-		assert.deepEqual(plain?.foreign, ["§app.list/mark", "§app/list"]);
-		assert.equal(plain?.arrived, undefined);
-	} finally {
-		r.done();
-	}
-});
-
-test("into a feature branch: a § master changed that the branch changed differently stays named", async () => {
-	const r = repo();
-	const worker = join(dirname(r.tree), "worker");
-	try {
-		sh(r.tree, "worktree", "add", "-q", "-b", "feat/x-w", worker);
-		put(r.main, ".sova/spec/claims/app/list.md", LIST.replace("The list.", "The list, by master."));
-		sh(r.main, "commit", "-qam", "master's task");
-		sh(worker, "merge", "-q", "--no-edit", "master");
-		put(worker, ".sova/spec/claims/app/list.md", readFileSync(join(worker, ".sova/spec/claims/app/list.md"), "utf8").replace("The list, by master.", "The list, by both."));
-		sh(worker, "commit", "-qam", "worker");
-		const m = await mergeWorktree(runGit, { tree: { path: worker, branch: "feat/x-w" }, target: "feat/x" });
-		const rep = await mergeSpecReport(runGit, { path: worker, branch: "feat/x-w", before: m.before, after: m.sha, branchSha: m.branchSha, defaultBranch: "master" });
-		assert.deepEqual(rep?.foreign, ["§app/list"]);
-		assert.equal(rep?.arrived, undefined);
-		assert.ok(!specLines(rep!).some((l) => l.startsWith("Arrived")));
+		put(r.tree, "src/list.ts", "v2\n");
+		sh(r.tree, "commit", "-qam", "code");
+		const m = await mergeWorktree(runGit, { tree: { path: r.tree, branch: "feat/x" }, target: "master" });
+		const rep = await mergeSpecReport(runGit, { path: r.tree, branch: "feat/x", before: m.before, after: m.sha, branchSha: m.branchSha }, { node: async () => ({ code: 2, stdout: "" }) });
+		assert.deepEqual(texts(rep), ["the merge's unmapped files and unpromoted drafts could not be computed (no output); check them yourself"]);
 	} finally {
 		r.done();
 	}

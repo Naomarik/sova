@@ -4,7 +4,8 @@
 // (ModelRuntime.getAuth → pi-ai's refresh under pi's lock), with its token endpoint routed to the
 // mock rotating token server. Nothing outside the scratch root is read or written.
 //
-// These are the credential-sync.md §5.5 scenarios at unit level; the Docker lab reruns them with
+// These are the credential-sync.md §5.5 scenarios at unit level, the mock called in-process (its HTTP
+// round trip: logins.integration.test.ts); the Docker lab reruns them with
 // real processes, real Tailscale and the HTTP transport.
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
@@ -12,6 +13,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Readable } from "node:stream";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { CredentialSync, type CredentialPush, type SyncPeer } from "./logins";
 import type { LoginKinds } from "./logins-merge";
@@ -31,21 +33,35 @@ const { AuthStorage } = (await import(pathToFileURL(join(piEntry, "..", "core", 
 
 const mock = createMockTokenState({ accessTtlS: 90 });
 const realFetch = globalThis.fetch;
-const { createServer } = await import("node:http");
 const { createHandler } = await import("../../scripts/mesh-lab/mock-token-server/server.mjs");
-const mockServer = createServer(createHandler(mock));
-await new Promise<void>((r) => mockServer.listen(0, "127.0.0.1", r));
-const mockUrl = `http://127.0.0.1:${(mockServer.address() as { port: number }).port}`;
-// pi-ai posts to the fixed https://auth.openai.com/oauth/token; in the lab that name resolves to
-// the mock, here the fetch is routed to it.
+const handle = createHandler(mock) as (req: unknown, res: { writeHead(s: number, h: Record<string, string>): void; end(text: string): void }) => Promise<void>;
+/** The mock's own request handler, called in-process: no socket (over real HTTP:
+    logins.integration.test.ts). */
+async function inProcessMock(req: Request): Promise<Response> {
+  const url = new URL(req.url);
+  const body = Buffer.from(await req.arrayBuffer());
+  const incoming = Object.assign(Readable.from(body.length ? [body] : []), {
+    method: req.method,
+    url: `${url.pathname}${url.search}`,
+    headers: Object.fromEntries(req.headers),
+    socket: { remoteAddress: "127.0.0.1" },
+  });
+  return await new Promise<Response>((resolve) => {
+    let status = 200;
+    let headers: Record<string, string> = {};
+    void handle(incoming, { writeHead: (s, h) => ((status = s), (headers = h)), end: (text) => resolve(new Response(text, { status, headers })) });
+  });
+}
+// The Claude simulator talks to the mock at this name; pi-ai posts to the fixed
+// https://auth.openai.com/oauth/token, which in the lab resolves to the mock. Both are routed to it.
+const mockUrl = "http://mock-token.test";
 globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
   const url = String(input instanceof Request ? input.url : input);
-  if (url.startsWith("https://auth.openai.com/")) return realFetch(new URL(new URL(url).pathname, mockUrl), init);
+  if (url.startsWith("https://auth.openai.com/") || url.startsWith(`${mockUrl}/`)) return inProcessMock(input instanceof Request ? input : new Request(url, init));
   return realFetch(input, init);
 }) as typeof fetch;
 after(() => {
   globalThis.fetch = realFetch;
-  mockServer.close();
 });
 
 // ---------------------------------------------------------------- hosts

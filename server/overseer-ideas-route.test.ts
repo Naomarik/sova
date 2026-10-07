@@ -1,6 +1,6 @@
 // Run: npx tsx --test server/overseer-ideas-route.test.ts (or npm test). Uses a throwaway
-// PI_CODING_AGENT_DIR in the OS temp dir; ~/.pi is never read or written. The server is imported
-// with PORT=0 so it binds an ephemeral port instead of the dev port.
+// PI_CODING_AGENT_DIR in the OS temp dir; ~/.pi is never read or written. The server's app is built
+// in-process (server/app.ts): no listener.
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -10,14 +10,13 @@ import type { OverseerIdeaDetail, OverseerIdeasInfo } from "../shared/protocol";
 
 const agentDir = mkdtempSync(join(tmpdir(), "sova-ideas-route-"));
 process.env.PI_CODING_AGENT_DIR = agentDir;
-process.env.PORT = "0";
 
-const { app, server } = await import("./index");
+const { buildApp } = await import("./app");
+const { app } = buildApp({ extensionEntriesOf: async () => [] });
 const { disposeAllChats } = await import("./chat-manager");
 const ideas = await import("./overseer-ideas");
 
 after(async () => {
-  server.close();
   await disposeAllChats();
   rmSync(agentDir, { recursive: true, force: true });
 });

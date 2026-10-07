@@ -159,6 +159,15 @@ onAccessChange(() => {
   rt.lan?.revokeGrants((nodeId, need) => allows(nodeId, need));
 });
 
+/** The tailnet listener's caller by its node (tests drive a PeerGate with it): the listed peer, from
+    peers.json as it is now, and seen up, since it just called. */
+export function peerByNode(nodeId: string): PeerEntry | null {
+  reloadIfChanged(); // a hand edit may have added or removed it since
+  const hit = rt.config?.peers.find((p) => p.nodeId === nodeId);
+  if (hit) sawPeer(hit.id, true); // it just called us, so it is up
+  return hit ?? null;
+}
+
 /** A peer reached over the tailnet (not a dial-out pairing). */
 const tailnetPeers = (): PeerEntry[] => (rt.config?.peers ?? []).filter((p) => !p.lan);
 
@@ -193,12 +202,7 @@ function apply(): void {
     rt.listener = new PeerListener({
       ...d,
       port: peerPort(),
-      peerByNode: (nodeId) => {
-        reloadIfChanged(); // a hand edit may have added or removed it since
-        const hit = rt.config?.peers.find((p) => p.nodeId === nodeId);
-        if (hit) sawPeer(hit.id, true); // it just called us, so it is up
-        return hit ?? null;
-      },
+      peerByNode,
       allows: (peer, need) => allows(peer.nodeId, need),
       addresses: async () => {
         const status = await getIdentity().status();

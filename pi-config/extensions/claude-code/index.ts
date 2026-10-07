@@ -5,12 +5,12 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { BACKEND_DIALOG_EVENT, registerBackend, type BackendRegistration, type BackendSpec, type BackendModel } from "../subagents/contracts.ts";
 import { ClaudeRunner, MAX_CLAUDE_INPUT_CHARS, type ClaudePermissionDecision, type ClaudePermissionRequest, type ClaudeSpawnOptions } from "./runner.ts";
 import { parseClaudePolicy, validateClaudeEffort, validateClaudeModel, validateClaudeTools } from "./policy.ts";
-import { withLongContextVariants } from "./context-window.ts";
-import { discoverClaudeModels } from "./models.ts";
+import { claudeOffer } from "./catalog.ts";
 import { PermissionQueue } from "./permissions.ts";
 import { registerClaudeCodeProvider } from "./provider/index.ts";
 import { hostLogins, type ClaudeLoginChoice } from "./accounts.ts";
 
+/** What a launch needs. An old Claude id passes: it runs, and is recorded, as its catalog id (policy.ts). */
 function validate(spec: BackendSpec): void {
 	// The runner would otherwise fail this asynchronously, after the batch started.
 	if (spec.prompt.length > MAX_CLAUDE_INPUT_CHARS) {
@@ -29,10 +29,6 @@ const safeText = (value: string) => stripVTControlCharacters(value).replace(/[\x
 /** Exported for offline registration/policy tests. No subprocess starts at extension load. */
 export function registerClaudeCode(pi: ExtensionAPI): void {
 	let stopped = false;
-	let modelCache: { at: number; models: BackendModel[] } | undefined;
-	const discoveries = new Set<AbortController>();
-	/** Discovery processes whose closure is still owed; callers do not wait for it. */
-	const discoveryClosures = new Set<Promise<void>>();
 	const promptQueue = new PermissionQueue();
 	// One handler per spec serves every count>1 instance, so identity comes from
 	// the requesting worker, never from the shared spec.
@@ -63,26 +59,14 @@ export function registerClaudeCode(pi: ExtensionAPI): void {
 	const backend: BackendRegistration = {
 		version: 1,
 		id: "claude-code",
+		// Sova's Claude catalog (§app.claude-code-provider/catalog): no CLI process, never the CLI's list.
 		async listModels(_ctx, signal) {
 			signal?.throwIfAborted();
 			if (stopped) throw new Error("Claude backend is shutting down.");
-			if (modelCache && Date.now() - modelCache.at < 60000) return structuredClone(modelCache.models);
-			const controller = new AbortController();
-			const abort = () => controller.abort();
-			signal?.addEventListener("abort", abort, { once: true });
-			discoveries.add(controller);
-			try {
-				// The CLI's list may omit the `[1m]` forms it still accepts; the rule adds them back.
-				const models = withLongContextVariants(await discoverClaudeModels(controller.signal, {
-					trackClosure: (closed) => {
-						discoveryClosures.add(closed);
-						void closed.then(() => discoveryClosures.delete(closed));
-					},
-				}));
-				controller.signal.throwIfAborted();
-				modelCache = { at: Date.now(), models };
-				return structuredClone(models);
-			} finally { discoveries.delete(controller); signal?.removeEventListener("abort", abort); }
+			return claudeOffer().map((m): BackendModel => ({
+				id: m.id, name: m.name, description: `Claude ${m.name}`,
+				...(m.efforts.length ? { efforts: [...m.efforts] } : {}),
+			}));
 		},
 		validate,
 		prepare(spec, ctx) {
@@ -118,11 +102,8 @@ export function registerClaudeCode(pi: ExtensionAPI): void {
 	// its Claude workers too.
 	registerClaudeCodeProvider(pi);
 	pi.on("session_shutdown", async () => {
-		stopped = true; unregister(); modelCache = undefined;
+		stopped = true; unregister();
 		promptQueue.dispose();
-		for (const controller of discoveries) controller.abort();
-		// Like worker shutdown: await confirmed closure of discovery processes.
-		await Promise.all(discoveryClosures);
 	});
 }
 export default registerClaudeCode;

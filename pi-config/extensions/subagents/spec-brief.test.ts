@@ -10,18 +10,17 @@ import { CARRIED_RULES, carriedText, missingRules, workerSpecBrief, writesCode }
  */
 const PINNED = `## Spec discipline (the spawning session has spec mode on)
 This project documents behavior in \`.sova/spec/\`. The rules below are quoted from its spec mode; they bind your part of the task.
-Trusted tools: start each bash command that runs them with exactly \`core=/agent/extensions/spec/core\`. <project root> is \`git rev-parse --show-toplevel\` of your working directory. Read-only: \`node "$core/sova-spec.mjs" <command> --root <project root> --json\`, where <command> is \`toc '<§id>' --dir out|in|down|up|mentions\`, \`read '<§id>' [--whole] [--no-frame]\`, \`impact '<§id>' [--near]\`, \`check\`, \`census\`, \`scope '<§id>'\` or \`foreign --base <rev>\`.
+Trusted tools: start each bash command that runs them with exactly \`core=/agent/extensions/spec/core\`. <project root> is \`git rev-parse --show-toplevel\` of your working directory. Read-only: \`node "$core/sova-spec.mjs" <command> --root <project root> --json\`, where <command> is \`toc '<§id>' --dir out|in|down|up|mentions\`, \`read '<§id>' [--whole] [--no-frame]\`, \`impact '<§id>' [--near]\`, \`check\`, \`census\` or \`scope '<§id>'\`.
 - never put \`§\` IDs or spec annotations in source code.
 - Every behavior change is spec'd. Exempt from drafts, not census: work changing no behavior (refactor, tests, tooling), decided from passages you read, never memory; a test that fails or flakes because of product code is that code's behavior fix, never test-only; say you claim the exemption.
 - Behavior no claim covers gets a new claim in a feature draft before coding. Write its sentence before the first code edit; \`new\` alone isn't enough.
-- While coding, exempt work included, edit one file per tool call (no multi-file sed, heredoc or parallel edits) and run \`census --changed\` (\`--spec\` your draft, if any) after the first edit and each new file.
+- While coding, a \`[spec census]\` note on a tool result is the census, run for you: act on it.
 - Any § the task didn't create is foreign, your new claim's parent included, wherever you put the claim; editing one in your draft flags.
 - Flag only a contradiction, or a user-visible addition, even one your new claim describes, that its own text lacks, never a gap it already had, even one you rely on; otherwise stay silent.
-- A \`[spec census]\` note on a tool result is this census, run for you: act on it.
+- Batch flags in the plan as one question: "This also changes §X: <what>. OK?"; a session told not to ask says it in its reply.
 - Documentation changes only through drafts, never by editing current \`claims/\` or \`manifest.json\`: \`node "$core/sova-spec-draft.mjs" <command> --root <project root> --json\`.
 - Documenting what the code already does is its own baseline draft, never mixed into a feature draft.
-- \`node "$core/sova-spec.mjs" census --changed --root <project root> --json\` must report no in-boundary changed file unclaimed, and no changed file outside it that no claim maps unless a "Plumbing: <path> — <why>" line above the last line names it (never UI text, colour, CLI output or footer rendering) (\`--spec\` the draft's \`spec/\` until promoted; \`--base <rev>\` once committed). Pre-existing unclaimed files aren't the task's job.
-- Your reply's last line on a turn that edited, committed, promoted or merged, exempt work included, is exactly "Also changes: §X — <what>; §Y — <what>" or "Also changes: none", nothing after; a turn that only answered writes no such line. Items are separated by ";", each led by the § it names (", /d" after "§a.b/c" is "§a.b/d"); a § inside a description isn't named. It names foreign § only, never your new claims; an addition under one is that §'s change, and a § the user asked for is still foreign. Notes (the exemption, a gap) go above it. A merge or promote turn names each foreign § it lands not described this session, never § arriving unchanged from master: copy \`worktree merge\`'s or \`promote --write\`'s list (\`foreign\` otherwise). One that leaves draft records unpromoted names their stale § on a "Deferred: §X — <why>" line above the last line; on the default branch it promotes them instead. "Spec check override: <why>" right above the last line excuses only an omission you show is wrong.
+- Run \`node "$core/sova-spec.mjs" census --changed --root <project root> --json\` (\`--spec\` the draft's \`spec/\` until promoted; \`--base <rev>\` once committed): every changed file in the boundary is claimed, any changed file outside it whose change a user sees is spec'd, and you have read each § it lists for your change.
 - The task's go-ahead authorizes its drafts, evidence and promotions as one bounded batch; no dialog per claim, and nothing at session start. It is not permission to commit: without that, leave evidence pending, and never commit unrelated changes.`;
 
 test("spec-mode.md still carries every rule the worker brief quotes, and the brief is the pinned text", () => {
@@ -36,9 +35,9 @@ test("every carried rule is quoted verbatim from spec-mode.md, and the brief sta
 });
 
 test("a rule the file no longer carries is dropped, never invented; sentences end outside quotes and code", () => {
-	const text = "Intro. Every behavior change is spec'd. Second one. Third.\nYour reply's last line is \"Also changes: none\". It names § only. Tail.";
+	const text = "Intro. Every behavior change is spec'd. Second one. Third.\nAsk it as \"This also changes §X: <what>. OK?\". It names § only. Tail.";
 	assert.equal(carriedText(text, { anchor: "Every behavior change is spec'd.", sentences: 2 }), "Every behavior change is spec'd. Second one.");
-	assert.equal(carriedText(text, { anchor: "Your reply's last line", sentences: 2 }), "Your reply's last line is \"Also changes: none\". It names § only.");
+	assert.equal(carriedText(text, { anchor: "Ask it as", sentences: 2 }), "Ask it as \"This also changes §X: <what>. OK?\". It names § only.");
 	assert.equal(carriedText(text, { anchor: "absent", sentences: 1 }), undefined);
 	assert.equal(carriedText("Twice. Twice.", { anchor: "Twice", sentences: 1 }), undefined, "an ambiguous anchor carries nothing");
 	assert.ok(missingRules(text).includes("never put `§` IDs"));

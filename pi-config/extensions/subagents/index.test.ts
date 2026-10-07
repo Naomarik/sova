@@ -13,7 +13,8 @@ import { placeholderDir } from "../remote/argv.ts";
 import { REMOTE_MCP_ENV, REMOTE_MCP_SERVER_NAME, REMOTE_SESSION_EVENT, decodeRemoteMcpIdentity } from "../remote/workers.ts";
 import { MODE_DISCOVER_EVENT, MODE_STATE_EVENT } from "../mode/state.ts";
 import { SPEC_HOOK_SCRIPT } from "../claude-code/spec-hooks.ts";
-import { LEDGER_ENV } from "../mode/spec-guard.ts";
+/** The retired worker-ledger variable: no worker is given it now. */
+const LEDGER_ENV = "SOVA_SPEC_LEDGER";
 import { workerSpecBrief } from "./spec-brief.ts";
 import { SANDBOX_DISCOVER_EVENT, SANDBOX_STATE_EVENT, type SandboxStateEvent, type WorkerLaunch } from "../sandbox/state.ts";
 import { MODE_WORKER_DISCOVER_EVENT, MODE_WORKER_EVENT, WORKER_ROLE_DISCOVER_EVENT, WORKER_ROLE_EVENT, type ModeWorkerEvent } from "../mode/events.ts";
@@ -158,7 +159,7 @@ function fakeBackend(created: any[]): BackendRegistration {
 		},
 		prepare(spec, ctx) {
 			assert.ok(ctx.cwd);
-			return { model: spec.model ?? "sonnet", backendOptions: { permissionMode: "default", ...spec.backendOptions } };
+			return { model: spec.model ?? "claude-sonnet-5-5", backendOptions: { permissionMode: "default", ...spec.backendOptions } };
 		},
 		create(options, handlers) {
 			const worker: any = {
@@ -358,7 +359,7 @@ test("worker snapshots include Claude and do not depend on working UI methods", 
 			{ prompt: "Claude background task", backend: "claude-code", wake: false },
 		] });
 		assert.equal(snapshots.at(-1).workers.length, 2);
-		assert.equal(snapshots.at(-1).workers[1].model, "sonnet");
+		assert.equal(snapshots.at(-1).workers[1].model, "claude-sonnet-5-5");
 		assert.equal(snapshots.at(-1).workers[1].preview, "Claude result");
 		assert.equal(snapshots.at(-1).workers[1].backend, "claude-code");
 		assert.equal(snapshots.at(-1).workers[0].backend, "pi");
@@ -392,7 +393,7 @@ test("agent_models discovers active Pi and native backend models with explicit e
 	const h = harness();
 	let cliCalls = 0;
 	h.ctx.modelRegistry.getAvailable = () => [{ provider: "ollama-cloud", id: "deepseek-v4.1-flash", name: "DeepSeek" }];
-	const backend = { ...fakeBackend([]), listModels: async () => { cliCalls++; return [{ id: "opus", name: "Opus", efforts: ["low", "medium"] }]; } };
+	const backend = { ...fakeBackend([]), listModels: async () => { cliCalls++; return [{ id: "claude-opus-5-5", name: "Opus", efforts: ["low", "medium"] }]; } };
 	registerBackend(h.bus as any, backend);
 	try {
 		const pi = await h.call("agent_models", { query: "deepseek 4.1 flash", backend: "pi" });
@@ -484,7 +485,7 @@ for (const order of ["backend-first", "host-first"] as const) {
 			const r = await h.call("agent_spawn", { prompt: "task", backend: "claude-code", backendOptions: { permissionMode: "plan" } });
 			assert.equal(h.workers.length, 0);
 			assert.equal(created.length, 1);
-			assert.equal(created[0].model, "sonnet");
+			assert.equal(created[0].model, "claude-sonnet-5-5");
 			assert.equal(created[0].effort, undefined);
 			assert.equal(created[0].tools, undefined);
 			assert.equal(created[0].backendOptions.permissionMode, "plan");
@@ -632,13 +633,13 @@ test("completion summary states model, thinking level and non-pi backend", async
 		assert.doesNotMatch(text, /backend:/);
 		assert.match(text, /\nthe answer$/);
 		// Explicit model/effort on a non-pi backend names all three.
-		worker.model = "opus"; worker.effort = "high"; worker.backend = "claude-code";
+		worker.model = "claude-opus-5-5"; worker.effort = "high"; worker.backend = "claude-code";
 		text = (await h.call("agent_transcript", { id: worker.id })).content[0].text;
-		assert.match(text, /\nModel: opus · thinking: high · backend: claude-code\n/);
+		assert.match(text, /\nModel: claude-opus-5-5 · thinking: high · backend: claude-code\n/);
 		// Errors stay above the metadata; empty output is still disclosed.
 		worker.backend = "pi"; worker.output = ""; worker.error = "boom";
 		text = (await h.call("agent_transcript", { id: worker.id })).content[0].text;
-		assert.match(text, /\nError: boom\nSession: .*\nModel: opus · thinking: high\n\(no output yet — task in progress\)$/);
+		assert.match(text, /\nError: boom\nSession: .*\nModel: claude-opus-5-5 · thinking: high\n\(no output yet — task in progress\)$/);
 	} finally { await h.close(); }
 });
 
@@ -698,7 +699,7 @@ test("backend validation is atomic across mixed batches and fails closed without
 		await assert.rejects(h.call("agent_spawn", { agents: [{ prompt: "x" }], backend: "pi" }), /Shorthand/);
 		await assert.rejects(h.call("agent_spawn", { prompt: "x", backendOptions: {} }), /not supported/);
 		await assert.rejects(h.call("agent_spawn", { prompt: "x", backend: "claude-code", fork: true }), /Unsupported/);
-		await h.call("agent_spawn", { agents: [{ prompt: "pi" }, { prompt: "claude", backend: "claude-code", model: "opus" }] });
+		await h.call("agent_spawn", { agents: [{ prompt: "pi" }, { prompt: "claude", backend: "claude-code", model: "claude-opus-5-5" }] });
 		assert.equal(h.workers.length, 1); assert.equal(created.length, 1);
 	} finally { await h.close(); }
 });
@@ -714,12 +715,12 @@ test("model policy disables providers and models for spawns, teams and discovery
 		{ provider: "test", id: "model", name: "Test Model" },
 		{ provider: "zai", id: "glm-5.3", name: "GLM" },
 	];
-	const backend = { ...fakeBackend(created), listModels: async () => [{ id: "sonnet", name: "Sonnet" }, { id: "opus", name: "Opus" }] };
+	const backend = { ...fakeBackend(created), listModels: async () => [{ id: "claude-sonnet-5-5", name: "Sonnet" }, { id: "claude-opus-5-5", name: "Opus" }] };
 	h.bus.emit(BACKEND_REGISTER_EVENT, backend);
 	try {
 		// No policy file yet: everything is spawnable and discoverable.
 		let models = await h.call("agent_models", {});
-		assert.deepEqual(models.details.models.map((m: any) => m.id).sort(), ["opus", "sonnet", "test/model", "zai/glm-5.3"]);
+		assert.deepEqual(models.details.models.map((m: any) => m.id).sort(), ["claude-opus-5-5", "claude-sonnet-5-5", "test/model", "zai/glm-5.3"]);
 		await h.call("agent_spawn", { prompt: "control", wake: false });
 		assert.equal(h.workers.length, 1);
 
@@ -732,25 +733,25 @@ test("model policy disables providers and models for spawns, teams and discovery
 		writePolicy(["zai"], []);
 		await assert.rejects(h.call("agent_spawn", { prompt: "provider gone", model: "zai/glm-5.3", wake: false }), /Provider zai is disabled/);
 		models = await h.call("agent_models", {});
-		assert.deepEqual(models.details.models.map((m: any) => m.id).sort(), ["opus", "sonnet", "test/model"]);
+		assert.deepEqual(models.details.models.map((m: any) => m.id).sort(), ["claude-opus-5-5", "claude-sonnet-5-5", "test/model"]);
 
 		// Backend-level rules: a disabled backend id rejects model-less specs (their default is
 		// still that provider's model) and explicit ones; single backend models can be disabled
 		// under the "backend/model" spelling while the backend stays allowed.
 		writePolicy(["claude-code"], []);
 		await assert.rejects(h.call("agent_spawn", { prompt: "default model", backend: "claude-code", wake: false }), /Backend claude-code is disabled/);
-		await assert.rejects(h.call("agent_spawn", { prompt: "explicit model", backend: "claude-code", model: "sonnet", wake: false }), /Backend claude-code is disabled/);
-		writePolicy([], ["claude-code/opus"]);
-		await assert.rejects(h.call("agent_spawn", { prompt: "opus gone", backend: "claude-code", model: "Opus", wake: false }), /Opus is disabled/);
-		await h.call("agent_spawn", { prompt: "sonnet stays", backend: "claude-code", model: "sonnet", wake: false });
+		await assert.rejects(h.call("agent_spawn", { prompt: "explicit model", backend: "claude-code", model: "claude-sonnet-5-5", wake: false }), /Backend claude-code is disabled/);
+		writePolicy([], ["claude-code/claude-opus-5-5"]);
+		await assert.rejects(h.call("agent_spawn", { prompt: "opus gone", backend: "claude-code", model: "Claude-Opus-5-5", wake: false }), /claude-opus-5-5 is disabled/i, "the policy matches whatever the case; the catalog id runs");
+		await h.call("agent_spawn", { prompt: "sonnet stays", backend: "claude-code", model: "claude-sonnet-5-5", wake: false });
 		models = await h.call("agent_models", { backend: "claude-code" });
-		assert.deepEqual(models.details.models.map((m: any) => m.id), ["sonnet"]);
+		assert.deepEqual(models.details.models.map((m: any) => m.id), ["claude-sonnet-5-5"]);
 
 		// The team path shares spawnBatch, so a disabled member model is rejected there too.
-		writePolicy([], ["claude-code/sonnet"]);
+		writePolicy([], ["claude-code/claude-sonnet-5-5"]);
 		await assert.rejects(
-			h.call("team_create", { name: "blocked", objective: "o", members: [{ role: "r", prompt: "p", backend: "claude-code", model: "sonnet" }] }),
-			/sonnet is disabled/,
+			h.call("team_create", { name: "blocked", objective: "o", members: [{ role: "r", prompt: "p", backend: "claude-code", model: "claude-sonnet-5-5" }] }),
+			/claude-sonnet-5-5 is disabled/,
 		);
 
 		// Nothing but the two allowed controls ever started.
@@ -1959,7 +1960,7 @@ test("team_create composes headers before backend validation, commits membership
 		const r = await h.call("team_create", {
 			name: "Alpha",
 			objective: "Ship the thing",
-			defaults: { backend: "claude-code", model: "opus[1m]", effort: "high" },
+			defaults: { backend: "claude-code", model: "claude-opus-5-5", effort: "high" },
 			members: [
 				{ role: "builder", prompt: "Implement it.", ownedPaths: ["src/api"] },
 				{ role: "reviewer", prompt: "Review it.", backend: "pi", wake: false },
@@ -1968,7 +1969,7 @@ test("team_create composes headers before backend validation, commits membership
 		assert.equal(r.details.teamId, "team_01");
 		assert.equal(r.details.groupId, "run_01");
 		assert.deepEqual(r.details.members, [
-			{ workerId: "ag_01", role: "builder", backend: "claude-code", model: "opus[1m]" },
+			{ workerId: "ag_01", role: "builder", backend: "claude-code", model: "claude-opus-5-5" },
 			{ workerId: "ag_02", role: "reviewer", backend: "pi", model: "test/model" },
 		]);
 		assert.match(r.content[0].text, /Created team_01 \(Alpha\) with 2 member\(s\) in run_01/);
@@ -1994,7 +1995,7 @@ test("team_create composes headers before backend validation, commits membership
 		assert.match(reviewer.task, /Your role: reviewer/);
 		assert.match(reviewer.task, /- builder: src\/api/);
 		assert.equal(created[0].name, "builder");
-		assert.equal(created[0].model, "opus[1m]");
+		assert.equal(created[0].model, "claude-opus-5-5");
 		assert.equal(created[0].effort, "high");
 		// The run cross-references the team in its label.
 		const listed = await h.call("agent_list");
@@ -2010,7 +2011,7 @@ test("team_create composes headers before backend validation, commits membership
 		);
 		assert.deepEqual(
 			teamEntries[0].data.members.map((m: any) => [m.workerId, m.role, m.backend, m.model, m.groupId, m.ownedPaths]),
-			[["ag_01", "builder", "claude-code", "opus[1m]", "run_01", ["src/api"]], ["ag_02", "reviewer", "pi", "test/model", "run_01", []]],
+			[["ag_01", "builder", "claude-code", "claude-opus-5-5", "run_01", ["src/api"]], ["ag_02", "reviewer", "pi", "test/model", "run_01", []]],
 		);
 		assert.equal(h.appended.findIndex((e) => e.customType === "subagents-counters-v2") > -1, true);
 		assert.ok(h.appended.findIndex((e) => e.customType === "subagents-counters-v2") < h.appended.indexOf(teamEntries[0]));
@@ -2092,14 +2093,14 @@ test("team_add extends a session team in another run, reuses defaults and persis
 	try {
 		await h.call("team_create", {
 			name: "Core", objective: "obj",
-			defaults: { backend: "claude-code", model: "opus[1m]" },
+			defaults: { backend: "claude-code", model: "claude-opus-5-5" },
 			members: [{ role: "lead", prompt: "start" }],
 		});
 		const add = await h.call("team_add", { team: "core", members: [{ role: "docs", prompt: "write docs", ownedPaths: ["docs/"] }] });
 		assert.equal(add.details.teamId, "team_01");
 		assert.equal(add.details.groupId, "run_02", "teams span independent run groups");
 		assert.match(add.content[0].text, /Added 1 member\(s\) to team_01 \(Core\) in run_02/);
-		assert.deepEqual(add.details.members, [{ workerId: "ag_02", role: "docs", backend: "claude-code", model: "opus[1m]" }]);
+		assert.deepEqual(add.details.members, [{ workerId: "ag_02", role: "docs", backend: "claude-code", model: "claude-opus-5-5" }]);
 		// The joiner's header lists the create-time roster; existing members are never rewritten.
 		assert.match(created[1].task, /Other members when you joined:\n- lead: none declared/);
 		assert.match(created[1].task, /Your declared ownership: docs\//);
@@ -2126,7 +2127,7 @@ test("team history restores read-only from the active branch; counters reserve a
 	const old = teamEntry({
 		version: 1, op: "create",
 		team: { id: "team_04", name: "Old", objective: "past", createdAt: 1 },
-		members: [{ workerId: "ag_03", role: "lead", ownedPaths: ["src"], backend: "claude-code", model: "opus", groupId: "run_02", addedAt: 1 }],
+		members: [{ workerId: "ag_03", role: "lead", ownedPaths: ["src"], backend: "claude-code", model: "claude-opus-5-5", groupId: "run_02", addedAt: 1 }],
 	});
 	const elsewhere = teamEntry({
 		version: 1, op: "create",
@@ -2721,7 +2722,7 @@ test("a remote session's workers run on the target: pi loads the remote extensio
 		assert.match(claude.systemPrompt, /^be terse\n\n/);
 		assert.match(claude.systemPrompt, /remote target "The box \(box\)" in \/srv\/app\/sub\/dir/);
 		assert.match(claude.systemPrompt, /no local file or shell tools/);
-		assert.equal(claude.model, "sonnet", "the backend's own preparation is kept");
+		assert.equal(claude.model, "claude-sonnet-5-5", "the backend's own preparation is kept");
 
 		// A team member of a remote session gets both servers; a pi member both extensions.
 		await h.call("team_create", { name: "Crew", objective: "o", members: [{ role: "lead", prompt: "t", orchestrator: true }, { role: "writer", prompt: "w", backend: "claude-code" }] });
@@ -2911,11 +2912,11 @@ test("worker marker: the requested built-ins the default set lacks are activated
 
 test("a pi worker on a claude-code-cli model gets the claude-code extension and its provider switch; other models get neither", async () => {
 	const h = harness();
-	h.ctx.modelRegistry.find = (p: string, m: string) => (p === "claude-code-cli" && m === "opus[1m]") || (p === "ollama-cloud" && m === "kimi-k3") ? { provider: p, id: m } : undefined;
+	h.ctx.modelRegistry.find = (p: string, m: string) => (p === "claude-code-cli" && m === "claude-opus-5-5") || (p === "ollama-cloud" && m === "kimi-k3") ? { provider: p, id: m } : undefined;
 	try {
-		await h.call("agent_spawn", { prompt: "1M task", model: "claude-code-cli/opus[1m]", effort: "low" });
+		await h.call("agent_spawn", { prompt: "1M task", model: "claude-code-cli/claude-opus-5-5", effort: "low" });
 		const scoped = h.workers[0];
-		assert.equal(scoped.model, "claude-code-cli/opus[1m]", "the ref reaches the runner unchanged; the runner sets it over RPC");
+		assert.equal(scoped.model, "claude-code-cli/claude-opus-5-5", "the ref reaches the runner unchanged; the runner sets it over RPC");
 		assert.deepEqual(scoped.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, CLAUDE_CODE_EXTENSION], "the marker, then the claude-code extension");
 		assert.deepEqual(scoped.flags, { "claude-code-provider": true });
 		assert.equal(CLAUDE_CODE_EXTENSION, path.join(fs.realpathSync(path.resolve(fileURLToPath(new URL("../claude-code", import.meta.url)))), "index.ts"), "the sibling directory, by real path");
@@ -2954,7 +2955,7 @@ test("pin: with the sandbox off and no worktree, a claude worker's create() opti
 		h.bus.emit(SANDBOX_STATE_EVENT, SANDBOX_OFF);
 		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code", systemPrompt: "be terse", wake: false });
 		const want = {
-			model: "sonnet", effort: undefined, tools: undefined, systemPrompt: "be terse", extensions: undefined, forkSession: undefined,
+			model: "claude-sonnet-5-5", effort: undefined, tools: undefined, systemPrompt: "be terse", extensions: undefined, forkSession: undefined,
 			backendOptions: { permissionMode: "default" }, backend: "claude-code", groupId: "run_01", name: "agent", task: "claude task", cwd: h.ctx.cwd, wake: false,
 		};
 		assert.deepEqual(Object.keys(options[0]).sort(), [...Object.keys(want), "id"].sort(), "no sandbox, env, settings, confinement or mcp key");
@@ -3227,8 +3228,8 @@ test("team_eject: parent-only, refuses occupied members, persists the op, frees 
 
 const DEFAULTS_FILE = {
 	version: 1,
-	coordinator: { enabled: true, role: "coordinator", primary: { backend: "claude-code", model: "opus[1m]", effort: "medium" }, fallback: null, instructions: "" },
-	monitor: { enabled: true, role: "monitor", primary: { backend: "claude-code", model: "haiku", effort: "medium" }, fallback: null, contextPct: 60, everyMinutes: 10, usage: { enabled: true, pausePct: 90, resumeMarginMinutes: 5 }, instructions: "" },
+	coordinator: { enabled: true, role: "coordinator", primary: { backend: "claude-code", model: "claude-opus-5-5", effort: "medium" }, fallback: null, instructions: "" },
+	monitor: { enabled: true, role: "monitor", primary: { backend: "claude-code", model: "claude-haiku-4-5", effort: "medium" }, fallback: null, contextPct: 60, everyMinutes: 10, usage: { enabled: true, pausePct: 90, resumeMarginMinutes: 5 }, instructions: "" },
 	handover: { retireTimeoutMinutes: 10 },
 };
 /** The parent session id coordinatedHarness reports; handover notes live under it (N1). */
@@ -3302,14 +3303,14 @@ test("team defaults: no file changes nothing; a malformed file turns them off vi
 test("team defaults synthesize a coordinator and a monitor in code, with role headers, identities and wake:false for the rest", async () => {
 	const h = coordinatedHarness(DEFAULTS_FILE);
 	try {
-		const r = await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build", ownedPaths: ["src"] }, { role: "writer", prompt: "docs", backend: "claude-code", model: "sonnet" }] });
+		const r = await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build", ownedPaths: ["src"] }, { role: "writer", prompt: "docs", backend: "claude-code", model: "claude-sonnet-5-5" }] });
 		const text = r.content[0].text;
-		assert.match(text, /Team defaults: coordinator coordinator added on claude-code\/opus\[1m\]\/medium \(primary\)\./);
-		assert.match(text, /Team defaults: monitor monitor added on claude-code\/haiku\/medium \(primary\)\./);
+		assert.match(text, /Team defaults: coordinator coordinator added on claude-code\/claude-opus-5-5\/medium \(primary\)\./);
+		assert.match(text, /Team defaults: monitor monitor added on claude-code\/claude-haiku-4-5\/medium \(primary\)\./);
 		const handoffs = path.join(h.agentDir, "sova", "teams", SESSION_ID, "team_01", "handoffs");
 		assert.match(text, new RegExp(`Handover notes: ${handoffs.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
 		assert.ok(fs.statSync(handoffs).isDirectory());
-		assert.match(text, /ag_01 {2}coordinator \(coordinator\) {2}running {2}backend=claude-code {2}model=opus\[1m\] {2}effort=medium/);
+		assert.match(text, /ag_01 {2}coordinator \(coordinator\) {2}running {2}backend=claude-code {2}model=claude-opus-5-5 {2}effort=medium/);
 		assert.match(text, /ag_04 {2}monitor \(monitor\) .* wake=false/);
 		assert.match(text, /Coordinated team: only the coordinator reaches you/);
 		assert.deepEqual(r.details.members.map((m: any) => [m.workerId, m.role, m.duty]), [["ag_01", "coordinator", "coordinator"], ["ag_02", "dev", undefined], ["ag_03", "writer", undefined], ["ag_04", "monitor", "monitor"]]);
@@ -3376,16 +3377,16 @@ test("team defaults pick the fallback when the primary cannot run, and refuse th
 	} finally { await n.cleanup(); }
 	const noClaude = coordinatedHarness(DEFAULTS_FILE, { claude: false });
 	try {
-		await assert.rejects(noClaude.call("team_create", { name: "Crew", objective: "o", members: [{ role: "dev", prompt: "p" }] }), /primary claude-code\/opus\[1m\]\/medium: backend claude-code is not loaded; fallback: no fallback is configured/);
+		await assert.rejects(noClaude.call("team_create", { name: "Crew", objective: "o", members: [{ role: "dev", prompt: "p" }] }), /primary claude-code\/claude-opus-5-5\/medium: backend claude-code is not loaded; fallback: no fallback is configured/);
 	} finally { await noClaude.cleanup(); }
 	// The model policy is a denial like any other.
 	const policyDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-td-policy-"));
 	const policyFile = path.join(policyDir, "policy.json");
-	fs.writeFileSync(policyFile, JSON.stringify({ version: 1, disabledProviders: [], disabledModels: ["claude-code/haiku"] }));
+	fs.writeFileSync(policyFile, JSON.stringify({ version: 1, disabledProviders: [], disabledModels: ["claude-code/claude-haiku-4-5"] }));
 	const p = coordinatedHarness({ ...DEFAULTS_FILE, monitor: { ...DEFAULTS_FILE.monitor, fallback: { backend: "pi", model: "test/model" } } });
 	try {
 		const r2 = await registerAgain(p, policyFile);
-		assert.match(r2, /monitor monitor added on pi\/test\/model \(fallback; primary claude-code\/haiku\/medium refused: .*haiku/);
+		assert.match(r2, /monitor monitor added on pi\/test\/model \(fallback; primary claude-code\/claude-haiku-4-5\/medium refused: .*claude-haiku-4-5/);
 	} finally { await p.cleanup(); fs.rmSync(policyDir, { recursive: true, force: true }); }
 });
 /** A second manager on the same agent dir with a policy file: returns its team_create text. */
@@ -4146,7 +4147,7 @@ test("members default: member's own model, then the call's, then the profile's; 
 		const dev = h.worker("ag_02"), own = h.worker("ag_03"), cc = h.worker("ag_04");
 		assert.deepEqual([dev.backend, dev.model, dev.effort], ["pi", "test/model", "high"], "the profile fills the member nobody gave a model");
 		assert.deepEqual([own.backend, own.model, own.effort], ["pi", "test/model", "low"], "the member's own choice wins over the profile");
-		assert.equal(cc.model, "sonnet", "a member naming another backend keeps to it: the backend's own prepare fills the model (the fixture's sonnet), never the pi default");
+		assert.equal(cc.model, "claude-sonnet-5-5", "a member naming another backend keeps to it: the backend's own prepare fills the model (the fixture's sonnet), never the pi default");
 		assert.notEqual(cc.effort, "high");
 		const entry = h.appended.filter((e) => e.customType === "subagents-team-v1" && e.data.op === "create").at(-1);
 		const recOf = (id: string) => entry.data.members.find((m: any) => m.workerId === id);
@@ -4217,7 +4218,7 @@ test("/team defaults prints the effective defaults, off, or the malformed reason
 	const h = coordinatedHarness(DEFAULTS_FILE);
 	try {
 		await h.commands.get("team").handler("ship the parser", h.ctx);
-		assert.match(h.messages[0][0].content, /- Team defaults are on: team_create adds a coordinator "coordinator" \(claude-code\/opus\[1m\]\)[\s\S]*a monitor "monitor"/);
+		assert.match(h.messages[0][0].content, /- Team defaults are on: team_create adds a coordinator "coordinator" \(claude-code\/claude-opus-5-5\)[\s\S]*a monitor "monitor"/);
 	} finally { await h.cleanup(); }
 });
 
@@ -4380,7 +4381,7 @@ test("worktrees: useWorktreeConfig runs a pi worker on <worktree>/.agent with it
 const STATE_SPEC_ON = { version: 1, mode: "normal", strict: false, minorModes: ["spec"] };
 const STATE_SPEC_OFF = { version: 1, mode: "normal", strict: false, minorModes: [] };
 
-test("spec on: every code-writing worker (pi, claude-code, team member) gets the worker spec brief; claude-code also the spec hooks, a confined one on its own state dir and ledger file", async () => {
+test("spec on: every code-writing worker (pi, claude-code, team member) gets the worker spec brief; claude-code also the spec hooks, a confined one on its own state dir; no worker gets a spec ledger", async () => {
 	const bus = eventBus();
 	let asked = 0;
 	bus.on(MODE_DISCOVER_EVENT, (data: any) => { if (data?.version === 1) asked++; });
@@ -4402,10 +4403,7 @@ test("spec on: every code-writing worker (pi, claude-code, team member) gets the
 		// pi workers run with --no-extensions: the census hook comes in by -e, a sibling of subagents/.
 		assert.deepEqual(h.workers[1].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, SPEC_WORKER_EXTENSION]);
 		assert.equal(SPEC_WORKER_EXTENSION, fs.realpathSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "mode", "spec-worker.ts")));
-		// Its git operations go to this session's ledger (M4); spec off, none.
-		const ledger = h.workers[1].env?.[LEDGER_ENV];
-		assert.ok(typeof ledger === "string" && ledger.startsWith(path.join(NO_AGENT_DIR, "sova", "spec-ledger") + path.sep) && ledger.endsWith(".jsonl"), String(ledger));
-		assert.equal(h.workers[0].env?.[LEDGER_ENV], undefined);
+		assert.equal(h.workers[1].env?.[LEDGER_ENV], undefined, "no spec ledger");
 		await h.call("agent_spawn", { prompt: "reader", tools: ["read", "grep"] });
 		assert.equal(h.workers[2].systemPrompt, undefined, "a worker that cannot write gets no brief");
 		assert.deepEqual(h.workers[2].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION], "nor the census hook");
@@ -4413,12 +4411,12 @@ test("spec on: every code-writing worker (pi, claude-code, team member) gets the
 		const claude = created[1];
 		assert.equal(claude.systemPrompt, `Own words.\n\n${brief}`);
 		const hooks = JSON.parse(claude.settingsJson).hooks;
-		assert.deepEqual(Object.keys(hooks).sort(), ["PostToolUse", "PreToolUse", "Stop", "UserPromptSubmit"]);
+		assert.deepEqual(Object.keys(hooks).sort(), ["PostToolUse", "PreToolUse", "UserPromptSubmit"], "nothing at the turn's end");
 		const post = hooks.PostToolUse[0];
 		assert.equal(post.matcher, "*", "after ANY tool, Bash included");
 		assert.ok(post.hooks[0].command.includes(SPEC_HOOK_SCRIPT) && post.hooks[0].command.includes(" post --core "));
 		assert.ok(post.hooks[0].command.includes(path.join(NO_AGENT_DIR, SPEC_HOOK_STATE)), "state under the agent dir");
-		assert.ok(post.hooks[0].command.includes(` --ledger ${ledger}`), "the hooks write the same ledger");
+		assert.ok(!post.hooks[0].command.includes("--ledger"), "no ledger");
 		await h.call("agent_spawn", { prompt: "claude reader", backend: "claude-code", tools: ["Read"] });
 		assert.ok(!("settingsJson" in created[2]) && created[2].systemPrompt === undefined, "a read-only claude worker gets neither");
 
@@ -4427,24 +4425,24 @@ test("spec on: every code-writing worker (pi, claude-code, team member) gets the
 		const confined = created[3];
 		const merged = JSON.parse(confined.settingsJson);
 		assert.equal(merged.sandbox, undefined, "no Claude sandbox settings from the sandbox (the runner turns it off)");
-		const stop = merged.hooks.Stop[0].hooks[0].command as string;
+		const confinedPost = merged.hooks.PostToolUse[0].hooks[0].command as string;
 		const ownState = path.join(NO_AGENT_DIR, SPEC_HOOK_STATE, "workers", confined.confine.key);
-		const ownLedger = path.join(NO_AGENT_DIR, "sova", "spec-ledger", `${path.basename(ledger!, ".jsonl")}.workers`, `${confined.confine.key}.jsonl`);
-		assert.ok(stop.includes(` --state ${ownState}`) && stop.includes(` --ledger ${ownLedger}`), stop);
-		assert.deepEqual(confined.confine.writable, [ownState, ownLedger], "both writable inside, nothing else of the agent dir");
-		assert.ok(fs.statSync(ownState).isDirectory() && fs.statSync(ownLedger).isFile(), "made before the launch");
+		assert.ok(confinedPost.endsWith(` --state ${ownState}`), confinedPost);
+		assert.equal(merged.hooks.Stop, undefined);
+		assert.deepEqual(confined.confine.writable, [ownState], "its hook state writable inside, nothing else of the agent dir");
+		assert.ok(fs.statSync(ownState).isDirectory(), "made before the launch");
+		assert.ok(!fs.existsSync(path.join(NO_AGENT_DIR, "sova", "spec-ledger")), "no ledger file is made");
 		fs.rmSync(path.join(NO_AGENT_DIR, SPEC_HOOK_STATE, "workers"), { recursive: true, force: true });
-		fs.rmSync(path.dirname(ownLedger), { recursive: true, force: true });
 		h.bus.emit(SANDBOX_STATE_EVENT, SANDBOX_OFF);
 
 		await h.call("team_create", { name: "T", objective: "o", members: [
-			{ role: "a", prompt: "p", backend: "claude-code", model: "sonnet" },
+			{ role: "a", prompt: "p", backend: "claude-code", model: "claude-sonnet-5-5" },
 			{ role: "b", prompt: "p", backend: "pi" },
 		] });
 		assert.ok(created[4].systemPrompt.endsWith(brief) && JSON.parse(created[4].settingsJson).hooks, "a claude member");
 		assert.ok(h.workers.at(-1).systemPrompt.endsWith(brief), "a pi member");
 		assert.deepEqual(h.workers.at(-1).extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, SPEC_WORKER_EXTENSION, MEMBER_EXTENSION], "a pi member gets the census hook too");
-		assert.equal(h.workers.at(-1).env?.[LEDGER_ENV], ledger, "and the ledger, beside its member identity");
+		assert.equal(h.workers.at(-1).env?.[LEDGER_ENV], undefined, "and no ledger beside its member identity");
 		assert.ok(Object.keys(h.workers.at(-1).env).length > 1);
 
 		h.bus.emit(MODE_STATE_EVENT, { ...STATE_SPEC_ON, version: 2 });
@@ -4544,7 +4542,7 @@ test("mode: team members get the block on both backends, the coordinator too; th
 	const h = coordinatedHarness(DEFAULTS_FILE);
 	try {
 		h.bus.emit(MODE_WORKER_EVENT, SPEC_ON);
-		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }, { role: "writer", prompt: "docs", backend: "claude-code", model: "sonnet" }] });
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }, { role: "writer", prompt: "docs", backend: "claude-code", model: "claude-sonnet-5-5" }] });
 		const coordinator = h.worker("ag_01"), dev = h.worker("ag_02"), writer = h.worker("ag_03"), monitor = h.worker("ag_04");
 		for (const [name, w] of [["coordinator", coordinator], ["dev", dev], ["writer", writer]] as const)
 			assert.ok(w.systemPrompt.endsWith(WORKER_BLOCK), `${name} ends with the block`);
@@ -4567,7 +4565,7 @@ test("worker marker: says it is a worker at load and to anyone who asks later (a
 	assert.doesNotThrow(() => workerMarkExtension({ on() {} } as any), "no bus: inert");
 });
 
-test("spec on with the parent's worker modes (mode:worker) too: the spec block comes once, from the mode prompt; the census hook, hooks and ledger stay", async () => {
+test("spec on with the parent's worker modes (mode:worker) too: the spec block comes once, from the mode prompt; the census hook and hooks stay", async () => {
 	const h = harness();
 	const created: any[] = [];
 	h.bus.emit(BACKEND_REGISTER_EVENT, fakeBackend(created));
@@ -4578,10 +4576,9 @@ test("spec on with the parent's worker modes (mode:worker) too: the spec block c
 		await h.call("agent_spawn", { prompt: "pi task", systemPrompt: "Be terse." });
 		assert.equal(h.workers[0].systemPrompt, `Be terse.\n\n${WORKER_BLOCK}`, "the mode prompt, no brief on top");
 		assert.deepEqual(h.workers[0].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, SPEC_WORKER_EXTENSION]);
-		assert.ok(typeof h.workers[0].env?.[LEDGER_ENV] === "string");
 		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code", systemPrompt: "Own words." });
 		assert.equal(created[0].systemPrompt, `Own words.\n\n${WORKER_BLOCK}`);
 		assert.ok(!created[0].systemPrompt.includes(brief));
-		assert.ok(JSON.parse(created[0].settingsJson).hooks.Stop, "the hooks still come");
+		assert.ok(JSON.parse(created[0].settingsJson).hooks.PostToolUse, "the hooks still come");
 	} finally { await h.close(); }
 });

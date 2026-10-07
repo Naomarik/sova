@@ -20,6 +20,7 @@ import {
   memoryLine,
   protocolLine,
   renameRefusal,
+  rowHostState,
   sinceLine,
   unavailableText,
 } from "./mesh-details";
@@ -51,6 +52,16 @@ test("host menu: each state has its own tone and word, never the colour alone", 
   assert.deepEqual(hostTone("refused"), { tone: "down", word: "refused" });
   const words = (["up", "skewed", "down", "refused"] as const).map((s) => hostTone(s).word);
   assert.equal(new Set(words).size, words.length, "no two states share a word");
+});
+
+test("session row: the host word names the peer's state in the host menu's words", () => {
+  assert.equal(rowHostState("up", false), null);
+  assert.deepEqual(rowHostState("up", true), { word: "hidden", tone: "warn" });
+  assert.deepEqual(rowHostState("skewed", false), { word: "other version", tone: "warn" });
+  assert.deepEqual(rowHostState("hidden", false), { word: "hidden", tone: "warn" });
+  assert.deepEqual(rowHostState("refused", false), { word: "refused", tone: "error" });
+  assert.deepEqual(rowHostState("down", false), { word: "down", tone: "error" });
+  for (const s of ["skewed", "hidden", "refused", "down"] as const) assert.equal(rowHostState(s, false)!.word, hostTone(s).word);
 });
 
 test("figures read as a person says them", () => {

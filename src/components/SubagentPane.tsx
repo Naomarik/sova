@@ -7,7 +7,7 @@ import { linkGroupId, linkGroups, linkHostLabel, linkReach, threadHost, type Lin
 import { headerTokenWords, spendTitle, spoken, transcriptHeaderSid, transcriptHeaderSpend, workerRowSpend } from "../lib/spend";
 import { chatLinks } from "../lib/links-live";
 import { hostOf, meshState, sessionHrefOn } from "../lib/mesh";
-import { clockTime, compactModel, shortModel } from "../lib/format";
+import { clockTime, compactModel, modelLabel, modelMismatch } from "../lib/format";
 import { memberBadges, memberStatus, newestEventLine } from "../lib/insights";
 import { createReconnectingSocket } from "../lib/socket";
 import { formatTokens } from "../lib/context";
@@ -559,7 +559,7 @@ export function SubagentPane(props: {
                     source={sourceOf(key)}
                     host={hostOf(props.path)}
                     name={label(w())}
-                    author={shortModel(w().model) ?? label(w())}
+                    author={modelLabel(w().model) ?? label(w())}
                     streaming={w().working}
                     onContext={(c) => setWatchedContext(transcriptContext(c, w()) ?? null)}
                   />
@@ -639,7 +639,7 @@ function LinkedTranscript(props: { row: LinkedAgentInfo; reach: LinkReach; hostL
           source={{ kind: "pi", path: key.slice(key.indexOf("\n") + 1) }}
           host={key.slice(0, key.indexOf("\n")) || null}
           name={props.row.title}
-          author={shortModel(props.row.model) ?? props.row.title}
+          author={modelLabel(props.row.model) ?? props.row.title}
           streaming={props.row.state === "working"}
           what="session"
           onContext={() => {}}
@@ -718,8 +718,12 @@ function WorkerMeta(props: { worker: WorkerInfo; spend: UsageSpend | null; liveS
               <Show when={provider()}>
                 <MetaSep />
               </Show>
-              <span class="text-mono meta-line-shrink" title={props.worker.model ?? undefined}>
+              <span
+                class="text-mono meta-line-shrink"
+                title={[props.worker.model, modelMismatch(props.worker.asked, props.worker.model)].filter(Boolean).join(" · ") || undefined}
+              >
                 {m()}
+                {props.worker.asked ? " ⚠" : ""}
               </span>
             </>
           )}

@@ -25,7 +25,7 @@ import {
 } from "./prompt.ts";
 import { routeAll, routeWriter, type Discovery } from "./routing.ts";
 import { specDefaults, type SpecSettings } from "./spec.ts";
-import { ALSO_CHANGES_OVERRIDE as SPEC_CHECK_OVERRIDE, DIGEST_TAG } from "./spec-guard.ts";
+import { DIGEST_TAG } from "./spec-guard.ts";
 import {
 	activeOf,
 	DEFAULT_ALIGN_VIEWER_SHORTCUT,
@@ -205,10 +205,10 @@ test("applyModeSection sets, overwrites and deletes the mode section", () => {
 
 /** Claude discovery offering fable and opus at every effort: every default profile routes to its primary. */
 const offering = (...ids: string[]): Discovery => ({ models: ids.map((id) => ({ id, efforts: ["low", "medium", "high", "xhigh", "max"] })) });
-const ALL_OK = routeAll(delegateDefaults(), { "claude-code": offering("claude-fable-5-1[1m]", "opus[1m]") }, () => null);
+const ALL_OK = routeAll(delegateDefaults(), { "claude-code": offering("claude-fable-5-1", "claude-opus-5-5") }, () => null);
 /** Fable listed at low only: planning's primary can't run at medium, so its fallback. (An alias the CLI's varying list omits is unverified, not unavailable.) */
-const fableLowOnly = { id: "claude-fable-5-1[1m]", efforts: ["low"] };
-const PLAN_FALLBACK = routeAll(delegateDefaults(), { "claude-code": { models: [fableLowOnly, { id: "opus[1m]", efforts: ["low", "medium", "high", "xhigh", "max"] }] } }, () => null);
+const fableLowOnly = { id: "claude-fable-5-1", efforts: ["low"] };
+const PLAN_FALLBACK = routeAll(delegateDefaults(), { "claude-code": { models: [fableLowOnly, { id: "claude-opus-5-5", efforts: ["low", "medium", "high", "xhigh", "max"] }] } }, () => null);
 
 test("composePrompt joins the delegate block and minor blocks", () => {
 	const normal = defaults();
@@ -437,7 +437,7 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 		assert.match(spec, new RegExp(`\`${cmd}\\b`), `${cmd} is named`);
 	}
 	// Task reading pulls: contents, then one passage; whole-chain packet/scope remain machine inspection.
-	assert.match(spec, /only reads: `map`, `where <path\|name>`, `toc '<§id>' --dir out\|in\|down\|up\|mentions`, `read '<§id>' \[--whole\] \[--no-frame\]`, `impact '<§id>' \[--near\]`, `check`, `census`, `foreign --base <rev>`, and whole-chain `packet`\/`scope '<§id>'` \(machine inspection\); `--cursor <next>` continues a page; `--spec <dir>` reads a draft\./);
+	assert.match(spec, /only reads: `map`, `where <path\|name>`, `toc '<§id>' --dir out\|in\|down\|up\|mentions`, `read '<§id>' \[--whole\] \[--no-frame\]`, `impact '<§id>' \[--near\]`, `check`, `census`, and whole-chain `packet`\/`scope '<§id>'` \(machine inspection\); `--cursor <next>` continues a page; `--spec <dir>` reads a draft\./);
 	for (const cmd of ["foreign", "map", "where", "toc", "read"]) assert.doesNotMatch(usage("sova-spec.mjs", cmd), /unknown command/, `${cmd} is a core command`);
 	assert.doesNotMatch(spec, /--budget/, "every default budget fits a passage: the guide spends no words on it");
 	// A project's copy is foreign code: inspected and asked about, never run blind.
@@ -470,13 +470,12 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	// Only what the task changed is claimed; neighbours are linked, never spec'd.
 	assert.match(spec, /Claim only files the task changed \(each record's `code`\); unchanged dependencies are not spec'd; `requires` names only existing claims\./);
 	// The finish gate: the changed-file census, run on the draft until it is promoted.
-	assert.match(spec, /Before finishing:\n- `node "\$core\/sova-spec\.mjs" census --changed --root <project root> --json` must report no in-boundary changed file unclaimed, and no changed file outside it that no claim maps unless a "Plumbing: <path> — <why>" line above the last line names it \(never UI text, colour, CLI output or footer rendering\) \(`--spec` the draft's `spec\/` until promoted; `--base <rev>` once committed\)\. Pre-existing unclaimed files aren't the task's job\./);
+	assert.match(spec, /Before finishing:\n- Run `node "\$core\/sova-spec\.mjs" census --changed --root <project root> --json` \(`--spec` the draft's `spec\/` until promoted; `--base <rev>` once committed\): every changed file in the boundary is claimed, any changed file outside it whose change a user sees is spec'd, and you have read each § it lists for your change\./, "one census before finishing; the boundary is not an exemption");
 	// Promotion is no longer conditional on a commit: promote, or say why not.
-	assert.match(spec, /- Read `\$core\/\.\.\/PROMOTE\.md`; promote what you verified, or say in your reply why not\./);
+	assert.match(spec, /- Before promoting, read `\$core\/\.\.\/PROMOTE\.md`; promote what you verified, or say in your reply why not\./);
 	assert.doesNotMatch(spec, /Before `git commit`, if/, "the old conditional is gone");
-	assert.match(spec, /A `conflict` is per declaration: re-apply in a new draft from current\./);
+	assert.match(spec, /A `manifest\.json` conflict: follow the census note\./);
 	// The `--doc-only` cases are checked against the draft tool itself: see "the guide's doc-only cases are the draft tool's".
-	assert.match(spec, /A Git merge conflict in `manifest\.json`: run `merge-manifest --write` first; if it refuses, take master's manifest and matching claims \(`git checkout master -- …`\), re-apply the branch's spec changes in a new draft, and promote\. Never take a side before it has run\./);
 	assert.match(usage("sova-spec-draft.mjs", "--no-such-flag"), /merge-manifest/, "merge-manifest is a draft command");
 	assert.match(spec, /never put `§` IDs or spec annotations in source code/);
 	assert.match(spec, /authorizes its drafts, evidence and promotions as one bounded batch; no dialog per claim, and nothing at session start/);
@@ -487,20 +486,14 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	assert.match(spec, /even one your new claim describes/);
 	assert.match(spec, /wherever you put the claim/);
 	assert.match(spec, /never a gap it already had, even one you rely on/);
-	assert.match(spec, /"Also changes: none"/);
-	assert.match(spec, /Before finishing:\n(- .*\n)*- Your reply's last line on a turn that edited, committed, promoted or merged, exempt work included, is exactly "Also changes: §X — <what>; §Y — <what>" or "Also changes: none", nothing after; a turn that only answered writes no such line\. Items are separated by ";", each led by the § it names \(", \/d" after "§a\.b\/c" is "§a\.b\/d"\); a § inside a description isn't named\. It names foreign § only, never your new claims; an addition under one is that §'s change, and a § the user asked for is still foreign\./, "the handoff line is a finishing step on change turns, exempt work included; none on a Q&A turn; its grammar");
-	assert.match(spec, /One that leaves draft records unpromoted names their stale § on a "Deferred: §X — <why>" line above the last line; on the default branch it promotes them instead\./, "q14: no Deferred exit at a master landing");
-	assert.match(spec, /A merge or promote turn names each foreign § it lands not described this session, never § arriving unchanged from master: copy `worktree merge`'s or `promote --write`'s list/, "merge and promote turns copy the computed list, minus what was described or arrived from master");
-	assert.match(spec, /"Spec check override: <why>"/);
-	assert.match(spec, /on the default branch it promotes them instead\. "Spec check override: <why>" right above the last line excuses only an omission you show is wrong\./, "the override never adds a §");
-	assert.ok(spec.includes(SPEC_CHECK_OVERRIDE), "the prompt spells the override the check accepts");
-	assert.ok(spec.includes(`A \`${DIGEST_TAG}\` note on a tool result is this census`), "the automatic census is named by its tag");
-	assert.match(spec, /While coding, exempt work included, edit one file per tool call \(no multi-file sed, heredoc or parallel edits\) and run `census --changed` \(`--spec` your draft, if any\) after the first edit and each new file\./, "q15: per tool call, so each file's census lands before the next");
+	assert.match(spec, /Batch flags in the plan as one question: "This also changes §X: <what>\. OK\?"; a session told not to ask says it in its reply\./, "the flag is asked in the plan, or said when asking isn't possible");
+	for (const gone of ["Also changes", "Plumbing:", "Deferred:", "Spec check override", "last line", "foreign --base", "merge round", "captain"]) assert.ok(!spec.includes(gone), `no closing lines and no merge round: ${gone}`);
+	assert.ok(spec.includes(`While coding, a \`${DIGEST_TAG}\` note on a tool result is the census, run for you: act on it.`), "while coding, the automatic census is named by its tag");
+	assert.doesNotMatch(spec, /one file per tool call|after the first edit and each new file/, "while coding, the census note replaces the census run by hand");
 	assert.match(spec, /Trusted tools: start each bash command with exactly this, never a guessed path:\n\n```sh\n/, "the recipe, not a hard-coded agent dir");
 	assert.match(spec, /plumbing \(a request, hook, helper or CSS class\) never flags/);
 	assert.match(spec, /editing one in your draft flags\. Read it with `read`;/, "a foreign § is read alone, not with its chain");
-	assert.ok(spec.split(/\s+/).length <= 1063, "short enough to ride every turn: growing it is a deliberate change");
-	assert.match(spec, /and no changed file outside it that no claim maps unless a "Plumbing: <path> — <why>" line above the last line names it \(never UI text, colour, CLI output or footer rendering\)/, "the boundary is not an exemption");
+	assert.ok(spec.split(/\s+/).length <= 810, "short enough to ride every turn: growing it is a deliberate change");
 });
 
 test("spec: the guide's doc-only cases are the draft tool's: each one it names is accepted, and every case the tool's rule lists is named", () => {
@@ -688,10 +681,10 @@ test("delegate prompt names every profile's exact worker and leaves no placehold
 	const prompt = buildDelegatePrompt(ALL_OK);
 	assert.doesNotMatch(prompt, /\{[A-Z_]+\}/);
 	assert.match(prompt, /^# Mode: delegate/);
-	assert.match(prompt, /- Planning & specs \(.*\) → backend "claude-code", model "claude-fable-5-1\[1m\]", effort "medium"; fallback backend "claude-code", model "opus\[1m\]", effort "high"\./);
-	assert.match(prompt, /- Investigation \(.*\) → backend "claude-code", model "opus\[1m\]", effort "low"; no fallback — if it fails, ask the user\./);
-	assert.match(prompt, /- Routine implementation \(.*\) → backend "claude-code", model "opus\[1m\]", effort "low"; no fallback — if it fails, ask the user\./);
-	assert.match(prompt, /- Complex implementation \(.*\) → backend "claude-code", model "opus\[1m\]", effort "medium"; no fallback — if it fails, ask the user\./);
+	assert.match(prompt, /- Planning & specs \(.*\) → backend "claude-code", model "claude-fable-5-1", effort "medium"; fallback backend "claude-code", model "claude-opus-5-5", effort "high"\./);
+	assert.match(prompt, /- Investigation \(.*\) → backend "claude-code", model "claude-opus-5-5", effort "low"; no fallback — if it fails, ask the user\./);
+	assert.match(prompt, /- Routine implementation \(.*\) → backend "claude-code", model "claude-opus-5-5", effort "low"; no fallback — if it fails, ask the user\./);
+	assert.match(prompt, /- Complex implementation \(.*\) → backend "claude-code", model "claude-opus-5-5", effort "medium"; no fallback — if it fails, ask the user\./);
 	assert.ok(prompt.indexOf("Planning & specs") < prompt.indexOf("- Investigation") && prompt.indexOf("- Investigation") < prompt.indexOf("- Routine") && prompt.indexOf("- Routine") < prompt.indexOf("- Complex"), "canonical order");
 	// Mandatory verification, the only voice, no invented permission modes.
 	assert.match(prompt, /only voice to the user/);
@@ -709,48 +702,48 @@ test("delegate prompt names every profile's exact worker and leaves no placehold
 
 test("delegate prompt discloses a fallback and asks when a profile has no worker", () => {
 	const fallback = buildDelegatePrompt(PLAN_FALLBACK);
-	assert.match(fallback, /- Planning & specs .* → backend "claude-code", model "opus\[1m\]", effort "high"\. This is the configured FALLBACK: the primary \(backend "claude-code", model "claude-fable-5-1\[1m\]", effort "medium"\) is unavailable — claude-fable-5-1\[1m\] does not support effort "medium" \(supports: low\)\. Tell the user/);
+	assert.match(fallback, /- Planning & specs .* → backend "claude-code", model "claude-opus-5-5", effort "high"\. This is the configured FALLBACK: the primary \(backend "claude-code", model "claude-fable-5-1", effort "medium"\) is unavailable — claude-fable-5-1 does not support effort "medium" \(supports: low\)\. Tell the user/);
 	assert.match(fallback, /do not retry the primary unless asked/);
 
-	const none = routeAll(delegateDefaults(), { "claude-code": { models: [fableLowOnly, { id: "opus[1m]", efforts: ["xhigh"] }, { id: "sonnet", efforts: ["low", "medium", "high"] }] } }, () => null);
+	const none = routeAll(delegateDefaults(), { "claude-code": { models: [fableLowOnly, { id: "claude-opus-5-5", efforts: ["xhigh"] }, { id: "claude-sonnet-5-5", efforts: ["low", "medium", "high"] }] } }, () => null);
 	const prompt = buildDelegatePrompt(none);
-	assert.match(prompt, /- Routine implementation .* → NO AVAILABLE WORKER \(opus\[1m\] does not support effort "low" \(supports: xhigh\); no fallback is set\)\. Before delegating this kind of work, tell the user and ask which model to use; do not choose one yourself\./);
-	assert.match(prompt, /- Planning & specs .* → NO AVAILABLE WORKER \(claude-fable-5-1\[1m\] does not support effort "medium" \(supports: low\); opus\[1m\] does not support effort "high" \(supports: xhigh\)\)/);
-	assert.doesNotMatch(prompt, /model "sonnet"/, "an offered but unconfigured model is never named");
+	assert.match(prompt, /- Routine implementation .* → NO AVAILABLE WORKER \(claude-opus-5-5 does not support effort "low" \(supports: xhigh\); no fallback is set\)\. Before delegating this kind of work, tell the user and ask which model to use; do not choose one yourself\./);
+	assert.match(prompt, /- Planning & specs .* → NO AVAILABLE WORKER \(claude-fable-5-1 does not support effort "medium" \(supports: low\); claude-opus-5-5 does not support effort "high" \(supports: xhigh\)\)/);
+	assert.doesNotMatch(prompt, /model "claude-sonnet-5-5"/, "an offered but unconfigured model is never named");
 	// The CLI's list of the moment omitting every configured alias: nothing is refused, every profile stays on its primary.
-	const unlisted = buildDelegatePrompt(routeAll(delegateDefaults(), { "claude-code": offering("sonnet") }, () => null));
+	const unlisted = buildDelegatePrompt(routeAll(delegateDefaults(), { "claude-code": offering("claude-sonnet-5-5") }, () => null));
 	assert.doesNotMatch(unlisted, /NO AVAILABLE WORKER|FALLBACK/);
-	assert.match(unlisted, /- Planning & specs .* → backend "claude-code", model "claude-fable-5-1\[1m\]", effort "medium"; fallback backend "claude-code", model "opus\[1m\]", effort "high"\./);
+	assert.match(unlisted, /- Planning & specs .* → backend "claude-code", model "claude-fable-5-1", effort "medium"; fallback backend "claude-code", model "claude-opus-5-5", effort "high"\./);
 });
 
 test("a configured fallback that can't run is never offered for the retry", () => {
 	// Fable offered, opus not: planning runs on its primary, and its fallback is known dead.
-	const deadFallback = routeAll(delegateDefaults(), { "claude-code": { models: [{ id: "claude-fable-5-1[1m]" }, { id: "opus[1m]", efforts: ["low"] }] } }, () => null);
+	const deadFallback = routeAll(delegateDefaults(), { "claude-code": { models: [{ id: "claude-fable-5-1" }, { id: "claude-opus-5-5", efforts: ["low"] }] } }, () => null);
 	const prompt = buildDelegatePrompt(deadFallback);
 	const planning = prompt.split("\n").find((line) => line.startsWith("- Planning & specs"))!;
-	assert.match(planning, /→ backend "claude-code", model "claude-fable-5-1\[1m\]", effort "medium"; its configured fallback \(backend "claude-code", model "opus\[1m\]", effort "high"\) can't run — opus\[1m\] does not support effort "high" \(supports: low\) — so if the primary fails, ask the user\./);
+	assert.match(planning, /→ backend "claude-code", model "claude-fable-5-1", effort "medium"; its configured fallback \(backend "claude-code", model "claude-opus-5-5", effort "high"\) can't run — claude-opus-5-5 does not support effort "high" \(supports: low\) — so if the primary fails, ask the user\./);
 	assert.doesNotMatch(planning, /; fallback backend/);
-	// A fallback the CLI's list of the moment omits is still offered: absence from that list is not an answer.
-	const unlistedFallback = buildDelegatePrompt(routeAll(delegateDefaults(), { "claude-code": offering("claude-fable-5-1[1m]") }, () => null));
-	assert.match(unlistedFallback, /- Planning & specs .*; fallback backend "claude-code", model "opus\[1m\]", effort "high"\./);
+	// A fallback the list omits is still offered: a shape-valid Claude id is never absent.
+	const unlistedFallback = buildDelegatePrompt(routeAll(delegateDefaults(), { "claude-code": offering("claude-fable-5-1") }, () => null));
+	assert.match(unlistedFallback, /- Planning & specs .*; fallback backend "claude-code", model "claude-opus-5-5", effort "high"\./);
 	// Denied fallbacks are withheld the same way, with their own reason.
-	const denied = buildDelegatePrompt(routeAll(delegateDefaults(), { "claude-code": offering("claude-fable-5-1[1m]", "opus[1m]") }, (c) => (c.model === "opus[1m]" ? "opus[1m] is disabled as a subagent model by user settings." : null)));
-	assert.match(denied, /its configured fallback .* can't run — opus\[1m\] is disabled as a subagent model/);
+	const denied = buildDelegatePrompt(routeAll(delegateDefaults(), { "claude-code": offering("claude-fable-5-1", "claude-opus-5-5") }, (c) => (c.model === "claude-opus-5-5" ? "claude-opus-5-5 is disabled as a subagent model by user settings." : null)));
+	assert.match(denied, /its configured fallback .* can't run — claude-opus-5-5 is disabled as a subagent model/);
 	// An unverified fallback (discovery failed) is still offered: failure to discover is not absence.
 	const unverified = buildDelegatePrompt(routeAll(delegateDefaults(), { "claude-code": { error: "timeout" } }, () => null));
-	assert.match(unverified, /- Planning & specs .*; fallback backend "claude-code", model "opus\[1m\]", effort "high"\./);
+	assert.match(unverified, /- Planning & specs .*; fallback backend "claude-code", model "claude-opus-5-5", effort "high"\./);
 	assert.match(prompt, /retry once with that profile's fallback only if one is listed above as its fallback/);
 });
 
 const WRITER: SpecSettings = {
 	version: 1,
-	writer: { primary: { backend: "claude-code", model: "opus[1m]", effort: "medium" }, fallback: { backend: "pi", model: "zai/glm-5.3", effort: "high" } },
+	writer: { primary: { backend: "claude-code", model: "claude-opus-5-5", effort: "medium" }, fallback: { backend: "pi", model: "zai/glm-5.3", effort: "high" } },
 };
 const piOffering = (...ids: string[]): Discovery => ({ models: ids.map((id) => ({ id, efforts: ["off", "low", "medium", "high"] })) });
 
 test("spec writer: a paragraph after the spec block only while spec is on and a writer is set", () => {
 	const spec = buildMinorPrompt("spec");
-	const writer = routeWriter(WRITER, { "claude-code": offering("opus[1m]"), pi: piOffering("zai/glm-5.3") }, () => null)!;
+	const writer = routeWriter(WRITER, { "claude-code": offering("claude-opus-5-5"), pi: piOffering("zai/glm-5.3") }, () => null)!;
 	const paragraph = buildSpecWriterPrompt(writer);
 	const specOn = withMinor(defaults(), "spec", true);
 	// On: spec block verbatim, then the paragraph — spec-mode.md itself is untouched.
@@ -773,22 +766,22 @@ test("spec writer: a paragraph after the spec block only while spec is on and a 
 });
 
 test("spec writer: the paragraph names the exact worker, the drafts-only rule, and the retry", () => {
-	const onPrimary = buildSpecWriterPrompt(routeWriter(WRITER, { "claude-code": offering("opus[1m]"), pi: piOffering("zai/glm-5.3") }, () => null)!);
-	assert.match(onPrimary, /^Spec writer: draft claims and evidence records are written by one worker, spawned with agent_spawn on exactly this backend, model and effort → backend "claude-code", model "opus\[1m\]", effort "medium"; fallback backend "pi", model "zai\/glm-5\.3", effort "high"\. /);
+	const onPrimary = buildSpecWriterPrompt(routeWriter(WRITER, { "claude-code": offering("claude-opus-5-5"), pi: piOffering("zai/glm-5.3") }, () => null)!);
+	assert.match(onPrimary, /^Spec writer: draft claims and evidence records are written by one worker, spawned with agent_spawn on exactly this backend, model and effort → backend "claude-code", model "claude-opus-5-5", effort "medium"; fallback backend "pi", model "zai\/glm-5\.3", effort "high"\. /);
 	assert.match(onPrimary, /Give it the relevant spec passages quoted literally, the files the task changed, and the verification you did\./);
 	assert.match(onPrimary, /It writes only under `\.sova\/spec\/drafts\/`, never current `claims\/` or `manifest\.json`; you check its draft, run the checks and the census, and promote yourself\./);
 	assert.match(onPrimary, /retry once with the fallback only if one is listed above, and say so; otherwise ask the user which model to use — never substitute one of your own\.$/);
 	assert.equal(onPrimary.match(/\n/g), null, "one paragraph");
 	// No fallback configured: a failed primary means asking.
-	const alone = buildSpecWriterPrompt(routeWriter({ version: 1, writer: { primary: WRITER.writer!.primary, fallback: null } }, { "claude-code": offering("opus[1m]") }, () => null)!);
+	const alone = buildSpecWriterPrompt(routeWriter({ version: 1, writer: { primary: WRITER.writer!.primary, fallback: null } }, { "claude-code": offering("claude-opus-5-5") }, () => null)!);
 	assert.match(alone, /effort "medium"; no fallback — if it fails, ask the user\./);
 	// Primary unavailable: the fallback, disclosed, and the retry rule is not repeated.
-	const fallback = buildSpecWriterPrompt(routeWriter(WRITER, { "claude-code": { models: [{ id: "opus[1m]", efforts: ["low"] }] }, pi: piOffering("zai/glm-5.3") }, () => null)!);
-	assert.match(fallback, /→ backend "pi", model "zai\/glm-5\.3", effort "high"\. This is the configured FALLBACK: the primary \(backend "claude-code", model "opus\[1m\]", effort "medium"\) is unavailable — opus\[1m\] does not support effort "medium" \(supports: low\)\. Tell the user the first time you use it; do not retry the primary unless asked\./);
+	const fallback = buildSpecWriterPrompt(routeWriter(WRITER, { "claude-code": { models: [{ id: "claude-opus-5-5", efforts: ["low"] }] }, pi: piOffering("zai/glm-5.3") }, () => null)!);
+	assert.match(fallback, /→ backend "pi", model "zai\/glm-5\.3", effort "high"\. This is the configured FALLBACK: the primary \(backend "claude-code", model "claude-opus-5-5", effort "medium"\) is unavailable — claude-opus-5-5 does not support effort "medium" \(supports: low\)\. Tell the user the first time you use it; do not retry the primary unless asked\./);
 	assert.doesNotMatch(fallback, /retry once/);
 	// Neither can run (policy and discovery): rendered as Delegate renders a profile with no worker.
 	const none = buildSpecWriterPrompt(
-		routeWriter(WRITER, { "claude-code": offering("opus[1m]"), pi: piOffering("zai/glm-5.3") }, (c) => (c.backend === "claude-code" ? "Backend claude-code is disabled for subagents by user settings." : "zai/glm-5.3 is off for subagents.")) as NonNullable<ReturnType<typeof routeWriter>>,
+		routeWriter(WRITER, { "claude-code": offering("claude-opus-5-5"), pi: piOffering("zai/glm-5.3") }, (c) => (c.backend === "claude-code" ? "Backend claude-code is disabled for subagents by user settings." : "zai/glm-5.3 is off for subagents.")) as NonNullable<ReturnType<typeof routeWriter>>,
 	);
 	assert.match(none, /→ NO AVAILABLE WORKER \(Backend claude-code is disabled for subagents by user settings\.; zai\/glm-5\.3 is off for subagents\.\)\. Before handing off spec writing, tell the user and ask which model to use; do not choose one yourself\./);
 	assert.doesNotMatch(none, /retry once/);
@@ -796,7 +789,7 @@ test("spec writer: the paragraph names the exact worker, the drafts-only rule, a
 });
 
 test("status label: a spec writer off its primary is shown while spec is on", () => {
-	const fallback = routeWriter(WRITER, { "claude-code": { models: [{ id: "opus[1m]", efforts: ["low"] }] }, pi: piOffering("zai/glm-5.3") }, () => null);
+	const fallback = routeWriter(WRITER, { "claude-code": { models: [{ id: "claude-opus-5-5", efforts: ["low"] }] }, pi: piOffering("zai/glm-5.3") }, () => null);
 	const none = routeWriter(WRITER, {}, () => "denied");
 	const ok = routeWriter(WRITER, {}, () => null);
 	assert.deepEqual(statusLabel("normal", ALL_OK, false, ["spec"], fallback), { text: "normal · spec · writer:fallback", tone: "warning" });
@@ -817,8 +810,8 @@ test("DEFAULT_ROUTES: every default profile on its primary, unverified until pro
 test("status labels", () => {
 	const settings: DelegateSettings = delegateDefaults();
 	const askRoutine = routeAll(
-		{ ...settings, profiles: { ...settings.profiles, routine: { primary: { backend: "claude-code", model: "opus[1m]", effort: "max" }, fallback: null } } },
-		{ "claude-code": { models: [{ id: "claude-fable-5-1[1m]", efforts: ["low", "medium", "high"] }, { id: "opus[1m]", efforts: ["low", "medium", "high"] }] } },
+		{ ...settings, profiles: { ...settings.profiles, routine: { primary: { backend: "claude-code", model: "claude-opus-5-5", effort: "max" }, fallback: null } } },
+		{ "claude-code": { models: [{ id: "claude-fable-5-1", efforts: ["low", "medium", "high"] }, { id: "claude-opus-5-5", efforts: ["low", "medium", "high"] }] } },
 		() => null,
 	);
 	assert.deepEqual(statusLabel("normal", ALL_OK, false, []), { text: "normal", tone: "dim" });
@@ -1019,7 +1012,7 @@ test("MINOR_WORKER declares every minor mode, and nothing else: spec reaches wor
 
 test("composeWorkerPrompt: the spec block byte for byte, then the worker note; never delegate, align, the bridge or a writer", () => {
 	const discovery: Record<string, Discovery> = {};
-	const writer = routeWriter({ ...specDefaults(), writer: { primary: { backend: "claude-code", model: "sonnet", effort: "high" }, fallback: null } } as SpecSettings, discovery, () => null);
+	const writer = routeWriter({ ...specDefaults(), writer: { primary: { backend: "claude-code", model: "claude-sonnet-5-5", effort: "high" }, fallback: null } } as SpecSettings, discovery, () => null);
 	const everything = { mode: "delegate" as const, strict: true, minorModes: ["align", "spec", "vis"] as MinorMode[] };
 	// The parent's own block carries all of it: the worker's must carry none of it.
 	const parent = composePrompt(everything, DEFAULT_ROUTES, writer)!;
@@ -1057,12 +1050,13 @@ test("codemode: a minor mode with no prompt block, no mode note and no worker re
 	assert.ok(SCRIPT_ONLY_EXPOSURES.has("codemode") && SCRIPT_ONLY_EXPOSURES.has("deferred") && !SCRIPT_ONLY_EXPOSURES.has("direct") && !SCRIPT_ONLY_EXPOSURES.has("model-only"));
 });
 
-test("SPEC_WORKER_NOTE: the parent promotes, the brief is the go-ahead, and the reply ends on the Also changes line spec-mode.md names", () => {
+test("SPEC_WORKER_NOTE: the parent promotes, the brief is the go-ahead, and flags go in the final report", () => {
 	assert.match(SPEC_WORKER_NOTE, /parent session started you, and it promotes/);
 	assert.match(SPEC_WORKER_NOTE, /Do not promote, commit, or record `--commit` evidence unless your brief says to/);
 	assert.match(SPEC_WORKER_NOTE, /Your brief is your go-ahead/);
 	// The note leans on spec-mode.md's own wording; a rewrite there must revisit the note.
-	for (const phrase of ["`--commit`", "Also changes:", "draft", "promote"]) assert.ok(SPEC_INSTRUCTIONS.includes(phrase.replace(/`/g, "")) || SPEC_INSTRUCTIONS.includes(phrase), phrase);
+	for (const phrase of ["`--commit`", "Batch flags", "draft", "promote"]) assert.ok(SPEC_INSTRUCTIONS.includes(phrase.replace(/`/g, "")) || SPEC_INSTRUCTIONS.includes(phrase), phrase);
+	assert.ok(SPEC_WORKER_NOTE.endsWith("Put any flags as one question in your final report."), "no last line for a worker either");
 	assert.ok(!SPEC_INSTRUCTIONS.includes(SPEC_WORKER_NOTE), "spec-mode.md itself stays the parent's text");
 });
 
@@ -1101,7 +1095,7 @@ test("buildModeNote: whole guide on first turning on, a pointer after, a line fo
 	assert.match(parts[0], /^Mode change: the user turned the spec minor mode off\. Its instructions \(the "# Minor mode: spec" block in your system prompt\) no longer apply/);
 	assert.match(parts[1], /^the user turned the vis minor mode off\. .*given earlier in this conversation/);
 	assert.ok(parts[2].startsWith("the user turned the align minor mode on") && parts[2].endsWith(buildMinorPrompt("align")), "offs first, then ons");
-	const writer = routeWriter({ version: 1, writer: { primary: { backend: "claude-code", model: "opus[1m]", effort: "medium" }, fallback: null } }, {}, () => null)!;
+	const writer = routeWriter({ version: 1, writer: { primary: { backend: "claude-code", model: "claude-opus-5-5", effort: "medium" }, fallback: null } }, {}, () => null)!;
 	assert.ok(buildModeNote([], ["spec"], none, writer)!.text.endsWith(`${buildMinorPrompt("spec")}\n\n${buildSpecWriterPrompt(writer)}`), "spec carries its writer paragraph, as in the prompt");
 });
 
@@ -1128,7 +1122,7 @@ test("restoreHead: the newest recorded head, the newest note, and nothing across
 });
 
 test("buildModeNote in the worker form: spec turned on carries the worker note, never a writer", () => {
-	const writer = routeWriter({ version: 1, writer: { primary: { backend: "claude-code", model: "opus[1m]", effort: "medium" }, fallback: null } }, {}, () => null)!;
+	const writer = routeWriter({ version: 1, writer: { primary: { backend: "claude-code", model: "claude-opus-5-5", effort: "medium" }, fallback: null } }, {}, () => null)!;
 	const note = buildModeNote([], ["spec"], { head: [], guides: [] }, writer, true)!;
 	assert.ok(note.text.endsWith(`\n\n${composeWorkerPrompt({ minorModes: ["spec"] })}`), "the worker form of the block");
 	assert.doesNotMatch(note.text, /Spec writer:/);

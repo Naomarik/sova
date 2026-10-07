@@ -239,10 +239,22 @@ interface SessionState {
 	since: Map<string, SinceEntry>;
 }
 
+/**
+ * A model as both sides name it: `modelUsage` keys a 1M request `claude-opus-5-5[1m]` while its
+ * messages say `claude-opus-5-5`, so the residual compares them without the suffix (else every
+ * message of a `[1m]` turn would be counted again as residual).
+ */
+const modelKey = (model: string): string => model.replace(/\[1m\]$/i, "");
+const byModelKey = (c: ClaudeCumulative): ClaudeCumulative => {
+	const out: ClaudeCumulative = {};
+	for (const [model, t] of Object.entries(c)) addInto((out[modelKey(model)] ??= zeroTokens()), t);
+	return out;
+};
+
 /** Tokens per model of the messages recorded since the baseline. */
 const sinceSums = (since: Map<string, SinceEntry>): ClaudeCumulative => {
 	const out: ClaudeCumulative = {};
-	for (const e of since.values()) addInto((out[e.model] ??= zeroTokens()), e.tokens);
+	for (const e of since.values()) addInto((out[modelKey(e.model)] ??= zeroTokens()), e.tokens);
 	return out;
 };
 
@@ -327,8 +339,9 @@ export function createClaudeUsageCollector(options: ClaudeUsageOptions): ClaudeU
 		}
 		const at = now();
 		const since = sinceSums(s.since);
-		for (const [model, t] of Object.entries(cum)) {
-			const b = s.base[model] ?? zeroTokens();
+		const base = byModelKey(s.base);
+		for (const [model, t] of Object.entries(byModelKey(cum))) {
+			const b = base[model] ?? zeroTokens();
 			const r = since[model] ?? zeroTokens();
 			const tokens = zeroTokens();
 			for (const f of FIELDS) tokens[f] = Math.max(0, t[f] - b[f] - r[f]);

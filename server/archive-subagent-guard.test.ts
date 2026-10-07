@@ -4,9 +4,9 @@
 // Archiving closes a session's runtime and its subagents die with it, so the server refuses while
 // any are working — read from the live records at the moment of the request, never from the
 // browser's list. A record written with THIS process's pid is how a Sova-hosted runtime looks (the
-// sessions extension runs inside it); a sleeper's pid stands in for another live process.
+// sessions extension runs inside it); the runner that started this file
+// (process.ppid, alive for all of it) stands in for another live process.
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -25,9 +25,10 @@ const { addWebSession } = await import("./web-sessions");
 const { canonicalPath } = await import("./paths");
 const { readLiveRecords, workingSubagents, WORKING_FRESH_MS } = await import("./live");
 
-const sleeper = spawn("sleep", ["60"], { stdio: "ignore" });
+const otherPid = process.ppid;
+/** Above Linux's PID_MAX_LIMIT (2^22), so never a live process. */
+const DEAD_PID = 2 ** 22 + 1;
 after(() => {
-  sleeper.kill();
   rmSync(agentDir, { recursive: true, force: true });
 });
 afterEach(() => {
@@ -92,9 +93,7 @@ test("a stale heartbeat is ignored, a fresh one just inside the window is not", 
 
 test("a dead pid's record is ignored", async () => {
   const path = session("guard-dead");
-  const gone = spawn("true", { stdio: "ignore" });
-  await new Promise((res) => gone.on("exit", res));
-  live("other.json", gone.pid!, path, 4);
+  live("other.json", DEAD_PID, path, 4);
   assert.equal(workingSubagents(path), 0);
   const r = await archiveSession(path, true);
   assert.ok(r.ok);
@@ -111,7 +110,7 @@ test("a heartbeat far in the future is garbage, not fresh", () => {
 test("another live process hosting the session counts too, and only for its own file", async () => {
   const path = session("guard-other");
   const neighbour = session("guard-neighbour");
-  live("other.json", sleeper.pid!, path, 2);
+  live("other.json", otherPid, path, 2);
   assert.equal(workingSubagents(path), 2);
   assert.equal(workingSubagents(neighbour), 0);
   // Archive itself is refused already (a foreign live record reads as open in a TUI): refused, whichever reason.

@@ -26,6 +26,7 @@ import {
   serveTar,
   Spools,
   tarAvailable,
+  type TarRunner,
   TransferError,
 } from "./links-transfer";
 
@@ -79,6 +80,8 @@ export interface TransferDeps {
   now?(): number;
   /** Tests: the pull's idle and retry timings. */
   timings?: Partial<PullTimings>;
+  /** How tar runs for packs and pulls (default: `tar` on this host, probed once). Tests: in-process. */
+  tar?: TarRunner;
 }
 
 const open = (o: LinkOffer) => o.recipients.some((r) => !OFFER_FINAL.has(r.state));
@@ -103,10 +106,11 @@ export class LinkTransfers {
   configure(deps: TransferDeps): void {
     this.d = deps;
     this.byLink = null;
-    this.spools = new Spools({ root: deps.root, now: () => this.now() });
+    this.spools = new Spools({ root: deps.root, now: () => this.now(), ...(deps.tar ? { tar: deps.tar } : {}) });
     this.pulls = new Pulls({
       root: deps.root,
       now: () => this.now(),
+      ...(deps.tar ? { tar: deps.tar } : {}),
       ...(deps.timings ? { timings: deps.timings } : {}),
       fetchTar: (o) => deps.peerGet(o.senderNodeId, o.path, { headers: o.headers, signal: o.signal }),
     });
@@ -124,7 +128,7 @@ export class LinkTransfers {
   start(): void {
     if (!this.d || this.running) return;
     this.running = true;
-    void tarAvailable().then((ok) => (this.tar = ok));
+    void (this.d.tar ? Promise.resolve(true) : tarAvailable()).then((ok) => (this.tar = ok));
     for (const o of this.all()) {
       if (o.packing?.state === "packing") {
         // The pack list lives only in the process that listed it.

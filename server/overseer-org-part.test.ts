@@ -21,6 +21,8 @@ const po = await import("./project-overseer");
 const store = await import("./project-overseer-store");
 const decisions = await import("./decisions");
 const reconcile = await import("./reconcile");
+// The spec draft tool in-process (server/spec-tool-fake.ts; reconcile.integration.test.ts runs the real one).
+(await import("./spec-draft-writer")).setDraftToolForTest((await import("./spec-tool-fake")).fakeDraftTool());
 const { appendSendLog } = await import("./outreach/log");
 const { hostOf } = await import("./org-engine");
 const { disposeAllChats } = await import("./chat-manager");

@@ -1,35 +1,27 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { parseDefinition, type VerbResult } from "../../shared/project-contract";
 import { conformer } from "./conform";
-import { DetachedDriver } from "./drivers";
 import { ProjectEngine, type Caller } from "./engine";
+import { FakeHost } from "./fake-host";
 import { readRegistry, servicesRoot } from "./store";
 import { approve, defHashOf } from "./trust";
 
 /**
  * conform's no-leaks check (§app.project-services/conform) while something else happens on the same
  * state root: another instance's unit that appears mid-run (a session's up, the server's reconcile)
- * is never a leak; a unit or data dir that belongs to no registered instance still is.
+ * is never a leak; a unit or data dir that belongs to no registered instance still is. On a host in
+ * memory (fake-host.ts); conform-leaks.integration.test.ts finds a real orphan process.
  */
 
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-conform-leaks-agent-"));
 
 const op: Caller = { kind: "operator" };
-/** Below the kernel's ephemeral range (32768+), and free now: a random port there can be any outgoing socket's. */
-let BASE = 0;
-const isFree = (port: number) => new Promise<boolean>((done) => { const s = createServer(); s.once("error", () => done(false)); s.listen(port, "127.0.0.1", () => s.close(() => done(true))); });
-async function pickBase(): Promise<number> {
-  for (;;) {
-    const b = 20_000 + Math.floor(Math.random() * 12_000);
-    if ((await Promise.all([0, 1, 2, 3].map((o) => isFree(b + o)))).every(Boolean)) return b;
-  }
-}
+const BASE = 21_000;
 
 const def = () => ({
   version: 1,
@@ -45,7 +37,6 @@ let mainId = "";
 let midRun: (() => Promise<void>) | null = null;
 
 before(async () => {
-  BASE = await pickBase();
   parent = realpathSync(mkdtempSync(join(tmpdir(), "sova-conform-leaks-proj-")));
   project = join(parent, "demo");
   mkdirSync(join(project, ".sova"), { recursive: true });
@@ -57,7 +48,7 @@ before(async () => {
   git(["commit", "-q", "-m", "fixture"]);
   const hash = defHashOf(parseDefinition(readFileSync(join(project, ".sova/project.json"), "utf8")));
   approve(project, hash, hash);
-  engine = new ProjectEngine({ driver: new DetachedDriver(3_000), pollMs: 100 });
+  engine = new ProjectEngine(new FakeHost().deps());
   engine.conformer = conformer(engine);
   const real = engine.run.bind(engine);
   engine.run = async (verb, body, caller) => {

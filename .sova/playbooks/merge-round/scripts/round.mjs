@@ -199,6 +199,15 @@ export const median = (xs) => {
   const s = [...xs].sort((a, b) => a - b);
   return s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2;
 };
+/** Whether the package.json in `tree` has the script `name` (none, or unreadable: no). */
+export function hasScript(tree, name) {
+  try {
+    return typeof JSON.parse(readFileSync(join(tree, "package.json"), "utf8"))?.scripts?.[name] === "string";
+  } catch {
+    return false;
+  }
+}
+
 /** A step's timeout: the larger of its floor and twice the median of its earlier passing runs. */
 export const timeoutFor = (floorMs, passedMs = []) => Math.max(floorMs, Math.round(2 * median(passedMs)));
 
@@ -825,20 +834,26 @@ class Round {
     };
     const tc = await step("typecheck", "typecheck", "typecheck", this.pnpm, ["run", "typecheck"], tree);
     if (tc.code !== 0) needs.push(tc.timedOut ? "typecheck timed out" : "typecheck fails");
-    const t = await step("test", "test", "pnpm test", this.pnpm, ["test"], tree);
-    if (t.timedOut) needs.push("pnpm test timed out");
-    else if (t.code !== 0) {
-      const files = failingTestFiles(`${t.stdout}\n${t.stderr}`, tree);
-      if (!files.length) needs.push("pnpm test fails (no failing file named; see the log)");
-      else {
-        const verdicts = await this.onMaster(files, master, env, st);
-        for (const [file, v] of Object.entries(verdicts)) {
-          if (v === "pre-existing") preexisting.push(file);
-          else needs.push(v === "new" ? `new test failure: ${file}` : `test failure in ${file} (${v})`);
+    // The unit tier, then the integration tier (each its own timings, the same floor and rules).
+    const suite = async (key, label, args) => {
+      const t = await step(key, "test", label, this.pnpm, args, tree);
+      if (t.timedOut) needs.push(`${label} timed out`);
+      else if (t.code !== 0) {
+        const files = failingTestFiles(`${t.stdout}\n${t.stderr}`, tree);
+        if (!files.length) needs.push(`${label} fails (no failing file named; see the log)`);
+        else {
+          const verdicts = await this.onMaster(files, master, env, st);
+          for (const [file, v] of Object.entries(verdicts)) {
+            if (v === "pre-existing") preexisting.push(file);
+            else needs.push(v === "new" ? `new test failure: ${file}` : `test failure in ${file} (${v})`);
+          }
+          lines.push(`  failing files: ${files.map((x) => `${x} (${verdicts[x]})`).join(", ")}.`);
         }
-        lines.push(`  failing files: ${files.map((x) => `${x} (${verdicts[x]})`).join(", ")}.`);
       }
-    }
+    };
+    await suite("test", "pnpm test", ["test"]);
+    if (hasScript(tree, "test:int")) await suite("test-int", "pnpm test:int", ["test:int"]);
+    else lines.push("pnpm test:int: skipped (this tree's package.json has no test:int script).");
     // Extension suites at the branch's own lowered priority (scripts/nice.mjs, as pnpm test runs);
     // a tree without it runs them unchanged.
     const nice = join(tree, "scripts", "nice.mjs");
@@ -883,7 +898,7 @@ class Round {
       const b = await step("build", "build", "build", this.pnpm, ["run", "build"], tree);
       if (b.code !== 0) needs.push(b.timedOut ? "build timed out" : "build fails");
     } else lines.push("build: skipped (the typecheck failed).");
-    lines.push(...(await this.specChecks(tree, needs)));
+    lines.push(...(await this.specChecks(tree)));
     // What landing would publish, scanned now: a scrubbed or leaky commit is caught before it lands.
     const scan = await this.leakScanTo(head);
     lines.push(...scan.lines);
@@ -924,19 +939,19 @@ class Round {
     return out;
   }
 
-  async specChecks(tree, needs) {
+  /** The spec check, census and each draft's status, printed for the captain; none of it holds a branch. */
+  async specChecks(tree) {
     if (!existsSync(join(tree, MANIFEST))) return ["spec: none in this project."];
     const tool = (file, args) => run(process.execPath, [join(this.specCore, file), ...args, "--root", tree, "--json"], { cwd: tree, timeoutMs: 120_000 });
-    if (!existsSync(join(this.specCore, "sova-spec.mjs"))) { needs.push("spec tools not found"); return ["spec: the spec tools aren't installed, so the spec can't be checked."]; }
+    if (!existsSync(join(this.specCore, "sova-spec.mjs"))) return ["spec: the spec tools aren't installed, so the spec can't be checked."];
     const lines = [];
     const c = await tool("sova-spec.mjs", ["check"]);
     lines.push(`spec check: ${c.code === 0 ? "ok" : c.code === 1 ? "warnings" : "ERRORS"}.`);
-    if (c.code !== 0 && c.code !== 1) needs.push("spec check fails");
     const census = await tool("sova-spec.mjs", ["census", "--changed", "--base", "master"]);
     let unclaimed = null;
     try { unclaimed = JSON.parse(census.stdout).census?.unclaimed ?? null; } catch {}
-    if (census.code === 2 || !Array.isArray(unclaimed)) { needs.push("spec census couldn't run"); lines.push("spec census: couldn't run."); }
-    else if (unclaimed.length) { needs.push(`${unclaimed.length} changed file${unclaimed.length === 1 ? "" : "s"} no claim maps`); lines.push(`spec census: ${unclaimed.length} unclaimed (${unclaimed.slice(0, 3).join(", ")}).`); }
+    if (census.code === 2 || !Array.isArray(unclaimed)) lines.push("spec census: couldn't run.");
+    else if (unclaimed.length) lines.push(`spec census: ${unclaimed.length} unclaimed (${unclaimed.slice(0, 3).join(", ")}).`);
     else lines.push("spec census: clean.");
     let drafts = [];
     try { drafts = readdirSync(join(tree, ".sova", "spec", "drafts"), { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name); } catch {}
@@ -947,8 +962,8 @@ class Round {
         const j = JSON.parse(s.stdout);
         if (Array.isArray(j.ids)) pending = j.ids.filter((x) => x?.current !== "already-current").map((x) => x?.id ?? "?");
       } catch {}
-      if (pending === null) { needs.push(`draft ${name}: status unreadable`); lines.push(`draft ${name}: status unreadable.`); }
-      else if (pending.length) { needs.push(`draft ${name}: ${pending.length} record${pending.length === 1 ? "" : "s"} not promoted`); lines.push(`draft ${name}: not promoted: ${pending.slice(0, 4).join(", ")}.`); }
+      if (pending === null) lines.push(`draft ${name}: status unreadable.`);
+      else if (pending.length) lines.push(`draft ${name}: not promoted: ${pending.slice(0, 4).join(", ")}.`);
       else lines.push(`draft ${name}: promoted.`);
     }
     return lines;

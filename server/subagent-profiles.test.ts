@@ -25,7 +25,7 @@ const agentDir = () => {
 
 const EMPTY: ModelPolicy = { disabledProviders: [], disabledModels: [], subagentDisabledProviders: [], subagentDisabledModels: [] };
 const claudeModels: ClaudeModel[] = [
-  { id: "opus[1m]", name: "Opus", efforts: ["low", "medium", "high", "xhigh", "max"] },
+  { id: "claude-opus-5-5", name: "Opus", efforts: ["low", "medium", "high", "xhigh", "max"] },
 ];
 const piModels = [{ ref: "zai/glm-5.3", id: "glm-5.3", provider: "zai", thinkingLevels: ["off", "minimal", "low", "medium", "high"] }];
 const sources = (over: Partial<DelegateSources> = {}): DelegateSources => ({
@@ -88,7 +88,7 @@ test("save validation: every slot is checked — a disabled coordinator's tuple 
   const lib = JSON.parse(readFileSync(subagentProfilesPath(d), "utf8"));
   lib.profiles[0].teams = {
     coordinator: { enabled: false, role: "coordinator", primary: { backend: "pi", model: "zai/gone", effort: "low" }, fallback: null, instructions: "" },
-    monitor: { enabled: false, role: "monitor", primary: { backend: "claude-code", model: "opus[1m]", effort: "medium" }, fallback: null, contextPct: 60, everyMinutes: 10, usage: { enabled: true, pausePct: 90, resumeMarginMinutes: 5 }, instructions: "" },
+    monitor: { enabled: false, role: "monitor", primary: { backend: "claude-code", model: "claude-opus-5-5", effort: "medium" }, fallback: null, contextPct: 60, everyMinutes: 10, usage: { enabled: true, pausePct: 90, resumeMarginMinutes: 5 }, instructions: "" },
     handover: { retireTimeoutMinutes: 10 },
   };
   const refused = await saveSubagentProfiles(lib, sources(), d);

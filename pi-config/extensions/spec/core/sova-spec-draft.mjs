@@ -1098,7 +1098,7 @@ function landingOf(root, g, a, bases) {
 }
 
 // The foreign § a promotion of `ids` changes: each one current already has, and each current H1 that gains a new H2,
-// never the task's own claims (`own`: absent at every own base). This, not memory, is what the reply's "Also changes:" line names.
+// never the task's own claims (`own`: absent at every own base). This, not memory, is what a flag names.
 function alsoChanges(a, ids, own = () => false) {
   const inCur = (id) => recOf(a.cur, id) !== undefined && !own(id), dirKinds = a.prop.manifest?.grammar?.directoryKinds ?? ["section"];
   const kinds = new Map(), mark = (id, k) => kinds.set(id, [...(kinds.get(id) ?? []), k]);
@@ -1343,7 +1343,7 @@ function human(out) {
     for (const t of out.targets) L.push(`  ${t.action.padEnd(7)} ${SPEC}/${t.path}`);
     for (const r of out.refusals ?? []) L.push(`  refused ${r.code}: ${r.message}`);
     for (const w of out.driftWarnings ?? []) L.push(`  warn drift: ${w}`);
-    if (out.alsoChanges) L.push(`Also changes must name: ${out.alsoChanges.join(", ") || "none"} (foreign § this promotion changes)`);
+    if (out.alsoChanges) L.push(`Foreign § this promotion changes: ${out.alsoChanges.join(", ") || "none"}`);
     if (!out.written && !(out.refusals ?? []).length) L.push(`plan ${out.plan} — write with: promote ${out.name} … --plan ${out.plan} --write`);
   }
   if (out.command === "merge-manifest" && out.mode) L.push(`merge-manifest (${out.mode}): ${out.conflicts.length ? `${out.conflicts.length} conflict(s): ${out.conflicts.map((c) => `${c.kind} ${c.key}`).join(", ")}` : `${out.fromTheirs.length} key(s) from theirs`} ${out.written ? "(written)" : "(nothing written)"}`);

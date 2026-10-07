@@ -296,7 +296,7 @@ test("a claude-code worker resumes by session id through its backend; not loaded
 	const resumed = await m.call("agent_resume", { id: "ag_04" });
 	assert.ok(!resumed?.isError, "the resume reports success");
 	assert.deepEqual(created[0].resume, { sessionId: id, startedAt: restoredStart }, "the restored entry's start travels with the resume");
-	assert.deepEqual([created[0].model, created[0].systemPrompt, created[0].permissionMode], ["sonnet", "be terse", "acceptEdits"]);
+	assert.deepEqual([created[0].model, created[0].systemPrompt, created[0].permissionMode], ["claude-sonnet-5-5", "be terse", "acceptEdits"], "an old spawn id resumes as its catalog id");
 	await m.shutdown();
 });
 
@@ -397,7 +397,7 @@ test("a restored and then resumed Claude worker shows the model it ran under, un
 	assert.equal(m.snapshot().workers[0].model, "claude-haiku-4-5-20251001", "restored: not the spawn alias");
 	await m.call("agent_resume", { id: "ag_05" });
 	assert.equal(worker.model, "claude-haiku-4-5-20251001", "resumed: the same label before its first turn");
-	assert.equal(launchedWith, "haiku", "the CLI is still launched with the spawn model");
+	assert.equal(launchedWith, "claude-haiku-4-5", "the CLI is launched with the spawn model's catalog id");
 	await m.shutdown();
 });
 

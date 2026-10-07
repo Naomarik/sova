@@ -1,7 +1,6 @@
 // Run: npx tsx --test server/sessions-workers.test.ts
 // Uses a throwaway PI_CODING_AGENT_DIR in the OS temp dir; ~/.pi is never read or written.
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -17,9 +16,9 @@ mkdirSync(liveDir, { recursive: true });
 const { getSessionSummary, listSessions } = await import("./sessions-index");
 const { canonicalPath } = await import("./paths");
 
-const sleeper = spawn("sleep", ["60"], { stdio: "ignore" });
+// The runner that started this file, alive for all of it, stands in for another live process.
+const otherPid = process.ppid;
 after(() => {
-  sleeper.kill();
   rmSync(agentDir, { recursive: true, force: true });
 });
 
@@ -61,9 +60,9 @@ test("web session: workers come from this server's own live record while live st
 
 test("TUI session: workers mirror live.workers", async () => {
   const tui = session("tui-workers");
-  liveRecord(`p${sleeper.pid}-bbbbbbbb`, tui, sleeper.pid!, "tui", 1, 4);
+  liveRecord(`p${otherPid}-bbbbbbbb`, tui, otherPid, "tui", 1, 4);
   const s = await getSessionSummary(tui);
-  assert.equal(s?.live?.pid, sleeper.pid);
+  assert.equal(s?.live?.pid, otherPid);
   assert.deepEqual(s?.live?.workers, { working: 1, total: 4 });
   assert.deepEqual(s?.workers, { working: 1, total: 4 });
 });

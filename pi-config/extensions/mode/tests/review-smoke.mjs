@@ -98,13 +98,13 @@ const route = (model) => ({ primary: { backend: "pi", model: "fake/sol", effort:
 const profile = (id, reviewer) => ({
 	id,
 	name: id,
-	delegate: Object.fromEntries(["planning", "investigation", "routine", "complex"].map((k) => [k, { primary: { backend: "claude-code", model: "opus[1m]", effort: "high" }, fallback: null }])),
+	delegate: Object.fromEntries(["planning", "investigation", "routine", "complex"].map((k) => [k, { primary: { backend: "claude-code", model: "claude-opus-5-5", effort: "high" }, fallback: null }])),
 	teams: null,
 	members: null,
 	specWriter: null,
 	...(reviewer === undefined ? {} : { reviewer }),
 });
-writeFileSync(path.join(agentDir, "subagent-profiles.json"), JSON.stringify({ version: 1, profiles: [profile("with-reviewer", route("opus[1m]")), profile("none", null), profile("old", undefined)] }));
+writeFileSync(path.join(agentDir, "subagent-profiles.json"), JSON.stringify({ version: 1, profiles: [profile("with-reviewer", route("claude-opus-5-5")), profile("none", null), profile("old", undefined)] }));
 writeFileSync(path.join(agentDir, "subagent-profiles-default.json"), JSON.stringify({ version: 1, default: "with-reviewer" }));
 {
 	const on = makeHost({ [REVIEW_FLAG]: true });
@@ -144,7 +144,7 @@ writeFileSync(path.join(agentDir, "subagent-profiles-default.json"), JSON.string
 	const started = await exec({ ops: [{ op: "review", phase: "plan", state: "running", reason: "persistence format" }] });
 	assert.equal(started.details.doc.review.plan.model, "pi · fake/sol · high");
 	assert.match(started.content[0].text, /backend "pi", model "fake\/sol", effort "high", tools \["read","grep","find","ls"\]/);
-	assert.match(started.content[0].text, /retry once with backend "claude-code", model "opus\[1m\]"/);
+	assert.match(started.content[0].text, /retry once with backend "claude-code", model "claude-opus-5-5"/);
 	await assert.rejects(exec({ ops: [{ op: "status", to: "implementing" }] }), /plan review is running/);
 	await exec({ ops: [{ op: "add", findings: ["Review (plan, fake/sol): the reload path loses the tail"] }, { op: "review", phase: "plan", state: "clear", reason: "1 constraint added" }] });
 	await assert.rejects(exec({ ops: [{ op: "review", phase: "plan", state: "running", reason: "again" }] }), /no second round/);

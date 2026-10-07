@@ -3,8 +3,8 @@
 
 The spec tools preserve declared requirements, keep proposed changes separate, and report what
 was checked against particular inputs. Their checks establish structure and applicability, not
-semantic correctness. The minor mode adds task reminders and change accounting; response wording
-is not proof that implementation and requirements agree.
+semantic correctness. The minor mode adds task reminders and the census note, and never holds
+a turn's end; response wording is not proof that implementation and requirements agree.
 
 Complete graph queries remain available to machine consumers. Bounded packets deliver exact
 requirements within an explicit whole-response budget, with continuation and unknowns kept visible.
@@ -55,7 +55,7 @@ assessments even when candidate identities and reasons stay unchanged.
 
 No session, pi worker, worktree-configured worker or Claude Code worker hook runs an assessment
 capture, records a task baseline or writes an assessment receipt by itself: not when a task starts,
-after any tool call, when a run settles or when a session reopens, with spec on or off. Sessions and
+after any tool call, when a turn ends or when a session reopens, with spec on or off. Sessions and
 workers have no assessment tool. An assessment is an explicit companion CLI operation that an
 operator or agent asks for: `prepare` against a declared known base revision, then `record` and
 `status`. Its receipt names that declared base, never a claimed task start. Nothing captures a
@@ -108,17 +108,22 @@ the playbook's own method appear there only as proposed diffs, never applied by 
 
 ## §tools.spec/census-note — The `[spec census]` note stays short
 
-After a tool call that brings new changed files, the `[spec census]` note says what the census
-found: its header counts, a `New:` line for the new files, a note for each new file outside the
-boundary that no claim maps, and the foreign § newly touched. In `New:` each file names at most 3 of
-the § that map it, then `(+N more)`; a file no claim maps still reads `unclaimed`. The fixed `Rule:`
-line and the `No draft yet` line are printed once in a session per work tree, on the first note that
-has them, in both pi and Claude Code workers. Returning to a work tree retains its census state.
-Each `New claims under a foreign §` pair (`id → parent`) is printed once, on the same terms: a later note
-lists only pairs not printed before, still at most 12 with `(+N more)`, so pairs held back by the
-cap come in a later note, and the line is left out when there is none. Apart from the skipped tools
-below, the note fires in exactly the cases it did before, and the census still counts every foreign
-§ it saw, printed or not, so the end-of-turn check accepts any of them.
+After a tool call that brings new changed files, and only then, the `[spec census]` note says what
+the census found, the same in pi sessions, pi workers and Claude Code workers:
+
+- a header, "N changed file(s) in the boundary, M unclaimed", followed by "; K mapped outside the
+  boundary" when K is above 0; it gives no foreign count;
+- `No draft yet`, printed once in a session per work tree, on the first note that has it;
+- `New: <file> → §a, §b, §c (+N more)` for the new files: at most 3 § per file and at most 8 files;
+  a file no claim maps still reads `unclaimed`;
+- one line for the new files outside the boundary that no claim maps: "Outside the boundary, no
+  claim maps: a, b (+N more): spec any whose change a user sees";
+- the write guard, orphaned-evidence, manifest-conflict and promote drift notes, when they apply.
+
+It has no `Foreign §:` line, no `Rule:` line and no `New claims under a foreign §` pairs, and a newly
+touched foreign § alone never fires it. Returning to a work tree retains its census state. When the
+census can't run, the model gets one line, "[spec census] incomplete: <why>; run census by hand",
+once per cause per work tree until a census there succeeds again; there is no toast.
 
 The census is skipped after a tool that cannot write the repository, by an explicit list of tool
 names: in pi, read, grep, find, ls, align, agent_list, agent_models, agent_transcript, agent_wait,
@@ -139,14 +144,31 @@ read with `read`. `packet` and `scope` stay listed for whole-chain machine inspe
 reading step. Every command the guide spells is one the shipped tools parse, with the flags the
 guide pairs with it.
 
-The guide's promotion lines agree with the draft tool: a conflict is per declaration
-(§tools.spec/span-promotion), and doc-only evidence covers notes, sections, agreed records without
-code (§tools.spec/agreed-promotion) and a change to `embeds`, `about` or `core` alone
-(§tools.spec/field-promotion); a test drives the draft tool's doc-only rule, so the guide fails its
-test when that rule gains a case the guide doesn't name or drops one it does. The exemption from drafts is decided from passages read, and the
-census note's `No draft yet` line says the same. A worker's spec brief lists `toc`, `read` and
+The guide's promotion lines agree with the draft tool: doc-only evidence covers notes, sections,
+agreed records without code (§tools.spec/agreed-promotion) and a change to `embeds`, `about` or
+`core` alone (§tools.spec/field-promotion); a test drives the draft tool's doc-only rule, so the
+guide fails its test when that rule gains a case the guide doesn't name or drops one it does. For a
+`manifest.json` conflict it sends the agent to the census note. The exemption from drafts is decided from passages read, and the
+census note's `No draft yet` line says the same. While coding, the guide relies on the census note
+(§tools.spec/census-note), with no rule of one file per edit and no census run by hand; one
+`census --changed` runs before finishing. A worker's spec brief lists `toc`, `read` and
 `impact --near` among its read-only commands. The guide rides every turn, so a test caps its word
 count a few words above its length, and growing it is a deliberate change.
+
+## §tools.spec/no-turn-end-check — A turn ends when the model stops
+
+Replies carry no spec lines: no `Also changes:`, `Plumbing:`, `Deferred:` or `Spec check
+override:` line is asked for or checked. A turn with spec on ends when the model stops, as one
+with spec off does: nothing re-prompts it, and no warning, toast, hidden note, session record or
+card about the turn's spec changes is added, in a pi session, a pi worker or a Claude Code worker.
+A worker writes no spec ledger, and its parent reads none. A Claude Code worker started before
+this change that still calls the hook's `stop` step or passes `--ledger` gets nothing: the hook
+prints nothing and exits 0. A change that also changes a foreign § (one that existed before the
+task started) is asked about in the plan as "This also changes §X: <what>. OK?"; a session or
+worker that can't ask says it in its reply or report. Spec mode stands alone: its guide, notes and
+tools never rely on the merge round or a merge captain, and a session promotes its own drafts.
+In the web app, an older reply shows any closing lines it was written with, as written, and an
+older session's spec-turn records draw nothing.
 
 ## §tools.spec/promotion-integrity — Publication and its receipt recover together
 
@@ -220,16 +242,6 @@ before incumbent contents are read. Log paths receive the same ancestor-symlink 
 evidence. Git-backed inspection must not execute configured clean/process filters; unsupported
 configurations are explicitly refused rather than weakening the read-only contract. Partial or
 unreadable draft inventories remain explicitly incomplete, not an exact empty result.
-
-## §tools.spec/runtime-accounting — Change obligations survive correction
-
-The parent retains worker and interrupted-run operations throughout corrective continuations;
-consumption for later turns happens only after the run is settled. Worktree-configured workers
-write the same parent ledger as dedicated workers. Worker accounting covers a shell call's
-explicit other-worktree destination. An incomplete check is reported as incomplete. A mapped
-claim may be truthfully named after an ordinary code edit, without being rejected merely because
-its prose was unchanged. Writer routing changes reach sessions whose spec mode was enabled by a
-note, not only sessions whose original prompt already contained spec.
 
 ## §tools.spec/context-packets — Exact context within a whole-response budget
 

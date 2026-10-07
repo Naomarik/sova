@@ -1,65 +1,59 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { connect, createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { parseDefinition } from "../../shared/project-contract";
 import { conformer } from "./conform";
-import { DetachedDriver } from "./drivers";
+import { FakeHost, ownPorts } from "./fake-host";
 import { ProjectEngine, type Caller } from "./engine";
 import { readRegistry } from "./store";
 import { approve, defHashOf } from "./trust";
-import { reservePorts } from "../test-ports";
 
 /**
  * A service's second port opening after the one its readiness asks (MotorSaif's nREPL a few seconds
  * after its HTTP server; §app.project-services/contract, /up, /conform): up waits for every declared
  * port within the ready timeout, conform's ports-owned too; a port that never opens fails not-ready by
- * name, and one a foreign process takes meanwhile fails port-held at once.
+ * name, and one a foreign process takes meanwhile fails port-held at once. On a host in memory
+ * (fake-host.ts) whose clock the waits step; ports-grace.integration.test.ts runs real services.
  */
 
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-ports-grace-agent-"));
 
 const op: Caller = { kind: "operator" };
 const LATE_MS = 1_000;
-const listens = (port: number) => new Promise<boolean>((done) => { const s = connect(port, "127.0.0.1"); s.once("connect", () => (s.destroy(), done(true))); s.once("error", () => done(false)); });
+const base = 21_000;
+const FOREIGN = { pid: 4_242, cwd: "/elsewhere" };
 
-// HTTP at once; the second port after LATE (never, for LATE < 0); a refused listen is ignored, so a foreign holder stays foreign.
-const SERVER = `
-import { createServer } from "node:http";
-import { createServer as tcp } from "node:net";
-const [httpPort, slowPort, late] = [process.env.HTTP, process.env.SLOW, process.env.LATE].map(Number);
-createServer((q, r) => r.end("ok")).listen(httpPort, "127.0.0.1", () => console.log("http up"));
-if (late >= 0) setTimeout(() => tcp((s) => s.end()).on("error", () => console.log("slow port taken")).listen(slowPort, "127.0.0.1", () => console.log("slow up")), late);
-`;
-
-let base = 0;
 let parent = "";
 let project = "";
+let host: FakeHost;
 let engine: ProjectEngine;
-const svc = (name: string, at: number, late: number, timeout: number, onDemand: boolean) => ({
+/** The main checkout's instance (down names an instance, never a project). */
+const mainId = () => readRegistry().instances.find((i) => i.project === project && i.slot === 0)!.id;
+const svc = (at: number, timeout: number, onDemand: boolean) => ({
   cmd: ["node", "server.mjs"],
-  env: { HTTP: `\${ports.${name}.http}`, SLOW: `\${ports.${name}.nrepl}`, LATE: String(late) },
   ports: { http: { base: at, stride: 2 }, nrepl: { base: at + 1, stride: 2 } },
   ready: { http: "http", timeout },
   ...(onDemand ? { start: "on-demand" } : {}),
 });
+/** Per service: whether its nREPL port opens LATE_MS after the start (web), never (stuck), or is left to the test (racy). */
+const LATE: Record<string, number | null> = { web: LATE_MS, stuck: null, racy: null };
 
-before(async () => {
-  base = await reservePorts(40);
+before(() => {
   parent = realpathSync(mkdtempSync(join(tmpdir(), "sova-ports-grace-proj-")));
   project = join(parent, "demo");
   mkdirSync(join(project, ".sova"), { recursive: true });
-  writeFileSync(join(project, "server.mjs"), SERVER);
+  writeFileSync(join(project, "server.mjs"), "");
   const d = {
     version: 1,
     slots: { cap: 2 },
     services: {
-      web: svc("web", base, LATE_MS, 20, false),
-      stuck: svc("stuck", base + 10, -1, 3, true),
-      racy: svc("racy", base + 20, 4_000, 20, true),
+      web: svc(base, 20, false),
+      stuck: svc(base + 10, 3, true),
+      // The ready timeout is long: waiting it out would end not-ready, so port-held proves it never waited.
+      racy: svc(base + 20, 60, true),
     },
   };
   writeFileSync(join(project, ".sova", "project.json"), JSON.stringify(d, null, 2));
@@ -69,23 +63,33 @@ before(async () => {
   git(["init", "-q", "-b", "main"]);
   git(["add", "-A"]);
   git(["commit", "-q", "-m", "fixture"]);
-  engine = new ProjectEngine({ driver: new DetachedDriver(3_000), pollMs: 100 });
+  host = new FakeHost();
+  // HTTP at once; the second port as LATE says.
+  host.driver.behave = (spec) => {
+    const [http, nrepl] = [Number(spec.env.SOVA_PORT_HTTP), Number(spec.env.SOVA_PORT_NREPL)];
+    const late = LATE[spec.unit.split("-").at(-1)!];
+    assert.deepEqual(ownPorts(spec).sort(), [http, nrepl].sort());
+    return { ports: [http], late: late === null ? [] : [{ port: nrepl, ms: late! }] };
+  };
+  engine = new ProjectEngine(host.deps());
   engine.conformer = conformer(engine);
 });
 
-after(async () => {
-  for (const i of readRegistry().instances) await engine.run(i.slot === 0 ? "down" : "teardown", { instance: i.id }, op);
+after(() => {
   rmSync(parent, { recursive: true, force: true });
   rmSync(process.env.PI_CODING_AGENT_DIR!, { recursive: true, force: true });
 });
 
 test("up waits for a port that opens after the probed one: once up answers ready, the late port listens", async () => {
-  const t0 = Date.now();
+  const t0 = host.clock.now();
   const r = await engine.run("up", { project }, op);
   assert.equal(r.ok, true, r.error?.message);
-  assert.equal(await listens(base + 1), true, "the late nREPL port listens when up says ready");
-  assert.ok(Date.now() - t0 >= LATE_MS - 200, "up waited for it");
-  await engine.run("down", { project, confirm: true }, op);
+  assert.notEqual(host.portOwner(base + 1), "none", "the late nREPL port listens when up says ready");
+  assert.ok(host.clock.now() - t0 >= LATE_MS, "up waited for it");
+  assert.ok(host.clock.now() - t0 < 20_000, "and no longer than the port took, never the ready timeout");
+  const dn = await engine.run("down", { instance: r.instance }, op);
+  assert.equal(dn.ok, true, dn.error?.message);
+  assert.equal(host.portOwner(base + 1), "none");
 });
 
 test("conform's ports-owned waits for the late port within the ready timeout, and passes", async () => {
@@ -95,27 +99,29 @@ test("conform's ports-owned waits for the late port within the ready timeout, an
 });
 
 test("a port that never opens fails not-ready by name at the ready timeout", async () => {
+  const t0 = host.clock.now();
   const r = await engine.run("up", { project, services: ["stuck"] }, op);
   assert.equal(r.error?.code, "not-ready");
   assert.match(r.error!.message, /answered, but nothing listens on stuck\.nrepl \(\d+\)/);
-  await engine.run("down", { project, services: ["stuck"], confirm: true }, op);
+  assert.ok(host.clock.now() - t0 >= 3_000, "at the ready timeout, not before");
+  await engine.run("down", { instance: mainId(), services: ["stuck"] }, op);
 });
 
 test("a port a foreign process takes while the service is coming up fails port-held at once, never waits out the timeout", async () => {
-  let foreign: Server | null = null;
-  const t0 = Date.now();
-  const up = engine.run("up", { project, services: ["racy"] }, op);
-  // Past the start's own port check: racy's HTTP port listens; then something else takes its late port.
-  while (!(await listens(base + 20))) await new Promise((r) => setTimeout(r, 50));
-  foreign = createServer((s) => s.end());
-  await new Promise<void>((ok) => foreign!.listen(base + 21, "127.0.0.1", () => ok()));
+  // Past the start's own port check: racy's HTTP answers; then something else takes its late port.
+  host.httpOk = (port) => {
+    if (port === base + 20) host.listen(base + 21, FOREIGN.pid, FOREIGN.cwd);
+    return true;
+  };
   try {
-    const r = await up;
+    const r = await engine.run("up", { project, services: ["racy"] }, op);
     assert.equal(r.error?.code, "port-held", r.error?.message);
-    assert.match(r.error!.message, /racy\.nrepl needs port \d+, which .* holds/);
-    assert.ok(Date.now() - t0 < 10_000, "failed at once, not at the 20 s timeout");
+    assert.match(r.error!.message, /racy\.nrepl needs port \d+, which pid 4242 \(\/elsewhere\) holds/);
+    assert.deepEqual(host.listeners.get(base + 21), FOREIGN, "the holder is never touched");
   } finally {
-    await new Promise((ok) => foreign!.close(() => ok(null)));
-    await engine.run("down", { project, services: ["racy"], confirm: true }, op);
+    host.httpOk = () => true;
+    host.close(base + 21);
+    await engine.run("down", { instance: mainId(), services: ["racy"] }, op);
   }
+  assert.equal(readRegistry().instances.filter((i) => i.slot !== 0).length, 0, "conform left nothing");
 });

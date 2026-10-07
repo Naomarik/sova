@@ -76,7 +76,7 @@ export class FakeDriver implements Driver {
     if (old?.pid) return;
     const b = this.behave(spec);
     const pid = ++this.nextPid;
-    const u: Unit = { spec, pid, logs: [...(old?.logs ?? []), ...(b.logs ?? [])], late: [], signals: [] };
+    const u: Unit = { spec, pid, logs: [...(old?.logs ?? []), `started: ${spec.argv.join(" ")}`, ...(b.logs ?? [])], late: [], signals: [] };
     this.units_.set(spec.unit, u);
     if (b.exit !== undefined) {
       u.pid = null;

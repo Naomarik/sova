@@ -1,6 +1,7 @@
 // Run: pnpm exec tsx --test server/baton-offers.test.ts. Slice 2 of §app/baton and
 // §app/organizations: offers and leases, referrals, the wrap-up's writer, spawn-for-person, events.
-// A throwaway PI_CODING_AGENT_DIR and workspace in the OS temp dir; no model is called.
+// A throwaway PI_CODING_AGENT_DIR and workspace in the OS temp dir; no model is called. The cases
+// on a real share listener are baton-offers.integration.test.ts.
 import assert from "node:assert/strict";
 import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -612,59 +613,11 @@ describe("createBaton without a link (in-process callers)", () => {
   });
 });
 
+// The share route's and the share WebSocket's regressions run on a real listener: baton-offers.integration.test.ts.
 describe("regressions from the slice-2 verification", async () => {
-  const { createShareServer } = await import("./share/listener");
   const { disposeAllChats } = await import("./chat-manager");
-  const { default: WebSocket } = await import("ws");
-  const server = createShareServer();
-  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
-  const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   after(async () => {
-    server.close();
-    server.closeAllConnections();
     await disposeAllChats();
-  });
-  const post = (token: string, text: string) => fetch(`${base}/api/h/${token}/message`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
-
-  test("N first messages at once on the share route: exactly one is accepted, the rest are 'taken'", async () => {
-    const people = [tony, maria, carlos];
-    const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: people.map((p) => p.id), publicTitle: "Race", goal: "g" });
-    const res = await Promise.all(c.links!.map((l) => post(l.token, `me first, ${l.personId}`)));
-    const bodies = await Promise.all(res.map((r) => r.json() as Promise<{ code?: string }>));
-    const accepted = res.filter((r) => r.status === 202);
-    assert.equal(accepted.length, 1, `statuses ${res.map((r) => r.status).join(",")}`);
-    assert.deepEqual(bodies.filter((_, i) => res[i]!.status !== 202).map((b) => b.code), ["taken", "taken"]);
-    const row = baton.batonById(c.sessionId)!.row;
-    assert.equal(row.budget.messagesUsed, 1);
-    assert.ok(people.some((p) => p.id === row.holder));
-  });
-
-  test("the share WebSocket writes nothing while taken; after the lease lapses a view that may write is pushed", async () => {
-    // A one-second lease (hermetic tests only): the statechart's own timer lapses it.
-    process.env.SOVA_BATON_LEASE_MS = "1000";
-    const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: [tony.id, maria.id], publicTitle: "WS", goal: "g" }).finally(() => delete process.env.SOVA_BATON_LEASE_MS);
-    const mariaTok = c.links!.find((l) => l.personId === maria.id)!.token;
-    baton.noteMessage(c.sessionId, tony.id); // Tony holds a live lease
-    await replyEnded(c.sessionId); // the reply to him ended: a lease lapses only between replies
-    const views: { canWrite: boolean; reason?: string }[] = [];
-    const ws = new WebSocket(`${base.replace("http", "ws")}/ws/h?token=${mariaTok}`);
-    ws.on("message", (d) => {
-      const m = JSON.parse(String(d));
-      if (m.type === "view") views.push(m.view.viewer);
-    });
-    await new Promise((r) => ws.on("open", r));
-    ws.send(JSON.stringify({ type: "prompt", text: "let me in" }));
-    // The server reads frames in order: its pong means the prompt was already handled.
-    await new Promise((r) => (ws.once("pong", r), ws.ping()));
-    await waitFor(() => views.length > 0);
-    assert.deepEqual(views[0], { name: "Maria Lopez", canWrite: false, reason: "taken" }, "on connect: taken");
-    const row = baton.batonById(c.sessionId)!.row;
-    assert.equal(row.holder, tony.id, "a socket message claims nothing");
-    assert.equal(row.budget.messagesUsed, 1, "and is not a message");
-    await waitFor(() => views.at(-1)?.canWrite === true, 5000);
-    ws.close();
-    assert.equal(baton.batonById(c.sessionId)!.row.holder, null, "back in the pool");
-    assert.deepEqual(views.at(-1), { name: "Maria Lopez", canWrite: true }, "Maria's page was told she may write");
   });
 
   test("the wrap-up also runs on close, once, and never counts against the budget", async () => {
@@ -683,11 +636,9 @@ describe("regressions from the slice-2 verification", async () => {
     const app = new Hono();
     registerOrgRoutes(app);
     assert.equal((await app.request(`/api/baton/${c.sessionId}/close`, { method: "POST" })).status, 200);
-    let row = baton.batonById(c.sessionId)!.row;
-    for (let i = 0; i < 100 && (!row.wrapup || row.wrapup.state === "running"); i++) {
-      await new Promise((r) => setTimeout(r, 50));
-      row = baton.batonById(c.sessionId)!.row;
-    }
+    const wrapup = () => baton.batonById(c.sessionId)!.row.wrapup;
+    await waitFor(() => !!wrapup() && wrapup()!.state !== "running");
+    const row = baton.batonById(c.sessionId)!.row;
     // No model is configured here, so the turn itself fails; what is pinned is that it ran on close.
     assert.ok(row.wrapup && row.wrapup.state !== "running", "the wrap-up ran");
     assert.equal(row.budget.messagesUsed, 1, "its prompt is not a message");

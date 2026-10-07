@@ -100,7 +100,6 @@ import { sweepPrivateConfigDirs, type ClaudeConfine } from "../claude-code/confi
 import { MODE_DISCOVER_EVENT, MODE_STATE_EVENT, type ModeStateEvent } from "../mode/state.ts";
 import { MODE_WORKER_DISCOVER_EVENT, MODE_WORKER_EVENT, parseModeWorkerEvent, type ModeWorkerEvent } from "../mode/events.ts";
 import { specHookSettings, withClaudeSettings } from "../claude-code/spec-hooks.ts";
-import { LEDGER_ENV, ledgerPath, workerLedgerPath } from "../mode/spec-guard.ts";
 import { ASSESSMENT_OWNER_ENV, ASSESSMENT_WORKER_ENV, ASSESSMENT_TEAM_ENV } from "../mode/spec-assessment.ts";
 import { DEFAULT_CLAUDE_TOOLS } from "../claude-code/transport.ts";
 import { canonicalClaudeId, unverifiedClaudeNote } from "../claude-code/catalog.ts";
@@ -1228,13 +1227,12 @@ export function registerSubagents(
 		// An old Claude id (opus[1m], sonnet, claude-opus-5-5[1m], …) is resolved through the catalog's
 		// read-only legacy table, quietly: the catalog id is what runs and what is recorded.
 		const specs = request.specs.map(withCatalogClaudeModel);
-		const parentId = ctx.sessionManager.getSessionId?.() || unsavedSessionKey;
 		/** A worker's session-qualified id: the sandbox's owner of its scope and the name of its Claude state dir. */
 		const workerKey = (id: string) => `${sessionDirKey(ctx.sessionManager.getSessionId?.(), unsavedSessionKey).slice(0, 112)}-${id}`;
 		/**
 		 * A confined Claude worker's confinement (claude-code/confined-launch.ts): the sandbox's scope for
 		 * it, and what its own state needs writable — its team mailbox, and with spec on its own hook state
-		 * dir and ledger file (which the parent's spec mode reads too), which its hooks are pointed at.
+		 * dir, which its hooks are pointed at.
 		 */
 		const confineClaude = (o: { id: string; cwd: string; backend: string; root?: string; specHooks: boolean; prepared: { settingsJson?: string }; mailbox?: string; hostedTmp?: string }): { confine: ClaudeConfine; settingsJson?: string } => {
 			const owner = workerKey(o.id);
@@ -1244,12 +1242,9 @@ export function registerSubagents(
 			let settingsJson = o.prepared.settingsJson;
 			if (o.specHooks) {
 				const stateDir = path.join(agentDir(), SPEC_HOOK_STATE, "workers", owner);
-				const ledger = workerLedgerPath(agentDir(), parentId, owner);
 				fs.mkdirSync(stateDir, { recursive: true, mode: 0o700 });
-				fs.mkdirSync(path.dirname(ledger), { recursive: true });
-				fs.appendFileSync(ledger, "");
-				writable.push(stateDir, ledger);
-				settingsJson = withClaudeSettings(settingsJson, specHookSettings({ node: process.execPath, coreDir: SPEC_CORE_DIR, stateDir, ledger }));
+				writable.push(stateDir);
+				settingsJson = withClaudeSettings(settingsJson, specHookSettings({ node: process.execPath, coreDir: SPEC_CORE_DIR, stateDir }));
 			}
 			const hostedTmpDir = o.hostedTmp ? path.join(o.hostedTmp, "tmp") : undefined;
 			if (hostedTmpDir) fs.mkdirSync(hostedTmpDir, { recursive: true, mode: 0o700 });
@@ -1382,24 +1377,22 @@ export function registerSubagents(
 						env: { MCP_TOOL_TIMEOUT: String(REMOTE_MCP_TOOL_TIMEOUT_MS) },
 					};
 				}
-				// Spec on: a code-writing Claude worker gets the hooks that run census after each tool call and
-				// check its reply's last line (claude-code/spec-hooks.ts), and the brief unless its mode prompt
-				// carries the spec block. Remote workers' files are on the target, out of the local tools' reach.
+				// Spec on: a code-writing Claude worker gets the hooks that run census after each tool call
+				// (claude-code/spec-hooks.ts), and the brief unless its mode prompt carries the spec block. Remote workers' files are on the target, out of the local tools' reach.
 				const specHooks = specOn && !remote && backendId === "claude-code" && writesCode(prepared.tools ?? spec.tools ?? DEFAULT_CLAUDE_TOOLS);
 				if (specHooks) {
 					const settingsJson = (prepared as { settingsJson?: string }).settingsJson;
 					prepared = {
 						...prepared,
 						...(specInPrompt ? {} : { systemPrompt: [prepared.systemPrompt ?? spec.systemPrompt, workerSpecBrief(SPEC_CORE_DIR)].filter(Boolean).join("\n\n") }),
-						// Its git operations go to this session's ledger, so the parent counts a worker's commit in its own tree.
-						// A confined worker gets its own hook state and ledger file, set per worker when it is created.
-						...(confined ? {} : { settingsJson: withClaudeSettings(settingsJson, specHookSettings({ node: process.execPath, coreDir: SPEC_CORE_DIR, stateDir: path.join(agentDir(), SPEC_HOOK_STATE), ledger: ledgerPath(agentDir(), ctx.sessionManager.getSessionId?.() || unsavedSessionKey) })) }),
+						// A confined worker gets its own hook state, set per worker when it is created.
+						...(confined ? {} : { settingsJson: withClaudeSettings(settingsJson, specHookSettings({ node: process.execPath, coreDir: SPEC_CORE_DIR, stateDir: path.join(agentDir(), SPEC_HOOK_STATE) })) }),
 					} as typeof prepared;
 				}
 				// Last, after the brief and any remote instructions: the prompt the runner uses is this one.
 				if (modePrompt) prepared = { ...prepared, systemPrompt: [prepared.systemPrompt ?? spec.systemPrompt, modePrompt].filter(Boolean).join("\n\n") };
 				return { spec, cwd, model: spec.model, tools: remote ? [] : spec.tools, systemPrompt: spec.systemPrompt,
-					extensions: undefined, forkSession: undefined, backend, prepared, flags: undefined, remoteMcp, ledger: undefined,
+					extensions: undefined, forkSession: undefined, backend, prepared, flags: undefined, remoteMcp,
 					givenModes: modePrompt ? [...modes!.minorModes] : [], confined: confined ? { root: tree?.path, specHooks } : undefined };
 			}
 			if (spec.backendOptions !== undefined) throw new Error("backendOptions are not supported by the pi backend.");
@@ -1463,9 +1456,6 @@ export function registerSubagents(
 				flags: piFlags,
 				remoteMcp: undefined,
 				treeConfig,
-				// A spec-on pi worker (the census hook, or its worktree's whole mode extension) logs its git
-				// operations to this session's ledger (mode/spec-guard.ts LEDGER_ENV).
-				ledger: specOn && !remote && (specWorker || treeConfig) ? ledgerPath(agentDir(), ctx.sessionManager.getSessionId?.() || unsavedSessionKey) : undefined,
 				// A tree-config worker is started with spec on (modeFlags); older records say nothing.
 				givenModes: treeConfig ? [modeFlags!.minor] : modePrompt ? [...modes!.minorModes] : [],
 				confined: undefined,
@@ -1484,7 +1474,7 @@ export function registerSubagents(
 		const launched: string[] = [];
 		const earlySettled = new Set<Worker>();
 		try {
-			for (const [index, { spec, cwd, model, tools, systemPrompt, extensions, forkSession, backend, prepared: backendPrepared, flags, remoteMcp, treeConfig, ledger, givenModes, confined }] of prepared.entries()) {
+			for (const [index, { spec, cwd, model, tools, systemPrompt, extensions, forkSession, backend, prepared: backendPrepared, flags, remoteMcp, treeConfig, givenModes, confined }] of prepared.entries()) {
 				for (let i = 0; i < (spec.count ?? 1); i++) {
 					const base = spec.name ?? spec.agentType ?? "agent";
 					const id = resuming ? resuming.id : `ag_${String(++counter).padStart(2, "0")}`;
@@ -1503,11 +1493,10 @@ export function registerSubagents(
 					const usageEnv = parentSid ? { [USAGE_PARENT_ENV]: `${parentSid}:${id}` } : undefined;
 					const specEnv = specOn && !remote ? {
 						...(backendPrepared?.env as Record<string, string> | undefined), ...baseEnv,
-						...(ledger ? { [LEDGER_ENV]: ledger } : {}),
 						[ASSESSMENT_OWNER_ENV]: ctx.sessionManager.getSessionId?.() ?? "",
 						[ASSESSMENT_WORKER_ENV]: id,
 						[ASSESSMENT_TEAM_ENV]: request.team?.teamId ?? "",
-					} : ledger ? { ...baseEnv, [LEDGER_ENV]: ledger } : baseEnv;
+					} : baseEnv;
 					const env = usageEnv ? { ...specEnv, ...usageEnv } : specEnv;
 					const name = (spec.count ?? 1) > 1 ? `${base}-${i + 1}` : base;
 					// Hosted: the runner's spawnImpl starts a detached host instead of the worker itself.
@@ -1534,7 +1523,7 @@ export function registerSubagents(
 						...(memberVars && tooling === "mcp" ? { [MCP_SERVER_NAME]: { command: process.execPath, args: [MEMBER_MCP], env: memberVars } } : {}),
 					};
 					// A confined claude worker: its own scope (named by its session-qualified id), its own state
-					// writable (the mailbox, and its own spec-hook state and ledger), and, hosted, the host's tmp.
+					// writable (the mailbox, and its own spec-hook state), and, hosted, the host's tmp.
 					const confinement = confined
 						? confineClaude({ id, cwd, backend: spec.backend ?? "pi", root: confined.root, specHooks: confined.specHooks, prepared: backendPrepared as { settingsJson?: string },
 							mailbox: teamMember && tooling === "mcp" ? memberDir(request.team!.teamId, id) : undefined,

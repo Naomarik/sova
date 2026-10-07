@@ -316,11 +316,10 @@ mode extension's census hook alone: a census digest after a tool call that chang
 under the same condition as the brief; it is plumbing, so the spawn summary does not list it.
 
 Claude Code workers also get the spec hooks (`../claude-code/spec-hooks.ts`) in their `--settings`:
-a census digest after any tool call that changes `git status`, and a check of the reply's
-`Also changes:` line at Stop. State and a log of what the hooks said live in
-`<agentDir>/spec-hooks/<claude session id>.json` / `.log.jsonl`. A confined worker cannot write
-there, so it gets its own writable state dir `<agentDir>/spec-hooks/workers/<key>/` and ledger file
-(`mode/spec-guard.ts` `workerLedgerPath`), which the parent's spec mode reads beside its own.
+a census digest after any tool call that changes `git status`; nothing runs when its turn ends.
+State and a log of what the hooks said live in `<agentDir>/spec-hooks/<claude session id>.json` /
+`.log.jsonl`. A confined worker cannot write there, so it gets its own writable state dir
+`<agentDir>/spec-hooks/workers/<key>/`. No worker, pi or Claude Code, is given a spec ledger.
 
 ## Model policy
 

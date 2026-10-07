@@ -754,6 +754,23 @@ test("the sandbox extension's entries render as nothing, on and off alike", () =
   assert.ok(!JSON.stringify(items).includes("Sandbox"), "no sandbox text reaches the transcript");
 });
 
+// §tools.spec/no-turn-end-check: the retired spec check's records in an older session draw no card.
+test("an older session's spec-turn and spec-check-error entries render as nothing", () => {
+  const turn = {
+    v: 1, ops: [], own: [{ id: "§a/b", change: "modified", what: "x" }], landed: [], created: [],
+    gate: { unmapped: [], unpromoted: [], stale: [], handResolved: [] },
+    check: { ok: true, reprompts: 0 }, prose: { "§a/b": "## §a/b — B\n" },
+  };
+  const entries = [
+    { type: "message", id: "u1", parentId: null, message: { role: "user", content: "hi", timestamp: 1 } },
+    { type: "custom", id: "t1", parentId: "u1", customType: "spec-turn", data: turn },
+    { type: "custom", id: "e1", parentId: "t1", customType: "spec-check-error", data: { message: "census failed" } },
+  ];
+  for (const e of entries.slice(1)) assert.deepEqual(normalizeEntry(e), [], e.id);
+  const items = normalizeEntries(entries);
+  assert.deepEqual(items.map((r) => [r.id, r.kind]), [["u1", "user"]]);
+});
+
 // Coordinated teams: team-report / team-question are report rows carrying `team`; the team
 // events are info rows like a model change. Real bytes from the e2e run, plus the kind suffix.
 describe("team messages and events", () => {

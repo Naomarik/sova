@@ -898,7 +898,7 @@ class Round {
       const b = await step("build", "build", "build", this.pnpm, ["run", "build"], tree);
       if (b.code !== 0) needs.push(b.timedOut ? "build timed out" : "build fails");
     } else lines.push("build: skipped (the typecheck failed).");
-    lines.push(...(await this.specChecks(tree, needs)));
+    lines.push(...(await this.specChecks(tree)));
     // What landing would publish, scanned now: a scrubbed or leaky commit is caught before it lands.
     const scan = await this.leakScanTo(head);
     lines.push(...scan.lines);
@@ -939,19 +939,19 @@ class Round {
     return out;
   }
 
-  async specChecks(tree, needs) {
+  /** The spec check, census and each draft's status, printed for the captain; none of it holds a branch. */
+  async specChecks(tree) {
     if (!existsSync(join(tree, MANIFEST))) return ["spec: none in this project."];
     const tool = (file, args) => run(process.execPath, [join(this.specCore, file), ...args, "--root", tree, "--json"], { cwd: tree, timeoutMs: 120_000 });
-    if (!existsSync(join(this.specCore, "sova-spec.mjs"))) { needs.push("spec tools not found"); return ["spec: the spec tools aren't installed, so the spec can't be checked."]; }
+    if (!existsSync(join(this.specCore, "sova-spec.mjs"))) return ["spec: the spec tools aren't installed, so the spec can't be checked."];
     const lines = [];
     const c = await tool("sova-spec.mjs", ["check"]);
     lines.push(`spec check: ${c.code === 0 ? "ok" : c.code === 1 ? "warnings" : "ERRORS"}.`);
-    if (c.code !== 0 && c.code !== 1) needs.push("spec check fails");
     const census = await tool("sova-spec.mjs", ["census", "--changed", "--base", "master"]);
     let unclaimed = null;
     try { unclaimed = JSON.parse(census.stdout).census?.unclaimed ?? null; } catch {}
-    if (census.code === 2 || !Array.isArray(unclaimed)) { needs.push("spec census couldn't run"); lines.push("spec census: couldn't run."); }
-    else if (unclaimed.length) { needs.push(`${unclaimed.length} changed file${unclaimed.length === 1 ? "" : "s"} no claim maps`); lines.push(`spec census: ${unclaimed.length} unclaimed (${unclaimed.slice(0, 3).join(", ")}).`); }
+    if (census.code === 2 || !Array.isArray(unclaimed)) lines.push("spec census: couldn't run.");
+    else if (unclaimed.length) lines.push(`spec census: ${unclaimed.length} unclaimed (${unclaimed.slice(0, 3).join(", ")}).`);
     else lines.push("spec census: clean.");
     let drafts = [];
     try { drafts = readdirSync(join(tree, ".sova", "spec", "drafts"), { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name); } catch {}
@@ -962,8 +962,8 @@ class Round {
         const j = JSON.parse(s.stdout);
         if (Array.isArray(j.ids)) pending = j.ids.filter((x) => x?.current !== "already-current").map((x) => x?.id ?? "?");
       } catch {}
-      if (pending === null) { needs.push(`draft ${name}: status unreadable`); lines.push(`draft ${name}: status unreadable.`); }
-      else if (pending.length) { needs.push(`draft ${name}: ${pending.length} record${pending.length === 1 ? "" : "s"} not promoted`); lines.push(`draft ${name}: not promoted: ${pending.slice(0, 4).join(", ")}.`); }
+      if (pending === null) lines.push(`draft ${name}: status unreadable.`);
+      else if (pending.length) lines.push(`draft ${name}: not promoted: ${pending.slice(0, 4).join(", ")}.`);
       else lines.push(`draft ${name}: promoted.`);
     }
     return lines;

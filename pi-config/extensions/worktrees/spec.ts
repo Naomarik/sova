@@ -1,8 +1,8 @@
 /**
- * What a merge does to the project's spec (`.sova/spec/`), for the merge note the model reads: the foreign § the
- * merge changes, computed by the spec core (`sova-spec.mjs foreign`), and warnings about spec work the merge left
- * behind. It only reads: git by argument list (the extension's `Git`) and the sibling spec tools run with node,
- * never a shell. A project without a spec, or an install without the spec tools, gets nothing. Node builtins only.
+ * What a merge leaves to do in the project's spec (`.sova/spec/`), for the merge note the model reads: warnings it
+ * can act on, from the spec core's landing lists (`sova-spec.mjs foreign --landing`) and the drafts' evidence. It
+ * only reads: git by argument list (the extension's `Git`) and the sibling spec tools run with node, never a shell.
+ * A project without a spec, or an install without the spec tools, gets nothing. Node builtins only.
  */
 import { execFile } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
@@ -13,35 +13,29 @@ import type { Git } from "./git.ts";
 export const SPEC_CORE_DIR = join(import.meta.dirname, "..", "spec", "core");
 const DRAFTS = ".sova/spec/drafts";
 
-/** What a landing brings besides its foreign §: the core's `foreign --landing` lists. */
+/** What a landing leaves behind: the core's `foreign --landing` lists. */
 export interface MergeLanding {
-	/** Changed files (deletions too) no claim's `code` maps: each needs a claim, or a `Plumbing: <path> — <why>` line. */
+	/** Changed files (deletions too) no claim's `code` maps. */
 	unmappedChanged: { path: string; status: string; inBoundary: boolean }[];
-	/** § whose mapped code changed while their prose and record didn't (advisory). */
-	mappedUntouched: { id: string; files: string[] }[];
 	/** Draft records left unpromoted in the merged worktree and in worktrees whose branch the merge contains. */
 	unpromotedDrafts: { draft: string; worktree: string; ids: string[] }[];
 	/** § of a merge commit that differ from every parent: a hand resolution. */
 	handResolved: { commit: string; ids: string[] }[];
 }
 
+/** One sentence the model can act on; a `key` marks one said once a session (a draft at its pending §). */
+export interface SpecWarning {
+	text: string;
+	key?: string;
+}
+
 export interface MergeSpecReport {
-	/** § the merge changed that it did not create (the core's `foreign`), sorted. */
-	foreign: string[];
-	/** Deleted foreign § (a rename's old id, with where it went); they stay in `foreign`. */
-	deleted?: { id: string; renamedTo?: string }[];
-	/** One sentence each: unmapped files, unpromoted draft records, hand resolutions, code after the last spec work, orphaned evidence. */
-	warnings: string[];
+	/** Unmapped files, unpromoted draft records, hand resolutions, orphaned evidence, or that they could not be computed. */
+	warnings: SpecWarning[];
 	/** The landing lists, when the core computed them. */
 	landing?: MergeLanding;
 	/** The target's top level (its checkout), when git lists one. */
 	top?: string;
-	/**
-	 * Into a branch other than the default: what the merge brought in from the default branch unchanged (each §'s
-	 * record and text, each file's content, equal to the default branch's side), kept out of `foreign`, `deleted`
-	 * and the landing lists.
-	 */
-	arrived?: { from: string; ids: string[]; files: string[] };
 }
 
 export interface MergeSpecRequest {
@@ -52,10 +46,8 @@ export interface MergeSpecRequest {
 	before: string;
 	after: string;
 	branchSha: string;
-	/** The target is the repo's default branch: its unpromoted records can't be deferred. */
+	/** The target is the repo's default branch: the landing's own drafts are promoted now. */
 	onDefault?: boolean;
-	/** The repo's default branch, when the target is another: what arrives from it unchanged is counted, not named. */
-	defaultBranch?: string;
 }
 
 type Node = (args: string[], cwd: string) => Promise<{ code: number; stdout: string }>;
@@ -88,86 +80,39 @@ export async function mergeSpecReport(git: Git, req: MergeSpecRequest, opts: { c
 
 	// The target before vs after, with the landing lists; the merged worktree's drafts are read whatever its HEAD.
 	const f = json((await node([core, "foreign", "--base", req.before, "--head", req.after, "--landing", "--drafts", req.path, "--root", top, "--json"], top)).stdout);
-	const warnings: string[] = [];
-	const arrived = Array.isArray(f?.foreign) ? await arrivals(git, node, core, top, req, f.foreign as string[], Array.isArray(f?.unmappedChanged) ? f.unmappedChanged : []) : undefined;
-	const gone = new Set(arrived?.ids ?? []);
-	const goneFiles = new Set(arrived?.files ?? []);
-	const foreign = Array.isArray(f?.foreign) ? (f.foreign as string[]).filter((id) => !gone.has(id)) : [];
-	if (!Array.isArray(f?.foreign)) warnings.push(`the foreign § of this merge could not be computed (${(f?.findings as { message?: string }[] | undefined)?.map((x) => x.message).join("; ") || "no output"}); name them from the spec diff yourself`);
-	const deleted = ((Array.isArray(f?.changes) ? f.changes : []) as { id: string; change: string; renamedTo?: string }[])
-		.filter((c) => c.change.split("+").includes("deleted") && !gone.has(c.id))
-		.map((c) => ({ id: c.id, ...(c.renamedTo ? { renamedTo: c.renamedTo } : {}) }));
+	const warnings: SpecWarning[] = [];
 	const landing: MergeLanding | undefined = Array.isArray(f?.unmappedChanged)
-		? {
-				unmappedChanged: (f.unmappedChanged as MergeLanding["unmappedChanged"]).filter((u) => !goneFiles.has(u.path)),
-				mappedUntouched: ((f.mappedUntouched ?? []) as MergeLanding["mappedUntouched"]).filter((m) => !m.files?.length || m.files.some((p) => !goneFiles.has(p))),
-				unpromotedDrafts: f.unpromotedDrafts ?? [],
-				handResolved: f.handResolved ?? [],
-			}
+		? { unmappedChanged: f.unmappedChanged, unpromotedDrafts: f.unpromotedDrafts ?? [], handResolved: f.handResolved ?? [] }
 		: undefined;
 	if (landing) {
-		if (landing.unmappedChanged.length)
-			warnings.push(`${landing.unmappedChanged.length} changed file${landing.unmappedChanged.length === 1 ? "" : "s"} no claim maps (${landing.unmappedChanged.map((u) => `${u.path}${u.status === "D" ? " deleted" : ""}`).join(", ")}): spec each one whose change a user sees with a claim listing it in \`code\`, or name it on a line "Plumbing: <path> — <why>" above your last line`);
-		for (const d of landing.unpromotedDrafts)
-			warnings.push(
-				`draft ${d.draft} has ${d.ids.length} unpromoted record${d.ids.length === 1 ? "" : "s"} (${d.ids.join(", ")}): ` +
-					(req.onDefault
-						? `this landed on the default branch, so promote ${d.ids.length === 1 ? "it" : "them"} now (a draft that conflicts is re-applied in a new draft from the current spec); a "Deferred:" line doesn't pass here`
-						: `promote what shipped, or name the § left stale on a line "Deferred: ${d.ids.join(", ")} — <why>" above your last line`),
-			);
+		const u = landing.unmappedChanged;
+		if (u.length)
+			warnings.push({ text: `${u.length} changed file${u.length === 1 ? "" : "s"} no claim maps (${u.map((x) => `${x.path}${x.status === "D" ? " deleted" : ""}`).join(", ")}): spec any whose change a user sees` });
+		for (const d of landing.unpromotedDrafts) {
+			const own = d.worktree === top || d.worktree === req.path;
+			const them = d.ids.length === 1 ? "it" : "them";
+			const what = !own ? `its session promotes ${them}` : req.onDefault ? `this landed on the default branch, so promote ${them} now` : "promote what shipped";
+			warnings.push({
+				text: `draft ${d.draft}${own ? "" : ` in ${d.worktree}`} has ${d.ids.length} unpromoted record${d.ids.length === 1 ? "" : "s"} (${d.ids.join(", ")}): ${what}`,
+				key: `${d.worktree}\0${d.draft}\0${d.ids.join(",")}`,
+			});
+		}
 		for (const h of landing.handResolved)
-			warnings.push(`merge ${short(h.commit)} resolved ${h.ids.join(", ")} by hand (it differs from both parents; see git show --cc ${short(h.commit)}): check it says what both sides meant`);
-	} else if (Array.isArray(f?.foreign)) warnings.push("the merge's unmapped files and unpromoted drafts could not be computed; check them yourself");
-	const drafts = draftsIn(req.path);
+			warnings.push({ text: `merge ${short(h.commit)} resolved ${h.ids.join(", ")} by hand (it differs from both parents; see git show --cc ${short(h.commit)}): check it says what both sides meant` });
+	} else {
+		const why = (f?.findings as { message?: string }[] | undefined)?.map((x) => x.message).join("; ") || "no output";
+		warnings.push({ text: `the merge's unmapped files and unpromoted drafts could not be computed (${why}); check them yourself` });
+	}
 
 	// Evidence commits the merged branch does not contain: a rebase after evidence orphaned them.
 	const evidence = new Map<string, string>();
-	for (const d of drafts) for (const c of d.evidenceCommits) evidence.set(c, d.name);
+	for (const d of draftsIn(req.path)) for (const c of d.evidenceCommits) evidence.set(c, d.name);
 	for (const [c, name] of evidence) {
 		if ((await git(["merge-base", "--is-ancestor", c, req.branchSha], top)).code !== 0)
-			warnings.push(`evidence commit ${short(c)} (draft ${name}) is not on ${req.branch}: a rebase after evidence orphans it; re-record evidence against the commit that landed`);
+			warnings.push({ text: `evidence commit ${short(c)} (draft ${name}) is not on ${req.branch}: a rebase after evidence orphans it; re-record evidence against the commit that landed` });
 	}
-
-	// Code committed after the branch's last spec work (a spec commit, or a commit evidence names).
-	const commits = (await git(["rev-list", "--reverse", "--no-merges", `${req.before}..${req.branchSha}`], top)).stdout.split("\n").filter(Boolean);
-	const kinds: { sha: string; spec: boolean; code: boolean }[] = [];
-	for (const sha of commits) {
-		const files = (await git(["diff-tree", "--no-commit-id", "--name-only", "-r", sha], top)).stdout.split("\n").filter(Boolean);
-		kinds.push({ sha, spec: files.some((p) => p.startsWith(".sova/spec/")) || evidence.has(sha), code: files.some((p) => !p.startsWith(".sova/")) });
-	}
-	let last = -1;
-	kinds.forEach((k, i) => {
-		if (k.spec) last = i;
-	});
-	const after = last < 0 ? [] : kinds.slice(last + 1).filter((k) => k.code && !evidence.has(k.sha));
-	if (after.length)
-		warnings.push(`${after.length} code commit${after.length === 1 ? "" : "s"} after the last spec commit ${short(kinds[last]!.sha)} (${after.map((k) => short(k.sha)).join(", ")}): spec what they changed, or say they change no behavior`);
 	const targetTop = await checkoutOf(git, top, req.after);
-	return { foreign, deleted, warnings, ...(landing ? { landing } : {}), ...(targetTop ? { top: targetTop } : {}), ...(arrived && (arrived.ids.length || arrived.files.length) ? { arrived } : {}) };
-}
-
-/**
- * Into a branch other than the default: the foreign § and unmapped files the merge brought in from the default
- * branch unchanged. The side is the newest default-branch commit `after` contains (its merge base with the default
- * tip) when `before` lacks it; a § arrived when the core finds no change of it from that side to `after` (record and
- * text equal: a content comparison, never id subtraction), a file when git finds none. A § both sides changed stays
- * the merge's. undefined when nothing arrived or it can't be compared (then everything stays named).
- */
-async function arrivals(git: Git, node: Node, core: string, top: string, req: MergeSpecRequest, foreign: string[], unmapped: { path: string }[]): Promise<MergeSpecReport["arrived"]> {
-	if (req.onDefault || !req.defaultBranch) return undefined;
-	const tip = (await git(["rev-parse", "--verify", "--quiet", `refs/heads/${req.defaultBranch}`], top)).stdout.trim();
-	const side = tip ? (await git(["merge-base", req.after, tip], top)).stdout.trim() : "";
-	if (!side || (await git(["merge-base", "--is-ancestor", side, req.before], top)).code === 0) return undefined;
-	const d = json((await node([core, "foreign", "--base", side, "--head", req.after, "--root", top, "--json"], top)).stdout);
-	if (!Array.isArray(d?.changes) || !Array.isArray(d?.created) || d.complete === false) return undefined;
-	const differs = new Set<string>([...(d.changes as { id: string }[]).map((c) => c.id), ...(d.created as string[])]);
-	const diff = await git(["diff", "--name-only", "-z", "--no-renames", "--no-ext-diff", "--no-textconv", side, req.after, "--"], top);
-	const changedFiles = diff.code === 0 ? new Set(diff.stdout.split("\0").filter(Boolean)) : undefined;
-	return {
-		from: req.defaultBranch,
-		ids: foreign.filter((id) => !differs.has(id)).sort(),
-		files: changedFiles ? unmapped.map((u) => u.path).filter((p) => !changedFiles.has(p)).sort() : [],
-	};
+	return { warnings, ...(landing ? { landing } : {}), ...(targetTop ? { top: targetTop } : {}) };
 }
 
 /** The worktree whose checkout is at `sha` on a branch (the merge's target), from `git worktree list`. */
@@ -205,16 +150,17 @@ function draftsIn(root: string): { name: string; evidenceCommits: string[] }[] {
 }
 
 /**
- * The lines added to the merge note: always the foreign § line, then the deleted § (a rename's new id shown), the
- * § whose code changed under unchanged prose (advisory), then one per warning.
+ * The lines added to the merge note, one `Spec warning: …` per warning. A keyed one (a draft at its pending §) is
+ * said once: with `said`, a key already in it is left out and a new one is added.
  */
-export function specLines(r: MergeSpecReport): string[] {
-	const untouched = r.landing?.mappedUntouched ?? [];
-	return [
-		`Foreign § this merge changes: ${r.foreign.length ? r.foreign.join(", ") : "none"}`,
-		...(r.arrived?.ids.length ? [`Arrived from ${r.arrived.from}: ${r.arrived.ids.length} §`] : []),
-		...(r.deleted?.length ? [`Deleted § (still foreign): ${r.deleted.map((d) => (d.renamedTo ? `${d.id} → ${d.renamedTo}` : d.id)).join(", ")}`] : []),
-		...(untouched.length ? [`Code changed under unchanged §: ${untouched.map((u) => `${u.id} (${u.files.join(", ")})`).join("; ")}: read each; name one on your last line only if its behavior changed`] : []),
-		...r.warnings.map((w) => `Spec warning: ${w}`),
-	];
+export function specLines(r: MergeSpecReport, said?: Set<string>): string[] {
+	const out: string[] = [];
+	for (const w of r.warnings) {
+		if (w.key !== undefined && said) {
+			if (said.has(w.key)) continue;
+			said.add(w.key);
+		}
+		out.push(`Spec warning: ${w.text}`);
+	}
+	return out;
 }

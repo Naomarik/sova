@@ -111,7 +111,7 @@ Every design must meet all five. They are not traded against the goals.
 
 ## The rules that hold it up
 
-Drafts, marks, checks and closing lines exist only to serve the goals and constraints above. A rule or tool that serves none of them should go. A few rules hold up the rest:
+Drafts, marks and checks exist only to serve the goals and constraints above. A rule or tool that serves none of them should go. A few rules hold up the rest:
 
 - **Names are permanent.** A `§` is never reused or quietly given a new meaning, so a change from anywhere still points at what it meant.
 - **Each fact is said once.** The second copy is the one that goes stale.

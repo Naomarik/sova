@@ -31,7 +31,7 @@ export interface ClaudeConfine {
 	key: string;
 	/** The parent's agent dir, where the private config dirs live. */
 	agentDir: string;
-	/** Further paths the worker's own state needs writable: its team mailbox, spec-hook state dir and ledger file. */
+	/** Further paths the worker's own state needs writable: its team mailbox and spec-hook state dir. */
 	writable?: string[];
 	/** A hosted worker: the host process confines it and owns this tmp (never the parent's). */
 	hostedTmpDir?: string;

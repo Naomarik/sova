@@ -11,8 +11,7 @@
 // a second tracked root, the marker stays empty: no capture, initial-baseline previews included. No
 // assessment task or error entry is added (seeded old ones stay as they were), no receipt store appears,
 // and no session or worker has an assessment tool, through strict toggles and the reopen too. The
-// census digest still rides the edits, and the worker's commit still reaches the parent's ledger, so
-// the spec checks ran throughout. Native: old hook state that still carries assessment keys (one a
+// census digest still rides the edits, so the spec checks ran throughout. Native: old hook state that still carries assessment keys (one a
 // corrupt task) loads without a failure note, and keeps those keys as they were.
 //
 // Calibration: ASSESS_ABSENCE_EXT=<an older pi-config/extensions, a whole extracted tree> with
@@ -49,7 +48,6 @@ writeFileSync(
 process.env.PI_CODING_AGENT_DIR = agentDir;
 delete process.env.PI_SPEC_CENSUS_HOOK;
 delete process.env.PI_SPEC_CHECK;
-delete process.env.SOVA_SPEC_LEDGER;
 const calls = () => (existsSync(marker) ? readFileSync(marker, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)) : []);
 
 function project(name) {
@@ -223,11 +221,9 @@ for (const role of ["session", "worktree-config worker"]) {
 	}
 }
 
-// 3. A pi worker: spec-worker.ts alone. Its commit still reaches the parent's ledger.
+// 3. A pi worker: spec-worker.ts alone.
 {
 	const p = project("worker");
-	const ledger = path.join(scratch, "worker-ledger.jsonl");
-	process.env.SOVA_SPEC_LEDGER = ledger;
 	const manager = SessionManager.create(p.cwd, path.join(scratch, "worker-sessions"));
 	let session = await open(p.cwd, path.join(ext, "mode/spec-worker.ts"), manager);
 	try {
@@ -244,12 +240,9 @@ for (const role of ["session", "worktree-config worker"]) {
 		noAssessTool(session, "pi worker reopened");
 		script.push({ tool: "edit", args: { path: "src/App.tsx", edits: [{ oldText: "22", newText: "3" }] } }, { tool: "bash", args: { command: "git add -A && git commit -qm work" } }, { text: "Done.\nAlso changes: §app/shell — the shell value" });
 		await session.prompt("again, and commit");
-		const entries = existsSync(ledger) ? readFileSync(ledger, "utf8").trim().split("\n").map((l) => JSON.parse(l)) : [];
-		assert.equal(entries.at(-1)?.kind, "commit", "pi worker: its commit is in the parent's ledger");
 		verdict("pi worker", [p], reopened.getEntries());
 	} finally {
 		session.dispose?.();
-		delete process.env.SOVA_SPEC_LEDGER;
 	}
 }
 
@@ -259,9 +252,10 @@ for (const role of ["session", "worktree-config worker"]) {
 	const state = path.join(scratch, "native-state");
 	const { specHookSettings } = await jiti.import(path.join(ext, "claude-code/spec-hooks.ts"));
 	const settings = specHookSettings({ node: process.execPath, coreDir: core, stateDir: state });
-	const command = { turn: settings.hooks.UserPromptSubmit[0].hooks[0].command, pre: settings.hooks.PreToolUse[0].hooks[0].command, post: settings.hooks.PostToolUse[0].hooks[0].command, stop: settings.hooks.Stop[0].hooks[0].command };
+	const command = { turn: settings.hooks.UserPromptSubmit[0].hooks[0].command, pre: settings.hooks.PreToolUse[0].hooks[0].command, post: settings.hooks.PostToolUse[0].hooks[0].command, stop: settings.hooks.Stop?.[0].hooks[0].command };
 	assert.ok(command.post.includes(path.join(ext, "claude-code/spec-hooks.ts")), "the settings run this tree's hook script");
 	const run = (event, input) => {
+		if (!command[event]) return undefined; // no Stop hook installed: a turn ends when the model stops
 		const r = spawnSync("/bin/sh", ["-c", command[event]], { cwd: p.cwd, encoding: "utf8", input: JSON.stringify({ cwd: p.cwd, ...input }), env: { ...process.env, SOVA_SPEC_OWNER_SESSION: "owner", SOVA_SPEC_WORKER_ID: "ag_01" }, timeout: 60_000 });
 		assert.equal(r.status, 0, r.stderr);
 		return r.stdout.trim() ? JSON.parse(r.stdout) : undefined;

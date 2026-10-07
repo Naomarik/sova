@@ -1,66 +1,33 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import {
-	ALSO_CHANGES_OVERRIDE,
 	CensusHook,
 	censusStep,
 	freshCensusState,
 	manifestConflict,
 	unmergedPaths,
-	checkAlsoChanges,
-	commandRoot,
 	coreDir,
-	describeProblem,
-	extraText,
 	CENSUS_SKIP_TOOLS,
 	DIGEST_TAG,
 	digest,
 	digestSaying,
-	draftForeign,
-	draftStamps,
-	draftsTouched,
 	draftsCreated,
-	foreignBetween,
-	gitCommits,
-	gitMerges,
-	lastLine,
+	draftToolRuns,
 	localIO,
 	NO_DRAFT_NOTE,
 	unmappedNote,
-	parseAlsoChanges,
 	parsePorcelain,
-	promoteWrites,
 	ranCensus,
-	repromptText,
-	reportedAlsoChanges,
-	treeStart,
-	treeTurn,
-	workerReported,
-	freshTally,
-	tallyCheck,
-	tallyOps,
-	judgeOp,
-	ownBasesFor,
-	appendLedger,
-	readLedger,
-	ledgerPath,
-	ledgerChargedPath,
-	ledgerEntryKey,
-	loadLedgerCharged,
-	markLedgerCharged,
-	ledgerFiles,
-	workerLedgerPath,
 	driftNote,
 	driftWarningsIn,
 	currentSpecPath,
 	sanctionedSpecWrite,
 	SpecWriteGuard,
-	stripAlsoChanges,
 	viewChanged,
 	type CensusView,
 	type SpecIO,
@@ -92,17 +59,12 @@ test("viewChanged: HEAD, the path set, or a changed file's mtime", () => {
 	assert.ok(!viewChanged(undefined, v));
 });
 
-test("command detection: promote --write, git commit / merge, --root, draft names, a census already run", () => {
+/** A promote that writes the current spec, as draftToolRuns reads it (the drift note and the write guard read commands the same way). */
+const promoteWrites = (command: string) => draftToolRuns(command).some((r) => r.verb === "promote" && r.args.includes("--write"));
+
+test("command detection: promote --write, draft names, a census already run", () => {
 	assert.ok(promoteWrites('node "$core/sova-spec-draft.mjs" promote feat --id \'§a/b\' --plan abc --write --root . --json'));
 	assert.ok(!promoteWrites('node "$core/sova-spec-draft.mjs" promote feat --id \'§a/b\' --json'), "a preview writes nothing");
-	assert.ok(gitCommits("git add x && git commit -qm y"));
-	assert.ok(gitCommits("git -C /r commit -m y"));
-	assert.ok(!gitCommits("git log --oneline"));
-	assert.ok(gitMerges("git merge --no-ff feat/x"));
-	assert.ok(!gitMerges("git merge-base --is-ancestor a b"));
-	assert.equal(commandRoot("node x promote f --root /w/t --write"), "/w/t");
-	assert.equal(commandRoot("node x promote f --root '/w/a b' --write"), "/w/a b");
-	assert.equal(commandRoot("node x promote f --write"), undefined);
 	assert.deepEqual(draftsCreated(['node "$core/sova-spec-draft.mjs" new feat-a --write --root .', 'node "$core/sova-spec-draft.mjs" new dry --root .']), ["feat-a"]);
 	assert.ok(ranCensus("bash", { command: 'node "$core/sova-spec.mjs" census --changed --json' }));
 	assert.ok(!ranCensus("edit", { path: "a" }));
@@ -152,132 +114,71 @@ test("promoteWrites: every argv that runs the draft tool (named, or through a va
 	assert.ok(!sanctionedSpecWrite("printf x > .sova/spec/manifest.json"));
 });
 
-test("parseAlsoChanges: none, ids, markdown emphasis; anything else is not the line", () => {
-	assert.deepEqual(parseAlsoChanges("Also changes: none"), []);
-	assert.deepEqual(parseAlsoChanges("Also changes: §chat.alignment/card — lettered options; §design.copy-deck/sidebar — count only"), [
-		"§chat.alignment/card",
-		"§design.copy-deck/sidebar",
-	]);
-	assert.deepEqual(parseAlsoChanges("**Also changes: none**"), []);
-	assert.equal(parseAlsoChanges("Also changes: the card"), undefined);
-	assert.equal(parseAlsoChanges("Also changed: none"), undefined);
-	assert.equal(lastLine("a\nAlso changes: none\n\n  "), "Also changes: none");
-});
-
-test("checkAlsoChanges: not required passes; required needs the last line naming every computed §", () => {
-	const foreign = ["§a/one", "§b/two"];
-	assert.ok(checkAlsoChanges("just an answer", { required: false, foreign }).ok);
-	assert.equal(checkAlsoChanges("done", { required: true, foreign: [] }).problem, "missing");
-	assert.equal(checkAlsoChanges("Also changes: none\nreport at /x.md", { required: true, foreign: [] }).problem, "not-last");
-	assert.equal(checkAlsoChanges("done\nAlso changes: nothing much", { required: true, foreign: [] }).problem, "malformed");
-	assert.ok(checkAlsoChanges("done\nAlso changes: none", { required: true, foreign: [] }).ok);
-	const omits = checkAlsoChanges("done\nAlso changes: §a/one — x", { required: true, foreign });
-	assert.equal(omits.problem, "omits");
-	assert.deepEqual(omits.missing, ["§b/two"]);
-	assert.equal(checkAlsoChanges("done\nAlso changes: none", { required: true, foreign }).problem, "none-but-changed");
-	assert.ok(checkAlsoChanges("done\nAlso changes: §a/one — x; §b/two — y; §c/own — z", { required: true, foreign }).ok, "naming more is fine");
-	const over = checkAlsoChanges(`done\n${ALSO_CHANGES_OVERRIDE} §b/two was created by this task's earlier merge\nAlso changes: §a/one — x`, { required: true, foreign });
-	assert.ok(over.ok && over.overridden);
-	assert.ok(!checkAlsoChanges(`done\n${ALSO_CHANGES_OVERRIDE} no\n`, { required: true, foreign }).ok, "an override never replaces the line itself");
-	const text = repromptText(omits, foreign, "merged a worktree");
-	assert.ok(text.includes("Also changes: §a/one — <what changed>; §b/two — <what changed>"));
-	assert.ok(text.includes(ALSO_CHANGES_OVERRIDE));
-});
-
-test("stripAlsoChanges drops the closing line (and an override above it), nothing else", () => {
-	assert.equal(stripAlsoChanges("Done.\n\nAlso changes: none\n"), "Done.");
-	assert.equal(stripAlsoChanges(`Done.\n${ALSO_CHANGES_OVERRIDE} created here\nAlso changes: §a/b — x`), "Done.");
-	assert.equal(stripAlsoChanges("Also changes: none, it said\nDone."), "Also changes: none, it said\nDone.");
-	assert.equal(stripAlsoChanges("Done."), "Done.");
-});
-
 const censusView = (over: Partial<CensusView> = {}): CensusView => ({
-	foreignNote: "flag only a contradiction",
-	foreign: [],
 	claimed: [],
 	unclaimed: [],
 	mappedOutside: [],
-	childUnderForeign: [],
 	...over,
 });
 
-test("digest: the first in-boundary change, each new file, new foreign §; says when there is no draft", () => {
-	const v = censusView({ foreign: ["§app/shell"], claimed: [{ path: "src/App.tsx", claims: ["§app/shell"] }], unclaimed: ["src/new.ts"] });
-	const first = digest(v, ["src/App.tsx"], { reported: false, foreign: [] }, false);
-	assert.ok(first?.startsWith(`${DIGEST_TAG} 2 changed file(s) in the boundary, 1 unclaimed; 1 foreign § touched.`));
+test("digest: the first in-boundary change and each new file; says when there is no draft; no foreign count", () => {
+	const v = censusView({ claimed: [{ path: "src/App.tsx", claims: ["§app/shell"] }], unclaimed: ["src/new.ts"] });
+	const first = digest(v, ["src/App.tsx"], { reported: false }, false);
+	assert.ok(first?.startsWith(`${DIGEST_TAG} 2 changed file(s) in the boundary, 1 unclaimed.\n`), first);
 	assert.ok(first?.includes(NO_DRAFT_NOTE));
 	assert.ok(first?.includes("New: src/App.tsx → §app/shell"));
-	assert.ok(first?.includes("Foreign §: §app/shell"));
-	assert.equal(digest(v, ["docs/notes.md"], { reported: true, foreign: ["§app/shell"] }, true), undefined, "nothing new in the boundary: silent");
-	const again = digest(v, ["src/new.ts"], { reported: true, foreign: ["§app/shell"] }, true);
+	assert.doesNotMatch(first ?? "", /Foreign|Rule:|foreign §/);
+	assert.equal(digest(v, ["docs/notes.md"], { reported: true }, true), undefined, "nothing new in the boundary: silent");
+	const again = digest(v, ["src/new.ts"], { reported: true }, true);
 	assert.ok(again?.includes("New: src/new.ts → unclaimed"));
-	assert.ok(!again?.includes(NO_DRAFT_NOTE) && !again?.includes("Foreign §:"));
-	const outside = digest(censusView({ mappedOutside: [{ path: "pi-config/x.ts", claims: ["§app/worker"] }] }), ["pi-config/x.ts"], { reported: false, foreign: [] }, true);
+	assert.ok(!again?.includes(NO_DRAFT_NOTE));
+	const outside = digest(censusView({ mappedOutside: [{ path: "pi-config/x.ts", claims: ["§app/worker"] }] }), ["pi-config/x.ts"], { reported: false }, true);
+	assert.ok(outside?.startsWith(`${DIGEST_TAG} 0 changed file(s) in the boundary, 0 unclaimed; 1 mapped outside the boundary.`), outside);
 	assert.ok(outside?.includes("pi-config/x.ts → outside the boundary, mapped by §app/worker"));
-	assert.equal(digest(censusView(), ["README.md"], { reported: false, foreign: [] }, false), undefined, "no in-boundary change: silent");
+	assert.equal(digest(censusView(), ["README.md"], { reported: false }, false), undefined, "no in-boundary change: silent");
 });
 
-test("digest: each file in New: names at most 3 §, mapped outside the boundary too; unclaimed stays", () => {
+test("digest: each file in New: names at most 3 §, mapped outside the boundary too; at most 8 files; unclaimed stays", () => {
 	const five = ["§a/1", "§a/2", "§a/3", "§a/4", "§a/5"];
 	const v = censusView({ claimed: [{ path: "src/f.ts", claims: five }, { path: "src/t.ts", claims: five.slice(0, 3) }], unclaimed: ["src/u.ts"], mappedOutside: [{ path: "pi-config/g.ts", claims: five }] });
-	const text = digest(v, ["src/f.ts", "src/t.ts", "src/u.ts", "pi-config/g.ts"], { reported: false, foreign: [] }, true);
+	const text = digest(v, ["src/f.ts", "src/t.ts", "src/u.ts", "pi-config/g.ts"], { reported: false }, true);
 	assert.ok(
 		text?.includes("New: src/f.ts → §a/1, §a/2, §a/3 (+2 more); src/t.ts → §a/1, §a/2, §a/3; src/u.ts → unclaimed; pi-config/g.ts → outside the boundary, mapped by §a/1, §a/2, §a/3 (+2 more)"),
 		text,
 	);
+	const ten = Array.from({ length: 10 }, (_, i) => `src/n${i}.ts`);
+	const many = digest(censusView({ unclaimed: ten }), ten, { reported: true }, true);
+	assert.ok(many?.includes("src/n7.ts → unclaimed (+2 more)") && !many.includes("src/n8.ts"), many);
 });
 
-test("digest: the Rule and No draft lines print once, on the note that has them; the header and Foreign § every time", () => {
+test("digest: the No draft line prints once, on the note that has it; the header every time", () => {
 	const a = { path: "src/a.ts", claims: ["§a/x"] };
-	const one = digestSaying(censusView({ foreign: ["§a/x"], claimed: [a] }), ["src/a.ts"], { reported: false, foreign: [] }, false);
-	assert.ok(one.text?.includes(NO_DRAFT_NOTE) && one.text.includes("Rule: flag only a contradiction."), one.text);
-	assert.deepEqual(one.said, { noDraft: true, rule: true });
-	const v2 = censusView({ foreign: ["§a/x", "§a/y"], claimed: [a, { path: "src/b.ts", claims: ["§a/y"] }] });
-	const two = digestSaying(v2, ["src/b.ts"], { reported: true, foreign: ["§a/x"], said: one.said }, false);
-	assert.ok(two.text !== undefined);
-	assert.ok(two.text.startsWith(`${DIGEST_TAG} 2 changed file(s) in the boundary, 0 unclaimed; 2 foreign § touched.`), two.text);
-	assert.ok(two.text.includes("Foreign §: §a/y"));
-	assert.ok(!two.text.includes("Rule:") && !two.text.includes(NO_DRAFT_NOTE), two.text);
-	// Not printed, not marked: a note without a new foreign § leaves the Rule for a later one.
-	const quiet = digestSaying(censusView({ claimed: [a] }), ["src/a.ts"], { reported: false, foreign: [] }, true);
+	const one = digestSaying(censusView({ claimed: [a] }), ["src/a.ts"], { reported: false }, false);
+	assert.ok(one.text?.includes(NO_DRAFT_NOTE), one.text);
+	assert.deepEqual(one.said, { noDraft: true });
+	const two = digestSaying(censusView({ claimed: [a, { path: "src/b.ts", claims: ["§a/y"] }] }), ["src/b.ts"], { reported: true, said: one.said }, false);
+	assert.ok(two.text?.startsWith(`${DIGEST_TAG} 2 changed file(s) in the boundary, 0 unclaimed.`), two.text);
+	assert.ok(!two.text?.includes(NO_DRAFT_NOTE), two.text);
+	// Not printed, not marked.
+	const quiet = digestSaying(censusView({ claimed: [a] }), ["src/a.ts"], { reported: false }, true);
 	assert.deepEqual(quiet.said, {});
 });
 
-test("digest: each new-claim pair prints once; pairs past the cap come in a later note; the line never triggers a note", () => {
-	const pair = (n: number) => ({ id: `§x.p/c${n}`, parent: "§x/p" });
-	const range = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => pair(from + i));
-	let state: Parameters<typeof digestSaying>[2] = { reported: true, foreign: [] };
-	let n = 0;
-	const fire = (pairs: { id: string; parent: string }[]) => {
-		const file = `src/n${n++}.ts`;
-		const out = digestSaying(censusView({ unclaimed: [file], childUnderForeign: pairs }), [file], state, true);
-		state = { ...state, said: out.said };
-		return out.text ?? "";
-	};
-	const line = (text: string) => text.split("\n").find((l) => l.startsWith("New claims under a foreign §:"));
-	assert.equal(line(fire(range(1, 2))), "New claims under a foreign §: §x.p/c1 → §x/p, §x.p/c2 → §x/p");
-	assert.equal(line(fire(range(1, 3))), "New claims under a foreign §: §x.p/c3 → §x/p");
-	const none = fire(range(1, 2));
-	assert.ok(none.startsWith(DIGEST_TAG) && line(none) === undefined, none);
-	assert.equal(line(fire(range(1, 17))), `New claims under a foreign §: ${range(4, 15).map((p) => `${p.id} → ${p.parent}`).join(", ")} (+2 more)`);
-	assert.equal(line(fire(range(1, 17))), "New claims under a foreign §: §x.p/c16 → §x/p, §x.p/c17 → §x/p");
-});
-
-test("digest: it fires in exactly the old cases, whatever was said before", () => {
-	const said = { rule: true, noDraft: true, pairs: ["§x.p/c1 → §x/p"] };
-	const cases: [string, CensusView, string[], { reported: boolean; foreign: string[] }, boolean][] = [
-		["nothing new", censusView({ unclaimed: ["src/u.ts"], foreign: ["§a/x"] }), [], { reported: true, foreign: ["§a/x"] }, false],
-		["new-claim pairs only", censusView({ unclaimed: ["src/u.ts"], childUnderForeign: [{ id: "§x.p/c2", parent: "§x/p" }] }), [], { reported: true, foreign: [] }, false],
-		["first in-boundary change", censusView({ unclaimed: ["src/u.ts"] }), [], { reported: false, foreign: [] }, true],
-		["a new unmapped file outside", censusView({ outside: ["README.md"] }), ["README.md"], { reported: true, foreign: [] }, true],
-		["a new foreign §", censusView({ foreign: ["§a/x"] }), [], { reported: true, foreign: [] }, true],
+test("digest: it fires on a first in-boundary change, a new file in the boundary or a new unmapped file outside, never on anything else", () => {
+	const said = { noDraft: true };
+	const cases: [string, CensusView, string[], { reported: boolean }, boolean][] = [
+		["nothing new", censusView({ unclaimed: ["src/u.ts"] }), [], { reported: true }, false],
+		["first in-boundary change", censusView({ unclaimed: ["src/u.ts"] }), [], { reported: false }, true],
+		["a new file in the boundary", censusView({ unclaimed: ["src/u.ts"] }), ["src/u.ts"], { reported: true }, true],
+		["a new unmapped file outside", censusView({ outside: ["README.md"] }), ["README.md"], { reported: true }, true],
+		["the spec's own files", censusView({ outside: [".sova/spec/drafts/x/spec/manifest.json"] }), [".sova/spec/drafts/x/spec/manifest.json"], { reported: true }, false],
 	];
 	for (const [name, v, fresh, state, fires] of cases) {
 		for (const s of [state, { ...state, said }]) assert.equal(digest(v, fresh, s, false) !== undefined, fires, name);
 	}
 });
 
-test("census on a real Git tree: every foreign § is kept though New: shows 3; a read-only tool is skipped, bash never; reset says the Rule again", async () => {
+test("census on a real Git tree: New: shows 3 §; a read-only tool is skipped, bash never; reset says No draft again; a failure is said once per cause until a census runs", async () => {
 	mkdirSync(scratchRoot, { recursive: true });
 	const project = mkdtempSync(join(scratchRoot, "census-note-"));
 	try {
@@ -298,14 +199,32 @@ test("census on a real Git tree: every foreign § is kept though New: shows 3; a
 		git("add", "-A");
 		git("commit", "-qm", "base");
 
-		// The census state: every foreign § the census saw, those New: holds back included.
 		let state = (await censusStep(freshCensusState(), { cwd: project, toolName: "", input: undefined }, CORE)).state;
 		put("src/a.ts", "2\n");
 		const step = await censusStep(state, { cwd: project, toolName: "edit", input: {} }, CORE);
 		assert.ok(step.result.text?.includes("New: src/a.ts → §app/aa, §app/ab, §app/ac (+2 more)"), step.result.text);
-		assert.deepEqual([...step.state.foreign].sort(), ["§app/aa", "§app/ab", "§app/ac", "§app/ad", "§app/ae"]);
-		assert.deepEqual(step.state.said, { noDraft: true, rule: true });
+		assert.doesNotMatch(step.result.text ?? "", /Foreign|Rule:|foreign/);
+		assert.deepEqual(step.state.said, { noDraft: true });
 		state = step.state;
+
+		// The census can't run (no trusted tool): one line, once per cause, until a census runs again.
+		const missing = join(project, "no-core");
+		const line = `${DIGEST_TAG} incomplete: trusted census unavailable; run census by hand`;
+		put("src/x1.ts", "1\n");
+		const f1 = await censusStep(state, { cwd: project, toolName: "edit", input: {} }, missing);
+		assert.equal(f1.result.failure, line);
+		put("src/x2.ts", "1\n");
+		const f2 = await censusStep(f1.state, { cwd: project, toolName: "edit", input: {} }, missing);
+		assert.equal(f2.result.failure, undefined, "the same cause again: silent");
+		put("src/x3.ts", "1\n");
+		const ok = await censusStep(f2.state, { cwd: project, toolName: "edit", input: {} }, CORE);
+		assert.equal(ok.result.failure, undefined);
+		assert.ok(ok.result.text?.includes("src/x3.ts"), ok.result.text);
+		assert.equal(ok.state.failSaid, undefined, "a census that ran clears what was said");
+		put("src/x4.ts", "1\n");
+		const f3 = await censusStep(ok.state, { cwd: project, toolName: "edit", input: {} }, missing);
+		assert.equal(f3.result.failure, line, "said again after a census ran");
+		assert.doesNotMatch(JSON.stringify([f1, f2, f3]), /\[spec check\]/);
 
 		const execs: string[][] = [];
 		const io: SpecIO = { ...localIO, exec: (cmd, args, o) => (execs.push([cmd, ...args]), localIO.exec(cmd, args, o)) };
@@ -320,36 +239,18 @@ test("census on a real Git tree: every foreign § is kept though New: shows 3; a
 		assert.deepEqual(execs, [], "a skipped tool neither looks nor runs the census");
 		assert.ok(!CENSUS_SKIP_TOOLS.has("bash") && !CENSUS_SKIP_TOOLS.has("edit") && !CENSUS_SKIP_TOOLS.has("write"));
 		const first = await hook.after({ cwd: project, toolName: "bash", input: { command: "true" } });
-		assert.ok(first.text?.includes("New: src/b.ts → §app/b") && first.text.includes("Rule:") && first.text.includes(NO_DRAFT_NOTE), `the next writing call reports it: ${first.text}`);
+		assert.ok(first.text?.includes("New: src/b.ts → §app/b") && first.text.includes(NO_DRAFT_NOTE), `the next writing call reports it: ${first.text}`);
 		put("src/c.ts", "2\n");
 		const second = await hook.after({ cwd: project, toolName: "edit", input: { path: "src/c.ts" } });
-		assert.ok(second.text?.includes("Foreign §: §app/c") && !second.text.includes("Rule:") && !second.text.includes(NO_DRAFT_NOTE), second.text);
+		assert.ok(second.text?.includes("New: src/c.ts → §app/c") && !second.text.includes(NO_DRAFT_NOTE), second.text);
 		hook.reset();
 		await hook.prime(project);
 		put("src/d.ts", "2\n");
 		const fresh = await hook.after({ cwd: project, toolName: "edit", input: { path: "src/d.ts" } });
-		assert.ok(fresh.text?.includes("Rule:") && fresh.text.includes(NO_DRAFT_NOTE), `a new session says them again: ${fresh.text}`);
+		assert.ok(fresh.text?.includes(NO_DRAFT_NOTE), `a new session says it again: ${fresh.text}`);
 	} finally {
 		rmSync(project, { recursive: true, force: true });
 	}
-});
-
-test("foreignBetween wraps `sova-spec.mjs foreign`; unusable output is undefined", async () => {
-	const calls: string[][] = [];
-	const io = (stdout: string): SpecIO => ({
-		...localIO,
-		exists: () => true,
-		exec: async (_cmd, args) => {
-			calls.push(args);
-			return { stdout, code: 0 };
-		},
-	});
-	assert.deepEqual(await foreignBetween("/r", "abc", undefined, "/core", io(JSON.stringify({ exit: 0, foreign: ["§a/b"] }))), ["§a/b"]);
-	assert.deepEqual(calls[0], ["/core/sova-spec.mjs", "foreign", "--base", "abc", "--root", "/r", "--json"]);
-	await foreignBetween("/r", "abc", "def", "/core", io("{}"));
-	assert.deepEqual(calls[1].slice(3, 6), ["abc", "--head", "def"]);
-	assert.equal(await foreignBetween("/r", "abc", undefined, "/core", io(JSON.stringify({ exit: 2, foreign: [] }))), undefined);
-	assert.equal(await foreignBetween("/r", "abc", undefined, "/core", io("not json")), undefined);
 });
 
 test("CensusHook on a real Git tree: bash-style writes are caught by the git delta; one digest per new file", async () => {
@@ -384,7 +285,7 @@ test("CensusHook on a real Git tree: bash-style writes are caught by the git del
 		assert.deepEqual(await hook.prime(project), {}, "the baseline says nothing");
 		put("README.md", "changed\n");
 		const outside = await after();
-		assert.equal(outside.text, `${DIGEST_TAG} 0 changed file(s) in the boundary, 0 unclaimed; 0 foreign § touched.\n${unmappedNote("README.md")}`, "a change outside the boundary no claim maps: one line");
+		assert.equal(outside.text, `${DIGEST_TAG} 0 changed file(s) in the boundary, 0 unclaimed.\n${unmappedNote(["README.md"])}`, "a change outside the boundary no claim maps: one line");
 		put("src/App.tsx", "2\n");
 		const first = await after("edit");
 		assert.ok(first.text?.startsWith(DIGEST_TAG), `first in-boundary change: ${JSON.stringify(first)}`);
@@ -400,25 +301,6 @@ test("CensusHook on a real Git tree: bash-style writes are caught by the git del
 		put("src/later.ts", "y\n");
 		git("add", "-A");
 		git("commit", "-qm", "more");
-		// A draft (ignored by Git): its edits show only in the stamps; draftForeign names the foreign § it edits.
-		const draft = spawnSync(process.execPath, [join(CORE, "sova-spec-draft.mjs"), "new", "feat", "--root", project, "--write", "--json"], { encoding: "utf8" });
-		assert.equal(draft.status, 0, draft.stdout + draft.stderr);
-		const before = await draftStamps(project);
-		assert.deepEqual(Object.keys(before), ["feat"]);
-		assert.deepEqual(await draftForeign(project, "feat", CORE), [], "a fresh copy changes nothing");
-		await new Promise((r) => setTimeout(r, 20));
-		put(".sova/spec/drafts/feat/spec/claims/app/shell.md", "# §app/shell\n\nShell, now blue.\n");
-		assert.deepEqual(draftsTouched(before, await draftStamps(project)), ["feat"]);
-		assert.deepEqual(draftsTouched(before, before), []);
-		assert.deepEqual(await draftForeign(project, "feat", CORE), ["§app/shell"]);
-		assert.equal(await draftForeign(project, "missing", CORE), undefined);
-		const meta = join(project, ".sova/spec/drafts/feat/draft.json");
-		const record = JSON.parse(readFileSync(meta, "utf8"));
-		delete record.base.commit;
-		writeFileSync(meta, JSON.stringify(record));
-		assert.equal(await draftForeign(project, "feat", CORE), undefined, "an older draft without base.commit and no fallback: unknown");
-		const head = spawnSync("git", ["-C", project, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim();
-		assert.deepEqual(await draftForeign(project, "feat", CORE, localIO, undefined, head), ["§app/shell"], "the run's starting HEAD stands in");
 		const committed = await after();
 		assert.ok(committed.text?.includes("src/later.ts"), `a file created and committed in one call still counts: ${JSON.stringify(committed)}`);
 	} finally {
@@ -426,66 +308,7 @@ test("CensusHook on a real Git tree: bash-style writes are caught by the git del
 	}
 });
 
-test("reportedAlsoChanges: a worker's line in a custom message or a worker tool's result; never other tools or our own re-prompt", () => {
-	assert.equal(reportedAlsoChanges([]), undefined);
-	const complete = { type: "custom_message", customType: "subagent-complete", content: "Worker done.\nAlso changes: §chat.sandbox/toggle — new wording" };
-	assert.deepEqual(reportedAlsoChanges([complete]), ["§chat.sandbox/toggle"]);
-	assert.equal(reportedAlsoChanges([{ type: "custom_message", customType: "team-report", content: [{ type: "text", text: "ok\nAlso changes: none" }] }]), undefined, "a planning worker's none is no change turn");
-	const wait = { type: "message", message: { role: "toolResult", toolName: "agent_wait", content: [{ type: "text", text: "report\nAlso changes: §a/b — x" }] } };
-	assert.deepEqual(reportedAlsoChanges([wait, complete]), ["§a/b", "§chat.sandbox/toggle"]);
-	// Starting, listing or reading a worker is no report: a transcript quoting its line names nothing.
-	for (const toolName of ["agent_spawn", "agent_list", "agent_transcript", "team_roster"])
-		assert.equal(reportedAlsoChanges([{ ...wait, message: { ...wait.message, toolName } }]), undefined, toolName);
-	const bash = { type: "message", message: { role: "toolResult", toolName: "bash", content: [{ type: "text", text: "Also changes: §x/y — grep hit" }] } };
-	assert.equal(reportedAlsoChanges([bash]), undefined);
-	assert.equal(reportedAlsoChanges([{ type: "custom_message", customType: "spec-check", content: "x\nAlso changes: §x/y — z" }]), undefined);
-	assert.equal(reportedAlsoChanges([{ type: "message", message: { role: "user", content: "Also changes: §x/y — z" } }]), undefined);
-});
-
-test("treeTurn: a worker's commit of a promotion in a tracked tree is a change that lands the current spec, with its foreign §", async () => {
-	mkdirSync(scratchRoot, { recursive: true });
-	const tree = mkdtempSync(join(scratchRoot, "spec-tree-"));
-	try {
-		const put = (rel: string, text: string) => {
-			mkdirSync(dirname(join(tree, rel)), { recursive: true });
-			writeFileSync(join(tree, rel), text);
-		};
-		const git = (...args: string[]) => assert.equal(spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-C", tree, ...args]).status, 0);
-		put(".sova/spec/manifest.json", JSON.stringify({ formatVersion: 1, grammar: { claimsRoot: "claims/", directoryKinds: ["section"] }, boundary: { include: ["src"], exclude: [] }, claims: { "§app/shell": { kind: "surface", code: ["src/App.tsx"] } } }));
-		put(".sova/spec/claims/app/shell.md", "# §app/shell\n\nShell.\n");
-		put(".sova/spec/.gitignore", "/drafts/\n");
-		put("src/App.tsx", "1\n");
-		git("init", "-q");
-		git("add", "-A");
-		git("commit", "-qm", "base");
-		const quiet = await treeStart(join(tree, "src"));
-		assert.ok(quiet?.root === tree, "found from a subdirectory");
-		assert.deepEqual(await treeTurn(quiet!, CORE), { changed: false, specChanged: false, foreign: [] });
-
-		const start = await treeStart(tree);
-		put("src/App.tsx", "2\n");
-		git("commit", "-qam", "code");
-		const code = await treeTurn(start!, CORE);
-		assert.ok(code.changed && !code.specChanged, "a code commit alone lands no spec");
-
-		put(".sova/spec/claims/app/shell.md", "# §app/shell\n\nShell, v2.\n");
-		git("commit", "-qam", "spec");
-		const landed = await treeTurn(start!, CORE);
-		assert.deepEqual(landed, { changed: true, specChanged: true, foreign: ["§app/shell"], changes: [{ id: "§app/shell", change: "text" }] });
-
-		const before = await treeStart(tree);
-		const draft = spawnSync(process.execPath, [join(CORE, "sova-spec-draft.mjs"), "new", "feat", "--root", tree, "--write", "--json"], { encoding: "utf8" });
-		assert.equal(draft.status, 0);
-		await new Promise((r) => setTimeout(r, 20));
-		put(".sova/spec/drafts/feat/spec/claims/app/shell.md", "# §app/shell\n\nShell, v3.\n");
-		const drafted = await treeTurn(before!, CORE);
-		assert.deepEqual(drafted, { changed: true, specChanged: false, foreign: ["§app/shell"] }, "a draft edit (ignored by Git) still counts");
-	} finally {
-		rmSync(tree, { recursive: true, force: true });
-	}
-});
-
-test("a manifest.json in a Git conflict: the census says to run merge-manifest, once per conflict; treeTurn carries it", async () => {
+test("a manifest.json in a Git conflict: the census says to run merge-manifest, once per conflict", async () => {
 	assert.deepEqual(unmergedPaths("UU .sova/spec/manifest.json\0 M src/a.ts\0AA b\0"), [".sova/spec/manifest.json", "b"]);
 	assert.equal(manifestConflict({ top: "/r", head: "a", files: {}, unmerged: ["sub/.sova/spec/manifest.json"] }), "sub/.sova/spec/manifest.json");
 	assert.equal(manifestConflict({ top: "/r", head: "a", files: {} }), undefined);
@@ -508,7 +331,6 @@ test("a manifest.json in a Git conflict: the census says to run merge-manifest, 
 		git("checkout", "-q", "master");
 		put(".sova/spec/manifest.json", manifest("§a/main"));
 		git("commit", "-qam", "main");
-		const tree = await treeStart(repo);
 		let state = (await censusStep(freshCensusState(), { cwd: repo, toolName: "", input: undefined }, CORE)).state;
 		assert.notEqual(git("merge", "side").status, 0, "the merge conflicts");
 		const first = await censusStep(state, { cwd: repo, toolName: "bash", input: { command: "git merge side" } }, CORE);
@@ -516,176 +338,22 @@ test("a manifest.json in a Git conflict: the census says to run merge-manifest, 
 		assert.match(first.result.text ?? "", /If it refuses \(manifest-conflict\): take master's manifest and matching claims \(git checkout master -- …\), re-apply the branch's spec changes in a new draft, and promote\. Never take a side before merge-manifest has run\./);
 		state = first.state;
 		assert.equal((await censusStep(state, { cwd: repo, toolName: "read", input: {} }, CORE)).result.text, undefined, "said once per conflict");
-		const turn = await treeTurn(tree!, CORE);
-		assert.match(turn.conflict ?? "", /merge-manifest/);
 	} finally {
 		rmSync(repo, { recursive: true, force: true });
 	}
 });
 
-test("B3's shape: merging master into the branch lands nothing; the landing merge's list is only the branch's §", async () => {
-	mkdirSync(scratchRoot, { recursive: true });
-	const dir = mkdtempSync(join(scratchRoot, "spec-b3-"));
-	const main = join(dir, "main");
-	const wt = join(dir, "wt");
-	try {
-		const put = (at: string, rel: string, text: string) => {
-			mkdirSync(dirname(join(at, rel)), { recursive: true });
-			writeFileSync(join(at, rel), text);
-		};
-		const git = (at: string, ...args: string[]) => {
-			const r = spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-C", at, ...args], { encoding: "utf8" });
-			assert.equal(r.status, 0, `git ${args.join(" ")}: ${r.stderr}`);
-		};
-		const claims = { "§app/a": { kind: "surface", code: ["src/a.ts"] }, "§app/b": { kind: "surface", code: ["src/b.ts"] } };
-		put(main, ".sova/spec/manifest.json", JSON.stringify({ formatVersion: 1, grammar: { claimsRoot: "claims/", directoryKinds: ["section"] }, boundary: { include: ["src"], exclude: [] }, claims }));
-		put(main, ".sova/spec/claims/app/a.md", "# §app/a\n\nA.\n");
-		put(main, ".sova/spec/claims/app/b.md", "# §app/b\n\nB.\n");
-		put(main, ".sova/spec/.gitignore", "/drafts/\n");
-		put(main, "src/a.ts", "a\n");
-		put(main, "src/b.ts", "b\n");
-		git(main, "init", "-q", "-b", "master");
-		git(main, "add", "-A");
-		git(main, "commit", "-qm", "base");
-		git(main, "worktree", "add", "-q", "-b", "feat/x", wt);
-		// The branch changes §app/a; another task changes §app/b on master meanwhile.
-		put(wt, ".sova/spec/claims/app/a.md", "# §app/a\n\nA, by the branch.\n");
-		git(wt, "commit", "-qam", "branch spec");
-		put(main, ".sova/spec/claims/app/b.md", "# §app/b\n\nB, by the other task.\n");
-		git(main, "commit", "-qam", "other task spec");
-
-		// A turn that only merges master into the branch: nothing lands, nothing is foreign.
-		const branchStart = await treeStart(wt);
-		git(wt, "merge", "--no-edit", "-q", "master");
-		const absorbed = await treeTurn(branchStart!, CORE);
-		assert.equal(absorbed.changed, true);
-		assert.equal(absorbed.specChanged, false, "an absorbed merge is no promotion of this branch's");
-		assert.deepEqual(absorbed.foreign, []);
-
-		// Later in the same run the branch changes its own § again: only that one is listed.
-		put(wt, ".sova/spec/claims/app/a.md", "# §app/a\n\nA, by the branch, again.\n");
-		git(wt, "commit", "-qam", "branch spec 2");
-		const mixed = await treeTurn(branchStart!, CORE);
-		assert.equal(mixed.specChanged, true);
-		assert.deepEqual(mixed.foreign, ["§app/a"], "master's §app/b, absorbed, is not the branch's");
-
-		// The landing merge into master (fast-forward): the target's own diff, §app/a only.
-		const mainStart = await treeStart(main);
-		git(main, "merge", "--ff-only", "-q", "feat/x");
-		const landed = await treeTurn(mainStart!, CORE);
-		assert.equal(landed.specChanged, true);
-		assert.deepEqual(landed.foreign, ["§app/a"]);
-	} finally {
-		spawnSync("git", ["-C", main, "worktree", "remove", "--force", wt]);
-		rmSync(dir, { recursive: true, force: true });
-	}
-});
-
-test("a merge commit into master (no fast-forward) lands the branch's §: the target keeps its whole diff", async () => {
-	mkdirSync(scratchRoot, { recursive: true });
-	const repo = mkdtempSync(join(scratchRoot, "spec-noff-"));
-	try {
-		const put = (rel: string, text: string) => {
-			mkdirSync(dirname(join(repo, rel)), { recursive: true });
-			writeFileSync(join(repo, rel), text);
-		};
-		const git = (...args: string[]) => assert.equal(spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-C", repo, ...args]).status, 0, args.join(" "));
-		put(".sova/spec/manifest.json", JSON.stringify({ formatVersion: 1, grammar: { claimsRoot: "claims/", directoryKinds: ["section"] }, claims: { "§app/a": { kind: "surface", code: ["src/a.ts"] } } }));
-		put(".sova/spec/claims/app/a.md", "# §app/a\n\nA.\n");
-		put("src/a.ts", "a\n");
-		git("init", "-q", "-b", "master");
-		git("add", "-A");
-		git("commit", "-qm", "base");
-		git("checkout", "-qb", "feat/y");
-		put(".sova/spec/claims/app/a.md", "# §app/a\n\nA, y.\n");
-		git("commit", "-qam", "y");
-		git("checkout", "-q", "master");
-		const start = await treeStart(repo);
-		git("merge", "--no-ff", "--no-edit", "-q", "feat/y");
-		assert.deepEqual((await treeTurn(start!, CORE)).foreign, ["§app/a"]);
-	} finally {
-		rmSync(repo, { recursive: true, force: true });
-	}
-});
-
-test("treeTurn reports a comparison that failed instead of staying silent; workerReported spots a relay", async () => {
-	const io: SpecIO = {
-		...localIO,
-		exists: () => false,
-		readDir: () => {
-			throw new Error("none");
-		},
-		mtime: () => 1,
-		exec: async (_cmd, args) => {
-			if (args[0] === "rev-parse" && args[1] === "--show-toplevel") return { stdout: "/r\n", code: 0 };
-			if (args[0] === "status") return { stdout: " M x\0", code: 0 };
-			if (args[0] === "rev-parse") return { stdout: "b\n", code: 0 };
-			throw new Error("git exploded");
-		},
-	};
-	const turn = await treeTurn({ view: { top: "/r", head: "a", files: {} }, root: "/r", drafts: {} }, "/core", io);
-	assert.equal(turn.changed, false);
-	assert.match(turn.error ?? "", /\/r: git exploded/);
-	assert.ok(workerReported([{ type: "custom_message", customType: "subagent-complete", content: "done" }]));
-	assert.ok(workerReported([{ type: "message", message: { role: "toolResult", toolName: "agent_wait" } }]));
-	assert.ok(workerReported([{ type: "message", message: { role: "toolResult", toolName: "team_inbox" } }]));
-	// A run that only starts workers relays nothing (§tools.spec/ledger-once): it takes no ledger op.
-	assert.ok(!workerReported([{ type: "message", message: { role: "toolResult", toolName: "agent_spawn" } }, { type: "message", message: { role: "toolResult", toolName: "agent_list" } }]));
-	assert.ok(!workerReported([{ type: "custom_message", customType: "spec-check", content: "x" }, { type: "message", message: { role: "toolResult", toolName: "bash" } }]));
-});
-
-test("a new child inserted right above a sibling's heading flags the parent (child-added), never the sibling", async () => {
-	mkdirSync(scratchRoot, { recursive: true });
-	const repo = mkdtempSync(join(scratchRoot, "spec-sibling-"));
-	try {
-		const put = (rel: string, text: string) => {
-			mkdirSync(dirname(join(repo, rel)), { recursive: true });
-			writeFileSync(join(repo, rel), text);
-		};
-		const git = (...args: string[]) => assert.equal(spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-C", repo, ...args]).status, 0, args.join(" "));
-		const manifest = (extra: Record<string, unknown>) =>
-			JSON.stringify({ formatVersion: 1, grammar: { claimsRoot: "claims/", directoryKinds: ["section"] }, claims: { "§app/insights": { kind: "note" }, "§app.insights/cards": { kind: "note" }, "§app.insights/refresh": { kind: "note" }, ...extra } });
-		put(".sova/spec/manifest.json", manifest({}));
-		put(".sova/spec/claims/app/insights.md", "# §app/insights — Insights\n\nIntro.\n\n## §app.insights/cards — Cards\n\nCards.\n\n## §app.insights/refresh — Refresh\n\nRefresh.\n");
-		git("init", "-q", "-b", "master");
-		git("add", "-A");
-		git("commit", "-qm", "base");
-		const start = await treeStart(repo);
-		put(".sova/spec/manifest.json", manifest({ "§app.insights/summary": { kind: "note" } }));
-		put(".sova/spec/claims/app/insights.md", "# §app/insights — Insights\n\nIntro.\n\n## §app.insights/cards — Cards\n\nCards.\n\n## §app.insights/summary — Summary\n\nSummary.\n\n## §app.insights/refresh — Refresh\n\nRefresh.\n");
-		git("commit", "-qam", "summary");
-		assert.deepEqual((await treeTurn(start!, CORE)).foreign, ["§app/insights"]);
-	} finally {
-		rmSync(repo, { recursive: true, force: true });
-	}
-});
-
-test("digest: a changed file outside the boundary that no claim maps gets one line, once; mapped ones and the spec's own files don't", () => {
-	const v = censusView({ outside: ["pi-config/usage-status/index.ts", "pi-config/x.ts", ".sova/spec/claims/app/a.md"], mappedOutside: [{ path: "pi-config/x.ts", claims: ["§app/worker"] }] });
-	const text = digest(v, ["pi-config/usage-status/index.ts", "pi-config/x.ts", ".sova/spec/claims/app/a.md"], { reported: false, foreign: [] }, true);
-	assert.ok(text?.includes(unmappedNote("pi-config/usage-status/index.ts")));
-	assert.equal(unmappedNote("f"), "f is outside the boundary and no claim maps it: if it changes user-visible behavior, spec it (a claim that lists it in `code`), else say it's plumbing.");
-	assert.ok(!text?.includes(unmappedNote("pi-config/x.ts")), "a mapped file has its own line");
-	assert.ok(!text?.includes(".sova/spec/claims/app/a.md is outside"), "the spec's own files are not behavior");
-	assert.equal(digest(v, ["README.md"], { reported: true, foreign: [] }, true), undefined, "only new files: said once per file");
-	assert.equal(digest(censusView({ outside: null }), ["a.ts"], { reported: false, foreign: [] }, true), undefined, "no boundary: nothing is outside");
-});
-
-test("checkAlsoChanges exact: a § beyond the computed list is an extra the override never excuses; the override still excuses an omission", () => {
-	const foreign = ["§a/one"];
-	const extra = checkAlsoChanges("x\nAlso changes: §a/one — y; §b/two — z", { required: true, foreign, exact: true });
-	assert.equal(extra.ok, false);
-	assert.equal(extra.problem, "extra");
-	assert.deepEqual(extra.extra, ["§b/two"]);
-	assert.equal(describeProblem(extra), extraText(["§b/two"]));
-	assert.equal(extraText(["§b/two"]), "§b/two isn't changed by this diff: if its user-visible behavior changed, update its claim in a draft and promote; otherwise drop it from the line");
-	const overridden = checkAlsoChanges(`x\n${ALSO_CHANGES_OVERRIDE} users see §b/two change\nAlso changes: §a/one — y; §b/two — z`, { required: true, foreign, exact: true });
-	assert.equal(overridden.ok, false, "an override never adds a §");
-	assert.ok(checkAlsoChanges("x\nAlso changes: §a/one — y; §b/two — z", { required: true, foreign }).ok, "without exact, extras aren't judged");
-	const omitted = checkAlsoChanges(`x\n${ALSO_CHANGES_OVERRIDE} §c/three was created by this task's earlier merge\nAlso changes: §a/one — y`, { required: true, foreign: ["§a/one", "§c/three"], exact: true });
-	assert.ok(omitted.ok, "the override still excuses an omission");
-	const both = checkAlsoChanges("x\nAlso changes: §b/two — z", { required: true, foreign, exact: true });
-	assert.equal(describeProblem(both), `your \`Also changes:\` line omits §a/one; ${extraText(["§b/two"])}`);
+test("digest: the new changed files outside the boundary that no claim maps get one line; mapped ones and the spec's own files don't", () => {
+	const v = censusView({ outside: ["pi-config/usage-status/index.ts", "pi-config/x.ts", ".sova/spec/claims/app/a.md", "docs/a.md"], mappedOutside: [{ path: "pi-config/x.ts", claims: ["§app/worker"] }] });
+	const text = digest(v, ["pi-config/usage-status/index.ts", "pi-config/x.ts", ".sova/spec/claims/app/a.md", "docs/a.md"], { reported: false }, true);
+	assert.ok(text?.includes("Outside the boundary, no claim maps: pi-config/usage-status/index.ts, docs/a.md: spec any whose change a user sees"), text);
+	assert.equal(text?.split("\n").filter((l) => l.startsWith("Outside the boundary")).length, 1, "one line");
+	assert.doesNotMatch(text ?? "", /plumbing/);
+	const many = Array.from({ length: 10 }, (_, i) => `docs/d${i}.md`);
+	assert.equal(unmappedNote(many), `Outside the boundary, no claim maps: ${many.slice(0, 8).join(", ")} (+2 more): spec any whose change a user sees`);
+	assert.ok(!text?.includes(".sova/spec/claims/app/a.md"), "the spec's own files are not behavior");
+	assert.equal(digest(v, ["README.md"], { reported: true }, true), undefined, "only new files: said once per file");
+	assert.equal(digest(censusView({ outside: null }), ["a.ts"], { reported: false }, true), undefined, "no boundary: nothing is outside");
 });
 
 test("SpecWriteGuard (M2-B-s2-1's shape): a rebase after evidence and a hand edit of the manifest are said at once; a merge, git and the draft tools are not", async () => {
@@ -793,125 +461,12 @@ test("driftNote: promote's driftWarnings (--json or text form) are relayed as a 
 	assert.deepEqual(driftWarningsIn(`promote d: §a/x (written)\n  warn drift: ${w}\n`), [w]);
 	const promote = { command: 'node "$core/sova-spec-draft.mjs" promote d --plan abc --write --json' };
 	const note = driftNote("bash", promote, [{ type: "text", text: json }]);
-	assert.match(note ?? "", /^\[spec check\] promote's drift warnings \(a warning, not a block\): \(1\) the draft removed "≥80%" from §a\/x, but §a\/y still says it/);
-	assert.match(note ?? "", /For each: change the stale § in a draft and promote \(name it in `Also changes:`\), or say why it stays\.$/);
+	assert.match(note ?? "", /^\[spec census\] promote's drift warnings: \(1\) the draft removed "≥80%" from §a\/x, but §a\/y still says it/);
+	assert.match(note ?? "", /For each: change the stale § in a draft and promote, or say why it stays\.$/);
+	assert.doesNotMatch(note ?? "", /Also changes|\[spec check\]/);
 	assert.equal(driftNote("bash", promote, [{ type: "text", text: JSON.stringify({ driftWarnings: [] }) }]), undefined);
 	assert.equal(driftNote("bash", { command: "cat out.json" }, [{ type: "text", text: json }]), undefined);
 	assert.equal(driftNote("read", promote, [{ type: "text", text: json }]), undefined);
-});
-
-test("checkAlsoChanges: a format error is its own problem; a line on a Q&A turn is forbidden; advisory § are no extras; the landing gate", () => {
-	const bad = checkAlsoChanges("Merged.\nAlso changes: §app/shell: moved. §app/nav: wraps", { required: true, foreign: ["§app/shell"], exact: true });
-	assert.equal(bad.problem, "malformed");
-	assert.match(describeProblem(bad), /breaks the format: separate items with ";" \(§app\/nav reads as a new item inside a description\)/);
-	const qa = checkAlsoChanges("It renders the shell.\nAlso changes: none", { required: false, forbidden: true, foreign: [] });
-	assert.equal(qa.ok, false);
-	assert.equal(qa.problem, "forbidden");
-	assert.ok(checkAlsoChanges("It renders the shell.", { required: false, forbidden: true, foreign: [] }).ok);
-	assert.ok(checkAlsoChanges("x\nAlso changes: §a/one — y; §m/mapped — its code changed", { required: true, foreign: ["§a/one"], exact: true, advisory: ["§m/mapped"] }).ok);
-	const gate = { required: true, foreign: [], exact: true, unmapped: ["pi-config/x/index.ts"], unpromoted: ["§app.links/public"] };
-	const blocked = checkAlsoChanges("Merged.\nAlso changes: none", gate);
-	assert.equal(blocked.ok, false);
-	assert.equal(blocked.problem, undefined, "the line itself is right");
-	assert.deepEqual([blocked.unmapped, blocked.undeferred], [["pi-config/x/index.ts"], ["§app.links/public"]]);
-	assert.match(describeProblem(blocked), /pi-config\/x\/index\.ts changed and no claim maps it: .*"Plumbing: <path> — <why>".*never plumbing; draft records left unpromoted: §app\.links\/public: promote what shipped, or say which § stay stale on a line "Deferred: §X — <why>"/);
-	const excused = checkAlsoChanges("Merged.\nPlumbing: pi-config/x/index.ts — log wording only in a debug path\nDeferred: §app.links/public — waits for copy review\nAlso changes: none", gate);
-	assert.ok(excused.ok);
-});
-
-test("M3-B-s2-2's own-claim sequence: a claim the branch created stays the task's through a master merge, a relabel and the ff merge", async () => {
-	mkdirSync(scratchRoot, { recursive: true });
-	const dir = mkdtempSync(join(scratchRoot, "spec-own-"));
-	const repo = join(dir, "repo");
-	const wt = join(dir, "wt");
-	try {
-		const git = (at: string, ...args: string[]) => {
-			const r = spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-C", at, ...args], { encoding: "utf8" });
-			assert.equal(r.status, 0, `${args.join(" ")}: ${r.stderr}`);
-			return r.stdout.trim();
-		};
-		const put = (at: string, rel: string, text: string) => {
-			mkdirSync(dirname(join(at, rel)), { recursive: true });
-			writeFileSync(join(at, rel), text);
-		};
-		type Claim = { kind: string; evidence?: string; code?: string[] };
-		const spec = (at: string, claims: Record<string, Claim>, prose: Record<string, string>) => {
-			put(at, ".sova/spec/manifest.json", JSON.stringify({ formatVersion: 1, grammar: { claimsRoot: "claims/", directoryKinds: ["section"] }, boundary: { include: ["src"], exclude: [] }, claims }, null, 1));
-			for (const [file, text] of Object.entries(prose)) put(at, `.sova/spec/claims/${file}`, text);
-		};
-		const base: Record<string, Claim> = { "§app/insights": { kind: "surface" }, "§app.insights/cards": { kind: "behavior", code: ["src/cards.ts"] } };
-		const insights = (extra: string) => `# §app/insights\n\nInsights.\n\n## §app.insights/cards\n\nCards at 80%.\n${extra}`;
-		mkdirSync(repo);
-		spec(repo, base, { "app/insights.md": insights("") });
-		put(repo, "src/cards.ts", "80\n");
-		git(repo, "init", "-q", "-b", "master");
-		git(repo, "add", "-A");
-		git(repo, "commit", "-qm", "base");
-		git(repo, "worktree", "add", "-q", "-b", "feat", wt);
-		// Turn 1 (branch): code, then a promotion that edits §cards and CREATES §app.insights/summary.
-		put(wt, "src/cards.ts", "90\n");
-		git(wt, "commit", "-qam", "code");
-		const summary = "\n## §app.insights/summary\n\nThe lead calls out 90%.\n";
-		spec(wt, { ...base, "§app.insights/summary": { kind: "behavior", evidence: "unreviewed" } }, { "app/insights.md": insights(summary).replace("Cards at 80%", "Cards at 90%") });
-		git(wt, "commit", "-qam", "spec: promote");
-		// Master moves: another task adds §app.insights/poll (master's own new claim: foreign).
-		spec(repo, { ...base, "§app.insights/poll": { kind: "behavior" } }, { "app/insights.md": insights("\n## §app.insights/poll\n\nPoll floor 20 s.\n") });
-		git(repo, "commit", "-qam", "master: poll floor");
-		const tipAtRunStart = git(repo, "rev-parse", "master");
-		// The merge turn: merge master in (resolve the claims file by hand for the fixture), relabel §summary, ff-merge.
-		spawnSync("git", ["-C", wt, "merge", "--no-edit", "master"], { encoding: "utf8" });
-		spec(wt, { ...base, "§app.insights/summary": { kind: "behavior", evidence: "unreviewed" }, "§app.insights/poll": { kind: "behavior" } }, {
-			"app/insights.md": insights(`${summary}\n## §app.insights/poll\n\nPoll floor 20 s.\n`).replace("Cards at 80%", "Cards at 90%"),
-		});
-		git(wt, "add", "-A");
-		git(wt, "-c", "core.editor=true", "commit", "-qm", "merge master");
-		const merged = git(wt, "rev-parse", "HEAD");
-		spec(wt, { ...base, "§app.insights/summary": { kind: "behavior", evidence: "verified" }, "§app.insights/poll": { kind: "behavior" } }, {
-			"app/insights.md": insights(`${summary}\n## §app.insights/poll\n\nPoll floor 20 s.\n`).replace("Cards at 80%", "Cards at 90%"),
-		});
-		git(wt, "commit", "-qam", "spec: relabel summary evidence");
-		const relabel = git(wt, "rev-parse", "HEAD");
-		git(repo, "merge", "--ff-only", "-q", "feat");
-		const bases = await ownBasesFor(repo, relabel, tipAtRunStart);
-		assert.deepEqual(bases, [tipAtRunStart], "after merging master in, the fork point is master's tip");
-		// The landing (master before..after): §cards and the parent's child-added; never §summary (own), never §poll (master's).
-		const landing = await judgeOp({ top: repo, before: tipAtRunStart, after: relabel, kind: "ff", actor: "self" }, CORE, localIO, tipAtRunStart);
-		assert.equal(landing.landing, true);
-		assert.ok(landing.foreign?.includes("§app.insights/cards"), JSON.stringify(landing.foreign));
-		assert.ok(!landing.foreign?.includes("§app.insights/summary"), "the task's own claim is not foreign");
-		assert.ok(!landing.foreign?.includes("§app.insights/poll"), "master's claim didn't land here");
-		// The relabel alone (a commit range on the branch after the master merge): §summary is still own.
-		const relabelOp = await judgeOp({ top: wt, before: merged, after: relabel, kind: "commit", actor: "self" }, CORE, localIO, tipAtRunStart);
-		assert.deepEqual(relabelOp.foreign, [], "a relabel of the task's own claim lands no foreign §");
-		assert.ok(relabelOp.lists === undefined || !relabelOp.lists.foreign.includes("§app.insights/summary"));
-	} finally {
-		rmSync(dir, { recursive: true, force: true });
-	}
-});
-
-test("the workers' ledger: append, read since, malformed lines skipped", () => {
-	mkdirSync(scratchRoot, { recursive: true });
-	const dir = mkdtempSync(join(scratchRoot, "spec-ledger-"));
-	try {
-		const file = ledgerPath(dir, "01a0/../x y");
-		assert.equal(file, join(dir, "sova", "spec-ledger", "01a0_.._x_y.jsonl"));
-		appendLedger(file, { v: 1, at: 10, actor: { runtime: "pi", session: "s1" }, top: "/r", before: "a", after: "b", kind: "commit" });
-		writeFileSync(file, `${readFileSync(file, "utf8")}{broken\n`);
-		appendLedger(file, { v: 1, at: 20, actor: { runtime: "claude-code" }, top: "/r", before: "b", after: "c", kind: "promote" });
-		assert.deepEqual(readLedger(file).map((e) => e.after), ["b", "c"]);
-		assert.deepEqual(readLedger(file, 11).map((e) => e.kind), ["promote"]);
-		assert.deepEqual(readLedger(join(dir, "none.jsonl")), []);
-		// A confined worker's own file, beside the parent's: every one of them is the parent's ledger.
-		const own = workerLedgerPath(dir, "01a0/../x y", "01a0-ag_03");
-		assert.equal(own, join(dir, "sova", "spec-ledger", "01a0_.._x_y.workers", "01a0-ag_03.jsonl"));
-		assert.deepEqual(ledgerFiles(dir, "01a0/../x y"), [file], "no worker file yet");
-		appendLedger(own, { v: 1, at: 15, actor: { runtime: "claude-code", session: "c" }, top: "/r", before: "c", after: "d", kind: "commit" });
-		writeFileSync(join(dirname(own), "note.txt"), "not a ledger");
-		assert.deepEqual(ledgerFiles(dir, "01a0/../x y"), [file, own]);
-		assert.deepEqual(ledgerFiles(dir, "01a0/../x y").flatMap((f) => readLedger(f)).map((e) => e.after), ["b", "c", "d"]);
-	} finally {
-		rmSync(dir, { recursive: true, force: true });
-	}
 });
 
 test("F6/F7: the census follows the tree a call writes in (a parent's `cd <worktree> && …`, an edit's path); a worktree's draft is its workers' too", async () => {
@@ -960,331 +515,33 @@ test("F6/F7: the census follows the tree a call writes in (a parent's `cd <workt
 	}
 });
 
-test("tallyOps: an unmapped file a claim of the current spec maps by settle time is covered (as the Stop hook re-checks)", async () => {
+test("two trees failing with different causes in one call: both lines are said", async () => {
 	mkdirSync(scratchRoot, { recursive: true });
-	const repo = mkdtempSync(join(scratchRoot, "spec-mapped-"));
+	const dir = mkdtempSync(join(scratchRoot, "spec-2fail-"));
 	try {
-		const git = (...args: string[]) => spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-C", repo, ...args], { encoding: "utf8" }).stdout.trim();
-		const manifest = (code: string[]) => JSON.stringify({ formatVersion: 1, grammar: { claimsRoot: "claims/", directoryKinds: ["section"] }, boundary: { include: ["src"], exclude: [] }, claims: { "§app/shell": { kind: "surface", code } } });
-		mkdirSync(join(repo, ".sova/spec/claims/app"), { recursive: true });
-		writeFileSync(join(repo, ".sova/spec/manifest.json"), manifest(["src/App.tsx"]));
-		writeFileSync(join(repo, ".sova/spec/claims/app/shell.md"), "# §app/shell\n\nShell.\n");
-		mkdirSync(join(repo, "src"));
-		writeFileSync(join(repo, "src/App.tsx"), "1\n");
-		git("init", "-q", "-b", "master");
-		git("add", "-A");
-		git("commit", "-qm", "base");
-		const before = git("rev-parse", "HEAD");
-		mkdirSync(join(repo, "tools"));
-		writeFileSync(join(repo, "tools/footer.ts"), "1\n");
-		git("add", "-A");
-		git("commit", "-qm", "footer");
-		const op = { top: repo, before, after: git("rev-parse", "HEAD"), kind: "merge" as const, actor: "self" };
-		const t = freshTally();
-		await tallyOps(t, [op], () => before, CORE);
-		assert.deepEqual([...t.unmapped], ["tools/footer.ts"]);
-		writeFileSync(join(repo, ".sova/spec/manifest.json"), manifest(["src/App.tsx", "tools/footer.ts"]));
-		const later = freshTally();
-		await tallyOps(later, [op], () => before, CORE);
-		assert.deepEqual([...later.unmapped], [], "mapped by the current spec now");
+		const make = (name: string) => {
+			const at = join(dir, name);
+			mkdirSync(join(at, ".sova/spec/claims"), { recursive: true });
+			mkdirSync(join(at, "src"), { recursive: true });
+			writeFileSync(join(at, ".sova/spec/manifest.json"), JSON.stringify({ formatVersion: 1, grammar: { claimsRoot: "claims/", directoryKinds: ["section"] }, boundary: { include: ["src"], exclude: [] }, claims: {} }));
+			writeFileSync(join(at, "src/a.ts"), "1\n");
+			for (const args of [["init", "-q", "-b", "master"], ["add", "-A"], ["commit", "-qm", "base"]])
+				assert.equal(spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-C", at, ...args]).status, 0);
+			return at;
+		};
+		const a = make("a");
+		const b = make("b");
+		const io = { ...localIO, exec: (cmd: string, args: string[], opts: any) => cmd === "node" && args.includes("census") ? Promise.resolve(args.some((x) => x.endsWith("/a")) ? { stdout: "", code: 1 } : { stdout: "not json", code: 0 }) : localIO.exec(cmd, args, opts) };
+		const hook = new CensusHook({ io, core: () => CORE });
+		const edit = { cwd: a, toolName: "edit", input: { path: join(b, "src/a.ts") } };
+		await hook.before(edit);
+		writeFileSync(join(a, "src/a.ts"), "2\n");
+		writeFileSync(join(b, "src/a.ts"), "2\n");
+		const r = await hook.after(edit);
+		assert.match(r.failure ?? "", /incomplete: the census produced no output/);
+		assert.match(r.failure ?? "", /incomplete: unusable census output/);
+		assert.equal((r.failure ?? "").split("\n").length, 2);
 	} finally {
-		rmSync(repo, { recursive: true, force: true });
-	}
-});
-
-/**
- * R3-B-s3-1r's merge-4: two feature branches, each with a draft never promoted, merged into the target with a
- * reply whose Deferred line names all four stale § above "Also changes: none". Into master that is blocked
- * (q14): only a promotion or the override line passes. Into an integration branch the Deferred line still passes.
- */
-async function s31rMerge(target: string): Promise<{ t: ReturnType<typeof freshTally>; base: string }> {
-	mkdirSync(scratchRoot, { recursive: true });
-	const base = mkdtempSync(join(scratchRoot, "spec-s31r-"));
-	const repo = join(base, "repo");
-	mkdirSync(repo);
-	const at = (dir: string) => (...args: string[]) => spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-C", dir, ...args], { encoding: "utf8" });
-	const git = at(repo);
-	const put = (dir: string, rel: string, text: string) => {
-		mkdirSync(dirname(join(dir, rel)), { recursive: true });
-		writeFileSync(join(dir, rel), text);
-	};
-	const claims = {
-		"§app/notifications": { kind: "surface", authority: "accepted" },
-		"§app.notifications/delivery": { kind: "behavior", authority: "accepted", requires: [], code: ["server/push.ts"] },
-		"§app.notifications/settings": { kind: "behavior", authority: "accepted", requires: [], code: ["src/PushSettings.tsx"] },
-		"§app.notifications/send-test": { kind: "behavior", authority: "accepted", requires: [], code: ["shared/protocol.ts"] },
-		"§app/settings-dialog": { kind: "surface", authority: "accepted" },
-		"§app.settings-dialog/save-bar": { kind: "behavior", authority: "accepted", requires: [], code: ["src/SaveBar.tsx"] },
-	};
-	put(repo, ".sova/spec/manifest.json", JSON.stringify({ formatVersion: 1, grammar: { claimsRoot: "claims/", directoryKinds: ["section"] }, boundary: { include: ["src", "server", "shared"], exclude: [] }, claims }, null, 2));
-	const NOTIF = "# §app/notifications\n\nNotifications.\n\n## §app.notifications/delivery\n\nPushes go out at once.\n\n## §app.notifications/settings\n\nOne toggle.\n\n## §app.notifications/send-test\n\nA test button sends one.\n";
-	put(repo, ".sova/spec/claims/app/notifications.md", NOTIF);
-	put(repo, ".sova/spec/claims/app/settings-dialog.md", "# §app/settings-dialog\n\nSettings.\n\n## §app.settings-dialog/save-bar\n\nSave and Cancel.\n");
-	for (const f of ["server/push.ts", "src/PushSettings.tsx", "shared/protocol.ts", "src/SaveBar.tsx"]) put(repo, f, "1\n");
-	put(repo, ".gitignore", ".sova/spec/drafts/\n");
-	git("init", "-q", "-b", "master");
-	git("add", "-A");
-	git("commit", "-qm", "base");
-	if (target !== "master") git("checkout", "-q", "-b", target);
-	const draftTool = join(CORE, "sova-spec-draft.mjs");
-	const feature = (name: string, draftEdit: (spec: string) => void, code: string[]) => {
-		const wt = join(base, name);
-		git("worktree", "add", "-q", "-b", `feat/${name}`, wt);
-		assert.equal(spawnSync(process.execPath, [draftTool, "new", name, "--write", "--root", wt, "--json"]).status, 0, "draft new");
-		draftEdit(join(wt, ".sova/spec/drafts", name, "spec"));
-		for (const f of code) put(wt, f, `${name}\n`);
-		at(wt)("commit", "-qam", name);
-		return wt;
-	};
-	[
-		feature("quiet-hold", (spec) => put(spec, "claims/app/notifications.md", NOTIF.replace("Pushes go out at once.", "Pushes wait out quiet hours.").replace("One toggle.", "A toggle and quiet hours.")), ["server/push.ts", "src/PushSettings.tsx"]),
-		feature("no-send-test", (spec) => {
-			put(spec, "claims/app/notifications.md", NOTIF.replace("A test button sends one.", "No test button.").replace("One toggle.", "One toggle, no test."));
-			put(spec, "claims/app/settings-dialog.md", "# §app/settings-dialog\n\nSettings.\n\n## §app.settings-dialog/save-bar\n\nSave only.\n");
-		}, ["shared/protocol.ts", "src/SaveBar.tsx"]),
-	];
-	const ops = [];
-	for (const name of ["quiet-hold", "no-send-test"]) {
-		const before = git("rev-parse", "HEAD").stdout.trim();
-		assert.equal(git("merge", "--no-ff", "--no-edit", `feat/${name}`).status, 0, `merge ${name}`);
-		ops.push({ top: repo, before, after: git("rev-parse", "HEAD").stdout.trim(), kind: "merge" as const, actor: "self" });
-	}
-	const tip = git("rev-parse", "master").stdout.trim();
-	const t = freshTally(true, true);
-	await tallyOps(t, ops, () => tip, CORE);
-	return { t, base };
-}
-
-const S31R_REPLY =
-	"Merged both.\nDeferred: §app.notifications/delivery, §app.notifications/settings, §app.notifications/send-test, §app.settings-dialog/save-bar — you asked for the merge without waiting on the spec, and both drafts now conflict with master's notifications spec, so they need writing again on current master.\nAlso changes: none";
-const S31R_IDS = ["§app.notifications/delivery", "§app.notifications/send-test", "§app.notifications/settings", "§app.settings-dialog/save-bar"];
-
-test("q14 (R3-B-s3-1r replay): code merged into master with drafts unpromoted: a Deferred line naming the 4 § is blocked; the override passes", async () => {
-	const { t, base } = await s31rMerge("master");
-	try {
-		assert.deepEqual([...t.unpromotedAtDefault].sort(), S31R_IDS, "the landing on master holds both drafts' records");
-		assert.deepEqual([...t.unpromoted], []);
-		const { check } = tallyCheck(t, S31R_REPLY);
-		assert.equal(check.ok, false, "a Deferred line doesn't pass a master landing");
-		assert.deepEqual(check.stale, S31R_IDS);
-		assert.match(describeProblem(check), /lands on the default branch with draft records unpromoted: .*a "Deferred:" line doesn't pass a landing on the default branch, only a line "Spec check override: <why>"/);
-		const overridden = S31R_REPLY.replace("\nAlso changes: none", "\nSpec check override: the user ruled these § stay stale on master until the redraft\nAlso changes: none");
-		assert.equal(tallyCheck(t, overridden).check.ok, true, "only the override line passes it");
-	} finally {
-		rmSync(base, { recursive: true, force: true });
-	}
-});
-
-test("q14: the same shape merged into a non-default branch (a team integration branch): the Deferred line still passes", async () => {
-	const { t, base } = await s31rMerge("team/notifications");
-	try {
-		assert.deepEqual([...t.unpromoted].sort(), S31R_IDS);
-		assert.deepEqual([...t.unpromotedAtDefault], []);
-		const { check } = tallyCheck(t, S31R_REPLY);
-		assert.equal(check.ok, true, describeProblem(check));
-		const bare = tallyCheck(t, "Merged both.\nAlso changes: none").check;
-		assert.deepEqual([bare.ok, bare.undeferred], [false, S31R_IDS], "without it the records still block");
-	} finally {
-		rmSync(base, { recursive: true, force: true });
-	}
-});
-
-// ── What arrives from master (sync merges) ───────────────────────────────────
-
-/** A repo whose master changed §app/b, §app/c and lib/master.ts after feat/x forked into a worktree. */
-function syncMergeRepo(prefix: string) {
-	mkdirSync(scratchRoot, { recursive: true });
-	const dir = mkdtempSync(join(scratchRoot, prefix));
-	const main = join(dir, "main");
-	const wt = join(dir, "wt");
-	const put = (at: string, rel: string, text: string) => {
-		mkdirSync(dirname(join(at, rel)), { recursive: true });
-		writeFileSync(join(at, rel), text);
-	};
-	const git = (at: string, ...args: string[]) => {
-		const r = spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-C", at, ...args], { encoding: "utf8" });
-		assert.equal(r.status, 0, `git ${args.join(" ")}: ${r.stderr}`);
-		return r.stdout.trim();
-	};
-	const claims = { "§app/a": { kind: "surface", code: ["src/a.ts"] }, "§app/b": { kind: "surface", code: ["src/b.ts"] }, "§app/c": { kind: "surface", code: ["src/c.ts"] } };
-	put(main, ".sova/spec/manifest.json", JSON.stringify({ formatVersion: 1, grammar: { claimsRoot: "claims/", directoryKinds: ["section"] }, boundary: { include: ["src"], exclude: [] }, claims }));
-	for (const x of ["a", "b", "c"]) {
-		put(main, `.sova/spec/claims/app/${x}.md`, `# §app/${x}\n\n${x.toUpperCase()}.\n`);
-		put(main, `src/${x}.ts`, `${x}\n`);
-	}
-	put(main, ".sova/spec/.gitignore", "/drafts/\n");
-	put(main, "lib/keep.ts", "keep\n");
-	git(main, "init", "-q", "-b", "master");
-	git(main, "add", "-A");
-	git(main, "commit", "-qm", "base");
-	git(main, "worktree", "add", "-q", "-b", "feat/x", wt);
-	// Another task on master: §app/b and §app/c, and a file no claim maps.
-	put(main, ".sova/spec/claims/app/b.md", "# §app/b\n\nB, by master.\n");
-	put(main, ".sova/spec/claims/app/c.md", "# §app/c\n\nC, by master.\n");
-	put(main, "lib/master.ts", "from master\n");
-	git(main, "add", "-A");
-	git(main, "commit", "-qm", "master's task");
-	const cleanup = () => {
-		spawnSync("git", ["-C", main, "worktree", "remove", "--force", wt]);
 		rmSync(dir, { recursive: true, force: true });
-	};
-	return { main, wt, put, git, cleanup };
-}
-
-test("a promote while a merge of master is in progress: master's § and files arrive, never land; a § both sides changed stays foreign", async () => {
-	const r = syncMergeRepo("spec-sync-both-");
-	try {
-		const before = r.git(r.wt, "rev-parse", "HEAD");
-		const start = await treeStart(r.wt);
-		r.git(r.wt, "merge", "--no-commit", "--no-ff", "master");
-		// The worker promotes its own, different edit to §app/b mid-merge, and changes a file no claim maps.
-		r.put(r.wt, ".sova/spec/claims/app/b.md", "# §app/b\n\nB, by the worker.\n");
-		r.put(r.wt, "lib/own.ts", "the worker's\n");
-		const promote = await judgeOp({ top: r.wt, before, after: before, kind: "promote", actor: "ag_01" }, CORE, localIO);
-		assert.equal(promote.landing, true);
-		assert.deepEqual(promote.foreign, ["§app/b"], "§app/c is master's, unchanged: arrived; §app/b both sides changed: stays");
-		assert.deepEqual(promote.arrivals, { from: "master", ids: ["§app/c"], files: ["lib/master.ts"] });
-		assert.deepEqual(promote.lists?.unmappedChanged.map((u) => u.path), ["lib/own.ts"], "master's unmapped file isn't the gate's");
-
-		// The session's own tree, seen across the merge in progress: the same.
-		const tree = await treeTurn(start!, CORE);
-		assert.deepEqual(tree.foreign, ["§app/b"]);
-		assert.equal(tree.specChanged, true);
-		assert.deepEqual(tree.arrivals?.ids, ["§app/c"]);
-
-		// The merge committed (`git commit` ends it): a commit op over the merge commit lands only §app/b.
-		r.git(r.wt, "add", "-A");
-		r.git(r.wt, "commit", "-q", "--no-edit");
-		const after = r.git(r.wt, "rev-parse", "HEAD");
-		const commit = await judgeOp({ top: r.wt, before, after, kind: "commit", actor: "self" }, CORE, localIO);
-		assert.equal(commit.landing, true);
-		assert.deepEqual(commit.foreign, ["§app/b"]);
-		assert.deepEqual(commit.arrivals?.ids, ["§app/c"]);
-		assert.deepEqual(commit.lists?.unmappedChanged.map((u) => u.path), ["lib/own.ts"]);
-		assert.deepEqual(commit.changes, [{ id: "§app/b", change: "text" }]);
-
-		// And the uncommitted promote, judged after the merge was committed: still only §app/b.
-		const late = await judgeOp({ top: r.wt, before, after: before, kind: "promote", actor: "ag_01" }, CORE, localIO);
-		assert.deepEqual(late.foreign, ["§app/b"]);
-	} finally {
-		r.cleanup();
-	}
-});
-
-test("sync-merge replay: workers' promotes mid-merge of master: the check asks for none of master's §, and its re-prompt lists none", async () => {
-	const r = syncMergeRepo("spec-sync-replay-");
-	try {
-		const before = r.git(r.wt, "rev-parse", "HEAD");
-		r.git(r.wt, "merge", "--no-commit", "--no-ff", "master");
-		// Two workers promote mid-merge: one a new claim of the branch's own, one nothing new (a re-run).
-		r.put(r.wt, ".sova/spec/claims/app/d.md", "# §app/d\n\nD, the branch's own.\n");
-		const m = JSON.parse(readFileSync(join(r.wt, ".sova/spec/manifest.json"), "utf8"));
-		m.claims["§app/d"] = { kind: "surface", code: ["src/d.ts"] };
-		r.put(r.wt, ".sova/spec/manifest.json", JSON.stringify(m));
-		r.put(r.wt, "src/d.ts", "d\n");
-		const ops = [
-			{ top: r.wt, before, after: before, kind: "promote" as const, actor: "ag_01" },
-			{ top: r.wt, before, after: before, kind: "promote" as const, actor: "ag_02" },
-		];
-		// The parent merged master itself (its own change: the line is required); the workers' promotes ride along.
-		const t = freshTally(true, true);
-		await tallyOps(t, ops, () => undefined, CORE, localIO);
-		assert.equal(t.landing, true);
-		assert.deepEqual([...t.ids], [], "master's §app/b and §app/c arrived; §app/d is the branch's own");
-		assert.deepEqual([...t.unmapped], [], "master's lib/master.ts arrived");
-		const v = tallyCheck(t, "Merged and promoted.\nAlso changes: none");
-		assert.equal(v.check.ok, true, describeProblem(v.check));
-		assert.deepEqual(v.arrived, ["§app/b", "§app/c"]);
-		assert.deepEqual(v.arrivedFiles, ["lib/master.ts"]);
-		assert.equal(v.arrivedFrom, "master");
-		// A reply without the line is re-prompted for the line only, with no list of master's § to copy.
-		const bad = tallyCheck(t, "Merged and promoted.");
-		assert.equal(bad.check.ok, false);
-		const text = repromptText(bad.check, bad.foreign, "promoted");
-		assert.doesNotMatch(text, /§app\/[bc]/);
-		assert.match(text, /"Also changes: none"/);
-	} finally {
-		r.cleanup();
-	}
-});
-
-test("a merge of master with nothing of the branch's: nothing lands; a hand resolution that differs from master stays foreign", async () => {
-	const r = syncMergeRepo("spec-sync-plain-");
-	try {
-		const before = r.git(r.wt, "rev-parse", "HEAD");
-		r.git(r.wt, "merge", "-q", "--no-edit", "master");
-		const after = r.git(r.wt, "rev-parse", "HEAD");
-		const plain = await judgeOp({ top: r.wt, before, after, kind: "merge", actor: "self" }, CORE, localIO);
-		assert.equal(plain.landing, false);
-		assert.deepEqual(plain.foreign, []);
-		assert.deepEqual(plain.arrivals?.ids, ["§app/b", "§app/c"]);
-		// A later commit rewrites master's §app/c: the branch's change, so it is foreign again.
-		r.put(r.wt, ".sova/spec/claims/app/c.md", "# §app/c\n\nC, resolved by the branch.\n");
-		r.git(r.wt, "commit", "-qam", "branch c");
-		const both = await judgeOp({ top: r.wt, before, after: r.git(r.wt, "rev-parse", "HEAD"), kind: "commit", actor: "self" }, CORE, localIO);
-		assert.deepEqual(both.foreign, ["§app/c"]);
-		assert.deepEqual(both.arrivals?.ids, ["§app/b"]);
-	} finally {
-		r.cleanup();
-	}
-});
-
-test("checkAlsoChanges `described`: a § already described this session needn't be named again, nor is it an extra; without it the line omits", () => {
-	const reply = (line: string) => `Done.\n${line}`;
-	const described = checkAlsoChanges(reply("Also changes: none"), { required: true, foreign: ["§a/x"], described: ["§a/x"], exact: true });
-	assert.equal(described.ok, true);
-	assert.deepEqual(described.described, ["§a/x"]);
-	const bare = checkAlsoChanges(reply("Also changes: none"), { required: true, foreign: ["§a/x"], exact: true });
-	assert.deepEqual([bare.ok, bare.problem, bare.missing], [false, "none-but-changed", ["§a/x"]]);
-	const partial = checkAlsoChanges(reply("Also changes: §a/y — its own"), { required: true, foreign: ["§a/x", "§a/y"], described: ["§a/x"], exact: true });
-	assert.equal(partial.ok, true);
-	const omits = checkAlsoChanges(reply("Also changes: §a/y — its own"), { required: true, foreign: ["§a/x", "§a/y"], exact: true });
-	assert.deepEqual([omits.ok, omits.problem, omits.missing], [false, "omits", ["§a/x"]]);
-	const named = checkAlsoChanges(reply("Also changes: §a/x — again; §a/z — said before"), { required: true, foreign: ["§a/x"], described: ["§a/x", "§a/z"], exact: true });
-	assert.deepEqual([named.ok, named.extra], [true, []], "naming a described § is never an extra");
-	const empty = checkAlsoChanges(reply("Also changes: none"), { required: true, foreign: ["§a/x"], described: [] });
-	assert.equal(empty.ok, false, "an empty list keeps today's rule");
-	// The re-prompt lists only what is still to be named.
-	const missing = checkAlsoChanges("Done.", { required: true, foreign: ["§a/x", "§a/y"], described: ["§a/x"] });
-	assert.deepEqual(missing.missing, ["§a/y"]);
-	const text = repromptText(missing, ["§a/x", "§a/y"], "merged");
-	assert.match(text, /computed from Git: §a\/y \(1 more already described this session need no repeat\)\./);
-	assert.match(text, /"Also changes: §a\/y — <what changed>"/);
-	assert.doesNotMatch(text, /§a\/x/);
-});
-
-test("the line is required only of a run whose session itself changed something; worker ops alone are charged, never required", async () => {
-	const workerOnly = freshTally();
-	workerOnly.changed = workerOnly.landing = true; // what tallyOps leaves after a worker's landing
-	workerOnly.ids.add("§a/x");
-	const v = tallyCheck(workerOnly, "The worker finished.", { relay: true });
-	assert.deepEqual([v.required, v.charged, v.check.ok], [false, true, true], "no line, no re-prompt; still charged (its record)");
-	const named = tallyCheck(workerOnly, "Done.\nAlso changes: §a/x — the worker's wording", { relay: true });
-	assert.equal(named.check.ok, true, "the line may still be written");
-	const own = freshTally(true);
-	own.ids.add("§a/x");
-	const o = tallyCheck(own, "Edited.");
-	assert.deepEqual([o.required, o.check.ok, o.check.problem], [true, false, "missing"]);
-	const qa = tallyCheck(freshTally(), "An answer.\nAlso changes: none");
-	assert.equal(qa.check.problem, "forbidden", "a run that took nothing still takes no line");
-});
-
-test("loadLedgerCharged: charged ops survive a restart; a session from before starts with its whole ledger charged", () => {
-	mkdirSync(scratchRoot, { recursive: true });
-	const agentDir = mkdtempSync(join(scratchRoot, "ledger-charged-"));
-	try {
-		const e1 = { v: 1 as const, at: 1, top: "/r", before: "a", after: "b", kind: "commit" as const };
-		const e2 = { ...e1, at: 2, after: "c" };
-		appendLedger(ledgerPath(agentDir, "old"), e1);
-		const seeded = loadLedgerCharged(agentDir, "old");
-		assert.deepEqual([...seeded], [ledgerEntryKey(e1)], "no file yet: what the ledger holds now counts as charged");
-		appendLedger(ledgerPath(agentDir, "old"), e2);
-		assert.deepEqual([...loadLedgerCharged(agentDir, "old")], [ledgerEntryKey(e1)], "the file exists now: a new op stays uncharged");
-		markLedgerCharged(agentDir, "old", [ledgerEntryKey(e2)]);
-		assert.deepEqual([...loadLedgerCharged(agentDir, "old")].sort(), [ledgerEntryKey(e1), ledgerEntryKey(e2)], "after a restart, both read as charged");
-		assert.ok(ledgerChargedPath(agentDir, "old").endsWith("spec-ledger/old.charged"));
-		assert.deepEqual([...loadLedgerCharged(agentDir, "fresh")], [], "a new session starts empty");
-	} finally {
-		rmSync(agentDir, { recursive: true, force: true });
 	}
 });

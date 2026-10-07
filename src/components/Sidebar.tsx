@@ -128,7 +128,7 @@ import {
   sessionsHiddenBy,
 } from "../lib/mesh";
 import { MeshHostMenu } from "./MeshHostMenu";
-import { connectedCount, hostFilterAsk } from "../lib/mesh-details";
+import { connectedCount, hostFilterAsk, rowHostState } from "../lib/mesh-details";
 import { openMonitor } from "../lib/monitor-nav";
 
 const ARCHIVE_KEY = "sova:archive-open";
@@ -180,30 +180,40 @@ async function applyDrop(from: DragInfo, groupId: string | null): Promise<boolea
 /** A session's link: `#/s/<path>`, or `#/p/<host>/s/<path>` for one that lives on a peer. */
 export const sessionHref = (path: string) => sessionHrefOn(hostOf(path), path);
 
+/** A peer row's host state: the host menu's word and tone, or null for a peer that can be used. */
+const rowHostOf = (host: string) => {
+  const peer = peerInfo(host);
+  return peer ? rowHostState(peer.state, !!peerUnavailable(peer)) : null;
+};
+
 /**
- * A peer's session carries its host's name beside the time; a host that can't be reached says so
- * in a word too. A session on this host carries nothing, exactly as before the mesh.
+ * A peer's session carries its host's name beside the time; a host that can't be used names its
+ * state in a word too. A session on this host carries nothing, exactly as before the mesh.
  */
 function HostMark(props: { host: string }) {
   const peer = () => peerInfo(props.host);
-  const down = () => (peer() ? peerUnavailable(peer()!) : null);
+  const why = () => (peer() ? peerUnavailable(peer()!) : null);
+  const state = () => rowHostOf(props.host);
   return (
-    <span class="session-host" classList={{ "session-host-down": !!down() }} title={down() ?? `On ${hostLabel(props.host)}`}>
-      <Show when={down()}>
+    <span
+      class="session-host"
+      classList={{ "session-host-warn": state()?.tone === "warn", "session-host-error": state()?.tone === "error" }}
+      title={why() ?? `On ${hostLabel(props.host)}`}
+    >
+      <Show when={state()}>
         <span class="chip-dot" />
       </Show>
       <span class="session-host-name">{hostLabel(props.host)}</span>
-      <Show when={down()}>
-        <span>down</span>
-      </Show>
+      <Show when={state()}>{(s) => <span class="session-host-word">{s().word}</span>}</Show>
     </span>
   );
 }
 
-/** The host clause of a peer row's accessible name. */
+/** The host clause of a peer row's accessible name: the same word as its mark. */
 const hostClause = (host: string) => {
-  const peer = peerInfo(host);
-  return `, on ${hostLabel(host)}${peer && peerUnavailable(peer) ? ", which can't be reached" : ""}`;
+  const state = rowHostOf(host);
+  if (!state) return `, on ${hostLabel(host)}`;
+  return `, on ${hostLabel(host)}, ${state.word === "down" ? "which can't be reached" : state.word}`;
 };
 
 /** "3 subagents working now" / "1 subagent working now" — rail title, toast and hidden row text. */

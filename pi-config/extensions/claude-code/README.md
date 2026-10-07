@@ -301,8 +301,7 @@ Claude half and no policy: it turns the worker and its login into the sandbox's 
 - A 401 in a confined worker refreshes that login once and resumes on it with `--resume` (a
   transcript line says so). Only a second 401 goes to the normal auth failover.
 - Writable besides the policy's roots: the private dir, its transcript slug folder, the team
-  mailbox, and with spec on its own hook state (`<agentDir>/spec-hooks/workers/<key>/`) and ledger
-  file (`mode/spec-guard.ts` `workerLedgerPath`, read by the parent's spec mode). The proxy is the
+  mailbox, and with spec on its own hook state (`<agentDir>/spec-hooks/workers/<key>/`). The proxy is the
   worker's own, and also allows `api.anthropic.com`; under `read-only` that is its only host.
 - Hosted workers: the host process (`subagents/host.ts`) reads the token and calls
   `confineLaunch` itself, owning the worker's proxy and its tmp (`<worker dir>/tmp`). Inline
@@ -319,60 +318,36 @@ Claude half and no policy: it turns the worker and its login into the sandbox's 
 
 ## Spec hooks
 
-`spec-hooks.ts` is the worker half of the spec guard (`mode/spec-guard.ts`). The subagents spawn
+`spec-hooks.ts` is the worker half of the spec census (`mode/spec-guard.ts`). The subagents spawn
 path installs it for code-writing workers of a spec-on session, as `hooks` in the one `--settings`
 JSON (`withClaudeSettings` merges them into the worker's settings; flag settings, hooks included, apply
 under `--setting-sources ""`, probed with CLI 2.1.282). Each hook is `node spec-hooks.ts
-<turn|pre|post|stop> --core <spec/core> --state <dir> [--ledger <file>]`, a fresh process per event with
-plain-JSON state per Claude session:
+<turn|pre|post> --core <spec/core> --state <dir>`, a fresh process per event with plain-JSON state per
+Claude session:
 
-- `UserPromptSubmit`: the cwd's baseline plus worktree HEAD metadata and the default branch's tip.
-  It does not inspect every worktree's source, drafts, or census. The task's own claims are absent
-  at that default tip and at the fork point.
+- `UserPromptSubmit`: primes the census baseline of the cwd's work tree. It does not inspect other
+  worktrees.
 - `PreToolUse`: nonblocking observation of the call's explicit destinations before it executes.
   This supplies the baseline for a shell edit in another worktree without scanning unrelated trees.
-- `PostToolUse` (every tool, Bash included): the shared census step on a git-status delta; its
+- `PostToolUse` (every tool, Bash included): the shared census step on a git-status delta, for each
+  tree the call works in (its cwd, each `cd <dir>`, `git -C <dir>`, a file path); its
   `[spec census]` digest comes back as `additionalContext`. Each worktree keeps its own census
-  state, so once-a-session lines (`Rule:`, "No draft yet", each printed "New claims under a foreign §"
-  pair) do not start over when returning to a tree already seen. The read-only tools (`READ_ONLY`, exact
-  names: Read, Glob, Grep, LS, the web tools, TodoWrite, BashOutput and the team MCP tools
-  `mcp__team__team_inbox`, `…team_msg`, `…team_ask`, `…team_roster`, `…team_report`, `…wake_nudge`)
-  are skipped whole: no git status, no census, so the next writing call sees every change. Every tree a Bash command works in (its
-  cwd, each `cd <dir>`, `git -C <dir>`, a promote's `--root`) is looked at: the HEAD reflog entries
-  since the pre-call observation are filtered to the kinds the command's own Git verbs can make,
-  each HEAD before → after (never `HEAD^1`). A merge into master in the root from a worktree,
-  fast-forward or not, and several merges in one command each count. An external commit followed
-  by this worker's `true` is not attributed to the worker. Shell recognition remains a bounded
-  heuristic, not a complete execution trace.
-  Each operation is appended to the parent's ledger (`--ledger`, else `SOVA_SPEC_LEDGER`;
-  `{v: 1, at, actor: {runtime: "claude-code", session}, top, before, after, kind, target?}`) and
-  judged by spec-guard's `judgeOp`, as the pi session's check does: merging master into a feature
-  branch lands nothing; a merge, a promote (with its `alsoChanges`) or a committed promotion lands its
-  foreign §, the task's own claims out, and the landing lists (unmapped files, unpromoted drafts,
-  § whose code changed under unchanged prose).
+  state, so "No draft yet" does not start over when returning to a tree already seen. A census that
+  can't run gives one line, `[spec census] incomplete: <why>; run census by hand`, once per cause per
+  work tree until a census there succeeds again (kept in the tree's census state, in the state file).
+  The read-only tools (`READ_ONLY`, exact names: Read, Glob, Grep, LS, the web tools, TodoWrite,
+  BashOutput and the team MCP tools `mcp__team__team_inbox`, `…team_msg`, `…team_ask`,
+  `…team_roster`, `…team_report`, `…wake_nudge`) are skipped whole: no git status, no census, so the
+  next writing call sees every change.
   The same call runs the pi session's write guard (spec-guard's helpers; "before" is the tree the
   pre-call hook saw): an edit of the current `manifest.json` or `claims/**`, or a shell command
   that writes them and is neither a draft tool nor git, gets "you wrote the current spec directly";
   a git operation after which a draft's evidence commit left the branch gets the rebase note (abort
   a rebase under way, else the exact old tip to restore with a clean tree, then merge master in).
-- `Stop`: after a promote or merge, the last line must name every computed foreign § (or carry the
-  override line, which excuses only an omission); a § named beyond a list Git fully computed is an
-  extra, never excused, except a § whose code changed under unchanged prose (advisory). The landing
-  gate: each changed file no claim in the current spec maps needs a `Plumbing: <path> — <why>` line,
-  and each draft record still unpromoted (status read again at Stop) a `Deferred: §X — <why>` line,
-  except after a landing on the default branch, where no Deferred line passes it: only a promotion or
-  the override line.
-  The line is parsed by `mode/also-changes.ts`, the one grammar. The reply is sent back up to twice. Otherwise a warning, sent back once: a
-  writing turn without the exact `Also changes:` line, a non-writing turn with one, a line omitting
-  a foreign § the turn's draft edits, or a named § absent from the known current mapping candidates.
-  Optional mapped names come from this turn's changed/touched paths and freshly read mappings,
-  even when a dirty-baseline or repeated-path edit caused no new census digest. Unknown mappings
-  are reported as incomplete, not used to accuse a truthful name as extra. Drafts are gitignored:
-  a draft edit (found by mtime) counts as writing, and its foreign § come from
-  `foreign --spec` against the draft's base commit. Known partial census and landing inventories
-  remain visibly incomplete; a successful reply check is not semantic verification.
 
-A hook that fails prints nothing and exits 0.
+Nothing runs when a turn ends, and no hook writes a spec ledger. A worker started before that change
+still calls `spec-hooks.ts stop` and may pass `--ledger <file>`: both are accepted, print nothing and
+exit 0. A hook that fails prints nothing and exits 0.
 
 ## Claude Code as pi models (experimental provider)
 

@@ -14,7 +14,7 @@
 import { convertToLlm, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { Message } from "@earendil-works/pi-ai";
 import { foldBudgetChars, foldSizeEstimate } from "./session-bridge.ts";
-import { dropLeadingUntaggedSection } from "./stream.ts";
+import { dropPiPreamble } from "./stream.ts";
 
 /** What pi's compact() throws when an extension or an abort (a user's Stop) cancels it. */
 const CANCELLED = "Compaction cancelled";
@@ -53,8 +53,8 @@ export function foldPressure(pi: ExtensionAPI, ctx: ExtensionContext, messages: 
 		budget: foldBudgetChars({
 			contextWindow: model.contextWindow,
 			maxTokens: model.maxTokens,
-			// What the provider sends: pi's preamble is dropped (stream.ts).
-			systemPrompt: dropLeadingUntaggedSection(ctx.getSystemPrompt()),
+			// What the provider sends: pi's stock preamble is dropped, any other prompt goes whole (stream.ts).
+			systemPrompt: dropPiPreamble(ctx.getSystemPrompt()),
 			tools,
 		}),
 	};

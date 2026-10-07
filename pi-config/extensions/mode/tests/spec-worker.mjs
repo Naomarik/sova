@@ -3,12 +3,12 @@
 // loads only this file, a scripted provider, the real spec tools through the agent dir, a scratch Git
 // project. No model requests. The worker's first edit carries the `[spec census]` digest (with the
 // no-draft note), the same file again none, and a new unmapped file outside the boundary its own line.
-// The turn-end check (M4): an edit run without the line is re-prompted once; a promote with a wrong line
-// up to twice, naming Git's list, and the promote lands in the parent's ledger; a merge into master with a
-// draft left unpromoted takes the override, never a Deferred line (q14); a Q&A line once.
+// A turn ends when the model stops: an edit run, a promote and a merge into master end without a
+// re-prompt, whatever the reply says, and a worker started with an old parent's SOVA_SPEC_LEDGER set
+// writes no ledger.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -18,7 +18,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const scratchRoot = process.env.MODE_TEST_SCRATCH ?? path.join(homedir(), ".cache", "mode-tests");
 mkdirSync(scratchRoot, { recursive: true });
 const scratch = mkdtempSync(path.join(scratchRoot, "spec-worker-"));
-// A draft tool that does nothing: `node <it> promote … --write` is a promote to the checks, and the test
+// A draft tool that does nothing: `node <it> promote … --write` is a promote to the census, and the test
 // writes the current spec itself right after, as the real tool would.
 const noopDraft = path.join(scratch, "noop", "sova-spec-draft.mjs");
 mkdirSync(path.dirname(noopDraft), { recursive: true });
@@ -28,7 +28,6 @@ mkdirSync(path.join(agentDir, "extensions"), { recursive: true });
 symlinkSync(path.resolve(here, "../../spec"), path.join(agentDir, "extensions/spec"));
 process.env.PI_CODING_AGENT_DIR = agentDir;
 delete process.env.PI_SPEC_CENSUS_HOOK;
-delete process.env.PI_SPEC_CHECK;
 const ledger = path.join(scratch, "parent-ledger.jsonl");
 process.env.SOVA_SPEC_LEDGER = ledger;
 
@@ -116,35 +115,28 @@ try {
 		{ tool: "bash", args: { command: "printf '3\\n' > src/App.tsx" } },
 		{ tool: "bash", args: { command: "printf '2\\n' > tools/footer.ts" } },
 		{ text: "Done." },
-		{ text: "Done.\nAlso changes: none" },
 	);
 	await session.prompt("change the shell and the footer");
-	assert.equal(requests.length, 6, "one re-prompt for an edit run without the line");
-	assert.match(seen(requests[5]), /your reply has no `Also changes:` line/);
+	assert.equal(requests.length, 5, "an edit run ends when the model stops");
 	assert.doesNotMatch(toolText(requests[1]), /\[spec census\]/, "a read is skipped");
 	assert.match(toolText(requests[2]), /\[spec census\] 1 changed file\(s\) in the boundary/, "the first edit carries the digest");
 	assert.match(toolText(requests[2]), /No draft yet/);
 	assert.match(toolText(requests[2]), /§app\/shell/);
 	assert.doesNotMatch(toolText(requests[3]), /\[spec census\]/, "the same file again: no digest");
-	assert.match(toolText(requests[4]), /tools\/footer\.ts is outside the boundary and no claim maps it/, "a new unmapped file outside the boundary: its line");
+	assert.match(toolText(requests[4]), /Outside the boundary, no claim maps: tools\/footer\.ts: spec any whose change a user sees/, "a new unmapped file outside the boundary: its line");
 	assert.ok(seen(requests[4]).includes("spec census"));
 
-	// A promote with a wrong line: re-prompted twice with Git's list, then let through; the ledger has it.
+	// A promote: no re-prompt, and no ledger.
 	git("add", "-A");
 	git("commit", "-qm", "work");
 	let at = requests.length;
 	// The tool through a path held in $d (R3-B-s3-3's form): still a promote.
 	const promote = `d=${noopDraft}; node "$d" promote feat --write; printf '# §app/shell\\n\\nShell, v2.\\n' > .sova/spec/claims/app/shell.md`;
-	script.push({ tool: "bash", args: { command: promote } }, { text: "Promoted.\nAlso changes: none" }, { text: "Promoted.\nAlso changes: none" }, { text: "Promoted.\nAlso changes: none" });
+	script.push({ tool: "bash", args: { command: promote } }, { text: "Promoted." });
 	await session.prompt("promote it");
-	assert.equal(requests.length, at + 4, "two re-prompts on a landing, then through");
-	assert.match(seen(requests[at + 2]), /The foreign § it lands, computed from Git: §app\/shell\./);
-	const entries = readFileSync(ledger, "utf8").trim().split("\n").map((l) => JSON.parse(l));
-	assert.equal(entries.at(-1).kind, "promote");
-	assert.equal(entries.at(-1).actor.runtime, "pi");
+	assert.equal(requests.length, at + 2, "a landing ends when the model stops");
 
-	// q14: the worker merges a branch whose draft was never promoted into its checkout's master, the default
-	// branch. A Deferred line naming the stale § doesn't pass; the override line does.
+	// A merge into master with a draft left unpromoted: no re-prompt either.
 	git("commit", "-qam", "promoted");
 	const wtD = path.join(scratch, "wtD");
 	git("worktree", "add", "-q", "-b", "featD", wtD);
@@ -154,22 +146,13 @@ try {
 	writeFileSync(path.join(wtD, "src/App.tsx"), "public links\n");
 	assert.equal(spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-C", wtD, "commit", "-qam", "public links"]).status, 0);
 	at = requests.length;
-	const deferred = "Merged.\nDeferred: §app/shell — the links wording waits for review\nAlso changes: §app/shell — its code now serves public links";
-	script.push(
-		{ tool: "bash", args: { command: "git merge --no-ff --no-edit featD" } },
-		{ text: deferred },
-		{ text: deferred.replace("\nAlso changes", "\nSpec check override: the parent ruled §app/shell stays stale until review\nAlso changes") },
-	);
+	script.push({ tool: "bash", args: { command: "git merge --no-ff --no-edit featD" } }, { text: "Merged." });
 	await session.prompt("merge featD into master");
-	assert.equal(requests.length, at + 3, "one re-prompt: the Deferred line didn't pass the landing on master, the override did");
-	assert.match(seen(requests[at + 2]), /lands on the default branch with draft records unpromoted: §app\/shell: .*a \\"Deferred:\\" line doesn't pass/);
-
-	// A Q&A run that writes the line: once.
-	at = requests.length;
-	script.push({ text: "It renders the shell.\nAlso changes: none" }, { text: "It renders the shell." });
-	await session.prompt("what does it render?");
 	assert.equal(requests.length, at + 2);
-	assert.match(seen(requests[at + 1]), /takes no `Also changes:` line/);
+
+	assert.ok(!existsSync(ledger), "no ledger is written");
+	assert.deepEqual(sessionManager.getBranch().filter((e) => e.customType === "spec-check"), []);
+	assert.doesNotMatch(JSON.stringify(requests.map((r) => r.messages)), /\[spec check\]|Also changes/);
 	console.log("spec-worker: ok");
 } finally {
 	session.dispose?.();

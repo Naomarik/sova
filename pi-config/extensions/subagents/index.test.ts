@@ -13,7 +13,8 @@ import { placeholderDir } from "../remote/argv.ts";
 import { REMOTE_MCP_ENV, REMOTE_MCP_SERVER_NAME, REMOTE_SESSION_EVENT, decodeRemoteMcpIdentity } from "../remote/workers.ts";
 import { MODE_DISCOVER_EVENT, MODE_STATE_EVENT } from "../mode/state.ts";
 import { SPEC_HOOK_SCRIPT } from "../claude-code/spec-hooks.ts";
-import { LEDGER_ENV } from "../mode/spec-guard.ts";
+/** The retired worker-ledger variable: no worker is given it now. */
+const LEDGER_ENV = "SOVA_SPEC_LEDGER";
 import { workerSpecBrief } from "./spec-brief.ts";
 import { SANDBOX_DISCOVER_EVENT, SANDBOX_STATE_EVENT, type SandboxStateEvent, type WorkerLaunch } from "../sandbox/state.ts";
 import { MODE_WORKER_DISCOVER_EVENT, MODE_WORKER_EVENT, WORKER_ROLE_DISCOVER_EVENT, WORKER_ROLE_EVENT, type ModeWorkerEvent } from "../mode/events.ts";
@@ -4380,7 +4381,7 @@ test("worktrees: useWorktreeConfig runs a pi worker on <worktree>/.agent with it
 const STATE_SPEC_ON = { version: 1, mode: "normal", strict: false, minorModes: ["spec"] };
 const STATE_SPEC_OFF = { version: 1, mode: "normal", strict: false, minorModes: [] };
 
-test("spec on: every code-writing worker (pi, claude-code, team member) gets the worker spec brief; claude-code also the spec hooks, a confined one on its own state dir and ledger file", async () => {
+test("spec on: every code-writing worker (pi, claude-code, team member) gets the worker spec brief; claude-code also the spec hooks, a confined one on its own state dir; no worker gets a spec ledger", async () => {
 	const bus = eventBus();
 	let asked = 0;
 	bus.on(MODE_DISCOVER_EVENT, (data: any) => { if (data?.version === 1) asked++; });
@@ -4402,10 +4403,7 @@ test("spec on: every code-writing worker (pi, claude-code, team member) gets the
 		// pi workers run with --no-extensions: the census hook comes in by -e, a sibling of subagents/.
 		assert.deepEqual(h.workers[1].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, SPEC_WORKER_EXTENSION]);
 		assert.equal(SPEC_WORKER_EXTENSION, fs.realpathSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "mode", "spec-worker.ts")));
-		// Its git operations go to this session's ledger (M4); spec off, none.
-		const ledger = h.workers[1].env?.[LEDGER_ENV];
-		assert.ok(typeof ledger === "string" && ledger.startsWith(path.join(NO_AGENT_DIR, "sova", "spec-ledger") + path.sep) && ledger.endsWith(".jsonl"), String(ledger));
-		assert.equal(h.workers[0].env?.[LEDGER_ENV], undefined);
+		assert.equal(h.workers[1].env?.[LEDGER_ENV], undefined, "no spec ledger");
 		await h.call("agent_spawn", { prompt: "reader", tools: ["read", "grep"] });
 		assert.equal(h.workers[2].systemPrompt, undefined, "a worker that cannot write gets no brief");
 		assert.deepEqual(h.workers[2].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION], "nor the census hook");
@@ -4413,12 +4411,12 @@ test("spec on: every code-writing worker (pi, claude-code, team member) gets the
 		const claude = created[1];
 		assert.equal(claude.systemPrompt, `Own words.\n\n${brief}`);
 		const hooks = JSON.parse(claude.settingsJson).hooks;
-		assert.deepEqual(Object.keys(hooks).sort(), ["PostToolUse", "PreToolUse", "Stop", "UserPromptSubmit"]);
+		assert.deepEqual(Object.keys(hooks).sort(), ["PostToolUse", "PreToolUse", "UserPromptSubmit"], "nothing at the turn's end");
 		const post = hooks.PostToolUse[0];
 		assert.equal(post.matcher, "*", "after ANY tool, Bash included");
 		assert.ok(post.hooks[0].command.includes(SPEC_HOOK_SCRIPT) && post.hooks[0].command.includes(" post --core "));
 		assert.ok(post.hooks[0].command.includes(path.join(NO_AGENT_DIR, SPEC_HOOK_STATE)), "state under the agent dir");
-		assert.ok(post.hooks[0].command.includes(` --ledger ${ledger}`), "the hooks write the same ledger");
+		assert.ok(!post.hooks[0].command.includes("--ledger"), "no ledger");
 		await h.call("agent_spawn", { prompt: "claude reader", backend: "claude-code", tools: ["Read"] });
 		assert.ok(!("settingsJson" in created[2]) && created[2].systemPrompt === undefined, "a read-only claude worker gets neither");
 
@@ -4427,14 +4425,14 @@ test("spec on: every code-writing worker (pi, claude-code, team member) gets the
 		const confined = created[3];
 		const merged = JSON.parse(confined.settingsJson);
 		assert.equal(merged.sandbox, undefined, "no Claude sandbox settings from the sandbox (the runner turns it off)");
-		const stop = merged.hooks.Stop[0].hooks[0].command as string;
+		const confinedPost = merged.hooks.PostToolUse[0].hooks[0].command as string;
 		const ownState = path.join(NO_AGENT_DIR, SPEC_HOOK_STATE, "workers", confined.confine.key);
-		const ownLedger = path.join(NO_AGENT_DIR, "sova", "spec-ledger", `${path.basename(ledger!, ".jsonl")}.workers`, `${confined.confine.key}.jsonl`);
-		assert.ok(stop.includes(` --state ${ownState}`) && stop.includes(` --ledger ${ownLedger}`), stop);
-		assert.deepEqual(confined.confine.writable, [ownState, ownLedger], "both writable inside, nothing else of the agent dir");
-		assert.ok(fs.statSync(ownState).isDirectory() && fs.statSync(ownLedger).isFile(), "made before the launch");
+		assert.ok(confinedPost.endsWith(` --state ${ownState}`), confinedPost);
+		assert.equal(merged.hooks.Stop, undefined);
+		assert.deepEqual(confined.confine.writable, [ownState], "its hook state writable inside, nothing else of the agent dir");
+		assert.ok(fs.statSync(ownState).isDirectory(), "made before the launch");
+		assert.ok(!fs.existsSync(path.join(NO_AGENT_DIR, "sova", "spec-ledger")), "no ledger file is made");
 		fs.rmSync(path.join(NO_AGENT_DIR, SPEC_HOOK_STATE, "workers"), { recursive: true, force: true });
-		fs.rmSync(path.dirname(ownLedger), { recursive: true, force: true });
 		h.bus.emit(SANDBOX_STATE_EVENT, SANDBOX_OFF);
 
 		await h.call("team_create", { name: "T", objective: "o", members: [
@@ -4444,7 +4442,7 @@ test("spec on: every code-writing worker (pi, claude-code, team member) gets the
 		assert.ok(created[4].systemPrompt.endsWith(brief) && JSON.parse(created[4].settingsJson).hooks, "a claude member");
 		assert.ok(h.workers.at(-1).systemPrompt.endsWith(brief), "a pi member");
 		assert.deepEqual(h.workers.at(-1).extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, SPEC_WORKER_EXTENSION, MEMBER_EXTENSION], "a pi member gets the census hook too");
-		assert.equal(h.workers.at(-1).env?.[LEDGER_ENV], ledger, "and the ledger, beside its member identity");
+		assert.equal(h.workers.at(-1).env?.[LEDGER_ENV], undefined, "and no ledger beside its member identity");
 		assert.ok(Object.keys(h.workers.at(-1).env).length > 1);
 
 		h.bus.emit(MODE_STATE_EVENT, { ...STATE_SPEC_ON, version: 2 });
@@ -4567,7 +4565,7 @@ test("worker marker: says it is a worker at load and to anyone who asks later (a
 	assert.doesNotThrow(() => workerMarkExtension({ on() {} } as any), "no bus: inert");
 });
 
-test("spec on with the parent's worker modes (mode:worker) too: the spec block comes once, from the mode prompt; the census hook, hooks and ledger stay", async () => {
+test("spec on with the parent's worker modes (mode:worker) too: the spec block comes once, from the mode prompt; the census hook and hooks stay", async () => {
 	const h = harness();
 	const created: any[] = [];
 	h.bus.emit(BACKEND_REGISTER_EVENT, fakeBackend(created));
@@ -4578,10 +4576,9 @@ test("spec on with the parent's worker modes (mode:worker) too: the spec block c
 		await h.call("agent_spawn", { prompt: "pi task", systemPrompt: "Be terse." });
 		assert.equal(h.workers[0].systemPrompt, `Be terse.\n\n${WORKER_BLOCK}`, "the mode prompt, no brief on top");
 		assert.deepEqual(h.workers[0].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, SPEC_WORKER_EXTENSION]);
-		assert.ok(typeof h.workers[0].env?.[LEDGER_ENV] === "string");
 		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code", systemPrompt: "Own words." });
 		assert.equal(created[0].systemPrompt, `Own words.\n\n${WORKER_BLOCK}`);
 		assert.ok(!created[0].systemPrompt.includes(brief));
-		assert.ok(JSON.parse(created[0].settingsJson).hooks.Stop, "the hooks still come");
+		assert.ok(JSON.parse(created[0].settingsJson).hooks.PostToolUse, "the hooks still come");
 	} finally { await h.close(); }
 });

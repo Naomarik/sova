@@ -53,7 +53,6 @@ const cases = [
 	hookCase("turn", hookInput("UserPromptSubmit", { prompt: "bench" })),
 	hookCase("pre", hookInput("PreToolUse", { tool_name: "Bash", tool_input: { command: "ls" } })),
 	hookCase("post", hookInput("PostToolUse", { tool_name: "Bash", tool_input: { command: "ls" }, tool_response: { stdout: "x", stderr: "", interrupted: false } })),
-	hookCase("stop", hookInput("Stop", { stop_hook_active: false, last_assistant_message: "done" })),
 	{ name: "worker host (to hello)", ready: hostReady },
 	{ name: "team MCP (to initialize reply)", ready: mcpReady },
 ].filter((c) => !ONLY?.length || ONLY.includes(c.name));

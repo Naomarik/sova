@@ -25,7 +25,7 @@ import {
 } from "./prompt.ts";
 import { routeAll, routeWriter, type Discovery } from "./routing.ts";
 import { specDefaults, type SpecSettings } from "./spec.ts";
-import { ALSO_CHANGES_OVERRIDE as SPEC_CHECK_OVERRIDE, DIGEST_TAG } from "./spec-guard.ts";
+import { DIGEST_TAG } from "./spec-guard.ts";
 import {
 	activeOf,
 	DEFAULT_ALIGN_VIEWER_SHORTCUT,
@@ -437,7 +437,7 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 		assert.match(spec, new RegExp(`\`${cmd}\\b`), `${cmd} is named`);
 	}
 	// Task reading pulls: contents, then one passage; whole-chain packet/scope remain machine inspection.
-	assert.match(spec, /only reads: `map`, `where <path\|name>`, `toc '<§id>' --dir out\|in\|down\|up\|mentions`, `read '<§id>' \[--whole\] \[--no-frame\]`, `impact '<§id>' \[--near\]`, `check`, `census`, `foreign --base <rev>`, and whole-chain `packet`\/`scope '<§id>'` \(machine inspection\); `--cursor <next>` continues a page; `--spec <dir>` reads a draft\./);
+	assert.match(spec, /only reads: `map`, `where <path\|name>`, `toc '<§id>' --dir out\|in\|down\|up\|mentions`, `read '<§id>' \[--whole\] \[--no-frame\]`, `impact '<§id>' \[--near\]`, `check`, `census`, and whole-chain `packet`\/`scope '<§id>'` \(machine inspection\); `--cursor <next>` continues a page; `--spec <dir>` reads a draft\./);
 	for (const cmd of ["foreign", "map", "where", "toc", "read"]) assert.doesNotMatch(usage("sova-spec.mjs", cmd), /unknown command/, `${cmd} is a core command`);
 	assert.doesNotMatch(spec, /--budget/, "every default budget fits a passage: the guide spends no words on it");
 	// A project's copy is foreign code: inspected and asked about, never run blind.
@@ -470,13 +470,12 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	// Only what the task changed is claimed; neighbours are linked, never spec'd.
 	assert.match(spec, /Claim only files the task changed \(each record's `code`\); unchanged dependencies are not spec'd; `requires` names only existing claims\./);
 	// The finish gate: the changed-file census, run on the draft until it is promoted.
-	assert.match(spec, /Before finishing:\n- `node "\$core\/sova-spec\.mjs" census --changed --root <project root> --json` must report no in-boundary changed file unclaimed, and no changed file outside it that no claim maps unless a "Plumbing: <path> — <why>" line above the last line names it \(never UI text, colour, CLI output or footer rendering\) \(`--spec` the draft's `spec\/` until promoted; `--base <rev>` once committed\)\. Pre-existing unclaimed files aren't the task's job\./);
+	assert.match(spec, /Before finishing:\n- Run `node "\$core\/sova-spec\.mjs" census --changed --root <project root> --json` \(`--spec` the draft's `spec\/` until promoted; `--base <rev>` once committed\): every changed file in the boundary is claimed, any changed file outside it whose change a user sees is spec'd, and you have read each § it lists for your change\./, "one census before finishing; the boundary is not an exemption");
 	// Promotion is no longer conditional on a commit: promote, or say why not.
-	assert.match(spec, /- Read `\$core\/\.\.\/PROMOTE\.md`; promote what you verified, or say in your reply why not\./);
+	assert.match(spec, /- Before promoting, read `\$core\/\.\.\/PROMOTE\.md`; promote what you verified, or say in your reply why not\./);
 	assert.doesNotMatch(spec, /Before `git commit`, if/, "the old conditional is gone");
-	assert.match(spec, /A `conflict` is per declaration: re-apply in a new draft from current\./);
+	assert.match(spec, /A `manifest\.json` conflict: follow the census note\./);
 	// The `--doc-only` cases are checked against the draft tool itself: see "the guide's doc-only cases are the draft tool's".
-	assert.match(spec, /A Git merge conflict in `manifest\.json`: run `merge-manifest --write` first; if it refuses, take master's manifest and matching claims \(`git checkout master -- …`\), re-apply the branch's spec changes in a new draft, and promote\. Never take a side before it has run\./);
 	assert.match(usage("sova-spec-draft.mjs", "--no-such-flag"), /merge-manifest/, "merge-manifest is a draft command");
 	assert.match(spec, /never put `§` IDs or spec annotations in source code/);
 	assert.match(spec, /authorizes its drafts, evidence and promotions as one bounded batch; no dialog per claim, and nothing at session start/);
@@ -487,20 +486,14 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	assert.match(spec, /even one your new claim describes/);
 	assert.match(spec, /wherever you put the claim/);
 	assert.match(spec, /never a gap it already had, even one you rely on/);
-	assert.match(spec, /"Also changes: none"/);
-	assert.match(spec, /Before finishing:\n(- .*\n)*- Your reply's last line on a turn that edited, committed, promoted or merged, exempt work included, is exactly "Also changes: §X — <what>; §Y — <what>" or "Also changes: none", nothing after; a turn that only answered writes no such line\. Items are separated by ";", each led by the § it names \(", \/d" after "§a\.b\/c" is "§a\.b\/d"\); a § inside a description isn't named\. It names foreign § only, never your new claims; an addition under one is that §'s change, and a § the user asked for is still foreign\./, "the handoff line is a finishing step on change turns, exempt work included; none on a Q&A turn; its grammar");
-	assert.match(spec, /One that leaves draft records unpromoted names their stale § on a "Deferred: §X — <why>" line above the last line; on the default branch it promotes them instead\./, "q14: no Deferred exit at a master landing");
-	assert.match(spec, /A merge or promote turn names each foreign § it lands not described this session, never § arriving unchanged from master: copy `worktree merge`'s or `promote --write`'s list/, "merge and promote turns copy the computed list, minus what was described or arrived from master");
-	assert.match(spec, /"Spec check override: <why>"/);
-	assert.match(spec, /on the default branch it promotes them instead\. "Spec check override: <why>" right above the last line excuses only an omission you show is wrong\./, "the override never adds a §");
-	assert.ok(spec.includes(SPEC_CHECK_OVERRIDE), "the prompt spells the override the check accepts");
-	assert.ok(spec.includes(`A \`${DIGEST_TAG}\` note on a tool result is this census`), "the automatic census is named by its tag");
-	assert.match(spec, /While coding, exempt work included, edit one file per tool call \(no multi-file sed, heredoc or parallel edits\) and run `census --changed` \(`--spec` your draft, if any\) after the first edit and each new file\./, "q15: per tool call, so each file's census lands before the next");
+	assert.match(spec, /Batch flags in the plan as one question: "This also changes §X: <what>\. OK\?"; a session told not to ask says it in its reply\./, "the flag is asked in the plan, or said when asking isn't possible");
+	for (const gone of ["Also changes", "Plumbing:", "Deferred:", "Spec check override", "last line", "foreign --base", "merge round", "captain"]) assert.ok(!spec.includes(gone), `no closing lines and no merge round: ${gone}`);
+	assert.ok(spec.includes(`While coding, a \`${DIGEST_TAG}\` note on a tool result is the census, run for you: act on it.`), "while coding, the automatic census is named by its tag");
+	assert.doesNotMatch(spec, /one file per tool call|after the first edit and each new file/, "while coding, the census note replaces the census run by hand");
 	assert.match(spec, /Trusted tools: start each bash command with exactly this, never a guessed path:\n\n```sh\n/, "the recipe, not a hard-coded agent dir");
 	assert.match(spec, /plumbing \(a request, hook, helper or CSS class\) never flags/);
 	assert.match(spec, /editing one in your draft flags\. Read it with `read`;/, "a foreign § is read alone, not with its chain");
-	assert.ok(spec.split(/\s+/).length <= 1063, "short enough to ride every turn: growing it is a deliberate change");
-	assert.match(spec, /and no changed file outside it that no claim maps unless a "Plumbing: <path> — <why>" line above the last line names it \(never UI text, colour, CLI output or footer rendering\)/, "the boundary is not an exemption");
+	assert.ok(spec.split(/\s+/).length <= 810, "short enough to ride every turn: growing it is a deliberate change");
 });
 
 test("spec: the guide's doc-only cases are the draft tool's: each one it names is accepted, and every case the tool's rule lists is named", () => {
@@ -1057,12 +1050,13 @@ test("codemode: a minor mode with no prompt block, no mode note and no worker re
 	assert.ok(SCRIPT_ONLY_EXPOSURES.has("codemode") && SCRIPT_ONLY_EXPOSURES.has("deferred") && !SCRIPT_ONLY_EXPOSURES.has("direct") && !SCRIPT_ONLY_EXPOSURES.has("model-only"));
 });
 
-test("SPEC_WORKER_NOTE: the parent promotes, the brief is the go-ahead, and the reply ends on the Also changes line spec-mode.md names", () => {
+test("SPEC_WORKER_NOTE: the parent promotes, the brief is the go-ahead, and flags go in the final report", () => {
 	assert.match(SPEC_WORKER_NOTE, /parent session started you, and it promotes/);
 	assert.match(SPEC_WORKER_NOTE, /Do not promote, commit, or record `--commit` evidence unless your brief says to/);
 	assert.match(SPEC_WORKER_NOTE, /Your brief is your go-ahead/);
 	// The note leans on spec-mode.md's own wording; a rewrite there must revisit the note.
-	for (const phrase of ["`--commit`", "Also changes:", "draft", "promote"]) assert.ok(SPEC_INSTRUCTIONS.includes(phrase.replace(/`/g, "")) || SPEC_INSTRUCTIONS.includes(phrase), phrase);
+	for (const phrase of ["`--commit`", "Batch flags", "draft", "promote"]) assert.ok(SPEC_INSTRUCTIONS.includes(phrase.replace(/`/g, "")) || SPEC_INSTRUCTIONS.includes(phrase), phrase);
+	assert.ok(SPEC_WORKER_NOTE.endsWith("Put any flags as one question in your final report."), "no last line for a worker either");
 	assert.ok(!SPEC_INSTRUCTIONS.includes(SPEC_WORKER_NOTE), "spec-mode.md itself stays the parent's text");
 });
 

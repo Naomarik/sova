@@ -140,49 +140,6 @@ export async function merging(ctx) {
     guard("a.same-h2.no-prose-lost", same.kept, "A's sentence current; B's still in its draft unless promoted; no conflict markers"),
   ]));
 
-  // A stacked chain: integration branch → task branch → master, judged per operation as the hooks judge it.
-  const guardMod = await ctx.module("mode/spec-guard.ts");
-  for (const shape of ["stacked", "absorbed"]) {
-    const repo = standard(ctx, `a-${shape}`);
-    const base = repo.head();
-    drafted(ctx, repo, "dint", "§b/other", "Other does Z.", "Other does Z, integrated.");
-    drafted(ctx, repo, "dtask", "§a.top/two", "Two does Y.", "Two does Y, tasked.");
-    repo.checkout("-b", "integration", base);
-    implement(repo, "src/other.txt", 1, "INT");
-    evidence(ctx, repo, "dint", "§b/other");
-    const pi = promote(ctx, repo, "dint", "§b/other");
-    repo.checkout("-b", "task", base);
-    implement(repo, "src/two.txt", 1, "TASK");
-    evidence(ctx, repo, "dtask", "§a.top/two");
-    const pt = promote(ctx, repo, "dtask", "§a.top/two");
-    let mid;
-    if (shape === "stacked") {
-      const before = repo.head();
-      repo.merge("integration");
-      mid = await guardMod.judgeOp({ top: repo.root, before, after: repo.head(), kind: "merge" }, ctx.tools.core, guardMod.localIO, base);
-    } else {
-      repo.checkout("master");
-      repo.merge("integration");
-      const tip = repo.head();
-      repo.checkout("task");
-      const before = repo.head();
-      repo.merge("master");
-      mid = await guardMod.judgeOp({ top: repo.root, before, after: repo.head(), kind: "merge" }, ctx.tools.core, guardMod.localIO, tip);
-    }
-    repo.checkout("master");
-    const tip = repo.head();
-    repo.merge("task");
-    const land = await guardMod.judgeOp({ top: repo.root, before: tip, after: repo.head(), kind: "merge" }, ctx.tools.core, guardMod.localIO, tip);
-    const midIds = mid.landing ? mid.foreign ?? [] : [];
-    const landIds = land.foreign ?? [];
-    const expect = shape === "stacked" ? ["§a.top/two", "§b/other"] : ["§a.top/two"];
-    const setup = pi.refused.length === 0 && pt.refused.length === 0;
-    rows.push(row("a", `a.${shape}.mid-merge-listed`, midIds.join(",") || "none"));
-    rows.push(row("a", `a.${shape}.relisted-at-master`, midIds.filter((id) => landIds.includes(id)).length, [
-      guard(`a.${shape}.setup-promoted`, setup, `integration: ${pi.refused.join("+") || "promoted"}; task: ${pt.refused.join("+") || "promoted"}`),
-      guard(`a.${shape}.master-landing-listed`, land.landing && expect.every((id) => landIds.includes(id)), `master landing ${land.landing ? "lists" : "is no landing; lists"} ${landIds.join(",") || "none"}; needs ${expect.join(",")}`),
-    ]));
-  }
   rows.push(...sameSpot(ctx));
   rows.push(...manifestMerge(ctx));
   return rows;
@@ -406,7 +363,7 @@ async function piSession(ctx, repo, steps) {
     const w = await writes.after(id, call);
     const c = await census.after({ ...call, orphansSaid: w.lost, commands, sessionStart: "2023-11-14T00:00:00.000Z" });
     // The tool_result composition of mode/index.ts: write guard, promote drift, census digest, a failure.
-    notes.push([w.text, g.driftNote(toolName, input, [{ type: "text", text: "" }]), c.text, c.failure ? `${g.DIGEST_TAG} ${c.failure}` : undefined].filter(Boolean).join("\n"));
+    notes.push([w.text, g.driftNote(toolName, input, [{ type: "text", text: "" }]), c.text, c.failure].filter(Boolean).join("\n"));
   }
   return notes;
 }

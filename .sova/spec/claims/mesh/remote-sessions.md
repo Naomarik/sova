@@ -23,6 +23,16 @@ opened until it returns. A host that withholds its sessions from this host (it a
 §mesh.peers/grants) keeps no rows, and the list filtered to it says "Hidden by {host}". The existing
 session list route is unchanged.
 
+## §mesh.remote-sessions/row-host-state — A peer row's host word names its state
+
+A peer session's row carries its host's name beside the time; when that host can't be used from
+here, a dot and a word after the name name its state in the host menu's words
+(§mesh.remote-sessions/host-filter): "other version" and "hidden" in amber, "down" and "refused" in
+red. An up host that keeps its sessions from this host says "hidden" in amber. A plain up host
+shows no dot and no word. The name gives way (ellipsis) before the word. The hover title is the
+sentence saying why the host is unavailable. The row's accessible name says the same word after
+the host (", on {host}, other version"); only a down host says ", which can't be reached".
+
 ## §mesh.remote-sessions/host-picker — New session: Host
 
 While the mesh is on, New Session has a **Host** choice above This Computer | Remote: where the

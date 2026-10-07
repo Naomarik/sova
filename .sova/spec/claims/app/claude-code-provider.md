@@ -165,3 +165,16 @@ intro when the list names a model the catalog doesn't know ("Claude Code offers 
 ({id}), which Sova's catalog doesn't know yet.") or resolves a family's alias to another model than
 the catalog's current one ("Claude Code now runs {family} as {id}; Sova's catalog still says
 {current}."). Nothing changes when the list omits a catalog model or can't be read.
+
+## §app.claude-code-provider/system-prompt — The system prompt the CLI is given
+
+The provider gives the Claude CLI the session's current system prompt (pi's system entries
+replayed, later ones folded into the first) in its `initialize` request, with one cut:
+pi's own stock preamble, the sentence that tells the model it is "an expert coding assistant
+operating inside pi", is left out. Only that exact text is cut, and only as a whole opening
+paragraph of the prompt's `preamble` section (or of a prompt pi recorded as one flat text),
+wherever that section sits among the others; everything else goes in its order, byte for byte.
+Every other prompt arrives whole: a custom preamble (a SYSTEM.md, a baton or gathering
+session's own instructions), a prompt with no tagged sections, and one with a line like `<script>`
+or `<tools>` anywhere in it. The fold budget that decides when a long Claude Code session is
+compacted counts the same prompt the CLI is given.

@@ -9,9 +9,7 @@
  *   edit call. Without a task draft the digest says so.
  * - **Forbidden writes** (SpecWriteGuard): the current spec written by hand, or commits a draft's evidence
  *   names rewritten (a rebase after evidence), are said in the same digest by the call that did it.
- * - **The `Also changes:` line** (checkAlsoChanges): the last line of a reply on a turn that edited,
- *   committed, promoted or merged, checked against the foreign § computed from Git (`sova-spec.mjs foreign`,
- *   the worktrees merge event). The caller blocks (one re-prompt) on merge/promote turns, warns elsewhere.
+ * - **Promote drift** (driftNote): a promote call's drift warnings, relayed in the same digest.
  *
  * Plain node: builtins only, erasable TypeScript only, no pi types — the mode extension's hooks
  * (index.ts) and the Claude Code workers' hook script (subagents) import the same code. Everything that
@@ -19,16 +17,11 @@
  * (CensusState), so a caller whose hooks are separate processes can keep it in a file.
  */
 import { spawn } from "node:child_process";
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { posix } from "node:path";
-import { ALSO_CHANGES_OVERRIDE, deferredIds, lastLine, looksLikeAlsoChanges, overrideLine, parseAlsoChanges, parseAlsoChangesLine, plumbingPaths } from "./also-changes.ts";
-
-export { ALSO_CHANGES_OVERRIDE, DEFERRED_LINE, deferredIds, lastLine, overrideLine, looksLikeAlsoChanges, parseAlsoChanges, parseAlsoChangesLine, PLUMBING_LINE, plumbingPaths, stripAlsoChanges } from "./also-changes.ts";
-
 const { dirname, join, relative } = posix;
 
 export const DIGEST_TAG = "[spec census]";
-export const CHECK_TAG = "[spec check]";
 export const TOOL_TIMEOUT_MS = 5000;
 /** Files and ids shown before "+N more". */
 export const FILE_CAP = 8;
@@ -240,8 +233,6 @@ export async function pickDraft(root: string, commands: readonly string[], sessi
 
 /** The parts of a `census --changed --json` the digest reports. */
 export interface CensusView {
-	foreignNote: string;
-	foreign: string[];
 	/** In-boundary changed files a claim maps, with their §. */
 	claimed: { path: string; claims: string[] }[];
 	/** null without a boundary: nothing is judged unclaimed. */
@@ -250,7 +241,6 @@ export interface CensusView {
 	mappedOutside: { path: string; claims: string[] }[];
 	/** Changed files outside the boundary (mapped or not); null without a boundary. */
 	outside?: string[] | null;
-	childUnderForeign: { id: string; parent: string }[];
 	/** Draft evidence commits HEAD lacks (a rebase or reset rewrote them). */
 	orphanedEvidence?: EvidenceCommit[];
 }
@@ -269,15 +259,12 @@ export function parseCensus(stdout: string): CensusView | undefined {
 		return undefined;
 	}
 	const c = out?.census;
-	if (out?.exit === 2 || !c || c.mode !== "changed" || typeof c.foreignNote !== "string" || !Array.isArray(c.foreign)) return undefined;
+	if (out?.exit === 2 || !c || c.mode !== "changed") return undefined;
 	return {
-		foreignNote: c.foreignNote,
-		foreign: c.foreign as string[],
 		claimed: pathClaims(c.claimed),
 		unclaimed: Array.isArray(c.unclaimed) ? (c.unclaimed as string[]) : null,
 		mappedOutside: pathClaims(c.mappedOutside),
 		outside: Array.isArray(c.outside) ? (c.outside as string[]) : null,
-		childUnderForeign: Array.isArray(c.childUnderForeign) ? (c.childUnderForeign as { id: string; parent: string }[]) : [],
 		orphanedEvidence: Array.isArray(c.orphanedEvidence)
 			? (c.orphanedEvidence as EvidenceCommit[]).filter((e) => e && typeof e.draft === "string" && typeof e.commit === "string").map((e) => ({ draft: e.draft, commit: e.commit, ids: Array.isArray(e.ids) ? e.ids : [] }))
 			: [],
@@ -293,12 +280,8 @@ export interface CensusState {
 	known: string[];
 	/** Whether an in-boundary change was reported yet. */
 	reported: boolean;
-	/** Foreign § already listed. */
-	foreign: string[];
-	/** A failure was reported once. */
-	failed: boolean;
-	/** Last unavailable input stays incomplete until a successful census replaces it. */
-	incomplete?: string;
+	/** Why the census couldn't run, each said once; cleared when a census succeeds (absent in older state files). */
+	failSaid?: string[];
 	/** The manifest conflict now in progress was already reported (absent in older state files). */
 	conflict?: boolean;
 	/** Orphaned evidence commits already said (by the census or the write guard). */
@@ -311,13 +294,10 @@ export interface CensusState {
 
 /** The digest's once-per-session lines, marked only on the note that printed them. */
 export interface CensusSaid {
-	rule?: boolean;
 	noDraft?: boolean;
-	/** "id → parent" pairs of new claims under a foreign § already listed. */
-	pairs?: string[];
 }
 
-export const freshCensusState = (): CensusState => ({ base: null, top: null, known: [], reported: false, foreign: [], failed: false });
+export const freshCensusState = (): CensusState => ({ base: null, top: null, known: [], reported: false });
 
 /** One tool call, as the census needs it; no pi types. */
 export interface CensusCall {
@@ -336,7 +316,7 @@ export interface CensusCall {
 export interface CensusResult {
 	/** The digest to append to the tool result. */
 	text?: string;
-	/** A failure to report to the user once; the tool result stays as it was. */
+	/** The census couldn't run: the model line (failureNote), once per cause per work tree. */
 	failure?: string;
 }
 
@@ -349,43 +329,43 @@ export function ranCensus(toolName: string, input: unknown): boolean {
 const capped = (items: readonly string[], cap: number): string =>
 	items.length > cap ? `${items.slice(0, cap).join(", ")} (+${items.length - cap} more)` : items.join(", ");
 
-/** The line for a changed file outside the boundary that no claim maps. */
-export const unmappedNote = (file: string): string =>
-	`${file} is outside the boundary and no claim maps it: if it changes user-visible behavior, spec it (a claim that lists it in \`code\`), else say it's plumbing.`;
+/** The line for the new changed files outside the boundary that no claim maps. */
+export const unmappedNote = (files: readonly string[]): string =>
+	`Outside the boundary, no claim maps: ${capped(files, FILE_CAP)}: spec any whose change a user sees`;
 
 export const NO_DRAFT_NOTE =
 	"No draft yet: a behaviour change needs its claim sentence in a draft before code (`sova-spec-draft.mjs new <name> --write`, then edit the claim); work that changes no behaviour: say you claim the exemption, decided from passages you read.";
 
+/** The model's line when the census can't run. */
+export const failureNote = (why: string): string => `${DIGEST_TAG} incomplete: ${why}; run census by hand`;
+
 /**
  * The digest for the files new since the last look, or undefined when there is nothing to say: a first
- * in-boundary change, a new file in the boundary or mapped by a claim, a new file outside the boundary
- * that no claim maps (it may still change behavior: said once per file), or a new foreign §.
+ * in-boundary change, a new file in the boundary or mapped by a claim, or a new file outside the boundary
+ * that no claim maps (it may still change behavior).
  */
-export function digest(v: CensusView, fresh: readonly string[], state: Pick<CensusState, "reported" | "foreign" | "said">, hasDraft: boolean): string | undefined {
+export function digest(v: CensusView, fresh: readonly string[], state: Pick<CensusState, "reported" | "said">, hasDraft: boolean): string | undefined {
 	return digestSaying(v, fresh, state, hasDraft).text;
 }
 
 /**
  * The digest and what it printed of the once-per-session lines (`said`, the next state's). Each file in
- * `New:` names at most NEW_ID_CAP §; the Rule and No draft lines print once; each new-claim pair prints
- * once, and only a printed pair is marked, so pairs past ID_CAP come in a later note. When it fires is
- * unchanged: the pairs never trigger it.
+ * `New:` names at most NEW_ID_CAP §, at most FILE_CAP files; the No draft line prints once.
  */
-export function digestSaying(v: CensusView, fresh: readonly string[], state: Pick<CensusState, "reported" | "foreign" | "said">, hasDraft: boolean): { text?: string; said: CensusSaid } {
-	const said: CensusSaid = { ...state.said, ...(state.said?.pairs ? { pairs: [...state.said.pairs] } : {}) };
+export function digestSaying(v: CensusView, fresh: readonly string[], state: Pick<CensusState, "reported" | "said">, hasDraft: boolean): { text?: string; said: CensusSaid } {
+	const said: CensusSaid = { ...state.said };
 	const inBoundary = new Map<string, string>();
 	for (const e of v.claimed) inBoundary.set(e.path, capped(e.claims, NEW_ID_CAP));
 	for (const p of v.unclaimed ?? []) inBoundary.set(p, "unclaimed");
 	for (const e of v.mappedOutside) inBoundary.set(e.path, `outside the boundary, mapped by ${capped(e.claims, NEW_ID_CAP)}`);
 	const freshIn = fresh.filter((p) => inBoundary.has(p));
-	const newForeign = v.foreign.filter((id) => !state.foreign.includes(id));
 	const first = !state.reported && inBoundary.size > 0;
 	// Outside the boundary and no claim maps it: the spec's own files never count.
 	const unmapped = fresh.filter((p) => v.outside?.includes(p) && !inBoundary.has(p) && !p.startsWith(".sova/"));
-	if (!first && !freshIn.length && !newForeign.length && !unmapped.length) return { said: state.said ?? {} };
+	if (!first && !freshIn.length && !unmapped.length) return { said: state.said ?? {} };
 	const unclaimed = v.unclaimed?.length ?? 0;
 	const lines = [
-		`${DIGEST_TAG} ${v.claimed.length + unclaimed} changed file(s) in the boundary, ${unclaimed} unclaimed; ${v.foreign.length} foreign § touched` +
+		`${DIGEST_TAG} ${v.claimed.length + unclaimed} changed file(s) in the boundary, ${unclaimed} unclaimed` +
 			(v.mappedOutside.length ? `; ${v.mappedOutside.length} mapped outside the boundary.` : "."),
 	];
 	if (!hasDraft && inBoundary.size && !said.noDraft) {
@@ -396,20 +376,7 @@ export function digestSaying(v: CensusView, fresh: readonly string[], state: Pic
 		const shown = freshIn.slice(0, FILE_CAP).map((p) => `${p} → ${inBoundary.get(p)}`);
 		lines.push(`New: ${shown.join("; ")}${freshIn.length > FILE_CAP ? ` (+${freshIn.length - FILE_CAP} more)` : ""}`);
 	}
-	for (const p of unmapped.slice(0, FILE_CAP)) lines.push(unmappedNote(p));
-	if (unmapped.length > FILE_CAP) lines.push(`(+${unmapped.length - FILE_CAP} more such files)`);
-	if (newForeign.length) {
-		lines.push(`Foreign §: ${capped(newForeign, ID_CAP)}`);
-		if (!said.rule) {
-			lines.push(`Rule: ${v.foreignNote}.`);
-			said.rule = true;
-		}
-	}
-	const pairs = [...new Set(v.childUnderForeign.map((p) => `${p.id} → ${p.parent}`))].filter((p) => !said.pairs?.includes(p));
-	if (pairs.length) {
-		lines.push(`New claims under a foreign §: ${capped(pairs, ID_CAP)}`);
-		said.pairs = [...(said.pairs ?? []), ...pairs.slice(0, ID_CAP)];
-	}
+	if (unmapped.length) lines.push(unmappedNote(unmapped));
 	return { text: lines.join("\n"), said };
 }
 
@@ -437,13 +404,12 @@ export async function censusStep(state: CensusState, call: CensusCall, core: str
 }
 
 async function censusDelta(state: CensusState, call: CensusCall, core: string, io: SpecIO, seen: { view?: GitView }): Promise<{ state: CensusState; result: CensusResult }> {
-	const next: CensusState = { ...state, known: [...state.known], foreign: [...state.foreign], orphans: [...new Set([...(state.orphans ?? []), ...(call.orphansSaid ?? [])])] };
+	const next: CensusState = { ...state, known: [...state.known], orphans: [...new Set([...(state.orphans ?? []), ...(call.orphansSaid ?? [])])] };
 	try {
 		const view = await gitView(call.cwd, io, call.signal);
 		if (!view) {
 			if (!state.top) return { state, result: {} };
-			next.incomplete = "spec census hook: incomplete check (Git view unavailable); inspect by hand";
-			return { state: next, result: { failure: next.incomplete } };
+			return failed(next, "Git view unavailable");
 		}
 		seen.view = view;
 		if (next.top !== view.top) {
@@ -475,10 +441,7 @@ async function censusDelta(state: CensusState, call: CensusCall, core: string, i
 		const root = await findSpecRoot(call.cwd, (p) => io.exists(p));
 		const tool = join(core, "sova-spec.mjs");
 		if (!root) return { state: next, result: {} };
-		if (!(await io.exists(tool))) {
-			next.incomplete = "spec census hook: incomplete check (trusted census unavailable); run it by hand";
-			return { state: next, result: { failure: next.incomplete } };
-		}
+		if (!(await io.exists(tool))) return failed(next, "trusted census unavailable");
 		const census = async (spec?: string) => {
 			const own = (next.ownBases ?? []).flatMap((rev) => ["--own-base", rev]);
 			const args = [tool, "census", "--changed", "--json", "--root", root, ...(next.base ? ["--base", next.base] : []), ...own, ...(spec ? ["--spec", spec] : [])];
@@ -486,36 +449,46 @@ async function censusDelta(state: CensusState, call: CensusCall, core: string, i
 			let incomplete: string | undefined;
 			try {
 				const out = JSON.parse(r.stdout);
-				if (out.complete === false || out.census?.draftScan?.complete === false) incomplete = `spec census hook: incomplete check (${Array.isArray(out.incomplete) ? out.incomplete.join(", ") : "partial draft scan"}); inspect by hand`;
+				if (out.complete === false || out.census?.draftScan?.complete === false) incomplete = Array.isArray(out.incomplete) ? out.incomplete.join(", ") : "partial draft scan";
 			} catch { /* unusable output is reported below */ }
 			return { view: parseCensus(r.stdout), ran: r.stdout.trim() !== "", incomplete };
 		};
 		const spec = await pickDraft(root, call.commands ?? [], call.sessionStart, io);
 		let r = await census(spec);
-		if (!r.view && spec) r = await census(); // an unreadable draft: the current spec still names what is foreign
-		if (!r.ran || !r.view) {
-			next.incomplete = !r.ran ? "spec census hook: incomplete check: the census produced no output (timeout or crash); run it by hand" : "spec census hook: incomplete check (unusable census output); run it by hand";
-			const failure = next.incomplete;
-			next.failed = true;
-			return { state: next, result: { failure } };
-		}
-		next.incomplete = r.incomplete;
+		if (!r.view && spec) r = await census(); // an unreadable draft: the current spec still maps the files
+		if (!r.ran || !r.view) return failed(next, !r.ran ? "the census produced no output (timeout or crash)" : "unusable census output");
 		const freshRel = fresh.map((p) => underRoot(view.top, root, p)).filter((p): p is string => p !== undefined);
 		const orphans = (r.view.orphanedEvidence ?? []).filter((e) => !next.orphans?.includes(e.commit));
 		const { text: said, said: printed } = digestSaying(r.view, freshRel, next, Boolean(spec));
-		next.foreign = [...new Set([...next.foreign, ...r.view.foreign])];
 		if (said) {
 			next.reported = true;
 			next.said = printed;
 		}
 		if (orphans.length) next.orphans = [...(next.orphans ?? []), ...orphans.map((e) => e.commit)];
 		const text = [orphans.length ? orphanNote(orphans) : undefined, said].filter(Boolean).join("\n");
-		return { state: next, result: { ...(text ? { text } : {}), ...(r.incomplete ? { failure: r.incomplete } : {}) } };
+		if (r.incomplete) {
+			const fail = failed(next, r.incomplete);
+			return { state: fail.state, result: { ...(text ? { text } : {}), ...fail.result } };
+		}
+		delete next.failSaid;
+		return { state: next, result: text ? { text } : {} };
 	} catch (error) {
-		next.failed = true;
-		next.incomplete = `spec census hook: incomplete check (${error instanceof Error ? error.message : String(error)}); inspect by hand`;
-		return { state: next, result: { failure: next.incomplete } };
+		return failed(next, error instanceof Error ? error.message : String(error));
 	}
+}
+
+/** A census that couldn't run: its line, unless this cause was already said in this tree since the last census that ran. */
+/** A step whose text the caller discards (a baseline): a failure it hit stays unsaid, so the next shown step says it. */
+export async function silentCensusStep(state: CensusState, call: CensusCall, core: string, io: SpecIO = localIO): Promise<CensusState> {
+	const step = await censusStep(state, call, core, io);
+	if (!step.result.failure) return step.state;
+	const { failSaid: _, ...rest } = step.state;
+	return state.failSaid ? { ...rest, failSaid: state.failSaid } : rest;
+}
+
+function failed(next: CensusState, why: string): { state: CensusState; result: CensusResult } {
+	if (next.failSaid?.includes(why)) return { state: next, result: {} };
+	return { state: { ...next, failSaid: [...(next.failSaid ?? []), why] }, result: { failure: failureNote(why) } };
 }
 
 /**
@@ -547,9 +520,6 @@ export function callDirs(call: Pick<CensusCall, "cwd" | "toolName" | "input">): 
  */
 export class CensusHook {
 	private states = new Map<string, CensusState>();
-	/** Only this run's observed destinations and paths; census history itself persists across runs. */
-	private active = new Map<string, Set<string>>();
-	private observedHeads = new Map<string, string | null>();
 	private chain: Promise<unknown> = Promise.resolve();
 	private readonly io: SpecIO;
 	private readonly core: () => string;
@@ -559,33 +529,9 @@ export class CensusHook {
 		this.core = options.core;
 	}
 
-	/** Mapped claims seen by actual census calls are allowed names, not required prose changes. */
-	foreign(): string[] {
-		return [...new Set([...this.states.values()].flatMap((state) => state.foreign))].sort();
-	}
-
-	/** Re-read bounded relevant mappings, independently of whether a fresh-path census ran. */
-	mapped(options: { commands?: readonly string[]; sessionStart?: string } = {}): Promise<{ ids: string[]; errors: string[] }> {
-		return this.serial(async () => {
-			const ids = new Set<string>(), errors: string[] = [];
-			for (const [top, paths] of this.active) {
-				const state = this.states.get(top) ?? freshCensusState();
-				if (state.incomplete) errors.push(state.incomplete);
-				const view = await gitView(top, this.io);
-				if (!view) { errors.push(`${top}: incomplete check (Git view unavailable)`); continue; }
-				const r = await mappedClaims(view, [...new Set([...paths, ...Object.keys(view.files)])], this.io, state.ownBases, options);
-				for (const id of r.ids) ids.add(id);
-				if (r.error) errors.push(r.error);
-			}
-			return { ids: [...ids].sort(), errors };
-		}, { ids: [], errors: ["incomplete check (mapped paths unavailable)"] });
-	}
-
 	/** A new session (or a switch to another): nothing seen yet. */
 	reset(): void {
 		this.states = new Map();
-		this.active = new Map();
-		this.observedHeads = new Map();
 	}
 
 	private async topOf(dir: string, signal?: AbortSignal): Promise<string | undefined> {
@@ -603,32 +549,14 @@ export class CensusHook {
 	private async baseline(dir: string, signal?: AbortSignal): Promise<void> {
 		const top = await this.topOf(dir, signal);
 		if (!top || this.states.has(top)) return;
-		const { state } = await censusStep(freshCensusState(), { cwd: dir, toolName: "", input: undefined, signal }, this.core(), this.io);
+		const state = await silentCensusStep(freshCensusState(), { cwd: dir, toolName: "", input: undefined, signal }, this.core(), this.io);
 		this.states.set(top, state);
-	}
-
-	private async observe(dir: string, signal?: AbortSignal): Promise<void> {
-		const view = await gitView(dir, this.io, signal);
-		if (!view) return;
-		const paths = this.active.get(view.top) ?? new Set<string>();
-		const before = this.observedHeads.get(view.top);
-		if (before && view.head && before !== view.head) {
-			// Tree objects only: never invoke worktree clean/process filters for this mapping lookup.
-			const diff = await this.io.exec("git", ["diff-tree", "--no-commit-id", "--name-only", "-r", "-z", before, view.head], { cwd: view.top, timeout: TOOL_TIMEOUT_MS, signal });
-			if (diff.code === 0) for (const p of diff.stdout.split("\0")) if (p) paths.add(p);
-		}
-		this.observedHeads.set(view.top, view.head);
-		for (const p of Object.keys(view.files)) paths.add(p);
-		this.active.set(view.top, paths);
 	}
 
 	/** Take the baseline now (a run's start), so the run's first edit is already a delta. */
 	prime(cwd: string): Promise<CensusResult> {
 		return this.serial(async () => {
-			this.active.clear();
-			this.observedHeads.clear();
 			await this.baseline(cwd);
-			await this.observe(cwd);
 			return {};
 		}, {});
 	}
@@ -637,10 +565,7 @@ export class CensusHook {
 	before(call: CensusCall): Promise<void> {
 		if (CENSUS_SKIP_TOOLS.has(call.toolName)) return Promise.resolve();
 		return this.serial(async () => {
-			for (const dir of callDirs(call)) {
-				await this.baseline(dir, call.signal);
-				await this.observe(dir, call.signal);
-			}
+			for (const dir of callDirs(call)) await this.baseline(dir, call.signal);
 		}, undefined);
 	}
 
@@ -648,170 +573,23 @@ export class CensusHook {
 		if (CENSUS_SKIP_TOOLS.has(call.toolName)) return Promise.resolve({});
 		return this.serial(async () => {
 			const texts: string[] = [];
-			let failure: string | undefined;
+			const failures: string[] = [];
 			const done = new Set<string>();
 			for (const dir of callDirs(call)) {
 				const top = await this.topOf(dir, call.signal);
 				if (!top || done.has(top)) continue;
 				done.add(top);
-				await this.observe(dir, call.signal);
 				const { state, result } = await censusStep(this.states.get(top) ?? freshCensusState(), { ...call, cwd: dir }, this.core(), this.io);
 				this.states.set(top, state);
 				if (result.text) texts.push(result.text);
-				failure ??= result.failure;
+				if (result.failure) failures.push(result.failure);
 			}
-			return { ...(texts.length ? { text: texts.join("\n") } : {}), ...(failure ? { failure } : {}) };
+			return { ...(texts.length ? { text: texts.join("\n") } : {}), ...(failures.length ? { failure: failures.join("\n") } : {}) };
 		}, {} as CensusResult);
 	}
 }
 
-// ── The `Also changes:` line ─────────────────────────────────────────────────
-
-// The grammar and its parser: also-changes.ts (shared with the Claude Code hook and the harness scorer).
-
-export type AlsoChangesProblem = "missing" | "not-last" | "malformed" | "forbidden" | "omits" | "none-but-changed" | "extra";
-
-export interface AlsoChangesCheck {
-	ok: boolean;
-	/** What is wrong with the line itself, if anything. */
-	problem?: AlsoChangesProblem;
-	/** The grammar error, for `malformed`. */
-	format?: string;
-	/** Computed foreign § the line doesn't name. */
-	missing: string[];
-	/** § the line names that the computed list doesn't (checked only when the list is `exact`). */
-	extra: string[];
-	/** Changed files no claim maps that no `Plumbing:` line names (the landing gate). */
-	unmapped: string[];
-	/** Unpromoted draft records' § that no `Deferred:` line names (the landing gate). */
-	undeferred: string[];
-	/** Unpromoted draft records' § at a landing on the default branch: no `Deferred:` line passes them, only the override. */
-	stale: string[];
-	/** The reply carries the override line. */
-	overridden: boolean;
-	/** Computed § already described this session (AlsoChangesOptions.described): never required, never extras. */
-	described: string[];
-}
-
-export interface AlsoChangesOptions {
-	/** The turn edited, committed, promoted or merged: the line is required. */
-	required: boolean;
-	/** Computed from Git; every one must be named. */
-	foreign: readonly string[];
-	/** That list is complete: a § the line names beyond it (and beyond `advisory`) is an extra. */
-	exact?: boolean;
-	/** § the line may name without being extras (mapped code changed, text untouched: advisory). */
-	advisory?: readonly string[];
-	/** A turn that must not carry the line (a Q&A turn): a line there is a problem. */
-	forbidden?: boolean;
-	/** Landing gate: changed files no claim maps; each needs a mapping claim or a `Plumbing:` line. */
-	unmapped?: readonly string[];
-	/** Landing gate: unpromoted draft records' §; each needs a `Deferred:` line (or a promotion). */
-	unpromoted?: readonly string[];
-	/** Landing gate on the default branch: unpromoted draft records' § there; each needs a promotion (or the override line). */
-	unpromotedAtDefault?: readonly string[];
-	/**
-	 * § this session already described (an earlier turn's record, a worker's report): a computed § among them
-	 * needn't be named again, and naming one is never an extra. Omitted or empty: every computed § is required.
-	 */
-	described?: readonly string[];
-}
-
-/**
- * Check a reply. `required`: the turn edited, committed, promoted or merged; `forbidden`: a Q&A turn,
- * where the line must not appear (spec-mode.md). The line is parsed by also-changes.ts (a format error is
- * its own problem, never a wrong list). Every computed foreign § must be named, except one this session
- * already described (`described`); with `exact`, a § beyond the list, `described` and `advisory` is an extra. On a landing, each unmapped changed file needs a `Plumbing:` line
- * and each unpromoted record's § a `Deferred:` line, except at a landing on the default branch
- * (`unpromotedAtDefault`), where only a promotion or the override line passes it.
- * The override line (ALSO_CHANGES_OVERRIDE) excuses only an OMISSION: a computed § the agent shows it must
- * not name (one this task created, in an earlier commit, promotion or merge). It never excuses an extra.
- */
-export function checkAlsoChanges(reply: string, options: AlsoChangesOptions): AlsoChangesCheck {
-	const overridden = overrideLine(reply);
-	const plumbing = plumbingPaths(reply);
-	const deferred = deferredIds(reply);
-	const unmapped = (options.unmapped ?? []).filter((p) => !plumbing.includes(p));
-	const stale = overridden ? [] : [...new Set(options.unpromotedAtDefault ?? [])].sort();
-	const atDefault = new Set(options.unpromotedAtDefault ?? []);
-	const undeferred = (options.unpromoted ?? []).filter((id) => !atDefault.has(id) && !deferred.includes(id));
-	const described = new Set(options.described ?? []);
-	const required = options.foreign.filter((id) => !described.has(id));
-	const base: AlsoChangesCheck = { ok: true, missing: [], extra: [], unmapped, undeferred, stale, overridden, described: options.foreign.filter((id) => described.has(id)) };
-	const gate = (check: AlsoChangesCheck): AlsoChangesCheck => ({ ...check, ok: check.ok && !unmapped.length && !undeferred.length && !stale.length });
-	const line = lastLine(reply);
-	if (!options.required) {
-		const written = reply.split("\n").some((l) => looksLikeAlsoChanges(l));
-		return options.forbidden && written ? { ...base, ok: false, problem: "forbidden" } : base;
-	}
-	const parsed = parseAlsoChangesLine(line);
-	if (!parsed?.ok) {
-		const problem: AlsoChangesProblem = parsed ? "malformed" : reply.split("\n").some((l) => looksLikeAlsoChanges(l)) ? "not-last" : "missing";
-		return { ...base, ok: false, problem, ...(parsed && !parsed.ok ? { format: parsed.error } : {}), missing: required };
-	}
-	const ids = parsed.ids;
-	const missing = required.filter((id) => !ids.includes(id));
-	const extra = options.exact ? ids.filter((id) => !options.foreign.includes(id) && !described.has(id) && !(options.advisory ?? []).includes(id)) : [];
-	if (!missing.length && !extra.length) return gate(base);
-	const problem: AlsoChangesProblem = missing.length ? (ids.length ? "omits" : "none-but-changed") : "extra";
-	return gate({ ...base, ok: overridden && !extra.length, problem, missing, extra });
-}
-
-const PROBLEM_TEXT: Record<AlsoChangesProblem, string> = {
-	missing: "your reply has no `Also changes:` line",
-	"not-last": "your `Also changes:` line is not the very last line",
-	malformed: "your `Also changes:` line breaks the format",
-	forbidden: "this turn changed nothing, so it takes no `Also changes:` line: drop it",
-	omits: "your `Also changes:` line omits",
-	"none-but-changed": "your line says none, but it lands",
-	extra: "",
-};
-
-/** The sentence for § a line names beyond the computed list; the override never excuses it. */
-export const extraText = (ids: readonly string[]): string =>
-	`${ids.join(", ")} ${ids.length === 1 ? "isn't" : "aren't"} changed by this diff: if its user-visible behavior changed, update its claim in a draft and promote; otherwise drop it from the line`;
-
-/** The landing gate's sentences: unmapped files and unpromoted records. */
-export const unmappedText = (paths: readonly string[]): string =>
-	`${capped(paths, FILE_CAP)} changed and no claim maps ${paths.length === 1 ? "it" : "them"}: spec each that changes user-visible behavior (a claim listing it in \`code\`, promoted), or name it on a line "Plumbing: <path> — <why>" above the last line; UI text, colour, CLI output and footer rendering are never plumbing`;
-export const undeferredText = (ids: readonly string[]): string =>
-	`draft records left unpromoted: ${capped(ids, ID_CAP)}: promote what shipped, or say which § stay stale on a line "Deferred: §X — <why>" above the last line`;
-export const staleText = (ids: readonly string[]): string =>
-	`this lands on the default branch with draft records unpromoted: ${capped(ids, ID_CAP)}: promote them now (a draft that conflicts is re-applied in a new draft from the current spec); a "Deferred:" line doesn't pass a landing on the default branch, only a line "${ALSO_CHANGES_OVERRIDE} <why>" above the last line`;
-
-/** What's wrong, for the re-prompt and the warning: the line's problem, the extras, then the landing gate. */
-export function describeProblem(check: AlsoChangesCheck): string {
-	const parts: string[] = [];
-	if (check.problem === "omits" || check.problem === "none-but-changed") parts.push(`${PROBLEM_TEXT[check.problem]} ${check.missing.join(", ")}`);
-	else if (check.problem === "malformed") parts.push(`${PROBLEM_TEXT.malformed}: ${check.format ?? "see the format"} (${ALSO_CHANGES_FORMAT})`);
-	else if (check.problem && check.problem !== "extra") parts.push(PROBLEM_TEXT[check.problem]);
-	if (check.extra.length) parts.push(extraText(check.extra));
-	if (check.unmapped.length) parts.push(unmappedText(check.unmapped));
-	if (check.undeferred.length) parts.push(undeferredText(check.undeferred));
-	if (check.stale.length) parts.push(staleText(check.stale));
-	return parts.join("; ");
-}
-
-/** The format, in one phrase, for a malformed line. */
-export const ALSO_CHANGES_FORMAT = 'items separated by ";", each starting with the § it names ("Also changes: §a.b/c, /d — <what>; §e/f — <what>"), or "Also changes: none"';
-
-/** The hidden message that re-prompts a landing turn. */
-export function repromptText(check: AlsoChangesCheck, foreign: readonly string[], what: string): string {
-	if (check.problem === "forbidden") return `${CHECK_TAG} ${describeProblem(check)}. Reply again, briefly, without that line.`;
-	// Only what is still to be named: § already described this session are never listed to copy.
-	const toName = foreign.filter((id) => !check.described.includes(id));
-	const list = toName.length ? toName.join(", ") : "none";
-	const shape = toName.length ? `Also changes: ${toName.map((id) => `${id} — <what changed>`).join("; ")}` : "Also changes: none";
-	const told = check.described.length ? ` (${check.described.length} more already described this session need no repeat)` : "";
-	return [
-		`${CHECK_TAG} This turn ${what}. The foreign § it lands, computed from Git: ${list}${told}.`,
-		`${describeProblem(check)}.`,
-		`Reply again, briefly, ending with exactly this last line, nothing after it: "${shape}". A § the user asked you to change is still foreign; § this task created are not.`,
-		`If a computed § must not be named (one this task created, in an earlier commit, promotion or merge), say why on a line "${ALSO_CHANGES_OVERRIDE} <why>" right above the last line; it never excuses naming a § the list lacks.`,
-	].join("\n");
-}
-
-// ── What a turn did ──────────────────────────────────────────────────────────
+// ── Shell commands ───────────────────────────────────────────────────────────
 
 /** A shell command's text with each heredoc body removed (the body is data, never a command). */
 function withoutHeredocs(command: string): string {
@@ -922,19 +700,6 @@ export function draftToolRuns(command: string): { verb: string; args: string[] }
 	return runs;
 }
 
-/** `sova-spec-draft.mjs … promote … --write` (the script named, or held in a variable): a promotion that writes the current spec. */
-export function promoteWrites(command: string): boolean {
-	return draftToolRuns(command).some((r) => r.verb === "promote" && r.args.includes("--write"));
-}
-
-/** `git commit` / `git merge` in a shell command (not merge-base, merge-file, …). */
-export function gitCommits(command: string): boolean {
-	return /\bgit\b(?:\s+-[Cc]\s+\S+)*\s+commit\b/.test(command);
-}
-export function gitMerges(command: string): boolean {
-	return /\bgit\b(?:\s+-[Cc]\s+\S+)*\s+merge(?![-\w])/.test(command);
-}
-
 /** The directories a shell command works in: each `cd <dir>`, `git -C <dir>` and `--root <dir>`; else the cwd. */
 export function commandDirs(command: string, cwd: string): string[] {
 	const dirs: string[] = [];
@@ -945,96 +710,6 @@ export function commandDirs(command: string, cwd: string): string[] {
 			if (dir) dirs.push(dir.startsWith("/") ? dir : join(cwd, dir));
 		}
 	return dirs.length ? dirs : [cwd];
-}
-
-/** The `--root <dir>` a spec tool command names, if any. */
-export function commandRoot(command: string): string | undefined {
-	const m = /--root[=\s]+("([^"]+)"|'([^']+)'|(\S+))/.exec(command);
-	return m ? (m[2] ?? m[3] ?? m[4]) : undefined;
-}
-
-/** What core's `foreign` says about a range (`--landing` adds the gate lists; `--own-base` the task's own). */
-export interface RangeLists {
-	foreign: string[];
-	complete?: boolean;
-	incomplete?: string[];
-	/** The task's own ids the range touched or created (already out of `foreign`). */
-	own: string[];
-	/** Each changed § that isn't the task's own, with its kind ("text", "record", "text+record", "child-added", "deleted", …). */
-	changes: { id: string; change: string }[];
-	/** § the range created (the task's own and anyone else's). */
-	created: string[];
-	unmappedChanged: { path: string; status?: string; inBoundary?: boolean }[];
-	mappedUntouched: { id: string; files?: string[] }[];
-	unpromotedDrafts: { draft: string; worktree?: string; ids: string[] }[];
-	handResolved: { commit: string; ids: string[] }[];
-}
-
-export interface RangeOptions {
-	/** Revs the task's own claims are absent at (fork point, default tip at run start): subtracted. */
-	ownBases?: readonly string[];
-	/** Ask for the landing gate's lists too. */
-	landing?: boolean;
-	/** A draft's `spec/` dir (relative to the root) as the head. */
-	spec?: string;
-	signal?: AbortSignal;
-}
-
-const arr = <T>(v: unknown, ok: (x: unknown) => boolean): T[] => (Array.isArray(v) ? (v.filter(ok) as T[]) : []);
-
-/**
- * The foreign § (and, with `landing`, the gate lists) the current spec at `root` changed from `base` to
- * `head` (the work tree without it; with `spec`, a draft is the head): `sova-spec.mjs foreign`, the task's
- * own ids subtracted when `ownBases` are given. undefined when it can't say (no tool, a bad rev, no spec).
- */
-export async function rangeLists(root: string, base: string, head: string | undefined, core: string, io: SpecIO = localIO, options: RangeOptions = {}): Promise<RangeLists | undefined> {
-	const tool = join(core, "sova-spec.mjs");
-	if (!(await io.exists(tool))) return undefined;
-	const args = [
-		tool,
-		"foreign",
-		"--base",
-		base,
-		...(head ? ["--head", head] : options.spec ? ["--spec", options.spec] : []),
-		...[...new Set(options.ownBases ?? [])].flatMap((rev) => ["--own-base", rev]),
-		...(options.landing ? ["--landing"] : []),
-		"--root",
-		root,
-		"--json",
-	];
-	const r = await io.exec("node", args, { cwd: root, timeout: TOOL_TIMEOUT_MS, signal: options.signal });
-	try {
-		const out = JSON.parse(r.stdout) as Record<string, unknown>;
-		if (out.exit === 2 || !Array.isArray(out.foreign)) return undefined;
-		const own = arr<string>(out.own, (x) => typeof x === "string");
-		return {
-			foreign: arr<string>(out.foreign, (x) => typeof x === "string").filter((id) => !own.includes(id)),
-			own,
-			changes: arr<{ id: string; change: string }>(out.changes, (x) => typeof (x as { id?: unknown })?.id === "string" && typeof (x as { change?: unknown })?.change === "string").map((c) => ({ id: c.id, change: c.change })),
-			created: arr<string>(out.created, (x) => typeof x === "string"),
-			...(out.complete === false ? { complete: false, incomplete: arr<string>(out.incomplete, (x) => typeof x === "string") } : {}),
-			unmappedChanged: arr(out.unmappedChanged, (x) => typeof (x as { path?: unknown })?.path === "string"),
-			mappedUntouched: arr(out.mappedUntouched, (x) => typeof (x as { id?: unknown })?.id === "string"),
-			unpromotedDrafts: arr<{ draft: string; ids: string[] }>(out.unpromotedDrafts, (x) => Array.isArray((x as { ids?: unknown })?.ids)),
-			handResolved: arr(out.handResolved, (x) => Array.isArray((x as { ids?: unknown })?.ids)),
-		};
-	} catch {
-		return undefined;
-	}
-}
-
-/** Just the foreign § of a range (see rangeLists). */
-export async function foreignBetween(
-	root: string,
-	base: string,
-	head: string | undefined,
-	core: string,
-	io: SpecIO = localIO,
-	signal?: AbortSignal,
-	spec?: string,
-	ownBases?: readonly string[],
-): Promise<string[] | undefined> {
-	return (await rangeLists(root, base, head, core, io, { signal, spec, ownBases }))?.foreign;
 }
 
 /**
@@ -1052,110 +727,6 @@ export async function ownBasesFor(top: string, head: string | null | undefined, 
 	return [...new Set(bases)];
 }
 
-/** Newest mtime under a directory, 0 when empty or unreadable. */
-async function newest(dir: string, io: SpecIO): Promise<number> {
-	let names: string[];
-	try {
-		names = await io.readDir(dir);
-	} catch {
-		return (await io.mtime(dir)) ?? 0;
-	}
-	let max = 0;
-	for (const name of names) max = Math.max(max, await newest(join(dir, name), io));
-	return max;
-}
-
-/**
- * Each draft's newest `spec/` file mtime. Drafts are ignored by Git (.sova/spec/.gitignore), so a
- * git-status look never shows them: two stamps taken around a run tell which drafts it edited.
- */
-export async function draftStamps(root: string, io: SpecIO = localIO): Promise<Record<string, number>> {
-	const stamps: Record<string, number> = {};
-	let names: string[];
-	try {
-		names = await io.readDir(join(root, SPEC_REL, "drafts"));
-	} catch {
-		return stamps;
-	}
-	for (const name of names) {
-		const spec = join(root, SPEC_REL, "drafts", name, "spec");
-		if (await io.exists(spec)) stamps[name] = await newest(spec, io);
-	}
-	return stamps;
-}
-
-/** Drafts new or edited between two stamps. */
-export function draftsTouched(before: Record<string, number> | undefined, after: Record<string, number>): string[] {
-	return Object.keys(after)
-		.filter((name) => before?.[name] !== after[name])
-		.sort();
-}
-
-/**
- * The foreign § a draft changes against the commit it was made from (draft.json `base.commit`, so what
- * current changed since isn't counted); a draft made by an older tool has none, and `fallbackBase` (the
- * run's starting HEAD) stands in. undefined when nothing can be computed: the caller then checks the
- * line's form only, never "none" against an empty list.
- */
-export async function draftForeign(
-	root: string,
-	name: string,
-	core: string,
-	io: SpecIO = localIO,
-	signal?: AbortSignal,
-	fallbackBase?: string,
-	ownBases?: readonly string[],
-): Promise<string[] | undefined> {
-	try {
-		const draft = JSON.parse(await io.readFile(join(root, SPEC_REL, "drafts", name, "draft.json"))) as { base?: { commit?: unknown } };
-		const base = typeof draft.base?.commit === "string" && draft.base.commit ? draft.base.commit : fallbackBase;
-		if (!base) return undefined;
-		return await foreignBetween(root, base, undefined, core, io, signal, `${SPEC_REL}/drafts/${name}/spec`, ownBases);
-	} catch {
-		return undefined;
-	}
-}
-
-// ── A turn across trees ──────────────────────────────────────────────────────
-
-/** One work tree as a run found it: the session's own, or a worktree it tracks (a worker may write there). */
-export interface TreeStart {
-	view: GitView;
-	/** The spec root inside it, if any. */
-	root?: string;
-	/** Each draft's newest spec/ mtime (drafts are ignored by Git). */
-	drafts: Record<string, number>;
-	/** The default branch's tip when the run found the tree: an own-claim base (ownBasesFor). */
-	defaultTip?: string;
-}
-
-/** What a run did to one tree. */
-export interface TreeTurn {
-	/** Anything changed: HEAD, a changed path or its mtime, a draft. */
-	changed: boolean;
-	/** The current spec (not a draft) changed: a promotion landed there, committed or not. */
-	specChanged: boolean;
-	/** The foreign § it changed (current spec since the run's HEAD, and each edited draft); undefined when not computable. */
-	foreign?: string[];
-	/** Its manifest.json is in a Git conflict now: what to do (manifestConflictNote). */
-	conflict?: string;
-	/** The comparison itself failed: the check must say so, never stay silent. */
-	error?: string;
-	/** Each foreign § of the current spec with its change kind (landedSpec). */
-	changes?: { id: string; change: string }[];
-	/** What it brought in from the default branch unchanged: never in `foreign`. */
-	arrivals?: Arrivals;
-}
-
-export async function treeStart(dir: string, io: SpecIO = localIO): Promise<TreeStart | undefined> {
-	const view = await gitView(dir, io);
-	if (!view) return undefined;
-	const root = await findSpecRoot(view.top, (p) => io.exists(p));
-	const main = root ? await defaultBranch(view.top, io) : undefined;
-	const tip = main ? (await io.exec("git", ["rev-parse", "--verify", "-q", `refs/heads/${main}`], { cwd: view.top, timeout: TOOL_TIMEOUT_MS })).stdout.trim() : "";
-	return { view, ...(root ? { root } : {}), drafts: root ? await draftStamps(root, io) : {}, ...(tip ? { defaultTip: tip } : {}) };
-}
-
 /** The repo's default branch: origin/HEAD's target, else `master`, else `main`; undefined when none exists. */
 export async function defaultBranch(top: string, io: SpecIO = localIO): Promise<string | undefined> {
 	const git = (args: string[]) => io.exec("git", args, { cwd: top, timeout: TOOL_TIMEOUT_MS });
@@ -1163,224 +734,6 @@ export async function defaultBranch(top: string, io: SpecIO = localIO): Promise<
 	if (origin) return origin.replace(/^origin\//, "");
 	for (const name of ["master", "main"]) if ((await git(["rev-parse", "--verify", "-q", `refs/heads/${name}`])).code === 0) return name;
 	return undefined;
-}
-
-// ── What arrived from the default branch ─────────────────────────────────────
-
-/** The newest commit of the default branch a range brought into another branch, and that branch's name. */
-export interface ArrivalSide {
-	/** The default branch's name ("master"). */
-	from: string;
-	/** Its newest commit the range's head (or a merge of it in progress) contains that `base` doesn't. */
-	side: string;
-}
-
-/**
- * The default branch's side a range brought in, on a branch other than the default: the merge base of the
- * default tip with the range's head and, for a work-tree head, with a merge in progress (MERGE_HEAD), the
- * newest of those that `base` doesn't already contain. undefined on the default branch, detached, without
- * a default branch, or when nothing new of it arrived (the common case: one cheap merge-base).
- */
-export async function arrivalSide(top: string, base: string, head: string | null, io: SpecIO = localIO, options: { workTree?: boolean } = {}): Promise<ArrivalSide | undefined> {
-	const git = (args: string[]) => io.exec("git", args, { cwd: top, timeout: TOOL_TIMEOUT_MS });
-	const main = await defaultBranch(top, io);
-	const branch = (await git(["symbolic-ref", "-q", "--short", "HEAD"])).stdout.trim();
-	if (!main || !branch || branch === main) return undefined;
-	const tip = (await git(["rev-parse", "--verify", "-q", `refs/heads/${main}`])).stdout.trim();
-	if (!tip) return undefined;
-	const heads = head ? [head] : [];
-	if (options.workTree) {
-		const merging = (await git(["rev-parse", "--verify", "-q", "MERGE_HEAD"])).stdout.trim();
-		if (merging) heads.push(merging);
-	}
-	let side: string | undefined;
-	for (const h of heads) {
-		const mb = (await git(["merge-base", h, tip])).stdout.trim();
-		if (!mb || (await isAncestor(top, mb, base, io))) continue;
-		if (!side || (await isAncestor(top, side, mb, io))) side = mb;
-	}
-	return side ? { from: main, side } : undefined;
-}
-
-/**
- * Of `ids` a range changed, those whose record and text at `head` (the work tree when undefined) equal
- * `side`'s: the core's `foreign` from the side to the head lists every § that differs there (changed,
- * deleted or created), so an id it doesn't list reads the same on both. A content comparison, never id
- * subtraction. undefined when the comparison isn't complete: then nothing counts as arrived.
- */
-export async function arrivedIds(root: string, side: string, head: string | undefined, ids: readonly string[], core: string, io: SpecIO = localIO): Promise<string[] | undefined> {
-	if (!ids.length) return [];
-	const d = await rangeLists(root, side, head, core, io);
-	if (!d || d.complete === false) return undefined;
-	const differs = new Set([...d.changes.map((c) => c.id), ...d.created, ...d.foreign, ...d.own]);
-	return [...new Set(ids)].filter((id) => !differs.has(id)).sort();
-}
-
-/**
- * Of `paths` (relative to `root`) a range changed, those whose content at `head` (the work tree when
- * undefined: untracked files always differ) equals `side`'s. undefined when Git can't say.
- */
-export async function arrivedFiles(root: string, side: string, head: string | undefined, paths: readonly string[], io: SpecIO = localIO): Promise<string[] | undefined> {
-	if (!paths.length) return [];
-	const git = (args: string[]) => io.exec("git", args, { cwd: root, timeout: TOOL_TIMEOUT_MS });
-	const diff = await git(["diff", "--name-only", "-z", "--no-renames", "--no-ext-diff", "--no-textconv", "--relative", side, ...(head ? [head] : []), "--"]);
-	if (diff.code !== 0) return undefined;
-	const differs = new Set(diff.stdout.split("\0").filter(Boolean));
-	if (!head) {
-		const untracked = await git(["ls-files", "--others", "--exclude-standard", "-z"]);
-		if (untracked.code !== 0) return undefined;
-		for (const p of untracked.stdout.split("\0")) if (p) differs.add(p);
-	}
-	return [...new Set(paths)].filter((p) => !differs.has(p)).sort();
-}
-
-/** A range's lists with what arrived from the default branch taken out: § and files equal to its side. */
-export interface Arrivals {
-	from: string;
-	/** § left out of `foreign` (and `own`): their record and text equal the default branch's side. */
-	ids: string[];
-	/** Changed files left out of `unmappedChanged`: their content equals the side's. */
-	files: string[];
-}
-
-/** Two operations' arrivals together. */
-export function mergeArrivals(a: Arrivals | undefined, b: Arrivals | undefined): Arrivals | undefined {
-	if (!a || !b) return a ?? b;
-	return { from: a.from, ids: [...new Set([...a.ids, ...b.ids])].sort(), files: [...new Set([...a.files, ...b.files])].sort() };
-}
-
-/**
- * Take what arrived from the default branch out of a range's lists (rangeLists from `base` to `head`, the
- * work tree when undefined): foreign and own § equal on the side, unmapped files equal there, and advisory
- * § whose changed files all arrived. Returns the lists unchanged, with no arrivals, when nothing arrived or
- * the side can't be compared.
- */
-export async function withoutArrivals(lists: RangeLists, top: string, root: string, base: string, head: string | undefined, core: string, io: SpecIO = localIO, side?: ArrivalSide): Promise<{ lists: RangeLists; arrivals?: Arrivals }> {
-	const headCommit = head ?? (await io.exec("git", ["rev-parse", "--verify", "-q", "HEAD"], { cwd: top, timeout: TOOL_TIMEOUT_MS })).stdout.trim();
-	const at = side ?? (await arrivalSide(top, base, headCommit || null, io, { workTree: !head }));
-	if (!at) return { lists };
-	const ids = (await arrivedIds(root, at.side, head, [...lists.foreign, ...lists.own, ...lists.changes.map((c) => c.id), ...lists.created], core, io)) ?? [];
-	const files = (await arrivedFiles(root, at.side, head, [...lists.unmappedChanged.map((u) => u.path), ...lists.mappedUntouched.flatMap((m) => m.files ?? [])], io)) ?? [];
-	const idSet = new Set(ids);
-	const fileSet = new Set(files);
-	return {
-		lists: {
-			...lists,
-			foreign: lists.foreign.filter((id) => !idSet.has(id)),
-			own: lists.own.filter((id) => !idSet.has(id)),
-			changes: lists.changes.filter((c) => !idSet.has(c.id)),
-			created: lists.created.filter((id) => !idSet.has(id)),
-			unmappedChanged: lists.unmappedChanged.filter((u) => !fileSet.has(u.path)),
-			mappedUntouched: lists.mappedUntouched.filter((m) => !m.files?.length || m.files.some((f) => !fileSet.has(f))),
-		},
-		arrivals: { from: at.from, ids: [...new Set([...lists.foreign, ...lists.own, ...lists.created])].filter((id) => idSet.has(id)).sort(), files: lists.unmappedChanged.map((u) => u.path).filter((p) => fileSet.has(p)).sort() },
-	};
-}
-
-/** What a range landed in a tree's current spec. */
-export interface LandedSpec {
-	specChanged: boolean;
-	/** Foreign § it landed (own and arrived out); undefined when not computable. */
-	foreign?: string[];
-	/** Each foreign § with its change kind. */
-	changes?: { id: string; change: string }[];
-	/** What it brought in from the default branch, unchanged, when anything. */
-	arrivals?: Arrivals;
-}
-
-/**
- * What a tree's current spec landed from `base` to its work tree (`head` its HEAD now; with `committed`,
- * the range base..head itself). On the default branch the whole diff is what landed. On any other branch,
- * what the range brought in from the default branch (a merge of it committed in the range, directly or
- * through another branch, or one in progress) is arrived, not landed: a § whose record and text equal the
- * default branch's side drops out (withoutArrivals), and only what is left is a spec change of this
- * tree's. A § both sides changed (master, and the branch's own edit or promotion) stays.
- */
-export async function landedSpec(
-	top: string,
-	root: string,
-	base: string,
-	head: string | null,
-	dirtySpec: boolean,
-	isSpec: (path: string) => boolean,
-	core: string,
-	io: SpecIO = localIO,
-	options: { committed?: boolean; ownBases?: readonly string[] } = {},
-): Promise<LandedSpec> {
-	const git = (args: string[]) => io.exec("git", args, { cwd: top, timeout: TOOL_TIMEOUT_MS });
-	const touches = async (from: string, to: string) => {
-		const diff = await git(["diff", "--name-only", "-z", from, to]);
-		return diff.code === 0 && diff.stdout.split("\0").some(isSpec);
-	};
-	// committed: the range base..head itself (one operation's), never the work tree.
-	const headArg = options.committed && head ? head : undefined;
-	const lists = () => rangeLists(root, base, headArg, core, io, { ownBases: options.ownBases });
-	const at = head ? await arrivalSide(top, base, head, io, { workTree: !headArg }) : undefined;
-	if (!at) {
-		const specChanged = dirtySpec || Boolean(head && head !== base && (await touches(base, head)));
-		if (!specChanged) return { specChanged, foreign: [] };
-		const l = await lists();
-		return { specChanged, ...(l ? { foreign: l.foreign, changes: l.changes } : {}) };
-	}
-	const l = await lists();
-	if (!l) return { specChanged: dirtySpec || head !== base };
-	const { lists: left, arrivals } = await withoutArrivals(l, top, root, base, headArg, core, io, at);
-	const specChanged = left.foreign.length > 0 || left.own.length > 0 || left.created.length > 0;
-	return { specChanged, foreign: left.foreign, changes: left.changes, ...(arrivals?.ids.length || arrivals?.files.length ? { arrivals } : {}) };
-}
-
-/**
- * Compare a tree with how the run found it. Never throws. `commits: false` ignores HEAD's movement (only
- * the work tree's own changes count): for the session's tree when this session made no commit, merge or
- * promotion there, so a commit someone else lands meanwhile (another task on master) is never this turn's.
- */
-export async function treeTurn(start: TreeStart, core: string, io: SpecIO = localIO, options: { commits?: boolean } = {}): Promise<TreeTurn> {
-	try {
-		const end = await gitView(start.view.top, io);
-		if (!end) return { changed: false, specChanged: false, error: `${start.view.top}: incomplete check (final Git view unavailable)` };
-		if (options.commits === false && end) start = { ...start, view: { ...start.view, head: end.head } };
-		const manifest = manifestConflict(end);
-		const conflict = manifest && end ? { conflict: manifestConflictNote(end.top, manifest, core) } : {};
-		const drafts = start.root ? draftsTouched(start.drafts, await draftStamps(start.root, io)) : [];
-		const changed = viewChanged(start.view, end) || drafts.length > 0;
-		if (!changed || !end) return { changed, specChanged: false, foreign: [], ...conflict };
-		const specRel = start.root ? relative(start.view.top, join(start.root, SPEC_REL)) : SPEC_REL;
-		const isSpec = (p: string) => p.startsWith(`${specRel}/`) && !p.startsWith(`${specRel}/drafts/`);
-		const dirtySpec = Object.entries(end.files).some(([p, m]) => isSpec(p) && start.view.files[p] !== m);
-		const base = start.view.head;
-		if (!start.root || !base) return { changed, specChanged: dirtySpec, ...conflict };
-		const ownBases = await ownBasesFor(end.top, end.head, start.defaultTip, io);
-		const landed = await landedSpec(end.top, start.root, base, end.head, dirtySpec, isSpec, core, io, { ownBases });
-		const specChanged = landed.specChanged;
-		const ids = new Set<string>();
-		let known = landed.foreign !== undefined;
-		if (landed.foreign) {
-			known = true;
-			for (const id of landed.foreign) ids.add(id);
-		}
-		for (const name of drafts) {
-			const edited = await draftForeign(start.root, name, core, io, undefined, base, ownBases);
-			if (edited) {
-				for (const id of edited) ids.add(id);
-			} else known = false;
-		}
-		return {
-			changed,
-			specChanged,
-			...(known ? { foreign: [...ids].sort() } : { error: `${start.view.top}: incomplete check (foreign list unavailable)` }),
-			...(landed.changes ? { changes: landed.changes } : {}),
-			...(landed.arrivals ? { arrivals: landed.arrivals } : {}),
-			...conflict,
-		};
-	} catch (error) {
-		return { changed: false, specChanged: false, error: `${start.view.top}: ${error instanceof Error ? error.message : String(error)}` };
-	}
-}
-
-/** Whether `commit` is an ancestor of (or equal to) `of`, in the repo at `dir`; false on any error. */
-export async function isAncestor(dir: string, commit: string, of: string, io: SpecIO = localIO): Promise<boolean> {
-	const r = await io.exec("git", ["merge-base", "--is-ancestor", commit, of], { cwd: dir, timeout: TOOL_TIMEOUT_MS }).catch(() => undefined);
-	return r?.code === 0;
 }
 
 /** A directory's work-tree top and HEAD (two cheap rev-parses, no status), or undefined outside Git. */
@@ -1394,409 +747,12 @@ export async function headAt(dir: string, io: SpecIO = localIO): Promise<{ top: 
 	}
 }
 
-/** One git operation of this session's in a tree: HEAD just before it and just after. */
-export interface OpRange {
-	before: string;
-	after: string;
-}
-
-/**
- * The session's own tree, attributed per operation: its uncommitted changes as treeTurn sees them
- * (HEAD's movement ignored), plus, for each git operation this session ran there (a commit, merge or
- * promotion), what landed between the HEAD just before it and just after it. A commit another actor
- * lands on the same branch meanwhile falls outside every range, so it is never this turn's.
- */
-export async function opsTurn(start: TreeStart, ranges: readonly OpRange[], core: string, io: SpecIO = localIO): Promise<TreeTurn> {
-	const base = await treeTurn(start, core, io, { commits: false });
-	const moved = ranges.filter((r) => r.before && r.after && r.before !== r.after);
-	if (!moved.length || base.error || !start.root) return moved.length ? { ...base, changed: true } : base;
-	try {
-		const specRel = relative(start.view.top, join(start.root, SPEC_REL));
-		const isSpec = (p: string) => p.startsWith(`${specRel}/`) && !p.startsWith(`${specRel}/drafts/`);
-		let specChanged = base.specChanged;
-		const ids = new Set(base.foreign ?? []);
-		let known = base.foreign !== undefined;
-		const changes = [...(base.changes ?? [])];
-		let arrivals = base.arrivals;
-		for (const r of moved) {
-			const landed = await landedSpec(start.view.top, start.root, r.before, r.after, false, isSpec, core, io, { committed: true });
-			if (landed.specChanged) specChanged = true;
-			if (landed.foreign) {
-				known = true;
-				for (const id of landed.foreign) ids.add(id);
-			}
-			changes.push(...(landed.changes ?? []));
-			arrivals = mergeArrivals(arrivals, landed.arrivals);
-		}
-		return { ...base, changed: true, specChanged, ...(known ? { foreign: [...ids].sort() } : {}), ...(changes.length ? { changes } : {}), ...(arrivals ? { arrivals } : {}) };
-	} catch (error) {
-		return { ...base, changed: true, error: `${start.view.top}: ${error instanceof Error ? error.message : String(error)}` };
-	}
-}
-
-/** One git operation that may land spec or code: the session's own (ops) or a worker's (the ledger). */
-export interface OpLanding {
-	top: string;
-	before: string;
-	/** HEAD after; equal to `before` for an uncommitted promote (the work tree is the head). */
-	after: string;
-	kind: "commit" | "merge" | "ff" | "promote" | "rebase" | "reset";
-	/** Who ran it: "self" for this session, else the worker's actor. */
-	actor?: string;
-}
-
-/** What one operation landed. */
-export interface OpJudgement {
-	/** A landing: a merge that isn't the default branch absorbed, a promote, or a commit that changed the current spec. */
-	landing: boolean;
-	specChanged: boolean;
-	/** Foreign § it landed (own subtracted); undefined when not computable. */
-	foreign?: string[];
-	/** The landing gate's lists, for a landing. */
-	lists?: RangeLists;
-	/** It landed on the default branch (checked out there): its unpromoted drafts can't be deferred. */
-	onDefault?: boolean;
-	/** Each foreign § with its change kind. */
-	changes?: { id: string; change: string }[];
-	/** What it brought in from the default branch unchanged (out of `foreign` and the gate's lists). */
-	arrivals?: Arrivals;
-}
-
-/**
- * Judge one operation's range in its tree. A merge (or fast-forward) lands unless it only brought the
- * default branch into another branch (absorbed: every merged-in side is on the default tip). A promote
- * always lands. A commit lands when it changed the current spec (a committed promotion). The lists come
- * from the range itself (before..after, or the work tree for an uncommitted promote), own claims out.
- */
-export async function judgeOp(op: OpLanding, core: string, io: SpecIO = localIO, defaultTip?: string): Promise<OpJudgement> {
-	const root = await findSpecRoot(op.top, (p) => io.exists(p));
-	const git = (args: string[]) => io.exec("git", args, { cwd: op.top, timeout: TOOL_TIMEOUT_MS });
-	const main = await defaultBranch(op.top, io);
-	const tip = defaultTip ?? (main ? (await git(["rev-parse", "--verify", "-q", `refs/heads/${main}`])).stdout.trim() : "");
-	const branch = (await git(["symbolic-ref", "-q", "--short", "HEAD"])).stdout.trim();
-	const moved = op.after !== op.before;
-	const onDefault = Boolean(main && branch === main);
-	let absorbing = false;
-	if ((op.kind === "merge" || op.kind === "ff") && moved && tip && branch && branch !== main) {
-		const merges = (await git(["rev-list", "--first-parent", "--parents", `${op.before}..${op.after}`])).stdout.trim().split("\n").filter(Boolean);
-		const sides = merges.map((l) => l.split(" ")[2]).filter(Boolean);
-		if (!sides.length) absorbing = (await git(["merge-base", "--is-ancestor", op.after, tip])).code === 0;
-		else {
-			absorbing = true;
-			for (const side of sides) if ((await git(["merge-base", "--is-ancestor", side, tip])).code !== 0) absorbing = false;
-		}
-	}
-	if (!root) return { landing: (op.kind === "merge" || op.kind === "ff" || op.kind === "promote") && !absorbing, specChanged: false };
-	const ownBases = await ownBasesFor(op.top, op.after, tip || undefined, io);
-	const specRel = relative(op.top, join(root, SPEC_REL));
-	const isSpec = (p: string) => p.startsWith(`${specRel}/`) && !p.startsWith(`${specRel}/drafts/`);
-	let specChanged = false;
-	let foreign: string[] | undefined = [];
-	let changes: { id: string; change: string }[] | undefined;
-	let arrivals: Arrivals | undefined;
-	if (moved) {
-		const landed = await landedSpec(op.top, root, op.before, op.after, false, isSpec, core, io, { committed: true, ownBases });
-		specChanged = landed.specChanged;
-		foreign = landed.foreign;
-		changes = landed.changes;
-		arrivals = landed.arrivals;
-	}
-	// What arrived from the default branch (a merge of it in the range, or in progress) is no landing of this op's.
-	const gateLists = async (head: string | undefined) => {
-		const raw = await rangeLists(root, op.before, head, core, io, { ownBases, landing: true });
-		return raw ? await withoutArrivals(raw, op.top, root, op.before, head, core, io) : undefined;
-	};
-	const extra = () => ({ ...(changes ? { changes } : {}), ...(arrivals?.ids.length || arrivals?.files.length ? { arrivals } : {}) });
-	if (op.kind === "promote" && !moved) {
-		const got = await gateLists(undefined);
-		const lists = got?.lists;
-		changes = lists?.changes;
-		arrivals = got?.arrivals;
-		return { landing: true, specChanged: true, foreign: lists?.foreign, ...(lists ? { lists } : {}), onDefault, ...extra() };
-	}
-	const landing = op.kind === "promote" || ((op.kind === "merge" || op.kind === "ff") && !absorbing) || (op.kind === "commit" && specChanged);
-	if (!landing || !moved) return { landing, specChanged, ...(foreign ? { foreign } : {}), ...extra() };
-	const got = await gateLists(op.after);
-	arrivals = mergeArrivals(arrivals, got?.arrivals);
-	return { landing, specChanged, ...(foreign ? { foreign } : {}), ...(got ? { lists: got.lists } : {}), onDefault, ...extra() };
-}
-
-/** What a run's check has gathered so far: shared by the parent (index.ts) and pi workers (spec-worker.ts). */
-export interface TurnTally {
-	changed: boolean;
-	landing: boolean;
-	/**
-	 * The session itself edited, committed, promoted or merged (its own ops, its own tree): only then is the
-	 * `Also changes:` line required. Worker ops a run takes are charged to it (its record) without that.
-	 */
-	self: boolean;
-	ids: Set<string>;
-	advisory: Set<string>;
-	unmapped: Set<string>;
-	unpromoted: Set<string>;
-	/** Unpromoted § at a landing on the default branch: never deferred. */
-	unpromotedAtDefault: Set<string>;
-	/** Landings described for the re-prompt ("commit by ag_07 in repo", …). */
-	landed: string[];
-	errors: string[];
-	conflicts: string[];
-	/** Git computed every part of the list … */
-	exact: boolean;
-	/** … and at least one part exists. */
-	gitBased: boolean;
-	/** § brought in from the default branch unchanged (never in `ids`, never to be named). */
-	arrived: Set<string>;
-	/** Changed files brought in from it unchanged (never in `unmapped`). */
-	arrivedFiles: Set<string>;
-	/** The default branch they arrived from, when any did. */
-	arrivedFrom?: string;
-	/** Change kind per foreign § ("text", "record", "text+record", "child-added", "deleted", …), where Git gave one. */
-	changes: Map<string, string>;
-}
-
-export const freshTally = (changed = false, landing = false): TurnTally => ({
-	changed,
-	landing,
-	self: changed || landing,
-	ids: new Set(),
-	advisory: new Set(),
-	unmapped: new Set(),
-	unpromoted: new Set(),
-	unpromotedAtDefault: new Set(),
-	landed: [],
-	errors: [],
-	conflicts: [],
-	exact: true,
-	gitBased: false,
-	arrived: new Set(),
-	arrivedFiles: new Set(),
-	changes: new Map(),
-});
-
-/** Add what an operation or tree brought in from the default branch, and its change kinds. */
-export function tallyArrivals(t: TurnTally, arrivals: Arrivals | undefined, changes: readonly { id: string; change: string }[] | undefined): void {
-	for (const c of changes ?? []) t.changes.set(c.id, t.changes.has(c.id) && t.changes.get(c.id) !== c.change ? mergeKinds(t.changes.get(c.id)!, c.change) : c.change);
-	if (!arrivals) return;
-	t.arrivedFrom ??= arrivals.from;
-	for (const id of arrivals.ids) t.arrived.add(id);
-	for (const p of arrivals.files) t.arrivedFiles.add(p);
-}
-
-/** Two change kinds of one § ("text" and "record": "text+record"). */
-const mergeKinds = (a: string, b: string): string => [...new Set([...a.split("+"), ...b.split("+")])].join("+");
-
-/** Add a computed foreign list (undefined: not computable, so the list is no longer exact). */
-export function tallyForeign(t: TurnTally, foreign: readonly string[] | undefined): void {
-	if (!foreign) t.exact = false;
-	else t.gitBased = true;
-	for (const id of foreign ?? []) t.ids.add(id);
-}
-
-/** Optional truthful names for observed paths only; reads manifests, never enumerates source trees.
- * Re-read on every check so dirty/repeated edits and mapping changes need no fresh census event.
- * Draft mappings may extend existing claims, but new draft claims are never foreign names.
- */
-export async function mappedClaims(view: GitView, paths: readonly string[], io: SpecIO = localIO, ownBases: readonly string[] = [], options: { commands?: readonly string[]; sessionStart?: string } = {}): Promise<{ ids: string[]; error?: string }> {
-	const ids = new Set<string>();
-	try {
-		const root = await findSpecRoot(view.top, (p) => io.exists(p));
-		if (!root) return { ids: [] };
-		const records = (text: string): Record<string, { code?: string[] }> => {
-			const m = JSON.parse(text);
-			if (!m?.claims || typeof m.claims !== "object" || Array.isArray(m.claims)) throw new Error("invalid manifest claims");
-			for (const r of Object.values(m.claims) as { code?: unknown }[]) {
-				if (!r || typeof r !== "object" || (r.code !== undefined && (!Array.isArray(r.code) || r.code.some((p: unknown) => typeof p !== "string" || p.startsWith("/") || p.split("/").includes(".."))))) throw new Error("invalid code mappings");
-			}
-			return m.claims;
-		};
-		const current = records(await io.readFile(join(root, SPEC_REL, "manifest.json")));
-		let foreign = new Set(Object.keys(current));
-		if (ownBases.length) {
-			foreign = new Set();
-			for (const base of ownBases) {
-				const r = await io.exec("git", ["show", `${base}:${relative(view.top, join(root, SPEC_REL, "manifest.json"))}`], { cwd: view.top, timeout: TOOL_TIMEOUT_MS });
-				if (r.code !== 0) throw new Error("own-claim baseline unavailable");
-				for (const id of Object.keys(records(r.stdout))) foreign.add(id);
-			}
-		}
-		const relevant = new Set(paths.map((p) => underRoot(view.top, root, p)).filter((p): p is string => p !== undefined));
-		const add = (claims: Record<string, { code?: string[] }>) => {
-			for (const [id, r] of Object.entries(claims)) if (foreign.has(id) && r.code?.some((p) => relevant.has(p.replace(/^\.\//, "")))) ids.add(id);
-		};
-		add(current);
-		const draft = await pickDraft(root, options.commands ?? [], options.sessionStart, io);
-		if (draft) add(records(await io.readFile(join(root, draft, "manifest.json"))));
-		return { ids: [...ids].sort() };
-	} catch (error) {
-		return { ids: [...ids].sort(), error: `${view.top}: incomplete check (mapped paths unavailable: ${error instanceof Error ? error.message : String(error)})` };
-	}
-}
-
-/** Paths the current spec at a root (its work tree's manifest.json) maps in some claim's `code`; empty when unreadable. */
-export async function mappedNow(root: string, io: SpecIO = localIO): Promise<Set<string>> {
-	try {
-		const m = JSON.parse(await io.readFile(join(root, SPEC_REL, "manifest.json"))) as { claims?: Record<string, { code?: unknown }> };
-		return new Set(Object.values(m.claims ?? {}).flatMap((c) => (Array.isArray(c?.code) ? c.code.filter((p): p is string => typeof p === "string") : [])));
-	} catch {
-		return new Set();
-	}
-}
-
-/**
- * Judge each operation (judgeOp) into the tally: a landing adds its gate lists. An unmapped file a claim
- * of the current spec maps by now (a promotion later in the run) is covered, as the Stop hook re-checks it.
- */
-export async function tallyOps(t: TurnTally, ops: readonly OpLanding[], defaultTips: (top: string) => string | undefined, core: string, io: SpecIO = localIO): Promise<void> {
-	for (const op of ops) {
-		let j: OpJudgement;
-		try {
-			j = await judgeOp(op, core, io, defaultTips(op.top));
-		} catch (error) {
-			t.exact = false;
-			t.errors.push(`${op.top}: incomplete check (${error instanceof Error ? error.message : String(error)})`);
-			continue;
-		}
-		t.changed = true;
-		if (!op.actor || op.actor === "self") t.self = true;
-		if (j.foreign === undefined || (j.landing && (!j.lists || j.lists.complete === false))) {
-			t.exact = false;
-			t.errors.push(`${op.top}: incomplete check (${j.lists?.incomplete?.join(", ") || "foreign/landing lists unavailable"})`);
-		}
-		if (j.landing) {
-			t.landing = true;
-			const where = op.top.split("/").pop() ?? op.top;
-			if (op.actor && op.actor !== "self") t.landed.push(`${op.kind} by ${op.actor} in ${where}`);
-			else if (op.kind === "commit") t.landed.push(`changed the current spec in ${where}`);
-			if (j.lists?.unmappedChanged.length) {
-				const root = await findSpecRoot(op.top, (p) => io.exists(p));
-				const mapped = root ? await mappedNow(root, io) : new Set<string>();
-				for (const e of j.lists.unmappedChanged) if (!mapped.has(e.path)) t.unmapped.add(e.path);
-			}
-			for (const d of j.lists?.unpromotedDrafts ?? []) for (const id of d.ids) (j.onDefault ? t.unpromotedAtDefault : t.unpromoted).add(id);
-			for (const m of j.lists?.mappedUntouched ?? []) t.advisory.add(m.id);
-		}
-		tallyForeign(t, j.foreign);
-		tallyArrivals(t, j.arrivals, j.changes);
-	}
-}
-
-/**
- * One tree against a baseline (treeTurn) into the tally; a current spec that changed there is a landing unless
- * `promoted` covers it. Its change is the session's own unless `worker` (a worker wrote there) or a `label` says so.
- */
-export async function tallyTree(t: TurnTally, start: TreeStart, core: string, io: SpecIO = localIO, options: { commits?: boolean; promoted?: boolean; label?: string; worker?: boolean } = {}): Promise<void> {
-	const r = await treeTurn(start, core, io, { commits: options.commits });
-	if (r.error) { t.exact = false; t.errors.push(r.error); }
-	if (r.conflict) t.conflicts.push(r.conflict);
-	if (!r.changed) return;
-	t.changed = true;
-	if (!options.worker && !options.label) t.self = true;
-	tallyForeign(t, r.foreign);
-	tallyArrivals(t, r.arrivals, r.changes);
-	if (r.specChanged && !options.promoted) {
-		t.landing = true;
-		t.landed.push(`changed the current spec in ${start.view.top.split("/").pop()}${options.label ?? ""}`);
-	}
-}
-
-/** The check's verdict on a reply, with what the tally computed, for a reader that records the turn. */
-export interface TallyVerdict {
-	check: AlsoChangesCheck;
-	/** Every foreign § the run changed (arrivals out), sorted. */
-	foreign: string[];
-	/** The line is required: the session itself changed something (TurnTally.self). */
-	required: boolean;
-	/** The run took operations or changes, its own or its workers': it has a record, required line or not. */
-	charged: boolean;
-	/** § that arrived from the default branch unchanged and are in no op's foreign list, sorted. */
-	arrived: string[];
-	/** Changed files that arrived from it unchanged and are in no landing's unmapped list, sorted. */
-	arrivedFiles: string[];
-	/** The default branch they arrived from, when any did. */
-	arrivedFrom?: string;
-	/** Change kind per foreign §, where Git gave one. */
-	changes: Record<string, string>;
-}
-
-/**
- * The reply against the tally: required on a change or landing, forbidden on a Q&A run (not a relay).
- * `described`: § this session already described (AlsoChangesOptions.described); empty or omitted keeps
- * every computed § required.
- */
-export function tallyCheck(t: TurnTally, reply: string, options: { relay?: boolean; described?: readonly string[] } = {}): TallyVerdict {
-	const foreign = [...t.ids].sort();
-	const charged = t.changed || t.landing;
-	// Only the session's own edits, commits, promotions and merges require the line; workers' alone never do.
-	const required = charged && t.self;
-	const check = checkAlsoChanges(reply, {
-		required,
-		forbidden: !charged && !options.relay,
-		foreign,
-		exact: t.exact && t.gitBased,
-		advisory: [...t.advisory],
-		...(options.described?.length ? { described: options.described } : {}),
-		...(t.landing ? { unmapped: [...t.unmapped].sort(), unpromoted: [...t.unpromoted].sort(), unpromotedAtDefault: [...t.unpromotedAtDefault].sort() } : {}),
-	});
-	const arrived = [...t.arrived].filter((id) => !t.ids.has(id)).sort();
-	const arrivedFiles = [...t.arrivedFiles].filter((p) => !t.unmapped.has(p)).sort();
-	const changes = Object.fromEntries(foreign.filter((id) => t.changes.has(id)).map((id) => [id, t.changes.get(id)!]));
-	return { check, foreign, required, charged, arrived, arrivedFiles, ...(t.arrivedFrom && (arrived.length || arrivedFiles.length) ? { arrivedFrom: t.arrivedFrom } : {}), changes };
-}
-
-/** Re-prompts a run gets: landings as the Claude Code Stop hook's MERGE_BLOCKS; a Q&A line once. */
-export const LANDING_REPROMPTS = 2;
-
 const textOf = (content: unknown): string =>
 	typeof content === "string"
 		? content
 		: Array.isArray(content)
 			? content.map((c) => (c && typeof c === "object" && typeof (c as { text?: unknown }).text === "string" ? (c as { text: string }).text : "")).join("\n")
 			: "";
-
-/**
- * `Also changes:` lines a worker's report carried into the parent's session: a custom message (a
- * subagent's completion, a team report) or the result of a tool that runs workers. Returns the §
- * they name, or undefined when none named one ("none" reports no change). Not the user's words, and not other tools' output.
- */
-/**
- * A worker tool's result that carries a worker's report (a wait, an inbox): never one that starts, lists, sizes up
- * or reads workers (agent_spawn, agent_list, agent_models, agent_transcript, team_roster, …).
- */
-export function workerReportTool(toolName: string | undefined): boolean {
-	const name = toolName ?? "";
-	return /agent|team|subagent|worker/i.test(name) && !/(spawn|_list|_models|_transcript|roster|_members|_offers)$/i.test(name);
-}
-
-export function reportedAlsoChanges(entries: readonly unknown[]): string[] | undefined {
-	let found = false;
-	const ids = new Set<string>();
-	for (const entry of entries) {
-		const e = entry as { type?: string; customType?: string; content?: unknown; message?: { role?: string; toolName?: string; content?: unknown } };
-		let text = "";
-		if (e.type === "custom_message" && e.customType !== "spec-check") text = textOf(e.content);
-		else if (e.type === "message" && e.message?.role === "toolResult" && workerReportTool(e.message.toolName)) text = textOf(e.message.content);
-		for (const line of text.split("\n")) {
-			const named = parseAlsoChanges(line.trim());
-			// "Also changes: none" (a planning worker's, say) makes no change turn; a named § does.
-			if (!named?.length) continue;
-			found = true;
-			for (const id of named) ids.add(id);
-		}
-	}
-	return found ? [...ids].sort() : undefined;
-}
-
-/**
- * Whether a worker's report arrived among these entries: a custom message from the subagents or teams
- * extension, or a worker tool's result. Such a run relays work done while the session was idle.
- */
-export function workerReported(entries: readonly unknown[]): boolean {
-	return entries.some((entry) => {
-		const e = entry as { type?: string; customType?: string; message?: { role?: string; toolName?: string } };
-		if (e.type === "custom_message") return /subagent|team|worker/i.test(e.customType ?? "") && e.customType !== "spec-check";
-		return e.type === "message" && e.message?.role === "toolResult" && workerReportTool(e.message.toolName);
-	});
-}
 
 // ── Writes the draft discipline forbids ──────────────────────────────────────
 
@@ -1999,115 +955,5 @@ export function driftNote(toolName: string, input: unknown, content: unknown): s
 	if (typeof command !== "string" || !draftToolRuns(command).some((r) => r.verb === "promote")) return undefined;
 	const warnings = driftWarningsIn(textOf(content));
 	if (!warnings.length) return undefined;
-	return `${CHECK_TAG} promote's drift warnings (a warning, not a block): ${warnings.map((w, i) => `(${i + 1}) ${w}`).join(" ")}\nFor each: change the stale § in a draft and promote (name it in \`Also changes:\`), or say why it stays.`;
-}
-
-// ── The workers' ledger (M4) ─────────────────────────────────────────────────
-
-/** The env var the spawn path sets on every spec-on worker and member: the parent's ledger file. */
-export const LEDGER_ENV = "SOVA_SPEC_LEDGER";
-
-/** One git operation a worker's hooks saw move a HEAD, as a line of the parent's ledger. */
-export interface LedgerEntry {
-	v: 1;
-	/** ms since the epoch. */
-	at: number;
-	actor: { runtime: "pi" | "claude-code"; session?: string };
-	/** The tree top the HEAD moved in. */
-	top: string;
-	before: string;
-	after: string;
-	kind: "commit" | "merge" | "promote" | "ff" | "rebase" | "reset";
-	/** For a merge: the target branch (when known). */
-	target?: string;
-	ref?: string;
-}
-
-/** The ledger file of a parent session: `<agentDir>/sova/spec-ledger/<parentSessionId>.jsonl`. */
-export function ledgerPath(agentDir: string, parentSessionId: string): string {
-	return join(agentDir, "sova", "spec-ledger", `${parentSessionId.replace(/[^\w.-]/g, "_")}.jsonl`);
-}
-
-/**
- * A confined worker's own ledger file (its sandbox makes only this file writable, never the parent's):
- * `<agentDir>/sova/spec-ledger/<parentSessionId>.workers/<worker key>.jsonl`. The parent reads it with its own (ledgerFiles).
- */
-export function workerLedgerPath(agentDir: string, parentSessionId: string, workerKey: string): string {
-	return join(dirname(ledgerPath(agentDir, parentSessionId)), `${parentSessionId.replace(/[^\w.-]/g, "_")}.workers`, `${workerKey.replace(/[^\w.-]/g, "_")}.jsonl`);
-}
-/** A ledger entry's identity: when, where, and the HEAD it left. */
-export const ledgerEntryKey = (e: { at: number; top: string; after: string }): string => `${e.at}:${e.top}:${e.after}`;
-
-/** The file of ledger entries a parent session already charged to a run, one ledgerEntryKey per line, beside its ledger. */
-export function ledgerChargedPath(agentDir: string, parentSessionId: string): string {
-	return join(dirname(ledgerPath(agentDir, parentSessionId)), `${parentSessionId.replace(/[^\w.-]/g, "_")}.charged`);
-}
-
-/**
- * The ledger entries a parent session already charged, surviving reloads, restarts and a reopened session. A
- * session without the file (one from before it existed) starts with every entry its ledger holds now counted as
- * charged, and the file is written then. Never throws: an unreadable or unwritable file reads as what it could read.
- */
-export function loadLedgerCharged(agentDir: string, parentSessionId: string): Set<string> {
-	const path = ledgerChargedPath(agentDir, parentSessionId);
-	try {
-		return new Set(readFileSync(path, "utf8").split("\n").filter(Boolean));
-	} catch {
-		const keys = new Set(ledgerFiles(agentDir, parentSessionId).flatMap((file) => readLedger(file)).map(ledgerEntryKey));
-		try {
-			mkdirSync(dirname(path), { recursive: true });
-			appendFileSync(path, [...keys].map((k) => `${k}\n`).join(""));
-		} catch { /* charged in memory only */ }
-		return keys;
-	}
-}
-
-/** Record ledger entries as charged to a settled run (loadLedgerCharged). Never throws. */
-export function markLedgerCharged(agentDir: string, parentSessionId: string, keys: Iterable<string>): void {
-	const lines = [...keys].map((k) => `${k}\n`).join("");
-	if (!lines) return;
-	try {
-		const path = ledgerChargedPath(agentDir, parentSessionId);
-		mkdirSync(dirname(path), { recursive: true });
-		appendFileSync(path, lines);
-	} catch { /* charged in memory only */ }
-}
-
-/** Every ledger file of a parent session: its own, then each confined worker's (workerLedgerPath). */
-export function ledgerFiles(agentDir: string, parentSessionId: string): string[] {
-	const own = ledgerPath(agentDir, parentSessionId);
-	const dir = join(dirname(own), `${parentSessionId.replace(/[^\w.-]/g, "_")}.workers`);
-	let names: string[] = [];
-	try { names = readdirSync(dir).filter((name) => name.endsWith(".jsonl")).sort(); } catch { /* no confined worker */ }
-	return [own, ...names.map((name) => join(dir, name))];
-}
-
-/** Append one entry (creating the file); never throws. */
-export function appendLedger(path: string, entry: LedgerEntry): void {
-	try {
-		mkdirSync(dirname(path), { recursive: true });
-		appendFileSync(path, `${JSON.stringify(entry)}\n`);
-	} catch {
-		// The ledger is best effort: a worker's op then counts only through the parent's own tree compare.
-	}
-}
-
-/** Entries at or after `since` (ms); malformed lines skipped; [] without a file. */
-export function readLedger(path: string, since = 0): LedgerEntry[] {
-	let text: string;
-	try {
-		text = readFileSync(path, "utf8");
-	} catch {
-		return [];
-	}
-	const out: LedgerEntry[] = [];
-	for (const line of text.split("\n")) {
-		try {
-			const e = JSON.parse(line) as LedgerEntry;
-			if (e?.v === 1 && typeof e.top === "string" && typeof e.before === "string" && typeof e.after === "string" && typeof e.at === "number" && e.at >= since) out.push(e);
-		} catch {
-			// a partial or foreign line
-		}
-	}
-	return out;
+	return `${DIGEST_TAG} promote's drift warnings: ${warnings.map((w, i) => `(${i + 1}) ${w}`).join(" ")}\nFor each: change the stale § in a draft and promote, or say why it stays.`;
 }

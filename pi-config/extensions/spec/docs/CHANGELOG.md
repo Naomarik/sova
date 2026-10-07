@@ -249,6 +249,28 @@ Each entry gives:
     - copy-deck needs 4/5 per arm and sections 8 / 17: neither target met.
     - The agent arm and the rubric: deferred: not re-run after landing.
 
+## After the landing
+
+### 2026-10-07
+
+- **Spec noise cut: no closing lines.**
+  - Branch: `feat/drop-closing-lines` (master commit filled in when it lands).
+  - Changed:
+    - replies carry no spec lines: the `Also changes:`, `Plumbing:`, `Deferred:` and `Spec check
+      override:` lines, the turn-end check, its re-prompts and toasts, the worker ledger and the spec
+      card are gone, in pi sessions, pi workers and Claude Code workers;
+    - the guide (`mode/spec-mode.md`) drops the last-line bullet, the one-file-per-tool-call rule and
+      the census run by hand while coding; one `census --changed` before finishing stays, and a flag
+      is asked as "This also changes §X: <what>. OK?";
+    - the `[spec census]` note drops its `Foreign §:` and `Rule:` lines; the merge note keeps
+      actionable warnings only;
+    - `census.foreignNote` no longer says what a last line names; `promote`'s human output says
+      "Foreign § this promotion changes: …" (the JSON keys are unchanged);
+    - spec mode no longer relies on a merge round.
+  - §: +§tools.spec/no-turn-end-check; −§tools.spec/runtime-accounting; §tools/spec,
+    §tools.spec/census-note, §tools.spec/mode-reading and the merge-card and merge-round claims
+    reworded (computed list to follow at landing).
+
 ## Integration → master
 
 The integration merges after 96ab3014 and the master commits that re-applied them. The integration
@@ -332,3 +354,5 @@ The tools are Node standard library only. Nothing is installed.
    Re-read `DRAFTS.md` and `PROMOTE.md`.
 6. **The mode text.** A project that points its agents at `mode/spec-mode.md` gets the pull reading
    path with this upgrade. Its shell line finds the tools at `<agent dir>/extensions/spec/core`.
+7. **No closing lines.** Replies no longer end with an `Also changes:` line and nothing checks one;
+   `census.foreignNote` no longer mentions it. Drop the line from your own agent instructions.

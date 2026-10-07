@@ -40,8 +40,6 @@ import { ToolCard, type ToolStatus } from "./ToolCard";
 import { WakeCard } from "./WakeCard";
 import { TopicCard } from "./TopicCard";
 import { WorktreeMergeCard } from "./WorktreeMergeCard";
-import { SpecTurnCard } from "./SpecTurnCard";
-import { rowsWithCard, withoutClosingLines } from "../lib/spec-card";
 import { ShowChangesCard } from "./ChangesViewer";
 import { SubagentLimitRow } from "./SubagentLimitRow";
 import { rowProvider } from "../lib/subagent-limit";
@@ -536,9 +534,6 @@ export function HistoryItems(props: {
   actions?: MessageActionsProvider;
   /** Build every row at once, even inside a transcript (the hidden-rows disclosure's own list). */
   whole?: boolean;
-  /** The session's spec mode is on: every reply draws without its closing spec lines
-      (§chat.spec-card/closing-lines), as a reply whose run has a spec card always does. */
-  specMode?: boolean;
   /** Rows above the list that the view doesn't hold yet (lib/older-rows): fetched as the reader
       nears the top, or down to a jump's target. */
   older?: OlderRowsApi;
@@ -589,12 +584,6 @@ export function HistoryItems(props: {
     : item.kind === "tool-call" ? [item.toolCallId ? results().get(item.toolCallId)?.images : undefined, "tool"]
     : item.kind === "tool-result" ? [item.toolCallId && calls().has(item.toolCallId) ? undefined : item.images, "tool"]
     : [undefined, "user"];
-  /** Replies whose run has a spec card: the card shows their closing spec lines (§chat.spec-card/closing-lines). */
-  const withCard = createMemo(() => rowsWithCard(props.items));
-  const replyText = (item: TranscriptItem) => {
-    const text = item.text ?? "";
-    return props.specMode || withCard().has(item.id) ? withoutClosingLines(text) : text;
-  };
   const latestAlign = createMemo(() => latestAlignId(props.items));
   /** The newest revision of each alignment renders as the card; the rest as one line each. */
   const newestAligns = createMemo(() => newestAlignRows(props.items));
@@ -891,14 +880,11 @@ export function HistoryItems(props: {
               <Match when={item.kind === "topic" && item.topic}>
                 {(batch) => <TopicCard batch={batch()} time={item.at} />}
               </Match>
-              <Match when={item.kind === "spec-turn" && item.specTurn}>
-                {(turn) => <SpecTurnCard turn={turn()} entryId={item.id} time={item.at} />}
-              </Match>
-              {/* A reply that was only its closing spec lines draws nothing once the card shows them. */}
-              <Match when={item.kind === "assistant-text" && !replyText(item).trim()}>{null}</Match>
+              {/* Legacy: the retired spec card's row, still sent by older mesh peers. */}
+              <Match when={item.kind === "spec-turn"}>{null}</Match>
               <Match when={item.kind === "assistant-text"}>
                 <AssistantText
-                  text={replyText(item)}
+                  text={item.text ?? ""}
                   author={modelLabel(item.model, item.answered) ?? props.author}
                   model={[item.model, modelMismatch(item.model, item.answered)].filter(Boolean).join(" · ") || undefined}
                   time={item.at}

@@ -1036,7 +1036,7 @@ test("census --related: foreign-summary is the last finding and names every fore
   const j = run(root, "--spec", ...DRAFT, "census", "--changed", "--related");
   const last = j.findings.at(-1);
   assert.deepEqual([last.severity, last.code, last.ids], ["note", "foreign-summary", ["§core/net"]]);
-  assert.equal(last.message, "flag any foreign § where a user sees a change, even one your new claim describes, wherever you put it; plumbing (a request, hook, helper or CSS class) never flags, nor a gap it already had, even one you now rely on; the last line names these foreign §, never your new claims: 1 touched (§core/net)");
+  assert.equal(last.message, "flag any foreign § where a user sees a change, even one your new claim describes, wherever you put it; plumbing (a request, hook, helper or CSS class) never flags, nor a gap it already had, even one you now rely on: 1 touched (§core/net)");
   assert.ok(codes(j).includes("changed-unclaimed"), "pushed after the census warnings too");
   assert.equal(j.exit, 1, "the unclaimed file sets the exit, not the notes");
 });
@@ -1086,7 +1086,7 @@ test("census --changed without --related: foreignNote before foreign, childUnder
   const j = run(draftRepo(), "--spec", ...DRAFT, "census", "--changed");
   const keys = Object.keys(j.census);
   assert.equal(keys.indexOf("foreignNote") + 1, keys.indexOf("foreign"), "the rule sits just before the ids");
-  assert.equal(j.census.foreignNote, "flag any of these where a user sees a change, even one your new claim describes, wherever you put it; plumbing (a request, hook, helper or CSS class) never flags, nor a gap it already had, even one you now rely on; the last line names these foreign §, never your new claims");
+  assert.equal(j.census.foreignNote, "flag any of these where a user sees a change, even one your new claim describes, wherever you put it; plumbing (a request, hook, helper or CSS class) never flags, nor a gap it already had, even one you now rely on");
   assert.deepEqual(j.census.foreign, ["§core/net"]);
   assert.deepEqual(j.census.childUnderForeign, [{ id: "§core.net/new", parent: "§core/net" }]);
   assert.deepEqual([j.findings.at(-1).code, j.findings.at(-1).ids], ["foreign-summary", ["§core/net"]]);
@@ -1096,7 +1096,7 @@ test("census --changed without --related: foreignNote before foreign, childUnder
 test("census --changed: one stderr line iff something foreign is touched; stdout stays pure JSON", () => {
   const sh = (root, ...a) => spawnSync(process.execPath, [CLI, ...a, "--root", root, "--json"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, HOME: root, XDG_CONFIG_HOME: root } });
   const r = sh(draftRepo(), "census", "--changed");
-  assert.equal(r.stderr, "sova-spec: flag any foreign § where a user sees a change, even one your new claim describes, wherever you put it; plumbing (a request, hook, helper or CSS class) never flags, nor a gap it already had, even one you now rely on; the last line names these foreign §, never your new claims: 1 touched (§chat.input/send)\n");
+  assert.equal(r.stderr, "sova-spec: flag any foreign § where a user sees a change, even one your new claim describes, wherever you put it; plumbing (a request, hook, helper or CSS class) never flags, nor a gap it already had, even one you now rely on: 1 touched (§chat.input/send)\n");
   assert.deepEqual(JSON.parse(r.stdout).census.foreign, ["§chat.input/send"]);
   const root = withDraft();
   bound(root, ".sova/spec"); bound(root, ".sova/spec/drafts/feat/spec");
@@ -1145,6 +1145,6 @@ test("census --changed: foreign lists surfaces first; the per-§ note says an ol
   assert.deepEqual(j.census.touched.map((t) => t.id), ["§chat.input/send", "§core/net"], "touched stays in id order");
   assert.deepEqual(j.census.foreign, ["§core/net", "§chat.input/send"]);
   assert.deepEqual(j.findings.at(-1).ids, ["§core/net", "§chat.input/send"]);
-  assert.match(j.findings.at(-1).message, /never your new claims: 2 touched \(§core\/net, §chat\.input\/send\)$/);
+  assert.match(j.findings.at(-1).message, /even one you now rely on: 2 touched \(§core\/net, §chat\.input\/send\)$/);
   assert.match(j.findings.find((f) => f.code === "touched-foreign").message, /; a gap it already had never flags, even one you now rely on$/);
 });

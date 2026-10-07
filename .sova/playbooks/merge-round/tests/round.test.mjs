@@ -102,13 +102,15 @@ else process.exit(0);
   writeFileSync(join(bin, "systemd-run"), `#!/bin/sh\necho "systemd-run $@" >> ${JSON.stringify(systemctlLog)}\n`);
   for (const f of ["pnpm", "systemctl", "systemd-run"]) chmodSync(join(bin, f), 0o755);
   writeFileSync(join(core, "sova-spec.mjs"), `const c = process.argv[2];
-console.log(JSON.stringify(c === "census" ? { census: { unclaimed: [] } } : { exit: 0 }));
+const bad = process.env.FAKE_SPEC_BAD === "1";
+console.log(JSON.stringify(c === "census" ? { census: { unclaimed: bad ? ["src/x.ts"] : [] } } : { exit: bad ? 2 : 0 }));
+if (bad && c === "check") process.exitCode = 2;
 `);
   writeFileSync(join(core, "sova-spec-draft.mjs"), `import { writeFileSync } from "node:fs";
 const a = process.argv.slice(2);
 const rootDir = a[a.indexOf("--root") + 1];
 if (a[0] === "merge-manifest") writeFileSync(rootDir + "/.sova/spec/manifest.json", '{"merged":true}\\n');
-console.log(JSON.stringify({ ids: [] }));
+console.log(JSON.stringify({ ids: process.env.FAKE_SPEC_BAD === "1" ? [{ id: "§a/b", current: "pending" }] : [] }));
 `);
 
   execFileSync("git", ["init", "-q", "--bare", "-b", "master", bare], { env: { ...process.env, ...gitEnv } });
@@ -412,6 +414,25 @@ test("check: a manifest-only conflict goes through merge-manifest, then the chec
   assert.match(r.out, /landable at [0-9a-f]{7}/);
   assert.equal(readFileSync(join(wt("feat/manifest"), ".sova/spec/manifest.json"), "utf8"), '{"merged":true}\n');
   assert.equal(git(main, "rev-parse", "master"), masterBefore, "check wrote to master");
+});
+
+test("check: a failing spec check, unclaimed files and an unpromoted draft are printed and hold nothing", async () => {
+  const exclude = join(main, ".git", "info", "exclude");
+  const was = existsSync(exclude) ? readFileSync(exclude, "utf8") : "";
+  writeFileSync(exclude, `${was}.sova/spec/drafts/\n`);
+  mkdirSync(join(wt("feat/manifest"), ".sova", "spec", "drafts", "left"), { recursive: true });
+  try {
+    const r = await run(["check", "feat/manifest"], { env: { FAKE_SPEC_BAD: "1" } });
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /^spec check: ERRORS\.$/m);
+    assert.match(r.out, /^spec census: 1 unclaimed \(src\/x\.ts\)\.$/m);
+    assert.match(r.out, /^draft left: not promoted: §a\/b\.$/m);
+    assert.match(r.out, /landable at [0-9a-f]{7}/);
+    assert.doesNotMatch(r.out, /needs:/);
+  } finally {
+    rmSync(join(wt("feat/manifest"), ".sova", "spec", "drafts"), { recursive: true, force: true });
+    writeFileSync(exclude, was);
+  }
 });
 
 test("check: a failing test file is pre-existing when it fails on master too; pnpm test runs without CLAUDE_CONFIG_DIR", async () => {

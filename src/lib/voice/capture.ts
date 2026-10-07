@@ -3,7 +3,7 @@
 // one created after an await suspended. Raw PCM through an AudioWorklet (a ScriptProcessorNode
 // where there is none), never MediaRecorder: iOS records only AAC, which whisper can't read.
 
-import { joinBatches, resampleTo16k, encodeWav, levelOf } from "./wav";
+import { joinBatches, resampleTo16k, encodeWav, levelOf, trimTapNoise } from "./wav";
 
 export interface Clip {
   wav: Uint8Array;
@@ -145,12 +145,13 @@ async function begin(ctx: AudioContext, ev: CaptureEvents): Promise<Recorder> {
       },
       async stop() {
         detach();
+        const stopAt = frames;
         // Post-roll: a stop tapped on the last syllable would cut it.
         await new Promise((r) => setTimeout(r, POST_ROLL_MS));
         await flush();
         stopTracks();
         void ctx.close().catch(() => {});
-        const pcm = await resampleTo16k(joinBatches(batches), rate);
+        const pcm = await resampleTo16k(trimTapNoise(joinBatches(batches), rate, stopAt), rate);
         return { wav: encodeWav(pcm), sec: pcm.length / 16000, peakRms: peak };
       },
     };

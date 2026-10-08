@@ -136,7 +136,9 @@ p code, li code, td code, dd code {
 
 /* ---- HERO. Centered copy, then the workspace, half on paper and half on a sunken band. ---- */
 
-.hero { padding: clamp(40px, 5.5vw, 72px) 0 0; position: relative; isolation: isolate; }
+/* overflow-x: clip keeps the glow (up to 180vw wide) and the hero's full-bleed band from widening
+   the page; the glow still spills upward, since clip on one axis leaves the other visible. */
+.hero { padding: clamp(40px, 5.5vw, 72px) 0 0; position: relative; isolation: isolate; overflow-x: clip; }
 
 /* Hero + closing backdrop: the one deliberate exception to "no gradients/glow".
    An indigo radial glow, plus (hero only) a faint grid masked out toward the edges.
@@ -175,13 +177,16 @@ p code, li code, td code, dd code {
   filter: blur(20px);
 }
 .h-hero .grad { display: inline; background: var(--site-grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
-.hero-copy { display: flex; flex-direction: column; align-items: center; text-align: center; gap: var(--space-5); }
+.hero-copy { display: flex; flex-direction: column; align-items: center; text-align: center; gap: var(--space-5); min-width: 0; }
+.hero-copy > * { max-width: 100%; min-width: 0; overflow-wrap: anywhere; }
 /* The app icon, large enough for the fold to read. Its box is fixed by width and height, so
    nothing moves when it paints. The pill sits a little closer to it than the copy's usual gap,
    and the hero's top padding gave back about what the mark added. */
-.hero-mark { width: clamp(64px, 6vw, 88px); height: auto; aspect-ratio: 1; border-radius: 25%; box-shadow: var(--shadow-2); margin-bottom: calc(var(--space-4) - var(--space-5)); }
-.hero .h-hero { max-width: 20ch; }
+.hero-mark { width: clamp(56px, 5vw, 72px); height: auto; aspect-ratio: 1; border-radius: 25%; box-shadow: var(--shadow-2); margin-bottom: calc(var(--space-4) - var(--space-5)); }
+/* The headline is 2 lines on a desktop; its second sentence is a subline, not 2 more big lines. */
+.hero .h-hero { max-width: 20ch; font-size: clamp(40px, 5.4vw, 72px); }
 .hero .h-hero > span { display: block; }
+.hero .h-hero > .quiet { max-width: none; margin-top: .45em; font-size: clamp(20px, 2.4vw, 34px); line-height: 1.2; letter-spacing: -.025em; font-weight: var(--fw-semibold); }
 .hero .lead { max-width: 64ch; }
 .hero-pill {
   display: inline-flex; align-items: center; gap: var(--space-3);
@@ -204,7 +209,7 @@ p code, li code, td code, dd code {
 .hero-note { font-size: var(--fs-caption); color: var(--color-ink-muted); text-wrap: balance; }
 .hero-note code { font-size: .92em; }
 .hero-links { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-2); }
-.hero-stage { margin-top: clamp(48px, 6vw, 88px); position: relative; }
+.hero-stage { margin-top: clamp(40px, 4vw, 56px); position: relative; min-width: 0; }
 .hero-stage > * { position: relative; z-index: 1; }
 .hero-stage::before {
   content: ""; position: absolute; z-index: 0;

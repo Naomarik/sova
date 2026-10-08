@@ -261,8 +261,18 @@ fi
 
 staging=
 backup=
+made_dirs=             # directories this run created for staging, deepest first
 cleanup() {
+	local status=$? d
 	[ -z "$staging" ] || rm -rf "$staging"
+	# A failure leaves no directory behind that this run created (rmdir: only while empty).
+	if [ "$status" -ne 0 ] && [ -n "$made_dirs" ]; then
+		while IFS= read -r d; do
+			[ -z "$d" ] || rmdir "$d" 2>/dev/null || true
+		done <<DIRS
+$made_dirs
+DIRS
+	fi
 	# A failure after the old install moved aside: put it back before leaving.
 	if [ -n "$backup" ] && [ -d "$backup" ] && [ ! -e "$dir" ]; then
 		mv "$backup" "$dir"
@@ -273,7 +283,13 @@ trap cleanup EXIT
 
 if $rebuild; then
 	parent=$(dirname "$dir")
-	mkdir -p "$parent" "$bindir"
+	d=$parent
+	while [ ! -e "$d" ]; do
+		made_dirs=${made_dirs:+$made_dirs
+}$d
+		d=$(dirname "$d")
+	done
+	mkdir -p "$parent"        # the launcher's directory waits for a successful build
 	staging=$(mktemp -d "$parent/.sova-staging.XXXXXX")   # beside the target, so promoting is a rename
 
 	say "cloning $repo at $ref"

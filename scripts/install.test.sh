@@ -31,7 +31,7 @@ nopnpm=$tmp/sandbox-nopnpm       # npx but no pnpm: the installer runs pnpm thro
 nopm=$tmp/sandbox-nopm           # neither pnpm nor npx
 stubs=$tmp/stubs                 # not on any PATH; the pnpm stub lives here so npx can reach it
 mkdir -p "$sandbox" "$nogit" "$nopnpm" "$nopm" "$stubs"
-for c in basename bash cat chmod cmp cp dirname env grep head id ln mkdir mktemp mv printf readlink rm sed sh sleep sort touch wc; do
+for c in basename bash cat chmod cmp cp dirname env grep head id ln mkdir mktemp mv printf readlink rm rmdir sed sh sleep sort touch wc; do
 	for d in "$sandbox" "$nogit" "$nopnpm" "$nopm"; do ln -sf "$(command -v "$c")" "$d/$c"; done
 done
 for d in "$sandbox" "$nopnpm" "$nopm"; do ln -sf "$(command -v git)" "$d/git"; done  # $nogit has no git
@@ -294,6 +294,7 @@ unset BUN_FAIL
 check "$(yes_if [ "$status" -ne 0 ])" "bun fails: exits nonzero"
 check "$(yes_if said 'could not install Bun; nothing was changed')" "bun fails: says nothing was changed"
 check "$(yes_if [ ! -e "$home/.local/share/sova" ] && [ ! -e "$home/.local/bin/sova" ])" "bun fails: no install dir, no launcher"
+check "$(yes_if [ ! -e "$home/.local" ])" "bun fails: no directory left that the run created"
 
 # 5. Re-running on our own clean clone with --reinstall rebuilds it and keeps working.
 home=$good_home
@@ -590,6 +591,11 @@ check "$(yes_if said "'deadbeef1' is not a tag, a branch or a commit")" "bad com
 check "$(yes_if said 'nothing was changed')" "bad commit: says nothing was changed"
 check "$(yes_if [ ! -e "$home/.local/share/sova" ] && [ ! -e "$home/.local/bin/sova" ])" "bad commit: no install dir, no launcher"
 check "$(yes_if [ -z "$(ls -d "$home/.local/share/.sova-staging."* 2>/dev/null)" ])" "bad commit: no staging dir left"
+check "$(yes_if [ ! -e "$home/.local" ])" "bad commit: no directory left that the run created (not even ~/.local)"
+mkdir -p "$home/.local/share/keep"
+CASE_REF=deadbeef1 inst
+check "$([ "$status" -ne 0 ] && [ -d "$home/.local/share/keep" ] && [ ! -e "$home/.local/bin" ] && echo true || echo false)" \
+	"bad commit: directories that were there stay; no launcher directory"
 # An existing install is left as it was by a bad ref.
 home=$good_home
 before_head=$(git -C "$home/.local/share/sova" rev-parse HEAD)

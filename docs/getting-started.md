@@ -144,6 +144,10 @@ systemctl --user disable --now sova.service
 rm ~/.config/systemd/user/sova.service && systemctl --user daemon-reload
 ```
 
+If Linux has no systemd user manager running (a container, say), the `systemctl --user` lines
+fail with "Failed to connect to bus"; the `rm` still removes the unit, which is all there is to
+remove.
+
 On macOS:
 
 ```sh
@@ -160,4 +164,11 @@ rm -rf ~/.local/share/sova ~/.local/bin/sova
 ```
 
 This leaves your pi sessions and credentials, and Sova's state under `~/.pi/agent/sova/`, intact.
+pnpm's package store and cache stay too, since other projects may share them. If nothing else
+on the machine uses pnpm, you can remove them as well (on Linux):
+
+```sh
+rm -rf ~/.local/share/pnpm ~/.cache/pnpm ~/.local/state/pnpm
+```
+
 For running a source checkout instead, see [Development](../CONTRIBUTING.md).

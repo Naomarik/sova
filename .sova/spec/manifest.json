@@ -8142,12 +8142,13 @@
         "src/lib/voice/format.ts",
         "src/lib/voice/status.ts",
         "src/components/ui.tsx",
-        "src/lib/voice/press.ts",
+        "src/lib/voice/keyboard.ts",
         "src/lib/voice/voice.test.ts"
       ],
       "requires": [
         "§app.settings-dialog/voice",
-        "§design.copy-deck/composer"
+        "§design.copy-deck/composer",
+        "§chat.voice/insertion"
       ]
     },
     "§chat.voice/capture": {

@@ -346,6 +346,11 @@ p code, li code, td code, dd code {
 .fcard p { font-size: 14.5px; line-height: 1.55; color: var(--color-ink-2); }
 .fcard .fcard-limit { font-size: var(--fs-caption); color: var(--color-ink-muted); margin-top: auto; padding-top: var(--space-2); border-top: var(--stroke-thin) dashed var(--color-border); }
 
+/* Four cards: one row on a desktop, two by two in between, never three and one. */
+.cards-four { grid-template-columns: 1fr; }
+@media (min-width: 600px) { .cards-four { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1100px) { .cards-four { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+
 /* Organizations and Mesh: cards under a feature, stretched to fill the row, and a note under them. */
 .cards-fit { grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); }
 .cards-follow { margin-top: clamp(56px, 7vw, 96px); }
@@ -474,6 +479,10 @@ p code, li code, td code, dd code {
 .touch dd { font-size: 15px; color: var(--color-ink-2); line-height: 1.55; }
 .touch dd strong { color: var(--color-ink); font-weight: var(--fw-semibold); }
 @media (min-width: 768px) { .touch { grid-template-columns: 200px 1fr; } }
+
+/* What it touches, under the diagram in How it works. */
+.touches-block { margin-top: clamp(56px, 7vw, 96px); }
+.touches-block .not-list { margin-top: var(--space-2); }
 
 .split { display: grid; gap: var(--space-7); }
 @media (min-width: 900px) { .split { grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: clamp(40px, 6vw, 96px); align-items: start; } }

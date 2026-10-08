@@ -16,56 +16,36 @@ import * as site from "../data/site";
 const cards = [
   {
     icon: "terminal", title: "Claude logins, with failover",
-    body: "Chat with Claude Code's models and run workers on the Claude Code CLI. Add more Claude logins in Settings → Accounts, and a session or worker that hits a usage limit moves on to the next one.",
-    limit: "Needs the <code>claude</code> CLI installed and logged in; Claude Code does every sign-in.",
+    body: "Use Claude Code's models in chat and in workers, across several logins. A session or worker that hits a usage limit moves on to the next one.",
+    limit: "Needs the <code>claude</code> CLI installed and logged in.",
   },
   {
     icon: "shield", title: "A sandbox per session",
-    body: "Off, Subagents only, or On. On runs a session's <code>bash</code> in an OS sandbox (bubblewrap on Linux, Seatbelt on macOS) and checks every file tool's path against the same policy. Subagents only, the default, keeps a worker in a worktree writing only there.",
-    limit: "It contains an agent's mistakes. It isn't a boundary for hostile code, and it hasn't been audited.",
+    body: "On runs a session's <code>bash</code> in an OS sandbox and checks file tools against the same policy. The default keeps a worker in a worktree writing only there.",
+    limit: "It contains an agent's mistakes, not hostile code, and it hasn't been audited.",
   },
   {
     icon: "file", title: "Playbooks and schedules",
-    body: "Markdown recipes an agent runs against a project. Sova ships 5, among them a spec review, a marketing kit, and a brand kit. Pick one from the composer, add a line of your own, and send. A project's playbook can also run by itself on a schedule.",
-    limit: "Yours live in <code>~/.pi/agent/sova/playbooks/</code>. A schedule fires only after you approve it.",
+    body: "Markdown recipes an agent runs against a project, picked from the composer or run on a schedule. Sova ships 5.",
+    limit: "A schedule fires only after you approve it.",
   },
   {
     icon: "external", title: "Share a session",
-    body: "Send a read-only link to a whole session or just part of it, as a snapshot or following live, one link per recipient. You see who opened each one.",
-    limit: `Needs an address you set up: <a href="${site.publicLinksDoc}">docs/public-links.md</a>. Recipients need no account or tailnet.`,
-  },
-  {
-    icon: "network", title: "Tools on your own targets",
-    body: "Run a session's tools on your own SSH, AWS SSM, Docker, or Incus targets. Tools run on the target, not through a local mount.",
-    limit: "Needs your targets listed in <code>~/.pi/agent/targets.json</code>.",
-  },
-  {
-    icon: "gauge", title: "Usage, agents, and load",
-    body: "The Usage page shows your subscription and spend windows, and the Agents page what's running. The resource monitor charges CPU and memory to the session and worker that started each process.",
-    limit: "The monitor only reads.",
-  },
-  {
-    icon: "sliders", title: "Your model rules",
-    body: "Settings → Models decides which models this machine may use, and which may be given to subagents. A disabled model is never silently swapped for another. Each provider can also take a limit on requests at once; the rest wait in a queue instead of failing with a 429.",
-    limit: "Saved in <code>~/.pi/agent/model-policy.json</code> and <code>provider-limits.json</code>.",
-  },
-  {
-    icon: "chat", title: "Voice input",
-    body: "A mic in every composer. A local speech model on your Sova host turns the clip into text at the caret, and nothing sends until you do.",
-    limit: "Set up once in Settings → Voice: a whisper.cpp build and a 574 MB model. Audio goes only to your Sova host.",
+    body: "A read-only link to a session or part of it, as a snapshot or live. You see who opened each one.",
+    limit: `Needs an address you set up (<a href="${site.publicLinksDoc}">how</a>). Recipients need no account.`,
   },
 ];
 
 const beyond = [
   {
     icon: "network", title: "Mesh: all your machines, one sidebar", href: "/mesh", more: "About Mesh",
-    body: "Run Sova on a laptop and a server on your tailnet, and use them all from one page. A session runs on the host you pick, and you drive it from wherever you are.",
-    limit: "Preview. Needs Tailscale, and the same Sova build on every host.",
+    body: "Run Sova on several machines on your tailnet and use them all from one page.",
+    limit: "Needs Tailscale, and the same Sova build on every host.",
   },
   {
     icon: "chat", title: "Organizations: ask the people who know", href: "/orgs", more: "About Organizations",
-    body: "Hand one conversation from person to person, each through their own link, and keep every decision with who made it and in their own words.",
-    limit: "Preview. People outside your tailnet reach their link through a listener you put behind your own HTTPS proxy.",
+    body: "Hand one conversation from person to person, each through their own link, and keep every decision with who made it.",
+    limit: "People outside your tailnet need a listener behind your own HTTPS proxy.",
   },
 ];
 ---
@@ -87,14 +67,13 @@ const beyond = [
             <Icon name="arrow-right" size={14} />
           </a>
           <h1 class="h-hero"><span>Every agent session, <span class="grad">one calm workspace.</span></span> <span class="quiet">On your desk, or folded in your pocket.</span></h1>
-          <p class="lead">Sova is where you run the pi coding agent: one browser workspace that fits a desktop, an unfolded foldable, or a phone. Delegate hands the work to subagents you can follow, each with its own transcript, and you read every change as steps before it lands.</p>
+          <p class="lead">A browser workspace for the <a href={site.pi}>pi</a> coding agent. Hand work to subagents you can follow, and read every change as steps before it lands.</p>
           <div class="hero-actions">
             <InstallBlock id="install-hero" />
-            <p class="hero-note">Then run <code>sova</code>, and <code>sova open</code> to open it. Needs Git, Node.js ≥22.19, pnpm (or npx), curl, and unzip or python3; the installer downloads its own pinned Bun. Sova runs on the <a href={site.pi}>pi</a> coding agent, and the install brings its own copy.</p>
+            <p class="hero-note">Then run <code>sova</code>, and <code>sova open</code>. Needs Git and Node.js ≥22.19; <a href="/docs/install/#what-you-need">full requirements</a>.</p>
             <div class="hero-links">
               <a class="button button-ghost" href="/docs/"><Icon name="file" size={16} />Read the Docs</a>
               <a class="button button-ghost" href={site.installScript}><Icon name="file" size={16} />Read the Install Script</a>
-              <a class="button button-ghost" href={site.gettingStarted}><Icon name="arrow-right" size={16} />Getting Started</a>
             </div>
           </div>
         </div>
@@ -105,8 +84,8 @@ const beyond = [
           <dl class="facts">
             <div class="fact"><dt class="fact-label">Your sessions, read in place</dt><dd class="fact-value">~/.pi/agent</dd></div>
             <div class="fact"><dt class="fact-label">Loopback by default</dt><dd class="fact-value">127.0.0.1:4800</dd></div>
-            <div class="fact"><dt class="fact-label">Token-gated, one token per install</dt><dd class="fact-value">sova/auth-token</dd></div>
-            <div class="fact"><dt class="fact-label">Read it, fork it</dt><dd class="fact-value">Apache-2.0</dd></div>
+            <div class="fact"><dt class="fact-label">One token per install</dt><dd class="fact-value">sova/auth-token</dd></div>
+            <div class="fact"><dt class="fact-label">Open source</dt><dd class="fact-value">Apache-2.0</dd></div>
           </dl>
         </div>
       </div>
@@ -118,7 +97,7 @@ const beyond = [
         <div class="section-head">
           <span class="eyebrow">What you get</span>
           <h2 class="h-section" id="features-title">More work, less window switching.</h2>
-          <p class="lead">Sova is for people who already run coding agents. Hand the work to subagents, agree on the plan before they build, and read every change before it lands. Your sessions, logins, and pi extensions come with you.</p>
+          <p class="lead">For people who already run coding agents. Your pi sessions, logins, and extensions come with you.</p>
         </div>
 
         <article class="feature">
@@ -126,11 +105,10 @@ const beyond = [
             <span class="eyebrow"><span class="eyebrow-num">01</span> Delegate</span>
             <h3 class="h-feature">Hand the work to subagents. Follow every one.</h3>
             <div class="prose">
-              <p>Switch a session to Delegate and its agent becomes an orchestrator. It sorts the work into planning, investigation, routine changes, and complex changes, and sends each kind to the model you routed it to, on Claude Code or any provider pi has, with an optional fallback. A subagent profile keeps those routes and your team defaults under one name, so a usage limit is 1 switch away from another setup.</p>
-              <p>Bigger jobs get a team: coordinated workers with one role each. Every worker and team member opens in the side pane with its own transcript and how full its context is. If Sova restarts, each worker comes back as an idle record with its transcript, and picks up again when asked.</p>
+              <p>In Delegate, a session's agent becomes an orchestrator: it sends each kind of work to the model you routed it to. Every worker opens in the side pane with its own transcript.</p>
             </div>
-            <p class="limit"><Icon name="info" size={18} /><span>Routes live in Settings → Subagents. <strong>The shipped routes use Claude Code models</strong>, so install the <code>claude</code> CLI or pick your own.</span></p>
-            <p class="feature-more"><a href="/docs/modes/delegate/">Read more about Delegate<Icon name="arrow-right" size={14} /></a><a href="/docs/subagent-profiles/">Subagent profiles<Icon name="arrow-right" size={14} /></a></p>
+            <p class="limit"><Icon name="info" size={18} /><span><strong>The shipped routes use Claude Code models</strong>, so install the <code>claude</code> CLI or pick your own in Settings → Subagents.</span></p>
+            <p class="feature-more"><a href="/docs/modes/delegate/">Read more about Delegate<Icon name="arrow-right" size={14} /></a></p>
           </div>
           <div class="feature-visual"><ScreenFrame at="feature.delegate" path="demo-app" /></div>
         </article>
@@ -140,11 +118,9 @@ const beyond = [
             <span class="eyebrow"><span class="eyebrow-num">02</span> Alignments</span>
             <h3 class="h-feature">Agree on the plan before anything gets built.</h3>
             <div class="prose">
-              <p>Turn on align and the agent works out what to build with you first. It records each agreement as an alignment: what it found, the approach, the alternatives it rejected and why, and its open questions, each with a recommendation. Answer in chat, even as just “1a”.</p>
-              <p>With adversarial review on, a fresh read-only reviewer checks the plan, and later the finished diff of complex work. What it finds is recorded on the alignment.</p>
+              <p>With align on, the agent works out what to build with you first, and records the approach, the alternatives it rejected, and its open questions, each with a recommendation. Answer with just “1a”.</p>
             </div>
-            <p class="limit"><Icon name="info" size={18} /><span>Adversarial review is experimental and off by default: Settings → Experimental.</span></p>
-            <p class="feature-more"><a href="/docs/modes/align/">Read more about alignments<Icon name="arrow-right" size={14} /></a><a href="/docs/modes/align/review/">Adversarial review<Icon name="arrow-right" size={14} /></a></p>
+            <p class="feature-more"><a href="/docs/modes/align/">Read more about alignments<Icon name="arrow-right" size={14} /></a></p>
           </div>
           <div class="feature-visual"><ScreenFrame at="feature.alignment" path="demo-app" /></div>
         </article>
@@ -152,12 +128,11 @@ const beyond = [
         <article class="feature">
           <div class="feature-copy">
             <span class="eyebrow"><span class="eyebrow-num">03</span> Worktrees and changes</span>
-            <h3 class="h-feature">Worktrees the session keeps track of. Changes you review as steps.</h3>
+            <h3 class="h-feature">Review every change as steps.</h3>
             <div class="prose">
-              <p>A session keeps track of the git worktrees it works in. Ask the agent to create, attach, detach, merge, or list them; detaching deletes nothing. Workers start only in the session's folder or one of its worktrees, and each merge lands in the transcript as a card.</p>
-              <p>Ask to see what changed and the agent lays it out as numbered steps, each with a line on why. It can't leave a hunk out: with more than one hunk, every one has to sit in a step. The changes viewer shows them a step or a file at a time, and only reads: it never writes to your working tree or runs a git command that changes anything.</p>
+              <p>Ask what changed and the agent lays it out as numbered steps, each with a line on why, and no hunk left out. A session also keeps track of the git worktrees it works in.</p>
             </div>
-            <p class="limit"><Icon name="info" size={18} /><span>Sova never removes a worktree on its own. A new session offers <strong>Clean Up Merged</strong>, which shows what goes and what stays before it removes anything.</span></p>
+            <p class="limit"><Icon name="info" size={18} /><span>The changes viewer only reads, and Sova never removes a worktree on its own.</span></p>
             <p class="feature-more"><a href="/docs/worktrees-and-changes/">Read more about worktrees and changes<Icon name="arrow-right" size={14} /></a></p>
           </div>
           <div class="feature-visual"><ScreenFrame at="feature.changes" path="demo-app" /></div>
@@ -168,14 +143,9 @@ const beyond = [
             <span class="eyebrow"><span class="eyebrow-num">04</span> Needs you</span>
             <h3 class="h-feature">Know which session needs you, even away from the desk.</h3>
             <div class="prose">
-              <p>The sidebar's Needs you list shows every session waiting on you: an open question, an error, a failed worker. Turn on notifications and the same news reaches your phone's lock screen, even with Sova closed. Neither makes a model call.</p>
-              <p>The Overseer is a session that reads every other one. Ask it what needs you, or to start sessions, send prompts, or tidy up. When a request is ambiguous or risky, it asks first, with a card that lists each session it would touch and why. It also keeps your ideas and todos from plain chat.</p>
+              <p>The Needs you list shows every session waiting on you: a question, an error, a failed worker. The Overseer, a session that reads all the others, can tell you what needs you, start sessions, or send them prompts.</p>
             </div>
-            <ul class="points">
-              <li><Icon name="check" size={16} /><span><strong>List Only</strong>, the default, fills the Needs you list and costs no tokens.</span></li>
-              <li><Icon name="check" size={16} />No shell and no file edits: the Overseer acts through Sova, with limits per turn you can set.</li>
-            </ul>
-            <p class="limit"><Icon name="info" size={18} /><span>Notifications need Sova on an HTTPS address, such as one from <code>tailscale serve</code>. On iPhone, add Sova to the Home Screen first.</span></p>
+            <p class="limit"><Icon name="info" size={18} /><span>The list costs no tokens. The Overseer has no shell and edits no files.</span></p>
             <p class="feature-more"><a href="/docs/needs-you/">Read more about Needs you<Icon name="arrow-right" size={14} /></a><a href="/docs/overseer/">The Overseer<Icon name="arrow-right" size={14} /></a></p>
           </div>
           <div class="feature-visual"><Overseer /></div>
@@ -186,11 +156,9 @@ const beyond = [
             <span class="eyebrow"><span class="eyebrow-num">05</span> On your phone</span>
             <h3 class="h-feature">Check in from your phone.</h3>
             <div class="prose">
-              <p>On a phone the layout folds to one column and installs as an app. To let it in, open Access in Sova, make a one-use code, and scan its QR; the code expires in 5 minutes. Then answer a question, steer a turn, or start a session, the same as at the desk.</p>
-              <p>With notifications on, a session that needs you reaches the lock screen; tapping it opens that session, or the Overseer when several need you.</p>
-              <p>Already have sessions in pi's terminal? They're listed as they are and stream live, no import.</p>
+              <p>Pair once by scanning a one-use QR code, then answer a question, steer a turn, or start a session. With notifications on, a session that needs you reaches your lock screen.</p>
             </div>
-            <p class="limit"><Icon name="info" size={18} /><span>Sova listens on <code>127.0.0.1</code>. For a phone to reach it, serve it on your tailnet with <code>tailscale serve</code>, or put your own HTTPS proxy in front. Notifications need that HTTPS address; on iPhone, add Sova to the Home Screen first.</span></p>
+            <p class="limit"><Icon name="info" size={18} /><span>Sova listens on <code>127.0.0.1</code>. For a phone to reach it, use <code>tailscale serve</code> or your own HTTPS proxy. On iPhone, add Sova to the Home Screen for notifications.</span></p>
             <p class="feature-more"><a href="/docs/phone/">Read more about checking in from your phone<Icon name="arrow-right" size={14} /></a></p>
           </div>
           <div class="feature-visual"><Phones /></div>
@@ -201,7 +169,7 @@ const beyond = [
             <span class="eyebrow"><span class="eyebrow-num">06</span> Change direction</span>
             <h3 class="h-feature">Rewind, regenerate, fork, steer. Keep the context you built.</h3>
             <div class="prose">
-              <p>Rewind to before any message you sent, regenerate a reply, or fork from a reply. Steer a running turn without stopping it, and switch models mid-session. Tool calls read as cards and edits as diffs, so you follow the work without scrollback.</p>
+              <p>Rewind to before any message you sent, regenerate or fork from a reply, steer a running turn without stopping it, or switch models mid-session.</p>
             </div>
             <p class="feature-more"><a href="/docs/change-direction/">Read more about changing direction<Icon name="arrow-right" size={14} /></a></p>
           </div>
@@ -217,7 +185,7 @@ const beyond = [
           <span class="eyebrow">And the rest</span>
           <h2 class="h-section" id="more-title">Small things that add up.</h2>
         </div>
-        <ul class="cards">
+        <ul class="cards cards-four">
           {cards.map((c) => (
             <li class="fcard">
               <span class="fcard-icon"><Icon name={c.icon} size={20} /></span>
@@ -227,6 +195,7 @@ const beyond = [
             </li>
           ))}
         </ul>
+        <p class="hero-note cards-note">Also: voice input, tools on your SSH or Docker targets, usage and load pages, and model rules. <a href={site.customization}>More in Customization</a>.</p>
       </div>
     </section>
 
@@ -236,7 +205,7 @@ const beyond = [
         <div class="section-head">
           <span class="eyebrow">Beyond one machine <span class="chip chip-accent">Preview</span></span>
           <h2 class="h-section" id="beyond-title">More hosts, more people.</h2>
-          <p class="lead">Two newer parts of Sova, each with its own page. Both need setup beyond the install.</p>
+          <p class="lead">Each needs setup beyond the install.</p>
         </div>
         <ul class="cards cards-fit">
           {beyond.map((c) => (
@@ -253,13 +222,13 @@ const beyond = [
     </section>
 
     <!-- THEMES -->
-    <section class="section" aria-labelledby="themes-title">
+    <section class="section section-alt" aria-labelledby="themes-title">
       <div class="wrap">
         <div class="split themes-head">
           <div class="section-head" style="margin-bottom:0">
             <span class="eyebrow">Make it yours</span>
             <h2 class="h-section" id="themes-title">{themes.length} themes. Yours is 1 JSON file.</h2>
-            <p class="lead">Pick a built-in theme in Settings → Themes, or save your own in <code>~/.pi/agent/sova/themes/</code>. While the Themes tab is open, the picker picks it up within 2 seconds. No rebuild, no restart.</p>
+            <p class="lead">Pick one in Settings → Themes, or save your own in <code>~/.pi/agent/sova/themes/</code>. No rebuild, no restart.</p>
           </div>
           <pre class="code" aria-label="Example theme file"><span class="c">// ~/.pi/agent/sova/themes/desk-lamp.json</span>
 &#123;
@@ -277,18 +246,17 @@ const beyond = [
     </section>
 
     <!-- HOW IT WORKS -->
-    <section class="section section-alt" id="how" aria-labelledby="how-title">
+    <section class="section" id="how" aria-labelledby="how-title">
       <div class="wrap">
         <div class="section-head">
           <span class="eyebrow">How it works</span>
           <h2 class="h-section" id="how-title">One process that runs pi, on your machine.</h2>
-          <p class="lead">Sova is a server, on Bun by default and Node if you ask, with the pi coding agent embedded, plus a web app. It uses pi's own agent directory: your sessions, your logins, your extensions.</p>
+          <p class="lead">A server with the pi coding agent embedded, plus a web app. It uses pi's own agent directory: your sessions, logins, and extensions.</p>
         </div>
         <div class="arch">
           <div class="arch-node">
             <h3><Icon name="chat" size={18} />Your browser</h3>
             <p>The desktop workspace, or the folded layout installed on a phone.</p>
-            <ul class="arch-list"><li>sessions and groups</li><li>transcripts and diffs</li><li>settings and themes</li></ul>
           </div>
           <div class="arch-link"><span>REST + WebSocket</span></div>
           <div class="arch-node arch-node-core">
@@ -309,34 +277,24 @@ const beyond = [
           </div>
           <div class="arch-provider"><Icon name="external" size={16} /><span>Model requests go from Sova to your configured provider. Tools and extensions may use the network too.</span></div>
         </div>
-      </div>
-    </section>
 
-    <!-- WHAT IT TOUCHES -->
-    <section class="section" id="touches" aria-labelledby="touch-title">
-      <div class="wrap split">
-        <div class="section-head" style="margin-bottom:0">
-          <span class="eyebrow">Before you install</span>
-          <h2 class="h-section" id="touch-title">What it touches, and what it doesn't.</h2>
-          <p class="lead">Sova shares a directory with a process you trust, so here's the whole list.</p>
-          <ul class="not-list" aria-label="What Sova is not">
-            <li>Not a hosted service. It runs on your machine.</li>
-            <li>Not a team app. One person runs it; the people you ask see only the conversation you share.</li>
-          </ul>
+        <!-- WHAT IT TOUCHES -->
+        <div class="split touches-block" id="touches">
+          <div class="section-head" style="margin-bottom:0">
+            <h3 class="h-feature">What it touches.</h3>
+            <ul class="not-list" aria-label="What Sova is not">
+              <li>Not a hosted service. It runs on your machine.</li>
+              <li>Not a team app. One person runs it; others see only what you share.</li>
+            </ul>
+          </div>
+          <dl class="touches">
+            <div class="touch"><dt>Install</dt><dd><code>~/.local/share/sova</code> and a <code>~/.local/bin/sova</code> launcher. No <code>sudo</code>, no system packages, no shell-profile edits, no settings.</dd></div>
+            <div class="touch"><dt>pi extensions</dt><dd>One link per Sova extension in <code>~/.pi/agent/extensions/</code>. <code>--no-extensions</code> skips this.</dd></div>
+            <div class="touch"><dt>Login service</dt><dd>Only if you say yes, or pass <code>--service</code>.</dd></div>
+            <div class="touch"><dt>Access</dt><dd>Loopback by default, and <strong>one token per install</strong>. Delete <code>~/.pi/agent/sova/auth-token</code> and restart to sign every browser out.</dd></div>
+            <div class="touch"><dt>Off by default</dt><dd>The share listener and Mesh, until you set them up.</dd></div>
+          </dl>
         </div>
-        <dl class="touches">
-          <div class="touch"><dt>Install</dt><dd><code>~/.local/share/sova</code>, with the pinned Bun it downloads kept inside it, and a <code>~/.local/bin/sova</code> launcher. No <code>sudo</code>, no system packages, no version manager, no shell-profile edits.</dd></div>
-          <div class="touch"><dt>pi extensions</dt><dd>One link per Sova extension in <code>~/.pi/agent/extensions/</code>. Anything already there that isn't its own link is left alone. <code>--no-extensions</code> skips this.</dd></div>
-          <div class="touch"><dt>Settings</dt><dd>None. The installer writes no settings, pi's or its own. Claude Code's models are always on, and work once the <code>claude</code> CLI is installed and logged in.</dd></div>
-          <div class="touch"><dt>Login service</dt><dd>Only if you say yes, or pass <code>--service</code>: a per-user service that starts Sova at login and restarts it if it exits. launchd on macOS, a systemd user unit on Linux. No <code>sudo</code>.</dd></div>
-          <div class="touch"><dt>Your sessions</dt><dd>Read in place. A session open in a terminal is read-only here.</dd></div>
-          <div class="touch"><dt>Sova's state</dt><dd>Groups, drafts, archive, and themes, in <code>~/.pi/agent/sova/</code>, and each organization's workspace repo.</dd></div>
-          <div class="touch"><dt>Network</dt><dd>Model requests go to your configured provider. Tools and extensions may use the network.</dd></div>
-          <div class="touch"><dt>Access</dt><dd>Single user, loopback by default, and <strong>one token per install</strong>, in <code>~/.pi/agent/sova/auth-token</code>. <code>sova open</code> opens the page already unlocked; a phone or another browser pairs once with a one-use QR code from Access. Delete the token file and restart Sova to sign every browser out. The token is all that stands between your network and an app that runs commands as you.</dd></div>
-          <div class="touch"><dt>Share listener</dt><dd>Off unless you set it. It serves only shared conversations and the owner page; every other path answers 404.</dd></div>
-          <div class="touch"><dt>Mesh</dt><dd>Off until you add a peer. Then a second port on your tailnet address only. With login sync on, your provider logins are copied to every host.</dd></div>
-          <div class="touch"><dt>Re-running</dt><dd>{site.release ? "Installs the same pinned release and changes nothing when it's already there." : "Updates to master's latest commit, and changes nothing when it's already there."}</dd></div>
-        </dl>
       </div>
     </section>
 
@@ -346,7 +304,7 @@ const beyond = [
         <div class="section-head" style="margin-bottom:0">
           <span class="eyebrow">Open source</span>
           <h2 class="h-section" id="source-title">Apache-2.0, built in the open.</h2>
-          <p class="lead">TypeScript end to end: a SolidJS web app, a Hono server with the pi SDK embedded, and the pi extensions it ships in <code>pi-config/</code>. Read the code, file an issue, or run a checkout.</p>
+          <p class="lead">TypeScript end to end: a SolidJS web app and a Hono server with the pi SDK embedded. Read the code, file an issue, or run a checkout.</p>
           <div class="oss-actions">
             <a class="button button-primary" href={site.repo}><Icon name="external" size={16} />View on GitHub</a>
             <a class="button button-ghost" href={site.contributing}>Read CONTRIBUTING</a>
@@ -367,11 +325,11 @@ const beyond = [
       <div class="wrap">
         <div class="section-head">
           <h2 class="h-section" id="closing-title">Run your next pi session here.</h2>
-          <p class="lead">Sessions you already have show up as soon as it starts. To chat, it uses the provider login you already have, or you log in once from the bundled CLI.</p>
+          <p class="lead">Sessions you already have show up as soon as it starts.</p>
         </div>
         <div class="closing-install">
           <InstallBlock id="install-closing" />
-          <p class="hero-note">Then run <code>sova</code>, and <code>sova open</code> to open it. Keep it running while you use the app; <code>Ctrl+C</code> stops it.</p>
+          <p class="hero-note">Then run <code>sova</code>, and <code>sova open</code>.</p>
         </div>
       </div>
     </section>

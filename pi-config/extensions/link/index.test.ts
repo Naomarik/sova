@@ -1,7 +1,7 @@
 // Run through tests/run.mjs (pi imports resolve from the installed package).
 import assert from "node:assert/strict";
 import test from "node:test";
-import link, { declaresLinkTools, FLAG, SECTION, TOKEN_FLAG, TOOL_NAMES, TOOLS_FLAG } from "./index.ts";
+import link, { declaresLinkTools, FLAG, LINK_LIVE, SECTION, TOKEN_FLAG, TOOL_NAMES, TOOLS_FLAG } from "./index.ts";
 import { NOT_LINKED } from "./client.ts";
 
 const ORIGIN = "http://127.0.0.1:4810";
@@ -19,6 +19,8 @@ function rigWith(opts: { origin?: string; tools?: string; transcript?: Sys[]; st
 	const tools = new Map<string, any>();
 	const handlers = new Map<string, (e: any, ctx: any) => unknown>();
 	const calls: { url: string; method: string; body?: any }[] = [];
+	/** Every registerTool call, in order (`name:hidden` for a withdrawal). */
+	const registrations: string[] = [];
 	const fetchImpl = (async (url: string, init: RequestInit) => {
 		calls.push({ url, method: init.method ?? "GET", ...(init.body ? { body: JSON.parse(String(init.body)) } : {}) });
 		const a = answers.shift() ?? { body: {} };
@@ -33,7 +35,10 @@ function rigWith(opts: { origin?: string; tools?: string; transcript?: Sys[]; st
 			assert.ok(loaded, "a flag is read only after every extension has loaded (pi applies the values then)");
 			return flags[name];
 		},
-		registerTool: (t: any) => tools.set(t.name, t),
+		registerTool: (t: any) => {
+			registrations.push(t.exposure === "hidden" ? `${t.name}:hidden` : t.name);
+			tools.set(t.name, t);
+		},
 		on: (event: string, h: any) => handlers.set(event, h),
 	};
 	link(pi as any, { fetch: fetchImpl });
@@ -43,11 +48,13 @@ function rigWith(opts: { origin?: string; tools?: string; transcript?: Sys[]; st
 	const r = {
 		tools,
 		calls,
+		registrations,
 		answers,
 		atLoad,
 		/** The tools the model is declared: registered and not hidden. */
 		declared: () => [...tools.values()].filter((t) => t.exposure !== "hidden").map((t) => t.name),
 		sessionStart: async () => handlers.get("session_start")!({ type: "session_start", reason: "startup" }, ctx),
+		turnEnd: async () => handlers.get("turn_end")!({ type: "turn_end", turnIndex: 0, message: {}, toolResults: [] }, ctx),
 		compact: async () => handlers.get("session_compact")!({ type: "session_compact", reason: "threshold", willRetry: false, fromExtension: false }, ctx),
 		run: async (name: string, params: Record<string, unknown> = {}) => {
 			const res = await tools.get(name).execute("c1", params, undefined, undefined, ctx);
@@ -146,6 +153,117 @@ test("a link member never loses its tools at a compaction, and asks nothing for 
 	await r.compact();
 	assert.deepEqual(r.declared(), TOOLS);
 	assert.equal(r.calls.length, 0);
+});
+
+/** Sova's `sova:link-live` hook, as the server installs it on globalThis; undefined removes it. */
+function hook(live: ((id: string) => boolean) | undefined) {
+	const g = globalThis as Record<symbol, unknown>;
+	if (live) g[LINK_LIVE] = live;
+	else delete g[LINK_LIVE];
+}
+
+test("a session that joins a live link mid-run gets the seven once, at the turn's end, and the section at its next run start", async () => {
+	let live = false;
+	const asked: string[] = [];
+	hook((id) => (asked.push(id), live));
+	try {
+		const r = rigWith({ origin: ORIGIN, tools: "legacy" }, linked());
+		assert.equal(r.tools.size, 0, "in no link at its start: none");
+		await r.turnEnd();
+		assert.equal(r.tools.size, 0, "still in none at a turn's end: none");
+		assert.equal(await r.start(), undefined, "no section, and the host isn't asked");
+		assert.equal(r.calls.length, 0);
+		live = true;
+		await r.turnEnd();
+		assert.deepEqual(r.declared(), TOOLS, "linked: all seven, before the next request is built");
+		assert.deepEqual(shape(r.tools), shape(rig(ORIGIN).tools), "the same schema as a born member's");
+		await r.turnEnd();
+		await r.start();
+		assert.deepEqual(r.registrations, TOOLS, "registered once: one tool-set change");
+		assert.ok(asked.every((id) => id === "s-me"), "the hook is asked by this session's id");
+		assert.equal(r.calls.length, 1, "the next run start reads the links");
+	} finally {
+		hook(undefined);
+	}
+});
+
+test("a joined session gets the section in the run whose start first sees it linked", async () => {
+	let live = false;
+	hook(() => live);
+	try {
+		const r = rigWith({ origin: ORIGIN, tools: "legacy" }, linked());
+		live = true;
+		const section = await r.start();
+		assert.deepEqual(r.declared(), TOOLS);
+		assert.ok(section?.includes("lk_a"), "joined at before_agent_start: the section comes with it");
+	} finally {
+		hook(undefined);
+	}
+});
+
+test("a session already in a live link when its runtime opens has the seven from its start", () => {
+	hook(() => true);
+	try {
+		const r = rigWith({ origin: ORIGIN, tools: "legacy" });
+		assert.deepEqual(r.declared(), TOOLS);
+	} finally {
+		hook(undefined);
+	}
+});
+
+test("no hook (a TUI, a worker, a server without links), or no link flags: never joins", async () => {
+	hook(undefined);
+	const r = rigWith({ origin: ORIGIN, tools: "legacy" });
+	await r.turnEnd();
+	assert.equal(await r.start(), undefined);
+	assert.equal(r.tools.size, 0);
+	assert.equal(r.calls.length, 0);
+	hook(() => true);
+	try {
+		for (const opts of [{}, { origin: ORIGIN }, { tools: "legacy" }]) {
+			const x = rigWith(opts);
+			await x.turnEnd();
+			await x.start();
+			assert.equal(x.tools.size, 0, JSON.stringify(opts));
+		}
+	} finally {
+		hook(undefined);
+	}
+});
+
+test("a joined session keeps them through a compaction while linked, loses them at one in no live link, and can join again", async () => {
+	let live = true;
+	hook(() => live);
+	try {
+		const r = rigWith({ origin: ORIGIN, tools: "legacy" }, linked(), { body: { links: [] } });
+		assert.deepEqual(r.declared(), TOOLS);
+		live = false;
+		await r.turnEnd();
+		assert.deepEqual(r.declared(), TOOLS, "the link ended: kept, no change mid-conversation");
+		await r.compact();
+		assert.deepEqual(r.declared(), TOOLS, "the host still lists a live link: kept");
+		await r.compact();
+		assert.deepEqual(r.declared(), [], "in no live link: withdrawn at this compaction");
+		assert.deepEqual(r.registrations.slice(7), TOOLS.map((n) => `${n}:hidden`));
+		live = true;
+		await r.turnEnd();
+		assert.deepEqual(r.declared(), TOOLS, "linked again: back, the same way");
+	} finally {
+		hook(undefined);
+	}
+});
+
+test("a born member never loses its tools, whatever the hook says", async () => {
+	hook(() => false);
+	try {
+		const r = rig(ORIGIN, { body: { links: [] } });
+		await r.turnEnd();
+		await r.compact();
+		assert.deepEqual(r.declared(), TOOLS);
+		assert.deepEqual(r.registrations, TOOLS, "registered once at start, never again");
+	} finally {
+		hook(undefined);
+	}
 });
 
 test("declaresLinkTools replays the system messages as pi restores tools", () => {

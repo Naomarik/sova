@@ -1151,7 +1151,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
       promptSnippet: "start a session (folder, target or mesh peer; model, mode, minor modes, title, group, first prompt)",
       parameters: obj({
         host: str("A mesh peer's id, to create the session on that host; omit for this host."),
-        link: bool("true: create it as a link member session, with the link tools from its first turn, so sova_link can link it. Only at creation: an existing session never becomes one."),
+        link: bool("true: create it as a link member session, with the link tools from its first turn: for a session you create only to link (create, sova_link, then send its task), so nothing restarts. Only at creation; an existing session can still be linked, and gets the tools as it joins."),
         cwd: str("Absolute folder (on host, when given)."),
         target: str("Remote target name (instead of cwd)."),
         remote_cwd: str("Absolute folder on the target."),

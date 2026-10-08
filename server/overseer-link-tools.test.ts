@@ -149,6 +149,17 @@ describe("sova_link", () => {
     assert.equal((await h.run("sova_link", { members: [{ session: "a" }, { host: "vps", session: "r1" }] })).text, "ERROR: Member 2 (vps/r1): it is open in a terminal (pid 7).");
   });
 
+  test("links two existing sessions as they are, with no create first; a gated peer's refusal comes back as worded", async () => {
+    const h = harness();
+    const out = await h.run("sova_link", { members: [{ session: "a" }, { host: "vps", session: "r1" }] });
+    assert.match(out.text, /^Linked 2 sessions/);
+    assert.deepEqual(h.local, [], "no session created or touched to link them");
+    assert.deepEqual(h.linkCalls.map((c) => c.op), ["create"]);
+    const why = "Member 2 (vps/r1): VPS runs an earlier build that links only sessions created with link: true: create the member there with sova_create_session host + link: true, or update VPS.";
+    const gated = harness({ links: { create: { status: 409, error: why } } });
+    assert.equal((await gated.run("sova_link", { members: [{ session: "a" }, { host: "vps", session: "r1" }] })).text, `ERROR: ${why}`);
+  });
+
   test("at most 3 links per message from the user, by default; the Settings value moves it", async () => {
     const h = harness();
     const members = [{ session: "a" }, { host: "vps", session: "r1" }];
@@ -304,13 +315,17 @@ describe("sova_create_session with host", () => {
     assert.deepEqual(plain.remote[0]!.body, { cwd: "/srv/app" });
   });
 
-  test("the tool tells the Overseer to create link members this way, and sova_link that it takes only those", async () => {
+  test("the tools tell the Overseer that any existing session can be linked, and that link: true is the cheaper way for one it creates only to link", async () => {
     const { overseerTools: tools } = await import("./overseer-tools");
     const all = tools({} as never, new TurnLimits());
     const create = all.find((t) => t.name === "sova_create_session")!;
-    assert.match(String((create.parameters as any).properties.link.description), /link member session.*sova_link/);
+    const linkParam = String((create.parameters as any).properties.link.description);
+    assert.match(linkParam, /link member session.*first turn.*create, sova_link, then send its task/);
+    assert.match(linkParam, /an existing session can still be linked/);
     const link = all.find((t) => t.name === "sova_link")!;
-    assert.match(link.description, /each must be a link member session: one you created with sova_create_session and link: true/);
+    assert.match(link.description, /Any existing session can be a member, running or idle; one without the link tools gets them at its next step \(a Claude Code chat restarts for that\)/);
+    assert.match(link.description, /cheaper created with sova_create_session and link: true, linked, then given its task/);
+    assert.doesNotMatch(link.description, /must be a link member session/);
   });
 
   test("a group can't be given with host; an unknown mode creates nothing; a down peer takes no cap", async () => {

@@ -5930,8 +5930,7 @@
         "server/index.ts",
         "server/sessions-index.ts",
         "shared/mesh-links.ts",
-        "server/app.ts",
-        "server/link-member.ts"
+        "server/app.ts"
       ],
       "requires": [
         "§mesh.peers/off",
@@ -5965,7 +5964,10 @@
         "server/harness/state-kinds.ts",
         "shared/mesh-links.ts",
         "server/link-tools-runtime.test.ts",
-        "server/harness/state-kinds.test.ts"
+        "server/harness/state-kinds.test.ts",
+        "server/harness/pi/contract.test.ts",
+        "server/harness/pi/quirks.ts",
+        "server/harness/pi/QUIRKS.md"
       ],
       "requires": [
         "§mesh.links/record",

@@ -1,11 +1,12 @@
 // Run: pnpm test -- server/link-tools-runtime.test.ts. A throwaway PI_CODING_AGENT_DIR; ~/.pi is never read.
 //
-// Which sessions get the link tools (§mesh.links/tools), in REAL hosted runtimes: the session is created
+// Which sessions get the link tools (§mesh.links/tools), born or joined, in REAL hosted runtimes: the session is created
 // through POST /api/sessions, opened by the chat's own open path (openPiSession, the flags it hands pi),
 // and runs real pi turns up to the model call, where a scripted model answers. The link extension is this
 // repo's own, loaded by path. Its host is an in-process stand-in for globalThis.fetch (no socket): it
 // answers the members read the extension makes at each run start and at a compaction. What the model is
-// declared is read twice: the tools each model call carried, and the system messages pi wrote.
+// declared is read twice: the tools each model call carried, and the system messages pi wrote. Whether a
+// session is in a live link is a stand-in for the server's `sova:link-live` hook.
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -61,6 +62,11 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
 
 const { buildApp } = await import("./app");
 const { app } = buildApp({ extensionEntriesOf: async () => [] });
+// The server's live-link hook (app.ts installs MeshLinks.inLiveLink there), replaced by the sessions a
+// test links: the mesh is off in this process, so the real one says none.
+const { LINK_LIVE } = await import("./mesh/links");
+const live = new Set<string>();
+(globalThis as Record<symbol, unknown>)[LINK_LIVE] = (id: string) => live.has(id);
 const { acquireChat, currentLinkOrigin, disposeAllChats, disposeHeldChat, setLinkOrigin } = await import("./chat-manager");
 const { markOwned } = await import("./write-guard");
 const { addWebSession } = await import("./web-sessions");
@@ -153,7 +159,7 @@ test("without Sova's link flags (a TUI, a worker) no link tool is registered, ev
 
 // ---- hosted by Sova ----------------------------------------------------------------------------------------
 
-test("an ordinary session declares no link tool, from its first request on, linked or not", async () => {
+test("an ordinary session in no link declares no link tool, from its first request on", async () => {
   setLinkOrigin(ORIGIN);
   const path = await create({});
   const chat = await open(path);
@@ -163,6 +169,108 @@ test("an ordinary session declares no link tool, from its first request on, link
   assert.ok(seesOtherTools(path), "the control: each request carried its other tools");
   assert.deepEqual(systemMessages(path).flatMap((m) => linkNames(m.toolsAdded)), []);
   assert.deepEqual(host.calls, [], "and never asks the host about links");
+  await disposeHeldChat(path, "test");
+});
+
+const ALL = [...LINK_TOOLS].sort();
+/** Link session `sid` as the server would: live in the hook, listed by the host. */
+function linkNow(sid: string) {
+  live.add(sid);
+  host.links = [liveLink(sid)];
+}
+
+let joinedFile = "";
+test("an idle ordinary session that is linked declares all seven at its next request, as exactly one tool change", async () => {
+  host.links = [];
+  host.calls.length = 0;
+  const path = await create({});
+  joinedFile = path;
+  const chat = await open(path);
+  await say(chat, "before the link");
+  const sid = piSession(chat).sessionManager.getSessionId();
+  linkNow(sid);
+  await say(chat, "linked now");
+  await say(chat, "and again");
+  assert.deepEqual(declaredPerCall(path), [[], ALL, ALL]);
+  assert.ok(seesOtherTools(path));
+  assert.deepEqual(laterLinkChanges(path), [[[...LINK_TOOLS], []]], "one toolsAdded with all seven, nothing else");
+  assert.ok(systemMessages(path).some((m) => /lk_0123456789abcdef/.test(m.sections?.["mesh-link"] ?? "")), "the section comes with the run");
+  await disposeHeldChat(path, "test");
+});
+
+test("a busy session linked in a tool loop declares the seven in the next request of the same run, beside the steered partner message", async () => {
+  host.links = [];
+  writeFileSync(join(cwd, "note.txt"), "a note\n");
+  const path = await create({});
+  const chat = await open(path);
+  await say(chat, "warm up");
+  const sid = piSession(chat).sessionManager.getSessionId();
+  const model = models.get(path)!;
+  const before = model.calls.length;
+  let delivered = "";
+  model.reply(() => {
+    // Linked while the model works: the partner's message steers into this run.
+    linkNow(sid);
+    delivered = chat.deliverToAgent("[link_msg lk_0123456789abcdef lm_00000000000000aa] from Partner (box/s-b)\nneed the files");
+    return { toolCall: { name: "read", arguments: { path: "note.txt" } } };
+  });
+  await say(chat, "read the note");
+  assert.equal(delivered, "delivered", "busy: steered, not a new turn");
+  const run = model.calls.slice(before);
+  assert.equal(run.length, 2, "one run: the tool call, then the next step");
+  assert.deepEqual(declaredPerCall(path).slice(before), [[], ALL], "the next request of the same run declares them");
+  const texts = JSON.stringify((run[1]!.context as { messages: unknown[] }).messages);
+  assert.ok(texts.includes("need the files"), "and carries the steered partner message");
+  assert.ok(!JSON.stringify((run[0]!.context as { messages: unknown[] }).messages).includes("need the files"));
+  assert.equal(laterLinkChanges(path).length, 1, "one tool change");
+  await disposeHeldChat(path, "test");
+});
+
+test("a session whose runtime isn't loaded when it is linked declares the seven from its first request after it opens", async () => {
+  host.links = [];
+  const path = await create({});
+  let chat = await open(path);
+  await say(chat, "one");
+  const sid = piSession(chat).sessionManager.getSessionId();
+  await disposeHeldChat(path, "test");
+  linkNow(sid);
+  chat = await open(path);
+  assert.deepEqual(piSession(chat).getAllTools().map((t) => t.name).filter((n) => n.startsWith("link_")).sort(), ALL, "registered at its start");
+  await say(chat, "two");
+  assert.deepEqual(declaredPerCall(path), [[], ALL]);
+  assert.equal(laterLinkChanges(path).length, 1);
+  await disposeHeldChat(path, "test");
+});
+
+test("a joined session keeps the seven past the link's end and through a compaction while linked, and loses them at one in no live link", async () => {
+  assert.ok(joinedFile, "runs after the idle join test");
+  const path = joinedFile;
+  const chat = await open(path);
+  const sid = piSession(chat).sessionManager.getSessionId();
+  live.add(sid);
+  host.links = [liveLink(sid)];
+  await say(chat, "reopened while linked");
+  // The link ends: nothing changes until a compaction.
+  live.delete(sid);
+  await say(chat, "the link ended");
+  assert.deepEqual(declaredPerCall(path).at(-1), ALL, "kept when the link ends");
+  const compactions = () => readFileSync(path, "utf8").split("\n").filter((l) => l.includes('"type":"compaction"')).length;
+  compactFixture().summary = "Earlier talk.";
+  // The host still lists a live link at this compaction: kept.
+  await say(chat, "/compact");
+  assert.equal(compactions(), 1);
+  await say(chat, "after the first compaction");
+  assert.deepEqual(declaredPerCall(path).at(-1), ALL, "a compaction while linked keeps them");
+  host.links = [];
+  await say(chat, "/compact");
+  assert.equal(compactions(), 2);
+  const calls = models.get(path)!.calls.length;
+  await say(chat, "after the second compaction");
+  assert.deepEqual(declaredPerCall(path).slice(calls), [[]], "gone from the request right after it");
+  assert.deepEqual(laterLinkChanges(path), [
+    [[...LINK_TOOLS], []],
+    [[], [...LINK_TOOLS]],
+  ], "one toolsAdded at the join, one toolsRemoved after the compaction in no live link");
   await disposeHeldChat(path, "test");
 });
 

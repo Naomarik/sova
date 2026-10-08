@@ -85,8 +85,10 @@ export const currentLinkOrigin = (): string | null => linkOrigin;
  * - the link: this server's own bound origin (setLinkOrigin), switching pi-config's `link`
  *   extension on (its tools call the /api/mesh/links/* routes), and which tools it registers
  *   (§mesh.links/tools): `member` for a link member session (its LINK_MEMBER marker, written by its
- *   create), all seven from its start; `legacy` for every other, only the tools its transcript
- *   already declares (a session an earlier build hosted), until a compaction drops them. Absent until
+ *   create), all seven from its start; `legacy` for every other: all seven once it is in a live link
+ *   (the extension asks the server's `sova:link-live` hook, app.ts), at its next request, else only
+ *   the tools its transcript already declares (a session an earlier build hosted); either is dropped
+ *   at a compaction that finds it in no live link. Absent until
  *   the listener is bound; workers and the TUI never get it, so they register no link tool. Beside it,
  *   this server's per-install token, which the link tools send back as `x-sova-token`
  *   (§app.access/callers). In-process only: never argv, never env.

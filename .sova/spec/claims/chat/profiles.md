@@ -13,7 +13,7 @@ once the first message is sent, and kept by the session itself. The UI says
   and client). Removable: **Shell** (`bash`), **Edit files** (`edit`, `write`), **Workers & teams**
   (`agent_*`, `team_*`), **Web** (`web_search`, `fetch_content`, `get_search_content`,
   `source_check`), **Worktrees** (`worktree`), **Timers** (`wake_nudge`). The link tools are no
-  capability: no session has them unless it was created as a link member (§mesh.links/tools), so
+  capability: a session has them only as a link member, born or joined (§mesh.links/tools), so
   no profile or board lists, keeps or removes them. A profile file that still names the old
   `links` removal reads as if it didn't, and the rest of it is kept.
   Grantable: **Read other sessions** (`sessions.read`), **Message other sessions**

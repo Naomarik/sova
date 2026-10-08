@@ -145,8 +145,8 @@ writer**).
   the agent directory (`<agent dir>/extensions/spec/core/`, resolved like pi's
   own agent dir: an exact `~` or a leading `~/` is home), always through that
   `sh` recipe, never a guessed path. A copy inside the
-  project is read and asked about first. Replies carry no spec lines: a turn
-  ends when the model stops, with no re-prompt, warning, record or card about
+  project is read and asked about first. Replies carry one requested spec line, "Also updates §X:
+  <what>" (below), and nothing checks it: a turn ends when the model stops, with no re-prompt, warning, record or card about
   its spec changes. A foreign § (one that existed before the task started) that
   the change contradicts or visibly extends is updated in the task's draft
   without asking and listed in the reply ("Also updates §X: <what>").

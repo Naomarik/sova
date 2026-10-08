@@ -21,7 +21,7 @@ export const CARRIED_RULES: readonly CarriedRule[] = [
 	{ anchor: "Behavior no claim covers gets a new claim", sentences: 2 },
 	{ anchor: "While coding, a `[spec census]` note", sentences: 1 },
 	{ anchor: "Any § the task didn't create is foreign", sentences: 1 },
-	{ anchor: "Where your change contradicts its text", sentences: 1 },
+	{ anchor: "Where the task needs a change", sentences: 1 },
 	{ anchor: "Documentation changes only through drafts", sentences: 1 },
 	{ anchor: "Documenting what the code already does", sentences: 1 },
 	{ anchor: "Run `node \"$core/sova-spec.mjs\" census --changed", sentences: 1 },

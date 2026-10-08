@@ -1452,7 +1452,7 @@ export function widgetText(docs: readonly AlignDocument[], keyHint: string): str
 
 const FENCED = /```[\s\S]*?```/g;
 /** The spec minor mode's closing line ("Also changes: none"): not part of what the reply asks. */
-const SPEC_TRAILER = /\n\s*Also changes:[^\n]*\s*$/i;
+const SPEC_TRAILER = /\n\s*Also (?:changes:|updates\b)[^\n]*\s*$/i;
 /** Words that label what follows as the user's to decide. */
 const LABEL_ASK = /\b(?:open questions?|questions for you|decisions? (?:for you|needed|to make)|need(?:s)? (?:your|a) (?:decision|call|answer))\b/i;
 /** Asking for a go-ahead on a plan, or for the agent's recommendations to stand. */

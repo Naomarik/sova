@@ -485,8 +485,8 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	assert.match(spec, /your new claim's parent included/);
 	assert.match(spec, /even one your new claim describes/);
 	assert.match(spec, /wherever you put the claim/);
-	assert.match(spec, /never for a gap it already had/);
-	assert.match(spec, /update it in your draft without asking \(the task's go-ahead covers it\), never for a gap it already had; list each in your reply: "Also updates §X: <what>"\./, "a foreign § is updated, never asked about");
+	assert.match(spec, /never for a gap it already had or a defect/);
+	assert.match(spec, /update it in your draft without asking \(the go-ahead covers it and restamps any `agreed`\), never for a gap it already had or a defect; list each foreign § your draft or workers edit in your reply: "Also updates §X: <what>"\./, "a foreign § is updated, never asked about");
 	assert.doesNotMatch(spec, /This also changes|OK\?|[Ff]lag/, "nothing about a foreign § is asked");
 	for (const gone of ["Also changes", "Plumbing:", "Deferred:", "Spec check override", "last line", "foreign --base", "merge round", "captain"]) assert.ok(!spec.includes(gone), `no closing lines and no merge round: ${gone}`);
 	assert.ok(spec.includes(`While coding, a \`${DIGEST_TAG}\` note on a tool result is the census, run for you: act on it.`), "while coding, the automatic census is named by its tag");

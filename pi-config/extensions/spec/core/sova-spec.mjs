@@ -1076,7 +1076,7 @@ function human(out) {
       ...(c.deleted ?? []).map((f) => `  deleted ${f}`), ...(c.symlinks ?? []).map((f) => `  symlink not followed ${f}`), ...(c.orphanedEvidence ?? []).map((e) => `  orphaned evidence ${e.commit.slice(0, 12)} (draft ${e.draft}: ${e.ids.join(", ")})`));
     const sum = out.findings.find((f) => f.code === "foreign-summary");
     if (sum) L.push(`${sum.severity} ${sum.code}: ${sum.message}`);
-    if (c.touched) L.push("touched § (read each; flag only a visible change in its area):", ...c.touched.map((t) => {
+    if (c.touched) L.push("touched § (read each; update and list only a visible change in its area):", ...c.touched.map((t) => {
       const lb = t.labels ? `; ${[t.labels.authority, t.labels.evidence].map((v) => v ?? "-").join("/")}` : "";
       const rq = t.requires === null ? "uninvestigated" : t.requires.join(", ") || "none declared";
       const cs = t.consumers.map((k) => `${k.id} (${k.depth})`).join(", ") || "none declared";

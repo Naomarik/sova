@@ -1076,7 +1076,7 @@ test("census --related: human output starts the related block with the summary",
   const root = draftRepo();
   const h = spawnSync(process.execPath, [CLI, "census", "--changed", "--related", "--root", root], { encoding: "utf8", env: { ...process.env, HOME: root, XDG_CONFIG_HOME: root } });
   assert.equal(h.status, 0);
-  assert.match(h.stdout, /\nnote foreign-summary: update any foreign § where [^\n]*: 1 touched \(§chat\.input\/send\)\ntouched § \(read each/);
+  assert.match(h.stdout, /\nnote foreign-summary: update any foreign § where [^\n]*: 1 touched \(§chat\.input\/send\)\ntouched § \(read each; update and list only a visible change in its area\):\n/);
   assert.match(h.stdout, /  §chat\.input\/send \[behavior; foreign\] /);
 });
 

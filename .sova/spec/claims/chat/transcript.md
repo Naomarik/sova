@@ -810,7 +810,10 @@ A jump lands at once, with no smooth scroll: its row is put in the middle of the
 there, to the pixel, while the rows around it are first drawn at their real heights, so it never
 moves once it is on screen; the hold ends once nothing has moved for a moment, or at the reader's
 own scroll, wheel, touch, press or key. A jump to a row not built yet builds a few rows above it
-too, so it can sit in the middle; one that is the first row the list holds sits at the top.
+too, so it can sit in the middle; one that is the first row the list holds sits at the top. A
+jump stops following; once its hold is over by itself, a view the jump left within 80px of the
+end follows again (§chat.transcript/turn-end-keeps-reader), and anywhere else Jump to Latest
+stays.
 
 ## §chat.transcript/compressed-transfer — A transcript travels compressed
 

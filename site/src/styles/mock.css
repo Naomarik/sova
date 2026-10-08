@@ -109,7 +109,7 @@
 .dev > .frame { align-self: stretch; width: 100%; }
 .dev-label { font-family: var(--font-mono); font-size: 11px; letter-spacing: var(--ls-eyebrow); text-transform: uppercase; color: var(--color-ink-muted); }
 
-/* The unfolded foldable, held landscape: a faint crease down the middle drawn over its screen. */
+/* The unfolded foldable, held landscape: a bezel around its screen, nothing drawn over it. */
 .fold {
   border-radius: 26px; padding: 8px;
   background: var(--color-surface);
@@ -117,7 +117,6 @@
   box-shadow: var(--shadow-3);
 }
 .fold-screen { position: relative; border-radius: 19px; overflow: hidden; background: var(--color-bg); }
-.fold-screen::after { content: ""; position: absolute; z-index: 2; top: 0; bottom: 0; left: 50%; width: 1px; background: var(--color-border-strong); opacity: .3; pointer-events: none; }
 
 /* Narrow: a row that scrolls sideways. */
 .devices {

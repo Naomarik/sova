@@ -1003,7 +1003,11 @@
     "§chat.model-menu/trigger": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "reviewed",
+      "code": [
+        "src/components/ComposerMenu.tsx",
+        "src/components/ModelMenu.tsx"
+      ]
     },
     "§chat.slash-commands/announcements": {
       "kind": "behavior",
@@ -2959,7 +2963,7 @@
     "§app.overseer/dialog-answers": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
         "server/chat-manager.ts",
         "server/overseer-tools.ts",
@@ -11620,7 +11624,7 @@
         "§app.extensions/serving"
       ],
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
         "server/chat-manager.ts",
         "server/extensions.ts",
@@ -11675,7 +11679,7 @@
         "§app.access/token"
       ],
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
         "README.md",
         "docs/customization.md",
@@ -11695,14 +11699,15 @@
     "§app/access": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
         "server/auth.ts",
         "server/index.ts",
         "server/app.ts",
         "server/ws.ts",
         "src/lib/auth.ts",
-        "src/components/Unlock.tsx"
+        "src/components/Unlock.tsx",
+        "scripts/install.sh"
       ]
     },
     "§app.overseer/input-source": {
@@ -11880,7 +11885,7 @@
         "§app.access/unlock"
       ],
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
         "package.json",
         "server/auth-devices.ts",
@@ -15789,6 +15794,21 @@
         "src/components/ModeMenu.tsx",
         "src/lib/mode-menu.ts",
         "pi-config/extensions/mode/index.test.ts"
+      ]
+    },
+    "§app.shell/installable": {
+      "kind": "behavior",
+      "requires": [
+        "§app/notifications",
+        "§app/access"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "public/manifest.webmanifest",
+        "public/sw.js",
+        "src/sw-register.ts",
+        "index.html"
       ]
     }
   },

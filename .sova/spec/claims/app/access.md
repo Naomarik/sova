@@ -2,8 +2,13 @@
 
 Sova's main listener serves one person on one machine, and it proves that with a per-install
 token rather than with the address it was reached on: a request is answered only when it carries
-the token, names a host this app is reachable at, and comes from a caller that is not another
-site acting on the person's behalf. The public side of
+the token (or is that machine's own browser opening the app, §app.access/gate), names a host this
+app is reachable at, and comes from a caller that is not another site acting on the person's
+behalf.
+
+It listens on `127.0.0.1:4800`, loopback only, unless the server is started with `HOST` or `PORT`
+set (`HOST=0.0.0.0` exposes it on every address of the machine on purpose; `PORT=0` takes any free
+port). The installed `sova` launcher passes both through to the server. The public side of
 Sova — the share listener and preview links — is not this claim: it keeps its own tokens and its
 own edge (§mesh.public, §app.baton/share-listener).
 

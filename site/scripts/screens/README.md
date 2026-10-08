@@ -38,7 +38,12 @@ Sova's own tools execute against the demo repository, so align cards, worktrees,
 manifests and the changes viewer are the real thing. A `hold` before a reply keeps that reply
 waiting mid-turn (live dots, a working worker, the Steer composer); before a user step it marks the
 turn's end. Shots name the hold they're taken at, or `end`, or `start` for a static session and
-the Access page.
+the Access page. Each shot also names one of the story's `viewports` (CSS width and height, device
+pixel scale, and `mobile` for a touch device): `desktop`, `compact` for a feature image, `fold`
+for an unfolded foldable held landscape (816x616 at 3x, 4:3) and `phone` for its folded cover
+screen (416x658 at 3x, portrait). Sova shows its two panes from 768px wide, so `fold` has the
+sidebar beside the chat and `phone` the chat alone. The site's device frames take each image's own
+shape.
 
 The director recognizes a live session by its first message and a worker by its task, so those
 must differ. Workers are started with `wake: false`, and Delegate's routes all point at the story's

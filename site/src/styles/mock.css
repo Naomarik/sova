@@ -96,9 +96,11 @@
 }
 
 /* ---- HERO DEVICES. One session on a desktop, an unfolded foldable and a folded phone. ------
-   From 1120px the three overlap: the desktop centred, the foldable over its lower left (where the
-   sidebar it repeats sits), the phone over its lower right. Narrower, they sit in a row that
-   scrolls sideways, each at a size it can be read at, the folded one first. */
+   Each screen takes its capture's own shape: the desktop 16:10, the unfolded foldable landscape
+   4:3, the folded cover screen portrait 10:16. From 1120px the three overlap, the desktop the
+   centrepiece: the unfolded foldable over its lower left (where the sidebar it repeats sits), the
+   cover screen over its lower right. Narrower, they sit in a row that scrolls sideways, each at a
+   size it can be read at, the folded one first. */
 
 .devices { position: relative; }
 .dev { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 10px; min-width: 0; }
@@ -107,8 +109,7 @@
 .dev > .frame { align-self: stretch; width: 100%; }
 .dev-label { font-family: var(--font-mono); font-size: 11px; letter-spacing: var(--ls-eyebrow); text-transform: uppercase; color: var(--color-ink-muted); }
 
-/* The unfolded foldable: near square, its screen a capture at a fold's width, a faint crease down
-   the middle drawn over it. */
+/* The unfolded foldable, held landscape: a faint crease down the middle drawn over its screen. */
 .fold {
   border-radius: 26px; padding: 8px;
   background: var(--color-surface);
@@ -137,11 +138,11 @@
 
 /* Wide: overlap. */
 @media (min-width: 1120px) {
-  .devices { display: block; overflow: visible; padding: 0 0 150px; margin: 0; }
-  .dev-desk { width: 80%; margin: 0 auto; }
+  .devices { display: block; overflow: visible; padding: 0 0 120px; margin: 0; }
+  .dev-desk { width: 78%; margin: 0 auto; }
   .dev-desk .dev-label { display: none; }
-  .dev-fold { position: absolute; left: 0; bottom: 0; width: 30%; }
-  .dev-phone { position: absolute; right: 0; bottom: 0; width: 206px; }
+  .dev-fold { position: absolute; left: 0; bottom: 0; width: 32%; }
+  .dev-phone { position: absolute; right: 0; bottom: 0; width: 184px; }
 }
 
 /* ---- SCREENSHOTS (site/scripts/screens/). A capture fills its frame's screen area at its own

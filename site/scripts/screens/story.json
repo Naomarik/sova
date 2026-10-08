@@ -10,6 +10,14 @@
     "scout": { "id": "glm-5.3", "name": "GLM-5.3", "contextWindow": 200000 }
   },
 
+  "viewports": {
+    "desktop": { "width": 1440, "height": 900, "scale": 2 },
+    "compact": { "width": 1100, "height": 760, "scale": 2, "note": "a feature image" },
+    "fold": { "width": 816, "height": 616, "scale": 3, "mobile": true, "note": "an unfolded foldable, landscape: 2448x1848 px, 4:3 (the Galaxy Z Fold 8 inner display)" },
+    "phone": { "width": 416, "height": 658, "scale": 3, "mobile": true, "note": "a folded foldable cover screen, portrait: 1248x1974 px, about 10:16 (the Galaxy Z Fold 8 cover display)" },
+    "video": { "width": 1280, "height": 800, "scale": 1.5, "note": "the session video, encoded at 1600 px wide" }
+  },
+
   "project": {
     "name": "demo-app",
     "path": "~/code/demo-app",
@@ -416,7 +424,7 @@
 
   "video": {
     "session": "retry-policy",
-    "viewport": "desktop",
+    "viewport": "video",
     "typing": "30ms",
     "chunk": "35ms",
     "alt": "A session running in Sova: a request typed in, an alignment with one open question, the answer 1a, 3 workers started and followed in the workers pane, and the changes opened as steps.",

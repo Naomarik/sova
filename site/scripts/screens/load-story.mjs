@@ -259,6 +259,7 @@ function compile(story, facts, storyDir, pos) {
   const positions = Object.fromEntries([...pos].map(([p, v]) => [p, [v.line, v.col]]));
   return {
     provider,
+    viewports: story.viewports,
     models: Object.fromEntries(Object.entries(story.models).map(([k, m]) => [k, { ...m, ref: ref(k) }])),
     project: { name: story.project.name, path: story.project.path, commits: story.project.commits.map((c) => ({ message: c.message, files: Object.fromEntries(Object.entries(c.files).map(([p, b]) => [p, fileBody(b, storyDir)])) })) },
     files,

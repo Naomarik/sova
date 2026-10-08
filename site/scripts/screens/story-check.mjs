@@ -420,13 +420,16 @@ export async function crossCheck(story, { storyDir, repoRoot, banned = runtimeBa
     if (shot.view === "workers" && !shot.worker) err([...at], 'view "workers" needs a worker to select');
     if (shot.worker && spawnedBy.get(shot.worker) !== shot.session) err([...at, "worker"], `worker "${shot.worker}" isn't one of ${shot.session}'s`);
     if (shot.worker && shot.view !== "workers") err([...at, "worker"], 'worker goes with view "workers"');
-    if (shot.view === "workers" && shot.viewport === "phone") warn([...at, "view"], "the phone layout shows the workers pane as its own screen, not beside the chat");
+    const vp = story.viewports[shot.viewport];
+    if (!vp) err([...at, "viewport"], `unknown viewport "${shot.viewport}"`, `${didYouMean(shot.viewport, Object.keys(story.viewports)) ? `did you mean "${didYouMean(shot.viewport, Object.keys(story.viewports))}"? ` : ""}viewports are: ${Object.keys(story.viewports).join(", ")}`);
+    else if (shot.view === "workers" && vp.width < 768) warn([...at, "view"], "under 768px Sova shows the workers pane as its own screen, not beside the chat");
   });
   for (const [slot, id] of Object.entries(story.pageShots)) if (!shotIds.has(id)) err(["pageShots", slot], `unknown shot "${id}"`, didYouMean(id, [...shotIds]) ? `did you mean "${didYouMean(id, [...shotIds])}"?` : undefined);
 
   if (story.video) {
     const v = story.video;
     if (!liveIds.has(v.session)) err(["video", "session"], `"${v.session}" isn't a live session`);
+    if (!story.viewports[v.viewport]) err(["video", "viewport"], `unknown viewport "${v.viewport}"`, `viewports are: ${Object.keys(story.viewports).join(", ")}`);
     const holds = holdsFor(v.session);
     const script = byId.get(v.session)?.s.script ?? [];
     let ms = 0;

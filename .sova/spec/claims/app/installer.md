@@ -98,13 +98,15 @@ Running the installer again with the same inputs leaves the machine as it was.
 ## §app.installer/ref — The ref it installs
 
 The installer installs `SOVA_REF` when set: a tag, a branch or a commit of the repository. Unset,
-it installs the release the script belongs to (the tag a release commit writes into it; `vNEXT`
-before the first such release).
+it installs the script's own default ref: `master` on master until the first release is tagged, so
+the published command `curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/master/scripts/install.sh | bash`
+installs master's latest commit and a re-run updates to it. A release commit sets the default to
+its own tag, so the installer fetched from that tag installs that tag.
 
 - **Checked before anything is written.** A name that is neither a tag nor a branch of the
   repository, and is not a commit (seven or more hex digits), stops the install before anything
-  is written, with a message that names the ref and says to pass `SOVA_REF` (for example
-  `SOVA_REF=master`). A hex name that turns out not to be a commit of the clone stops it before
+  is written, with a message that names the ref and says to pass `SOVA_REF` (a tag, a branch
+  or a commit). A hex name that turns out not to be a commit of the clone stops it before
   anything is promoted, with "nothing was changed". The default branch is never installed in a
   ref's place.
 - **A repository it cannot reach** stops the install the same way, saying so.

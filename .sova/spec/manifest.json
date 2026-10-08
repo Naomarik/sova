@@ -16141,7 +16141,8 @@
       "code": [
         "scripts/install.sh",
         "scripts/install.test.sh",
-        "scripts/install.integration.test.ts"
+        "scripts/install.integration.test.ts",
+        "site/src/data/site.ts"
       ]
     }
   },

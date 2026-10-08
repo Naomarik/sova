@@ -44,6 +44,8 @@ interface Host {
   app: Hono;
   links: MeshLinks;
   sessions: Map<string, SessionSummary>;
+  /** Session ids NOT created as link member sessions (every other one was). */
+  plain: Set<string>;
   held: Set<string>;
   delivered: Array<{ path: string; framed: string }>;
   answer: PeerLinkMessageResult;
@@ -128,6 +130,7 @@ function makeHost(id: string, label: string, opts: Partial<Host> = {}): Host {
     app: new Hono(),
     links: new MeshLinks(),
     sessions: new Map(),
+    plain: new Set(),
     held: new Set(),
     delivered: [],
     answer: { state: "started" },
@@ -192,6 +195,7 @@ function makeHost(id: string, label: string, opts: Partial<Host> = {}): Host {
       if (h.stall) await h.stall;
       return h.sessions.get(sid) ?? null;
     },
+    linkMember: async (path: string) => ![...h.sessions.values()].some((s) => s.path === path && h.plain.has(s.id)),
     held: (sid: string) => (h.held.has(sid) ? (h.sessions.get(sid)?.path ?? null) : null),
     deliver: async (path: string, framed: string) => {
       h.delivered.push({ path, framed });
@@ -334,6 +338,39 @@ describe("the record (§mesh.links/record)", () => {
     r = await act<LinkError>(A, "POST", "/api/mesh/links", { members: [{ session: "sa" }, { host: "zz", session: "sb" }] });
     assert.equal(r.json.reason, "unreachable");
     assert.equal(A.links.all().length, 0);
+  });
+
+  test("a session not created as a link member is refused, each host checking its own member", async () => {
+    // This host's own member: refused before anything is sent.
+    A.plain.add("sa");
+    let r = await act<LinkError>(A, "POST", "/api/mesh/links", { members: [{ session: "sa" }, { host: "b", session: "sb" }] });
+    assert.equal(r.status, 409);
+    assert.equal(r.json.reason, "not-link-member");
+    assert.equal(r.json.member, 0);
+    assert.match(r.json.error, /^Member 1 \(this host\/sa\): it was not created with the link tools.*sova_create_session and link: true/);
+    assert.equal(A.links.all().length, 0);
+    assert.equal(B.links.all().length, 0, "nothing was sent");
+    // The peer's member: its host refuses the link's copy, so the link is not made anywhere.
+    A.plain.clear();
+    B.plain.add("sb");
+    r = await act<LinkError>(A, "POST", "/api/mesh/links", { members: [{ session: "sa" }, { host: "b", session: "sb" }] });
+    assert.equal(r.status, 409);
+    assert.equal(r.json.reason, "not-link-member");
+    assert.equal(r.json.member, 1);
+    assert.match(r.json.error, /Beta refused the link \(not-link-member\): Session sb on this host: it was not created with the link tools/);
+    assert.ok(A.links.all().every((l) => l.endedAt !== undefined), "no live link left here");
+    assert.ok(B.links.all().every((l) => l.endedAt !== undefined), "nor there");
+  });
+
+  test("a link that already exists keeps a member not created as one: its copy is never refused again", async () => {
+    const v = await link();
+    B.plain.add("sb");
+    // The creating host sends the same live copy again (a retry after a lost answer).
+    const res = await B.app.request("/api/peer/links", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ link: v.link, you: B.nodeId }) }, { meshPeer: entryOf(A, B) });
+    assert.equal(res.status, 200);
+    const sent = await act<{ deliveries: Array<{ state: string }> }>(A, "POST", "/api/mesh/links/send", { session: "sa", text: "still here?" });
+    assert.equal(sent.status, 200);
+    assert.notEqual(sent.json.deliveries[0]!.state, "refused", "a message still reaches it");
   });
 
   test("an organization's session is refused, on this host or a peer", async () => {

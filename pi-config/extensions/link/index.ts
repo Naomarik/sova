@@ -2,16 +2,24 @@
  * link: the tools of a session linked with sessions on other Sova mesh hosts (§mesh.links/tools).
  *
  * `link_members`, `link_send`, `link_inbox` and the file tools `link_offer`, `link_accept`,
- * `link_decline` and `link_offers` are registered at load in EVERY session, with a fixed schema,
- * whether or not the session is linked: a claude-code session reaches them through its
- * provider's `mcp__sova__` bridge, and a tool set that changed when a link was made would change
- * that session's tools mid-conversation. Each tool refuses with a sentence when the session is in
- * no link.
+ * `link_decline` and `link_offers`, with a fixed schema, exist only in a **link member session**: one
+ * the Overseer created as a link member (Sova's marker, fixed at its creation). Sova says so with the
+ * `sova-link-tools` flag (`member`), and the tools are registered at `session_start` (pi applies flag
+ * values only after every extension has loaded, so never in the factory body), before the session's
+ * first request. A claude-code session reaches them through its provider's `mcp__sova__` bridge, and
+ * a tool set that changed mid-conversation would restart its CLI, so the set never changes because a
+ * link is made or ended; each tool refuses with a sentence when the session is in no link.
+ *
+ * Every other session Sova hosts gets `legacy`: it registers the tools only when its transcript already
+ * declares them (a session an earlier build hosted, when every session had them), and withdraws them at
+ * its next compaction (re-registered `hidden`, the one way pi takes a tool back), which rebuilds the
+ * prompt cache anyway; a compaction while the session is in a live link, or whose host can't say,
+ * keeps them for a later one. A session that never declared them never gets them.
  *
  * Sova sets the `sova-link` flag on every runtime it hosts to its own origin (the real bound port).
- * Without the flag (a TUI, a worker) the extension is inert: the tools refuse, nothing is fetched.
- * Beside it, `sova-link-token` carries the host's per-install token, sent on every call (the host's
- * gate refuses a loopback call without it).
+ * Without it (a TUI, a worker) nothing is registered and nothing is fetched. Beside it,
+ * `sova-link-token` carries the host's per-install token, sent on every call (the host's gate
+ * refuses a loopback call without it).
  * Every call goes to the session's own host only (`client.ts`); the host does every peer hop.
  *
  * While linked, each run's prompt gets the `mesh-link` section (`promptSection`), rebuilt only when
@@ -19,7 +27,7 @@
  * system prompt restarts a claude-code session's CLI. When the host can't be read at a run start, the last
  * section is kept rather than dropped, for the same reason.
  */
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import {
 	LinkClient,
@@ -36,17 +44,37 @@ import {
 	renderOfferCreate,
 	renderOffers,
 	renderSend,
+	liveLinks,
 	sectionKey,
 	UNLINKED_REASONS,
 } from "./client.ts";
 
 export const FLAG = "sova-link";
 export const TOKEN_FLAG = "sova-link-token";
+export const TOOLS_FLAG = "sova-link-tools";
 export const SECTION = "mesh-link";
+export const TOOL_NAMES = ["link_members", "link_send", "link_inbox", "link_offer", "link_accept", "link_decline", "link_offers"] as const;
+
+/** Whether the transcript's current loadout (its system messages replayed in order, as pi restores
+    the active tools on open) declares any link tool. */
+export function declaresLinkTools(messages: readonly { role: string }[]): boolean {
+	const tools = new Set<string>();
+	for (const m of messages) {
+		if (m.role !== "system") continue;
+		const sys = m as { toolsAdded?: { name: string }[]; toolsRemoved?: { name: string }[] };
+		for (const t of sys.toolsRemoved ?? []) tools.delete(t.name);
+		for (const t of sys.toolsAdded ?? []) tools.add(t.name);
+	}
+	return TOOL_NAMES.some((n) => tools.has(n));
+}
 
 export default function link(pi: ExtensionAPI, deps: { fetch?: typeof fetch } = {}) {
-	pi.registerFlag(FLAG, { description: "Sova sets this to its own origin in the sessions it hosts; enables the link tools", type: "string" });
+	pi.registerFlag(FLAG, { description: "Sova sets this to its own origin in the sessions it hosts; the link tools call it", type: "string" });
 	pi.registerFlag(TOKEN_FLAG, { description: "Sova sets this to its own access token beside sova-link; the link tools send it back", type: "string" });
+	pi.registerFlag(TOOLS_FLAG, {
+		description: "Sova sets this beside sova-link: member (the session has the link tools from its start) or legacy (only while its transcript declares them, until its next compaction)",
+		type: "string",
+	});
 
 	let client: LinkClient | null | undefined;
 	const host = (): LinkClient | null => {
@@ -67,6 +95,11 @@ export default function link(pi: ExtensionAPI, deps: { fetch?: typeof fetch } = 
 	let lastSection: string | null = null;
 	let lastKey = "";
 
+	/** The seven tools, registered only at session_start and only in a session that gets them. */
+	const defs: ToolDefinition<any, any>[] = [];
+	/** Why this session has the tools, or null while it has none. */
+	let has: "member" | "legacy" | null = null;
+
 	const sessionOf = (ctx: ExtensionContext): string => ctx.sessionManager.getSessionId();
 	const text = (t: string, details: unknown = {}) => ({ content: [{ type: "text" as const, text: t }], details });
 	/** `asIs`: an answer about one offer, whose host sentence says it all ("No file offer of_… for
@@ -77,7 +110,7 @@ export default function link(pi: ExtensionAPI, deps: { fetch?: typeof fetch } = 
 		throw e;
 	};
 
-	pi.registerTool({
+	defs.push({
 		name: "link_members",
 		label: "Link members",
 		description:
@@ -96,7 +129,7 @@ export default function link(pi: ExtensionAPI, deps: { fetch?: typeof fetch } = 
 		},
 	});
 
-	pi.registerTool({
+	defs.push({
 		name: "link_send",
 		label: "Link send",
 		description:
@@ -130,7 +163,7 @@ export default function link(pi: ExtensionAPI, deps: { fetch?: typeof fetch } = 
 		},
 	});
 
-	pi.registerTool({
+	defs.push({
 		name: "link_inbox",
 		label: "Link inbox",
 		description: "This session's link messages, both directions, newest last: what partners sent it and what it sent them, with each delivery's outcome.",
@@ -163,7 +196,7 @@ export default function link(pi: ExtensionAPI, deps: { fetch?: typeof fetch } = 
 		return nameFrom(lastView);
 	};
 
-	pi.registerTool({
+	defs.push({
 		name: "link_offer",
 		label: "Link offer",
 		description:
@@ -215,7 +248,7 @@ export default function link(pi: ExtensionAPI, deps: { fetch?: typeof fetch } = 
 		},
 	});
 
-	pi.registerTool({
+	defs.push({
 		name: "link_accept",
 		label: "Link accept",
 		description:
@@ -244,7 +277,7 @@ export default function link(pi: ExtensionAPI, deps: { fetch?: typeof fetch } = 
 		},
 	});
 
-	pi.registerTool({
+	defs.push({
 		name: "link_decline",
 		label: "Link decline",
 		description: "Decline a partner's file offer (of_…). Nothing is sent; the partner is told, with your reason if you give one.",
@@ -271,7 +304,7 @@ export default function link(pi: ExtensionAPI, deps: { fetch?: typeof fetch } = 
 		},
 	});
 
-	pi.registerTool({
+	defs.push({
 		name: "link_offers",
 		label: "Link offers",
 		description:
@@ -295,9 +328,36 @@ export default function link(pi: ExtensionAPI, deps: { fetch?: typeof fetch } = 
 		},
 	});
 
+	pi.on("session_start", (_event, ctx) => {
+		if (has || !host()) return;
+		const mode = pi.getFlag(TOOLS_FLAG);
+		if (mode === "member" || (mode === "legacy" && declaresLinkTools(ctx.sessionManager.buildSessionProjection().messages))) {
+			for (const def of defs) pi.registerTool(def);
+			has = mode;
+		}
+	});
+
+	// A session from before keeps its tools until a compaction finds it in no live link: the
+	// compaction rebuilds the prompt cache (a claude-code CLI restarts after one), so dropping them
+	// then costs nothing extra. Never at any other moment.
+	pi.on("session_compact", async (_event, ctx) => {
+		const c = host();
+		if (has !== "legacy" || !c) return;
+		try {
+			if (liveLinks(await c.members(sessionOf(ctx), { brief: true })).length) return;
+		} catch (e) {
+			// The host's answer (no link routes, not linked) is no live link; no answer at all keeps them.
+			if (!(e instanceof LinkHostError && e.status >= 400 && e.status < 500)) return;
+		}
+		for (const def of defs) pi.registerTool({ ...def, exposure: "hidden" });
+		has = null;
+		lastKey = "";
+		lastSection = null;
+	});
+
 	pi.on("before_agent_start", async (event, ctx) => {
 		const c = host();
-		if (!c) return;
+		if (!c || !has) return;
 		try {
 			const view = await c.members(sessionOf(ctx), { brief: true });
 			lastView = view;

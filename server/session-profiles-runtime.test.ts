@@ -16,7 +16,8 @@ import { piSession } from "./harness/pi/testing/handle";
 const agentDir = realpathSync(mkdtempSync(join(tmpdir(), "sova-profiles-runtime-")));
 process.on("exit", () => rmSync(agentDir, { recursive: true, force: true }));
 process.env.PI_CODING_AGENT_DIR = agentDir;
-// Stand-ins for the subagents and link extensions' tools (the removals must take them), and this
+// Stand-ins for the subagents extension's tools and others (the removals must take them; link_send is no
+// capability's, so no removal takes it), and this
 // repo's mode extension by its real path, so strict mode really rewrites the active tools.
 mkdirSync(join(agentDir, "extensions"), { recursive: true });
 writeFileSync(

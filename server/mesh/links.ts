@@ -78,6 +78,9 @@ export interface LinksDeps {
   root(): string;
   /** A session on this host's disk, by id. */
   summary(id: string): Promise<SessionSummary | null>;
+  /** Whether the session file at `path` is a link member session: its create marked it
+      (§mesh.links/tools; server/link-member.ts). Checked only when a link is made. */
+  linkMember(path: string): Promise<boolean>;
   /** The path of a session whose runtime this server holds, by id (server/link-delivery.ts). */
   held(sessionId: string): string | null;
   /** Hand a tagged message to a local member's agent (server/link-delivery.ts). Never throws. */
@@ -112,6 +115,9 @@ export class LinkActError extends Error {
 const hex = (n: number) => randomBytes(n).toString("hex");
 export const newLinkId = () => `lk_${hex(8)}`;
 export const newLinkMessageId = () => `lm_${hex(8)}`;
+
+/** A session that was not created as a link member (§mesh.links/record), as the Overseer can act on it. */
+export const NOT_LINK_MEMBER = "it was not created with the link tools, so it can't be a link member; create the member with sova_create_session and link: true, then link that session";
 
 /** Why a session can't be a link member, or null (§mesh/links intro). */
 export function memberRefusal(s: SessionSummary): { reason: NonNullable<LinkError["reason"]>; why: string } | null {
@@ -600,6 +606,8 @@ export class MeshLinks {
         if (!s) fail(404, "no-session", "no session with that id on this host");
         const no = memberRefusal(s!);
         if (no) fail(409, no.reason, no.why);
+        // Each host checks its own member (§mesh.links/record): a peer's refuses its copy below.
+        if (!(await this.deps.linkMember(s!.path))) fail(409, "not-link-member", NOT_LINK_MEMBER);
         const self = await this.ensureSelfNodeId();
         if (!self) fail(409, "internal", "this host doesn't know its own node identity yet, and no peer answered to tell it");
         members.push({ nodeId: self!, sessionId: a.session, path: s!.path });
@@ -793,6 +801,13 @@ export class MeshLinks {
     // An ended copy (a rollback's end) is kept whatever became of the session: it only records the end.
     if (link.endedAt === undefined && !(await this.deps.summary(mine.sessionId)))
       return { status: 409, body: { error: `No session ${mine.sessionId} on this host.`, reason: "no-session" } };
+    // A new link's member on this host must be a link member session (§mesh.links/record); a copy of
+    // a link this host already keeps is never refused for it.
+    if (link.endedAt === undefined && !this.get(link.id)) {
+      const s = await this.deps.summary(mine.sessionId);
+      if (s && !(await this.deps.linkMember(s.path)))
+        return { status: 409, body: { error: `Session ${mine.sessionId} on this host: ${NOT_LINK_MEMBER}.`, reason: "not-link-member" } };
+    }
     if (!known) this.learnSelf(you);
     if (this.isSelf(you)) this.learnAs(caller.nodeId, you);
     const self = this.selfNodeId() ?? you;

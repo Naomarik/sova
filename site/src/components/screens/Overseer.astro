@@ -1,0 +1,33 @@
+---
+// Needs you: the Overseer page as captured (asked what needs you, it asks with a card before
+// archiving), and beside it an illustration of the same news on a phone's lock screen as a push.
+// A browser can't capture a lock screen, so that phone is drawn, and says so to assistive tech.
+import Mark from "../Mark.astro";
+import ScreenFrame from "./ScreenFrame.astro";
+---
+<figure class="duo duo-shot">
+  <ScreenFrame at="feature.overseer" path="overseer" class="duo-desk" />
+  <div class="phone phone-lock duo-phone" role="img" aria-label="Illustration: a phone's lock screen with 2 Sova notifications, one for a session that needs input and one for a session that stopped with an error.">
+    <div class="phone-screen" aria-hidden="true">
+      <div class="phone-status"><span>Sat</span><span>84%</span></div>
+      <div class="phone-time">9:41</div>
+      <div class="phone-date">Saturday, October 10</div>
+      <div class="notif">
+        <Mark tile size={30} class="notif-icon" />
+        <div>
+          <div class="notif-top"><span>Sova</span><span>now</span></div>
+          <div class="notif-title">Needs input · Upload metrics</div>
+          <div class="notif-body">A part can fail and then succeed on a retry. Does that count as a failure?</div>
+        </div>
+      </div>
+      <div class="notif">
+        <Mark tile size={30} class="notif-icon" />
+        <div>
+          <div class="notif-top"><span>Sova</span><span>14m ago</span></div>
+          <div class="notif-title">Error · Flaky upload test</div>
+          <div class="notif-body">The last turn stopped with an error.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</figure>

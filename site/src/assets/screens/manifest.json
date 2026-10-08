@@ -1,0 +1,117 @@
+{
+  "_generated": "by site/scripts/screens (pnpm run screens); edit story.json instead",
+  "shots": {
+    "hero-desk": {
+      "file": "hero-desk.webp",
+      "width": 2880,
+      "height": 1800,
+      "viewport": "desktop",
+      "alt": "Sova on a desktop: the sessions sidebar with 2 sessions that need you, the Retry policy session in Delegate mode waiting on 3 workers, and the workers pane with the running worker's transcript.",
+      "hash": "2ce784fedb83bebd",
+      "sha": "7c589efe1c18a51f",
+      "bytes": 144370
+    },
+    "hero-fold": {
+      "file": "hero-fold.webp",
+      "width": 1680,
+      "height": 1800,
+      "viewport": "fold",
+      "alt": "The same session on an unfolded foldable: the sidebar on the left and the chat on the right, waiting on its workers.",
+      "hash": "84c89e29a2c8e58d",
+      "sha": "97f99999f79056d9",
+      "bytes": 90894
+    },
+    "hero-phone": {
+      "file": "hero-phone.webp",
+      "width": 1170,
+      "height": 2532,
+      "viewport": "phone",
+      "alt": "The same session on a folded phone: the chat alone, with the workers it started and a Steer composer.",
+      "hash": "b6609956cae2a954",
+      "sha": "04d9675343626508",
+      "bytes": 65572
+    },
+    "delegate": {
+      "file": "delegate.webp",
+      "width": 2200,
+      "height": 1520,
+      "viewport": "compact",
+      "alt": "The workers pane beside a Delegate session: 3 workers with their model and state, and the selected worker's transcript with its edits.",
+      "hash": "d3315e25e76e8cf2",
+      "sha": "5d51a62b7496476d",
+      "bytes": 102784
+    },
+    "alignment": {
+      "file": "alignment.webp",
+      "width": 2200,
+      "height": 1520,
+      "viewport": "compact",
+      "alt": "An alignment card in the chat: what the agent found, its approach, a rejected alternative, and an open question with 2 options and a recommendation.",
+      "hash": "1a493bc2686eb320",
+      "sha": "eb48ba5b1d46bfc0",
+      "bytes": 90480
+    },
+    "changes": {
+      "file": "changes.webp",
+      "width": 2200,
+      "height": 1520,
+      "viewport": "compact",
+      "alt": "The changes viewer: 3 numbered steps, each with why it was made, and the first step's diff.",
+      "hash": "3c0c40124974b265",
+      "sha": "9e6c0ccd4385f8eb",
+      "bytes": 89964
+    },
+    "overseer": {
+      "file": "overseer.webp",
+      "width": 2200,
+      "height": 1520,
+      "viewport": "compact",
+      "alt": "The Overseer page: asked what needs you, it names 2 sessions and asks with a card before archiving 2 finished ones.",
+      "hash": "04894a96825b00cf",
+      "sha": "fbcc96e15734ffe5",
+      "bytes": 93312
+    },
+    "phone-access": {
+      "file": "phone-access.webp",
+      "width": 1170,
+      "height": 2532,
+      "viewport": "phone",
+      "alt": "The Access page on a phone: a one-use pairing code with its QR.",
+      "hash": "a82d3b752834e38d",
+      "sha": "fbfcb9d417108d25",
+      "bytes": 82536
+    },
+    "phone-question": {
+      "file": "phone-question.webp",
+      "width": 1170,
+      "height": 2532,
+      "viewport": "phone",
+      "alt": "A session on a phone, waiting on an open question with 2 options and a recommendation.",
+      "hash": "4e55369f73b65cd7",
+      "sha": "972866cac9b7f180",
+      "bytes": 76422
+    },
+    "transcript": {
+      "file": "transcript.webp",
+      "width": 2200,
+      "height": 1520,
+      "viewport": "compact",
+      "alt": "A running turn: the user's message, 2 edits shown as diffs, a finished test run, and a follow-up typed into the Steer composer.",
+      "hash": "4d2f364d1616ca09",
+      "sha": "bc332279a55f8ac7",
+      "bytes": 82708
+    }
+  },
+  "slots": {
+    "hero.desk": "hero-desk",
+    "hero.fold": "hero-fold",
+    "hero.phone": "hero-phone",
+    "feature.delegate": "delegate",
+    "feature.alignment": "alignment",
+    "feature.changes": "changes",
+    "feature.overseer": "overseer",
+    "feature.phone-access": "phone-access",
+    "feature.phone-question": "phone-question",
+    "feature.transcript": "transcript"
+  }
+}

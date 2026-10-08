@@ -5,14 +5,12 @@ import Icon from "../components/Icon.astro";
 import Mark from "../components/Mark.astro";
 import InstallBlock from "../components/InstallBlock.astro";
 import ThemeGrid from "../components/ThemeGrid.astro";
-import Devices from "../components/mocks/Devices.astro";
-import Transcript from "../components/mocks/Transcript.astro";
-import Workers from "../components/mocks/Workers.astro";
-import Alignment from "../components/mocks/Alignment.astro";
-import Changes from "../components/mocks/Changes.astro";
-import Overseer from "../components/mocks/Overseer.astro";
-import Phones from "../components/mocks/Phones.astro";
+import Devices from "../components/screens/Devices.astro";
+import ScreenFrame from "../components/screens/ScreenFrame.astro";
+import Overseer from "../components/screens/Overseer.astro";
+import Phones from "../components/screens/Phones.astro";
 import { themes } from "../data/themes";
+import { video } from "../data/screens";
 import * as site from "../data/site";
 
 const cards = [
@@ -134,7 +132,7 @@ const beyond = [
             <p class="limit"><Icon name="info" size={18} /><span>Routes live in Settings → Subagents. <strong>The shipped routes use Claude Code models</strong>, so install the <code>claude</code> CLI or pick your own.</span></p>
             <p class="feature-more"><a href="/docs/modes/delegate/">Read more about Delegate<Icon name="arrow-right" size={14} /></a><a href="/docs/subagent-profiles/">Subagent profiles<Icon name="arrow-right" size={14} /></a></p>
           </div>
-          <div class="feature-visual"><Workers /></div>
+          <div class="feature-visual"><ScreenFrame at="feature.delegate" path="demo-app" /></div>
         </article>
 
         <article class="feature feature-flip">
@@ -148,7 +146,7 @@ const beyond = [
             <p class="limit"><Icon name="info" size={18} /><span>Adversarial review is experimental and off by default: Settings → Experimental.</span></p>
             <p class="feature-more"><a href="/docs/modes/align/">Read more about alignments<Icon name="arrow-right" size={14} /></a><a href="/docs/modes/align/review/">Adversarial review<Icon name="arrow-right" size={14} /></a></p>
           </div>
-          <div class="feature-visual"><Alignment /></div>
+          <div class="feature-visual"><ScreenFrame at="feature.alignment" path="demo-app" /></div>
         </article>
 
         <article class="feature">
@@ -162,7 +160,7 @@ const beyond = [
             <p class="limit"><Icon name="info" size={18} /><span>Sova never removes a worktree on its own. A new session offers <strong>Clean Up Merged</strong>, which shows what goes and what stays before it removes anything.</span></p>
             <p class="feature-more"><a href="/docs/worktrees-and-changes/">Read more about worktrees and changes<Icon name="arrow-right" size={14} /></a></p>
           </div>
-          <div class="feature-visual"><Changes /></div>
+          <div class="feature-visual"><ScreenFrame at="feature.changes" path="demo-app" /></div>
         </article>
 
         <article class="feature feature-flip">
@@ -207,7 +205,7 @@ const beyond = [
             </div>
             <p class="feature-more"><a href="/docs/change-direction/">Read more about changing direction<Icon name="arrow-right" size={14} /></a></p>
           </div>
-          <div class="feature-visual"><Transcript /></div>
+          <div class="feature-visual"><ScreenFrame at="feature.transcript" path="demo-app" /></div>
         </article>
       </div>
     </section>
@@ -396,7 +394,7 @@ const beyond = [
       </div>
       <div class="footer-meta">
         <p>pi is a separate project; Sova is not affiliated with it. Sova is Apache-2.0; <code>pi-config/</code> is licensed separately.</p>
-        <p>Fonts: Inter and JetBrains Mono, SIL OFL 1.1. The screens on this page are mock-ups built from Sova's own styles.</p>
+        <p>Fonts: Inter and JetBrains Mono, SIL OFL 1.1. {video ? "The screenshots and the video" : "The screenshots"} on this page are Sova running on demo data, and the model replies in them are scripted. The phone lock screen beside the Overseer is an illustration.</p>
         <p>Checked against <code>{site.verified.ref}</code> at <code>{site.verified.rev}</code> on {site.verified.date}; installs <code>{site.installRef}</code>{site.release ? "" : " until the first release is tagged"}.</p>
       </div>
     </div>

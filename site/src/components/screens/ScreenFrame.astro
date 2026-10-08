@@ -1,0 +1,11 @@
+---
+// A feature's screenshot in a product frame: the strip names where it is, the image fills the rest.
+import Frame from "../Frame.astro";
+import Screen from "../Screen.astro";
+
+interface Props { at: string; path: string; class?: string }
+const { at, path, class: cls = "" } = Astro.props;
+---
+<Frame path={path} class={`m-frame ${cls}`.trim()} caption="" decorative={false}>
+  <Screen at={at} sizes="(min-width: 900px) 660px, 92vw" />
+</Frame>

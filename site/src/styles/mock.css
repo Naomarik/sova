@@ -1,7 +1,8 @@
-/* Product frames: CSS mock-ups of the app, built on the same tokens and component classes the
-   app uses (chip, list row, message, tool card, diff, meter). Sizes follow the app, set a step
-   down (13px body) so a whole workspace fits in one frame. Nothing here animates except the
-   live dot, which is the app's one sanctioned loop. */
+/* Product frames and devices. They hold real screenshots (site/scripts/screens/) on the home page,
+   and CSS mock-ups of the app on the Mesh and Organizations pages, built on the same tokens and
+   component classes the app uses (chip, list row, message, meter). Sizes follow the app, set a step
+   down (13px body) so a whole workspace fits in one frame. Nothing here animates except the live
+   dot, which is the app's one sanctioned loop. */
 
 .frame { position: relative; min-width: 0; }
 .frame-window {
@@ -29,9 +30,7 @@
 .frame-path::before { content: "/"; margin-right: var(--space-3); color: var(--color-border-strong); }
 
 /* Bits the mocks share. */
-.m-mono { font-family: var(--font-mono); font-size: 11.5px; }
 .m-muted { color: var(--color-ink-muted); }
-.m-ink2 { color: var(--color-ink-2); }
 .m-sep { color: var(--color-border-strong); }
 .live-dot {
   display: inline-block; width: 6px; height: 6px; border-radius: var(--r-full);
@@ -40,13 +39,11 @@
 }
 @keyframes live-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .4; } }
 .m-frame .chip { font-size: 10px; padding: 2px 8px; gap: 6px; line-height: 1.5; }
-.chip-static { color: var(--color-ink-2); }
 
 .context-ring { display: inline-flex; flex: none; width: 12px; height: 12px; }
 .context-ring svg { width: 12px; height: 12px; overflow: visible; }
 .context-ring-track { stroke: var(--color-border); stroke-width: 1.5; }
 .context-ring-fill { stroke: var(--color-ink-muted); stroke-width: 2; }
-.context-warn .context-ring-fill { stroke: var(--status-warn); }
 
 .m-btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
@@ -60,15 +57,6 @@
 .m-btn-primary { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-on-accent); }
 .m-btn-off { opacity: .42; }
 .m-btn-icon { width: 32px; padding: 0; }
-.m-input {
-  display: flex; align-items: center; gap: 8px;
-  height: 34px; padding: 0 10px;
-  border-radius: var(--r-md);
-  border: var(--stroke-icon) solid var(--color-border-strong);
-  background: var(--color-bg);
-  color: var(--color-ink-muted); font-size: 12.5px;
-  min-width: 0; overflow: hidden; white-space: nowrap;
-}
 
 /* ---- THE APP'S PARTS. Sidebar, session head, thread, tool cards, composer. ---------- */
 
@@ -76,7 +64,6 @@
 .m-side-top { display: flex; gap: 8px; padding: 12px; }
 .m-side-top .m-btn { flex: 1; }
 .m-side-top .m-btn-icon { flex: none; }
-.m-side-search { padding: 0 12px 10px; }
 .m-side-count { display: flex; justify-content: space-between; padding: 0 16px 10px; font-size: 11.5px; color: var(--color-ink-muted); border-bottom: var(--stroke-thin) solid var(--color-border); }
 .m-group-label {
   display: flex; align-items: center; gap: 6px;
@@ -84,7 +71,6 @@
   font-family: var(--font-mono); font-size: 10px; letter-spacing: var(--ls-eyebrow); text-transform: uppercase;
   color: var(--color-ink-muted);
 }
-.m-group-label .m-na { color: var(--status-warn); }
 .m-row { display: flex; gap: 8px; padding: 7px 14px 7px 16px; min-width: 0; }
 .m-row-sel { background: var(--color-accent-tint); box-shadow: inset 2px 0 0 var(--color-accent); }
 .m-row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
@@ -93,55 +79,16 @@
 .m-row-sum { font-size: 11.5px; color: var(--color-ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .m-row-meta { display: flex; align-items: center; gap: 6px; font-size: 10.5px; color: var(--color-ink-muted); white-space: nowrap; }
 .m-row-meta > span:first-child { flex: 1; overflow: hidden; text-overflow: ellipsis; }
-.m-folder { display: flex; align-items: center; gap: 8px; padding: 8px 16px; font-family: var(--font-mono); font-size: 11.5px; color: var(--color-ink-2); }
-.m-folder .icon { color: var(--color-ink-muted); }
-.m-folder b { margin-left: auto; font-weight: var(--fw-regular); display: inline-flex; align-items: center; gap: 6px; }
-.m-side-foot { margin-top: auto; display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-top: var(--stroke-thin) solid var(--color-border); font-size: 11.5px; color: var(--color-ink-muted); }
 
-.m-main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .m-head { display: flex; align-items: center; gap: 12px; height: 52px; padding: 0 16px; border-bottom: var(--stroke-thin) solid var(--color-border); flex: none; }
 .m-head-title { font-weight: var(--fw-semibold); font-size: 14px; letter-spacing: -.01em; white-space: nowrap; }
 .m-head-sub { font-size: 11.5px; color: var(--color-ink-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .m-head-end { margin-left: auto; display: flex; align-items: center; gap: 8px; flex: none; }
-.m-seg { display: inline-flex; padding: 2px; border-radius: var(--r-md); background: var(--color-sunken); border: var(--stroke-thin) solid var(--color-border); }
-.m-seg span { padding: 3px 10px; border-radius: 6px; font-size: 11.5px; color: var(--color-ink-muted); }
-.m-seg .on { background: var(--color-surface); color: var(--color-ink); box-shadow: var(--shadow-1); }
 
 .m-thread { display: flex; flex-direction: column; gap: 10px; padding: 14px 12px; min-height: 0; overflow: hidden; }
 .m-msg-user { align-self: flex-end; max-width: 92%; padding: 8px 12px; border-radius: var(--r-lg); background: var(--color-accent-tint); color: var(--color-ink); font-size: 12.5px; }
 .m-msg { color: var(--color-ink); font-size: 12.5px; line-height: 1.55; }
 .m-msg code { font-size: 11px; padding: 0 4px; border-radius: 4px; background: var(--color-sunken); border: 1px solid var(--color-border); white-space: nowrap; }
-.m-tool { border: var(--stroke-thin) solid var(--color-border); border-radius: var(--r-md); background: var(--color-sunken); overflow: hidden; }
-.m-tool-sum { display: flex; align-items: center; gap: 6px; min-height: 30px; padding: 4px 10px; font-family: var(--font-mono); font-size: 11px; color: var(--color-ink-2); white-space: nowrap; }
-.m-tool-sum .icon { color: var(--color-ink-muted); }
-.m-tool-name { font-weight: var(--fw-semibold); color: var(--color-ink); }
-.m-tool-arg { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--color-ink-muted); }
-.m-tool-stat { display: inline-flex; gap: 6px; }
-.m-tool-body { border-top: var(--stroke-thin) solid var(--color-border); padding: 8px 10px; font-family: var(--font-mono); font-size: 11px; color: var(--color-ink-2); background: var(--color-surface); white-space: pre; overflow: hidden; }
-.m-ok { color: var(--status-success); }
-.m-add { color: var(--status-success); }
-.m-del { color: var(--status-error); }
-.m-tool .diff { border: 0; border-radius: 0; border-top: var(--stroke-thin) solid var(--color-border); font-size: 11px; }
-.m-tool .diff-line { grid-template-columns: 32px 1fr; gap: 8px; white-space: pre; overflow: hidden; }
-
-.m-ask { border: var(--stroke-thin) solid var(--color-border-strong); border-radius: var(--r-md); background: var(--color-surface); padding: 10px; display: flex; flex-direction: column; gap: 8px; }
-.m-ask-q { font-size: 12.5px; font-weight: var(--fw-medium); }
-.m-ask-opts { display: flex; flex-wrap: wrap; gap: 6px; }
-.m-ask .m-btn { height: 28px; font-size: 11.5px; }
-
-.m-composer { flex: none; display: flex; flex-direction: column; gap: 6px; padding: 10px 16px 12px; border-top: var(--stroke-thin) solid var(--color-border); background: var(--color-surface); }
-.m-composer-row { display: flex; gap: 8px; align-items: center; }
-.m-composer-row .m-input { flex: 1; height: 38px; font-size: 12.5px; background: var(--color-bg); }
-.m-composer-row .m-btn { height: 38px; }
-.m-composer-foot { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--color-ink-muted); }
-.m-composer-foot .m-mono { color: var(--color-ink-2); font-size: 11px; }
-.m-composer-foot .m-end { margin-left: auto; }
-/* The mode switch: a ghost button at the right end of the composer foot, never in the head. */
-.m-mode { display: inline-flex; align-items: center; gap: 4px; min-width: 0; white-space: nowrap; }
-.m-mode .icon { color: var(--color-ink-muted); flex: none; }
-.m-head-end.m-mono { font-family: var(--font-mono); font-size: 11px; color: var(--color-ink-2); gap: 6px; }
-.m-composer-off .m-input { background: var(--color-sunken); border-color: var(--color-border); }
-.m-composer-reason { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--status-warn); }
 
 /* A narrow frame drops the head's secondary line first. */
 @container frame (max-width: 640px) {
@@ -160,51 +107,16 @@
 .dev > .frame { align-self: stretch; width: 100%; }
 .dev-label { font-family: var(--font-mono); font-size: 11px; letter-spacing: var(--ls-eyebrow); text-transform: uppercase; color: var(--color-ink-muted); }
 
-.hd-app { display: grid; grid-template-columns: 216px minmax(0, 1fr) 248px; height: 560px; }
-.hd-app > * { min-height: 0; overflow: hidden; }
-.hd-side { display: flex; }
-.hd-thread { flex: 1; }
-.hd-mode {
-  display: inline-flex; align-items: center; gap: 5px;
-  height: 26px; padding: 0 10px; border-radius: var(--r-full);
-  border: var(--stroke-thin) solid var(--color-border-strong); background: var(--color-surface);
-  font-family: var(--font-mono); font-size: 11px; color: var(--color-ink); white-space: nowrap;
-}
-.hd-mode .icon { color: var(--color-ink-muted); }
-.hd-workers { display: flex; flex-direction: column; border-left: var(--stroke-thin) solid var(--color-border); background: var(--color-surface); min-width: 0; }
-.hd-workers .m-group-label { padding-top: 12px; }
-.hd-wt { padding: 10px 12px; border-bottom: var(--stroke-thin) solid var(--color-border); }
-.hd-peek { display: flex; flex-direction: column; gap: 8px; padding: 12px; }
-.hd-peek-head { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: var(--fw-medium); }
-.hd-wcard { display: flex; flex-direction: column; border: var(--stroke-thin) solid var(--color-border); border-radius: var(--r-md); background: var(--color-surface); }
-.hd-wline { display: flex; align-items: center; gap: 8px; padding: 6px 10px; font-size: 12px; white-space: nowrap; overflow: hidden; }
-.hd-wline > span:not(.live-dot):not(.m-ok) { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.hd-wline + .hd-wline { border-top: var(--stroke-thin) solid var(--color-border); }
-.hd-wline .m-mono { margin-left: auto; font-size: 10.5px; }
-.hd-wline .m-ok { width: 6px; font-size: 11px; display: inline-flex; justify-content: center; }
-
-/* The unfolded foldable: near square, a crease down the middle, sidebar left and chat right. */
+/* The unfolded foldable: near square, its screen a capture at a fold's width, a faint crease down
+   the middle drawn over it. */
 .fold {
   border-radius: 26px; padding: 8px;
   background: var(--color-surface);
   border: var(--stroke-thin) solid var(--color-border-strong);
   box-shadow: var(--shadow-3);
 }
-.fold-screen { position: relative; border-radius: 19px; overflow: hidden; background: var(--color-bg); height: 100%; display: flex; flex-direction: column; font-size: 12px; }
-/* The crease sits under the screen's content, faint: cards, bubbles and the composer cover it, and text draws over it. */
-.fold-screen::after { content: ""; position: absolute; z-index: 0; top: 0; bottom: 0; left: 50%; width: 1px; background: var(--color-border); opacity: .35; pointer-events: none; }
-.fold-screen > * { position: relative; z-index: 1; }
-.fold-app { flex: 1; min-height: 0; display: grid; grid-template-columns: 40% minmax(0, 1fr); }
-.fold-side { border-right: var(--stroke-thin) solid var(--color-border); overflow: hidden; min-width: 0; }
-.fold-side .m-group-label { padding: 10px 12px 4px; }
-.fold-side .m-row { padding: 6px 10px 6px 12px; }
-.fold-main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-.fold .m-head, .hd-phone .m-head { height: 44px; padding: 0 12px; }
-.fold .m-thread, .hd-phone .m-thread { padding: 12px; flex: 1; }
-.fold .m-composer, .hd-phone .m-composer { padding: 8px 10px 12px; }
-.fold .m-composer-row .m-input, .hd-phone .m-composer-row .m-input { height: 34px; }
-.fold .m-composer-row .m-btn, .hd-phone .m-composer-row .m-btn { height: 34px; width: 34px; }
-.hd-phone .phone-screen { height: 100%; }
+.fold-screen { position: relative; border-radius: 19px; overflow: hidden; background: var(--color-bg); }
+.fold-screen::after { content: ""; position: absolute; z-index: 2; top: 0; bottom: 0; left: 50%; width: 1px; background: var(--color-border-strong); opacity: .3; pointer-events: none; }
 
 /* Narrow: a row that scrolls sideways. */
 .devices {
@@ -215,13 +127,12 @@
 .dev { flex: none; scroll-snap-align: center; }
 .dev-desk { width: 920px; }
 .dev-fold { width: 460px; }
-.dev-fold .fold { width: 100%; height: 420px; }
+.dev-fold .fold { width: 100%; }
 .dev-phone { width: 236px; }
-.dev-phone .phone { width: 100%; height: 470px; }
+.dev-phone .phone { width: 100%; }
 @media (max-width: 767px) {
   .dev-phone { order: -2; width: min(236px, 64vw); }
   .dev-fold { order: -1; width: min(460px, 86vw); }
-  .dev-fold .fold { height: min(420px, 80vw); }
 }
 
 /* Wide: overlap. */
@@ -230,25 +141,26 @@
   .dev-desk { width: 80%; margin: 0 auto; }
   .dev-desk .dev-label { display: none; }
   .dev-fold { position: absolute; left: 0; bottom: 0; width: 30%; }
-  .dev-fold .fold { height: 400px; }
   .dev-phone { position: absolute; right: 0; bottom: 0; width: 206px; }
-  .dev-phone .phone { height: 450px; }
 }
+
+/* ---- SCREENSHOTS (site/scripts/screens/). A capture fills its frame's screen area at its own
+   aspect ratio: the frame's height follows the image, never the other way round. ------------ */
+
+.frame-body > picture, .screen-fill > picture, .screen-stack > picture { display: block; }
+.screen-img { display: block; width: 100%; height: auto; }
+.phone-screen.screen-fill { height: auto; }
+/* The session video plays over the desktop still; with reduced motion it is never shown (its
+   source doesn't match either), and the still stays. */
+.screen-stack { position: relative; }
+.screen-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; background: transparent; }
+@media (prefers-reduced-motion: reduce) { .screen-video { display: none; } }
 
 /* ---- A SINGLE-SESSION FRAME (transcript, watch, overseer). ---------------------- */
 
 .m-session { display: flex; flex-direction: column; min-width: 0; }
 .m-session .m-thread { padding: 18px 20px; gap: 12px; }
 .m-session .m-msg, .m-session .m-msg-user { font-size: 13px; }
-.m-actions { display: flex; justify-content: flex-end; gap: 2px; margin-top: -6px; }
-.m-actions-start { justify-content: flex-start; }
-.m-action { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 8px; border-radius: 6px; font-size: 11px; color: var(--color-ink-2); }
-.m-action .icon { color: var(--color-ink-muted); }
-.m-action-hot { background: var(--color-sunken); color: var(--color-ink); box-shadow: inset 0 0 0 1px var(--color-border); }
-.m-queued { align-self: flex-end; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
-.m-queued .m-msg-user { background: transparent; border: var(--stroke-thin) dashed var(--color-border-strong); color: var(--color-ink-2); }
-.m-queued-state { display: inline-flex; align-items: center; gap: 6px; font-size: 10.5px; color: var(--color-ink-muted); font-family: var(--font-mono); text-transform: uppercase; letter-spacing: .05em; }
-.m-queued-state::before { content: ""; width: 6px; height: 6px; border-radius: 99px; background: var(--color-ink-muted); }
 .m-info { display: flex; align-items: center; gap: 10px; font-size: 11px; color: var(--color-ink-muted); }
 .m-info::before, .m-info::after { content: ""; flex: 1; height: 1px; background: var(--color-border); }
 
@@ -261,48 +173,10 @@
 .m-field-label { font-size: 12px; font-weight: var(--fw-semibold); margin-bottom: 6px; }
 .m-hint { font-size: 11.5px; color: var(--color-ink-muted); margin-top: 4px; }
 
-/* ---- WORKERS PANE. -------------------------------------------------------------- */
-
-.m-workers { display: grid; grid-template-columns: 220px minmax(0, 1fr); min-height: 380px; }
-.m-wlist { border-right: var(--stroke-thin) solid var(--color-border); display: flex; flex-direction: column; min-width: 0; }
-.m-wrow { display: flex; gap: 8px; padding: 9px 12px; min-width: 0; border-bottom: var(--stroke-thin) solid var(--color-border); }
-.m-wrow .icon { color: var(--color-ink-muted); margin-top: 2px; }
-.m-wrow-sel { background: var(--color-accent-tint); box-shadow: inset 2px 0 0 var(--color-accent); }
-.m-wtree { padding: 8px 12px 12px; display: flex; flex-direction: column; gap: 6px; margin-top: auto; border-top: var(--stroke-thin) solid var(--color-border); }
-.m-wt { display: flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: 11px; color: var(--color-ink-2); min-width: 0; }
-.m-wt span:first-of-type { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
-.m-wt .icon { color: var(--color-ink-muted); }
-/* Changes: a step's number, its why, and a file line. */
-.m-step-n {
-  flex: none; display: inline-grid; place-items: center; width: 18px; height: 18px; margin-top: 1px;
-  border-radius: var(--r-full); background: var(--color-sunken); border: var(--stroke-thin) solid var(--color-border-strong);
-  font-family: var(--font-mono); font-size: 10.5px; color: var(--color-ink);
-}
-.m-wrow-sel .m-step-n { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-on-accent); }
-.m-step-why { font-size: 11.5px; color: var(--color-ink-2); line-height: 1.4; }
-.m-file { padding: 3px 12px; }
-.m-file .m-add, .m-file .m-del { flex: none; }
-.m-workers .m-wlist > .m-group-label { padding: 10px 12px 4px; }
-
-@container frame (max-width: 560px) {
-  .m-workers { grid-template-columns: minmax(0, 1fr); }
-  .m-wlist { border-right: 0; border-bottom: var(--stroke-thin) solid var(--color-border); }
-  .m-wdetail { display: none; }
-}
-
 /* ---- OVERSEER. ------------------------------------------------------------------ */
 
 .m-confirm { border: var(--stroke-thin) solid var(--color-border-strong); border-radius: var(--r-lg); background: var(--color-surface); overflow: hidden; }
 .m-confirm-head { padding: 10px 12px; font-weight: var(--fw-semibold); font-size: 13px; border-bottom: var(--stroke-thin) solid var(--color-border); }
-.m-confirm-item { display: flex; gap: 8px; padding: 8px 12px; font-size: 12px; }
-.m-confirm-item + .m-confirm-item { border-top: var(--stroke-thin) solid var(--color-border); }
-.m-confirm-item .m-check { width: 14px; height: 14px; border-radius: 4px; background: var(--color-accent); color: var(--color-on-accent); display: grid; place-items: center; flex: none; margin-top: 2px; }
-.m-confirm-item b { font-weight: var(--fw-medium); color: var(--color-ink); display: block; }
-.m-confirm-item span { color: var(--color-ink-muted); }
-.m-confirm-foot { display: flex; gap: 8px; padding: 10px 12px; border-top: var(--stroke-thin) solid var(--color-border); background: var(--color-sunken); }
-.m-link { color: var(--color-accent); text-decoration: underline; text-underline-offset: 2px; text-decoration-thickness: 1px; }
-.m-needs { display: flex; flex-direction: column; }
-.m-needs .m-row { border-bottom: var(--stroke-thin) solid var(--color-border); }
 
 /* ---- DUO. A desktop frame with a phone over its lower right; stacked when narrow. ---- */
 
@@ -311,16 +185,6 @@
 .duo .duo-phone { position: absolute; right: 0; bottom: 0; width: var(--duo-phone); }
 .duo-phone .phone-screen { height: 440px; }
 .duo-phone .phone-time { font-size: 48px; margin-top: 22px; }
-.m-access-body { display: flex; flex-direction: column; gap: 10px; padding: 18px 20px 22px; max-width: 340px; }
-.m-access-title { font-size: 15px; font-weight: var(--fw-semibold); letter-spacing: -.01em; }
-.m-access-body p { font-size: 12.5px; line-height: 1.5; }
-.m-qr { width: 168px; height: 168px; border-radius: var(--r-sm); }
-/* Dark modules on a light ground in both themes, as the app draws it, so a camera can read it. */
-.m-qr-bg { fill: var(--color-ink); }
-:root[data-theme="light"] .m-qr-bg { fill: var(--color-surface); }
-.m-qr-fg { fill: var(--color-surface); }
-:root[data-theme="light"] .m-qr-fg { fill: var(--color-ink); }
-.duo-pair .duo-desk .m-session { min-height: 420px; }
 @container visual (max-width: 560px) {
   .duo { padding: 0; }
   .duo-desk .m-thread { padding-right: 12px; }
@@ -353,7 +217,6 @@
 .notif-body { font-size: 12px; color: var(--color-ink-2); line-height: 1.4; }
 .phone .m-head { height: 48px; padding: 0 14px; }
 .phone .m-row { padding: 8px 14px; }
-.phone .m-composer { padding: 8px 10px 14px; margin-top: auto; }
 .phone .m-thread { padding: 12px; }
 @media (max-width: 599px) {
   .phone { width: min(280px, 78vw); }

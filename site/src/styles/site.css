@@ -292,7 +292,7 @@ p code, li code, td code, dd code {
 .section-head { display: flex; flex-direction: column; gap: var(--space-4); max-width: 760px; margin-bottom: clamp(40px, 5vw, 72px); }
 .section-head .lead { max-width: 62ch; }
 
-/* A feature: text and its mock-up. Stacked on a phone, side by side from 900px, alternating. */
+/* A feature: text and its picture. Stacked on a phone, side by side from 900px, alternating. */
 .feature { display: grid; gap: var(--space-6); align-items: center; }
 .feature + .feature { margin-top: clamp(72px, 9vw, 128px); }
 .feature-copy { display: flex; flex-direction: column; gap: var(--space-4); }

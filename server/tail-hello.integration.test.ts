@@ -107,7 +107,7 @@ describe("/ws/chat", () => {
     await new Promise((r) => setTimeout(r, 100)); // nothing else is on its way
     assert.deepEqual(types(got), ["hello", "commands", "queue", "mode", "claude_login"]);
     const hello = JSON.parse(got[0]!);
-    assert.deepEqual(Object.keys(hello), ["type", "items", "isStreaming", "isCompacting", "model", "thinking", "context"]);
+    assert.deepEqual(Object.keys(hello), ["type", "items", "isStreaming", "isCompacting", "model", "thinking", "context", "alignReview"]);
     assert.deepEqual(hello.items, whole);
     // Byte for byte what the per-client stringify always sent for that object.
     assert.equal(got[0], JSON.stringify(hello));

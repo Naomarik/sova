@@ -10,7 +10,8 @@
     "dev": "astro dev --port 4340",
     "build": "astro build && node scripts/check-docs-leaks.mjs",
     "preview": "astro preview --port 4340",
-    "vis-examples": "node scripts/vis-examples.mjs"
+    "vis-examples": "node scripts/vis-examples.mjs",
+    "screens:check": "node scripts/screens/check.mjs"
   },
   "dependencies": {
     "astro": "7.3.5"

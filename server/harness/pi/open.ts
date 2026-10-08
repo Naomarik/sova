@@ -253,6 +253,18 @@ export function modelForSessionOpen(
   return recordedModelForEmptyBranch(sessionManager, modelRuntime) ?? legacyClaudeModelForOpen(sessionManager, modelRuntime) ?? savedDefault;
 }
 
+/**
+ * The thinking level a MESSAGE-LESS session records for itself (a thinking_level_change on its
+ * branch), for openSession to pass as `thinkingLevel`: like the model, the SDK restores a recorded
+ * level only once the branch has messages, so without this a level set before the first message
+ * would be lost at the next open.
+ */
+export function recordedThinkingForEmptyBranch(sessionManager: Pick<SessionManager, "buildSessionContext" | "getBranch">): string | undefined {
+  const context = sessionManager.buildSessionContext();
+  if (context.messages.length > 0 || !sessionManager.getBranch().some((e) => e.type === "thinking_level_change")) return undefined;
+  return context.thinkingLevel;
+}
+
 /** A branch's resolved context, as buildSessionContext() reports it. */
 type BranchContext = ReturnType<SessionManager["buildSessionContext"]>;
 
@@ -308,8 +320,10 @@ export interface PiBuild {
   tools?: string[];
   customTools?: PiToolDefinition[];
   /** For a session that may still open on a default: the model ref and thinking level it should, already
-      checked against Sova's policy and ladder; null, or a missing field, leaves pi's choice. */
-  opening(): { model?: string; thinking?: string } | null;
+      checked against Sova's policy and ladder; null, or a missing field, leaves pi's choice. A model or
+      level the message-less branch records outranks these, unless `fresh` names it: then the session
+      opens on it as a new session would. */
+  opening(): { model?: string; thinking?: string; fresh?: { model?: boolean; thinking?: boolean } } | null;
   /** Route the provider's prompt cache by the file's inherited fork key (an ordinary session). */
   forkCacheRouting: boolean;
   /** Each session built, as a driving session over it, before anything runs on it (the profile's run state,
@@ -373,13 +387,14 @@ export async function openPiSession(path: string, cwdOverride: string | undefine
       let defaultModel: Awaited<ReturnType<typeof modelRuntime.getAvailable>>[number] | undefined;
       const opening = plan.opening();
       if (opening?.model) defaultModel = (await modelRuntime.getAvailable().catch(() => [])).find((m) => `${m.provider}/${m.id}` === opening.model);
-      const model = modelForSessionOpen(sessionManager, modelRuntime, defaultModel);
+      const model = opening?.fresh?.model ? defaultModel : modelForSessionOpen(sessionManager, modelRuntime, defaultModel);
+      const thinking = (opening?.fresh?.thinking ? undefined : recordedThinkingForEmptyBranch(sessionManager)) ?? opening?.thinking;
       const created = await createAgentSessionFromServices({
         services,
         sessionManager,
         sessionStartEvent,
         model,
-        ...(opening?.thinking ? { thinkingLevel: opening.thinking as Parameters<AgentSession["setThinkingLevel"]>[0] } : {}), // Sova's ladder has "off", the SDK's union doesn't
+        ...(thinking ? { thinkingLevel: thinking as Parameters<AgentSession["setThinkingLevel"]>[0] } : {}), // Sova's ladder has "off", the SDK's union doesn't
         ...(plan.tools ? { tools: plan.tools, ...(plan.customTools ? { customTools: plan.customTools } : {}) } : {}),
         ...(excluded.length ? { excludeTools: excluded } : {}),
       });

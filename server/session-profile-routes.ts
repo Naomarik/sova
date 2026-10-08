@@ -1,12 +1,11 @@
 import type { Hono } from "hono";
 import { keyOf, THINKING_LEVELS, type ListedProfile, type Profile, type ProfilesListing } from "../shared/profiles";
 import type { SessionSummary } from "../shared/protocol";
-import { acquireChat, disposeHeldChat, heldChat, setSingletonCheck } from "./chat-manager";
+import { acquireChat, disposeHeldChat, heldChat, setOpeningChoice, setSingletonCheck } from "./chat-manager";
 import { modelDenial, readModelPolicy } from "./model-policy";
 import { listModels } from "./models";
 import { addProfile } from "./profiles-store";
 import { subagentProfilesInfo } from "./subagent-profiles";
-import { loadDefaults } from "./web-defaults";
 import { getSessionInsight } from "./insights";
 import { resolveSessionPath } from "./paths";
 import { findProfile, profileSources, readHidden, setHidden } from "./profile-sources";
@@ -81,12 +80,11 @@ async function applyNow(path: string, choice: ProfileChoice, by?: "overseer" | "
     const why = (next?.subagents ? subagentsUnusable(next.subagents) : null) ?? chat.subagentSwitchRefusal();
     if (why) return { ok: false, status: 400, error: `${next?.label ?? "Default"} can't be picked here: ${why}` };
   }
-  // A profile without a model or effort, after one that set it: back to the new-session default
-  // (read, never written), when that is usable.
-  const defaults = loadDefaults();
-  let model = next?.model;
-  if (!model && prev?.model && defaults.model && !modelDenial(readModelPolicy(), defaults.model) && (await chat.harness.findModel(defaults.model)).ok) model = defaults.model;
-  const thinking = next?.thinking ?? (prev?.thinking && defaults.thinking && (THINKING_LEVELS as readonly string[]).includes(defaults.thinking) ? defaults.thinking : undefined);
+  // A profile without a model or effort, after one that set it: back to what a new session opens on
+  // (the new-session default when usable, else pi's own; read, never written), by a fresh reopen below.
+  const fresh = { model: !next?.model && !!prev?.model, thinking: !next?.thinking && !!prev?.thinking };
+  const model = next?.model;
+  const thinking = next?.thinking;
   try {
     chat.writeProfile({ v: 1, profile: next, ...(by ? { by } : {}) });
   } catch (err) {
@@ -106,6 +104,14 @@ async function applyNow(path: string, choice: ProfileChoice, by?: "overseer" | "
   if (thinking) await step("effort", () => chat.setThinking(thinking));
   if (subagents) await step("subagent profile", () => chat.switchSubagentProfile(subagents));
   await disposeHeldChat(path, "Applying the profile.");
+  if (fresh.model || fresh.thinking) {
+    setOpeningChoice(path, { fresh });
+    await step("model and effort reset", async () => {
+      const reopened = await acquireChat(path);
+      reopened.flushDeferredAppends();
+    });
+    await disposeHeldChat(path, "Applying the profile.");
+  }
   if (failed.length) return { ok: false, status: 409, error: `${next?.label ?? "Default"} was picked, but ${failed.join(", and ")}.` };
   return { ok: true };
 }

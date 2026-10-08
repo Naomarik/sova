@@ -1106,7 +1106,8 @@ class ChatSession {
       });
   }
 
-  private flushDeferredAppends(): void {
+  /** Write the model and thinking entries the open queued (P1), e.g. to keep a fresh open's choice. */
+  flushDeferredAppends(): void {
     for (const append of this.deferredAppends.splice(0)) append();
   }
 
@@ -3068,9 +3069,10 @@ function settledTurn(path: string): void {
  * next open of that file only (a project's coding session gets its model at creation, so its file
  * never records a switch from the default first). Ignored once the session has a user message.
  */
-const openingChoices = new Map<string, { model?: string; thinking?: string }>();
-export function setOpeningChoice(path: string, choice: { model?: string | null; thinking?: string | null }): void {
-  const c = { ...(choice.model ? { model: choice.model } : {}), ...(choice.thinking ? { thinking: choice.thinking } : {}) };
+const openingChoices = new Map<string, { model?: string; thinking?: string; fresh?: { model?: boolean; thinking?: boolean } }>();
+/** `fresh`: open on the model and/or effort a new session would, not the ones the file records. */
+export function setOpeningChoice(path: string, choice: { model?: string | null; thinking?: string | null; fresh?: { model?: boolean; thinking?: boolean } }): void {
+  const c = { ...(choice.model ? { model: choice.model } : {}), ...(choice.thinking ? { thinking: choice.thinking } : {}), ...(choice.fresh ? { fresh: choice.fresh } : {}) };
   if (Object.keys(c).length) openingChoices.set(path, c);
 }
 
@@ -3215,6 +3217,7 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
           // the session opens on pi's own default rather than on a model it would refuse to send with.
           ...(defaults.model && modelAllowed(readModelPolicy(), defaults.model) ? { model: defaults.model } : {}),
           ...(defaults.thinking && (THINKING_LEVELS as readonly string[]).includes(defaults.thinking) ? { thinking: defaults.thinking } : {}),
+          ...(opening?.fresh ? { fresh: opening.fresh } : {}),
         };
       },
       forkCacheRouting: !special,

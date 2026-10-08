@@ -21,6 +21,8 @@ writeFileSync(
 );
 // The policy turns zai off, so a card on a zai model can't be picked.
 writeFileSync(join(agentDir, "model-policy.json"), JSON.stringify({ version: 1, disabledProviders: ["zai"], disabledModels: [], subagentDisabledProviders: [], subagentDisabledModels: [] }));
+// Two providers with keys, so a card can name a model other than the one a fresh session opens on.
+writeFileSync(join(agentDir, "auth.json"), JSON.stringify({ anthropic: { type: "api_key", key: "test" }, openai: { type: "api_key", key: "test" } }));
 const sessionsDir = join(agentDir, "sessions", "--tmp-cards--");
 mkdirSync(sessionsDir, { recursive: true });
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
@@ -42,6 +44,7 @@ const YOURS = {
     { id: "denied", label: "GLM main", model: "zai/glm-5.3" },
     { id: "dangling", label: "Gone subagents", subagents: "nope" },
     { id: "plain", label: "Plain", description: "Changes nothing." },
+    { id: "gpt", label: "GPT high", model: "openai/gpt-5.5", thinking: "high" },
   ],
 };
 writeFileSync(yoursFile, JSON.stringify(YOURS, null, 2));
@@ -111,6 +114,22 @@ describe("a card's effort and subagents", () => {
     assert.deepEqual(await applyProfile(path, { ...yours, id: "plain" }), { ok: true });
     assert.deepEqual(await applyProfile(path, null), { ok: true });
     assert.equal(picks(path).length, 0);
+  });
+
+  test("Default after a card that set the model and effort, with no new-session defaults: what a fresh session opens on", async () => {
+    assert.equal(existsSync(defaultsFile), false);
+    const fresh = await acquireChat(makeSession(), true);
+    const want = { model: fresh.harness.model()?.ref, thinking: fresh.harness.thinking() };
+    assert.notEqual(want.model, "openai/gpt-5.5");
+    assert.notEqual(want.thinking, "high");
+    const path = makeSession();
+    assert.deepEqual(await applyProfile(path, { ...yours, id: "gpt" }), { ok: true });
+    const card = await acquireChat(path, true);
+    assert.deepEqual({ model: card.harness.model()?.ref, thinking: card.harness.thinking() }, { model: "openai/gpt-5.5", thinking: "high" });
+    assert.deepEqual(await applyProfile(path, null), { ok: true });
+    const back = await acquireChat(path, true);
+    assert.deepEqual({ model: back.harness.model()?.ref, thinking: back.harness.thinking() }, want);
+    assert.equal(existsSync(defaultsFile), false, "defaults.json is never written");
   });
 
   test("refused before anything is written: a model the policy turns off, a subagent profile this device lacks", async () => {

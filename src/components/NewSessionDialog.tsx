@@ -1,11 +1,21 @@
 import { createEffect, createMemo, createResource, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { SessionSummary } from "../../shared/protocol";
-import { ApiError, connectTarget, createSession, fetchTargets, listCwds } from "../lib/api";
+import { ApiError, connectTarget, createSession, fetchTargets, getSessionSummaryById, listCwds, listProjects, startProjectCoding } from "../lib/api";
 import { tildePath } from "../lib/format";
 import { hiddenFolder, setShowHiddenFolders, showHiddenFolders } from "../lib/hidden-folders";
-import { hiddenRecentNote, recentFolders, recentRemoteFolders } from "../lib/new-session";
+import {
+  hiddenRecentNote,
+  type NewSessionWhere,
+  PROJECT_TAB_START,
+  projectAt,
+  projectChoices,
+  recentFolders,
+  recentRemoteFolders,
+  tabsForHost,
+  whereForHost,
+} from "../lib/new-session";
 import { localOnly, remoteLabel, type RemotePlace, remoteRecents, splitRemoteCwd, type TargetInfo, targetDown } from "../lib/remote-session";
-import { home } from "../lib/ui-state";
+import { home, toast } from "../lib/ui-state";
 import { meshOn, meshPeers, noteHost, peerUnavailable, selfLabel } from "../lib/mesh";
 import { FolderPicker } from "./FolderPicker";
 import { Banner, Chip, Icon, trapFocus } from "./ui";
@@ -17,11 +27,9 @@ const TARGETS_TIMEOUT_MS = 10_000;
 const PROBE_RECHECK_MS = 6_000;
 const PROBE_RECHECKS = 3;
 
-type Where = "local" | "remote";
-const TABS: { id: Where; label: string }[] = [
-  { id: "local", label: "This Computer" },
-  { id: "remote", label: "Remote" },
-];
+type Where = NewSessionWhere;
+/** The Project tab's toast: its session starts in the project root. */
+const PROJECT_STARTED = "Coding session started in the project root.";
 
 const targetName = (t: TargetInfo) => t.label || t.name;
 
@@ -77,9 +85,25 @@ export function NewSessionDialog(props: {
   const [connectError, setConnectError] = createSignal<string | null>(null);
   /** The Folder field of the tab that's shown (the Remote one exists once a target is chosen). */
   let field: HTMLButtonElement | undefined;
+  let projectListEl: HTMLUListElement | undefined;
   let form!: HTMLFormElement;
   const tabEls: HTMLButtonElement[] = [];
-  onMount(() => (field ?? tabEls[TABS.findIndex((t) => t.id === where())])?.focus());
+  /** Projects are this host's: the Project tab is offered only while the Host is the one serving the page. */
+  const tabs = createMemo(() => tabsForHost(host()));
+  onMount(() => (field ?? tabEls[tabs().findIndex((t) => t.id === where())])?.focus());
+
+  // The Project tab: this host's projects, fetched the first time it shows.
+  const [projectsWanted, setProjectsWanted] = createSignal(false);
+  createEffect(() => where() === "project" && setProjectsWanted(true));
+  const [projects] = createResource(projectsWanted, () => listProjects());
+  const projectList = createMemo(() => (projects.error ? [] : projectChoices(projects()?.projects ?? [])));
+  /** A project the user picked; until then, the one the open session's folder is in. */
+  const [pickedProject, setPickedProject] = createSignal<string | null>(null);
+  const projectId = () => pickedProject() ?? projectAt(projectList(), prefillRemote ? "" : props.prefill);
+  const pickProject = (id: string) => {
+    setPickedProject(id);
+    setFieldError(null);
+  };
 
   // Only fetched once the Remote tab is shown; bounded so "Loading targets…" always ends.
   const [targets, { refetch: refetchTargets }] = createResource(
@@ -162,6 +186,8 @@ export function NewSessionDialog(props: {
   const chooseHost = (h: string | null) => {
     if (h === host()) return;
     setHost(h);
+    // Another host's tabs have no Project: the dialog moves to This Computer.
+    setWhere(whereForHost(where(), h));
     setCwd("");
     setPlace({ target: null, remoteCwd: "" });
     setPicking(false);
@@ -169,7 +195,16 @@ export function NewSessionDialog(props: {
     setRechecks(0);
   };
 
-  const ready = () => (where() === "local" ? !!cwd().trim() : !!place().target && !!place().remoteCwd);
+  const ready = () =>
+    where() === "project" ? !!projectId() : where() === "local" ? !!cwd().trim() : !!place().target && !!place().remoteCwd;
+
+  /** The Project tab's Create Session: a project coding session in the root, its worktree adopted later. */
+  const startInProject = async (pid: string) => {
+    const r = await startProjectCoding(pid, { ...PROJECT_TAB_START });
+    const s = await getSessionSummaryById(r.sessionId);
+    toast(r.modeNotSet ?? PROJECT_STARTED);
+    props.onCreated(s);
+  };
 
   const submit = async (e?: Event) => {
     e?.preventDefault();
@@ -178,6 +213,10 @@ export function NewSessionDialog(props: {
     setFieldError(null);
     setFailed(false);
     try {
+      if (where() === "project") {
+        await startInProject(projectId()!);
+        return;
+      }
       const p = place();
       const h = host();
       const s = await createSession(where() === "local" ? cwd().trim() : { target: p.target!, remoteCwd: p.remoteCwd }, h);
@@ -186,9 +225,10 @@ export function NewSessionDialog(props: {
       props.onCreated(s);
     } catch (err) {
       if (err instanceof ApiError && err.status >= 400 && err.status < 500) {
-        setFieldError(err.message || "That folder doesn't exist. Pick one that does.");
+        setFieldError(err.message || (where() === "project" ? "No session was started." : "That folder doesn't exist. Pick one that does."));
         setPicking(false);
-        field?.focus();
+        if (where() === "project") (projectListEl?.querySelector<HTMLElement>('[aria-selected="true"]') ?? projectListEl)?.focus();
+        else field?.focus();
       } else {
         setFailed(true);
       }
@@ -219,12 +259,13 @@ export function NewSessionDialog(props: {
     setFieldError(null);
   };
   const onTabKey = (e: KeyboardEvent, i: number) => {
-    const last = TABS.length - 1;
+    const shown = tabs();
+    const last = shown.length - 1;
     const next =
       e.key === "ArrowRight" ? (i === last ? 0 : i + 1) : e.key === "ArrowLeft" ? (i === 0 ? last : i - 1) : e.key === "Home" ? 0 : e.key === "End" ? last : -1;
     if (next < 0) return;
     e.preventDefault();
-    switchTo(TABS[next]!.id);
+    switchTo(shown[next]!.id);
     tabEls[next]?.focus();
   };
 
@@ -292,8 +333,8 @@ export function NewSessionDialog(props: {
             </div>
           </Show>
           {/* flex: none — .tabs scrolls sideways, so in the scrolling modal body it would otherwise shrink to nothing. */}
-          <div class="tabs" role="tablist" aria-label="Where pi runs" style={{ flex: "none" }}>
-            <For each={TABS}>
+          <div class="tabs ns-tabs" role="tablist" aria-label="Where pi runs" style={{ flex: "none" }}>
+            <For each={tabs()}>
               {(t, i) => (
                 <button
                   type="button"
@@ -307,7 +348,7 @@ export function NewSessionDialog(props: {
                   onClick={() => switchTo(t.id)}
                   onKeyDown={(e) => onTabKey(e, i())}
                 >
-                  <Icon name={t.id === "local" ? "folder" : "terminal"} small />
+                  <Icon name={t.icon} small />
                   {/* With peers, "this computer" could be any of them: the tab names the host. */}
                   {t.id === "local" && meshOn() ? hostName() : t.label}
                 </button>
@@ -315,6 +356,80 @@ export function NewSessionDialog(props: {
             </For>
           </div>
           <div class="stack" role="tabpanel" id="ns-tabpanel" aria-labelledby={`ns-tab-${where()}`}>
+            {/* A coding session of a project, started in its root: nothing here names anything, the conversation names
+                its worktree later. */}
+            <Show when={where() === "project"}>
+              <div class="field">
+                <span class="field-label" id="ns-projects">
+                  Project
+                </span>
+                <Show
+                  when={!projects.loading || projects.latest}
+                  fallback={
+                    <span class="field-hint" aria-live="polite">
+                      Loading projects…
+                    </span>
+                  }
+                >
+                  <Show
+                    when={!projects.error}
+                    fallback={
+                      <span class="field-error" role="alert">
+                        Couldn't read the projects. {(projects.error as Error)?.message}
+                      </span>
+                    }
+                  >
+                    <Show when={projectList().length > 0} fallback={<span class="field-hint">No projects on this host yet. Add one from Projects.</span>}>
+                      <ul
+                        ref={projectListEl}
+                        class="list folder-list"
+                        role="listbox"
+                        tabindex="-1"
+                        aria-labelledby="ns-projects"
+                        aria-describedby="ns-project-hint ns-project-error"
+                        aria-invalid={fieldError() ? "true" : undefined}
+                      >
+                        <For each={projectList()}>
+                          {(p) => (
+                            <li
+                              class="list-row list-row-interactive"
+                              role="option"
+                              tabindex="0"
+                              title={p.root}
+                              aria-selected={projectId() === p.id ? "true" : "false"}
+                              onClick={() => pickProject(p.id)}
+                              onDblClick={() => {
+                                pickProject(p.id);
+                                form.requestSubmit();
+                              }}
+                              onKeyDown={(e) => rowKeys(e, () => pickProject(p.id))}
+                            >
+                              <Icon name="branch" small />
+                              {/* The name wins: a long root is what gives way. */}
+                              <span class="list-title truncate" style={{ flex: "0 0 auto", "max-width": "50%" }}>
+                                {p.name}
+                              </span>
+                              <span class="folder-picker-link truncate" style={{ flex: "1 1 0", "font-family": "var(--font-mono)" }}>
+                                {tildePath(p.root, home())}
+                              </span>
+                              <span class="chip" style={{ flex: "none" }}>
+                                {p.place}
+                              </span>
+                            </li>
+                          )}
+                        </For>
+                      </ul>
+                    </Show>
+                  </Show>
+                </Show>
+                <span class="field-hint" id="ns-project-hint">
+                  pi starts in the project root. When it makes a worktree, the project tracks it.
+                </span>
+                <span class="field-error" id="ns-project-error">
+                  {fieldError()}
+                </span>
+              </div>
+            </Show>
             <Show when={where() === "local"}>
               <div class="field">
                 <label class="field-label" for="ns-cwd">

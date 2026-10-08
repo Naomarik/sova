@@ -1033,6 +1033,9 @@ function CodingSessions(props: {
                     </Show>
                   </span>
                   <Show when={row.state === "root" && row.inRoot}>{(why) => <span class="list-meta">In the project root: {why()}</span>}</Show>
+                  <Show when={row.state === "root" && !row.inRoot && row.later}>
+                    <span class="list-meta">In the project root until it makes a worktree.</span>
+                  </Show>
                   <Show when={mergeNote(row)}>
                     {(lead) => (
                       <span class="list-meta">

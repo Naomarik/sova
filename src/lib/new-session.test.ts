@@ -1,7 +1,8 @@
 // Run: npx tsx --test src/lib/new-session.test.ts
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createThenArchive, dropArchived, hiddenRecentNote, MAX_RECENT, newSessionCwd, offersCwd, recentFolders, recentRemoteFolders } from "./new-session";
+import { createThenArchive, dropArchived, hiddenRecentNote, MAX_RECENT, NEW_SESSION_TABS, newSessionCwd, offersCwd, PROJECT_TAB_START, projectAt, projectChoices, recentFolders, recentRemoteFolders, tabsForHost, whereForHost } from "./new-session";
+import type { ProjectSummary } from "../../shared/projects";
 
 test("newSessionCwd prefers the chat's own folder", () => {
   assert.equal(newSessionCwd({ cwd: "/a" }, [{ cwd: "/b", lastActiveAt: "2026-01-02T00:00:00Z" }]), "/a");
@@ -138,4 +139,65 @@ test("dropArchived leaves an unarchived session, and a path it never created, al
   assert.equal(dropArchived(created, "/b.jsonl", false), false);
   assert.equal(dropArchived(created, "/gone.jsonl", true), false);
   assert.deepEqual([...created.keys()], ["/b.jsonl"]);
+});
+
+// ---- the Project tab ---------------------------------------------------------------------------------------
+
+const proj = (id: string, name: string, root: string, extra: Partial<ProjectSummary> = {}): ProjectSummary => ({
+  id,
+  name,
+  root,
+  origin: "folder",
+  createdAt: "2026-10-01T00:00:00Z",
+  space: { kind: "standalone" },
+  ...extra,
+});
+
+test("the Project tab lists every project that isn't archived, by name, each with its organization or Standalone", () => {
+  const rows = projectChoices([
+    proj("prj_b", "billing", "/w/billing", { space: { kind: "org", orgId: "o1", orgName: "Acme Corp" } }),
+    proj("prj_old", "Archive me", "/w/old", { archived: { at: "2026-10-02T00:00:00Z" } }),
+    proj("prj_a", "Atlas", "/w/atlas"),
+    proj("prj_c", "cobalt", "/w/cobalt", { space: { kind: "org", orgId: "o2", orgName: "Beta" } }),
+  ]);
+  assert.deepEqual(
+    rows.map((r) => [r.id, r.name, r.place]),
+    [
+      ["prj_a", "Atlas", "Standalone"],
+      ["prj_b", "billing", "Acme Corp"],
+      ["prj_c", "cobalt", "Beta"],
+    ],
+    "case-insensitive by name, the archived one left out",
+  );
+});
+
+test("the open session's folder preselects the project it is in: its root or inside it, the deepest root winning", () => {
+  const rows = projectChoices([proj("prj_w", "web", "/w/web"), proj("prj_api", "api", "/w/web/api"), proj("prj_x", "x", "/w/web-x")]);
+  assert.equal(projectAt(rows, "/w/web"), "prj_w");
+  assert.equal(projectAt(rows, "/w/web/src"), "prj_w");
+  assert.equal(projectAt(rows, "/w/web/api/routes"), "prj_api", "the deepest root wins");
+  assert.equal(projectAt(rows, "/w/web-x/a"), "prj_x", "a sibling sharing a prefix is not inside /w/web");
+  assert.equal(projectAt(rows, "/w"), null);
+  assert.equal(projectAt(rows, ""), null);
+  assert.equal(projectAt(projectChoices([proj("prj_r", "r", "/w/r/")]), "/w/r/a"), "prj_r", "a root's trailing slash");
+});
+
+test("tabs: Project, This Computer, Remote in that order; Project only on the host serving the page", () => {
+  assert.deepEqual(
+    NEW_SESSION_TABS.map((t) => [t.id, t.label, t.icon]),
+    [
+      ["project", "Project", "branch"],
+      ["local", "This Computer", "folder"],
+      ["remote", "Remote", "terminal"],
+    ],
+  );
+  assert.deepEqual(tabsForHost(null).map((t) => t.id), ["project", "local", "remote"]);
+  assert.deepEqual(tabsForHost("peer-1").map((t) => t.id), ["local", "remote"]);
+  assert.equal(whereForHost("project", "peer-1"), "local", "choosing another host while on Project moves to This Computer");
+  assert.equal(whereForHost("remote", "peer-1"), "remote");
+  assert.equal(whereForHost("project", null), "project");
+});
+
+test("the Project tab posts exactly {worktree: \"later\"}: nothing that names, picks a model or prompts", () => {
+  assert.deepEqual({ ...PROJECT_TAB_START }, { worktree: "later" });
 });

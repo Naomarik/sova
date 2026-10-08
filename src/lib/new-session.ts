@@ -1,6 +1,7 @@
 // Bare "/new" in the composer: a fresh session in the chat's folder, and the
 // chat it was typed in goes to the Archive. Kept free of the api module so it's testable.
 
+import type { ProjectSummary } from "../../shared/projects";
 import { hiddenFolder } from "./hidden-folders";
 import { isRemoteCwd, type RemotePlace, remoteRecents, splitRemoteCwd } from "./remote-session";
 
@@ -90,3 +91,48 @@ export async function createThenArchive<S>(
 export function dropArchived(created: { delete(path: string): boolean }, path: string, archived: boolean): boolean {
   return archived ? created.delete(path) : false;
 }
+
+/** A row of New Session's Project tab: a project on this host, and where it lives. */
+export interface ProjectChoice {
+  id: string;
+  name: string;
+  root: string;
+  /** Its organization's name, or "Standalone". */
+  place: string;
+}
+
+/** The Project tab's rows: every project that isn't archived, by name (case-insensitive). */
+export function projectChoices(projects: readonly ProjectSummary[]): ProjectChoice[] {
+  return projects
+    .filter((p) => !p.archived)
+    .map((p) => ({ id: p.id, name: p.name, root: p.root, place: p.space.kind === "org" ? p.space.orgName : "Standalone" }))
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) || a.root.localeCompare(b.root));
+}
+
+/** The project the open session's folder is in (its root, or inside it; the deepest root wins), or null. */
+export function projectAt(choices: readonly ProjectChoice[], cwd: string): string | null {
+  if (!cwd) return null;
+  const inside = (root: string) => {
+    const r = root.replace(/\/+$/, "") || "/";
+    return cwd === r || cwd.startsWith(r === "/" ? r : `${r}/`);
+  };
+  let best: ProjectChoice | null = null;
+  for (const c of choices) if (inside(c.root) && (!best || c.root.length > best.root.length)) best = c;
+  return best?.id ?? null;
+}
+
+/** Where New Session starts pi: a project's root, a folder here, or a folder on a target. */
+export type NewSessionWhere = "project" | "local" | "remote";
+/** The tabs, in this order (the dialog still opens on This Computer, or Remote for a remote prefill). */
+export const NEW_SESSION_TABS: readonly { id: NewSessionWhere; label: string; icon: "branch" | "folder" | "terminal" }[] = [
+  { id: "project", label: "Project", icon: "branch" },
+  { id: "local", label: "This Computer", icon: "folder" },
+  { id: "remote", label: "Remote", icon: "terminal" },
+];
+/** The tabs offered for a Host (null: the one serving the page). Projects are this host's: another has no Project tab. */
+export const tabsForHost = (host: string | null) => (host === null ? NEW_SESSION_TABS : NEW_SESSION_TABS.filter((t) => t.id !== "project"));
+/** The tab shown after choosing a Host: Project moves to This Computer when it isn't offered there. */
+export const whereForHost = (where: NewSessionWhere, host: string | null): NewSessionWhere =>
+  tabsForHost(host).some((t) => t.id === where) ? where : "local";
+/** What the Project tab posts: no title, model, thinking, mode or prompt; the conversation names its worktree later. */
+export const PROJECT_TAB_START = { worktree: "later" } as const;

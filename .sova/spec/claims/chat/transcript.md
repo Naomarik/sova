@@ -747,15 +747,15 @@ virtualized.
   Chrome 154's tab.
 - **Jumps build their target first.** Whether an entry can be jumped to is asked of the rows the
   thread renders, not of what is built. Every jump builds the rows down from its target if the
-  fill hasn't reached it, then scrolls and tints as before (§chat.timeline/jumping): a Timeline
+  fill hasn't reached it, then lands on it and tints it (§chat.timeline/jumping): a Timeline
   input row, the outline's Jump to Message, the Skills tab, Open in Session, and a
   switch back (below). A jump to a row the list doesn't hold, while the branch has rows above
   the list, fetches every row down to it in one request and then lands; nothing is said while it
   waits, and a slow fetch shows the top edge's bar (above). A newer jump replaces a waiting one. "Isn't in
   the transcript" still means the thread has no row for the entry: said by a list that reaches
   the top of the branch, or when the server finds no such row on it.
-  Rows never drawn have estimated heights, so a long jump that doesn't land in the middle aims
-  again once the scroll has rested, at most twice.
+  Rows never drawn have estimated heights, so a jump lands once and holds its row in the middle
+  while the rows around it are drawn (§chat.transcript/jump-landing).
 - **Counts of the whole branch.** The `hello` and the snapshot also say what the counts need of
   the rows they don't carry: the ids of their inputs, how many messages they hold, whether
   any is a reply, and the alignments still open among them (each one's newest revision there,
@@ -803,6 +803,14 @@ virtualized.
   (§chat.timeline/opening-it) that was known with them (the last visit's `hello`, or the Recent
   fetch that kept them), and this visit's `hello` corrects it. The count is kept with those rows
   alone; once the list holds other rows it is gone until the `hello`.
+
+## §chat.transcript/jump-landing — A jump lands at once and stays put
+
+A jump lands at once, with no smooth scroll: its row is put in the middle of the view and held
+there, to the pixel, while the rows around it are first drawn at their real heights, so it never
+moves once it is on screen; the hold ends once nothing has moved for a moment, or at the reader's
+own scroll, wheel, touch, press or key. A jump to a row not built yet builds a few rows above it
+too, so it can sit in the middle; one that is the first row the list holds sits at the top.
 
 ## §chat.transcript/compressed-transfer — A transcript travels compressed
 

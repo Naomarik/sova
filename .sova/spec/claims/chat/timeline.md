@@ -437,7 +437,8 @@ gets `rewound` with the text. Refusals come back as `rewind_refused`, never as a
 ## §chat.timeline/jumping — Jumping
 
 `jumpToEntry` in `src/lib/jump.ts`, the one helper the outline strip, the Skills tab and this tab
-share. The row scrolls to the middle of the transcript and tints for ~1.5s (`.entry-jumped`,
+share. The transcript lands on the row, in the middle, at once (§chat.transcript/jump-landing),
+and it tints for ~1.5s (`.entry-jumped`,
 `JUMP_HIGHLIGHT_MS`). **The filter doesn't change a jump**: with Inputs Only on, pressing a row's
 body lands on that message exactly as it would unfiltered, and the filter stays as it was.
 

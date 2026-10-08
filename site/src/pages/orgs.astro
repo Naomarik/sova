@@ -1,0 +1,123 @@
+---
+import Base from "../layouts/Base.astro";
+import Icon from "../components/Icon.astro";
+import Mark from "../components/Mark.astro";
+import InstallBlock from "../components/InstallBlock.astro";
+import Baton from "../components/mocks/Baton.astro";
+import * as site from "../data/site";
+
+const orgCards = [
+  {
+    icon: "file", title: "Decisions with provenance",
+    body: "Each decision keeps who said it, where, when, and in their words. Sova compares the decisions on each topic and sends any contradiction to the person who decides that area. You then promote the settled ones into the project's own spec.",
+    limit: "No model writes the spec. Promotion is a fixed writer, a few decisions at a time, and only when you choose.",
+  },
+  {
+    icon: "eye", title: "A project overseer",
+    body: "One session per project that watches for new decisions, spots who hasn't been asked, and acts at the level you grant: propose, gather, reconcile, or build. Build starts coding sessions, each in its own worktree.",
+    limit: "Starts at gather. Limits per message, per day and at once are enforced by the tools, not the prompt.",
+  },
+  {
+    icon: "chat", title: "A page for the owner",
+    body: "Pick the client's owner and send one link. They read how each project is going, in everyday words: updates at real milestones, who was asked, what was decided, what was built.",
+    limit: "Read only. Never shows goals, profiles, code, models or costs. The link lasts 90 days.",
+  },
+  {
+    icon: "folder", title: "The whole organization is one repo",
+    body: "Roster, projects, conversations, decisions and the overseer's notes live in a plain git repo. Clone it onto another Sova host and attach it.",
+    limit: "Links don't travel, so you send new ones. On the new host, overseers start paused.",
+  },
+];
+---
+<Base
+  title="Sova · Organizations"
+  description="Organizations in Sova: ask the people who know through their own link, one at a time, and keep every decision with who made it and in their words. A preview feature of the open-source Sova workspace."
+>
+  <header class="nav">
+    <div class="wrap nav-inner">
+      <a class="brand" href="/" aria-label="Sova home"><Mark size={24} />sova</a>
+      <nav class="nav-links" aria-label="Page">
+        <a href="/">← Back to Sova</a>
+        <a class="nav-link-extra" href="/mesh">Mesh</a>
+      </nav>
+      <span class="nav-spacer"></span>
+      <a class="button button-ghost nav-gh" href={site.repo}><Icon name="external" size={16} /><span class="nav-gh-label">GitHub</span><span class="visually-hidden"> (Sova on GitHub)</span></a>
+      <button type="button" class="button button-ghost button-icon theme-toggle" data-theme-toggle aria-label="Use Light Theme" aria-pressed="false">
+        <Icon name="sun" size={18} class="icon-sun" /><Icon name="moon" size={18} class="icon-moon" />
+      </button>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="section" id="orgs" aria-labelledby="orgs-title">
+      <div class="wrap">
+        <div class="section-head">
+          <span class="eyebrow">Organizations <span class="chip chip-accent">Preview</span></span>
+          <h1 class="h-section" id="orgs-title">Ask the people who know. Keep what they decide.</h1>
+          <p class="lead">An organization is a client or a team you work with: its people, its projects, and one git repo that holds all of it. Sova asks each person through their own link, one at a time, and keeps every answer with who gave it and in which words.</p>
+        </div>
+
+        <article class="feature">
+          <div class="feature-copy">
+            <span class="eyebrow">Baton sessions</span>
+            <h2 class="h-feature">One conversation, handed from person to person.</h2>
+            <div class="prose">
+              <p>Start a conversation with a goal only you can see. The model talks to whoever holds the baton. When they don't know, it hands the baton to someone on the roster with a question and a short briefing, and Sova makes that person a link.</p>
+              <p>They see the conversation and nothing else: no tool calls, no goal, no other sessions. Every message carries its sender's name.</p>
+            </div>
+            <ul class="points">
+              <li><Icon name="check" size={16} />Decisions are recorded as they're made, with the speaker's own words.</li>
+              <li><Icon name="check" size={16} />Profiles learn each person's language and skills from their own words. The page people see never shows a profile.</li>
+            </ul>
+            <p class="limit"><Icon name="info" size={18} /><span>People who can't reach your machine open their link on a public address you set up: Sova's share port, which only serves shared pages, behind a web server or tunnel you run. <strong>It needs setup:</strong> <a href={site.publicLinksDoc}>docs/public-links.md</a> walks through it. Sova's own page never goes public, and each link is shown once.</span></p>
+          </div>
+          <div class="feature-visual"><Baton /></div>
+        </article>
+
+        <ul class="cards cards-fit cards-follow">
+          {orgCards.map((c) => (
+            <li class="fcard">
+              <span class="fcard-icon"><Icon name={c.icon} size={20} /></span>
+              <h3>{c.title}</h3>
+              <p set:html={c.body} />
+              <p class="fcard-limit" set:html={c.limit} />
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
+
+    <section class="section closing" aria-labelledby="closing-title">
+      <div class="wrap">
+        <div class="section-head">
+          <h2 class="h-section" id="closing-title">Start with the sessions you already have.</h2>
+          <p class="lead">Organizations live in the same Sova as your coding sessions. Install it, then open Organizations from the home page.</p>
+        </div>
+        <div class="closing-install">
+          <InstallBlock id="install-orgs" />
+          <p class="hero-note">Then run <code>sova</code>, then <code>sova open</code>.</p>
+          <a class="button button-ghost" href="/">← Back to Sova</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="wrap">
+      <div class="footer-grid">
+        <a class="brand" href="/"><Mark size={20} />sova</a>
+        <nav class="footer-links" aria-label="Footer">
+          <a href={site.repo}>Sova on GitHub</a>
+          <a href={site.gettingStarted}>Getting Started</a>
+          <a href={site.publicLinksDoc}>Public Links</a>
+          <a href={site.license}>License</a>
+          <a href={site.pi}>pi</a>
+        </nav>
+      </div>
+      <div class="footer-meta">
+        <p>pi is a separate project; Sova is not affiliated with it. Sova is Apache-2.0; <code>pi-config/</code> is licensed separately.</p>
+        <p>The screens on this page are mock-ups built from Sova's own styles.</p>
+      </div>
+    </div>
+  </footer>
+</Base>

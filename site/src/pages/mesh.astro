@@ -1,0 +1,117 @@
+---
+import Base from "../layouts/Base.astro";
+import Icon from "../components/Icon.astro";
+import Mark from "../components/Mark.astro";
+import InstallBlock from "../components/InstallBlock.astro";
+import Mesh from "../components/mocks/Mesh.astro";
+import * as site from "../data/site";
+
+const termuxNotes = `${site.repo}/blob/master/scripts/mesh-termux/README.md`;
+
+const meshCards = [
+  {
+    icon: "refresh", title: "A front door that fails over",
+    body: "The Mesh page writes a Caddy config that sends you to the first healthy host in your order, and back when it recovers.",
+    limit: "You run it behind <code>tailscale serve</code>, never Funnel. A reply in progress can fail during a switch.",
+  },
+  {
+    icon: "network", title: "Linked sessions",
+    body: "Ask the Overseer to link sessions on different hosts, so they can message each other and offer each other files. Their traffic shows in the Agents tab, not the transcript.",
+    limit: "One session per host in a link. A file moves only when the other side accepts it.",
+  },
+  {
+    icon: "terminal", title: "A phone as a host",
+    body: "Sova can run in Termux on an Android phone, installed with one pasted command, and join the mesh like any other host. Its uninstaller removes exactly what the install added.",
+    limit: `Android with Termux only, and still rough: <a href="${termuxNotes}">its install notes</a> are written for developers. Other phones use Sova in the browser.`,
+  },
+];
+---
+<Base
+  title="Sova · Mesh"
+  description="Mesh in Sova: run Sova on several machines on your tailnet and use them all from one sidebar. A preview feature of the open-source Sova workspace."
+>
+  <header class="nav">
+    <div class="wrap nav-inner">
+      <a class="brand" href="/" aria-label="Sova home"><Mark size={24} />sova</a>
+      <nav class="nav-links" aria-label="Page">
+        <a href="/">← Back to Sova</a>
+        <a class="nav-link-extra" href="/orgs">Organizations</a>
+      </nav>
+      <span class="nav-spacer"></span>
+      <a class="button button-ghost nav-gh" href={site.repo}><Icon name="external" size={16} /><span class="nav-gh-label">GitHub</span><span class="visually-hidden"> (Sova on GitHub)</span></a>
+      <button type="button" class="button button-ghost button-icon theme-toggle" data-theme-toggle aria-label="Use Light Theme" aria-pressed="false">
+        <Icon name="sun" size={18} class="icon-sun" /><Icon name="moon" size={18} class="icon-moon" />
+      </button>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="section" id="mesh" aria-labelledby="mesh-title">
+      <div class="wrap">
+        <div class="section-head">
+          <span class="eyebrow">Mesh <span class="chip chip-accent">Preview · Needs Tailscale</span></span>
+          <h1 class="h-section" id="mesh-title">All your machines, one sidebar.</h1>
+          <p class="lead">Run Sova on a laptop, a server and an Android phone on your tailnet, and use them all from any one page. A session runs on the host you pick, and you drive it from wherever you are.</p>
+        </div>
+
+        <article class="feature feature-flip">
+          <div class="feature-copy">
+            <span class="eyebrow">Several hosts</span>
+            <h2 class="h-feature">Start it on the server. Check it from the couch.</h2>
+            <div class="prose">
+              <p>Every host's sessions appear in one list, labelled by host and filterable. New Session asks which host. An organization on another host opens there, with its pages and its overseer.</p>
+              <p>Settings, themes, extensions and logins can be kept in step, each behind its own switch. With logins on, they're copied to every host. Two different logins for the same provider are shown as a conflict for you to settle, never overwritten.</p>
+            </div>
+            <p class="limit"><Icon name="info" size={18} /><span>Hosts trust each other by Tailscale identity, with no token between them. Your browser unlocks a host with its token or a one-use pairing code, and through it can use every peer. <strong>Every host in a mesh must be reachable by the same devices, and run the same Sova build.</strong> <a href={site.meshDoc}>docs/mesh.md</a> covers the setup.</span></p>
+          </div>
+          <div class="feature-visual"><Mesh /></div>
+        </article>
+
+        <ul class="cards cards-fit cards-follow">
+          {meshCards.map((c) => (
+            <li class="fcard">
+              <span class="fcard-icon"><Icon name={c.icon} size={20} /></span>
+              <h3>{c.title}</h3>
+              <p set:html={c.body} />
+              <p class="fcard-limit" set:html={c.limit} />
+            </li>
+          ))}
+        </ul>
+        <p class="hero-note cards-note">With no peer added, nothing changes: no extra port, no Tailscale calls, no requests to other machines.</p>
+      </div>
+    </section>
+
+    <section class="section closing" aria-labelledby="closing-title">
+      <div class="wrap">
+        <div class="section-head">
+          <h2 class="h-section" id="closing-title">Start on one machine.</h2>
+          <p class="lead">Install Sova where your sessions are. Add a peer from the Mesh page when you want a second host.</p>
+        </div>
+        <div class="closing-install">
+          <InstallBlock id="install-mesh" />
+          <p class="hero-note">Then run <code>sova</code>, then <code>sova open</code>. Install the same release on every host you add.</p>
+          <a class="button button-ghost" href="/">← Back to Sova</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="wrap">
+      <div class="footer-grid">
+        <a class="brand" href="/"><Mark size={20} />sova</a>
+        <nav class="footer-links" aria-label="Footer">
+          <a href={site.repo}>Sova on GitHub</a>
+          <a href={site.gettingStarted}>Getting Started</a>
+          <a href={site.meshDoc}>Mesh Setup</a>
+          <a href={site.license}>License</a>
+          <a href={site.pi}>pi</a>
+        </nav>
+      </div>
+      <div class="footer-meta">
+        <p>pi is a separate project; Sova is not affiliated with it. Sova is Apache-2.0; <code>pi-config/</code> is licensed separately.</p>
+        <p>The screens on this page are mock-ups built from Sova's own styles.</p>
+      </div>
+    </div>
+  </footer>
+</Base>

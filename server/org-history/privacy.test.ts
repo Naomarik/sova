@@ -336,22 +336,22 @@ test("a roster email written in another case is no hit and no word for a model r
       actors: { decidedBy: { kind: "person", id: "priya" } },
       source: { adapter: "t", version: 1, key: "decision:s1:case" },
       decision: { disposition: "choose", options: [], authority: { kind: "person", id: "priya" } },
-      rationale: { what: "Payroll moves to Fridays", quotes: [{ n: 1, text: "Payroll on Fridays, write maria@gatecapital.com or MARIA@GATECAPITAL.COM" }] },
+      rationale: { what: "Payroll moves to Fridays", quotes: [{ n: 1, text: "Payroll on Fridays, write maria@exampleholdings.com or MARIA@EXAMPLEHOLDINGS.COM" }] },
     },
   ]);
-  // the roster holds "Maria@GateCapital.com"; the product redactor over it
-  const l: HistoryLabels = { ...labels, scrub: (t) => contactRedactor([MARK.contact, "Maria@GateCapital.com"]).text(t) };
+  // the roster holds "Maria@ExampleHoldings.com"; the product redactor over it
+  const l: HistoryLabels = { ...labels, scrub: (t) => contactRedactor([MARK.contact, "Maria@ExampleHoldings.com"]).text(t) };
   const h = f.host.history;
   for (const reader of [{ role: "global-overseer" }, { role: "project-overseer", project: P_A }] as const) {
-    for (const q of ["gatecapital", "maria", "GateCapital.com", "maria@gatecapital.com", "com"]) {
+    for (const q of ["exampleholdings", "maria", "ExampleHoldings.com", "maria@exampleholdings.com", "com"]) {
       assert.equal(h.search(reader, { text: q }, l).total, 0, `${reader.role} "${q}"`);
       assert.deepEqual(h.packet(reader, { query: { text: q } }, l)!.events, [], `${reader.role} "${q}": packet`);
     }
     assert.deepEqual(h.search(reader, { text: "payroll fridays" }, l).items.map((i) => i.id), [id]);
     const read = JSON.stringify([h.search(reader, { text: "payroll" }, l), h.event(reader, id!, {}, l), h.packet(reader, { event: id! }, l)]).toLowerCase();
-    assert.ok(!read.includes("gatecapital"), `${reader.role}: the email in no case`);
+    assert.ok(!read.includes("exampleholdings"), `${reader.role}: the email in no case`);
   }
-  assert.deepEqual(h.search({ role: "operator" }, { text: "gatecapital" }).items.map((i) => i.id), [id]);
+  assert.deepEqual(h.search({ role: "operator" }, { text: "exampleholdings" }).items.map((i) => i.id), [id]);
 });
 
 test("an import's headline comes from its capture fields only, in its row and on a boundary card", async () => {

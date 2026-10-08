@@ -157,8 +157,8 @@ export function contactValues(): string[] {
 }
 
 /** A redactor over the contact values as they are now: `text` for a string, `deep` for any value. A
-    value is matched as a literal in any case (an email typed `maria@gatecapital.com` is the roster's
-    `Maria@GateCapital.com`), the longest first where two overlap; nothing in a value is a pattern. */
+    value is matched as a literal in any case (an email typed `maria@exampleholdings.com` is the roster's
+    `Maria@ExampleHoldings.com`), the longest first where two overlap; nothing in a value is a pattern. */
 export function contactRedactor(values = contactValues()): { text(s: string): string; deep<T>(v: T): T } {
   const literal = (v: string) => v.replace(/[\\^$.*+?()[\]{}|/]/g, "\\$&");
   const known = values.filter((v) => v.length > 0);

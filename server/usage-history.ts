@@ -4,10 +4,11 @@
 //
 // Append-only `<state root>/usage-history/v1/<UTC day>.jsonl`, one sample per line, written by this
 // server alone; kept KEEP_DAYS days, pruned at start and once a day; never synced. Node builtins
-// only, plus types.
+// only, plus the shared pure Ollama cache parser and types.
 import { appendFileSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { CacheFile } from "../pi-config/extensions/usage-status/fetch.ts";
+import { parseEndpoint } from "../pi-config/extensions/usage-status/ollama.ts";
 import { stateRoot } from "./state-root";
 
 /** Raw samples are kept this many days; a closed period's summary, a year. */
@@ -179,7 +180,8 @@ export interface SampleInput {
  * Every reading a cache carries, keyed for the history. Claude: one series per account, each
  * login stamped with its own fetchedAt; a login with no known account, or none at all, is left
  * out. Other providers: stamped with the cache's fetchedAt, and left out while their `errors`
- * entry is set (a failed fetch keeps the old value under a fresh cache time).
+ * entry is set (a failed fetch keeps the old value under a fresh cache time). New Ollama caches
+ * use the usage endpoint's own successful time/error independently of balance.
  */
 export function readingsOf(cache: CacheFile, input: SampleInput): UsageReading[] {
   const out: UsageReading[] = [];
@@ -208,12 +210,19 @@ export function readingsOf(cache: CacheFile, input: SampleInput): UsageReading[]
     const mcp = windowReading("zai", t, zai.mcp, "mcp");
     for (const r of [plan, mcp]) if (r) out.push(r);
   }
-  const ollama = ok("ollama");
-  if (ollama && finite(ollama.usedPct)) {
-    const month = input.ollamaMonth?.(t) ?? null;
+  const rawOllama = cache.ollama;
+  const usageEndpoint = parseEndpoint(rawOllama?.usageEndpoint);
+  // New caches distinguish usage success from balance failure. Old caches still use the
+  // aggregate error and file time; malformed explicit metadata never gets that fallback.
+  const usageTime = rawOllama?.usageEndpoint === undefined ? (!errors.ollama ? t : undefined)
+    : usageEndpoint && !usageEndpoint.error ? usageEndpoint.fetchedAt : undefined;
+  const ollama = rawOllama?.state === "ok" && finite(usageTime) ? rawOllama : null;
+  const modernCredits = ollama && isRec(ollama.credits) && isRec(ollama.credits.data) && isRec(ollama.credits.data.included) && isRec(ollama.credits.data.included.period);
+  if (ollama && finite(ollama.usedPct) && !isRec(ollama.activity) && !modernCredits) {
+    const month = input.ollamaMonth?.(usageTime!) ?? null;
     const resetsAt = time(month?.resetsAt);
     const startsAt = time(month?.startsAt);
-    out.push({ series: "ollama", window: "month", label: "month", t, pct: ollama.usedPct, ...(resetsAt !== undefined && startsAt !== undefined ? { resetsAt, startsAt } : {}) });
+    out.push({ series: "ollama", window: "month", label: "month", t: usageTime!, pct: ollama.usedPct, ...(resetsAt !== undefined && startsAt !== undefined ? { resetsAt, startsAt } : {}) });
   }
   const deepseek = ok("deepseek");
   if (deepseek && Array.isArray(deepseek.balances)) {

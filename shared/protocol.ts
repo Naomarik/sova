@@ -2384,6 +2384,29 @@ export interface UsageHistory { series: string; window: string; current: UsageHi
 export interface UsageStripWindow { startsAt: number; resetsAt: number; final: number; hitAt?: number; rate: number }
 /** `GET /api/insights/usage/history?series=&window=&strip=1`: the last 30 days' closed windows, oldest first, summaries only. */
 export interface UsageHistoryStrip { series: string; window: string; windows: UsageStripWindow[] }
+export interface OllamaActivityMetrics {
+  request_count?: number;
+  usage_usd?: number;
+  input_tokens?: number;
+  cached_input_tokens?: number;
+  output_tokens?: number;
+}
+export interface OllamaActivity {
+  range: "24h" | "7d" | "30d";
+  scope: "self" | "team";
+  from: string;
+  until: string;
+  totals: OllamaActivityMetrics;
+  buckets: (OllamaActivityMetrics & { from: string; until: string; partial: boolean })[];
+}
+export interface OllamaCredits {
+  included?: { balance_usd?: number; allowance_usd?: number; period?: { from: string; until: string } };
+  purchased?: { balance_usd: number };
+  session?: { remaining_percent: number; resets_at?: string };
+  weekly?: { remaining_percent: number; resets_at?: string };
+}
+/** Additive endpoint readings: absent metrics are unknown, each source ages independently. */
+export interface OllamaReading<T> { data?: T; fetchedAt?: number; error?: string }
 export interface UsageProvider {
   id: "claude" | "openai" | "ollama" | "zai" | "deepseek";
   state: "ok" | "nologin" | "expired" | "nokey" | "badkey" | "na" | "error";
@@ -2392,6 +2415,8 @@ export interface UsageProvider {
       balance): no percentages and no reset times. `available: false` means the provider says
       calls are not fundable. */
   balance?: UsageBalance;
+  activity?: OllamaReading<OllamaActivity>;
+  credits?: OllamaReading<OllamaCredits>;
   error?: string;
   /** OpenAI's plan name as the source sends it (e.g. "plus"). Absent when not reported. */
   plan?: string;

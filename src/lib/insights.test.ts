@@ -248,7 +248,7 @@ test("usageSummary: null without data; all healthy is one sentence", () => {
   assert.equal(usageSummary({ available: false, reason: "missing", fetchedAt: null, nextFetchAt: null, stale: false, providers: [] }, NOW), null);
   const healthy = usage([
     provider({ id: "claude", windows: [{ label: "5h", pct: 79.4 }], extraUsage: { enabled: true, pct: 100 } }),
-    provider({ id: "ollama", state: "na" }),
+    provider({ id: "ollama", windows: [{ label: "month", pct: 20 }] }),
     deepseek(true),
   ]);
   assert.equal(usageSummary(healthy, NOW), "All providers under limits.");
@@ -276,7 +276,7 @@ test("usageSummary: a window whose reset passed adds no sentence; limitReached s
   // Like the head chip: the window is gone, so it is neither rate-limited nor used up.
   const passed = usage([provider({ id: "claude", windows: [{ label: "5h", pct: 100, resetsAt: inMs(-60_000) }, { label: "7d", pct: 100, resetsAt: inMs(-H) }] })]);
   assert.equal(providerChip(passed.providers[0]!, NOW), null);
-  assert.equal(usageSummary(passed, NOW), "All providers under limits.");
+  assert.equal(usageSummary(passed, NOW), "No reported limit needs attention. Some readings are unavailable or stale.");
   const stillAhead = usage([provider({ id: "claude", windows: [{ label: "5h", pct: 100, resetsAt: inMs(-60_000) }, { label: "7d", pct: 100, resetsAt: inMs(H) }] })]);
   assert.equal(usageSummary(stillAhead, NOW), "Claude's 7-day quota is used up \u2014 resets in 1h.");
   const reached = usage([provider({ id: "openai", limitReached: true, windows: [{ label: "7d", pct: 40 }] })]);
@@ -302,7 +302,7 @@ test("usageSummary: not-ok states each have a sentence; na and kept readings don
     provider({ id: "zai", state: "error", error: "timeout", windows: [{ label: "5h", pct: 10 }] }),
     provider({ id: "claude", lastKnown: true, error: "older pi", windows: [{ label: "7d", pct: 10 }] }),
   ]);
-  assert.equal(usageSummary(quiet, NOW), "All providers under limits.");
+  assert.equal(usageSummary(quiet, NOW), "No reported limit needs attention. Some readings are unavailable or stale.");
 });
 
 const claudeAuth = (a: Partial<NonNullable<UsageProvider["auth"]>>): UsageProvider["auth"] => ({ kind: "oauth", source: "claude-cli", ...a });
@@ -582,7 +582,7 @@ test("an account's reading prefers a login with a current window over a fresher 
   const u: UsageInsight = { ...usage([provider({ id: "claude", windows: [{ label: "7d", pct: 100, resetsAt: inMs(80 * H) }] })]), claudeLogins: [spare, notYet] };
   const c = usageGlance(u, NOW)[0]!;
   assert.equal(c.pending, true);
-  assert.equal(usageSummary(u, NOW), "All providers under limits.", "nor does the summary call the quota used up");
+  assert.equal(usageSummary(u, NOW), "No reported limit needs attention. Some readings are unavailable or stale.", "a frozen quota is not current, and is not described as used up");
 });
 
 test("usageGlance: readable selected accounts take precedence even at 100%", () => {

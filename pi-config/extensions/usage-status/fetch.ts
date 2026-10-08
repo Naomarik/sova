@@ -21,6 +21,9 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { ClaudeLogins, DEFAULT_LOGIN_ID, claudeConfigDirEnv } from "../claude-code/accounts.ts";
 import { readKeychainCredentials, type KeychainOptions } from "../claude-code/keychain.ts";
+import { parseActivity, parseCredits, parseReading, parseEndpoint, nonnegative, type OllamaActivity, type OllamaCredits, type OllamaReading, type OllamaEndpoint } from "./ollama.ts";
+
+export { parseActivity, parseCredits, parseReading } from "./ollama.ts";
 
 const HOME = os.homedir();
 const PI_AUTH = path.join(HOME, ".pi/agent/auth.json"); // ollama-cloud key + openai-codex oauth + zai/deepseek keys
@@ -45,11 +48,14 @@ export type ProviderId = (typeof PROVIDERS)[number];
 // ---------------------------------------------------------------------------
 // Normalized data (this is what goes into the shared cache; no secrets)
 
-export type OllamaData =
+// Additive to schema 3: old readers see modern activity as na, never an undefined percent.
+// No schema bump/refetch-on-missing-field: older writers remain usable at normal cadence.
+export type OllamaData = (
 	| { state: "ok"; usedPct: number }
 	| { state: "nokey" }
 	| { state: "badkey" }
-	| { state: "na" };
+	| { state: "na" }
+) & { activity?: OllamaReading<OllamaActivity>; credits?: OllamaReading<OllamaCredits>; usageEndpoint?: OllamaEndpoint };
 
 export interface Window {
 	pct: number;
@@ -164,12 +170,12 @@ async function missing(file: string): Promise<boolean> {
 	}
 }
 
-export async function fetchOllama(): Promise<OllamaData> {
-	const auth = await readJson(PI_AUTH);
-	const key = auth?.["ollama-cloud"]?.key;
+export interface OllamaFetchOptions { key?: string | null; request?: typeof fetch }
+export async function fetchOllama(options: OllamaFetchOptions = {}): Promise<OllamaData> {
+	const key = options.key === undefined ? (await readJson(PI_AUTH))?.["ollama-cloud"]?.key : options.key;
 	if (typeof key !== "string" || !key) return { state: "nokey" };
 
-	const res = await fetch("https://ollama.com/api/usage", {
+	const res = await (options.request ?? fetch)("https://ollama.com/api/usage", {
 		headers: { Authorization: `Bearer ${key}` },
 		signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
 	});
@@ -177,9 +183,53 @@ export async function fetchOllama(): Promise<OllamaData> {
 	if (!res.ok) throw new Error(`ollama HTTP ${res.status}`);
 
 	const body: any = await res.json();
-	const usage = body?.limits?.monthly?.usage;
-	if (typeof usage !== "number" || !Number.isFinite(usage)) return { state: "na" };
+	const activity = parseActivity(body);
+	const usage = nonnegative(body?.limits?.monthly?.usage);
+	if (activity) return { state: "na", activity: { data: activity } };
+	if (usage === undefined) return { state: "na" };
 	return { state: "ok", usedPct: usage * 100 };
+}
+
+export async function fetchOllamaBalance(options: OllamaFetchOptions = {}): Promise<OllamaData> {
+	const key = options.key === undefined ? (await readJson(PI_AUTH))?.["ollama-cloud"]?.key : options.key;
+	if (typeof key !== "string" || !key) return { state: "nokey" };
+	const res = await (options.request ?? fetch)("https://ollama.com/api/balance", {
+		headers: { Authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+	});
+	if (res.status === 401 || res.status === 403) return { state: "badkey" };
+	if (!res.ok) throw new Error(`ollama balance HTTP ${res.status}`);
+	const data = parseCredits(await res.json());
+	if (!data) throw new Error("ollama balance unavailable");
+	return { state: "na", credits: { data } };
+}
+
+/** Independent last-good endpoint readings; never advance a failed source's timestamp. */
+export async function fetchOllamaPair(prev?: OllamaData, now = Date.now, options: OllamaFetchOptions = {}): Promise<{ data: OllamaData; error?: string }> {
+	const keptActivity = parseReading(prev?.activity, parseActivity);
+	const keptCredits = parseReading(prev?.credits, parseCredits);
+	const run = async <T>(kind: "activity" | "balance", fetcher: () => Promise<OllamaData>, extract: (o: OllamaData) => OllamaReading<T> | undefined, kept: OllamaReading<T> | undefined): Promise<{ result?: OllamaData; reading?: OllamaReading<T>; fetchedAt?: number }> => {
+		try {
+			const result = await fetcher();
+			if (result.state === "nokey" || result.state === "badkey") return { result, reading: kept?.data ? { ...kept, error: `ollama ${kind} ${result.state === "nokey" ? "no key" : "bad key"}` } : undefined };
+			const reading = extract(result);
+			if (!reading?.data && result.state !== "ok") throw new Error(`ollama ${kind} unavailable`);
+			const fetchedAt = now();
+			return { result, fetchedAt, reading: reading?.data ? { data: reading.data, fetchedAt } : undefined };
+		} catch (err) {
+			const message = err instanceof Error ? err.message.replace(/^ollama HTTP /, "ollama activity HTTP ") : "";
+			const error = new RegExp(`^ollama ${kind} (?:HTTP \\d{3}|unavailable)$`).test(message) ? message : `ollama ${kind} request failed`;
+			return { reading: { ...kept, error } };
+		}
+	};
+	const [a, b] = await Promise.all([run("activity", () => fetchOllama(options), (o) => o.activity, keptActivity), run("balance", () => fetchOllamaBalance(options), (o) => o.credits, keptCredits)]);
+	const base = a.result ?? (prev?.state === "ok" && Number.isFinite(prev.usedPct) && prev.usedPct >= 0 ? { state: "ok" as const, usedPct: prev.usedPct } : { state: "na" as const });
+	const usageEndpoint: OllamaEndpoint = a.fetchedAt !== undefined ? { fetchedAt: a.fetchedAt } : {
+		...parseEndpoint(prev?.usageEndpoint),
+		error: a.reading?.error ?? `ollama activity ${a.result?.state === "nokey" ? "no key" : a.result?.state === "badkey" ? "bad key" : "unavailable"}`,
+	};
+	const data: OllamaData = { ...base, usageEndpoint, ...(a.reading ? { activity: a.reading } : {}), ...(b.reading ? { credits: b.reading } : {}) };
+	const error = [a.reading?.error, b.reading?.error].find((e) => e && !/(?:no key|bad key)$/.test(e));
+	return { data, ...(error ? { error } : {}) };
 }
 
 export async function fetchOpenAi(): Promise<OpenAiData> {
@@ -424,13 +474,26 @@ export function errMessage(err: unknown): string {
 // Shared cache + cross-process lock
 
 function isCacheFile(v: any): v is CacheFile {
-	return v && typeof v === "object" && typeof v.fetchedAt === "number" && typeof v.errors === "object";
+	return v && typeof v === "object" && !Array.isArray(v) && typeof v.fetchedAt === "number" && Number.isFinite(v.fetchedAt) && v.fetchedAt >= 0 && v.errors && typeof v.errors === "object" && !Array.isArray(v.errors);
+}
+
+export function normalizeOllama(v: unknown): OllamaData | undefined {
+	if (!v || typeof v !== "object" || Array.isArray(v)) return;
+	const o = v as Record<string, unknown>;
+	const activity = parseReading(o.activity, parseActivity), credits = parseReading(o.credits, parseCredits);
+	// Preserve explicit malformed metadata as unavailable, never fall back to a fresh file time.
+	const usageEndpoint = o.usageEndpoint === undefined ? undefined : parseEndpoint(o.usageEndpoint) ?? { error: "ollama reading unavailable" };
+	const usedPct = nonnegative(o.usedPct);
+	const state: "nokey" | "badkey" | "na" = o.state === "nokey" || o.state === "badkey" ? o.state : "na";
+	const base = o.state === "ok" && usedPct !== undefined ? { state: "ok" as const, usedPct } : { state };
+	return { ...base, ...(usageEndpoint ? { usageEndpoint } : {}), ...(activity ? { activity } : {}), ...(credits ? { credits } : {}) };
 }
 
 export async function readCache(): Promise<CacheFile | undefined> {
 	const data = await readJson(CACHE_FILE); // missing or corrupt -> undefined
 	if (!isCacheFile(data)) return undefined;
-	if (typeof data.nextFetchAt !== "number") data.nextFetchAt = data.fetchedAt + FRESH_MS;
+	if (data.ollama !== undefined) data.ollama = normalizeOllama(data.ollama);
+	if (typeof data.nextFetchAt !== "number" || !Number.isFinite(data.nextFetchAt)) data.nextFetchAt = data.fetchedAt + FRESH_MS;
 	// Cache written before the openai / zai sources existed: refetch once.
 	if (!data.openai && !data.errors.openai) data.nextFetchAt = 0;
 	if (!data.zai && !data.errors.zai) data.nextFetchAt = 0;
@@ -686,7 +749,7 @@ export async function fetchAll(prev: CacheFile | undefined, force = false, optio
 	const ownDue = !ownSkipped && (force || !prev || claudeReadingDue(ownReading(prev), clock()));
 	const claudeDefault = ownDue ? (options.fetchLogin ?? ((dir: string) => fetchClaude(dir)))(logins.dirOf(DEFAULT_LOGIN_ID)) : Promise.resolve(prev?.claude);
 	const [o, x, c, z, d, a] = await Promise.allSettled([
-		fetchOllama(),
+		fetchOllamaPair(prev?.ollama, clock),
 		fetchOpenAi(),
 		claudeDefault,
 		fetchZai(),
@@ -700,7 +763,10 @@ export async function fetchAll(prev: CacheFile | undefined, force = false, optio
 	let claude = prev?.claude;
 	let zai = prev?.zai;
 	let deepseek = prev?.deepseek;
-	if (o.status === "fulfilled") ollama = o.value;
+	if (o.status === "fulfilled") {
+		ollama = o.value.data;
+		if (o.value.error) errors.ollama = o.value.error;
+	}
 	else errors.ollama = errMessage(o.reason);
 	if (x.status === "fulfilled") openai = x.value;
 	else errors.openai = errMessage(x.reason);

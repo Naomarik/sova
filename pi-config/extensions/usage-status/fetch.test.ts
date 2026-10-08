@@ -16,6 +16,11 @@ const CLAUDE = path.join(ROOT, "claude");
 process.env.HOME = ROOT;
 process.env.PI_CODING_AGENT_DIR = AGENT;
 process.env.CLAUDE_CONFIG_DIR = CLAUDE;
+// Bun's os.homedir() is fixed at startup; Node follows the in-process HOME above.
+// Put home-resolved fixtures where production's builtins actually resolve them, never in a real home.
+const FETCH_HOME = os.homedir();
+const runnerHome = process.env.SOVA_TEST_HOME;
+assert.ok(FETCH_HOME === ROOT || runnerHome && (FETCH_HOME === runnerHome || FETCH_HOME.startsWith(`${runnerHome}${path.sep}`)), "credential fixtures require the runner's throwaway home");
 delete process.env.SOVA_DEVICE_ID;
 process.on("exit", () => fs.rmSync(ROOT, { recursive: true, force: true }));
 
@@ -33,6 +38,14 @@ const C = "l-0000000c"; // assigned to another device
 function creds(dir: string, token: string): void {
 	fs.mkdirSync(dir, { recursive: true });
 	fs.writeFileSync(path.join(dir, ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: token, expiresAt: 1 } }));
+}
+
+function preserveFile(file: string): () => void {
+	const prior = fs.existsSync(file) ? fs.readFileSync(file) : undefined;
+	return () => {
+		if (prior === undefined) fs.rmSync(file, { force: true });
+		else fs.writeFileSync(file, prior);
+	};
 }
 
 function setup(): void {
@@ -290,9 +303,14 @@ test("a session with no recorded login reads the first ready login in this devic
 
 test("OpenAI: each window keeps its own length and is labelled from it", async () => {
 	setup();
-	fs.mkdirSync(path.join(ROOT, ".pi/agent"), { recursive: true });
-	fs.writeFileSync(path.join(ROOT, ".pi/agent/auth.json"), JSON.stringify({ "openai-codex": { access: "fake-openai" } }));
-	const answer = (rate_limit: unknown) => async () => ({ ok: true, status: 200, json: async () => ({ plan_type: "plus", rate_limit }) }) as Response;
+	const authFile = path.join(FETCH_HOME, ".pi/agent/auth.json");
+	const restoreAuth = preserveFile(authFile);
+	fs.mkdirSync(path.dirname(authFile), { recursive: true });
+	fs.writeFileSync(authFile, JSON.stringify({ "openai-codex": { access: "fake-openai" } }));
+	const answer = (rate_limit: unknown) => async (_url: unknown, init?: RequestInit) => {
+		assert.equal(new Headers(init?.headers).get("Authorization"), "Bearer fake-openai", "the home-resolved synthetic credential was selected");
+		return { ok: true, status: 200, json: async () => ({ plan_type: "plus", rate_limit }) } as Response;
+	};
 	const real = globalThis.fetch;
 	try {
 		globalThis.fetch = answer({
@@ -316,17 +334,21 @@ test("OpenAI: each window keeps its own length and is labelled from it", async (
 		assert.deepEqual(odd.state === "ok" && odd.windows.map((w) => [w.label, w.seconds]), [["pri", 86_400]]);
 	} finally {
 		globalThis.fetch = real;
+		restoreAuth();
 	}
 });
 
-test("a Claude login on macOS with no credentials file: its keychain item's token, read afresh for each fetch; a file always wins, and elsewhere nothing changes", async () => {
+test("a Claude login on macOS with no credentials file: its keychain item's token, read afresh for each fetch; a file always wins, and elsewhere nothing changes", async (t) => {
 	setup();
-	const own = path.join(ROOT, ".claude");
+	const own = path.join(FETCH_HOME, ".claude");
+	const file = path.join(own, ".credentials.json");
+	t.after(preserveFile(file));
 	fs.mkdirSync(own, { recursive: true });
+	fs.rmSync(file, { force: true });
 	let token = "fake-keychain-1";
 	const execs: string[][] = [];
 	const exec = async (_file: string, args: string[]) => (execs.push(args), JSON.stringify({ claudeAiOauth: { accessToken: args[2] === "Claude Code-credentials" ? token : `added:${args[2]}`, refreshToken: "fake-keychain-refresh" } }));
-	const keychain = { platform: "darwin" as const, env: { USER: "someone" }, home: ROOT, userHome: ROOT, exec };
+	const keychain = { platform: "darwin" as const, env: { USER: "someone" }, home: FETCH_HOME, userHome: FETCH_HOME, exec };
 	const sent: string[] = [];
 	const answer = async (_url: string, init: { headers: Record<string, string> }) => (sent.push(init.headers.Authorization!), { ok: true, status: 200, json: async () => ({ five_hour: { utilization: 7 } }) });
 

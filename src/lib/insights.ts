@@ -7,6 +7,7 @@ import { accountGroups, type LoginFacts, loginName } from "./claude-login-groups
 import { costsRouteFromHash, type CostsQuery } from "./cost-history";
 import { clockTime, duration, relativeTime, shortDate, stampTime, thousands } from "./format";
 import { isHostSession } from "./workers";
+import { currentIncluded, includedCreditPct } from "./ollama-usage";
 
 export const PROVIDER_NAME: Record<UsageProvider["id"], string> = {
   claude: "Claude",
@@ -100,6 +101,13 @@ export const liveWindow = (w: UsageWindow, now: number) => !resetPassed(w, now);
  * With `now`, a window whose reset has passed decides nothing (its meter is a ghost).
  */
 export function providerChip(p: UsageProvider, now?: number): { tone?: Tone; text: string } | null {
+  if (p.id === "ollama" && p.credits && p.windows.length === 0) {
+    if (!currentIncluded(p, now ?? Date.now())) return null;
+    const used = includedCreditPct(p.credits.data)!;
+    if (used >= 100) return { tone: "warn", text: "Included credits used" };
+    if (used >= 80) return { tone: "warn", text: "Near limit" };
+    return null;
+  }
   if (p.balance && !p.balance.available) return { tone: "error", text: "Out of credit" };
   const windows = now === undefined ? p.windows : p.windows.filter((w) => !resetPassed(w, now));
   const full = windows.filter((w) => w.pct >= 100);
@@ -137,6 +145,7 @@ function timedOut(p: UsageProvider, now: number): UsageLine | null {
 
 /** One caption replacing the meters when a provider has nothing to show. Null = render meters. */
 export function providerProblem(p: UsageProvider, now = Date.now()): UsageLine | null {
+  if (p.id === "ollama" && (p.activity || p.credits)) return null;
   switch (p.state) {
     case "ok":
       return null;
@@ -444,6 +453,11 @@ function stateSentence(p: UsageProvider, name = PROVIDER_NAME[p.id]): string | n
 function providerSentence(p: UsageProvider, now: number, name = PROVIDER_NAME[p.id]): string | null {
   const state = stateSentence(p, name);
   if (state) return state;
+  if (p.id === "ollama" && currentIncluded(p, now)) {
+    const used = includedCreditPct(p.credits?.data)!;
+    if (used >= 100) return "Ollama Cloud's included credits are used up.";
+    return used >= 80 ? `Ollama Cloud's included credits are at ${Math.round(used)}% used.` : null;
+  }
   if (p.state !== "ok" && p.state !== "error") return null;
   if (p.balance && !p.balance.available) return `${name} is out of credit.`;
   const resets = (w: UsageWindow) => {
@@ -496,7 +510,14 @@ function readings(u: UsageInsight, now: number, loginId?: string | null): { p: U
 export function usageSummary(u: UsageInsight | undefined, now: number, loginId?: string | null): string | null {
   if (!u?.available) return null;
   const sentences = readings(u, now, loginId).map(({ p, name }) => providerSentence(p, now, name)).filter((x): x is string => x !== null);
-  return sentences.length ? sentences.join(" ") : "All providers under limits.";
+  const ollama = u.providers.find((p) => p.id === "ollama");
+  const unknownCredits = !!ollama && !!(ollama.activity || ollama.credits) && !currentIncluded(ollama, now);
+  if (unknownCredits) return `${sentences.length ? sentences.join(" ") : "No reported limit needs attention."} Ollama Cloud's included credits are unknown.`;
+  const unknown = readings(u, now, loginId).some(({ p }) => {
+    if (p.id === "ollama" && (p.activity || p.credits)) return !currentIncluded(p, now);
+    return p.state !== "ok" || !!p.error || !!p.lastKnown || (!p.balance && !p.windows.some((w) => liveWindow(w, now)));
+  });
+  return sentences.length ? sentences.join(" ") : unknown || u.stale ? "No reported limit needs attention. Some readings are unavailable or stale." : "All providers under limits.";
 }
 
 /** Sidebar-foot abbreviation per provider. */

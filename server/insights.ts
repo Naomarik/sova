@@ -37,7 +37,7 @@ import type { HEntry } from "../shared/harness";
 import type { LinkedAgentInfo } from "../shared/mesh-links";
 // The usage-status extension's fetch/cache core. Part of the sanctioned pi-config import
 // surface (node builtins only, like extensions/mode/state.ts) — see CLAUDE.md.
-import { claudeLoginIds, forceRefresh, type CacheFile } from "../pi-config/extensions/usage-status/fetch.ts";
+import { claudeLoginIds, forceRefresh, parseActivity, parseCredits, parseReading, type CacheFile } from "../pi-config/extensions/usage-status/fetch.ts";
 import { balanceBurn, type BurnHistory, windowBurn } from "../src/lib/usage-burn";
 import { type PeriodSummary, readingsOf, samePeriod, splitPeriods, splitRuns, summarizePeriod, type UsageSample, usageHistory, type WindowSummary, windowKey } from "./usage-history";
 // Ollama's declared reset day (usage-windows.json), the same sanctioned surface (builtins only).
@@ -198,8 +198,9 @@ function usageExtras(id: UsageProvider["id"], data: Rec): Pick<UsageProvider, "p
   return {};
 }
 
-function usageProvider(id: UsageProvider["id"], data: unknown, error: unknown): UsageProvider {
-  const err = str(error);
+export function usageProvider(id: UsageProvider["id"], data: unknown, error: unknown): UsageProvider {
+  const rawError = str(error);
+  const err = id === "ollama" && rawError && !/^ollama (?:(?:activity|balance) )?(?:HTTP \d{3}|unavailable|request failed)$/.test(rawError) ? "ollama request failed" : rawError;
   const withError = (p: UsageProvider): UsageProvider => (err ? { ...p, error: err } : p);
   // Absent = never fetched OK (or a cache from before this source existed).
   if (data === undefined) return { id, state: "error", windows: [], error: err ?? "no data" };
@@ -209,6 +210,16 @@ function usageProvider(id: UsageProvider["id"], data: unknown, error: unknown): 
   };
   if (!isRec(data)) return unrecognized(`not an object: ${typeof data}`);
   const state = str(data.state);
+  if (id === "ollama") {
+    const activity = parseReading(data.activity, parseActivity);
+    const credits = parseReading(data.credits, parseCredits);
+    const used = num(data.usedPct);
+    const states: UsageProvider["state"][] = ["ok", "nokey", "badkey", "na"];
+    const s = states.find((v) => v === state) ?? "na";
+    // Modern credit readings are deliberately not UsageWindows: no quota history/pace/burn.
+    const legacy = s === "ok" && used !== undefined && used >= 0 && !activity?.data && !credits?.data?.included?.period;
+    return withError({ id, state: legacy ? "ok" : s === "ok" ? "na" : s, windows: legacy ? [{ label: "month", pct: used! }] : [], ...(activity ? { activity } : {}), ...(credits ? { credits } : {}) });
+  }
   if (state === "ok") {
     // A credit provider reports money left, never windows.
     if (id === "deepseek") {

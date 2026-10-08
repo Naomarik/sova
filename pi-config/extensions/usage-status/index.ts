@@ -18,6 +18,7 @@ import * as path from "node:path";
 import { ClaudeLogins, DEFAULT_LOGIN_ID, planLabel, recordedLogin } from "../claude-code/accounts.ts";
 import { type CacheFile, type ClaudeData, describeErrors, errMessage, firstReadyLogin, refreshCache, type Window } from "./fetch";
 import { monthlyWindow, readUsageWindows, runResetDay } from "./windows.ts";
+import { ollamaCompact, ollamaDetail } from "./ollama-presentation.ts";
 
 const HOME = os.homedir();
 
@@ -58,12 +59,14 @@ function buildUsage(theme: Theme, cache: CacheFile | undefined, level: number, l
 	// Ollama
 	let ollama: string;
 	const o = cache.ollama;
-	if (!o) ollama = theme.fg("error", `ollama: ${cache.errors.ollama ?? "error"}`);
+	const modern = o ? ollamaCompact(o, Date.now()) : undefined;
+	if (modern) ollama = dim(modern);
+	else if (!o) ollama = theme.fg("error", `ollama: ${cache.errors.ollama ?? "error"}`);
 	else if (o.state === "nokey") ollama = dim("ollama: no key");
 	else if (o.state === "na") ollama = dim("ollama n/a");
 	else if (o.state === "badkey") ollama = theme.fg("warning", "ollama: bad key");
 	else ollama = `${theme.fg("muted", level >= 1 ? "ollama mo" : "oll")} ${pct(o.usedPct)}`;
-	ollama += o ? staleMark(cache.errors.ollama) : "";
+	ollama += o && !modern ? staleMark(o.activity || o.credits ? o.activity?.error : cache.errors.ollama) : "";
 
 	// OpenAI Codex
 	let openai: string;
@@ -171,6 +174,7 @@ function renderUsageScreen(
 	width: number,
 	maxLines: number,
 	status: { refreshing: boolean; failure?: string },
+	viewport: { offset: number; room: number; total: number },
 ): string[] {
 	const now = Date.now();
 	const dim = (s: string) => theme.fg("dim", s);
@@ -202,15 +206,20 @@ function renderUsageScreen(
 
 		const o = cache.ollama;
 		const oRows: string[] = [];
-		if (o?.state === "ok") {
+		if (o) oRows.push(...ollamaDetail(o, now).map((s) => dim(s)));
+		if (o?.state === "ok" && !o.activity?.data && !o.credits?.data?.included?.period) {
 			// The month's reset is the user's declared day (usage-windows.json), never Ollama's answer.
 			const day = readUsageWindows().ollama?.resetDay;
 			oRows.push(windowRow("monthly", { pct: o.usedPct, resetsAt: day ? monthlyWindow(day, now).resetsAt : undefined }) + (day ? dim("  (set)") : ""));
 		}
 		else if (o?.state === "nokey") oRows.push(note("no key"));
 		else if (o?.state === "badkey") oRows.push(note("bad key", "warning"));
-		else if (o?.state === "na") oRows.push(note("n/a"));
-		block("Ollama Cloud", undefined, Boolean(o), errors.ollama, oRows);
+		else if (o?.state === "na" && !oRows.length) oRows.push(note("n/a"));
+		if (o?.activity?.data && !o.credits?.data?.included?.period) {
+			const day = readUsageWindows().ollama?.resetDay;
+			if (day) oRows.push(dim(`Declared subscription reset: ${monthlyWindow(day, now).resetsAt} (set)`));
+		}
+		block("Ollama Cloud", undefined, Boolean(o), o?.activity || o?.credits ? undefined : errors.ollama, oRows);
 
 		const x = cache.openai;
 		const xRows: string[] = [];
@@ -300,13 +309,17 @@ function renderUsageScreen(
 	head.push(updated);
 	if (status.failure) head.push(theme.fg("error", `refresh failed: ${status.failure}`));
 	head.push("");
-	const foot = ["", dim("r refresh · q/esc close")];
+	const foot = ["", dim("↑↓ scroll · PgUp/PgDn · Home/End · r refresh · q/esc close")];
 
-	// Keep the header and key hint; cut the provider blocks to fit the height budget.
+	// Title and controls stay fixed while all provider rows share a bounded viewport.
 	const boxed = width >= 8;
 	const chrome = boxed ? 2 : 0;
-	const room = maxLines - chrome - head.length - foot.length;
-	const shown = body.length <= room ? body : room > 0 ? [...body.slice(0, room - 1), dim("… more (enlarge the terminal)")] : [];
+	const room = Math.max(0, maxLines - chrome - head.length - foot.length);
+	viewport.room = room;
+	viewport.total = body.length;
+	viewport.offset = Math.max(0, Math.min(viewport.offset, Math.max(0, body.length - room)));
+	const shown = body.slice(viewport.offset, viewport.offset + room);
+	if (body.length > room) foot[0] = dim(`Rows ${viewport.offset + 1}–${viewport.offset + shown.length} of ${body.length}`);
 	const content = [...head, ...shown, ...foot];
 
 	if (!boxed) return content.map((l) => truncateToWidth(l, Math.max(1, width), "…")).slice(0, Math.max(1, maxLines));
@@ -709,6 +722,7 @@ export default function (pi: ExtensionAPI) {
 			await ctx.ui.custom<null>(
 				(tui, theme, _keys, done) => {
 					const status: { refreshing: boolean; failure?: string } = { refreshing: false };
+					const viewport = { offset: 0, room: 1, total: 0 };
 					let closed = false;
 					const rerender = () => {
 						if (!closed) tui.requestRender();
@@ -721,7 +735,7 @@ export default function (pi: ExtensionAPI) {
 					void refresh().then(rerender);
 					return {
 						// Reads the live cache on every render, so refreshes show in place.
-						render: (width: number) => renderUsageScreen(theme, lastCache, width, Math.floor(rows() * 0.9), status),
+						render: (width: number) => renderUsageScreen(theme, lastCache, width, Math.floor(rows() * 0.9), status, viewport),
 						handleInput(data: string) {
 							if (matchesKey(data, "q") || matchesKey(data, "escape") || matchesKey(data, "ctrl+c")) {
 								closed = true;
@@ -735,6 +749,21 @@ export default function (pi: ExtensionAPI) {
 									status.failure = failure;
 									rerender();
 								});
+							} else {
+								const page = Math.max(1, viewport.room);
+								const max = Math.max(0, viewport.total - viewport.room);
+								let next = viewport.offset;
+								if (matchesKey(data, "down")) next++;
+								else if (matchesKey(data, "up")) next--;
+								else if (matchesKey(data, "pageDown")) next += page;
+								else if (matchesKey(data, "pageUp")) next -= page;
+								else if (matchesKey(data, "home")) next = 0;
+								else if (matchesKey(data, "end")) next = max;
+								next = Math.max(0, Math.min(next, max));
+								if (next !== viewport.offset) {
+									viewport.offset = next;
+									rerender();
+								}
 							}
 						},
 						invalidate() {},

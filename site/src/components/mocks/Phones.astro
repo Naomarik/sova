@@ -1,6 +1,6 @@
 ---
-// Keep your terminal, check from your phone: the Access page's one-use pairing QR on the desk, and
-// the phone it let in, watching a session a terminal has open, live and read-only.
+// Check in from your phone: the Access page's one-use pairing QR on the desk, and the phone it let
+// in, answering the question a session asked.
 import Frame from "../Frame.astro";
 import Icon from "../Icon.astro";
 import ContextRing from "../ContextRing.astro";
@@ -28,18 +28,20 @@ const path = q.matrix.flatMap((row, y) => row.flatMap((dark, x) => (dark ? [`M${
   <div class="phone duo-phone" aria-hidden="true">
     <div class="phone-screen">
       <div class="phone-status"><span>9:42</span><span>84%</span></div>
-      <header class="m-head"><span class="m-head-title">Flaky upload test</span><span class="m-head-end"><span class="chip chip-static">TUI</span></span></header>
+      <header class="m-head"><span class="m-head-title">Upload metrics</span><span class="m-head-end"><span class="chip chip-warn"><span class="chip-dot"></span>Input</span></span></header>
       <div class="m-thread">
-        <div class="m-msg-user">upload/client.test.ts fails about 1 run in 10. Find out why.</div>
-        <div class="m-tool"><div class="m-tool-sum"><Icon name="chevron-right" size={12} /><span class="m-tool-name">bash</span><span class="m-tool-arg">pnpm test client</span><span class="m-del">2 failed</span></div></div>
-        <p class="m-msg">The fake server closes the socket on a timer, and the timer races the second chunk.</p>
-        <div class="m-tool"><div class="m-tool-sum"><span class="live-dot"></span><span class="m-tool-name">edit</span><span class="m-tool-arg">client.test.ts</span></div></div>
+        <div class="m-msg-user">Count failed uploads per hour on the dashboard.</div>
+        <p class="m-msg">A retried upload can fail and then succeed. Counting each try would show errors the user never saw.</p>
+        <div class="m-ask">
+          <div class="m-ask-q">Count a retry as an error, or only the last failed try?</div>
+          <div class="m-ask-opts"><span class="m-btn">Every Try</span><span class="m-btn">Last Try Only</span></div>
+        </div>
       </div>
-      <div class="m-composer m-composer-off">
-        <div class="m-composer-reason"><Icon name="terminal" size={14} />Read only while this session is open in the TUI.</div>
-        <div class="m-composer-foot"><span class="m-mono">live</span><span class="m-end"><ContextRing pct={58} tone="warn" /></span></div>
+      <div class="m-composer">
+        <div class="m-composer-row"><span class="m-input">Enter a message</span><span class="m-btn m-btn-primary m-btn-off m-btn-icon"><Icon name="arrow-right" size={14} /></span></div>
+        <div class="m-composer-foot"><span class="m-mono">Sonnet 5.5</span><span class="m-end"><ContextRing pct={27} /></span></div>
       </div>
     </div>
   </div>
-  <figcaption class="visually-hidden">Sova's Access page on a desktop, showing a one-use pairing QR that expires in 5 minutes. Beside it, the phone that scanned it, watching a session a terminal has open: it streams live with a TUI chip, and its composer reads: Read only while this session is open in the TUI.</figcaption>
+  <figcaption class="visually-hidden">Sova's Access page on a desktop, showing a one-use pairing QR that expires in 5 minutes. Beside it, the phone that scanned it, in Sova's folded layout: a session asks whether to count a retry as an error, with its 2 answers as buttons.</figcaption>
 </figure>

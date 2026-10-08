@@ -104,7 +104,7 @@ const beyond = [
             <Icon name="arrow-right" size={14} />
           </a>
           <h1 class="h-hero"><span>Every agent session, <span class="grad">one calm workspace.</span></span> <span class="quiet">On your desk, or folded in your pocket.</span></h1>
-          <p class="lead">Sova runs your coding-agent sessions in one browser workspace that fits a desktop, an unfolded foldable, or a phone. Delegate hands the work to subagents you can follow, each with its own transcript, and you read every change as steps before it lands.</p>
+          <p class="lead">Sova is where you run the pi coding agent: one browser workspace that fits a desktop, an unfolded foldable, or a phone. Delegate hands the work to subagents you can follow, each with its own transcript, and you read every change as steps before it lands.</p>
           <div class="hero-actions">
             <InstallBlock id="install-hero" />
             <p class="hero-note">Then run <code>sova</code>, and <code>sova open</code> to open it. Needs Git, Node.js ≥22.19, pnpm (or npx), curl, and unzip or python3; the installer downloads its own pinned Bun. Sova runs on the <a href={site.pi}>pi</a> coding agent, and the install brings its own copy.</p>
@@ -134,7 +134,7 @@ const beyond = [
         <div class="section-head">
           <span class="eyebrow">What you get</span>
           <h2 class="h-section" id="features-title">More work, less window switching.</h2>
-          <p class="lead">Sova is for people who already run coding agents. Hand the work to subagents, agree on the plan before they build, and read every change before it lands. Your terminal setup stays yours.</p>
+          <p class="lead">Sova is for people who already run coding agents. Hand the work to subagents, agree on the plan before they build, and read every change before it lands. Your sessions, logins, and pi extensions come with you.</p>
         </div>
 
         <article class="feature">
@@ -158,7 +158,7 @@ const beyond = [
               <p>Turn on align and the agent works out what to build with you first. It records each agreement as an alignment: what it found, the approach, the alternatives it rejected and why, and its open questions, each with a recommendation. Answer in chat, even as just “1a”.</p>
               <p>With adversarial review on, a fresh read-only reviewer checks the plan, and later the finished diff of complex work. What it finds is recorded on the alignment.</p>
             </div>
-            <p class="limit"><Icon name="info" size={18} /><span>Adversarial review is experimental and off by default: Settings → Experimental. Align works the same in pi's terminal UI.</span></p>
+            <p class="limit"><Icon name="info" size={18} /><span>Adversarial review is experimental and off by default: Settings → Experimental.</span></p>
           </div>
           <div class="feature-visual"><Alignment /></div>
         </article>
@@ -195,13 +195,14 @@ const beyond = [
 
         <article class="feature">
           <div class="feature-copy">
-            <span class="eyebrow"><span class="eyebrow-num">05</span> Your terminal, your phone</span>
-            <h3 class="h-feature">Keep your terminal. Check in from your phone.</h3>
+            <span class="eyebrow"><span class="eyebrow-num">05</span> On your phone</span>
+            <h3 class="h-feature">Check in from your phone.</h3>
             <div class="prose">
-              <p>Sova lists every session in your agent directory. There's no import step and no copy. A session a terminal has open streams in live, and stays read-only here until the terminal lets it go.</p>
-              <p>On a phone the layout folds to one column and installs as an app. To let it in, open Access in Sova, make a one-use code, and scan its QR; the code expires in 5 minutes. Then read transcripts, watch terminal sessions, and keep chatting in web sessions.</p>
+              <p>On a phone the layout folds to one column and installs as an app. To let it in, open Access in Sova, make a one-use code, and scan its QR; the code expires in 5 minutes. Then answer a question, steer a turn, or start a session, the same as at the desk.</p>
+              <p>With notifications on, a session that needs you reaches the lock screen; tapping it opens that session, or the Overseer when several need you.</p>
+              <p>Already have sessions in pi's terminal? They're listed as they are and stream live, no import.</p>
             </div>
-            <p class="limit"><Icon name="info" size={18} /><span>Sova listens on <code>127.0.0.1</code>. For a phone to reach it, serve it on your tailnet with <code>tailscale serve</code>, or put your own HTTPS proxy in front. Knowing which sessions a terminal has open takes the <code>sessions</code> extension, which the installer links.</span></p>
+            <p class="limit"><Icon name="info" size={18} /><span>Sova listens on <code>127.0.0.1</code>. For a phone to reach it, serve it on your tailnet with <code>tailscale serve</code>, or put your own HTTPS proxy in front. Notifications need that HTTPS address; on iPhone, add Sova to the Home Screen first.</span></p>
           </div>
           <div class="feature-visual"><Phones /></div>
         </article>
@@ -290,8 +291,8 @@ const beyond = [
       <div class="wrap">
         <div class="section-head">
           <span class="eyebrow">How it works</span>
-          <h2 class="h-section" id="how-title">One process, next to your terminal.</h2>
-          <p class="lead">Sova is a server, on Bun by default and Node if you ask, with its coding agent embedded, plus a web app. It reads the same agent directory as the agent in your terminal: the same sessions, the same login, the same extensions.</p>
+          <h2 class="h-section" id="how-title">One process that runs pi, on your machine.</h2>
+          <p class="lead">Sova is a server, on Bun by default and Node if you ask, with the pi coding agent embedded, plus a web app. It uses pi's own agent directory: your sessions, your logins, your extensions.</p>
         </div>
         <div class="arch">
           <div class="arch-node">
@@ -303,20 +304,20 @@ const beyond = [
           <div class="arch-node arch-node-core">
             <h3><Mark size={18} />sova server</h3>
             <p>Hono and the pi SDK, on <code>127.0.0.1:4800</code> by default.</p>
-            <ul class="arch-list"><li>hosts web sessions</li><li>watches terminal sessions</li><li>runs workers and the Overseer</li><li>checks the install's token</li></ul>
+            <ul class="arch-list"><li>runs pi sessions</li><li>runs workers and the Overseer</li><li>checks the install's token</li></ul>
           </div>
           <div class="arch-link"><span>same files</span></div>
           <div class="arch-node">
             <h3><Icon name="folder" size={18} />~/.pi/agent</h3>
-            <p>Shared with pi in your terminal. Sova's own state lives in <code>sova/</code>.</p>
+            <p>pi's agent directory. Sova's own state lives in <code>sova/</code>.</p>
             <ul class="arch-list"><li>sessions/*.jsonl</li><li>auth.json</li><li>extensions/</li><li>sova/</li></ul>
           </div>
           <div class="arch-link arch-link-down"><span>same files</span></div>
           <div class="arch-node arch-node-tui">
-            <h3><Icon name="terminal" size={18} />pi in your terminal</h3>
-            <p>Unchanged. A session it has open streams into Sova live, and stays read-only there.</p>
+            <h3><Icon name="terminal" size={18} />pi's terminal UI</h3>
+            <p>Optional. A session it has open streams into Sova live, and stays read-only there.</p>
           </div>
-          <div class="arch-provider"><Icon name="external" size={16} /><span>Model requests go from Sova, and from pi in your terminal, to your configured provider. Tools and extensions may use the network too.</span></div>
+          <div class="arch-provider"><Icon name="external" size={16} /><span>Model requests go from Sova to your configured provider. Tools and extensions may use the network too.</span></div>
         </div>
       </div>
     </section>
@@ -331,7 +332,6 @@ const beyond = [
           <ul class="not-list" aria-label="What Sova is not">
             <li>Not a hosted service. It runs on your machine.</li>
             <li>Not a team app. One person runs it; the people you ask see only the conversation you share.</li>
-            <li>Not a replacement for pi's TUI. It's a second window.</li>
           </ul>
         </div>
         <dl class="touches">
@@ -376,8 +376,8 @@ const beyond = [
     <section class="section closing" aria-labelledby="closing-title">
       <div class="wrap">
         <div class="section-head">
-          <h2 class="h-section" id="closing-title">Try it on the sessions you already have.</h2>
-          <p class="lead">Existing sessions are readable as soon as it starts. To chat, it uses the provider login you already have, or you log in once from the bundled CLI.</p>
+          <h2 class="h-section" id="closing-title">Run your next pi session here.</h2>
+          <p class="lead">Sessions you already have show up as soon as it starts. To chat, it uses the provider login you already have, or you log in once from the bundled CLI.</p>
         </div>
         <div class="closing-install">
           <InstallBlock id="install-closing" />

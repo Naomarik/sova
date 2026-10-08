@@ -27,7 +27,9 @@ html {
 }
 @media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
 
-body { margin: 0; min-width: 320px; overflow-x: clip; }
+/* No min-width: a 320px window with a classic scrollbar leaves 305px, and a 320px floor would
+   scroll the page sideways there. Every part of the page fits in 305px. */
+body { margin: 0; overflow-x: clip; }
 h1, h2, h3, h4, p, ul, ol, figure, dl, dd { margin: 0; }
 ul, ol { padding: 0; list-style: none; }
 a { color: var(--color-accent); text-underline-offset: 3px; text-decoration-thickness: 1px; }

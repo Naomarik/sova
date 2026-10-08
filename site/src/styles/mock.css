@@ -147,15 +147,16 @@
    the desktop, a fixed gap apart, bottoms on one baseline. Nothing covers the desktop's screen,
    where the session video plays. At full size the pair spans about 65% of the desktop. */
 @media (min-width: 1120px) {
+  /* A wrapping row, not a grid: the desktop takes the whole first line, so it never widens the
+     pair's columns, and the pair sits centred on the second line exactly 32px apart. */
   .devices {
     --pair-h: clamp(260px, 26vw, 321px);
-    display: grid; grid-template-columns: 1fr auto 32px auto 1fr; align-items: end;
-    row-gap: 32px; overflow: visible; padding: 0; margin: 0;
+    display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-end;
+    gap: 32px; overflow: visible; padding: 0; margin: 0;
   }
   .dev { scroll-snap-align: none; }
-  .dev-desk { grid-column: 1 / -1; justify-self: center; width: min(88%, 1040px); }
-  .dev-fold { grid-column: 2; }
-  .dev-phone { grid-column: 4; }
+  .dev-desk { flex: 0 0 100%; width: auto; }
+  .dev-desk > .frame { align-self: center; width: min(88%, 1040px); }
 }
 
 /* ---- SCREENSHOTS (site/scripts/screens/). A capture fills its frame's screen area at its own
@@ -211,6 +212,9 @@
 /* ---- PHONES. -------------------------------------------------------------------- */
 
 .phones { display: flex; justify-content: center; align-items: flex-start; gap: clamp(16px, 3vw, 32px); }
+/* Two phones share the column they sit in: each up to 300px wide, both shrinking with it, never
+   wider than it (from 900px the feature column is narrower than two full-size phones). */
+.phones .phone { flex: 0 1 300px; width: auto; min-width: 0; }
 .phone {
   width: min(300px, 46vw); flex: none;
   border-radius: 36px; padding: 8px;
@@ -237,6 +241,7 @@
 @media (max-width: 599px) {
   .phone { width: min(280px, 78vw); }
   .phones .phone + .phone { display: none; }
+  .phones .phone { flex-basis: min(280px, 78vw); }
 }
 
 /* ---- BATON (organizations). The operator's transcript, and the shared page on a phone. ---- */

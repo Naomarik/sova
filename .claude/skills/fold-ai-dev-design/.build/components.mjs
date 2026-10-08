@@ -171,7 +171,7 @@ never as the sole action on a touch surface.</p>` },
   },
   {
     slug: 'select', title: 'Select & combobox',
-    purpose: `A closed list and a searchable one. Options are 44px targets too — a menu is not somewhere to save vertical space, because the whole point of opening it is to hit one item.`,
+    purpose: `A closed list and a searchable one, for picking a value the user may type to find. Options are 44px targets too — a menu is not somewhere to save vertical space, because the whole point of opening it is to hit one item. A menu of actions or choices with no typing is a \`.popover\` (see Modal, sheet & popover), not a combobox.`,
     sections: [
       { id: 'select', name: 'Select', html: `
 <div style="max-width:320px" class="stack">
@@ -860,7 +860,7 @@ track reads as zero — and zero is a measurement.</p>` },
   },
   {
     slug: 'overlay', title: 'Modal, sheet & popover',
-    purpose: `Three ways to put something on top. At folded width a modal becomes a bottom sheet, so the decision arrives inside the thumb arc rather than in the middle of a screen nobody can reach one-handed.`,
+    purpose: `Three ways to put something on top. At folded width a modal becomes a bottom sheet, so the decision arrives inside the thumb arc rather than in the middle of a screen nobody can reach one-handed. A popover is also every menu: a ⋯ overflow, a dropdown, a picker and a flyout all use \`.popover-item\` rows, one line or label + description.`,
     sections: [
       { id: 'modal', name: 'Modal', html: `
 <div class="modal modal-static">
@@ -878,12 +878,32 @@ track reads as zero — and zero is a measurement.</p>` },
     <label class="toggle"><input type="checkbox"><span class="toggle-box">✓</span>Include finished runs</label>
   </div>
 </div>` },
-      { id: 'popover', name: 'Popover', html: `
-<div class="popover" style="max-width:240px">
-  <a class="popover-item" href="#">Open in editor</a>
-  <a class="popover-item" href="#">Copy run ID</a>
-  <div class="popover-sep"></div>
-  <a class="popover-item text-error" href="#">Discard run</a>
+      { id: 'popover', name: 'Popover (action menu)', html: `
+<div class="popover" role="menu" aria-label="Run actions" style="max-width:240px">
+  <a class="popover-item" role="menuitem" href="#"><span class="popover-item-icon" aria-hidden="true">↗</span>Open in editor</a>
+  <a class="popover-item" role="menuitem" href="#"><span class="popover-item-icon" aria-hidden="true">⧉</span>Copy run ID</a>
+  <div class="popover-sep" role="separator"></div>
+  <a class="popover-item text-error" role="menuitem" href="#">Discard run</a>
+</div>` },
+      { id: 'popover-choice', name: 'Popover (choice menu)', html: `
+<div class="popover" role="menu" aria-label="Move into group" style="max-width:240px">
+  <div role="group" aria-label="Groups">
+    <div class="popover-label" aria-hidden="true">Groups</div>
+    <div class="popover-item" role="menuitemradio" aria-checked="false" tabindex="-1"><span class="popover-item-check" aria-hidden="true">✓</span><span class="popover-item-text"><span class="popover-item-label">No group</span></span></div>
+    <div class="popover-item" role="menuitemradio" aria-checked="true" tabindex="0"><span class="popover-item-check" aria-hidden="true">✓</span><span class="popover-item-text"><span class="popover-item-label">Release work</span></span></div>
+  </div>
+  <div class="popover-sep" role="separator"></div>
+  <div class="popover-item" role="menuitem" tabindex="-1"><span class="popover-item-text"><span class="popover-item-label">New group…</span></span></div>
+</div>` },
+      { id: 'popover-detail', name: 'Popover (label + description)', html: `
+<div class="popover" role="menu" aria-label="Mode" style="max-width:280px">
+  <div class="popover-item popover-item-detail popover-item-mono" role="menuitemradio" aria-checked="true" tabindex="0">
+    <span class="popover-item-check" aria-hidden="true">✓</span>
+    <span class="popover-item-text"><span class="popover-item-label">normal</span><span class="popover-item-desc">The agent as usual</span></span>
+  </div>
+  <div class="popover-item popover-item-detail" role="menuitem" aria-disabled="true" tabindex="-1">
+    <span class="popover-item-text"><span class="popover-item-label">Open workspace</span><span class="popover-item-desc">Nothing is in it yet. Add a session first.</span></span>
+  </div>
 </div>` },
     ],
     classes: [['.scrim','Fixed dim layer','Click closes'],
@@ -891,12 +911,20 @@ track reads as zero — and zero is a measurement.</p>` },
               ['.modal-head / -title / -body / -foot','Dialog parts','Foot holds actions'],
               ['.sheet','Bottom sheet, ≤85vh','Folded-width modal'],
               ['.sheet-grip','Drag handle','Affordance only'],
-              ['.popover','Anchored menu','`--shadow-2`'],
-              ['.popover-item','44px menu row','Never the only path'],
-              ['.popover-sep','Divider','Before destructive items']],
+              ['.popover','Anchored menu, dropdown or picker panel','`--shadow-2`, min 200px'],
+              ['.popover-item','One-line 44px menu row, centered','Every menu, dropdown, ⋯ overflow and flyout row'],
+              ['.popover-item-detail','Label + description row','Icon and check stay on the label line'],
+              ['.popover-item-mono','Mono label','Machine names: ids, modes'],
+              ['.popover-item-icon','Leading icon slot','Muted; or an `.icon` as a direct child'],
+              ['.popover-item-check','Check slot','Shown while `aria-checked="true"`'],
+              ['.popover-item-text / -label / -desc','Row text','Desc is caption, muted'],
+              ['.popover-item-end','Trailing value or chevron','Pushed to the end'],
+              ['.popover-label','Section label inside a menu','Mono micro caps'],
+              ['.popover-sep','Divider, `role="separator"`','Between groups; before destructive items']],
     tokens: [['--r-xl','16px — sheets and modals.'],
              ['--shadow-2 / -3','Popover / modal.'],
-             ['--dur-base','200ms entry.']],
+             ['--dur-base','200ms entry.'],
+             ['--control-md','44px — the minimum height of a menu row.']],
     snippets: [
       ['Confirm modal', `<div class="modal">
   <div class="modal-head"><h3 class="modal-title">Discard this run?</h3></div>
@@ -907,11 +935,36 @@ track reads as zero — and zero is a measurement.</p>` },
     <button class="button button-ghost">Cancel</button>
   </div>
 </div>`],
+      ['Action menu (⋯ overflow)', `<div class="popover" role="menu" aria-label="Run actions">
+  <a class="popover-item" role="menuitem" href="…"><svg class="icon" aria-hidden="true">…external…</svg>Open in editor</a>
+  <div class="popover-item" role="menuitem" tabindex="-1"><svg class="icon" aria-hidden="true">…copy…</svg>Copy run ID</div>
+  <div class="popover-sep" role="separator"></div>
+  <div class="popover-item text-error" role="menuitem" tabindex="-1">Discard run</div>
+</div>`],
+      ['Choice menu (dropdown, picker)', `<div class="popover" role="menu" aria-label="Move into group">
+  <div role="group" aria-label="Groups">
+    <div class="popover-label" aria-hidden="true">Groups</div>
+    <div class="popover-item" role="menuitemradio" aria-checked="true" tabindex="0">
+      <svg class="icon popover-item-check" aria-hidden="true">…check…</svg>
+      <span class="popover-item-text"><span class="popover-item-label">Release work</span></span>
+    </div>
+  </div>
+</div>`],
+      ['Label + description row', `<div class="popover-item popover-item-detail" role="menuitem" aria-disabled="true" tabindex="-1">
+  <svg class="icon" aria-hidden="true">…external…</svg>
+  <span class="popover-item-text">
+    <span class="popover-item-label">Open workspace</span>
+    <span class="popover-item-desc">Nothing is in it yet. Add a session first.</span>
+  </span>
+</div>`],
     ],
     dos: [['State what goes away and what does not','the second half is what makes the decision easy'],
+          ['Make every menu row a `.popover-item`','one row component owns alignment, height and states for every menu'],
+          ['Use `.popover-item-detail` for a row with a second line','its icon and check stay on the label line'],
           ['Use a sheet instead of a modal at folded width','the thumb cannot reach a centered dialog'],
           ['Separate destructive popover items with a divider','distance prevents mis-taps']],
-    donts: [['Put the only path to an action in a popover','hidden actions do not exist on touch'],
+    donts: [['Reveal the trigger of a menu only on hover','a phone has no hover, so the menu and everything in it does not exist there'],
+            ['Style a menu row with the row class of another component, or set its `align-items` or vertical padding yourself','a borrowed row brings its own alignment; use `.popover-item` / `.popover-item-detail`'],
             ['Stack a modal on a modal','close the first; the user has lost the thread by then'],
             ['Ask "Are you sure?"','say what will happen instead']],
   },

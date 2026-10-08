@@ -10,6 +10,7 @@ import {
   LIMIT_QUESTION,
   OPERATOR,
   POOL,
+  takesFiles,
   type BatonDecisionData,
   type BatonHandoffData,
   type BatonMarkerData,
@@ -19,6 +20,7 @@ import {
 import { actorOn, batonById, batonFileOf, batonOfPath, batonSid, BRIEFING_MAX, handTo, handToTarget, heldOffer, markDone, mintForEffect, nameOf, namesOf, noteMessage, QUESTION_MAX, sessionPathOf, undoNote } from "./baton";
 import { linksOfKey, revokeLinks } from "./baton-links";
 import { READ_LINK_TOOL, readLinkTool, READS_MAX } from "./baton-read-link";
+import { confirmFileTool, FILE_TOOLS, FILES_ON, inspectFilesTool, noteRunModel } from "./baton-files";
 import { GATHERING_VIS_GUIDE } from "./baton-vis-guide";
 import { areaKeyOf, ownerAreaChoices, pickOwnerArea } from "./decisions";
 import { OWNER_AREA_NONE } from "../shared/decisions";
@@ -63,12 +65,13 @@ export const BATON_TOOLS = ["hand_to", "goal_done", "record_decision", "propose_
 /** The runtime's allowlist: the conversation's tools, `read_link` (active only while the session
     can read links, §app.baton/read-link), and the wrap-up's, which is active only during the
     wrap-up turn (and refuses outside it). */
-export const LOADOUT_TOOLS = [...BATON_TOOLS, READ_LINK_TOOL, WRAPUP_TOOL] as const;
+export const LOADOUT_TOOLS = [...BATON_TOOLS, READ_LINK_TOOL, ...FILE_TOOLS, WRAPUP_TOOL] as const;
 
-/** The tools active in the session's next ordinary run: its abilities decide `read_link`. */
+/** The tools active in the session's next ordinary run: its abilities decide `read_link`, and
+    file intake `inspect_files` and `confirm_file` (§app.baton/files). */
 export function activeBatonTools(sessionId: string): string[] {
   const row = batonById(sessionId)?.row;
-  return [...BATON_TOOLS, ...(row && abilitiesOf(row).readLinks ? [READ_LINK_TOOL] : [])];
+  return [...BATON_TOOLS, ...(row && abilitiesOf(row).readLinks ? [READ_LINK_TOOL] : []), ...(row && takesFiles(row) ? FILE_TOOLS : [])];
 }
 
 const NO_BROWSE = "You cannot read files, run commands or browse.";
@@ -109,6 +112,8 @@ export function renderBatonPrompt(sessionId: string, template = readFileSync(PRO
     // The guide's tier: with interactive drawings it also teaches `vis html` (§app.baton/abilities).
     DRAWING: abilitiesOf(row).draw ? `\n${GATHERING_VIS_GUIDE(drawsHtml(abilitiesOf(row)))}\n` : "",
     PHOTOS: photos ? PHOTOS_ON : PHOTOS_OFF,
+    // Only while the session takes files (§app.baton/files).
+    FILES: takesFiles(row) ? FILES_ON : "",
     FORMER: former.length
       ? `\n# People who have left the organization\n\nNever hand to them or propose them as new people. If someone names one of them, say they have left and ask who covers their area now.\n\n${former.map((p) => `- ${p.name}${p.role ? ` — was ${p.role}` : ""}`).join("\n")}\n`
       : "",
@@ -654,6 +659,8 @@ registerSpecialLoadout({
               const state = toolStateWriter(pi);
               for (const t of batonTools(sessionId, state)) pi.registerTool(toPiTool(t));
               pi.registerTool(toPiTool(readLinkTool(sessionId)));
+              pi.registerTool(toPiTool(inspectFilesTool(sessionId)));
+              pi.registerTool(toPiTool(confirmFileTool(sessionId)));
               let offered = JSON.stringify(ownerAreaSchema(readRoster(hit.row.orgId)).enum);
               pi.on("before_agent_start", (event, ctx) => {
                 // The owner areas follow the roster: a change reaches the schema at the next run
@@ -672,6 +679,8 @@ registerSpecialLoadout({
                 const o = event.systemPromptOptions;
                 // Photos as this run can take them: on in Settings, and its model sees images.
                 const photos = readBatonSettings().photos.enabled && !!ctx?.model?.input?.includes("image");
+                // inspect_files shows an image only to a model that sees images.
+                noteRunModel(sessionId, !!ctx?.model?.input?.includes("image"));
                 o.customPrompt = wrapupActive(sessionId) ? WRAPUP_SYSTEM : renderBatonPrompt(sessionId, undefined, photos);
                 o.appendSystemPrompt = "";
                 o.contextFiles = [];

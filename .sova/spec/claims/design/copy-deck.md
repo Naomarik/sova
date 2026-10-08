@@ -811,6 +811,31 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Operator's strip and the project page's gathering-model picker, a model without vision | This model can't see photos: people won't get an attach button. |
 | Settings → Organizations, section | Photos in gathering chats · `People can send photos` · `Per message` (1–8) · `Largest photo, MB` (1–10) · `Per conversation` (1–200) · hint "Applies to every gathering session on this host, from its next message." · invalid: "Organizations needs photo limits within their ranges." |
 
+## §design.copy-deck/gathering-files — Files from people (§app/file-intake, §app.baton/files, §app.organizations/files-card)
+
+| Where | Copy |
+|---|---|
+| Share page, paperclip `aria-label` and `title` while files can be sent | Attach Files |
+| Pending strip `aria-label` while it holds a file | Files to send |
+| Pending file, uploading | Uploading {p}% |
+| Pending file, failed | Upload failed · `Retry` (`aria-label` "Retry {name}") |
+| Pending file, Remove `aria-label` | Remove {name} |
+| Send while an upload runs (hint) | Waiting for files to finish. |
+| Refused on the device | Over {n} MB. · Up to {n} files per message. |
+| Refused by the host | This conversation can't take files right now. · You've sent the most files this conversation takes. · Files can't be taken right now. · Too many files. Wait a minute. |
+| Announce: added | {n} files attached. (1: "1 file attached.") |
+| Thread, a sent file's row `aria-label` | File {name}, {size} |
+| Strip, ability checkbox | Receive files |
+| Settings → Organizations, section | Files in gathering chats · `Largest file, MB` (1–25) · hint "Applies to gathering sessions that take files, from the next upload." · invalid: "Organizations needs a largest file from 1 to 25 MB." |
+| Project page, card heading | Files |
+| Files card, empty | Nothing yet. Files people send in a gathering session with files on list here. |
+| Files card, row meta | from {person} · {gathering title} · {time} · {size} |
+| Files card, status chips | Received · Confirmed |
+| Files card, buttons | Download · Delete (`aria-label` "Download {name}", "Delete {name}") |
+| Files card, bytes elsewhere | Not on this host. |
+| Files card, delete confirm | Delete {name}? Its bytes go; the gathering's transcript keeps its line. · `Delete File` · `Cancel` |
+| Files card, failed | Couldn't delete {name}: {reason} |
+
 ## §design.copy-deck/project-limits — Project page · limits and pace (§app.project-overseer/limits)
 
 | Where | Copy |

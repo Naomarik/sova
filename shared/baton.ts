@@ -20,9 +20,11 @@
  * GET  /h/<token>                    the share page
  * GET  /h/assets/*                   its build (dist-share/)
  * GET  /api/h/<token>                -> BatonView
- * POST /api/h/<token>/message        body { text, images?: string[] } -> 202 { ok: true } | 4xx { error, code }
- *                                    (images: ids of this link's staged photos, §app.baton/images)
+ * POST /api/h/<token>/message        body { text, images?: string[], files?: string[] } -> 202 { ok: true } | 4xx { error, code }
+ *                                    (images: ids of this link's staged photos, §app.baton/images;
+ *                                    files: ids of its staged files, §app.baton/files)
  * POST /api/h/<token>/image          raw body (image/jpeg|png|webp|gif) -> 201 BatonPhotoUpload | 4xx/507 { error, code }
+ * POST /api/h/<token>/file           raw body, X-File-Name (percent-encoded) -> 201 BatonFileUpload | 4xx/507 { error, code }
  * GET  /api/h/<token>/img/<n>        the n-th photo of this link's view (BatonViewImage.n), its bytes
  * WS   /ws/h?token=<token>           ShareServerMessage stream (hello, view, streaming)
  */
@@ -205,6 +207,8 @@ export interface GatheringAbilities {
   readLinks: boolean;
   /** Interactive drawings: takes effect only with `draw` (drawsHtml). */
   drawHtml: boolean;
+  /** File intake (§app.baton/files): a session's own, never the project's set; absent is off. */
+  files?: boolean;
 }
 
 /** Automatic: what a project with no setting gives its gathering sessions. */
@@ -216,7 +220,11 @@ export const abilitiesOf = (row: Pick<BatonSession, "abilities">): GatheringAbil
   draw: row.abilities?.draw === true,
   readLinks: row.abilities?.readLinks === true,
   drawHtml: row.abilities?.drawHtml === true,
+  ...(row.abilities?.files === true ? { files: true } : {}),
 });
+
+/** Whether the session takes files now (§app.baton/files). */
+export const takesFiles = (row: Pick<BatonSession, "abilities">): boolean => row.abilities?.files === true;
 
 /** Whether a set draws `vis html`: interactive drawings count only while it can draw. */
 export const drawsHtml = (a: GatheringAbilities): boolean => a.draw && a.drawHtml;
@@ -346,7 +354,19 @@ export interface BatonSettings {
   messagesMax: number;
   /** Photos in gathering chats (§app.baton/images); every session on this host, from its next message. */
   photos: BatonPhotoSettings;
+  /** Files in gathering chats that take them (§app.baton/files); absent on a PUT keeps what is stored. */
+  files: BatonFileSettings;
 }
+
+export interface BatonFileSettings {
+  /** The largest file, in bytes (a whole number of MB within FILE_MB bounds). */
+  maxBytes: number;
+}
+
+/** The largest file a person may send (§app.baton/files): the setting's bounds, in MB. */
+export const FILE_MB = { min: 1, max: 25, default: 25 } as const;
+/** Files in one message. */
+export const FILES_PER_MESSAGE = 10;
 
 export interface BatonPhotoSettings {
   enabled: boolean;
@@ -504,7 +524,7 @@ export interface BatonSummaryField {
 export type BatonViewItem =
   /** `by`: the sender's person id in the operator's and the overseer's views; on a share page never
       an id — "you" (the viewer), "operator", or "person-<n>" numbered within that view. */
-  | { kind: "message"; id: string; by: PersonRef; name: string; text: string; at?: string; images?: BatonViewImage[] }
+  | { kind: "message"; id: string; by: PersonRef; name: string; text: string; at?: string; images?: BatonViewImage[]; files?: BatonViewFile[] }
   /** `cutOff`: the reply stopped before it finished (the stream guard, a shutdown, Take back, Stop);
       its text is at most CUT_REPLY_MAX characters. */
   | { kind: "reply"; id: string; text: string; at?: string; cutOff?: true }
@@ -524,6 +544,20 @@ export type BatonViewItem =
 export interface BatonViewImage {
   n: number;
   mime: string;
+}
+
+/** A file a person sent with a message (§app.baton/files): its name and size only, never a link. */
+export interface BatonViewFile {
+  name: string;
+  size: number;
+}
+
+/** POST /api/h/<token>/file's answer: the staged file. */
+export interface BatonFileUpload {
+  id: string;
+  name: string;
+  size: number;
+  kind: string;
 }
 
 export type ViewerReason = "moved-on" | "done" | "needs-operator" | "budget" | "taken" | "withdrawn" | "newer-link";
@@ -546,6 +580,9 @@ export interface BatonView {
     /** Present only while this link writes, photos are on and the session's model sees images:
         the page shows its paperclip (§app.baton/images). */
     photos?: { perMessage: number; maxBytes: number };
+    /** Present only while this link writes and the session takes files (§app.baton/files): the
+        paperclip takes any file. */
+    files?: { perMessage: number; maxBytes: number };
   };
   /** Which drawings the page runs, from the session's abilities as they are now
       (§app.baton/outsider-view): `html`, a reply's `vis html` in a frame; else its quiet line. */

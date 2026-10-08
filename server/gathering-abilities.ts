@@ -45,15 +45,16 @@ export function checkAbilitiesPatch(v: unknown): GatheringAbilities | null | { e
   return p ?? { error: "gatheringAbilities must be null (Automatic) or { draw, readLinks, drawHtml? }, each true or false" };
 }
 
-/** The operator's choice on a start or on the strip (`{draw?, readLinks?, drawHtml?}`), over
+/** The operator's choice on a start or on the strip (`{draw?, readLinks?, drawHtml?, files?}`), over
     `base`: anything goes, but each named field must be a boolean. */
 export function operatorAbilities(v: unknown, base: GatheringAbilities): GatheringAbilities | { error: string } {
   if (v === undefined || v === null) return { ...base };
-  if (!isObj(v)) return { error: "abilities must be { draw?, readLinks?, drawHtml? }" };
-  for (const k of ["draw", "readLinks", "drawHtml"] as const)
+  if (!isObj(v)) return { error: "abilities must be { draw?, readLinks?, drawHtml?, files? }" };
+  for (const k of ["draw", "readLinks", "drawHtml", "files"] as const)
     if (v[k] !== undefined && typeof v[k] !== "boolean") return { error: `abilities.${k} must be true or false` };
-  const pick = (k: keyof GatheringAbilities): boolean => (typeof v[k] === "boolean" ? (v[k] as boolean) : base[k]);
-  return { draw: pick("draw"), readLinks: pick("readLinks"), drawHtml: pick("drawHtml") };
+  const pick = (k: keyof GatheringAbilities): boolean => (typeof v[k] === "boolean" ? (v[k] as boolean) : base[k] === true);
+  // File intake (§app.baton/files) is the session's own: on only when asked for, or already on.
+  return { draw: pick("draw"), readLinks: pick("readLinks"), drawHtml: pick("drawHtml"), ...(pick("files") ? { files: true } : {}) };
 }
 
 /** An overseer's `abilities` arg (`{draw?, read_links?, draw_html?}`) over the project's set,
@@ -74,4 +75,14 @@ export function overseerAbilities(v: unknown, base: GatheringAbilities): Gatheri
 /** "draw, read links" · "draw with interactive drawings" · "read links" · "nothing extra": the
     words the project page and the overseers' prompts use. */
 export const describeAbilities = (a: GatheringAbilities): string =>
-  [a.draw ? (a.drawHtml ? "draw with interactive drawings" : "draw") : "", a.readLinks ? "read links" : ""].filter(Boolean).join(", ") || "nothing extra";
+  [a.draw ? (a.drawHtml ? "draw with interactive drawings" : "draw") : "", a.readLinks ? "read links" : "", a.files ? "receive files" : ""].filter(Boolean).join(", ") || "nothing extra";
+
+/** The overseers' `files` arg (§app.baton/files): file intake on for this one session; no project ceiling. */
+export const FILES_PARAM = {
+  type: "boolean",
+  description:
+    "Optional: true lets the person send files (any type, up to the host's largest file) with the paperclip; the session's model examines each with them and confirms it is what's needed. Say in the goal exactly what file you need and what a good one looks like (e.g. a JSON export newer than a date, with given fields). Then list them with sova_files.",
+};
+
+/** `abilities` with file intake set from an overseer's `files` arg (true turns it on; anything else leaves it off). */
+export const withFiles = (a: GatheringAbilities, files: unknown): GatheringAbilities => (files === true ? { ...a, files: true } : a);

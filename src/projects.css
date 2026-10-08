@@ -540,3 +540,17 @@ a.pipeline-link:hover, button.pipeline-link:hover, summary.pipeline-link:hover {
   .deploy-tick { padding: var(--space-2); }
   .deploy-check-list { padding-left: var(--space-3); }
 }
+
+/* Files people sent the project (§app.organizations/files-card): a row each, name over its meta,
+   the status chip at the end, Download and Delete under it; 44 px targets, nothing scrolls at 390 px. */
+.project-files { display: flex; flex-direction: column; gap: var(--space-3); margin: 0; padding: 0; list-style: none; }
+.project-file { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; padding-bottom: var(--space-3); border-bottom: 1px solid var(--color-border); }
+.project-file:last-child { border-bottom: none; padding-bottom: 0; }
+.project-file-main { display: flex; align-items: flex-start; gap: var(--space-2); min-width: 0; }
+.project-file-icon { flex: none; margin-top: 2px; color: var(--color-ink-muted); }
+.project-file-text { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.project-file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-ink); }
+.project-file-meta { white-space: normal; overflow-wrap: anywhere; }
+.project-file-main .chip { flex: none; }
+.project-file-actions { flex-wrap: wrap; }
+.project-file-actions .button { min-height: 44px; }

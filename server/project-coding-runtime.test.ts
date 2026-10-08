@@ -356,7 +356,9 @@ describe("a project's coding sessions", async () => {
     const { currentLinkOrigin, extensionFlagsFor } = await import("./chat-manager");
     assert.ok(currentLinkOrigin(), "the listener's origin is known, so ordinary runtimes get the link flag too");
     assert.deepEqual([...extensionFlagsFor(plainRoot, false, true)], [], "the project overseer and baton sessions: none, not even the always-on Claude Code provider");
-    assert.deepEqual([...extensionFlagsFor(plainRoot, false, false).keys()], ["claude-code-provider", "sova-link", "sova-link-token"], "an ordinary session keeps them, the provider with no setting at all");
+    assert.deepEqual([...extensionFlagsFor(plainRoot, false, false).keys()], ["claude-code-provider", "sova-link", "sova-link-token", "sova-link-tools"], "an ordinary session keeps them, the provider with no setting at all");
+    assert.equal(extensionFlagsFor(plainRoot, false, false).get("sova-link-tools"), "legacy", "an ordinary session: only the link tools its transcript already declares");
+    assert.equal(extensionFlagsFor(plainRoot, false, false, "member").get("sova-link-tools"), "member");
   });
 
   test("F20 (r3): at L3 the item statechart's own build of a gap's promoted decisions gets the project's mode, then its first prompt", async () => {

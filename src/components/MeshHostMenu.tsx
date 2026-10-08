@@ -192,18 +192,19 @@ export function MeshHostMenu(props: { value: string | null; onChange(value: stri
               return (
                 <div class="host-menu-row">
                   <div
-                    class="mode-option group-option host-menu-option"
+                    class="popover-item host-menu-option"
+                    classList={{ "popover-item-detail": !!view().line }}
                     role="menuitemradio"
                     aria-checked={props.value === o.value ? "true" : "false"}
                     tabindex={-1}
                     title={o.why ?? (o.value === null ? "Sessions on every host" : `Only sessions on ${o.label}`)}
                     onClick={() => choose(o.value)}
                   >
-                    <Icon name="check" small class="mode-option-check" />
+                    <Icon name="check" small class="popover-item-check" />
                     <span class="host-menu-option-main">
-                      <span class="mode-option-text host-menu-option-text">
+                      <span class="popover-item-text host-menu-option-text">
                         <Show when={o.state}>{(st) => <span class={`chip-dot host-filter-${hostTone(st()).tone}`} />}</Show>
-                        <span class="mode-option-id">{o.label}</span>
+                        <span class="popover-item-label">{o.label}</span>
                         {/* Any state but up is said in a word as well as the dot's colour. */}
                         <Show when={o.state && hostTone(o.state).word}>
                           {(word) => <span class={`host-filter-state host-filter-${hostTone(o.state!).tone}`}>{word()}</span>}
@@ -244,11 +245,11 @@ export function MeshHostMenu(props: { value: string | null; onChange(value: stri
               </p>
             )}
           </Show>
-          <div class="host-menu-sep" role="separator" />
-          <div class="mode-option group-option" role="menuitem" tabindex={-1} onClick={details}>
-            <Icon name="info" small class="group-option-icon" />
-            <span class="mode-option-text">
-              <span class="mode-option-id">Mesh details…</span>
+          <div class="popover-sep" role="separator" />
+          <div class="popover-item" role="menuitem" tabindex={-1} onClick={details}>
+            <Icon name="info" small />
+            <span class="popover-item-text">
+              <span class="popover-item-label">Mesh details…</span>
             </span>
           </div>
         </div>

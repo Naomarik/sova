@@ -16,6 +16,8 @@ import { hashToken } from "../baton-links";
 import { serverRedactor } from "../overseer-redact";
 import { readBranch } from "../harness/pi/reader";
 import { photosFor } from "../baton-images";
+import { filesFor } from "../baton-files";
+import { readLedger } from "../project-files";
 
 /**
  * The share page's live side (§app.baton/outsider-view): who is watching which baton session, and
@@ -58,7 +60,7 @@ export async function readView(
   viewer?: PersonRef,
   untilOffer?: number,
   /** Receives the view's photos in order (the image route), and the branch it read. */
-  out?: { collect?: { data: string; mimeType: string }[]; branch?: HEntry[] },
+  out?: { collect?: { data: string; mimeType: string }[]; branch?: HEntry[]; files?: boolean },
 ): Promise<BatonView> {
   const branch = await readBranch(sessionPathOf(dir, row)).catch((): HEntry[] => []);
   if (out) out.branch = branch;
@@ -73,7 +75,20 @@ export async function readView(
     redact: r.redact,
     said: r.said,
     ...(out?.collect ? { collect: out.collect } : {}),
+    // The share page alone draws a file's row (§app.baton/files); every other reader keeps its line,
+    // the id the project overseer's sova_files names it by included.
+    ...(out?.files ? { files: sessionFiles(row) } : {}),
   });
+}
+
+/** The files received in this session (§app.baton/files), deleted ones too: a sent file's row
+    stays after its bytes go. None when the ledger can't be read. */
+function sessionFiles(row: BatonSession): Map<string, { name: string; size: number; personId: string }> {
+  try {
+    return new Map(readLedger(row.projectId).filter((f) => f.sessionId === row.sessionId).map((f) => [f.id, { name: f.name, size: f.size, personId: f.personId }]));
+  } catch {
+    return new Map();
+  }
 }
 
 /** The view a token's holder gets, with what their link may do now. An offer's invitee who has not
@@ -82,7 +97,7 @@ export async function readView(
 export async function viewForToken(token: string): Promise<BatonView | { status: 404 | 410; why?: GoneWhy }> {
   const access = linkAccess(token);
   if (!access.ok) return { status: access.status, ...(access.why ? { why: access.why } : {}) };
-  const out: { branch?: HEntry[] } = {};
+  const out: { branch?: HEntry[]; files?: boolean } = { files: true };
   const view = await readView(access.row, access.dir, access.link.personId, outsiderCut(access.row, access.link.personId), out);
   const names = namesOf(access.row.orgId);
   // The paperclip only while this link writes, photos are on and the model sees images (§app.baton/images).
@@ -95,6 +110,8 @@ export async function viewForToken(token: string): Promise<BatonView | { status:
       canWrite: access.canWrite,
       ...(access.reason ? { reason: access.reason } : {}),
       ...(photos ? { photos: { perMessage: photos.perMessage, maxBytes: photos.maxBytes } } : {}),
+      // The paperclip takes any file while this link writes and the session takes files (§app.baton/files).
+      ...(access.canWrite && filesFor(access.row) ? { files: filesFor(access.row)! } : {}),
     },
   };
 }

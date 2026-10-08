@@ -92,6 +92,8 @@ tool result says when that look comes: say what is waiting and why instead.
 - You never see a preview's link: it is a secret, and your tool results are part of your session
   file, which may be committed with the project. Tell the operator it is ready (they have the link on
   the project page). Never write a preview address anywhere.
+- Files people sent the project are listed by `sova_files` list; `sova_files copy` puts one into a coding session's worktree as `incoming/<name>` (excluded
+  from git there), after which you tell that session where it is.
 - `sova_previews` lists the project's previews by id, with whether the operator has its link (one
   made before links were kept has none; it can still be sent by its id). Delete a preview
   (`sova_preview` off) once it has served its purpose. That is for good: every link sent from it

@@ -729,6 +729,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
     } else body = { cwd: p.cwd ?? "" };
     if ((typeof p.profile === "string" && p.profile) || (p.profile && typeof p.profile === "object")) body.profile = p.profile;
     if (p.subagent_profile !== undefined) body.subagent_profile = p.subagent_profile;
+    if (p.link === true) body.link = true;
     const created = await call("POST", "/api/sessions", body);
     if (created.status !== 201) throw failed(created, "Creating the session");
     const s = created.json as SessionSummary;
@@ -780,7 +781,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
     // what the list will call it, so the link says that.
     const title = typeof p.title === "string" && p.title.trim() ? p.title.trim() : hasPrompt ? cut(p.prompt, 60) : s.title;
     const prof = s.profile ? { id: s.profile.id, label: s.profile.label, icon: s.profile.icon } : undefined;
-    const said = [`Created ${link({ id: s.id, title })} in ${whereOf(s)}${prof ? ` from the ${prof.label} profile` : ""}${hasPrompt ? " and sent the first prompt" : ""}.`, ...notes];
+    const said = [`Created ${link({ id: s.id, title })} in ${whereOf(s)}${prof ? ` from the ${prof.label} profile` : ""}${p.link === true ? " as a link member" : ""}${hasPrompt ? " and sent the first prompt" : ""}.`, ...notes];
     return { content: text(said.join("\n")), details: { id: s.id, path: s.path, title, ...(prof ? { profile: prof } : {}) } };
   }
 
@@ -801,6 +802,8 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
         notes.push(`Target ${p.target} is ${info.status} from ${peer.label}${info.error ? ` (${info.error})` : ""}; its first prompt may fail.`);
     } else body = { cwd: p.cwd ?? "" };
     if (p.subagent_profile !== undefined) body.subagent_profile = p.subagent_profile;
+    // A peer on an earlier build ignores it: every session there has the link tools.
+    if (p.link === true) body.link = true;
     const created = await peerCall(peer, "POST", "/api/sessions", body);
     if (created.status !== 201) throw failed(created, `Creating the session ${on}`);
     const s = created.json as SessionSummary;
@@ -832,7 +835,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
       host.startedOnPeer(peer.id, s.id, true);
     }
     const title = typeof p.title === "string" && p.title.trim() ? p.title.trim() : hasPrompt ? p.prompt : s.title;
-    const said = [`Created ${named(title)} ${where}${hasPrompt ? " and sent the first prompt" : ""}. It is on another host: sova:// links and the other session tools reach only this host's sessions, except sova_read_session and sova_link with host.`, ...notes];
+    const said = [`Created ${named(title)} ${where}${p.link === true ? " as a link member" : ""}${hasPrompt ? " and sent the first prompt" : ""}. It is on another host: sova:// links and the other session tools reach only this host's sessions, except sova_read_session and sova_link with host.`, ...notes];
     return { content: text(said.join("\n")), details: { id: s.id, path: s.path, host: peer.id } };
   }
 
@@ -1144,10 +1147,11 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
       // Its card reads the recorded result (EAGER_TOOLS): never a codemode script's call.
       exposure: "model-only",
       description:
-        "Start a new session in a local folder (cwd) or on a remote target (target + remote_cwd), optionally with a model, thinking level, mode, minor modes, title, group and a first prompt. The mode and minor modes are set before the first prompt is sent, so its first turn already runs in them; they apply to that session only. With host (a mesh peer's id) the session is made on that host (cwd is a folder there; no group). Counts against the per-turn cap on new sessions (and on prompts, when it has one). The first prompt runs with no browser attached: any extension dialog it raises falls back to its default.",
+        "Start a new session in a local folder (cwd) or on a remote target (target + remote_cwd), optionally with a model, thinking level, mode, minor modes, title, group and a first prompt. The mode and minor modes are set before the first prompt is sent, so its first turn already runs in them; they apply to that session only. With host (a mesh peer's id) the session is made on that host (cwd is a folder there; no group). With link: true it is a link member session, the only kind sova_link accepts: it has the link tools from its first turn, and no other session ever gets them. Counts against the per-turn cap on new sessions (and on prompts, when it has one). The first prompt runs with no browser attached: any extension dialog it raises falls back to its default.",
       promptSnippet: "start a session (folder, target or mesh peer; model, mode, minor modes, title, group, first prompt)",
       parameters: obj({
         host: str("A mesh peer's id, to create the session on that host; omit for this host."),
+        link: bool("true: create it as a link member session, with the link tools from its first turn, so sova_link can link it. Only at creation: an existing session never becomes one."),
         cwd: str("Absolute folder (on host, when given)."),
         target: str("Remote target name (instead of cwd)."),
         remote_cwd: str("Absolute folder on the target."),

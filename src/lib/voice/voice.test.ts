@@ -2,8 +2,9 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { VoiceStatus } from "../../../shared/protocol";
 import { backgroundSentence, clock, etaSentence, jobPercent, languagesWord, micErrorSentence, modelName, percentWer, perClip, readyLine, recordingText, roughTime, settingsWords, stepFigure, unsupportedReason, wordDiff } from "./format";
-import { spacedInsert, splice, targetRange, wordCount } from "./insert";
-import { encodeWav, joinBatches, levelOf } from "./wav";
+import { insertsByTyping, spacedInsert, splice, targetRange, wordCount } from "./insert";
+import { clickWasTouch, liftedInside, touchPress } from "./press";
+import { encodeWav, joinBatches, levelOf, trimTapNoise } from "./wav";
 
 describe("insertion", () => {
   const ins = (value: string, at: number, text: string, end = at) => {
@@ -38,6 +39,70 @@ describe("insertion", () => {
     assert.equal(wordCount(" Open Sova,  and run it. "), 5);
     assert.equal(wordCount(""), 0);
   });
+  it("types only into a focused box no touch press led to", () => {
+    assert.equal(insertsByTyping(true, false), true);
+    assert.equal(insertsByTyping(true, true), false);
+    assert.equal(insertsByTyping(false, false), false);
+    assert.equal(insertsByTyping(false, true), false);
+  });
+});
+
+describe("touch press", () => {
+  const box = { left: 10, top: 20, right: 54, bottom: 64 };
+  /** A button stand-in: its listeners, by type, and how it was bound. */
+  const fake = () => {
+    const on = new Map<string, { fn: (e: unknown) => void; opts: unknown }>();
+    const el = {
+      addEventListener: (type: string, fn: (e: unknown) => void, opts?: unknown) => on.set(type, { fn, opts }),
+      removeEventListener: (type: string) => on.delete(type),
+      getBoundingClientRect: () => box,
+    };
+    let cancelled = 0;
+    const fire = (type: string, touches: number, at?: { x: number; y: number }) =>
+      on.get(type)?.fn({ preventDefault: () => cancelled++, touches: { length: touches }, changedTouches: at ? [{ clientX: at.x, clientY: at.y }] : [] });
+    return { el: el as unknown as HTMLElement, on, fire, cancelled: () => cancelled };
+  };
+  it("lifts inside the box, edges included", () => {
+    assert.equal(liftedInside(box, 10, 20), true);
+    assert.equal(liftedInside(box, 54, 64), true);
+    assert.equal(liftedInside(box, 9, 30), false);
+    assert.equal(liftedInside(box, 30, 65), false);
+  });
+  it("cancels the touch, so no tap, and runs once on a lift inside", () => {
+    const f = fake();
+    let runs = 0;
+    const off = touchPress(f.el, () => runs++);
+    assert.deepEqual(f.on.get("touchstart")?.opts, { passive: false });
+    assert.deepEqual(f.on.get("touchend")?.opts, { passive: false });
+    f.fire("touchstart", 1);
+    f.fire("touchend", 0, { x: 30, y: 40 });
+    assert.equal(runs, 1);
+    assert.equal(f.cancelled(), 2);
+    f.fire("touchend", 0, { x: 30, y: 40 }); // no start: nothing
+    assert.equal(runs, 1);
+    off();
+    assert.equal(f.on.size, 0);
+  });
+  it("ignores a slide off, a second finger and a cancelled touch", () => {
+    const f = fake();
+    let runs = 0;
+    touchPress(f.el, () => runs++);
+    f.fire("touchstart", 1);
+    f.fire("touchend", 0, { x: 200, y: 40 });
+    f.fire("touchstart", 1);
+    f.fire("touchstart", 2);
+    f.fire("touchend", 1, { x: 30, y: 40 });
+    f.fire("touchend", 0, { x: 30, y: 40 });
+    f.fire("touchstart", 1);
+    f.fire("touchcancel", 0);
+    f.fire("touchend", 0, { x: 30, y: 40 });
+    assert.equal(runs, 0);
+  });
+  it("reads a click's pointer type", () => {
+    assert.equal(clickWasTouch({ pointerType: "touch" } as unknown as MouseEvent), true);
+    assert.equal(clickWasTouch({ pointerType: "mouse" } as unknown as MouseEvent), false);
+    assert.equal(clickWasTouch({} as MouseEvent), false);
+  });
 });
 
 describe("wav", () => {
@@ -63,6 +128,41 @@ describe("wav", () => {
     const speech = levelOf(0.05);
     assert.ok(speech > 30 && speech < 70, `${speech}`);
     assert.equal(levelOf(4), 100);
+  });
+  describe("trimTapNoise", () => {
+    const RATE = 48000;
+    const STOP = RATE; // Stop pressed at 1 s, after 0.2 s of quiet and 0.8 s of speech
+    /** 1.35 s at 48 kHz: quiet room (±0.003, about −55 dBFS), speech from 0.2 s to `speechEnd` s, then `edit`. */
+    const clip = (speechEnd = 1, edit?: (s: Float32Array) => void) => {
+      let seed = 1;
+      const s = new Float32Array(Math.round(RATE * 1.35));
+      for (let i = 0; i < s.length; i++) {
+        seed = (seed * 1103515245 + 12345) % 2147483648;
+        s[i] = (seed / 2147483648 - 0.5) * 0.006 + (i >= RATE * 0.2 && i < RATE * speechEnd ? 0.1 * Math.sin(i / 5) : 0);
+      }
+      edit?.(s);
+      return s;
+    };
+    const knock = (at: number, ms = 30) => (s: Float32Array) => {
+      for (let i = 0; i < (RATE * ms) / 1000; i++) s[at + i] = i % 2 ? 0.5 : -0.5;
+    };
+    it("cuts the clip just before a knock in the post-roll, fading the cut", () => {
+      const out = trimTapNoise(clip(1, knock(STOP + RATE * 0.15)), RATE, STOP);
+      assert.equal(out.length, STOP + RATE * 0.15);
+      assert.equal(Math.abs(out.at(-1)!), 0);
+    });
+    it("keeps the whole clip when the post-roll is quiet, or holds speech longer than a knock", () => {
+      const quiet = clip();
+      assert.equal(trimTapNoise(quiet, RATE, STOP), quiet);
+      const word = clip(1, (s) => s.forEach((_, i) => i >= STOP + RATE * 0.1 && i < STOP + RATE * 0.3 && (s[i] = 0.1 * Math.sin(i / 5))));
+      assert.equal(trimTapNoise(word, RATE, STOP).length, word.length, "a word after Stop stays");
+      const lastSyllable = clip(1.2);
+      assert.equal(trimTapNoise(lastSyllable, RATE, STOP).length, lastSyllable.length, "speech running past Stop stays");
+    });
+    it("ignores a burst before the stop moment", () => {
+      const early = clip(1, knock(RATE * 0.1));
+      assert.equal(trimTapNoise(early, RATE, STOP).length, early.length);
+    });
   });
 });
 

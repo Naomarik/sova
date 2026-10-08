@@ -33,6 +33,13 @@ members` chip (§workspace.groups/send-all-mode). It is a ghost `.button-icon`, 
   `preventDefault()`, so a focused textarea stays focused: an open on-screen keyboard stays open
   and the selection stays put. It never focuses the textarea itself, so on a phone it never raises
   the keyboard on its own.
+- **A touch press moves no focus.** A touch on the mic, or on any button in the dictation strip
+  (§chat.voice/states), cancels its `touchstart` (a non-passive listener) and acts on `touchend`
+  when the finger lifts inside the button, so the browser runs no tap of its own: focus stays where
+  it was (not on the button, not on the textarea), a keyboard that is down stays down even while
+  the textarea keeps focus, and one that is up stays up. Nothing that follows a touch press focuses
+  the textarea; only tapping the textarea raises the keyboard. Mouse, pen-as-mouse and keyboard
+  presses go through `click` as before.
 - **Hidden** when the composer is read only (a session live in a TUI). While the composer is
   merely blocked (connecting, reconnecting, a pending model switch, busy) it works: dictating is
   typing.
@@ -94,8 +101,11 @@ textarea. The textarea stays visible and editable throughout.
   batches and their RMS; where AudioWorklet is missing a ScriptProcessorNode does the same.
 - **Stop** keeps recording for 350 ms more (post-roll, so a stop tapped on the last syllable
   doesn't cut it), then flushes the worklet, stops every mic track (which releases the OS mic indicator), closes
-  the context, resamples to 16 kHz through an `OfflineAudioContext`, and encodes a 16-bit mono WAV
-  (32 KB per second).
+  the context, drops the knock of the finger tapping Stop, resamples to 16 kHz through an
+  `OfflineAudioContext`, and encodes a 16-bit mono WAV (32 KB per second). The knock is the first
+  burst after the stop moment: a 10 ms stretch above −45 dBFS and at least 15 dB louder than the
+  median of the 100 ms before it, staying that loud for no more than 80 ms. The clip ends where it
+  begins, with a 5 ms fade; with no such burst the whole post-roll is kept.
 - **Warm-up.** Starting a recording sends `POST /api/voice/warm`, so the model loads while you
   speak.
 
@@ -110,7 +120,10 @@ textarea. The textarea stays visible and editable throughout.
   whitespace is trimmed.
 - **Focused**, the text goes in through `document.execCommand("insertText")`, so native undo, the
   input event and the IME state all behave as if typed. **Not focused**, it goes in with
-  `setRangeText` and an input event, without focusing, so no keyboard opens.
+  `setRangeText` and an input event, without focusing, so no keyboard opens. **Touched**: when a
+  touch press started the recording, stopped it, or asked to try it again, the text goes in with
+  `setRangeText` and an input event even into a focused textarea, at the same range, so a keyboard
+  the user put away while the textarea kept focus doesn't come back.
 - **Drafts.** The inserted text is part of the draft like typed text (§chat.composer/behavior
   "Drafts"); it is never sent by itself.
 

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-A closed list and a searchable one. Options are 44px targets too — a menu is not somewhere to save vertical space, because the whole point of opening it is to hit one item.
+A closed list and a searchable one, for picking a value the user may type to find. Options are 44px targets too — a menu is not somewhere to save vertical space, because the whole point of opening it is to hit one item. A menu of actions or choices with no typing is a `.popover` (see Modal, sheet & popover), not a combobox.
 
 Rendered: `site/components/select.html#select`
 

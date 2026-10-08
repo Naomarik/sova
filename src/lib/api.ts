@@ -1,4 +1,5 @@
 import type { ProfilesListing } from "../../shared/profiles";
+import type { ProjectFilesAnswer } from "../../shared/project-files";
 import type { DeployVerb, VerbResult } from "../../shared/project-contract";
 import type { HostServicesView, ProjectServicesView, ServicesUiVerb } from "../../shared/services-view";
 import type { SubagentProfilesFile, SubagentProfilesInfo } from "../../shared/subagent-profiles";
@@ -1234,6 +1235,10 @@ export const cancelHeldAct = (projectId: string, holdId: string, reason?: string
 // ---- a project's cost at API prices (§app/project-costs) ---------------------------------------------
 
 export const getProjectCost = (projectId: string) => request<ProjectCost>(`${projectPath(projectId)}/costs`);
+/** Files people sent the project (§app.organizations/files-card). */
+export const getProjectFiles = (projectId: string) => request<ProjectFilesAnswer>(`${projectPath(projectId)}/files`, { cache: "no-store" });
+export const projectFileHref = (projectId: string, id: string): string => `${projectPath(projectId)}/files/${encodeURIComponent(id)}`;
+export const deleteProjectFile = (projectId: string, id: string) => request<{ ok: true }>(projectFileHref(projectId, id), { method: "DELETE" });
 export const getOrgCosts = (orgId: string) => request<OrgCosts>(`/api/orgs/${encodeURIComponent(orgId)}/costs`);
 
 // ---- the usage ledger: the Agents page's Costs tab ------------------------------------------------

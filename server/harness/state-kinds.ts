@@ -46,7 +46,8 @@ import {
   type RuleEntry,
   type UseEntry,
 } from "../../shared/overseer-grants";
-import { PROFILE_ENTRY, SESSION_SENT_ENTRY, type ProfileEntryData, type SessionSentData } from "../../shared/profiles";
+import { LINK_MEMBER_ENTRY, type LinkMemberData } from "../../shared/mesh-links";
+import { PROFILE_ENTRY, RETIRED_REMOVABLE, SESSION_SENT_ENTRY, type ProfileEntryData, type SessionSentData } from "../../shared/profiles";
 import { PROJECT_OVERSEER_ENTRY, type ProjectOverseerMarkerData } from "../../shared/project-overseer";
 import {
   OVERSEER_DIALOG_ANSWER_ENTRY,
@@ -94,11 +95,19 @@ export const TOPIC_DELIVERED = kind<TopicDeliveredData>("sova-topic-delivered", 
 /** The marker an older build wrote into every member of a group it created; read so they keep opening as before. */
 export const FANOUT_MEMBER = kind<Record<string, unknown>>("sova-fanout-member", "presence", (d) => (isRecord(d) ? d : null));
 
-/** The session's profile (newest on the branch wins), as `profileOnBranch` checks it. */
+/** The session's profile (newest on the branch wins), as `profileOnBranch` checks it. A removal an older
+    build had (`links`, RETIRED_REMOVABLE) reads as absent: its copy carries the rest unchanged. */
 export const PROFILE = kind<ProfileEntryData>(PROFILE_ENTRY, "newest-on-branch", (d) => {
   const p = d as ProfileEntryData | undefined;
-  return p && p.v === 1 && (p.profile === null || (typeof p.profile === "object" && typeof p.profile.id === "string")) ? p : null;
+  if (!(p && p.v === 1 && (p.profile === null || (typeof p.profile === "object" && typeof p.profile.id === "string")))) return null;
+  const remove: unknown = p.profile?.remove;
+  if (!Array.isArray(remove) || !remove.some((r) => RETIRED_REMOVABLE.includes(r))) return p;
+  return { ...p, profile: { ...p.profile!, remove: remove.filter((r) => !RETIRED_REMOVABLE.includes(r)) } };
 });
+
+/** A link member session's marker (§mesh.links/tools), written by its create before anything else
+    (`POST /api/sessions` with `link: true`): it fixes the session's link tools for its whole life. */
+export const LINK_MEMBER = kind<LinkMemberData>(LINK_MEMBER_ENTRY, "marker", (d) => (isRecord(d) && d.v === 1 ? { v: 1 } : null));
 
 /** The session's context files and skills left out (newest on the branch wins), `normalizeLoadout`. */
 // Called through, not referenced: session-loadout folds through this registry, so the two modules form a cycle.
@@ -234,7 +243,7 @@ export const ALIGN_DOC = kind<{ doc?: unknown }>("align-doc", "branch-list", (d)
 export const STATE_KINDS: ReadonlyMap<string, StateKind<unknown>> = new Map(
   [
     REWIND, TOPIC_DELIVERED, FANOUT_MEMBER, PROFILE, LOADOUT, SESSION_SENT, OVERSEER, OVERSEER_SENT, OVERSEER_DIALOG_ANSWER,
-    GRANT, RULE, REVOKE, GRANT_USE, PROJECT_OVERSEER,
+    GRANT, RULE, REVOKE, GRANT_USE, PROJECT_OVERSEER, LINK_MEMBER,
     BATON, BATON_SENT, BATON_HANDOFF, BATON_OFFER, BATON_LEASE, BATON_DECISION, BATON_DONE, BATON_PROPOSAL, BATON_WRAPUP,
     MODE, SUBAGENT_PROFILE, FORK_CACHE, WORKER_SESSION, WORKER_REGISTRY, SANDBOX, WORKTREES, CLAUDE_LOGIN, ALIGN_DOC,
   ].map((k) => [k.type, k as StateKind<unknown>]),

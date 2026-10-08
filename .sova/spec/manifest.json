@@ -396,10 +396,11 @@
         "§app.session-list/spine"
       ],
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "unreviewed",
       "code": [
         "src/components/SidebarResizer.tsx",
-        "src/lib/sidebar-width.ts"
+        "src/lib/sidebar-width.ts",
+        "src/lib/sidebar-width.test.ts"
       ]
     },
     "§app.shell/the-open-failure-banner": {
@@ -5929,7 +5930,8 @@
         "server/index.ts",
         "server/sessions-index.ts",
         "shared/mesh-links.ts",
-        "server/app.ts"
+        "server/app.ts",
+        "server/link-member.ts"
       ],
       "requires": [
         "§mesh.peers/off",
@@ -5958,7 +5960,12 @@
         "pi-config/extensions/link/tests/runtime.mjs",
         "server/mesh/links.ts",
         "server/link-delivery.ts",
-        "server/project-coding-runtime.test.ts"
+        "server/project-coding-runtime.test.ts",
+        "server/harness/pi/open.ts",
+        "server/harness/state-kinds.ts",
+        "shared/mesh-links.ts",
+        "server/link-tools-runtime.test.ts",
+        "server/harness/state-kinds.test.ts"
       ],
       "requires": [
         "§mesh.links/record",
@@ -8150,7 +8157,9 @@
         "src/design/voice.css",
         "src/lib/voice/format.ts",
         "src/lib/voice/status.ts",
-        "src/components/ui.tsx"
+        "src/components/ui.tsx",
+        "src/lib/voice/press.ts",
+        "src/lib/voice/voice.test.ts"
       ],
       "requires": [
         "§app.settings-dialog/voice",
@@ -10033,7 +10042,8 @@
         "profiles/reviewer.json",
         "profiles/mini-overseer.json",
         "shared/protocol.ts",
-        "src/lib/summary-diff.test.ts"
+        "src/lib/summary-diff.test.ts",
+        "server/harness/state-kinds.ts"
       ],
       "requires": []
     },
@@ -15588,6 +15598,115 @@
         "src/components/ChatView.tsx",
         "src/lib/api.ts",
         "src/app.css"
+      ]
+    },
+    "§app.baton/files": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app/file-intake",
+        "§app.baton/images",
+        "§app.baton/abilities",
+        "§app.baton/share-listener",
+        "§app.baton/goal-and-loadout"
+      ],
+      "code": [
+        "server/baton-files.ts",
+        "server/baton-files.test.ts",
+        "server/baton-files.integration.test.ts",
+        "server/baton-inspect.ts",
+        "server/baton-inspect.test.ts",
+        "server/baton-inspect.integration.test.ts",
+        "server/share/routes.ts",
+        "server/share/edge.ts",
+        "server/share/router.ts",
+        "server/share/hub.ts",
+        "server/baton-view.ts",
+        "server/baton-loadout.ts",
+        "server/baton-prompt.md",
+        "server/gathering-abilities.ts",
+        "shared/baton.ts",
+        "src/share/ShareApp.tsx",
+        "src/share/files.ts",
+        "src/share/thread.tsx",
+        "src/share/share.css",
+        "src/components/BatonStrip.tsx",
+        "src/share/thread.css",
+        "server/baton-settings.ts"
+      ]
+    },
+    "§app.organizations/files-card": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app/file-intake",
+        "§app.organizations/project-page"
+      ],
+      "code": [
+        "server/project-files-routes.ts",
+        "src/components/ProjectFilesCard.tsx",
+        "src/components/ProjectPage.tsx",
+        "src/lib/api.ts",
+        "shared/project-files.ts",
+        "src/projects.css"
+      ]
+    },
+    "§app.project-overseer/files": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app/file-intake",
+        "§app.project-overseer/tools",
+        "§app.project-overseer/coding-worktrees"
+      ],
+      "code": [
+        "server/project-files-tool.ts",
+        "server/project-files-tool.test.ts",
+        "server/project-overseer-tools.ts",
+        "server/overseer-org-part.ts",
+        "server/project-overseer-prompt.md",
+        "server/app.ts"
+      ]
+    },
+    "§app/file-intake": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/project-files.ts",
+        "server/project-files.test.ts",
+        "shared/project-files.ts"
+      ]
+    },
+    "§design.copy-deck/gathering-files": {
+      "kind": "note",
+      "authority": "accepted",
+      "evidence": "verified"
+    },
+    "§design/menu-rows": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/design/base.css",
+        "src/lib/menu-rows.test.ts",
+        "src/components/ActionMenu.tsx",
+        "src/components/Groups.tsx",
+        "src/components/GroupView.tsx",
+        "src/components/ComposerMenu.tsx",
+        "src/components/ModeMenu.tsx",
+        "src/components/MeshHostMenu.tsx",
+        "src/components/AlignChip.tsx",
+        "src/components/OverseerCardChip.tsx",
+        "src/components/CostsTab.tsx",
+        "src/mesh.css",
+        "src/costs-tab.css",
+        "src/orgs.css",
+        "src/design/align-viewer.css"
       ]
     }
   },

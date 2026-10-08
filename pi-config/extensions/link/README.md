@@ -16,11 +16,21 @@ members message each other and hand each other files. Sova makes and ends links 
 
 ## How it works
 
-- **Always registered, fixed schema.** The seven tools load in every session, linked or not, so a
-  claude-code session (which reaches them as `mcp__sova__link_*`) never sees its tool set change
-  mid-conversation. Each refuses with a sentence when the session is in no link.
+- **Only in a link member session, fixed schema.** Sova's Overseer creates a session as a link
+  member (`sova_create_session` with `link: true`); Sova then hands its runtime the
+  `sova-link-tools` flag `member`, and the seven tools are registered at `session_start` (pi applies
+  flag values only after every extension has loaded), so they are there from its first request.
+  Every other session has none, so it pays nothing for them. The set never changes because a link
+  is made or ended, so a claude-code session (which reaches them as `mcp__sova__link_*`) never sees
+  its tool set change mid-conversation. Each refuses with a sentence when the session is in no link.
+- **Sessions from before.** Every other session Sova hosts gets `legacy`: it registers the tools
+  only when its transcript already declares them (a session an earlier build hosted, when every
+  session had them), unchanged, and withdraws them at its next compaction, which rebuilds the
+  prompt cache anyway (a claude-code CLI restarts after one). A compaction while the session is in
+  a live link, or whose host doesn't answer, keeps them for a later one. Once withdrawn (re-registered
+  `hidden`, the one way pi takes a tool back) they never come back.
 - **Enabled by Sova only.** Sova sets the `sova-link` flag to its own origin on every runtime it
-  hosts. Without it (a TUI, a subagent worker) the tools refuse and nothing is fetched.
+  hosts. Without it (a TUI, a subagent worker) no link tool is registered and nothing is fetched.
 - **Talks only to its own host.** Every call goes to that origin's `/api/mesh/links/*` routes
   (`client.ts`), naming the session by id. The host checks that it holds the session and that the
   session is a member, and does every peer hop, the outbox for offline hosts and delivery. The
@@ -43,7 +53,7 @@ members message each other and hand each other files. Sova makes and ends links 
   doesn't answer keeps the previous section. Any answer from the host (no links, no link routes)
   drops it.
 
-Files: `index.ts` (flag, tools, section), `client.ts` (builtins only: the HTTP client, the
+Files: `index.ts` (flags, tools and when they are registered, section), `client.ts` (builtins only: the HTTP client, the
 structural copies of the route bodies, and the pure rendering the model reads).
 
 ## Verify

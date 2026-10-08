@@ -46,6 +46,8 @@ function harness(
     links?: { list?: MeshLinkView[]; create?: MeshLinkView | { status: number; error: string }; end?: MeshLinkView };
     peers?: PeerRef[];
     peerRoutes?: Record<string, [number, unknown] | Error>;
+    /** This host's in-process routes, as peerRoutes answers a peer's (anything else: 404). */
+    localRoutes?: Record<string, [number, unknown]>;
     /** Gate each peer call through the real outbound table, as peerFetch does. */
     gated?: boolean;
   } = {},
@@ -61,7 +63,8 @@ function harness(
     request: async (path: string, init?: RequestInit) => {
       const method = init?.method ?? "GET";
       local.push({ method, path, body: init?.body ? JSON.parse(String(init.body)) : undefined });
-      return Response.json({ error: "Not found" }, { status: 404 });
+      const hit = opts.localRoutes?.[`${method} ${path.split("?")[0]}`];
+      return hit ? Response.json(hit[1], { status: hit[0] }) : Response.json({ error: "Not found" }, { status: 404 });
     },
     links: {
       list: async (o?: { sessionId?: string }) => {
@@ -81,6 +84,7 @@ function harness(
       },
     },
     overseerId: () => "ov",
+    confirmed: () => null,
     caps: () => ({ ...DEFAULT_CAPS, ...opts.caps }),
     session: async (ref: string) => (ref === "a" ? ({ id: "a", path: "/s/a.jsonl", title: "Local work", cwd: "/w" } as SessionSummary) : null),
     transcript: async () => [{ id: "u", kind: "user" as const, text: "local ask" }],
@@ -282,6 +286,31 @@ describe("sova_create_session with host", () => {
     assert.deepEqual(out.details, { id: "r9", path: "/r/r9.jsonl", host: "vps" });
     assert.equal(h.limits.count("create"), 1);
     assert.equal(h.limits.count("prompt"), 1);
+  });
+
+  test("link: true creates a link member session: the create itself carries it, on a peer or on this host", async () => {
+    const h = harness({ peerRoutes: ok });
+    const out = await h.run("sova_create_session", { host: "vps", cwd: "/srv/app", link: true, prompt: "Port the parser" });
+    assert.deepEqual(h.remote[0], { ...h.remote[0], method: "POST", path: "/api/sessions", body: { cwd: "/srv/app", link: true } }, "on the peer's own create, before its prompt");
+    assert.equal(h.remote.filter((c) => c.body && "link" in (c.body as object)).length, 1, "and on nothing else");
+    assert.match(out.text, /^Created "Port the parser" \(r9\) on VPS \(vps\), in .* as a link member and sent the first prompt\./);
+    const here = harness({ localRoutes: { "POST /api/sessions": [201, { id: "l1", path: "/s/l1.jsonl", title: "Untitled", cwd: "/w" }] } });
+    const local = await here.run("sova_create_session", { cwd: "/w", link: true });
+    assert.deepEqual(here.local[0], { method: "POST", path: "/api/sessions", body: { cwd: "/w", link: true } });
+    assert.match(local.text, /as a link member\./);
+    // Without it, no create says link: an ordinary session.
+    const plain = harness({ peerRoutes: ok });
+    await plain.run("sova_create_session", { host: "vps", cwd: "/srv/app" });
+    assert.deepEqual(plain.remote[0]!.body, { cwd: "/srv/app" });
+  });
+
+  test("the tool tells the Overseer to create link members this way, and sova_link that it takes only those", async () => {
+    const { overseerTools: tools } = await import("./overseer-tools");
+    const all = tools({} as never, new TurnLimits());
+    const create = all.find((t) => t.name === "sova_create_session")!;
+    assert.match(String((create.parameters as any).properties.link.description), /link member session.*sova_link/);
+    const link = all.find((t) => t.name === "sova_link")!;
+    assert.match(link.description, /each must be a link member session: one you created with sova_create_session and link: true/);
   });
 
   test("a group can't be given with host; an unknown mode creates nothing; a down peer takes no cap", async () => {

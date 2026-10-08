@@ -1,15 +1,21 @@
 // Run through tests/run.mjs (pi imports resolve from the installed package).
 import assert from "node:assert/strict";
 import test from "node:test";
-import link, { FLAG, SECTION, TOKEN_FLAG } from "./index.ts";
-import { NOT_HOSTED, NOT_LINKED } from "./client.ts";
+import link, { declaresLinkTools, FLAG, SECTION, TOKEN_FLAG, TOOL_NAMES, TOOLS_FLAG } from "./index.ts";
+import { NOT_LINKED } from "./client.ts";
 
 const ORIGIN = "http://127.0.0.1:4810";
 
 type Answer = { status?: number; body?: unknown } | Error;
+type Sys = { role: "system"; toolsAdded?: { name: string }[]; toolsRemoved?: { name: string }[] };
 
-/** Just enough of ExtensionAPI: flags, tools, handlers. The host is a queue of answers. */
+/** Just enough of ExtensionAPI: flags (read only after load, as pi applies them), tools (a
+    re-registration replaces, as pi's does), handlers. The host is a queue of answers. `transcript`
+    is the session's projected messages, which a legacy session's start reads. */
 function rig(flag: string | undefined, ...answers: Answer[]) {
+	return rigWith({ origin: flag, tools: flag ? "member" : undefined }, ...answers);
+}
+function rigWith(opts: { origin?: string; tools?: string; transcript?: Sys[]; start?: boolean }, ...answers: Answer[]) {
 	const tools = new Map<string, any>();
 	const handlers = new Map<string, (e: any, ctx: any) => unknown>();
 	const calls: { url: string; method: string; body?: any }[] = [];
@@ -19,21 +25,33 @@ function rig(flag: string | undefined, ...answers: Answer[]) {
 		if (a instanceof Error) throw a;
 		return new Response(JSON.stringify(a.body ?? {}), { status: a.status ?? 200 });
 	}) as unknown as typeof fetch;
+	let loaded = false;
+	const flags: Record<string, string | undefined> = { [FLAG]: opts.origin, [TOOLS_FLAG]: opts.tools };
 	const pi = {
 		registerFlag: () => {},
-		getFlag: (name: string) => (name === FLAG ? flag : undefined),
+		getFlag: (name: string) => {
+			assert.ok(loaded, "a flag is read only after every extension has loaded (pi applies the values then)");
+			return flags[name];
+		},
 		registerTool: (t: any) => tools.set(t.name, t),
 		on: (event: string, h: any) => handlers.set(event, h),
 	};
 	link(pi as any, { fetch: fetchImpl });
-	const ctx = { sessionManager: { getSessionId: () => "s-me" } };
-	return {
+	loaded = true;
+	const atLoad = tools.size;
+	const ctx = { sessionManager: { getSessionId: () => "s-me", buildSessionProjection: () => ({ messages: opts.transcript ?? [] }) } };
+	const r = {
 		tools,
 		calls,
 		answers,
+		atLoad,
+		/** The tools the model is declared: registered and not hidden. */
+		declared: () => [...tools.values()].filter((t) => t.exposure !== "hidden").map((t) => t.name),
+		sessionStart: async () => handlers.get("session_start")!({ type: "session_start", reason: "startup" }, ctx),
+		compact: async () => handlers.get("session_compact")!({ type: "session_compact", reason: "threshold", willRetry: false, fromExtension: false }, ctx),
 		run: async (name: string, params: Record<string, unknown> = {}) => {
-			const r = await tools.get(name).execute("c1", params, undefined, undefined, ctx);
-			return r.content[0].text as string;
+			const res = await tools.get(name).execute("c1", params, undefined, undefined, ctx);
+			return res.content[0].text as string;
 		},
 		start: async () => {
 			const event = { systemPromptOptions: { sections: {} as Record<string, string> } };
@@ -41,6 +59,8 @@ function rig(flag: string | undefined, ...answers: Answer[]) {
 			return event.systemPromptOptions.sections[SECTION];
 		},
 	};
+	if (opts.start !== false) void r.sessionStart();
+	return r;
 }
 
 const linked = (id = "lk_a", endedAt?: number, title = "Fix it") => ({
@@ -59,14 +79,79 @@ const linked = (id = "lk_a", endedAt?: number, title = "Fix it") => ({
 
 const shape = (tools: Map<string, any>) => [...tools.values()].map((t) => [t.name, JSON.stringify(t.parameters)]);
 
-const TOOLS = ["link_members", "link_send", "link_inbox", "link_offer", "link_accept", "link_decline", "link_offers"];
+const TOOLS = [...TOOL_NAMES];
 const OF = "of_0123456789abcdef";
+const declaring = (...names: string[]): Sys => ({ role: "system", toolsAdded: names.map((name) => ({ name })) });
 
-test("the same seven tools, with the same schema, with or without the flag", () => {
-	const hosted = rig(ORIGIN);
-	const tui = rig(undefined);
-	assert.deepEqual([...hosted.tools.keys()], TOOLS);
-	assert.deepEqual(shape(hosted.tools), shape(tui.tools));
+test("a link member gets the seven tools at session start, none at load, with a fixed schema", () => {
+	const member = rigWith({ origin: ORIGIN, tools: "member", start: false });
+	assert.equal(member.atLoad, 0, "nothing at load: the flag isn't known yet");
+	assert.equal(member.tools.size, 0);
+	void member.sessionStart();
+	assert.deepEqual([...member.tools.keys()], TOOLS);
+	assert.deepEqual(member.declared(), TOOLS);
+	const again = rig(ORIGIN);
+	assert.deepEqual(shape(member.tools), shape(again.tools));
+	void member.sessionStart();
+	assert.equal(member.tools.size, 7, "a second start registers nothing more");
+});
+
+test("no flag at all (a TUI, a worker): no link tool, no section, nothing fetched", async () => {
+	const r = rigWith({});
+	assert.equal(r.tools.size, 0);
+	assert.equal(await r.start(), undefined);
+	assert.equal(r.calls.length, 0);
+	const noTools = rigWith({ origin: ORIGIN }, linked());
+	assert.equal(noTools.tools.size, 0, "an origin without sova-link-tools registers nothing either");
+	assert.equal(await noTools.start(), undefined);
+	assert.equal(noTools.calls.length, 0);
+});
+
+test("an ordinary session (legacy) whose transcript declares no link tool gets none, ever", async () => {
+	const fresh = rigWith({ origin: ORIGIN, tools: "legacy" });
+	assert.equal(fresh.tools.size, 0);
+	const other = rigWith({ origin: ORIGIN, tools: "legacy", transcript: [declaring("read", "bash")] });
+	assert.equal(other.tools.size, 0);
+	const dropped = rigWith({ origin: ORIGIN, tools: "legacy", transcript: [declaring("read", ...TOOLS), { role: "system", toolsRemoved: TOOLS.map((name) => ({ name })) }] });
+	assert.equal(dropped.tools.size, 0, "dropped once: never back");
+	assert.equal(await fresh.start(), undefined);
+	assert.equal(fresh.calls.length, 0);
+});
+
+test("a session from before keeps its declared tools, unchanged, until a compaction finds it in no live link", async () => {
+	const r = rigWith({ origin: ORIGIN, tools: "legacy", transcript: [declaring("read", ...TOOLS)] }, linked(), new TypeError("fetch failed"), { body: { links: [] } });
+	assert.deepEqual(r.declared(), TOOLS, "the same seven it declared");
+	assert.deepEqual(shape(r.tools), shape(rig(ORIGIN).tools), "the same schema as a member's: no changed definition");
+	await r.compact();
+	assert.deepEqual(r.declared(), TOOLS, "still in a live link: kept");
+	await r.compact();
+	assert.deepEqual(r.declared(), TOOLS, "the host didn't answer: kept");
+	await r.compact();
+	assert.deepEqual(r.declared(), [], "in no live link: withdrawn at this compaction");
+	assert.equal(r.tools.size, 7, "withdrawn as pi takes a tool back: re-registered hidden");
+	await r.compact();
+	assert.equal(r.calls.length, 3, "once withdrawn, a later compaction asks nothing");
+	assert.equal(await r.start(), undefined, "and no run asks the host either");
+	assert.equal(r.calls.length, 3);
+});
+
+test("a host with no link routes (4xx) at a compaction is no live link: withdrawn", async () => {
+	const r = rigWith({ origin: ORIGIN, tools: "legacy", transcript: [declaring(...TOOLS)] }, { status: 404, body: {} });
+	await r.compact();
+	assert.deepEqual(r.declared(), []);
+});
+
+test("a link member never loses its tools at a compaction, and asks nothing for it", async () => {
+	const r = rig(ORIGIN);
+	await r.compact();
+	assert.deepEqual(r.declared(), TOOLS);
+	assert.equal(r.calls.length, 0);
+});
+
+test("declaresLinkTools replays the system messages as pi restores tools", () => {
+	assert.equal(declaresLinkTools([]), false);
+	assert.equal(declaresLinkTools([declaring("read"), { role: "user" } as any, declaring("link_inbox")]), true);
+	assert.equal(declaresLinkTools([declaring("link_inbox"), { role: "system", toolsRemoved: [{ name: "link_inbox" }] }]), false);
 });
 
 test("the sova-link-token flag is sent back to the host on every call", async () => {
@@ -76,23 +161,15 @@ test("the sova-link-token flag is sent back to the host on every call", async ()
 		return new Response(JSON.stringify({ links: [] }));
 	}) as unknown as typeof fetch;
 	const tools = new Map<string, any>();
-	const flags: Record<string, string> = { [FLAG]: ORIGIN, [TOKEN_FLAG]: "tok-abc" };
-	const pi = { registerFlag: () => {}, getFlag: (n: string) => flags[n], registerTool: (t: any) => tools.set(t.name, t), on: () => {} };
+	const handlers = new Map<string, any>();
+	const flags: Record<string, string> = { [FLAG]: ORIGIN, [TOKEN_FLAG]: "tok-abc", [TOOLS_FLAG]: "member" };
+	const pi = { registerFlag: () => {}, getFlag: (n: string) => flags[n], registerTool: (t: any) => tools.set(t.name, t), on: (e: string, h: any) => handlers.set(e, h) };
 	link(pi as any, { fetch: fetchImpl });
-	await tools.get("link_members").execute("c1", {}, undefined, undefined, { sessionManager: { getSessionId: () => "s-me" } });
+	const ctx = { sessionManager: { getSessionId: () => "s-me", buildSessionProjection: () => ({ messages: [] }) } };
+	await handlers.get("session_start")({ type: "session_start" }, ctx);
+	await tools.get("link_members").execute("c1", {}, undefined, undefined, ctx);
 	assert.equal(headers.length, 1);
 	assert.equal(headers[0]!.get("x-sova-token"), "tok-abc");
-});
-
-test("without the flag (a TUI, a worker) everything is inert", async () => {
-	const r = rig(undefined);
-	for (const name of ["link_members", "link_inbox", "link_offers"]) assert.equal(await r.run(name), NOT_HOSTED);
-	assert.equal(await r.run("link_send", { text: "hi" }), NOT_HOSTED);
-	assert.equal(await r.run("link_offer", { paths: ["a"], dest: "/in" }), NOT_HOSTED);
-	assert.equal(await r.run("link_accept", { offer: OF, dest: "/in" }), NOT_HOSTED);
-	assert.equal(await r.run("link_decline", { offer: OF }), NOT_HOSTED);
-	assert.equal(await r.start(), undefined);
-	assert.equal(r.calls.length, 0);
 });
 
 test("an unlinked session: no section, and every tool refuses with a sentence", async () => {

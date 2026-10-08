@@ -172,16 +172,17 @@ export function ActionMenu(props: {
     const body = (
       <>
         {p.icon}
-        <span class="mode-option-text">
-          <span class="mode-option-id">{p.label}</span>
+        <span class="popover-item-text">
+          <span class="popover-item-label">{p.label}</span>
           <Show when={p.disabled || p.description}>
-            <span class="mode-option-note">{p.disabled || p.description}</span>
+            <span class="popover-item-desc">{p.disabled || p.description}</span>
           </Show>
         </span>
       </>
     );
     const shared = {
-      class: "mode-option group-option",
+      // A second line (the reason it can't run, or what it does) makes it a detail row.
+      get class() { return p.disabled || p.description ? "popover-item popover-item-detail" : "popover-item"; },
       role: "menuitem",
       tabindex: 0,
       // Keep these reactive: groups initially render before their sessions load.

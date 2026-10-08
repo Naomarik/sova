@@ -10,7 +10,7 @@ import type { ItemSendInput, ItemSendResult, StartedSession } from "../shared/pr
 import { allBatons, batonById, closeBaton, createBaton, nameOf, sessionPathOf, workspaceHasFile } from "./baton";
 import { readBuilds } from "./build-loadout";
 import { isSessionBusy } from "./chat-manager";
-import { ABILITIES_PARAM, baseAbilities, overseerAbilities } from "./gathering-abilities";
+import { ABILITIES_PARAM, baseAbilities, FILES_PARAM, overseerAbilities, withFiles } from "./gathering-abilities";
 import { actOrThrow, heldAt, holdRef, hostOf, isOrgHostOpen, onOrgHostOpened } from "./org-engine";
 import type { Envelope } from "./org-envelope";
 import { OrgError } from "./org-error";
@@ -345,6 +345,11 @@ Corrections also cover a gap done too early and a session linked to the wrong ga
 - The roster shows each person's language, skills and voice. Voice says how to address and write to
   them (greeting, language, register): follow it in every note, gathering question and title meant
   for them, without quoting or mentioning it. Language and voice are about that person only.
+- People can send you files: start a gathering with \`files: true\` and say in its goal exactly what you need
+  and what a good file looks like ("Alex's latest JSON dump: a JSON export with a \`records\` array, its
+  newest record after 2026-09-01"). Its model checks each file with the person and confirms it. Then list them
+  with \`sova_files\` (Received, or Confirmed) and copy the one you need into a coding session's worktree
+  (\`sova_files copy\`; it lands in \`incoming/\`), and tell that session where it is.
 - You can check whether a message arrived: \`sova_send_status\` lists your project's WhatsApp sends
   with each one's latest state (held, refused, sent, delivered, read, failed, unknown) and why, by
   person or the most recent. Don't tell anyone a message went until it says sent or later; a look
@@ -555,8 +560,10 @@ function orgTools(orgId: string, ctx: OverseerToolCtx): Tool[] {
       if (person.status !== "active") throw new Refusal(`${person.name} is ${person.status === "proposed" ? "proposed but not approved yet" : "no longer on the roster"}.`);
       to.push(person.id);
     }
-    const abilities = overseerAbilities(p0.abilities, baseAbilities(ctx.settings().gatheringAbilities));
-    if ("error" in abilities) throw new Refusal(abilities.error);
+    const checked = overseerAbilities(p0.abilities, baseAbilities(ctx.settings().gatheringAbilities));
+    if ("error" in checked) throw new Refusal(checked.error);
+    // File intake (§app.baton/files): this session's own, no project ceiling.
+    const abilities = withFiles(checked, p0.files);
     const choice = { ...(typeof p0.model === "string" && p0.model.trim() ? { model: p0.model.trim() } : {}), ...(typeof p0.thinking === "string" && p0.thinking.trim() ? { thinking: p0.thinking.trim() } : {}) };
     const plan = p0.plan === true;
     if (plan && gap === "none") throw new Refusal("A planned gathering belongs to a gap: name it (gap \"§gap/<name>\").");
@@ -645,6 +652,7 @@ function orgTools(orgId: string, ctx: OverseerToolCtx): Tool[] {
           question: str(`The first question to put to them. ${VERBATIM}`),
           why: str(WHY_PARAM),
           abilities: ABILITIES_PARAM,
+          files: FILES_PARAM,
           gap: str(GAP_PARAM),
           plan: { type: "boolean", description: "With a gap: file it as the gap's planned gathering instead (allowed at L0); the statechart starts it itself once the level reaches L1." },
         },
@@ -666,6 +674,7 @@ function orgTools(orgId: string, ctx: OverseerToolCtx): Tool[] {
           question: str(`The first question. ${VERBATIM}`),
           why: str(WHY_PARAM),
           abilities: ABILITIES_PARAM,
+          files: FILES_PARAM,
           gap: str(GAP_PARAM),
           plan: { type: "boolean", description: "With a gap: file it as the gap's planned gathering instead (allowed at L0)." },
         },

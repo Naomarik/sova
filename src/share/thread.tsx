@@ -1,5 +1,5 @@
 import { createEffect, createSignal, For, Match, onCleanup, Show, Switch } from "solid-js";
-import type { BatonView, BatonViewImage, BatonViewItem } from "../../shared/baton";
+import type { BatonView, BatonViewFile, BatonViewImage, BatonViewItem } from "../../shared/baton";
 import { linkSegments } from "../lib/share-linkify";
 import "./thread.css";
 import { createMarkdownPatcher } from "../vis/hydrate";
@@ -48,6 +48,28 @@ export function LinkedText(props: { text: string }) {
 }
 
 export const photoCount = (n: number) => (n === 1 ? "1 photo" : `${n} photos`);
+
+/** `KB` under 1 MB, rounded; else one decimal (as the composer's chips). Pure. */
+const fileSize = (bytes: number): string => (bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`);
+
+/** A message's files (§app.baton/files): a row each, its name and size, never a link. */
+export function MessageFiles(props: { files: readonly BatonViewFile[] }) {
+  return (
+    <ul class="share-files">
+      <For each={props.files}>
+        {(f) => (
+          <li class="share-file" aria-label={`File ${f.name}, ${fileSize(f.size)}`}>
+            <span class="icon share-icon-file" aria-hidden="true" />
+            <span class="share-file-name" title={f.name}>
+              {f.name}
+            </span>
+            <span class="share-file-size">{fileSize(f.size)}</span>
+          </li>
+        )}
+      </For>
+    </ul>
+  );
+}
 
 /**
  * A message's photos (§app.baton/images): one fitted in 320 × 240, more as 96 px tiles, and a
@@ -142,6 +164,9 @@ export function Item(props: { item: BatonViewItem; reader?: boolean; photo?: (n:
               <Show when={props.photo} fallback={<p class="share-photo-count">{photoCount(photos(m()).length)}</p>}>
                 {(url) => <MessagePhotos srcs={photos(m()).map((p) => url()(p.n))} from={m().by === "you" ? "you" : m().name} />}
               </Show>
+            </Show>
+            <Show when={m().files?.length}>
+              <MessageFiles files={m().files!} />
             </Show>
             <Show when={m().text}>
               <LinkedText text={m().text} />

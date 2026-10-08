@@ -556,7 +556,7 @@ function BatonSection(props: { org: OrgDetail; start?: string; act: Act; onLinks
     () => (starting() && pid() ? pid() : false),
     (p) => getProjectOverseer(p).catch(() => null),
   );
-  const ability = (k: keyof GatheringAbilities): boolean => chosen()[k] ?? projectSet()?.gatheringAbilitiesNow?.[k] ?? AUTOMATIC_ABILITIES[k];
+  const ability = (k: keyof GatheringAbilities): boolean => chosen()[k] ?? projectSet()?.gatheringAbilitiesNow?.[k] ?? AUTOMATIC_ABILITIES[k] ?? false;
   // The model picker's list (keys, favorites, policy), as the project's gathering-model select reads it.
   const [models] = createResource(
     () => starting(),

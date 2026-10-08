@@ -1,6 +1,6 @@
 // Where dictated text goes (§chat.voice/insertion): at the caret, with a space on each side where
 // the neighbouring character isn't whitespace. Pure, so the spacing rules are tests; the composer
-// applies the result with execCommand("insertText") when focused, else setRangeText.
+// applies the result with execCommand("insertText") when focused and untouched, else setRangeText.
 
 export interface Range {
   start: number;
@@ -44,5 +44,11 @@ export function spacedInsert(value: string, range: Range, transcript: string): s
 export function splice(value: string, range: Range, inserted: string): { value: string; caret: number } {
   return { value: value.slice(0, range.start) + inserted + value.slice(range.end), caret: range.start + inserted.length };
 }
+
+/**
+ * Whether the text goes in as typing (execCommand, native undo) rather than setRangeText: only
+ * into a focused box, and never after a touch press, whose put-away keyboard typing could raise.
+ */
+export const insertsByTyping = (focused: boolean, touched: boolean): boolean => focused && !touched;
 
 export const wordCount = (text: string): number => (text.trim() ? text.trim().split(/\s+/).length : 0);

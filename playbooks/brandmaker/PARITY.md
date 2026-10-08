@@ -14,7 +14,8 @@ not fall below the minimum.
       for component detail, this file wins for anything cross-cutting) · How to use (load
       order, theme, where to look) · Layout (tree + one-line-purpose table) · Voice (pillars,
       grammar table, microcopy patterns) · Color · Type · Shape & space · Responsive ·
-      Focus & motion · Dark mode · Accessibility · Icons · Marks · Components · Class index ·
+      Focus & motion · Dark mode · Accessibility · Icons · Marks · Components · Menus &
+      dropdowns · Class index ·
       Tokens by group · Licensing. Headings match `templates/skill-md.md` exactly. Every count
       in it matches the shipped files.
 - [ ] **No `README.md` and no `CHANGELOG.md`.** `SKILL.md` is the only prose document. Two of
@@ -55,9 +56,13 @@ not fall below the minimum.
       direction for imagery is not how a UI gets produced, and a page whose entire content is
       "we don't use photos" earns nothing.
 - [ ] `components/` — one MD per inventory component (*scale*: min 8; default inventory is
-      buttons, chips, inputs, controls, toggles, cards, banners, nav-bars, overlays, lists,
-      tables, charts, unless the interview changes it — plus empty states, loading/skeleton,
-      toasts, and pagination where the product implies them).
+      buttons, chips, inputs, controls, toggles, cards, banners, nav-bars, overlays, menus
+      (popover), lists, tables, charts, unless the interview changes it — plus empty states,
+      loading/skeleton, toasts, and pagination where the product implies them).
+- [ ] **Menus.** The popover page documents a one-line row and a label + description row,
+      the checked state with its check slot, disabled with its reason, the icon slot, a
+      section label and a separator, each with a snippet. Its Purpose names menu, dropdown,
+      ⋯ overflow and picker, and `SKILL.md` has its Menus & dropdowns section.
 - [ ] Every reference MD follows `templates/reference-page.md`: Purpose · Rendered (the page
       path) · Styles (class table) · Tokens used · then **Variants & states** with copy-paste
       HTML snippets (components) or **Scale & spec** (foundations and brand topics) · DO /

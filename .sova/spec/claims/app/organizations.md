@@ -391,7 +391,8 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
   pane is at least 1000px wide (one column below): **Coding sessions**
   (§app.project-overseer/coding-worktrees) and the gathering **Sessions it started**, and **Previews**
   (§mesh.public/preview-card) in the first; **Software** (§app.project-runtime/software-card),
-  **Activity** and **To-do** in the second. Overview's
+  **Files** (§app.organizations/files-card, while placed or holding a file), **Activity** and
+  **To-do** in the second. Overview's
   cards use the width they are given (no 880px cap); the page stops at 1280px.
 - **Activity** is a card: its newest 5 acts, then **Show All {n}** (and **Show Fewer**). A done
   act has no chip; `Partly`, `Refused` and `Failed` keep theirs. With none: "Nothing yet. Every act
@@ -422,6 +423,26 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
 - **Width.** At 390px nothing scrolls sideways: the chips wrap, the tab strip scrolls as the org
   page's does, and every control stays at least 44px tall.
 
+## §app.organizations/files-card — The project page's Files card
+
+- **Where.** On the project page's Overview, in the second column after Software, while the
+  project is placed or has a file (§app/file-intake). Read from `GET /api/projects/:pid/files`
+  (`{files: [{id, name, size, kind, sender, gathering: {sessionId, title, path?} | null, at, status,
+  here}]}`, newest first, deleted ones left out). Refresh Project reads it again, and it re-reads
+  every 30 seconds.
+- **A row per file**: the name (cut with an ellipsis, the whole name as its `title`), then a meta
+  line: who sent it, the gathering's title (a link to that session), the time (relative), the
+  size, and the status chip (`Received`, or `Confirmed` in the ok colour). **Download** and
+  **Delete**, each at least 44 px tall. A file whose bytes aren't on this host shows "Not on this
+  host." instead of Download.
+- **Download** is `GET /api/projects/:pid/files/:id` on the main listener only: the bytes with
+  `Content-Type: application/octet-stream`, `Content-Disposition: attachment` (the name,
+  RFC 5987 encoded), `X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src
+  'none'; sandbox` and `Cache-Control: no-store`; 404 for an unknown, deleted or absent file.
+- **Delete** asks first ("Delete {name}? Its bytes go; the gathering's transcript keeps its
+  line.", **Delete File** / Cancel), then `DELETE /api/projects/:pid/files/:id` (§app/file-intake).
+- **Empty**: "Nothing yet. Files people send in a gathering session with files on list here."
+
 ## §app.organizations/workspace-repo — What the workspace repo holds, and what it never holds
 
 - It is the org's **whole portable state** (§app.organizations/portability). Files:
@@ -445,7 +466,9 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
     title and token counts as last counted, by model, time and token kind, §app.project-costs/ledger),
     `usage.jsonl` (the reconciler's decide calls' usage, §app.project-costs/recording), and the
     overseer's `overseer/` — `overseer.json` (autonomy, models, the coding sessions' mode, caps,
-    watch, extra instructions), `notes.md`, `ideas/` and `todos.json`;
+    watch, extra instructions), `notes.md`, `ideas/`, `todos.json` and `files.jsonl` (the files
+    people sent, by name, size and status, never their bytes, which stay on the host that took
+    them, §app/file-intake);
   - `visits.jsonl`, the visit log: each time a roster person opened one of their links, and each
     link preview and turned-off-link attempt (§app.baton/visits) — never a token, a token's hash,
     an IP address or a raw user agent;

@@ -43,6 +43,38 @@ export function joinBatches(batches: Float32Array[]): Float32Array {
   return out;
 }
 
+/** The clip without the knock of the finger tapping Stop, which a phone's raw mic picks up through
+    its body: the first burst at or after `stopAt` (the sample count when Stop was pressed) — a 10 ms
+    frame above −45 dBFS and 15 dB over the median of the 100 ms before it, staying that loud for at
+    most 80 ms (speech runs longer) — and everything after it go, with a 5 ms fade so the cut doesn't
+    click. With no such burst the clip comes back whole. */
+export function trimTapNoise(samples: Float32Array, rate: number, stopAt: number): Float32Array {
+  const F = Math.max(1, Math.round(rate / 100));
+  const count = Math.floor(samples.length / F);
+  const db: number[] = [];
+  for (let k = 0; k < count; k++) {
+    let s = 0;
+    for (let i = k * F; i < (k + 1) * F; i++) s += samples[i]! ** 2;
+    db.push(10 * Math.log10(s / F + 1e-12));
+  }
+  for (let k = Math.max(10, Math.ceil(stopAt / F)); k < count; k++) {
+    const before = db.slice(k - 10, k).sort((a, b) => a - b);
+    const bar = (before[4]! + before[5]!) / 2 + 15;
+    if (db[k]! <= -45 || db[k]! < bar) continue;
+    let end = k;
+    while (end < count && db[end]! >= bar) end++;
+    if (end - k > 8) {
+      k = end; // a word, not a knock: look past it
+      continue;
+    }
+    const out = samples.slice(0, k * F);
+    const fade = Math.min(out.length, Math.round(rate / 200));
+    for (let i = 0; i < fade; i++) out[out.length - 1 - i] = out[out.length - 1 - i]! * (i / fade);
+    return out;
+  }
+  return samples;
+}
+
 /** A batch RMS as the meter's 0–100: a speaking voice sits around 30–70, silence under 5. */
 export const levelOf = (rms: number): number => Math.max(0, Math.min(100, Math.round(Math.sqrt(Math.max(0, rms)) * 220)));
 

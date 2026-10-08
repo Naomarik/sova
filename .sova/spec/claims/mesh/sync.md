@@ -13,7 +13,8 @@ under that program's own lock where it has one. A file that is a link into a git
 written. **Settings** are Sova's and pi's host-wide preferences (Sova's experimental switches, new-session
 defaults, model favorites, model policy, request limits, Ollama Cloud's usage reset day
 (`usage-windows.json`, validated with its own strict parser), mode defaults, the legacy Delegate and
-Spec settings, and the whole `subagent-profiles.json` library), not
+Spec settings, the whole `subagent-profiles.json` library, and your session profiles, Yours
+(`sova/session-profiles.json`, §chat.profiles/projects, validated with its own strict parser)), not
 anything a session's own host keeps for it (titles, groups, drafts, archive), and not paths that
 only make sense on one machine. The library contains `{version, profiles}` only and is validated
 with its own strict parser. `subagent-profiles-default.json` never syncs: each device chooses its

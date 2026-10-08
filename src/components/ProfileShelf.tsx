@@ -34,7 +34,8 @@ export function shelfGroups(sessions: readonly SessionSummary[], profiles: reado
   const by = new Map<string, ShelfGroup>();
   for (const s of sessions) {
     const p = s.profile;
-    if (!p || s.archived) continue;
+    // A capability-neutral profile (only model, effort, subagents or mode) is no shelf profile.
+    if (!p || p.neutral || s.archived) continue;
     const key = p.custom ? `custom:${p.label}` : keyOf(p);
     const g =
       by.get(key) ??

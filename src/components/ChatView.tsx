@@ -1690,6 +1690,17 @@ export function ChatView(props: {
     }
   };
 
+  /** The new-session empty state is showing: the thread has no rendered row (see where it draws). */
+  const emptyScreen = () => {
+    const list = items();
+    return (
+      !!list &&
+      whole() &&
+      (props.overseer ? list.every((it) => it.kind === "info") : list.every((it) => isChangeRow(it) || isProfileRow(it) || isLoginNoteRow(it))) &&
+      live.entries.length === 0 &&
+      commandRows().length === 0
+    );
+  };
   /** A baton session's names, from its strip (§app/baton). */
   const [batonNames, setBatonNames] = createSignal<Record<string, string> | undefined>(undefined);
   return (
@@ -1706,6 +1717,7 @@ export function ChatView(props: {
         count={visibleCount(newRows(items() ?? [], newFrom()), { tools: hideTools(props.path), thinking: hideThinking(props.path) }) + live.entries.length}
         resume={resume()}
         busy={!items()}
+        empty={emptyScreen()}
         banner={
           <div class="stack-2">
             <Show when={!archivedPane()}>
@@ -1906,14 +1918,7 @@ export function ChatView(props: {
                   mode), the profile entry and a Claude login note draw nothing, so they don't count; local rows such as "Ran /cmd" still do.
                   The Overseer's also while it holds only machine notes (its model and thinking
                   rows): nothing has been said yet. */}
-              <Show
-                when={
-                  whole() &&
-                  (props.overseer ? list().every((it) => it.kind === "info") : list().every((it) => isChangeRow(it) || isProfileRow(it) || isLoginNoteRow(it))) &&
-                  live.entries.length === 0 &&
-                  commandRows().length === 0
-                }
-              >
+              <Show when={emptyScreen()}>
                 <Show
                   when={props.overseer}
                   fallback={

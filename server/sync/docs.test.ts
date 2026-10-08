@@ -134,6 +134,18 @@ test("validators: the consumers' defaults are valid, garbage is not; theme files
   assert.equal(specs["settings:usage-windows.json"]!.valid(JSON.stringify({ version: 1, ollama: { resetDay: 32 } })), false);
   assert.equal(specs["settings:usage-windows.json"]!.valid("not json"), false);
   assert.equal(specs["settings:sova/settings.json"]!.valid("{}"), false);
+  // Yours: the whole file, checked with the profile store's strict parser.
+  const yours = specs["settings:sova/session-profiles.json"]!;
+  assert.equal(yours.path, "/a/sova/session-profiles.json");
+  assert.equal(yours.category, "settings");
+  const card = { id: "claude", label: "Claude session", model: "claude-code-cli/claude-opus-5-5", thinking: "high", subagents: "claude-subs" };
+  assert.equal(yours.valid(JSON.stringify({ version: 1, profiles: [card] })), true);
+  assert.equal(yours.valid(JSON.stringify({ version: 1, profiles: [] })), true);
+  assert.equal(yours.valid(JSON.stringify({ version: 1, profiles: [{ ...card, thinking: "hot" }] })), false);
+  assert.equal(yours.valid(JSON.stringify({ version: 1, profiles: [{ ...card, typo: 1 }] })), false);
+  assert.equal(yours.valid(JSON.stringify({ version: 1, profiles: [card, { ...card, label: "Other" }] })), false, "two profiles with one id");
+  assert.equal(yours.valid(JSON.stringify({ version: 2, profiles: [] })), false);
+  assert.equal(yours.valid("{"), false);
   assert.equal(themeDoc("/t", "../evil.json"), null);
   assert.equal(themeDoc("/t", "a/b.json"), null);
   assert.equal(themeDoc("/t", ".hidden.json"), null);

@@ -16,10 +16,11 @@ import {
   type Removable,
 } from "../../shared/profiles";
 import type { ChatProfileInfo, PlaybookInfo } from "../../shared/protocol";
-import { approveProfile, fetchProfiles, pickProfile, type ProfilePickRef } from "../lib/api";
-import { allProfiles, changeRows, defaultTools, guardrailNote, pickerProfiles, pickRef, profileIconName } from "../lib/profiles";
+import { approveProfile, fetchProfiles, pickProfile, saveCurrentProfile, type ProfilePickRef } from "../lib/api";
+import { allProfiles, cardUnusable, changeRows, defaultTools, guardrailNote, pickerProfiles, pickRef } from "../lib/profiles";
 import { openSettings } from "../lib/settings-nav";
 import { toast } from "../lib/ui-state";
+import { PROFILE_GRID_CUSTOM, ProfileGrid } from "./ProfileGrid";
 import { ProfilePlaybookCard } from "./ProfilePlaybookCard";
 import { Banner, Icon } from "./ui";
 
@@ -27,7 +28,7 @@ import { Banner, Icon } from "./ui";
 const boardsOpen = new Set<string>();
 
 /**
- * The empty screen's Profile select and what it changes (§chat.profiles/picker). A pick is written
+ * The empty screen's profile cards and what the picked one changes (§chat.profiles/picker). A pick is written
  * to the session at once and its runtime reopens (§chat.profiles/applying); the socket's next
  * `profile` message is what this shows, so it never keeps its own idea of the tools.
  */
@@ -46,8 +47,12 @@ export function ProfilePicker(props: {
   onRunPlaybook?: (playbook: PlaybookInfo) => boolean;
 }) {
   const [listing, { refetch, mutate }] = createResource(() => fetchProfiles(props.cwd).catch(() => undefined));
-  const [open, setOpen] = createSignal(false);
-  const [query, setQuery] = createSignal("");
+  // Save Current As Profile's form.
+  const [saving, setSaving] = createSignal(false);
+  const [saveName, setSaveName] = createSignal("");
+  const [savingNow, setSavingNow] = createSignal(false);
+  /** Why the last save was refused, under the name field until the name changes. */
+  const [saveError, setSaveError] = createSignal<string | null>(null);
   const [pending, setPending] = createSignal<string | null>(null);
   const [alert, setAlert] = createSignal<{ label: string; running: { id: string; path: string; title: string } } | null>(null);
   /** An unapproved project profile that was picked: nothing changed yet (§chat.profiles/trust). */
@@ -64,7 +69,6 @@ export function ProfilePicker(props: {
   const current = () => props.info.profile;
   const label = () => current()?.label ?? "Default";
   const lists = createMemo(() => pickerProfiles(listing()));
-  const matches = (p: ListedProfile) => !query().trim() || p.label.toLowerCase().includes(query().trim().toLowerCase());
   const runningElsewhere = (p: ListedProfile) => {
     const r = listing()?.running[p.key];
     return r && r.path !== props.path ? r : null;
@@ -94,8 +98,6 @@ export function ProfilePicker(props: {
     }
   }
   const choose = (p: ListedProfile) => {
-    setOpen(false);
-    setQuery("");
     setAsking(null);
     const r = runningElsewhere(p);
     if (p.singleton && r) {
@@ -123,6 +125,23 @@ export function ProfilePicker(props: {
     setBoard(false);
     void apply(pickRef(p), p.label, p);
   };
+
+  async function saveCurrent() {
+    const name = saveName().trim();
+    if (!name) return;
+    setSavingNow(true);
+    setSaveError(null);
+    try {
+      mutate(await saveCurrentProfile(props.path, name));
+      setSaving(false);
+      setSaveName("");
+      toast(`Saved ${name} to your profiles.`);
+    } catch (err) {
+      setSaveError(`Couldn't save ${name}. ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setSavingNow(false);
+    }
+  }
 
   // The board: kept capabilities and grants, starting from the current pick.
   const [edited, setEdited] = createSignal<{ remove: Removable[]; grant: Grantable[] } | null>(null);
@@ -159,74 +178,85 @@ export function ProfilePicker(props: {
 
   return (
     <section class="profile-picker" aria-label="Profile">
-      <div class="profile-select-row">
-        <span class="field-label" id="profile-label">
-          Profile
-        </span>
-        <div class="profile-select">
-          <button
-            type="button"
-            class="button profile-select-button"
-            aria-haspopup="listbox"
-            aria-expanded={open()}
-            aria-labelledby="profile-label profile-current"
-            onClick={() => setOpen(!open())}
-          >
-            <Icon name={profileIconName(current()?.icon ?? "grid")} small />
-            <span id="profile-current">{label()}</span>
-            <Icon name="chevron-down" small />
-          </button>
-          <Show when={open()}>
-            <div class="profile-menu" role="dialog" aria-label="Pick a profile" onKeyDown={(e) => e.key === "Escape" && setOpen(false)}>
-              <input
-                class="input"
-                type="search"
-                placeholder="Find a profile"
-                aria-label="Find a profile"
-                value={query()}
-                onInput={(e) => setQuery(e.currentTarget.value)}
-                ref={(el) => queueMicrotask(() => el.focus())}
-              />
-              <ul class="profile-options" role="listbox" aria-label="Profiles">
-                <li class="profile-options-group" role="presentation">
-                  Built in
-                </li>
-                <For each={lists().builtins.filter(matches)}>{(p) => <Option p={p} running={!!runningElsewhere(p)} selected={currentKey() === p.key} onPick={() => choose(p)} />}</For>
-                <Show when={lists().project.filter(matches).length}>
-                  <li class="profile-options-group" role="presentation">
-                    This project ({lists().projectName})
-                  </li>
-                  <For each={lists().project.filter(matches)}>{(p) => <Option p={p} running={!!runningElsewhere(p)} selected={currentKey() === p.key} onPick={() => choose(p)} />}</For>
-                </Show>
-                <Show when={lists().yours.filter(matches).length}>
-                  <li class="profile-options-group" role="presentation">
-                    Yours
-                  </li>
-                  <For each={lists().yours.filter(matches)}>{(p) => <Option p={p} running={!!runningElsewhere(p)} selected={currentKey() === p.key} onPick={() => choose(p)} />}</For>
-                </Show>
-                <li role="option" aria-selected={!!current()?.custom} class="profile-option" tabIndex={0} onClick={() => (setOpen(false), setBoard(true))} onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), setOpen(false), setBoard(true))}>
-                  <Icon name="wrench" small />
-                  <span class="profile-option-name">Custom…</span>
-                  <span class="profile-option-meta">Adjust this one</span>
-                </li>
-              </ul>
-              <Show when={problems()}>
-                <p class="profile-muted">
-                  {problems()} profile file{problems() === 1 ? " has" : "s have"} mistakes. See Manage Profiles.
-                </p>
-              </Show>
-              <button type="button" class="button button-sm button-ghost" onClick={() => (setOpen(false), openSettings("profiles"))}>
-                Manage Profiles
-              </button>
-            </div>
-          </Show>
-        </div>
+      <ProfileGrid
+        path={props.path}
+        groups={lists()}
+        checked={current()?.custom ? PROFILE_GRID_CUSTOM : currentKey()}
+        subagents={listing()?.subagents ?? []}
+        running={(p) => !!runningElsewhere(p)}
+        unusable={(p) => cardUnusable(listing(), p)}
+        onPick={choose}
+        onCustom={() => setBoard(true)}
+      />
+      <Show when={problems()}>
+        <p class="profile-muted">
+          {problems()} profile file{problems() === 1 ? " has" : "s have"} mistakes. See Manage Profiles.
+        </p>
+      </Show>
+      <div class="profile-actions">
+        <button type="button" class="button button-sm button-ghost" onClick={() => openSettings("profiles")}>
+          Manage Profiles
+        </button>
+        <button type="button" class="button button-sm button-ghost" aria-expanded={saving()} onClick={() => (setSaving(!saving()), setSaveError(null))}>
+          Save Current As Profile
+        </button>
         <Show when={pending()}>
           <span class="profile-applying" role="status">
             <span class="live-dot" /> Applying {pending()}…
           </span>
         </Show>
       </div>
+      <Show when={saving()}>
+        <form
+          class="profile-save"
+          aria-label="Save current as profile"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void saveCurrent();
+          }}
+        >
+          <label class="field profile-save-field">
+            <span class="field-label">Name</span>
+            <input
+              class="input"
+              type="text"
+              maxLength={60}
+              required
+              value={saveName()}
+              aria-invalid={saveError() ? "true" : undefined}
+              aria-describedby={saveError() ? "profile-save-error" : undefined}
+              onInput={(e) => {
+                setSaveName(e.currentTarget.value);
+                setSaveError(null);
+              }}
+              ref={(el) => queueMicrotask(() => el.focus())}
+            />
+            <span class="field-hint">Saves this session's model, effort and subagent profile to Yours. Nothing else changes.</span>
+            <Show when={saveError()}>
+              {(msg) => (
+                <span class="field-error" id="profile-save-error" role="alert">
+                  {msg()}
+                </span>
+              )}
+            </Show>
+          </label>
+          <div class="profile-alert-actions">
+            <button type="submit" class="button button-sm button-primary" disabled={!saveName().trim() || savingNow()}>
+              Save Profile
+            </button>
+            <button
+              type="button"
+              class="button button-sm button-ghost"
+              onClick={() => {
+                setSaving(false);
+                setSaveError(null);
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      </Show>
 
       <Show when={alert() ?? props.race}>
         {(a) => (
@@ -238,7 +268,7 @@ export function ProfilePicker(props: {
                 <a class="button button-sm button-primary" href={`#/sid/${encodeURIComponent(a().running.id)}`}>
                   Open the Running {titleCase(a().label)}
                 </a>
-                <button type="button" class="button button-sm" onClick={() => (setAlert(null), setOpen(true))}>
+                <button type="button" class="button button-sm" onClick={() => setAlert(null)}>
                   Pick Another Profile
                 </button>
               </div>
@@ -257,7 +287,7 @@ export function ProfilePicker(props: {
                 <button type="button" class="button button-sm button-primary" onClick={() => void approveAndPick(p())}>
                   Approve
                 </button>
-                <button type="button" class="button button-sm" onClick={() => (setAsking(null), setOpen(true))}>
+                <button type="button" class="button button-sm" onClick={() => setAsking(null)}>
                   Pick Another Profile
                 </button>
               </div>
@@ -376,39 +406,5 @@ export function ProfilePicker(props: {
       <p class="profile-muted">Fixed once you send your first message.</p>
 
     </section>
-  );
-}
-
-const SOURCE_META = { sova: "Built in", project: "This project", user: "Yours" } as const;
-
-function Option(props: { p: ListedProfile; running: boolean; selected: boolean; onPick: () => void }) {
-  return (
-    <li
-      role="option"
-      aria-selected={props.selected}
-      class="profile-option"
-      tabIndex={0}
-      onClick={() => props.onPick()}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          props.onPick();
-        }
-      }}
-    >
-      <Icon name={profileIconName(props.p.icon)} small />
-      <span class="profile-option-name">{props.p.label}</span>
-      <span class="profile-option-meta">
-        {SOURCE_META[props.p.source]}
-        {props.p.singleton ? " · One at a time" : ""}
-        {props.p.playbook ? " · Runs a playbook" : ""}
-      </span>
-      <Show when={props.running}>
-        <span class="chip">Running</span>
-      </Show>
-      <Show when={props.p.approval === "needed"}>
-        <span class="chip chip-warn">Needs approval</span>
-      </Show>
-    </li>
   );
 }

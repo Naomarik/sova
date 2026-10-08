@@ -569,12 +569,16 @@ export const setSessionTitle = (path: string, title: string | null) =>
 /** The sidebar's user-made groups, in creation order. */
 export const listSessionGroups = () => request<SessionGroup[]>("/api/session-groups");
 
-/** Profiles (§chat/profiles): what a folder can use, one pick, approving and hiding (profiles are files; nothing here writes one). */
+/** Profiles (§chat/profiles): what a folder can use, one pick, approving and hiding, and saving the
+    session's model, effort and subagent pick as a new profile of yours (the one profile file written). */
 export type ProfilePickRef = { source: "sova" | "user" | "project"; id: string };
 export const fetchProfiles = (cwd?: string | null) =>
   request<ProfilesListing>(cwd ? `/api/profiles?cwd=${encodeURIComponent(cwd)}` : "/api/profiles", { cache: "no-store" });
 export const pickProfile = (path: string, profile: ProfilePickRef | { remove: string[]; grant: string[]; from?: ProfilePickRef } | null) =>
   request<{ ok: true }>("/api/sessions/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, profile }) });
+/** Save Current As Profile: this session's model, effort and subagent pick as a new profile of yours; answers with the listing. */
+export const saveCurrentProfile = (path: string, label: string) =>
+  request<ProfilesListing>("/api/profiles/save-current", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, label }) });
 /** Approve a project profile's powers, exactly the ones shown (§chat.profiles/trust). */
 export const approveProfile = (cwd: string, p: { id: string; grant: string[]; overseerMayStart: boolean }) =>
   request<ProfilesListing>("/api/profiles/approve", {

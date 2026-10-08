@@ -116,7 +116,7 @@ export const hasUnmerged = (trees: readonly WorktreeStatus[] | undefined): boole
 
 /**
  * Whether a row passes a chip. Chips narrow what the board is for (the default scope), except
- * Needs you, which reaches any session that asks, and Archived, which is only what you archived.
+ * Needs you, which reaches any unarchived session that asks, and Archived, which is only what you archived.
  */
 export function passesFilter(r: BoardRow, filter: BoardFilter | null, trees: readonly WorktreeStatus[] | undefined): boolean {
   switch (filter) {
@@ -125,7 +125,7 @@ export function passesFilter(r: BoardRow, filter: BoardFilter | null, trees: rea
     case "live":
       return r.live;
     case "needs-you":
-      return r.state === "needs-you";
+      return !r.session.archived && r.state === "needs-you";
     case "has-workers":
       return r.total > 0;
     case "unmerged":
@@ -154,7 +154,7 @@ export function sortRows<R extends Pick<BoardRow, "state" | "lastActive">>(rows:
 /**
  * The rows on screen: the chip (or the default scope), then the search. A search with no chip
  * looks through every session, not only the default scope — the one you're looking for is often
- * an old one. `pinned` stays in whatever the filter says: a team link's parent session.
+ * an old one. `pinned` keeps a team link's parent session, except archived rows under Needs you.
  */
 export function visibleRows(
   rows: readonly BoardRow[],
@@ -164,6 +164,7 @@ export function visibleRows(
   return sortRows(
     rows.filter((r) => {
       const trees = opts.treesOf(r.session.path);
+      if (opts.filter === "needs-you" && r.session.archived) return false;
       if (r.session.path === opts.pinned) return true;
       const inScope = opts.filter === null && searching ? true : passesFilter(r, opts.filter, trees);
       return inScope && matchesSearch(r, opts.query, trees);

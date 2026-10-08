@@ -100,25 +100,8 @@
       "authority": "accepted",
       "evidence": "verified",
       "code": [
-        "src/components/AgentsView.tsx",
-        "src/agents-board.css",
         "src/lib/agents-board.ts",
-        "src/lib/agents-board.test.ts",
-        "src/lib/session-actions.ts",
-        "src/components/Groups.tsx",
-        "src/components/SelectionToolbar.tsx",
-        "src/components/SessionDetails.tsx",
-        "src/App.tsx",
-        "src/components/InsightsPage.tsx",
-        "src/lib/pane-insight.ts",
-        "server/insights.ts",
-        "server/worker-restore.ts",
-        "shared/protocol.ts",
-        "server/insights-workers.test.ts",
-        "server/insights-restored.test.ts",
-        "src/lib/title-field.ts",
-        "src/lib/title-field.test.ts",
-        "shared/usage/wire.ts"
+        "src/lib/agents-board.test.ts"
       ]
     },
     "§app.insights/tokens-motion-and-accessibility": {

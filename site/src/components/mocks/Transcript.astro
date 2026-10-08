@@ -1,11 +1,11 @@
 ---
-// One web session mid-turn: message actions on your message, an edit shown as a diff,
+// One web session mid-turn: Rewind on your message, Regenerate and Fork on a reply, an edit shown as a diff,
 // a queued follow-up, and the composer in its Steer state.
 import Frame from "../Frame.astro";
 import Icon from "../Icon.astro";
 import ContextRing from "../ContextRing.astro";
 ---
-<Frame path="demo-app" class="m-frame" caption="A session transcript: your message with Copy, Fork and Rewind actions, an edit rendered as a diff, a queued follow-up message, and the composer offering Steer and Stop while the turn runs.">
+<Frame path="demo-app" class="m-frame" caption="A session transcript: your message with Copy, Share and Rewind actions, a reply with Copy, Regenerate and Fork, an edit rendered as a diff, a queued follow-up message, and the composer offering Steer and Stop while the turn runs.">
   <div class="m-session">
     <header class="m-head">
       <span class="m-head-title">Upload client</span>
@@ -16,10 +16,15 @@ import ContextRing from "../ContextRing.astro";
       <div class="m-msg-user">Cap the backoff at 30 seconds, and log each retry at debug level.</div>
       <div class="m-actions">
         <span class="m-action"><Icon name="copy" size={13} />Copy</span>
-        <span class="m-action m-action-hot"><Icon name="branch" size={13} />Fork</span>
+        <span class="m-action"><Icon name="external" size={13} />Share</span>
         <span class="m-action"><Icon name="undo" size={13} />Rewind</span>
       </div>
       <p class="m-msg">The delay doubles from 500 ms, so it needs a ceiling before the 7th try. I'll clamp it where it's computed.</p>
+      <div class="m-actions m-actions-start">
+        <span class="m-action"><Icon name="copy" size={13} />Copy</span>
+        <span class="m-action"><Icon name="refresh" size={13} />Regenerate</span>
+        <span class="m-action m-action-hot"><Icon name="branch" size={13} />Fork</span>
+      </div>
       <div class="m-tool">
         <div class="m-tool-sum"><Icon name="chevron-down" size={12} /><span class="m-tool-name">edit</span><span class="m-tool-arg">src/upload/retry.ts</span><span class="m-tool-stat"><span class="m-add">+3</span><span class="m-del">−1</span></span></div>
         <div class="diff">

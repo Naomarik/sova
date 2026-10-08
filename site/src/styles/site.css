@@ -98,7 +98,7 @@ p code, li code, td code, dd code {
 .theme-toggle .icon-moon { display: none; }
 :root[data-theme="light"] .theme-toggle .icon-moon { display: inline-block; }
 :root[data-theme="light"] .theme-toggle .icon-sun { display: none; }
-/* The two newer sections get nav links only where the bar has room for them. */
+/* The Mesh and Organizations pages get nav links only where the bar has room for them. */
 @media (max-width: 1099px) { .nav-links .nav-link-extra { display: none; } }
 @media (max-width: 767px) {
   .nav-links, .nav .chip { display: none; }
@@ -335,6 +335,17 @@ p code, li code, td code, dd code {
 .cards-fit { grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); }
 .cards-follow { margin-top: clamp(56px, 7vw, 96px); }
 .cards-note { margin-top: var(--space-5); text-align: center; }
+/* A card that opens a page: its title is the link, stretched over the whole card. */
+.fcard-link { position: relative; transition: border-color var(--dur-fast) var(--ease-standard); }
+.fcard-link h3 a { color: var(--color-ink); text-decoration: none; }
+.fcard-link h3 a::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
+.fcard-link h3 a:focus-visible { outline: none; }
+.fcard-link:has(h3 a:focus-visible) { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.fcard-link:hover { border-color: var(--color-border-strong); }
+.fcard-more { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: var(--fw-medium); color: var(--color-accent); }
+.fcard-link:hover .fcard-more { color: var(--color-accent-hover); }
+.fcard-link .fcard-limit { margin-top: 0; }
+.fcard-link p:not(.fcard-limit) { flex: 1; }
 .eyebrow .chip { font-size: 10px; padding: 1px 8px; letter-spacing: .06em; }
 .fcard .chip { font-size: 10px; padding: 0 7px; line-height: 1.7; vertical-align: 1px; }
 .chip-soon { color: var(--status-warn); border-color: currentColor; background: transparent; }

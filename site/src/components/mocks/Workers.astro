@@ -5,12 +5,12 @@ import Icon from "../Icon.astro";
 import ContextRing from "../ContextRing.astro";
 
 const workers = [
-  { name: "reviewer", model: "claude-opus-5-5", state: "working", pct: 18, live: true, sel: true },
-  { name: "test-writer", model: "glm-5.3", state: "done · 4m", pct: 41 },
-  { name: "docs", model: "claude-sonnet-5", state: "done · 9m", pct: 12 },
+  { name: "reviewer", backend: "claude-code", model: "Opus 5.5", state: "working", pct: 18, live: true, sel: true },
+  { name: "test-writer", backend: "pi", model: "glm-5.3", state: "done · 4m", pct: 41 },
+  { name: "docs", backend: "claude-code", model: "Sonnet 5.5", state: "done · 9m", pct: 12 },
 ];
 ---
-<Frame path="demo-app · workers" class="m-frame" caption="A session's workers pane: 3 workers with their models and context rings, one worker's transcript open beside them, and the 2 git worktrees the session works in, one of them merged.">
+<Frame path="demo-app · workers" class="m-frame" caption="A session's workers pane: 3 workers on 2 backends, Claude Code and pi, with their models and context rings, one worker's transcript open beside them, and the 2 git worktrees the session works in, one of them merged.">
   <div class="m-workers">
     <div class="m-wlist">
       <div class="m-group-label">Workers <span class="m-sep">·</span> 3</div>
@@ -19,8 +19,8 @@ const workers = [
           <Icon name="worker" size={14} />
           <div class="m-row-main">
             <div class="m-row-title">{w.live && <span class="live-dot" />}<span>{w.name}</span></div>
-            <div class="m-row-meta"><span class="m-mono">{w.model}</span><ContextRing pct={w.pct} /></div>
-            <div class="m-row-meta"><span>{w.state}</span><span>{w.pct}%</span></div>
+            <div class="m-row-meta"><span class="m-mono">{w.model}</span><span class="m-tag">{w.backend}</span></div>
+            <div class="m-row-meta"><span>{w.state}</span><ContextRing pct={w.pct} /><span>{w.pct}%</span></div>
           </div>
         </div>
       ))}
@@ -34,7 +34,7 @@ const workers = [
       <header class="m-head" style="height:44px">
         <span class="m-head-title">reviewer</span>
         <span class="m-head-sub m-mono">feat/retry-backoff</span>
-        <span class="m-head-end m-mono m-muted"><ContextRing pct={18} />36k / 200k</span>
+        <span class="m-head-end m-mono m-muted"><ContextRing pct={18} />180k · 18%</span>
       </header>
       <div class="m-thread">
         <div class="m-msg-user">Review the retry change. Look for retries on non-idempotent calls.</div>

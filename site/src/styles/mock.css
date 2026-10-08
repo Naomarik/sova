@@ -163,6 +163,87 @@
 .m-tabs-folded > span { padding: 6px 10px; font-family: var(--font-mono); font-size: 11px; color: var(--color-ink-muted); border-bottom: 2px solid transparent; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; }
 .m-tabs-folded > .on { color: var(--color-ink); border-bottom-color: var(--color-accent); }
 
+/* ---- HERO DEVICES. One session on a desktop, an unfolded foldable and a folded phone. ------
+   From 1120px the three overlap: the desktop centred, the foldable over its lower left (where the
+   sidebar it repeats sits), the phone over its lower right. Narrower, they sit in a row that
+   scrolls sideways, each at a size it can be read at, the folded one first. */
+
+.devices { position: relative; }
+.dev { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 10px; min-width: 0; }
+.dev-label { font-family: var(--font-mono); font-size: 11px; letter-spacing: var(--ls-eyebrow); text-transform: uppercase; color: var(--color-ink-muted); }
+
+.hd-app { display: grid; grid-template-columns: 216px minmax(0, 1fr) 248px; height: 560px; }
+.hd-app > * { min-height: 0; overflow: hidden; }
+.hd-side { display: flex; }
+.hd-thread { flex: 1; }
+.hd-mode {
+  display: inline-flex; align-items: center; gap: 5px;
+  height: 26px; padding: 0 10px; border-radius: var(--r-full);
+  border: var(--stroke-thin) solid var(--color-border-strong); background: var(--color-surface);
+  font-family: var(--font-mono); font-size: 11px; color: var(--color-ink); white-space: nowrap;
+}
+.hd-mode .icon { color: var(--color-ink-muted); }
+.hd-workers { display: flex; flex-direction: column; border-left: var(--stroke-thin) solid var(--color-border); background: var(--color-surface); min-width: 0; }
+.hd-workers .m-group-label { padding-top: 12px; }
+.hd-wt { padding: 10px 12px; border-bottom: var(--stroke-thin) solid var(--color-border); }
+.hd-peek { display: flex; flex-direction: column; gap: 8px; padding: 12px; }
+.hd-peek-head { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: var(--fw-medium); }
+.hd-wcard { display: flex; flex-direction: column; border: var(--stroke-thin) solid var(--color-border); border-radius: var(--r-md); background: var(--color-surface); }
+.hd-wline { display: flex; align-items: center; gap: 8px; padding: 6px 10px; font-size: 12px; white-space: nowrap; }
+.hd-wline + .hd-wline { border-top: var(--stroke-thin) solid var(--color-border); }
+.hd-wline .m-mono { margin-left: auto; font-size: 10.5px; }
+.hd-wline .m-ok { width: 6px; font-size: 11px; display: inline-flex; justify-content: center; }
+
+/* The unfolded foldable: near square, a crease down the middle, sidebar left and chat right. */
+.fold {
+  border-radius: 26px; padding: 8px;
+  background: var(--color-surface);
+  border: var(--stroke-thin) solid var(--color-border-strong);
+  box-shadow: var(--shadow-3);
+}
+.fold-screen { position: relative; border-radius: 19px; overflow: hidden; background: var(--color-bg); height: 100%; display: flex; flex-direction: column; font-size: 12px; }
+.fold-screen::after { content: ""; position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; background: var(--color-border); opacity: .7; pointer-events: none; }
+.fold-app { flex: 1; min-height: 0; display: grid; grid-template-columns: 40% minmax(0, 1fr); }
+.fold-side { border-right: var(--stroke-thin) solid var(--color-border); overflow: hidden; min-width: 0; }
+.fold-side .m-group-label { padding: 10px 12px 4px; }
+.fold-side .m-row { padding: 6px 10px 6px 12px; }
+.fold-main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.fold .m-head, .hd-phone .m-head { height: 44px; padding: 0 12px; }
+.fold .m-thread, .hd-phone .m-thread { padding: 12px; flex: 1; }
+.fold .m-composer, .hd-phone .m-composer { padding: 8px 10px 12px; }
+.fold .m-composer-row .m-input, .hd-phone .m-composer-row .m-input { height: 34px; }
+.fold .m-composer-row .m-btn, .hd-phone .m-composer-row .m-btn { height: 34px; width: 34px; }
+.hd-phone .phone-screen { height: 100%; }
+
+/* Narrow: a row that scrolls sideways. */
+.devices {
+  display: flex; align-items: flex-end; gap: clamp(20px, 3vw, 32px);
+  overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: thin;
+  padding: 4px var(--gutter) 20px; margin: 0 calc(var(--gutter) * -1);
+}
+.dev { flex: none; scroll-snap-align: center; }
+.dev-desk { width: 920px; }
+.dev-fold { width: 460px; }
+.dev-fold .fold { width: 100%; height: 420px; }
+.dev-phone { width: 236px; }
+.dev-phone .phone { width: 100%; height: 470px; }
+@media (max-width: 767px) {
+  .dev-phone { order: -2; width: min(236px, 64vw); }
+  .dev-fold { order: -1; width: min(460px, 86vw); }
+  .dev-fold .fold { height: min(420px, 80vw); }
+}
+
+/* Wide: overlap. */
+@media (min-width: 1120px) {
+  .devices { display: block; overflow: visible; padding: 0 0 150px; margin: 0; }
+  .dev-desk { width: 80%; margin: 0 auto; }
+  .dev-desk .dev-label { display: none; }
+  .dev-fold { position: absolute; left: 0; bottom: 0; width: 30%; }
+  .dev-fold .fold { height: 400px; }
+  .dev-phone { position: absolute; right: 0; bottom: 0; width: 206px; }
+  .dev-phone .phone { height: 450px; }
+}
+
 /* ---- A SINGLE-SESSION FRAME (transcript, watch, overseer). ---------------------- */
 
 .m-session { display: flex; flex-direction: column; min-width: 0; }

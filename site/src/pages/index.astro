@@ -4,7 +4,7 @@ import Icon from "../components/Icon.astro";
 import Mark from "../components/Mark.astro";
 import InstallBlock from "../components/InstallBlock.astro";
 import ThemeGrid from "../components/ThemeGrid.astro";
-import Workspace from "../components/mocks/Workspace.astro";
+import Devices from "../components/mocks/Devices.astro";
 import Fanout from "../components/mocks/Fanout.astro";
 import Transcript from "../components/mocks/Transcript.astro";
 import Watch from "../components/mocks/Watch.astro";
@@ -113,8 +113,8 @@ const meshCards = [
 ];
 ---
 <Base
-  title="Sova · Run AI sessions side by side"
-  description="Sova is an open-source browser workspace for AI coding sessions. Delegate to subagents you can follow, agree on the plan before they build, run models side by side, and use every machine you own from one page."
+  title="Sova · Every agent session, one calm workspace"
+  description="Sova is an open-source browser workspace for the pi coding agent, on your desk or on a phone, foldables included. Delegate work to subagents you can follow, agree on the plan before they build, and read every change as steps."
 >
   <header class="nav">
     <div class="wrap nav-inner">
@@ -145,26 +145,25 @@ const meshCards = [
             <span>Open source · Apache-2.0<span class="hero-pill-extra"> · For the pi coding agent</span></span>
             <Icon name="arrow-right" size={14} />
           </a>
-          <h1 class="h-hero"><span>Run AI sessions <span class="grad">side by side.</span></span> <span class="quiet">Stop juggling terminals.</span></h1>
-          <p class="lead">Send one prompt to several models, compare their approaches, and branch the conversation worth pursuing. Sova runs your AI sessions in the browser, from a full desktop workspace to your phone, with the sessions you already have.</p>
+          <h1 class="h-hero"><span>Every agent session, <span class="grad">one calm workspace.</span></span> <span class="quiet">On your desk, or folded in your pocket.</span></h1>
+          <p class="lead">Sova runs your coding-agent sessions in one browser workspace that fits a desktop, an unfolded foldable, or a phone. Delegate hands the work to subagents you can follow, each with its own transcript, and you read every change as steps before it lands.</p>
           <div class="hero-actions">
             <InstallBlock id="install-hero" />
-            <p class="hero-note">Then run <code>sova</code> and open <code>http://127.0.0.1:4800</code>. Needs Git, Node.js ≥22.19, and pnpm (or npx). Sova runs on the <a href={site.pi}>pi</a> coding agent, and the install brings its own copy.</p>
+            <p class="hero-note">Then run <code>sova</code>, and <code>sova open</code> to open it. Needs Git, Node.js ≥22.19, pnpm (or npx), curl, and unzip or python3; the installer downloads its own pinned Bun. Sova runs on the <a href={site.pi}>pi</a> coding agent, and the install brings its own copy.</p>
             <div class="hero-links">
               <a class="button button-ghost" href={site.installScript}><Icon name="file" size={16} />Read the Install Script</a>
               <a class="button button-ghost" href={site.gettingStarted}><Icon name="arrow-right" size={16} />Getting Started</a>
-              <a class="button button-ghost" href="#orgs"><Icon name="network" size={16} />Organizations and Mesh</a>
             </div>
           </div>
         </div>
-        <div class="hero-stage"><Workspace /></div>
+        <div class="hero-stage"><Devices /></div>
       </div>
       <div class="hero-band">
         <div class="wrap">
           <dl class="facts">
             <div class="fact"><dt class="fact-label">Your sessions, read in place</dt><dd class="fact-value">~/.pi/agent</dd></div>
             <div class="fact"><dt class="fact-label">Loopback by default</dt><dd class="fact-value">127.0.0.1:4800</dd></div>
-            <div class="fact"><dt class="fact-label">Several machines, one list</dt><dd class="fact-value">Mesh</dd></div>
+            <div class="fact"><dt class="fact-label">Token-gated, one token per install</dt><dd class="fact-value">sova/auth-token</dd></div>
             <div class="fact"><dt class="fact-label">Read it, fork it</dt><dd class="fact-value">Apache-2.0</dd></div>
           </dl>
         </div>

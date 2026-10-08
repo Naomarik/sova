@@ -789,9 +789,13 @@ Three tools let the Overseer make and end links between sessions on different ho
   its host (a peer id; this host when left out) and session id. A peer's member is resolved on its
   own host by id (§mesh.links/by-id). It refuses, naming the member, a TUI-live session, an archived
   one, a worker's session, the Overseer's own, a baton session, a project overseer's session, any
-  other organization's session (§app.session-list/organizations), a session on a host that is down or skewed, a second member on the same host as another,
-  and a session that was not created as a link member (§mesh.links/record), saying to create the
-  member with `sova_create_session` and `link: true` instead.
+  other organization's session (§app.session-list/organizations), a session on a host that is down or skewed,
+  and a second member on the same host as another. Any other session can be linked, running or
+  idle, whether or not it was created with `link: true` (§mesh.links/record); one that wasn't gets
+  the link tools as it joins (§mesh.links/tools). A member host on the earlier build that linked
+  only sessions created with `link: true` refuses any other member there; the call fails naming
+  that host and saying it runs that earlier build, to create the member there with
+  `sova_create_session`, `host` and `link: true`, or to update that host.
   A member on a peer this host doesn't share links with (its grant to that peer, §mesh.peers/grants)
   is refused before anything is sent, naming the host and saying this host doesn't share links with
   it, to be raised on this host's Mesh page; if the grant is lowered while the link is being made,
@@ -820,9 +824,12 @@ Three tools let the Overseer make and end links between sessions on different ho
   itself marks it, before its title, model, modes or first prompt, so its first request already
   has the link tools. It is the create route's `link: true` (`POST /api/sessions`, the route a
   peer's Overseer reaches too), which no page of Sova sends; no profile, setting or later call
-  makes a session one, and an existing session never becomes one. A peer on an earlier build
-  ignores the field; every session there has the link tools, and it accepts any of them in a link. To link sessions, the Overseer
-  creates each member this way first, then calls `sova_link`.
+  makes a session one, and an existing session never becomes one (it gets the tools by joining a
+  link instead, §mesh.links/tools). A peer on a build older than link members ignores the field;
+  every session there has the link tools, and it accepts any of them in a link. When the Overseer
+  creates a session only to link it, this is the cheaper way: create it with `link: true`, call
+  `sova_link`, then send its task, so nothing restarts. Turning the tools on in a running session
+  restarts a claude-code chat's CLI once, twice when it is linked mid-run.
 - **Creating a member on a peer.** `sova_create_session` takes an optional `host`; with a peer's id
   it creates the session on that peer, with the same caps and refusals. Title and first prompt go
   through the peer's own routes; a group can't be given with `host` (groups are per host); model,

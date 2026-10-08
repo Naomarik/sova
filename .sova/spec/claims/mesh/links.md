@@ -23,15 +23,16 @@ does, never part of making or keeping a link.
   own host, resolved when the link is made. A member host's peer id and label are never stored: they are looked up from this host's
   `peers.json` by node identity whenever they are used (a peer's id here can be changed). **One
   member per host**: a link never joins two sessions on the same host, and making one is refused.
-- **Only link member sessions.** Every member must have been created as a link member session
-  (§mesh.links/tools). Making a link with any other session is refused, naming that member and
-  saying it was not created with the link tools, so to create a new session for it with `link`
-  (§app.overseer/links-tools). Each host checks its own member: the host making the link checks
-  its local member before anything is sent, and a member host refuses a new link's copy whose
-  member on it is not one, which fails the whole link as any refused copy does (§app.overseer/links-tools).
-  A host on an earlier build checks nothing here. The check is made only when a link is made: a
-  link that already exists keeps its members, and a copy of a link the host already keeps is never
-  refused for it.
+- **Each host checks its own member.** Any session Sova hosts can be a member, whether or not it
+  was created as a link member session (§mesh.links/tools), except the usual refusals: a TUI-live
+  session, an archived one, a worker's session, a special session (§app.overseer/links-tools). The
+  host making the link checks its local member before anything is sent, and a member host checks
+  its own member again when a new link's copy arrives, refusing the copy with that member's reason,
+  which fails the whole link as any refused copy does (§app.overseer/links-tools). A host on the
+  build that linked only link member sessions refuses a copy whose member on it was not created
+  with `link: true`, which fails the link the same way. The check is made only when a link is
+  made: a link that already exists keeps its members, and a copy of a link the host already keeps
+  is never refused for it.
 - **Its own identity.** A host that doesn't know its own node identity (a phone that identifies
   callers by address, §mesh.peers/address-identity) learns it from the first member host that
   sends it a link, which names the recipient's identity as it knows it, or by asking any peer.
@@ -103,7 +104,8 @@ does, never part of making or keeping a link.
   begins, a message the user sends in that session is queued behind it
   (§chat.transcript/a-queued-message), never refused. A link message that arrives while a turn is
   starting (a message accepted, its run not yet begun) waits for that run to begin, then steers
-  into it. It **never enters Sova's web queue**, the queue of messages the user typed: it is never a
+  into it. A member linked mid-run has the link tools (§mesh.links/tools) in the same request that
+  carries the steered message, so it can answer at once. It **never enters Sova's web queue**, the queue of messages the user typed: it is never a
   queued row, never counted or reordered with the user's messages, and Remove never reaches it.
   The ids in the tag are random, so text that merely quotes a tag is never classified as a link
   message.
@@ -165,24 +167,34 @@ not the user's message and the main transcript never shows it:
 
 ## §mesh.links/tools — The link tools
 
-One pi-config extension, `link`, has seven tools, with a fixed schema, and only a **link member
-session** gets them: a session created as one (§app.overseer/links-tools), which carries a marker
-from its creation, before its first message. Every other session has none of them: an ordinary
-chat, the Overseer and the other special sessions, a TUI session and a worker register no link
-tool, and no profile or setting adds them. A link member has all seven from its first request; a
-claude-code member gets the same tools through the provider's `mcp__sova__` bridge with no
-separate copy, and a claude-code chat that is no member sees none there. The set is fixed when the
-session's runtime starts and never changes because a link is made or ended, a message arrives or
-the session is linked or unlinked, so a claude-code session's tool set never changes
-mid-conversation.
+One pi-config extension, `link`, has seven tools, with a fixed schema. A session gets them in one
+of two ways:
+
+- **Born a member.** A **link member session**, one the Overseer created as one
+  (§app.overseer/links-tools), carries a marker from its creation, before its first message, and
+  has all seven from its first request. It keeps them for its whole life: a link made or ended, a
+  message arriving or a compaction never takes them away.
+- **Joined.** Any other session Sova hosts gets all seven once it is a member of a live link on its
+  own host, at its next request, mid-run included: a session linked while it works has them in the
+  request after its current step (§mesh.links/delivery), and one whose runtime isn't loaded then
+  has them from its first request after it is opened. A link whose copy a member host is still
+  taking, or that a member host refused, is not live for this. A joined session keeps them until a
+  compaction finds it in no live link, since a compaction already rebuilds the prompt cache (a
+  claude-code session's CLI restarts after one); a compaction while it is in a live link, or at
+  which its host can't say, keeps them for a later one. They are never dropped when the link ends
+  or at any other moment, and a session linked again after losing them gets them again the same
+  way.
+
+A TUI session, a worker, the Overseer and the other special sessions never get them, an ordinary
+chat in no link has none of them, and no profile or setting adds them. A claude-code session gets
+the same tools through the provider's `mcp__sova__` bridge with no separate copy, and a
+claude-code chat without them sees none there. Turning them on in a running session changes its
+tool set, which restarts a claude-code session's CLI; a born member never pays that.
 
 **Sessions from before.** A session an earlier build hosted already declares the seven tools in its
 transcript. It keeps them, unchanged, until its next compaction, and loses them at that
-compaction, since a compaction already rebuilds the prompt cache (a claude-code session's CLI
-restarts after one). A compaction while the session is in a live link keeps them until a later
-compaction that finds it in none, and so does a compaction at which its host can't say. They are
-never dropped at any other moment, and once dropped they never come back. A session that never
-declared them never gets them this way.
+compaction under the joined session's rule: kept while it is in a live link or its host can't say.
+A session that never declared them gets them only by joining a link.
 
 - **`link_members`**: the links this session is in, and for each member its host, label, cwd,
   backend, whether its host is up and whether it is working or idle.
@@ -198,7 +210,9 @@ Each refuses, with a sentence saying so, when the session is in no link. When `l
 the session's own host, which does every peer hop; the extension knows nothing about the mesh.
 While a session is linked, each run's prompt gets a short section that changes only when a link
 is made or ended (partner names and ids, the tools; no live state such as up, down, working or
-idle), since a change to it restarts a claude-code session's CLI.
+idle), since a change to it restarts a claude-code session's CLI. A session that joins a link
+mid-run gets the section at its next run's start, so a claude-code session linked mid-run
+restarts its CLI twice: once for the tools, once for the section.
 
 ## §mesh.links/agents-pane — "Remotely linked agents" in the Agents tab
 

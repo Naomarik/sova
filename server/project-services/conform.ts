@@ -21,10 +21,9 @@ import {
 import { projectOf } from "../project-root";
 import { actFor, callerTag, parseRequest, passRefusal, realGit, VerbFailure, type Caller, type ProjectEngine } from "./engine";
 import { rssOf } from "./drivers";
-import { conformDir, dataRootOf, instanceLockFile, readRegistry, servicesRoot, sharedIdOf, slugOf, tryLock, type InstanceRecord } from "./store";
-import { CONTAINER_REFUSAL, openConfinement, type Confinement } from "./confine";
+import { conformDir, dataRootOf, instanceLockFile, readRegistry, servicesRoot, slugOf, tryLock, type InstanceRecord } from "./store";
 import { endpointAnswers, endpointOf, shareRefusal } from "./share";
-import { defHashOf, isApproved } from "./trust";
+import { defHashOf } from "./def-hash";
 
 /**
  * Conformance (§app.project-services/conform): a fixed, versioned suite no project can change,
@@ -153,7 +152,6 @@ export interface Stamp {
   at: string;
   /** The report file. */
   report: string;
-  confined: boolean;
   /** Its first failed check. */
   failed?: { check: string; detail: string };
   memory?: ConformMemory;
@@ -161,35 +159,29 @@ export interface Stamp {
 
 const stampsFile = () => join(conformDir(), "stamps.json");
 
-/** `stamps.json`: `{version: 1, stamps, confined}`, each `{<project root>: {<defHash>: Stamp}}`: the newest unconfined and the newest confined run, apart. */
-type StampFile = { stamps: Record<string, Record<string, Stamp>>; confined: Record<string, Record<string, Stamp>> };
+/** `stamps.json`: `{version: 1, stamps}`, `{<project root>: {<defHash>: Stamp}}`: the newest run of each hash. */
+type StampFile = { stamps: Record<string, Record<string, Stamp>> };
 
 function readStamps(): StampFile {
   try {
-    const raw = JSON.parse(readFileSync(stampsFile(), "utf8")) as { version?: unknown; stamps?: unknown; confined?: unknown };
+    const raw = JSON.parse(readFileSync(stampsFile(), "utf8")) as { version?: unknown; stamps?: unknown };
     const map = (v: unknown) => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, Record<string, Stamp>>) : {});
-    if (raw.version === 1) return { stamps: map(raw.stamps), confined: map(raw.confined) };
+    if (raw.version === 1) return { stamps: map(raw.stamps) };
   } catch {
     // none yet
   }
-  return { stamps: {}, confined: {} };
+  return { stamps: {} };
 }
 
-/**
- * The newest stamp of `project`'s definition `defHash` on this host, of the kind asked (an unconfined run's by
- * default), or null. A stamp from before `confined` existed was unconfined.
- */
-export function readStamp(project: string, defHash: string, opts: { confined?: boolean } = {}): Stamp | null {
-  const f = readStamps();
-  const s = (opts.confined ? f.confined : f.stamps)[project]?.[defHash];
-  if (!s || typeof s !== "object") return null;
-  return { ...s, confined: !!opts.confined };
+/** The newest stamp of `project`'s definition `defHash` on this host, or null. */
+export function readStamp(project: string, defHash: string): Stamp | null {
+  const s = readStamps().stamps[project]?.[defHash];
+  return s && typeof s === "object" ? s : null;
 }
 
 function writeStamp(project: string, defHash: string, stamp: Stamp): void {
   const f = readStamps();
-  const kind = stamp.confined ? f.confined : f.stamps;
-  kind[project] = { ...(kind[project] ?? {}), [defHash]: stamp };
+  f.stamps[project] = { ...(f.stamps[project] ?? {}), [defHash]: stamp };
   mkdirSync(conformDir(), { recursive: true });
   const file = stampsFile();
   const tmp = `${file}.${process.pid}.tmp`;
@@ -197,13 +189,7 @@ function writeStamp(project: string, defHash: string, stamp: Stamp): void {
   renameSync(tmp, file);
 }
 
-export interface ConformerOptions {
-  /** Open a confined run (tests fake it); default `openConfinement`. */
-  openConfinement?: (opts: { project: string }) => Promise<Confinement | { refused: string }>;
-}
-
-export function conformer(engine: ProjectEngine, git: Git = realGit, opts: ConformerOptions = {}) {
-  const open = opts.openConfinement ?? openConfinement;
+export function conformer(engine: ProjectEngine, git: Git = realGit) {
   return async (body: unknown, caller: Caller): Promise<VerbResult> => {
     const base = (over: Partial<VerbResult>): VerbResult =>
       ordered({
@@ -223,13 +209,11 @@ export function conformer(engine: ProjectEngine, git: Git = realGit, opts: Confo
         data: [],
         links: [],
         defHash: null,
-        approved: false,
         at: new Date().toISOString(),
         ...over,
       });
     let project: string | null = null;
     let defHash: string | null = null;
-    let approved = false;
     try {
       const req = parseRequest(body);
       if (!req.project) throw new VerbFailure("invalid-request", "conform needs the project (a path inside it)");
@@ -251,24 +235,10 @@ export function conformer(engine: ProjectEngine, git: Git = realGit, opts: Confo
         throw new VerbFailure("invalid-definition", err instanceof Error ? err.message : String(err));
       }
       defHash = defHashOf(def);
-      approved = isApproved(project, defHash);
-      // Not approved here: the run is confined (§app.project-services/confined), and what confinement can't hold is refused first.
-      const container = approved ? undefined : def.services.find((x) => x.container);
-      if (container) throw new VerbFailure("not-approved", `${CONTAINER_REFUSAL} (service ${container.name})`);
       const lock = tryLock(instanceLockFile(project, "\0conform"));
       if ("heldBy" in lock) throw new VerbFailure("busy", `a conformance run is already running on this project (pid ${lock.heldBy})`);
-      let confine: Confinement | null = null;
       try {
-        if (!approved) {
-          const c = await open({ project });
-          if ("refused" in c) throw new VerbFailure("not-approved", `this definition (${defHash}) is not approved on this host, and ${c.refused}`);
-          confine = c;
-          for (const src of engine.dataSources(def, project)) {
-            const why = c.fromRefusal(src, [project]);
-            if (why) throw new VerbFailure("not-approved", why);
-          }
-        }
-        const report = await runSuite(engine, git, { project, ref, commit, def, defHash, confine }, caller);
+        const report = await runSuite(engine, git, { project, ref, commit, def, defHash }, caller);
         const file = join(conformDir(), `${slugOf(project)}-${defHash.slice(7, 19)}-${Date.now()}.json`);
         mkdirSync(conformDir(), { recursive: true });
         writeFileSync(file, `${JSON.stringify({ ...report.report, project, commit, envelopes: report.envelopes }, null, 2)}\n`);
@@ -278,7 +248,6 @@ export function conformer(engine: ProjectEngine, git: Git = realGit, opts: Confo
           pass: report.report.pass,
           at: new Date().toISOString(),
           report: file,
-          confined: !!confine,
           ...(f ? { failed: { check: f.id, detail: f.detail } } : {}),
           ...(report.report.memory ? { memory: report.report.memory } : {}),
         });
@@ -289,16 +258,14 @@ export function conformer(engine: ProjectEngine, git: Git = realGit, opts: Confo
           conform: report.report,
           ...(f ? { error: { code: f.code, message: `check ${f.id} failed: ${f.detail}`, step: f.id } } : {}),
           defHash,
-          approved,
         });
       } finally {
-        await confine?.close();
         lock.release();
       }
     } catch (err) {
       passRefusal(err);
       const f = err instanceof VerbFailure ? err : new VerbFailure("start-failed", err instanceof Error ? err.message : String(err));
-      return base({ project, error: { code: f.code, message: f.message }, defHash, approved });
+      return base({ project, error: { code: f.code, message: f.message }, defHash });
     }
   };
 }
@@ -323,12 +290,11 @@ export async function removeScratch(git: Git, project: string, branches: readonl
 async function runSuite(
   engine: ProjectEngine,
   git: Git,
-  t: { project: string; ref: string; commit: string; def: ProjectDef; defHash: string; confine: Confinement | null },
+  t: { project: string; ref: string; commit: string; def: ProjectDef; defHash: string },
   caller: Caller,
 ): Promise<{ report: ConformReport; envelopes: { label: string; result: VerbResult }[]; failure: { id: string; code: ErrorCode; detail: string } | null }> {
   const runId = randomBytes(3).toString("hex");
-  const confine = t.confine;
-  const confCaller: Caller = { kind: "conform", id: `${runId}:${callerTag(caller)}`, ...(confine ? { confine } : {}) };
+  const confCaller: Caller = { kind: "conform", id: `${runId}:${callerTag(caller)}` };
   const s = new Suite(engine, confCaller);
   const { project, commit, def } = t;
   const memory = new Memory(engine, def.services.filter((x) => x.scope === "checkout" && x.cmd && !x.container).map((x) => x.name));
@@ -437,12 +403,11 @@ async function runSuite(
       const w = await engine.probeHook(recA!, ["write", token]);
       const rA = await engine.probeHook(recA!, ["read", token]);
       const rB = await engine.probeHook(recB!, ["read", token]);
-      // The main checkout's instance runs outside a confined run: its read is skipped there.
-      const main = confine ? undefined : readRegistry().instances.find((i) => i.project === project && i.slot === 0);
+      const main = readRegistry().instances.find((i) => i.project === project && i.slot === 0);
       const mainUp = main ? (await engine.run("status", { instance: main.id }, confCaller)).state === "running" : false;
       const rMain = main && mainUp ? await engine.probeHook(main, ["read", token]) : null;
       const ok = w === 0 && rA === 0 && rB !== 0 && (rMain === null || rMain !== 0);
-      const mainSaid = confine ? "skipped (confined)" : rMain === null ? "skipped (main not running)" : rMain;
+      const mainSaid = rMain === null ? "skipped (main not running)" : rMain;
       if (!s.check("isolation", ok, `write in A ${w}, read in A ${rA}, read in B ${rB}, read in main ${mainSaid}`, t0)) return;
     } else s.check("isolation", true, "no probe hook declared: only ports and data refs were compared", Date.now());
     // 7. apply A: ready again, B untouched.
@@ -473,8 +438,7 @@ async function runSuite(
           said.push(`${ep}: its service is not ready after up (${svc?.state ?? "absent"})`);
           continue;
         }
-        // A confined run's process services answer only inside its namespace; a static one is served here.
-        const r = confine && at.service.static === undefined ? { ok: await confine.http(at.port, "/"), detail: "GET / inside the run's namespace" } : await endpointAnswers(at.port);
+        const r = await endpointAnswers(at.port);
         ok &&= r.ok;
         said.push(`${ep} (port ${at.port}): ${r.detail}${r.ok ? "" : ", not below 500"}`);
       }
@@ -490,12 +454,10 @@ async function runSuite(
       if (!at || svc?.state !== "ready") {
         if (!s.check("open", false, `${endpoint}: its service is not ready after up (${svc?.state ?? "absent"})`, t0)) return;
       } else {
-        // A confined run's process services answer only inside its namespace; a static one is served here.
-        const inside = !!confine && at.service.static === undefined;
-        const r = inside ? await confine!.get(at.port, path) : await entryAnswers(at.port, path);
+        const r = await entryAnswers(at.port, path);
         const ok = r.status !== null && r.status < 500;
         const said = r.status === null ? "no answer" : `answered ${r.status} (${r.type ?? "no content type"})`;
-        if (!s.check("open", ok, `${endpoint} (port ${at.port}): GET ${path}${inside ? " inside the run's namespace" : ""} ${said}${ok ? "" : ", not below 500"}`, t0)) return;
+        if (!s.check("open", ok, `${endpoint} (port ${at.port}): GET ${path} ${said}${ok ? "" : ", not below 500"}`, t0)) return;
       }
     }
     // 9. reset A.
@@ -535,7 +497,7 @@ async function runSuite(
     const bPids = pidsOf(await s.verb("status B before down A", "status", { instance: b.instance }));
     const dn = await s.verb("down A", "down", { instance: a.instance });
     const leftA = (dn.services.filter((x) => x.scope === "checkout" && x.unit).flatMap((x) => engine.driver.pids(x.unit!)) as number[]).length;
-    const heldA = portsOf(dn).filter((p) => engine.portHeld(recA!, p));
+    const heldA = portsOf(dn).filter((p) => engine.portHeld(p));
     const stB = await s.verb("status B after down A", "status", { instance: b.instance });
     if (!s.check("down-a", dn.ok && dn.state === "stopped" && !leftA && !heldA.length && stB.state === "running" && sameJson(pidsOf(stB), bPids), `${describe(dn)}; ${leftA} process(es) left, ports still held ${heldA.join(",") || "none"}; B ${describe(stB)}`, t0, dn.error?.code)) return;
     t0 = Date.now();
@@ -590,12 +552,6 @@ async function runSuite(
     // The run's own scratch worktrees and branches go on every outcome (§app.project-services/conform): teardown keeps
     // a worktree a failed step left files in, so whatever is still checked out on a scratch branch is removed by force.
     await removeScratch(git, project, [branchA, branchB]);
-    // A confined run's own shared services end with it (the host's are never touched).
-    if (confine) {
-      const id = `${sharedIdOf(project)}-${confine.runId}`;
-      for (const u of confine.units) if (u.startsWith(`${engine.unitPrefix()}${id}-`)) await engine.driver.stop(u);
-      rmSync(dataRootOf(id), { recursive: true, force: true });
-    }
   }
   // 12. leaks.
   const t0 = Date.now();
@@ -605,14 +561,13 @@ async function runSuite(
     const prefix = `${engine.unitPrefix()}${r.id}-`;
     for (const u of await engine.driver.units(prefix)) leaks.push(`unit ${u}`);
     for (const svc of def.services.filter((x) => x.scope === "checkout")) for (const p of engine.driver.pids(engine.unitOf(r.id, svc.name))) leaks.push(`process ${p} in ${svc.name}`);
-    for (const ports of Object.values(r.ports)) for (const p of Object.values(ports)) if (engine.portHeld(r, p)) leaks.push(`listener on port ${p}`);
+    for (const ports of Object.values(r.ports)) for (const p of Object.values(ports)) if (engine.portHeld(p)) leaks.push(`listener on port ${p}`);
     if (existsSync(dataRootOf(r.id))) leaks.push(`data dir ${dataRootOf(r.id)}`);
     for (const ref of Object.values(r.data)) if (ref.startsWith("/") && existsSync(ref)) leaks.push(`data ${ref}`);
     if (readRegistry().instances.some((i) => i.id === r.id)) leaks.push(`registry entry ${r.id}`);
     if (existsSync(r.checkout)) leaks.push(`worktree ${r.checkout}`);
   }
   for (const c of containersSeen) if (await containerExists(c.engine, c.name)) leaks.push(`container ${c.name}`);
-  for (const u of confine?.units ?? []) if (engine.driver.pids(u).length && !leaks.includes(`unit ${u}`)) leaks.push(`unit ${u}`);
   const wt = await git(["worktree", "list", "--porcelain"], project);
   for (const br of [branchA, branchB]) if (wt.stdout.includes(`branch refs/heads/${br}\n`)) leaks.push(`git worktree on ${br}`);
   // What appeared during the run is a leak only when it is the run's own scratch instance's, or nobody's:
@@ -642,7 +597,6 @@ async function runSuite(
       checks: s.checks,
       leaks,
       ...(logs.length ? { logs } : {}),
-      ...(confine ? { confined: true } : {}),
       ...(recA ? { memory: memory.report() } : {}),
     },
     envelopes: s.envelopes,

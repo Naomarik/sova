@@ -4,11 +4,10 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
-import { parseDefinition, type VerbResult } from "../../shared/project-contract";
+import { type VerbResult } from "../../shared/project-contract";
 import { DetachedDriver } from "./drivers";
 import { ProjectEngine, type Caller } from "./engine";
 import { readRegistry, sharedIdOf } from "./store";
-import { approve, defHashOf } from "./trust";
 import { reservePorts } from "../test-ports";
 
 /**
@@ -40,8 +39,6 @@ let engine: ProjectEngine;
 
 const define = (def: object, checkout = project) => {
   writeFileSync(join(checkout, ".sova", "project.json"), JSON.stringify(def, null, 2));
-  const hash = defHashOf(parseDefinition(JSON.stringify(def)));
-  approve(project, hash, hash);
 };
 const cacheUnit = () => engine.unitOf(sharedIdOf(project), "cache");
 const live = async (unit: string) => ["active", "activating"].includes((await engine.driver.status(unit)).state);

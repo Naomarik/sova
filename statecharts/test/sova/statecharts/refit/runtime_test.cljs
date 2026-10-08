@@ -1,6 +1,6 @@
 (ns sova.statecharts.refit.runtime-test
   "The software registry (`runtime/<p>`, §app/project-runtime): the standing derived from what the host
-   observed, approval (the operator's only), the automatic unconfined conformance, drift, and the Project
+   observed, the automatic conformance, drift, and the Project
    verbs playbook's run (`verbs/onboard` on the project, then its build)."
   (:require
     [cljs.test :refer [deftest is testing]]
@@ -28,12 +28,11 @@
 (def files2 [{:path "bb.edn" :sha "a2"} {:path "package.json" :sha "b1"}])
 (def software [{:name "web" :kind "process" :scope "checkout" :ports [{:name "http" :port 4000}] :requires [] :isolation {:method "ports" :why "PORT is read"}}])
 
-(defn- facts [& {:keys [hash approved proof files] :or {files files1}}]
+(defn- facts [& {:keys [hash proof files] :or {files files1}}]
   {:commit "c1" :suite 2
    :def (if hash {:state "present" :hash hash} {:state "absent"})
    :software (if hash software [])
    :sources {:paths (mapv :path files) :files files :fingerprint (str "fp:" (apply str (map :sha files)))}
-   :approved (when approved {:hash approved :at t0})
    :proof proof})
 
 (defn- eng! []
@@ -45,11 +44,8 @@
 (defn- observe! [eng n f] (core/send! eng rsid :runtime/observed (assoc f :by "system") {:now (+ t0 n)}))
 
 (defn- registered! [eng]
-  (observe! eng 2 (facts :hash "h1"))
-  (core/send! eng rsid :runtime/approve (assoc op :hash "h1") {:now (+ t0 3)})
-  (core/send! eng rsid :effect/done {:kind "approve" :by "system" :result {:hash "h1"}} {:now (+ t0 4)})
-  (let [r (observe! eng 5 (facts :hash "h1" :approved "h1"))]
-    (core/send! eng rsid :effect/done {:kind "conform" :by "system" :result {:hash "h1" :suite 2 :pass true :confined false :at (+ t0 6)}} {:now (+ t0 6)})
+  (let [r (observe! eng 2 (facts :hash "h1"))]
+    (core/send! eng rsid :effect/done {:kind "conform" :by "system" :result {:hash "h1" :suite 2 :pass true :at (+ t0 6)}} {:now (+ t0 6)})
     r))
 
 (deftest born-beside-the-watch
@@ -64,26 +60,13 @@
   (let [eng (eng!)]
     (observe! eng 2 (facts))
     (is (in? eng rsid :unregistered) "no .sova/project.json on main")
-    (is (= rr/nothing-waiting (:sentence (refused (core/send! eng rsid :runtime/approve (assoc op :hash "h1") {:now (+ t0 2)}) :runtime/approve))))
-    (observe! eng 3 (facts :hash "h1"))
-    (is (in? eng rsid :awaiting-approval))
-    (testing "only the operator approves"
-      (let [x (refused (core/send! eng rsid :runtime/approve (assoc l3 :hash "h1") {:now (+ t0 4)}) :runtime/approve)]
-        (is (= rr/operator-only (:sentence x)))
-        (is (= 403 (:status x)))))
-    (is (= rr/changed-since (:sentence (refused (core/send! eng rsid :runtime/approve (assoc op :hash "h0") {:now (+ t0 4)}) :runtime/approve)))
-        "a hash that is no longer the one shown")
-    (let [r (core/send! eng rsid :runtime/approve (assoc op :hash "h1") {:now (+ t0 5)})]
-      (is (= [{:hash "h1" :ref "HEAD"}] (map #(select-keys % [:hash :ref]) (effects r "approve")))))
-    (core/send! eng rsid :effect/done {:kind "approve" :by "system" :result {:hash "h1"}} {:now (+ t0 6)})
-    (is (= "h1" (:hash (:approved-last (core/data eng rsid)))))
-    (let [r (observe! eng 7 (facts :hash "h1" :approved "h1"))]
-      (is (in? eng rsid :conforming) "approved, not proven yet")
-      (is (= [{:hash "h1"}] (map #(select-keys % [:hash]) (effects r "conform"))) "entering conforming runs the unconfined conformance"))
-    (testing "a confined pass never registers"
-      (observe! eng 8 (facts :hash "h1" :approved "h1" :proof {:hash "h1" :suite 2 :pass true :confined true :at (+ t0 8)}))
+    (let [r (observe! eng 3 (facts :hash "h1"))]
+      (is (in? eng rsid :conforming) "a valid definition, not proven yet")
+      (is (= [{:hash "h1"}] (map #(select-keys % [:hash]) (effects r "conform"))) "entering conforming runs the conformance by itself"))
+    (testing "a pass at an older suite proves nothing"
+      (observe! eng 8 (facts :hash "h1" :proof {:hash "h1" :suite 1 :pass true :at (+ t0 8)}))
       (is (in? eng rsid :conforming)))
-    (core/send! eng rsid :effect/done {:kind "conform" :by "system" :result {:hash "h1" :suite 2 :pass true :confined false :at (+ t0 9)}} {:now (+ t0 9)})
+    (core/send! eng rsid :effect/done {:kind "conform" :by "system" :result {:hash "h1" :suite 2 :pass true :at (+ t0 9)}} {:now (+ t0 9)})
     (is (in? eng rsid :registered))
     (is (= {:hash "h1" :suite 2 :fingerprint "fp:a1b1" :commit "c1"} (select-keys (:registered (core/data eng rsid)) [:hash :suite :fingerprint :commit])))
     (is (not (contains? (reasons eng) "runtime/registered")) "a registration asks nothing: it starts no look (r14)")))
@@ -92,7 +75,7 @@
   (let [eng (eng!)]
     (registered! eng)
     (is (in? eng rsid :registered))
-    (observe! eng 10 (facts :hash "h1" :approved "h1" :files files2 :proof {:hash "h1" :suite 2 :pass true :confined false :at (+ t0 6)}))
+    (observe! eng 10 (facts :hash "h1" :files files2 :proof {:hash "h1" :suite 2 :pass true :at (+ t0 6)}))
     (is (in? eng rsid :stale) "a source changed on main")
     (is (= ["bb.edn"] (get-in (core/data eng rsid) [:drift :paths])))
     (is (contains? (reasons eng) "runtime/stale") "the overseer is told")
@@ -123,8 +106,6 @@
     (core/send! eng psid :verbs/onboard (assoc op :session-id "o2" :title "Project verbs" :prompt "Run it" :why "first time") {:now (+ t0 3)})
     (is (= "first time" (get-in (core/data eng rsid) [:playbook :why])))
     (is (= "operator" (get-in (core/data eng rsid) [:playbook :started-by])))
-    (is (some? (:sentence (refused (core/send! eng rsid :runtime/approve (assoc op :hash "hb") {:now (+ t0 4)}) :runtime/approve)))
-        "nothing proposed yet")
     (core/send! eng bs :effect/done {:kind "make-worktree" :result {:branch "sova/verbs" :target "main" :base "b0"}} {:now (+ t0 4)})
     (core/send! eng bs :effect/done {:kind "set-mode"} {:now (+ t0 5)})
     (core/send! eng bs :effect/done {:kind "first-prompt"} {:now (+ t0 6)})
@@ -134,11 +115,9 @@
     (core/send! eng bs :turn/ended {} {:now (+ t0 9)})
     (is (in? eng rsid :proposed))
     (is (= "sova/verbs" (get-in (core/data eng rsid) [:playbook :branch])))
-    (observe! eng 10 {:branch-facts {:ref "sova/verbs" :def {:state "present" :hash "hb"} :approved false
-                                     :proof {:hash "hb" :suite 2 :pass true :confined true :at (+ t0 9)}}})
-    (is (= rr/changed-since (:sentence (refused (core/send! eng rsid :runtime/approve (assoc op :hash "hx") {:now (+ t0 11)}) :runtime/approve))))
-    (let [r (core/send! eng rsid :runtime/approve (assoc op :hash "hb") {:now (+ t0 11)})]
-      (is (= [{:hash "hb" :ref "sova/verbs"}] (map #(select-keys % [:hash :ref]) (effects r "approve"))) "the branch's definition, at its branch"))
+    (observe! eng 10 {:branch-facts {:ref "sova/verbs" :def {:state "present" :hash "hb"}
+                                     :proof {:hash "hb" :suite 2 :pass true :at (+ t0 9)}}})
+    (is (= "hb" (rr/branch-hash (core/data eng rsid))) "the branch's own hash, kept while proposed")
     (core/send! eng bs :turn/started {} {:now (+ t0 12)})
     (is (in? eng rsid :running) "it works again")
     (core/send! eng bs :turn/ended {} {:now (+ t0 13)})
@@ -148,24 +127,22 @@
     (core/send! eng bs :git/probe {:branch "merged"} {:now (+ t0 16)})
     (is (in? eng rsid :idle))
     (is (= "merged" (get-in (core/data eng rsid) [:playbook :result])))
-    (observe! eng 17 (facts :hash "hb" :approved "hb"))
-    (is (in? eng rsid :conforming) "main now declares the approved branch definition: it conforms by itself")))
+    (observe! eng 17 (facts :hash "hb"))
+    (is (in? eng rsid :conforming) "main now declares the branch's definition: it conforms by itself")))
 
-(deftest a-failure-and-a-retry
+(deftest a-failure-and-a-newer-pass
   (let [eng (eng!)]
-    (observe! eng 2 (facts :hash "h1" :approved "h1"))
+    (observe! eng 2 (facts :hash "h1"))
     (is (in? eng rsid :conforming))
-    (core/send! eng rsid :effect/done {:kind "conform" :by "system" :result {:hash "h1" :suite 2 :pass false :confined false :at (+ t0 3)
+    (core/send! eng rsid :effect/done {:kind "conform" :by "system" :result {:hash "h1" :suite 2 :pass false :at (+ t0 3)
                                                                              :failed {:check "ready" :detail "web never listened"}}} {:now (+ t0 3)})
     (is (in? eng rsid :failed))
     (is (contains? (reasons eng) "runtime/failed"))
-    (observe! eng 4 (facts :hash "h1" :approved "h1" :proof {:hash "h1" :suite 2 :pass false :confined false :at (+ t0 3) :failed {:check "ready" :detail "x"}}))
+    (observe! eng 4 (facts :hash "h1" :proof {:hash "h1" :suite 2 :pass false :at (+ t0 3) :failed {:check "ready" :detail "x"}}))
     (is (in? eng rsid :failed) "the stamp agrees")
-    (testing "approving it again runs conformance again"
-      (core/send! eng rsid :runtime/approve (assoc op :hash "h1") {:now (+ t0 5)})
-      (let [r (core/send! eng rsid :effect/done {:kind "approve" :by "system" :result {:hash "h1"}} {:now (+ t0 6)})]
-        (is (in? eng rsid :conforming))
-        (is (seq (effects r "conform")))))
+    (testing "a newer conformance of the same hash that passes registers it"
+      (observe! eng 5 (facts :hash "h1" :proof {:hash "h1" :suite 2 :pass true :at (+ t0 5)}))
+      (is (in? eng rsid :registered)))
     (testing "an invalid definition is failed"
       (observe! eng 7 {:def {:state "invalid" :error "services.web.cmd is required"}})
       (is (in? eng rsid :failed)))))
@@ -185,11 +162,13 @@
 (deftest the-standing-rule
   (is (= "unregistered" (rr/standing-of {})))
   (is (= "failed" (rr/standing-of {:def {:state "invalid"}})))
-  (is (= "awaiting-approval" (rr/standing-of {:def {:state "present" :hash "h"} :approved {:hash "g"}})))
-  (is (= "conforming" (rr/standing-of {:def {:state "present" :hash "h"} :approved {:hash "h"} :suite 2 :proof {:hash "h" :suite 1 :pass true}}))
+  (is (= "conforming" (rr/standing-of {:def {:state "present" :hash "h"} :suite 2})) "a valid definition with no proof")
+  (is (= "conforming" (rr/standing-of {:def {:state "present" :hash "h"} :suite 2 :proof {:hash "g" :suite 2 :pass true}}))
+      "another hash's proof does not count")
+  (is (= "conforming" (rr/standing-of {:def {:state "present" :hash "h"} :suite 2 :proof {:hash "h" :suite 1 :pass true}}))
       "a pass at an older suite does not count")
-  (is (= "registered" (rr/standing-of {:def {:state "present" :hash "h"} :approved {:hash "h"} :suite 2 :proof {:hash "h" :suite 2 :pass true}})))
-  (is (= "stale" (rr/standing-of {:def {:state "present" :hash "h"} :approved {:hash "h"} :suite 2 :proof {:hash "h" :suite 2 :pass true}
+  (is (= "registered" (rr/standing-of {:def {:state "present" :hash "h"} :suite 2 :proof {:hash "h" :suite 2 :pass true}})))
+  (is (= "stale" (rr/standing-of {:def {:state "present" :hash "h"} :suite 2 :proof {:hash "h" :suite 2 :pass true}
                                   :sources {:fingerprint "f2"} :registered {:hash "h" :suite 2 :fingerprint "f1"}})))
   (is (= ["b" "c"] (rr/changed-paths {:registered {:files [{:path "a" :sha 1} {:path "b" :sha 1} {:path "c" :sha 1}]}
                                       :sources {:files [{:path "a" :sha 1} {:path "b" :sha 2}]}}))
@@ -209,9 +188,9 @@
         bs  "build/pr1/o5"]
     (observe! eng 2 (facts))
     (core/send! eng psid :verbs/onboard (assoc op :session-id "o5" :title "Project verbs: Site" :prompt "Run it"
-                                          :playbook-id "project-verbs" :label "Project verbs" :approves "definition") {:now (+ t0 3)})
-    (is (= {:playbook-id "project-verbs" :label "Project verbs" :approves "definition"}
-           (select-keys (:playbook (core/data eng rsid)) [:playbook-id :label :approves])) "keyed by the verb playbook")
+                                          :playbook-id "project-verbs" :label "Project verbs" :proposes "definition") {:now (+ t0 3)})
+    (is (= {:playbook-id "project-verbs" :label "Project verbs" :proposes "definition"}
+           (select-keys (:playbook (core/data eng rsid)) [:playbook-id :label :proposes])) "keyed by the verb playbook")
     (core/send! eng bs :effect/done {:kind "make-worktree" :result {:branch "sova/verbs" :target "main" :base "b0"}} {:now (+ t0 4)})
     (core/send! eng bs :effect/done {:kind "set-mode"} {:now (+ t0 5)})
     (core/send! eng bs :effect/done {:kind "first-prompt"} {:now (+ t0 6)})
@@ -238,11 +217,29 @@
   (let [eng (eng!)]
     (observe! eng 2 (facts))
     (core/send! eng psid :verbs/onboard (assoc op :session-id "o6" :prompt "Run it") {:now (+ t0 3)})
-    (is (= {:playbook-id "project-verbs" :label "Project verbs" :approves "definition"}
-           (select-keys (:playbook (core/data eng rsid)) [:playbook-id :label :approves])))))
+    (is (= {:playbook-id "project-verbs" :label "Project verbs" :proposes "definition"}
+           (select-keys (:playbook (core/data eng rsid)) [:playbook-id :label :proposes])))))
 
 (deftest run-moved-says-waiting-before-the-branch
   (is (= :waiting (rr/run-moved {:states [:unmerged :turn-idle] :exported {:last-turn-at 1 :questions 3 :branch-state "unmerged"}})))
   (is (= :proposed (rr/run-moved {:states [:unmerged :turn-idle] :exported {:last-turn-at 1 :questions 0 :branch-state "unmerged"}})))
   (is (= :working (rr/run-moved {:states [:working] :exported {:running true :last-turn-at 1 :questions 3}})) "working wins")
   (is (= :merged (rr/run-moved {:states [:merged] :exported {:last-turn-at 1 :questions 3}})) "a merge ends it"))
+
+(deftest a-v1-registry-loads-with-its-standing-derived-again
+  ;; v1 → v2 keeps the states v2 has; a standing v2 lacks starts over at unregistered, and the next observation
+  ;; moves it on by the standing rule.
+  (let [eng  (eng!)
+        _    (registered! eng)
+        v2   (core/dump eng rsid)
+        ;; a v1 snapshot whose standing is one this version lacks (:gone)
+        v1   (-> (core/read-snapshot v2)
+                 (assoc :version 1)
+                 (update-in [:wmem :com.fulcrologic.statecharts/configuration] #(-> (set %) (disj :registered) (conj :gone)))
+                 core/snapshot-text)
+        eng2 (core/new-engine registry/statecharts {:level-check lv/level-check})]
+    (is (= 2 (:version (core/load! eng2 rsid v1))))
+    (is (in? eng2 rsid :unregistered) "a standing this version lacks starts over")
+    (is (in? eng2 rsid :idle) "the playbook region keeps its state")
+    (core/send! eng2 rsid :runtime/observed (assoc (facts :hash "h1" :proof {:hash "h1" :suite 2 :pass true :at (+ t0 6)}) :by "system") {:now (+ t0 20)})
+    (is (in? eng2 rsid :registered) "the next observation derives it again")))

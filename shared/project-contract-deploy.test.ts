@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { DEFINITION_KEYS, DefinitionError, deployStepsOf, exitOf, isVerb, parseDefinition, reviewKeys } from "./project-contract";
+import { DEFINITION_KEYS, DefinitionError, deployStepsOf, exitOf, isVerb, parseDefinition } from "./project-contract";
 
 // The deploy section (§app.project-services/deploy): targets of argv steps, addresses as ${host.NAME},
 // credentials by name only, parsed as strictly as the rest of the definition.
@@ -47,7 +47,6 @@ test("a target parses with its defaults: steps in order, credentials by name, ve
   assert.deepEqual(t.requires, { tests: "smoke" });
   // Every step in the order it runs: credential checks, plan, build, steps (rollback's last).
   assert.deepEqual(deployStepsOf(t).map((s) => s.key), ["credentials.prod-ssh", "credentials.CF_API_TOKEN", "plan.dry", "build.bundle", "steps.sync", "steps.restart"]);
-  assert.deepEqual(reviewKeys([{ name: "prod", steps: deployStepsOf(t).map((s) => ({ key: s.key })) as never, verify: {} as never }]).slice(-2), ["prod/verify", "prod/rollback"]);
 });
 
 test("rollback is steps, redeploy-previous or none with a reason; a target must say which", () => {

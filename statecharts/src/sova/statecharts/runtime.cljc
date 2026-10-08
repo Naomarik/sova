@@ -2,20 +2,20 @@
   "The runtime statechart (host-local, `runtime/<p>`): the project's software registry on this host
    (§app/project-runtime). Project layer: it knows the project id and root, never an organization. The
    project spawns it at birth beside its watch; the host starts it for every existing project as the
-   project's engine opens. Approval and proof are this host's, so after an attach elsewhere it starts fresh.
+   project's engine opens. Proof is this host's, so after an attach elsewhere it starts fresh.
 
    ```
    runtime ‹compound› → regions ‹parallel›
-   ├─ standing  unregistered · awaiting-approval · conforming · registered · stale · failed
+   ├─ standing  unregistered · conforming · registered · stale · failed
    └─ playbook  idle · running · waiting · proposed
    ```
 
    standing moves only by eventless transitions over `rules/runtime standing-of` (the facts the host
    observed on main's HEAD: `runtime/observed`, a quiet mirror sent only when they changed). Entering
-   conforming emits effect `conform {hash}` (the operator's approval is the authority); entering
-   registered records the registration. playbook follows the build the project's `verbs/onboard` started
-   (`playbook/started`, then its `link/moved`): keyed by the verb playbook's id, with its title (`label`) and what
-   its proposal approves; waiting while a turn ended on open alignment questions. `runtime/approve {hash}` is the operator's only.
+   conforming emits effect `conform {hash}`; entering registered records the registration. playbook follows
+   the build the project's `verbs/onboard` started (`playbook/started`, then its `link/moved`): keyed by the verb
+   playbook's id, with its title (`label`) and what it proposes; waiting while a turn ended on open alignment
+   questions.
 
    What runs right now (units, instances) is never stored here: the host joins the engine's status at read
    time. Start data: `{:project-id :root}`."
@@ -28,9 +28,9 @@
     [sova.statecharts.rules.runtime :as rr]
     [sova.statecharts.engine.dsl :as dsl]))
 
-(def version 1)
+(def version 2)
 
-(def fact-keys [:commit :def :software :data :sources :approved :proof :confined-proof :suite])
+(def fact-keys [:commit :def :software :data :sources :proof :suite])
 
 (defn- e [d] (b/evt d))
 (defn- done-kind? [k] (fn [_ d] (= k (:kind (e d)))))
@@ -51,8 +51,19 @@
 
 ;; ---- standing -----------------------------------------------------------------------------------
 
-(def standing-ids {"unregistered" :unregistered "awaiting-approval" :awaiting-approval "conforming" :conforming
-                   "registered" :registered "stale" :stale "failed" :failed})
+(def standing-ids {"unregistered" :unregistered "conforming" :conforming "registered" :registered "stale" :stale
+                   "failed" :failed})
+
+(def ^:private states-v2
+  "Every state id of this version: the standing's, the regions' and the playbook's."
+  (into #{:runtime :regions :standing :playbook :idle :running :waiting :proposed} (vals standing-ids)))
+
+(defn- migrate-v1
+  "v1 → v2: a configuration keeps the states v2 has; a standing v2 lacks starts over at unregistered, and the
+   standing rule moves it on at the next observation."
+  [s]
+  (update s :config (fn [c] (let [kept (set (filter states-v2 c))]
+                              (cond-> kept (not-any? (set (vals standing-ids)) kept) (conj :unregistered))))))
 
 (def entry-asks
   "r14: what entering each standing asks of the overseer (its on-entry sends the reason): a registration is
@@ -149,31 +160,16 @@
       (transition {:sova/feed :quiet :event :runtime/observed}
         (script {:expr (fn [_ d] (observed-ops d))}))
 
-      ;; Approve {hash}: the operator's only; main's definition while it waits (awaiting approval, or failed:
-      ;; approving it again runs conformance again), or the playbook branch's while its run is proposed.
-      (dsl/act {:sova/feed :feed :event :runtime/approve
-                :checks [(fn [d] (rr/approve-refusal d (b/by d) (:hash (e d))))]}
-        (dsl/effect :approve (fn [d] (let [h (:hash (e d))]
-                                       (cond-> {:hash h :ref "HEAD"}
-                                         (not (rr/approves-main? d h)) (assoc :ref (get-in d [:playbook :branch])))))))
-      (transition {:sova/feed :feed :event :effect/done :cond (done-kind? "approve")}
-        (script {:expr (fn [_ d] (let [h (get-in (e d) [:result :hash])]
-                                   (cond-> [(ops/assign :approved-last {:hash h :hash12 (hash12 h) :at (b/now-ms d)}) (ops/assign :approve-refused nil)]
-                                     (and (= "failed" (:standing d)) (= h (rr/main-hash d))) (conj (ops/assign :cleared-at (b/now-ms d))))))}))
-      (transition {:sova/feed :feed :event :effect/failed :cond (done-kind? "approve")}
-        (script {:expr (fn [_ d] [(ops/assign :approve-refused (:detail (e d)))])}))
-
-      ;; The automatic unconfined conformance's answer (whatever the standing is now: it records its own hash).
+      ;; The automatic conformance's answer (whatever the standing is now: it records its own hash).
       (transition {:sova/feed :feed :event :effect/done :cond (done-kind? "conform")}
-        (script {:expr (fn [_ d] [(ops/assign :conform-result (merge {:at (b/now-ms d)} (select-keys (get-in (e d) [:result]) [:hash :suite :pass :confined :at :failed :memory])))])}))
+        (script {:expr (fn [_ d] [(ops/assign :conform-result (merge {:at (b/now-ms d)} (select-keys (get-in (e d) [:result]) [:hash :suite :pass :at :failed :memory])))])}))
       (transition {:sova/feed :feed :event :effect/failed :cond (done-kind? "conform")}
-        (script {:expr (fn [_ d] [(ops/assign :conform-result {:hash (rr/main-hash d) :suite (:suite d) :pass false :confined false :at (b/now-ms d)
+        (script {:expr (fn [_ d] [(ops/assign :conform-result {:hash (rr/main-hash d) :suite (:suite d) :pass false :at (b/now-ms d)
                                                               :failed {:check "run" :detail (:detail (e d))}})])}))
 
       (parallel {:id :regions}
         (state {:id :standing :initial :unregistered}
           (standing :unregistered)
-          (standing :awaiting-approval)
           (standing :conforming
             (on-entry {} (dsl/effect :conform (fn [d] {:hash (rr/main-hash d)}))))
           (standing :registered
@@ -205,7 +201,7 @@
                                                                          :at (b/now-ms d)
                                                                          :playbook-id (or (:playbook-id ev) "project-verbs")
                                                                          :label (or (:label ev) "Project verbs")
-                                                                         :approves (or (:approves ev) "definition")}
+                                                                         :proposes (or (:proposes ev) "definition")}
                                                                   (:why ev) (assoc :why (:why ev))
                                                                   (:title ev) (assoc :title (:title ev))))]))})
               (dsl/watch (fn [d] (:sid (e d))))))
@@ -227,8 +223,7 @@
             (waiting-transition)
             (transition {:sova/feed :quiet :event :link/moved :cond run-of?})))))))
 
-(def acts
-  {:runtime/approve {:needs nil}})
+(def acts {})
 
 (defn not-here [_event _config _data] "That can't be done now.")
 
@@ -237,9 +232,9 @@
 (def entry
   {:statechart statechart
    :version    version
-   :migrate    {}
+   :migrate    {1 migrate-v1}
    :storage    :host-local
-   :exported   [:project-id :root :standing :hash12 :playbook-state :commit :def :software :data :sources :approved :proof :confined-proof :suite
-                :registered :drift :playbook :conform-result :approved-last :approve-refused :cleared-at]
+   :exported   [:project-id :root :standing :hash12 :playbook-state :commit :def :software :data :sources :proof :suite
+                :registered :drift :playbook :conform-result]
    :acts       acts
    :not-here   not-here})

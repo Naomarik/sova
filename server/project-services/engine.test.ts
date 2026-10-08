@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
@@ -10,7 +10,7 @@ import { DetachedDriver, SystemdDriver } from "./drivers";
 import { ProjectEngine, type Caller } from "./engine";
 import { FakeHost } from "./fake-host";
 import { readRegistry } from "./store";
-import { approve, defHashOf } from "./trust";
+import { defHashOf } from "./def-hash";
 import { parseDefinition } from "../../shared/project-contract";
 
 /**
@@ -88,22 +88,6 @@ const shaped = (r: VerbResult) => {
   assert.ok(isVerbResult(r), `result shape: ${JSON.stringify(r).slice(0, 400)}`);
   return r;
 };
-
-test("nothing runs before the operator approves the definition's hash", async () => {
-  const r = shaped(await engine.run("up", { project, branch: "sova/a" }, op));
-  assert.equal(r.error?.code, "not-approved");
-  assert.equal(exitOf(r), 2);
-  assert.equal(readRegistry().instances.length, 0, "nothing was made");
-  assert.ok(!existsSync(join(parent, ".worktrees")), "no worktree was cut");
-  assert.deepEqual(host.driver.running(), [], "nothing started");
-  const d = shaped(await engine.run("doctor", { project }, op));
-  assert.equal(d.ok, false);
-  assert.equal(d.checks?.find((c) => c.id === "approved")?.ok, false);
-  assert.equal(exitOf(d), 0, "doctor reports; it does not fail");
-  const hash = defHashOf(parseDefinition(readFileSync(join(project, ".sova/project.json"), "utf8")));
-  assert.throws(() => approve(project, "sha256:other", hash), /changed since it was shown/);
-  approve(project, hash, hash);
-});
 
 let a: VerbResult;
 
@@ -296,6 +280,32 @@ test("reconcile brings an instance back to what it should be doing", async () =>
   assert.notEqual(back.services.find((s) => s.name === "web")!.pid, web.pid, "a new process");
   assert.equal(back.generation, gen + 1, "nothing of A ran (the shared bus is the project's): a start from nothing is a new generation");
   assert.deepEqual(await engine.reconcile(), [], "a second reconcile has nothing to do");
+});
+
+test("a definition edited in a session's worktree runs as written, and reconcile restarts its copy", async () => {
+  // The session's own worktree, its definition edited there: a hash this host has never seen.
+  const wt = join(parent, "edited");
+  git(["worktree", "add", "-q", "-b", "sova/edited", wt]);
+  const edited = { ...DEF, services: { ...DEF.services, web: { ...DEF.services.web, env: { ...DEF.services.web.env, EDITED: "1" } } } };
+  writeFileSync(join(wt, ".sova", "project.json"), JSON.stringify(edited, null, 2));
+  const main = shaped(await engine.run("status", { project }, op));
+  const session: Caller = { kind: "session", id: "s-edit", root: project, own: [wt] };
+  const up = shaped(await engine.run("up", { checkout: wt }, session));
+  assert.equal(up.ok, true, JSON.stringify(up.error));
+  assert.equal(up.state, "running");
+  assert.equal(up.defHash, defHashOf(parseDefinition(JSON.stringify(edited))));
+  assert.notEqual(up.defHash, main.defHash, "its own hash, not main's");
+  const d = shaped(await engine.run("doctor", { checkout: wt }, session));
+  assert.equal(d.checks?.find((c) => c.id === "definition")?.ok, true);
+  // The server restarts with the copy's web gone: reconcile starts it again, as written.
+  const web = up.services.find((s) => s.name === "web")!;
+  host.driver.crash(web.unit!);
+  const did = await engine.reconcile();
+  assert.ok(did.includes(`${up.instance}: started web`), JSON.stringify(did));
+  assert.equal(shaped(await engine.run("status", { instance: up.instance }, session)).state, "running");
+  const td = shaped(await engine.run("teardown", { instance: up.instance }, session));
+  assert.equal(td.ok, true, JSON.stringify(td.error));
+  git(["worktree", "remove", "--force", wt]);
 });
 
 test("reset gives fresh data; down keeps it; teardown deletes it and keeps the branch", async () => {

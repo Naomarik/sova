@@ -403,7 +403,7 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .org-needs-held .org-needs-item { flex: 1; min-width: 0; border-bottom: 0; }
 .org-needs-held { border-bottom: var(--stroke-thin) solid var(--color-border); }
 .org-needs-cancel { flex: none; min-height: var(--tap-min); margin-right: var(--space-2); }
-/* A proposed playbook run's Approve & Merge, under its Needs you row (§app.project-runtime/review). */
+/* A proposed playbook run's Merge Branch, under its Needs you row (§app.project-runtime/review). */
 .needs-you-playbook { display: flex; padding: 0 var(--space-3) var(--space-2); border-bottom: var(--stroke-thin) solid var(--color-border); }
 .playbook-review-act { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 .playbook-review-act .button { min-height: var(--tap-min); }

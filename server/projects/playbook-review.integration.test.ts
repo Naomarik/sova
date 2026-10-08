@@ -1,5 +1,5 @@
 // Run: tsx --test server/projects/playbook-review.integration.test.ts. One story over a real repository: the merge starts the copy's static service on its real port, so the whole file is integration. A verb playbook run that ends proposed
-// (§app.project-runtime/review) and its one-gesture finish, Approve & Merge (§app.project-runtime/approve-merge):
+// (§app.project-runtime/review) and its finish, Merge Branch (§app.project-runtime/merge):
 // a real repository and worktree, the run's build started through `verbs/onboard` with its setup seeded (no model,
 // no session runtime), its turn ended by hand, and a real Merge Branch. A throwaway PI_CODING_AGENT_DIR.
 import assert from "node:assert/strict";
@@ -102,51 +102,47 @@ test("a run that ends with commits is proposed: a playbook-review item on its se
   assert.deepEqual([r.share, r.open, r.proof], [null, null, null], "no share, no entry point, no conformance yet");
   assert.equal(v.playbook!.live?.working, false);
   const fact = playbookReviewOf(pid)!;
-  assert.deepEqual({ ...fact, since: 0 }, { projectId: pid, sessionId, path: sessionPath, label: "Project verbs", branch, target: "main", hash: v.playbook!.branchHash, approved: false, approves: "definition", since: 0 });
+  assert.deepEqual({ ...fact, since: 0 }, { projectId: pid, sessionId, path: sessionPath, label: "Project verbs", branch, target: "main", hash: v.playbook!.branchHash, proposes: "definition", since: 0 });
   assert.ok(fact.since > 0, "dated by its last turn's end");
   assert.equal(playbookReviews().get(sessionPath)?.sessionId, sessionId, "keyed by its session file for the digest");
   const summary = { id: sessionId, path: sessionPath, cwd: wt, title: "Project verbs: site", createdAt: "", lastActiveAt: new Date().toISOString(), model: "a/b", live: null, busy: false, origin: "web", archived: false } as never;
   const items = sessionItems({ summary, dialogs: [], queued: 0, failedWorkers: 0, activitySince: 0, playbook: fact }, Date.now());
   const it = items.find((i) => i.kind === "playbook-review");
   assert.equal(it?.tier, "act");
-  assert.equal(it?.detail, `Project verbs: approve ${v.playbook!.branchHash!.replace(/^sha256:/, "").slice(0, 12)} and merge into main`);
+  assert.equal(it?.detail, `Project verbs: merge ${v.playbook!.branchHash!.replace(/^sha256:/, "").slice(0, 12)} into main`);
 });
 
-test("Approve & Merge refuses a hash that is not the one proposed, approving nothing", async () => {
-  const r = await app.request(`/api/projects/${pid}/runtime/approve-merge`, json("POST", { hash: "sha256:00000000" }));
+test("Merge Branch refuses a hash that is not the one proposed, merging nothing", async () => {
+  const r = await app.request(`/api/projects/${pid}/runtime/merge`, json("POST", { hash: "sha256:00000000" }));
   assert.equal(r.status, 409);
   assert.equal(((await r.json()) as { error: string }).error, "The definition changed since it was shown: look again.");
-  const v = await read();
-  assert.equal(v.playbook?.branchApproved, false);
-  assert.equal(v.playbookState, "proposed");
+  assert.equal((await read()).playbookState, "proposed");
 });
 
-test("a refused merge keeps the approval and says why; the item stays, now asking only for the merge", async () => {
+test("a refused merge says why; the item stays", async () => {
   const v = await read();
   const hash = v.playbook!.branchHash!;
   writeFileSync(join(root, "index.html"), "<p>edited by hand</p>\n"); // main's checkout has tracked changes
-  const r = await app.request(`/api/projects/${pid}/runtime/approve-merge`, json("POST", { hash }));
+  const r = await app.request(`/api/projects/${pid}/runtime/merge`, json("POST", { hash }));
   assert.equal(r.status, 409);
-  const body = (await r.json()) as { error: string; approved: string };
-  assert.match(body.error, new RegExp(`^Approved ${hash.replace(/^sha256:/, "").slice(0, 12)}, but the merge was refused: `));
-  assert.equal(body.approved, hash);
-  const after = await until((x) => x.playbook?.branchApproved === true);
-  assert.equal(after.playbookState, "proposed", "still waits: nothing was merged");
-  assert.equal(playbookReviewOf(pid)?.approved, true);
+  const body = (await r.json()) as { error: string };
+  assert.match(body.error, /^The merge was refused: /);
+  assert.equal((await read()).playbookState, "proposed", "still waits: nothing was merged");
+  assert.equal(playbookReviewOf(pid)?.hash, hash);
   git(root, "checkout", "--", "index.html");
 });
 
-test("Approve & Merge with the approval in place merges: the run is idle, merged, and nothing waits", async () => {
+test("Merge Branch merges: the run is idle, merged, and nothing waits", async () => {
   const hash = (await read()).playbook!.branchHash!;
-  const r = await app.request(`/api/projects/${pid}/runtime/approve-merge`, json("POST", { hash }));
+  const r = await app.request(`/api/projects/${pid}/runtime/merge`, json("POST", { hash }));
   assert.equal(r.status, 200, await r.clone().text());
   const v = await until((x) => x.playbookState === "idle");
   assert.equal(v.playbook?.result, "merged");
   assert.equal(git(root, "show", "HEAD:.sova/project.json"), definition, "main has the branch's definition");
   assert.equal(playbookReviewOf(pid), null);
-  const again = await app.request(`/api/projects/${pid}/runtime/approve-merge`, json("POST", { hash }));
+  const again = await app.request(`/api/projects/${pid}/runtime/merge`, json("POST", { hash }));
   assert.equal(again.status, 409);
-  assert.equal(((await again.json()) as { error: string }).error, "No playbook run is waiting for approval.");
+  assert.equal(((await again.json()) as { error: string }).error, "No playbook run is proposed.");
 });
 
 test("a run whose turn ends on open alignment questions waits, never proposed, and its answer resumes it (§app.project-runtime/onboard)", async () => {
@@ -185,10 +181,10 @@ test("a run whose turn ends on open alignment questions waits, never proposed, a
   assert.equal((await until((x) => x.playbookState === "proposed")).playbook?.sessionId, sid2, "no questions left: proposed");
 });
 
-test("a deploy-setup run proposes its deploy recipe: its own hash, every step ticked before Approve & Merge (§app.project-runtime/approve-merge)", async () => {
-  // The waiting run above ended proposed: finish it first (its definition is main's, already approved: a merge).
+test("a deploy-setup run proposes its deploy recipe: its own hash and its rendering, then Merge Branch (§app.project-runtime/merge)", async () => {
+  // The waiting run above ended proposed: finish it first.
   const prev = await read();
-  const done = await app.request(`/api/projects/${pid}/runtime/approve-merge`, json("POST", { hash: prev.playbook!.branchHash }));
+  const done = await app.request(`/api/projects/${pid}/runtime/merge`, json("POST", { hash: prev.playbook!.branchHash }));
   assert.equal(done.status, 200, await done.clone().text());
   await until((x) => x.playbookState === "idle");
 
@@ -202,7 +198,7 @@ test("a deploy-setup run proposes its deploy recipe: its own hash, every step ti
   const out = await host.act(
     projectSid(pid),
     "verbs/onboard",
-    { sessionId: sid3, title: "Project deploy: site", prompt: "Run it", mode: { mode: "normal", minorModes: ["align"] }, playbookId: "project-deploy", label: "Project deploy", approves: "deploy" },
+    { sessionId: sid3, title: "Project deploy: site", prompt: "Run it", mode: { mode: "normal", minorModes: ["align"] }, playbookId: "project-deploy", label: "Project deploy", proposes: "deploy" },
     operatorEnvelopeOf(pid),
     { settle: true },
   );
@@ -217,22 +213,18 @@ test("a deploy-setup run proposes its deploy recipe: its own hash, every step ti
   await noteBuildSettled(path3, false);
   const v = await until((x) => x.playbookState === "proposed" && !!x.playbook?.branchHash && !!x.playbook?.review?.deploy);
   const r = v.playbook!.review!.deploy!;
-  assert.equal(v.playbook!.approves, "deploy");
+  assert.equal(v.playbook!.proposes, "deploy");
   assert.equal(v.playbook!.branchHash, r.deployHash, "the review's hash is the recipe's, not the definition's");
-  assert.ok(r.keys.length >= 2, JSON.stringify(r.keys));
+  assert.deepEqual(r.targets.map((t) => [t.name, t.steps.map((x) => x.key)]), [["staging", ["steps.push"]]], "every step as Sova renders it");
   const fact = playbookReviewOf(pid)!;
-  assert.deepEqual([fact.label, fact.approves, fact.hash, fact.approved], ["Project deploy", "deploy", r.deployHash, false]);
+  assert.deepEqual([fact.label, fact.proposes, fact.hash], ["Project deploy", "deploy", r.deployHash]);
 
-  const unticked = await app.request(`/api/projects/${pid}/runtime/approve-merge`, json("POST", { hash: r.deployHash, ticked: r.keys.slice(1) }));
-  assert.equal(unticked.status, 409);
-  assert.match(((await unticked.json()) as { error: string }).error, /^Tick every step before approving: 1 not ticked/);
-  const stale = await app.request(`/api/projects/${pid}/runtime/approve-merge`, json("POST", { hash: "sha256:00", ticked: r.keys }));
+  const stale = await app.request(`/api/projects/${pid}/runtime/merge`, json("POST", { hash: "sha256:00" }));
   assert.equal(((await stale.json()) as { error: string }).error, "The deploy recipe changed since it was shown: look again.");
-  assert.equal((await read()).playbookState, "proposed", "nothing approved, nothing merged");
+  assert.equal((await read()).playbookState, "proposed", "nothing merged");
 
-  const ok = await app.request(`/api/projects/${pid}/runtime/approve-merge`, json("POST", { hash: r.deployHash, ticked: r.keys }));
+  const ok = await app.request(`/api/projects/${pid}/runtime/merge`, json("POST", { hash: r.deployHash }));
   assert.equal(ok.status, 200, await ok.clone().text());
   const after = await until((x) => x.playbookState === "idle");
   assert.equal(after.playbook?.result, "merged");
-  assert.ok(after.feed.some((f) => f.line.startsWith("You approved the deploy recipe ")), JSON.stringify(after.feed.slice(0, 4)));
 });

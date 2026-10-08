@@ -1,17 +1,14 @@
 // The Deploy panel's words (§app.project-runtime/deploy-panel), pure so they run under tsx --test:
-// a target's standing chip, its last deploy, a plan's checks and deadline, and how many of a
-// review's steps are still unticked. The panel (src/components/ProjectDeployPanel.tsx) renders them.
+// a target's standing chip, its last deploy, and a plan's checks and deadline. The panel (src/components/ProjectDeployPanel.tsx) renders them.
 
-import type { DeployRecordView, DeployReview, DeployStanding, DeployTargetView } from "../../shared/project-contract";
+import type { DeployRecordView, DeployStanding, DeployTargetView } from "../../shared/project-contract";
 
 export const short = (commit: string) => commit.slice(0, 7);
 export const hash12 = (h: string) => h.replace(/^sha256:/, "").slice(0, 12);
 
-/** Each standing's chip: approved is the only success; out of date and awaiting are things to act on. */
+/** Each standing's chip: a target main declares, or one only its history names. */
 export const DEPLOY_STANDING_CHIP: Record<DeployStanding, { word: string; tone?: "success" | "warn" | "info" }> = {
-  approved: { word: "Approved", tone: "success" },
-  "awaiting-approval": { word: "Awaiting approval", tone: "warn" },
-  stale: { word: "Out of date", tone: "warn" },
+  declared: { word: "Declared", tone: "info" },
   none: { word: "Not declared" },
 };
 
@@ -39,12 +36,6 @@ export function rollbackWord(t: Pick<DeployTargetView, "rollback" | "verifiedCom
   if (typeof t.rollback === "object") return null;
   if (t.rollback === "steps") return "Runs the target's rollback steps.";
   return "Deploys the last verified commit before this one again.";
-}
-
-/** "2 of 9 steps ticked" / "Every step ticked." */
-export function tickProgress(review: Pick<DeployReview, "keys">, ticked: ReadonlySet<string>): { left: number; line: string } {
-  const left = review.keys.filter((k) => !ticked.has(k)).length;
-  return { left, line: left ? `${review.keys.length - left} of ${review.keys.length} steps ticked` : "Every step ticked." };
 }
 
 /** Deploy Now's confirm: "This ships 1a2b3c4 to prod: A local folder. Everyone using it gets it." — the about ends its sentence. */

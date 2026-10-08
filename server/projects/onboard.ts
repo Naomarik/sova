@@ -49,7 +49,7 @@ export interface OnboardFacts {
   rootExists: boolean;
   /** The verb playbook asked for (default project-verbs). */
   playbookId?: string;
-  playbook: Pick<PlaybookInfo, "title" | "dir" | "body" | "approves"> | null;
+  playbook: Pick<PlaybookInfo, "title" | "dir" | "body" | "proposes"> | null;
 }
 
 /** The host's refusal sentence, or null when the playbook can start. Pure. */
@@ -58,7 +58,7 @@ export function onboardInvalid(f: OnboardFacts): string | null {
   if (!f.rootExists) return `${f.name}'s folder ${f.root} is missing on this host.`;
   const id = f.playbookId ?? ONBOARD_PLAYBOOK_ID;
   if (!f.playbook) return `No playbook "${id}" is listed for ${f.name}.`;
-  if (!f.playbook.approves) return `${id} is not a verb playbook: its PLAYBOOK.md says no approves:.`;
+  if (!f.playbook.proposes) return `${id} is not a verb playbook: its PLAYBOOK.md says no proposes:.`;
   return null;
 }
 
@@ -69,10 +69,10 @@ export interface OnboardStart {
   title: string;
   model: string;
   thinking: string;
-  /** The verb playbook the run is keyed by (§app.project-runtime/verb-playbooks): its id, title and what it approves. */
+  /** The verb playbook the run is keyed by (§app.project-runtime/verb-playbooks): its id, title and what it proposes. */
   playbookId: string;
   label: string;
-  approves: "definition" | "deploy";
+  proposes: "definition" | "deploy";
   /** Set when the host refuses: nothing may start. */
   invalid?: string;
 }
@@ -106,7 +106,7 @@ async function offeredRefs(): Promise<string[] | null> {
 export function onboardStartFrom(facts: OnboardFacts, input: { why?: string | null; model?: string | null; thinking?: string | null }, offered: readonly string[] | null): OnboardStart {
   const choice = onboardModel(input, offered);
   const label = facts.playbook?.title || "Project verbs";
-  const who = { playbookId: facts.playbookId ?? ONBOARD_PLAYBOOK_ID, label, approves: facts.playbook?.approves ?? "definition" };
+  const who = { playbookId: facts.playbookId ?? ONBOARD_PLAYBOOK_ID, label, proposes: facts.playbook?.proposes ?? "definition" };
   const title = onboardTitle(facts.name, label);
   const invalid = onboardInvalid(facts) ?? (choice ? null : NO_ONBOARD_MODEL);
   if (invalid || !facts.playbook || !choice) return { prompt: "", title, model: choice?.model ?? "", thinking: choice?.thinking ?? ONBOARD_THINKING, ...who, invalid: invalid ?? "" };

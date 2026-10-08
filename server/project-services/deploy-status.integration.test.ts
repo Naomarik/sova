@@ -4,10 +4,9 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
-import { parseDefinition, type VerbResult } from "../../shared/project-contract";
-import { approveDeployRecipe, Deployer, deployAttention, deployNotes } from "./deploy";
+import type { VerbResult } from "../../shared/project-contract";
+import { Deployer, deployAttention, deployNotes } from "./deploy";
 import { deployItems } from "./deploy-attention";
-import { deployReview } from "./deploy-trust";
 import { DetachedDriver } from "./drivers";
 import { ProjectEngine, type Caller } from "./engine";
 import { hostVarsFile } from "./store";
@@ -85,8 +84,6 @@ before(async () => {
   git(["push", "-q", "-u", "origin", "main"]);
   mkdirSync(join(process.env.PI_CODING_AGENT_DIR!, "sova", "project-services"), { recursive: true });
   writeFileSync(hostVarsFile(), JSON.stringify({ version: 1, projects: { [project]: { TARGET_DIR: target, DEPLOY_TOKEN: TOKEN } } }));
-  const review = deployReview(project, parseDefinition(JSON.stringify(DEF)).deploy!, "main");
-  await approveDeployRecipe(project, review.deployHash, "HEAD", review.keys);
   deployer = new Deployer(new ProjectEngine({ driver: new DetachedDriver() }), { watchMs: 50 });
 });
 after(() => rmSync(parent, { recursive: true, force: true }));
@@ -100,7 +97,7 @@ test("status keeps each target's history; logs read the redacted log; redeploy-p
   const st = await deployer.run("deploy.status", { project, target: "prod" }, { kind: "session", id: "s", root: project, own: [] });
   assert.equal(st.error, undefined, "a session reads its project's deploys");
   const prod = st.deploy!.targets![0]!;
-  assert.deepEqual([prod.last!.commit, prod.last!.state, prod.verifiedCommit, prod.standing], [v2, "succeeded", v2, "approved"]);
+  assert.deepEqual([prod.last!.commit, prod.last!.state, prod.verifiedCommit, prod.standing], [v2, "succeeded", v2, "declared"]);
   assert.deepEqual(st.deploy!.history!.map((h) => h.commit), [v2, v1]);
   const logs = await deployer.run("deploy.logs", { project, target: "prod" }, op);
   assert.ok(logs.lines!.some((l) => l.service === "steps.ship" && l.text === "using [redacted:DEPLOY_TOKEN]"), JSON.stringify(logs.lines));

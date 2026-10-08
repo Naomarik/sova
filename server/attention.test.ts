@@ -338,16 +338,14 @@ describe("blockerCount: the count \"Brief me\" compares (§app.overseer/brief-re
 });
 
 describe("attention: a proposed verb playbook run (§app.project-runtime/review)", () => {
-  const fact = { projectId: "p1", sessionId: "s1", path: "/s/pb.jsonl", label: "Project verbs", branch: "sova/verbs-1a2b3c", target: "main", hash: "sha256:0123456789abcdef", approved: false, since: NOW - 5000, approves: "definition" as const };
-  test("is an act item of the run's session, worded by what waits, carrying what Approve & Merge needs", () => {
+  const fact = { projectId: "p1", sessionId: "s1", path: "/s/pb.jsonl", label: "Project verbs", branch: "sova/verbs-1a2b3c", target: "main", hash: "sha256:0123456789abcdef", since: NOW - 5000, proposes: "definition" as const };
+  test("is an act item of the run's session, worded by what waits, carrying what Merge Branch needs", () => {
     const items = sessionItems(row(summary("pb"), { playbook: fact }), NOW);
     const it = items.find((i) => i.kind === "playbook-review")!;
     assert.equal(it.tier, "act");
     assert.equal(it.since, NOW - 5000);
-    assert.equal(it.detail, "Project verbs: approve 0123456789ab and merge into main");
-    assert.deepEqual(it.playbook, { projectId: "p1", label: "Project verbs", hash: "sha256:0123456789abcdef", approved: false, branch: "sova/verbs-1a2b3c", target: "main", approves: "definition" });
-    const approved = sessionItems(row(summary("pb"), { playbook: { ...fact, approved: true } }), NOW).find((i) => i.kind === "playbook-review")!;
-    assert.equal(approved.detail, "Project verbs: 0123456789ab is approved: merge it into main");
+    assert.equal(it.detail, "Project verbs: merge 0123456789ab into main");
+    assert.deepEqual(it.playbook, { projectId: "p1", label: "Project verbs", hash: "sha256:0123456789abcdef", branch: "sova/verbs-1a2b3c", target: "main", proposes: "definition" });
     const none = sessionItems(row(summary("pb"), { playbook: { ...fact, hash: undefined } }), NOW).find((i) => i.kind === "playbook-review")!;
     assert.equal(none.detail, "Project verbs: its branch sova/verbs-1a2b3c has no valid definition: read its report");
     assert.equal(buildDigest([row(summary("pb"), { playbook: fact })], NOW).badge.act, 1, "counts in the Overseer's need you");

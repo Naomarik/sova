@@ -187,13 +187,7 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   resolution of a session's sandbox policy from its agent dir, cwd, session id and tracked
   worktrees, which the extension's `snapshot()` also calls, and `readDenial`/`writeDenial`/
   `hiddenBelow`, so a linked session's file transfer is refused exactly where that session's own
-  tools would be), `server/project-services/confine.ts` imports `sandbox/backends/linux-bwrap.ts`,
-  `env.ts`, `proxy.ts`, `policy.ts` and `session-policy.ts` (builtins only: a confined conformance
-  run, §app.project-services/confined, holds its private network namespace in a bwrap anchor with
-  the policy's proxy, and wraps each unit in the bwrap view a sandboxed session there would get, so
-  an unapproved definition runs exactly as confined as the session that wrote it; the watcher does
-  not watch these, so an edit there reaches a running server only at its restart),
-  `server/transcript.ts` and `server/align-state.ts` import
+  tools would be), `server/transcript.ts` and `server/align-state.ts` import
   `pi-config/extensions/mode/align.ts` (builtins only: the `align` tool's details shape, its strict
   check `normalizeAlignDetails` and the one fold `foldAlignments` — the transcript's align row and
   the session list's `SessionSummary.align` read what the extension writes, with its own code),

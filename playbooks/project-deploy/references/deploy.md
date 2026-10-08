@@ -2,9 +2,8 @@
 
 Parsed as strictly as the rest of the definition (Sova's own parser, `project-deploy.mjs check`): an
 unknown key, a wrong type, a shell string or an unknown template variable makes the whole file
-invalid. It sits outside the definition's approval hash and has its own, the **deploy hash**
-(everything in it but timeouts): approving how the project runs locally never approves how it
-ships, and a deploy edit never needs the services approved again.
+invalid. It sits outside the definition's hash and has its own, the **deploy hash** (everything
+in it but timeouts): a plan is bound to it, so a recipe that changed since a plan needs a new plan.
 
 ```json
 "host": ["PROD_HOST", "SITE_HOST"],
@@ -50,8 +49,8 @@ literal `$`. Nothing else: no ports, slots or data paths. Addresses, users and p
 always `${host.NAME}`, never literals: the repository may be public.
 
 ## What happens later (the operator's, never yours)
-1. **Approve**: Sova renders every step with `${host.*}` resolved on this host; the operator ticks
-   each one, then Approve Deploy (or Approve & Merge for your branch).
+1. **Merge**: Sova renders every step with `${host.*}` resolved on this host on your run's review;
+   the operator reads it, then Merge Branch.
 2. **Plan** (`deploy.plan`): in a fresh checkout at the exact commit, Sova checks the commit is on
    the target's branch and pushed, runs the required tests and the credential checks and plan steps,
    and answers a plan good for 15 minutes. Not on the branch, not pushed, or a credential check

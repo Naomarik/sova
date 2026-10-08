@@ -25,11 +25,11 @@ import {
   type VerbResult,
 } from "../../shared/project-contract";
 import { projectOf } from "../project-root";
-import { approveDeployAtRef, definitionAt, deployApprovalOf, deployHashOf, deployReview, mainBranchOf, readDeployApprovals, resolveHost, targetStanding } from "./deploy-trust";
+import { definitionAt, mainBranchOf, resolveHost, targetStanding } from "./deploy-recipe";
 import { callerTag, realGit, type Caller, type ProjectEngine } from "./engine";
 import { realExec, SLICE } from "./drivers";
-import { servicesRoot, stateHash, tryLock } from "./store";
-import { defHashOf, hostVars, isApproved } from "./trust";
+import { defHashOf, deployHashOf } from "./def-hash";
+import { hostVars, servicesRoot, stateHash, tryLock } from "./store";
 
 /**
  * The deploy verbs (§app.project-services/deploy): a target of the definition's `deploy`, never an
@@ -188,15 +188,6 @@ export function deployNotes(root: string): DeployNote[] {
   return f?.version === 1 ? (f.notes?.[root] ?? []) : [];
 }
 
-/**
- * The operator approves the deploy recipe `seen` at `ref` (main's HEAD, or a verb playbook's branch tip) with
- * every step of its review ticked (§app.project-services/deploy-trust); the feed says so. Throws the refusal.
- */
-export async function approveDeployRecipe(root: string, seen: string, ref: string, ticked: readonly string[]): Promise<void> {
-  await approveDeployAtRef(root, seen, ref, ticked);
-  addDeployNote(root, `You approved the deploy recipe ${hash12(seen)} on this host.`);
-}
-
 // ---- records ------------------------------------------------------------------------------------------
 
 /** A deploy record on disk: what deploy.status shows, plus what the runner needs to find. */
@@ -280,7 +271,6 @@ interface DRun {
   lines?: LogLine[];
   report?: DeployReport;
   defHash: string | null;
-  approved: boolean;
   changed: boolean;
 }
 
@@ -306,7 +296,7 @@ export class Deployer {
 
   /** Run one deploy verb for `caller`: every outcome is a result. */
   async run(verb: string, body: unknown, caller: Caller, _opts: { signal?: AbortSignal } = {}): Promise<VerbResult> {
-    const run: DRun = { verb: (isDeployVerb(verb) ? verb : "deploy.status") as DeployVerb, caller, req: {}, root: null, steps: [], defHash: null, approved: false, changed: false };
+    const run: DRun = { verb: (isDeployVerb(verb) ? verb : "deploy.status") as DeployVerb, caller, req: {}, root: null, steps: [], defHash: null, changed: false };
     try {
       if (!isDeployVerb(verb)) throw new DeployFailure("invalid-request", `unknown verb "${verb}"`);
       run.req = parseDeployRequest(body);
@@ -372,32 +362,29 @@ export class Deployer {
       ...(run.report ? { deploy: run.report } : {}),
       ...(failure ? { error: { code: failure.code, message: failure.message } } : {}),
       defHash: run.defHash,
-      approved: run.approved,
       at: new Date(this.now()).toISOString(),
     });
   }
 
-  /** Main's definition at HEAD, its deploy recipe and their hashes and approvals; refused when there is no definition. */
-  protected async mainRecipe(run: DRun): Promise<{ deploy: DeployDecl | undefined; deployHash: string | null; approved: boolean; commit: string }> {
+  /** Main's definition at HEAD, its deploy recipe and their hashes; refused when there is no definition. */
+  protected async mainRecipe(run: DRun): Promise<{ deploy: DeployDecl | undefined; deployHash: string | null; commit: string }> {
     const root = run.root!;
     const at = await definitionAt(root, "HEAD", this.git);
     if (!at.def || !at.commit) throw new DeployFailure(at.error?.startsWith("no ") ? "not-found" : "invalid-definition", `main's definition: ${at.error ?? "none"}`);
     run.defHash = defHashOf(at.def);
-    run.approved = isApproved(root, run.defHash);
     const deployHash = at.def.deploy ? deployHashOf(at.def.deploy) : null;
-    return { deploy: at.def.deploy, deployHash, approved: !!deployHash && !!deployApprovalOf(root, deployHash), commit: at.commit };
+    return { deploy: at.def.deploy, deployHash, commit: at.commit };
   }
 
   // ---- deploy.plan (§app.project-services/deploy-plan) ---------------------------------------------------
 
-  /** The target in main's approved recipe, or the refusal. */
-  protected async approvedTarget(run: DRun): Promise<{ deploy: DeployDecl; deployHash: string; target: DeployTargetDecl; mainBranch: string }> {
+  /** The target in main's recipe, or the refusal. */
+  protected async mainTarget(run: DRun): Promise<{ deploy: DeployDecl; deployHash: string; target: DeployTargetDecl; mainBranch: string }> {
     const m = await this.mainRecipe(run);
     if (!run.req.target) throw new DeployFailure("invalid-request", "name the target");
     if (!m.deploy || !m.deployHash) throw new DeployFailure("not-found", "main's definition declares no deploy");
     const target = m.deploy.targets.find((t) => t.name === run.req.target);
     if (!target) throw new DeployFailure("not-found", `no deploy target ${run.req.target} on main (${m.deploy.targets.map((t) => t.name).join(", ")})`);
-    if (!m.approved) throw new DeployFailure("not-approved", `the deploy recipe ${hash12(m.deployHash)} is not approved on this host: the operator approves it on the project's Deploy panel, each step ticked`);
     return { deploy: m.deploy, deployHash: m.deployHash, target, mainBranch: await mainBranchOf(run.root!, this.git) };
   }
 
@@ -463,7 +450,7 @@ export class Deployer {
   protected async plan(run: DRun, kind: DeployKind, commitOverride?: string): Promise<DeployPlanView> {
     const root = run.root!;
     this.sweepPlans();
-    const { deployHash, target: t, mainBranch } = await this.approvedTarget(run);
+    const { deployHash, target: t, mainBranch } = await this.mainTarget(run);
     if (kind === "deploy" && run.caller.kind === "operator" && clearRequest(root, t.name)) addDeployNote(root, `You opened the plan the overseer asked for: ${t.name}.`);
     const branch = t.branch ?? mainBranch;
     const checks: Check[] = [];
@@ -538,7 +525,7 @@ export class Deployer {
       kept = true;
       for (const [k, why] of Object.entries(overrides))
         addDeployNote(root, `You let the plan of ${commit.slice(0, 7)} to ${t.name} through ${k === "tests" ? "without its required tests passing" : "with main's tree dirty"}: "${why}"`);
-      run.report = { deployHash, approved: true, plan: view };
+      run.report = { deployHash, plan: view };
       run.changed = true;
       return view;
     } finally {
@@ -610,7 +597,7 @@ export class Deployer {
   /** Start `p` (a plan or a rollback's) under the target's lock, after checking it still holds. */
   protected async start(run: DRun, p: StoredPlan): Promise<DeployRecord> {
     const root = run.root!;
-    const { deployHash, target: t } = await this.approvedTarget(run);
+    const { deployHash, target: t } = await this.mainTarget(run);
     if (deployHash !== p.deployHash) throw new DeployFailure("deploy-refused", `the deploy recipe changed since the plan (${hash12(p.deployHash)} → ${hash12(deployHash)}): plan again`);
     const rendered = this.renderTarget(root, t, p.kind, p.commit, p.checkout, p.branch);
     if (this.varsHash(rendered) !== p.varsHash) throw new DeployFailure("deploy-refused", "this host's values for the recipe changed since the plan: plan again");
@@ -665,7 +652,7 @@ export class Deployer {
     }
     addDeployNote(root, `${p.kind === "rollback" ? "Rolling back" : "Deploying"} ${p.commit.slice(0, 7)} to ${t.name} (${id}).`);
     this.watch(id);
-    run.report = { deployHash, approved: true, record: viewOf(rec) };
+    run.report = { deployHash, record: viewOf(rec) };
     run.changed = true;
     return rec;
   }
@@ -801,7 +788,7 @@ export class Deployer {
       } catch {}
     }
     run.lines = lines.slice(-n);
-    run.report = { deployHash: r.deployHash, approved: !!deployApprovalOf(root, r.deployHash), record: viewOf(r) };
+    run.report = { deployHash: r.deployHash, record: viewOf(r) };
   }
 
   /**
@@ -811,7 +798,7 @@ export class Deployer {
    */
   private async rollback(run: DRun): Promise<void> {
     const root = run.root!;
-    const { target: t } = await this.approvedTarget(run);
+    const { target: t } = await this.mainTarget(run);
     if (typeof t.rollback === "object" && "none" in t.rollback) throw new DeployFailure("unsupported", `${t.name} can't be rolled back: ${t.rollback.none}`);
     const ok = recordsOf(root, t.name).filter((r) => r.state === "succeeded");
     let commit: string | undefined;
@@ -836,7 +823,7 @@ export class Deployer {
       if (!clearRequest(root, run.req.target)) throw new DeployFailure("not-found", `no request to deploy ${run.req.target}`);
       addDeployNote(root, `You dismissed the request to deploy ${run.req.target}.`);
       run.changed = true;
-      run.report = { deployHash: m.deployHash, approved: m.approved };
+      run.report = { deployHash: m.deployHash };
       return;
     }
     if (!t) throw new DeployFailure("not-found", `no deploy target ${run.req.target} on main`);
@@ -851,7 +838,7 @@ export class Deployer {
     writeRequests([...readRequests().filter((r) => !(r.project === root && r.target === t.name)), req]);
     addDeployNote(root, `${run.caller.kind === "project-overseer" ? "The project overseer" : "The Overseer"} asks you to deploy ${commit ? commit.slice(0, 7) : `the tip of ${t.branch ?? "main"}`} to ${t.name}: ${run.req.why}`);
     const { project: _p, ...view } = req;
-    run.report = { deployHash: m.deployHash, approved: m.approved, request: view };
+    run.report = { deployHash: m.deployHash, request: view };
     run.changed = true;
   }
 
@@ -870,7 +857,6 @@ export class Deployer {
     if (!at.def) throw new DeployFailure(at.error?.startsWith("no ") ? "not-found" : "invalid-definition", `the definition at ${ref}: ${at.error}`);
     if (!at.def.deploy) throw new DeployFailure("not-found", `the definition at ${ref} declares no deploy`);
     run.defHash = defHashOf(at.def);
-    run.approved = isApproved(root, run.defHash);
     const d = at.def.deploy;
     const hash = deployHashOf(d);
     const host = hostVars(root);
@@ -908,7 +894,7 @@ export class Deployer {
     run.checks = checks;
     const pass = checks.every((c) => c.ok);
     writeJson(join(checksDir(), `${rootKey(root)}-${hash12(hash)}.json`), { v: 1, project: root, ref, commit: at.commit, deployHash: hash, pass, checks, at: new Date(this.now()).toISOString() });
-    run.report = { deployHash: hash, approved: !!deployApprovalOf(root, hash) };
+    run.report = { deployHash: hash };
   }
 
   // ---- deploy.status --------------------------------------------------------------------------------------
@@ -916,13 +902,11 @@ export class Deployer {
   private async status(run: DRun): Promise<void> {
     const root = run.root!;
     const m = await this.mainRecipe(run);
-    const approvals = readDeployApprovals();
     const records = recordsOf(root);
     const requests = readRequests().filter((r) => r.project === root);
     const declared = m.deploy?.targets ?? [];
     const names = [...declared.map((t) => t.name), ...[...new Set(records.map((r) => r.target))].filter((n) => !declared.some((t) => t.name === n))];
     if (run.req.target && !names.includes(run.req.target)) throw new DeployFailure("not-found", `no deploy target ${run.req.target}${m.deploy ? "" : ": main's definition declares no deploy"}`);
-    const at = m.deployHash ? approvals[root]?.[m.deployHash]?.at ?? null : null;
     const targets: DeployTargetView[] = names
       .filter((n) => !run.req.target || n === run.req.target)
       .map((name) => {
@@ -933,8 +917,7 @@ export class Deployer {
         return {
           name,
           about: t?.about ?? "No longer declared on main.",
-          standing: targetStanding(root, m.deploy, name, approvals),
-          approvedAt: at,
+          standing: targetStanding(m.deploy, name),
           last: mine[0] ? viewOf(mine[0]) : null,
           verifiedCommit: verified?.commit ?? null,
           rollback: !t ? { none: "No longer declared on main." } : typeof t.rollback === "string" ? t.rollback : "steps" in t.rollback ? "steps" : { none: t.rollback.none },
@@ -943,9 +926,7 @@ export class Deployer {
       });
     run.report = {
       deployHash: m.deployHash,
-      approved: m.approved,
       targets,
-      ...(m.deploy && !m.approved ? { review: deployReview(root, m.deploy, await mainBranchOf(root, this.git)) } : {}),
       ...(run.req.target ? { history: records.filter((r) => r.target === run.req.target).slice(0, 20).map(viewOf) } : {}),
     };
   }

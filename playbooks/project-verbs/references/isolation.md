@@ -62,8 +62,7 @@ missing), leave it out and say so in the report.
 ## 5. `container` — a container per checkout
 Last, and only when the software can't run as a process here. `cmd` runs the container in the
 foreground (`docker run --rm --name ${instance}-db -p ${ports.db.port}:5432 …`) with
-`container: {name: "${instance}-db"}`. A container definition conforms only after the operator
-approves it: say so in the report instead of looping.
+`container: {name: "${instance}-db"}`.
 
 `netns` (a private network namespace per copy) is reserved: never choose it.
 

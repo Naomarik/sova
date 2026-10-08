@@ -80,8 +80,6 @@ const clearHolds = async () => {
 
 describe("sova_project_verbs goes through the project statechart (§app.project-services/callers)", () => {
   test("unattended: down from L0, up only at L3, any verb in the operator's run; each verb but the reads is an act", async () => {
-    const { approve, defHashOf } = await import("./project-services/trust");
-    const { parseDefinition } = await import("../shared/project-contract");
     const { stopStaticServe, staticServes } = await import("./preview-serve");
     const { writeFileSync } = await import("node:fs");
     const port = await reservePorts(1); // held across the run's processes, not a free port picked and let go
@@ -91,8 +89,6 @@ describe("sova_project_verbs goes through the project statechart (§app.project-
     writeFileSync(join(dir, "public", "index.html"), "portal");
     const def = { version: 1, services: { site: { static: "public", ports: { http: { base: port } } } } };
     writeFileSync(join(dir, ".sova", "project.json"), JSON.stringify(def));
-    const h = defHashOf(parseDefinition(JSON.stringify(def)));
-    approve(dir, h, h);
     type Result = { ok: boolean; state: string; instance: string | null; error?: { code: string } };
     const verb = async (params: Record<string, unknown>, attended = false) => ((await run("sova_project_verbs", params, attended)) as { details: { result: Result } }).details.result;
     const acts = () => hostOf(org.id).feed(project.id, { newestFirst: false, limit: 500 }).filter((e) => e.event.startsWith("services/")).map((e) => [e.event, e.refused ? "refused" : "taken"]);
@@ -142,8 +138,6 @@ describe("sova_project_verbs goes through the project statechart (§app.project-
 
 describe("sova_project_verbs share is the project's services/share (§app.project-overseer/previews)", () => {
   test("L0 refused; L1 unattended held, then approved: the link is minted, never in a result; revoke at L0, never held", async () => {
-    const { approve, defHashOf } = await import("./project-services/trust");
-    const { parseDefinition } = await import("../shared/project-contract");
     const { stopStaticServe, staticServes } = await import("./preview-serve");
     const { writeFileSync } = await import("node:fs");
     const port = await reservePorts(1); // held across the run's processes, not a free port picked and let go
@@ -155,8 +149,6 @@ describe("sova_project_verbs share is the project's services/share (§app.projec
     writeFileSync(join(dir, "public", "index.html"), "portal");
     const def = { version: 1, services: { site: { static: "public", ports: { http: { base: port } } } }, share: { endpoints: ["site.http"] } };
     writeFileSync(join(dir, ".sova", "project.json"), JSON.stringify(def));
-    const h = defHashOf(parseDefinition(JSON.stringify(def)));
-    approve(dir, h, h);
     type Result = { ok: boolean; state: string; instance: string | null; error?: { code: string; message: string }; links: { id: string; endpoint: string; url?: string }[]; steps: { id: string; result: string; detail?: string }[] };
     const verb = async (params: Record<string, unknown>, attended = false) => {
       const out = (await run("sova_project_verbs", params, attended)) as { content: { text: string }[]; details: { result: Result } };

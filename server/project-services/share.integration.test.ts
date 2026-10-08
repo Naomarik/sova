@@ -8,7 +8,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
-import { DefinitionError, isVerbResult, parseDefinition, type VerbResult } from "../../shared/project-contract";
+import { DefinitionError, isVerbResult, type VerbResult } from "../../shared/project-contract";
 import { reservePorts } from "../test-ports";
 
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-share-agent-"));
@@ -19,7 +19,7 @@ const { DetachedDriver } = await import("./drivers");
 const { ProjectEngine } = await import("./engine");
 type Caller = import("./engine").Caller;
 const { readRegistry, sharedIdOf } = await import("./store");
-const { approve, defHashOf } = await import("./trust");
+const { defHashOf } = await import("./def-hash");
 const links = await import("../preview-links");
 const { keptPreview } = await import("../preview-kept");
 const { previewDialable } = await import("../share/preview-proxy");
@@ -59,11 +59,6 @@ const shaped = (r: VerbResult) => {
   return r;
 };
 const write = (def: unknown) => writeFileSync(join(project, ".sova", "project.json"), JSON.stringify(def, null, 2));
-const approveNow = (dir = project) => {
-  const h = defHashOf(parseDefinition(JSON.stringify(DEF)));
-  approve(dir, h, h);
-};
-
 before(() => {
   parent = realpathSync(mkdtempSync(join(tmpdir(), "sova-share-proj-")));
   project = join(parent, "demo");
@@ -74,7 +69,6 @@ before(() => {
   git(["init", "-q", "-b", "main"]);
   git(["add", "-A"]);
   git(["commit", "-q", "-m", "fixture"]);
-  approveNow();
 });
 
 after(async () => {

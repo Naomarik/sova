@@ -225,7 +225,7 @@
                       ;; the verb playbook it runs (§app.project-runtime/verb-playbooks), stamped by the host
                       (:playbook-id e) (assoc :playbook-id (:playbook-id e))
                       (:label e) (assoc :label (:label e))
-                      (:approves e) (assoc :approves (:approves e)))))))
+                      (:proposes e) (assoc :proposes (:proposes e)))))))
 
       (parallel {:id :regions}
         (state {:id :shelf :initial :active}

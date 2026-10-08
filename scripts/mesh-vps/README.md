@@ -87,9 +87,10 @@ GET /api/mesh/front-door, rebound to 127.0.0.1).
 
 A laptop whose host menu shows the VPS as "other version" and behind can run this deploy for you
 (`§mesh.peers/resync`): it deploys exactly the commit the laptop's Sova booted from (`deploy.sh --rev <that commit>`), never
-the checkout's newer HEAD, and only when the VPS is behind (never a downgrade). It needs a recipe in the laptop's
-`~/.pi/agent/sova/mesh-resync.json` (never synced to other hosts), keyed by the VPS's peer id, plus this directory's
-`local.env`:
+the checkout's newer HEAD, and only when the VPS is behind (never a downgrade). It needs this directory's `local.env`:
+its `VPS_ID` alone makes that peer resyncable (the file is read as plain `KEY=value` lines, never sourced by Sova). An
+entry in the laptop's `~/.pi/agent/sova/mesh-resync.json` (never synced to other hosts), keyed by the peer id, wins
+over that, e.g. to pass options:
 
     {"hosts": {"vps": {"kind": "vps"}}}
 

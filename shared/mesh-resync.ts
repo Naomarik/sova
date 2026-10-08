@@ -28,6 +28,10 @@ export type ResyncRelation =
 /** A recipe's kind: which script deploys to it (scripts/mesh-vps/deploy.sh, scripts/mesh-termux/deploy.sh). */
 export type ResyncKind = "vps" | "termux";
 
+/** Why a host has no recipe, and what would give it one: the menu's reason and the start's 409 alike. */
+export const noRecipeReason = (host: { id: string; label: string }, selfLabel: string): string =>
+  `No resync recipe for ${host.label} on ${selfLabel}: set VPS_ID in scripts/mesh-vps/local.env (or PHONE_ID in scripts/mesh-termux/local.env) to ${host.id}, or add ${host.id} to mesh-resync.json`;
+
 export type ResyncJobState =
   /** The deploy script is running. */
   | "running"
@@ -70,7 +74,8 @@ export interface ResyncHost {
   relation: ResyncRelation;
   /** Commits between the two, when one contains the other. */
   distance?: number;
-  /** The recipe for it in this host's mesh-resync.json; null when there is none. */
+  /** The recipe for it in this host's mesh-resync.json, else derived from a deploy script's
+      local.env; null when there is none. */
   recipe: ResyncKind | null;
   /** Why the recipe can't run as it stands (e.g. the script's local.env is missing). */
   recipeProblem?: string;

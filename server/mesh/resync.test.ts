@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import { Hono } from "hono";
 import type { ResyncJob } from "../../shared/mesh-resync";
-import { mountResync, parseRecipes, readRecipes, recipeArgv, recipeProblem, relationOf } from "./resync";
+import { derivedRecipes, localEnvs, mountResync, parseLocalEnv, parseRecipes, type Recipe, readRecipes, recipeArgv, recipeProblem, relationOf } from "./resync";
 import { config, fakeScript, memoryHistory, PROTO, resyncKit, skewed, until, type World } from "./resync-test-fixtures";
 
 const tmp = mkdtempSync(join(tmpdir(), "sova-resync-test-"));
@@ -77,12 +77,66 @@ describe("recipes", () => {
 
   test("the file: missing is no recipe and no error; malformed is no recipe and says so", () => {
     const file = join(tmp, "mesh-resync.json");
-    assert.deepEqual(readRecipes(file), { recipes: new Map() });
+    assert.deepEqual(readRecipes(file, new Map()), { recipes: new Map() });
     writeFileSync(file, "{ not json");
-    assert.equal(readRecipes(file).recipes.size, 0);
-    assert.match(readRecipes(file).error!, /valid JSON/);
+    assert.equal(readRecipes(file, new Map()).recipes.size, 0);
+    assert.match(readRecipes(file, new Map()).error!, /valid JSON/);
     writeFileSync(file, JSON.stringify({ vps: { kind: "vps" } }));
-    assert.match(readRecipes(file).error!, /"hosts"/);
+    assert.match(readRecipes(file, new Map()).error!, /"hosts"/);
+  });
+
+  test("local.env: plain KEY=value lines, quotes dropped, comments and anything else skipped", () => {
+    const env = parseLocalEnv(
+      [
+        "# the phone",
+        "",
+        "PHONE=100.64.0.3",
+        'PHONE_ID="host-b"',
+        "PHONE_LABEL='Host B'",
+        "export VPS_ID=vps # trailing",
+        "  PHONE_PORT = 8022",
+        "echo $(rm -rf /)",
+        "LAPTOP_IP=",
+      ].join("\n"),
+    );
+    assert.deepEqual(Object.fromEntries(env), { PHONE: "100.64.0.3", PHONE_ID: "host-b", PHONE_LABEL: "Host B", VPS_ID: "vps", LAPTOP_IP: "" });
+  });
+
+  test("derived: VPS_ID is a vps recipe, PHONE_ID a termux one taking its ssh from local.env; nothing from a missing file or a bad id", () => {
+    assert.deepEqual(
+      derivedRecipes({ vps: "VPS_SSH=u@v\nVPS_ID=cloud\n", termux: "PHONE=100.64.0.3\nPHONE_ID=host-b\n" }),
+      new Map([
+        ["cloud", { kind: "vps", args: [] }],
+        ["host-b", { kind: "termux", args: [] }],
+      ]),
+    );
+    assert.deepEqual(derivedRecipes({ vps: null, termux: null }), new Map());
+    assert.deepEqual(derivedRecipes({ vps: "VPS_SSH=u@v\n", termux: "PHONE_ID=Not An Id\n" }), new Map(), "no VPS_ID, and an id no peer can have");
+    assert.deepEqual(localEnvs(join(tmp, "no-checkout")), { vps: null, termux: null }, "an unreadable local.env is no text");
+  });
+
+  test("the file and derived recipes: a missing file gives the derived; an entry the file names wins, even a bad one; a malformed file gives none", () => {
+    const file = join(tmp, "mesh-resync-derived.json");
+    const derived = derivedRecipes({ vps: "VPS_ID=vps\n", termux: "PHONE_ID=phone\n" });
+    rmSync(file, { force: true });
+    assert.deepEqual(readRecipes(file, derived), { recipes: derived });
+    writeFileSync(file, JSON.stringify({ hosts: { phone: { kind: "termux", ssh: "u@p", args: ["--dns", "p.ts.net"] } } }));
+    assert.deepEqual(readRecipes(file, derived), {
+      recipes: new Map<string, Recipe>([
+        ["phone", { kind: "termux", args: ["--dns", "p.ts.net"], ssh: "u@p" }],
+        ["vps", { kind: "vps", args: [] }],
+      ]),
+    });
+    writeFileSync(file, JSON.stringify({ hosts: { vps: { kind: "shell" } } }));
+    const bad = readRecipes(file, derived);
+    assert.deepEqual([...bad.recipes.keys()], ["phone"], "the bad vps entry is left out, not replaced by the derived one");
+    assert.match(bad.error!, /^vps: kind/);
+    writeFileSync(file, "{ not json");
+    assert.deepEqual(readRecipes(file, derived), { recipes: new Map(), error: "mesh-resync.json isn't valid JSON" });
+    writeFileSync(file, JSON.stringify({ vps: { kind: "vps" } }));
+    const shape = readRecipes(file, derived);
+    assert.equal(shape.recipes.size, 0);
+    assert.match(shape.error!, /"hosts"/);
   });
 
   test("argv: the script, then the recipe's args, and the boot commit where nothing can override it", () => {
@@ -165,7 +219,7 @@ describe("the service", () => {
     w.details.new = { commit: A, turnsRunning: 0, workers: 0 };
     const r = await service(w).start("new", { commit: C }, json);
     assert.equal(r.status, 409);
-    assert.equal((r.body as { error: string }).error, "No resync recipe for NEW on Desk");
+    assert.equal((r.body as { error: string }).error, "No resync recipe for NEW on Desk: set VPS_ID in scripts/mesh-vps/local.env (or PHONE_ID in scripts/mesh-termux/local.env) to new, or add new to mesh-resync.json");
     assert.deepEqual(w.spawned, []);
   });
 

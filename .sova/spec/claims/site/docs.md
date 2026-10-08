@@ -47,7 +47,24 @@ spec writer, what workers get, and project coding sessions.
 ## §site.docs/vis — Vis (`/docs/modes/vis/`)
 
 The vis minor mode: the drawings the agent can put in a reply, where they render, and what is never
-trusted from the model.
+trusted from the model. An Examples section at the end, which the kinds section points to, shows
+one example of each kind (§site.docs/vis-examples).
+
+## §site.docs/vis-examples — The Vis page's examples
+
+The Vis page shows one example per kind the registry lists (`flow`, `state`, `sequence`, `layers`,
+`tree`, `chart`, `timeline`, `steps`, `wireframe`, `matrix`, `code`, `svg`, `html`), each as its
+`vis <kind>` block's source followed by its drawing. The drawings are Sova's own figure and Views
+rendered to static HTML when the examples are generated (`pnpm run vis-examples` in `site/`), with
+a copy of the vis styles scoped to the examples, so the page matches the app, runs no script, and
+follows the site's light/dark toggle through the same tokens. Every example parses with no
+warnings, or the generator fails, and it writes the same bytes on every run. A kind that lays
+out for its pane's width (flow, state, sequence, chart, matrix) is drawn for the docs column and
+for a 320px phone, and the page shows the one that fits its figure's width. Interactive parts
+show their first state and do nothing: a sequence's **Step Through** button is disabled. A `vis
+svg` example is drawn in place, as its frame would show it; a `vis html` example shows only its
+source, with a line saying that in the chat it runs in a sandboxed frame. A changed kind, View or
+style reaches the page only when the generator runs again.
 
 ## §site.docs/codemode — Codemode (`/docs/modes/codemode/`)
 

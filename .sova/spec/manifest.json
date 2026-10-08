@@ -16162,6 +16162,25 @@
       "code": [
         "site/src/content/docs/modes/codemode.md"
       ]
+    },
+    "§site.docs/vis-examples": {
+      "kind": "behavior",
+      "requires": [
+        "§site.docs/vis",
+        "§chat.markdown/visuals"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "site/scripts/vis-examples.mjs",
+        "site/scripts/vis-examples/examples.mjs",
+        "site/scripts/vis-examples/render.tsx",
+        "site/src/generated/vis-examples.html",
+        "site/src/content/docs/modes/vis.md",
+        "site/src/pages/docs/[...slug].astro",
+        "site/README.md",
+        "site/package.json"
+      ]
     }
   },
   "boundary": {

@@ -2,6 +2,7 @@
 title: Adversarial review
 description: An experimental addition to align. A fresh, read-only reviewer checks the plan and the finished work of complex changes, at most once each, and its verdict is recorded on the alignment.
 group: Modes
+subgroup: Minor
 order: 5
 ---
 

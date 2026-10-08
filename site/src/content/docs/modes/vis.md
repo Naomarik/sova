@@ -2,6 +2,7 @@
 title: Vis
 description: With vis on, the agent can draw small diagrams and charts in its replies. Sova draws them with its own code, and never puts the model's HTML or SVG into the page.
 group: Modes
+subgroup: Minor
 order: 7
 ---
 

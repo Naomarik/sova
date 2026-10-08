@@ -1,20 +1,21 @@
 ---
-// A /docs page: the shared header, a sidebar of every page grouped Start / Modes / Features / Setup
+// A /docs page: the shared header, a sidebar of every page grouped Start / Modes (with Major and
+// Minor modes nested) / Features / Setup
 // (sticky from 1024px, a <details> menu below that, no script), the page, prev/next, and a footer.
 import Base from "./Base.astro";
 import SiteNav from "../components/SiteNav.astro";
 import Icon from "../components/Icon.astro";
 import Mark from "../components/Mark.astro";
+import DocsNav from "../components/DocsNav.astro";
 import "../styles/docs.css";
 import * as site from "../data/site";
-import { docHref, groups, type DocEntry } from "../data/docs";
+import { docHref, subgroupLabels, type DocEntry } from "../data/docs";
 
 interface Props { entry: DocEntry; docs: DocEntry[] }
 const { entry, docs } = Astro.props;
 const i = docs.findIndex((d) => d.id === entry.id);
 const prev = i > 0 ? docs[i - 1] : undefined;
 const next = i < docs.length - 1 ? docs[i + 1] : undefined;
-const grouped = groups.map((g) => ({ group: g, pages: docs.filter((d) => d.data.group === g) })).filter((g) => g.pages.length);
 const title = entry.id === "index" ? "Sova docs" : `${entry.data.title} · Sova docs`;
 ---
 <Base title={title} description={entry.data.description}>
@@ -22,37 +23,19 @@ const title = entry.id === "index" ? "Sova docs" : `${entry.data.title} · Sova 
 
   <div class="wrap docs">
     <nav class="docs-side" aria-label="Docs">
-      {grouped.map(({ group, pages }) => (
-        <div class="docs-group">
-          <p class="docs-group-label">{group}</p>
-          <ul>
-            {pages.map((d) => (
-              <li><a href={docHref(d.id)} aria-current={d.id === entry.id ? "page" : undefined}>{d.data.title}</a></li>
-            ))}
-          </ul>
-        </div>
-      ))}
+      <DocsNav docs={docs} current={entry.id} idPrefix="docs-side" />
     </nav>
 
     <main id="main" class="docs-main">
       <details class="docs-menu">
         <summary><Icon name="chevron-right" size={16} /><span>Docs</span><span class="docs-menu-current">{entry.data.title}</span></summary>
         <nav aria-label="Docs">
-          {grouped.map(({ group, pages }) => (
-            <div class="docs-group">
-              <p class="docs-group-label">{group}</p>
-              <ul>
-                {pages.map((d) => (
-                  <li><a href={docHref(d.id)} aria-current={d.id === entry.id ? "page" : undefined}>{d.data.title}</a></li>
-                ))}
-              </ul>
-            </div>
-          ))}
+          <DocsNav docs={docs} current={entry.id} idPrefix="docs-menu" />
         </nav>
       </details>
 
       <article class="docs-article">
-        <p class="eyebrow">{entry.data.group}</p>
+        <p class="eyebrow">{entry.data.subgroup ? subgroupLabels[entry.data.subgroup] : entry.data.group}</p>
         <h1 class="docs-title">{entry.data.title}</h1>
         <p class="docs-lead">{entry.data.description}</p>
         <div class="docs-body">

@@ -20,7 +20,7 @@ The **major mode** is one of two:
 | [align](/docs/modes/align/) | The agent agrees with you on what to build before building it, and records each agreement as an alignment. | No |
 | [spec](/docs/modes/spec/) | The agent works from the project's spec: it reads the claims a task touches, and proposes changes in drafts. | Yes |
 | [vis](/docs/modes/vis/) | The agent can draw small diagrams and charts in its replies. | No |
-| [codemode](#codemode) | The agent can run a short script that calls its other tools, several at once, and filters their output. | No |
+| [codemode](/docs/modes/codemode/) | The agent can run a short script that calls its other tools, several at once, and filters their output. | No |
 
 Both kinds are **per chat**. Each chat keeps its own modes, saved in that chat's session file, so
 they survive a reload or a server restart. Switching one chat never moves another chat or a
@@ -128,24 +128,6 @@ Of the minor modes, only those that are meant for workers reach them, and today 
 A worker gets the modes its parent has **when it starts**. A later switch in the chat doesn't reach
 a running worker; a resumed worker takes the parent's current modes. The worker's view in the
 Subagents pane shows what it was given as a small chip beside its status, such as `spec`.
-
-## codemode
-
-Codemode is a minor mode that gives the agent pi's `codemode` tool: a short JavaScript script
-that calls the chat's other tools, several at once, and filters their output before the agent
-reads it. The tool is the whole mode: there are no extra instructions, and turning it on or off
-only adds or removes the tool.
-
-- **What a script can call.** The chat's tools, except a few that only the agent may call
-  directly, because Sova reads their results back: the `align` tool, starting a worker or a
-  team, and sending to another session. A model call from a script goes through this device's
-  model policy, and counts as the chat's own usage.
-- **What you see.** The script's card shows the script (with **Copy Script**) and each call it
-  made with its status (Running, Done, Failed or Cancelled), live while it runs, then its output.
-- **Where.** Sova offers it in every ordinary chat, on pi models and Claude Code alike. The
-  Overseer doesn't load it. Workers never get it.
-
-A switch made during a turn applies when that turn ends.
 
 ## strict
 

@@ -2,6 +2,7 @@
 title: Delegate
 description: In Delegate, the agent orchestrates. It sorts the work into 4 kinds and hands each to a worker on the model your subagent profile names for it.
 group: Modes
+subgroup: Major
 order: 2
 ---
 

@@ -2,6 +2,7 @@
 title: Align and alignments
 description: With align on, the agent agrees with you on what to build before it builds. Each agreement is an alignment, a card you answer in chat.
 group: Modes
+subgroup: Minor
 order: 4
 ---
 

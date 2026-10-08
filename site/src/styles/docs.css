@@ -19,6 +19,17 @@
 }
 .docs-group a:hover { color: var(--color-ink); background: var(--color-sunken); }
 .docs-group a[aria-current="page"] { color: var(--color-ink); background: var(--color-accent-tint); }
+/* A subgroup (Major modes, Minor modes): a small label, then its pages indented past a rule, so the
+   nesting reads at 320px as well as in the sidebar. */
+.docs-subgroup { margin-top: var(--space-2); }
+.docs-subgroup-label {
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--fs-caption); font-weight: var(--fw-semibold); color: var(--color-ink-muted);
+}
+.docs-subgroup > ul {
+  margin-left: var(--space-3); padding-left: var(--space-2);
+  border-left: var(--stroke-thin) solid var(--color-border);
+}
 
 .docs-menu {
   margin-bottom: var(--space-5);

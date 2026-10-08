@@ -2,6 +2,7 @@
 title: Spec
 description: With spec on, the agent works from the project's spec. It reads the claims a task touches before coding, and proposes changes to them in drafts it promotes once the work is done.
 group: Modes
+subgroup: Minor
 order: 6
 ---
 

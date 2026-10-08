@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { request, type IncomingHttpHeaders, type IncomingMessage, type ServerResponse } from "node:http";
 import { join } from "node:path";
@@ -50,8 +51,10 @@ import { createWsHop, WS_HOP_WITHDRAW_GRACE_MS, type WsHop } from "./ws-hop";
  * or a redirect, or has no response headers in time answers the offline 503
  * (server/share/offline.ts). A hop is tried once: a POST is never retried or replayed. Every hop
  * answer carries no-store, no-referrer and nosniff, and never a cookie. A hashed asset comes from
- * this host's own share build first, else from the first live host whose snapshot listed it,
- * streamed with a 5 MB cap. This file never binds.
+ * this host's own share build first, else from the live host whose snapshot listed it, streamed
+ * with a 5 MB cap and a sandbox CSP; a name several live hosts listed is served only once all of
+ * them answered the same bytes (agreedAsset). No hop passes back a header that would act on the
+ * whole share origin (a cookie, Service-Worker-Allowed, Clear-Site-Data). This file never binds.
  *
  * Preview hosts (kind `p`, §mesh.public/preview) come through `preview`: a label this host minted
  * goes to its own preview proxy; a hash a live, accepted host registered as `p` is hopped to that
@@ -68,10 +71,14 @@ export const HOP_SWEEP_MS = 1_000;
 export const HTTP_HOPS_TOTAL = 256;
 
 const HOP_BY_HOP = new Set(["connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailer", "transfer-encoding", "upgrade"]);
-/** Never passed back from a hop: the share origin is shared by every routed host. */
-const DROPPED_RESPONSE = /^(set-cookie|set-cookie2|x-sova-.*)$/;
+/** Never passed back from a hop: the share origin is shared by every routed host (a cookie, a
+    worker's widened scope or a wipe of the origin's storage would reach every host's links). */
+const DROPPED_RESPONSE = /^(set-cookie|set-cookie2|x-sova-.*|service-worker-allowed|clear-site-data)$/;
 /** Stamped on every hop answer, whatever the origin sent (an old or misconfigured one included). */
 const SHARE_RESPONSE_HEADERS = { "cache-control": "no-store", "referrer-policy": "no-referrer", "x-content-type-options": "nosniff" } as const;
+/** On every forwarded asset but the frame host: a script or SVG opened as a page runs nothing on the
+    share origin; loaded by the page as a subresource it works as ever. */
+export const ASSET_CSP = "sandbox; default-src 'none'";
 
 export interface GatewayRouterOptions {
   /** This host's own share. Default: inProcessShare(). */
@@ -388,7 +395,7 @@ export function createGatewayRouter(opts: GatewayRouterOptions = {}): GatewayRou
       res.writeHead(200, {
         "Content-Type": type,
         // The frame host carries its own sandbox CSP and SAMEORIGIN, as its origin would send it.
-        ...(name === FRAME_HOST_NAME ? frameHostHeaders() : {}),
+        ...(name === FRAME_HOST_NAME ? frameHostHeaders() : { "Content-Security-Policy": ASSET_CSP }),
         ...SHARE_RESPONSE_HEADERS,
         ...(Number.isFinite(declared) ? { "Content-Length": String(declared) } : {}),
       });
@@ -407,6 +414,117 @@ export function createGatewayRouter(opts: GatewayRouterOptions = {}): GatewayRou
     });
   };
 
+  /** Hashed names more than one live host listed: the SHA-256 every one of those listers answered,
+      and which listers (node and port) they were. */
+  const agreed = new Map<string, { digest: string; listers: string }>();
+  /** What was logged already, so a refused name is logged once per set of listers. */
+  const warned = new Set<string>();
+  const listersOf = (sources: RegistryHit[]): string => sources.map((s) => `${s.nodeId}:${s.ingressPort}`).sort().join(" ");
+  const sha256 = (b: Buffer): string => createHash("sha256").update(b).digest("hex");
+
+  /** One lister's whole answer for a hashed asset, under the cap, or null: no verified address,
+      unreachable, refused, any status but 200, over the cap, or not all in within twice the
+      header wait. Nothing of it reaches the visitor until it is judged. */
+  const fetchAsset = async (req: IncomingMessage, ctx: ShareRequestContext, name: string, hit: RegistryHit): Promise<Buffer | null> => {
+    const address = await addressNow(hit.nodeId);
+    if (!address || serves(hit.nodeId, name, hit.ingressPort) !== "same") return null;
+    const base = `http://${bracket(address)}:${hit.ingressPort}`;
+    if ((await reachable(base)) === false || serves(hit.nodeId, name, hit.ingressPort) !== "same") return null;
+    const headers = hopHeaders(req, ctx.client, address, hit.ingressPort);
+    // The whole body is wanted: never a range or a conditional answer.
+    for (const k of Object.keys(headers)) if (/^(range|if-.*)$/.test(k)) delete headers[k];
+    return new Promise((resolve) => {
+      const chunks: Buffer[] = [];
+      let seen = 0;
+      let done = false;
+      const up = request({ host: address, port: hit.ingressPort, method: "GET", path: `/h/assets/${name}`, headers });
+      const finish = (body: Buffer | null): void => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        if (!body) up.destroy();
+        resolve(body);
+      };
+      const timer = setTimeout(() => {
+        notePeerReach(base, false);
+        finish(null);
+      }, 2 * headersMs);
+      up.on("error", () => {
+        if (!done) notePeerReach(base, false);
+        finish(null);
+      });
+      up.on("response", (r) => {
+        notePeerReach(base, true);
+        const declared = Number(r.headers["content-length"]);
+        if (r.statusCode !== 200 || (Number.isFinite(declared) && declared > assetMax)) {
+          r.resume();
+          return finish(null);
+        }
+        r.on("data", (chunk: Buffer) => {
+          seen += chunk.length;
+          if (seen > assetMax) finish(null);
+          else chunks.push(chunk);
+        });
+        r.on("end", () => finish(Buffer.concat(chunks)));
+        r.on("error", () => finish(null));
+      });
+      up.end();
+    });
+  };
+
+  /**
+   * A hashed name more than one live host listed (§mesh.public/routing): any of them could claim
+   * another build's name, so its bytes are served only once every lister answered the same. The
+   * agreed digest is kept per name and set of listers; from then on the first lister whose bytes
+   * match it serves them (one lister down is no outage). Until all have answered alike, or while
+   * they differ, the asset is the offline 503.
+   */
+  const agreedAsset = async (req: IncomingMessage, res: ServerResponse, ctx: ShareRequestContext, name: string, sources: RegistryHit[]): Promise<void> => {
+    if (active.size + preparing >= httpTotal) return offlineResponse(res, "asset");
+    const listers = listersOf(sources);
+    const refused = (why: string): void => {
+      const key = `${name} ${listers} ${why}`;
+      if (!warned.has(key)) {
+        warned.add(key);
+        console.warn(`[share] asset ${name} not served: ${why} (${sources.map((s) => s.nodeId).join(", ")})`);
+      }
+      offlineResponse(res, "asset");
+    };
+    const send = (body: Buffer): void => {
+      // The listers are judged again: one that came or went meanwhile was never part of the agreement.
+      const v = view();
+      const current = v && !hasAsset(name) ? listersOf(registry.assetSources(name, (n) => v.byNode.has(n))) : "";
+      if (current !== listers) return offlineResponse(res, "asset");
+      if (res.destroyed) return;
+      res.writeHead(200, {
+        "Content-Type": assetType(name)!,
+        "Content-Security-Policy": ASSET_CSP,
+        ...SHARE_RESPONSE_HEADERS,
+        "Content-Length": String(body.length),
+      });
+      res.end(req.method === "HEAD" ? undefined : body);
+    };
+    preparing++;
+    try {
+      const known = agreed.get(name);
+      if (known?.listers === listers) {
+        for (const s of sources) {
+          const body = await fetchAsset(req, ctx, name, s);
+          if (body && sha256(body) === known.digest) return send(body);
+        }
+        return refused("no lister answered the agreed bytes");
+      }
+      const bodies = await Promise.all(sources.map((s) => fetchAsset(req, ctx, name, s)));
+      if (bodies.some((b) => !b)) return offlineResponse(res, "asset");
+      const digests = bodies.map((b) => sha256(b!));
+      if (digests.some((d) => d !== digests[0])) return refused("its listers' bytes differ");
+      agreed.set(name, { digest: digests[0]!, listers });
+      return send(bodies[0]!);
+    } finally {
+      preparing--;
+    }
+  };
+
   const dispatch: ShareDispatch = async (req, res, ctx) => {
     const route = routeOf(ctx.url.pathname);
     const v = route ? view() : null;
@@ -417,9 +535,12 @@ export function createGatewayRouter(opts: GatewayRouterOptions = {}): GatewayRou
       // Its own build first; a name with no allowed extension never leaves this host; a name no
       // live host listed is this host's own 404.
       if (hasAsset(name) || !assetType(name)) return local.dispatch(req, res, ctx);
-      const source = registry.assetSources(name, live)[0];
-      if (!source) return local.dispatch(req, res, ctx);
-      return forwardAsset(req, res, ctx, name, source);
+      const sources = registry.assetSources(name, live);
+      if (!sources.length) return local.dispatch(req, res, ctx);
+      // The frame host's name is no hash (each build has its own bytes): it stays the first
+      // lister's, under its own sandbox headers.
+      if (sources.length === 1 || name === FRAME_HOST_NAME) return forwardAsset(req, res, ctx, name, sources[0]!);
+      return agreedAsset(req, res, ctx, name, sources);
     }
     if (isLocal(route.token, route.kind)) return local.dispatch(req, res, ctx);
     const h = hashToken(route.token);

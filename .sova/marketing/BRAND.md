@@ -6,7 +6,7 @@ The brand as recorded in `brand.json`, for reading. Field rules: the Sova market
 
 ## One line
 
-Run pi sessions side by side. Stop juggling terminals.
+Every agent session, one calm workspace. On your desk, or folded in your pocket.
 
 ## One paragraph
 
@@ -25,7 +25,7 @@ Write for that person. They know what a session, a model, and a tool call are. T
 - Not a replacement for pi's TUI.
 - Not a general chat client: it speaks to pi's SDK and reads pi's files, and it would be useless without them.
 - There is no service, no team plan, no account.
-- Not safe to expose beyond the machine as it is: it is local, single-user, and has no authentication, so keep it behind authenticated access first.
+- Not safe to expose openly: it is local and single-user, and one per-install token is its only gate. Anyone with the token can do what you can, so reach it from elsewhere only through a tunnel or HTTPS proxy you trust.
 
 ## Voice
 
@@ -49,7 +49,7 @@ Rules every piece of prose follows:
 - The reader is another pi user, on their own machine, deciding whether to run this: address them as "you", refer to the project as "Sova" or "it", and use "we" only for the people who wrote it. Never "our users", "customers", or "teams".
 - Write the wordmark lowercase only when you are quoting the lockup (`sova`); in a sentence, the name is Sova.
 - "pi" stays lowercase and is never part of the name. The agent belongs to someone else.
-- Say what it isn't when the reader might assume it is: "It is for one local user." "The server has no authentication." "A session open in a TUI is read-only here."
+- Say what it isn't when the reader might assume it is: "It is for one local user." "One token unlocks everything; there are no accounts." "A session open in a TUI is read-only here."
 - A spec section is a plan, not a receipt: say a feature is shipped only after checking the code at a named revision.
 - Lead with what the thing does, then how, then the limits. One idea per sentence.
 - Sentence case for headings. Title Case only for a button you are quoting.

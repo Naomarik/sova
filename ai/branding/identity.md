@@ -11,7 +11,7 @@ behind those words and what a rendered brand book has no field for.
 
 ## One line
 
-Run pi sessions side by side. Stop juggling terminals.
+Every agent session, one calm workspace. On your desk, or folded in your pocket.
 
 Sova stands for Sessions, Orchestration, Viewing & Agents.
 
@@ -45,8 +45,8 @@ only in sessions Sova created. The rule is in the code, not in a warning.
 and focus. Status carries a word, never a hue alone. Failures are stated once, plainly, with what
 was and wasn't changed.
 
-**It is honest about scope.** Local, single-user, no authentication. The README says to keep the
-app behind authenticated access before exposing it beyond the machine.
+**It is honest about scope.** Local and single-user, with one per-install token as the only gate.
+The README says to protect access before exposing the app beyond the machine.
 
 ## What it is not
 

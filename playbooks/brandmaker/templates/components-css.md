@@ -10,6 +10,14 @@ Per component section:
 - **Variant classes** — `.button-primary`, `.button-ghost`, … one per documented variant.
 - **Size classes** — `.button-sm/-lg` etc. where the spec defines sizes.
 - **Real states** — `:hover`, `:focus-visible` (uses focus tokens), `:active`, `:disabled`.
+  Row components (a menu row, a list row, an option) have them too, plus their own
+  `[aria-checked="true"]` / selected and `[aria-disabled="true"]` states: a row is not exempt
+  because it is not a button.
+- **Rows own their vertical alignment.** A row component's one-line base is
+  `align-items: center` at its minimum height; a multi-line row (label + description) is a
+  modifier of it that top-aligns and keeps its icon on the first line, sized from that line's
+  line-height, never a `margin-top` nudge. A consumer never sets `align-items`, vertical
+  padding or a min-height on a row: what a row needs that it lacks becomes a variant here.
 - **Static state helpers** — `.is-hover`, `.is-focus`, `.is-active`, `.is-disabled` mirroring
   the real states, with a comment: *demo/documentation only — production uses real
   pseudo-classes*. (The site's state matrices need these.) Keep them in the `is-` namespace,

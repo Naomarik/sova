@@ -14,14 +14,32 @@ gateway only routes by hash (§mesh/public). Wire shapes: `shared/session-share.
 ## §app.session-share/link — Links: shape, store, expiry, revoke
 
 - **Shape.** `/s/<token>` on the share listener's public address, built like a hand-off link
-  (§app.baton/links): 32 random bytes in base64url; the host keeps only its SHA-256, compared in
-  constant time; logs show at most 6 characters. Each recipient has its own link; a recipient's
+  (§app.baton/links): 32 random bytes in base64url; the store keeps its SHA-256, compared in
+  constant time, and the token itself is kept beside it (Kept tokens, below); logs show at most 6
+  characters. Each recipient has its own link; a recipient's
   label is never shown to any viewer.
 - **Store.** `<stateRoot>/session-shares.json`, mode 0600, written atomically, host-local, never
   synced or committed: `{version: 1, shares: [{id: "ss_…", sessionId, sessionPath, title, mode,
   cut: {entryId, at} | null, from?: {entryId, at}, createdAt, stoppedAt?}], links: [{hash, shareId, recipientId: "r_…",
   label, anyone?, createdAt, expiresAt, revokedAt?, revokedWhy?}]}`. A file that fails the strict
   parse serves no link and is never overwritten.
+- **Kept tokens.** Every link this host mints, a session share's `/s/`, a hand-off's `/h/`
+  (§app.baton/links) and an owner's `/i/` (§app.owner-page/link) alike, keeps its token in one
+  shared file, `<stateRoot>/link-tokens.json` (mode 0600, written atomically, host-local, never
+  synced or committed): `{version: 1, tokens: {<hash>: {kind: "s" | "h" | "i", token}}}`. It is
+  read tolerantly: a file that can't be read keeps no token and every link still opens, and an
+  entry counts only when its token is well formed and its SHA-256 is the entry's key. A token is
+  kept from its mint on and dropped when its link is turned off (deleted, relinked or replaced,
+  stopped, archived, its person gone or its owner changed), never when it merely expires (an
+  Extend can open it again). The link stores' own files and keys never change, so an older Sova
+  still reads them. A link made before tokens were kept has none: it carries no link and shows no
+  Copy Link, with no line about why.
+- **Copyable.** Every operator answer that describes a live link whose token is kept carries its
+  URL as `link`, built on the current public address when it answers: each recipient of a
+  `SessionShare` (`GET /api/session-shares`, the share in every act's answer, and
+  `/api/shares-overview`), each org link row of `/api/shares-overview`, the person page's hand-off
+  and owner link rows, the owner card's `ownerPage.link.url`, and the strip's `BatonInfo.links`. An
+  expired, turned-off or older link carries none.
 - **Expiry.** 1, 7, 30 or 90 days, 30 by default, absolute. Extend sets every live link of the share
   to expire that many days from now. An expired link that was not turned off opens again with it
   only while the limits below still hold, newest first; one that would be a second Anyone row, a
@@ -46,11 +64,13 @@ gateway only routes by hash (§mesh/public). Wire shapes: `shared/session-share.
   nothing from it, and of two rebuilds only the newest is pushed.
 - **Registry.** Live links are registered with the gateway as kind `s` rows (§mesh.public/registry)
   on every mint, relink, revoke, stop and extend; a mint waits for the gateway's answer as other
-  links do, and returns each link once with the share's `linkWarning`. A mint of several links is
+  links do, and returns each new link with the share's `linkWarning`. A mint of several links is
   confirmed only when each of them was sent and accepted.
 - **Operator routes** are the operator API, as listed in `shared/session-share.ts`: the main
   listener, and a verified peer through the pane's host scope (a peer's sessions are shared by the
-  peer). The share listener never has them.
+  peer). The share listener never has them. Their answers carry the kept links (Copyable, above),
+  so a peer granted `sessions` (§mesh.peers/grants) reads working links; there is no other route
+  for them.
 
 ## §app.session-share/snapshot — Snapshot by default, Follow live per share
 
@@ -103,7 +123,11 @@ gateway only routes by hash (§mesh/public). Wire shapes: `shared/session-share.
   it is a word of its own, `[image]` otherwise; ordinary code stays as written. A preview link
   this host keeps (§app.project-overseer/previews), in the title or any message, a person's own
   words included, becomes "[preview link]" before any text is cut, and every view, outline and
-  socket frame passes that filter whole. A time goes out only as a canonical ISO time
+  socket frame passes that filter whole. Likewise a link of this host whose token is kept
+  (§app.session-share/link: `/s/`, `/h/` or `/i/`), in the title or any message, becomes
+  "[share link]" before any text is cut, in every session share's view, outline and socket frame.
+  Hand-off pages are never filtered this way: a person holding a hand-off sees every link as
+  written. A time goes out only as a canonical ISO time
   re-written from a whole ISO 8601 entry time; any other value is left out.
 - The branch is chosen strictly: the cut's path to the root, or, with no cut, the path from the
   file's last entry that has an id. An id-less record is ignored, never read as a reason to show
@@ -117,7 +141,9 @@ gateway only routes by hash (§mesh/public). Wire shapes: `shared/session-share.
   an abandoned branch next to an id-less record in Follow live. For a slice it plants text, an
   image and a vis source before the start and after a snapshot's end, and checks that none of them
   and no entry id reach any answer, any image index up to the whole session's count, or a frame,
-  in either mode, and that a rewind above a live slice's start makes its link read as gone.
+  in either mode, and that a rewind above a live slice's start makes its link read as gone. A kept
+  link planted in a shared session reads "[share link]" in its view, preview and outline (a frame
+  carries the same view), and as written on a hand-off page.
 
 ## §app.session-share/rejected — Rejected shapes
 
@@ -126,6 +152,10 @@ gateway only routes by hash (§mesh/public). Wire shapes: `shared/session-share.
   gateway's advertised kinds, instead.
 - Sending transcript rows and filtering on the client, copying content to the gateway, storing a
   frozen copy of the view, token streaming to viewers, and viewer replies.
+- A `token` key in `session-shares.json`: an older Sova parses that file strictly and would serve
+  no link after a rollback; tokens are kept in `link-tokens.json` instead.
+- A separate admin-gated route that reads links, held in a client cache: a link rides on the row
+  it belongs to, so a copy can never drift from the state shown beside it.
 
 ## §app.session-share/page — The share page
 
@@ -199,7 +229,7 @@ gateway only routes by hash (§mesh/public). Wire shapes: `shared/session-share.
   the sheet showed, never what the session added after; Follow live sends none. When the cut is
   no longer in the session file (409 `stale-preview`), nothing is minted: the sheet says "The
   session changed. Preview it again." beside the preview and reads it again, to be reviewed again.
-- **Create Links** (`Create Link` for one) mints them and shows each link once, with its label and
+- **Create Links** (`Create Link` for one) mints them and shows each new link with its label and
   **Copy Link**; the `linkWarning`, when there is one, shows with **Open Settings** (§app.baton/links).
 - **Managing a share** opens the sheet on it: its slice line (or "The whole session.") with
   **Change Slice** (the share page on this share; the sheet closes; not on a stopped share), the title (Save Title), the
@@ -208,14 +238,20 @@ gateway only routes by hash (§mesh/public). Wire shapes: `shared/session-share.
   conversation as it is now, images loaded as above, and then stop at that preview's cut:
   **Update to This** / **Stop Following Here**, with the same stale-preview handling; Back
   changes nothing), each recipient's
-  row (presence, opened line, expiry, its visits folded underneath, **Get New Link**, and **Delete
-  Link** asked twice, its confirm and the line under it saying the link stops working for good,
+  row (presence, opened line, expiry, its visits folded underneath, **Copy Link** while it is live
+  and its link is kept, **Get New Link**, and **Delete Link** asked twice, its confirm and the line under it saying the link stops working for good,
   §design.copy-deck/session-share), **Add Person**, **Add Anyone Link** while it has no live anyone row, **Extend**
   with the four expiry choices, **Preview**, and **Stop Sharing** asked twice. A new link from Get
-  New Link or Add shows once, like Create. A Get New Link or Delete Link that fails says the server's
+  New Link or Add shows as Create's do, and its row takes the answer's share. A Get New Link or Delete Link that fails says the server's
   reason on that recipient's own row, brought into view; a share-level action's failure is the
   sheet's banner. A turned-off row has no Get New Link: the person is added again instead. While
   open it reads the share's activity every 5 seconds while the page is visible.
+- **Copy Link copies the row's own link**, the `link` of the recipient row it sits on, never one
+  remembered elsewhere, so it always belongs to the state and times shown beside it. Each
+  activity row carries its recipient's newest link's `createdAt` and its state (`live`, `off`,
+  `expired`); when either differs from the row's, that row hides Copy Link and the sheet reads the
+  share again at once, so a link replaced, deleted or stopped from another tab or host is never
+  copied and the change shows within one read.
 - A share on a peer's session is read and changed on that peer, through the pane's host scope.
 
 ## §app.session-share/shares-page — The Shares page
@@ -233,11 +269,11 @@ gateway only routes by hash (§mesh/public). Wire shapes: `shared/session-share.
   expiry). With the mesh on, each row names its host.
 - A session share row: its public title (a link to the session), its slice line or mode line (as
   the Sharing section), its recipients
-  with presence and opened lines, and **Manage** (the Share sheet on it) and **Stop Sharing**
+  with presence and opened lines (each live one whose link is kept with **Copy Link**), and **Manage** (the Share sheet on it) and **Stop Sharing**
   asked twice.
 - An org link row: the person, the organization, the hand-off's title and number or "Owner page",
   its state, "Expires in {n} days", the presence word, the opened line, its visits folded
-  underneath, and **Delete Link** asked twice, its confirm and the line under it saying the link
+  underneath, **Copy Link** when its link is kept, and **Delete Link** asked twice, its confirm and the line under it saying the link
   stops working for good (the existing hand-off or owner revoke route). The
   page never changes those stores otherwise.
 - A visit's line adds what §mesh.public/visitor-log recorded for it, when anything: the address,
@@ -290,8 +326,8 @@ gateway only routes by hash (§mesh/public). Wire shapes: `shared/session-share.
   peers): its session shares, with each recipient's presence and visit counts, and its **org
   links**, meaning every live hand-off (`/h/`) and owner (`/i/`) link of every attached org, newest
   first. Each org link carries its org, its person's name, a hand-off's session id, public title,
-  number and baton state (an owner link's state is "live"), its creation and expiry, and its own
-  visits from the org's visit log (§app.baton/visits), with `opened` and `lastAt` counted as for a
+  number and baton state (an owner link's state is "live"), its creation and expiry, its `link` when
+  its token is kept (§app.session-share/link), and its own visits from the org's visit log (§app.baton/visits), with `opened` and `lastAt` counted as for a
   recipient. A hand-off link whose page has an open socket is `viewing` (hand-off pages send no
   visibility); an owner link, which has no socket, carries no presence.
 - Each session share recipient also carries its own `visits`, and the answer carries
@@ -299,7 +335,8 @@ gateway only routes by hash (§mesh/public). Wire shapes: `shared/session-share.
   with lines in the host's identity side file carries them: `ip`, `ua`, `lang`, and for a preview
   its `pages` (paths) and `referer`. Only this answer carries them; the preview list
   (`GET /api/previews`) and the project overseer's tools never do.
-- It only reads the hand-off and owner link stores and the visit logs, and never writes them. An
+- It only reads the hand-off and owner link stores, the kept tokens and the visit logs, and never
+  writes them. An
   org whose workspace can't be read is left out. A turned-off or expired link is not listed.
 
 ## §app.session-share/slice — A share of part of a session
@@ -367,7 +404,7 @@ gateway only routes by hash (§mesh/public). Wire shapes: `shared/session-share.
   included. **Next** shows the create form (title, people, Anyone, Follow live, expiry, the images
   and Create Links, as §app.session-share/sheet describes them), sending `from` and the previewed
   `cut`; a start or cut no longer on the branch is 409 stale-preview and nothing is minted. The new
-  links show once on the page, with **Copy Link** and the `linkWarning`, and **Done** returns to the
+  links show on the page, with **Copy Link** and the `linkWarning`, and **Done** returns to the
   session.
 - **Changing a slice.** With `&share=<id>` the page opens on that share's slice and Next becomes
   **Save Slice**: the same review step (the new slice's images load and gate it, as Create's do,

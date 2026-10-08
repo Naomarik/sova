@@ -9,7 +9,7 @@ import { execFileSync } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
-import { after, describe, test } from "node:test";
+import { after, before, describe, test } from "node:test";
 import type { SovaConfirmItem } from "../shared/protocol";
 import type { OverseerToolHost } from "./overseer-tools";
 import { piSession } from "./harness/pi/testing/handle";
@@ -217,6 +217,15 @@ describe("the organization tools (§app.overseer/org-tools)", async () => {
   const withLink = await baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Servers", goal: "Where it runs" });
   const TOKEN = withLink.token!;
   const TOKEN2 = baton.rotateLink(withLink.sessionId).token;
+  // A live, kept link no act below touches: sova_public_links gives it, and every other read and act
+  // runs while it is live, so the marker check finds it nowhere else. Minted when the tests start: a
+  // later describe's setup rewrites the link store while the file is collected.
+  const lena = await orgs.addPerson(org.id, { name: "Lena Park", role: "Ops" });
+  const lenaSession = (await baton.createBaton({ orgId: org.id, projectId: project.id, to: lena.id, publicTitle: "Public", goal: "g" }, { mintLink: false })).sessionId;
+  let KEPT = "";
+  before(() => {
+    KEPT = baton.rotateLink(lenaSession).token;
+  });
   {
     const last = JSON.parse(readFileSync(withLink.path, "utf8").trim().split("\n").at(-1)!).id;
     const ts = new Date().toISOString();
@@ -236,7 +245,7 @@ describe("the organization tools (§app.overseer/org-tools)", async () => {
         .join(""),
     );
   }
-  const secrets = () => [TOKEN, TOKEN2, "/h/", "/i/"];
+  const secrets = () => [TOKEN, TOKEN2, KEPT, "/h/", "/i/"];
   const leaks = (s: string, about: boolean): string | null => leaksContact(s) ?? secrets().find((t) => s.includes(t)) ?? (!about && (s.includes("ABOUT-MARKER") || s.includes("pay late")) ? "about" : null);
 
   test("reads: every org, one org in full, a project, a person; none carries contact, a link or the About text", async () => {
@@ -479,6 +488,35 @@ describe("the organization tools (§app.overseer/org-tools)", async () => {
     const page = await app.request(`/api/projects/${project.id}/overseer/items/code`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt: "x", title: "y" }) });
     assert.equal(page.status, 400);
     await piSession(await acquireChat(row.path!)).waitForIdle();
+  });
+
+  test("sova_public_links: the one read that gives the live kept link; its log line counts, never a link (§app.overseer/org-projection)", async () => {
+    // Not through call(): its output is the exception the marker check below leaves out.
+    const run = async (params: Record<string, unknown>) => {
+      const out = await tool("sova_public_links").execute(`tc${++seq}`, params, undefined, undefined, undefined as never);
+      return { text: (out.content as { text: string }[]).map((c) => c.text).join("\n"), details: out.details };
+    };
+    const all = await run({});
+    assert.ok(all.text.includes(`/h/${KEPT}`), all.text);
+    assert.match(all.text, /hand-off · Qorvex Holdings · Lena Park · "Public" · hand-off #\d+ · expires \d{4}-\d\d-\d\d · /);
+    assert.ok(!all.text.includes(TOKEN), "a replaced link is not live");
+    assert.ok(!JSON.stringify(all.details).includes(KEPT), "the details carry counts only");
+    assert.ok((await run({ org: "Qorvex Holdings", kind: "handoff" })).text.includes(KEPT));
+    assert.ok(!(await run({ kind: "owner" })).text.includes(KEPT), "kind filters");
+    assert.ok(!(await run({ kind: "session" })).text.includes(KEPT));
+    const { dropTokens } = await import("./link-tokens");
+    const { hashToken } = await import("./baton-links");
+    dropTokens([hashToken(KEPT)]);
+    try {
+      const legacy = await run({ org: org.id });
+      assert.ok(legacy.text.includes("link not kept") && !legacy.text.includes(KEPT), legacy.text);
+    } finally {
+      const { keepTokens } = await import("./link-tokens");
+      keepTokens("h", [KEPT]);
+    }
+    const log = readFileSync(overseerActionsFile(), "utf8");
+    assert.ok(log.includes('"tool":"sova_public_links"'), "control: its calls are logged");
+    assert.ok(!log.includes(KEPT), "never the link");
   });
 
   test("marker: no contact value, link token or /h/ URL in any result, refusal or action-log line; the About text only in its one read", () => {

@@ -806,7 +806,7 @@ user row.
 - Each item offers **Send to person…** (`POST …/overseer/items/send`): a gathering session owned by
   the operator (one person, the operator, or an offer to several), with the public title and first
   question the operator writes (both required, 400 without them, and never taken from the item: they
-  are shown to the person as written) and the item as its goal; its links are shown once; and **Start coding session** (`…/items/code`): an ordinary session in the
+  are shown to the person as written) and the item as its goal; its links show with Copy Link; and **Start coding session** (`…/items/code`): an ordinary session in the
   project, in its own worktree (§app.project-overseer/coding-worktrees) and the project's coding
   mode (§app.project-overseer/coding-mode), with the item as its first prompt. Either links the item to the session it started.
 - The to-do field takes at most 200 characters (`TODO_TEXT_MAX`), the same limit the server

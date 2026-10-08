@@ -1,39 +1,64 @@
 // Run through tests/run.mjs (pi imports resolve from the installed package).
 import assert from "node:assert/strict";
 import test from "node:test";
-import link, { FLAG, SECTION, TOKEN_FLAG } from "./index.ts";
-import { NOT_HOSTED, NOT_LINKED } from "./client.ts";
+import link, { declaresLinkTools, FLAG, LINK_LIVE, SECTION, TOKEN_FLAG, TOOL_NAMES, TOOLS_FLAG } from "./index.ts";
+import { NOT_LINKED } from "./client.ts";
 
 const ORIGIN = "http://127.0.0.1:4810";
 
 type Answer = { status?: number; body?: unknown } | Error;
+type Sys = { role: "system"; toolsAdded?: { name: string }[]; toolsRemoved?: { name: string }[] };
 
-/** Just enough of ExtensionAPI: flags, tools, handlers. The host is a queue of answers. */
+/** Just enough of ExtensionAPI: flags (read only after load, as pi applies them), tools (a
+    re-registration replaces, as pi's does), handlers. The host is a queue of answers. `transcript`
+    is the session's projected messages, which a legacy session's start reads. */
 function rig(flag: string | undefined, ...answers: Answer[]) {
+	return rigWith({ origin: flag, tools: flag ? "member" : undefined }, ...answers);
+}
+function rigWith(opts: { origin?: string; tools?: string; transcript?: Sys[]; start?: boolean }, ...answers: Answer[]) {
 	const tools = new Map<string, any>();
 	const handlers = new Map<string, (e: any, ctx: any) => unknown>();
 	const calls: { url: string; method: string; body?: any }[] = [];
+	/** Every registerTool call, in order (`name:hidden` for a withdrawal). */
+	const registrations: string[] = [];
 	const fetchImpl = (async (url: string, init: RequestInit) => {
 		calls.push({ url, method: init.method ?? "GET", ...(init.body ? { body: JSON.parse(String(init.body)) } : {}) });
 		const a = answers.shift() ?? { body: {} };
 		if (a instanceof Error) throw a;
 		return new Response(JSON.stringify(a.body ?? {}), { status: a.status ?? 200 });
 	}) as unknown as typeof fetch;
+	let loaded = false;
+	const flags: Record<string, string | undefined> = { [FLAG]: opts.origin, [TOOLS_FLAG]: opts.tools };
 	const pi = {
 		registerFlag: () => {},
-		getFlag: (name: string) => (name === FLAG ? flag : undefined),
-		registerTool: (t: any) => tools.set(t.name, t),
+		getFlag: (name: string) => {
+			assert.ok(loaded, "a flag is read only after every extension has loaded (pi applies the values then)");
+			return flags[name];
+		},
+		registerTool: (t: any) => {
+			registrations.push(t.exposure === "hidden" ? `${t.name}:hidden` : t.name);
+			tools.set(t.name, t);
+		},
 		on: (event: string, h: any) => handlers.set(event, h),
 	};
 	link(pi as any, { fetch: fetchImpl });
-	const ctx = { sessionManager: { getSessionId: () => "s-me" } };
-	return {
+	loaded = true;
+	const atLoad = tools.size;
+	const ctx = { sessionManager: { getSessionId: () => "s-me", buildSessionProjection: () => ({ messages: opts.transcript ?? [] }) } };
+	const r = {
 		tools,
 		calls,
+		registrations,
 		answers,
+		atLoad,
+		/** The tools the model is declared: registered and not hidden. */
+		declared: () => [...tools.values()].filter((t) => t.exposure !== "hidden").map((t) => t.name),
+		sessionStart: async () => handlers.get("session_start")!({ type: "session_start", reason: "startup" }, ctx),
+		turnEnd: async () => handlers.get("turn_end")!({ type: "turn_end", turnIndex: 0, message: {}, toolResults: [] }, ctx),
+		compact: async () => handlers.get("session_compact")!({ type: "session_compact", reason: "threshold", willRetry: false, fromExtension: false }, ctx),
 		run: async (name: string, params: Record<string, unknown> = {}) => {
-			const r = await tools.get(name).execute("c1", params, undefined, undefined, ctx);
-			return r.content[0].text as string;
+			const res = await tools.get(name).execute("c1", params, undefined, undefined, ctx);
+			return res.content[0].text as string;
 		},
 		start: async () => {
 			const event = { systemPromptOptions: { sections: {} as Record<string, string> } };
@@ -41,6 +66,8 @@ function rig(flag: string | undefined, ...answers: Answer[]) {
 			return event.systemPromptOptions.sections[SECTION];
 		},
 	};
+	if (opts.start !== false) void r.sessionStart();
+	return r;
 }
 
 const linked = (id = "lk_a", endedAt?: number, title = "Fix it") => ({
@@ -59,14 +86,190 @@ const linked = (id = "lk_a", endedAt?: number, title = "Fix it") => ({
 
 const shape = (tools: Map<string, any>) => [...tools.values()].map((t) => [t.name, JSON.stringify(t.parameters)]);
 
-const TOOLS = ["link_members", "link_send", "link_inbox", "link_offer", "link_accept", "link_decline", "link_offers"];
+const TOOLS = [...TOOL_NAMES];
 const OF = "of_0123456789abcdef";
+const declaring = (...names: string[]): Sys => ({ role: "system", toolsAdded: names.map((name) => ({ name })) });
 
-test("the same seven tools, with the same schema, with or without the flag", () => {
-	const hosted = rig(ORIGIN);
-	const tui = rig(undefined);
-	assert.deepEqual([...hosted.tools.keys()], TOOLS);
-	assert.deepEqual(shape(hosted.tools), shape(tui.tools));
+test("a link member gets the seven tools at session start, none at load, with a fixed schema", () => {
+	const member = rigWith({ origin: ORIGIN, tools: "member", start: false });
+	assert.equal(member.atLoad, 0, "nothing at load: the flag isn't known yet");
+	assert.equal(member.tools.size, 0);
+	void member.sessionStart();
+	assert.deepEqual([...member.tools.keys()], TOOLS);
+	assert.deepEqual(member.declared(), TOOLS);
+	const again = rig(ORIGIN);
+	assert.deepEqual(shape(member.tools), shape(again.tools));
+	void member.sessionStart();
+	assert.equal(member.tools.size, 7, "a second start registers nothing more");
+});
+
+test("no flag at all (a TUI, a worker): no link tool, no section, nothing fetched", async () => {
+	const r = rigWith({});
+	assert.equal(r.tools.size, 0);
+	assert.equal(await r.start(), undefined);
+	assert.equal(r.calls.length, 0);
+	const noTools = rigWith({ origin: ORIGIN }, linked());
+	assert.equal(noTools.tools.size, 0, "an origin without sova-link-tools registers nothing either");
+	assert.equal(await noTools.start(), undefined);
+	assert.equal(noTools.calls.length, 0);
+});
+
+test("an ordinary session (legacy) whose transcript declares no link tool gets none, ever", async () => {
+	const fresh = rigWith({ origin: ORIGIN, tools: "legacy" });
+	assert.equal(fresh.tools.size, 0);
+	const other = rigWith({ origin: ORIGIN, tools: "legacy", transcript: [declaring("read", "bash")] });
+	assert.equal(other.tools.size, 0);
+	const dropped = rigWith({ origin: ORIGIN, tools: "legacy", transcript: [declaring("read", ...TOOLS), { role: "system", toolsRemoved: TOOLS.map((name) => ({ name })) }] });
+	assert.equal(dropped.tools.size, 0, "dropped once: never back");
+	assert.equal(await fresh.start(), undefined);
+	assert.equal(fresh.calls.length, 0);
+});
+
+test("a session from before keeps its declared tools, unchanged, until a compaction finds it in no live link", async () => {
+	const r = rigWith({ origin: ORIGIN, tools: "legacy", transcript: [declaring("read", ...TOOLS)] }, linked(), new TypeError("fetch failed"), { body: { links: [] } });
+	assert.deepEqual(r.declared(), TOOLS, "the same seven it declared");
+	assert.deepEqual(shape(r.tools), shape(rig(ORIGIN).tools), "the same schema as a member's: no changed definition");
+	await r.compact();
+	assert.deepEqual(r.declared(), TOOLS, "still in a live link: kept");
+	await r.compact();
+	assert.deepEqual(r.declared(), TOOLS, "the host didn't answer: kept");
+	await r.compact();
+	assert.deepEqual(r.declared(), [], "in no live link: withdrawn at this compaction");
+	assert.equal(r.tools.size, 7, "withdrawn as pi takes a tool back: re-registered hidden");
+	await r.compact();
+	assert.equal(r.calls.length, 3, "once withdrawn, a later compaction asks nothing");
+	assert.equal(await r.start(), undefined, "and no run asks the host either");
+	assert.equal(r.calls.length, 3);
+});
+
+test("a host with no link routes (4xx) at a compaction is no live link: withdrawn", async () => {
+	const r = rigWith({ origin: ORIGIN, tools: "legacy", transcript: [declaring(...TOOLS)] }, { status: 404, body: {} });
+	await r.compact();
+	assert.deepEqual(r.declared(), []);
+});
+
+test("a link member never loses its tools at a compaction, and asks nothing for it", async () => {
+	const r = rig(ORIGIN);
+	await r.compact();
+	assert.deepEqual(r.declared(), TOOLS);
+	assert.equal(r.calls.length, 0);
+});
+
+/** Sova's `sova:link-live` hook, as the server installs it on globalThis; undefined removes it. */
+function hook(live: ((id: string) => boolean) | undefined) {
+	const g = globalThis as Record<symbol, unknown>;
+	if (live) g[LINK_LIVE] = live;
+	else delete g[LINK_LIVE];
+}
+
+test("a session that joins a live link mid-run gets the seven once, at the turn's end, and the section at its next run start", async () => {
+	let live = false;
+	const asked: string[] = [];
+	hook((id) => (asked.push(id), live));
+	try {
+		const r = rigWith({ origin: ORIGIN, tools: "legacy" }, linked());
+		assert.equal(r.tools.size, 0, "in no link at its start: none");
+		await r.turnEnd();
+		assert.equal(r.tools.size, 0, "still in none at a turn's end: none");
+		assert.equal(await r.start(), undefined, "no section, and the host isn't asked");
+		assert.equal(r.calls.length, 0);
+		live = true;
+		await r.turnEnd();
+		assert.deepEqual(r.declared(), TOOLS, "linked: all seven, before the next request is built");
+		assert.deepEqual(shape(r.tools), shape(rig(ORIGIN).tools), "the same schema as a born member's");
+		await r.turnEnd();
+		await r.start();
+		assert.deepEqual(r.registrations, TOOLS, "registered once: one tool-set change");
+		assert.ok(asked.every((id) => id === "s-me"), "the hook is asked by this session's id");
+		assert.equal(r.calls.length, 1, "the next run start reads the links");
+	} finally {
+		hook(undefined);
+	}
+});
+
+test("a joined session gets the section in the run whose start first sees it linked", async () => {
+	let live = false;
+	hook(() => live);
+	try {
+		const r = rigWith({ origin: ORIGIN, tools: "legacy" }, linked());
+		live = true;
+		const section = await r.start();
+		assert.deepEqual(r.declared(), TOOLS);
+		assert.ok(section?.includes("lk_a"), "joined at before_agent_start: the section comes with it");
+	} finally {
+		hook(undefined);
+	}
+});
+
+test("a session already in a live link when its runtime opens has the seven from its start", () => {
+	hook(() => true);
+	try {
+		const r = rigWith({ origin: ORIGIN, tools: "legacy" });
+		assert.deepEqual(r.declared(), TOOLS);
+	} finally {
+		hook(undefined);
+	}
+});
+
+test("no hook (a TUI, a worker, a server without links), or no link flags: never joins", async () => {
+	hook(undefined);
+	const r = rigWith({ origin: ORIGIN, tools: "legacy" });
+	await r.turnEnd();
+	assert.equal(await r.start(), undefined);
+	assert.equal(r.tools.size, 0);
+	assert.equal(r.calls.length, 0);
+	hook(() => true);
+	try {
+		for (const opts of [{}, { origin: ORIGIN }, { tools: "legacy" }]) {
+			const x = rigWith(opts);
+			await x.turnEnd();
+			await x.start();
+			assert.equal(x.tools.size, 0, JSON.stringify(opts));
+		}
+	} finally {
+		hook(undefined);
+	}
+});
+
+test("a joined session keeps them through a compaction while linked, loses them at one in no live link, and can join again", async () => {
+	let live = true;
+	hook(() => live);
+	try {
+		const r = rigWith({ origin: ORIGIN, tools: "legacy" }, linked(), { body: { links: [] } });
+		assert.deepEqual(r.declared(), TOOLS);
+		live = false;
+		await r.turnEnd();
+		assert.deepEqual(r.declared(), TOOLS, "the link ended: kept, no change mid-conversation");
+		await r.compact();
+		assert.deepEqual(r.declared(), TOOLS, "the host still lists a live link: kept");
+		await r.compact();
+		assert.deepEqual(r.declared(), [], "in no live link: withdrawn at this compaction");
+		assert.deepEqual(r.registrations.slice(7), TOOLS.map((n) => `${n}:hidden`));
+		live = true;
+		await r.turnEnd();
+		assert.deepEqual(r.declared(), TOOLS, "linked again: back, the same way");
+	} finally {
+		hook(undefined);
+	}
+});
+
+test("a born member never loses its tools, whatever the hook says", async () => {
+	hook(() => false);
+	try {
+		const r = rig(ORIGIN, { body: { links: [] } });
+		await r.turnEnd();
+		await r.compact();
+		assert.deepEqual(r.declared(), TOOLS);
+		assert.deepEqual(r.registrations, TOOLS, "registered once at start, never again");
+	} finally {
+		hook(undefined);
+	}
+});
+
+test("declaresLinkTools replays the system messages as pi restores tools", () => {
+	assert.equal(declaresLinkTools([]), false);
+	assert.equal(declaresLinkTools([declaring("read"), { role: "user" } as any, declaring("link_inbox")]), true);
+	assert.equal(declaresLinkTools([declaring("link_inbox"), { role: "system", toolsRemoved: [{ name: "link_inbox" }] }]), false);
 });
 
 test("the sova-link-token flag is sent back to the host on every call", async () => {
@@ -76,23 +279,15 @@ test("the sova-link-token flag is sent back to the host on every call", async ()
 		return new Response(JSON.stringify({ links: [] }));
 	}) as unknown as typeof fetch;
 	const tools = new Map<string, any>();
-	const flags: Record<string, string> = { [FLAG]: ORIGIN, [TOKEN_FLAG]: "tok-abc" };
-	const pi = { registerFlag: () => {}, getFlag: (n: string) => flags[n], registerTool: (t: any) => tools.set(t.name, t), on: () => {} };
+	const handlers = new Map<string, any>();
+	const flags: Record<string, string> = { [FLAG]: ORIGIN, [TOKEN_FLAG]: "tok-abc", [TOOLS_FLAG]: "member" };
+	const pi = { registerFlag: () => {}, getFlag: (n: string) => flags[n], registerTool: (t: any) => tools.set(t.name, t), on: (e: string, h: any) => handlers.set(e, h) };
 	link(pi as any, { fetch: fetchImpl });
-	await tools.get("link_members").execute("c1", {}, undefined, undefined, { sessionManager: { getSessionId: () => "s-me" } });
+	const ctx = { sessionManager: { getSessionId: () => "s-me", buildSessionProjection: () => ({ messages: [] }) } };
+	await handlers.get("session_start")({ type: "session_start" }, ctx);
+	await tools.get("link_members").execute("c1", {}, undefined, undefined, ctx);
 	assert.equal(headers.length, 1);
 	assert.equal(headers[0]!.get("x-sova-token"), "tok-abc");
-});
-
-test("without the flag (a TUI, a worker) everything is inert", async () => {
-	const r = rig(undefined);
-	for (const name of ["link_members", "link_inbox", "link_offers"]) assert.equal(await r.run(name), NOT_HOSTED);
-	assert.equal(await r.run("link_send", { text: "hi" }), NOT_HOSTED);
-	assert.equal(await r.run("link_offer", { paths: ["a"], dest: "/in" }), NOT_HOSTED);
-	assert.equal(await r.run("link_accept", { offer: OF, dest: "/in" }), NOT_HOSTED);
-	assert.equal(await r.run("link_decline", { offer: OF }), NOT_HOSTED);
-	assert.equal(await r.start(), undefined);
-	assert.equal(r.calls.length, 0);
 });
 
 test("an unlinked session: no section, and every tool refuses with a sentence", async () => {

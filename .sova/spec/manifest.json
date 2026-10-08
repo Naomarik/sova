@@ -4148,7 +4148,7 @@
     "§app.baton/goal-and-loadout": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "server/baton.ts",
         "server/baton-loadout.ts",
@@ -4284,7 +4284,7 @@
     "§app.baton/offers-and-leases": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "server/baton.ts",
         "server/baton-links.ts",
@@ -4789,7 +4789,7 @@
     "§app.project-overseer/ideas-and-todos": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "server/project-overseer-routes.ts",
         "server/project-overseer.ts",
@@ -4802,7 +4802,8 @@
         "server/project-overseer.test.ts",
         "server/spec-tool-fake.ts",
         "server/project-overseer-prompt.md",
-        "server/project-overseer-tools.ts"
+        "server/project-overseer-tools.ts",
+        "src/components/LinksBanner.tsx"
       ],
       "requires": [
         "§app.overseer/ideas",
@@ -5958,7 +5959,15 @@
         "pi-config/extensions/link/tests/runtime.mjs",
         "server/mesh/links.ts",
         "server/link-delivery.ts",
-        "server/project-coding-runtime.test.ts"
+        "server/project-coding-runtime.test.ts",
+        "server/harness/pi/open.ts",
+        "server/harness/state-kinds.ts",
+        "shared/mesh-links.ts",
+        "server/link-tools-runtime.test.ts",
+        "server/harness/state-kinds.test.ts",
+        "server/harness/pi/contract.test.ts",
+        "server/harness/pi/quirks.ts",
+        "server/harness/pi/QUIRKS.md"
       ],
       "requires": [
         "§mesh.links/record",
@@ -8929,7 +8938,9 @@
         "server/index.ts",
         "server/share/share-state.ts",
         "server/share-ingress.integration.test.ts",
-        "server/app.ts"
+        "server/app.ts",
+        "server/link-tokens.ts",
+        "server/link-tokens.test.ts"
       ]
     },
     "§app.session-share/never": {
@@ -8942,7 +8953,10 @@
         "server/session-share-privacy.test.ts",
         "server/session-share-privacy.integration.test.ts",
         "server/test-wait.ts",
-        "server/preview-kept.ts"
+        "server/preview-kept.ts",
+        "server/link-tokens.ts",
+        "server/session-shares.test.ts",
+        "server/baton.test.ts"
       ]
     },
     "§app.session-share/overview": {
@@ -8957,7 +8971,9 @@
       ],
       "code": [
         "server/shares-overview.ts",
-        "server/session-share-activity.test.ts"
+        "server/session-share-activity.test.ts",
+        "shared/session-share.ts",
+        "server/owner-page.test.ts"
       ]
     },
     "§app.session-share/page": {
@@ -9000,13 +9016,13 @@
     "§app.session-share/rejected": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": []
     },
     "§app.session-share/shares-page": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "requires": [
         "§app.session-share/sheet",
         "§app.insights/placement"
@@ -9035,7 +9051,9 @@
         "src/components/SessionDetails.tsx",
         "src/lib/session-shares.ts",
         "src/shares.css",
-        "src/lib/session-shares.test.ts"
+        "src/lib/session-shares.test.ts",
+        "server/session-shares-routes.ts",
+        "shared/session-share.ts"
       ]
     },
     "§app.session-share/snapshot": {
@@ -9517,7 +9535,7 @@
     "§app.session-share/share-page": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "requires": [
         "§app.session-share/slice",
         "§app.session-share/sheet"
@@ -10026,7 +10044,8 @@
         "profiles/reviewer.json",
         "profiles/mini-overseer.json",
         "shared/protocol.ts",
-        "src/lib/summary-diff.test.ts"
+        "src/lib/summary-diff.test.ts",
+        "server/harness/state-kinds.ts"
       ],
       "requires": []
     },
@@ -10545,7 +10564,10 @@
         "server/project-previews.integration.test.ts",
         "server/outreach/sender-test-fixtures.ts",
         "server/outreach-test-fixtures.ts",
-        "server/outreach.integration.test.ts"
+        "server/outreach.integration.test.ts",
+        "server/outreach/core.ts",
+        "server/baton-links.ts",
+        "server/baton.ts"
       ],
       "requires": [
         "§app.baton/links",
@@ -10593,7 +10615,7 @@
     "§app.outreach/send": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "statecharts/src/sova/statecharts/proj.cljc",
         "server/statecharts-replay.ts",
@@ -15665,6 +15687,29 @@
       "kind": "note",
       "authority": "accepted",
       "evidence": "verified"
+    },
+    "§design/menu-rows": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/design/base.css",
+        "src/lib/menu-rows.test.ts",
+        "src/components/ActionMenu.tsx",
+        "src/components/Groups.tsx",
+        "src/components/GroupView.tsx",
+        "src/components/ComposerMenu.tsx",
+        "src/components/ModeMenu.tsx",
+        "src/components/MeshHostMenu.tsx",
+        "src/components/AlignChip.tsx",
+        "src/components/OverseerCardChip.tsx",
+        "src/components/CostsTab.tsx",
+        "src/mesh.css",
+        "src/costs-tab.css",
+        "src/orgs.css",
+        "src/design/align-viewer.css"
+      ]
     }
   },
   "boundary": {

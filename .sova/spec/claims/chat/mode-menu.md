@@ -95,14 +95,14 @@ popover (§chat.subagent-profiles/menu), with Off first and the current profile 
   <div class="model-menu-list" role="menu" id="mode-menu" aria-label="Mode">
     <div class="model-menu-group" role="group" aria-labelledby="mode-group-major">
       <div class="list-group-label" id="mode-group-major">Major mode</div>
-      <div class="mode-option" role="menuitemradio" aria-checked="false" tabindex="-1">
-        <span class="icon icon-sm mode-option-check" style="--icon: url(/icons/check.svg)" aria-hidden="true"></span>
-        <span class="mode-option-text"><span class="mode-option-id">normal</span>
-          <span class="mode-option-desc">Pi as usual</span></span>
+      <div class="popover-item popover-item-detail popover-item-mono" role="menuitemradio" aria-checked="false" tabindex="-1">
+        <span class="icon icon-sm popover-item-check" style="--icon: url(/icons/check.svg)" aria-hidden="true"></span>
+        <span class="popover-item-text"><span class="popover-item-label">normal</span>
+          <span class="popover-item-desc">Pi as usual</span></span>
       </div>
-      <div class="mode-option-row" role="none">
-        <div class="mode-option" role="menuitemradio" aria-checked="true" tabindex="0">…delegate…</div>
-        <button type="button" class="button button-ghost button-icon mode-option-gear" role="menuitem"
+      <div class="mode-menu-row" role="none">
+        <div class="popover-item popover-item-detail popover-item-mono" role="menuitemradio" aria-checked="true" tabindex="0">…delegate…</div>
+        <button type="button" class="button button-ghost button-icon mode-menu-gear" role="menuitem"
           tabindex="-1" aria-label="Configure Delegate" title="Configure Delegate">
           <span class="icon icon-sm" style="--icon: url(/icons/settings.svg)" aria-hidden="true"></span>
         </button>
@@ -110,11 +110,11 @@ popover (§chat.subagent-profiles/menu), with Off first and the current profile 
     </div>
     <div class="model-menu-group" role="group" aria-labelledby="mode-group-minor">
       <div class="list-group-label" id="mode-group-minor">Minor modes</div>
-      <div class="mode-option" role="menuitemcheckbox" aria-checked="true" tabindex="-1">…align…</div>
+      <div class="popover-item popover-item-detail popover-item-mono" role="menuitemcheckbox" aria-checked="true" tabindex="-1">…align…</div>
     </div>
     <div class="model-menu-group" role="group" aria-labelledby="mode-group-subagents">
       <div class="list-group-label" id="mode-group-subagents">Subagents</div>
-      <div class="mode-option" role="menuitem" aria-haspopup="true" tabindex="-1">Subagents · My setup …chevron-right…</div>
+      <div class="popover-item" role="menuitem" aria-haspopup="true" tabindex="-1">…worker… Subagents · My setup …chevron-right…</div>
     </div>
   </div>
   <div class="mode-menu-foot">
@@ -374,9 +374,10 @@ What the trigger and the menu show in each state, from a mode not known yet to a
 The tokens the trigger, the menu's rows and its foot are drawn with.
 
 Trigger: `--font-mono`, `--fs-mono`, `--color-ink-2`, sunken fill while open, icons
-`--color-ink-muted`. Rows: `--control-md` min height, `--space-2` / `--space-3`
-padding, id in `--font-mono` `--color-ink`, description `--fs-caption` `--color-ink-muted`,
-checked `--color-accent-tint`, focus `--focus-ring` inset. Foot: `--fs-caption`
+`--color-ink-muted`. Rows (`.popover-item`, §design/menu-rows): `--control-md` min height, `--space-3` at the
+sides and `--space-2` above and below a mode row, id in `--font-mono` `--color-ink`, description `--fs-caption` `--color-ink-muted`,
+checked `--color-accent-tint`, focus `--focus-ring` inset. A mode row's check sits on its id's line, the
+first of its two; the one-line Subagents row's icon, label and chevron sit on the row's centre line. Foot: `--fs-caption`
 `--color-ink-muted` over a `--color-border` rule.
 
 ## §chat.mode-menu/rejected — Rejected

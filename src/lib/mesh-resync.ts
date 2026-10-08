@@ -2,7 +2,7 @@
 // on another version, whether it offers Resync, and the words of the confirm sheet. Pure, so node
 // tests run it without a DOM. Types: shared/mesh-resync.ts.
 
-import type { ResyncHost, ResyncJob, ResyncSelf } from "../../shared/mesh-resync";
+import { noRecipeReason, type ResyncHost, type ResyncJob, type ResyncSelf } from "../../shared/mesh-resync";
 
 export type { MeshResync, ResyncHost, ResyncJob, ResyncSelf } from "../../shared/mesh-resync";
 
@@ -31,7 +31,7 @@ export function resyncView(h: ResyncHost | undefined, self: ResyncSelf): { line:
       const where = h.distance !== undefined ? `${plural(h.distance, "commit")} behind ${self.label}` : `Behind ${self.label}`;
       // This host's own block is about every host: the menu says it once (resyncNote), not under each.
       if (self.blocked) return { line: `${failed}${where}`, button: { reason: self.blocked } };
-      const reason = h.recipe === null ? `No resync recipe for ${h.label} on ${self.label}` : h.recipeProblem ? `Its recipe can't run: ${h.recipeProblem}` : undefined;
+      const reason = h.recipe === null ? noRecipeReason(h, self.label) : h.recipeProblem ? `Its recipe can't run: ${h.recipeProblem}` : undefined;
       return { line: `${failed}${where}${reason ? `. ${reason}` : ""}`, button: reason ? { reason } : {} };
     }
     case "ahead":

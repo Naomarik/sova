@@ -35,7 +35,7 @@ import { contextOfBranch } from "./harness/pi/usage";
 import { extensionEntries } from "./harness/pi/state";
 import { isAlreadyProcessing } from "./harness/pi/session";
 import { isCompactionInProgress } from "./harness/pi/history-ops";
-import { BATON_SENT, FANOUT_MEMBER, LOADOUT, MODE, OVERSEER, OVERSEER_DIALOG_ANSWER, OVERSEER_SENT, PROFILE, SESSION_SENT, SUBAGENT_PROFILE, TOPIC_DELIVERED } from "./harness/state-kinds";
+import { BATON_SENT, FANOUT_MEMBER, LINK_MEMBER, LOADOUT, MODE, OVERSEER, OVERSEER_DIALOG_ANSWER, OVERSEER_SENT, PROFILE, SESSION_SENT, SUBAGENT_PROFILE, TOPIC_DELIVERED } from "./harness/state-kinds";
 import { cutTail, type HistoryPart, pullFields } from "./tail-hello";
 import { isOverseerId } from "./overseer-store";
 import { attachStreamGuard, capsFor, type StreamTrip } from "./stream-guard";
@@ -83,27 +83,32 @@ export const currentLinkOrigin = (): string | null => linkOrigin;
  *   CLI's models as first-class pi models (§app.claude-code-provider/always-on). With no `claude`
  *   CLI the extension registers nothing and the session carries on.
  * - the link: this server's own bound origin (setLinkOrigin), switching pi-config's `link`
- *   extension on (link_members/link_send/link_inbox call its /api/mesh/links/* routes). Absent
- *   until the listener is bound; workers never get it, so the tools are inert there. Beside it,
+ *   extension on (its tools call the /api/mesh/links/* routes), and which tools it registers
+ *   (§mesh.links/tools): `member` for a link member session (its LINK_MEMBER marker, written by its
+ *   create), all seven from its start; `legacy` for every other: all seven once it is in a live link
+ *   (the extension asks the server's `sova:link-live` hook, app.ts), at its next request, else only
+ *   the tools its transcript already declares (a session an earlier build hosted); either is dropped
+ *   at a compaction that finds it in no live link. Absent until
+ *   the listener is bound; workers and the TUI never get it, so they register no link tool. Beside it,
  *   this server's per-install token, which the link tools send back as `x-sova-token`
  *   (§app.access/callers). In-process only: never argv, never env.
  * - adversarial review: only while Settings → Experimental's Adversarial review is saved on
  *   (§chat.alignment-review/flag); read at each runtime start, so an open chat keeps what it began with.
  */
-function sessionFlags(cwd: string, outline = true): OpenFlags {
+function sessionFlags(cwd: string, outline = true, linkTools: "member" | "legacy" = "legacy"): OpenFlags {
   const flags: OpenFlags = { outline };
   const target = targetOfCwd(cwd);
   if (target) flags.target = target;
   flags.claudeCode = true;
   if (readWebSettings().experimental.adversarialReview) flags.review = true;
-  if (linkOrigin) flags.link = { origin: linkOrigin, token: sovaToken() };
+  if (linkOrigin) flags.link = { origin: linkOrigin, token: sovaToken(), tools: linkTools };
   return flags;
 }
 
 /** The extension flags a runtime is handed: none for a loadout that loads no extension (a flag
     nobody registered only logs "Unknown option"), else sessionFlags. Exported for the tests. */
-export function extensionFlagsFor(cwd: string, outline: boolean, noExtensions: boolean): Map<string, boolean | string> {
-  return noExtensions ? new Map() : extensionFlagValues(sessionFlags(cwd, outline));
+export function extensionFlagsFor(cwd: string, outline: boolean, noExtensions: boolean, linkTools: "member" | "legacy" = "legacy"): Map<string, boolean | string> {
+  return noExtensions ? new Map() : extensionFlagValues(sessionFlags(cwd, outline, linkTools));
 }
 
 /** The extensions every ordinary session loads beyond pi-config's: resource monitoring, inherited
@@ -403,6 +408,11 @@ export interface SessionMarks {
  *  exception on. */
 export function isFanoutMember(s: Pick<SessionMarks, "state">): boolean {
   return s.state.file().has(FANOUT_MEMBER);
+}
+
+/** Whether a session file is a link member session: its create wrote the marker (§mesh.links/tools). */
+export function isLinkMember(s: Pick<SessionMarks, "state">): boolean {
+  return s.state.file().first(LINK_MEMBER) !== null;
 }
 
 /** Whether a session file is an Overseer file: it carries the marker its creation wrote
@@ -3156,6 +3166,8 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
         ? [sessionPowersExtension({ sessionId: read.id, cwd, title: () => titleOf(read.branch()), profile: snap, run: profile.run, limits: profile.limits, path: () => path })]
         : [];
     const outline = special ? false : !isFanoutMember(read);
+    // A link member's tools are fixed by its creation marker, read at every build (§mesh.links/tools).
+    const linkTools = isLinkMember(read) ? "member" : "legacy";
     return {
       loader: special
         ? special.resourceLoaderOptions
@@ -3171,7 +3183,7 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
             ],
             ...overrides,
           },
-      flags: () => sessionFlags(cwd, outline),
+      flags: () => sessionFlags(cwd, outline, linkTools),
       // Removals: the SDK's excludeTools, a filter on the registry itself, so no extension's
       // setActiveTools or re-registration brings a removed tool back.
       exclude: (present) => (profile.excluded = snap?.remove.length ? excludedTools(snap.remove, present) : []),

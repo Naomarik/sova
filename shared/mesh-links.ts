@@ -126,6 +126,13 @@ export interface LinkMessage {
   text: string;
 }
 
+/** A link member session's marker (§mesh.links/tools): the custom entry its create writes first, which
+    alone gives a session the link tools. Only such a session can be made a member of a new link. */
+export const LINK_MEMBER_ENTRY = "sova-link-member";
+export interface LinkMemberData {
+  v: 1;
+}
+
 /** Why a delivery was refused. Final: never retried. */
 export type LinkRefusal =
   | "ended" // the link has ended
@@ -251,7 +258,7 @@ export interface LinkCreate {
 /** A 4xx body from a local act. `member` is the index into LinkCreate.members it names. */
 export interface LinkError {
   error: string;
-  reason?: OfferRefusal | "same-host" | "too-few" | "worker" | "skewed" | "lan-pairing";
+  reason?: OfferRefusal | "same-host" | "too-few" | "worker" | "skewed" | "lan-pairing" | "not-link-member";
   member?: number;
 }
 export interface LinkSend {

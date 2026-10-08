@@ -375,7 +375,7 @@ export function ModeMenu(props: { control: ModeControl }) {
 
   const Row = (p: { it: Item; index: number }) => (
     <div
-      class="mode-option"
+      class="popover-item popover-item-detail popover-item-mono"
       role={p.it.kind === "radio" ? "menuitemradio" : "menuitemcheckbox"}
       id={itemId(p.it)}
       tabindex={active() === p.index ? 0 : -1}
@@ -387,10 +387,10 @@ export function ModeMenu(props: { control: ModeControl }) {
       }}
       onFocus={() => setActive(p.index)}
     >
-      <Icon name="check" small class="mode-option-check" />
-      <span class="mode-option-text">
-        <span class="mode-option-id">{p.it.label ?? p.it.id}</span>
-        <span class="mode-option-desc">{p.it.id === "delegate" ? `Profile: ${profileName()}` : p.it.description}</span>
+      <Icon name="check" small class="popover-item-check" />
+      <span class="popover-item-text">
+        <span class="popover-item-label">{p.it.label ?? p.it.id}</span>
+        <span class="popover-item-desc">{p.it.id === "delegate" ? `Profile: ${profileName()}` : p.it.description}</span>
       </span>
     </div>
   );
@@ -398,7 +398,7 @@ export function ModeMenu(props: { control: ModeControl }) {
   const Gear = (p: { it: Item; index: number }) => (
     <button
       type="button"
-      class="button button-ghost button-icon mode-option-gear"
+      class="button button-ghost button-icon mode-menu-gear"
       role="menuitem"
       id={itemId(p.it)}
       tabindex={active() === p.index ? 0 : -1}
@@ -419,7 +419,7 @@ export function ModeMenu(props: { control: ModeControl }) {
     return (
       <Show when={gear()} fallback={<Row it={p.it} index={p.index} />}>
         {(g) => (
-          <div class="mode-option-row" role="none">
+          <div class="mode-menu-row" role="none">
             <Row it={p.it} index={p.index} />
             <Gear it={g()} index={p.index + 1} />
           </div>
@@ -526,7 +526,7 @@ export function ModeMenu(props: { control: ModeControl }) {
                 >
                   {(p, i) => (
                     <div
-                      class="mode-option"
+                      class="popover-item popover-item-detail"
                       role="menuitemradio"
                       id={paneId(`subagent-choice-${p.id}`)}
                       data-profile={p.id}
@@ -536,10 +536,10 @@ export function ModeMenu(props: { control: ModeControl }) {
                       onClick={() => void chooseProfile(p.id)}
                       onFocus={() => setPActive(i())}
                     >
-                      <Icon name="check" small class="mode-option-check" />
-                      <span class="mode-option-text">
-                        <span class="mode-option-name">{p.name}</span>
-                        <span class="mode-option-desc" classList={{ "text-mono": p.id !== "off" }}>
+                      <Icon name="check" small class="popover-item-check" />
+                      <span class="popover-item-text">
+                        <span class="popover-item-label">{p.name}</span>
+                        <span class="popover-item-desc" classList={{ "text-mono": p.id !== "off" }}>
                           {p.footprint}
                         </span>
                       </span>
@@ -636,7 +636,7 @@ export function ModeMenu(props: { control: ModeControl }) {
                 Subagents
               </div>
               <div
-                class="mode-option"
+                class="popover-item"
                 role="menuitem"
                 id={itemId(SUBAGENTS)}
                 tabindex={active() === items().findIndex((it) => it.id === SUBAGENTS.id) ? 0 : -1}
@@ -647,11 +647,11 @@ export function ModeMenu(props: { control: ModeControl }) {
                 }}
                 onFocus={() => setActive(items().findIndex((it) => it.id === SUBAGENTS.id))}
               >
-                <Icon name="worker" small class="mode-option-lead" />
-                <span class="mode-option-text">
-                  <span class="mode-option-name">Subagents · {profileName()}</span>
+                <Icon name="worker" small />
+                <span class="popover-item-text">
+                  <span class="popover-item-label">Subagents · {profileName()}</span>
                 </span>
-                <Icon name="chevron-right" small class="mode-option-caret" />
+                <Icon name="chevron-right" small class="popover-item-end" />
               </div>
             </div>
           </div>

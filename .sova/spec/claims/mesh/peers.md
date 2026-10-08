@@ -167,7 +167,7 @@ name that places its commit against this host's by this checkout's history: behi
 newer, on another branch, or not known here. Only a host that is behind gets a `Resync` button beside
 it; a newer host gets the hint to update this host instead (Sova never downgrades a host from the
 page). The button is disabled with its reason: under the host when this host has no recipe for that
-host or the recipe's own settings are missing, and once for the whole menu, above `Mesh details…`,
+host, kept or derived (the reason says what to set), or the recipe's own settings are missing, and once for the whole menu, above `Mesh details…`,
 when this host's build can't be named (it booted with uncommitted changes, its protocol doesn't match
 its commit, or it has no commit).
 
@@ -182,10 +182,19 @@ running, then waiting until the host's `hello` carries this host's fingerprint, 
 with the reason and the last lines of the script's output, which are also kept in
 `<agent dir>/sova/mesh-resync/<host id>.log`.
 
-Recipes live in `<agent dir>/sova/mesh-resync.json`, on this host only (sync never copies it), keyed
+Explicit recipes live in `<agent dir>/sova/mesh-resync.json`, on this host only (sync never copies it), keyed
 by peer id: `{"hosts": {"<id>": {"kind": "vps"}}}` runs `scripts/mesh-vps/deploy.sh --rev <commit>`
 (with its own `local.env`); `{"kind": "termux", "ssh"?: "<user@host>", "sshPort"?: <n>, "args"?:
 […]}` runs `scripts/mesh-termux/deploy.sh`, which streams `git archive` of the commit over ssh into
 the phone's installer with those installer arguments. A recipe names a kind and arguments, never a
-shell command. The routes are `/api/mesh/resync` (read) and `/api/mesh/resync/<id>` (start), on the
+shell command. A peer the file doesn't name, or with no file at all, gets a recipe derived from the
+deploy scripts' own `local.env`, read from the checkout the server runs from as plain `KEY=value`
+lines (never sourced or run; a missing or unreadable one gives nothing): the peer whose id is
+`VPS_ID` in `scripts/mesh-vps/local.env` gets `{"kind": "vps"}`, and the one whose id is `PHONE_ID`
+in `scripts/mesh-termux/local.env` gets `{"kind": "termux"}` (its deploy script takes the ssh target
+from that file). An entry in the file always wins, even one left out as malformed; a file that isn't
+valid JSON, or isn't `{"hosts": …}`, gives no recipes at all, derived ones included, and says why.
+With no recipe, the reason under the host and the start's refusal are one sentence naming what to
+set: "No resync recipe for <host> on <this host>: set VPS_ID in scripts/mesh-vps/local.env (or
+PHONE_ID in scripts/mesh-termux/local.env) to <id>, or add <id> to mesh-resync.json". The routes are `/api/mesh/resync` (read) and `/api/mesh/resync/<id>` (start), on the
 main listener only; the peer listener never answers them.

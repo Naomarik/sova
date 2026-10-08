@@ -6,14 +6,15 @@ import { Banner, CopyButton } from "./ui";
 
 export type Links = OfferLink[];
 
-/** Links minted for a new session or offer: shown once, one row per person. `warning`: why they
+/** Links just minted or got (a new session or offer, Get Link, New Link): one row per person, each
+    with Copy Link; a live one stays copyable afterwards from where it is listed. `warning`: why they
     may not open from outside yet, the server's text verbatim, with a way to Settings → Public links. `replaced`: a link a Get
     Link elsewhere turned off, said in place of its text and Copy Link. */
 export function LinksBanner(props: { links: Links; warning?: string; replaced?(link: OfferLink): boolean; onDismiss(): void }) {
   return (
     <Banner
       tone={props.warning ? "warn" : "info"}
-      title={props.links.length === 1 ? `${props.links[0]!.name}'s link — shown once` : `${props.links.length} links — shown once`}
+      title={props.links.length === 1 ? `${props.links[0]!.name}'s link` : `${props.links.length} links`}
       body={
         <span class="project-links">
           <For each={props.links}>

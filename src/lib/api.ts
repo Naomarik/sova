@@ -1140,8 +1140,9 @@ export const unarchiveProject = (pid: string) => request<ProjectSummary>(`${proj
 // ---- the org's owner and the Owner page (§app/owner-page; routes in shared/owner.ts) ----
 /** Set the org's owner (an active roster person's id), or none. */
 export const setOrgOwner = (id: string, personId: string | null) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/owner`, jsonInit("PUT", { personId }));
-/** Mint the owner's link, shown once; the older one stops at once. */
-export const ownerLink = (id: string) => request<OwnerLinkResult>(`/api/orgs/${encodeURIComponent(id)}/owner/link`);
+/** The owner's link. `keep` (Get Owner Link): the live kept one when there is one, else a new one;
+    without it (Get New Owner Link) a new one, and the older one stops at once. */
+export const ownerLink = (id: string, keep = false) => request<OwnerLinkResult>(`/api/orgs/${encodeURIComponent(id)}/owner/link${keep ? "?keep=1" : ""}`);
 export const revokeOwnerLink = (id: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/owner/revoke`, jsonInit("POST"));
 /** The Owner page as the owner sees it (Home, a project `q_…`, a conversation `k_…`); no token, no visit. */
 export const previewOwnerPage = (id: string, at?: { project?: string; c?: string }) =>
@@ -1162,7 +1163,10 @@ export const startBaton = (input: BatonStartInput) => request<BatonStartResult>(
 export const getBaton = (path: string) => request<BatonInfo>(`/api/baton?path=${encodeURIComponent(path)}`);
 /** What It's Told (§app.baton/told): fetched when opened, the operator's only. */
 export const getBatonTold = (sid: string) => request<BatonTold>(`/api/baton/${encodeURIComponent(sid)}/told`);
-export const batonLink = (sid: string) => request<{ link: string; n: number; at?: string; linkWarning?: string }>(`/api/baton/${encodeURIComponent(sid)}/link`);
+/** The holder's link. `keep` (Get Link): their live kept one when there is one, else a new one;
+    without it (New Link) a new one, and the older ones stop. */
+export const batonLink = (sid: string, keep = false) =>
+  request<{ link: string; n: number; at?: string; linkWarning?: string }>(`/api/baton/${encodeURIComponent(sid)}/link${keep ? "?keep=1" : ""}`);
 /** Send on WhatsApp (§app.outreach/send-link): the statechart's act; the answer is the outcome only. */
 export const sendBatonLink = (sid: string, person?: string) => request<SendLinkAnswer>(`/api/baton/${encodeURIComponent(sid)}/send-link`, jsonInit("POST", person ? { person } : {}));
 /** Who Send on WhatsApp may go to now, each ready or why not. */
@@ -1181,7 +1185,8 @@ export const offerBaton = (sid: string, to: string[], question?: string, briefin
   request<{ links: OfferLink[]; info?: BatonInfo; linkWarning?: string }>(`/api/baton/${encodeURIComponent(sid)}/offer`, jsonInit("POST", { to, ...(question ? { question } : {}), ...(briefing ? { briefing } : {}) }));
 export const withdrawOffer = (sid: string) => request<BatonInfo>(`/api/baton/${encodeURIComponent(sid)}/offer/withdraw`, jsonInit("POST"));
 /** A fresh link for one invitee of the open offer (their older one stops working). */
-export const inviteeLink = (sid: string, personId: string) => request<{ link: string; n: number; at?: string; linkWarning?: string }>(`/api/baton/${encodeURIComponent(sid)}/link?person=${encodeURIComponent(personId)}`);
+export const inviteeLink = (sid: string, personId: string, keep = false) =>
+  request<{ link: string; n: number; at?: string; linkWarning?: string }>(`/api/baton/${encodeURIComponent(sid)}/link?person=${encodeURIComponent(personId)}${keep ? "&keep=1" : ""}`);
 /** The operator hands the session to a person ("Hand this session to Bob"). */
 export const handBaton = (sid: string, to: string, question: string, briefing?: string) =>
   request<{ info?: BatonInfo; link?: string; at?: string; linkWarning?: string; offHours?: string }>(`/api/baton/${encodeURIComponent(sid)}/handoff`, jsonInit("POST", { to, question, ...(briefing ? { briefing } : {}) }));

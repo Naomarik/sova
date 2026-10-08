@@ -11,6 +11,7 @@ import { ABSENT, agent, ann, cleanup, gathering, json, logOf, org, project, root
 
 const { resetLocalClient } = await import("./outreach/whatsapp");
 const { liveLinks } = await import("./baton-links");
+const { dropTokens } = await import("./link-tokens");
 const { batonById } = await import("./baton");
 
 let fake: ChildProcess | null = null;
@@ -54,12 +55,14 @@ describe("§app.outreach/send-link and /sender-route: the sender as a real child
     await startSender();
   });
 
-  test("sent: a fresh link replaces the older ones, the log holds no number, token or text; receipts follow", async () => {
+  test("sent, with no kept link (one made before tokens were kept): a fresh link replaces the older ones, the log holds no number, token or text; receipts follow", async () => {
     assert.equal((await json("PUT", "/api/outreach", { sender: { local: {} } })).status, 200);
     await senderOpen();
     const sid = await gathering(ann.id);
     const n = batonById(sid)!.row.handoffs.at(-1)!.n;
     const firstLinks = liveLinks(sid, n).map((l) => l.hash);
+    // A kept live link would be sent as it is (outreach.test.ts covers that); this is the mint path.
+    dropTokens(firstLinks);
     const r = await sendLink(sid);
     assert.deepEqual(r.body, { outcome: "sent", channel: "whatsapp", name: "Ann" });
     const now = liveLinks(sid, n);

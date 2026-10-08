@@ -29,14 +29,26 @@ component inventory that drives `<brand>.css`, `reference/components/`, and `sit
    scheme can be added), or never. Any answer is valid; the ledger must record one, and
    `SKILL.md` must state it.
 9. **Component inventory** — default inventory: buttons, chips, inputs, controls,
-   toggles, cards, banners, nav-bars, overlays, lists, tables, charts. Ask one question:
+   toggles, cards, banners, nav-bars, overlays, menus (popover), lists, tables, charts. Ask one question:
    "here's my proposed inventory — anything your product needs added or dropped?" (min 8).
    Then probe the domain yourself: a data-heavy product likely needs tables front and
    center; most products need empty states, loading/skeleton patterns, toasts (distinct
    from in-flow banners), and pagination — propose the ones the product description clearly
    implies rather than waiting to be asked. For each component you (not the user) define
    variants, sizes, and the full state set (default/hover/focus/active/disabled), plus the
-   one-line usage rule ("one primary per view", etc.).
+   one-line usage rule ("one primary per view", etc.). Write the usage rule in the words a
+   builder searches with, naming the task, not just the component: menus (popover) is "every
+   menu, dropdown, ⋯ overflow and picker", so a grep for any of those lands on it.
+
+   **Menus (popover)** is its own inventory line, not part of overlays: it is the one row
+   component every menu, dropdown, ⋯ overflow and flyout uses. Define a one-line row
+   (a verb or a value, centered on the row's center line), a label + description variant (a
+   mode, a profile, a row that says why it can't run, with its icon on the first line), a
+   checked state with a check slot (`menuitemradio` / `menuitemcheckbox` + `aria-checked`),
+   disabled with its reason shown, an icon slot, a section label and a separator. Use it when
+   something opens from a trigger and closes on a pick; use a select or combobox when the user
+   types to filter. Every row-like component (a list row, a menu row, an option) gets the same
+   set: one-line, label + description, checked or selected, disabled with a reason, icon slot.
 
 ## User questions worth asking (pick ≤4)
 

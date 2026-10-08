@@ -16,11 +16,28 @@ members message each other and hand each other files. Sova makes and ends links 
 
 ## How it works
 
-- **Always registered, fixed schema.** The seven tools load in every session, linked or not, so a
-  claude-code session (which reaches them as `mcp__sova__link_*`) never sees its tool set change
-  mid-conversation. Each refuses with a sentence when the session is in no link.
+- **Only in a link member, fixed schema.** A session gets the seven in one of two ways.
+  **Born:** Sova's Overseer creates a session as a link member (`sova_create_session` with
+  `link: true`); Sova then hands its runtime the `sova-link-tools` flag `member`, and the tools
+  are registered at `session_start` (pi applies flag values only after every extension has
+  loaded), so they are there from its first request, for good. **Joined:** every other session
+  Sova hosts gets `legacy`, and registers all seven once Sova's `Symbol.for("sova:link-live")`
+  hook (a function on `globalThis` the server installs, asked by session id) says it is in a live
+  link: at `session_start`, at `before_agent_start` or at `turn_end`, so a session linked mid-run
+  has them in the request that carries the partner's steered message (pi builds that request's
+  loadout after `turn_end`). A claude-code session (which reaches them as `mcp__sova__link_*`)
+  restarts its CLI when they are turned on, so a session the Overseer creates only to link is born
+  a member. A session in no link has none, so it pays nothing for them. Each tool refuses with a
+  sentence when the session is in no link.
+- **Taken back only at a compaction.** A joined session, and one whose transcript already declares
+  the tools (a session an earlier build hosted, when every session had them), withdraws them at a
+  compaction that finds it in no live link, which rebuilds the prompt cache anyway (a claude-code
+  CLI restarts after one): re-registered `hidden`, the one way pi takes a tool back. A compaction
+  while the session is in a live link, or whose host doesn't answer, keeps them for a later one.
+  Never when a link ends. A born member never loses them.
 - **Enabled by Sova only.** Sova sets the `sova-link` flag to its own origin on every runtime it
-  hosts. Without it (a TUI, a subagent worker) the tools refuse and nothing is fetched.
+  hosts. Without it (a TUI, a subagent worker) no link tool is registered and nothing is fetched,
+  and neither has the `sova:link-live` hook.
 - **Talks only to its own host.** Every call goes to that origin's `/api/mesh/links/*` routes
   (`client.ts`), naming the session by id. The host checks that it holds the session and that the
   session is a member, and does every peer hop, the outbox for offline hosts and delivery. The
@@ -43,7 +60,7 @@ members message each other and hand each other files. Sova makes and ends links 
   doesn't answer keeps the previous section. Any answer from the host (no links, no link routes)
   drops it.
 
-Files: `index.ts` (flag, tools, section), `client.ts` (builtins only: the HTTP client, the
+Files: `index.ts` (flags, tools and when they are registered, section), `client.ts` (builtins only: the HTTP client, the
 structural copies of the route bodies, and the pure rendering the model reads).
 
 ## Verify

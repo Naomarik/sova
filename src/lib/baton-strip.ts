@@ -120,19 +120,20 @@ export function goalShown(session: { goal?: string | null } | undefined): string
 /** The strip's one primary act for the state it is in (§app.baton/strip-layout). */
 export type StripPrimary = "take-back" | "withdraw" | "hand-on";
 /** A row of the strip's More actions menu, in the order it is drawn. */
-export type StripMenuRow = "get-link" | "hand-on" | "told" | "owner";
+export type StripMenuRow = "copy-link" | "get-link" | "new-link" | "hand-on" | "told" | "owner";
 /** A destructive row, set apart at the menu's end; each asks before it acts. */
 export type StripDestructive = "delete-link" | "close";
 
 /**
  * Which acts the strip offers and where: at most one primary in the bar, the rest in the menu, the
- * destructive ones last. Each act is reachable in exactly the states it was before the menu: Get
- * Link, Delete Link (with a live link) and Take Back while a person holds it with no offer out,
+ * destructive ones last. Each act is reachable in exactly the states it was before the menu: Copy
+ * Link (the holder's live kept link) or Get Link, New Link and Delete Link (with a live link) and
+ * Take Back while a person holds it with no offer out,
  * Withdraw Offer while an offer is live, Hand On… while the session is open, What It's Told always,
  * Hide From / Show To while the org has an owner, and Close Session until it is closed.
  */
 export function stripActions(
-  i: Pick<BatonInfo, "offer" | "session" | "liveLinks" | "owner">,
+  i: Pick<BatonInfo, "offer" | "session" | "liveLinks" | "owner" | "links">,
 ): { primary: StripPrimary | null; menu: StripMenuRow[]; destructive: StripDestructive[] } {
   const s = i.session;
   const open = s.state === "open" || s.state === "needs-you";
@@ -142,7 +143,9 @@ export function stripActions(
   // At the limit Hand On isn't the decision: Extend is, in its own row.
   const primary: StripPrimary | null = personHolds ? "take-back" : offer ? "withdraw" : open && !spent ? "hand-on" : null;
   const menu: StripMenuRow[] = [];
-  if (personHolds) menu.push("get-link");
+  // Copy Link while the holder's live link is kept, else Get Link (§app.baton/links); New Link while one is live.
+  if (personHolds) menu.push(i.links?.[s.holder!] ? "copy-link" : "get-link");
+  if (personHolds && i.liveLinks > 0) menu.push("new-link");
   if (open && primary !== "hand-on") menu.push("hand-on");
   menu.push("told");
   if (i.owner) menu.push("owner");

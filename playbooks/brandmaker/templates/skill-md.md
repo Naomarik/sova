@@ -89,7 +89,19 @@ disclosure here if the logo was generated.>
 
 ## Components
 <One row per component: Component | Variants | Sizes | Key rule. Matches
-`reference/components/` and `site/` one-to-one.>
+`reference/components/` and `site/` one-to-one. The Key rule says when to use it, in the words
+of the task a builder has in hand ("every menu, dropdown, ⋯ overflow and picker"), not only
+what the component is.>
+
+## Menus & dropdowns
+<Mandatory. Anything that opens from a trigger and closes on a pick is the popover holding
+popover rows; there is one menu-row component. A table: Row | Class | Alignment, with the
+one-line row (centered, built in), the label + description row (icon on the first line), the
+icon slot and the trailing slot. Then: the checked state (`menuitemradio` / `menuitemcheckbox`
+with `aria-checked` and a check slot), disabled with its reason, section labels, separators,
+and when to use a select or combobox instead (the user types to filter). End with the rule:
+never style a menu row with another component's row class, and never set `align-items` or
+vertical padding on a row yourself.>
 
 ## Class index
 <Component | Selectors. Dense and greppable — this is the lookup that saves reading the

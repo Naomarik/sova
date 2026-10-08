@@ -272,10 +272,12 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
     so a new link for the same hand-off never takes an older visit. A link that can still open has `Delete
     Link` (that one link; the session and every other link stay as they are), asked twice like the
     strip's (§app.baton/links: "Delete?", with "The link stops working for good." under it;
-    done: "Link deleted."). The row for the hand-off they hold now, or an open offer they are
-    invited to, has `Get New Link` (tooltip "Makes a new link and deletes the one you sent
-    before"): the strip's Get Link (`GET /api/baton/:sid/link`, `?person=` for an offer), shown
-    once with Copy Link. With 2 or more links that can open, the section has `Delete All {n}
+    done: "Link deleted."). A link that can still open and whose token is kept
+    (§app.session-share/link) has `Copy Link`. The row for the hand-off they hold now, or an open
+    offer they are invited to, has `New Link` (tooltip "Makes a new link and deletes the one you
+    sent before"): the strip's New Link (`GET /api/baton/:sid/link`, `?person=` for an offer),
+    and, while they have no kept live link of it, `Get Link` (the strip's Get Link, `keep=1`). A new
+    link shows with Copy Link. With 2 or more links that can open, the section has `Delete All {n}
     Links` (a destructive button, apart from the others), confirmed with "{name}'s {n} links stop
     working for good. Their sessions, messages and visits stay." and `Delete All {n}
     Links?` (done: "Deleted {n} links."). With no link: "No links for {name} on this host."
@@ -284,7 +286,7 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
   - **Owner links** (for the org's owner, §app.owner-page/link), newest first, under their own
     heading after their links: `The owner page`, its state (`Can read`, `Turned off`, `Expired`),
     `sent {relative time}`, `expires {relative time}` while it can open, `{n} visits`, and on the
-    live one `Delete Owner Link`, asked twice like `Delete Link` (done: "Owner link deleted.").
+    live one `Copy Link` when its token is kept and `Delete Owner Link`, asked twice like `Delete Link` (done: "Owner link deleted.").
     `Delete All` never touches them.
   - **Sent on WhatsApp** (§app.outreach/log), after the owner links, when they were sent anything:
     one row per send, newest first: what went (the gathering's public title, "A preview" or "A
@@ -327,7 +329,8 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
   sideways scrolling.
 - **Where the data comes from.** `GET /api/orgs/:id/people/:pid` answers the page (`PersonPage`
   in `shared/orgs.ts`): the person, the org's id and name, sessions with their relations,
-  decisions, routed conflicts, this host's links with their states, the visit rows (every
+  decisions, routed conflicts, this host's links with their states (and each live kept one's
+  `link`), the visit rows (every
   one, newest first), how many of them are openings and the newest one's time, and the history. `POST /api/orgs/:id/people/:pid/links/revoke
   {sessionId?, n?}` turns off one link (both given) or every link of theirs (neither) and answers
   the page. `GET /api/orgs/:id/people/:pid/preview?session=<sid>` answers the preview's view,

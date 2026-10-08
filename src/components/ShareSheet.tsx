@@ -24,6 +24,9 @@ import {
   imagesBlocked,
   isShareChanged,
   isStalePreview,
+  copyableLink,
+  linkMoved,
+  listSessionShares,
   modeLine,
   sliceLine,
   openedLine,
@@ -230,7 +233,8 @@ export function ImagesShared(props: { count: number; url(n: number): string; onS
   );
 }
 
-/** Freshly minted links, each shown once with Copy Link, and the warning when they may not open. */
+/** Freshly minted links, each with Copy Link, and the warning when they may not open. A live one
+    stays copyable afterwards from its recipient row. */
 export function MintedLinks(props: { links: SessionShareLink[]; warning?: string }) {
   return (
     <div class="stack-2">
@@ -247,7 +251,6 @@ export function MintedLinks(props: { links: SessionShareLink[]; warning?: string
           )}
         </For>
       </ul>
-      <p class="usage-note text-muted">We keep only a fingerprint of each link. If one is lost, Get New Link makes another.</p>
       <Show when={props.warning}>
         {(w) => (
           <Banner
@@ -293,10 +296,21 @@ function ManageShare(props: {
   const [stale, setStale] = createSignal(false);
   const stopped = () => !!s().stoppedAt;
 
+  /** The share as the host has it now (a recipient relinked elsewhere): the rows are replaced whole. */
+  const rereadShare = async () => {
+    try {
+      const fresh = (await listSessionShares(props.host, s().sessionId)).find((x) => x.id === s().id);
+      if (fresh) props.onChanged(fresh);
+    } catch {
+      // the next activity read tries again; a moved row keeps its Copy Link hidden until then
+    }
+  };
   const readActivity = async () => {
     try {
       const a = await shareActivity(props.host, s().id);
       setActivity(new Map(a.recipients.map((r) => [r.recipientId, r])));
+      // A row whose newest link is not the one it shows (relinked, turned off or stopped elsewhere): read the share again at once.
+      if (s().recipients.some((r) => linkMoved(r, a.recipients.find((x) => x.recipientId === r.id)))) void rereadShare();
     } catch {
       // the rows keep the share's own presence and counts
     }
@@ -479,7 +493,7 @@ function ManageShare(props: {
           <Show when={fresh()}>
             {(f) => (
               <section class="stack-2" aria-label="New links">
-                <h3 class="text-eyebrow">{f().links.length === 1 ? "New link · shown once" : `${f().links.length} new links · shown once`}</h3>
+                <h3 class="text-eyebrow">{f().links.length === 1 ? "New link" : `${f().links.length} new links`}</h3>
                 <MintedLinks links={f().links} warning={f().warning} />
               </section>
             )}
@@ -678,6 +692,8 @@ function RecipientRow(props: {
   const opened = () => props.activity?.opened ?? r().opened;
   const lastAt = () => props.activity?.lastAt ?? r().lastAt;
   const visits = createMemo(() => props.activity?.visits ?? []);
+  /** The row's own link, while it is live, kept, and still the recipient's newest (§app.session-share/sheet). */
+  const copyable = () => copyableLink(r(), props.activity);
   return (
     <li class="list-row share-recipient" classList={{ "share-recipient-off": r().state !== "live" }}>
       <div class="list-main">
@@ -710,6 +726,9 @@ function RecipientRow(props: {
       </div>
       <Show when={r().state !== "off"}>
         <div class="share-recipient-actions">
+          <Show when={copyable()}>
+            {(link) => <CopyButton label="Copy Link" title={r().anyone ? "Copy this link" : `Copy ${r().label}'s link`} text={link} onCopy={(t) => copyText(t, "Link copied.")} />}
+          </Show>
           <button type="button" class="button button-sm" aria-disabled={props.busy ? "true" : undefined} title="A new link for them. This one stops working." onClick={() => props.onRelink()}>
             Get New Link
           </button>

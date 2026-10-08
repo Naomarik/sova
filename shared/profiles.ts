@@ -6,8 +6,12 @@
  */
 
 /** Removable capabilities, in the order every list shows them. */
-export const REMOVABLE = ["shell", "edit", "workers", "web", "worktrees", "links", "timers"] as const;
+export const REMOVABLE = ["shell", "edit", "workers", "web", "worktrees", "timers"] as const;
 export type Removable = (typeof REMOVABLE)[number];
+/** Removal names an older build had, still accepted in a profile file and a session's copy and read
+    as if absent: `links` (the link tools are no capability now; only a link member session has them,
+    §mesh.links/tools). */
+export const RETIRED_REMOVABLE: readonly string[] = ["links"];
 
 /** Grantable session powers, in order. */
 export const GRANTABLE = ["sessions.read", "sessions.message", "sessions.all"] as const;
@@ -20,16 +24,14 @@ export const CAPABILITY_TOOLS: Record<Removable, readonly string[]> = {
   workers: ["agent_*", "team_*"],
   web: ["web_search", "fetch_content", "get_search_content", "source_check"],
   worktrees: ["worktree"],
-  links: ["link_*"],
   timers: ["wake_nudge"],
 };
 
-/** Every tool the `*` groups hold today (pi-config's subagents and link extensions), so a runtime
+/** Every tool the `*` groups hold today (pi-config's subagents extension), so a runtime
     excludes them by exact name even when an extension registers one after load. */
 export const KNOWN_REMOVABLE_TOOLS = [
   "agent_spawn", "agent_resume", "agent_models", "agent_list", "agent_transcript", "agent_steer", "agent_kill", "agent_wait",
   "team_create", "team_add", "team_eject", "team_list",
-  "link_members", "link_send", "link_inbox", "link_offer", "link_accept", "link_decline", "link_offers",
 ] as const;
 
 /** The tools each grant adds (registered by the server's `sova-session-powers` extension). */
@@ -46,7 +48,6 @@ export const CAPABILITY_LABEL: Record<Removable | Grantable, string> = {
   workers: "Workers & teams",
   web: "Web",
   worktrees: "Worktrees",
-  links: "Mesh links",
   timers: "Timers",
   "sessions.read": "Read other sessions",
   "sessions.message": "Message other sessions",
@@ -251,14 +252,14 @@ export function profileFileError(raw: unknown): string | null {
   const o = raw as Record<string, unknown>;
   const unknown = Object.keys(o).filter((k) => !PROFILE_FIELDS.includes(k));
   if (unknown.length) return `Unknown field${unknown.length > 1 ? "s" : ""} ${unknown.map((k) => `"${k}"`).join(", ")}. Known: ${PROFILE_FIELDS.join(", ")}.`;
-  const list = (k: "remove" | "grant", known: readonly string[]) => {
+  const list = (k: "remove" | "grant", known: readonly string[], retired: readonly string[] = []) => {
     const v = o[k];
     if (v === undefined) return null;
     if (!Array.isArray(v) || v.some((x) => typeof x !== "string")) return `"${k}" must be a list of names.`;
-    const bad = (v as string[]).filter((x) => !known.includes(x));
+    const bad = (v as string[]).filter((x) => !known.includes(x) && !retired.includes(x));
     return bad.length ? `"${k}" has unknown name${bad.length > 1 ? "s" : ""} ${bad.map((x) => `"${x}"`).join(", ")}. Known: ${known.join(", ")}.` : null;
   };
-  const listError = list("remove", REMOVABLE) ?? list("grant", GRANTABLE);
+  const listError = list("remove", REMOVABLE, RETIRED_REMOVABLE) ?? list("grant", GRANTABLE);
   if (listError) return listError;
   for (const k of ["label", "description", "model", "firstMessage", "playbook"] as const)
     if (o[k] !== undefined && typeof o[k] !== "string") return `"${k}" must be text.`;

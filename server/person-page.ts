@@ -12,7 +12,9 @@ import { operatorName, orgDir, OrgError, readHistory, readOrg, readProjects, rea
 import { listDecisions } from "./reconcile";
 import { opaqueSenders, readView } from "./share/hub";
 import { readVisits } from "./visits";
+import { tokenFor } from "./link-tokens";
 import { ownerLinksOfPerson } from "./owner";
+import { linkUrl } from "./share/listener";
 import { ownerLinksOf } from "./person-links";
 import { personSends } from "./outreach/log";
 
@@ -288,6 +290,9 @@ export function personLinks(ctx: Ctx, pid: string, visits: (VisitRow & { offerId
       const row = rows.get(l.sessionId);
       const mine = visits.filter((v) => v.kind === "visit" && !v.bot && linkOfVisit(all, v) === l);
       const current = !!row && row.handoffs[row.handoffs.length - 1]?.n === l.n && !linkDead(l, now);
+      const st = linkState(l, row, now);
+      // While it can still open (writes or reads) and its token is kept, the link itself (§app.session-share/link).
+      const token = st.state === "writes" || st.state === "reads" ? tokenFor(l.hash, "h") : null;
       return {
         sessionId: l.sessionId,
         publicTitle: row?.publicTitle ?? "",
@@ -296,10 +301,11 @@ export function personLinks(ctx: Ctx, pid: string, visits: (VisitRow & { offerId
         createdAt: l.createdAt,
         expiresAt: l.expiresAt,
         ...(l.revokedAt ? { revokedAt: l.revokedAt } : {}),
-        ...linkState(l, row, now),
+        ...st,
         current,
         visits: mine.length,
         ...(mine[0] ? { lastVisitAt: mine[0].at } : {}),
+        ...(token ? { link: linkUrl("h", token) } : {}),
       };
     })
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));

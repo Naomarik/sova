@@ -23,8 +23,9 @@ StableID or name from its env.
 From the laptop, with `--ssh-key` installed: `scripts/mesh-termux/deploy.sh [--ssh <user@host>] [--ssh-port <n>] [--rev
 <sha>] [-- <install.sh options>]` streams `git archive` of a commit of the laptop's checkout over ssh and runs that
 commit's install.sh with it (`--source-url file://…`; the target defaults to PHONE / PHONE_PORT in `local.env`). The
-host menu's resync (`§mesh.peers/resync`) runs it for a phone that is behind, with a recipe in the laptop's
-`~/.pi/agent/sova/mesh-resync.json`:
+host menu's resync (`§mesh.peers/resync`) runs it for a phone that is behind: the phone whose id is `PHONE_ID` in
+`local.env` needs nothing more (Sova reads the file as plain `KEY=value` lines, never sourcing it; deploy.sh takes PHONE
+from it). A recipe in the laptop's `~/.pi/agent/sova/mesh-resync.json`, keyed by the peer id, wins over that:
 
     {"hosts": {"phone": {"kind": "termux", "ssh": "u0_a123@100.64.0.3", "sshPort": 8022}}}
 

@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { OPERATOR } from "../../shared/baton";
 import { composeMessage, notSentReason, OUTREACH_NOT_READY, waDigits, type ChannelId, type LinkRef, type OutreachLogLine, type SendAnswer, type SendOutcome } from "../../shared/outreach";
 import { batonById, currentOffer, targetOfPerson } from "../baton";
+import { holdSendKey, releaseSendKey } from "../baton-links";
 import { hostOf, heldAt, onOrgHostOpened, refusalError, type Effect, type OrgHostApi } from "../org-engine";
 import type { Envelope } from "../org-envelope";
 import { OrgError, placementSid, readRoster } from "../orgs";
@@ -101,6 +102,17 @@ function setPending(key: string, v: { kind: string; minted: Record<string, strin
 // ---- the send --------------------------------------------------------------------------------------
 
 export async function send(input: SendInput, channel: Channel = channels.whatsapp): Promise<SendResult> {
+  // What this send mints is never handed out again (Get Link kept, another send) until it settles:
+  // a definite failure turns it off.
+  holdSendKey(input.key);
+  try {
+    return await sendStep(input, channel);
+  } finally {
+    releaseSendKey(input.key);
+  }
+}
+
+async function sendStep(input: SendInput, channel: Channel): Promise<SendResult> {
   wireReceipts();
   const { orgId, projectId, personId, link, by, key } = input;
   const note = input.note?.trim() || undefined;

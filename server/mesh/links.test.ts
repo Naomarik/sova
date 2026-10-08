@@ -44,6 +44,9 @@ interface Host {
   app: Hono;
   links: MeshLinks;
   sessions: Map<string, SessionSummary>;
+  /** Runs the earlier build that linked only link member sessions: refuses a new link copy whose
+      member here is one of these session ids, as that build did. */
+  gated: Set<string>;
   held: Set<string>;
   delivered: Array<{ path: string; framed: string }>;
   answer: PeerLinkMessageResult;
@@ -52,6 +55,8 @@ interface Host {
   old: boolean;
   /** Serves only summary?id=, no by-id (an older build). */
   noById: boolean;
+  /** The mesh is off on this host (mesh.enabled() false). */
+  meshOff?: boolean;
   peerUp: Array<(peerId: string) => void>;
   clock: number;
   /** Each local session's sandbox, as linkSandboxOf would answer. */
@@ -128,6 +133,7 @@ function makeHost(id: string, label: string, opts: Partial<Host> = {}): Host {
     app: new Hono(),
     links: new MeshLinks(),
     sessions: new Map(),
+    gated: new Set(),
     held: new Set(),
     delivered: [],
     answer: { state: "started" },
@@ -152,7 +158,7 @@ function makeHost(id: string, label: string, opts: Partial<Host> = {}): Host {
   h.app.get("/api/sessions/summary", (c) => byId(c, c.req.query("id") ?? ""));
   if (!h.noById) h.app.get("/api/sessions/by-id/:id", (c) => byId(c, c.req.param("id")));
   const mesh = {
-    enabled: () => true,
+    enabled: () => !h.meshOff,
     peers: () =>
       Object.values(hosts)
         .filter((o) => o !== h && !h.hidePeers.has(o.id))
@@ -206,6 +212,19 @@ function makeHost(id: string, label: string, opts: Partial<Host> = {}): Host {
     // Packs and pulls through the in-process tar; the host's own: links-transfer.integration.test.ts.
     tar: inProcessTar,
   };
+  // The earlier build's own refusal, word for word, in front of this host's routes.
+  h.app.post("/api/peer/links", async (c, next) => {
+    const b = (await c.req.raw.clone().json()) as { link?: { id: string; endedAt?: number; members: Array<{ sessionId: string }> } };
+    const mine = b.link?.members.find((m) => h.gated.has(m.sessionId));
+    if (!mine || b.link!.endedAt !== undefined || h.links.get(b.link!.id)) return next();
+    return c.json(
+      {
+        error: `Session ${mine.sessionId} on this host: it was not created with the link tools, so it can't be a link member; create the member with sova_create_session and link: true, then link that session.`,
+        reason: "not-link-member",
+      },
+      409,
+    );
+  });
   if (h.old) h.links.configure({ ...deps, mesh });
   else mountLinks(h.app, mesh as never, deps, h.links);
   h.app.all("/api/*", (c) => c.json({ error: "Not found" }, 404));
@@ -334,6 +353,92 @@ describe("the record (§mesh.links/record)", () => {
     r = await act<LinkError>(A, "POST", "/api/mesh/links", { members: [{ session: "sa" }, { host: "zz", session: "sb" }] });
     assert.equal(r.json.reason, "unreachable");
     assert.equal(A.links.all().length, 0);
+  });
+
+  test("any session can be a member: none was created with link: true, on this host or the peer", async () => {
+    // The harness writes no marker at all: both members are ordinary sessions.
+    const v = await link();
+    assert.equal(v.link.members.length, 2);
+    assert.ok(A.links.get(v.link.id) && B.links.get(v.link.id), "kept on both hosts");
+    assert.equal(A.links.inLiveLink("sa"), true);
+    assert.equal(B.links.inLiveLink("sb"), true);
+  });
+
+  for (const [what, extra, reason] of [
+    ["open in a terminal", { live: { pid: 9, status: "x" } }, "tui-live"],
+    ["archived", { archived: true }, "archived"],
+    ["an Overseer", { overseer: true }, "special"],
+  ] as const) {
+    test(`a peer refuses a new link's copy whose own member is ${what}, and no link is made`, async () => {
+      // The maker's lookup sees an ordinary session; the member changes before its copy lands, so
+      // only the peer's own check can catch it.
+      A.onFetch = (peer, path) => {
+        if (peer === "b" && path === "/api/peer/links") B.sessions.set("sb", summary("sb", extra as Partial<SessionSummary>));
+      };
+      const r = await act<LinkError>(A, "POST", "/api/mesh/links", { members: [{ session: "sa" }, { host: "b", session: "sb" }] });
+      assert.equal(r.status, 409);
+      assert.equal(r.json.reason, reason);
+      assert.equal(r.json.member, 1);
+      assert.match(r.json.error, new RegExp(`^Member 2 \\(b/sb\\): Beta refused the link \\(${reason}\\): Session sb on this host: it is`));
+      assert.equal(B.links.all().length, 0, "the peer kept nothing");
+      assert.ok(A.links.all().every((l) => l.endedAt !== undefined), "no live link left here");
+      assert.equal(A.links.inLiveLink("sa"), false);
+    });
+  }
+
+  test("a peer on the gated build refuses an unmarked member: the link fails, saying how to make one there", async () => {
+    B.gated.add("sb");
+    let liveWhileTold: boolean | undefined;
+    A.onFetch = (peer, path) => {
+      if (peer === "b" && path === "/api/peer/links") liveWhileTold = A.links.inLiveLink("sa");
+    };
+    const r = await act<LinkError>(A, "POST", "/api/mesh/links", { members: [{ session: "sa" }, { host: "b", session: "sb" }] });
+    assert.equal(r.status, 409);
+    assert.equal(r.json.reason, "not-link-member");
+    assert.equal(r.json.member, 1);
+    assert.equal(
+      r.json.error,
+      "Member 2 (b/sb): Beta runs an earlier build that links only sessions created with link: true: create the member there with sova_create_session host + link: true, or update Beta.",
+    );
+    assert.equal(liveWhileTold, false, "not live while the peer's answer is out");
+    assert.equal(A.links.inLiveLink("sa"), false, "nor after the refusal");
+    assert.ok(A.links.all().every((l) => l.endedAt !== undefined), "no live link left here");
+    assert.equal(B.links.all().length, 0, "nor there");
+  });
+
+  test("inLiveLink: live only once every copy is answered, never once ended, only for this host's member, never with the mesh off", async () => {
+    let liveWhileTold: boolean | undefined;
+    A.onFetch = (peer, path) => {
+      if (peer === "b" && path === "/api/peer/links") liveWhileTold = A.links.inLiveLink("sa");
+    };
+    assert.equal(A.links.inLiveLink("sa"), false, "in no link yet");
+    const v = await link();
+    assert.equal(liveWhileTold, false, "a link still being made is not live");
+    assert.equal(A.links.inLiveLink("sa"), true);
+    assert.equal(A.links.inLiveLink("sb"), false, "the peer's member is not this host's");
+    assert.equal(A.links.inLiveLink("nope"), false);
+    A.meshOff = true;
+    assert.equal(A.links.inLiveLink("sa"), false, "the mesh off: no live link");
+    A.meshOff = false;
+    await act(A, "POST", `/api/mesh/links/${v.link.id}/end`);
+    assert.equal(A.links.inLiveLink("sa"), false, "ended");
+    await settle();
+    assert.equal(B.links.inLiveLink("sb"), false, "ended on the peer too");
+    assert.equal(new MeshLinks().inLiveLink("sa"), false, "an unwired store: none");
+  });
+
+  test("a link that already exists keeps its member whatever it became: its copy is never refused again", async () => {
+    const v = await link();
+    B.gated.add("sb");
+    B.sessions.set("sb", summary("sb", { live: { pid: 9, status: "x" } }));
+    // The creating host sends the same live copy again (a retry after a lost answer).
+    const res = await B.app.request("/api/peer/links", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ link: v.link, you: B.nodeId }) }, { meshPeer: entryOf(A, B) });
+    assert.equal(res.status, 200);
+    assert.equal(B.links.inLiveLink("sb"), true, "still live there");
+    B.sessions.set("sb", summary("sb"));
+    const sent = await act<{ deliveries: Array<{ state: string }> }>(A, "POST", "/api/mesh/links/send", { session: "sa", text: "still here?" });
+    assert.equal(sent.status, 200);
+    assert.notEqual(sent.json.deliveries[0]!.state, "refused", "a message still reaches it");
   });
 
   test("an organization's session is refused, on this host or a peer", async () => {

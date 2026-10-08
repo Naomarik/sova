@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { OwnerPageInfo } from "../../shared/orgs";
-import { deleteOwnerLine, ownerChangeLine, ownerLinkLine, rotateLine, updateMeta } from "./owner-card";
+import { deleteOwnerLine, ownerChangeLine, ownerLinkActions, ownerLinkLine, rotateLine, updateMeta } from "./owner-card";
 
 const NOW = Date.parse("2026-09-27T12:00:00Z");
 const DAY = 86_400_000;
@@ -40,4 +40,15 @@ test("an update's log line says who posted it", () => {
 
 test("an owner set through the Overseer: \"Set by you, via the Overseer\"", () => {
   assert.equal(ownerChangeLine([{ at: at(-2), from: null, to: "p_kim00001", why: "operator", via: "overseer" }], NOW), "Set by you, via the Overseer 2d ago.");
+});
+
+test("the owner card's link buttons: Copy Owner Link while the live link is kept, else Get Owner Link (asking first over a live one); Get New Owner Link and Delete while live (§app.owner-page/controls)", () => {
+  const link = (state: "live" | "expired" | "off", url?: string) => ({ state, createdAt: at(-1), expiresAt: at(80), ...(url ? { url } : {}) });
+  const URL = "https://share.example.invalid/i/abc";
+  assert.deepEqual(ownerLinkActions({ person: kim, link: link("live", URL) }), { copy: URL, get: null, rotate: true, remove: true });
+  assert.deepEqual(ownerLinkActions({ person: kim, link: link("live") }), { get: "ask", rotate: true, remove: true }, "live, made before tokens were kept");
+  assert.deepEqual(ownerLinkActions({ person: kim, link: link("expired") }), { get: "now", rotate: false, remove: false });
+  assert.deepEqual(ownerLinkActions({ person: kim, link: link("off") }), { get: "now", rotate: false, remove: false });
+  assert.deepEqual(ownerLinkActions({ person: kim, link: null }), { get: "now", rotate: false, remove: false });
+  assert.deepEqual(ownerLinkActions(undefined), { get: "now", rotate: false, remove: false });
 });

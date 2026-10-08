@@ -42,6 +42,10 @@ import { operatorEnvelopeOf } from "./projects/spaces";
 import { orgConfirmLookup, orgTools } from "./overseer-org-tools";
 import { resolveAnyProject, resolveOrg, resolvePerson } from "./overseer-org-view";
 import { contactRedactor, loggedArgs } from "./overseer-org-view";
+import { linkState as shareLinkState, listShares, type ShareLinkRecord } from "./session-shares";
+import { tokenFor } from "./link-tokens";
+import { orgLinkRows } from "./shares-overview";
+import { linkUrl, shareState } from "./share/listener";
 import type { PeerLinkRead } from "../shared/mesh-links";
 import { cut, Refusal, renderTranscript, sessionRef, text, writableRefusal } from "./session-guards";
 import { findProfile } from "./profile-sources";
@@ -725,6 +729,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
     } else body = { cwd: p.cwd ?? "" };
     if ((typeof p.profile === "string" && p.profile) || (p.profile && typeof p.profile === "object")) body.profile = p.profile;
     if (p.subagent_profile !== undefined) body.subagent_profile = p.subagent_profile;
+    if (p.link === true) body.link = true;
     const created = await call("POST", "/api/sessions", body);
     if (created.status !== 201) throw failed(created, "Creating the session");
     const s = created.json as SessionSummary;
@@ -776,7 +781,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
     // what the list will call it, so the link says that.
     const title = typeof p.title === "string" && p.title.trim() ? p.title.trim() : hasPrompt ? cut(p.prompt, 60) : s.title;
     const prof = s.profile ? { id: s.profile.id, label: s.profile.label, icon: s.profile.icon } : undefined;
-    const said = [`Created ${link({ id: s.id, title })} in ${whereOf(s)}${prof ? ` from the ${prof.label} profile` : ""}${hasPrompt ? " and sent the first prompt" : ""}.`, ...notes];
+    const said = [`Created ${link({ id: s.id, title })} in ${whereOf(s)}${prof ? ` from the ${prof.label} profile` : ""}${p.link === true ? " as a link member" : ""}${hasPrompt ? " and sent the first prompt" : ""}.`, ...notes];
     return { content: text(said.join("\n")), details: { id: s.id, path: s.path, title, ...(prof ? { profile: prof } : {}) } };
   }
 
@@ -797,6 +802,8 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
         notes.push(`Target ${p.target} is ${info.status} from ${peer.label}${info.error ? ` (${info.error})` : ""}; its first prompt may fail.`);
     } else body = { cwd: p.cwd ?? "" };
     if (p.subagent_profile !== undefined) body.subagent_profile = p.subagent_profile;
+    // A peer on an earlier build ignores it: every session there has the link tools.
+    if (p.link === true) body.link = true;
     const created = await peerCall(peer, "POST", "/api/sessions", body);
     if (created.status !== 201) throw failed(created, `Creating the session ${on}`);
     const s = created.json as SessionSummary;
@@ -828,7 +835,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
       host.startedOnPeer(peer.id, s.id, true);
     }
     const title = typeof p.title === "string" && p.title.trim() ? p.title.trim() : hasPrompt ? p.prompt : s.title;
-    const said = [`Created ${named(title)} ${where}${hasPrompt ? " and sent the first prompt" : ""}. It is on another host: sova:// links and the other session tools reach only this host's sessions, except sova_read_session and sova_link with host.`, ...notes];
+    const said = [`Created ${named(title)} ${where}${p.link === true ? " as a link member" : ""}${hasPrompt ? " and sent the first prompt" : ""}. It is on another host: sova:// links and the other session tools reach only this host's sessions, except sova_read_session and sova_link with host.`, ...notes];
     return { content: text(said.join("\n")), details: { id: s.id, path: s.path, host: peer.id } };
   }
 
@@ -918,6 +925,73 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
             lines.push(`Dialog ${d.id} (${d.method}): "${cut(d.title, 120)}"${d.message ? ` — ${cut(d.message, 200)}` : ""}${d.options ? ` · options: ${d.options.map((o) => JSON.stringify(o)).join(", ")}` : ""}`);
         } else if (s.pendingDialogs) lines.push("Dialogs pending.");
         return { content: text(lines.join("\n")), details: { id: s.id, path: s.path, dialogs: held?.dialogs ?? [] } };
+      }),
+    },
+    {
+      name: "sova_public_links",
+      label: "Public links",
+      description:
+        "This host's live public links, with their URLs, to give the user when they ask for one: session shares (/s/), gathering hand-offs (/h/) and organization owner pages (/i/). One line per live link: its kind; a share's title, recipient and share id; a hand-off's org, person, gathering title and number; an owner link's org and owner; then its expiry and URL. A link made before links were kept reads 'link not kept': the user gets a new one on its page. This host only. Give a link only to the user, never into another session or message.",
+      promptSnippet: "this host's live share, hand-off and owner links with their URLs (give one when the user asks)",
+      parameters: obj({
+        kind: str("session | handoff | owner (default all).", { enum: ["session", "handoff", "owner"] }),
+        session: str("Only this session's links: a session id (its shares, or a gathering session's hand-off links)."),
+        org: str("Only this organization's hand-off and owner links: its id or exact name."),
+      }),
+      execute: read(async (p, call) => {
+        const kind = p.kind as "session" | "handoff" | "owner" | undefined;
+        let orgId: string | undefined;
+        if (typeof p.org === "string" && p.org) {
+          try {
+            orgId = resolveOrg(p.org).id;
+          } catch (err) {
+            throw new Refusal(err instanceof Error ? err.message : String(err));
+          }
+        }
+        const session = typeof p.session === "string" && p.session ? ((await lookup(p.session).catch(() => null))?.id ?? p.session) : undefined;
+        const now = Date.now();
+        const day = (iso: string) => iso.slice(0, 10);
+        const lines: string[] = [];
+        let kept = 0;
+        if ((!kind || kind === "session") && !orgId) {
+          const { shares, links } = listShares(session);
+          for (const s of shares) {
+            const newest = new Map<string, ShareLinkRecord>();
+            for (const l of links) if (l.shareId === s.id) newest.set(l.recipientId, l);
+            for (const l of newest.values()) {
+              if (shareLinkState(l, s, now) !== "live") continue;
+              const token = tokenFor(l.hash, "s");
+              if (token) kept++;
+              lines.push(`- session share · "${cut(s.title, 80)}" · ${l.label} · ${s.id} · expires ${day(l.expiresAt)} · ${token ? linkUrl("s", token) : "link not kept"}`);
+            }
+          }
+        }
+        if (kind !== "session") {
+          for (const r of orgLinkRows(now)) {
+            if ((kind === "handoff" && r.kind !== "handoff") || (kind === "owner" && r.kind !== "owner")) continue;
+            if (orgId && r.orgId !== orgId) continue;
+            if (session && r.sessionId !== session) continue;
+            if (r.link) kept++;
+            const what = r.kind === "handoff" ? `hand-off · ${r.orgName} · ${r.personName} · "${cut(r.sessionTitle ?? "", 80)}" · hand-off #${r.n}` : `owner link · ${r.orgName} · ${r.personName}`;
+            lines.push(`- ${what} · expires ${day(r.expiresAt)} · ${r.link ?? "link not kept"}`);
+          }
+        }
+        const warning = shareState().warning;
+        const head = lines.length ? `${lines.length} live link${lines.length === 1 ? "" : "s"} on this host (${kept} with a URL).` : "No live public link on this host matches.";
+        // A read, but this one is logged: the tool and the counts, never a link (§app.overseer/tools).
+        logAction({
+          at: new Date().toISOString(),
+          overseerId: host.overseerId(),
+          toolCallId: call.toolCallId,
+          tool: "sova_public_links",
+          args: { kind: kind ?? null, session: session ?? null, org: orgId ?? null },
+          outcome: "ok",
+          note: `${lines.length} links, ${kept} with a URL`,
+        });
+        return {
+          content: text([head, ...lines, ...(warning && lines.length ? [`These links may not open from outside: ${warning}`] : [])].join("\n")),
+          details: { links: lines.length, kept },
+        };
       }),
     },
     {
@@ -1073,10 +1147,11 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
       // Its card reads the recorded result (EAGER_TOOLS): never a codemode script's call.
       exposure: "model-only",
       description:
-        "Start a new session in a local folder (cwd) or on a remote target (target + remote_cwd), optionally with a model, thinking level, mode, minor modes, title, group and a first prompt. The mode and minor modes are set before the first prompt is sent, so its first turn already runs in them; they apply to that session only. With host (a mesh peer's id) the session is made on that host (cwd is a folder there; no group). Counts against the per-turn cap on new sessions (and on prompts, when it has one). The first prompt runs with no browser attached: any extension dialog it raises falls back to its default.",
+        "Start a new session in a local folder (cwd) or on a remote target (target + remote_cwd), optionally with a model, thinking level, mode, minor modes, title, group and a first prompt. The mode and minor modes are set before the first prompt is sent, so its first turn already runs in them; they apply to that session only. With host (a mesh peer's id) the session is made on that host (cwd is a folder there; no group). With link: true it is a link member session, the only kind sova_link accepts: it has the link tools from its first turn, and no other session ever gets them. Counts against the per-turn cap on new sessions (and on prompts, when it has one). The first prompt runs with no browser attached: any extension dialog it raises falls back to its default.",
       promptSnippet: "start a session (folder, target or mesh peer; model, mode, minor modes, title, group, first prompt)",
       parameters: obj({
         host: str("A mesh peer's id, to create the session on that host; omit for this host."),
+        link: bool("true: create it as a link member session, with the link tools from its first turn: for a session you create only to link (create, sova_link, then send its task), so nothing restarts. Only at creation; an existing session can still be linked, and gets the tools as it joins."),
         cwd: str("Absolute folder (on host, when given)."),
         target: str("Remote target name (instead of cwd)."),
         remote_cwd: str("Absolute folder on the target."),

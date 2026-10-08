@@ -39,14 +39,17 @@ export type { PiExtensionFactory, PiLoaderOptions, PiModelRuntime, PiToolDefinit
  *   pi-config/extensions/claude-code/provider/index.ts CLAUDE_PROVIDER_FLAG).
  * - `review`: adversarial review (`adversarial-review`, pi-config/extensions/mode/index.ts REVIEW_FLAG).
  * - `link`: this server's bound origin and its per-install token for the `link` extension (`sova-link`,
- *   `sova-link-token`). In-process only: never argv, never env.
+ *   `sova-link-token`), and which of its tools the session gets (`sova-link-tools`): `member`, all seven
+ *   from its start; `legacy`, all seven once the server's `sova:link-live` hook says it is in a live
+ *   link, else only those its transcript already declares, until a compaction in no live link drops
+ *   them (pi-config/extensions/link/index.ts). In-process only: never argv, never env.
  */
 export interface OpenFlags {
   outline?: boolean;
   target?: string;
   claudeCode?: boolean;
   review?: boolean;
-  link?: { origin: string; token: string };
+  link?: { origin: string; token: string; tools: "member" | "legacy" };
 }
 
 /** The flags as pi's extension flag values, in the order they have always been set. */
@@ -58,6 +61,7 @@ export function extensionFlagValues(f: OpenFlags): Map<string, boolean | string>
   if (f.link) {
     flags.set("sova-link", f.link.origin);
     flags.set("sova-link-token", f.link.token);
+    flags.set("sova-link-tools", f.link.tools);
   }
   return flags;
 }

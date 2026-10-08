@@ -52,8 +52,8 @@ import { cleanSessionTitle, readSessionTitleRecords, SESSION_TITLE_MAX, setSessi
 import { rowsOf } from "./transcript";
 import { readBranch, unknownEntries } from "./harness/pi/reader";
 import { contextOfBranch } from "./harness/pi/usage";
-import { appendToClosedFile, createSessionFile } from "./harness/pi/state";
-import { SUBAGENT_PROFILE } from "./harness/state-kinds";
+import { appendToClosedFile, createSessionFile, type NewSessionFile } from "./harness/pi/state";
+import { LINK_MEMBER, SUBAGENT_PROFILE } from "./harness/state-kinds";
 import { checkTmpImage, deleteAttachment, MAX_ATTACHMENT_BYTES, readTmpImage, saveUploadedImage, sessionAttachmentsDir, UploadError } from "./attachments";
 import { listFolders } from "./folders";
 import { listProjectFiles } from "./files";
@@ -95,7 +95,7 @@ import { meshApi, meshRoutes } from "./mesh";
 import { mountDetails } from "./mesh/details";
 import { mountResync } from "./mesh/resync";
 import { probePeer } from "./mesh/hello";
-import { meshLinks } from "./mesh/links";
+import { LINK_LIVE, meshLinks } from "./mesh/links";
 import { mountLinks } from "./mesh/links-routes";
 import { deliverLinkMessage, heldSessionPath, notifyLinksChanged, setLinksSource } from "./link-delivery";
 import { linkSandbox, linkSandboxOf } from "./link-sandbox";
@@ -226,7 +226,7 @@ export function buildApp(deps: AppDeps) {
   /** Create a new empty webapp-owned session in `cwd` (an existing absolute directory) → 201 SessionSummary.
       With `start`, it is made with that profile (§app.session-list/profile-shelf) and, given one, its
       first message is sent; a One at a time profile live elsewhere refuses before anything is made. */
-  async function createWebSession(c: Context, cwd: string, start?: { profile: ProfilePick; prompt?: string; by?: "overseer" | "start" }, subagentProfile?: string) {
+  async function createWebSession(c: Context, cwd: string, start?: { profile: ProfilePick; prompt?: string; by?: "overseer" | "start" }, subagentProfile?: string, linkMember = false) {
     let pick: ProfilePick | undefined = start?.profile;
     if (start) {
       // Resolved against the new session's own project (§chat.profiles/projects); unapproved refuses.
@@ -238,7 +238,10 @@ export function buildApp(deps: AppDeps) {
       }
       if (r.listed) pick = { source: r.listed.source, id: r.listed.id };
     }
-    const made = await createWebSessionFile(c, cwd);
+    // A link member session (§mesh.links/tools): its marker is written with the header, so its
+    // runtime has the link tools from its first open (any other session gets them only when it joins
+    // a live link, which restarts a claude-code chat's CLI).
+    const made = await createWebSessionFile(c, cwd, linkMember ? [[LINK_MEMBER, { v: 1 }]] : undefined);
     if (made instanceof Response) return made;
     if (subagentProfile !== undefined) appendToClosedFile(made.path, SUBAGENT_PROFILE, { v: 1, profile: subagentProfile });
     if (!start || !pick) return c.json(made, 201);
@@ -251,12 +254,12 @@ export function buildApp(deps: AppDeps) {
     return c.json((await getSessionSummary(made.path)) ?? made, 201);
   }
 
-  async function createWebSessionFile(c: Context, cwd: string) {
+  async function createWebSessionFile(c: Context, cwd: string, seed?: NewSessionFile["seed"]) {
     // pi defers writing until the first user or assistant message; the header is written now so the session
     // exists on disk (listable, watchable, openable by path).
     let made: { path: string; id: string };
     try {
-      made = createSessionFile({ cwd: resolve(cwd) });
+      made = createSessionFile({ cwd: resolve(cwd), ...(seed ? { seed } : {}) });
     } catch (err) {
       const noFile = "SessionManager did not produce a session file";
       if (err instanceof Error && err.message === noFile) return c.json({ error: noFile }, 500);
@@ -274,9 +277,10 @@ export function buildApp(deps: AppDeps) {
 
   // { cwd } for a local session, or { target, remoteCwd } for a remote one: its cwd is the local
   // placeholder mirroring the remote path (server/targets.ts), created here; chat-manager passes the
-  // `target` flag, so the remote extension runs every tool on the far side.
+  // `target` flag, so the remote extension runs every tool on the far side. `link: true` makes it a
+  // link member session (§app.overseer/links-tools): only the Overseer's create sends it.
   app.post("/api/sessions", async (c) => {
-    let body: { cwd?: unknown; target?: unknown; remoteCwd?: unknown; profile?: unknown; prompt?: unknown; subagent_profile?: unknown };
+    let body: { cwd?: unknown; target?: unknown; remoteCwd?: unknown; profile?: unknown; prompt?: unknown; subagent_profile?: unknown; link?: unknown };
     try {
       body = await c.req.json();
     } catch {
@@ -287,6 +291,8 @@ export function buildApp(deps: AppDeps) {
       try { subagentProfile = requireSubagentProfile(body.subagent_profile); }
       catch (err) { return c.json({ error: String(err instanceof Error ? err.message : err) }, 400); }
     }
+    if (body.link !== undefined && typeof body.link !== "boolean") return c.json({ error: "link must be true or false" }, 400);
+    const linkMember = body.link === true;
     if (body.target !== undefined) {
       if (!isTargetName(body.target)) return c.json({ error: "target must be a target name" }, 400);
       const remoteCwd = normalizeRemotePath(typeof body.remoteCwd === "string" ? body.remoteCwd.trim() : "");
@@ -295,12 +301,12 @@ export function buildApp(deps: AppDeps) {
       if (!target) return c.json({ error: `Unknown target: ${body.target}` }, 404);
       const dir = targetDir(body.target, remoteCwd);
       mkdirSync(dir, { recursive: true });
-      return createWebSession(c, dir, startOf(body, !!overseerSender(c.req.header(OVERSEER_SENDER_HEADER))), subagentProfile);
+      return createWebSession(c, dir, startOf(body, !!overseerSender(c.req.header(OVERSEER_SENDER_HEADER))), subagentProfile, linkMember);
     }
     const cwd = typeof body.cwd === "string" ? body.cwd.trim() : "";
     const cwdError = await validateNewSessionCwd(cwd);
     if (cwdError) return c.json({ error: cwdError }, 400);
-    return createWebSession(c, cwd, startOf(body, !!overseerSender(c.req.header(OVERSEER_SENDER_HEADER))), subagentProfile);
+    return createWebSession(c, cwd, startOf(body, !!overseerSender(c.req.header(OVERSEER_SENDER_HEADER))), subagentProfile, linkMember);
   });
 
   /** POST /api/sessions's optional `profile` (an id or `{source, id}`) and `prompt`: the shelf's Run and Start, the Overseer. */
@@ -1526,6 +1532,9 @@ export function buildApp(deps: AppDeps) {
     homedir,
     protectedRoots: () => [stateRoot(), SESSIONS_DIR],
   });
+  // The link extension asks this, by session id, whether a hosted session is in a live link now:
+  // a session that joins one gets the link tools at its next request (§mesh.links/tools).
+  (globalThis as Record<symbol, unknown>)[LINK_LIVE] = (id: string) => meshLinks.inLiveLink(id);
   // The `links` chat frame: a member's partners; the Overseer's pane, every link on this host.
   const linkedAgents = async (id: string, path: string) => meshLinks.linkedAgents(id, { overseer: !!(await getSessionSummary(path))?.overseer });
   setLinksSource(linkedAgents);

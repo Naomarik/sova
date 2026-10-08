@@ -113,6 +113,16 @@ const hex = (n: number) => randomBytes(n).toString("hex");
 export const newLinkId = () => `lk_${hex(8)}`;
 export const newLinkMessageId = () => `lm_${hex(8)}`;
 
+/** `globalThis[LINK_LIVE](sessionId)`: whether a local session is in a live link now (inLiveLink),
+    for the link extension, which imports nothing from the server (installed by app.ts). */
+export const LINK_LIVE = Symbol.for("sova:link-live");
+
+/** A peer on the build that linked only sessions created with `link: true` refused its member
+    (its reason `not-link-member`, §mesh.links/record), as the Overseer can act on it. */
+export const NOT_LINK_MEMBER = "not-link-member";
+export const gatedPeer = (label: string) =>
+  `runs an earlier build that links only sessions created with link: true: create the member there with sova_create_session host + link: true, or update ${label}`;
+
 /** Why a session can't be a link member, or null (§mesh/links intro). */
 export function memberRefusal(s: SessionSummary): { reason: NonNullable<LinkError["reason"]>; why: string } | null {
   if (s.overseer) return { reason: "special", why: "it is an Overseer conversation" };
@@ -197,6 +207,9 @@ export class MeshLinks {
   private flushing: Promise<void> | null = null;
   /** Links whose creation was refused while their held copies are taken out: a drain skips them. */
   private readonly refusedCopies = new Set<string>();
+  /** Links this host made whose copies the other member hosts are still taking: not live yet for
+      the link tools (inLiveLink), so a link a peer refuses never turns them on here. */
+  private readonly making = new Set<string>();
   private readonly memberCache = new Map<string, { at: number; value: Promise<MemberLookup> }>();
   /** The last answer about each member, however old: what a brief view shows. */
   private readonly lastKnown = new Map<string, { at: number; value: MemberLookup }>();
@@ -458,6 +471,13 @@ export class MeshLinks {
   linksOf(sessionId: string): MeshLink[] {
     return this.load().links.filter((l) => this.localMember(l)?.sessionId === sessionId);
   }
+  /** Whether a local session is a member of a live link now (§mesh.links/tools): one not ended and
+      not still being made. False while the mesh is off. Synchronous: the link extension asks at
+      every step of a run (`Symbol.for("sova:link-live")`, app.ts). */
+  inLiveLink(sessionId: string): boolean {
+    if (!this.d?.mesh.enabled()) return false;
+    return this.linksOf(sessionId).some((l) => l.endedAt === undefined && !this.making.has(l.id));
+  }
   private localSessions(link: MeshLink): string[] {
     const m = this.localMember(link);
     return m ? [m.sessionId] : [];
@@ -644,7 +664,22 @@ export class MeshLinks {
     const self = await this.ensureSelfNodeId();
     if (!self) throw new LinkActError(409, { error: "This host doesn't know its own node identity yet, and no peer answered to tell it.", reason: "internal" });
     const link: MeshLink = { id: newLinkId(), createdAt: this.now(), createdBy: self, members };
-    this.keep(link);
+    // Not live for the link tools until every copy is answered and a refusal has ended it: a local
+    // member must never turn them on for a link that is not made (§mesh.links/tools).
+    this.making.add(link.id);
+    try {
+      this.keep(link);
+      await this.sendCopies(link, asked);
+    } finally {
+      this.making.delete(link.id);
+    }
+    this.notify(this.localSessions(link));
+    return this.view(link);
+  }
+
+  /** Send a new link's copy to every other member host; a final refusal ends the link and throws. */
+  private async sendCopies(link: MeshLink, asked: LinkCreate["members"]): Promise<void> {
+    const members = link.members;
     const told = await Promise.all(
       members.filter((m) => !this.isSelf(m.nodeId)).map(async (m) => ({ m, r: await this.tell(m.nodeId, { kind: "link", body: { link, you: m.nodeId } }) })),
     );
@@ -656,7 +691,11 @@ export class MeshLinks {
       const i = members.indexOf(refusal.m);
       const label = this.hostLabel(refusal.m.nodeId);
       const reason = !r.withheld && typeof r.body?.reason === "string" ? (r.body.reason as NonNullable<LinkError["reason"]>) : undefined;
-      const why = r.withheld ? linksWithheld(label) : `${label} refused the link${reason ? ` (${reason})` : ""}: ${r.why.replace(/\.$/, "")}`;
+      const why = r.withheld
+        ? linksWithheld(label)
+        : reason === NOT_LINK_MEMBER
+          ? `${label} ${gatedPeer(label)}`
+          : `${label} refused the link${reason ? ` (${reason})` : ""}: ${r.why.replace(/\.$/, "")}`;
       // A copy held for a host that was down never goes: taken out of the outbox (after any drain
       // under way), and a drain that already read it skips it.
       this.refusedCopies.add(link.id);
@@ -675,8 +714,6 @@ export class MeshLinks {
       } else this.forget(link.id);
       throw new LinkActError(409, { error: `Member ${i + 1} (${asked[i]?.host ?? label}/${refusal.m.sessionId}): ${why}.`, ...(reason ? { reason } : {}), member: i });
     }
-    this.notify(this.localSessions(link));
-    return this.view(link);
   }
 
   /** Take every held copy of link `linkId` out of the outbox, once any drain under way is done;
@@ -793,6 +830,13 @@ export class MeshLinks {
     // An ended copy (a rollback's end) is kept whatever became of the session: it only records the end.
     if (link.endedAt === undefined && !(await this.deps.summary(mine.sessionId)))
       return { status: 409, body: { error: `No session ${mine.sessionId} on this host.`, reason: "no-session" } };
+    // Each host checks its own member of a new link against the usual refusals (§mesh.links/record),
+    // relayed by the maker; a copy of a link this host already keeps is never refused for it.
+    if (link.endedAt === undefined && !this.get(link.id)) {
+      const s = await this.deps.summary(mine.sessionId);
+      const no = s && memberRefusal(s);
+      if (no) return { status: 409, body: { error: `Session ${mine.sessionId} on this host: ${no.why}.`, reason: no.reason } };
+    }
     if (!known) this.learnSelf(you);
     if (this.isSelf(you)) this.learnAs(caller.nodeId, you);
     const self = this.selfNodeId() ?? you;

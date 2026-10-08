@@ -152,8 +152,8 @@
 .baton-strip-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 .baton-strip-bar-end { margin-left: auto; display: flex; }
 /* The menu's destructive rows: last, set apart by the group rule, said in the error tone. */
-.baton-strip-menu-danger .mode-option-id { color: var(--status-error); }
-.baton-strip-menu-danger .mode-option .icon { color: var(--status-error); }
+.baton-strip-menu-danger .popover-item-label { color: var(--status-error); }
+.baton-strip-menu-danger .popover-item > .icon { color: var(--status-error); }
 .baton-strip-meta { font-size: var(--fs-caption); color: var(--color-ink-muted); }
 /* Org · project, then It can: and Started by on one line, wrapping when they must. */
 .baton-strip-facts { display: flex; flex-direction: column; gap: 0; }

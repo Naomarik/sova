@@ -114,7 +114,14 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   opened for writing); list groups, targets, models, subagent profiles and folders; the ideas backlog (`sova_ideas`: its table of contents,
   a search, one idea, an idea's scope and impact, an idea's explorer; §app.overseer/ideas); the
   user's todos (`sova_todos`: open, done or all; §app.overseer/todos); the links this host knows
-  (`sova_links`, §app.overseer/links-tools); this host's organizations, their projects and project
+  (`sova_links`, §app.overseer/links-tools); this host's live public links with their URLs
+  (`sova_public_links {kind?: "session" | "handoff" | "owner", session?, org?}`: one line per live
+  link, its kind, then a session share's title, recipient label and share id, a hand-off's org,
+  person, gathering title and hand-off number, or an owner link's org and owner, then its expiry
+  and URL, or "link not kept" for one made before tokens were kept, §app.session-share/link; the
+  address warning when links can't open from outside; this host only; its action-log line names
+  the tool and how many links it gave, never a link; the prompt says to give a link when the user
+  asks for one, and project overseers don't have it); this host's organizations, their projects and project
   overseers, and one roster person (`sova_orgs`, `sova_org_project`, `sova_org_person`,
   §app.overseer/org-reads), never a contact or a link (§app.overseer/org-projection).
 - **The transcript read reaches peers.** `sova_read_session` takes an optional `host`: with a
@@ -123,6 +130,7 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   secrets before it leaves, and this host redacts it again. A peer that is down or skewed is a
   refusal naming the host, never an empty transcript.
 - **Act:** create a session in any folder, on a remote target, or on a mesh peer (`host`,
+  §app.overseer/links-tools), optionally as a link member session (`link`, the only way one is made,
   §app.overseer/links-tools), with an optional first prompt, model,
   mode and minor modes (`minor_modes`, e.g. `["spec"]`); the mode and minor modes are set before the
   first prompt is sent, so its first turn already runs in them, and written into the session as its
@@ -781,7 +789,13 @@ Three tools let the Overseer make and end links between sessions on different ho
   its host (a peer id; this host when left out) and session id. A peer's member is resolved on its
   own host by id (§mesh.links/by-id). It refuses, naming the member, a TUI-live session, an archived
   one, a worker's session, the Overseer's own, a baton session, a project overseer's session, any
-  other organization's session (§app.session-list/organizations), a session on a host that is down or skewed, and a second member on the same host as another.
+  other organization's session (§app.session-list/organizations), a session on a host that is down or skewed,
+  and a second member on the same host as another. Any other session can be linked, running or
+  idle, whether or not it was created with `link: true` (§mesh.links/record); one that wasn't gets
+  the link tools as it joins (§mesh.links/tools). A member host on the earlier build that linked
+  only sessions created with `link: true` refuses any other member there; the call fails naming
+  that host and saying it runs that earlier build, to create the member there with
+  `sova_create_session`, `host` and `link: true`, or to update that host.
   A member on a peer this host doesn't share links with (its grant to that peer, §mesh.peers/grants)
   is refused before anything is sent, naming the host and saying this host doesn't share links with
   it, to be raised on this host's Mesh page; if the grant is lowered while the link is being made,
@@ -805,6 +819,17 @@ Three tools let the Overseer make and end links between sessions on different ho
 - **`sova_links {}`** (a read) lists every link this host knows, with each member's host, state
   and last activity, ended links included and marked, with why when the link keeps a reason
   (§mesh.links/delivery).
+- **Creating a link member.** `sova_create_session` takes `link: true` to create the session as a
+  link member session (§mesh.links/tools), on this host or, with `host`, on a peer: the create
+  itself marks it, before its title, model, modes or first prompt, so its first request already
+  has the link tools. It is the create route's `link: true` (`POST /api/sessions`, the route a
+  peer's Overseer reaches too), which no page of Sova sends; no profile, setting or later call
+  makes a session one, and an existing session never becomes one (it gets the tools by joining a
+  link instead, §mesh.links/tools). A peer on a build older than link members ignores the field;
+  every session there has the link tools, and it accepts any of them in a link. When the Overseer
+  creates a session only to link it, this is the cheaper way: create it with `link: true`, call
+  `sova_link`, then send its task, so nothing restarts. Turning the tools on in a running session
+  restarts a claude-code chat's CLI once, twice when it is linked mid-run.
 - **Creating a member on a peer.** `sova_create_session` takes an optional `host`; with a peer's id
   it creates the session on that peer, with the same caps and refusals. Title and first prompt go
   through the peer's own routes; a group can't be given with `host` (groups are per host); model,
@@ -1483,8 +1508,10 @@ name is a `[title](sova://s/<id>)` link; every time is relative, as in `sova_ses
     call in a baton transcript (`sova_read_session` of an org session shows the call without its
     `contact`), a person's or a model's words in a transcript (below), and a write's own arguments
     once it has run (§app.overseer/org-writes);
-  - **links**: no `/h/` or `/i/` URL, no token, no part of one, no token hash; a link is a state
-    word, a hand-off number and its times;
+  - **links**: no `/s/`, `/h/` or `/i/` URL, no token, no part of one, no token hash; a link is a
+    state word, a hand-off number and its times. The module never names the `link` or `url`
+    fields the org answers carry. The one exception is `sova_public_links` (§app.overseer/tools),
+    the read that gives this host's live kept links;
   - the About text, except in `sova_orgs {org, about: true}`.
 - **Contact in transcripts is redacted, in every tool.** A contact value also reaches a transcript
   as words: a person types their own number, a referrer types someone else's, a model repeats one.
@@ -1501,7 +1528,8 @@ name is a `[title](sova://s/<id>)` link; every time is relative, as in `sova_ses
 - **Checked by test.** A marker test plants a contact value, a link token and an About text in a
   hermetic org, drives every org read and act, and `sova_read_session` and `sova_session` on its
   baton sessions (one whose person typed the contact value into their message), and finds none of
-  them in any result, error or action-log line, except the About text in that one read.
+  them in any result, error or action-log line, except the About text in that one read and the
+  live link's token in `sova_public_links`, where it checks the token is.
 
 ## §app.overseer/org-writes — Changing organizations
 

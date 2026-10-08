@@ -22,6 +22,7 @@ const {
   parseProfile,
   profileFileError,
   PROFILE_ENTRY,
+  REMOVABLE,
   sessionSentHeader,
   stripSessionHeader,
 } = await import("../shared/profiles");
@@ -90,10 +91,24 @@ describe("the model", () => {
   });
 
   test("removals exclude exact names, and the * groups by every name they hold", () => {
-    const ex = excludedTools(["workers", "links"], ["agent_new_thing", "link_x", "read"]);
-    for (const t of ["agent_spawn", "team_create", "link_send", "agent_new_thing", "link_x"]) assert.ok(ex.includes(t), t);
+    const ex = excludedTools(["workers"], ["agent_new_thing", "link_send", "read"]);
+    for (const t of ["agent_spawn", "team_create", "agent_new_thing"]) assert.ok(ex.includes(t), t);
     assert.ok(!ex.includes("read"));
+    assert.ok(!ex.includes("link_send"), "the link tools are no capability: no removal names them");
     assert.deepEqual(excludedTools(["shell", "edit"], []).sort(), ["bash", "edit", "write"]);
+  });
+
+  test("the retired `links` removal: a profile file naming it still parses, read as if it didn't", () => {
+    assert.ok(!(REMOVABLE as readonly string[]).includes("links"), "no Mesh links capability on any board");
+    const file = { ...CAPTAIN, remove: ["links", "web"] };
+    assert.equal(profileFileError(file), null, "not a mistake in the file");
+    const p = parseProfile(file) as Profile;
+    assert.deepEqual(p.remove, ["workers", "web"], "web kept, and Workers & teams with it, as for any removal");
+    // Alone, it removes nothing at all: the old implied Workers & teams removal goes with it.
+    assert.deepEqual((parseProfile({ id: "only-links", label: "L", remove: ["links"] }) as Profile).remove, []);
+    // Still a typo next to it is an error, naming only the typo and the names that exist today.
+    const err = profileFileError({ ...CAPTAIN, remove: ["links", "linkz"] }) ?? "";
+    assert.match(err, /unknown name "linkz"\. Known: shell, edit, workers, web, worktrees, timers\.$/);
   });
 
   test("parseProfile refuses bad ids and names, and clamps limits to whole numbers from 1", () => {
@@ -125,6 +140,13 @@ describe("the model", () => {
 
 describe("the snapshot a session keeps", () => {
   const captain = captainIn("/w/acme");
+  test("a copy an older build saved with the `links` removal reads without it, the rest kept", () => {
+    const old = { ...captain, remove: ["workers", "links", "web"] };
+    const d = profileOnBranch([entry(old, "1")]);
+    assert.deepEqual(d?.profile?.remove, ["workers", "web"]);
+    assert.equal(d?.profile?.id, "captain");
+    assert.deepEqual(excludedTools(d!.profile!.remove, ["link_send", "agent_spawn"]).includes("link_send"), false, "and its runtime opens, excluding no link tool");
+  });
   test("the newest entry on the branch wins; none, or a null profile, is Default", () => {
     assert.equal(profileOnBranch([]), null);
     const d = profileOnBranch([entry(reviewer, "1"), { type: "message" }, entry(captain, "2")]);

@@ -266,20 +266,8 @@
 @media (min-width: 768px) {
   .model-menu.action-menu.align-menu { width: 340px; max-width: calc(100vw - var(--space-6)); }
 }
-/* A menu row: id, title, then how far its questions are decided — a bar and "{decided}/{live}",
-   or the status word when it has none. One line; the title gives way. */
-.align-menu-item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-height: var(--tap-min);
-  padding: var(--space-1) var(--space-3);
-  cursor: pointer;
-  font-size: var(--fs-body);
-  line-height: var(--lh-body);
-}
-.align-menu-item:hover { background: var(--color-sunken); }
-.align-menu-item:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-width) * -1); }
+/* A menu row (.popover-item): id, title, then how far its questions are decided — a bar and
+   "{decided}/{live}", or the status word when it has none. One line; the title gives way. */
 .align-menu-id { flex: none; color: var(--color-ink-muted); }
 .align-menu-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-ink); }
 .align-menu-bar { flex: none; width: 54px; height: 4px; border-radius: var(--r-full); background: var(--color-border); overflow: hidden; }

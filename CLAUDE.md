@@ -155,7 +155,11 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   lowering the subagents extension does; claude-code and the sandbox, which import nothing outside
   their own directory, call the server's `Symbol.for("sova:lower-worker")` and
   `Symbol.for("sova:tool-command-prefix")` instead; unset, as in the TUI, nothing changes;
-  §app.load-priority/workers), and of the same package's
+  §app.load-priority/workers; likewise the `link` extension, which imports nothing from the server,
+  asks the server's `Symbol.for("sova:link-live")` (`(sessionId) => boolean`, installed by
+  `server/app.ts` from `MeshLinks.inLiveLink`: a live link this host keeps, not one still being made;
+  false with the mesh off) whether a hosted session has joined a link, and turns the link tools on
+  at its next request; unset, as in the TUI or a worker, it never does, §mesh.links/tools), and of the same package's
   `subagent-profiles.ts` (builtins only, see above: `server/subagent-profiles.ts` — Settings →
   Subagents, the `/api/subagents` pick route and the session-create field, `server/sync/docs.ts` —
   the library's mesh registration, its default file deliberately absent, `server/chat-manager.ts` —

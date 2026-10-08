@@ -1,6 +1,8 @@
 import type { OwnerPageInfo } from "../shared/orgs";
 import { type OperatorBy, OrgError, ownerOf, readIndex, readOrgOrPlaceholder, readRoster, setOrgOwner } from "./orgs";
+import { tokenFor } from "./link-tokens";
 import { findPersonLink, mintOwnerLink, ownerLinksOf, personLinkDead, personLinkState, revokePersonLinks, type PersonLinkRecord } from "./person-links";
+import { linkUrl } from "./share/listener";
 import { readVisits } from "./visits";
 
 /**
@@ -18,12 +20,26 @@ export async function setOwner(orgId: string, personId: unknown, by?: OperatorBy
   await setOrgOwner(orgId, personId, by);
 }
 
-/** Get Owner Link: a new link for the owner now; every older one stops working. */
-export function mintOwnerLinkFor(orgId: string, now = Date.now()): PersonLinkRecord & { token: string } {
+/** A live owner link's URL when its token is kept (§app.owner-page/link). */
+const keptUrl = (l: PersonLinkRecord, now: number): string | undefined => {
+  if (personLinkState(l, now) !== "live") return undefined;
+  const token = tokenFor(l.hash, "i");
+  return token ? linkUrl("i", token) : undefined;
+};
+
+/** Get New Owner Link: a new link for the owner now; every older one stops working. With `keep`
+    (Get Owner Link), the owner's live link instead when its token is kept; a new one only when none
+    is live or the live one isn't kept. */
+export function ownerLinkFor(orgId: string, opts: { keep?: boolean } = {}, now = Date.now()): { token: string; createdAt: string; expiresAt: string } {
   const owner = ownerOf(orgId);
   if (!owner) throw new OrgError("Pick an owner first.", 400);
+  if (opts.keep) {
+    const live = ownerLinksOf(orgId).filter((l) => l.personId === owner.id && personLinkState(l, now) === "live").at(-1);
+    const token = live ? tokenFor(live.hash, "i") : null;
+    if (live && token) return { token, createdAt: live.createdAt, expiresAt: live.expiresAt };
+  }
   const { token, record } = mintOwnerLink(orgId, owner.id, now);
-  return { ...record, token };
+  return { token, createdAt: record.createdAt, expiresAt: record.expiresAt };
 }
 
 /** Turn Off Owner Link (and the org statechart's `revoke-owner-links` effect). Returns how many were live. */
@@ -57,6 +73,11 @@ export function ownerAccess(token: string, now = Date.now()): OwnerAccess {
 /** Visits to the Owner page by a person (not a scanner), newest first. */
 const ownerVisits = (orgId: string, personId: string) => readVisits(orgId, personId).filter((v) => v.via === "owner" && v.kind === "visit" && !v.bot);
 
+const urlOf = (l: PersonLinkRecord, now: number): { url?: string } => {
+  const url = keptUrl(l, now);
+  return url ? { url } : {};
+};
+
 /** The owner card (OrgDetail.ownerPage). */
 export function ownerPageInfo(orgId: string, now = Date.now()): OwnerPageInfo {
   const org = readOrgOrPlaceholder(orgId);
@@ -68,7 +89,7 @@ export function ownerPageInfo(orgId: string, now = Date.now()): OwnerPageInfo {
   const opened = ownerVisits(orgId, person.id);
   return {
     person: { id: person.id, name: person.name },
-    link: newest ? { state: personLinkState(newest, now), createdAt: newest.createdAt, expiresAt: newest.expiresAt } : null,
+    link: newest ? { state: personLinkState(newest, now), createdAt: newest.createdAt, expiresAt: newest.expiresAt, ...urlOf(newest, now) } : null,
     opened: opened.length,
     ...(opened[0] ? { lastOpenedAt: opened[0].at } : {}),
   };
@@ -95,6 +116,7 @@ export function ownerLinksOfPerson(orgId: string, personId: string, now = Date.n
         state: personLinkState(l, now),
         visits: mine.length,
         ...(mine[0] ? { lastVisitAt: mine[0].at } : {}),
+        ...(keptUrl(l, now) ? { link: keptUrl(l, now)! } : {}),
       };
     })
     .reverse();

@@ -81,9 +81,6 @@
 .host-menu-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .host-menu-count { flex: none; margin-left: auto; font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); }
 .host-menu-option-text { flex-direction: row; align-items: center; gap: var(--space-1); }
-.host-menu-panel .mode-option { align-items: center; }
-.host-menu-panel .mode-option-check { margin-top: 0; }
-.host-menu-sep { height: 1px; margin: var(--space-1) 0; background: var(--color-border); }
 .host-filter-up { color: var(--status-success); }
 .host-filter-skewed { color: var(--status-warn); }
 .host-filter-down { color: var(--status-error); }

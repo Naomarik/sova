@@ -410,7 +410,7 @@ comments): `yes`, `no`, or `partial` with what is missing.
 | Meter | measure, ghost | 6px track | Number first, bar second, **never a bar alone**. The third term is context, not the denominator. | yes |
 | Modal | — | ≤520px | Becomes a sheet at folded width. | yes |
 | Sheet | — | ≤85vh | Arrives inside the thumb arc. | partial — no `.sheet`; only `.sheet-grip`, as a folded-width state of `.modal` |
-| Popover | — | ≥200px | Items are 44px. Never the only path to an action. | no |
+| Popover | menu: one-line, detail (label + description), mono, checked, disabled, busy, section label, separator | ≥200px · 44px rows | **Every menu, dropdown, ⋯ overflow and flyout is a `.popover` of `.popover-item` rows** — see Menus & dropdowns. Its trigger is always visible, never revealed on hover. | yes |
 | Tooltip | on a term, on a figure, start · end aligned | ≤32ch | One sentence, on hover and keyboard focus. **Never the only place a fact lives.** | no |
 | Run timeline | done, running, waiting, failed | — | Every step says what happened; a failure says what it did *not* touch. | no |
 | Diff viewer | unified, split ≥768 | — | Added/removed carry a gutter sign as well as a color. Split measures its `.diff`, not the window. | no |
@@ -419,6 +419,36 @@ comments): `yes`, `no`, or `partial` with what is missing.
 
 Sova's own `.timeline` is a different component (its session axis), not Run timeline; the chip
 status-word mapping lives in `reference/components/chip.md`.
+
+## Menus & dropdowns
+
+Anything that opens from a trigger and closes on a pick is a `.popover` holding `.popover-item`
+rows: a ⋯ overflow menu, a dropdown, a picker, a flyout, a "Move to…" list. There is one menu-row
+component. When the user types to filter, use a native `<select>` or the `.combobox-*` listbox
+instead: those are `role="option"` rows, not menu rows.
+
+| Row | Class | Alignment |
+|---|---|---|
+| One line: a verb or a value | `.popover-item` | Icon, check and label on the row's 44px center line, built in |
+| Label + description (a mode, a profile, a row that says why it can't run) | `.popover-item.popover-item-detail` holding `.popover-item-text` > `.popover-item-label` + `.popover-item-desc` | Top-aligned; icon and check on the label's line |
+| A machine name as the label (an id, a mode) | add `.popover-item-mono` | The label's line box follows the mono size |
+| Leading icon | `.icon` as a direct child, or `.popover-item-icon` around anything that is not one glyph | Muted; the label carries the meaning |
+| Trailing value, shortcut, chevron | `.popover-item-end` | Pushed to the end; never the only label |
+
+**Choosing one or several.** A row that is a choice is `role="menuitemradio"` or
+`"menuitemcheckbox"` with `aria-checked`, and carries `.popover-item-check` as its first child. The
+check shows only while the row is checked and the row is tinted, so the state reads from a shape,
+not from tint alone. **Disabled** is `aria-disabled="true"` plus the reason in `.popover-item-desc`,
+never a silent gray-out. **Pending** is `aria-busy="true"`: full ink, a progress cursor. **Section
+labels** are `.popover-label` (mono micro caps), each group wrapped in `role="group"` and named
+by its label. **Separators** are `.popover-sep` with `role="separator"`, between groups and
+always before destructive rows. **A side action** on a row (a gear, a Resync) is its own
+`button.button` beside the row, never inside it: a button nested in a `menuitemradio` loses its role.
+
+**Never borrow another component's row class for a menu, and never set `align-items` or vertical
+padding on a menu row yourself.** A borrowed row brings its own alignment, and an override at the
+same specificity loses or wins on source order alone, with no error either way. If a row needs
+something this table lacks, add a variant here and in `fold-ai-dev.css` first.
 
 ## Class index
 
@@ -443,7 +473,7 @@ status-word mapping lives in `reference/components/chip.md`.
 | Table | `.table-wrap` `.table` `.table-stack` `.table-num` `.table-mono` |
 | Filter bar | `.filterbar` `.filterbar-filters` `.filterbar-filter` `.filterbar-filter-on` `.filterbar-value` `.filterbar-order` `.filterbar-count` |
 | Meter | `.meter` `.meter-head` `.meter-label` `.meter-value` `.meter-of` `.meter-track` `.meter-fill` `.meter-context` `.meter-ghost` |
-| Overlay | `.scrim` `.modal` `.modal-head` `.modal-title` `.modal-body` `.modal-foot` `.sheet` `.sheet-grip` `.popover` `.popover-item` `.popover-sep` |
+| Overlay | `.scrim` `.modal` `.modal-head` `.modal-title` `.modal-body` `.modal-foot` `.sheet` `.sheet-grip` `.popover` `.popover-item` `.popover-item-detail` `.popover-item-mono` `.popover-item-icon` `.popover-item-check` `.popover-item-text` `.popover-item-label` `.popover-item-desc` `.popover-item-end` `.popover-label` `.popover-sep` |
 | Tooltip | `.tip` `.tip-bubble` `.tip-start` `.tip-end` `.tip-static` |
 | Run timeline | `.timeline` `.timeline-step` `.timeline-marker` `.timeline-title` `.timeline-meta` `.timeline-body` `.timeline-done|running|waiting|failed` |
 | Diff viewer | `.diff` `.diff-file` `.diff-stat-add` `.diff-stat-del` `.diff-hunk` `.diff-line` `.diff-gutter` `.diff-add` `.diff-del` `.diff-split` |

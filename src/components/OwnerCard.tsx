@@ -5,10 +5,10 @@ import type { OrgDetail } from "../../shared/orgs";
 import { ApiError, ownerLink, previewOwnerPage, revokeOwnerLink, setOrgOwner } from "../lib/api";
 import { useMinuteNow } from "../lib/minute-clock";
 import { DELETE_OWNER_LINK, DELETE_OWNER_LINK_ASK, OWNER_LINK_DELETED } from "../lib/link-delete";
-import { deleteOwnerLine, ownerChangeLine, ownerLinkLine, rotateLine } from "../lib/owner-card";
+import { deleteOwnerLine, ownerChangeLine, ownerLinkActions, ownerLinkLine, rotateLine } from "../lib/owner-card";
 import { ownerHash, type OwnerRoute } from "../lib/owner-words";
 import { firstName } from "../lib/person-page";
-import { announce } from "../lib/ui-state";
+import { announce, copyText } from "../lib/ui-state";
 import { type OwnerAnswer, OwnerLoadError, OwnerPage } from "../share/owner-view";
 import { LinksBanner } from "./LinksBanner";
 import { Banner, Icon, trapFocus } from "./ui";
@@ -22,8 +22,9 @@ type Act = (fn: () => Promise<OrgDetail | unknown>, done?: string) => Promise<bo
 
 /**
  * The owner card on the People tab (§app.owner-page/owner, /link, /preview): who the org's owner is
- * (an active roster person, or None), their owner link (minted on demand and shown once: the host
- * keeps only its hash), Delete Owner Link, and the preview of their page.
+ * (an active roster person, or None), their owner link (Copy Owner Link while the live one is kept,
+ * from `ownerPage.link.url`; else Get Owner Link; Get New Owner Link replaces it), Delete Owner Link,
+ * and the preview of their page.
  */
 export function OwnerCard(props: { org: OrgDetail; act: Act }) {
   const now = useMinuteNow();
@@ -38,6 +39,9 @@ export function OwnerCard(props: { org: OrgDetail; act: Act }) {
   const [err, setErr] = createSignal<string | null>(null);
   let select: HTMLSelectElement | undefined;
   const live = () => info()?.link?.state === "live";
+  const actions = () => ownerLinkActions(info());
+  /** The live owner link, when its token is kept: what Copy Owner Link copies. */
+  const kept = () => actions().copy;
   const line = () => ownerLinkLine(info(), now());
 
   const setOwner = async (id: string | null) => {
@@ -60,12 +64,13 @@ export function OwnerCard(props: { org: OrgDetail; act: Act }) {
     }
   };
 
-  const getLink = async () => {
+  /** `keep` (Get Owner Link): the kept live link, else a new one; without it (Get New Owner Link) a new one. */
+  const getLink = async (keep: boolean) => {
     const o = owner();
     setConfirm(null);
     if (!o) return;
     try {
-      const r = await ownerLink(props.org.id);
+      const r = await ownerLink(props.org.id, keep);
       setShown({ link: { personId: o.id, name: o.name, link: r.link, at: r.createdAt }, ...(r.linkWarning ? { warning: r.linkWarning } : {}) });
       setErr(null);
       await props.act(async () => undefined);
@@ -118,20 +123,37 @@ export function OwnerCard(props: { org: OrgDetail; act: Act }) {
       <Show when={shown()}>{(s) => <LinksBanner links={[s().link]} warning={s().warning} onDismiss={() => setShown(null)} />}</Show>
       <div class="orgs-owner-actions">
         <div class="button-row">
-          <button
-            type="button"
-            class="button button-sm"
-            aria-disabled={!owner() ? "true" : undefined}
-            aria-describedby={!owner() ? "orgs-owner-none" : undefined}
-            aria-expanded={live() ? confirm() === "rotate" : undefined}
-            onClick={() => {
-              if (!owner()) return;
-              if (live()) setConfirm(confirm() === "rotate" ? null : "rotate");
-              else void getLink();
-            }}
+          <Show
+            when={kept()}
+            fallback={
+              <button
+                type="button"
+                class="button button-sm"
+                aria-disabled={!owner() ? "true" : undefined}
+                aria-describedby={!owner() ? "orgs-owner-none" : undefined}
+                aria-expanded={live() ? confirm() === "rotate" : undefined}
+                onClick={() => {
+                  if (!owner()) return;
+                  // A live link that isn't kept can't be shown again: getting one replaces it, so ask first.
+                  if (actions().get === "ask") setConfirm(confirm() === "rotate" ? null : "rotate");
+                  else void getLink(true);
+                }}
+              >
+                Get Owner Link
+              </button>
+            }
           >
-            Get Owner Link
-          </button>
+            {(url) => (
+              <button type="button" class="button button-sm" onClick={() => void copyText(url(), "Link copied.")}>
+                <Icon name="copy" small /> Copy Owner Link
+              </button>
+            )}
+          </Show>
+          <Show when={actions().rotate}>
+            <button type="button" class="button button-sm" aria-expanded={confirm() === "rotate"} onClick={() => setConfirm(confirm() === "rotate" ? null : "rotate")}>
+              Get New Owner Link
+            </button>
+          </Show>
           <button type="button" class="button button-sm" aria-disabled={!owner() ? "true" : undefined} onClick={() => owner() && setPreviewing(true)}>
             <Icon name="eye" small /> Preview Owner Page
           </button>
@@ -160,8 +182,8 @@ export function OwnerCard(props: { org: OrgDetail; act: Act }) {
                   </button>
                 }
               >
-                <button type="button" class="button button-sm button-primary" onClick={() => void getLink()}>
-                  Get Owner Link
+                <button type="button" class="button button-sm button-primary" onClick={() => void getLink(false)}>
+                  Get New Owner Link
                 </button>
               </Show>
               <button type="button" class="button button-sm button-ghost" onClick={() => setConfirm(null)}>

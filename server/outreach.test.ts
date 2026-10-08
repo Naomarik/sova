@@ -11,11 +11,15 @@ import { after, before, describe, test } from "node:test";
 import { Hono } from "hono";
 import { ABSENT, agent, ann, app, bob, cleanup, gathering, gone, json, logOf, org, project, root, senderOpen, sendLink } from "./outreach-test-fixtures";
 import { inProcessSender } from "./outreach/sender-test-fixtures";
+import type { Channel, ChannelSend } from "./outreach/types";
 
 const { mountOutreachRelay } = await import("./outreach/relay");
 const { resetLocalClient, setSenderClientOptionsForTest } = await import("./outreach/whatsapp");
 const { liveLinks } = await import("./baton-links");
-const { batonById } = await import("./baton");
+const { dropTokens, tokenFor } = await import("./link-tokens");
+const { RESOLVERS } = await import("./outreach/links");
+const { batonById, keepLink } = await import("./baton");
+const { send } = await import("./outreach/core");
 const { SecretGuard } = await import("./overseer-deny");
 const po = await import("./project-overseer");
 const { hostOf } = await import("./org-engine");
@@ -60,12 +64,13 @@ describe("§app.outreach/send-link", () => {
     assert.equal(logOf().at(-1)!.event, "refused");
   });
 
-  test("sent: a fresh link replaces the older ones, the log holds no number, token or text; receipts follow", async () => {
+  test("sent, with no kept link (one made before tokens were kept): a fresh link replaces the older ones, the log holds no number, token or text; receipts follow", async () => {
     assert.equal((await json("PUT", "/api/outreach", { sender: { local: {} } })).status, 200);
     await senderOpen();
     const sid = await gathering(ann.id);
     const n = batonById(sid)!.row.handoffs.at(-1)!.n;
     const firstLinks = liveLinks(sid, n).map((l) => l.hash);
+    dropTokens(firstLinks);
     const r = await sendLink(sid);
     assert.deepEqual(r.body, { outcome: "sent", channel: "whatsapp", name: "Ann" });
     const now = liveLinks(sid, n);
@@ -85,6 +90,73 @@ describe("§app.outreach/send-link", () => {
     const page = await json("GET", `/api/orgs/${org.id}/people/${ann.id}`);
     assert.equal(page.body.sends?.[0]?.event, "read");
     assert.equal(page.body.sends?.[0]?.what, "Office hours");
+  });
+
+  test("sent, with a kept live link: that link goes, nothing is minted or turned off; a failed send of it turns nothing off", async () => {
+    const sid = await gathering(ann.id);
+    const n = batonById(sid)!.row.handoffs.at(-1)!.n;
+    const first = liveLinks(sid, n);
+    assert.equal(first.length, 1);
+    const token = tokenFor(first[0]!.hash, "h");
+    assert.ok(token, "control: the start's link is kept");
+    // The resolver itself: the kept link's URL, and nothing made (so neither revoke nor settle touches it).
+    const resolved = await RESOLVERS.handoff.resolve({ orgId: org.id, projectId: project.id, personId: ann.id, key: "k-test" }, { kind: "handoff", session: sid });
+    assert.ok(resolved.url.endsWith(`/h/${token}`), resolved.url);
+    assert.deepEqual(resolved.minted, {});
+    const r = await sendLink(sid);
+    assert.equal(r.body.outcome, "sent");
+    assert.deepEqual(liveLinks(sid, n).map((l) => l.hash), [first[0]!.hash], "the same one link, still live");
+    assert.equal(tokenFor(first[0]!.hash, "h"), token, "and still kept");
+
+    const sidG = await gathering(gone.id);
+    const ng = batonById(sidG)!.row.handoffs.at(-1)!.n;
+    const startG = liveLinks(sidG, ng).map((l) => l.hash);
+    assert.equal(startG.length, 1);
+    const rg = await sendLink(sidG);
+    assert.equal(rg.body.outcome, "failed");
+    assert.deepEqual(liveLinks(sidG, ng).map((l) => l.hash), startG, "a failed send of a kept link turns nothing off");
+    assert.ok(tokenFor(startG[0]!, "h"), "it stays kept");
+  });
+
+  // Send A of a fresh gathering: it mints its link (kept at once, the start's token dropped so nothing
+  // is reused) and hangs at the channel until `fail` lets it go.
+  async function inFlight(key: string) {
+    const sid = await gathering(ann.id);
+    const n = batonById(sid)!.row.handoffs.at(-1)!.n;
+    dropTokens(liveLinks(sid, n).map((l) => l.hash));
+    let let_go: ((r: ChannelSend) => void) | undefined;
+    const hanging: Channel = { id: "whatsapp", status: async () => ({ state: "open" }) as never, onReceipt: () => {}, send: () => new Promise<ChannelSend>((res) => (let_go = res)) };
+    const input = { orgId: org.id, projectId: project.id, personId: ann.id, link: { kind: "handoff" as const, session: sid }, by: "operator" as const };
+    const a = send({ ...input, key }, hanging);
+    while (!let_go) await new Promise((r) => setTimeout(r, 5));
+    const tokenA = tokenFor(liveLinks(sid, n).find((l) => l.key === key)!.hash, "h");
+    assert.ok(tokenA, "control: A's link is kept while A is in flight");
+    const fail = async () => {
+      let_go!({ ok: false, code: "not-on-whatsapp", retryable: false, why: "no" });
+      assert.equal((await a).outcome, "failed");
+    };
+    const liveTokens = () => liveLinks(sid, n).map((l) => tokenFor(l.hash, "h"));
+    return { sid, input, tokenA, fail, liveTokens };
+  }
+
+  test("a link minted by a send still in flight is not reused by another send: A failing after B went leaves B's link live", async () => {
+    const A = await inFlight("k-flight-a");
+    const texts: string[] = [];
+    const delivering: Channel = { id: "whatsapp", status: async () => ({ state: "open" }) as never, onReceipt: () => {}, send: async ({ text }) => (texts.push(text), { ok: true, ref: "ref-b", at: new Date().toISOString() }) };
+    const b = await send({ ...A.input, key: "k-flight-b" }, delivering);
+    assert.equal(b.outcome, "sent");
+    const tokenB = /\/h\/([\w-]+)/.exec(texts[0]!)![1]!;
+    assert.notEqual(tokenB, A.tokenA, "B made its own link");
+    await A.fail();
+    assert.ok(A.liveTokens().includes(tokenB), "the link B delivered is still live after A failed");
+  });
+
+  test("Get Link kept (keep=1) does not give the link of a send still in flight: A failing leaves the link it gave live", async () => {
+    const A = await inFlight("k-flight-c");
+    const got = keepLink(A.sid).token;
+    assert.notEqual(got, A.tokenA, "keep=1 skips the link of an unsettled send");
+    await A.fail();
+    assert.ok(A.liveTokens().includes(got), "the link Get Link gave is still live after A failed");
   });
 
   test("no WhatsApp number, not on WhatsApp, paused: refused or failed, and the send-link wait comes back", async () => {

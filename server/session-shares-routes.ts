@@ -37,6 +37,7 @@ import {
 } from "./session-shares";
 import { cachedTitleOf, getSessionSummary, indexedSessionPaths, listSessions, onSessionArchived } from "./sessions-index";
 import { sharesOverview } from "./shares-overview";
+import { tokenFor } from "./link-tokens";
 import { awaitShareLinks } from "./share/links-events";
 import { linkUrl, sessionLinkWarning } from "./share/listener";
 import { closeLinks, pushShareView, startSessionShareLive } from "./share/session-live";
@@ -71,22 +72,26 @@ async function sessionTitleOf(path: string): Promise<string> {
   return (await getSessionSummary(path).catch(() => null))?.title ?? "Untitled";
 }
 
-/** A recipient's row: their newest link, its state, presence now and visits. */
+/** A recipient's row: their newest link, its state, presence now and visits; while it is live
+    and its token is kept, the link itself, on the address as it is now (§app.session-share/link). */
 function recipientsOf(share: ShareRecord, links: ShareLinkRecord[], now: number): SessionShareRecipient[] {
   const newest = new Map<string, ShareLinkRecord>();
   for (const l of links) newest.set(l.recipientId, l);
   return [...newest.values()].map((l) => {
     const visits = visitSummary(readSessionVisits(share.id, l.recipientId));
+    const state = linkState(l, share, now);
+    const token = state === "live" ? tokenFor(l.hash, "s") : null;
     return {
       id: l.recipientId,
       label: l.label,
       ...(l.anyone ? { anyone: true as const } : {}),
-      state: linkState(l, share, now),
+      state,
       createdAt: l.createdAt,
       expiresAt: l.expiresAt,
       ...(l.revokedAt ? { revokedAt: l.revokedAt } : {}),
       presence: presenceOf(share.id, l.recipientId),
       ...visits,
+      ...(token ? { link: linkUrl("s", token) } : {}),
     };
   });
 }
@@ -466,12 +471,16 @@ export function registerSessionShareRoutes(app: Hono): void {
     try {
       const hit = getShare(c.req.param("id"));
       if (!hit) throw new ShareError(404, "not-found", "No such share.");
-      const ids = [...new Set(hit.links.map((l) => l.recipientId))];
+      // Each recipient's newest link: its createdAt and state tell an open sheet when the row it shows
+      // was relinked, turned off or stopped elsewhere.
+      const newest = new Map<string, ShareLinkRecord>();
+      for (const l of hit.links) newest.set(l.recipientId, l);
+      const now = Date.now();
       const activity: SessionShareActivity = {
         shareId: hit.share.id,
-        recipients: ids.map((rid) => {
-          const visits = readSessionVisits(hit.share.id, rid);
-          return { recipientId: rid, presence: presenceOf(hit.share.id, rid), ...visitSummary(visits), visits };
+        recipients: [...newest.values()].map((l) => {
+          const visits = readSessionVisits(hit.share.id, l.recipientId);
+          return { recipientId: l.recipientId, presence: presenceOf(hit.share.id, l.recipientId), ...visitSummary(visits), visits, createdAt: l.createdAt, state: linkState(l, hit.share, now) };
         }),
       };
       return c.json(activity, 200, NO_STORE);

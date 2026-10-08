@@ -80,7 +80,7 @@ pairs or unlinks it.
   idempotency key `<projectId>#<personId>#<effect key>`.
 - Sent (the sender accepted it): `{outcome: "sent", channel}`; a gathering link's Needs-you wait
   clears, as after Get Link. A definite failure turns off exactly what the step made (the hand-off
-  link, or the preview sibling), so "Send {name} their link" comes back unless an older link of
+  link it minted, nothing when it sent a kept one, or the preview sibling), so "Send {name} their link" comes back unless an older link of
   theirs still works, and the result is `{outcome:
   "failed", code, retryable, why}`. An uncertain one — the request left and no answer came (a
   timeout, the connection closed, or the sender's own `unknown`) — keeps what the step made (the
@@ -110,10 +110,10 @@ pairs or unlinks it.
   → Outreach.", "Outreach is paused."); while outreach is off, **Set Up Outreach** beside it opens
   Settings → Outreach. Sent: a toast "Sent {name} their link on WhatsApp.".
 - **Fallback.** After a failure or a refusal the strip shows, below its bar, a warn banner with the why and three
-  ways on: **Retry** (the same act), **Open in WhatsApp** (mints a fresh link through Get Link and
-  opens `https://wa.me/<digits>?text=<the same message>` in a new tab, so the operator sends it from
-  their own WhatsApp; only when the person has a number) and **Copy Link** (Get Link, shown once as
-  today).
+  ways on: **Retry** (the same act), **Open in WhatsApp** (the person's kept live link, else one Get Link
+  makes, and opens `https://wa.me/<digits>?text=<the same message>` in a new tab, so the operator sends it from
+  their own WhatsApp; only when the person has a number) and **Copy Link** (copies the kept live link, else
+  shows the one Get Link makes on the strip).
 
 ## §app.outreach/links — Links are references the server resolves
 
@@ -123,9 +123,15 @@ pairs or unlinks it.
   for the person and makes the URL in the send's own step; the core knows no kind.
 - `handoff`: the session is this project's and open; the person holds its current hand-off, or is a
   reached invitee of its open offer (else "{name} does not hold the baton, so there is no link to
-  send.", "{name} is not invited to its open offer.", "{name} is not reached yet: …"). It mints a
-  fresh link; once the message went, their older links of that hand-off (or of that offer) stop, as
-  after Get Link. A send that fails leaves the older ones as they were.
+  send.", "{name} is not invited to its open offer.", "{name} is not reached yet: …"). It sends
+  the person's live link of that hand-off (or of that offer) when its token is kept
+  (§app.session-share/link), as Get Link does, and makes nothing. Else it mints a fresh link, and
+  once the message went their older links of that hand-off (or of that offer) stop, as after Get
+  Link. A send that fails turns off only a link it made, and leaves the older ones as they were.
+  A link minted by a send still in flight on this host is never handed out again, by another send
+  or by Get Link's kept link (`?keep=1`, §app.baton/links), until that send settles: either
+  passes it over for the person's newest other kept live link, else makes a new one as without a
+  kept link, so that send's failure never turns off a link someone else delivered.
 - `preview`: the preview is this project's and active. The host keeps only a preview's hash, so the
   person gets their own **sibling** of it (a new `pv_…`): the same organization, project and port,
   expiring when the original does and never later (an Extend of a sibling stops at the original's

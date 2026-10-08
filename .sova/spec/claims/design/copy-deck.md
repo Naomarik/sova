@@ -1056,11 +1056,11 @@ merge, commit, repo, session, token, spec, L0–L3, workspace, roster.
 | …latest change | "Set by you {relative time}." |
 | …cleared (warn banner) | "{name} left the organization, so it has no owner now. Their owner link stopped working." |
 | …link line | "Owner link made {relative time} · expires {relative time} · opened {n} times" · none: "No owner link yet." · newest turned off or replaced: "The owner link is turned off." · under 14 days (warn): "Owner link expires {relative time}." · expired: "The owner link expired {relative time}." |
-| …buttons | `Get Owner Link` (secondary) · `Preview Owner Page` (secondary) · `Delete Owner Link` (destructive, outlined, apart) |
-| Get Owner Link, while one is live (confirm) | "{first}'s current link stops working at once. The new one works from now." · `Get Owner Link` · `Cancel` |
+| …buttons | `Copy Owner Link` (secondary; toast "Link copied.") while the live link is kept, else `Get Owner Link` (secondary) · `Get New Owner Link` (secondary, while one is live) · `Preview Owner Page` (secondary) · `Delete Owner Link` (destructive, outlined, apart) |
+| Get New Owner Link (confirm) | "{first}'s current link stops working at once. The new one works from now." · `Get New Owner Link` · `Cancel` |
 | Get Owner Link, no owner | "Pick an owner first." |
 | Delete, confirm | "{first}'s owner link stops working for good. The conversations and updates stay." · `Delete Owner Link?` · `Cancel` · done (toast) "Owner link deleted." |
-| Link shown once | the baton strip's Copy Link pattern; `linkWarning` when no share address is known |
+| A new link | the baton strip's Copy Link pattern; `linkWarning` when no share address is known |
 | Preview modal title | "{org}, as {first} sees it" |
 | …line | "Read only. Nothing you do here reaches {first}, and no visit is recorded." |
 | Project page card title | "Owner Page" |
@@ -1113,8 +1113,8 @@ host, person or recipient.
 | Stale preview (warn banner) | **The session changed. Preview it again.** Nothing was shared. We read it again: check it, then create the links. · confirming an update: **The session changed. Preview it again.** Nothing changed for them. We read it again: check it, then confirm. |
 | Update and stop following | titles "Update to Now" · "Stop Following Live" · "Their pages will show the conversation as it is here, images included." · "Follow live stops here: their pages keep the conversation as it is here, images included." · `Back to Share` · `Update to This` / `Stop Following Here` (`Saving…`) · failed: **Couldn't read the conversation.** Nothing changed. {reason} `Try Again` |
 | Foot | `Cancel` · `Preview` · `Create Link` / `Create Links` (`Creating…`) · Preview: `Back to Sharing` / `Back to Share` · managing: `Stop Sharing` (armed `Stop Every Link?`), `Preview`, `Done` |
-| New links | eyebrow "New link · shown once" / "{n} new links · shown once" · `Copy Link` (toast "Link copied.") · "We keep only a fingerprint of each link. If one is lost, Get New Link makes another." · the `linkWarning` text with `Open Settings` |
-| Managing | "Snapshot up to {date time}." · `Update to Now` (title "Their pages show the conversation as it is now.") · eyebrows "People", "Expiry" · `Get New Link` (title "A new link for them. This one stops working.") · `Delete Link` (armed "Delete {label}'s Link?", the anyone row "Delete This Link?", with "The link stops working for good." under it while armed) · placeholder "Add a person, like Ben" · `Add Person` · `Add Anyone Link` · "{n} days from now" · `Extend` · "Every live link then expires {n} days from now." · `Save Title` |
+| New links | eyebrow "New link" / "{n} new links" · `Copy Link` (toast "Link copied.") · the `linkWarning` text with `Open Settings` |
+| Managing | "Snapshot up to {date time}." · `Update to Now` (title "Their pages show the conversation as it is now.") · eyebrows "People", "Expiry" · `Copy Link` (title "Copy {label}'s link", the anyone row "Copy this link"; toast "Link copied.") · `Get New Link` (title "A new link for them. This one stops working.") · `Delete Link` (armed "Delete {label}'s Link?", the anyone row "Delete This Link?", with "The link stops working for good." under it while armed) · placeholder "Add a person, like Ben" · `Add Person` · `Add Anyone Link` · "{n} days from now" · `Extend` · "Every live link then expires {n} days from now." · `Save Title` |
 | Stopped / gone | **Stopped {time}.** Every link is off. The session itself didn't change. · **The session file is gone.** Every link answers that it's no longer active. |
 | Errors | **Couldn't read the conversation to preview it.** Nothing was shared. {reason} `Try Again` · **Couldn't create the links.** Nothing was shared. {reason} · **That didn't go through.** Nothing changed. {reason} · "Couldn't read the preview. {reason}" |
 
@@ -1129,7 +1129,7 @@ host, person or recipient.
 | Review | "{range}. People you send a link to can read these messages and the replies, with their drawings and images. Never tool steps, thinking, paths or costs." · changing a share: "{range}. Open pages start over with the new slice." · Follow live off: "Off: they see these messages as they are now. You can update it to now later." · Save blocked: "The conversation couldn't be read, so nothing can be saved yet." · `Create Link` / `Create Links` (`Creating…`) · `Done` |
 | Stale and errors | **The session changed. Preview it again.** Nothing was shared. / Nothing changed. We read it again: check the slice, then go on. · **Couldn't create the links.** / **Couldn't save the slice.** Nothing was shared. / Nothing changed. {reason} |
 | Changed meanwhile (Save Slice, 409 `share-changed`) | **This share changed meanwhile.** Nothing was changed. We read it again: save again to apply this slice. |
-| Done | "{range}. The link shows only once, here." / "Each link shows only once, here." · toast "Slice saved." |
+| Done | "{range}. Copy it again any time from Manage, in the session's Sharing tab." / "{range}. Copy them again any time from Manage, in the session's Sharing tab." · toast "Slice saved." |
 | Old host | **This host needs an update to share part of a session.** Nothing was shared. Once it runs the current Sova, open this page again. |
 | Head | Session head's icon link `aria-label` "Share session" |
 

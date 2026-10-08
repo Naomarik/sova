@@ -10,7 +10,8 @@ is how a foundation loses the only prose that explained it.
 
 ## Purpose
 2–3 sentences in the brand voice: what this element is for and its single most important
-usage rule.
+usage rule. Name the everyday nouns a builder would search for (the popover page says
+"menu", "dropdown", "⋯ overflow", "picker"), so a grep for the task finds this page.
 
 Rendered: `site/<category>/<page>.html`
 

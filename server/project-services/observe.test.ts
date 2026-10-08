@@ -6,9 +6,9 @@ import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { parseDefinition } from "../../shared/project-contract";
 import { SUITE_VERSION } from "./conform";
-import { approveAtRef, branchFacts, observeRuntime } from "./observe";
+import { branchFacts, observeRuntime } from "./observe";
 import { conformDir } from "./store";
-import { defHashOf, isApproved } from "./trust";
+import { defHashOf } from "./def-hash";
 
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-observe-agent-"));
 
@@ -75,7 +75,6 @@ test("present: main's HEAD is read, never the working tree; software, sources an
   assert.match(f.sources.files["bb.edn"]!, /^[0-9a-f]{40}$/);
   assert.match(f.sources.fingerprint!, /^sha256:/);
   assert.deepEqual(f.data, [{ name: "db", kind: "dir", sensitive: true }, { name: "scratch", kind: "dir", sensitive: false }]);
-  assert.equal(f.approved, null);
   assert.equal(f.proof, null);
   assert.equal(f.suite, SUITE_VERSION);
   git("checkout", "--", ".");
@@ -85,7 +84,7 @@ test("present: main's HEAD is read, never the working tree; software, sources an
   commit("deps");
   const g = await observeRuntime(root);
   assert.deepEqual(g.def, { state: "present", hash }, "isolation and sources stay outside the hash");
-  // `sensitive` is inside it: dropping it changes the hash (it gates exposure), and so needs approving again.
+  // `sensitive` is inside it: dropping it changes the hash (it gates exposure).
   assert.notEqual(defHashOf(parseDefinition(JSON.stringify({ ...DEF, data: { db: { kind: "dir" }, scratch: { kind: "dir" } } }))), hash);
   assert.equal(defHashOf(parseDefinition(JSON.stringify({ ...DEF, data: { db: { kind: "dir", sensitive: true }, scratch: { kind: "dir", sensitive: false } } }))), hash, "false is the default");
   assert.notEqual(g.sources.fingerprint, f.sources.fingerprint);
@@ -93,29 +92,21 @@ test("present: main's HEAD is read, never the working tree; software, sources an
   assert.equal(g.sources.files["package.json"], f.sources.files["package.json"]);
 });
 
-test("approval at HEAD: a stale hash is refused, the shown one approved; stamps split unconfined from confined", async () => {
+test("main's proof: the newest stamp of its hash at the current suite", async () => {
   const f = await observeRuntime(root);
   const hash = (f.def as { hash: string }).hash;
-  await assert.rejects(() => approveAtRef(root, "sha256:other"), /changed since it was shown/);
-  const ok = await approveAtRef(root, hash);
-  assert.equal(ok.hash, hash);
-  assert.ok(isApproved(root, hash));
   mkdirSync(conformDir(), { recursive: true });
   const stamp = (pass: boolean, suiteVersion = SUITE_VERSION) => ({ suiteVersion, pass, at: "2026-10-03T00:00:00.000Z", report: "/r.json", ...(pass ? {} : { failed: { check: "up-a", detail: "x" } }) });
-  writeFileSync(join(conformDir(), "stamps.json"), JSON.stringify({ version: 1, stamps: { [root]: { [hash]: stamp(false) } }, confined: { [root]: { [hash]: stamp(true) } } }));
+  writeFileSync(join(conformDir(), "stamps.json"), JSON.stringify({ version: 1, stamps: { [root]: { [hash]: stamp(false) } } }));
   const g = await observeRuntime(root);
-  assert.deepEqual(g.approved?.hash, hash);
   assert.equal(g.proof?.pass, false);
-  assert.equal(g.proof?.confined, false);
   assert.deepEqual(g.proof?.failed, { check: "up-a", detail: "x" });
-  assert.equal(g.confinedProof?.pass, true);
-  assert.equal(g.confinedProof?.confined, true);
   // A stamp of an older suite proves nothing now.
   writeFileSync(join(conformDir(), "stamps.json"), JSON.stringify({ version: 1, stamps: { [root]: { [hash]: stamp(true, SUITE_VERSION - 1) } } }));
   assert.equal((await observeRuntime(root)).proof, null);
 });
 
-test("a branch's tip: its own hash, approval and confined proof", async () => {
+test("a branch's tip: its own hash and proof", async () => {
   git("checkout", "-qb", "sova/onboard");
   const next = { ...DEF, slots: { cap: 3 } };
   write(".sova/project.json", JSON.stringify(next, null, 2));
@@ -123,7 +114,6 @@ test("a branch's tip: its own hash, approval and confined proof", async () => {
   git("checkout", "-q", "main");
   const b = await branchFacts(root, "sova/onboard");
   assert.deepEqual(b.def, { state: "present", hash: defHashOf(parseDefinition(JSON.stringify(next))) });
-  assert.equal(b.approved, false);
   assert.equal(b.proof, null);
   assert.equal(b.commit, git("rev-parse", "sova/onboard").trim());
   assert.deepEqual((await branchFacts(root, "no-such-branch")).def, { state: "absent" });

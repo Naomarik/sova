@@ -16,9 +16,22 @@ export const dataRootOf = (id: string) => join(servicesRoot(), "data", id);
 export const logsDir = () => join(servicesRoot(), "logs");
 export const procsDir = () => join(servicesRoot(), "procs");
 export const locksDir = () => join(servicesRoot(), "locks");
-export const approvalsFile = () => join(servicesRoot(), "approvals.json");
 export const hostVarsFile = () => join(servicesRoot(), "host.json");
 export const conformDir = () => join(servicesRoot(), "conform");
+
+/** Host variables (`host` names) per project root: `{version: 1, projects: {<root>: {NAME: value}}}`, set by the operator by hand. */
+export function hostVars(project: string, file = hostVarsFile()): Record<string, string> {
+  try {
+    const raw = JSON.parse(readFileSync(file, "utf8")) as { version?: unknown; projects?: Record<string, Record<string, unknown>> };
+    if (raw?.version !== 1) return {};
+    const vars = raw.projects?.[project] ?? {};
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(vars)) if (typeof v === "string") out[k] = v;
+    return out;
+  } catch {
+    return {};
+  }
+}
 
 /** Six hex of the state root's path: every unit name carries it, so two Sova servers on one user manager never touch each other's units. */
 export const stateHash = () => createHash("sha256").update(stateRoot()).digest("hex").slice(0, 6);
@@ -48,8 +61,6 @@ export interface InstanceRecord {
   ports: Record<string, Record<string, number>>;
   /** Container service → the container its last start ran as, so a down can remove it after the service left the definition. */
   containers?: Record<string, { engine: string; name: string }>;
-  /** The confined conformance run it belongs to (§app.project-services/confined): its processes run only inside that run. */
-  confined?: string;
 }
 
 /** A project's shared services (§app.project-services/contract `scope: shared`): one per project. */

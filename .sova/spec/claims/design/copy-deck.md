@@ -313,8 +313,9 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Group labels | Major mode · Minor modes · Subagents |
 | Subagents row / Delegate detail | Subagents · {name} / Profile: {name} |
 | Subagent picker | Back · Subagent profiles · Search subagent profiles · Manage Profiles… · Save Current as Profile |
-| Descriptions | from pi-config `MODE_DESCRIPTIONS` (state.ts): normal: Pi as usual · delegate: Orchestrate: route planning, investigation and implementation to workers by profile · minors: from pi-config `MINOR_DESCRIPTIONS` |
+| Descriptions | from pi-config `MODE_DESCRIPTIONS` (state.ts): normal: Pi as usual · delegate: Orchestrate: route planning, investigation and implementation to workers by profile · minors, from pi-config `MINOR_DESCRIPTIONS` (minor.ts): align: Align with the user on what to build (architecture, UX, scope) before building · spec: Scope work from the project's .sova/spec documentation, propose changes in drafts, and promote them once implemented · vis: Draw small inline visuals (vis fences: flow, sequence, tree, timeline, chart, …) when a picture explains faster than prose · codemode: Let the model run JavaScript that calls tools in parallel and filters their output (pi's codemode tool) |
 | Delegate gear | icon only; `aria-label`/`title`: Configure Delegate (opens Settings → Subagents; switches nothing) |
+| Spec gear | icon only; `aria-label`/`title`: Configure Spec (opens Settings → Subagents at its spec-writer section; switches nothing) |
 | Foot | strict: {on\|off} · A switch here is this chat's own. New sessions start from the default. |
 | Save button | `Save as default` · while the save is in flight: `Saving…` · when this chat's mode, strict flag, minors and subagent profile match the saved defaults: ✓ `Already the default` (`aria-disabled`). The visible label is the accessible name |
 | Save button `title` | New sessions will start from {mode · strict · minors}. · already: New sessions already start from {mode · strict · minors}. · this chat's mode not arrived: Make this chat's mode the default for new sessions. (already: New sessions already start from the default mode.) — `strict` named only when on |
@@ -324,7 +325,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Can't switch | **This chat can't switch.** This chat can't switch: the mode extension isn't loaded here, or another program wrote this session. |
 | Switch failed | **Couldn't switch the mode.** {reason}. Your mode is unchanged. |
 | Load failed | **Couldn't load the modes.** Your mode is unchanged. Close this and try again. |
-| Transcript marker | Mode → {mode} · Minor mode: {minor} on\|off (shown as recorded) |
+| Transcript marker | Mode → {mode} · Minor mode: {minor} on\|off · Strict mode on\|off (shown as recorded) |
 | Toast (from the extension) | Mode: {mode} · Minor mode: {minor} on\|off |
 
 ## §design.copy-deck/context-window — Context window
@@ -383,6 +384,11 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | 4xx error | {server message}, or: That folder doesn't exist. Pick one that does. |
 | Other error | **Couldn't create the session.** Nothing was written. Try again. |
 | Recent list header | checkbox "Show hidden folders" (the picker's own preference, not a second one) · caption "1 hidden folder is not listed." / "{n} hidden folders are not listed." — one line, only when rows were dropped |
+| Tabs | `Project` (branch icon) · `This Computer` (folder) · `Remote` (terminal), in that order |
+| Project tab | label "Project" · row: the project's name · its root with `~` · chip: the organization's name, or "Standalone" · hint "pi starts in the project root. When it makes a worktree, the project tracks it." |
+| Project tab states | Loading projects… · Couldn't read the projects. {message} · No projects on this host yet. Add one from Projects. |
+| Project tab, started (toast) | Coding session started in the project root. · mode not set: Started, but its mode could not be set. Set it from the chat's mode menu before you send. |
+| Project tab, 4xx (`.field-error` under the list) | {server message} |
 
 ## §design.copy-deck/insights — Insights (§app/insights)
 
@@ -767,6 +773,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Row | the title (a link on this host) · meta: "Started by the overseer", "Started by you" or "Started by you, via the Overseer" · `working` / `idle` · {relative time} · then the branch in mono: `sova/{name}` · not on this host: `sova/{name}` · "on another host" |
 | Above the list, when the project can't have worktrees | "Coding sessions run in the project root: {reason}" — `{reason}` one of "it isn't a Git repository." · "the repository has no commits yet." · "its checkout is on a detached HEAD." |
 | …a row in the root | "In the project root: {reason}" — no branch, no buttons |
+| …a row started from New Session's Project tab, before its worktree | "In the project root until it makes a worktree." — no branch, no buttons · Merge or Remove asked of it anyway (server): "It runs in the project root until it makes a worktree." |
 | …after | "Merged into `{target}` {relative time}" · "Worktree removed" · "Worktree folder missing" · merged before, with commits since: "{n} new commits since the last merge into `{target}` {relative time}" (1: "1 new commit since…"), and Merge Branch again |
 | Merge | `Merge Branch` (secondary) · disabled reasons: "Session working" · "Workers running" · "On another host" · done (toast): "Merged sova/{name} into {target}." |
 | …refused (`.field-error` under the row) | "The project root has {branch} checked out, not {target}. Check out {target} there, then merge." · "The project root has uncommitted changes to tracked files. Commit or stash them, then merge." · "The project root is in the middle of a {merge/rebase/cherry-pick}. Finish it, then merge." · detached root: "The project root's checkout is on a detached HEAD, not {target}. Check out {target} there, then merge." · uncommitted in the worktree: "The worktree has uncommitted changes in {n} files ({first file}). Commit them in the session first, then merge." · nothing to merge: "sova/{name} has nothing to merge into {target}." · conflict: "sova/{name} conflicts with {target} in {n} files. Nothing was merged. Resolve it in the worktree, then merge again." · busy (server): "The session is working." · "Its workers are running." · another host: "On another host: its worktree is there." |

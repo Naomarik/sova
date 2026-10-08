@@ -62,7 +62,7 @@ const fakeEngine = {
     } catch (err) {
       error = { code: (err as DeployFailure).code as "forbidden", message: (err as Error).message };
     }
-    return ordered({ v: 1, verb: verb as DeployVerb, project: root, instance: null, slot: null, generation: null, checkout: null, branch: null, ok: !error, changed: false, state: "absent", steps: [], services: [], data: [], links: [], ...(error ? { error } : {}), defHash: null, approved: false, at: "" });
+    return ordered({ v: 1, verb: verb as DeployVerb, project: root, instance: null, slot: null, generation: null, checkout: null, branch: null, ok: !error, changed: false, state: "absent", steps: [], services: [], data: [], links: [], ...(error ? { error } : {}), defHash: null, at: "" });
   },
 } as unknown as ProjectEngine;
 

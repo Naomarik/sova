@@ -91,7 +91,7 @@ shell string is accepted anywhere: every command is an argv array of non-empty s
 - **`open`** (optional): `{endpoint, path?}`, the project's entry point: where a person opens the
   app. `endpoint` is `"<service>.<port>"`, a declared port of a checkout service (never a shared
   service's); `path` starts with `/` (default `/`). It exposes nothing (a copy's entry is a port the
-  copy already listens on), so it is outside the approval hash; conformance checks that it answers
+  copy already listens on), so it is outside the definition's hash; conformance checks that it answers
   (§app.project-services/conform), and the Branches tab opens it (§app.project-services/services-ui).
 - **`sources`** (optional): the checkout files the definition was written from (`bb.edn`,
   `package.json`, a compose file, `.mise.toml`: relative, no `..`, dot-files allowed, at most 50),
@@ -136,17 +136,17 @@ createdBy, url?}`, §app.project-services/share: share's link, the links revoke 
 links of the instance status reads; empty otherwise), then the verb's own key (`instances` for status of a whole
 project, `lines` for logs and test, `checks` for doctor and status (status: the supervisor's alone), `conform` for conform,
 `tests` for test, `deploy` for the deploy verbs, §app.project-services/deploy), then `error?` (`{code,
-message, step?, service?}`), `defHash`, `approved` and `at`. Arrays follow declaration order.
+message, step?, service?}`), `defHash` and `at`. Arrays follow declaration order.
 Running a verb again with the same inputs gives the same object apart from `at`, `ms`, pids,
 `rssBytes` and a new generation.
 
 The error codes are a closed list: `not-found`, `invalid-request`, `invalid-definition`,
-`not-approved`, `not-conformant`, `cap-reached`, `port-held`, `not-ready`, `start-failed`,
+`not-conformant`, `cap-reached`, `port-held`, `not-ready`, `start-failed`,
 `hook-failed`, `tests-failed`, `dirty-worktree`, `busy`, `unsupported`, `refused-slot0`, `share-denied`,
 `forbidden`, `needs-confirm`, `deploy-refused`, `needs-override`, `deploy-failed`, `verify-failed`. Each maps to one exit class, the CLI's exit code and the route's
 status: **0** done, a no-op included (200); **1** failed part-way — `not-ready`, `start-failed`,
 `hook-failed`, `tests-failed`, `deploy-failed`, `verify-failed` — with `state` saying what runs, and a re-run converges from there (502); **2**
-refused, nothing changed — `not-approved`, `not-conformant`, `cap-reached`, `port-held`,
+refused, nothing changed — `not-conformant`, `cap-reached`, `port-held`,
 `dirty-worktree`, `unsupported`, `refused-slot0`, `share-denied`, `forbidden`, `needs-confirm`,
 `deploy-refused`, `needs-override` (409); **3** invalid — `invalid-request`, `invalid-definition`, `not-found` (400, 404 for
 not-found); **4** `busy` (423). `status`, `logs` and `doctor` answer 0 when the app is unhealthy;
@@ -209,8 +209,8 @@ before each start.
 In: `project`, and `checkout` (an existing worktree of the project, adopted), or `branch` (with
 `from`, default the main checkout's HEAD: Sova adds a worktree for it beside the repository, as
 §app.project-overseer/coding-worktrees places them, creating the branch when it is new), or neither
-(the main checkout, slot 0); `slot` optional. The definition is read and checked, and its approval
-too, before anything is made. Then the slot is allocated, the worktree cut when asked, each data
+(the main checkout, slot 0); `slot` optional. The definition is read and checked before anything
+is made. Then the slot is allocated, the worktree cut when asked, each data
 resource provisioned (skipped when it exists) and each setup step run (skipped when its
 fingerprint, its rendered argv plus a hash of its `inputs`, is unchanged). A second create of the
 same checkout answers the same instance with `changed: false`.
@@ -276,7 +276,7 @@ nothing (§app.project-services/adopt).
 Both are reads. `status` of an instance reports each service as observed now (stopped, starting,
 ready, degraded, failed, or `external` when something else holds its port) with its unit, pid,
 ports and, while a process service runs, `rssBytes` (the resident memory of its unit's
-processes now), each data resource's existence, the definition's hash and approval, and the supervisor in use
+processes now), each data resource's existence, the definition's hash, and the supervisor in use
 as the one check `supervisor` (informational: it never makes `ok` false). A service the definition
 no longer declares whose unit (or static serve) still runs is listed too, after the declared ones,
 as `degraded` with its unit and pid and the detail "no longer in the definition" (a shared one:
@@ -293,7 +293,7 @@ its launchd agent's output file).
 
 ## §app.project-services/doctor — doctor
 
-A read-only preflight: the definition parses, it is approved, the supervisor is reachable (its check
+A read-only preflight: the definition parses, the supervisor is reachable (its check
 names the adapter in use and why it was chosen), every
 command's program is on the PATH, every `host` name is set, every `dir` resource's `from` exists,
 and the instance's ports are free or held by its own (as §app.project-services/up counts them). Each is a check `{id, ok, detail}`;
@@ -334,8 +334,7 @@ Sova tells each coding session about its own running copies in a note rendered f
 own `.sova/project.json` and the registry, never from a file in the checkout. It covers every
 checkout that is the session's own (§app.project-services/callers) except the main checkout, whose
 project has a definition. For a checkout with an instance it says: the checkout and branch, the
-instance id and slot, and when the definition is not approved, that the operator approves it; each
-port as "`<service>.<port>`: N (main checkout: M)", with its `http://127.0.0.1:N<path>` URL when
+instance id and slot; each port as "`<service>.<port>`: N (main checkout: M)", with its `http://127.0.0.1:N<path>` URL when
 the service's readiness is http on that port, and "shared" for a shared service's; each service's
 rendered `about` and whether it is on-demand; each data resource's name and where it is; how tests
 run ("project_verbs {verb: "test", select: [...]} runs them in this instance; no select runs the
@@ -349,7 +348,7 @@ gets no note.
 The note reaches the model as a hidden message (`sova-instance-note`, never shown in the
 transcript) at the start of a turn, only when its text differs from the last such message on the
 branch: the text holds no live state (no pids, no running or stopped), so it changes only when a
-slot, port, data ref, `about`, the test command, the approval or the sandbox does. After a
+slot, port, data ref, `about`, the test command or the sandbox does. After a
 compaction the current note is sent again. The system prompt never changes. The same text follows
 the result of `project_verbs` and `sova_project_verbs` for create, up, apply and status of one
 instance, so a turn that just ran up learns its ports at once, and status is the note on demand.
@@ -392,8 +391,7 @@ like the others: one result shape, every caller.
   shared."); the definition has no `share` key or says `allow: false`; the endpoint is not listed;
   any data resource of the definition is `sensitive` ("Derived from production: copies are never
   shared."); the instance is not running that endpoint's service (share never starts anything: up
-  first); or no preview address is set. An unapproved definition is `not-approved`, as for every verb
-  that runs something.
+  first); or no preview address is set.
 - **The link.** A port preview of the endpoint's port in the copy's slot, kept in
   `preview-kept.json` with the target `instance` (the instance id, the endpoint, and for a static
   service the serve that must hold the port) and the copy's branch; preview-links.json's keys do not
@@ -423,19 +421,6 @@ like the others: one result shape, every caller.
   Status lists each instance's active links. A share or revoke that changed something is a `link`
   step (`share`, `revoke`, teardown's `links`); a held share is a skipped `share` step whose detail
   says it is held, with no link.
-
-## §app.project-services/trust — Approval of a definition
-
-A definition runs only after the operator approved its hash on this host. The hash
-(`sha256:<hex>`) covers the whole parsed definition except timeouts, readiness paths, each
-service's `about` and `isolation`, the `sources` list, the entry point `open` and `deploy` (which has
-a hash of its own, §app.project-services/deploy-trust), so a
-branch that changes any command, env template, port, hook or data source needs approving again,
-while tuning a timeout, rewording an `about` or an isolation's `why`, or listing another source does not; a `test`, a `start`, a data resource's `sensitive`, `share` and a service's `onMerge` are covered (`allow: true`, the default, hashes as if absent). Approvals live in `<state root>/project-services/approvals.json`,
-keyed by project root and hash, outside every repo, so no branch can approve itself; only the
-operator's own routes and CLI approve, never a session or an Overseer, and an approval is refused
-when the definition's hash is no longer the one shown. Every verb that runs something answers
-`not-approved` before changing anything; reads and doctor still work.
 
 ## §app.project-services/reconcile — After a server start
 
@@ -469,13 +454,11 @@ adds: up A left every on-demand service stopped; test A with the `smoke` selecti
 `requires` are ready afterwards and B's pids are unchanged; a second such test passes with the same
 counts; without a `test`, test A answers `unsupported`; suite version 3 adds, after logs: each
 endpoint the definition's `share` lists answers a `GET /` below 500 through the preview proxy's own
-request path, in the server's process, with no link minted (a confined run's process service is
-asked inside the run's namespace; with no endpoints, `allow: false` or sensitive data the check
+request path, in the server's process, with no link minted (with no endpoints, `allow: false` or sensitive data the check
 passes saying so); suite version 4 adds, after that: when the definition declares `open`, its entry
 in A (that endpoint's port in A, at its `path`) answers a `GET` below 500, its service ready, and
-the check's detail names the answer's status and content type, so a reader can tell a page from an API (a
-confined run's process service is asked inside the run's namespace; without `open` the check
-passes saying so); then down A (its processes gone, the
+the check's detail names the answer's status and content type, so a reader can tell a page from an API (without `open`
+the check passes saying so); then down A (its processes gone, the
 on-demand ones' included, its ports free, B still ready), and again (`changed: false`); teardown A and B, and again (`absent`);
 then nothing is left of either: no unit or process, no listener on their ports, no data dir, no
 container, no registry entry, no worktree. While the suite runs, Sova samples the resident memory of
@@ -492,38 +475,17 @@ in git. The suite's version is 4, which the report and the stamp carry. Beyond A
 that appeared during the run is a leak only when it belongs to no registered instance (nor the
 project's shared services): another instance's, registered before the run or made meanwhile by
 another caller (a session's `up`, the server's reconcile), is never one. The report and a stamp keyed by project, hash and suite
-version are written to Sova's state, a failed run's too (with its first failed check), and a
-confined run's stamp is kept apart from an unconfined one's. A definition that is approved on this
-host runs as described; one that is not runs confined (§app.project-services/confined), whoever
-calls, and a confined stamp never stands for approval or registers anything. Once the operator
-approves main's definition, the project's software registry runs this unconfined conformance on main
-by itself (§app.project-runtime/standing).
+version are written to Sova's state, a failed run's too (with its first failed check). Any valid
+definition conforms as written, whoever calls, and the project's software registry runs this
+conformance on main by itself (§app.project-runtime/standing).
 
-## §app.project-services/confined — Conformance before approval, confined
-
-A definition that is not approved on this host conforms confined, so the Project verbs playbook
-can prove a definition before the operator approves it. Before anything starts, the run is refused
-with `not-approved` when the definition has a `container` service ("a container service runs only
-after approval: approve this definition to conform it"), when a data `from` names a folder outside
-the project's checkouts or one the host's sandbox policy hides, or when the host can't confine (not
-Linux, no `bwrap` or `nsenter`, no sandbox policy file, or a read-only policy), naming why.
-
-Each confined run gets one private network namespace of its own, held by an anchor that Sova starts
-under the host's sandbox policy (`<agent dir>/sandbox-policy/`) with its proxy: the namespace has
-only loopback, and its one way out is the policy's proxy allowlist (`HTTP(S)_PROXY`, and for a JVM
-`JAVA_TOOL_OPTIONS` with the same proxy; Maven's resolver, which reads proxies only from
-`~/.m2/settings.xml`, finds them in the sandbox's private `~/.m2`, written there once when it has no
-settings file). Every process of the run (setup, hooks, build steps,
-services, test runs, the probe) joins that namespace and runs in the policy's filesystem view: the
-policy's hidden paths read as empty, its caches are the sandbox's private copies (the policy's, and also the Clojure CLI's user classpath cache `~/.clojure/.cpcache` and git libraries `~/.gitlibs`, never the user's config beside them), and it may write
-only its own instance's checkout and data dir and a tmp of its own; the main checkout, every other
-checkout and the rest of the host are read-only. So A's and B's services reach each other's ports
-only inside the run, nothing of the run is reachable from the host, and a fixed port collides with
-nothing on the host. Sova checks readiness, port owners and listeners inside the namespace itself.
-A static service is served by the server as always. The check that the token is absent from the
-main checkout's instance is recorded as skipped (confined). The stamp says `confined`, and the
-report carries `confined: true`. The run's units are stopped when the server starts again, never
-started.
+The hash (`sha256:<hex>`) a stamp is keyed by covers the whole parsed definition except timeouts,
+readiness paths, each service's `about` and `isolation`, the `sources` list, the entry point `open`
+and `deploy` (which has a hash of its own, §app.project-services/deploy), so a stamp still proves a
+definition whose timeout was tuned, whose `about` or isolation `why` was reworded or whose sources
+grew, while a change to any command, env template, port, hook or data source needs a new run; a
+`test`, a `start`, a data resource's `sensitive`, `share` and a service's `onMerge` are covered
+(`allow: true`, the default, hashes as if absent).
 
 ## §app.project-services/facts — What a project's software registry reads
 
@@ -532,19 +494,17 @@ dirty): whether `.sova/project.json` is absent, invalid (with the parse error) o
 hash), the commit, the software it declares (each service's name, kind, scope, slot-0 ports,
 requires, start and isolation), its data resources (each one's name, kind and whether it is
 `sensitive`), its `sources` with each file's blob at HEAD (`null` where missing)
-and a fingerprint over them, this host's approval of that hash, and its newest unconfined and newest
-confined conformance stamps with the current suite (pass, time, report, the first failed check, the
-run's memory); a stamp of an older suite proves nothing. A source whose blob changed since the
+and a fingerprint over them, and the newest conformance stamp of that hash with the current suite
+(pass, time, report, the first failed check, the run's memory); a stamp of an older suite proves
+nothing. A source whose blob changed since the
 software was registered is the project's drift, named by its path. The same read of a branch's tip
-gives a proposed definition's hash, whether it is approved here, and its confined stamp, and the
-branch's deploy recipe's own hash and whether that is approved here (§app.project-services/deploy-trust). An approval
-made through this read is refused when the definition at that ref is no longer the hash shown, or
-when there is none.
+gives a proposed definition's hash and its newest stamp, and the branch's deploy recipe's own hash
+(§app.project-services/deploy).
 
 ## §app.project-services/callers — Who may call which verb
 
-The verbs are served by `POST /api/project-services/<verb>` (and `POST
-/api/project-services/approve`), which act as the operator, and by `scripts/sova-project.mjs <verb>`,
+The verbs are served by `POST /api/project-services/<verb>`, which acts as the operator, and by
+`scripts/sova-project.mjs <verb>`,
 a thin client of those routes that prints the result and exits with its class. Two tools call the
 same engine in-process, never over HTTP:
 
@@ -553,7 +513,7 @@ same engine in-process, never over HTTP:
   worktrees, and its cwd's checkout unless that is the main checkout); reset and teardown only on
   instances it created; conform of its project. Anything else is `forbidden`.
 - **`sova_project_verbs`** for the Overseers. The global Overseer reads any project and acts in a
-  turn the user started; the project overseer is confined to its project: reads at any level,
+  turn the user started; the project overseer acts only on its project: reads at any level,
   and every other verb only once its project statechart took the act (`services/down` at L0,
   `services/run` at L3 for create, up, apply, test, reset, teardown and conform; any of them in a run the
   operator started; §app.project-overseer/tools). Above its level the statechart refuses with a
@@ -570,8 +530,7 @@ check of the share passed, so a refused share never reaches the statechart; the 
 no act, never held and taking no lock. Sova itself, on no one's request (the `system` caller: today
 only onMerge, §app.project-services/on-merge), runs `apply` and the reads, nothing else: any other
 verb is `forbidden`, and the self-host rule refuses it like any caller but the operator. The deploy
-verbs have callers of their own (§app.project-services/deploy-callers), and nothing but the operator
-approves a definition or a deploy recipe.
+verbs have callers of their own (§app.project-services/deploy-callers).
 
 ## §app.project-services/self-host — When the project is Sova itself
 
@@ -635,7 +594,7 @@ started) answers `unsupported`; nothing restarts in either case.
   running, as Sova itself (the `system` caller, §app.project-services/callers): each one's `build`
   when its fingerprint changed, then its `reload`. Other services, other slots and a stopped
   service are left as they are: onMerge never starts anything. Main's definition is the one read,
-  so an unapproved one is refused (`not-approved`) and nothing reloads.
+  and it runs as written.
 - **When.** At once after Sova's Merge Branch (§app.project-overseer/coding-worktrees), never
   holding the merge up; otherwise within 5 minutes, by a check of the HEAD of every project with a
   main checkout copy (a hand `git merge`, a release, the operator's own commit or checkout). The
@@ -706,7 +665,7 @@ The operator sees and drives every running copy from two places, both on this ho
   **Stop** that stops it (`down` as the operator; an adopted main has none, its "Runs as {unit}" line stands there instead; a shared service's asks first, and a refusal reads as on the
   tab). It is read every 15 seconds. The project's name links to its Branches tab, with "In {org}"
   while placed. A copy whose root no registered project holds is listed under its folder, without a
-  link. A confined conformance run's copies are not listed. With nothing running it says "Nothing runs on this host now. Copies you
+  link. With nothing running it says "Nothing runs on this host now. Copies you
   start show here."
 - **Share** (§app.project-services/share): a copy's row offers **Share** while the copy is running
   and its status lists share endpoints (`share.endpoints`). It opens a form under the row's facts: the endpoint
@@ -752,23 +711,9 @@ steps, a dry run), `build` and `steps` (at least one) (each step `{id, run, time
 deploy's fresh checkout) and `${branch}`, and nothing else. A target is never an instance: the deploy
 verbs (`deploy.check`, `deploy.plan`, `deploy.run`, `deploy.status`, `deploy.logs`, `deploy.rollback`,
 `deploy.request`) name it by `target` and answer the one result shape with their own key, `deploy`.
-Deploy state lives in `<state root>/project-services/deploy/`.
-
-## §app.project-services/deploy-trust — Approval of a deploy recipe
-
 The deploy section has a hash of its own, the deploy hash (its canonical JSON without timeouts),
-outside the definition's, so approving how the project runs locally never approves how it ships and
-a deploy edit never needs the definition approved again. Only the operator approves it, on Sova's
-rendering of the recipe, the review: for each target, in the order they run, every credential check,
-plan step, build step, step and rollback step as an argv with this host's `${host.…}` values in place
-(a name this host lacks shown unset, never guessed), its verify and its rollback, each with a key to
-tick. `POST /api/project-services/deploy-approve {project, deployHash, ticked, ref?}` approves the
-recipe at `ref` (main's HEAD by default, or a verb playbook's branch, never a working tree) and is
-refused (409, approving nothing) when the recipe there is no longer the hash shown ("The deploy recipe
-changed since it was shown: look again.") or when any key was not ticked ("Tick every step before
-approving: {n} not ticked ({keys})."). Approvals live in `<state root>/project-services/
-deploy-approvals.json`, keyed by project root and deploy hash, with each target's own hash, outside
-every repo. The software feed says "You approved the deploy recipe {hash12} on this host."
+outside the definition's: a plan is bound to it (§app.project-services/deploy-plan). Deploy state
+lives in `<state root>/project-services/deploy/`.
 
 ## §app.project-services/deploy-check — Proving a recipe offline
 
@@ -783,8 +728,8 @@ definition, no deploy or no such commit is `not-found`; an invalid definition, `
 
 ## §app.project-services/deploy-plan — A plan, good for 15 minutes
 
-`deploy.plan {project, target, commit?}` checks one commit for one target and answers a plan. The
-target's recipe on main must be approved (`not-approved` otherwise). The commit is the one named,
+`deploy.plan {project, target, commit?}` checks one commit for one target of main's recipe and
+answers a plan. The commit is the one named,
 else the tip of the target's branch. In this order, each a check `{id, ok, detail}`: the commit is on
 the target's branch (`branch`) and on that branch's upstream, read again from its git remote
 (`pushed`; never a deploy target); main's working tree has no uncommitted change (`dirty`); then, in a
@@ -827,7 +772,7 @@ answered {status}." or why it failed; the plan and its checkout are then removed
 `deploy.status {project, target?}` answers each target main declares (and any with history that main no
 longer declares): its standing (§app.project-runtime/deploy-standing), its last deploy, the last
 verified commit, its rollback, an overseer's open request, with the target's last 20 deploys when one
-is named and, while main's recipe waits for approval, its review. `deploy.logs {project, target |
+is named. `deploy.logs {project, target |
 deploy, lines?}` answers a deploy's log (the target's latest by default; at most 500 lines),
 redacted when it was written. `deploy.rollback {project, target, confirm}` is the operator's alone,
 confirmed: it plans and runs the target's undo, its rollback steps at the commit it runs now, or

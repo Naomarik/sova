@@ -1,5 +1,3 @@
-import type { DeployReview } from "../../shared/project-contract";
-import { tickProgress } from "./project-deploy";
 import type { ProjectRuntimeView, RuntimeMemory, RuntimeRunReview, RuntimeService, RuntimeStanding } from "../../shared/project-runtime";
 
 /**
@@ -11,7 +9,6 @@ export type ChipTone = "success" | "warn" | "error" | "info" | "accent";
 
 export const STANDING_CHIP: Record<RuntimeStanding, { word: string; tone?: ChipTone }> = {
   unregistered: { word: "Unregistered" },
-  "awaiting-approval": { word: "Awaiting approval", tone: "warn" },
   conforming: { word: "Checking", tone: "info" },
   registered: { word: "Registered", tone: "success" },
   stale: { word: "Out of date", tone: "warn" },
@@ -63,21 +60,12 @@ export function failedLine(v: ProjectRuntimeView): string | null {
 /** Run Playbook, or Run Again once something is registered. */
 export const playbookLabel = (v: ProjectRuntimeView): string => (v.registered ? "Run Again" : "Run Playbook");
 
-/** The approval button's label, or null when nothing waits. */
-export const approveLabel = (v: ProjectRuntimeView): string | null => (v.can.approve ? `Approve ${hash12(v.can.approve)}` : null);
-
-/** What the approval approves, in one line (main's definition, or the branch the playbook proposes). */
-export function approveWhat(v: ProjectRuntimeView): string | null {
-  if (!v.can.approve) return null;
-  return v.can.approveBranch ? `The definition the playbook proposes on ${v.can.approveBranch}. Merge the branch after.` : "Main's definition runs on this host once approved; conformance then runs by itself.";
-}
-
 /** The playbook's run in a few words, for the link under the services. */
 export function runWord(v: ProjectRuntimeView): string | null {
   const pb = v.playbook;
   if (!pb) return null;
   if (v.playbookState === "running") return `The ${pb.label} playbook is running`;
-  if (v.playbookState === "proposed") return `The ${pb.label} playbook proposes ${pb.approves === "deploy" ? "a deploy recipe" : "a definition"} on ${pb.branch ?? "its branch"}`;
+  if (v.playbookState === "proposed") return `The ${pb.label} playbook proposes ${pb.proposes === "deploy" ? "a deploy recipe" : "a definition"} on ${pb.branch ?? "its branch"}`;
   if (v.playbookState === "waiting") return `The ${pb.label} playbook waits on your answers`;
   const ended: Record<string, string> = { "no-change": "finished with no change", merged: "was merged", removed: "had its worktree removed", "not-started": "could not start" };
   return `The last ${pb.label} run ${ended[pb.result ?? ""] ?? "ended"}`;
@@ -128,18 +116,12 @@ export function reviewProofWord(r: RuntimeRunReview): string {
   const p = r.proof;
   if (!p) return "No conformance of this definition yet";
   if (!p.pass) return `Conformance failed at ${p.failed?.check ?? "run"}: ${p.failed?.detail ?? ""}`;
-  return `Conformance passed (${p.confined ? "confined" : "unconfined"}, suite v${p.suite})`;
+  return `Conformance passed (suite v${p.suite})`;
 }
 
-/** Why the branch proposes nothing to approve, or null when it has a valid definition. */
+/** Why the branch proposes nothing to merge, or null when it has a valid definition. */
 export function reviewDefProblem(r: RuntimeRunReview): string | null {
   if (r.def.state === "absent") return "Its branch has no .sova/project.json.";
   if (r.def.state === "invalid") return `The definition on its branch is invalid: ${r.def.error ?? ""}`;
   return null;
-}
-
-/** Why a deploy-setup run's Approve & Merge can't go yet: steps of its recipe not ticked; null once every one is. */
-export function deployTickBlock(review: Pick<DeployReview, "keys">, ticked: ReadonlySet<string>): string | null {
-  const p = tickProgress(review, ticked);
-  return p.left ? `Tick every step first: ${p.line}.` : null;
 }

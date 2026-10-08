@@ -48,7 +48,7 @@ tier and comes back is new again.
   replaced, `asks-you`, carries over to it, and a client still sending that key is not refused), `error` (the
   last turn stopped with an error), `baton-needs-you` (a baton session waits on you), `worker-error`
   (a subagent ended in an error) and `playbook-review` (a verb playbook's run proposes a change to
-  approve and merge, §app.project-runtime/review). Each can be switched off; all are on by default
+  merge, §app.project-runtime/review). Each can be switched off; all are on by default
   except `worker-error`. `looping` ("Subagent stuck") is retired: a stuck subagent is no longer a blocker
   (§app.overseer/attention-digest), so nothing could send it; a stored choice for it is dropped,
   and a client still sending that key is not refused. A reply that asks you (`asks-you`,

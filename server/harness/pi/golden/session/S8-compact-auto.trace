@@ -62,7 +62,7 @@ A {"type":"event","event":{"type":"compaction_start","reason":"threshold"}}
 B {"type":"event","v":2,"event":{"type":"activity","what":"compaction","phase":"start"}}
 got compaction handler {"reason":"threshold","firstKeptEntryId":"00000007"}
 write {"id":"00000008","type":"compaction"}
-A {"type":"event","event":{"type":"compaction_end","reason":"threshold","result":{"summary":"One turn, then a big one.","firstKeptEntryId":"00000007","tokensBefore":1234,"estimatedTokensAfter":2845},"aborted":false,"willRetry":false}}
+A {"type":"event","event":{"type":"compaction_end","reason":"threshold","result":{"summary":"One turn, then a big one.","firstKeptEntryId":"00000007","tokensBefore":1234,"estimatedTokensAfter":2824},"aborted":false,"willRetry":false}}
 B {"type":"event","v":2,"event":{"type":"activity","what":"compaction","phase":"end","wrote":true}}
 A {"type":"queue_item_gone","itemId":"c3","reason":"delivered"}
 B {"type":"queue_item_gone","itemId":"c3","reason":"delivered"}

@@ -570,7 +570,8 @@
         "src/lib/hidden-folders.test.ts",
         "server/targets.ts",
         "server/targets.test.ts",
-        "server/targets.integration.test.ts"
+        "server/targets.integration.test.ts",
+        "src/lib/api.ts"
       ]
     },
     "§app/session-list": {
@@ -1003,7 +1004,11 @@
     "§chat.model-menu/trigger": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "reviewed",
+      "code": [
+        "src/components/ComposerMenu.tsx",
+        "src/components/ModelMenu.tsx"
+      ]
     },
     "§chat.slash-commands/announcements": {
       "kind": "behavior",
@@ -1320,7 +1325,7 @@
     "§chat/composer": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
         "src/components/Composer.tsx"
       ]
@@ -1366,7 +1371,7 @@
     "§chat/model-menu": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
         "src/components/ModelMenu.tsx",
         "src/components/ComposerMenu.tsx",
@@ -1801,6 +1806,7 @@
         "src/components/SessionSetup.tsx",
         "src/lib/setup-fold.ts",
         "src/app.css",
+        "src/design/base.css",
         "src/lib/profile-cards.test.ts"
       ]
     },
@@ -2454,7 +2460,7 @@
         "§app/new-session-dialog"
       ],
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "src/components/NewSessionDialog.tsx",
         "src/lib/host-scope.ts"
@@ -2687,7 +2693,8 @@
       "evidence": "verified",
       "code": [
         "scripts/install.sh",
-        "scripts/install.test.sh"
+        "scripts/install.test.sh",
+        "scripts/install.integration.test.ts"
       ]
     },
     "§app.installer/service": {
@@ -2697,7 +2704,9 @@
       "evidence": "verified",
       "code": [
         "scripts/install.sh",
-        "scripts/install.test.sh"
+        "scripts/install.test.sh",
+        "scripts/install.integration.test.ts",
+        "docs/running-as-a-service.md"
       ]
     },
     "§app/installer": {
@@ -2706,7 +2715,8 @@
       "evidence": "verified",
       "code": [
         "scripts/install.sh",
-        "scripts/install.test.sh"
+        "scripts/install.test.sh",
+        "scripts/install.integration.test.ts"
       ]
     },
     "§app.extensions/cards": {
@@ -2959,7 +2969,7 @@
     "§app.overseer/dialog-answers": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
         "server/chat-manager.ts",
         "server/overseer-tools.ts",
@@ -5592,7 +5602,10 @@
         "server/project-services/checkout-teardown.test.ts",
         "server/project-services/on-merge.ts",
         "server/project-services/on-merge.test.ts",
-        "server/project-services/on-merge.integration.test.ts"
+        "server/project-services/on-merge.integration.test.ts",
+        "server/project-coding-later.test.ts",
+        "statecharts/test/sova/statecharts/refit/watch_decisions_build_test.cljc",
+        "statecharts/EVENTS.md"
       ]
     },
     "§app.requirements/promotion-commit": {
@@ -6909,7 +6922,9 @@
         "src/lib/ui-state.ts",
         "src/App.tsx",
         "src/components/ProjectOverseerPanel.tsx",
-        "server/project-coding-runtime.test.ts"
+        "server/project-coding-runtime.test.ts",
+        "server/build-loadout.ts",
+        "server/project-coding-later.test.ts"
       ],
       "requires": [
         "§app.project-overseer/coding-worktrees",
@@ -7049,7 +7064,7 @@
         "§app.worker-restore/claude-bridge-restart"
       ],
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
         "pi-config/extensions/mode/index.ts",
         "pi-config/extensions/mode/vis-guide-tool.ts",
@@ -7061,7 +7076,10 @@
         "pi-config/extensions/mode/README.md",
         "pi-config/extensions/claude-code/provider/bridge.test.ts",
         "server/mode-state.ts",
-        "server/mode-state.test.ts"
+        "server/mode-state.test.ts",
+        "pi-config/extensions/mode/minor.ts",
+        "pi-config/extensions/claude-code/provider/session-bridge.ts",
+        "server/vis-check.ts"
       ]
     },
     "§app.organizations/archive": {
@@ -8128,12 +8146,13 @@
         "src/lib/voice/format.ts",
         "src/lib/voice/status.ts",
         "src/components/ui.tsx",
-        "src/lib/voice/press.ts",
+        "src/lib/voice/keyboard.ts",
         "src/lib/voice/voice.test.ts"
       ],
       "requires": [
         "§app.settings-dialog/voice",
-        "§design.copy-deck/composer"
+        "§design.copy-deck/composer",
+        "§chat.voice/insertion"
       ]
     },
     "§chat.voice/capture": {
@@ -11170,7 +11189,7 @@
       "evidence": "verified",
       "requires": [
         "§app.project-services/result",
-        "§app.project-services/trust",
+        "§app.project-services/conform",
         "§app.project-overseer/tools"
       ],
       "code": [
@@ -11198,7 +11217,9 @@
         "server/project-services/test-verb.integration.test.ts",
         "server/project-services/share.integration.test.ts",
         "server/project-services/on-merge.integration.test.ts",
-        "server/app.ts"
+        "server/app.ts",
+        "server/harness/pi/golden/session/S7-compact-manual.jsonl",
+        "server/harness/pi/golden/session/S8-compact-auto.jsonl"
       ]
     },
     "§app.project-services/conform": {
@@ -11227,8 +11248,6 @@
         "server/project-services/test-verb.test.ts",
         "server/project-services/test-verb.integration.test.ts",
         "server/project-services/conform-static-on-demand.integration.test.ts",
-        "server/project-services/confine.test.ts",
-        "server/project-services/confine.integration.test.ts",
         "server/project-services/conform-logs.test.ts",
         "server/project-services/conform-logs.integration.test.ts",
         "server/project-services/share.ts",
@@ -11236,10 +11255,9 @@
         "server/project-services/share.integration.test.ts",
         "server/project-services/conform-cleanup.test.ts",
         "server/project-services/conform-cleanup.integration.test.ts",
-        "server/project-services/confine.ts",
-        "server/project-services/netns-agent.mjs",
         "server/project-services/ports-grace.test.ts",
-        "server/project-services/ports-grace.integration.test.ts"
+        "server/project-services/ports-grace.integration.test.ts",
+        "server/project-services/def-hash.ts"
       ]
     },
     "§app.project-services/contract": {
@@ -11270,7 +11288,7 @@
         "§app.project-services/contract",
         "§app.project-services/instances",
         "§app.project-services/lock",
-        "§app.project-services/trust",
+        "§app.project-services/conform",
         "§app.project-services/result",
         "§app.project-overseer/coding-worktrees"
       ],
@@ -11288,7 +11306,7 @@
       "evidence": "reviewed",
       "requires": [
         "§app.project-services/contract",
-        "§app.project-services/trust",
+        "§app.project-services/conform",
         "§app.project-services/supervisor"
       ],
       "code": [
@@ -11499,28 +11517,6 @@
         "server/project-services/adopt.integration.test.ts"
       ]
     },
-    "§app.project-services/trust": {
-      "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "verified",
-      "requires": [
-        "§app.project-services/contract"
-      ],
-      "code": [
-        "server/project-services/trust.ts",
-        "server/project-services/routes.ts",
-        "server/project-services/engine.ts",
-        "server/project-services/engine.test.ts",
-        "server/project-services/engine.integration.test.ts",
-        "server/project-services/note.test.ts",
-        "server/project-services/note.integration.test.ts",
-        "server/project-services/observe.test.ts",
-        "shared/project-contract.ts",
-        "server/project-services/share.test.ts",
-        "server/project-services/share.integration.test.ts",
-        "shared/project-contract.test.ts"
-      ]
-    },
     "§app.project-services/up": {
       "kind": "behavior",
       "authority": "accepted",
@@ -11529,7 +11525,7 @@
         "§app.project-services/create",
         "§app.project-services/supervisor",
         "§app.project-services/lock",
-        "§app.project-services/trust"
+        "§app.project-services/conform"
       ],
       "code": [
         "server/project-services/engine.ts",
@@ -11617,7 +11613,7 @@
         "§app.extensions/serving"
       ],
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
         "server/chat-manager.ts",
         "server/extensions.ts",
@@ -11672,7 +11668,7 @@
         "§app.access/token"
       ],
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
         "README.md",
         "docs/customization.md",
@@ -11692,14 +11688,15 @@
     "§app/access": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
         "server/auth.ts",
         "server/index.ts",
         "server/app.ts",
         "server/ws.ts",
         "src/lib/auth.ts",
-        "src/components/Unlock.tsx"
+        "src/components/Unlock.tsx",
+        "scripts/install.sh"
       ]
     },
     "§app.overseer/input-source": {
@@ -11877,7 +11874,7 @@
         "§app.access/unlock"
       ],
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
         "package.json",
         "server/auth-devices.ts",
@@ -12693,21 +12690,6 @@
         "§mesh.peers/listener"
       ]
     },
-    "§app.project-runtime/approve": {
-      "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "statecharts/src/sova/statecharts/runtime.cljc",
-        "statecharts/src/sova/statecharts/rules/runtime.cljc",
-        "server/projects/runtime.ts",
-        "server/projects/runtime-routes.ts",
-        "server/projects/runtime.test.ts"
-      ],
-      "requires": [
-        "§app.project-services/trust"
-      ]
-    },
     "§app.project-runtime/onboard": {
       "kind": "behavior",
       "authority": "accepted",
@@ -12778,7 +12760,7 @@
         "shared/project-runtime.ts"
       ],
       "requires": [
-        "§app.project-services/trust",
+        "§app.project-services/conform",
         "§app.project-services/status-logs"
       ]
     },
@@ -12817,30 +12799,7 @@
         "server/projects/runtime.test.ts"
       ],
       "requires": [
-        "§app.project-services/conform",
-        "§app.project-services/trust"
-      ]
-    },
-    "§app.project-services/confined": {
-      "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "verified",
-      "requires": [
-        "§app.project-services/conform",
-        "§app.project-services/trust",
-        "§app.project-services/supervisor",
-        "§app.project-services/reconcile"
-      ],
-      "code": [
-        "server/project-services/confine.ts",
-        "server/project-services/netns-agent.mjs",
-        "server/project-services/conform.ts",
-        "server/project-services/engine.ts",
-        "server/project-services/store.ts",
-        "server/project-services/confine.test.ts",
-        "server/project-services/confine.integration.test.ts",
-        "server/port-owner.ts",
-        "server/port-owner.test.ts"
+        "§app.project-services/conform"
       ]
     },
     "§app.project-services/facts": {
@@ -12849,7 +12808,6 @@
       "evidence": "verified",
       "requires": [
         "§app.project-services/contract",
-        "§app.project-services/trust",
         "§app.project-services/conform"
       ],
       "code": [
@@ -13182,7 +13140,7 @@
         "§app.project-services/apply",
         "§app.project-services/callers",
         "§app.project-services/self-host",
-        "§app.project-services/trust"
+        "§app.project-services/conform"
       ],
       "authority": "accepted",
       "evidence": "verified",
@@ -13661,23 +13619,6 @@
         "server/claude-pool/agent.integration.test.ts"
       ]
     },
-    "§app.project-runtime/approve-merge": {
-      "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "server/projects/runtime.ts",
-        "server/projects/runtime-routes.ts",
-        "server/projects/playbook-review.integration.test.ts",
-        "src/lib/api.ts",
-        "src/components/PlaybookReview.tsx",
-        "src/components/ProjectSoftwareCard.tsx"
-      ],
-      "requires": [
-        "§app.project-runtime/approve",
-        "§app.project-overseer/coding-worktrees"
-      ]
-    },
     "§app.project-runtime/review": {
       "kind": "behavior",
       "authority": "accepted",
@@ -13740,7 +13681,9 @@
         "src/lib/project-software.ts",
         "src/lib/project-software.test.ts",
         "src/components/ProjectDeployPanel.tsx",
-        "src/lib/project-deploy.ts"
+        "src/lib/project-deploy.ts",
+        "server/project-services/deploy-recipe.ts",
+        "server/project-services/deploy-recipe.test.ts"
       ],
       "requires": [
         "§app.project-runtime/registry"
@@ -13814,13 +13757,13 @@
       "authority": "accepted",
       "evidence": "verified",
       "requires": [
-        "§app.project-services/deploy-trust"
+        "§app.project-services/deploy"
       ],
       "code": [
-        "server/project-services/deploy-trust.ts",
+        "server/project-services/deploy-recipe.ts",
         "server/project-services/deploy.ts",
-        "server/project-services/deploy-trust.test.ts",
-        "server/project-services/deploy-trust.integration.test.ts"
+        "server/project-services/deploy-recipe.test.ts",
+        "server/project-services/deploy-recipe.integration.test.ts"
       ]
     },
     "§app.project-services/deploy": {
@@ -13840,7 +13783,8 @@
         "server/project-services/engine.test.ts",
         "server/project-services/engine.integration.test.ts",
         "playbooks/project-verbs/scripts/project-verbs.mjs",
-        "playbooks/project-verbs/references/contract.md"
+        "playbooks/project-verbs/references/contract.md",
+        "server/project-services/def-hash.ts"
       ]
     },
     "§app.project-services/deploy-callers": {
@@ -13878,13 +13822,13 @@
       "evidence": "verified",
       "requires": [
         "§app.project-services/deploy",
-        "§app.project-services/deploy-trust",
         "§app.project-services/test"
       ],
       "code": [
         "server/project-services/deploy.ts",
         "server/project-services/deploy-run.test.ts",
-        "server/project-services/deploy-run.integration.test.ts"
+        "server/project-services/deploy-run.integration.test.ts",
+        "server/project-services/deploy-recipe.ts"
       ]
     },
     "§app.project-services/deploy-run": {
@@ -13919,24 +13863,6 @@
         "server/overseer.ts",
         "shared/protocol.ts",
         "server/project-services/routes.ts"
-      ]
-    },
-    "§app.project-services/deploy-trust": {
-      "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "verified",
-      "requires": [
-        "§app.project-services/deploy",
-        "§app.project-services/trust"
-      ],
-      "code": [
-        "server/project-services/deploy-trust.ts",
-        "server/project-services/deploy-trust.test.ts",
-        "server/project-services/deploy-trust.integration.test.ts",
-        "server/project-services/trust.ts",
-        "server/project-services/observe.ts",
-        "server/project-services/routes.ts",
-        "server/project-services/deploy.ts"
       ]
     },
     "§mesh.peers/grants": {
@@ -15562,7 +15488,8 @@
         "src/components/ChatView.tsx",
         "src/lib/api.ts",
         "src/app.css"
-      ]
+      ],
+      "evidence": "reviewed"
     },
     "§app.baton/files": {
       "kind": "behavior",
@@ -15739,6 +15666,483 @@
       "code": [
         "pi-config/extensions/usage-status/index.ts",
         "pi-config/extensions/usage-status/overlay.test.ts"
+      ]
+    },
+    "§app.project-runtime/merge": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/projects/runtime.ts",
+        "server/projects/runtime-routes.ts",
+        "server/projects/playbook-review.integration.test.ts",
+        "src/lib/api.ts",
+        "src/components/PlaybookReview.tsx",
+        "src/components/ProjectSoftwareCard.tsx"
+      ],
+      "requires": [
+        "§app.project-runtime/review",
+        "§app.project-overseer/coding-worktrees"
+      ]
+    },
+    "§chat.transcript/jump-landing": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.transcript/rendering"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/Thread.tsx",
+        "src/lib/jump.ts",
+        "src/lib/tail-render.ts",
+        "src/lib/tail-render.test.ts",
+        "scripts/e2e/jump-settle.mjs",
+        "package.json"
+      ]
+    },
+    "§chat.mode-menu/codemode": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.mode-menu/how-a-switch-reaches-the-chat",
+        "§chat.mode-menu/minor-toggle-keeps-prompt",
+        "§chat.mode-menu/workers",
+        "§tools.spec/census-note"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "pi-config/extensions/mode/minor.ts",
+        "pi-config/extensions/mode/index.ts",
+        "pi-config/extensions/mode/prompt.ts",
+        "pi-config/extensions/mode/palette.ts",
+        "server/harness/pi/codemode.ts",
+        "server/chat-manager.ts",
+        "server/mode-state.ts",
+        "shared/harness-tools.ts",
+        "src/components/ToolCard.tsx",
+        "pi-config/extensions/mode/index.test.ts",
+        "server/codemode-runtime.test.ts",
+        "server/harness/pi/contract.test.ts",
+        "server/harness/pi/tools.test.ts"
+      ]
+    },
+    "§chat.mode-menu/strict": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.mode-menu/menu",
+        "§app.overseer/hosting",
+        "§app.project-overseer/coding-mode"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "pi-config/extensions/mode/index.ts",
+        "pi-config/extensions/mode/prompt.ts",
+        "pi-config/extensions/mode/state.ts",
+        "server/mode-state.ts",
+        "server/transcript.ts",
+        "src/components/ModeMenu.tsx",
+        "src/lib/mode-menu.ts",
+        "pi-config/extensions/mode/index.test.ts"
+      ]
+    },
+    "§app.shell/installable": {
+      "kind": "behavior",
+      "requires": [
+        "§app/notifications",
+        "§app/access"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "public/manifest.webmanifest",
+        "public/sw.js",
+        "src/sw-register.ts",
+        "index.html"
+      ]
+    },
+    "§chat.mode-menu/terminal": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.mode-menu/how-a-switch-reaches-the-chat",
+        "§chat.mode-menu/strict",
+        "§chat.mode-menu/prompt-holds-across-turn-starters"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "pi-config/extensions/mode/index.ts",
+        "pi-config/extensions/mode/palette.ts",
+        "pi-config/extensions/mode/minor.ts",
+        "pi-config/extensions/mode/state.ts",
+        "pi-config/extensions/mode/prompt.ts",
+        "pi-config/extensions/mode/tests/smoke.mjs",
+        "pi-config/extensions/mode/index.test.ts"
+      ]
+    },
+    "§site.docs/align": {
+      "kind": "behavior",
+      "requires": [
+        "§chat/alignment",
+        "§chat.alignment/document",
+        "§chat.alignment/tool",
+        "§chat.alignment/state",
+        "§chat.alignment/model",
+        "§chat.alignment/card",
+        "§chat.alignment/chip",
+        "§chat.alignment/session-mark",
+        "§chat.alignment/tui",
+        "§app.session-list/needs-you",
+        "§app/notifications",
+        "§app.project-overseer/coding-mode",
+        "§chat.mode-menu/workers",
+        "§app.overseer/hosting"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "site/src/content/docs/modes/align/index.md"
+      ]
+    },
+    "§site.docs/align-review": {
+      "kind": "behavior",
+      "requires": [
+        "§chat/alignment-review",
+        "§chat.alignment-review/flag",
+        "§chat.alignment-review/record",
+        "§chat.alignment-review/op",
+        "§chat.alignment-review/rules",
+        "§chat.alignment-review/prompt",
+        "§chat.alignment-review/route",
+        "§chat.alignment-review/card",
+        "§chat.alignment-review/tui"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "site/src/content/docs/modes/align/review.md"
+      ]
+    },
+    "§site.docs/change-direction": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.transcript/message-actions",
+        "§chat.transcript/a-queued-message",
+        "§chat.timeline/opening-it",
+        "§chat.timeline/rewind",
+        "§chat.session-fork/from-reply",
+        "§chat/composer",
+        "§chat.composer/composer-flyout",
+        "§chat/model-menu",
+        "§chat.model-menu/trigger",
+        "§chat.model-menu/states",
+        "§chat.model-menu/saved-default",
+        "§chat.changes/tool-card-diff"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "site/src/content/docs/change-direction.md"
+      ]
+    },
+    "§site.docs/delegate": {
+      "kind": "behavior",
+      "requires": [
+        "§app.settings-dialog/modes",
+        "§chat/subagent-profiles",
+        "§chat.subagent-profiles/off",
+        "§chat.subagent-profiles/resolution",
+        "§chat.subagent-profiles/members-default",
+        "§teams/defaults",
+        "§app/teams",
+        "§app/subagents-pane",
+        "§app.subagents-pane/trigger",
+        "§app.subagents-pane/transcript-view",
+        "§app/worker-restore",
+        "§app.worker-restore/restore",
+        "§app.worker-restore/resume",
+        "§chat.worktrees/workers",
+        "§chat.mode-menu/strict",
+        "§design.copy-deck/settings-modes-delegate",
+        "§app.project-overseer/coding-mode",
+        "§app.overseer/hosting"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "site/src/content/docs/modes/delegate.md"
+      ]
+    },
+    "§site.docs/index": {
+      "kind": "behavior",
+      "requires": [
+        "§chat/mode-menu",
+        "§design.copy-deck/mode-menu",
+        "§chat/alignment",
+        "§chat/subagent-profiles",
+        "§chat.mode-menu/codemode",
+        "§chat.markdown/visuals",
+        "§tools/spec"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "site/src/content/docs/index.md"
+      ]
+    },
+    "§site.docs/install": {
+      "kind": "behavior",
+      "requires": [
+        "§app/installer",
+        "§app.installer/pi-extensions",
+        "§app.installer/claude-code-provider",
+        "§app.installer/service",
+        "§app.installer/idempotent",
+        "§app.installer/portable",
+        "§app.installer/bun",
+        "§app.access/token",
+        "§app.access/callers"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "site/src/content/docs/install.md"
+      ]
+    },
+    "§site.docs/modes": {
+      "kind": "behavior",
+      "requires": [
+        "§chat/mode-menu",
+        "§chat.mode-menu/trigger",
+        "§chat.mode-menu/menu",
+        "§chat.mode-menu/how-a-switch-reaches-the-chat",
+        "§chat.mode-menu/states",
+        "§chat.mode-menu/workers",
+        "§chat.mode-menu/minor-toggle-keeps-prompt",
+        "§chat.mode-menu/codemode",
+        "§chat.mode-menu/strict",
+        "§chat.mode-menu/terminal",
+        "§design.copy-deck/mode-menu",
+        "§chat.subagent-profiles/menu",
+        "§app.overseer/hosting",
+        "§app.overseer/quick-actions",
+        "§app.project-overseer/coding-mode"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "site/src/content/docs/modes/index.md"
+      ]
+    },
+    "§site.docs/needs-you": {
+      "kind": "behavior",
+      "requires": [
+        "§app.session-list/needs-you",
+        "§app.overseer/attention-digest",
+        "§app.overseer/proactivity",
+        "§app/notifications",
+        "§app.notifications/delivery",
+        "§app.notifications/settings",
+        "§app.settings-dialog/overseer"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "site/src/content/docs/needs-you.md"
+      ]
+    },
+    "§site.docs/overseer": {
+      "kind": "behavior",
+      "requires": [
+        "§app/overseer",
+        "§app.overseer/identity-and-clear",
+        "§app.overseer/hosting",
+        "§app.overseer/tools",
+        "§app.overseer/confirm",
+        "§app.overseer/caps",
+        "§app.overseer/approvals",
+        "§app.overseer/entry-button",
+        "§app.overseer/quick-actions",
+        "§app.overseer/standing-notes",
+        "§app.overseer/ideas",
+        "§app.overseer/ideas-panel",
+        "§app.overseer/todos",
+        "§app.overseer/todos-panel",
+        "§app.overseer/head-layout",
+        "§app.overseer/attention-digest",
+        "§app.overseer/proactivity",
+        "§app.overseer/dialog-answers",
+        "§app.settings-dialog/overseer"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "site/src/content/docs/overseer.md"
+      ]
+    },
+    "§site.docs/phone": {
+      "kind": "behavior",
+      "requires": [
+        "§app/access",
+        "§app.access/token",
+        "§app.access/gate",
+        "§app.access/unlock",
+        "§app.access/devices",
+        "§app.access/callers",
+        "§app/notifications",
+        "§app/shell",
+        "§app.shell/installable",
+        "§chat.transcript/live-watch",
+        "§chat/composer",
+        "§app.session-list/regions-top-and-archive",
+        "§chat.transcript/message-actions"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "site/src/content/docs/phone.md"
+      ]
+    },
+    "§site.docs/spec-mode": {
+      "kind": "behavior",
+      "requires": [
+        "§tools/spec",
+        "§tools.spec/mode-reading",
+        "§tools.spec/census-note",
+        "§tools.spec/no-turn-end-check",
+        "§tools.spec/review-playbook",
+        "§tools.spec/spec-map",
+        "§chat.mode-menu/workers",
+        "§chat/subagent-profiles",
+        "§chat.subagent-profiles/settings",
+        "§chat.worktrees/worktree-config",
+        "§app.project-overseer/coding-mode",
+        "§design.copy-deck/settings-modes-delegate"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "site/src/content/docs/modes/spec.md"
+      ]
+    },
+    "§site.docs/subagent-profiles": {
+      "kind": "behavior",
+      "requires": [
+        "§chat/subagent-profiles",
+        "§chat.subagent-profiles/file",
+        "§chat.subagent-profiles/off",
+        "§chat.subagent-profiles/resolution",
+        "§chat.subagent-profiles/members-default",
+        "§chat.subagent-profiles/menu",
+        "§chat.subagent-profiles/settings",
+        "§chat.subagent-profiles/editor-rows",
+        "§chat.subagent-profiles/limit-row",
+        "§chat.subagent-profiles/overseer",
+        "§chat.alignment-review/route",
+        "§design.copy-deck/settings-modes-delegate"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "site/src/content/docs/subagent-profiles.md"
+      ]
+    },
+    "§site.docs/vis": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.markdown/visuals",
+        "§chat.mode-menu/workers",
+        "§chat.mode-menu/minor-toggle-keeps-prompt",
+        "§app.overseer/hosting"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "site/src/content/docs/modes/vis.md"
+      ]
+    },
+    "§site.docs/worktrees-and-changes": {
+      "kind": "behavior",
+      "requires": [
+        "§chat/worktrees",
+        "§chat.worktrees/entry",
+        "§chat.worktrees/tool",
+        "§chat.worktrees/sandbox",
+        "§chat.worktrees/workers",
+        "§chat.worktrees/inherit",
+        "§chat.worktrees/merge-card",
+        "§chat.worktrees/pane",
+        "§chat.worktrees/readiness",
+        "§chat.worktrees/cleanup",
+        "§chat.transcript/empty-worktrees",
+        "§design.copy-deck/worktree-cleanup",
+        "§chat/changes",
+        "§chat.changes/viewer",
+        "§chat.changes/tree",
+        "§chat.changes/steps",
+        "§chat.changes/entry",
+        "§chat.changes/show-changes-card",
+        "§chat.changes/show-changes-tool",
+        "§chat.changes/diff-renderer",
+        "§chat.changes/tool-card-diff",
+        "§chat/sandbox"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "site/src/content/docs/worktrees-and-changes.md"
+      ]
+    },
+    "§site/docs": {
+      "kind": "note",
+      "authority": "accepted",
+      "evidence": "reviewed"
+    },
+    "§site.docs/codemode": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.mode-menu/codemode",
+        "§chat.mode-menu/minor-toggle-keeps-prompt",
+        "§chat.mode-menu/workers",
+        "§tools.spec/census-note",
+        "§app.overseer/hosting"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "site/src/content/docs/modes/codemode.md"
+      ]
+    },
+    "§site.docs/vis-examples": {
+      "kind": "behavior",
+      "requires": [
+        "§site.docs/vis",
+        "§chat.markdown/visuals"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "site/scripts/vis-examples.mjs",
+        "site/scripts/vis-examples/examples.mjs",
+        "site/scripts/vis-examples/render.tsx",
+        "site/src/generated/vis-examples.html",
+        "site/src/content/docs/modes/vis.md",
+        "site/src/pages/docs/[...slug].astro",
+        "site/README.md",
+        "site/package.json"
+      ]
+    },
+    "§app.installer/ref": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "scripts/install.sh",
+        "scripts/install.test.sh",
+        "scripts/install.integration.test.ts",
+        "site/src/data/site.ts"
       ]
     }
   },

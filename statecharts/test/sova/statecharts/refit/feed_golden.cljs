@@ -126,6 +126,7 @@
    ["build" ":tree-open" [":git/probe"] "[:tree-missing]" 0] :feed
    ["build" ":tree-open" [":git/probe"] "[:tree-removed]" 0] :feed
    ["build" ":tree-open" [":git/probe"] "[:tree-root]" 0] :feed
+   ["build" ":tree-root" [":worktree/adopted"] "[:tree-open]" 0] :feed
    ["build" ":turn-failed" [":turn/started"] "[:working]" 0] :quiet
    ["build" ":turn-idle" [":turn/started"] "[:working]" 0] :quiet
    ["build" ":unmerged" [":git/probe"] "[:merged]" 0] :feed
@@ -459,17 +460,10 @@
    ["watch" ":watch-off" [] "[:watch-on]" 0] :quiet
    ["watch" ":watch-on" [] "[:watch-off]" 0] :quiet
    ["project" ":project" [":verbs/onboard"] "[]" 0] :feed
-   ["runtime" ":awaiting-approval" [] "[:conforming]" 0] :feed
-   ["runtime" ":awaiting-approval" [] "[:failed]" 0] :feed
-   ["runtime" ":awaiting-approval" [] "[:registered]" 0] :feed
-   ["runtime" ":awaiting-approval" [] "[:stale]" 0] :feed
-   ["runtime" ":awaiting-approval" [] "[:unregistered]" 0] :feed
-   ["runtime" ":conforming" [] "[:awaiting-approval]" 0] :feed
    ["runtime" ":conforming" [] "[:failed]" 0] :feed
    ["runtime" ":conforming" [] "[:registered]" 0] :feed
    ["runtime" ":conforming" [] "[:stale]" 0] :feed
    ["runtime" ":conforming" [] "[:unregistered]" 0] :feed
-   ["runtime" ":failed" [] "[:awaiting-approval]" 0] :feed
    ["runtime" ":failed" [] "[:conforming]" 0] :feed
    ["runtime" ":failed" [] "[:registered]" 0] :feed
    ["runtime" ":failed" [] "[:stale]" 0] :feed
@@ -479,7 +473,6 @@
    ["runtime" ":proposed" [":link/moved"] "[:running]" 0] :feed
    ["runtime" ":proposed" [":link/moved"] "[:waiting]" 0] :feed
    ["runtime" ":proposed" [":link/moved"] "[]" 0] :quiet
-   ["runtime" ":registered" [] "[:awaiting-approval]" 0] :feed
    ["runtime" ":registered" [] "[:conforming]" 0] :feed
    ["runtime" ":registered" [] "[:failed]" 0] :feed
    ["runtime" ":registered" [] "[:stale]" 0] :feed
@@ -493,18 +486,13 @@
    ["runtime" ":waiting" [":link/moved"] "[:proposed]" 0] :feed
    ["runtime" ":waiting" [":link/moved"] "[:running]" 0] :feed
    ["runtime" ":waiting" [":link/moved"] "[]" 0] :quiet
-   ["runtime" ":runtime" [":effect/done"] "[]" 1] :feed
    ["runtime" ":runtime" [":effect/failed"] "[]" 0] :feed
-   ["runtime" ":runtime" [":effect/failed"] "[]" 1] :feed
-   ["runtime" ":runtime" [":runtime/approve"] "[]" 0] :feed
    ["runtime" ":runtime" [":runtime/observed"] "[]" 0] :quiet
    ["runtime" ":runtime" [":sova.statecharts/flush"] "[]" 0] :quiet
-   ["runtime" ":stale" [] "[:awaiting-approval]" 0] :feed
    ["runtime" ":stale" [] "[:conforming]" 0] :feed
    ["runtime" ":stale" [] "[:failed]" 0] :feed
    ["runtime" ":stale" [] "[:registered]" 0] :feed
    ["runtime" ":stale" [] "[:unregistered]" 0] :feed
-   ["runtime" ":unregistered" [] "[:awaiting-approval]" 0] :feed
    ["runtime" ":unregistered" [] "[:conforming]" 0] :feed
    ["runtime" ":unregistered" [] "[:failed]" 0] :feed
    ["runtime" ":unregistered" [] "[:registered]" 0] :feed

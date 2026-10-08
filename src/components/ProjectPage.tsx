@@ -231,7 +231,7 @@ export function ProjectPage(props: {
       titleRef={props.titleRef}
     >
       <ArchiveConfirm from="head" />
-      {/* A verb playbook run waits on Approve & Merge (§app.project-runtime/review), on every tab. */}
+      {/* A verb playbook run waits on Merge Branch (§app.project-runtime/review), on every tab. */}
       <PlaybookReviewBanner projectId={projectId} runtime={runtime.data()} onDone={(view) => (view ? runtime.set(view) : runtime.refetch())} />
       <Show when={archived()}>
         {(a) => (

@@ -5,26 +5,21 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { parseDefinition, type ProjectDef } from "../../shared/project-contract";
-import { approveDeployRecipe, Deployer, deployNotes } from "./deploy";
-import { approveDeploy, CHANGED_SINCE_SHOWN, deployHashOf, deployReview, readDeployApprovals, targetStanding } from "./deploy-trust";
-import { DetachedDriver } from "./drivers";
-import { ProjectEngine, type Caller } from "./engine";
-import { branchFacts } from "./observe";
+import { deployReview, targetStanding } from "./deploy-recipe";
+import { defHashOf, deployHashOf } from "./def-hash";
 import { hostVarsFile } from "./store";
-import { defHashOf } from "./trust";
 
 /**
- * The deploy recipe's own hash and approval (§app.project-services/deploy-trust) and each target's
- * standing (§app.project-runtime/deploy-standing): deploy is outside the definition's hash; its hash is
- * approved only with every step of the Sova-rendered review ticked, on the hash shown; standing moves
- * awaiting approval → approved → stale. A real git repo, no target contacted (nothing runs here).
+ * The deploy recipe's own hash (§app.project-services/deploy-plan), its rendering on this host
+ * (§app.project-runtime/run-report) and each target's standing (§app.project-runtime/deploy-standing):
+ * deploy is outside the definition's hash; a target main declares is declared, one only history names is
+ * none. A real git repo, no target contacted (nothing runs here).
  */
 
-process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-deploy-trust-agent-"));
+process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-deploy-recipe-agent-"));
 
 let parent = "";
 let project = "";
-const op: Caller = { kind: "operator" };
 
 const DEF = {
   version: 1,
@@ -51,10 +46,9 @@ function commitDef(d: object): void {
   git(["add", "-A"]);
   git(["commit", "-q", "-m", "def"]);
 }
-const allKeys = (d: ProjectDef) => deployReview(project, d.deploy!, "main").keys;
 
 before(() => {
-  parent = realpathSync(mkdtempSync(join(tmpdir(), "sova-deploy-trust-")));
+  parent = realpathSync(mkdtempSync(join(tmpdir(), "sova-deploy-recipe-")));
   project = join(parent, "site");
   mkdirSync(join(project, ".sova"), { recursive: true });
   execFileSync("git", ["init", "-q", "-b", "main", project]);
@@ -64,17 +58,17 @@ after(() => rmSync(parent, { recursive: true, force: true }));
 
 test("deploy is outside the definition's hash and has its own: steps count, timeouts don't", () => {
   const { deploy: _d, ...bare } = DEF;
-  assert.equal(defHashOf(parse(DEF)), defHashOf(parse(bare)), "approving the services never covers how they ship");
+  assert.equal(defHashOf(parse(DEF)), defHashOf(parse(bare)), "the services' hash never covers how they ship");
   const h = deployHashOf(parse(DEF).deploy!);
   const timed = structuredClone(DEF);
   (timed.deploy.targets.prod.steps[0] as Record<string, unknown>).timeout = 1200;
   assert.equal(deployHashOf(parse(timed).deploy!), h, "a timeout is tuning");
   const moved = structuredClone(DEF);
   moved.deploy.targets.prod.steps[0]!.run[3] = "deploy@${host.PROD_HOST}:/srv/other";
-  assert.notEqual(deployHashOf(parse(moved).deploy!), h, "a step's argv is what is approved");
+  assert.notEqual(deployHashOf(parse(moved).deploy!), h, "a step's argv changes the hash");
 });
 
-test("the review resolves ${host.*} on this host, keeps the deploy's own variables, and lists every tick", () => {
+test("the rendering resolves ${host.*} on this host and keeps the deploy's own variables", () => {
   const def = parse(DEF);
   const before = deployReview(project, def.deploy!, "main");
   const sync = before.targets[0]!.steps.find((s) => s.key === "steps.sync")!;
@@ -88,25 +82,13 @@ test("the review resolves ${host.*} on this host, keeps the deploy's own variabl
   assert.equal(r.targets[0]!.verify!.url, "https://203.0.113.7/health");
   assert.equal(r.targets[0]!.branch, "main", "no branch declared: the main checkout's");
   assert.deepEqual(r.targets[1]!.steps[0]!.argv, ["./bin/push", "${commit}"], "$$ reads as one $");
-  assert.deepEqual(r.keys, ["prod/credentials.prod-ssh", "prod/steps.sync", "prod/verify", "prod/rollback", "staging/steps.push", "staging/rollback"]);
+  assert.equal(r.deployHash, deployHashOf(def.deploy!));
 });
 
-test("approval needs the hash shown and every tick; standing goes awaiting → approved → stale; none when undeclared", () => {
-  const file = join(parent, "approvals.json");
+test("standing: declared while main's deploy declares the target, none otherwise", () => {
   const def = parse(DEF);
-  const h = deployHashOf(def.deploy!);
-  const keys = allKeys(def);
-  assert.equal(targetStanding(project, def.deploy, "prod", readDeployApprovals(file)), "awaiting-approval");
-  assert.throws(() => approveDeploy(project, "sha256:00", def.deploy!, keys, file), (e: Error) => e.message === CHANGED_SINCE_SHOWN);
-  assert.throws(() => approveDeploy(project, h, def.deploy!, keys.slice(1), file), /Tick every step before approving: 1 not ticked \(prod\/credentials\.prod-ssh\)/);
-  assert.deepEqual(readDeployApprovals(file), {}, "a refused approval approves nothing");
-  approveDeploy(project, h, def.deploy!, keys, file);
-  assert.equal(targetStanding(project, def.deploy, "prod", readDeployApprovals(file)), "approved");
-  const moved = structuredClone(DEF);
-  moved.deploy.targets.staging.steps[0]!.run = ["./bin/push", "--fast"];
-  const def2 = parse(moved);
-  assert.equal(targetStanding(project, def2.deploy, "prod", readDeployApprovals(file)), "stale", "another target changed: the recipe needs approving again");
-  assert.equal(targetStanding(project, def2.deploy, "staging", readDeployApprovals(file)), "stale");
-  assert.equal(targetStanding(project, def2.deploy, "gone", readDeployApprovals(file)), "none");
-  assert.equal(targetStanding(project, undefined, "prod", readDeployApprovals(file)), "none");
+  assert.equal(targetStanding(def.deploy, "prod"), "declared");
+  assert.equal(targetStanding(def.deploy, "staging"), "declared");
+  assert.equal(targetStanding(def.deploy, "gone"), "none");
+  assert.equal(targetStanding(undefined, "prod"), "none");
 });

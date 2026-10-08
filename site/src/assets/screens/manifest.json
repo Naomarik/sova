@@ -7,9 +7,9 @@
       "height": 1800,
       "viewport": "desktop",
       "alt": "Sova on a desktop: the sessions sidebar with 2 sessions that need you, the Retry policy session in Delegate mode waiting on its 3 workers, and the session detail pane's Agents tab with the working worker's transcript.",
-      "hash": "0890df7beadf1495",
-      "sha": "db979fb4ef4d9632",
-      "bytes": 139278
+      "hash": "d2bcc6e139dd36e8",
+      "sha": "5b6a14257dcef9fa",
+      "bytes": 139192
     },
     "hero-fold": {
       "file": "hero-fold.webp",
@@ -17,9 +17,9 @@
       "height": 1848,
       "viewport": "fold",
       "alt": "The same session on an unfolded foldable: the sidebar on the left and the chat on the right, waiting on its workers.",
-      "hash": "869c036b3fcfc868",
-      "sha": "08d9fcb95f0ba1ac",
-      "bytes": 105316
+      "hash": "8b30b28a3060ec9c",
+      "sha": "86add6b0aaf59f08",
+      "bytes": 105426
     },
     "hero-phone": {
       "file": "hero-phone.webp",
@@ -27,9 +27,9 @@
       "height": 1974,
       "viewport": "phone",
       "alt": "The same session on a folded phone: the chat alone, its alignment decided and its workers running, with a Steer composer.",
-      "hash": "28f7368dc861c05c",
-      "sha": "86f19ddabda5c103",
-      "bytes": 49374
+      "hash": "dc6ba385fce33936",
+      "sha": "811ed23168fff825",
+      "bytes": 49478
     },
     "delegate": {
       "file": "delegate.webp",
@@ -37,9 +37,9 @@
       "height": 1520,
       "viewport": "compact",
       "alt": "The Agents tab beside a Delegate session: 3 workers with their model, tokens and state, and the working worker's transcript: its task, a read, 2 edits and a new test file.",
-      "hash": "1c54e6a07b22c860",
-      "sha": "531ee7cba4be0e3f",
-      "bytes": 98668
+      "hash": "bb9013dce2f2181e",
+      "sha": "46d4b01de5d6a7ac",
+      "bytes": 98798
     },
     "alignment": {
       "file": "alignment.webp",
@@ -47,9 +47,9 @@
       "height": 1520,
       "viewport": "compact",
       "alt": "An alignment card in the chat: what the agent found, its approach, a rejected alternative, and an open question with 2 options and a recommendation.",
-      "hash": "a1358547a920f735",
-      "sha": "3f1c9b0b6c20828a",
-      "bytes": 81100
+      "hash": "ab75d2d61e6abf09",
+      "sha": "c9c4898913eb7af9",
+      "bytes": 81044
     },
     "changes": {
       "file": "changes.webp",
@@ -57,9 +57,9 @@
       "height": 1520,
       "viewport": "compact",
       "alt": "The changes viewer: 3 numbered steps, each with why it was made, and the first step's diff.",
-      "hash": "192091ea9346877e",
-      "sha": "2ec84d6c871a0ff3",
-      "bytes": 89962
+      "hash": "1b9cafe2a1557409",
+      "sha": "d0c4ee7880999b5f",
+      "bytes": 89972
     },
     "overseer": {
       "file": "overseer.webp",
@@ -67,9 +67,9 @@
       "height": 1520,
       "viewport": "compact",
       "alt": "The Overseer page after asking what needs you: a card that lists 2 finished sessions, each with why, and asks before archiving them.",
-      "hash": "d095f2097b2ee75a",
-      "sha": "f43842414624087e",
-      "bytes": 87866
+      "hash": "ba1366c0efaacced",
+      "sha": "66e6570a8477d765",
+      "bytes": 87730
     },
     "phone-access": {
       "file": "phone-access.webp",
@@ -77,7 +77,7 @@
       "height": 1974,
       "viewport": "phone",
       "alt": "The Access page on a phone: a one-use pairing code, its QR and the link to open it.",
-      "hash": "2ca2770848095fda",
+      "hash": "e650cfb9e0d6ec5d",
       "sha": "d1eb17731d3637f5",
       "bytes": 55968
     },
@@ -87,9 +87,9 @@
       "height": 1974,
       "viewport": "phone",
       "alt": "A session on a phone, waiting on an open question with 2 options and a recommendation.",
-      "hash": "7785545e66992258",
-      "sha": "68ae268edcecb293",
-      "bytes": 52538
+      "hash": "3d4118caa62e662c",
+      "sha": "606865a6931480dd",
+      "bytes": 52560
     },
     "transcript": {
       "file": "transcript.webp",
@@ -97,9 +97,9 @@
       "height": 1520,
       "viewport": "compact",
       "alt": "A running turn: the user's message, a read, 2 edits with their line counts, a finished test run, and a follow-up typed into the Steer composer.",
-      "hash": "c6e7ba953c67338b",
-      "sha": "ec2e6596f1ed2d72",
-      "bytes": 78796
+      "hash": "872a135b84b14cec",
+      "sha": "d343fc6c6b18274f",
+      "bytes": 78524
     }
   },
   "slots": {

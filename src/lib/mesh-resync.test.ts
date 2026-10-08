@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { ResyncHost, ResyncSelf } from "../../shared/mesh-resync";
+import { noRecipeReason, type ResyncHost, type ResyncSelf } from "../../shared/mesh-resync";
 import { jobText, resyncNote, resyncView, sheetText, tailLines } from "./mesh-resync";
 
 const self: ResyncSelf = { id: "desk", label: "Desk", commit: "c".repeat(40) };
@@ -34,8 +34,10 @@ test("a newer host gets the hint to update this host, never a downgrade", () => 
 
 test("disabled with its reason, said under the host: no recipe, a recipe that can't run, a build that can't be named", () => {
   const none = resyncView(host({ recipe: null }), self);
-  assert.deepEqual(none.button, { reason: "No resync recipe for VPS on Desk" });
-  assert.match(none.line!, /No resync recipe for VPS on Desk/);
+  const what = "No resync recipe for VPS on Desk: set VPS_ID in scripts/mesh-vps/local.env (or PHONE_ID in scripts/mesh-termux/local.env) to vps, or add vps to mesh-resync.json";
+  assert.deepEqual(none.button, { reason: what }, "names what to set, in the sentence the start's 409 says too");
+  assert.equal(noRecipeReason({ id: "vps", label: "VPS" }, "Desk"), what);
+  assert.equal(none.line, `12 commits behind Desk. ${what}`);
   assert.deepEqual(resyncView(host({ recipeProblem: "scripts/mesh-vps/local.env is missing" }), self).button, { reason: "Its recipe can't run: scripts/mesh-vps/local.env is missing" });
   const blocked = resyncView(host({ recipe: null }), { ...self, blocked: "This host booted with uncommitted changes" });
   assert.deepEqual(blocked.button, { reason: "This host booted with uncommitted changes" }, "the build comes first: a recipe wouldn't help");

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import type { MeshResync, ResyncHost, ResyncJob, ResyncKind, ResyncRelation, ResyncSelf } from "../../shared/mesh-resync";
+import { type MeshResync, noRecipeReason, type ResyncHost, type ResyncJob, type ResyncKind, type ResyncRelation, type ResyncSelf } from "../../shared/mesh-resync";
 import { stateRoot } from "../state-root";
 import { type BootBuild, bootBuild, bootBuildChecked, type Git, realGit } from "./build-id";
 import { fetchPeerDetails } from "./details";
@@ -13,7 +13,8 @@ import type { MeshApi } from "./index";
 import { PEER_ID_RE, type PeerEntry, peerUrl } from "./peers";
 
 // Mesh version resync (§mesh.peers/resync): deploy the exact build this host booted from to a peer
-// that is behind it, with the recipe this host keeps for that peer in <state root>/mesh-resync.json.
+// that is behind it, with the recipe this host keeps for that peer in <state root>/mesh-resync.json, else
+// the one its deploy scripts' local.env implies (VPS_ID, PHONE_ID).
 // A mechanical background job on the claude-accounts sign-in model: one per host, 409 while it runs,
 // spawned without a shell, output capped and teed to <state root>/mesh-resync/<id>.log, a timeout;
 // after the script exits the peer's hello is polled (uncached) until it speaks this host's protocol.
@@ -93,21 +94,69 @@ export function parseRecipes(raw: unknown): { recipes: Map<string, Recipe>; erro
   return { recipes, errors };
 }
 
-/** The recipes as the file says now (read per call); a missing file is no recipe and no error. */
-export function readRecipes(file = recipesFile()): { recipes: Map<string, Recipe>; error?: string } {
-  let text: string;
-  try {
-    text = readFileSync(file, "utf8");
-  } catch {
-    return { recipes: new Map() };
+/** A deploy script's local.env as plain `KEY=value` lines (an optional `export`, values optionally
+    quoted, comments and blanks skipped). Never sourced or run: a line that isn't a plain assignment is skipped. */
+export function parseLocalEnv(text: string): Map<string, string> {
+  const vars = new Map<string, string>();
+  for (const line of text.split(/\r?\n/)) {
+    const m = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(line);
+    if (!m) continue;
+    let value = m[2]!.trim();
+    const quote = value[0];
+    if ((quote === '"' || quote === "'") && value.length >= 2 && value.endsWith(quote)) value = value.slice(1, -1);
+    else value = value.replace(/\s+#.*$/, "");
+    vars.set(m[1]!, value);
   }
-  let raw: unknown;
+  return vars;
+}
+
+/** The recipes the deploy scripts' local.env files imply: VPS_ID → vps, PHONE_ID → termux (whose
+    deploy.sh reads PHONE from that same file). Takes each file's text, or null when it can't be read. */
+export function derivedRecipes(env: { vps: string | null; termux: string | null }): Map<string, Recipe> {
+  const recipes = new Map<string, Recipe>();
+  const idIn = (text: string | null, key: string) => {
+    const id = text === null ? undefined : parseLocalEnv(text).get(key);
+    return id && PEER_ID_RE.test(id) ? id : undefined;
+  };
+  const vps = idIn(env.vps, "VPS_ID");
+  if (vps) recipes.set(vps, { kind: "vps", args: [] });
+  const phone = idIn(env.termux, "PHONE_ID");
+  if (phone && !recipes.has(phone)) recipes.set(phone, { kind: "termux", args: [] });
+  return recipes;
+}
+
+const readText = (path: string): string | null => {
   try {
-    raw = JSON.parse(text);
+    return readFileSync(path, "utf8");
   } catch {
-    return { recipes: new Map(), error: "mesh-resync.json isn't valid JSON" };
+    return null;
+  }
+};
+
+/** The local.env files of `root`'s deploy scripts, as derivedRecipes takes them. */
+export const localEnvs = (root: string): { vps: string | null; termux: string | null } => ({
+  vps: readText(join(root, "scripts/mesh-vps/local.env")),
+  termux: readText(join(root, "scripts/mesh-termux/local.env")),
+});
+
+/** The recipes now (read per call): the file's, then the derived ones for the peers it doesn't name
+    (a missing file names none). A file that isn't JSON or `{"hosts": …}` gives none at all and says why. */
+export function readRecipes(file = recipesFile(), derived: Map<string, Recipe> = derivedRecipes(localEnvs(ROOT))): { recipes: Map<string, Recipe>; error?: string } {
+  const text = readText(file);
+  let raw: unknown = { hosts: {} };
+  if (text !== null) {
+    try {
+      raw = JSON.parse(text);
+    } catch {
+      return { recipes: new Map(), error: "mesh-resync.json isn't valid JSON" };
+    }
   }
   const { recipes, errors } = parseRecipes(raw);
+  const named = (raw as { hosts?: unknown } | null)?.hosts;
+  // A file that isn't {"hosts": …} gives nothing (parseRecipes said why); an entry it names wins even when left out.
+  if (typeof named === "object" && named !== null && !Array.isArray(named)) {
+    for (const [id, recipe] of derived) if (!Object.hasOwn(named, id)) recipes.set(id, recipe);
+  }
   return { recipes, ...(errors.length ? { error: errors.join("; ") } : {}) };
 }
 
@@ -203,7 +252,7 @@ export class ResyncService {
       probe: probePeer,
       hello: probeHello,
       protocol: ownProtocol,
-      recipes: () => readRecipes(),
+      recipes: () => readRecipes(recipesFile(), derivedRecipes(localEnvs(this.d.root))),
       logDir: resyncLogDir,
       spawn: realSpawn,
       exists: existsSync,
@@ -285,7 +334,7 @@ export class ResyncService {
     }
     if (build.blocked) return { status: 409, body: { error: build.blocked } };
     const recipe = this.d.recipes().recipes.get(id);
-    if (!recipe) return { status: 409, body: { error: `No resync recipe for ${name} on ${selfName}` } };
+    if (!recipe) return { status: 409, body: { error: noRecipeReason({ id, label: name }, selfName) } };
     const problem = recipeProblem(recipe, this.d.root, this.d.exists);
     if (problem) return { status: 409, body: { error: `The recipe for ${name} can't run: ${problem}` } };
     const probe = await this.d.hello(peerUrl(peer));

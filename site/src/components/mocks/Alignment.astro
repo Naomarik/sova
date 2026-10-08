@@ -3,6 +3,7 @@
 // open with its options and recommendation.
 import Frame from "../Frame.astro";
 import Icon from "../Icon.astro";
+import ContextRing from "../ContextRing.astro";
 
 const steps = [
   { t: "Retry only idempotent calls", n: "finalize() keeps 1 try and reports its error." },
@@ -10,12 +11,11 @@ const steps = [
   { t: "Rejected: retry everything", n: "A retried finalize can commit twice." },
 ];
 ---
-<Frame path="demo-app" class="m-frame" caption="An alignment card in a session transcript: the plan's 3 entries, including one rejected alternative with why, and an open question with 2 lettered options and the agent's recommendation.">
+<Frame path="demo-app" class="m-frame" caption="An alignment card in a session transcript: the plan's 3 entries, including one rejected alternative with why, and an open question with 2 lettered options and the agent's recommendation. Below it, the composer counts 1 alignment with 0 of 1 questions decided, and its mode switch reads delegate · align.">
   <div class="m-session">
     <header class="m-head">
       <span class="m-head-title">Upload retries</span>
-      <span class="m-head-sub m-mono">delegate · align</span>
-      <span class="m-head-end"><span class="chip chip-info"><span class="chip-dot"></span>Aligning</span></span>
+      <span class="m-head-end m-mono">41k<ContextRing pct={4} /></span>
     </header>
     <div class="m-thread">
       <div class="m-msg-user">Add retries to the upload client. Plan it with me first.</div>
@@ -31,6 +31,11 @@ const steps = [
         <div class="m-ask-opts"><span class="m-btn">a · ky's Retry</span><span class="m-btn">b · Own Loop</span></div>
         <span class="m-muted" style="font-size:11.5px">Recommended: a, it already honors Retry-After.</span>
       </div>
+    </div>
+    <div class="m-composer">
+      <div class="m-composer-foot"><span class="m-end m-mode"><Icon name="chat" size={12} /><span class="m-mono">1 align · 0/1 decided</span></span></div>
+      <div class="m-composer-row"><span class="m-input">Answer, even as just “1a”</span><span class="m-btn m-btn-primary"><Icon name="arrow-right" size={14} />Send</span></div>
+      <div class="m-composer-foot"><span class="m-mono">Opus 5.5 · high</span><span class="m-end m-mode"><Icon name="sliders" size={12} /><span class="m-mono">delegate <span class="m-sep">·</span> align</span><Icon name="chevron-down" size={12} /></span></div>
     </div>
   </div>
 </Frame>

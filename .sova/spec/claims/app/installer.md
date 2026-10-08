@@ -107,7 +107,11 @@ its own tag, so the installer fetched from that tag installs that tag.
   repository, and is not a commit (seven or more hex digits), stops the install before anything
   is written, with a message that names the ref and says to pass `SOVA_REF` (a tag, a branch
   or a commit). A hex name that turns out not to be a commit of the clone stops it before
-  anything is promoted, with "nothing was changed". The default branch is never installed in a
+  anything is promoted, with "nothing was changed", and leaves nothing behind: the staging
+  directory goes, and so does every directory the run created for it (such as `~/.local/share`
+  on a fresh machine). The launcher's directory is created only once the build succeeded. Any
+  other failure before promotion cleans up the same way (pnpm's own store and cache aside, once
+  pnpm ran). The default branch is never installed in a
   ref's place.
 - **A repository it cannot reach** stops the install the same way, saying so.
 - **The closing message names what it installed:** "installed <ref> (<short commit>) in <install

@@ -19,7 +19,7 @@ import { defHashOf } from "./def-hash";
  * The instance note (§app.project-services/instance-note): rendered from the checkout's definition and the
  * registry, with no live state; delivered hidden at a turn's start only when it changed, again after a
  * compaction, and after single-instance results. Also the definition hash's treatment of `about`,
- * `start` and `test` (§app.project-services/trust), and the systemd memory peak (§app.project-services/test).
+ * `start` and `test` (§app.project-services/conform), and the systemd memory peak (§app.project-services/test).
  * On a host in memory (fake-host.ts); note.integration.test.ts starts a real static serve under the note.
  */
 

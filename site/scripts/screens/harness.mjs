@@ -15,12 +15,17 @@ import { HERE, REPO, SITE } from "./load-story.mjs";
 export const TOKEN = randomBytes(32).toString("base64url");
 export const tokenHeaders = () => ({ "x-sova-token": TOKEN, "content-type": "application/json" });
 
-/** A fresh root outside the repository: <root>/home is HOME, <root>/agent the agent dir. */
+/** The agent dir: pi's own place under the root's HOME, because the web app reads home from a
+    session file's path (`<home>/.pi/agent/sessions/…`) and shows every path under it as ~/…. */
+export const agentDirOf = (root) => join(root, "home", ".pi", "agent");
+
+/** A fresh root outside the repository: <root>/home is HOME, <root>/home/.pi/agent the agent dir. */
 export function makeRoot() {
   const base = realpathSync(tmpdir());
   if (base === REPO || base.startsWith(`${REPO}/`)) throw new Error(`the temp dir ${base} is inside the repository; set TMPDIR elsewhere`);
   const root = mkdtempSync(join(base, "sova-screens-"));
-  for (const d of ["home", "agent", "tmp", "logs"]) mkdirSync(join(root, d), { recursive: true });
+  for (const d of ["home", "tmp", "logs"]) mkdirSync(join(root, d), { recursive: true });
+  mkdirSync(agentDirOf(root), { recursive: true });
   return root;
 }
 
@@ -154,7 +159,7 @@ export async function startDirector(root, { chunkMs, gated = true, storyFile } =
 export async function startServer(root, { node = false } = {}) {
   const port = await freePort();
   const bun = node ? null : resolveBun();
-  const env = rootEnv(root, { PORT: String(port), PI_CODING_AGENT_DIR: join(root, "agent"), SOVA_TOKEN: TOKEN, ...(bun ? { SOVA_BUN: bun } : { SOVA_RUNTIME: "node" }) });
+  const env = rootEnv(root, { PORT: String(port), PI_CODING_AGENT_DIR: agentDirOf(root), SOVA_TOKEN: TOKEN, ...(bun ? { SOVA_BUN: bun } : { SOVA_RUNTIME: "node" }) });
   const child = startChild(join(REPO, "scripts", "start-server.sh"), bun ? [] : ["--node"], { env, cwd: REPO, log: join(root, "logs", "server.log") });
   const base = `http://127.0.0.1:${port}`;
   await waitFor(() => fetch(`${base}/api/health`).then((r) => r.ok), { what: `the Sova server (log: ${join(root, "logs", "server.log")})`, timeout: 60_000 });
@@ -215,8 +220,8 @@ export const FREEZE_CSS = "*, *::before, *::after { animation-duration: 0s !impo
 // ---- the leak gate ----------------------------------------------------------------------------
 
 /** What must never reach an image: this machine's home, user and host, tailnet names and
-    addresses. Held in memory only. */
-export function leakPatterns() {
+    addresses, and the capture root itself. Held in memory only. */
+export function leakPatterns(root) {
   const lits = [];
   const add = (v, what) => v && v.length >= 3 && !["demo", "root", "localhost"].includes(v) && lits.push({ v, what });
   add(homedir(), "the real home directory");
@@ -235,25 +240,39 @@ export function leakPatterns() {
       [/(?<!\bexample)\.ts\.net\b/i, "a .ts.net name"],
       [/\b100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}\b/, "a tailnet (100.64.0.0/10) address"],
     ],
+    // The root is in every session link and data attribute by design (sessions live under it);
+    // what must never show is a path that the app failed to shorten to ~/…, so only the page's
+    // rendered text and form fields are checked for it (a tooltip may hold the full path).
+    visible: [
+      ...(root ? [{ v: root, what: "the capture root (a path that should read ~/…)" }] : []),
+      { v: "sova-screens-", what: "the capture root's name (a path that should read ~/…)" },
+    ],
   };
 }
 
 /** Every visible string, attribute and link on the page, checked against the patterns. Throws. */
 export async function leakGate(page, patterns, where) {
-  const blob = await page.evaluate(() => {
-    const parts = [document.body.innerText, document.title, location.href.replace(/#t=[^&]*/, "")];
+  const { all, visible } = await page.evaluate(() => {
+    const text = [document.body.innerText];
+    const seen = [document.title];
+    const attrs = [location.href.replace(/#t=[^&]*/, "")];
     for (const el of document.querySelectorAll("*")) {
-      for (const a of ["title", "aria-label", "href", "src", "alt", "placeholder", "value", "data-path"]) {
+      for (const a of ["title", "aria-label", "alt", "placeholder"]) {
         const v = el.getAttribute(a);
-        if (v) parts.push(v);
+        if (v) seen.push(v);
       }
-      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) parts.push(el.value);
+      for (const a of ["href", "src", "value", "data-path"]) {
+        const v = el.getAttribute(a);
+        if (v) attrs.push(v);
+      }
+      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) text.push(el.value, el.placeholder);
     }
-    return parts.join("\n");
+    return { visible: text.join("\n"), all: [...text, ...seen, ...attrs].join("\n") };
   });
   const hits = [];
-  for (const { v, what } of patterns.lits) if (blob.toLowerCase().includes(v.toLowerCase())) hits.push(what);
-  for (const [re, what] of patterns.res) if (re.test(blob)) hits.push(what);
+  for (const { v, what } of patterns.lits) if (all.toLowerCase().includes(v.toLowerCase())) hits.push(what);
+  for (const [re, what] of patterns.res) if (re.test(all)) hits.push(what);
+  for (const { v, what } of patterns.visible ?? []) if (visible.includes(v)) hits.push(what);
   if (hits.length) throw new Error(`leak gate at ${where}: the page shows ${[...new Set(hits)].join(", ")}. Nothing was written.`);
 }
 

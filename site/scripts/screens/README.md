@@ -62,7 +62,8 @@ a link to another checkout is refused). The video needs `ffmpeg` on `PATH`. Noth
 either `package.json`'s dependencies.
 
 Each run makes a fresh `mktemp -d` root outside the repository: `HOME` is `<root>/home` (so paths
-read `~/code/demo-app`), the agent dir is `<root>/agent`, built by `scripts/hermetic-agent-dir.mjs`,
+read `~/code/demo-app`), the agent dir is `<root>/home/.pi/agent` (the web app reads home from a
+session file's path), built by `scripts/hermetic-agent-dir.mjs`,
 and nothing is read from or written to the real `~/.pi`. No auth is copied in and no model is
 called. The server and director use free ports. Everything started is stopped at the end, and the
 root is removed unless `--keep`. `--no-browser` plays the live sessions over the REST API only and
@@ -85,7 +86,8 @@ The repository is public, so:
   never stored).
 - Before every screenshot and at every beat of the video, the leak gate reads the page's text,
   titles, labels, links and form values, and refuses the real home directory, user name, host
-  name, any `.ts.net` name other than `example.ts.net`, any 100.64.0.0/10 address, and the tailnet
+  name, the capture root's own path, any `.ts.net` name other than `example.ts.net`, any
+  100.64.0.0/10 address, and the tailnet
   name `tailscale status` reports when it runs.
 - The Access page's pairing response is mocked (`sova.example.ts.net`): the real one names this
   machine's tailnet.

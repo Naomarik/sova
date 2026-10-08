@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { loadStory, REPO } from "./load-story.mjs";
 import { durationMs, text } from "./story-check.mjs";
 import { FREEZE_CSS, leakGate, leakPatterns, makeRoot, OUT_DIR, removeRoot, startBrowser, startDirector, startServer, TOKEN, VIDEO_DIR, VIEWPORTS, writeJson } from "./harness.mjs";
-import { loadAlignModule, seed } from "./seed.mjs";
+import { loadAlignModule, seed, titleStatic } from "./seed.mjs";
 import { fileSha, videoHash } from "./hashes.mjs";
 
 const args = process.argv.slice(2);
@@ -53,9 +53,10 @@ try {
   const seeded = await seed(plan, root, { directorPort: director.port });
   const server = await startServer(root, { node: flag("--node") });
   stops.push(server.stop);
+  await titleStatic(server, plan, seeded);
   const browser = await startBrowser();
   stops.push(browser.stop);
-  const patterns = leakPatterns();
+  const patterns = leakPatterns(root);
 
   const s = plan.sessions.find((x) => x.id === v.session);
   const created = await server.call("POST", "/api/sessions", { cwd: seeded.repo });

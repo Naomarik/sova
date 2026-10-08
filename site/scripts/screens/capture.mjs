@@ -18,7 +18,7 @@ import { join } from "node:path";
 import { HERE, loadStory, REPO, whereIn } from "./load-story.mjs";
 import { actionOf, text } from "./story-check.mjs";
 import { DEBUG_DIR, FREEZE_CSS, leakGate, leakPatterns, makeRoot, OUT_DIR, removeRoot, sleep, startBrowser, startDirector, startServer, TOKEN, VIEWPORTS, waitFor, writeJson } from "./harness.mjs";
-import { loadAlignModule, seed } from "./seed.mjs";
+import { loadAlignModule, seed, titleStatic } from "./seed.mjs";
 import { fileSha, inputHashes } from "./hashes.mjs";
 
 const args = process.argv.slice(2);
@@ -59,9 +59,10 @@ try {
   const seeded = await seed(plan, root, { directorPort: director.port });
   const server = await startServer(root, { node: flag("--node") });
   stops.push(server.stop);
+  await titleStatic(server, plan, seeded);
   console.log(`root ${root}\nserver ${server.base}, director ${director.url}`);
 
-  const patterns = leakPatterns();
+  const patterns = leakPatterns(root);
   let browser = null;
   if (!flag("--no-browser")) {
     browser = await startBrowser();
@@ -263,6 +264,13 @@ async function shoot(browser, server, shot, { sessionPath, patterns }) {
     const width = await page.evaluate(() => innerWidth);
     if (width !== VIEWPORTS[shot.viewport].width) throw new Error(`viewport is ${width}px wide, wanted ${VIEWPORTS[shot.viewport].width}`);
 
+    // The Access page: make a code (the pair route is mocked), so the shot shows its QR and link.
+    if (shot.session === "access") {
+      await page.getByRole("button", { name: "Make a Code" }).click({ timeout: 10_000 });
+      await page.getByRole("button", { name: "Make Another Code" }).waitFor({ timeout: 10_000 });
+      await page.waitForTimeout(800);
+    }
+
     if (shot.view === "workers") {
       const trigger = page.locator("button.run-status-link:not(.run-status-align):not(.run-status-running)").first();
       await trigger.click({ timeout: 10_000 });
@@ -275,7 +283,18 @@ async function shoot(browser, server, shot, { sessionPath, patterns }) {
       await page.locator("[role=dialog]").last().waitFor({ timeout: 10_000 });
       await page.waitForTimeout(1500);
     }
-    if (shot.scroll === "align") await page.locator("article.align-doc").last().scrollIntoViewIfNeeded({ timeout: 10_000 });
+    if (shot.scroll === "align") {
+      // The card's end (its answer row) at the bottom of the view; scrolled away from the latest
+      // row, the transcript shows Jump to Latest over it, so the view is taken back to the end then.
+      await page.locator("article.align-doc").last().evaluate((el) => el.scrollIntoView({ block: "end" }));
+      await page.waitForTimeout(600);
+      const pill = page.locator(".jump-latest[data-shown]");
+      if (await pill.count()) {
+        await pill.first().click();
+        await page.waitForTimeout(800);
+      }
+      if (await page.locator(".jump-latest[data-shown]").count()) throw new Error("Jump to Latest is still shown over the transcript");
+    }
     if (shot.scroll === "show_changes") await page.getByRole("button", { name: "Review Changes" }).last().scrollIntoViewIfNeeded({ timeout: 10_000 });
     if (shot.compose) {
       const input = page.locator("textarea.composer-input").first();
@@ -283,10 +302,13 @@ async function shoot(browser, server, shot, { sessionPath, patterns }) {
       await input.fill(shot.compose);
       await page.locator("textarea.composer-input").first().blur();
     }
-    await page.addStyleTag({ content: FREEZE_CSS });
+    // No focus ring: whatever the page focused (a heading on navigation, the composer) is blurred.
+    await page.addStyleTag({ content: `${FREEZE_CSS} :focus-visible { outline: none !important; }` });
+    await page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
     await page.evaluate(() => document.fonts.ready);
     await page.mouse.move(0, 0);
     await page.waitForTimeout(400);
+    await page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
 
     await leakGate(page, patterns, `shot ${shot.id}`);
     const png = await page.screenshot({ type: "png", ...(shot.clip ? { clip: shot.clip } : {}) });
@@ -319,6 +341,8 @@ async function shoot(browser, server, shot, { sessionPath, patterns }) {
 /** sharp, from the site's own install (the build's image service). */
 async function sharpModule() {
   const { createRequire } = await import("node:module");
-  return createRequire(join(HERE, "..", "..", "package.json"))("sharp");
+  // sharp is astro's dependency, not the site's own: resolve it from astro's real path (pnpm isolates it).
+  const site = createRequire(join(HERE, "..", "..", "package.json"));
+  return createRequire(site.resolve("astro/package.json"))("sharp");
 }
 

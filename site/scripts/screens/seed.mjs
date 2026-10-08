@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Write everything Sova reads, from the story, into a throwaway root:
 //   <root>/home/<project.path>  the demo git repo (author Demo <demo@example.com>, fixed dates)
-//   <root>/agent                a hermetic agent dir (scripts/hermetic-agent-dir.mjs), with
+//   <root>/home/.pi/agent       a hermetic agent dir (scripts/hermetic-agent-dir.mjs), with
 //                               models.json naming the director, Delegate's routes on it, and the
 //                               static sessions as session files dated relative to now
 // Nothing is read from or written to the real ~/.pi.
@@ -16,7 +16,7 @@ import { existsSync, lstatSync, mkdirSync, rmSync, utimesSync, writeFileSync } f
 import { dirname, join } from "node:path";
 import { loadStory, REPO, storyUuid } from "./load-story.mjs";
 import { actionOf, text } from "./story-check.mjs";
-import { makeRoot, rootEnv, writeJson } from "./harness.mjs";
+import { agentDirOf, makeRoot, rootEnv, writeJson } from "./harness.mjs";
 
 /** Commit dates are fixed, so the demo repo's shas are the same on every run. */
 const GIT_EPOCH = Date.parse("2026-09-01T09:00:00Z");
@@ -26,7 +26,7 @@ export const projectDir = (root, plan) => join(root, "home", plan.project.path.s
 
 export async function seed(plan, root, { directorPort, now = Date.now() } = {}) {
   const home = join(root, "home");
-  const agent = join(root, "agent");
+  const agent = agentDirOf(root);
   const env = rootEnv(root);
 
   // Git identity for everything that commits in the run (the repo, worktree merges).
@@ -47,8 +47,12 @@ export async function seed(plan, root, { directorPort, now = Date.now() } = {}) 
     git(["commit", "-q", "-m", c.message], { GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date });
   });
 
-  // The hermetic agent dir, built by the repo's own script into <root>/agent.
-  execFileSync(process.execPath, [join(REPO, "scripts", "hermetic-agent-dir.mjs")], { cwd: REPO, env: { ...env, HERMETIC_AGENT_DIR: agent }, stdio: ["ignore", "pipe", "pipe"] });
+  // The hermetic agent dir, built by the repo's own script at <root>/home/.pi/agent. That script
+  // refuses to touch $HOME/.pi, so it runs with HOME at a scratch dir of the root (it then reads no
+  // real ~/.pi either).
+  const scratchHome = join(root, "tmp", "hermetic-home");
+  mkdirSync(scratchHome, { recursive: true });
+  execFileSync(process.execPath, [join(REPO, "scripts", "hermetic-agent-dir.mjs")], { cwd: REPO, env: { ...env, HOME: scratchHome, HERMETIC_AGENT_DIR: agent }, stdio: ["ignore", "pipe", "pipe"] });
 
   // models.json: the director, and nothing else (the linked catalogue is replaced).
   const models = join(agent, "models.json");
@@ -103,6 +107,12 @@ export async function seed(plan, root, { directorPort, now = Date.now() } = {}) 
     written[s.id] = file;
   }
   return { root, home, agent, repo, sessionsDir, sessions: written };
+}
+
+/** The static sessions' titles, set where Sova keeps them (its own title store, as a rename
+    does): the sidebar titles a session from that store, else from its first message. */
+export async function titleStatic(server, plan, seeded) {
+  for (const s of plan.sessions.filter((x) => !x.live)) await server.call("POST", "/api/sessions/title", { path: seeded.sessions[s.id], title: s.title });
 }
 
 const isLink = (p) => {

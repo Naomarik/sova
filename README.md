@@ -14,9 +14,9 @@ the ones you start here, the ones running in your terminal, and the subagents th
 The same workspace fits a desktop, an unfolded foldable, and a folded phone, so you can follow and
 review the work from wherever you are.
 
-It runs on your machine alongside pi and uses the sessions you already have. Read the tool calls,
-review every change, and answer the session that needs you, without digging through terminal
-scrollback. Your existing setup stays yours.
+It runs pi itself on your machine, through pi's SDK, and uses the sessions you already have.
+Read the tool calls, review every change, and answer the session that needs you, without digging
+through terminal scrollback. Your existing setup stays yours.
 
 ## Get started
 
@@ -54,9 +54,9 @@ existing pi provider login.
   and the same list can reach your phone as a push notification, which costs no tokens. The
   Overseer starts, prompts, or tidies sessions when you ask, confirming first when a request is
   risky.
-- **Keep your terminal. Check from your phone.** Existing sessions are listed without importing
-  them; terminal sessions stream live and read-only. Add Sova to your phone's home screen, and
-  bring the phone in by scanning a one-use pairing QR.
+- **Check in from your phone.** Add Sova to your phone's home screen, bring the phone in by
+  scanning a one-use pairing QR, and get a push when a session needs you. Sessions already in pi's
+  terminal are listed as they are and stream live, with no import.
   [Terminal presence and phone access](docs/getting-started.md#terminal-and-phone-access) need setup.
 - **Change direction without starting over.** Rewind to a message, regenerate a reply, fork from an
   assistant reply, steer a running web chat, and switch models mid-session.

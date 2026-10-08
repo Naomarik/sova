@@ -10,11 +10,11 @@ Every agent session, one calm workspace. On your desk, or folded in your pocket.
 
 ## One paragraph
 
-Sova runs on your own machine next to the pi coding agent and reads the same `~/.pi/agent` the terminal does. It lists every session on the machine, shows any transcript, watches a session that's open in a TUI as it runs, and gives web chats parallel workspaces, branching, and steering. Model requests go to your configured provider; tools and extensions may also use the network. It is one person's tool for one person's agent.
+Sova runs the pi coding agent itself, on your own machine, through pi's SDK, and reads the same `~/.pi/agent` the terminal does. It lists every session on the machine, shows any transcript, watches a session that's open in a TUI as it runs, and gives web chats parallel workspaces, branching, and steering. Model requests go to your configured provider; tools and extensions may also use the network. It is one person's tool for one person's agent.
 
 ## Who it is for
 
-Someone who already runs pi. They have sessions on disk, extensions in `pi-config`, and opinions about their terminal. Sova doesn't replace that setup; it gives it a second window, one that works on a phone across the room and shows more than 80 columns can.
+Someone who already runs pi. They have sessions on disk, extensions in `pi-config`, and opinions about their terminal. Sova keeps that setup and gives it a full interface, one that can replace pi's terminal UI, works on a phone across the room, and shows more than 80 columns can.
 
 Write for that person. They know what a session, a model, and a tool call are. They don't need the agent explained. They do need to know what Sova will and won't touch on disk, because it shares the directory with a process they trust.
 
@@ -22,7 +22,6 @@ Write for that person. They know what a session, a model, and a tool call are. T
 
 - Not a hosted service.
 - Not a team product.
-- Not a replacement for pi's TUI.
 - Not a general chat client: it speaks to pi's SDK and reads pi's files, and it would be useless without them.
 - There is no service, no team plan, no account.
 - Not safe to expose openly: it is local and single-user, and one per-install token is its only gate. Anyone with the token can do what you can, so reach it from elsewhere only through a tunnel or HTTPS proxy you trust.

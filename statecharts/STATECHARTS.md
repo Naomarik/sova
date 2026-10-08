@@ -261,7 +261,7 @@ the envelope), **data** (plain data, unchanged rules), **del** (deleted, per cov
 | F-138 | Start coding session from an item | statechart | `project` `build/start` (operator-coding, `opItem`) |
 | F-139 | New Coding Session | statechart | `project` `build/start` without prompt (build `setting-mode` → `ready`) |
 | F-140 | Coding mode | statechart | `build.setup.setting-mode` (`mode-not-set`); ceiling = host `invalid` |
-| F-141 | Coding worktrees | statechart | `build.setup.making-worktree` (branch/base/target or `in-root`; not-started sentence) |
+| F-141 | Coding worktrees | statechart | `build.setup.making-worktree` (branch/base/target, `in-root`, or `later`; not-started sentence); `tree-root` `worktree/adopted` (a `later` build adopts its session's first own worktree, once) |
 | F-142 | Merge Branch | statechart | `build/merge` (`root-check`, `busy-check`) → effect `merge`; reasons `build/merged` / `build/merge-refused` (not for root-checkout) |
 | F-143 | Merged is read from git | statechart | `build.branch` from `git/probe`; recorded `merged` when git can't say; `correct/merged` (L2) |
 | F-144 | Remove Worktree | statechart | `build/remove-worktree` → effect; `tree-removed` |

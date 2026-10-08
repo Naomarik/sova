@@ -570,7 +570,8 @@
         "src/lib/hidden-folders.test.ts",
         "server/targets.ts",
         "server/targets.test.ts",
-        "server/targets.integration.test.ts"
+        "server/targets.integration.test.ts",
+        "src/lib/api.ts"
       ]
     },
     "§app/session-list": {
@@ -2454,7 +2455,7 @@
         "§app/new-session-dialog"
       ],
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "src/components/NewSessionDialog.tsx",
         "src/lib/host-scope.ts"
@@ -5592,7 +5593,10 @@
         "server/project-services/checkout-teardown.test.ts",
         "server/project-services/on-merge.ts",
         "server/project-services/on-merge.test.ts",
-        "server/project-services/on-merge.integration.test.ts"
+        "server/project-services/on-merge.integration.test.ts",
+        "server/project-coding-later.test.ts",
+        "statecharts/test/sova/statecharts/refit/watch_decisions_build_test.cljc",
+        "statecharts/EVENTS.md"
       ]
     },
     "§app.requirements/promotion-commit": {
@@ -6909,7 +6913,9 @@
         "src/lib/ui-state.ts",
         "src/App.tsx",
         "src/components/ProjectOverseerPanel.tsx",
-        "server/project-coding-runtime.test.ts"
+        "server/project-coding-runtime.test.ts",
+        "server/build-loadout.ts",
+        "server/project-coding-later.test.ts"
       ],
       "requires": [
         "§app.project-overseer/coding-worktrees",
@@ -15662,6 +15668,22 @@
       "requires": [
         "§app.project-runtime/review",
         "§app.project-overseer/coding-worktrees"
+      ]
+    },
+    "§chat.transcript/jump-landing": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.transcript/rendering"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/Thread.tsx",
+        "src/lib/jump.ts",
+        "src/lib/tail-render.ts",
+        "src/lib/tail-render.test.ts",
+        "scripts/e2e/jump-settle.mjs",
+        "package.json"
       ]
     }
   },

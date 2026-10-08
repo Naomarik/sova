@@ -324,7 +324,8 @@
     (run "build" "build/pr1/c1"
       {:starts [{:project-id "pr1" :session-id "c1" :kind "coding" :title "T" :prompt "P"}]
        :drive [[:effect/done {:kind "make-worktree" :result {:branch "sova/t" :target "main"}}]
-               [:effect/done {:kind "make-worktree" :result {:in-root "x"}}] [:effect/failed {:kind "make-worktree" :detail "x"}]
+               [:effect/done {:kind "make-worktree" :result {:in-root "x"}}] [:effect/done {:kind "make-worktree" :result {:later true}}]
+               [:worktree/adopted {:branch "feat/t" :base "b" :target "main"}] [:effect/failed {:kind "make-worktree" :detail "x"}]
                [:effect/done {:kind "set-mode"}] [:effect/done {:kind "first-prompt"}] [:turn/started {}] [:turn/ended {}]
                [:workers/changed {:n 1}] [:workers/changed {:n 0}] [:git/probe {:branch "merged"}] [:git/probe {:tree "missing"}]
                [:effect/done {:kind "merge" :result {:commit "c"}}] [:effect/failed {:kind "merge" :detail "No."}]

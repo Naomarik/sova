@@ -1330,7 +1330,8 @@ export const sendProjectItem = (orgId: string, projectId: string, input: ItemSen
   request<ItemSendResult>(`${projectBase(orgId, projectId)}/items/send`, jsonInit("POST", input));
 export const codeProjectItem = (projectId: string, input: ItemCodeInput) =>
   request<ItemCodeResult>(`${overseerBase(projectId)}/items/code`, jsonInit("POST", input));
-/** New Coding Session: a coding session in its own worktree, tied to no item, with nothing sent. */
+/** New Coding Session: a coding session in its own worktree, tied to no item, with nothing sent; `worktree: "later"` (New
+    Session's Project tab) starts it in the project root, and its row adopts the worktree its session makes later. */
 export const startProjectCoding = (projectId: string, input: CodingStartInput = {}) =>
   request<CodingStartResult>(`${overseerBase(projectId)}/coding`, jsonInit("POST", input));
 /** The operator's gestures on a coding session's worktree: merge its branch into the root's, or remove it. */

@@ -100,7 +100,7 @@
 
 (defn build-data [data]
   (let [e (b/evt data)]
-    (merge (select-keys e [:title :prompt :model :thinking :mode :op-item :folder])
+    (merge (select-keys e [:title :prompt :model :thinking :mode :op-item :folder :worktree])
       {:project-id (:id data) :session-id (:session-id e)
        :kind (if (= "overseer" (some-> (:by e) name)) "coding" "operator-coding")
        :started-by (if (= "overseer" (some-> (:by e) name)) "overseer" "operator")

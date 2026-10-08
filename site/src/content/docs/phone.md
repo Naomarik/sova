@@ -24,15 +24,15 @@ Every browser needs the install's access token once. Your phone doesn't have to 
 2. Press **Make a Code**. The code expires in 5 minutes and works once.
 3. Scan the QR with your phone's camera. It opens Sova's tailnet address with the code, and the phone is in.
 
-No camera handy? Each address the code works at is listed with a **Copy Link** button. You can also open Sova on the phone and type the code on its unlock screen, choosing **Pairing code** under "What are you pasting?".
+No camera handy? Each address the code works at is listed with a **Copy Link** button, the phone's tailnet address ("Phone · Tailscale") first. You can also open Sova on the phone and type the code on its unlock screen: under "What are you pasting?", choose **Pairing code** (the screen starts on Access token).
 
-The QR is shown only when a phone can actually open the link: if the page you're on can't name a tailnet address, it says to open Sova at that address and make another code. Keep the QR and its links private until they're used.
+The QR is drawn only when that tailnet link can be opened from another device. Otherwise the page says "Sova has to be reached by its tailnet address for a phone to pair." Open Sova at that address and make another code. Keep the QR and its links private until they're used.
 
 Each address of Sova needs its own sign-in: `127.0.0.1`, `localhost`, and your tailnet name are separate. A code works at any of them.
 
 ## Add it to your Home Screen
 
-Add Sova to your phone's Home Screen to run it as an app. On iPhone and iPad this is required for notifications, and the app's icon can show how many sessions need you.
+Sova installs as an app: add it to your phone's Home Screen, or install it from your browser. On iPhone and iPad this is required for notifications, and the app's icon can show how many sessions need you.
 
 ## Sessions you started in a terminal
 

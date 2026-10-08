@@ -393,7 +393,7 @@ Rules:
   refused. Never run the gate script against `sova-runtime.service` by hand, and never point a test
   at it: tests and gates use a stand-in unit.
 - On macOS the live server is the launchd agent `sova-runtime` (`~/Library/LaunchAgents/sova-runtime.plist`,
-  README's launchd example), and every rule above holds. Its restart is
+  the launchd example in docs/running-as-a-service.md), and every rule above holds. Its restart is
   `launchctl kickstart -k gui/$(id -u)/sova-runtime`, never run by hand from a hosted session: use the
   verb form (`sova-project apply --checkout ~/webapps/sova --confirm`; its gate runs detached from the server, waits the
   30 s itself and then kickstarts the agent) or ask the user. Its pid and state:
@@ -442,7 +442,7 @@ launcher):
   `systemctl --user daemon-reload`, then restart under the rules of **Live server restart** above
   (the gate, never `systemctl restart` from a hosted session). An agent never edits the unit.
 - **The live unit** (`sova-runtime.service`) runs `scripts/start-server.sh`, so it is on Bun.
-  README's "Run on Bun (or Node)" has the complete unit example (`%h` paths, the same ExecStartPre,
+  docs/running-as-a-service.md has the complete unit example (`%h` paths, the same ExecStartPre,
   PATH, Restart and TimeoutStopSec as the live unit) and the switch steps.
 - **Testing a server:** in a worktree, `pnpm run dev:hermetic` (Bun) or `SOVA_PORT=48xx pnpm run
   dev:hermetic`; check `curl -s 127.0.0.1:<port>/api/health`. On Node only when asked:

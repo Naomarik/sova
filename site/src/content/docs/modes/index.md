@@ -61,7 +61,7 @@ chat, and the chat's running workers keep running.
   it was.
 
 Switching a minor mode in the middle of a chat doesn't rewrite the instructions the model already
-has. The change reaches the model as a hidden note with its next message, which you don't see in
+has (except align in Delegate, which changes one paragraph of Delegate's instructions). The change reaches the model as a hidden note with its next message, which you don't see in
 the transcript. This keeps the model provider's prompt cache, so a toggle doesn't re-send the whole
 conversation. Turning **align**, **vis** or **codemode** on or off does change the agent's tools:
 align adds its `align` tool, vis its drawing tools, and codemode its `codemode` tool.

@@ -1,11 +1,12 @@
 ---
-// A feature's screenshot in a product frame: the strip names where it is, the image fills the rest.
+// A feature's screenshot in a product frame: a plain rounded window the image fills, no strip
+// (the capture already shows Sova's own header).
 import Frame from "../Frame.astro";
 import Screen from "../Screen.astro";
 
-interface Props { at: string; path: string; class?: string }
-const { at, path, class: cls = "" } = Astro.props;
+interface Props { at: string; class?: string }
+const { at, class: cls = "" } = Astro.props;
 ---
-<Frame path={path} class={`m-frame ${cls}`.trim()} caption="" decorative={false}>
+<Frame strip={false} class={`m-frame ${cls}`.trim()} caption="" decorative={false}>
   <Screen at={at} sizes="(min-width: 900px) 660px, 92vw" />
 </Frame>

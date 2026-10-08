@@ -14,7 +14,7 @@ const poster = video ? await getImage({ src: video.posterShot.image, format: "we
 ---
 <div class="devices">
   <figure class="dev dev-desk">
-    <Frame path="demo-app" class="m-frame" caption="" decorative={false}>
+    <Frame strip={false} class="m-frame" caption="" decorative={false}>
       <div class="screen-stack">
         <Screen at="hero.desk" sizes="(min-width: 1120px) 1040px, 920px" eager />
         {video && poster && (

@@ -1,14 +1,15 @@
 ---
-// A product frame: the app's surfaces in a card, with a sunken strip that names what it shows.
-// Two kinds of content go in it. A real screenshot (Screen.astro, from site/scripts/screens/): the
-// frame's chrome is hidden from assistive tech and the image's alt text says what it shows. A CSS
-// mock-up (the Mesh and Organizations pages' illustrations): `decorative` (the default) hides the
-// whole window, and `caption` says in words what it shows. A frame inside a larger figure leaves
-// `caption` empty, and the figure says it instead.
+// A product frame: the app's surfaces in a rounded card. Two kinds of content go in it.
+// A real screenshot (Screen.astro, from site/scripts/screens/): `strip={false}`, since the capture
+// already shows Sova's own header, and the image's alt text says what it shows. A CSS mock-up (the
+// Mesh and Organizations pages' illustrations): a sunken strip names what it shows (`path`),
+// `decorative` (the default) hides the whole window from assistive tech, and `caption` says in
+// words what it shows. A frame inside a larger figure leaves `caption` empty, and the figure says
+// it instead.
 import Mark from "./Mark.astro";
 
-interface Props { path: string; caption: string; class?: string; strip?: boolean; decorative?: boolean }
-const { path, caption, class: cls = "", strip = true, decorative = true } = Astro.props;
+interface Props { path?: string; caption: string; class?: string; strip?: boolean; decorative?: boolean }
+const { path = "", caption, class: cls = "", strip = true, decorative = true } = Astro.props;
 ---
 <figure class={`frame ${cls}`}>
   <div class="frame-window" aria-hidden={decorative ? "true" : undefined}>

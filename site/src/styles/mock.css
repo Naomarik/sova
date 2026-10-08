@@ -97,10 +97,9 @@
 
 /* ---- HERO DEVICES. One session on a desktop, an unfolded foldable and a folded phone. ------
    Each screen takes its capture's own shape: the desktop 16:10, the unfolded foldable landscape
-   4:3, the folded cover screen portrait 10:16. From 1120px the three overlap, the desktop the
-   centrepiece: the unfolded foldable over its lower left (where the sidebar it repeats sits), the
-   cover screen over its lower right. Narrower, they sit in a row that scrolls sideways, each at a
-   size it can be read at, the folded one first. */
+   4:3, the folded cover screen portrait 10:16. No frame ever covers another's screen. From
+   1120px the desktop is the centrepiece with the two foldable frames below it; narrower, they sit
+   in a row that scrolls sideways, each at a size it can be read at, the folded one first. */
 
 .devices { position: relative; }
 .dev { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 10px; min-width: 0; }
@@ -135,13 +134,18 @@
   .dev-fold { order: -1; width: min(460px, 86vw); }
 }
 
-/* Wide: overlap. */
+/* Wide: the desktop large and centred, the two foldable frames side by side below it. Nothing
+   overlaps the desktop's screen, where the session video plays. The unfolded and folded frames
+   are sized to about the same height (4:3 at 400px wide, 10:16 at 196px). */
 @media (min-width: 1120px) {
-  .devices { display: block; overflow: visible; padding: 0 0 120px; margin: 0; }
-  .dev-desk { width: 78%; margin: 0 auto; }
-  .dev-desk .dev-label { display: none; }
-  .dev-fold { position: absolute; left: 0; bottom: 0; width: 32%; }
-  .dev-phone { position: absolute; right: 0; bottom: 0; width: 184px; }
+  .devices {
+    display: grid; grid-template-columns: 1fr 1fr; align-items: end;
+    gap: 28px 48px; overflow: visible; padding: 0; margin: 0;
+  }
+  .dev { scroll-snap-align: none; }
+  .dev-desk { grid-column: 1 / -1; justify-self: center; width: min(88%, 1040px); }
+  .dev-fold { justify-self: end; width: 400px; }
+  .dev-phone { justify-self: start; width: 196px; }
 }
 
 /* ---- SCREENSHOTS (site/scripts/screens/). A capture fills its frame's screen area at its own

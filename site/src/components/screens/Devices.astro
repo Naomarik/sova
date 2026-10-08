@@ -16,7 +16,7 @@ const poster = video ? await getImage({ src: video.posterShot.image, format: "we
   <figure class="dev dev-desk">
     <Frame path="demo-app" class="m-frame" caption="" decorative={false}>
       <div class="screen-stack">
-        <Screen at="hero.desk" sizes="(min-width: 1120px) 936px, 920px" eager />
+        <Screen at="hero.desk" sizes="(min-width: 1120px) 1040px, 920px" eager />
         {video && poster && (
           <video class="screen-video" autoplay muted loop playsinline preload="metadata" poster={poster.src} width={video.width} height={video.height} aria-label={video.alt}>
             <source media="(prefers-reduced-motion: no-preference)" type="video/mp4" src={video.file} />
@@ -30,7 +30,7 @@ const poster = video ? await getImage({ src: video.posterShot.image, format: "we
   <figure class="dev dev-fold">
     <div class="fold">
       <div class="fold-screen screen-fill">
-        <Screen at="hero.fold" sizes="(min-width: 1120px) 384px, (max-width: 767px) 86vw, 460px" />
+        <Screen at="hero.fold" sizes="(min-width: 1120px) 400px, (max-width: 767px) 86vw, 460px" />
       </div>
     </div>
     <figcaption class="dev-label">Unfolded</figcaption>
@@ -39,7 +39,7 @@ const poster = video ? await getImage({ src: video.posterShot.image, format: "we
   <figure class="dev dev-phone">
     <div class="phone hd-phone">
       <div class="phone-screen screen-fill">
-        <Screen at="hero.phone" sizes="(min-width: 1120px) 184px, (max-width: 767px) 64vw, 236px" />
+        <Screen at="hero.phone" sizes="(min-width: 1120px) 196px, (max-width: 767px) 64vw, 236px" />
       </div>
     </div>
     <figcaption class="dev-label">Folded</figcaption>

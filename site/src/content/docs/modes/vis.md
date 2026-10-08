@@ -37,6 +37,8 @@ Any drawing can **mark** up to 8 items, each with a tone and a short numbered no
 the drawing. Colour is never the only signal: a marked item is also heavier, and carries its
 note's number.
 
+There is an example of every kind at the end of this page, under [Examples](#examples).
+
 ## Reading a drawing
 
 Each drawing has a title (or its kind's name), the drawing itself, its numbered notes and its
@@ -97,3 +99,10 @@ vis: drawings are for you, and a worker's replies are read by its parent session
 ## Where vis isn't available
 
 The Overseer is always in normal mode with no minor modes, so it doesn't draw.
+
+## Examples
+
+One block of each kind, as the agent writes it, followed by the drawing Sova makes of it. On this
+page the drawings are still pictures: in the chat, a sequence's **Step Through** works.
+
+<!-- vis-examples -->

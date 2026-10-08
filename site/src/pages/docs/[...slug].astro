@@ -2,6 +2,8 @@
 // Every /docs page, /docs/ included: one Markdown file each, from the docs collection.
 import Docs from "../../layouts/Docs.astro";
 import { docSlug, sortedDocs, type DocEntry } from "../../data/docs";
+// The Vis page's examples, drawn by Sova's own vis code (scripts/vis-examples.mjs writes this file).
+import visExamples from "../../generated/vis-examples.html?raw";
 
 export async function getStaticPaths() {
   const docs = await sortedDocs();
@@ -18,7 +20,11 @@ const html = (entry.rendered?.html ?? "").replace(/<h[23][^>]*>([\s\S]*?)<\/h[23
   if (h !== undefined) { heading = h.replace(/<[^>]+>/g, "").replace(/"/g, "&quot;"); return m; }
   return `<div class="docs-table" role="region" tabindex="0" aria-label="${heading}">${m}</div>`;
 });
+// A page's `<!-- vis-examples -->` line becomes the examples (after the tables above are wrapped,
+// so a drawing's own table is left alone).
+const VIS_EXAMPLES = "<!-- vis-examples -->";
+const page = html.includes(VIS_EXAMPLES) ? html.replace(VIS_EXAMPLES, () => visExamples) : html;
 ---
 <Docs entry={entry} docs={docs}>
-  <Fragment set:html={html} />
+  <Fragment set:html={page} />
 </Docs>

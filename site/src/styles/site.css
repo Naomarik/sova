@@ -194,7 +194,7 @@ p code, li code, td code, dd code {
 .hero-pill {
   display: inline-flex; align-items: center; gap: var(--space-3);
   min-height: 36px; padding: 4px 14px 4px 4px;
-  border-radius: var(--r-full);
+  border-radius: var(--r-md);
   border: var(--stroke-thin) solid var(--color-border);
   background: var(--color-surface);
   color: var(--color-ink-2); text-decoration: none;
@@ -204,7 +204,7 @@ p code, li code, td code, dd code {
 .hero-pill:hover { color: var(--color-ink); border-color: var(--color-border-strong); }
 .hero-pill .icon { color: var(--color-ink-muted); }
 .hero-pill-tag {
-  padding: 3px 10px; border-radius: var(--r-full);
+  padding: 3px 10px; border-radius: var(--r-sm);
   background: var(--color-accent-tint); color: var(--color-ink);
   font-family: var(--font-mono); font-size: var(--fs-micro); letter-spacing: .02em;
   white-space: nowrap;
@@ -393,6 +393,52 @@ p code, li code, td code, dd code {
 .eyebrow .chip { font-size: 10px; padding: 1px 8px; letter-spacing: .06em; }
 .fcard .chip { font-size: 10px; padding: 0 7px; line-height: 1.7; vertical-align: 1px; }
 
+/* ---- LOCK SCREEN (feature 04). The Overseer screenshot, and beside it a phone at about the
+   screenshot's height, never over it. Inside, everything is sized in the phone's own width (cqw,
+   on .lock: a cqw in .lock-screen's own padding would read the feature column instead),
+   so the clock, the 2 notifications and their text keep a real lock screen's proportions:
+   a ~20px icon, a one-line title, a body clamped to 2 lines. ------------------------------- */
+
+.ovs { margin: 0; display: flex; align-items: flex-end; gap: var(--space-4); }
+.ovs > .ovs-desk { flex: 1 1 auto; min-width: 0; }
+.lock {
+  flex: none; width: clamp(128px, 24%, 156px); aspect-ratio: 9 / 19; container-type: inline-size;
+  padding: 4px; border-radius: var(--r-xl);
+  background: #0d0d10; border: var(--stroke-thin) solid var(--color-border-strong);
+  box-shadow: var(--shadow-2);
+}
+.lock-screen {
+  height: 100%; overflow: hidden;
+  display: flex; flex-direction: column;
+  padding: 0 4cqw; border-radius: var(--r-sm);
+  background: var(--color-sunken); color: var(--color-ink);
+}
+.lock-status { display: flex; justify-content: space-between; padding: 3cqw 2cqw 0; font-family: var(--font-mono); font-size: 5.5cqw; color: var(--color-ink-2); }
+.lock-time { margin-top: 9cqw; text-align: center; font-size: 22cqw; line-height: 1; font-weight: var(--fw-display); letter-spacing: -.04em; }
+.lock-date { margin-top: 2cqw; text-align: center; font-size: 6cqw; color: var(--color-ink-2); }
+.lock-list { display: flex; flex-direction: column; gap: 3cqw; margin-top: 12cqw; }
+.lock-notif {
+  display: grid; grid-template-columns: 12cqw minmax(0, 1fr); gap: 3.5cqw; align-items: start;
+  padding: 4cqw; border-radius: var(--r-lg);
+  background: var(--color-surface); border: var(--stroke-thin) solid var(--color-border);
+  line-height: 1.3;
+}
+.lock-icon { display: block; width: 12cqw; height: auto; }
+.lock-text { min-width: 0; }
+.lock-top { display: flex; justify-content: space-between; gap: 2cqw; font-size: 5cqw; color: var(--color-ink-muted); }
+.lock-app { font-weight: var(--fw-semibold); color: var(--color-ink-2); text-transform: uppercase; letter-spacing: .04em; }
+.lock-title { margin-top: 1cqw; font-size: 5.9cqw; font-weight: var(--fw-semibold); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lock-body {
+  font-size: 5.7cqw; color: var(--color-ink-2);
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
+}
+/* Narrow column: the phone goes under the screenshot, centred, rather than squeezing it. */
+@container visual (max-width: 560px) {
+  .ovs { flex-direction: column; align-items: center; }
+  .ovs > .ovs-desk { align-self: stretch; }
+  .lock { width: 136px; }
+}
+
 /* ---- THEMES. Each swatch is a tiny app, painted with that theme's own colors. -- */
 
 .themes { display: grid; gap: var(--space-3); }
@@ -407,9 +453,9 @@ p code, li code, td code, dd code {
 .swatch-name { font-weight: var(--fw-semibold); letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .swatch-base { margin-left: auto; font-family: var(--font-mono); font-size: 10px; color: var(--t-muted); text-transform: uppercase; letter-spacing: .06em; }
 .swatch-body { display: flex; flex-direction: column; gap: 6px; padding: 10px; }
-.swatch-bubble { align-self: flex-end; padding: 4px 8px; border-radius: 8px; background: var(--t-tint); color: var(--t-ink); }
+.swatch-bubble { align-self: flex-end; padding: 4px 8px; border-radius: var(--r-md); background: var(--t-tint); color: var(--t-ink); }
 .swatch-foot { display: flex; align-items: center; gap: 6px; }
-.swatch-btn { padding: 3px 8px; border-radius: 6px; background: var(--t-accent); color: var(--t-on-accent); font-weight: var(--fw-medium); font-size: 11px; }
+.swatch-btn { padding: 3px 8px; border-radius: var(--r-sm); background: var(--t-accent); color: var(--t-on-accent); font-weight: var(--fw-medium); font-size: 11px; }
 .swatch-muted { color: var(--t-muted); font-family: var(--font-mono); font-size: 10.5px; }
 .themes-head { margin-bottom: clamp(40px, 5vw, 64px); align-items: end; }
 /* Wide: 6 across, so the 18 make 3 even rows. Narrower: one row that scrolls sideways inside its
@@ -473,7 +519,7 @@ p code, li code, td code, dd code {
   color: var(--color-ink-muted);
 }
 .arch-link::before { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--color-border-strong); }
-.arch-link span { position: relative; padding: 2px 8px; background: var(--color-bg); border: 1px solid var(--color-border); border-radius: var(--r-full); }
+.arch-link span { position: relative; padding: 2px 8px; background: var(--color-bg); border: 1px solid var(--color-border); border-radius: var(--r-sm); }
 .section-alt .arch-link span { background: var(--color-sunken); }
 .arch-provider { margin-top: var(--space-4); display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); border-radius: var(--r-md); border: 1px dashed var(--color-border-strong); font-size: var(--fs-caption); color: var(--color-ink-2); }
 .arch-provider .icon { color: var(--color-ink-muted); }

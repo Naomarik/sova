@@ -335,6 +335,8 @@ export interface CodingWorktree {
   branch: string | null;
   /** Why it runs in the project root (a tail: "it isn't a Git repository."). */
   inRoot?: string;
+  /** Started with `worktree: "later"` and has no worktree yet: "In the project root until it makes a worktree." */
+  later?: true;
   /** The worktree's top level when it exists on this host. */
   worktree: string | null;
   /** The commit it was cut from. */
@@ -426,10 +428,14 @@ export interface ItemCodeResult {
 
 /** New Coding Session: a coding session tied to no to-do or idea, with no first prompt (the operator writes it in the composer). */
 export interface CodingStartInput {
-  /** Names the branch and the row; absent: `sova/coding-<hex>`, and the row is untitled until the first message. */
+  /** Names the branch and the row; absent: `sova/coding-<hex>`, and the row is untitled until the first message.
+      With `worktree: "later"` it names the row and the session only, never a branch. */
   title?: string;
   model?: string;
   thinking?: string;
+  /** "now" (the default): its worktree is cut at create. "later" (New Session's Project tab): it starts in the project
+      root, and the first worktree its session makes itself with the `worktree` tool becomes its row's (adopted). */
+  worktree?: "now" | "later";
 }
 export type CodingStartResult = Omit<ItemCodeResult, "notPrompted"> & {
   /** Its mode could not be set (the session exists and is listed): the sentence to show. */

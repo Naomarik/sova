@@ -258,18 +258,23 @@ Effect: `idea-status {ideaId, status: dropped}`.
 ## build (`build/<p>/<sid>`, portable, project layer)
 
 Start: `{projectId, sessionId, kind, title, prompt, startedBy, via, gap, item, decisions, model, thinking,
-mode, opItem, folder, createdAt}` (`gap`, `item`, `decisions`: attribution its spawner sets, never read here).
+mode, opItem, folder, worktree, createdAt}` (`gap`, `item`, `decisions`: attribution its spawner sets, never read here;
+`worktree`: `"later"` from New Session's Project tab, else absent).
 No milestone send: its project reads its exported `merged`.
-Setup effects in order: `make-worktree` → `{result: {branch, base, target} | {inRoot}}` (failed: not
+Setup effects in order: `make-worktree {sessionId, title, folder, worktree}` → `{result: {branch, base, target} | {inRoot} | {later: true}}`
+(`later`: no worktree cut, the project root until `worktree/adopted`; failed: not
 started, "No session was started: its worktree could not be made ({line})."), `set-mode` (failed:
-`modeNotSet`), `first-prompt {prompt, branch, target}`.
+`modeNotSet`), `first-prompt {prompt, branch, target}`; with no prompt, `worktree-note {text}` (the commit paragraph) when it has a branch.
 Host events: `turn/started`, `turn/ended {failed, questions?}` (`questions`: the open alignment questions the session waits on), `workers/changed {n}`, `git/probe {tree, branch,
-ahead, dirty, newSinceMerge, branchGone, error}`.
+ahead, dirty, newSinceMerge, branchGone, error}`, `worktree/adopted {branch, base, target}` (a `later` build only, in
+`tree-root` with no branch yet: the first worktree its session made itself, as the `worktree` tool named it; records
+`branch base target adoptedAt`, clears `later`, moves the tree to open and sends `worktree-note`; taken once, ignored after).
+Until adopted, `build/merge` and `build/remove-worktree` are refused "It runs in the project root until it makes a worktree."
 Acts: `build/prompt {text, mode?}` + `invalid`, `live` (overseer L3 `sova_send`, held; op),
 `build/merge` + `elsewhere` (op only) → effect `merge` → `effect/done {result: {commit}}` |
 `effect/failed {detail}` (git's refusal, today's words); `build/remove-worktree` → effect
 `remove-worktree`; `correct/merged {commit, reason}` (L2).
-Exported: `…, turn, workers, running, tree, branchState, merged, lastTurnAt`.
+Exported: `…, later, adoptedAt, turn, workers, running, tree, branchState, merged, lastTurnAt`.
 
 ## runtime (`runtime/<p>`, host-local, project layer)
 

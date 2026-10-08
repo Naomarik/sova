@@ -28,7 +28,7 @@ import {
 import type { HarnessSession } from "../shared/harness";
 import type { OverseerState } from "../shared/protocol";
 import { noteBuildMerged } from "./build-merged";
-import { buildSessionPath, buildSetupEnded, buildSid, newBuildSessionId, noteBuildSettled, noteBuildStarted, probeBuild, readBuild, readBuilds, syncBuildTurn, syncProjectBuilds, withWorktreePath } from "./build-loadout";
+import { adoptWorktree, buildSessionPath, buildSetupEnded, buildSid, newBuildSessionId, noteBuildSettled, noteBuildStarted, probeBuild, readBuild, readBuilds, syncBuildTurn, syncProjectBuilds, withWorktreePath } from "./build-loadout";
 import { acquireChat, BusyError, disposeHeldChat, drainQueueThenAbort, heldChat, isSessionBusy, onAgentSettled, onAgentStarted, registerSpecialLoadout, type ChatSession, type SessionMarks } from "./chat-manager";
 import { shuttingDown } from "./wrapup-recovery";
 import { listModels } from "./models";
@@ -294,7 +294,9 @@ const listedTitle = (t: string | undefined): string => (t && t !== "Untitled" ? 
 /** Every coding session the project started (both kinds), with its worktree or why it runs in the root, newest first. */
 async function codingWorktrees(projectId: string, root: string): Promise<CodingWorktree[]> {
   const out: CodingWorktree[] = [];
-  for (const r of readBuilds(projectId)) {
+  for (const b of readBuilds(projectId)) {
+    // A `later` build adopts the worktree its session made on this read too (one run in a terminal never tells Sova its turn ended).
+    const r = b.later && (await adoptWorktree(projectId, buildSid(projectId, b.sessionId), b.sessionId)) ? (readBuild(projectId, b.sessionId) ?? b) : b;
     const path = r.path ?? null;
     const common = {
       sessionId: r.sessionId,
@@ -315,7 +317,7 @@ async function codingWorktrees(projectId: string, root: string): Promise<CodingW
     const row = await withWorktreePath(r, root);
     if (!row) {
       // Started in a root that can't have one.
-      out.push({ ...common, branch: null, ...(r.inRoot ? { inRoot: r.inRoot } : {}), worktree: null, base: null, target: null, state: "root", merged: false, ahead: 0, dirty: false });
+      out.push({ ...common, branch: null, ...(r.inRoot ? { inRoot: r.inRoot } : {}), ...(r.later ? { later: true as const } : {}), worktree: null, base: null, target: null, state: "root", merged: false, ahead: 0, dirty: false });
       continue;
     }
     const w = await readWorktree(row.worktree, root);
@@ -788,6 +790,8 @@ async function startCodingSession(
     envelope?: Envelope;
     item?: string;
     decisions?: string[];
+    /** "later" (New Session's Project tab): in the project root, adopting the worktree its session makes later. */
+    worktree?: "later";
     /** The project act that starts it (default build/start) and what that act's payload adds. */
     act?: "verbs/onboard";
     extra?: Record<string, unknown>;
@@ -828,6 +832,7 @@ async function startCodingSession(
         ...(choice.thinking ? { thinking: choice.thinking } : {}),
         mode,
         ...(input.cwd ? { folder: input.cwd } : {}),
+        ...(input.worktree ? { worktree: input.worktree } : {}),
       },
       envelope,
       { settle: true },
@@ -1143,6 +1148,8 @@ function overseerEnvelope(projectId: string, paths: ProjectOverseerPaths, attend
 export async function startCoding(projectId: string, body: CodingStartInput): Promise<CodingStartResult> {
   projectOf(projectId);
   if (body && typeof body === "object" && "prompt" in body) throw new OrgError("This starts a session with no first prompt. To send one, start it from a to-do or idea (items/code).", 400);
+  const worktree = body && typeof body === "object" && "worktree" in body ? body.worktree : "now";
+  if (worktree !== "now" && worktree !== "later") throw new OrgError('worktree is "now" or "later".', 400);
   const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : undefined);
   const title = str(body?.title);
   const model = str(body?.model);
@@ -1151,6 +1158,7 @@ export async function startCoding(projectId: string, body: CodingStartInput): Pr
     ...(title ? { title: title.slice(0, 80) } : {}),
     ...(model ? { model } : {}),
     ...(thinking ? { thinking } : {}),
+    ...(worktree === "later" ? { worktree } : {}),
     kind: "operator-coding",
   });
   return {

@@ -4551,6 +4551,10 @@ a.group-picker-tile[aria-disabled="true"] { cursor: default; color: var(--color-
 }
 .folder-list .list-row .list-title { font-family: var(--font-mono); font-size: var(--fs-mono); font-weight: var(--fw-regular); }
 .folder-list .list-row[aria-selected="true"] { background: var(--color-accent-tint); }
+/* Where pi runs: Project | This Computer | Remote, each with its icon, fit a 375px sheet with no sideways scroll. */
+@media (max-width: 767px) {
+  .ns-tabs .tab { padding: 0 var(--space-2); }
+}
 
 /* The Folder field is a button that reads like an input: the chosen path
    in mono, never typed. It opens the picker in place. */

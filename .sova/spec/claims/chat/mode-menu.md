@@ -10,7 +10,9 @@ routing (§chat/subagent-profiles, §app/settings-dialog), what align does (§ch
 Overseer's Quick Actions in this slot (§app.overseer/quick-actions).
 
 pi's mode extension (`pi-config/extensions/mode`) has one **major mode**, `normal` or
-`delegate`, and any set of **minor modes** (today `align`, `spec` and `vis`, which teaches the inline visuals of §chat.markdown/visuals). What Delegate routes where is
+`delegate`, and any set of **minor modes** (today `align`, `spec`, `vis`, which teaches the inline
+visuals of §chat.markdown/visuals, and `codemode`, §chat.mode-menu/codemode). Every chat with the
+extension offers all of them, in that order. What Delegate routes where is
 Settings → Subagents (§app/settings-dialog), through this chat's subagent profile
 (§chat/subagent-profiles). The menu always offers its Subagents picker, in either major mode.
 
@@ -261,20 +263,22 @@ on the first turn, on later turns, or after the chat is reopened.
 
 ## §chat.mode-menu/minor-toggle-keeps-prompt — A minor toggle keeps the cached prompt
 
-Turning a minor mode (`align`, `spec`, `vis`) on or off mid-session never rewrites the prompt the
-model already has, on any provider. The `<mode>` section's minor blocks stay those of the **head**:
+Turning a minor mode (`align`, `spec`, `vis`, `codemode`) on or off mid-session never rewrites the
+prompt the model already has, on any provider; the one exception is align while in Delegate, whose
+bridge paragraph in the Delegate block follows the active align. The `<mode>` section's minor blocks stay those of the **head**:
 the minor modes the first run after the session's start, or after its last compaction, was built
 with. Only models that take mid-conversation system messages could absorb a changed section as a
-cheap tail patch; everywhere else (Sonnet, Haiku, GLM, DeepSeek, everything on ollama-cloud) pi
+cheap tail patch; everywhere else (every model without pi's `supportsMidConvoSystemMessages`) pi
 folds it into a new head, and the claude-code bridge restarts its CLI
 (§app.worker-restore/claude-bridge-restart), so one toggle re-sent the whole conversation uncached
 (measured: 53K–180K tokens per toggle).
 
-The tool list is another matter: turning `vis` or `align` on or off does change the active tools
-(`vis` adds or removes `vis_check` and `vis_guide` together, `align` its `align` tool), while the
-system prompt stays as it was (neither tool adds a line to it). In Sova's hosted sessions that is
-one tool-set change per toggle; in the plain TUI, where `vis` used to change no tool, it costs a
-prompt-cache rebuild.
+The tool list is another matter: turning `vis`, `align` or `codemode` on or off does change the
+active tools (`vis` adds or removes `vis_guide`, and in Sova's hosted sessions `vis_check` with it;
+`align` its `align` tool; `codemode` its `codemode` tool, §chat.mode-menu/codemode), while the
+system prompt stays as it was (none of them adds a line to it). That is one tool-set change per
+toggle; in the plain TUI, where `vis` used to change no tool, it costs a prompt-cache rebuild.
+`codemode` has no block, so no note tells the model about it either: its tool is the whole switch.
 
 Instead the switch reaches the model as a **hidden note**, one path for every provider: a
 `mode-note` custom message (`display: false`, so neither the TUI nor Sova's transcript shows it)
@@ -301,14 +305,15 @@ once, as their net change.
   active then, sends no note for them, and drops from its requests any older note the compaction
   kept in its recent tail, so no guide reaches the model twice.
 
-Not covered: `align` also adds or removes its `align` tool, and a tool-set change breaks the cached
-prefix on every provider and restarts the claude-code CLI, note or not. A major-mode switch still
-changes the section, as before.
+Not covered: `align`, `vis` and `codemode` also add or remove their tools, and a tool-set change
+breaks the cached prefix on every provider and restarts the claude-code CLI, note or not. A
+major-mode switch still changes the section, as before.
 
-Observable: toggling `vis` in a chat on the claude-code provider starts no new CLI (no "restarted"
+Observable: toggling `spec` in a chat on the claude-code provider starts no new CLI (no "restarted"
 fold) and the next request's cache read covers the previous context; on any provider the session
-records no system entry for the toggle, and the provider's system prompt is byte-identical before
-and after it. The model draws `vis` fences after turning it on and none after turning it off.
+records no system entry for a minor toggle (align in Delegate aside), and the provider's system prompt is byte-identical
+before and after it. The model draws `vis` fences after turning vis on and none after turning it
+off.
 
 ## §chat.mode-menu/workers — What a chat's workers get of its modes
 
@@ -320,7 +325,8 @@ A worker is not a chat: it has no mode menu, and its parent's major mode never r
 whether it reaches workers** (`MINOR_WORKER` in `pi-config/extensions/mode/minor.ts`, a record
 over every minor mode, so a new one cannot be added without deciding): `spec` does; `align`
 does not (aligning is a conversation with the user, which a worker doesn't have), nor does `vis`
-(its visuals are for the user, and a worker's replies are read by its parent session).
+(its visuals are for the user, and a worker's replies are read by its parent session), nor does
+`codemode` (it changes the chat's own tool set, and a worker's tools are its brief's).
 
 - **What a worker gets.** While the parent chat has spec on, every worker it starts — pi or
   Claude Code, plain, remote, sandboxed, hosted, or a team member — gets the spec block
@@ -350,6 +356,67 @@ worker prompt on the extension bus (`mode:worker`), the way the sandbox publishe
 (§chat.sandbox/workers), and the subagents extension appends that text at spawn without
 interpreting it. A parent without the mode extension publishes nothing, and its workers get
 nothing.
+
+## §chat.mode-menu/codemode — codemode: scripts that call the chat's tools
+
+The `codemode` minor mode gives the model pi's `codemode` tool: a JavaScript script that calls the
+chat's other tools, several at once, and filters their output before the model reads it.
+
+- **The tool is the whole mode.** On, `codemode` is in the chat's tool set; off, it is nowhere in
+  it, even when something else had turned it on (the default tools, a restored transcript's tool
+  set). The one exception: while a tool only scripts can reach is registered (an MCP tool with
+  `codemode` or `deferred` exposure), turning the mode off leaves `codemode` in, since that tool has
+  no other way in. The mode has no prompt block and no hidden mode note, on or off: the tool's own
+  description is its guide (`MINOR_PROMPTLESS` in `pi-config/extensions/mode/minor.ts`).
+- **When it applies.** A switch made between runs puts the tool in or takes it out at once; a switch
+  during a run applies when that run settles, and the run under way keeps its tools
+  (§chat.mode-menu/how-a-switch-reaches-the-chat). A reopened chat comes back with the tool as its
+  `mode` entry says. A toggle is a tool-set change, so, like align's tool, it costs the cached prompt
+  prefix and restarts a Claude Code chat's CLI (§chat.mode-menu/minor-toggle-keeps-prompt).
+- **Where.** pi's built-in extensions load only in its CLI, so a terminal session has pi's own
+  tool, while Sova adds it to every ordinary chat it runs, registered inactive
+  (`server/harness/pi/codemode.ts`, in the chat manager's default extension factories). A Claude
+  Code chat is like any other: off, no tool and no prompt line mentions it; on, it is declared from
+  the next run. The special loadouts (the Overseer, organizations, baton) don't load it, and where
+  the tool isn't registered the mode changes nothing.
+- **Workers never get it** (`MINOR_WORKER`): a worker's tools are its brief's
+  (§chat.mode-menu/workers).
+- **What a script can call.** The chat's tools, except the ones declared **model-only**: a tool
+  whose state Sova reads back from its own recorded result (the `align` tool, spawning a worker,
+  creating a team, sending to another session, the Overseer's cards) is offered to the model but is
+  never callable from a script. A script's model calls (`models.classify`,
+  `models.generateImages`) go through this device's model policy, which refuses a turned-off model
+  ("<provider/id> is turned off in this device's model policy (Settings → Models).") without
+  calling it; each call that runs holds one of the provider's request slots and is recorded as the
+  chat's own usage.
+- **What the chat shows.** The calls a script makes write no transcript entries of their own: the
+  script's result keeps them, and its tool card shows the script (with **Copy Script**) and each
+  call it made with its status (Running, Done, Failed, Cancelled), live while it runs, then its
+  output.
+- **With spec on**, a `[spec census]` or spec-guard note about a call the script made is repeated on
+  the script's own result, the one the model reads (§tools.spec/census-note).
+
+## §chat.mode-menu/strict — strict: Delegate without edit and write
+
+`strict` is a per-session flag that, while the chat is in Delegate, takes the `edit` and `write`
+tools away from the orchestrator.
+
+- **Only those two.** `bash` and every other tool stay, and the Delegate instructions read the same
+  with strict on or off: the prompt never mentions it. The tools the chat had before are kept and
+  come back when strict goes off or the chat leaves Delegate.
+- **In the normal mode** the flag is kept and does nothing; switching to Delegate applies it, and a
+  session restored in Delegate with strict on applies it on open.
+- **Setting it.** `/mode strict on|off`, per session like the rest of the mode, with a transcript
+  marker ("Strict mode on" / "Strict mode off") and a notice that adds "(edit/write removed from the
+  orchestrator)" or "(edit/write restored to the orchestrator)" when it applied at once. It is off
+  by default; `mode.json`'s `strict` sets what new sessions start with, and `/mode default` or the
+  menu's `Save as default` saves this chat's flag there. There is no launch flag for it.
+- **Shown.** The terminal's status line adds `strict` after `delegate` (only in Delegate). The web
+  mode menu shows it read-only in its foot (`strict: off|on`, §chat.mode-menu/menu); the trigger's
+  label never names it.
+- **Sova never sets it.** A switch from the menu can't carry it, the Overseer leaves it as it is
+  (§app.overseer/hosting), and a project's coding sessions never set or offer it
+  (§app.project-overseer/coding-mode). A worker is never strict.
 
 ## §chat.mode-menu/states — States
 

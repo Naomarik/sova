@@ -7049,7 +7049,7 @@
         "§app.worker-restore/claude-bridge-restart"
       ],
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
         "pi-config/extensions/mode/index.ts",
         "pi-config/extensions/mode/vis-guide-tool.ts",
@@ -7061,7 +7061,10 @@
         "pi-config/extensions/mode/README.md",
         "pi-config/extensions/claude-code/provider/bridge.test.ts",
         "server/mode-state.ts",
-        "server/mode-state.test.ts"
+        "server/mode-state.test.ts",
+        "pi-config/extensions/mode/minor.ts",
+        "pi-config/extensions/claude-code/provider/session-bridge.ts",
+        "server/vis-check.ts"
       ]
     },
     "§app.organizations/archive": {
@@ -15562,7 +15565,8 @@
         "src/components/ChatView.tsx",
         "src/lib/api.ts",
         "src/app.css"
-      ]
+      ],
+      "evidence": "reviewed"
     },
     "§app.baton/files": {
       "kind": "behavior",
@@ -15739,6 +15743,52 @@
       "code": [
         "pi-config/extensions/usage-status/index.ts",
         "pi-config/extensions/usage-status/overlay.test.ts"
+      ]
+    },
+    "§chat.mode-menu/codemode": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.mode-menu/how-a-switch-reaches-the-chat",
+        "§chat.mode-menu/minor-toggle-keeps-prompt",
+        "§chat.mode-menu/workers",
+        "§tools.spec/census-note"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "pi-config/extensions/mode/minor.ts",
+        "pi-config/extensions/mode/index.ts",
+        "pi-config/extensions/mode/prompt.ts",
+        "pi-config/extensions/mode/palette.ts",
+        "server/harness/pi/codemode.ts",
+        "server/chat-manager.ts",
+        "server/mode-state.ts",
+        "shared/harness-tools.ts",
+        "src/components/ToolCard.tsx",
+        "pi-config/extensions/mode/index.test.ts",
+        "server/codemode-runtime.test.ts",
+        "server/harness/pi/contract.test.ts",
+        "server/harness/pi/tools.test.ts"
+      ]
+    },
+    "§chat.mode-menu/strict": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.mode-menu/menu",
+        "§app.overseer/hosting",
+        "§app.project-overseer/coding-mode"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "pi-config/extensions/mode/index.ts",
+        "pi-config/extensions/mode/prompt.ts",
+        "pi-config/extensions/mode/state.ts",
+        "server/mode-state.ts",
+        "server/transcript.ts",
+        "src/components/ModeMenu.tsx",
+        "src/lib/mode-menu.ts",
+        "pi-config/extensions/mode/index.test.ts"
       ]
     }
   },

@@ -40,8 +40,9 @@ export type { PiExtensionFactory, PiLoaderOptions, PiModelRuntime, PiToolDefinit
  * - `review`: adversarial review (`adversarial-review`, pi-config/extensions/mode/index.ts REVIEW_FLAG).
  * - `link`: this server's bound origin and its per-install token for the `link` extension (`sova-link`,
  *   `sova-link-token`), and which of its tools the session gets (`sova-link-tools`): `member`, all seven
- *   from its start; `legacy`, only those its transcript already declares, until a compaction drops them
- *   (pi-config/extensions/link/index.ts). In-process only: never argv, never env.
+ *   from its start; `legacy`, all seven once the server's `sova:link-live` hook says it is in a live
+ *   link, else only those its transcript already declares, until a compaction in no live link drops
+ *   them (pi-config/extensions/link/index.ts). In-process only: never argv, never env.
  */
 export interface OpenFlags {
   outline?: boolean;

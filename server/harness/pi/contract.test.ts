@@ -5,7 +5,7 @@
 // faux provider, registered through the public ModelRuntime API: no network, no private fields.
 // C1 the session manager's append* methods (the entry union), C2 the custom entry's line, C3 the event
 // names and fields chat-manager's bind() reads, C5 image content as prompt/steer take and store it.
-// P1-P22 and T1 are the quirk canaries (QUIRKS.md, quirks.ts): each asserts that a pi behaviour a Sova
+// P1-P23 and T1 are the quirk canaries (QUIRKS.md, quirks.ts): each asserts that a pi behaviour a Sova
 // workaround or assumption rests on still holds. Their turns run on testing/scripted-model.ts (a held
 // reply makes the mid-turn windows deterministic). When one fails, triage it by its QUIRKS.md row.
 import assert from "node:assert/strict";
@@ -731,6 +731,50 @@ return w + ":" + r.stopReason;`;
       for (const t of expected) assert.equal(sent.get(t.name), t.description, `${t.name}: the request's description is agent.state.tools'`);
       session.dispose();
     }
+  });
+
+  test("P23 turn-end-loadout: a tool registered at turn_end is declared in the next request of the same run, beside the steered message; one registered at turn_start is not", async () => {
+    /** The tools a request declared: its system messages' toolsAdded, less toolsRemoved. */
+    const declaredIn = (call: { context: unknown }) => {
+      const tools = new Set<string>();
+      for (const m of (call.context as { messages: any[] }).messages) {
+        if (m.role !== "system") continue;
+        for (const r of m.toolsRemoved ?? []) tools.delete(typeof r === "string" ? r : r.name);
+        for (const t of m.toolsAdded ?? []) tools.add(t.name);
+      }
+      return tools;
+    };
+    const tool = (name: string) => ({ name, label: name, description: `The ${name} tool.`, parameters: Type.Object({}), execute: async () => ({ content: [{ type: "text", text: name }], details: {} }) });
+    let turnEnds = 0;
+    let turnStarts = 0;
+    const late = (api: any) => {
+      api.registerTool(tool("echo"));
+      // The first step's end and the second step's start, both inside the one run.
+      api.on("turn_end", () => {
+        if (++turnEnds === 1) api.registerTool(tool("at_turn_end"));
+      });
+      api.on("turn_start", () => {
+        if (++turnStarts === 2) api.registerTool(tool("at_turn_start"));
+      });
+    };
+    const { session, model } = await quirkSession({ extensions: [{ name: "contract-late", factory: late } as never] });
+    model.reply(
+      async () => {
+        await session.steer("steered while the tool ran");
+        return { toolCall: { name: "echo", arguments: {} } };
+      },
+      { toolCall: { name: "echo", arguments: {} } },
+      { text: "done" },
+    );
+    await session.prompt("go");
+    assert.equal(model.calls.length, 3, "one run, three requests");
+    const [first, second, third] = model.calls.map(declaredIn);
+    assert.ok(first!.has("echo") && !first!.has("at_turn_end"), "the first request: the tools from the start");
+    assert.ok(second!.has("at_turn_end"), "registered at turn_end: declared in the next request of the same run");
+    assert.ok(JSON.stringify((model.calls[1]!.context as { messages: unknown[] }).messages).includes("steered while the tool ran"), "the request that carries the steered message");
+    assert.ok(!second!.has("at_turn_start"), "registered at turn_start: too late for that request (fixed: pi builds the loadout after turn_start)");
+    assert.ok(third!.has("at_turn_start"), "the control: it is declared in the request after");
+    session.dispose();
   });
 
   test("T1 scripted-model: the members the test double replaces exist, and it runs a turn", async () => {

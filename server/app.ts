@@ -54,7 +54,6 @@ import { readBranch, unknownEntries } from "./harness/pi/reader";
 import { contextOfBranch } from "./harness/pi/usage";
 import { appendToClosedFile, createSessionFile, type NewSessionFile } from "./harness/pi/state";
 import { LINK_MEMBER, SUBAGENT_PROFILE } from "./harness/state-kinds";
-import { isLinkMemberFile } from "./link-member";
 import { checkTmpImage, deleteAttachment, MAX_ATTACHMENT_BYTES, readTmpImage, saveUploadedImage, sessionAttachmentsDir, UploadError } from "./attachments";
 import { listFolders } from "./folders";
 import { listProjectFiles } from "./files";
@@ -96,7 +95,7 @@ import { meshApi, meshRoutes } from "./mesh";
 import { mountDetails } from "./mesh/details";
 import { mountResync } from "./mesh/resync";
 import { probePeer } from "./mesh/hello";
-import { meshLinks } from "./mesh/links";
+import { LINK_LIVE, meshLinks } from "./mesh/links";
 import { mountLinks } from "./mesh/links-routes";
 import { deliverLinkMessage, heldSessionPath, notifyLinksChanged, setLinksSource } from "./link-delivery";
 import { linkSandbox, linkSandboxOf } from "./link-sandbox";
@@ -240,7 +239,8 @@ export function buildApp(deps: AppDeps) {
       if (r.listed) pick = { source: r.listed.source, id: r.listed.id };
     }
     // A link member session (§mesh.links/tools): its marker is written with the header, so its
-    // runtime has the link tools from its first open.
+    // runtime has the link tools from its first open (any other session gets them only when it joins
+    // a live link, which restarts a claude-code chat's CLI).
     const made = await createWebSessionFile(c, cwd, linkMember ? [[LINK_MEMBER, { v: 1 }]] : undefined);
     if (made instanceof Response) return made;
     if (subagentProfile !== undefined) appendToClosedFile(made.path, SUBAGENT_PROFILE, { v: 1, profile: subagentProfile });
@@ -1522,7 +1522,6 @@ export function buildApp(deps: AppDeps) {
   mountLinks(app, meshApi, {
     root: stateRoot,
     summary: sessionById,
-    linkMember: isLinkMemberFile,
     held: heldSessionPath,
     deliver: deliverLinkMessage,
     probe: async (peer) => (await probePeer(peer)).state,
@@ -1533,6 +1532,9 @@ export function buildApp(deps: AppDeps) {
     homedir,
     protectedRoots: () => [stateRoot(), SESSIONS_DIR],
   });
+  // The link extension asks this, by session id, whether a hosted session is in a live link now:
+  // a session that joins one gets the link tools at its next request (§mesh.links/tools).
+  (globalThis as Record<symbol, unknown>)[LINK_LIVE] = (id: string) => meshLinks.inLiveLink(id);
   // The `links` chat frame: a member's partners; the Overseer's pane, every link on this host.
   const linkedAgents = async (id: string, path: string) => meshLinks.linkedAgents(id, { overseer: !!(await getSessionSummary(path))?.overseer });
   setLinksSource(linkedAgents);

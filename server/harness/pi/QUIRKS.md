@@ -58,6 +58,7 @@ Paths in "Where" are under `server/`.
 | P20 model-restore-gate | semantic | `recordedModelForEmptyBranch` (harness/pi/open.ts), `modelForSessionOpen` (harness/pi/open.ts), `legacyClaudeModelForOpen` (harness/pi/open.ts) | `createAgentSession`, `SessionManager.buildSessionContext` | pi restores a recorded model on any branch |
 | P21 codemode-definition | semantic | `captureCodemode` (harness/pi/codemode.ts), `scriptRegistry` (harness/pi/codemode.ts) | `createCodemodeExtension`, `ExtensionAPI.registerTool`, `ExtensionContext.modelRegistry`, `ExtensionToolContext.executeTool` | pi exports the codemode tool definition and a model hook for scripts |
 | P22 declared-tools | private-read | `PiHarnessSession.declaredTools` (harness/pi/session.ts), `toolSource` (harness/pi/session.ts) | `Agent.state.tools`, `AgentSession._hiddenDeclarations`, `AgentSession._applyToolLoadout`, `AgentSession.getAllTools`, `SourceInfo.path` | pi offers a public read of the declared tools as a request will send them |
+| P23 turn-end-loadout | ordering | `join` (pi-config/extensions/link/index.ts) | `agentLoop`, `AgentSession._installAgentNextTurnRefresh`, `AgentSession._preparePromptAndToolLoadout`, `ExtensionAPI.registerTool` | pi offers a documented hook for changing the tool set before a run's next request |
 | T1 scripted-model (test-only) | private-write | `ScriptedModel.attach` (harness/pi/testing/scripted-model.ts) | `AgentSession._modelRuntime`, `Agent.getApiKey`, `Agent.streamFunction` | pi offers a public test model hook |
 
 ## What each one relies on
@@ -195,6 +196,12 @@ Canary: `P21 codemode-definition: the factory registers one inactive codemode to
 `agent.state.tools` is the set the next request declares, in its order, with the descriptions a `prepareLoadout` hook gave them (codemode's "Codemode: `tools.x(args)` resolves to …" line); `getAllTools()` keeps the registry's own descriptions. The private `_hiddenDeclarations` names the declarations requests leave out (codemode's `only` mode). A tool's `sourceInfo.path` is `builtin:<name>` for pi's own tools, `<inline:<name>>` for an extension factory (`<sdk:<name>>` for a custom tool), else the extension's file. The driving session's `declaredTools()` reads the three for the setup card's Tools group (§chat.transcript/setup-card-tools).
 
 Canary: `P22 declared-tools: agent.state.tools is the declared set with the loadout's descriptions, _hiddenDeclarations what requests leave out, sourceInfo.path names the source`.
+
+### P23 turn-end-loadout
+
+Within one run pi (1.0.3, `pi-agent-core` `agent-loop.js`) emits `turn_end` (an extension's handler runs in the `finishTurn` boundary before it), then polls `getSteeringMessages`, then runs `prepareNextTurn` — `AgentSession._installAgentNextTurnRefresh` builds the next request's prompt and tool loadout there from `getActiveToolNames()` (`_preparePromptAndToolLoadout`) — and only then emits `turn_start`. So a tool an extension registers in a `turn_end` handler is declared (`toolsAdded`) in the very next request of the same run, the one that carries a message steered during the step; a tool registered at `turn_start` waits for the request after. The `link` extension turns the link tools on at `turn_end` for a session linked mid-run, so the partner's steered message arrives with the tools to answer it (§mesh.links/tools, §mesh.links/delivery).
+
+Canary: `P23 turn-end-loadout: a tool registered at turn_end is declared in the next request of the same run, beside the steered message; one registered at turn_start is not`.
 
 ### T1 scripted-model (test-only)
 

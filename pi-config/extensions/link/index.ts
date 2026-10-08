@@ -2,19 +2,27 @@
  * link: the tools of a session linked with sessions on other Sova mesh hosts (§mesh.links/tools).
  *
  * `link_members`, `link_send`, `link_inbox` and the file tools `link_offer`, `link_accept`,
- * `link_decline` and `link_offers`, with a fixed schema, exist only in a **link member session**: one
- * the Overseer created as a link member (Sova's marker, fixed at its creation). Sova says so with the
- * `sova-link-tools` flag (`member`), and the tools are registered at `session_start` (pi applies flag
- * values only after every extension has loaded, so never in the factory body), before the session's
- * first request. A claude-code session reaches them through its provider's `mcp__sova__` bridge, and
- * a tool set that changed mid-conversation would restart its CLI, so the set never changes because a
- * link is made or ended; each tool refuses with a sentence when the session is in no link.
+ * `link_decline` and `link_offers`, with a fixed schema, exist only in a session that is a link member:
  *
- * Every other session Sova hosts gets `legacy`: it registers the tools only when its transcript already
- * declares them (a session an earlier build hosted, when every session had them), and withdraws them at
- * its next compaction (re-registered `hidden`, the one way pi takes a tool back), which rebuilds the
- * prompt cache anyway; a compaction while the session is in a live link, or whose host can't say,
- * keeps them for a later one. A session that never declared them never gets them.
+ * - **Born** (`member`): one the Overseer created as a link member (Sova's marker, fixed at its
+ *   creation), said with the `sova-link-tools` flag `member`. The tools are registered at
+ *   `session_start` (pi applies flag values only after every extension has loaded, so never in the
+ *   factory body), before its first request, and never withdrawn.
+ * - **Joined** (`legacy` flag, `has` = `joined`): any other session Sova hosts, once the server's
+ *   `Symbol.for("sova:link-live")` hook (installed by Sova, asked by session id; absent in a TUI or
+ *   a worker) says it is in a live link: at `session_start`, `before_agent_start`, or `turn_end`, so a
+ *   session linked mid-run declares them in the request that carries the steered partner message
+ *   (pi builds that request's loadout after `turn_end`, before `turn_start`).
+ *
+ * A claude-code session reaches them through its provider's `mcp__sova__` bridge, and a changed tool
+ * set restarts its CLI, so the tools are turned on once and taken back only at a compaction; each
+ * tool refuses with a sentence when the session is in no link.
+ *
+ * A joined session, and one whose transcript already declares the tools (`legacy`: a session an
+ * earlier build hosted, when every session had them), withdraws them at a compaction that finds it in
+ * no live link (re-registered `hidden`, the one way pi takes a tool back), which rebuilds the prompt
+ * cache anyway; a compaction while the session is in a live link, or whose host can't say, keeps them
+ * for a later one. Never when a link ends, and never at any other moment.
  *
  * Sova sets the `sova-link` flag on every runtime it hosts to its own origin (the real bound port).
  * Without it (a TUI, a worker) nothing is registered and nothing is fetched. Beside it,
@@ -53,6 +61,8 @@ export const FLAG = "sova-link";
 export const TOKEN_FLAG = "sova-link-token";
 export const TOOLS_FLAG = "sova-link-tools";
 export const SECTION = "mesh-link";
+/** Sova installs `globalThis[LINK_LIVE](sessionId) => boolean` in the server its sessions run in. */
+export const LINK_LIVE = Symbol.for("sova:link-live");
 export const TOOL_NAMES = ["link_members", "link_send", "link_inbox", "link_offer", "link_accept", "link_decline", "link_offers"] as const;
 
 /** Whether the transcript's current loadout (its system messages replayed in order, as pi restores
@@ -98,7 +108,7 @@ export default function link(pi: ExtensionAPI, deps: { fetch?: typeof fetch } = 
 	/** The seven tools, registered only at session_start and only in a session that gets them. */
 	const defs: ToolDefinition<any, any>[] = [];
 	/** Why this session has the tools, or null while it has none. */
-	let has: "member" | "legacy" | null = null;
+	let has: "member" | "joined" | "legacy" | null = null;
 
 	const sessionOf = (ctx: ExtensionContext): string => ctx.sessionManager.getSessionId();
 	const text = (t: string, details: unknown = {}) => ({ content: [{ type: "text" as const, text: t }], details });
@@ -328,21 +338,45 @@ export default function link(pi: ExtensionAPI, deps: { fetch?: typeof fetch } = 
 		},
 	});
 
+	/** Whether the host says this session is in a live link now (Sova's `sova:link-live` hook, by
+	    session id); false where there is none (a TUI, a worker, a server without links). */
+	const linkedNow = (ctx: ExtensionContext): boolean => {
+		const live = (globalThis as Record<symbol, unknown>)[LINK_LIVE];
+		if (typeof live !== "function") return false;
+		try {
+			return (live as (id: string) => unknown)(sessionOf(ctx)) === true;
+		} catch {
+			return false;
+		}
+	};
+	const register = (why: NonNullable<typeof has>) => {
+		for (const def of defs) pi.registerTool(def);
+		has = why;
+	};
+	/** A session with none that is now in a live link joins: the tools from its next request. */
+	const join = (ctx: ExtensionContext) => {
+		if (has || !host() || pi.getFlag(TOOLS_FLAG) !== "legacy" || !linkedNow(ctx)) return;
+		register("joined");
+	};
+
 	pi.on("session_start", (_event, ctx) => {
 		if (has || !host()) return;
 		const mode = pi.getFlag(TOOLS_FLAG);
-		if (mode === "member" || (mode === "legacy" && declaresLinkTools(ctx.sessionManager.buildSessionProjection().messages))) {
-			for (const def of defs) pi.registerTool(def);
-			has = mode;
-		}
+		if (mode === "member") register("member");
+		else if (mode === "legacy" && linkedNow(ctx)) register("joined");
+		else if (mode === "legacy" && declaresLinkTools(ctx.sessionManager.buildSessionProjection().messages)) register("legacy");
 	});
 
-	// A session from before keeps its tools until a compaction finds it in no live link: the
-	// compaction rebuilds the prompt cache (a claude-code CLI restarts after one), so dropping them
-	// then costs nothing extra. Never at any other moment.
+	// Linked while it runs: registered at the turn's end, before pi takes the steered partner message
+	// and builds the next request's loadout, so that request declares them (quirk P23).
+	pi.on("turn_end", (_event, ctx) => join(ctx));
+
+	// A joined session, or one from before, keeps its tools until a compaction finds it in no live
+	// link: the compaction rebuilds the prompt cache (a claude-code CLI restarts after one), so
+	// dropping them then costs nothing extra. Never at any other moment, and a born member never.
 	pi.on("session_compact", async (_event, ctx) => {
 		const c = host();
-		if (has !== "legacy" || !c) return;
+		if ((has !== "legacy" && has !== "joined") || !c) return;
 		try {
 			if (liveLinks(await c.members(sessionOf(ctx), { brief: true })).length) return;
 		} catch (e) {
@@ -356,6 +390,7 @@ export default function link(pi: ExtensionAPI, deps: { fetch?: typeof fetch } = 
 	});
 
 	pi.on("before_agent_start", async (event, ctx) => {
+		join(ctx);
 		const c = host();
 		if (!c || !has) return;
 		try {

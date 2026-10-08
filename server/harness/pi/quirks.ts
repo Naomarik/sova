@@ -351,6 +351,17 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     retireWhen: "pi offers a public read of the declared tools as a request will send them",
   },
   {
+    id: "P23",
+    name: "turn-end-loadout",
+    kind: "ordering",
+    relies:
+      "Within one run, pi emits turn_end, then takes the steering messages, then builds the next request's loadout from the active tools (prepareNextTurn), then emits turn_start: a tool an extension registers in a turn_end handler is declared (toolsAdded) in the next request of the same run, beside a message steered during the step, while one registered at turn_start is not.",
+    pi: ["agentLoop", "AgentSession._installAgentNextTurnRefresh", "AgentSession._preparePromptAndToolLoadout", "ExtensionAPI.registerTool"],
+    where: [{ file: "pi-config/extensions/link/index.ts", symbol: "join" }],
+    canary: "P23 turn-end-loadout: a tool registered at turn_end is declared in the next request of the same run, beside the steered message; one registered at turn_start is not",
+    retireWhen: "pi offers a documented hook for changing the tool set before a run's next request",
+  },
+  {
     id: "T1",
     name: "scripted-model (test-only)",
     kind: "private-write",

@@ -274,10 +274,13 @@ other with their own `link_send`, `link_inbox` and `link_members` tools. `sova_l
 link this host knows, `sova_link` makes one, `sova_unlink` ends one.
 
 - **Members.** One session per host, each named by its session id and host (a peer id; leave host
-  out for this host). Only link member sessions: only those have the link tools, and a session
-  becomes one only at its creation, so create each member with `sova_create_session` and
-  `link: true` (with `host` for a peer's) before `sova_link`; an existing session can't be linked.
-  Never a terminal-owned, archived, subagent, baton or project-overseer session, and never you.
+  out for this host). Any session can be linked, an existing one too, running or idle: one without
+  the link tools gets them as it joins. Never a terminal-owned, archived, subagent, baton or
+  project-overseer session, and never you.
+- **Creating a session only to link it?** Create it with `sova_create_session` and `link: true`
+  (with `host` for a peer's), call `sova_link`, then send its task: it has the link tools from its
+  first request, so nothing restarts. Turning the tools on in a running session restarts a Claude
+  Code chat once, twice when it is linked mid-run (the link section arrives at its next run's start).
   Relay the tool's refusal as worded.
 - **No confirm card is needed** to link: a link changes no session and sends nothing. It is still
   an act (a turn the user started, under the per-message link limit).

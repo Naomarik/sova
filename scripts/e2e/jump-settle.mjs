@@ -15,7 +15,8 @@
 //     ends later;
 //   - a lazy image above it that the jump brings into view and that finishes loading mid-hold (a
 //     path attachment opened beforehand, its response held back) doesn't move it either, for 1.5 s
-//     after the load.
+//     after the load;
+//   - a jump that lands at the end leaves following off: what lands there after doesn't move the view.
 //
 // Writes a fixture session (odd-sized images, a table whose rows wrap far past their estimate, a
 // path attachment served over HTTP) into the hermetic agent dir and drives a hermetic server —
@@ -28,10 +29,11 @@
 // Env: SOVA_E2E_PORT (default 4810); SOVA_E2E_AGENT, the server's agent dir when it isn't this
 // worktree's .agent; SOVA_E2E_CDP, a browser already running (CDP URL) instead of starting one;
 // SOVA_E2E_SESSIONS, ids of other sessions in that agent dir to measure too (comma-separated; their
-// numbers are printed, never asserted): SOVA_E2E_PICK names one of their jumps ("1440 unbuilt"; near, far,
-// unbuilt), SOVA_E2E_REMOTE=1 opens them through a proxy (no background fetch), SOVA_E2E_MS sets
-// how long each jump is sampled (default 2600). SOVA_E2E_ONLY runs only the checks whose name holds it. The playwright skill needs its node_modules (`npm ci` in
-// .claude/skills/playwright/scripts, or a symlink to another checkout's).
+// numbers are printed, never asserted): SOVA_E2E_PICK names one of their jumps ("1440 unbuilt";
+// near, far, unbuilt), SOVA_E2E_ENTRY jumps to that entry id instead, SOVA_E2E_REMOTE=1 opens them
+// through a proxy (no background fetch), SOVA_E2E_MS sets how long each jump is sampled (default
+// 2600). SOVA_E2E_ONLY runs only the checks whose name holds it. The playwright skill needs its
+// node_modules (`npm ci` in .claude/skills/playwright/scripts, or a symlink to another checkout's).
 
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, utimesSync, writeFileSync } from "node:fs";
@@ -47,6 +49,7 @@ const BASE = `http://127.0.0.1:${PORT}`;
 const SKILL = join(ROOT, ".claude/skills/playwright/scripts");
 const EXTRA = (process.env.SOVA_E2E_SESSIONS ?? "").split(",").filter(Boolean);
 const PICK = process.env.SOVA_E2E_PICK;
+const ENTRY = process.env.SOVA_E2E_ENTRY;
 const EXTRA_REMOTE = process.env.SOVA_E2E_REMOTE === "1";
 const SAMPLE_MS = Number(process.env.SOVA_E2E_MS ?? 2600);
 
@@ -164,7 +167,8 @@ writeFileSync(attachment, png(700, 420));
     push({ type: "message", id: `u${i}`, message: { role: "user", content, timestamp: 0 } });
     const paras = Array.from({ length: 1 + (i % 4) }, (_, k) => words(20 + ((i * 53 + k * 29) % 140), i + k)).join("\n\n");
     if (i === LAZY - 1) continue;
-    const reply = TABLES.has(i) ? table(i) : paras;
+    // The last reply is short, so a jump to the last input lands at the end at 390 too.
+    const reply = TABLES.has(i) ? table(i) : i === TURNS - 1 ? "Done." : paras;
     push({
       type: "message",
       id: `a${i}`,
@@ -386,6 +390,35 @@ async function wheelTakesIt(viewport, entryId) {
   }
 }
 
+/** A jump to the last input lands at the end; once its hold is over, content landing there doesn't
+    pull the view down: a jump never turns following back on, so the reader keeps their place. */
+async function staysPut(viewport, entryId) {
+  const { ctx, page } = await open(viewport, ID);
+  try {
+    const now = () =>
+      page.evaluate(() => {
+        const t = document.getElementById("transcript");
+        return { gap: Math.round(t.scrollHeight - t.scrollTop - t.clientHeight), pill: !!t.parentElement.querySelector(".jump-latest[data-shown]") };
+      });
+    await page.evaluate((id) => document.querySelector(`li.timeline-row[data-input="${CSS.escape(id)}"] button.timeline-body`).click(), entryId);
+    await sleep(1500);
+    const landed = await now();
+    // A row growing at the end, as a streamed reply does.
+    await page.evaluate(() => {
+      const d = document.createElement("div");
+      d.style.height = "300px";
+      [...document.querySelectorAll("#transcript .thread > .entry")].at(-1).append(d);
+    });
+    await sleep(500);
+    const after = await now();
+    console.log(`       ${viewport.width}: after the jump ${JSON.stringify(landed)}; after 300 px landed at the end ${JSON.stringify(after)}`);
+    assert(landed.gap < 80, `precondition: the jump should land within 80 px of the end; it is ${landed.gap} px from it`);
+    assert(after.pill && after.gap >= 290, `following should stay off, with Jump to Latest: ${JSON.stringify(after)}`);
+  } finally {
+    await ctx.close();
+  }
+}
+
 const DESKTOP = { width: 1440, height: 900 };
 const PHONE = { width: 390, height: 844 };
 
@@ -400,6 +433,7 @@ try {
     await check(`${w}: a built row far up, under a row drawn far taller than its estimate, lands in the middle at once and stays`, () => landsAndStays(vp, `u${FAR}`, { built: remote ? undefined : true, remote }));
     await check(`${w}: a row not built yet lands in the middle at once and stays, through the rows built above it after`, () => landsAndStays(vp, `u${UNBUILT}`, { built: remote ? undefined : false, remote }));
     await check(`${w}: the first row lands at the top of the view and stays`, () => landsAndStays(vp, "u0", { built: remote ? undefined : false, remote, atTop: true }));
+    await check(`${w}: a jump that lands at the end doesn't turn following on; Jump to Latest shows`, () => staysPut(vp, `u${TURNS - 1}`));
     await check(`${w}: a lazy image above the row loading mid-hold doesn't move it`, () => landsAndStays(vp, `u${LAZY}`, { built: true, lazyMs: 450, openId: `u${LAZY - 1}` }));
   }
   await check("1440: the reader's wheel while the row is held moves the view, and the hold lets go", () => wheelTakesIt(DESKTOP, `u${FAR}`));
@@ -424,10 +458,10 @@ try {
       for (const [what, x] of picks) {
         if (PICK && `${vp.width} ${what}` !== PICK) continue;
         try {
-          await landsAndStays(vp, x.id, { sessionId: sid, remote: EXTRA_REMOTE });
-          console.log(`  info ${sid.slice(0, 8)} ${vp.width} ${what}: ok`);
+          await landsAndStays(vp, ENTRY ?? x.id, { sessionId: sid, remote: EXTRA_REMOTE });
+          console.log(`  info ${sid.slice(0, 8)} ${vp.width} ${what} ${x.id}: ok`);
         } catch (err) {
-          console.log(`  info ${sid.slice(0, 8)} ${vp.width} ${what}: ${String(err.message).split("\n")[0]}`);
+          console.log(`  info ${sid.slice(0, 8)} ${vp.width} ${what} ${x.id}: ${String(err.message).split("\n")[0]}`);
         }
       }
   }

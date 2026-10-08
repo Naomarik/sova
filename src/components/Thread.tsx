@@ -1616,7 +1616,8 @@ export function ThreadScroller(props: {
       reflowed = !first;
     }
     const near = lastGap < FOLLOW_PX;
-    // A jump that lands near the end isn't the reader coming back to follow it.
+    // A jump never brings following back, even one landing at the end right after a press in the
+    // transcript (a card reference), which would otherwise read as the reader's scroll.
     if (near && held?.jump) return;
     // Only the view moving up stops following. Content landing below a following view (a queued
     // message drawn again after a switch back) lands in a task before the frame that settles it,
@@ -1626,7 +1627,7 @@ export function ThreadScroller(props: {
     if (follow && !near && !up && !toggled) return settleSoon();
     if (near === follow) return;
     // Following comes back only by the reader's hand (§chat.transcript/turn-end-keeps-reader): their
-    // own scroll reaching the end of the rows as they stood (`endAt`), a jump's, a disclosure they
+    // own scroll reaching the end of the rows as they stood (`endAt`), a disclosure they
     // toggled, or the view resized. The browser taking a view that isn't following to the end
     // (clamped as rows below got shorter or left, or its anchoring adding rows inserted above an
     // anchor that then left) is not the reader coming back, even mid-scroll: the view stays where

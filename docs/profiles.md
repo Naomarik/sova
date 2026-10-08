@@ -2,11 +2,14 @@
 
 [← Sova](../README.md)
 
-A profile says what one session can do: which of the default tools it loses, and which session
-powers it gains. You pick one on a new session's empty screen. It is fixed once the first message
-is sent.
+A profile says what one session can do: which of the default tools it loses, which session powers
+it gains, and, if you like, which model, effort and subagents it starts with. You pick one with a
+click on a new session's empty screen, where each profile is a card. It is fixed once the first
+message is sent.
 
-Profiles are files. Sova lists them and never writes them: you or an agent add and change them.
+Profiles are files: you or an agent add and change them. Sova writes only one thing itself: **Save
+Current As Profile**, on a new session's screen, adds that session's model, effort and subagent
+profile to yours as a new profile. It never writes a built-in or project file.
 **Settings → Profiles** shows every profile the open session's folder can use, with each file's path
 and any mistake in it.
 
@@ -16,7 +19,7 @@ and any mistake in it.
 |---|---|---|
 | **Built in** | `profiles/<id>.json` in Sova | Default (in code, changes nothing), Read-only reviewer, Mini overseer |
 | **This project** | `<project>/.sova/profiles/<id>.json` | Committed with the project. One file per profile |
-| **Yours** | `~/.pi/agent/sova/session-profiles.json` | `{"version": 1, "profiles": [...]}`. Every folder can use them. One of yours replaces a built-in one of the same id |
+| **Yours** | `~/.pi/agent/sova/session-profiles.json` | `{"version": 1, "profiles": [...]}`. Every folder can use them. One of yours replaces a built-in one of the same id. With the mesh on, the whole file syncs to your other devices (the newest edit wins) |
 
 **The project** is the repository's main checkout. A session in a worktree or a subfolder of the
 repository uses the main checkout's `.sova/profiles/` and `.sova/playbooks/`. So a profile changed on
@@ -53,7 +56,9 @@ skipped and shown in Settings → Profiles with the exact error. The others stil
 | `singleton` | no | `true`: **One at a time**, at most 1 live session per profile (per project for a project's profile) |
 | `limits` | no | Any of `hops` (3), `perMessage` (10), `perDay` (40), `targetsPerRun` (5), `perPair` (6): whole numbers from 1 |
 | `mode` | no | `normal` or `delegate`: the mode it starts in |
-| `model` | no | `"provider/model"`: the model it starts on |
+| `model` | no | `"provider/model"`: the model the main thread starts on |
+| `thinking` | no | The main thread's effort: `off`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max` |
+| `subagents` | no | A subagent profile's id (Settings → Subagents), or `"off"`: what its workers, teams and spec writer use. Absent: this device's default |
 | `firstMessage` | no | Text put in an empty message box |
 | `playbook` | no | A playbook's id. The empty screen offers **Run Playbook** for it, and the Overseer sends it as the first message |
 | `overseerMayStart` | no | `true`: the Overseer may start a session with it |
@@ -65,6 +70,52 @@ Any other field is an error, and so is an unknown capability name.
 
 **Grantable** (`grant`): `sessions.read` (list and read other sessions), `sessions.message` (send
 them messages), `sessions.all` (see every session on this host, not just this project's).
+
+## Model, effort and subagents
+
+A profile can be nothing but a starting point: which model the session talks to, how hard it thinks,
+and which subagent profile its workers use. Such a profile changes no tools, so the sidebar's
+Profiles shelf leaves its sessions out; they show in Recent like any other session. Three examples
+for `session-profiles.json` (the subagent ids are the ones in your Settings → Subagents):
+
+```json
+{
+  "version": 1,
+  "profiles": [
+    {
+      "id": "claude-session",
+      "label": "Claude session",
+      "description": "Opus on the main thread; Claude subagents.",
+      "model": "claude-code-cli/claude-opus-5-5",
+      "thinking": "high",
+      "subagents": "claude-team"
+    },
+    {
+      "id": "claude-openai-subagents",
+      "label": "Claude + OpenAI subagents",
+      "model": "claude-code-cli/claude-opus-5-5",
+      "thinking": "medium",
+      "subagents": "openai-team"
+    },
+    {
+      "id": "deepseek-main",
+      "label": "DeepSeek main + Claude subagents",
+      "icon": "bulb",
+      "model": "deepseek/deepseek-chat",
+      "thinking": "off",
+      "subagents": "claude-team"
+    }
+  ]
+}
+```
+
+A card shows what it sets on one line: "Opus 5.5 · high · subagents: Opus 5.5 · Sonnet 5.5". A card
+whose model is turned off in Settings → Models, has no credentials on this device, or names a
+subagent profile this device doesn't have is shown disabled with the reason, and can't be picked.
+
+Picking one sets the session's model, effort and subagent profile at once; none of them becomes
+the default for new sessions. Picking Default (or a profile that doesn't set them) afterwards puts
+back the new-session model and effort, and this device's default subagent profile.
 
 ## Approving a project's profile
 

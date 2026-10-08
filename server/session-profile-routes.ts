@@ -1,7 +1,12 @@
 import type { Hono } from "hono";
-import { keyOf, type ProfilesListing } from "../shared/profiles";
+import { keyOf, THINKING_LEVELS, type ListedProfile, type Profile, type ProfilesListing } from "../shared/profiles";
 import type { SessionSummary } from "../shared/protocol";
 import { acquireChat, disposeHeldChat, heldChat, setSingletonCheck } from "./chat-manager";
+import { modelDenial, readModelPolicy } from "./model-policy";
+import { listModels } from "./models";
+import { addProfile } from "./profiles-store";
+import { subagentProfilesInfo } from "./subagent-profiles";
+import { loadDefaults } from "./web-defaults";
 import { getSessionInsight } from "./insights";
 import { resolveSessionPath } from "./paths";
 import { findProfile, profileSources, readHidden, setHidden } from "./profile-sources";
@@ -17,7 +22,8 @@ import { readBranch } from "./harness/pi/reader";
  * Profiles over HTTP (§chat.profiles/applying, /projects, /trust, §app.settings-dialog/profiles),
  * the One at a time check the chat runtime runs at a first message, and the host the session
  * powers reach other sessions through (§chat.profiles/session-tools). Registered by server/index.ts.
- * Profile files are never written here: only a pick, an approval and hide/show.
+ * Profile files are written here only by Save Current As Profile, and only yours (profiles-store
+ * addProfile); otherwise only a pick, an approval and hide/show.
  */
 
 export type ApplyResult =
@@ -58,21 +64,102 @@ async function applyNow(path: string, choice: ProfileChoice, by?: "overseer" | "
   } catch (err) {
     return { ok: false, status: 409, error: err instanceof Error ? err.message : String(err) };
   }
+  const next = r.profile;
+  const prev = chat.profileState?.data?.profile ?? null;
+  // Everything the pick sets is checked here first, so a pick that can't apply writes nothing.
+  if (next?.model) {
+    const why = modelDenial(readModelPolicy(), next.model) ?? (await chat.harness.findModel(next.model).then((f) => (f.ok ? null : f.error)));
+    if (why) return { ok: false, status: 400, error: `${next.label} can't be picked here: ${why}` };
+  }
+  if (next?.thinking && !(THINKING_LEVELS as readonly string[]).includes(next.thinking))
+    return { ok: false, status: 400, error: `${next.label} can't be picked here: "${next.thinking}" isn't an effort level.` };
+  // Switching back from a profile that set subagents pins the device default, since a pick can't be
+  // cleared; a chat that never had a pick gets none.
+  let subagents = next?.subagents;
+  if (!subagents && prev?.subagents && chat.subagentPick !== undefined) subagents = subagentProfilesInfo().default;
+  if (subagents) {
+    const why = (next?.subagents ? subagentsUnusable(next.subagents) : null) ?? chat.subagentSwitchRefusal();
+    if (why) return { ok: false, status: 400, error: `${next?.label ?? "Default"} can't be picked here: ${why}` };
+  }
+  // A profile without a model or effort, after one that set it: back to the new-session default
+  // (read, never written), when that is usable.
+  const defaults = loadDefaults();
+  let model = next?.model;
+  if (!model && prev?.model && defaults.model && !modelDenial(readModelPolicy(), defaults.model) && (await chat.harness.findModel(defaults.model)).ok) model = defaults.model;
+  const thinking = next?.thinking ?? (prev?.thinking && defaults.thinking && (THINKING_LEVELS as readonly string[]).includes(defaults.thinking) ? defaults.thinking : undefined);
   try {
-    chat.writeProfile({ v: 1, profile: r.profile, ...(by ? { by } : {}) });
+    chat.writeProfile({ v: 1, profile: next, ...(by ? { by } : {}) });
   } catch (err) {
     return { ok: false, status: 409, error: err instanceof Error ? err.message : String(err) };
   }
-  // Starts with: its mode (pinned) and its model, before the reopen.
-  if (r.profile?.mode) {
-    await chat
-      .switchMode({ mode: r.profile.mode as "normal" | "delegate" })
-      .then(() => chat.pinMode())
-      .catch((err) => console.warn(`[profiles] mode not applied: ${err instanceof Error ? err.message : String(err)}`));
-  }
-  if (r.profile?.model) await chat.setModelRef(r.profile.model).catch((err) => console.warn(`[profiles] model not applied: ${err instanceof Error ? err.message : String(err)}`));
+  // Starts with: its mode (pinned), model, effort and subagent pick, before the reopen. None saves a default.
+  const failed: string[] = [];
+  const step = async (what: string, run: () => unknown) => {
+    try {
+      await run();
+    } catch (err) {
+      failed.push(`its ${what} wasn't (${err instanceof Error ? err.message : String(err)})`);
+    }
+  };
+  if (next?.mode) await step("mode", () => chat.switchMode({ mode: next.mode as "normal" | "delegate" }).then(() => chat.pinMode()));
+  if (model && model !== chat.harness.model()?.ref) await step("model", () => chat.setModelRef(model));
+  if (thinking) await step("effort", () => chat.setThinking(thinking));
+  if (subagents) await step("subagent profile", () => chat.switchSubagentProfile(subagents));
   await disposeHeldChat(path, "Applying the profile.");
+  if (failed.length) return { ok: false, status: 409, error: `${next?.label ?? "Default"} was picked, but ${failed.join(", and ")}.` };
   return { ok: true };
+}
+
+/** Why a profile's subagent profile can't be picked on this device, or null. */
+function subagentsUnusable(id: string, info = subagentProfilesInfo()): string | null {
+  if (info.error) return `this device's subagent profiles can't be read (${info.error}).`;
+  return info.profiles.some((p) => p.id === id) ? null : `Its subagent profile "${id}" isn't in this device's library.`;
+}
+
+/**
+ * Why each profile that sets a model or subagents can't be used on this host now, by key: the
+ * model policy's sentence, a model with no credentials here, a subagent profile this device lacks.
+ */
+async function unusableProfiles(profiles: readonly ListedProfile[], info = subagentProfilesInfo()): Promise<Record<string, string>> {
+  const out: Record<string, string> = {};
+  const policy = readModelPolicy();
+  let available: Set<string> | null = null;
+  if (profiles.some((p) => p.model)) available = await listModels().then((ms) => new Set(ms.map((m) => m.ref)), () => null);
+  for (const p of profiles) {
+    const why =
+      (p.model ? (modelDenial(policy, p.model) ?? (available && !available.has(p.model) ? `No credentials here for ${p.model}.` : null)) : null) ??
+      (p.subagents ? subagentsUnusable(p.subagents, info) : null);
+    if (why) out[p.key] = why;
+  }
+  return out;
+}
+
+/**
+ * Save Current As Profile: the session's model, effort and its own subagent pick (none when it
+ * follows the device default) as a new capability-neutral profile in yours. The session itself
+ * doesn't change. Answers with the session's listing, the new profile in it.
+ */
+export async function saveCurrentProfile(path: string, label: string): Promise<{ ok: true; profile: Profile; listing: ProfilesListing } | { ok: false; status: 400 | 404 | 409; error: string }> {
+  const s = await getSessionSummary(path);
+  if (!s) return { ok: false, status: 404, error: "Session file not found" };
+  let chat = heldChat(path);
+  try {
+    chat ??= await acquireChat(path);
+  } catch (err) {
+    return { ok: false, status: 409, error: err instanceof Error ? err.message : String(err) };
+  }
+  const thinking = chat.harness.thinking();
+  try {
+    const profile = addProfile({
+      label,
+      ...(chat.harness.model()?.ref ? { model: chat.harness.model()!.ref } : {}),
+      ...((THINKING_LEVELS as readonly string[]).includes(thinking) ? { thinking: thinking as Profile["thinking"] } : {}),
+      ...(chat.subagentPick ? { subagents: chat.subagentPick } : {}),
+    });
+    return { ok: true, profile, listing: await profilesListing(s.cwd) };
+  } catch (err) {
+    return { ok: false, status: 409, error: err instanceof Error ? err.message : String(err) };
+  }
 }
 
 /** GET /api/profiles?cwd=: every profile a session in `cwd` can use (§chat.profiles/projects). */
@@ -87,6 +174,8 @@ export async function profilesListing(cwd?: string | null): Promise<ProfilesList
     everRun.add(key);
     if (!s.archived && !running[key]) running[key] = holderOf(s);
   }
+  const info = subagentProfilesInfo();
+  const unusable = await unusableProfiles([...src.builtins, ...src.yours, ...src.project.profiles], info);
   return {
     builtins: src.builtins,
     yours: src.yours,
@@ -96,6 +185,8 @@ export async function profilesListing(cwd?: string | null): Promise<ProfilesList
     hidden: readHidden(),
     running,
     everRun: [...everRun],
+    unusable,
+    subagents: info.profiles.map((p) => ({ id: p.id, name: p.name, footprint: p.footprint })),
     ...(src.yoursError ? { error: src.yoursError } : {}),
   };
 }
@@ -132,6 +223,15 @@ export function registerProfileRoutes(app: Hono): void {
       return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
     }
     return c.json(await profilesListing(str(body.cwd)));
+  });
+  // Save Current As Profile: this session's model, effort and subagent pick as a new profile of yours.
+  app.post("/api/profiles/save-current", async (c) => {
+    const body = (await c.req.json().catch(() => null)) as { path?: unknown; label?: unknown } | null;
+    const path = resolveSessionPath(typeof body?.path === "string" ? body.path : null);
+    const label = str(body?.label);
+    if (!path || !label) return c.json({ error: "Expected {path, label}" }, 400);
+    const r = await saveCurrentProfile(path, label);
+    return r.ok ? c.json(r.listing) : c.json({ error: r.error }, r.status);
   });
   app.post("/api/sessions/profile", async (c) => {
     const body = (await c.req.json().catch(() => null)) as { path?: unknown; profile?: unknown } | null;

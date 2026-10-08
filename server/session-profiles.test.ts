@@ -16,6 +16,7 @@ process.env.PI_CODING_AGENT_DIR = join(dir, "agent"); // before the modules belo
 const {
   DEFAULT_LIMITS,
   excludedTools,
+  isCapabilityNeutral,
   keyOf,
   lockedReason,
   normalizeCaps,
@@ -128,6 +129,36 @@ describe("the model", () => {
     assert.match(profileFileError({ ...CAPTAIN, limits: { perDay: 0 } }) ?? "", /"limits.perDay" must be a whole number/);
     assert.match(profileFileError({ ...CAPTAIN, playbook: "../x" }) ?? "", /"playbook" must be a playbook's id/);
     assert.match(profileFileError({ ...CAPTAIN, singleton: "yes" }) ?? "", /"singleton" must be true or false/);
+    assert.match(profileFileError({ ...CAPTAIN, thinking: "hot" }) ?? "", /^"thinking" must be one of off, minimal, low, medium, high, xhigh, max\./);
+    assert.match(profileFileError({ ...CAPTAIN, thinking: 3 }) ?? "", /^"thinking" must be one of/);
+    assert.match(profileFileError({ ...CAPTAIN, subagents: "Claude Subs" }) ?? "", /^"subagents" must be "off" or a subagent profile's id/);
+    assert.match(profileFileError({ ...CAPTAIN, subagents: "x".repeat(49) }) ?? "", /^"subagents" must be/, "longer than a subagent profile id can be");
+    assert.match(profileFileError({ ...CAPTAIN, subagents: true }) ?? "", /^"subagents" must be/);
+    assert.equal(profileFileError({ ...CAPTAIN, thinking: "xhigh", subagents: "off" }), null);
+    assert.equal(profileFileError({ ...CAPTAIN, subagents: "x".repeat(48) }), null);
+  });
+
+  test("model, effort and subagents parse when valid and are absent otherwise", () => {
+    const card = parseProfile({ id: "claude", label: "Claude session", model: "claude-code-cli/claude-opus-5-5", thinking: "high", subagents: "claude-subs" }) as Profile;
+    assert.deepEqual([card.model, card.thinking, card.subagents], ["claude-code-cli/claude-opus-5-5", "high", "claude-subs"]);
+    const none = parseProfile({ id: "x", label: "X", thinking: "hot", subagents: "Bad Id" }) as Profile;
+    assert.equal("thinking" in none, false);
+    assert.equal("subagents" in none, false);
+    assert.equal((parseProfile({ id: "x", label: "X", subagents: "off" }) as Profile).subagents, "off");
+  });
+
+  test("capability-neutral: only model, effort, subagents or mode", () => {
+    const p = (extra: Record<string, unknown>) => parseProfile({ id: "x", label: "X", ...extra }) as Profile;
+    assert.equal(isCapabilityNeutral(p({ model: "a/b", thinking: "low", subagents: "off", mode: "delegate" })), true);
+    assert.equal(isCapabilityNeutral(p({ remove: ["web"] })), false);
+    assert.equal(isCapabilityNeutral(p({ grant: ["sessions.read"] })), false);
+    assert.equal(isCapabilityNeutral(p({ singleton: true })), false);
+    assert.equal(isCapabilityNeutral(p({ playbook: "release" })), false);
+    assert.equal(isCapabilityNeutral(p({ firstMessage: "go" })), false);
+    // The summary field says so, and a custom board pick never does.
+    assert.equal(profileField({ v: 1, profile: { ...p({ model: "a/b" }), source: "user" } })?.neutral, true);
+    assert.equal(profileField({ v: 1, profile: reviewer })?.neutral, undefined);
+    assert.equal(profileField({ v: 1, profile: { ...p({}), custom: true } })?.neutral, undefined);
   });
 
   test("a session message's header is one line the target's model reads, and the transcript strips", () => {

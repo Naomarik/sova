@@ -3,6 +3,7 @@ import {
   DEFAULT_LIMITS,
   DEFAULT_PROFILE,
   DEFAULT_PROFILE_ID,
+  isCapabilityNeutral,
   keyOf,
   normalizeCaps,
   singletonRunningText,
@@ -45,6 +46,7 @@ export function profileField(d: ProfileEntryData | null | undefined): SessionPro
     ...(p.project ? { project: p.project } : {}),
     ...(p.projectName ? { projectName: p.projectName } : {}),
     ...(p.custom ? { custom: true as const } : {}),
+    ...(!p.custom && isCapabilityNeutral(p) ? { neutral: true as const } : {}),
     ...(d?.by ? { by: d.by } : {}),
   };
 }

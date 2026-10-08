@@ -14,6 +14,7 @@ import {
   type Removable,
 } from "../../shared/profiles";
 import type { ChatProfileInfo } from "../../shared/protocol";
+import { modelLabel } from "./format";
 
 /** The Icon a profile's icon names (an unknown one reads as the wrench). */
 export function profileIconName(icon: string | undefined): IconName {
@@ -96,3 +97,28 @@ export function guardrailNote(remove: readonly string[]): string | null {
     ? "The shell is off, so these removals hold."
     : "The shell is on, so removals are guardrails, not a boundary. Bash can still change files and call Sova's API.";
 }
+
+/** The grid shows a Find a profile field past this many cards (Custom… included). */
+export const CARD_FILTER_AFTER = 9;
+
+/** How many cards the grid draws: every shown profile, plus Custom…. */
+export const cardCount = (g: ReturnType<typeof pickerProfiles>): number => g.builtins.length + g.project.length + g.yours.length + 1;
+
+/** Whether a profile matches the Find a profile field (by name, ignoring case; an empty query matches all). */
+export const cardMatches = (p: Pick<Profile, "label">, query: string): boolean => !query.trim() || p.label.toLowerCase().includes(query.trim().toLowerCase());
+
+/**
+ * A card's one caption line: what it sets of "{model} · {effort} · subagents: {footprint}", or its
+ * description when it sets none. `subagents`: this device's subagent profiles (the listing's), for
+ * the footprint; "off" reads "off", and an id this device lacks reads as the id.
+ */
+export function profileCaption(p: Pick<Profile, "model" | "thinking" | "subagents" | "description">, subagents: readonly { id: string; footprint: string }[] = []): string {
+  const parts: string[] = [];
+  if (p.model) parts.push(modelLabel(p.model) ?? p.model);
+  if (p.thinking) parts.push(p.thinking);
+  if (p.subagents) parts.push(`subagents: ${p.subagents === "off" ? "off" : (subagents.find((s) => s.id === p.subagents)?.footprint || p.subagents)}`);
+  return parts.length ? parts.join(" · ") : p.description;
+}
+
+/** Why a card can't be picked on this host now (the listing's sentence), or null. */
+export const cardUnusable = (l: ProfilesListing | undefined, p: Pick<ListedProfile, "key">): string | null => l?.unusable?.[p.key] ?? null;

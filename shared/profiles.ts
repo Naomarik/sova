@@ -54,6 +54,13 @@ export const CAPABILITY_LABEL: Record<Removable | Grantable, string> = {
   "sessions.all": "See all Sova sessions",
 };
 
+/** pi's thinking ladder: the levels a profile's `thinking` may name. */
+export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
+export type ThinkingLevel = (typeof THINKING_LEVELS)[number];
+/** A subagent profile id as its library spells it (lowercase letters, digits, dashes, at most 48), or "off". */
+const SUBAGENTS_RE = /^[a-z0-9](?:[a-z0-9-]{0,47})$/;
+export const isSubagentsRef = (v: unknown): v is string => typeof v === "string" && (v === "off" || SUBAGENTS_RE.test(v));
+
 export const PROFILE_ICONS = ["grid", "eye", "network", "branch", "wrench", "shield", "search", "terminal", "bulb", "building"] as const;
 export type ProfileIcon = (typeof PROFILE_ICONS)[number];
 
@@ -94,6 +101,10 @@ export interface Profile {
   mode?: string;
   /** Starts with this model ref "provider/id"; absent = the session default. */
   model?: string;
+  /** Starts with this thinking level (THINKING_LEVELS); absent = the session default. */
+  thinking?: ThinkingLevel;
+  /** The subagent profile id the session picks, or "off"; absent = this device's default. */
+  subagents?: string;
   firstMessage?: string;
   /** A linked playbook's id (§chat.profiles/playbook). */
   playbook?: string;
@@ -157,6 +168,11 @@ export interface ProfilesListing {
   running: Record<string, { id: string; path: string; title: string }>;
   /** Keys of One at a time profiles that have been run at least once (their shelf slot). */
   everRun: string[];
+  /** Keys of profiles that can't be used on this host now, each with the sentence why (a model the
+      policy turns off or with no credentials here, a subagent profile not in this device's library). */
+  unusable?: Record<string, string>;
+  /** This device's subagent profiles ("off" first), for the cards' captions. */
+  subagents?: { id: string; name: string; footprint: string }[];
   error?: string;
 }
 
@@ -239,7 +255,7 @@ function num(v: unknown, fallback: number): number {
   return typeof v === "number" && Number.isInteger(v) && v >= 1 && v <= 10_000 ? v : fallback;
 }
 
-const PROFILE_FIELDS = ["id", "label", "icon", "description", "remove", "grant", "singleton", "limits", "mode", "model", "firstMessage", "playbook", "overseerMayStart"];
+const PROFILE_FIELDS = ["id", "label", "icon", "description", "remove", "grant", "singleton", "limits", "mode", "model", "thinking", "subagents", "firstMessage", "playbook", "overseerMayStart"];
 const PLAYBOOK_ID_RE = /^[a-z0-9][a-z0-9-]*$/;
 
 /**
@@ -266,6 +282,8 @@ export function profileFileError(raw: unknown): string | null {
   for (const k of ["singleton", "overseerMayStart"] as const) if (o[k] !== undefined && typeof o[k] !== "boolean") return `"${k}" must be true or false.`;
   if (o.icon !== undefined && !(PROFILE_ICONS as readonly string[]).includes(o.icon as string)) return `"icon" must be one of ${PROFILE_ICONS.join(", ")}.`;
   if (o.mode !== undefined && o.mode !== "normal" && o.mode !== "delegate") return `"mode" must be "normal" or "delegate".`;
+  if (o.thinking !== undefined && !(THINKING_LEVELS as readonly unknown[]).includes(o.thinking)) return `"thinking" must be one of ${THINKING_LEVELS.join(", ")}.`;
+  if (o.subagents !== undefined && !isSubagentsRef(o.subagents)) return `"subagents" must be "off" or a subagent profile's id (lowercase letters, digits and dashes).`;
   if (o.playbook !== undefined && !PLAYBOOK_ID_RE.test(o.playbook as string)) return `"playbook" must be a playbook's id (its folder name: lowercase letters, digits and dashes).`;
   if (o.limits !== undefined) {
     if (!o.limits || typeof o.limits !== "object" || Array.isArray(o.limits)) return `"limits" must be an object.`;
@@ -299,6 +317,8 @@ export function parseProfile(raw: unknown): Profile | { error: string } {
   const str = (v: unknown, max: number) => (typeof v === "string" && v.trim() ? v.trim().slice(0, max) : undefined);
   const mode = o.mode === "normal" || o.mode === "delegate" ? o.mode : undefined;
   const model = str(o.model, 200);
+  const thinking = (THINKING_LEVELS as readonly unknown[]).includes(o.thinking) ? (o.thinking as ThinkingLevel) : undefined;
+  const subagents = isSubagentsRef(o.subagents) ? o.subagents : undefined;
   const firstMessage = str(o.firstMessage, 20_000);
   const playbook = typeof o.playbook === "string" && PLAYBOOK_ID_RE.test(o.playbook.trim()) ? o.playbook.trim() : undefined;
   return {
@@ -311,6 +331,8 @@ export function parseProfile(raw: unknown): Profile | { error: string } {
     limits,
     ...(mode ? { mode } : {}),
     ...(model ? { model } : {}),
+    ...(thinking ? { thinking } : {}),
+    ...(subagents ? { subagents } : {}),
     ...(firstMessage ? { firstMessage } : {}),
     ...(playbook ? { playbook } : {}),
     overseerMayStart: o.overseerMayStart === true,
@@ -331,6 +353,14 @@ export function powersText(p: { grant: readonly Grantable[]; overseerMayStart: b
 
 /** Whether the profile changes nothing (Default's shape). */
 export const isDefaultShape = (p: Pick<Profile, "remove" | "grant">) => p.remove.length === 0 && p.grant.length === 0;
+
+/**
+ * Capability-neutral: changes no capability or grant, isn't One at a time and
+ * links no playbook or first message, so it sets only model, effort, subagents or mode. The shelf
+ * leaves these out. A stored snapshot missing a list reads as not changing it.
+ */
+export const isCapabilityNeutral = (p: Partial<Pick<Profile, "remove" | "grant" | "singleton" | "playbook" | "firstMessage">>) =>
+  !p.remove?.length && !p.grant?.length && !p.singleton && !p.playbook && !p.firstMessage;
 
 /** Whether a tool name is taken by these removals. */
 export function toolRemoved(name: string, remove: readonly Removable[]): boolean {

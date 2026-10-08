@@ -27,6 +27,7 @@ import {
 } from "../lib/session-setup";
 import type { ToolsView } from "../lib/session-tools";
 import { createToolsReads } from "../lib/tools-reads";
+import { setSetupContextOpen, setupContextOpen } from "../lib/setup-fold";
 import { home, toast } from "../lib/ui-state";
 import { Icon } from "./ui";
 
@@ -44,6 +45,9 @@ type Answer<T> = { ok: T } | { error: string };
  * a switch (§chat.transcript/setup-card-toggles). `editable` is the chat's own word that the window
  * is open (the Profile picker's: pickable and not locked). A flip sends the whole off set and draws
  * the server's fresh read in place.
+ *
+ * Everything but Repository is one fold, closed by default, whose summary is the System context
+ * line; its open state lives per session in lib/setup-fold, so a redraw after a pick keeps it.
  */
 export function SessionSetupCard(props: { path: string; editable?: boolean; toolsKey?: string }) {
   const [setup, setSetup] = createSignal<Answer<SessionSetup> | null>(null);
@@ -135,126 +139,143 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
     const v = view();
     return v?.kind === "groups" ? v.setup : null;
   };
+  // The fold's summary: the card's one aggregate line, which the sections inside add up to. Empty
+  // files sum to zero, and a zero figure says nothing the sections don't, so it reads just the label.
+  const whole = createMemo(() => {
+    const g = groups();
+    const sum = g ? systemContextSum(g) : null;
+    return sum && !isSumEmpty(sum) ? sum : null;
+  });
+  const [foldOpen, setFoldOpen] = createSignal(setupContextOpen(props.path));
+  createEffect(on(path, (p) => setFoldOpen(setupContextOpen(p)), { defer: true }));
 
   return (
     <Show when={landed()}>
       <section class="setup-card" aria-label="Session setup">
-        <Switch>
-          <Match when={setup() && "error" in setup()! && (setup() as { error: string })}>
-            {(e) => (
-              <div class="setup-group">
-                <p class="setup-note">Couldn't read what pi loads here. {e().error}</p>
-              </div>
-            )}
-          </Match>
-          <Match when={groups()}>
-            {(s) => {
-              const rows = createMemo(() => contextRows(s(), home()));
-              const context = createMemo(() => contextSum(s()));
-              const skills = createMemo(() => skillsSum(s()));
-              const whole = createMemo(() => systemContextSum(s()));
-              return (
-                <>
-                  {/* The card's one aggregate line: the two sections below add up to it. Empty files
-                      sum to zero, and a zero line says nothing the sections don't. */}
-                  <Show when={!isSumEmpty(whole())}>
+        <details
+          class="setup-context"
+          open={foldOpen()}
+          onToggle={(e) => {
+            const now = e.currentTarget.open;
+            setSetupContextOpen(path(), now);
+            setFoldOpen(now);
+          }}
+        >
+          <summary class="setup-group setup-context-head" title={SYSTEM_CONTEXT_TITLE}>
+            <span class="setup-sum">
+              <span class="setup-context-title">
+                <Icon name="chevron-right" small class="icon-twist" />
+                <span class="setup-sum-label">{SYSTEM_CONTEXT_LABEL}</span>
+              </span>
+              <Show when={whole()}>{(w) => <span class="setup-sum-facts">{sumFacts(w())}</span>}</Show>
+            </span>
+          </summary>
+          <Switch>
+            <Match when={setup() && "error" in setup()! && (setup() as { error: string })}>
+              {(e) => (
+                <div class="setup-group">
+                  <p class="setup-note">Couldn't read what pi loads here. {e().error}</p>
+                </div>
+              )}
+            </Match>
+            <Match when={groups()}>
+              {(s) => {
+                const rows = createMemo(() => contextRows(s(), home()));
+                const context = createMemo(() => contextSum(s()));
+                const skills = createMemo(() => skillsSum(s()));
+                return (
+                  <>
                     <div class="setup-group">
-                      <p class="setup-sum" title={SYSTEM_CONTEXT_TITLE}>
-                        <span class="setup-sum-label">{SYSTEM_CONTEXT_LABEL}</span>
-                        <span class="setup-sum-facts">{sumFacts(whole())}</span>
-                      </p>
-                    </div>
-                  </Show>
-                  <div class="setup-group">
-                    <div class="setup-head">
-                      <h2 class="text-eyebrow setup-label">{contextHeading(rows().length)}</h2>
-                      <Show when={!isSumEmpty(context())}>
-                        <span class="setup-total">{sumFacts(context())}</span>
+                      <div class="setup-head">
+                        <h2 class="text-eyebrow setup-label">{contextHeading(rows().length)}</h2>
+                        <Show when={!isSumEmpty(context())}>
+                          <span class="setup-total">{sumFacts(context())}</span>
+                        </Show>
+                      </div>
+                      <Show when={rows().length > 0} fallback={<p class="setup-note">{CONTEXT_NONE}</p>}>
+                        <p class="setup-note">{contextNote(s())}</p>
+                        <ul class="setup-list">
+                          <For each={rows()}>
+                            {(r) => (
+                              <li class="setup-row" classList={{ "setup-row-off": isOff(r.file) }} title={r.file.path}>
+                                <span class="setup-name">
+                                  <span class="setup-path">{r.label}</span>
+                                  <Show when={r.role}>{(role) => <span class="setup-role">{role()}</span>}</Show>
+                                </span>
+                                <span class="setup-facts">{fileFacts(r.file)}</span>
+                                <Show when={switchable() && r.switchable}>
+                                  <label class="toggle toggle-switch setup-toggle">
+                                    <input
+                                      type="checkbox"
+                                      aria-label={contextSwitchLabel(r.label)}
+                                      checked={!isOff(r.file)}
+                                      disabled={applying()}
+                                      onChange={(e) => flip("context", r.file.path, e.currentTarget)}
+                                    />
+                                    <span class="toggle-box" />
+                                  </label>
+                                </Show>
+                              </li>
+                            )}
+                          </For>
+                        </ul>
                       </Show>
                     </div>
-                    <Show when={rows().length > 0} fallback={<p class="setup-note">{CONTEXT_NONE}</p>}>
-                      <p class="setup-note">{contextNote(s())}</p>
-                      <ul class="setup-list">
-                        <For each={rows()}>
-                          {(r) => (
-                            <li class="setup-row" classList={{ "setup-row-off": isOff(r.file) }} title={r.file.path}>
-                              <span class="setup-name">
-                                <span class="setup-path">{r.label}</span>
-                                <Show when={r.role}>{(role) => <span class="setup-role">{role()}</span>}</Show>
-                              </span>
-                              <span class="setup-facts">{fileFacts(r.file)}</span>
-                              <Show when={switchable() && r.switchable}>
-                                <label class="toggle toggle-switch setup-toggle">
-                                  <input
-                                    type="checkbox"
-                                    aria-label={contextSwitchLabel(r.label)}
-                                    checked={!isOff(r.file)}
-                                    disabled={applying()}
-                                    onChange={(e) => flip("context", r.file.path, e.currentTarget)}
-                                  />
-                                  <span class="toggle-box" />
-                                </label>
-                              </Show>
-                            </li>
-                          )}
-                        </For>
-                      </ul>
-                    </Show>
-                  </div>
-                  <div class="setup-group">
-                    <div class="setup-head">
-                      <h2 class="text-eyebrow setup-label">{skillsHeading(s().skills.length)}</h2>
-                      <Show when={!isSumEmpty(skills())}>
-                        <span class="setup-total">{sumFacts(skills())}</span>
+                    <div class="setup-group">
+                      <div class="setup-head">
+                        <h2 class="text-eyebrow setup-label">{skillsHeading(s().skills.length)}</h2>
+                        <Show when={!isSumEmpty(skills())}>
+                          <span class="setup-total">{sumFacts(skills())}</span>
+                        </Show>
+                      </div>
+                      <Show when={s().skills.length > 0} fallback={<p class="setup-note">{skillsNone(s())}</p>}>
+                        <p class="setup-note">{skillsNote(s())}</p>
+                        <ul class="setup-list">
+                          <For each={s().skills}>
+                            {(k) => (
+                              <li class="setup-row" classList={{ "setup-row-off": isOff(k) }} title={k.description ? `${k.path}\n${k.description}` : k.path}>
+                                <span class="setup-name">
+                                  <span class="setup-path">{k.name}</span>
+                                </span>
+                                <span class="setup-facts">{fileFacts(k)}</span>
+                                <Show when={switchable()}>
+                                  <label class="toggle toggle-switch setup-toggle">
+                                    <input
+                                      type="checkbox"
+                                      aria-label={skillSwitchLabel(k.name)}
+                                      checked={!isOff(k)}
+                                      disabled={applying()}
+                                      onChange={(e) => flip("skill", k.name, e.currentTarget)}
+                                    />
+                                    <span class="toggle-box" />
+                                  </label>
+                                </Show>
+                              </li>
+                            )}
+                          </For>
+                        </ul>
                       </Show>
                     </div>
-                    <Show when={s().skills.length > 0} fallback={<p class="setup-note">{skillsNone(s())}</p>}>
-                      <p class="setup-note">{skillsNote(s())}</p>
-                      <ul class="setup-list">
-                        <For each={s().skills}>
-                          {(k) => (
-                            <li class="setup-row" classList={{ "setup-row-off": isOff(k) }} title={k.description ? `${k.path}\n${k.description}` : k.path}>
-                              <span class="setup-name">
-                                <span class="setup-path">{k.name}</span>
-                              </span>
-                              <span class="setup-facts">{fileFacts(k)}</span>
-                              <Show when={switchable()}>
-                                <label class="toggle toggle-switch setup-toggle">
-                                  <input
-                                    type="checkbox"
-                                    aria-label={skillSwitchLabel(k.name)}
-                                    checked={!isOff(k)}
-                                    disabled={applying()}
-                                    onChange={(e) => flip("skill", k.name, e.currentTarget)}
-                                  />
-                                  <span class="toggle-box" />
-                                </label>
-                              </Show>
-                            </li>
-                          )}
-                        </For>
-                      </ul>
-                    </Show>
-                  </div>
-                </>
-              );
-            }}
-          </Match>
-          <Match when={view()?.kind === "line" && (view() as { kind: "line"; text: string })}>
+                  </>
+                );
+              }}
+            </Match>
+            <Match when={view()?.kind === "line" && (view() as { kind: "line"; text: string })}>
+              {(v) => (
+                <div class="setup-group">
+                  <p class="setup-note">{v().text}</p>
+                </div>
+              )}
+            </Match>
+          </Switch>
+          <Show when={tools.view()}>
             {(v) => (
               <div class="setup-group">
-                <p class="setup-note">{v().text}</p>
+                <ToolsGroup view={v()} open={tools.groupOpen()} onToggle={tools.setGroupOpen} isOpen={tools.isOpen} onToggleRow={tools.flip} />
               </div>
             )}
-          </Match>
-        </Switch>
-        <Show when={tools.view()}>
-          {(v) => (
-            <div class="setup-group">
-              <ToolsGroup view={v()} open={tools.groupOpen()} onToggle={tools.setGroupOpen} isOpen={tools.isOpen} onToggleRow={tools.flip} />
-            </div>
-          )}
-        </Show>
+          </Show>
+        </details>
         <div class="setup-group">
           <h2 class="text-eyebrow setup-label">Repository</h2>
           <GitFacts answer={git()!} />

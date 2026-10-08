@@ -687,10 +687,6 @@ html, body { overflow: clip; overscroll-behavior: none; }
   text-align: left;
   margin: var(--space-2) 0;
 }
-.profile-select-row { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
-.profile-select { position: relative; }
-.profile-select-button { gap: var(--space-2); min-height: var(--tap-min); }
-.profile-menu,
 .profile-popover {
   position: absolute;
   z-index: 30;
@@ -709,39 +705,89 @@ html, body { overflow: clip; overscroll-behavior: none; }
   box-shadow: var(--shadow-2, 0 8px 24px rgb(0 0 0 / 0.18));
   text-align: left;
 }
-.profile-options { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-.profile-options-group {
+/* The profile cards: one radio group, a card per profile, in as many 160px+ columns as the
+   560px column fits, one single-line card per row under 480px. A card is the whole 44px+ target; the checked
+   one is tinted AND carries a check, so its state never reads from tint alone. */
+.profile-picker { container: profile-picker / inline-size; }
+.profile-grid-wrap { display: flex; flex-direction: column; gap: var(--space-2); }
+.profile-grid-filter { max-width: 280px; }
+.profile-grid-groups { display: flex; flex-direction: column; gap: var(--space-3); }
+.profile-grid-group { display: flex; flex-direction: column; gap: var(--space-2); }
+.profile-grid-label {
+  margin: 0;
   font-family: var(--font-mono);
   font-size: var(--fs-micro);
   text-transform: uppercase;
   letter-spacing: var(--ls-mono-caps);
   color: var(--color-ink-muted);
-  padding: var(--space-2) var(--space-2) var(--space-1);
 }
-.profile-option {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  grid-template-areas: "icon name chip" "icon meta chip";
-  align-items: center;
-  column-gap: var(--space-2);
+.profile-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: var(--space-2); }
+.profile-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-1);
+  min-width: 0;
   min-height: var(--tap-min);
-  padding: var(--space-1) var(--space-2);
-  border-radius: var(--r-sm);
-  cursor: pointer;
-  background: none;
-  border: 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-surface);
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-md);
   color: var(--color-ink);
-  text-align: left;
   font: inherit;
-  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard);
 }
-.profile-option > .icon { grid-area: icon; color: var(--color-ink-muted); }
-.profile-option-name { grid-area: name; }
-.profile-option-meta { grid-area: meta; font-size: var(--fs-caption); color: var(--color-ink-muted); }
-.profile-option > .chip { grid-area: chip; }
-.profile-option:hover,
-.profile-option:focus-visible { background: var(--color-sunken); }
-.profile-option[aria-selected="true"] { background: var(--color-accent-tint); }
+.profile-tile:hover { background: var(--color-sunken); }
+.profile-tile:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.profile-tile[aria-checked="true"] { background: var(--color-accent-tint); border-color: var(--color-accent); }
+.profile-tile-head { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.profile-tile-head > .icon { flex: none; color: var(--color-ink-muted); }
+.profile-tile-label { flex: 1 1 auto; min-width: 0; font-weight: var(--fw-medium); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.profile-tile-check { flex: none; color: var(--color-accent); }
+.profile-tile-caption {
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--color-ink-muted);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow-wrap: anywhere;
+}
+.profile-tile-chips { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+/* A card that can't be used here: still focusable (its reason is read), never pickable. It reads
+   as off from its shape too, not only its tone: no fill, a dashed edge, muted label and icon, no
+   hover change, and its reason in the warn tone. */
+.profile-tile-off,
+.profile-tile-off:hover { cursor: not-allowed; background: transparent; border-style: dashed; border-color: var(--color-border-strong); }
+.profile-tile-off .profile-tile-head > .icon { opacity: 0.6; }
+.profile-tile-off .profile-tile-label { color: var(--color-ink-muted); font-weight: var(--fw-regular); }
+.profile-tile-off .profile-tile-caption { color: var(--status-warn); }
+/* Phone-narrow (the picker's own box under 480px): one column of single-line cards, so more fit
+   above the fold. Icon, label, caption, chips and check share one 44px line; the caption
+   truncates first, and the label keeps up to 55% of the card before it does. */
+@container profile-picker (max-width: 479.98px) {
+  .profile-grid { grid-template-columns: minmax(0, 1fr); gap: var(--space-1); }
+  .profile-tile { flex-direction: row; align-items: center; gap: var(--space-2); padding: var(--space-1) var(--space-3); }
+  .profile-tile-head { display: contents; }
+  .profile-tile-label { flex: 0 0 auto; max-width: 55%; }
+  .profile-tile-caption { flex: 1 1 0; min-width: 0; display: block; white-space: nowrap; text-overflow: ellipsis; }
+  .profile-tile-chips { flex: none; flex-wrap: nowrap; }
+  .profile-tile-check { order: 1; margin-left: auto; }
+}
+.profile-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
+.profile-save {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-lg);
+  background: var(--color-surface);
+}
+.profile-save-field { margin: 0; }
 .profile-applying { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--fs-caption); color: var(--color-ink-muted); }
 .profile-muted { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); }
 .profile-description { margin: 0; color: var(--color-ink-2); }
@@ -927,3 +973,14 @@ html, body { overflow: clip; overscroll-behavior: none; }
 @media (max-width: 767px) {
   .profile-chip-wrap .profile-popover { position: fixed; top: 64px; left: var(--space-3); right: var(--space-3); width: auto; }
 }
+
+/* ---- The setup card's System context fold ------------------------------------------------- */
+/* Everything but Repository, closed by default; the summary is the System context line, the
+   whole 44px row its target, the twist turning as it opens. */
+.setup-context > summary { list-style: none; cursor: pointer; min-height: 44px; justify-content: center; }
+.setup-context > summary::-webkit-details-marker { display: none; }
+.setup-context > summary:focus-visible { outline: var(--focus-ring); outline-offset: calc(-1 * var(--focus-offset)); border-radius: var(--r-lg); }
+.setup-context-title { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.setup-context .icon-twist { flex: none; color: var(--color-ink-muted); transition: transform var(--dur-fast) var(--ease-standard); }
+.setup-context[open] > summary .icon-twist { transform: rotate(90deg); }
+.setup-context + .setup-group { border-top: 1px solid var(--color-border); }

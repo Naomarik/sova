@@ -8,6 +8,7 @@ import { parseSpec } from "../../pi-config/extensions/mode/spec.ts";
 import { parseProviderLimits } from "../../pi-config/extensions/provider-limits/gate.ts";
 import { parseUsageWindows, USAGE_WINDOWS_FILE } from "../../pi-config/extensions/usage-status/windows.ts";
 import { parseSubagentProfiles } from "../../pi-config/extensions/subagents/subagent-profiles.ts";
+import { parseProfilesFile } from "../profiles-store";
 import { clockSkewed } from "./logins-merge";
 import { writeFileAtomic } from "./logins-stores";
 
@@ -28,7 +29,8 @@ import { writeFileAtomic } from "./logins-stores";
  *   model and thinking); pi's model-favorites.json and model-policy.json; the mode extension's
  *   mode.json (default mode), mode-delegate.json and mode-spec.json; the subagent profile library
  *   subagent-profiles.json (its device default, subagent-profiles-default.json, never syncs:
- *   which profile new chats start from is each device's own).
+ *   which profile new chats start from is each device's own); your session profiles, Sova's
+ *   session-profiles.json (checked with its own strict parser).
  * - themes: every `<state root>/themes/*.json` (the theme CHOICE is the browser's, per origin).
  * Not synced: subagent-profiles-default.json, topic-outline.json (it holds this host's claudeBin
  * path), anything keyed by session (titles, groups, drafts, origin: the session's owner keeps
@@ -107,6 +109,16 @@ const jsonObject = (text: string): Record<string, unknown> | null => {
     return null;
   }
 };
+const validSessionProfiles = (text: string): boolean => {
+  const o = jsonObject(text);
+  if (o === null) return false;
+  try {
+    parseProfilesFile(o);
+    return true;
+  } catch {
+    return false;
+  }
+};
 const THEME_FILE_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}\.json$/;
 const MAX_DOC_BYTES = 256 * 1024;
 
@@ -116,6 +128,8 @@ export function settingsDocs(agentDir: string, stateDir: string): DocSpec[] {
   return [
     { key: "settings:sova/settings.json", category: "settings", path: join(stateDir, "settings.json"), valid: (t) => jsonObject(t)?.version === 1 },
     { key: "settings:sova/defaults.json", category: "settings", path: join(stateDir, "defaults.json"), valid: (t) => jsonObject(t) !== null },
+    // Your session profiles ("Yours"), whole: what your profile cards are on every device.
+    { key: "settings:sova/session-profiles.json", category: "settings", path: join(stateDir, "session-profiles.json"), valid: (t) => validSessionProfiles(t) },
     {
       key: "settings:model-favorites.json",
       category: "settings",

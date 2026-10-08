@@ -1685,6 +1685,19 @@ class ChatSession {
     return subagentProfilesInfo(restorePick(this.extensionBranch()));
   }
 
+  /** This chat's own subagent pick on its branch (an id or "off"), or undefined: it follows the device default. */
+  get subagentPick(): string | undefined {
+    return restorePick(this.extensionBranch());
+  }
+
+  /** Why switchSubagentProfile would refuse right now (short of an unknown id), or null: a profile
+      pick checks this before it writes anything. */
+  subagentSwitchRefusal(): string | null {
+    if (this.disposed || this.overseer || this.specialEntry?.refuses?.("mode") || this.hasForeignWrites()) return "This session's subagent profile can't be switched here.";
+    if (!this.modeCommand()) return "The mode extension isn't loaded in this chat.";
+    return null;
+  }
+
   async switchSubagentProfile(id: unknown) {
     if (this.disposed || this.overseer || this.specialEntry?.refuses?.("mode") || this.hasForeignWrites()) throw new ModeRefusedError();
     assertNotLive(this.path);

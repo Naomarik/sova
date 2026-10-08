@@ -1887,6 +1887,9 @@ export interface SessionProfileField {
   project?: string;
   projectName?: string;
   custom?: true;
+  /** Capability-neutral (shared/profiles isCapabilityNeutral): it sets only model, effort,
+      subagents or mode, so the sidebar's Profiles shelf leaves it out. */
+  neutral?: true;
   /** Picked by the Overseer or a start sheet, not on the empty screen. */
   by?: "overseer" | "start";
 }

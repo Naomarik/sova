@@ -81,13 +81,14 @@ export const recentCountValid = (raw: unknown): boolean => {
  * here, not in the sidebar, so the spine's tiles and the overview's "Last active" get it too.
  *
  * A profile session (`profile` set, custom picks included) never is either: the Profiles region
- * lists exactly those (components/ProfileShelf), so Recent would only repeat it.
+ * lists exactly those (components/ProfileShelf), so Recent would only repeat it. A capability-neutral
+ * profile's session (`profile.neutral`) is the exception: the shelf leaves it out, so it is eligible.
  *
  * A server that predates `archived`, `workerSession` or `org` sends none, which counts as not
  * archived and an ordinary main thread (protocol.ts).
  */
 export const recentEligible = (s: Pick<SessionSummary, "archived" | "workerSession" | "overseer" | "org" | "project" | "profile">): boolean =>
-  s.archived !== true && isOrdinarySession(s) && !s.profile;
+  s.archived !== true && isOrdinarySession(s) && (!s.profile || s.profile.neutral === true);
 
 /**
  * Recent's order: most recently ACTIVE first.

@@ -88,7 +88,7 @@
 .m-thread { display: flex; flex-direction: column; gap: 10px; padding: 14px 12px; min-height: 0; overflow: hidden; }
 .m-msg-user { align-self: flex-end; max-width: 92%; padding: 8px 12px; border-radius: var(--r-lg); background: var(--color-accent-tint); color: var(--color-ink); font-size: 12.5px; }
 .m-msg { color: var(--color-ink); font-size: 12.5px; line-height: 1.55; }
-.m-msg code { font-size: 11px; padding: 0 4px; border-radius: 4px; background: var(--color-sunken); border: 1px solid var(--color-border); white-space: nowrap; }
+.m-msg code { font-size: 11px; padding: 0 4px; border-radius: var(--r-xs); background: var(--color-sunken); border: 1px solid var(--color-border); white-space: nowrap; }
 
 /* A narrow frame drops the head's secondary line first. */
 @container frame (max-width: 640px) {
@@ -236,20 +236,6 @@
 .m-confirm { border: var(--stroke-thin) solid var(--color-border-strong); border-radius: var(--r-lg); background: var(--color-surface); overflow: hidden; }
 .m-confirm-head { padding: 10px 12px; font-weight: var(--fw-semibold); font-size: 13px; border-bottom: var(--stroke-thin) solid var(--color-border); }
 
-/* ---- DUO. A desktop frame with a phone over its lower right; stacked when narrow. ---- */
-
-.duo { --duo-phone: clamp(200px, 20vw, 240px); position: relative; margin: 0; padding: 0 calc(var(--duo-phone) - 48px) 56px 0; }
-.duo-desk .m-thread { padding-right: 60px; }
-.duo .duo-phone { position: absolute; right: 0; bottom: 0; width: var(--duo-phone); }
-.duo-phone .phone-screen { height: 440px; }
-.duo-phone .phone-time { font-size: 48px; margin-top: 22px; }
-@container visual (max-width: 560px) {
-  .duo { padding: 0; }
-  .duo-desk .m-thread { padding-right: 12px; }
-  .duo .duo-phone { position: relative; width: min(256px, 80%); margin: -56px 0 0 auto; }
-  .duo-phone .phone-screen { height: 420px; }
-}
-
 /* ---- PHONES. -------------------------------------------------------------------- */
 
 .phones { display: flex; justify-content: center; align-items: flex-start; gap: clamp(16px, 3vw, 32px); }
@@ -258,24 +244,13 @@
 .phones .phone { flex: 0 1 300px; width: auto; min-width: 0; }
 .phone {
   width: min(300px, 46vw); flex: none;
-  border-radius: 36px; padding: 8px;
-  background: var(--color-surface);
+  border-radius: var(--r-xl); padding: 6px;
+  background: #0d0d10;
   border: var(--stroke-thin) solid var(--color-border-strong);
   box-shadow: var(--shadow-3);
 }
-.phone-screen { border-radius: 29px; overflow: hidden; background: var(--color-bg); height: 560px; display: flex; flex-direction: column; font-size: 12px; container: frame / inline-size; }
+.phone-screen { border-radius: var(--r-sm); overflow: hidden; background: var(--color-bg); height: 560px; display: flex; flex-direction: column; font-size: 12px; container: frame / inline-size; }
 .phone-status { display: flex; justify-content: space-between; padding: 10px 20px 6px; font-family: var(--font-mono); font-size: 10.5px; color: var(--color-ink-2); }
-.phone-lock { background: var(--color-sunken); }
-.phone-lock .phone-screen { background: var(--color-sunken); }
-.phone-time { text-align: center; font-size: 56px; font-weight: var(--fw-display); letter-spacing: -.04em; margin-top: 28px; line-height: 1; }
-.phone-date { text-align: center; font-size: 12.5px; color: var(--color-ink-2); margin-top: 6px; }
-.notif { margin: 18px 10px 0; padding: 10px 12px; border-radius: 18px; background: var(--color-surface); border: var(--stroke-thin) solid var(--color-border); box-shadow: var(--shadow-2); display: grid; grid-template-columns: 30px 1fr; gap: 10px; }
-.notif + .notif { margin-top: 8px; }
-/* The app icon, as the lock screen shows it: the dusk tile, not the accent mark. */
-.notif-icon { display: block; }
-.notif-top { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--color-ink-muted); }
-.notif-title { font-weight: var(--fw-semibold); font-size: 12.5px; margin-top: 1px; }
-.notif-body { font-size: 12px; color: var(--color-ink-2); line-height: 1.4; }
 .phone .m-head { height: 48px; padding: 0 14px; }
 .phone .m-row { padding: 8px 14px; }
 .phone .m-thread { padding: 12px; }
@@ -334,7 +309,7 @@
 .mm-new .m-modal-head { font-size: 14px; padding: 10px 14px; }
 .mm-new .m-modal-body { padding: 12px 14px 14px; }
 .mm-select { display: flex; flex-direction: column; padding: 4px; border-radius: var(--r-md); border: var(--stroke-icon) solid var(--color-border-strong); background: var(--color-bg); box-shadow: var(--shadow-2); }
-.mm-opt { display: flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 6px; font-size: 12px; white-space: nowrap; }
+.mm-opt { display: flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: var(--r-sm); font-size: 12px; white-space: nowrap; }
 .mm-opt .icon { margin-left: auto; color: var(--color-accent); }
 .mm-opt-on { background: var(--color-accent-tint); }
 .mm-opt-off { color: var(--color-ink-muted); opacity: .6; }

@@ -49,6 +49,11 @@ spec writer, what workers get, and project coding sessions.
 The vis minor mode: the drawings the agent can put in a reply, where they render, and what is never
 trusted from the model.
 
+## §site.docs/codemode — Codemode (`/docs/modes/codemode/`)
+
+The codemode minor mode: the script tool it adds, what a script can call, the script's card, when a
+switch applies, and where it is available.
+
 ## §site.docs/worktrees-and-changes — Worktrees and changes (`/docs/worktrees-and-changes/`)
 
 How a session keeps track of the git worktrees it works in (where workers may start, merging and

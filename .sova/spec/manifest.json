@@ -16147,6 +16147,21 @@
       "kind": "note",
       "authority": "accepted",
       "evidence": "reviewed"
+    },
+    "§site.docs/codemode": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.mode-menu/codemode",
+        "§chat.mode-menu/minor-toggle-keeps-prompt",
+        "§chat.mode-menu/workers",
+        "§tools.spec/census-note",
+        "§app.overseer/hosting"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "site/src/content/docs/modes/codemode.md"
+      ]
     }
   },
   "boundary": {

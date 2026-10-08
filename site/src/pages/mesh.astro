@@ -38,7 +38,7 @@ const meshCards = [
       <div class="wrap">
         <div class="section-head">
           <span class="eyebrow">Mesh <span class="chip chip-accent">Preview · Needs Tailscale</span></span>
-          <h1 class="h-section" id="mesh-title">All your machines, one sidebar.</h1>
+          <h1 class="h-section h-page" id="mesh-title">All your machines, one sidebar.</h1>
           <p class="lead">Run Sova on a laptop, a server and an Android phone on your tailnet, and use them all from any one page.</p>
         </div>
 
@@ -55,13 +55,12 @@ const meshCards = [
           <div class="feature-visual"><Mesh /></div>
         </article>
 
-        <ul class="cards cards-fit cards-follow">
+        <ul class="perks perks-three cards-follow">
           {meshCards.map((c) => (
-            <li class="fcard">
-              <span class="fcard-icon"><Icon name={c.icon} size={20} /></span>
-              <h3>{c.title}</h3>
+            <li class="perk">
+              <h3><Icon name={c.icon} size={18} />{c.title}</h3>
               <p set:html={c.body} />
-              <p class="fcard-limit" set:html={c.limit} />
+              <p class="perk-limit" set:html={c.limit} />
             </li>
           ))}
         </ul>

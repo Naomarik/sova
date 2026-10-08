@@ -1,5 +1,5 @@
 import { setProfileStartAdopt } from "./lib/profile-start";
-import { loadExperimental } from "./lib/experimental-draft";
+import { loadAlignment } from "./lib/alignment-draft";
 import { batch, createEffect, createMemo, createResource, createSignal, Match, on, onCleanup, Show, Switch, untrack } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
@@ -140,8 +140,8 @@ function createMediaQuery(query: string) {
 }
 
 export function App() {
-  // Settings → Experimental's saved switches gate parts of the UI (adversarial review): read once.
-  loadExperimental();
+  // Settings → Alignment's saved review switch gates parts of the UI (adversarial review): read once.
+  loadAlignment();
   const [listError, setListError] = createSignal<string | null>(null);
   /** Bumped on every successful list load, so views can tell a fresh list from a stale one. */
   const [listVersion, setListVersion] = createSignal(0);

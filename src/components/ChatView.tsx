@@ -446,6 +446,10 @@ export function ChatView(props: {
   const [commands, setCommands] = createSignal<SlashCommand[]>([]);
   /** This chat's mode and how a switch applies to it, as the socket said (WS "mode"). */
   const [saidMode, setModeState] = createSignal<ModeState | null>(null);
+  /** Whether this chat's runtime runs with adversarial review, as its hello said (§chat.alignment-review/flag);
+      undefined until it says, or from a server that doesn't, when the saved setting stands in. */
+  const [helloReview, setHelloReview] = createSignal<boolean | undefined>(undefined);
+  const chatReview = () => helloReview() ?? adversarialReview();
   /** The mode the foot shows: the socket's, else the known one, which may carry no `applies`. */
   const modeState = (): ModeState | null => saidMode() ?? known().mode;
   /** This chat's sandbox as this visit's socket said it (WS "sandbox"; null: the `commands` list
@@ -695,6 +699,7 @@ export function ChatView(props: {
             setCompacting(!!msg.isCompacting);
           });
           setModel(msg.model);
+          setHelloReview(msg.alignReview);
           // The shield and the login stay as shown until the messages after the hello settle them
           // ("commands", "sandbox", "claude_login"), so neither blinks out and back.
           setProfileInfo(null); // a "profile" message follows for a profile or a session before its first message
@@ -1311,10 +1316,10 @@ export function ChatView(props: {
   const picks = createMemo(() => (alignAnswerable() ? prunePicks(picksOf(props.path), aligns()) : {}), {}, { equals: samePicks });
   /** Whether the composer holds typed text or an attachment: the card's button then waits. */
   const [hasDraft, setHasDraft] = createSignal(false);
-  /** With adversarial review on: whether this chat's subagent profile names a reviewer (§chat.alignment-review/card).
+  /** With adversarial review on in this chat: whether its subagent profile names a reviewer (§chat.alignment-review/card).
       Read only while the feature is on; undefined until it answers (the button then stays usable). */
   const [reviewerSet] = createResource(
-    () => (adversarialReview() && alignAnswerable() ? props.path : false),
+    () => (chatReview() && alignAnswerable() ? props.path : false),
     async (path) => {
       const info = await getSubagentProfiles(path);
       const current = info.settings.profiles.find((p) => p.id === info.current.id);
@@ -1352,7 +1357,7 @@ export function ChatView(props: {
         focusComposer();
       }
     },
-    review: () => adversarialReview(),
+    review: () => chatReview(),
     reviewBlocked: () => alignAnswer.goBlocked() ?? (!reviewerSet.error && reviewerSet() === false ? NO_REVIEWER : null),
     requestReview: (doc, phase) => {
       if (alignAnswer.reviewBlocked?.()) return;

@@ -82,7 +82,7 @@ export function openLabel(doc: AlignDocInfo): string {
 
 /** One of the card body's sections, as `cardSections` builds it. */
 export interface AlignCardSection {
-  kind: "approach" | "findings" | "rejected";
+  kind: "approach" | "technical" | "findings" | "rejected";
   label: string;
   /** The approach renders open; the others fold. */
   open: boolean;
@@ -95,10 +95,12 @@ export interface AlignCardSection {
  * questions, the folded findings and rejected. A section with no items is absent. The card
  * renders from this order (the approach above the questions, the others below them).
  */
-export function cardSections(doc: Pick<AlignDocInfo, "approach" | "findings" | "rejected">): AlignCardSection[] {
+export function cardSections(doc: Pick<AlignDocInfo, "approach" | "findings" | "rejected" | "technical">): AlignCardSection[] {
   return (
     [
       { kind: "approach", label: "Approach", open: true, items: doc.approach.map((a) => ({ id: a.id, body: a.text })) },
+      // Technical notes (§chat.alignment/card): right under the approach, closed.
+      { kind: "technical", label: "Technical notes", open: false, items: (doc.technical ?? []).map((t) => ({ id: t.id, body: t.text })) },
       { kind: "findings", label: "Findings", open: false, items: doc.findings.map((f) => ({ id: f.id, body: f.text })) },
       { kind: "rejected", label: "Rejected", open: false, items: doc.rejected.map((x) => ({ id: x.id, body: `${x.option} — ${x.why}` })) },
     ] as AlignCardSection[]
@@ -251,4 +253,15 @@ export function alignMetrics(a: AlignInfo): string {
   const parts = [plural(a.lines, "line")];
   if (a.total > 0) parts.push(`${a.open} of ${plural(a.total, "question")} open`);
   return parts.join(" · ");
+}
+
+/** The meta line's writing style mark (§chat.alignment/card): "Simplified style", "Project manager style"; none for Default. */
+export function alignStyleMark(doc: Pick<AlignDocInfo, "style">): string | undefined {
+  return doc.style === "pm" ? "Project manager style" : doc.style === "simplified" ? "Simplified style" : undefined;
+}
+
+/** A visual as the fence the chat draws it from: `vis {kind}`, its source as the body (a source holding a backtick fence takes tildes). */
+export function visualFence(visual: { kind: string; source: string }): string {
+  const marker = visual.source.includes("```") ? "~~~~" : "```";
+  return `${marker}vis ${visual.kind}\n${visual.source}\n${marker}`;
 }

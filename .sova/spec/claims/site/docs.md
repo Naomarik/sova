@@ -99,5 +99,5 @@ running turn, and switching models mid-session.
 ## §site.docs/install — Install (`/docs/install/`)
 
 Installing Sova on a Mac or Linux machine with one command and its options, starting it and
-opening it unlocked, the access token, the login service, running the installer again, and the
-Claude Code models.
+opening it unlocked, the access token, the login service, running the installer again, removing
+it (the service, the extension links, the install and the launcher), and the Claude Code models.

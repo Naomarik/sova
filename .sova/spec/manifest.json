@@ -2693,7 +2693,8 @@
       "evidence": "verified",
       "code": [
         "scripts/install.sh",
-        "scripts/install.test.sh"
+        "scripts/install.test.sh",
+        "scripts/install.integration.test.ts"
       ]
     },
     "§app.installer/service": {
@@ -2703,7 +2704,9 @@
       "evidence": "verified",
       "code": [
         "scripts/install.sh",
-        "scripts/install.test.sh"
+        "scripts/install.test.sh",
+        "scripts/install.integration.test.ts",
+        "docs/running-as-a-service.md"
       ]
     },
     "§app/installer": {
@@ -2712,7 +2715,8 @@
       "evidence": "verified",
       "code": [
         "scripts/install.sh",
-        "scripts/install.test.sh"
+        "scripts/install.test.sh",
+        "scripts/install.integration.test.ts"
       ]
     },
     "§app.extensions/cards": {
@@ -16127,6 +16131,17 @@
         "site/src/pages/docs/[...slug].astro",
         "site/README.md",
         "site/package.json"
+      ]
+    },
+    "§app.installer/ref": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "scripts/install.sh",
+        "scripts/install.test.sh",
+        "scripts/install.integration.test.ts"
       ]
     }
   },

@@ -197,7 +197,7 @@ const beyond = [
 
     <!-- BEYOND ONE MACHINE -->
     <section class="section section-alt section-join" id="beyond" aria-labelledby="beyond-title">
-      <div class="wrap split">
+      <div class="wrap split split-late">
         <div class="section-head" style="margin-bottom:0">
           <span class="eyebrow">Beyond one machine <span class="chip chip-accent">Preview</span></span>
           <h2 class="h-section" id="beyond-title">More hosts, more people.</h2>
@@ -294,29 +294,7 @@ const beyond = [
       </div>
     </section>
 
-    <!-- OPEN SOURCE -->
-    <section class="section" id="source" aria-labelledby="source-title">
-      <div class="wrap split">
-        <div class="section-head" style="margin-bottom:0">
-          <span class="eyebrow">Open source</span>
-          <h2 class="h-section" id="source-title">Apache-2.0, built in the open.</h2>
-          <p class="lead">TypeScript end to end: a SolidJS web app and a Hono server with the pi SDK embedded. Read the code, file an issue, or run a checkout.</p>
-          <div class="oss-actions">
-            <a class="button button-primary" href={site.repo}><Icon name="external" size={16} />View on GitHub</a>
-            <a class="button button-ghost" href={site.contributing}>Read CONTRIBUTING</a>
-          </div>
-        </div>
-        <pre class="code" aria-label="Run a checkout"><span class="c"># Run a checkout: Git, Node.js ≥22.19, pnpm, and Bun 1.4.2</span>
-<span class="k">git clone</span> https://github.com/Naomarik/sova.git
-<span class="k">cd</span> sova
-<span class="k">pnpm install</span> --frozen-lockfile
-<span class="k">pnpm run</span> build
-<span class="k">pnpm start</span>   <span class="c"># http://127.0.0.1:4800, on Bun</span>
-<span class="k">pnpm start</span> --node   <span class="c"># the same, on Node</span></pre>
-      </div>
-    </section>
-
-    <!-- CLOSING -->
+    <!-- CLOSING: the install, then the source for anyone who'd rather build it. -->
     <section class="section closing" aria-labelledby="closing-title">
       <div class="wrap">
         <div class="section-head">
@@ -326,6 +304,26 @@ const beyond = [
         <div class="closing-install">
           <InstallBlock id="install-closing" />
           <p class="hero-note">Then run <code>sova</code>, and <code>sova open</code>.</p>
+        </div>
+
+        <!-- OPEN SOURCE -->
+        <div class="split oss" id="source">
+          <div class="oss-copy">
+            <span class="eyebrow">Open source</span>
+            <h3 class="h-feature">Apache-2.0, built in the open.</h3>
+            <p class="prose">TypeScript end to end: a SolidJS web app and a Hono server with the pi SDK embedded. Read the code, file an issue, or run a checkout.</p>
+            <div class="oss-actions">
+              <a class="button" href={site.repo}><Icon name="external" size={16} />View on GitHub</a>
+              <a class="button button-ghost" href={site.contributing}>Read CONTRIBUTING</a>
+            </div>
+          </div>
+          <pre class="code" aria-label="Run a checkout"><span class="c"># Run a checkout: Git, Node.js ≥22.19, pnpm, and Bun 1.4.2</span>
+<span class="k">git clone</span> https://github.com/Naomarik/sova.git
+<span class="k">cd</span> sova
+<span class="k">pnpm install</span> --frozen-lockfile
+<span class="k">pnpm run</span> build
+<span class="k">pnpm start</span>   <span class="c"># http://127.0.0.1:4800, on Bun</span>
+<span class="k">pnpm start</span> --node   <span class="c"># the same, on Node</span></pre>
         </div>
       </div>
     </section>

@@ -402,17 +402,21 @@ p code, li code, td code, dd code {
 .swatch-base { margin-left: auto; font-family: var(--font-mono); font-size: 10px; color: var(--t-muted); text-transform: uppercase; letter-spacing: .06em; }
 .swatch-body { display: flex; flex-direction: column; gap: 6px; padding: 10px; }
 .swatch-bubble { align-self: flex-end; padding: 4px 8px; border-radius: 8px; background: var(--t-tint); color: var(--t-ink); }
-.swatch-diff { font-family: var(--font-mono); font-size: 10.5px; border-radius: 6px; overflow: hidden; border: 1px solid var(--t-border); }
-.swatch-diff span { display: block; padding: 1px 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.swatch-add { background: var(--t-add-bg); color: var(--t-add); }
-.swatch-del { background: var(--t-del-bg); color: var(--t-del); }
 .swatch-foot { display: flex; align-items: center; gap: 6px; }
 .swatch-btn { padding: 3px 8px; border-radius: 6px; background: var(--t-accent); color: var(--t-on-accent); font-weight: var(--fw-medium); font-size: 11px; }
 .swatch-muted { color: var(--t-muted); font-family: var(--font-mono); font-size: 10.5px; }
 .themes-head { margin-bottom: clamp(40px, 5vw, 64px); align-items: end; }
-.themes { grid-template-columns: repeat(auto-fill, minmax(min(100%, 176px), 1fr)); }
-@media (max-width: 599px) {
-  .themes { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); }
+/* Wide: 6 across, so the 18 make 3 even rows. Narrower: one row that scrolls sideways inside its
+   own box (the page never does), so the themes cost a phone one swatch's height, not 9 rows. */
+@media (min-width: 900px) { .themes { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
+@media (max-width: 899px) {
+  .themes {
+    display: flex; gap: var(--space-2);
+    overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: thin;
+    margin: 0 calc(var(--gutter) * -1); padding: 2px var(--gutter) var(--space-4);
+    scroll-padding-inline: var(--gutter);
+  }
+  .swatch { flex: 0 0 156px; scroll-snap-align: start; }
   .swatch-base { display: none; }
 }
 
@@ -470,10 +474,11 @@ p code, li code, td code, dd code {
 .arch-node-tui { border-style: dashed; background: transparent; }
 @media (min-width: 900px) {
   .arch {
-    grid-template-columns: 1fr 164px 1.2fr 164px 1fr;
+    grid-template-columns: 1fr clamp(112px, 12vw, 164px) 1.2fr clamp(112px, 12vw, 164px) 1fr;
     grid-template-areas: "browser l1 core l2 dir" ". . . . down" "prov prov prov . tui";
   }
-  .arch > :nth-child(1) { grid-area: browser; }
+  /* The browser node holds 1 sentence: centred on its link, not stretched into an empty box. */
+  .arch > :nth-child(1) { grid-area: browser; align-self: center; }
   .arch > :nth-child(2) { grid-area: l1; }
   .arch > :nth-child(3) { grid-area: core; }
   .arch > :nth-child(4) { grid-area: l2; }
@@ -483,17 +488,17 @@ p code, li code, td code, dd code {
   .arch > :nth-child(8) { grid-area: prov; align-self: center; margin-top: 0; }
   .arch-link:not(.arch-link-down) { min-height: 0; }
   .arch-link:not(.arch-link-down)::before { left: 0; right: 0; top: 50%; bottom: auto; width: auto; height: 1px; }
-  .arch-link span { white-space: nowrap; }
+  .arch-link span { max-width: 100%; text-align: center; }
 }
 
 /* ---- TOUCHES TABLE. ---------------------------------------------------------- */
 
 .touches { border-top: var(--stroke-thin) solid var(--color-border); }
-.touch { display: grid; grid-template-columns: 1fr; gap: var(--space-1) var(--space-6); padding: var(--space-4) 0; border-bottom: var(--stroke-thin) solid var(--color-border); }
+.touch { display: grid; grid-template-columns: 1fr; gap: var(--space-1) var(--space-5); padding: var(--space-3) 0; border-bottom: var(--stroke-thin) solid var(--color-border); }
 .touch dt { font-family: var(--font-mono); font-size: var(--fs-micro); letter-spacing: var(--ls-eyebrow); text-transform: uppercase; color: var(--color-ink-muted); padding-top: 4px; }
-.touch dd { font-size: 15px; color: var(--color-ink-2); line-height: 1.55; }
+.touch dd { font-size: 14.5px; color: var(--color-ink-2); line-height: 1.55; }
 .touch dd strong { color: var(--color-ink); font-weight: var(--fw-semibold); }
-@media (min-width: 768px) { .touch { grid-template-columns: 200px 1fr; } }
+@media (min-width: 768px) { .touch { grid-template-columns: 136px 1fr; } }
 
 /* What it touches, under the diagram in How it works. */
 .touches-block { margin-top: clamp(56px, 7vw, 96px); }
@@ -501,6 +506,8 @@ p code, li code, td code, dd code {
 
 .split { display: grid; gap: var(--space-7); }
 @media (min-width: 900px) { .split { grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: clamp(40px, 6vw, 96px); align-items: start; } }
+/* A split whose right side needs more room (2 cards side by side): stacked until 1100px. */
+@media (min-width: 900px) and (max-width: 1099px) { .split-late { grid-template-columns: 1fr; gap: var(--space-6); } }
 
 .not-list { display: flex; flex-direction: column; gap: var(--space-3); margin-top: var(--space-5); }
 .not-list li { display: flex; gap: var(--space-3); align-items: baseline; font-size: 15px; color: var(--color-ink-2); }
@@ -508,12 +515,17 @@ p code, li code, td code, dd code {
 
 /* ---- OPEN SOURCE + CLOSING. -------------------------------------------------- */
 
-.oss-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-5); }
+/* The source, a quiet row under the closing install: a hairline over it, a smaller heading. */
+.oss { margin-top: clamp(72px, 9vw, 120px); padding-top: clamp(40px, 5vw, 64px); border-top: var(--stroke-thin) solid var(--color-border); align-items: center; }
+.oss-copy { display: flex; flex-direction: column; gap: var(--space-3); }
+.oss-copy .prose { max-width: 52ch; }
+.oss-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-3); }
 
 .closing { position: relative; isolation: isolate; overflow: hidden; }
 .closing::before {
   content: ""; position: absolute; z-index: -1; pointer-events: none;
-  left: 50%; top: 50%; width: min(1100px, 180vw); height: 640px; transform: translate(-50%, -50%);
+  /* Behind the heading and the install, above the open-source row. */
+  left: 50%; top: 300px; width: min(1100px, 180vw); height: 640px; transform: translate(-50%, -50%);
   background:
     radial-gradient(closest-side at 40% 50%, var(--site-glow), transparent 70%),
     radial-gradient(closest-side at 62% 45%, var(--site-glow-2), transparent 70%);

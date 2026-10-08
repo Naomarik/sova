@@ -20,12 +20,16 @@ through terminal scrollback. Your existing setup stays yours.
 
 ## Get started
 
-Requires Git, Node.js ≥22.19, pnpm (without pnpm, the installer runs it through npx), curl, and
-unzip or python3. The installer downloads the Bun version Sova is tested on into its own folder.
+Runs on macOS or Linux. Requires bash, Git, Node.js ≥22.19, pnpm (without pnpm, the installer
+runs it through npx), curl, and unzip or python3. The installer downloads the Bun version Sova is
+tested on into its own folder.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/vNEXT/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/master/scripts/install.sh | SOVA_REF=master bash
 ```
+
+Until the first release is tagged, this installs the `master` branch; running it again updates to
+master's latest commit.
 
 Then run `sova`, and `sova open` to open **http://127.0.0.1:4800** already unlocked. Uses your
 existing pi provider login.

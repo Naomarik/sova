@@ -5,7 +5,14 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/vNEXT/scripts/install.sh | bash
 #
-# What it needs on the machine already: git, node (>= 22.19), pnpm, curl, and unzip or python3.
+# Until the first release is tagged, install master instead:
+#
+#   curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/master/scripts/install.sh | SOVA_REF=master bash
+#
+# The whole script is one function, main, called on its last line: bash reads all of it before any
+# of it runs, so a download cut short runs nothing.
+#
+# What it needs on the machine already: bash, git, node (>= 22.19), pnpm, curl, and unzip or python3.
 # Without pnpm it runs the version the repository pins through npx (npm ships with Node). The
 # server runs on Bun: the installer downloads the Bun release the repository pins (mise.toml) from
 # Bun's GitHub releases into <install dir>/.bun, checked against the sha256 the repository records
@@ -47,12 +54,18 @@
 # --service / --no-service install the login service or not, without asking · --port <n> the
 # service's port (default 4800) · --no-extensions link no pi extensions · --reinstall rebuild
 # even when the install is already at the requested commit.
-# Env for testing: SOVA_REPO (clone source), SOVA_REF (tag, branch or commit).
+# Env: SOVA_REF (tag, branch or commit to install; a name that is none of them stops the install),
+# SOVA_REPO (clone source, for testing).
 set -euo pipefail
 
+# The body is not indented, so the here-documents below keep their text as written.
+main() {
+
 repo=${SOVA_REPO:-https://github.com/Naomarik/sova.git}
-# RELEASE: vNEXT is a placeholder for the next release tag. Replace every vNEXT (this file, README.md,
-# docs/getting-started.md) with that tag in the commit the tag points at, so the tagged installer installs itself.
+# RELEASE: vNEXT is a placeholder for the next release tag. Replace every vNEXT (this file,
+# docs/public-links.md) with that tag in the commit the tag points at, so the tagged installer
+# installs itself, and point the install command in README.md, docs/getting-started.md and
+# site/src/content/docs/install.md (master with SOVA_REF=master until then) at the tag's script.
 ref=${SOVA_REF:-vNEXT}
 dir=${SOVA_DIR:-$HOME/.local/share/sova}
 bindir=${SOVA_BIN:-$HOME/.local/bin}
@@ -92,7 +105,7 @@ case "$port" in '' | *[!0-9]*) die "--port needs a number, got '$port'" ;; esac
 # ---- prerequisites. Nothing below this block writes anything. ----
 
 for cmd in git node; do
-	command -v "$cmd" >/dev/null 2>&1 || die "$cmd is not installed. Install git, Node.js >= $node_min_major.$node_min_minor and pnpm, then run this again."
+	command -v "$cmd" >/dev/null 2>&1 || die "$cmd is not installed. Install git and Node.js >= $node_min_major.$node_min_minor, then run this again."
 done
 # Bun's download (scripts/fetch-bun.sh): curl, and unzip or python3 to unpack it.
 command -v curl >/dev/null 2>&1 || die "curl is not installed; it downloads Bun. Install curl, then run this again."
@@ -197,17 +210,31 @@ if [ "$service" = yes ]; then
 	fi
 fi
 
-# The commit the ref names, when the source can say so without a clone. An install already at it,
-# with its dependencies and build in place, is not rebuilt.
+# The commit the ref names, asked of the source before anything is written: a tag (its commit) or
+# a branch. A name that is neither must look like a commit, checked once cloned; anything else
+# stops here, so the default branch is never installed in a ref's place.
+remote_refs=$(git ls-remote "$repo" "refs/tags/$ref^{}" "refs/tags/$ref" "refs/heads/$ref" 2>/dev/null) ||
+	die "could not read the tags and branches of $repo (git ls-remote failed); nothing was changed"
+want=
+while read -r sha name; do
+	case "$name" in *'^{}') want=$sha; break ;; esac
+	[ -n "$want" ] || want=$sha
+done <<EOF
+$remote_refs
+EOF
+if [ -z "$want" ]; then
+	case "$ref" in
+		*[!0-9a-f]* | '') bad_ref=true ;;
+		???????*) bad_ref=false ;;           # a commit, or not: the clone says
+		*) bad_ref=true ;;
+	esac
+	! $bad_ref ||
+		die "'$ref' is not a tag or a branch of $repo; nothing was changed. Pass SOVA_REF=<tag, branch or commit>, for example SOVA_REF=master."
+fi
+
+# An install already at that commit, with its dependencies and build in place, is not rebuilt.
 rebuild=true
 if $update && ! $reinstall; then
-	want=
-	while read -r sha name; do
-		case "$name" in *'^{}') want=$sha; break ;; esac
-		[ -n "$want" ] || want=$sha
-	done <<EOF
-$(git ls-remote "$repo" "refs/tags/$ref^{}" "refs/tags/$ref" "refs/heads/$ref" 2>/dev/null || true)
-EOF
 	have=$(git -C "$dir" rev-parse HEAD 2>/dev/null || true)
 	same=false
 	if [ -n "$want" ]; then
@@ -254,8 +281,9 @@ if $rebuild; then
 	say "cloning $repo at $ref"
 	git clone --quiet --depth 1 --branch "$ref" "$repo" "$staging/sova" 2>/dev/null ||
 		git clone --quiet "$repo" "$staging/sova" ||
-		die "could not clone $repo"
-	git -C "$staging/sova" checkout --quiet "$ref" 2>/dev/null || true
+		die "could not clone $repo; nothing was changed"
+	git -C "$staging/sova" -c advice.detachedHead=false checkout --quiet "$ref" 2>/dev/null ||
+		die "'$ref' is not a tag, a branch or a commit of $repo; nothing was changed. Pass SOVA_REF=<tag, branch or commit>, for example SOVA_REF=master."
 
 	if $use_npx; then
 		# The pnpm the repository pins in package.json's packageManager, or the latest without one.
@@ -319,7 +347,7 @@ write_file "$launcher" 755 <<LAUNCHER
 #!/usr/bin/env bash
 $marker
 # Runs the built Sova server from its install directory, on the Bun in its .bun/ (SOVA_BUN names
-# another). PORT and HOST are read by the server.
+# another), on PORT, else the port it was installed with. HOST is read by the server.
 #   sova --node  run the server on Node instead (SOVA_RUNTIME=node does the same)
 #   sova token   print this install's access token (the server mints it at its first start)
 #   sova open    open the browser at the app, unlocked by the token in the URL's fragment
@@ -342,6 +370,7 @@ case "\${1:-}" in
 		exit 1 ;;
 esac
 export SOVA_BUN=\${SOVA_BUN:-\$dir/.bun/bin/bun}
+export PORT=\${PORT:-$port}
 exec "\$dir/scripts/start-server.sh" "\$@"
 LAUNCHER
 
@@ -430,11 +459,16 @@ if [ "$service" = yes ]; then
 	<dict>
 		<key>PORT</key><string>$port</string>
 		<key>PATH</key><string>$(xml "$service_path")</string>
+		<key>LANG</key><string>en_US.UTF-8</string>
 $agent_env
 	</dict>
 	<key>WorkingDirectory</key><string>$(xml "$HOME")</string>
 	<key>RunAtLoad</key><true/>
 	<key>KeepAlive</key><true/>
+	<key>ThrottleInterval</key><integer>2</integer>
+	<!-- A stop drains hosted runtimes and their workers; 60 s is launchd's cap for an agent. -->
+	<key>ExitTimeOut</key><integer>60</integer>
+	<key>ProcessType</key><string>Interactive</string>
 	<key>StandardOutPath</key><string>$(xml "$HOME/Library/Logs/sova.log")</string>
 	<key>StandardErrorPath</key><string>$(xml "$HOME/Library/Logs/sova.log")</string>
 </dict>
@@ -489,8 +523,11 @@ Environment=PORT=$port
 Environment=$(sd "PATH=$service_path")
 $agent_env
 WorkingDirectory=%h
-Restart=on-failure
-RestartSec=3
+# As docs/running-as-a-service.md: a stop you ask for stays stopped, any other exit restarts it,
+# and a stop drains hosted runtimes and their workers before it exits.
+Restart=always
+RestartSec=2
+TimeoutStopSec=90
 
 [Install]
 WantedBy=default.target
@@ -550,3 +587,6 @@ say "It reads the agent directory the pi TUI does: $agent"
 say "Sessions already on the machine are listed and readable straight away. To chat from the page"
 say "with a pi provider you need its credentials in auth.json there — run 'pi' and '/login' once"
 say "if you have not. A session open in a TUI is shown live and read-only."
+}
+
+main "$@"

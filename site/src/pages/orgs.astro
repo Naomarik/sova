@@ -10,23 +10,23 @@ import * as site from "../data/site";
 const orgCards = [
   {
     icon: "file", title: "Decisions with provenance",
-    body: "Each decision keeps who said it, where, when, and in their words. Sova compares the decisions on each topic and sends any contradiction to the person who decides that area. You then promote the settled ones into the project's own spec.",
-    limit: "No model writes the spec. Promotion is a fixed writer, a few decisions at a time, and only when you choose.",
+    body: "Each decision keeps who said it, when, and in their words. A contradiction goes to the person who decides that area.",
+    limit: "No model writes the spec. You promote settled decisions, only when you choose.",
   },
   {
     icon: "eye", title: "A project overseer",
-    body: "One session per project that watches for new decisions, spots who hasn't been asked, and acts at the level you grant: propose, gather, reconcile, or build. Build starts coding sessions, each in its own worktree.",
-    limit: "Starts at gather. Limits per message, per day and at once are enforced by the tools, not the prompt.",
+    body: "One session per project that spots who hasn't been asked, and acts at the level you grant, up to starting coding sessions.",
+    limit: "Starts at gather. Its limits are enforced by the tools, not the prompt.",
   },
   {
     icon: "chat", title: "A page for the owner",
-    body: "Pick the client's owner and send one link. They read how each project is going, in everyday words: updates at real milestones, who was asked, what was decided, what was built.",
-    limit: "Read only. Never shows goals, profiles, code, models or costs. The link lasts 90 days.",
+    body: "One link where the client's owner reads how each project is going, in everyday words.",
+    limit: "Read only. Never shows goals, profiles, code, models or costs.",
   },
   {
     icon: "folder", title: "The whole organization is one repo",
-    body: "Roster, projects, conversations, decisions and the overseer's notes live in a plain git repo. Clone it onto another Sova host and attach it.",
-    limit: "Links don't travel, so you send new ones. On the new host, overseers start paused.",
+    body: "Roster, projects, conversations and decisions live in a plain git repo you can move to another Sova host.",
+    limit: "Links don't travel, so you send new ones.",
   },
 ];
 ---
@@ -42,7 +42,7 @@ const orgCards = [
         <div class="section-head">
           <span class="eyebrow">Organizations <span class="chip chip-accent">Preview</span></span>
           <h1 class="h-section" id="orgs-title">Ask the people who know. Keep what they decide.</h1>
-          <p class="lead">An organization is a client or a team you work with: its people, its projects, and one git repo that holds all of it. Sova asks each person through their own link, one at a time, and keeps every answer with who gave it and in which words.</p>
+          <p class="lead">An organization is a client or a team you work with: its people, its projects, and one git repo that holds all of it.</p>
         </div>
 
         <article class="feature">
@@ -50,14 +50,10 @@ const orgCards = [
             <span class="eyebrow">Baton sessions</span>
             <h2 class="h-feature">One conversation, handed from person to person.</h2>
             <div class="prose">
-              <p>Start a conversation with a goal only you can see. The model talks to whoever holds the baton. When they don't know, it hands the baton to someone on the roster with a question and a short briefing, and Sova makes that person a link.</p>
-              <p>They see the conversation and nothing else: no tool calls, no goal, no other sessions. Every message carries its sender's name.</p>
+              <p>Start a conversation with a goal only you can see. When the person holding the baton doesn't know, the model hands it to someone on the roster with a question, and Sova makes them a link.</p>
+              <p>They see the conversation and nothing else, and decisions are recorded in their own words.</p>
             </div>
-            <ul class="points">
-              <li><Icon name="check" size={16} />Decisions are recorded as they're made, with the speaker's own words.</li>
-              <li><Icon name="check" size={16} />Profiles learn each person's language and skills from their own words. The page people see never shows a profile.</li>
-            </ul>
-            <p class="limit"><Icon name="info" size={18} /><span>People who can't reach your machine open their link on a public address you set up: Sova's share port, which only serves shared pages, behind a web server or tunnel you run. <strong>It needs setup:</strong> <a href={site.publicLinksDoc}>docs/public-links.md</a> walks through it. Sova's own page never goes public, and each link is shown once.</span></p>
+            <p class="limit"><Icon name="info" size={18} /><span>People who can't reach your machine need a public address you set up: <a href={site.publicLinksDoc}>public links</a>. Sova's own page never goes public.</span></p>
           </div>
           <div class="feature-visual"><Baton /></div>
         </article>
@@ -79,7 +75,7 @@ const orgCards = [
       <div class="wrap">
         <div class="section-head">
           <h2 class="h-section" id="closing-title">Start with the sessions you already have.</h2>
-          <p class="lead">Organizations live in the same Sova as your coding sessions. Install it, then open Organizations from the home page.</p>
+          <p class="lead">Organizations live in the same Sova as your coding sessions.</p>
         </div>
         <div class="closing-install">
           <InstallBlock id="install-orgs" />

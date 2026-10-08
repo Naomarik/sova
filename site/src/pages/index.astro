@@ -15,6 +15,11 @@ import * as site from "../data/site";
 
 const cards = [
   {
+    icon: "undo", title: "Rewind, regenerate, fork, steer",
+    body: "Rewind to before any message you sent, regenerate or fork from a reply, steer a running turn without stopping it, or switch models mid-session. The context you built stays.",
+    limit: `<a href="/docs/change-direction/">Changing direction, in the docs</a>`,
+  },
+  {
     icon: "terminal", title: "Claude logins, with failover",
     body: "Use Claude Code's models in chat and in workers, across several logins. A session or worker that hits a usage limit moves on to the next one.",
     limit: "Needs the <code>claude</code> CLI installed and logged in.",
@@ -60,21 +65,21 @@ const beyond = [
     <section class="hero" id="top">
       <div class="wrap">
         <div class="hero-copy">
-          <Mark tile size={88} class="hero-mark" />
           <a class="hero-pill" href={site.releaseUrl}>
             <span class="hero-pill-tag">{site.releaseLabel}</span>
-            <span>Open source · Apache-2.0<span class="hero-pill-extra"> · For the pi coding agent</span></span>
+            <span><span class="hero-pill-extra">Open source · </span>Apache-2.0<span class="hero-pill-extra"> · For the pi coding agent</span></span>
             <Icon name="arrow-right" size={14} />
           </a>
           <h1 class="h-hero"><span>Every agent session, <span class="grad">one calm workspace.</span></span> <span class="quiet">On your desk, or folded in your pocket.</span></h1>
           <p class="lead">A browser workspace for the <a href={site.pi}>pi</a> coding agent. Hand work to subagents you can follow, and read every change as steps before it lands.</p>
           <div class="hero-actions">
             <InstallBlock id="install-hero" />
-            <p class="hero-note">Then run <code>sova</code>, and <code>sova open</code>. Needs Git and Node.js ≥22.19; <a href="/docs/install/#what-you-need">full requirements</a>.</p>
-            <div class="hero-links">
-              <a class="button button-ghost" href="/docs/"><Icon name="file" size={16} />Read the Docs</a>
-              <a class="button button-ghost" href={site.installScript}><Icon name="file" size={16} />Read the Install Script</a>
-            </div>
+            <p class="hero-note">Then run <code>sova</code>, and <code>sova open</code>. Needs Git and Node.js ≥22.19.</p>
+            <p class="hero-links">
+              <a href="/docs/install/#what-you-need">Full requirements</a>
+              <a href={site.installScript}>Read the install script</a>
+              <a href="/docs/">Docs</a>
+            </p>
           </div>
         </div>
         <div class="hero-stage"><Devices /></div>
@@ -108,7 +113,7 @@ const beyond = [
               <p>In Delegate, a session's agent becomes an orchestrator: it sends each kind of work to the model you routed it to. Every worker opens in the side pane with its own transcript.</p>
             </div>
             <p class="limit"><Icon name="info" size={18} /><span><strong>The shipped routes use Claude Code models</strong>, so install the <code>claude</code> CLI or pick your own in Settings → Subagents.</span></p>
-            <p class="feature-more"><a href="/docs/modes/delegate/">Read more about Delegate<Icon name="arrow-right" size={14} /></a></p>
+            <p class="feature-more"><a href="/docs/modes/delegate/">Delegate docs<Icon name="arrow-right" size={14} /></a></p>
           </div>
           <div class="feature-visual"><ScreenFrame at="feature.delegate" /></div>
         </article>
@@ -120,7 +125,7 @@ const beyond = [
             <div class="prose">
               <p>With align on, the agent works out what to build with you first, and records the approach, the alternatives it rejected, and its open questions, each with a recommendation. Answer with just “1a”.</p>
             </div>
-            <p class="feature-more"><a href="/docs/modes/align/">Read more about alignments<Icon name="arrow-right" size={14} /></a></p>
+            <p class="feature-more"><a href="/docs/modes/align/">Alignment docs<Icon name="arrow-right" size={14} /></a></p>
           </div>
           <div class="feature-visual"><ScreenFrame at="feature.alignment" /></div>
         </article>
@@ -133,7 +138,7 @@ const beyond = [
               <p>Ask what changed and the agent lays it out as numbered steps, each with a line on why, and no hunk left out. A session also keeps track of the git worktrees it works in.</p>
             </div>
             <p class="limit"><Icon name="info" size={18} /><span>The changes viewer only reads, and Sova never removes a worktree on its own.</span></p>
-            <p class="feature-more"><a href="/docs/worktrees-and-changes/">Read more about worktrees and changes<Icon name="arrow-right" size={14} /></a></p>
+            <p class="feature-more"><a href="/docs/worktrees-and-changes/">Worktrees and changes docs<Icon name="arrow-right" size={14} /></a></p>
           </div>
           <div class="feature-visual"><ScreenFrame at="feature.changes" /></div>
         </article>
@@ -146,7 +151,7 @@ const beyond = [
               <p>The Needs you list shows every session waiting on you: a question, an error, a failed worker. The Overseer, a session that reads all the others, can tell you what needs you, start sessions, or send them prompts.</p>
             </div>
             <p class="limit"><Icon name="info" size={18} /><span>The list costs no tokens. The Overseer has no shell and edits no files.</span></p>
-            <p class="feature-more"><a href="/docs/needs-you/">Read more about Needs you<Icon name="arrow-right" size={14} /></a><a href="/docs/overseer/">The Overseer<Icon name="arrow-right" size={14} /></a></p>
+            <p class="feature-more"><a href="/docs/needs-you/">Needs you docs<Icon name="arrow-right" size={14} /></a><a href="/docs/overseer/">Overseer docs<Icon name="arrow-right" size={14} /></a></p>
           </div>
           <div class="feature-visual"><Overseer /></div>
         </article>
@@ -159,21 +164,9 @@ const beyond = [
               <p>Pair once by scanning a one-use QR code, then answer a question, steer a turn, or start a session. With notifications on, a session that needs you reaches your lock screen.</p>
             </div>
             <p class="limit"><Icon name="info" size={18} /><span>Sova listens on <code>127.0.0.1</code>. For a phone to reach it, use <code>tailscale serve</code> or your own HTTPS proxy. On iPhone, add Sova to the Home Screen for notifications.</span></p>
-            <p class="feature-more"><a href="/docs/phone/">Read more about checking in from your phone<Icon name="arrow-right" size={14} /></a></p>
+            <p class="feature-more"><a href="/docs/phone/">Phone docs<Icon name="arrow-right" size={14} /></a></p>
           </div>
           <div class="feature-visual"><Phones /></div>
-        </article>
-
-        <article class="feature feature-flip">
-          <div class="feature-copy">
-            <span class="eyebrow"><span class="eyebrow-num">06</span> Change direction</span>
-            <h3 class="h-feature">Rewind, regenerate, fork, steer. Keep the context you built.</h3>
-            <div class="prose">
-              <p>Rewind to before any message you sent, regenerate or fork from a reply, steer a running turn without stopping it, or switch models mid-session.</p>
-            </div>
-            <p class="feature-more"><a href="/docs/change-direction/">Read more about changing direction<Icon name="arrow-right" size={14} /></a></p>
-          </div>
-          <div class="feature-visual"><ScreenFrame at="feature.transcript" /></div>
         </article>
       </div>
     </section>
@@ -185,29 +178,32 @@ const beyond = [
           <span class="eyebrow">And the rest</span>
           <h2 class="h-section" id="more-title">Small things that add up.</h2>
         </div>
-        <ul class="cards cards-four">
+        <ul class="perks">
           {cards.map((c) => (
-            <li class="fcard">
-              <span class="fcard-icon"><Icon name={c.icon} size={20} /></span>
-              <h3>{c.title}</h3>
+            <li class="perk">
+              <h3><Icon name={c.icon} size={18} />{c.title}</h3>
               <p set:html={c.body} />
-              <p class="fcard-limit" set:html={c.limit} />
+              <p class="perk-limit" set:html={c.limit} />
             </li>
           ))}
+          <li class="perk">
+            <h3><Icon name="plus" size={18} />And more</h3>
+            <p>Voice input, tools on your SSH or Docker targets, usage and load pages, and model rules.</p>
+            <p class="perk-limit"><a href={site.customization}>More in Customization</a></p>
+          </li>
         </ul>
-        <p class="hero-note cards-note">Also: voice input, tools on your SSH or Docker targets, usage and load pages, and model rules. <a href={site.customization}>More in Customization</a>.</p>
       </div>
     </section>
 
     <!-- BEYOND ONE MACHINE -->
-    <section class="section" id="beyond" aria-labelledby="beyond-title">
-      <div class="wrap">
-        <div class="section-head">
+    <section class="section section-alt section-join" id="beyond" aria-labelledby="beyond-title">
+      <div class="wrap split">
+        <div class="section-head" style="margin-bottom:0">
           <span class="eyebrow">Beyond one machine <span class="chip chip-accent">Preview</span></span>
           <h2 class="h-section" id="beyond-title">More hosts, more people.</h2>
           <p class="lead">Each needs setup beyond the install.</p>
         </div>
-        <ul class="cards cards-fit">
+        <ul class="cards cards-two">
           {beyond.map((c) => (
             <li class="fcard fcard-link">
               <span class="fcard-icon"><Icon name={c.icon} size={20} /></span>
@@ -222,7 +218,7 @@ const beyond = [
     </section>
 
     <!-- THEMES -->
-    <section class="section section-alt" aria-labelledby="themes-title">
+    <section class="section" aria-labelledby="themes-title">
       <div class="wrap">
         <div class="split themes-head">
           <div class="section-head" style="margin-bottom:0">
@@ -246,7 +242,7 @@ const beyond = [
     </section>
 
     <!-- HOW IT WORKS -->
-    <section class="section" id="how" aria-labelledby="how-title">
+    <section class="section section-alt" id="how" aria-labelledby="how-title">
       <div class="wrap">
         <div class="section-head">
           <span class="eyebrow">How it works</span>
@@ -299,7 +295,7 @@ const beyond = [
     </section>
 
     <!-- OPEN SOURCE -->
-    <section class="section section-alt" id="source" aria-labelledby="source-title">
+    <section class="section" id="source" aria-labelledby="source-title">
       <div class="wrap split">
         <div class="section-head" style="margin-bottom:0">
           <span class="eyebrow">Open source</span>

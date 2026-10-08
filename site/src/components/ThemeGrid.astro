@@ -17,7 +17,6 @@ const vars = (c: Record<string, string>) =>
       <div class="swatch-top"><span class="swatch-dot" /><span class="swatch-name">{t.name}</span><span class="swatch-base">{t.base}</span></div>
       <div class="swatch-body" aria-hidden="true">
         <span class="swatch-bubble">Cap it at 30s</span>
-        <span class="swatch-card">Clamped where it's computed.</span>
         <span class="swatch-diff"><span class="swatch-del">− ms = base</span><span class="swatch-add">+ ms = min(base, MAX)</span></span>
         <span class="swatch-foot"><span class="swatch-btn">Send</span><span class="swatch-muted">glm-5.3</span></span>
       </div>

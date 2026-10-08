@@ -143,7 +143,7 @@ p code, li code, td code, dd code {
 
 /* overflow-x: clip keeps the glow (up to 180vw wide) and the hero's full-bleed band from widening
    the page; the glow still spills upward, since clip on one axis leaves the other visible. */
-.hero { padding: clamp(40px, 5.5vw, 72px) 0 0; position: relative; isolation: isolate; overflow-x: clip; }
+.hero { padding: clamp(48px, 7vw, 96px) 0 0; position: relative; isolation: isolate; overflow-x: clip; }
 
 /* Hero + closing backdrop: the one deliberate exception to "no gradients/glow".
    An indigo radial glow, plus (hero only) a faint grid masked out toward the edges.
@@ -184,10 +184,6 @@ p code, li code, td code, dd code {
 .h-hero .grad { display: inline; background: var(--site-grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .hero-copy { display: flex; flex-direction: column; align-items: center; text-align: center; gap: var(--space-5); min-width: 0; }
 .hero-copy > * { max-width: 100%; min-width: 0; overflow-wrap: anywhere; }
-/* The app icon, large enough for the fold to read. Its box is fixed by width and height, so
-   nothing moves when it paints. The pill sits a little closer to it than the copy's usual gap,
-   and the hero's top padding gave back about what the mark added. */
-.hero-mark { width: clamp(56px, 5vw, 72px); height: auto; aspect-ratio: 1; border-radius: 25%; box-shadow: var(--shadow-2); margin-bottom: calc(var(--space-4) - var(--space-5)); }
 /* The headline is 2 lines on a desktop; its second sentence is a subline, not 2 more big lines. */
 .hero .h-hero { max-width: 20ch; font-size: clamp(40px, 5.4vw, 72px); }
 .hero .h-hero > span { display: block; }
@@ -209,11 +205,18 @@ p code, li code, td code, dd code {
   padding: 3px 10px; border-radius: var(--r-full);
   background: var(--color-accent-tint); color: var(--color-ink);
   font-family: var(--font-mono); font-size: var(--fs-micro); letter-spacing: .02em;
+  white-space: nowrap;
 }
 .hero-actions { display: flex; flex-direction: column; align-items: center; gap: var(--space-3); width: 100%; max-width: 1000px; margin-top: var(--space-3); }
 .hero-note { font-size: var(--fs-caption); color: var(--color-ink-muted); text-wrap: balance; }
 .hero-note code { font-size: .92em; }
-.hero-links { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-2); }
+/* Three quiet text links under the install note; the install's copy button stays the one action. */
+.hero-links { display: flex; flex-wrap: wrap; justify-content: center; gap: 0 var(--space-5); margin-top: calc(var(--space-2) * -1); font-size: 13.5px; }
+.hero-links a {
+  display: inline-flex; align-items: center; min-height: var(--tap-min);
+  color: var(--color-ink-2); text-decoration: underline; text-decoration-color: var(--color-border-strong);
+}
+.hero-links a:hover { color: var(--color-ink); text-decoration-color: currentColor; }
 .hero-stage { margin-top: clamp(40px, 4vw, 56px); position: relative; min-width: 0; }
 .hero-stage > * { position: relative; z-index: 1; }
 .hero-stage::before {
@@ -294,7 +297,7 @@ p code, li code, td code, dd code {
 
 /* A feature: text and its picture. Stacked on a phone, side by side from 900px, alternating. */
 .feature { display: grid; gap: var(--space-6); align-items: center; }
-.feature + .feature { margin-top: clamp(72px, 9vw, 128px); }
+.feature + .feature { margin-top: clamp(64px, 8vw, 112px); }
 .feature-copy { display: flex; flex-direction: column; gap: var(--space-4); }
 .feature-copy .eyebrow { margin-bottom: calc(var(--space-1) * -1); }
 .feature-visual { min-width: 0; }
@@ -308,14 +311,13 @@ p code, li code, td code, dd code {
 .points li { display: grid; grid-template-columns: 20px 1fr; gap: var(--space-2); align-items: start; }
 .points .icon { color: var(--color-accent); margin-top: 3px; }
 
-/* A limit, stated next to the feature it limits. */
+/* A limit, stated next to the feature it limits: under a hairline, a step quieter than the pitch,
+   never a box competing with the screenshot beside it. */
 .limit {
   display: grid; grid-template-columns: 18px 1fr; gap: var(--space-3); align-items: start;
-  padding: var(--space-3) var(--space-4);
-  border-radius: var(--r-md);
-  border: var(--stroke-thin) solid var(--color-border);
-  background: var(--color-surface);
-  font-size: 13.5px; line-height: 1.5; color: var(--color-ink-2);
+  padding-top: var(--space-4);
+  border-top: var(--stroke-thin) solid var(--color-border);
+  font-size: 14px; line-height: 1.55; color: var(--color-ink-muted);
   max-width: 62ch;
 }
 .limit .icon { color: var(--color-ink-muted); margin-top: 1px; }
@@ -346,10 +348,24 @@ p code, li code, td code, dd code {
 .fcard p { font-size: 14.5px; line-height: 1.55; color: var(--color-ink-2); }
 .fcard .fcard-limit { font-size: var(--fs-caption); color: var(--color-ink-muted); margin-top: auto; padding-top: var(--space-2); border-top: var(--stroke-thin) dashed var(--color-border); }
 
-/* Four cards: one row on a desktop, two by two in between, never three and one. */
-.cards-four { grid-template-columns: 1fr; }
-@media (min-width: 600px) { .cards-four { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (min-width: 1100px) { .cards-four { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+/* The home page's smaller features: no boxes, just a hairline over each, three across on a
+   desktop, two in between, one on a phone. Limits sit on one baseline per row. */
+.perks { display: grid; gap: clamp(32px, 4vw, 48px) clamp(24px, 4vw, 56px); grid-template-columns: 1fr; }
+@media (min-width: 640px) { .perks { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1000px) { .perks { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.perk { display: flex; flex-direction: column; gap: var(--space-2); padding-top: var(--space-5); border-top: var(--stroke-thin) solid var(--color-border-strong); }
+.perk h3 { display: flex; align-items: center; gap: 10px; font-size: 17px; line-height: 1.3; font-weight: var(--fw-semibold); letter-spacing: -.012em; }
+.perk h3 .icon { color: var(--color-ink-muted); }
+.perk p { font-size: 15px; line-height: 1.55; color: var(--color-ink-2); max-width: 46ch; }
+.perk .perk-limit { margin-top: auto; padding-top: var(--space-2); font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.perk-limit a { display: inline-flex; align-items: center; min-height: var(--tap-min); }
+
+/* Two link cards beside their heading. */
+.cards-two { grid-template-columns: 1fr; }
+@media (min-width: 600px) { .cards-two { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* A sunken section that continues the one above it: one band, not two. */
+.section-alt + .section-join { border-top: 0; padding-top: 0; }
 
 /* Organizations and Mesh: cards under a feature, stretched to fill the row, and a note under them. */
 .cards-fit { grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); }
@@ -385,7 +401,6 @@ p code, li code, td code, dd code {
 .swatch-base { margin-left: auto; font-family: var(--font-mono); font-size: 10px; color: var(--t-muted); text-transform: uppercase; letter-spacing: .06em; }
 .swatch-body { display: flex; flex-direction: column; gap: 6px; padding: 10px; }
 .swatch-bubble { align-self: flex-end; padding: 4px 8px; border-radius: 8px; background: var(--t-tint); color: var(--t-ink); }
-.swatch-card { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 6px 8px; border-radius: 8px; background: var(--t-surface); border: 1px solid var(--t-border); color: var(--t-ink2); }
 .swatch-diff { font-family: var(--font-mono); font-size: 10.5px; border-radius: 6px; overflow: hidden; border: 1px solid var(--t-border); }
 .swatch-diff span { display: block; padding: 1px 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .swatch-add { background: var(--t-add-bg); color: var(--t-add); }
@@ -397,7 +412,6 @@ p code, li code, td code, dd code {
 .themes { grid-template-columns: repeat(auto-fill, minmax(min(100%, 176px), 1fr)); }
 @media (max-width: 599px) {
   .themes { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); }
-  .swatch-card { display: none; }
   .swatch-base { display: none; }
 }
 

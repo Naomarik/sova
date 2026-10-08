@@ -309,9 +309,6 @@ p code, li code, td code, dd code {
   .feature-flip { grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); }
 }
 
-.points { display: flex; flex-direction: column; gap: var(--space-2); font-size: 15px; color: var(--color-ink-2); }
-.points li { display: grid; grid-template-columns: 20px 1fr; gap: var(--space-2); align-items: start; }
-.points .icon { color: var(--color-accent); margin-top: 3px; }
 
 /* A limit, stated next to the feature it limits: under a hairline, a step quieter than the pitch,
    never a box competing with the screenshot beside it. */
@@ -373,8 +370,7 @@ p code, li code, td code, dd code {
 /* A sunken section that continues the one above it: one band, not two. */
 .section-alt + .section-join { border-top: 0; padding-top: 0; }
 
-/* Organizations and Mesh: cards under a feature, stretched to fill the row, and a note under them. */
-.cards-fit { grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); }
+/* Organizations and Mesh: the feature grid under a feature, and a note under it. */
 .cards-follow { margin-top: clamp(56px, 7vw, 96px); }
 .cards-note { margin-top: var(--space-5); text-align: center; }
 /* A card that opens a page: its title is the link, stretched over the whole card. */
@@ -390,7 +386,6 @@ p code, li code, td code, dd code {
 .fcard-link p:not(.fcard-limit) { flex: 1; }
 .eyebrow .chip { font-size: 10px; padding: 1px 8px; letter-spacing: .06em; }
 .fcard .chip { font-size: 10px; padding: 0 7px; line-height: 1.7; vertical-align: 1px; }
-.chip-soon { color: var(--status-warn); border-color: currentColor; background: transparent; }
 
 /* ---- THEMES. Each swatch is a tiny app, painted with that theme's own colors. -- */
 
@@ -514,7 +509,6 @@ p code, li code, td code, dd code {
 /* ---- OPEN SOURCE + CLOSING. -------------------------------------------------- */
 
 .oss-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-5); }
-.stack-list { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-5); }
 
 .closing { position: relative; isolation: isolate; overflow: hidden; }
 .closing::before {

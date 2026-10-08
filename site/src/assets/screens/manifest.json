@@ -7,9 +7,9 @@
       "height": 1800,
       "viewport": "desktop",
       "alt": "Sova on a desktop: the sessions sidebar with 2 sessions that need you, the Retry policy session in Delegate mode waiting on its 3 workers, and the session detail pane's Agents tab with the working worker's transcript.",
-      "hash": "43a6bb76f14a0486",
-      "sha": "8f991e056c6a3bb6",
-      "bytes": 139422
+      "hash": "1eb3810a47e5bb36",
+      "sha": "f1a1b69984a2d685",
+      "bytes": 139032
     },
     "hero-fold": {
       "file": "hero-fold.webp",
@@ -17,9 +17,9 @@
       "height": 1848,
       "viewport": "fold",
       "alt": "The same session on an unfolded foldable: the sidebar on the left and the chat on the right, waiting on its workers.",
-      "hash": "81fd982ac7f68436",
-      "sha": "10fb4311b1a8e7ec",
-      "bytes": 105392
+      "hash": "c15adb213b19689a",
+      "sha": "1d93f7d8bfd3e595",
+      "bytes": 105462
     },
     "hero-phone": {
       "file": "hero-phone.webp",
@@ -27,9 +27,9 @@
       "height": 1974,
       "viewport": "phone",
       "alt": "The same session on a folded phone: the chat alone, its alignment decided and its workers running, with a Steer composer.",
-      "hash": "53c280fc407fa8db",
-      "sha": "4057e02c3c0433bb",
-      "bytes": 49538
+      "hash": "8bf40a6e9ecd13c3",
+      "sha": "2762fd63a3aec904",
+      "bytes": 50404
     },
     "delegate": {
       "file": "delegate.webp",
@@ -37,9 +37,9 @@
       "height": 1520,
       "viewport": "compact",
       "alt": "The Agents tab beside a Delegate session: 3 workers with their model, tokens and state, and the working worker's transcript: its task, a read, 2 edits and a new test file.",
-      "hash": "5c33df71b07fa023",
-      "sha": "6ed379f69f4e7aba",
-      "bytes": 98686
+      "hash": "4ca87cae389ebeee",
+      "sha": "b811e65c7bdcec8e",
+      "bytes": 98374
     },
     "alignment": {
       "file": "alignment.webp",
@@ -47,9 +47,9 @@
       "height": 1520,
       "viewport": "compact",
       "alt": "An alignment card in the chat: what the agent found, its approach, a rejected alternative, and an open question with 2 options and a recommendation.",
-      "hash": "0804eb060653086d",
-      "sha": "e7984974d9bbd64c",
-      "bytes": 81456
+      "hash": "4505c18999030dac",
+      "sha": "5d5b8fca6f2a25f8",
+      "bytes": 81076
     },
     "changes": {
       "file": "changes.webp",
@@ -57,9 +57,9 @@
       "height": 1520,
       "viewport": "compact",
       "alt": "The changes viewer: 3 numbered steps, each with why it was made, and the first step's diff.",
-      "hash": "f426df790fca91c9",
-      "sha": "75d5e39f923dd8ea",
-      "bytes": 89970
+      "hash": "0e10071a58f6a9f9",
+      "sha": "d0c4ee7880999b5f",
+      "bytes": 89972
     },
     "overseer": {
       "file": "overseer.webp",
@@ -67,9 +67,9 @@
       "height": 1520,
       "viewport": "compact",
       "alt": "The Overseer page after asking what needs you: a card that lists 2 finished sessions, each with why, and asks before archiving them.",
-      "hash": "8244f5090567078d",
-      "sha": "db89819e62d9aea1",
-      "bytes": 87750
+      "hash": "876be77b8583b77c",
+      "sha": "9021e3663d123579",
+      "bytes": 87858
     },
     "phone-access": {
       "file": "phone-access.webp",
@@ -77,7 +77,7 @@
       "height": 1974,
       "viewport": "phone",
       "alt": "The Access page on a phone: a one-use pairing code, its QR and the link to open it.",
-      "hash": "ad9dd14f9a5cbd40",
+      "hash": "1b8baf1c00fbd70a",
       "sha": "d1eb17731d3637f5",
       "bytes": 55968
     },
@@ -87,9 +87,9 @@
       "height": 1974,
       "viewport": "phone",
       "alt": "A session on a phone, waiting on an open question with 2 options and a recommendation.",
-      "hash": "2fee0fdedc9130ad",
-      "sha": "0de407735dc69908",
-      "bytes": 52550
+      "hash": "3aee5af0b9849939",
+      "sha": "98e7002e004e5172",
+      "bytes": 52436
     },
     "transcript": {
       "file": "transcript.webp",
@@ -97,9 +97,9 @@
       "height": 1520,
       "viewport": "compact",
       "alt": "A running turn: the user's message, a read, 2 edits with their line counts, a finished test run, and a follow-up typed into the Steer composer.",
-      "hash": "dfded4bb4a9b3a71",
-      "sha": "d0e384c4853a1289",
-      "bytes": 78518
+      "hash": "5692def737143562",
+      "sha": "02a9a4d7aaf92d5d",
+      "bytes": 78658
     }
   },
   "slots": {
@@ -113,5 +113,16 @@
     "feature.phone-access": "phone-access",
     "feature.phone-question": "phone-question",
     "feature.transcript": "transcript"
+  },
+  "video": {
+    "file": "/video/session-desk.mp4",
+    "width": 1280,
+    "height": 800,
+    "seconds": 19.4,
+    "bytes": 679193,
+    "sha": "859668347ca5a806",
+    "alt": "A session running in Sova: a request typed in, an alignment with one open question, the answer 1a, 3 workers started and followed in the workers pane, and the changes opened as steps.",
+    "poster": "hero-desk",
+    "hash": "c6da793e14fe9a92"
   }
 }

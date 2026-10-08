@@ -192,7 +192,7 @@ export const COUNTS: Record<string, PoLimitKind> = (() => {
 
 /** Where a build's branch stands, as the project page reads it from git. Pure. */
 export function buildState(w: CodingWorktree): string {
-  if (w.state === "root") return `in the project root${w.inRoot ? ` (${w.inRoot.replace(/\.$/, "")})` : ""}`;
+  if (w.state === "root") return `in the project root${w.inRoot ? ` (${w.inRoot.replace(/\.$/, "")})` : w.later ? " until it makes a worktree" : ""}`;
   const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
   const out = [
     w.merged

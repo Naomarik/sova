@@ -304,7 +304,7 @@ user row.
 
 - Reads: `sova_project` (level, roster, gathering sessions, decisions by state and area, open
   conflicts, spec status, its builds, its limits, and a Software block: the registry's standing in
-  words, each service as name · kind · scope · isolation with its live state, approval, proof, the
+  words, each service as name · kind · scope · isolation with its live state, proof, the
   drifted paths and the playbook run, §app.project-runtime/registry), `sova_decisions` (with who, their exact words and each
   decision's owner area), `sova_list_sessions` / `sova_read_session` (the project's gathering sessions as their
   participants see them; the project's coding sessions, every one its statecharts record, the
@@ -381,7 +381,7 @@ user row.
   act, which starts the Project verbs playbook (§app.project-runtime/onboard): counted and held like
   a coding session's start, and refused for an unattended overseer while the project's software is
   registered and current. The overseer may start it when the Software standing is unregistered,
-  stale or failed; below L3 it raises a card instead; it never approves a definition or merges.
+  stale or failed; below L3 it raises a card instead; it never merges.
   Operator turns only: `sova_todo`.
 - **Every start names its gap.** `sova_start_gathering` and `sova_offer` take a required `gap`: a
   `§gap/…` idea of the project (the session becomes that gap's, §app.project-overseer/gaps), or

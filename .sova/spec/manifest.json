@@ -11170,7 +11170,7 @@
       "evidence": "verified",
       "requires": [
         "§app.project-services/result",
-        "§app.project-services/trust",
+        "§app.project-services/conform",
         "§app.project-overseer/tools"
       ],
       "code": [
@@ -11198,7 +11198,9 @@
         "server/project-services/test-verb.integration.test.ts",
         "server/project-services/share.integration.test.ts",
         "server/project-services/on-merge.integration.test.ts",
-        "server/app.ts"
+        "server/app.ts",
+        "server/harness/pi/golden/session/S7-compact-manual.jsonl",
+        "server/harness/pi/golden/session/S8-compact-auto.jsonl"
       ]
     },
     "§app.project-services/conform": {
@@ -11227,8 +11229,6 @@
         "server/project-services/test-verb.test.ts",
         "server/project-services/test-verb.integration.test.ts",
         "server/project-services/conform-static-on-demand.integration.test.ts",
-        "server/project-services/confine.test.ts",
-        "server/project-services/confine.integration.test.ts",
         "server/project-services/conform-logs.test.ts",
         "server/project-services/conform-logs.integration.test.ts",
         "server/project-services/share.ts",
@@ -11236,10 +11236,9 @@
         "server/project-services/share.integration.test.ts",
         "server/project-services/conform-cleanup.test.ts",
         "server/project-services/conform-cleanup.integration.test.ts",
-        "server/project-services/confine.ts",
-        "server/project-services/netns-agent.mjs",
         "server/project-services/ports-grace.test.ts",
-        "server/project-services/ports-grace.integration.test.ts"
+        "server/project-services/ports-grace.integration.test.ts",
+        "server/project-services/def-hash.ts"
       ]
     },
     "§app.project-services/contract": {
@@ -11270,7 +11269,7 @@
         "§app.project-services/contract",
         "§app.project-services/instances",
         "§app.project-services/lock",
-        "§app.project-services/trust",
+        "§app.project-services/conform",
         "§app.project-services/result",
         "§app.project-overseer/coding-worktrees"
       ],
@@ -11288,7 +11287,7 @@
       "evidence": "reviewed",
       "requires": [
         "§app.project-services/contract",
-        "§app.project-services/trust",
+        "§app.project-services/conform",
         "§app.project-services/supervisor"
       ],
       "code": [
@@ -11499,28 +11498,6 @@
         "server/project-services/adopt.integration.test.ts"
       ]
     },
-    "§app.project-services/trust": {
-      "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "verified",
-      "requires": [
-        "§app.project-services/contract"
-      ],
-      "code": [
-        "server/project-services/trust.ts",
-        "server/project-services/routes.ts",
-        "server/project-services/engine.ts",
-        "server/project-services/engine.test.ts",
-        "server/project-services/engine.integration.test.ts",
-        "server/project-services/note.test.ts",
-        "server/project-services/note.integration.test.ts",
-        "server/project-services/observe.test.ts",
-        "shared/project-contract.ts",
-        "server/project-services/share.test.ts",
-        "server/project-services/share.integration.test.ts",
-        "shared/project-contract.test.ts"
-      ]
-    },
     "§app.project-services/up": {
       "kind": "behavior",
       "authority": "accepted",
@@ -11529,7 +11506,7 @@
         "§app.project-services/create",
         "§app.project-services/supervisor",
         "§app.project-services/lock",
-        "§app.project-services/trust"
+        "§app.project-services/conform"
       ],
       "code": [
         "server/project-services/engine.ts",
@@ -12693,21 +12670,6 @@
         "§mesh.peers/listener"
       ]
     },
-    "§app.project-runtime/approve": {
-      "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "statecharts/src/sova/statecharts/runtime.cljc",
-        "statecharts/src/sova/statecharts/rules/runtime.cljc",
-        "server/projects/runtime.ts",
-        "server/projects/runtime-routes.ts",
-        "server/projects/runtime.test.ts"
-      ],
-      "requires": [
-        "§app.project-services/trust"
-      ]
-    },
     "§app.project-runtime/onboard": {
       "kind": "behavior",
       "authority": "accepted",
@@ -12778,7 +12740,7 @@
         "shared/project-runtime.ts"
       ],
       "requires": [
-        "§app.project-services/trust",
+        "§app.project-services/conform",
         "§app.project-services/status-logs"
       ]
     },
@@ -12817,30 +12779,7 @@
         "server/projects/runtime.test.ts"
       ],
       "requires": [
-        "§app.project-services/conform",
-        "§app.project-services/trust"
-      ]
-    },
-    "§app.project-services/confined": {
-      "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "verified",
-      "requires": [
-        "§app.project-services/conform",
-        "§app.project-services/trust",
-        "§app.project-services/supervisor",
-        "§app.project-services/reconcile"
-      ],
-      "code": [
-        "server/project-services/confine.ts",
-        "server/project-services/netns-agent.mjs",
-        "server/project-services/conform.ts",
-        "server/project-services/engine.ts",
-        "server/project-services/store.ts",
-        "server/project-services/confine.test.ts",
-        "server/project-services/confine.integration.test.ts",
-        "server/port-owner.ts",
-        "server/port-owner.test.ts"
+        "§app.project-services/conform"
       ]
     },
     "§app.project-services/facts": {
@@ -12849,7 +12788,6 @@
       "evidence": "verified",
       "requires": [
         "§app.project-services/contract",
-        "§app.project-services/trust",
         "§app.project-services/conform"
       ],
       "code": [
@@ -13182,7 +13120,7 @@
         "§app.project-services/apply",
         "§app.project-services/callers",
         "§app.project-services/self-host",
-        "§app.project-services/trust"
+        "§app.project-services/conform"
       ],
       "authority": "accepted",
       "evidence": "verified",
@@ -13661,23 +13599,6 @@
         "server/claude-pool/agent.integration.test.ts"
       ]
     },
-    "§app.project-runtime/approve-merge": {
-      "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "server/projects/runtime.ts",
-        "server/projects/runtime-routes.ts",
-        "server/projects/playbook-review.integration.test.ts",
-        "src/lib/api.ts",
-        "src/components/PlaybookReview.tsx",
-        "src/components/ProjectSoftwareCard.tsx"
-      ],
-      "requires": [
-        "§app.project-runtime/approve",
-        "§app.project-overseer/coding-worktrees"
-      ]
-    },
     "§app.project-runtime/review": {
       "kind": "behavior",
       "authority": "accepted",
@@ -13740,7 +13661,9 @@
         "src/lib/project-software.ts",
         "src/lib/project-software.test.ts",
         "src/components/ProjectDeployPanel.tsx",
-        "src/lib/project-deploy.ts"
+        "src/lib/project-deploy.ts",
+        "server/project-services/deploy-recipe.ts",
+        "server/project-services/deploy-recipe.test.ts"
       ],
       "requires": [
         "§app.project-runtime/registry"
@@ -13814,13 +13737,13 @@
       "authority": "accepted",
       "evidence": "verified",
       "requires": [
-        "§app.project-services/deploy-trust"
+        "§app.project-services/deploy"
       ],
       "code": [
-        "server/project-services/deploy-trust.ts",
+        "server/project-services/deploy-recipe.ts",
         "server/project-services/deploy.ts",
-        "server/project-services/deploy-trust.test.ts",
-        "server/project-services/deploy-trust.integration.test.ts"
+        "server/project-services/deploy-recipe.test.ts",
+        "server/project-services/deploy-recipe.integration.test.ts"
       ]
     },
     "§app.project-services/deploy": {
@@ -13840,7 +13763,8 @@
         "server/project-services/engine.test.ts",
         "server/project-services/engine.integration.test.ts",
         "playbooks/project-verbs/scripts/project-verbs.mjs",
-        "playbooks/project-verbs/references/contract.md"
+        "playbooks/project-verbs/references/contract.md",
+        "server/project-services/def-hash.ts"
       ]
     },
     "§app.project-services/deploy-callers": {
@@ -13878,13 +13802,13 @@
       "evidence": "verified",
       "requires": [
         "§app.project-services/deploy",
-        "§app.project-services/deploy-trust",
         "§app.project-services/test"
       ],
       "code": [
         "server/project-services/deploy.ts",
         "server/project-services/deploy-run.test.ts",
-        "server/project-services/deploy-run.integration.test.ts"
+        "server/project-services/deploy-run.integration.test.ts",
+        "server/project-services/deploy-recipe.ts"
       ]
     },
     "§app.project-services/deploy-run": {
@@ -13919,24 +13843,6 @@
         "server/overseer.ts",
         "shared/protocol.ts",
         "server/project-services/routes.ts"
-      ]
-    },
-    "§app.project-services/deploy-trust": {
-      "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "verified",
-      "requires": [
-        "§app.project-services/deploy",
-        "§app.project-services/trust"
-      ],
-      "code": [
-        "server/project-services/deploy-trust.ts",
-        "server/project-services/deploy-trust.test.ts",
-        "server/project-services/deploy-trust.integration.test.ts",
-        "server/project-services/trust.ts",
-        "server/project-services/observe.ts",
-        "server/project-services/routes.ts",
-        "server/project-services/deploy.ts"
       ]
     },
     "§mesh.peers/grants": {
@@ -15739,6 +15645,23 @@
       "code": [
         "pi-config/extensions/usage-status/index.ts",
         "pi-config/extensions/usage-status/overlay.test.ts"
+      ]
+    },
+    "§app.project-runtime/merge": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/projects/runtime.ts",
+        "server/projects/runtime-routes.ts",
+        "server/projects/playbook-review.integration.test.ts",
+        "src/lib/api.ts",
+        "src/components/PlaybookReview.tsx",
+        "src/components/ProjectSoftwareCard.tsx"
+      ],
+      "requires": [
+        "§app.project-runtime/review",
+        "§app.project-overseer/coding-worktrees"
       ]
     }
   },

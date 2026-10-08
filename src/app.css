@@ -766,16 +766,19 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .profile-tile-off .profile-tile-label { color: var(--color-ink-muted); font-weight: var(--fw-regular); }
 .profile-tile-off .profile-tile-caption { color: var(--status-warn); }
 /* Phone-narrow (the picker's own box under 480px): one column of single-line cards, so more fit
-   above the fold. Icon, label, caption, chips and check share one 44px line; the caption
-   truncates first, and the label keeps up to 55% of the card before it does. */
+   above the fold. Icon, label, caption, chips and check share one 44px line (chips that don't fit
+   take a second); the caption truncates first, and the label keeps up to 65% of the card before
+   it does. */
 @container profile-picker (max-width: 479.98px) {
   .profile-grid { grid-template-columns: minmax(0, 1fr); gap: var(--space-1); }
-  .profile-tile { flex-direction: row; align-items: center; gap: var(--space-2); padding: var(--space-1) var(--space-3); }
+  .profile-tile { flex-direction: row; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); padding: var(--space-1) var(--space-3); }
   .profile-tile-head { display: contents; }
-  .profile-tile-label { flex: 0 0 auto; max-width: 55%; }
+  .profile-tile-label { flex: 0 0 auto; max-width: 65%; }
   .profile-tile-caption { flex: 1 1 0; min-width: 0; display: block; white-space: nowrap; text-overflow: ellipsis; }
-  .profile-tile-chips { flex: none; flex-wrap: nowrap; }
+  .profile-tile-chips { flex: 0 1 auto; max-width: 100%; }
   .profile-tile-check { order: 1; margin-left: auto; }
+  /* An off card's reason is the one caption that must be read: its own line, wrapping. */
+  .profile-tile-off .profile-tile-caption { order: 2; flex-basis: 100%; white-space: normal; padding-bottom: var(--space-1); }
 }
 .profile-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
 .profile-save {

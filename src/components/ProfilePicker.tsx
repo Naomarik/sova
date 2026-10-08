@@ -51,6 +51,8 @@ export function ProfilePicker(props: {
   const [saving, setSaving] = createSignal(false);
   const [saveName, setSaveName] = createSignal("");
   const [savingNow, setSavingNow] = createSignal(false);
+  /** Why the last save was refused, under the name field until the name changes. */
+  const [saveError, setSaveError] = createSignal<string | null>(null);
   const [pending, setPending] = createSignal<string | null>(null);
   const [alert, setAlert] = createSignal<{ label: string; running: { id: string; path: string; title: string } } | null>(null);
   /** An unapproved project profile that was picked: nothing changed yet (§chat.profiles/trust). */
@@ -128,13 +130,14 @@ export function ProfilePicker(props: {
     const name = saveName().trim();
     if (!name) return;
     setSavingNow(true);
+    setSaveError(null);
     try {
       mutate(await saveCurrentProfile(props.path, name));
       setSaving(false);
       setSaveName("");
       toast(`Saved ${name} to your profiles.`);
     } catch (err) {
-      toast(`Couldn't save ${name}. ${err instanceof Error ? err.message : String(err)}`);
+      setSaveError(`Couldn't save ${name}. ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setSavingNow(false);
     }
@@ -194,7 +197,7 @@ export function ProfilePicker(props: {
         <button type="button" class="button button-sm button-ghost" onClick={() => openSettings("profiles")}>
           Manage Profiles
         </button>
-        <button type="button" class="button button-sm button-ghost" aria-expanded={saving()} onClick={() => setSaving(!saving())}>
+        <button type="button" class="button button-sm button-ghost" aria-expanded={saving()} onClick={() => (setSaving(!saving()), setSaveError(null))}>
           Save Current As Profile
         </button>
         <Show when={pending()}>
@@ -214,14 +217,41 @@ export function ProfilePicker(props: {
         >
           <label class="field profile-save-field">
             <span class="field-label">Name</span>
-            <input class="input" type="text" maxLength={60} required value={saveName()} onInput={(e) => setSaveName(e.currentTarget.value)} ref={(el) => queueMicrotask(() => el.focus())} />
+            <input
+              class="input"
+              type="text"
+              maxLength={60}
+              required
+              value={saveName()}
+              aria-invalid={saveError() ? "true" : undefined}
+              aria-describedby={saveError() ? "profile-save-error" : undefined}
+              onInput={(e) => {
+                setSaveName(e.currentTarget.value);
+                setSaveError(null);
+              }}
+              ref={(el) => queueMicrotask(() => el.focus())}
+            />
             <span class="field-hint">Saves this session's model, effort and subagent profile to Yours. Nothing else changes.</span>
+            <Show when={saveError()}>
+              {(msg) => (
+                <span class="field-error" id="profile-save-error" role="alert">
+                  {msg()}
+                </span>
+              )}
+            </Show>
           </label>
           <div class="profile-alert-actions">
             <button type="submit" class="button button-sm button-primary" disabled={!saveName().trim() || savingNow()}>
               Save Profile
             </button>
-            <button type="button" class="button button-sm button-ghost" onClick={() => setSaving(false)}>
+            <button
+              type="button"
+              class="button button-sm button-ghost"
+              onClick={() => {
+                setSaving(false);
+                setSaveError(null);
+              }}
+            >
               Cancel
             </button>
           </div>

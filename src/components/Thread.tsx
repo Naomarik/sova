@@ -1480,6 +1480,24 @@ export function ThreadScroller(props: {
     setAway(null);
     toBottom();
   };
+  // A new session's empty state reads from its top (the title, then the profile cards), never its
+  // end, and follows nothing; the first row to land puts the view back to following the end.
+  createEffect(
+    on(
+      () => !!props.empty,
+      (empty, was) => {
+        if (empty)
+          queueMicrotask(() => {
+            if (!el || !props.empty) return;
+            follow = false;
+            el.scrollTop = 0;
+            scrolledTop = 0;
+            lastGap = el.scrollHeight - el.clientHeight;
+          });
+        else if (was) resumeFollowing();
+      },
+    ),
+  );
   /** Until then a jump's own smooth scroll is under way: its first frames are still near the
       bottom, and must not read as the user coming back to follow it. */
   let jumpingUntil = 0;

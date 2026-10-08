@@ -1802,6 +1802,7 @@
         "src/components/SessionSetup.tsx",
         "src/lib/setup-fold.ts",
         "src/app.css",
+        "src/design/base.css",
         "src/lib/profile-cards.test.ts"
       ]
     },

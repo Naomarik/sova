@@ -74,7 +74,8 @@ width, and it grows with the pane from unfolded up:
 `clamp(72ch, 100vw − --sidebar-width − --space-9 − 2 × --space-8, 110ch)`. That keeps 64px of
 margin on each side of the column until the 110ch cap (990px). The formula is under 72ch until
 the viewport reaches 1192px, so it grows without a jump. The banner, the composer
-(`.composer-inner`), the Current goal strip (§app/insights), and Jump to Latest follow the same token, so they stay
+(`.composer-inner`), the Current goal strip (§app/insights), Jump to Latest, and a new session's
+empty state (its profile cards and setup card) follow the same token, so they stay
 aligned with the column.
 
 | Viewport | Pane | `.transcript-inner` | Message cap | Composer |
@@ -1138,7 +1139,8 @@ main-pane rows.
   Repository group says "Couldn't read this session's repository. {message}". The message is the
   request's own: "The Sova server isn't reachable.", the server's error text, or the HTTP status
   line. The two fail independently, so one failure never hides the other group.
-- **Width.** The card is at most 560px wide and left-aligned inside the centred empty state. It is
+- **Width.** The card is at most `--measure` wide, the same column as the profile cards
+  above it, and left-aligned inside the centred empty state. It is
   its own inline-size container. Under 420px across, every row, the aggregate line and each
   group's total put their figures on their own line under the name, left-aligned, except a row
   with a switch (/setup-card-toggles): it stays one line, its name ellipsised, then ≈tokens, then

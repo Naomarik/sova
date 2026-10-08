@@ -418,6 +418,38 @@ tools away from the orchestrator.
   (§app.overseer/hosting), and a project's coding sessions never set or offer it
   (§app.project-overseer/coding-mode). A worker is never strict.
 
+## §chat.mode-menu/terminal — From a terminal
+
+In a pi terminal session the same per-session mode is switched with `/mode`, a palette category,
+shortcuts and launch flags. Sova's menu runs the same `/mode` handler
+(§chat.mode-menu/how-a-switch-reaches-the-chat), so a switch either way leaves the same marker.
+
+- **Bare `/mode`** opens the command palette (`ctrl+p`) at its **Mode** category: `normal` and
+  `delegate` (the current one checked; Enter switches and closes), one row per minor mode with its
+  description and an on/off marker (Enter toggles it and the palette stays open), **align: open
+  viewer**, and **save as default** last. Without a palette to open (outside the TUI, or the palette
+  extension not loaded) it shows the status and the usage line instead; it never toggles anything.
+- **`/mode normal`**, **`/mode delegate`** switch the major mode. **`/mode <minor>`** toggles that
+  minor mode and **`/mode <minor> on|off`** sets it; `/align on|off` does the same for align.
+- **`/mode status`** lists this session's mode, the default for new sessions, its subagent profile
+  and where that came from, the Delegate routing, the spec writer, strict, the minor modes, the
+  toggle shortcut, the alignments and the state file.
+- **`/mode default`** saves this session's mode, strict flag and minor modes as the default, the
+  only command that writes `mode.json`; **`/mode strict on|off`** (§chat.mode-menu/strict);
+  **`/mode subagents <id|off>`** pins this chat's subagent profile, by id or name; `/mode sync`
+  changes nothing visible (§chat.mode-menu/prompt-holds-across-turn-starters). Any other argument
+  is answered with the usage line.
+- **Shortcuts.** `alt+m` toggles normal and Delegate (`mode.json` `shortcut` changes the key, from
+  the next reload); `minorShortcuts` binds a key per minor mode (none by default); `alt+a`
+  (`viewerShortcut`) opens the alignments viewer.
+- **Launch flags.** `pi --major delegate` and `pi --minor align,spec` (`none` for no minor modes)
+  start a new session in that mode on top of the default and are written nowhere; a session's own
+  saved mode wins over them, and an unknown minor name is warned about.
+- **The status line** in the TUI's footer reads the mode, then in Delegate `fallback:<profiles>`,
+  `ask:<profiles>` and `strict`, then each minor mode on, then `writer:fallback` or `writer:ask`
+  while spec's writer is off its primary route: dim in normal with no minor mode, accent otherwise,
+  warning when a route has fallen back or has none.
+
 ## §chat.mode-menu/states — States
 
 What the trigger and the menu show in each state, from a mode not known yet to a failed save.

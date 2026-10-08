@@ -24,6 +24,7 @@ commands.
 | [align](/docs/modes/align/) | Minor | The agent agrees with you on what to build first, and records each agreement as an alignment you answer in chat. |
 | [spec](/docs/modes/spec/) | Minor | The agent reads the project's spec before coding, and proposes changes to it in drafts before promoting them. |
 | [vis](/docs/modes/vis/) | Minor | The agent can draw small diagrams and charts in its replies, which Sova renders itself. |
+| [codemode](/docs/modes/#codemode) | Minor | The agent can run a short script that calls its other tools, several at once, and filters their output. |
 
 [Subagent profiles](/docs/subagent-profiles/) hold the models every subagent uses: Delegate's
 workers, team members, the spec writer and the reviewer. Each chat picks one in its mode menu.

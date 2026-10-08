@@ -100,7 +100,7 @@
 .docs-table { overflow-x: auto; border: var(--stroke-thin) solid var(--color-border); border-radius: var(--r-md); }
 .docs-table table { width: 100%; border-collapse: collapse; font-size: 14.5px; line-height: 1.5; }
 .docs-table th, .docs-table td { padding: var(--space-2) var(--space-3); text-align: left; vertical-align: top; }
-.docs-table th { color: var(--color-ink); font-weight: var(--fw-semibold); background: var(--color-surface); white-space: nowrap; }
+.docs-table th { color: var(--color-ink); font-weight: var(--fw-semibold); background: var(--color-surface); }
 .docs-table tr + tr td, .docs-table thead + tbody tr td { border-top: var(--stroke-thin) solid var(--color-border); }
 .docs-table td { min-width: 12ch; }
 .docs-table td:first-child { min-width: 9ch; }

@@ -20,6 +20,7 @@ The **major mode** is one of two:
 | [align](/docs/modes/align/) | The agent agrees with you on what to build before building it, and records each agreement as an alignment. | No |
 | [spec](/docs/modes/spec/) | The agent works from the project's spec: it reads the claims a task touches, and proposes changes in drafts. | Yes |
 | [vis](/docs/modes/vis/) | The agent can draw small diagrams and charts in its replies. | No |
+| [codemode](#codemode) | The agent can run a short script that calls its other tools, several at once, and filters their output. | No |
 
 Both kinds are **per chat**. Each chat keeps its own modes, saved in that chat's session file, so
 they survive a reload or a server restart. Switching one chat never moves another chat or a
@@ -36,8 +37,9 @@ Press it to open the menu. It has three groups:
 - **Major mode**: normal and delegate, each with its one-line description. Picking one closes the
   menu. Delegate's row has a gear, **Configure Delegate**, that opens Settings → Subagents without
   switching anything, so you can set Delegate up before you turn it on.
-- **Minor modes**: one row per minor mode. Toggling one keeps the menu open, so you can set
-  several.
+- **Minor modes**: align, spec, vis and codemode, each with its description. Toggling one keeps
+  the menu open, so you can set several. Spec's row has a gear too, **Configure Spec**, that opens
+  its spec writer settings.
 - **Subagents**: one row, **Subagents · {profile}**, that opens the picker for this chat's
   [subagent profile](/docs/subagent-profiles/).
 
@@ -61,8 +63,8 @@ chat, and the chat's running workers keep running.
 Switching a minor mode in the middle of a chat doesn't rewrite the instructions the model already
 has. The change reaches the model as a hidden note with its next message, which you don't see in
 the transcript. This keeps the model provider's prompt cache, so a toggle doesn't re-send the whole
-conversation. Turning **align** or **vis** on or off does change the agent's tools: align adds its
-`align` tool, and vis adds two drawing tools.
+conversation. Turning **align**, **vis** or **codemode** on or off does change the agent's tools:
+align adds its `align` tool, vis its drawing tools, and codemode its `codemode` tool.
 
 Each switch is recorded in the session. It draws nothing in the thread, but it shows in the Session
 pane's Changes and as a marker on the Timeline.
@@ -86,17 +88,28 @@ switched keep their own modes.
 
 ## From the terminal
 
-The same switches work in pi's terminal UI, through the mode extension's `/mode` command:
+The same switches work in pi's terminal UI. Sova's menu runs the same `/mode` command, so a
+switch made either way is the same switch.
 
 | Command | What it does |
 |---|---|
-| `/mode default` | Save this session's modes as the default for new sessions |
-| `/mode strict on`, `/mode strict off` | Set this session's strict flag |
-| `/mode subagents <profile>`, `/mode subagents off` | Pick this session's subagent profile |
-| `/align`, `/align status`, `/align export [path]` | Open, list or export the alignments (see [Align](/docs/modes/align/)) |
+| `/mode` | Opens the command palette at its **Mode** category: the major modes, one row per minor mode, the alignment viewer, and save as default. It never switches anything by itself |
+| `/mode normal`, `/mode delegate` | Switch this session's major mode |
+| `/mode align`, `/mode vis on`, `/mode spec off` | Toggle a minor mode, or set it on or off |
+| `/mode status` | List this session's modes, the default, its subagent profile and routing, its spec writer and its alignments |
+| `/mode default` | Save this session's major mode, strict flag and minor modes as the default for new sessions |
+| `/mode strict on`, `/mode strict off` | Set this session's [strict](#strict) flag |
+| `/mode subagents <profile>`, `/mode subagents off` | Pick this session's subagent profile, by id or name |
+| `/align on`, `/align off` | Turn align on or off |
 
-A switch made in a terminal and one made in Sova are the same switch: Sova calls the mode
-extension's own `/mode` command.
+Shortcuts: `alt+m` switches between normal and Delegate, and `alt+a` opens the alignment viewer.
+You can change the first, and give each minor mode a key of its own, in `~/.pi/agent/mode.json`.
+
+To start a session in a mode without changing the default, launch pi with `pi --major delegate`
+or `pi --minor align,spec`. A session's own saved mode wins over these flags.
+
+The terminal's status line shows the mode, then `strict` when it's on in Delegate, then each
+minor mode that is on.
 
 ## What workers get
 
@@ -110,10 +123,43 @@ Of the minor modes, only those that are meant for workers reach them, and today 
   promotes. See [Spec](/docs/modes/spec/).
 - **align** doesn't: aligning is a conversation with you, and a worker doesn't have one.
 - **vis** doesn't: drawings are for you, and a worker's replies are read by its parent.
+- **codemode** doesn't: it changes the chat's own tools, and a worker's tools come from its brief.
 
 A worker gets the modes its parent has **when it starts**. A later switch in the chat doesn't reach
 a running worker; a resumed worker takes the parent's current modes. The worker's view in the
 Subagents pane shows what it was given as a small chip beside its status, such as `spec`.
+
+## codemode
+
+Codemode is a minor mode that gives the agent pi's `codemode` tool: a short JavaScript script
+that calls the chat's other tools, several at once, and filters their output before the agent
+reads it. The tool is the whole mode: there are no extra instructions, and turning it on or off
+only adds or removes the tool.
+
+- **What a script can call.** The chat's tools, except a few that only the agent may call
+  directly, because Sova reads their results back: the `align` tool, starting a worker or a
+  team, and sending to another session. A model call from a script goes through this device's
+  model policy, and counts as the chat's own usage.
+- **What you see.** The script's card shows the script (with **Copy Script**) and each call it
+  made with its status (Running, Done, Failed or Cancelled), live while it runs, then its output.
+- **Where.** Sova offers it in every ordinary chat, on pi models and Claude Code alike. The
+  Overseer doesn't load it. Workers never get it.
+
+A switch made during a turn applies when that turn ends.
+
+## strict
+
+Strict is a flag for Delegate. While a chat is in Delegate with strict on, the agent loses its
+`edit` and `write` tools. Only those two go: `bash`
+and every other tool stay, and the agent's instructions read the same either way.
+
+- It is **per session** and **off by default**. Set it in a terminal with `/mode strict on` or
+  `/mode strict off`.
+- The web mode menu shows it read-only in its foot, `strict: off` or `strict: on`. Save as default
+  saves it with the rest of the chat's modes.
+- In normal mode the flag is kept and does nothing. Switching to Delegate applies it.
+- Sova never sets it: a switch from the menu can't carry it, and project coding sessions never set
+  it. Workers are never strict.
 
 ## Sessions that choose their own mode
 

@@ -107,6 +107,12 @@ pane with their transcripts and their spend, but not running.
   type `/agent-resume <id>`. The worker keeps its id and its transcript, rejoins its team, and comes
   back idle: it waits for new work rather than finishing the interrupted turn.
 
+## Strict
+
+With the chat's **strict** flag on, Delegate also takes the agent's `edit` and `write` tools away;
+`bash` and every other tool stay. Set it in a terminal with `/mode strict on`; the mode menu shows
+it read-only. See [strict](/docs/modes/#strict).
+
 ## Where Delegate isn't available
 
 - **The Overseer** is always in normal mode.

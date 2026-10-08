@@ -11,8 +11,6 @@ import { conformer } from "./conform";
 import { DetachedDriver, SystemdDriver } from "./drivers";
 import { ProjectEngine, type Caller } from "./engine";
 import { readRegistry, sharedIdOf } from "./store";
-import { approve, defHashOf } from "./trust";
-import { parseDefinition } from "../../shared/project-contract";
 import { reservePorts } from "../test-ports";
 
 /**
@@ -70,8 +68,6 @@ before(async () => {
   git(["commit", "-q", "-m", "fixture"]);
   engine = new ProjectEngine({ driver: new DetachedDriver(3_000), pollMs: 100 });
   engine.conformer = conformer(engine);
-  const hash = defHashOf(parseDefinition(readFileSync(join(project, ".sova/project.json"), "utf8")));
-  approve(project, hash, hash);
   a = shaped(await engine.run("create", { project, branch: "sova/a" }, op));
   assert.equal(a.ok, true, JSON.stringify(a.error));
   assert.equal(a.steps.find((s) => s.id === "setup:mark")?.result, "done", "the real setup ran");
@@ -173,8 +169,6 @@ test("with no supervisor reachable, process verbs are unsupported and change not
   git(["init", "-q", "-b", "main"], site);
   git(["add", "-A"], site);
   git(["commit", "-q", "-m", "site"], site);
-  const h = defHashOf(parseDefinition(JSON.stringify(def)));
-  approve(site, h, h);
   const up = shaped(await bare.run("up", { project: site }, op));
   assert.equal(up.ok, true, JSON.stringify(up.error));
   assert.equal(await (await fetch(`http://127.0.0.1:${PORTS.site + 10}/`)).text(), "static");

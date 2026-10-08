@@ -2,13 +2,12 @@ import { createHash } from "node:crypto";
 import { CONTRACT_FILE, DefinitionError, parseDefinition, portsFor, type IsolationDecl, type ProjectDef, type ServiceDecl } from "../../shared/project-contract";
 import { readStamp, SUITE_VERSION, type Stamp } from "./conform";
 import { realGit } from "./engine";
-import { deployApprovalOf, deployHashOf } from "./deploy-trust";
-import { approve, defHashOf, readApprovals } from "./trust";
+import { defHashOf, deployHashOf } from "./def-hash";
 
 /**
  * What a project's software registry reads (§app.project-services/facts): main's definition at
- * HEAD (never the working tree, which may be dirty), its software, its `sources` at HEAD, this
- * host's approval and conformance stamps. Pure reads of git and Sova's state; the host turns them
+ * HEAD (never the working tree, which may be dirty), its software, its `sources` at HEAD, and this
+ * host's conformance stamps. Pure reads of git and Sova's state; the host turns them
  * into the `runtime/<p>` statechart's facts and compares what drifted.
  */
 
@@ -38,7 +37,6 @@ export interface ProofFact {
   hash: string;
   suite: number;
   pass: boolean;
-  confined: boolean;
   at: string;
   /** The report file. */
   report: string;
@@ -64,12 +62,8 @@ export interface RuntimeFacts {
   /** In declaration order. */
   data: DataFact[];
   sources: SourcesFact;
-  /** This host's approval of `def.hash`. */
-  approved: { hash: string; at: string } | null;
-  /** The newest unconfined conformance of `def.hash` with the current suite: only it can register. */
+  /** The newest conformance of `def.hash` with the current suite. */
   proof: ProofFact | null;
-  /** The newest confined one (before approval). */
-  confinedProof: ProofFact | null;
   suite: number;
 }
 
@@ -77,11 +71,10 @@ export interface BranchFacts {
   ref: string;
   commit: string | null;
   def: DefFact;
-  approved: boolean;
-  /** The newest confined conformance of the branch's definition with the current suite. */
+  /** The newest conformance of the branch's definition with the current suite. */
   proof: ProofFact | null;
-  /** Its deploy recipe's own hash and this host's approval of it (§app.project-services/deploy-trust); null when it declares none. */
-  deploy: { hash: string; approved: boolean } | null;
+  /** Its deploy recipe's own hash; null when it declares none. */
+  deploy: { hash: string } | null;
 }
 
 const kindOf = (s: ServiceDecl): SoftwareFact["kind"] => (s.static !== undefined ? "static" : s.container ? "container" : "process");
@@ -99,10 +92,10 @@ export function softwareOf(def: ProjectDef): SoftwareFact[] {
   }));
 }
 
-function proofOf(root: string, hash: string, confined: boolean): ProofFact | null {
-  const s = readStamp(root, hash, { confined });
+function proofOf(root: string, hash: string): ProofFact | null {
+  const s = readStamp(root, hash);
   if (!s || s.suiteVersion !== SUITE_VERSION) return null;
-  return { hash, suite: s.suiteVersion, pass: s.pass, confined, at: s.at, report: s.report, ...(s.failed ? { failed: s.failed } : {}), ...(s.memory ? { memory: s.memory } : {}) };
+  return { hash, suite: s.suiteVersion, pass: s.pass, at: s.at, report: s.report, ...(s.failed ? { failed: s.failed } : {}), ...(s.memory ? { memory: s.memory } : {}) };
 }
 
 /** The definition at `ref` of `root`: its commit, and the parsed definition or why not. */
@@ -140,7 +133,6 @@ export async function sourcesAt(root: string, commit: string | null, paths: stri
 export async function observeRuntime(root: string, git: Git = realGit): Promise<RuntimeFacts> {
   const { commit, def, fact } = await defAt(root, "HEAD", git);
   const hash = fact.state === "present" ? fact.hash : null;
-  const at = hash ? readApprovals()[root]?.[hash]?.at : undefined;
   return {
     v: 1,
     root,
@@ -149,14 +141,12 @@ export async function observeRuntime(root: string, git: Git = realGit): Promise<
     software: def ? softwareOf(def) : [],
     data: (def?.data ?? []).map((d) => ({ name: d.name, kind: d.kind, sensitive: d.sensitive === true })),
     sources: await sourcesAt(root, commit, def?.sources ?? [], git),
-    approved: hash && at ? { hash, at } : null,
-    proof: hash ? proofOf(root, hash, false) : null,
-    confinedProof: hash ? proofOf(root, hash, true) : null,
+    proof: hash ? proofOf(root, hash) : null,
     suite: SUITE_VERSION,
   };
 }
 
-/** A branch's definition at its tip (the Project verbs playbook's proposal): its hash, approval and confined proof. */
+/** A branch's definition at its tip (the Project verbs playbook's proposal): its hash and proof. */
 export async function branchFacts(root: string, ref: string, git: Git = realGit): Promise<BranchFacts> {
   const { commit, def, fact } = await defAt(root, ref, git);
   const hash = fact.state === "present" ? fact.hash : null;
@@ -165,20 +155,8 @@ export async function branchFacts(root: string, ref: string, git: Git = realGit)
     ref,
     commit,
     def: fact,
-    approved: !!hash && !!readApprovals()[root]?.[hash],
-    proof: hash ? proofOf(root, hash, true) : null,
-    deploy: dh ? { hash: dh, approved: !!deployApprovalOf(root, dh) } : null,
+    proof: hash ? proofOf(root, hash) : null,
+    deploy: dh ? { hash: dh } : null,
   };
 }
 
-/**
- * Approve the definition `seen` as it reads at `ref` (main's HEAD by default), never the working tree: refused
- * (trust.ts's sentence) when the definition there is no longer the hash shown, or when there is none.
- */
-export async function approveAtRef(root: string, seen: string, ref = "HEAD", git: Git = realGit): Promise<{ hash: string; commit: string }> {
-  const { commit, fact } = await defAt(root, ref, git);
-  if (fact.state === "absent" || !commit) throw new Error(`There is no ${CONTRACT_FILE} at ${ref} to approve.`);
-  if (fact.state === "invalid") throw new Error(`The definition at ${ref} is invalid: ${fact.error}`);
-  approve(root, seen, fact.hash);
-  return { hash: fact.hash, commit };
-}

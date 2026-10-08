@@ -18,7 +18,7 @@ const { FakeHost } = await import("./fake-host");
 const { ProjectEngine } = await import("./engine");
 type Caller = import("./engine").Caller;
 const { readRegistry, sharedIdOf } = await import("./store");
-const { approve, defHashOf } = await import("./trust");
+const { defHashOf } = await import("./def-hash");
 const links = await import("../preview-links");
 const { keptPreview } = await import("../preview-kept");
 const { sensitivePortRefusal } = await import("./sensitive");
@@ -56,11 +56,6 @@ const shaped = (r: VerbResult) => {
   return r;
 };
 const write = (def: unknown) => writeFileSync(join(project, ".sova", "project.json"), JSON.stringify(def, null, 2));
-const approveNow = (dir = project) => {
-  const h = defHashOf(parseDefinition(JSON.stringify(DEF)));
-  approve(dir, h, h);
-};
-
 before(() => {
   parent = realpathSync(mkdtempSync(join(tmpdir(), "sova-share-proj-")));
   project = join(parent, "demo");
@@ -71,7 +66,6 @@ before(() => {
   git(["init", "-q", "-b", "main"]);
   git(["add", "-A"]);
   git(["commit", "-q", "-m", "fixture"]);
-  approveNow();
 });
 
 after(async () => {
@@ -236,8 +230,6 @@ test("refused shares: unregistered, no share key, allow false, sensitive data, a
   ];
   for (const [def, re] of variants) {
     writeFileSync(join(c.checkout!, ".sova", "project.json"), JSON.stringify(def));
-    const h = defHashOf(parseDefinition(JSON.stringify(def)));
-    approve(project, h, h);
     const r = shaped(await ask());
     assert.equal(r.error?.code, "share-denied", String(re));
     assert.match(r.error!.message, re);

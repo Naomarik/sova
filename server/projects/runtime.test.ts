@@ -1,7 +1,6 @@
 // Run: pnpm exec tsx --test server/projects/runtime.test.ts. The software registry through its routes
-// (§app/project-runtime): a standalone project's runtime/<p>, read from main's HEAD; approval (the operator's
-// only, a stale hash refused); the automatic conformance (the engine's conform stubbed: its own suite is the
-// engine's tests); registration and drift. A throwaway PI_CODING_AGENT_DIR and repos in the OS temp dir.
+// (§app/project-runtime): a standalone project's runtime/<p>, read from main's HEAD; the automatic conformance
+// (the engine's conform stubbed: its own suite is the engine's tests); registration and drift. A throwaway PI_CODING_AGENT_DIR and repos in the OS temp dir.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
@@ -21,7 +20,7 @@ symlinkSync(resolve(import.meta.dirname, "..", "..", "pi-config", "extensions"),
 const { registerProjectRoutes } = await import("./routes");
 const { closeAllOrgHosts, hostOf } = await import("../org-engine");
 const { projectEngine } = await import("../project-services/routes");
-const { engineOf, operatorEnvelopeOf, runtimeSid } = await import("./spaces");
+const { engineOf, runtimeSid } = await import("./spaces");
 after(() => closeAllOrgHosts());
 
 // The automatic conformance: the engine's own run is its tests' (conform.ts); here it answers a pass or a failure.
@@ -46,7 +45,6 @@ engine.run = (async (verb: string, body: unknown, caller: never, opts?: never) =
       pass: conformAnswer.pass,
       checks: conformAnswer.failed ? [{ id: conformAnswer.failed.id, ok: false, detail: conformAnswer.failed.detail }] : [{ id: "ready", ok: true, detail: "" }],
       leaks: [],
-      confined: false,
       memory: { instances: [{ label: "A", peakBytes: 2_000_000, steadyBytes: 1_000_000, services: [{ name: "site", peakBytes: 2_000_000, steadyBytes: 1_000_000 }] }] },
     },
   } as never;
@@ -106,47 +104,23 @@ test("a new project is born with its registry: unregistered while main declares 
   const v = await read();
   assert.equal(v.standing, "unregistered");
   assert.equal(v.playbookState, "idle");
-  assert.equal(v.can.approve, null);
   assert.equal(v.can.onboard, true);
 });
 
-test("a definition on main waits for the operator's approval; only the operator approves, and only the hash shown", async () => {
+test("a definition on main conforms by itself, and a pass registers it with its memory", async () => {
   // A definition only in the working tree is not main's.
   writeFileSync(join(root, "dirty.txt"), "x");
   commit(root, { ".sova/project.json": definition(18731) }, "define the site");
-  const v = await read();
-  assert.equal(v.standing, "awaiting-approval");
-  assert.equal(v.def?.state, "present");
-  assert.equal(v.can.approve, v.def?.hash);
-  assert.deepEqual(v.services.map((s) => [s.name, s.kind, s.scope, s.isolation?.method, s.ports]), [["site", "static", "checkout", "ports", [{ name: "http", port: 18731 }]]]);
-  assert.ok(v.feed.some((f) => f.line === `The definition on main (${v.def!.hash!.replace(/^sha256:/, "").slice(0, 12)}) runs here once you approve it.`), JSON.stringify(v.feed));
-
-  const host = hostOf(engineOf(pid)!);
-  const overseer = await host.act(runtimeSid(pid), "runtime/approve", { hash: v.def!.hash }, { ...operatorEnvelopeOf(pid), by: "overseer", attended: true } as never);
-  assert.equal(overseer.taken, false);
-  assert.equal(overseer.refusal?.sentence, "Only the operator approves a definition.");
-  assert.equal(overseer.refusal?.status, 403);
-
-  const stale = await app.request(`/api/projects/${pid}/runtime/approve`, json("POST", { hash: "sha256:0000" }));
-  assert.equal(stale.status, 409);
-  assert.equal(((await stale.json()) as { error: string }).error, "The definition changed since it was shown: look again.");
-  assert.equal(conformCalls.length, 0, "nothing conforms before approval");
-});
-
-test("approval conforms main by itself, and a pass registers it with its memory", async () => {
-  const before = await read();
-  const ok = await app.request(`/api/projects/${pid}/runtime/approve`, json("POST", { hash: before.def!.hash }));
-  assert.equal(ok.status, 200);
   const v = await until("registered");
-  assert.equal(conformCalls.length, 1, "one unconfined conformance on main");
+  assert.equal(v.def?.state, "present");
+  assert.deepEqual(v.services.map((s) => [s.name, s.kind, s.scope, s.isolation?.method, s.ports]), [["site", "static", "checkout", "ports", [{ name: "http", port: 18731 }]]]);
+  assert.equal(conformCalls.length, 1, "one conformance on main");
   assert.deepEqual(conformCalls[0], { project: root });
-  assert.equal(v.registered?.hash, before.def!.hash);
+  assert.equal(v.registered?.hash, v.def!.hash);
   assert.equal(v.proof?.pass, true);
   assert.deepEqual(v.services[0]!.memory, { peakBytes: 2_000_000, steadyBytes: 1_000_000 });
-  assert.equal(v.can.approve, null, "nothing waits");
   const lines = v.feed.map((f) => f.line);
-  assert.ok(lines.includes(`You approved the definition ${before.def!.hash!.replace(/^sha256:/, "").slice(0, 12)} on this host.`), JSON.stringify(lines));
-  assert.ok(lines.includes("Conformance is running on main."));
+  assert.ok(lines.includes("Conformance is running on main."), JSON.stringify(lines));
   assert.ok(lines[0]!.startsWith("The project's software is registered: 1 service, proven at "), "newest first");
 });
 
@@ -159,19 +133,16 @@ test("a source changing on main is drift: stale, naming the path", async () => {
   assert.equal(conformCalls.length, 1, "drift conforms nothing by itself");
 });
 
-test("a new definition is approved and conformed afresh; a failure is failed, and approving again retries", async () => {
+test("a new definition conforms afresh; a failure is failed, and the next definition conforms again", async () => {
   conformAnswer = { pass: false, failed: { id: "ready", detail: "site never listened" } };
   commit(root, { ".sova/project.json": definition(18741) }, "move the port");
-  const v = await read();
-  assert.equal(v.standing, "awaiting-approval");
-  await app.request(`/api/projects/${pid}/runtime/approve`, json("POST", { hash: v.def!.hash }));
   const f = await until("failed");
   assert.equal(f.feed[0]!.line, "Conformance failed on main at ready: site never listened.");
-  assert.equal(f.can.approve, f.def!.hash, "approving again is offered");
+  assert.equal(conformCalls.length, 2);
   conformAnswer = { pass: true };
-  await app.request(`/api/projects/${pid}/runtime/approve`, json("POST", { hash: f.def!.hash }));
+  commit(root, { ".sova/project.json": definition(18751) }, "move the port again");
   const r = await until("registered");
-  assert.equal(r.registered?.hash, f.def!.hash);
+  assert.equal(r.registered?.hash, r.def!.hash);
   assert.equal(conformCalls.length, 3);
 });
 
@@ -181,7 +152,6 @@ test("an invalid definition on main is failed with the parser's error", async ()
   assert.equal(v.standing, "failed");
   assert.equal(v.def?.state, "invalid");
   assert.ok(v.feed[0]!.line.startsWith("The definition on main is invalid: "), v.feed[0]!.line);
-  assert.equal(v.can.approve, null, "an invalid definition can't be approved");
 });
 
 test("Run Playbook is refused for an archived project, and not offered", async () => {
@@ -209,12 +179,12 @@ test("the registry lists the definition's data resources, a production-derived o
   assert.deepEqual(v.data, [{ name: "db", kind: "dir", sensitive: true }, { name: "cache", kind: "dir", sensitive: false }]);
 });
 
-test("sova_project's Software block says what a proposed run's branch holds, by what its playbook approves", async () => {
+test("sova_project's Software block says what a proposed run's branch holds, by what its playbook proposes", async () => {
   const { softwareLines } = await import("./runtime");
-  const view = (approves: "definition" | "deploy", label: string, branch: string) =>
+  const view = (proposes: "definition" | "deploy", label: string, branch: string) =>
     ({
-      standing: "registered", playbookState: "proposed", def: null, services: [], orphans: [], drift: null, approved: null, proof: null,
-      playbook: { sessionId: "s1", playbookId: "p", label, approves, startedBy: "operator", startedAt: "", branch },
+      standing: "registered", playbookState: "proposed", def: null, services: [], orphans: [], drift: null, proof: null,
+      playbook: { sessionId: "s1", playbookId: "p", label, proposes, startedBy: "operator", startedAt: "", branch },
     }) as unknown as ProjectRuntimeView;
   const run = (v: ProjectRuntimeView) => softwareLines(v).find((l) => l.includes("playbook:"));
   assert.match(run(view("deploy", "Project deploy", "sova/d"))!, /^Project deploy playbook: proposes a deploy recipe on sova\/d \(/);

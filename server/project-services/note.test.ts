@@ -13,13 +13,13 @@ import { FakeHost } from "./fake-host";
 import { instanceNote, lastNoteDigest, NOTE_MESSAGE, noteDigest, registerInstanceNote, resultNote } from "./note";
 import { readRegistry } from "./store";
 import { renderResult } from "./tools";
-import { approve, defHashOf } from "./trust";
+import { defHashOf } from "./def-hash";
 
 /**
  * The instance note (§app.project-services/instance-note): rendered from the checkout's definition and the
  * registry, with no live state; delivered hidden at a turn's start only when it changed, again after a
  * compaction, and after single-instance results. Also the definition hash's treatment of `about`,
- * `start` and `test` (§app.project-services/trust), and the systemd memory peak (§app.project-services/test).
+ * `start` and `test` (§app.project-services/conform), and the systemd memory peak (§app.project-services/test).
  * On a host in memory (fake-host.ts); note.integration.test.ts starts a real static serve under the note.
  */
 
@@ -45,14 +45,11 @@ let checkout = "";
 let id = "";
 let engine: ProjectEngine;
 
-const define = (d: object, where = project, approveIt = true) => {
+const define = (d: object, where = project) => {
   // Never the real cwd: before `before` has set `project` it is "", and join("", ".sova", ...) is
   // the repository's own .sova/project.json.
   assert.ok(where.startsWith(realpathSync(tmpdir()) + "/"), `define() outside the temp dir: "${where}"`);
   writeFileSync(join(where, ".sova", "project.json"), JSON.stringify(d, null, 2));
-  if (!approveIt) return;
-  const hash = defHashOf(parseDefinition(JSON.stringify(d)));
-  approve(project, hash, hash);
 };
 
 before(async () => {
@@ -113,9 +110,9 @@ test("a worktree's note: its own ports beside the main checkout's, abouts, data 
   assert.equal(up.ok, true, up.error?.message);
   assert.equal(instanceNote((await engine.noteFacts(checkout))!, false), text);
 
-  // Unapproved, invalid.
-  define({ ...def(), slots: { cap: 3 } }, checkout, false);
-  assert.match(instanceNote((await engine.noteFacts(checkout))!, false), /Its definition is not approved on this host yet: the operator approves it before anything runs\./);
+  // Edited in the worktree: the note is the copy's as before, its first line unchanged; then invalid.
+  define({ ...def(), slots: { cap: 3 } }, checkout);
+  assert.equal(instanceNote((await engine.noteFacts(checkout))!, false).split("\n")[0], text.split("\n")[0]);
   writeFileSync(join(checkout, ".sova", "project.json"), "{ nope");
   assert.match(instanceNote((await engine.noteFacts(checkout))!, false), /^Sova instance note for .*: its \.sova\/project\.json is invalid \(\$: not JSON/);
   define(def(), checkout);
@@ -163,7 +160,7 @@ test("the hash leaves out about and the default start, and covers an on-demand s
   const h = (d: object) => defHashOf(parseDefinition(JSON.stringify(d)));
   const plain = { version: 1, services: { app: { cmd: ["a"] } } };
   assert.equal(h(plain), h({ version: 1, services: { app: { cmd: ["a"], start: "up" } } }), "start: up is the default");
-  assert.equal(h(plain), h({ version: 1, services: { app: { cmd: ["a"], about: "how to use it" } } }), "rewording about needs no approval");
+  assert.equal(h(plain), h({ version: 1, services: { app: { cmd: ["a"], about: "how to use it" } } }), "rewording about keeps the hash");
   assert.notEqual(h(plain), h({ version: 1, services: { app: { cmd: ["a"], start: "on-demand" } } }));
   assert.notEqual(h(plain), h({ ...plain, test: { run: ["t"], smoke: ["a"] } }));
   assert.notEqual(h({ ...plain, test: { run: ["t"], smoke: ["a"] } }), h({ ...plain, test: { run: ["t"], smoke: ["b"] } }));

@@ -33,9 +33,6 @@
    ["reconciler" ":running" [":reconcile/finished"] "[:failed]" 0] {"reconcile/conflict" true "reconcile/resolved" true "reconcile/drafted" :unless-auto-promoted}
    ["reconciler" ":running" [":reconcile/finished"] "[:idle]" 0] {"reconcile/conflict" true "reconcile/resolved" true "reconcile/drafted" :unless-auto-promoted}
    ["reconciler" ":running" [":reconcile/finished"] "[:running]" 0] {"reconcile/conflict" true "reconcile/resolved" true "reconcile/drafted" :unless-auto-promoted}
-   ["runtime" ":awaiting-approval" [] "[:failed]" 0] true
-   ["runtime" ":awaiting-approval" [] "[:registered]" 0] false
-   ["runtime" ":awaiting-approval" [] "[:stale]" 0] true
    ["runtime" ":conforming" [] "[:failed]" 0] true
    ["runtime" ":conforming" [] "[:registered]" 0] false
    ["runtime" ":conforming" [] "[:stale]" 0] true

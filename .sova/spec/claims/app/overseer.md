@@ -919,9 +919,9 @@ itself.
   question(s) in {al_N} {title}" (or "… in {m} alignments"): visible in the digest, never Needs you,
   a brief or a phone notification.
 - **Needs you, a proposed playbook run** (§app.project-runtime/review): `playbook-review` on the
-  run's session while a verb playbook's run is proposed, "{Title}: approve {hash12} and merge into
-  {target}" (or its approved and no-definition forms), dated by its last turn's end, carrying what
-  Approve & Merge needs (`playbook: {projectId, hash?, approved, branch, target}`).
+  run's session while a verb playbook's run is proposed, "{Title}: merge {hash12} into
+  {target}" (or its no-definition form), dated by its last turn's end, carrying what Merge Branch
+  needs (`playbook: {projectId, hash?, branch, target}`).
 - **Needs you, a deploy** (§app.project-services/deploy-status): items of no session, linking to the
   project's page: `deploy-failed`, one per deploy target whose latest deploy failed, failed its verify
   or was interrupted, "Deploy of {commit7} to {target} failed: {why}" (or "… ran, and its verify

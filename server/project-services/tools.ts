@@ -61,7 +61,7 @@ const OVERSEER_PARAMS = {
 } as const;
 
 const ONBOARD_HELP =
-  " onboard {why} starts the Project verbs playbook as a coding session on its own branch (counted and held like a coding session's start): it writes or updates .sova/project.json, proves it with a confined conform and proposes it; the operator approves and merges it, never you.";
+  " onboard {why} starts the Project verbs playbook as a coding session on its own branch (counted and held like a coding session's start): it writes or updates .sova/project.json, proves it with conform and proposes it on its branch; the operator merges it, never you.";
 
 /** The playbook's start for a verb tool (the Overseers'): the text the model reads and the details. */
 export type OnboardRun = (why: string, params: Record<string, unknown>) => Promise<{ text: string; details: Record<string, unknown> }>;
@@ -72,7 +72,7 @@ const VERB_HELP =
   "status, logs, doctor (preflight), reset (fresh data), teardown (the only destructive verb: stops, deletes its data, removes a worktree Sova cut; never the branch), conform (Sova's conformance suite in two scratch copies), " +
   "test (runs the project's test command in that instance, starting what it requires; tests {pass, passed, failed, failures…}; error tests-failed when it did not pass, unsupported when the project declares none). " +
   "share {instance, endpoint, days?} gives a running copy a preview link to one endpoint the definition lists in share.endpoints (never anything else; never a copy whose data is sensitive); the result names the link by its id, never its URL, which only the operator sees. revoke {link} or {instance, endpoint?} ends links at once (never held). Teardown ends every link of its copy, and down of a copy with an active link is the operator's (needs-confirm). " +
-  "A definition runs only once the operator approved its hash (error not-approved). Error busy: another verb is running on that instance; try again later. " +
+  "Error busy: another verb is running on that instance; try again later. " +
   "Deploy (a target of the definition's deploy section, never an instance): deploy.status {target?} (each target's standing, last deploy and history) and deploy.logs {target | deploy} read; deploy.check {ref?} proves a recipe offline (programs, host values, credentials by presence; runs nothing). " +
   "Shipping is the operator's alone: deploy.run and deploy.rollback answer forbidden to every tool; deploy.plan is the operator's (the global Overseer's in a turn the user started); to ask for a deploy, deploy.request {target, commit?, why} raises it for the operator.";
 

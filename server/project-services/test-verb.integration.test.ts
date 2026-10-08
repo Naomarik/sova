@@ -4,12 +4,11 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSy
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
-import { exitOf, httpStatusOf, isVerbResult, parseDefinition, type VerbResult } from "../../shared/project-contract";
+import { exitOf, httpStatusOf, isVerbResult, type VerbResult } from "../../shared/project-contract";
 import { conformer } from "./conform";
 import { DetachedDriver } from "./drivers";
 import { ProjectEngine, type Caller } from "./engine";
 import { conformDir, dataRootOf, readRegistry } from "./store";
-import { approve, defHashOf } from "./trust";
 import { reservePorts } from "../test-ports";
 
 /**
@@ -66,8 +65,6 @@ const define = (d: object, checkout = project) => {
   // the repository's own .sova/project.json (it once was, under a runner that didn't await `before`).
   assert.ok(checkout.startsWith(realpathSync(tmpdir()) + "/"), `define() outside the temp dir: "${checkout}"`);
   writeFileSync(join(checkout, ".sova", "project.json"), JSON.stringify(d, null, 2));
-  const hash = defHashOf(parseDefinition(JSON.stringify(d)));
-  approve(project, hash, hash);
 };
 const unitLive = async (id: string, svc: string) => ["active", "activating"].includes((await engine.driver.status(engine.unitOf(id, svc))).state);
 const svc = (r: VerbResult, name: string) => r.services.find((s) => s.name === name)!;

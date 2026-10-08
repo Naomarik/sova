@@ -187,13 +187,7 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   resolution of a session's sandbox policy from its agent dir, cwd, session id and tracked
   worktrees, which the extension's `snapshot()` also calls, and `readDenial`/`writeDenial`/
   `hiddenBelow`, so a linked session's file transfer is refused exactly where that session's own
-  tools would be), `server/project-services/confine.ts` imports `sandbox/backends/linux-bwrap.ts`,
-  `env.ts`, `proxy.ts`, `policy.ts` and `session-policy.ts` (builtins only: a confined conformance
-  run, §app.project-services/confined, holds its private network namespace in a bwrap anchor with
-  the policy's proxy, and wraps each unit in the bwrap view a sandboxed session there would get, so
-  an unapproved definition runs exactly as confined as the session that wrote it; the watcher does
-  not watch these, so an edit there reaches a running server only at its restart),
-  `server/transcript.ts` and `server/align-state.ts` import
+  tools would be), `server/transcript.ts` and `server/align-state.ts` import
   `pi-config/extensions/mode/align.ts` (builtins only: the `align` tool's details shape, its strict
   check `normalizeAlignDetails` and the one fold `foldAlignments` — the transcript's align row and
   the session list's `SessionSummary.align` read what the extension writes, with its own code),
@@ -393,7 +387,7 @@ Rules:
   refused. Never run the gate script against `sova-runtime.service` by hand, and never point a test
   at it: tests and gates use a stand-in unit.
 - On macOS the live server is the launchd agent `sova-runtime` (`~/Library/LaunchAgents/sova-runtime.plist`,
-  README's launchd example), and every rule above holds. Its restart is
+  the launchd example in docs/running-as-a-service.md), and every rule above holds. Its restart is
   `launchctl kickstart -k gui/$(id -u)/sova-runtime`, never run by hand from a hosted session: use the
   verb form (`sova-project apply --checkout ~/webapps/sova --confirm`; its gate runs detached from the server, waits the
   30 s itself and then kickstarts the agent) or ask the user. Its pid and state:
@@ -442,7 +436,7 @@ launcher):
   `systemctl --user daemon-reload`, then restart under the rules of **Live server restart** above
   (the gate, never `systemctl restart` from a hosted session). An agent never edits the unit.
 - **The live unit** (`sova-runtime.service`) runs `scripts/start-server.sh`, so it is on Bun.
-  README's "Run on Bun (or Node)" has the complete unit example (`%h` paths, the same ExecStartPre,
+  docs/running-as-a-service.md has the complete unit example (`%h` paths, the same ExecStartPre,
   PATH, Restart and TimeoutStopSec as the live unit) and the switch steps.
 - **Testing a server:** in a worktree, `pnpm run dev:hermetic` (Bun) or `SOVA_PORT=48xx pnpm run
   dev:hermetic`; check `curl -s 127.0.0.1:<port>/api/health`. On Node only when asked:

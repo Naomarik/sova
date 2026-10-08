@@ -5,9 +5,9 @@ import { buildSessionPath, readBuild, probeBuild, withWorktreePath } from "../bu
 import type { Envelope } from "../org-envelope";
 import { hostOf, isOrgHostOpen, onOrgChange, onOrgHostOpened, type Effect, type OrgHostApi } from "../org-engine";
 import { OrgError } from "../org-error";
-import { approveAtRef, branchFacts, observeRuntime, type BranchFacts, type ProofFact, type RuntimeFacts } from "../project-services/observe";
+import { branchFacts, observeRuntime, type BranchFacts, type ProofFact, type RuntimeFacts } from "../project-services/observe";
 import { onMergeNotes, startOnMergeTick, withOnMerge } from "../project-services/on-merge";
-import { approveDeployRecipe, deployNotes } from "../project-services/deploy";
+import { deployNotes } from "../project-services/deploy";
 import { projectEngine } from "../project-services/routes";
 import { mergeCodingWorktree, startOnboardSession, type StartedCoding } from "../project-overseer";
 import { projectRootOf } from "../project-root";
@@ -15,14 +15,14 @@ import { readWorktree } from "../project-worktrees";
 import { onboardStart } from "./onboard";
 import { branchReview, DEFAULT_PLAYBOOK_LABEL, memoryIn, playbookReviewOf, runLive } from "./playbook-review";
 import { runtimeFeed, type FeedRow } from "./runtime-feed";
-import { engineOf, engineOrThrow, listProjects, operatorEnvelopeOf, projectArchived, readProject, runtimeSid, type OperatorBy } from "./spaces";
+import { engineOf, engineOrThrow, listProjects, operatorEnvelopeOf, projectArchived, readProject, runtimeSid } from "./spaces";
 
 /**
  * The host side of the software registry (§app/project-runtime): `runtime/<p>`, a host-local project-layer
  * statechart. Here: starting it for every project as its engine opens, the facts it is told
- * (`runtime/observed`, from the engine's read of main's HEAD, sent only when they changed), its effects
- * (`approve`, `conform`), the page's read (the registry joined with the engine's live status and the feed),
- * the operator's approval and the Project verbs playbook's start (`verbs/onboard` on the project).
+ * (`runtime/observed`, from the engine's read of main's HEAD, sent only when they changed), its effect
+ * (`conform`), the page's read (the registry joined with the engine's live status and the feed),
+ * the merge of a proposed run and the Project verbs playbook's start (`verbs/onboard` on the project).
  */
 
 const SYSTEM = { by: "system" } as unknown as Envelope;
@@ -38,10 +38,10 @@ const iso = (v: unknown): string => (typeof v === "number" && Number.isFinite(v)
 
 // ---- the facts ------------------------------------------------------------------------------------------
 
-/** A proof as the statechart keeps it: its time in ms (the standing rule compares it with a re-approval's). */
+/** A proof as the statechart keeps it: its time in ms (the standing rule takes the newest). */
 function proofFact(p: ProofFact | null): Record<string, unknown> | null {
   if (!p) return null;
-  return { hash: p.hash, suite: p.suite, pass: p.pass, confined: p.confined, at: ms(p.at), ...(p.failed ? { failed: p.failed } : {}), ...(p.memory ? { memory: p.memory } : {}) };
+  return { hash: p.hash, suite: p.suite, pass: p.pass, at: ms(p.at), ...(p.failed ? { failed: p.failed } : {}), ...(p.memory ? { memory: p.memory } : {}) };
 }
 
 /** `runtime/observed`'s payload from the engine's read: lists, never path-keyed maps (keys are case-converted on the way in). */
@@ -52,15 +52,13 @@ export function observedPayload(f: RuntimeFacts): Record<string, unknown> {
     software: f.software.map((s) => ({ name: s.name, kind: s.kind, scope: s.scope, ports: s.ports, requires: s.requires, ...(s.isolation ? { isolation: s.isolation } : {}) })),
     data: f.data.map((r) => ({ name: r.name, kind: r.kind, sensitive: r.sensitive })),
     sources: { paths: f.sources.paths, files: f.sources.paths.map((path) => ({ path, sha: f.sources.files[path] ?? null })), fingerprint: f.sources.fingerprint },
-    approved: f.approved ? { hash: f.approved.hash, at: ms(f.approved.at) } : null,
     proof: proofFact(f.proof),
-    confinedProof: proofFact(f.confinedProof),
     suite: f.suite,
   };
 }
 
 export function branchPayload(b: BranchFacts): Record<string, unknown> {
-  return { ref: b.ref, commit: b.commit, def: b.def, approved: b.approved, proof: proofFact(b.proof), deploy: b.deploy };
+  return { ref: b.ref, commit: b.commit, def: b.def, proof: proofFact(b.proof), deploy: b.deploy };
 }
 
 /** The payload last sent per project (only a change is sent). */
@@ -148,13 +146,12 @@ async function startRegistries(host: OrgHostApi): Promise<void> {
 
 function conformResult(r: VerbResult, hash: string): Record<string, unknown> {
   const c = r.conform;
-  if (!c) return { hash, pass: false, confined: false, at: Date.now(), failed: { check: r.error?.step ?? "run", detail: r.error?.message ?? "Conformance did not run." } };
+  if (!c) return { hash, pass: false, at: Date.now(), failed: { check: r.error?.step ?? "run", detail: r.error?.message ?? "Conformance did not run." } };
   const bad = c.checks.find((x) => !x.ok);
   return {
     hash: c.defHash || hash,
     suite: c.suiteVersion,
     pass: c.pass,
-    confined: !!c.confined,
     at: Date.now(),
     ...(!c.pass ? { failed: { check: bad?.id ?? r.error?.step ?? "run", detail: bad?.detail ?? r.error?.message ?? "" } } : {}),
     ...(c.memory ? { memory: c.memory } : {}),
@@ -162,15 +159,7 @@ function conformResult(r: VerbResult, hash: string): Record<string, unknown> {
 }
 
 function registerRuntimeEffects(host: OrgHostApi): void {
-  // runtime: the operator's approval of a hash, at main's HEAD or the playbook's branch (a stale hash is refused).
-  host.effects.register("approve", async (e: Effect) => {
-    const projectId = str(host.data(e.sessionId)?.projectId);
-    const root = readProject(projectId).root;
-    const out = await approveAtRef(root, str(e.hash), str(e.ref) || "HEAD");
-    observeSoon(projectId);
-    return { hash: out.hash, commit: out.commit };
-  });
-  // runtime: entering conforming: the full, unconfined conformance on main (the approval is the authority).
+  // runtime: entering conforming: the full conformance on main.
   host.effects.register("conform", async (e: Effect) => {
     const projectId = str(host.data(e.sessionId)?.projectId);
     const root = readProject(projectId).root;
@@ -224,18 +213,16 @@ function proofView(v: unknown): RuntimeProof | null {
     hash: str(p.hash),
     suite: Number(p.suite) || 0,
     pass: p.pass === true,
-    confined: p.confined === true,
     at: iso(p.at),
     ...(p.failed ? { failed: { check: str(obj(p.failed).check), detail: str(obj(p.failed).detail) } } : {}),
     ...(p.memory ? { memory: p.memory as RuntimeProof["memory"] } : {}),
   };
 }
 
-/** The proof that counts for main's hash (the standing rule's: unconfined, current suite, newest). */
+/** The proof that counts for main's hash (the standing rule's: current suite, newest). */
 function countingProof(d: Record<string, unknown>): RuntimeProof | null {
   const hash = str(obj(d.def).hash);
-  const cleared = typeof d.clearedAt === "number" ? d.clearedAt : null;
-  const ok = (p: Record<string, unknown>) => p.hash === hash && p.suite === d.suite && p.confined !== true && (cleared === null || (Number(p.at) || 0) > cleared);
+  const ok = (p: Record<string, unknown>) => p.hash === hash && p.suite === d.suite;
   const c = [obj(d.proof), obj(d.conformResult)].filter(ok).sort((a, b) => (Number(a.at) || 0) - (Number(b.at) || 0));
   return proofView(c.at(-1));
 }
@@ -287,14 +274,14 @@ function playbookView(host: OrgHostApi, d: Record<string, unknown>): RuntimePlay
   const bf = obj(pb.branchFacts);
   const bdef = obj(bf.def);
   const path = buildSessionPath(str(pb.sessionId));
-  // A deploy-setup run proposes its deploy recipe: its own hash and approval (§app.project-runtime/verb-playbooks).
-  const deploy = pb.approves === "deploy" ? obj(bf.deploy) : null;
+  // A deploy-setup run proposes its deploy recipe, with a hash of its own (§app.project-runtime/verb-playbooks).
+  const deploy = pb.proposes === "deploy" ? obj(bf.deploy) : null;
   const build = obj(host.data(str(pb.sid)));
   return {
     sessionId: str(pb.sessionId),
     playbookId: str(pb.playbookId) || "project-verbs",
     label: str(pb.label) || DEFAULT_PLAYBOOK_LABEL,
-    approves: pb.approves === "deploy" ? "deploy" : "definition",
+    proposes: pb.proposes === "deploy" ? "deploy" : "definition",
     ...(d.playbookState === "waiting" && typeof pb.questions === "number" && pb.questions > 0 ? { questions: pb.questions } : {}),
     ...(path ? { path } : {}),
     ...(str(pb.title) ? { title: str(pb.title) } : str(host.data(str(pb.sid))?.title) ? { title: str(host.data(str(pb.sid))?.title) } : {}),
@@ -306,10 +293,10 @@ function playbookView(host: OrgHostApi, d: Record<string, unknown>): RuntimePlay
     ...(str(build.target) ? { target: str(build.target) } : {}),
     ...(deploy
       ? deploy.hash
-        ? { branchHash: str(deploy.hash), branchApproved: deploy.approved === true }
+        ? { branchHash: str(deploy.hash) }
         : {}
       : bdef.state === "present"
-        ? { branchHash: str(bdef.hash), branchApproved: bf.approved === true, branchProof: proofView(bf.proof) }
+        ? { branchHash: str(bdef.hash), branchProof: proofView(bf.proof) }
         : {}),
   };
 }
@@ -320,7 +307,7 @@ async function withRun(pb: RuntimePlaybook | null, state: string, root: string):
   const live = await runLive(pb.path);
   const review =
     state === "proposed" && pb.branch
-      ? await branchReview(root, pb.branch, pb.branchProof ?? null, pb.approves === "deploy").catch(() => undefined)
+      ? await branchReview(root, pb.branch, pb.branchProof ?? null, pb.proposes === "deploy").catch(() => undefined)
       : undefined;
   return { ...pb, ...(live ? { live } : {}), ...(review ? { review } : {}) };
 }
@@ -354,16 +341,12 @@ export async function readRuntime(projectId: string, opts: { observe?: boolean }
   const { services, orphans } = joinLive(Array.isArray(d.software) ? (d.software as Record<string, unknown>[]) : [], instances, proof);
   const def = obj(d.def);
   const reg = obj(d.registered);
-  const env = operatorEnvelopeOf(projectId);
-  const mainHash = def.state === "present" ? str(def.hash) : "";
-  const branchHash = str(obj(obj(obj(d.playbook).branchFacts).def).hash);
-  const approve = [mainHash, branchHash].find((h) => h && at.host.trial(at.sid, "runtime/approve", { hash: h }, env).taken) ?? null;
   const running = liveRun(at.host, d);
   const onboardWhy = running ? ALREADY_RUNNING(running) : projectArchived(projectId) ? `${readProject(projectId).name} is archived. Unarchive it first.` : undefined;
   const rows = at.host.log.rows({ session: at.sid }) as unknown as FeedRow[];
   return {
     projectId,
-    standing: ((["unregistered", "awaiting-approval", "conforming", "registered", "stale", "failed"] as const).find((s) => cfg.includes(s)) ?? "unregistered") as RuntimeStanding,
+    standing: ((["unregistered", "conforming", "registered", "stale", "failed"] as const).find((s) => cfg.includes(s)) ?? "unregistered") as RuntimeStanding,
     playbookState: LIVE_RUN.has(str(d.playbookState)) ? (d.playbookState as RuntimePlaybookState) : "idle",
     def: def.state ? { state: def.state as "absent" | "invalid" | "present", ...(def.hash ? { hash: str(def.hash) } : {}), ...(def.error ? { error: str(def.error) } : {}) } : null,
     commit: str(d.commit) || null,
@@ -373,14 +356,10 @@ export async function readRuntime(projectId: string, opts: { observe?: boolean }
     data: (Array.isArray(d.data) ? (d.data as Record<string, unknown>[]) : []).map((r) => ({ name: str(r.name), kind: r.kind === "hook" ? ("hook" as const) : ("dir" as const), sensitive: r.sensitive === true })),
     sources: Array.isArray(obj(d.sources).paths) ? (obj(d.sources).paths as string[]) : [],
     drift: cfg.includes("stale") && Array.isArray(obj(d.drift).paths) ? (obj(d.drift).paths as string[]) : null,
-    approved: obj(d.approved).hash ? { hash: str(obj(d.approved).hash), at: iso(obj(d.approved).at) } : null,
     proof,
-    confinedProof: proofView(d.confinedProof),
     registered: reg.hash ? { hash: str(reg.hash), suite: Number(reg.suite) || 0, commit: str(reg.commit) || null, at: iso(reg.at) } : null,
     playbook: await withRun(playbookView(at.host, d), String(d.playbookState), root),
     can: {
-      approve,
-      ...(approve && approve !== mainHash ? { approveBranch: str(obj(d.playbook).branch) } : {}),
       onboard: !onboardWhy,
       ...(onboardWhy ? { onboardWhy } : {}),
     },
@@ -390,7 +369,7 @@ export async function readRuntime(projectId: string, opts: { observe?: boolean }
 
 // ---- the operator's acts --------------------------------------------------------------------------------
 
-/** A refusal of a registry act, with its own status (403 for anyone but the operator). */
+/** A refusal of a registry act, with its own status. */
 export class RuntimeRefusal extends Error {
   constructor(
     message: string,
@@ -400,62 +379,34 @@ export class RuntimeRefusal extends Error {
   }
 }
 
-/** Approve `hash` (`runtime/approve`): the operator's only; the effect approves it on this host. */
-export async function approveRuntime(projectId: string, hash: string, by: OperatorBy = { kind: "operator" }): Promise<ProjectRuntimeView> {
-  const at = runtimeOf(projectId);
-  if (!at) throw new OrgError("This project's software registry is not open on this host.", 409);
-  const out = await at.host.act(at.sid, "runtime/approve", { hash }, operatorEnvelopeOf(projectId, by), { settle: true });
-  if (!out.taken) {
-    const r = out.refusal ?? { sentence: "That can't be done now." };
-    throw new RuntimeRefusal(r.sentence, r.status === 403 ? 403 : r.status === 400 ? 400 : 409);
-  }
-  const refused = str(at.host.data(at.sid)?.approveRefused);
-  if (refused) throw new RuntimeRefusal(refused, 409);
-  return readRuntime(projectId);
-}
-
-export const NO_RUN_PROPOSED = "No playbook run is waiting for approval.";
+export const NO_RUN_PROPOSED = "No playbook run is proposed.";
 const CHANGED_SINCE = "The definition changed since it was shown: look again.";
 const DEPLOY_CHANGED_SINCE = "The deploy recipe changed since it was shown: look again.";
 
-/** What Approve & Merge answers: the registry, read again; on a refused merge, the approval stands and `refused` says why. */
-export interface ApproveMergeOutcome {
+/** What Merge Branch answers: the registry, read again; on a refused merge, `refused` says why. */
+export interface MergeRunOutcome {
   view: ProjectRuntimeView;
-  approved: string;
   merged: boolean;
   refused?: string;
 }
 
 /**
- * Approve & Merge (§app.project-runtime/approve-merge): approve the proposed run's `hash` (skipped when already
- * approved; refused when it is no longer the one the branch proposes, or for anyone but the operator), then Merge
- * Branch on its session with every refusal of its own. A refused merge keeps the approval.
+ * Merge Branch on a proposed run (§app.project-runtime/merge): refused when `hash` is no longer the one its branch
+ * proposes, then Merge Branch on its session with every refusal of its own.
  */
-export async function approveMerge(projectId: string, hash: string, by: OperatorBy = { kind: "operator" }, ticked: readonly string[] = []): Promise<ApproveMergeOutcome> {
+export async function mergeRun(projectId: string, hash: string): Promise<MergeRunOutcome> {
   await readRuntime(projectId);
   const review = playbookReviewOf(projectId);
   if (!review) throw new RuntimeRefusal(NO_RUN_PROPOSED, 409);
   // Never main's hash by mistake: only the one the branch proposes now.
-  if (!review.hash || review.hash !== hash) throw new RuntimeRefusal(review.approves === "deploy" ? DEPLOY_CHANGED_SINCE : CHANGED_SINCE, 409);
-  if (!review.approved) {
-    if (review.approves === "definition") await approveRuntime(projectId, hash, by);
-    else {
-      // The deploy recipe: approved at the branch's tip only with every resolved step ticked (§app.project-services/deploy-trust).
-      if (by.kind !== "operator") throw new RuntimeRefusal("Only the operator approves a deploy recipe.", 403);
-      try {
-        await approveDeployRecipe(readProject(projectId).root, hash, review.branch, ticked);
-      } catch (err) {
-        throw new RuntimeRefusal(err instanceof Error ? err.message : String(err), 409);
-      }
-    }
-  }
+  if (!review.hash || review.hash !== hash) throw new RuntimeRefusal(review.proposes === "deploy" ? DEPLOY_CHANGED_SINCE : CHANGED_SINCE, 409);
   try {
     await mergeCodingWorktree(projectId, review.sessionId);
   } catch (err) {
     if (!(err instanceof OrgError)) throw err;
-    return { view: await readRuntime(projectId), approved: hash, merged: false, refused: err.message };
+    return { view: await readRuntime(projectId), merged: false, refused: err.message };
   }
-  return { view: await readRuntime(projectId), approved: hash, merged: true };
+  return { view: await readRuntime(projectId), merged: true };
 }
 
 /** What starting the playbook needs stamped on `verbs/onboard`: the host's refusal (its own, else a live run) and the standing. */
@@ -464,10 +415,10 @@ export async function onboardStamp(projectId: string, input: OnboardInput) {
   const at = runtimeOf(projectId);
   const d = at ? obj(at.host.data(at.sid)) : {};
   const running = at ? liveRun(at.host, d) : null;
-  const standing = at ? ((["unregistered", "awaiting-approval", "conforming", "registered", "stale", "failed"] as const).find((s) => (at.host.configuration(at.sid) ?? []).includes(s)) ?? null) : null;
+  const standing = at ? ((["unregistered", "conforming", "registered", "stale", "failed"] as const).find((s) => (at.host.configuration(at.sid) ?? []).includes(s)) ?? null) : null;
   const invalid = start.invalid || (running ? ALREADY_RUNNING(running) : "");
   // The verb playbook the run is keyed by (§app.project-runtime/verb-playbooks).
-  const who = { playbookId: start.playbookId, label: start.label, approves: start.approves };
+  const who = { playbookId: start.playbookId, label: start.label, proposes: start.proposes };
   return { start, extra: { ...who, ...(input.why?.trim() ? { why: input.why.trim() } : {}), ...(invalid ? { invalid, invalidStatus: 409 } : {}), ...(standing ? { runtimeStanding: standing } : {}) } };
 }
 
@@ -500,14 +451,13 @@ export async function projectByPath(path: string): Promise<string> {
 
 const STANDING_WORDS: Record<RuntimeStanding, string> = {
   unregistered: "Unregistered: main declares no software yet (.sova/project.json is missing).",
-  "awaiting-approval": "Awaiting approval: main's definition runs here once the operator approves it.",
   conforming: "Checking: conformance is running on main.",
   registered: "Registered and current.",
   stale: "Out of date: the stack changed since the software was registered.",
   failed: "Failed.",
 };
 
-/** sova_project's Software block: the standing in words, each service, approval, proof, drift and the playbook's run. */
+/** sova_project's Software block: the standing in words, each service, proof, drift and the playbook's run. */
 export function softwareLines(v: ProjectRuntimeView): string[] {
   const h = (x: string) => x.replace(/^sha256:/, "").slice(0, 12);
   const out = [`Standing: ${STANDING_WORDS[v.standing]}`];
@@ -516,13 +466,12 @@ export function softwareLines(v: ProjectRuntimeView): string[] {
   if (v.drift?.length) out.push(`Changed since registration: ${v.drift.join(", ")}`);
   for (const s of v.services) out.push(`- ${s.name} · ${s.kind} · ${s.scope}${s.isolation ? ` · ${s.isolation.method}` : ""}${s.live.length ? ` (running: ${s.live.map((l) => `${l.label} ${l.state}`).join(", ")})` : ""}`);
   for (const o of v.orphans) out.push(`- ${o.name}: still running in ${o.label} but no longer declared`);
-  if (v.approved) out.push(`Approved: ${h(v.approved.hash)} on this host.`);
   if (v.proof) out.push(`Proven: ${v.proof.pass ? "passed" : "failed"} at ${h(v.proof.hash)} (suite v${v.proof.suite}), ${v.proof.at}.`);
   if (v.playbook)
     out.push(
-      `${v.playbook.label} playbook: ${v.playbookState === "idle" ? `last run ${v.playbook.result ?? "ended"}` : v.playbookState === "proposed" ? `proposes ${v.playbook.approves === "deploy" ? "a deploy recipe" : "a definition"} on ${v.playbook.branch ?? "its branch"} (the operator approves and merges)` : v.playbookState === "waiting" ? "waits on the operator's answers to its open questions" : "running"} (session ${v.playbook.sessionId}, started by ${v.playbook.startedBy}).`,
+      `${v.playbook.label} playbook: ${v.playbookState === "idle" ? `last run ${v.playbook.result ?? "ended"}` : v.playbookState === "proposed" ? `proposes ${v.playbook.proposes === "deploy" ? "a deploy recipe" : "a definition"} on ${v.playbook.branch ?? "its branch"} (the operator merges it)` : v.playbookState === "waiting" ? "waits on the operator's answers to its open questions" : "running"} (session ${v.playbook.sessionId}, started by ${v.playbook.startedBy}).`,
     );
-  if (["unregistered", "stale", "failed"].includes(v.standing) && v.playbookState === "idle") out.push("At L3 you may start the playbook once: sova_project_verbs onboard {why}. Never approve or merge.");
+  if (["unregistered", "stale", "failed"].includes(v.standing) && v.playbookState === "idle") out.push("At L3 you may start the playbook once: sova_project_verbs onboard {why}. Never merge.");
   return out;
 }
 
@@ -531,7 +480,7 @@ export function onboardAnswer(made: StartedCoding): { text: string; details: Rec
   if (made.held) return { text: `Held: the Project verbs playbook waits until ${new Date(made.held.until).toISOString()} so the operator can cancel it; it goes ahead then unless cancelled.`, details: { held: made.held.id } };
   const where = made.worktree ? ` on the branch ${made.worktree.branch}` : "";
   return {
-    text: `Started the Project verbs playbook (coding session ${made.sessionId})${where}. It proposes a definition on its branch; the operator approves and merges it.${made.notPrompted ? ` ${made.notPrompted}` : ""}`,
+    text: `Started the Project verbs playbook (coding session ${made.sessionId})${where}. It proposes a definition on its branch; the operator merges it.${made.notPrompted ? ` ${made.notPrompted}` : ""}`,
     details: { onboard: { sessionId: made.sessionId, ...(made.worktree ? { branch: made.worktree.branch } : {}) } },
   };
 }

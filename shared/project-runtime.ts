@@ -6,7 +6,7 @@ import type { DeployReview } from "./project-contract";
  * from the engine's status at read time, never stored.
  */
 
-export type RuntimeStanding = "unregistered" | "awaiting-approval" | "conforming" | "registered" | "stale" | "failed";
+export type RuntimeStanding = "unregistered" | "conforming" | "registered" | "stale" | "failed";
 /** `waiting`: its last turn ended on open alignment questions, answered in its session (§app.project-runtime/onboard). */
 export type RuntimePlaybookState = "idle" | "running" | "waiting" | "proposed";
 
@@ -32,7 +32,7 @@ export interface RuntimeService {
   requires: string[];
   isolation?: { method: string; why: string };
   live: RuntimeServiceLive[];
-  /** The memory the last unconfined conformance measured (the larger of its two instances). */
+  /** The memory the last conformance measured (the larger of its two instances). */
   memory?: RuntimeMemory;
 }
 
@@ -55,7 +55,6 @@ export interface RuntimeProof {
   hash: string;
   suite: number;
   pass: boolean;
-  confined: boolean;
   at: string;
   failed?: { check: string; detail: string };
   /** Each scratch instance's memory and its services' (§app.project-services/conform). */
@@ -65,10 +64,10 @@ export interface RuntimeProof {
 export interface RuntimePlaybook {
   sessionId: string;
   /** The verb playbook the run is keyed by (§app.project-runtime/verb-playbooks), its title ("Project verbs"), which
-      every sentence about the run names it by, and what its proposal approves. */
+      every sentence about the run names it by, and what it proposes. */
   playbookId: string;
   label: string;
-  approves: "definition" | "deploy";
+  proposes: "definition" | "deploy";
   /** While waiting: the open alignment questions its session asks the operator. */
   questions?: number;
   /** Its session file on this host, when known (the card links it). */
@@ -84,7 +83,6 @@ export interface RuntimePlaybook {
   target?: string;
   /** The definition its branch proposes, while proposed. */
   branchHash?: string;
-  branchApproved?: boolean;
   branchProof?: RuntimeProof | null;
   /** While the run is live: its session as the session list reads it now (§app.project-runtime/run-progress). */
   live?: RuntimeRunLive;
@@ -100,7 +98,7 @@ export interface RuntimeRunLive {
   questions?: number;
 }
 
-/** The definition on a proposed run's branch at its tip, and the newest confined conformance of its hash. */
+/** The definition on a proposed run's branch at its tip, and the newest conformance of its hash. */
 export interface RuntimeRunReview {
   def: { state: "absent" | "invalid" | "present"; hash?: string; error?: string };
   services: (Omit<RuntimeService, "live" | "requires"> & { start: "up" | "on-demand" })[];
@@ -109,7 +107,7 @@ export interface RuntimeRunReview {
   share: { endpoints: string[]; allow: boolean } | null;
   open: { endpoint: string; path: string } | null;
   proof: RuntimeProof | null;
-  /** A deploy-setup run's recipe at the branch's tip, every step to tick before Approve & Merge (absent for a definition). */
+  /** A deploy-setup run's recipe at the branch's tip, as Sova renders it (absent for a definition). */
   deploy?: DeployReview;
 }
 
@@ -131,17 +129,12 @@ export interface ProjectRuntimeView {
   sources: string[];
   /** The changed source paths while stale. */
   drift: string[] | null;
-  approved: { hash: string; at: string } | null;
-  /** The unconfined proof that counts for main's hash. */
+  /** The proof that counts for main's hash. */
   proof: RuntimeProof | null;
-  confinedProof: RuntimeProof | null;
   registered: { hash: string; suite: number; commit: string | null; at: string } | null;
   playbook: RuntimePlaybook | null;
   /** What the operator may do now, as the statecharts would take it. */
   can: {
-    /** The hash Approve approves (main's, else the proposing branch's), or null. */
-    approve: string | null;
-    approveBranch?: string;
     onboard: boolean;
     /** Why Run Playbook is not offered (a run is live, archived, the host's refusal). */
     onboardWhy?: string;

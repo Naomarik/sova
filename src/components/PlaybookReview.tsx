@@ -1,18 +1,13 @@
 import { createSignal, Show } from "solid-js";
 import type { ProjectRuntimeView } from "../../shared/project-runtime";
 import { reviewAction, reviewBanner, type PlaybookReviewWords } from "../../shared/playbook-review";
-import { ApiError, approveMergeProjectRuntime } from "../lib/api";
+import { ApiError, mergeProjectRun } from "../lib/api";
 import { requestListRefresh } from "../lib/list-refresh";
 import { projectSessionHref } from "../lib/projects-route";
 import { announce, toast } from "../lib/ui-state";
 import { Banner } from "./ui";
 
 const errText = (err: unknown) => (err instanceof ApiError || err instanceof Error ? err.message : String(err));
-
-/** A deploy recipe is ticked step by step where its review is: the Software card. */
-export const TICK_ON_CARD = "Tick every step of the deploy recipe on the Software card first.";
-/** The Needs-you row has no room for the steps. */
-export const REVIEW_ON_PAGE = "Review the deploy recipe on the project page and tick every step first.";
 
 /** A proposed run's words from the registry the page reads, or null while nothing is proposed. */
 export function proposedRun(v: ProjectRuntimeView | undefined): (PlaybookReviewWords & { path?: string }) | null {
@@ -23,24 +18,18 @@ export function proposedRun(v: ProjectRuntimeView | undefined): (PlaybookReviewW
     branch: pb.branch ?? "its branch",
     target: pb.target ?? "main",
     ...(pb.branchHash ? { hash: pb.branchHash } : {}),
-    approved: pb.branchApproved === true,
-    approves: pb.approves,
+    proposes: pb.proposes,
     ...(pb.path ? { path: pb.path } : {}),
   };
 }
 
 /**
- * Approve & Merge (§app.project-runtime/approve-merge): one gesture that approves the hash the run proposes
- * (skipped once approved: the label is then Merge Branch) and merges its branch. A refusal is said under the
- * button; done, the list and digest are read again so the Needs-you item goes at once.
+ * Merge Branch (§app.project-runtime/merge): merges the branch of the run that proposes this hash. A refusal is
+ * said under the button; done, the list and digest are read again so the Needs-you item goes at once.
  */
-export function ApproveMergeButton(props: {
+export function MergeRunButton(props: {
   projectId: string;
-  run: Pick<PlaybookReviewWords, "hash" | "approved" | "target">;
-  /** A deploy recipe's ticked step keys, sent with the approval. */
-  ticked?: readonly string[];
-  /** Why it can't go yet (a deploy recipe with steps not ticked): disabled, with this as its reason. */
-  blocked?: string | null;
+  run: Pick<PlaybookReviewWords, "hash" | "target">;
   class?: string;
   onDone?(view?: ProjectRuntimeView): void;
 }) {
@@ -50,15 +39,10 @@ export function ApproveMergeButton(props: {
   const go = async () => {
     const hash = props.run.hash;
     if (busy() || !hash) return;
-    if (props.blocked && !props.run.approved) {
-      setError(props.blocked);
-      announce(props.blocked);
-      return;
-    }
     setBusy(true);
     setError(null);
     try {
-      const view = await approveMergeProjectRuntime(props.projectId, hash, props.ticked);
+      const view = await mergeProjectRun(props.projectId, hash);
       const done = `Merged into ${props.run.target}.`;
       toast(done);
       announce(done);
@@ -77,9 +61,7 @@ export function ApproveMergeButton(props: {
     <Show when={label()}>
       {(l) => (
         <span class="playbook-review-act">
-          <button type="button" class={`button button-sm button-primary${props.class ? ` ${props.class}` : ""}`} aria-disabled={busy() || (props.blocked && !props.run.approved) ? "true" : undefined}
-            title={props.blocked && !props.run.approved ? props.blocked : undefined}
-            onClick={() => void go()}
+          <button type="button" class={`button button-sm button-primary${props.class ? ` ${props.class}` : ""}`} aria-disabled={busy() ? "true" : undefined} onClick={() => void go()}
           >
             {l()}
           </button>
@@ -92,7 +74,7 @@ export function ApproveMergeButton(props: {
 
 /**
  * The project page's banner while a verb playbook run is proposed (§app.project-runtime/review): what it
- * proposes and what to do, Approve & Merge, and the run's session (its last message is the report).
+ * proposes and what to do, Merge Branch, and the run's session (its last message is the report).
  */
 export function PlaybookReviewBanner(props: { projectId: string; runtime: ProjectRuntimeView | undefined; onDone(view?: ProjectRuntimeView): void }) {
   return (
@@ -115,7 +97,7 @@ export function PlaybookReviewBanner(props: { projectId: string; runtime: Projec
                       </a>
                     )}
                   </Show>
-                  <ApproveMergeButton projectId={props.projectId} run={run()} blocked={run().approves === "deploy" ? TICK_ON_CARD : null} onDone={props.onDone} />
+                  <MergeRunButton projectId={props.projectId} run={run()} onDone={props.onDone} />
                 </span>
               }
             />

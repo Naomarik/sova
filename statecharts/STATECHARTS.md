@@ -32,7 +32,7 @@ routes read the engine). The event vocabulary is `EVENTS.md`.
 | reconciler | `reconciler.cljc` | portable | `reconciler/<org>/<p>` | ‹off·idle·debouncing·running·failed› (+ `:sova/reconcile`); decision index; promotion |
 | item | `item.cljc` | portable | `item/<org>/<p>/<g_id>` | lane × follow-up × attention × drive; sets of gatherings and builds; owned links |
 | build | `build.cljc` | portable | `build/<p>/<sid>` | setup × turn × tree × branch × merge |
-| runtime | `runtime.cljc` | host-local | `runtime/<p>` | project layer, no org: the software registry; standing ‹unregistered·awaiting-approval·conforming·registered·stale·failed› (`rules/runtime standing-of`) × playbook ‹idle·running·proposed›; approval (operator only), the automatic conform, drift |
+| runtime | `runtime.cljc` | host-local | `runtime/<p>` | project layer, no org: the software registry; standing ‹unregistered·conforming·registered·stale·failed› (`rules/runtime standing-of`) × playbook ‹idle·running·proposed›; the automatic conform, drift |
 
 Shared: `base.cljc` (event, time, ids, reasons and ledger sends, `relink`, `send-if`/`flush-transition`),
 `reasons.cljc` (typed reasons and today's sentences), `rules/*.cljc` (pure rules: `refusal`, `levels`

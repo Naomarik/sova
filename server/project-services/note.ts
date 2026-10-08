@@ -10,7 +10,7 @@ import type { ProjectEngine } from "./engine";
  * The instance note (§app.project-services/instance-note): what a coding session is told about each of
  * its own running copies, rendered from the checkout's definition and the registry. `instanceNote` is
  * pure; the engine gathers the facts (`ProjectEngine.noteFacts`). The text holds no live state, so it
- * changes only when a slot, port, data ref, `about`, the test command, the approval or the sandbox does.
+ * changes only when a slot, port, data ref, `about`, the test command or the sandbox does.
  */
 
 export const NOTE_MESSAGE = "sova-instance-note";
@@ -25,7 +25,6 @@ export type NoteFacts =
       project: string;
       instance: string;
       slot: number;
-      approved: boolean;
       ports: { key: string; port: number; main: number; url?: string; shared: boolean }[];
       services: { name: string; about?: string; onDemand: boolean }[];
       data: { name: string; ref: string }[];
@@ -37,8 +36,7 @@ export function instanceNote(f: NoteFacts, sandboxed: boolean): string {
   if (f.kind === "invalid") return `Sova instance note for ${f.checkout}: its .sova/project.json is invalid (${f.problem}); project_verbs doctor says more.`;
   if (f.kind === "no-instance") return `Sova instance note for ${f.checkout}: it has no running copy yet; project_verbs up gives it its own ports.`;
   const lines = [
-    `Sova instance note for ${f.checkout}${f.branch ? ` (branch ${f.branch})` : ""}: instance ${f.instance}, slot ${f.slot}, its own running copy of ${f.project}.` +
-      (f.approved ? "" : " Its definition is not approved on this host yet: the operator approves it before anything runs."),
+    `Sova instance note for ${f.checkout}${f.branch ? ` (branch ${f.branch})` : ""}: instance ${f.instance}, slot ${f.slot}, its own running copy of ${f.project}.`,
   ];
   if (f.ports.length) {
     lines.push("Ports, this instance's (the main checkout's in brackets):");

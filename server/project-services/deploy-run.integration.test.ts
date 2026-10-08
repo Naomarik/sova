@@ -5,13 +5,10 @@ import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
-import { parseDefinition } from "../../shared/project-contract";
-import { approveDeployRecipe, Deployer, deployLogFile, deployNotes, readPlan, readRecord } from "./deploy";
-import { deployReview } from "./deploy-trust";
+import { Deployer, deployLogFile, deployNotes, readPlan, readRecord } from "./deploy";
 import { DetachedDriver } from "./drivers";
 import { ProjectEngine, type Caller } from "./engine";
 import { hostVarsFile } from "./store";
-import { approve, defHashOf } from "./trust";
 
 /**
  * deploy.plan and deploy.run (§app.project-services/deploy-plan, /deploy-run) against a fake target: a
@@ -107,21 +104,13 @@ before(async () => {
   commitAll("v1");
   git(["remote", "add", "origin", join(parent, "remote.git")]);
   git(["push", "-q", "-u", "origin", "main"]);
-  const def = parseDefinition(JSON.stringify(DEF()));
-  approve(project, defHashOf(def), defHashOf(def));
   setHost();
   deployer = new Deployer(new ProjectEngine({ driver: new DetachedDriver() }), { watchMs: 50 });
-  await approveMain();
 });
 after(async () => {
   await new Promise((r) => server.close(r));
   rmSync(parent, { recursive: true, force: true });
 });
-
-async function approveMain(): Promise<void> {
-  const review = deployReview(project, parseDefinition(git(["show", "HEAD:.sova/project.json"])).deploy!, "main");
-  await approveDeployRecipe(project, review.deployHash, "HEAD", review.keys);
-}
 
 test("run: the operator's only, confirmed; ships the plan's commit to the fake target, verifies, redacts the secret", async () => {
   const head = git(["rev-parse", "HEAD"]);

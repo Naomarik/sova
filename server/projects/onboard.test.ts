@@ -9,7 +9,7 @@ import { listPlaybooks } from "../playbooks";
 import { NO_ONBOARD_MODEL, ONBOARD_MODELS, ONBOARD_PLAYBOOK_ID, onboardInvalid, onboardModel, onboardStartFrom, type OnboardFacts } from "./onboard";
 import { linkedPlaybook } from "../../shared/playbooks";
 
-const PLAYBOOK = { title: "Project verbs", dir: "/x/playbooks/project-verbs", body: "# Project verbs\n", approves: "definition" as const };
+const PLAYBOOK = { title: "Project verbs", dir: "/x/playbooks/project-verbs", body: "# Project verbs\n", proposes: "definition" as const };
 const facts = (over: Partial<OnboardFacts> = {}): OnboardFacts => ({ name: "Motors", root: "/w/motors", remote: null, rootExists: true, playbook: PLAYBOOK, ...over });
 
 test("the model: asked wins (medium unless given); else the catalog's current Opus, then gpt-6-astra, when the host lists it, at medium; never an unlisted ref", () => {
@@ -60,14 +60,14 @@ test("the shipped catalog lists project-verbs for any folder, with its PLAYBOOK.
   assert.equal(p.source, "sova");
   assert.equal(p.title, "Project verbs");
   assert.match(p.body, /At most 6 conform runs/);
-  assert.equal(p.approves, "definition", "a verb playbook: its frontmatter says what its proposal approves");
+  assert.equal(p.proposes, "definition", "a verb playbook: its frontmatter says what it proposes");
 });
 
-test("a run is keyed by its verb playbook: id, title, what it approves; a playbook without approves: is refused (§app.project-runtime/verb-playbooks)", () => {
+test("a run is keyed by its verb playbook: id, title, what it proposes; a playbook without proposes: is refused (§app.project-runtime/verb-playbooks)", () => {
   const s = onboardStartFrom(facts(), {}, ["claude-code-cli/claude-opus-5-5"]);
-  assert.deepEqual([s.playbookId, s.label, s.approves], ["project-verbs", "Project verbs", "definition"]);
-  const deploy = onboardStartFrom(facts({ playbookId: "project-deploy", playbook: { title: "Project deploy", dir: "/x/playbooks/project-deploy", body: "# d\n", approves: "deploy" } }), {}, ["claude-code-cli/claude-opus-5-5"]);
-  assert.deepEqual([deploy.playbookId, deploy.label, deploy.approves, deploy.title, deploy.invalid], ["project-deploy", "Project deploy", "deploy", "Project deploy: Motors", undefined]);
+  assert.deepEqual([s.playbookId, s.label, s.proposes], ["project-verbs", "Project verbs", "definition"]);
+  const deploy = onboardStartFrom(facts({ playbookId: "project-deploy", playbook: { title: "Project deploy", dir: "/x/playbooks/project-deploy", body: "# d\n", proposes: "deploy" } }), {}, ["claude-code-cli/claude-opus-5-5"]);
+  assert.deepEqual([deploy.playbookId, deploy.label, deploy.proposes, deploy.title, deploy.invalid], ["project-deploy", "Project deploy", "deploy", "Project deploy: Motors", undefined]);
   const plain = facts({ playbookId: "tidy", playbook: { title: "Tidy", dir: "/x/playbooks/tidy", body: "# t\n" } });
-  assert.equal(onboardInvalid(plain), "tidy is not a verb playbook: its PLAYBOOK.md says no approves:.");
+  assert.equal(onboardInvalid(plain), "tidy is not a verb playbook: its PLAYBOOK.md says no proposes:.");
 });

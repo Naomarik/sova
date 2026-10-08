@@ -11,28 +11,25 @@ export interface PlaybookReviewWords {
   target: string;
   /** The definition its branch proposes; absent when it has none, or an invalid one. */
   hash?: string;
-  approved: boolean;
-  /** What the proposal approves: a deploy-setup run's is its deploy recipe. */
-  approves?: "definition" | "deploy";
+  /** What the run proposes: a deploy-setup run's is its deploy recipe. */
+  proposes?: "definition" | "deploy";
 }
 
-const nothingValid = (r: PlaybookReviewWords) => (r.approves === "deploy" ? "no valid deploy recipe" : "no valid definition");
+const nothingValid = (r: PlaybookReviewWords) => (r.proposes === "deploy" ? "no valid deploy recipe" : "no valid definition");
 
 export const hash12 = (h: string): string => h.replace(/^sha256:/, "").slice(0, 12);
 
 /** The Needs-you item's sentence. */
 export function reviewDetail(r: PlaybookReviewWords): string {
   if (!r.hash) return `${r.label}: its branch ${r.branch} has ${nothingValid(r)}: read its report`;
-  if (r.approved) return `${r.label}: ${hash12(r.hash)} is approved: merge it into ${r.target}`;
-  return `${r.label}: approve ${hash12(r.hash)} and merge into ${r.target}`;
+  return `${r.label}: merge ${hash12(r.hash)} into ${r.target}`;
 }
 
 /** The banner: its title, and what to do. */
 export function reviewBanner(r: PlaybookReviewWords): { title: string; body: string } {
   if (!r.hash) return { title: `${r.label} proposes changes on ${r.branch}.`, body: `Its branch has ${nothingValid(r)}: read its report.` };
-  const title = `${r.label} proposes ${hash12(r.hash)} on ${r.branch}.`;
-  return { title, body: r.approved ? `It is approved: merge it into ${r.target}.` : `Approve it and merge it into ${r.target}.` };
+  return { title: `${r.label} proposes ${hash12(r.hash)} on ${r.branch}.`, body: `Read it, then merge it into ${r.target}.` };
 }
 
-/** The one button's label: Approve & Merge, Merge Branch once approved, none with nothing valid to approve. */
-export const reviewAction = (r: Pick<PlaybookReviewWords, "hash" | "approved">): string | null => (!r.hash ? null : r.approved ? "Merge Branch" : "Approve & Merge");
+/** The one button's label: Merge Branch, none with nothing valid to merge. */
+export const reviewAction = (r: Pick<PlaybookReviewWords, "hash">): string | null => (r.hash ? "Merge Branch" : null);

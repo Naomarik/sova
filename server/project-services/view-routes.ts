@@ -157,7 +157,7 @@ export function registerServicesViewRoutes(app: Hono<any>): void {
     handle(async (c) => {
       const projects = listProjects();
       const byRoot = new Map(projects.map((p) => [canonicalPath(p.root), p]));
-      const roots = [...new Set(readRegistry().instances.filter((i) => !i.confined).map((i) => i.project))];
+      const roots = [...new Set(readRegistry().instances.map((i) => i.project))];
       const out: RunningProject[] = [];
       for (const root of roots) {
         const p = byRoot.get(canonicalPath(root));

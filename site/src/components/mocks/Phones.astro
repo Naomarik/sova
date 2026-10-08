@@ -1,50 +1,47 @@
 ---
-// Two phones: the folded session list, and a notification on the lock screen.
+// Check in from your phone: the Access page's one-use pairing QR on the desk, and the phone it let
+// in, answering the question a session asked.
+import Frame from "../Frame.astro";
 import Icon from "../Icon.astro";
-import Mark from "../Mark.astro";
 import ContextRing from "../ContextRing.astro";
+import { encodeQr } from "../../../../src/lib/qr";
+import { repo } from "../../data/site";
+
+// A real QR, drawn by the app's own encoder. It points at the repository, not at a Sova.
+const q = encodeQr(repo);
+const size = q.matrix.length + 8;
+const path = q.matrix.flatMap((row, y) => row.flatMap((dark, x) => (dark ? [`M${x + 4},${y + 4}h1v1h-1z`] : []))).join("");
 ---
-<figure class="phones">
-  <div class="phone phone-lock" aria-hidden="true">
-    <div class="phone-screen">
-      <div class="phone-status"><span>Sat</span><span>84%</span></div>
-      <div class="phone-time">9:41</div>
-      <div class="phone-date">Saturday, September 26</div>
-      <div class="notif">
-        <Mark tile size={30} class="notif-icon" />
-        <div>
-          <div class="notif-top"><span>Sova</span><span>now</span></div>
-          <div class="notif-title">Needs input · Retry policy · claude-sonnet-5</div>
-          <div class="notif-body">Use ky's built-in retry, or write the loop by hand?</div>
-        </div>
-      </div>
-      <div class="notif">
-        <Mark tile size={30} class="notif-icon" />
-        <div>
-          <div class="notif-top"><span>Sova</span><span>6m ago</span></div>
-          <div class="notif-title">Error · Flaky upload test</div>
-          <div class="notif-body">The last turn stopped with an error.</div>
-        </div>
+<figure class="duo duo-pair">
+  <Frame path="access" class="m-frame duo-desk" caption="">
+    <div class="m-session m-access">
+      <header class="m-head"><span class="m-head-title">Access</span></header>
+      <div class="m-access-body">
+        <div class="m-access-title">Bring a device in</div>
+        <p class="m-ink2">The code expires in 5 minutes and works once.</p>
+        <svg class="m-qr" viewBox={`0 0 ${size} ${size}`} shape-rendering="crispEdges"><rect width={size} height={size} class="m-qr-bg" /><path d={path} class="m-qr-fg" /></svg>
+        <p class="m-muted">Scan with your phone's camera. Keep this QR and its link private.</p>
+        <div class="m-mono m-ink2">4:52 left</div>
       </div>
     </div>
-  </div>
-  <div class="phone" aria-hidden="true">
+  </Frame>
+  <div class="phone duo-phone" aria-hidden="true">
     <div class="phone-screen">
       <div class="phone-status"><span>9:42</span><span>84%</span></div>
-      <header class="m-head"><span class="m-head-title">Retry policy · sonnet-5</span><span class="m-head-end"><span class="chip chip-warn"><span class="chip-dot"></span>Input</span></span></header>
+      <header class="m-head"><span class="m-head-title">Upload metrics</span><span class="m-head-end"><span class="chip chip-warn"><span class="chip-dot"></span>Input</span></span></header>
       <div class="m-thread">
-        <div class="m-msg-user">Add retry with backoff to the upload client. Keep its public API as it is.</div>
-        <p class="m-msg">The client already depends on <code>ky</code>, which has its own retry option.</p>
+        <div class="m-msg-user">Count failed uploads per hour on the dashboard.</div>
+        <p class="m-msg">A retried upload can fail and then succeed. Counting each try would show errors the user never saw.</p>
         <div class="m-ask">
-          <div class="m-ask-q">Use ky's built-in retry, or write the loop by hand?</div>
-          <div class="m-ask-opts"><span class="m-btn">Use ky's Retry</span><span class="m-btn">Write the Loop</span></div>
+          <div class="m-ask-q">Count a retry as an error, or only the last failed try?</div>
+          <div class="m-ask-opts"><span class="m-btn">Every Try</span><span class="m-btn">Last Try Only</span></div>
         </div>
       </div>
       <div class="m-composer">
         <div class="m-composer-row"><span class="m-input">Enter a message</span><span class="m-btn m-btn-primary m-btn-off m-btn-icon"><Icon name="arrow-right" size={14} /></span></div>
-        <div class="m-composer-foot"><span class="m-mono">claude-sonnet-5</span><span class="m-end"><ContextRing pct={22} /></span></div>
+        <div class="m-composer-foot"><span class="m-mono">Sonnet 5.5</span><span class="m-end"><ContextRing pct={27} /></span></div>
       </div>
     </div>
   </div>
-  <figcaption class="visually-hidden">Two phones. One shows a lock screen with 2 Sova notifications: a session needs input, and another stopped with an error. The other shows that session open in Sova's folded layout, with the question and its 2 answers.</figcaption>
+  <figcaption class="visually-hidden">Sova's Access page on a desktop, showing a one-use pairing QR that expires in 5 minutes. Beside it, the phone that scanned it, in Sova's folded layout: a session asks whether to count a retry as an error, with its 2 answers as buttons.</figcaption>
 </figure>

@@ -1,48 +1,61 @@
 ---
-// The read-only changes viewer: what a merged worktree brought in, files on the left, one diff open.
+// The read-only changes viewer on a worktree: the agent's numbered steps on the left, each with
+// its why, then the files; one step open on the right with the hunks it placed.
 import Frame from "../Frame.astro";
 import Icon from "../Icon.astro";
 
+const steps = [
+  { n: 1, t: "Cap the delay at 30s", why: "Doubling from 500 ms passes a minute by the 8th try.", sel: true },
+  { n: 2, t: "Log each retry", why: "So a slow upload shows why in the debug log.", builds: 1 },
+  { n: 3, t: "Test the cap", why: "Pins the ceiling with a fake clock.", builds: 1 },
+];
 const files = [
-  { path: "src/upload/retry.ts", add: 3, del: 1, sel: true },
-  { path: "src/upload/client.ts", add: 12, del: 4 },
-  { path: "test/upload/retry.test.ts", add: 28, del: 0 },
+  { path: "retry.ts", add: 3, del: 1 },
+  { path: "client.ts", add: 12, del: 4 },
+  { path: "retry.test.ts", add: 28, del: 0 },
 ];
 ---
-<Frame path="demo-app · changes" class="m-frame" caption="The changes viewer for a merged worktree: 3 changed files with their line counts on the left, and one file's diff open on the right.">
+<Frame path="demo-app · changes" class="m-frame" caption="The changes viewer for a worktree: 3 numbered steps the agent wrote, each with a line on why, then the 3 changed files; step 1 is open, showing its why and the one hunk it placed.">
   <div class="m-workers">
     <div class="m-wlist">
-      <div class="m-group-label">Files <span class="m-sep">·</span> 3</div>
-      {files.map((f) => (
-        <div class:list={["m-wrow", f.sel && "m-wrow-sel"]}>
-          <Icon name="file" size={14} />
+      <div class="m-group-label">Steps <span class="m-sep">·</span> 3</div>
+      {steps.map((s) => (
+        <div class:list={["m-wrow", s.sel && "m-wrow-sel"]}>
+          <span class="m-step-n">{s.n}</span>
           <div class="m-row-main">
-            <div class="m-row-title"><span class="m-mono">{f.path.split("/").pop()}</span></div>
-            <div class="m-row-meta"><span class="m-add">+{f.add}</span><span class="m-del">−{f.del}</span></div>
+            <div class="m-row-title"><span>{s.t}</span></div>
+            <div class="m-step-why">{s.why}</div>
+            {s.builds && <div class="m-row-meta"><span>builds on {s.builds}</span></div>}
           </div>
         </div>
       ))}
+      <div class="m-group-label">Files <span class="m-sep">·</span> 3</div>
+      {files.map((f) => (
+        <div class="m-wt m-file"><Icon name="file" size={13} /><span>{f.path}</span><span class="m-add">+{f.add}</span><span class="m-del">−{f.del}</span></div>
+      ))}
       <div class="m-wtree">
-        <div class="m-wt"><Icon name="branch" size={13} /><span>feat/retry-backoff</span><span class="chip chip-success"><span class="chip-dot"></span>Merged</span></div>
+        <div class="m-wt"><Icon name="branch" size={13} /><span>feat/retry-backoff</span><span class="chip chip-info"><span class="chip-dot"></span>Active</span></div>
       </div>
     </div>
     <div class="m-wdetail m-session">
       <header class="m-head" style="height:44px">
-        <span class="m-head-title m-mono">src/upload/retry.ts</span>
+        <span class="m-step-n">1</span>
+        <span class="m-head-title">Cap the delay at 30s</span>
         <span class="m-head-end m-mono"><span class="m-add">+3</span>&nbsp;<span class="m-del">−1</span></span>
       </header>
       <div class="m-thread">
+        <p class="m-msg m-ink2"><span class="m-muted">Why</span> · Doubling from 500 ms passes a minute by the 8th try. Clamp it where the delay is computed, so every caller gets the cap.</p>
         <div class="m-tool">
+          <div class="m-tool-sum"><Icon name="file" size={12} /><span class="m-tool-name">src/upload/retry.ts</span></div>
           <div class="diff">
             <div class="diff-hunk">@@ -18,6 +18,8 @@ export async function backoff(n, err)</div>
             <div class="diff-line"><span class="diff-gutter">18</span><span>  if (isClientError(err)) throw err</span></div>
             <div class="diff-line diff-del"><span class="diff-gutter">19</span><span>  const ms = 500 * 2 ** (n - 1)</span></div>
             <div class="diff-line diff-add"><span class="diff-gutter">19</span><span>  const ms = Math.min(500 * 2 ** (n - 1), MAX_DELAY)</span></div>
-            <div class="diff-line diff-add"><span class="diff-gutter">20</span><span>  log.debug(`retry $&#123;n&#125; in $&#123;ms&#125;ms`, err)</span></div>
-            <div class="diff-line diff-add"><span class="diff-gutter">21</span><span>  </span></div>
-            <div class="diff-line"><span class="diff-gutter">22</span><span>  await sleep(ms)</span></div>
+            <div class="diff-line"><span class="diff-gutter">20</span><span>  await sleep(ms)</span></div>
           </div>
         </div>
+        <p class="m-muted" style="font-size:11.5px">Step 1 of 3 · Read only. Nothing here writes to your tree.</p>
       </div>
     </div>
   </div>

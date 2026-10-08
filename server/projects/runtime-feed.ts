@@ -1,7 +1,7 @@
 import type { RuntimeFeedLine } from "../../shared/project-runtime";
 
 /**
- * The registry's feed (§app.project-runtime/standing, /approve, /onboard): one line per move of `runtime/<p>`,
+ * The registry's feed (§app.project-runtime/standing, /onboard): one line per move of `runtime/<p>`,
  * read from its log rows. The standing moves by eventless transitions, so a line comes from the states a row
  * entered (before → after), and its details from the data the rows changed, followed oldest first. Pure.
  */
@@ -16,7 +16,7 @@ export interface FeedRow {
   refused?: string;
 }
 
-const STANDINGS = ["unregistered", "awaiting-approval", "conforming", "registered", "stale", "failed"] as const;
+const STANDINGS = ["unregistered", "conforming", "registered", "stale", "failed"] as const;
 const RUNS = ["idle", "running", "waiting", "proposed"] as const;
 
 const obj = (v: unknown): Record<string, unknown> => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
@@ -42,8 +42,8 @@ const shown = (m: Mirror): string => str(m.get("hash12")) || hash12(m.get("def",
 
 /** The run's playbook by its title (§app.project-runtime/verb-playbooks); a run recorded before it had one is Project verbs'. */
 const label = (m: Mirror): string => str(m.get("playbook", "label")) || "Project verbs";
-/** What a proposed run's branch holds, by what its playbook approves: a deploy-setup run's recipe, else a definition. */
-const proposal = (m: Mirror): string => (m.get("playbook", "approves") === "deploy" ? "a deploy recipe" : "a definition");
+/** What a proposed run's branch holds, by what its playbook proposes: a deploy-setup run's recipe, else a definition. */
+const proposal = (m: Mirror): string => (m.get("playbook", "proposes") === "deploy" ? "a deploy recipe" : "a definition");
 
 const entered = (r: FeedRow, s: string): boolean => r.after.includes(s) && !r.before.includes(s);
 
@@ -51,8 +51,6 @@ function standingLine(s: string, m: Mirror): string | null {
   switch (s) {
     case "unregistered":
       return "The project declares no software yet (.sova/project.json is missing on main).";
-    case "awaiting-approval":
-      return `The definition on main (${shown(m)}) runs here once you approve it.`;
     case "conforming":
       return "Conformance is running on main.";
     case "registered": {
@@ -80,7 +78,7 @@ function runLine(s: string, r: FeedRow, m: Mirror): string | null {
     case "waiting":
       return `The ${label(m)} playbook waits on your answers in its session.`;
     case "proposed":
-      return `The ${label(m)} playbook proposes ${proposal(m)} on ${str(m.get("playbook", "branch"))}: approve it, then merge.`;
+      return `The ${label(m)} playbook proposes ${proposal(m)} on ${str(m.get("playbook", "branch"))}: read it, then merge it.`;
     case "idle":
       switch (str(m.get("playbook", "result"))) {
         case "no-change":
@@ -106,7 +104,6 @@ export function runtimeFeed(rows: readonly FeedRow[], max = 20): RuntimeFeedLine
     m.take(r.changed ?? {});
     // the session's start enters its initial states: nothing has been read yet
     if (r.event === "sova/started") continue;
-    if (r.event === "effect/done" && Object.keys(r.changed ?? {}).some((k) => k === "approved-last" || k.startsWith("approved-last."))) out.push({ at: at(r.at), line: `You approved the definition ${str(m.get("approved-last", "hash12")) || hash12(m.get("approved-last", "hash"))} on this host.` });
     for (const s of STANDINGS) if (entered(r, s)) {
       const line = standingLine(s, m);
       if (line) out.push({ at: at(r.at), line });

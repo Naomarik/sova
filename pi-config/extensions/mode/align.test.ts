@@ -548,6 +548,7 @@ test("planSignal: catches a plan that asks the user to decide, and leaves report
 	].join("\n");
 	assert.equal(planSignal(freeform), "asks-decision");
 	assert.equal(planSignal(`${freeform}\n\nAlso changes: none`), "asks-decision", "the spec mode's last line is not the reply's end");
+	assert.equal(planSignal(`${freeform}\n\nAlso updates §chat.input/send: the new button`), "asks-decision", "nor is an Also updates line");
 	assert.equal(planSignal("## Alignment: Export\n### Findings\nx\n### Open questions\n- [ ] **1. Zip:** yes?"), "markdown-alignment");
 	assert.equal(planSignal("Options:\n- **Daily 6** — simple\n- **3 per run** — bursty\n\nWhich do you want: the daily 6 or 3 per run?"), "asks-decision");
 	assert.equal(planSignal("Here is the plan, and its open questions are in the doc:\n1. Add the route\n2. Stream it\n\nGo?"), "list-then-decision");

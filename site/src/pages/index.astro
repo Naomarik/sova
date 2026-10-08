@@ -6,6 +6,7 @@ import Mark from "../components/Mark.astro";
 import InstallBlock from "../components/InstallBlock.astro";
 import ThemeGrid from "../components/ThemeGrid.astro";
 import Devices from "../components/screens/Devices.astro";
+import FoldDevice from "../components/screens/FoldDevice.astro";
 import ScreenFrame from "../components/screens/ScreenFrame.astro";
 import Overseer from "../components/screens/Overseer.astro";
 import Phones from "../components/screens/Phones.astro";
@@ -93,6 +94,18 @@ const beyond = [
             <div class="fact"><dt class="fact-label">Open source</dt><dd class="fact-value">Apache-2.0</dd></div>
           </dl>
         </div>
+      </div>
+    </section>
+
+    <!-- OFF THE DESK -->
+    <section class="section" id="fold" aria-labelledby="fold-title">
+      <div class="wrap split">
+        <div class="section-head" style="margin-bottom:0">
+          <span class="eyebrow">Off the desk</span>
+          <h2 class="h-section" id="fold-title">Not chained to your desk.</h2>
+          <p class="lead">Sova is one web app at every width: pair your phone once by scanning a one-use QR code, install it to the Home Screen, and a session that needs you reaches your lock screen. Folded or open, the same session follows you.</p>
+        </div>
+        <FoldDevice />
       </div>
     </section>
 

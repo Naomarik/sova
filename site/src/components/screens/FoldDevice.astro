@@ -1,0 +1,36 @@
+---
+// "Off the desk": one foldable the visitor unfolds (Fold 8 shape: a flat slab, thin even bezel,
+// near-square corners). No script: a visually-hidden checkbox holds the state, and the slab and
+// the Unfold/Fold pill are both labels for it, so a tap, a click or Space on the focused
+// checkbox all toggle it. The right half of the open screen is a real 3D wing that turns about
+// the hinge (rotateY, transform-origin left); its outer face carries the folded cover screen,
+// and when closed it lands exactly over the slab's content box. Both screenshots are the real
+// captures (screens manifest), uncropped at both rest states: every measure derives from
+// --fd-w, the open slab's full width, capped by the column, so the widest state never
+// overflows. Reduced motion: the transition is removed, the state still swaps instantly.
+// Styles: mock.css, the FOLDDEV block.
+import Screen from "../Screen.astro";
+
+const foldSizes = "(min-width: 470px) 442px, calc(100vw - 42px)";
+const coverSizes = "(min-width: 470px) 207px, 45vw";
+---
+<div class="folddev">
+  <input type="checkbox" id="folddev-state" class="visually-hidden folddev-check" aria-label="Toggle between the folded and the unfolded device" />
+  <div class="folddev-stage">
+    <label class="folddev-book" for="folddev-state">
+      <span class="folddev-half"><Screen at="hero.fold" sizes={foldSizes} /></span>
+      <span class="folddev-wing">
+        {/* The open screen's right half: the same capture once more, shifted by one panel.
+            Decorative — the left half's alt already describes the whole screen. */}
+        <span class="folddev-face folddev-in" aria-hidden="true">
+          <Screen at="hero.fold" sizes={foldSizes} />
+          <span class="folddev-crease"></span>
+        </span>
+        <span class="folddev-face folddev-out">
+          <Screen at="hero.phone" sizes={coverSizes} />
+        </span>
+      </span>
+    </label>
+    <label class="folddev-action" for="folddev-state"><span class="folddev-verb"></span></label>
+  </div>
+</div>

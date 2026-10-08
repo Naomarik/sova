@@ -1,11 +1,10 @@
 ---
-// Hero: one Delegate session in three frames, captured from Sova on the screens story's demo data.
-// The desktop workspace (sidebar, chat, the session detail pane on its workers), an unfolded
-// foldable held landscape (sidebar left, chat right: Sova's two panes from 768px) and the folded
-// cover screen (the chat alone). When a session video is recorded, it plays over the desktop
-// still (muted, looping, no script); with reduced motion its source never matches and the still
-// shows. data/screens.ts offers the video only when its shape is the still's, so it fills the
-// same screen area exactly: never cropped, never letterboxed.
+// Hero: one Delegate session on a desktop, captured from Sova on the screens story's demo data
+// (sidebar, chat, the session detail pane on its workers). The session video plays over the
+// desktop still (muted, looping, no script); with reduced motion its source never matches and
+// the still shows. data/screens.ts offers the video only when its shape is the still's, so it
+// fills the same screen area exactly: never cropped, never letterboxed. The foldable pair moved
+// to its own section below the hero (FoldDevice.astro).
 import { getImage } from "astro:assets";
 import Frame from "../Frame.astro";
 import Screen from "../Screen.astro";
@@ -26,23 +25,5 @@ const poster = video ? await getImage({ src: video.posterShot.image, format: "we
       </div>
     </Frame>
     <figcaption class="dev-label">On your desk</figcaption>
-  </figure>
-
-  <figure class="dev dev-fold">
-    <div class="fold">
-      <div class="fold-screen screen-fill">
-        <Screen at="hero.fold" sizes="(min-width: 1120px) 424px, (max-width: 468px) 84vw, 400px" />
-      </div>
-    </div>
-    <figcaption class="dev-label">Unfolded</figcaption>
-  </figure>
-
-  <figure class="dev dev-phone">
-    <div class="phone hd-phone">
-      <div class="phone-screen screen-fill">
-        <Screen at="hero.phone" sizes="(min-width: 1120px) 208px, (max-width: 468px) 41vw, 196px" />
-      </div>
-    </div>
-    <figcaption class="dev-label">Folded</figcaption>
   </figure>
 </div>

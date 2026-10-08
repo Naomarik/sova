@@ -95,68 +95,109 @@
   .m-head-sub { display: none; }
 }
 
-/* ---- HERO DEVICES. One session on a desktop, an unfolded foldable and a folded phone. ------
-   Each screen takes its capture's own shape: the desktop 16:10, the unfolded foldable landscape
-   4:3, the folded cover screen portrait 10:16. No frame ever covers another's screen. From
-   1120px the desktop is the centrepiece with the two foldable frames as a pair below it;
-   narrower, they sit in a row that scrolls sideways, the folded one first on a phone. */
+/* ---- HERO DEVICE. One session on a desktop; the session video plays over the still. ---------
+   The screen takes its capture's 16:10 shape. The foldable pair became one device the visitor
+   folds and unfolds in its own section below the hero (FoldDevice.astro, the FOLDDEV block). */
 
-.devices { position: relative; }
-.dev { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 10px; min-width: 0; }
+.devices { position: relative; display: flex; justify-content: center; }
+.dev { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 10px; min-width: 0; max-width: 100%; }
 /* The frame fills its figure. Centred, it would shrink to its content, and its window's inline-size
    containment counts that content as 0 wide: the frame collapses to its 2 borders. */
 .dev > .frame { align-self: stretch; width: 100%; }
 .dev-label { font-family: var(--font-mono); font-size: 11px; letter-spacing: var(--ls-eyebrow); text-transform: uppercase; color: var(--color-ink-muted); }
+.dev-desk { width: min(920px, 100%); }
 
-/* The two foldable frames: the unfolded inner screen (landscape) and the folded cover screen
-   (portrait), drawn as the device is: a flat slab with a thin, even bezel and small, near-square
-   corners. Both share one outer height, --pair-h; each screenshot is set to that height less the
-   bezel and its width follows its own aspect, so the pair's tops, bottoms and captions line up
-   whatever the captures' shapes. Bezel and corners scale with the height. */
-.devices { --pair-h: min(300px, 64vw); }
-.dev-fold, .dev-phone { --bezel: calc(var(--pair-h) * .016); }
-.dev-fold .fold, .dev-phone .phone {
-  width: auto; padding: var(--bezel);
-  border-radius: calc(var(--pair-h) * .024);
+/* ---- FOLDDEV. One foldable the visitor unfolds, FoldDevice.astro, no script. -----------------
+   A visually-hidden checkbox holds the state; the slab and the Unfold/Fold pill are both labels
+   for it, so a tap, a click or Space on the focused checkbox all toggle it. The open screen's
+   right half is a real 3D wing turning about the hinge (rotateY, transform-origin at the hinge);
+   its outer face carries the folded cover screen and lands exactly over the slab's content box
+   when closed (translateZ(-.4px) keeps it a hair in front of the half beneath, coplanar). Every
+   measure derives from --fd-w, the open slab's full width, capped by its column, so the widest
+   state never overflows, at any width. Reduced motion: no transition, the state swaps at once. */
+
+.folddev {
+  --fd-bz: 5px; /* the bezel: thin and even all round */
+  --fd-w: min(452px, 100cqi);
+  --fd-h: calc((var(--fd-w) - 2 * var(--fd-bz)) * .75); /* the open screen is landscape 4:3 */
+  width: 100%; align-self: center;
+  /* The container, so --fd-w can cap the open slab's width by the column as a LENGTH (cqi), not
+     a %: a percentage would resolve against an indefinite height where --fd-w feeds heights. */
+  container: folddev / inline-size;
+}
+.folddev-stage { display: flex; flex-direction: column; align-items: center; gap: var(--space-4); }
+/* The slab itself: flat, near-square corners with a very subtle radius. When closed, the wing
+   covers it whole, so its shell is the device's shell in both states. */
+.folddev-book {
+  display: block; position: relative; cursor: pointer; -webkit-tap-highlight-color: transparent;
+  width: calc(var(--fd-h) * .625 + 2 * var(--fd-bz)); /* folded: the cover screen is portrait 10:16 */
+  height: calc(var(--fd-h) + 2 * var(--fd-bz));
+  border-radius: calc(var(--fd-h) * .024);
   background: #0d0d10;
-  border: var(--stroke-thin) solid var(--color-border-strong);
-  box-shadow: var(--shadow-3);
+  box-shadow: var(--shadow-2), inset 0 0 0 var(--stroke-thin) var(--color-border-strong);
+  overflow: hidden;
+  perspective: 1600px;
+  transition: width .64s var(--ease-standard), box-shadow .64s var(--ease-standard);
 }
-.dev-fold .fold-screen, .dev-phone .phone-screen {
-  position: relative; overflow: hidden; background: var(--color-bg);
-  border-radius: calc(var(--pair-h) * .01);
-  /* .phone-screen sizes its contents by its own width elsewhere; here the width comes from the image. */
-  container-type: normal; display: block;
+/* The under-layer carries the whole open screenshot across the slab; closed, the wing covers
+   it, and inset at both sides it never pokes past the bezel. */
+.folddev-half {
+  display: block; position: absolute; top: var(--fd-bz); left: var(--fd-bz); right: var(--fd-bz);
+  height: var(--fd-h);
+  overflow: hidden; border-radius: calc(var(--fd-h) * .01);
 }
-.dev-fold .screen-img, .dev-phone .screen-img { height: calc(var(--pair-h) - 2 * var(--bezel) - 2 * var(--stroke-thin)); width: auto; max-width: none; }
-
-/* Narrow: a row that scrolls sideways, inside its own box (the page never scrolls sideways). */
-.devices {
-  display: flex; align-items: flex-end; gap: clamp(20px, 3vw, 32px);
-  overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: thin;
-  padding: 4px var(--gutter) 20px; margin: 0 calc(var(--gutter) * -1);
+.folddev-half picture, .folddev-in picture { display: block; width: calc(var(--fd-h) * 4 / 3); height: var(--fd-h); }
+.folddev-in picture { position: absolute; top: 0; right: 0; } /* the same capture, its right half */
+.folddev-half .screen-img, .folddev-in .screen-img { width: 100%; height: 100%; max-width: none; }
+/* The wing: the right half of the open screen inside, the cover screen outside. Folded out it is
+   rotateY(180): swung over the left half, outer face to you; its left edge sits on the closed
+   slab's right edge, so the turn ends exactly over the content box. */
+.folddev-wing {
+  display: block; position: absolute; top: var(--fd-bz);
+  left: calc(var(--fd-bz) + var(--fd-h) * .625);
+  width: calc(var(--fd-h) * .625); height: var(--fd-h);
+  transform: rotateY(180deg) translateZ(-.4px);
+  transform-origin: left center;
+  transform-style: preserve-3d;
+  transition: transform .64s var(--ease-standard), left .64s var(--ease-standard), width .64s var(--ease-standard);
 }
-.dev { flex: none; scroll-snap-align: center; }
-.dev-desk { width: 920px; }
-@media (max-width: 767px) {
-  .dev-phone { order: -2; }
-  .dev-fold { order: -1; }
+.folddev-face {
+  display: block; position: absolute; inset: 0; overflow: hidden;
+  border-radius: calc(var(--fd-h) * .01);
+  background: var(--color-bg);
+  backface-visibility: hidden;
 }
-
-/* Wide: the desktop large and centred; under it the two foldable frames as one pair, centred on
-   the desktop, a fixed gap apart, bottoms on one baseline. Nothing covers the desktop's screen,
-   where the session video plays. At full size the pair spans about 65% of the desktop. */
-@media (min-width: 1120px) {
-  /* A wrapping row, not a grid: the desktop takes the whole first line, so it never widens the
-     pair's columns, and the pair sits centred on the second line exactly 32px apart. */
-  .devices {
-    --pair-h: clamp(260px, 26vw, 321px);
-    display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-end;
-    gap: 32px; overflow: visible; padding: 0; margin: 0;
-  }
-  .dev { scroll-snap-align: none; }
-  .dev-desk { flex: 0 0 100%; width: auto; }
-  .dev-desk > .frame { align-self: center; width: min(88%, 1040px); }
+.folddev-out { transform: rotateY(180deg); }
+.folddev-out .screen-img { position: absolute; inset: 0; width: 100%; height: 100%; max-width: none; }
+/* The crease along the hinge, only once open. */
+.folddev-crease {
+  position: absolute; top: 0; bottom: 0; left: 0; width: 2px;
+  background: linear-gradient(90deg, rgb(0 0 0 / .3), transparent);
+  opacity: 0; transition: opacity .64s linear;
+}
+/* Open. */
+.folddev-check:checked ~ .folddev-stage .folddev-book { width: var(--fd-w); box-shadow: var(--shadow-3), inset 0 0 0 var(--stroke-thin) var(--color-border-strong); }
+.folddev-check:checked ~ .folddev-stage .folddev-wing { transform: rotateY(0deg); left: calc(var(--fd-bz) + var(--fd-h) / 1.5); width: calc(var(--fd-h) / 1.5); }
+.folddev-check:checked ~ .folddev-stage .folddev-crease { opacity: 1; }
+/* The affordance under the slab, its verb following the state. */
+.folddev-action {
+  display: inline-flex; align-items: center; gap: 8px;
+  height: 30px; padding: 0 14px;
+  border-radius: var(--r-full);
+  border: var(--stroke-icon) solid var(--color-border-strong);
+  background: var(--color-surface); color: var(--color-ink-2);
+  font-size: 12.5px; font-weight: var(--fw-medium);
+  cursor: pointer; user-select: none;
+  transition: color .2s, border-color .2s;
+}
+.folddev-action:hover { color: var(--color-ink); border-color: var(--color-accent); }
+.folddev-verb::after { content: "Unfold"; }
+.folddev-check:checked ~ .folddev-stage .folddev-verb::after { content: "Fold"; }
+/* The hidden checkbox is the focusable control; focus shows on the slab and the pill. */
+.folddev-check:focus-visible ~ .folddev-stage :is(.folddev-book, .folddev-action) { outline: var(--focus-ring); outline-offset: 4px; border-radius: calc(var(--fd-h) * .024); }
+.folddev-check:focus-visible ~ .folddev-stage .folddev-action { border-radius: var(--r-full); }
+@media (prefers-reduced-motion: reduce) {
+  .folddev-book, .folddev-wing, .folddev-crease { transition: none; }
 }
 
 /* ---- SCREENSHOTS (site/scripts/screens/). A capture fills its frame's screen area at its own

@@ -374,7 +374,7 @@
   "shots": [
     {
       "id": "hero-desk", "session": "retry-policy", "at": "delegating", "viewport": "desktop", "view": "workers", "worker": "cap-delay",
-      "alt": "Sova on a desktop: the sessions sidebar with 2 sessions that need you, the Retry policy session in Delegate mode waiting on 3 workers, and the workers pane with the running worker's transcript."
+      "alt": "Sova on a desktop: the sessions sidebar with 2 sessions that need you, the Retry policy session in Delegate mode waiting on its 3 workers, and the session detail pane's Agents tab with the working worker's transcript."
     },
     {
       "id": "hero-fold", "session": "retry-policy", "at": "delegating", "viewport": "fold",
@@ -382,11 +382,11 @@
     },
     {
       "id": "hero-phone", "session": "retry-policy", "at": "delegating", "viewport": "phone",
-      "alt": "The same session on a folded phone: the chat alone, with the workers it started and a Steer composer."
+      "alt": "The same session on a folded phone: the chat alone, its alignment decided and its workers running, with a Steer composer."
     },
     {
       "id": "delegate", "session": "retry-policy", "at": "delegating", "viewport": "compact", "view": "workers", "worker": "cap-delay",
-      "alt": "The workers pane beside a Delegate session: 3 workers with their model and state, and the selected worker's transcript with its edits."
+      "alt": "The Agents tab beside a Delegate session: 3 workers with their model, tokens and state, and the working worker's transcript: its task, a read, 2 edits and a new test file."
     },
     {
       "id": "alignment", "session": "retry-policy", "at": "aligned", "viewport": "compact", "scroll": "align",
@@ -398,11 +398,11 @@
     },
     {
       "id": "overseer", "session": "overseer", "at": "end", "viewport": "compact",
-      "alt": "The Overseer page: asked what needs you, it names 2 sessions and asks with a card before archiving 2 finished ones."
+      "alt": "The Overseer page after asking what needs you: a card that lists 2 finished sessions, each with why, and asks before archiving them."
     },
     {
       "id": "phone-access", "session": "access", "at": "start", "viewport": "phone",
-      "alt": "The Access page on a phone: a one-use pairing code with its QR."
+      "alt": "The Access page on a phone: a one-use pairing code, its QR and the link to open it."
     },
     {
       "id": "phone-question", "session": "upload-metrics", "at": "start", "viewport": "phone", "scroll": "align",
@@ -410,7 +410,7 @@
     },
     {
       "id": "transcript", "session": "upload-id", "at": "testing", "viewport": "compact", "compose": "Also return the id from send()",
-      "alt": "A running turn: the user's message, 2 edits shown as diffs, a finished test run, and a follow-up typed into the Steer composer."
+      "alt": "A running turn: the user's message, a read, 2 edits with their line counts, a finished test run, and a follow-up typed into the Steer composer."
     }
   ],
 

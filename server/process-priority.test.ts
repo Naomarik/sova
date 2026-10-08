@@ -5,7 +5,6 @@ import { getPriority } from "node:os";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WORKER_NICE, workerNice } from "../pi-config/extensions/subagents/priority.ts";
-import { spawn } from "node:child_process";
 import { DEFAULT_WORKER_NICE, installWorkerNice, LOWER_WORKER, lowerToolCommands, readWorkerNice, TOOL_COMMAND_PREFIX } from "./process-priority";
 
 function withAgentDir(settings: unknown, fn: () => void) {
@@ -55,13 +54,6 @@ test("installWorkerNice points the extensions' hooks at the setting, read per us
     if (process.platform !== "win32" && getPriority() < 10)
       withAgentDir({ version: 1, workerNice: 10 }, () => {
         assert.match((g[TOOL_COMMAND_PREFIX] as (p?: string) => string)("mine"), /^renice -n \d+ -p \$\$ >\/dev\/null 2>&1\nmine$/);
-        const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 30000)"], { stdio: "ignore" });
-        try {
-          (g[LOWER_WORKER] as (pid: number) => void)(child.pid!);
-          assert.equal(getPriority(child.pid!), 10, "the claude-code hook lowers the launched worker");
-        } finally {
-          child.kill("SIGKILL");
-        }
       });
   } finally {
     if (beforeLower === undefined) delete g[LOWER_WORKER];

@@ -2,6 +2,7 @@
   "The watch, decision, reconciler, conflict and build statecharts."
   (:require
     #?(:clj [clojure.test :refer [deftest is testing]] :cljs [cljs.test :refer-macros [deftest is testing]])
+    [sova.statecharts.build :as bld]
     [sova.statecharts.reasons :as rs]
     [sova.statecharts.refit.host :as h]
     [sova.statecharts.watch :as w]))
@@ -185,6 +186,61 @@
     (is (= "Its worktree was removed, so it has no folder to work in."
            (h/refusal (-> x (h/send! bsid :build/remove-worktree op) (h/send! bsid :effect/done {:kind "remove-worktree"})) bsid :build/prompt {:by "overseer" :attended true :text "go"})))
     (is (h/in? (h/send! x bsid :git/probe {:branch "new-since-merge"}) bsid :new-since-merge))))
+
+;; worktree "later" (New Session's Project tab): the root until its session makes a worktree, then that one, once
+(def adopted-tree {:branch "feat/pay" :base "b0" :target "main"})
+(defn later [] (-> (build {:kind "operator-coding" :prompt nil :title nil :worktree "later"})
+                   (h/send! bsid :effect/done {:kind "make-worktree" :result {:later true}})
+                   (h/send! bsid :effect/done {:kind "set-mode"})))
+
+(deftest builds-adopt-a-later-worktree
+  (let [x (later)]
+    (testing "it starts in the root, with no worktree, branch or note"
+      (is (h/in? x bsid :ready))
+      (is (h/in? x bsid :tree-root))
+      (is (= "root" (:tree (h/data x bsid))))
+      (is (true? (:later (h/data x bsid))))
+      (is (nil? (:branch (h/data x bsid))))
+      (is (nil? (:in-root (h/data x bsid))))
+      (is (not (some #{"worktree-note"} (h/kinds x bsid))) "no commit paragraph before it has a branch"))
+    (testing "Merge Branch and Remove Worktree are refused until it adopts one"
+      (is (= "It runs in the project root until it makes a worktree." (h/refusal x bsid :build/merge op)))
+      (is (= "It runs in the project root until it makes a worktree." (h/refusal x bsid :build/remove-worktree op))))
+    (testing "the start data's worktree reaches the host's make-worktree"
+      (is (= "later" (:worktree (first (filter #(= "make-worktree" (:kind %)) (h/outbox (build {:worktree "later"}) bsid)))))))
+    (let [a (h/send! (h/clear! x bsid) bsid :worktree/adopted adopted-tree)
+          d (h/data a bsid)]
+      (testing "adopted: the tool's branch, base and target, as named, and the tree open"
+        (is (h/in? a bsid :tree-open))
+        (is (= ["feat/pay" "b0" "main"] [(:branch d) (:base d) (:target d)]))
+        (is (number? (:adopted-at d)))
+        (is (nil? (:later d)))
+        (is (= "open" (:tree d))))
+      (testing "its commit paragraph goes in as a note, naming the adopted branch"
+        (let [note (first (filter #(= "worktree-note" (:kind %)) (h/outbox a bsid)))]
+          (is (some? note))
+          (is (= (bld/commit-paragraph adopted-tree) (:text note)))))
+      (testing "adopted once: a second worktree changes nothing"
+        (let [again (h/send! (h/clear! a bsid) bsid :worktree/adopted {:branch "feat/other" :base "b1" :target "main"})]
+          (is (= "feat/pay" (:branch (h/data again bsid))))
+          (is (not (some #{"worktree-note"} (h/kinds again bsid))))))
+      (testing "then Merge Branch works on it as on any worktree build"
+        (let [m (h/send! a bsid :build/merge op)]
+          (is (h/in? m bsid :merging))
+          (is (= {:branch "feat/pay" :target "main"} (select-keys (first (filter #(= "merge" (:kind %)) (h/outbox m bsid))) [:branch :target])))))
+      (testing "and a git probe moves its branch region"
+        (is (h/in? (h/send! a bsid :git/probe {:tree "open" :branch "unmerged"}) bsid :unmerged))))
+    (testing "an adoption with no branch or target is not taken"
+      (is (h/in? (h/send! x bsid :worktree/adopted {:branch "" :base "b0" :target "main"}) bsid :tree-root))
+      (is (h/in? (h/send! x bsid :worktree/adopted {:branch "feat/x" :base "b0"}) bsid :tree-root))))
+  (testing "a build with no later start never adopts"
+    (let [eager (made (build))]
+      (is (= "sova/pay-abc123" (:branch (h/data (h/send! eager bsid :worktree/adopted adopted-tree) bsid)))))
+    (let [root (-> (build {:prompt nil}) (h/send! bsid :effect/done {:kind "make-worktree" :result {:in-root "it isn't a Git repository."}})
+                   (h/send! bsid :effect/done {:kind "set-mode"}))]
+      (is (h/in? (h/send! root bsid :worktree/adopted adopted-tree) bsid :tree-root))
+      (is (nil? (:branch (h/data (h/send! root bsid :worktree/adopted adopted-tree) bsid))))
+      (is (= "It runs in the project root: it isn't a Git repository." (h/refusal root bsid :build/merge op))))))
 
 (deftest F-133-a-folded-reason-never-pushes-the-soon-look-back
   ;; server-5: a coding session's turn settles at t, again at t+30 s (same key, folded): the look

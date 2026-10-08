@@ -1252,7 +1252,14 @@ Sova that aren't archived.
 - **Sort.** Working first, then Needs you, then the rest; within each, last active first.
 - **Filter chips.** One at a time, a second press clears it; each shows its count, and a set one
   carries a check as well as the tint. **Live**: a TUI or runtime reports on it. **Needs you**:
-  in that state, anywhere in the list. **Has workers**: any worker listed or counted.
+  in that state, anywhere in the list, but never archived sessions. Its rows and count exclude
+  every session whose `archived` flag is true, even with an error, an open dialog, open alignment
+  questions, own or worker decision signals, a live record, a matching search, or a linked-team
+  pin. A missing `archived` flag counts as not archived. This is filter eligibility only: the row's
+  state precedence, every other scope and filter, and archived-session access through Archived
+  or search with no chip stay unchanged. The separate attention digest keeps its own rules,
+  including archived blockers (§app.overseer/attention-digest).
+  **Has workers**: any worker listed or counted.
   **Unmerged**: the default scope narrowed to rows with an existing tree whose branch isn't
   merged. **Archived**: only what you archived.
 - **Search.** Every word must appear in the title, original title, gist, path, cwd, or a tree's
@@ -1326,8 +1333,10 @@ Sova that aren't archived.
   behind one thin guide rule drawn down from under the twist: that rule, not width, says it
   belongs to the session.
 - **Deep link.** `#/agents/{teamKey}` (a bare team id from an older link: the newest team with
-  that id) keeps the team's parent session on the board whatever the filter, and opens that
-  session's Session details pane on its Agents tab, once per link: polls don't open it again.
+  that id) keeps the team's parent session on the board whatever the filter, except that an
+  archived parent never appears under Needs you, even when pinned or matching the search.
+  The link opens that session's Session details pane on its Agents tab, once per link:
+  polls don't open it again.
 
 ## §app.insights/subagent-cards — Board worktrees
 

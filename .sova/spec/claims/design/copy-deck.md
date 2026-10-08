@@ -384,6 +384,11 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | 4xx error | {server message}, or: That folder doesn't exist. Pick one that does. |
 | Other error | **Couldn't create the session.** Nothing was written. Try again. |
 | Recent list header | checkbox "Show hidden folders" (the picker's own preference, not a second one) · caption "1 hidden folder is not listed." / "{n} hidden folders are not listed." — one line, only when rows were dropped |
+| Tabs | `Project` (branch icon) · `This Computer` (folder) · `Remote` (terminal), in that order |
+| Project tab | label "Project" · row: the project's name · its root with `~` · chip: the organization's name, or "Standalone" · hint "pi starts in the project root. When it makes a worktree, the project tracks it." |
+| Project tab states | Loading projects… · Couldn't read the projects. {message} · No projects on this host yet. Add one from Projects. |
+| Project tab, started (toast) | Coding session started in the project root. · mode not set: Started, but its mode could not be set. Set it from the chat's mode menu before you send. |
+| Project tab, 4xx (`.field-error` under the list) | {server message} |
 
 ## §design.copy-deck/insights — Insights (§app/insights)
 
@@ -768,6 +773,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Row | the title (a link on this host) · meta: "Started by the overseer", "Started by you" or "Started by you, via the Overseer" · `working` / `idle` · {relative time} · then the branch in mono: `sova/{name}` · not on this host: `sova/{name}` · "on another host" |
 | Above the list, when the project can't have worktrees | "Coding sessions run in the project root: {reason}" — `{reason}` one of "it isn't a Git repository." · "the repository has no commits yet." · "its checkout is on a detached HEAD." |
 | …a row in the root | "In the project root: {reason}" — no branch, no buttons |
+| …a row started from New Session's Project tab, before its worktree | "In the project root until it makes a worktree." — no branch, no buttons · Merge or Remove asked of it anyway (server): "It runs in the project root until it makes a worktree." |
 | …after | "Merged into `{target}` {relative time}" · "Worktree removed" · "Worktree folder missing" · merged before, with commits since: "{n} new commits since the last merge into `{target}` {relative time}" (1: "1 new commit since…"), and Merge Branch again |
 | Merge | `Merge Branch` (secondary) · disabled reasons: "Session working" · "Workers running" · "On another host" · done (toast): "Merged sova/{name} into {target}." |
 | …refused (`.field-error` under the row) | "The project root has {branch} checked out, not {target}. Check out {target} there, then merge." · "The project root has uncommitted changes to tracked files. Commit or stash them, then merge." · "The project root is in the middle of a {merge/rebase/cherry-pick}. Finish it, then merge." · detached root: "The project root's checkout is on a detached HEAD, not {target}. Check out {target} there, then merge." · uncommitted in the worktree: "The worktree has uncommitted changes in {n} files ({first file}). Commit them in the session first, then merge." · nothing to merge: "sova/{name} has nothing to merge into {target}." · conflict: "sova/{name} conflicts with {target} in {n} files. Nothing was merged. Resolve it in the worktree, then merge again." · busy (server): "The session is working." · "Its workers are running." · another host: "On another host: its worktree is there." |

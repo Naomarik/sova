@@ -159,16 +159,18 @@ sidebar or by the Overseer (§workspace.groups/making-a-comparison).
 
 ### Remote
 
-Above the Folder field, a `.tabs` strip (`role="tablist"`, `aria-label="Where pi runs"`):
-**This Computer** (`folder`) and **Remote** (`terminal`). Selection follows ←/→/Home/End, like the
-session pane's tabs. The dialog opens on Remote when the prefill is a remote session's placeholder
-(below), with that target and folder chosen — unless that folder is hidden and Show hidden folders
-is off, in which case the remote prefill is skipped like a local one and the dialog opens on This
-Computer with no folder. Switching tabs closes the picker and clears the field
-error; each tab keeps its own choice.
+Above the Folder field, a `.tabs` strip (`role="tablist"`, `aria-label="Where pi runs"`), in this
+order: **Project** (`branch`, below), **This Computer** (`folder`) and **Remote** (`terminal`).
+Selection follows ←/→/Home/End, like the session pane's tabs. The order is not where it opens: the
+dialog opens on This Computer with the Folder field focused, as it always has, and on Remote when
+the prefill is a remote session's placeholder (below), with that target and folder chosen — unless
+that folder is hidden and Show hidden folders is off, in which case the remote prefill is skipped
+like a local one and the dialog opens on This Computer with no folder. Switching tabs closes the
+picker and clears the field error; each tab keeps its own choice.
 
 ```html
 <div class="tabs" role="tablist" aria-label="Where pi runs">
+  <button type="button" role="tab" class="tab" id="ns-tab-project" aria-selected="false" tabindex="-1">…branch… Project</button>
   <button type="button" role="tab" class="tab" id="ns-tab-local" aria-selected="false" tabindex="-1">…folder… This Computer</button>
   <button type="button" role="tab" class="tab tab-active" id="ns-tab-remote" aria-selected="true" tabindex="0">…terminal… Remote</button>
 </div>
@@ -301,4 +303,56 @@ listbox):
 `/` separators in `--color-ink-muted`. Lists `--color-bg` with `--r-md`, rows `--row-height` in
 `--font-mono`, and the active or selected row `--color-accent-tint`. Note `--fs-caption` in
 `--color-ink-2`. "link" `--fs-caption` in `--color-ink-muted`.
+
+### Project
+
+The **Project** tab starts a coding session that belongs to a project
+(§app.project-overseer/new-coding-session, its `worktree: "later"` start): it runs in the project
+root, and the worktree it later makes with its own `worktree` tool becomes its row's
+(§app.project-overseer/coding-worktrees). It is for work not named yet: the conversation names the
+branch, so the tab asks for nothing that names anything.
+
+```html
+<div class="stack" role="tabpanel" id="ns-tabpanel" aria-labelledby="ns-tab-project">
+  <div class="field">
+    <span class="field-label" id="ns-projects">Project</span>
+    <ul class="list folder-list" role="listbox" aria-labelledby="ns-projects" aria-describedby="ns-project-hint ns-project-error">
+      <li class="list-row list-row-interactive" role="option" tabindex="0" aria-selected="true" title="/home/user/webapps/acme">
+        …branch… <span class="list-title truncate">acme</span>
+        <span class="folder-picker-link truncate">~/webapps/acme</span>
+        <span class="chip">Acme Corp</span>  <!-- an org's name, or "Standalone" -->
+      </li>
+    </ul>
+    <span class="field-hint" id="ns-project-hint">pi starts in the project root. When it makes a worktree, the project tracks it.</span>
+    <span class="field-error" id="ns-project-error"><!-- on error only --></span>
+  </div>
+</div>
+```
+
+- **The list.** `GET /api/projects`, fetched the first time the tab shows: every project on this
+  host that isn't archived, sorted by name (case-insensitive). Each row shows the name, the root
+  (with `~`, muted mono) and a chip with its organization's name, or "Standalone" for a project in
+  no organization. Click or Enter/Space selects one; double-click selects it and submits.
+- **States.** While loading: the hint "Loading projects…". A failed read: `.field-error`
+  "Couldn't read the projects. {message}". None: the hint "No projects on this host yet. Add one
+  from Projects."
+- **Preselected.** When the open session's folder (the prefill) is the root of a listed project or
+  inside it, that project is selected (the deepest root wins); otherwise none is, and Create Session
+  stays `aria-disabled` until one is. Preselecting chooses a row, never the opening tab.
+- **Nothing else.** No Title, no model, thinking or mode picker, no prompt, and no line naming the
+  model or mode: the session starts on the project's coding settings
+  (§app.project-overseer/coding-mode), changed afterwards in the composer's menus. The one text is
+  the field hint.
+- **Submitting** posts `POST /api/projects/:pid/overseer/coding` with exactly `{worktree:
+  "later"}`. Pending reads "Creating…", as on the other tabs. On success the dialog closes and the
+  session opens with the composer focused (as **On success** above), and a toast says "Coding
+  session started in the project root." When its mode couldn't be set (`modeNotSet`), the session
+  still opens, and the toast says "Started, but its mode could not be set. Set it from the chat's
+  mode menu before you send." instead.
+- **Errors.** A 4xx (a 409 included: an archived project, a cap) shows the server's message as the
+  `.field-error` under the list, and focus moves to the list; the dialog stays with the choice
+  intact. Anything else shows the same banner as the other tabs.
+- **Mesh.** Projects are this host's: the tab is offered only while the Host is the host serving
+  the page (§mesh.remote-sessions/host-picker). Choosing another host drops the tab from the strip,
+  and when Project was shown the dialog moves to This Computer.
 

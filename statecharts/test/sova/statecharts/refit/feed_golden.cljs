@@ -126,6 +126,7 @@
    ["build" ":tree-open" [":git/probe"] "[:tree-missing]" 0] :feed
    ["build" ":tree-open" [":git/probe"] "[:tree-removed]" 0] :feed
    ["build" ":tree-open" [":git/probe"] "[:tree-root]" 0] :feed
+   ["build" ":tree-root" [":worktree/adopted"] "[:tree-open]" 0] :feed
    ["build" ":turn-failed" [":turn/started"] "[:working]" 0] :quiet
    ["build" ":turn-idle" [":turn/started"] "[:working]" 0] :quiet
    ["build" ":unmerged" [":git/probe"] "[:merged]" 0] :feed

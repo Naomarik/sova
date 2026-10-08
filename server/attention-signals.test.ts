@@ -264,6 +264,9 @@ describe("looksLikeAsk: the mechanical pre-filter (labelled cases from the Jev a
     assert.equal(sig.looksLikeAsk(`Should I start? ${"Then I did it all. ".repeat(100)}`), false);
     assert.equal(sig.withoutFooter("Merge it?\n\nDeferred: §a — b\nAlso changes: none"), "Merge it?");
   });
+  test("the closing Also updates lines are cut too", () => {
+    assert.equal(sig.withoutFooter("Merge it?\n\nAlso updates §app.x/y: a\nAlso updates §app.z/w: b"), "Merge it?");
+  });
   test("the quoted sentence is the asking one, read on from its start", () => {
     assert.equal(sig.lastSentence("I fixed it. Should I push first? The tests pass.\n\nAlso changes: none"), "Should I push first? The tests pass.");
     assert.equal(sig.lastSentence("Done with the audit. **Still waiting on you:** 1. the port 2. the key"), "Still waiting on you: 1. the port 2. the key");

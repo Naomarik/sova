@@ -106,10 +106,19 @@ try {
   mkdirSync(framesDir);
   const frames = [];
   const cdp = await ctx.newCDPSession(page);
+  // The screencast films the browser window, and a headless window can be shorter than the
+  // emulated viewport (it once cut the composer off): make the window larger than the viewport.
+  try {
+    const { windowId } = await cdp.send("Browser.getWindowForTarget");
+    await cdp.send("Browser.setWindowBounds", { windowId, bounds: { width: vp.width + 200, height: vp.height + 300 } });
+    await page.waitForTimeout(300);
+  } catch (e) {
+    console.warn(`could not size the browser window (${e.message}); the frame check below still applies`);
+  }
   cdp.on("Page.screencastFrame", async (f) => {
     const file = join(framesDir, `${String(frames.length).padStart(6, "0")}.jpg`);
     writeFileSync(file, Buffer.from(f.data, "base64"));
-    frames.push({ file, t: f.metadata.timestamp });
+    frames.push({ file, t: f.metadata.timestamp, w: f.metadata.deviceWidth, h: f.metadata.deviceHeight });
     await cdp.send("Page.screencastFrameAck", { sessionId: f.sessionId }).catch(() => {});
   });
   await cdp.send("Page.startScreencast", { format: "jpeg", quality: 92, everyNthFrame: 1, maxWidth: Math.round(vp.width * vp.scale), maxHeight: Math.round(vp.height * vp.scale) });
@@ -157,6 +166,10 @@ try {
 
   // Frames → constant 30 fps H.264, each frame held until the next one's timestamp.
   if (frames.length < 10) throw new Error(`only ${frames.length} screencast frames arrived`);
+  // Every frame must show the whole viewport: a shorter one would crop the page (and the site
+  // would refuse a video whose shape isn't its poster's).
+  const short = frames.find((f) => Math.abs(f.w - vp.width) > 2 || Math.abs(f.h - vp.height) > 2);
+  if (short) throw new Error(`the screencast filmed ${Math.round(short.w)}x${Math.round(short.h)} of the ${vp.width}x${vp.height} viewport; nothing was encoded`);
   const list = frames.map((f, k) => `file '${f.file}'\nduration ${Math.max(0.001, ((frames[k + 1]?.t ?? f.t + 1 / 30) - f.t)).toFixed(4)}`).join("\n");
   writeFileSync(join(root, "frames.txt"), `${list}\nfile '${frames.at(-1).file}'\n`);
   mkdirSync(VIDEO_DIR, { recursive: true });
@@ -164,7 +177,9 @@ try {
   execFileSync("ffmpeg", ["-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", join(root, "frames.txt"), "-vf", "fps=30,scale=1600:-2:flags=lanczos,format=yuv420p", "-c:v", "libx264", "-preset", "slow", "-crf", "24", "-profile:v", "high", "-movflags", "+faststart", "-an", out], { stdio: "inherit" });
   const seconds = frames.at(-1).t - frames[0].t;
   const bytes = statSync(out).size;
-  const [w, h] = [1600, Math.round((1600 * vp.height) / vp.width / 2) * 2];
+  // The encoded size, as the file has it (the manifest and the page's shape check rely on it).
+  const [w, h] = execFileSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "csv=p=0", out]).toString().trim().split(",").map(Number);
+  if (Math.abs(w / h - vp.width / vp.height) > 0.005) throw new Error(`the video came out ${w}x${h}, not the viewport's ${vp.width}:${vp.height} shape`);
   console.log(`wrote ${out.slice(REPO.length + 1)}: ${w}x${h}, ${seconds.toFixed(1)}s, ${(bytes / 1e6).toFixed(2)} MB from ${frames.length} frames`);
   if (bytes > 2_500_000) console.warn(`warning: ${(bytes / 1e6).toFixed(2)} MB is over the 2.5 MB budget`);
 

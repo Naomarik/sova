@@ -1,6 +1,7 @@
 // Bare "/new" in the composer: a fresh session in the chat's folder, and the
 // chat it was typed in goes to the Archive. Kept free of the api module so it's testable.
 
+import type { CodingStartResult } from "../../shared/project-overseer";
 import type { ProjectSummary } from "../../shared/projects";
 import { hiddenFolder } from "./hidden-folders";
 import { isRemoteCwd, type RemotePlace, remoteRecents, splitRemoteCwd } from "./remote-session";
@@ -136,3 +137,23 @@ export const whereForHost = (where: NewSessionWhere, host: string | null): NewSe
   tabsForHost(host).some((t) => t.id === where) ? where : "local";
 /** What the Project tab posts: no title, model, thinking, mode or prompt; the conversation names its worktree later. */
 export const PROJECT_TAB_START = { worktree: "later" } as const;
+
+/** The Project tab's toast: its session starts in the project root. */
+export const PROJECT_STARTED = "Coding session started in the project root.";
+
+/**
+ * The Project tab's Create Session. Only the start may fail (the caller shows it, and nothing was started). Once it has
+ * answered the session exists, so nothing after it throws: a summary that can't be read opens the session by its path
+ * instead, and a retry never starts a second one.
+ */
+export async function startInProject<S>(
+  projectId: string,
+  api: { start(projectId: string, input: typeof PROJECT_TAB_START): Promise<Pick<CodingStartResult, "path" | "sessionId" | "modeNotSet">>; summary(id: string): Promise<S> },
+  ui: { toast(text: string): void; created(s: S): void; open(href: string): void },
+): Promise<void> {
+  const r = await api.start(projectId, { ...PROJECT_TAB_START });
+  ui.toast(r.modeNotSet ?? PROJECT_STARTED);
+  const s = await api.summary(r.sessionId).catch(() => null);
+  if (s) ui.created(s);
+  else ui.open(`#/s/${encodeURIComponent(r.path)}`);
+}

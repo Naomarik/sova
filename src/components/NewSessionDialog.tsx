@@ -6,11 +6,11 @@ import { hiddenFolder, setShowHiddenFolders, showHiddenFolders } from "../lib/hi
 import {
   hiddenRecentNote,
   type NewSessionWhere,
-  PROJECT_TAB_START,
   projectAt,
   projectChoices,
   recentFolders,
   recentRemoteFolders,
+  startInProject,
   tabsForHost,
   whereForHost,
 } from "../lib/new-session";
@@ -28,8 +28,6 @@ const PROBE_RECHECK_MS = 6_000;
 const PROBE_RECHECKS = 3;
 
 type Where = NewSessionWhere;
-/** The Project tab's toast: its session starts in the project root. */
-const PROJECT_STARTED = "Coding session started in the project root.";
 
 const targetName = (t: TargetInfo) => t.label || t.name;
 
@@ -198,13 +196,21 @@ export function NewSessionDialog(props: {
   const ready = () =>
     where() === "project" ? !!projectId() : where() === "local" ? !!cwd().trim() : !!place().target && !!place().remoteCwd;
 
-  /** The Project tab's Create Session: a project coding session in the root, its worktree adopted later. */
-  const startInProject = async (pid: string) => {
-    const r = await startProjectCoding(pid, { ...PROJECT_TAB_START });
-    const s = await getSessionSummaryById(r.sessionId);
-    toast(r.modeNotSet ?? PROJECT_STARTED);
-    props.onCreated(s);
-  };
+  /** The Project tab's Create Session: a project coding session in the root, its worktree adopted later. Once started it
+      never comes back to the error path: an unreadable summary closes the dialog and opens the session by its path. */
+  const startProjectSession = (pid: string) =>
+    startInProject(
+      pid,
+      { start: startProjectCoding, summary: getSessionSummaryById },
+      {
+        toast,
+        created: (s) => props.onCreated(s),
+        open: (href) => {
+          props.onCancel();
+          location.hash = href;
+        },
+      },
+    );
 
   const submit = async (e?: Event) => {
     e?.preventDefault();
@@ -214,7 +220,7 @@ export function NewSessionDialog(props: {
     setFailed(false);
     try {
       if (where() === "project") {
-        await startInProject(projectId()!);
+        await startProjectSession(projectId()!);
         return;
       }
       const p = place();

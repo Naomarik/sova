@@ -1,7 +1,8 @@
 // Run: npx tsx --test src/lib/new-session.test.ts
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createThenArchive, dropArchived, hiddenRecentNote, MAX_RECENT, NEW_SESSION_TABS, newSessionCwd, offersCwd, PROJECT_TAB_START, projectAt, projectChoices, recentFolders, recentRemoteFolders, tabsForHost, whereForHost } from "./new-session";
+import { ApiError } from "./api";
+import { createThenArchive, dropArchived, hiddenRecentNote, MAX_RECENT, NEW_SESSION_TABS, newSessionCwd, offersCwd, PROJECT_TAB_START, projectAt, projectChoices, recentFolders, recentRemoteFolders, startInProject, tabsForHost, whereForHost } from "./new-session";
 import type { ProjectSummary } from "../../shared/projects";
 
 test("newSessionCwd prefers the chat's own folder", () => {
@@ -200,4 +201,43 @@ test("tabs: Project, This Computer, Remote in that order; Project only on the ho
 
 test("the Project tab posts exactly {worktree: \"later\"}: nothing that names, picks a model or prompts", () => {
   assert.deepEqual({ ...PROJECT_TAB_START }, { worktree: "later" });
+});
+
+test("once the Project tab's start has answered, an unreadable summary never reaches the error path: the session opens by its path", async () => {
+  let starts = 0;
+  const created: unknown[] = [];
+  const opened: string[] = [];
+  const toasts: string[] = [];
+  let error: unknown = null;
+  const path = "/home/u/.pi/agent/sessions/--w--/2026-10-08T00-00-00-000Z_abc.jsonl";
+  await startInProject(
+    "prj_a",
+    {
+      start: async (_pid, input) => {
+        starts++;
+        assert.deepEqual(input, { worktree: "later" });
+        return { path, sessionId: "abc" };
+      },
+      summary: async () => {
+        throw new ApiError("Not found", 404);
+      },
+    },
+    { toast: (t) => toasts.push(t), created: (s) => created.push(s), open: (h) => opened.push(h) },
+  ).catch((e) => (error = e));
+  assert.equal(error, null, "nothing for the dialog's field error or banner");
+  assert.equal(starts, 1);
+  assert.deepEqual(created, []);
+  assert.deepEqual(opened, [`#/s/${encodeURIComponent(path)}`]);
+  assert.deepEqual(toasts, ["Coding session started in the project root."]);
+});
+
+test("the Project tab's start: a summary hands the session over; a refused start is the caller's to show, with nothing opened", async () => {
+  const created: unknown[] = [];
+  const opened: string[] = [];
+  const toasts: string[] = [];
+  await startInProject("prj_a", { start: async () => ({ path: "/p.jsonl", sessionId: "s1", modeNotSet: "Started, but its mode could not be set." }), summary: async (id) => ({ id }) }, { toast: (t) => toasts.push(t), created: (s) => created.push(s), open: (h) => opened.push(h) });
+  assert.deepEqual([created, opened, toasts], [[{ id: "s1" }], [], ["Started, but its mode could not be set."]]);
+  const refused = new ApiError("demo is archived.", 409);
+  await assert.rejects(startInProject("prj_a", { start: async () => { throw refused; }, summary: async () => ({}) }, { toast: (t) => toasts.push(t), created: (s) => created.push(s), open: (h) => opened.push(h) }), (e) => e === refused);
+  assert.deepEqual([created.length, opened.length, toasts.length], [1, 0, 1]);
 });

@@ -1440,6 +1440,8 @@ export function ThreadScroller(props: {
   onSpot?(spot: ScrollSpot): void;
   /** This visit's rows have come (its hello or snapshot): until then, rows kept from the last visit. */
   current?: boolean;
+  /** The thread shows a new session's empty state: there is no latest to jump to. */
+  empty?: boolean;
 }) {
   const paneId = usePaneId();
   let el!: HTMLElement;
@@ -1969,7 +1971,7 @@ export function ThreadScroller(props: {
       </section>
       {/* Always mounted, shown by attribute: inserting it relaid out the whole transcript at the
           first scroll up (base.css `.jump-latest`). */}
-      <button type="button" class="button jump-latest" data-shown={away() !== null ? "" : undefined} onClick={resumeFollowing}>
+      <button type="button" class="button jump-latest" data-shown={away() !== null && !props.empty ? "" : undefined} onClick={resumeFollowing}>
         <Icon name="chevron-down" small />
         {newCount() > 0 ? `Jump to Latest · ${newCount()} new` : "Jump to Latest"}
       </button>

@@ -50,6 +50,7 @@ import { configureSessionFeed, nudgeMarks, publishFeed } from "./session-feed";
 import { configureLlmInflight } from "./llm-inflight";
 import { snapshot as llmSnapshot, subscribe as onLlmChange } from "../pi-config/extensions/llm-inflight/tracker.ts";
 import { readUnadoptedWorkers } from "../pi-config/extensions/llm-inflight/hosted.ts";
+import { verifiedPeerSocket } from "./mesh/peer-address";
 import { peerUrl } from "./mesh/peers";
 import { onTagsChanged } from "./session-tags";
 import { terminalSession } from "./decide-settings";
@@ -196,9 +197,14 @@ configureLlmInflight({
   workers: () => readUnadoptedWorkers(),
   mesh: {
     // A dial-out pairing has no URL to open a feed to (§mesh/lan): its count isn't shown here.
+    // `url` names the peer's entry; the feed opens at its verified address (§mesh/peers).
     peers: () => (meshApi.enabled() ? meshApi.peers().filter((p) => !p.lan).map((p) => ({ id: p.id, url: peerUrl(p) })) : []),
     selfId: () => meshApi.self().id,
-    connect: (url) => cappedWebSocket(`${url.replace(/^http/, "ws")}/ws/watch?feed=llm`, undefined, { handshakeTimeout: 10_000, maxPayload: 16 * 1024 }),
+    connect: (url) => {
+      const peer = meshApi.peers().find((p) => !p.lan && peerUrl(p) === url);
+      if (!peer) throw new Error("no such peer");
+      return verifiedPeerSocket(peer, (base) => cappedWebSocket(`${base.replace(/^http/, "ws")}/ws/watch?feed=llm`, undefined, { handshakeTimeout: 10_000, maxPayload: 16 * 1024 }));
+    },
   },
 });
 const attentionSignals = new AttentionSignals({

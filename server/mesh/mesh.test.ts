@@ -22,7 +22,7 @@ mkdirSync(join(tmp, "agent", "sessions", "live"), { recursive: true });
 // Every LocalAPI call goes through this stub; OFF, it must never be called.
 const { setIdentity } = await import("./localapi");
 let identityCalls = 0;
-let tailnetPeers: Array<{ nodeId: string; name: string; online: boolean; tags?: string[] }> = [];
+let tailnetPeers: Array<{ nodeId: string; name: string; online: boolean; tags?: string[]; addresses?: string[] }> = [];
 setIdentity({
   status: async () => {
     identityCalls++;
@@ -232,8 +232,9 @@ describe("mesh ON", () => {
   });
 
   test("candidates: tailnet nodes, probed; peerId for known ones", async () => {
+    // Probed at the node's own address, never its name (§mesh/peers).
     tailnetPeers = [
-      { nodeId: "nB", name: "127.0.0.1", online: true },
+      { nodeId: "nB", name: "b.lab", addresses: ["127.0.0.1"], online: true },
       { nodeId: "nOff", name: "off.lab", online: false },
     ];
     const was = process.env.SOVA_PEER_PORT;

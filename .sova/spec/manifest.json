@@ -15746,6 +15746,22 @@
         "pi-config/extensions/usage-status/index.ts",
         "pi-config/extensions/usage-status/overlay.test.ts"
       ]
+    },
+    "§chat.transcript/jump-landing": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.transcript/rendering"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/Thread.tsx",
+        "src/lib/jump.ts",
+        "src/lib/tail-render.ts",
+        "src/lib/tail-render.test.ts",
+        "scripts/e2e/jump-settle.mjs",
+        "package.json"
+      ]
     }
   },
   "boundary": {

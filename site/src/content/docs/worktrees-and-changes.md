@@ -5,7 +5,7 @@ group: Features
 order: 10
 ---
 
-A session keeps a list of the git worktrees it works in. You manage that list by asking the agent, workers start only where the list allows, and each merge the session makes shows up in the transcript as a card. When you want to see what changed, the agent lays the diff out as numbered steps in a read-only viewer.
+You manage the list by asking the agent, workers start only where it allows, and each merge the session makes shows up in the transcript as a card. The diff opens in a read-only viewer.
 
 It works the same in pi's terminal UI and in Sova. Worktrees and steps come from the `worktrees` and `show-changes` pi extensions, which the installer links.
 

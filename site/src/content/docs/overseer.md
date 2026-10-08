@@ -5,7 +5,7 @@ group: Features
 order: 12
 ---
 
-The **Overseer** is a session that reads every other session and acts on them for you. Ask it what needs you, what finished, or where you left off. Ask it to start sessions, send prompts, or tidy up. When a request is ambiguous or risky, it asks first.
+Ask the **Overseer** what needs you, what finished, or where you left off. Ask it to start sessions, send prompts, or tidy up. When a request is ambiguous or risky, it asks first.
 
 It has no shell and edits no files. It acts only through Sova, with limits you set.
 

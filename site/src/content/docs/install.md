@@ -5,7 +5,7 @@ group: Setup
 order: 30
 ---
 
-One script installs Sova on a Mac or a Linux machine. It's safe to pipe from `curl`, needs no `sudo`, and installs no system packages.
+The install script is safe to pipe from `curl`, needs no `sudo`, and installs no system packages.
 
 ## What you need
 

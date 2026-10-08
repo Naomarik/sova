@@ -5,7 +5,7 @@ group: Features
 order: 14
 ---
 
-A session doesn't have to go in a straight line. You can take back a message, run a reply again, branch off into a new session, redirect a turn while it runs, or move to another model, and keep the context you built.
+A session doesn't have to go in a straight line, and changing course keeps the context you built.
 
 ## The actions under a message
 

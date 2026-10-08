@@ -319,6 +319,11 @@ p code, li code, td code, dd code {
 .limit .icon { color: var(--color-ink-muted); margin-top: 1px; }
 .limit strong { color: var(--color-ink); font-weight: var(--fw-semibold); }
 
+/* A feature's link to its docs page, after the limit. */
+.feature-more { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-5); font-size: 14px; font-weight: var(--fw-medium); }
+.feature-more a { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; color: var(--color-accent); text-decoration: none; }
+.feature-more a:hover { color: var(--color-accent-hover); text-decoration: underline; }
+
 /* ---- CARDS. ------------------------------------------------------------------ */
 
 .cards { display: grid; gap: var(--space-4); grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); }

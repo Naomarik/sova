@@ -94,6 +94,7 @@ const beyond = [
             <InstallBlock id="install-hero" />
             <p class="hero-note">Then run <code>sova</code>, and <code>sova open</code> to open it. Needs Git, Node.js ≥22.19, pnpm (or npx), curl, and unzip or python3; the installer downloads its own pinned Bun. Sova runs on the <a href={site.pi}>pi</a> coding agent, and the install brings its own copy.</p>
             <div class="hero-links">
+              <a class="button button-ghost" href="/docs/"><Icon name="file" size={16} />Read the Docs</a>
               <a class="button button-ghost" href={site.installScript}><Icon name="file" size={16} />Read the Install Script</a>
               <a class="button button-ghost" href={site.gettingStarted}><Icon name="arrow-right" size={16} />Getting Started</a>
             </div>
@@ -131,6 +132,7 @@ const beyond = [
               <p>Bigger jobs get a team: coordinated workers with one role each. Every worker and team member opens in the side pane with its own transcript and how full its context is. If Sova restarts, each worker comes back as an idle record with its transcript, and picks up again when asked.</p>
             </div>
             <p class="limit"><Icon name="info" size={18} /><span>Routes live in Settings → Subagents. <strong>The shipped routes use Claude Code models</strong>, so install the <code>claude</code> CLI or pick your own. Delegate, workers, and teams come from the <a href={site.modeExtension}><code>mode</code></a> and <a href={site.subagentsExtension}><code>subagents</code></a> pi extensions, which the installer links.</span></p>
+            <p class="feature-more"><a href="/docs/modes/delegate/">Read more about Delegate<Icon name="arrow-right" size={14} /></a><a href="/docs/subagent-profiles/">Subagent profiles<Icon name="arrow-right" size={14} /></a></p>
           </div>
           <div class="feature-visual"><Workers /></div>
         </article>
@@ -144,6 +146,7 @@ const beyond = [
               <p>With adversarial review on, a fresh read-only reviewer checks the plan, and later the finished diff of complex work. What it finds is recorded on the alignment.</p>
             </div>
             <p class="limit"><Icon name="info" size={18} /><span>Adversarial review is experimental and off by default: Settings → Experimental.</span></p>
+            <p class="feature-more"><a href="/docs/modes/align/">Read more about alignments<Icon name="arrow-right" size={14} /></a><a href="/docs/modes/align/review/">Adversarial review<Icon name="arrow-right" size={14} /></a></p>
           </div>
           <div class="feature-visual"><Alignment /></div>
         </article>
@@ -151,12 +154,13 @@ const beyond = [
         <article class="feature">
           <div class="feature-copy">
             <span class="eyebrow"><span class="eyebrow-num">03</span> Worktrees and changes</span>
-            <h3 class="h-feature">Every worker in a worktree. Review the changes as steps.</h3>
+            <h3 class="h-feature">Worktrees the session keeps track of. Changes you review as steps.</h3>
             <div class="prose">
               <p>A session keeps track of the git worktrees it works in. Ask the agent to create, attach, detach, merge, or list them; detaching deletes nothing. Workers start only in the session's folder or one of its worktrees, and each merge lands in the transcript as a card.</p>
               <p>Ask to see what changed and the agent lays it out as numbered steps, each with a line on why. It can't leave a hunk out: with more than one hunk, every one has to sit in a step. The changes viewer shows them a step or a file at a time, and only reads: it never writes to your working tree or runs a git command that changes anything.</p>
             </div>
             <p class="limit"><Icon name="info" size={18} /><span>Worktrees and steps come from the <code>worktrees</code> and <code>show-changes</code> pi extensions, which the installer links; <code>--no-extensions</code> skips that.</span></p>
+            <p class="feature-more"><a href="/docs/worktrees-and-changes/">Read more about worktrees and changes<Icon name="arrow-right" size={14} /></a></p>
           </div>
           <div class="feature-visual"><Changes /></div>
         </article>
@@ -174,6 +178,7 @@ const beyond = [
               <li><Icon name="check" size={16} />No shell and no file edits: the Overseer acts through Sova, with limits per turn you can set.</li>
             </ul>
             <p class="limit"><Icon name="info" size={18} /><span>Notifications need Sova on an HTTPS address, such as one from <code>tailscale serve</code>. On iPhone, add Sova to the Home Screen first.</span></p>
+            <p class="feature-more"><a href="/docs/needs-you/">Read more about Needs you<Icon name="arrow-right" size={14} /></a><a href="/docs/overseer/">The Overseer<Icon name="arrow-right" size={14} /></a></p>
           </div>
           <div class="feature-visual"><Overseer /></div>
         </article>
@@ -188,6 +193,7 @@ const beyond = [
               <p>Already have sessions in pi's terminal? They're listed as they are and stream live, no import.</p>
             </div>
             <p class="limit"><Icon name="info" size={18} /><span>Sova listens on <code>127.0.0.1</code>. For a phone to reach it, serve it on your tailnet with <code>tailscale serve</code>, or put your own HTTPS proxy in front. Notifications need that HTTPS address; on iPhone, add Sova to the Home Screen first.</span></p>
+            <p class="feature-more"><a href="/docs/phone/">Read more about checking in from your phone<Icon name="arrow-right" size={14} /></a></p>
           </div>
           <div class="feature-visual"><Phones /></div>
         </article>
@@ -197,8 +203,9 @@ const beyond = [
             <span class="eyebrow"><span class="eyebrow-num">06</span> Change direction</span>
             <h3 class="h-feature">Rewind, regenerate, fork, steer. Keep the context you built.</h3>
             <div class="prose">
-              <p>Rewind to before any message you sent, regenerate a reply, or fork from a reply. Steer a running turn, queue the next one, and switch models mid-session. Tool calls read as cards and edits as diffs, so you follow the work without scrollback.</p>
+              <p>Rewind to before any message you sent, regenerate a reply, or fork from a reply. Steer a running turn without stopping it, and switch models mid-session. Tool calls read as cards and edits as diffs, so you follow the work without scrollback.</p>
             </div>
+            <p class="feature-more"><a href="/docs/change-direction/">Read more about changing direction<Icon name="arrow-right" size={14} /></a></p>
           </div>
           <div class="feature-visual"><Transcript /></div>
         </article>
@@ -378,6 +385,7 @@ const beyond = [
         <a class="brand" href="#top"><Mark size={20} />sova</a>
         <nav class="footer-links" aria-label="Footer">
           <a href={site.repo}>Sova on GitHub</a>
+          <a href="/docs/">Docs</a>
           <a href={site.gettingStarted}>Getting Started</a>
           <a href={site.customization}>Customization</a>
           <a href="/mesh">Mesh</a>

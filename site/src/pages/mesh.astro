@@ -1,5 +1,6 @@
 ---
 import Base from "../layouts/Base.astro";
+import SiteNav from "../components/SiteNav.astro";
 import Icon from "../components/Icon.astro";
 import Mark from "../components/Mark.astro";
 import InstallBlock from "../components/InstallBlock.astro";
@@ -30,20 +31,7 @@ const meshCards = [
   title="Sova · Mesh"
   description="Mesh in Sova: run Sova on several machines on your tailnet and use them all from one sidebar. A preview feature of the open-source Sova workspace."
 >
-  <header class="nav">
-    <div class="wrap nav-inner">
-      <a class="brand" href="/" aria-label="Sova home"><Mark size={24} />sova</a>
-      <nav class="nav-links" aria-label="Page">
-        <a href="/">← Back to Sova</a>
-        <a class="nav-link-extra" href="/orgs">Organizations</a>
-      </nav>
-      <span class="nav-spacer"></span>
-      <a class="button button-ghost nav-gh" href={site.repo}><Icon name="external" size={16} /><span class="nav-gh-label">GitHub</span><span class="visually-hidden"> (Sova on GitHub)</span></a>
-      <button type="button" class="button button-ghost button-icon theme-toggle" data-theme-toggle aria-label="Use Light Theme" aria-pressed="false">
-        <Icon name="sun" size={18} class="icon-sun" /><Icon name="moon" size={18} class="icon-moon" />
-      </button>
-    </div>
-  </header>
+  <SiteNav page="mesh" />
 
   <main id="main">
     <section class="section" id="mesh" aria-labelledby="mesh-title">

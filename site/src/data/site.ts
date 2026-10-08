@@ -19,3 +19,6 @@ export const pi = "https://pi.dev";
 
 // The revision and date the page's claims were checked against (derive-website playbook).
 export const verified = { ref: "master", rev: "9f94e69", date: "2026-09-28" };
+
+// The revision and date the /docs pages were written from Sova's spec and checked against its source.
+export const docsVerified = { rev: "1469ad33", date: "2026-10-08" };

@@ -1,5 +1,6 @@
 ---
 import Base from "../layouts/Base.astro";
+import SiteNav from "../components/SiteNav.astro";
 import Icon from "../components/Icon.astro";
 import Mark from "../components/Mark.astro";
 import InstallBlock from "../components/InstallBlock.astro";
@@ -74,23 +75,7 @@ const beyond = [
   title="Sova · Every agent session, one calm workspace"
   description="Sova is an open-source browser workspace for the pi coding agent, on your desk or on a phone, foldables included. Delegate work to subagents you can follow, agree on the plan before they build, and read every change as steps."
 >
-  <header class="nav">
-    <div class="wrap nav-inner">
-      <a class="brand" href="#top" aria-label="Sova, back to top"><Mark size={24} />sova</a>
-      <nav class="nav-links" aria-label="Page">
-        <a href="#features">Features</a>
-        <a class="nav-link-extra" href="/mesh">Mesh</a>
-        <a class="nav-link-extra" href="/orgs">Organizations</a>
-        <a href="#how">How It Works</a>
-        <a href="#source">Open Source</a>
-      </nav>
-      <span class="nav-spacer"></span>
-      <a class="button button-ghost nav-gh" href={site.repo}><Icon name="external" size={16} /><span class="nav-gh-label">GitHub</span><span class="visually-hidden"> (Sova on GitHub)</span></a>
-      <button type="button" class="button button-ghost button-icon theme-toggle" data-theme-toggle aria-label="Use Light Theme" aria-pressed="false">
-        <Icon name="sun" size={18} class="icon-sun" /><Icon name="moon" size={18} class="icon-moon" />
-      </button>
-    </div>
-  </header>
+  <SiteNav page="home" />
 
   <main id="main">
     <!-- HERO -->

@@ -100,8 +100,11 @@ p code, li code, td code, dd code {
 :root[data-theme="light"] .theme-toggle .icon-sun { display: none; }
 /* The Mesh and Organizations pages get nav links only where the bar has room for them. */
 @media (max-width: 1099px) { .nav-links .nav-link-extra { display: none; } }
+.nav-links a[aria-current="page"] { color: var(--color-ink); }
+/* Narrow bars keep one link, Docs. */
 @media (max-width: 767px) {
-  .nav-links, .nav .chip { display: none; }
+  .nav .chip, .nav-links a:not(.nav-link-keep) { display: none; }
+  .nav-links { margin-left: var(--space-1); }
   .nav-gh .nav-gh-label { display: none; }
   .nav-gh { width: var(--control-md); padding: 0; }
 }

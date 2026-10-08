@@ -1,5 +1,6 @@
 ---
 import Base from "../layouts/Base.astro";
+import SiteNav from "../components/SiteNav.astro";
 import Icon from "../components/Icon.astro";
 import Mark from "../components/Mark.astro";
 import InstallBlock from "../components/InstallBlock.astro";
@@ -33,20 +34,7 @@ const orgCards = [
   title="Sova · Organizations"
   description="Organizations in Sova: ask the people who know through their own link, one at a time, and keep every decision with who made it and in their words. A preview feature of the open-source Sova workspace."
 >
-  <header class="nav">
-    <div class="wrap nav-inner">
-      <a class="brand" href="/" aria-label="Sova home"><Mark size={24} />sova</a>
-      <nav class="nav-links" aria-label="Page">
-        <a href="/">← Back to Sova</a>
-        <a class="nav-link-extra" href="/mesh">Mesh</a>
-      </nav>
-      <span class="nav-spacer"></span>
-      <a class="button button-ghost nav-gh" href={site.repo}><Icon name="external" size={16} /><span class="nav-gh-label">GitHub</span><span class="visually-hidden"> (Sova on GitHub)</span></a>
-      <button type="button" class="button button-ghost button-icon theme-toggle" data-theme-toggle aria-label="Use Light Theme" aria-pressed="false">
-        <Icon name="sun" size={18} class="icon-sun" /><Icon name="moon" size={18} class="icon-moon" />
-      </button>
-    </div>
-  </header>
+  <SiteNav page="orgs" />
 
   <main id="main">
     <section class="section" id="orgs" aria-labelledby="orgs-title">

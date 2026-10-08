@@ -8,4 +8,6 @@ export default defineConfig({
   build: { inlineStylesheets: "auto" },
   devToolbar: { enabled: false },
   server: { port: 4340, host: true },
+  // The docs' code blocks are commands and file names: plain, in the site's own colours.
+  markdown: { syntaxHighlight: false },
 });

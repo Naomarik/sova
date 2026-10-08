@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { carriedStart, chunkStart, fillStops, imagesEstimate, initialStart, lineCols, MAX_BUILT_ROWS, MAX_CHUNK, MIN_CHUNK, nextChunk, rowEstimate, rowIndexFor, TAIL_ROWS, textShape, windowId } from "./tail-render";
+import { carriedStart, chunkStart, fillStops, imagesEstimate, initialStart, JUMP_MARGIN_ROWS, jumpStart, lineCols, MAX_BUILT_ROWS, MAX_CHUNK, MIN_CHUNK, nextChunk, rowEstimate, rowIndexFor, TAIL_ROWS, textShape, windowId } from "./tail-render";
 
 test("a long list opens on its last TAIL_ROWS rows; a short one is built whole", () => {
   assert.equal(initialStart(802), 802 - TAIL_ROWS);
@@ -14,6 +14,16 @@ test("chunks walk the window up to row 0 and stop there", () => {
   const seen: number[] = [];
   while (start > 0) seen.push((start = chunkStart(start, 50)));
   assert.deepEqual(seen, [20, 0]);
+});
+
+test("a jump builds JUMP_MARGIN_ROWS rows above its target, never past the top, never fewer than are built", () => {
+  assert.equal(jumpStart(500, 900), 476, "an unbuilt target: the margin above it too");
+  assert.equal(jumpStart(10, 900), 0, "near the top of the list: as many as there are");
+  assert.equal(jumpStart(0, 900), 0, "the first row: nothing above it to build");
+  assert.equal(JUMP_MARGIN_ROWS, 24);
+  assert.equal(jumpStart(905, 900), 881, "a built target just under the window's top: the rows above it built too");
+  assert.equal(jumpStart(950, 900), 900, "a target with the margin already built: nothing more");
+  assert.equal(jumpStart(500, 900, 5), 495, "the margin is a parameter");
 });
 
 test("the idle fill stops at MAX_BUILT_ROWS built, or at the top of a shorter list", () => {

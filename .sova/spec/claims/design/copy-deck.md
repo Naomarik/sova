@@ -313,8 +313,9 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Group labels | Major mode · Minor modes · Subagents |
 | Subagents row / Delegate detail | Subagents · {name} / Profile: {name} |
 | Subagent picker | Back · Subagent profiles · Search subagent profiles · Manage Profiles… · Save Current as Profile |
-| Descriptions | from pi-config `MODE_DESCRIPTIONS` (state.ts): normal: Pi as usual · delegate: Orchestrate: route planning, investigation and implementation to workers by profile · minors: from pi-config `MINOR_DESCRIPTIONS` |
+| Descriptions | from pi-config `MODE_DESCRIPTIONS` (state.ts): normal: Pi as usual · delegate: Orchestrate: route planning, investigation and implementation to workers by profile · minors, from pi-config `MINOR_DESCRIPTIONS` (minor.ts): align: Align with the user on what to build (architecture, UX, scope) before building · spec: Scope work from the project's .sova/spec documentation, propose changes in drafts, and promote them once implemented · vis: Draw small inline visuals (vis fences: flow, sequence, tree, timeline, chart, …) when a picture explains faster than prose · codemode: Let the model run JavaScript that calls tools in parallel and filters their output (pi's codemode tool) |
 | Delegate gear | icon only; `aria-label`/`title`: Configure Delegate (opens Settings → Subagents; switches nothing) |
+| Spec gear | icon only; `aria-label`/`title`: Configure Spec (opens Settings → Subagents at its spec-writer section; switches nothing) |
 | Foot | strict: {on\|off} · A switch here is this chat's own. New sessions start from the default. |
 | Save button | `Save as default` · while the save is in flight: `Saving…` · when this chat's mode, strict flag, minors and subagent profile match the saved defaults: ✓ `Already the default` (`aria-disabled`). The visible label is the accessible name |
 | Save button `title` | New sessions will start from {mode · strict · minors}. · already: New sessions already start from {mode · strict · minors}. · this chat's mode not arrived: Make this chat's mode the default for new sessions. (already: New sessions already start from the default mode.) — `strict` named only when on |
@@ -324,7 +325,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Can't switch | **This chat can't switch.** This chat can't switch: the mode extension isn't loaded here, or another program wrote this session. |
 | Switch failed | **Couldn't switch the mode.** {reason}. Your mode is unchanged. |
 | Load failed | **Couldn't load the modes.** Your mode is unchanged. Close this and try again. |
-| Transcript marker | Mode → {mode} · Minor mode: {minor} on\|off (shown as recorded) |
+| Transcript marker | Mode → {mode} · Minor mode: {minor} on\|off · Strict mode on\|off (shown as recorded) |
 | Toast (from the extension) | Mode: {mode} · Minor mode: {minor} on\|off |
 
 ## §design.copy-deck/context-window — Context window

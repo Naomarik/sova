@@ -34,6 +34,8 @@ pnpm run preview    # serves dist/ locally
 The theme grid is read from the repository's `themes/*.json` at build time, so the build needs
 the whole repository checked out, not only `site/`.
 
+Set `SOVA_SITE_URL` to the address the site is served from so link previews get an absolute image URL.
+
 ## What to update
 
 - **A new release:** `release` in `src/data/site.ts` sets the install command, the version pill
@@ -41,6 +43,14 @@ the whole repository checked out, not only `site/`.
   (the revision and date the footer names).
 - **The design tokens:** re-copy `src/design/tokens.css` into `src/styles/tokens.css`; don't edit
   values here.
+- **The Vis page's examples:** after a change to an example (`scripts/vis-examples/examples.mjs`)
+  or to the app's vis code or styles (the repository's `src/vis/`), run `pnpm run vis-examples`
+  here and commit `src/generated/vis-examples.html`. It draws each example with the app's own
+  components, server-side, into static HTML plus the vis styles scoped to the examples, and the
+  docs page puts it where `vis.md` has its `<!-- vis-examples -->` line. It needs the repository's
+  root packages (`pnpm install` at the root). It stops on an example that doesn't parse or draws
+  with warnings, on a kind with no example, and when a View it hands a width to has changed. The
+  build doesn't run it, so a stale file builds without complaint.
 
 ## The social card
 

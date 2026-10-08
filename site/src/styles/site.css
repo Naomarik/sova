@@ -27,7 +27,9 @@ html {
 }
 @media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
 
-body { margin: 0; min-width: 320px; overflow-x: clip; }
+/* No min-width: a 320px window with a classic scrollbar leaves 305px, and a 320px floor would
+   scroll the page sideways there. Every part of the page fits in 305px. */
+body { margin: 0; overflow-x: clip; }
 h1, h2, h3, h4, p, ul, ol, figure, dl, dd { margin: 0; }
 ul, ol { padding: 0; list-style: none; }
 a { color: var(--color-accent); text-underline-offset: 3px; text-decoration-thickness: 1px; }
@@ -98,10 +100,13 @@ p code, li code, td code, dd code {
 .theme-toggle .icon-moon { display: none; }
 :root[data-theme="light"] .theme-toggle .icon-moon { display: inline-block; }
 :root[data-theme="light"] .theme-toggle .icon-sun { display: none; }
-/* The two newer sections get nav links only where the bar has room for them. */
+/* The Mesh and Organizations pages get nav links only where the bar has room for them. */
 @media (max-width: 1099px) { .nav-links .nav-link-extra { display: none; } }
+.nav-links a[aria-current="page"] { color: var(--color-ink); }
+/* Narrow bars keep one link, Docs. */
 @media (max-width: 767px) {
-  .nav-links, .nav .chip { display: none; }
+  .nav .chip, .nav-links a:not(.nav-link-keep) { display: none; }
+  .nav-links { margin-left: var(--space-1); }
   .nav-gh .nav-gh-label { display: none; }
   .nav-gh { width: var(--control-md); padding: 0; }
 }
@@ -136,7 +141,9 @@ p code, li code, td code, dd code {
 
 /* ---- HERO. Centered copy, then the workspace, half on paper and half on a sunken band. ---- */
 
-.hero { padding: clamp(40px, 5.5vw, 72px) 0 0; position: relative; isolation: isolate; }
+/* overflow-x: clip keeps the glow (up to 180vw wide) and the hero's full-bleed band from widening
+   the page; the glow still spills upward, since clip on one axis leaves the other visible. */
+.hero { padding: clamp(40px, 5.5vw, 72px) 0 0; position: relative; isolation: isolate; overflow-x: clip; }
 
 /* Hero + closing backdrop: the one deliberate exception to "no gradients/glow".
    An indigo radial glow, plus (hero only) a faint grid masked out toward the edges.
@@ -175,13 +182,16 @@ p code, li code, td code, dd code {
   filter: blur(20px);
 }
 .h-hero .grad { display: inline; background: var(--site-grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
-.hero-copy { display: flex; flex-direction: column; align-items: center; text-align: center; gap: var(--space-5); }
+.hero-copy { display: flex; flex-direction: column; align-items: center; text-align: center; gap: var(--space-5); min-width: 0; }
+.hero-copy > * { max-width: 100%; min-width: 0; overflow-wrap: anywhere; }
 /* The app icon, large enough for the fold to read. Its box is fixed by width and height, so
    nothing moves when it paints. The pill sits a little closer to it than the copy's usual gap,
    and the hero's top padding gave back about what the mark added. */
-.hero-mark { width: clamp(64px, 6vw, 88px); height: auto; aspect-ratio: 1; border-radius: 25%; box-shadow: var(--shadow-2); margin-bottom: calc(var(--space-4) - var(--space-5)); }
-.hero .h-hero { max-width: 20ch; }
+.hero-mark { width: clamp(56px, 5vw, 72px); height: auto; aspect-ratio: 1; border-radius: 25%; box-shadow: var(--shadow-2); margin-bottom: calc(var(--space-4) - var(--space-5)); }
+/* The headline is 2 lines on a desktop; its second sentence is a subline, not 2 more big lines. */
+.hero .h-hero { max-width: 20ch; font-size: clamp(40px, 5.4vw, 72px); }
 .hero .h-hero > span { display: block; }
+.hero .h-hero > .quiet { max-width: none; margin-top: .45em; font-size: clamp(20px, 2.4vw, 34px); line-height: 1.2; letter-spacing: -.025em; font-weight: var(--fw-semibold); }
 .hero .lead { max-width: 64ch; }
 .hero-pill {
   display: inline-flex; align-items: center; gap: var(--space-3);
@@ -204,7 +214,7 @@ p code, li code, td code, dd code {
 .hero-note { font-size: var(--fs-caption); color: var(--color-ink-muted); text-wrap: balance; }
 .hero-note code { font-size: .92em; }
 .hero-links { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-2); }
-.hero-stage { margin-top: clamp(48px, 6vw, 88px); position: relative; }
+.hero-stage { margin-top: clamp(40px, 4vw, 56px); position: relative; min-width: 0; }
 .hero-stage > * { position: relative; z-index: 1; }
 .hero-stage::before {
   content: ""; position: absolute; z-index: 0;
@@ -311,6 +321,11 @@ p code, li code, td code, dd code {
 .limit .icon { color: var(--color-ink-muted); margin-top: 1px; }
 .limit strong { color: var(--color-ink); font-weight: var(--fw-semibold); }
 
+/* A feature's link to its docs page, after the limit. */
+.feature-more { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-5); font-size: 14px; font-weight: var(--fw-medium); }
+.feature-more a { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; color: var(--color-accent); text-decoration: none; }
+.feature-more a:hover { color: var(--color-accent-hover); text-decoration: underline; }
+
 /* ---- CARDS. ------------------------------------------------------------------ */
 
 .cards { display: grid; gap: var(--space-4); grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); }
@@ -335,6 +350,17 @@ p code, li code, td code, dd code {
 .cards-fit { grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); }
 .cards-follow { margin-top: clamp(56px, 7vw, 96px); }
 .cards-note { margin-top: var(--space-5); text-align: center; }
+/* A card that opens a page: its title is the link, stretched over the whole card. */
+.fcard-link { position: relative; transition: border-color var(--dur-fast) var(--ease-standard); }
+.fcard-link h3 a { color: var(--color-ink); text-decoration: none; }
+.fcard-link h3 a::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
+.fcard-link h3 a:focus-visible { outline: none; }
+.fcard-link:has(h3 a:focus-visible) { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.fcard-link:hover { border-color: var(--color-border-strong); }
+.fcard-more { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: var(--fw-medium); color: var(--color-accent); }
+.fcard-link:hover .fcard-more { color: var(--color-accent-hover); }
+.fcard-link .fcard-limit { margin-top: 0; }
+.fcard-link p:not(.fcard-limit) { flex: 1; }
 .eyebrow .chip { font-size: 10px; padding: 1px 8px; letter-spacing: .06em; }
 .fcard .chip { font-size: 10px; padding: 0 7px; line-height: 1.7; vertical-align: 1px; }
 .chip-soon { color: var(--status-warn); border-color: currentColor; background: transparent; }

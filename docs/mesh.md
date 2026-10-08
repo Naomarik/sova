@@ -10,9 +10,10 @@ sends no request to another machine.
 
 ## Requirement: every host is reachable by the same devices
 
-Sova has no login of its own. The tailnet is the gate. Any device that can open one Sova host's
-page can use every peer of that host through it, because the host forwards `/peer/<id>/…` for the
-page it serves.
+A browser unlocks each Sova host's page with that host's token, or a one-use pairing code from its
+**Access** page. Hosts trust each other by Tailscale identity, with no token between them, so a
+device that has unlocked one host can use every peer of that host through it: the host forwards
+`/peer/<id>/…` for the page it serves.
 
 So **every Sova host in a mesh must be reachable by exactly the same devices.** If your tailnet
 policy lets a device reach one host, it must be fine for that device to use all of them. Don't add a

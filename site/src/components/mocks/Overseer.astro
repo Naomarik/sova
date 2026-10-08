@@ -1,8 +1,9 @@
 ---
-// The Overseer: a session that reads every other session, answering "what needs me?" and asking
-// before it acts.
+// Needs you: the Overseer answering "what needs me?" and asking before it acts, with the same
+// question arriving on a phone's lock screen as a push.
 import Frame from "../Frame.astro";
 import Icon from "../Icon.astro";
+import Mark from "../Mark.astro";
 
 const items = [
   { t: "Upload client", n: "Retry cap merged yesterday. Nothing running." },
@@ -10,29 +11,55 @@ const items = [
   { t: "Try vitest 4", n: "Tests pass on 4. You said to keep 3 for now." },
 ];
 ---
-<Frame path="overseer" class="m-frame" caption="The Overseer page: it lists the 2 sessions that need you with links to each, then asks with a confirmation card before archiving 3 finished sessions.">
-  <div class="m-session">
-    <header class="m-head">
-      <Icon name="eye" size={16} class="m-muted" />
-      <span class="m-head-title">Overseer</span>
-      <span class="m-head-end"><span class="m-seg"><span>Off</span><span class="on">List Only</span><span>Brief Me</span></span></span>
-    </header>
-    <div class="m-thread">
-      <div class="m-msg-user">What needs me?</div>
-      <div class="m-tool"><div class="m-tool-sum"><Icon name="chevron-right" size={12} /><span class="m-tool-name">sova_attention</span><span class="m-tool-arg">12 sessions</span><span class="m-ok">✓</span></div></div>
-      <div class="m-msg">
-        <p>2 sessions need you:</p>
-        <p style="margin-top:6px"><span class="m-link">Retry policy · claude-sonnet-5</span> asks whether to use ky's retry or its own loop.</p>
-        <p style="margin-top:4px"><span class="m-link">Flaky upload test</span> stopped with an error on its last turn.</p>
-        <p style="margin-top:6px">3 others finished and have been quiet since. Want them archived?</p>
+<figure class="duo">
+  <Frame path="overseer" class="m-frame duo-desk" caption="">
+    <div class="m-session">
+      <header class="m-head">
+        <Icon name="eye" size={16} class="m-muted" />
+        <span class="m-head-title">Overseer</span>
+        <span class="m-head-end"><span class="m-seg"><span>Off</span><span class="on">List Only</span><span>Brief Me</span></span></span>
+      </header>
+      <div class="m-thread">
+        <div class="m-msg-user">What needs me?</div>
+        <div class="m-tool"><div class="m-tool-sum"><Icon name="chevron-right" size={12} /><span class="m-tool-name">sova_attention</span><span class="m-tool-arg">12 sessions</span><span class="m-ok">✓</span></div></div>
+        <div class="m-msg">
+          <p>2 sessions need you:</p>
+          <p style="margin-top:6px"><span class="m-link">Upload metrics</span> asks whether a retry counts as an error.</p>
+          <p style="margin-top:4px"><span class="m-link">Flaky upload test</span> stopped with an error on its last turn.</p>
+          <p style="margin-top:6px">3 others finished and have been quiet since. Want them archived?</p>
+        </div>
+        <div class="m-confirm">
+          <div class="m-confirm-head">Archive 3 finished sessions?</div>
+          {items.map((i) => (
+            <div class="m-confirm-item"><span class="m-check"><Icon name="check" size={10} /></span><div><b>{i.t}</b><span>{i.n}</span></div></div>
+          ))}
+          <div class="m-confirm-foot"><span class="m-btn m-btn-primary">Archive 3</span><span class="m-btn">Keep Them</span></div>
+        </div>
       </div>
-      <div class="m-confirm">
-        <div class="m-confirm-head">Archive 3 finished sessions?</div>
-        {items.map((i) => (
-          <div class="m-confirm-item"><span class="m-check"><Icon name="check" size={10} /></span><div><b>{i.t}</b><span>{i.n}</span></div></div>
-        ))}
-        <div class="m-confirm-foot"><span class="m-btn m-btn-primary">Archive 3</span><span class="m-btn">Keep Them</span></div>
+    </div>
+  </Frame>
+  <div class="phone phone-lock duo-phone" aria-hidden="true">
+    <div class="phone-screen">
+      <div class="phone-status"><span>Sat</span><span>84%</span></div>
+      <div class="phone-time">9:41</div>
+      <div class="phone-date">Saturday, October 10</div>
+      <div class="notif">
+        <Mark tile size={30} class="notif-icon" />
+        <div>
+          <div class="notif-top"><span>Sova</span><span>now</span></div>
+          <div class="notif-title">Needs input · Upload metrics</div>
+          <div class="notif-body">Count a retry as an error, or only the last failed try?</div>
+        </div>
+      </div>
+      <div class="notif">
+        <Mark tile size={30} class="notif-icon" />
+        <div>
+          <div class="notif-top"><span>Sova</span><span>6m ago</span></div>
+          <div class="notif-title">Error · Flaky upload test</div>
+          <div class="notif-body">The last turn stopped with an error.</div>
+        </div>
       </div>
     </div>
   </div>
-</Frame>
+  <figcaption class="visually-hidden">The Overseer page: it lists the 2 sessions that need you with links to each, then asks with a confirmation card before archiving 3 finished sessions. Beside it, a phone's lock screen shows the same 2 sessions as Sova notifications: one needs input, one stopped with an error.</figcaption>
+</figure>

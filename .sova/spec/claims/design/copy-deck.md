@@ -407,9 +407,12 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Balance (DeepSeek) | label Balance · value `$4.29` (currency of the balance) · context: the non-zero parts of Granted `$0.00` · Topped up `$4.29`, joined by ` · `, omitted when both are 0 |
 | Out of credit note | This balance can't fund calls. They'll fail until it's topped up. |
 | Meter context | Resets in {2h 17m} (under 24h) · Resets {Sep 25} · declared reset: Resets {Oct 14} · with a tick, then ` · day {4} of {7}` (under a day: ` · {2h 43m} of {5h}`) · reset already passed: Reset at `{HH:MM}`. New reading at the next refresh. · a free login's figures: Reset at `{HH:MM}`. Not read while it is free. |
-| Ollama reset day (card) | unset: Reset day unknown · `Set` · field label: Reset day · buttons: Save · Cancel (set: Clear) · invalid: Enter a day from 1 to 31. · set: Resets {Oct 14} · day {18} of {30} · `Change` |
+| Ollama activity (card and `/usage` detail) | Activity · Reported USD · Requests · Input tokens · Cached input tokens (included in input) · Output tokens · actual UTC from/until interval · missing metric: Unknown · chart: Daily reported USD · unfinished/in-progress day: Partial · usage may be delayed |
+| Ollama included credits | Included remaining · Included allowance · exact provider UTC period · Purchased remaining (separate) · absent/invalid: Unknown · kept after failure: Previous reading · as of {time} · {error} · exhausted: Ollama Cloud's included credits are used up. |
+| Usage summary, no attention sentence | All providers under limits. (only with current interpretable quota readings) · activity but no current included-credit reading: No reported limit needs attention. Ollama Cloud's included credits are unknown. · with attention sentences, append: Ollama Cloud's included credits are unknown. · other unavailable/stale readings without an attention sentence: No reported limit needs attention. Some readings are unavailable or stale. |
+| Ollama reset day (card, declared fallback only when no valid provider credit period) | unset: Reset day unknown · `Set` · field label: Reset day · buttons: Save · Cancel (set: Clear) · invalid: Enter a day from 1 to 31. · set: Resets {Oct 14} · day {18} of {30} · `Change` |
 | `/usage reset-day` | Ollama Cloud resets on day {14} of each month. · Ollama Cloud's reset day is cleared. · Usage: /usage reset-day ollama <1-31\|clear> |
-| Usage chips | Near limit · Rate-limited · Quota used · Out of credit (DeepSeek, `available:false`) |
+| Usage chips | Near limit · Rate-limited · Quota used · Included credits used (Ollama's current included credits, warning: purchased credits remain separate) · Out of credit (DeepSeek, `available:false`) |
 | Stale usage (banner-warn; only after a failed Refresh Usage) | **Usage is {42m} old.** Couldn't refresh: {message} · button: `Retry` |
 | Usage file missing (`reason:"missing"`) | **No usage data yet.** Nothing has fetched provider usage on this machine. Refresh Usage fetches it now. · button: `Refresh Usage` |
 | Usage file corrupt (`reason:"corrupt"`) | **Couldn't read usage.** `usage-status.json` isn't valid JSON right now. Nothing was changed. It's rewritten at the next refresh. · button: `Retry` |
@@ -422,7 +425,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Provider `badkey` | Ollama Cloud refused the key in `~/.pi/agent/auth.json`. · Z.ai: Z.ai refused the API key in `~/.pi/agent/auth.json`. |
 | Provider `na` | This account doesn't report usage. |
 | Provider `error`, no windows | Couldn't fetch usage: {error}. We'll try again at the next refresh. |
-| Provider `error`, windows kept | No note: the card shows the kept windows (or balance) as an ordinary reading |
+| Provider `error`, windows kept | No note: the card shows the kept windows (or balance) as an ordinary reading; exception: Ollama activity and balance each mark their own kept reading, time and error, never taking freshness from the other endpoint |
 | Provider key dropped by an older pi | No note: the reading we last stored for it (at most 24h old) is shown as an ordinary reading |
 | Team card | {name} · `{id}` · foot: Started {rel} in {parent title} · ended (parent session only): chip "Ended" |
 | Member status chips | Starting · Working · Idle · Stopping · Done · Failed · Stopped · No report yet |

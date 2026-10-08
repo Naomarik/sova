@@ -1,7 +1,7 @@
 # §app/insights — Insights
 > Part of the Sova design spec · [overview](../design/overview.md)
 
-What the user's pi extensions publish, read-only except for one cache: subscription usage
+What the user's pi extensions publish, read-only except for one cache: subscription usage, provider-reported credits and activity
 (usage-status), which this server also keeps fresh itself (§app.insights/usage-refresh), teams and
 subagents (subagents + sessions live records), the LLM calls in flight and their output-token ring
 (each process's own count in its live record, and each connected host's own count,
@@ -17,7 +17,7 @@ working worker is never the one it leaves out.
 
 - **Global:** two main-pane pages, each about one thing, entered from two pinned `.sidebar-foot`
   rows:
-  - **`#/usage`** covers subscription limits.
+  - **`#/usage`** covers subscription limits, provider-reported credits and activity.
   - **`#/agents`** covers teams and subagents. Team deep links are `#/agents/{teamId}`.
 
   The head is full at 320px (§app/session-list). A third sidebar region would scroll away and mix non-session
@@ -117,7 +117,7 @@ Usage glance needs the room.
     and its long one as a 4px bar under it, 1px apart: Claude's 5-hour over the window flagged
     `active` when that is a 7-day one (a 7-day Fable, say), else its 7-day; Z.ai's plan window
     (5-hour) over MCP uses. A one-window provider draws one 6px bar: OpenAI the window flagged
-    `active` (the first one, if several are), else its 7-day, else its longest; Ollama its Monthly.
+    `active` (the first one, if several are), else its 7-day, else its longest; legacy Ollama percent readings their Monthly. Modern Ollama activity and included/purchased credit fields are not glance windows or DeepSeek-style balances; they remain on the Usage page and are omitted from the web glance under Missing data below. The TUI's compact status is separate (§app.insights/ollama-activity).
     Never Claude's Opus-only window. A provider sending only one of its two windows draws that one
     as a one-window provider does. A window of the pair with no current reading (its reset
     passed) keeps its place as an empty track, so the meter's shape never jumps.
@@ -665,6 +665,34 @@ Both pages share one shell: a `.session-head` and a `.insights.pane` containing
   load usage." or "Couldn't load agents." Any data already loaded stays visible below it. The
   worktrees request never raises one (§app.insights/subagent-cards).
 
+## §app.insights/usage-detail-reachability — Reading all of the TUI usage detail
+
+The TUI `/usage` detail keeps every reported provider section and its error, freshness and reset information reachable when the content is taller than the terminal, including a 24-row terminal, by scrolling or paging rather than silently truncating the tail.
+
+- Keep the overlay inside the terminal bounds. Its title and navigation/close hints remain visible while the content moves through a bounded viewport.
+- Keyboard navigation can reach the first and last content rows, with visible position or remaining-content feedback; reaching an edge does not close the overlay or discard data. Escape retains its existing close behavior, and refresh retains its existing meaning.
+- Apply reachability to the full detail, not only Ollama: adding Ollama activity/credits must not hide another provider's detail or error. No extra provider fetches, credential changes, status meaning changes or new web behavior are introduced by navigation.
+
+## §app.insights/ollama-activity — Ollama Cloud's reported activity
+
+Ollama Cloud activity readings show the provider's actual interval, reported USD, requests and separate input, cached-input and output tokens; the Usage page adds a daily USD trend with partial days marked, without inventing a quota.
+
+- **Source and shape.** Accept the inspected activity response with `range`, `scope`, `granularity`, `from`, `until`, `totals` and `buckets` (the inspected selection is `7d`, `self`, `day`). Totals and bucket metrics are `request_count`, `usage_usd`, `input_tokens`, `cached_input_tokens`, `output_tokens`. `request_count` is required in totals and every reported bucket as a safe nonnegative integer; an absent or malformed request count makes that activity response unavailable. USD and token metrics may be omitted for legacy requests: a missing metric is unknown, never zero, and does not erase other valid reported metrics. Preserve the actual reporting bounds and scope; do not silently assume every response spans a reset cycle or every bucket a complete day. Normalize only valid finite nonnegative metrics when present and valid ordered reporting bounds. Invalid required reporting metadata is unavailable, never a successful all-zero reading. Unknown response fields do not become quota facts. Supported ranges are `24h`, `7d`, `30d` (default `7d`); supported scopes are `self` and `team` (default `self`, team requires an administrator). Custom ranges are not supported; unsupported or repeated query parameters are rejected with HTTP 400. Do not request invented reset-cycle bounds.
+- **Card and TUI.** The Usage card and `/usage` detail show this as activity, not a monthly percentage. Label the amount "Reported USD", not subscription spend, balance or allowance used: `usage_usd` includes both requests covered by the plan and requests paid from purchased credits. Show requests and input, cached input and output tokens as distinct labelled quantities. Input includes cached-input tokens; explicitly identify cached input as included in input and never sum the two. Show the actual from/until interval; the range label alone is not the interval. The compact TUI status must not print an undefined or fabricated percent for an activity reading.
+- **Daily trend.** Plot each reported day's `usage_usd` over the reported interval, with its date and amount available in text. Reporting bounds and buckets are UTC, with `from` inclusive and `until` exclusive; `7d` and `30d` cover complete days plus today. Mark a day partial when the reporting bounds or bucket bounds cover only part of that UTC day, including an unfinished current day. The provider's `partial` field means still in progress, not proof of interval completeness; reporting of new usage can be delayed. Preserve the provider's bucket boundaries rather than regrouping by the viewer's local date. Missing days or missing USD values are gaps, not inferred zeros; no trend extrapolation, previous-cycle comparison or percent history is derived from activity totals. Distinguish this reported USD chart from quota burn and from this device's usage ledger/API-price estimates.
+- **Activity is not subscription consumption.** Activity totals have no quota, reset or plan denominator. `usage_usd` is request value including purchased-credit usage, not a subscription debit. Do not divide rolling activity dollars by an allowance or subscription price, infer quota used, produce a run-out estimate or percent history from raw totals, or extrapolate the range into a month. Authoritative monthly included credits come separately from §app.insights/ollama-credits; speculative declared-budget consumption is not part of this feature. No personal allowance or subscription amount is hardcoded in public code, fixtures or documentation.
+- **Compatibility.** Legacy monthly percent responses and caches remain supported alongside activity; activity and legacy data are distinguishable across fetch, cache, server wire, web and TUI. Credential handling and refresh/cache fallback remain §app.insights/usage-refresh's. The page summary acknowledges an activity-only provider's unknown included-credit status when no current balance is available (§app.insights/usage-cards).
+
+## §app.insights/ollama-credits — Ollama Cloud's included and purchased credits
+
+Ollama Cloud's monthly credit display reads authoritative included balance, allowance and UTC period from its balance endpoint, with purchased credits separate; rolling activity dollars never stand in for subscription consumption.
+
+- **Fetch and parse.** Fetch `GET /api/balance` with the same bearer key as activity and no query parameters. Parse `included.balance_usd` as remaining included credits, `included.allowance_usd` as included credits available for the full period, `included.period.from` and `included.period.until` as the exact provider cycle, and `purchased.balance_usd` as remaining unexpired purchased credits. USD values must be finite and nonnegative; period bounds must be valid ordered UTC timestamps. Missing or malformed sections remain unknown, not zero, without discarding independent valid sections. Never require legacy session/weekly fields: the inspected response has none. When the balance API actually supplies legacy `session` or `weekly` `remaining_percent` and optional `resets_at`, the detail view may show those reported remaining shares and resets separately. Never invent those windows from activity or treat them as included-credit allowance.
+- **Monthly card.** Show "Included remaining" and the remaining USD against "Included allowance" for the full provider period, plus its actual start/end dates. The included period follows the plan's monthly reset schedule, including annual subscriptions: `from` is inclusive, `until` exclusive. The provider period is authoritative, not relabelled with the saved reset day. Any included-credit meter uses only balance and allowance: used share is `(allowance − balance) / allowance` when allowance is positive and the pair permits a meaningful share; zero allowance, missing values or inconsistent pairs get no fabricated percent or divide-by-zero. Exact remaining and allowance values remain visible even when a percent is not meaningful. Label any derived figure as included credits used, never total request value or total subscription spend. No inferred run-out or historical consumption chart is introduced by this balance reading.
+- **Purchased card section.** Show "Purchased remaining" separately with its USD balance. Purchased credits are not added to the included allowance, used-share numerator or monthly meter. Included exhaustion is not proof that calls cannot run: purchased credits may remain. No invented top-up history or expiry date is shown.
+- **Independent freshness.** Activity and balance have independent last-success timestamps, errors and last-good readings in cache and wire data. Failure of one endpoint does not erase the other's success, block its display or advance the failed endpoint's timestamp. Kept balance after a failed fetch is explicitly marked as a previous reading with its own time and error; a fresh activity response cannot make that balance look current. The converse applies to kept activity. A balance whose provider period has ended is not a current included-credit reading, even if activity was just refreshed. Unknown or stale included credits never justify "All providers under limits." A kept reading is also previous when its own time is unknown, ahead of now or more than 10 minutes old. Refresh uses existing scheduling and locks, with no credential writes or token refresh.
+- **Legacy and fallback.** Continue reading legacy monthly percent responses/caches. When no valid provider balance period is available, the saved reset day remains a declared fallback for legacy monthly windows or an independently labelled subscription reset; it never turns activity into monthly consumption. Older caches and servers without balance data remain usable, with absent included/purchased values unknown. The authoritative balance endpoint supersedes speculative configurable-budget estimates; the user's personal amount is not a product default.
+
 ## §app.insights/usage-cards — Usage cards
 
 ```html
@@ -690,7 +718,7 @@ Both pages share one shell: a `.session-head` and a `.insights.pane` containing
 
 - **Summary lead.** Above the grid, one `.usage-lead` line: one sentence per provider that needs
   attention, in payload order ("Claude's 5-hour window is rate-limited — resets in 1h 58m.",
-  "DeepSeek is out of credit."), or "All providers under limits." when none does. Claude's
+  "DeepSeek is out of credit."), or "All providers under limits." when none does and every displayed quota-bearing provider has a current interpretable reading. When Ollama has activity but no current interpretable included-credit reading, the lead instead says "No reported limit needs attention. Ollama Cloud's included credits are unknown." if there is no attention sentence; with attention sentences it appends "Ollama Cloud's included credits are unknown." A stale balance is not a current reading. An authoritative positive-allowance included-credit reading may contribute its actual used share to attention status, never rolling activity dollars. Included exhaustion is described as "Ollama Cloud's included credits are used up.", not "Out of credit" or proof calls will fail, because purchased credits are separate. Claude's
   sentence reads the same login the sidebar foot's `C` does (§app.insights/sidebar-foot, **Which
   Claude login**): with no chat open, the login in use for new chats, never a limited login that
   no chat is on. With more than one login it names it: "Claude (spare@example.com)'s 7-day
@@ -769,6 +797,7 @@ Both pages share one shell: a `.session-head` and a `.insights.pane` containing
   head chip is `.chip.chip-error` "Out of credit" and a `.usage-note` under the balance reads "This
   balance can't fund calls. They'll fail until it's topped up." A failed fetch that kept the balance
   says nothing: the balance reads as an ordinary one.
+- **Ollama activity.** An activity reading is shown as §app.insights/ollama-activity specifies, not as a monthly quota meter. The activity section has no limit chip, pace tick, quota burn or inferred reset; a separate authoritative included-credit section follows §app.insights/ollama-credits. Legacy monthly percent readings retain the monthly meter.
 - **Meters.** Each window gets a `.meter`. The number comes first, the bar second, and there's
   never a bar alone.
   - **Value.** `Math.round(pct)` followed by `%`. No decimals: the sources round, and a decimal
@@ -806,8 +835,8 @@ Both pages share one shell: a `.session-head` and a `.insights.pane` containing
   | A 5-hour window ≥ 100% | `.chip.chip-warn` "Rate-limited" (it comes back on its own) |
   | A 7-day, monthly, or MCP-uses window ≥ 100% | `.chip.chip-error` "Quota used" (waits for the reset) |
   | A balance with `available: false` | `.chip.chip-error` "Out of credit" (waits for a top-up) |
-  | `error` set and `windows` (or a balance) kept | none: the kept reading is shown with no chip and no note |
-- **Provider not ok.** The body is a single `.usage-note` (`nologin`, `expired`, `nokey`,
+  | `error` set and `windows` (or a balance) kept | none: the kept reading is shown with no chip and no note, except Ollama's independently stale endpoint readings, which carry their own previous-reading time and error (§app.insights/ollama-credits) |
+- **Provider not ok.** Ollama's independent activity and balance sections may still show a valid kept reading with its own time and failure note when the other endpoint fails (§app.insights/ollama-credits). Otherwise the body is a single `.usage-note` (`nologin`, `expired`, `nokey`,
   `badkey`, `na`, or `error` with no windows; see §design/copy-deck), with no chip and no meters. Commands in
   the note go in `<code>`.
   - `expired` (the provider refused the sign-in) has two notes, chosen from the card's `auth`.
@@ -872,9 +901,9 @@ Fill past the tick means the quota is going faster than the window.
 
 ## §app.insights/usage-reset-day — Ollama Cloud's reset day
 
-Ollama Cloud reports only the share of its monthly usage used, never when the month resets. The
+Ollama Cloud may report activity totals and daily buckets instead of a monthly used share; neither activity nor a legacy percent establishes the subscription's reset day. A valid balance response supplies the authoritative included-credit period (§app.insights/ollama-credits), which takes precedence over a saved day. The
 user can declare the day of the month the subscription resets; nothing guesses it, and no reset
-is offered from a drop in usage.
+is offered from a drop in usage. Activity readings keep the provider's actual reporting interval, never relabelled as this declared month (§app.insights/ollama-activity).
 
 - **The file.** `usage-windows.json` in the pi agent dir, `{version: 1, ollama?: {resetDay:
   1..31}}`, owned by the usage-status extension's `windows.ts` (node builtins only: the strict
@@ -886,7 +915,7 @@ is offered from a drop in usage.
   changed day or a month rollover shows at once: Ollama's `month` window gains `startsAt` and
   `resetsAt` and is marked `declared: true`. `UsageInsight.ollamaResetDay` is the day, or `null`
   while none is set (absent from an older server, which offers no control).
-- **The card.** On an `ok` Ollama card with no day set, the monthly meter's context reads, muted,
+- **The card.** The reset-day control is a fallback: it remains available for legacy percent readings and for activity readings without a valid provider credit period. With an authoritative provider period it need not be shown. Without a valid provider credit period, an activity card labels its saved date as the declared subscription reset, separate from its reporting interval; that date supplies no quota denominator or monthly consumption. With a provider credit period the card uses that period for included credits, never overrides it with the saved day, and may retain the saved-day editor as an explicitly declared fallback. On a legacy `ok` Ollama card with no day set, the monthly meter's context reads, muted,
   "Reset day unknown · " and a text button "Set". It opens an inline day-of-month field labelled
   "Reset day" (1–31): Enter or Save saves it (`PUT /api/insights/usage/reset-day`, `{provider:
   "ollama", day}`, which answers with the whole usage payload; `day: null` clears), Escape or
@@ -974,14 +1003,16 @@ in the same numbers-only form.
 `limit_window_seconds`, and takes its label from it: `5h` or `7d` when within 5% of five hours or
 seven days, else `pri`; the secondary window, which reads `5h` when it sends no length, included.
 `CACHE_SCHEMA` is unchanged, since the field is additive. The server sends `resetsAt − seconds` as
-the window's `startsAt` (§app.insights/pace-tick). Ollama's reset is never in the cache: the server
-derives it from `usage-windows.json` as it reads (§app.insights/usage-reset-day).
+the window's `startsAt` (§app.insights/pace-tick). A legacy Ollama percent's declared reset is never in the cache: the server
+derives a declared subscription cycle from `usage-windows.json` as it reads (§app.insights/usage-reset-day), without replacing an activity interval.
+
+**Ollama response compatibility.** The fetch accepts both legacy `limits.monthly.usage` (a finite fraction, rendered as percent) and the activity response (§app.insights/ollama-activity). Existing percent caches still read correctly. Activity cache/wire data is separately identifiable and contains only normalized reporting metadata and metrics, never credentials. An activity response never fabricates `usedPct`, a quota window or a zero-percent reading. Activity and balance fetch failures keep their own last valid readings, timestamps and errors independently (§app.insights/ollama-credits); neither endpoint's success refreshes the failed endpoint's apparent age. Missing keys and refused keys keep their existing states. No credential source, credential write, token refresh or provider refresh schedule changes. Additive validated `usageEndpoint` metadata preserves the usage endpoint's own success time/error even for legacy percent responses, so balance failure cannot suppress a fresh monthly-percent history sample (§app.insights/usage-burn); activity failure never republishes the kept percent as fresh.
 
 ## §app.insights/usage-burn — Usage burn: how fast a subscription is going
 
 **Each Usage card meter says how fast its window is being used, how that compares with the last
 period, and when it runs out at this pace. The figures come from the provider's own percent, recorded
-over time on this device.**
+over time on this device. Activity-only Ollama readings are not quota windows: their reported daily USD trend (§app.insights/ollama-activity) is not this percent history. They feed no percent series, inferred quota, period summary, run-out projection or previous-month consumption from raw totals; legacy Ollama percent readings keep this behavior.**
 
 ```html
 <div class="meter">
@@ -1003,8 +1034,8 @@ over time on this device.**
   series. A login whose identity this device doesn't know yet is skipped, never filed under its
   login id. A window is keyed by its label plus its scope. A sample is stamped with the
   reading's own time: a Claude login's own `fetchedAt` (`default`: the cache's `claudeFetchedAt`),
-  any other provider's with the cache's `fetchedAt`. A provider whose `errors` entry is set is not
-  recorded, because a failed fetch keeps the old value under a fresh cache time. A reading no newer
+  any other provider's with the cache's `fetchedAt`, except a legacy Ollama percent in a new cache: its sample uses the usage endpoint's own last-success timestamp (`usageEndpoint.fetchedAt`). A provider whose `errors` entry is set is not
+  recorded, because a failed fetch keeps the old value under a fresh cache time, with one endpoint-specific exception: validated Ollama `usageEndpoint` metadata showing usage success permits a fresh legacy monthly-percent sample even when the aggregate Ollama error is only a balance failure. A usage-endpoint error excludes the kept percent even if balance succeeds or the aggregate error is absent. Explicit malformed endpoint metadata never falls back to the cache timestamp; an older cache without that metadata retains the original aggregate-error/file-time rule. A reading no newer
   than the last one recorded for its series and window is skipped.
 - **When.** Each tick of the server's poller that yields a cache, whether it fetched it or adopted
   another process's (a TUI's), and once at server start from the file as it is. Nothing is

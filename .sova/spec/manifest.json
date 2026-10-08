@@ -47,10 +47,9 @@
     "§app.insights/placement": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
-        "src/lib/insights.ts",
-        "src/App.tsx"
+        "src/lib/insights.ts"
       ]
     },
     "§app.insights/sidebar-foot": {
@@ -59,12 +58,7 @@
       "evidence": "verified",
       "code": [
         "src/lib/insights.ts",
-        "src/lib/insights.test.ts",
-        "src/components/Sidebar.tsx",
-        "src/design/base.css",
-        "src/lib/llm-inflight.ts",
-        "src/lib/work-now.ts",
-        "src/components/ChatView.tsx"
+        "src/lib/insights.test.ts"
       ],
       "requires": [
         "§app.claude-logins/active-login",
@@ -139,14 +133,8 @@
       "code": [
         "src/components/UsageView.tsx",
         "src/lib/insights.ts",
-        "src/lib/insights.test.ts",
         "server/insights.ts",
-        "shared/protocol.ts",
-        "src/design/base.css",
-        "server/insights-claude-logins.test.ts",
-        "src/App.tsx",
-        "src/lib/claude-login-groups.ts",
-        "src/lib/claude-login-groups.test.ts"
+        "shared/protocol.ts"
       ]
     },
     "§app.insights/usage-page-and-agents-page": {
@@ -580,10 +568,8 @@
     "§app/insights": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
-        "pi-config/extensions/sessions/schema.ts",
-        "pi-config/extensions/sessions/index.ts",
         "server/insights.ts"
       ]
     },
@@ -1477,10 +1463,11 @@
     "§design.copy-deck/insights": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
-        "src/components/CostsTab.tsx",
-        "src/lib/cost-history.ts"
+        "src/components/UsageView.tsx",
+        "src/lib/insights.ts",
+        "pi-config/extensions/usage-status/index.ts"
       ]
     },
     "§design.copy-deck/live-watch": {
@@ -4000,20 +3987,11 @@
       "authority": "accepted",
       "evidence": "verified",
       "code": [
-        "server/usage-poll.ts",
-        "server/auth-status.ts",
         "server/insights.ts",
-        "server/index.ts",
-        "server/app.ts",
         "shared/protocol.ts",
         "src/components/UsageView.tsx",
         "src/lib/insights.ts",
-        "server/usage-poll.test.ts",
-        "server/auth-status.test.ts",
-        "server/insights-usage.test.ts",
-        "pi-config/extensions/usage-status/fetch.ts",
-        "pi-config/extensions/usage-status/fetch.test.ts",
-        "server/claude-accounts.ts"
+        "pi-config/extensions/usage-status/fetch.ts"
       ]
     },
     "§app.settings-dialog/toggle-target": {
@@ -12504,20 +12482,10 @@
       "authority": "accepted",
       "evidence": "verified",
       "code": [
-        "pi-config/extensions/usage-status/windows.ts",
-        "pi-config/extensions/usage-status/windows.test.ts",
         "pi-config/extensions/usage-status/index.ts",
         "server/insights.ts",
-        "server/index.ts",
-        "server/app.ts",
-        "server/insights-usage.test.ts",
         "shared/protocol.ts",
-        "src/lib/api.ts",
-        "src/components/UsageView.tsx",
-        "src/design/base.css",
-        "server/sync/docs.ts",
-        "server/sync/docs.test.ts",
-        "pi-config/extensions/usage-status/index.test.ts"
+        "src/components/UsageView.tsx"
       ]
     },
     "§app.projects/clone": {
@@ -15205,20 +15173,14 @@
       "authority": "accepted",
       "evidence": "verified",
       "code": [
-        "server/usage-history.ts",
-        "server/usage-history.test.ts",
-        "server/usage-poll.ts",
-        "server/usage-poll.test.ts",
         "server/insights.ts",
-        "server/insights-usage.test.ts",
-        "server/index.ts",
-        "server/app.ts",
+        "server/usage-history.ts",
+        "server/ollama-usage.test.ts",
+        "pi-config/extensions/usage-status/fetch.ts",
+        "pi-config/extensions/usage-status/ollama.ts",
+        "pi-config/extensions/usage-status/ollama.test.ts",
         "shared/protocol.ts",
-        "src/lib/usage-burn.ts",
-        "src/lib/usage-burn.test.ts",
-        "src/lib/api.ts",
-        "src/components/UsageView.tsx",
-        "src/design/base.css"
+        "src/components/UsageView.tsx"
       ]
     },
     "§app.model-levels/cache": {
@@ -15709,6 +15671,74 @@
         "src/costs-tab.css",
         "src/orgs.css",
         "src/design/align-viewer.css"
+      ]
+    },
+    "§app.insights/ollama-activity": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.insights/usage-refresh",
+        "§app.insights/usage-reset-day",
+        "§app.insights/usage-cards",
+        "§app.insights/usage-burn"
+      ],
+      "code": [
+        "pi-config/extensions/usage-status/fetch.ts",
+        "pi-config/extensions/usage-status/index.ts",
+        "pi-config/extensions/usage-status/ollama.ts",
+        "pi-config/extensions/usage-status/ollama-presentation.ts",
+        "pi-config/extensions/usage-status/ollama.test.ts",
+        "shared/protocol.ts",
+        "server/insights.ts",
+        "server/usage-history.ts",
+        "server/ollama-usage.test.ts",
+        "src/components/UsageView.tsx",
+        "src/lib/insights.ts",
+        "src/lib/ollama-usage.ts",
+        "src/lib/ollama-usage.test.ts",
+        "src/lib/ollama-card.integration.test.ts",
+        "src/lib/insights.test.ts"
+      ]
+    },
+    "§app.insights/ollama-credits": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.insights/usage-refresh",
+        "§app.insights/usage-reset-day",
+        "§app.insights/usage-cards"
+      ],
+      "code": [
+        "pi-config/extensions/usage-status/fetch.ts",
+        "pi-config/extensions/usage-status/index.ts",
+        "pi-config/extensions/usage-status/ollama.ts",
+        "pi-config/extensions/usage-status/ollama-presentation.ts",
+        "pi-config/extensions/usage-status/ollama.test.ts",
+        "shared/protocol.ts",
+        "server/insights.ts",
+        "server/ollama-usage.test.ts",
+        "src/components/UsageView.tsx",
+        "src/lib/insights.ts",
+        "src/lib/ollama-usage.ts",
+        "src/lib/ollama-usage.test.ts",
+        "src/lib/ollama-card.integration.test.ts",
+        "src/lib/insights.test.ts"
+      ]
+    },
+    "§app.insights/usage-detail-reachability": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.insights/ollama-activity",
+        "§app.insights/ollama-credits",
+        "§app.insights/usage-reset-day"
+      ],
+      "code": [
+        "pi-config/extensions/usage-status/index.ts",
+        "pi-config/extensions/usage-status/overlay.test.ts"
       ]
     }
   },

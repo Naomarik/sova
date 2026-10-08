@@ -59,6 +59,7 @@ const INTEGRATION_SUFFIX = ".integration.test.ts";
 const isIntegration = (f) => f.endsWith(INTEGRATION_SUFFIX);
 const GLOBS = [
   "shared/*.test.ts",
+  "scripts/*.test.ts",
   "server/*.test.ts",
   "server/project-services/*.test.ts",
   "server/projects/*.test.ts",

@@ -9,6 +9,8 @@ The install script is safe to pipe from `curl`, needs no `sudo`, and installs no
 
 ## What you need
 
+- macOS, or Linux on x64 or arm64 (glibc or musl). Tested on Debian, Fedora and Alpine.
+- bash (Alpine has none until you `apk add bash`)
 - Git
 - Node.js 22.19 or later
 - pnpm, or npx to run the pnpm Sova pins
@@ -20,12 +22,12 @@ The server runs on Bun. The installer downloads the Bun version Sova pins into S
 ## Install
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/master/scripts/install.sh | SOVA_REF=master bash
+curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/master/scripts/install.sh | bash
 ```
 
 Until the first release is tagged, this installs Sova's `master` branch, which changes from day to day; running it again updates to master's latest commit.
 
-The script is read whole before it runs, so a download cut short runs nothing. It builds Sova in a staging folder and only replaces your install once the build has succeeded; if anything fails, the previous install stays.
+The whole script is one function that runs only after bash has read its last line, so a download cut short runs nothing. To install another tag, branch or commit, end the command with `| SOVA_REF=<ref> bash` instead; one that doesn't exist stops it before it changes anything. It builds Sova in a staging folder and only replaces your install once the build has succeeded; if anything fails, the previous install stays.
 
 What it puts on your machine:
 
@@ -57,7 +59,7 @@ That opens your browser at Sova, already signed in. Sessions you already have in
 | `sova open` | Opens the app in your browser, signed in. |
 | `sova token` | Prints this install's access token. |
 
-`sova open` and `sova token` don't start the server. Before the server has run once there's no token yet, and both tell you to start it first.
+`sova open` and `sova token` don't start the server. Before the server has run once there's no token yet, and both tell you to start it first. On a machine with no browser opener, such as a server you reach over SSH, `sova open` says so; open the page yourself and paste the token from `sova token`.
 
 ## The access token
 
@@ -70,15 +72,17 @@ There's no account, password, or expiry: anyone with the token has the same acce
 Pass options to the script after `bash -s --`:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/master/scripts/install.sh | SOVA_REF=master bash -s -- --service
+curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/master/scripts/install.sh | bash -s -- --service
 ```
 
 | Option | Does |
 |---|---|
 | `--service` | Installs the login service without asking. |
 | `--no-service` | Doesn't install it, and doesn't ask. |
-| `--port <n>` | The port the login service runs Sova on. 4800 by default. |
-| `--no-extensions` | Links no pi extensions. |
+| `--port <n>` | The port `sova` and the login service run Sova on. 4800 by default. |
+| `--no-extensions` | Links no pi extensions (links already there stay). |
+| `--dir <path>` | Installs Sova there instead of `~/.local/share/sova`. |
+| `--bin <path>` | Puts the launcher there instead of `~/.local/bin`. |
 | `--reinstall` | Rebuilds even when the install is already up to date. |
 
 ## A login service
@@ -87,9 +91,44 @@ With your yes, or `--service`, the installer adds a per-user service that starts
 
 With neither option it asks, defaulting to no. With no terminal to ask on, it installs none and says how to add one. If something already listens on the port, such as a `sova` you started by hand, it installs the service without starting it, and says so.
 
+The service restarts Sova whenever it exits, but a stop you ask for stays stopped, and a stop gives Sova up to 90 seconds (60 on macOS) to let running agents finish. On Linux it stops at logout unless lingering is on (`loginctl enable-linger`).
+
+It needs launchd or a systemd user manager. In a container or on another machine without `systemctl`, `--service` stops with an error; run `sova` yourself instead. Where `systemctl` exists but no user manager runs (a container, an SSH login without lingering), it writes the unit and prints the command to start it later.
+
 ## Run it again
 
-Running the installer again with the same inputs changes nothing. An install already at the requested version isn't rebuilt, files are rewritten only when they'd change, and a service is reloaded only when its definition changed and restarted only when the code did. A second copy is never started.
+Running the install command again updates to master's latest commit (or the latest of the `SOVA_REF` you set); pass the same options as before, since a run without `--port` goes back to 4800. Running it with the same inputs changes nothing. An install already at the requested version isn't rebuilt (`--reinstall` rebuilds it anyway), files are rewritten only when they'd change, and a service is reloaded only when its definition changed and restarted only when the code did. A second copy is never started.
+
+## Remove it
+
+Stop and remove the login service first, if you installed one. On Linux:
+
+```sh
+systemctl --user disable --now sova.service
+rm ~/.config/systemd/user/sova.service && systemctl --user daemon-reload
+```
+
+If Linux has no systemd user manager running (a container, say), the `systemctl --user` lines fail with "Failed to connect to bus"; the `rm` still removes the unit, which is all there is to remove.
+
+On macOS:
+
+```sh
+launchctl bootout gui/$(id -u)/io.github.naomarik.sova
+rm ~/Library/LaunchAgents/io.github.naomarik.sova.plist
+```
+
+Then remove the extension links (use your `$PI_CODING_AGENT_DIR` in place of `~/.pi/agent` if you set one), Sova and the launcher:
+
+```sh
+find ~/.pi/agent/extensions -maxdepth 1 -lname "$HOME/.local/share/sova/*" -delete
+rm -rf ~/.local/share/sova ~/.local/bin/sova
+```
+
+Your pi sessions and credentials, and Sova's own state in `~/.pi/agent/sova/`, stay. So do pnpm's package store and cache, which other projects may share. If nothing else on the machine uses pnpm, you can remove them too (on Linux):
+
+```sh
+rm -rf ~/.local/share/pnpm ~/.cache/pnpm ~/.local/state/pnpm
+```
 
 ## Claude Code models
 

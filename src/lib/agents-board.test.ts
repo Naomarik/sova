@@ -126,6 +126,63 @@ test("filters: each chip says what it means; Unmerged needs a reading; Archived 
   assert.deepEqual(counts, { live: 1, "needs-you": 2, "has-workers": 1, unmerged: 1, archived: 1 });
 });
 
+test("Needs you: archive eligibility wins over attention facts, search and a linked-team pin", () => {
+  const cases: { name: string; extra: Partial<SessionSummary>; host?: Partial<LiveAgentSession> }[] = [
+    { name: "turn-error", extra: { turnError: { message: "429" } } },
+    { name: "activity-error", extra: { activity: { state: "error", error: "failed" } } },
+    { name: "input", extra: { activity: { state: "needs-input" } } },
+    { name: "dialog", extra: { pendingDialogs: 2 } },
+    { name: "questions", extra: { align: { openDocs: 1, openQuestions: 1, questionDocs: 1 } } },
+    { name: "asks", extra: { signals: { kinds: ["asks-you"], at: 5, turnId: "t1", provider: "jev" } } },
+    { name: "loop", extra: { signals: { kinds: ["looping"], at: 5, turnId: "t1", provider: "jev" } } },
+    { name: "worker-signal", extra: { workerSignals: { stuck: 1 } } },
+    { name: "tui", extra: { live: { pid: 1, status: "idle" }, turnError: {} } },
+    { name: "host-input", extra: {}, host: { state: "needs-input" } },
+    { name: "host-error", extra: {}, host: { state: "error" } },
+  ];
+  for (const { name, extra, host } of cases) {
+    const active = sess(`${name}-active`, extra);
+    const archived = sess(`${name}-archived`, { ...extra, archived: true, lastActiveAt: ago(0) });
+    const legacy = sess(`${name}-legacy`, { ...extra, archived: undefined });
+    const sessions = [active, archived, legacy];
+    const data = host ? insight(sessions.map((s) => agent(s.path, { ...host, teams: [team("linked", s.path)] }))) : undefined;
+    const rows = boardRows(sessions, data, noBusy);
+    assert.ok(rows.every((r) => r.state === "needs-you"), `${name}: attention state stays intact`);
+    assert.equal(rows[1]!.reason, rows[0]!.reason, `${name}: archive does not erase the reason`);
+    const expected = [active.id, legacy.id];
+    assert.deepEqual(rows.filter((r) => passesFilter(r, "needs-you", undefined)).map((r) => r.session.id), expected, name);
+    for (const query of ["", "TITLE", "no-match"]) {
+      for (const pinned of [undefined, archived.path]) {
+        const visible = visibleRows(rows, { filter: "needs-you", query, treesOf: none, pinned });
+        assert.deepEqual(visible.map((r) => r.session.id), query === "no-match" ? [] : expected, `${name}: query=${query}, pin=${pinned}`);
+      }
+    }
+    assert.equal(filterCounts(rows, none)["needs-you"], expected.length, `${name}: chip agrees with unsearched rows`);
+    assert.deepEqual(visibleRows(rows, { filter: "archived", query: "TITLE", treesOf: none }).map((r) => r.session.id), [archived.id], `${name}: archive browsing`);
+    assert.deepEqual(visibleRows(rows, { filter: null, query: archived.id, treesOf: none }).map((r) => r.session.id), [archived.id], `${name}: unfiltered search`);
+    const restored = boardRows([{ ...archived, archived: false }], data, noBusy);
+    assert.equal(passesFilter(restored[0]!, "needs-you", undefined), true, `${name}: unarchive restores eligibility`);
+  }
+});
+
+test("archive exclusion is only Needs you: other scopes, pins and state precedence stay intact", () => {
+  const s = sess("archived-live", { archived: true, origin: "web", activity: { state: "working" }, turnError: {}, workers: { total: 1, working: 1 } });
+  const rows = boardRows([s], undefined, noBusy);
+  const r = rows[0]!;
+  const trees = () => [tree("/t/unmerged", { merged: "no" })];
+  assert.equal(r.state, "working", "work still outranks an old error on an archived session");
+  assert.deepEqual(filterCounts(rows, trees), { live: 1, "needs-you": 0, "has-workers": 1, unmerged: 1, archived: 1 });
+  for (const filter of [null, "live", "has-workers", "unmerged", "archived"] as const) {
+    assert.deepEqual(visibleRows(rows, { filter, query: "", treesOf: trees }), rows, `unchanged ${filter} scope`);
+    assert.deepEqual(visibleRows(rows, { filter, query: "no-match", treesOf: none, pinned: s.path }), rows, `unchanged ${filter} pin bypass`);
+  }
+  const idle = boardRows([sess("idle", { archived: true })], insight([agent("/s/idle.jsonl")]), noBusy)[0]!;
+  assert.equal(idle.state, "idle", "an archived host record still derives idle");
+  const blocked = boardRows([{ ...s, pendingDialogs: 1 }], undefined, () => true)[0]!;
+  assert.equal(blocked.state, "needs-you", "a dialog still outranks running work");
+  assert.equal(passesFilter(blocked, "needs-you", undefined), false);
+});
+
 test("sort: working, then needs-you, then last active, newest first", () => {
   const rows = [
     { id: "idle-new", state: "idle", lastActive: 50 },

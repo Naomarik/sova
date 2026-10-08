@@ -890,7 +890,8 @@ export async function runReconcile(orgId: string, projectId: string, params: { b
       const roster = readRoster(orgId);
       for (let k = 0; k < pairs.length; k++) {
         const [x, y] = pairs[k]!;
-        if (x.supersededBy || y.supersededBy) continue;
+        // A side in an open conflict (one opened earlier in this run too) waits for its resolution, unmarked.
+        if (x.supersededBy || y.supersededBy || openConflictOf(conflicts, x.id) || openConflictOf(conflicts, y.id)) continue;
         const v = ps[k] ?? { conflict: 0, same: 0 };
         const p = v.conflict;
         // The same rule said twice (a confirmation, a second person agreeing): one record, both quotes.
@@ -898,8 +899,8 @@ export async function runReconcile(orgId: string, projectId: string, params: { b
           fold(x, y, byId);
           continue;
         }
-        if (p < CONFLICT_P || openConflictOf(conflicts, x.id) || openConflictOf(conflicts, y.id)) {
-          if (p < CONFLICT_P) markChecked(x, y);
+        if (p < CONFLICT_P) {
+          markChecked(x, y);
           continue;
         }
         const owner = ownerAreaOfPair(x, y);

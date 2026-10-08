@@ -271,6 +271,20 @@ Each entry gives:
     §tools.spec/census-note, §tools.spec/mode-reading and the merge-card and merge-round claims
     reworded (computed list to follow at landing).
 
+### 2026-10-08
+
+- **A foreign § is updated, never asked about.**
+  - Branch: `feat/spec-auto-foreign` (master commit filled in when it lands).
+  - Changed:
+    - the guide (`mode/spec-mode.md`) no longer asks "This also changes §X: <what>. OK?": a change
+      that contradicts a foreign § or adds what a user sees there is written into the task's draft
+      without asking (the go-ahead covers it, `agreed` records included) and listed as "Also
+      updates §X: <what>"; workers list them in their final report;
+    - the `touched-foreign`, `child-under-foreign` and `foreign-summary` notes and
+      `census.foreignNote` say "update … in your draft without asking, and list it" instead of
+      "flag"; the worker brief carries the new sentence.
+  - §: §tools.spec/no-turn-end-check, §tools.spec/agreed-promotion, §chat.mode-menu/workers reworded.
+
 ## Integration → master
 
 The integration merges after 96ab3014 and the master commits that re-applied them. The integration

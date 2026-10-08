@@ -147,9 +147,10 @@ writer**).
   `sh` recipe, never a guessed path. A copy inside the
   project is read and asked about first. Replies carry no spec lines: a turn
   ends when the model stops, with no re-prompt, warning, record or card about
-  its spec changes. A change to a foreign § (one that existed before the task
-  started) is asked about in the plan ("This also changes §X: <what>. OK?").
-  A request, hook, helper or CSS class is plumbing and never flags. No widget,
+  its spec changes. A foreign § (one that existed before the task started) that
+  the change contradicts or visibly extends is updated in the task's draft
+  without asking and listed in the reply ("Also updates §X: <what>").
+  A request, hook, helper or CSS class is plumbing and never counts. No widget,
   command or entry of its own, but one mechanical check (`spec-guard.ts`, plain
   node, shared with the Claude Code workers' hooks). Local coverage needs a
   spec, Git, and the trusted tools; unavailable or partial inputs are not
@@ -586,7 +587,7 @@ cannot compile without deciding):
   parent session, not rendered for the user). `composeWorkerPrompt` (`prompt.ts`) is the
   worker-scope minors only: for spec, the `spec-mode.md` block byte for byte,
   then `SPEC_WORKER_NOTE` (the brief is the go-ahead; the parent promotes unless
-  the brief says otherwise; flags go as one question in the final report).
+  the brief says otherwise; the final report lists each foreign § it updated).
   Never the Delegate block, the align block or bridge, the vis guide, or the
   writer paragraph.
 - **Delivered over the bus** (`events.ts`), like the sandbox's state: the

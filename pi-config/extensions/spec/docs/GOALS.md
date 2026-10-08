@@ -22,7 +22,7 @@ This pays for all the upkeep. Because settled behaviour is already written in pl
 Agreed but unbuilt promises are the normal state between steps 2 and 4. Text written down from existing code, but not yet reviewed, has its own mark.
 
 **When writing the spec finds a gap,** the agent sorts it one of three ways:
-- a clash with something already decided goes back to the person;
+- a consequence of what the person asked for is written into the promises it changes without asking, and listed;
 - a detail nobody decided becomes a flagged assumption plus an open question;
 - a pure wording choice, the agent just makes.
 

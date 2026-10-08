@@ -485,14 +485,15 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	assert.match(spec, /your new claim's parent included/);
 	assert.match(spec, /even one your new claim describes/);
 	assert.match(spec, /wherever you put the claim/);
-	assert.match(spec, /never a gap it already had, even one you rely on/);
-	assert.match(spec, /Batch flags in the plan as one question: "This also changes §X: <what>\. OK\?"; a session told not to ask says it in its reply\./, "the flag is asked in the plan, or said when asking isn't possible");
+	assert.match(spec, /never for a gap it already had/);
+	assert.match(spec, /update it in your draft without asking \(the task's go-ahead covers it\), never for a gap it already had; list each in your reply: "Also updates §X: <what>"\./, "a foreign § is updated, never asked about");
+	assert.doesNotMatch(spec, /This also changes|OK\?|[Ff]lag/, "nothing about a foreign § is asked");
 	for (const gone of ["Also changes", "Plumbing:", "Deferred:", "Spec check override", "last line", "foreign --base", "merge round", "captain"]) assert.ok(!spec.includes(gone), `no closing lines and no merge round: ${gone}`);
 	assert.ok(spec.includes(`While coding, a \`${DIGEST_TAG}\` note on a tool result is the census, run for you: act on it.`), "while coding, the automatic census is named by its tag");
 	assert.doesNotMatch(spec, /one file per tool call|after the first edit and each new file/, "while coding, the census note replaces the census run by hand");
 	assert.match(spec, /Trusted tools: start each bash command with exactly this, never a guessed path:\n\n```sh\n/, "the recipe, not a hard-coded agent dir");
-	assert.match(spec, /plumbing \(a request, hook, helper or CSS class\) never flags/);
-	assert.match(spec, /editing one in your draft flags\. Read it with `read`;/, "a foreign § is read alone, not with its chain");
+	assert.match(spec, /plumbing \(a request, hook, helper or CSS class\) never counts/);
+	assert.match(spec, /wherever you put the claim\. Read it with `read`;/, "a foreign § is read alone, not with its chain");
 	assert.ok(spec.split(/\s+/).length <= 810, "short enough to ride every turn: growing it is a deliberate change");
 });
 
@@ -1050,13 +1051,13 @@ test("codemode: a minor mode with no prompt block, no mode note and no worker re
 	assert.ok(SCRIPT_ONLY_EXPOSURES.has("codemode") && SCRIPT_ONLY_EXPOSURES.has("deferred") && !SCRIPT_ONLY_EXPOSURES.has("direct") && !SCRIPT_ONLY_EXPOSURES.has("model-only"));
 });
 
-test("SPEC_WORKER_NOTE: the parent promotes, the brief is the go-ahead, and flags go in the final report", () => {
+test("SPEC_WORKER_NOTE: the parent promotes, the brief is the go-ahead, and updated foreign § go in the final report", () => {
 	assert.match(SPEC_WORKER_NOTE, /parent session started you, and it promotes/);
 	assert.match(SPEC_WORKER_NOTE, /Do not promote, commit, or record `--commit` evidence unless your brief says to/);
 	assert.match(SPEC_WORKER_NOTE, /Your brief is your go-ahead/);
 	// The note leans on spec-mode.md's own wording; a rewrite there must revisit the note.
-	for (const phrase of ["`--commit`", "Batch flags", "draft", "promote"]) assert.ok(SPEC_INSTRUCTIONS.includes(phrase.replace(/`/g, "")) || SPEC_INSTRUCTIONS.includes(phrase), phrase);
-	assert.ok(SPEC_WORKER_NOTE.endsWith("Put any flags as one question in your final report."), "no last line for a worker either");
+	for (const phrase of ["`--commit`", "Also updates", "draft", "promote"]) assert.ok(SPEC_INSTRUCTIONS.includes(phrase.replace(/`/g, "")) || SPEC_INSTRUCTIONS.includes(phrase), phrase);
+	assert.ok(SPEC_WORKER_NOTE.endsWith("List each foreign § you updated in your final report."), "a worker lists, never asks");
 	assert.ok(!SPEC_INSTRUCTIONS.includes(SPEC_WORKER_NOTE), "spec-mode.md itself stays the parent's text");
 });
 

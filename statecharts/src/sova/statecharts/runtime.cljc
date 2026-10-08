@@ -60,10 +60,15 @@
 
 (defn- migrate-v1
   "v1 → v2: a configuration keeps the states v2 has; a standing v2 lacks starts over at unregistered, and the
-   standing rule moves it on at the next observation."
+   standing rule moves it on at the next observation. The playbook run's v1 `:approves` is v2's `:proposes`."
   [s]
-  (update s :config (fn [c] (let [kept (set (filter states-v2 c))]
-                              (cond-> kept (not-any? (set (vals standing-ids)) kept) (conj :unregistered))))))
+  (-> s
+    (update :config (fn [c] (let [kept (set (filter states-v2 c))]
+                              (cond-> kept (not-any? (set (vals standing-ids)) kept) (conj :unregistered)))))
+    (update :data (fn [d] (let [pb (:playbook d)]
+                            (if (and (map? pb) (contains? pb :approves))
+                              (assoc d :playbook (-> pb (assoc :proposes (:approves pb)) (dissoc :approves)))
+                              d))))))
 
 (def entry-asks
   "r14: what entering each standing asks of the overseer (its on-entry sends the reason): a registration is

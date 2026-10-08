@@ -243,3 +243,30 @@
     (is (in? eng2 rsid :idle) "the playbook region keeps its state")
     (core/send! eng2 rsid :runtime/observed (assoc (facts :hash "h1" :proof {:hash "h1" :suite 2 :pass true :at (+ t0 6)}) :by "system") {:now (+ t0 20)})
     (is (in? eng2 rsid :registered) "the next observation derives it again")))
+
+(deftest a-v1-proposed-run-says-what-it-proposes
+  ;; v1 kept what a run's playbook proposes under :approves; v2 exports it as :proposes.
+  (let [eng  (eng!)
+        bs   "build/pr1/o7"]
+    (observe! eng 2 (facts))
+    (core/send! eng psid :verbs/onboard (assoc op :session-id "o7" :prompt "Run it" :playbook-id "project-deploy"
+                                          :label "Project deploy" :proposes "deploy") {:now (+ t0 3)})
+    (core/send! eng bs :effect/done {:kind "make-worktree" :result {:branch "sova/deploy" :target "main" :base "b0"}} {:now (+ t0 4)})
+    (core/send! eng bs :effect/done {:kind "set-mode"} {:now (+ t0 5)})
+    (core/send! eng bs :effect/done {:kind "first-prompt"} {:now (+ t0 6)})
+    (core/send! eng bs :turn/started {} {:now (+ t0 7)})
+    (core/send! eng bs :git/probe {:branch "unmerged" :tree "open"} {:now (+ t0 8)})
+    (core/send! eng bs :turn/ended {} {:now (+ t0 9)})
+    (is (in? eng rsid :proposed))
+    (let [dk   :com.fulcrologic.statecharts.data-model.working-memory-data-model/data-model
+          v1   (-> (core/read-snapshot (core/dump eng rsid))
+                   (assoc :version 1)
+                   (update-in [:wmem dk :playbook] #(-> % (assoc :approves (:proposes %)) (dissoc :proposes)))
+                   core/snapshot-text)
+          eng2 (core/new-engine registry/statecharts {:level-check lv/level-check})]
+      (is (= "deploy" (get-in (core/read-snapshot v1) [:wmem dk :playbook :approves])) "the v1 dump carries :approves")
+      (is (= 2 (:version (core/load! eng2 rsid v1))))
+      (is (in? eng2 rsid :proposed))
+      (let [exported (select-keys (core/data eng2 rsid) (:exported (get registry/statecharts "runtime")))]
+        (is (= "deploy" (get-in exported [:playbook :proposes])))
+        (is (not (contains? (:playbook exported) :approves)))))))

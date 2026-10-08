@@ -20,8 +20,10 @@ The server runs on Bun. The installer downloads the Bun version Sova pins into S
 ## Install
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/v0.2.0/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/master/scripts/install.sh | SOVA_REF=master bash
 ```
+
+Until the first release is tagged, this installs Sova's `master` branch, which changes from day to day; running it again updates to master's latest commit.
 
 The script is read whole before it runs, so a download cut short runs nothing. It builds Sova in a staging folder and only replaces your install once the build has succeeded; if anything fails, the previous install stays.
 
@@ -68,7 +70,7 @@ There's no account, password, or expiry: anyone with the token has the same acce
 Pass options to the script after `bash -s --`:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/v0.2.0/scripts/install.sh | bash -s -- --service
+curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/master/scripts/install.sh | SOVA_REF=master bash -s -- --service
 ```
 
 | Option | Does |

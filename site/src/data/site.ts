@@ -1,11 +1,19 @@
-// One place for the facts the page repeats. Bump `release` (and re-verify every claim on the page
-// against that tag) when a new release is tagged.
+// One place for the facts the page repeats. Until a release is tagged the site installs master:
+// install.sh's default ref is a placeholder, so the command passes SOVA_REF=master. When a release
+// is tagged, set `release` to the tag (and re-verify every claim on the page against it); the
+// install URLs, command and labels follow. Also update the master command in content/docs/install.md.
 
-export const release = "v0.2.0";
+export const release: string | null = null;
+export const installRef = release ?? "master";
 export const repo = "https://github.com/Naomarik/sova";
-export const installUrl = `https://raw.githubusercontent.com/Naomarik/sova/${release}/scripts/install.sh`;
-export const installCommand = `curl -fsSL ${installUrl} | bash`;
-export const installScript = `${repo}/blob/${release}/scripts/install.sh`;
+export const installUrl = `https://raw.githubusercontent.com/Naomarik/sova/${installRef}/scripts/install.sh`;
+export const installCommand = release
+  ? `curl -fsSL ${installUrl} | bash`
+  : `curl -fsSL ${installUrl} | SOVA_REF=${installRef} bash`;
+export const installScript = `${repo}/blob/${installRef}/scripts/install.sh`;
+// The hero pill: the tagged release, or before one exists, master's commit history.
+export const releaseLabel = release ?? "Pre-release · master";
+export const releaseUrl = release ? `${repo}/releases/tag/${release}` : `${repo}/commits/master`;
 export const license = `${repo}/blob/master/LICENSE`;
 export const contributing = `${repo}/blob/master/CONTRIBUTING.md`;
 export const gettingStarted = `${repo}/blob/master/docs/getting-started.md`;

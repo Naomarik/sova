@@ -83,8 +83,8 @@ const beyond = [
       <div class="wrap">
         <div class="hero-copy">
           <Mark tile size={88} class="hero-mark" />
-          <a class="hero-pill" href={`${site.repo}/releases/tag/${site.release}`}>
-            <span class="hero-pill-tag">{site.release}</span>
+          <a class="hero-pill" href={site.releaseUrl}>
+            <span class="hero-pill-tag">{site.releaseLabel}</span>
             <span>Open source · Apache-2.0<span class="hero-pill-extra"> · For the pi coding agent</span></span>
             <Icon name="arrow-right" size={14} />
           </a>
@@ -337,7 +337,7 @@ const beyond = [
           <div class="touch"><dt>Access</dt><dd>Single user, loopback by default, and <strong>one token per install</strong>, in <code>~/.pi/agent/sova/auth-token</code>. <code>sova open</code> opens the page already unlocked; a phone or another browser pairs once with a one-use QR code from Access. Delete the token file and restart Sova to sign every browser out. The token is all that stands between your network and an app that runs commands as you.</dd></div>
           <div class="touch"><dt>Share listener</dt><dd>Off unless you set it. It serves only shared conversations and the owner page; every other path answers 404.</dd></div>
           <div class="touch"><dt>Mesh</dt><dd>Off until you add a peer. Then a second port on your tailnet address only. With login sync on, your provider logins are copied to every host.</dd></div>
-          <div class="touch"><dt>Re-running</dt><dd>Installs the same pinned release and changes nothing when it's already there.</dd></div>
+          <div class="touch"><dt>Re-running</dt><dd>{site.release ? "Installs the same pinned release and changes nothing when it's already there." : "Updates to master's latest commit, and changes nothing when it's already there."}</dd></div>
         </dl>
       </div>
     </section>
@@ -397,7 +397,7 @@ const beyond = [
       <div class="footer-meta">
         <p>pi is a separate project; Sova is not affiliated with it. Sova is Apache-2.0; <code>pi-config/</code> is licensed separately.</p>
         <p>Fonts: Inter and JetBrains Mono, SIL OFL 1.1. The screens on this page are mock-ups built from Sova's own styles.</p>
-        <p>Checked against <code>{site.verified.ref}</code> at <code>{site.verified.rev}</code> on {site.verified.date}; installs <code>{site.release}</code>.</p>
+        <p>Checked against <code>{site.verified.ref}</code> at <code>{site.verified.rev}</code> on {site.verified.date}; installs <code>{site.installRef}</code>{site.release ? "" : " until the first release is tagged"}.</p>
       </div>
     </div>
   </footer>

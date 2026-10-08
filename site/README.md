@@ -34,6 +34,8 @@ pnpm run preview    # serves dist/ locally
 The theme grid is read from the repository's `themes/*.json` at build time, so the build needs
 the whole repository checked out, not only `site/`.
 
+Set `SOVA_SITE_URL` to the address the site is served from so link previews get an absolute image URL.
+
 ## What to update
 
 - **A new release:** `release` in `src/data/site.ts` sets the install command, the version pill

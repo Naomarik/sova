@@ -11,7 +11,7 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "no
 import { join } from "node:path";
 import { loadStory, REPO } from "./load-story.mjs";
 import { durationMs, text } from "./story-check.mjs";
-import { FREEZE_CSS, saveDebug, leakGate, leakPatterns, makeRoot, OUT_DIR, removeRoot, startBrowser, startDirector, startServer, TOKEN, VIDEO_DIR, contextOptions, ui, writeJson } from "./harness.mjs";
+import { cropToViewport, FREEZE_CSS, saveDebug, leakGate, leakPatterns, makeRoot, OUT_DIR, removeRoot, startBrowser, startDirector, startServer, TOKEN, VIDEO_DIR, contextOptions, ui, writeJson } from "./harness.mjs";
 import { loadAlignModule, seed, titleStatic } from "./seed.mjs";
 import { fileSha, videoHash } from "./hashes.mjs";
 
@@ -106,19 +106,21 @@ try {
   mkdirSync(framesDir);
   const frames = [];
   const cdp = await ctx.newCDPSession(page);
-  // The screencast films the browser window, and a headless window can be shorter than the
-  // emulated viewport (it once cut the composer off): make the window larger than the viewport.
+  // The screencast films the browser window, not the emulated viewport: a headless window can be
+  // shorter than the viewport (it once cut the composer off), or larger (then the page is its
+  // top-left). So the window is made larger than the viewport here, and every frame is cropped
+  // to the viewport after the recording (cropToViewport).
   try {
     const { windowId } = await cdp.send("Browser.getWindowForTarget");
     await cdp.send("Browser.setWindowBounds", { windowId, bounds: { width: vp.width + 200, height: vp.height + 300 } });
     await page.waitForTimeout(300);
   } catch (e) {
-    console.warn(`could not size the browser window (${e.message}); the frame check below still applies`);
+    console.warn(`could not size the browser window (${e.message}); each frame is still checked and cropped`);
   }
   cdp.on("Page.screencastFrame", async (f) => {
     const file = join(framesDir, `${String(frames.length).padStart(6, "0")}.jpg`);
     writeFileSync(file, Buffer.from(f.data, "base64"));
-    frames.push({ file, t: f.metadata.timestamp, w: f.metadata.deviceWidth, h: f.metadata.deviceHeight });
+    frames.push({ file, t: f.metadata.timestamp, w: f.metadata.deviceWidth, h: f.metadata.deviceHeight, top: f.metadata.offsetTop ?? 0 });
     await cdp.send("Page.screencastFrameAck", { sessionId: f.sessionId }).catch(() => {});
   });
   await cdp.send("Page.startScreencast", { format: "jpeg", quality: 92, everyNthFrame: 1, maxWidth: Math.round(vp.width * vp.scale), maxHeight: Math.round(vp.height * vp.scale) });
@@ -166,15 +168,14 @@ try {
 
   // Frames → constant 30 fps H.264, each frame held until the next one's timestamp.
   if (frames.length < 10) throw new Error(`only ${frames.length} screencast frames arrived`);
-  // Every frame must show the whole viewport: a shorter one would crop the page (and the site
-  // would refuse a video whose shape isn't its poster's).
-  const short = frames.find((f) => Math.abs(f.w - vp.width) > 2 || Math.abs(f.h - vp.height) > 2);
-  if (short) throw new Error(`the screencast filmed ${Math.round(short.w)}x${Math.round(short.h)} of the ${vp.width}x${vp.height} viewport; nothing was encoded`);
-  const list = frames.map((f, k) => `file '${f.file}'\nduration ${Math.max(0.001, ((frames[k + 1]?.t ?? f.t + 1 / 30) - f.t)).toFixed(4)}`).join("\n");
-  writeFileSync(join(root, "frames.txt"), `${list}\nfile '${frames.at(-1).file}'\n`);
+  // Each frame cut to exactly the viewport (refused if it shows less of the page than that).
+  const cropped = await cropToViewport(frames, vp, join(root, "frames-viewport"));
+  console.log(`frames: ${Math.round(frames[0].w)}x${Math.round(frames[0].h)} CSS px filmed, cropped to the ${vp.width}x${vp.height} viewport at ${cropped.width}x${cropped.height} px`);
+  const list = cropped.frames.map((f, k) => `file '${f.file}'\nduration ${Math.max(0.001, ((frames[k + 1]?.t ?? f.t + 1 / 30) - f.t)).toFixed(4)}`).join("\n");
+  writeFileSync(join(root, "frames.txt"), `${list}\nfile '${cropped.frames.at(-1).file}'\n`);
   mkdirSync(VIDEO_DIR, { recursive: true });
   const out = join(VIDEO_DIR, FILE);
-  execFileSync("ffmpeg", ["-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", join(root, "frames.txt"), "-vf", "fps=30,scale=1600:-2:flags=lanczos,format=yuv420p", "-c:v", "libx264", "-preset", "slow", "-crf", "24", "-profile:v", "high", "-movflags", "+faststart", "-an", out], { stdio: "inherit" });
+  execFileSync("ffmpeg", ["-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", join(root, "frames.txt"), "-vf", "fps=30,scale=trunc(min(1600\\,iw)/2)*2:-2:flags=lanczos,format=yuv420p", "-c:v", "libx264", "-preset", "slow", "-crf", "24", "-profile:v", "high", "-movflags", "+faststart", "-an", out], { stdio: "inherit" });
   const seconds = frames.at(-1).t - frames[0].t;
   const bytes = statSync(out).size;
   // The encoded size, as the file has it (the manifest and the page's shape check rely on it).

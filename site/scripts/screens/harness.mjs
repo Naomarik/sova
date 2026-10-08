@@ -322,6 +322,41 @@ export async function leakGate(page, patterns, where) {
   if (hits.length) throw new Error(`leak gate at ${where}: the page shows ${[...new Set(hits)].join(", ")}. Nothing was written.`);
 }
 
+/** sharp, from where the site's install has it: astro's dependency, resolved through astro. */
+export function siteSharp() {
+  const site = createRequire(join(SITE, "package.json"));
+  return createRequire(site.resolve("astro/package.json"))("sharp");
+}
+
+/**
+ * Cut every screencast frame down to the page's viewport. The screencast films the browser
+ * window, which may be larger than the emulated viewport (the viewport is its top-left, offset by
+ * `top` CSS px), at the window's own pixel scale. Each frame is { file, w, h, top }, w/h its size
+ * in CSS px; a frame that doesn't hold the whole viewport is refused. Returns the frames with
+ * `file` pointing at the cropped image, and the crop's pixel size.
+ */
+export async function cropToViewport(frames, vp, outDir) {
+  const sharp = siteSharp();
+  mkdirSync(outDir, { recursive: true });
+  let size = null;
+  const out = [];
+  for (const [i, f] of frames.entries()) {
+    const top = f.top ?? 0;
+    if (f.w + 0.5 < vp.width || f.h - top + 0.5 < vp.height)
+      throw new Error(`frame ${i} shows ${Math.round(f.w)}x${Math.round(f.h - top)} CSS px, less than the ${vp.width}x${vp.height} viewport; nothing was encoded`);
+    const meta = await sharp(f.file).metadata();
+    const s = meta.width / f.w;
+    const box = { left: 0, top: Math.round(top * s), width: Math.min(Math.round(vp.width * s), meta.width), height: 0 };
+    box.height = Math.min(Math.round(vp.height * s), meta.height - box.top);
+    size ??= [box.width, box.height];
+    const file = join(outDir, `${String(i).padStart(6, "0")}.png`);
+    // Every frame the same size: the first frame's crop is the video's.
+    await sharp(f.file).extract(box).resize(size[0], size[1], { fit: "fill" }).png({ compressionLevel: 1 }).toFile(file);
+    out.push({ ...f, file });
+  }
+  return { frames: out, width: size[0], height: size[1] };
+}
+
 /** Where debug output of a failed run goes: the worktree's ignored .agent/screens/. */
 export const DEBUG_DIR = join(REPO, ".agent", "screens", "debug");
 export const OUT_DIR = join(SITE, "src", "assets", "screens");

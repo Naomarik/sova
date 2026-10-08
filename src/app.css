@@ -677,13 +677,13 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .message-images-single > li.thumb-sized .thumb img { width: 100%; aspect-ratio: var(--thumb-ratio); }
 
 /* ---- Session profiles (§chat/profiles) ---------------------------------------------------- */
-/* The empty screen's picker: left-aligned, the setup card's measure, above it. */
+/* The empty screen's picker: left-aligned, the session column (--measure), above the setup card. */
 .profile-picker {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
   width: 100%;
-  max-width: 560px;
+  max-width: var(--measure);
   text-align: left;
   margin: var(--space-2) 0;
 }
@@ -705,8 +705,8 @@ html, body { overflow: clip; overscroll-behavior: none; }
   box-shadow: var(--shadow-2, 0 8px 24px rgb(0 0 0 / 0.18));
   text-align: left;
 }
-/* The profile cards: one radio group, a card per profile, in as many 160px+ columns as the
-   560px column fits, one single-line card per row under 480px. A card is the whole 44px+ target; the checked
+/* The profile cards: one radio group, a card per profile, in as many 220px+ columns as the
+   session column (--measure) fits, one single-line card per row under 480px. A card is the whole 44px+ target; the checked
    one is tinted AND carries a check, so its state never reads from tint alone. */
 .profile-picker { container: profile-picker / inline-size; }
 .profile-grid-wrap { display: flex; flex-direction: column; gap: var(--space-2); }
@@ -721,7 +721,7 @@ html, body { overflow: clip; overscroll-behavior: none; }
   letter-spacing: var(--ls-mono-caps);
   color: var(--color-ink-muted);
 }
-.profile-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: var(--space-2); }
+.profile-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--space-2); }
 .profile-tile {
   display: flex;
   flex-direction: column;
@@ -869,7 +869,7 @@ html, body { overflow: clip; overscroll-behavior: none; }
 }
 .profile-board-head { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; margin: 0; font-weight: var(--fw-medium); }
 .profile-board-head > span { margin-right: auto; }
-.profile-board-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2) var(--space-4); }
+.profile-board-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--space-2) var(--space-4); }
 .profile-toggle { justify-content: space-between; min-height: var(--tap-min); }
 .profile-toggle-grant > span:first-child { color: var(--color-accent); }
 /* The setup card's per-row switch (§chat.transcript/setup-card-toggles): the switch alone is the

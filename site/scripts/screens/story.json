@@ -54,6 +54,16 @@
             "  return status >= 400 && status < 500;",
             "}"
           ],
+          "src/upload/client.test.ts": [
+            "import assert from \"node:assert/strict\";",
+            "import { test } from \"node:test\";",
+            "import { isClientError } from \"./retry.ts\";",
+            "",
+            "test(\"a 4xx is not retried\", () => {",
+            "  assert.equal(isClientError({ status: 404 }), true);",
+            "  assert.equal(isClientError({ status: 503 }), false);",
+            "});"
+          ],
           "src/upload/client.ts": [
             "import { backoff, MAX_TRIES } from \"./retry.ts\";",
             "",
@@ -124,7 +134,7 @@
       "model": "scout",
       "messages": [
         { "user": "The upload test fails about one run in ten. Find out why." },
-        { "bash": { "command": "node --test src/upload/", "output": ["# tests 4", "# pass 4", "# fail 0"] } },
+        { "bash": { "command": "node --test", "output": ["ℹ tests 1", "ℹ pass 1", "ℹ fail 0"] } },
         { "error": "429 Too Many Requests: this model's rate limit is reached. Try again in 2 minutes." }
       ]
     },
@@ -249,7 +259,7 @@
             ]
         } },
         { "say": "finalize() now returns the id. Running the tests." },
-        { "bash": { "command": "node --test src/upload/" } },
+        { "bash": { "command": "node --test src/upload/client.test.ts" } },
         { "hold": "testing", "note": "Shot transcript is taken here, with a follow-up typed in the composer." },
         { "say": "The tests pass. finalize() resolves to the server's upload id; callers that ignored its result are unaffected." }
       ]

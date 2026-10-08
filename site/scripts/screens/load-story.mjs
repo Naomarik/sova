@@ -185,7 +185,7 @@ function toolCall(step, a, ctx) {
         name: "show_changes",
         args: {
           scope: s.scope,
-          ...(s.worktree ? { worktree: `$worktree:${s.worktree}` } : {}),
+          ...(s.worktree ? { worktree: `feat/${s.worktree}` } : {}),
           title: s.title,
           steps: s.steps.map((st) => ({ title: st.title, ...(st.why ? { why: st.why } : {}), ...(st.buildsOn?.length ? { buildsOn: st.buildsOn } : {}), hunks: st.files.map((f) => ({ path: f })) })),
         },

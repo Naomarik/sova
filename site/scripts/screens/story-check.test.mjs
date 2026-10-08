@@ -1,4 +1,4 @@
-// node --test site/scripts/screens/ — the story check's messages, on broken copies of story.json.
+// node --test site/scripts/screens/story-check.test.mjs — the story check's messages, on broken copies of story.json.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";

@@ -668,13 +668,15 @@ runaway reply there is capped: it can't write a line too long to read back or to
 - **Following comes back only by the reader's hand.** A view that isn't following follows again
   when the reader's own scroll (a wheel, a touch, a key, or a press on the transcript such as
   dragging its scrollbar or opening a disclosure) brings it within 80px of the end of the rows as
-  they stood, when they wheel down while already there, when a jump's own scroll lands there
-  (§chat.timeline/jumping), when the view gets narrower or wider, on Jump to Latest and on
+  they stood, when they wheel down while already there, when the view gets narrower or wider,
+  on Jump to Latest and on
   sending a message, or when a new session's empty state, which opens at its top
   (§chat.transcript/states), gives way to its first rendered row. Rows drawn shorter for a moment (a turn's saved rows at their estimate) don't
   bring the end closer; a lower end counts once it has stood 0.6 s. The view reaching the end any
   other way (the browser clamping it as rows below get shorter or leave) doesn't follow again: it
   stays where the browser put it, not following, with Jump to Latest showing, until one of those.
+  A jump never turns following back on, even when it lands at the end (§chat.timeline/jumping):
+  the reader keeps their place, with Jump to Latest showing.
 
 ## §chat.transcript/rendering — Opening and switching a long transcript
 
@@ -811,9 +813,8 @@ there, to the pixel, while the rows around it are first drawn at their real heig
 moves once it is on screen; the hold ends once nothing has moved for a moment, or at the reader's
 own scroll, wheel, touch, press or key. A jump to a row not built yet builds a few rows above it
 too, so it can sit in the middle; one that is the first row the list holds sits at the top. A
-jump stops following; once its hold is over by itself, a view the jump left within 80px of the
-end follows again (§chat.transcript/turn-end-keeps-reader), and anywhere else Jump to Latest
-stays.
+jump stops following and never turns it back on, even when it lands at the end
+(§chat.transcript/turn-end-keeps-reader).
 
 ## §chat.transcript/compressed-transfer — A transcript travels compressed
 

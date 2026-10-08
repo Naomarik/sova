@@ -447,7 +447,7 @@ export async function projectView(projectId: string, items = false, now = Date.n
     ...(coding.length
       ? coding.slice(0, 20).map(
           (c) =>
-            `- ${sessionLink(c.sessionId, c.title || c.sessionId)} · started by ${c.startedBy === "overseer" ? "the overseer" : c.via === "overseer" ? "you, via the Overseer" : "you"} · ${c.running ? "working" : "idle"}${c.workers ? ` (${plural(c.workers, "worker")})` : ""} · ${c.branch ? `branch ${c.branch}` : `in the root${c.inRoot ? `: ${c.inRoot}` : ""}`}${c.merged ? " · merged" : ""}${c.state === "removed" ? " · worktree removed" : ""}${c.path ? "" : " · on another host"}`,
+            `- ${sessionLink(c.sessionId, c.title || c.sessionId)} · started by ${c.startedBy === "overseer" ? "the overseer" : c.via === "overseer" ? "you, via the Overseer" : "you"} · ${c.running ? "working" : "idle"}${c.workers ? ` (${plural(c.workers, "worker")})` : ""} · ${c.branch ? `branch ${c.branch}` : `in the root${c.inRoot ? `: ${c.inRoot}` : c.later ? " until it makes a worktree" : ""}`}${c.merged ? " · merged" : ""}${c.state === "removed" ? " · worktree removed" : ""}${c.path ? "" : " · on another host"}`,
         )
       : ["- none"]),
   );

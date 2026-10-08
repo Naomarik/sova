@@ -23,6 +23,15 @@ does, never part of making or keeping a link.
   own host, resolved when the link is made. A member host's peer id and label are never stored: they are looked up from this host's
   `peers.json` by node identity whenever they are used (a peer's id here can be changed). **One
   member per host**: a link never joins two sessions on the same host, and making one is refused.
+- **Only link member sessions.** Every member must have been created as a link member session
+  (§mesh.links/tools). Making a link with any other session is refused, naming that member and
+  saying it was not created with the link tools, so to create a new session for it with `link`
+  (§app.overseer/links-tools). Each host checks its own member: the host making the link checks
+  its local member before anything is sent, and a member host refuses a new link's copy whose
+  member on it is not one, which fails the whole link as any refused copy does (§app.overseer/links-tools).
+  A host on an earlier build checks nothing here. The check is made only when a link is made: a
+  link that already exists keeps its members, and a copy of a link the host already keeps is never
+  refused for it.
 - **Its own identity.** A host that doesn't know its own node identity (a phone that identifies
   callers by address, §mesh.peers/address-identity) learns it from the first member host that
   sends it a link, which names the recipient's identity as it knows it, or by asking any peer.
@@ -156,12 +165,24 @@ not the user's message and the main transcript never shows it:
 
 ## §mesh.links/tools — The link tools
 
-One pi-config extension, `link`, registers seven tools at load, with a fixed schema, in every
-session Sova hosts; a claude-code session gets the same tools through the provider's `mcp__sova__`
-bridge with no separate copy. They never appear or disappear when a link is made or ended, so a
-claude-code session's tool set never changes mid-conversation. Hosted by anything other than
-Sova (a TUI), they are registered but inert; workers never get the tools' switch, and there they
-are inert too.
+One pi-config extension, `link`, has seven tools, with a fixed schema, and only a **link member
+session** gets them: a session created as one (§app.overseer/links-tools), which carries a marker
+from its creation, before its first message. Every other session has none of them: an ordinary
+chat, the Overseer and the other special sessions, a TUI session and a worker register no link
+tool, and no profile or setting adds them. A link member has all seven from its first request; a
+claude-code member gets the same tools through the provider's `mcp__sova__` bridge with no
+separate copy, and a claude-code chat that is no member sees none there. The set is fixed when the
+session's runtime starts and never changes because a link is made or ended, a message arrives or
+the session is linked or unlinked, so a claude-code session's tool set never changes
+mid-conversation.
+
+**Sessions from before.** A session an earlier build hosted already declares the seven tools in its
+transcript. It keeps them, unchanged, until its next compaction, and loses them at that
+compaction, since a compaction already rebuilds the prompt cache (a claude-code session's CLI
+restarts after one). A compaction while the session is in a live link keeps them until a later
+compaction that finds it in none, and so does a compaction at which its host can't say. They are
+never dropped at any other moment, and once dropped they never come back. A session that never
+declared them never gets them this way.
 
 - **`link_members`**: the links this session is in, and for each member its host, label, cwd,
   backend, whether its host is up and whether it is working or idle.
@@ -269,8 +290,8 @@ the session with each recipient's state. No human confirms anything, on either h
   link message) and answers `link_accept {offer, dest}` or `link_decline {offer, reason?}`. One
   recipient's answer never waits on another's. An unanswered offer expires after 24 hours. A
   recipient that can't take the message (open in a TUI, archived, its model off, busy, special) is
-  refused for that offer, final, as a message would be (§mesh.links/delivery): its link tools are
-  inert in a TUI, so it could never answer.
+  refused for that offer, final, as a message would be (§mesh.links/delivery): a TUI session has
+  no link tools, so it could never answer.
 - **`dest` is the recipient host's.** `~` is that host's home (`~user` is refused), a relative path
   is under the member session's cwd, `..` is normalised and missing parents are created. Existing
   files are overwritten. Nothing else is checked, except that Sova's own state is never written:

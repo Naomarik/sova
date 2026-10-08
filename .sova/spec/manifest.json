@@ -5929,7 +5929,8 @@
         "server/index.ts",
         "server/sessions-index.ts",
         "shared/mesh-links.ts",
-        "server/app.ts"
+        "server/app.ts",
+        "server/link-member.ts"
       ],
       "requires": [
         "§mesh.peers/off",
@@ -5958,7 +5959,12 @@
         "pi-config/extensions/link/tests/runtime.mjs",
         "server/mesh/links.ts",
         "server/link-delivery.ts",
-        "server/project-coding-runtime.test.ts"
+        "server/project-coding-runtime.test.ts",
+        "server/harness/pi/open.ts",
+        "server/harness/state-kinds.ts",
+        "shared/mesh-links.ts",
+        "server/link-tools-runtime.test.ts",
+        "server/harness/state-kinds.test.ts"
       ],
       "requires": [
         "§mesh.links/record",
@@ -10026,7 +10032,8 @@
         "profiles/reviewer.json",
         "profiles/mini-overseer.json",
         "shared/protocol.ts",
-        "src/lib/summary-diff.test.ts"
+        "src/lib/summary-diff.test.ts",
+        "server/harness/state-kinds.ts"
       ],
       "requires": []
     },

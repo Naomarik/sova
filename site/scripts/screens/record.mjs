@@ -11,7 +11,7 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "no
 import { join } from "node:path";
 import { loadStory, REPO } from "./load-story.mjs";
 import { durationMs, text } from "./story-check.mjs";
-import { FREEZE_CSS, saveDebug, leakGate, leakPatterns, makeRoot, OUT_DIR, removeRoot, startBrowser, startDirector, startServer, TOKEN, VIDEO_DIR, contextOptions, writeJson } from "./harness.mjs";
+import { FREEZE_CSS, saveDebug, leakGate, leakPatterns, makeRoot, OUT_DIR, removeRoot, startBrowser, startDirector, startServer, TOKEN, VIDEO_DIR, contextOptions, ui, writeJson } from "./harness.mjs";
 import { loadAlignModule, seed, titleStatic } from "./seed.mjs";
 import { fileSha, videoHash } from "./hashes.mjs";
 
@@ -95,7 +95,7 @@ try {
   beatNow = "opening the session";
   await page.evaluate((h) => (location.hash = h), `#/sid/${created.id}`);
   await page.waitForLoadState("networkidle").catch(() => {});
-  await page.locator("textarea.composer-input").first().waitFor({ state: "visible", timeout: 20_000 });
+  await ui.composer(page).waitFor({ state: "visible", timeout: 20_000 });
   await page.addStyleTag({ content: FREEZE_CSS.replace("animation-duration: 0s !important; animation-delay: 0s !important; ", "") });
   await page.evaluate(() => document.fonts.ready);
   await page.waitForTimeout(1500);
@@ -124,12 +124,12 @@ try {
     console.log(`beat ${i}: ${JSON.stringify(beat)}`);
     beatNow = `beat ${i}`;
     if (beat.do === "type") {
-      const input = page.locator("textarea.composer-input").first();
+      const input = ui.composer(page);
       await moveTo(input);
       await input.click();
       await input.pressSequentially(text(script[beat.step].user), { delay: v.typingMs });
     } else if (beat.do === "send") {
-      const button = page.locator(".composer-actions button[type=submit]").first();
+      const button = ui.send(page);
       await moveTo(button);
       await button.click();
     } else if (beat.do === "release") {
@@ -139,22 +139,14 @@ try {
       await page.waitForTimeout(600);
     } else if (beat.do === "click") {
       if (beat.target === "show_changes") {
-        const b = page.getByRole("button", { name: "Review Changes" }).last();
+        await ui.toLatest(page, moveTo);
+        const b = ui.reviewChanges(page);
         await b.scrollIntoViewIfNeeded();
         await moveTo(b);
         await b.click();
       } else {
-        const trigger = page.locator("button.run-status-link:not(.run-status-align):not(.run-status-running)").first();
-        if ((await trigger.getAttribute("aria-expanded")) !== "true") {
-          await moveTo(trigger);
-          await trigger.click();
-          await page.waitForTimeout(500);
-        }
-        if (beat.target === "worker") {
-          const row = page.locator(".subagent-row", { hasText: plan.workers[beat.worker].name }).first();
-          await moveTo(row);
-          await row.click();
-        }
+        if (beat.target === "worker") await ui.openWorker(page, plan.workers[beat.worker].name, moveTo);
+        else await ui.openAgents(page, moveTo);
       }
     } else if (beat.do === "pause") await page.waitForTimeout(durationMs(beat.for));
     await leakGate(page, patterns, `video beat ${i}`);

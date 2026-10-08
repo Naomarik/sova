@@ -17,7 +17,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { join } from "node:path";
 import { HERE, loadStory, REPO, whereIn } from "./load-story.mjs";
 import { actionOf, text } from "./story-check.mjs";
-import { FREEZE_CSS, saveDebug, leakGate, leakPatterns, makeRoot, OUT_DIR, removeRoot, sleep, startBrowser, startDirector, startServer, TOKEN, contextOptions, waitFor, writeJson } from "./harness.mjs";
+import { FREEZE_CSS, saveDebug, leakGate, leakPatterns, makeRoot, OUT_DIR, removeRoot, sleep, startBrowser, startDirector, startServer, TOKEN, contextOptions, ui, waitFor, writeJson } from "./harness.mjs";
 import { loadAlignModule, seed, titleStatic } from "./seed.mjs";
 import { fileSha, inputHashes } from "./hashes.mjs";
 
@@ -238,10 +238,10 @@ async function open(ctx, server, hash) {
 }
 
 async function typeAndSend(page, value, delay) {
-  const input = page.locator("textarea.composer-input").first();
+  const input = ui.composer(page);
   await input.click();
   await input.pressSequentially(value, { delay });
-  await page.locator(".composer-actions button[type=submit]").first().click();
+  await ui.send(page).click();
 }
 
 async function shoot(browser, server, shot, { sessionPath, patterns }) {
@@ -262,14 +262,12 @@ async function shoot(browser, server, shot, { sessionPath, patterns }) {
     }
 
     if (shot.view === "workers") {
-      const trigger = page.locator("button.run-status-link:not(.run-status-align):not(.run-status-running)").first();
-      await trigger.click({ timeout: 10_000 });
-      const name = plan.workers[shot.worker].name;
-      await page.locator(".subagent-row", { hasText: name }).first().click({ timeout: 10_000 });
+      await ui.openWorker(page, plan.workers[shot.worker].name);
       await page.waitForTimeout(1200);
     }
     if (shot.view === "changes") {
-      await page.getByRole("button", { name: "Review Changes" }).last().click({ timeout: 10_000 });
+      await ui.toLatest(page);
+      await ui.reviewChanges(page).click({ timeout: 10_000 });
       await page.locator("[role=dialog]").last().waitFor({ timeout: 10_000 });
       await page.waitForTimeout(1500);
     }
@@ -285,12 +283,12 @@ async function shoot(browser, server, shot, { sessionPath, patterns }) {
       }
       if (await page.locator(".jump-latest[data-shown]").count()) throw new Error("Jump to Latest is still shown over the transcript");
     }
-    if (shot.scroll === "show_changes") await page.getByRole("button", { name: "Review Changes" }).last().scrollIntoViewIfNeeded({ timeout: 10_000 });
+    if (shot.scroll === "show_changes") await ui.reviewChanges(page).scrollIntoViewIfNeeded({ timeout: 10_000 });
     if (shot.compose) {
-      const input = page.locator("textarea.composer-input").first();
+      const input = ui.composer(page);
       await input.click();
       await input.fill(shot.compose);
-      await page.locator("textarea.composer-input").first().blur();
+      await input.blur();
     }
     // No focus ring: whatever the page focused (a heading on navigation, the composer) is blurred.
     await page.addStyleTag({ content: `${FREEZE_CSS} :focus-visible { outline: none !important; }` });

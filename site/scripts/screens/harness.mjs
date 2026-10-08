@@ -217,6 +217,49 @@ export const contextOptions = (vp) => ({
   locale: "en-US",
 });
 
+/**
+ * The app's controls the capture and the video use, each found in the state the page is in, never
+ * the state a previous step left it in. The composer and Review Changes are the open session's
+ * (inside <main>): the session detail pane beside it can hold its own. The pane opens on whichever
+ * tab it last showed, so the Agents tab is selected by its own button, not assumed.
+ * `moveTo` moves the video's pointer to a control before it is clicked (a no-op for screenshots).
+ */
+export const ui = {
+  composer: (page) => page.locator("main textarea.composer-input").first(),
+  send: (page) => page.locator("main .composer-actions button[type=submit]").first(),
+  reviewChanges: (page) => page.locator("main").getByRole("button", { name: "Review Changes" }).last(),
+  /** Back to the end of the transcript when Jump to Latest shows (it covers what is under it). */
+  async toLatest(page, moveTo = async () => {}) {
+    const pill = page.locator("main .jump-latest[data-shown]").first();
+    if (await pill.isVisible().catch(() => false)) {
+      await moveTo(pill);
+      await pill.click();
+      await page.waitForTimeout(600);
+    }
+  },
+  async openAgents(page, moveTo = async () => {}) {
+    const panel = page.locator("#session-tabpanel");
+    if (!(await panel.isVisible().catch(() => false))) {
+      const trigger = page.locator("main button.run-status-link:not(.run-status-align):not(.run-status-running)").first();
+      await moveTo(trigger);
+      await trigger.click({ timeout: 10_000 });
+      await panel.waitFor({ state: "visible", timeout: 10_000 });
+    }
+    const tab = page.locator("#session-tab-agents");
+    if ((await tab.getAttribute("aria-selected")) !== "true") {
+      await moveTo(tab);
+      await tab.click({ timeout: 10_000 });
+    }
+    await page.locator("#session-tabpanel .subagent-row").first().waitFor({ state: "visible", timeout: 10_000 });
+  },
+  async openWorker(page, name, moveTo = async () => {}) {
+    await ui.openAgents(page, moveTo);
+    const row = page.locator("#session-tabpanel .subagent-row", { hasText: name }).first();
+    await moveTo(row);
+    await row.click({ timeout: 10_000 });
+  },
+};
+
 /** Animations and carets off, so a shot is the same every run. */
 export const FREEZE_CSS = "*, *::before, *::after { animation-duration: 0s !important; animation-delay: 0s !important; transition: none !important; caret-color: transparent !important; } ::-webkit-scrollbar { display: none; }";
 

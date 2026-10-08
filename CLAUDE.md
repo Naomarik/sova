@@ -68,7 +68,9 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   strict parse, a reader that reads a missing or malformed file as Default with Visuals off, the
   atomic writer and `resolveAlign`; written by Settings → Alignment, synced like `mode-spec.json`; the
   style re-read by every session at each turn boundary and told to an open chat as one hidden
-  `mode-note` whose details record `style`/`headStyle`, Visuals read at session start — in Sova from
+  `mode-note` whose details record `style`/`headStyle`; a head fixed in a style other than Default
+  records it in the extension's own `mode-head` custom entry `{v: 1, style}` (none: Default once a
+  prompt went out since the last compaction), Visuals read at session start — in Sova from
   the chat's `sova-align-launch` state entry `{v: 1, review, visuals}` (Sova's own, written with the
   chat's first message, the first in the file holds), handed over as the `align-visuals` flag `on` |
   `off`, absent in the TUI, which then reads the file; a subagent profile's optional `alignment`

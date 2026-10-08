@@ -108,6 +108,7 @@ import {
 	loadState,
 	MODE_DISCOVER_EVENT,
 	MODE_ENTRY_TYPE,
+	MODE_HEAD_TYPE,
 	MODE_NOTE_TYPE,
 	MODE_STATE_EVENT,
 	MODES,
@@ -119,6 +120,7 @@ import {
 	withMinor,
 	type Mode,
 	type ModeActive,
+	type ModeHeadRecord,
 	type ModeNoteDetails,
 	type ModeState,
 } from "./state.ts";
@@ -369,8 +371,18 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		told = [...head];
 		guides = [];
 		toldWriter = head.includes("spec") ? writerInstruction() : undefined;
-		// A head rebuilt on reopen keeps the style its newest style note recorded (restoreActiveState).
-		headStyle ??= alignNow().style;
+		// A head rebuilt on reopen keeps the style the branch recorded for it (restoreActiveState). A new
+		// one built in a style other than Default records it (MODE_HEAD_TYPE); a Default head records nothing.
+		if (headStyle === undefined) {
+			headStyle = alignNow().style;
+			if (!workerRole && head.includes("align") && headStyle !== "default") {
+				try {
+					pi.appendEntry<ModeHeadRecord>(MODE_HEAD_TYPE, { v: 1, style: headStyle });
+				} catch {
+					// Best-effort: without it, a reopen reads this head as Default.
+				}
+			}
+		}
 		toldStyle ??= headStyle;
 	}
 
@@ -648,11 +660,12 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		head = restoredHead.head;
 		told = restoredHead.told ?? [...(head ?? [])];
 		guides = restoredHead.guides;
-		// The style the head was built with, as its newest style note since the last compaction recorded it
-		// (a head no entry records is rebuilt with it at the next fixHead); a head no note speaks for takes
-		// the style now (§chat.alignment/style), and one still to be fixed follows it until then.
-		headStyle = restoredHead.style?.head ?? (head === undefined ? undefined : alignNow().style);
-		toldStyle = restoredHead.style?.told ?? (head === undefined ? undefined : headStyle);
+		// The style the head was built with, as the branch records it since the last compaction (a style
+		// note, else the head's own record, else Default once a prompt went out; a head no entry records is
+		// rebuilt with it at the next fixHead), so a style changed since goes out as a note (§chat.alignment/style);
+		// a head still to be fixed follows the style now until then.
+		headStyle = restoredHead.headStyle;
+		toldStyle = restoredHead.style?.told ?? headStyle;
 		// A restore can land on a different strict flag than the tools currently reflect.
 		if (active.mode === "delegate" && active.strict) applyStrictTools();
 		else restoreTools();

@@ -132,6 +132,43 @@ try {
 		session.dispose();
 	}
 
+	// A head no note speaks for: started in Default, the style changed with no message since, then a reopen.
+	// The head keeps Default (nothing records a Default head) and the change goes out as one note.
+	// And the other way: a Project manager head, recorded when it was fixed, survives a change back to Default.
+	for (const [from, to] of [["default", "pm"], ["pm", "default"]]) {
+		setAlign(from, false);
+		session = await open(SessionManager.create(cwd, sessionDir));
+		let first;
+		try {
+			await mode(session, "align on");
+			await session.prompt("one");
+			first = requests.at(-1).prompt;
+			assert.equal(first.includes(ALIGN_STYLE_PARAGRAPHS.pm), from === "pm");
+			setAlign(to, false);
+			file = session.sessionManager.getSessionFile();
+		} finally {
+			session.dispose();
+		}
+		session = await open(SessionManager.open(file, sessionDir));
+		try {
+			await session.prompt("after the reopen");
+			const request = requests.at(-1);
+			assert.equal(request.prompt, first, `${from} → ${to}: the reopened head is byte-identical to the first run's`);
+			assert.equal(styleNotes(request.users).length, 1, `${from} → ${to}: one hidden note`);
+			const told = request.users.find((u) => u.startsWith("Writing style change:"));
+			if (to === "pm") assert.ok(told.endsWith(ALIGN_STYLE_PARAGRAPHS.pm), "carrying the Project manager paragraph");
+			else assert.match(told, /back to Default/);
+			assert.equal(notes(session).length, 1);
+			assert.equal(notes(session)[0].display, false);
+			assert.deepEqual(notes(session)[0].details, { v: 1, minorModes: ["align"], guides: [], style: to, headStyle: from });
+			await session.prompt("again");
+			assert.equal(requests.at(-1).prompt, first);
+			assert.equal(notes(session).length, 1, "told once");
+		} finally {
+			session.dispose();
+		}
+	}
+
 	// Align off: a style change tells nothing (no align block in context to change).
 	session = await open(SessionManager.inMemory(cwd));
 	try {

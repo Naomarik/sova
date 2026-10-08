@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { lstatSync, mkdirSync, readFileSync, readdirSync, rmdirSync, unlinkSync, watch, type FSWatcher } from "node:fs";
 import { basename, dirname, join } from "node:path";
+import type { MeshCap } from "../../shared/mesh-access";
 import type { SyncCategory } from "../../shared/protocol";
 import { parseTheme } from "../../shared/theme";
 import { parseDelegate } from "../../pi-config/extensions/mode/delegate.ts";
@@ -30,7 +31,8 @@ import { writeFileAtomic } from "./logins-stores";
  *   mode.json (default mode), mode-delegate.json and mode-spec.json; the subagent profile library
  *   subagent-profiles.json (its device default, subagent-profiles-default.json, never syncs:
  *   which profile new chats start from is each device's own); your session profiles, Sova's
- *   session-profiles.json (checked with its own strict parser).
+ *   session-profiles.json (checked with its own strict parser; only with peers also granted
+ *   sessions, since a profile's first message runs here as a session's opening prompt).
  * - themes: every `<state root>/themes/*.json` (the theme CHOICE is the browser's, per origin).
  * Not synced: subagent-profiles-default.json, topic-outline.json (it holds this host's claudeBin
  * path), anything keyed by session (titles, groups, drafts, origin: the session's owner keeps
@@ -54,6 +56,8 @@ export interface DocSpec {
   valid(text: string): boolean;
   /** The consumer's mkdir lock around read-modify-rename, where it has one. */
   lockDir?: string;
+  /** Capabilities a peer needs on top of the category's own (§mesh.peers/grants). */
+  needs?: readonly MeshCap[];
 }
 
 export interface DocManifest {
@@ -129,7 +133,14 @@ export function settingsDocs(agentDir: string, stateDir: string): DocSpec[] {
     { key: "settings:sova/settings.json", category: "settings", path: join(stateDir, "settings.json"), valid: (t) => jsonObject(t)?.version === 1 },
     { key: "settings:sova/defaults.json", category: "settings", path: join(stateDir, "defaults.json"), valid: (t) => jsonObject(t) !== null },
     // Your session profiles ("Yours"), whole: what your profile cards are on every device.
-    { key: "settings:sova/session-profiles.json", category: "settings", path: join(stateDir, "session-profiles.json"), valid: (t) => validSessionProfiles(t) },
+    // A profile's first message runs as a session's opening prompt here: only for peers granted sessions.
+    {
+      key: "settings:sova/session-profiles.json",
+      category: "settings",
+      path: join(stateDir, "session-profiles.json"),
+      valid: (t) => validSessionProfiles(t),
+      needs: ["sessions"],
+    },
     {
       key: "settings:model-favorites.json",
       category: "settings",
@@ -242,6 +253,8 @@ export interface DocSyncOptions {
   /** Whether category `c` is exchanged with peer `peerId` at all (this host's grant to that peer,
       §mesh.peers/grants). Absent: every category with every peer. */
   shares?: (peerId: string, c: DocCategory) => boolean;
+  /** Whether this host grants `peerId` capability `cap`, for a document's `needs`. Absent: every one. */
+  allows?: (peerId: string, cap: MeshCap) => boolean;
   now?: () => number;
   log?: (m: string) => void;
   debounceMs?: number;
@@ -432,24 +445,28 @@ export class DocSync {
 
   // ---------------------------------------------------------------- peer-facing
 
-  /** Whether category `c` is exchanged with `peerId` (this host's grant to it); every one with no peer named. */
-  private sharesWith(peerId: string | undefined, c: DocCategory): boolean {
-    return peerId === undefined || !this.opts.shares || this.opts.shares(peerId, c);
+  /** Whether `spec` is exchanged with `peerId` (this host's grant to it: its category and every
+      capability it needs); every one with no peer named. */
+  private sharesWith(peerId: string | undefined, spec: DocSpec): boolean {
+    if (peerId === undefined) return true;
+    if (this.opts.shares && !this.opts.shares(peerId, spec.category)) return false;
+    const allows = this.opts.allows;
+    return !allows || (spec.needs ?? []).every((cap) => allows(peerId, cap));
   }
 
-  /** The manifest as `forPeer` may see it: only the categories this host shares with that peer. */
+  /** The manifest as `forPeer` may see it: only the documents this host shares with that peer. */
   manifest(forPeer?: string): DocManifest {
     const docs: Record<string, DocMeta> = {};
     for (const [key, meta] of Object.entries(this.records)) {
       const spec = this.specFor(key);
-      if (spec && this.enabled(spec.category) && this.sharesWith(forPeer, spec.category) && readLocal(spec).kind !== "local-only") docs[key] = meta;
+      if (spec && this.enabled(spec.category) && this.sharesWith(forPeer, spec) && readLocal(spec).kind !== "local-only") docs[key] = meta;
     }
     return { hostId: this.opts.hostId, now: this.now(), docs };
   }
 
   doc(key: string, forPeer?: string): DocReply | null {
     const spec = this.specFor(key);
-    if (!spec || !this.enabled(spec.category) || !this.sharesWith(forPeer, spec.category)) return null;
+    if (!spec || !this.enabled(spec.category) || !this.sharesWith(forPeer, spec)) return null;
     if (this.observeOne(spec)) this.persist();
     const meta = this.records[key];
     const local = readLocal(spec);
@@ -524,9 +541,9 @@ export class DocSync {
         continue;
       }
       const it = item as Partial<DocReply> | null;
-      // Never taken from a peer this host doesn't share the category with.
+      // Never taken from a peer this host doesn't share the document with.
       const spec = this.specFor(key);
-      if (spec && !this.sharesWith(from, spec.category)) {
+      if (spec && !this.sharesWith(from, spec)) {
         reply.rejected.push({ key, reason: "disabled" });
         continue;
       }
@@ -550,7 +567,7 @@ export class DocSync {
       const theirs: Record<string, DocMeta> = {};
       for (const [k, v] of Object.entries(remote.docs ?? {})) {
         const spec = this.specFor(k);
-        if (spec && isDocMeta(v) && this.sharesWith(peer.id, spec.category)) theirs[k] = v;
+        if (spec && isDocMeta(v) && this.sharesWith(peer.id, spec)) theirs[k] = v;
       }
       const push: DocPush = { hostId: this.opts.hostId, now: this.now(), docs: {} };
       for (const key of new Set([...Object.keys(mine), ...Object.keys(theirs)])) {

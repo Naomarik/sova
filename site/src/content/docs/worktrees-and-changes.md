@@ -7,7 +7,7 @@ order: 10
 
 You manage the list by asking the agent, workers start only where it allows, and each merge the session makes shows up in the transcript as a card. The diff opens in a read-only viewer.
 
-It works the same in pi's terminal UI and in Sova. Worktrees and steps come from the `worktrees` and `show-changes` pi extensions, which the installer links.
+It works the same in pi's terminal UI and in Sova.
 
 ## Ask the agent
 

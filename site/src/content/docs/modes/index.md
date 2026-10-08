@@ -56,9 +56,8 @@ chat, and the chat's running workers keep running.
 
 - **During a turn**, the running turn keeps the old mode, and so do messages you queue during it.
   The menu says so: **Applies after this turn.** Your next message follows the new mode.
-- **A chat that can't switch** shows **This chat can't switch.** That happens when the mode
-  extension isn't loaded in that chat, or another program wrote its session. The chat is left as
-  it was.
+- **A chat that can't switch** shows **This chat can't switch.** in its menu, for example when
+  another program wrote its session. The chat is left as it was; **Save as default** still works.
 
 Switching a minor mode in the middle of a chat doesn't rewrite the instructions the model already
 has (except align in Delegate, which changes one paragraph of Delegate's instructions). The change reaches the model as a hidden note with its next message, which you don't see in

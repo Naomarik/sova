@@ -39,12 +39,12 @@ const cards = [
   {
     icon: "network", title: "Tools on your own targets",
     body: "Run a session's tools on your own SSH, AWS SSM, Docker, or Incus targets. Tools run on the target, not through a local mount.",
-    limit: "Needs the <code>remote</code> extension and your targets in <code>~/.pi/agent/targets.json</code>.",
+    limit: "Needs your targets listed in <code>~/.pi/agent/targets.json</code>.",
   },
   {
     icon: "gauge", title: "Usage, agents, and load",
     body: "The Usage page shows your subscription and spend windows, and the Agents page what's running. The resource monitor charges CPU and memory to the session and worker that started each process.",
-    limit: "Usage meters need the <code>usage-status</code> extension. The monitor only reads.",
+    limit: "The monitor only reads.",
   },
   {
     icon: "sliders", title: "Your model rules",
@@ -131,7 +131,7 @@ const beyond = [
               <p>Switch a session to Delegate and its agent becomes an orchestrator. It sorts the work into planning, investigation, routine changes, and complex changes, and sends each kind to the model you routed it to, on Claude Code or any provider pi has, with an optional fallback. A subagent profile keeps those routes and your team defaults under one name, so a usage limit is 1 switch away from another setup.</p>
               <p>Bigger jobs get a team: coordinated workers with one role each. Every worker and team member opens in the side pane with its own transcript and how full its context is. If Sova restarts, each worker comes back as an idle record with its transcript, and picks up again when asked.</p>
             </div>
-            <p class="limit"><Icon name="info" size={18} /><span>Routes live in Settings → Subagents. <strong>The shipped routes use Claude Code models</strong>, so install the <code>claude</code> CLI or pick your own. Delegate, workers, and teams come from the <a href={site.modeExtension}><code>mode</code></a> and <a href={site.subagentsExtension}><code>subagents</code></a> pi extensions, which the installer links.</span></p>
+            <p class="limit"><Icon name="info" size={18} /><span>Routes live in Settings → Subagents. <strong>The shipped routes use Claude Code models</strong>, so install the <code>claude</code> CLI or pick your own.</span></p>
             <p class="feature-more"><a href="/docs/modes/delegate/">Read more about Delegate<Icon name="arrow-right" size={14} /></a><a href="/docs/subagent-profiles/">Subagent profiles<Icon name="arrow-right" size={14} /></a></p>
           </div>
           <div class="feature-visual"><Workers /></div>
@@ -159,7 +159,7 @@ const beyond = [
               <p>A session keeps track of the git worktrees it works in. Ask the agent to create, attach, detach, merge, or list them; detaching deletes nothing. Workers start only in the session's folder or one of its worktrees, and each merge lands in the transcript as a card.</p>
               <p>Ask to see what changed and the agent lays it out as numbered steps, each with a line on why. It can't leave a hunk out: with more than one hunk, every one has to sit in a step. The changes viewer shows them a step or a file at a time, and only reads: it never writes to your working tree or runs a git command that changes anything.</p>
             </div>
-            <p class="limit"><Icon name="info" size={18} /><span>Worktrees and steps come from the <code>worktrees</code> and <code>show-changes</code> pi extensions, which the installer links; <code>--no-extensions</code> skips that.</span></p>
+            <p class="limit"><Icon name="info" size={18} /><span>Sova never removes a worktree on its own. A new session offers <strong>Clean Up Merged</strong>, which shows what goes and what stays before it removes anything.</span></p>
             <p class="feature-more"><a href="/docs/worktrees-and-changes/">Read more about worktrees and changes<Icon name="arrow-right" size={14} /></a></p>
           </div>
           <div class="feature-visual"><Changes /></div>
@@ -348,7 +348,7 @@ const beyond = [
         <div class="section-head" style="margin-bottom:0">
           <span class="eyebrow">Open source</span>
           <h2 class="h-section" id="source-title">Apache-2.0, built in the open.</h2>
-          <p class="lead">TypeScript end to end: a SolidJS web app, a Hono server with the pi SDK embedded, and the optional pi extensions in <code>pi-config/</code>. Read the code, file an issue, or run a checkout.</p>
+          <p class="lead">TypeScript end to end: a SolidJS web app, a Hono server with the pi SDK embedded, and the pi extensions it ships in <code>pi-config/</code>. Read the code, file an issue, or run a checkout.</p>
           <div class="oss-actions">
             <a class="button button-primary" href={site.repo}><Icon name="external" size={16} />View on GitHub</a>
             <a class="button button-ghost" href={site.contributing}>Read CONTRIBUTING</a>

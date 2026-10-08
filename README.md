@@ -39,9 +39,8 @@ existing pi provider login.
   it to, with a fallback. A subagent profile keeps those routes under one name, set in Settings →
   Subagents. The shipped routes use Claude Code models, so install the `claude` CLI or pick your
   own. Workers open in a side pane, each with its own transcript and how full its context is, and
-  come back as idle entries after a server restart. From the
-  [mode](pi-config/extensions/mode/README.md) and [subagents](pi-config/extensions/subagents/README.md)
-  extensions, which the installer links.
+  come back as idle entries after a server restart. More on
+  [Delegate](pi-config/extensions/mode/README.md) and [workers](pi-config/extensions/subagents/README.md).
 - **Agree on the plan before anything gets built.** With align on, the agent records each agreement
   as an alignment: findings, approach, rejected alternatives, and open questions with its
   recommendations. An experimental adversarial review (Settings → Experimental) has a fresh,
@@ -49,7 +48,7 @@ existing pi provider login.
 - **Work in worktrees. Review changes as steps.** A session tracks the git worktrees it works in;
   ask it to create, attach, detach, or merge one, and each merge lands as a card. The changes viewer
   shows what a session or worktree changed, read-only, as numbered steps, each with the agent's
-  why when it wrote one. [worktrees extension](pi-config/extensions/worktrees/README.md).
+  why when it wrote one. [More on worktrees](pi-config/extensions/worktrees/README.md).
 - **Know which session needs you.** The sidebar's Needs you list shows the sessions waiting on you,
   and the same list can reach your phone as a push notification, which costs no tokens. The
   Overseer starts, prompts, or tidies sessions when you ask, confirming first when a request is
@@ -63,8 +62,8 @@ existing pi provider login.
 - **And more.** Several [Claude logins](pi-config/extensions/claude-code/README.md) with failover on
   a usage limit; a [sandbox](pi-config/extensions/sandbox/README.md) per session; playbooks and
   schedules; read-only [share links](docs/public-links.md) to a session, on an address you set up;
-  session tools on your SSH, AWS SSM, Docker, or Incus targets with the
-  [remote extension](pi-config/extensions/remote/README.md); a usage page and a resource monitor
+  session tools on your SSH, AWS SSM, Docker, or Incus
+  [targets](pi-config/extensions/remote/README.md); a usage page and a resource monitor
   that charges load to the session that caused it; model rules (which models this machine and its
   subagents may use, and how many requests each provider runs at once); and local voice input (set
   up in Settings → Voice).

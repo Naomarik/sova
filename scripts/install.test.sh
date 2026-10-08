@@ -581,7 +581,7 @@ rm "$home/.pi/agent/sova/auth-token"
 CASE_REF=mastr run_install bad-ref
 check "$(yes_if [ "$status" -ne 0 ])" "bad ref: exits nonzero"
 check "$(yes_if said "'mastr' is not a tag or a branch")" "bad ref: names the ref"
-check "$(yes_if said 'SOVA_REF=master')" "bad ref: says to pass SOVA_REF"
+check "$(yes_if said 'Pass SOVA_REF=<tag, branch or commit>')" "bad ref: says to pass SOVA_REF"
 check "$(yes_if [ ! -e "$home/.local" ])" "bad ref: nothing written, not even ~/.local"
 check "$(yes_if pi_untouched)" "bad ref: ~/.pi untouched"
 CASE_REF=deadbeef1 run_install bad-commit
@@ -599,6 +599,16 @@ check "$(yes_if [ "$status" -ne 0 ] && [ "$(git -C "$home/.local/share/sova" rev
 seed_master=$(git -C "$seed" rev-parse master)
 CASE_REF=master run_install ref-branch
 check "$(yes_if said "installed master (${seed_master:0:7})")" "ref, a branch: the summary names it and its commit"
+# With no SOVA_REF, the default is master (until a release commit sets its own tag).
+fresh_home ref-default
+set +e
+out=$(env -u SOVA_REF HOME="$home" PATH="$sandbox" SOVA_REPO="file://$seed" SOVA_TTY="$tmp/.no-tty" \
+	SVC_LOG="$tmp/ref-default/svc.log" SVC_STATE="$tmp/ref-default/svc" "$test_bash" "$installer" 2>&1)
+status=$?
+set -e
+check "$(yes_if [ "$status" -eq 0 ] && [ "$(git -C "$home/.local/share/sova" rev-parse HEAD)" = "$seed_master" ])" \
+	"ref, unset: installs master's latest commit"
+check "$(yes_if said "installed master (${seed_master:0:7})")" "ref, unset: the summary names master"
 seed_next=$(git -C "$seed" rev-parse next)
 CASE_REF=$seed_next run_install ref-commit
 check "$(yes_if [ "$status" -eq 0 ] && [ "$(git -C "$home/.local/share/sova" rev-parse HEAD)" = "$seed_next" ])" \

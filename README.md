@@ -25,7 +25,7 @@ runs it through npx), curl, and unzip or python3. The installer downloads the Bu
 tested on into its own folder.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/master/scripts/install.sh | SOVA_REF=master bash
+curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/master/scripts/install.sh | bash
 ```
 
 Until the first release is tagged, this installs the `master` branch; running it again updates to

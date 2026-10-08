@@ -3,11 +3,9 @@
 # launcher on PATH, link Sova's pi extensions into pi's agent directory and, if you want one,
 # install a login service. Safe to pipe from curl:
 #
-#   curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/vNEXT/scripts/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/master/scripts/install.sh | bash
 #
-# Until the first release is tagged, install master instead:
-#
-#   curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/master/scripts/install.sh | SOVA_REF=master bash
+# That installs the ref below (master until the first release is tagged); SOVA_REF picks another.
 #
 # The whole script is one function, main, called on its last line: bash reads all of it before any
 # of it runs, so a download cut short runs nothing.
@@ -62,11 +60,11 @@ set -euo pipefail
 main() {
 
 repo=${SOVA_REPO:-https://github.com/Naomarik/sova.git}
-# RELEASE: vNEXT is a placeholder for the next release tag. Replace every vNEXT (this file,
-# docs/public-links.md) with that tag in the commit the tag points at, so the tagged installer
-# installs itself, and point the install command in README.md, docs/getting-started.md and
-# site/src/content/docs/install.md (master with SOVA_REF=master until then) at the tag's script.
-ref=${SOVA_REF:-vNEXT}
+# RELEASE: in the commit a release tag points at, set this default to that tag (and replace vNEXT
+# in docs/public-links.md with it), so the installer fetched from the tag installs the tag. Point
+# the install command in README.md, docs/getting-started.md and site/src/content/docs/install.md
+# at the tag's script, and set `release` in site/src/data/site.ts. Until then it is master.
+ref=${SOVA_REF:-master}
 dir=${SOVA_DIR:-$HOME/.local/share/sova}
 bindir=${SOVA_BIN:-$HOME/.local/bin}
 tty=${SOVA_TTY:-/dev/tty}
@@ -229,7 +227,7 @@ if [ -z "$want" ]; then
 		*) bad_ref=true ;;
 	esac
 	! $bad_ref ||
-		die "'$ref' is not a tag or a branch of $repo; nothing was changed. Pass SOVA_REF=<tag, branch or commit>, for example SOVA_REF=master."
+		die "'$ref' is not a tag or a branch of $repo; nothing was changed. Pass SOVA_REF=<tag, branch or commit>."
 fi
 
 # An install already at that commit, with its dependencies and build in place, is not rebuilt.
@@ -283,7 +281,7 @@ if $rebuild; then
 		git clone --quiet "$repo" "$staging/sova" ||
 		die "could not clone $repo; nothing was changed"
 	git -C "$staging/sova" -c advice.detachedHead=false checkout --quiet "$ref" 2>/dev/null ||
-		die "'$ref' is not a tag, a branch or a commit of $repo; nothing was changed. Pass SOVA_REF=<tag, branch or commit>, for example SOVA_REF=master."
+		die "'$ref' is not a tag, a branch or a commit of $repo; nothing was changed. Pass SOVA_REF=<tag, branch or commit>."
 
 	if $use_npx; then
 		# The pnpm the repository pins in package.json's packageManager, or the latest without one.

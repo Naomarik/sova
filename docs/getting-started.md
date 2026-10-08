@@ -15,12 +15,13 @@ The server runs on Bun: the installer downloads the version Sova pins into the i
 and checks its checksum. Then:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/master/scripts/install.sh | SOVA_REF=master bash
+curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/master/scripts/install.sh | bash
 ```
 
 Until the first release is tagged, this builds Sova's `master` branch in `~/.local/share/sova`
-and creates `~/.local/bin/sova`. A `SOVA_REF` that is not a tag, branch or commit stops the
-installer before it changes anything. It does **not** start the server. Run:
+and creates `~/.local/bin/sova`. For another tag, branch or commit, end the command with
+`| SOVA_REF=<ref> bash`; a ref that doesn't exist stops the installer before it changes anything.
+It does **not** start the server. Run:
 
 ```sh
 sova
@@ -128,8 +129,8 @@ experimenting with configuration. Never commit credentials, transcripts, or pers
 
 ## Reinstall or remove
 
-Running the install command again updates to the latest commit of its `SOVA_REF` (with
-`SOVA_REF=master`, master's latest). An install already at that commit isn't rebuilt;
+Running the install command again updates to master's latest commit (or the latest of the
+`SOVA_REF` you set). An install already at that commit isn't rebuilt;
 `--reinstall` rebuilds it anyway. Pass the same options again: without `--port`, a re-run goes back
 to 4800. The installer stages the build before replacing the installation and refuses tracked
 local changes. Don't store your own files in the install directory: untracked files do not prevent

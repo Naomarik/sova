@@ -11,7 +11,7 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "no
 import { join } from "node:path";
 import { loadStory, REPO } from "./load-story.mjs";
 import { durationMs, text } from "./story-check.mjs";
-import { FREEZE_CSS, leakGate, leakPatterns, makeRoot, OUT_DIR, removeRoot, startBrowser, startDirector, startServer, TOKEN, VIDEO_DIR, VIEWPORTS, writeJson } from "./harness.mjs";
+import { FREEZE_CSS, saveDebug, leakGate, leakPatterns, makeRoot, OUT_DIR, removeRoot, startBrowser, startDirector, startServer, TOKEN, VIDEO_DIR, contextOptions, writeJson } from "./harness.mjs";
 import { loadAlignModule, seed, titleStatic } from "./seed.mjs";
 import { fileSha, videoHash } from "./hashes.mjs";
 
@@ -47,6 +47,9 @@ if (!flag("--force") && manifest?.video?.hash === hash && existsSync(join(VIDEO_
 const root = makeRoot();
 const stops = [];
 let failed = false;
+let page = null;
+let patterns = null;
+let beatNow = "setup";
 try {
   const director = await startDirector(root, { chunkMs: v.chunkMs });
   stops.push(director.stop);
@@ -56,7 +59,7 @@ try {
   await titleStatic(server, plan, seeded);
   const browser = await startBrowser();
   stops.push(browser.stop);
-  const patterns = leakPatterns(root);
+  patterns = leakPatterns(root);
 
   const s = plan.sessions.find((x) => x.id === v.session);
   const created = await server.call("POST", "/api/sessions", { cwd: seeded.repo });
@@ -71,8 +74,8 @@ try {
   await server.call("POST", "/api/sessions/title", { path: created.path, title: s.title });
   await server.call("POST", `/api/sandbox?path=${encodeURIComponent(created.path)}`, { state: "off" }).catch(() => {});
 
-  const vp = VIEWPORTS.video;
-  const ctx = await browser.browser.newContext({ viewport: { width: vp.width, height: vp.height }, deviceScaleFactor: vp.deviceScaleFactor, colorScheme: "dark", timezoneId: "UTC", locale: "en-US" });
+  const vp = plan.viewports[v.viewport];
+  const ctx = await browser.browser.newContext(contextOptions(vp));
   // Headless draws no pointer: a small dot that follows the mouse and pulses on a click.
   await ctx.addInitScript(() => {
     addEventListener("DOMContentLoaded", () => {
@@ -84,11 +87,15 @@ try {
       addEventListener("mouseup", () => (dot.style.transform = ""), true);
     });
   });
-  const page = await ctx.newPage();
+  page = await ctx.newPage();
   await page.goto(`${server.base}/#t=${TOKEN}`, { waitUntil: "load" });
   await page.waitForTimeout(500);
-  await page.evaluate((h) => (location.hash = h), `#/s/${encodeURIComponent(created.path)}`);
+  // A session with no message yet is left out of the session list, so #/s/<path> has no row to
+  // open; #/sid/<id> asks the server for it (the app's route for a session the list doesn't carry).
+  beatNow = "opening the session";
+  await page.evaluate((h) => (location.hash = h), `#/sid/${created.id}`);
   await page.waitForLoadState("networkidle").catch(() => {});
+  await page.locator("textarea.composer-input").first().waitFor({ state: "visible", timeout: 20_000 });
   await page.addStyleTag({ content: FREEZE_CSS.replace("animation-duration: 0s !important; animation-delay: 0s !important; ", "") });
   await page.evaluate(() => document.fonts.ready);
   await page.waitForTimeout(1500);
@@ -105,7 +112,7 @@ try {
     frames.push({ file, t: f.metadata.timestamp });
     await cdp.send("Page.screencastFrameAck", { sessionId: f.sessionId }).catch(() => {});
   });
-  await cdp.send("Page.startScreencast", { format: "jpeg", quality: 92, everyNthFrame: 1, maxWidth: Math.round(vp.width * vp.deviceScaleFactor), maxHeight: Math.round(vp.height * vp.deviceScaleFactor) });
+  await cdp.send("Page.startScreencast", { format: "jpeg", quality: 92, everyNthFrame: 1, maxWidth: Math.round(vp.width * vp.scale), maxHeight: Math.round(vp.height * vp.scale) });
   await page.waitForTimeout(700);
 
   const script = story.sessions.find((x) => x.id === v.session).script;
@@ -115,6 +122,7 @@ try {
   };
   for (const [i, beat] of v.beats.entries()) {
     console.log(`beat ${i}: ${JSON.stringify(beat)}`);
+    beatNow = `beat ${i}`;
     if (beat.do === "type") {
       const input = page.locator("textarea.composer-input").first();
       await moveTo(input);
@@ -173,7 +181,8 @@ try {
   writeJson(MANIFEST, next);
 } catch (e) {
   failed = true;
-  console.error(`\nrecording failed: ${e.stack ?? e.message}`);
+  console.error(`\nrecording failed at ${beatNow}: ${e.stack ?? e.message}`);
+  console.error(await saveDebug(page, patterns ?? leakPatterns(root), `video-${beatNow.replace(/\s+/g, "-")}`));
   console.error(`logs: ${join(root, "logs")}${flag("--keep") ? "" : " (pass --keep to keep them)"}`);
 } finally {
   for (const stop of stops.reverse()) await stop().catch(() => {});

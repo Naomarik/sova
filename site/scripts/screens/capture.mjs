@@ -17,7 +17,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { join } from "node:path";
 import { HERE, loadStory, REPO, whereIn } from "./load-story.mjs";
 import { actionOf, text } from "./story-check.mjs";
-import { DEBUG_DIR, FREEZE_CSS, leakGate, leakPatterns, makeRoot, OUT_DIR, removeRoot, sleep, startBrowser, startDirector, startServer, TOKEN, VIEWPORTS, waitFor, writeJson } from "./harness.mjs";
+import { FREEZE_CSS, saveDebug, leakGate, leakPatterns, makeRoot, OUT_DIR, removeRoot, sleep, startBrowser, startDirector, startServer, TOKEN, contextOptions, waitFor, writeJson } from "./harness.mjs";
 import { loadAlignModule, seed, titleStatic } from "./seed.mjs";
 import { fileSha, inputHashes } from "./hashes.mjs";
 
@@ -206,16 +206,7 @@ function events(sessionId) {
 }
 
 async function newContext(browser, viewport) {
-  const vp = VIEWPORTS[viewport];
-  const ctx = await browser.newContext({
-    viewport: { width: vp.width, height: vp.height },
-    deviceScaleFactor: vp.deviceScaleFactor,
-    isMobile: !!vp.isMobile,
-    hasTouch: !!vp.hasTouch,
-    colorScheme: "dark",
-    timezoneId: "UTC",
-    locale: "en-US",
-  });
+  const ctx = await browser.newContext(contextOptions(plan.viewports[viewport]));
   // The Access page's pairing response, mocked: the real one names this machine's tailnet.
   await ctx.route("**/api/auth/pair", (route) =>
     route.fulfill({
@@ -255,14 +246,13 @@ async function typeAndSend(page, value, delay) {
 
 async function shoot(browser, server, shot, { sessionPath, patterns }) {
   const ctx = await newContext(browser, shot.viewport);
-  const debug = (name) => join(DEBUG_DIR, `${shot.id}-${name}`);
   let page;
   try {
     const hash =
       shot.session === "overseer" ? "#/overseer" : shot.session === "access" ? "#/access" : `#/s/${encodeURIComponent(sessionPath.get(shot.session))}`;
     page = await open(ctx, server, hash);
     const width = await page.evaluate(() => innerWidth);
-    if (width !== VIEWPORTS[shot.viewport].width) throw new Error(`viewport is ${width}px wide, wanted ${VIEWPORTS[shot.viewport].width}`);
+    if (width !== plan.viewports[shot.viewport].width) throw new Error(`viewport is ${width}px wide, wanted ${plan.viewports[shot.viewport].width}`);
 
     // The Access page: make a code (the pair route is mocked), so the shot shows its QR and link.
     if (shot.session === "access") {
@@ -321,17 +311,7 @@ async function shoot(browser, server, shot, { sessionPath, patterns }) {
     writeFileSync(join(OUT_DIR, file), webp);
     return { file, width: meta.width, height: meta.height, bytes: webp.length, sha: fileSha(webp) };
   } catch (e) {
-    // What the page looked like, for whoever fixes the story or a selector, kept out of the repo's
-    // tracked files; only when the page passes the leak gate.
-    try {
-      mkdirSync(DEBUG_DIR, { recursive: true });
-      if (page) {
-        await leakGate(page, patterns, "debug");
-        await page.screenshot({ path: `${debug("failed")}.png` });
-        writeFileSync(`${debug("failed")}.txt`, await page.evaluate(() => document.body.innerText));
-        e.message += ` (page saved to ${debug("failed")}.png)`;
-      }
-    } catch {}
+    e.message += ` (${await saveDebug(page, patterns, `${shot.id}-failed`)})`;
     throw e;
   } finally {
     await ctx.close().catch(() => {});

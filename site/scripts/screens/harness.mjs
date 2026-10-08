@@ -206,13 +206,16 @@ export async function startBrowser() {
   };
 }
 
-export const VIEWPORTS = {
-  desktop: { width: 1440, height: 900, deviceScaleFactor: 2 },
-  compact: { width: 1100, height: 760, deviceScaleFactor: 2 },
-  fold: { width: 840, height: 900, deviceScaleFactor: 2 },
-  phone: { width: 390, height: 844, deviceScaleFactor: 3, isMobile: true, hasTouch: true },
-  video: { width: 1280, height: 800, deviceScaleFactor: 1.5 },
-};
+/** A story viewport (story.json `viewports`) as Playwright's context options. */
+export const contextOptions = (vp) => ({
+  viewport: { width: vp.width, height: vp.height },
+  deviceScaleFactor: vp.scale,
+  isMobile: !!vp.mobile,
+  hasTouch: !!vp.mobile,
+  colorScheme: "dark",
+  timezoneId: "UTC",
+  locale: "en-US",
+});
 
 /** Animations and carets off, so a shot is the same every run. */
 export const FREEZE_CSS = "*, *::before, *::after { animation-duration: 0s !important; animation-delay: 0s !important; transition: none !important; caret-color: transparent !important; } ::-webkit-scrollbar { display: none; }";
@@ -279,6 +282,35 @@ export async function leakGate(page, patterns, where) {
 /** Where debug output of a failed run goes: the worktree's ignored .agent/screens/. */
 export const DEBUG_DIR = join(REPO, ".agent", "screens", "debug");
 export const OUT_DIR = join(SITE, "src", "assets", "screens");
+
+/**
+ * What a page looked like when a run failed, for whoever fixes the story or a selector:
+ * <DEBUG_DIR>/<name>.png, and <name>.txt with its route and visible text. Written only when the
+ * page passes the leak gate. Returns where it went, or a reason it wrote nothing.
+ */
+export async function saveDebug(page, patterns, name) {
+  if (!page || page.isClosed()) return "no page to save";
+  try {
+    await leakGate(page, patterns, "debug");
+  } catch (e) {
+    return `not saved: ${e.message}`;
+  }
+  try {
+    mkdirSync(DEBUG_DIR, { recursive: true });
+    const base = join(DEBUG_DIR, name);
+    await page.screenshot({ path: `${base}.png` });
+    const info = await page.evaluate(() => ({
+      route: location.hash.replace(/#t=[^&]*/, ""),
+      size: `${innerWidth}x${innerHeight}`,
+      focused: document.activeElement?.outerHTML.slice(0, 200) ?? "",
+      text: document.body.innerText,
+    }));
+    writeFileSync(`${base}.txt`, `route: ${info.route}\nviewport: ${info.size}\nfocused: ${info.focused}\n\n${info.text}\n`);
+    return `page saved to ${base}.png and .txt`;
+  } catch (e) {
+    return `not saved: ${e.message}`;
+  }
+}
 export const VIDEO_DIR = join(SITE, "public", "video");
 
 export function writeJson(path, v) {

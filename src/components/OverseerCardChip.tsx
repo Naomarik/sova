@@ -84,7 +84,7 @@ export function OverseerCardChip(props: { cards: OverseerCard[]; onJump(card: Ov
         <For each={rows()}>
           {(card) => (
             <div
-              class="align-menu-item"
+              class="popover-item"
               role="menuitem"
               tabindex="0"
               aria-label={`${card.id}: ${card.title}`}

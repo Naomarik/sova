@@ -1138,6 +1138,13 @@ details[open] > .tree-row .tree-twist { transform: rotate(90deg); }
   margin: 0 auto var(--space-4);
 }
 
+/* Popover (menu). Every menu, dropdown, ⋯ overflow and flyout is a .popover of
+   .popover-item rows; a picker you type into is a combobox instead. The row owns its
+   alignment, height and states: a one-line row is centered on its 44px center line, and
+   .popover-item-detail (label + description) is top-aligned with its icon and check in a
+   box as tall as the label's line, so they stay on the first line at any label size.
+   Never style a menu row with another component's row class, and never set align-items
+   or vertical padding on one yourself. */
 .popover {
   border: var(--stroke-thin) solid var(--color-border);
   border-radius: var(--r-md);
@@ -1147,19 +1154,54 @@ details[open] > .tree-row .tree-twist { transform: rotate(90deg); }
   min-width: 200px;
 }
 .popover-item {
+  --popover-item-fs: var(--fs-body);
+  --popover-item-line: calc(var(--popover-item-fs) * 1.35);
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  width: 100%;
   min-height: var(--control-md);
-  padding: 0 var(--space-3);
+  padding: var(--space-1) var(--space-3);
+  border: 0;
   border-radius: var(--r-sm);
+  background: none;
+  font: inherit;
   font-size: var(--fs-body);
+  text-align: start;
   color: var(--color-ink);
   text-decoration: none;
   cursor: pointer;
 }
 .popover-item:hover { background: var(--color-sunken); }
-.popover-sep { height: 1px; background: var(--color-border); margin: var(--space-1) 0; }
+.popover-item:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-width) * -1); }
+.popover-item[aria-checked="true"] { background: var(--color-accent-tint); }
+.popover-item[aria-disabled="true"] { opacity: .42; cursor: not-allowed; }
+.popover-item[aria-busy="true"] { opacity: 1; cursor: progress; }
+.popover-item-icon,
+.popover-item > .icon { flex: none; color: var(--color-ink-muted); }
+.popover-item-icon { display: inline-flex; align-items: center; justify-content: center; }
+.popover-item > .popover-item-check { color: var(--color-ink); visibility: hidden; }
+.popover-item[aria-checked="true"] > .popover-item-check { visibility: visible; }
+.popover-item-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.35; }
+.popover-item-label { font-size: var(--popover-item-fs); color: var(--color-ink); }
+.popover-item-desc { font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.popover-item-end { flex: none; margin-left: auto; color: var(--color-ink-muted); }
+.popover-item-mono { --popover-item-fs: var(--fs-mono); }
+.popover-item-mono .popover-item-label { font-family: var(--font-mono); }
+.popover-item-detail { align-items: flex-start; padding-block: var(--space-2); }
+.popover-item-detail > .icon,
+.popover-item-detail > .popover-item-icon,
+.popover-item-detail > .popover-item-check { height: var(--popover-item-line); }
+.popover-label {
+  padding: var(--space-2) var(--space-3) var(--space-1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  line-height: var(--lh-micro);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--color-ink-muted);
+}
+.popover-sep { height: var(--stroke-thin); background: var(--color-border); margin: var(--space-1) 0; }
 
 /* Tooltip. One sentence that defines a term or a figure, shown on hover and on
    keyboard focus, and never the only place a fact lives — a touch user may never

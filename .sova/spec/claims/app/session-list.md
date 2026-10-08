@@ -924,12 +924,14 @@ sessions shows as empty.
          rendered panel and clamping it inside the window (both axes, both directions). -->
     <div class="model-menu action-menu" popover="auto">
       <div class="model-menu-list" role="menu" aria-label="Group actions · Work">
-        <a class="mode-option group-option" role="menuitem" tabindex="0" href="#/g/…"
-           aria-label="Open “Work” as a workspace">…external…<span class="mode-option-text">
-           <span class="mode-option-id">Open workspace</span></span></a>
-        <div class="mode-option group-option" role="menuitem" tabindex="0"
+        <!-- Menu rows are .popover-item (§design/menu-rows); a row with its reason under the
+             label is .popover-item.popover-item-detail. -->
+        <a class="popover-item" role="menuitem" tabindex="0" href="#/g/…"
+           aria-label="Open “Work” as a workspace">…external…<span class="popover-item-text">
+           <span class="popover-item-label">Open workspace</span></span></a>
+        <div class="popover-item" role="menuitem" tabindex="0"
              aria-label="Rename “Work”">…pencil… Rename…</div>
-        <div class="mode-option group-option" role="menuitem" tabindex="0"
+        <div class="popover-item" role="menuitem" tabindex="0"
              aria-label="Delete “Work”">…close… Delete group…</div>
       </div>
       <!-- Rename… and Delete group… each swap the rows for one screen inside this same menu:

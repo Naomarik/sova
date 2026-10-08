@@ -17,9 +17,7 @@
 /* A set filter says so in words (its trigger names what's picked) and with the accent edge, never by tint alone. */
 .costs-pick-on { border-color: var(--color-accent); background: var(--color-accent-tint); }
 .costs-pick-empty { margin: 0; padding: var(--space-2) var(--space-3); color: var(--color-ink-muted); font-size: var(--fs-caption); }
-.costs-check { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border: var(--stroke-icon) solid var(--color-border-strong); border-radius: var(--r-xs); color: var(--color-accent); }
-.action-menu [role="menuitemcheckbox"] { cursor: pointer; }
-.action-menu [role="menuitemcheckbox"]:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); }
+.costs-check { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border: var(--stroke-icon) solid var(--color-border-strong); border-radius: var(--r-xs); color: var(--color-ink-muted); }
 
 /* ---- Stats: two by two when folded, four in a row from 768 ---- */
 .costs-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); margin: 0; }

@@ -63,7 +63,7 @@
       <button class="docs-theme button button-sm" data-theme-toggle>Theme</button>
       <p class="text-eyebrow">Component</p>
       <h1>Modal, sheet &amp; popover</h1>
-      <p class="docs-purpose">Three ways to put something on top. At folded width a modal becomes a bottom sheet, so the decision arrives inside the thumb arc rather than in the middle of a screen nobody can reach one-handed.</p>
+      <p class="docs-purpose">Three ways to put something on top. At folded width a modal becomes a bottom sheet, so the decision arrives inside the thumb arc rather than in the middle of a screen nobody can reach one-handed. A popover is also every menu: a ⋯ overflow, a dropdown, a picker and a flyout all use `.popover-item` rows, one line or label + description.</p>
       <section class="docs-section" id="modal">
         <h2 class="docs-h2">Modal</h2>
         <div class="docs-demo">
@@ -87,13 +87,39 @@
 </div></div>
       </section>
       <section class="docs-section" id="popover">
-        <h2 class="docs-h2">Popover</h2>
+        <h2 class="docs-h2">Popover (action menu)</h2>
         <div class="docs-demo">
-<div class="popover" style="max-width:240px">
-  <a class="popover-item" href="#">Open in editor</a>
-  <a class="popover-item" href="#">Copy run ID</a>
-  <div class="popover-sep"></div>
-  <a class="popover-item text-error" href="#">Discard run</a>
+<div class="popover" role="menu" aria-label="Run actions" style="max-width:240px">
+  <a class="popover-item" role="menuitem" href="#"><span class="popover-item-icon" aria-hidden="true">↗</span>Open in editor</a>
+  <a class="popover-item" role="menuitem" href="#"><span class="popover-item-icon" aria-hidden="true">⧉</span>Copy run ID</a>
+  <div class="popover-sep" role="separator"></div>
+  <a class="popover-item text-error" role="menuitem" href="#">Discard run</a>
+</div></div>
+      </section>
+      <section class="docs-section" id="popover-choice">
+        <h2 class="docs-h2">Popover (choice menu)</h2>
+        <div class="docs-demo">
+<div class="popover" role="menu" aria-label="Move into group" style="max-width:240px">
+  <div role="group" aria-label="Groups">
+    <div class="popover-label" aria-hidden="true">Groups</div>
+    <div class="popover-item" role="menuitemradio" aria-checked="false" tabindex="-1"><span class="popover-item-check" aria-hidden="true">✓</span><span class="popover-item-text"><span class="popover-item-label">No group</span></span></div>
+    <div class="popover-item" role="menuitemradio" aria-checked="true" tabindex="0"><span class="popover-item-check" aria-hidden="true">✓</span><span class="popover-item-text"><span class="popover-item-label">Release work</span></span></div>
+  </div>
+  <div class="popover-sep" role="separator"></div>
+  <div class="popover-item" role="menuitem" tabindex="-1"><span class="popover-item-text"><span class="popover-item-label">New group…</span></span></div>
+</div></div>
+      </section>
+      <section class="docs-section" id="popover-detail">
+        <h2 class="docs-h2">Popover (label + description)</h2>
+        <div class="docs-demo">
+<div class="popover" role="menu" aria-label="Mode" style="max-width:280px">
+  <div class="popover-item popover-item-detail popover-item-mono" role="menuitemradio" aria-checked="true" tabindex="0">
+    <span class="popover-item-check" aria-hidden="true">✓</span>
+    <span class="popover-item-text"><span class="popover-item-label">normal</span><span class="popover-item-desc">The agent as usual</span></span>
+  </div>
+  <div class="popover-item popover-item-detail" role="menuitem" aria-disabled="true" tabindex="-1">
+    <span class="popover-item-text"><span class="popover-item-label">Open workspace</span><span class="popover-item-desc">Nothing is in it yet. Add a session first.</span></span>
+  </div>
 </div></div>
       </section>
       <section class="docs-section" id="styles">
@@ -106,9 +132,16 @@
           <tr><td class="text-mono">.modal-head / -title / -body / -foot</td><td>Dialog parts</td><td>Foot holds actions</td></tr>
           <tr><td class="text-mono">.sheet</td><td>Bottom sheet, ≤85vh</td><td>Folded-width modal</td></tr>
           <tr><td class="text-mono">.sheet-grip</td><td>Drag handle</td><td>Affordance only</td></tr>
-          <tr><td class="text-mono">.popover</td><td>Anchored menu</td><td><code>--shadow-2</code></td></tr>
-          <tr><td class="text-mono">.popover-item</td><td>44px menu row</td><td>Never the only path</td></tr>
-          <tr><td class="text-mono">.popover-sep</td><td>Divider</td><td>Before destructive items</td></tr>
+          <tr><td class="text-mono">.popover</td><td>Anchored menu, dropdown or picker panel</td><td><code>--shadow-2</code>, min 200px</td></tr>
+          <tr><td class="text-mono">.popover-item</td><td>One-line 44px menu row, centered</td><td>Every menu, dropdown, ⋯ overflow and flyout row</td></tr>
+          <tr><td class="text-mono">.popover-item-detail</td><td>Label + description row</td><td>Icon and check stay on the label line</td></tr>
+          <tr><td class="text-mono">.popover-item-mono</td><td>Mono label</td><td>Machine names: ids, modes</td></tr>
+          <tr><td class="text-mono">.popover-item-icon</td><td>Leading icon slot</td><td>Muted; or an <code>.icon</code> as a direct child</td></tr>
+          <tr><td class="text-mono">.popover-item-check</td><td>Check slot</td><td>Shown while <code>aria-checked="true"</code></td></tr>
+          <tr><td class="text-mono">.popover-item-text / -label / -desc</td><td>Row text</td><td>Desc is caption, muted</td></tr>
+          <tr><td class="text-mono">.popover-item-end</td><td>Trailing value or chevron</td><td>Pushed to the end</td></tr>
+          <tr><td class="text-mono">.popover-label</td><td>Section label inside a menu</td><td>Mono micro caps</td></tr>
+          <tr><td class="text-mono">.popover-sep</td><td>Divider, <code>role="separator"</code></td><td>Between groups; before destructive items</td></tr>
           </tbody>
         </table></div>
       </section>
@@ -120,6 +153,7 @@
           <tr><td class="text-mono">--r-xl</td><td>16px — sheets and modals.</td></tr>
           <tr><td class="text-mono">--shadow-2 / -3</td><td>Popover / modal.</td></tr>
           <tr><td class="text-mono">--dur-base</td><td>200ms entry.</td></tr>
+          <tr><td class="text-mono">--control-md</td><td>44px — the minimum height of a menu row.</td></tr>
           </tbody>
         </table></div>
       </section>
@@ -128,11 +162,11 @@
         <div class="do-dont">
           <div class="do">
             <p class="text-eyebrow text-success">Do</p>
-            <ul><li><b>State what goes away and what does not</b> — the second half is what makes the decision easy.</li><li><b>Use a sheet instead of a modal at folded width</b> — the thumb cannot reach a centered dialog.</li><li><b>Separate destructive popover items with a divider</b> — distance prevents mis-taps.</li></ul>
+            <ul><li><b>State what goes away and what does not</b> — the second half is what makes the decision easy.</li><li><b>Make every menu row a `.popover-item`</b> — one row component owns alignment, height and states for every menu.</li><li><b>Use `.popover-item-detail` for a row with a second line</b> — its icon and check stay on the label line.</li><li><b>Use a sheet instead of a modal at folded width</b> — the thumb cannot reach a centered dialog.</li><li><b>Separate destructive popover items with a divider</b> — distance prevents mis-taps.</li></ul>
           </div>
           <div class="dont">
             <p class="text-eyebrow text-error">Don't</p>
-            <ul><li><b>Put the only path to an action in a popover</b> — hidden actions do not exist on touch.</li><li><b>Stack a modal on a modal</b> — close the first; the user has lost the thread by then.</li><li><b>Ask "Are you sure?"</b> — say what will happen instead.</li></ul>
+            <ul><li><b>Reveal the trigger of a menu only on hover</b> — a phone has no hover, so the menu and everything in it does not exist there.</li><li><b>Style a menu row with the row class of another component, or set its `align-items` or vertical padding yourself</b> — a borrowed row brings its own alignment; use `.popover-item` / `.popover-item-detail`.</li><li><b>Stack a modal on a modal</b> — close the first; the user has lost the thread by then.</li><li><b>Ask "Are you sure?"</b> — say what will happen instead.</li></ul>
           </div>
         </div>
       </section>

@@ -23,7 +23,6 @@ test("a jump builds JUMP_MARGIN_ROWS rows above its target, never past the top, 
   assert.equal(JUMP_MARGIN_ROWS, 24);
   assert.equal(jumpStart(905, 900), 881, "a built target just under the window's top: the rows above it built too");
   assert.equal(jumpStart(950, 900), 900, "a target with the margin already built: nothing more");
-  assert.equal(jumpStart(500, 900, 5), 495, "the margin is a parameter");
 });
 
 test("the idle fill stops at MAX_BUILT_ROWS built, or at the top of a shorter list", () => {

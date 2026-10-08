@@ -28,11 +28,7 @@
 //
 // Env: SOVA_E2E_PORT (default 4810); SOVA_E2E_AGENT, the server's agent dir when it isn't this
 // worktree's .agent; SOVA_E2E_CDP, a browser already running (CDP URL) instead of starting one;
-// SOVA_E2E_SESSIONS, ids of other sessions in that agent dir to measure too (comma-separated; their
-// numbers are printed, never asserted): SOVA_E2E_PICK names one of their jumps ("1440 unbuilt";
-// near, far, unbuilt), SOVA_E2E_ENTRY jumps to that entry id instead, SOVA_E2E_REMOTE=1 opens them
-// through a proxy (no background fetch), SOVA_E2E_MS sets how long each jump is sampled (default
-// 2600). SOVA_E2E_ONLY runs only the checks whose name holds it. The playwright skill needs its
+// SOVA_E2E_ONLY, run only the checks whose name holds it. The playwright skill needs its
 // node_modules (`npm ci` in .claude/skills/playwright/scripts, or a symlink to another checkout's).
 
 import { execFileSync } from "node:child_process";
@@ -47,11 +43,6 @@ const AGENT = resolve(process.env.SOVA_E2E_AGENT ?? join(ROOT, ".agent"));
 const PORT = Number(process.env.SOVA_E2E_PORT ?? 4810);
 const BASE = `http://127.0.0.1:${PORT}`;
 const SKILL = join(ROOT, ".claude/skills/playwright/scripts");
-const EXTRA = (process.env.SOVA_E2E_SESSIONS ?? "").split(",").filter(Boolean);
-const PICK = process.env.SOVA_E2E_PICK;
-const ENTRY = process.env.SOVA_E2E_ENTRY;
-const EXTRA_REMOTE = process.env.SOVA_E2E_REMOTE === "1";
-const SAMPLE_MS = Number(process.env.SOVA_E2E_MS ?? 2600);
 
 let passed = 0;
 const failures = [];
@@ -197,9 +188,9 @@ const browser = await chromium.connectOverCDP(cdp);
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/** Opens a session at `viewport` and waits for its rows to stop being built (the idle fill, and
+/** Opens the fixture at `viewport` and waits for its rows to stop being built (the idle fill, and
     a desktop's background fetch). `lazyMs` holds back each path attachment's response. */
-async function open(viewport, sessionId, { remote = false, lazyMs = 0 } = {}) {
+async function open(viewport, { remote = false, lazyMs = 0 } = {}) {
   const ctx = await browser.newContext({ serviceWorkers: "block", viewport, deviceScaleFactor: 1 });
   // The token on every request, and through a proxy, as a phone on the tailnet reaches it.
   await ctx.setExtraHTTPHeaders({ ...tokenHeaders(AGENT), ...(remote ? { "X-Forwarded-For": "100.64.0.9" } : {}) });
@@ -212,8 +203,8 @@ async function open(viewport, sessionId, { remote = false, lazyMs = 0 } = {}) {
   const cdpSession = await ctx.newCDPSession(page);
   await cdpSession.send("Emulation.setCPUThrottlingRate", { rate: 2 });
   const list = await api("/api/sessions");
-  const session = (list.sessions ?? list).find((s) => s.id === sessionId);
-  assert(session, `the session ${sessionId} isn't listed by the server`);
+  const session = (list.sessions ?? list).find((s) => s.id === ID);
+  assert(session, `the fixture ${ID} isn't listed by the server`);
   await page.goto(`${BASE}/#/s/${encodeURIComponent(session.path)}`);
   await page.waitForFunction(() => document.querySelectorAll("#transcript .thread > .entry").length > 5, null, { timeout: 30000 });
   await settled(page);
@@ -242,7 +233,7 @@ async function settled(page) {
  * first row the list holds. `openId`: a row whose path attachment is opened first, off screen, so
  * its image is requested only once the jump brings it into view (`opened`: open, its image not loaded).
  */
-async function jump(page, entryId, { ms = SAMPLE_MS, openId = null } = {}) {
+async function jump(page, entryId, { ms = 2600, openId = null } = {}) {
   return page.evaluate(
     async ({ entryId, ms, openId }) => {
       const T = document.getElementById("transcript");
@@ -272,7 +263,7 @@ async function jump(page, entryId, { ms = SAMPLE_MS, openId = null } = {}) {
         if (!row?.isConnected) return frames.push({ t: performance.now() - t0, n, has: false });
         const v = T.getBoundingClientRect();
         const b = row.getBoundingClientRect();
-        frames.push({ t: performance.now() - t0, n, has: true, firstInList: T.querySelector(".thread > .entry") === row.parentElement, center: (b.top + b.bottom) / 2 - (v.top + v.bottom) / 2, top: b.top - v.top, h: b.height, vh: v.height, st: T.scrollTop });
+        frames.push({ t: performance.now() - t0, n, has: true, firstInList: T.querySelector(".thread > .entry") === row.parentElement, center: (b.top + b.bottom) / 2 - (v.top + v.bottom) / 2, top: b.top - v.top });
       };
       // Read where the frame is final: in a resize observer made after the transcript's own, so after
       // its corrections and before the paint. A 1px probe that changes width every frame makes it
@@ -300,8 +291,7 @@ async function jump(page, entryId, { ms = SAMPLE_MS, openId = null } = {}) {
       observer.disconnect();
       probe.remove();
       document.removeEventListener("load", onLoad, true);
-      const images = openId ? [...T.querySelectorAll(`.thread > .entry[data-entry="${CSS.escape(openId)}"] img`)].map((i) => ({ complete: i.complete, h: i.getBoundingClientRect().height, top: i.getBoundingClientRect().top - T.getBoundingClientRect().top, vh: T.clientHeight, loading: i.loading, cv: getComputedStyle(i.closest(".entry")).contentVisibility, open: i.closest("details")?.open })) : [];
-      return { builtBefore, opened, frames, loads, images };
+      return { builtBefore, opened, frames, loads };
     },
     { entryId, ms, openId },
   );
@@ -326,30 +316,25 @@ function judge(r, { atTop = false, remote = false, after = [] } = {}) {
   const moved = Math.max(0, ...window.filter((f) => f.has).map((f) => Math.abs(f.center - first.center)));
   const worst = window.filter((f) => f.has).reduce((w, f) => (Math.abs(f.center - first.center) > Math.abs(w.center - first.center) ? f : w), first);
   const off = atTop ? first.top : first.center;
-  // Where it came to rest, and when it last moved: the miss a smooth scroll leaves, and its second aim.
-  const shown = r.frames.filter((f) => f.has);
-  const final = shown.at(-1);
-  const restAt = [...shown].reverse().find((f) => Math.abs(f.center - final.center) >= 1)?.t ?? first.t;
-  return { atTop, first, off, moved, gone, worst, final: atTop ? final.top : final.center, restAt: Math.round(restAt), chunkAt: chunk ? Math.round(chunk.t) : null, until: Math.round(until), lastT: Math.round(r.frames.at(-1)?.t ?? 0) };
+  return { atTop, first, off, moved, gone, worst, chunkAt: chunk ? Math.round(chunk.t) : null, until: Math.round(until) };
 }
 const fmt = (j) =>
   j.first
     ? `first painted at ${Math.round(j.first.t)} ms, ${j.off.toFixed(1)} px off; moved ${j.moved.toFixed(1)} px within ${j.until} ms` +
       (j.moved >= 1 ? ` (worst at ${Math.round(j.worst.t)} ms)` : "") +
       (j.atTop ? " (at the top: the first row the list holds)" : "") +
-      `; at rest ${j.final.toFixed(1)} px off, last moved at ${j.restAt} ms` +
       (j.chunkAt !== null ? `; rows built above at ${j.chunkAt} ms` : "; no rows built above meanwhile")
     : "the row never painted";
 
 /** One jump at `viewport`: the row lands in the middle (`atTop`: at the top) at once and stays. */
-async function landsAndStays(viewport, entryId, { built, remote = false, atTop = false, lazyMs = 0, openId = null, sessionId = ID } = {}) {
-  const { ctx, page } = await open(viewport, sessionId, { remote, lazyMs });
+async function landsAndStays(viewport, entryId, { built, remote = false, atTop = false, lazyMs = 0, openId = null } = {}) {
+  const { ctx, page } = await open(viewport, { remote, lazyMs });
   try {
     const r = await jump(page, entryId, { openId });
     assert(!r.error, r.error);
     if (openId) assert(r.opened, `precondition: the attachment of ${openId} didn't open`);
     if (built !== undefined) assert(r.builtBefore === built, `precondition: the row was ${r.builtBefore ? "" : "not "}built before the jump`);
-    if (lazyMs > 0) assert(r.loads.length > 0, `the lazy image above the row never loaded during the run: ${JSON.stringify(r.images)}`);
+    if (lazyMs > 0) assert(r.loads.length > 0, "the lazy image above the row never loaded during the run");
     const j = judge(r, { atTop, remote, after: r.loads });
     console.log(`       ${viewport.width}: ${fmt(j)}${r.loads.length ? `; lazy image loaded at ${r.loads.map(Math.round).join(", ")} ms` : ""}`);
     assert(j.first, "the row never painted after the jump");
@@ -357,7 +342,6 @@ async function landsAndStays(viewport, entryId, { built, remote = false, atTop =
     else assert(Math.abs(j.off) <= 1, `in its first painted frame the row's center is ${j.off.toFixed(1)} px from the view's`);
     assert(!j.gone, "the row left the page mid-hold");
     assert(j.moved < 1, `the row moved ${j.moved.toFixed(1)} px after it landed (at ${Math.round(j.worst.t)} ms)`);
-    return j;
   } finally {
     await ctx.close();
   }
@@ -366,7 +350,7 @@ async function landsAndStays(viewport, entryId, { built, remote = false, atTop =
 /** A jump, then the reader's wheel while its row is still held: the wheel moves the view, and the
     hold lets go of it rather than pulling the row back. */
 async function wheelTakesIt(viewport, entryId) {
-  const { ctx, page } = await open(viewport, ID);
+  const { ctx, page } = await open(viewport);
   try {
     const center = () =>
       page.evaluate((id) => {
@@ -393,7 +377,7 @@ async function wheelTakesIt(viewport, entryId) {
 /** A jump to the last input lands at the end; once its hold is over, content landing there doesn't
     pull the view down: a jump never turns following back on, so the reader keeps their place. */
 async function staysPut(viewport, entryId) {
-  const { ctx, page } = await open(viewport, ID);
+  const { ctx, page } = await open(viewport);
   try {
     const now = () =>
       page.evaluate(() => {
@@ -437,34 +421,6 @@ try {
     await check(`${w}: a lazy image above the row loading mid-hold doesn't move it`, () => landsAndStays(vp, `u${LAZY}`, { built: true, lazyMs: 450, openId: `u${LAZY - 1}` }));
   }
   await check("1440: the reader's wheel while the row is held moves the view, and the hold lets go", () => wheelTakesIt(DESKTOP, `u${FAR}`));
-  // Other sessions in the agent dir (real ones copied in): measured, never asserted.
-  for (const sid of EXTRA) {
-    const ids = await (async () => {
-      const { ctx, page } = await open(DESKTOP, sid);
-      const all = await page.evaluate(() => {
-        const built = new Set([...document.querySelectorAll("#transcript .thread > .entry")].map((e) => e.dataset.entry));
-        return [...document.querySelectorAll("li.timeline-row[data-input]")].map((li) => ({ id: li.dataset.input, built: built.has(li.dataset.input) }));
-      });
-      await ctx.close();
-      return all;
-    })();
-    const builtIds = ids.filter((x) => x.built);
-    const picks = [
-      ["near", builtIds[Math.min(3, builtIds.length - 1)]],
-      ["far", builtIds.at(-Math.min(builtIds.length, 6))],
-      ["unbuilt", ids.filter((x) => !x.built)[Math.floor(ids.filter((x) => !x.built).length / 2)]],
-    ].filter(([, x]) => x);
-    for (const vp of [DESKTOP, PHONE])
-      for (const [what, x] of picks) {
-        if (PICK && `${vp.width} ${what}` !== PICK) continue;
-        try {
-          await landsAndStays(vp, ENTRY ?? x.id, { sessionId: sid, remote: EXTRA_REMOTE });
-          console.log(`  info ${sid.slice(0, 8)} ${vp.width} ${what} ${x.id}: ok`);
-        } catch (err) {
-          console.log(`  info ${sid.slice(0, 8)} ${vp.width} ${what} ${x.id}: ${String(err.message).split("\n")[0]}`);
-        }
-      }
-  }
 } finally {
   await browser.close().catch(() => {});
   if (cdpPort) {

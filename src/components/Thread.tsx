@@ -1365,7 +1365,7 @@ interface ScrollerApi {
   /** Runs `build`, which adds rows above the ones on screen, and keeps the view where it was:
       at the bottom while following, else the same distance from the end. With `hold`, the row at
       the top of the view also stays put while the rows just built are first drawn; while a jump's
-      row is held (ThreadScroller `land`), that row stays put instead, with or without it. */
+      row is held (ThreadScroller `land`), that row stays put instead, with or without `hold`. */
   prepend(build: () => void, hold?: boolean): void;
 }
 const ScrollerContext = createContext<ScrollerApi | null>(null);
@@ -1539,13 +1539,9 @@ export function ThreadScroller(props: {
    * up would, and the row's center goes to the view's center (a row taller than the view fills it;
    * one the view can't center, at the top or the end of the rows, goes as near as it can). The
    * rows around it are then first drawn at their real heights, not their estimates, above it too,
-   * so it is held where it landed: corrected when the thread's size changes (after layout, before
-   * paint) and once a frame, until it has needed no correction for JUMP_QUIET_FRAMES frames with no
-   * image above it on screen still loading (`loadingAbove`), or JUMP_HOLD_MS have passed, or it
-   * leaves the page. Rows built above it meanwhile keep it held (`prepend`). The reader's own input
-   * ends it (`onInput`), and so does a scroll of theirs no input announced (`onScroll`), or anything
-   * else placing the view (`endJumpHold`: the end, a kept spot, the last row read; a swap's hold or
-   * another jump replaces it).
+   * so it is held where it landed, corrected when the thread's size changes (after layout, before
+   * paint) and once a frame. How the hold ends: the frame loop below, `keepHeld`, `onScroll`,
+   * `onInput` and `endJumpHold`.
    */
   const land = (target: HTMLElement) => {
     if (follow) {
@@ -1876,18 +1872,20 @@ export function ThreadScroller(props: {
       // The rows just added are above the view: not new content to follow. The view keeps its
       // distance from the end, which at the bottom is the bottom. The browser's own scroll
       // anchoring usually has done this already; then nothing is written, and a scroll under way
-      // (a jump) carries on.
+      // carries on.
       observer.takeRecords();
       const want = el.scrollHeight - fromEnd;
       if (Math.abs(el.scrollTop - want) >= 1) el.scrollTop = want;
-      if (held?.jump) {
-        // A jump's row is held (`land`): it stays where it is, through these rows' first drawing too.
-        keepHeld();
-        if (held?.jump) {
-          held.until = Math.max(held.until, performance.now() + HOLD_MS);
-          held.jump.quiet = 0;
-        }
-      } else if (hold && !follow) holdView();
+      const jump = held?.jump;
+      if (!jump) {
+        if (hold && !follow) holdView();
+        return;
+      }
+      // A jump's row is held (`land`): it stays where it is, through these rows' first drawing too.
+      keepHeld();
+      if (!held || held.jump !== jump) return;
+      held.until = Math.max(held.until, performance.now() + HOLD_MS);
+      jump.quiet = 0;
     },
   };
   createEffect(on(() => props.resume, resumeFollowing, { defer: true }));

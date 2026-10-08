@@ -48,9 +48,9 @@ export const chunkStart = (start: number, rows: number): number => Math.max(0, s
     than at the top of the built rows. */
 export const JUMP_MARGIN_ROWS = 24;
 
-/** Where the window starts once a jump to row `i` has built what it needs: `margin` rows above
-    the target (fewer at the top of the list), or where it started if that already holds them. */
-export const jumpStart = (i: number, start: number, margin = JUMP_MARGIN_ROWS): number => Math.min(start, Math.max(0, i - margin));
+/** Where the window starts once a jump to row `i` has built what it needs: JUMP_MARGIN_ROWS rows
+    above the target (fewer at the top of the list), or where it started if that already holds them. */
+export const jumpStart = (i: number, start: number): number => Math.min(start, Math.max(0, i - JUMP_MARGIN_ROWS));
 
 /**
  * The index of the row an entry id resolves to, the way the transcript's `[data-entry]` lookup

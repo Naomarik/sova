@@ -792,6 +792,15 @@ const resultOf = (d: DecisionRow): Record<string, unknown> => ({
   ...Object.fromEntries(RESULT_KEYS.filter((k) => d[k] !== undefined).map((k) => [k, d[k]])),
 });
 const changedSince = (before: Map<string, string>, d: DecisionRow) => before.get(d.id) !== JSON.stringify(resultOf(d));
+/** The run's changed decisions, each superseded one naming its superseding decision's statement (`title`, its
+    history headline: that statement is already the history's own headline for that decision). */
+const resultsSince = (before: Map<string, string>, store: DecisionStore): Record<string, unknown>[] =>
+  store.decisions
+    .filter((x) => changedSince(before, x))
+    .map((x) => {
+      const by = x.supersededBy ? store.decisions.find((y) => y.id === x.supersededBy)?.statement : undefined;
+      return { ...resultOf(x), ...(by ? { title: by } : {}) };
+    });
 
 /**
  * One comparison (the reconciler statechart's :sova/reconcile): settle the routed conflicts whose sessions
@@ -968,7 +977,7 @@ export async function runReconcile(orgId: string, projectId: string, params: { b
       };
     });
   return {
-    decisions: store.decisions.filter((x) => changedSince(before, x)).map(resultOf),
+    decisions: resultsSince(before, store),
     conflicts: fresh,
     resolved: conflicts.filter((c) => resolved.includes(c.id)).map((c) => ({ id: c.id, outcome: c.outcome ?? "neither", resolvedBy: c.resolvedBy ?? "" })),
     compared: run.compared,
@@ -1109,11 +1118,15 @@ export async function resolveConflict(orgId: string, projectId: string, conflict
   const c = readConflicts(orgId, projectId).find((x) => x.id === conflictId);
   if (!c) throw new OrgError("Unknown conflict", 404);
   const statement = "statement" in input ? input.statement : undefined;
+  // What it settled on, for its history headline: the decision stated, the side kept, or (both kept) their area.
+  const sides = readDecisionStore(orgId, projectId).decisions;
+  const kept = "keep" in input && input.keep !== "both" ? sides.find((x) => x.id === c[input.keep as "a" | "b"]) : undefined;
+  const title = statement?.trim() || kept?.statement || ("keep" in input && input.keep === "both" ? sides.find((x) => x.id === c.a)?.area : undefined);
   await act(
     orgId,
     conflictSid(orgId, projectId, conflictId),
     "conflict/settle",
-    { ...("keep" in input ? { keep: input.keep } : {}), ...(statement !== undefined ? { statement, decisionId: `operator:${shortId("")}` } : {}) },
+    { ...("keep" in input ? { keep: input.keep } : {}), ...(statement !== undefined ? { statement, decisionId: `operator:${shortId("")}` } : {}), ...(title ? { title } : {}) },
     operatorEnvelope(orgId, projectId),
   );
   return listDecisions(orgId, projectId);
@@ -1156,7 +1169,7 @@ async function settleEffect(orgId: string, projectId: string, e: Effect): Promis
   settleStates(store, conflicts, project.root, orgId, project.stakeholder);
   assignRecordIds(project.root, store);
   await refreshDraft(orgId, projectId, store).catch(() => []);
-  return { decisions: store.decisions.filter((x) => changedSince(before, x)).map(resultOf) };
+  return { decisions: resultsSince(before, store) };
 }
 
 // ---- promotion ------------------------------------------------------------------------------------------------

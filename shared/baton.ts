@@ -97,6 +97,17 @@ export interface BatonDecisionData {
   statement: string;
   quote: string;
   by: PersonRef;
+  /** `by`'s display name in the conversation when the marker was written. Absent on markers written before
+      it was kept, and never filled in for them later. */
+  name?: string;
+  /** A decision not to act is a decision too: choose (when absent), reject,
+      defer or do-not-do, with the options weighed and the reason given, when said. */
+  disposition?: "choose" | "reject" | "defer" | "do-not-do";
+  options?: { id: string; label: string; outcome: "selected" | "rejected" | "deferred" | "do-not-do"; reason?: string }[];
+  reason?: string;
+  /** For defer: when or on what condition to look again, and that date (ms) when it is one. */
+  review?: string;
+  reviewAt?: number;
 }
 export interface BatonDoneData {
   v: 1;

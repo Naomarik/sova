@@ -20,6 +20,7 @@ import { updateIdea } from "./overseer-ideas";
 import { serverRedactor } from "./overseer-redact";
 import { readNotes } from "./overseer-store";
 import { holdsPreviewLink } from "./preview-kept";
+import { listPreviews } from "./preview-links";
 import { adoptOverseerFiles, gatheringChoice, itemOf, linkItem } from "./project-overseer";
 import { projectOverseerPaths, readPoSettings } from "./project-overseer-store";
 import { cut, link, obj, PREVIEW_IN_GATHERING, Refusal, str, strs, text } from "./project-overseer-tools";
@@ -92,10 +93,11 @@ export function itemOfGapOrThrow(orgId: string, projectId: string, gap: string):
   return sid;
 }
 
-/** A `§gap/…` idea was filed (the overseer's sova_idea, the operator's Add): the placement's gap/file spawns its item. */
-export async function fileGap(orgId: string, projectId: string, ideaId: string, envelope: Envelope): Promise<void> {
+/** A `§gap/…` idea was filed (the overseer's sova_idea, the operator's Add): the placement's gap/file spawns its item.
+    Its act names the idea's title, so the history's headline says which gap. */
+export async function fileGap(orgId: string, projectId: string, ideaId: string, envelope: Envelope, title?: string): Promise<void> {
   if (!/^§gap\//.test(ideaId) || itemOfGap(orgId, projectId, ideaId)) return;
-  await actOrThrow(orgId, placementSid(orgId, projectId), "gap/file", { gapId: `g_${randomBytes(6).toString("hex").slice(0, 8)}`, ideaId }, envelope, { settle: true });
+  await actOrThrow(orgId, placementSid(orgId, projectId), "gap/file", { gapId: `g_${randomBytes(6).toString("hex").slice(0, 8)}`, ideaId, ...(title?.trim() ? { title: title.trim() } : {}) }, envelope, { settle: true });
 }
 
 /** A `§gap/…` idea was set dropped: its item ends (`fromIdea`: the idea already says so). */
@@ -109,7 +111,7 @@ function gapPart(orgId: string, projectId: string): GapPart {
     param: GAP_PARAM,
     buildTarget: (gap) => itemOfGapOrThrow(orgId, projectId, gap),
     ideaTarget: (ideaId) => itemOfGap(orgId, projectId, ideaId),
-    filed: (ideaId, envelope) => fileGap(orgId, projectId, ideaId, envelope),
+    filed: (ideaId, envelope, title) => fileGap(orgId, projectId, ideaId, envelope, title),
     dropped: (ideaId, envelope) => dropGap(orgId, projectId, ideaId, envelope),
   };
 }
@@ -525,6 +527,7 @@ const WHY_REFUSAL = "Say why you start it (why): one or two sentences for the op
 export const GOAL_RULES =
   'Name people by name only, never by role or job title, and never say how the answers will be recorded or under which area ("as finance decisions"): the session\'s model may repeat it.';
 
+const PREVIEW_PARAM = "Optional: the id (pv_…) of this project's preview the conversation asks about, recorded with it. It sends no link: send it with sova_send_to_person.";
 const SESSION_PARAM = 'Session id as sova_list_sessions lists it (a bare id; "sova://s/<id>" also works).';
 const VERBATIM = "Shown to the person VERBATIM: neutral wording only, no internal labels (\"gap\", idea or area ids), no judgments about people.";
 
@@ -566,6 +569,9 @@ function orgTools(orgId: string, ctx: OverseerToolCtx): Tool[] {
     const abilities = withFiles(checked, p0.files);
     const choice = { ...(typeof p0.model === "string" && p0.model.trim() ? { model: p0.model.trim() } : {}), ...(typeof p0.thinking === "string" && p0.thinking.trim() ? { thinking: p0.thinking.trim() } : {}) };
     const plan = p0.plan === true;
+    // the preview it asks about, by id: recorded with its start, never sent (sova_send_to_person sends a link)
+    const preview = typeof p0.preview === "string" && p0.preview.trim() ? p0.preview.trim() : "";
+    if (preview && !listPreviews({ projectId }).some((v) => v.id === preview)) throw new Refusal("No such preview in this project: give a preview id (pv_…) sova_preview lists.");
     if (plan && gap === "none") throw new Refusal("A planned gathering belongs to a gap: name it (gap \"§gap/<name>\").");
     // No link minted: no one would see it (and the model must never see a token), so Needs you
     // asks the operator to send one (Get Link mints it).
@@ -578,6 +584,7 @@ function orgTools(orgId: string, ctx: OverseerToolCtx): Tool[] {
         mintLink: false,
         startedVia: "overseer",
         why,
+        ...(preview ? { preview } : {}),
         // A gap's gathering is its item's (gather/start, or gather/plan): the Pipeline links it.
         ...(gap !== "none" ? { item: itemOfGapOrThrow(orgId, projectId, gap), ...(plan ? { plan: true } : {}) } : {}),
       },
@@ -654,6 +661,7 @@ function orgTools(orgId: string, ctx: OverseerToolCtx): Tool[] {
           abilities: ABILITIES_PARAM,
           files: FILES_PARAM,
           gap: str(GAP_PARAM),
+          preview: str(PREVIEW_PARAM),
           plan: { type: "boolean", description: "With a gap: file it as the gap's planned gathering instead (allowed at L0); the statechart starts it itself once the level reaches L1." },
         },
         ["person", "public_title", "goal", "question", "why", "gap"],
@@ -676,6 +684,7 @@ function orgTools(orgId: string, ctx: OverseerToolCtx): Tool[] {
           abilities: ABILITIES_PARAM,
           files: FILES_PARAM,
           gap: str(GAP_PARAM),
+          preview: str(PREVIEW_PARAM),
           plan: { type: "boolean", description: "With a gap: file it as the gap's planned gathering instead (allowed at L0)." },
         },
         ["people", "public_title", "goal", "question", "why", "gap"],

@@ -100,6 +100,9 @@ export function buildSessionPath(sessionId: string): string | null {
   return p && existsSync(p) ? p : null;
 }
 
+/** Its title: the one given, else the prompt's first line; none with neither (New Coding Session). */
+const titleOf = (d: Record<string, unknown>): string => str(d.title) || (str(d.prompt) ? cleanSessionTitle((str(d.prompt).split("\n")[0] ?? "").slice(0, 80)) ?? "" : "");
+
 function rowOf(configuration: string[], d: Record<string, unknown>): BuildRow {
   const sessionId = str(d.sessionId);
   const path = buildSessionPath(sessionId);
@@ -114,7 +117,7 @@ function rowOf(configuration: string[], d: Record<string, unknown>): BuildRow {
     ...(d.removedAt != null ? { removed: isoOf(d.removedAt) } : {}),
     ...(d.branchDeleted === true ? { branchDeleted: true } : {}),
     ...(typeof d.inRoot === "string" && d.inRoot ? { inRoot: d.inRoot } : {}),
-    ...(typeof d.title === "string" && d.title ? { title: d.title } : {}),
+    ...(titleOf(d) ? { title: titleOf(d) } : {}),
     ...(d.via === "overseer" ? { via: "overseer" as const } : {}),
     ...(d.kind === "onboard" ? { onboard: { startedBy: d.startedBy === "overseer" ? ("overseer" as const) : ("operator" as const) } } : {}),
     ...(typeof d.gap === "string" && d.gap ? { gap: d.gap } : {}),
@@ -367,7 +370,7 @@ export function registerBuildEffects(host: OrgHostApi, engine: string): void {
     // Its title as the page shows it: a rename, the one it started with, the listing's (its first message), its branch.
     const path = buildSessionPath(sessionId);
     const listed = path ? (await getSessionSummary(path).catch(() => null))?.title : undefined;
-    const title = readSessionTitles()[sessionId] || str(d.title) || (listed && listed !== "Untitled" ? listed : "") || row.worktree.branch;
+    const title = readSessionTitles()[sessionId] || titleOf(d) || (listed && listed !== "Untitled" ? listed : "") || row.worktree.branch;
     const m = await mergeBack(row.worktree, root, title);
     noteBuildMerged(sessionId, true);
     // Main moved: its copy's onMerge services reload now, never holding up the merge (§app.project-services/on-merge).
@@ -393,13 +396,19 @@ export function registerBuildEffects(host: OrgHostApi, engine: string): void {
   // build not resumed yet would keep "working" forever: F-049/F-050's twin for coding sessions).
   void (async () => {
     for (const s of host.sessions("build")) {
-      if (s.running && s.data.turn === "working") await host.act(s.id, "turn/ended", {}, SYSTEM);
+      if (s.running && s.data.turn === "working") await turnEnded(host, s.id, {});
     }
   })().catch((err) => console.warn(`[build] ${engine}: resuming turns: ${err instanceof Error ? err.message : String(err)}`));
 }
 onOrgHostOpened(registerBuildEffects);
 
 const SYSTEM = { by: "system" } as unknown as Envelope;
+
+/** A build's turn ended, naming the session's given title (its history headline says it; never the prompt's line). */
+function turnEnded(host: OrgHostApi, sid: string, data: Record<string, unknown>) {
+  const title = str(host.data(sid)?.title);
+  return host.act(sid, "turn/ended", { ...data, ...(title ? { title } : {}) }, SYSTEM);
+}
 
 // ---- facts ---------------------------------------------------------------------------------------------
 
@@ -423,7 +432,7 @@ export async function syncBuildTurn(projectId: string, sid: string, path: string
   if (working && d.turn !== "working") await host.act(sid, "turn/started", {}, SYSTEM);
   if (!working && d.turn === "working") {
     await probeAtTurnEnd(projectId, sid, str(d.sessionId));
-    await host.act(sid, "turn/ended", { questions: await openQuestionsAt(path) }, SYSTEM);
+    await turnEnded(host, sid, { questions: await openQuestionsAt(path) });
   }
   if (workers !== (typeof d.workers === "number" ? d.workers : 0)) await host.act(sid, "workers/changed", { n: workers }, SYSTEM);
 }
@@ -486,7 +495,7 @@ export async function noteBuildSettled(path: string, failed: boolean): Promise<v
     const host = hostOf(hit.engine);
     if (host.data(hit.sid)?.turn !== "working") await host.act(hit.sid, "turn/started", {}, SYSTEM);
     await probeAtTurnEnd(hit.projectId, hit.sid, id);
-    await host.act(hit.sid, "turn/ended", { failed, questions: await openQuestionsAt(p) }, SYSTEM);
+    await turnEnded(host, hit.sid, { failed, questions: await openQuestionsAt(p) });
     return;
   }
 }

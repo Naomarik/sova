@@ -46,6 +46,8 @@ export interface ProjectOrgPart {
   orgLink(): JSX.Element;
   /** Who the overseer's attach pause names ("This organization"). */
   attachedWho: string;
+  /** The Overview's Open History: the placing layer's history of this project (the page never builds it). */
+  historyHref(): string;
   /** Where the head's back arrow goes: the org's Projects tab. */
   back(): { href: string; label: string };
   /** Its counts for the summary strip; a count not read yet is absent. */
@@ -296,6 +298,21 @@ export function ProjectPage(props: {
                 <ProjectDeployPanel projectId={projectId} root={project().root} archived={!!archived()} />
                 {/* Files people sent it (§app.organizations/files-card): while placed, or once it holds one. */}
                 <ProjectFilesCard projectId={projectId} placed={!!org} tick={costTick} />
+                <Show when={org}>
+                  {(o) => (
+                    <section class="card orgs-section project-history-card" aria-labelledby="project-history">
+                      <div class="orgs-head">
+                        <h2 class="orgs-h2" id="project-history">
+                          History
+                        </h2>
+                        <a class="button" href={o().historyHref()}>
+                          Open History
+                        </a>
+                      </div>
+                      <p class="orgs-line">What happened in this project, who decided it, and the reason recorded.</p>
+                    </section>
+                  )}
+                </Show>
                 <ActivityCard po={po} />
                 <TodosCard po={po} send={org?.send} archived={!!archived()} />
                 {/* A placed project's ideas sit with its requirements; a standalone one's here. */}

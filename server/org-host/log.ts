@@ -8,8 +8,8 @@
 // `contact.email` is contact), and to a field-change record's from/to (`{field: "contact", from, to}`): "drop" removes the key, "contact" writes "[contact]", "digest" writes
 // `{sha, len}` (sha-256 of the text, hex). A refusal's model tail is never logged.
 import { createHash } from "node:crypto";
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { closeSync, existsSync, fstatSync, fsyncSync, ftruncateSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, writeSync } from "node:fs";
+import { dirname, join } from "node:path";
 import type { Json, Step } from "../statecharts";
 
 export type RedactRule = "drop" | "contact" | "digest";
@@ -62,8 +62,10 @@ export interface LogRow {
   /** The session's project, when it belongs to one. */
   project?: string | null;
   offHours?: number;
-  /** The journal that wrote it (replay appends a row once). */
+  /** The journal that wrote it. */
   j?: string;
+  /** The row's own key in its journal (`<j>:<i>`): replay appends each row once. */
+  k?: string;
   /** The engine's own time, when `at` was moved on to keep it unique (a log replay runs on it). */
   t?: number;
   /** A host start's data, scrubbed (its envelope is who started it). */
@@ -236,12 +238,92 @@ export function lastAt(dirs: string[]): number {
   return last;
 }
 
+/** A last line without its newline, found before an append: `cut` only while a journal is replayed and
+    the fragment begins one of its lines not yet on disk (the write that tore), else kept in place and
+    closed with a newline. */
+export interface TornTail {
+  file: string;
+  fragment: string;
+  cut: boolean;
+}
+
+function fsyncDirOf(file: string): void {
+  try {
+    const fd = openSync(dirname(file), "r");
+    try {
+      fsyncSync(fd);
+    } finally {
+      closeSync(fd);
+    }
+  } catch {
+    // some filesystems refuse a directory fsync; the file's own fsync still holds
+  }
+}
+
+/** The bytes after the file's last newline ("" when it ends with one, or is empty), and where they start. */
+export function tailOf(fd: number): { fragment: string; at: number } {
+  const size = fstatSync(fd).size;
+  if (size === 0) return { fragment: "", at: 0 };
+  const last = Buffer.alloc(1);
+  readSync(fd, last, 0, 1, size - 1);
+  if (last[0] === 0x0a) return { fragment: "", at: size };
+  // read backwards for the last newline
+  const chunk = 64 * 1024;
+  let end = size;
+  const parts: Buffer[] = [];
+  while (end > 0) {
+    const start = Math.max(0, end - chunk);
+    const buf = Buffer.alloc(end - start);
+    readSync(fd, buf, 0, buf.length, start);
+    const nl = buf.lastIndexOf(0x0a);
+    if (nl >= 0) {
+      parts.unshift(buf.subarray(nl + 1));
+      return { fragment: Buffer.concat(parts).toString("utf8"), at: start + nl + 1 };
+    }
+    parts.unshift(buf);
+    end = start;
+  }
+  return { fragment: Buffer.concat(parts).toString("utf8"), at: 0 };
+}
+
+/**
+ * Append whole lines to `file`, checking its last byte first: a torn last line (a write cut short) is
+ * cut only on a `replay` whose `lines` (those of the journal not yet on disk) one begins with it: the
+ * write that tore. Otherwise it is kept as it is, closed with a newline so nothing joins onto it, and
+ * reported through `onTorn`. `durable`: fsync the file, and its directory when the file is new.
+ */
+export function appendLines(file: string, lines: readonly string[], durable: boolean, onTorn?: (t: TornTail) => void, replay = false): void {
+  if (!lines.length) return;
+  mkdirSync(dirname(file), { recursive: true });
+  const created = !existsSync(file);
+  const fd = openSync(file, created ? "a" : "r+");
+  try {
+    let lead = "";
+    let pos = 0;
+    if (!created) {
+      const { fragment, at } = tailOf(fd);
+      pos = at + Buffer.byteLength(fragment);
+      if (fragment) {
+        const cut = replay && lines.some((l) => l.startsWith(fragment));
+        if (cut) {
+          ftruncateSync(fd, at);
+          pos = at;
+        } else lead = "\n";
+        onTorn?.({ file, fragment, cut });
+      }
+    }
+    const buf = Buffer.from(lead + lines.join("\n") + "\n", "utf8");
+    writeSync(fd, buf, 0, buf.length, created ? null : pos);
+    if (durable) fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
+  if (created && durable) fsyncDirOf(file);
+}
+
 /** Append rows to their segment files (one write per file). */
-export function appendRows(entries: { file: string; row: LogRow }[]): void {
+export function appendRows(entries: { file: string; row: LogRow }[], durable = false, onTorn?: (t: TornTail) => void, replay = false): void {
   const byFile = new Map<string, string[]>();
   for (const { file, row } of entries) byFile.set(file, [...(byFile.get(file) ?? []), JSON.stringify(row)]);
-  for (const [file, lines] of byFile) {
-    mkdirSync(join(file, ".."), { recursive: true });
-    appendFileSync(file, lines.join("\n") + "\n");
-  }
+  for (const [file, lines] of byFile) appendLines(file, lines, durable, onTorn, replay);
 }

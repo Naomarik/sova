@@ -156,15 +156,16 @@ export function contactValues(): string[] {
   return [...all].filter((v) => v.length >= CONTACT_MIN).sort((a, b) => b.length - a.length);
 }
 
-/** A redactor over the contact values as they are now: `text` for a string, `deep` for any value. */
+/** A redactor over the contact values as they are now: `text` for a string, `deep` for any value. A
+    value is matched as a literal in any case (an email typed `maria@gatecapital.com` is the roster's
+    `Maria@GateCapital.com`), the longest first where two overlap; nothing in a value is a pattern. */
 export function contactRedactor(values = contactValues()): { text(s: string): string; deep<T>(v: T): T } {
-  const text = (s: string): string => {
-    let out = s;
-    for (const v of values) if (out.includes(v)) out = out.split(v).join(CONTACT_MARK);
-    return out;
-  };
+  const literal = (v: string) => v.replace(/[\\^$.*+?()[\]{}|/]/g, "\\$&");
+  const known = values.filter((v) => v.length > 0);
+  const any = known.length ? new RegExp([...known].sort((a, b) => b.length - a.length).map(literal).join("|"), "giu") : null;
+  const text = (s: string): string => (any ? s.replace(any, CONTACT_MARK) : s);
   const deep = <T>(v: T): T => {
-    if (!values.length) return v;
+    if (!any) return v;
     if (typeof v === "string") return text(v) as T;
     if (Array.isArray(v)) return v.map(deep) as T;
     if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, deep(x)])) as T;

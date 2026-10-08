@@ -89,11 +89,13 @@ import {
 	normalizeMinorModes,
 	parseMinorFlag,
 	SCRIPT_ONLY_EXPOSURES,
+	visToolsWanted,
 	workerMinorModes,
 	type MinorMode,
 } from "./minor.ts";
+import { ALIGN_SETTINGS_FILE, alignSettingsReader, resolveAlign, type AlignStyle } from "./align-settings.ts";
 import { MODE_CATEGORY_ID, modeCategoryItems } from "./palette.ts";
-import { applyModeSection, buildModeNote, buildSpecWriterPrompt, composePrompt, composeWorkerPrompt, DEFAULT_ROUTES, statusLabel } from "./prompt.ts";
+import { applyModeSection, buildAlignStyleNote, buildModeNote, buildSpecWriterPrompt, composePrompt, composeWorkerPrompt, DEFAULT_ROUTES, statusLabel } from "./prompt.ts";
 import { backendsOf, describeChoice, routeAll, routeNotice, routeWriter, slotNotice, usable, type Discovery, type ProfileRoute, type SlotRoute } from "./routing.ts";
 import { SPEC_WRITER_LABEL, specBackends, specKey } from "./spec.ts";
 import { OFF_PROFILE_ID, pickEntryFor, profilesReader, resolveSubagents, restorePick, type ResolvedSubagents } from "../subagents/subagent-profiles.ts";
@@ -141,6 +143,12 @@ const discoveryTtl = (discovery: Discovery): number =>
 const STRICT_REMOVED_TOOLS = new Set(["edit", "write"]);
 /** The launch flag behind adversarial review (§chat.alignment-review/flag); Sova passes it per hosted session. */
 export const REVIEW_FLAG = "adversarial-review";
+/**
+ * The align mode's Visuals as the caller fixed them for this session (§chat.alignment/visuals): Sova
+ * passes `on` or `off` from the chat's launch record; without it (the TUI) the session reads
+ * mode-align.json, and the chat's profile override, at its start.
+ */
+export const VISUALS_FLAG = "align-visuals";
 
 /**
  * What changed in this switch. Old entries carry only `mode`; `active` is absent before per-session state.
@@ -192,6 +200,23 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	 */
 	let reviewFlag = false;
 	const reviewOn = (): boolean => reviewFlag;
+	/** mode-align.json, re-read (one stat) whenever consulted. */
+	const readAlignSettings = alignSettingsReader(join(getAgentDir(), ALIGN_SETTINGS_FILE));
+	/** The writing style and Visuals this chat would use now: its profile's override, else the host's file. */
+	const alignNow = () => resolveAlign(readAlignSettings(), subagents().alignment);
+	/**
+	 * This session's Visuals (§chat.alignment/visuals), fixed at session_start: the caller's flag, else
+	 * alignNow(). A worker never has them (it has no align either).
+	 */
+	let alignVisuals = false;
+	/**
+	 * The writing style the head's align block was built with, fixed with the head (fixHead) or
+	 * restored with it; undefined while the head isn't, when the block follows the style now.
+	 */
+	let headStyle: AlignStyle | undefined;
+	/** The writing style the model was last told: the head's, then each style note's (§chat.alignment/style). */
+	let toldStyle: AlignStyle | undefined;
+	const alignOptions = (style: AlignStyle) => ({ style, visuals: alignVisuals });
 	/** The reviewer route a probe should cover: flag on, align on, not a worker, and the profile names one. */
 	const probedReviewer = () => (reviewOn() && hasMinor(active, "align") && !workerRole ? subagents().reviewer : null);
 	/** Re-read this chat's pick from its branch. */
@@ -260,6 +285,8 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	// Adversarial review of alignments (§chat.alignment-review/flag). Its value is visible from
 	// session_start on (a caller's flags are applied after every factory ran); off is today, exactly.
 	pi.registerFlag(REVIEW_FLAG, { description: "Adversarial review of alignments (experimental)", type: "boolean", default: false });
+	// The align mode's Visuals for this session (§chat.alignment/visuals): on | off; absent, mode-align.json.
+	pi.registerFlag(VISUALS_FLAG, { description: "Align visuals for this session: on | off (default: mode-align.json)", type: "string" });
 	pi.registerFlag("minor", {
 		description: `Start with minor modes on (comma-separated): ${MINOR_MODES.join(" | ")}, or none`,
 		type: "string",
@@ -331,7 +358,9 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	 * worker, the worker form of the head's worker-scope minors (never Delegate or a writer).
 	 */
 	const modeBlock = (): string | undefined =>
-		workerRole ? composeWorkerPrompt({ minorModes: headMinors() }) : composePrompt(active, routes, writerRoute, headMinors());
+		workerRole
+			? composeWorkerPrompt({ minorModes: headMinors() })
+			: composePrompt(active, routes, writerRoute, headMinors(), alignOptions(headStyle ?? alignNow().style));
 
 	/** A run is about to send the prompt: a head not sent since the start or the last compaction is the active set from now on. */
 	function fixHead(): void {
@@ -340,22 +369,35 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		told = [...head];
 		guides = [];
 		toldWriter = head.includes("spec") ? writerInstruction() : undefined;
+		// A head rebuilt on reopen keeps the style its newest style note recorded (restoreActiveState).
+		headStyle ??= alignNow().style;
+		toldStyle ??= headStyle;
 	}
 
 	/** The hidden note for what the model hasn't been told yet, now counted as told; undefined when there is nothing. */
 	function takeNote(): { customType: string; content: string; display: false; details: ModeNoteDetails } | undefined {
 		if (head === undefined) return undefined;
+		const style = alignNow().style;
 		const note = workerRole
 			? buildModeNote(workerMinorModes(told), workerMinorModes(active.minorModes), { head: workerMinorModes(head), guides }, null, true)
-			: buildModeNote(told, active.minorModes, { head, guides }, writerRoute);
+			: buildModeNote(told, active.minorModes, { head, guides }, writerRoute, false, alignOptions(style));
 		const instruction = writerInstruction();
 		const routeNote = !workerRole && active.minorModes.includes("spec") && !head.includes("spec") && !note?.guides.includes("spec") && toldWriter !== instruction
 			? `Spec writer routing now applies instead of any earlier writer routing.\n\n${instruction}` : undefined;
-		if (!note && !routeNote) return undefined;
+		// The writing style (§chat.alignment/style): an align block this note carries is written in the style
+		// now; with align's block already in context, a style changed since it was told gets one note of its own.
+		const alignGuide = note?.guides.includes("align") ?? false;
+		const was = toldStyle ?? headStyle ?? "default";
+		const styleNote = !workerRole && hasMinor(active, "align") && !alignGuide && was !== style ? buildAlignStyleNote(was, style) : undefined;
+		if (!note && !routeNote && !styleNote) return undefined;
 		if (active.minorModes.includes("spec")) toldWriter = instruction;
+		const toldAlignStyle = alignGuide || styleNote !== undefined;
+		if (toldAlignStyle) toldStyle = style;
 		told = [...active.minorModes];
 		guides = normalizeMinorModes([...guides, ...(note?.guides ?? [])]);
-		return { customType: MODE_NOTE_TYPE, content: [note?.text, routeNote].filter(Boolean).join("\n\n"), display: false, details: { v: 1, minorModes: [...told], guides: note?.guides ?? [] } };
+		const details: ModeNoteDetails = { v: 1, minorModes: [...told], guides: note?.guides ?? [] };
+		if (toldAlignStyle) Object.assign(details, { style, headStyle: headStyle ?? style });
+		return { customType: MODE_NOTE_TYPE, content: [note?.text, routeNote, styleNote].filter(Boolean).join("\n\n"), display: false, details };
 	}
 
 	/**
@@ -527,7 +569,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		}
 		// Between runs the tool follows at once; a run under way keeps its tools, and agent_settled syncs.
 		if (minor === "codemode" && !running) syncCodemodeTool();
-		if (minor === "vis" && !running) syncVisGuideTool();
+		if ((minor === "vis" || minor === "align") && !running) syncVisGuideTool();
 		ctx.ui.notify(`Minor mode: ${minor} ${on ? "on" : "off"}`, "info");
 		// Spec on probes its writer's backends (and announces a writer that can't run); off, and
 		// outside delegate, there is nothing left to probe.
@@ -606,6 +648,11 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		head = restoredHead.head;
 		told = restoredHead.told ?? [...(head ?? [])];
 		guides = restoredHead.guides;
+		// The style the head was built with, as its newest style note since the last compaction recorded it
+		// (a head no entry records is rebuilt with it at the next fixHead); a head no note speaks for takes
+		// the style now (§chat.alignment/style), and one still to be fixed follows it until then.
+		headStyle = restoredHead.style?.head ?? (head === undefined ? undefined : alignNow().style);
+		toldStyle = restoredHead.style?.told ?? (head === undefined ? undefined : headStyle);
 		// A restore can land on a different strict flag than the tools currently reflect.
 		if (active.mode === "delegate" && active.strict) applyStrictTools();
 		else restoreTools();
@@ -630,12 +677,13 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	}
 
 	/**
-	 * The vis_guide tool is in the loadout exactly while vis is on, synced where Sova's vis_check is (at
-	 * session start, right after a switch made between runs, when a user's prompt starts a run, and when a
-	 * run settles), so a toggle changes the tool set once, for both.
+	 * The vis_guide tool is in the loadout exactly while the vis tools are wanted (visToolsWanted: vis on,
+	 * or align on in a session started with Visuals, §chat.alignment/visuals), synced where Sova's
+	 * vis_check is (at session start, right after a switch made between runs, when a user's prompt starts
+	 * a run, and when a run settles), so a toggle changes the tool set once, for both.
 	 */
 	function syncVisGuideTool(): void {
-		syncTool(VIS_GUIDE_TOOL, hasMinor(active, "vis"));
+		syncTool(VIS_GUIDE_TOOL, visToolsWanted(active.minorModes, alignVisuals));
 	}
 
 	/**
@@ -807,14 +855,23 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		},
 		remoteTarget: () => remoteTarget,
 		review: () => (reviewOn() ? { reviewer: reviewerSlot, startText: reviewStartText } : undefined),
+		style: () => alignNow().style,
 	};
 	registerAlignTool(pi, alignHost);
-	/** Whether the review form of the align tool and /review are registered (once, at the first session_start with the flag on). */
+	/** The align tool's form now registered: review ops, visual fields (re-registered when either changes). */
+	let alignForm = { review: false, visual: false };
+	/** The align tool's form follows this session's flags (pi replaces a tool registered again under its name). */
+	function syncAlignForm(): void {
+		const want = { review: reviewOn(), visual: alignVisuals };
+		if (want.review === alignForm.review && want.visual === alignForm.visual) return;
+		alignForm = want;
+		registerAlignTool(pi, alignHost, want);
+	}
+	/** Whether /review is registered (once, at the first session_start with the flag on). */
 	let reviewRegistered = false;
 	function registerReview(): void {
 		if (reviewRegistered || !reviewOn()) return;
 		reviewRegistered = true;
-		registerAlignTool(pi, alignHost, true);
 		pi.registerCommand("review", {
 			description: "Ask for an alignment's adversarial review: /review plan|implementation [al_N]",
 			getArgumentCompletions: (argumentPrefix) => {
@@ -1154,6 +1211,8 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		head = undefined;
 		told = [];
 		guides = [];
+		headStyle = undefined;
+		toldStyle = undefined;
 		syncHostSection();
 	});
 
@@ -1313,6 +1372,10 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		reviewFlag = pi.getFlag(REVIEW_FLAG) === true;
 		registerReview();
 		refreshPick(ctx);
+		// Visuals are fixed here for the session's life: the caller's flag, else the file and the profile now.
+		const visualsFlag = pi.getFlag(VISUALS_FLAG);
+		alignVisuals = workerRole ? false : visualsFlag === "on" ? true : visualsFlag === "off" ? false : alignNow().visuals;
+		syncAlignForm();
 		restoreActiveState(event?.reason, ctx);
 		restoreAlign(ctx);
 		if (viewerShortcutClash && ctx.hasUI) {

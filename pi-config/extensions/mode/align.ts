@@ -65,7 +65,21 @@ export interface AlignQuestion {
 	recommendation: AlignRecommendation;
 	decision?: AlignDecision;
 	dropped?: { why: string; at: string };
+	/** A drawing on the card (§chat.alignment/visuals), only in a session started with Visuals on. */
+	visual?: AlignVisual;
 }
+
+/** A `vis` drawing: its kind and its source, exactly what a `vis` fence would hold. */
+export interface AlignVisual {
+	kind: string;
+	source: string;
+}
+
+/** At most this many visuals per alignment, its questions' and its own together. */
+export const ALIGN_VISUALS_MAX = 3;
+
+/** The non-Default writing styles a document records (align-settings.ts AlignStyle; Default is no field). */
+export type AlignDocStyle = "simplified" | "pm";
 
 /** Adversarial review (behind the mode extension's `adversarial-review` flag): its two phases. */
 export type AlignReviewPhase = "plan" | "diff";
@@ -120,16 +134,25 @@ export interface AlignDocument {
 	findings: AlignText[];
 	approach: AlignText[];
 	rejected: AlignRejected[];
+	/**
+	 * Technical notes (tN): the technical detail a plan written for a reader who doesn't read code keeps
+	 * out of its other fields (§chat.alignment/style). Absent until the first one is added.
+	 */
+	technical?: AlignText[];
 	questions: AlignQuestion[];
 	phase: AlignPhase;
 	/** Why the whole document was dropped (phase "dropped"). */
 	droppedWhy?: string;
-	/** The last number used per item kind: ids are never reused, removed or not. */
-	next: { f: number; a: number; x: number; q: number };
+	/** The last number used per item kind: ids are never reused, removed or not. `t` from the first technical note. */
+	next: { f: number; a: number; x: number; q: number; t?: number };
 	/** 1 at create, +1 per changing call. */
 	rev: number;
 	/** The adversarial review record; absent until a review op ran (and always with the flag off). */
 	review?: AlignReview;
+	/** The writing style in effect at the document's latest change; absent for Default. */
+	style?: AlignDocStyle;
+	/** The document's own drawing (§chat.alignment/visuals). */
+	visual?: AlignVisual;
 	createdAt: string;
 	updatedAt: string;
 }
@@ -334,12 +357,13 @@ export interface AlignQuestionInput {
 	context?: string;
 	options?: AlignOption[];
 	recommendation: AlignRecommendation;
+	visual?: AlignVisual;
 }
 
-function questionInput(value: unknown, where: string): AlignQuestionInput {
-	need(isRecord(value), `${where} must be an object {topic, ask, context?, options?, recommendation}`);
+function questionInput(value: unknown, where: string, visuals = false): AlignQuestionInput {
+	need(isRecord(value), `${where} must be an object {topic, ask, context?, options?, recommendation${visuals ? ", visual?" : ""}}`);
 	const v = value as Record<string, unknown>;
-	onlyKeys(v, ["topic", "ask", "context", "options", "recommendation"], where);
+	onlyKeys(v, ["topic", "ask", "context", "options", "recommendation", ...(visuals ? ["visual"] : [])], where);
 	const q: AlignQuestionInput = {
 		topic: text(v.topic, `${where}.topic`),
 		ask: text(v.ask, `${where}.ask`),
@@ -350,7 +374,19 @@ function questionInput(value: unknown, where: string): AlignQuestionInput {
 		const options = list(v.options, `${where}.options`, option);
 		if (options.length > 0) q.options = options;
 	}
+	if (v.visual !== undefined) q.visual = visualInput(v.visual, `${where}.visual`);
 	return q;
+}
+
+/** A visual as an op gives it: a kind word and its source, both non-empty. */
+function visualInput(value: unknown, where: string): AlignVisual {
+	need(isRecord(value), `${where} must be an object {kind, source}`);
+	const v = value as Record<string, unknown>;
+	onlyKeys(v, ["kind", "source"], where);
+	const kind = text(v.kind, `${where}.kind`);
+	need(/^[a-z]+$/.test(kind), `${where}.kind must be one vis kind word, e.g. "wireframe" (call vis_guide for the kinds)`);
+	need(typeof v.source === "string" && v.source.trim() !== "", `${where}.source must be the drawing's source, non-empty`);
+	return { kind, source: (v.source as string).replace(/\s+$/, "") };
 }
 
 function rejectedInput(value: unknown, where: string): { option: string; why: string } {
@@ -367,28 +403,39 @@ export interface AlignDocInput {
 	findings: string[];
 	approach: string[];
 	rejected: { option: string; why: string }[];
+	technical: string[];
 	questions: AlignQuestionInput[];
+	visual?: AlignVisual;
 }
 
-export const DOC_INPUT_KEYS = ["title", "summary", "findings", "approach", "rejected", "questions"] as const;
+/** The fields an import's file holds (create takes them too, and `visual` with Visuals on). */
+export const DOC_INPUT_KEYS = ["title", "summary", "findings", "approach", "rejected", "technical", "questions"] as const;
 
-/** Strict: every field typed, nothing unknown. `where` prefixes each message ("import /tmp/x.json"). */
-export function parseDocInput(value: unknown, where: string): AlignDocInput {
-	need(isRecord(value), `${where} must be a JSON object with ${DOC_INPUT_KEYS.join(", ")}`);
+/**
+ * Strict: every field typed, nothing unknown. `where` prefixes each message ("import /tmp/x.json").
+ * `visuals`: the document's and the questions' `visual` are taken too (create in a session started
+ * with Visuals on; an import's file never holds them).
+ */
+export function parseDocInput(value: unknown, where: string, visuals = false): AlignDocInput {
+	const keys: readonly string[] = visuals ? [...DOC_INPUT_KEYS, "visual"] : DOC_INPUT_KEYS;
+	need(isRecord(value), `${where} must be a JSON object with ${keys.join(", ")}`);
 	const v = value as Record<string, unknown>;
-	onlyKeys(v, DOC_INPUT_KEYS, where);
-	return {
+	onlyKeys(v, keys, where);
+	const doc: AlignDocInput = {
 		title: oneLine(text(v.title, `${where}: title`)),
 		summary: oneLine(text(v.summary, `${where}: summary`)),
 		findings: v.findings === undefined ? [] : list(v.findings, `${where}: findings`, text),
 		approach: v.approach === undefined ? [] : list(v.approach, `${where}: approach`, text),
 		rejected: v.rejected === undefined ? [] : list(v.rejected, `${where}: rejected`, rejectedInput),
-		questions: v.questions === undefined ? [] : list(v.questions, `${where}: questions`, questionInput),
+		technical: v.technical === undefined ? [] : list(v.technical, `${where}: technical`, text),
+		questions: v.questions === undefined ? [] : list(v.questions, `${where}: questions`, (q, at) => questionInput(q, at, visuals)),
 	};
+	if (v.visual !== undefined) doc.visual = visualInput(v.visual, `${where}: visual`);
+	return doc;
 }
 
 /** The JSON a planning worker writes for `import`: said once, for the tool's schema and the prompts. */
-export const ALIGN_FILE_SCHEMA = `{"title": string, "summary": string (one line), "findings"?: [string], "approach"?: [string, in order], "rejected"?: [{"option": string, "why": string}], "questions"?: [{"topic": string, "ask": string, "context"?: string, "options"?: [{"label": string, "tradeoff": string}], "recommendation": {"choice": string, "why": string}}]}`;
+export const ALIGN_FILE_SCHEMA = `{"title": string, "summary": string (one line), "findings"?: [string], "approach"?: [string, in order], "rejected"?: [{"option": string, "why": string}], "technical"?: [string (a technical note)], "questions"?: [{"topic": string, "ask": string, "context"?: string, "options"?: [{"label": string, "tradeoff": string}], "recommendation": {"choice": string, "why": string}}]}`;
 
 // ── Operations ───────────────────────────────────────────────────────────────
 
@@ -421,9 +468,9 @@ export type AlignOpName = (typeof ALIGN_OPS)[number] | (typeof ALIGN_REVIEW_OPS)
  * op from the same table, so the schema and this check can't disagree (smoke.mjs pins it).
  */
 export const ALIGN_OP_FIELDS: Record<AlignOpName, { required: readonly string[]; optional: readonly string[]; atLeast?: number }> = {
-	create: { required: ["title", "summary"], optional: ["findings", "approach", "rejected", "questions"] },
+	create: { required: ["title", "summary"], optional: ["findings", "approach", "rejected", "technical", "questions"] },
 	import: { required: ["path"], optional: [] },
-	add: { required: [], optional: ["findings", "approach", "rejected", "questions"], atLeast: 1 },
+	add: { required: [], optional: ["findings", "approach", "rejected", "technical", "questions"], atLeast: 1 },
 	edit: { required: ["id", "text"], optional: [] },
 	edit_question: { required: ["q"], optional: ["topic", "ask", "context", "options", "recommendation"], atLeast: 1 },
 	edit_rejected: { required: ["id"], optional: ["option", "why"], atLeast: 1 },
@@ -440,6 +487,16 @@ export const ALIGN_OP_FIELDS: Record<AlignOpName, { required: readonly string[];
 	get: { required: [], optional: [] },
 	review: { required: ["phase", "state", "reason"], optional: ["model", "blockers"] },
 	close_blocker: { required: ["phase", "id", "by", "evidence"], optional: [] },
+};
+
+/**
+ * The ops' extra fields in a session started with Visuals on (§chat.alignment/visuals): in the schema and
+ * accepted only then. A question's `visual` (in create's and add's questions) follows the same switch.
+ */
+export const ALIGN_VISUAL_FIELDS: Partial<Record<AlignOpName, readonly string[]>> = {
+	create: ["visual"],
+	edit_question: ["visual"],
+	edit_doc: ["visual"],
 };
 
 /** Op names models reach for, and what to use instead. */
@@ -483,6 +540,10 @@ export interface AlignEnv {
 	readFile(path: string): string;
 	/** Present only with the `adversarial-review` flag on: the review ops and guards apply. */
 	review?: AlignReviewEnv;
+	/** The session started with Visuals on: the visual fields are taken (ALIGN_VISUAL_FIELDS). */
+	visuals?: boolean;
+	/** The writing style now; a changing call records it on the document (absent or "default": no field). */
+	style?: "default" | AlignDocStyle;
 }
 
 /** A worker tuple as the reviewer route names it. */
@@ -530,9 +591,9 @@ export function nextDocId(docs: readonly AlignDocument[]): string {
 	return `al_${max + 1}`;
 }
 
-function itemKind(id: string): "f" | "a" | "x" | "q" | undefined {
-	const m = /^([faxq])[1-9]\d*$/.exec(id);
-	return m ? (m[1] as "f" | "a" | "x" | "q") : undefined;
+function itemKind(id: string): "f" | "a" | "x" | "q" | "t" | undefined {
+	const m = /^([faxqt])[1-9]\d*$/.exec(id);
+	return m ? (m[1] as "f" | "a" | "x" | "q" | "t") : undefined;
 }
 
 function freshDoc(id: string, input: AlignDocInput, now: string): AlignDocument {
@@ -551,11 +612,12 @@ function freshDoc(id: string, input: AlignDocInput, now: string): AlignDocument 
 		updatedAt: now,
 	};
 	addItems(doc, input);
+	if (input.visual) doc.visual = input.visual;
 	return doc;
 }
 
 /** Append items with fresh ids; returns the ids, in order. */
-function addItems(doc: AlignDocument, input: Pick<AlignDocInput, "findings" | "approach" | "rejected" | "questions">): string[] {
+function addItems(doc: AlignDocument, input: Pick<AlignDocInput, "findings" | "approach" | "rejected" | "technical" | "questions">): string[] {
 	const ids: string[] = [];
 	for (const t of input.findings) {
 		const id = `f${++doc.next.f}`;
@@ -572,6 +634,11 @@ function addItems(doc: AlignDocument, input: Pick<AlignDocInput, "findings" | "a
 		doc.rejected.push({ id, option: r.option, why: r.why });
 		ids.push(id);
 	}
+	for (const t of input.technical) {
+		const id = `t${(doc.next.t = (doc.next.t ?? 0) + 1)}`;
+		(doc.technical ??= []).push({ id, text: t });
+		ids.push(id);
+	}
 	for (const q of input.questions) {
 		const id = `q${++doc.next.q}`;
 		doc.questions.push({ id, ...q });
@@ -579,6 +646,9 @@ function addItems(doc: AlignDocument, input: Pick<AlignDocInput, "findings" | "a
 	}
 	return ids;
 }
+
+/** How many visuals a document carries, its questions' and its own. */
+const visualCount = (doc: AlignDocument): number => doc.questions.filter((q) => q.visual).length + (doc.visual ? 1 : 0);
 
 function findQuestion(doc: AlignDocument, id: unknown, where: string): AlignQuestion {
 	need(typeof id === "string" && itemKind(id) === "q", `${where}: q must be a question id like "q3"`);
@@ -598,7 +668,7 @@ function questionIdOf(value: unknown, where: string): string {
 }
 
 /** The call's shape and each op's fields; the first problem throws. */
-function checkedOps(input: unknown, allowed: readonly string[]): (Record<string, unknown> & { op: AlignOpName })[] {
+function checkedOps(input: unknown, allowed: readonly string[], visuals = false): (Record<string, unknown> & { op: AlignOpName })[] {
 	// A bare op, or a list of them, without the wrapper: the one mistake the schema's shape invites.
 	if (Array.isArray(input) || (isRecord(input) && typeof input.op === "string" && input.ops === undefined)) {
 		throw new AlignError('wrap ops in {ops: [...]}: align takes {doc?, ops: [{op: ...}, ...]}');
@@ -618,10 +688,12 @@ function checkedOps(input: unknown, allowed: readonly string[]): (Record<string,
 		const hint = opShapeHint(o);
 		if (hint !== undefined) throw new AlignError(`${where}: ${hint}`);
 		const fields = ALIGN_OP_FIELDS[o.op as AlignOpName];
-		onlyKeys(o, ["op", ...fields.required, ...fields.optional], where);
+		const visualFields = visuals ? (ALIGN_VISUAL_FIELDS[o.op as AlignOpName] ?? []) : [];
+		onlyKeys(o, ["op", ...fields.required, ...fields.optional, ...visualFields], where);
 		for (const key of fields.required) need(o[key] !== undefined, `${where}: ${key} is required`);
 		if (fields.atLeast !== undefined) {
-			need(fields.optional.filter((k) => o[k] !== undefined).length >= fields.atLeast, `${where}: give at least one of ${fields.optional.join(", ")}`);
+			const optional = [...fields.optional, ...visualFields];
+			need(optional.filter((k) => o[k] !== undefined).length >= fields.atLeast, `${where}: give at least one of ${optional.join(", ")}`);
 		}
 		return o as Record<string, unknown> & { op: AlignOpName };
 	});
@@ -632,7 +704,8 @@ function checkedOps(input: unknown, allowed: readonly string[]): (Record<string,
  * anything is kept, and the first problem throws AlignError. Pure apart from `env.readFile`.
  */
 export function applyAlignCall(docs: readonly AlignDocument[], input: unknown, env: AlignEnv): AlignOutcome {
-	const ops = checkedOps(input, env.review ? [...ALIGN_OPS, ...ALIGN_REVIEW_OPS] : ALIGN_OPS);
+	const visuals = env.visuals === true;
+	const ops = checkedOps(input, env.review ? [...ALIGN_OPS, ...ALIGN_REVIEW_OPS] : ALIGN_OPS, visuals);
 	const params = input as Record<string, unknown>;
 	/** Text a started review adds to the result (the worker and the filled prompt). */
 	const extra: string[] = [];
@@ -678,7 +751,7 @@ export function applyAlignCall(docs: readonly AlignDocument[], input: unknown, e
 			}
 			parsed = parseDocInput(json, `import ${path}`);
 		} else {
-			parsed = parseDocInput(Object.fromEntries(DOC_INPUT_KEYS.map((k) => [k, o[k]])), "ops[0] (create)");
+			parsed = parseDocInput(Object.fromEntries([...DOC_INPUT_KEYS, ...(visuals ? ["visual"] : [])].map((k) => [k, o[k]])), "ops[0] (create)", visuals);
 		}
 		doc = freshDoc(nextDocId(docs), parsed, env.now);
 		changes.push(o.op === "import" ? { kind: "created", fromFile: true } : { kind: "created" });
@@ -714,7 +787,8 @@ export function applyAlignCall(docs: readonly AlignDocument[], input: unknown, e
 					findings: o.findings === undefined ? [] : list(o.findings, `${where}: findings`, text),
 					approach: o.approach === undefined ? [] : list(o.approach, `${where}: approach`, text),
 					rejected: o.rejected === undefined ? [] : list(o.rejected, `${where}: rejected`, rejectedInput),
-					questions: o.questions === undefined ? [] : list(o.questions, `${where}: questions`, questionInput),
+					technical: o.technical === undefined ? [] : list(o.technical, `${where}: technical`, text),
+					questions: o.questions === undefined ? [] : list(o.questions, `${where}: questions`, (q, at) => questionInput(q, at, visuals)),
 				});
 				need(ids.length > 0, `${where}: nothing to add (every list is empty)`);
 				changes.push({ kind: "added", ids });
@@ -723,15 +797,15 @@ export function applyAlignCall(docs: readonly AlignDocument[], input: unknown, e
 			case "edit": {
 				const id = text(o.id, `${where}: id`);
 				const kind = itemKind(id);
-				need(kind === "f" || kind === "a", `${where}: id must be a finding (fN) or an approach step (aN); questions take edit_question, rejected alternatives edit_rejected, the title and summary edit_doc`);
-				const item = (kind === "f" ? d.findings : d.approach).find((x) => x.id === id);
+				need(kind === "f" || kind === "a" || kind === "t", `${where}: id must be a finding (fN), an approach step (aN) or a technical note (tN); questions take edit_question, rejected alternatives edit_rejected, the title and summary edit_doc`);
+				const item = (kind === "f" ? d.findings : kind === "a" ? d.approach : (d.technical ?? [])).find((x) => x.id === id);
 				need(item !== undefined, `${where}: ${d.id} has no ${id}`);
 				item!.text = text(o.text, `${where}: text`);
 				changes.push({ kind: "edited", ids: [id] });
 				break;
 			}
 			case "edit_question":
-				changes.push({ kind: "edited", ids: [editQuestion(d, o, where)] });
+				changes.push({ kind: "edited", ids: [editQuestion(d, o, where, visuals)] });
 				break;
 			case "edit_rejected": {
 				const id = text(o.id, `${where}: id`);
@@ -753,6 +827,12 @@ export function applyAlignCall(docs: readonly AlignDocument[], input: unknown, e
 					d.summary = oneLine(text(o.summary, `${where}: summary`));
 					ids.push("summary");
 				}
+				if (visuals && o.visual !== undefined) {
+					// null removes it.
+					if (o.visual === null) delete d.visual;
+					else d.visual = visualInput(o.visual, `${where}: visual`);
+					ids.push("visual");
+				}
 				changes.push({ kind: "edited", ids });
 				break;
 			}
@@ -761,11 +841,12 @@ export function applyAlignCall(docs: readonly AlignDocument[], input: unknown, e
 				need(ids.length > 0, `${where}: ids must name at least one item`);
 				for (const id of ids) {
 					const kind = itemKind(id);
-					need(kind === "f" || kind === "a" || kind === "x", `${where}: ${id} can't be removed (findings fN, approach aN and rejected xN only; a question takes drop_question)`);
-					const key = kind === "f" ? "findings" : kind === "a" ? "approach" : "rejected";
-					const before = d[key].length;
-					(d as unknown as Record<string, { id: string }[]>)[key] = d[key].filter((item) => item.id !== id);
-					need(d[key].length < before, `${where}: ${d.id} has no ${id}`);
+					need(kind === "f" || kind === "a" || kind === "x" || kind === "t", `${where}: ${id} can't be removed (findings fN, approach aN, rejected xN and technical notes tN only; a question takes drop_question)`);
+					const key = kind === "f" ? "findings" : kind === "a" ? "approach" : kind === "x" ? "rejected" : "technical";
+					const items: readonly { id: string }[] = d[key] ?? [];
+					const kept = items.filter((item) => item.id !== id);
+					need(kept.length < items.length, `${where}: ${d.id} has no ${id}`);
+					(d as unknown as Record<string, { id: string }[]>)[key] = kept;
 				}
 				changes.push({ kind: "removed", ids });
 				break;
@@ -863,6 +944,13 @@ export function applyAlignCall(docs: readonly AlignDocument[], input: unknown, e
 	}
 
 	const changed = changes.length > 0;
+	if (doc && changed) {
+		const n = visualCount(doc);
+		need(n <= ALIGN_VISUALS_MAX, `${doc.id} would carry ${n} visuals: at most ${ALIGN_VISUALS_MAX} per alignment (its questions' and its own); remove one with edit_question or edit_doc {visual: null}`);
+		// The style in effect at the document's latest change (§chat.alignment/document); Default is no field.
+		if (env.style !== undefined && env.style !== "default") doc.style = env.style;
+		else if (env.style === "default") delete doc.style;
+	}
 	if (doc && changed && !creates) {
 		doc.rev += 1;
 		doc.updatedAt = env.now;
@@ -966,7 +1054,7 @@ function closeBlocker(d: AlignDocument, o: Record<string, unknown>, where: strin
 	changes.push({ kind: "blocker-closed", phase, id });
 }
 
-function editQuestion(d: AlignDocument, o: Record<string, unknown>, where: string): string {
+function editQuestion(d: AlignDocument, o: Record<string, unknown>, where: string, visuals = false): string {
 	const q = findQuestion(d, questionIdOf(o.q, `${where}: q`), where);
 	if (o.topic !== undefined) q.topic = text(o.topic, `${where}: topic`);
 	if (o.ask !== undefined) q.ask = text(o.ask, `${where}: ask`);
@@ -982,6 +1070,11 @@ function editQuestion(d: AlignDocument, o: Record<string, unknown>, where: strin
 		else q.options = options;
 	}
 	if (o.recommendation !== undefined) q.recommendation = recommendation(o.recommendation, `${where}: recommendation`);
+	if (visuals && o.visual !== undefined) {
+		// null removes it.
+		if (o.visual === null) delete q.visual;
+		else q.visual = visualInput(o.visual, `${where}: visual`);
+	}
 	return q.id;
 }
 
@@ -1071,7 +1164,16 @@ function normQuestion(v: unknown): AlignQuestion | undefined {
 		if (!isRecord(d) || !nonEmpty(d.why) || !str(d.at)) return undefined;
 		q.dropped = { why: d.why, at: d.at };
 	}
+	if (v.visual !== undefined) {
+		const visual = normVisual(v.visual);
+		if (!visual) return undefined;
+		q.visual = visual;
+	}
 	return q;
+}
+
+function normVisual(v: unknown): AlignVisual | undefined {
+	return isRecord(v) && nonEmpty(v.kind) && nonEmpty(v.source) ? { kind: v.kind, source: v.source } : undefined;
 }
 
 function normAll<T>(v: unknown, one: (x: unknown) => T | undefined): T[] | undefined {
@@ -1137,10 +1239,12 @@ export function normalizeAlignDocument(v: unknown): AlignDocument | undefined {
 			isRecord(x) && str(x.id) && itemKind(x.id) === "x" && nonEmpty(x.option) && nonEmpty(x.why) ? { id: x.id, option: x.option, why: x.why } : undefined,
 		);
 		const questions = normAll(v.questions, normQuestion);
-		if (!findings || !approach || !rejected || !questions) return undefined;
+		const technical = v.technical === undefined ? [] : normAll(v.technical, (x) => normText(x, "t"));
+		if (!findings || !approach || !rejected || !questions || !technical) return undefined;
 		if (v.phase !== "open" && v.phase !== "implementing" && v.phase !== "done" && v.phase !== "dropped") return undefined;
 		const n = v.next;
-		if (!isRecord(n) || !count(n.f) || !count(n.a) || !count(n.x) || !count(n.q)) return undefined;
+		if (!isRecord(n) || !count(n.f) || !count(n.a) || !count(n.x) || !count(n.q) || (n.t !== undefined && !count(n.t))) return undefined;
+		if (technical.length > 0 && n.t === undefined) return undefined;
 		if (!count(v.rev) || v.rev < 1 || !str(v.createdAt) || !str(v.updatedAt)) return undefined;
 		const doc: AlignDocument = {
 			id: v.id,
@@ -1151,11 +1255,21 @@ export function normalizeAlignDocument(v: unknown): AlignDocument | undefined {
 			rejected,
 			questions,
 			phase: v.phase,
-			next: { f: n.f, a: n.a, x: n.x, q: n.q },
+			next: { f: n.f, a: n.a, x: n.x, q: n.q, ...(n.t !== undefined ? { t: n.t as number } : {}) },
 			rev: v.rev,
 			createdAt: v.createdAt,
 			updatedAt: v.updatedAt,
 		};
+		if (v.technical !== undefined) doc.technical = technical;
+		if (v.style !== undefined) {
+			if (v.style !== "simplified" && v.style !== "pm") return undefined;
+			doc.style = v.style;
+		}
+		if (v.visual !== undefined) {
+			const visual = normVisual(v.visual);
+			if (!visual) return undefined;
+			doc.visual = visual;
+		}
 		if (v.review !== undefined) {
 			const review = normReview(v.review);
 			if (!review) return undefined;
@@ -1169,10 +1283,10 @@ export function normalizeAlignDocument(v: unknown): AlignDocument | undefined {
 		}
 		// The invariants the ops rely on for "ids are never reused": each id is unique in its kind
 		// and no higher than that kind's counter, which the next add continues from.
-		const kinds: [keyof AlignDocument["next"], readonly { id: string }[]][] = [["f", findings], ["a", approach], ["x", rejected], ["q", questions]];
+		const kinds: [keyof AlignDocument["next"], readonly { id: string }[]][] = [["f", findings], ["a", approach], ["x", rejected], ["q", questions], ["t", technical]];
 		for (const [kind, items] of kinds) {
 			const numbers = items.map((item) => (itemKind(item.id) === kind ? Number(item.id.slice(1)) : Number.NaN));
-			if (numbers.some((k) => !Number.isInteger(k) || k < 1 || k > doc.next[kind])) return undefined;
+			if (numbers.some((k) => !Number.isInteger(k) || k < 1 || k > (doc.next[kind] ?? 0))) return undefined;
 			if (new Set(numbers).size !== numbers.length) return undefined;
 		}
 		return doc;
@@ -1404,7 +1518,9 @@ export function changeLine(changes: readonly AlignChange[]): string {
 
 /** The whole document as markdown: `get`, `/align export`, the TUI viewer. */
 export function toMarkdown(doc: AlignDocument): string {
-	const out = [`## ${doc.id}: ${doc.title}`, "", `_${doc.summary}_`, "", `Status: ${alignStatusWord(alignStatus(doc))} · ${openText(doc)} · v${doc.rev}`];
+	const style = doc.style ? ` · ${doc.style === "pm" ? "Project manager" : "Simplified"} style` : "";
+	const out = [`## ${doc.id}: ${doc.title}`, "", `_${doc.summary}_`, "", `Status: ${alignStatusWord(alignStatus(doc))} · ${openText(doc)} · v${doc.rev}${style}`];
+	if (doc.visual) out.push("", ...visualMarkdown(doc.visual));
 	if (doc.phase === "dropped" && doc.droppedWhy) out.push(`Dropped: ${doc.droppedWhy}`);
 	if (doc.questions.length > 0) {
 		out.push("", "### Questions");
@@ -1412,6 +1528,7 @@ export function toMarkdown(doc: AlignDocument): string {
 			const state = questionState(q);
 			out.push("", `**${q.id} · ${q.topic}** (${state})`, "", q.ask);
 			if (q.context) out.push("", q.context);
+			if (q.visual) out.push("", ...visualMarkdown(q.visual));
 			// One paragraph per option: "a." is no list marker, so adjacent lines would run together.
 			if (q.options) for (const [i, o] of q.options.entries()) out.push("", `${optionLetter(i)}. **${o.label}** — ${o.tradeoff}`);
 			const rec = recommendedOption(q);
@@ -1422,6 +1539,7 @@ export function toMarkdown(doc: AlignDocument): string {
 	}
 	if (doc.findings.length > 0) out.push("", "### Findings", "", ...doc.findings.map((f) => `- ${f.id}: ${f.text}`));
 	if (doc.approach.length > 0) out.push("", "### Approach", "", ...doc.approach.map((a, i) => `${i + 1}. ${a.id}: ${a.text}`));
+	if (doc.technical?.length) out.push("", "### Technical notes", "", ...doc.technical.map((t) => `- ${t.id}: ${t.text}`));
 	if (doc.rejected.length > 0) out.push("", "### Rejected", "", ...doc.rejected.map((x) => `- ${x.id}: ${x.option} — ${x.why}`));
 	if (doc.review && (doc.review.plan || doc.review.diff)) {
 		out.push("", "### Review");
@@ -1434,6 +1552,12 @@ export function toMarkdown(doc: AlignDocument): string {
 		}
 	}
 	return out.join("\n");
+}
+
+/** A visual as markdown: its source in a `vis {kind}` code block (the TUI shows the source; Sova draws it). */
+function visualMarkdown(visual: AlignVisual): string[] {
+	const fence = visual.source.includes("```") ? "~~~~" : "```";
+	return [`${fence}vis ${visual.kind}`, visual.source, fence];
 }
 
 /** The TUI widget: "◇ align · al_3 2/7 open · al_2 implementing · alt+a view". */

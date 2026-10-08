@@ -8,6 +8,7 @@
  */
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { isAlignStyle, type AlignStyle } from "./align-settings.ts";
 import { MINOR_MODES, normalizeMinorModes, type MinorMode } from "./minor.ts";
 
 export type Mode = "normal" | "delegate";
@@ -175,11 +176,17 @@ export function restoreActive(entries: readonly { type: string; customType?: str
  */
 export const MODE_NOTE_TYPE = "mode-note";
 
-/** A mode note's `details`: the minor modes in effect after it, and those whose whole guide it carried. */
+/**
+ * A mode note's `details`: the minor modes in effect after it, and those whose whole guide it carried.
+ * `style` / `headStyle`, only on a note that told the align writing style (§chat.alignment/style): the
+ * style the model was told by it, and the one the prompt's align block was built with.
+ */
 export interface ModeNoteDetails {
 	v: 1;
 	minorModes: MinorMode[];
 	guides: MinorMode[];
+	style?: AlignStyle;
+	headStyle?: AlignStyle;
 }
 
 /**
@@ -193,6 +200,8 @@ export interface ModeHead {
 	head: MinorMode[] | undefined;
 	told: MinorMode[] | undefined;
 	guides: MinorMode[];
+	/** The newest style-telling note since that compaction: the align writing style told, and the head's. */
+	style?: { told: AlignStyle; head: AlignStyle };
 }
 
 /**
@@ -205,6 +214,7 @@ export interface ModeHead {
 export function restoreHead(entries: readonly { type: string; customType?: string; data?: unknown; details?: unknown }[]): ModeHead {
 	let head: MinorMode[] | undefined;
 	let told: MinorMode[] | undefined;
+	let style: ModeHead["style"];
 	const guides = new Set<MinorMode>();
 	if (!Array.isArray(entries)) return { head, told, guides: [] };
 	for (let i = entries.length - 1; i >= 0; i--) {
@@ -215,6 +225,7 @@ export function restoreHead(entries: readonly { type: string; customType?: strin
 			const details = entry.details as Partial<ModeNoteDetails> | undefined;
 			if (details?.v !== 1 || !Array.isArray(details.minorModes)) continue;
 			told ??= normalizeMinorModes(details.minorModes);
+			if (style === undefined && isAlignStyle(details.style) && isAlignStyle(details.headStyle)) style = { told: details.style, head: details.headStyle };
 			for (const mode of normalizeMinorModes(details.guides)) guides.add(mode);
 			continue;
 		}
@@ -223,8 +234,9 @@ export function restoreHead(entries: readonly { type: string; customType?: strin
 			if (data && typeof data === "object" && Array.isArray(data.head)) head = normalizeMinorModes(data.head);
 		}
 	}
-	if (head === undefined) return { head, told: undefined, guides: [] };
-	return { head, told: told ?? [...head], guides: normalizeMinorModes([...guides]) };
+	// A head no entry records equals the active set, but the style it was built with is the notes' to say.
+	if (head === undefined) return { head, told: undefined, guides: [], ...(style ? { style } : {}) };
+	return { head, told: told ?? [...head], guides: normalizeMinorModes([...guides]), ...(style ? { style } : {}) };
 }
 
 /** Read the defaults file; missing or corrupt files fall back to built-in defaults. Never throws. */

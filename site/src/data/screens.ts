@@ -29,5 +29,12 @@ export function screen(slot: string): Screen {
   return byId(id, `slot ${slot}`);
 }
 
-/** The recorded session, when there is one, with its poster shot. */
-export const video: (VideoEntry & { posterShot: Screen }) | null = m.video ? { ...m.video, posterShot: byId(m.video.poster, "the video's poster") } : null;
+/** The recorded session with its poster shot, when there is one and it has its poster's shape:
+    it plays over that still and must fill the same screen area exactly (never cropped, never
+    letterboxed). A video of another shape is left off the page; re-record it. */
+export const video: (VideoEntry & { posterShot: Screen }) | null = (() => {
+  if (!m.video) return null;
+  const posterShot = byId(m.video.poster, "the video's poster");
+  const same = Math.abs(m.video.width / m.video.height - posterShot.image.width / posterShot.image.height) < 0.005;
+  return same ? { ...m.video, posterShot } : null;
+})();

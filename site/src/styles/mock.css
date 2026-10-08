@@ -98,8 +98,8 @@
 /* ---- HERO DEVICES. One session on a desktop, an unfolded foldable and a folded phone. ------
    Each screen takes its capture's own shape: the desktop 16:10, the unfolded foldable landscape
    4:3, the folded cover screen portrait 10:16. No frame ever covers another's screen. From
-   1120px the desktop is the centrepiece with the two foldable frames below it; narrower, they sit
-   in a row that scrolls sideways, each at a size it can be read at, the folded one first. */
+   1120px the desktop is the centrepiece with the two foldable frames as a pair below it;
+   narrower, they sit in a row that scrolls sideways, the folded one first on a phone. */
 
 .devices { position: relative; }
 .dev { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 10px; min-width: 0; }
@@ -108,16 +108,29 @@
 .dev > .frame { align-self: stretch; width: 100%; }
 .dev-label { font-family: var(--font-mono); font-size: 11px; letter-spacing: var(--ls-eyebrow); text-transform: uppercase; color: var(--color-ink-muted); }
 
-/* The unfolded foldable, held landscape: a bezel around its screen, nothing drawn over it. */
-.fold {
-  border-radius: 26px; padding: 8px;
-  background: var(--color-surface);
+/* The two foldable frames: the unfolded inner screen (landscape) and the folded cover screen
+   (portrait), drawn as the device is: a flat slab with a thin, even bezel and small, near-square
+   corners. Both share one outer height, --pair-h; each screenshot is set to that height less the
+   bezel and its width follows its own aspect, so the pair's tops, bottoms and captions line up
+   whatever the captures' shapes. Bezel and corners scale with the height. */
+.devices { --pair-h: min(300px, 64vw); }
+.dev-fold, .dev-phone { --bezel: calc(var(--pair-h) * .016); }
+.dev-fold .fold, .dev-phone .phone {
+  width: auto; padding: var(--bezel);
+  border-radius: calc(var(--pair-h) * .024);
+  background: #0d0d10;
   border: var(--stroke-thin) solid var(--color-border-strong);
   box-shadow: var(--shadow-3);
 }
-.fold-screen { position: relative; border-radius: 19px; overflow: hidden; background: var(--color-bg); }
+.dev-fold .fold-screen, .dev-phone .phone-screen {
+  position: relative; overflow: hidden; background: var(--color-bg);
+  border-radius: calc(var(--pair-h) * .01);
+  /* .phone-screen sizes its contents by its own width elsewhere; here the width comes from the image. */
+  container-type: normal; display: block;
+}
+.dev-fold .screen-img, .dev-phone .screen-img { height: calc(var(--pair-h) - 2 * var(--bezel) - 2 * var(--stroke-thin)); width: auto; max-width: none; }
 
-/* Narrow: a row that scrolls sideways. */
+/* Narrow: a row that scrolls sideways, inside its own box (the page never scrolls sideways). */
 .devices {
   display: flex; align-items: flex-end; gap: clamp(20px, 3vw, 32px);
   overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: thin;
@@ -125,27 +138,24 @@
 }
 .dev { flex: none; scroll-snap-align: center; }
 .dev-desk { width: 920px; }
-.dev-fold { width: 460px; }
-.dev-fold .fold { width: 100%; }
-.dev-phone { width: 236px; }
-.dev-phone .phone { width: 100%; }
 @media (max-width: 767px) {
-  .dev-phone { order: -2; width: min(236px, 64vw); }
-  .dev-fold { order: -1; width: min(460px, 86vw); }
+  .dev-phone { order: -2; }
+  .dev-fold { order: -1; }
 }
 
-/* Wide: the desktop large and centred, the two foldable frames side by side below it. Nothing
-   overlaps the desktop's screen, where the session video plays. The unfolded and folded frames
-   are sized to about the same height (4:3 at 400px wide, 10:16 at 196px). */
+/* Wide: the desktop large and centred; under it the two foldable frames as one pair, centred on
+   the desktop, a fixed gap apart, bottoms on one baseline. Nothing covers the desktop's screen,
+   where the session video plays. At full size the pair spans about 65% of the desktop. */
 @media (min-width: 1120px) {
   .devices {
-    display: grid; grid-template-columns: 1fr 1fr; align-items: end;
-    gap: 28px 48px; overflow: visible; padding: 0; margin: 0;
+    --pair-h: clamp(260px, 26vw, 321px);
+    display: grid; grid-template-columns: 1fr auto 32px auto 1fr; align-items: end;
+    row-gap: 32px; overflow: visible; padding: 0; margin: 0;
   }
   .dev { scroll-snap-align: none; }
   .dev-desk { grid-column: 1 / -1; justify-self: center; width: min(88%, 1040px); }
-  .dev-fold { justify-self: end; width: 400px; }
-  .dev-phone { justify-self: start; width: 196px; }
+  .dev-fold { grid-column: 2; }
+  .dev-phone { grid-column: 4; }
 }
 
 /* ---- SCREENSHOTS (site/scripts/screens/). A capture fills its frame's screen area at its own
@@ -157,7 +167,9 @@
 /* The session video plays over the desktop still; with reduced motion it is never shown (its
    source doesn't match either), and the still stays. */
 .screen-stack { position: relative; }
-.screen-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; background: transparent; }
+/* contain, never cover: the video is only shown when its shape is the still's (Devices.astro), so
+   it fills the screen exactly; nothing is cropped and no band shows. */
+.screen-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; display: block; background: transparent; }
 @media (prefers-reduced-motion: reduce) { .screen-video { display: none; } }
 
 /* ---- A SINGLE-SESSION FRAME (transcript, watch, overseer). ---------------------- */

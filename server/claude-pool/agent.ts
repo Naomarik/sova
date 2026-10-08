@@ -42,7 +42,7 @@ import {
   INCOMING_DIR_NAME,
   type LoginFiles,
 } from "./creds";
-import { emptyDoc, mergeDocs, newPoolLogin, parseDoc, poolOrder, reg, sameDoc, standingNow, type PoolDoc, type PoolLogin, type PoolStanding, type PoolUsage } from "./doc";
+import { emptyDoc, mergeDocs, newPoolLogin, parseDoc, plausible, poolOrder, reg, sameDoc, standingNow, type PoolDoc, type PoolLogin, type PoolStanding, type PoolUsage } from "./doc";
 import { readJournal, setOp, type JournalOp } from "./journal";
 
 /**
@@ -270,13 +270,26 @@ export class PoolAgent {
     }
     return next;
   }
-  /** Merge a peer's document in; true when ours changed. */
-  mergeIn(theirs: PoolDoc): boolean {
+  /** Merge a peer's document in (its implausible stamps ignored, doc.ts `plausible`); true when ours changed. */
+  mergeIn(theirs: PoolDoc, from = "a peer"): boolean {
     const ours = this.doc();
-    const merged = mergeDocs(ours, theirs);
+    const { doc, ignored } = plausible(theirs, ours, this.now());
+    for (const field of ignored) this.logIgnored(from, field, theirs);
+    const merged = mergeDocs(ours, doc);
     if (sameDoc(ours, merged)) return false;
     this.writeDoc(merged);
     return true;
+  }
+  /** Once per peer, field and value: the same document comes back at every exchange. */
+  private readonly ignoredSeen = new Set<string>();
+  private logIgnored(from: string, field: string, theirs: PoolDoc): void {
+    const [id, name] = field.includes(".") ? field.split(".") as [string, string] : [undefined, field];
+    const value = id ? (theirs.logins[id] as unknown as Record<string, unknown>)[name] : (theirs as unknown as Record<string, unknown>)[name];
+    const key = `${from}\0${field}\0${JSON.stringify(value)}`;
+    if (this.ignoredSeen.has(key)) return;
+    if (this.ignoredSeen.size >= 1024) this.ignoredSeen.clear();
+    this.ignoredSeen.add(key);
+    this.log(`ignored ${field} from ${from}: stamped more than an hour ahead, or its holder counter too far ahead`);
   }
   private schedulePush(): void {
     if (this.pushTimer) return;
@@ -291,7 +304,7 @@ export class PoolAgent {
     await Promise.all(this.o.peers().map(async (peer) => {
       try {
         const back = await peer.pushDoc(doc);
-        if (this.mergeIn(back)) this.schedulePush();
+        if (this.mergeIn(back, peer.id)) this.schedulePush();
       } catch { /* down: it pulls when it comes up */ }
     }));
   }
@@ -302,17 +315,17 @@ export class PoolAgent {
   async syncWith(peer: PoolPeer): Promise<void> {
     try {
       const theirs = await peer.doc();
-      this.mergeIn(theirs);
+      this.mergeIn(theirs, peer.id);
       const back = await peer.pushDoc(this.doc());
-      this.mergeIn(back);
+      this.mergeIn(back, peer.id);
     } catch { /* down */ }
   }
 
   /** POST /api/peer/claude-pool/doc: merge theirs, answer the merged document. */
-  receiveDoc(theirs: unknown): PoolDoc | null {
+  receiveDoc(theirs: unknown, from?: string): PoolDoc | null {
     const doc = parseDoc(theirs);
     if (!doc) return null;
-    this.mergeIn(doc);
+    this.mergeIn(doc, from);
     return this.doc();
   }
 
@@ -706,7 +719,7 @@ export class PoolAgent {
       this.log(`borrow of ${id} cancelled: ${reply.cancelled}`);
       return false;
     }
-    this.mergeIn(reply.doc);
+    this.mergeIn(reply.doc, peer.id);
     await this.activate(id, op);
     return true;
   }
@@ -948,7 +961,7 @@ export class PoolAgent {
       this.log(`return of ${id} refused: ${reply.refused}`);
       return;
     }
-    this.mergeIn(reply.doc);
+    this.mergeIn(reply.doc, peer.id);
     setOp(this.o.stateDir, id, { ...op, state: "deleting" });
     this.crash("return-deleting");
     return this.finishLeave(id);

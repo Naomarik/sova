@@ -13370,6 +13370,7 @@
         "pi-config/extensions/sandbox/index.ts",
         "server/process-priority.ts",
         "server/process-priority.test.ts",
+        "server/process-priority.integration.test.ts",
         "server/chat-manager.ts"
       ],
       "requires": []

@@ -327,8 +327,8 @@ does not (aligning is a conversation with the user, which a worker doesn't have)
   (`spec-mode.md`, byte for byte) at the end of its system prompt, after its agent type, its
   brief and any remote instructions, followed by a short **worker note**: the brief is its
   go-ahead; it works in the draft its brief names (or says which it started); it doesn't promote,
-  commit or record `--commit` evidence unless the brief says so — the parent promotes; and flags
-  go as one question in its final report. Nothing else of the parent's mode reaches it: no
+  commit or record `--commit` evidence unless the brief says so — the parent promotes; and its final
+  report lists each foreign § it updated. Nothing else of the parent's mode reaches it: no
   Delegate block, no align block, no Delegate+align bridge, and never the spec-writer paragraph
   (a worker can't spawn one). With spec off the worker's prompt carries nothing from the mode.
 - **Not everyone.** A team's monitor (it has no tools) gets no spec block. A worker on its

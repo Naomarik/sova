@@ -1524,7 +1524,8 @@ export function ThreadScroller(props: {
   const keepHeld = () => {
     if (!held) return;
     if (performance.now() > held.until || !held.row.isConnected) {
-      held = null;
+      if (held.jump) jumpHoldOver();
+      else held = null;
       return;
     }
     const delta = offsetOf(held.row) - held.offset;
@@ -1536,7 +1537,7 @@ export function ThreadScroller(props: {
   };
   /**
    * A jump (lib/jump JUMP_EVENT) lands at once, with no smooth scroll: following stops, as a scroll
-   * up would, and the row's center goes to the view's center (a row taller than the view fills it;
+   * up would (and comes back if the hold ends with the view at the end, `jumpHoldOver`), and the row's center goes to the view's center (a row taller than the view fills it;
    * one the view can't center, at the top or the end of the rows, goes as near as it can). The
    * rows around it are then first drawn at their real heights, not their estimates, above it too,
    * so it is held where it landed: corrected when the thread's size changes (after layout, before
@@ -1565,7 +1566,7 @@ export function ThreadScroller(props: {
       if (held !== hold) return;
       hold.jump.quiet = hold.jump.moved || loadingAbove(row) ? 0 : hold.jump.quiet + 1;
       hold.jump.moved = false;
-      if (hold.jump.quiet >= JUMP_QUIET_FRAMES) held = null;
+      if (hold.jump.quiet >= JUMP_QUIET_FRAMES) jumpHoldOver();
       else requestAnimationFrame(frame);
     };
     requestAnimationFrame(frame);
@@ -1578,6 +1579,17 @@ export function ThreadScroller(props: {
     for (let r = row.previousElementSibling; r && r.getBoundingClientRect().bottom > top; r = r.previousElementSibling)
       for (const img of r.querySelectorAll("img")) if (!img.complete) return true;
     return false;
+  };
+  /** A jump's hold is over by itself (quiet, its time up, its row gone): a jump that left the view
+      at the end follows again, as the reader's own scroll there would (§chat.transcript/turn-end-keeps-reader).
+      While it was held, the landing was not read as coming back (`onScroll`). Not when the reader's
+      input or another placement ends it: they say where the view goes. */
+  const jumpHoldOver = () => {
+    held = null;
+    lastGap = el.scrollHeight - el.scrollTop - el.clientHeight;
+    if (follow || lastGap >= FOLLOW_PX) return;
+    follow = true;
+    setAway(null);
   };
   /** Something else places the view: a jump's row is no longer held there. */
   const endJumpHold = () => {
@@ -1616,7 +1628,8 @@ export function ThreadScroller(props: {
       reflowed = !first;
     }
     const near = lastGap < FOLLOW_PX;
-    // A jump that lands near the end isn't the reader coming back to follow it.
+    // A jump's landing near the end, while its row is held, isn't read here: the hold's end does
+    // (`jumpHoldOver`).
     if (near && held?.jump) return;
     // Only the view moving up stops following. Content landing below a following view (a queued
     // message drawn again after a switch back) lands in a task before the frame that settles it,

@@ -15,7 +15,9 @@
 //     ends later;
 //   - a lazy image above it that the jump brings into view and that finishes loading mid-hold (a
 //     path attachment opened beforehand, its response held back) doesn't move it either, for 1.5 s
-//     after the load.
+//     after the load;
+//   - following: a jump that leaves the view within 80 px of the end follows what lands there once
+//     its hold is over; one that leaves it above the end doesn't.
 //
 // Writes a fixture session (odd-sized images, a table whose rows wrap far past their estimate, a
 // path attachment served over HTTP) into the hermetic agent dir and drives a hermetic server —
@@ -164,7 +166,8 @@ writeFileSync(attachment, png(700, 420));
     push({ type: "message", id: `u${i}`, message: { role: "user", content, timestamp: 0 } });
     const paras = Array.from({ length: 1 + (i % 4) }, (_, k) => words(20 + ((i * 53 + k * 29) % 140), i + k)).join("\n\n");
     if (i === LAZY - 1) continue;
-    const reply = TABLES.has(i) ? table(i) : paras;
+    // The last reply is short, so a jump to the last input leaves the view at the end at 390 too.
+    const reply = TABLES.has(i) ? table(i) : i === TURNS - 1 ? "Done." : paras;
     push({
       type: "message",
       id: `a${i}`,
@@ -386,6 +389,43 @@ async function wheelTakesIt(viewport, entryId) {
   }
 }
 
+/**
+ * A jump, its hold over, then content landing at the end (a row growing below, as a streamed reply
+ * does): a jump that left the view within 80 px of the end follows it, with no Jump to Latest
+ * (§chat.transcript/turn-end-keeps-reader, "when a jump's own scroll lands there"); one that left
+ * it well above the end doesn't, and Jump to Latest shows.
+ */
+async function followsAfter(viewport, entryId, follows) {
+  const { ctx, page } = await open(viewport, ID);
+  try {
+    const now = () =>
+      page.evaluate(() => {
+        const t = document.getElementById("transcript");
+        return { gap: Math.round(t.scrollHeight - t.scrollTop - t.clientHeight), pill: !!t.parentElement.querySelector(".jump-latest[data-shown]") };
+      });
+    await page.evaluate((id) => document.querySelector(`li.timeline-row[data-input="${CSS.escape(id)}"] button.timeline-body`).click(), entryId);
+    await sleep(1500);
+    const landed = await now();
+    await page.evaluate(() => {
+      const d = document.createElement("div");
+      d.style.height = "300px";
+      [...document.querySelectorAll("#transcript .thread > .entry")].at(-1).append(d);
+    });
+    await sleep(500);
+    const after = await now();
+    console.log(`       ${viewport.width}: after the jump ${JSON.stringify(landed)}; after 300 px landed at the end ${JSON.stringify(after)}`);
+    if (follows) {
+      assert(landed.gap < 80, `precondition: the jump should leave the view within 80 px of the end; it is ${landed.gap} px`);
+      assert(after.gap < 80 && !after.pill, `a jump that left the view at the end should follow: ${JSON.stringify(after)}`);
+    } else {
+      assert(landed.gap >= 80, `precondition: the jump should leave the view above the end; it is ${landed.gap} px from it`);
+      assert(after.gap >= 290 && after.pill, `a jump above the end should not follow: ${JSON.stringify(after)}`);
+    }
+  } finally {
+    await ctx.close();
+  }
+}
+
 const DESKTOP = { width: 1440, height: 900 };
 const PHONE = { width: 390, height: 844 };
 
@@ -400,6 +440,8 @@ try {
     await check(`${w}: a built row far up, under a row drawn far taller than its estimate, lands in the middle at once and stays`, () => landsAndStays(vp, `u${FAR}`, { built: remote ? undefined : true, remote }));
     await check(`${w}: a row not built yet lands in the middle at once and stays, through the rows built above it after`, () => landsAndStays(vp, `u${UNBUILT}`, { built: remote ? undefined : false, remote }));
     await check(`${w}: the first row lands at the top of the view and stays`, () => landsAndStays(vp, "u0", { built: remote ? undefined : false, remote, atTop: true }));
+    await check(`${w}: a jump that leaves the view at the end follows what lands there, no Jump to Latest`, () => followsAfter(vp, `u${TURNS - 1}`, true));
+    await check(`${w}: a jump that leaves the view above the end doesn't follow; Jump to Latest shows`, () => followsAfter(vp, `u${NEAR}`, false));
     await check(`${w}: a lazy image above the row loading mid-hold doesn't move it`, () => landsAndStays(vp, `u${LAZY}`, { built: true, lazyMs: 450, openId: `u${LAZY - 1}` }));
   }
   await check("1440: the reader's wheel while the row is held moves the view, and the hold lets go", () => wheelTakesIt(DESKTOP, `u${FAR}`));

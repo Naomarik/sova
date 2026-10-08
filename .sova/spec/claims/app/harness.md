@@ -216,6 +216,7 @@ session file, builds pi's services and session with the extensions, tool lists a
 Sova decides (the flags by meaning: topic outline, remote target, the Claude Code provider,
 adversarial review, the link origin and its token; named in pi's words only there), resolves the
 model a message-less session opens on (its recorded model, else the saved default Sova passes), and
+likewise its effort, unless Sova asks one open to skip what the file records, as a new session would; and
 warms the Claude Code provider. Creating the one shared model runtime also applies the cached model
 levels and starts pi's built-in catalog refresh in the background (§app.model-levels/sova-boot).
 The chat (`server/chat-manager.ts`) keeps the policy: which special

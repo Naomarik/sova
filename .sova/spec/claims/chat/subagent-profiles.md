@@ -75,7 +75,8 @@ edited, renamed or deleted. It configures nothing, so the agent picks every mode
 - **Per chat.** A chat's pick is its own, stored in the session as a hidden custom entry,
   `subagent-profile` `{v: 1, profile}` (a profile id or `"off"`); the newest on the branch wins.
   It is a sibling of the `mode` entry, never part of it. Sova writes it (the mode menu, the
-  Overseer, the limit row), and so does `/mode subagents <id|off>` in a terminal. No other chat
+  Overseer, the limit row, and a session profile pick that sets `subagents` or switches back from
+  one, §chat.profiles/applying), and so does `/mode subagents <id|off>` in a terminal. No other chat
   moves.
 - **The default.** A chat with no pick follows this device's default file, read again each time, so a
   new default reaches it too. It moves only when the user asks: the mode menu's save-as-default

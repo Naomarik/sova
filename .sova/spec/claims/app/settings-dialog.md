@@ -402,7 +402,9 @@ offers Retry and the built-in themes list anyway — the app's own themes don't 
 The tab after Subagents: every profile a session in the open session's folder can use
 (§chat.profiles/projects), read-only. It opens with one line: "Profiles are files. Ask an agent to
 add or change one, or edit {path}." `{path}` is the project's `.sova/profiles/` folder (else your
-`session-profiles.json`), and a **File Format** link opens `docs/profiles.md`.
+`session-profiles.json`), and a **File Format** link opens `docs/profiles.md`. Nothing here
+writes a profile; the one profile Sova writes is a new one of yours, from Save Current As Profile on
+a new session's screen (§chat.profiles/picker), and it is listed under Yours like any other.
 
 - **The list**, in the picker's groups: **Built in** (Default first), **This project ({name})** and
   **Yours**. Each row has the profile's icon and label, its source badge, its summary line of what it

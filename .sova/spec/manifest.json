@@ -229,7 +229,8 @@
       "evidence": "verified",
       "code": [
         "src/lib/recent.ts",
-        "src/lib/recent.test.ts"
+        "src/lib/recent.test.ts",
+        "src/lib/profile-cards.test.ts"
       ]
     },
     "§app.session-list/regions-top-and-archive": {
@@ -1808,7 +1809,13 @@
     "§chat.transcript/setup-card": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified"
+      "evidence": "verified",
+      "code": [
+        "src/components/SessionSetup.tsx",
+        "src/lib/setup-fold.ts",
+        "src/app.css",
+        "src/lib/profile-cards.test.ts"
+      ]
     },
     "§chat.transcript/setup-card-context": {
       "kind": "behavior",
@@ -9913,7 +9920,8 @@
         "src/lib/profile-start.ts",
         "src/components/Sidebar.tsx",
         "src/App.tsx",
-        "src/app.css"
+        "src/app.css",
+        "src/lib/profile-cards.test.ts"
       ],
       "requires": [
         "§chat.profiles/model",
@@ -9964,10 +9972,12 @@
         "server/chat-manager.ts",
         "server/index.ts",
         "server/app.ts",
-        "server/session-profiles-runtime.test.ts"
+        "server/session-profiles-runtime.test.ts",
+        "server/session-profile-cards.test.ts"
       ],
       "requires": [
-        "§chat.profiles/model"
+        "§chat.profiles/model",
+        "§chat.subagent-profiles/resolution"
       ]
     },
     "§chat.profiles/delivery": {
@@ -10043,7 +10053,12 @@
         "src/lib/change-rows.ts",
         "src/lib/api.ts",
         "src/app.css",
-        "src/components/ProfilePlaybookCard.tsx"
+        "src/components/ProfilePlaybookCard.tsx",
+        "src/components/ProfileGrid.tsx",
+        "server/session-profile-routes.ts",
+        "server/profiles-store.ts",
+        "src/lib/profile-cards.test.ts",
+        "server/session-profile-cards.test.ts"
       ],
       "requires": [
         "§chat.profiles/model",
@@ -10228,7 +10243,8 @@
         "server/profiles-store.ts",
         "server/playbooks.ts",
         "server/session-profiles.test.ts",
-        ".sova/profiles/merge-captain.json"
+        ".sova/profiles/merge-captain.json",
+        "server/session-profile-cards.test.ts"
       ],
       "requires": [
         "§chat.profiles/model"

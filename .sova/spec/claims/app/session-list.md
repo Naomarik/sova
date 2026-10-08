@@ -690,7 +690,7 @@ label a person reads says "sessions pane".
 
 Under Groups (§app.session-list/groups), above Live & web: the sessions that run with a profile
 (§chat/profiles), grouped by profile. It is a **shortcut, not a place**: every row also keeps its
-place in Live & web (and Groups), but a profile session is never a Recent row
+place in Live & web (and Groups), but a session it lists is never a Recent row
 (§app.session-list/recent).
 
 ```html
@@ -710,7 +710,11 @@ place in Live & web (and Groups), but a profile session is never a Recent row
 </details>
 ```
 
-- **Rows**: every non-archived session on this host whose `SessionSummary.profile` is set, under
+- **Not a capability-neutral profile.** A profile that only sets model, effort, subagents or mode
+  (`SessionSummary.profile.neutral`, §chat.profiles/model) is not a shelf profile: its sessions get
+  no rows here and it gets no sub-group or slot. They keep the head chip, the info row and the list
+  badge (§chat.profiles/after-first-message).
+- **Rows**: every non-archived session on this host whose `SessionSummary.profile` is set and not neutral, under
   its profile's sub-head, newest started first. Sub-groups are keyed by the profile's identity
   (§chat.profiles/projects), so the same id from two projects is two sub-groups; a custom pick is
   grouped by its label. A sub-head carries the profile's icon and label, a project profile's
@@ -844,7 +848,8 @@ mark, menu and accessible name.
 that saves four.
 - **Who is eligible.** An ordinary session (§app.session-list/ordinary-surfaces: never an Overseer file
 or an organization session, in any state — live, busy, unread or just replied), not archived
-(`archived !== true`), and not a profile session (`SessionSummary.profile` set): Profiles lists those
+(`archived !== true`), and not a profile session (`SessionSummary.profile` set and not
+`neutral`; a capability-neutral profile's session is eligible, since the shelf leaves it out): Profiles lists those
 (§app.session-list/profile-shelf) — and deliberately **not** the pane rule
 `isTopSession`. A session you ran in a TUI last week and closed is exactly what this region is
 for, and the pane rule files that under the Archive. Archiving is the user saying "done with
@@ -1715,8 +1720,8 @@ for the same reason: something other than the operator runs them.
 - the global **Needs you** region (§app.session-list/needs-you) and its spine door;
 - **Recent** (§app.session-list/recent), the spine's tiles, and the overview's `Last active` / `Resume`
   (§chat.transcript/landing-page) — enforced in Recent's own eligibility rule, so every caller gets it;
-  these also leave out profile sessions (`SessionSummary.profile` set), which Profiles lists
-  (§app.session-list/profile-shelf);
+  these also leave out profile sessions (`SessionSummary.profile` set and not `neutral`), which
+  Profiles lists (§app.session-list/profile-shelf);
 - **Live & web** and the **Archive** with its date sections, their counts and their spine doors
   (§app.session-list/regions-top-and-archive), and the overview's `{live} live` count;
 - the **Archive cleanup**: its counts, its sweeps and its one-session list (§app.session-list/archive-cleanup;

@@ -637,7 +637,8 @@ runaway reply there is capped: it can't write a line too long to read back or to
     "Jump to Latest · N new". Clicking it scrolls to the end, resumes following, and removes the
     button. Only the view moving up stops following: content landing below a following view (a
     reply, a queued message drawn again after a switch back), or the browser moving the view down
-    to keep a row in place, never does, and the view goes back to the end.
+    to keep a row in place, never does, and the view goes back to the end. A new session's empty
+    state (§chat.transcript/states) opens at its top, doesn't follow, and never shows it.
   - It also appears, not following, when you switch back to a session left at the end that gained
     rows while you were away: the view stops at the last row read, and "N new" counts the rows
     below it (§chat.transcript/rendering).
@@ -668,8 +669,9 @@ runaway reply there is capped: it can't write a line too long to read back or to
   when the reader's own scroll (a wheel, a touch, a key, or a press on the transcript such as
   dragging its scrollbar or opening a disclosure) brings it within 80px of the end of the rows as
   they stood, when they wheel down while already there, when a jump's own scroll lands there
-  (§chat.timeline/jumping), when the view gets narrower or wider, or on Jump to Latest and on
-  sending a message. Rows drawn shorter for a moment (a turn's saved rows at their estimate) don't
+  (§chat.timeline/jumping), when the view gets narrower or wider, on Jump to Latest and on
+  sending a message, or when a new session's empty state, which opens at its top
+  (§chat.transcript/states), gives way to its first rendered row. Rows drawn shorter for a moment (a turn's saved rows at their estimate) don't
   bring the end closer; a lower end counts once it has stood 0.6 s. The view reaching the end any
   other way (the browser clamping it as rows below get shorter or leave) doesn't follow again: it
   stays where the browser put it, not following, with Jump to Latest showing, until one of those.
@@ -1046,7 +1048,7 @@ card). On a phone it is `#/overview`, under the list's head row (§app.shell/ove
 | No session selected (unfolded) | The landing page below, not a bare `.empty`: `.overview` fills `.app-main`: the title "Overview" in `.overview-head`, the Start section's action card (`New Session`), then the Sessions card, Mesh, the Extensions section and the Explained grid when there are any, and last the Organizations card. No composer |
 | Loading transcript (after 300ms) | Three placeholder messages in `.thread`: a right-aligned `.skeleton` 40% × 44px, then a left `.skeleton-title` plus 3 `.skeleton-line` at 92/78/60%, then a `.skeleton-row` at 60% width. Put `aria-busy="true"` on the `section`. The head renders straight away from the `SessionSummary` |
 | Error (a watched TUI session) | `.banner.banner-error` in `.transcript-inner`. Title: "Couldn't load this transcript." Body: "The file at `{path}` wasn't changed. {server message}." Action: `Retry`. A chat the server refuses to open shows §app.shell's open-failure banner instead |
-| Empty (new session) | `.empty` with no icon: the title "New session in `~/webapps/sova`.", then, in an ordinary session, the Profile select and what it changes (§chat.profiles/picker), then the setup card (§chat.transcript/setup-card), then the footnote `.empty-body` "Your first message becomes its title.", then, for a local folder in a git repository with linked worktrees, the worktrees line and its `Clean Up Merged` button (§chat.transcript/empty-worktrees). The composer has focus. Show it only while the thread, holding every row of the branch (a list this short sits at the top, so its older rows, if any, are fetched at once), has no **rendered row**: model, thinking and mode change rows, the profile entry and a Claude login note (§app.claude-logins/switch-login) draw nothing and don't count (the login note is drawn where it sits once a message is on the branch), while local rows such as "Ran `/cmd`" (§chat/slash-commands) still do. Once any rendered row exists, the thread renders normally with no empty state |
+| Empty (new session) | `.empty` with no icon: the title "New session in `~/webapps/sova`.", then, in an ordinary session, the profile cards and what the picked profile changes (§chat.profiles/picker), then the setup card (§chat.transcript/setup-card), then the footnote `.empty-body` "Your first message becomes its title.", then, for a local folder in a git repository with linked worktrees, the worktrees line and its `Clean Up Merged` button (§chat.transcript/empty-worktrees). The composer has focus. Show it only while the thread, holding every row of the branch (a list this short sits at the top, so its older rows, if any, are fetched at once), has no **rendered row**: model, thinking and mode change rows, the profile entry and a Claude login note (§app.claude-logins/switch-login) draw nothing and don't count (the login note is drawn where it sits once a message is on the branch), while local rows such as "Ran `/cmd`" (§chat/slash-commands) still do. Once any rendered row exists, the thread renders normally with no empty state. It opens at its top (the title, then the profile cards), not at its end, and doesn't follow the end; the first rendered row puts the view back to following. Jump to Latest never shows over it: scrolling the empty state (the cards, the setup card) has no latest to jump to |
 | Agent/server error (`type:"error"`, not busy) | `.banner.banner-error` placed as the last item of the thread (in flow, so it stays in the record). Title: "The turn stopped with an error." Body: "{message}. Your messages are kept. Send again to retry." |
 
 ## §chat.transcript/setup-card — Setup card
@@ -1060,16 +1062,18 @@ main-pane rows.
 ```html
 <div class="empty">
   <p class="empty-title">New session in <code>~/webapps/sova</code>.</p>
+  <section class="profile-picker" aria-label="Profile">…the profile cards (§chat.profiles/picker)…</section>
   <section class="setup-card" aria-label="Session setup">
-    <!-- the loadout: these three groups, or one line in their place -->
-    <div class="setup-group">                          <!-- omitted when it adds up to 0 B · 0 lines -->
-      <p class="setup-sum" title="Everything pi loads into the prompt, plus the skills it offers.">
-        <span class="setup-sum-label">System context</span>
-        <span class="setup-sum-facts">40 KB · 687 lines · ≈10.2k tokens</span>
-      </p>
-    </div>
-    <div class="setup-group">…Context (/setup-card-context)…</div>
-    <div class="setup-group">…Skills (/setup-card-skills)…</div>
+    <details class="setup-context">                    <!-- closed by default -->
+      <summary class="setup-group setup-sum" title="Everything pi loads into the prompt, plus the skills it offers.">
+        …chevron… <span class="setup-sum-label">System context</span>
+        <span class="setup-sum-facts">40 KB · 687 lines · ≈10.2k tokens</span>  <!-- omitted at 0 B · 0 lines -->
+      </summary>
+      <!-- the loadout: these two groups, or one line in their place; then the Tools group -->
+      <div class="setup-group">…Context (/setup-card-context)…</div>
+      <div class="setup-group">…Skills (/setup-card-skills)…</div>
+      <div class="setup-group">…Tools…</div>
+    </details>
     <div class="setup-group">
       <h2 class="text-eyebrow setup-label">Repository</h2>
       …(/setup-card-repository)…
@@ -1081,9 +1085,16 @@ main-pane rows.
 
 - **When it shows.** Only inside that empty state, so only while the thread has zero rows, local
   rows included. The first row takes the empty state away, and the card with it.
-- **The profile comes first.** In an ordinary session the empty state's Profile select and what it
-  changes (§chat.profiles/picker) sit between the title and this card; the card itself is unchanged.
-  The `sova-profile` entry draws no row, so picking a profile keeps the empty state.
+- **The profile comes first.** In an ordinary session the empty state's profile cards and what the
+  picked profile changes (§chat.profiles/picker) sit between the title and this card. The
+  `sova-profile` entry draws no row, so picking a profile keeps the empty state.
+- **System context is folded.** Everything on the card but Repository, that is the loadout (the
+  `System context` line, Context and Skills, or the one line in their place) and the Tools group,
+  sits in one `<details class="setup-context">`, closed by default. Its `<summary>` is the
+  `System context` line with a chevron, and reads just "System context" when there is no sum to
+  show. Repository stays outside it, always shown. Opening or closing it is kept for that session
+  while the page is open, so the redraw after a profile pick or a switch flip (the runtime reopens)
+  keeps it as it was; nothing is saved, so a reload of the page shows it closed again.
 - **It lands whole.** It asks two things at once, the loadout (`GET /api/sessions/context`) and
   the repository (`GET /api/sessions/git`), and draws nothing until both have answered, whether
   each answered with data or with a failure. There is no skeleton and no placeholder: the card
@@ -1108,8 +1119,8 @@ main-pane rows.
   /setup-card-toggles, is listed but not counted), which is exactly what the two groups under it
   total, so it is the sum of their two totals. Its `title` is the one sentence saying so:
   "Everything pi loads into the prompt, plus the skills it offers." It carries no heading, because
-  it is a line and not a section. It is left out when it would read `0 B · 0 lines`, that is when
-  there are no files, only empty ones, or every row is off. It is not what the prompt costs before the first
+  it is a line and not a section. Its figures are left out when they would read `0 B · 0 lines`,
+  that is when there are no files, only empty ones, or every row is off. It is not what the prompt costs before the first
   message: it counts each offered skill's SKILL.md whole, and a skill loads only when it is used
   (/setup-card-skills). The title's "plus the skills it offers" is what says so.
 - **One line in place of Context and Skills.** A `.setup-note` in its own group, with no

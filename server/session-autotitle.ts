@@ -22,14 +22,20 @@ import { claudeCliId } from "../pi-config/extensions/claude-code/catalog.ts";
 // of that one session). All go through `nameSession` below.
 
 /**
- * The title rules, and the whole system prompt: no Sova or agent prompt goes with them. Judged
- * against hand-written ideal titles for 55 real sessions on deepseek-v4.1-flash: the subject the
- * whole session is about, never the summary line again, releases told apart by what landed.
+ * The title rules, and the whole system prompt: no Sova or agent prompt goes with them. The
+ * original rules were tuned against hand-written ideal titles for 55 real sessions on
+ * deepseek-v4.1-flash: the subject the whole session is about, releases told apart by what landed.
+ * Their "never reuse the summary line's wording" rule once turned a new side-issue bullet into a
+ * title. Rules that only allowed sharing the subject named it more accurately but let titles
+ * collapse into the summary line shortened or reordered. So the principal subject comes from the
+ * topic headings, the overall purpose and the opening request, bullets only sharpen it, and the
+ * title may share the summary line's subject phrase but adds one concrete detail about that
+ * subject when the inputs hold one: a positive ask, not an overlap ban.
  */
 export const TITLE_SYSTEM_PROMPT = `You name a coding-agent chat session for a narrow sidebar list. Reply with one JSON object only: {"title": "..."}
 Each row shows the title, then the session's summary line under it. The title is the label the user scans and searches for; the summary line already explains it.
-- Name the subject the whole session is about: the thing built, fixed or decided. The first message usually names it in the user's words; topics show where it went. Later topics are often follow-ups: don't title a late side topic or a single step.
-- Add what the summary line lacks. Never reuse its wording or its first words. Use the user's own name for the thing, or the concrete cause, mechanism, model or round.
+- Name the subject the whole session is about: the thing built, fixed or decided. The topic headings, the summary line's overall purpose and the first message name it, in the user's words. Topic bullets are secondary recent details: they may sharpen the subject, never replace it. Don't title a late side topic or a single step. If the session truly moved on to a new main goal, name that goal rather than the opening request.
+- Add what the summary line lacks: one concrete detail about that main subject, from the topic headings or the first message: the user's own name for the thing, or the concrete cause, mechanism, model or round. Sharing the summary line's subject words or phrase is fine, but when such a detail is there, never make the title just the summary line shortened, reordered or reworded. An accurate subject still comes first: never take the detail from a late bullet or side issue, and when there is no relevant detail to add, name the recognizable subject rather than inventing one.
 - A subject, never a status: no merged, shipped, landed, done, restart; no counts or commit ids.
 - Merges, releases, pushes: name the first one or two branches or features that landed (from the first message or topics). Never only "branches", "merge", "release", "push", "fast-forward" or "restart".
 - A rerun, round or repeat of earlier work: say which one (round 2, the model it ran on).
@@ -38,12 +44,30 @@ Each row shows the title, then the session's summary line under it. The title is
 Examples (summary line → title):
 "Merging two branches into master, then a restart" → "Push badges and voice merge"
 "Fixing usage monitor percentages" → "Claude meter stuck at 100%"
-"Scroll position lost when switching sessions" → "Queued-message scroll jump"`;
+"Fixing the settings dialog in dark mode" → "Settings dialog contrast bug"`;
 
 /** The sidebar's title line holds about 32 characters; a title is a label that fits it. */
 export const TITLE_MAX_CHARS = SESSION_TITLE_LABEL_MAX;
 export const TITLE_WORDS = { min: 2, max: 5 } as const;
+/**
+ * Despite its name, now only the second and third user messages (the no-summary-line form) are
+ * cut to this many characters; the first goes through firstRequestExcerpt.
+ */
 export const FIRST_MESSAGE_MAX = 600;
+/**
+ * The first user message goes in whole up to this many characters (UTF-16 code units). A longer
+ * one is excerpted: its opening often states the setting and its goal comes later, so a plain
+ * head cut once dropped the very goal the title should name.
+ */
+export const FIRST_REQUEST_WHOLE_MAX = 2000;
+/** An excerpted first message keeps at most this much of its start … */
+export const FIRST_REQUEST_HEAD_MAX = 1500;
+/** … and at most this much of its end, */
+export const FIRST_REQUEST_TAIL_MAX = 500;
+/** … with this between them. */
+export const FIRST_REQUEST_GAP = " […] ";
+/** How far a cut may move inward to land on a word boundary; past it the cut stays where it was. */
+export const WORD_BOUNDARY_REACH = 40;
 export const MAX_BULLETS = 2;
 export const CLAUDE_TITLE_BUDGET_USD = 0.05;
 
@@ -61,6 +85,44 @@ export interface TitleInput {
 
 const oneLine = (s: string) => s.replace(/\s+/g, " ").trim();
 const cut = (s: string, max: number) => (s.length > max ? `${s.slice(0, max - 1)}…` : s);
+
+const isSpace = (s: string, i: number) => /\s/.test(s[i] ?? "");
+const isHighSurrogate = (code: number) => code >= 0xd800 && code <= 0xdbff;
+const isLowSurrogate = (code: number) => code >= 0xdc00 && code <= 0xdfff;
+
+/**
+ * The first user message as the title call sees it: whole when it is at most
+ * FIRST_REQUEST_WHOLE_MAX characters; otherwise at most its first FIRST_REQUEST_HEAD_MAX, then
+ * FIRST_REQUEST_GAP, then at most its last FIRST_REQUEST_TAIL_MAX. Each cut moves inward only
+ * (the head ends earlier, the tail starts later) to a whitespace boundary at most
+ * WORD_BOUNDARY_REACH characters away, and never splits a surrogate pair. Pure.
+ */
+export function firstRequestExcerpt(text: string): string {
+  if (text.length <= FIRST_REQUEST_WHOLE_MAX) return text;
+  // The head: [0, end). Step back off a high surrogate, then back to the nearest space; the reach
+  // counts from the plain cut, so the two steps together move it at most WORD_BOUNDARY_REACH.
+  const headCut = FIRST_REQUEST_HEAD_MAX;
+  let end = headCut;
+  if (isHighSurrogate(text.charCodeAt(end - 1))) end--;
+  for (let i = end; i >= headCut - WORD_BOUNDARY_REACH && i > 0; i--) {
+    if (isSpace(text, i)) {
+      end = i;
+      break;
+    }
+  }
+  // The tail: [start, length). Step forward off a low surrogate, then on past the nearest space,
+  // again at most WORD_BOUNDARY_REACH from the plain cut in all.
+  const tailCut = text.length - FIRST_REQUEST_TAIL_MAX;
+  let start = tailCut;
+  if (isLowSurrogate(text.charCodeAt(start))) start++;
+  for (let j = start - 1; j < tailCut + WORD_BOUNDARY_REACH && j < text.length - 1; j++) {
+    if (isSpace(text, j)) {
+      start = j + 1;
+      break;
+    }
+  }
+  return `${text.slice(0, end).trimEnd()}${FIRST_REQUEST_GAP}${text.slice(start).trimStart()}`;
+}
 
 const userText = (h: HEntry): string => firstText(h) ?? "";
 
@@ -115,25 +177,27 @@ export async function readTitleInput(path: string): Promise<TitleInput> {
 
 /**
  * The user message of the title call. With a summary line: the summary line, labelled as what the
- * row already shows (so the title won't repeat it), the topics in order with their first bullets,
- * then the first message (≤600 characters). Without one: the first 3 user messages. Pure; its
- * argument has no field for the current title, so none can reach the model.
+ * row already shows (not to be copied whole, though its subject may be shared), the topics in
+ * order (headings are the subjects, their first bullets secondary recent details), then the first
+ * message as the opening intent (firstRequestExcerpt). Without one: the first 3 user messages, the
+ * first as the same excerpt, the others ≤600 characters. Pure; its argument has no field for the
+ * current title, so none can reach the model.
  */
 export function buildTitlePrompt(input: TitleInput): string {
   if (input.summaryLine) {
-    const lines = ["SUMMARY LINE (already shown under the title; do not repeat it):", input.summaryLine];
+    const lines = ["SUMMARY LINE (already shown under the title; don't just copy it, though the title may share its subject):", input.summaryLine];
     if (input.topics.length) {
-      lines.push("", "TOPICS (in order):");
+      lines.push("", "TOPICS (in order; each heading is a subject, its indented bullets are secondary recent details and may concern side issues):");
       for (const t of input.topics) {
         lines.push(`- ${t.heading}`);
         for (const b of t.bullets) lines.push(`  - ${b}`);
       }
     }
-    lines.push("", "FIRST MESSAGE (what the user came for; the session may have moved on):", cut(input.userMessages[0] ?? "", FIRST_MESSAGE_MAX));
+    lines.push("", "FIRST MESSAGE (the user's opening intent; the session may have moved on to a new main goal):", firstRequestExcerpt(input.userMessages[0] ?? ""));
     return lines.join("\n");
   }
   const lines = ["FIRST MESSAGES:"];
-  input.userMessages.slice(0, 3).forEach((m, i) => lines.push(`${i + 1}. ${cut(m, FIRST_MESSAGE_MAX)}`));
+  input.userMessages.slice(0, 3).forEach((m, i) => lines.push(`${i + 1}. ${i === 0 ? firstRequestExcerpt(m) : cut(m, FIRST_MESSAGE_MAX)}`));
   return lines.join("\n");
 }
 

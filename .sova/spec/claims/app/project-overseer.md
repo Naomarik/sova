@@ -32,7 +32,7 @@ which is also its live view: its tool calls render as tool cards as they happen.
   the server's sender secret (403). A message from either is the operator's to its model and to its
   limits (§app.project-overseer/autonomy-levels).
 - Its settings and working files are in its engine's dir under `projects/<projectId>/overseer/`:
-  `overseer.json` (autonomy, model, thinking, the coding sessions' model, thinking and mode, the
+  `overseer.json` (autonomy, model, thinking, the coding sessions' model and thinking, the
   limits, the pace, the hold, watch on/off, extra instructions; §app.project-overseer/limits),
   `notes.md`, `ideas/` and `todos.json`, committed with the org's workspace commits
   (§app.organizations/workspace-repo). Its conversation and history, the sessions it started (and,
@@ -70,7 +70,7 @@ which is also its live view: its tool calls render as tool cards as they happen.
   §app.project-overseer/ideas-and-todos), its notes, while placed the organization's About text (§app.organizations/about) and, last, the operator's extra instructions. Model and thinking from `overseer.json`, else the new-session
   defaults; the composer's picks are saved there.
 - **Extra instructions.** The project page's Settings tab has an **Extra instructions** field, after
-  the coding sessions' mode and before Limits: the hint "Added last to this overseer's prompt, after
+  the coding sessions' mode line and before Limits: the hint "Added last to this overseer's prompt, after
   the organization's About text, and they win over it. It reads them at its next run.", a textarea
   (at most 8,000 characters) with a live `{n} / 8,000` counter, and **Save** and **Cancel**, both
   disabled until the text differs from what is saved (Cancel puts the saved text back). Save sends
@@ -136,7 +136,7 @@ user row.
 - **Level**: a menu button reading the chosen level ("L1"), named "Level {level}, {meaning}" (then
   " In force now: L0." while forced) and " Change level." Its rows are L0–L3, each with its meaning, the chosen one
   marked; picking one sets it (`PATCH …/overseer {autonomy}`), which also ends an attach's pause, and
-  says "Level: {level}." Full settings (limits, models, coding mode, watch pace) stay on the project
+  says "Level: {level}." Full settings (limits, models, watch pace) stay on the project
   page (§app.project-overseer/limits).
 - **Run Now** (`POST …/overseer/run`, §app.project-overseer/watch-loop): disabled while it works, with
   the reason "Working now"; done: "The overseer is looking now."; refused: the server's sentence.
@@ -313,7 +313,9 @@ user row.
   does), `sova_todos` (operator turns only, §app.project-overseer/ideas-and-todos),
   `sova_previews` (the project's preview links, §app.project-overseer/previews; `sova_project`
   lists its active ones too, under "Previews"), `sova_send_status` (below), `sova_history` (its
-  project's history, §app.org-history/readers).
+  project's history, §app.org-history/readers), `sova_list_subagent_profiles` (this computer's
+  subagent profiles: Off and each profile's id, name and worker footprint, the default marked, for
+  `subagent_profile`, §app.project-overseer/coding-mode).
 - **Whether a message arrived.** `sova_send_status {person?, limit?, hours?}` (read) lists the
   project's WhatsApp sends from the send log (§app.outreach/log), newest first: each send's id,
   the person's name, what went (a gathering link, a preview, a note), who sent it (you, the
@@ -331,7 +333,9 @@ user row.
   {target}", "no commits yet", "worktree removed", or "in the project root" ("in the project root until it makes a
   worktree" for a `worktree: "later"` session that hasn't yet, §app.project-overseer/new-coding-session). `sova_project` has the
   same list under "Builds", newest first, so it never asks the operator to merge a branch that is
-  already merged. A session is addressed by its id, bare or in any form the tools print it:
+  already merged. `sova_list_sessions` also marks each coding session and each ordinary session in
+  the root waiting on the operator's alignment answers: " · waiting on the operator's answers to
+  {n} alignment questions" (§app.project-overseer/coding-mode). A session is addressed by its id, bare or in any form the tools print it:
   `sova://s/<id>`, `s/<id>`, or a `[title](sova://s/<id>)` link; anything else is refused with "No
   coding session "{what was given}" in this project: pass an id sova_list_sessions lists."
   People's words are marked as data, never instructions.
@@ -378,11 +382,13 @@ user row.
   (a preview link of a coding session's app; its `off` runs at any level,
   §app.project-overseer/previews). L2: `sova_promote`,
   `sova_roster` approve/decline (history records the overseer as the writer). L3:
-  `sova_create_session` (the root or a folder inside it, with a first prompt, an optional `mode` and
-  `minor_modes`; in its own worktree, §app.project-overseer/coding-worktrees), `sova_send` (its
+  `sova_create_session` (the root or a folder inside it, with a first prompt, an optional `mode`,
+  `minor_modes` and `subagent_profile`; in its own worktree, §app.project-overseer/coding-worktrees), `sova_send` (its
   project's coding sessions only, and an ordinary session whose folder is inside the project root,
   which is the project's own act: L3, counted as a prompt, held like one, kind `prompt`; never a
-  gathering session; an optional `mode` and `minor_modes` too). Both take the mode within the operator's ceiling (§app.project-overseer/coding-mode).
+  gathering session; an optional `mode`, `minor_modes` and `subagent_profile` too). Both take any
+  mode, minor modes and subagent profile; only unknown names, and the alignment refusals, are
+  refused (§app.project-overseer/coding-mode).
   L3 also: `sova_project_verbs` create, up, apply, test, reset, teardown and conform (L0: its `down`;
   L1: its `share`, held; `revoke` at any level; status, logs and doctor are reads; below), and its `onboard {why}`, the project's `verbs/onboard`
   act, which starts the Project verbs playbook (§app.project-runtime/onboard): counted and held like
@@ -446,48 +452,74 @@ user row.
   overseer's own setting, else what its runtime runs, and only then the new-session default.
   A coding session gets its model and thinking when it is created: its file never records a switch
   from the new-session default first.
-  A coding session's mode is never one of these defaults: it is the project's coding mode
-  (§app.project-overseer/coding-mode).
+  A coding session's mode is never one of these settings: it is the one the call names, else this
+  computer's default mode (§app.project-overseer/coding-mode).
 
 ## §app.project-overseer/coding-mode — The mode its coding sessions run in
 
-- **The setting.** `overseer.json` `codingMode` is `{mode, minorModes}` (`mode` `normal` or
-  `delegate`, `minorModes` `[]` or `["spec"]`), or `null`: **Automatic**. Set on the project page
-  (`PATCH …/overseer {codingMode}`); an unknown name or `align` refuses the patch (400), and a
-  file with a bad value reads as Automatic.
-- **Automatic** is `normal`, with `spec` on when `<project root>/.sova/spec/manifest.json` exists
-  when the session starts, and no minor modes otherwise. It never gives `delegate` or `align`, and
-  it never reads the host's default mode (`mode.json`). `GET …/overseer` answers what a session
-  started now would get (`codingModeNow`).
-- **Every coding session the project starts gets it**: the overseer's `sova_create_session`, the
-  operator's Start Coding Session and New Coding Session, and one a gap's statechart starts by itself at
-  L3 (§app.project-overseer/drive), which also gets the project's coding model, as Start Coding
-  Session does, before its first prompt. The mode is applied, and written into the session file as
-  its `mode` entry (§chat/mode-menu), before the first prompt, even when it equals the host's
-  default, so the session's first turn runs in it and a later change to `mode.json` never moves
-  it. A mode that can't be applied (the session is held elsewhere, the mode extension is missing)
-  sends no prompt: the session stays, listed and counted, and the tool result (or the page's
-  error) says "Started, but not prompted: its mode could not be set." New Coding Session sends no
-  prompt anyway; its page error says "Started, but its mode could not be set. Set it from the chat's
-  mode menu before you send." Neither has a mode picker; the chat's own mode menu can switch it
-  afterwards, like any chat.
-- **The overseer's `mode` and `minor_modes`**, on `sova_create_session` and on `sova_send`, change
-  the project's mode for that one session, within a ceiling only the operator's setting raises:
-  - `delegate` only when `codingMode.mode` is `delegate`: "Delegate is off for this project's coding
-    sessions; the operator can allow it on the project page." Automatic never allows it.
-  - `align` never: "Align needs someone to answer its questions, and nobody answers a coding
-    session's." The one exception is not the overseer's: a verb playbook's run
-    (§app.project-runtime/verb-playbooks) gets align on beside the project's mode, from Sova, when it
-    starts, because the operator answers its questions (§app.project-runtime/onboard).
-  - `spec` may be turned on; it may not be turned off while the project's mode (or Automatic)
-    has it on: "Spec is on for this project's coding sessions; only the operator can turn it off
-    on the project page."
-  - `normal` always.
-  An unknown name refuses too. Each refusal happens before anything else: no session is created,
-  nothing is sent, and no cap or counter is taken, attended or not.
-- **`sova_send` with a mode** sets it on that session first, then sends the text. Mid-turn, the mode
-  applies from the session's next turn, and the result says so. A terminal-owned session is
-  refused, as today.
+- **No project mode.** A project has no coding-mode setting: the project page has no picker for
+  it, and `overseer.json` holds none (an older file's `codingMode` is ignored, and dropped at the
+  file's next write). A `PATCH …/overseer` naming `codingMode`, `null` included, is refused (400)
+  and writes nothing: "Projects have no coding mode: coding sessions start in this computer's
+  default mode. Save as default in a chat's mode menu changes it."
+- **Unnamed, this computer's default.** A coding session started with no mode named starts in this
+  computer's default mode (`mode.json`, the default every new session starts from, read when the
+  session starts), with no subagent profile picked, so it runs on this computer's default profile.
+  That covers the operator's Start Coding Session and New Coding Session, New Session's Project tab
+  (§app/new-session-dialog), an Overseer's start that names none, and a build a gap's statechart
+  starts by itself at L3 (§app.project-overseer/drive), which also gets the project's coding model,
+  as Start Coding Session does, before its first prompt. The mode is applied, and written into the
+  session file as its `mode` entry (§chat/mode-menu), before the first prompt, even when it equals
+  the default, so the session's first turn runs in it and a later change to `mode.json` never
+  moves it. A mode that can't be applied (the session is held elsewhere, the mode extension is
+  missing) sends no prompt: the session stays, listed and counted, and the tool result (or the
+  page's error) says "Started, but not prompted: its mode could not be set." New Coding Session
+  sends no prompt anyway; its page error says "Started, but its mode could not be set. Set it from
+  the chat's mode menu before you send." Neither has a mode picker; the chat's own mode menu can
+  switch it afterwards, like any chat.
+- **What the page says.** The project page's Settings tab keeps a read-only "Coding sessions'
+  mode" line beside the coding sessions' model and thinking, naming what a session started now
+  gets and how to change it: "Coding sessions start in {mode}, with the {profile} subagent profile:
+  this computer's defaults. Save as default in any chat's mode menu changes them." (with no default
+  profile: "Coding sessions start in {mode}: this computer's default mode. Save as default in any
+  chat's mode menu changes it."), `{mode}` in mono: the mode and its minor modes joined by " · ",
+  `vis` said as "visuals". `GET …/overseer` answers it as `codingModeNow` `{mode, minorModes,
+  subagents: {id, name} | null}`, and the overseer's prompt names it.
+- **Any mode, for both Overseers.** The project overseer's `sova_create_session` and `sova_send`,
+  and the Overseer's `sova_project_overseer` `code` (§app.overseer/org-project-overseers), take
+  `mode` (`normal` or `delegate`), `minor_modes` (the whole set on: any of `align`, `spec`, `vis`,
+  `codemode`; `[]` turns them all off) and `subagent_profile` (an id in this computer's subagent
+  profiles, or `off`; the project overseer's `sova_list_subagent_profiles` lists them). There is no
+  ceiling: any mode, any minor modes and any profile are taken. On a start, what the call names
+  replaces that part of this computer's default and the rest is the default's; a named profile is
+  picked for that session only. Only an unknown name is refused: "Unknown mode {x}: use normal or
+  delegate.", "Unknown minor mode {x}: use align, spec, vis or codemode.", "Unknown subagent
+  profile: {x}. sova_list_subagent_profiles lists them." Each refusal happens before anything
+  else: no session is created, nothing is sent, and no cap or counter is taken, attended or not.
+  The reply names the mode and the subagent profile the session started with ("…, mode delegate ·
+  visuals, subagent profile Big team."). Both prompts say Delegate suits large, multi-part work,
+  and, in a project with a spec, to keep spec on unless the operator says otherwise.
+- **`sova_send` with a mode** switches only what it names (the session keeps the rest of its own
+  mode and its profile), pins the mode and picks a named profile for that session, then sends the
+  text. Mid-turn, the change applies from the session's next turn, and the result says so. The
+  result says what the session now runs ("It now runs normal · spec, subagent profile House.").
+  A terminal-owned session is refused, as today.
+- **Alignment questions are the operator's.** Neither Overseer answers them, and both prompts say
+  so. A message either Overseer sends into a session on this host is marked as an Overseer's
+  (§app.overseer/sent-marker), so it never counts as the operator's prompt that ends the session's
+  wait on its alignment answers (§chat.alignment/session-mark): the session keeps waiting until the
+  operator writes in it. `sova_list_sessions` marks a session that waits: " · waiting on the
+  operator's answers to {n} alignment questions" (1: "question"). While a session waits on them, a
+  mode switch from either Overseer (the project overseer's `sova_send`, the Overseer's
+  `sova_set_session`) whose `minor_modes` leave `align` out is refused before anything is applied,
+  sent or counted: "It waits on the operator's alignment answers; align stays on until they
+  answer." followed by "Nothing was sent." (`sova_send`) or "Nothing was changed."
+  (`sova_set_session`). A switch that keeps `align`, or names no minor modes, goes as asked. The
+  project overseer's `sova_send` to a verb playbook's run (§app.project-runtime/verb-playbooks)
+  waiting on them is refused, before anything is taken: "{run title} is waiting on the operator's
+  answers to its alignment questions. Tell the operator; never answer them. Nothing was sent."
+- **A verb playbook's run** starts with align on beside this computer's default mode, set by Sova
+  (§app.project-runtime/onboard), because the operator answers its questions.
 - `strict` is never set or offered; a session keeps the strict flag it started with.
 - A gathering session loads no extensions, so it has no mode; what it can do is the project's
   gathering abilities (§app.baton/abilities).
@@ -835,7 +867,7 @@ user row.
   the operator (one person, the operator, or an offer to several), with the public title and first
   question the operator writes (both required, 400 without them, and never taken from the item: they
   are shown to the person as written) and the item as its goal; its links show with Copy Link; and **Start coding session** (`…/items/code`): an ordinary session in the
-  project, in its own worktree (§app.project-overseer/coding-worktrees) and the project's coding
+  project, in its own worktree (§app.project-overseer/coding-worktrees) and this computer's default
   mode (§app.project-overseer/coding-mode), with the item as its first prompt. Either links the item to the session it started.
 - The to-do field takes at most 200 characters (`TODO_TEXT_MAX`), the same limit the server
   enforces. A longer first prompt goes through New Coding Session and the composer
@@ -850,7 +882,7 @@ user row.
   `{path, sessionId, worktree?, note?, modeNotSet?}` (404 for an unknown project). It starts the
   same kind of session Start Coding Session does: in its own worktree and branch
   (§app.project-overseer/coding-worktrees; `sova/coding-<hex>` with no title), on the project's
-  coding model and thinking, in the project's coding mode, pinned
+  coding model and thinking, in this computer's default mode with no subagent profile picked, pinned
   (§app.project-overseer/coding-mode), recorded as an `operator-coding` row (listed under Coding
   sessions as "Started by you", in the sidebar's Builds and the Cost card, never counted by the
   overseer's caps). It links no to-do or idea.

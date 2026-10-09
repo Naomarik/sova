@@ -437,7 +437,8 @@ user's answers: each summary carries `align: {openDocs, openQuestions}` (open al
 active branch and their open questions) while an alignment is open, **align is on** (the newest
 `mode` entry on the branch), and **the session waits**: the newest align result that changed a
 document comes after the user's last prompt (a wake nudge, a partner's link message or a topic
-batch, §chat.topics/row, is not one).
+batch, §chat.topics/row, is not one, and neither is a message an Overseer sent, the one its
+`sova-overseer-sent` mark names, §app.overseer/sent-marker: alignment questions are the user's).
 Once the user has spoken again and the agent moved on without touching an alignment, or align is
 turned off (nothing could record an answer), the questions stay on the card and the chip but leave
 the row mark, Needs you and push; the next align result that changes a document brings them back.

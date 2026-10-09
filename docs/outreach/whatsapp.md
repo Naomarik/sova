@@ -59,15 +59,15 @@ Moving it to an always-on server later is [one move](#move-the-sender-to-another
    checkout>/services/whatsapp && pnpm install --frozen-lockfile`. Use the checkout Sova itself runs
    from, not a feature worktree that will be removed.
 2. **Check** with `sova-whatsapp check-config`: it should show the default paths, `problems: none`,
-   and `paired: yes` if this number was linked here before (then skip step 3) or `paired: no`.
-3. **Pair** once, if needed ([Pair](#4-pair)).
-4. **Start it.** For a first try, in a terminal: `sova-whatsapp run` (Ctrl-C stops it; the device
+   and `paired: yes` if this number was linked here before or `paired: no`.
+3. **Start it.** For a first try, in a terminal: `sova-whatsapp run` (Ctrl-C stops it; the device
    stays linked). To keep it running, [install the service](#5-run-it-as-a-service); on a desktop
    session `loginctl enable-linger` is optional. Only one may run: a second start refuses.
-5. **Check it:** in another terminal, `sova-whatsapp status` says `running: yes` and `state: open`.
-6. **Connect Sova:** Settings → Outreach → **Sender: This host**, **Socket** left empty, **Save
-   Changes**. The chip reads **Connected** ([Connect Sova](#6-connect-sova)).
-7. **Verify** with one real send ([Verify](#8-verify)).
+4. **Connect Sova:** Settings → Outreach → under **Sender**, pick **This host**, **Socket** left
+   empty, **Save Changes** ([Connect Sova](#6-connect-sova)).
+5. **Pair** once, if the chip reads **Not paired**: **Link a Phone** on the same page, and scan the
+   QR with the phone ([Pair](#4-pair)). The chip reads **Connected**.
+6. **Verify** with one real send ([Verify](#8-verify)).
 
 A laptop that sleeps loses the connection each time; after waking, the sender reconnects by itself
 30 seconds or more later, and each of those reconnects counts against the budget (3 an hour, 10 a
@@ -160,6 +160,25 @@ to start. It refuses when:
 Pairing links the sender to your phone. It happens once, on the sender's host: never pair a second
 copy anywhere else ([Move the sender](#move-the-sender-to-another-host) instead).
 
+**From Sova's Settings, on the sender's host.** Once the sender runs and Sova on the same host is
+connected to it ([Connect Sova](#6-connect-sova): **Sender** is **This host**), the chip reads **Not
+paired** and **Settings → Outreach** offers **Link a Phone**. Press it: a QR code appears on the
+page. On the phone: **WhatsApp → Settings → Linked devices → Link a Device**, and scan it. Each new
+code the sender issues replaces the last on the page; once the phone links, the page says
+**Linked: number ending …123**. If nobody scans in time it says "The QR code expired before the phone
+scanned it." with **Try Again**; **Cancel** stops a link in progress.
+
+No camera at hand? **Use a Pairing Code Instead**, type the phone's own number (country code first,
+digits only), and **Get Pairing Code**: type the 8-character code on the phone under **Linked
+devices → Link a Device → Link with phone number instead**.
+
+The page shows a QR only after you press **Link a Phone**, never on its own and never when the link
+is lost; only the sender's own host offers it (a host sending through a peer never does, and no peer
+can ask for it). The QR and the code are as good as the number's credentials: Sova keeps them in
+memory only while the link runs, and never logs, stores or relays them. Keep them off screen shares.
+
+**From a terminal, on the sender's host** (no Sova there, or over SSH):
+
 ```sh
 sova-whatsapp pair
 ```
@@ -227,11 +246,20 @@ its host's Sova, over the same authenticated peer listener public links use.
 1. The two hosts must be peers: each lists the other in its peers, as for any mesh feature.
 2. On the sender's host, in **Settings → Outreach**, under **Accept sends from**, choose **All
    peers** or tick the hosts that may send, and **Save Changes**.
-3. On the other host, in **Settings → Outreach**, choose **Via a peer** under **Sender**, pick the
-   sender's host as the **Peer**, and **Save Changes**. Its chip shows the sender's state as well.
+3. On the other host, in **Settings → Outreach**, pick the sender's host in the list under
+   **Sender**, and **Save Changes**. Its chip shows the sender's state as well.
 
-Pairing and unlinking happen only on the sender's host, with `sova-whatsapp`: no Sova, not even
-the sender host's own, can pair or unlink the number. All hosts share the one number's limits.
+Pairing and unlinking happen only on the sender's host: its own Settings → Outreach (**Link a
+Phone**, **Unlink This Number**) or `sova-whatsapp`. No other host can pair or unlink the number,
+and the relay refuses both. All hosts share the one number's limits.
+
+**Picking the sender.** Under **Sender**, Settings → Outreach lists every sender this host can use:
+**This host** (always listed; "No sender answers on this host." when none runs here), then each peer
+whose sender accepts this host, then **Off**. Each row shows the number's last 3 digits, its state,
+and its sends against the limits ("4 of 60 sent in 24 h, 1 of 20 this hour"). Pick one and **Save
+Changes**. A peer whose sender doesn't accept this host isn't listed until that host ticks yours
+under **Accept sends from**; **Check Again** reads the list again. The setting is stored as it
+always was (`outreach.json` `sender`), so a file from an earlier version keeps working.
 
 **From Settings → Outreach** the sender's state is live (read every 5 seconds while the tab is open),
 with why it stopped, when it tries again, its sends and automatic reconnects against their limits,
@@ -244,6 +272,8 @@ and these controls, each saying what it does under its button:
 - **Pause Sender** / **Resume Sender**, on the sender's host: pauses the sender itself, so every host's
   sends through it are refused until you resume it. **Pause all sending from this host** is the
   separate switch that stops only this host's sends.
+- **Link a Phone** and **Unlink This Number**, on the sender's host only ([Pair](#4-pair),
+  [Logged out](#logged-out)).
 - **Start Sender**, on the sender's host, while the sender doesn't answer and its `sova-whatsapp`
   user unit ([Run it as a service](#5-run-it-as-a-service)) serves the socket Sova uses and is
   stopped or failed: runs `systemctl --user start sova-whatsapp.service` once. Sova never restarts or
@@ -334,16 +364,16 @@ as your number, from anywhere, until you unlink the device on the phone.
 Every state the sender reports: `sova-whatsapp status` prints the state, why, and the next step;
 Settings → Outreach shows the chip, the why and the controls. `connecting`, and `down` with a next
 try, fix themselves; every other stop waits for you, across restarts. Every fix runs on the sender's
-host with `sova-whatsapp`, so a host without Sova's page (a headless gateway) needs nothing else; on
-a host with it, Settings → Outreach's **Reconnect Now**, **Resume Sender** and **Start Sender** do
-the same.
+host: on a host with Sova's page, Settings → Outreach's **Reconnect Now**, **Resume Sender**, **Start
+Sender**, **Link a Phone** and **Unlink This Number** do it; `sova-whatsapp` does the same from a
+terminal, so a host without Sova's page (a headless gateway) needs nothing else.
 
 | `status` | Settings chip | What it means | What to do |
 |---|---|---|---|
 | `open` | Connected | Connected; sends go. | Nothing. |
 | `connecting` | Connecting, or Reconnecting | Opening, or waiting to reconnect after a drop (`status` and Settings show the next try's time). | Wait. If it keeps coming back, check the host's network. |
-| `unpaired` | Not paired | No device linked (a new install, or after `unlink`). | [Pair](#4-pair). |
-| `linking` | Not paired | A pairing is waiting for the phone. | Scan the QR or type the code. |
+| `unpaired` | Not paired | No device linked (a new install, or after an unlink). | **Link a Phone**, or `sova-whatsapp pair` ([Pair](#4-pair)). |
+| `linking` | Linking | A pairing is waiting for the phone. | Scan the QR or type the code, or **Cancel**. |
 | `logged-out` | Logged out | The phone unlinked this device, or WhatsApp stopped accepting its credentials. | [Logged out](#logged-out) |
 | `replaced` | Replaced | Another copy opened the same credentials. | [Replaced](#replaced) |
 | `blocked` | Blocked | WhatsApp refused the account, or restricted it from new chats. Sending is paused. | [Blocked or restricted](#blocked-or-restricted) |
@@ -354,12 +384,19 @@ the same.
 ### Logged out
 
 The device was removed under Linked devices on the phone, or WhatsApp no longer accepts its
-credentials. The sender keeps the old credentials and does nothing on its own. To link again:
+credentials. The sender keeps the old credentials and does nothing on its own. To link again, on
+the sender's host's **Settings → Outreach**: **Unlink This Number**, type `UNLINK` to confirm
+(it logs the device out where it still can, and deletes its keys on this host), then **Link a
+Phone** ([Pair](#4-pair)). Or from a terminal:
 
 ```sh
 sova-whatsapp unlink --yes   # deletes the dead credentials
 sova-whatsapp pair
 ```
+
+**Unlink This Number** is also how you retire a number on purpose: sending from it stops until a
+phone is linked again, and the chats on the phone stay. The page then says whether the phone was
+told; if not ("Also remove this device on the phone"), remove it under Linked devices yourself.
 
 ### Replaced
 
@@ -455,6 +492,12 @@ unknown to WhatsApp, `SOVA_WA_FAKE_RECEIPTS` sets the receipts (`delivered,read`
 `none`), and `ctl` also takes `ack-error 463` (the next send is failed by WhatsApp), `send-throw` and
 `open-fail [n]` (the next `n` connection attempts can't be opened). `SOVA_WA_FAKE_TIME_SCALE=<n>`
 runs its clock `n` times faster, so with `SOVA_WA_RECONNECT_BUDGET=1/10` and a scale of 60 a spent
-budget's hour-long wait takes a minute.
+budget's hour-long wait takes a minute (the 3-minute link limit shrinks with it, so drive linking
+unscaled).
+
+Linking on the fake: **Link a Phone** (or `pair`) gets a new fake QR every `SOVA_WA_FAKE_QR_MS`
+(3000), 5 in all, then the link expires as WhatsApp's does; `ctl scan` is the phone scanning the QR
+or typing the pairing code (always `FAKE1234`), and the link succeeds. **Unlink This Number** then
+returns it to unpaired.
 The protocol is [services/whatsapp/IPC.md](../../services/whatsapp/IPC.md); the sender's own tests
 run with `pnpm test` in `services/whatsapp`.

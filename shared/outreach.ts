@@ -21,6 +21,15 @@
  * POST /api/outreach/sender/pause        { on: boolean } -> OutreachInfo | 409 { error } (local sender only)
  * POST /api/outreach/sender/start        {} -> OutreachInfo | 409 { error } (local, its systemd unit inactive)
  *
+ * Linking a phone (§app.outreach/sender-link; guarded the same, and 409 unless the sender is local):
+ * POST /api/outreach/sender/link         { phone? } -> SenderLinkView | 409 { error, code? } (starts a link)
+ * GET  /api/outreach/sender/link         -> SenderLinkView (the newest QR or code while it runs; no-store)
+ * POST /api/outreach/sender/link/cancel  {} -> SenderLinkView | 409 { error }
+ * POST /api/outreach/sender/unlink       { confirm: "UNLINK" } -> OutreachInfo | 400 | 409 { error }
+ *
+ * The senders this host can use (§app.outreach/sender-list; main listener only, never the Overseer's):
+ * GET  /api/outreach/senders             -> SenderList
+ *
  * Peer routes (peer listener; the caller is its verified StableID), only on a host whose sender is
  * `local` and whose acceptFrom lists the caller (403 { code: "not-accepted" } / 404 { code: "no-sender" }):
  * POST /api/peer/outreach/status         {} -> the sender's status frame
@@ -91,6 +100,45 @@ export interface OutreachInfo {
   problem?: string;
   /** The local sender's unit (Start Sender), when installed and serving this socket; absent otherwise. */
   unit?: SenderUnit;
+}
+
+/**
+ * A link Sova started on its own host's sender (§app.outreach/sender-link), as the page polls it.
+ * `qr` and `code` are as good as the number's credentials: only in this answer, never logged or kept.
+ */
+export interface SenderLinkView {
+  /** idle: none started (or it was dropped); starting: asked; waiting: for the phone; then linked or ended. */
+  phase: "idle" | "starting" | "waiting" | "linked" | "ended";
+  mode?: "qr" | "code";
+  /** The newest QR the sender issued, while waiting with a QR. */
+  qr?: string;
+  /** How many QRs this link has issued so far (each new one replaces the last). */
+  qrCount?: number;
+  /** The 8-character pairing code, while waiting with a code. */
+  code?: string;
+  /** The last 3 digits of the number the code is for, "…234". */
+  phoneTail?: string;
+  /** Linked: the number's last 3 digits, "…123". */
+  me?: string;
+  /** Ended: the sender's sentence ("The QR code expired before the phone scanned it."). */
+  why?: string;
+}
+
+/** One sender this host can use (§app.outreach/sender-list); `id` names it in the list (`local`, `peer:<StableID>`). */
+export interface SenderEntry {
+  id: string;
+  where: "local" | "peer";
+  /** The peer's StableID (where: peer). */
+  nodeId?: string;
+  /** "This host", or the peer's name. */
+  label: string;
+  status: SenderStatus;
+  /** It is the one this host's saved setting sends through. */
+  chosen: boolean;
+}
+
+export interface SenderList {
+  senders: SenderEntry[];
 }
 
 /** The states a person has to deal with: sends are refused at once, and Needs you says so (§app.outreach/sender-health). */

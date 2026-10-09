@@ -4,13 +4,16 @@
 // no network, no credentials, no `pnpm install` in services/whatsapp. Protocol: services/whatsapp/IPC.md.
 //
 //   PI_CODING_AGENT_DIR=$PWD/.agent node scripts/fake-whatsapp-sender.mjs [--unpaired]
-//   node scripts/fake-whatsapp-sender.mjs ctl close 401 | ctl ack-error 463 | ctl send-throw | ctl open-fail [n]
+//   node scripts/fake-whatsapp-sender.mjs ctl close 401 | ctl ack-error 463 | ctl send-throw | ctl open-fail [n] | ctl scan
 //
 // It listens where the real sender would ($SOVA_WA_SOCKET, else <PI_CODING_AGENT_DIR>/sova/whatsapp/sender.sock)
 // and refuses to run on the real default directory. Every number exists except those in SOVA_WA_FAKE_ABSENT
 // (comma-separated digits); receipts follow SOVA_WA_FAKE_RECEIPTS: delivered,read (default) | delivered | none.
 // SOVA_WA_FAKE_TIME_SCALE=<n> runs the sender's clock n times faster (60: an hour's reconnect wait takes a
 // minute), so a budget wait can be watched end to end; its times (retryAt, events) are on that fast clock.
+// A link (Settings' Link a Phone, or `sova-whatsapp pair`) issues a new fake QR every SOVA_WA_FAKE_QR_MS (3000),
+// 5 in all, then expires as WhatsApp's does (408); `ctl scan` is the phone scanning it (or typing the pairing
+// code), and the link succeeds. The fake QRs are random words, never a credential.
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { resolveConfig } from '../services/whatsapp/src/config.mjs'
@@ -72,6 +75,12 @@ const ME = '0000000000'
 let paired = !argv.includes('--unpaired')
 let current = null // the open fake socket's handlers
 const next = { ackError: null, sendThrow: false, openFail: 0 }
+const qrMs = Number(env.SOVA_WA_FAKE_QR_MS || 3000)
+let fakeLink = null // {handlers, timers} while a fake link waits for `ctl scan`
+const endFakeLink = () => {
+  for (const t of fakeLink?.timers ?? []) clearTimeout(t)
+  fakeLink = null
+}
 
 // The sender's clock, SOVA_WA_FAKE_TIME_SCALE times faster than the wall's (1: the real clock).
 const scale = Number(env.SOVA_WA_FAKE_TIME_SCALE || 1)
@@ -101,19 +110,21 @@ const driver = {
     current = handlers
     const alive = () => current === handlers
     if (link) {
-      // Two QR refreshes, then the phone "scans": pair-success, then WhatsApp's restart request (515).
-      setTimeout(() => alive() && handlers.onQr(`FAKE-QR-${Date.now()}-1`), 100)
-      setTimeout(() => alive() && handlers.onQr(`FAKE-QR-${Date.now()}-2`), 1000)
-      setTimeout(() => {
-        if (!alive()) return
-        paired = true
-        handlers.onClose(515, 'restart required')
-      }, 2000)
+      // A QR now and every qrMs, 5 in all, then WhatsApp gives up (408) unless `ctl scan` came first.
+      endFakeLink()
+      const timers = []
+      for (let i = 0; i < 5; i++) timers.push(setTimeout(() => alive() && handlers.onQr(`FAKE-QR-${i + 1}-${Math.random().toString(36).slice(2, 10)}`), 100 + i * qrMs))
+      timers.push(setTimeout(() => alive() && (endFakeLink(), handlers.onClose(408, 'QR refs attempts ended')), 100 + 5 * qrMs))
+      fakeLink = { handlers, timers }
     } else {
       setTimeout(() => alive() && (paired ? handlers.onOpen(ME) : handlers.onQr('FAKE-QR-unexpected')), 300)
     }
     return {
-      end: () => alive() && (current = null),
+      end: () => {
+        if (!alive()) return
+        current = null
+        if (fakeLink?.handlers === handlers) endFakeLink()
+      },
       logout: async () => {
         paired = false
       },
@@ -160,8 +171,17 @@ const ipc = await serveIpc({
         case 'send-throw':
           next.sendThrow = true
           return { ok: true }
+        case 'scan': {
+          // The phone scans the QR (or types the code): pair-success, then WhatsApp's restart request (515).
+          if (!fakeLink || current !== fakeLink.handlers) return { ok: false, code: 'not-linking', retryable: false, why: 'No fake link is waiting for a phone.' }
+          const h = fakeLink.handlers
+          endFakeLink()
+          paired = true
+          setTimeout(() => current === h && h.onClose(515, 'restart required'), 200)
+          return { ok: true }
+        }
       }
-      return { ok: false, code: 'bad-request', retryable: false, why: 'fake do: close | ack-error | send-throw | open-fail' }
+      return { ok: false, code: 'bad-request', retryable: false, why: 'fake do: close | ack-error | send-throw | open-fail | scan' }
     },
   },
 }).catch((err) => {

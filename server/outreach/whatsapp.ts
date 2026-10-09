@@ -2,16 +2,17 @@ import type { SenderState, SenderStatus } from "../../shared/outreach";
 import { meshPeers, peerFetch } from "../mesh";
 import { noteSenderState, noteSenderStatus } from "./health";
 import { SenderClient, SenderUncertain, SenderUnreachable, type Frame, type SenderClientOptions, type SenderEvent } from "./ipc-client";
+import { noteLinkEvent } from "./link";
 import { localSocket, noteAuthDir, readOutreach } from "./settings";
 import type { Channel, ChannelSend, Receipt } from "./types";
 
 /**
  * The WhatsApp channel (§app.outreach/channels, /sender-route): a client of the sender, either on
  * this host (its Unix socket, services/whatsapp/IPC.md) or on a peer through that peer's Sova
- * (`/api/peer/outreach/*`, server/outreach/relay.ts). The sender owns the number; this module never
- * links or unlinks it, and reconnects or pauses it only for the operator's own buttons
- * (§app.outreach/sender-controls). Every status it reads and every `state` event is noted in
- * ./health.ts.
+ * (`/api/peer/outreach/*`, server/outreach/relay.ts). The sender owns the number; this module
+ * reconnects, pauses, links or unlinks it only for the operator's own buttons on the sender's host
+ * (§app.outreach/sender-controls, /sender-link). Every status it reads and every `state` event is
+ * noted in ./health.ts; the link events go to ./link.ts and nowhere else.
  */
 
 const STATES: ReadonlySet<string> = new Set(["unpaired", "linking", "connecting", "open", "logged-out", "replaced", "blocked", "down"]);
@@ -24,6 +25,8 @@ const listeners: ((r: Receipt) => void)[] = [];
 const ring: SenderEvent[] = [];
 
 function onSenderEvent(e: SenderEvent): void {
+  // A QR is as good as the credentials: ./link.ts alone sees it, and only for a link this page started.
+  if (e.ev === "qr" || e.ev === "paired" || e.ev === "state") noteLinkEvent(e);
   if (e.ev === "state") {
     // A replayed event dates the state from when it happened, never later than now.
     const now = Date.now();
@@ -164,14 +167,55 @@ export type ControlAnswer = { ok: true; frame: Frame } | { ok: false; why: strin
 const answerOf = (f: Frame): ControlAnswer =>
   f.ok === false ? { ok: false, why: typeof f.why === "string" ? f.why : "The sender refused.", ...(typeof f.code === "string" ? { code: f.code } : {}) } : { ok: true, frame: f };
 
-/** `reconnect {}` or `pause {on}` on this host's own sender. Never the relay's: the routes call it for the operator only. */
-export async function localControl(op: "reconnect" | "pause", body: Frame = {}): Promise<ControlAnswer> {
+/** `reconnect {}`, `pause {on}` or `unlink {confirm: true}` on this host's own sender. Never the relay's: the routes call it for the operator only. */
+export async function localControl(op: "reconnect" | "pause" | "unlink", body: Frame = {}): Promise<ControlAnswer> {
   const c = localClient();
   if (!c) return { ok: false, why: "This host has no sender of its own." };
   try {
-    return answerOf(await c.request(op, op === "pause" ? { on: body.on === true } : {}, 10_000));
+    const req = op === "pause" ? { on: body.on === true } : op === "unlink" ? { confirm: true } : {};
+    // An unlink logs the device out first, which the sender waits up to 10 s for.
+    return answerOf(await c.request(op, req, op === "unlink" ? 20_000 : 10_000));
   } catch (err) {
     return { ok: false, why: err instanceof Error ? err.message : String(err), code: "unreachable" };
+  }
+}
+
+/**
+ * The status of the sender at `path` on this host, whatever the setting (§app.outreach/sender-list):
+ * the setting's own client when it is that socket, else a connection made for this one question.
+ */
+export async function probeLocal(path: string): Promise<SenderStatus> {
+  const c = localClient();
+  const own = c?.socketPath === path;
+  const client = own ? c! : new SenderClient(path, () => {}, { ...clientOptions, retryMs: 0 });
+  try {
+    const f = await client.request("status", {}, 5_000);
+    return f.ok === false ? { state: "down", why: String(f.why ?? "The sender refused.") } : statusOf(f);
+  } catch (err) {
+    return { state: "unreachable", why: err instanceof Error ? err.message : String(err) };
+  } finally {
+    if (!own) client.close();
+  }
+}
+
+/** The status of a peer's sender through its relay, or why it has none this host may use (§app.outreach/sender-list). */
+export async function peerSenderStatus(nodeId: string, ms = 5_000): Promise<{ status: SenderStatus } | { why: string }> {
+  const peerId = peerIdOf(nodeId);
+  if (!peerId) return { why: "It is not one of this host's peers." };
+  let res: Response;
+  try {
+    res = await peerFetch(peerId, "/api/peer/outreach/status", { method: "POST", headers: { "content-type": "application/json" }, body: "{}", signal: AbortSignal.timeout(ms) });
+  } catch {
+    return { why: "It can't be reached." };
+  }
+  if (res.status === 403) return (await res.body?.cancel(), { why: "It doesn't accept sends from this host." });
+  if (res.status === 404) return (await res.body?.cancel(), { why: "It has no sender of its own." });
+  try {
+    const f = (await res.json()) as Frame;
+    if (res.status !== 200) return { why: typeof f.why === "string" ? f.why : `It answered ${res.status}.` };
+    return { status: statusOf(f) };
+  } catch {
+    return { why: `It answered ${res.status}.` };
   }
 }
 

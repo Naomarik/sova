@@ -1,7 +1,7 @@
 import type { Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { OPERATOR } from "../../shared/baton";
-import { waDigits, type BatonOutreach, type OutreachInfo, type OutreachPatch } from "../../shared/outreach";
+import { waDigits, type BatonOutreach, type OutreachInfo, type OutreachPatch, type SenderList } from "../../shared/outreach";
 import { attentionChanged } from "../attention-memo";
 import { meshPeers } from "../mesh";
 import { localRequest } from "../mesh/proxy";
@@ -11,17 +11,20 @@ import { operatorEnvelope, operatorName, OrgError, readRoster } from "../orgs";
 import { secretRules } from "../overseer-deny";
 import { OVERSEER_SENDER_HEADER } from "../overseer-sender";
 import { notReady, refreshSender, sendAct, sendHandoffLink } from "./core";
+import { cancelLink, dropLink, linkView, startLink } from "./link";
 import { parseLinkRef } from "./links";
 import { outreachSecretDirs, outreachSecretFiles, sandboxWarning } from "./protected-paths";
+import { listSenders } from "./senders";
 import { localSocket, readOutreach, readOutreachState, saveOutreach } from "./settings";
 import { senderUnit, startSenderUnit } from "./unit";
-import { localControl, resetLocalClient, viaReconnect, whatsapp, type ControlAnswer } from "./whatsapp";
+import { localClient, localControl, resetLocalClient, viaReconnect, whatsapp, type ControlAnswer } from "./whatsapp";
 
 /**
- * The operator's outreach routes (§app.outreach/sender-route, /send-link, /sender-controls), main
- * listener only: a request that carries a peer or came through the mesh proxy gets 404, like Public
- * links'. The sender's controls also refuse the Overseer's own calls (its dispatch is in-process, so
- * it passes the local check): no tool reaches them.
+ * The operator's outreach routes (§app.outreach/sender-route, /send-link, /sender-controls,
+ * /sender-link, /sender-list), main listener only: a request that carries a peer or came through the
+ * mesh proxy gets 404, like Public links'. The sender's controls, its link and the list of senders
+ * also refuse the Overseer's own calls (its dispatch is in-process, so it passes the local check): no
+ * tool reaches them.
  */
 
 const local = localRequest;
@@ -66,14 +69,22 @@ export function mountOutreach(app: Hono): void {
     for (const k of Object.keys(body)) if (!["sender", "acceptFrom", "paused", "authDir"].includes(k)) return c.json({ error: `Unknown key ${JSON.stringify(k)}` }, 400);
     const r = saveOutreach(patch);
     if ("error" in r) return c.json({ error: r.error }, 400);
-    if ("sender" in patch) resetLocalClient();
+    if ("sender" in patch) {
+      resetLocalClient();
+      dropLink();
+    }
     attentionChanged();
     return c.json(await outreachInfo(), 200, NO_STORE);
   });
   // The sender's controls (§app.outreach/sender-controls): the operator's own buttons in Settings → Outreach.
-  const control = (run: (c: Context) => Promise<ControlAnswer | Response>) => async (c: Context) => {
+  const operatorOnly = (c: Context): Response | null => {
     if (!local(c)) return c.json({ error: "Not found" }, 404);
     if (c.req.header(OVERSEER_SENDER_HEADER) !== undefined) return c.json({ error: "Only the operator controls the WhatsApp sender, in Settings → Outreach." }, 403);
+    return null;
+  };
+  const control = (run: (c: Context) => Promise<ControlAnswer | Response>) => async (c: Context) => {
+    const refused = operatorOnly(c);
+    if (refused) return refused;
     const r = await run(c);
     if (r instanceof Response) return r;
     if (!r.ok) return c.json({ error: r.why, ...(r.code ? { code: r.code } : {}) }, 409);
@@ -113,6 +124,48 @@ export function mountOutreach(app: Hono): void {
       return r.ok ? { ok: true, frame: {} } : { ok: false, why: r.why };
     }),
   );
+  // Linking a phone (§app.outreach/sender-link): this host's own sender only, never relayed. The answer
+  // carries the newest QR or pairing code, so it is never cached.
+  const ownSender = (c: Context) => localClient() ?? c.json({ error: "Only the sender's own host links or unlinks a phone: set Sender to This host there." }, 409);
+  app.post("/api/outreach/sender/link", small, async (c) => {
+    const refused = operatorOnly(c);
+    if (refused) return refused;
+    const b = (await c.req.json().catch(() => ({}))) as { phone?: unknown } | null;
+    if (!b || typeof b !== "object" || Array.isArray(b)) return c.json({ error: "Body must be { phone? }" }, 400);
+    if (b.phone !== undefined && typeof b.phone !== "string") return c.json({ error: "phone must be a string of digits" }, 400);
+    const client = ownSender(c);
+    if (client instanceof Response) return client;
+    const r = await startLink(client, b.phone);
+    if (!r.ok) return c.json({ error: r.why, ...(r.code ? { code: r.code } : {}) }, r.code === "invalid" ? 400 : 409);
+    attentionChanged();
+    return c.json(r.view, 200, NO_STORE);
+  });
+  app.get("/api/outreach/sender/link", (c) => operatorOnly(c) ?? c.json(linkView(), 200, NO_STORE));
+  app.post("/api/outreach/sender/link/cancel", small, async (c) => {
+    const refused = operatorOnly(c);
+    if (refused) return refused;
+    const client = ownSender(c);
+    if (client instanceof Response) return client;
+    const r = await cancelLink(client);
+    if (!r.ok) return c.json({ error: r.why, ...(r.code ? { code: r.code } : {}) }, 409);
+    attentionChanged();
+    return c.json(r.view, 200, NO_STORE);
+  });
+  app.post(
+    "/api/outreach/sender/unlink",
+    small,
+    control(async (c) => {
+      const b = (await c.req.json().catch(() => null)) as { confirm?: unknown } | null;
+      if (!b || b.confirm !== "UNLINK") return c.json({ error: 'Body must be { confirm: "UNLINK" }' }, 400);
+      const client = ownSender(c);
+      if (client instanceof Response) return client;
+      const r = await localControl("unlink");
+      dropLink();
+      return r;
+    }),
+  );
+  // The senders this host can use (§app.outreach/sender-list).
+  app.get("/api/outreach/senders", async (c) => operatorOnly(c) ?? c.json({ senders: await listSenders() } satisfies SenderList, 200, NO_STORE));
   // Who the strip may send to now (§app.outreach/send-link): the holder, or the open offer's reached
   // invitees; each ready or why not, and their number for the wa.me fallback (the operator's own view).
   app.get("/api/baton/:sid/outreach", async (c) => {

@@ -90,7 +90,11 @@ Error codes:
 `pause`, `link`, `reconnect` and `unlink` act on the number itself, so only someone on the sender's
 host uses them: `sova-whatsapp pause | resume | pair | reconnect | unlink` on its socket, or Sova's
 own Settings → Outreach there, which sends `reconnect` and `pause` only when the operator presses
-Reconnect Now or Pause/Resume Sender, and never `link` or `unlink`. The sender cannot tell a relayed request from a local one, since
+Reconnect Now or Pause/Resume Sender, `link` (and `link {cancel}`) only for Link a Phone (or Use a
+Pairing Code Instead, and Cancel), and `unlink` only for Unlink This Number after the operator typed
+UNLINK. Sova does so only while its own setting says the sender is on this host; it never sends any
+of them on its own, and its Overseer has no way to ask. The `qr` events and the pairing code reach
+the operator's page only, and only for a link the page started. The sender cannot tell a relayed request from a local one, since
 the relay is a local client too, so the guarantee is the relay's: it forwards exactly `status`, `check`,
 `send` and `events`, each rebuilt from named fields (never a caller's frame passed through), and
 answers every other op with 403 `code: "refused"`, with one exception: Sova's relay also forwards
@@ -106,7 +110,13 @@ it is a Unix socket, `0600`, and the sender never listens on a network.
 - `link {phone?}` → `{started: true, pairingCode?}`. Starts linking a device on an unpaired sender:
   `qr` events follow (scan within about a minute; WhatsApp refreshes it about five times, then stops).
   With `phone` (digits), a pairing code is returned instead to type on the phone. Refused with
-  `code: "linked"` when already paired, `busy` while linking.
+  `code: "linked"` when already paired, `busy` while linking, `invalid` for a bad `phone`. A link
+  that ends without a phone leaves `unpaired` with why: "The QR code expired before the phone scanned
+  it.", "The pairing code expired before it was typed on the phone.", "Nobody finished linking in
+  time." (3 minutes), or "Linking stopped (…)".
+- `link {cancel: true}` → `{state: "unpaired"}`. Ends the link in progress ("Linking was
+  cancelled."); a `qr` of that link is never sent after it. Refused with `code: "not-linking"` when
+  none runs.
 - `reconnect {}` → `{state}`. One immediate connection attempt from `down`, `replaced`, `blocked` or a
   backoff wait, outside the reconnect budget. Refused (`code: "needs-link"`) in `unpaired` and
   `logged-out`, and `code: "open"` when already open. Leaves `paused` as it is.
@@ -161,7 +171,12 @@ does not have:
 - `{op: "fake", do: "send-throw"}`: the next send throws inside the socket.
 - `{op: "fake", do: "open-fail", code}`: the next `code` (default 1) connection attempts can't be opened.
 
-`node scripts/fake-whatsapp-sender.mjs ctl <close|ack-error|send-throw|open-fail> [code]` sends that op.
+- `{op: "fake", do: "scan"}`: the phone scans the link's QR (or types its pairing code): the link
+  succeeds (`paired`, then `open`). Refused `not-linking` while no link waits. A fake link issues a
+  new QR every `SOVA_WA_FAKE_QR_MS` (3000), 5 in all, then expires (408); its pairing code is
+  `FAKE1234`.
+
+`node scripts/fake-whatsapp-sender.mjs ctl <close|ack-error|send-throw|open-fail|scan> [code]` sends that op.
 `SOVA_WA_FAKE_TIME_SCALE=<n>` runs the fake's clock `n` times faster than the wall's (with
 `SOVA_WA_RECONNECT_BUDGET=1/10` and 60, a spent budget's hour-long wait takes a minute); its
 `retryAt` and event times then run ahead of the wall clock.

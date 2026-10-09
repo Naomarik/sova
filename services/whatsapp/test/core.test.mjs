@@ -549,7 +549,22 @@ test('link with a phone returns a pairing code and shows no QR; an expired link 
   await r.close(408)
   assert.equal(r.events.filter((e) => e.ev === 'qr').length, 0)
   assert.equal(r.core.state, 'unpaired')
-  assert.match(r.core.why, /expired/)
+  assert.equal(r.core.why, 'The pairing code expired before it was typed on the phone.')
+})
+
+test('link {cancel}: ends a link in progress (unpaired, no more QR); refused when none runs', async () => {
+  const r = rig({ paired: false })
+  r.core.start()
+  assert.equal((await r.core.link({ cancel: true })).code, 'not-linking')
+  await r.core.link()
+  const h = r.driver.last
+  const res = await r.core.link({ cancel: true })
+  assert.deepEqual(res, { ok: true, state: 'unpaired' })
+  assert.equal(r.core.why, 'Linking was cancelled.')
+  h.handlers.onQr('2@late')
+  assert.equal(r.events.filter((e) => e.ev === 'qr').length, 0, 'a QR from the ended link is dropped')
+  assert.equal(r.core.state, 'unpaired')
+  assert.deepEqual(await r.core.link(), { ok: true, started: true }, 'a new link can start')
 })
 
 test('unlink needs confirm, logs out when connected and wipes the creds', async () => {

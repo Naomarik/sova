@@ -1,7 +1,10 @@
 import { createEffect, createResource, createSignal, For, onCleanup, Show } from "solid-js";
-import type { OutreachInfo } from "../../shared/outreach";
+import type { OutreachInfo, SenderEntry } from "../../shared/outreach";
 import {
   acceptOutreachInfo,
+  entryChoice,
+  entryPicked,
+  getSenders,
   getOutreach,
   outreachDraft as draft,
   outreachInfo,
@@ -13,6 +16,7 @@ import {
   reconnectSender,
   senderActions,
   senderFacts,
+  senderUse,
   senderWords,
   setOutreachDraft,
   setOutreachInfo,
@@ -20,6 +24,7 @@ import {
   type OutreachDraft,
 } from "../lib/outreach";
 import { announce } from "../lib/ui-state";
+import { SenderLink } from "./SenderLink";
 import { Banner, Chip } from "./ui";
 import "../orgs.css";
 
@@ -27,13 +32,15 @@ import "../orgs.css";
 const LIVE_MS = 5_000;
 
 /**
- * Settings → Outreach (§app.settings-dialog/outreach): how this host reaches the WhatsApp sender
- * (Off · This host · Via a peer) and, when it is here, which peers may send through it; both staged
- * for the dialog's Save Changes. The sender's state, read again every few seconds while the page is
+ * Settings → Outreach (§app.settings-dialog/outreach): which sender this host sends through, picked
+ * from the list of every sender it can use (§app.outreach/sender-list: this host's own, each peer whose
+ * sender accepts it, Off) and, when it is here, which peers may send through it; both staged for the
+ * dialog's Save Changes. The chosen sender's state, read again every few seconds while the page is
  * open (why it stopped, when it tries again, sends and reconnects against their limits), its controls
- * (§app.outreach/sender-controls: Reconnect Now, Pause/Resume Sender, Start Sender, each saying what it
- * does before it runs), Check Again, this host's Pause all sending (at once), the protected paths,
- * and the note that sent links stay in the operator's own chat history.
+ * (§app.outreach/sender-controls: Reconnect Now, Pause/Resume Sender, Start Sender; and on its own host
+ * Link a Phone / Unlink This Number, §app.outreach/sender-link; each saying what it does before it
+ * runs), Check Again, this host's Pause all sending (at once), the protected paths, and the note that
+ * sent links stay in the operator's own chat history.
  */
 export function OutreachSettingsSection() {
   const [stored, { refetch }] = createResource(getOutreach);
@@ -55,9 +62,17 @@ export function OutreachSettingsSection() {
     getOutreach().then(setOutreachInfo, () => {});
   }, LIVE_MS);
   onCleanup(() => clearInterval(live));
+  // The list of senders: read on open, after a save (the saved file changes) and on Check Again.
+  const savedRoute = () => JSON.stringify(info()?.file.sender ?? null);
+  const [senders, { refetch: refetchSenders }] = createResource(savedRoute, () => getSenders());
+  const entries = (): SenderEntry[] => (senders.error ? [] : (senders.latest ?? []));
+  const here = () => {
+    const r = info()?.file.sender;
+    return typeof r === "object" && "local" in r;
+  };
   const words = () => {
     const s = info()?.sender;
-    return s ? senderWords(s, now()) : null;
+    return s ? senderWords(s, now(), here()) : null;
   };
   const facts = () => {
     const s = info()?.sender;
@@ -65,7 +80,7 @@ export function OutreachSettingsSection() {
   };
   const actions = () => {
     const i = info();
-    return i ? senderActions(i) : { reconnect: false as const, pause: null, start: false };
+    return i ? senderActions(i) : { reconnect: false as const, pause: null, start: false, link: false, unlink: false };
   };
   const [pausing, setPausing] = createSignal(false);
   const [actionError, setActionError] = createSignal<string | null>(null);
@@ -104,7 +119,7 @@ export function OutreachSettingsSection() {
       <h3 class="settings-heading" id="outreach-heading">
         Outreach
       </h3>
-      <p class="settings-intro">Send a person their gathering link on WhatsApp, from a sender that holds your number. Sova never pairs or unlinks it.</p>
+      <p class="settings-intro">Send a person their gathering link on WhatsApp, from a sender that holds your number.</p>
       <Show when={stored.error}>
         <Banner tone="error" title="Outreach settings can't be read." />
       </Show>
@@ -112,46 +127,65 @@ export function OutreachSettingsSection() {
 
       <fieldset class="field">
         <legend class="field-label">Sender</legend>
-        <label class="toggle public-links-choice">
-          <input type="radio" name="outreach-sender" checked={draft()?.sender === "off"} disabled={off()} onChange={() => edit({ sender: "off" })} />
-          <span class="toggle-box" aria-hidden="true" />
-          <span class="public-links-choice-name">Off</span>
-        </label>
-        <label class="toggle public-links-choice">
-          <input type="radio" name="outreach-sender" checked={draft()?.sender === "local"} disabled={off()} onChange={() => edit({ sender: "local" })} />
-          <span class="toggle-box" aria-hidden="true" />
-          <span class="public-links-choice-name">This host</span>
-        </label>
-        <Show when={draft()?.sender === "local"}>
-          <div class="field settings-field">
-            <label class="field-label" for="outreach-socket">
-              Socket
+        <span class="field-hint">The number this host sends from: its own sender, or a peer's that accepts it.</span>
+        <ul class="sender-list">
+          <For each={entries()}>
+            {(e) => {
+              // The chosen sender's row follows the state this page reads every few seconds; the others are as of the list's read.
+              const st = () => (e.chosen && info()?.sender) || e.status;
+              const w = () => senderWords(st(), now(), e.where === "local");
+              const missing = () => e.where === "local" && st().state === "unreachable" && !e.chosen;
+              return (
+                <li class="sender-row">
+                  <label class="toggle public-links-choice">
+                    <input type="radio" name="outreach-sender" checked={entryPicked(e, draft())} disabled={off()} onChange={() => edit(entryChoice(e))} />
+                    <span class="toggle-box" aria-hidden="true" />
+                    <span class="sender-row-main">
+                      <span class="sender-row-head">
+                        <span class="public-links-choice-name">{e.label}</span>
+                        <Show when={st().me}>{(me) => <span class="sender-row-number input-mono">{me()}</span>}</Show>
+                        <Show when={!missing()}>
+                          <Chip tone={w().tone}>{w().chip}</Chip>
+                        </Show>
+                      </span>
+                      <span class="sender-row-facts">
+                        {missing() ? "No sender answers on this host." : st().state === "unreachable" ? (st().why ?? "Not reachable.") : (senderUse(st()) ?? "")}
+                      </span>
+                    </span>
+                  </label>
+                  <Show when={e.where === "local" && draft()?.sender === "local"}>
+                    <div class="field settings-field">
+                      <label class="field-label" for="outreach-socket">
+                        Socket
+                      </label>
+                      <input
+                        id="outreach-socket"
+                        class="input input-mono"
+                        autocomplete="off"
+                        placeholder="Default: the sender's own (sova/whatsapp/sender.sock)"
+                        value={draft()?.socket ?? ""}
+                        disabled={off()}
+                        onInput={(ev) => edit({ socket: ev.currentTarget.value })}
+                      />
+                    </div>
+                  </Show>
+                </li>
+              );
+            }}
+          </For>
+          <Show when={senders.loading && entries().length === 0}>
+            <li class="field-hint">Asking this host and its peers for their senders…</li>
+          </Show>
+          <li class="sender-row">
+            <label class="toggle public-links-choice">
+              <input type="radio" name="outreach-sender" checked={draft()?.sender === "off"} disabled={off()} onChange={() => edit({ sender: "off" })} />
+              <span class="toggle-box" aria-hidden="true" />
+              <span class="public-links-choice-name">Off</span>
             </label>
-            <input
-              id="outreach-socket"
-              class="input input-mono"
-              autocomplete="off"
-              placeholder="Default: the sender's own (sova/whatsapp/sender.sock)"
-              value={draft()?.socket ?? ""}
-              disabled={off()}
-              onInput={(e) => edit({ socket: e.currentTarget.value })}
-            />
-          </div>
-        </Show>
-        <label class="toggle public-links-choice">
-          <input type="radio" name="outreach-sender" checked={draft()?.sender === "via"} disabled={off() || peers().length === 0} onChange={() => edit({ sender: "via", viaNodeId: draft()?.viaNodeId || peers()[0]?.nodeId || "" })} />
-          <span class="toggle-box" aria-hidden="true" />
-          <span class="public-links-choice-name">Via a peer{peers().length === 0 ? " (no peers)" : ""}</span>
-        </label>
-        <Show when={draft()?.sender === "via"}>
-          <div class="field settings-field">
-            <label class="field-label" for="outreach-via">
-              Peer
-            </label>
-            <select id="outreach-via" class="input" value={draft()?.viaNodeId ?? ""} disabled={off()} onChange={(e) => edit({ viaNodeId: e.currentTarget.value })}>
-              <For each={peers()}>{(p) => <option value={p.nodeId}>{p.label}</option>}</For>
-            </select>
-          </div>
+          </li>
+        </ul>
+        <Show when={senders.error}>
+          <span class="field-error">The list of senders can't be read. Check Again to retry.</span>
         </Show>
         <Show when={draft() && outreachProblem(draft()!)}>{(p) => <span class="field-error">{p()}</span>}</Show>
       </fieldset>
@@ -213,6 +247,7 @@ export function OutreachSettingsSection() {
                   </div>
                 )}
               </Show>
+              <SenderLink link={actions().link} unlink={actions().unlink} disabled={busy() !== null} onChanged={(i) => (i ? setOutreachInfo(i) : void getOutreach().then(setOutreachInfo, () => {}))} />
               <Show when={actions().start}>
                 <div class="outreach-control">
                   <button type="button" class="button button-sm" disabled={busy() !== null} onClick={() => void control("start", startSender, "Starting the sender.")}>
@@ -224,7 +259,7 @@ export function OutreachSettingsSection() {
                 </div>
               </Show>
               <div class="outreach-control">
-                <button type="button" class="button button-sm button-ghost" onClick={() => void refetch()}>
+                <button type="button" class="button button-sm button-ghost" onClick={() => (void refetch(), void refetchSenders())}>
                   Check Again
                 </button>
               </div>
@@ -290,7 +325,7 @@ export function OutreachSettingsSection() {
       <Show when={info()?.sandboxWarning}>{(w) => <Banner tone="warn" title={w()} />}</Show>
 
       <p class="settings-intro">
-        Links you send stay in your own WhatsApp chat history: anyone with your phone can open them. Setting up the sender: <code>docs/outreach/whatsapp.md</code>.
+        Links you send stay in your own WhatsApp chat history: anyone with your phone can open them. Installing a sender: <code>docs/outreach/whatsapp.md</code>.
       </p>
       <Show when={outreachSaveError()}>{(e) => <Banner tone="error" title={`Outreach wasn't saved: ${e().message}`} />}</Show>
     </section>

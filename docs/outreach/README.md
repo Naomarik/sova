@@ -30,10 +30,14 @@ you, an overseer (see below) ──▶ Sova: the project's send act ──▶ th
   so you can turn off just theirs. The log keeps its `pv_` id, never its URL.
 - **The sender** (`services/whatsapp`) is a separate, small program that holds the one WhatsApp
   connection of one number, as a linked device of your phone. It runs on one always-on host; every
-  other Sova host sends through that host's Sova. Sova never pairs, unlinks, restarts or stops it.
-  Settings → Outreach shows its state live and, when you ask, reconnects it, pauses or resumes it,
-  or starts its stopped service once ([whatsapp.md](whatsapp.md#6-connect-sova)). While it is down,
-  Needs you says so, and a send is refused at once with the why.
+  other Sova host sends through that host's Sova, picked from Settings → Outreach's list of the
+  senders it can use (each with its number's last 3 digits, its state and its sends against the
+  limits). Sova never restarts or stops it. Settings → Outreach shows its state live and, when you
+  ask, reconnects it, pauses or resumes it, or starts its stopped service once; on the sender's own
+  host only, **Link a Phone** pairs it (a QR on the page, or a pairing code) and **Unlink This
+  Number** logs it out and deletes its keys, after you type UNLINK
+  ([whatsapp.md](whatsapp.md#4-pair)). No other host and no agent can link or unlink it. While it is
+  down, Needs you says so, and a send is refused at once with the why.
 
 ## Who may send
 

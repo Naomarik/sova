@@ -312,7 +312,8 @@ user row.
   inside the project root; never another project's, an overseer's or a subagent's own), `sova_roster` (read: every person as the prompt's roster shows them, plus their status when not active, never contact; both it and `sova_project` name the main stakeholder, as the prompt
   does), `sova_todos` (operator turns only, §app.project-overseer/ideas-and-todos),
   `sova_previews` (the project's preview links, §app.project-overseer/previews; `sova_project`
-  lists its active ones too, under "Previews"), `sova_send_status` (below).
+  lists its active ones too, under "Previews"), `sova_send_status` (below), `sova_history` (its
+  project's history, §app.org-history/readers).
 - **Whether a message arrived.** `sova_send_status {person?, limit?, hours?}` (read) lists the
   project's WhatsApp sends from the send log (§app.outreach/log), newest first: each send's id,
   the person's name, what went (a gathering link, a preview, a note), who sent it (you, the
@@ -360,14 +361,19 @@ user row.
   project page), or ask with `sova_card`. `sova_decisions` shows each decision's owner area and
   whether its author owns it, so the check has what it needs. Reconcile is on by default, so
   `sova_reconcile` runs unless the operator turned it off in Settings → Decisions.
-- L0: `sova_note`, `sova_card`, `sova_idea`. L1: `sova_start_gathering` (one active roster
+- L0: `sova_note`, `sova_card`, `sova_idea`, `sova_decide` (a deliberate decision of its own,
+  an abstention included, recorded in the history and changing no statechart,
+  §app.org-history/negatives). L1: `sova_start_gathering` (one active roster
   person, or the operator), `sova_offer` (two or more), `sova_reconcile`,
   `sova_owner_update` (an update on the owner page, §app.owner-page/updates),
   `sova_send_to_person` (L1: a WhatsApp message to a roster person — their gathering link, a preview
   link, a note, or a link with a note; §app.outreach/decisions),
   `sova_close_gathering`; `sova_start_gathering` and `sova_offer` take an optional `abilities`
   within the project's ceiling (§app.baton/abilities), an optional `files: true` (file intake,
-  §app.baton/files) and a required `why`; `sova_files` (list a read, copy L3 unattended, delete in
+  §app.baton/files), an optional `preview` (the id, `pv_…`, of this project's preview the
+  conversation asks about: recorded with its start, §app.org-history/capture; it sends no link, and
+  one this project doesn't have is refused: "No such preview in this project: give a preview id
+  (pv_…) sova_preview lists.") and a required `why`; `sova_files` (list a read, copy L3 unattended, delete in
   the operator's turns only, §app.project-overseer/files); `sova_preview` start
   (a preview link of a coding session's app; its `off` runs at any level,
   §app.project-overseer/previews). L2: `sova_promote`,
@@ -910,8 +916,11 @@ user row.
 - **In the workspace repo.** The portable statecharts' snapshots are files under `statecharts/` in the org's
   workspace repo, and the transition log is `statecharts/log/<yyyy-mm>.jsonl` there, committed with the
   workspace commits (§app.organizations/workspace-repo); the host-local statecharts live under
-  `<stateRoot>/statecharts/<org>/`. One step's snapshots and log rows are written together, through
-  a journal, so a crash never leaves half a step. Sova writes no `baton.json`, `decisions.json`,
+  `<stateRoot>/statecharts/<org>/`. One step's snapshots, log rows and history events (§app.org-history/durability) are written
+  together, through a journal, so a crash never leaves half a step. Each log row carries its own key
+  (`k`), so a replay writes it once. Any act may therefore be refused with "History can't be saved
+  right now: {why}. Nothing was done.", or answered "Saved, but not applied yet: it takes effect
+  when the workspace reloads." (§app.org-history/durability). Sova writes no `baton.json`, `decisions.json`,
   `conflicts.json`, `started.json`, `roster.json`, `projects.json`, `org.json`, overseer
   `state.json` or `holder.json`, and no pause list in the attach index.
 - **A statechart file that doesn't load** (a hand edit, conflict markers after a pull, an unknown
@@ -937,7 +946,8 @@ user row.
   what changed, and for a refusal its sentence. It never holds a link token or hash, a contact
   value (`[contact]`), the About text (its hash and length only) or anything a person wrote. The
   overseer's activity list, the Pipeline's timelines (§app.project-overseer/pipeline) and each
-  "Last looked" line are read from it.
+  "Last looked" line are read from it. Beside it, the org's history (§app/org-history) records each captured
+  happening with its actors, explicit links and recorded reasons; neither is the state.
 - **Versions and recovery.** Each statechart carries a version, and a snapshot saved by an older
   version is migrated when it loads, through each version's migration in turn; a statechart change never
   starts sessions fresh. A lost or broken snapshot is recovered from the workspace repo's history,

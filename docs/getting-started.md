@@ -4,21 +4,32 @@
 
 ## Install and launch
 
-Have Git, Node.js ≥22.19, and pnpm installed, plus `curl` and Bash for this command (without
-pnpm, the installer runs the version Sova pins through npx):
+Sova runs on macOS and Linux (x64 or arm64, glibc or musl). The installer is tested on Debian,
+Fedora and Alpine; Alpine has no bash until you `apk add bash`. You need:
+
+- bash, Git, `curl`, and `unzip` or `python3`
+- Node.js ≥22.19
+- pnpm; without it, the installer runs the version Sova pins through npx
+
+The server runs on Bun: the installer downloads the version Sova pins into the install directory
+and checks its checksum. Then:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/vNEXT/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/master/scripts/install.sh | bash
 ```
 
-The installer builds the published `vNEXT` release in `~/.local/share/sova` and creates
-`~/.local/bin/sova`. It does **not** start the server. Run:
+Until the first release is tagged, this builds Sova's `master` branch in `~/.local/share/sova`
+and creates `~/.local/bin/sova`. For another tag, branch or commit, end the command with
+`| SOVA_REF=<ref> bash`; a ref that doesn't exist stops the installer before it changes anything.
+It does **not** start the server. Run:
 
 ```sh
 sova
 ```
 
 Then, in another terminal, run `sova open`: it opens <http://127.0.0.1:4800> already unlocked.
+On a machine with no browser opener (`open` or `xdg-open`), such as a server over SSH, it says so
+and exits instead; open the page yourself and paste the token from `sova token`.
 Sova asks every browser for its token once, at each address it uses; `sova token` prints it, to
 paste on the unlock screen of another browser or device. A browser can also be let in with a
 pairing code instead of the token — see below. Without the installer's launcher (Sova running from
@@ -38,10 +49,15 @@ If your shell says `sova` is not found, run `~/.local/bin/sova`
 directly, or add `~/.local/bin` to your shell's `PATH`. Keep the process running while you use
 the app; `Ctrl+C` stops it.
 
-The installer uses no `sudo`, installs no toolchain, and changes no shell profiles or autostart
-services. It does not read or write `~/.pi`, or install the optional pi configuration.
-You can [inspect the published script](https://github.com/Naomarik/sova/blob/vNEXT/scripts/install.sh)
-before running it. Its `--dir` and `--bin` flags select different install and launcher directories.
+The installer uses no `sudo`, installs no toolchain apart from that Bun, and changes no shell
+profiles. In `~/.pi/agent` it only links Sova's pi extensions into `extensions/`, one symlink per
+extension (`--no-extensions` skips them); it writes no settings, models, auth or keybindings, and
+doesn't install the optional pi configuration. It installs a login service only if you ask
+(`--service`, or yes at its prompt; see [running as a service](running-as-a-service.md)).
+The whole script is one function called on its last line, so a download cut short runs nothing.
+You can [inspect the script](https://github.com/Naomarik/sova/blob/master/scripts/install.sh)
+before running it. Its `--dir` and `--bin` flags select different install and launcher
+directories, and `--port <n>` the port `sova` (and the service) serves on.
 
 ## First-time provider login
 
@@ -113,16 +129,46 @@ experimenting with configuration. Never commit credentials, transcripts, or pers
 
 ## Reinstall or remove
 
-Re-running the installer rebuilds the same pinned release, not the latest `master`. It stages the
-build before replacing the installation and refuses tracked local changes. Don't store your own
-files in the install directory: untracked files do not prevent replacement.
+Running the install command again updates to master's latest commit (or the latest of the
+`SOVA_REF` you set). An install already at that commit isn't rebuilt;
+`--reinstall` rebuilds it anyway. Pass the same options again: without `--port`, a re-run goes back
+to 4800. The installer stages the build before replacing the installation and refuses tracked
+local changes. Don't store your own files in the install directory: untracked files do not prevent
+replacement.
 
-To remove the default installation and launcher:
+To remove the default installation, first stop and remove the login service if you installed one.
+On Linux:
 
 ```sh
+systemctl --user disable --now sova.service
+rm ~/.config/systemd/user/sova.service && systemctl --user daemon-reload
+```
+
+If Linux has no systemd user manager running (a container, say), the `systemctl --user` lines
+fail with "Failed to connect to bus"; the `rm` still removes the unit, which is all there is to
+remove.
+
+On macOS:
+
+```sh
+launchctl bootout gui/$(id -u)/io.github.naomarik.sova
+rm ~/Library/LaunchAgents/io.github.naomarik.sova.plist
+```
+
+Then remove the extension links (they point into the install; use your `$PI_CODING_AGENT_DIR` in
+place of `~/.pi/agent` if you set one), the install, and the launcher:
+
+```sh
+find ~/.pi/agent/extensions -maxdepth 1 -lname "$HOME/.local/share/sova/*" -delete
 rm -rf ~/.local/share/sova ~/.local/bin/sova
 ```
 
 This leaves your pi sessions and credentials, and Sova's state under `~/.pi/agent/sova/`, intact.
-If you opted into configuration symlinks from this installation, relocate or remove those links
-before deleting it. For running a source checkout instead, see [Development](../CONTRIBUTING.md).
+pnpm's package store and cache stay too, since other projects may share them. If nothing else
+on the machine uses pnpm, you can remove them as well (on Linux):
+
+```sh
+rm -rf ~/.local/share/pnpm ~/.cache/pnpm ~/.local/state/pnpm
+```
+
+For running a source checkout instead, see [Development](../CONTRIBUTING.md).

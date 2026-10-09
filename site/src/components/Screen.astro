@@ -1,0 +1,25 @@
+---
+// One product screenshot, by page slot (`at`; never a prop called `slot`, which Astro reads as
+// a named-slot assignment): AVIF and WebP at several widths, its alt text from the
+// screens manifest, its intrinsic size set so nothing shifts as it loads. It fills the screen area
+// of whatever device frame holds it. `eager` only for the hero's first image; the rest load lazily.
+import { Picture } from "astro:assets";
+import { screen } from "../data/screens";
+
+interface Props { at: string; sizes: string; eager?: boolean; class?: string }
+const { at, sizes, eager = false, class: cls = "" } = Astro.props;
+const s = screen(at);
+const widths = [...new Set([400, 640, 960, 1280, 1600, 2200].filter((w) => w < s.image.width).concat(s.image.width))];
+---
+<Picture
+  src={s.image}
+  alt={s.alt}
+  formats={["avif", "webp"]}
+  fallbackFormat="webp"
+  widths={widths}
+  sizes={sizes}
+  loading={eager ? "eager" : "lazy"}
+  fetchpriority={eager ? "high" : undefined}
+  decoding="async"
+  class={`screen-img ${cls}`.trim()}
+/>

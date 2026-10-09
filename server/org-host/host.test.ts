@@ -280,10 +280,12 @@ describe("org host", () => {
   test("a crash after the journal was written: open applies it (snapshot and row, once)", async () => {
     const at = place();
     let crash = false;
-    const host = await open(at, { commitHooks: { afterJournal: () => { if (crash) throw new Error("killed"); } } });
+    // the in-process retry fails too (as when the process dies here): the journal is left for the next open
+    const host = await open(at, { commitHooks: { afterJournal: () => { if (crash) throw new Error("killed"); }, retryApply: () => { if (crash) throw new Error("killed"); } } });
     await host.start("p/1", "host-probe", {}, operator);
     crash = true;
-    assert.throws(() => host.actNow("p/1", "count", {}, operator), /killed/);
+    // the journal holds the step: never refused, it takes effect when the journal is applied
+    assert.equal(host.actNow("p/1", "count", {}, operator).refusal?.stage, "pending-apply");
     await host.close();
     assert.equal(readdirSync(host.paths.journal).length, 1, "the journal is left behind");
     const again = await open(at);
@@ -296,10 +298,12 @@ describe("org host", () => {
   test("a crash after applying but before deleting the journal appends its rows only once", async () => {
     const at = place();
     let crash = false;
-    const host = await open(at, { commitHooks: { afterApply: () => { if (crash) throw new Error("killed"); } } });
+    // the in-process retry fails too (as when the process dies here): the journal is left for the next open
+    const host = await open(at, { commitHooks: { afterApply: () => { if (crash) throw new Error("killed"); }, retryApply: () => { if (crash) throw new Error("killed"); } } });
     await host.start("p/1", "host-probe", {}, operator);
     crash = true;
-    assert.throws(() => host.actNow("p/1", "count", {}, operator), /killed/);
+    // the journal holds the step: never refused, it takes effect when the journal is applied
+    assert.equal(host.actNow("p/1", "count", {}, operator).refusal?.stage, "pending-apply");
     await host.close();
     const again = await open(at);
     assert.equal(again.log.rows({ session: "p/1" }).filter((r) => r.event === "count").length, 1);

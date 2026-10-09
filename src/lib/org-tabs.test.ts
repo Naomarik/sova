@@ -7,7 +7,7 @@ const git: OrgGitStatus = { remote: null, lastCommit: null, lastError: null, dir
 const baton = (waiting?: OrgBatonRow["waiting"]): OrgBatonRow => ({ sessionId: "s", path: "/p", publicTitle: "t", projectId: "j", state: "open", holder: null, createdAt: "", ...(waiting ? { waiting } : {}) });
 const person = (status: Person["status"]): Person => ({ id: "p", orgId: "o", name: "n", status, contact: {}, role: "", decides: [], skills: [], competence: {}, language: "", voice: "" });
 
-test("an empty org: counts 0, Workspace uncounted, no dots", () => {
+test("an empty org: counts 0, History and Workspace uncounted, no dots", () => {
   const tabs = orgTabsOf({ batons: [], roster: [], projectList: [], problems: [], git });
   assert.deepEqual(
     tabs.map((t) => [t.id, t.count, t.waiting, t.waitingText]),
@@ -15,6 +15,7 @@ test("an empty org: counts 0, Workspace uncounted, no dots", () => {
       ["sessions", 0, 0, ""],
       ["people", 0, 0, ""],
       ["projects", 0, 0, ""],
+      ["history", null, 0, ""],
       ["workspace", null, 0, ""],
     ],
   );

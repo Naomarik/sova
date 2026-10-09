@@ -22,9 +22,11 @@ import { linksOfKey, revokeLinks } from "./baton-links";
 import { READ_LINK_TOOL, readLinkTool, READS_MAX } from "./baton-read-link";
 import { confirmFileTool, FILE_TOOLS, FILES_ON, inspectFilesTool, noteRunModel } from "./baton-files";
 import { GATHERING_VIS_GUIDE } from "./baton-vis-guide";
-import { areaKeyOf, ownerAreaChoices, pickOwnerArea } from "./decisions";
+import { areaKeyOf, decisionProvenance, ownerAreaChoices, pickOwnerArea, quoteCheckOf, type DecisionDisposition } from "./decisions";
+import type { Provenance } from "./org-history-capture";
 import { OWNER_AREA_NONE } from "../shared/decisions";
 import type { Person } from "../shared/orgs";
+import type { QuoteCheck } from "../shared/org-history";
 import { handoffChosen } from "./baton-guards";
 import { inlineOperatorImages } from "./baton-images";
 import { readBatonSettings } from "./baton-settings";
@@ -179,10 +181,10 @@ async function inTool<T>(sessionId: string, state: SessionStateWriter, f: () => 
 }
 
 /** A model's act on its session; a refusal is the tool's error, in the statechart's words. */
-async function modelAct(sessionId: string, event: string, payload: Record<string, unknown>): Promise<void> {
+async function modelAct(sessionId: string, event: string, payload: Record<string, unknown>, provenance?: Provenance): Promise<void> {
   const hit = batonById(sessionId);
   if (!hit) throw new Error("This conversation is no longer registered.");
-  const out = await hostOf(hit.row.orgId).act(batonSid(hit.row.orgId, sessionId), event, payload, actorOn("model")(hit.row.orgId, hit.row.projectId), { settle: true });
+  const out = await hostOf(hit.row.orgId).act(batonSid(hit.row.orgId, sessionId), event, payload, actorOn("model")(hit.row.orgId, hit.row.projectId), { settle: true, ...(provenance ? { provenance } : {}) });
   if (!out.taken) throw new Error(out.refusal?.sentence ?? "That can't be done now.");
 }
 
@@ -206,19 +208,59 @@ export function quoteEntryOf(branch: readonly HEntry[], id: string): string {
   return id;
 }
 
+/** record_decision's optional disposition: a choice, a rejection, a postponement or
+    a decision not to do something, with the options as they were weighed. Parsed strictly; null when absent. */
+export function dispositionOf(params: Record<string, unknown>): DecisionDisposition | null {
+  const given = (v: unknown) => v !== undefined && v !== null && v !== "";
+  if (!given(params.disposition) && !given(params.options) && !given(params.reason) && !given(params.review)) return null;
+  // Options or a reason with no disposition: a choice (the default).
+  const d = given(params.disposition) ? params.disposition : "choose";
+  if (d !== "choose" && d !== "reject" && d !== "defer" && d !== "do-not-do") throw new Error('disposition must be "choose", "reject", "defer" or "do-not-do".');
+  const options: NonNullable<DecisionDisposition["options"]> = [];
+  if (params.options !== undefined) {
+    if (!Array.isArray(params.options)) throw new Error("options must be a list.");
+    const seen = new Set<string>();
+    for (const o of params.options.slice(0, 12)) {
+      const x = (typeof o === "object" && o !== null ? o : {}) as Record<string, unknown>;
+      const label = clip(x.label, 200);
+      if (!label) throw new Error("Each option needs a label.");
+      if (x.outcome !== "selected" && x.outcome !== "rejected" && x.outcome !== "deferred" && x.outcome !== "do-not-do") throw new Error('Each option\'s outcome must be "selected", "rejected", "deferred" or "do-not-do".');
+      // A stable id by its place in the decision (never from its words: the event line holds no words);
+      // the same option said twice is one.
+      if (seen.has(label.toLowerCase())) continue;
+      seen.add(label.toLowerCase());
+      const id = `o${options.length + 1}`;
+      options.push({ id, label, outcome: x.outcome, ...(clip(x.reason, 500) ? { reason: clip(x.reason, 500) } : {}) });
+    }
+  }
+  const review = clip(params.review, 300);
+  const reviewAt = review && /^\d{4}-\d{2}-\d{2}/.test(review) && Number.isFinite(Date.parse(review)) ? Date.parse(review) : undefined;
+  return { disposition: d, ...(options.length ? { options } : {}), ...(clip(params.reason, 500) ? { reason: clip(params.reason, 500) } : {}), ...(review ? { review } : {}), ...(reviewAt ? { reviewAt } : {}) };
+}
+
 /** record_decision, its owner areas listed as the roster has them now (the call itself always
     checks the roster as it is then). */
 export function recordDecisionTool(sessionId: string, state: SessionStateWriter, roster: readonly Person[]): ToolSpec {
   return {
     name: "record_decision",
     label: "Record decision",
-    description: "Record a decision the person you are talking to just stated, with their exact words. The conversation carries on.",
+    description:
+      "Record a decision the person you are talking to just stated, with their exact words. A decision not to do something, to reject an option or to put it off is a decision too: " +
+      "say so with disposition, and list the options they weighed when they named them. The conversation carries on.",
     parameters: obj(
       {
         area: str('The topic of the decision, a few words ("invoicing", "bank access").'),
         ownerArea: ownerAreaSchema(roster),
         statement: str("The decision in one sentence."),
-        quote: str("Their exact words."),
+        quote: str("Their exact words, copied from one message they sent (whole words). It is checked against that message and who sent it: when it doesn't check, the decision is recorded as your reading of what they said, not as theirs."),
+        disposition: { type: "string", enum: ["choose", "reject", "defer", "do-not-do"], description: "What kind of decision: choose (the default), reject, defer (put off until a condition or date), do-not-do." },
+        options: {
+          type: "array",
+          description: "The options they weighed, only when they named them.",
+          items: obj({ label: str("The option, a few words."), outcome: { type: "string", enum: ["selected", "rejected", "deferred", "do-not-do"] }, reason: str("Their reason for it, when they gave one.") }, ["label", "outcome"]),
+        },
+        reason: str("Their reason, in a sentence, only when they gave one."),
+        review: str("For defer: when or on what condition to look again (a date as YYYY-MM-DD, or their words)."),
       },
       ["area", "ownerArea", "statement", "quote"],
     ) as any,
@@ -237,6 +279,7 @@ export function recordDecisionTool(sessionId: string, state: SessionStateWriter,
       const area = clip(params.area, 60);
       const statement = clip(params.statement, 500);
       const quote = clip(params.quote, 1000);
+      const disposition = dispositionOf(params ?? {});
       const roster = readRoster(hit.row.orgId);
       // Required: a call that skipped prepareArguments (or left it out) is refused with the choices.
       const owner = pickOwnerArea(roster, params.ownerArea);
@@ -248,16 +291,38 @@ export function recordDecisionTool(sessionId: string, state: SessionStateWriter,
       const sid = batonSid(hit.row.orgId, sessionId);
       const refused = host.explain(sid, "baton/record-decision", { ...payload, decisionId: "?", entryId: "?", markerId: "?" }, actorOn("model")(hit.row.orgId, hit.row.projectId));
       if (refused) throw new Error(refused.sentence);
-      state.append(BATON_DECISION, { v: 1, area, ownerArea: payload.ownerArea, statement, quote, by: hit.row.holder ?? OPERATOR } satisfies BatonDecisionData);
-      const marker = ctx?.leafId() ?? `${Date.now()}`;
-      await modelAct(sessionId, "baton/record-decision", { ...payload, decisionId: `${sessionId}:${marker}`, markerId: marker, entryId: quoteEntryOf(ctx?.branch() ?? [], marker) });
+      const by = hit.row.holder ?? OPERATOR;
+      // The decider's name as this conversation calls them now: kept with the marker, so it says who decided under the name they had then.
+      const names = host.data(sid)?.names as Record<string, unknown> | undefined;
+      const name = (typeof names?.[by] === "string" && (names[by] as string)) || (by === OPERATOR ? operatorName() : roster.find((p) => p.id === by)?.name) || "";
+      const entry: BatonDecisionData = { v: 1, area, ownerArea: payload.ownerArea, statement, quote, by, ...(name ? { name } : {}), ...(disposition ?? {}) };
+      // The marker's own id (the writer's answer; the leaf only when the harness doesn't say): two decisions
+      // in one message are two markers, so two decisions.
+      const marker = state.append(BATON_DECISION, entry) || ctx?.leafId() || `${Date.now()}`;
+      const branch = ctx?.branch() ?? [];
+      const entryId = quoteEntryOf(branch, marker);
+      const byId = new Map<string, HEntry>();
+      for (const h of branch) if (h.id) byId.set(h.id, h);
+      const decisionId = `${sessionId}:${marker}`;
+      const check = quoteCheckOf(byId, { markerId: marker, entryId, quote, by });
+      const provenance = decisionProvenance({ decisionId, sessionId, entryId, by, statement, quote, check, ...(disposition ? { disposition } : {}) });
+      await modelAct(sessionId, "baton/record-decision", { ...payload, decisionId, markerId: marker, entryId }, provenance);
       refreshShare(sessionId);
       // pi ends the run only when EVERY tool of the batch terminates: when this call rides with a
       // hand_to or goal_done, it must agree, or the model writes one more reply after the turn ended.
-      return { ...say("Recorded."), ...(batchEndsTurn(ctx?.branch() ?? []) ? { terminate: true } : {}) };
+      return { ...say(RECORDED_WORDS[check]), ...(batchEndsTurn(branch) ? { terminate: true } : {}) };
     },
   };
 }
+
+/** record_decision's answer per quote check: anything but checked is the model's reading of what was said, and says why. */
+const RECORDED_WORDS: Record<QuoteCheck, string> = {
+  checked: "Recorded.",
+  "quote-not-found": "Recorded as your reading, not checked: their exact words weren't found in that message.",
+  "speaker-mismatch": "Recorded as your reading, not checked: that message was sent by someone else.",
+  unchecked: "Recorded as your reading, not checked: who sent that message wasn't recorded.",
+  "source-unavailable": "Recorded as your reading, not checked: the message it quotes couldn't be read.",
+};
 
 /** hand_to, goal_done, propose_roster_edit and the wrap-up's tool. */
 function conversationTools(sessionId: string, state: SessionStateWriter): ToolSpec[] {

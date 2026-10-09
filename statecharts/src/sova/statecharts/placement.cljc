@@ -271,7 +271,7 @@
                        :what (fn [d] (str "A gathering session \"" (:public-title (b/evt d)) "\""))}
    :owner-update/post {:needs "L1" :tool "sova_owner_update" :people-facing true :hold true :confirm-kind "owner-update"
                        :what (fn [_] "An owner update")}
-   :outreach/send     {:needs "L1" :tool "sova_send_to_person" :people-facing true :hold true :confirm-kind "send" :hours b/hours-window
+   :outreach/send     {:needs "L1" :tool "sova_send_to_person" :people-facing true :hold true :confirm-kind "send" :hours b/hours-window :outage true
                        :card (fn [d] (let [e (b/evt d)] {:people [(get-in e [:target :id])] :sessions (vec (keep identity [(get-in e [:link :session])]))}))
                        :what (fn [d] (str "A WhatsApp message to " (get-in (b/evt d) [:target :name])))}
    :hold/cancel       {:needs "L0" :correction true}

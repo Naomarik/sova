@@ -16962,6 +16962,42 @@
         "site/src/content.config.ts",
         "site/astro.config.mjs"
       ]
+    },
+    "§tools.spec/census-rank": {
+      "kind": "behavior",
+      "requires": [
+        "§tools.spec/census-created",
+        "§tools.spec/where-lookup"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/README.md",
+        "pi-config/extensions/spec/core/README.md",
+        "pi-config/extensions/spec/tests/census-rank.test.mjs",
+        "pi-config/extensions/spec/tests/core.test.mjs"
+      ]
+    },
+    "§tools.spec/unread-landed": {
+      "kind": "behavior",
+      "requires": [
+        "§tools.spec/census-note",
+        "§tools.spec/census-rank",
+        "§tools.spec/no-turn-end-check"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/mode/spec-guard.ts",
+        "pi-config/extensions/mode/spec-guard.test.ts",
+        "pi-config/extensions/claude-code/spec-hooks.test.ts",
+        "pi-config/extensions/mode/spec-mode.md",
+        "pi-config/extensions/mode/README.md",
+        "pi-config/extensions/spec/docs/MODE.md",
+        "pi-config/extensions/spec/README.md",
+        "site/src/content/docs/modes/spec.md"
+      ]
     }
   },
   "boundary": {

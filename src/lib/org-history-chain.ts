@@ -21,7 +21,11 @@ export interface ChainItem {
   /** The card's other returned edges, each said here once. */
   also: { edge: ChainEdge; words: string; causal: boolean }[];
   children: ChainItem[];
+  /** The bound cut the chain past this card: its earlier or later events weren't returned. */
+  cut: "before" | "after" | null;
 }
+
+export type ChainSection = "causes" | "consequences" | "related";
 
 export interface ChainSections {
   causes: ChainItem[];
@@ -29,6 +33,9 @@ export interface ChainSections {
   rootCap: boolean;
   consequences: ChainItem[];
   related: ChainItem[];
+  /** Where each side's Expand goes: the first section, in reading order, holding a card the bound cut past
+      (this event itself: above Came from, or under Led to); null when nothing on that side was left out. */
+  expandAt: { before: ChainSection | null; after: ChainSection | null };
 }
 
 const at = (e: Pick<EventSummary, "occurredAt" | "recordedAt">) => e.occurredAt ?? e.recordedAt;
@@ -37,7 +44,7 @@ export const edgeKey = (e: ChainEdge): string => `${e.from}>${e.to}>${e.via ?? "
 /** A headline as a noun in another card's words, short enough to read on one line. */
 const quoted = (h: string): string => `“${h.length > 48 ? `${h.slice(0, 47).trimEnd()}…` : h}”`;
 
-export function chainSections(c: Pick<HistoryChain, "root" | "nodes" | "edges" | "noTrigger">): ChainSections {
+export function chainSections(c: Pick<HistoryChain, "root" | "nodes" | "edges" | "noTrigger"> & Partial<Pick<HistoryChain, "omitted" | "frontier">>): ChainSections {
   const byId = new Map(c.nodes.map((n) => [n.id, n]));
   const order = (a: string, b: string) => {
     const x = byId.get(a)!;
@@ -83,6 +90,7 @@ export function chainSections(c: Pick<HistoryChain, "root" | "nodes" | "edges" |
       cap: noTrigger.has(id) && (sect === "cause" || (!!edge && isCause(edge) && side === "from" && sect === "related")),
       also: [],
       children: [],
+      cut: c.frontier?.before.includes(id) ? "before" : c.frontier?.after.includes(id) ? "after" : null,
     };
     items.set(id, item);
     return item;
@@ -163,7 +171,18 @@ export function chainSections(c: Pick<HistoryChain, "root" | "nodes" | "edges" |
     const w = side === "from" ? `also ${edgeWords(e, "from", other)}` : edgeWords(e, "to", other).replace(/^(“[^”]*”|the event (?:above|below)|\S+) /, "$1 also ");
     items.get(card)?.also.push({ edge: e, words: w, causal: isCause(e) });
   }
-  return { causes, rootCap: noTrigger.has(c.root) && !causes.length, consequences, related };
+  return { causes, rootCap: noTrigger.has(c.root) && !causes.length, consequences, related, expandAt: { before: expandAt("before"), after: expandAt("after") } };
+
+  /** The bound's place on one side: where its cut cards are (an older answer without them: the side's own section). */
+  function expandAt(side: "before" | "after"): ChainSection | null {
+    if (!c.omitted?.[side]) return null;
+    const own: ChainSection = side === "before" ? "causes" : "consequences";
+    const cut = c.frontier?.[side];
+    if (!cut?.length || cut.includes(c.root)) return own;
+    const SECTIONS = { cause: "causes", consequence: "consequences", related: "related" } as const;
+    const held = new Set(cut.map((id) => section.get(id)).filter((x) => x && x !== "root").map((x) => SECTIONS[x as keyof typeof SECTIONS]));
+    return (["causes", "consequences", "related"] as const).find((x) => held.has(x)) ?? own;
+  }
 }
 
 /** The bound in words: how many events, how far each way, and what was left out. */

@@ -5,7 +5,7 @@ import { boundLine, chainSections, mergeChain, type ChainItem, type ChainSection
 
 const node = (id: string, hop: number, t: number, headline = id) => ({ id, hop, recordedAt: t, headline }) as EventSummary & { hop: number };
 const chain = (over: Partial<HistoryChain>): HistoryChain =>
-  ({ root: "r", nodes: [], edges: [], omitted: { before: 0, after: 0 }, cursor: null, noTrigger: [], freshness: { through: null, events: 0, current: true, rebuiltAt: null }, ...over }) as HistoryChain;
+  ({ root: "r", nodes: [], edges: [], omitted: { before: 0, after: 0 }, frontier: { before: [], after: [] }, cursor: null, noTrigger: [], freshness: { through: null, events: 0, current: true, rebuiltAt: null }, ...over }) as HistoryChain;
 const cause = (from: string, to: string, via: ChainEdge["via"] = "effect"): ChainEdge => ({ from, to, via, link: "cause" });
 const rel = (from: string, to: string, type: ChainEdge["type"]): ChainEdge => ({ from, to, type, link: "relation" });
 
@@ -120,4 +120,56 @@ test("Expand merges the next page: nodes by id, edges once, the newer bound's co
   assert.deepEqual(m.omitted, { before: 0, after: 0 });
   assert.equal(m.cursor, null);
   assert.deepEqual(m.noTrigger, ["p", "q"]);
+});
+
+// The gap's chain from the re-run: two hops reach the gathering and its decisions; the next page brings the conflict
+// that names a decision, the settle gathering it spawned, and the settle's decision. Merged, they take their place.
+test("Expand: the next page's events join the sections by their edges, causal pairs on cause rails, none appended unlinked", () => {
+  const page1 = chain({
+    root: "gap",
+    nodes: [node("gap", 0, 1, "Gap filed"), node("gath", 1, 2, "Gathering started"), node("dec", 2, 3, "Nothing posts on its own")],
+    edges: [rel("gath", "gap", "named-target"), rel("dec", "gath", "recorded-in")],
+    omitted: { before: 0, after: 3 },
+    frontier: { before: [], after: ["dec"] },
+    cursor: "c1",
+    noTrigger: ["gap", "gath", "dec"],
+  });
+  const page2 = chain({
+    root: "gap",
+    nodes: [node("gap", 0, 1, "Gap filed"), node("opened", 3, 4, "Conflict opened"), node("settle", 4, 5, "Gathering started: Settle"), node("settled", 4, 6, "Conflict settled")],
+    // the edge back to the frontier event is returned with the page that reaches past it
+    edges: [rel("opened", "dec", "named-target"), cause("opened", "settle", "spawn"), rel("settled", "opened", "named-target")],
+    omitted: { before: 0, after: 0 },
+    frontier: { before: [], after: [] },
+    cursor: null,
+    noTrigger: ["opened", "settled"],
+  });
+  const before = chainSections(page1);
+  assert.equal(before.expandAt.after, "related", "the bound cut the chain in Related: the button goes there, not under Led to");
+  assert.equal(before.expandAt.before, null);
+  assert.equal(walk(before.related).find((i) => i.id === "dec")!.cut, "after", "the card past which events weren't shown");
+  const s = chainSections(mergeChain(page1, page2));
+  assert.deepEqual(s.expandAt, { before: null, after: null });
+  const items = new Map(all(s).map((i) => [i.id, i]));
+  for (const id of ["opened", "settle", "settled"]) assert.ok(items.get(id)!.edge, `${id} is placed by its edge`);
+  assert.equal(items.get("dec")!.cut, null);
+  const dec = items.get("dec")!;
+  assert.ok(dec.children.some((c) => c.id === "opened"), "the conflict hangs from the decision it names");
+  assert.equal(items.get("opened")!.words, "names it as its target");
+  const settle = items.get("settle")!;
+  assert.deepEqual({ causal: settle.causal, words: settle.words }, { causal: true, words: "the event above triggered it · spawned" }, "a causal pair among them reads as a cause, on its rail");
+  assert.deepEqual(s.consequences, [], "nothing triggered by the gap");
+});
+
+test("Expand: a consequence beyond two hops joins Led to; the frontier's place says where the button goes", () => {
+  const page1 = chain({ nodes: [node("r", 0, 1), node("c1", 1, 2), node("c2", 2, 3)], edges: [cause("r", "c1"), cause("c1", "c2")], omitted: { before: 0, after: 1 }, frontier: { before: [], after: ["c2"] }, cursor: "c" });
+  assert.equal(chainSections(page1).expandAt.after, "consequences");
+  const page2 = chain({ nodes: [node("r", 0, 1), node("c3", 3, 4)], edges: [cause("c2", "c3", "request")], frontier: { before: [], after: [] } });
+  const s = chainSections(mergeChain(page1, page2));
+  assert.deepEqual(walk(s.consequences).map((i) => i.id), ["c1", "c2", "c3"]);
+  assert.equal(walk(s.consequences).at(-1)!.words, "the event above triggered it · requested");
+  // an older answer with no frontier: earlier events above Came from, later ones under Led to
+  assert.deepEqual(chainSections({ ...page1, frontier: undefined } as never).expandAt, { before: null, after: "consequences" });
+  // the root itself at the bound
+  assert.equal(chainSections(chain({ nodes: [node("r", 0, 1)], omitted: { before: 2, after: 0 }, frontier: { before: ["r"], after: [] }, cursor: "c" })).expandAt.before, "causes");
 });

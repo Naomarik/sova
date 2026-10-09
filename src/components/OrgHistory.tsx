@@ -45,11 +45,16 @@ export function OrgHistory(props: { org: OrgDetail; view: HistoryView }) {
   const orgId = props.org.id;
   // Scalars behind equality-gated memos: a re-read of the org or a new route object for the same
   // address changes none of them, so nothing below resets (CLAUDE.md, Method: `on` doesn't gate values).
-  const { filtersKey: fKey, filters, selected, chain } = historyViewMemos(() => props.view);
+  const { filtersKey: fKey, filters, selected, chain, more } = historyViewMemos(() => props.view);
   const list = createHistoryList({ key: fKey, query: () => queryOf(filters()), fetch: (q) => getOrgHistory(orgId, q) });
 
-  const view = (): HistoryView => untrack(() => ({ filters: filters(), ...(selected() ? { event: selected() } : {}), ...(chain() ? { chain: true } : {}) }));
-  const hrefWith = (over: Partial<HistoryView>): string => orgHistoryHref(orgId, { ...view(), ...over });
+  const view = (): HistoryView => untrack(() => ({ filters: filters(), ...(selected() ? { event: selected() } : {}), ...(chain() ? { chain: true } : {}), ...(more() ? { more: more() } : {}) }));
+  // The Causal View's expansion belongs to the event it was expanded on: another event's link starts unexpanded.
+  const hrefWith = (over: Partial<HistoryView>): string => {
+    const v = { ...view(), ...over };
+    if (v.event !== view().event && !("more" in over)) delete v.more;
+    return orgHistoryHref(orgId, v);
+  };
   const setFilters = (f: HistoryFilters) => go(orgHistoryHref(orgId, { filters: f, ...(selected() ? { event: selected() } : {}), ...(chain() ? { chain: true } : {}) }));
   const projects = () => props.org.projectList;
 
@@ -143,7 +148,7 @@ export function OrgHistory(props: { org: OrgDetail; view: HistoryView }) {
       <div class="orghist-split">
         <div class="orghist-main">
           <Show when={chain() && selected()} fallback={<Timeline orgId={orgId} list={list} filters={filters()} selected={selected()} hrefWith={hrefWith} onOpen={rememberScroll} />}>
-            {(id) => <OrgHistoryChain orgId={orgId} root={id()} filters={filters()} hrefWith={hrefWith} />}
+            {(id) => <OrgHistoryChain orgId={orgId} root={id()} more={more()} filters={filters()} hrefWith={hrefWith} />}
           </Show>
         </div>
         <Show when={selected()} keyed>

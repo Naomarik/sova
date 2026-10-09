@@ -81,11 +81,16 @@ const same = (a: ActorView, b: ActorView): boolean => !isUnknown(a) && !isUnknow
 const sameRef = (a: Pick<ActorRef, "kind" | "id" | "session">, b: Pick<ActorRef, "kind" | "id" | "session">): boolean =>
   a.kind === b.kind && (a.id ?? "") === (b.id ?? "") && (!a.session || !b.session || a.session === b.session);
 
+/** Who words a statement: a model, an overseer, a person or the operator. Sova, the statechart and the system
+    compose a template headline from names and titles, which words no one's decision. */
+const WORDERS: ReadonlySet<string> = new Set(["model", "project-overseer", "global-overseer", "person", "operator"]);
+
 /** Who worded the statement, when that isn't who decided it (a model wording a person's decision). The
-    operator's own decision is worded by the operator, so it has none, whoever the record names as recorder. */
+    operator's own decision is worded by the operator, so it has none, whoever the record names as recorder;
+    a template headline (a conflict opened, a branch merged) has none either. The one rule for every read. */
 export function wordedBy(e: Pick<EventSummary, "actors">): string | null {
   const a = e.actors;
-  if (!a || isUnknown(a.recordedBy)) return null;
+  if (!a || isUnknown(a.recordedBy) || !WORDERS.has(a.recordedBy.kind)) return null;
   if (!isUnknown(a.decidedBy) && (a.decidedBy.kind === "operator" || sameRef(a.decidedBy, a.recordedBy))) return null;
   return a.recordedBy.label;
 }
@@ -94,7 +99,8 @@ export function wordedBy(e: Pick<EventSummary, "actors">): string | null {
 export const whatAdds = (what: string | undefined, headline: string): boolean => !!what?.trim() && what.trim() !== headline.trim();
 
 /** The recorded reason's caption: "{author} · Worded by {recorder} · recorded at the time" ("Added later"
-    for a later one), "Worded by" only when the recorder isn't the author and the author isn't the operator.
+    for a later one), "Worded by" only when the recorder isn't the author, the author isn't the operator, and
+    the recorder words statements at all (never Sova storing someone's reason, the same rule as `wordedBy`).
     The author is named by the recorder's own label when they are one actor, so it is never named twice. */
 export function reasonCaption(
   r: { author: Pick<ActorRef, "kind" | "id" | "session"> | Unknown; contemporaneous: boolean },
@@ -105,7 +111,7 @@ export function reasonCaption(
   const recorder = isUnknown(recordedBy) ? null : recordedBy;
   const one = !!author && !!recorder && sameRef(author, recorder);
   const parts = [author ? (one ? recorder!.label : label(author)) : "Author not recorded"];
-  if (recorder && !one && author?.kind !== "operator") parts.push(`Worded by ${recorder.label}`);
+  if (recorder && !one && author?.kind !== "operator" && WORDERS.has(recorder.kind)) parts.push(`Worded by ${recorder.label}`);
   parts.push(r.contemporaneous ? "recorded at the time" : "Added later");
   return parts.join(" · ");
 }

@@ -3,23 +3,25 @@
 // Related · not causes (a dashed rail). Each edge's words sit between the cards they join, from the
 // card's side, so causes and relations stay apart by section and by words, never by line style alone.
 // Where no trigger was recorded the list says so in words, with no line. No canvas: it never scrolls
-// sideways. The list is keyboard navigable with the arrow keys, Home and End.
+// sideways. The list is keyboard navigable with the arrow keys, Home and End. Expand sits in the section where
+// the bound cut the chain, and is part of the address (`more=`), so Back and Forward keep what was expanded.
 import { createMemo, For, Show } from "solid-js";
 import { isUnknown, type EventSummary } from "../../shared/org-history";
 import { getHistoryChain } from "../lib/api";
 import type { HistoryFilters, HistoryView } from "../lib/org-history-route";
 import { actorWord, outcomeChip, OUTSIDE_FILTER, projectWords, rowClock, TRIGGER_NOT_RECORDED } from "../lib/org-history-words";
-import { boundLine, chainSections, type ChainItem } from "../lib/org-history-chain";
+import { boundLine, chainSections, type ChainItem, type ChainSection } from "../lib/org-history-chain";
 import { createHistoryChain } from "../lib/org-history-source";
 import { outsideFilter } from "./OrgHistory";
 import { Banner, Chip } from "./ui";
 
 type Href = (over: Partial<HistoryView>) => string;
 
-export function OrgHistoryChain(props: { orgId: string; root: string; filters: HistoryFilters; hrefWith: Href }) {
+export function OrgHistoryChain(props: { orgId: string; root: string; more: number; filters: HistoryFilters; hrefWith: Href }) {
   const { chain, error, busy, read } = createHistoryChain({
     root: () => props.root,
     projects: () => props.filters.projects,
+    more: () => props.more,
     fetch: (root, projects, cursor) => getHistoryChain(props.orgId, root, { projects, ...(cursor ? { cursor } : {}) }),
   });
   const sections = createMemo(() => (chain() ? chainSections(chain()!) : null));
@@ -32,13 +34,14 @@ export function OrgHistoryChain(props: { orgId: string; root: string; filters: H
     if (side === "after" && !o.before && o.after) return `Expand ${o.after} Later ${o.after === 1 ? "Event" : "Events"}`;
     return null;
   };
-  const ExpandButton = (p: { side: "before" | "after" }) => (
-    <Show when={expand(p.side)}>
+  /** Expand, in the section where the bound cut that side: one more page, as a step in the address. */
+  const ExpandButton = (p: { side: "before" | "after"; at: ChainSection }) => (
+    <Show when={sections()?.expandAt[p.side] === p.at && expand(p.side)}>
       {(w) => (
         <div class="button-row">
-          <button type="button" class="button" aria-busy={busy() ? "true" : undefined} onClick={() => read(chain()!.cursor!)}>
+          <a class="button" href={props.hrefWith({ more: props.more + 1 })} aria-busy={busy() ? "true" : undefined}>
             {w()}
-          </button>
+          </a>
         </div>
       )}
     </Show>
@@ -66,7 +69,7 @@ export function OrgHistoryChain(props: { orgId: string; root: string; filters: H
       <Show when={sections()} fallback={<Show when={!error()}><div class="skeleton skeleton-row" aria-label="Reading the chain" /></Show>}>
         {(s) => (
           <div class="orghist-ladder" ref={ladder} onKeyDown={onKey}>
-            <ExpandButton side="before" />
+            <ExpandButton side="before" at="causes" />
             <Show when={s().causes.length || s().rootCap}>
               <div class="orghist-sect">
                 <SectionLabel causal>Came from</SectionLabel>
@@ -100,13 +103,16 @@ export function OrgHistoryChain(props: { orgId: string; root: string; filters: H
               <Show when={s().consequences.length} fallback={<p class="orghist-empty-line">No recorded consequence.</p>}>
                 <Steps items={s().consequences} byId={byId()} filters={props.filters} hrefWith={props.hrefWith} label="Led to" />
               </Show>
+              <ExpandButton side="before" at="consequences" />
+              <ExpandButton side="after" at="consequences" />
             </div>
-            <ExpandButton side="after" />
 
             <Show when={s().related.length}>
               <div class="orghist-sect">
                 <SectionLabel>Related · not causes</SectionLabel>
                 <Steps items={s().related} byId={byId()} filters={props.filters} hrefWith={props.hrefWith} label="Related, not causes" />
+                <ExpandButton side="before" at="related" />
+                <ExpandButton side="after" at="related" />
               </div>
             </Show>
           </div>
@@ -199,6 +205,7 @@ function Card(props: { item: ChainItem; byId: Map<string, EventSummary>; filters
         <Show when={!outside() && decider(e())}>{(d) => <> · {d()}</>}</Show>
       </span>
       <For each={props.item.also}>{(a) => <span class="orghist-ev-meta orghist-ev-also">{a.words}</span>}</For>
+      <Show when={props.item.cut}>{(side) => <span class="orghist-ev-meta orghist-ev-also">{side() === "before" ? "Earlier events past this aren't shown" : "Later events past this aren't shown"}</span>}</Show>
     </a>
   );
 }

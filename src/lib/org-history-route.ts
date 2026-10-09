@@ -43,6 +43,8 @@ export interface HistoryView {
   event?: string;
   /** Causal View instead of the timeline. */
   chain?: boolean;
+  /** How many times the Causal View was expanded past its first bound (1–50), so Back and a link read it as far. */
+  more?: number;
 }
 
 export const emptyFilters = (): HistoryFilters => ({ projects: [] });
@@ -72,7 +74,9 @@ export function historyViewOf(tail: string, params: URLSearchParams): HistoryVie
   if (to && isDay(to)) filters.to = to;
   const q = params.get("q")?.trim();
   if (q) filters.q = q.slice(0, 200);
-  return { filters, ...(event ? { event } : {}), ...(params.get("view") === "chain" ? { chain: true } : {}) };
+  const chain = params.get("view") === "chain";
+  const more = /^[1-9]\d?$/.test(params.get("more") ?? "") ? Number(params.get("more")) : 0;
+  return { filters, ...(event ? { event } : {}), ...(chain ? { chain: true } : {}), ...(chain && more && more <= 50 ? { more } : {}) };
 }
 
 /** The query part (no `?`), in one fixed order, so one view has one address. Empty filters: "". */
@@ -89,6 +93,7 @@ export function historyQueryOf(v: HistoryView): string {
   put("to", f.to);
   put("q", f.q);
   if (v.chain) parts.push("view=chain");
+  if (v.chain && v.more) parts.push(`more=${v.more}`);
   return parts.join("&");
 }
 

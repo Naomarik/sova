@@ -308,6 +308,43 @@ describe("lineage through the real engine", () => {
     assert.equal(closed.length, 1, "the settle's close names the gathering's recorded start");
   });
 
+  test("a conflict opened says who called the reconcile that found it: the operator's call, an overseer's tool; an automatic run stays unknown", async () => {
+    const pair = async (area: string, n: number) => {
+      const a = await decide(await gathering(`${area} A`, "Tony Reyes"), tony.id, `${area} wait ${n} days.`, area);
+      const b = await decide(await gathering(`${area} B`, "Maria Lopez"), maria.id, `${area} wait ${n * 10} days.`, area);
+      return [a, b].sort().join();
+    };
+    const openedFor = (info: { conflicts: { id: string; a: string; b: string }[] }, ids: string) => {
+      const c = info.conflicts.find((k) => [k.a, k.b].sort().join() === ids)!;
+      assert.ok(c, JSON.stringify(info.conflicts));
+      return byKey(`conflict:${decisions.conflictSid(org.id, project.id, c.id)}`);
+    };
+    // the operator's own call (the route's): the operator initiated it, the reconciler (the system) decided it
+    const p1 = await pair("backups", 3);
+    const op = openedFor(await reconcile.reconcileProject(org.id, project.id), p1);
+    assert.deepEqual(op.actors.initiatedBy, { kind: "operator" });
+    assert.deepEqual(op.actors.decidedBy, { kind: "system" });
+    assert.deepEqual(op.actors.recordedBy, { kind: "sova" });
+    assert.deepEqual(op.actors.authorization, { kind: "operator-act", attended: true });
+    // the global Overseer's call through the route: it initiated it, in the operator's turn
+    const p2 = await pair("exports", 4);
+    const go = openedFor(await reconcile.reconcileProject(org.id, project.id, { operator: { kind: "operator", via: "overseer", overseerId: "ovr-1" } }), p2);
+    assert.deepEqual(go.actors.initiatedBy, { kind: "global-overseer", id: "ovr-1" });
+    assert.deepEqual(go.actors.decidedBy, { kind: "system" });
+    assert.deepEqual(go.actors.authorization, { kind: "attended-turn", attended: true });
+    // the project overseer's sova_reconcile, in an attended turn: the overseer initiated it
+    const ids = await pair("archives", 2);
+    await run("sova_reconcile", {});
+    const po = openedFor(reconcile.listDecisions(org.id, project.id), ids);
+    assert.equal((po.actors.initiatedBy as { kind: string }).kind, "project-overseer");
+    assert.deepEqual(po.actors.decidedBy, { kind: "system" });
+    assert.equal((po.actors.authorization as { kind: string }).kind, "attended-turn");
+    // Sova's own run: nothing carried, so nothing filled in
+    const p4 = await pair("mirrors", 5);
+    const auto = openedFor(await reconcile.reconcileProject(org.id, project.id, { auto: true }), p4);
+    assert.equal((auto.actors.initiatedBy as { unknown?: boolean }).unknown, true, JSON.stringify(auto.actors));
+  });
+
   test("the operator's Take Back is recorded: a hand-off back to the operator, named as such", async () => {
     const g = await gathering("Monitoring", "Tony Reyes");
     const before = new Set(ofKind("gathering.handed-off").map((e) => e.id));

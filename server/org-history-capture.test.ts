@@ -312,6 +312,16 @@ describe("headlines", () => {
     assert.notEqual(failed.rationale?.what, "Branch merged");
   });
 
+  test("an observed promotion names the commit it made, as the promote effect answers it ({sha}), with its Git evidence", () => {
+    const answer = (result: { promoted: string[]; refused: string[]; commit?: { sha: string } }) =>
+      step({ sessionId: "reconciler/o1/p1", statechart: "reconciler", event: "effect/done", data: { by: "system", key: "k7", result }, changed: { "sova/pending.k7": ["promote", null] } });
+    const sha = "12c59bf0e4a1d2c3b4a5968778695a4b3c2d1e0f";
+    const input = one(composeHistory([answer({ promoted: ["d1"], refused: [], commit: { sha } })], ctx({ projectId: "p1" } as Partial<CaptureContext>)), "promotion.made");
+    assert.equal(input.rationale?.what, "Decisions promoted: 12c59bf");
+    assert.ok(input.evidence?.some((e) => e.kind === "git" && e.commit === sha), JSON.stringify(input.evidence));
+    assert.equal(whatOf(answer({ promoted: ["d1"], refused: [] }), "promotion.made"), "Decisions promoted", "no commit: none named");
+  });
+
   test("an object-less headline names its object from a title the step carries, else keeps the kind's wording", () => {
     const filed = (data: Record<string, unknown>) => step({ sessionId: "placement/o1/p1", statechart: "placement", event: "gap/file", data: { ...operatorEnv, gapId: "g_1", ideaId: "i1", ...data } });
     assert.equal(whatOf(filed({ title: "Receipts export", ...SECRET }), "gap.filed"), "Gap filed: Receipts export");

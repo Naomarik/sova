@@ -88,3 +88,54 @@ test("a failed read says so for its own event only, and the next event clears it
   assert.equal(c.chain()?.root, "he_b");
   dispose();
 });
+
+test("the expansion is the address's: Expand goes one page further, Back to an expanded chain reads it as far again", async () => {
+  const calls: { root: string; cursor?: string; resolve: (c: HistoryChain) => void }[] = [];
+  const { c, setRoot, setMore, dispose } = solid.createRoot((dispose) => {
+    const [root, setRoot] = solid.createSignal("he_g");
+    const [more, setMore] = solid.createSignal(1);
+    const c = createHistoryChain({ root, projects: () => [], more, fetch: (r, _p, cursor) => new Promise<HistoryChain>((resolve) => calls.push({ root: r, ...(cursor ? { cursor } : {}), resolve })) });
+    return { c, setRoot, setMore, dispose };
+  });
+  const answer = async (i: number, ch: HistoryChain) => {
+    calls[i]!.resolve(ch);
+    await flush();
+  };
+  await flush();
+  // Opened at more=1 (a link, a reload, Back): the first page, then one further, merged.
+  await answer(0, chainOf("he_g", "g1"));
+  assert.deepEqual(calls.map((x) => [x.root, x.cursor]), [["he_g", undefined], ["he_g", "g1"]]);
+  await answer(1, chainOf("he_g", "g2", ["he_1"]));
+  assert.deepEqual(c.chain()?.nodes.map((n) => n.id), ["he_g", "he_1"]);
+  // Expand: one page further, nothing read again.
+  setMore(2);
+  await flush();
+  assert.deepEqual(calls.slice(2).map((x) => x.cursor), ["g2"]);
+  await answer(2, chainOf("he_g", null, ["he_2"]));
+  assert.deepEqual(c.chain()?.nodes.map((n) => n.id), ["he_g", "he_1", "he_2"]);
+  // Another event's chain (a card's link: more=0), then Back to this one at more=2: read as far as it was.
+  solid.batch(() => {
+    setRoot("he_c");
+    setMore(0);
+  });
+  await flush();
+  await answer(3, chainOf("he_c", "c1"));
+  assert.equal(calls.length, 4, "a chain not expanded reads one page");
+  solid.batch(() => {
+    setRoot("he_g");
+    setMore(2);
+  });
+  await flush();
+  await answer(4, chainOf("he_g", "g1"));
+  await answer(5, chainOf("he_g", "g2", ["he_1"]));
+  await answer(6, chainOf("he_g", null, ["he_2"]));
+  assert.deepEqual(calls.slice(4).map((x) => [x.root, x.cursor]), [["he_g", undefined], ["he_g", "g1"], ["he_g", "g2"]]);
+  assert.deepEqual(c.chain()?.nodes.map((n) => n.id), ["he_g", "he_1", "he_2"]);
+  // Back within the same event, to fewer pages: read again from the start, only that far.
+  setMore(0);
+  await flush();
+  await answer(7, chainOf("he_g", "g1"));
+  assert.equal(calls.length, 8);
+  assert.deepEqual(c.chain()?.nodes.map((n) => n.id), ["he_g"]);
+  dispose();
+});

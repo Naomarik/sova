@@ -474,6 +474,9 @@ const said = (what: string | null | undefined): HistoryInput["rationale"] | unde
 // ---- headlines ------------------------------------------------------------------------------------------------
 
 /** A name or title as the step's data holds it, on one line and short; never anything else. */
+/** The commit an effect's answer names: a merge answers its sha, a promotion `{ sha }`. */
+const commitOf = (result: Record<string, unknown>): string | undefined => str(result.commit) ?? (isObj(result.commit) ? str(result.commit.sha) : undefined);
+
 const label = (v: unknown): string | undefined => {
   const t = typeof v === "string" ? v.replace(/\s+/g, " ").trim() : "";
   return t ? (t.length > 120 ? `${t.slice(0, 119)}…` : t) : undefined;
@@ -500,7 +503,7 @@ export function headlineOf(kind: HistoryKind, outcome: HistoryOutcome, d: Record
   const people = namesOf(d.targetPeople) ?? person;
   const title = label(d.publicTitle);
   const result = isObj(d.result) ? d.result : {};
-  const sha = label(result.commit);
+  const sha = label(commitOf(result));
   const commit = sha && /^[0-9a-f]{8,40}$/i.test(sha) ? sha.slice(0, 7) : sha;
   const project = label(d.projectName);
   switch (kind) {
@@ -706,7 +709,7 @@ export function composeHistory(steps: readonly Step[], ctx: CaptureContext): His
       const failed = s.event === "effect/failed";
       const result = isObj(d.result) ? d.result : {};
       const evidence: EvidenceRef[] = [];
-      if ((kind === "merge.observed" || kind === "promotion.made") && str(result.commit)) evidence.push({ n: 1, kind: "git", repo: "project", ...(projectId ? { project: projectId } : {}), commit: str(result.commit)! });
+      if ((kind === "merge.observed" || kind === "promotion.made") && commitOf(result)) evidence.push({ n: 1, kind: "git", repo: "project", ...(projectId ? { project: projectId } : {}), commit: commitOf(result)! });
       if (kind === "validation.observed")
         evidence.push({ n: 1, kind: "validation", runner: "conform", result: failed ? "unknown" : result.pass === true ? "passed" : result.pass === false ? "failed" : "unknown", ...(projectId ? { project: projectId } : {}) });
       const outcome: HistoryOutcome = kind === "outreach.sent" ? sendOutcome(failed, result) : failed ? "failed" : kind === "build.started" ? "started" : kind === "preview.made" ? "done" : "observed";
@@ -781,11 +784,23 @@ export function composeHistory(steps: readonly Step[], ctx: CaptureContext): His
     if (s.event === "sova/started" && chart === "conflict") {
       // the two decisions its start data names as its sides
       const sides = [d.a, d.b].map((x) => (isObj(x) ? str(x.id) : undefined)).filter((x): x is string => !!x);
+      const input = common("conflict.opened", "recorded", `conflict:${s.sessionId}`, {
+        entities: [{ type: "conflict", id: s.sessionId }],
+        ...(sides.length ? { relationKeys: [...new Set(sides)].map((did) => toKey("named-target", `decision:${did}`, { type: "decision", id: did })) } : {}),
+      });
+      // the run's request, as its start data carries it (the operator's call, the global Overseer's through it, a
+      // project overseer's tool): who called it initiated it, under that call's authorization; the reconciler's
+      // comparison decided it. An automatic run carries none and stays as its step says.
+      const asked = isObj(d.requestedBy) && (d.requestedBy.by === "operator" || d.requestedBy.by === "overseer") ? actorsOf({ by: null, data: d.requestedBy as Step["data"], sessionId: s.sessionId }, projectId) : null;
+      const askedPolicy = asked ? policyOf(d.requestedBy as Record<string, unknown>) : undefined;
       push(
-        common("conflict.opened", "recorded", `conflict:${s.sessionId}`, {
-          entities: [{ type: "conflict", id: s.sessionId }],
-          ...(sides.length ? { relationKeys: [...new Set(sides)].map((did) => toKey("named-target", `decision:${did}`, { type: "decision", id: did })) } : {}),
-        }),
+        asked
+          ? {
+              ...input,
+              actors: { initiatedBy: asked.decidedBy, decidedBy: { kind: "system" }, recordedBy: { kind: "sova" }, executedBy: { kind: "sova" }, authorization: asked.authorization },
+              ...(askedPolicy ? { policy: askedPolicy } : {}),
+            }
+          : input,
       );
       return;
     }

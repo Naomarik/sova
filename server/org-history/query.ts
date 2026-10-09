@@ -250,7 +250,7 @@ export class HistoryReads {
   }
 
   /** The rationale the reader may read, and how its reason stands. */
-  private reasonOf(e: IndexEntry, reader: HistoryReader, asOf?: number): { rationale: HistoryRationale | null; state: EventSummary["reasonState"]; reason?: string; reasonOf?: EventId } {
+  private reasonOf(e: IndexEntry): { rationale: HistoryRationale | null; state: EventSummary["reasonState"]; reason?: string } {
     let rationale: HistoryRationale | null = null;
     if (e.rationale) {
       const r = readRationale(this.paths, e.id);
@@ -258,13 +258,7 @@ export class HistoryReads {
       else if (this.purgedAt(e.id) != null) return { rationale: null, state: "purged" };
     }
     if (rationale?.reason) return { rationale, state: rationale.reason.contemporaneous ? "recorded" : "added-later", reason: firstLine(rationale.reason.text) };
-    // a reason given afterwards: its own event, "Added later"
-    for (const lid of this.index.later.get(e.id) ?? []) {
-      const l = this.index.entry(lid);
-      if (!l?.ok || l.kind !== "annotation.added" || !l.rationale || !asOfOk(l, asOf) || this.access(reader, l, asOf) !== "full") continue;
-      const r = readRationale(this.paths, l.id);
-      if (r.state === "present" && r.rationale.reason) return { rationale, state: "added-later", reason: firstLine(r.rationale.reason.text), reasonOf: l.id };
-    }
+    // a note's or a correction's reason is that event's own, never this one's: it is listed under Added later
     return { rationale, state: "not-recorded" };
   }
 
@@ -312,7 +306,7 @@ export class HistoryReads {
         boundary: true,
       };
     const ev = this.index.event(e.id);
-    const reason = this.reasonOf(e, reader, asOf);
+    const reason = this.reasonOf(e);
     const sup = this.superseded(e, reader, asOf);
     const group = this.grouped(e.id, reader, asOf).length;
     const affected = reader.role === "project-overseer" ? p.affected.filter((x) => x === reader.project) : p.affected;
@@ -599,7 +593,7 @@ export class HistoryReads {
     const ev = this.index.event(id);
     if (!ev) return { event: this.summary(e, reader, "full", asOf, labels), ...empty };
     const filter = opts.projects?.length ? new Set(opts.projects) : undefined;
-    const { rationale } = this.reasonOf(e, reader, asOf);
+    const { rationale } = this.reasonOf(e);
     const record = this.recordFor(reader, ev, asOf, labels);
     const t = (s: string | undefined) => (s == null ? undefined : this.text(reader, s, labels));
     const evidence: EvidenceView[] = [];
@@ -674,7 +668,7 @@ export class HistoryReads {
     if (!ev || !ref) return null;
     const av = this.availability(reader, ref, sources);
     if (!av) return null;
-    const quote = this.reasonOf(e, reader).rationale?.quotes?.find((q) => q.n === n)?.text;
+    const quote = this.reasonOf(e).rationale?.quotes?.find((q) => q.n === n)?.text;
     if (reader.role === "project-overseer" && ref.kind === "transcript" && ref.speaker) ref = { ...ref, speaker: this.actorFor(reader, ref.speaker) as ActorRef };
     return { ref, availability: av.availability, ...(quote ? { quote: this.text(reader, quote, labels) } : {}) };
   }
@@ -693,12 +687,20 @@ export class HistoryReads {
     const hops = Math.max(1, Math.min(opts.hops ?? HISTORY_BOUNDS.hops, HISTORY_BOUNDS.hops));
     const limit = Math.max(1, Math.min(opts.limit ?? HISTORY_BOUNDS.nodes, HISTORY_BOUNDS.nodes));
     const filter = opts.projects?.length ? new Set(opts.projects) : undefined;
-    const cur = decodeCursor<{ b: [EventId, number, Reach][]; a: [EventId, number, Reach][] }>(opts.cursor);
+    // `k`: the events earlier pages returned, by a 12-character piece of each id, so the next page joins them (its
+    // edges to them are returned) and never returns one of them again
+    const cur = decodeCursor<{ b: [EventId, number, Reach][]; a: [EventId, number, Reach][]; k?: string }>(opts.cursor);
+    const shortOf = (eid: EventId) => eid.slice(3, 15);
+    const known = new Set<string>();
+    if (typeof cur?.k === "string") for (let i = 0; i + 12 <= cur.k.length; i += 12) known.add(cur.k.slice(i, i + 12));
+    const shown = (eid: EventId) => known.has(shortOf(eid)) && eid !== root.id;
     // what a node may be: walked (full) or a card (not walked on from)
     const acc = (e: IndexEntry | undefined): Access => this.viaLink(reader, e, asOf);
     const nodes = new Map<EventId, { e: IndexEntry; hop: number; a: Access; reached?: Reach }>();
     const omitted = { before: 0, after: 0 };
     const next = { b: [] as [EventId, number, Reach][], a: [] as [EventId, number, Reach][] };
+    /** The returned events past which the bound left events out, each side. */
+    const frontierOf = { before: [] as EventId[], after: [] as EventId[] };
     nodes.set(root.id, { e: root, hop: 0, a: "full" });
     // A node's links on one side: its triggers (causes) and the relations it holds (their targets are earlier),
     // or its consequences and the relations held on it. A node is reached as a cause only through causes all the way.
@@ -716,7 +718,7 @@ export class HistoryReads {
         for (const [sid, hop, reached] of level) {
           if (acc(this.index.entry(sid)) !== "full") continue;
           for (const [nid, r] of linksOf(sid, side, reached)) {
-            if (nodes.has(nid)) continue;
+            if (nodes.has(nid) || shown(nid)) continue;
             const had = found.get(nid);
             // reached both ways at one hop: a cause
             if (!had || (had.reached === "relation" && r === "cause")) found.set(nid, { hop: side === "before" ? hop - 1 : hop + 1, reached: r });
@@ -740,7 +742,13 @@ export class HistoryReads {
       const frontier = new Set<EventId>();
       for (const [sid, , reached] of level) {
         if (acc(this.index.entry(sid)) !== "full") continue;
-        for (const [nid] of linksOf(sid, side, reached)) if (!nodes.has(nid) && acc(this.index.entry(nid)) !== "none") frontier.add(nid);
+        let cut = false;
+        for (const [nid] of linksOf(sid, side, reached))
+          if (!nodes.has(nid) && !shown(nid) && acc(this.index.entry(nid)) !== "none") {
+            frontier.add(nid);
+            cut = true;
+          }
+        if (cut) frontierOf[side].push(sid);
       }
       omitted[side] += frontier.size;
       if (frontier.size) (side === "before" ? next.b : next.a).push(...(level as [EventId, number, Reach][]));
@@ -748,10 +756,17 @@ export class HistoryReads {
     walk("before", cur?.b ?? [[root.id, 0, undefined]]);
     walk("after", cur?.a ?? [[root.id, 0, undefined]]);
     const edges: ChainEdge[] = [];
+    // an event an earlier page returned, still readable: this page's edges to it are returned too
+    const joins = (eid: EventId) => !nodes.has(eid) && shown(eid) && acc(this.index.entry(eid)) !== "none";
+    const walked = (eid: EventId) => acc(this.index.entry(eid)) === "full";
     for (const { e } of nodes.values()) {
       if (!e.ok || acc(e) !== "full") continue;
-      for (const t of e.triggers) if (nodes.has(t.event)) edges.push({ from: t.event, to: e.id, via: t.via, link: "cause" });
-      for (const r of e.rels) if (nodes.has(r.event)) edges.push({ from: e.id, to: r.event, type: r.type, link: "relation" });
+      for (const t of e.triggers) if (nodes.has(t.event) || joins(t.event)) edges.push({ from: t.event, to: e.id, via: t.via, link: "cause" });
+      for (const r of e.rels) if (nodes.has(r.event) || joins(r.event)) edges.push({ from: e.id, to: r.event, type: r.type, link: "relation" });
+      if (e.id === root.id || !known.size) continue;
+      // the links an earlier page's walked event holds onto this one (they were left out then: this one wasn't returned)
+      for (const c of this.index.children.get(e.id) ?? []) if (joins(c.id) && walked(c.id)) edges.push({ from: e.id, to: c.id, via: c.via, link: "cause" });
+      for (const r of this.index.relIn.get(e.id) ?? []) if (joins(r.id) && walked(r.id)) edges.push({ from: r.id, to: e.id, type: r.type, link: "relation" });
     }
     // a card's own links are not shown; only those from walked nodes
     const ordered = [...nodes.values()].sort((x, y) => x.hop - y.hop || x.e.pos - y.e.pos);
@@ -764,7 +779,8 @@ export class HistoryReads {
       }),
       edges: edges.sort((x, y) => (x.from + x.to + (x.via ?? x.type)).localeCompare(y.from + y.to + (y.via ?? y.type))),
       omitted,
-      cursor: next.b.length || next.a.length ? encodeCursor(next) : null,
+      frontier: frontierOf,
+      cursor: next.b.length || next.a.length ? encodeCursor({ ...next, k: [...new Set([...known, ...[...nodes.keys()].map(shortOf)])].join("") }) : null,
       noTrigger: ordered.filter(({ e, a }) => a === "full" && e.ok && e.triggers.length === 0).map(({ e }) => e.id),
       freshness: this.freshnessFor(reader, asOf),
     };

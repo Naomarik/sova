@@ -177,6 +177,17 @@ test("WHAT shows only when it says more than the headline; Worded by only for a 
   assert.equal(wordedBy({ actors: actors({ decidedBy: unknown, recordedBy: model }) }), "A model");
   assert.equal(wordedBy({ actors: actors({ decidedBy: person("Mahmoud"), recordedBy: unknown }) }), null);
   assert.equal(wordedBy({ actors: undefined }), null);
+  // Sova (or the statechart, or the system) composing a template headline words no one's decision: a conflict opened,
+  // a decision superseded, a branch merged, a preview made, a settle gathering started.
+  const statechart: ActorView = { kind: "statechart", label: "The statechart" };
+  const system: ActorView = { kind: "system", label: "System" };
+  assert.equal(wordedBy({ actors: actors({ decidedBy: unknown, recordedBy: sova }) }), null, "conflict opened, decision superseded");
+  assert.equal(wordedBy({ actors: actors({ decidedBy: statechart, recordedBy: sova }) }), null, "a settle gathering started");
+  assert.equal(wordedBy({ actors: actors({ decidedBy: overseer, recordedBy: sova }) }), null, "an effect's answer");
+  assert.equal(wordedBy({ actors: actors({ decidedBy: system, recordedBy: system }) }), null);
+  // Words someone put on another's decision still say so: a model or an overseer, or the operator wording a person's.
+  assert.equal(wordedBy({ actors: actors({ decidedBy: person("Mahmoud"), recordedBy: overseer }) }), "Overseer · Expense Inbox");
+  assert.equal(wordedBy({ actors: actors({ decidedBy: person("Mahmoud"), recordedBy: { kind: "operator", label: "Operator" } }) }), "Operator");
 });
 
 test("the reason's caption names its author once, Worded by only when someone else wrote it", () => {
@@ -187,6 +198,7 @@ test("the reason's caption names its author once, Worded by only when someone el
   assert.equal(reasonCaption({ author: { kind: "person", id: "p_1" }, contemporaneous: true }, model, label), "Mahmoud · Worded by A model · recorded at the time");
   assert.equal(reasonCaption({ author: { kind: "operator" }, contemporaneous: false }, operator, label), "Operator · Added later");
   assert.equal(reasonCaption({ author: { kind: "operator" }, contemporaneous: true }, { kind: "sova", label: "Sova" }, label), "Operator · recorded at the time");
+  assert.equal(reasonCaption({ author: { kind: "person", id: "p_1" }, contemporaneous: true }, { kind: "sova", label: "Sova" }, label), "Mahmoud · recorded at the time", "Sova storing a person's reason words nothing");
   assert.equal(reasonCaption({ author: unknown, contemporaneous: true }, model, label), "Author not recorded · Worded by A model · recorded at the time");
 });
 

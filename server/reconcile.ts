@@ -44,7 +44,7 @@ import { heldAt, hostOf, isOrgHostOpen, onOrgHostOpened, refusalError, type ActR
 import type { Envelope } from "./org-envelope";
 import { envelopeFor } from "./org-engine";
 import { withUsageContext } from "../pi-config/extensions/llm-inflight/attribution.ts";
-import { operatorEnvelope, operatorName, OrgError, placementSid, readHistory, readProjects, readRoster, shortId } from "./orgs";
+import { operatorEnvelope, operatorName, OrgError, placementSid, readHistory, readProjects, readRoster, shortId, type OperatorBy } from "./orgs";
 import {
   PROJECT_DRAFT,
   areaId,
@@ -632,7 +632,16 @@ export interface ReconcileOptions {
   /** The caller's own envelope (the project overseer's turn), else the operator's. */
   envelope?: Envelope;
   attended?: boolean;
+  /** The operator's call as the route received it (through the global Overseer: its id and card). */
+  operator?: OperatorBy;
 }
+
+/** Who asked for a run, as the request's envelope said it: carried into each conflict that run opens, so the
+    conflict's start names who started it. Only an operator's or an overseer's own request has one. */
+export type Requester = Pick<Envelope, "by" | "attended"> & Partial<Pick<Envelope, "via" | "overseerId" | "autonomy" | "paused" | "ceiling" | "card">>;
+const REQUESTER_KEYS = ["by", "attended", "via", "overseerId", "autonomy", "paused", "ceiling", "card"] as const;
+/** The request waiting for its run, per project (the reconciler's next run takes it). */
+const requesters = new Map<string, Requester>();
 
 /**
  * The model and thinking of a settle session (the person talks to it, like any gathering
@@ -765,7 +774,15 @@ export async function reconcileProject(orgId: string, projectId: string, opts: R
   await syncReconcileSwitch(orgId);
   // The statechart's own refusal answers "That can't be done now." while off (inbox-charts/server3-p3-findings.md 1).
   if (by !== "sova" && hostOf(orgId).configuration(reconcilerSid(orgId, projectId))?.includes("off")) throw new OrgError(RECONCILE_OFF, 409);
-  await act(orgId, reconcilerSid(orgId, projectId), "reconcile/request", { delayMs: 0, by: by === "sova" ? "sova" : by, ...(opts.owner ? { owner: opts.owner } : {}) }, opts.envelope ?? envelopeOf(orgId, projectId, by, opts.attended ?? true));
+  const envelope = opts.envelope ?? (by === "operator" ? operatorEnvelope(orgId, projectId, opts.operator) : envelopeOf(orgId, projectId, by, opts.attended ?? true));
+  const key = `${orgId}/${projectId}`;
+  if (by !== "sova") requesters.set(key, Object.fromEntries(REQUESTER_KEYS.filter((k) => envelope[k] !== undefined).map((k) => [k, envelope[k]])) as Requester);
+  try {
+    await act(orgId, reconcilerSid(orgId, projectId), "reconcile/request", { delayMs: 0, by: by === "sova" ? "sova" : by, ...(opts.owner ? { owner: opts.owner } : {}) }, envelope);
+  } catch (err) {
+    requesters.delete(key);
+    throw err;
+  }
   await runEnded(orgId, projectId);
   return listDecisions(orgId, projectId);
 }
@@ -808,7 +825,7 @@ const resultsSince = (before: Map<string, string>, store: DecisionStore): Record
  * settle session is the conflict statechart's), draft the clean decisions. Reads the statecharts; writes only the
  * project's draft; its results go back to the statechart, which moves each decision and spawns the conflicts.
  */
-export async function runReconcile(orgId: string, projectId: string, params: { by: CostStarter; owner?: BatonOwner }): Promise<RunResult> {
+export async function runReconcile(orgId: string, projectId: string, params: { by: CostStarter; owner?: BatonOwner; requestedBy?: Requester }): Promise<RunResult> {
   const d = await currentDeps();
   const project = projectOf(orgId, projectId);
   const store = readDecisionStore(orgId, projectId);
@@ -973,6 +990,7 @@ export async function runReconcile(orgId: string, projectId: string, params: { b
         ...(c.selfAsserted ? { selfAsserted: true } : {}),
         batonSessionId: randomUUID(),
         operatorName: operatorName(),
+        ...(params.requestedBy ? { requestedBy: params.requestedBy } : {}),
         ...choice,
       };
     });
@@ -1324,7 +1342,10 @@ function registerReconcile(host: OrgHostApi, orgId: string): void {
       const projectId = pidOf(inv);
       const p = (inv.params ?? {}) as { by?: string; owner?: BatonOwner };
       const by: CostStarter = p.by === "sova" ? "sova" : p.by === "overseer" || p.by === "statechart" ? "overseer" : "operator";
-      void runReconcile(orgId, projectId, { by, ...(p.owner && p.owner !== "operator" ? { owner: p.owner } : {}) })
+      // an operator's or an overseer's own request: who asked (an automatic run, Sova's or the statechart's, has none)
+      const requestedBy = p.by === "operator" || p.by === "overseer" ? requesters.get(`${orgId}/${projectId}`) : undefined;
+      if (requestedBy) requesters.delete(`${orgId}/${projectId}`);
+      void runReconcile(orgId, projectId, { by, ...(p.owner && p.owner !== "operator" ? { owner: p.owner } : {}), ...(requestedBy ? { requestedBy } : {}) })
         .then((r) => report("finished", undefined, r as unknown as Record<string, unknown>))
         .catch((err) => report("stopped", err instanceof Error ? err.message : String(err)));
     },

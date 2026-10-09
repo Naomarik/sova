@@ -543,6 +543,8 @@ export interface HistoryChain {
   edges: ChainEdge[];
   /** Events the reader may see past the bound on each side, not returned (never a withheld one). */
   omitted: { before: number; after: number };
+  /** The returned events past which `omitted` events lie, each side: where the bound cut the chain. */
+  frontier: { before: EventId[]; after: EventId[] };
   cursor: string | null;
   /** Events in the chain with no recorded trigger ("Trigger not recorded"). */
   noTrigger: EventId[];

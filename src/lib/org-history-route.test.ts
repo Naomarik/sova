@@ -22,6 +22,17 @@ test("the History tab, an event on it, and its filters round-trip through the ad
   assert.equal(orgHistoryHref("org_1", view()), orgTabHref("org_1", "history"));
 });
 
+test("the Causal View's expansion rides the address beside view=chain, so Back and a link open it as far", () => {
+  const v = view({ event: "he_g", chain: true, more: 2 });
+  const href = orgHistoryHref("org_1", v);
+  assert.equal(href, "#/orgs/org_1/history/events/he_g?view=chain&more=2");
+  assert.deepEqual(orgsRouteFromHash(href), { kind: "org", id: "org_1", tab: "history", history: v });
+  // only with the Causal View, and only a count it can read
+  assert.equal(orgHistoryHref("org_1", view({ event: "he_g", more: 2 })), "#/orgs/org_1/history/events/he_g");
+  for (const bad of ["0", "-1", "1.5", "x", "51"]) assert.deepEqual(orgsRouteFromHash(`#/orgs/org_1/history/events/he_g?view=chain&more=${bad}`), { kind: "org", id: "org_1", tab: "history", history: view({ event: "he_g", chain: true }) }, bad);
+  assert.deepEqual(orgsRouteFromHash("#/orgs/org_1/history/events/he_g?more=2"), { kind: "org", id: "org_1", tab: "history", history: view({ event: "he_g" }) });
+});
+
 test("a value this version can't read is dropped, never guessed; a bad path is no route", () => {
   const r = orgsRouteFromHash("#/orgs/org_1/history?project=p_a,a b,p_a&kind=everything&initiation=boss&actor=person:&from=2026-13-40&to=yesterday&q=%20%20&view=graph&zzz=1");
   assert.deepEqual(r, { kind: "org", id: "org_1", tab: "history", history: { filters: { projects: ["p_a"] } } });

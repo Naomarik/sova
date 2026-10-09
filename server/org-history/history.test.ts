@@ -205,8 +205,14 @@ describe("reads", () => {
     assert.ok(c.edges.every((e) => (e.via == null) !== (e.type == null)));
     assert.ok(c.edges.some((e) => e.type === "depends-on" && e.to === f.ids["E0"]));
     assert.deepEqual(c.noTrigger.sort(), [f.ids["E0"], f.ids["E1"]].sort());
+    assert.deepEqual(c.frontier, { before: [], after: [f.ids["E8"]] }, "where the bound cut the chain: the event past which more wasn't shown");
     const more = f.host.history.trace(operator, f.ids["E6"]!, { cursor: c.cursor! })!;
     assert.ok(more.nodes.some((n) => n.id === f.ids["E9"]));
+    // the next page joins what was shown: its edge back to the frontier is returned, and nothing shown before comes back as new
+    assert.ok(more.edges.some((e) => e.from === f.ids["E8"] && e.to === f.ids["E9"] && e.link === "cause" && e.via === "effect"), JSON.stringify(more.edges));
+    assert.ok(!more.nodes.some((n) => c.nodes.some((m) => m.id === n.id && n.id !== c.root)), "no earlier event again");
+    assert.deepEqual(more.omitted, { before: 0, after: 0 });
+    assert.equal(more.cursor, null);
     assert.ok(f.host.history.trace(operator, f.ids["E6"]!, { limit: 3 })!.nodes.length <= 3);
   });
 

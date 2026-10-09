@@ -86,7 +86,14 @@ describe("the operator's notes and corrections", async () => {
     assert.ok(RELATION_TYPES.includes("about"));
     const d = h.event(OP, target!)!;
     assert.ok(d.later.some((l) => l.id === e.id));
-    assert.equal(d.event.reasonState, "added-later");
+    // the note's reason is the note's: never read as the target's own, in its detail, its row or its packet
+    assert.equal(d.event.reasonState, "not-recorded");
+    assert.equal(d.event.reason, undefined);
+    assert.equal(d.rationale?.reason, undefined);
+    assert.ok(!h.search(OP, { text: "weekly" }).items.some((i) => i.id === target && i.reason), "the target's row has no reason of its own");
+    const block = h.packet(OP, { event: target! })!.text.split(`id ${target} `)[1]!.split("\nid ")[0]!;
+    assert.match(block, /Reason not recorded/, "its packet doesn't give the note's reason as the target's");
+    assert.equal(h.event(OP, e.id)!.event.reason, "Finance asked for weekly ZEBRA.", "the note keeps its own reason");
     assert.equal(h.event(OP, e.id)!.rationale?.reason?.contemporaneous, false);
     assert.equal(rowOf(target!), original, "the original is untouched");
   });

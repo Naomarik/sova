@@ -178,39 +178,61 @@ export interface HistoryChainRead {
  * The Causal View's chain. The view stays mounted while the address moves from one event's chain to
  * another's (a chain card's link, Back, Forward), so it is read again whenever the event or the project
  * filter (the boundary is marked against it) changes; an answer for an earlier event or filter is dropped.
+ * `more` is how many further pages the address asks for (Expand adds one): the chain is read that far, so
+ * Back, Forward and a reload show it as expanded as it was; fewer than are shown reads it again from the start.
  */
 export function createHistoryChain(opts: {
   root: Accessor<string>;
   projects: Accessor<string[]>;
+  more?: Accessor<number>;
   fetch: (root: string, projects: string[], cursor?: string) => Promise<HistoryChain>;
 }): HistoryChainRead {
   const key = createMemo(() => `${opts.root()}?${opts.projects().join(",")}`);
+  const more = createMemo(() => opts.more?.() ?? 0);
   const [chain, setChain] = createSignal<HistoryChain | null>(null);
   const [error, setError] = createSignal<string | null>(null);
   const [busy, setBusy] = createSignal(false);
   /** Bumped by a new event or filter: an answer for older ones is dropped. */
   let gen = 0;
+  /** Further pages merged into the chain shown, and whether a read of this generation is out. */
+  let loaded = 0;
+  let out = false;
   let stopped = false;
   onCleanup(() => (stopped = true));
+  /** One page further, while the address asks for more than is shown. */
+  const pump = () => {
+    const c = untrack(chain);
+    if (!out && c?.cursor && loaded < untrack(more)) read(c.cursor);
+  };
   const read = (cursor?: string) => {
     const mine = gen;
+    out = true;
     setBusy(true);
     untrack(() => opts.fetch(opts.root(), opts.projects(), cursor))
       .then((c) => {
         if (mine !== gen || stopped) return;
+        out = false;
+        loaded = cursor ? loaded + 1 : 0;
         setChain((cur) => (cursor && cur ? mergeChain(cur, c) : c));
         setError(null);
+        pump();
       })
       .catch((err: Error) => {
-        if (mine === gen && !stopped) setError(err.message);
+        if (mine !== gen || stopped) return;
+        out = false;
+        setError(err.message);
       })
       .finally(() => {
-        if (mine === gen) setBusy(false);
+        if (mine === gen && !out) setBusy(false);
       });
   };
   createEffect(
-    on(key, () => {
+    on([key, more], ([k, n], prev) => {
+      // the same chain asked to go further: on from what is shown
+      if (prev && prev[0] === k && n >= loaded) return pump();
       gen++;
+      loaded = 0;
+      out = false;
       setChain(null);
       setError(null);
       read();

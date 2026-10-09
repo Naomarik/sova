@@ -36,6 +36,7 @@ export function historyViewMemos(view: Accessor<HistoryView>): {
   filters: Accessor<HistoryFilters>;
   selected: Accessor<string | undefined>;
   chain: Accessor<boolean>;
+  more: Accessor<number>;
 } {
   const key = createMemo(() => filtersKey(view().filters));
   const filters = createMemo((): HistoryFilters => {
@@ -44,5 +45,6 @@ export function historyViewMemos(view: Accessor<HistoryView>): {
   });
   const selected = createMemo(() => view().event);
   const chain = createMemo(() => !!view().chain);
-  return { filtersKey: key, filters, selected, chain };
+  const more = createMemo(() => view().more ?? 0);
+  return { filtersKey: key, filters, selected, chain, more };
 }

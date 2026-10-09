@@ -256,6 +256,18 @@ function emptyUsage(): AgentUsage {
 
 export { getPiInvocation, PI_PACKAGE } from "./pi-invocation.ts";
 
+/** How much of a pi child's stderr its failure keeps: the newest lines, bounded both ways. */
+export const STDERR_TAIL_LINES = 20;
+export const STDERR_TAIL_BYTES = 2048;
+
+/** The tail of `text` that a failure keeps: its last STDERR_TAIL_LINES non-blank lines, at most STDERR_TAIL_BYTES. */
+export function stderrTail(text: string): string {
+	const lines = text.split(/\r?\n/).filter((line) => line.trim()).slice(-STDERR_TAIL_LINES);
+	let tail = lines.join("\n");
+	if (Buffer.byteLength(tail) > STDERR_TAIL_BYTES) tail = Buffer.from(tail).subarray(-STDERR_TAIL_BYTES).toString("utf8").replace(/^\uFFFD+/, "");
+	return tail.trim();
+}
+
 function textOf(content: unknown): string {
 	if (typeof content === "string") return content;
 	if (!Array.isArray(content)) return "";
@@ -349,6 +361,8 @@ export class SubagentRunner implements Worker {
 	private readonly limits: RunnerLimits;
 	private readonly stdoutDecoder = new StringDecoder("utf-8");
 	private readonly stderrDecoder = new StringDecoder("utf-8");
+	/** The child's recent stderr, for the failure it may end in (stderrTail). */
+	private stderrRecent = "";
 	/** True from the moment we decide the process must die (kill/dispose/fatal). All stream events except command responses are dropped. */
 	private killInitiated = false;
 	private abortSent = false;
@@ -510,7 +524,9 @@ export class SubagentRunner implements Worker {
 		proc.stdout?.on("data", (chunk: Buffer) => this.consume(this.stdoutDecoder.write(chunk)));
 		proc.stdout?.on("end", () => this.flushStdout());
 		proc.stderr?.on("data", (chunk: Buffer) => {
-			const text = this.stderrDecoder.write(chunk).trim();
+			const raw = this.stderrDecoder.write(chunk);
+			this.stderrRecent = (this.stderrRecent + raw).slice(-4 * STDERR_TAIL_BYTES);
+			const text = raw.trim();
 			if (text) this.push("error", text);
 		});
 		proc.on("error", (e) => {
@@ -731,10 +747,12 @@ export class SubagentRunner implements Worker {
 				this.status = "error";
 				// Death by signal is NOT success. code === null with no signal of
 				// ours means the child died abnormally — also not success.
+				// The stderr tail says why (a missing runtime, a bad flag): without it the record only says that it died.
+				const tail = stderrTail(this.stderrRecent);
 				this.error ??=
-					code !== null && code !== undefined
+					(code !== null && code !== undefined
 						? `pi exited with code ${code}`
-						: `pi terminated by ${signal ?? "unknown cause"}`;
+						: `pi terminated by ${signal ?? "unknown cause"}`) + (tail ? `\n${tail}` : "");
 			}
 		}
 

@@ -10,8 +10,10 @@
  *   most once per run, so the retry's own reply is never retried. Soft warnings (the figure draws)
  *   never trigger it; neither does a run that was aborted or errored, nor one the user has already
  *   queued a message behind (that message goes first).
- * - `vis_check`: a tool, active only while vis is on, that checks a draft `vis html` / `vis svg`
- *   body before it is posted: the parse result and the document's size against the budget.
+ * - `vis_check`: a tool, active only while the vis tools are wanted (vis on, or align on in a chat that
+ *   started with Visuals: visToolsWanted, §chat.alignment/visuals), that checks a draft `vis html` /
+ *   `vis svg` body before it is posted: the parse result and the document's size against the budget.
+ *   The retry stays with vis alone.
  *
  * Both live in one hidden inline extension that chat-manager gives every ordinary hosted runtime
  * (not the Overseer, baton or project-overseer loadouts). It hooks pi's `agent_before_settle`, the
@@ -25,7 +27,9 @@ import type { HookCtx, StateView, ToolSpec } from "../shared/harness";
 import { FRAME_HARD_CHARS, FRAME_SOFT_CHARS } from "../src/vis/kinds/frame/parse";
 import { parseVis, visKindWord, type ParseResult } from "../src/vis/parse";
 import { toolCtx, toPiTool } from "./harness/pi/tools";
+import { ALIGN_LAUNCH } from "./harness/state-kinds";
 import { chatModeOf } from "./mode-state";
+import { visToolsWanted } from "../pi-config/extensions/mode/minor.ts";
 
 /** customType of the hidden message a retry adds. Never displayed: the transcript drops it
     (`display: false`, server/transcript.ts) and the live view draws no custom-role message. */
@@ -116,8 +120,10 @@ export function retryEntry(failures: readonly VisFailure[]) {
 
 /** What the hosting chat answers for the retry and the tool. */
 export interface VisCheckHost {
-  /** The vis minor mode is on for this chat. */
+  /** The vis minor mode is on for this chat (the retry's gate). */
   visOn(state: StateView): boolean;
+  /** The vis tools belong in this chat's loadout now (visToolsWanted over its mode and its launch Visuals). */
+  visToolsOn(state: StateView): boolean;
   /** A message waits behind this run (Sova's queue or the SDK's): it goes first, no retry. */
   queued(): boolean;
   /** This runtime may still write the file (no TUI took it, no foreign writer seen). */
@@ -126,6 +132,13 @@ export interface VisCheckHost {
 
 /** The mode a branch resolves to, by the server's own rule (the extension's too). */
 export const visOnBranch = (state: StateView): boolean => chatModeOf(state).minorModes.includes("vis");
+
+/**
+ * Whether the vis tools are wanted on a branch with no chat to ask: the one rule (visToolsWanted) over the
+ * branch's mode and the Visuals its launch record holds (none yet: off, as at the chat's first start
+ * before its record is written — the hosting chat answers from its own launch values once bound).
+ */
+export const visToolsOnBranch = (state: StateView): boolean => visToolsWanted(chatModeOf(state).minorModes, state.first(ALIGN_LAUNCH)?.data.visuals ?? false);
 
 /**
  * The retry's state for one runtime: the run's assistant text, and whether this run has had its
@@ -264,12 +277,13 @@ export function visCheckExtension(host: () => VisCheckHost | null) {
       const retry = new VisRetry();
       pi.registerTool(toPiTool(visCheckTool));
 
-      // The tool is in the loadout exactly while vis is on. pi activates every extension tool at
-      // registration, so session_start takes it out of a chat without vis before any request; a
-      // switch made meanwhile is picked up when the next run starts, or when this one settles.
+      // The tool is in the loadout exactly while the vis tools are wanted (visToolsWanted: vis on, or
+      // align on with the chat's Visuals). pi activates every extension tool at registration, so
+      // session_start takes it out of a chat that doesn't want it before any request; a switch made
+      // meanwhile is picked up when the next run starts, or when this one settles.
       const syncTool = (c: HookCtx) => {
         try {
-          const want = host()?.visOn(c.state()) ?? visOnBranch(c.state());
+          const want = host()?.visToolsOn(c.state()) ?? visToolsOnBranch(c.state());
           const current = pi.getActiveTools();
           const has = current.includes(VIS_CHECK_TOOL);
           if (want && !has) pi.setActiveTools([...current, VIS_CHECK_TOOL]);

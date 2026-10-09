@@ -16,6 +16,9 @@ import {
   roleProblem,
   sectionProblems,
   reviewerSummary,
+  alignmentSummary,
+  withAlignment,
+  ALIGN_STYLE_NAMES,
   specSummary,
   teamsSummary,
   withCoordinator,
@@ -704,6 +707,74 @@ export function SubagentProfilesSettings() {
                   "subagents-reviewer",
                 )}
               </Show>
+
+              {/* The align mode's writing style and Visuals for chats on this profile (§chat.subagent-profiles/settings):
+                  "Use host default" stores nothing, so a profile without an override reads as before. */}
+              {section(
+                "alignment",
+                "Alignment",
+                () => alignmentSummary(p()),
+                () => {
+                  const setAlign = (patch: Parameters<typeof withAlignment>[1]) =>
+                    change((x) => {
+                      const next = withAlignment(x, patch).alignment;
+                      if (next) x.alignment = next;
+                      else delete x.alignment;
+                    });
+                  return (
+                    <>
+                      <p class="field-hint settings-delegate-desc">How the align mode writes for chats on this profile; "Use host default" follows Settings → Alignment.</p>
+                      <div class="public-links-row">
+                        <label class="field settings-field">
+                          <span class="field-label">Writing style</span>
+                          <span class="select-wrap">
+                            <select class="select" disabled={store.saving()} onChange={(e) => setAlign({ style: e.currentTarget.value as "host" | "default" | "simplified" | "pm" })}>
+                              <option value="host" selected={p().alignment?.style === undefined}>
+                                Use host default
+                              </option>
+                              <For each={["default", "simplified", "pm"] as const}>
+                                {(s) => (
+                                  <option value={s} selected={p().alignment?.style === s}>
+                                    {ALIGN_STYLE_NAMES[s]}
+                                  </option>
+                                )}
+                              </For>
+                            </select>
+                            <span class="select-caret" aria-hidden="true">
+                              ▾
+                            </span>
+                          </span>
+                        </label>
+                        <label class="field settings-field">
+                          <span class="field-label">Visuals</span>
+                          <span class="select-wrap">
+                            <select
+                              class="select"
+                              disabled={store.saving()}
+                              onChange={(e) => setAlign({ visuals: e.currentTarget.value === "host" ? "host" : e.currentTarget.value === "on" })}
+                            >
+                              <option value="host" selected={p().alignment?.visuals === undefined}>
+                                Use host default
+                              </option>
+                              <option value="on" selected={p().alignment?.visuals === true}>
+                                On
+                              </option>
+                              <option value="off" selected={p().alignment?.visuals === false}>
+                                Off
+                              </option>
+                            </select>
+                            <span class="select-caret" aria-hidden="true">
+                              ▾
+                            </span>
+                          </span>
+                        </label>
+                      </div>
+                      <p class="field-hint">A style change reaches this profile's open chats at their next message; Visuals, sessions started after saving.</p>
+                    </>
+                  );
+                },
+                "subagents-alignment",
+              )}
             </>
           )}
         </Show>

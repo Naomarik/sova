@@ -17,10 +17,17 @@ Subagents, no review buttons or review lines on the card, and nothing written to
 Review exists only in sessions with align on (with or without Delegate); a Delegate-only or plain
 session gets none.
 
-In Sova the flag is Settings → Experimental's **Adversarial review** switch (`adversarialReview`
-in Sova's settings, off by default), with one line saying what it does. A hosted session started
-while it is saved on gets `--adversarial-review`; one already open keeps what it started with. The
-web shows the Reviewer section and the card's review lines and buttons only while it is saved on.
+In Sova the flag is Settings → Alignment's **Adversarial review** switch (§app.settings-dialog/alignment;
+`alignment.review` in Sova's settings, off by default), with one line saying what it does. A file
+an older build wrote with only `experimental.adversarialReview` reads as that value, once, until a
+save writes `alignment.review`. Each chat takes the flag at its **first start**: it records the
+switch as saved then in a hidden per-chat state entry (`sova-align-launch` `{v: 1, review,
+visuals}`, written with the chat's first message, §chat.alignment/visuals), and every later start of
+the same chat — a reopen, a server restart, a CLI restart — gets `--adversarial-review` from that
+record, never from the setting as it is now. So a chat already open keeps what it started with,
+across restarts too. The web shows the card's review lines and buttons by that chat's own flag
+(the hello's `alignReview`; a server that sends none falls back to the saved setting), and the
+Reviewer section in Settings → Subagents while the setting is saved on.
 
 ## §chat.alignment-review/record — The review record
 
@@ -120,7 +127,7 @@ flag on, Settings → Subagents' profile editor shows a **Reviewer** section und
 (§chat.subagent-profiles/settings), with the same rows, validation and save rules (a toggle "Review
 alignments with a reviewer", off = None, "No review.").
 
-**Seeding.** The first time Settings → Experimental saves the switch on, every library profile with
+**Seeding.** The first time Settings → Alignment saves the switch on, every library profile with
 no `reviewer` key gets the default: primary pi · `openai-codex/gpt-6.1-sol` · high, fallback
 claude-code · `claude-opus-5-5` (Opus 5.5, the catalog's current Opus) · high. A profile with `reviewer: null` (None) or a route of its own is
 never touched. It is written through the library's own atomic writer, so the mesh syncs it like any
@@ -130,7 +137,7 @@ that finds every profile keyed writes nothing.
 
 ## §chat.alignment-review/card — On the card
 
-With the flag on, each alignment card shows one line per recorded phase in its body, its phase as a
+With the flag on (the chat's own, §chat.alignment-review/flag), each alignment card shows one line per recorded phase in its body, its phase as a
 chip ("Plan" or "Implementation"; `diff` stays the phase's id in the op, the record and the
 message): "Plan review skipped: routine change", "Reviewing the plan", "Plan reviewed · 1
 constraint added", "Plan review: 2 blocking", "Plan review incomplete: …", and for the diff phase

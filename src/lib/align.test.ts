@@ -160,3 +160,16 @@ test("options are lettered from a; the recommendation names one by its label", (
   assert.equal(rec(""), undefined);
   assert.equal(recommendedOption({ recommendation: { choice: "CSV", why: "w" } }), undefined, "no options");
 });
+
+test("technical notes, the style mark and a visual's fence (§chat.alignment/card)", async () => {
+  const { alignStyleMark, cardSections, visualFence } = await import("./align");
+  const base = { approach: [{ id: "a1", text: "Do it." }], findings: [{ id: "f1", text: "A fact." }], rejected: [] };
+  assert.deepEqual(cardSections(base).map((s) => s.kind), ["approach", "findings"], "no technical notes: no section");
+  const sections = cardSections({ ...base, technical: [{ id: "t1", text: "In `x.ts`." }] });
+  assert.deepEqual(sections.map((s) => [s.kind, s.label, s.open]), [["approach", "Approach", true], ["technical", "Technical notes", false], ["findings", "Findings", false]], "right after the approach, closed");
+  assert.equal(alignStyleMark({}), undefined, "Default: no mark");
+  assert.equal(alignStyleMark({ style: "simplified" }), "Simplified style");
+  assert.equal(alignStyleMark({ style: "pm" }), "Project manager style");
+  assert.equal(visualFence({ kind: "flow", source: "a -> b" }), "```vis flow\na -> b\n```");
+  assert.equal(visualFence({ kind: "code", source: "```js\nx\n```" }), "~~~~vis code\n```js\nx\n```\n~~~~", "a source with a backtick fence takes tildes");
+});

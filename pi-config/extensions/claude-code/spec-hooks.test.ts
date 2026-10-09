@@ -369,6 +369,62 @@ test("a commit another process made between calls is no census note; the worker'
 	assert.match(await s.bash(root, "echo n > src/new.txt"), /src\/new\.txt → unclaimed/, "a planted unclaimed file is still flagged");
 });
 
+/**
+ * A Claude session whose Bash calls really run; a call that exits non-zero goes to PostToolUseFailure, never
+ * PostToolUse, and runs a hook only if specHookSettings registers one for it (the event word in its command).
+ */
+function failingSession(stateDir: string) {
+	const o = { core: CORE, stateDir };
+	const failure = (specHookSettings({ node: "node", coreDir: CORE, stateDir, script: "S" }) as any).hooks.PostToolUseFailure?.[0]?.hooks?.[0]?.command?.split(" ")[2] as string | undefined;
+	let n = 0;
+	return {
+		turn: (cwd: string) => runHook("turn", event(cwd, { hook_event_name: "UserPromptSubmit" }), o),
+		bash: async (cwd: string, command: string) => {
+			const tool_use_id = `toolu_${++n}`, tool_input = { command };
+			await runHook("pre", event(cwd, { hook_event_name: "PreToolUse", tool_name: "Bash", tool_use_id, tool_input }), o);
+			const status = spawnSync("bash", ["-c", command], { cwd }).status;
+			if (status === 0) return { failed: false, out: await runHook("post", event(cwd, { hook_event_name: "PostToolUse", tool_name: "Bash", tool_use_id, tool_input, tool_response: {} }), o) as any };
+			const input = { hook_event_name: "PostToolUseFailure", tool_name: "Bash", tool_use_id, tool_input, error: `Exit code ${status}` } as Partial<HookInput>;
+			return { failed: true, out: failure ? await runHook(failure, event(cwd, input), o) as any : undefined };
+		},
+	};
+}
+
+test("a failed call (PostToolUseFailure) closes the call: another process's later commit is no note; the failed command's own write is noted at the failed call", async () => {
+	const settings = specHookSettings({ node: "/usr/bin/node", coreDir: CORE, stateDir: "/s" }) as any;
+	assert.equal(settings.hooks.PostToolUseFailure?.[0]?.matcher, "*", "a hook runs after a failed call of any tool");
+	const foreign = (root: string) => {
+		write(root, "src/b.txt", "theirs\n");
+		write(root, "src/a.txt", "theirs\n");
+		git(root, ...C, "add", "-A");
+		git(root, ...C, "commit", "-qm", "elsewhere");
+	};
+	// A read-only call that fails (a grep with no match), then another process commits, then a read-only call.
+	let { root, stateDir } = project();
+	let s = failingSession(stateDir);
+	await s.turn(root);
+	const grep = await s.bash(root, "grep -q nomatch src/a.txt");
+	assert.ok(grep.failed);
+	foreign(root);
+	const quiet = [context(grep.out), context((await s.bash(root, "git log -1 --oneline")).out)].join("\n");
+	assert.doesNotMatch(quiet, /\[spec census\]|No draft yet/, `read-only calls after a failed call and another process's commit: ${quiet}`);
+
+	// Guard: a failing command's own write is still this session's, said by the failed call's own hook.
+	({ root, stateDir } = project());
+	s = failingSession(stateDir);
+	await s.turn(root);
+	const own = await s.bash(root, "echo own > src/own.txt && false");
+	assert.ok(own.failed);
+	assert.equal(own.out?.hookSpecificOutput?.hookEventName, "PostToolUseFailure");
+	assert.match(context(own.out), /New: src\/own\.txt → unclaimed/, context(own.out));
+	assert.match(context(own.out), /No draft yet/);
+	foreign(root);
+	const after = context((await s.bash(root, "git log -1 --oneline")).out);
+	assert.doesNotMatch(after, /\[spec census\]|src\/b\.txt/, `another process's commit after the failed call: ${after}`);
+	// Guard: a successful own write after all that still gets its note.
+	assert.match(context((await s.bash(root, "echo n > src/new.txt")).out), /New: src\/new\.txt → unclaimed/);
+});
+
 test("the script entry under a PATH whose `node` exits 1 (an untrusted mise.toml's shim): the census still runs; a census that does crash says why, its first stderr error line", () => {
 	const { root, stateDir } = project();
 	const shim = fs.mkdtempSync(path.join(os.tmpdir(), "node-shim-"));

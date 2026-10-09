@@ -16144,6 +16144,22 @@
         "scripts/install.integration.test.ts",
         "site/src/data/site.ts"
       ]
+    },
+    "§site.landing/fold-device": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "site/src/components/screens/FoldDevice.astro",
+        "site/src/styles/mock.css",
+        "site/src/pages/index.astro"
+      ]
+    },
+    "§site/landing": {
+      "kind": "note",
+      "authority": "accepted",
+      "evidence": "reviewed"
     }
   },
   "boundary": {

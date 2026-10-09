@@ -199,7 +199,7 @@ async function run(label, { spec = true, params = {}, before = () => {}, calls =
 		const lines = landedLines(texts);
 		const ok = heard && lines.length === expect && names.every((id) => lines.some((l) => l.includes(id))) && absent.every((id) => !lines.some((l) => l.includes(id)));
 		const result = { label, heard, landedLines: lines.length, expect, ok, lines };
-		// A second task on the same worker (steered), that changes nothing: informational, how often the line repeats.
+		// A second task on the same worker (steered) that changes nothing: the same line again: it covers the worker's whole life.
 		if (again) {
 			await h.call("agent_steer", { id: w.id, message: "again" });
 			await w.hooks.start(false);
@@ -210,6 +210,7 @@ async function run(label, { spec = true, params = {}, before = () => {}, calls =
 			const all = await completionsAfter(h, had + 1, 5_000);
 			result.secondTaskHeard = all.length > had;
 			result.secondTaskLandedLines = landedLines(all.slice(had)).length;
+			result.ok &&= result.secondTaskHeard && result.secondTaskLandedLines === 1;
 		}
 		results.push(result);
 	} finally { await h.close(); }
@@ -233,7 +234,7 @@ try {
 	await run("pi worker changes nothing, another process commits meanwhile", { before: foreign, calls: [readOnly], expect: 0 });
 	await run("read-only worker", { params: { tools: ["read", "grep"] }, calls: [], expect: 0 });
 	await run("spec off: a worker's change gets no line", { spec: false, calls: [ownCommit], expect: 0 });
-	await run("pi worker, a second task that changes nothing (informational: line repeats?)", { calls: [ownCommit], again: [readOnly], expect: 1, names: ["§app/x"] });
+	await run("pi worker, a second task that changes nothing: the same line once again", { calls: [ownCommit], again: [readOnly], expect: 1, names: ["§app/x"] });
 } finally {
 	fs.rmSync(scratch, { recursive: true, force: true });
 }

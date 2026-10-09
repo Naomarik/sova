@@ -38,6 +38,13 @@ hosted workers before this change.
 - The record is the parent's, not the worker's. A worker's own session is never written by the
   parent or by Sova (§app.subagents-pane/transcript-view: read only).
 
+## §app.worker-restore/failure-reason — A pi worker that dies says why
+
+When a pi worker's process exits with a nonzero code, or ends on a signal no one sent it, the error
+its record keeps (§app.worker-restore/worker-record) and `agent_list` shows is `pi exited with code
+N` (or `pi terminated by <signal>`) followed by the last lines that process wrote on stderr: at most
+20 lines and 2 KB, the newest kept. With nothing on stderr it is the bare message.
+
 ## §app.worker-restore/transcript-protocol — One transcript protocol, one adapter per backend
 
 Everything that reads a worker's transcript goes through one backend-neutral protocol

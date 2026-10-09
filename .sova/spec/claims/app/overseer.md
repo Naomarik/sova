@@ -139,7 +139,10 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   `mode` entry even when they equal the default, so a later change to the default never moves it
   (the same for `sova_set_session`). An unknown mode or minor mode refuses
   the whole call before any session is created, and a mode switch that fails sends no prompt: the
-  result says the session was created but its first prompt was not sent. Send a message to a
+  result says the session was created but its first prompt was not sent. A `sova_set_session`
+  whose `minor_modes` leave `align` out, on a session waiting on the user's alignment answers, is
+  refused before anything changes: "It waits on the operator's alignment answers; align stays on
+  until they answer. Nothing was changed." (§app.project-overseer/coding-mode). Send a message to a
   session (below); archive and unarchive
   (never permanent delete; below); rename; give a session an alias (§app.overseer/session-names); groups (create, move a session in, remove it); set a session's
   model or mode; answer a hosted session's pending extension dialog; standing notes; navigate;
@@ -865,6 +868,13 @@ Three tools let the Overseer make and end links between sessions on different ho
   conversation, the Overseer's message route (§app.overseer/org-project-overseers), marks every
   message it hands in the same way, with the same `sova-overseer-sent` entry, the same queued-row
   word and the same tag.
+- **A project overseer's `sova_send` too.** A message a project overseer's `sova_send` hands to a
+  coding session (Sova's own in-process statechart effect, never a request) is marked the same
+  way, with the same entry, naming the project overseer's current conversation as its `overseerId`
+  when it can be read (none otherwise).
+- **Never the user's answer.** A user message this marker names is never the user's prompt that
+  ends a session's wait on its alignment answers (§chat.alignment/session-mark): alignment
+  questions are the user's (§app.project-overseer/coding-mode).
 - **Only the Overseer can tag.** `POST /api/sessions/prompt` and that route mark a prompt as the
   Overseer's only when the request carries the server's sender secret: random, made at server start, held in memory
   only, never written to disk or sent to a client, and carried only by the Overseer's own in-process
@@ -933,7 +943,7 @@ itself.
   {target}? {why}", until the operator plans that target or dismisses it. Never a phone notification.
 - **Only real blockers are act.** The act tier — Needs you, the Overseer's "need you" count, its
   briefs and phone notifications — is exactly: open alignment questions on an unmerged branch, open dialogs, errored
-  turns, subagent errors, proposed playbook runs, failed deploys and deploy requests, and the baton and roster hand-offs and held acts below. A guess (a
+  turns, subagent errors, proposed playbook runs, failed deploys and deploy requests, WhatsApp sending down, and the baton and roster hand-offs and held acts below. A guess (a
   reply that seems to ask, a team that seems stalled) and a branch ready to merge are decide
   items: a line in the digest and a quiet mark on the session's row, never a brief.
 - **Nothing puts an item away.** The digest lists act items by the rules above and nothing else:
@@ -958,8 +968,15 @@ itself.
   live link exists for, "Send <name> their link: <question>".
 - **Needs you, a held act** (§app.project-overseer/holds): `held-act`, one per act a project's
   statechart holds before it reaches a person or the client's code, "{what} starts in {n} min unless
-  you cancel it.", carrying the hold (`held: {id, goesAt, what}`) so the list can offer Cancel.
+  you cancel it." (a WhatsApp message waiting for WhatsApp to come back, §app.outreach/send: "{what}
+  waits for WhatsApp to come back: it goes when WhatsApp is back, and is not sent if WhatsApp is
+  still down in {n} min."), carrying the hold (`held: {id, goesAt, what}`) so the list can offer Cancel.
   Never a phone notification.
+- **Needs you, WhatsApp sending down** (§app.outreach/sender-health): `whatsapp-down`, an item of
+  no session, one per WhatsApp sender in use (id `whatsapp-sender:<entry id>`), "WhatsApp sending is
+  down for {label}: {why}", opening Settings → Outreach, while that sender is down, logged out,
+  replaced, blocked or unpaired, or unreachable for 5 minutes; never while it is down with its next
+  automatic try still ahead.
 - **Needs you, a message not sent** (§app.outreach/send): `outreach-not-sent`, one per project
   overseer's WhatsApp send whose last outcome is refused, failed or unknown, "The WhatsApp message
   to {name} was not sent: {reason}.", opening the person's page, until a later send to that person
@@ -1482,8 +1499,8 @@ name is a `[title](sova://s/<id>)` link; every time is relative, as in `sova_ses
   text and its last 10 history lines (§app.organizations/about); nothing else ever carries it.
 - **`sova_org_project {org?, project}`**: the project row; its overseer: its conversation (a
   session link), working or not, unread, the chosen level and the level in force with the reason,
-  watching and the pace, models, the coding sessions' mode and what one started now gets, the
-  extra instructions, both allowances used and left and the held items
+  watching and the pace, models, what a coding session started now gets (this computer's default
+  mode and subagent profile, §app.project-overseer/coding-mode), the extra instructions, both allowances used and left and the held items
   (§app.project-overseer/limits); its last 10 actions; its gathering sessions and offers; decisions
   by state and area, and the open conflicts with who they are routed to; spec status (frozen, edited
   outside); its coding sessions from their statecharts (title, who started it, working or idle, branch,
@@ -1697,8 +1714,9 @@ organization write (§app.overseer/caps); a refusal takes nothing.
 
 - **`start`** creates the project's overseer, as the project page's Start Overseer does
   (§app.project-overseer/identity). **`settings {…}`** changes what the project page's Settings tab sets (level,
-  models and thinking, the coding sessions' mode, the limits and the pace, watching, the extra
-  instructions): one PATCH, refused whole as the page's is. **`run_now`** is Run Now
+  models and thinking, the limits and the pace, watching, the extra instructions): one PATCH,
+  refused whole as the page's is. It has no coding mode: a project has none
+  (§app.project-overseer/coding-mode). **`run_now`** is Run Now
   (§app.project-overseer/watch-loop). **`clear`** is its Clear, behind a confirm card
   (§app.overseer/org-people-facing). **`idea`** and **`todo`** add, edit, tick, untick and
   remove the project's ideas and to-dos, as the project page does
@@ -1723,11 +1741,15 @@ organization write (§app.overseer/caps); a refusal takes nothing.
   (§app.overseer/caps).
 - **Coding sessions.** A project's coding sessions are ordinary sessions: `sova_list_sessions`,
   `sova_session`, `sova_read_session` and `sova_send` reach them as before. **`code {prompt?,
-  title?, item?, model?, thinking?}`** starts one as the project's, the same way the project page's
-  Start Coding Session does: its own worktree (§app.project-overseer/coding-worktrees), the
-  project's coding mode (§app.project-overseer/coding-mode), an `operator-coding` session whose
-  statechart is marked `via: "overseer"`. `item` (a to-do or idea id) links it and gives the
+  title?, item?, model?, thinking?, mode?, minor_modes?, subagent_profile?}`** starts one as the
+  project's, the same way the project page's Start Coding Session does: its own worktree
+  (§app.project-overseer/coding-worktrees), an `operator-coding` session whose statechart is marked
+  `via: "overseer"`, in any mode, minor modes and subagent profile it names, else this computer's
+  default (§app.project-overseer/coding-mode); an unknown name is refused ("… No session was
+  started.") before anything is started or counted. `item` (a to-do or idea id) links it and gives the
   prompt when none is given; without an item, `prompt` and `title` are required. It counts against
   the Overseer's per-turn sessions created and running at once, like any session it starts, and
   never against the project overseer's limits. The result names the session, its branch and its
-  path.
+  path, and the mode and subagent profile it started with. Its prompt says a coding session's
+  alignment questions are the user's: it never answers them, and tells the user which session
+  waits.

@@ -2,8 +2,7 @@ import { AUTOMATIC_ABILITIES, type GatheringAbilities } from "../shared/baton";
 
 /**
  * What a project's gathering sessions can do (§app.baton/abilities): draw, draw interactive
- * drawings (`vis html`, only with draw), and read links someone wrote in the conversation. Built
- * like the coding mode (project-coding-mode.ts):
+ * drawings (`vis html`, only with draw), and read links someone wrote in the conversation:
  *
  * - The project setting `gatheringAbilities`, or Automatic (null): draw on, read links and
  *   interactive drawings off.

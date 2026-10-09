@@ -2434,7 +2434,15 @@
         "server/mesh/mesh.test.ts",
         "server/mesh/peer-wire-test-fixtures.ts",
         "server/mesh/app-test-fixtures.ts",
-        "server/mesh/mesh.integration.test.ts"
+        "server/mesh/mesh.integration.test.ts",
+        "server/mesh/peer-address.ts",
+        "server/mesh/peer-address.test.ts",
+        "server/mesh/dial.ts",
+        "server/mesh/proxy.ts",
+        "server/mesh/resync.ts",
+        "server/mesh/resync-test-fixtures.ts",
+        "server/index.ts",
+        "docs/mesh.md"
       ]
     },
     "§mesh.remote-sessions/host-filter": {
@@ -2490,7 +2498,10 @@
         "server/mesh/paths.ts",
         "server/extensions.ts",
         "src/lib/api.ts",
-        "vite.config.ts"
+        "vite.config.ts",
+        "server/mesh/proxy-local.test.ts",
+        "server/mesh/proxy-pairing.test.ts",
+        "docs/mesh.md"
       ]
     },
     "§mesh.remote-sessions/routing": {
@@ -13995,7 +14006,8 @@
       "requires": [
         "§mesh.lan/pairing",
         "§mesh.lan/reverse-channel",
-        "§mesh.peers/listener"
+        "§mesh.peers/listener",
+        "§mesh.remote-sessions/proxy"
       ]
     },
     "§mesh.lan/dialer": {

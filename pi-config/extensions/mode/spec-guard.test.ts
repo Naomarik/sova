@@ -30,7 +30,11 @@ import {
 	currentSpecPath,
 	SpecWriteGuard,
 	viewChanged,
+	specReads,
+	unreadLine,
+	UNREAD_PREFIX,
 	type CensusView,
+	type RankedView,
 	type SpecIO,
 } from "./spec-guard.ts";
 import { SPEC_CORE_SHELL } from "./minor.ts";
@@ -832,4 +836,29 @@ test("the unread line: once at the first call after the last edit, naming every 
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
+});
+
+test("specReads: the § a shell command `read`s, a flag before the id or a loop variable included; toc and a heredoc body are no reads", () => {
+	assert.deepEqual(specReads([`node "$core/sova-spec.mjs" read '§a/b' --no-frame --root .`]), ["§a/b"]);
+	assert.deepEqual(specReads(["node sova-spec.mjs read --root /x '§a/b'"]), ["§a/b"], "a valued flag before the id");
+	assert.deepEqual(specReads([`for id in '§a/b' '§c/d'; do node "$core/sova-spec.mjs" read "$id" --no-frame; done`]), ["§a/b", "§c/d"]);
+	assert.deepEqual(specReads(["node sova-spec.mjs toc '§a/b' --dir out"]), [], "toc isn't a read");
+	assert.deepEqual(specReads(["cat > notes.md <<'EOF'\nnode sova-spec.mjs read '§a/b'\nEOF"]), [], "a heredoc body is data");
+	assert.deepEqual(specReads(["node sova-spec.mjs read '§a/b'", "node sova-spec.mjs read '§c/d' --no-frame"]), ["§a/b", "§c/d"], "across commands");
+});
+
+test("unreadLine: at most 5 scored § read first, the rest named; a stale one says what it still states; read § and § the session's files didn't land in are left out", () => {
+	const row = (id: string, score: number, stale: string[] = [], files = ["src/v.tsx"]) => ({ id, score, stale, files });
+	const v: RankedView = { rank: [row("§a/s", 9, ["12"]), ...["b", "c", "d", "e", "f", "g"].map((n, i) => row(`§a/${n}`, 6 - i)), row("§a/zero", 0), row("§a/other", 5, [], ["src/other.ts"])] };
+	const { text, key } = unreadLine(v, new Set(["src/v.tsx"]), new Set(["§a/c"]));
+	assert.ok(text?.includes(UNREAD_PREFIX), text);
+	const [first, named] = text!.slice(text!.indexOf(UNREAD_PREFIX) + UNREAD_PREFIX.length).split("; named ");
+	assert.ok(first!.startsWith("read first "), text);
+	assert.deepEqual(first!.slice("read first ".length).split(", ").map((s) => s.split(" ")[0]), ["§a/s", "§a/b", "§a/d", "§a/e", "§a/f"], "exactly 5, in rank order, the read one skipped");
+	assert.match(first!, /§a\/s \(still states 12\)/);
+	assert.deepEqual(named!.split(", "), ["§a/g", "§a/zero"], "the rest named, a zero score included");
+	assert.ok(!text!.includes("§a/other"), "a § only another file maps is not the session's landing");
+	assert.equal(key, "§a/b,§a/c,§a/d,§a/e,§a/f,§a/g,§a/s,§a/zero", "the key is the landed set, reads included");
+	assert.equal(unreadLine(v, new Set(["src/v.tsx"]), new Set(["§a/s", "§a/b", "§a/c", "§a/d", "§a/e", "§a/f", "§a/g", "§a/zero"])).text, undefined, "all read: no line");
+	assert.equal(unreadLine(v, new Set(["src/none.ts"]), new Set()).text, undefined, "nothing landed: no line");
 });

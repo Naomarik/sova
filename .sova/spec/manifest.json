@@ -15480,6 +15480,33 @@
         "src/design/base.css"
       ]
     },
+    "§app.claude-code-provider/no-memory": {
+      "kind": "behavior",
+      "requires": [
+        "§app.claude-code-provider/pinned-model"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/claude-code/fixed-settings.ts",
+        "pi-config/extensions/claude-code/transport.ts",
+        "pi-config/extensions/claude-code/transport.test.ts",
+        "pi-config/extensions/claude-code/accounts.ts",
+        "pi-config/extensions/topic-outline/summarizers/claude-cli.ts",
+        "server/decide-llm.ts",
+        "server/session-autotitle.ts",
+        "server/claude-models.ts",
+        "server/claude-models.test.ts",
+        "pi-config/extensions/topic-outline/claude-cli.test.ts",
+        "pi-config/extensions/claude-code/launch-pin.test.ts",
+        "pi-config/extensions/claude-code/runner.test.ts",
+        "pi-config/extensions/claude-code/confined-launch.test.ts",
+        "pi-config/extensions/claude-code/provider/bridge.test.ts",
+        "server/decide-llm.test.ts",
+        "server/session-autotitle.test.ts",
+        "pi-config/extensions/claude-code/accounts.test.ts"
+      ]
+    },
     "§app.claude-code-provider/pinned-model": {
       "kind": "behavior",
       "requires": [

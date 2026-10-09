@@ -87,7 +87,7 @@ export interface ClaudeSpawnOptions extends SpawnOptions {
 	/** Host must bound displayed dialogs itself; queue time does not consume the runner deadline. */
 	permissionTimeoutManagedByHost?: boolean;
 	maxBudgetUsd?: number;
-	/** `--settings` JSON object; buildClaudeArgv merges NO_ATTRIBUTION over it. */
+	/** `--settings` JSON object; buildClaudeArgv merges SOVA_FIXED_SETTINGS over it. */
 	settingsJson?: string;
 	spawnImpl?: SpawnOptions["spawnImpl"];
 	/** @internal Signal the owned detached process group (test seam). */

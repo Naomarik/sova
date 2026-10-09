@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { request, type IncomingHttpHeaders } from "node:http";
+import { connect } from "node:net";
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
@@ -101,6 +102,52 @@ describe("a browser on this machine (a real loopback socket, headers as it sends
     assert.equal(res.headers["set-cookie"], undefined);
   });
 });
+/** One request line sent exactly as written (no client-side URL parsing), on its own connection:
+    the status and body of the answer. */
+function raw(method: string, target: string, headers: Record<string, string> = {}): Promise<{ status: number; body: string }> {
+  return new Promise((resolve, reject) => {
+    const socket = connect(port, "127.0.0.1");
+    let text = "";
+    socket.setTimeout(8000, () => socket.destroy(new Error(`no answer within 8 s: ${method} ${target}`)));
+    socket.on("data", (c) => (text += c));
+    socket.on("error", reject);
+    socket.on("close", () => {
+      const status = Number(/^HTTP\/1\.1 (\d{3})/.exec(text)?.[1]);
+      resolve({ status, body: text.slice(text.indexOf("\r\n\r\n") + 4) });
+    });
+    const lines = Object.entries({ Host: self, ...headers, Connection: "close" }).map(([k, v]) => `${k}: ${v}`);
+    socket.write(`${method} ${target} HTTP/1.1\r\n${lines.join("\r\n")}\r\n\r\n`);
+  });
+}
+
+describe("a dynamic route spelled so that only the server's URL parsing finds it (raw request lines)", () => {
+  // Dot segments and an absolute-form target are resolved before any gate reads the path; a
+  // client like fetch would have resolved them itself, so they are sent as raw bytes here.
+  const SPELLINGS = [
+    "/x/../%61pi/auth/token",
+    "/%2e%2e/%61pi/auth/token",
+    "/%61pi/./auth/token",
+    "/./%61pi/sessions/dir",
+    "//x/..//%61pi/auth/token",
+    "/x/%2e%2e/API/auth/token",
+    `http://${self}/%61pi/auth/token`,
+  ];
+
+  test("no token: refused, never the answer", async () => {
+    for (const target of SPELLINGS) {
+      for (const method of ["GET", "HEAD"]) {
+        const res = await raw(method, target);
+        assert.ok(res.status === 401 || res.status === 400 || res.status === 403, `${method} ${target} answered ${res.status}`);
+        assert.equal(res.body.includes(token), false, `${method} ${target} never carries the token`);
+      }
+    }
+  });
+
+  test("not vacuous: with the token the same spelling reaches the route", async () => {
+    assert.equal((await raw("GET", "/x/../%61pi/sessions/dir", { "x-sova-token": token })).status, 200);
+  });
+});
+
 describe("the allowed-origin set: exact scheme, host and port, never the host alone", () => {
   // What the mesh would name: this host's MagicDNS name, its front door and serve URL, a peer's serve URL.
   const MAGIC = "a.tail1234.ts.net";

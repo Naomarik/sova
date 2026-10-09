@@ -70,9 +70,9 @@ Sova keeps its own list of the Claude models it offers, one entry per real model
 claude-code extension's `catalog.ts` (imports nothing, so the extension, the server and the web app
 all read the same file). An entry is the model's id as the CLI's own model table names it, which is
 also what `--model` is given (`claude-opus-5-5`, `claude-sonnet-5-5`, `claude-fable-5-1`,
-`claude-haiku-4-5`), the ids the API answers with for it (`claude-haiku-4-5-20251001` for Haiku
+`claude-haiku-5-5`), the ids the API answers with for it (`claude-haiku-4-5-20251001` for Haiku
 4.5), its family and version, its name as the CLI names it (`Opus 5.5`, `Sonnet 5.5`, `Fable 5.1`,
-`Haiku 4.5`), its context window (1,000,000 where the CLI's table says the model is natively 1M,
+`Haiku 5.5`), its context window (1,000,000 where the CLI's table says the model is natively 1M,
 else 200,000), its output cap, the efforts it takes, whether it is the current model of its family
 or a previous one, and its price key. There are no aliases (`opus`, `sonnet`, `haiku`, `fable`) and
 no `[1m]` forms: a natively 1M model is 1M by its id alone.

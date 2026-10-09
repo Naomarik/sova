@@ -127,7 +127,10 @@ test("no-Git, no-spec bootstrap: starter draft, snapshot evidence, promotion cre
   assert.equal(w.exit, 0, JSON.stringify(w.findings));
   assert.equal(read(root, ".sova/spec/claims/a/top.md"), "# §a/top\n\nExisting baseline behavior.\n");
   assert.equal(core(root, "check").exit, 0);
-  assert.equal(JSON.parse(read(root, ".sova/spec/drafts/boot/draft.json")).promotions.length, 1);
+  const receipts = JSON.parse(read(root, ".sova/spec/drafts/boot/draft.json")).promotions;
+  assert.equal(receipts.length, 1);
+  assert.deepEqual(receipts[0].after, { "claims/a/top.md": sha(read(root, ".sova/spec/claims/a/top.md")), "manifest.json": sha(read(root, ".sova/spec/manifest.json")) },
+    "the receipt records each written file's SHA-256 after the write");
   assert.equal(run(root, "status", "boot").ids[0].current, "already-current");
 });
 

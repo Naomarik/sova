@@ -16666,6 +16666,23 @@
         "pi-config/extensions/spec/README.md",
         "pi-config/extensions/spec/tests/census-base.test.mjs"
       ]
+    },
+    "§tools.spec/write-guard": {
+      "kind": "behavior",
+      "requires": [
+        "§tools.spec/census-note",
+        "§tools.spec/promotion-integrity"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/mode/spec-guard.ts",
+        "pi-config/extensions/claude-code/spec-hooks.ts",
+        "pi-config/extensions/mode/spec-guard.test.ts",
+        "pi-config/extensions/claude-code/spec-hooks.test.ts",
+        "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+        "pi-config/extensions/spec/tests/draft.test.mjs"
+      ]
     }
   },
   "boundary": {

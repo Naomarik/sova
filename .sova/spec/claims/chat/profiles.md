@@ -34,8 +34,7 @@ once the first message is sent, and kept by the session itself. The UI says
   capability-neutral.
 - **Where profiles come from** is §chat.profiles/projects: **Default** in code (nothing changed),
   the **Built in** files Sova ships (**Read-only reviewer**: reads sessions; no shell, edits or
-  workers. **Mini overseer**: reads and messages sessions in its project; no edits. The Overseer
-  may start either), **Yours**, and **This project**'s files. Sova writes only Yours, and only when
+  workers; the Overseer may start it), **Yours**, and **This project**'s files. Sova writes only Yours, and only when
   you save one (§chat.profiles/picker's Save Current As Profile).
 - **The session keeps its own copy.** A session's profile is its invisible `custom` entry
   `customType: "sova-profile"`, data `{v: 1, profile: {…the whole profile…, source, project?,
@@ -269,7 +268,7 @@ Enforced in the tool, never by the prompt; each has a default and is editable pe
   name is its root folder's name. A relative or remote cwd has no project; that is decided before any
   filesystem call, as for playbooks (§chat.playbooks/the-project-listing).
 - **Four sources.** **Default** is in code and changes nothing. **Built in**: one JSON file per
-  profile in `profiles/` at the Sova repo root (Read-only reviewer, Mini overseer). **Yours**:
+  profile in `profiles/` at the Sova repo root (Read-only reviewer). **Yours**:
   `<state root>/session-profiles.json` `{version: 1, profiles: [...]}`. **This project**:
   `<project root>/.sova/profiles/<id>.json`, one profile per file, whose `id` must equal the file's
   name.

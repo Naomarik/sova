@@ -10051,7 +10051,6 @@
         "server/sessions-index.ts",
         "server/session-profiles.test.ts",
         "profiles/reviewer.json",
-        "profiles/mini-overseer.json",
         "shared/protocol.ts",
         "src/lib/summary-diff.test.ts",
         "server/harness/state-kinds.ts"
@@ -10254,7 +10253,6 @@
         "server/profile-sources.ts",
         "shared/profiles.ts",
         "profiles/reviewer.json",
-        "profiles/mini-overseer.json",
         "docs/profiles.md",
         "server/profiles-store.ts",
         "server/playbooks.ts",

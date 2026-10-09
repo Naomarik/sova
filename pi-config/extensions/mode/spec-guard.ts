@@ -18,7 +18,7 @@
  */
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { posix } from "node:path";
 const { dirname, join, relative } = posix;
 
@@ -323,6 +323,8 @@ export interface CensusState {
 	last?: { head: string | null; files: Record<string, number> };
 	/** Paths changed between the session's calls (another process's), each with its mtime then: kept out of every note. */
 	foreign?: Record<string, number>;
+	/** The session's own changed files the census maps, by spec-root path, with their § ([] = in the boundary, unclaimed): landedLine. */
+	landed?: Record<string, string[]>;
 }
 
 /** The digest's once-per-session lines, marked only on the note that printed them. */
@@ -334,6 +336,8 @@ export const freshCensusState = (): CensusState => ({ base: null, top: null, kno
 
 /** One tool call, as the census needs it; no pi types. */
 export interface CensusCall {
+	/** The tool call's id: what lets a call that never ran be closed (CensusHook.close). */
+	id?: string;
 	cwd: string;
 	toolName: string;
 	input: unknown;
@@ -413,6 +417,68 @@ export function digestSaying(v: CensusView, fresh: readonly string[], state: Pic
 	return { text: lines.join("\n"), said };
 }
 
+/**
+ * The session's own files the census maps (`fresh`, plus earlier ones it still lists), by path, with
+ * their §; [] for one in the boundary no claim maps. A file the census no longer lists drops out.
+ */
+export function landedFrom(v: CensusView, fresh: readonly string[], prior: CensusState["landed"]): CensusState["landed"] {
+	const mapped = new Map<string, string[]>();
+	for (const e of v.claimed) mapped.set(e.path, e.claims);
+	for (const p of v.unclaimed ?? []) mapped.set(p, []);
+	for (const e of v.mappedOutside) mapped.set(e.path, e.claims);
+	const out: Record<string, string[]> = {};
+	for (const p of new Set([...Object.keys(prior ?? {}), ...fresh])) {
+		const claims = mapped.get(p);
+		if (claims) out[p] = [...claims];
+	}
+	return Object.keys(out).length ? out : undefined;
+}
+
+export const LANDED_PREFIX = "Spec: this worker's changes landed in ";
+const LANDED_ID_CAP = 5;
+const LANDED_FILE_CAP = 3;
+
+/** A finished worker's one line: the § its own changes landed in, then its unclaimed files; undefined when none landed. */
+export function landedLine(states: Iterable<CensusState | undefined>): string | undefined {
+	const ids: string[] = [], unclaimed: string[] = [];
+	for (const s of states)
+		for (const [p, claims] of Object.entries(s?.landed ?? {})) {
+			if (!claims.length && !unclaimed.includes(p)) unclaimed.push(p);
+			for (const id of claims) if (!ids.includes(id)) ids.push(id);
+		}
+	if (!ids.length && !unclaimed.length) return undefined;
+	return `${LANDED_PREFIX}${ids.length ? capped(ids, LANDED_ID_CAP) : "no claim"}${unclaimed.length ? `; unclaimed: ${capped(unclaimed, LANDED_FILE_CAP)}` : ""}`;
+}
+
+/**
+ * landedLine over a worker's census state file: `{ census?, censuses? }` (a Claude Code worker's hook
+ * state, a pi worker's spec-worker file). Missing or unreadable: undefined.
+ */
+export function readLandedLine(file: string): string | undefined {
+	try {
+		const value = JSON.parse(readFileSync(file, "utf8")) as { census?: CensusState; censuses?: Record<string, CensusState> };
+		const trees: Record<string, CensusState> = { ...value?.censuses };
+		if (value?.census?.top && !trees[value.census.top]) trees[value.census.top] = value.census;
+		return landedLine(Object.values(trees));
+	} catch {
+		return undefined;
+	}
+}
+
+/** The env var naming the file a worker's census state goes to, for its parent's landed line. */
+export const LANDED_FILE_ENV = "SOVA_SPEC_LANDED_FILE";
+
+/** The census state, by tree, where the parent reads it (readLandedLine); a write that fails is skipped. */
+export function writeLanded(file: string | undefined, censuses: Record<string, CensusState>): void {
+	if (!file) return;
+	try {
+		mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
+		const tmp = `${file}.${process.pid}.tmp`;
+		writeFileSync(tmp, JSON.stringify({ censuses }), { mode: 0o600 });
+		renameSync(tmp, file);
+	} catch { /* the parent gets no line; the worker is never stopped */ }
+}
+
 /** A git-top-relative path as the spec root sees it, or undefined outside the root. */
 function underRoot(top: string, root: string, path: string): string | undefined {
 	const rel = relative(top, root);
@@ -453,6 +519,7 @@ async function censusDelta(state: CensusState, call: CensusCall, core: string, i
 			Object.assign(next, freshCensusState(), { base: view.head, top: view.top, known: Object.keys(view.files), last: lookOf(view), ...(ownBases.length ? { ownBases } : {}) });
 			delete next.said;
 			delete next.foreign;
+			delete next.landed;
 			return { state: next, result: {} };
 		}
 		next.last = lookOf(view);
@@ -481,11 +548,12 @@ async function censusDelta(state: CensusState, call: CensusCall, core: string, i
 		}
 		if (!fresh.length) return { state: next, result: {} };
 		next.known.push(...fresh.filter((p) => !next.known.includes(p)));
-		if (ranCensus(call.toolName, call.input)) return { state: next, result: {} };
+		// A bash call that ran the census itself already shows it: no note, but what it changed still lands.
+		const handRun = ranCensus(call.toolName, call.input);
 		const root = await findSpecRoot(call.cwd, (p) => io.exists(p));
 		const tool = join(core, "sova-spec.mjs");
 		if (!root) return { state: next, result: {} };
-		if (!(await io.exists(tool))) return failed(next, "trusted census unavailable");
+		if (!(await io.exists(tool))) return handRun ? { state: next, result: {} } : failed(next, "trusted census unavailable");
 		const census = async (spec?: string) => {
 			const own = (next.ownBases ?? []).flatMap((rev) => ["--own-base", rev]);
 			const args = [tool, "census", "--changed", "--json", "--root", root, ...(next.base ? ["--base", next.base] : []), ...own, ...(spec ? ["--spec", spec] : [])];
@@ -500,10 +568,17 @@ async function censusDelta(state: CensusState, call: CensusCall, core: string, i
 		const spec = await pickDraft(root, call.commands ?? [], call.sessionStart, io);
 		let r = await census(spec);
 		if (!r.view && spec) r = await census(); // an unreadable draft: the current spec still maps the files
-		if (!r.ran || !r.view) return failed(next, !r.ran ? `the census produced no output (${r.silent})` : "unusable census output");
 		const freshRel = fresh.map((p) => underRoot(view.top, root, p)).filter((p): p is string => p !== undefined);
+		const own = r.view && withoutPaths(r.view, foreignUnder(next, view.top, root));
+		if (own) {
+			const landed = landedFrom(own, freshRel, next.landed);
+			if (landed) next.landed = landed;
+			else delete next.landed;
+		}
+		if (handRun) return { state: next, result: {} };
+		if (!r.ran || !r.view || !own) return failed(next, !r.ran ? `the census produced no output (${r.silent})` : "unusable census output");
 		const orphans = (r.view.orphanedEvidence ?? []).filter((e) => !next.orphans?.includes(e.commit));
-		const { text: said, said: printed } = digestSaying(withoutPaths(r.view, foreignUnder(next, view.top, root)), freshRel, next, Boolean(spec));
+		const { text: said, said: printed } = digestSaying(own, freshRel, next, Boolean(spec));
 		if (said) {
 			next.reported = true;
 			next.said = printed;
@@ -631,6 +706,8 @@ export class CensusHook {
 	private states = new Map<string, CensusState>();
 	/** Calls between their before and after: while one runs, what changes may be its own, so nothing is settled. */
 	private open = 0;
+	/** The ids of the open calls that carried one: a call that never ran is closed by id (close). */
+	private pending = new Set<string>();
 	private chain: Promise<unknown> = Promise.resolve();
 	private readonly io: SpecIO;
 	private readonly core: () => string;
@@ -644,6 +721,21 @@ export class CensusHook {
 	reset(): void {
 		this.states = new Map();
 		this.open = 0;
+		this.pending.clear();
+	}
+
+	/** Each work tree's census state, by top: what a worker's landed line is read from. */
+	snapshot(): Record<string, CensusState> {
+		return Object.fromEntries(this.states);
+	}
+
+	/**
+	 * A call that never ran (blocked or aborted before it started): it gets no after, so it stops counting
+	 * as open here, with no census (it changed nothing). A call already closed by after is left alone.
+	 */
+	close(id: string): void {
+		if (!this.pending.delete(id)) return;
+		this.open = Math.max(0, this.open - 1);
 	}
 
 	private async topOf(dir: string, signal?: AbortSignal): Promise<string | undefined> {
@@ -673,6 +765,7 @@ export class CensusHook {
 	/** Take the baseline now (a run's start), so the run's first edit is already a delta; a known tree takes in what changed since. */
 	prime(cwd: string): Promise<CensusResult> {
 		this.open = 0;
+		this.pending.clear();
 		return this.serial(async () => {
 			await this.baseline(cwd, undefined, true);
 			return {};
@@ -687,6 +780,7 @@ export class CensusHook {
 		if (CENSUS_SKIP_TOOLS.has(call.toolName)) return Promise.resolve();
 		const alone = this.open === 0;
 		this.open++;
+		if (call.id) this.pending.add(call.id);
 		return this.serial(async () => {
 			for (const dir of callDirs(call)) await this.baseline(dir, call.signal, alone);
 		}, undefined);
@@ -694,7 +788,8 @@ export class CensusHook {
 
 	after(call: CensusCall): Promise<CensusResult> {
 		if (CENSUS_SKIP_TOOLS.has(call.toolName)) return Promise.resolve({});
-		this.open = Math.max(0, this.open - 1);
+		// A failed call (an error result) is closed here like any other: what it changed is its own.
+		if (!call.id || this.pending.delete(call.id) || !this.pending.size) this.open = Math.max(0, this.open - 1);
 		return this.serial(async () => {
 			const texts: string[] = [];
 			const failures: string[] = [];

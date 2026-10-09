@@ -83,15 +83,15 @@ describe("§app.outreach/send-link and /sender-route: the sender as a real child
     assert.equal(page.body.sends?.[0]?.what, "Office hours");
   });
 
-  test("the sender is down: failed, retryable, with why; nothing stays minted", async () => {
+  test("the sender is not running: refused at once as WhatsApp down, with why; nothing is minted", async () => {
     await stopSender();
     const sid = await gathering(ann.id);
     const n = batonById(sid)!.row.handoffs.at(-1)!.n;
     const before = liveLinks(sid, n).map((l) => l.hash);
     const r = await sendLink(sid);
-    assert.equal(r.body.outcome, "failed");
-    assert.equal(r.body.code, "unreachable");
-    assert.equal(r.body.retryable, true);
+    assert.equal(r.body.outcome, "refused");
+    assert.equal(r.body.code, "sender-down");
+    assert.match(r.body.why, /^WhatsApp is down: /);
     assert.deepEqual(liveLinks(sid, n).map((l) => l.hash), before, "nothing new stays minted; the older link is untouched");
     const info = await json("GET", "/api/outreach");
     assert.equal(info.body.sender.state, "unreachable");

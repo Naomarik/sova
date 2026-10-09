@@ -1045,6 +1045,19 @@ export class OrgHost {
     return n;
   }
 
+  /** The channel a released act waits for came back (the WhatsApp sender, §app.outreach/send): every outage
+      wait is released now, each one committed step. The release re-checks the act under a fresh stamp, so one
+      whose channel is still down waits again, to the same 24 h bound. Returns how many were released. */
+  async releaseOutageWaits(): Promise<number> {
+    await this.ready();
+    let n = 0;
+    for (const h of this.engine.holds(null).filter((x) => x.wait === "outage")) {
+      this.step(() => this.engine.send(h.sessionId, "sova/rewindow", { id: h.id, until: null } as JsonObject, { now: this.clock() }), undefined, { call: "rewindow" });
+      n++;
+    }
+    return n;
+  }
+
   /** The earliest pending delayed event (the host's own timer follows it). */
   nextDueAt(): number | null {
     return this.engine.nextDueAt();

@@ -148,3 +148,10 @@ test("a project's deploy items of no session list in the region, newest first, n
   assert.equal(needsYouTitle(2, 1), "The 2 sessions waiting on you, newest first, and 1 deploy item.");
   assert.equal(needsYouTitle(1), "The 1 session waiting on you.");
 });
+
+test("WhatsApp sending down lists in the region as an item of no session, and the head's title names it (§app.outreach/sender-health)", () => {
+  const wa = { id: "whatsapp-sender", path: "", title: "WhatsApp sending", where: "Settings → Outreach", tier: "act" as const, kind: "whatsapp-down" as const, since: 4, detail: "WhatsApp sending is down: x", href: "#/settings/outreach" };
+  assert.deepEqual(needsYouItems({ items: [wa] }).map((i) => i.href), ["#/settings/outreach"]);
+  assert.equal(needsYouTitle(0, 0, true), "WhatsApp sending waiting on you.");
+  assert.equal(needsYouTitle(2, 1, true), "The 2 sessions waiting on you, newest first, and 1 deploy item and WhatsApp sending.");
+});

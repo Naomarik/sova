@@ -20,6 +20,10 @@ const MAX_TEXT = 4096
 /** Close codes worth one more try after a backoff (WhatsApp's routine drops and restarts). */
 export const TRANSIENT = new Set([428, 408, 503, 515])
 
+/** The close codes that stop the sender until a person acts: everything else WhatsApp or the network
+    can cause is ridden out, after a backoff or at the reconnect budget's next free slot. */
+export const HELD = new Set([401, 440, 403])
+
 export const realClock = {
   now: () => Date.now(),
   setTimeout: (fn, ms) => setTimeout(fn, ms),
@@ -30,6 +34,21 @@ const fail = (code, why, extra = {}) => ({ ok: false, code, retryable: code === 
 const DIGITS = /^\d{7,15}$/
 
 const RANK = { delivered: 1, read: 2, failed: 3 }
+
+/**
+ * What the WebSocket said as it ended, for the log (is it WhatsApp ending the connection, or the path to
+ * it?): whether the server sent a stream error or ended the stream, the WebSocket's close code and whether
+ * a close frame came (1006 = none: the connection just dropped). Codes and flags only, never a reason's text.
+ */
+export function wireWords(wire) {
+  if (!wire) return ''
+  const parts = []
+  if (wire.streamError) parts.push('server sent a stream error')
+  if (wire.streamEnd) parts.push('server ended the stream')
+  if (typeof wire.wsCode === 'number') parts.push(`websocket ${wire.wsCode}`, wire.closeFrame ? 'close frame received' : 'no close frame')
+  else parts.push('websocket closed by the sender')
+  return ` [${parts.join(', ')}]`
+}
 
 export class Sender extends EventEmitter {
   /**
@@ -85,6 +104,15 @@ export class Sender extends EventEmitter {
       if (rec.status === 'sending') (rec.status = 'unknown'), (changed = true)
     }
     this.prune()
+    // An older sender held `down` for good after a spent budget, a bad session (500), an unknown close or a
+    // failed open. Each is a wait now, so that hold is dropped and this start retries within the budget. A
+    // second 405 (the sender needs an update) and an unreadable state.json stay held for a person.
+    const h = this.s.hold
+    if (h?.state === 'down' && h.code !== 405 && h.code !== 'unreadable') {
+      this.log('warn', `dropping a saved down hold (${h.why}): the sender retries on its own now`)
+      this.s.hold = null
+      changed = true
+    }
     if (changed) this.save()
     if (this.s.hold) return this.setState(this.s.hold.state, this.s.hold.why)
     if (!this.driver.isPaired()) return this.setState('unpaired', 'No device is linked yet: run `sova-whatsapp pair` on this host.')
@@ -158,24 +186,57 @@ export class Sender extends EventEmitter {
     return { hour, day, ...this.config.reconnectBudget }
   }
 
-  /** Records one automatic attempt, or holds `down` when the budget is spent. */
+  /** Records one automatic attempt; false, recording nothing, when the budget is spent. */
   spendBudget() {
     this.prune()
     const b = this.budget()
-    if (b.hour >= b.perHour || b.day >= b.perDay) {
-      const which = b.hour >= b.perHour ? `${b.hour} in the last hour` : `${b.day} in the last day`
-      this.hold('down', `Reconnect budget spent (${which}).`)
-      return false
-    }
+    if (b.hour >= b.perHour || b.day >= b.perDay) return false
     this.s.reconnects.push(this.now())
     this.save()
     return true
   }
 
-  /** kind: start | auto (both spend the budget) | operator | relink (the restart right after pairing). */
+  /** When the budget has a slot again: the attempt that has to leave each window leaves it. */
+  nextSlot() {
+    const now = this.now()
+    const { perHour, perDay } = this.config.reconnectBudget
+    const sorted = [...this.s.reconnects].sort((a, b) => a - b)
+    let at = now
+    for (const [span, per] of [
+      [HOUR, perHour],
+      [DAY, perDay],
+    ]) {
+      const inside = sorted.filter((t) => now - t < span)
+      if (inside.length >= per) at = Math.max(at, inside[inside.length - per] + span)
+    }
+    return at
+  }
+
+  /**
+   * The budget is spent: `down` until its next free slot, then one automatic attempt, on its own.
+   * `cause` says what ended the connection. A budget of 0 never refills: held for a person.
+   */
+  waitForBudget(cause) {
+    this.clearRetry()
+    this.endSock()
+    const b = this.budget()
+    const day = b.day >= b.perDay
+    const per = day ? b.perDay : b.perHour
+    const limit = `The reconnect limit of ${per} ${day ? 'a day' : 'an hour'} is reached.`
+    const why = cause ? `${cause} ${limit}` : limit
+    if (per <= 0) return this.hold('down', `${why} Automatic reconnects are off (SOVA_WA_RECONNECT_BUDGET).`)
+    const at = this.nextSlot()
+    this.setState('down', why, at)
+    this.retryTimer = this.clock.setTimeout(() => {
+      this.retryTimer = null
+      this.connect('auto')
+    }, at - this.now())
+  }
+
+  /** kind: start | auto (both spend the budget) | scheduled (spent when scheduled) | operator | relink (the restart right after pairing). */
   async connect(kind) {
     if (this.stopped) return
-    if ((kind === 'start' || kind === 'auto') && !this.spendBudget()) return
+    if ((kind === 'start' || kind === 'auto') && !this.spendBudget()) return void this.waitForBudget('')
     this.clearRetry()
     this.endSock()
     const gen = this.gen
@@ -185,7 +246,7 @@ export class Sender extends EventEmitter {
     const handlers = {
       onQr: (qr) => live() && this.onQr(qr),
       onOpen: (me) => live() && this.onOpen(me),
-      onClose: (code, message) => live() && this.onClose(code, message),
+      onClose: (code, message, wire) => live() && this.onClose(code, message, wire),
       onReceipt: (ref, status, code) => this.onReceipt(ref, status, code),
     }
     let handle
@@ -195,7 +256,8 @@ export class Sender extends EventEmitter {
       if (!live()) return
       this.log('error', `open failed: ${err.message}`)
       if (this.linking) return this.endLink(`Linking failed: ${err.message}`)
-      return this.hold('down', `The connection could not be opened: ${err.message}`)
+      // The network or WhatsApp: tried again after a backoff, within the budget, like a transient close.
+      return void this.scheduleReconnect(undefined, undefined, `The connection could not be opened: ${err.message}`)
     }
     if (!live()) {
       try {
@@ -241,18 +303,20 @@ export class Sender extends EventEmitter {
     this.setState('open')
   }
 
-  onClose(code, message) {
+  /** `wire`: what the WebSocket itself said ({wsCode?, closeFrame?, streamEnd?}), for the log only. */
+  onClose(code, message, wire) {
     const wasOpenFor = this.openedAt ? this.now() - this.openedAt : 0
     this.openedAt = 0
     this.sock = null
     this.pending = null
     this.gen++
     if (wasOpenFor >= STABLE_OPEN) this.streak = 0
-    this.log('warn', `connection closed: ${code ?? 'no code'}${message ? ` (${message})` : ''}`)
+    this.log('warn', `connection closed: ${code ?? 'no code'}${message ? ` (${message})` : ''}${wireWords(wire)}`)
     if (this.linking) {
       // Pairing ends with WhatsApp asking for a restart (515): that one reconnect finishes the link.
       if (code === 515 && this.driver.isPaired()) return void this.connect('relink')
-      return this.endLink(code === 408 ? 'The QR code expired before the phone scanned it.' : `Linking stopped (${code ?? 'closed'}).`)
+      if (code !== 408) return this.endLink(`Linking stopped (${code ?? 'closed'}).`)
+      return this.endLink(this.linking.phone ? 'The pairing code expired before it was typed on the phone.' : 'The QR code expired before the phone scanned it.')
     }
     switch (code) {
       case 401:
@@ -262,7 +326,7 @@ export class Sender extends EventEmitter {
       case 403:
         return this.hold('blocked', 'WhatsApp refused this account (403), possibly a ban. Sending is paused.', 403)
       case 500:
-        return this.hold('down', 'WhatsApp reported a bad session (500).', 500)
+        return this.scheduleReconnect(500, undefined, 'WhatsApp reported a bad session (500).')
       case 405:
         if (!this.versionRefetched) {
           this.versionRefetched = true
@@ -271,7 +335,7 @@ export class Sender extends EventEmitter {
         return this.hold('down', 'WhatsApp rejects this WA Web version (405) even after refetching it: update the sender.', 405)
     }
     if (TRANSIENT.has(code)) return this.scheduleReconnect(code)
-    this.hold('down', `The connection closed with ${code ?? 'no code'}, which the sender does not retry on its own.`, code)
+    this.scheduleReconnect(code, undefined, `The connection closed with ${code ?? 'no code'}.`)
   }
 
   async refetchAndReconnect() {
@@ -283,12 +347,14 @@ export class Sender extends EventEmitter {
     this.scheduleReconnect(405, 0)
   }
 
-  scheduleReconnect(code, delay) {
-    if (!this.spendBudget()) return
+  /** One automatic attempt after a backoff, `connecting` meanwhile; past the budget, `down` until its next slot. */
+  scheduleReconnect(code, delay, why = `WhatsApp closed the connection (${code}).`) {
+    if (!this.spendBudget()) return this.waitForBudget(why)
+    this.clearRetry()
     this.streak++
     const wait = delay ?? Math.min(BACKOFF_FIRST * 2 ** (this.streak - 1), BACKOFF_MAX)
     const at = this.now() + wait
-    this.setState('connecting', `WhatsApp closed the connection (${code}).`, at)
+    this.setState('connecting', why, at)
     this.retryTimer = this.clock.setTimeout(() => {
       this.retryTimer = null
       this.connect('scheduled')
@@ -311,7 +377,12 @@ export class Sender extends EventEmitter {
     return { ok: true, state: this.state }
   }
 
-  async link({ phone } = {}) {
+  async link({ phone, cancel } = {}) {
+    if (cancel === true) {
+      if (!this.linking) return fail('not-linking', 'No link is in progress.')
+      this.endLink('Linking was cancelled.')
+      return { ok: true, state: this.state }
+    }
     if (this.linking) return fail('busy', 'A link is already in progress.')
     if (this.driver.isPaired()) return fail('linked', 'A device is already linked. Unlink it first to link another.')
     if (phone != null && !DIGITS.test(String(phone))) return fail('invalid', 'The phone number must be 7 to 15 digits, country code first, no +.')
@@ -419,6 +490,8 @@ export class Sender extends EventEmitter {
       case 'blocked':
         return fail(this.s.hold?.code === 463 ? 'restricted' : 'blocked', this.why)
       case 'down':
+        // Waiting for the budget: it reconnects on its own at retryAt. Otherwise a person has to act.
+        if (this.retryAt) return fail('not-connected', this.why, { retryAt: new Date(this.retryAt).toISOString() })
         return { ...fail('not-connected', this.why), retryable: false }
     }
     return null

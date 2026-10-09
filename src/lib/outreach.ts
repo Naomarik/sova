@@ -1,5 +1,5 @@
 import { createSignal } from "solid-js";
-import type { OutreachFile, OutreachInfo, OutreachPatch, SenderRoute, SenderStatus } from "../../shared/outreach";
+import type { OutreachFile, OutreachInfo, OutreachPatch, SenderEntry, SenderLinkView, SenderList, SenderRoute, SenderStatus } from "../../shared/outreach";
 import { relativeIn, stampTime } from "./format";
 import { createDraftStore } from "./settings-draft";
 
@@ -38,6 +38,18 @@ const post = (op: "reconnect" | "pause" | "start", body: unknown = {}) =>
 export const reconnectSender = () => post("reconnect");
 export const pauseSender = (on: boolean) => post("pause", { on });
 export const startSender = () => post("start");
+
+/** Linking a phone (§app.outreach/sender-link): the answer carries the newest QR or code, never cached. */
+const json = (body: unknown): RequestInit => ({ method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const startLink = (phone?: string) => call<SenderLinkView>("/api/outreach/sender/link", json(phone ? { phone } : {}));
+export const getLink = () => call<SenderLinkView>("/api/outreach/sender/link", { cache: "no-store" });
+export const cancelLink = () => call<SenderLinkView>("/api/outreach/sender/link/cancel", json({}));
+export const unlinkSender = (confirm: string) => call<OutreachInfo>("/api/outreach/sender/unlink", json({ confirm }));
+/** The phone number a pairing code is for: digits only, country code first. */
+export const PHONE_DIGITS = /^\d{7,15}$/;
+
+/** The senders this host can use (§app.outreach/sender-list). */
+export const getSenders = () => call<SenderList>("/api/outreach/senders", { cache: "no-store" }).then((l) => l.senders);
 
 export type SenderChoice = "off" | "local" | "via";
 
@@ -81,8 +93,11 @@ const nextTry = (retryAt: string, now: number) => {
   return `${stampTime(retryAt, now)}${rel ? `, ${rel}` : ""}`;
 };
 
-/** The sender's state in words (a chip and a sentence), as Settings shows it: why it stopped and when it tries again. */
-export function senderWords(s: Pick<SenderStatus, "state" | "why" | "retryAt" | "paused">, now = Date.now()): { chip: string; tone: "success" | "warn" | "info" | undefined; text: string } {
+/**
+ * The sender's state in words (a chip and a sentence), as Settings shows it: why it stopped and when it
+ * tries again. `here`: the sender is this host's own, so linking a phone is this page's to offer.
+ */
+export function senderWords(s: Pick<SenderStatus, "state" | "why" | "retryAt" | "paused">, now = Date.now(), here = false): { chip: string; tone: "success" | "warn" | "info" | undefined; text: string } {
   const why = s.why;
   switch (s.state) {
     case "off":
@@ -96,11 +111,16 @@ export function senderWords(s: Pick<SenderStatus, "state" | "why" | "retryAt" | 
     case "connecting":
       if (s.retryAt) return { chip: "Reconnecting", tone: "info", text: `${why ?? "The connection closed."} It tries again at ${nextTry(s.retryAt, now)}.` };
       return { chip: "Connecting", tone: "info", text: why ?? "Connecting to WhatsApp." };
-    case "unpaired":
     case "linking":
-      return { chip: "Not paired", tone: "warn", text: "Pair it on the sender's host: sova-whatsapp pair." };
+      return { chip: "Linking", tone: "info", text: why ?? "Waiting for the phone to link this device." };
+    case "unpaired":
+      return here
+        ? { chip: "Not paired", tone: "warn", text: "Link a phone to send from: Link a Phone below, or sova-whatsapp pair on this host." }
+        : { chip: "Not paired", tone: "warn", text: "Link a phone on the sender's host." };
     case "logged-out":
-      return { chip: "Logged out", tone: "warn", text: "Pair it again on the sender's host: sova-whatsapp pair." };
+      return here
+        ? { chip: "Logged out", tone: "warn", text: "The phone unlinked this device. Unlink this number, then link a phone again." }
+        : { chip: "Logged out", tone: "warn", text: "Link it again on the sender's host." };
     case "replaced":
       return { chip: "Replaced", tone: "warn", text: "Another copy of the sender took over this number. Stop that copy, then reconnect." };
     case "blocked":
@@ -122,12 +142,22 @@ export function senderFacts(s: SenderStatus, now = Date.now()): string[] {
   return out;
 }
 
+/** The states with a linked device: Unlink This Number clears it, logged out included (§app.outreach/sender-link). */
+const LINKED: ReadonlySet<SenderStatus["state"]> = new Set(["open", "connecting", "down", "replaced", "blocked", "logged-out"]);
+
 /**
- * Which of the sender's controls this page offers now (§app.outreach/sender-controls). Reconnect: down,
- * replaced, or a backoff wait; blocked only on the sender's own host, behind its warning. Pause/Resume:
- * the sender's own host, while it answers. Start: the sender's own host, its unit installed and stopped.
+ * Which of the sender's controls this page offers now (§app.outreach/sender-controls, /sender-link).
+ * Reconnect: down, replaced, or a backoff wait; blocked only on the sender's own host, behind its
+ * warning. Pause/Resume: the sender's own host, while it answers. Start: the sender's own host, its unit
+ * installed and stopped. Link: the sender's own host, unpaired. Unlink: the sender's own host, linked.
  */
-export function senderActions(info: Pick<OutreachInfo, "file" | "sender" | "unit">): { reconnect: false | "plain" | "blocked"; pause: null | "pause" | "resume"; start: boolean } {
+export function senderActions(info: Pick<OutreachInfo, "file" | "sender" | "unit">): {
+  reconnect: false | "plain" | "blocked";
+  pause: null | "pause" | "resume";
+  start: boolean;
+  link: boolean;
+  unlink: boolean;
+} {
   const route = info.file.sender;
   const local = typeof route === "object" && "local" in route;
   const via = typeof route === "object" && "via" in route;
@@ -136,8 +166,20 @@ export function senderActions(info: Pick<OutreachInfo, "file" | "sender" | "unit
   const reconnect = local && s.state === "blocked" ? "blocked" : (local || via) && waiting ? "plain" : false;
   const pause = local && s.state !== "off" && s.state !== "unreachable" ? (s.paused ? "resume" : "pause") : null;
   const start = local && s.state === "unreachable" && !!info.unit && (info.unit.active === "inactive" || info.unit.active === "failed");
-  return { reconnect, pause, start };
+  return { reconnect, pause, start, link: local && s.state === "unpaired", unlink: local && LINKED.has(s.state) };
 }
+
+/** A sender's use against its limits, for its row in the list: "4 of 60 sent in 24 h, 1 of 20 this hour". */
+export function senderUse(s: SenderStatus): string | null {
+  if (!s.usage || !s.limits) return null;
+  return `${s.usage.day} of ${s.limits.perDay} sent in 24 h, ${s.usage.hour} of ${s.limits.perHour} this hour`;
+}
+
+/** The draft's choice for an entry of the list, and whether the draft has picked it. */
+export const entryChoice = (e: SenderEntry): Pick<OutreachDraft, "sender" | "viaNodeId"> =>
+  e.where === "local" ? { sender: "local", viaNodeId: "" } : { sender: "via", viaNodeId: e.nodeId ?? "" };
+export const entryPicked = (e: SenderEntry, d: OutreachDraft | null | undefined): boolean =>
+  !!d && (e.where === "local" ? d.sender === "local" : d.sender === "via" && d.viaNodeId === e.nodeId);
 
 const [info, setInfo] = createSignal<OutreachInfo | null>(null);
 export const outreachInfo = info;

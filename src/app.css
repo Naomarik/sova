@@ -555,6 +555,20 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .outreach-control > .button { flex: none; }
 .outreach-control > .field-hint { flex: 1 1 16rem; min-width: 0; }
 .outreach-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+/* Settings → Outreach's senders (§app.outreach/sender-list) and Link a Phone (§app.outreach/sender-link). */
+.outreach-settings fieldset.field { border: 0; margin: 0; padding: 0; min-width: 0; }
+.outreach-settings fieldset.field > legend { padding: 0; margin-bottom: var(--space-1); }
+.sender-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: var(--space-2); }
+.sender-row-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.sender-row-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.sender-row-number { font-size: var(--fs-caption); color: var(--color-ink-2); }
+.sender-row-facts { font-size: var(--fs-caption); color: var(--color-ink-muted); overflow-wrap: anywhere; }
+.sender-row-facts:empty { display: none; }
+.sender-link { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); border: 1px solid var(--color-border); border-radius: var(--r-md); background: var(--color-surface); }
+.sender-link-qr { width: calc(var(--space-8) * 5); max-width: 100%; height: auto; align-self: flex-start; color: light-dark(var(--color-ink), var(--color-surface)); }
+.sender-link-code { margin: 0; font-family: var(--font-mono); font-size: var(--fs-display-l); letter-spacing: 0.08em; color: var(--color-ink); }
+.sender-link-steps { margin: 0; color: var(--color-ink); }
+.sender-link-phone { max-width: 22rem; }
 .public-links-row { display: flex; flex-wrap: wrap; gap: var(--space-3); }
 .public-links-row .settings-field { flex: 1 1 12rem; }
 .public-links-port { max-width: 9rem; }

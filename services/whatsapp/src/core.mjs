@@ -315,7 +315,8 @@ export class Sender extends EventEmitter {
     if (this.linking) {
       // Pairing ends with WhatsApp asking for a restart (515): that one reconnect finishes the link.
       if (code === 515 && this.driver.isPaired()) return void this.connect('relink')
-      return this.endLink(code === 408 ? 'The QR code expired before the phone scanned it.' : `Linking stopped (${code ?? 'closed'}).`)
+      if (code !== 408) return this.endLink(`Linking stopped (${code ?? 'closed'}).`)
+      return this.endLink(this.linking.phone ? 'The pairing code expired before it was typed on the phone.' : 'The QR code expired before the phone scanned it.')
     }
     switch (code) {
       case 401:
@@ -376,7 +377,12 @@ export class Sender extends EventEmitter {
     return { ok: true, state: this.state }
   }
 
-  async link({ phone } = {}) {
+  async link({ phone, cancel } = {}) {
+    if (cancel === true) {
+      if (!this.linking) return fail('not-linking', 'No link is in progress.')
+      this.endLink('Linking was cancelled.')
+      return { ok: true, state: this.state }
+    }
     if (this.linking) return fail('busy', 'A link is already in progress.')
     if (this.driver.isPaired()) return fail('linked', 'A device is already linked. Unlink it first to link another.')
     if (phone != null && !DIGITS.test(String(phone))) return fail('invalid', 'The phone number must be 7 to 15 digits, country code first, no +.')

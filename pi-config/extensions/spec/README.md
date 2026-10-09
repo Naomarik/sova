@@ -78,9 +78,11 @@ behavior without a `requires` key is a `touched-uninvestigated` note, so the
 exit code stays what the files make it. It lists what to read; it never judges
 a flag. `--related` without `--changed` is a usage error.
 
-Every § the task didn't create is foreign. Without `--spec` that is every
-touched §; with `--spec <draft spec dir>`, the ids the draft has and `.sova/spec`
-lacks are the task's own. Every `census --changed`, with or without
+Every § the task didn't create is foreign. The task created each § the spec
+lacks at `--base` (the `created` of `foreign --base`), so one it promoted and
+committed since the base is its own; with `--spec <draft spec dir>`, the ids
+the draft has and `.sova/spec` lacks are its own too, and with `--own-base`, the
+ids absent at every such revision. Every `census --changed`, with or without
 `--related`, carries `census.foreignNote` (the rule) then `census.foreign` and
 `census.childUnderForeign` right after `census.changed`, so a `head` keeps
 them (surfaces first); one `foreign-summary` note, the rule then every foreign

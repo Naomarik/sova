@@ -12,6 +12,8 @@ Beside the full-closure packet, a contents view (`toc`) lists a claim's one-hop 
 each is and why it is linked, and single-passage reads (`read`) return one claim without its chain,
 so the agent chooses what it reads.
 A map (`map`) shows every area on one page, and `where` finds the claims for a source file or a name.
+Draft commands say what a draft introduced apart from what the spec already had, and a spec conflict
+a Git merge leaves has one recovery, given in the same words by the docs and the refusals.
 Records may also declare `embeds` (surfaces drawn inside a claim), `core` and `about` (the target a
 note serves), and an `agreed` decision (who decided and when); the claims flagged `core` form an
 always-on frame that arrives with the first page of a `read`.
@@ -109,7 +111,13 @@ the playbook's own method appear there only as proposed diffs, never applied by 
 ## §tools.spec/census-note — The `[spec census]` note stays short
 
 After a tool call that brings new changed files, and only then, the `[spec census]` note says what
-the census found, the same in pi sessions, pi workers and Claude Code workers:
+the census found, the same in pi sessions, pi workers and Claude Code workers. Only what changes
+while one of the session's own tool calls runs is the session's: a file changed, or a commit made,
+between its calls (another process sharing the work tree, a worker, the user's editor) is taken in
+silently before the next call and left out of every count and line, so a session that changes
+nothing itself never gets a note or `No draft yet`. Such a file the session then changes itself is
+its own from that call on. A worker's changes reach the worker's own census note, never its
+parent's.
 
 - a header, "N changed file(s) in the boundary, M unclaimed", followed by "; K mapped outside the
   boundary" when K is above 0; it gives no foreign count;
@@ -123,14 +131,47 @@ the census found, the same in pi sessions, pi workers and Claude Code workers:
 It has no `Foreign §:` line, no `Rule:` line and no `New claims under a foreign §` pairs, and a newly
 touched foreign § alone never fires it. Returning to a work tree retains its census state. When the
 census can't run, the model gets one line, "[spec census] incomplete: <why>; run census by hand",
-once per cause per work tree until a census there succeeds again; there is no toast.
+once per cause per work tree until a census there succeeds again; there is no toast. When the
+census printed nothing, <why> carries the first error line it wrote to stderr (else its first
+stderr line), else that it timed out or its exit status. The census runs on the node the hook
+itself runs on, by absolute path, so a version manager's `node` shim on PATH that refuses an
+untrusted directory never stops it (under bun: the first `node` on PATH outside a shims directory).
 
 The census is skipped after a tool that cannot write the repository, by an explicit list of tool
 names: in pi, read, grep, find, ls, align, agent_list, agent_models, agent_transcript, agent_wait,
 team_list, team_inbox, team_roster, link_inbox, link_members and link_offers; in Claude Code, its
 own read-only tools and the team tools team_inbox, team_msg, team_ask, team_roster, team_report and
-wake_nudge. A skipped call neither looks at the tree nor moves the census's baseline, so the next
-call that can write reports every change since. Shell commands are never skipped.
+wake_nudge. A skipped call neither looks at the tree nor moves the census's baseline; what changed
+while it ran is taken in before the next call that can write, like any change between calls. Shell
+commands are never skipped.
+
+## §tools.spec/write-guard — The direct-write note judges the files, not the command
+
+The census note's write guard says "you wrote the current spec directly (<files>): undo it" for a
+current-spec file (`manifest.json` or a file under `claims/`) that a tool call changed by hand, the
+same in pi sessions, pi workers and Claude Code workers. An edit or write tool on such a file is
+always one. For a shell command, the guard looks at each current-spec file the call changed and
+never at the command's text, so a wrapper script, an alias or a shell function is judged like the
+tool it runs. A changed file is not a hand write when:
+
+- its bytes are what a promotion wrote: their SHA-256 matches the hash a promotion receipt
+  (`promotions[]` in a draft's `draft.json`) records for that file;
+- a merge, rebase, cherry-pick or revert is in progress in that work tree;
+- its bytes equal the file at HEAD or at the default branch's tip.
+
+Any other change, `sed -i` on a claim file for one, still gets the note. Each promotion receipt
+records, beside the files it wrote, each file's SHA-256 after the write (null for a file it removed).
+
+## §tools.spec/census-created — `census --changed` counts § created since its base as the task's own
+
+`census --changed --base <rev>` (the base is `HEAD` without the flag) treats a § the spec lacks at
+`<rev>` and has now as one the task created: the same set `foreign --base <rev>` reports as
+`created`. "Now" is the `--spec` draft when one is given, otherwise the working tree's
+`.sova/spec`, so a § the task promoted and committed after `<rev>` counts as its own just like one
+still in its draft. Such a § is never in `census.foreign` or the `foreign-summary` note, gets no
+`touched-foreign` note, and its `touched` entry (with `--related`) says `created: true`. A § that
+existed at `<rev>` stays foreign however the task changed it. With `--own-base` revisions, a §
+absent at every one of them is the task's own as well.
 
 ## §tools.spec/mode-reading — Spec mode teaches contents first, then one passage
 
@@ -194,27 +235,24 @@ declarations were reordered, that holds a carriage return, or whose graph on any
 load, is still compared as a whole file. A merged file must read back as exactly the declarations
 it was merged from, byte for byte, or the promotion is refused as a conflict and nothing is written.
 
-## §tools.spec/git-merge — A Git merge of spec changes conflicts only on the same promise
+## §tools.spec/conflict-recovery — A spec conflict has one recovery, said the same way everywhere
 
-Two Git branches that each promoted spec changes merge without a conflict unless they changed the
-same promise. `.gitattributes` routes the claim files through the draft tool's `merge-claims`
-driver and `manifest.json` through `merge-manifest`; Git needs each defined once per clone, and the
-setup names no project path but the tools' own. `merge-claims` merges a claim file per declaration
-the same way promotion does (§tools.spec/span-promotion), with the merge base, ours and theirs in
-the roles of base, current and draft, so the merged file has the bytes the two promotions give when
-landed one after the other in one tree, in either order. The driver finds declarations from the
-file's own H1 and H2 headings, without loading the graph. When a declaration or a gap changed
-differently on both sides, a declaration was deleted on one side and changed on the other, the file
-can't be cut per declaration (no declarations, a carriage return, kept declarations reordered), or
-the merged file doesn't read back as the declarations it was merged from, the driver writes Git's
-own line merge with its conflict markers, so both sides' prose stays in the file, and Git reports
-the file as conflicted.
-
-A record's place in `manifest.json` doesn't depend on the order changes landed in. Promotion and
-`merge-manifest` put a record that is new to the manifest right before the first record of its own
-area (its identifier up to the `/`) that sorts after it, or else right after that area's last
-record; the first record of an area goes right before the first record whose area sorts after its
-own, or last. Records already in the manifest keep their place.
+A promotion conflict within one tree (current changed a declaration the draft changed too) is
+refused with what PROMOTE.md says: revert those declarations in the draft's `spec/` to their
+`base/` text and promote the rest, or start a new draft from current; it never says to fix the
+draft by hand. A Git merge that leaves the spec conflicted (a `claims/*.md` file, or a manifest key
+`merge-manifest` refuses), whether or not the manifest merge driver already merged the manifest,
+has one recovery, given in the same words by PROMOTE.md and by the draft tool's refusals: take the
+default branch's whole spec with `git checkout --no-overlay master -- .sova/spec/manifest.json
+.sova/spec/claims` (never `--ours` and never one file at a time: the driver may already have
+merged the manifest, and the branch's other claim files would then lack their records), commit the
+merge, promote the branch's drafts again with the same `--id`s (re-recording evidence that `status`
+calls stale; a draft that is gone is re-applied in a new draft from current), then commit the
+claims. Followed literally, it leaves a spec whose graph loads and a re-promotion that lands on the
+first try. The refusal names the project's own default branch where PROMOTE.md says `master`.
+`merge-manifest`'s `manifest-conflict` refusal carries it, and so does a promotion refused because
+spec files are still unmerged in Git's index (`spec-merge-conflict`) or because the current spec's
+graph does not load (`current-invalid`).
 
 ## §tools.spec/agreed-promotion — An agreed promise lands in the main spec before it is built
 
@@ -256,6 +294,20 @@ evidence as before. Doc-only eligibility is judged by
 the record's kind both in current (the draft's base) and in the draft: a record whose kind changes
 qualifies only if both kinds allow it, so turning a behavior or surface into a note or section while
 rewriting its prose still needs commit or snapshot evidence, as deleting it would.
+
+## §tools.spec/draft-output — Draft commands say what the draft introduced, apart from what was there
+
+`draft check` splits the core's findings on the draft graph in two: those the draft introduced
+(absent from the core's findings on the draft's own base) are listed one by one (`introduced`, and
+`coreFindings` and `frontier` hold only those), and those the base already had are counted by code
+(`preexisting`); `--all` lists them too. A draft with no base, or whose base graph does not load,
+counts every finding as introduced. So a draft that introduces nothing prints under 2 KB however
+many findings the current spec already carries; the exit status is the same as before the split.
+`new` reports the number of files it copied, their bytes and one hash over the copied tree; the
+per-file list appears only with `--all`. A promotion preview or write gives, beside the merged
+graph's warning count, how many of those warnings current does not already have
+(`warningsIntroduced`), and names at most five claims whose mapped code changed under unchanged
+prose, with their total count and the core `foreign --landing` command that lists every one.
 
 ## §tools.spec/inspection-safety — Refused inputs are not inspected
 
@@ -366,8 +418,9 @@ The command may follow its flags. They store nothing and run no project code.
 
 The read-only `where <path|token>` command answers "which promises cover this?". A path is a file a
 record's `code` lists or that exists under the project root; anything else is a token, and `--token`
-forces that reading. A path-shaped argument that is neither is searched as a token with a line saying
-so. For a path it lists every claim whose `code` names the file, ranked by the interface tokens in
+forces that reading. A path-shaped argument that is neither is searched as a token, and both the
+text and the JSON form say that no such file exists under the root and no record lists it (JSON:
+`file.state` `absent` and a `note`), exit 1. For a path it lists every claim whose `code` names the file, ranked by the interface tokens in
 the claim's own passage that also occur in the file, each shown with the tokens it shares. An
 interface token is a backticked span, outside fenced code and HTML comments, of at least three
 characters with a letter, that looks like a name the code uses: it contains `/`, `.`, `_`, `:`, `#`,
@@ -376,8 +429,9 @@ are not tokens. It occurs in a file when it appears there with no letter, digit,
 either side. A token counts for more the fewer records use it (its score is the log of the record
 count over the records using it), and a claim's score is the sum over the tokens it shares. Claims
 sharing no token follow the ranked ones in id order, with their `code` list as the only link. The
-first ten are shown with a line naming how many more there are and the `--all` flag that lists every
-claim naming the file, none dropped. A file no record lists is reported as listed by no claim, exit
+first ten are shown; how many more there are and the `--all` flag that lists every one, none
+dropped, are named in the text and in the JSON form alike (`notShown`, `hint`), and a cut list exits
+1, never a complete answer. A file no record lists is reported as listed by no claim, exit
 1, with up to ten claims whose interface tokens occur in it under a heading that calls them unmapped
 candidates, a name match and not a mapping, and never as an empty success. The file is read only
 through the core's own refusal rules (inside the root, no symlink on its path, a regular file), and

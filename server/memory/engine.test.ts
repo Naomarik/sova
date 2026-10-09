@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import type { HEntry } from "../../shared/harness";
 import { readMemoryView } from "../../pi-config/extensions/claude-code/provider/memory-view.ts";
-import { MemoryEngine, type EngineDeps } from "./engine";
+import { MemoryEngine, WAIT_MS, type EngineDeps } from "./engine";
 import { inputStart, messagesBefore, messagesOf, PAGE, TOOL_CLIP } from "./log";
 import { copyMemory, MemoryStore, memoryDir, removeMemory } from "./store";
 import type { SummaryCall } from "./summarizer";
@@ -179,6 +179,23 @@ describe("the engine", () => {
     await e.idle();
     assert.equal(e.status().state, "ready");
     assert.ok(await e.turnView([...history, user("next")], 128));
+  });
+
+  test("the turn's wait is 20 s unless the deps say otherwise", () => {
+    assert.equal(WAIT_MS, 20_000);
+  });
+
+  test("preparing counts up: n of m messages, then ready", async () => {
+    const statuses: string[] = [];
+    const { e } = engine({ onStatus: (s) => statuses.push(s.state === "preparing" ? `${s.done}/${s.total}` : s.state) });
+    const history = Array.from({ length: 40 }, (_, k) => (k % 2 ? reply(long(`r${k}`)) : user(long(`u${k}`))));
+    e.sync(history);
+    e.startPreparing();
+    await e.idle();
+    const counts = statuses.filter((s) => s.includes("/")).map((s) => Number(s.split("/")[0]));
+    assert.equal(statuses.find((s) => s.includes("/")), "0/40");
+    assert.ok(counts.length > 2 && counts.every((c, k) => k === 0 || c >= counts[k - 1]!), `counts up: ${counts.join(" ")}`);
+    assert.equal(statuses.at(-1), "ready");
   });
 
   test("a summarizer that can't run pauses the queue and says why", async () => {

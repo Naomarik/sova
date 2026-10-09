@@ -252,13 +252,27 @@ export const CLAUDE_LOGIN = kind<ClaudeLoginEntry>(
 /** An older session's alignment document (mode's `align` tool now keeps it in tool results). Read only. */
 export const ALIGN_DOC = kind<{ doc?: unknown }>("align-doc", "branch-list", (d) => (isObject(d) ? (d as { doc?: unknown }) : null), "extension:mode");
 
+/** A chat's memory choice (§chat.memory/choice): its type and view size (KB; absent = the type's own default),
+    newest on the branch wins; `on` is read only for the Overseer, which has no mode entry (§chat.memory/overseer). */
+export interface MemoryChoiceData {
+  v: 1;
+  type: "uniichat" | "zoomable";
+  size?: number;
+  on?: boolean;
+}
+export const MEMORY = kind<MemoryChoiceData>("sova-memory", "newest-on-branch", (d) => {
+  if (!isRecord(d) || d.v !== 1 || (d.type !== "uniichat" && d.type !== "zoomable")) return null;
+  const size = typeof d.size === "number" && Number.isInteger(d.size) && d.size >= 8 && d.size <= 512 ? d.size : undefined;
+  return { v: 1, type: d.type, ...(size !== undefined ? { size } : {}), ...(typeof d.on === "boolean" ? { on: d.on } : {}) };
+});
+
 /** Every registered kind, by type. */
 export const STATE_KINDS: ReadonlyMap<string, StateKind<unknown>> = new Map(
   [
     REWIND, TOPIC_DELIVERED, FANOUT_MEMBER, PROFILE, LOADOUT, SESSION_SENT, OVERSEER, OVERSEER_SENT, OVERSEER_DIALOG_ANSWER,
     GRANT, RULE, REVOKE, GRANT_USE, PROJECT_OVERSEER, LINK_MEMBER, ALIGN_LAUNCH,
     BATON, BATON_SENT, BATON_HANDOFF, BATON_OFFER, BATON_LEASE, BATON_DECISION, BATON_DONE, BATON_PROPOSAL, BATON_WRAPUP,
-    MODE, SUBAGENT_PROFILE, FORK_CACHE, WORKER_SESSION, WORKER_REGISTRY, SANDBOX, WORKTREES, CLAUDE_LOGIN, ALIGN_DOC,
+    MODE, SUBAGENT_PROFILE, FORK_CACHE, WORKER_SESSION, WORKER_REGISTRY, SANDBOX, WORKTREES, CLAUDE_LOGIN, ALIGN_DOC, MEMORY,
   ].map((k) => [k.type, k as StateKind<unknown>]),
 );
 

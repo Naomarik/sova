@@ -27,9 +27,14 @@ pi, its Claude login is leaving this device, an interrupted turn has not settled
 effort, system prompt, tool set or cwd changed, the history diverged (a rewind, branch, compaction
 or foreign append), pi answered only some of the child's tool calls or a result matches no held
 call, or there is nothing new to send. A new child gets the whole history folded into one user
-message, clipped to the fold budget. After a restart it opens "Your session was restarted, so this
-is a condensed, lossy replay of the conversation so far"; reasoning is left out and long tool
-output keeps only its head and tail.
+message, clipped to the fold budget, except the first child of a forked session: it resumes the
+parent's Claude session and sends only the new user messages when the transcript extends exactly
+the prefix that session heard, with the same cwd and no tool results after it. A replaced live
+child's fold opens "Your session was restarted, so this is a condensed, lossy replay of the
+conversation so far", and a first child for a conversation that already has history opens "This
+conversation started before you joined it"; reasoning is left out and long tool output keeps only
+its head and tail. A restart costs a few seconds to launch the child, and the folded history is a
+new prompt, so it is sent without help from the prompt cache.
 
 ## §app.claude-code-provider/invalid-tool-input — A tool call whose arguments are not valid JSON
 

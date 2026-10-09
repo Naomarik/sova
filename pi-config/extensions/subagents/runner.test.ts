@@ -9,7 +9,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter, getEventListeners } from "node:events";
 import { spawn, type ChildProcess } from "node:child_process";
-import { BUILTIN_TOOLS, type SpawnOptions, SubagentRunner } from "./runner.ts";
+import { BUILTIN_TOOLS, STDERR_TAIL_BYTES, STDERR_TAIL_LINES, stderrTail, type SpawnOptions, SubagentRunner } from "./runner.ts";
 import { LLM_STATUS_KEY, snapshot as llmSnapshot } from "../llm-inflight/tracker.ts";
 
 for (const exitMode of ["natural", "term", "kill"]) test(`detached pipe holder cannot hang Pi closure (${exitMode})`, { skip: process.platform === "win32", timeout: 5000 }, async (t) => {
@@ -244,6 +244,37 @@ test("spawn args: model, effort, tools, no-extensions, system prompt", async () 
 	assert.ok(sysIdx !== -1 && args[sysIdx + 1].endsWith("system.md"));
 	assert.equal(h.runner.status, "running");
 	await fin(h);
+});
+
+test("a pi child that exits early keeps the tail of its stderr in its error", async () => {
+	// The bare `pi exited with code 1` hid why a worker died (a mise shim refusing the cwd's node).
+	const h = makeRunner();
+	h.child.stderr.push("mise ERROR No version is set for shim: pi\n");
+	h.child.stderr.push("Set a global default version with one of the following:\nmise use -g node@25.2.1\n\n");
+	await flush();
+	h.child.close(1);
+	await flush();
+	assert.equal(h.runner.status, "error");
+	assert.equal(
+		h.runner.error,
+		"pi exited with code 1\nmise ERROR No version is set for shim: pi\nSet a global default version with one of the following:\nmise use -g node@25.2.1",
+	);
+	await fin(h);
+
+	const quiet = makeRunner();
+	quiet.child.close(2);
+	await flush();
+	assert.equal(quiet.runner.error, "pi exited with code 2", "nothing on stderr: the bare message");
+	await fin(quiet);
+});
+
+test("stderrTail keeps the newest 20 lines and at most 2 KB", () => {
+	const lines = Array.from({ length: 30 }, (_, i) => `line ${i}`);
+	assert.equal(stderrTail(lines.join("\n")), lines.slice(-STDERR_TAIL_LINES).join("\n"));
+	const long = stderrTail(`${"a".repeat(5000)}\n${"é".repeat(3000)}`);
+	assert.ok(Buffer.byteLength(long) <= STDERR_TAIL_BYTES);
+	assert.ok(!long.includes("a") && !long.includes("\uFFFD"), "the newest bytes, never a split character");
+	assert.equal(stderrTail("\n  \n"), "");
 });
 
 test("env is merged over the parent's environment only when given", async () => {

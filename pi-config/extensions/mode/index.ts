@@ -869,6 +869,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		remoteTarget: () => remoteTarget,
 		review: () => (reviewOn() ? { reviewer: reviewerSlot, startText: reviewStartText } : undefined),
 		style: () => alignNow().style,
+		specOn: () => hasMinor(active, "spec"),
 	};
 	registerAlignTool(pi, alignHost);
 	/** The align tool's form now registered: review ops, visual fields (re-registered when either changes). */

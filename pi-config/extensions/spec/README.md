@@ -159,6 +159,8 @@ node core/sova-spec-draft.mjs diff NAME [--against base|current] --root DIR [--j
 node core/sova-spec-draft.mjs check NAME --root DIR [--json]
 node core/sova-spec-draft.mjs evidence NAME --id '<§id>' --by WHO --verification TEXT \
   (--commit REV | --snapshot | --doc-only) [--path P] [--log FILE] --root DIR [--write] [--json]
+node core/sova-spec-draft.mjs agree NAME --id '<§id>' --by WHO --verification TEXT [--at ISO] \
+  --root DIR [--write] [--json]
 node core/sova-spec-draft.mjs promote NAME (--id '<§id>' | --all) [--meta KEY] [--file PATH] \
   [--plan SHA] --root DIR [--write] [--json]
 node core/sova-spec-draft.mjs recover --root DIR [--write] [--json]
@@ -197,7 +199,12 @@ node core/sova-spec-draft.mjs merge-claims --base F --ours F --theirs F [--path 
    load. Prose is compared per declaration (an H1 lede or H2 span): edits to
    different declarations of one file merge, and one declaration changed on both
    sides is a conflict, never merged as text. Current changes the draft doesn't
-   touch are kept.
+   touch are kept. A changed number or backticked token in an agreed record
+   whose `agreed` stays as current has it gets an `agreed-kept-on-change` note,
+   never a refusal.
+   **`agree`** stamps `agreed: {by, at}` on draft records the person agreed to,
+   and, for those that map no code, records `--doc-only` evidence and promotes
+   them when promote's plan is clean ([PROMOTE.md](PROMOTE.md)).
 5. **`recover`** rolls back an interrupted promotion. Until it runs, every
    other write refuses.
 6. **`merge-manifest`** resolves a Git merge conflict in `manifest.json` record

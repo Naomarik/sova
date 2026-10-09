@@ -122,7 +122,8 @@ the results' snapshots (§chat.alignment/state), never the calls' arguments.
 
 The tool's answer is a compact echo of what is still open: the touched document's id, title,
 status and "k of n open", one line per open question with its recommendation (by letter and label
-when it names an option), and one line naming the other open alignments.
+when it names an option), and one line naming the other open alignments. A call that sets a document implementing
+while the spec minor mode is on also ends with the spec's Agree step (§tools.spec/align-agree).
 
 ## §chat.alignment/state — The state lives in the tool results
 

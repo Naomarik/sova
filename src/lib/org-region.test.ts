@@ -7,6 +7,7 @@ import {
   doneOpen,
   inArchivedProject,
   inOrgRegion,
+  isOrgFolderSession,
   NO_PROJECT,
   orgRowState,
   overseerEye,
@@ -302,4 +303,26 @@ test("orgProjectItems: held acts first, soonest to go ahead on top; then conflic
     items: [it("stake", "project-stakeholder", 5), it("late", "held-act", 9, 2000), it("soon", "held-act", 1, 1000), it("conf", "conflict-to-operator", 7), it("sess", "needs-input", 99), it("unsent", "outreach-not-sent", 6)],
   };
   assert.deepEqual(orgProjectItems(digest).map((x) => x.id), ["soon", "late", "conf", "unsent", "stake"]);
+});
+
+test("a placed project's folder session (folderOrg, no org): a row in its project's Builds, active while it runs, never in the region's Needs you", () => {
+  const where = { orgId: "o1", orgName: "Mamluk Arabia", projectId: "p1", projectName: "Rakiba site" };
+  const folder = { projectId: "p1", projectName: "Rakiba site", kind: "folder" as const };
+  const liveOne = session("f-live", { project: folder, folderOrg: where, origin: "external", live: { pid: 1, status: "idle" } as SessionSummary["live"], lastActiveAt: at(5) });
+  const web = session("f-web", { project: folder, folderOrg: where, lastActiveAt: at(4) });
+  const ended = session("f-ended", { project: folder, folderOrg: where, origin: "external", lastActiveAt: at(3) });
+  const archived = session("f-arch", { project: folder, folderOrg: where, archived: true, lastActiveAt: at(2) });
+  const build = session("c1", { org: org({ kind: "coding" }), lastActiveAt: at(1) });
+  const gone = session("f-gone", { project: folder, folderOrg: { ...where, projectArchived: true } });
+  assert.equal(isOrgFolderSession(web), true);
+  assert.equal(isOrgFolderSession(build), false);
+  assert.equal(inOrgRegion(web), true);
+  assert.equal(inOrgRegion(session("no-project", { folderOrg: where })), false, "folderOrg goes with a folder session only");
+  const [o] = orgSections([liveOne, web, ended, archived, build, gone]);
+  const p = o!.projects[0]!;
+  assert.deepEqual(ids(p.builds.active), ["f-live", "f-web", "c1"]);
+  assert.deepEqual(ids(p.builds.done), ["f-ended", "f-arch"]);
+  assert.equal(orgCount(o!), 5, "an archived project's folder session is left out with it");
+  const waiting = { items: [{ id: "i", path: "/s/f-web.jsonl", title: "f-web", where: "~", tier: "act", kind: "needs-input", since: 5, href: "" } as AttentionItem] };
+  assert.deepEqual(orgNeedsYouRows(waiting, [web]), [], "the global Needs you lists it: an ordinary session");
 });

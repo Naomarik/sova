@@ -46,9 +46,10 @@ export function archivedDropToast(deleted: boolean, project?: string | null): { 
 /** What Undo (or Unarchive) says: an org session goes back to its project, the rest to Live & web. */
 export const unarchivedToast = (project?: string | null): string => (project ? `Moved back to ${project}.` : "Moved back to Live & web.");
 
-/** The project an org or project row's archive and unarchive toasts name, or null for an ordinary session. */
+/** The project an org or project row's archive and unarchive toasts name, or null for an ordinary session (a session only
+    in a project's folder is one: it goes to the Archive like any other). */
 export const orgProjectOf = (s: Pick<SessionSummary, "org" | "project">): string | null =>
-  s.org ? (s.org.projectId ? s.org.projectName || "its project" : s.org.orgName || s.org.orgId) : s.project ? s.project.projectName || "its project" : null;
+  s.org ? (s.org.projectId ? s.org.projectName || "its project" : s.org.orgName || s.org.orgId) : s.project && s.project.kind !== "folder" ? s.project.projectName || "its project" : null;
 
 /** What a drop on a refused Archive tile says as a toast, or null when it archives (or does nothing). */
 export function blockedDropSentence(drag: ArchiveDrag): string | null {

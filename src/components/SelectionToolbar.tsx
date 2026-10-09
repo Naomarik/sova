@@ -1,6 +1,7 @@
 import { createEffect, createMemo, createSignal, For, on, Show } from "solid-js";
 import { SESSION_TITLE_MAX, type SessionSummary } from "../../shared/protocol";
 import { assignSessionGroup, setSessionArchived } from "../lib/api";
+import { isOwnedSession } from "../lib/regions";
 import { renameSession } from "../lib/session-actions";
 import { inPlaceTitleEnd } from "../lib/title-field";
 import {
@@ -116,7 +117,7 @@ export function SelectionToolbar(props: { sessions: SessionSummary[]; onRefresh(
   /** An organization's or a project's session: it lives in that region, never in a group. */
   const ownedRow = (path: string): boolean => {
     const x = props.sessions.find((r) => r.path === path);
-    return !!(x?.org || x?.project);
+    return !!x && isOwnedSession(x);
   };
   const plan = createMemo(() => selectionPlan(chosen()));
   const [renaming, setRenaming] = createSignal(false);

@@ -436,6 +436,9 @@ export interface CodingStartInput {
   /** "now" (the default): its worktree is cut at create. "later" (New Session's Project tab): it starts in the project
       root, and the first worktree its session makes itself with the `worktree` tool becomes its row's (adopted). */
   worktree?: "now" | "later";
+  /** Where it starts (absolute): the project root, a folder inside it, or one inside its linked worktrees (New Session's
+      folder tab); anything else is refused with 400. Absent: the root. */
+  cwd?: string;
 }
 export type CodingStartResult = Omit<ItemCodeResult, "notPrompted"> & {
   /** Its mode could not be set (the session exists and is listed): the sentence to show. */

@@ -49,6 +49,7 @@ import { readNotes } from "./overseer-store";
 import { readTodos, updateTodo } from "./overseer-todos";
 import { UserTurns } from "./user-turns";
 import { canonicalPath } from "./paths";
+import { startableIn } from "./project-folder";
 import { isViewing, markSeen, readSeen } from "./seen";
 import { cleanSessionTitle, readSessionTitles, setSessionTitle } from "./session-titles";
 import { getSessionSummary, idOf, indexedSessionPaths, listSessions } from "./sessions-index";
@@ -1146,7 +1147,7 @@ function overseerEnvelope(projectId: string, paths: ProjectOverseerPaths, attend
  * linked to nothing, and no reason to look: the overseer sees it when it next looks.
  */
 export async function startCoding(projectId: string, body: CodingStartInput): Promise<CodingStartResult> {
-  projectOf(projectId);
+  const project = projectOf(projectId);
   if (body && typeof body === "object" && "prompt" in body) throw new OrgError("This starts a session with no first prompt. To send one, start it from a to-do or idea (items/code).", 400);
   const worktree = body && typeof body === "object" && "worktree" in body ? body.worktree : "now";
   if (worktree !== "now" && worktree !== "later") throw new OrgError('worktree is "now" or "later".', 400);
@@ -1154,7 +1155,12 @@ export async function startCoding(projectId: string, body: CodingStartInput): Pr
   const title = str(body?.title);
   const model = str(body?.model);
   const thinking = str(body?.thinking);
+  // A folder in the project (New Session's folder tab): the root, inside it, or inside one of its worktrees.
+  const cwd = body && typeof body === "object" && "cwd" in body ? body.cwd : undefined;
+  if (cwd !== undefined && (typeof cwd !== "string" || !startableIn(project.root, cwd)))
+    throw new OrgError(`${typeof cwd === "string" ? cwd : "cwd"} is not a folder in ${project.name}: give the project root, a folder inside it, or one inside its worktrees.`, 400);
   const made = await startCodingSession(projectId, {
+    ...(cwd ? { cwd: canonicalPath(cwd) } : {}),
     ...(title ? { title: title.slice(0, 80) } : {}),
     ...(model ? { model } : {}),
     ...(thinking ? { thinking } : {}),

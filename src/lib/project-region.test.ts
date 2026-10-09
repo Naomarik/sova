@@ -22,7 +22,7 @@ const session = (id: string, extra: Partial<SessionSummary> = {}): SessionSummar
     archived: false,
     ...extra,
   }) as SessionSummary;
-const proj = (projectId: string, kind: "overseer" | "coding", extra: Record<string, unknown> = {}) => ({ project: { projectId, projectName: projectId.toUpperCase(), kind, ...extra } }) as Partial<SessionSummary>;
+const proj = (projectId: string, kind: "overseer" | "coding" | "folder", extra: Record<string, unknown> = {}) => ({ project: { projectId, projectName: projectId.toUpperCase(), kind, ...extra } }) as Partial<SessionSummary>;
 const registered = (id: string, name: string, extra: Partial<ProjectSummary> = {}): ProjectSummary => ({ id, name, root: `/w/${id}`, origin: "folder", createdAt: at(1), space: { kind: "standalone" }, ...extra });
 const placedOrg = { orgId: "o1", orgName: "Org", projectId: "pb", projectName: "PB", kind: "coding" as const };
 
@@ -68,4 +68,25 @@ test("blocks: every registered standalone project by name, its overseer as the e
 test("before the project list is read, a session still names its project", () => {
   const blocks = projectBlocks([session("b1", proj("pz", "coding"))]);
   assert.deepEqual(blocks.map((b) => [b.id, b.name]), [["pz", "PZ"]]);
+});
+
+test("a folder session is in its project's Builds too: active while live or a web session not archived, else Done", () => {
+  const liveOne = session("f-live", { ...proj("pa", "folder"), origin: "external", live: { pid: 1, status: "idle" } as SessionSummary["live"], lastActiveAt: at(5) });
+  const web = session("f-web", { ...proj("pa", "folder"), origin: "web", lastActiveAt: at(4) });
+  const ended = session("f-ended", { ...proj("pa", "folder"), origin: "external", lastActiveAt: at(3) });
+  const archivedWeb = session("f-arch", { ...proj("pa", "folder"), origin: "web", archived: true, lastActiveAt: at(2) });
+  const build = session("c1", { ...proj("pa", "coding"), lastActiveAt: at(1) });
+  const placed = session("f-placed", { ...proj("pb", "folder"), folderOrg: { orgId: "o1", orgName: "Org", projectId: "pb", projectName: "PB" } });
+  for (const s of [liveOne, web, ended, archivedWeb]) {
+    assert.equal(inProjectsRegion(s), true, s.id);
+    assert.equal(isOrdinarySession(s), true, `${s.id}: still on the ordinary surfaces`);
+  }
+  assert.equal(inProjectsRegion(placed), false, "a placed project's folder session goes to the Organizations region");
+  const [b, ...rest] = projectBlocks([liveOne, web, ended, archivedWeb, build, placed], [registered("pa", "A"), registered("pb", "B", { space: { kind: "org", orgId: "o1", orgName: "Org" } })]);
+  assert.equal(rest.length, 0, "the placed project has no block here");
+  assert.deepEqual(b!.builds.active.map((s) => s.id), ["f-live", "f-web", "c1"]);
+  assert.deepEqual(b!.builds.done.map((s) => s.id), ["f-ended", "f-arch"]);
+  assert.equal(projectRowCount([b!]), 5);
+  // Without the projects read, a placed folder session still makes no block.
+  assert.deepEqual(projectBlocks([placed]).length, 0);
 });

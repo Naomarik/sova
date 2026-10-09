@@ -90,6 +90,7 @@ import type {
 } from "../../shared/mesh-access";
 import type { OwnerConversation, OwnerHome, OwnerLinkResult, OwnerProject, ProjectUpdate } from "../../shared/owner";
 import type { NamedChange, OrgDetail, OrgsInfo, PersonHours, PersonInput, PersonPage, PersonPreview, ProfileChange } from "../../shared/orgs";
+import type { EventDetail, EvidenceView, HistoryChain, HistoryPacket, HistoryPage, HistoryQuery } from "../../shared/org-history";
 import type { BatonOutreach, SendLinkAnswer } from "../../shared/outreach";
 import type { BatonInfo, BatonSettings, BatonTold, BatonStartInput, BatonStartResult, BatonView, GatheringAbilities, OfferLink } from "../../shared/baton";
 import type { ConflictResolveInput, DecisionsInfo, PromoteResult, SpecStatus } from "../../shared/decisions";
@@ -1098,6 +1099,52 @@ export const putOrgHours = (id: string, body: { tz: string; hours: PersonHours |
 export const revertOrgHours = (id: string, at: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/hours/revert`, jsonInit("POST", { at }));
 /** The org's About text back to history line `at`'s `from` (§app.organizations/about). */
 export const revertOrgAbout = (id: string, at: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/about/revert`, jsonInit("POST", { at }));
+// An org's history: the operator's reads, main listener only. No
+// read calls a model; Copy Context copies the packet's text as the server made it.
+const historyBase = (orgId: string) => `/api/orgs/${encodeURIComponent(orgId)}/history`;
+/** The query string of a history search: lists comma-joined, times in ms. */
+export function historyParams(q: HistoryQuery): string {
+  const p = new URLSearchParams();
+  if (q.projects?.length) p.set("project", q.projects.join(","));
+  if (q.kinds?.length) p.set("kind", q.kinds.join(","));
+  if (q.outcomes?.length) p.set("outcome", q.outcomes.join(","));
+  if (q.actors?.length) p.set("actor", q.actors.join(","));
+  if (q.initiation?.length) p.set("initiation", q.initiation.join(","));
+  if (q.from !== undefined) p.set("from", String(q.from));
+  if (q.to !== undefined) p.set("to", String(q.to));
+  if (q.text) p.set("q", q.text);
+  if (q.asOf !== undefined) p.set("asOf", String(q.asOf));
+  if (q.cursor) p.set("cursor", q.cursor);
+  if (q.limit !== undefined) p.set("limit", String(q.limit));
+  if (q.groupOf) p.set("groupOf", q.groupOf);
+  const s = p.toString();
+  return s ? `?${s}` : "";
+}
+export const getOrgHistory = (orgId: string, q: HistoryQuery) => request<HistoryPage>(`${historyBase(orgId)}${historyParams(q)}`, { cache: "no-store" });
+export const getHistoryEvent = (orgId: string, eventId: string) =>
+  request<EventDetail>(`${historyBase(orgId)}/events/${encodeURIComponent(eventId)}`, { cache: "no-store" });
+/** The event's local chain: `hops` each way (the server's bound caps it), from `cursor` to go further, its boundary marked against `projects`. */
+export const getHistoryChain = (orgId: string, eventId: string, opts: { hops?: number; cursor?: string; projects?: string[] } = {}) => {
+  const p = new URLSearchParams();
+  // The project filter in force: the server marks what lies outside it as boundary nodes.
+  if (opts.projects?.length) p.set("project", opts.projects.join(","));
+  if (opts.hops !== undefined) p.set("hops", String(opts.hops));
+  if (opts.cursor) p.set("cursor", opts.cursor);
+  const s = p.toString();
+  return request<HistoryChain>(`${historyBase(orgId)}/events/${encodeURIComponent(eventId)}/chain${s ? `?${s}` : ""}`, { cache: "no-store" });
+};
+/** A deterministic context packet: one event's, or (no event) the list filters' (one path, a GET). */
+export const getHistoryPacket = (orgId: string, scope: { event: string } | { query: HistoryQuery }) =>
+  request<HistoryPacket>(
+    `${historyBase(orgId)}/packet${"event" in scope ? `?event=${encodeURIComponent(scope.event)}` : historyParams(scope.query)}`,
+    { cache: "no-store" },
+  );
+/** Open Source: one cited span of an event's evidence, read on request only. */
+export const getHistoryEvidence = (orgId: string, eventId: string, n: number) =>
+  request<EvidenceView>(`${historyBase(orgId)}/events/${encodeURIComponent(eventId)}/evidence/${n}`, { cache: "no-store" });
+/** Purge Reason…: removes the event's recorded reason and its index copies, and records a word-free purge event. */
+export const purgeHistoryReason = (orgId: string, eventId: string) =>
+  request<{ event: string }>(`${historyBase(orgId)}/events/${encodeURIComponent(eventId)}/purge`, jsonInit("POST", { confirm: true }));
 export const detachOrg = (id: string) => request<{ ok: true }>(`/api/orgs/${encodeURIComponent(id)}`, jsonInit("DELETE"));
 /** Reload the org's statecharts from its workspace (a fixed journal, restored snapshots): `problems` is what is still wrong. */
 export const reloadOrg = (id: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/reload`, jsonInit("POST"));

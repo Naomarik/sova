@@ -27,7 +27,7 @@ import {
   type ProfileChange,
   type StakeholderChange,
 } from "../shared/orgs";
-import { actOrThrow, closeOrgHost, envelopeFor, heldAt, hostOf, isOrgHostOpen, onOrgChange, openOrgHost, refusalError, setStampPeopleSource, type OrgHostApi } from "./org-engine";
+import { actOrThrow, closeOrgHost, envelopeFor, heldAt, hostOf, isOrgHostOpen, onOrgChange, openOrgHost, refusalError, setStampPeopleSource, stampHostOf, type OrgHostApi } from "./org-engine";
 import type { Envelope, EnvelopeCard } from "./org-envelope";
 import { hostIdentity } from "./org-holder";
 import { OrgHost, OrgWorkspaceError } from "./org-host";
@@ -265,9 +265,51 @@ async function openHost(orgId: string, dir: string): Promise<OrgHostApi> {
   await import("./baton-loadout"); // the baton statecharts' effects (the session file, links, entries) and its reply runner
   await import("./build-loadout"); // the build statecharts' effects (worktree, session file, mode, prompts, merge)
   await import("./project-overseer-store"); // the settings every act is stamped with
-  const host = await openOrgHost({ orgId, workspaceDir: dir, stateDir: stateRoot() });
+  recoverDecisions ??= (await import("./decisions")).recoverDecisionMarkers;
+  await import("./org-history-tools"); // the overseers' history tools (sova_history, sova_decide)
+  const { composeHistory } = await import("./org-history-capture");
+  // The org's history: its capture adapters write each act's events in the act's own commit, from the
+  // engine's boot on. Only an org's engine has them; a standalone project's never does.
+  // The import of what it already has is recorded in the step where this host's residence comes to hold it
+  // (an attach, a create): in that step's journal, so the commit it makes on holding takes it.
+  const { baselineOnHold } = await import("./org-history/bootstrap");
+  let opened: OrgHostApi | null = null;
+  const host = await openOrgHost({
+    orgId,
+    workspaceDir: dir,
+    stateDir: stateRoot(),
+    historyComposer: (steps, ctx) => [...composeHistory(steps, ctx), ...(opened ? baselineOnHold(opened, orgId, steps, ctx) : [])],
+  });
+  opened = host;
+  // An org this host already held when its history began: what it had is imported now, once (committed by
+  // the residence's next commit).
+  await bootstrapHistory(host, orgId);
+  // A decision marker left without its decision gets it now, before anything can list the decisions: for an
+  // org this host holds (an attach recovers once it holds it: attachOrg).
+  if (readIndex().orgs.some((o) => o.id === orgId)) recoverMarkers(host, orgId, dir);
   await placeUnplaced(orgId);
   return host;
+}
+
+/** Decision marker recovery (server/decisions.ts); one that can't be read never stops an open or an attach. */
+function recoverMarkers(host: OrgHostApi, orgId: string, dir: string): string[] {
+  try {
+    return recoverDecisions?.(host, orgId, dir) ?? [];
+  } catch (err) {
+    console.warn(`[orgs] ${orgId}: decision marker recovery: ${err instanceof Error ? err.message : String(err)}`);
+    return [];
+  }
+}
+let recoverDecisions: ((host: OrgHostApi, orgId: string, dir: string) => string[]) | null = null;
+
+/** The one-time import of the org's existing records into its history (server/org-history/bootstrap.ts) at the
+    engine's open, only on a host that holds it. A failure never stops an open: the next open tries again. */
+async function bootstrapHistory(host: OrgHostApi, orgId: string): Promise<void> {
+  try {
+    await (await import("./org-history/bootstrap")).importBaseline(host, orgId);
+  } catch (err) {
+    console.warn(`[orgs] ${orgId}: history import: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 // ---- what the org contributes to its projects (server/projects/contributions.ts) ------------------------------
@@ -282,9 +324,12 @@ contributeProjectPart({
     if (!isOrgEngine(engine)) return null;
     return { kind: "org", orgId: engine, orgName: readOrgOrPlaceholder(engine).name };
   },
+  // Read at stamp time, the engine's boot included (stampHostOf).
   ceiling(engine) {
-    if (!isOrgEngine(engine) || !isOrgHostOpen(engine)) return null;
-    return hostOf(engine).sessions("person").some((p) => p.configuration.includes("active")) ? null : { autonomy: "L0", reason: EMPTY_ROSTER_REASON };
+    // An org's engine: in the index, or (an attach's boot, before it is) holding the org's own session.
+    const host = stampHostOf(engine);
+    if (!host || !(isOrgEngine(engine) || host.sessions("org").length)) return null;
+    return host.sessions("person").some((p) => p.configuration.includes("active")) ? null : { autonomy: "L0", reason: EMPTY_ROSTER_REASON };
   },
   // A project root is never an org's workspace (every project's transcripts, the roster's contacts), whichever holds the other.
   reservedRoots: () => readIndex().orgs.map((o) => o.dir),
@@ -442,6 +487,12 @@ export async function attachOrg(input: { dir: unknown; confirm?: unknown }, by: 
     await closeOrgHost(id);
     throw new OrgError("No organization in that dir: not a workspace repo.");
   }
+  // Each project's watch starts here, paused (as the residence's pause-overseers would start it), before the
+  // residence holds the org: its project's snapshot then changes before the commit holding makes, not after.
+  for (const p of host.sessions("project")) {
+    const pid = String(p.data.id ?? "");
+    if (pid && !host.configuration(watchSid(pid))) await host.start(watchSid(pid), "watch", { projectId: pid, paused: true }, { by: "system" });
+  }
   const me = hostIdentity();
   await host.settle(
     await host.start(residenceSid(id), "residence", { orgId: id, orgName: String(org.name ?? id), hostId: me.id, hostName: me.name, mode: "attach", commitEveryMs: commitEveryMs() }, { by: "system", ...viaOf(by) }),
@@ -460,6 +511,13 @@ export async function attachOrg(input: { dir: unknown; confirm?: unknown }, by: 
   }
   const index = readIndex();
   writeIndex({ ...index, orgs: [...index.orgs, { id, dir, attachedAt: new Date().toISOString() }] });
+  // Decisions recovered now are committed (and pushed) in this attach call, through the residence's own commit,
+  // once every step of the recovery and its effects have landed: never left for the hourly commit.
+  if (recoverMarkers(host, id, dir).length) {
+    await host.idle();
+    const out = await host.act(residenceSid(id), "commit/now", {}, { by: "system" }, { settle: true });
+    if (!out.taken) console.warn(`[orgs] ${id}: commit after recovering decisions on attach: ${out.refusal?.sentence ?? "not taken"}`);
+  }
   for (const hook of attachHooks)
     try {
       hook(id, dir);
@@ -592,7 +650,7 @@ function hoursOf(d: Record<string, unknown>, now = Date.now()): Pick<Person, "tz
 
 /** The tz and hours an act reaching this person waits for (r13: effective; {} = always in hours). */
 export function effectiveHoursOf(orgId: string, personId: string): { tz?: string; hours?: PersonHours } {
-  const d = isOrgHostOpen(orgId) ? hostOf(orgId).data(personSid(orgId, personId)) : null;
+  const d = stampHostOf(orgId)?.data(personSid(orgId, personId)) ?? null;
   const eff = d ? effectiveOfData(d) : null;
   return eff ? { tz: eff.tz, hours: eff.hours } : {};
 }
@@ -862,9 +920,11 @@ export async function rewindowOrgHours(orgId: string): Promise<number> {
     later is checked against the hours in force then (engine: the stamp merges over the held data). */
 export function stampPeople(orgId: string, payload: Record<string, unknown>): Record<string, unknown> {
   // Called for every engine: a standalone project's has no people.
-  if (!isOrgHostOpen(orgId) || !hostOf(orgId).sessions("org").length) return {};
+  // Read at stamp time, the engine's boot included (stampHostOf).
+  const host = stampHostOf(orgId);
+  if (!host || !host.sessions("org").length) return {};
   const rec = (pid: string) => {
-    const s = hostOf(orgId).sessions("person").find((x) => x.id === personSid(orgId, pid));
+    const s = host.sessions("person").find((x) => x.id === personSid(orgId, pid));
     if (!s) return null;
     const p = personOf(orgId, s);
     const eff = effectiveHoursOf(orgId, pid);
@@ -1355,14 +1415,34 @@ export function orgsInfo(): OrgsInfo {
   return { operator: readIndex().operator, orgs: orgSummaries(), defaultDir: defaultWorkspacesDir() };
 }
 
+/** Other layers' workspace problems (a decision marker that couldn't be recovered), one sentence each. */
+// (A hoisted holder, never a module constant: a module that registers may load while this one is still loading.)
+function problemSources(): ((orgId: string) => string[])[] {
+  const holder = problemSources as unknown as { list?: ((orgId: string) => string[])[] };
+  return (holder.list ??= []);
+}
+export function addWorkspaceProblems(fn: (orgId: string) => string[]): void {
+  problemSources().push(fn);
+}
+
 /** The workspace's file problems, one sentence each (the page's banner and the Workspace dot). */
 function problemsOf(orgId: string, dir: string): string[] {
+  const more = problemSources().flatMap((fn) => {
+    try {
+      return fn(orgId);
+    } catch {
+      return [];
+    }
+  });
   try {
-    return orgHost(orgId)
-      .problems()
-      .map((p) => `${relative(dir, p.file).startsWith("..") ? p.file : relative(dir, p.file)} can't be read: ${p.why}`);
+    return [
+      ...orgHost(orgId)
+        .problems()
+        .map((p) => `${relative(dir, p.file).startsWith("..") ? p.file : relative(dir, p.file)} can't be read: ${p.why}`),
+      ...more,
+    ];
   } catch (err) {
-    return [err instanceof Error ? err.message : String(err)];
+    return [err instanceof Error ? err.message : String(err), ...more];
   }
 }
 

@@ -183,6 +183,46 @@
     (or (blank? area) (blank? statement) (blank? quote)) (r/refuse 400 "Give the area, the statement and their exact words.")
     :else (owner-area-refusal {:owner-area owner-area :owner-areas owner-areas})))
 
+(defn took-part?
+  "Whether `person` is the operator or took part in this conversation: a participant, or someone a hand-off or
+   an offer reached or came from."
+  [data person]
+  (boolean
+    (and (not (blank? person))
+         (or (= operator person)
+             (some #{person} (:participants data))
+             (some #(or (= person (:from %)) (= person (:to %)) (some #{person} (when (sequential? (:to %)) (:to %)))) (:handoffs data))))))
+
+(defn recovery-by
+  "A recovered decision's author: the person its transcript marker names, taken
+   only on a guarded recovery (the event says `:recovery true`, Sova itself sends it: envelope `by` system,
+   and that person took part in the conversation). Else nil: the decision is the holder's, as always."
+  [data ev]
+  (when (and (true? (:recovery ev)) (= "system" (:by ev)) (took-part? data (:recovery-by ev)))
+    (:recovery-by ev)))
+
+(defn recovery-name
+  "The name a recovered decision's marker kept for its author when it was written: only on a guarded recovery,
+   and only when the marker kept one (older markers kept none, and none is made up for them)."
+  [data ev]
+  (when (and (recovery-by data ev) (not (blank? (:recovery-name ev))))
+    (:recovery-name ev)))
+
+(defn recovery-refusal
+  "A recovery the guard doesn't take is refused, never recorded as the holder's: only Sova recovers, and only
+   for someone who took part in the conversation."
+  [data ev]
+  (when (true? (:recovery ev))
+    (cond
+      (not= "system" (:by ev)) (r/refuse 403 "Only Sova recovers a decision.")
+      (not (took-part? data (:recovery-by ev))) (r/refuse 409 "Not recovered: the person who decided isn't part of this conversation."))))
+
+(defn duplicate-decision-refusal
+  "The same decision twice (a recovery after the call that recorded it): refused, nothing recorded again."
+  [data ev]
+  (when (and (not (blank? (:decision-id ev))) (some #{(:decision-id ev)} (:decisions data)))
+    (r/refuse 409 "That decision is already recorded.")))
+
 (defn spelled-owner-area
   "The owner area in the roster's spelling (the same key), or none."
   [{:keys [owner-area owner-areas]}]

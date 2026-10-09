@@ -52,6 +52,8 @@ export function orgTabsOf(o: TabSource): OrgTabInfo[] {
         held ? plural(held, "held act") : "",
       ]),
     },
+    // An open-ended record, not a list size: no count, and nothing in it waits.
+    { id: "history", label: "History", count: null, waiting: 0, waitingText: "" },
     {
       id: "workspace",
       label: "Workspace",

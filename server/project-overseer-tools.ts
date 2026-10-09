@@ -101,8 +101,8 @@ export interface PoToolHost {
   limitRefused(kind: PoLimitKind): Promise<void>;
   /** Both allowances' use and limits, from the watch statechart's ledgers. */
   allowance(): { message: AllowanceUse; today: AllowanceUse };
-  /** A `§gap/…` idea filed or dropped: the layer that tracks gaps hears it (nothing when none does). */
-  fileGap(ideaId: string): Promise<void>;
+  /** A `§gap/…` idea filed (with its title) or dropped: the layer that tracks gaps hears it (nothing when none does). */
+  fileGap(ideaId: string, title?: string): Promise<void>;
   dropGap(ideaId: string): Promise<void>;
   /** What is held for a later look now (sova_project). */
   held?(): HeldItem[];
@@ -545,12 +545,12 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
             const have = ns === "gap" ? readManifest(p.ideas).ideas[key] : undefined;
             if (have) {
               if (have.status === "dropped") throw new Refusal(`${key} is dropped: set its status first (sova_idea status) to file it as a gap again.`);
-              await host.fileGap(key);
+              await host.fileGap(key, have.title);
               return { content: text(`Filed ${key} as a gap (the idea was already on the list; its text is unchanged).`), details: { id: key, op: "add", status: have.status } };
             }
             const r = addIdea({ id, title: q.title, text: q.text ?? "", tags }, p.ideas);
             // A gap is an item statechart from now on: its Pipeline row, its gatherings and builds (gap/file).
-            if (ns === "gap") await host.fileGap(r.id);
+            if (ns === "gap") await host.fileGap(r.id, r.title);
             return { content: text(`Filed ${r.id}.`), details: { id: r.id, op: "add", status: r.status } };
           }
           if (q.op === "append") {

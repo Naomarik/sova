@@ -117,3 +117,12 @@ test("the Requirements card's build counts: nothing when nothing is promoted", (
   assert.equal(builtLine({ built: 0, notBuilt: 0 }), "");
   assert.equal(builtLine({}), "");
 });
+
+test("a recovered decision's name says it is the name at recovery; a recorded one stays as recorded", async () => {
+  const { provenanceName } = await import("./decisions-view");
+  assert.deepEqual(provenanceName({ name: "Priya" }), { text: "Priya" });
+  const rec = provenanceName({ name: "Priya", nameAt: "recovery" });
+  assert.equal(rec.text, "Priya (name at recovery)");
+  assert.match(rec.title ?? "", /recovered later/);
+  assert.doesNotMatch(rec.text, /^Priya$/, "never shown as the name recorded at the time");
+});

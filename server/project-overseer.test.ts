@@ -84,8 +84,9 @@ describe("a project overseer", async () => {
     const chat = await acquireChat(path);
     assert.equal(chat.special, "project-overseer");
     assert.equal(chat.overseer, false, "not the Overseer");
-    // A placed project: the org part's reads (no statechart act names them) come with its tools.
-    const want = [...new Set([...Object.keys(TOOL_NEEDS), "sova_decisions", "sova_offer", "sova_send_status", ...PO_BUILTINS])].sort();
+    // A placed project: the org part's reads (no statechart act names them) come with its tools, and so do the
+    // org history's (sova_history, sova_decide).
+    const want = [...new Set([...Object.keys(TOOL_NEEDS), "sova_decisions", "sova_offer", "sova_send_status", "sova_history", "sova_decide", ...PO_BUILTINS])].sort();
     assert.deepEqual([...piSession(chat).getActiveToolNames()].sort(), want);
     assert.deepEqual(piSession(chat).getAllTools().map((t) => t.name).sort(), want, "no bash, edit, write or extension tool");
     const loaded = piRuntime(chat).services.resourceLoader.getExtensions().extensions.map((e) => e.path);

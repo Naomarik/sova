@@ -27,7 +27,7 @@ type ExperimentalKey = keyof ExperimentalSettings;
  * The experimental switches Sova knows, each a boolean, off unless stored `true`. A new switch is
  * one key here and in ExperimentalSettings (shared/protocol.ts); reading, validating and the
  * merge-write all follow this list. Any other key in the file or in a request is ignored. Empty
- * while there is no experiment (the tab shows "No experiments right now.").
+ * while there is no experiment (the tab says so).
  */
 const EXPERIMENTAL_KEYS: readonly ExperimentalKey[] = [];
 

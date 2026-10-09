@@ -754,3 +754,88 @@ test("off Linux a lease's child counts only as a `claude` started no later than 
   const dead = 2 ** 30; // no process has it
   assert.equal(claudeRunsOn(dead, "/l", at, now, "darwin", ps("claude", 120)), false, "not alive");
 });
+
+describe("a peer's forged pool document (§app.claude-logins/pool: stamps more than an hour ahead, a holder counter far ahead)", () => {
+  const HOUR = 60 * MIN;
+
+  test("a removal, a keeper and a holder stamped beyond any real edit change nothing and delete nothing, on any device", async () => {
+    const { w, k, clock } = await pool();
+    const d = w.dev("d");
+    const e = w.dev("e");
+    want(d);
+    await d.agent.tick();
+    await w.syncAll();
+    assert.deepEqual(usableOn(w, L1), ["d"]);
+    const forged = structuredClone(e.agent.doc());
+    forged.logins[L1]!.removed = reg(true, 9e15, "x");
+    forged.logins[L2]!.holder = { device: "evil", free: false, seq: 2 ** 52, at: clock.now };
+    forged.keeper = reg("evil", 9e15, "x");
+    // A peer pushes it to e; it gossips on from there.
+    e.agent.receiveDoc(JSON.parse(JSON.stringify(forged)), "evil");
+    await w.syncAll();
+    await w.tickAll(3);
+    await w.syncAll();
+    await w.tickAll(3);
+    assert.deepEqual(usableOn(w, L1), ["d"], "d keeps using L1");
+    assert.ok(existsSync(credsPath(k, L2)), "the keeper keeps L2");
+    for (const x of w.devices.values()) {
+      const doc = x.agent.doc();
+      assert.equal(doc.keeper.value, "k", `${x.id}: keeper`);
+      assert.equal(doc.logins[L1]!.removed.value, false, `${x.id}: L1 not removed`);
+      assert.equal(doc.logins[L2]!.holder.device, "k", `${x.id}: L2's holder`);
+    }
+    const lines = w.logs.filter((m) => m.startsWith("[e]") && m.includes("ignored"));
+    assert.equal(lines.length, 3, `each ignored field logged: ${lines.join(" | ")}`);
+    e.agent.receiveDoc(JSON.parse(JSON.stringify(forged)), "evil");
+    assert.equal(w.logs.filter((m) => m.startsWith("[e]") && m.includes("ignored")).length, 3, "once per peer and document");
+    // A real edit still wins afterwards.
+    clock.now += 1000;
+    e.agent.setLabel(L1, "still mine");
+    await w.syncAll();
+    assert.equal(d.agent.doc().logins[L1]!.label.value, "still mine");
+  });
+
+  test("an edit 30 minutes ahead applies at once; one 2 hours ahead only once this clock passes it", async () => {
+    const { w, k, clock } = await pool();
+    const e = w.dev("e");
+    const ahead = (label: string, by: number) => {
+      const doc = structuredClone(e.agent.doc());
+      doc.logins[L1]!.label = reg(label, clock.now + by, "x");
+      return JSON.parse(JSON.stringify(doc));
+    };
+    e.agent.receiveDoc(ahead("soon", 30 * MIN), "x");
+    assert.equal(e.agent.doc().logins[L1]!.label.value, "soon");
+    const later = ahead("later", 2 * HOUR);
+    e.agent.receiveDoc(later, "x");
+    assert.equal(e.agent.doc().logins[L1]!.label.value, "soon", "not yet");
+    clock.now += HOUR + 1;
+    e.agent.receiveDoc(later, "x");
+    assert.equal(e.agent.doc().logins[L1]!.label.value, "later", "its time came");
+    await w.syncAll();
+    assert.equal(k.agent.doc().logins[L1]!.label.value, "later", "and it gossips on");
+  });
+
+  test("gossip through a host that pairs with both: an edit, a Remove and a borrow reach a device it never talks to", async () => {
+    const { w, k, clock } = await pool();
+    w.cut.add("d>e");
+    const d = w.dev("d");
+    const e = w.dev("e");
+    want(d);
+    await d.agent.tick();
+    await w.syncAll();
+    assert.equal(holder(e, L1)!.device, "d", "e learns d's borrow through k");
+    clock.now += 1000;
+    e.agent.setLabel(L1, "via k");
+    await w.syncAll();
+    await w.syncAll();
+    assert.equal(d.agent.doc().logins[L1]!.label.value, "via k");
+    clock.now += 1000;
+    e.agent.remove(L1);
+    await w.syncAll();
+    await w.syncAll();
+    await d.agent.tick();
+    await d.agent.tick();
+    assert.equal(copies(w, L1), 0, "a Remove made on e reaches its holder d through k, which deletes its copy");
+    void k;
+  });
+});

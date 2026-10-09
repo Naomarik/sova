@@ -19,6 +19,7 @@ import {
   type ItemCodeInput,
   type ItemCodeResult,
   type CodingWorktree,
+  type CodingModeNow,
   type ProjectCodingMode,
   type ProjectOverseerInfo,
   type ProjectMessageResult,
@@ -33,7 +34,8 @@ import { acquireChat, BusyError, disposeHeldChat, drainQueueThenAbort, heldChat,
 import { shuttingDown } from "./wrapup-recovery";
 import { listModels } from "./models";
 import { workingSubagents } from "./live";
-import { baseCodingMode, codingModeChoice, describeCodingMode, PLAYBOOK_RUN_KINDS, playbookRunMode } from "./project-coding-mode";
+import { checkedCodingModeChoice, codingModeSwitch, describeCodingMode, hostDefaultMode, PLAYBOOK_RUN_KINDS, playbookRunMode, profileRefusal, type ModeRequest } from "./project-coding-mode";
+import { subagentProfilesInfo } from "./subagent-profiles";
 import { baseAbilities } from "./gathering-abilities";
 import { gitRootOf, readWorktree } from "./project-worktrees";
 import { hostOf, isOrgHostOpen, onOrgHostOpened, setOrgClockForTest, type InvocationReport } from "./org-engine";
@@ -394,7 +396,7 @@ export async function projectOverseerInfo(projectId: string): Promise<ProjectOve
     id: exists ? st!.current : null,
     history,
     settings,
-    codingModeNow: baseCodingMode(settings.codingMode, project.root),
+    codingModeNow: codingModeNow(),
     gatheringAbilitiesNow: baseAbilities(settings.gatheringAbilities),
     worktrees: { available: !("reason" in repo), ...("reason" in repo ? { reason: repo.reason } : {}), sessions: trees },
     effective: effectiveOf(projectId, settings),
@@ -456,7 +458,7 @@ export function renderProjectOverseerPrompt(projectId: string, tools: { name: st
     AUTONOMY_REASON: eff.reason ? ` (${eff.reason})` : "",
     CAPS: limitsText(settings, placed),
     ROOT: project.root,
-    CODING_MODE: `${describeCodingMode(baseCodingMode(settings.codingMode, project.root))}${settings.codingMode ? " (the operator's setting)" : " (Automatic)"}`,
+    CODING_MODE: codingModeNowWords(),
     IDEAS: r.redact(promptToc(readManifest(p.ideas), readPoState(p)?.current ?? "")),
     NOTES: notes ? r.redact(notes.slice(0, 4000)) : "(none yet)",
     TOOLS: toolCatalogue(tools),
@@ -536,9 +538,22 @@ function toolHost(rt: Rt): PoToolHost {
     contributed: (wrap) => contributedTools({ ...partCtx(rt, paths), ...wrap }),
     sessions: () => listSessions(),
     transcript: async (path) => rowsOf(await readBranch(path)),
-    codingMode(req) {
-      const s = settings();
-      return codingModeChoice(req, baseCodingMode(s.codingMode, projectOf(projectId).root), s.codingMode);
+    codingMode: (req) => checkedCodingModeChoice(req),
+    codingSwitch(req) {
+      const c = codingModeSwitch(req);
+      if ("error" in c) return c;
+      const bad = profileRefusal(c.mode?.subagentProfile);
+      return bad ? { error: bad } : c;
+    },
+    subagentProfiles: () => subagentProfilesInfo(),
+    async playbookWaiting(sessionId) {
+      // A verb playbook's run waiting on the operator's alignment answers (§app.project-overseer/coding-mode): theirs to answer.
+      const build = readBuild(projectId, sessionId);
+      // Every verb playbook's run is an onboard build (its statechart kind), whichever playbook it runs.
+      if (!build?.onboard) return null;
+      const path = await pathOfId(sessionId);
+      const align = path ? (await getSessionSummary(path).catch(() => null))?.align : undefined;
+      return align?.openQuestions ? { title: readSessionTitles()[sessionId] || build.title || sessionId, questions: align.openQuestions } : null;
     },
     async createCoding(input) {
       const { gap, ...rest } = input;
@@ -570,8 +585,8 @@ function toolHost(rt: Rt): PoToolHost {
       if (out.held) return { held: heldAt(target, out.held) };
       const fx = out.effects?.find((e) => e.kind === "prompt");
       if (fx?.error) throw new Error(fx.error);
-      const r = (fx?.result ?? {}) as { queued?: boolean; modeApplies?: "now" | "after-turn" };
-      return { queued: !!r.queued, ...(r.modeApplies ? { modeApplies: r.modeApplies } : {}) };
+      const r = (fx?.result ?? {}) as { queued?: boolean; modeApplies?: "now" | "after-turn"; modeNow?: ProjectCodingMode; profile?: string | null };
+      return { queued: !!r.queued, ...(r.modeApplies ? { modeApplies: r.modeApplies } : {}), ...(r.modeNow ? { modeNow: r.modeNow, profile: r.profile ?? null } : {}) };
     },
     coding: () => codingOf(projectId),
     builds: () => codingWorktrees(projectId, projectOf(projectId).root),
@@ -732,11 +747,38 @@ export const codingChoice = (input: { model?: string; thinking?: string }, setti
 
 /**
  * What a build started without them gets (F20: the item statechart's own L3 build names no mode, model or thinking):
- * the project's coding mode (else Automatic) and its coding model, as Start coding gives them.
+ * this computer's default mode (no subagent profile picked) and the project's coding model, as Start coding gives them.
  */
 export async function buildDefaults(projectId: string): Promise<{ mode: ProjectCodingMode; model: string | null; thinking: string | null }> {
   const settings = readPoSettings(projectOverseerPaths(projectId));
-  return { mode: baseCodingMode(settings.codingMode, projectOf(projectId).root), ...codingChoice({}, settings, await overseerRunning(projectId)) };
+  return { mode: hostDefaultMode(), ...codingChoice({}, settings, await overseerRunning(projectId)) };
+}
+
+/** What a coding session started now gets (§app.project-overseer/coding-mode): this computer's default mode, and
+    its default subagent profile (a start picks none). */
+export function codingModeNow(): CodingModeNow {
+  const m = hostDefaultMode();
+  let subagents: CodingModeNow["subagents"] = null;
+  try {
+    const cur = subagentProfilesInfo().current;
+    if (cur.id) subagents = { id: cur.id, name: cur.name };
+  } catch {
+    // An unreadable library: no profile to name.
+  }
+  return { mode: m.mode, minorModes: m.minorModes, subagents };
+}
+
+/** The prompt's words for it: "normal · spec, subagent profile Balanced (this computer's defaults)". */
+export function codingModeNowWords(now = codingModeNow()): string {
+  return `${describeCodingMode(now)}${now.subagents ? `, subagent profile ${now.subagents.name}` : ""} (this computer's default${now.subagents ? "s" : ""})`;
+}
+
+/** The Overseer's mode request on a start (POST …/items/code): its mode, or a 400 before anything is taken. */
+function itemCodeMode(body: ModeRequest): ProjectCodingMode | undefined {
+  if (body.mode === undefined && body.minor_modes === undefined && body.subagent_profile === undefined) return undefined;
+  const c = checkedCodingModeChoice(body);
+  if ("error" in c) throw new OrgError(c.error, 400);
+  return c.mode;
 }
 
 /** The model and thinking a session people talk to gets (a contributing layer's gathering sessions). */
@@ -806,7 +848,8 @@ async function startCodingSession(
   const engine = engineOrThrow(projectId);
   const p = projectOverseerPaths(projectId);
   const settings = readPoSettings(p);
-  const base = input.mode ?? baseCodingMode(settings.codingMode, project.root);
+  // Unnamed: this computer's default, read now and pinned at start (§app.project-overseer/coding-mode).
+  const base = input.mode ?? hostDefaultMode();
   // A verb playbook's run asks the operator through align (§app.project-runtime/verb-playbooks).
   const mode = PLAYBOOK_RUN_KINDS.includes(input.kind) ? playbookRunMode(base) : base;
   const sessionId = newBuildSessionId();
@@ -1196,6 +1239,8 @@ export async function codeItem(projectId: string, body: ItemCodeInput, via?: "ov
   const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
   const title = typeof body.title === "string" ? body.title.trim() : "";
   if (!item && (!prompt || !title)) throw new OrgError("Without an item (todo or idea), give both prompt and title.");
+  // Checked before anything is taken: an unknown name starts nothing.
+  const mode = itemCodeMode(body);
   // A §gap/… idea whose gap has promoted decisions not built yet: the gap's own build (where its layer says), when
   // that would take it; otherwise a plain coding session linked to the idea.
   const engine = engineOrThrow(projectId);
@@ -1210,6 +1255,7 @@ export async function codeItem(projectId: string, body: ItemCodeInput, via?: "ov
     title: (title || item!.title).slice(0, 80),
     ...(body.model ? { model: body.model } : {}),
     ...(body.thinking ? { thinking: body.thinking } : {}),
+    ...(mode ? { mode } : {}),
     kind: "operator-coding",
     ...(via ? { via } : {}),
     // a plain session on a gap's idea names the gap's item in its act, so its record names the gap it was started from

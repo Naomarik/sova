@@ -7,7 +7,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
-import type { Autonomy, CodingWorktree, ProjectCodingMode, ProjectOverseerSettings } from "../shared/project-overseer";
+import type { Autonomy, CodingModeSwitch, CodingWorktree, ProjectCodingMode, ProjectOverseerSettings } from "../shared/project-overseer";
 import type { SessionSummary } from "../shared/protocol";
 import type { PreviewView } from "../shared/preview-links";
 
@@ -34,24 +34,28 @@ const PREVIEW: PreviewView = {
 
 const root = mkdtempSync(join(tmpdir(), "sova-po-tools-"));
 process.env.PI_CODING_AGENT_DIR = join(root, "agent");
-const { projectOverseerTools, TOOL_NEEDS, COUNTS, operatorOnlyRefusal, underRoot, buildState } = await import("./project-overseer-tools");
+const { projectOverseerTools, TOOL_NEEDS, COUNTS, operatorOnlyRefusal, underRoot, buildState, waitingWords } = await import("./project-overseer-tools");
 const { statechartInfo, statechartVersions } = await import("./statecharts");
 const { defaultPoSettings, effectiveAutonomy, projectOverseerPaths, PAUSED_REASON } = await import("./project-overseer-store");
 const { OrgError } = await import("./org-error");
 const { TOOL_NEEDS: MASTER_NEEDS } = await import("./statecharts-replay");
-const { baseCodingMode, codingModeChoice } = await import("./project-coding-mode");
+const { codingModeChoice, codingModeSwitch } = await import("./project-coding-mode");
+
+/** This computer's subagent profiles, as the fake host has them ("house" the default). */
+const PROFILES = { profiles: [{ id: "off", name: "Off", footprint: "no workers" }, { id: "house", name: "House", footprint: "4 routes" }, { id: "big", name: "Big team", footprint: "6 routes" }], default: "house", current: { id: "house", name: "House", source: "default" } } as never;
+const profileCheck = (id: string | undefined) => (id === undefined || ["off", "house", "big"].includes(id) ? null : `Unknown subagent profile: ${id}. sova_list_subagent_profiles lists them.`);
 after(() => rmSync(root, { recursive: true, force: true }));
 
 /** The tools an organization's part contributes to a placed project's overseer (server/overseer-org-part.ts). */
 const ORG_PART_TOOLS = ["sova_start_gathering", "sova_offer", "sova_close_gathering", "sova_roster", "sova_decisions", "sova_reconcile", "sova_promote", "sova_send_status", "sova_send_to_person", "sova_owner_update"];
 
 let n = 0;
-function fake(opts: { attended?: boolean; autonomy?: Autonomy; settings?: Partial<ProjectOverseerSettings>; hasSpec?: boolean; builds?: CodingWorktree[]; refuse?: InstanceType<typeof OrgError>; previews?: PreviewView[]; previewHeld?: boolean } = {}) {
+function fake(opts: { attended?: boolean; autonomy?: Autonomy; settings?: Partial<ProjectOverseerSettings>; hostMode?: ProjectCodingMode; waiting?: Record<string, number>; builds?: CodingWorktree[]; refuse?: InstanceType<typeof OrgError>; previews?: PreviewView[]; previewHeld?: boolean } = {}) {
   const calls: string[] = [];
   /** The allowances a statechart refused, as the tools told the watch (limit/refused). */
   const limited: string[] = [];
   /** The mode each create/send reached the host with (a send without one records null). */
-  const modes: (ProjectCodingMode | null)[] = [];
+  const modes: (CodingModeSwitch | null)[] = [];
   const dir = join(root, `ws${n++}`);
   const paths = projectOverseerPaths("prj_bbbbbbbb", dir);
   const settings = { ...defaultPoSettings(), autonomy: opts.autonomy ?? "L1", ...opts.settings };
@@ -80,7 +84,19 @@ function fake(opts: { attended?: boolean; autonomy?: Autonomy; settings?: Partia
     contributed: () => [],
     sessions: async () => sessions,
     transcript: async () => [],
-    codingMode: (req: { mode?: string; minor_modes?: unknown }) => codingModeChoice(req, baseCodingMode(settings.codingMode, "/proj", opts.hasSpec ?? false), settings.codingMode),
+    // This computer's default (opts.hostMode, else normal · spec), and its library's profiles.
+    codingMode: (req: Record<string, unknown>) => {
+      const c = codingModeChoice(req, opts.hostMode ?? { mode: "normal", minorModes: ["spec"] });
+      const bad = "mode" in c ? profileCheck(c.mode.subagentProfile) : null;
+      return bad ? { error: bad } : c;
+    },
+    codingSwitch: (req: Record<string, unknown>) => {
+      const c = codingModeSwitch(req);
+      const bad = "mode" in c ? profileCheck(c.mode?.subagentProfile) : null;
+      return bad ? { error: bad } : c;
+    },
+    subagentProfiles: () => PROFILES,
+    playbookWaiting: async (id: string) => (opts.waiting?.[id] ? { title: "Project verbs: Portal", questions: opts.waiting[id]! } : null),
     createCoding: async (input: { cwd: string; mode: ProjectCodingMode }) => {
       // A statechart's refusal (opts.refuse): as the real host throws it.
       if (opts.refuse) throw opts.refuse;
@@ -88,12 +104,12 @@ function fake(opts: { attended?: boolean; autonomy?: Autonomy; settings?: Partia
       modes.push(input.mode);
       return { id: "c1", path: "/s/c1.jsonl", cwd: input.cwd };
     },
-    send: async (id: string, _text: string, mode?: ProjectCodingMode) => {
+    send: async (id: string, _text: string, mode?: CodingModeSwitch) => {
       // As the build statechart refuses it (build/prompt's prompt-check).
       if (id === "gone-tree") throw new OrgError("Its worktree was removed, so it has no folder to work in.", 409);
       calls.push(`send:${id}`);
       modes.push(mode ?? null);
-      return { queued: false };
+      return mode ? { queued: false, modeApplies: "now" as const, modeNow: { mode: mode.mode ?? "normal", minorModes: mode.minorModes ?? [] }, profile: mode.subagentProfile === "big" ? "Big team" : "House" } : { queued: false };
     },
     coding: () => [],
     builds: async () => opts.builds ?? [],
@@ -310,55 +326,89 @@ describe("scope and caps", () => {
   });
 });
 
-describe("coding sessions' modes (the operator's ceiling)", () => {
+describe("coding sessions' modes (any mode, this computer's default unnamed; §app.project-overseer/coding-mode)", () => {
   const N = (minorModes: string[] = []): ProjectCodingMode => ({ mode: "normal", minorModes });
 
-  test("Automatic: spec on when the project has a spec, off otherwise; never delegate", async () => {
-    const f = fake({ attended: true, hasSpec: true });
-    await f.run("sova_create_session", { gap: "none", prompt: "p" });
-    const g = fake({ attended: true, hasSpec: false });
-    await g.run("sova_create_session", { gap: "none", prompt: "p" });
-    assert.deepEqual([f.modes, g.modes], [[N(["spec"])], [N()]]);
+  test("unnamed: this computer's default, whole, with no subagent profile picked; the reply names mode and profile", async () => {
+    const f = fake({ attended: true, hostMode: { mode: "delegate", minorModes: ["align", "spec"] } });
+    const r = await f.run("sova_create_session", { gap: "none", prompt: "p" });
+    assert.deepEqual(f.modes, [{ mode: "delegate", minorModes: ["align", "spec"] }]);
+    assert.match((r.content[0] as { text: string }).text, /mode delegate · align · spec, subagent profile House\.$/);
   });
 
-  test("each refused mode creates nothing and takes no cap", async () => {
+  test("every mode, minor mode and profile is accepted on a start and on a running session; no ceiling", async () => {
+    const asks: Record<string, unknown>[] = [
+      { mode: "delegate" },
+      { minor_modes: [] },
+      { minor_modes: ["align"] },
+      { mode: "delegate", minor_modes: ["align", "spec", "vis", "codemode"] },
+      { minor_modes: ["vis", "codemode"] },
+      { subagent_profile: "big" },
+      { subagent_profile: "off" },
+    ];
+    for (const ask of asks) {
+      const f = fake({ attended: true });
+      await f.run("sova_create_session", { gap: "none", prompt: "p", ...ask });
+      await f.run("sova_send", { session: "in-root", text: "p", ...ask });
+      assert.deepEqual(f.calls, ["create:/proj", "send:in-root"], JSON.stringify(ask));
+    }
+    const f = fake({ attended: true });
+    const r = await f.run("sova_create_session", { gap: "none", prompt: "p", mode: "delegate", minor_modes: ["vis"], subagent_profile: "big" });
+    assert.deepEqual(f.modes, [{ mode: "delegate", minorModes: ["vis"], subagentProfile: "big" }]);
+    assert.match((r.content[0] as { text: string }).text, /mode delegate · visuals, subagent profile Big team\.$/);
+  });
+
+  test("only unknown names are refused: nothing is created or sent, and no cap is taken", async () => {
     const asks: [Record<string, unknown>, RegExp][] = [
-      [{ mode: "turbo" }, /Unknown mode turbo: use normal or delegate\./],
-      [{ minor_modes: ["bogus"] }, /Unknown minor mode bogus: only spec is allowed\./],
-      [{ minor_modes: ["align", "spec"] }, /Align needs someone to answer its questions, and nobody answers a coding session's\./],
-      [{ mode: "delegate" }, /Delegate is off for this project's coding sessions; the operator can allow it on the project page\./],
-      [{ minor_modes: [] }, /Spec is on for this project's coding sessions; only the operator can turn it off on the project page\./],
+      [{ mode: "turbo" }, /Unknown mode turbo: use normal or delegate./],
+      [{ minor_modes: ["bogus"] }, /Unknown minor mode bogus: use align, spec, vis or codemode./],
+      [{ subagent_profile: "nope" }, /Unknown subagent profile: nope. sova_list_subagent_profiles lists them./],
     ];
     for (const [ask, why] of asks) {
-      const f = fake({ attended: true, hasSpec: true });
+      const f = fake({ attended: true, settings: { caps: { ...defaultPoSettings().caps, createPerTurn: 0, promptsPerTurn: 0 } } });
       await assert.rejects(() => f.run("sova_create_session", { gap: "none", prompt: "p", ...ask }), why, JSON.stringify(ask));
       await assert.rejects(() => f.run("sova_send", { session: "in-root", text: "p", ...ask }), why, JSON.stringify(ask));
-      assert.deepEqual(f.calls, [], JSON.stringify(ask));
+      assert.deepEqual([f.calls, f.limited], [[], []], JSON.stringify(ask));
     }
   });
 
-  test("a mode refusal comes before the caps", async () => {
-    const f = fake({ attended: true });
-    await assert.rejects(() => f.run("sova_create_session", { gap: "none", prompt: "p", mode: "delegate" }), /Delegate is off/);
-  });
-
-  test("delegate once the operator chose it; spec may be turned on; normal is always allowed", async () => {
-    const f = fake({ attended: true, settings: { codingMode: { mode: "delegate", minorModes: [] } } });
+  test("a stored codingMode is ignored: a start gets this computer's default", async () => {
+    const f = fake({ attended: true, settings: { codingMode: { mode: "delegate", minorModes: [] } } as never, hostMode: N(["spec"]) });
     await f.run("sova_create_session", { gap: "none", prompt: "p" });
-    await f.run("sova_create_session", { gap: "none", prompt: "p", mode: "normal", minor_modes: ["spec"] });
-    assert.deepEqual(f.modes, [{ mode: "delegate", minorModes: [] }, N(["spec"])]);
-    // The setting says normal: the overseer can't raise it to delegate, but may add spec.
-    const g = fake({ attended: true, settings: { codingMode: N() } });
-    await assert.rejects(() => g.run("sova_create_session", { gap: "none", prompt: "p", mode: "delegate" }), /Delegate is off/);
-    await g.run("sova_create_session", { gap: "none", prompt: "p", minor_modes: ["spec"] });
-    assert.deepEqual(g.modes, [N(["spec"])]);
+    assert.deepEqual(f.modes, [N(["spec"])]);
   });
 
-  test("sova_send: a mode reaches the host with the text; none leaves the session's mode alone", async () => {
+  test("sova_send: only what it names reaches the host; none leaves the session's mode alone; the reply says what it runs", async () => {
     const f = fake({ attended: true });
-    await f.run("sova_send", { session: "in-root", text: "go", minor_modes: ["spec"] });
+    const r = await f.run("sova_send", { session: "in-root", text: "go", minor_modes: ["spec"] });
+    await f.run("sova_send", { session: "in-root", text: "go", subagent_profile: "big" });
     await f.run("sova_send", { session: "in-root", text: "go" });
-    assert.deepEqual(f.modes, [N(["spec"]), null]);
+    assert.deepEqual(f.modes, [{ minorModes: ["spec"] }, { subagentProfile: "big" }, null]);
+    assert.match((r.content[0] as { text: string }).text, /It now runs normal · spec, subagent profile House\.$/);
+  });
+
+  test("a verb playbook's run waiting on alignment answers refuses sova_send before anything is taken", async () => {
+    const f = fake({ attended: true, waiting: { "in-root": 3 } });
+    await assert.rejects(
+      () => f.run("sova_send", { session: "in-root", text: "use port 4000", minor_modes: [] }),
+      /^Error: Project verbs: Portal is waiting on the operator's answers to its alignment questions. Tell the operator; never answer them. Nothing was sent./,
+    );
+    assert.deepEqual(f.calls, []);
+    await f.run("sova_send", { session: "in-tree", text: "go" });
+    assert.deepEqual(f.calls, ["send:in-tree"], "any other session still takes it");
+  });
+
+  test("sova_list_sessions marks a session waiting on the operator's alignment answers", () => {
+    assert.equal(waitingWords(3), " · waiting on the operator's answers to 3 alignment questions");
+    assert.equal(waitingWords(1), " · waiting on the operator's answers to 1 alignment question");
+    assert.equal(waitingWords(undefined), "");
+  });
+
+  test("sova_list_subagent_profiles lists this computer's profiles, the default marked; a read", async () => {
+    const f = fake({ attended: false, autonomy: "L0" });
+    const r = await f.run("sova_list_subagent_profiles");
+    assert.equal((r.content[0] as { text: string }).text, "off: Off · no workers\nhouse: House · 4 routes · default\nbig: Big team · 6 routes");
+    assert.equal(TOOL_NEEDS.sova_list_subagent_profiles, "read");
   });
 
   test("sova_send reaches a coding session it started in a worktree outside the root, never one whose worktree was removed", async () => {

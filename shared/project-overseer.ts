@@ -208,12 +208,30 @@ export interface HeldItem {
 export type AllowanceUse = Record<PoLimitKind, { used: number; max: Allowance }>;
 
 /** The mode a coding session the project starts runs in (the mode extension's major mode and minor
-    modes). `align` is never allowed: nobody answers a coding session's alignment questions. */
+    modes, §app.project-overseer/coding-mode): this computer's default unless an Overseer names
+    another. `subagentProfile`: the profile picked for that session only (an id or "off"); absent,
+    nothing is picked and the session runs on this computer's default profile. */
 export interface ProjectCodingMode {
   mode: "normal" | "delegate";
-  /** Canonical order; only "spec" may be on. */
+  /** Canonical order (the mode extension's MINOR_MODES): any of align, spec, vis, codemode. */
   minorModes: string[];
+  subagentProfile?: string;
 }
+
+/** A switch an Overseer asks of a running coding session (sova_send): only what it names. */
+export type CodingModeSwitch = Partial<ProjectCodingMode>;
+
+/** What a coding session started now gets: this computer's default mode and subagent profile
+    (null when there is no default profile). */
+export interface CodingModeNow {
+  mode: ProjectCodingMode["mode"];
+  minorModes: string[];
+  subagents: { id: string; name: string } | null;
+}
+
+/** A mode as people read it: `normal · spec · visuals` (`vis` said as "visuals"). */
+export const codingModeWords = (m: Pick<ProjectCodingMode, "mode" | "minorModes">): string =>
+  [m.mode, ...m.minorModes.map((x) => (x === "vis" ? "visuals" : x))].join(" · ");
 
 export interface ProjectOverseerSettings {
   version: 1;
@@ -225,10 +243,6 @@ export interface ProjectOverseerSettings {
       null = the overseer's own model; `codingThinking` likewise (null = the overseer's own level). */
   codingModel: string | null;
   codingThinking: string | null;
-  /** The mode its coding sessions start in; null = Automatic (normal, with spec on when the project
-      root has a spec, `.sova/spec/manifest.json`). The overseer may never exceed it: delegate only
-      when set here, spec never turned off when it is on. */
-  codingMode: ProjectCodingMode | null;
   /** The gathering sessions and offers it starts (and Send to person…): the model the person talks
       to; null = the overseer's own. `gatheringThinking` likewise. */
   gatheringModel: string | null;
@@ -251,7 +265,7 @@ export interface ProjectOverseerSettings {
   extraSystemPrompt: string;
 }
 
-export type ProjectOverseerPatch = Partial<Pick<ProjectOverseerSettings, "autonomy" | "model" | "thinking" | "codingModel" | "codingThinking" | "codingMode" | "gatheringModel" | "gatheringThinking" | "gatheringAbilities" | "watchGapMin" | "soonLookSec" | "watch" | "holdMin" | "confirmKinds" | "extraSystemPrompt">> & {
+export type ProjectOverseerPatch = Partial<Pick<ProjectOverseerSettings, "autonomy" | "model" | "thinking" | "codingModel" | "codingThinking" | "gatheringModel" | "gatheringThinking" | "gatheringAbilities" | "watchGapMin" | "soonLookSec" | "watch" | "holdMin" | "confirmKinds" | "extraSystemPrompt">> & {
   caps?: Partial<ProjectOverseerCaps>;
 };
 
@@ -269,8 +283,8 @@ export interface ProjectOverseerInfo {
   /** Earlier conversations, newest first (read-only). */
   history: { id: string; path: string; title: string; lastActiveAt: string }[];
   settings: ProjectOverseerSettings;
-  /** The mode a coding session started now gets (`settings.codingMode`, or what Automatic resolves to now). */
-  codingModeNow: ProjectCodingMode;
+  /** What a coding session started now gets: this computer's default mode and subagent profile. */
+  codingModeNow: CodingModeNow;
   /** What a gathering session started now gets (`settings.gatheringAbilities`, or Automatic). */
   gatheringAbilitiesNow: GatheringAbilities;
   /** Coding sessions run in their own git worktree and branch when the project root is in a git
@@ -408,6 +422,11 @@ export interface ItemCodeInput {
   title?: string;
   model?: string;
   thinking?: string;
+  /** The Overseer's choice (§app.project-overseer/coding-mode): any mode, minor modes and subagent profile;
+      unnamed, this computer's default. */
+  mode?: string;
+  minor_modes?: string[];
+  subagent_profile?: string;
 }
 /** POST …/overseer/message: where the text went (idle: a turn started; mid-turn: queued as a follow-up). */
 export interface ProjectMessageResult {

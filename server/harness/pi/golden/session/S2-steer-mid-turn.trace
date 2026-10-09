@@ -8,6 +8,7 @@ B {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now"}
 step A sends {"type":"prompt","text":"work","clientId":"c1"}
 write {"id":"00000001","type":"model_change"}
 write {"id":"00000002","type":"thinking_level_change"}
+write {"id":"00000003","type":"custom","customType":"sova-align-launch"}
 sdk prompt ["work",{"source":"interactive"}]
 A {"type":"send_ack","clientId":"c1","queued":false}
 A {"type":"links","links":[]}
@@ -16,13 +17,13 @@ A {"type":"event","event":{"type":"agent_start"}}
 B {"type":"event","v":2,"event":{"type":"run.start"}}
 A {"type":"event","event":{"type":"turn_start"}}
 A {"type":"event","event":{"type":"message_start","message":{"role":"system","elided":true}}}
-write {"id":"00000003","type":"message","role":"system"}
-A {"type":"event","event":{"type":"message_end","message":{"role":"system","elided":true}},"entryId":"00000003"}
+write {"id":"00000004","type":"message","role":"system"}
+A {"type":"event","event":{"type":"message_end","message":{"role":"system","elided":true}},"entryId":"00000004"}
 A {"type":"event","event":{"type":"message_start","message":{"role":"user","content":[{"type":"text","text":"work"}],"timestamp":1000000000000}}}
 B {"type":"event","v":2,"event":{"type":"message.start","role":"user","text":"work","images":[]}}
-write {"id":"00000004","type":"message","role":"user"}
-A {"type":"event","event":{"type":"message_end","message":{"role":"user","content":[{"type":"text","text":"work"}],"timestamp":1000000000000}},"entryId":"00000004"}
-B {"type":"event","v":2,"event":{"type":"message.end","role":"user","entryId":"00000004"}}
+write {"id":"00000005","type":"message","role":"user"}
+A {"type":"event","event":{"type":"message_end","message":{"role":"user","content":[{"type":"text","text":"work"}],"timestamp":1000000000000}},"entryId":"00000005"}
+B {"type":"event","v":2,"event":{"type":"message.end","role":"user","entryId":"00000005"}}
 step A sends {"type":"steer","text":"steer one","clientId":"c2"}
 A {"type":"queue","items":[{"id":"c2","kind":"steer","state":"queued","text":"steer one","origin":"client"}]}
 B {"type":"queue","items":[{"id":"c2","kind":"steer","state":"queued","text":"steer one","origin":"client"}]}
@@ -38,9 +39,9 @@ A {"type":"event","event":{"type":"queue_update","steering":["steer one"],"follo
 step release the reply
 A {"type":"event","event":{"type":"message_start","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop","thinkingLevel":"off"}}}
 B {"type":"event","v":2,"event":{"type":"message.start","role":"assistant","model":"scripted/scripted","parts":[{"kind":"text","text":"ok"}]}}
-write {"id":"00000005","type":"message","role":"assistant"}
-A {"type":"event","event":{"type":"message_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop","thinkingLevel":"off"}},"entryId":"00000005"}
-B {"type":"event","v":2,"event":{"type":"message.end","role":"assistant","entryId":"00000005","model":"scripted/scripted","parts":[{"kind":"text","text":"ok"}],"stop":"ok"}}
+write {"id":"00000006","type":"message","role":"assistant"}
+A {"type":"event","event":{"type":"message_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop","thinkingLevel":"off"}},"entryId":"00000006"}
+B {"type":"event","v":2,"event":{"type":"message.end","role":"assistant","entryId":"00000006","model":"scripted/scripted","parts":[{"kind":"text","text":"ok"}],"stop":"ok"}}
 A {"type":"event","event":{"type":"turn_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop","thinkingLevel":"off"},"toolResults":[]}}
 A {"type":"event","event":{"type":"turn_start"}}
 A {"type":"event","event":{"type":"queue_update","steering":[],"followUp":[]}}
@@ -54,14 +55,14 @@ sdk steer ["",[{"type":"image","data":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfF
 A {"type":"event","event":{"type":"queue_update","steering":[""],"followUp":[]}}
 A {"type":"event","event":{"type":"message_start","message":{"role":"user","content":[{"type":"text","text":"steer one"}],"timestamp":1000000000000}}}
 B {"type":"event","v":2,"event":{"type":"message.start","role":"user","text":"steer one","images":[]}}
-write {"id":"00000006","type":"message","role":"user"}
-A {"type":"event","event":{"type":"message_end","message":{"role":"user","content":[{"type":"text","text":"steer one"}],"timestamp":1000000000000}},"entryId":"00000006"}
-B {"type":"event","v":2,"event":{"type":"message.end","role":"user","entryId":"00000006"}}
+write {"id":"00000007","type":"message","role":"user"}
+A {"type":"event","event":{"type":"message_end","message":{"role":"user","content":[{"type":"text","text":"steer one"}],"timestamp":1000000000000}},"entryId":"00000007"}
+B {"type":"event","v":2,"event":{"type":"message.end","role":"user","entryId":"00000007"}}
 A {"type":"event","event":{"type":"message_start","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop","thinkingLevel":"off"}}}
 B {"type":"event","v":2,"event":{"type":"message.start","role":"assistant","model":"scripted/scripted","parts":[{"kind":"text","text":"ok"}]}}
-write {"id":"00000007","type":"message","role":"assistant"}
-A {"type":"event","event":{"type":"message_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop","thinkingLevel":"off"}},"entryId":"00000007"}
-B {"type":"event","v":2,"event":{"type":"message.end","role":"assistant","entryId":"00000007","model":"scripted/scripted","parts":[{"kind":"text","text":"ok"}],"stop":"ok"}}
+write {"id":"00000008","type":"message","role":"assistant"}
+A {"type":"event","event":{"type":"message_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop","thinkingLevel":"off"}},"entryId":"00000008"}
+B {"type":"event","v":2,"event":{"type":"message.end","role":"assistant","entryId":"00000008","model":"scripted/scripted","parts":[{"kind":"text","text":"ok"}],"stop":"ok"}}
 A {"type":"event","event":{"type":"turn_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop","thinkingLevel":"off"},"toolResults":[]}}
 A {"type":"event","event":{"type":"turn_start"}}
 A {"type":"event","event":{"type":"message_start","message":{"role":"user","content":[{"type":"text","text":""},{"type":"image","data":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==","mimeType":"image/png"}],"timestamp":1000000000000}}}
@@ -70,14 +71,14 @@ A {"type":"queue_item_gone","itemId":"c3","reason":"delivered"}
 B {"type":"queue_item_gone","itemId":"c3","reason":"delivered"}
 A {"type":"queue","items":[]}
 B {"type":"queue","items":[]}
-write {"id":"00000008","type":"message","role":"user"}
-A {"type":"event","event":{"type":"message_end","message":{"role":"user","content":[{"type":"text","text":""},{"type":"image","data":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==","mimeType":"image/png"}],"timestamp":1000000000000}},"entryId":"00000008"}
-B {"type":"event","v":2,"event":{"type":"message.end","role":"user","entryId":"00000008"}}
+write {"id":"00000009","type":"message","role":"user"}
+A {"type":"event","event":{"type":"message_end","message":{"role":"user","content":[{"type":"text","text":""},{"type":"image","data":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==","mimeType":"image/png"}],"timestamp":1000000000000}},"entryId":"00000009"}
+B {"type":"event","v":2,"event":{"type":"message.end","role":"user","entryId":"00000009"}}
 A {"type":"event","event":{"type":"message_start","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop","thinkingLevel":"off"}}}
 B {"type":"event","v":2,"event":{"type":"message.start","role":"assistant","model":"scripted/scripted","parts":[{"kind":"text","text":"ok"}]}}
-write {"id":"00000009","type":"message","role":"assistant"}
-A {"type":"event","event":{"type":"message_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop","thinkingLevel":"off"}},"entryId":"00000009"}
-B {"type":"event","v":2,"event":{"type":"message.end","role":"assistant","entryId":"00000009","model":"scripted/scripted","parts":[{"kind":"text","text":"ok"}],"stop":"ok"}}
+write {"id":"00000010","type":"message","role":"assistant"}
+A {"type":"event","event":{"type":"message_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop","thinkingLevel":"off"}},"entryId":"00000010"}
+B {"type":"event","v":2,"event":{"type":"message.end","role":"assistant","entryId":"00000010","model":"scripted/scripted","parts":[{"kind":"text","text":"ok"}],"stop":"ok"}}
 A {"type":"event","event":{"type":"turn_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop","thinkingLevel":"off"},"toolResults":[]}}
 A {"type":"event","event":{"type":"agent_end","messages":[{"role":"system","elided":true},{"role":"user","content":[{"type":"text","text":"work"}],"timestamp":1000000000000},{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop","thinkingLevel":"off"},{"role":"user","content":[{"type":"text","text":"steer one"}],"timestamp":1000000000000},{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop","thinkingLevel":"off"},{"role":"user","content":[{"type":"text","text":""},{"type":"image","data":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==","mimeType":"image/png"}],"timestamp":1000000000000},{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop","thinkingLevel":"off"}],"willRetry":false}}
 A {"type":"event","event":{"type":"agent_settled"}}

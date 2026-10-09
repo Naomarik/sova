@@ -22,3 +22,16 @@ export function createTouchMode(): { touch: Accessor<boolean>; onPointerDown(e: 
   const [touch, setTouch] = createSignal(false);
   return { touch, onPointerDown: (e) => setTouch(e.pointerType === "touch") };
 }
+
+/** How a Send, Steer or Stop press began: a touch, and whether the textarea had focus with the keyboard up. */
+export type SendPress = { touch: boolean; focused: boolean; keyboardUp: boolean };
+
+/**
+ * Whether focus goes back to the textarea after a send or stop. A key send (no press), a mouse or
+ * a pen always returns it; a tap only when the textarea had it with the keyboard up, so a
+ * keyboard that was down stays down.
+ */
+export function refocusAfterSend(press: SendPress | null): boolean {
+  if (!press || !press.touch) return true;
+  return press.focused && press.keyboardUp;
+}

@@ -235,11 +235,11 @@ describe("/compact through a real chat runtime", () => {
     assert.equal(done.entryId, written.at(-1).id);
     assert.equal(done.tokensBefore, 300);
     assert.equal(done.id, "k1");
-    // The open-time thinking entry (no thinking entry on this branch) was deferred; it lands
-    // right before the compaction, as it would before a prompt.
-    const added = written.slice(before).map((e) => e.type);
+    // The open-time thinking entry (no thinking entry on this branch) and the chat's align launch record
+    // (§chat.alignment-review/flag) were deferred; they land right before the compaction, as before a prompt.
+    const added = written.slice(before).map((e) => (e.type === "custom" ? `custom:${e.customType}` : e.type));
     assert.equal(added.at(-1), "compaction");
-    assert.ok(added.slice(0, -1).every((t) => t === "thinking_level_change" || t === "model_change"), added.join(","));
+    assert.ok(added.slice(0, -1).every((t) => t === "thinking_level_change" || t === "model_change" || t === "custom:sova-align-launch"), added.join(","));
     const hello = t.theirs[0] as Extract<ChatServerMessage, { type: "hello" }>;
     assert.equal(hello.items.at(-1)?.kind, "info");
     assert.equal(hello.context, null, "fill is unknown until the next reply");

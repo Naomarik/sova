@@ -82,6 +82,7 @@ import { modelDenial, readModelPolicy, writeModelPolicy } from "./model-policy";
 import { listThemes } from "./themes";
 import { registerScheduleRoutes } from "./schedule-routes";
 import { readWebSettings, writeWebSettings } from "./web-settings";
+import { alignSettingsInfo, saveAlignSettingsBody } from "./align-settings";
 import { readSummarizerSettings, writeSummarizerSettings } from "./topic-outline-settings";
 import { claudeCliStatus } from "./claude-status";
 import { AutoTitleSweep, autoTitlePaths, nameSession, shortenPicks, traceToFile, type NameDeps } from "./session-autotitle";
@@ -816,7 +817,8 @@ export function buildApp(deps: AppDeps) {
   // The playbooks catalog with each schedule's state, and the schedules' routes (server/schedule-routes.ts).
   registerScheduleRoutes(app);
 
-  // Sova's own settings (server/web-settings.ts): Settings → Experimental's switches. GET reads the
+  // Sova's own settings (server/web-settings.ts): Settings → Alignment's review switch and
+  // Experimental's switches. GET reads the
   // stored values, PUT replaces the known ones it carries and ignores the rest.
   app.get("/api/settings", (c) => c.json(readWebSettings()));
   app.put("/api/settings", async (c) => {
@@ -824,9 +826,24 @@ export function buildApp(deps: AppDeps) {
     try {
       body = await c.req.json();
     } catch {
-      return c.json({ error: "Expected JSON body { experimental: { ... } }" }, 400);
+      return c.json({ error: "Expected JSON body { experimental?: { ... }, alignment?: { ... } }" }, 400);
     }
     const result = writeWebSettings(body);
+    return "error" in result ? c.json({ error: result.error }, 400) : c.json(result);
+  });
+
+  // The align mode's writing style and Visuals (mode-align.json, server/align-settings.ts): Settings →
+  // Alignment's other half. The file is the mode extension's; the style reaches open chats at their
+  // next turn boundary, Visuals only chats started after the save.
+  app.get("/api/settings/align", (c) => c.json(alignSettingsInfo()));
+  app.put("/api/settings/align", async (c) => {
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "Expected JSON body { version: 1, style, visuals }" }, 400);
+    }
+    const result = saveAlignSettingsBody(body);
     return "error" in result ? c.json({ error: result.error }, 400) : c.json(result);
   });
 

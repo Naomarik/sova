@@ -241,7 +241,12 @@ While `align` is on, the agent records every alignment with one tool, `align`
 (`align-tool.ts`), which is in its loadout only while align is on. An
 alignment is a structured document, `al_N`, one per concern; several can be
 open at once. It holds a title, a one-line summary, findings (`fN`), approach
-steps (`aN`), rejected alternatives with why (`xN`) and questions (`qN`). A
+steps (`aN`), rejected alternatives with why (`xN`), technical notes (`tN`,
+optional: the detail a plan for a non-coding reader keeps out of its other
+fields) and questions (`qN`). It records the writing style in effect at its
+latest change (`style`, absent for Default), and in a session started with
+Visuals on a question, and the document once, can carry a `visual`
+(`{kind, source}`, a `vis` drawing; at most 3 per alignment). A
 question has a topic, the ask, optional context and options (label and
 trade-off), a recommendation (choice and why) and, once answered, a decision
 (its text, `user` or `accepted-recommendation`, and when). Ids are never
@@ -253,8 +258,10 @@ op, each with exactly its fields, the required ones required: `create` (inline),
 `import` (`path`: a JSON file a planning worker wrote at an absolute path
 outside the repository, validated strictly; only a regular file up to 256 KB,
 and refused in a remote session, whose files live on the target: create inline
-there), `add`, `edit` (a finding's or step's `text`), `edit_question`,
-`edit_rejected`, `edit_doc` (title, summary), `remove`, `decide`, `accept`
+there; the file takes `technical`, never `visual`), `add`, `edit` (a finding's,
+step's or technical note's `text`), `edit_question` (with Visuals, `visual`,
+`null` removing it), `edit_rejected`, `edit_doc` (title, summary; with Visuals,
+`visual`), `remove`, `decide`, `accept`
 (`qs`: the recommendation becomes the decision; never over a question already
 decided, which must be reopened first), `accept_all`, `reopen`,
 `drop_question` and `drop_alignment` (each with a `reason`), `status`
@@ -534,6 +541,40 @@ transcripts carry the mode, never the routing.
   policy on its own; nothing here routes around a denied provider to a model
   nobody configured.
 
+## Writing style and Visuals
+
+`~/.pi/agent/mode-align.json` (`align-settings.ts`, node builtins only) holds
+the align mode's writing style and Visuals; Sova's Settings → Alignment writes it:
+
+```json
+{ "version": 1, "style": "pm", "visuals": true }
+```
+
+- `style` is `default` (no added text: the align block is today's),
+  `simplified` (short sentences in everyday words, about 5 findings and 6
+  steps, files only when the user must recognise them, each question's context
+  saying what changes for the user) or `pm` (Project manager: the fields the
+  user reads describe only screens, controls, wording, states and flows, no
+  code; technical choices with a user-visible effect are asked as product
+  questions; the technical detail goes in technical notes). Its paragraph
+  (`ALIGN_STYLE_PARAGRAPHS` in `minor.ts`) follows the align block when the head
+  is built; a later change reaches an open chat as one hidden `mode-note` at its
+  next run (`buildAlignStyleNote`), once per change, its details recording the
+  style told and the head's (`restoreHead`), so a reopen neither repeats it nor
+  rebuilds the head with the new style. The style is re-read at every turn
+  boundary.
+- `visuals` is read once, at session start: the `align-visuals` flag (`on` |
+  `off`, which Sova passes from each chat's launch record) wins; without it the
+  file is read. With align on it adds `ALIGN_VISUALS_PARAGRAPH` after the block
+  (and the style's), the `visual` fields to the align tool's schema, and the vis
+  tools to the loadout even with vis off (`visToolsWanted`, the one rule Sova's
+  `vis_check` follows too).
+- A subagent profile's optional `alignment` (`{style?, visuals?}`) overrides the
+  file field by field for chats on it (`resolveAlign`).
+- Missing or malformed reads as Default with Visuals off; the strict parse
+  (`parseAlignSettings`) refuses an unknown key or value, and the mesh checks
+  with it before writing.
+
 ## Spec writer
 
 `~/.pi/agent/mode-spec.json` (`spec.ts`) names the worker that writes the spec
@@ -627,6 +668,7 @@ node --test index.test.ts     # pure state/prompt/minor/palette logic
 node --test delegate.test.ts  # the routing file: defaults, parsing, persistence, per-turn re-read
 node --test routing.test.ts   # primary → fallback → ask, discovery failure, policy
 node --test spec.test.ts      # the spec writer file: parsing, persistence, per-turn re-read
+node --test align-settings.test.ts # mode-align.json: strict parse, tolerant read, profile override, the paragraphs, the style note, visToolsWanted
 node --test align.test.ts     # alignments: ops, strict input and import, hints, fold, echo, note, nudge heuristic, legacy entries
 node --test review.test.ts    # adversarial review: the review and close_blocker ops, slots, guards, the record's normalization, the reviewer prompt
 node tests/smoke.mjs          # real index.ts against a fake pi host, no model requests
@@ -634,6 +676,7 @@ node tests/review-smoke.mjs   # the adversarial-review flag through index.ts: of
 node tests/wake-turn.mjs      # real pi session + scripted provider: same prompt whoever starts the turn
 node tests/note-turn.mjs      # real pi session + scripted provider: a minor toggle keeps the head; notes, reopen, compaction
 node tests/align-turn.mjs     # real pi session + scripted provider: the align tool, its hidden notes (per prompt, after a compaction) and the settle nudge
+node tests/style-turn.mjs     # real pi session + scripted provider: the writing style in the head, its one note, reopen; Visuals by flag and file
 node --test spec-guard.test.ts # the census: digest, per tree (real Git + spec tools), failure once per cause, write guard, drift note, command detection
 node --test spec-assessment.test.ts # the assessment transport, and that nothing else is left to capture with
 node tests/assessment-absence.mjs # session, worktree-config worker, pi worker and Claude Code hooks never call a trapped companion by themselves

@@ -233,6 +233,9 @@
 .align-approach-label { font-weight: var(--fw-semibold); color: var(--color-ink); }
 /* Steps number by their stable ids only (a1, a2…): no list marker, the id in a narrow column of
    its own, so a wrapped line aligns under the step's text. */
+/* A visual on the card (§chat.alignment/visuals): the chat's own vis figure, set off like a question's part. */
+.align-visual { margin: var(--space-2) 0; min-width: 0; }
+.align-visual .md { margin: 0; }
 .align-approach-list { list-style: none; padding-left: 0; }
 .align-approach-list > li { display: grid; grid-template-columns: var(--space-5) 1fr; align-items: baseline; column-gap: var(--space-1); }
 /* The step's whole inline-rich body is one span, so the li's two grid columns are the id and the

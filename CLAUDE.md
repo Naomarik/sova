@@ -62,17 +62,30 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   Delegate session at each turn boundary — never snapshotted into a session; mode `mode-spec.json`
   = the spec minor mode's writer (one backend/model/effort plus an optional fallback, or `null`: the
   session writes the spec itself), seeding/backing the profiles' spec writer the same way, and re-read the same way by
-  every session with spec on, in either major mode), subagents `team-defaults.json` = the standing
+  every session with spec on, in either major mode), mode `mode-align.json` = the align minor mode's
+  writing style and Visuals (`{version: 1, style: "default" | "simplified" | "pm", visuals}`, one module,
+  `pi-config/extensions/mode/align-settings.ts`, builtins only plus `mode/delegate.ts`: the shape, the
+  strict parse, a reader that reads a missing or malformed file as Default with Visuals off, the
+  atomic writer and `resolveAlign`; written by Settings → Alignment, synced like `mode-spec.json`; the
+  style re-read by every session at each turn boundary and told to an open chat as one hidden
+  `mode-note` whose details record `style`/`headStyle`; a head fixed in a style other than Default
+  records it in the extension's own `mode-head` custom entry `{v: 1, style}` (none: Default once a
+  prompt went out since the last compaction), Visuals read at session start — in Sova from
+  the chat's `sova-align-launch` state entry `{v: 1, review, visuals}` (Sova's own, written with the
+  chat's first message, the first in the file holds), handed over as the `align-visuals` flag `on` |
+  `off`, absent in the TUI, which then reads the file; a subagent profile's optional `alignment`
+  `{style?, visuals?}` overrides it field by field, §chat.alignment/settings-file), subagents `team-defaults.json` = the standing
   coordinator and monitor every new team gets (absent = off), seeding Settings → Subagents' Teams section and
   read by the subagents extension at team creation), and subagent profiles: `subagent-profiles.json`
   = the library of named subagent setups (a profile bundles Delegate's four routes, the standing
-  coordinator/monitor, the members default and the spec writer),
+  coordinator/monitor, the members default, the spec writer and, optionally, the reviewer and the
+  align writing style/Visuals override),
   `subagent-profiles-default.json` = this device's default (never synced; the library syncs whole,
   newest edit wins), and each chat's hidden `subagent-profile` custom entry `{v: 1, profile}` (an
   id or "off", newest on the branch wins — an id reference, not a snapshot: editing a profile
   reaches every chat on it from its next turn or team action). One module,
   `pi-config/extensions/subagents/subagent-profiles.ts` (builtins only, plus `mode/delegate.ts`,
-  `mode/spec.ts` and `subagents/team-defaults.ts`), owns all three: the shapes, the strict parses,
+  `mode/spec.ts`, `mode/align-settings.ts` and `subagents/team-defaults.ts`), owns all three: the shapes, the strict parses,
   the seeding (absent = seeded from the legacy files, so nothing changes until the user switches; a
   malformed legacy `team-defaults.json` postpones seeding), atomic writers, pick entries
   (`restorePick`, `pickEntryFor`) and the one `resolveSubagents` (pick → this device's default →
@@ -140,8 +153,11 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   sets `PI_USAGE_PARENT=<parent sid>:<worker id>` in every worker's spawn env (the worker's records name
   their parent from it).
   Not covered by Sova's tsconfig, with these exceptions: the server imports
-  `pi-config/extensions/mode/state.ts`, `minor.ts`, `delegate.ts` and `spec.ts` (`server/mode-state.ts`,
-  `server/delegate.ts`, `server/spec-settings.ts`; hence `allowImportingTsExtensions`),
+  `pi-config/extensions/mode/state.ts`, `minor.ts`, `delegate.ts`, `spec.ts` and `align-settings.ts`
+  (`server/mode-state.ts`, `server/delegate.ts`, `server/spec-settings.ts`, `server/align-settings.ts`
+  and `server/sync/docs.ts`, the file's mesh registration; `server/vis-check.ts` and
+  `server/chat-manager.ts` take `visToolsWanted`, the one rule for the vis tools, from `minor.ts`;
+  hence `allowImportingTsExtensions`),
   `server/targets.ts` imports `pi-config/extensions/remote/argv.ts` (the target schema,
   validation and the single argv builder that both the `remote` extension and the web server use to
   run a command on a target), `server/model-favorites.ts` imports

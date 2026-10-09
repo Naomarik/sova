@@ -11127,7 +11127,10 @@
     },
     "§tools.spec/census-note": {
       "kind": "behavior",
-      "requires": [],
+      "requires": [
+        "§tools.spec/conflict-recovery",
+        "§tools.spec/git-merge"
+      ],
       "authority": "accepted",
       "evidence": "verified",
       "code": [
@@ -16667,7 +16670,8 @@
         "pi-config/extensions/spec/core/sova-spec-draft.mjs",
         "pi-config/extensions/spec/PROMOTE.md",
         "pi-config/extensions/spec/DRAFTS.md",
-        "pi-config/extensions/spec/tests/draft.test.mjs"
+        "pi-config/extensions/spec/tests/draft.test.mjs",
+        "pi-config/extensions/spec/tests/claims-merge.test.mjs"
       ]
     },
     "§tools.spec/draft-output": {
@@ -16707,6 +16711,25 @@
         "pi-config/extensions/claude-code/spec-hooks.test.ts",
         "pi-config/extensions/spec/core/sova-spec-draft.mjs",
         "pi-config/extensions/spec/tests/draft.test.mjs"
+      ]
+    },
+    "§tools.spec/git-merge": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/span-promotion",
+        "§tools.spec/conflict-recovery"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/tests/claims-merge.test.mjs",
+        ".gitattributes",
+        "pi-config/extensions/spec/docs/CHANGELOG.md",
+        "pi-config/extensions/spec/PROMOTE.md",
+        "pi-config/extensions/spec/DRAFTS.md",
+        "pi-config/extensions/spec/README.md"
       ]
     }
   },

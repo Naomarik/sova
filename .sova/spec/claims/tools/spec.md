@@ -3,7 +3,8 @@
 
 The spec tools preserve declared requirements, keep proposed changes separate, and report what
 was checked against particular inputs. Their checks establish structure and applicability, not
-semantic correctness. The minor mode adds task reminders and the census note, names in a finished
+semantic correctness. The minor mode adds task reminders and the census note, names once after a
+session's last edit the foreign § its change landed in that it hasn't read, names in a finished
 code-writing worker's summary the § its changes landed in, and never holds a turn's end; response wording is not proof that implementation and requirements agree.
 
 Complete graph queries remain available to machine consumers. Bounded packets deliver exact
@@ -111,7 +112,7 @@ the playbook's own method appear there only as proposed diffs, never applied by 
 ## §tools.spec/census-note — The `[spec census]` note stays short
 
 After a tool call that brings new changed files, and only then, the `[spec census]` note says what
-the census found, the same in pi sessions, pi workers and Claude Code workers. Only what changes
+the census found (the one exception is the unread line, §tools.spec/unread-landed), the same in pi sessions, pi workers and Claude Code workers. Only what changes
 while one of the session's own tool calls runs is the session's: a file changed, or a commit made,
 between its calls (another process sharing the work tree, a worker, the user's editor) is taken in
 silently before the next call and left out of every count and line, so a session that changes
@@ -133,7 +134,9 @@ its parent's; when the worker settles, its parent gets one line naming where the
   a file no claim maps still reads `unclaimed`;
 - one line for the new files outside the boundary that no claim maps: "Outside the boundary, no
   claim maps: a, b (+N more): spec any whose change a user sees";
-- the write guard, orphaned-evidence, spec-conflict and promote drift notes, when they apply.
+- the write guard, orphaned-evidence, spec-conflict and promote drift notes, when they apply;
+- at the first call after the session's last edit, the one `Unread § your change landed in` line
+  (§tools.spec/unread-landed).
 
 The spec-conflict note comes first, once per conflict, when Git holds spec files unmerged. A
 conflicted `manifest.json` gets the `merge-manifest --write` command to run first and, if it
@@ -144,7 +147,7 @@ set up for it in that clone, the note ends with the one-time setup. During a reb
 the rebase instead.
 
 It has no `Foreign §:` line, no `Rule:` line and no `New claims under a foreign §` pairs, and a newly
-touched foreign § alone never fires it. Returning to a work tree retains its census state. When the
+touched foreign § alone never fires it (the unread line alone lists foreign § to read). Returning to a work tree retains its census state. When the
 census can't run, the model gets one line, "[spec census] incomplete: <why>; run census by hand",
 once per cause per work tree until a census there succeeds again; there is no toast. When the
 census printed nothing, <why> carries the first error line it wrote to stderr (else its first
@@ -177,6 +180,26 @@ changes is in the boundary or mapped by a claim, when its census never ran, and 
 without the census (read-only, remote, or started before this change). It is the same line at
 every settle of that worker, never a per-call note, and nothing checks or acts on it.
 
+## §tools.spec/unread-landed — Once after the last edit, one line names the unread § the change landed in
+
+At the first tool call after a session's last edit (a call that can write but changed nothing of
+the session's own, after one or more that did), the `[spec census]` note carries one line naming the
+foreign § the session's own changed files landed in that the session hasn't read: "Unread § your
+change landed in: read first §a, §b; named §c, §d". It is the same in pi sessions, pi workers and
+Claude Code workers. The § come from `census --changed --related` (with the task's draft when it
+has one), in census-rank order (§tools.spec/census-rank), keeping only those a session's own
+changed file lands in: at most 5 are marked read first, the first of that order that score above
+zero or have a stale literal; every other one is named after them, on the same line, never dropped.
+A § with a stale literal says so beside its id: "(still states 12)". A § the session ran
+`sova-spec.mjs read` on, by its literal id in any of its shell commands so far (a read of a shell
+variable counts every § that command spells), counts as read; a §
+the task created is never listed, nor one only another process's changes landed in. The line is
+said once per set of landed §: it stays quiet until a later edit changes that set, and says nothing
+when every one of them was read. A call that edits never carries it; a tool the census skips
+(§tools.spec/census-note) is not the call after the edit, so the line comes with the next call that
+can write. Like every census note it checks nothing and holds nothing: the turn still ends when the
+model stops (§tools.spec/no-turn-end-check).
+
 ## §tools.spec/write-guard — The direct-write note judges the files, not the command
 
 The census note's write guard says "you wrote the current spec directly (<files>): undo it" for a
@@ -205,6 +228,25 @@ still in its draft. Such a § is never in `census.foreign` or the `foreign-summa
 existed at `<rev>` stays foreign however the task changed it. With `--own-base` revisions, a §
 absent at every one of them is the task's own as well.
 
+## §tools.spec/census-rank — `census --changed --related` ranks touched § by the changed lines
+
+`census --changed --related` ranks the foreign § the changed files land in by the change's own
+lines. From the added and removed lines of each changed file a claim maps (`git diff -U0` against
+the base; an untracked file's lines all count as added) it takes code-shaped names (with an inner
+capital, `_`, `-`, `.` or `$`, or all capitals), the text of short string literals, and numbers of
+two or more digits. A § scores the sum of the weights of the distinct ones its passage (heading,
+prose, backticked tokens and fenced examples) contains as whole names, each weighing more the fewer
+of the spec's passages contain it, as `where` weighs a file's tokens (§tools.spec/where-lookup). A
+string or number the change removed and didn't add back that a § still states is a `stale` literal
+of that §; a § with one ranks above every § without. `census.rank` lists each foreign touched §
+once, best first (an equal score puts the § mapping fewer code files first, then goes by id), with its `score`, `reason` (the matched names, heaviest first) and
+`stale` literals; `census.readFirst` is its first 5 that score above zero or have a stale literal,
+and `census.named` every other one, so each is in exactly one of the two. The text output prints a
+`read first (ranked by the changed lines):` line, each § with its heaviest names and stale
+literals, and a `named:` line. Nothing in the ranking knows a project: the names come from
+the diff and the spec. A rank is a literal match, never proof that a § is or isn't affected; without
+`--related` the census does not rank.
+
 ## §tools.spec/mode-reading — Spec mode teaches contents first, then one passage
 
 The spec minor mode's guide teaches the pull path. The agent finds its roots with `map` and `where`,
@@ -223,8 +265,9 @@ agreed records without code (§tools.spec/agreed-promotion) and a change to `emb
 guide fails its test when that rule gains a case the guide doesn't name or drops one it does. For a
 `manifest.json` conflict it sends the agent to the census note. The exemption from drafts is decided from passages read, and the
 census note's `No draft yet` line says the same. While coding, the guide relies on the census note
-(§tools.spec/census-note), with no rule of one file per edit and no census run by hand; one
-`census --changed` runs before finishing. A worker's spec brief lists `toc`, `read` and
+(§tools.spec/census-note), with no rule of one file per edit and no census run by hand. Before
+finishing it reads each § the census note's unread line (§tools.spec/unread-landed) marks read
+first; the rest are named, and `census --changed --related` gives the same ranking by hand. A worker's spec brief lists `toc`, `read` and
 `impact --near` among its read-only commands. The guide rides every turn, so a test caps its word
 count a few words above its length, and growing it is a deliberate change.
 

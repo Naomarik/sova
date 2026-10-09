@@ -1419,11 +1419,17 @@ whatever title that one session has.
 summary line sits right under it (§app.session-list/content-rules, "Row line 2"). So a title is
 2 to 5 words and at most 36 characters: a noun phrase, not a sentence and not an "X: Y" with a
 tail. It is the label the user scans and searches for, and the summary line already explains, so
-the title **never restates the summary line** (neither its wording nor its first words) and adds
-what it lacks. It names the subject the whole session is about, the thing built, fixed or
-decided, not the opening question when the session moved on and not one late side topic, in the
-user's own nouns, never a status (merged, shipped, restart). Rows that would otherwise look alike
-are told apart: a merge, release or push names the branches or features that landed, never just
+the title adds what the summary line lacks: it may share the summary line's subject words or
+phrase, and adds one concrete detail about that subject from the topic headings or the opening
+request (the user's own name for the thing, its cause or mechanism), so when such a detail is
+there it is **never merely the summary line shortened, reordered or reworded**. An accurate
+subject still comes first: it names the subject the whole session is about, the thing built,
+fixed or decided, which the topic headings, the overall purpose and the opening request name;
+topic bullets are secondary recent details that may sharpen it but never replace it, the added
+detail is never a late bullet or side issue, and with no relevant detail to add the title names
+the recognizable subject rather than inventing one. Not the opening question when the session
+truly moved on to another main goal, and not one late side topic, in the user's own nouns, never
+a status (merged, shipped, restart). Rows that would otherwise look alike are told apart: a merge, release or push names the branches or features that landed, never just
 "merging branches"; a rerun names its round or model. A title typed by hand keeps its own cap
 (80, `SESSION_TITLE_MAX`).
 
@@ -1446,12 +1452,17 @@ rules alone (the label rules above, sentence case, never name the app, with thre
 **no Sova or agent system prompt goes with it**, and the user message holds only, in this order:
 
 - its summary line (the last topic-outline snapshot's `overall`), labelled as already shown under
-  the title and not to be repeated;
-- that snapshot's topic headings in order, each with at most 2 of its bullets;
-- the session's first user message, whitespace collapsed, at most 600 characters (a wake nudge,
-  a partner's link message or a topic batch, §chat.topics/row, is not one, as for the derived
-  title), labelled as what the user came for;
-- or, with no summary line (the button only), its first 3 user messages instead.
+  the title and not to be copied, though its subject may be shared;
+- that snapshot's topic headings in order, labelled as the subjects, each with at most 2 of its
+  bullets, labelled as secondary recent details that may concern side issues;
+- the session's first user message, whitespace collapsed (a wake nudge, a partner's link message
+  or a topic batch, §chat.topics/row, is not one, as for the derived title), labelled as the
+  opening intent, which the session may have moved on from: whole up to 2000 characters; a longer
+  one is at most its first 1500 characters, then ` […] `, then at most its last 500, each part
+  trimmed inward to a word boundary when one lies within 40 characters of its cut, never splitting
+  a surrogate pair;
+- or, with no summary line (the button only), its first 3 user messages instead: the first as that
+  same excerpt, the second and third at most 600 characters each.
 
 **The session's current title is never in it**, whatever set it. On pi the call is
 `completeSimple` with that system prompt and one user message, temperature 0 and no reasoning

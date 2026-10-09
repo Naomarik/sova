@@ -1163,7 +1163,9 @@ async function cmdPromote(root, o) {
     if (o.plan !== undefined && o.plan !== p.planSha) throw new Fail(1, "plan-changed", "the plan differs from the previewed --plan; preview again", { written: false, ...p.out });
     if (!p.targets.length) throw new Fail(1, "nothing-to-write", "current already equals the selected proposal", { written: false, ...p.out });
     const d = structuredClone(p.a.d);
-    d.promotions.push({ at: new Date().toISOString(), plan: p.planSha, ids: p.out.ids, meta: p.out.meta, files: p.targets.map((t) => t.path) });
+    d.promotions.push({ at: new Date().toISOString(), plan: p.planSha, ids: p.out.ids, meta: p.out.meta, files: p.targets.map((t) => t.path),
+      // Each current-spec file's SHA-256 after the write (null: removed), so a hook can tell promoted bytes from a hand edit.
+      after: Object.fromEntries(p.targets.filter((t) => t.storage !== "draft").map((t) => [t.path, t.after])) });
     const receipt = Buffer.from(JSON.stringify(d, null, 2) + "\n");
     await applyTxn(root, o.name, p.targets, p.cand, { before: p.a.sha, buf: receipt });
     return { exit: 0, written: true, ...p.out, ...landingOf(root, p.g, p.a, p.bases) };

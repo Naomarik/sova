@@ -4,12 +4,10 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
-import { parseDefinition } from "../../shared/project-contract";
 import { DetachedDriver } from "./drivers";
 import { ProjectEngine, type Caller } from "./engine";
 import { mainMoved, onMergeNotes, SYSTEM_ON_MERGE, withOnMerge, type OnMergeDeps } from "./on-merge";
 import { readRegistry } from "./store";
-import { approve, defHashOf } from "./trust";
 import { reservePorts } from "../test-ports";
 
 /**
@@ -50,13 +48,8 @@ function commit(name: string, content = name): void {
   git(["add", "-A"]);
   git(["commit", "-q", "-m", name]);
 }
-function writeDef(def: object, approved: boolean): void {
-  const text = JSON.stringify(def);
-  writeFileSync(join(project, ".sova", "project.json"), text);
-  if (approved) {
-    const h = defHashOf(parseDefinition(text));
-    approve(project, h, h);
-  }
+function writeDef(def: object): void {
+  writeFileSync(join(project, ".sova", "project.json"), JSON.stringify(def));
 }
 const pidOn = async (port: number): Promise<string> => (await (await fetch(`http://127.0.0.1:${port}/`)).text()).trim();
 const deps = (): Partial<OnMergeDeps> => ({ run: (verb, body, caller) => engine.run(verb, body, caller), selfCheckout: () => self, file });
@@ -68,7 +61,7 @@ before(async () => {
   file = join(parent, "on-merge.json");
   mkdirSync(join(project, ".sova"), { recursive: true });
   writeFileSync(join(project, "server.mjs"), SERVER);
-  writeDef(defOf(), true);
+  writeDef(defOf());
   git(["init", "-q", "-b", "main"]);
   commit(".gitignore", "");
   engine = new ProjectEngine({ driver: new DetachedDriver(3_000), pollMs: 50, selfCheckout: () => self, hostBusy: () => null });

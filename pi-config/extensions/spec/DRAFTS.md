@@ -115,7 +115,7 @@ The machine can't tell which label is correct.
    print `alsoChanges`: the foreign § the promotion changes, i.e. every selected ID current already
    has, plus each current H1 that gains a new H2 (`alsoChangesDetail: [{id, change, children?}]`,
    `change` one of `text`, `record`, `text+record`, `deleted`, `file`, `child-added`). That list,
-   not memory, is what a flag names. They also print `driftWarnings`,
+   not memory, is what "Also updates" names. They also print `driftWarnings`,
    the `check` warnings above (never a refusal), so drift shows even when nobody ran `check`.
    Evidence on a commit that is gone or not an ancestor of `HEAD` (a rebase after evidence) is
    refused as `evidence-not-ancestor`: never rebase after evidence; re-record evidence on the
@@ -194,7 +194,8 @@ records the decision, not that it was built.
   those labels; a record with no `agreed` at all is refused as before.
 - **It names who decided.** The build edits the same record: it adds `code` (and its label), keeps
   `agreed` as it is, and records commit or snapshot evidence of the code. A rewording may keep
-  `agreed`; a change of meaning goes back to the person, and their new agreement replaces it, in
+  `agreed`; a change of meaning needs a new agreement: the go-ahead of the task that changes it is that
+  agreement, with `by` set to whoever gave it, and it replaces `agreed` in
   the same promotion as the reworded prose, with an `at` not earlier than the old one. Changing
   `agreed` on unchanged prose, an earlier `at`, or removing `agreed` is refused (`agreed-rewritten`).
   Deleting the whole record is an ordinary deletion.

@@ -29,6 +29,7 @@ import {
 	type WorkerChoice,
 } from "../mode/delegate.ts";
 import { claudeName, latestClaude } from "../claude-code/catalog.ts";
+import { parseAlignOverride, type AlignOverride } from "../mode/align-settings.ts";
 import { loadSpec, parseSpec, SPEC_FILE_NAME, SPEC_WRITER_LABEL, specDefaults, type SpecSettings, type SpecWriter } from "../mode/spec.ts";
 import {
 	parseTeamDefaults,
@@ -78,6 +79,12 @@ export interface SubagentProfile {
 	 * profile), read as None; a parse never adds the key.
 	 */
 	reviewer?: ReviewerRoute | null;
+	/**
+	 * The align mode's writing style and Visuals for chats on this profile (§chat.alignment/settings-file):
+	 * each field present only when it overrides the host's mode-align.json. Absent: both follow the host;
+	 * a parse never adds the key.
+	 */
+	alignment?: AlignOverride;
 }
 /** The reviewer's route: exactly the spec writer's `{primary, fallback}`. */
 export type ReviewerRoute = SpecWriter;
@@ -140,7 +147,7 @@ function parseProfile(at: string, raw: unknown, errors: string[]): SubagentProfi
 		errors.push(`${at}: must be an object`);
 		return undefined;
 	}
-	const known = ["id", "name", "delegate", "teams", "members", "specWriter", "reviewer"];
+	const known = ["id", "name", "delegate", "teams", "members", "specWriter", "reviewer", "alignment"];
 	for (const key of Object.keys(raw)) if (!known.includes(key)) errors.push(`${at}.${key}: unknown key`);
 	const before = errors.length;
 	if (!isProfileId(raw.id)) errors.push(`${at}.id: must be lowercase letters, digits and dashes (at most 48), and not "${OFF_PROFILE_ID}"`);
@@ -176,8 +183,23 @@ function parseProfile(at: string, raw: unknown, errors: string[]): SubagentProfi
 		if ("error" in parsed) errors.push(`${at}.reviewer: ${parsed.error.replaceAll(SPEC_WRITER_LABEL, REVIEWER_LABEL)}`);
 		else reviewer = parsed.writer;
 	}
+	let alignment: AlignOverride | undefined;
+	if (raw.alignment !== undefined) {
+		const parsed = parseAlignOverride(raw.alignment, `${at}.alignment`);
+		if ("error" in parsed) errors.push(parsed.error);
+		else alignment = parsed;
+	}
 	if (errors.length > before || "error" in delegate) return undefined;
-	return { id: raw.id as string, name: raw.name as string, delegate: delegate.profiles, teams, members, specWriter, ...(reviewer === undefined ? {} : { reviewer }) };
+	return {
+		id: raw.id as string,
+		name: raw.name as string,
+		delegate: delegate.profiles,
+		teams,
+		members,
+		specWriter,
+		...(reviewer === undefined ? {} : { reviewer }),
+		...(alignment === undefined ? {} : { alignment }),
+	};
 }
 
 /** Strict validation of the whole file (or its raw text). Every error is collected; on any, no value. */
@@ -370,7 +392,7 @@ export const DEFAULT_REVIEWER: ReviewerRoute = {
 
 /**
  * Give every library profile WITHOUT a `reviewer` key the default reviewer, once adversarial review
- * is switched on (Sova's Settings → Experimental). An explicit null (None) or an existing route is
+ * is switched on (Sova's Settings → Alignment). An explicit null (None) or an existing route is
  * never touched, so a second run writes nothing. Through this module's own atomic writer, so the
  * mesh's watcher syncs the library like any save. A malformed library is left alone (`ok: false`):
  * the caller retries at a later save. Returns the ids it gave the default.
@@ -426,6 +448,8 @@ export interface ResolvedSubagents {
 	spec: SpecSettings;
 	/** The alignment reviewer; null: none (None, a profile without one, Off, or the legacy files). */
 	reviewer: ReviewerRoute | null;
+	/** The profile's align override (writing style, Visuals); null: the host's mode-align.json (no override, Off, legacy). */
+	alignment: AlignOverride | null;
 	/** Team defaults in the shape team_create reads; `absent` = no standing members. */
 	teams: TeamDefaultsState;
 	members: WorkerChoice | null;
@@ -449,6 +473,7 @@ function fromProfile(file: string, profile: SubagentProfile, source: "pick" | "d
 		delegate: { version: 1, profiles: clone(profile.delegate) },
 		spec: { version: 1, writer: profile.specWriter ? clone(profile.specWriter) : null },
 		reviewer: profile.reviewer ? clone(profile.reviewer) : null,
+		alignment: profile.alignment ? { ...profile.alignment } : null,
 		teams: teamsState(file, profile.name, profile.teams),
 		members: profile.members ? clone(profile.members) : null,
 		...(note ? { note } : {}),
@@ -463,6 +488,7 @@ function off(file: string, source: "pick" | "default", note?: string): ResolvedS
 		delegate: null,
 		spec: specDefaults(),
 		reviewer: null,
+		alignment: null,
 		teams: { state: "absent", file: `${file} (subagent profile "${OFF_PROFILE_NAME}")`, note: `the subagent profile "${OFF_PROFILE_NAME}" configures nothing` },
 		members: null,
 		...(note ? { note } : {}),
@@ -478,6 +504,7 @@ export function legacyResolved(agentDir: string, note?: string): ResolvedSubagen
 		delegate: loadDelegate(path.join(agentDir, DELEGATE_FILE_NAME)),
 		spec: loadSpec(path.join(agentDir, SPEC_FILE_NAME)),
 		reviewer: null,
+		alignment: null,
 		teams: readTeamDefaults(agentDir),
 		members: null,
 		...(note ? { note } : {}),

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { DeployRecordView } from "../../shared/project-contract";
-import { checksLine, overridesAsked, planDeadline, recordLine, rollbackWord, shipConfirmLine, tickProgress } from "./project-deploy";
+import { checksLine, overridesAsked, planDeadline, recordLine, rollbackWord, shipConfirmLine } from "./project-deploy";
 
 // The Deploy panel's words (§app.project-runtime/deploy-panel).
 
@@ -31,9 +31,7 @@ test("a record reads as what happened, the commit short", () => {
   assert.equal(recordLine(rec({ kind: "rollback", state: "succeeded" })), "Rolled back to 1a2b3c4");
 });
 
-test("ticks, deadline, rollback and the overrides a refusal asks for", () => {
-  assert.deepEqual(tickProgress({ keys: ["a", "b", "c"] }, new Set(["a"])), { left: 2, line: "1 of 3 steps ticked" });
-  assert.deepEqual(tickProgress({ keys: ["a"] }, new Set(["a"])), { left: 0, line: "Every step ticked." });
+test("deadline, rollback and the overrides a refusal asks for", () => {
   const now = Date.parse("2026-10-04T10:00:00.000Z");
   assert.equal(planDeadline("2026-10-04T10:14:30.000Z", now), "Expires in 15 min");
   assert.equal(planDeadline("2026-10-04T09:59:00.000Z", now), "Expired: plan again");

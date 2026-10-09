@@ -1,0 +1,32 @@
+---
+// The header every page shares. On the landing page the section links jump within the page;
+// elsewhere the first link goes back to it. Docs shows at every width; Mesh and Organizations only
+// where the bar has room.
+import Icon from "./Icon.astro";
+import Mark from "./Mark.astro";
+import * as site from "../data/site";
+
+type Page = "home" | "docs" | "mesh" | "orgs";
+interface Props { page: Page }
+const { page } = Astro.props;
+const home = page === "home";
+const at = (p: Page) => (page === p ? "page" : undefined);
+---
+<header class="nav">
+  <div class="wrap nav-inner">
+    <a class="brand" href={home ? "#top" : "/"} aria-label={home ? "Sova, back to top" : "Sova home"}><Mark size={24} />sova</a>
+    <nav class="nav-links" aria-label="Site">
+      {home ? <a href="#features">Features</a> : <a href="/">← Back to Sova</a>}
+      <a class="nav-link-keep" href="/docs/" aria-current={at("docs")}>Docs</a>
+      {page !== "mesh" && <a class="nav-link-extra" href="/mesh">Mesh</a>}
+      {page !== "orgs" && <a class="nav-link-extra" href="/orgs">Organizations</a>}
+      {home && <a href="#how">How It Works</a>}
+      {home && <a href="#source">Open Source</a>}
+    </nav>
+    <span class="nav-spacer"></span>
+    <a class="button button-ghost nav-gh" href={site.repo}><Icon name="external" size={16} /><span class="nav-gh-label">GitHub</span><span class="visually-hidden"> (Sova on GitHub)</span></a>
+    <button type="button" class="button button-ghost button-icon theme-toggle" data-theme-toggle aria-label="Use Light Theme" aria-pressed="false">
+      <Icon name="sun" size={18} class="icon-sun" /><Icon name="moon" size={18} class="icon-moon" />
+    </button>
+  </div>
+</header>

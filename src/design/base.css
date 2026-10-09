@@ -478,15 +478,16 @@ input.input { text-overflow: ellipsis; }
    trail in mono tabular muted, so the eye scans names first. */
 .setup-card {
   width: 100%;
-  max-width: 560px;
+  max-width: var(--measure);
   margin: var(--space-3) 0 var(--space-1);
   text-align: left;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--r-lg);
   /* Its own query container, so the fold below asks the card, not the pane: the card stops at
-     560px, so a pane query would miss every pane between the fold and that cap. Its width is
-     already set from outside (100%, capped), never from contents, so this changes no layout. */
+     --measure, the session column, so a pane query would miss every pane between the fold and
+     that cap. Its width is already set from outside (100%, capped), never from contents, so this
+     changes no layout. */
   container-type: inline-size;
 }
 .setup-group { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-4) var(--space-5); }
@@ -4550,6 +4551,10 @@ a.group-picker-tile[aria-disabled="true"] { cursor: default; color: var(--color-
 }
 .folder-list .list-row .list-title { font-family: var(--font-mono); font-size: var(--fs-mono); font-weight: var(--fw-regular); }
 .folder-list .list-row[aria-selected="true"] { background: var(--color-accent-tint); }
+/* Where pi runs: Project | This Computer | Remote, each with its icon, fit a 375px sheet with no sideways scroll. */
+@media (max-width: 767px) {
+  .ns-tabs .tab { padding: 0 var(--space-2); }
+}
 
 /* The Folder field is a button that reads like an input: the chosen path
    in mono, never typed. It opens the picker in place. */

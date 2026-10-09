@@ -102,8 +102,6 @@
      "^It runs in the project root.*" "^The session is working\\.$" "^Its workers are running\\.$" "^On another host: its worktree is there\\.$"
      "^Its worktree was (already )?removed.*" "^\".*\" is open in a terminal, so it is read-only\\.$" "^text must not be blank\\.$"
      "^A merge is running\\.$" "^Name the commit it was merged by\\.$"
-     "^Only the operator approves a definition\\.$" "^There is no definition waiting for approval\\.$"
-     "^The definition changed since it was shown: look again\\.$"
      "^The project's software is registered and current: the playbook has nothing to do\\.$"
      "^Say what it shows and to whom \\(purpose\\): one line\\.$" "^The purpose is one line of at most 200 characters\\.$"]))
 
@@ -326,7 +324,8 @@
     (run "build" "build/pr1/c1"
       {:starts [{:project-id "pr1" :session-id "c1" :kind "coding" :title "T" :prompt "P"}]
        :drive [[:effect/done {:kind "make-worktree" :result {:branch "sova/t" :target "main"}}]
-               [:effect/done {:kind "make-worktree" :result {:in-root "x"}}] [:effect/failed {:kind "make-worktree" :detail "x"}]
+               [:effect/done {:kind "make-worktree" :result {:in-root "x"}}] [:effect/done {:kind "make-worktree" :result {:later true}}]
+               [:worktree/adopted {:branch "feat/t" :base "b" :target "main"}] [:effect/failed {:kind "make-worktree" :detail "x"}]
                [:effect/done {:kind "set-mode"}] [:effect/done {:kind "first-prompt"}] [:turn/started {}] [:turn/ended {}]
                [:workers/changed {:n 1}] [:workers/changed {:n 0}] [:git/probe {:branch "merged"}] [:git/probe {:tree "missing"}]
                [:effect/done {:kind "merge" :result {:commit "c"}}] [:effect/failed {:kind "merge" :detail "No."}]
@@ -341,28 +340,29 @@
         obs   (fn [m] [:runtime/observed (merge {:commit "c1" :suite 2 :sources {:paths ["bb.edn"] :files files :fingerprint "f1"}} m)])
         h1    {:state "present" :hash "h1"}
         bm    (fn [states ex] (moved "build" "build/pr1/o1" states ex))]
-    (clean! "runtime"
-      (run "runtime" "runtime/pr1"
+    ;; no acts: its world moves by events alone, so nothing is accepted or refused
+    (let [r (run "runtime" "runtime/pr1"
         {:starts [{:project-id "pr1" :root "/r"}]
-         :drive [(obs {:def {:state "absent"}}) (obs {:def h1 :approved nil :proof nil}) (obs {:def h1 :approved {:hash "h1"} :proof nil})
-                 (obs {:def h1 :approved {:hash "h1"} :proof {:hash "h1" :suite 2 :pass true :confined false :at 1}})
-                 (obs {:def h1 :approved {:hash "h1"} :proof {:hash "h1" :suite 2 :pass true :confined false :at 1}
+         :drive [(obs {:def {:state "absent"}}) (obs {:def h1 :proof nil})
+                 (obs {:def h1 :proof {:hash "h1" :suite 2 :pass true :at 1}})
+                 (obs {:def h1 :proof {:hash "h1" :suite 2 :pass true :at 1}
                        :sources {:paths ["bb.edn"] :files [{:path "bb.edn" :sha "a2"}] :fingerprint "f2"}})
                  (obs {:def {:state "invalid" :error "bad"}})
-                 [:effect/done {:kind "approve" :result {:hash "h1"}}] [:effect/failed {:kind "approve" :detail "The definition changed since it was shown: look again."}]
-                 [:effect/done {:kind "conform" :result {:hash "h1" :suite 2 :pass false :confined false :at 2 :failed {:check "ready" :detail "x"}}}]
+                 [:effect/done {:kind "conform" :result {:hash "h1" :suite 2 :pass false :at 2 :failed {:check "ready" :detail "x"}}}]
                  [:effect/failed {:kind "conform" :detail "x"}]
                  [:playbook/started {:sid "build/pr1/o1" :session-id "o1" :started-by "overseer" :why "w"}]
-                 [:runtime/observed {:branch-facts {:ref "sova/v" :def {:state "present" :hash "hb"} :approved false}}]
+                 [:runtime/observed {:branch-facts {:ref "sova/v" :def {:state "present" :hash "hb"}}}]
                  (bm [:build :turn-idle :no-commits] {:last-turn-at 5 :running false :branch-state "no-commits"})
                  (bm [:build :turn-idle :unmerged] {:last-turn-at 5 :running false :branch-state "unmerged" :branch "sova/v"})
                  (bm [:build :working :unmerged] {:last-turn-at 5 :running true :branch-state "unmerged"})
                  (bm [:build :merged] {:branch-state "merged"})
                  (bm [:build :tree-removed] {})]
-         :acts [[:runtime/approve {:hash "h1"}] [:runtime/approve {:hash "hb"}] [:runtime/approve {:hash "h0"}]]
-         :key (fn [d] [(:standing d) (some? (:registered d)) (some? (:drift d)) (some? (:conform-result d)) (some? (:cleared-at d))
+         :acts []
+         :key (fn [d] [(:standing d) (some? (:registered d)) (some? (:drift d)) (some? (:conform-result d))
                        (some? (get-in d [:playbook :branch-facts])) (get-in d [:playbook :result])])
-         :max-configs 6000}))))
+         :max-configs 6000})]
+      (is (empty? (:failures r)) (str "runtime: " (count (:failures r)) " failures; distinct: " (pr-str (take 12 (distinct (map #(select-keys % [:why :event :explain :error]) (:failures r)))))))
+      (is (not (:truncated r)) "runtime: truncated"))))
 
 (deftest every-statechart-has-its-own-world
   (is (= (set (keys registry/statecharts)) (set (keys worlds))))

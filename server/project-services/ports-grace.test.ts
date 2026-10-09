@@ -4,12 +4,10 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
-import { parseDefinition } from "../../shared/project-contract";
 import { conformer } from "./conform";
 import { FakeHost, ownPorts } from "./fake-host";
 import { ProjectEngine, type Caller } from "./engine";
 import { readRegistry } from "./store";
-import { approve, defHashOf } from "./trust";
 
 /**
  * A service's second port opening after the one its readiness asks (MotorSaif's nREPL a few seconds
@@ -57,8 +55,6 @@ before(() => {
     },
   };
   writeFileSync(join(project, ".sova", "project.json"), JSON.stringify(d, null, 2));
-  const hash = defHashOf(parseDefinition(JSON.stringify(d)));
-  approve(project, hash, hash);
   const git = (args: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd: project });
   git(["init", "-q", "-b", "main"]);
   git(["add", "-A"]);

@@ -186,7 +186,7 @@ appends (one line each).
   not open the turn (its question is to the partner), nor a topic batch (§chat.topics/row); and the
   reply's end looks like it asks.
 - **Looks like it asks** is counted in code on the last 1,000 characters of the reply, after the
-  closing spec lines (`Also changes:`, `Deferred:`, `Plumbing:`, `Spec check override:`) are cut:
+  closing spec lines (`Also changes:`, `Also updates:`, `Deferred:`, `Plumbing:`, `Spec check override:`) are cut:
   a question mark, or a phrase such as "should I", "shall I", "want me to", "do you want", "would
   you like", "tell me", "let me know", "say if/when/which", "if you want", "your call", "up to you",
   "confirm and", "once you say", "after you confirm" or "say yes". A reply without one makes no model call for it.

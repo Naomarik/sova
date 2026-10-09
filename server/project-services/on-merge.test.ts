@@ -4,12 +4,10 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
-import { parseDefinition } from "../../shared/project-contract";
 import { ProjectEngine, type Caller } from "./engine";
 import { FakeHost } from "./fake-host";
 import { mainMoved, onMergeNotes, SYSTEM_ON_MERGE, withOnMerge, type OnMergeDeps } from "./on-merge";
 import { readRegistry } from "./store";
-import { approve, defHashOf } from "./trust";
 
 /**
  * onMerge (§app.project-services/on-merge): when main's HEAD moves, the main checkout's copy (slot 0)
@@ -50,13 +48,8 @@ function commit(name: string, content = name): void {
   git(["add", "-A"]);
   git(["commit", "-q", "-m", name]);
 }
-function writeDef(def: object, approved: boolean): void {
-  const text = JSON.stringify(def);
-  writeFileSync(join(project, ".sova", "project.json"), text);
-  if (approved) {
-    const h = defHashOf(parseDefinition(text));
-    approve(project, h, h);
-  }
+function writeDef(def: object): void {
+  writeFileSync(join(project, ".sova", "project.json"), JSON.stringify(def));
 }
 /** The pid listening on `port` (as the real test's server answers its own). */
 const pidOn = async (port: number): Promise<string> => {
@@ -72,7 +65,7 @@ before(async () => {
   file = join(parent, "on-merge.json");
   mkdirSync(join(project, ".sova"), { recursive: true });
   writeFileSync(join(project, "server.mjs"), SERVER);
-  writeDef(defOf(), true);
+  writeDef(defOf());
   git(["init", "-q", "-b", "main"]);
   commit(".gitignore", "");
   engine = new ProjectEngine(host.deps({ selfCheckout: () => self }));
@@ -126,7 +119,7 @@ test("the merge and the tick at once reload once", async () => {
   assert.notEqual(await pidOn(BASE), web0);
 });
 
-test("a stopped onMerge service stays stopped; Sova's own checkout never reloads; a refused apply says why", async () => {
+test("a stopped onMerge service stays stopped; Sova's own checkout never reloads; a changed definition reloads as written", async () => {
   const main = (await engine.run("status", { project }, op)).instances!.find((i) => i.slot === 0)!.instance;
   const dn = await engine.run("down", { instance: main, services: ["web"] }, op);
   assert.equal(dn.ok, true, dn.error?.message);
@@ -144,16 +137,15 @@ test("a stopped onMerge service stays stopped; Sova's own checkout never reloads
   assert.equal(await pidOn(BASE), web0, "Sova's own checkout: nothing reloaded");
   self = null;
 
-  // main's definition changed and is not approved here: the reload is refused, and the note says so.
-  writeDef(defOf({ MODE: "new" }), false);
+  // main's definition changed: the reload runs it as written.
+  writeDef(defOf({ MODE: "new" }));
   commit("def.txt", "x");
-  const refused = await mainMoved(project, deps());
-  assert.match(refused ?? "", /onMerge could not reload web: .*not approved/);
-  assert.equal(await pidOn(BASE), web0);
+  assert.match((await mainMoved(project, deps())) ?? "", /onMerge reloaded web/);
+  assert.notEqual(await pidOn(BASE), web0);
 });
 
 test("the system caller runs apply and reads, nothing else", async () => {
-  writeDef(defOf(), true);
+  writeDef(defOf());
   commit("back.txt");
   const main = (await engine.run("status", { project }, SYSTEM_ON_MERGE)).instances!.find((i) => i.slot === 0)!.instance;
   for (const verb of ["down", "up", "reset", "teardown", "share"]) {
@@ -163,9 +155,9 @@ test("the system caller runs apply and reads, nothing else", async () => {
 });
 
 test("the project's software feed shows the notes among its own lines, newest first", () => {
-  const feed = [{ at: "2026-10-03T10:00:00.000Z", line: "registered" }, { at: "2026-10-01T10:00:00.000Z", line: "approved" }];
+  const feed = [{ at: "2026-10-03T10:00:00.000Z", line: "registered" }, { at: "2026-10-01T10:00:00.000Z", line: "conforming" }];
   const notes = [{ at: "2026-10-02T10:00:00.000Z", line: "Main moved to abc1234: onMerge reloaded web on the main checkout's copy." }];
-  assert.deepEqual(withOnMerge(feed, notes).map((l) => l.line), ["registered", notes[0]!.line, "approved"]);
+  assert.deepEqual(withOnMerge(feed, notes).map((l) => l.line), ["registered", notes[0]!.line, "conforming"]);
   assert.equal(withOnMerge(feed, []), feed);
   assert.equal(withOnMerge(feed, notes, 2).length, 2);
 });

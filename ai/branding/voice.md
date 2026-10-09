@@ -41,8 +41,8 @@ model, extension, the agent directory (`~/.pi/agent`), local, on this machine.
 onboarding, workspace when you mean the machine (it is a specific feature; see
 [naming.md](naming.md)), AI-powered (everything here is), revolutionary.
 
-**Say what it isn't when the reader might assume it is.** "It is for one local user." "The server
-has no authentication." "A session open in a TUI is read-only here." These sentences are the brand.
+**Say what it isn't when the reader might assume it is.** "It is for one local user." "One token
+unlocks everything; there are no accounts." "A session open in a TUI is read-only here." These sentences are the brand.
 A page that only lists what works reads like a pitch, and this is not a pitch.
 
 ## Shape

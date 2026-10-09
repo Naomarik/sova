@@ -13,7 +13,6 @@
 //     deploy.check [--ref <ref>]; deploy.plan --target <name> [--commit <ref>] [--override-tests <reason>]
 //     [--override-dirty <reason>]; deploy.run --plan <pl_…> --confirm (answers at once: follow it with deploy.status);
 //     deploy.rollback --target <name> --confirm; deploy.request --target <name> --dismiss
-//   node scripts/sova-project.mjs approve --project <path> --def-hash <sha256:…> [--checkout <path>]
 //
 // The server is --url, else $SOVA_URL, else http://127.0.0.1:$SOVA_PORT (default 4800). Its token
 // is $SOVA_TOKEN, else the one in $PI_CODING_AGENT_DIR (default ~/.pi/agent) (scripts/sova-token.mjs).
@@ -24,7 +23,7 @@ import { resolve } from "node:path";
 import { exitOf } from "../shared/project-contract.ts";
 import { tokenHeaders } from "./sova-token.mjs";
 
-const VALUE = new Set(["project", "instance", "checkout", "branch", "from", "slot", "services", "lines", "resources", "ref", "select", "endpoint", "days", "link", "url", "def-hash", "target", "commit", "plan", "deploy", "why", "override-tests", "override-dirty"]);
+const VALUE = new Set(["project", "instance", "checkout", "branch", "from", "slot", "services", "lines", "resources", "ref", "select", "endpoint", "days", "link", "url", "target", "commit", "plan", "deploy", "why", "override-tests", "override-dirty"]);
 const FLAG = new Set(["restart", "keep-data", "confirm", "dismiss"]);
 const PATHS = new Set(["project", "checkout"]);
 
@@ -60,11 +59,7 @@ const num = (k) => {
 
 let path;
 let body;
-if (verb === "approve") {
-  if (!opts.project || !opts["def-hash"]) usage("approve needs --project and --def-hash (the hash status or doctor shows)");
-  path = "/api/project-services/approve";
-  body = { project: opts.project, defHash: opts["def-hash"], ...(opts.checkout ? { checkout: opts.checkout } : {}) };
-} else if (verb.startsWith("deploy.")) {
+if (verb.startsWith("deploy.")) {
   // The deploy verbs take their own keys (a target, never an instance).
   path = `/api/project-services/${encodeURIComponent(verb)}`;
   body = {
@@ -143,5 +138,4 @@ try {
   process.exit(1);
 }
 process.stdout.write(`${JSON.stringify(json, null, 2)}\n`);
-if (verb === "approve") process.exit(res.ok ? 0 : res.status === 409 ? 2 : 3);
 process.exit(exitOf(json?.error?.code ? json : {}));

@@ -8,7 +8,7 @@ const row = (at: number, before: string[], after: string[], changed: Record<stri
 
 test("a run that asks: started, waits on your answers, resumes silently, proposes; named by its playbook's title", () => {
   const rows = [
-    row(1, ["idle"], ["running"], { playbook: [null, { label: "Project deploy", approves: "deploy", why: "first deploy" }] }),
+    row(1, ["idle"], ["running"], { playbook: [null, { label: "Project deploy", proposes: "deploy", why: "first deploy" }] }),
     row(2, ["running"], ["waiting"], { "playbook.questions": [null, 2] }),
     row(3, ["waiting"], ["running"]),
     row(4, ["running"], ["proposed"], { "playbook.branch": [null, "sova/deploy-1a2b3c"] }),
@@ -16,19 +16,19 @@ test("a run that asks: started, waits on your answers, resumes silently, propose
   assert.deepEqual(
     runtimeFeed(rows).map((f) => f.line),
     [
-      "The Project deploy playbook proposes a deploy recipe on sova/deploy-1a2b3c: approve it, then merge.",
+      "The Project deploy playbook proposes a deploy recipe on sova/deploy-1a2b3c: read it, then merge it.",
       "The Project deploy playbook waits on your answers in its session.",
       "The Project deploy playbook was started: first deploy.",
     ],
   );
 });
 
-test("a run that approves a definition proposes a definition", () => {
+test("a run that proposes a definition says so", () => {
   const rows = [
-    row(1, ["idle"], ["running"], { playbook: [null, { label: "Project verbs", approves: "definition" }] }),
+    row(1, ["idle"], ["running"], { playbook: [null, { label: "Project verbs", proposes: "definition" }] }),
     row(2, ["running"], ["proposed"], { "playbook.branch": [null, "sova/verbs-1"] }),
   ];
-  assert.equal(runtimeFeed(rows)[0]!.line, "The Project verbs playbook proposes a definition on sova/verbs-1: approve it, then merge.");
+  assert.equal(runtimeFeed(rows)[0]!.line, "The Project verbs playbook proposes a definition on sova/verbs-1: read it, then merge it.");
 });
 
 test("a run recorded without a title is the Project verbs playbook's", () => {

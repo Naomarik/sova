@@ -453,39 +453,31 @@ a.pipeline-link:hover, button.pipeline-link:hover, summary.pipeline-link:hover {
 .project-software-feed-block > .text-eyebrow { margin: 0; }
 .project-software-feed-block > .project-software-feed { border-top: 0; padding-top: 0; }
 
-/* The Deploy card (§app.project-runtime/deploy-panel), and the deploy review the Software card shows too.
+/* The Deploy card (§app.project-runtime/deploy-panel), and the deploy recipe the Software card shows.
    Both cards are a container, so a card at folded width stacks whatever the window is. */
 .project-card { container: project-card / inline-size; }
-.deploy-review { display: flex; flex-direction: column; gap: var(--space-4); }
-.deploy-review-target { display: flex; flex-direction: column; gap: var(--space-1); }
+.deploy-recipe { display: flex; flex-direction: column; gap: var(--space-4); }
+.deploy-recipe-target { display: flex; flex-direction: column; gap: var(--space-1); }
 .deploy-target-head { margin: 0; color: var(--color-ink-2); overflow-wrap: anywhere; }
 .project-card-note { margin: 0; font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); overflow-wrap: anywhere; }
-/* A tick: the box on the kind's line, the kind on one line, what runs under it in its own block. The whole row is the target. */
-.deploy-ticks { list-style: none; margin: var(--space-2) 0 0; padding: 0; border: var(--stroke-thin) solid var(--color-border); border-radius: var(--r-md); }
-.deploy-ticks > li + li { border-top: var(--stroke-thin) solid var(--color-border); }
-.deploy-tick { justify-content: flex-start; align-items: flex-start; gap: var(--space-3); padding: var(--space-3); }
-.deploy-tick > .toggle-box { margin-top: calc((var(--fs-caption) * var(--lh-caption) - 18px) / 2); }
-.deploy-tick-body { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-1); }
-.deploy-tick-kind { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); font-size: var(--fs-caption); line-height: var(--lh-caption); font-weight: var(--fw-medium); color: var(--color-ink-muted); }
-.deploy-tick-body > code.deploy-cmd,
-.deploy-tick-body code.deploy-cmd { display: inline-block; max-width: 100%; padding: var(--space-1) var(--space-2); border-radius: var(--r-sm); line-height: var(--lh-mono); white-space: pre-wrap; }
-.deploy-tick-note { font-size: var(--fs-caption); color: var(--color-ink-muted); }
-.deploy-tick-text { color: var(--color-ink-2); }
-.deploy-approve { display: flex; flex-direction: column; gap: var(--space-3); }
-.deploy-approve-bar,
+/* A step: the kind on one line, what runs under it in its own block. */
+.deploy-steps { list-style: none; margin: var(--space-2) 0 0; padding: 0; border: var(--stroke-thin) solid var(--color-border); border-radius: var(--r-md); }
+.deploy-steps > li + li { border-top: var(--stroke-thin) solid var(--color-border); }
+.deploy-step { min-width: 0; padding: var(--space-3); display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-1); }
+.deploy-step-kind { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); font-size: var(--fs-caption); line-height: var(--lh-caption); font-weight: var(--fw-medium); color: var(--color-ink-muted); }
+.deploy-step > code.deploy-cmd,
+.deploy-step code.deploy-cmd { display: inline-block; max-width: 100%; padding: var(--space-1) var(--space-2); border-radius: var(--r-sm); line-height: var(--lh-mono); white-space: pre-wrap; }
+.deploy-step-note { font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.deploy-step-text { color: var(--color-ink-2); }
 .deploy-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
-.deploy-approve-bar { column-gap: var(--space-3); }
-.deploy-approve-bar > .button,
 .deploy-actions > .button { min-height: var(--tap-min); }
-.deploy-progress { font-size: var(--fs-caption); color: var(--color-ink-muted); }
 /* Roll Back sits apart from the primary, at the row's end. */
 .deploy-rollback { margin-inline-start: auto; }
 
 .deploy-targets { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .deploy-target { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-3) 0; }
 .deploy-target:first-child { padding-top: 0; }
-.deploy-target + .deploy-target,
-.deploy-approve + .deploy-targets > .deploy-target:first-child { border-top: var(--stroke-thin) solid var(--color-border); padding-top: var(--space-3); }
+.deploy-target + .deploy-target { border-top: var(--stroke-thin) solid var(--color-border); padding-top: var(--space-3); }
 /* Name, then the standing and the last deploy as two rows of one grid: the chips share a column, the words the next. */
 .deploy-target-facts { display: grid; grid-template-columns: max-content max-content minmax(0, 1fr); align-items: baseline; gap: var(--space-2) var(--space-3); }
 .deploy-fact { display: contents; }
@@ -526,7 +518,7 @@ a.pipeline-link:hover, button.pipeline-link:hover, summary.pipeline-link:hover {
 }
 .deploy-log:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
 
-/* A proposed run's banner: Read Report and Approve & Merge, apart. */
+/* A proposed run's banner: Read Report and Merge Branch, apart. */
 .playbook-banner-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 .playbook-banner-actions > .button { min-height: var(--tap-min); }
 
@@ -536,8 +528,7 @@ a.pipeline-link:hover, button.pipeline-link:hover, summary.pipeline-link:hover {
   .deploy-fact { display: block; overflow-wrap: anywhere; }
   .deploy-actions > .button { flex: 1 1 auto; }
   .deploy-actions > .deploy-rollback { flex-basis: 100%; margin: var(--space-2) 0 0; }
-  .deploy-approve-bar > .button { flex: 1 1 100%; }
-  .deploy-tick { padding: var(--space-2); }
+  .deploy-step { padding: var(--space-2); }
   .deploy-check-list { padding-left: var(--space-3); }
 }
 

@@ -50,7 +50,7 @@
           "runtime/failed" (if (:error params)
                              (str "The definition on main is invalid: " (:error params))
                              (str "Conformance failed on main at " (or (:check params) "run") ": " (:detail params)))
-          "runtime/proposed" (str "The Project verbs playbook proposes a definition on " branch ": approve it, then merge.")
+          "runtime/proposed" (str "The Project verbs playbook proposes a definition on " branch ": read it, then merge it.")
           "runtime/playbook-done" (case (:result params)
                                     "no-change" "The Project verbs playbook finished with no change."
                                     "merged" "The Project verbs playbook's branch was merged."

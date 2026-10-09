@@ -1,0 +1,71 @@
+---
+// A /docs page: the shared header, a sidebar of every page grouped Start / Modes (with Major and
+// Minor modes nested) / Features / Setup
+// (sticky from 1024px, a <details> menu below that, no script), the page, prev/next, and a footer.
+import Base from "./Base.astro";
+import SiteNav from "../components/SiteNav.astro";
+import Icon from "../components/Icon.astro";
+import Mark from "../components/Mark.astro";
+import DocsNav from "../components/DocsNav.astro";
+import "../styles/docs.css";
+import * as site from "../data/site";
+import { docHref, subgroupLabels, type DocEntry } from "../data/docs";
+
+interface Props { entry: DocEntry; docs: DocEntry[] }
+const { entry, docs } = Astro.props;
+const i = docs.findIndex((d) => d.id === entry.id);
+const prev = i > 0 ? docs[i - 1] : undefined;
+const next = i < docs.length - 1 ? docs[i + 1] : undefined;
+const title = entry.id === "index" ? "Sova docs" : `${entry.data.title} · Sova docs`;
+---
+<Base title={title} description={entry.data.description}>
+  <SiteNav page="docs" />
+
+  <div class="wrap docs">
+    <nav class="docs-side" aria-label="Docs">
+      <DocsNav docs={docs} current={entry.id} idPrefix="docs-side" />
+    </nav>
+
+    <main id="main" class="docs-main">
+      <details class="docs-menu">
+        <summary><Icon name="chevron-right" size={16} /><span>Docs</span><span class="docs-menu-current">{entry.data.title}</span></summary>
+        <nav aria-label="Docs">
+          <DocsNav docs={docs} current={entry.id} idPrefix="docs-menu" />
+        </nav>
+      </details>
+
+      <article class="docs-article">
+        <p class="eyebrow">{entry.data.subgroup ? subgroupLabels[entry.data.subgroup] : entry.data.group}</p>
+        <h1 class="docs-title">{entry.data.title}</h1>
+        <p class="docs-lead">{entry.data.description}</p>
+        <div class="docs-body">
+          <slot />
+        </div>
+      </article>
+
+      {(prev || next) && (
+        <nav class="docs-pager" aria-label="Previous and next page">
+          {prev ? <a class="docs-pager-link" href={docHref(prev.id)} rel="prev"><span class="docs-pager-dir">Previous</span><span>{prev.data.title}</span></a> : <span></span>}
+          {next && <a class="docs-pager-link docs-pager-next" href={docHref(next.id)} rel="next"><span class="docs-pager-dir">Next</span><span>{next.data.title}</span></a>}
+        </nav>
+      )}
+    </main>
+  </div>
+
+  <footer class="footer">
+    <div class="wrap">
+      <div class="footer-grid">
+        <a class="brand" href="/"><Mark size={20} />sova</a>
+        <nav class="footer-links" aria-label="Footer">
+          <a href="/">Sova home</a>
+          <a href={site.repo}>Sova on GitHub</a>
+          <a href={site.license}>License</a>
+          <a href={site.pi}>pi</a>
+        </nav>
+      </div>
+      <div class="footer-meta">
+        <p>Written from Sova's spec at <code>{site.docsVerified.rev}</code> on {site.docsVerified.date}.</p>
+      </div>
+    </div>
+  </footer>
+</Base>

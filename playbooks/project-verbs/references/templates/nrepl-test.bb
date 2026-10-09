@@ -8,7 +8,7 @@
 ;; assertions. Exit 0 only when at least one test ran and nothing failed.
 ;;
 ;; Copy templates/bb.edn beside it: bb then ignores the project's bb.edn, whose :deps it would
-;; otherwise resolve under ~/.deps.clj and ~/.clojure (read-only in a confined run).
+;; otherwise resolve under ~/.deps.clj and ~/.clojure.
 ;; Adapt: PORT_ENV (the test REPL service's SOVA_PORT_<SERVICE>_<PORT>) and TEST_DIRS.
 (require '[bencode.core :as b] '[cheshire.core :as json] '[clojure.string :as str])
 (import '[java.net Socket])

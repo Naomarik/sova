@@ -133,9 +133,9 @@ test("asks you, team stalled and ready to merge are decide items: never a Needs 
   assert.deepEqual(needsYouRows(d, ["a", "b", "c"].map(session)), []);
 });
 
-test("a proposed playbook run's row carries what its Approve & Merge needs; no other row does (§app.project-runtime/review)", () => {
-  const playbook = { projectId: "p1", label: "Project verbs", hash: "sha256:abc", approved: false, branch: "sova/v", target: "main" };
-  const rows = needsYouRows(digest([{ ...item("a", "act", "playbook-review", 20, "Project verbs: approve abc and merge into main"), playbook }, item("b", "act", "error", 10, "boom")]), [session("a"), session("b")]);
+test("a proposed playbook run's row carries what its Merge Branch needs; no other row does (§app.project-runtime/review)", () => {
+  const playbook = { projectId: "p1", label: "Project verbs", hash: "sha256:abc", branch: "sova/v", target: "main" };
+  const rows = needsYouRows(digest([{ ...item("a", "act", "playbook-review", 20, "Project verbs: merge abc into main"), playbook }, item("b", "act", "error", 10, "boom")]), [session("a"), session("b")]);
   assert.deepEqual(rows.map((r) => [r.session.id, r.playbook?.hash ?? null]), [["a", "sha256:abc"], ["b", null]]);
 });
 

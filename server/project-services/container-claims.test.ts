@@ -9,7 +9,6 @@ import type { ContainerQuery } from "./container-ports";
 import { ProjectEngine, type Caller } from "./engine";
 import { FakeHost } from "./fake-host";
 import { readRegistry } from "./store";
-import { approve, defHashOf } from "./trust";
 
 /**
  * A container service whose engine publishes its port through a listener the unit doesn't own
@@ -95,8 +94,6 @@ before(() => {
   git(["init", "-q", "-b", "main"]);
   git(["add", "-A"]);
   git(["commit", "-q", "-m", "fixture"]);
-  const hash = defHashOf(def());
-  approve(project, hash, hash);
   engine = new ProjectEngine(
     host.deps({
       // Every listener is unreadable, as root's docker-proxy is to the user.

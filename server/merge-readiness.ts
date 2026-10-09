@@ -170,8 +170,8 @@ export const checkFailed = (isError: boolean, output: string): boolean => isErro
 /** The reply's end asking to merge (the fallback when no attention answer covers the reply). */
 const MERGE_ASK_RE =
   /\b(?:shall|should|can|may)\s+i\s+(?:\S+\s+){0,6}?merge\b|\bwant\s+me\s+to\s+(?:\S+\s+){0,4}?merge\b|\b(?:ok|okay|good)\s+to\s+merge\b|\bready\s+to\s+merge\b|\bsay\s+["“'`]?merge\b|\bmerge\s+(?:it|this|the\s+branch)\b[^.?!\n]{0,80}\?/i;
-/** The reply without its closing spec lines ("Also changes:", "Deferred:", "Plumbing:", "Spec check override:"). */
-export const replyBody = (reply: string): string => reply.replace(/(?:\n\s*(?:Also changes|Deferred|Plumbing|Spec check override):[^\n]*)+\s*$/i, "").trimEnd();
+/** The reply without its closing spec lines ("Also changes:", "Also updates", "Deferred:", "Plumbing:", "Spec check override:"). */
+export const replyBody = (reply: string): string => reply.replace(/(?:\n\s*(?:(?:Also changes|Deferred|Plumbing|Spec check override):|Also updates\b)[^\n]*)+\s*$/i, "").trimEnd();
 export const asksToMerge = (reply: string): boolean => MERGE_ASK_RE.test(replyBody(reply).slice(-ASK_TAIL));
 
 /** A changed file that needs the server restarted: server-side code, never src/, docs or tests. */

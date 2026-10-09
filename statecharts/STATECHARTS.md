@@ -32,7 +32,7 @@ routes read the engine). The event vocabulary is `EVENTS.md`.
 | reconciler | `reconciler.cljc` | portable | `reconciler/<org>/<p>` | ‹off·idle·debouncing·running·failed› (+ `:sova/reconcile`); decision index; promotion |
 | item | `item.cljc` | portable | `item/<org>/<p>/<g_id>` | lane × follow-up × attention × drive; sets of gatherings and builds; owned links |
 | build | `build.cljc` | portable | `build/<p>/<sid>` | setup × turn × tree × branch × merge |
-| runtime | `runtime.cljc` | host-local | `runtime/<p>` | project layer, no org: the software registry; standing ‹unregistered·awaiting-approval·conforming·registered·stale·failed› (`rules/runtime standing-of`) × playbook ‹idle·running·proposed›; approval (operator only), the automatic conform, drift |
+| runtime | `runtime.cljc` | host-local | `runtime/<p>` | project layer, no org: the software registry; standing ‹unregistered·conforming·registered·stale·failed› (`rules/runtime standing-of`) × playbook ‹idle·running·proposed›; the automatic conform, drift |
 
 Shared: `base.cljc` (event, time, ids, reasons and ledger sends, `relink`, `send-if`/`flush-transition`),
 `reasons.cljc` (typed reasons and today's sentences), `rules/*.cljc` (pure rules: `refusal`, `levels`
@@ -261,7 +261,7 @@ the envelope), **data** (plain data, unchanged rules), **del** (deleted, per cov
 | F-138 | Start coding session from an item | statechart | `project` `build/start` (operator-coding, `opItem`) |
 | F-139 | New Coding Session | statechart | `project` `build/start` without prompt (build `setting-mode` → `ready`) |
 | F-140 | Coding mode | statechart | `build.setup.setting-mode` (`mode-not-set`); ceiling = host `invalid` |
-| F-141 | Coding worktrees | statechart | `build.setup.making-worktree` (branch/base/target or `in-root`; not-started sentence) |
+| F-141 | Coding worktrees | statechart | `build.setup.making-worktree` (branch/base/target, `in-root`, or `later`; not-started sentence); `tree-root` `worktree/adopted` (a `later` build adopts its session's first own worktree, once) |
 | F-142 | Merge Branch | statechart | `build/merge` (`root-check`, `busy-check`) → effect `merge`; reasons `build/merged` / `build/merge-refused` (not for root-checkout) |
 | F-143 | Merged is read from git | statechart | `build.branch` from `git/probe`; recorded `merged` when git can't say; `correct/merged` (L2) |
 | F-144 | Remove Worktree | statechart | `build/remove-worktree` → effect; `tree-removed` |

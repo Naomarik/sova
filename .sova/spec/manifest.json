@@ -570,7 +570,8 @@
         "src/lib/hidden-folders.test.ts",
         "server/targets.ts",
         "server/targets.test.ts",
-        "server/targets.integration.test.ts"
+        "server/targets.integration.test.ts",
+        "src/lib/api.ts"
       ]
     },
     "§app/session-list": {
@@ -650,10 +651,11 @@
         "src/lib/release-control.test.ts"
       ],
       "requires": [
-        "§chat.images/composer-attachments"
+        "§chat.images/composer-attachments",
+        "§chat.voice/button"
       ],
       "authority": "accepted",
-      "evidence": "verified"
+      "evidence": "reviewed"
     },
     "§chat.composer/composer-flyout": {
       "kind": "behavior",
@@ -1003,7 +1005,11 @@
     "§chat.model-menu/trigger": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "reviewed",
+      "code": [
+        "src/components/ComposerMenu.tsx",
+        "src/components/ModelMenu.tsx"
+      ]
     },
     "§chat.slash-commands/announcements": {
       "kind": "behavior",
@@ -1320,7 +1326,7 @@
     "§chat/composer": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
         "src/components/Composer.tsx"
       ]
@@ -1366,7 +1372,7 @@
     "§chat/model-menu": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
         "src/components/ModelMenu.tsx",
         "src/components/ComposerMenu.tsx",
@@ -1801,6 +1807,7 @@
         "src/components/SessionSetup.tsx",
         "src/lib/setup-fold.ts",
         "src/app.css",
+        "src/design/base.css",
         "src/lib/profile-cards.test.ts"
       ]
     },
@@ -2454,7 +2461,7 @@
         "§app/new-session-dialog"
       ],
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "src/components/NewSessionDialog.tsx",
         "src/lib/host-scope.ts"
@@ -2687,7 +2694,8 @@
       "evidence": "verified",
       "code": [
         "scripts/install.sh",
-        "scripts/install.test.sh"
+        "scripts/install.test.sh",
+        "scripts/install.integration.test.ts"
       ]
     },
     "§app.installer/service": {
@@ -2697,7 +2705,9 @@
       "evidence": "verified",
       "code": [
         "scripts/install.sh",
-        "scripts/install.test.sh"
+        "scripts/install.test.sh",
+        "scripts/install.integration.test.ts",
+        "docs/running-as-a-service.md"
       ]
     },
     "§app/installer": {
@@ -2706,7 +2716,8 @@
       "evidence": "verified",
       "code": [
         "scripts/install.sh",
-        "scripts/install.test.sh"
+        "scripts/install.test.sh",
+        "scripts/install.integration.test.ts"
       ]
     },
     "§app.extensions/cards": {
@@ -2959,7 +2970,7 @@
     "§app.overseer/dialog-answers": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
         "server/chat-manager.ts",
         "server/overseer-tools.ts",
@@ -3998,11 +4009,6 @@
     },
     "§app.settings-dialog/save-bar": {
       "kind": "behavior",
-      "requires": [
-        "§app/settings-dialog",
-        "§app.settings-dialog/modes",
-        "§design.copy-deck/settings-modes-delegate"
-      ],
       "authority": "accepted",
       "evidence": "verified",
       "code": [
@@ -4028,7 +4034,15 @@
         "src/lib/baton-settings-draft.ts",
         "src/components/BatonSettings.tsx",
         "src/lib/push-draft.ts",
-        "src/components/PushSettings.tsx"
+        "src/components/PushSettings.tsx",
+        "src/lib/alignment-draft.ts",
+        "src/lib/alignment-draft.test.ts",
+        "src/components/AlignmentSettings.tsx"
+      ],
+      "requires": [
+        "§app/settings-dialog",
+        "§app.settings-dialog/modes",
+        "§design.copy-deck/settings-modes-delegate"
       ]
     },
     "§design.copy-deck/settings-experimental": {
@@ -4174,7 +4188,10 @@
         "server/queue.test.ts",
         "server/baton-recount.ts",
         "server/index.ts",
-        "server/app.ts"
+        "server/app.ts",
+        "shared/baton.ts",
+        "server/record-decision-history.test.ts",
+        "server/harness/pi/golden/state/G6-baton-decision.jsonl"
       ],
       "requires": [
         "§app.baton/links"
@@ -4533,7 +4550,9 @@
         "server/reconcile.ts",
         "shared/decisions.ts",
         "server/org-routes.ts",
-        "server/org-holder.ts"
+        "server/org-holder.ts",
+        "server/decision-markers-attach.test.ts",
+        "server/org-history/bootstrap.test.ts"
       ],
       "requires": [
         "§app.organizations/workspace-repo",
@@ -4841,7 +4860,11 @@
         "server/spec-tool-fake.ts",
         "server/outreach/sender-test-fixtures.ts",
         "server/outreach-test-fixtures.ts",
-        "server/outreach.integration.test.ts"
+        "server/outreach.integration.test.ts",
+        "server/org-history-tools.ts",
+        "server/project-overseer.test.ts",
+        "server/baton.ts",
+        "server/org-history-preview.test.ts"
       ],
       "requires": [
         "§app.baton/goal-and-loadout",
@@ -4903,7 +4926,13 @@
         "src/lib/decisions-view.ts",
         "src/lib/decisions-view.test.ts",
         "src/lib/api.ts",
-        "src/projects.css"
+        "src/projects.css",
+        "statecharts/src/sova/statecharts/rules/baton.cljc",
+        "statecharts/src/sova/statecharts/baton.cljc",
+        "statecharts/test/sova/statecharts/refit/baton_test.cljc",
+        "server/decision-markers.test.ts",
+        "server/vendor/statecharts.js",
+        "src/components/ProjectOrgPart.tsx"
       ],
       "requires": [
         "§app.baton/hand-off"
@@ -5592,7 +5621,10 @@
         "server/project-services/checkout-teardown.test.ts",
         "server/project-services/on-merge.ts",
         "server/project-services/on-merge.test.ts",
-        "server/project-services/on-merge.integration.test.ts"
+        "server/project-services/on-merge.integration.test.ts",
+        "server/project-coding-later.test.ts",
+        "statecharts/test/sova/statecharts/refit/watch_decisions_build_test.cljc",
+        "statecharts/EVENTS.md"
       ]
     },
     "§app.requirements/promotion-commit": {
@@ -6766,7 +6798,9 @@
         "pi-config/extensions/mode/align.test.ts",
         "pi-config/extensions/mode/tests/align-turn.mjs",
         "pi-config/extensions/mode/tests/smoke.mjs",
-        "pi-config/extensions/mode/README.md"
+        "pi-config/extensions/mode/README.md",
+        "pi-config/extensions/mode/align-settings.test.ts",
+        "pi-config/extensions/mode/tests/fixtures/flag-off-master.json"
       ],
       "requires": [
         "§chat.alignment/state",
@@ -6829,7 +6863,8 @@
         "pi-config/extensions/mode/tests/align-turn.mjs",
         "pi-config/extensions/mode/align-file.ts",
         "pi-config/extensions/mode/tests/align-old-ops.jsonl",
-        "pi-config/extensions/mode/README.md"
+        "pi-config/extensions/mode/README.md",
+        "pi-config/extensions/mode/tests/fixtures/flag-off-master.json"
       ],
       "requires": [
         "§chat.alignment/document"
@@ -6858,7 +6893,9 @@
       "code": [
         "pi-config/extensions/mode/README.md",
         "pi-config/extensions/mode/align.ts",
-        "pi-config/extensions/mode/index.ts"
+        "pi-config/extensions/mode/index.ts",
+        "src/components/AlignmentSettings.tsx",
+        "pi-config/extensions/mode/align-settings.ts"
       ]
     },
     "§app.requirements/owner-area": {
@@ -6909,7 +6946,9 @@
         "src/lib/ui-state.ts",
         "src/App.tsx",
         "src/components/ProjectOverseerPanel.tsx",
-        "server/project-coding-runtime.test.ts"
+        "server/project-coding-runtime.test.ts",
+        "server/build-loadout.ts",
+        "server/project-coding-later.test.ts"
       ],
       "requires": [
         "§app.project-overseer/coding-worktrees",
@@ -6918,10 +6957,6 @@
     },
     "§chat.markdown/visuals": {
       "kind": "behavior",
-      "requires": [
-        "§chat.markdown/code-blocks",
-        "§chat.markdown/streaming"
-      ],
       "authority": "accepted",
       "evidence": "verified",
       "code": [
@@ -7038,18 +7073,18 @@
         "server/vis-check.ts",
         "server/vis-check.test.ts",
         "src/vis/multimark.test.ts",
-        "shared/vis-frame-host.ts"
+        "shared/vis-frame-host.ts",
+        "server/vis-tools-sync.test.ts"
+      ],
+      "requires": [
+        "§chat.markdown/code-blocks",
+        "§chat.markdown/streaming"
       ]
     },
     "§chat.mode-menu/minor-toggle-keeps-prompt": {
       "kind": "behavior",
-      "requires": [
-        "§chat.mode-menu/prompt-holds-across-turn-starters",
-        "§chat.mode-menu/how-a-switch-reaches-the-chat",
-        "§app.worker-restore/claude-bridge-restart"
-      ],
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "verified",
       "code": [
         "pi-config/extensions/mode/index.ts",
         "pi-config/extensions/mode/vis-guide-tool.ts",
@@ -7061,7 +7096,17 @@
         "pi-config/extensions/mode/README.md",
         "pi-config/extensions/claude-code/provider/bridge.test.ts",
         "server/mode-state.ts",
-        "server/mode-state.test.ts"
+        "server/mode-state.test.ts",
+        "pi-config/extensions/mode/minor.ts",
+        "pi-config/extensions/claude-code/provider/session-bridge.ts",
+        "server/vis-check.ts",
+        "pi-config/extensions/mode/tests/style-turn.mjs",
+        "server/vis-tools-sync.test.ts"
+      ],
+      "requires": [
+        "§chat.mode-menu/prompt-holds-across-turn-starters",
+        "§chat.mode-menu/how-a-switch-reaches-the-chat",
+        "§app.worker-restore/claude-bridge-restart"
       ]
     },
     "§app.organizations/archive": {
@@ -7205,7 +7250,8 @@
         "server/search-tools-fake.ts",
         "server/overseer.ts",
         "server/org-about-privacy.test.ts",
-        "server/org-about-privacy.integration.test.ts"
+        "server/org-about-privacy.integration.test.ts",
+        "server/contact-redactor.test.ts"
       ],
       "requires": [
         "§app.organizations/privacy",
@@ -7222,7 +7268,9 @@
         "server/overseer-org-view.ts",
         "server/overseer-org-tools.ts",
         "server/overseer-org-tools.test.ts",
-        "server/search-tools-fake.ts"
+        "server/search-tools-fake.ts",
+        "server/org-history-tools.ts",
+        "server/overseer-runtime.test.ts"
       ],
       "requires": [
         "§app.organizations/org-cards",
@@ -8128,12 +8176,13 @@
         "src/lib/voice/format.ts",
         "src/lib/voice/status.ts",
         "src/components/ui.tsx",
-        "src/lib/voice/press.ts",
+        "src/lib/voice/keyboard.ts",
         "src/lib/voice/voice.test.ts"
       ],
       "requires": [
         "§app.settings-dialog/voice",
-        "§design.copy-deck/composer"
+        "§design.copy-deck/composer",
+        "§chat.voice/insertion"
       ]
     },
     "§chat.voice/capture": {
@@ -9271,7 +9320,8 @@
         "server/baton.ts",
         "server/orgs.ts",
         "server/reconcile.ts",
-        "server/project-holds.ts"
+        "server/project-holds.ts",
+        "server/org-history-boot.test.ts"
       ],
       "requires": [
         "§app.project-overseer/statecharts",
@@ -11129,7 +11179,8 @@
         "src/lib/project-page.ts",
         "src/lib/project-page.test.ts",
         "src/projects.css",
-        "src/lib/projects-route.ts"
+        "src/lib/projects-route.ts",
+        "src/components/ProjectOrgPart.tsx"
       ]
     },
     "§chat.playbooks/bundles": {
@@ -11170,7 +11221,7 @@
       "evidence": "verified",
       "requires": [
         "§app.project-services/result",
-        "§app.project-services/trust",
+        "§app.project-services/conform",
         "§app.project-overseer/tools"
       ],
       "code": [
@@ -11198,7 +11249,9 @@
         "server/project-services/test-verb.integration.test.ts",
         "server/project-services/share.integration.test.ts",
         "server/project-services/on-merge.integration.test.ts",
-        "server/app.ts"
+        "server/app.ts",
+        "server/harness/pi/golden/session/S7-compact-manual.jsonl",
+        "server/harness/pi/golden/session/S8-compact-auto.jsonl"
       ]
     },
     "§app.project-services/conform": {
@@ -11227,8 +11280,6 @@
         "server/project-services/test-verb.test.ts",
         "server/project-services/test-verb.integration.test.ts",
         "server/project-services/conform-static-on-demand.integration.test.ts",
-        "server/project-services/confine.test.ts",
-        "server/project-services/confine.integration.test.ts",
         "server/project-services/conform-logs.test.ts",
         "server/project-services/conform-logs.integration.test.ts",
         "server/project-services/share.ts",
@@ -11236,10 +11287,9 @@
         "server/project-services/share.integration.test.ts",
         "server/project-services/conform-cleanup.test.ts",
         "server/project-services/conform-cleanup.integration.test.ts",
-        "server/project-services/confine.ts",
-        "server/project-services/netns-agent.mjs",
         "server/project-services/ports-grace.test.ts",
-        "server/project-services/ports-grace.integration.test.ts"
+        "server/project-services/ports-grace.integration.test.ts",
+        "server/project-services/def-hash.ts"
       ]
     },
     "§app.project-services/contract": {
@@ -11270,7 +11320,7 @@
         "§app.project-services/contract",
         "§app.project-services/instances",
         "§app.project-services/lock",
-        "§app.project-services/trust",
+        "§app.project-services/conform",
         "§app.project-services/result",
         "§app.project-overseer/coding-worktrees"
       ],
@@ -11288,7 +11338,7 @@
       "evidence": "reviewed",
       "requires": [
         "§app.project-services/contract",
-        "§app.project-services/trust",
+        "§app.project-services/conform",
         "§app.project-services/supervisor"
       ],
       "code": [
@@ -11499,28 +11549,6 @@
         "server/project-services/adopt.integration.test.ts"
       ]
     },
-    "§app.project-services/trust": {
-      "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "verified",
-      "requires": [
-        "§app.project-services/contract"
-      ],
-      "code": [
-        "server/project-services/trust.ts",
-        "server/project-services/routes.ts",
-        "server/project-services/engine.ts",
-        "server/project-services/engine.test.ts",
-        "server/project-services/engine.integration.test.ts",
-        "server/project-services/note.test.ts",
-        "server/project-services/note.integration.test.ts",
-        "server/project-services/observe.test.ts",
-        "shared/project-contract.ts",
-        "server/project-services/share.test.ts",
-        "server/project-services/share.integration.test.ts",
-        "shared/project-contract.test.ts"
-      ]
-    },
     "§app.project-services/up": {
       "kind": "behavior",
       "authority": "accepted",
@@ -11529,7 +11557,7 @@
         "§app.project-services/create",
         "§app.project-services/supervisor",
         "§app.project-services/lock",
-        "§app.project-services/trust"
+        "§app.project-services/conform"
       ],
       "code": [
         "server/project-services/engine.ts",
@@ -11617,7 +11645,7 @@
         "§app.extensions/serving"
       ],
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
         "server/chat-manager.ts",
         "server/extensions.ts",
@@ -11672,7 +11700,7 @@
         "§app.access/token"
       ],
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
         "README.md",
         "docs/customization.md",
@@ -11692,14 +11720,15 @@
     "§app/access": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
         "server/auth.ts",
         "server/index.ts",
         "server/app.ts",
         "server/ws.ts",
         "src/lib/auth.ts",
-        "src/components/Unlock.tsx"
+        "src/components/Unlock.tsx",
+        "scripts/install.sh"
       ]
     },
     "§app.overseer/input-source": {
@@ -11877,7 +11906,7 @@
         "§app.access/unlock"
       ],
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
         "package.json",
         "server/auth-devices.ts",
@@ -12178,7 +12207,8 @@
         "server/subagent-profiles.ts",
         "server/subagent-profiles.test.ts",
         "server/sync/docs.ts",
-        "shared/subagent-profiles.ts"
+        "shared/subagent-profiles.ts",
+        "pi-config/extensions/mode/align-settings.ts"
       ]
     },
     "§chat.subagent-profiles/limit-row": {
@@ -12262,7 +12292,8 @@
         "server/delegate.ts",
         "server/spec-settings.ts",
         "server/team-defaults.ts",
-        "shared/team-defaults.ts"
+        "shared/team-defaults.ts",
+        "server/align-settings.ts"
       ]
     },
     "§chat.subagent-profiles/settings": {
@@ -12693,21 +12724,6 @@
         "§mesh.peers/listener"
       ]
     },
-    "§app.project-runtime/approve": {
-      "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "statecharts/src/sova/statecharts/runtime.cljc",
-        "statecharts/src/sova/statecharts/rules/runtime.cljc",
-        "server/projects/runtime.ts",
-        "server/projects/runtime-routes.ts",
-        "server/projects/runtime.test.ts"
-      ],
-      "requires": [
-        "§app.project-services/trust"
-      ]
-    },
     "§app.project-runtime/onboard": {
       "kind": "behavior",
       "authority": "accepted",
@@ -12778,7 +12794,7 @@
         "shared/project-runtime.ts"
       ],
       "requires": [
-        "§app.project-services/trust",
+        "§app.project-services/conform",
         "§app.project-services/status-logs"
       ]
     },
@@ -12817,30 +12833,7 @@
         "server/projects/runtime.test.ts"
       ],
       "requires": [
-        "§app.project-services/conform",
-        "§app.project-services/trust"
-      ]
-    },
-    "§app.project-services/confined": {
-      "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "verified",
-      "requires": [
-        "§app.project-services/conform",
-        "§app.project-services/trust",
-        "§app.project-services/supervisor",
-        "§app.project-services/reconcile"
-      ],
-      "code": [
-        "server/project-services/confine.ts",
-        "server/project-services/netns-agent.mjs",
-        "server/project-services/conform.ts",
-        "server/project-services/engine.ts",
-        "server/project-services/store.ts",
-        "server/project-services/confine.test.ts",
-        "server/project-services/confine.integration.test.ts",
-        "server/port-owner.ts",
-        "server/port-owner.test.ts"
+        "§app.project-services/conform"
       ]
     },
     "§app.project-services/facts": {
@@ -12849,7 +12842,6 @@
       "evidence": "verified",
       "requires": [
         "§app.project-services/contract",
-        "§app.project-services/trust",
         "§app.project-services/conform"
       ],
       "code": [
@@ -12970,7 +12962,38 @@
         "src/components/SettingsDialog.tsx",
         "src/lib/experimental-draft.ts",
         "src/App.tsx",
-        "src/lib/align-review.ts"
+        "src/lib/align-review.ts",
+        "server/harness/state-kinds.ts",
+        "server/harness/state-kinds.test.ts",
+        "server/harness/pi/open.ts",
+        "server/align-launch.test.ts",
+        "server/tail-hello.integration.test.ts",
+        "src/components/ChatView.tsx",
+        "src/components/AlignDocCard.tsx",
+        "src/lib/align-review.test.ts",
+        "src/lib/alignment-draft.ts",
+        "src/components/AlignmentSettings.tsx",
+        "server/harness/pi/golden/session/S1-open-first-prompt.jsonl",
+        "server/harness/pi/golden/session/S12-link-delivery.jsonl",
+        "server/harness/pi/golden/session/S13-dialog-bridge.jsonl",
+        "server/harness/pi/golden/session/S14-model-thinking.jsonl",
+        "server/harness/pi/golden/session/S15-mode-command.jsonl",
+        "server/harness/pi/golden/session/S2-steer-mid-turn.jsonl",
+        "server/harness/pi/golden/session/S3-follow-up-queue.jsonl",
+        "server/harness/pi/golden/session/S4-abort.jsonl",
+        "server/harness/pi/golden/session/S5-rewind.jsonl",
+        "server/harness/pi/golden/session/S6-regenerate.jsonl",
+        "server/harness/pi/golden/session/S7-compact-manual.jsonl",
+        "server/harness/pi/golden/session/S8-compact-auto.jsonl",
+        "server/harness/pi/golden/session/S9-deferred-in-settle.jsonl",
+        "server/harness/pi/golden/state/G1-rewind-no-thinking.jsonl",
+        "server/harness/pi/golden/state/G1-rewind.jsonl",
+        "server/harness/pi/golden/state/G10-open-dispose.jsonl",
+        "server/harness/pi/golden/state/G2-sender-markers.jsonl",
+        "server/harness/pi/golden/state/G3-topic-delivered.jsonl",
+        "server/harness/pi/golden/state/G4-pristine-setup.jsonl",
+        "server/harness/pi/golden/state/G7-overseer-target.jsonl",
+        "server/harness/pi/golden/state/G9-dialog-answer.jsonl"
       ],
       "requires": [
         "§chat.alignment/tool"
@@ -13182,7 +13205,7 @@
         "§app.project-services/apply",
         "§app.project-services/callers",
         "§app.project-services/self-host",
-        "§app.project-services/trust"
+        "§app.project-services/conform"
       ],
       "authority": "accepted",
       "evidence": "verified",
@@ -13661,23 +13684,6 @@
         "server/claude-pool/agent.integration.test.ts"
       ]
     },
-    "§app.project-runtime/approve-merge": {
-      "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "server/projects/runtime.ts",
-        "server/projects/runtime-routes.ts",
-        "server/projects/playbook-review.integration.test.ts",
-        "src/lib/api.ts",
-        "src/components/PlaybookReview.tsx",
-        "src/components/ProjectSoftwareCard.tsx"
-      ],
-      "requires": [
-        "§app.project-runtime/approve",
-        "§app.project-overseer/coding-worktrees"
-      ]
-    },
     "§app.project-runtime/review": {
       "kind": "behavior",
       "authority": "accepted",
@@ -13740,7 +13746,9 @@
         "src/lib/project-software.ts",
         "src/lib/project-software.test.ts",
         "src/components/ProjectDeployPanel.tsx",
-        "src/lib/project-deploy.ts"
+        "src/lib/project-deploy.ts",
+        "server/project-services/deploy-recipe.ts",
+        "server/project-services/deploy-recipe.test.ts"
       ],
       "requires": [
         "§app.project-runtime/registry"
@@ -13814,13 +13822,13 @@
       "authority": "accepted",
       "evidence": "verified",
       "requires": [
-        "§app.project-services/deploy-trust"
+        "§app.project-services/deploy"
       ],
       "code": [
-        "server/project-services/deploy-trust.ts",
+        "server/project-services/deploy-recipe.ts",
         "server/project-services/deploy.ts",
-        "server/project-services/deploy-trust.test.ts",
-        "server/project-services/deploy-trust.integration.test.ts"
+        "server/project-services/deploy-recipe.test.ts",
+        "server/project-services/deploy-recipe.integration.test.ts"
       ]
     },
     "§app.project-services/deploy": {
@@ -13840,7 +13848,8 @@
         "server/project-services/engine.test.ts",
         "server/project-services/engine.integration.test.ts",
         "playbooks/project-verbs/scripts/project-verbs.mjs",
-        "playbooks/project-verbs/references/contract.md"
+        "playbooks/project-verbs/references/contract.md",
+        "server/project-services/def-hash.ts"
       ]
     },
     "§app.project-services/deploy-callers": {
@@ -13878,13 +13887,13 @@
       "evidence": "verified",
       "requires": [
         "§app.project-services/deploy",
-        "§app.project-services/deploy-trust",
         "§app.project-services/test"
       ],
       "code": [
         "server/project-services/deploy.ts",
         "server/project-services/deploy-run.test.ts",
-        "server/project-services/deploy-run.integration.test.ts"
+        "server/project-services/deploy-run.integration.test.ts",
+        "server/project-services/deploy-recipe.ts"
       ]
     },
     "§app.project-services/deploy-run": {
@@ -13919,24 +13928,6 @@
         "server/overseer.ts",
         "shared/protocol.ts",
         "server/project-services/routes.ts"
-      ]
-    },
-    "§app.project-services/deploy-trust": {
-      "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "verified",
-      "requires": [
-        "§app.project-services/deploy",
-        "§app.project-services/trust"
-      ],
-      "code": [
-        "server/project-services/deploy-trust.ts",
-        "server/project-services/deploy-trust.test.ts",
-        "server/project-services/deploy-trust.integration.test.ts",
-        "server/project-services/trust.ts",
-        "server/project-services/observe.ts",
-        "server/project-services/routes.ts",
-        "server/project-services/deploy.ts"
       ]
     },
     "§mesh.peers/grants": {
@@ -15562,7 +15553,8 @@
         "src/components/ChatView.tsx",
         "src/lib/api.ts",
         "src/app.css"
-      ]
+      ],
+      "evidence": "reviewed"
     },
     "§app.baton/files": {
       "kind": "behavior",
@@ -15740,6 +15732,911 @@
         "pi-config/extensions/usage-status/index.ts",
         "pi-config/extensions/usage-status/overlay.test.ts"
       ]
+    },
+    "§app.project-runtime/merge": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/projects/runtime.ts",
+        "server/projects/runtime-routes.ts",
+        "server/projects/playbook-review.integration.test.ts",
+        "src/lib/api.ts",
+        "src/components/PlaybookReview.tsx",
+        "src/components/ProjectSoftwareCard.tsx"
+      ],
+      "requires": [
+        "§app.project-runtime/review",
+        "§app.project-overseer/coding-worktrees"
+      ]
+    },
+    "§chat.transcript/jump-landing": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.transcript/rendering"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/Thread.tsx",
+        "src/lib/jump.ts",
+        "src/lib/tail-render.ts",
+        "src/lib/tail-render.test.ts",
+        "scripts/e2e/jump-settle.mjs",
+        "package.json"
+      ]
+    },
+    "§chat.mode-menu/codemode": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.mode-menu/how-a-switch-reaches-the-chat",
+        "§chat.mode-menu/minor-toggle-keeps-prompt",
+        "§chat.mode-menu/workers",
+        "§tools.spec/census-note"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "pi-config/extensions/mode/minor.ts",
+        "pi-config/extensions/mode/index.ts",
+        "pi-config/extensions/mode/prompt.ts",
+        "pi-config/extensions/mode/palette.ts",
+        "server/harness/pi/codemode.ts",
+        "server/chat-manager.ts",
+        "server/mode-state.ts",
+        "shared/harness-tools.ts",
+        "src/components/ToolCard.tsx",
+        "pi-config/extensions/mode/index.test.ts",
+        "server/codemode-runtime.test.ts",
+        "server/harness/pi/contract.test.ts",
+        "server/harness/pi/tools.test.ts"
+      ]
+    },
+    "§chat.mode-menu/strict": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.mode-menu/menu",
+        "§app.overseer/hosting",
+        "§app.project-overseer/coding-mode"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "pi-config/extensions/mode/index.ts",
+        "pi-config/extensions/mode/prompt.ts",
+        "pi-config/extensions/mode/state.ts",
+        "server/mode-state.ts",
+        "server/transcript.ts",
+        "src/components/ModeMenu.tsx",
+        "src/lib/mode-menu.ts",
+        "pi-config/extensions/mode/index.test.ts"
+      ]
+    },
+    "§app.shell/installable": {
+      "kind": "behavior",
+      "requires": [
+        "§app/notifications",
+        "§app/access"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "public/manifest.webmanifest",
+        "public/sw.js",
+        "src/sw-register.ts",
+        "index.html"
+      ]
+    },
+    "§chat.mode-menu/terminal": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.mode-menu/how-a-switch-reaches-the-chat",
+        "§chat.mode-menu/strict",
+        "§chat.mode-menu/prompt-holds-across-turn-starters"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "pi-config/extensions/mode/index.ts",
+        "pi-config/extensions/mode/palette.ts",
+        "pi-config/extensions/mode/minor.ts",
+        "pi-config/extensions/mode/state.ts",
+        "pi-config/extensions/mode/prompt.ts",
+        "pi-config/extensions/mode/tests/smoke.mjs",
+        "pi-config/extensions/mode/index.test.ts"
+      ]
+    },
+    "§site.docs/align": {
+      "kind": "behavior",
+      "requires": [
+        "§chat/alignment",
+        "§chat.alignment/document",
+        "§chat.alignment/tool",
+        "§chat.alignment/state",
+        "§chat.alignment/model",
+        "§chat.alignment/card",
+        "§chat.alignment/chip",
+        "§chat.alignment/session-mark",
+        "§chat.alignment/tui",
+        "§app.session-list/needs-you",
+        "§app/notifications",
+        "§app.project-overseer/coding-mode",
+        "§chat.mode-menu/workers",
+        "§app.overseer/hosting"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "site/src/content/docs/modes/align/index.md"
+      ]
+    },
+    "§site.docs/align-review": {
+      "kind": "behavior",
+      "requires": [
+        "§chat/alignment-review",
+        "§chat.alignment-review/flag",
+        "§chat.alignment-review/record",
+        "§chat.alignment-review/op",
+        "§chat.alignment-review/rules",
+        "§chat.alignment-review/prompt",
+        "§chat.alignment-review/route",
+        "§chat.alignment-review/card",
+        "§chat.alignment-review/tui"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "site/src/content/docs/modes/align/review.md"
+      ]
+    },
+    "§site.docs/change-direction": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.transcript/message-actions",
+        "§chat.transcript/a-queued-message",
+        "§chat.timeline/opening-it",
+        "§chat.timeline/rewind",
+        "§chat.session-fork/from-reply",
+        "§chat/composer",
+        "§chat.composer/composer-flyout",
+        "§chat/model-menu",
+        "§chat.model-menu/trigger",
+        "§chat.model-menu/states",
+        "§chat.model-menu/saved-default",
+        "§chat.changes/tool-card-diff"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "site/src/content/docs/change-direction.md"
+      ]
+    },
+    "§site.docs/delegate": {
+      "kind": "behavior",
+      "requires": [
+        "§app.settings-dialog/modes",
+        "§chat/subagent-profiles",
+        "§chat.subagent-profiles/off",
+        "§chat.subagent-profiles/resolution",
+        "§chat.subagent-profiles/members-default",
+        "§teams/defaults",
+        "§app/teams",
+        "§app/subagents-pane",
+        "§app.subagents-pane/trigger",
+        "§app.subagents-pane/transcript-view",
+        "§app/worker-restore",
+        "§app.worker-restore/restore",
+        "§app.worker-restore/resume",
+        "§chat.worktrees/workers",
+        "§chat.mode-menu/strict",
+        "§design.copy-deck/settings-modes-delegate",
+        "§app.project-overseer/coding-mode",
+        "§app.overseer/hosting"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "site/src/content/docs/modes/delegate.md"
+      ]
+    },
+    "§site.docs/index": {
+      "kind": "behavior",
+      "requires": [
+        "§chat/mode-menu",
+        "§design.copy-deck/mode-menu",
+        "§chat/alignment",
+        "§chat/subagent-profiles",
+        "§chat.mode-menu/codemode",
+        "§chat.markdown/visuals",
+        "§tools/spec"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "site/src/content/docs/index.md"
+      ]
+    },
+    "§site.docs/install": {
+      "kind": "behavior",
+      "requires": [
+        "§app/installer",
+        "§app.installer/pi-extensions",
+        "§app.installer/claude-code-provider",
+        "§app.installer/service",
+        "§app.installer/idempotent",
+        "§app.installer/portable",
+        "§app.installer/bun",
+        "§app.access/token",
+        "§app.access/callers"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "site/src/content/docs/install.md"
+      ]
+    },
+    "§site.docs/modes": {
+      "kind": "behavior",
+      "requires": [
+        "§chat/mode-menu",
+        "§chat.mode-menu/trigger",
+        "§chat.mode-menu/menu",
+        "§chat.mode-menu/how-a-switch-reaches-the-chat",
+        "§chat.mode-menu/states",
+        "§chat.mode-menu/workers",
+        "§chat.mode-menu/minor-toggle-keeps-prompt",
+        "§chat.mode-menu/codemode",
+        "§chat.mode-menu/strict",
+        "§chat.mode-menu/terminal",
+        "§design.copy-deck/mode-menu",
+        "§chat.subagent-profiles/menu",
+        "§app.overseer/hosting",
+        "§app.overseer/quick-actions",
+        "§app.project-overseer/coding-mode"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "site/src/content/docs/modes/index.md"
+      ]
+    },
+    "§site.docs/needs-you": {
+      "kind": "behavior",
+      "requires": [
+        "§app.session-list/needs-you",
+        "§app.overseer/attention-digest",
+        "§app.overseer/proactivity",
+        "§app/notifications",
+        "§app.notifications/delivery",
+        "§app.notifications/settings",
+        "§app.settings-dialog/overseer"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "site/src/content/docs/needs-you.md"
+      ]
+    },
+    "§site.docs/overseer": {
+      "kind": "behavior",
+      "requires": [
+        "§app/overseer",
+        "§app.overseer/identity-and-clear",
+        "§app.overseer/hosting",
+        "§app.overseer/tools",
+        "§app.overseer/confirm",
+        "§app.overseer/caps",
+        "§app.overseer/approvals",
+        "§app.overseer/entry-button",
+        "§app.overseer/quick-actions",
+        "§app.overseer/standing-notes",
+        "§app.overseer/ideas",
+        "§app.overseer/ideas-panel",
+        "§app.overseer/todos",
+        "§app.overseer/todos-panel",
+        "§app.overseer/head-layout",
+        "§app.overseer/attention-digest",
+        "§app.overseer/proactivity",
+        "§app.overseer/dialog-answers",
+        "§app.settings-dialog/overseer"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "site/src/content/docs/overseer.md"
+      ]
+    },
+    "§site.docs/phone": {
+      "kind": "behavior",
+      "requires": [
+        "§app/access",
+        "§app.access/token",
+        "§app.access/gate",
+        "§app.access/unlock",
+        "§app.access/devices",
+        "§app.access/callers",
+        "§app/notifications",
+        "§app/shell",
+        "§app.shell/installable",
+        "§chat.transcript/live-watch",
+        "§chat/composer",
+        "§app.session-list/regions-top-and-archive",
+        "§chat.transcript/message-actions"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "site/src/content/docs/phone.md"
+      ]
+    },
+    "§site.docs/spec-mode": {
+      "kind": "behavior",
+      "requires": [
+        "§tools/spec",
+        "§tools.spec/mode-reading",
+        "§tools.spec/census-note",
+        "§tools.spec/no-turn-end-check",
+        "§tools.spec/review-playbook",
+        "§tools.spec/spec-map",
+        "§chat.mode-menu/workers",
+        "§chat/subagent-profiles",
+        "§chat.subagent-profiles/settings",
+        "§chat.worktrees/worktree-config",
+        "§app.project-overseer/coding-mode",
+        "§design.copy-deck/settings-modes-delegate"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "site/src/content/docs/modes/spec.md"
+      ]
+    },
+    "§site.docs/subagent-profiles": {
+      "kind": "behavior",
+      "requires": [
+        "§chat/subagent-profiles",
+        "§chat.subagent-profiles/file",
+        "§chat.subagent-profiles/off",
+        "§chat.subagent-profiles/resolution",
+        "§chat.subagent-profiles/members-default",
+        "§chat.subagent-profiles/menu",
+        "§chat.subagent-profiles/settings",
+        "§chat.subagent-profiles/editor-rows",
+        "§chat.subagent-profiles/limit-row",
+        "§chat.subagent-profiles/overseer",
+        "§chat.alignment-review/route",
+        "§design.copy-deck/settings-modes-delegate"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "site/src/content/docs/subagent-profiles.md"
+      ]
+    },
+    "§site.docs/vis": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.markdown/visuals",
+        "§chat.mode-menu/workers",
+        "§chat.mode-menu/minor-toggle-keeps-prompt",
+        "§app.overseer/hosting"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "site/src/content/docs/modes/vis.md"
+      ]
+    },
+    "§site.docs/worktrees-and-changes": {
+      "kind": "behavior",
+      "requires": [
+        "§chat/worktrees",
+        "§chat.worktrees/entry",
+        "§chat.worktrees/tool",
+        "§chat.worktrees/sandbox",
+        "§chat.worktrees/workers",
+        "§chat.worktrees/inherit",
+        "§chat.worktrees/merge-card",
+        "§chat.worktrees/pane",
+        "§chat.worktrees/readiness",
+        "§chat.worktrees/cleanup",
+        "§chat.transcript/empty-worktrees",
+        "§design.copy-deck/worktree-cleanup",
+        "§chat/changes",
+        "§chat.changes/viewer",
+        "§chat.changes/tree",
+        "§chat.changes/steps",
+        "§chat.changes/entry",
+        "§chat.changes/show-changes-card",
+        "§chat.changes/show-changes-tool",
+        "§chat.changes/diff-renderer",
+        "§chat.changes/tool-card-diff",
+        "§chat/sandbox"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "site/src/content/docs/worktrees-and-changes.md"
+      ]
+    },
+    "§site/docs": {
+      "kind": "note",
+      "authority": "accepted",
+      "evidence": "reviewed"
+    },
+    "§site.docs/codemode": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.mode-menu/codemode",
+        "§chat.mode-menu/minor-toggle-keeps-prompt",
+        "§chat.mode-menu/workers",
+        "§tools.spec/census-note",
+        "§app.overseer/hosting"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "site/src/content/docs/modes/codemode.md"
+      ]
+    },
+    "§site.docs/vis-examples": {
+      "kind": "behavior",
+      "requires": [
+        "§site.docs/vis",
+        "§chat.markdown/visuals"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "site/scripts/vis-examples.mjs",
+        "site/scripts/vis-examples/examples.mjs",
+        "site/scripts/vis-examples/render.tsx",
+        "site/src/generated/vis-examples.html",
+        "site/src/content/docs/modes/vis.md",
+        "site/src/pages/docs/[...slug].astro",
+        "site/README.md",
+        "site/package.json"
+      ]
+    },
+    "§app.installer/ref": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "scripts/install.sh",
+        "scripts/install.test.sh",
+        "scripts/install.integration.test.ts",
+        "site/src/data/site.ts"
+      ]
+    },
+    "§app.org-history/actors": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-overseer/autonomy-levels",
+        "§app.requirements/decisions"
+      ],
+      "code": [
+        "shared/org-history.ts",
+        "server/org-history/record.ts",
+        "server/org-history/history.test.ts",
+        "server/org-history/test-fixture.ts",
+        "server/org-history-capture.ts",
+        "server/record-decision-history.test.ts",
+        "server/decision-markers.test.ts",
+        "server/org-history-capture.test.ts",
+        "server/org-history-lineage.test.ts"
+      ]
+    },
+    "§app.org-history/capture": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/org-history-capture.ts",
+        "shared/org-history.ts",
+        "server/org-history/query.ts",
+        "server/org-history/history.test.ts",
+        "server/org-history/test-fixture.ts",
+        "server/org-history-capture.test.ts",
+        "server/org-history-effects.test.ts",
+        "server/orgs.ts",
+        "server/org-engine.ts",
+        "server/project-overseer.ts",
+        "shared/baton.ts",
+        "server/org-history-lineage.test.ts",
+        "server/org-history-preview.test.ts",
+        "server/baton.ts",
+        "server/overseer-org-part.ts",
+        "server/project-coding-runtime.test.ts"
+      ],
+      "requires": [
+        "§app.org-history/ledger",
+        "§app.project-overseer/statecharts"
+      ]
+    },
+    "§app.org-history/durability": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-overseer/statecharts",
+        "§app.requirements/decisions",
+        "§app.org-history/ledger"
+      ],
+      "code": [
+        "server/org-history/store.ts",
+        "server/org-history/service.ts",
+        "server/org-host/index.ts",
+        "server/org-host/store.ts",
+        "server/org-host/log.ts",
+        "server/org-host/journal.test.ts",
+        "server/org-history/history.test.ts",
+        "server/org-history/test-fixture.ts",
+        "statecharts/src/sova/statecharts/rules/baton.cljc",
+        "statecharts/src/sova/statecharts/baton.cljc",
+        "statecharts/test/sova/statecharts/refit/baton_test.cljc",
+        "server/decisions.ts",
+        "server/decision-markers.test.ts",
+        "server/vendor/statecharts.js",
+        "server/org-host/host.test.ts",
+        "server/org-host/privacy.test.ts",
+        "server/org-host/test-statechart.ts",
+        "server/org-history-capture.ts",
+        "server/org-history-outreach.test.ts",
+        "server/org-history-boot.test.ts",
+        "server/org-engine.ts",
+        "server/decision-markers-attach.test.ts"
+      ]
+    },
+    "§app.org-history/evidence": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.harness/reader",
+        "§app.harness/new-work"
+      ],
+      "code": [
+        "shared/org-history.ts",
+        "server/org-history/record.ts",
+        "server/org-history/history.test.ts",
+        "server/org-history/test-fixture.ts"
+      ]
+    },
+    "§app.org-history/ledger": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-overseer/statecharts",
+        "§app.organizations/workspace-repo"
+      ],
+      "code": [
+        "shared/org-history.ts",
+        "server/org-history/store.ts",
+        "server/org-history/record.ts",
+        "server/org-history/index.ts",
+        "server/org-history/history.test.ts",
+        "server/org-history/test-fixture.ts",
+        "server/org-history-capture.ts"
+      ]
+    },
+    "§app.org-history/links": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-overseer/statecharts"
+      ],
+      "code": [
+        "shared/org-history.ts",
+        "server/org-history/record.ts",
+        "server/org-history/query.ts",
+        "server/org-history/history.test.ts",
+        "server/org-history/test-fixture.ts",
+        "server/org-history-lineage.test.ts",
+        "server/org-history/index.ts",
+        "server/org-history/privacy.test.ts",
+        "server/org-history-annotations.test.ts",
+        "server/org-history-tools.ts",
+        "server/org-history-tools.test.ts"
+      ]
+    },
+    "§app.org-history/negatives": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.baton/hand-off",
+        "§app.project-overseer/tools",
+        "§app.requirements/decisions"
+      ],
+      "code": [
+        "server/baton-loadout.ts",
+        "server/org-history-tools.ts",
+        "server/project-overseer-tools.ts",
+        "shared/org-history.ts",
+        "server/org-history/record.ts",
+        "server/org-history/query.ts",
+        "server/org-history/history.test.ts",
+        "server/org-history/test-fixture.ts",
+        "server/org-history-tools.test.ts",
+        "shared/baton.ts",
+        "server/record-decision-history.test.ts"
+      ]
+    },
+    "§app.org-history/page": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.organizations/org-page",
+        "§app.organizations/project-page"
+      ],
+      "code": [
+        "src/components/OrgHistory.tsx",
+        "src/components/OrgHistoryInspector.tsx",
+        "src/components/OrgHistoryChain.tsx",
+        "src/lib/org-history-route.ts",
+        "src/lib/org-history-route.test.ts",
+        "src/lib/org-history-words.ts",
+        "src/lib/org-history-words.test.ts",
+        "src/lib/org-history-source.ts",
+        "src/lib/org-history-source.browser.test.ts",
+        "src/lib/org-history-chain.ts",
+        "src/lib/org-history-chain.test.ts",
+        "src/org-history.css",
+        "src/lib/orgs-route.ts",
+        "src/lib/orgs-route.test.ts",
+        "src/lib/org-tabs.ts",
+        "src/lib/org-tabs.test.ts",
+        "src/lib/org-page-route.ts",
+        "src/lib/api.ts",
+        "src/components/OrgsView.tsx",
+        "src/components/ProjectPage.tsx",
+        "src/components/ProjectOrgPart.tsx",
+        "src/lib/org-history-view.browser.test.ts",
+        "src/lib/org-history-chain-read.browser.test.ts",
+        "server/org-history/query.ts",
+        "src/lib/org-history-css.test.ts",
+        "src/orgs.css"
+      ]
+    },
+    "§app.org-history/portability": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.organizations/holder",
+        "§app.organizations/portability",
+        "§app.organizations/workspace-repo"
+      ],
+      "code": [
+        "shared/org-history.ts",
+        "server/org-history/portability.test.ts",
+        "server/org-history/history.test.ts",
+        "server/org-history/test-fixture.ts",
+        "server/org-history/attach.test.ts",
+        "server/org-history/bootstrap.ts",
+        "server/org-history/bootstrap.test.ts"
+      ]
+    },
+    "§app.org-history/rationale": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.organizations/workspace-repo"
+      ],
+      "code": [
+        "shared/org-history.ts",
+        "server/org-history-routes.ts",
+        "server/org-history/store.ts",
+        "server/org-history/index.ts",
+        "server/org-history/service.ts",
+        "server/org-history/history.test.ts",
+        "server/org-history/test-fixture.ts",
+        "server/org-history-routes.test.ts",
+        "server/org-history-annotations.ts",
+        "server/org-history-annotations.test.ts",
+        "server/org-history/query.ts"
+      ]
+    },
+    "§app.org-history/readers": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.organizations/about",
+        "§app.organizations/privacy",
+        "§app.project-overseer/tools",
+        "§app.overseer/org-reads",
+        "§app.overseer/org-projection",
+        "§mesh.remote-sessions/org-pages"
+      ],
+      "code": [
+        "server/org-history-routes.ts",
+        "server/org-history-tools.ts",
+        "server/project-overseer-tools.ts",
+        "server/overseer-tools.ts",
+        "server/org-history/query.ts",
+        "server/org-history/privacy.test.ts",
+        "server/org-history/history.test.ts",
+        "server/org-history/test-fixture.ts",
+        "server/org-host/privacy.test.ts",
+        "server/org-history-routes.test.ts",
+        "server/org-history-tools.test.ts",
+        "server/overseer-runtime.test.ts",
+        "server/org-history-surfaces.test.ts",
+        "server/org-history-annotations.test.ts"
+      ]
+    },
+    "§app.org-history/reads": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/org-history-routes.ts",
+        "server/org-history-tools.ts",
+        "server/org-history/index.ts",
+        "server/org-history/query.ts",
+        "server/org-history/service.ts",
+        "server/org-history/history.test.ts",
+        "server/org-history/test-fixture.ts",
+        "server/org-history-routes.test.ts",
+        "server/org-history-tools.test.ts",
+        "shared/org-history.ts",
+        "server/org-history/privacy.test.ts",
+        "server/org-history-lineage.test.ts"
+      ],
+      "requires": [
+        "§app.org-history/ledger",
+        "§app.org-history/readers"
+      ]
+    },
+    "§app.org-history/seams": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.harness/new-work",
+        "§app.projects/seam"
+      ],
+      "code": [
+        "shared/org-history.ts"
+      ]
+    },
+    "§app/org-history": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "shared/org-history.ts"
+      ]
+    },
+    "§site.landing/fold-device": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "site/src/components/screens/FoldDevice.astro",
+        "site/src/styles/mock.css",
+        "site/src/pages/index.astro"
+      ]
+    },
+    "§site/landing": {
+      "kind": "note",
+      "authority": "accepted",
+      "evidence": "reviewed"
+    },
+    "§app.settings-dialog/alignment": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/AlignmentSettings.tsx",
+        "src/lib/alignment-draft.ts",
+        "src/lib/alignment-draft.test.ts",
+        "src/components/SettingsDialog.tsx",
+        "src/lib/settings-nav.ts",
+        "src/lib/settings-nav.test.ts",
+        "src/lib/api.ts",
+        "src/App.tsx",
+        "server/align-settings.ts",
+        "server/app.ts",
+        "server/web-settings.ts",
+        "shared/protocol.ts"
+      ],
+      "requires": [
+        "§app/settings-dialog",
+        "§app.settings-dialog/save-bar",
+        "§chat.alignment/settings-file",
+        "§chat.alignment-review/flag",
+        "§design.copy-deck/settings-alignment"
+      ]
+    },
+    "§chat.alignment/settings-file": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/mode/align-settings.ts",
+        "pi-config/extensions/mode/align-settings.test.ts",
+        "server/align-settings.ts",
+        "server/app.ts",
+        "server/sync/docs.ts",
+        "shared/protocol.ts",
+        "pi-config/extensions/subagents/subagent-profiles.ts",
+        "pi-config/extensions/mode/README.md",
+        "pi-config/README.md",
+        "CLAUDE.md"
+      ],
+      "requires": [
+        "§chat.subagent-profiles/file"
+      ]
+    },
+    "§chat.alignment/style": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/mode/minor.ts",
+        "pi-config/extensions/mode/prompt.ts",
+        "pi-config/extensions/mode/state.ts",
+        "pi-config/extensions/mode/index.ts",
+        "pi-config/extensions/mode/align.ts",
+        "pi-config/extensions/mode/align-tool.ts",
+        "pi-config/extensions/mode/align-settings.test.ts",
+        "pi-config/extensions/mode/align.test.ts",
+        "pi-config/extensions/mode/tests/style-turn.mjs",
+        "pi-config/extensions/mode/README.md"
+      ],
+      "requires": [
+        "§chat.alignment/settings-file",
+        "§chat.mode-menu/minor-toggle-keeps-prompt",
+        "§chat.alignment/document"
+      ]
+    },
+    "§chat.alignment/visuals": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/mode/minor.ts",
+        "pi-config/extensions/mode/index.ts",
+        "pi-config/extensions/mode/align.ts",
+        "pi-config/extensions/mode/align-tool.ts",
+        "pi-config/extensions/mode/align-settings.test.ts",
+        "pi-config/extensions/mode/tests/style-turn.mjs",
+        "server/vis-check.ts",
+        "server/chat-manager.ts",
+        "server/harness/state-kinds.ts",
+        "server/harness/pi/open.ts",
+        "server/vis-tools-sync.test.ts",
+        "server/align-launch.test.ts",
+        "src/components/AlignDocCard.tsx",
+        "src/lib/align.ts",
+        "src/lib/align-card.test.ts"
+      ],
+      "requires": [
+        "§chat.alignment/settings-file",
+        "§chat.alignment/document",
+        "§chat.alignment/tool",
+        "§chat.alignment-review/flag",
+        "§chat.mode-menu/minor-toggle-keeps-prompt"
+      ]
+    },
+    "§design.copy-deck/settings-alignment": {
+      "kind": "note",
+      "authority": "accepted",
+      "about": [
+        "§app.settings-dialog/alignment"
+      ],
+      "evidence": "reviewed"
     }
   },
   "boundary": {

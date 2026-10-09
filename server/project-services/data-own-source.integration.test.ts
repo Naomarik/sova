@@ -4,11 +4,9 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
-import { parseDefinition } from "../../shared/project-contract";
 import { DetachedDriver } from "./drivers";
 import { ProjectEngine, type Caller } from "./engine";
 import { readRegistry } from "./store";
-import { approve, defHashOf } from "./trust";
 
 /**
  * A `dir` resource copied from main (`"from": "${main}/<path>"` with `path` the same folder): on the main checkout it
@@ -43,8 +41,6 @@ before(() => {
   // Main's own data: ignored by git, never in a commit.
   mkdirSync(join(project, "public", "corpus"), { recursive: true });
   writeFileSync(join(project, "public", "corpus", "surah-1.json"), "main's data");
-  const h = defHashOf(parseDefinition(JSON.stringify(DEF)));
-  approve(project, h, h);
   engine = new ProjectEngine({ driver: new DetachedDriver(3_000), pollMs: 100 });
 });
 

@@ -102,7 +102,7 @@ import { ArchiveCleanup } from "./ArchiveCleanup";
 import { SelectionToolbar } from "./SelectionToolbar";
 import { ContextRing } from "./ContextRing";
 import { CancelHeldButton } from "./HeldAct";
-import { ApproveMergeButton, REVIEW_ON_PAGE } from "./PlaybookReview";
+import { MergeRunButton } from "./PlaybookReview";
 import { heldWaitLine } from "../lib/pipeline-view";
 import { waitingWords } from "../lib/working-hours";
 import { groupHref } from "../lib/group-route";
@@ -2591,7 +2591,7 @@ export function Sidebar(props: {
                       <Show when={needsYouPlaybook(s.path)}>
                         {(pb) => (
                           <li class="needs-you-playbook">
-                            <ApproveMergeButton projectId={pb().projectId} run={pb()} blocked={pb().approves === "deploy" ? REVIEW_ON_PAGE : null} />
+                            <MergeRunButton projectId={pb().projectId} run={pb()} />
                           </li>
                         )}
                       </Show>

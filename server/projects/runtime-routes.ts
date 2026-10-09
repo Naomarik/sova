@@ -2,15 +2,13 @@ import type { Context, Hono } from "hono";
 import { BusyError } from "../chat-manager";
 import { OrgError } from "../org-error";
 import { OVERSEER_CARD_HEADER, OVERSEER_SENDER_HEADER, overseerCard, overseerSender } from "../overseer-sender";
-import { approveMerge, approveRuntime, readRuntime, RuntimeRefusal, startOnboard, startRuntimeTick } from "./runtime";
-import { hash12 } from "../../shared/playbook-review";
+import { mergeRun, readRuntime, RuntimeRefusal, startOnboard, startRuntimeTick } from "./runtime";
 import { operatorEnvelopeOf, type OperatorBy } from "./spaces";
 
 /**
  * The software registry's routes (§app/project-runtime): `GET /api/projects/:pid/runtime` (the registry, read
- * fresh), `POST …/runtime/approve {hash}` (the operator's only), `POST …/runtime/approve-merge {hash}` (approve, then
- * Merge Branch on the proposed run) and `POST …/verbs/onboard {why?, model?}` (the
- * Project verbs playbook).
+ * fresh), `POST …/runtime/merge {hash}` (Merge Branch on the proposed run) and `POST …/verbs/onboard {why?, model?}`
+ * (the Project verbs playbook).
  */
 
 const NO_STORE = { "Cache-Control": "no-store" };
@@ -47,26 +45,15 @@ export function registerRuntimeRoutes(app: Hono<any>): void {
 
   app.get("/api/projects/:pid/runtime", handle(async (c) => c.json(await readRuntime(c.req.param("pid") ?? ""), 200, NO_STORE)));
 
+  // Merge Branch on a proposed run (§app.project-runtime/merge): a refused merge says why (409).
   app.post(
-    "/api/projects/:pid/runtime/approve",
+    "/api/projects/:pid/runtime/merge",
     handle(async (c) => {
       const b = await body(c);
       const hash = opt(b.hash);
       if (!hash) return c.json({ error: "Give the hash you were shown (hash)." }, 400);
-      return c.json(await approveRuntime(c.req.param("pid") ?? "", hash, operatorBy(c)), 200, NO_STORE);
-    }),
-  );
-
-  // Approve & Merge (§app.project-runtime/approve-merge): a refused merge keeps the approval and says why (409).
-  app.post(
-    "/api/projects/:pid/runtime/approve-merge",
-    handle(async (c) => {
-      const b = await body(c);
-      const hash = opt(b.hash);
-      if (!hash) return c.json({ error: "Give the hash you were shown (hash)." }, 400);
-      const ticked = Array.isArray(b.ticked) ? b.ticked.filter((k): k is string => typeof k === "string") : [];
-      const out = await approveMerge(c.req.param("pid") ?? "", hash, operatorBy(c), ticked);
-      if (out.refused) return c.json({ error: `Approved ${hash12(hash)}, but the merge was refused: ${out.refused}`, approved: out.approved, runtime: out.view }, 409, NO_STORE);
+      const out = await mergeRun(c.req.param("pid") ?? "", hash);
+      if (out.refused) return c.json({ error: `The merge was refused: ${out.refused}`, runtime: out.view }, 409, NO_STORE);
       return c.json(out.view, 200, NO_STORE);
     }),
   );

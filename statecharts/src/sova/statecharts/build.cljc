@@ -18,9 +18,14 @@
    keeps the session file and worktree folder in its own table, never here.
 
    Start data: `{:project-id :session-id :kind :title :prompt :started-by :via :gap :item :decisions
-   :model :thinking :mode :op-item :folder :created-at}`. `gap`, `item` and `decisions` are attribution
+   :model :thinking :mode :op-item :folder :worktree :created-at}`. `gap`, `item` and `decisions` are attribution
    its spawner sets (an item names its gap); the build never reads them. Its project learns a merge
-   from the exported `merged` (it watches every build it lists)."
+   from the exported `merged` (it watches every build it lists).
+
+   `:worktree \"later\"` (New Session's Project tab): the host makes no worktree and answers
+   `{:later true}`; the build runs in the project root (`tree-root`, `:later`, no `:in-root`) until the
+   host hears of the first worktree its session made itself and sends `worktree/adopted {branch base
+   target}` once, which records it and moves the tree to open: from then on it is a worktree build."
   (:require
     [clojure.string :as str]
     [com.fulcrologic.statecharts.chart :as chart]
@@ -37,7 +42,16 @@
 (defn done-kind? [k] (fn [_ d] (= k (:kind (e d)))))
 (defn result [d] (:result (e d)))
 
-(defn in-root-sentence [d] (str "It runs in the project root" (if (:in-root d) (str ": " (:in-root d)) ".")))
+(defn waiting-to-adopt?
+  "Started with `worktree: \"later\"` and not yet given the worktree its session makes."
+  [d]
+  (and (true? (:later d)) (nil? (:branch d))))
+
+(defn in-root-sentence [d]
+  (cond
+    (:in-root d) (str "It runs in the project root: " (:in-root d))
+    (waiting-to-adopt? d) "It runs in the project root until it makes a worktree."
+    :else "It runs in the project root."))
 
 (defn running? [d] (or (= "working" (:turn d)) (pos? (or (:workers d) 0))))
 
@@ -145,12 +159,14 @@
       (parallel {:id :regions}
         (state {:id :setup :initial :making-worktree}
           (state {:id :making-worktree}
-            (on-entry {} (dsl/effect :make-worktree (fn [d] (select-keys d [:session-id :title :folder]))))
+            (on-entry {} (dsl/effect :make-worktree (fn [d] (select-keys d [:session-id :title :folder :worktree]))))
             (transition {:sova/feed :feed :event :effect/done :cond (done-kind? "make-worktree") :target :setting-mode}
               (script {:expr (fn [_ d] (let [res (result d)]
-                                         (if (:in-root res)
-                                           [(ops/assign :in-root (:in-root res)) (ops/assign :tree "root")]
-                                           [(ops/assign :branch (:branch res)) (ops/assign :base (:base res)) (ops/assign :target (:target res))])))}))
+                                         (cond
+                                           (:in-root res) [(ops/assign :in-root (:in-root res)) (ops/assign :tree "root")]
+                                           ;; worktree "later": the root, until its session makes one (worktree/adopted)
+                                           (true? (:later res)) [(ops/assign :later true) (ops/assign :tree "root")]
+                                           :else [(ops/assign :branch (:branch res)) (ops/assign :base (:base res)) (ops/assign :target (:target res))])))}))
             (transition {:sova/feed :feed :event :effect/failed :cond (done-kind? "make-worktree") :target :not-started}
               (script {:expr (fn [_ d] [(ops/assign :not-started (str "No session was started: its worktree could not be made (" (:detail (e d)) ")."))])})))
           (state {:id :setting-mode}
@@ -195,10 +211,20 @@
         (state {:id :tree :initial :tree-open}
           (transition {:sova/feed :feed :event :tree/removed :type :internal :target :tree-removed})
           (state {:id :tree-open} (region :tree "open") (tree-transitions :tree-open)
-            (transition {:sova/feed :feed :cond (fn [_ d] (some? (:in-root d))) :target :tree-root}))
+            (transition {:sova/feed :feed :cond (fn [_ d] (or (some? (:in-root d)) (waiting-to-adopt? d))) :target :tree-root}))
           (state {:id :tree-missing} (region :tree "missing") (tree-transitions :tree-missing))
           (state {:id :tree-removed} (region :tree "removed"))
-          (state {:id :tree-root} (region :tree "root")))
+          (state {:id :tree-root} (region :tree "root")
+            ;; worktree "later": the first worktree its session made itself, recorded once, as named; its commit
+            ;; paragraph goes in as the note a New Coding Session gets at its start
+            (transition {:sova/feed :feed :event :worktree/adopted
+                         :cond (fn [_ d] (and (waiting-to-adopt? d) (not (lv/blank? (:branch (e d)))) (not (lv/blank? (:target (e d))))))
+                         :target :tree-open}
+              (script {:expr (fn [_ d] (let [ev (e d)]
+                                         (into [(ops/assign :branch (:branch ev)) (ops/assign :base (str (:base ev)))
+                                                (ops/assign :target (:target ev)) (ops/assign :adopted-at (b/now-ms d))
+                                                (ops/assign :later nil)]
+                                           (dsl/effect-ops d (dsl/effect-map :worktree-note (fn [_] {:text (commit-paragraph ev)}) d)))))}))))
 
         (state {:id :branch :initial :no-commits}
           (state {:id :no-commits} (region :branch-state "no-commits") (branch-transitions :no-commits))
@@ -250,7 +276,7 @@
    :version  version
    :migrate  {}
    :storage  :portable
-   :exported [:session-id :kind :title :started-by :via :gap :item :decisions :branch :base :target :in-root :merged
+   :exported [:session-id :kind :title :started-by :via :gap :item :decisions :branch :base :target :in-root :later :adopted-at :merged
               :turn :workers :running :tree :branch-state :last-turn-at :questions :mode-not-set :not-started :created-at]
    :acts     acts
    :not-here not-here})

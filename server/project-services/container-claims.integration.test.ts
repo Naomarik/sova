@@ -11,7 +11,6 @@ import { DetachedDriver } from "./drivers";
 import { ProjectEngine, type Caller } from "./engine";
 import { hostPortOwner } from "./proctable";
 import { readRegistry } from "./store";
-import { approve, defHashOf } from "./trust";
 import { reservePorts } from "../test-ports";
 
 /**
@@ -86,8 +85,6 @@ before(() => {
   git(["init", "-q", "-b", "main"]);
   git(["add", "-A"]);
   git(["commit", "-q", "-m", "fixture"]);
-  const hash = defHashOf(def());
-  approve(project, hash, hash);
   engine = new ProjectEngine({
     driver: new DetachedDriver(3_000),
     pollMs: 100,

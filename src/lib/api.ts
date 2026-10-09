@@ -64,6 +64,7 @@ import type {
   UsageInsight,
   UsageResetDayRequest,
   WebSettings,
+  AlignSettingsInfo,
   WorktreesInsight,
   MeshCandidate,
   MeshHello,
@@ -90,6 +91,7 @@ import type {
 } from "../../shared/mesh-access";
 import type { OwnerConversation, OwnerHome, OwnerLinkResult, OwnerProject, ProjectUpdate } from "../../shared/owner";
 import type { NamedChange, OrgDetail, OrgsInfo, PersonHours, PersonInput, PersonPage, PersonPreview, ProfileChange } from "../../shared/orgs";
+import type { EventDetail, EvidenceView, HistoryChain, HistoryPacket, HistoryPage, HistoryQuery } from "../../shared/org-history";
 import type { BatonOutreach, SendLinkAnswer } from "../../shared/outreach";
 import type { BatonInfo, BatonSettings, BatonTold, BatonStartInput, BatonStartResult, BatonView, GatheringAbilities, OfferLink } from "../../shared/baton";
 import type { ConflictResolveInput, DecisionsInfo, PromoteResult, SpecStatus } from "../../shared/decisions";
@@ -424,12 +426,19 @@ export const sendPushTest = () => request<PushTestResult>("/api/push/test", { me
     still listed. */
 export const getThemes = () => request<ThemeList>("/api/themes");
 
-/** Sova's own settings (GET /api/settings): Settings → Experimental's switches. */
+/** Sova's own settings (GET /api/settings): Settings → Alignment's review switch and Experimental's switches. */
 export const getWebSettings = () => request<WebSettings>("/api/settings");
 
-/** Save Settings → Experimental's switches; the server keeps every key the body doesn't name. */
-export const putWebSettings = (settings: WebSettings) =>
+/** Save part of Sova's own settings; the server keeps every key the body doesn't name. */
+export const putWebSettings = (settings: Partial<WebSettings>) =>
   request<WebSettings>("/api/settings", { method: "PUT", body: JSON.stringify(settings) });
+
+/** The align mode's writing style and Visuals (GET /api/settings/align, mode-align.json). */
+export const getAlignSettings = () => request<AlignSettingsInfo>("/api/settings/align");
+
+/** Replace the align mode's writing style and Visuals (the whole file). */
+export const putAlignSettings = (settings: AlignSettingsInfo["settings"]) =>
+  request<AlignSettingsInfo>("/api/settings/align", { method: "PUT", body: JSON.stringify(settings) });
 
 /** Whether the Claude Code CLI is usable, for Settings → Accounts' status line. */
 export const getClaudeCliStatus = () => request<ClaudeCliStatus>("/api/settings/claude-status");
@@ -1098,6 +1107,52 @@ export const putOrgHours = (id: string, body: { tz: string; hours: PersonHours |
 export const revertOrgHours = (id: string, at: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/hours/revert`, jsonInit("POST", { at }));
 /** The org's About text back to history line `at`'s `from` (§app.organizations/about). */
 export const revertOrgAbout = (id: string, at: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/about/revert`, jsonInit("POST", { at }));
+// An org's history: the operator's reads, main listener only. No
+// read calls a model; Copy Context copies the packet's text as the server made it.
+const historyBase = (orgId: string) => `/api/orgs/${encodeURIComponent(orgId)}/history`;
+/** The query string of a history search: lists comma-joined, times in ms. */
+export function historyParams(q: HistoryQuery): string {
+  const p = new URLSearchParams();
+  if (q.projects?.length) p.set("project", q.projects.join(","));
+  if (q.kinds?.length) p.set("kind", q.kinds.join(","));
+  if (q.outcomes?.length) p.set("outcome", q.outcomes.join(","));
+  if (q.actors?.length) p.set("actor", q.actors.join(","));
+  if (q.initiation?.length) p.set("initiation", q.initiation.join(","));
+  if (q.from !== undefined) p.set("from", String(q.from));
+  if (q.to !== undefined) p.set("to", String(q.to));
+  if (q.text) p.set("q", q.text);
+  if (q.asOf !== undefined) p.set("asOf", String(q.asOf));
+  if (q.cursor) p.set("cursor", q.cursor);
+  if (q.limit !== undefined) p.set("limit", String(q.limit));
+  if (q.groupOf) p.set("groupOf", q.groupOf);
+  const s = p.toString();
+  return s ? `?${s}` : "";
+}
+export const getOrgHistory = (orgId: string, q: HistoryQuery) => request<HistoryPage>(`${historyBase(orgId)}${historyParams(q)}`, { cache: "no-store" });
+export const getHistoryEvent = (orgId: string, eventId: string) =>
+  request<EventDetail>(`${historyBase(orgId)}/events/${encodeURIComponent(eventId)}`, { cache: "no-store" });
+/** The event's local chain: `hops` each way (the server's bound caps it), from `cursor` to go further, its boundary marked against `projects`. */
+export const getHistoryChain = (orgId: string, eventId: string, opts: { hops?: number; cursor?: string; projects?: string[] } = {}) => {
+  const p = new URLSearchParams();
+  // The project filter in force: the server marks what lies outside it as boundary nodes.
+  if (opts.projects?.length) p.set("project", opts.projects.join(","));
+  if (opts.hops !== undefined) p.set("hops", String(opts.hops));
+  if (opts.cursor) p.set("cursor", opts.cursor);
+  const s = p.toString();
+  return request<HistoryChain>(`${historyBase(orgId)}/events/${encodeURIComponent(eventId)}/chain${s ? `?${s}` : ""}`, { cache: "no-store" });
+};
+/** A deterministic context packet: one event's, or (no event) the list filters' (one path, a GET). */
+export const getHistoryPacket = (orgId: string, scope: { event: string } | { query: HistoryQuery }) =>
+  request<HistoryPacket>(
+    `${historyBase(orgId)}/packet${"event" in scope ? `?event=${encodeURIComponent(scope.event)}` : historyParams(scope.query)}`,
+    { cache: "no-store" },
+  );
+/** Open Source: one cited span of an event's evidence, read on request only. */
+export const getHistoryEvidence = (orgId: string, eventId: string, n: number) =>
+  request<EvidenceView>(`${historyBase(orgId)}/events/${encodeURIComponent(eventId)}/evidence/${n}`, { cache: "no-store" });
+/** Purge Reason…: removes the event's recorded reason and its index copies, and records a word-free purge event. */
+export const purgeHistoryReason = (orgId: string, eventId: string) =>
+  request<{ event: string }>(`${historyBase(orgId)}/events/${encodeURIComponent(eventId)}/purge`, jsonInit("POST", { confirm: true }));
 export const detachOrg = (id: string) => request<{ ok: true }>(`/api/orgs/${encodeURIComponent(id)}`, jsonInit("DELETE"));
 /** Reload the org's statecharts from its workspace (a fixed journal, restored snapshots): `problems` is what is still wrong. */
 export const reloadOrg = (id: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/reload`, jsonInit("POST"));
@@ -1296,18 +1351,11 @@ export async function runDeployVerb(root: string, verb: DeployVerb, body: Record
     throw err;
   }
 }
-/** Approve main's deploy recipe (§app.project-services/deploy-trust): the hash shown, with every step of its review ticked. */
-export const approveDeployRecipe = (root: string, deployHash: string, ticked: readonly string[]) =>
-  request<{ ok: true; deployHash: string }>("/api/project-services/deploy-approve", jsonInit("POST", { project: root, deployHash, ticked }));
 /** What runs on this host now, every project's (Running branches on `#/projects`). */
 export const getHostServices = () => request<HostServicesView>("/api/services");
 export const getProjectRuntime = (projectId: string) => request<ProjectRuntimeView>(`${projectPath(projectId)}/runtime`);
-/** Approve the definition shown (its hash) on this host: the operator's only. */
-export const approveProjectRuntime = (projectId: string, hash: string) => request<ProjectRuntimeView>(`${projectPath(projectId)}/runtime/approve`, jsonInit("POST", { hash }));
-/** Approve & Merge a proposed playbook run (§app.project-runtime/approve-merge): approve its hash, then Merge Branch.
-    A refused merge keeps the approval: the error says why. */
-export const approveMergeProjectRuntime = (projectId: string, hash: string, ticked?: readonly string[]) =>
-  request<ProjectRuntimeView>(`${projectPath(projectId)}/runtime/approve-merge`, jsonInit("POST", ticked ? { hash, ticked } : { hash }));
+/** Merge Branch on a proposed playbook run (§app.project-runtime/merge): the hash shown; a refused merge's error says why. */
+export const mergeProjectRun = (projectId: string, hash: string) => request<ProjectRuntimeView>(`${projectPath(projectId)}/runtime/merge`, jsonInit("POST", { hash }));
 /** Run the Project verbs playbook on the project: a coding session on its own branch. */
 export const runProjectVerbsPlaybook = (projectId: string, why?: string) =>
   request<{ sessionId: string; path: string; worktree?: { path: string; branch: string }; notPrompted?: string }>(`${projectPath(projectId)}/verbs/onboard`, jsonInit("POST", why ? { why } : {}));
@@ -1337,7 +1385,8 @@ export const sendProjectItem = (orgId: string, projectId: string, input: ItemSen
   request<ItemSendResult>(`${projectBase(orgId, projectId)}/items/send`, jsonInit("POST", input));
 export const codeProjectItem = (projectId: string, input: ItemCodeInput) =>
   request<ItemCodeResult>(`${overseerBase(projectId)}/items/code`, jsonInit("POST", input));
-/** New Coding Session: a coding session in its own worktree, tied to no item, with nothing sent. */
+/** New Coding Session: a coding session in its own worktree, tied to no item, with nothing sent; `worktree: "later"` (New
+    Session's Project tab) starts it in the project root, and its row adopts the worktree its session makes later. */
 export const startProjectCoding = (projectId: string, input: CodingStartInput = {}) =>
   request<CodingStartResult>(`${overseerBase(projectId)}/coding`, jsonInit("POST", input));
 /** The operator's gestures on a coding session's worktree: merge its branch into the root's, or remove it. */

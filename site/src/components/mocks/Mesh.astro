@@ -7,9 +7,9 @@ import Icon from "../Icon.astro";
 import ContextRing from "../ContextRing.astro";
 
 const hosts = [
-  { name: "laptop", meta: "Sova 0.2.0", chip: "This host", tone: "" },
-  { name: "server", meta: "Sova 0.2.0", chip: "Up", tone: "chip-success" },
-  { name: "phone", meta: "Sova 0.1.0", chip: "Other version", tone: "chip-warn", why: "phone runs a different Sova version (0.1.0). Update one of them." },
+  { name: "laptop", meta: "Sova", chip: "This host", tone: "" },
+  { name: "server", meta: "Sova", chip: "Up", tone: "chip-success" },
+  { name: "phone", meta: "Sova", chip: "Other version", tone: "chip-warn", why: "phone runs a different Sova version. Update one of them." },
 ];
 const sync = [
   { name: "Settings", meta: "Synced 2m ago", chip: "On", tone: "chip-success" },
@@ -38,7 +38,7 @@ const sync = [
       </div>
       <div class="m-row">
         <div class="m-row-main">
-          <div class="m-row-title"><span>Retry policy · sonnet-5</span><span class="m-tag">laptop</span></div>
+          <div class="m-row-title"><span>Retry policy · sonnet-5-5</span><span class="m-tag">laptop</span></div>
           <div class="m-row-sum">Asks: ky's retry, or its own loop?</div>
           <div class="m-row-meta"><span>4m ago · needs input</span><ContextRing pct={22} /></div>
         </div>

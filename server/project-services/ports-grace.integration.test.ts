@@ -5,11 +5,9 @@ import { connect, createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
-import { parseDefinition } from "../../shared/project-contract";
 import { DetachedDriver } from "./drivers";
 import { ProjectEngine, type Caller } from "./engine";
 import { readRegistry } from "./store";
-import { approve, defHashOf } from "./trust";
 import { reservePorts } from "../test-ports";
 
 /**
@@ -67,8 +65,6 @@ before(async () => {
     },
   };
   writeFileSync(join(project, ".sova", "project.json"), JSON.stringify(d, null, 2));
-  const hash = defHashOf(parseDefinition(JSON.stringify(d)));
-  approve(project, hash, hash);
   const git = (args: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd: project });
   git(["init", "-q", "-b", "main"]);
   git(["add", "-A"]);

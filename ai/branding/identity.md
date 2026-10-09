@@ -11,14 +11,14 @@ behind those words and what a rendered brand book has no field for.
 
 ## One line
 
-Run pi sessions side by side. Stop juggling terminals.
+Every agent session, one calm workspace. On your desk, or folded in your pocket.
 
 Sova stands for Sessions, Orchestration, Viewing & Agents.
 
 ## One paragraph
 
-Sova runs on your own machine next to the pi coding agent and reads the same `~/.pi/agent` the
-terminal does. It lists every session on the machine, shows any transcript, watches a session
+Sova runs the pi coding agent itself, on your own machine, through pi's SDK, and reads the same
+`~/.pi/agent` the terminal does. It lists every session on the machine, shows any transcript, watches a session
 that's open in a TUI as it runs, and gives web chats parallel workspaces, branching, and steering.
 Model requests go to your configured provider; tools and extensions may also use the network.
 It is one person's tool for one person's agent.
@@ -26,8 +26,8 @@ It is one person's tool for one person's agent.
 ## Who it is for
 
 Someone who already runs pi. They have sessions on disk, extensions in `pi-config`, and opinions
-about their terminal. Sova doesn't replace that setup; it gives it a second window, one that
-works on a phone across the room and shows more than 80 columns can.
+about their terminal. Sova keeps that setup and gives it a full interface, one that can replace
+pi's terminal UI, works on a phone across the room, and shows more than 80 columns can.
 
 Write for that person. They know what a session, a model, and a tool call are. They don't need
 the agent explained. They do need to know what Sova will and won't touch on disk, because it
@@ -45,12 +45,12 @@ only in sessions Sova created. The rule is in the code, not in a warning.
 and focus. Status carries a word, never a hue alone. Failures are stated once, plainly, with what
 was and wasn't changed.
 
-**It is honest about scope.** Local, single-user, no authentication. The README says to keep the
-app behind authenticated access before exposing it beyond the machine.
+**It is honest about scope.** Local and single-user, with one per-install token as the only gate.
+The README says to protect access before exposing the app beyond the machine.
 
 ## What it is not
 
-Not a hosted service. Not a team product. Not a replacement for pi's TUI. Not a general chat
+Not a hosted service. Not a team product. Not a general chat
 client: it speaks to pi's SDK and reads pi's files, and it would be useless without them.
 
 Do not describe it with words that imply otherwise: platform, workspace-for-teams, cloud, seat,

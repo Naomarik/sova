@@ -249,6 +249,7 @@ export const LINES: Record<string, string> = {
   "build/remove-worktree": "The coding session's worktree is being removed.",
   "tree/removed": "The coding session's worktree was removed.",
   "git/probe": "Git was checked for the branch.",
+  "worktree/adopted": "The worktree the coding session made became its own.",
   "build:effect/failed": "Something the coding session tried failed.",
   // a decision
   "decision/owner-area": "A decision's owner area was changed.",

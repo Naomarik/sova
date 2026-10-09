@@ -35,6 +35,9 @@ import {
 	type AlignDocument,
 	type AlignEnv,
 	type AlignOpName,
+	ALIGN_FILE_SCHEMA,
+	ALIGN_VISUALS_MAX,
+	ALIGN_VISUAL_FIELDS,
 } from "./align.ts";
 
 const NOW = "2026-09-28T10:00:00.000Z";
@@ -548,6 +551,7 @@ test("planSignal: catches a plan that asks the user to decide, and leaves report
 	].join("\n");
 	assert.equal(planSignal(freeform), "asks-decision");
 	assert.equal(planSignal(`${freeform}\n\nAlso changes: none`), "asks-decision", "the spec mode's last line is not the reply's end");
+	assert.equal(planSignal(`${freeform}\n\nAlso updates §chat.input/send: the new button`), "asks-decision", "nor is an Also updates line");
 	assert.equal(planSignal("## Alignment: Export\n### Findings\nx\n### Open questions\n- [ ] **1. Zip:** yes?"), "markdown-alignment");
 	assert.equal(planSignal("Options:\n- **Daily 6** — simple\n- **3 per run** — bursty\n\nWhich do you want: the daily 6 or 3 per run?"), "asks-decision");
 	assert.equal(planSignal("Here is the plan, and its open questions are in the doc:\n1. Add the route\n2. Stream it\n\nGo?"), "list-then-decision");
@@ -615,4 +619,77 @@ test("clampScroll/viewport keep the window inside the content", () => {
 	assert.deepEqual(viewport([1, 2, 3, 4, 5], 1, 2), [2, 3]);
 	assert.deepEqual(viewport([1, 2, 3], 5, 2), [2, 3]);
 	assert.deepEqual(viewport([1, 2, 3], 0, 0), []);
+});
+
+// ── Technical notes, visuals and the writing style (§chat.alignment/document, §chat.alignment/visuals) ──
+
+test("technical notes: tN ids from create, add, edit and remove like findings; absent until the first one", () => {
+	const plain = run([{ ops: [CREATE] }]).docs[0]!;
+	assert.equal("technical" in plain, false, "a document without technical notes has no field");
+	assert.equal("t" in plain.next, false, "nor a counter");
+	const { docs } = run([{ ops: [{ ...CREATE, technical: ["server/export.ts streams it.", "Use node:stream."] }] }]);
+	assert.deepEqual(docs[0]!.technical, [{ id: "t1", text: "server/export.ts streams it." }, { id: "t2", text: "Use node:stream." }]);
+	const { docs: after, last } = run([{ ops: [{ op: "edit", id: "t2", text: "Use pipeline()." }, { op: "remove", ids: ["t1"] }, { op: "add", technical: ["A third."] }] }], docs);
+	assert.deepEqual(after[0]!.technical, [{ id: "t2", text: "Use pipeline()." }, { id: "t3", text: "A third." }], "ids never reused");
+	assert.equal(last.details.line, "t2 edited · −t1 · +t3");
+	throwsAlign(() => applyAlignCall(after, { ops: [{ op: "edit", id: "t9", text: "x" }] }, env), /has no t9/);
+	assert.match(toMarkdown(after[0]!), /### Technical notes\n\n- t2: Use pipeline\(\)\.\n- t3: A third\./);
+	// The snapshot round-trips, and a counter behind its ids is refused like any other kind's.
+	assert.deepEqual(normalizeAlignDetails(JSON.parse(JSON.stringify(last.details)))?.doc, after[0]);
+	const broken = { ...last.details, doc: { ...after[0]!, next: { ...after[0]!.next, t: 1 } } };
+	assert.equal(normalizeAlignDetails(broken)?.doc, undefined);
+});
+
+test("import: the file takes technical, never visual", () => {
+	files["/tmp/tech.json"] = JSON.stringify({ title: "T", summary: "S.", technical: ["a note"] });
+	assert.deepEqual(run([{ ops: [{ op: "import", path: "/tmp/tech.json" }] }]).docs[0]!.technical, [{ id: "t1", text: "a note" }]);
+	files["/tmp/vis.json"] = JSON.stringify({ title: "T", summary: "S.", visual: { kind: "flow", source: "a -> b" } });
+	throwsAlign(() => applyAlignCall([], { ops: [{ op: "import", path: "/tmp/vis.json" }] }, { ...env, visuals: true }), /unknown field "visual"/);
+	assert.match(ALIGN_FILE_SCHEMA, /"technical"\?: \[string/);
+	assert.doesNotMatch(ALIGN_FILE_SCHEMA, /visual/);
+});
+
+test("visuals: only in a session started with Visuals on; on questions and the document, at most 3, null removes", () => {
+	const visual = { kind: "wireframe", source: "screen: phone\n  title: Export" };
+	const withVisual = { ...CREATE, visual, questions: [{ ...Q("Screen"), visual }] };
+	throwsAlign(() => applyAlignCall([], { ops: [withVisual] }, env), /unknown field "visual"/);
+	throwsAlign(() => applyAlignCall([], { ops: [{ ...CREATE, questions: [{ ...Q("Screen"), visual }] }] }, env), /unknown field "visual"/);
+	const on = { ...env, visuals: true };
+	const created = applyAlignCall([], { ops: [withVisual] }, on).details.doc!;
+	assert.deepEqual(created.visual, visual);
+	assert.deepEqual(created.questions[0]!.visual, visual);
+	throwsAlign(() => applyAlignCall([], { ops: [{ ...CREATE, visual: { kind: "Flow chart", source: "x" } }] }, on), /one vis kind word/);
+	throwsAlign(() => applyAlignCall([], { ops: [{ ...CREATE, visual: { kind: "flow", source: "  " } }] }, on), /source must be/);
+	// One more reaches the cap; a fourth is refused, whole call.
+	const added = applyAlignCall([created], { ops: [{ op: "add", questions: [{ ...Q("Flow"), visual: { kind: "flow", source: "a -> b" } }, Q("Plain")] }] }, on).details.doc!;
+	assert.equal(ALIGN_VISUALS_MAX, 3);
+	throwsAlign(() => applyAlignCall([added], { ops: [{ op: "edit_question", q: "q3", visual: { kind: "steps", source: "s" } }] }, on), /would carry 4 visuals: at most 3/);
+	assert.ok(applyAlignCall([added], { ops: [{ op: "edit_question", q: "q2", visual: { kind: "steps", source: "s" } }] }, on).details.doc, "replacing one keeps the count");
+	const removed = applyAlignCall([added], { ops: [{ op: "edit_doc", visual: null }, { op: "edit_question", q: "q3", visual: { kind: "steps", source: "s" } }] }, on);
+	assert.equal(removed.details.doc!.visual, undefined);
+	assert.deepEqual(removed.details.doc!.questions[2]!.visual, { kind: "steps", source: "s" });
+	assert.equal(removed.details.line, "visual edited · q3 edited");
+	// Without Visuals the edits that carry them are refused, whatever the document holds.
+	throwsAlign(() => applyAlignCall([added], { ops: [{ op: "edit_doc", visual: null }] }, env), /unknown field "visual"/);
+	// Markdown: the source in a vis code block, under the summary's status line (and under its question).
+	const fence = "```";
+	assert.ok(toMarkdown(created).includes(`v1\n\n${fence}vis wireframe\nscreen: phone\n  title: Export\n${fence}`), "the document's visual after the status line");
+	assert.ok(toMarkdown(created).includes(`Screen?\n\n${fence}vis wireframe\n`), "a question's after its ask");
+	assert.deepEqual(normalizeAlignDetails(JSON.parse(JSON.stringify({ v: 1, doc: created, changes: [], line: "" })))?.doc, created);
+	assert.deepEqual(Object.keys(ALIGN_VISUAL_FIELDS).sort(), ["create", "edit_doc", "edit_question"]);
+});
+
+test("style: a changing call records the non-Default style in effect; Default records none and clears it", () => {
+	const pm = applyAlignCall([], { ops: [CREATE] }, { ...env, style: "pm" }).details.doc!;
+	assert.equal(pm.style, "pm");
+	assert.match(toMarkdown(pm), /· v1 · Project manager style/);
+	const read = applyAlignCall([pm], { ops: [{ op: "get" }] }, { ...env, style: "simplified" });
+	assert.equal(read.details.doc, undefined, "a get changes nothing, so records nothing");
+	const simple = applyAlignCall([pm], { ops: [{ op: "decide", q: "q1", decision: "Full" }] }, { ...env, style: "simplified" }).details.doc!;
+	assert.equal(simple.style, "simplified", "the latest change's style");
+	const plain = applyAlignCall([simple], { ops: [{ op: "decide", q: "q2", decision: "JSONL" }] }, { ...env, style: "default" }).details.doc!;
+	assert.equal("style" in plain, false);
+	const none = applyAlignCall([], { ops: [CREATE] }, env).details.doc!;
+	assert.equal("style" in none, false, "no style given (an older host): no field");
+	assert.equal(normalizeAlignDetails({ v: 1, doc: { ...pm, style: "expert" }, changes: [], line: "" })?.doc, undefined, "an unknown style is malformed");
 });

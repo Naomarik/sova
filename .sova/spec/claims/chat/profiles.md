@@ -58,8 +58,8 @@ Overseer, project overseers, baton, organization and TUI-live sessions show no p
   the session's; one card is in the tab order. Arrow keys move focus between cards, Home and End to
   the first and last, and Enter, Space or a click picks (moving focus never picks: every pick
   reopens the runtime). The focused card shows the focus ring, and focus is back on the picked card
-  once the runtime has reopened. Cards fill the 560px column in as many columns as fit at 160px or
-  wider. Where the picker is narrower than 480px (a phone), the cards are one column of single-line
+  once the runtime has reopened. Cards fill the session column (at most `--measure`, the message cap of
+  §chat.transcript/transcript-items) in as many columns as fit at 220px or wider. Where the picker is narrower than 480px (a phone), the cards are one column of single-line
   cards: icon, label, caption and chips on one 44px line (chips that don't fit take a second), the
   caption cut short with an ellipsis first, the label keeping up to about two thirds of the card
   before it is cut. A card that can't be used keeps its whole reason, on its own line below. **Built in** comes first (Default, then the shipped profiles), then **This project ({name})**, then **Yours**, each under its own label; hidden

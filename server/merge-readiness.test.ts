@@ -151,6 +151,11 @@ test("R4: ready, or asking 'Shall I merge it into master?' → a decide item (ne
   assert.deepEqual(r.readinessItems(row({ archived: true })), []);
 });
 
+test("replyBody cuts closing Also updates lines", () => {
+  assert.equal(r.replyBody("Shall I merge it?\n\nAlso updates §app.x/y: a\nAlso updates §app.z/w: b"), "Shall I merge it?");
+  assert.equal(r.replyBody("Done.\nAlso updates §app.x/y: a"), "Done.");
+});
+
 test("a failed or missing check: failed keeps it off ready, none is still ready and says so", () => {
   assert.deepEqual(r.treeReadiness(tree(), { ...idle, lastCheck: { at: 1, ok: false } }), { state: "in-progress", why: "the last check failed", reason: "In progress · the last check failed" });
   assert.deepEqual(r.treeReadiness(tree(), idle), { state: "ready", why: "no check run seen", reason: "Ready to merge · no check run seen · 1 commit ahead" });

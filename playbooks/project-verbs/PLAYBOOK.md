@@ -1,23 +1,23 @@
 ---
 title: Project verbs
-approves: definition
+proposes: definition
 description: Declares how this project runs in .sova/project.json, so every worktree gets its own isolated running copy: chooses isolation per service, writes the definition, hooks and a minimal app adapter on a branch, and proves it with conformance.
 promptHint: Why you are running it (first onboarding, or what changed), and anything Sova can't see: services you never start, data that must not be copied, ports to keep clear.
 ---
 
 # Project verbs
 
-You make this project runnable by Sova's project verbs: one running copy per checkout, each with its own ports and data, so coding sessions build features side by side without touching each other or the main checkout. You write `.sova/project.json` and what it needs, on a branch, and prove it with `conform`. The operator approves and merges; you never do.
+You make this project runnable by Sova's project verbs: one running copy per checkout, each with its own ports and data, so coding sessions build features side by side without touching each other or the main checkout. You write `.sova/project.json` and what it needs, on a branch, and prove it with `conform`. The operator merges it; you never do.
 
 Paths here are relative to this playbook's folder. `scripts/project-verbs.mjs` does the mechanical reading: run `node scripts/project-verbs.mjs <command> --root <your checkout>` and read its digest. Exit 0 is fine, 1 is something to act on, 2 is "couldn't tell": treat 2 as not fine, never as 0. Read `references/contract.md` before you write the definition and `references/isolation.md` before you choose isolation; `references/recipes.md` has the usual moves per stack (ports, datastores, local config, test runners), and `references/examples/` three worked definitions.
 
 ## Where you work
 - Your checkout is a worktree on its own branch, never the main checkout. A Project verbs run started from the project page already is one. Started anywhere else: check `git worktree list`; in the main checkout, cut a worktree first (the `worktree` tool, `create project-verbs`) and work there.
 - Read the project at HEAD. The main checkout may have uncommitted edits: they are not the project, and the definition must not depend on them.
-- Every run of the project's code goes through `project_verbs`. Before the operator approves, `conform` is the only verb that runs your definition (confined: a private network namespace, the sandbox's files rule); `up` and `test` answer `not-approved`, and that is expected.
+- Every run of the project's code goes through `project_verbs`: `up`, `test` and `conform` run your branch's definition as written.
 
 ## When you need a decision, ask
-You run with `align` on, and the operator answers you. When the repository can't settle a choice that changes what you write, ask with `align` and end your turn instead of guessing: which of two held ports a service takes when its usual one is busy, whether a store is production data when its name doesn't say, which of two serving services is the app's entry point, whether a task that writes outside the checkout may run in a copy. One question per choice, each with the options you found, what each means for the definition, and your recommendation. The answer arrives as the next message; carry on from where you stopped. Never ask what you can read (a file, a route, a port in use), and never ask for approval or a merge: those are the operator's buttons, after your report.
+You run with `align` on, and the operator answers you. When the repository can't settle a choice that changes what you write, ask with `align` and end your turn instead of guessing: which of two held ports a service takes when its usual one is busy, whether a store is production data when its name doesn't say, which of two serving services is the app's entry point, whether a task that writes outside the checkout may run in a copy. One question per choice, each with the options you found, what each means for the definition, and your recommendation. The answer arrives as the next message; carry on from where you stopped. Never ask what you can read (a file, a route, a port in use), and never ask for a merge: that is the operator's button, after your report.
 
 ## Steps
 1. **State.** `project_verbs {verb: "status"}` and `{verb: "doctor"}` for the project; the run's reason is the text after `---` in this message, if any.
@@ -36,8 +36,8 @@ You run with `align` on, and the operator answers you. When the repository can't
    - **Silence outbound sends when any data resource is `sensitive`** (a copy of real users' data must never message them). Find every channel in config and code: push notifications, chat bots (Telegram, Slack…), SMS/WhatsApp, email, webhooks, payment and other third-party calls. Route each send through one switch, `SOVA_SILENCE_OUTBOUND`: set to anything but `0` or empty, the send returns a stand-in answer and nothing leaves the host. Set it to `${slot}` in every service's `env`, so slot 0 (the main checkout) sends as before. Add a test to the `smoke` selection that fails when `SOVA_SLOT` is not 0 and the switch is off, and that calls every send path with each transport replaced by one that throws. `references/recipes.md` has the pattern.
    - One sentence in CLAUDE.md (or AGENTS.md, whichever the project has): "Ports above are the main checkout's; in a Sova worktree use the ports in Sova's instance note, and run tests with project_verbs test."
 6. **Check.** `project-verbs.mjs fmt`, then `project-verbs.mjs check` until it exits 0 (a `note:` is advice, a `problem:` must be fixed). Commit by explicit path: `git add .sova <each adapted file>`, `git commit -m "Project verbs: <what>"`.
-7. **Conform.** `project_verbs {verb: "conform", ref: "<your branch>"}`. On a failure read its error code, the failing check's detail and `conform.logs` (the last lines of each service that was not ready and of a failed step), fix the cause, check, commit, and run it again. With `open` declared, read the `open` check's detail: the entry must answer with HTML (`text/html` in its content type). Anything else (JSON, plain text, a redirect to an API, no content type when the page should have one) means the entry is not the app's page: read the routes again, fix `open`, and conform again. **At most 6 conform runs** in this session; after the sixth failure stop and report. A conform that answers `not-approved` (a container service, a data folder copied from outside the project or from a hidden path, or a host that can't confine) ran nothing: fix the definition if you can (keep data `from` inside the project), else report the refusal word for word instead of looping.
-   **Guard:** with a sensitive resource, propose nothing until a confined conform passed with the silencing test in `smoke`. If you can't verify the silencing (a channel you can't route through the switch, a send you can't make throw in a test), stop and say exactly which, and never ask for approval.
+7. **Conform.** `project_verbs {verb: "conform", ref: "<your branch>"}`. On a failure read its error code, the failing check's detail and `conform.logs` (the last lines of each service that was not ready and of a failed step), fix the cause, check, commit, and run it again. With `open` declared, read the `open` check's detail: the entry must answer with HTML (`text/html` in its content type). Anything else (JSON, plain text, a redirect to an API, no content type when the page should have one) means the entry is not the app's page: read the routes again, fix `open`, and conform again. **At most 6 conform runs** in this session; after the sixth failure stop and report.
+   **Guard:** with a sensitive resource, propose nothing until a conform passed with the silencing test in `smoke`. If you can't verify the silencing (a channel you can't route through the switch, a send you can't make throw in a test), stop and say exactly which, and propose nothing.
 8. **Measure.** The passing report's `memory` gives each service's steady and peak resident memory, and each scratch instance's total. Report it as measured; never estimate.
 9. **Report** (below), and end your turn.
 
@@ -54,7 +54,7 @@ You run with `align` on, and the operator answers you. When the repository can't
 ## Report
 - `Services`: one line each: name · kind · scope · isolation method — why · ports (slot 0 → slot 1) · "reloads on merge" when it carries `onMerge`.
 - `Entry`: `open` as declared (`web.http` at `/`), the page it shows, and the status and content type the `open` check read; or "none" and why (a library, an API-only project).
-- `Conform`: pass or fail, runs used of 6, confined or not, suite version, the definition's hash (first 12 hex), and for a failure the check, its detail and what you would try next.
+- `Conform`: pass or fail, runs used of 6, suite version, the definition's hash (first 12 hex), and for a failure the check, its detail and what you would try next.
 - `RAM`: per service steady / peak, and per instance total, from the report.
 - `Sensitive data`: each data resource marked `sensitive` and the evidence (or "none: no production-derived data found").
 - `Share`: the endpoints listed and what each shows, or `allow: false` and why.
@@ -62,7 +62,7 @@ You run with `align` on, and the operator answers you. When the repository can't
 - `Tests`: the command, the smoke selection and its counts.
 - `Adapter`: each app file changed, and the literal it keeps as its default; and each of those files the main checkout has uncommitted edits to (Merge Branch needs them committed or set aside first).
 - `Deploy entrypoints found (never run)`: what inspect listed.
-- `Next`: "Approve & Merge <hash12> on the project page." (or why it can't be approved yet).
+- `Next`: "Merge Branch <hash12> on the project page." (or why it can't be merged yet).
 
 ## Never
-Approve a definition, merge, push or rebase. Edit, start, stop or reset the main checkout or its running processes (its datastores included). Run deploy, prod, release, tunnel or backup tasks. Start anything by hand (`&`, `nohup`, tmux, `bb tmux`, `docker run`): only the verbs start things. Copy secrets or local config into tracked files, or write `${host.…}` values into the repo. Print, copy or log a channel's credentials (bot tokens, push or API keys, SMTP passwords) anywhere: reports, fixtures, tests, commit messages, messages to anyone; read config files with such values masked. Send anything real while testing. Weaken, skip or rewrite a conformance check or the smoke selection to make conform pass.
+Merge, push or rebase. Edit, start, stop or reset the main checkout or its running processes (its datastores included). Run deploy, prod, release, tunnel or backup tasks. Start anything by hand (`&`, `nohup`, tmux, `bb tmux`, `docker run`): only the verbs start things. Copy secrets or local config into tracked files, or write `${host.…}` values into the repo. Print, copy or log a channel's credentials (bot tokens, push or API keys, SMTP passwords) anywhere: reports, fixtures, tests, commit messages, messages to anyone; read config files with such values masked. Send anything real while testing. Weaken, skip or rewrite a conformance check or the smoke selection to make conform pass.

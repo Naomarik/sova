@@ -91,15 +91,14 @@ Adding `--related` lists every § a changed file lands in, with its `requires` a
 notes each touched § the task didn't create (`touched-foreign`), and with `--spec <draft spec dir>`
 each new claim nested under one (`child-under-foreign`). The notes are reminders to read and judge,
 not flags. Any § the task didn't create is foreign, even one your draft edits, and even the parent
-your new claim nests under; editing it in the draft (a row, a sub-claim, a sketch line) is itself a
-flag. Read a foreign § with `read` and stay silent while its text holds; plumbing (an added
-request, hook, helper, CSS class or types) never flags. Otherwise flag only a contradiction of its
-text, or something a user would see there that its own text doesn't describe; that your new claim
-describes it, in the parent's document or its own, does not remove the flag. A gap the foreign §
-already had (a field its prose never named) is not a change your task made, even when your feature
-now depends on that field: mention it, or open a baseline draft. Batch the flags into the plan as
-one question ("This also changes §X: <what>. OK?"); a session told not to ask says them in its
-reply. Before finishing, run `census --changed` once more: every changed file in the boundary is
+your new claim nests under; read it with `read` and stay silent while its text holds; plumbing (an added
+request, hook, helper, CSS class or types) never counts. Where your change contradicts its text, or
+adds something a user would see there that its own text doesn't describe (even when your new claim
+describes it, in the parent's document or its own), update it in your draft (a row, a sub-claim, a
+sketch line) without asking: the task's go-ahead covers it, even for an `agreed` record. List each
+in your reply ("Also updates §X: <what>"). A gap the foreign § already had (a field its prose never
+named) is not a change your task made, even when your feature now depends on that field: mention
+it, or open a baseline draft. Before finishing, run `census --changed` once more: every changed file in the boundary is
 claimed, and any changed file outside it whose change a user sees is spec'd.
 Exempt work skips the draft, not the census.
 

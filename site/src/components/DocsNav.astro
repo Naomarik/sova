@@ -1,0 +1,36 @@
+---
+// The docs' page list, grouped, drawn twice by the layout: the sidebar and the <details> menu.
+// A group's own pages come first; each subgroup is then one item holding its label and a nested,
+// indented list named by that label. `idPrefix` keeps the labels' ids unique on the page.
+import { docHref, groups, subgroups, subgroupLabels, type DocEntry } from "../data/docs";
+
+interface Props { docs: DocEntry[]; current: string; idPrefix: string }
+const { docs, current, idPrefix } = Astro.props;
+const grouped = groups
+  .map((group) => {
+    const pages = docs.filter((d) => d.data.group === group);
+    return {
+      group,
+      own: pages.filter((d) => !d.data.subgroup),
+      subs: subgroups.map((sub) => ({ sub, pages: pages.filter((d) => d.data.subgroup === sub) })).filter((s) => s.pages.length),
+    };
+  })
+  .filter((g) => g.own.length || g.subs.length);
+const at = (d: DocEntry) => (d.id === current ? "page" : undefined);
+---
+{grouped.map(({ group, own, subs }) => (
+  <div class="docs-group">
+    <p class="docs-group-label" id={`${idPrefix}-${group.toLowerCase()}`}>{group}</p>
+    <ul aria-labelledby={`${idPrefix}-${group.toLowerCase()}`}>
+      {own.map((d) => <li><a href={docHref(d.id)} aria-current={at(d)}>{d.data.title}</a></li>)}
+      {subs.map(({ sub, pages }) => (
+        <li class="docs-subgroup">
+          <p class="docs-subgroup-label" id={`${idPrefix}-${sub.toLowerCase()}`}>{subgroupLabels[sub]}</p>
+          <ul aria-labelledby={`${idPrefix}-${sub.toLowerCase()}`}>
+            {pages.map((d) => <li><a href={docHref(d.id)} aria-current={at(d)}>{d.data.title}</a></li>)}
+          </ul>
+        </li>
+      ))}
+    </ul>
+  </div>
+))}

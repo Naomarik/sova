@@ -9,8 +9,8 @@ import type { RowTarget } from "./older-rows";
 export const JUMP_HIGHLIGHT_MS = 1500;
 /** The tint's class, on the landed-on row. */
 export const JUMP_CLASS = "entry-jumped";
-/** Dispatched on the transcript before a jump scrolls it: the transcript stops following the
-    bottom, so a row still rendering below can't pull the view back down mid-scroll. */
+/** Dispatched on the transcript with the row to land on (`detail`): the transcript stops following
+    the bottom, places the row and holds it, and cancels the event to say it did. */
 export const JUMP_EVENT = "sova-jump";
 
 const escape = (id: string) => (typeof CSS !== "undefined" && CSS.escape ? CSS.escape(id) : id.replace(/["\\]/g, "\\$&"));
@@ -67,7 +67,8 @@ export function transcriptRoot(path?: string | null): HTMLElement | null {
 export interface TranscriptRows {
   /** Whether the thread renders a row for this entry, built yet or not. */
   has(entryId: string): boolean;
-  /** Builds every row from this entry's down, now. False when the thread has no such row. */
+  /** Builds every row from this entry's down, now, and a few above it (lib/tail-render
+      `jumpStart`), so it can sit in the middle of the view. False when the thread has no such row. */
   ensure(entryId: string): boolean;
   /** The branch may have rows above the list that the view doesn't hold yet (lib/older-rows):
       a row that isn't here may still be there, so "not there" isn't known yet. */
@@ -129,19 +130,20 @@ export function findEntryRow(entryId: string, root: ParentNode | null = transcri
 }
 
 /**
- * Scroll the entry's row into the middle of the transcript and tint it briefly, so the eye can
- * find where it landed. Returns false when the transcript has no such row: callers say so rather
- * than scrolling nowhere. `path` picks the pane in a workspace; without it, the page's transcript.
+ * Land on the entry's row, in the middle of the transcript, at once, and tint it briefly, so the
+ * eye can find where it landed. The transcript places it and holds it there while the rows around
+ * it are first drawn (ThreadScroller); one that doesn't take the jump gets the row put in its
+ * middle once. Returns false when the transcript has no such row: callers say so rather than
+ * scrolling nowhere. `path` picks the pane in a workspace; without it, the page's transcript.
  */
 export function jumpToEntry(entryId: string, path?: string | null): boolean {
   const root = transcriptRoot(path);
   const row = ensureRendered(entryId, root);
   if (!row) return false;
-  root?.dispatchEvent(new Event(JUMP_EVENT));
-  row.scrollIntoView({ block: "center", behavior: "smooth" });
+  const taken = root ? !root.dispatchEvent(new CustomEvent<HTMLElement>(JUMP_EVENT, { detail: row, cancelable: true })) : false;
+  if (!taken) row.scrollIntoView({ block: "center", behavior: "instant" });
   row.classList.add(JUMP_CLASS);
   setTimeout(() => row.classList.remove(JUMP_CLASS), JUMP_HIGHLIGHT_MS);
-  if (root) recenter(root, row, JUMP_CORRECTIONS);
   return true;
 }
 
@@ -182,50 +184,6 @@ export function jumpWhenArrived(entryId: string, path: string | null | undefined
   };
   void first.then((r) => settle(r, true));
   return "waiting";
-}
-
-/** Off center by more than this after a jump's scroll, the jump aims again. */
-const JUMP_TOLERANCE_PX = 24;
-/** At most this many more aims. */
-const JUMP_CORRECTIONS = 2;
-/** A scroll is over once no scroll event has come for this long. */
-const SCROLL_QUIET_MS = 150;
-
-/**
- * A long jump aims at a position computed partly from estimated row heights (rows never drawn are
- * skipped at an estimate, app.css `.entry`), and the rows it passes are drawn at their real
- * heights on the way. Once the scroll comes to rest, aim again from the row's real position if it
- * didn't land in the middle: each pass starts nearer, among rows already drawn.
- */
-function recenter(root: HTMLElement, row: HTMLElement, left: number): void {
-  let timer = 0;
-  let over = false;
-  const finish = () => {
-    if (over) return;
-    over = true;
-    clearTimeout(timer);
-    root.removeEventListener("scroll", onScroll);
-    root.removeEventListener("scrollend", finish);
-    if (!row.isConnected) return;
-    const view = root.getBoundingClientRect();
-    const box = row.getBoundingClientRect();
-    const off = (box.top + box.bottom) / 2 - (view.top + view.bottom) / 2;
-    // A row taller than the view never sits inside it: filling it is landing enough.
-    const landed = Math.abs(off) <= JUMP_TOLERANCE_PX || (box.height > view.height && box.top <= view.top && box.bottom >= view.bottom);
-    if (landed || left <= 0) return;
-    root.dispatchEvent(new Event(JUMP_EVENT));
-    row.scrollIntoView({ block: "center", behavior: "smooth" });
-    recenter(root, row, left - 1);
-  };
-  // The scroll is over at `scrollend` where the browser has it, else after a quiet spell (which
-  // also covers a scroll that never started: the row was already in place).
-  const onScroll = () => {
-    clearTimeout(timer);
-    timer = window.setTimeout(finish, SCROLL_QUIET_MS);
-  };
-  root.addEventListener("scroll", onScroll, { passive: true });
-  root.addEventListener("scrollend", finish);
-  timer = window.setTimeout(finish, SCROLL_QUIET_MS);
 }
 
 // ---- A jump asked for before the session is on screen ------------------------------------------

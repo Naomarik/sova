@@ -4,12 +4,11 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSy
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
-import { parseDefinition, type VerbResult } from "../../shared/project-contract";
+import { type VerbResult } from "../../shared/project-contract";
 import { conformer } from "./conform";
 import { ProjectEngine, type Caller } from "./engine";
 import { FakeHost } from "./fake-host";
 import { readRegistry, servicesRoot } from "./store";
-import { approve, defHashOf } from "./trust";
 
 /**
  * conform's no-leaks check (§app.project-services/conform) while something else happens on the same
@@ -46,8 +45,6 @@ before(async () => {
   git(["init", "-q", "-b", "main"]);
   git(["add", "-A"]);
   git(["commit", "-q", "-m", "fixture"]);
-  const hash = defHashOf(parseDefinition(readFileSync(join(project, ".sova/project.json"), "utf8")));
-  approve(project, hash, hash);
   engine = new ProjectEngine(new FakeHost().deps());
   engine.conformer = conformer(engine);
   const real = engine.run.bind(engine);

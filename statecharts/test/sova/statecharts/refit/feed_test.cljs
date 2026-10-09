@@ -98,12 +98,12 @@
 (deftest runtime
   (let [sid "runtime/pr1" mk #(started "runtime" sid {:project-id "pr1" :root "/r"})]
     (is (= :quiet (feed-of (mk) sid :runtime/observed {:def {:state "absent"}})) "the host's observation is a mirror")
-    (is (= :feed (feed-of (mk) sid :runtime/approve (assoc op :hash "h1"))) "an act (taken or refused) is feed")))
+    (is (= :feed (feed-of (mk) sid :effect/done {:kind "conform" :result {:hash "h1" :suite 2 :pass true :at 1}})) "the conformance's answer is feed")))
 
 (deftest every-transitions-class-is-the-golden-one
   (let [now (ft/table)
         ks  (into (set (keys now)) (keys fg/golden))
         bad (for [k (sort ks) :when (not= (get now k ::none) (get fg/golden k ::none))]
               [k :now (get now k ::none) :golden (get fg/golden k ::none)])]
-    (is (= 504 (count fg/golden)))
+    (is (= 492 (count fg/golden)))
     (is (empty? bad) (str (count bad) " differ: " (pr-str (take 20 bad))))))

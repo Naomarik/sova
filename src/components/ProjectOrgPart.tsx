@@ -18,11 +18,11 @@ import {
   setProjectStakeholder,
   setSpecFrozen,
 } from "../lib/api";
-import { alsoCarriesLine, areaGroups, BUILD_CHIP, builtLine, conflictSides, DECISION_STATE, decisionsLine, emptySelection, outsideTheirArea, promotable, type PromoteSelection, refName, refreshSelection, selectAllReady, toggleSelection } from "../lib/decisions-view";
+import { alsoCarriesLine, areaGroups, provenanceName, BUILD_CHIP, builtLine, conflictSides, DECISION_STATE, decisionsLine, emptySelection, outsideTheirArea, promotable, type PromoteSelection, refName, refreshSelection, selectAllReady, toggleSelection } from "../lib/decisions-view";
 import { promotionCommitLine } from "../lib/coding-worktrees";
 import { relativeTime } from "../lib/format";
 import { hostLabel, orgHostOf } from "../lib/mesh";
-import { orgSessionHref, orgTabHref } from "../lib/orgs-route";
+import { orgHistoryHref, orgSessionHref, orgTabHref } from "../lib/orgs-route";
 import { itemSendInput } from "../lib/project-overseer-view";
 import { attentionLine, emptySectionsLine } from "../lib/project-page";
 import { stakeholderView } from "../lib/stakeholder";
@@ -118,6 +118,8 @@ export function createProjectOrgPart(orgId: string, ctx: ProjectPartContext): Pr
   return {
     back: () => ({ href: orgTabHref(orgId, "projects"), label: `Back to ${org()?.name ?? "the organization"}` }),
     attachedWho: "This organization",
+    // Open History: the org's History tab, filtered to this project.
+    historyHref: () => orgHistoryHref(orgId, { filters: { projects: [projectId] } }),
     orgLink: () => (
       <Show when={org()}>
         {(o) => (
@@ -645,7 +647,7 @@ function Provenance(props: { orgId: string; row: DecisionRow }) {
       <p class="project-statement">{r().statement}</p>
       <blockquote class="project-quote">{r().quote}</blockquote>
       <p class="project-by">
-        {r().name} · <time title={r().at}>{relativeTime(r().at)}</time>
+        <span title={provenanceName(r()).title}>{provenanceName(r()).text}</span> · <time title={r().at}>{relativeTime(r().at)}</time>
         <Show when={r().sessionPath} fallback={<span title={`The session isn't on ${host() ? hostLabel(host()!) : "this host"}.`}> · session elsewhere</span>}>
           {(p) => (
             <>
@@ -844,7 +846,7 @@ function DecisionsCard(props: CardProps) {
                           )}
                         </Show>
                         <Show when={outsideTheirArea(d)}>
-                          <Chip tone="warn" title={`${d.name} doesn't decide ${d.ownerArea && d.ownerArea !== OWNER_AREA_NONE ? d.ownerArea : d.area}. Select All Ready leaves it out; tick it to promote it anyway.`}>
+                          <Chip tone="warn" title={`${provenanceName(d).text} doesn't decide ${d.ownerArea && d.ownerArea !== OWNER_AREA_NONE ? d.ownerArea : d.area}. Select All Ready leaves it out; tick it to promote it anyway.`}>
                             Outside their area
                           </Chip>
                         </Show>

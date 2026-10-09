@@ -4,7 +4,6 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
-import { parseDefinition } from "../../shared/project-contract";
 import { historyOf } from "../harness/pi/reader";
 import { stateView } from "../harness/state-view";
 import { staticServes, stopStaticServe } from "../preview-serve";
@@ -13,7 +12,6 @@ import { ProjectEngine, type Caller } from "./engine";
 import { instanceNote, lastNoteDigest, NOTE_MESSAGE, noteDigest, registerInstanceNote, resultNote } from "./note";
 import { readRegistry } from "./store";
 import { renderResult } from "./tools";
-import { approve, defHashOf } from "./trust";
 import { reservePorts } from "../test-ports";
 
 /**
@@ -45,14 +43,11 @@ let checkout = "";
 let id = "";
 let engine: ProjectEngine;
 
-const define = (d: object, where = project, approveIt = true) => {
+const define = (d: object, where = project) => {
   // Never the real cwd: before `before` has set `project` it is "", and join("", ".sova", ...) is
   // the repository's own .sova/project.json.
   assert.ok(where.startsWith(realpathSync(tmpdir()) + "/"), `define() outside the temp dir: "${where}"`);
   writeFileSync(join(where, ".sova", "project.json"), JSON.stringify(d, null, 2));
-  if (!approveIt) return;
-  const hash = defHashOf(parseDefinition(JSON.stringify(d)));
-  approve(project, hash, hash);
 };
 
 before(async () => {
@@ -114,9 +109,9 @@ test("a worktree's note: its own ports beside the main checkout's, abouts, data 
   assert.equal(up.ok, true, up.error?.message);
   assert.equal(instanceNote((await engine.noteFacts(checkout))!, false), text);
 
-  // Unapproved, invalid.
-  define({ ...def(), slots: { cap: 3 } }, checkout, false);
-  assert.match(instanceNote((await engine.noteFacts(checkout))!, false), /Its definition is not approved on this host yet: the operator approves it before anything runs\./);
+  // Edited in the worktree: the note is the copy's as before, its first line unchanged; then invalid.
+  define({ ...def(), slots: { cap: 3 } }, checkout);
+  assert.equal(instanceNote((await engine.noteFacts(checkout))!, false).split("\n")[0], text.split("\n")[0]);
   writeFileSync(join(checkout, ".sova", "project.json"), "{ nope");
   assert.match(instanceNote((await engine.noteFacts(checkout))!, false), /^Sova instance note for .*: its \.sova\/project\.json is invalid \(\$: not JSON/);
   define(def(), checkout);

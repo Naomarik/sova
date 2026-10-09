@@ -4,11 +4,9 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
-import { parseDefinition } from "../../shared/project-contract";
 import { FakeHost } from "./fake-host";
 import { ProjectEngine, type Caller, type VerbAct } from "./engine";
 import { readRegistry } from "./store";
-import { approve, defHashOf } from "./trust";
 
 /**
  * Sova hosting itself (§app.project-services/self-host): on the server's own checkout, apply, down,
@@ -39,8 +37,6 @@ function makeProject(dir: string, base: number) {
   writeFileSync(join(dir, ".gitignore"), "");
   git(["add", "-A"]);
   git(["commit", "-q", "-m", "fixture"]);
-  const h = defHashOf(parseDefinition(JSON.stringify(def)));
-  approve(dir, h, h);
 }
 
 before(async () => {

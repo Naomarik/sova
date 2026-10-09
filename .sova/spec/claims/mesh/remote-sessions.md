@@ -35,10 +35,12 @@ the host (", on {host}, other version"); only a down host says ", which can't be
 
 ## §mesh.remote-sessions/host-picker — New session: Host
 
-While the mesh is on, New Session has a **Host** choice above This Computer | Remote: where the
+While the mesh is on, New Session has a **Host** choice above Project | This Computer | Remote: where the
 agent runs and the conversation is stored. It defaults to the host serving the page, labelled by
 name. Down or skewed hosts, and hosts that hide their sessions from this one, are disabled with the reason. Choosing a host re-scopes folders, recent
-folders, targets and models to that host. Remote keeps meaning where the tools run.
+folders, targets and models to that host. Remote keeps meaning where the tools run. Project
+(§app/new-session-dialog) is offered only while the Host is the host serving the page: choosing
+another host drops the tab, and moves the dialog to This Computer when Project was shown.
 
 ## §mesh.remote-sessions/routing — Addresses
 

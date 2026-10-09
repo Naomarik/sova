@@ -33,6 +33,9 @@ export interface Provenance {
   by: string;
   /** Their display name when the decision was recorded. */
   name: string;
+  /** "recovery": a decision recovered from a marker that kept no name, so `name` is their label when it was
+      recovered, not when it was recorded. */
+  nameAt?: "recovery";
   /** "" for a decision the operator stated on the project page (a conflict's resolution). */
   sessionId: string;
   /** The user message holding the quote (the last one before the decision entry); the decision
@@ -87,6 +90,8 @@ export interface DecisionRow {
   /** A roster person's id, or "operator". */
   by: string;
   name: string;
+  /** As Provenance.nameAt. */
+  nameAt?: "recovery";
   /** ISO time of the decision entry. */
   at: string;
   sessionId: string;

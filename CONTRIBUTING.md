@@ -17,7 +17,7 @@ pnpm start
 ```
 
 `pnpm start` runs the server on Bun; Node only on request (`scripts/start-server.sh --node`, see
-the README's "Run on Bun (or Node)"). Open <http://127.0.0.1:4800>. This runs your checkout; the release installer instead installs its
+[Running as a service](docs/running-as-a-service.md)). Open <http://127.0.0.1:4800>. This runs your checkout; the release installer instead installs its
 pinned tag. Provider login and network access are covered in [Getting started](docs/getting-started.md).
 
 For frontend development, run `pnpm run dev:server` and `pnpm run dev:web` in separate terminals,

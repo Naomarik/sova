@@ -10,7 +10,7 @@ import { listPlaybooks } from "../playbooks";
 import * as pd from "../../playbooks/project-deploy/scripts/project-deploy.mjs";
 
 /**
- * The Project deploy playbook (§app.project-runtime/deploy-playbook): a verb playbook that approves
+ * The Project deploy playbook (§app.project-runtime/deploy-playbook): a verb playbook that proposes
  * `deploy`, asks before it writes, and only reads: its driver lists the repository's deploy
  * candidates without running one, and its check refuses what Sova's parser can't see (a literal
  * address, a shell string, a secret-looking value).

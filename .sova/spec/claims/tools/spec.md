@@ -157,15 +157,16 @@ count a few words above its length, and growing it is a deliberate change.
 
 ## §tools.spec/no-turn-end-check — A turn ends when the model stops
 
-Replies carry no spec lines: no `Also changes:`, `Plumbing:`, `Deferred:` or `Spec check
-override:` line is asked for or checked. A turn with spec on ends when the model stops, as one
+Replies carry no spec lines but one, "Also updates §X: <what>" (below), which nothing checks;
+no `Also changes:`, `Plumbing:`, `Deferred:` or `Spec check override:` line is asked for or checked. A turn with spec on ends when the model stops, as one
 with spec off does: nothing re-prompts it, and no warning, toast, hidden note, session record or
 card about the turn's spec changes is added, in a pi session, a pi worker or a Claude Code worker.
 A worker writes no spec ledger, and its parent reads none. A Claude Code worker started before
 this change that still calls the hook's `stop` step or passes `--ledger` gets nothing: the hook
-prints nothing and exits 0. A change that also changes a foreign § (one that existed before the
-task started) is asked about in the plan as "This also changes §X: <what>. OK?"; a session or
-worker that can't ask says it in its reply or report. Spec mode stands alone: its guide, notes and
+prints nothing and exits 0. A foreign § (one that existed before the task
+started) whose text the task's change contradicts, or where it changes what a user sees beyond
+that text, is updated in the task's draft without asking, the task's go-ahead covering it, and
+listed in the reply or report as "Also updates §X: <what>"; it is never asked about. Spec mode stands alone: its guide, notes and
 tools never rely on the merge round or a merge captain, and a session promotes its own drafts.
 In the web app, an older reply shows any closing lines it was written with, as written, and an
 older session's spec-turn records draw nothing.
@@ -198,8 +199,8 @@ it was merged from, byte for byte, or the promotion is refused as a conflict and
 A behavior or surface record may carry `agreed: {by, at}`: who made the decision it records, and
 when (an ISO date, optionally with a time). It names who decided and when, not that they read the
 record's current words; no tool checks what the prose means. A later promotion may reword the prose
-and keep `agreed`. A change of meaning goes back to the person who decided, and their new agreement
-replaces `agreed`: a promotion may replace the `agreed` of a record current already has only when
+and keep `agreed`. A change of meaning needs a new agreement: the go-ahead of the task that changes it
+is that agreement, with `by` set to whoever gave it, and it replaces `agreed`: a promotion may replace the `agreed` of a record current already has only when
 the same promotion also changes that record's prose and the new `at` is not earlier than the old
 one. A promotion that changes `agreed` on unchanged prose, or that removes it without deleting the
 whole record, is refused, so the later build updates the same record and still says who decided,

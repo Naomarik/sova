@@ -246,7 +246,7 @@ no model call (`server/merge-readiness.ts`):
   user something: the attention signal's ask answer when it has one for that reply
   (§app.decisions/attention-signals), else the reply's last 600 characters asking to merge ("Shall
   I … merge…?", "Want me to merge…", "OK to merge?", "ready to merge", "say merge"). The closing
-  spec lines (`Also changes:`, `Deferred:`, `Plumbing:`, `Spec check override:`) are cut from the
+  spec lines (`Also changes:`, `Also updates:`, `Deferred:`, `Plumbing:`, `Spec check override:`) are cut from the
   whole reply **before** its last 1,500 characters are kept, here and for the follow-up check
   (§app.decisions/merge-followup), so a long spec line never crowds out the reply's body.
 

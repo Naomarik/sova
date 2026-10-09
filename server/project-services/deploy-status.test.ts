@@ -4,10 +4,9 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
-import { parseDefinition, type VerbResult } from "../../shared/project-contract";
-import { approveDeployRecipe, Deployer, deployAttention, deployNotes } from "./deploy";
+import type { VerbResult } from "../../shared/project-contract";
+import { Deployer, deployAttention, deployNotes } from "./deploy";
 import { deployItems } from "./deploy-attention";
-import { deployReview } from "./deploy-trust";
 import { ProjectEngine, type Caller } from "./engine";
 import { FakeHost } from "./fake-host";
 import { hostVarsFile } from "./store";
@@ -86,8 +85,6 @@ before(async () => {
   git(["push", "-q", "-u", "origin", "main"]);
   mkdirSync(join(process.env.PI_CODING_AGENT_DIR!, "sova", "project-services"), { recursive: true });
   writeFileSync(hostVarsFile(), JSON.stringify({ version: 1, projects: { [project]: { TARGET_DIR: target, DEPLOY_TOKEN: TOKEN } } }));
-  const review = deployReview(project, parseDefinition(JSON.stringify(DEF)).deploy!, "main");
-  await approveDeployRecipe(project, review.deployHash, "HEAD", review.keys);
   deployer = new Deployer(new ProjectEngine(new FakeHost().deps()), { watchMs: 50 });
 });
 after(() => rmSync(parent, { recursive: true, force: true }));

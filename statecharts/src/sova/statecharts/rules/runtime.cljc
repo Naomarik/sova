@@ -1,26 +1,22 @@
 (ns sova.statecharts.rules.runtime
   "The software registry's pure rules (§app.project-runtime/standing): one standing derived from the facts
-   the host observed on main (definition, approval, proof, sources), what changed since registration,
-   and whether a definition waits for the operator's approval. Pure; nothing here knows an organization.")
+   the host observed on main (definition, proof, sources), and what changed since registration. Pure; nothing
+   here knows an organization.")
 
-(def standings ["unregistered" "awaiting-approval" "conforming" "registered" "stale" "failed"])
+(def standings ["unregistered" "conforming" "registered" "stale" "failed"])
 
 (defn main-hash [d] (when (= "present" (get-in d [:def :state])) (get-in d [:def :hash])))
 
 (defn- proof-of?
-  "An unconfined conformance of main's hash at the current suite, newer than a re-approval of a failed one."
+  "A conformance of main's hash at the current suite."
   [d p]
-  (and (map? p) (some? (main-hash d)) (= (main-hash d) (:hash p)) (= (:suite d) (:suite p))
-       (not (true? (:confined p)))
-       (or (nil? (:cleared-at d)) (> (or (:at p) 0) (:cleared-at d)))))
+  (and (map? p) (some? (main-hash d)) (= (main-hash d) (:hash p)) (= (:suite d) (:suite p))))
 
 (defn proof
-  "The unconfined proof that counts for main's hash: the newest of the host's stamp (`:proof`) and the
+  "The proof that counts for main's hash: the newest of the host's stamp (`:proof`) and the
    conform effect's own answer (`:conform-result`), or nil."
   [d]
   (->> [(:proof d) (:conform-result d)] (filter #(proof-of? d %)) (sort-by #(or (:at %) 0)) last))
-
-(defn approved? [d] (and (some? (main-hash d)) (= (main-hash d) (get-in d [:approved :hash]))))
 
 (defn current-registration?
   "`:registered` is for main's hash at the current suite."
@@ -30,15 +26,14 @@
 (defn fingerprint [d] (get-in d [:sources :fingerprint]))
 
 (defn standing-of
-  "The standing (a string of `standings`) from the facts: no definition → unregistered; an invalid one or an
-   unconfined failure of its hash → failed; not approved here → awaiting-approval; no unconfined pass at the
-   current suite → conforming; registered at another fingerprint → stale; else registered."
+  "The standing (a string of `standings`) from the facts: no definition → unregistered; an invalid one or a
+   failure of its hash → failed; no proof at the current suite → conforming; registered at another fingerprint
+   → stale; else registered."
   [d]
   (let [st (get-in d [:def :state])]
     (cond
       (or (nil? st) (= "absent" st)) "unregistered"
       (not= "present" st) "failed"
-      (not (approved? d)) "awaiting-approval"
       :else (let [p (proof d)]
               (cond
                 (nil? p) "conforming"
@@ -77,34 +72,9 @@
   (when (current-registration? d)
     (assoc (:registered d) :fingerprint (fingerprint d) :files (vec (get-in d [:sources :files])))))
 
-;; ---- approval ---------------------------------------------------------------------------------------
+;; ---- the playbook's branch ------------------------------------------------------------------------
 
 (defn branch-hash [d] (when (= "present" (get-in d [:playbook :branch-facts :def :state])) (get-in d [:playbook :branch-facts :def :hash])))
-
-(defn main-waiting?
-  "Main's valid definition waits for approval (awaiting approval), or for a fresh one (failed)."
-  [d]
-  (and (some? (main-hash d)) (contains? #{"awaiting-approval" "failed"} (:standing d))))
-
-(defn branch-waiting?
-  "The playbook's branch proposes a definition not yet approved here."
-  [d]
-  (and (= "proposed" (:playbook-state d)) (some? (branch-hash d)) (not (true? (get-in d [:playbook :branch-facts :approved])))))
-
-(def nothing-waiting "There is no definition waiting for approval.")
-(def changed-since "The definition changed since it was shown: look again.")
-(def operator-only "Only the operator approves a definition.")
-
-(defn approve-refusal
-  "Why `runtime/approve {hash}` can't be taken now (nil: it can): `by` who acts, `h` the hash shown."
-  [d by h]
-  (cond
-    (not= "operator" by) {:sentence operator-only :status 403}
-    (not (or (main-waiting? d) (branch-waiting? d))) {:sentence nothing-waiting :status 409}
-    (not (contains? (cond-> #{} (main-waiting? d) (conj (main-hash d)) (branch-waiting? d) (conj (branch-hash d))) h))
-    {:sentence changed-since :status 409}))
-
-(defn approves-main? [d h] (and (main-waiting? d) (= h (main-hash d))))
 
 ;; ---- the playbook's run, from its build's link notification ----------------------------------------------
 

@@ -1,14 +1,13 @@
-import { createEffect, createSignal, For, on, Show } from "solid-js";
+import { createSignal, For, Show } from "solid-js";
 import type { ProjectRuntimeView } from "../../shared/project-runtime";
-import { ApiError, approveProjectRuntime, getProjectRuntime, runProjectVerbsPlaybook } from "../lib/api";
+import { ApiError, getProjectRuntime, runProjectVerbsPlaybook } from "../lib/api";
 import { relativeTime } from "../lib/format";
 import { createPoll, type Poll } from "../lib/poll";
-import { approveLabel, approveWhat, deployTickBlock, failedLine, liveWord, memoryWord, openWord, playbookLabel, portsWord, provenTail, reviewDefProblem, reviewProofWord, runStrip, runWord, SENSITIVE_TITLE, serviceFacts, shareWord, STANDING_CHIP } from "../lib/project-software";
+import { failedLine, liveWord, memoryWord, openWord, playbookLabel, portsWord, provenTail, reviewDefProblem, reviewProofWord, runStrip, runWord, SENSITIVE_TITLE, serviceFacts, shareWord, STANDING_CHIP } from "../lib/project-software";
 import { projectSessionHref, projectTabHref } from "../lib/projects-route";
 import { announce, toast } from "../lib/ui-state";
-import { ApproveMergeButton, proposedRun } from "./PlaybookReview";
-import { DeployReviewTicks } from "./ProjectDeployPanel";
-import { tickProgress } from "../lib/project-deploy";
+import { MergeRunButton, proposedRun } from "./PlaybookReview";
+import { DeployRecipeSteps } from "./ProjectDeployPanel";
 import { Chip, Icon } from "./ui";
 
 /** The registry changes on a merge, a conformance or a run: read it often enough to follow one. */
@@ -27,29 +26,14 @@ const errText = (err: unknown) => (err instanceof ApiError || err instanceof Err
  * The project's Software card (§app.project-runtime/software-card): the registry's standing, each declared
  * service with how it is isolated, where it runs now and the memory conformance measured, the proof, what
  * changed since registration, the Project verbs playbook's run, and the registry's latest feed. Run Playbook
- * and Approve show only while the statecharts would take them.
+ * shows only while the statecharts would take it.
  */
 export function ProjectSoftwareCard(props: { projectId: string; archived: boolean; runtime: Poll<ProjectRuntimeView> }) {
   const poll = props.runtime;
-  // A deploy recipe's ticks (§app.project-services/deploy-trust), kept for the recipe shown: a new hash starts over.
-  const [ticked, setTicked] = createSignal<ReadonlySet<string>>(new Set());
-  const deployReview = () => (poll.data()?.playbookState === "proposed" ? poll.data()?.playbook?.review?.deploy : undefined);
-  createEffect(on(() => deployReview()?.deployHash, () => setTicked(new Set<string>())));
-  const tick = (key: string, on: boolean) =>
-    setTicked((prev) => {
-      const next = new Set(prev);
-      if (on) next.add(key);
-      else next.delete(key);
-      return next;
-    });
-  const tickBlock = () => {
-    const r = deployReview();
-    return r ? deployTickBlock(r, ticked()) : null;
-  };
-  const [busy, setBusy] = createSignal<"approve" | "run" | null>(null);
+  const [busy, setBusy] = createSignal<"run" | null>(null);
   const [error, setError] = createSignal<string | null>(null);
 
-  const act = async (kind: "approve" | "run", fn: () => Promise<string>) => {
+  const act = async (kind: "run", fn: () => Promise<string>) => {
     if (busy()) return;
     setBusy(kind);
     setError(null);
@@ -64,12 +48,6 @@ export function ProjectSoftwareCard(props: { projectId: string; archived: boolea
       poll.refetch();
     }
   };
-  const approve = (v: ProjectRuntimeView) =>
-    act("approve", async () => {
-      const hash = v.can.approve!;
-      poll.set(await approveProjectRuntime(props.projectId, hash));
-      return `Approved ${hash.replace(/^sha256:/, "").slice(0, 12)} on this host.`;
-    });
   const run = () =>
     act("run", async () => {
       const out = await runProjectVerbsPlaybook(props.projectId);
@@ -95,7 +73,7 @@ export function ProjectSoftwareCard(props: { projectId: string; archived: boolea
             </Show>
             <Show
               when={v().services.length}
-              fallback={<p class="orgs-empty">{v().def?.state === "absent" || !v().def ? "Main declares no software yet. Run Playbook writes its definition on a branch for you to approve." : "No services declared."}</p>}
+              fallback={<p class="orgs-empty">{v().def?.state === "absent" || !v().def ? "Main declares no software yet. Run Playbook writes its definition on a branch for you to merge." : "No services declared."}</p>}
             >
               <ul class="orgs-history-list project-software-list">
                 <For each={v().services}>
@@ -220,17 +198,8 @@ export function ProjectSoftwareCard(props: { projectId: string; archived: boolea
                     </p>
                   </Show>
                   <p class="list-meta">{reviewProofWord(r())}</p>
-                  {/* A deploy-setup run: its recipe, every resolved step ticked before Approve & Merge. */}
-                  <Show when={r().deploy}>
-                    {(d) => (
-                      <>
-                        <DeployReviewTicks review={d()} ticked={ticked()} onTick={tick} />
-                        <p class="list-meta" role="status">
-                          {tickProgress(d(), ticked()).line}
-                        </p>
-                      </>
-                    )}
-                  </Show>
+                  {/* A deploy-setup run: its recipe as Sova renders it. */}
+                  <Show when={r().deploy}>{(d) => <DeployRecipeSteps recipe={d()} />}</Show>
                   <Show when={v().playbook?.path}>
                     {(path) => (
                       <p class="orgs-line">
@@ -244,26 +213,11 @@ export function ProjectSoftwareCard(props: { projectId: string; archived: boolea
                 </div>
               )}
             </Show>
-            <Show when={!proposedRun(v()) && approveWhat(v())}>{(w) => <p class="project-card-note">{w()}</p>}</Show>
             <Show when={error()}>{(e) => <p class="field-error">{e()}</p>}</Show>
             <div class="button-row project-software-actions">
-              {/* While a run is proposed: one gesture, Approve & Merge (§app.project-runtime/approve-merge). */}
+              {/* While a run is proposed: Merge Branch (§app.project-runtime/merge). */}
               <Show when={proposedRun(v())}>
-                {(run) => (
-                  <ApproveMergeButton
-                    projectId={props.projectId}
-                    run={run()}
-                    {...(deployReview() ? { ticked: [...ticked()], blocked: tickBlock() } : {})}
-                    onDone={(view) => (view ? poll.set(view) : poll.refetch())}
-                  />
-                )}
-              </Show>
-              <Show when={!proposedRun(v()) && approveLabel(v())}>
-                {(label) => (
-                  <button type="button" class="button button-sm button-primary" aria-disabled={busy() ? "true" : undefined} onClick={() => void approve(v())}>
-                    {label()}
-                  </button>
-                )}
+                {(run) => <MergeRunButton projectId={props.projectId} run={run()} onDone={(view) => (view ? poll.set(view) : poll.refetch())} />}
               </Show>
               <Show when={v().can.onboard && !props.archived}>
                 <button type="button" class="button button-sm" aria-disabled={busy() ? "true" : undefined} onClick={() => void run()}>

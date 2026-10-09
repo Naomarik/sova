@@ -4,12 +4,10 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
-import { parseDefinition } from "../../shared/project-contract";
 import { conformer } from "./conform";
 import { ProjectEngine, type Caller } from "./engine";
 import { FakeHost } from "./fake-host";
 import { readRegistry } from "./store";
-import { approve, defHashOf } from "./trust";
 
 /**
  * Conformance cleans up after itself on every outcome (§app.project-services/conform): the scratch
@@ -28,8 +26,6 @@ const git = (args: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", 
 
 function commitDef(d: object) {
   writeFileSync(join(project, ".sova", "project.json"), JSON.stringify(d, null, 2));
-  const hash = defHashOf(parseDefinition(JSON.stringify(d)));
-  approve(project, hash, hash);
   git(["add", "-A"]);
   git(["commit", "-q", "-m", "def"]);
 }

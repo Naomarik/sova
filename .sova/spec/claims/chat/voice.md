@@ -30,16 +30,17 @@ members` chip (§workspace.groups/send-all-mode). It is a ghost `.button-icon`, 
 
 - **Tap to start, tap to stop**, everywhere. There is no press-and-hold and no keyboard shortcut.
 - **It keeps the keyboard and the caret.** Its `pointerdown` and `mousedown` call
-  `preventDefault()`, so a focused textarea stays focused: an open on-screen keyboard stays open
+  `preventDefault()`, so the press itself takes no focus: an open on-screen keyboard stays open
   and the selection stays put. It never focuses the textarea itself, so on a phone it never raises
   the keyboard on its own.
-- **A touch press moves no focus.** A touch on the mic, or on any button in the dictation strip
-  (§chat.voice/states), cancels its `touchstart` (a non-passive listener) and acts on `touchend`
-  when the finger lifts inside the button, so the browser runs no tap of its own: focus stays where
-  it was (not on the button, not on the textarea), a keyboard that is down stays down even while
-  the textarea keeps focus, and one that is up stays up. Nothing that follows a touch press focuses
-  the textarea; only tapping the textarea raises the keyboard. Mouse, pen-as-mouse and keyboard
-  presses go through `click` as before.
+- **A touch press with the keyboard down drops the focus.** When a touch press on the mic starts a
+  recording while the textarea is focused and the on-screen keyboard is down, the caret is saved
+  as for any recording and the textarea then loses focus, so the browser has no focused field to
+  raise the keyboard for: the keyboard stays down through the recording, and the text goes in at
+  the caret set before (§chat.voice/insertion). The keyboard counts as down unless the visual
+  viewport is under 80% of the tallest height it has had at the current width; a browser without
+  `visualViewport` counts it as down. With the keyboard up, focus and keyboard are left as they are.
+  Mouse, pen-as-mouse and keyboard presses never move focus.
 - **Hidden** when the composer is read only (a session live in a TUI). While the composer is
   merely blocked (connecting, reconnecting, a pending model switch, busy) it works: dictating is
   typing.
@@ -120,10 +121,7 @@ textarea. The textarea stays visible and editable throughout.
   whitespace is trimmed.
 - **Focused**, the text goes in through `document.execCommand("insertText")`, so native undo, the
   input event and the IME state all behave as if typed. **Not focused**, it goes in with
-  `setRangeText` and an input event, without focusing, so no keyboard opens. **Touched**: when a
-  touch press started the recording, stopped it, or asked to try it again, the text goes in with
-  `setRangeText` and an input event even into a focused textarea, at the same range, so a keyboard
-  the user put away while the textarea kept focus doesn't come back.
+  `setRangeText` and an input event, without focusing, so no keyboard opens.
 - **Drafts.** The inserted text is part of the draft like typed text (§chat.composer/behavior
   "Drafts"); it is never sent by itself.
 

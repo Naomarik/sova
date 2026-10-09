@@ -64,6 +64,8 @@ import { ownerView } from "./owner-page";
 import { readUpdates, withdrawUpdate } from "./project-updates";
 import { setRemote } from "./workspace-git";
 import { actOrThrow, hostOf } from "./org-engine";
+import { registerOrgHistoryRoutes } from "./org-history-routes";
+import { registerOrgHistoryAnnotationRoutes } from "./org-history-annotations";
 
 /**
  * The operator's routes for organizations and baton sessions (§app/organizations, §app/baton). On
@@ -326,6 +328,9 @@ const handle =
   };
 
 export function registerOrgRoutes(app: Hono<any>): void {
+  // The org's History tab: its reads and Purge Reason…, on this listener only.
+  registerOrgHistoryRoutes(app);
+  registerOrgHistoryAnnotationRoutes(app);
   app.get("/api/orgs", (c) => c.json(withOrgActivity(orgsInfo())));
   app.post(
     "/api/orgs",

@@ -792,7 +792,7 @@ thing it waits on being done.
   the row draws it elsewhere. The rules live in `src/lib/needs-you.ts`.
 - **No row menu, no put-away.** A Needs you row carries no button of its own and no menu, except
   a session whose act item is a proposed playbook run (`playbook-review`,
-  §app.project-runtime/review): under its row, **Approve & Merge** (or **Merge Branch**), which acts
+  §app.project-runtime/review): under its row, **Merge Branch**, which acts
   at once and says a refusal's reason under it. Otherwise: a press
   held on it and let go selects it (§app.session-list/selecting-several-sessions), one that moves
   opens the drop overlay (§app.session-list/drop-overlay), and a right-click is the browser's, as

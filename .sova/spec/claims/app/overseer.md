@@ -123,7 +123,9 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   the tool and how many links it gave, never a link; the prompt says to give a link when the user
   asks for one, and project overseers don't have it); this host's organizations, their projects and project
   overseers, and one roster person (`sova_orgs`, `sova_org_project`, `sova_org_person`,
-  §app.overseer/org-reads), never a contact or a link (§app.overseer/org-projection).
+  §app.overseer/org-reads), and, in turns the operator started, an organization's history
+  (`sova_org_history`, §app.org-history/readers), never a contact or a link
+  (§app.overseer/org-projection).
 - **The transcript read reaches peers.** `sova_read_session` takes an optional `host`: with a
   peer's id it reads that peer's session by id (§mesh.links/by-id), with the same bounds and
   untrusted wrapping. The peer renders the slice with its own parser and redacts it with its own
@@ -919,9 +921,9 @@ itself.
   question(s) in {al_N} {title}" (or "… in {m} alignments"): visible in the digest, never Needs you,
   a brief or a phone notification.
 - **Needs you, a proposed playbook run** (§app.project-runtime/review): `playbook-review` on the
-  run's session while a verb playbook's run is proposed, "{Title}: approve {hash12} and merge into
-  {target}" (or its approved and no-definition forms), dated by its last turn's end, carrying what
-  Approve & Merge needs (`playbook: {projectId, hash?, approved, branch, target}`).
+  run's session while a verb playbook's run is proposed, "{Title}: merge {hash12} into
+  {target}" (or its no-definition form), dated by its last turn's end, carrying what Merge Branch
+  needs (`playbook: {projectId, hash?, branch, target}`).
 - **Needs you, a deploy** (§app.project-services/deploy-status): items of no session, linking to the
   project's page: `deploy-failed`, one per deploy target whose latest deploy failed, failed its verify
   or was interrupted, "Deploy of {commit7} to {target} failed: {why}" (or "… ran, and its verify
@@ -1461,7 +1463,7 @@ the files: the workspace repos are closed to its file tools (§app.overseer/tool
 
 ## §app.overseer/org-reads — Reading organizations
 
-Three reads, no side effects (no seen mark, no visit, no link, no git write). Every session they
+Four reads, no side effects (no seen mark, no visit, no link, no git write). Every session they
 name is a `[title](sova://s/<id>)` link; every time is relative, as in `sova_session`.
 
 - **`sova_orgs {}`**: one row per attached org, in the index's order: id, name, `{n} people`
@@ -1493,8 +1495,10 @@ name is a `[title](sova://s/<id>)` link; every time is relative, as in `sova_ses
   how they relate to each, their decisions and routed conflicts, their links on this host as states
   only (session, hand-off, `Can write` / `Reads only` / `Turned off` / `Expired` / `Session
   closed`, sent, expires, visits), the visit rows, and the profile history.
+- **`sova_org_history {org, project?, action, …}`**, in turns the operator started: the org's history
+  (search, one event, a trace or a packet), through this projection (§app.org-history/readers).
 - A name, a role or a skill someone gave is data, wrapped as untrusted content like a transcript
-  read (§app.overseer/tools); so is a decision's quote.
+  read (§app.overseer/tools); so is a decision's quote, and so is every history record's text.
 
 ## §app.overseer/org-projection — What never reaches the model
 
@@ -1523,7 +1527,11 @@ name is a `[title](sova://s/<id>)` link; every time is relative, as in `sova_ses
   still stores what it was given. A transcript's tool-call line never shows a call's `contact`
   argument. The same holds for a peer's read of one of this host's sessions (§mesh.links/by-id).
   Treat `[contact]` like `[redacted]`: final. A value no roster holds (one a person typed and nobody
-  saved) is not known, so not redacted.
+  saved) is not known, so not redacted. A known value is matched as a literal, never a pattern, in
+  whatever case it is written (an email typed `maria@gatecapital.com` is the roster's
+  `Maria@GateCapital.com`), a phone or WhatsApp number also as its digits alone (7 or more), the
+  longest first where two overlap; the roster and the operator's own pages keep the value as given.
+  The org's history tools (§app.org-history/readers) go through the same redactor.
 - **Secrets are still redacted** over everything, as for every tool (§app.overseer/tools).
 - **Checked by test.** A marker test plants a contact value, a link token and an About text in a
   hermetic org, drives every org read and act, and `sova_read_session` and `sova_session` on its

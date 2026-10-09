@@ -120,7 +120,7 @@ test("templates render every known variable and $$ as a literal $", () => {
 test("every error code has one exit class and one status", () => {
   const want: Record<number, string[]> = {
     1: ["not-ready", "start-failed", "hook-failed", "tests-failed", "deploy-failed", "verify-failed"],
-    2: ["not-approved", "not-conformant", "cap-reached", "port-held", "dirty-worktree", "unsupported", "refused-slot0", "share-denied", "forbidden", "needs-confirm", "deploy-refused", "needs-override"],
+    2: ["not-conformant", "cap-reached", "port-held", "dirty-worktree", "unsupported", "refused-slot0", "share-denied", "forbidden", "needs-confirm", "deploy-refused", "needs-override"],
     3: ["invalid-request", "invalid-definition", "not-found"],
     4: ["busy"],
   };
@@ -139,7 +139,6 @@ test("every error code has one exit class and one status", () => {
 test("ordered results keep one key order and isVerbResult checks it", () => {
   const base: VerbResult = {
     at: "t",
-    approved: true,
     defHash: null,
     links: [],
     data: [],
@@ -159,11 +158,11 @@ test("ordered results keep one key order and isVerbResult checks it", () => {
   };
   const r = ordered(base);
   assert.deepEqual(Object.keys(r).slice(0, 3), ["v", "verb", "project"]);
-  assert.deepEqual(Object.keys(r).slice(-3), ["defHash", "approved", "at"]);
+  assert.deepEqual(Object.keys(r).slice(-2), ["defHash", "at"]);
   assert.ok(isVerbResult(r));
   assert.ok(!isVerbResult(base as unknown), "the unordered object is not the shape");
   const failed = ordered({ ...base, ok: false, error: { code: "busy", message: "x" }, checks: [] });
-  assert.deepEqual(Object.keys(failed).slice(-5), ["checks", "error", "defHash", "approved", "at"]);
+  assert.deepEqual(Object.keys(failed).slice(-4), ["checks", "error", "defHash", "at"]);
   assert.ok(isVerbResult(failed));
   assert.ok(!isVerbResult({ ...failed, ok: true }), "an error with ok true is not the shape");
   assert.ok(!isVerbResult(ordered({ ...base, error: { code: "nope" as never, message: "x" }, ok: false })), "codes are a closed list");
@@ -200,12 +199,12 @@ test("test, start and about: parsed strictly, selectors can never read as flags"
 
 test("a tests block goes between conform and error", () => {
   const tests = { select: ["a"], pass: false, passed: 1, failed: 1, errors: 0, skipped: 0, failures: [{ name: "a" }], exit: 1, timedOut: false, ms: 5, peakBytes: null };
-  const r = ordered({ v: 1, verb: "test", project: null, instance: null, slot: null, generation: null, checkout: null, branch: null, ok: false, changed: false, state: "running", steps: [], services: [], data: [], links: [], error: { code: "tests-failed", message: "1 of 2 failed" }, tests, lines: [], defHash: null, approved: true, at: "t" });
-  assert.deepEqual(Object.keys(r).slice(-6), ["lines", "tests", "error", "defHash", "approved", "at"]);
+  const r = ordered({ v: 1, verb: "test", project: null, instance: null, slot: null, generation: null, checkout: null, branch: null, ok: false, changed: false, state: "running", steps: [], services: [], data: [], links: [], error: { code: "tests-failed", message: "1 of 2 failed" }, tests, lines: [], defHash: null, at: "t" });
+  assert.deepEqual(Object.keys(r).slice(-5), ["lines", "tests", "error", "defHash", "at"]);
   assert.ok(isVerbResult(r));
-  const { tests: _t, error, defHash, approved, at, ...head } = r;
-  const swapped = { ...head, error, tests, defHash, approved, at };
-  assert.deepEqual(Object.keys(swapped).slice(-5), ["error", "tests", "defHash", "approved", "at"]);
+  const { tests: _t, error, defHash, at, ...head } = r;
+  const swapped = { ...head, error, tests, defHash, at };
+  assert.deepEqual(Object.keys(swapped).slice(-4), ["error", "tests", "defHash", "at"]);
   assert.ok(!isVerbResult(swapped), "tests after error is not the shape");
 });
 
@@ -272,13 +271,13 @@ test("adopt: slot 0 of one cmd checkout service is a systemd unit Sova did not s
 });
 
 test('onMerge: "reload" on a checkout cmd service only, kept as written and inside the hash; absent hashes as before', async () => {
-  const { defHashOf } = await import("../server/project-services/trust");
+  const { defHashOf } = await import("../server/project-services/def-hash");
   const web = { cmd: ["node", "web.js"], ports: { http: { base: 5100 } } };
   const plain = parse({ version: 1, services: { web } });
   const opted = parse({ version: 1, services: { web: { ...web, onMerge: "reload" } } });
   assert.equal(plain.services[0]!.onMerge, undefined);
   assert.equal(opted.services[0]!.onMerge, "reload");
-  assert.notEqual(defHashOf(opted), defHashOf(plain), "opting in needs approval again");
+  assert.notEqual(defHashOf(opted), defHashOf(plain), "opting in changes the hash");
   assert.equal(refusedAt({ version: 1, services: { web: { ...web, onMerge: "restart" } } }), "$.services.web.onMerge");
   assert.equal(refusedAt({ version: 1, services: { web: { ...web, onMerge: true } } }), "$.services.web.onMerge");
   assert.equal(refusedAt({ version: 1, services: { site: { static: "public", ports: { http: { base: 5200 } }, onMerge: "reload" } } }), "$.services.site.onMerge");
@@ -286,7 +285,7 @@ test('onMerge: "reload" on a checkout cmd service only, kept as written and insi
 });
 
 test("open: a checkout service's declared port and a path from / (default /), kept as written, outside the hash", async () => {
-  const { defHashOf } = await import("../server/project-services/trust");
+  const { defHashOf } = await import("../server/project-services/def-hash");
   const services = {
     web: { cmd: ["node", "web.js"], ports: { http: { base: 5100 }, nrepl: { base: 5150 } } },
     cache: { cmd: ["redis-server"], scope: "shared", ports: { port: { fixed: 6390 } } },
@@ -296,7 +295,7 @@ test("open: a checkout service's declared port and a path from / (default /), ke
   assert.deepEqual(parse({ version: 1, services, open: { endpoint: "web.http" } }).open, { endpoint: "web.http", path: "/" });
   const deep = parse({ version: 1, services, open: { endpoint: "web.http", path: "/app?tab=home" } });
   assert.deepEqual(deep.open, { endpoint: "web.http", path: "/app?tab=home" });
-  // It exposes nothing: declaring, moving or removing the entry needs no new approval.
+  // It exposes nothing: declaring, moving or removing the entry keeps the hash.
   assert.equal(defHashOf(deep), defHashOf(plain));
   assert.equal(refusedAt({ version: 1, services, open: "web.http" }), "$.open");
   assert.equal(refusedAt({ version: 1, services, open: {} }), "$.open.endpoint");

@@ -1098,7 +1098,7 @@ function landingOf(root, g, a, bases) {
 }
 
 // The foreign § a promotion of `ids` changes: each one current already has, and each current H1 that gains a new H2,
-// never the task's own claims (`own`: absent at every own base). This, not memory, is what a flag names.
+// never the task's own claims (`own`: absent at every own base). This, not memory, is what "Also updates" names.
 function alsoChanges(a, ids, own = () => false) {
   const inCur = (id) => recOf(a.cur, id) !== undefined && !own(id), dirKinds = a.prop.manifest?.grammar?.directoryKinds ?? ["section"];
   const kinds = new Map(), mark = (id, k) => kinds.set(id, [...(kinds.get(id) ?? []), k]);

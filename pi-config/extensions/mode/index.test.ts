@@ -35,6 +35,7 @@ import {
 	isMode,
 	loadState,
 	MODE_DESCRIPTIONS,
+	MODE_HEAD_TYPE,
 	MODE_NOTE_TYPE,
 	MODES,
 	normalizeActive,
@@ -485,14 +486,15 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	assert.match(spec, /your new claim's parent included/);
 	assert.match(spec, /even one your new claim describes/);
 	assert.match(spec, /wherever you put the claim/);
-	assert.match(spec, /never a gap it already had, even one you rely on/);
-	assert.match(spec, /Batch flags in the plan as one question: "This also changes §X: <what>\. OK\?"; a session told not to ask says it in its reply\./, "the flag is asked in the plan, or said when asking isn't possible");
+	assert.match(spec, /never for a gap it already had or a defect/);
+	assert.match(spec, /update it in your draft without asking \(the go-ahead covers it and restamps any `agreed`\), never for a gap it already had or a defect; list each foreign § your draft or workers edit in your reply: "Also updates §X: <what>"\./, "a foreign § is updated, never asked about");
+	assert.doesNotMatch(spec, /This also changes|OK\?|[Ff]lag/, "nothing about a foreign § is asked");
 	for (const gone of ["Also changes", "Plumbing:", "Deferred:", "Spec check override", "last line", "foreign --base", "merge round", "captain"]) assert.ok(!spec.includes(gone), `no closing lines and no merge round: ${gone}`);
 	assert.ok(spec.includes(`While coding, a \`${DIGEST_TAG}\` note on a tool result is the census, run for you: act on it.`), "while coding, the automatic census is named by its tag");
 	assert.doesNotMatch(spec, /one file per tool call|after the first edit and each new file/, "while coding, the census note replaces the census run by hand");
 	assert.match(spec, /Trusted tools: start each bash command with exactly this, never a guessed path:\n\n```sh\n/, "the recipe, not a hard-coded agent dir");
-	assert.match(spec, /plumbing \(a request, hook, helper or CSS class\) never flags/);
-	assert.match(spec, /editing one in your draft flags\. Read it with `read`;/, "a foreign § is read alone, not with its chain");
+	assert.match(spec, /plumbing \(a request, hook, helper or CSS class\) never counts/);
+	assert.match(spec, /wherever you put the claim\. Read it with `read`;/, "a foreign § is read alone, not with its chain");
 	assert.ok(spec.split(/\s+/).length <= 810, "short enough to ride every turn: growing it is a deliberate change");
 });
 
@@ -1050,13 +1052,13 @@ test("codemode: a minor mode with no prompt block, no mode note and no worker re
 	assert.ok(SCRIPT_ONLY_EXPOSURES.has("codemode") && SCRIPT_ONLY_EXPOSURES.has("deferred") && !SCRIPT_ONLY_EXPOSURES.has("direct") && !SCRIPT_ONLY_EXPOSURES.has("model-only"));
 });
 
-test("SPEC_WORKER_NOTE: the parent promotes, the brief is the go-ahead, and flags go in the final report", () => {
+test("SPEC_WORKER_NOTE: the parent promotes, the brief is the go-ahead, and updated foreign § go in the final report", () => {
 	assert.match(SPEC_WORKER_NOTE, /parent session started you, and it promotes/);
 	assert.match(SPEC_WORKER_NOTE, /Do not promote, commit, or record `--commit` evidence unless your brief says to/);
 	assert.match(SPEC_WORKER_NOTE, /Your brief is your go-ahead/);
 	// The note leans on spec-mode.md's own wording; a rewrite there must revisit the note.
-	for (const phrase of ["`--commit`", "Batch flags", "draft", "promote"]) assert.ok(SPEC_INSTRUCTIONS.includes(phrase.replace(/`/g, "")) || SPEC_INSTRUCTIONS.includes(phrase), phrase);
-	assert.ok(SPEC_WORKER_NOTE.endsWith("Put any flags as one question in your final report."), "no last line for a worker either");
+	for (const phrase of ["`--commit`", "Also updates", "draft", "promote"]) assert.ok(SPEC_INSTRUCTIONS.includes(phrase.replace(/`/g, "")) || SPEC_INSTRUCTIONS.includes(phrase), phrase);
+	assert.ok(SPEC_WORKER_NOTE.endsWith("List each foreign § you updated in your final report."), "a worker lists, never asks");
 	assert.ok(!SPEC_INSTRUCTIONS.includes(SPEC_WORKER_NOTE), "spec-mode.md itself stays the parent's text");
 });
 
@@ -1104,21 +1106,36 @@ test("restoreHead: the newest recorded head, the newest note, and nothing across
 	const note = (minorModes: MinorMode[], guides: MinorMode[]) => ({ type: "custom_message", customType: MODE_NOTE_TYPE, details: { v: 1, minorModes, guides } });
 	assert.deepEqual(restoreHead([]), { head: undefined, told: undefined, guides: [] }, "never sent: the head follows the active set");
 	assert.deepEqual(restoreHead([pin(["vis"])]), { head: undefined, told: undefined, guides: [] }, "a Sova pin carries no head");
-	assert.deepEqual(restoreHead([pin(["vis"], [])]), { head: [], told: [], guides: [] }, "recorded, not told yet");
+	assert.deepEqual(restoreHead([pin(["vis"], [])]), { head: [], told: [], guides: [], headStyle: "default" }, "recorded, not told yet");
 	assert.deepEqual(
 		restoreHead([pin(["vis"], []), note(["vis"], ["vis"]), pin([]), note([], [])]),
-		{ head: [], told: [], guides: ["vis"] },
+		{ head: [], told: [], guides: ["vis"], headStyle: "default" },
 		"an entry equal to its head carries none; the older one still names it, and every guide since counts",
 	);
-	assert.deepEqual(restoreHead([pin(["vis"], []), note(["vis"], ["vis"]), pin([])]), { head: [], told: ["vis"], guides: ["vis"] }, "a switch not told yet: told is the last note's");
+	assert.deepEqual(restoreHead([pin(["vis"], []), note(["vis"], ["vis"]), pin([])]), { head: [], told: ["vis"], guides: ["vis"], headStyle: "default" }, "a switch not told yet: told is the last note's");
 	assert.deepEqual(
 		restoreHead([pin(["vis"], []), note(["vis"], ["vis"]), { type: "compaction" }, pin(["spec", "vis"], ["vis"])]),
-		{ head: ["vis"], told: ["vis"], guides: [] },
+		{ head: ["vis"], told: ["vis"], guides: [], headStyle: "default" },
 		"notes before a compaction don't count",
 	);
 	assert.deepEqual(restoreHead([pin(["vis"], []), { type: "compaction" }]).head, undefined, "a compaction rebuilds the head from the active set");
 	assert.deepEqual(restoreHead([pin(["vis"], []), { type: "custom_message", customType: MODE_NOTE_TYPE, details: { v: 2 } }]).told, [], "an unknown note is skipped");
 	assert.doesNotThrow(() => restoreHead(null as never));
+});
+
+test("restoreHead: the head's writing style, from a style note, else its record, else Default once a run began", () => {
+	const user = { type: "message", message: { role: "user", content: "hi" } };
+	const reply = { type: "message", message: { role: "assistant", content: [] } };
+	const record = (style: unknown) => ({ type: "custom", customType: MODE_HEAD_TYPE, data: { v: 1, style } });
+	const styleNote = { type: "custom_message", customType: MODE_NOTE_TYPE, details: { v: 1, minorModes: ["align"], guides: [], style: "simplified", headStyle: "pm" } };
+	assert.equal(restoreHead([]).headStyle, undefined, "no run yet: the head follows the style now");
+	assert.equal(restoreHead([user, reply]).headStyle, "default", "a head no entry records was built in Default");
+	assert.equal(restoreHead([record("pm"), user, reply]).headStyle, "pm", "a recorded head");
+	assert.equal(restoreHead([record("bogus"), user]).headStyle, "default", "an unreadable record reads as none");
+	assert.deepEqual(restoreHead([record("pm"), user, styleNote]).style, { told: "simplified", head: "pm" });
+	assert.equal(restoreHead([record("pm"), user, styleNote]).headStyle, "pm");
+	assert.equal(restoreHead([record("pm"), user, { type: "compaction" }, reply]).headStyle, undefined, "a run that compacted goes on with the old prompt: no head since");
+	assert.equal(restoreHead([record("pm"), user, { type: "compaction" }, user]).headStyle, "default", "a record before the compaction doesn't count");
 });
 
 test("buildModeNote in the worker form: spec turned on carries the worker note, never a writer", () => {

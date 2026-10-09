@@ -5,11 +5,9 @@ import { createServer as httpServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
-import { parseDefinition } from "../../shared/project-contract";
 import { DetachedDriver, type AdoptedStatus } from "./drivers";
 import { ProjectEngine, type Caller, type VerbAct } from "./engine";
 import { readRegistry } from "./store";
-import { approve, defHashOf } from "./trust";
 import { reservePorts } from "../test-ports";
 
 /**
@@ -53,8 +51,6 @@ before(async () => {
   git(["init", "-q", "-b", "main"]);
   git(["add", "-A"]);
   git(["commit", "-q", "-m", "fixture"]);
-  const h = defHashOf(parseDefinition(JSON.stringify(def)));
-  approve(project, h, h);
   // The stand-in unit's port, answered by this process.
   listener = httpServer((_q, r) => r.end("ok"));
   await new Promise<void>((ok) => listener.listen(BASE, "127.0.0.1", () => ok()));

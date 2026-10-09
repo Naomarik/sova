@@ -246,14 +246,16 @@
   --space-8: 64px;
   --space-9: 96px;
 
-  /* Status is round, actions are not. */
+  /* Status is round, actions are not. The site's scale is near-square, after the Fold 8's own
+     frame (a few px at any size): a step down from the app's 4/6/8/12/16, so the page's cards,
+     frames and controls read as hardware edges, not bubbles. Only a true chip stays a pill. */
   --r-none: 0;
-  --r-xs:   4px;    /* focus ring, checkbox     */
-  --r-sm:   6px;    /* code block, tool output  */
-  --r-md:   8px;    /* button, input, select    */
-  --r-lg:  12px;    /* card, panel, bubble      */
-  --r-xl:  16px;    /* sheet, modal             */
-  --r-full: 999px;  /* chip, badge              */
+  --r-xs:   2px;    /* focus ring, inline code  */
+  --r-sm:   3px;    /* code block, tag, small   */
+  --r-md:   4px;    /* button, input, install   */
+  --r-lg:   5px;    /* card, panel, bubble      */
+  --r-xl:   6px;    /* frame, sheet, modal      */
+  --r-full: 999px;  /* chip, badge, dot         */
 
   --stroke-thin: 1px;     /* dividers                         */
   --stroke-icon: 1.5px;   /* icons, control borders, outlines */

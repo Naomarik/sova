@@ -417,18 +417,31 @@ export interface AlignDocInfo {
   findings: { id: string; text: string }[];
   approach: { id: string; text: string }[];
   rejected: { id: string; option: string; why: string }[];
+  /** Technical notes (tN, §chat.alignment/document): absent until one is added. */
+  technical?: { id: string; text: string }[];
   questions: AlignQuestionInfo[];
   /** The stored lifecycle; status is derived (alignStatus): implementing/done/dropped from here,
       else "aligning" while a question is open or there are none, else "confirmed". */
   phase: "open" | "implementing" | "done" | "dropped";
   droppedWhy?: string;
-  next: { f: number; a: number; x: number; q: number };
+  /** t: absent until a technical note was added. */
+  next: { f: number; a: number; x: number; q: number; t?: number };
   rev: number;
   createdAt: string;
   updatedAt: string;
   /** The adversarial review record (§chat.alignment-review/record); absent on every document no
       review op touched, which is all of them with the `adversarial-review` flag off. */
   review?: AlignReviewInfo;
+  /** The writing style in effect at the document's latest change; absent for Default. */
+  style?: "simplified" | "pm";
+  /** The document's own drawing (§chat.alignment/visuals); a question can carry one too. */
+  visual?: AlignVisualInfo;
+}
+
+/** A `vis` drawing on the card: its kind and source, exactly what a `vis` fence would hold. */
+export interface AlignVisualInfo {
+  kind: string;
+  source: string;
 }
 
 export type AlignReviewPhaseInfo = "plan" | "diff";
@@ -456,6 +469,7 @@ export interface AlignQuestionInfo {
   recommendation: { choice: string; why: string };
   decision?: { text: string; by: "user" | "accepted-recommendation"; at: string };
   dropped?: { why: string; at: string };
+  visual?: AlignVisualInfo;
 }
 
 export type AlignChangeInfo =
@@ -911,9 +925,9 @@ export interface PlaybookInfo {
   title: string;              // frontmatter title, else name, else the id
   description: string;        // frontmatter description, else ""
   promptHint?: string;        // frontmatter promptHint: what the reader may want to specify for the first turn
-  /** Frontmatter `approves: definition | deploy`: a verb playbook, whose proposal the operator approves and merges
+  /** Frontmatter `proposes: definition | deploy`: a verb playbook, whose branch the operator merges
       (§app.project-runtime/verb-playbooks). Absent (or any other value): not a verb playbook. */
-  approves?: "definition" | "deploy";
+  proposes?: "definition" | "deploy";
   source: "sova" | "user" | "project";
   dir: string;                // ABSOLUTE directory holding the playbook: its entry file, scripts/, references/…; every relative path in it resolves here
   entry: PlaybookEntry;       // the file read as the playbook: PLAYBOOK.md when the folder has one, else SKILL.md
@@ -975,24 +989,42 @@ export interface PlaybookCatalog {
 }
 
 // GET /api/settings              -> WebSettings
-// PUT /api/settings              -> WebSettings (400 bad body; `experimental` must be an object,
-//                                   a known key a boolean; unknown keys are ignored)
+// PUT /api/settings              -> WebSettings (400 bad body; `experimental` and `alignment`, when
+//                                   present, must be objects, a known key a boolean; unknown keys
+//                                   are ignored)
 // GET /api/settings/claude-status -> ClaudeCliStatus
+// GET /api/settings/align        -> AlignSettingsInfo
+// PUT /api/settings/align        -> AlignSettingsInfo (400 bad body: `{version: 1, style, visuals}`,
+//                                   the mode extension's strict parse, align-settings.ts)
 // ---------------------------------------------------------------------------
 /** Sova's own settings, stored in <agentDir>/sova/settings.json (server/web-settings.ts).
     Nothing outside Sova reads this file, so it is not a cross-process contract the way the
     subagent policy is. */
 export interface WebSettings {
   experimental: ExperimentalSettings;
+  /** Settings → Alignment's part of this file (style and visuals are mode-align.json's, AlignSettingsInfo). */
+  alignment: AlignmentWebSettings;
 }
 
-/** Settings → Experimental's switches, each a boolean, off unless stored `true`. The Claude Code
-    provider is always on now, and an old file's `claudeCodeProvider` is ignored. A new switch is a
-    key here and in server/web-settings.ts EXPERIMENTAL_KEYS. */
-export interface ExperimentalSettings {
-  /** Adversarial review of alignments (§chat.alignment-review/flag): new hosted sessions get the
-      mode extension's `adversarial-review` flag, and the web shows the review UI. */
-  adversarialReview: boolean;
+/** Settings → Experimental's switches, each a boolean, off unless stored `true`. None right now:
+    adversarial review moved to `alignment.review`, and the Claude Code provider is always on (an old
+    file's `claudeCodeProvider` and `adversarialReview` are ignored here). A new switch is a key here
+    and in server/web-settings.ts EXPERIMENTAL_KEYS. */
+export interface ExperimentalSettings {}
+
+/** Settings → Alignment's switch stored in Sova's settings. */
+export interface AlignmentWebSettings {
+  /** Adversarial review of alignments (§chat.alignment-review/flag): a chat's first start records it,
+      and every start of that chat gets the mode extension's `adversarial-review` flag from that record.
+      A file with no `alignment.review` reads Experimental's older `adversarialReview`. */
+  review: boolean;
+}
+
+/** GET/PUT /api/settings/align: the align mode's writing style and Visuals
+    (`<agent dir>/mode-align.json`, §chat.alignment/settings-file), and where they are stored. */
+export interface AlignSettingsInfo {
+  settings: { version: 1; style: "default" | "simplified" | "pm"; visuals: boolean };
+  file: string;
 }
 
 /** Whether the Claude Code CLI is usable, for Settings → Accounts' status line. `version` is
@@ -1999,7 +2031,10 @@ export type ChatServerMessage =
       else; with `?tail=rest` nothing follows, and `olderSummary` sums them up (`prefetch`: fetch
       them all now; see OlderSummary and TranscriptRows). Absent or 0: `items` is the whole branch,
       as for every client that didn't ask. */
-  | { type: "hello"; items: TranscriptItem[]; isStreaming: boolean; isCompacting?: boolean; model: string | null; thinking: string; context: ContextInfo | null; older?: number; olderSummary?: OlderSummary; prefetch?: boolean }
+  /** `alignReview`: whether THIS chat's runtime runs with adversarial review (its `sova-align-launch`
+      record, §chat.alignment-review/flag) — the card's review lines and buttons follow it, never the
+      live setting. Absent from older servers: the web falls back to the saved setting. */
+  | { type: "hello"; items: TranscriptItem[]; isStreaming: boolean; isCompacting?: boolean; model: string | null; thinking: string; context: ContextInfo | null; older?: number; olderSummary?: OlderSummary; prefetch?: boolean; alignReview?: boolean }
   /** The older rows of a `hello` with `older` (see HistoryMessage). After attach they come after
       `links`; after a rewind, regenerate or compaction, after the requester's `rewound`,
       `regenerated` or `compacted` (and a compaction's `queue`). */
@@ -2985,7 +3020,7 @@ export type AttentionKind =
   | "roster-proposal"  // a baton session proposed a new roster person (referral): approve or decline
   | "project-stakeholder" // an org project's main stakeholder left: pick a new one (no session: `path` "", `href` the project page)
   | "held-act"            // act tier, never pushed: a statechart act waits in a hold before it reaches a person or the code; Cancel stops it (no session: `path` "", `href` the project page, `held` set)
-  | "playbook-review"     // act tier: a verb playbook's run is proposed and waits on Approve & Merge (§app.project-runtime/review; the run's session, `playbook` set)
+  | "playbook-review"     // act tier: a verb playbook's run is proposed and waits on Merge Branch (§app.project-runtime/review; the run's session, `playbook` set)
   | "deploy-failed"       // act tier, never pushed: a deploy target's latest deploy failed, its verify failed or its runner stopped (§app.project-services/deploy-status; no session: `path` "", `href` the project page)
   | "deploy-request"      // act tier, never pushed: an overseer asks the operator to deploy (deploy.request; no session: `path` "", `href` the project page)
   | "outreach-not-sent"   // act tier, never pushed: a project overseer's WhatsApp send was refused or failed (no session: `path` "", `href` the person's page)
@@ -3037,9 +3072,9 @@ export interface AttentionItem {
     /** ms epoch: the hold ended and it waits for the overseer to approve it (r8: an act on the project's confirm list); the row's stall clock runs from here. */
     reviewSince?: number;
   };
-  /** kind `playbook-review` only: what Approve & Merge needs (§app.project-runtime/approve-merge). `hash`
-      absent: the branch has no valid definition, so there is nothing to approve. */
-  playbook?: { projectId: string; label: string; hash?: string; approved: boolean; branch: string; target: string; approves?: "definition" | "deploy" };
+  /** kind `playbook-review` only: what Merge Branch needs (§app.project-runtime/merge). `hash`
+      absent: the branch has no valid definition, so there is nothing to merge. */
+  playbook?: { projectId: string; label: string; hash?: string; branch: string; target: string; proposes?: "definition" | "deploy" };
 }
 
 /** Which org (and project) an organizational session belongs to; names as they read now. `projectId`

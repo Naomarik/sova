@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { VoiceStatus } from "../../../shared/protocol";
 import { backgroundSentence, clock, etaSentence, jobPercent, languagesWord, micErrorSentence, modelName, percentWer, perClip, readyLine, recordingText, roughTime, settingsWords, stepFigure, unsupportedReason, wordDiff } from "./format";
-import { insertsByTyping, spacedInsert, splice, targetRange, wordCount } from "./insert";
-import { clickWasTouch, liftedInside, touchPress } from "./press";
+import { spacedInsert, splice, targetRange, wordCount } from "./insert";
+import { keyboardUp, nextTallest } from "./keyboard";
 import { encodeWav, joinBatches, levelOf, trimTapNoise } from "./wav";
 
 describe("insertion", () => {
@@ -39,69 +39,21 @@ describe("insertion", () => {
     assert.equal(wordCount(" Open Sova,  and run it. "), 5);
     assert.equal(wordCount(""), 0);
   });
-  it("types only into a focused box no touch press led to", () => {
-    assert.equal(insertsByTyping(true, false), true);
-    assert.equal(insertsByTyping(true, true), false);
-    assert.equal(insertsByTyping(false, false), false);
-    assert.equal(insertsByTyping(false, true), false);
-  });
 });
 
-describe("touch press", () => {
-  const box = { left: 10, top: 20, right: 54, bottom: 64 };
-  /** A button stand-in: its listeners, by type, and how it was bound. */
-  const fake = () => {
-    const on = new Map<string, { fn: (e: unknown) => void; opts: unknown }>();
-    const el = {
-      addEventListener: (type: string, fn: (e: unknown) => void, opts?: unknown) => on.set(type, { fn, opts }),
-      removeEventListener: (type: string) => on.delete(type),
-      getBoundingClientRect: () => box,
-    };
-    let cancelled = 0;
-    const fire = (type: string, touches: number, at?: { x: number; y: number }) =>
-      on.get(type)?.fn({ preventDefault: () => cancelled++, touches: { length: touches }, changedTouches: at ? [{ clientX: at.x, clientY: at.y }] : [] });
-    return { el: el as unknown as HTMLElement, on, fire, cancelled: () => cancelled };
-  };
-  it("lifts inside the box, edges included", () => {
-    assert.equal(liftedInside(box, 10, 20), true);
-    assert.equal(liftedInside(box, 54, 64), true);
-    assert.equal(liftedInside(box, 9, 30), false);
-    assert.equal(liftedInside(box, 30, 65), false);
+describe("keyboard", () => {
+  it("keeps the tallest height at one width and starts over at a new one", () => {
+    let t = nextTallest(null, 412, 823);
+    t = nextTallest(t, 412, 473);
+    assert.deepEqual(t, { width: 412, height: 823 });
+    assert.deepEqual(nextTallest(t, 915, 360), { width: 915, height: 360 });
   });
-  it("cancels the touch, so no tap, and runs once on a lift inside", () => {
-    const f = fake();
-    let runs = 0;
-    const off = touchPress(f.el, () => runs++);
-    assert.deepEqual(f.on.get("touchstart")?.opts, { passive: false });
-    assert.deepEqual(f.on.get("touchend")?.opts, { passive: false });
-    f.fire("touchstart", 1);
-    f.fire("touchend", 0, { x: 30, y: 40 });
-    assert.equal(runs, 1);
-    assert.equal(f.cancelled(), 2);
-    f.fire("touchend", 0, { x: 30, y: 40 }); // no start: nothing
-    assert.equal(runs, 1);
-    off();
-    assert.equal(f.on.size, 0);
-  });
-  it("ignores a slide off, a second finger and a cancelled touch", () => {
-    const f = fake();
-    let runs = 0;
-    touchPress(f.el, () => runs++);
-    f.fire("touchstart", 1);
-    f.fire("touchend", 0, { x: 200, y: 40 });
-    f.fire("touchstart", 1);
-    f.fire("touchstart", 2);
-    f.fire("touchend", 1, { x: 30, y: 40 });
-    f.fire("touchend", 0, { x: 30, y: 40 });
-    f.fire("touchstart", 1);
-    f.fire("touchcancel", 0);
-    f.fire("touchend", 0, { x: 30, y: 40 });
-    assert.equal(runs, 0);
-  });
-  it("reads a click's pointer type", () => {
-    assert.equal(clickWasTouch({ pointerType: "touch" } as unknown as MouseEvent), true);
-    assert.equal(clickWasTouch({ pointerType: "mouse" } as unknown as MouseEvent), false);
-    assert.equal(clickWasTouch({} as MouseEvent), false);
+  it("is up when the viewport is well under its tallest, not for a URL bar", () => {
+    const t = { width: 412, height: 823 };
+    assert.equal(keyboardUp(t, 473), true, "Fold, keyboard up");
+    assert.equal(keyboardUp(t, 823), false);
+    assert.equal(keyboardUp(t, 767), false, "URL bar shown");
+    assert.equal(keyboardUp({ width: 915, height: 360 }, 150), true, "landscape");
   });
 });
 

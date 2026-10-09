@@ -306,3 +306,22 @@ else about the shell changes.
   one column, and `data-spine` is not set.
 
 ---
+
+## §app.shell/installable — The app installs like an app
+
+The web app can be added to a phone's Home Screen or installed from a desktop browser, and it then
+opens in its own window with no browser bar.
+
+- **The manifest** (`public/manifest.webmanifest`, linked from `index.html`) names it `sova`, starts
+  at `/` with the whole origin in scope, asks for `display: standalone`, and carries 192px and 512px
+  icons, each also in a maskable form. `index.html` adds the iOS Home Screen tags (capable, a black
+  status bar, the title `sova`, an apple-touch icon) and a theme colour.
+- **The service worker** (`public/sw.js`), registered in production builds only (never under the
+  Vite dev server), keeps the shell working offline: it seeds `/` and the hashed bundles it names on
+  install, answers page loads network first (falling back to the cached shell), hashed `/assets/`
+  cache first, and other static files from cache while it refreshes them. Live data is never
+  cached: nothing under `/api`, `/ws`, `/peer/`, `/ext/` or `/design/`. It also carries phone
+  notifications (§app/notifications), which on an iPhone or iPad need the app added to the Home
+  Screen.
+- **Being installed changes nothing else.** The installed app is the same page at the same
+  address, behind the same gate (§app/access).

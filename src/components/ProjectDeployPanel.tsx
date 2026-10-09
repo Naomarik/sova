@@ -1,9 +1,9 @@
 import { createSignal, For, type JSX, Show } from "solid-js";
 import type { DeployPlanView, DeployReview, DeployTargetView, LogLine, VerbResult } from "../../shared/project-contract";
-import { ApiError, approveDeployRecipe, runDeploySetup, runDeployVerb } from "../lib/api";
+import { ApiError, runDeploySetup, runDeployVerb } from "../lib/api";
 import { relativeTime } from "../lib/format";
 import { createPoll } from "../lib/poll";
-import { checksLine, DEPLOY_STANDING_CHIP, DEPLOY_STATE_CHIP, hash12, overridesAsked, planDeadline, recordLine, rollbackWord, shipConfirmLine, short, tickProgress } from "../lib/project-deploy";
+import { checksLine, DEPLOY_STANDING_CHIP, DEPLOY_STATE_CHIP, hash12, overridesAsked, planDeadline, recordLine, rollbackWord, shipConfirmLine, short } from "../lib/project-deploy";
 import { announce, toast } from "../lib/ui-state";
 import { Chip } from "./ui";
 
@@ -16,39 +16,31 @@ const errText = (err: unknown) => (err instanceof ApiError || err instanceof Err
 const LIST_WORD: Record<string, string> = { credentials: "Credential check", plan: "Plan step", build: "Build", steps: "Step", rollback: "Rollback step" };
 
 /**
- * The review the operator ticks (§app.project-services/deploy-trust): every target's steps as Sova renders them, with
- * this host's values in place and an unset one named, then its verify and its rollback. Each is a checkbox;
- * `onTick` reports one key. The parent holds the ticks and enables Approve once every key is ticked.
+ * A deploy recipe as Sova renders it (§app.project-runtime/run-report): every target's steps with this host's values
+ * in place and an unset one named, then its verify and its rollback.
  */
-export function DeployReviewTicks(props: { review: DeployReview; ticked: ReadonlySet<string>; onTick(key: string, on: boolean): void }) {
-  // One row per tick: the box, then what it is on one line and what runs (mono, wrapping in its own block) under it.
-  const tick = (key: string, kind: () => JSX.Element, body: () => JSX.Element) => (
-    <li>
-      <label class="toggle deploy-tick">
-        <input type="checkbox" checked={props.ticked.has(key)} onChange={(e) => props.onTick(key, e.currentTarget.checked)} />
-        <span class="toggle-box" />
-        <span class="deploy-tick-body">
-          <span class="deploy-tick-kind">{kind()}</span> {body()}
-        </span>
-      </label>
+export function DeployRecipeSteps(props: { recipe: DeployReview }) {
+  // One row per step: what it is on one line, and what runs (mono, wrapping in its own block) under it.
+  const step = (kind: () => JSX.Element, body: () => JSX.Element) => (
+    <li class="deploy-step">
+      <span class="deploy-step-kind">{kind()}</span> {body()}
     </li>
   );
   return (
-    <div class="deploy-review" role="group" aria-label="Deploy recipe to review">
-      <For each={props.review.targets}>
+    <div class="deploy-recipe" role="group" aria-label="Deploy recipe">
+      <For each={props.recipe.targets}>
         {(t) => (
-          <div class="deploy-review-target">
+          <div class="deploy-recipe-target">
             <p class="deploy-target-head">
               <span class="project-software-name">{t.name}</span> <span class="project-card-note">{t.about}</span>
             </p>
             <p class="project-card-note">
               Ships from <span class="text-mono">{t.branch}</span> · tests: {t.tests === "none" ? "none required" : t.tests === "full" ? "the full suite" : "the smoke selection"}
             </p>
-            <ul class="deploy-ticks">
+            <ul class="deploy-steps">
               <For each={t.steps}>
                 {(s) =>
-                  tick(
-                    `${t.name}/${s.key}`,
+                  step(
                     () => (
                       <>
                         {LIST_WORD[s.list] ?? s.list} {s.id}
@@ -66,22 +58,20 @@ export function DeployReviewTicks(props: { review: DeployReview; ticked: Readonl
               </For>
               <Show when={t.verify}>
                 {(v) =>
-                  tick(
-                    `${t.name}/verify`,
+                  step(
                     () => <>Verify</>,
                     () => (
                       <>
-                        <code class="deploy-cmd">GET {v().url}</code> <span class="deploy-tick-note">answers {v().expect}</span>
+                        <code class="deploy-cmd">GET {v().url}</code> <span class="deploy-step-note">answers {v().expect}</span>
                       </>
                     ),
                   )
                 }
               </Show>
-              {tick(
-                `${t.name}/rollback`,
+              {step(
                 () => <>Rollback</>,
                 () => (
-                  <span class="deploy-tick-text">
+                  <span class="deploy-step-text">
                     {t.rollback === "steps" ? "its rollback steps above" : t.rollback === "redeploy-previous" ? "the last verified commit, deployed again" : `none: ${(t.rollback as { none: string }).none}`}
                   </span>
                 ),
@@ -129,13 +119,11 @@ function PlanView(props: { plan: DeployPlanView }) {
 }
 
 /**
- * The project's Deploy panel (§app.project-runtime/deploy-panel): each target's standing and last deploy; while
- * main's recipe waits for approval, its review to tick and Approve Deploy; per target Plan Deploy, then Deploy
- * Now after a confirm; Roll Back; the last deploy's log; an overseer's request. Only the operator sees it.
+ * The project's Deploy panel (§app.project-runtime/deploy-panel): each target's standing and last deploy; per
+ * target Plan Deploy, then Deploy Now after a confirm; Roll Back; the last deploy's log; an overseer's request. Only the operator sees it.
  */
 export function ProjectDeployPanel(props: { projectId: string; root: string; archived: boolean }) {
   const poll = createPoll(() => runDeployVerb(props.root, "deploy.status", {}), DEPLOY_POLL_MS);
-  const [ticked, setTicked] = createSignal<ReadonlySet<string>>(new Set());
   const [busy, setBusy] = createSignal<string | null>(null);
   const [error, setError] = createSignal<string | null>(null);
   const [plans, setPlans] = createSignal<Record<string, DeployPlanView | { refused: VerbResult["error"] }>>({});
@@ -164,12 +152,6 @@ export function ProjectDeployPanel(props: { projectId: string; root: string; arc
   };
   const failed = (r: VerbResult): string | null => (r.error ? r.error.message : null);
 
-  const approve = (review: DeployReview) =>
-    act("approve", async () => {
-      await approveDeployRecipe(props.root, review.deployHash, [...ticked()]);
-      setTicked(new Set<string>());
-      return `Approved the deploy recipe ${hash12(review.deployHash)} on this host.`;
-    });
   const plan = (t: DeployTargetView) =>
     act(`plan:${t.name}`, async () => {
       const why = reasons()[t.name] ?? {};
@@ -230,30 +212,7 @@ export function ProjectDeployPanel(props: { projectId: string; root: string; arc
         {(d) => (
           <>
             <Show when={!d().targets?.length}>
-              <p class="orgs-empty">Main declares no deploy yet. Set Up Deploy asks you how each target ships, then proposes a recipe for you to tick and approve.</p>
-            </Show>
-            <Show when={d().review}>
-              {(review) => {
-                const progress = () => tickProgress(review(), ticked());
-                return (
-                  <div class="deploy-approve">
-                    <p class="orgs-line">This recipe runs on your targets once you approve it. Tick each step as you read it.</p>
-                    <DeployReviewTicks review={review()} ticked={ticked()} onTick={(k, on) => setTicked((cur) => { const n = new Set(cur); if (on) n.add(k); else n.delete(k); return n; })} />
-                    <div class="deploy-approve-bar">
-                      <button
-                        type="button"
-                        class="button button-sm button-primary"
-                        aria-disabled={progress().left || busy() ? "true" : undefined}
-                        title={progress().left ? `Tick every step first: ${progress().left} left.` : undefined}
-                        onClick={() => !progress().left && void approve(review())}
-                      >
-                        Approve Deploy {hash12(review().deployHash)}
-                      </button>
-                      <span class="deploy-progress" role="status">{progress().line}</span>
-                    </div>
-                  </div>
-                );
-              }}
+              <p class="orgs-empty">Main declares no deploy yet. Set Up Deploy asks you how each target ships, then proposes a recipe on its branch for you to merge.</p>
             </Show>
             <ul class="deploy-targets">
               <For each={d().targets ?? []}>
@@ -262,7 +221,7 @@ export function ProjectDeployPanel(props: { projectId: string; root: string; arc
                   const planned = () => (p() && "planId" in p()! ? (p() as DeployPlanView) : null);
                   const refused = () => (p() && "refused" in p()! ? (p() as { refused: VerbResult["error"] }).refused : null);
                   const running = () => t.last?.state === "running";
-                  const can = () => d().approved && t.standing === "approved" && !props.archived;
+                  const can = () => t.standing === "declared" && !props.archived;
                   return (
                     <li class="deploy-target">
                       {/* Two rows on one grid: the target and its standing, then its last deploy and its state, chips in one column. */}

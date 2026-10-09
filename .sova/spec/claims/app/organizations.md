@@ -12,7 +12,7 @@ last section (§chat.transcript/landing-page): totals across every org, the most
 orgs as links, and a link to `#/orgs`, shown whether or not any org exists. The sidebar has no
 navigation row for orgs; it lists their sessions in its Organizations region, each org's head linking
 to its page (§app.session-list/organizations). `#/orgs` is
-a grid of organization cards (§app.organizations/org-cards); an org's page has four tabs, each in
+a grid of organization cards (§app.organizations/org-cards); an org's page has five tabs, each in
 the URL (§app.organizations/org-page); each roster person has a page of their own,
 `#/orgs/<id>/people/<pid>` (§app.organizations/person-page).
 
@@ -104,7 +104,7 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
   "Each organization keeps its roster, projects and hand-off sessions in its own git repo.", and a
   secondary `New Organization` button that focuses the New Organization form's Name field.
 
-## §app.organizations/org-page — One org's page: four tabs
+## §app.organizations/org-page — One org's page: five tabs
 
 - Under the title, in this order: the workspace-problem banners and the new-links banner (they
   stay above the tabs whichever tab is open), then a tab strip (`.tabs`, `role="tablist"`), then
@@ -151,6 +151,8 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
   project page's Overview, whose cards fill its columns (§app.organizations/project-page). The project
   page's title, cut with an ellipsis when it doesn't fit, carries the whole project name as its
   tooltip (`title`).
+  - **History**: the org's history, its timeline, filters, event detail and causal view
+    (§app.org-history/page).
   - **Workspace**: the workspace repo card: how often changes are committed ("Changes are
     committed hourly[ and pushed to the remote], when there are any. Commit Now does it at once."),
     the last commit (relative time with the exact stamp as its title, short sha, message) and
@@ -158,8 +160,9 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
     says what it did: "Committed {short sha} and pushed.", "Committed {short sha}.", "Nothing new
     to commit. Pushed the commits the remote lacked." or "Nothing new to commit."
 - **Counts.** Each tab's label is followed by a count: Sessions, every baton session of the org;
-  People, every roster person (active, proposed and left); Projects, the projects not archived. Workspace shows
-  no count: it holds one repo, not a list.
+  People, every roster person (active, proposed and left); Projects, the projects not archived. History and
+  Workspace show no count: History is a filtered read with its own count line, and Workspace
+  holds one repo, not a list.
 - **Needs-you dot.** A tab carries a warn dot, with its words as hidden text and as the tab's
   title, when something in it waits on the operator, by the same definitions as the card
   (§app.organizations/org-cards): Sessions — sessions the operator holds unanswered (`{n} to
@@ -167,7 +170,8 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
   (`{n} to approve`); Projects — open conflicts routed to the operator with no session
   (`{n} conflict(s) to settle`) and held acts (`{n} held act(s)`); Workspace — file problems in the repo and a failed last commit
   or push. A session row with a link to send shows a `Link to send` warn chip in place of `Open`.
-- **In the URL.** `#/orgs/<id>/sessions`, `/people`, `/projects`, `/workspace`; the bare
+- **In the URL.** `#/orgs/<id>/sessions`, `/people`, `/projects`, `/history` (and
+  `/history/events/<event id>`, §app.org-history/page), `/workspace`; the bare
   `#/orgs/<id>` is Sessions. `#/orgs/<id>/start/<person>` opens Sessions with the start form open
   and that person ticked — on load, and whenever the hash changes to it while the page shows.
   Closing the form (Cancel, or a session started) replaces the hash with `#/orgs/<id>/sessions`,
@@ -182,9 +186,11 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
   every width: the phone's move-focus-to-the-title on a route change happens only when the page
   changes (another org, the list, a project page or a person's page), never for a tab or a start
   link.
-- **Width.** Under 480px of pane width the tabs tighten (`--space-1` padding and gap), so the four
-  fit a 420px window with two-digit counts; narrower, the strip scrolls sideways and the selected
-  tab is scrolled into view whole. A section's heading (on an org, project or person page) keeps
+- **Width.** The tab strip tightens in steps by its own width: under 600px, tighter spacing; under
+  500px, tighter still and the caption size. Every tab stays 44px tall. A 420px
+  window, and any wider one, shows all five tabs with counts of up to three digits; a 390px window
+  with up to two digits; a 360px window with one digit. When the five tabs don't fit, the strip
+  scrolls sideways and the selected tab is kept in view whole. A section's heading (on an org, project or person page) keeps
   its whole word: when it and its buttons don't fit one line, the buttons wrap below it rather
   than cutting it off.
 - **Live.** The page re-reads its org every 10 seconds while the browser tab shows (paused while
@@ -391,9 +397,12 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
   pane is at least 1000px wide (one column below): **Coding sessions**
   (§app.project-overseer/coding-worktrees) and the gathering **Sessions it started**, and **Previews**
   (§mesh.public/preview-card) in the first; **Software** (§app.project-runtime/software-card),
-  **Files** (§app.organizations/files-card, while placed or holding a file), **Activity** and
+  **Files** (§app.organizations/files-card, while placed or holding a file), **History** (while
+  placed), **Activity** and
   **To-do** in the second. Overview's
-  cards use the width they are given (no 880px cap); the page stops at 1280px.
+  cards use the width they are given (no 880px cap); the page stops at 1280px. While the project
+  is placed, Overview's second column has a **History** card before Activity, whose **Open History** opens the org's History tab filtered to this
+  project (§app.org-history/page).
 - **Activity** is a card: its newest 5 acts, then **Show All {n}** (and **Show Fewer**). A done
   act has no chip; `Partly`, `Refused` and `Failed` keep theirs. With none: "Nothing yet. Every act
   it takes, refused or not, lists here."
@@ -458,6 +467,9 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
     project's last reconcile run and last promotion, each gap's item, and every coding session the
     project started with its worktree's branch — never a link;
   - `roster-history.jsonl`: the roster's per-field history (§app.organizations/history-and-revert);
+  - `history/events/<yyyy-mm>.jsonl` and `history/rationale/<event id>.json`: the org's history of
+    what happened, who did it and the reasons recorded, and its private words
+    (§app.org-history/ledger, §app.org-history/rationale);
   - `about.md` and `org-history.jsonl`: the org's About text and its history (§app.organizations/about);
   - `sessions/*.jsonl`: every baton session transcript and every project overseer conversation
     (current and history), written there directly by pi (`SessionManager.create(cwd, sessionDir)`);
@@ -483,7 +495,8 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
   and, for owner links, `<stateRoot>/person-links.json`, both mode 0600; links are minted again after a restore), credentials and auth, and Sova's own
   settings (Settings → Decisions, new-session defaults, the model policy).
 - **Host-local, by design** — a restore starts these fresh or derives them again: this host's
-  attach index `<stateRoot>/orgs.json` (where each repo lives here); the host-local statecharts under
+  attach index `<stateRoot>/orgs.json` (where each repo lives here); the history's index under
+  `<stateRoot>/org-history/<org>/`, rebuilt from `history/` (§app.org-history/reads); the host-local statecharts under
   `<stateRoot>/statecharts/<org>/` (§app.project-overseer/statecharts): this host's hold on the org
   and its commits, and each project overseer's watch loop — the pause an attach set, its
   allowances used, reasons waiting, held items, last run and runs per day — which rate-limit what
@@ -540,7 +553,14 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
   history line, its projects, every baton session with its transcript, holder, hand-offs, offers
   and wrap-up state, the decisions and conflicts, every recorded visit (§app.baton/visits), and each
   project overseer with its conversations, settings, notes, actions, ideas, to-dos and the
-  sessions it started. Nothing is read from the old host.
+  sessions it started, and its history with every event's id, links and recorded words
+  (§app.org-history/portability). Nothing is read from the old host. An attach commits what it wrote before it
+  returns, pushed to the repo's remote when it has one: its "Attached on …" commit holds the holder
+  record, the history it imported and what pausing each project's watch wrote to the repo; decisions
+  it recovered, with their history events (§app.org-history/durability), are committed right after,
+  in a commit of their own within the same attach. A clone with nothing to recover gets only the
+  "Attached on …" commit. If that follow-up commit is refused, the refusal is logged and those
+  changes go in with the next regular commit (the hourly one or the shutdown commit).
 - **Links must be re-issued.** No link is in the repo, so every old link answers 404 on the new
   host; the operator sends new ones (Get Link, or Needs you's "Send <name> their link"), the owner
   link included (the owner itself travels, in the org's statechart). The attach form says so. A person's page lists no links until new ones are sent; their old visits still

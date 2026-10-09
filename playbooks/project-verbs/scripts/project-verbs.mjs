@@ -2,7 +2,7 @@
 // The Project verbs playbook's driver (playbooks/project-verbs/PLAYBOOK.md). Node builtins, plus the
 // contract's parser from Sova's shared/project-contract.ts (Node strips its types), so `check` reads
 // a definition exactly as the engine does. It reads the project and this host; it writes only the
-// file `fmt` is given. It never starts, stops or approves anything: the verbs do that.
+// file `fmt` is given. It never starts or stops anything: the verbs do that.
 //
 //   node scripts/project-verbs.mjs inspect [--root <dir>] [--json]
 //   node scripts/project-verbs.mjs plan    [--root <dir>] [--json]
@@ -705,7 +705,6 @@ export async function check(file, root) {
   for (const s of def.services) {
     const at = `$.services.${s.name}`;
     if (takesIsolation && !isObj(raw.services?.[s.name]?.isolation)) problems.push(`${at}.isolation: record {method, why} (references/isolation.md)`);
-    if (s.container) notes.push(`${at}: a container service conforms only after the operator approves the definition`);
     if (Object.keys(s.ports).length && !s.about) notes.push(`${at}.about: say how a builder uses it (a client command with its port)`);
     for (const [k, p] of Object.entries(s.ports)) {
       if ("fixed" in p && s.scope === "checkout") problems.push(`${at}.ports.${k}: a fixed port on a checkout service gives every instance the same port; use {base, stride}`);
@@ -723,7 +722,7 @@ export async function check(file, root) {
   if (raw.open === undefined && hasPage(def) && (await parserTakes("open")))
     notes.push("$.open: name the app's entry point ({endpoint, path}: where a person opens it); leave it out only for a library or an API-only project, and say why in the report");
   for (const d of def.data)
-    if (d.kind === "dir" && d.from !== "empty" && !/^\$\{(main|checkout)\}/.test(d.from)) problems.push(`$.data.${d.name}.from: copy from inside the project (\${main}/… or \${checkout}/…); a path outside it is refused under confinement`);
+    if (d.kind === "dir" && d.from !== "empty" && !/^\$\{(main|checkout)\}/.test(d.from)) problems.push(`$.data.${d.name}.from: copy from inside the project (\${main}/… or \${checkout}/…); a copy never depends on a folder outside it`);
   return { file, ok: problems.length === 0, problems, notes, services: def.services.map((s) => s.name), fatal: false };
 }
 

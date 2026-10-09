@@ -100,7 +100,7 @@
 
 (defn build-data [data]
   (let [e (b/evt data)]
-    (merge (select-keys e [:title :prompt :model :thinking :mode :op-item :folder])
+    (merge (select-keys e [:title :prompt :model :thinking :mode :op-item :folder :worktree])
       {:project-id (:id data) :session-id (:session-id e)
        :kind (if (= "overseer" (some-> (:by e) name)) "coding" "operator-coding")
        :started-by (if (= "overseer" (some-> (:by e) name)) "overseer" "operator")
@@ -225,7 +225,7 @@
                       ;; the verb playbook it runs (§app.project-runtime/verb-playbooks), stamped by the host
                       (:playbook-id e) (assoc :playbook-id (:playbook-id e))
                       (:label e) (assoc :label (:label e))
-                      (:approves e) (assoc :approves (:approves e)))))))
+                      (:proposes e) (assoc :proposes (:proposes e)))))))
 
       (parallel {:id :regions}
         (state {:id :shelf :initial :active}

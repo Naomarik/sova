@@ -53,7 +53,7 @@ test("the contact marker: planted and changed through person/edit, it is in the 
   const workspaceDir = join(root, "ws");
   const stateDir = join(root, "state");
   let crash = false;
-  const host = await OrgHost.open({ orgId: "o1", workspaceDir, stateDir, durable: false, commitHooks: { afterJournal: () => { if (crash) throw new Error("killed"); } } });
+  const host = await OrgHost.open({ orgId: "o1", workspaceDir, stateDir, durable: false, commitHooks: { afterJournal: () => { if (crash) throw new Error("killed"); }, retryApply: () => { if (crash) throw new Error("killed"); } } });
   // the person watches its org (r13: company hours), so the org is there first, as in production
   await host.start("org/o1", "org", { id: "o1", name: "Acme", slug: "acme", createdAt: 1 }, { by: "operator" });
   const person = { name: "Ana Ruiz", contact: { email: OLD }, status: "active", role: "Owner", decides: [], skills: [] };
@@ -63,7 +63,7 @@ test("the contact marker: planted and changed through person/edit, it is in the 
   assert.equal((host.data("person/o1/p1")?.["contact"] as Record<string, string>)["email"], NEW, "the edit went through");
   // a torn commit: its journal is left in the state root (host-local), with the rows scrubbed
   crash = true;
-  assert.throws(() => host.actNow("person/o1/p1", "person/edit", { patch: { contact: { email: OLD } } }, { by: "operator" }), /killed/);
+  assert.match(host.actNow("person/o1/p1", "person/edit", { patch: { contact: { email: OLD } } }, { by: "operator" }).refusal?.stage ?? "", /pending-apply/);
   await host.close();
 
   const markers = [OLD, NEW, PHONE];

@@ -49,7 +49,7 @@ Exactly one of `cmd` and `static`.
 | `reload` | `"restart"` (default), `"none"`, `{signal: HUP\|USR1\|USR2\|INT\|TERM}` (`signal`) or `{cmd: argv}` |
 | `build` | `{run, inputs?, timeout?}`: run by apply when its fingerprint changed |
 | `scope` | `"checkout"` (default: one per instance) or `"shared"` (one per project, fixed ports only) |
-| `container` | `{name, engine?: docker\|podman}` (`name`, `engine`): `cmd` runs that container in the foreground; Sova removes it by name at each stop. Conforms only after approval |
+| `container` | `{name, engine?: docker\|podman}` (`name`, `engine`): `cmd` runs that container in the foreground; Sova removes it by name at each stop |
 | `start` | `"up"` (default) or `"on-demand"`: up leaves it stopped unless named or required; a test run's `requires` starts it; down stops it. Checkout services only |
 | `about` | ≤ 200 characters, a template without `${host.…}`: how a builder uses it ("Backend nREPL: clj-nrepl-eval -p ${ports.web.nrepl}"). Shown in the instance note. Not hashed |
 | `isolation` | `{method, why}`: `method` one of `ports`, `names`, `process`, `container`, `netns`, `shared`; `why` ≤ 200 characters. A record for readers, never applied. Not hashed |
@@ -57,8 +57,8 @@ Exactly one of `cmd` and `static`.
 | `adopt` | `{unit, ports}`: in slot 0 only, this service is a systemd user unit the operator already runs (`unit`, a whole `<name>.service`, never `sova-svc-…`), on these fixed `ports` (every port of the service; no slot may allocate one). Sova only reads it: up, down, reset and teardown of slot 0 are refused, and apply schedules a gated restart the operator confirms. One cmd checkout service at most, no container. Hashed. Sova's own definition adopts `sova-runtime.service`; a project you onboard almost never needs it |
 
 ## A data resource
-Each has a `kind`, and may carry `sensitive: true`: its contents derive from production, so no instance holding it is ever shared. `sensitive` is inside the approval hash.
-- `{kind: "dir", path?, from?}` (`path`, `from`): a folder, by default under the instance's data dir (`${data.<name>}`); `path` places it inside the checkout (it must be gitignored). `from` is `"empty"` (default) or a template naming a folder to copy at create and reset, e.g. `"${main}/infra/datomic/data"`. Keep `from` inside the project: a path outside it is refused before approval.
+Each has a `kind`, and may carry `sensitive: true`: its contents derive from production, so no instance holding it is ever shared. `sensitive` is inside the definition's hash.
+- `{kind: "dir", path?, from?}` (`path`, `from`): a folder, by default under the instance's data dir (`${data.<name>}`); `path` places it inside the checkout (it must be gitignored). `from` is `"empty"` (default) or a template naming a folder to copy at create and reset, e.g. `"${main}/infra/datomic/data"`. Keep `from` inside the project: a copy never depends on a folder outside it.
 - `{kind: "hook", provision: argv, deprovision: argv, timeout?}` (`provision`, `deprovision`): your scripts make and remove it; provision prints its ref.
 
 ## `test`
@@ -70,12 +70,12 @@ The runner should write `SOVA_OUT` as JSON: `{"passed": n, "failed": n, "errors"
 - `endpoints`: `["<service>.<port>", …]`, the ports of the copy's own (checkout) services a stakeholder may open through a share link: the app's web page, its public API. Never a shared service, and never a REPL, nREPL, shadow-cljs, debugger, metrics or admin port: a link gives whoever has it everything that port does. Each at most once, at most 20.
 - `maxDays` (1–7, default 7): the longest a link of a copy lasts. Every link lasts 1 day unless the operator asks for more, at most 7.
 - `allow` (`false`): copies are never shared, whatever is listed (Sova itself, a tool with no stakeholder view).
-A project with any `sensitive` data resource is never shared, whatever `share` says. The whole key is inside the approval hash, so the operator approves what is exposed.
+A project with any `sensitive` data resource is never shared, whatever `share` says. The whole key is inside the definition's hash.
 
 ## `open`
 - `endpoint`: `"<service>.<port>"`, a declared port of a checkout service (never a shared service's): the port the app's page is served on, in every copy.
 - `path` (default `/`): where on that port a person lands, starting with `/`, at most 200 characters, no spaces or backslashes. The home page, never an API, health or readiness route: `ready.path` is for Sova's probe, `open.path` is for a person.
-Sova's Branches tab offers **Open** on each running copy (`http://<host>:<its port><path>`, in a new tab), and conformance (suite 4) checks in scratch copy A that a `GET` of the entry answers below 500, naming its content type in the `open` check's detail (`web.http (port 41010): GET /home answered 200 (text/html; charset=utf-8)`; a confined run says `GET /home inside the run's namespace answered …`). It exposes nothing a copy doesn't already listen on, so it is outside the approval hash.
+Sova's Branches tab offers **Open** on each running copy (`http://<host>:<its port><path>`, in a new tab), and conformance (suite 4) checks in scratch copy A that a `GET` of the entry answers below 500, naming its content type in the `open` check's detail (`web.http (port 41010): GET /home answered 200 (text/html; charset=utf-8)`). It exposes nothing a copy doesn't already listen on, so it is outside the definition's hash.
 
 ## `deploy`
 Written by the Project deploy playbook (`playbooks/project-deploy`) from the operator's answers; this playbook only keeps it. `targets` is `{name: target}` in declaration order, 1 to 10, each:
@@ -97,8 +97,8 @@ Deploy templates read `${host.<NAME>}`, `${commit}`, `${target}`, `${checkout}` 
 ## Templates
 `${slot}`, `${instance}`, `${project}`, `${checkout}`, `${main}` (the main checkout), `${branch}`, `${data}` (the instance's data dir), `${data.<resource>}`, `${ports.<service>.<port>}`, `${host.<NAME>}`; `$$` is a literal `$`. Every process and hook also gets `SOVA_V=1`, `SOVA_PROJECT`, `SOVA_INSTANCE`, `SOVA_SLOT`, `SOVA_CHECKOUT`, `SOVA_MAIN`, `SOVA_BRANCH`, `SOVA_DATA`, `SOVA_PORT_<SERVICE>_<PORT>` for every port of the instance and `SOVA_PORT_<PORT>` for its own; a hook also `SOVA_VERB`, `SOVA_STEP`, `SOVA_OUT`; a test run also `SOVA_TEST_SELECT`. `<SERVICE>` and `<PORT>` are upper case with anything else `_`.
 
-## The approval hash
-Approval covers the whole parsed definition (a data resource's `sensitive` and `share` included) except every `timeout`, readiness `path`, `about`, `isolation`, `sources`, `open`, `deploy` (approved apart, under its own hash) and the default `start: "up"`. So rewording a `why` or an `about`, listing another source or moving the entry point needs no new approval; any command, env, port, hook, data source, `test` or `start: "on-demand"` does.
+## The definition's hash
+A conformance stamp proves exactly one hash. The hash covers the whole parsed definition (a data resource's `sensitive` and `share` included) except every `timeout`, readiness `path`, `about`, `isolation`, `sources`, `open`, `deploy` (hashed apart, under its own hash) and the default `start: "up"`. So rewording a `why` or an `about`, listing another source or moving the entry point keeps the proof; any command, env, port, hook, data source, `test` or `start: "on-demand"` needs a new conformance.
 
 ## Error codes
 | code | exit | meaning for you |
@@ -106,7 +106,6 @@ Approval covers the whole parsed definition (a data resource's `sensitive` and `
 | `invalid-definition` | 3 | the parser's path and message: fix the file |
 | `invalid-request` | 3 | a bad verb argument |
 | `not-found` | 3 | no such project, instance or ref |
-| `not-approved` | 2 | `up`/`test` before approval (expected); conform of a container definition before approval |
 | `not-conformant` | 2 | a verb that needs a passing conformance |
 | `cap-reached` | 2 | no free slot |
 | `port-held` | 2 | something else holds a port of the slot: change `base`/`stride`, never stop the holder |
@@ -128,4 +127,3 @@ Approval covers the whole parsed definition (a data resource's `sensitive` and `
 
 ## Toolchains
 - mise shims (`mise.toml`, `.mise.toml`, `.tool-versions`) refuse an untrusted checkout: give each service `"MISE_TRUSTED_CONFIG_PATHS": "${checkout}"` in `env`. Setup steps, hooks, builds and the test run take no `env`: run them through a `.sova/bin/` script that exports `MISE_TRUSTED_CONFIG_PATHS="$SOVA_CHECKOUT"` first.
-- A JVM resolving dependencies under confinement goes through the sandbox's proxy; Sova sets the proxy properties for it. The first confined run warms its caches and is slow.

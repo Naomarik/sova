@@ -23,7 +23,6 @@ export const ERROR_CODES = [
   "not-found",
   "invalid-request",
   "invalid-definition",
-  "not-approved",
   "not-conformant",
   "cap-reached",
   "port-held",
@@ -53,7 +52,6 @@ const EXIT: Record<ErrorCode, ExitClass> = {
   "tests-failed": 1,
   "deploy-failed": 1,
   "verify-failed": 1,
-  "not-approved": 2,
   "not-conformant": 2,
   "cap-reached": 2,
   "port-held": 2,
@@ -665,7 +663,7 @@ function deployDecl(v: unknown, test: TestDecl | undefined): DeployDecl {
   return { targets };
 }
 
-/** Every step of a target, in the order they run, each with its review key (`<list>.<id>`, a credential's `credentials.<name>`). */
+/** Every step of a target, in the order they run, each with its key (`<list>.<id>`, a credential's `credentials.<name>`). */
 export function deployStepsOf(t: DeployTargetDecl): { key: string; list: "credentials" | "plan" | "build" | "steps" | "rollback"; id: string; run: Argv }[] {
   return [
     ...t.credentials.map((c) => ({ key: `credentials.${c.name}`, list: "credentials" as const, id: c.name, run: c.check })),
@@ -988,8 +986,6 @@ export interface ConformReport {
   leaks: string[];
   /** On a failed run: the last lines of each service (or step) that was not ready or failed, read before teardown. */
   logs?: ConformLog[];
-  /** Run in a private network namespace under the sandbox policy, before approval (§app.project-services/confined). */
-  confined?: boolean;
   memory?: ConformMemory;
 }
 export interface TestFailure {
@@ -1014,9 +1010,9 @@ export interface TestsReport {
 }
 export const FAILURES_MAX = 50;
 export const FAILURE_MESSAGE_MAX = 2000;
-/** A target's deploy standing (§app.project-runtime/deploy-standing), derived from main's deploy and this host's approvals. */
-export type DeployStanding = "none" | "awaiting-approval" | "approved" | "stale";
-/** One step as the operator ticks it: its argv with `${host.…}` resolved on this host (`unset`: the names this host lacks), `${commit}` and the like kept. */
+/** A target's deploy standing (§app.project-runtime/deploy-standing): declared by main's deploy, or not any more. */
+export type DeployStanding = "declared" | "none";
+/** One step as Sova renders it: its argv with `${host.…}` resolved on this host (`unset`: the names this host lacks), `${commit}` and the like kept. */
 export interface DeployReviewStep {
   key: string;
   list: "credentials" | "plan" | "build" | "steps" | "rollback";
@@ -1035,16 +1031,10 @@ export interface DeployTargetReview {
   rollback: "steps" | "redeploy-previous" | { none: string };
   tests: DeployTargetDecl["requires"]["tests"];
 }
-/** The Sova-rendered review of a deploy section (§app.project-services/deploy-trust): every key must be ticked before it is approved. */
+/** A deploy section as Sova renders it on this host (§app.project-runtime/run-report). */
 export interface DeployReview {
   deployHash: string;
   targets: DeployTargetReview[];
-  /** Every tick: `<target>/<step key>`, `<target>/verify` when declared, and `<target>/rollback`. */
-  keys: string[];
-}
-/** The keys a review needs ticked. Pure. */
-export function reviewKeys(targets: readonly { name: string; steps: readonly { key: string }[]; verify: unknown }[]): string[] {
-  return targets.flatMap((t) => [...t.steps.map((s) => `${t.name}/${s.key}`), ...(t.verify ? [`${t.name}/verify`] : []), `${t.name}/rollback`]);
 }
 export type DeployKind = "deploy" | "rollback";
 export type DeployState = "running" | "succeeded" | "failed" | "verify-failed" | "interrupted";
@@ -1093,8 +1083,6 @@ export interface DeployTargetView {
   name: string;
   about: string;
   standing: DeployStanding;
-  /** When this deploy hash was approved here. */
-  approvedAt: string | null;
   /** Its deploy now, or the last one. */
   last: DeployRecordView | null;
   /** The last verified deploy's commit (redeploy-previous goes back before it). */
@@ -1115,10 +1103,7 @@ export interface DeployRequestView {
 export interface DeployReport {
   /** Main's deploy hash (deploy.status, deploy.check: the ref's), null when it declares none. */
   deployHash: string | null;
-  approved: boolean;
   targets?: DeployTargetView[];
-  /** While the hash waits for approval (deploy.status). */
-  review?: DeployReview;
   plan?: DeployPlanView;
   record?: DeployRecordView;
   history?: DeployRecordView[];
@@ -1154,7 +1139,6 @@ export interface VerbResult {
   deploy?: DeployReport;
   error?: VerbError;
   defHash: string | null;
-  approved: boolean;
   at: string;
 }
 
@@ -1184,7 +1168,6 @@ export function ordered(r: VerbResult): VerbResult {
     ...(r.deploy !== undefined ? { deploy: r.deploy } : {}),
     ...(r.error !== undefined ? { error: r.error } : {}),
     defHash: r.defHash,
-    approved: r.approved,
     at: r.at,
   };
   return out;
@@ -1198,9 +1181,9 @@ export function isVerbResult(v: unknown): v is VerbResult {
   if (keys.slice(0, want.length).join() !== want.join()) return false;
   const tail = keys.slice(want.length);
   const optional = ["instances", "lines", "checks", "conform", "tests", "deploy", "error"];
-  const fixedTail = ["defHash", "approved", "at"];
-  if (tail.slice(-3).join() !== fixedTail.join()) return false;
-  const mid = tail.slice(0, -3);
+  const fixedTail = ["defHash", "at"];
+  if (tail.slice(-2).join() !== fixedTail.join()) return false;
+  const mid = tail.slice(0, -2);
   if (mid.some((k) => !optional.includes(k)) || mid.join() !== optional.filter((k) => mid.includes(k)).join()) return false;
   if (v.v !== 1 || !isVerb(v.verb) || typeof v.ok !== "boolean" || typeof v.changed !== "boolean") return false;
   if (!["absent", "stopped", "running", "degraded"].includes(v.state as string)) return false;

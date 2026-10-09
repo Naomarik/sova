@@ -27,7 +27,7 @@ export interface NeedsYouRow {
   details: string[];
   /** ms epoch of the session's newest act item; 0 unknown. */
   since: number;
-  /** A proposed verb playbook run's item (`playbook-review`): what the row's Approve & Merge needs
+  /** A proposed verb playbook run's item (`playbook-review`): what the row's Merge Branch needs
       (§app.project-runtime/review), the one button a Needs you row carries. */
   playbook?: NonNullable<AttentionItem["playbook"]>;
 }

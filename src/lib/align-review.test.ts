@@ -117,7 +117,7 @@ const answer = (over: Partial<AlignAnswer> = {}): AlignAnswer => ({
 test("card, feature off: no review line, button or verdict — even for a document that carries a record", () => {
   setAdversarialReview(false);
   const d = doc({ review: { plan: entry("clear", { reason: "fine" }) } });
-  const html = draw(d, answer({ current: () => d }));
+  const html = draw(d, answer({ current: () => d, review: () => false }));
   assert.ok(!html.includes("align-review"), "no review markup at all");
   assert.ok(!html.includes("Review Plan") && !html.includes("Plan reviewed"));
   assert.ok(!html.includes(REVIEW_ABOUT), "no explainer");
@@ -171,6 +171,26 @@ test("card, feature on: body lines everywhere; the foot only on the answerable n
     const offer = draw(implOpen, answer({ current: () => implOpen }));
     assert.match(offer, />Review Implementation<\/button>/);
     assert.ok(offer.includes("align-review-about"));
+  } finally {
+    setAdversarialReview(false);
+  }
+});
+
+test("card: the chat's own flag decides, never the setting as saved now; with no chat to ask, the setting does", () => {
+  const d = doc({ review: { plan: entry("clear", { reason: "fine" }) } });
+  try {
+    // A chat that started without review, after the setting was turned on: no review ops exist in it.
+    setAdversarialReview(true);
+    const off = draw(d, answer({ current: () => d, review: () => false }));
+    assert.ok(!off.includes("align-review") && !off.includes("Plan reviewed"), "the chat's flag off: no review markup, whatever is saved");
+    // A chat that started with review, after the setting was turned off: its lines and foot stay.
+    setAdversarialReview(false);
+    const on = draw(d, answer({ current: () => d, review: () => true }));
+    assert.ok(on.includes("Plan reviewed · fine"), "the chat's flag on: its review lines show");
+    // A watch or a worker transcript has no chat context: the saved setting stands in.
+    assert.ok(!draw(d).includes("Plan reviewed"));
+    setAdversarialReview(true);
+    assert.ok(draw(d).includes("Plan reviewed · fine"));
   } finally {
     setAdversarialReview(false);
   }

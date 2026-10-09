@@ -62,17 +62,30 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   Delegate session at each turn boundary — never snapshotted into a session; mode `mode-spec.json`
   = the spec minor mode's writer (one backend/model/effort plus an optional fallback, or `null`: the
   session writes the spec itself), seeding/backing the profiles' spec writer the same way, and re-read the same way by
-  every session with spec on, in either major mode), subagents `team-defaults.json` = the standing
+  every session with spec on, in either major mode), mode `mode-align.json` = the align minor mode's
+  writing style and Visuals (`{version: 1, style: "default" | "simplified" | "pm", visuals}`, one module,
+  `pi-config/extensions/mode/align-settings.ts`, builtins only plus `mode/delegate.ts`: the shape, the
+  strict parse, a reader that reads a missing or malformed file as Default with Visuals off, the
+  atomic writer and `resolveAlign`; written by Settings → Alignment, synced like `mode-spec.json`; the
+  style re-read by every session at each turn boundary and told to an open chat as one hidden
+  `mode-note` whose details record `style`/`headStyle`; a head fixed in a style other than Default
+  records it in the extension's own `mode-head` custom entry `{v: 1, style}` (none: Default once a
+  prompt went out since the last compaction), Visuals read at session start — in Sova from
+  the chat's `sova-align-launch` state entry `{v: 1, review, visuals}` (Sova's own, written with the
+  chat's first message, the first in the file holds), handed over as the `align-visuals` flag `on` |
+  `off`, absent in the TUI, which then reads the file; a subagent profile's optional `alignment`
+  `{style?, visuals?}` overrides it field by field, §chat.alignment/settings-file), subagents `team-defaults.json` = the standing
   coordinator and monitor every new team gets (absent = off), seeding Settings → Subagents' Teams section and
   read by the subagents extension at team creation), and subagent profiles: `subagent-profiles.json`
   = the library of named subagent setups (a profile bundles Delegate's four routes, the standing
-  coordinator/monitor, the members default and the spec writer),
+  coordinator/monitor, the members default, the spec writer and, optionally, the reviewer and the
+  align writing style/Visuals override),
   `subagent-profiles-default.json` = this device's default (never synced; the library syncs whole,
   newest edit wins), and each chat's hidden `subagent-profile` custom entry `{v: 1, profile}` (an
   id or "off", newest on the branch wins — an id reference, not a snapshot: editing a profile
   reaches every chat on it from its next turn or team action). One module,
   `pi-config/extensions/subagents/subagent-profiles.ts` (builtins only, plus `mode/delegate.ts`,
-  `mode/spec.ts` and `subagents/team-defaults.ts`), owns all three: the shapes, the strict parses,
+  `mode/spec.ts`, `mode/align-settings.ts` and `subagents/team-defaults.ts`), owns all three: the shapes, the strict parses,
   the seeding (absent = seeded from the legacy files, so nothing changes until the user switches; a
   malformed legacy `team-defaults.json` postpones seeding), atomic writers, pick entries
   (`restorePick`, `pickEntryFor`) and the one `resolveSubagents` (pick → this device's default →
@@ -140,8 +153,11 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   sets `PI_USAGE_PARENT=<parent sid>:<worker id>` in every worker's spawn env (the worker's records name
   their parent from it).
   Not covered by Sova's tsconfig, with these exceptions: the server imports
-  `pi-config/extensions/mode/state.ts`, `minor.ts`, `delegate.ts` and `spec.ts` (`server/mode-state.ts`,
-  `server/delegate.ts`, `server/spec-settings.ts`; hence `allowImportingTsExtensions`),
+  `pi-config/extensions/mode/state.ts`, `minor.ts`, `delegate.ts`, `spec.ts` and `align-settings.ts`
+  (`server/mode-state.ts`, `server/delegate.ts`, `server/spec-settings.ts`, `server/align-settings.ts`
+  and `server/sync/docs.ts`, the file's mesh registration; `server/vis-check.ts` and
+  `server/chat-manager.ts` take `visToolsWanted`, the one rule for the vis tools, from `minor.ts`;
+  hence `allowImportingTsExtensions`),
   `server/targets.ts` imports `pi-config/extensions/remote/argv.ts` (the target schema,
   validation and the single argv builder that both the `remote` extension and the web server use to
   run a command on a target), `server/model-favorites.ts` imports
@@ -187,13 +203,7 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   resolution of a session's sandbox policy from its agent dir, cwd, session id and tracked
   worktrees, which the extension's `snapshot()` also calls, and `readDenial`/`writeDenial`/
   `hiddenBelow`, so a linked session's file transfer is refused exactly where that session's own
-  tools would be), `server/project-services/confine.ts` imports `sandbox/backends/linux-bwrap.ts`,
-  `env.ts`, `proxy.ts`, `policy.ts` and `session-policy.ts` (builtins only: a confined conformance
-  run, §app.project-services/confined, holds its private network namespace in a bwrap anchor with
-  the policy's proxy, and wraps each unit in the bwrap view a sandboxed session there would get, so
-  an unapproved definition runs exactly as confined as the session that wrote it; the watcher does
-  not watch these, so an edit there reaches a running server only at its restart),
-  `server/transcript.ts` and `server/align-state.ts` import
+  tools would be), `server/transcript.ts` and `server/align-state.ts` import
   `pi-config/extensions/mode/align.ts` (builtins only: the `align` tool's details shape, its strict
   check `normalizeAlignDetails` and the one fold `foldAlignments` — the transcript's align row and
   the session list's `SessionSummary.align` read what the extension writes, with its own code),
@@ -393,7 +403,7 @@ Rules:
   refused. Never run the gate script against `sova-runtime.service` by hand, and never point a test
   at it: tests and gates use a stand-in unit.
 - On macOS the live server is the launchd agent `sova-runtime` (`~/Library/LaunchAgents/sova-runtime.plist`,
-  README's launchd example), and every rule above holds. Its restart is
+  the launchd example in docs/running-as-a-service.md), and every rule above holds. Its restart is
   `launchctl kickstart -k gui/$(id -u)/sova-runtime`, never run by hand from a hosted session: use the
   verb form (`sova-project apply --checkout ~/webapps/sova --confirm`; its gate runs detached from the server, waits the
   30 s itself and then kickstarts the agent) or ask the user. Its pid and state:
@@ -442,7 +452,7 @@ launcher):
   `systemctl --user daemon-reload`, then restart under the rules of **Live server restart** above
   (the gate, never `systemctl restart` from a hosted session). An agent never edits the unit.
 - **The live unit** (`sova-runtime.service`) runs `scripts/start-server.sh`, so it is on Bun.
-  README's "Run on Bun (or Node)" has the complete unit example (`%h` paths, the same ExecStartPre,
+  docs/running-as-a-service.md has the complete unit example (`%h` paths, the same ExecStartPre,
   PATH, Restart and TimeoutStopSec as the live unit) and the switch steps.
 - **Testing a server:** in a worktree, `pnpm run dev:hermetic` (Bun) or `SOVA_PORT=48xx pnpm run
   dev:hermetic`; check `curl -s 127.0.0.1:<port>/api/health`. On Node only when asked:

@@ -35,7 +35,11 @@ identify the setup as "Subagent profiles" or "Subagents".
   `members` is one worker or `null`; `specWriter` is `{primary, fallback}` or `null`. A profile
   may also carry an optional `reviewer` (`{primary, fallback}` or `null`), the adversarial
   reviewer's route (§chat.alignment-review/route): a profile without the key parses as before, and
-  a parse never adds it. The default
+  a parse never adds it. Likewise an optional `alignment` `{style?, visuals?}`: the align mode's
+  writing style (`default`, `simplified` or `pm`) and Visuals for chats on this profile, each
+  field present only when the profile overrides the host's `mode-align.json`
+  (§chat.alignment/settings-file); an empty object, an unknown key or a bad value is malformed, and a
+  profile without it reads exactly as before. The default
   file is `{version: 1, default}`: a profile's id or `"off"` (§chat.subagent-profiles/off).
 - **Strict.** An id is lowercase letters, digits and dashes, at most 48 characters, unique, and
   never `off`; a name is one line of at most 48 characters, unique ignoring case, and never "Off";
@@ -92,7 +96,11 @@ edited, renamed or deleted. It configures nothing, so the agent picks every mode
   parent session's branch, at every `team_create` and `team_add`, at `team_succeed` (the retire
   timeout), at every roster answer to a coordinator or monitor (the monitor's thresholds), and for
   `/team defaults` and `/team <objective>` planning. Normal mode reads teams and the spec writer
-  through it too; only the Delegate prompt is Delegate's own.
+  through it too; only the Delegate prompt is Delegate's own. The align mode's writing style and
+  Visuals resolve through it as well: the chat's profile's `alignment` override, field by field,
+  else the host's `mode-align.json`. A profile's style reaches its open chats at their next run like
+  a host change (§chat.alignment/style); its Visuals count only at a chat's first start
+  (§chat.alignment/visuals).
 - **Running work.** A switch reaches the chat from its next turn and its next team action: a
   running team adds members and starts successors under the chat's current profile. A worker
   already running keeps the model it was started with. Successors preserve explicit member and
@@ -152,8 +160,8 @@ profile in its mode menu; new chats start on the default."
   default first. A chat whose pick is deleted follows the default.
 - **The editor** (Edit, or a new profile) replaces the list in the tab. Its head is a back
   control, **Subagent profiles**, that returns to the list, then the profile's name field with the
-  saved footprint under it ("Not saved yet" for a new one). Below are three collapsible sections,
-  four while adversarial review is switched on, each a header that shows, while closed, a one-line
+  saved footprint under it ("Not saved yet" for a new one). Below are four collapsible sections,
+  five while adversarial review is switched on, each a header that shows, while closed, a one-line
   summary of what is inside:
   - **Delegate routing**, open when the editor opens; its summary is the routes' distinct primary
     models and how many fallbacks are set ("fable · opus · 1 fallback"). The four work kinds
@@ -169,9 +177,14 @@ profile in its mode menu; new chats start on the default."
     **Handover** line under both roles. **Members default** is one switch and one worker row.
   - **Spec writer**, one heading and one switch ("Use a spec writer while spec is on"); its summary
     is the writer's model, or "Off · the session writes it".
-  - **Reviewer**, only while adversarial review is switched on (§chat.alignment-review/route), last:
-    one switch ("Review alignments with a reviewer"); its summary is the reviewer's model, or
+  - **Reviewer**, only while adversarial review is switched on (§chat.alignment-review/route): one
+    switch ("Review alignments with a reviewer"); its summary is the reviewer's model, or
     "Off · no review".
+  - **Alignment**, last: two choices, **Writing style** (Use host default, Default, Simplified,
+    Project manager) and **Visuals** (Use host default, On, Off), each starting on "Use host default"
+    for a profile without an override; its summary is "Host default" or what it overrides
+    ("Project manager · visuals on"). "Use host default" stores no field, and both on it store no
+    `alignment` at all.
   A section holding something Save waits for opens itself, and a role whose fields need fixing
   shows them even while switched off. The mode menu's spec gear opens the chat's profile with Spec
   writer open and in view. Rows, validation and save rules are §app.settings-dialog/modes': choices

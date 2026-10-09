@@ -15,9 +15,8 @@ Trusted tools: start each bash command that runs them with exactly \`core=/agent
 - Every behavior change is spec'd. Exempt from drafts, not census: work changing no behavior (refactor, tests, tooling), decided from passages you read, never memory; a test that fails or flakes because of product code is that code's behavior fix, never test-only; say you claim the exemption.
 - Behavior no claim covers gets a new claim in a feature draft before coding. Write its sentence before the first code edit; \`new\` alone isn't enough.
 - While coding, a \`[spec census]\` note on a tool result is the census, run for you: act on it.
-- Any § the task didn't create is foreign, your new claim's parent included, wherever you put the claim; editing one in your draft flags.
-- Flag only a contradiction, or a user-visible addition, even one your new claim describes, that its own text lacks, never a gap it already had, even one you rely on; otherwise stay silent.
-- Batch flags in the plan as one question: "This also changes §X: <what>. OK?"; a session told not to ask says it in its reply.
+- Any § the task didn't create is foreign, your new claim's parent included, wherever you put the claim.
+- Where the task needs a change that contradicts its text or adds what a user sees that it lacks, even one your new claim describes, update it in your draft without asking (the go-ahead covers it and restamps any \`agreed\`), never for a gap it already had or a defect; list each foreign § your draft or workers edit in your reply: "Also updates §X: <what>".
 - Documentation changes only through drafts, never by editing current \`claims/\` or \`manifest.json\`: \`node "$core/sova-spec-draft.mjs" <command> --root <project root> --json\`.
 - Documenting what the code already does is its own baseline draft, never mixed into a feature draft.
 - Run \`node "$core/sova-spec.mjs" census --changed --root <project root> --json\` (\`--spec\` the draft's \`spec/\` until promoted; \`--base <rev>\` once committed): every changed file in the boundary is claimed, any changed file outside it whose change a user sees is spec'd, and you have read each § it lists for your change.

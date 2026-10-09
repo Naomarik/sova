@@ -651,10 +651,11 @@
         "src/lib/release-control.test.ts"
       ],
       "requires": [
-        "§chat.images/composer-attachments"
+        "§chat.images/composer-attachments",
+        "§chat.voice/button"
       ],
       "authority": "accepted",
-      "evidence": "verified"
+      "evidence": "reviewed"
     },
     "§chat.composer/composer-flyout": {
       "kind": "behavior",

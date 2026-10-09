@@ -1,4 +1,4 @@
-import { createEffect, createResource, createSignal, For, Show } from "solid-js";
+import { createEffect, createResource, createSignal, For, onCleanup, Show } from "solid-js";
 import type { OutreachInfo } from "../../shared/outreach";
 import {
   acceptOutreachInfo,
@@ -8,20 +8,32 @@ import {
   outreachProblem,
   outreachSaveError,
   outreachSaving as saving,
+  pauseSender,
   putOutreach,
+  reconnectSender,
+  senderActions,
+  senderFacts,
   senderWords,
   setOutreachDraft,
   setOutreachInfo,
+  startSender,
   type OutreachDraft,
 } from "../lib/outreach";
+import { announce } from "../lib/ui-state";
 import { Banner, Chip } from "./ui";
 import "../orgs.css";
+
+/** How often the open page reads the sender's state again, so it is live, not only as of the open. */
+const LIVE_MS = 5_000;
 
 /**
  * Settings → Outreach (§app.settings-dialog/outreach): how this host reaches the WhatsApp sender
  * (Off · This host · Via a peer) and, when it is here, which peers may send through it; both staged
- * for the dialog's Save Changes. The sender's state, Check Again, Pause all sending (at once), the
- * protected paths, and the note that sent links stay in the operator's own chat history.
+ * for the dialog's Save Changes. The sender's state, read again every few seconds while the page is
+ * open (why it stopped, when it tries again, sends and reconnects against their limits), its controls
+ * (§app.outreach/sender-controls: Reconnect Now, Pause/Resume Sender, Start Sender, each saying what it
+ * does before it runs), Check Again, this host's Pause all sending (at once), the protected paths,
+ * and the note that sent links stay in the operator's own chat history.
  */
 export function OutreachSettingsSection() {
   const [stored, { refetch }] = createResource(getOutreach);
@@ -35,12 +47,45 @@ export function OutreachSettingsSection() {
     if (d) setOutreachDraft({ ...d, ...patch });
   };
   const off = () => !draft() || saving();
+  // Live: the state alone is replaced (setOutreachInfo), never the saved file the draft rebases on.
+  const [now, setNow] = createSignal(Date.now());
+  const live = setInterval(() => {
+    setNow(Date.now());
+    if (document.hidden || busy()) return;
+    getOutreach().then(setOutreachInfo, () => {});
+  }, LIVE_MS);
+  onCleanup(() => clearInterval(live));
   const words = () => {
     const s = info()?.sender;
-    return s ? senderWords(s.state, s.why) : null;
+    return s ? senderWords(s, now()) : null;
+  };
+  const facts = () => {
+    const s = info()?.sender;
+    return s ? senderFacts(s, now()) : [];
+  };
+  const actions = () => {
+    const i = info();
+    return i ? senderActions(i) : { reconnect: false as const, pause: null, start: false };
   };
   const [pausing, setPausing] = createSignal(false);
   const [actionError, setActionError] = createSignal<string | null>(null);
+  /** A sender control in flight ("reconnect" | "pause" | "start"), or null. */
+  const [busy, setBusy] = createSignal<string | null>(null);
+  const [confirmBlocked, setConfirmBlocked] = createSignal(false);
+  const [controlError, setControlError] = createSignal<string | null>(null);
+  const control = async (name: string, run: () => Promise<OutreachInfo>, said: string) => {
+    setBusy(name);
+    try {
+      setOutreachInfo(await run());
+      setControlError(null);
+      setConfirmBlocked(false);
+      announce(said);
+    } catch (err) {
+      setControlError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  };
   const togglePause = async (on: boolean) => {
     setPausing(true);
     try {
@@ -113,15 +158,78 @@ export function OutreachSettingsSection() {
 
       <Show when={words()}>
         {(w) => (
-          <div class="outreach-state" role="status">
-            <Chip tone={w().tone}>{w().chip}</Chip>
-            <span class="settings-intro">
-              {w().text}
-              <Show when={info()?.sender.me}>{(me) => ` Number ${me()}.`}</Show>
-            </span>
-            <button type="button" class="button button-sm button-ghost" onClick={() => void refetch()}>
-              Check Again
-            </button>
+          <div class="outreach-sender">
+            <div class="outreach-state" role="status">
+              <Chip tone={w().tone}>{w().chip}</Chip>
+              <span class="outreach-state-text">{w().text}</span>
+            </div>
+            <Show when={facts().length > 0}>
+              <ul class="outreach-facts">
+                <For each={facts()}>{(f) => <li>{f}</li>}</For>
+              </ul>
+            </Show>
+            <Show when={confirmBlocked()}>
+              <Banner
+                tone="warn"
+                title="WhatsApp blocked this account."
+                body="Reconnecting soon after a block can get the number banned for good; waiting a day or more is safer. Sending stays paused until you press Resume Sender too."
+                action={
+                  <span class="outreach-actions">
+                    <button type="button" class="button button-sm button-destructive" disabled={busy() !== null} onClick={() => void control("reconnect", reconnectSender, "Reconnecting the sender.")}>
+                      Reconnect Anyway
+                    </button>
+                    <button type="button" class="button button-sm button-ghost" onClick={() => setConfirmBlocked(false)}>
+                      Cancel
+                    </button>
+                  </span>
+                }
+              />
+            </Show>
+            <div class="outreach-controls">
+              <Show when={actions().reconnect && !confirmBlocked()}>
+                <div class="outreach-control">
+                  <button
+                    type="button"
+                    class="button button-sm"
+                    disabled={busy() !== null}
+                    onClick={() => (actions().reconnect === "blocked" ? setConfirmBlocked(true) : void control("reconnect", reconnectSender, "Reconnecting the sender."))}
+                  >
+                    {busy() === "reconnect" ? "Reconnecting…" : "Reconnect Now"}
+                  </button>
+                  <span class="field-hint">Tries to connect once now; doesn't count against the automatic limit.</span>
+                </div>
+              </Show>
+              <Show when={actions().pause}>
+                {(p) => (
+                  <div class="outreach-control">
+                    <button type="button" class="button button-sm" disabled={busy() !== null} onClick={() => void control("pause", () => pauseSender(p() === "pause"), p() === "pause" ? "The sender is paused." : "The sender is resumed.")}>
+                      {p() === "pause" ? "Pause Sender" : "Resume Sender"}
+                    </button>
+                    <span class="field-hint">
+                      {p() === "pause"
+                        ? "Refuses every send through this sender, from every host, until you resume it. The connection stays up."
+                        : "Sends through this sender go again, from every host it accepts."}
+                    </span>
+                  </div>
+                )}
+              </Show>
+              <Show when={actions().start}>
+                <div class="outreach-control">
+                  <button type="button" class="button button-sm" disabled={busy() !== null} onClick={() => void control("start", startSender, "Starting the sender.")}>
+                    {busy() === "start" ? "Starting…" : "Start Sender"}
+                  </button>
+                  <span class="field-hint">
+                    Runs <code>systemctl --user start {info()?.unit?.name}</code> once. Sova never restarts or stops it.
+                  </span>
+                </div>
+              </Show>
+              <div class="outreach-control">
+                <button type="button" class="button button-sm button-ghost" onClick={() => void refetch()}>
+                  Check Again
+                </button>
+              </div>
+            </div>
+            <Show when={controlError()}>{(e) => <Banner tone="error" title={e()} />}</Show>
           </div>
         )}
       </Show>
@@ -166,7 +274,7 @@ export function OutreachSettingsSection() {
       <label class="toggle">
         <input type="checkbox" checked={!!info()?.file.paused} disabled={!info() || pausing()} onChange={(e) => void togglePause(e.currentTarget.checked)} />
         <span class="toggle-box" aria-hidden="true" />
-        <span>Pause all sending</span>
+        <span>Pause all sending from this host</span>
       </label>
       <Show when={actionError()}>{(e) => <Banner tone="error" title={e()} />}</Show>
 

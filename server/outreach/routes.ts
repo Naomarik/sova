@@ -9,15 +9,19 @@ import { operatorBy } from "../org-routes";
 import { batonById, currentOffer, reachedBy } from "../baton";
 import { operatorEnvelope, operatorName, OrgError, readRoster } from "../orgs";
 import { secretRules } from "../overseer-deny";
-import { notReady, sendAct, sendHandoffLink } from "./core";
+import { OVERSEER_SENDER_HEADER } from "../overseer-sender";
+import { notReady, refreshSender, sendAct, sendHandoffLink } from "./core";
 import { parseLinkRef } from "./links";
 import { outreachSecretDirs, outreachSecretFiles, sandboxWarning } from "./protected-paths";
-import { readOutreachState, saveOutreach } from "./settings";
-import { resetLocalClient, whatsapp } from "./whatsapp";
+import { localSocket, readOutreach, readOutreachState, saveOutreach } from "./settings";
+import { senderUnit, startSenderUnit } from "./unit";
+import { localControl, resetLocalClient, viaReconnect, whatsapp, type ControlAnswer } from "./whatsapp";
 
 /**
- * The operator's outreach routes (§app.outreach/sender-route, /send-link), main listener only: a
- * request that carries a peer or came through the mesh proxy gets 404, like Public links'.
+ * The operator's outreach routes (§app.outreach/sender-route, /send-link, /sender-controls), main
+ * listener only: a request that carries a peer or came through the mesh proxy gets 404, like Public
+ * links'. The sender's controls also refuse the Overseer's own calls (its dispatch is in-process, so
+ * it passes the local check): no tool reaches them.
  */
 
 const local = localRequest;
@@ -32,7 +36,18 @@ export async function outreachInfo(): Promise<OutreachInfo> {
   const denied = new Set([...secretRules().dirs, ...secretRules().files]);
   const covered = [...outreachSecretDirs(), ...outreachSecretFiles()].filter((p) => denied.has(p));
   const peers = meshPeers().map((p) => ({ nodeId: p.nodeId, label: p.label }));
-  return { file: now, sender, protected: covered, peers, sandboxWarning: file.sender === "off" ? null : sandboxWarning(now.senderAuthDir ?? now.authDir), ...(problem ? { problem } : {}) };
+  // Start Sender: asked of systemd only while the local sender doesn't answer.
+  const socket = localSocket(now.sender);
+  const unit = socket && sender.state === "unreachable" ? await senderUnit(socket).catch(() => null) : null;
+  return {
+    file: now,
+    sender,
+    protected: covered,
+    peers,
+    sandboxWarning: file.sender === "off" ? null : sandboxWarning(now.senderAuthDir ?? now.authDir),
+    ...(problem ? { problem } : {}),
+    ...(unit ? { unit } : {}),
+  };
 }
 
 export function mountOutreach(app: Hono): void {
@@ -55,10 +70,55 @@ export function mountOutreach(app: Hono): void {
     attentionChanged();
     return c.json(await outreachInfo(), 200, NO_STORE);
   });
+  // The sender's controls (§app.outreach/sender-controls): the operator's own buttons in Settings → Outreach.
+  const control = (run: (c: Context) => Promise<ControlAnswer | Response>) => async (c: Context) => {
+    if (!local(c)) return c.json({ error: "Not found" }, 404);
+    if (c.req.header(OVERSEER_SENDER_HEADER) !== undefined) return c.json({ error: "Only the operator controls the WhatsApp sender, in Settings → Outreach." }, 403);
+    const r = await run(c);
+    if (r instanceof Response) return r;
+    if (!r.ok) return c.json({ error: r.why, ...(r.code ? { code: r.code } : {}) }, 409);
+    attentionChanged();
+    return c.json(await outreachInfo(), 200, NO_STORE);
+  };
+  app.post(
+    "/api/outreach/sender/reconnect",
+    small,
+    control(async (c) => {
+      const route = readOutreach().sender;
+      if (route === "off") return c.json({ error: "Outreach is off: there is no sender to reconnect." }, 409);
+      return "via" in route ? viaReconnect(route.via.nodeId) : localControl("reconnect");
+    }),
+  );
+  app.post(
+    "/api/outreach/sender/pause",
+    small,
+    control(async (c) => {
+      const b = (await c.req.json().catch(() => null)) as { on?: unknown } | null;
+      if (!b || typeof b.on !== "boolean") return c.json({ error: "Body must be { on: true | false }" }, 400);
+      const route = readOutreach().sender;
+      if (typeof route !== "object" || !("local" in route)) return c.json({ error: "Only the sender's own host pauses it." }, 409);
+      return localControl("pause", { on: b.on });
+    }),
+  );
+  app.post(
+    "/api/outreach/sender/start",
+    small,
+    control(async (c) => {
+      const socket = localSocket(readOutreach().sender);
+      if (!socket) return c.json({ error: "Only the sender's own host starts it." }, 409);
+      if ((await whatsapp.status()).state !== "unreachable") return c.json({ error: "The sender is already running." }, 409);
+      const r = await startSenderUnit(socket);
+      // A fresh connection: the next read finds the sender as soon as it listens (Settings reads again shortly).
+      resetLocalClient();
+      return r.ok ? { ok: true, frame: {} } : { ok: false, why: r.why };
+    }),
+  );
   // Who the strip may send to now (§app.outreach/send-link): the holder, or the open offer's reached
   // invitees; each ready or why not, and their number for the wa.me fallback (the operator's own view).
-  app.get("/api/baton/:sid/outreach", (c) => {
+  app.get("/api/baton/:sid/outreach", async (c) => {
     if (!local(c)) return c.json({ error: "Not found" }, 404);
+    // The sender's state as of now, so a down sender shows on the strip before anyone presses Send.
+    await refreshSender();
     const hit = batonById(c.req.param("sid"));
     if (!hit) return c.json({ error: "Unknown baton session" }, 404);
     const row = hit.row;
@@ -70,7 +130,7 @@ export function mountOutreach(app: Hono): void {
       if (!p) return [];
       const nr = notReady(row.orgId, id);
       const wa = waDigits(p.contact?.whatsapp);
-      return [{ id, name: p.name, ready: !nr, ...(nr ? { why: nr.why } : {}), ...(wa ? { wa } : {}) }];
+      return [{ id, name: p.name, ready: !nr, ...(nr ? { why: nr.why, code: nr.code } : {}), ...(wa ? { wa } : {}) }];
     });
     return c.json({ people, operatorName: operatorName(), publicTitle: row.publicTitle } satisfies BatonOutreach, 200, NO_STORE);
   });

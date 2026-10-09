@@ -25,7 +25,7 @@ export type { ActResult, Effect, EffectOutcome, HostChange, HostProblem, Invocat
     tests may hand in a fake with the same shape. */
 export type OrgHostApi = Pick<
   OrgHost,
-  "paths" | "feed" | "effects" | "invocations" | "log" | "act" | "actNow" | "settle" | "start" | "setState" | "trial" | "explain" | "enabledEvents" | "configuration" | "data" | "sessions" | "holds" | "nextDueAt" | "fireDue" | "statechartOf" | "statechartInfo" | "problems" | "logAct" | "onChange" | "reload" | "close" | "rewindowHours" | "adopt" | "idle" | "setHistoryComposer" | "record" | "purgeRationale" | "history"
+  "paths" | "feed" | "effects" | "invocations" | "log" | "act" | "actNow" | "settle" | "start" | "setState" | "trial" | "explain" | "enabledEvents" | "configuration" | "data" | "sessions" | "holds" | "nextDueAt" | "fireDue" | "statechartOf" | "statechartInfo" | "problems" | "logAct" | "onChange" | "reload" | "close" | "rewindowHours" | "releaseOutageWaits" | "adopt" | "idle" | "setHistoryComposer" | "record" | "purgeRationale" | "history"
 >;
 
 /** Where a project's settings (overseer.json, as read now) come from: server/project-overseer-store.ts
@@ -47,6 +47,14 @@ function settingsOf(): NonNullable<typeof settingsSource> {
 let stampPeopleSource: ((engine: string, payload: Record<string, unknown>) => Record<string, unknown>) | null = null;
 export function setStampPeopleSource(fn: NonNullable<typeof stampPeopleSource>): void {
   stampPeopleSource = fn;
+}
+
+/** Why the channel an act goes out on is down now, as the act's `outage` (`{why}`), or null: server/outreach/core.ts
+    registers it for `outreach/send` from its last reading of the sender. A released act whose stamp carries one waits
+    for the channel in an outage hold (engine `:outage` act meta), at most 24 h from its first wait. */
+let stampOutageSource: ((event: string) => { why: string } | null) | null = null;
+export function setStampOutageSource(fn: NonNullable<typeof stampOutageSource>): void {
+  stampOutageSource = fn;
 }
 
 export interface OpenOptions {
@@ -120,7 +128,7 @@ export async function openOrgHost(opts: OpenOptions): Promise<OrgHostApi> {
   if (pending) return pending;
   const p = (async () => {
     let self: OrgHostApi | null = null;
-    const stamp: Stamp = (sid, _event, payload, who, booted) => {
+    const stamp: Stamp = (sid, event, payload, who, booted) => {
       // During open the engine hands itself in: its boot's releases are stamped from it, as they stand.
       const host = self ?? booted ?? null;
       if (!host) throw new Error("The org engine stamped before it opened.");
@@ -135,7 +143,8 @@ export async function openOrgHost(opts: OpenOptions): Promise<OrgHostApi> {
         settings.defaults(),
         (projectId) => (projectId ? ceilingOf(opts.orgId, projectId) : null),
       );
-      return { ...env, ...(stampPeopleSource?.(opts.orgId, payload) ?? {}) } as Envelope;
+      const outage = stampOutageSource?.(event) ?? null;
+      return { ...env, ...(stampPeopleSource?.(opts.orgId, payload) ?? {}), ...(outage ? { outage } : {}) } as Envelope;
     };
     let host: OrgHostApi;
     try {

@@ -79,8 +79,9 @@ export interface HeldAct {
   /** ISO time it was held. */
   since: string;
   by?: "overseer" | "statechart";
-  /** "hours": it waits for a person's working hours (r7), `goesAt` is when their window opens; absent: the hold (r2). */
-  wait?: "hold" | "hours";
+  /** "hours": it waits for a person's working hours (r7), `goesAt` is when their window opens; "outage": a WhatsApp
+      message waits for WhatsApp to come back, `goesAt` is its 24 h bound (then it is not sent); absent: the hold (r2). */
+  wait?: "hold" | "hours" | "outage";
   /** An hours wait's person, by display name. */
   person?: string;
   /** ISO: the hold ended and it waits for the overseer to approve it (r8: an act on the project's confirm list); a stall clock runs from here. */

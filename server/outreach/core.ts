@@ -1,15 +1,16 @@
 import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { OPERATOR } from "../../shared/baton";
-import { composeMessage, notSentReason, OUTREACH_NOT_READY, waDigits, type ChannelId, type LinkRef, type OutreachLogLine, type SendAnswer, type SendOutcome } from "../../shared/outreach";
+import { composeMessage, notSentReason, OUTREACH_NOT_READY, senderDownWhy, waDigits, type ChannelId, type LinkRef, type OutreachLogLine, type SendAnswer, type SendOutcome } from "../../shared/outreach";
 import { batonById, currentOffer, targetOfPerson } from "../baton";
 import { holdSendKey, releaseSendKey } from "../baton-links";
-import { hostOf, heldAt, onOrgHostOpened, refusalError, type Effect, type OrgHostApi } from "../org-engine";
+import { hostOf, heldAt, isOrgHostOpen, onOrgHostOpened, openEngineIds, refusalError, setStampOutageSource, type Effect, type OrgHostApi } from "../org-engine";
 import type { Envelope } from "../org-envelope";
 import { OrgError, placementSid, readRoster } from "../orgs";
 import { projectSid } from "../projects/sids";
 import { readOverseerState } from "../overseer-store";
 import { stateRoot } from "../state-root";
+import { onSenderChange, senderReading } from "./health";
 import { LinkRefused, parseLinkRef, RESOLVERS } from "./links";
 import { appendSendLog, applyReceipt, newSendId, rememberRef } from "./log";
 import { readOutreach } from "./settings";
@@ -57,21 +58,73 @@ function wireReceipts(): void {
   for (const ch of Object.values(channels)) ch.onReceipt((r) => applyReceipt(r));
 }
 
-/** At server start: receipts of earlier sends find their log lines as soon as the sender replays them. */
+/** How often the server reads the sender's status on its own (§app.outreach/sender-health). */
+const WATCH_MS = 60_000;
+let watch: NodeJS.Timeout | null = null;
+
+/**
+ * At server start: receipts of earlier sends find their log lines as soon as the sender replays them,
+ * and the sender's state is read now and every minute, so Needs you knows it (a local sender's
+ * `state` events say it sooner).
+ */
 export function startOutreach(): void {
   wireReceipts();
   void whatsapp.status().catch(() => {});
+  if (!watch) {
+    watch = setInterval(() => void whatsapp.status().catch(() => {}), WATCH_MS);
+    watch.unref?.();
+  }
 }
 
-/** Why the channel can't be used for this person now (§app.outreach/send), or null. */
-export function notReady(orgId: string, personId: string): { code: keyof typeof OUTREACH_NOT_READY; why: string } | null {
+/** Read the sender's status again when the last reading is older than `maxAgeMs` (a send, the strip). */
+export async function refreshSender(maxAgeMs = 5_000): Promise<void> {
+  if (readOutreach().sender === "off") return;
+  const r = senderReading();
+  if (r && maxAgeMs > 0 && Date.now() - r.at < maxAgeMs) return;
+  await whatsapp.status().catch(() => {});
+}
+
+/** Why the channel can't be used for this person now (§app.outreach/send), or null. The sender's state is the
+    last reading (refreshSender first for a fresh one): down, it refuses at once with the sender's why. */
+export function notReady(orgId: string, personId: string): { code: string; why: string } | null {
   const f = readOutreach();
   if (f.sender === "off") return { code: "off", why: OUTREACH_NOT_READY.off };
   if (f.paused) return { code: "paused", why: OUTREACH_NOT_READY.paused };
+  const s = senderReading()?.status;
+  const down = s ? senderDownWhy(s) : null;
+  if (down) return { code: "sender-down", why: down };
+  if (s?.paused) return { code: "sender-paused", why: OUTREACH_NOT_READY["sender-paused"] };
   const p = readRoster(orgId).find((x) => x.id === personId);
   if (!waDigits(p?.contact?.whatsapp)) return { code: "no-number", why: `${p?.name ?? "They"} ${p ? "has" : "have"} no WhatsApp number on the roster.` };
   return null;
 }
+
+// ---- a held send while WhatsApp is down ----------------------------------------------------------------
+
+/** The sender as the last reading has it, for a project overseer's held send at its release: down, the send waits
+    for WhatsApp in its hold (in the person's hours, cancellable), at most 24 h from its first wait; then it goes
+    ahead, is refused `sender-down`, and its project's Needs you says it was not sent. */
+function outageNow(event: string): { why: string } | null {
+  if (event !== "outreach/send" || readOutreach().sender === "off") return null;
+  const s = senderReading()?.status;
+  const why = s ? senderDownWhy(s) : null;
+  return why ? { why } : null;
+}
+setStampOutageSource(outageNow);
+
+const releaseWaits = (host: OrgHostApi) =>
+  host.releaseOutageWaits().catch((err) => console.warn(`[outreach] could not release the sends waiting for WhatsApp: ${err instanceof Error ? err.message : String(err)}`));
+
+/** WhatsApp is back (any reading that isn't down, the first after a restart too): every send waiting for it goes
+    now; an engine that opens after such a reading, as it opens. */
+onSenderChange((s) => {
+  if (senderDownWhy(s)) return;
+  for (const engine of openEngineIds()) if (isOrgHostOpen(engine)) void releaseWaits(hostOf(engine));
+});
+onOrgHostOpened((host) => {
+  const s = senderReading()?.status;
+  if (s && !senderDownWhy(s)) void releaseWaits(host);
+});
 
 // ---- steps in flight: what a step made, so a step run again after a restart turns it off --------------
 
@@ -132,6 +185,8 @@ async function sendStep(input: SendInput, channel: Channel): Promise<SendResult>
     log("unknown", "unknown-after-restart");
     return { outcome: "failed", channel: channel.id, code: "unknown-after-restart", why: "Sova restarted during the send, so it may or may not have gone." };
   }
+  // The sender's state as of now (one status request), so a sender that is down refuses at once.
+  await refreshSender(0);
   const nr = notReady(orgId, personId);
   if (nr) return refuse(nr.code, nr.why);
   // A held send runs later: its link is checked again now.

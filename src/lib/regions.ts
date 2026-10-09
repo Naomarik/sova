@@ -31,6 +31,11 @@ export const isOrgSession = (s: Pick<SessionSummary, "org">): boolean => !!s.org
  */
 export const isProjectOwned = (s: Pick<SessionSummary, "project">): boolean => !!s.project && s.project.kind !== "folder";
 
+/** A standalone project's build the operator archived: it leaves the project's block for the Archive (§app.projects/list).
+    A placed project's builds carry `org` and keep going to their group's Done instead. */
+export const isArchivedStandaloneBuild = (s: Pick<SessionSummary, "org" | "project"> & { archived?: boolean }): boolean =>
+  !s.org && s.project?.kind === "coding" && s.archived === true;
+
 /** An organization's or a project's own session: it lives in that region and never joins a group (the drag lock, bulk
     Move to Group, the archive toasts). A session only in a project's folder is not owned. */
 export const isOwnedSession = (s: Pick<SessionSummary, "org" | "project">): boolean => isOrgSession(s) || isProjectOwned(s);
@@ -39,11 +44,12 @@ export const isOwnedSession = (s: Pick<SessionSummary, "org" | "project">): bool
  * The one check every ordinary surface reads (Recent, Needs you, Groups, Live & web, the Archive and
  * its cleanup, recent folders, the overview): a main thread that no organization and no registered
  * project owns (a standalone project's builds and overseer are the Projects region's; a session in its
- * folder is both). It is NOT folded into `isMainThread`, because the Organizations region, the Overseer
+ * folder is both; an archived standalone build is the Archive's). It is NOT folded into `isMainThread`, because the Organizations region, the Overseer
  * page and the Agents board still read org sessions.
  */
-export const isOrdinarySession = (s: Pick<SessionSummary, "workerSession" | "overseer" | "org" | "project">): boolean => isMainThread(s) && !isOrgSession(s) && !isProjectOwned(s);
+export const isOrdinarySession = (s: Pick<SessionSummary, "workerSession" | "overseer" | "org" | "project"> & { archived?: boolean }): boolean =>
+  isMainThread(s) && !isOrgSession(s) && (!isProjectOwned(s) || isArchivedStandaloneBuild(s));
 
-/** Which of the pane's places a main thread lives in: org, then a project's (§app.projects/list), win over live, web and archived. A folder session's is its ordinary place. */
+/** Which of the pane's places a main thread lives in: org, then a project's (§app.projects/list), win over live, web and archived. A folder session's, and an archived standalone build's, is its ordinary place. */
 export const sidebarRegion = (s: Pick<SessionSummary, "live" | "origin" | "archived" | "org" | "project">): "org" | "projects" | "top" | "archive" =>
-  isOrgSession(s) ? "org" : isProjectOwned(s) ? "projects" : isTopSession(s) ? "top" : "archive";
+  isOrgSession(s) ? "org" : isProjectOwned(s) && !isArchivedStandaloneBuild(s) ? "projects" : isTopSession(s) ? "top" : "archive";

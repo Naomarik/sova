@@ -39,7 +39,7 @@ import {
 } from "../lib/org-region";
 import { groupRemotePlaceOf, remoteMarkOf, remoteMarkSuffix, remoteMarkTitle } from "../lib/remote-mark";
 import { summaryLineOf, summaryTitleOf } from "../lib/summary-row";
-import { archiveDragOf, archivedDropToast, blockedDropSentence, orgProjectOf, unarchivedToast } from "../lib/drag-archive";
+import { archiveDragOf, archivedDropToast, archivedProjectOf, blockedDropSentence, orgProjectOf, unarchivedToast } from "../lib/drag-archive";
 import { cwdLabel, remotePlaceOf, type TargetInfo } from "../lib/remote-session";
 import { recentCount, recentSessions } from "../lib/recent";
 import { NEEDS_YOU_KEY, needsYouCut, needsYouItems, needsYouOpen as needsYouOpenRule, needsYouRows, needsYouShown, needsYouTitle, storedNeedsYouOpen } from "../lib/needs-you";
@@ -61,7 +61,7 @@ import { overlaid, rowLeadMark, rowNeedsYou, SIGNAL_CLASS, SIGNAL_ICON, signalTi
 import { readinessBadge, readinessCount, readinessCountWords, readinessTitle } from "../lib/readiness";
 import { requestListRefresh } from "../lib/list-refresh";
 import { orgHref } from "../lib/orgs-route";
-import { inProjectsRegion, projectBlocks, projectRowCount, PROJECTS_KEY } from "../lib/project-region";
+import { inProjectsRegion, projectBlocks, projectOpenCount, projectRowCount, PROJECTS_KEY } from "../lib/project-region";
 import { projectHref, PROJECTS_HREF } from "../lib/projects-route";
 import { AddProjectDialog } from "./AddProjectDialog";
 import { llmInflight, marksOverlay, openSessionFeed } from "../lib/session-feed";
@@ -342,6 +342,7 @@ function SessionRow(props: {
       // A session only in a project's folder is ordinary: it can be grouped.
       org: isOwnedSession(row),
       orgProject: orgProjectOf(row),
+      archivedProject: archivedProjectOf(row),
       peer: host ? hostLabel(host) : null,
       // Busy as the row shows it: this tab's own run is newer than the last fetched list.
       archive: archiveDragOf({ ...row, busy: localRunning()[row.path] ?? row.busy }),
@@ -1336,7 +1337,7 @@ export function Sidebar(props: {
       return;
     }
     mutation.commit(deleted);
-    const done = archivedDropToast(deleted, d.orgProject);
+    const done = archivedDropToast(deleted, d.archivedProject);
     // Keyed: the next archive's toast replaces this one, so only the latest Undo is on screen.
     toast(done.text, done.undo ? { key: "archive-undo", action: { label: "Undo", run: () => undoArchive(d.path, d.orgProject) } } : undefined);
     announce(done.text);
@@ -1631,7 +1632,7 @@ export function Sidebar(props: {
   };
   /**
    * Organizations (lib/org-region): the only place org sessions are listed. Its own Needs you first,
-   * then org → project → groups (Conversations, Conflicts to settle, Builds), each with a Done tail. Open by default, a collapse remembered for the tab.
+   * then org → project → groups (Conversations, Conflicts to settle, Sessions), each with a Done tail. Open by default, a collapse remembered for the tab.
    */
   const orgs = createMemo(() => orgSections(orgHits()));
   /** The region counts rows: a project's eye is not one. */
@@ -1691,7 +1692,7 @@ export function Sidebar(props: {
   /**
    * Projects (lib/project-region, §app.projects/list): every standalone project's sessions, and only
    * here, right before Organizations — each registered project's heading with its overseer's eye,
-   * then its Builds. Open by default, a collapse remembered for the tab.
+   * then its Sessions. Open by default, a collapse remembered for the tab.
    */
   // The registered projects, read again with the session list (a project added or archived moves
   // both), at most every 15 seconds: the list reloads on every live event.
@@ -1742,16 +1743,19 @@ export function Sidebar(props: {
       <For each={rows}>{(s) => <ProjectRow session={s} />}</For>
     </ul>
   );
-  /** One group of a project: its label and count, the live states, then its collapsed Done. */
-  const ProjectGroup = (g: { key: string; label: string; title: string; doneTitle: string; states: { label: string; rows: SessionSummary[] }[]; done: SessionSummary[] }) => {
-    const count = () => g.states.reduce((n, x) => n + x.rows.length, 0) + g.done.length;
+  /** One group of a project: its label and count, the live states, then its collapsed Done. `openCount`: the label counts
+      the open rows only (the Projects region), Done keeping its own; else every row, Done included (Organizations). */
+  const ProjectGroup = (g: { key: string; label: string; title: string; doneTitle: string; states: { label: string; rows: SessionSummary[] }[]; done: SessionSummary[]; openCount?: boolean }) => {
+    const open = () => g.states.reduce((n, x) => n + x.rows.length, 0);
+    const count = () => open() + g.done.length;
+    const shown = () => (g.openCount ? open() : count());
     // Done can hold hundreds of a folder's finished sessions: its rows are built only once it opens.
     const doneBuilt = builtOnceOpen(() => groupDoneOpen(g.key, g.done));
     return (
       <Show when={count() > 0}>
-        <section class="org-group" aria-label={`${g.label}, ${count()}`}>
+        <section class="org-group" aria-label={`${g.label}, ${shown()}`}>
           <h5 class="list-group-label org-group-label" title={g.title}>
-            {g.label} <span class="text-num">{count()}</span>
+            {g.label} <span class="text-num">{shown()}</span>
           </h5>
           <For each={g.states}>
             {(st) => (
@@ -2735,7 +2739,7 @@ export function Sidebar(props: {
           </Show>
 
           {/* Projects, right before Organizations (lib/project-region): the only place a standalone
-              project's sessions are listed, each project's heading with its overseer's eye, then Builds. */}
+              project's sessions are listed, each project's heading with its overseer's eye, then Sessions. */}
           <Show when={showProjects()}>
             <details class="sidebar-region sidebar-orgs sidebar-projects" aria-labelledby="r-projects" open={projectsOpen()} onToggle={onProjectsToggle}>
               <summary class="sidebar-orgs-summary">
@@ -2783,17 +2787,18 @@ export function Sidebar(props: {
                           <a class="org-project-name project-region-link" href={projectHref(p.id)}>
                             <bdi>{p.name}</bdi>
                           </a>
-                          <span class="text-num">{p.builds.active.length + p.builds.done.length}</span>
+                          <span class="text-num">{projectOpenCount(p)}</span>
                         </h4>
                         <Show when={p.overseer}>{(po) => <OverseerEye session={po()} project={p.name} selected={props.selected} />}</Show>
                       </div>
                       <ProjectGroup
                         key={`projects\n${p.id}\nbuilds`}
-                        label="Builds"
-                        title="Coding sessions this project started, and the other sessions in its folder."
-                        doneTitle="Merged, archived, or ended in a terminal."
+                        label="Sessions"
+                        title="Coding sessions this project started and the other sessions in its folder; archived ones are in the Archive."
+                        doneTitle="Merged, or ended in a terminal."
                         states={[{ label: "", rows: p.builds.active }]}
                         done={p.builds.done}
+                        openCount
                       />
                     </div>
                   )}
@@ -2955,7 +2960,7 @@ export function Sidebar(props: {
                             />
                             <ProjectGroup
                               key={`${o.id}\n${p.id}\nbuilds`}
-                              label="Builds"
+                              label="Sessions"
                               title="Coding sessions this project started, and the other sessions in its folder."
                               doneTitle="Merged, archived, or ended in a terminal."
                               states={[{ label: "", rows: p.builds.active }]}

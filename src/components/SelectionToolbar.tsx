@@ -119,6 +119,8 @@ export function SelectionToolbar(props: { sessions: SessionSummary[]; onRefresh(
     const x = props.sessions.find((r) => r.path === path);
     return !!x && isOwnedSession(x);
   };
+  /** An organization's session: archiving it sends it to its project's Done, not the Archive. */
+  const orgRow = (path: string): boolean => !!props.sessions.find((r) => r.path === path)?.org;
   const plan = createMemo(() => selectionPlan(chosen()));
   const [renaming, setRenaming] = createSignal(false);
   /** An action in flight belongs to the TAB, not to this component instance: the toolbar is
@@ -176,7 +178,8 @@ export function SelectionToolbar(props: { sessions: SessionSummary[]; onRefresh(
         }
       }
       const failedPaths = new Set(failed.map((f) => f.path));
-      const org = p.eligible.filter((s) => !failedPaths.has(s.path) && ownedRow(s.path)).length;
+      // Only an organization's session goes to its project's Done; a standalone project's build goes to the Archive.
+      const org = p.eligible.filter((s) => !failedPaths.has(s.path) && orgRow(s.path)).length;
       const sentence = archiveSummary({ mode: p.mode, done, blocked: p.blocked, failed, org });
       toast(sentence);
       announce(sentence);

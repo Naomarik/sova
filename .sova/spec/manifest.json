@@ -11171,6 +11171,35 @@
         "server/vis-check.test.ts"
       ]
     },
+    "§tools.spec/agree-command": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "requires": [
+        "§tools.spec/agreed-promotion"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+        "pi-config/extensions/spec/tests/agree-command.test.mjs",
+        "pi-config/extensions/spec/DRAFTS.md",
+        "pi-config/extensions/spec/PROMOTE.md",
+        "pi-config/extensions/spec/README.md"
+      ]
+    },
+    "§tools.spec/align-agree": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "requires": [
+        "§tools.spec/agree-command",
+        "§tools.spec/agreed-promotion",
+        "§tools.spec/mode-reading"
+      ],
+      "code": [
+        "pi-config/extensions/mode/align-tool.ts",
+        "pi-config/extensions/mode/index.ts",
+        "pi-config/extensions/mode/tests/agree-turn.mjs",
+        "pi-config/extensions/spec/docs/MODE.md"
+      ]
+    },
     "§tools.spec/census-note": {
       "kind": "behavior",
       "requires": [
@@ -11990,6 +12019,19 @@
         "src/lib/qr-reference.json",
         "src/lib/qr.ts",
         "server/app.ts"
+      ]
+    },
+    "§tools.spec/draft-hygiene": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/draft-output"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+        "pi-config/extensions/spec/DRAFTS.md",
+        "pi-config/extensions/spec/PROMOTE.md"
       ]
     },
     "§tools.spec/inspection-safety": {
@@ -15128,6 +15170,7 @@
       "code": [
         "pi-config/extensions/spec/core/sova-spec-draft.mjs",
         "pi-config/extensions/spec/tests/agreed.test.mjs",
+        "pi-config/extensions/spec/tests/agreed-kept.test.mjs",
         "pi-config/extensions/spec/DRAFTS.md",
         "pi-config/extensions/spec/PROMOTE.md"
       ],
@@ -15160,7 +15203,8 @@
         "§tools.spec/frame",
         "§tools.spec/context-packets",
         "§tools.spec/field-promotion",
-        "§tools.spec/census-note"
+        "§tools.spec/census-note",
+        "§tools.spec/agree-command"
       ],
       "authority": "accepted",
       "evidence": "verified",
@@ -15981,6 +16025,21 @@
         "site/src/content/docs/change-direction.md"
       ]
     },
+    "§site.docs/chrome": {
+      "kind": "behavior",
+      "requires": [
+        "§site.docs/frame"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "site/src/layouts/Base.astro",
+        "site/src/components/SiteNav.astro",
+        "site/src/data/site.ts",
+        "site/src/styles/site.css",
+        "site/src/styles/tokens.css"
+      ]
+    },
     "§site.docs/delegate": {
       "kind": "behavior",
       "requires": [
@@ -16007,6 +16066,23 @@
       "evidence": "reviewed",
       "code": [
         "site/src/content/docs/modes/delegate.md"
+      ]
+    },
+    "§site.docs/frame": {
+      "kind": "behavior",
+      "requires": [
+        "§site/docs"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "site/src/pages/docs/[...slug].astro",
+        "site/src/layouts/Docs.astro",
+        "site/src/components/DocsNav.astro",
+        "site/src/data/docs.ts",
+        "site/src/styles/docs.css",
+        "site/src/content.config.ts",
+        "site/astro.config.mjs"
       ]
     },
     "§site.docs/index": {
@@ -16144,6 +16220,7 @@
       "requires": [
         "§tools/spec",
         "§tools.spec/mode-reading",
+        "§tools.spec/align-agree",
         "§tools.spec/census-note",
         "§tools.spec/no-turn-end-check",
         "§tools.spec/review-playbook",
@@ -16929,38 +17006,6 @@
       ],
       "requires": [
         "§app.worker-restore/worker-record"
-      ]
-    },
-    "§site.docs/chrome": {
-      "kind": "behavior",
-      "requires": [
-        "§site.docs/frame"
-      ],
-      "authority": "accepted",
-      "evidence": "reviewed",
-      "code": [
-        "site/src/layouts/Base.astro",
-        "site/src/components/SiteNav.astro",
-        "site/src/data/site.ts",
-        "site/src/styles/site.css",
-        "site/src/styles/tokens.css"
-      ]
-    },
-    "§site.docs/frame": {
-      "kind": "behavior",
-      "requires": [
-        "§site/docs"
-      ],
-      "authority": "accepted",
-      "evidence": "reviewed",
-      "code": [
-        "site/src/pages/docs/[...slug].astro",
-        "site/src/layouts/Docs.astro",
-        "site/src/components/DocsNav.astro",
-        "site/src/data/docs.ts",
-        "site/src/styles/docs.css",
-        "site/src/content.config.ts",
-        "site/astro.config.mjs"
       ]
     }
   },

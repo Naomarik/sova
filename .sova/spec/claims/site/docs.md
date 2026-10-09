@@ -67,8 +67,8 @@ route, when it runs, blockers, and what the card shows.
 
 ## §site.docs/spec-mode — Spec (`/docs/modes/spec/`)
 
-The spec minor mode: working from the project's spec, the census note, drafts and promotion, the
-spec writer, what workers get, and project coding sessions.
+The spec minor mode: working from the project's spec, the census note, the Agree step when align is
+on too, drafts and promotion, the spec writer, what workers get, and project coding sessions.
 
 ## §site.docs/vis — Vis (`/docs/modes/vis/`)
 

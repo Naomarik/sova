@@ -710,8 +710,8 @@ place in Live & web (and Groups), but a session it lists is never a Recent row
 </details>
 ```
 
-- **Not a capability-neutral profile.** A profile that only sets model, effort, subagents or mode
-  (`SessionSummary.profile.neutral`, §chat.profiles/model) is not a shelf profile: its sessions get
+- **Not a capability-neutral profile.** A profile that only sets model, effort, subagents, mode
+  or minor modes (`SessionSummary.profile.neutral`, §chat.profiles/model) is not a shelf profile: its sessions get
   no rows here and it gets no sub-group or slot. They keep the head chip, the info row and the list
   badge (§chat.profiles/after-first-message).
 - **Rows**: every non-archived session on this host whose `SessionSummary.profile` is set and not neutral, under

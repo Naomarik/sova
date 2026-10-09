@@ -433,8 +433,9 @@ a new session's screen (§chat.profiles/picker), and it is listed under Yours li
 
 - **The list**, in the picker's groups: **Built in** (Default first), **This project ({name})** and
   **Yours**. Each row has the profile's icon and label, its source badge, its summary line of what it
-  changes ("reads and messages sessions · no edit files · One at a time"; Default "Nothing
-  changed"), the playbook it links ("Runs {title}", or "Runs "{id}", not found here"), and its file's
+  changes ("reads and messages sessions · no edit files · One at a time", then its mode and minor
+  modes when it sets them, "· delegate · align, spec, vis", or "· no minor modes" for `[]`; Default
+  "Nothing changed"), the playbook it links ("Runs {title}", or "Runs "{id}", not found here"), and its file's
   path. Without a session folder, This project says "Open a session to see its project's profiles."
 - **Problems.** A file that couldn't be read is its own row under its group, with a **Can't be
   read** badge, its path and the exact error, so a mistake made by hand or by an agent shows here.

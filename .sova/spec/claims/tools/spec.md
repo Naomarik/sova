@@ -222,7 +222,8 @@ The guide's promotion lines agree with the draft tool: doc-only evidence covers 
 agreed records without code (§tools.spec/agreed-promotion) and a change to `embeds`, `about` or
 `core` alone (§tools.spec/field-promotion); a test drives the draft tool's doc-only rule, so the
 guide fails its test when that rule gains a case the guide doesn't name or drops one it does. For a
-`manifest.json` conflict it sends the agent to the census note. The exemption from drafts is decided from passages read, and the
+`manifest.json` conflict it sends the agent to the census note. For a decision the user agreed to, it points to `agree`
+(§tools.spec/agree-command) in one line, and to PROMOTE.md for when that lands. The exemption from drafts is decided from passages read, and the
 census note's `No draft yet` line says the same. While coding, the guide relies on the census note
 (§tools.spec/census-note), with no rule of one file per edit and no census run by hand; one
 `census --changed` runs before finishing. A worker's spec brief lists `toc`, `read` and
@@ -331,6 +332,44 @@ refused, and an agreed record that maps code still needs commit or snapshot evid
 An `agreed` that is not an object with a non-empty `by` and a valid date `at`, or that sits on a
 note or section, is refused at evidence and at promotion. `agreed` is a record field, not a label
 value, so a core that predates it still loads a manifest carrying it.
+When a promotion changes an agreed record's prose but keeps the `agreed` current has, and a number
+or a backticked token in that prose was added or removed, the promotion carries a note
+(`agreed-kept-on-change`, never a refusal) naming who the kept `agreed` credits, and when, and the
+changed tokens: a change of meaning needs a new agreement (§tools.spec/agree-command), while a
+rewording that changes no number or token gets no note.
+
+## §tools.spec/agree-command — One command agrees, and lands what isn't built
+
+`agree <draft> --id '<§id>'… --by <who> --verification <text>` writes the decision into the draft:
+on each named behavior or surface it sets `agreed: {by, at}`, with `at` the current UTC time to the
+minute unless `--at` gives an ISO date or time, and `authority: "accepted"`. A promise with prose in
+the draft but no record gets one (an H1 is a surface, an H2 a behavior). An `agreed` this draft
+already gave, by the same person, is kept, so a second run changes nothing. It refuses what
+promotion would: a note or section, an id with no prose in the draft, a record current already has
+agreed whose prose the draft leaves unchanged, and an `at` earlier than current's.
+
+For each record that maps no code and is not labelled built, the same call records doc-only
+evidence with `--by` and `--verification` as given, then runs promotion's own plan for those
+records and applies it only when that plan is clean: no refusal, no drift warning, no note, and no
+foreign § beyond a parent gaining the new claim. Its output then names what it promoted, the plan
+hash and the files written. Otherwise it writes nothing to the main spec, exits 1
+(`agree-not-promoted`) with the plan's findings, and the agent takes the ordinary path. A record
+that maps code is only stamped, never promoted by `agree`: its build records commit or snapshot
+evidence and promotes with a preview. Without `--write` it only previews and writes nothing.
+
+## §tools.spec/align-agree — With align on too, the go-ahead is the Agree step
+
+With the align minor mode also on, agreeing in align and changing the spec are one act. When an
+`align` call sets an alignment implementing while the spec minor mode is on, its result text (never
+its `details`) ends with a paragraph telling the agent that this go-ahead is the Agree step: before
+building, it writes each decision that changes behavior as a promise in a spec draft (a new claim,
+or the claim the decision changes) and runs `agree` with `--by` the person who gave the go-ahead and
+the alignment's id in `--verification`, which lands the records that map no code in the main spec,
+so it says who decided before any code exists. If `agree` reports the promotion not clean, the
+agent resolves what it lists and promotes. A changed claim that already maps code keeps its new
+`agreed` in the draft and lands with the build, and the build updates those same records. With
+spec off, or align off, nothing is added, and neither mode's prompt block carries this step: it
+rides only that one result. What the align tool records is unchanged.
 
 ## §tools.spec/field-promotion — A record-field-only change lands on doc-only evidence
 

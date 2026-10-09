@@ -51,7 +51,8 @@ test("a send cut off by a restart: recorded as sent-then-Unknown, linked to the 
     assert.equal(answer!.outcome, "unknown");
     assert.deepEqual(answer!.triggeredBy, [{ event: send!.id, via: "effect" }]);
     assert.deepEqual(send!.entities.filter((x) => x.type === "person"), [{ type: "person", id: ann.id }]);
-    assert.ok(!/555|share\.example|\/h\//.test(JSON.stringify(records)), "no number, link or token in the history");
+    // Ann's number in any spelling (a bare "555" also matched random hex ids, a 1-in-8 false failure).
+    assert.ok(!/555\D?000\D?0100|share\.example|\/h\//.test(JSON.stringify(records)), "no number, link or token in the history");
     assert.equal(logOf().at(-1)!.event, "unknown", "the send log says the same");
   } finally {
     await cleanup();

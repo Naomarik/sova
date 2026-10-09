@@ -944,23 +944,38 @@ sentence step shows that sentence on its status line; nothing is kept:
 
 ## §app.settings-dialog/outreach — Outreach
 
-Settings → Outreach (§app/outreach) sets how this host reaches the WhatsApp sender, after Public
-links in the rail. It is Save-gated (§app.settings-dialog/save-bar): **Sender** and **Accept sends
-from** are staged and written by Save Changes, as the form "Outreach".
+Settings → Outreach (§app/outreach) sets how this host reaches the WhatsApp sender of each number
+it sends from, after Public links in the rail. It is Save-gated (§app.settings-dialog/save-bar):
+**Numbers** (the default, added numbers, labels, This host's optional socket path) and **Accept
+sends from** are staged and written by Save
+Changes, as the form "Outreach". `#/settings/<tab>` (Needs you's Open Outreach Settings, a phone
+notification's tap) opens Settings at that tab over the screen it was followed from, the address
+put back to that screen's without a history entry.
 
-- **Sender**: **Off** · **This host** (the sender runs here; an optional socket path, placeholder
-  the default) · **Via a peer** (a select of this host's peers, §mesh/peers). Under it, the sender's
-  state as the server last read it, as a chip and a sentence: Off; "Not reachable: {why}";
-  Connected (with the number's last three digits); Connecting; Not paired ("Pair it on the sender's
-  host: sova-whatsapp pair."); Logged out ("Pair it again on the sender's host:
-  sova-whatsapp pair."); Replaced ("Another copy of the sender took over this number."); Blocked;
-  Down ("Reconnect it on the sender's host."). **Check Again** re-reads it at once.
-- **Accept sends from** (shown only while Sender is This host): **No other host** · **All peers** ·
-  a checkbox per peer; other hosts send through this host's sender only as listed here.
-- **Pause all sending**, a switch that applies at once (an action, not part of the draft): while on,
-  every send from this host is refused with "Outreach is paused.".
+- **Numbers** (§app.outreach/sender-list): each sender this host can use, its radio picking the
+  default, then **Off**; **Add a Number**; and under the list the managed number: its heading, its
+  **Label**, **Remove Number** for an added one, its state, its facts and its controls. The state is
+  as the server last read it, read again every 5 seconds while the page is open, as a chip and a
+  sentence: Off ("Nothing is sent from this host."); Not reachable ("Not reachable: {why}");
+  Connected ("Connected: sends go at once."), or Paused ("Connected, but the sender is paused: every
+  send through it is refused until it is resumed."); Reconnecting ("{why} It tries again at {time},
+  in {n}."); Connecting; Linking; Not paired ("Link a phone to send from: Link a Phone below, or
+  sova-whatsapp pair on this host.", or through a peer "Link a phone on the sender's host."); Logged
+  out ("The phone unlinked this device. Unlink this number, then link a phone again.", or through a
+  peer "Link it again on the sender's host."); Replaced ("Another copy of the sender took over this
+  number. Stop that copy, then reconnect."); Blocked ("{why} Sending stays paused until the sender
+  is resumed."); Down, waiting ("Waiting until {time}, in {n} to reconnect. {why}") or not ("{why}
+  It won't reconnect on its own: reconnect it."). The facts: since when (any state but Connected and
+  Off), the number's last three digits, sends and automatic reconnects against their limits this hour
+  and in 24 h. The controls are §app.outreach/sender-controls and §app.outreach/sender-link; **Check
+  Again** re-reads the state and the list at once.
+- **Accept sends from** (shown only while the default sender runs on this host: This host or an
+  added number): **No other host** · **All peers** · a checkbox per peer; other hosts send through this
+  host's default number only as listed here.
+- **Pause all sending from this host**, a switch that applies at once (an action, not part of the
+  draft): while on, every send from this host is refused with "Outreach is paused.".
 - **Protected paths**: the paths §app.outreach/secrets covers, one per line, under "Hidden from
-  the Overseer's file tools:"; a warn banner when the sender reports an auth directory that
-  sandboxed agents can still read.
+  the Overseer's file tools:"; a warn banner when the managed number's auth directory (the one its
+  sender reports, else the configured or default one) is one that sandboxed agents can still read.
 - A closing note: "Links you send stay in your own WhatsApp chat history: anyone with your phone
-  can open them." and a pointer to `docs/outreach/whatsapp.md`, the setup guide.
+  can open them." and a pointer to `docs/outreach/whatsapp.md`, the guide to installing a sender.

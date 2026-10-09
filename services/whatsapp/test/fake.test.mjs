@@ -54,3 +54,46 @@ test('a second fake on the same home refuses while the first holds the lock', as
   first.kill('SIGTERM')
   await exited
 })
+
+test('a fake link: QRs refresh, expire (408), and `scan` pairs; a pairing code links the same way', async () => {
+  const linkHome = realpathSync(mkdtempSync(join(tmpdir(), 'sova-wa-fake-link-')))
+  const env = { PATH: process.env.PATH, SOVA_WA_HOME: linkHome, SOVA_WA_LOG_LEVEL: 'warn', SOVA_WA_FAKE_QR_MS: '150' }
+  const child = spawn(process.execPath, [fake, '--unpaired'], { env, stdio: 'ignore' })
+  try {
+    const sock = join(linkHome, 'sender.sock')
+    await waitFor(() => existsSync(sock))
+    const c = await connectIpc(sock)
+    const events = []
+    c.onEvent((e) => events.push(e))
+    await c.request('hello', { v: 1 })
+    const scan = () => c.request('fake', { do: 'scan' })
+    assert.equal((await scan()).code, 'not-linking')
+    // Left alone: 5 QRs, each new, then it expires.
+    assert.equal((await c.request('link', {})).started, true)
+    await waitFor(() => events.some((e) => e.ev === 'state' && e.state === 'unpaired' && /expired/.test(e.why)))
+    const qrs = events.filter((e) => e.ev === 'qr').map((e) => e.qr)
+    assert.equal(qrs.length, 5)
+    assert.equal(new Set(qrs).size, 5)
+    // Scanned: paired, then open.
+    events.length = 0
+    await c.request('link', {})
+    await waitFor(() => events.some((e) => e.ev === 'qr'))
+    assert.equal((await scan()).ok, true)
+    await waitFor(() => events.some((e) => e.ev === 'paired'))
+    await waitFor(() => events.some((e) => e.ev === 'state' && e.state === 'open'))
+    // Unlink, then a pairing code: no QR, and the scan links it.
+    assert.equal((await c.request('unlink', { confirm: true })).state, 'unpaired')
+    events.length = 0
+    const r = await c.request('link', { phone: '15550001234' })
+    assert.equal(r.pairingCode, 'FAKE1234')
+    assert.equal((await scan()).ok, true)
+    await waitFor(() => events.some((e) => e.ev === 'state' && e.state === 'open'))
+    assert.equal(events.filter((e) => e.ev === 'qr').length, 0)
+    c.close()
+  } finally {
+    const exited = new Promise((r) => child.once('exit', r))
+    child.kill('SIGTERM')
+    await exited
+    rmSync(linkHome, { recursive: true, force: true })
+  }
+})

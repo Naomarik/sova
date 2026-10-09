@@ -8,7 +8,7 @@ export const EVENT_RING = 500
 const emptyState = () => ({
   v: 1,
   paused: false,
-  hold: null, // {state, why, code?} a stop that survives restarts: logged-out, replaced, blocked, down
+  hold: null, // {state, why, code?} a stop that survives restarts, for a person: logged-out, replaced, blocked, down (405, unreadable)
   reconnects: [], // epoch ms of each automatic connection attempt (the budget)
   sends: [], // epoch ms of each message handed to WhatsApp (the limits)
   idem: {}, // idem → {at, status: sending|sent|failed|unknown, ref?, code?, receipt?}
@@ -41,7 +41,7 @@ export function fileStore({ stateFile, eventsFile }) {
   // no sends) until the operator looks and presses Reconnect, rather than start over with a clean slate.
   const state =
     read === CORRUPT || !read || typeof read !== 'object'
-      ? { ...emptyState(), hold: { state: 'down', why: `${stateFile} could not be read.` } }
+      ? { ...emptyState(), hold: { state: 'down', why: `${stateFile} could not be read.`, code: 'unreadable' } }
       : { ...emptyState(), ...read }
   const events = readJson(eventsFile, () => [])
   return {

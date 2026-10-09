@@ -286,7 +286,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	pi.registerFlag("major", { description: "Start in a mode: normal | delegate", type: "string" });
 	// Adversarial review of alignments (§chat.alignment-review/flag). Its value is visible from
 	// session_start on (a caller's flags are applied after every factory ran); off is today, exactly.
-	pi.registerFlag(REVIEW_FLAG, { description: "Adversarial review of alignments (experimental)", type: "boolean", default: false });
+	pi.registerFlag(REVIEW_FLAG, { description: "Adversarial review of alignments", type: "boolean", default: false });
 	// The align mode's Visuals for this session (§chat.alignment/visuals): on | off; absent, mode-align.json.
 	pi.registerFlag(VISUALS_FLAG, { description: "Align visuals for this session: on | off (default: mode-align.json)", type: "string" });
 	pi.registerFlag("minor", {

@@ -583,7 +583,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Where | Copy |
 |---|---|
 | Intro | Unfinished features. They can change or disappear, and they apply to sessions you start after switching them on — chats already open keep the setup they began with. |
-| Empty state (no switch to show) | No experiments right now. |
+| Empty state (no switch to show) | Adversarial review is in Alignment, marked Experimental. No other experiments right now. |
 | Load failed (banner-error) | **Couldn't read the experimental settings.** Nothing was changed. |
 | Buttons | none in the tab — the dialog footer's Discard Changes · Save Changes (§design.copy-deck/settings-modes-delegate) |
 

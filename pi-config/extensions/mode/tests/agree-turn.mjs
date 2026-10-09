@@ -44,8 +44,9 @@ git("commit", "-qm", "base");
 const { createAgentSession, DefaultResourceLoader, SessionManager, SettingsManager } = await jiti.import("@earendil-works/pi-coding-agent");
 const { createAssistantMessageEventStream, getCurrentSystemPrompt } = await jiti.import("@earendil-works/pi-ai");
 
-/** The Agree step's instruction: the spec tools' `agree` command named in what the model reads. */
+/** The Agree step's instruction: the word "agree" anywhere (absent without both modes), and with both its stable phrase and the command. */
 const AGREE = /\bagree\b/;
+const AGREE_STEP = /this go-ahead is the Agree step[\s\S]*sova-spec-draft\.mjs\\*"? agree\b/;
 
 const CREATE = {
 	ops: [
@@ -137,6 +138,7 @@ try {
 	assert.equal(seen.alignOnly, false, "align alone never asks for the spec's agree step");
 	assert.equal(seen.specOnly, false, "spec alone never asks for the agree step");
 	assert.equal(seen.both, true, "align and spec on: the go-ahead's turn carries the agree instruction");
+	assert.match(both, AGREE_STEP, "in its stable words, naming the command");
 	console.log("agree-turn: ok");
 } finally {
 	rmSync(scratch, { recursive: true, force: true });

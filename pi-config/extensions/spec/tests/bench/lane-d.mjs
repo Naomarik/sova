@@ -92,20 +92,22 @@ function writePromise(root, name, rec) {
   step(() => write(root, D(name, "claims/app/list.md"), `${TOP}\n## ${ID}\n\n${SIXTY}\n`));
   step(() => editManifest(root, D(name, "manifest.json"), (m) => { m.claims[ID] = { kind: "behavior", authority: "accepted", requires: [], ...rec }; }));
 }
-function promote(root, name) {
+/** The documented promotion (preview, then --write with its plan), or the minimal one (--write alone). */
+function promote(root, name, minimal) {
+  if (minimal) return draft(root, "promote", name, "--id", ID, "--write");
   const p = draft(root, "promote", name, "--id", ID);
   return p.exit ? p : draft(root, "promote", name, "--id", ID, "--plan", p.plan, "--write");
 }
-function pathToday() {
+function pathToday(minimal) {
   const root = project(false), name = "talk";
   steps = 0;
   draft(root, "new", name, "--write");
   writePromise(root, name, { agreed: { by: "user", at: new Date().toISOString().slice(0, 16) + "Z" } });
   draft(root, "evidence", name, "--id", ID, "--by", "user", "--verification", "agreed in the alignment", "--doc-only", "--write");
-  const w = promote(root, name);
+  const w = promote(root, name, minimal);
   return { steps, promoteExit: w.exit, ...verify(root, name) };
 }
-function pathAgree() {
+function pathAgree(minimal) {
   const root = project(false), name = "talk";
   steps = 0;
   draft(root, "new", name, "--write");
@@ -113,7 +115,7 @@ function pathAgree() {
   const a = draft(root, "agree", name, "--id", ID, "--by", "user", "--verification", "agreed in the alignment", "--write");
   if (a.exit === 2 && /usage|unknown/i.test(JSON.stringify(a))) return { available: false, agreeExit: a.exit, agreeSays: (a.findings?.[0]?.message ?? a.raw ?? "").slice(0, 160) };
   const promoted = !!JSON.parse(read(root, ".sova/spec/manifest.json")).claims[ID];
-  const w = promoted ? { exit: 0 } : promote(root, name);
+  const w = promoted ? { exit: 0 } : promote(root, name, minimal);
   return { available: true, agreeExit: a.exit, agreePromoted: promoted, steps, promoteExit: w.exit, ...verify(root, name) };
 }
 
@@ -129,5 +131,5 @@ function baseline() {
   return out;
 }
 
-const result = { notes: await notes(), agreePath: { today: pathToday(), agreeCommand: pathAgree() }, agreedOnMain: baseline() };
+const result = { notes: await notes(), agreePath: { today: pathToday(false), todayMinimal: pathToday(true), agreeCommand: pathAgree(false), agreeCommandMinimal: pathAgree(true) }, agreedOnMain: baseline() };
 console.log(JSON.stringify(result, null, 2));

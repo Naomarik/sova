@@ -56,6 +56,7 @@ skipped and shown in Settings → Profiles with the exact error. The others stil
 | `singleton` | no | `true`: **One at a time**, at most 1 live session per profile (per project for a project's profile) |
 | `limits` | no | Any of `hops` (3), `perMessage` (10), `perDay` (40), `targetsPerRun` (5), `perPair` (6): whole numbers from 1 |
 | `mode` | no | `normal` or `delegate`: the mode it starts in |
+| `minorModes` | no | The whole set of minor modes it starts with, any of `align`, `spec`, `vis` and `codemode`, in any order. `[]` starts with none. Absent: the default in `mode.json`. Picking a profile without it after one that had it puts the default back |
 | `model` | no | `"provider/model"`: the model the main thread starts on |
 | `thinking` | no | The main thread's effort: `off`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max` |
 | `subagents` | no | A subagent profile's id (Settings → Subagents), or `"off"`: what its workers, teams and spec writer use. Absent: this device's default |

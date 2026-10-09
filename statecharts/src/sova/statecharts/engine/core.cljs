@@ -493,8 +493,9 @@
         id      (:id hold)
         payload (:data hold)
         fresh   (when stamp (stamp sid (:event hold) payload (select-keys hold [:by :overseer-id :project-id])))
+        ;; the channel's outage is the fresh stamp's alone: one the held payload kept is stale
         steps   (process-one eng sid (evts/new-event {:name (:event hold)
-                                                      :data (merge payload fresh {:sova/released id})}))
+                                                      :data (merge (dissoc payload :outage) fresh {:sova/released id})}))
         refused (:refused (first steps))
         follow  (run-step! eng sid (evts/new-event
                                      {:name (if refused :hold/dropped :hold/released)
@@ -609,8 +610,9 @@
 
 (defn- hold-act!
   "Put act `event` on hold: no transition now; the engine re-delivers it at the hold's end. opts:
-   `:wait` \"hours\" and `:until` (r7: until the person's window opens), `:confirm` (q12: it waits
-   past its end for the overseer's approval, per the switch)."
+   `:wait` \"hours\" and `:until` (r7: until the person's window opens), `:wait` \"outage\" and `:until`
+   (its channel is down: until it comes back, at most `policy/outage-wait-ms` from `:sova/outage-since`),
+   `:confirm` (q12: it waits past its end for the overseer's approval, per the switch)."
   [eng sid event orig act {:keys [wait until confirm]}]
   (let [now    ((:clock (engine eng)))
         wm0    (wmem-of eng sid)
@@ -651,7 +653,8 @@
 (defn- rewindow-hold!
   "r13: the host moves an hours hold's end (`:until`) after a working-hours edit (a person's or the
    company's): a later end re-arms its timer; nil or one due now releases it now (the release checks
-   the act again under a fresh stamp, so fresh target records decide). Anything else is ignored."
+   the act again under a fresh stamp, so fresh target records decide). An outage wait (its channel
+   came back) is released with nil only: its end stays its 24 h bound. Anything else is ignored."
   [eng sid event]
   (let [{:keys [queue env clock]} (engine eng)
         {:keys [id until]} (:data event)
@@ -660,7 +663,8 @@
         now  (clock)
         c    (configuration eng sid)]
     (cond
-      (not (and hold (= "hours" (:wait hold)))) [(assoc (refused-step eng sid event nil) :refused nil :ignored true)]
+      (not (and hold (or (= "hours" (:wait hold)) (and (= "outage" (:wait hold)) (nil? until)))))
+      [(assoc (refused-step eng sid event nil) :refused nil :ignored true)]
       (or (nil? until) (<= until now))
       ;; its own row first (the log replays the release from it), then the release
       (into [(assoc (base-step eng sid event)
@@ -705,16 +709,20 @@
                 window  (when-let [f (:hours act)] (f view))
                 off     (when (and (number? window) (> window now)) window)
                 held?   (and (not (:sova/released d)) (policy/held? act d (data eng sid)))
-                waits?  (and off (policy/hours-wait-by? d))]
-            (if (or held? waits?)
+                waits?  (and off (policy/hours-wait-by? d))
+                ;; released while its channel is down: it waits for the channel (in hours only)
+                outage  (when (and (:sova/released d) (:outage act) (not waits?)) (policy/outage-wait d now))]
+            (if (or held? waits? outage)
               (if-let [r (explain-refusal eng sid ename d {:stages #{:state :check}})]
                 [(refused-step eng sid event r)]
-                (hold-act! eng sid event orig act
-                  (if held?
-                    {:confirm (policy/confirm-required?
-                                (let [ck (:confirm-kind act)] (cond (fn? ck) (ck view) (some? ck) ck :else (id-str ename)))
-                                d)}
-                    {:wait "hours" :until off})))
+                (cond
+                  held? (hold-act! eng sid event orig act
+                          {:confirm (policy/confirm-required?
+                                      (let [ck (:confirm-kind act)] (cond (fn? ck) (ck view) (some? ck) ck :else (id-str ename)))
+                                      d)})
+                  waits? (hold-act! eng sid event orig act {:wait "hours" :until off})
+                  :else (hold-act! eng sid event (-> orig (dissoc :outage) (assoc :sova/outage-since (:since outage))) act
+                          {:wait "outage" :until (:until outage)})))
               (cond-> (run-step! eng sid event)
                 off (update 0 assoc :off-hours off)))))))))
 

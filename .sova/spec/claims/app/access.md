@@ -8,7 +8,8 @@ behalf.
 
 It listens on `127.0.0.1:4800`, loopback only, unless the server is started with `HOST` or `PORT`
 set (`HOST=0.0.0.0` exposes it on every address of the machine on purpose; `PORT=0` takes any free
-port). The installed `sova` launcher passes both through to the server. The public side of
+port). The installed `sova` launcher passes both through to the server, and with no `PORT` set it starts
+the server on the port it was installed with (`--port`, default `4800`). The public side of
 Sova — the share listener and preview links — is not this claim: it keeps its own tokens and its
 own edge (§mesh.public, §app.baton/share-listener).
 
@@ -86,7 +87,11 @@ host rule: the app's static shell and assets (a `GET` or `HEAD` outside `/api`, 
 shows the unlock screen, and reach nothing else that way), `GET /api/health`,
 because it is how a front and a doctor ask which build runs, and `POST /api/auth/unlock`; nothing
 that reads or changes state is open beside them. Everything else on the listener, a route family
-added later included, is gated by default. `SOVA_AUTH=off` stops asking for the token, for a test
+added later included, is gated by default. A path is judged as the router will route it, never
+by its raw spelling: decoded once, with repeated slashes collapsed and letter case ignored, so
+`/%61pi/…`, `/API/…` or `//api/…` is `/api` and needs the token. A spelling that can't be judged
+that way (an encoded `.`, `/` or `\`, a bad escape, or a `%` still left after decoding) is never
+the shell and needs the token too. `SOVA_AUTH=off` stops asking for the token, for a test
 rig, and only while the server is bound to loopback; the host and cross-site rules hold anyway.
 
 **A browser on this machine is not asked.** Opening the app's own address on the machine Sova runs
@@ -177,6 +182,8 @@ Every caller keeps working with no new step for the person:
   agent dir (`$PI_CODING_AGENT_DIR`, else the one the install used), and `open` opens
   `http://127.0.0.1:<PORT, else the install's port>/#t=<token>` in the browser; neither starts the
   server, and before the server ever minted a token both say to start it once and exit nonzero.
+  Plain `sova` serves on that same port. With no browser opener (`open` on macOS, `xdg-open`),
+  `open` says to paste the token from `sova token` into the page and exits nonzero.
 - **A local development server** that proxies to the app presents its own page as the app: it
   forwards the cookie, names the app's own host, and replaces an `Origin` naming the dev server
   itself (a loopback name, as the browser addressed it) with the app's, on requests and socket

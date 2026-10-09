@@ -22,6 +22,11 @@ const { registerOrgRoutes } = await import("./org-routes");
 const { mountOutreach } = await import("./outreach/routes");
 const { readSendLog } = await import("./outreach/log");
 const { disposeAllChats } = await import("./chat-manager");
+const { setSystemctlForTest } = await import("./outreach/unit");
+
+/** No systemd here: an unreachable sender offers no Start Sender, and nothing is spawned. */
+export const noSystemd = () => setSystemctlForTest(async () => ({ code: 1, stdout: "" }));
+noSystemd();
 
 /** Gil's number: the sender says it isn't on WhatsApp. */
 export const ABSENT = "15550000999";

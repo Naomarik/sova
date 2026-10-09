@@ -38,6 +38,8 @@ export type { PiExtensionFactory, PiLoaderOptions, PiModelRuntime, PiToolDefinit
  * - `claudeCode`: the claude-code extension registers the Claude Code CLI's models (`claude-code-provider`,
  *   pi-config/extensions/claude-code/provider/index.ts CLAUDE_PROVIDER_FLAG).
  * - `review`: adversarial review (`adversarial-review`, pi-config/extensions/mode/index.ts REVIEW_FLAG).
+ * - `alignVisuals`: the align mode's Visuals as the chat's launch record has them (`align-visuals`, `on` or
+ *   `off`, pi-config/extensions/mode/index.ts VISUALS_FLAG); absent, the extension reads mode-align.json.
  * - `link`: this server's bound origin and its per-install token for the `link` extension (`sova-link`,
  *   `sova-link-token`), and which of its tools the session gets (`sova-link-tools`): `member`, all seven
  *   from its start; `legacy`, all seven once the server's `sova:link-live` hook says it is in a live
@@ -49,6 +51,7 @@ export interface OpenFlags {
   target?: string;
   claudeCode?: boolean;
   review?: boolean;
+  alignVisuals?: boolean;
   link?: { origin: string; token: string; tools: "member" | "legacy" };
 }
 
@@ -58,6 +61,7 @@ export function extensionFlagValues(f: OpenFlags): Map<string, boolean | string>
   if (f.target) flags.set("target", f.target);
   if (f.claudeCode) flags.set("claude-code-provider", true);
   if (f.review) flags.set("adversarial-review", true);
+  if (f.alignVisuals !== undefined) flags.set("align-visuals", f.alignVisuals ? "on" : "off");
   if (f.link) {
     flags.set("sova-link", f.link.origin);
     flags.set("sova-link-token", f.link.token);

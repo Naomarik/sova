@@ -3,7 +3,7 @@ import { relativeTime } from "../pi-config/extensions/stamp/format.ts";
 import { OPERATOR, type BatonSession } from "../shared/baton";
 import type { Conflict, DecisionRow } from "../shared/decisions";
 import type { NamedChange, OrgChange, OrgNeedsYou, OrgProject, Person, PersonContact, ProfileChange } from "../shared/orgs";
-import { AUTONOMY_MEANING, LIMIT_WHAT, PO_LIMIT_KINDS, type ProjectOverseerInfo } from "../shared/project-overseer";
+import { AUTONOMY_MEANING, codingModeWords, LIMIT_WHAT, PO_LIMIT_KINDS, type ProjectOverseerInfo } from "../shared/project-overseer";
 import { allBatons, batonById, nameOf, sessionPathOf, workspaceHasFile } from "./baton";
 import { personPage } from "./person-page";
 import { projectCostLine } from "./project-costs";
@@ -156,15 +156,16 @@ export function contactValues(): string[] {
   return [...all].filter((v) => v.length >= CONTACT_MIN).sort((a, b) => b.length - a.length);
 }
 
-/** A redactor over the contact values as they are now: `text` for a string, `deep` for any value. */
+/** A redactor over the contact values as they are now: `text` for a string, `deep` for any value. A
+    value is matched as a literal in any case (an email typed `maria@exampleholdings.com` is the roster's
+    `Maria@ExampleHoldings.com`), the longest first where two overlap; nothing in a value is a pattern. */
 export function contactRedactor(values = contactValues()): { text(s: string): string; deep<T>(v: T): T } {
-  const text = (s: string): string => {
-    let out = s;
-    for (const v of values) if (out.includes(v)) out = out.split(v).join(CONTACT_MARK);
-    return out;
-  };
+  const literal = (v: string) => v.replace(/[\\^$.*+?()[\]{}|/]/g, "\\$&");
+  const known = values.filter((v) => v.length > 0);
+  const any = known.length ? new RegExp([...known].sort((a, b) => b.length - a.length).map(literal).join("|"), "giu") : null;
+  const text = (s: string): string => (any ? s.replace(any, CONTACT_MARK) : s);
   const deep = <T>(v: T): T => {
-    if (!values.length) return v;
+    if (!any) return v;
     if (typeof v === "string") return text(v) as T;
     if (Array.isArray(v)) return v.map(deep) as T;
     if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, deep(x)])) as T;
@@ -411,7 +412,7 @@ export async function projectView(projectId: string, items = false, now = Date.n
       `Level: chosen ${s.autonomy} (${AUTONOMY_MEANING[s.autonomy]}); in force ${info.effective.autonomy}${info.effective.reason ? ` (${info.effective.reason})` : ""}`,
       `Watching: ${s.watch ? "on" : "off"}, at most one look every ${s.watchGapMin} min${s.soonLookSec === null ? "" : `, or ${s.soonLookSec} s after something to see soon`}${info.usage.pending.length ? ` · ${plural(info.usage.pending.length, "reason")} waiting` : ""}`,
       `Models: its own ${s.model ?? "the default"} (thinking ${s.thinking ?? "default"}); coding ${s.codingModel ?? "its own"} (${s.codingThinking ?? "its own"}); gathering ${s.gatheringModel ?? "its own"} (${s.gatheringThinking ?? "its own"})`,
-      `Coding sessions' mode: ${s.codingMode ? `${s.codingMode.mode}${s.codingMode.minorModes.length ? ` + ${s.codingMode.minorModes.join(", ")}` : ""}` : "Automatic"}; one started now gets ${info.codingModeNow.mode}${info.codingModeNow.minorModes.length ? ` + ${info.codingModeNow.minorModes.join(", ")}` : ""}`,
+      `A coding session started now gets ${codingModeWords(info.codingModeNow)}${info.codingModeNow.subagents ? `, subagent profile ${info.codingModeNow.subagents.name}` : ""} (this computer's default${info.codingModeNow.subagents ? "s" : ""})`,
       `Extra instructions: ${s.extraSystemPrompt.trim() ? `"${cut(s.extraSystemPrompt, 600)}" (${s.extraSystemPrompt.length} characters)` : "(none)"}`,
       `Each message you send allows: ${allowance("message")}`,
       `On its own today: ${allowance("today")}; looks ${info.usage.unattendedToday} of ${s.caps.unattendedPerDay ?? "no limit"}`,

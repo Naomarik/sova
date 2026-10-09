@@ -40,6 +40,7 @@ import { projectEngine } from "./project-services/routes";
 import { overseerVerbsTool, type LooseExec } from "./project-services/tools";
 import { operatorEnvelopeOf } from "./projects/spaces";
 import { orgConfirmLookup, orgTools } from "./overseer-org-tools";
+import { orgHistoryParams, orgHistoryRead } from "./org-history-tools";
 import { resolveAnyProject, resolveOrg, resolvePerson } from "./overseer-org-view";
 import { contactRedactor, loggedArgs } from "./overseer-org-view";
 import { linkState as shareLinkState, listShares, type ShareLinkRecord } from "./session-shares";
@@ -54,6 +55,7 @@ import { singletonHolder } from "./session-profile";
 import { listPlaybooks } from "./playbooks";
 import { keyOf, singletonRunningText, titleCase } from "../shared/profiles";
 import { linkedPlaybook, missingPlaybookText, playbookTurnText } from "../shared/playbooks";
+import { alignDropRefusal } from "./project-coding-mode";
 
 export { renderTranscript, sessionRef };
 
@@ -1161,10 +1163,10 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
         mode: str("normal | delegate (see the mode extension)."),
         subagent_profile: str("Subagent profile id or off, from sova_list_subagent_profiles. This session only, before its first prompt; never saves a default."),
         sandbox: str('Its sandbox, before its first prompt: "on" (its tools and its subagents confined), "subagents" (the default: only its subagents in its worktrees, write-only) or "off" (nothing confined). Below the default only in the turn the user\'s click on a card that said so opened. Not with host.', { enum: ["off", "subagents", "on"] }),
-        minor_modes: { type: "array", items: { type: "string" }, description: 'Minor modes to have on from the first turn, e.g. ["spec"]; [] turns them all off. Omitted: the default.' },
+        minor_modes: { type: "array", items: { type: "string" }, description: 'Minor modes to have on from the first turn, e.g. ["spec"]; [] turns them all off. Omitted: the profile\'s, else the default.' },
         title: str(`A title for the list: ${SESSION_TITLE_HINT}`),
         group: str("Group id to add it to."),
-        profile: str('A profile id (§ profiles: what the session can do), this host only, looked up in the new session\'s project, then the user\'s, then built in. Only profiles marked "The Overseer may start it", and a project\'s profile only once the user approved it. Its mode and model apply unless you give your own. A profile that runs a playbook sends that playbook as the first message, with prompt as its text.'),
+        profile: str('A profile id (§ profiles: what the session can do), this host only, looked up in the new session\'s project, then the user\'s, then built in. Only profiles marked "The Overseer may start it", and a project\'s profile only once the user approved it. Its mode, minor modes and model apply unless you give your own. A profile that runs a playbook sends that playbook as the first message, with prompt as its text.'),
       }),
       execute: act("sova_create_session", async (p) => {
         const caps = host.caps();
@@ -1308,6 +1310,9 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
       ),
       execute: act("sova_set_session", async (p) => {
         const s = await resolveWritable(p.session);
+        // A session waiting on the user's alignment answers keeps align on (§app.project-overseer/coding-mode): checked first.
+        const drop = alignDropRefusal(!!s.align, p.minor_modes);
+        if (drop) throw new Refusal(`${drop} Nothing was changed.`);
         if (p.subagent_profile !== undefined) await checkSubagentProfile(p.subagent_profile);
         // The sandbox is checked before anything changes: lowering it needs this turn to be the user's
         // click on a card that lists this session (§app.overseer/tools), never an approval for later.
@@ -1624,6 +1629,17 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
       int,
       bool,
     }),
+    // The organization's history: read when the operator's turn asks for it.
+    {
+      name: "sova_org_history",
+      label: "Org history",
+      description:
+        "Read an organization's recorded history: what was requested, decided (decisions not to act included), held, refused, built and merged, who initiated, decided and carried it out, and the reason recorded at the time. " +
+        "search lists events; event reads one in full with its sources; trace follows its recorded causes and results; packet gives a bounded context. Only in a turn the operator started.",
+      promptSnippet: "read an organization's recorded history (who decided what, why, and what it led to)",
+      parameters: orgHistoryParams(),
+      execute: read(async (params) => ({ content: text(orgHistoryRead(params, host.attended())), details: {} })),
+    } as unknown as Tool,
   ];
   // Every tool, this list's and any added to it: no secret value in or out (overseer-redact.ts), and
   // no contact value out (§app.overseer/org-projection).

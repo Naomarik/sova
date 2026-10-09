@@ -11,9 +11,9 @@ import { workingSubagents } from "./live";
 import { hostOf, isOrgHostOpen, onOrgChange, onOrgHostOpened, openEngineIds, type Effect, type OrgHostApi } from "./org-engine";
 import type { Envelope } from "./org-envelope";
 import { canonicalPath } from "./paths";
-import { projectOf } from "./project-overseer-store";
+import { projectOf, projectOverseerPaths, readPoState } from "./project-overseer-store";
 import { buildSid, engineOf, projectHost } from "./projects/spaces";
-import type { ProjectCodingMode } from "../shared/project-overseer";
+import type { CodingModeSwitch, ProjectCodingMode } from "../shared/project-overseer";
 import { cutWorktree, gitRootOf, mergeBack, readWorktree, removeWorktree, uncommitted, worktreePathOf, type GitRoot, type WorktreeReading, type WorktreeRecord } from "./project-worktrees";
 import { teardownCopyOf } from "./project-services/checkout-teardown";
 import { mainMoved } from "./project-services/on-merge";
@@ -107,6 +107,9 @@ export function buildSessionPath(sessionId: string): string | null {
   return p && existsSync(p) ? p : null;
 }
 
+/** Its title: the one given, else the prompt's first line; none with neither (New Coding Session). */
+const titleOf = (d: Record<string, unknown>): string => str(d.title) || (str(d.prompt) ? cleanSessionTitle((str(d.prompt).split("\n")[0] ?? "").slice(0, 80)) ?? "" : "");
+
 function rowOf(configuration: string[], d: Record<string, unknown>): BuildRow {
   const sessionId = str(d.sessionId);
   const path = buildSessionPath(sessionId);
@@ -123,7 +126,7 @@ function rowOf(configuration: string[], d: Record<string, unknown>): BuildRow {
     ...(typeof d.inRoot === "string" && d.inRoot ? { inRoot: d.inRoot } : {}),
     ...(d.later === true && !(typeof d.branch === "string" && d.branch) ? { later: true as const } : {}),
     ...(d.adoptedAt != null ? { adoptedAt: isoOf(d.adoptedAt) } : {}),
-    ...(typeof d.title === "string" && d.title ? { title: d.title } : {}),
+    ...(titleOf(d) ? { title: titleOf(d) } : {}),
     ...(d.via === "overseer" ? { via: "overseer" as const } : {}),
     ...(d.kind === "onboard" ? { onboard: { startedBy: d.startedBy === "overseer" ? ("overseer" as const) : ("operator" as const) } } : {}),
     ...(typeof d.gap === "string" && d.gap ? { gap: d.gap } : {}),
@@ -269,24 +272,50 @@ async function createBuildSession(cwd: string, sessionId: string, d: Record<stri
 /** `customType` of the note a coding session started with no prompt gets: its worktree paragraph. */
 export const CODING_WORKTREE_NOTE = "sova-coding-worktree";
 
+/** What a mode switch left a coding session on: when it applies, its mode, and its subagent profile's name. */
+export interface CodingModeApplied {
+  applies: "now" | "after-turn";
+  mode: ProjectCodingMode;
+  profile: string | null;
+}
+
 /**
- * Set a coding session's mode and pin it (§app.project-overseer/tools, Modes): the mode extension's
- * own handler (applyMode), then the `mode` entry Sova writes itself, so the session keeps this mode
- * whatever mode.json says later. Throws when either can't be done: the caller then sends no prompt.
- * Returns when the switch applies (a running turn finishes in the old mode).
+ * Set a coding session's mode and pin it (§app.project-overseer/coding-mode): the mode extension's
+ * own handler (applyMode) over what it names (a partial switch keeps the rest of the session's own
+ * mode), then the `mode` entry Sova writes itself, so the session keeps this mode whatever mode.json
+ * says later, then the subagent profile it names, picked for this session only. Throws when any of it
+ * can't be done: the caller then sends no prompt. Says when the switch applies (a running turn
+ * finishes in the old mode) and what the session is on.
  */
-export async function applyCodingMode(path: string, mode: ProjectCodingMode): Promise<"now" | "after-turn"> {
+export async function applyCodingMode(path: string, mode: CodingModeSwitch): Promise<CodingModeApplied> {
   const chat = await acquireChat(path);
-  const plan = await chat.applyMode(mergeMode(chat.modeState, { mode: mode.mode, minorModes: mode.minorModes as never }));
-  if (plan !== "command")
-    throw new OrgError(plan === "unsupported" ? "the mode extension is not loaded in it" : "it is open in another writer (a terminal, or a process Sova doesn't know)", 409);
-  if (!chat.pinMode()) throw new OrgError("its mode entry could not be written", 409);
-  return chat.harness.isRunning() ? "after-turn" : "now";
+  const patch = { ...(mode.mode ? { mode: mode.mode } : {}), ...(mode.minorModes ? { minorModes: mode.minorModes as never } : {}) };
+  if (Object.keys(patch).length || mode.subagentProfile === undefined) {
+    const plan = await chat.applyMode(mergeMode(chat.modeState, patch));
+    if (plan !== "command")
+      throw new OrgError(plan === "unsupported" ? "the mode extension is not loaded in it" : "it is open in another writer (a terminal, or a process Sova doesn't know)", 409);
+    if (!chat.pinMode()) throw new OrgError("its mode entry could not be written", 409);
+  }
+  const profile = mode.subagentProfile !== undefined ? (await chat.switchSubagentProfile(mode.subagentProfile)).current.name : chat.subagentProfileInfo().current.name;
+  const now = chat.modeState;
+  return { applies: chat.harness.isRunning() ? "after-turn" : "now", mode: { mode: now.mode, minorModes: [...now.minorModes] }, profile: profile ?? null };
 }
 
 function sessionOf(host: OrgHostApi, e: Effect): { d: Record<string, unknown>; projectId: string; sessionId: string } {
   const d = host.data(e.sessionId) ?? {};
   return { d, projectId: str(d.projectId), sessionId: str(d.sessionId) };
+}
+
+/** The project overseer's conversation id, for the mark on a message its sova_send hands in: the effect's session is a
+    build (its `projectId`) or the project statechart (its `id`). Undefined when it can't be read: the mark then names none. */
+function projectOverseerIdOf(host: OrgHostApi, e: Effect): string | undefined {
+  const d = host.data(e.sessionId) ?? {};
+  const projectId = str(d.projectId) || str(d.id);
+  try {
+    return projectId ? (readPoState(projectOverseerPaths(projectId))?.current ?? undefined) : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function pathOrThrow(sessionId: string): string {
@@ -389,11 +418,11 @@ export function registerBuildEffects(host: OrgHostApi, engine: string): void {
     const overseer = await import("./session-prompt");
     const path = typeof e.session === "string" ? await overseer.pathOfId(e.session) : pathOrThrow(sessionOf(host, e).sessionId);
     if (!path) throw new Error("That session is not on this host.");
-    let modeApplies: "now" | "after-turn" | undefined;
-    if (e.mode) modeApplies = await applyCodingMode(path, e.mode as ProjectCodingMode);
-    const r = await overseer.promptSession(path, str(e.text));
+    const applied = e.mode ? await applyCodingMode(path, e.mode as CodingModeSwitch) : null;
+    // The project overseer's message, marked as an Overseer's (§app.overseer/sent-marker): never the operator's answer.
+    const r = await overseer.promptSession(path, str(e.text), undefined, "followUp", { projectOverseer: projectOverseerIdOf(host, e) });
     if (!r.ok) throw new Error(r.error);
-    return { queued: r.queued, ...(modeApplies ? { modeApplies } : {}) };
+    return { queued: r.queued, ...(applied ? { modeApplies: applied.applies, modeNow: applied.mode, profile: applied.profile } : {}) };
   });
 
   host.effects.register("merge", async (e) => {
@@ -406,7 +435,7 @@ export function registerBuildEffects(host: OrgHostApi, engine: string): void {
     // Its title as the page shows it: a rename, the one it started with, the listing's (its first message), its branch.
     const path = buildSessionPath(sessionId);
     const listed = path ? (await getSessionSummary(path).catch(() => null))?.title : undefined;
-    const title = readSessionTitles()[sessionId] || str(d.title) || (listed && listed !== "Untitled" ? listed : "") || row.worktree.branch;
+    const title = readSessionTitles()[sessionId] || titleOf(d) || (listed && listed !== "Untitled" ? listed : "") || row.worktree.branch;
     const m = await mergeBack(row.worktree, root, title);
     noteBuildMerged(sessionId, true);
     // Main moved: its copy's onMerge services reload now, never holding up the merge (§app.project-services/on-merge).
@@ -432,13 +461,19 @@ export function registerBuildEffects(host: OrgHostApi, engine: string): void {
   // build not resumed yet would keep "working" forever: F-049/F-050's twin for coding sessions).
   void (async () => {
     for (const s of host.sessions("build")) {
-      if (s.running && s.data.turn === "working") await host.act(s.id, "turn/ended", {}, SYSTEM);
+      if (s.running && s.data.turn === "working") await turnEnded(host, s.id, {});
     }
   })().catch((err) => console.warn(`[build] ${engine}: resuming turns: ${err instanceof Error ? err.message : String(err)}`));
 }
 onOrgHostOpened(registerBuildEffects);
 
 const SYSTEM = { by: "system" } as unknown as Envelope;
+
+/** A build's turn ended, naming the session's given title (its history headline says it; never the prompt's line). */
+function turnEnded(host: OrgHostApi, sid: string, data: Record<string, unknown>) {
+  const title = str(host.data(sid)?.title);
+  return host.act(sid, "turn/ended", { ...data, ...(title ? { title } : {}) }, SYSTEM);
+}
 
 // ---- facts ---------------------------------------------------------------------------------------------
 
@@ -463,7 +498,7 @@ export async function syncBuildTurn(projectId: string, sid: string, path: string
   if (!working && d.turn === "working") {
     await adoptWorktree(projectId, sid, str(d.sessionId));
     await probeAtTurnEnd(projectId, sid, str(d.sessionId));
-    await host.act(sid, "turn/ended", { questions: await openQuestionsAt(path) }, SYSTEM);
+    await turnEnded(host, sid, { questions: await openQuestionsAt(path) });
   }
   if (workers !== (typeof d.workers === "number" ? d.workers : 0)) await host.act(sid, "workers/changed", { n: workers }, SYSTEM);
 }
@@ -596,7 +631,7 @@ export async function noteBuildSettled(path: string, failed: boolean): Promise<v
     // The worktree its turn made (worktree "later") first, so the probe reads its branch.
     await adoptWorktree(hit.projectId, hit.sid, id);
     await probeAtTurnEnd(hit.projectId, hit.sid, id);
-    await host.act(hit.sid, "turn/ended", { failed, questions: await openQuestionsAt(p) }, SYSTEM);
+    await turnEnded(host, hit.sid, { failed, questions: await openQuestionsAt(p) });
     return;
   }
 }

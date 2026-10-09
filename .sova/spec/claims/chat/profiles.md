@@ -20,22 +20,24 @@ once the first message is sent, and kept by the session itself. The UI says
   (`sessions.message`), **See all Sova sessions** (`sessions.all`). Messaging and See all each turn
   reading on; turning reading off turns both off.
 - **A profile** is `{id, label, icon, description, remove[], grant[], singleton, limits, mode?,
-  model?, thinking?, subagents?, firstMessage?, playbook?, overseerMayStart}`. `singleton` is
+  minorModes?, model?, thinking?, subagents?, firstMessage?, playbook?, overseerMayStart}`. `singleton` is
   labelled **One at a time** in the UI (§chat.profiles/singleton). `limits` are
   §chat.profiles/limits's five numbers. `playbook` links a playbook (§chat.profiles/playbook).
   `model` is the main thread's model ref (`provider/id`); `thinking` its effort, one of pi's levels
   (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`); `subagents` the subagent profile the
   session uses (§chat.subagent-profiles/file), by its id, or `"off"`. Each is optional: absent, the
   session keeps the new-session default model and effort, and follows this device's default
-  subagent profile. A file whose `thinking` is no level, or whose `subagents` isn't `off` or a
-  subagent profile id (lowercase letters, digits and dashes, at most 48), doesn't parse.
+  subagent profile. `minorModes` is the whole set of minor modes the session starts with (`align`,
+  `spec`, `vis`, `codemode`), in any order; `[]` starts with none; absent, the session starts with
+  mode.json's default. A file whose `thinking` is no level, whose `subagents` isn't `off` or a
+  subagent profile id (lowercase letters, digits and dashes, at most 48), or whose `minorModes`
+  isn't a list of those names, doesn't parse.
 - **Capability-neutral.** A profile that removes and grants nothing, isn't One at a time, and links
-  no playbook and no first message (so it sets only model, effort, subagents or mode) is
+  no playbook and no first message (so it sets only model, effort, subagents, mode or minor modes) is
   capability-neutral.
 - **Where profiles come from** is §chat.profiles/projects: **Default** in code (nothing changed),
   the **Built in** files Sova ships (**Read-only reviewer**: reads sessions; no shell, edits or
-  workers. **Mini overseer**: reads and messages sessions in its project; no edits. The Overseer
-  may start either), **Yours**, and **This project**'s files. Sova writes only Yours, and only when
+  workers; the Overseer may start it), **Yours**, and **This project**'s files. Sova writes only Yours, and only when
   you save one (§chat.profiles/picker's Save Current As Profile).
 - **The session keeps its own copy.** A session's profile is its invisible `custom` entry
   `customType: "sova-profile"`, data `{v: 1, profile: {…the whole profile…, source, project?,
@@ -69,9 +71,10 @@ Overseer, project overseers, baton, organization and TUI-live sessions show no p
   mistakes. See Manage Profiles." ("1 profile file has mistakes.") **Manage Profiles** opens
   Settings → Profiles (§app.settings-dialog/profiles).
 - **A card** shows the profile's icon, its label and one caption line: what it sets of
-  "{model} · {effort} · subagents: {footprint}" (the model's short name, the effort level, and the
-  subagent profile's footprint, its distinct primary models, or "off"), or its description when it
-  sets none of them. Chips say **Running** (a One at a time profile already live in another
+  "{model} · {effort} · subagents: {footprint} · {mode} · {minor modes}" (the model's short name,
+  the effort level, the subagent profile's footprint, its distinct primary models, or "off", the
+  mode's name, and the minor modes it starts with, e.g. "align, spec, vis", or "no minor modes"
+  for `[]`), or its description when it sets none of them. Chips say **Running** (a One at a time profile already live in another
   session), **Needs approval** (an unapproved project profile, §chat.profiles/trust) and **One at a
   time**.
 - **A card that can't be used here** is disabled (`aria-disabled`, still focusable so its reason is
@@ -117,7 +120,9 @@ Overseer, project overseers, baton, organization and TUI-live sessions show no p
   is Default) writes the new `sova-profile` entry at once, after the
   open-time model and thinking entries, then disposes the held runtime, the move the Overseer's model
   change makes: open tabs get `reloaded` and reconnect, keeping the draft. The reopened runtime reads
-  the entry. A profile's `mode` is pinned (the mode extension's own entry), its `model` becomes
+  the entry. A profile's `mode` and `minorModes` are applied and pinned together (one mode
+  extension `mode` entry, so the session keeps them on every reopen whatever mode.json says later;
+  a profile that sets only one of them keeps the session's other), its `model` becomes
   the opening model, its `thinking` the opening effort, and its `subagents` is written as the
   session's subagent pick (the `subagent-profile` entry, §chat.subagent-profiles/resolution), in the
   same step; its `firstMessage` fills an empty composer. None of these moves a default: the
@@ -133,7 +138,10 @@ Overseer, project overseers, baton, organization and TUI-live sessions show no p
   be cleared; a session with no pick entry gets none. Likewise a pick of a profile without `model`
   or `thinking`, made while the current profile sets it, puts back the model or effort a new
   session would open on: the new-session default's (`defaults.json`) when it names a usable one,
-  else pi's own default, the same fallback a new session takes. That file is never written.
+  else pi's own default, the same fallback a new session takes. That file is never written. And a
+  pick of a profile without `mode` or `minorModes`, made while the current profile sets it, puts
+  that field back to mode.json's default and pins it with the other, so the session doesn't keep the
+  previous profile's mode or minor modes; mode.json is never written either.
 - **Refused** (409, nothing written) once a user message is on the branch ("The profile is fixed
   once a message is sent."), mid-turn, TUI-live, for a foreign writer, for the special sessions
   above, and for a project profile that needs approval (§chat.profiles/trust). A rewind to before the first message leaves a branch with no user message, so the picker
@@ -269,7 +277,7 @@ Enforced in the tool, never by the prompt; each has a default and is editable pe
   name is its root folder's name. A relative or remote cwd has no project; that is decided before any
   filesystem call, as for playbooks (§chat.playbooks/the-project-listing).
 - **Four sources.** **Default** is in code and changes nothing. **Built in**: one JSON file per
-  profile in `profiles/` at the Sova repo root (Read-only reviewer, Mini overseer). **Yours**:
+  profile in `profiles/` at the Sova repo root (Read-only reviewer). **Yours**:
   `<state root>/session-profiles.json` `{version: 1, profiles: [...]}`. **This project**:
   `<project root>/.sova/profiles/<id>.json`, one profile per file, whose `id` must equal the file's
   name.

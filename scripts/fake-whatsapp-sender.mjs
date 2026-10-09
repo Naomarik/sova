@@ -4,11 +4,18 @@
 // no network, no credentials, no `pnpm install` in services/whatsapp. Protocol: services/whatsapp/IPC.md.
 //
 //   PI_CODING_AGENT_DIR=$PWD/.agent node scripts/fake-whatsapp-sender.mjs [--unpaired]
-//   node scripts/fake-whatsapp-sender.mjs ctl close 401 | ctl ack-error 463 | ctl send-throw
+//   node scripts/fake-whatsapp-sender.mjs ctl close 401 | ctl ack-error 463 | ctl send-throw | ctl open-fail [n] | ctl scan
 //
 // It listens where the real sender would ($SOVA_WA_SOCKET, else <PI_CODING_AGENT_DIR>/sova/whatsapp/sender.sock)
 // and refuses to run on the real default directory. Every number exists except those in SOVA_WA_FAKE_ABSENT
 // (comma-separated digits); receipts follow SOVA_WA_FAKE_RECEIPTS: delivered,read (default) | delivered | none.
+// SOVA_WA_FAKE_TIME_SCALE=<n> runs the sender's clock n times faster (60: an hour's reconnect wait takes a
+// minute), so a budget wait can be watched end to end; its times (retryAt, events) are on that fast clock.
+// A link (Settings' Link a Phone, or `sova-whatsapp pair`) issues a new fake QR every SOVA_WA_FAKE_QR_MS (3000),
+// 5 in all, then expires as WhatsApp's does (408); `ctl scan` is the phone scanning it (or typing the pairing
+// code), and the link succeeds. The fake QRs are random words, never a credential. A second number is a second
+// fake with its own SOVA_WA_HOME (its socket and lock there; `ctl` with the same SOVA_WA_HOME reaches it) and,
+// to tell them apart, SOVA_WA_FAKE_ME=<digits>, the number it links as (default 0000000000).
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { resolveConfig } from '../services/whatsapp/src/config.mjs'
@@ -65,11 +72,31 @@ process.on('exit', () => lock.release())
 const log = makeLog(env.SOVA_WA_LOG_LEVEL || 'info')
 const absent = new Set((env.SOVA_WA_FAKE_ABSENT || '').split(',').map((s) => s.trim()).filter(Boolean))
 const receipts = (env.SOVA_WA_FAKE_RECEIPTS ?? 'delivered,read').split(',').map((s) => s.trim()).filter((s) => s && s !== 'none')
-const ME = '0000000000'
+// The linked number's digits (Sova shows its last 3): SOVA_WA_FAKE_ME, so a second fake (its own SOVA_WA_HOME) reads apart.
+const ME = /^\d{7,15}$/.test(env.SOVA_WA_FAKE_ME || '') ? env.SOVA_WA_FAKE_ME : '0000000000'
 
 let paired = !argv.includes('--unpaired')
 let current = null // the open fake socket's handlers
-const next = { ackError: null, sendThrow: false }
+const next = { ackError: null, sendThrow: false, openFail: 0 }
+const qrMs = Number(env.SOVA_WA_FAKE_QR_MS || 3000)
+let fakeLink = null // {handlers, timers} while a fake link waits for `ctl scan`
+const endFakeLink = () => {
+  for (const t of fakeLink?.timers ?? []) clearTimeout(t)
+  fakeLink = null
+}
+
+// The sender's clock, SOVA_WA_FAKE_TIME_SCALE times faster than the wall's (1: the real clock).
+const scale = Number(env.SOVA_WA_FAKE_TIME_SCALE || 1)
+if (!(scale >= 1)) {
+  process.stderr.write('fake-whatsapp-sender: SOVA_WA_FAKE_TIME_SCALE must be a number ≥ 1\n')
+  process.exit(2)
+}
+const t0 = Date.now()
+const clock = {
+  now: () => t0 + (Date.now() - t0) * scale,
+  setTimeout: (fn, ms) => setTimeout(fn, Math.max(0, ms) / scale),
+  clearTimeout: (t) => clearTimeout(t),
+}
 let n = 0
 
 const driver = {
@@ -79,22 +106,28 @@ const driver = {
     paired = false
   },
   async open({ link, handlers }) {
+    if (!link && next.openFail > 0) {
+      next.openFail--
+      throw new Error('fake: the connection could not be opened')
+    }
     current = handlers
     const alive = () => current === handlers
     if (link) {
-      // Two QR refreshes, then the phone "scans": pair-success, then WhatsApp's restart request (515).
-      setTimeout(() => alive() && handlers.onQr(`FAKE-QR-${Date.now()}-1`), 100)
-      setTimeout(() => alive() && handlers.onQr(`FAKE-QR-${Date.now()}-2`), 1000)
-      setTimeout(() => {
-        if (!alive()) return
-        paired = true
-        handlers.onClose(515, 'restart required')
-      }, 2000)
+      // A QR now and every qrMs, 5 in all, then WhatsApp gives up (408) unless `ctl scan` came first.
+      endFakeLink()
+      const timers = []
+      for (let i = 0; i < 5; i++) timers.push(setTimeout(() => alive() && handlers.onQr(`FAKE-QR-${i + 1}-${Math.random().toString(36).slice(2, 10)}`), 100 + i * qrMs))
+      timers.push(setTimeout(() => alive() && (endFakeLink(), handlers.onClose(408, 'QR refs attempts ended')), 100 + 5 * qrMs))
+      fakeLink = { handlers, timers }
     } else {
       setTimeout(() => alive() && (paired ? handlers.onOpen(ME) : handlers.onQr('FAKE-QR-unexpected')), 300)
     }
     return {
-      end: () => alive() && (current = null),
+      end: () => {
+        if (!alive()) return
+        current = null
+        if (fakeLink?.handlers === handlers) endFakeLink()
+      },
       logout: async () => {
         paired = false
       },
@@ -119,7 +152,7 @@ const driver = {
   },
 }
 
-const core = new Sender({ config, store: fileStore(config), driver, log, version: 'fake' })
+const core = new Sender({ config, store: fileStore(config), driver, clock, log, version: 'fake' })
 const ipc = await serveIpc({
   core,
   path: config.socket,
@@ -129,7 +162,11 @@ const ipc = await serveIpc({
       switch (req.do) {
         case 'close':
           if (!current) return { ok: false, code: 'not-connected', retryable: false, why: 'No fake connection to close.' }
-          current.onClose(Number(req.code), 'fake close')
+          current.onClose(Number(req.code), 'fake close', { wsCode: 1006, closeFrame: false })
+          return { ok: true }
+        case 'open-fail':
+          // The next `code` opens (default 1) throw, as a network that refuses the connection would.
+          next.openFail = Number(req.code) || 1
           return { ok: true }
         case 'ack-error':
           next.ackError = Number(req.code) || 463
@@ -137,8 +174,17 @@ const ipc = await serveIpc({
         case 'send-throw':
           next.sendThrow = true
           return { ok: true }
+        case 'scan': {
+          // The phone scans the QR (or types the code): pair-success, then WhatsApp's restart request (515).
+          if (!fakeLink || current !== fakeLink.handlers) return { ok: false, code: 'not-linking', retryable: false, why: 'No fake link is waiting for a phone.' }
+          const h = fakeLink.handlers
+          endFakeLink()
+          paired = true
+          setTimeout(() => current === h && h.onClose(515, 'restart required'), 200)
+          return { ok: true }
+        }
       }
-      return { ok: false, code: 'bad-request', retryable: false, why: 'fake do: close | ack-error | send-throw' }
+      return { ok: false, code: 'bad-request', retryable: false, why: 'fake do: close | ack-error | send-throw | open-fail | scan' }
     },
   },
 }).catch((err) => {

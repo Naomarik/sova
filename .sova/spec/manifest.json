@@ -560,7 +560,7 @@
     "§app/new-session-dialog": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "src/components/NewSessionDialog.tsx",
         "src/components/FolderPicker.tsx",
@@ -651,10 +651,11 @@
         "src/lib/release-control.test.ts"
       ],
       "requires": [
-        "§chat.images/composer-attachments"
+        "§chat.images/composer-attachments",
+        "§chat.voice/button"
       ],
       "authority": "accepted",
-      "evidence": "verified"
+      "evidence": "reviewed"
     },
     "§chat.composer/composer-flyout": {
       "kind": "behavior",
@@ -2433,7 +2434,15 @@
         "server/mesh/mesh.test.ts",
         "server/mesh/peer-wire-test-fixtures.ts",
         "server/mesh/app-test-fixtures.ts",
-        "server/mesh/mesh.integration.test.ts"
+        "server/mesh/mesh.integration.test.ts",
+        "server/mesh/peer-address.ts",
+        "server/mesh/peer-address.test.ts",
+        "server/mesh/dial.ts",
+        "server/mesh/proxy.ts",
+        "server/mesh/resync.ts",
+        "server/mesh/resync-test-fixtures.ts",
+        "server/index.ts",
+        "docs/mesh.md"
       ]
     },
     "§mesh.remote-sessions/host-filter": {
@@ -2489,7 +2498,10 @@
         "server/mesh/paths.ts",
         "server/extensions.ts",
         "src/lib/api.ts",
-        "vite.config.ts"
+        "vite.config.ts",
+        "server/mesh/proxy-local.test.ts",
+        "server/mesh/proxy-pairing.test.ts",
+        "docs/mesh.md"
       ]
     },
     "§mesh.remote-sessions/routing": {
@@ -2512,7 +2524,8 @@
         "server/sync/index.ts",
         "server/sync/docs.test.ts",
         "server/sync/extensions.test.ts",
-        "server/sync/index.test.ts"
+        "server/sync/index.test.ts",
+        "server/sync/docs-grants.test.ts"
       ]
     },
     "§mesh.sync/logins": {
@@ -2693,7 +2706,8 @@
       "evidence": "verified",
       "code": [
         "scripts/install.sh",
-        "scripts/install.test.sh"
+        "scripts/install.test.sh",
+        "scripts/install.integration.test.ts"
       ]
     },
     "§app.installer/service": {
@@ -2703,7 +2717,9 @@
       "evidence": "verified",
       "code": [
         "scripts/install.sh",
-        "scripts/install.test.sh"
+        "scripts/install.test.sh",
+        "scripts/install.integration.test.ts",
+        "docs/running-as-a-service.md"
       ]
     },
     "§app/installer": {
@@ -2712,7 +2728,8 @@
       "evidence": "verified",
       "code": [
         "scripts/install.sh",
-        "scripts/install.test.sh"
+        "scripts/install.test.sh",
+        "scripts/install.integration.test.ts"
       ]
     },
     "§app.extensions/cards": {
@@ -2887,7 +2904,10 @@
         "server/app.ts",
         "server/outreach/log.ts",
         "server/projects/playbook-review.ts",
-        "server/project-services/deploy-attention.ts"
+        "server/project-services/deploy-attention.ts",
+        "server/outreach/health.ts",
+        "server/project-holds.ts",
+        "server/outreach-health.test.ts"
       ],
       "requires": [
         "§app.overseer/seen"
@@ -3137,7 +3157,9 @@
         "server/overseer-markers.test.ts",
         "server/search-tools-fake.ts",
         "server/test-wait.ts",
-        "server/project-overseer-routes.ts"
+        "server/project-overseer-routes.ts",
+        "server/session-prompt.ts",
+        "server/build-loadout.ts"
       ],
       "requires": [
         "§chat.transcript/message-actions"
@@ -4004,11 +4026,6 @@
     },
     "§app.settings-dialog/save-bar": {
       "kind": "behavior",
-      "requires": [
-        "§app/settings-dialog",
-        "§app.settings-dialog/modes",
-        "§design.copy-deck/settings-modes-delegate"
-      ],
       "authority": "accepted",
       "evidence": "verified",
       "code": [
@@ -4034,7 +4051,15 @@
         "src/lib/baton-settings-draft.ts",
         "src/components/BatonSettings.tsx",
         "src/lib/push-draft.ts",
-        "src/components/PushSettings.tsx"
+        "src/components/PushSettings.tsx",
+        "src/lib/alignment-draft.ts",
+        "src/lib/alignment-draft.test.ts",
+        "src/components/AlignmentSettings.tsx"
+      ],
+      "requires": [
+        "§app/settings-dialog",
+        "§app.settings-dialog/modes",
+        "§design.copy-deck/settings-modes-delegate"
       ]
     },
     "§design.copy-deck/settings-experimental": {
@@ -4180,7 +4205,10 @@
         "server/queue.test.ts",
         "server/baton-recount.ts",
         "server/index.ts",
-        "server/app.ts"
+        "server/app.ts",
+        "shared/baton.ts",
+        "server/record-decision-history.test.ts",
+        "server/harness/pi/golden/state/G6-baton-decision.jsonl"
       ],
       "requires": [
         "§app.baton/links"
@@ -4405,7 +4433,9 @@
         "server/app.ts",
         "server/share-listener.integration.test.ts",
         "server/share-message.integration.test.ts",
-        "server/public-links.integration.test.ts"
+        "server/public-links.integration.test.ts",
+        "server/share/rate-limit.ts",
+        "server/share-rate-limit.test.ts"
       ],
       "requires": [
         "§app.baton/links",
@@ -4508,7 +4538,8 @@
         "src/lib/api.ts",
         "server/org-reload.test.ts",
         "server/orgs.ts",
-        "server/org-routes.test.ts"
+        "server/org-routes.test.ts",
+        "src/components/OrgWhatsAppCard.tsx"
       ],
       "requires": [
         "§app.organizations/org-cards",
@@ -4539,7 +4570,9 @@
         "server/reconcile.ts",
         "shared/decisions.ts",
         "server/org-routes.ts",
-        "server/org-holder.ts"
+        "server/org-holder.ts",
+        "server/decision-markers-attach.test.ts",
+        "server/org-history/bootstrap.test.ts"
       ],
       "requires": [
         "§app.organizations/workspace-repo",
@@ -4640,7 +4673,7 @@
     "§app.organizations/workspace-repo": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "server/workspace-git.ts",
         "server/orgs.ts",
@@ -4847,7 +4880,11 @@
         "server/spec-tool-fake.ts",
         "server/outreach/sender-test-fixtures.ts",
         "server/outreach-test-fixtures.ts",
-        "server/outreach.integration.test.ts"
+        "server/outreach.integration.test.ts",
+        "server/org-history-tools.ts",
+        "server/project-overseer.test.ts",
+        "server/baton.ts",
+        "server/org-history-preview.test.ts"
       ],
       "requires": [
         "§app.baton/goal-and-loadout",
@@ -4909,7 +4946,13 @@
         "src/lib/decisions-view.ts",
         "src/lib/decisions-view.test.ts",
         "src/lib/api.ts",
-        "src/projects.css"
+        "src/projects.css",
+        "statecharts/src/sova/statecharts/rules/baton.cljc",
+        "statecharts/src/sova/statecharts/baton.cljc",
+        "statecharts/test/sova/statecharts/refit/baton_test.cljc",
+        "server/decision-markers.test.ts",
+        "server/vendor/statecharts.js",
+        "src/components/ProjectOrgPart.tsx"
       ],
       "requires": [
         "§app.baton/hand-off"
@@ -5561,7 +5604,13 @@
         "src/lib/coding-worktrees.ts",
         "src/lib/coding-worktrees.test.ts",
         "src/lib/api.ts",
-        "server/build-loadout.ts"
+        "server/build-loadout.ts",
+        "server/overseer-org-tools.ts",
+        "server/overseer-org-tools.test.ts",
+        "server/overseer-tools.ts",
+        "server/overseer-runtime.test.ts",
+        "server/overseer-prompt.md",
+        "server/overseer-org-view.ts"
       ]
     },
     "§app.project-overseer/coding-worktrees": {
@@ -6775,7 +6824,9 @@
         "pi-config/extensions/mode/align.test.ts",
         "pi-config/extensions/mode/tests/align-turn.mjs",
         "pi-config/extensions/mode/tests/smoke.mjs",
-        "pi-config/extensions/mode/README.md"
+        "pi-config/extensions/mode/README.md",
+        "pi-config/extensions/mode/align-settings.test.ts",
+        "pi-config/extensions/mode/tests/fixtures/flag-off-master.json"
       ],
       "requires": [
         "§chat.alignment/state",
@@ -6801,7 +6852,8 @@
         "src/lib/agents-board.ts",
         "src/lib/summary-diff.ts",
         "src/design/base.css",
-        "shared/protocol.ts"
+        "shared/protocol.ts",
+        "server/harness/pi/golden/expected/synthetic/all-types/align-scan.json"
       ],
       "requires": [
         "§chat.alignment/state",
@@ -6838,7 +6890,8 @@
         "pi-config/extensions/mode/tests/align-turn.mjs",
         "pi-config/extensions/mode/align-file.ts",
         "pi-config/extensions/mode/tests/align-old-ops.jsonl",
-        "pi-config/extensions/mode/README.md"
+        "pi-config/extensions/mode/README.md",
+        "pi-config/extensions/mode/tests/fixtures/flag-off-master.json"
       ],
       "requires": [
         "§chat.alignment/document"
@@ -6867,7 +6920,9 @@
       "code": [
         "pi-config/extensions/mode/README.md",
         "pi-config/extensions/mode/align.ts",
-        "pi-config/extensions/mode/index.ts"
+        "pi-config/extensions/mode/index.ts",
+        "src/components/AlignmentSettings.tsx",
+        "pi-config/extensions/mode/align-settings.ts"
       ]
     },
     "§app.requirements/owner-area": {
@@ -6929,10 +6984,6 @@
     },
     "§chat.markdown/visuals": {
       "kind": "behavior",
-      "requires": [
-        "§chat.markdown/code-blocks",
-        "§chat.markdown/streaming"
-      ],
       "authority": "accepted",
       "evidence": "verified",
       "code": [
@@ -7049,18 +7100,18 @@
         "server/vis-check.ts",
         "server/vis-check.test.ts",
         "src/vis/multimark.test.ts",
-        "shared/vis-frame-host.ts"
+        "shared/vis-frame-host.ts",
+        "server/vis-tools-sync.test.ts"
+      ],
+      "requires": [
+        "§chat.markdown/code-blocks",
+        "§chat.markdown/streaming"
       ]
     },
     "§chat.mode-menu/minor-toggle-keeps-prompt": {
       "kind": "behavior",
-      "requires": [
-        "§chat.mode-menu/prompt-holds-across-turn-starters",
-        "§chat.mode-menu/how-a-switch-reaches-the-chat",
-        "§app.worker-restore/claude-bridge-restart"
-      ],
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "pi-config/extensions/mode/index.ts",
         "pi-config/extensions/mode/vis-guide-tool.ts",
@@ -7075,7 +7126,14 @@
         "server/mode-state.test.ts",
         "pi-config/extensions/mode/minor.ts",
         "pi-config/extensions/claude-code/provider/session-bridge.ts",
-        "server/vis-check.ts"
+        "server/vis-check.ts",
+        "pi-config/extensions/mode/tests/style-turn.mjs",
+        "server/vis-tools-sync.test.ts"
+      ],
+      "requires": [
+        "§chat.mode-menu/prompt-holds-across-turn-starters",
+        "§chat.mode-menu/how-a-switch-reaches-the-chat",
+        "§app.worker-restore/claude-bridge-restart"
       ]
     },
     "§app.organizations/archive": {
@@ -7194,7 +7252,9 @@
         "server/overseer-org-tools.ts",
         "server/overseer-org-tools.test.ts",
         "server/search-tools-fake.ts",
-        "shared/project-overseer.ts"
+        "shared/project-overseer.ts",
+        "server/project-coding-mode.ts",
+        "server/overseer-prompt.md"
       ],
       "requires": [
         "§app.project-overseer/identity",
@@ -7219,7 +7279,8 @@
         "server/search-tools-fake.ts",
         "server/overseer.ts",
         "server/org-about-privacy.test.ts",
-        "server/org-about-privacy.integration.test.ts"
+        "server/org-about-privacy.integration.test.ts",
+        "server/contact-redactor.test.ts"
       ],
       "requires": [
         "§app.organizations/privacy",
@@ -7230,13 +7291,15 @@
     "§app.overseer/org-reads": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "server/overseer-tools.ts",
         "server/overseer-org-view.ts",
         "server/overseer-org-tools.ts",
         "server/overseer-org-tools.test.ts",
-        "server/search-tools-fake.ts"
+        "server/search-tools-fake.ts",
+        "server/org-history-tools.ts",
+        "server/overseer-runtime.test.ts"
       ],
       "requires": [
         "§app.organizations/org-cards",
@@ -8041,7 +8104,8 @@
         "server/claude-pool/pool-test-fixtures.ts",
         "server/claude-pool/agent.integration.test.ts",
         "scripts/claude-pool-e2e/run.mjs",
-        "server/app.ts"
+        "server/app.ts",
+        "server/claude-pool/doc.test.ts"
       ]
     },
     "§app.claude-logins/stuck": {
@@ -9286,7 +9350,12 @@
         "server/baton.ts",
         "server/orgs.ts",
         "server/reconcile.ts",
-        "server/project-holds.ts"
+        "server/project-holds.ts",
+        "server/org-history-boot.test.ts",
+        "server/org-host/index.ts",
+        "server/statecharts.ts",
+        "src/lib/pipeline-view.test.ts",
+        "server/outreach.test.ts"
       ],
       "requires": [
         "§app.project-overseer/statecharts",
@@ -9933,7 +10002,9 @@
         "src/components/SettingsDialog.tsx",
         "src/lib/settings-nav.ts",
         "src/lib/settings-nav.test.ts",
-        "src/App.tsx"
+        "src/App.tsx",
+        "src/lib/profiles.ts",
+        "src/lib/profile-cards.test.ts"
       ],
       "requires": [
         "§chat.profiles/model",
@@ -10028,10 +10099,10 @@
         "server/sessions-index.ts",
         "server/session-profiles.test.ts",
         "profiles/reviewer.json",
-        "profiles/mini-overseer.json",
         "shared/protocol.ts",
         "src/lib/summary-diff.test.ts",
-        "server/harness/state-kinds.ts"
+        "server/harness/state-kinds.ts",
+        "docs/profiles.md"
       ],
       "requires": []
     },
@@ -10231,7 +10302,6 @@
         "server/profile-sources.ts",
         "shared/profiles.ts",
         "profiles/reviewer.json",
-        "profiles/mini-overseer.json",
         "docs/profiles.md",
         "server/profiles-store.ts",
         "server/playbooks.ts",
@@ -10535,7 +10605,8 @@
         "server/outreach.test.ts",
         "server/outreach/sender-test-fixtures.ts",
         "server/outreach-test-fixtures.ts",
-        "server/outreach.integration.test.ts"
+        "server/outreach.integration.test.ts",
+        "server/outreach-numbers.test.ts"
       ]
     },
     "§app.outreach/links": {
@@ -10578,7 +10649,10 @@
         "server/outreach.test.ts",
         "server/outreach/sender-test-fixtures.ts",
         "server/outreach-test-fixtures.ts",
-        "server/outreach.integration.test.ts"
+        "server/outreach.integration.test.ts",
+        "shared/outreach.ts",
+        "server/outreach/core.ts",
+        "server/outreach-numbers.test.ts"
       ],
       "requires": [
         "§app.organizations/workspace-repo"
@@ -10598,7 +10672,10 @@
         "server/outreach.test.ts",
         "server/outreach/sender-test-fixtures.ts",
         "server/outreach-test-fixtures.ts",
-        "server/outreach.integration.test.ts"
+        "server/outreach.integration.test.ts",
+        "server/outreach/whatsapp.ts",
+        "server/outreach/routes.ts",
+        "server/outreach-numbers.test.ts"
       ],
       "requires": [
         "§app.overseer/tools"
@@ -10630,7 +10707,20 @@
         "server/outreach/log.ts",
         "server/project-overseer.ts",
         "server/project-overseer-tools.ts",
-        "shared/outreach.ts"
+        "shared/outreach.ts",
+        "server/outreach/targets.ts",
+        "server/outreach/health.ts",
+        "server/org-engine.ts",
+        "server/org-host/index.ts",
+        "server/project-holds.ts",
+        "shared/pipeline.ts",
+        "src/lib/pipeline-view.ts",
+        "src/lib/pipeline-view.test.ts",
+        "server/outreach-numbers.test.ts",
+        "statecharts/src/sova/statecharts/engine/core.cljs",
+        "statecharts/src/sova/statecharts/engine/hold_policy.cljc",
+        "statecharts/src/sova/statecharts/placement.cljc",
+        "statecharts/src/sova/statecharts/engine/refit_test.cljs"
       ],
       "requires": [
         "§app.baton/links",
@@ -10686,7 +10776,10 @@
         "server/outreach/sender-test-fixtures.ts",
         "server/outreach-test-fixtures.ts",
         "server/outreach.integration.test.ts",
-        "server/app.ts"
+        "server/app.ts",
+        "shared/outreach.ts",
+        "server/outreach/targets.ts",
+        "server/outreach-link.test.ts"
       ],
       "requires": [
         "§mesh.peers/listener"
@@ -10701,7 +10794,11 @@
         "src/lib/outreach.ts",
         "src/components/SettingsDialog.tsx",
         "src/lib/settings-nav.ts",
-        "src/lib/settings-nav.test.ts"
+        "src/lib/settings-nav.test.ts",
+        "src/App.tsx",
+        "src/components/SenderLink.tsx",
+        "src/lib/outreach.test.ts",
+        "src/app.css"
       ],
       "requires": [
         "§app.settings-dialog/save-bar"
@@ -11144,7 +11241,8 @@
         "src/lib/project-page.ts",
         "src/lib/project-page.test.ts",
         "src/projects.css",
-        "src/lib/projects-route.ts"
+        "src/lib/projects-route.ts",
+        "src/components/ProjectOrgPart.tsx"
       ]
     },
     "§chat.playbooks/bundles": {
@@ -12171,7 +12269,8 @@
         "server/subagent-profiles.ts",
         "server/subagent-profiles.test.ts",
         "server/sync/docs.ts",
-        "shared/subagent-profiles.ts"
+        "shared/subagent-profiles.ts",
+        "pi-config/extensions/mode/align-settings.ts"
       ]
     },
     "§chat.subagent-profiles/limit-row": {
@@ -12226,7 +12325,7 @@
     "§chat.subagent-profiles/overseer": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "server/overseer-tools.ts",
         "server/overseer-runtime.test.ts",
@@ -12255,7 +12354,8 @@
         "server/delegate.ts",
         "server/spec-settings.ts",
         "server/team-defaults.ts",
-        "shared/team-defaults.ts"
+        "shared/team-defaults.ts",
+        "server/align-settings.ts"
       ]
     },
     "§chat.subagent-profiles/settings": {
@@ -12924,7 +13024,38 @@
         "src/components/SettingsDialog.tsx",
         "src/lib/experimental-draft.ts",
         "src/App.tsx",
-        "src/lib/align-review.ts"
+        "src/lib/align-review.ts",
+        "server/harness/state-kinds.ts",
+        "server/harness/state-kinds.test.ts",
+        "server/harness/pi/open.ts",
+        "server/align-launch.test.ts",
+        "server/tail-hello.integration.test.ts",
+        "src/components/ChatView.tsx",
+        "src/components/AlignDocCard.tsx",
+        "src/lib/align-review.test.ts",
+        "src/lib/alignment-draft.ts",
+        "src/components/AlignmentSettings.tsx",
+        "server/harness/pi/golden/session/S1-open-first-prompt.jsonl",
+        "server/harness/pi/golden/session/S12-link-delivery.jsonl",
+        "server/harness/pi/golden/session/S13-dialog-bridge.jsonl",
+        "server/harness/pi/golden/session/S14-model-thinking.jsonl",
+        "server/harness/pi/golden/session/S15-mode-command.jsonl",
+        "server/harness/pi/golden/session/S2-steer-mid-turn.jsonl",
+        "server/harness/pi/golden/session/S3-follow-up-queue.jsonl",
+        "server/harness/pi/golden/session/S4-abort.jsonl",
+        "server/harness/pi/golden/session/S5-rewind.jsonl",
+        "server/harness/pi/golden/session/S6-regenerate.jsonl",
+        "server/harness/pi/golden/session/S7-compact-manual.jsonl",
+        "server/harness/pi/golden/session/S8-compact-auto.jsonl",
+        "server/harness/pi/golden/session/S9-deferred-in-settle.jsonl",
+        "server/harness/pi/golden/state/G1-rewind-no-thinking.jsonl",
+        "server/harness/pi/golden/state/G1-rewind.jsonl",
+        "server/harness/pi/golden/state/G10-open-dispose.jsonl",
+        "server/harness/pi/golden/state/G2-sender-markers.jsonl",
+        "server/harness/pi/golden/state/G3-topic-delivered.jsonl",
+        "server/harness/pi/golden/state/G4-pristine-setup.jsonl",
+        "server/harness/pi/golden/state/G7-overseer-target.jsonl",
+        "server/harness/pi/golden/state/G9-dialog-answer.jsonl"
       ],
       "requires": [
         "§chat.alignment/tool"
@@ -13899,7 +14030,8 @@
         "scripts/mesh-lab/e2e/m7-grants.test.mjs",
         "server/mesh/lan-mesh.test.ts",
         "server/mesh/lan-mesh.integration.test.ts",
-        "server/overseer-link-tools.test.ts"
+        "server/overseer-link-tools.test.ts",
+        "server/sync/docs-grants.test.ts"
       ]
     },
     "§mesh.lan/as-a-peer": {
@@ -13926,7 +14058,8 @@
       "requires": [
         "§mesh.lan/pairing",
         "§mesh.lan/reverse-channel",
-        "§mesh.peers/listener"
+        "§mesh.peers/listener",
+        "§mesh.remote-sessions/proxy"
       ]
     },
     "§mesh.lan/dialer": {
@@ -16128,15 +16261,619 @@
         "site/README.md",
         "site/package.json"
       ]
+    },
+    "§app.installer/ref": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "scripts/install.sh",
+        "scripts/install.test.sh",
+        "scripts/install.integration.test.ts",
+        "site/src/data/site.ts"
+      ]
+    },
+    "§app.org-history/actors": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-overseer/autonomy-levels",
+        "§app.requirements/decisions"
+      ],
+      "code": [
+        "shared/org-history.ts",
+        "server/org-history/record.ts",
+        "server/org-history/history.test.ts",
+        "server/org-history/test-fixture.ts",
+        "server/org-history-capture.ts",
+        "server/record-decision-history.test.ts",
+        "server/decision-markers.test.ts",
+        "server/org-history-capture.test.ts",
+        "server/org-history-lineage.test.ts"
+      ]
+    },
+    "§app.org-history/capture": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/org-history-capture.ts",
+        "shared/org-history.ts",
+        "server/org-history/query.ts",
+        "server/org-history/history.test.ts",
+        "server/org-history/test-fixture.ts",
+        "server/org-history-capture.test.ts",
+        "server/org-history-effects.test.ts",
+        "server/orgs.ts",
+        "server/org-engine.ts",
+        "server/project-overseer.ts",
+        "shared/baton.ts",
+        "server/org-history-lineage.test.ts",
+        "server/org-history-preview.test.ts",
+        "server/baton.ts",
+        "server/overseer-org-part.ts",
+        "server/project-coding-runtime.test.ts"
+      ],
+      "requires": [
+        "§app.org-history/ledger",
+        "§app.project-overseer/statecharts"
+      ]
+    },
+    "§app.org-history/durability": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-overseer/statecharts",
+        "§app.requirements/decisions",
+        "§app.org-history/ledger"
+      ],
+      "code": [
+        "server/org-history/store.ts",
+        "server/org-history/service.ts",
+        "server/org-host/index.ts",
+        "server/org-host/store.ts",
+        "server/org-host/log.ts",
+        "server/org-host/journal.test.ts",
+        "server/org-history/history.test.ts",
+        "server/org-history/test-fixture.ts",
+        "statecharts/src/sova/statecharts/rules/baton.cljc",
+        "statecharts/src/sova/statecharts/baton.cljc",
+        "statecharts/test/sova/statecharts/refit/baton_test.cljc",
+        "server/decisions.ts",
+        "server/decision-markers.test.ts",
+        "server/vendor/statecharts.js",
+        "server/org-host/host.test.ts",
+        "server/org-host/privacy.test.ts",
+        "server/org-host/test-statechart.ts",
+        "server/org-history-capture.ts",
+        "server/org-history-outreach.test.ts",
+        "server/org-history-boot.test.ts",
+        "server/org-engine.ts",
+        "server/decision-markers-attach.test.ts"
+      ]
+    },
+    "§app.org-history/evidence": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.harness/reader",
+        "§app.harness/new-work"
+      ],
+      "code": [
+        "shared/org-history.ts",
+        "server/org-history/record.ts",
+        "server/org-history/history.test.ts",
+        "server/org-history/test-fixture.ts"
+      ]
+    },
+    "§app.org-history/ledger": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-overseer/statecharts",
+        "§app.organizations/workspace-repo"
+      ],
+      "code": [
+        "shared/org-history.ts",
+        "server/org-history/store.ts",
+        "server/org-history/record.ts",
+        "server/org-history/index.ts",
+        "server/org-history/history.test.ts",
+        "server/org-history/test-fixture.ts",
+        "server/org-history-capture.ts"
+      ]
+    },
+    "§app.org-history/links": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-overseer/statecharts"
+      ],
+      "code": [
+        "shared/org-history.ts",
+        "server/org-history/record.ts",
+        "server/org-history/query.ts",
+        "server/org-history/history.test.ts",
+        "server/org-history/test-fixture.ts",
+        "server/org-history-lineage.test.ts",
+        "server/org-history/index.ts",
+        "server/org-history/privacy.test.ts",
+        "server/org-history-annotations.test.ts",
+        "server/org-history-tools.ts",
+        "server/org-history-tools.test.ts"
+      ]
+    },
+    "§app.org-history/negatives": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.baton/hand-off",
+        "§app.project-overseer/tools",
+        "§app.requirements/decisions"
+      ],
+      "code": [
+        "server/baton-loadout.ts",
+        "server/org-history-tools.ts",
+        "server/project-overseer-tools.ts",
+        "shared/org-history.ts",
+        "server/org-history/record.ts",
+        "server/org-history/query.ts",
+        "server/org-history/history.test.ts",
+        "server/org-history/test-fixture.ts",
+        "server/org-history-tools.test.ts",
+        "shared/baton.ts",
+        "server/record-decision-history.test.ts"
+      ]
+    },
+    "§app.org-history/page": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.organizations/org-page",
+        "§app.organizations/project-page"
+      ],
+      "code": [
+        "src/components/OrgHistory.tsx",
+        "src/components/OrgHistoryInspector.tsx",
+        "src/components/OrgHistoryChain.tsx",
+        "src/lib/org-history-route.ts",
+        "src/lib/org-history-route.test.ts",
+        "src/lib/org-history-words.ts",
+        "src/lib/org-history-words.test.ts",
+        "src/lib/org-history-source.ts",
+        "src/lib/org-history-source.browser.test.ts",
+        "src/lib/org-history-chain.ts",
+        "src/lib/org-history-chain.test.ts",
+        "src/org-history.css",
+        "src/lib/orgs-route.ts",
+        "src/lib/orgs-route.test.ts",
+        "src/lib/org-tabs.ts",
+        "src/lib/org-tabs.test.ts",
+        "src/lib/org-page-route.ts",
+        "src/lib/api.ts",
+        "src/components/OrgsView.tsx",
+        "src/components/ProjectPage.tsx",
+        "src/components/ProjectOrgPart.tsx",
+        "src/lib/org-history-view.browser.test.ts",
+        "src/lib/org-history-chain-read.browser.test.ts",
+        "server/org-history/query.ts",
+        "src/lib/org-history-css.test.ts",
+        "src/orgs.css"
+      ]
+    },
+    "§app.org-history/portability": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.organizations/holder",
+        "§app.organizations/portability",
+        "§app.organizations/workspace-repo"
+      ],
+      "code": [
+        "shared/org-history.ts",
+        "server/org-history/portability.test.ts",
+        "server/org-history/history.test.ts",
+        "server/org-history/test-fixture.ts",
+        "server/org-history/attach.test.ts",
+        "server/org-history/bootstrap.ts",
+        "server/org-history/bootstrap.test.ts"
+      ]
+    },
+    "§app.org-history/rationale": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.organizations/workspace-repo"
+      ],
+      "code": [
+        "shared/org-history.ts",
+        "server/org-history-routes.ts",
+        "server/org-history/store.ts",
+        "server/org-history/index.ts",
+        "server/org-history/service.ts",
+        "server/org-history/history.test.ts",
+        "server/org-history/test-fixture.ts",
+        "server/org-history-routes.test.ts",
+        "server/org-history-annotations.ts",
+        "server/org-history-annotations.test.ts",
+        "server/org-history/query.ts"
+      ]
+    },
+    "§app.org-history/readers": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.organizations/about",
+        "§app.organizations/privacy",
+        "§app.project-overseer/tools",
+        "§app.overseer/org-reads",
+        "§app.overseer/org-projection",
+        "§mesh.remote-sessions/org-pages"
+      ],
+      "code": [
+        "server/org-history-routes.ts",
+        "server/org-history-tools.ts",
+        "server/project-overseer-tools.ts",
+        "server/overseer-tools.ts",
+        "server/org-history/query.ts",
+        "server/org-history/privacy.test.ts",
+        "server/org-history/history.test.ts",
+        "server/org-history/test-fixture.ts",
+        "server/org-host/privacy.test.ts",
+        "server/org-history-routes.test.ts",
+        "server/org-history-tools.test.ts",
+        "server/overseer-runtime.test.ts",
+        "server/org-history-surfaces.test.ts",
+        "server/org-history-annotations.test.ts"
+      ]
+    },
+    "§app.org-history/reads": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/org-history-routes.ts",
+        "server/org-history-tools.ts",
+        "server/org-history/index.ts",
+        "server/org-history/query.ts",
+        "server/org-history/service.ts",
+        "server/org-history/history.test.ts",
+        "server/org-history/test-fixture.ts",
+        "server/org-history-routes.test.ts",
+        "server/org-history-tools.test.ts",
+        "shared/org-history.ts",
+        "server/org-history/privacy.test.ts",
+        "server/org-history-lineage.test.ts"
+      ],
+      "requires": [
+        "§app.org-history/ledger",
+        "§app.org-history/readers"
+      ]
+    },
+    "§app.org-history/seams": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.harness/new-work",
+        "§app.projects/seam"
+      ],
+      "code": [
+        "shared/org-history.ts"
+      ]
+    },
+    "§app/org-history": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "shared/org-history.ts"
+      ]
+    },
+    "§site.landing/fold-device": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "site/src/components/screens/FoldDevice.astro",
+        "site/src/styles/mock.css",
+        "site/src/pages/index.astro"
+      ]
+    },
+    "§site/landing": {
+      "kind": "note",
+      "authority": "accepted",
+      "evidence": "reviewed"
+    },
+    "§app.settings-dialog/alignment": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/AlignmentSettings.tsx",
+        "src/lib/alignment-draft.ts",
+        "src/lib/alignment-draft.test.ts",
+        "src/components/SettingsDialog.tsx",
+        "src/lib/settings-nav.ts",
+        "src/lib/settings-nav.test.ts",
+        "src/lib/api.ts",
+        "src/App.tsx",
+        "server/align-settings.ts",
+        "server/app.ts",
+        "server/web-settings.ts",
+        "shared/protocol.ts"
+      ],
+      "requires": [
+        "§app/settings-dialog",
+        "§app.settings-dialog/save-bar",
+        "§chat.alignment/settings-file",
+        "§chat.alignment-review/flag",
+        "§design.copy-deck/settings-alignment"
+      ]
+    },
+    "§chat.alignment/settings-file": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/mode/align-settings.ts",
+        "pi-config/extensions/mode/align-settings.test.ts",
+        "server/align-settings.ts",
+        "server/app.ts",
+        "server/sync/docs.ts",
+        "shared/protocol.ts",
+        "pi-config/extensions/subagents/subagent-profiles.ts",
+        "pi-config/extensions/mode/README.md",
+        "pi-config/README.md",
+        "CLAUDE.md"
+      ],
+      "requires": [
+        "§chat.subagent-profiles/file"
+      ]
+    },
+    "§chat.alignment/style": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/mode/minor.ts",
+        "pi-config/extensions/mode/prompt.ts",
+        "pi-config/extensions/mode/state.ts",
+        "pi-config/extensions/mode/index.ts",
+        "pi-config/extensions/mode/align.ts",
+        "pi-config/extensions/mode/align-tool.ts",
+        "pi-config/extensions/mode/align-settings.test.ts",
+        "pi-config/extensions/mode/align.test.ts",
+        "pi-config/extensions/mode/tests/style-turn.mjs",
+        "pi-config/extensions/mode/README.md"
+      ],
+      "requires": [
+        "§chat.alignment/settings-file",
+        "§chat.mode-menu/minor-toggle-keeps-prompt",
+        "§chat.alignment/document"
+      ]
+    },
+    "§chat.alignment/visuals": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/mode/minor.ts",
+        "pi-config/extensions/mode/index.ts",
+        "pi-config/extensions/mode/align.ts",
+        "pi-config/extensions/mode/align-tool.ts",
+        "pi-config/extensions/mode/align-settings.test.ts",
+        "pi-config/extensions/mode/tests/style-turn.mjs",
+        "server/vis-check.ts",
+        "server/chat-manager.ts",
+        "server/harness/state-kinds.ts",
+        "server/harness/pi/open.ts",
+        "server/vis-tools-sync.test.ts",
+        "server/align-launch.test.ts",
+        "src/components/AlignDocCard.tsx",
+        "src/lib/align.ts",
+        "src/lib/align-card.test.ts"
+      ],
+      "requires": [
+        "§chat.alignment/settings-file",
+        "§chat.alignment/document",
+        "§chat.alignment/tool",
+        "§chat.alignment-review/flag",
+        "§chat.mode-menu/minor-toggle-keeps-prompt"
+      ]
+    },
+    "§design.copy-deck/settings-alignment": {
+      "kind": "note",
+      "authority": "accepted",
+      "about": [
+        "§app.settings-dialog/alignment"
+      ],
+      "evidence": "reviewed"
+    },
+    "§tools.spec/conflict-recovery": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/span-promotion"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+        "pi-config/extensions/spec/PROMOTE.md",
+        "pi-config/extensions/spec/DRAFTS.md",
+        "pi-config/extensions/spec/tests/draft.test.mjs"
+      ]
+    },
+    "§tools.spec/draft-output": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [],
+      "code": [
+        "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+        "pi-config/extensions/spec/DRAFTS.md",
+        "pi-config/extensions/spec/tests/draft.test.mjs"
+      ]
+    },
+    "§tools.spec/census-created": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/README.md",
+        "pi-config/extensions/spec/tests/census-base.test.mjs"
+      ]
+    },
+    "§tools.spec/write-guard": {
+      "kind": "behavior",
+      "requires": [
+        "§tools.spec/census-note",
+        "§tools.spec/promotion-integrity"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/mode/spec-guard.ts",
+        "pi-config/extensions/claude-code/spec-hooks.ts",
+        "pi-config/extensions/mode/spec-guard.test.ts",
+        "pi-config/extensions/claude-code/spec-hooks.test.ts",
+        "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+        "pi-config/extensions/spec/tests/draft.test.mjs"
+      ]
+    },
+    "§app.outreach/org-sender": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/outreach/targets.ts",
+        "server/outreach/routes.ts",
+        "server/outreach/core.ts",
+        "server/outreach/whatsapp.ts",
+        "server/org-engine.ts",
+        "shared/outreach.ts",
+        "src/components/OrgWhatsAppCard.tsx",
+        "src/components/OrgsView.tsx",
+        "src/lib/outreach.ts",
+        "server/outreach-numbers.test.ts"
+      ],
+      "requires": [
+        "§app.outreach/sender-list",
+        "§app.outreach/send"
+      ]
+    },
+    "§app.outreach/sender-controls": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/outreach/routes.ts",
+        "server/outreach/unit.ts",
+        "server/outreach/relay.ts",
+        "server/outreach/whatsapp.ts",
+        "server/mesh/access.ts",
+        "shared/outreach.ts",
+        "src/components/OutreachSettings.tsx",
+        "src/lib/outreach.ts",
+        "src/lib/outreach.test.ts",
+        "server/outreach-unit.test.ts",
+        "server/outreach.test.ts",
+        "server/outreach-test-fixtures.ts",
+        "server/outreach/sender-test-fixtures.ts"
+      ],
+      "requires": [
+        "§app.outreach/sender-route",
+        "§mesh.peers/grants"
+      ]
+    },
+    "§app.outreach/sender-health": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/outreach/health.ts",
+        "server/outreach/core.ts",
+        "server/outreach/targets.ts",
+        "server/outreach/whatsapp.ts",
+        "server/overseer.ts",
+        "shared/outreach.ts",
+        "shared/protocol.ts",
+        "server/outreach-health.test.ts",
+        "server/outreach.test.ts",
+        "server/outreach-numbers.test.ts"
+      ],
+      "requires": [
+        "§app.overseer/attention-digest"
+      ]
+    },
+    "§app.outreach/sender-link": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/outreach/link.ts",
+        "server/outreach/routes.ts",
+        "server/outreach/whatsapp.ts",
+        "shared/outreach.ts",
+        "src/components/SenderLink.tsx",
+        "src/lib/outreach.ts",
+        "src/lib/qr.ts",
+        "src/lib/outreach.test.ts",
+        "server/outreach-link.test.ts",
+        "services/whatsapp/src/core.mjs"
+      ],
+      "requires": [
+        "§app.outreach/sender"
+      ]
+    },
+    "§app.outreach/sender-list": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/outreach/senders.ts",
+        "server/outreach/targets.ts",
+        "server/outreach/settings.ts",
+        "server/outreach/routes.ts",
+        "server/outreach/whatsapp.ts",
+        "shared/outreach.ts",
+        "src/components/OutreachSettings.tsx",
+        "src/lib/outreach.ts",
+        "src/lib/outreach.test.ts",
+        "server/outreach-link.test.ts"
+      ],
+      "requires": [
+        "§app.outreach/sender-route"
+      ]
     }
   },
   "boundary": {
     "include": [
       "server",
       "shared",
+      "site",
       "src",
       "vite.config.ts"
     ],
-    "exclude": []
+    "exclude": [
+      {
+        "path": "site/pnpm-lock.yaml",
+        "reason": "generated by pnpm from site/package.json"
+      }
+    ]
   }
 }

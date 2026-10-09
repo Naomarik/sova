@@ -40,8 +40,8 @@ export const allProfiles = (l: ProfilesListing | undefined): ListedProfile[] => 
 /** What a pick sends for a listed profile. */
 export const pickRef = (p: Pick<ListedProfile, "source" | "id">) => ({ source: p.source, id: p.id });
 
-/** "reads and messages sessions · no edit files · One at a time": a profile's summary line (Settings → Profiles). */
-export function profileSummary(p: Pick<Profile, "remove" | "grant" | "singleton">): string {
+/** "reads and messages sessions · no edit files · One at a time · delegate · align, spec": a profile's summary line (Settings → Profiles). */
+export function profileSummary(p: Pick<Profile, "remove" | "grant" | "singleton" | "mode" | "minorModes">): string {
   const parts: string[] = [];
   const g = new Set(p.grant);
   if (g.has("sessions.message")) parts.push(g.has("sessions.all") ? "sees and messages all sessions" : "reads and messages sessions");
@@ -49,7 +49,13 @@ export function profileSummary(p: Pick<Profile, "remove" | "grant" | "singleton"
   const off = p.remove.filter((r) => r !== "workers" || p.remove.length === 1);
   if (off.length) parts.push(`no ${off.map((r) => CAPABILITY_LABEL[r].toLowerCase()).join(", ")}`);
   if (p.singleton) parts.push("One at a time");
+  parts.push(...modeParts(p));
   return parts.length ? parts.join(" · ") : "Nothing changed";
+}
+
+/** A profile's mode and minor modes as line parts, each only when it sets it: "delegate", "align, spec, vis" or "no minor modes". */
+function modeParts(p: Pick<Profile, "mode" | "minorModes">): string[] {
+  return [...(p.mode ? [p.mode] : []), ...(p.minorModes ? [p.minorModes.length ? p.minorModes.join(", ") : "no minor modes"] : [])];
 }
 
 /** One row of "What changes vs Default". */
@@ -108,15 +114,16 @@ export const cardCount = (g: ReturnType<typeof pickerProfiles>): number => g.bui
 export const cardMatches = (p: Pick<Profile, "label">, query: string): boolean => !query.trim() || p.label.toLowerCase().includes(query.trim().toLowerCase());
 
 /**
- * A card's one caption line: what it sets of "{model} · {effort} · subagents: {footprint}", or its
- * description when it sets none. `subagents`: this device's subagent profiles (the listing's), for
- * the footprint; "off" reads "off", and an id this device lacks reads as the id.
+ * A card's one caption line: what it sets of "{model} · {effort} · subagents: {footprint} · {mode} ·
+ * {minor modes}", or its description when it sets none. `subagents`: this device's subagent profiles
+ * (the listing's), for the footprint; "off" reads "off", and an id this device lacks reads as the id.
  */
-export function profileCaption(p: Pick<Profile, "model" | "thinking" | "subagents" | "description">, subagents: readonly { id: string; footprint: string }[] = []): string {
+export function profileCaption(p: Pick<Profile, "model" | "thinking" | "subagents" | "mode" | "minorModes" | "description">, subagents: readonly { id: string; footprint: string }[] = []): string {
   const parts: string[] = [];
   if (p.model) parts.push(modelLabel(p.model) ?? p.model);
   if (p.thinking) parts.push(p.thinking);
   if (p.subagents) parts.push(`subagents: ${p.subagents === "off" ? "off" : (subagents.find((s) => s.id === p.subagents)?.footprint || p.subagents)}`);
+  parts.push(...modeParts(p));
   return parts.length ? parts.join(" · ") : p.description;
 }
 

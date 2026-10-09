@@ -109,6 +109,19 @@ export const PROFILE = kind<ProfileEntryData>(PROFILE_ENTRY, "newest-on-branch",
     (`POST /api/sessions` with `link: true`): it fixes the session's link tools for its whole life. */
 export const LINK_MEMBER = kind<LinkMemberData>(LINK_MEMBER_ENTRY, "marker", (d) => (isRecord(d) && d.v === 1 ? { v: 1 } : null));
 
+/** What a chat's align mode started with (§chat.alignment-review/flag, §chat.alignment/visuals): adversarial
+    review and Visuals as saved at its first start, written with its first message. A marker: the first record
+    in the file holds for the chat's whole life, so every later start (a reopen, a server or CLI restart, a
+    rewind past it) gets the same flags. */
+export interface AlignLaunchData {
+  v: 1;
+  review: boolean;
+  visuals: boolean;
+}
+export const ALIGN_LAUNCH = kind<AlignLaunchData>("sova-align-launch", "marker", (d) =>
+  isRecord(d) && d.v === 1 && typeof d.review === "boolean" && typeof d.visuals === "boolean" ? { v: 1, review: d.review, visuals: d.visuals } : null,
+);
+
 /** The session's context files and skills left out (newest on the branch wins), `normalizeLoadout`. */
 // Called through, not referenced: session-loadout folds through this registry, so the two modules form a cycle.
 export const LOADOUT = kind<LoadoutEntryData>("sova-loadout", "newest-on-branch", (d) => normalizeLoadout(d));
@@ -243,7 +256,7 @@ export const ALIGN_DOC = kind<{ doc?: unknown }>("align-doc", "branch-list", (d)
 export const STATE_KINDS: ReadonlyMap<string, StateKind<unknown>> = new Map(
   [
     REWIND, TOPIC_DELIVERED, FANOUT_MEMBER, PROFILE, LOADOUT, SESSION_SENT, OVERSEER, OVERSEER_SENT, OVERSEER_DIALOG_ANSWER,
-    GRANT, RULE, REVOKE, GRANT_USE, PROJECT_OVERSEER, LINK_MEMBER,
+    GRANT, RULE, REVOKE, GRANT_USE, PROJECT_OVERSEER, LINK_MEMBER, ALIGN_LAUNCH,
     BATON, BATON_SENT, BATON_HANDOFF, BATON_OFFER, BATON_LEASE, BATON_DECISION, BATON_DONE, BATON_PROPOSAL, BATON_WRAPUP,
     MODE, SUBAGENT_PROFILE, FORK_CACHE, WORKER_SESSION, WORKER_REGISTRY, SANDBOX, WORKTREES, CLAUDE_LOGIN, ALIGN_DOC,
   ].map((k) => [k.type, k as StateKind<unknown>]),

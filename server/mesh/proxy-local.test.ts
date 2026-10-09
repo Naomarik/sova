@@ -41,3 +41,58 @@ test("a request relayed by proxyPeer is refused, even on a main listener", async
 test("a browser can't strip the relay's mark: sending its own header only refuses itself", async () => {
   assert.equal((await guarded.request(`${base}/api/local`, { headers: { "X-Sova-Relayed": "1" } })).status, 404);
 });
+
+// A tailnet peer's REST answers reach this host's browser origin hardened, as a pairing's do
+// (§mesh.remote-sessions/proxy): a peer can't run script, set a cookie, register a worker or redirect here.
+test("a tailnet peer's answers through /peer are hardened; JSON and raster images pass unchanged", async () => {
+  const origin = "http://127.0.0.1:47012";
+  const png = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+  wire.serve(origin, (req) => {
+    const path = new URL(req.url).pathname;
+    const evil = { "set-cookie": "sova=x; Path=/", "service-worker-allowed": "/", location: "https://evil.example/", "access-control-allow-origin": "*", "clear-site-data": "\"*\"" };
+    if (path === "/api/html") return new Response(new TextEncoder().encode("<script>alert(1)</script>"), { headers: { "content-type": "text/html", ...evil } });
+    if (path === "/api/svg") return new Response(new TextEncoder().encode("<svg/>"), { headers: { "content-type": "image/svg+xml" } });
+    if (path === "/api/redirect") return new Response(null, { status: 302, headers: { location: "https://evil.example/" } });
+    if (path === "/api/json") return Response.json({ ok: true }, { headers: { "cache-control": "no-store" } });
+    if (path === "/api/png") return new Response(png, { headers: { "content-type": "image/png", "content-length": String(png.length) } });
+    if (path === "/api/zip") return new Response(new Uint8Array([80, 75]), { headers: { "content-type": "application/zip", "content-disposition": 'attachment; filename="notes.zip"' } });
+    if (path === "/api/lock") return Response.json({ error: "locked" }, { status: 401 });
+    if (path === "/api/hidden") return Response.json({ error: "denied" }, { status: 403, headers: { "x-sova-mesh": "denied" } });
+    return Response.json({ error: "Not found" }, { status: 404 });
+  });
+  const b: PeerEntry = { id: "b", nodeId: "nB", label: "b", dnsName: "b.invalid", url: origin };
+  const relay = new Hono();
+  relay.get("/peer/b/*", (c) => proxyPeer(c, b, new URL(c.req.url).pathname.slice("/peer/b".length)));
+  const get = (path: string) => relay.request(`http://serving.host/peer/b${path}`);
+
+  for (const path of ["/api/html", "/api/svg"]) {
+    const res = await get(path);
+    assert.equal(res.status, 200, path);
+    assert.equal(res.headers.get("content-type"), "application/octet-stream", path);
+    assert.equal(res.headers.get("content-disposition"), "attachment", path);
+    assert.equal(res.headers.get("content-security-policy"), "sandbox; default-src 'none'", path);
+    assert.equal(res.headers.get("x-content-type-options"), "nosniff", path);
+    for (const h of ["set-cookie", "service-worker-allowed", "location", "access-control-allow-origin", "clear-site-data"]) assert.equal(res.headers.get(h), null, `${path} ${h}`);
+  }
+  const moved = await get("/api/redirect");
+  assert.equal(moved.headers.get("location"), null, "a redirect sends the browser nowhere");
+
+  const json = await get("/api/json");
+  assert.match(json.headers.get("content-type") ?? "", /^application\/json\b/);
+  assert.equal(json.headers.get("cache-control"), "no-store");
+  assert.deepEqual(await json.json(), { ok: true });
+
+  const image = await get("/api/png");
+  assert.equal(image.headers.get("content-type"), "image/png");
+  assert.equal(image.headers.get("content-disposition"), null);
+  assert.deepEqual(new Uint8Array(await image.arrayBuffer()), png);
+
+  const zip = await get("/api/zip");
+  assert.equal(zip.headers.get("content-type"), "application/octet-stream");
+  assert.equal(zip.headers.get("content-disposition"), 'attachment; filename="notes.zip"', "the peer's own file name is kept");
+
+  assert.equal((await get("/api/lock")).status, 502, "a peer's 401 is never this page's lock-out");
+  const hidden = await get("/api/hidden");
+  assert.equal(hidden.status, 403);
+  assert.equal(hidden.headers.get("x-sova-mesh"), "denied", "the hidden marker passes");
+});

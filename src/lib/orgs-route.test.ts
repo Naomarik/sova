@@ -19,7 +19,9 @@ test("a tab: sessions, people, projects, workspace; the bare org is Sessions by 
   assert.deepEqual(orgsRouteFromHash("#/orgs/org_ab12/people"), { kind: "org", id: "org_ab12", tab: "people" });
   assert.deepEqual(orgsRouteFromHash("#/orgs/org_ab12/projects"), { kind: "org", id: "org_ab12", tab: "projects" }, "no project id: the tab");
   assert.deepEqual(orgsRouteFromHash("#/orgs/org_ab12/workspace/"), { kind: "org", id: "org_ab12", tab: "workspace" });
-  for (const tab of ORG_TABS) assert.deepEqual(orgsRouteFromHash(orgTabHref("org_x", tab)), { kind: "org", id: "org_x", tab });
+  for (const tab of ORG_TABS)
+    assert.deepEqual(orgsRouteFromHash(orgTabHref("org_x", tab)), { kind: "org", id: "org_x", tab, ...(tab === "history" ? { history: { filters: { projects: [] } } } : {}) });
+  assert.deepEqual(ORG_TABS, ["sessions", "people", "projects", "history", "workspace"], "History after Projects, before Workspace");
 });
 
 test("a project inside an org is no route: projects live at #/projects/<id>", () => {

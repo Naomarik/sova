@@ -120,7 +120,6 @@ export function resyncKit(h: History, start: (s: Script) => ChildProcess) {
     };
   }
   function service(w: World, logDir: string, timeouts: Partial<{ vps: number; termux: number; wait: number; poll: number }> = {}) {
-    const byUrl = (url: string) => config.peers.find((p) => p.url === url)!.id;
     return new ResyncService({
       mesh: {
         enabled: () => true,
@@ -138,7 +137,7 @@ export function resyncKit(h: History, start: (s: Script) => ChildProcess) {
       build: () => w.build,
       buildChecked: async () => w.build,
       probe: async (p) => w.probes[p.id]!,
-      hello: async (url) => w.probes[byUrl(url)]!,
+      hello: async (p) => w.probes[p.id]!,
       protocol: () => PROTO,
       recipes: () => ({ recipes: w.recipes }),
       logDir: () => logDir,

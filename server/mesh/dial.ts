@@ -1,11 +1,12 @@
-// One way to dial a peer (§mesh.lan/as-a-peer): a tailnet peer by its URL, a dial-out pairing over
-// the channel this host asks it on (lan.ts). Every caller that talks to a peer server-side goes
-// through here (peerFetch, the hello probe, the session list, the /peer proxy), so a pairing is
+// One way to dial a peer (§mesh.lan/as-a-peer): a tailnet peer at its verified address
+// (§mesh/peers, peer-address.ts), a dial-out pairing over the channel this host asks it on (lan.ts).
+// Every caller that talks to a peer server-side goes through here (peerFetch, the hello probe, the session list, the /peer proxy), so a pairing is
 // reached exactly where a tailnet peer is, and a pairing with no live connection fails at once.
 
 import type { Agent } from "node:http";
 import { agentFetch } from "./lan-fetch";
 import type { ReverseClient } from "./lan-reverse";
+import { forgetPeerAddress, verifiedPeerBase } from "./peer-address";
 import { type PeerEntry, peerUrl } from "./peers";
 
 interface LanClients {
@@ -76,16 +77,28 @@ export function responseCap(path: string, env: NodeJS.ProcessEnv = process.env):
   return undefined;
 }
 
-/** fetch(<peer>/<path>, init). `path` starts with "/". A pairing's answers to probes and lists are
-    capped (responseCap): it may roam anywhere, and nothing else bounds a body it streams. */
-export function fetchPeer(peer: PeerEntry, path: string, init?: RequestInit): Promise<Response> {
-  if (!peer.lan) return urlFetch(`${peerUrl(peer)}${path}`, init);
+/** fetch(<peer>/<path>, init). `path` starts with "/". A tailnet peer is dialed at its verified
+    address (peer-address.ts). A pairing's answers to probes and lists are capped (responseCap): it
+    may roam anywhere, and nothing else bounds a body it streams. */
+export async function fetchPeer(peer: PeerEntry, path: string, init?: RequestInit): Promise<Response> {
+  if (!peer.lan) {
+    const base = await verifiedPeerBase(peer);
+    try {
+      return await urlFetch(`${base}${path}`, init);
+    } catch (err) {
+      if (!isAbort(err)) forgetPeerAddress(peer);
+      throw err;
+    }
+  }
   const agent = lanAgent(peer);
   const maxBytes = responseCap(path);
   return agent ? agentFetch(agent, path, init, maxBytes === undefined ? {} : { maxBytes }) : Promise.reject(new NotConnected());
 }
 
-/** A Request the proxy built for `peer`, sent the same way. */
+/** The caller gave up (an abort or a timeout): says nothing about the peer's address. */
+const isAbort = (err: unknown): boolean => (err as Error)?.name === "AbortError" || (err as Error)?.name === "TimeoutError";
+
+/** A Request the proxy built for `peer` (at its verified address, proxy.ts), sent the same way. */
 export function fetchPeerRequest(peer: PeerEntry, req: Request): Promise<Response> {
   if (!peer.lan) return wire ? wire.fetch(req) : fetch(req);
   const agent = lanAgent(peer);

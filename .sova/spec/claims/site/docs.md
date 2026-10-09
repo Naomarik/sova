@@ -36,7 +36,7 @@ Needs you and notifications, and the terminal viewer.
 
 ## §site.docs/align-review — Adversarial review (`/docs/modes/align/review/`)
 
-The experimental review of an alignment's plan and implementation: turning it on, the Reviewer
+The review of an alignment's plan and implementation: turning it on, the Reviewer
 route, when it runs, blockers, and what the card shows.
 
 ## §site.docs/spec-mode — Spec (`/docs/modes/spec/`)
@@ -99,5 +99,6 @@ running turn, and switching models mid-session.
 ## §site.docs/install — Install (`/docs/install/`)
 
 Installing Sova on a Mac or Linux machine with one command and its options, starting it and
-opening it unlocked, the access token, the login service, running the installer again, and the
-Claude Code models.
+opening it unlocked, the access token, the login service, running the installer again, removing
+it (the service, the extension links, the install and the launcher, and optionally pnpm's store
+and cache), and the Claude Code models.

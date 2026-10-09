@@ -35,6 +35,7 @@ import {
 	isMode,
 	loadState,
 	MODE_DESCRIPTIONS,
+	MODE_HEAD_TYPE,
 	MODE_NOTE_TYPE,
 	MODES,
 	normalizeActive,
@@ -1105,21 +1106,36 @@ test("restoreHead: the newest recorded head, the newest note, and nothing across
 	const note = (minorModes: MinorMode[], guides: MinorMode[]) => ({ type: "custom_message", customType: MODE_NOTE_TYPE, details: { v: 1, minorModes, guides } });
 	assert.deepEqual(restoreHead([]), { head: undefined, told: undefined, guides: [] }, "never sent: the head follows the active set");
 	assert.deepEqual(restoreHead([pin(["vis"])]), { head: undefined, told: undefined, guides: [] }, "a Sova pin carries no head");
-	assert.deepEqual(restoreHead([pin(["vis"], [])]), { head: [], told: [], guides: [] }, "recorded, not told yet");
+	assert.deepEqual(restoreHead([pin(["vis"], [])]), { head: [], told: [], guides: [], headStyle: "default" }, "recorded, not told yet");
 	assert.deepEqual(
 		restoreHead([pin(["vis"], []), note(["vis"], ["vis"]), pin([]), note([], [])]),
-		{ head: [], told: [], guides: ["vis"] },
+		{ head: [], told: [], guides: ["vis"], headStyle: "default" },
 		"an entry equal to its head carries none; the older one still names it, and every guide since counts",
 	);
-	assert.deepEqual(restoreHead([pin(["vis"], []), note(["vis"], ["vis"]), pin([])]), { head: [], told: ["vis"], guides: ["vis"] }, "a switch not told yet: told is the last note's");
+	assert.deepEqual(restoreHead([pin(["vis"], []), note(["vis"], ["vis"]), pin([])]), { head: [], told: ["vis"], guides: ["vis"], headStyle: "default" }, "a switch not told yet: told is the last note's");
 	assert.deepEqual(
 		restoreHead([pin(["vis"], []), note(["vis"], ["vis"]), { type: "compaction" }, pin(["spec", "vis"], ["vis"])]),
-		{ head: ["vis"], told: ["vis"], guides: [] },
+		{ head: ["vis"], told: ["vis"], guides: [], headStyle: "default" },
 		"notes before a compaction don't count",
 	);
 	assert.deepEqual(restoreHead([pin(["vis"], []), { type: "compaction" }]).head, undefined, "a compaction rebuilds the head from the active set");
 	assert.deepEqual(restoreHead([pin(["vis"], []), { type: "custom_message", customType: MODE_NOTE_TYPE, details: { v: 2 } }]).told, [], "an unknown note is skipped");
 	assert.doesNotThrow(() => restoreHead(null as never));
+});
+
+test("restoreHead: the head's writing style, from a style note, else its record, else Default once a run began", () => {
+	const user = { type: "message", message: { role: "user", content: "hi" } };
+	const reply = { type: "message", message: { role: "assistant", content: [] } };
+	const record = (style: unknown) => ({ type: "custom", customType: MODE_HEAD_TYPE, data: { v: 1, style } });
+	const styleNote = { type: "custom_message", customType: MODE_NOTE_TYPE, details: { v: 1, minorModes: ["align"], guides: [], style: "simplified", headStyle: "pm" } };
+	assert.equal(restoreHead([]).headStyle, undefined, "no run yet: the head follows the style now");
+	assert.equal(restoreHead([user, reply]).headStyle, "default", "a head no entry records was built in Default");
+	assert.equal(restoreHead([record("pm"), user, reply]).headStyle, "pm", "a recorded head");
+	assert.equal(restoreHead([record("bogus"), user]).headStyle, "default", "an unreadable record reads as none");
+	assert.deepEqual(restoreHead([record("pm"), user, styleNote]).style, { told: "simplified", head: "pm" });
+	assert.equal(restoreHead([record("pm"), user, styleNote]).headStyle, "pm");
+	assert.equal(restoreHead([record("pm"), user, { type: "compaction" }, reply]).headStyle, undefined, "a run that compacted goes on with the old prompt: no head since");
+	assert.equal(restoreHead([record("pm"), user, { type: "compaction" }, user]).headStyle, "default", "a record before the compaction doesn't count");
 });
 
 test("buildModeNote in the worker form: spec turned on carries the worker note, never a writer", () => {

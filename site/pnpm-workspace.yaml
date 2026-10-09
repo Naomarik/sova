@@ -5,3 +5,7 @@
 allowBuilds:
   esbuild: true
   sharp: true
+# sharp is astro's optional dependency, which its image service imports from the built pages:
+# hoisted to site/node_modules so that import resolves, without making it a site dependency.
+publicHoistPattern:
+  - sharp

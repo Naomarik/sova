@@ -252,11 +252,13 @@ broken block's source (§app.baton/outsider-view).
   answers in every session the mode reaches (`mcp__sova__vis_guide` on the claude-code provider).
   It enters and leaves the loadout where `vis_check` does (at a session's start, when a prompt starts
   a run, when a run settles), so turning vis on or off changes the tool set once, and it adds no line
-  to the system prompt. With vis off the tool is not in the model's loadout.
+  to the system prompt. With vis off the tool is not in the model's loadout, unless align is on in a
+  chat that started with Visuals (§chat.alignment/visuals), which wants the vis tools too.
 - **`vis_check`.** While vis is on, the model has a `vis_check` tool for draft `vis html` / `vis
   svg` bodies (title/caption lines included). It answers whether the block would draw (or its error
   and line), any warnings, and the document's size in characters against the budget (aim under
-  8K; over 16K doesn't draw). With vis off the tool is not in the model's loadout. The guide's
+  8K; over 16K doesn't draw). With vis off the tool is not in the model's loadout, with the same
+  exception as `vis_guide` (align on with Visuals); the retry after a reply stays with vis alone. The guide's
   html/svg file names it in one line.
 - **Streaming.** An open `vis` fence is never drawn half-way: it holds a 200px dashed box reading
   "Drawing <kind>… N lines", with a pulsing dot (static under reduced motion). The drawing replaces

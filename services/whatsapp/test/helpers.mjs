@@ -57,9 +57,14 @@ export function fakeDriver({ paired = true } = {}) {
       d.wiped++
       d.paired = false
     },
+    openFail: 0, // the next n opens throw, as a refused network connection
     async open({ link, handlers }) {
       d.opens++
       if (link) d.opensLink++
+      if (d.openFail > 0) {
+        d.openFail--
+        throw new Error('connect ECONNREFUSED')
+      }
       const h = {
         handlers,
         link,
@@ -119,8 +124,8 @@ export function rig({ paired = true, store = memoryStore(), config = baseConfig(
       driver.last.handlers.onOpen(me)
       await clock.tick(0)
     },
-    async close(code) {
-      driver.last.handlers.onClose(code, 'test')
+    async close(code, wire) {
+      driver.last.handlers.onClose(code, 'test', wire)
       await clock.tick(0)
     },
   }

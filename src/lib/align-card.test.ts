@@ -143,3 +143,39 @@ test("no disclosure draws a guide rule, and the alignment disclosures keep their
   assert.match(cardCss, /\.align-approach-summary \{[^}]*font-size: var\(--fs-heading-s\);[^}]*color: var\(--color-ink\);/, "the heading full-ink at heading size");
   assert.match(cardCss, /\.align-approach-label \{[^}]*font-weight: var\(--fw-semibold\);[^}]*color: var\(--color-ink\);/, "the heading semibold");
 });
+
+// ── Technical notes, the writing style and visuals (§chat.alignment/card, §chat.alignment/visuals) ──
+
+test("DOM: technical notes sit right under the approach, closed, in the approach's two columns; none without notes", () => {
+  const plain = draw(AlignDocCard, { doc: doc() });
+  assert.ok(!plain.includes("Technical notes"), "no section without notes");
+  const html = draw(AlignDocCard, { doc: doc({ technical: [{ id: "t1", text: "Lives in `server/export.ts`." }, { id: "t2", text: "Stream it." }], next: { f: 1, a: 2, x: 1, q: 3, t: 2 } }) });
+  const at = (needle: string) => html.indexOf(needle);
+  assert.ok(at("Technical notes") > at("align-approach"), "after the approach");
+  assert.ok(at("Technical notes") < at('<ol class="align-questions"'), "before the questions");
+  assert.match(html, /<details class="disclosure align-section align-technical">/, "closed: no open attribute");
+  assert.doesNotMatch(html, /<details class="disclosure align-section align-technical"[^>]*\bopen\b/);
+  const from = html.indexOf("align-technical");
+  const section = html.slice(from, html.indexOf("</details>", from));
+  assert.match(section, /Technical notes · <span class="text-num">2<\/span>/);
+  assert.match(section, /<ul class="align-list align-approach-list">/, "the approach's two-column list");
+  assert.match(section, /<span class="text-mono align-item-id">t1<\/span><span class="align-approach-text">Lives in <code>server\/export\.ts<\/code>\.<\/span>/);
+  assert.equal(html.match(/<details class="disclosure align-section">/g)?.length, 2, "findings and rejected still fold below the questions");
+});
+
+test("DOM: the meta line says a non-Default style; Default says nothing", () => {
+  assert.ok(!draw(AlignDocCard, { doc: doc() }).includes("style</span>"));
+  assert.match(draw(AlignDocCard, { doc: doc({ style: "pm" }) }), /<span class="align-doc-style"> · <!--\$-->Project manager style<!--\/-->|<span class="align-doc-style"> · Project manager style/);
+  assert.match(draw(AlignDocCard, { doc: doc({ style: "simplified" }) }), /Simplified style/);
+});
+
+test("DOM: a visual sits under the summary (the document's) or under the question's context, before its options", () => {
+  const visual = { kind: "wireframe", source: "screen: phone" };
+  const q = doc().questions[0]!;
+  const html = draw(AlignDocCard, { doc: doc({ visual, questions: [{ ...q, context: "Runs cost money.", visual }] }) });
+  const first = html.indexOf('class="align-visual"');
+  const second = html.indexOf('class="align-visual"', first + 1);
+  assert.ok(first > html.indexOf('class="align-doc-summary"') && first < html.indexOf("align-approach"), "the document's under its summary");
+  assert.ok(second > html.indexOf('class="align-q-context"') && second < html.indexOf('class="align-q-options"'), "the question's after its context, before its options");
+  assert.ok(!draw(AlignDocCard, { doc: doc() }).includes("align-visual"), "none without one");
+});

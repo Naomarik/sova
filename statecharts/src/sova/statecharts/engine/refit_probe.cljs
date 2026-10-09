@@ -117,7 +117,7 @@
    :item/reopen  {:needs "L1" :tool "sova_reopen" :correction true}
    :hold/cancel  {:needs "L0" :tool "sova_note" :correction true}
    :hold/approve {:needs "L0" :tool "sova_note" :correction true}
-   :message/send {:needs "L1" :tool "sova_send" :people-facing true
+   :message/send {:needs "L1" :tool "sova_send" :people-facing true :outage true
                   :hours (fn [d] (:window (dsl/evt d)))}})
 
 (def kid-statechart

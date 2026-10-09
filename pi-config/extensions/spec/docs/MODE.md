@@ -47,8 +47,11 @@ Paths are relative to `pi-config/extensions/` unless they start with `.sova/` or
 4. **Census while working.** After each tool call (bash included), `CensusHook` compares `git status`.
    - Tools that cannot write are skipped by name (`CENSUS_SKIP_TOOLS`). A skipped call doesn't move the
      baseline.
+   - Only changes made during the session's own calls count; changes between calls, a worker's commits
+     included, are silent. A failed or denied call closes its census call too.
+   - The census runs on the hook's own node, not the `node` on PATH.
    - The digest's "No draft yet" line prints once per session per work tree; a census that can't run is said
-     once per cause per work tree.
+     once per cause per work tree, naming its stderr error line, a timeout, or the exit code.
    - `PI_SPEC_CENSUS_HOOK=0` turns the census off.
 5. **Workers.** The subagents extension listens for the session's mode event. While spec is on, a
    code-writing worker gets these:
@@ -56,20 +59,25 @@ Paths are relative to `pi-config/extensions/` unless they start with `.sova/` or
      block, the generated brief;
    - its census: `spec-worker.ts` for a pi worker, or `spec-hooks.ts` through `--settings` for a Claude
      Code worker.
+   - a finished code-writing worker's completion ends with one line naming the § its own changes landed
+     in.
 6. **Merge.** A recorded worktree merge names the changed files no claim maps and any draft records
    left behind.
-   - Git merges `manifest.json` through the driver.
-   - If the driver refuses (both sides changed one record differently), the procedure in `../PROMOTE.md`
-     applies: take master's manifest and claims, re-apply in a new draft, promote.
+   - Git merges `manifest.json` and `claims/*.md` through the drivers.
+   - If a driver refuses, the procedure in `../PROMOTE.md` applies: take master's whole spec with
+     `git checkout --no-overlay`, then promote the branch's drafts again.
 
 ## The merge driver, once per clone
 
 ```sh
 git config merge.sova-spec-manifest.driver \
   'node pi-config/extensions/spec/core/sova-spec-draft.mjs merge-manifest --root . --base %O --ours %A --theirs %B --write'
+git config merge.sova-spec-claims.driver \
+  'node pi-config/extensions/spec/core/sova-spec-draft.mjs merge-claims --root . --base %O --ours %A --theirs %B --path %P --write'
 ```
 
-`.gitattributes` routes `.sova/spec/manifest.json` to `merge=sova-spec-manifest`. Worktrees share the clone's
+`.gitattributes` routes `.sova/spec/manifest.json` to `merge=sova-spec-manifest` and `.sova/spec/claims/**/*.md`
+to `merge=sova-spec-claims`. Worktrees share the clone's
 config. Without the driver, Git falls back to its line merge.
 
 ## Where the requirements live

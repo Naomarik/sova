@@ -254,7 +254,7 @@ Each entry gives:
 ### 2026-10-07
 
 - **Spec noise cut: no closing lines.**
-  - Branch: `feat/drop-closing-lines` (master commit filled in when it lands).
+  - Commit: efc64e64 (the promotion), branch `feat/drop-closing-lines`.
   - Changed:
     - replies carry no spec lines: the `Also changes:`, `Plumbing:`, `Deferred:` and `Spec check
       override:` lines, the turn-end check, its re-prompts and toasts, the worker ledger and the spec
@@ -267,14 +267,15 @@ Each entry gives:
     - `census.foreignNote` no longer says what a last line names; `promote`'s human output says
       "Foreign § this promotion changes: …" (the JSON keys are unchanged);
     - spec mode no longer relies on a merge round.
-  - §: +§tools.spec/no-turn-end-check; −§tools.spec/runtime-accounting; §tools/spec,
-    §tools.spec/census-note, §tools.spec/mode-reading and the merge-card and merge-round claims
-    reworded (computed list to follow at landing).
+  - §: +§tools.spec/no-turn-end-check; −§tools.spec/runtime-accounting; §tools/spec (child added),
+    §tools.spec/census-note, §tools.spec/mode-reading, §tools.spec/assessment-observations,
+    §chat.merge-round/driver, §chat.merge-round/round, §chat.worktrees/merge-card,
+    §chat.sandbox/claude-state, §chat.sandbox/limits reworded.
 
 ### 2026-10-08
 
 - **A foreign § is updated, never asked about.**
-  - Branch: `feat/spec-auto-foreign` (master commit filled in when it lands).
+  - Commit: 529ce1ce (the promotion), branch `feat/spec-auto-foreign`.
   - Changed:
     - the guide (`mode/spec-mode.md`) no longer asks "This also changes §X: <what>. OK?": a change
       that contradicts a foreign § or adds what a user sees there is written into the task's draft
@@ -289,7 +290,165 @@ Each entry gives:
     - a task's go-ahead is the new agreement for an `agreed` record it changes (`DRAFTS.md`), and
       `PROMOTE.md` asks for each `alsoChanges` § in the reply as "Also updates §X: <what>";
     - align's plan detection skips a trailing "Also updates" line as it does "Also changes:".
-  - §: §tools.spec/no-turn-end-check, §tools.spec/agreed-promotion, §chat.mode-menu/workers reworded.
+  - §: §tools.spec/no-turn-end-check, §tools.spec/agreed-promotion, §chat.mode-menu/workers,
+    §app.decisions/asks-user, §chat.worktrees/readiness reworded.
+
+### 2026-10-09
+
+- **Measurement: the agent-arm baseline on master (wave 0).**
+  - Commit: none; measured on master bd597e20 (scorecard data in the lane folder `baseline/`).
+  - Changed: nothing; this is the baseline the 2026-10-09/10 lanes are compared against.
+  - §: none.
+  - Numbers: pull arm, all 24 comparisons run twice, `zai/glm-5.3:medium`, prompt `neutral-1`, spec
+    pinned a95768b7, the tree's `spec-mode.md`: answered 97.5 / 99.5 of 138; bytes received median
+    94,441 / 100,328.5 B (p90 152,032 / 144,899 B); calls median 15 / 15; lost against packet, unshown:
+    1 (C01 need 2) in both runs; C23 0 in both runs. Packet (computed, not run): 93.5 / 138.
+
+### 2026-10-10
+
+These came out of a session audit (2026-10-09, three buckets of spec-on sessions) and a tool trial,
+split into lanes, each with a builder and a measurer. BEFORE is master bd597e20 unless said otherwise.
+The § lists of landed merges are computed by `foreign --base <master before the merge> --head
+<merge>`: the merges' first parents are lane branches that had taken master, so the first parent
+would list master's changes instead.
+
+- **Quiet hook notes: only the session's own calls count (lane A).**
+  - Commit: 1176737d (the promotion), branch `feat/spec-quiet-notes`.
+  - Changed:
+    - the census hooks (pi and Claude Code) count only changes made during the session's own calls;
+      a commit by another process or a worker between calls is silent, and a skipped call no longer
+      "reports every change since";
+    - the census runs on the hook's own node (`process.execPath`), not the `node` on PATH, so an
+      untrusted `mise.toml` no longer breaks it;
+    - the incomplete note names the census's stderr error line, "timed out", or the exit code;
+    - the write guard (direct writes to `claims/` or `manifest.json`) judges file state: a promote
+      through a wrapper script, `git merge` and `git checkout` of committed bytes are silent; `sed -i`
+      and an Edit of a current claim are still flagged. The promote receipt gains an optional
+      `promotions[].after` hash map; old receipts fall back to the old checks.
+  - §: +§tools.spec/write-guard; §tools.spec/census-note reworded; §tools/spec (child added).
+  - Numbers (fixture bench, pi | Claude Code): census notes on read-only calls after another
+    process commits 1 | 1 → 0 | 0; census failures with an untrusted mise and mise shims first on
+    PATH 20/20 | 20/20 → 0/20 | 0/20; direct-write notes for a scripted promote and for a merge
+    checkout 1 | 1 → 0 | 0 (guards hold). Audit re-score, zero-edit sessions with notes
+    (landing / post1007 / post1008): 6 / 5 / 7 → 1 / 0 / 1.
+
+- **Census: § created in the range are the task's own; the boundary takes in site/ (lane B1).**
+  - Merge: 8450314b, branch `feat/spec-census-fixes`.
+  - Changed:
+    - `census --changed --base` leaves § created in the range out of `census.foreign`, as `foreign
+      --base` does; a pre-existing § it touched, or one deleted and re-created, stays foreign;
+    - Sova's manifest boundary includes `site/` (excluding `site/pnpm-lock.yaml`);
+    - the census timeout was measured, not changed: the "no output" notes were the mise shim
+      (fixed in lane A), not timeouts.
+  - §: +§tools.spec/census-created; §tools/spec (child added).
+  - Numbers: own new claims in `census.foreign` after promote + commit 1 → 0 (this branch, `--base
+    bd597e20`: 14 → 13 foreign); changed site files treated as outside 3/3 → 0/3; census p95 at 10 /
+    50 / 200 changed files 92–100 → 97–103 ms, 0/120 runs over the 5,000 ms timeout, output
+    byte-identical.
+
+- **Honest, short tool output; one merge-conflict recovery (lane C).**
+  - Merge: c2211283, branch `feat/spec-tool-output`.
+  - Changed:
+    - `where --json` names hidden results (`notShown`, a `--token --all` hint, exit 1) and an absent
+      path (`file.state: "absent"`, a note, exit 1);
+    - `draft check` separates what the draft `introduced` from `preexisting` warnings (counted by
+      code); `new` lists files only with `--all` (`fileCount`); `promote` adds
+      `warningsIntroduced`;
+    - one recovery for a spec conflict a Git merge leaves: `git checkout --no-overlay master --
+      .sova/spec/manifest.json .sova/spec/claims`, never `--ours`, then promote the drafts again; the
+      `promote` refusal and `PROMOTE.md` say the same words.
+  - §: +§tools.spec/draft-output, +§tools.spec/conflict-recovery; §tools.spec/where-lookup,
+    §tools/spec reworded.
+  - Numbers: `where` results hidden with no signal 2 of 12 → 0; `draft check --json` on the real
+    spec with nothing new 43,627 → 1,270 B (text 11,862 → 395 B); `new` 14,295 → 730 B; `promote`
+    1,671 → 1,700 B; `check` exit after the documented recovery, branch with its own claims file 2 →
+    0.
+
+- **The site's docs boundary (site-docs).**
+  - Merge: 5ef88948, branch `feat/spec-site-docs`.
+  - Changed: the boundary covers the site's docs only, with 28 excludes, each with a reason; the
+    docs frame and chrome get claims.
+  - §: +§site.docs/frame, +§site.docs/chrome; §site/docs (child added), §site/landing reworded.
+  - Numbers: none measured.
+
+- **Claim files merge per declaration; manifest keys land in claim order (lane F).**
+  - Merge: 6f98ff2f (with lane G), branch `feat/spec-claims-merge`; its tool-fake fix f66f1b0e.
+  - Changed:
+    - new `merge-claims` merge driver for `claims/*.md`, reusing promotion's per-declaration merge;
+      the same declaration changed differently on both sides still conflicts, with both sides' prose;
+    - new manifest records are placed in claim order, so the manifest is the same whichever draft
+      lands first;
+    - the hook's conflict note takes the lane C recovery wording, and covers a claims-only conflict.
+  - §: +§tools.spec/git-merge; §tools.spec/conflict-recovery, §tools.spec/census-note reworded;
+    §tools/spec (child added). Computed together with lane G.
+  - Numbers (bench, both merge orders): conflicted claim files 1 / 1 → 0 / 0; merged claims equal
+    in-tree promotion no → yes (the hand path took 11 calls); manifest bytes AB vs BA differ →
+    identical.
+
+- **Failed calls close their census call; a worker names where it landed (lane G).**
+  - Merge: 6f98ff2f, branch `feat/spec-hook-failure`.
+  - Changed:
+    - Claude Code spec hooks register `PostToolUseFailure` (runs the post-call census) and
+      `PermissionDenied` (closes the call); pi closes a call blocked or aborted before running;
+    - a finished code-writing worker's completion ends with one line, "Spec: this worker's changes
+      landed in §a, §b (+N more)", from its own changes only, and none when it changed nothing.
+  - §: +§tools.spec/worker-landed; §tools.spec/census-note, §tools.spec/no-turn-end-check,
+    §tools/spec reworded.
+  - Numbers (fixture bench): Claude Code failed call then a foreign commit, 1 false note + 1 "No
+    draft yet" → 0; pi blocked call 1 → 0; landed line 0 → 1 per code-writing worker, 0 when nothing
+    changed (13/13 checks; 8 failed before). Exposure: 71 of 240 Claude Code sessions since 10-08
+    had a failed Bash call.
+
+- **The Agree step made real; agreed kept across a meaning change is noted (lane D).**
+  - Branch: `feat/spec-agree-step` (master commit filled in when it lands).
+  - Changed:
+    - new draft command `agree NAME --id §x… --by WHO --verification TEXT [--at ISO] [--write]`:
+      creates a missing record from the draft's prose heading, stamps `agreed {by, at}` and
+      `authority: accepted`, records doc-only evidence for records with no code, and promotes those
+      only when promote's plan is clean (else exit 1 `agree-not-promoted`, nothing written); records
+      that map code are stamped only; a second run is a no-op;
+    - with align and spec both on, the align call that sets status implementing carries the Agree
+      step instruction; `spec-mode.md` gains a one-line pointer to `agree`;
+    - `promote` notes `agreed-kept-on-change` (never a refusal) when an agreed record's prose changes
+      a number or backticked token while `agreed` stays the same.
+  - §: +§tools.spec/agree-command, +§tools.spec/align-agree; §tools.spec/agreed-promotion,
+    §tools.spec/mode-reading, §site.docs/spec-mode, §chat.alignment/tool reworded; §tools/spec
+    (child added).
+  - Numbers: agree path 6 → 3 steps (5 → 3 minimal); agreed-kept notes on a 60 → 64 change 0 → 1;
+    `agreed` records on master 0 (review 2026-10-24: none means cut `agreed`).
+
+- **Drafts left behind are reported, and only an approved list is pruned (lane E).**
+  - Branch: `feat/spec-draft-hygiene` (master commit filled in when it lands).
+  - Changed:
+    - new read-only `drafts [--days N] [--worktrees]`: each draft's age, one state (`landed`,
+      `promoted`, `superseded`, `empty`, `old`, `active`, `unreadable`), reasons, a suggested action
+      and a hash over `draft.json` and `spec/`; exit 1 when any draft is not `active`;
+    - new `prune --approved FILE [--write]`: deletes only the drafts the file names (`NAME [hash]`);
+      a missing name, a changed hash or a pending `.txn/` refuses the whole prune;
+    - a promotion preview or write carries `staleDrafts` when other drafts are past the age limit;
+      `DRAFTS.md` "Drafts left behind" and `PROMOTE.md` say what to do with it.
+  - §: +§tools.spec/draft-hygiene; §tools/spec reworded.
+  - Numbers: fixture checks 0/4 → 4/4; the main tree's 48 drafts in one read-only call (~21 s):
+    promoted 24, superseded 20, landed 2, old 1, unreadable 1 (before: none reported); every Sova
+    work tree (`--worktrees`, 255 drafts, 4 min 19 s): landed 18.
+
+- **Ranked finishing census and the unread line (lane B2).**
+  - Branch: `feat/spec-ranked-finish` (master commit filled in when it lands).
+  - Changed:
+    - `census --changed --related` ranks the foreign § a change touched by its changed lines (names,
+      string and number literals from `git diff -U0`, added and removed) and adds `census.rank`,
+      `census.readFirst` (≤ 5) and `census.named` (the rest, never dropped); a removed literal a §
+      still states is `stale` and ranks that § first;
+    - the census hook (pi and Claude Code) adds one line, "Unread § your change landed in: read
+      first …; named …", at the first call after the session's last edit, leaving out the § already
+      `read`, and says nothing again until an edit changes that set;
+    - `spec-mode.md`: the finishing census rule becomes "read each § marked read first; the rest are
+      named".
+  - §: +§tools.spec/census-rank, +§tools.spec/unread-landed; §tools.spec/census-note,
+    §tools.spec/mode-reading, §site.docs/spec-mode reworded; §tools/spec (two children added).
+  - Numbers: trial task (d), a rename: relevant § at ranks 1 and 3 of 25 (unranked before); the read
+    first set is 5 § / 28.8 KB, down from 25 § / 116.3 KB. Probe (g), 12 → 16 MB: the § rank 1 of 7,
+    flagged stale (before: listed 7th, not flagged). 0 touched § dropped in either.
 
 ## Integration → master
 
@@ -386,3 +545,22 @@ The tools are Node standard library only. Nothing is installed.
    path with this upgrade. Its shell line finds the tools at `<agent dir>/extensions/spec/core`.
 7. **No closing lines.** Replies no longer end with an `Also changes:` line and nothing checks one;
    `census.foreignNote` no longer mentions it. Drop the line from your own agent instructions.
+8. **The 2026-10-10 round.** Copy every `core/*.mjs` again (step 1), then:
+   - **The claims merge driver.** Add the `claims/**/*.md merge=sova-spec-claims` line to
+     `.gitattributes` and run its `git config` once per clone (step 2). A clone with only the manifest
+     driver still gets Git's line merge for claim files.
+   - **New and changed output.** `where --json` gives `notShown` and a `--token --all` hint when it
+     hides results, and `file.state: "absent"` for a path that isn't a file; both exit 1 (was 0).
+     `draft check` splits `introduced` from `preexisting`; `new` lists files only with `--all`.
+     `census --changed --base` leaves out § created in the range.
+   - **New commands** (once lanes D, E and B2 land): `drafts [--days N] [--worktrees]` and `prune
+     --approved FILE [--write]`; `agree NAME --id §x… --by WHO --verification TEXT [--write]`;
+     `census --changed --related` gives `census.rank`, `census.readFirst` and `census.named`.
+   - **Hooks.** The census hooks count only the session's own calls: changes made between calls,
+     a worker's included, are silent. They run the census on their own node, and a Claude Code
+     worker's settings register `PostToolUseFailure` and `PermissionDenied`. Once B2 lands, the
+     hook's unread line ("Unread § your change landed in: read first …") replaces the finishing
+     census run by hand; update your agent instructions to read the § marked read first.
+   - **Merge recovery.** A spec conflict a Git merge leaves is resolved one way only: `git checkout
+     --no-overlay <default branch> -- .sova/spec/manifest.json .sova/spec/claims`, never `--ours`,
+     then promote the branch's drafts again (`PROMOTE.md`).

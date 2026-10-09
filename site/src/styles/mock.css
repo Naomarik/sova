@@ -107,80 +107,121 @@
 .dev-label { font-family: var(--font-mono); font-size: 11px; letter-spacing: var(--ls-eyebrow); text-transform: uppercase; color: var(--color-ink-muted); }
 .dev-desk { width: min(920px, 100%); }
 
-/* ---- FOLDDEV. One foldable the visitor unfolds, FoldDevice.astro, no script. -----------------
-   A visually-hidden checkbox holds the state; the slab and the Unfold/Fold pill are both labels
-   for it, so a tap, a click or Space on the focused checkbox all toggle it. The open screen's
-   right half is a real 3D wing turning about the hinge (rotateY, transform-origin at the hinge);
-   its outer face carries the folded cover screen and lands exactly over the slab's content box
-   when closed (translateZ(-.4px) keeps it a hair in front of the half beneath, coplanar). Every
-   measure derives from --fd-w, the open slab's full width, capped by its column, so the widest
-   state never overflows, at any width. Reduced motion: no transition, the state swaps at once. */
+/* ---- FOLDDEV. One foldable the visitor opens like a book, FoldDevice.astro, no script. --------
+   A visually-hidden checkbox holds the state; the device and the Unfold/Fold pill are both labels
+   for it. One registered number, --fd-t, runs 0 (closed) to 1 (open) and everything follows it:
+   the leaf turns rotateY(0 to -180deg) about its left edge, the book slides half a panel right so
+   the device grows symmetrically about its centre, each face darkens as it turns from you (most
+   edge-on, mid-swing), the leaf shades the base near the hinge, and the shadow under the device
+   follows its footprint and lifts mid-swing. The easing is point-symmetric, so closing plays the
+   opening exactly in reverse. The two halves of the inner screen meet at the hinge with no line:
+   the hinge sides of both panels have no bezel, no outline and square corners. Every measure
+   derives from --fd-d, the open device's width, capped by the column and rounded so the halves
+   land on whole pixels. Reduced motion: no transition and no 3D, the state swaps at once. */
+
+@property --fd-t { syntax: "<number>"; inherits: true; initial-value: 0; }
 
 .folddev {
-  --fd-bz: 5px; /* the bezel: thin and even all round */
-  --fd-w: min(452px, 100cqi);
-  --fd-h: calc((var(--fd-w) - 2 * var(--fd-bz)) * .75); /* the open screen is landscape 4:3 */
   width: 100%; align-self: center;
-  /* The container, so --fd-w can cap the open slab's width by the column as a LENGTH (cqi), not
-     a %: a percentage would resolve against an indefinite height where --fd-w feeds heights. */
+  /* The container, so --fd-d can cap the open device's width by the column as a length (cqi). */
   container: folddev / inline-size;
 }
-.folddev-stage { display: flex; flex-direction: column; align-items: center; gap: var(--space-4); }
-/* The slab itself: flat, near-square corners with a very subtle radius. When closed, the wing
-   covers it whole, so its shell is the device's shell in both states. */
+.folddev-stage {
+  --fd-b: 6px; /* the bezel: thin and even all round */
+  --fd-d: round(down, min(620px, 100cqi), 4px);       /* the open device's width */
+  --fd-p: calc(var(--fd-d) / 2);                       /* one panel: the closed device's width */
+  --fd-w: calc(var(--fd-d) - 2 * var(--fd-b));         /* the inner screen, its capture's 816:616 */
+  --fd-h: round(calc(var(--fd-w) * 616 / 816), 1px);
+  --fd-a: calc(var(--fd-t) * 180deg);                  /* how far the leaf has turned */
+  --fd-t: 0;
+  display: flex; flex-direction: column; align-items: center; gap: var(--space-4);
+  transition: --fd-t .82s cubic-bezier(.45, .05, .55, .95);
+}
+.folddev-check:checked ~ .folddev-stage { --fd-t: 1; }
+/* The open device's footprint, reserved in both states so nothing around it moves. */
+.folddev-device {
+  display: block; position: relative;
+  width: var(--fd-d); height: calc(var(--fd-h) + 2 * var(--fd-b));
+  perspective: calc(var(--fd-p) * 4.6);
+  pointer-events: none; -webkit-tap-highlight-color: transparent;
+}
+/* The shadow on the table: under the base, plus the leaf's footprint once it passes upright. */
+.folddev-shadow {
+  position: absolute; top: 0; bottom: 0;
+  left: calc(var(--fd-p) / 2 * (1 + var(--fd-t)) - var(--fd-p) * max(0, -1 * cos(var(--fd-a))));
+  width: calc(var(--fd-p) * (1 + max(0, -1 * cos(var(--fd-a)))));
+  border-radius: var(--r-xl);
+  box-shadow: var(--shadow-3);
+}
+.folddev-shadow::after {
+  content: ""; position: absolute; inset: 0; border-radius: inherit;
+  box-shadow: 0 26px 56px -18px rgb(0 0 0 / .45);
+  opacity: sin(var(--fd-a));
+}
 .folddev-book {
-  display: block; position: relative; cursor: pointer; -webkit-tap-highlight-color: transparent;
-  width: calc(var(--fd-h) * .625 + 2 * var(--fd-bz)); /* folded: the cover screen is portrait 10:16 */
-  height: calc(var(--fd-h) + 2 * var(--fd-bz));
-  border-radius: calc(var(--fd-h) * .024);
-  background: #0d0d10;
-  box-shadow: var(--shadow-2), inset 0 0 0 var(--stroke-thin) var(--color-border-strong);
-  overflow: hidden;
-  perspective: 1600px;
-  transition: width .64s var(--ease-standard), box-shadow .64s var(--ease-standard);
-}
-/* The under-layer carries the whole open screenshot across the slab; closed, the wing covers
-   it, and inset at both sides it never pokes past the bezel. */
-.folddev-half {
-  display: block; position: absolute; top: var(--fd-bz); left: var(--fd-bz); right: var(--fd-bz);
-  height: var(--fd-h);
-  overflow: hidden; border-radius: calc(var(--fd-h) * .01);
-}
-.folddev-half picture, .folddev-in picture { display: block; width: calc(var(--fd-h) * 4 / 3); height: var(--fd-h); }
-.folddev-in picture { position: absolute; top: 0; right: 0; } /* the same capture, its right half */
-.folddev-half .screen-img, .folddev-in .screen-img { width: 100%; height: 100%; max-width: none; }
-/* The wing: the right half of the open screen inside, the cover screen outside. Folded out it is
-   rotateY(180): swung over the left half, outer face to you; its left edge sits on the closed
-   slab's right edge, so the turn ends exactly over the content box. */
-.folddev-wing {
-  display: block; position: absolute; top: var(--fd-bz);
-  left: calc(var(--fd-bz) + var(--fd-h) * .625);
-  width: calc(var(--fd-h) * .625); height: var(--fd-h);
-  transform: rotateY(180deg) translateZ(-.4px);
-  transform-origin: left center;
+  position: absolute; top: 0; bottom: 0; left: calc(var(--fd-p) / 2); width: var(--fd-p);
+  transform: translateX(calc(var(--fd-t) * var(--fd-p) / 2));
   transform-style: preserve-3d;
-  transition: transform .64s var(--ease-standard), left .64s var(--ease-standard), width .64s var(--ease-standard);
+  pointer-events: auto; cursor: pointer;
 }
-.folddev-face {
-  display: block; position: absolute; inset: 0; overflow: hidden;
-  border-radius: calc(var(--fd-h) * .01);
-  background: var(--color-bg);
-  backface-visibility: hidden;
+.folddev-base, .folddev-face {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: #0d0d10;
 }
-.folddev-out { transform: rotateY(180deg); }
-.folddev-out .screen-img { position: absolute; inset: 0; width: 100%; height: 100%; max-width: none; }
-/* The crease along the hinge, only once open. */
-.folddev-crease {
-  position: absolute; top: 0; bottom: 0; left: 0; width: 2px;
-  background: linear-gradient(90deg, rgb(0 0 0 / .3), transparent);
-  opacity: 0; transition: opacity .64s linear;
+/* The thin outline every phone mock has, on the outer sides only: none along the hinge. */
+.folddev-base::before, .folddev-face::before {
+  content: ""; position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  border: var(--stroke-thin) solid var(--color-border-strong); border-radius: inherit;
 }
-/* Open. */
-.folddev-check:checked ~ .folddev-stage .folddev-book { width: var(--fd-w); box-shadow: var(--shadow-3), inset 0 0 0 var(--stroke-thin) var(--color-border-strong); }
-.folddev-check:checked ~ .folddev-stage .folddev-wing { transform: rotateY(0deg); left: calc(var(--fd-bz) + var(--fd-h) / 1.5); width: calc(var(--fd-h) / 1.5); }
-.folddev-check:checked ~ .folddev-stage .folddev-crease { opacity: 1; }
-/* The affordance under the slab, its verb following the state. */
+.folddev-base::after, .folddev-face::after {
+  content: ""; position: absolute; inset: 0; z-index: 2; pointer-events: none; border-radius: inherit;
+}
+.folddev-base { justify-content: flex-start; border-radius: 0 var(--r-xl) var(--r-xl) 0; }
+.folddev-base::before { border-left: 0; }
+/* The leaf's shade on the base, near the hinge, while it is still over it. */
+.folddev-base::after {
+  background: linear-gradient(90deg, rgb(0 0 0 / .55), transparent 70%);
+  opacity: max(0, sin(var(--fd-a) * 2));
+}
+.folddev-leaf {
+  position: absolute; inset: 0;
+  transform-origin: left center;
+  transform: rotateY(calc(var(--fd-a) * -1));
+  transform-style: preserve-3d;
+}
+.folddev-face { -webkit-backface-visibility: hidden; backface-visibility: hidden; }
+.folddev-face::after { background: #000; }
+.folddev-cover { border-radius: var(--r-xl); }
+.folddev-cover::after { opacity: calc(.62 * (1 - cos(var(--fd-a)))); }
+.folddev-back { transform: rotateY(180deg); justify-content: flex-end; border-radius: var(--r-xl) 0 0 var(--r-xl); }
+.folddev-back::before { border-right: 0; }
+.folddev-back::after { opacity: calc(.62 * (1 + cos(var(--fd-a)))); }
+/* A face that can't be seen is hidden at rest, so assistive tech reads only the screen in view:
+   visibility stays visible for the whole turn either way, and flips at its far end. */
+.folddev-base, .folddev-back { visibility: hidden; transition: visibility .82s; }
+.folddev-check:checked ~ .folddev-stage :is(.folddev-base, .folddev-back) { visibility: visible; }
+.folddev-cover { transition: visibility .82s; }
+.folddev-check:checked ~ .folddev-stage .folddev-cover { visibility: hidden; }
+
+.folddev-screen { display: block; position: relative; overflow: hidden; height: var(--fd-h); }
+.folddev-screen picture { display: block; }
+.folddev-screen .screen-img { width: 100%; height: 100%; max-width: none; object-fit: cover; }
+/* The cover screen at its capture's 416:658, full height; the bezel absorbs the extra width. */
+.folddev-cover .folddev-screen { width: calc(var(--fd-h) * 416 / 658); border-radius: var(--r-sm); }
+.folddev-cover .folddev-screen picture { height: 100%; }
+/* The inner screen's halves: each the whole capture, clipped to its side of the hinge. */
+.folddev-left, .folddev-right { width: calc(var(--fd-w) / 2); }
+.folddev-left { border-radius: var(--r-sm) 0 0 var(--r-sm); }
+.folddev-right { border-radius: 0 var(--r-sm) var(--r-sm) 0; }
+.folddev-left picture, .folddev-right picture { position: absolute; top: 0; width: var(--fd-w); height: var(--fd-h); }
+.folddev-left picture { left: 0; }
+.folddev-right picture { right: 0; }
+
+/* The affordance under the device, its verb following the state; above the leaf, which
+   reaches past the device's box as it swings toward you. */
 .folddev-action {
+  position: relative; z-index: 1;
   display: inline-flex; align-items: center; gap: 8px;
   height: 30px; padding: 0 14px;
   border-radius: var(--r-full);
@@ -191,13 +232,16 @@
   transition: color .2s, border-color .2s;
 }
 .folddev-action:hover { color: var(--color-ink); border-color: var(--color-accent); }
-.folddev-verb::after { content: "Unfold"; }
-.folddev-check:checked ~ .folddev-stage .folddev-verb::after { content: "Fold"; }
-/* The hidden checkbox is the focusable control; focus shows on the slab and the pill. */
-.folddev-check:focus-visible ~ .folddev-stage :is(.folddev-book, .folddev-action) { outline: var(--focus-ring); outline-offset: 4px; border-radius: calc(var(--fd-h) * .024); }
-.folddev-check:focus-visible ~ .folddev-stage .folddev-action { border-radius: var(--r-full); }
+.folddev-v-fold, .folddev-check:checked ~ .folddev-stage .folddev-v-unfold { display: none; }
+.folddev-check:checked ~ .folddev-stage .folddev-v-fold { display: inline; }
+/* The hidden checkbox is the focusable control; focus shows round the device and on the pill. */
+.folddev-check:focus-visible ~ .folddev-stage :is(.folddev-shadow, .folddev-action) { outline: var(--focus-ring); outline-offset: 4px; }
 @media (prefers-reduced-motion: reduce) {
-  .folddev-book, .folddev-wing, .folddev-crease { transition: none; }
+  .folddev-stage, .folddev-base, .folddev-face { transition: none; }
+  .folddev-device { perspective: none; }
+  .folddev-leaf { transform: translateX(calc(var(--fd-t) * -100%)); }
+  .folddev-back { transform: none; }
+  .folddev-face { -webkit-backface-visibility: visible; backface-visibility: visible; }
 }
 
 /* ---- SCREENSHOTS (site/scripts/screens/). A capture fills its frame's screen area at its own

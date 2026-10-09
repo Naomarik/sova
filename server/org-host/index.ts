@@ -10,6 +10,7 @@
 // snapshots (`sova/pending`), so at open every un-answered effect is run again with its key (every
 // effect handler is idempotent by key). One timer follows the engine's `nextDueAt`.
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { join } from "node:path";
 import {
   statechartInfo as statechartInfoOf,
   statechartVersions,
@@ -27,8 +28,12 @@ import {
   type Step,
   type StepResult,
 } from "../statecharts";
-import { DEFAULT_REDACT, lastAt, readRows, rowOfStep, scrub, segmentFile, type LogProblem, type LogRow, type RedactRule, type RowFilter } from "./log";
-import { commitJournal, hostPaths, journalId, replayJournals, scanSnapshots, snapshotFile, type HostPaths, type Journal, type JournalProblem } from "./store";
+import { SAFETY_ACTS, type ActorBundle, type ActorRef, type EventId, type HistoryInput } from "../../shared/org-history";
+import { OrgHistory } from "../org-history/service";
+import type { Prepared } from "../org-history/record";
+import { noteProblem } from "../org-history/store";
+import { DEFAULT_REDACT, lastAt, readRows, rowOfStep, scrub, segmentFile, type LogProblem, type LogRow, type RedactRule, type RowFilter, type TornTail } from "./log";
+import { applyJournal, commitJournal, hostPaths, journalId, JournalWriteError, missingOf, replayJournals, scanSnapshots, snapshotFile, writeAtomic, type HostPaths, type Journal, type JournalProblem } from "./store";
 
 export type Envelope = Record<string, unknown>;
 
@@ -103,14 +108,79 @@ export interface HostChange {
   steps: Step[];
 }
 
+/** What a caller knows about its act that the step can't: handed to
+    the history composer with the act's own step, never with a timer's that fired first. */
+export interface Provenance extends Pick<HistoryInput, "triggeredBy" | "parentKeys" | "relations" | "relationKeys" | "rationale" | "evidence"> {
+  actors?: Partial<ActorBundle>;
+  sourceKey?: string;
+}
+
+/** What kind of engine call a step came from. */
+export type StepCall = "act" | "start" | "set-state" | "timers" | "resume" | "effect" | "invocation" | "rewindow" | "adopt" | "reload" | "log" | "record";
+
+export interface ComposeContext {
+  orgId: string;
+  /** The recorded time of this commit. */
+  at: number;
+  journalId: string;
+  call: StepCall;
+  /** The call's own act (an act's step is found by session and event, never by position: due timers fire first). */
+  act?: { sessionId: string; event: string };
+  provenance?: Provenance;
+  invocations: InvocationRecord[];
+  outbox: Effect[];
+  /** logAct's row, scrubbed (no step wrote it). */
+  plain?: Record<string, Json>;
+  /** An attribution the composer couldn't make cleanly: shown as a workspace problem, the step goes on. */
+  onProblem(why: string): void;
+}
+
+/** Turns a call's steps into history inputs, inside the step's commit. Pure and synchronous; a throw is a
+    history save failure (the act is refused, nothing changes). */
+export type HistoryComposer = (steps: Step[], ctx: ComposeContext) => HistoryInput[];
+
+/** A step saved in its journal but not applied to the files: not refused, it takes effect when the
+    workspace reloads (or the host opens again). Nothing of it has started. */
+export class PendingApplyError extends Error {
+  readonly status = 409;
+  readonly code = "pending-apply";
+  constructor(readonly file: string) {
+    super("Saved, but not applied yet: it takes effect when the workspace reloads.");
+    this.name = "PendingApplyError";
+  }
+  get refusal(): Refusal {
+    return { sentence: this.message, stage: "pending-apply", status: 409, code: "pending-apply" };
+  }
+}
+
+/** History can't be saved: the act is refused whole. */
+export class HistorySaveError extends Error {
+  readonly status = 503;
+  readonly code = "history";
+  constructor(readonly why: string) {
+    super(`History can't be saved right now: ${why}. Nothing was done.`);
+    this.name = "HistorySaveError";
+  }
+  get refusal(): Refusal {
+    return { sentence: this.message, stage: "history", status: 503, code: "history" };
+  }
+}
+
+interface CallInfo {
+  call: StepCall;
+  act?: { sessionId: string; event: string };
+  provenance?: Provenance;
+}
+
 export interface HostProblem {
-  kind: "snapshot" | "journal" | "log" | "resume" | "timer";
+  kind: "snapshot" | "journal" | "log" | "resume" | "timer" | "history";
   file: string;
   why: string;
   sessionId?: string;
 }
 
-export type Stamp = (sid: string, event: string, payload: Record<string, unknown>, who?: StampContext) => Envelope;
+/** `host`: the host stamping (set before open resolves, so a stamp during boot can read it). */
+export type Stamp = (sid: string, event: string, payload: Record<string, unknown>, who?: StampContext, host?: OrgHost) => Envelope;
 
 export interface OrgHostOptions {
   orgId: string;
@@ -126,8 +196,10 @@ export interface OrgHostOptions {
   chunk?: number;
   /** Tests: more statecharts (JS trees), passed to the engine. */
   statecharts?: EngineOptions["statecharts"];
-  /** Tests (kill-9 fuzz): called between the journal write and applying it, and after applying it. */
-  commitHooks?: { afterJournal?: () => void; afterApply?: () => void };
+  /** Tests (kill-9 fuzz, save failures): called before the journal write, between it and applying it, and after applying it. */
+  /** The history composer, from the first step of the open on (boot's resume and due timers included). */
+  historyComposer?: HistoryComposer;
+  commitHooks?: { beforeJournal?: () => void; afterJournal?: () => void; afterApply?: () => void; retryApply?: () => void };
 }
 
 /** A session file the host can't read: every event to it is refused with this sentence (409). */
@@ -214,6 +286,16 @@ export class OrgHost {
   private lastRowAt = 0;
   private readonly peeks = new Map<string, { mtime: number; peek: SnapshotPeek }>();
   private closed = false;
+  /** The org's history: its events go in each step's own journal. */
+  readonly history: OrgHistory;
+  private composer: HistoryComposer | null = null;
+  /** History can't be saved: every act but a safety act is refused until a probe or Reload finds it can. */
+  private saveProblem: { why: string; since: number } | null = null;
+  /** Torn last lines kept as they were, and attributions the composer flagged. */
+  private readonly historyProblems: HostProblem[] = [];
+  /** Effect and run answers waiting for history to be saveable again, oldest first. */
+  private readonly waiting: (() => void)[] = [];
+  private retryTimer: ReturnType<typeof setTimeout> | null = null;
 
   readonly effects = {
     /** Every effect of `kind` still pending (e.g. from before a crash) runs as its handler registers. */
@@ -269,18 +351,72 @@ export class OrgHost {
     this.engine = createStatecharts({
       statecharts: opts.statecharts,
       loadCold: (sid) => this.loadCold(sid),
-      stamp: (sid, event, payload, ctx) => (opts.stamp ? (opts.stamp(sid, event, payload, ctx) as JsonObject) : {}),
+      stamp: (sid, event, payload, ctx) => (opts.stamp ? (opts.stamp(sid, event, payload, ctx, this) as JsonObject) : {}),
     });
     for (const c of statechartVersions()) this.storage.set(c.name, c.storage ?? "portable");
     for (const [name, c] of Object.entries(opts.statecharts ?? {})) this.storage.set(name, ((c as { storage?: string }).storage as "host-local") ?? "portable");
+    this.history = new OrgHistory(opts.orgId, opts.workspaceDir, opts.stateDir, this.clock);
+    this.composer = opts.historyComposer ?? null;
+  }
+
+  /** The capture adapters' composer (server/org-history-capture.ts), called inside every commit. */
+  setHistoryComposer(fn: HistoryComposer | null): void {
+    this.composer = fn;
+  }
+
+  /** A torn last line found before an append: cut on a replay (the journal holds it whole), else kept
+      and shown as a workspace problem. */
+  private readonly onTorn = (t: TornTail): void => {
+    if (t.cut) return;
+    this.historyProblems.push({ kind: "log", file: t.file, why: `its last line was cut short (${t.fragment.length} characters); it is kept as it is and the next line starts after it` });
+    noteProblem(this.history.paths, { at: this.clock(), kind: "torn-tail", file: t.file, fragment: t.fragment });
+  };
+
+  private isSafety(call: CallInfo | undefined): boolean {
+    const act = call?.act;
+    if (!act || (call.call !== "act" && call.call !== "set-state")) return false;
+    const statechart = this.statechartOfSid(act.sessionId);
+    return SAFETY_ACTS.some((s) => s.event === act.event && (s.statechart === "*" || s.statechart === statechart));
+  }
+
+  /** Whether history can be saved again: the history and host-local dirs take a durable write. */
+  private probeSaving(): boolean {
+    const prev = this.saveProblem;
+    if (!prev) return true;
+    try {
+      if (!this.history.isOpen) this.history.open();
+      for (const dir of [this.history.paths.events, this.history.paths.local]) {
+        const f = join(dir, `.probe.${process.pid}.tmp`);
+        writeAtomic(f, "probe", this.durable);
+        rmSync(f, { force: true });
+      }
+      this.saveProblem = null;
+      // answers that waited go in at once now
+      if (this.waiting.length) {
+        if (this.retryTimer) clearTimeout(this.retryTimer);
+        this.retryTimer = null;
+        this.retryWaiting();
+      }
+      return true;
+    } catch (err) {
+      this.saveProblem = { since: prev.since, why: message(err) };
+      return false;
+    }
   }
 
   // ---- open ------------------------------------------------------------------------------------
 
   private async boot(chunk: number): Promise<void> {
     mkdirSync(this.paths.journal, { recursive: true });
-    const { problem } = replayJournals(this.paths.journal, this.durable);
+    const { problem } = replayJournals(this.paths.journal, this.durable, this.onTorn);
     this.journalProblem = problem;
+    // the history's index is loaded (or rebuilt) before any step, so a source key is never taken for new
+    // while the index is unknown; one that can't open refuses acts like a save failure
+    try {
+      this.history.open();
+    } catch (err) {
+      this.saveProblem = { why: `its index can't be read (${message(err)})`, since: this.clock() };
+    }
     this.lastRowAt = lastAt([this.paths.portableLog, this.paths.localLog]);
     const sids: string[] = [];
     let loaded = 0;
@@ -303,7 +439,7 @@ export class OrgHost {
       // time, and a session whose resume still throws is a problem (it stays readable).
       const resume = (part: string[]): void => {
         const r = this.engine.resume(part, { now: this.clock() });
-        this.commit(r);
+        this.commitOrFail(r, { call: "resume" });
         started.push(...r.invocations);
       };
       for (let i = 0; i < sids.length; i += chunk) {
@@ -322,7 +458,7 @@ export class OrgHost {
       }
       for (const r of this.fireTimers((f) => {
         const r = f();
-        this.commit(r);
+        this.commitOrFail(r, { call: "timers" });
         return r;
       }))
         started.push(...r.invocations);
@@ -368,7 +504,7 @@ export class OrgHost {
     }
     for (const sid of sids) this.index.set(sid, found.get(sid)!);
     this.lastRowAt = Math.max(this.lastRowAt, lastAt([this.paths.portableLog, this.paths.localLog]));
-    this.step(() => this.engine.resume(sids, { now: this.clock() }));
+    this.step(() => this.engine.resume(sids, { now: this.clock() }), undefined, { call: "adopt" });
     for (const sid of sids) {
       const pending = (this.engine.data(sid)?.["sova/pending"] ?? {}) as Record<string, JsonObject>;
       for (const [key, e] of Object.entries(pending)) this.runEffect({ ...(e as Record<string, unknown>), key, sessionId: sid } as Effect);
@@ -432,12 +568,14 @@ export class OrgHost {
     return segmentFile(this.isLocal(statechart) ? this.paths.localLog : this.paths.portableLog, at);
   }
 
-  /** Journal and apply one call's snapshots and log rows (synchronous). */
-  private commit(r: StepResult, extra?: { startEnvelope?: Envelope }): void {
+  /** Journal and apply one call's snapshots, log rows and history (synchronous): all of it, or a throw.
+      `call` says what the call was; while history can't be saved only a safety act gets here, and it
+      commits without history, covered by a capture gap. */
+  private commit(r: StepResult, extra?: { startEnvelope?: Envelope }, call: CallInfo = { call: "act" }): void {
     const id = journalId(this.clock());
     const rows = r.steps
       .filter((s) => s.saved || s.refused || s.held)
-      .map((s) => {
+      .map((s, i) => {
         const row = rowOfStep(this.orgId, s, this.rulesOf(s.statechart));
         if (s.event === "sova/started" && extra?.startEnvelope) {
           row.start = row.envelope;
@@ -446,25 +584,136 @@ export class OrgHost {
         row.at = this.uniqueAt(s.at);
         if (row.at !== s.at) row.t = s.at;
         row.j = id;
+        row.k = `${id}:${i}`;
         return { file: this.logFileFor(s.statechart, row.at), row };
       });
     const snapshots = Object.entries(r.snapshots).map(([sessionId, text]) => {
       const statechart = this.statechartOfSid(sessionId);
       const file = snapshotFile(this.isLocal(statechart) ? this.paths.local : this.paths.portable, statechart, sessionId);
-      this.index.set(sessionId, { file, statechart });
-      return { sessionId, file, text };
+      return { sessionId, file, text, statechart };
     });
-    if (!rows.length && !snapshots.length) return;
-    const j: Journal = { id, at: this.clock(), snapshots, rows };
-    commitJournal(this.paths.journal, j, this.durable, this.opts.commitHooks);
+    const prepared = this.saveProblem ? null : this.prepareHistory(id, r.steps, call, { invocations: r.invocations, outbox: r.outbox as Effect[] });
+    if (!rows.length && !snapshots.length && !prepared?.history.lines.length) return;
+    const j: Journal = { id, at: this.clock(), snapshots: snapshots.map(({ sessionId, file, text }) => ({ sessionId, file, text })), rows, ...(prepared?.history.lines.length ? { history: prepared.history } : {}) };
+    this.commitDurably(j);
+    for (const s of snapshots) this.index.set(s.sessionId, { file: s.file, statechart: s.statechart });
+    if (prepared) this.historyCommitted(prepared);
+    else if (this.saveProblem && this.isSafety(call)) this.history.extendGap(this.saveProblem.since, this.clock());
+  }
+
+  /** The history of a commit: the composer's inputs (and an open capture gap's event first), prepared. */
+  private prepareHistory(txn: string, steps: Step[], call: CallInfo, more: { invocations?: InvocationRecord[]; outbox?: Effect[]; plain?: Record<string, Json>; inputs?: HistoryInput[] } = {}): Prepared {
+    const at = this.clock();
+    const inputs: HistoryInput[] = [];
+    const gap = this.history.openGap();
+    if (gap) inputs.push(this.history.gapInput(gap, at));
+    if (this.composer && (steps.length || more.plain))
+      inputs.push(
+        ...this.composer(steps, {
+          orgId: this.orgId,
+          at,
+          journalId: txn,
+          call: call.call,
+          ...(call.act ? { act: call.act } : {}),
+          ...(call.provenance ? { provenance: call.provenance } : {}),
+          invocations: more.invocations ?? [],
+          outbox: more.outbox ?? [],
+          ...(more.plain ? { plain: more.plain } : {}),
+          onProblem: (why) => {
+            this.historyProblems.push({ kind: "history", file: this.history.paths.events, why });
+            noteProblem(this.history.paths, { at, kind: "attribution", why });
+          },
+        }),
+      );
+    if (more.inputs) inputs.push(...more.inputs);
+    return this.history.prepare(inputs, at, txn);
+  }
+
+  private historyCommitted(p: Prepared): void {
+    if (p.events.some((e) => e.kind === "history.gap")) this.history.closeGap();
+    try {
+      this.history.afterCommit(p);
+    } catch (err) {
+      // the index is rebuildable: the next read refreshes it from the event files
+      console.warn(`[org-host] ${this.orgId}: history index: ${message(err)}`);
+    }
+  }
+
+  /** A commit that threw. Before its journal was written nothing is on disk: the sessions it touched are
+      loaded again from their files, and acts are refused until history can be saved. After: the journal
+      holds the whole step, so it stands, and the host waits for Reload to replay it. */
+  private failed(r: StepResult | null, err: unknown): never {
+    // saved in its journal: memory already matches what the journal will make of the disk
+    if (err instanceof PendingApplyError) throw err;
+    if (r) this.restore(r);
+    const why = err instanceof JournalWriteError ? err.message : message(err);
+    this.saveProblem = { why: why.length > 200 ? `${why.slice(0, 199)}…` : why, since: this.saveProblem?.since ?? this.clock() };
+    console.warn(`[org-host] ${this.orgId}: history can't be saved: ${why}`);
+    throw new HistorySaveError(this.saveProblem.why);
+  }
+
+  /** Commit a journal; when applying it fails after it was written, apply it once more here (replay:
+      each row and event once, then checked). Still failing: the host waits for Reload, and the act's
+      answer says it was saved, not refused. */
+  private commitDurably(j: Journal): void {
+    try {
+      commitJournal(this.paths.journal, j, this.durable, this.opts.commitHooks, this.onTorn);
+      return;
+    } catch (err) {
+      if (!(err instanceof JournalWriteError) || err.phase !== "apply") throw err;
+      try {
+        this.opts.commitHooks?.retryApply?.();
+        applyJournal(j, this.durable, true, this.onTorn);
+        const missing = missingOf(j);
+        if (missing.length) throw new Error(`still missing ${missing[0]}`);
+        rmSync(err.file, { force: true });
+      } catch (again) {
+        this.journalProblem = { file: err.file, why: `it was saved but not applied (${message(again)}); Reload applies it` };
+        console.warn(`[org-host] ${this.orgId}: journal ${err.file} saved but not applied: ${message(again)}`);
+        throw new PendingApplyError(err.file);
+      }
+    }
+  }
+
+  /** Memory back to disk for the sessions a failed step touched: reloaded from their snapshot files, or
+      unloaded when the step made them (they have no file). */
+  private restore(r: StepResult): void {
+    for (const sid of Object.keys(r.snapshots)) {
+      const known = this.index.get(sid);
+      try {
+        this.engine.unload(sid);
+      } catch {
+        // not loaded
+      }
+      if (known && existsSync(known.file))
+        try {
+          this.engine.load(sid, readFileSync(known.file, "utf8"));
+        } catch (err) {
+          this.broken.set(sid, { kind: "snapshot", file: known.file, why: message(err), sessionId: sid });
+        }
+    }
+    this.arm();
+  }
+
+  private commitOrFail(r: StepResult, call: CallInfo): void {
+    try {
+      this.commit(r, undefined, call);
+    } catch (err) {
+      this.failed(r, err);
+    }
   }
 
   /** A synchronous engine call, committed, then its effects, invocations, listeners and timer. */
-  private step<R extends StepResult>(f: () => R, extra?: { startEnvelope?: Envelope }): R {
+  private step<R extends StepResult>(f: () => R, extra?: { startEnvelope?: Envelope }, call: CallInfo = { call: "act" }): R {
     if (this.closed) throw new Error("The organization's engine is closed.");
     if (this.journalProblem) throw new OrgWorkspaceError(this.journalProblem.file);
+    if (this.saveProblem && !this.isSafety(call) && !this.probeSaving()) throw new HistorySaveError(this.saveProblem.why);
     const r = f();
-    this.commit(r, extra);
+    try {
+      this.commit(r, extra, call);
+    } catch (err) {
+      this.failed(r, err);
+    }
     this.after(r);
     return r;
   }
@@ -500,7 +749,15 @@ export class OrgHost {
   private fire(): void {
     this.timer = null;
     if (this.closed || this.resuming || this.journalProblem) return;
-    this.fireTimers((f) => this.step(f));
+    // history can't be saved: due timers wait (they fire, in order, once it can)
+    if (this.saveProblem && !this.probeSaving()) {
+      this.timer = setTimeout(() => this.fire(), 30_000);
+      this.timer.unref?.();
+      return;
+    }
+    // answers that waited go first: they answer work that already happened
+    this.deliverWaiting();
+    this.fireTimers((f) => this.step(f, undefined, { call: "timers" }));
     this.arm();
   }
 
@@ -555,8 +812,12 @@ export class OrgHost {
       await this.ready();
       if (this.closed) return out;
       try {
-        this.step(() =>
-          this.engine.send(e.sessionId, out.error == null ? "effect/done" : "effect/failed", out.error == null ? { key: e.key, result: (out.result ?? null) as Json } : { key: e.key, detail: out.error }, { now: this.clock() }),
+        this.answerOrWait(() =>
+          this.step(
+            () => this.engine.send(e.sessionId, out.error == null ? "effect/done" : "effect/failed", out.error == null ? { key: e.key, result: (out.result ?? null) as Json } : { key: e.key, detail: out.error }, { now: this.clock() }),
+            undefined,
+            { call: "effect" },
+          ),
         );
       } catch (err) {
         console.warn(`[org-host] ${this.orgId}: answering effect ${e.key}: ${message(err)}`);
@@ -566,6 +827,48 @@ export class OrgHost {
     this.running.set(e.key, p);
     void p.finally(() => this.running.delete(e.key));
     return p;
+  }
+
+  /** An effect's or a run's answer: the outside work already happened, so while history can't be saved
+      the answer waits, in order, and goes in once saving works again (never lost, never twice). */
+  private answerOrWait(deliver: () => void): void {
+    if (this.waiting.length) {
+      this.waiting.push(deliver);
+      this.retryWaiting();
+      return;
+    }
+    try {
+      deliver();
+    } catch (err) {
+      if (!(err instanceof HistorySaveError)) throw err;
+      this.waiting.push(deliver);
+      this.retryWaiting();
+    }
+  }
+
+  /** Deliver waiting answers once saving works; else look again in 30 s. */
+  private retryWaiting(): void {
+    if (this.retryTimer || this.closed) return;
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = null;
+      this.deliverWaiting();
+    }, this.saveProblem ? 30_000 : 0);
+    this.retryTimer.unref?.();
+  }
+
+  private deliverWaiting(): void {
+    if (this.closed || this.journalProblem || !this.waiting.length) return;
+    if (this.saveProblem && !this.probeSaving()) return this.retryWaiting();
+    while (this.waiting.length) {
+      const next = this.waiting[0]!;
+      try {
+        next();
+      } catch (err) {
+        if (err instanceof HistorySaveError) return this.retryWaiting();
+        console.warn(`[org-host] ${this.orgId}: a waiting answer: ${message(err)}`);
+      }
+      this.waiting.shift();
+    }
   }
 
   private runInvocation(rec: InvocationRecord): void {
@@ -581,7 +884,7 @@ export class OrgHost {
         if (this.closed) return;
         try {
           const payload = { ...(data ?? {}), ...(detail ? { detail } : {}) } as JsonObject;
-          this.step(() => this.engine.send(inv.sessionId, outcomeEvent(inv.type, outcome), payload, { now: this.clock(), invokeId: inv.invokeId }));
+          this.answerOrWait(() => this.step(() => this.engine.send(inv.sessionId, outcomeEvent(inv.type, outcome), payload, { now: this.clock(), invokeId: inv.invokeId }), undefined, { call: "invocation" }));
         } catch (err) {
           console.warn(`[org-host] ${this.orgId}: reporting ${inv.type}: ${message(err)}`);
         }
@@ -616,24 +919,28 @@ export class OrgHost {
     try {
       return f();
     } catch (err) {
-      if (err instanceof OrgWorkspaceError) return { taken: false, refusal: err.refusal, result: null };
+      if (err instanceof OrgWorkspaceError || err instanceof HistorySaveError || err instanceof PendingApplyError) return { taken: false, refusal: err.refusal, result: null };
       throw err;
     }
   }
 
   /** Step an act now, synchronously (the share route's one synchronous stretch). Throws `busy` while resuming. */
-  actNow(sid: string, event: string, payload: Record<string, unknown>, envelope: Envelope): ActResult {
+  actNow(sid: string, event: string, payload: Record<string, unknown>, envelope: Envelope, opts: { provenance?: Provenance } = {}): ActResult {
     if (this.resuming) throw new OrgHostBusyError();
     return this.guard(() => {
-      const r = this.step(() => this.engine.send(sid, event, merged(event, payload, envelope), { now: this.clock() }));
+      const r = this.step(() => this.engine.send(sid, event, merged(event, payload, envelope), { now: this.clock() }), undefined, {
+        call: "act",
+        act: { sessionId: sid, event },
+        ...(opts.provenance ? { provenance: opts.provenance } : {}),
+      });
       return this.answer(sid, event, r);
     });
   }
 
   /** Step an act (after open finished). `settle`: resolve once this call's effects were answered. */
-  async act(sid: string, event: string, payload: Record<string, unknown>, envelope: Envelope, opts: { settle?: boolean } = {}): Promise<ActResult> {
+  async act(sid: string, event: string, payload: Record<string, unknown>, envelope: Envelope, opts: { settle?: boolean; provenance?: Provenance } = {}): Promise<ActResult> {
     await this.ready();
-    const out = this.actNow(sid, event, payload, envelope);
+    const out = this.actNow(sid, event, payload, envelope, opts.provenance ? { provenance: opts.provenance } : {});
     if (opts.settle && out.result) out.effects = await this.settle(out.result);
     return out;
   }
@@ -648,28 +955,78 @@ export class OrgHost {
     return Promise.all(r.outbox.map((e) => this.runEffect(e as Effect)));
   }
 
-  async start(sid: string, statechart: string, data: Record<string, unknown>, envelope: Envelope = {}): Promise<StepResult> {
+  async start(sid: string, statechart: string, data: Record<string, unknown>, envelope: Envelope = {}, opts: { provenance?: Provenance } = {}): Promise<StepResult> {
     await this.ready();
-    return this.step(() => this.engine.start(sid, statechart, data as JsonObject, { now: this.clock() }), { startEnvelope: envelope });
+    return this.step(() => this.engine.start(sid, statechart, data as JsonObject, { now: this.clock() }), { startEnvelope: envelope }, {
+      call: "start",
+      act: { sessionId: sid, event: "sova/started" },
+      ...(opts.provenance ? { provenance: opts.provenance } : {}),
+    });
   }
 
   /** q9/r5 free set-state (the engine refuses anyone but the project overseer in an attended turn). */
-  async setState(sid: string, change: { states: string[]; patch?: Record<string, unknown>; reason: string }, envelope: Envelope): Promise<ActResult> {
+  async setState(sid: string, change: { states: string[]; patch?: Record<string, unknown>; reason: string }, envelope: Envelope, opts: { provenance?: Provenance } = {}): Promise<ActResult> {
     await this.ready();
     return this.guard(() => {
-      const r = this.step(() => this.engine.setState(sid, { states: change.states, patch: change.patch as JsonObject, reason: change.reason }, envelope as JsonObject, { now: this.clock() }));
+      const r = this.step(() => this.engine.setState(sid, { states: change.states, patch: change.patch as JsonObject, reason: change.reason }, envelope as JsonObject, { now: this.clock() }), undefined, {
+        call: "set-state",
+        act: { sessionId: sid, event: "sova/set-state" },
+        ...(opts.provenance ? { provenance: opts.provenance } : {}),
+      });
       return this.answer(sid, "sova/set-state", r);
     });
   }
 
   /** A log row for an act no statechart takes (note, idea, to-do, confirm). */
-  async logAct(row: Record<string, unknown>): Promise<void> {
+  async logAct(row: Record<string, unknown>, opts: { provenance?: Provenance } = {}): Promise<void> {
+    this.writable();
     const at = this.uniqueAt(typeof row["at"] === "number" ? (row["at"] as number) : this.clock());
     const statechart = typeof row["statechart"] === "string" ? (row["statechart"] as string) : null;
+    const id = journalId(this.clock());
     // `plain`: no statechart step wrote it (a log replay skips it)
-    const full = { feed: "feed", ...(scrub(row, this.rulesOf(statechart)) as Record<string, Json>), at, org: this.orgId, plain: true } as LogRow;
-    const j: Journal = { id: journalId(this.clock()), at, snapshots: [], rows: [{ file: this.logFileFor(statechart, at), row: full }] };
-    commitJournal(this.paths.journal, j, this.durable);
+    const full = { feed: "feed", ...(scrub(row, this.rulesOf(statechart)) as Record<string, Json>), at, org: this.orgId, plain: true, j: id, k: `${id}:0` } as LogRow;
+    const call: CallInfo = { call: "log", ...(opts.provenance ? { provenance: opts.provenance } : {}) };
+    try {
+      const prepared = this.prepareHistory(id, [], call, { plain: full as Record<string, Json> });
+      const j: Journal = { id, at, snapshots: [], rows: [{ file: this.logFileFor(statechart, at), row: full }], ...(prepared.history.lines.length ? { history: prepared.history } : {}) };
+      this.commitDurably(j);
+      this.historyCommitted(prepared);
+    } catch (err) {
+      this.failed(null, err);
+    }
+  }
+
+  /** History with no statechart step (an observed merge, an abstention, a purge): one journal of its
+      own. Returns each input's event id (an input whose key was recorded before answers that id). */
+  async record(inputs: HistoryInput[]): Promise<EventId[]> {
+    await this.ready();
+    this.writable();
+    const id = journalId(this.clock());
+    try {
+      const prepared = this.prepareHistory(id, [], { call: "record" }, { inputs });
+      if (prepared.history.lines.length) {
+        this.commitDurably({ id, at: this.clock(), snapshots: [], rows: [], history: prepared.history });
+        this.historyCommitted(prepared);
+      }
+      // the gap event (when one was open) comes first; the ids answer the inputs
+      return prepared.ids.slice(prepared.ids.length - inputs.length);
+    } catch (err) {
+      this.failed(null, err);
+    }
+  }
+
+  /** Purge Reason…: the rationale file and its index words removed, and a
+      purge event with no words, in one step. */
+  async purgeRationale(eventId: EventId, by: ActorRef): Promise<EventId> {
+    const [id] = await this.record([this.history.purgeInput(eventId, by)]);
+    return id!;
+  }
+
+  /** Throws when nothing may be written now (closed, a journal problem, history can't be saved). */
+  private writable(): void {
+    if (this.closed) throw new Error("The organization's engine is closed.");
+    if (this.journalProblem) throw new OrgWorkspaceError(this.journalProblem.file);
+    if (this.saveProblem && !this.probeSaving()) throw new HistorySaveError(this.saveProblem.why);
   }
 
   /** r13: after a working-hours edit (a person's or the company's), move every hours wait to its new
@@ -682,7 +1039,7 @@ export class OrgHost {
     for (const h of this.engine.holds(null).filter((x) => x.wait === "hours")) {
       const until = windowOf(h);
       if (until === h.until) continue;
-      this.step(() => this.engine.send(h.sessionId, "sova/rewindow", { id: h.id, until } as JsonObject, { now: this.clock() }));
+      this.step(() => this.engine.send(h.sessionId, "sova/rewindow", { id: h.id, until } as JsonObject, { now: this.clock() }), undefined, { call: "rewindow" });
       n++;
     }
     return n;
@@ -697,7 +1054,7 @@ export class OrgHost {
       this itself). Throws busy while resuming. */
   fireDue(): StepResult {
     if (this.resuming) throw new OrgHostBusyError();
-    return this.step(() => this.engine.fireDue(this.clock()));
+    return this.step(() => this.engine.fireDue(this.clock()), undefined, { call: "timers" });
   }
 
   // ---- reads -------------------------------------------------------------------------------------------
@@ -782,6 +1139,8 @@ export class OrgHost {
       ...this.stuck,
       ...this.stalled.values(),
       ...this.logProblems.map((p) => ({ kind: "log" as const, ...p })),
+      ...(this.saveProblem ? [{ kind: "history" as const, file: this.history.paths.root, why: `history can't be saved: ${this.saveProblem.why}` }] : []),
+      ...this.historyProblems,
     ];
   }
 
@@ -791,9 +1150,18 @@ export class OrgHost {
 
   /** Retry what did not load (the Workspace tab's Reload): a fixed journal, broken snapshots. */
   async reload(): Promise<HostProblem[]> {
+    const hadJournalProblem = !!this.journalProblem;
     if (this.journalProblem) {
-      const { problem } = replayJournals(this.paths.journal, this.durable);
+      const { problem } = replayJournals(this.paths.journal, this.durable, this.onTorn);
       this.journalProblem = problem;
+    }
+    // history: the index reopened (it may have been the problem), saving probed again, notes cleared
+    this.historyProblems.splice(0);
+    try {
+      this.history.open();
+      if (this.saveProblem) this.probeSaving();
+    } catch (err) {
+      this.saveProblem = { why: `its index can't be read (${message(err)})`, since: this.saveProblem?.since ?? this.clock() };
     }
     const retry = [...this.broken.keys()];
     const fixed: string[] = [];
@@ -815,14 +1183,14 @@ export class OrgHost {
       this.stuck.splice(0, this.stuck.length, ...this.stuck.filter((p) => !p.sessionId));
       for (const sid of again)
         try {
-          this.commit(this.engine.resume([sid], { now: this.clock() }));
+          this.commitOrFail(this.engine.resume([sid], { now: this.clock() }), { call: "reload" });
         } catch (err) {
           this.stuck.push({ kind: "resume", file: this.index.get(sid)?.file ?? sid, why: message(err), sessionId: sid });
         }
       // a session whose file was just fixed missed the notifications of those it watches: catch it up
       if (fixed.length)
         try {
-          this.commit(this.engine.renotify(fixed, { now: this.clock() }));
+          this.commitOrFail(this.engine.renotify(fixed, { now: this.clock() }), { call: "reload" });
         } catch (err) {
           console.warn(`[org-host] ${this.orgId}: renotify after reload: ${message(err)}`);
         }
@@ -830,8 +1198,10 @@ export class OrgHost {
       if (this.stalled.size) {
         this.stalled.clear();
         this.engine.setAside([]);
-        this.fireTimers((f) => this.step(f));
+        this.fireTimers((f) => this.step(f, undefined, { call: "timers" }));
       }
+      // a journal replayed now may hold a step whose effects never started
+      if (hadJournalProblem) for (const kind of this.effectHandlers.keys()) this.runPending(kind);
     }
     this.arm();
     return this.problems();
@@ -848,6 +1218,9 @@ export class OrgHost {
 
   async close(): Promise<void> {
     this.closed = true;
+    if (this.retryTimer) clearTimeout(this.retryTimer);
+    this.retryTimer = null;
+    this.history.close();
     if (this.sweeper) clearInterval(this.sweeper);
     this.sweeper = null;
     if (this.timer) clearTimeout(this.timer);

@@ -1,0 +1,36 @@
+---
+// "Off the desk": one foldable the visitor opens like a book (the Galaxy Z Fold 8's shape: a flat
+// slab, thin even bezel, near-square corners). Closed, it is one portrait panel whose outside is
+// the cover screen. Opening, that front panel (the leaf) swings about a vertical hinge on its left
+// edge to lie beside the panel beneath (the base): the leaf's inside carries the left half of the
+// unfolded capture, the base the right half, so open, the two halves are the whole inner screen.
+// No script: a visually-hidden checkbox holds the state; the device and the Unfold/Fold pill are
+// both labels for it, so a tap, a click or Space on the focused checkbox all toggle it, and the
+// checkbox takes its name from the pill's visible verb. Both screenshots are the real captures
+// (screens manifest). Styles: mock.css, the FOLDDEV block.
+import Screen from "../Screen.astro";
+
+// The inner capture is drawn at the open device's full width (up to 620px, else the column).
+const innerSizes = "(min-width: 900px) 608px, calc(100vw - 40px)";
+const coverSizes = "(min-width: 900px) 290px, 46vw";
+---
+<div class="folddev">
+  <input type="checkbox" id="folddev-state" class="visually-hidden folddev-check" aria-labelledby="folddev-verb" />
+  <div class="folddev-stage">
+    <label class="folddev-device" for="folddev-state">
+      <span class="folddev-shadow"></span>
+      <span class="folddev-book">
+        <span class="folddev-base">
+          {/* The inner screen's right half: the same capture once more, shifted by one half.
+              Decorative — the left half's alt already describes the whole screen. */}
+          <span class="folddev-screen folddev-right" aria-hidden="true"><Screen at="hero.fold" sizes={innerSizes} /></span>
+        </span>
+        <span class="folddev-leaf">
+          <span class="folddev-face folddev-cover"><span class="folddev-screen"><Screen at="hero.phone" sizes={coverSizes} /></span></span>
+          <span class="folddev-face folddev-back"><span class="folddev-screen folddev-left"><Screen at="hero.fold" sizes={innerSizes} /></span></span>
+        </span>
+      </span>
+    </label>
+    <label class="folddev-action" for="folddev-state"><span id="folddev-verb"><span class="folddev-v-unfold">Unfold</span><span class="folddev-v-fold">Fold</span></span></label>
+  </div>
+</div>

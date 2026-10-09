@@ -2,6 +2,7 @@ import type { Context, Hono } from "hono";
 import type { ConflictResolveInput } from "../shared/decisions";
 import { DecisionError } from "./decide";
 import { OrgError } from "./orgs";
+import { operatorBy } from "./org-routes";
 import { draftProject, listDecisions, promoteDecisions, reconcileProject, resolveConflict, routeConflictNow, setFrozen, setOwnerArea, settleSpecText, specStatusOf } from "./reconcile";
 import { SpecToolError } from "./spec-draft-writer";
 
@@ -48,7 +49,7 @@ export function registerDecisionRoutes(app: Hono<any>): void {
   );
   app.post(
     `${BASE}/reconcile`,
-    handle(async (c) => c.json(await reconcileProject(p(c, "id"), p(c, "pid")))),
+    handle(async (c) => c.json(await reconcileProject(p(c, "id"), p(c, "pid"), { operator: operatorBy(c) }))),
   );
   app.post(
     `${BASE}/draft`,

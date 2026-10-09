@@ -176,6 +176,59 @@
                 {:by "model" :decision-id "s1:e2" :area "Pay" :statement "S" :quote "Q" :owner-areas []})]
         (is (= [:reconcile/request] (map :event (h/elsewhere y))))))))
 
+(deftest recovered-decisions
+  ;; A marker left without its decision is recovered by Sova with its original author
+  (let [d    {:area "Pay" :statement "S" :quote "Q" :owner-areas []}
+        rec  (fn [by-env author id] (merge d {:by by-env :recovery true :recovery-by author :decision-id id}))
+        x    (-> (start to-ana) (h/send! sid :baton/hand-to {:by "model" :target bob :chosen true :question "Q" :briefing "B"}))
+        spawn-of (fn [y] (last (filter #(= :spawn (:op %)) (h/directives y sid))))]
+    (is (= "p2" (:holder (h/data x sid))) "Bob holds it now")
+    (testing "Sova's recovery keeps the marker's author (Ana took part), not the holder now"
+      (let [y (h/send! x sid :baton/record-decision (rec "system" "p1" "s1:m1"))]
+        (is (= ["s1:m1"] (:decisions (h/data y sid))))
+        (is (= "p1" (get-in (spawn-of y) [:data :by])))
+        (is (= "Ana Ruiz" (get-in (spawn-of y) [:data :name])))))
+    (testing "the operator's own marker too"
+      (is (= "operator" (get-in (spawn-of (h/send! x sid :baton/record-decision (rec "system" "operator" "s1:m2"))) [:data :by]))))
+    (testing "only Sova recovers: a model, the operator or a route claiming a recovery is refused"
+      (doseq [by ["model" "operator" "overseer" "person"]]
+        (is (= "Only Sova recovers a decision." (h/refusal x sid :baton/record-decision (rec by "p1" "s1:m3"))) by)))
+    (testing "someone who never took part is refused, never recorded as anyone's"
+      (is (= "Not recovered: the person who decided isn't part of this conversation." (h/refusal x sid :baton/record-decision (rec "system" "p3" "s1:m4"))))
+      (is (= "Not recovered: the person who decided isn't part of this conversation." (h/refusal x sid :baton/record-decision (rec "system" nil "s1:m4")))))
+    (testing "a recovery-by without the recovery flag is ignored: the holder decides, as always"
+      (is (= "p2" (get-in (spawn-of (h/send! x sid :baton/record-decision (merge d {:by "model" :recovery-by "p1" :decision-id "s1:m5"}))) [:data :by]))))
+    (testing "a closed conversation still takes the recovery of a decision made while it was open"
+      (let [c (h/send! x sid :baton/close op)
+            y (h/send! c sid :baton/record-decision (rec "system" "p1" "s1:m6"))]
+        (is (h/in? c sid :closed))
+        (is (some #{"s1:m6"} (:decisions (h/data y sid))))
+        (is (= "p1" (get-in (spawn-of y) [:data :by])))))
+    (testing "a recovered decision keeps the name its marker kept, not the conversation's label now"
+      (let [y (h/send! x sid :baton/record-decision (assoc (rec "system" "p1" "s1:m8") :recovery-name "Ana R. (then)"))]
+        (is (= "Ana R. (then)" (get-in (spawn-of y) [:data :name])))
+        (is (= "record" (get-in (spawn-of y) [:data :name-at])))))
+    (testing "a recovered marker that kept no name: today's label, said to be the label at recovery"
+      (let [y (h/send! x sid :baton/record-decision (rec "system" "p1" "s1:m9"))]
+        (is (= "Ana Ruiz" (get-in (spawn-of y) [:data :name])))
+        (is (= "recovery" (get-in (spawn-of y) [:data :name-at])))))
+    (testing "a live decision: the holder's name as recorded; a recovery-name without the guard is ignored"
+      (let [y (h/send! x sid :baton/record-decision (merge d {:by "model" :decision-id "s1:m10" :recovery-name "Forged"}))]
+        (is (= "Bob Diaz" (get-in (spawn-of y) [:data :name])))
+        (is (= "record" (get-in (spawn-of y) [:data :name-at])))))
+    (testing "a name override outside Sova's guarded recovery never names anyone"
+      (doseq [by ["model" "operator" "overseer" "person"]]
+        (let [y (h/send! x sid :baton/record-decision (merge d {:by by :decision-id (str "s1:n-" by) :recovery-name "Forged"}))]
+          (is (= "Bob Diaz" (get-in (spawn-of y) [:data :name])) by)
+          (is (= "record" (get-in (spawn-of y) [:data :name-at])) by))
+        (is (= "Only Sova recovers a decision." (h/refusal x sid :baton/record-decision (assoc (rec by "p1" (str "s1:r-" by)) :recovery-name "Forged"))) by))
+      (is (= "Not recovered: the person who decided isn't part of this conversation."
+             (h/refusal x sid :baton/record-decision (assoc (rec "system" "p3" "s1:r-p3") :recovery-name "Forged")))))
+    (testing "the same decision id twice: refused, no second record and no second spawn"
+      (let [y (h/send! x sid :baton/record-decision (rec "system" "p1" "s1:m7"))]
+        (is (= "That decision is already recorded." (h/refusal y sid :baton/record-decision (rec "system" "p1" "s1:m7"))))
+        (is (= "That decision is already recorded." (h/refusal y sid :baton/record-decision (merge d {:by "model" :decision-id "s1:m7"}))))))))
+
 (deftest global-overseer-card
   (let [x (start to-ana)]
     (is (= "This reaches people or ends something: ask with sova_card, listing the session s1 in its items, and act in the turn the user's click starts."

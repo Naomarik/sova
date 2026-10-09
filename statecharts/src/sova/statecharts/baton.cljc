@@ -379,7 +379,10 @@
   (let [[wops _] (withdraw-ops d)]
     (into wops [(ops/assign :holder nil) (ops/assign :needs-you false) (ops/assign :closed-at (or (:closed-at d) (b/now-ms d)))])))
 
-(def record-checks [(fn [d] (rb/record-decision-refusal (e d)))])
+(def record-checks [(fn [d] (or (rb/record-decision-refusal (e d)) (rb/recovery-refusal d (e d)) (rb/duplicate-decision-refusal d (e d))))])
+
+;; The decision's author: the holder, or, on a guarded recovery only, the person its marker names.
+(defn- author-of [d] (or (rb/recovery-by d (e d)) (:holder d) operator))
 
 (defn- record-content []
   [(script {:expr (fn [_ d] [(ops/assign :decisions (conj (vec (:decisions d)) (:decision-id (e d))))])})
@@ -388,8 +391,12 @@
                :data (fn [d] (let [ev (e d)]
                                (merge (select-keys ev [:area :statement :quote :entry-id :marker-id :area-key])
                                  {:org-id (:org-id d) :project-id (:project-id d) :id (:decision-id ev)
-                                  :owner-area (rb/spelled-owner-area ev) :by (or (:holder d) operator)
-                                  :name (rb/name-of d (or (:holder d) operator)) :session-id (:session-id d)
+                                  :owner-area (rb/spelled-owner-area ev) :by (author-of d)
+                                  ;; the name as recorded: the holder's now, or the one a recovered marker kept; a
+                                  ;; recovered marker that kept none gets the label at recovery, said as such
+                                  :name (or (rb/recovery-name d ev) (rb/name-of d (author-of d)))
+                                  :name-at (if (and (rb/recovery-by d ev) (not (rb/recovery-name d ev))) "recovery" "record")
+                                  :session-id (:session-id d)
                                   :item (get-in d [:sova/links :item]) :resolves (get-in d [:conflict :id])
                                   :shown (not (:hidden-from-owner d))
                                   :recorded-at (b/now-ms d)})))})])

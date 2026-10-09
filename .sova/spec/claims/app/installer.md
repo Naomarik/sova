@@ -1,15 +1,16 @@
 # §app/installer — The one-shot installer
 
 `scripts/install.sh` installs Sova on a Mac or a Linux machine in one run, safe to pipe from curl.
-It needs git, Node.js (>= 22.19), curl, and unzip or python3 already there, and pnpm or, failing
-that, npx to run the pnpm the repository pins. Apart from the Bun the server runs on, which it
+It needs bash, git, Node.js (>= 22.19), curl, and unzip or python3 already there, and pnpm or,
+failing that, npx to run the pnpm the repository pins. Apart from the Bun the server runs on, which it
 downloads into the install directory (§app.installer/bun), it installs no toolchain and no system
 package, and it never uses sudo. It
-clones the requested ref into an install directory of its own (default `~/.local/share/sova`),
+clones the requested ref (§app.installer/ref) into an install directory of its own (default `~/.local/share/sova`),
 installs its dependencies and builds it in a staging directory beside it, promotes the build only
 after it succeeded (the previous install kept until then, and restored on failure), and writes a
 `sova` launcher (default `~/.local/bin/sova`). The launcher runs the server on that Bun (`sova
---node` runs it on Node instead), except `sova token`,
+--node` runs it on Node instead), on `PORT` when set, else the install's port (`--port`, default
+`4800`, the port its closing message names), except `sova token`,
 which prints the install's access token, and `sova open`, which opens the browser at the app
 already unlocked (§app.access/callers); its closing message says both. An install directory that
 is not a clean clone of Sova, or a launcher this script did not write, is refused and left alone.
@@ -60,6 +61,14 @@ systemd user unit on Linux (`~/.config/systemd/user/sova.service`, or under
   it asks on the terminal (`/dev/tty`, so a curl pipe can still answer), defaulting to no. With
   no terminal it installs none and says how to add one. A service this script installed before
   is kept and updated without asking, unless `--no-service` is given, which leaves it untouched.
+- **Restarts and stops.** Both restart it whenever it exits (systemd `Restart=always`,
+  `RestartSec=2`; launchd `KeepAlive`, `ThrottleInterval` 2), and a stop you ask for stays
+  stopped. A stop gives the server time to drain its hosted runtimes and their workers:
+  `TimeoutStopSec=90` on systemd, `ExitTimeOut` 60 on launchd (its cap for an agent). The
+  launchd agent also runs as `ProcessType` `Interactive`, with `LANG=en_US.UTF-8`. These match
+  the hand-written definitions in docs/running-as-a-service.md, except that neither runs
+  `pi-config/install.sh --links` before the start: the installer links the extensions itself on
+  every update (§app.installer/pi-extensions).
 - **Environment.** The service runs the launcher with `PORT` (`--port`, default `4800`) and a
   `PATH` of its own, because launchd and systemd start services without the login shell's: the
   directories the installer found `node`, `git`, `pnpm` and `claude` in, `~/.local/bin`, mise's
@@ -86,11 +95,35 @@ Running the installer again with the same inputs leaves the machine as it was.
   is left running; a changed definition is updated in place and reloaded; a code update restarts
   it. A second instance is never started.
 
+## §app.installer/ref — The ref it installs
+
+The installer installs `SOVA_REF` when set: a tag, a branch or a commit of the repository. Unset,
+it installs the script's own default ref: `master` on master until the first release is tagged, so
+the published command `curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/master/scripts/install.sh | bash`
+installs master's latest commit and a re-run updates to it. A release commit sets the default to
+its own tag, so the installer fetched from that tag installs that tag.
+
+- **Checked before anything is written.** A name that is neither a tag nor a branch of the
+  repository, and is not a commit (seven or more hex digits), stops the install before anything
+  is written, with a message that names the ref and says to pass `SOVA_REF` (a tag, a branch
+  or a commit). A hex name that turns out not to be a commit of the clone stops it before
+  anything is promoted, with "nothing was changed", and leaves nothing behind: the staging
+  directory goes, and so does every directory the run created for it (such as `~/.local/share`
+  on a fresh machine). The launcher's directory is created only once the build succeeded. Any
+  other failure before promotion cleans up the same way (pnpm's own store and cache aside, once
+  pnpm ran). The default branch is never installed in a
+  ref's place.
+- **A repository it cannot reach** stops the install the same way, saying so.
+- **The closing message names what it installed:** "installed <ref> (<short commit>) in <install
+  dir>", or "<install dir> is already at <ref> (<short commit>); nothing to rebuild".
+
 ## §app.installer/portable — Stock macOS tools
 
 The installer and the launcher it writes run on macOS's bash 3.2 and BSD userland as well as on
 Linux: no GNU-only flags (`sed -i`, `readlink -f`, `stat -c`, `date -d`, `setsid`) and no bash 4
-features. It is read whole before it runs, so a curl pipe cut short runs nothing.
+features. Its whole body is one function, called on its last line, so bash has read the whole
+script before any of it runs: a curl pipe cut short runs nothing, and an early failure leaves no
+unread input behind for curl to complain about.
 
 ## §app.installer/bun — The server's Bun, inside the install directory
 

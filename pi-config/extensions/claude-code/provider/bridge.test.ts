@@ -395,6 +395,7 @@ test("pin (unwrapped provider): no built-in tools, no settings sources, no ambie
 	const after = (flag: string) => cli.argv[cli.argv.indexOf(flag) + 1];
 	assert.ok(cli.argv.includes("--tools") && after("--tools") === "", "--tools '' (no Bash, Read, Edit, Write, …)");
 	assert.ok(cli.argv.includes("--setting-sources") && after("--setting-sources") === "", "--setting-sources '' (no user or project hooks, permissions or MCP servers)");
+	assert.equal(JSON.parse(after("--settings")).autoMemoryEnabled, false, "auto-memory off: no MEMORY.md read into a request, none written");
 	assert.ok(cli.argv.includes("--strict-mcp-config"), "--strict-mcp-config (only the configured servers)");
 	assert.ok(!cli.argv.includes("--mcp-config"), "and none configured: its one server, sova, is answered in-process");
 	assert.equal(cli.argv.filter((a) => a === "--tools").length, 1, "one --tools, never widened by a later one");

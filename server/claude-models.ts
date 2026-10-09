@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess, type SpawnOptions } from "node:child_process";
 import { claudeBaseSpawnEnv, claudeLoginEnv } from "./claude-accounts";
+import { fixedSettingsJson } from "../pi-config/extensions/claude-code/fixed-settings.ts";
 import { randomUUID } from "node:crypto";
 import { StringDecoder } from "node:string_decoder";
 
@@ -20,7 +21,7 @@ import { StringDecoder } from "node:string_decoder";
  */
 export const CLAUDE_DISCOVERY_ARGV: readonly string[] = [
   "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
-  "--tools", "", "--setting-sources", "", "--strict-mcp-config",
+  "--tools", "", "--setting-sources", "", "--settings", fixedSettingsJson(), "--strict-mcp-config",
   "--permission-mode", "dontAsk", "--permission-prompts", "none",
 ];
 

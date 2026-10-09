@@ -11,6 +11,7 @@ import { firstText, lineEntry, lineMay } from "./harness/pi/reader";
 import { cleanSessionTitle, readSessionTitleRecords, replaceAutoTitle, type StoredTitle, writeAutoTitle } from "./session-titles";
 import { withUsageContext } from "../pi-config/extensions/llm-inflight/attribution.ts";
 import { claudeCliId } from "../pi-config/extensions/claude-code/catalog.ts";
+import { fixedSettingsJson } from "../pi-config/extensions/claude-code/fixed-settings.ts";
 
 // Sova names sessions itself (§app.session-list/auto-titles): one short title per session from
 // what it became, stored as an `auto` title in Sova's own title store — never in the .jsonl, and
@@ -231,13 +232,14 @@ export function retryTitlePrompt(prompt: string, raw: unknown): string {
 
 // ── The model call ────────────────────────────────────────────────────────────────────────────
 
-/** Claude Code's argv for a title: the rules as the whole system prompt, no tools, no settings, no MCP, NO --json-schema. Pure. */
+/** Claude Code's argv for a title: the rules as the whole system prompt, no tools, no user settings (the fixed ones only), no MCP, NO --json-schema. Pure. */
 export function titleClaudeArgs(choice: WorkerChoice): string[] {
   return [
     "-p",
     "--model", claudeCliId(choice.model),
     "--tools", "",
     "--setting-sources", "",
+    "--settings", fixedSettingsJson(),
     "--strict-mcp-config",
     "--permission-mode", "dontAsk",
     "--no-session-persistence",

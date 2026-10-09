@@ -8,7 +8,7 @@ import { PassThrough, Writable } from "node:stream";
 import type { ChildProcess } from "node:child_process";
 import {
 	applyResultUsage, buildClaudeArgv, buildDiscoveryArgv, ClaudePrivateFiles, ClaudeTransport, claudeEnv,
-	contextTokensFrom, DEFAULT_CLAUDE_TOOLS, isMessageStart, isUncorrelatedResult, mcpServerFailure, NO_ATTRIBUTION,
+	contextTokensFrom, DEFAULT_CLAUDE_TOOLS, isMessageStart, isUncorrelatedResult, mcpServerFailure, NO_ATTRIBUTION, SOVA_FIXED_SETTINGS,
 	parseCanUseTool, permissionDenialsFrom, resultError, resultMatches, textBlocksText, textDelta,
 	validEnv, validMcpServers, type ClaudeStreamEvent, type ClaudeTransportHooks, type ClaudeUsage,
 } from "./transport.ts";
@@ -186,19 +186,22 @@ test("an operator allow rule keeps its place, and MCP tools are allowed only out
 	assert.ok(!argvFor().args!.includes("--allowedTools"));
 });
 
-test("settings JSON is merged with no-attribution into one --settings; no-attribution is sent by default too", () => {
+test("settings JSON is merged with the fixed settings (no attribution, auto-memory off) into one --settings; they are sent by default too", () => {
 	const sandbox = { sandbox: { enabled: true }, permissions: { allow: ["Read"] } };
 	const args = argvFor({ permissionMode: "dontAsk", settingsJson: JSON.stringify(sandbox) }).args!;
 	assert.equal(args.filter((a) => a === "--settings").length, 1, "the CLI keeps only the last --settings");
-	assert.deepEqual(JSON.parse(args[args.indexOf("--settings") + 1]), { ...sandbox, attribution: { commit: "", pr: "" } });
+	assert.deepEqual(JSON.parse(args[args.indexOf("--settings") + 1]), { ...sandbox, attribution: { commit: "", pr: "" }, autoMemoryEnabled: false });
 	assert.equal(args[args.indexOf("--setting-sources") + 1], "", "the user's own settings stay excluded");
 	assert.equal(args[args.indexOf("--permission-mode") + 1], "dontAsk");
-	// Without a sandbox: attribution is still off.
+	// Without a sandbox: attribution and auto-memory are still off.
 	const plain = argvFor().args!;
-	assert.deepEqual(JSON.parse(plain[plain.indexOf("--settings") + 1]), NO_ATTRIBUTION);
-	// A caller cannot turn it back on.
-	const override = argvFor({ settingsJson: '{"attribution":{"commit":"Co-Authored-By: x"}}' }).args!;
-	assert.deepEqual(JSON.parse(override[override.indexOf("--settings") + 1]), NO_ATTRIBUTION);
+	assert.deepEqual(JSON.parse(plain[plain.indexOf("--settings") + 1]), SOVA_FIXED_SETTINGS);
+	assert.deepEqual(SOVA_FIXED_SETTINGS, { ...NO_ATTRIBUTION, autoMemoryEnabled: false });
+	// A caller (the sandbox included) cannot turn either back on.
+	const override = argvFor({ settingsJson: '{"attribution":{"commit":"Co-Authored-By: x"},"autoMemoryEnabled":true,"autoMemoryDirectory":"/x"}' }).args!;
+	assert.deepEqual(JSON.parse(override[override.indexOf("--settings") + 1]), { autoMemoryDirectory: "/x", ...SOVA_FIXED_SETTINGS });
+	const sandboxed = argvFor({ settingsJson: JSON.stringify({ ...sandbox, autoMemoryEnabled: true }) }).args!;
+	assert.equal(JSON.parse(sandboxed[sandboxed.indexOf("--settings") + 1]).autoMemoryEnabled, false);
 	for (const bad of ["", "not json", "[]", "null", "1", '"s"']) {
 		assert.deepEqual(argvFor({ settingsJson: bad }), { error: "Invalid settingsJson: must be a JSON object" }, bad);
 	}
@@ -257,6 +260,7 @@ test("discovery argv asks only for initialize: no tools, settings or prompts", (
 	const args = buildDiscoveryArgv();
 	assert.equal(args[args.indexOf("--tools") + 1], "");
 	assert.equal(args[args.indexOf("--setting-sources") + 1], "");
+	assert.deepEqual(JSON.parse(args[args.indexOf("--settings") + 1]), SOVA_FIXED_SETTINGS, "only the fixed settings: auto-memory off");
 	assert.equal(args[args.indexOf("--permission-mode") + 1], "dontAsk");
 	assert.equal(args[args.indexOf("--permission-prompts") + 1], "none");
 	assert.ok(args.includes("--strict-mcp-config"));

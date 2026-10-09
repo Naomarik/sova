@@ -12,6 +12,8 @@ Beside the full-closure packet, a contents view (`toc`) lists a claim's one-hop 
 each is and why it is linked, and single-passage reads (`read`) return one claim without its chain,
 so the agent chooses what it reads.
 A map (`map`) shows every area on one page, and `where` finds the claims for a source file or a name.
+Draft commands say what a draft introduced apart from what the spec already had, and a spec conflict
+a Git merge leaves has one recovery, given in the same words by the docs and the refusals.
 Records may also declare `embeds` (surfaces drawn inside a claim), `core` and `about` (the target a
 note serves), and an `agreed` decision (who decided and when); the claims flagged `core` form an
 always-on frame that arrives with the first page of a `read`.
@@ -194,6 +196,25 @@ declarations were reordered, that holds a carriage return, or whose graph on any
 load, is still compared as a whole file. A merged file must read back as exactly the declarations
 it was merged from, byte for byte, or the promotion is refused as a conflict and nothing is written.
 
+## §tools.spec/conflict-recovery — A spec conflict has one recovery, said the same way everywhere
+
+A promotion conflict within one tree (current changed a declaration the draft changed too) is
+refused with what PROMOTE.md says: revert those declarations in the draft's `spec/` to their
+`base/` text and promote the rest, or start a new draft from current; it never says to fix the
+draft by hand. A Git merge that leaves the spec conflicted (a `claims/*.md` file, or a manifest key
+`merge-manifest` refuses), whether or not the manifest merge driver already merged the manifest,
+has one recovery, given in the same words by PROMOTE.md and by the draft tool's refusals: take the
+default branch's whole spec with `git checkout --no-overlay master -- .sova/spec/manifest.json
+.sova/spec/claims` (never `--ours` and never one file at a time: the driver may already have
+merged the manifest, and the branch's other claim files would then lack their records), commit the
+merge, promote the branch's drafts again with the same `--id`s (re-recording evidence that `status`
+calls stale; a draft that is gone is re-applied in a new draft from current), then commit the
+claims. Followed literally, it leaves a spec whose graph loads and a re-promotion that lands on the
+first try. The refusal names the project's own default branch where PROMOTE.md says `master`.
+`merge-manifest`'s `manifest-conflict` refusal carries it, and so does a promotion refused because
+spec files are still unmerged in Git's index (`spec-merge-conflict`) or because the current spec's
+graph does not load (`current-invalid`).
+
 ## §tools.spec/agreed-promotion — An agreed promise lands in the main spec before it is built
 
 A behavior or surface record may carry `agreed: {by, at}`: who made the decision it records, and
@@ -234,6 +255,20 @@ evidence as before. Doc-only eligibility is judged by
 the record's kind both in current (the draft's base) and in the draft: a record whose kind changes
 qualifies only if both kinds allow it, so turning a behavior or surface into a note or section while
 rewriting its prose still needs commit or snapshot evidence, as deleting it would.
+
+## §tools.spec/draft-output — Draft commands say what the draft introduced, apart from what was there
+
+`draft check` splits the core's findings on the draft graph in two: those the draft introduced
+(absent from the core's findings on the draft's own base) are listed one by one (`introduced`, and
+`coreFindings` and `frontier` hold only those), and those the base already had are counted by code
+(`preexisting`); `--all` lists them too. A draft with no base, or whose base graph does not load,
+counts every finding as introduced. So a draft that introduces nothing prints under 2 KB however
+many findings the current spec already carries; the exit status is the same as before the split.
+`new` reports the number of files it copied, their bytes and one hash over the copied tree; the
+per-file list appears only with `--all`. A promotion preview or write gives, beside the merged
+graph's warning count, how many of those warnings current does not already have
+(`warningsIntroduced`), and names at most five claims whose mapped code changed under unchanged
+prose, with their total count and the core `foreign --landing` command that lists every one.
 
 ## §tools.spec/inspection-safety — Refused inputs are not inspected
 
@@ -344,8 +379,9 @@ The command may follow its flags. They store nothing and run no project code.
 
 The read-only `where <path|token>` command answers "which promises cover this?". A path is a file a
 record's `code` lists or that exists under the project root; anything else is a token, and `--token`
-forces that reading. A path-shaped argument that is neither is searched as a token with a line saying
-so. For a path it lists every claim whose `code` names the file, ranked by the interface tokens in
+forces that reading. A path-shaped argument that is neither is searched as a token, and both the
+text and the JSON form say that no such file exists under the root and no record lists it (JSON:
+`file.state` `absent` and a `note`), exit 1. For a path it lists every claim whose `code` names the file, ranked by the interface tokens in
 the claim's own passage that also occur in the file, each shown with the tokens it shares. An
 interface token is a backticked span, outside fenced code and HTML comments, of at least three
 characters with a letter, that looks like a name the code uses: it contains `/`, `.`, `_`, `:`, `#`,
@@ -354,8 +390,9 @@ are not tokens. It occurs in a file when it appears there with no letter, digit,
 either side. A token counts for more the fewer records use it (its score is the log of the record
 count over the records using it), and a claim's score is the sum over the tokens it shares. Claims
 sharing no token follow the ranked ones in id order, with their `code` list as the only link. The
-first ten are shown with a line naming how many more there are and the `--all` flag that lists every
-claim naming the file, none dropped. A file no record lists is reported as listed by no claim, exit
+first ten are shown; how many more there are and the `--all` flag that lists every one, none
+dropped, are named in the text and in the JSON form alike (`notShown`, `hint`), and a cut list exits
+1, never a complete answer. A file no record lists is reported as listed by no claim, exit
 1, with up to ten claims whose interface tokens occur in it under a heading that calls them unmapped
 candidates, a name match and not a mapping, and never as an empty success. The file is read only
 through the core's own refusal rules (inside the root, no symlink on its path, a regular file), and

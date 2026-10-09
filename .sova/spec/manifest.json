@@ -16655,6 +16655,31 @@
         "§app.settings-dialog/alignment"
       ],
       "evidence": "reviewed"
+    },
+    "§tools.spec/conflict-recovery": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/span-promotion"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+        "pi-config/extensions/spec/PROMOTE.md",
+        "pi-config/extensions/spec/DRAFTS.md",
+        "pi-config/extensions/spec/tests/draft.test.mjs"
+      ]
+    },
+    "§tools.spec/draft-output": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [],
+      "code": [
+        "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+        "pi-config/extensions/spec/DRAFTS.md",
+        "pi-config/extensions/spec/tests/draft.test.mjs"
+      ]
     }
   },
   "boundary": {

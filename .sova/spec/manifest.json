@@ -8086,7 +8086,8 @@
         "server/claude-pool/pool-test-fixtures.ts",
         "server/claude-pool/agent.integration.test.ts",
         "scripts/claude-pool-e2e/run.mjs",
-        "server/app.ts"
+        "server/app.ts",
+        "server/claude-pool/doc.test.ts"
       ]
     },
     "§app.claude-logins/stuck": {

@@ -308,19 +308,28 @@ the session with each recipient's state. No human confirms anything, on either h
   no link tools, so it could never answer.
 - **`dest` is the recipient host's.** `~` is that host's home (`~user` is refused), a relative path
   is under the member session's cwd, `..` is normalised and missing parents are created. Existing
-  files are overwritten. Nothing else is checked, except that Sova's own state is never written:
-  a `dest` inside Sova's state root or the sessions directory is refused, and so is a `dest` above
-  one of them when an offered path would land in it (offering `.pi` into `~`).
+  files are overwritten. Sova's own state is never written: a `dest` inside Sova's state root or
+  the sessions directory is refused, and so is a `dest` above one of them when an offered path
+  would land in it (offering `.pi` into `~`).
+- **Every archive is checked before it is unpacked**, whatever the sandbox. The recipient's host
+  reads every path in the downloaded archive first and refuses the whole archive, extracting
+  nothing, on the first path that is absolute or climbs with `..`; that would be written under
+  anything the archive didn't itself create as a directory (so never through a link already on
+  disk, such as one an earlier offer left); that is a hard link to anything but an earlier path of
+  the same archive; or that lies in Sova's state root or the sessions directory, links already on
+  disk resolved. The recipient's row then reads `refused`, with a sentence naming the path.
+  Symlinks in the archive still land as links, whatever their target, and archives from Sova
+  senders always carry their directories, so they pass.
 - **A sandboxed session binds the server.** The server packs and unpacks on a session's behalf,
   so while the **sending** session's sandbox is on (§chat/sandbox) it refuses to pack any path that
   session's own tools couldn't read: an offered path that is hidden, or a tree that holds a hidden
   path the `exclude` list doesn't drop, named so the sender can exclude it. While a **receiving**
   session's sandbox is on, its host refuses, for that recipient, a `dest` its tools couldn't write
   (its writable roots include its tracked worktrees, §chat.worktrees/sandbox), and, before
-  extracting, checks every path in the archive the same way, refusing on the first it couldn't
-  write or that would be written through a link already on disk. The server resolves the same
-  policy the sandbox extension does, from the session's own branch; when it can't, it refuses. With
-  the sandbox off, nothing here is restricted. **Known limit:** the check before extraction and
+  extracting, also checks every path in the archive the same way, refusing on the first it
+  couldn't write. The server resolves the same policy the sandbox extension does, from the
+  session's own branch; when it can't, it refuses. With the sandbox off, only the archive checks
+  above and the Sova-state rule apply. **Known limit:** the check before extraction and
   the extraction are two steps, so a sandboxed receiving agent that plants a symlink in `dest`
   between them could have the files written through it, outside its sandbox. Extracting inside the
   receiver's own sandbox would close this; it is not built.

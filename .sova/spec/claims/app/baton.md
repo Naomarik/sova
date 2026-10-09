@@ -561,7 +561,10 @@ once), **lease** (an offer's lock on its first taker).
   `GET /api/s/<token>/img/<n>` and the WebSocket `/ws/s?token=` (§app/session-share). Every other path
   answers 404 before any routing (the path is judged raw, before any decoding: a dot segment, an
   escape or a non-origin-form target never reaches a route); the operator app, `/api/*`, `/ws/chat`, `/ws/watch`, `/peer/*` and
-  `/ext/*` are unreachable on it. The main listener never serves the share page. A request whose `Host` is a
+  `/ext/*` are unreachable on it. A request carrying a `Service-Worker` header (a browser fetching a
+  service-worker script) answers 404 on every share path and socket, so no script served on the share
+  host, by this host or by any host routed through it, can become a service worker there. The main
+  listener never serves the share page. A request whose `Host` is a
   preview host is the preview's (§mesh.public/preview-address), with its own limits and answers
   (§mesh.public/preview-limits, §mesh.public/preview-proxy); nothing below applies to it.
 - Limits: request bodies over 16 KB (or without a length) are refused (413), except a photo
@@ -576,7 +579,10 @@ once), **lease** (an offer's lock on its first taker).
   elsewhere; a frame over 1 KB closes it with 1009, and a share socket's error is logged, never
   an uncaught exception); per client address 60 requests a minute (429; the page shell answers a
   plain page, "Too many requests from this network. Wait a minute, then reload.", with
-  `Retry-After: 60`, and the API paths JSON). The client address follows
+  `Retry-After: 60`, and the API paths JSON). Each of these limiters forgets a key with no request in
+  the last minute at its next sweep, on every request while it holds at most 1,000 keys and at most
+  once a second above that, and holds at most 100,000 keys, forgetting the least recently seen
+  first. The client address follows
   §mesh.public/forwarded-for: the last `X-Forwarded-For` hop counts only from a loopback front, or
   on a routed host's ingress from its admitted gateway; every other client's is its own socket
   address.

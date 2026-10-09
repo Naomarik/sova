@@ -30,7 +30,11 @@ the user adds it to this host's own list, and that entry wins.
 What each peer exchanges is also this host's grant to it (§mesh.peers/grants). A category the peer isn't
 granted is neither offered to it, taken from it, pulled from it nor merged, in either direction, and its
 extensions aren't listed here. Every other host still exchanges with that peer under its own grants, so a
-category this host denies a peer can still reach it through a third host.
+category this host denies a peer can still reach it through a third host. Your session profiles
+(`sova/session-profiles.json`) also need the sessions grant: a profile's first message runs as a
+session's opening prompt here, so a peer granted settings but not sessions exchanges every other
+settings document but never this one, in either direction. It still reaches that peer through a
+third host that grants it both.
 
 ## §mesh.sync/logins — Logins
 

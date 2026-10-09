@@ -8,9 +8,10 @@ import { type MeshResync, noRecipeReason, type ResyncHost, type ResyncJob, type 
 import { stateRoot } from "../state-root";
 import { type BootBuild, bootBuild, bootBuildChecked, type Git, realGit } from "./build-id";
 import { fetchPeerDetails } from "./details";
+import { fetchPeer } from "./dial";
 import { ownProtocol, type ProbeResult, probeHello, probePeer } from "./hello";
 import type { MeshApi } from "./index";
-import { PEER_ID_RE, type PeerEntry, peerUrl } from "./peers";
+import { PEER_ID_RE, type PeerEntry } from "./peers";
 
 // Mesh version resync (§mesh.peers/resync): deploy the exact build this host booted from to a peer
 // that is behind it, with the recipe this host keeps for that peer in <state root>/mesh-resync.json, else
@@ -219,7 +220,7 @@ export interface ResyncDeps {
   buildChecked: () => Promise<BootBuild | null>;
   /** The page's cached probe, and an uncached one for the job's own checks. */
   probe: (peer: PeerEntry) => Promise<ProbeResult>;
-  hello: (url: string) => Promise<ProbeResult>;
+  hello: (peer: PeerEntry) => Promise<ProbeResult>;
   protocol: () => string;
   recipes: () => { recipes: Map<string, Recipe>; error?: string };
   logDir: () => string;
@@ -250,7 +251,7 @@ export class ResyncService {
       build: bootBuild,
       buildChecked: bootBuildChecked,
       probe: probePeer,
-      hello: probeHello,
+      hello: (peer) => probeHello((path, init) => fetchPeer(peer, path, init)),
       protocol: ownProtocol,
       recipes: () => readRecipes(recipesFile(), derivedRecipes(localEnvs(this.d.root))),
       logDir: resyncLogDir,
@@ -337,7 +338,7 @@ export class ResyncService {
     if (!recipe) return { status: 409, body: { error: noRecipeReason({ id, label: name }, selfName) } };
     const problem = recipeProblem(recipe, this.d.root, this.d.exists);
     if (problem) return { status: 409, body: { error: `The recipe for ${name} can't run: ${problem}` } };
-    const probe = await this.d.hello(peerUrl(peer));
+    const probe = await this.d.hello(peer);
     if (probe.state === "up") return { status: 409, body: { error: `${name} already runs ${selfName}'s version` } };
     if (probe.state !== "skewed") return { status: 409, body: { error: `${name} isn't answering (${probe.state}), so its build can't be compared` } };
     const facts = await this.peerFacts(peer, probe);
@@ -410,7 +411,7 @@ export class ResyncService {
     const until = Date.now() + this.d.timeouts.wait;
     let last: ProbeResult | null = null;
     while (job.state.state === "waiting") {
-      last = await this.d.hello(peerUrl(peer));
+      last = await this.d.hello(peer);
       if (job.state.state !== "waiting") return;
       if (last.state === "up" && last.hello?.protocol === this.d.protocol()) {
         this.end(job, { state: "done" });

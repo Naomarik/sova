@@ -5,11 +5,12 @@
 // path. The rules around them, in-process: links-transfer.test.ts.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, test } from "node:test";
+import { zstdCompressSync } from "node:zlib";
 import { checkDest, listOffer, type OfferListing, type PullDeps, Pulls, partFile, serveTar, Spools, spoolFile, TransferError } from "./links-transfer";
 import { type ResolvedPolicy, writeDenial } from "../../pi-config/extensions/sandbox/policy.ts";
 import { prescan } from "../link-sandbox";
@@ -135,6 +136,28 @@ describe("Pulls", () => {
     assert.throws(() => statSync(partFile(rcvRoot, offerId)));
   });
 
+  test("sandbox off, the pre-scan still runs: this host's own spool (directories, a link) passes it and lands whole, twice into the same dest", async () => {
+    const s = sender();
+    const dest = join(rcvRoot, "dest", "scanned");
+    const protectedRoots = [join(rcvRoot, "agent", "sova"), join(rcvRoot, "agent", "sessions")];
+    for (let i = 0; i < 2; i++) {
+      const { scan } = checkDest({ resolvedDest: dest, rootNames: ["proj"], protectedRoots, sandbox: null });
+      assert.equal(scan, true);
+      await pulls(s.fetchTar).pull(
+        job({
+          resolvedDest: dest,
+          prescan: async (members) => {
+            const d = await prescan(members, { dest, roots: ["proj"], sandbox: { on: false }, protectedRoots });
+            if (d) throw new TransferError(d.reason, d.message);
+          },
+        }),
+      );
+      landed(dest);
+      sameBin(dest);
+    }
+    assert.equal(readlinkSync(join(dest, "proj", "sub", "l")), "../a.txt");
+  });
+
   test("a cut mid-body resumes with Range and If-Range from the bytes on disk", async () => {
     const s = sender(({ headers, n }) => {
       if (n !== 1) return undefined as unknown as Response;
@@ -234,5 +257,86 @@ describe("with the sandbox's own write rule: an existing root is decided by the 
     await offerAndPull(join(tmp, "locked-src", "a"), "of_2000000000000001");
     assert.equal(readFileSync(join(dest, "pj", "new.txt"), "utf8"), "new");
     assert.equal(readFileSync(join(dest, "pj", "locked", "keep.txt"), "utf8"), "keep");
+  });
+});
+
+describe("sandbox off, with the host's tar: a link an earlier offer left never carries a later offer's files", () => {
+  const base = join(tmp, "plant");
+  const state = join(base, "agent", "sova");
+  const protectedRoots = [state, join(base, "agent", "sessions")];
+  const sendRoot = join(base, "sender");
+  const rcvRoot = join(base, "receiver");
+  // Offer 1: proj/ and proj/l -> the state root. Offer 2: proj/l/mesh-access.json alone, no directory members.
+  const archive = (name: string, src: string, members: string[]) => {
+    const tar = join(base, `${name}.tar`);
+    execFileSync("tar", ["-C", src, "--no-recursion", "-cf", tar, ...members]);
+    return tar;
+  };
+  let one: string;
+  let two: string;
+  before(() => {
+    mkdirSync(state, { recursive: true });
+    mkdirSync(join(base, "src1", "proj"), { recursive: true });
+    symlinkSync(state, join(base, "src1", "proj", "l"));
+    makeTree(join(base, "src2"), { proj: { l: { "mesh-access.json": '{"grant":"full"}' } } });
+    one = archive("one", join(base, "src1"), ["proj", "proj/l"]);
+    two = archive("two", join(base, "src2"), ["proj/l/mesh-access.json"]);
+  });
+  const extractRaw = (tar: string, dest: string) => execFileSync("tar", ["-x", "--ignore-zeros", "--no-same-owner", "-C", dest, "-f", tar]);
+
+  test("the threat: the host's tar alone writes the second archive through the first one's link", (t) => {
+    const dest = join(base, "raw");
+    const outside = join(base, "raw-target");
+    mkdirSync(dest, { recursive: true });
+    mkdirSync(outside, { recursive: true });
+    // The same pair, pointed at a scratch dir instead of the state root.
+    mkdirSync(join(base, "src3", "proj"), { recursive: true });
+    symlinkSync(outside, join(base, "src3", "proj", "l"));
+    extractRaw(archive("three", join(base, "src3"), ["proj", "proj/l"]), dest);
+    extractRaw(two, dest);
+    const through = existsSync(join(outside, "mesh-access.json"));
+    t.diagnostic(`${execFileSync("tar", ["--version"], { encoding: "utf8" }).split("\n")[0]} ${through ? "writes through" : "does not write through"} a link already on disk`);
+    if (!/bsdtar/.test(execFileSync("tar", ["--version"], { encoding: "utf8" }))) assert.ok(through, "GNU tar follows a link in a member's parent path");
+  });
+
+  test("a pull of each, with the pre-scan checkDest asks for: the first lands, the second is refused, the state root is untouched", async () => {
+    const dest = join(base, "cwd", "in");
+    const spools: Record<string, { sha256: string; size: number }> = {};
+    const zipped = (offerId: string, tar: string) => {
+      const file = spoolFile(sendRoot, offerId);
+      mkdirSync(join(file, ".."), { recursive: true });
+      const bytes = zstdCompressSync(readFileSync(tar));
+      writeFileSync(file, bytes);
+      spools[offerId] = { sha256: createHash("sha256").update(bytes).digest("hex"), size: bytes.length };
+    };
+    zipped("of_3000000000000001", one);
+    zipped("of_3000000000000002", two);
+    const pulls = new Pulls({
+      root: () => rcvRoot,
+      ...quiet,
+      fetchTar: async ({ offerId, headers }) => serveTar({ file: spoolFile(sendRoot, offerId), ...spools[offerId]!, range: headers.Range, ifRange: headers["If-Range"] }),
+    });
+    const pull = (offerId: string) => {
+      const { scan } = checkDest({ resolvedDest: dest, rootNames: ["proj"], protectedRoots, sandbox: null });
+      return pulls.pull({
+        offerId,
+        linkId: "lk_0000000000000003",
+        from: "node-a",
+        resolvedDest: dest,
+        rootNames: ["proj"],
+        prescan: scan
+          ? async (members) => {
+              const d = await prescan(members, { dest, roots: ["proj"], sandbox: { on: false }, protectedRoots });
+              if (d) throw new TransferError(d.reason, d.message);
+            }
+          : undefined,
+      });
+    };
+    await pull("of_3000000000000001");
+    assert.equal(readlinkSync(join(dest, "proj", "l")), state, "a link member still lands as a link");
+    const e = await refusal(pull("of_3000000000000002"));
+    assert.equal(e.reason, "not-writable");
+    assert.match(e.message, /would be written through a path the archive didn't create as a directory/);
+    assert.equal(existsSync(join(state, "mesh-access.json")), false);
   });
 });

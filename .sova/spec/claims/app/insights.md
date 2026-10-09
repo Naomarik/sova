@@ -108,10 +108,10 @@ Usage glance needs the room.
     beside it; the meters share the glance row's free width, each at least 20px and at most
     64px, so they grow as the pane widens, never with their readings (the numbers are in the row's words, below). **A provider that reports a balance
     instead of windows (DeepSeek) shows the money, not a meter**: `DS $4`, mono, in `.text-num`.
-    It has no quota, so there is no percentage to invent; its segment goes last, like its card.
+    It has no quota, so there is no percentage to invent; its segment goes last, like its row.
   - **Two precisions for the one balance.** The foot is a shorthand, so it rounds to **whole
     currency units** ($4.29 → `$4`, $4.99 → `$5`; `moneyCompact()`, both fraction-digit options
-    set to 0). The row's `title`/`aria-label` and the Usage card keep the **exact** amount
+    set to 0). The row's `title`/`aria-label` and the Usage page's row keep the **exact** amount
     ($4.29, "Topped up $4.29"; `money()`) — the cents stay one hover, or one click, away.
   - **Bars.** A two-window provider draws two stacked bars, its short window as a 2px bar on top
     and its long one as a 4px bar under it, 1px apart: Claude's 5-hour over the window flagged
@@ -130,14 +130,14 @@ Usage glance needs the room.
     chat that has not recorded one yet, a TUI-watched session, a workspace pane that isn't a chat,
     and every page with no session open. Only with neither (an older server without
     `claudeLogins`, or no login ready) does it read `providers`' `claude`, Claude Code's own
-    login. Its reading is that login's account card on the Usage page (the account's freshest
+    login. Its reading is that login's account row on the Usage page (the account's freshest
     reading that still has a current window, else its freshest: its logins share one quota), so the meter follows a failover in the same poll. The visible segment stays `C` and its meter: the glance has no room for a name. With
-    more than one login, the row's `title` and `aria-label` name it after "Claude", by its card
+    more than one login, the row's `title` and `aria-label` name it after "Claude", by its row
     title (its email, else its label): "Claude (spare@example.com) 7-day: 61% used · …". With
     one login nothing is named, as before. `C` never pools accounts (a chat runs on one login),
     but the words then add one line per **other** account usable on this device — its logins on
     this device, never one another device holds or the pool keeps free; logins sharing an
-    `accountUuid` are one account, never counted twice — each its account card's reading in the
+    `accountUuid` are one account, never counted twice — each its account row's reading in the
     same form: "Claude (own@example.com) 5-hour: 0% used; 7-day: 40% used · day 3 of 7 · resets
     Oct 4 10:59 AM", or "… reading pending".
   - **Only current windows.** A window whose `resetsAt` is behind now is not a current reading:
@@ -618,7 +618,7 @@ Both pages share one shell: a `.session-head` and a `.insights.pane` containing
 <section class="insights pane" aria-label="Usage">
   <div class="insights-inner">
     <!-- stale banner here; no section head, since the h1 names the page -->
-    <div class="insights-grid">…usage cards…</div>
+    <div class="card usage-rows">…one article.usage-row per provider or Claude account…</div>
   </div>
 </section>
 
@@ -653,13 +653,15 @@ Both pages share one shell: a `.session-head` and a `.insights.pane` containing
   first answer and while nothing was spent today), and distinct
   unmerged branches among the worktrees read so far (left out before the first reading). The
   line's `title` says what each figure counts.
-- **Grid (Usage).** `.insights-grid` has 1 column. It becomes 2 columns when the `insights`
-  container is at least 640px wide, and 3 at 1000px or more. The container is named, per the skill.
+- **Rows (Usage).** The Usage page lists its providers as rows of one `.card.usage-rows`
+  (§app.insights/usage-cards), each row the card's full width, so a short row is never stretched
+  to a taller neighbour's height. Its layout steps at 640px and 960px of the `insights` container
+  width. The container is named, per the skill.
 - **Polling** (frontend's call on intervals). Update in place and keep scroll position and
   focus. Don't show a skeleton again after the first load. The board keys its rows by session
   path, so a poll keeps an open row open and a rename field focused.
-- **Loading** (first load, after 300ms). The Usage page shows a skeleton list of 5 groups (one per
-  provider it can show), one row each. The Agents page shows 1 skeleton list until the session list has loaded.
+- **Loading** (first load, after 300ms). The Usage page shows a skeleton in the rows' shape: one
+  card of 5 rows (one per provider it can show), each a title line beside 2 meter lines. The Agents page shows 1 skeleton list until the session list has loaded.
   Put `aria-busy` on `.insights-inner`.
 - **Request error.** Show `.banner-error` at the top of `.insights-inner` with Retry: "Couldn't
   load usage." or "Couldn't load agents." Any data already loaded stays visible below it. The
@@ -678,8 +680,9 @@ The TUI `/usage` detail keeps every reported provider section and its error, fre
 Ollama Cloud activity readings show the provider's actual interval, reported USD, requests and separate input, cached-input and output tokens; the Usage page adds a daily USD trend with partial days marked, without inventing a quota.
 
 - **Source and shape.** Accept the inspected activity response with `range`, `scope`, `granularity`, `from`, `until`, `totals` and `buckets` (the inspected selection is `7d`, `self`, `day`). Totals and bucket metrics are `request_count`, `usage_usd`, `input_tokens`, `cached_input_tokens`, `output_tokens`. `request_count` is required in totals and every reported bucket as a safe nonnegative integer; an absent or malformed request count makes that activity response unavailable. USD and token metrics may be omitted for legacy requests: a missing metric is unknown, never zero, and does not erase other valid reported metrics. Preserve the actual reporting bounds and scope; do not silently assume every response spans a reset cycle or every bucket a complete day. Normalize only valid finite nonnegative metrics when present and valid ordered reporting bounds. Invalid required reporting metadata is unavailable, never a successful all-zero reading. Unknown response fields do not become quota facts. Supported ranges are `24h`, `7d`, `30d` (default `7d`); supported scopes are `self` and `team` (default `self`, team requires an administrator). Custom ranges are not supported; unsupported or repeated query parameters are rejected with HTTP 400. Do not request invented reset-cycle bounds.
-- **Card and TUI.** The Usage card and `/usage` detail show this as activity, not a monthly percentage. Label the amount "Reported USD", not subscription spend, balance or allowance used: `usage_usd` includes both requests covered by the plan and requests paid from purchased credits. Show requests and input, cached input and output tokens as distinct labelled quantities. Input includes cached-input tokens; explicitly identify cached input as included in input and never sum the two. Show the actual from/until interval; the range label alone is not the interval. The compact TUI status must not print an undefined or fabricated percent for an activity reading.
+- **Usage row and TUI.** The Usage page's Ollama row and `/usage` detail show this as activity, not a monthly percentage. Label the amount "Reported USD", not subscription spend, balance or allowance used: `usage_usd` includes both requests covered by the plan and requests paid from purchased credits. Show requests and input, cached input and output tokens as distinct labelled quantities. Input includes cached-input tokens; explicitly identify cached input as included in input and never sum the two. Show the actual from/until interval; the range label alone is not the interval. The compact TUI status must not print an undefined or fabricated percent for an activity reading.
 - **Daily trend.** Plot each reported day's `usage_usd` over the reported interval, with its date and amount available in text. Reporting bounds and buckets are UTC, with `from` inclusive and `until` exclusive; `7d` and `30d` cover complete days plus today. Mark a day partial when the reporting bounds or bucket bounds cover only part of that UTC day, including an unfinished current day. The provider's `partial` field means still in progress, not proof of interval completeness; reporting of new usage can be delayed. Preserve the provider's bucket boundaries rather than regrouping by the viewer's local date. Missing days or missing USD values are gaps, not inferred zeros; no trend extrapolation, previous-cycle comparison or percent history is derived from activity totals. Distinguish this reported USD chart from quota burn and from this device's usage ledger/API-price estimates.
+- **The activity line.** On the Usage page the activity is one line of the Ollama row (§app.insights/usage-cards): its meter block holds the `h3` "Activity" (`#u-ollama-activity`), the as-of caption, the interval, the five metrics and the disclaimer; its trend block holds "Daily reported USD", a bar chart measured to the block's width (bars at a fixed pitch from the left edge, partial days muted, missing days a dashed base), and under it the date list in as many columns as fit. The interval's `from` and `until` each stay on one line, so a wrap falls at the "→", never inside a timestamp.
 - **Activity is not subscription consumption.** Activity totals have no quota, reset or plan denominator. `usage_usd` is request value including purchased-credit usage, not a subscription debit. Do not divide rolling activity dollars by an allowance or subscription price, infer quota used, produce a run-out estimate or percent history from raw totals, or extrapolate the range into a month. Authoritative monthly included credits come separately from §app.insights/ollama-credits; speculative declared-budget consumption is not part of this feature. No personal allowance or subscription amount is hardcoded in public code, fixtures or documentation.
 - **Compatibility.** Legacy monthly percent responses and caches remain supported alongside activity; activity and legacy data are distinguishable across fetch, cache, server wire, web and TUI. Credential handling and refresh/cache fallback remain §app.insights/usage-refresh's. The page summary acknowledges an activity-only provider's unknown included-credit status when no current balance is available (§app.insights/usage-cards).
 
@@ -688,35 +691,45 @@ Ollama Cloud activity readings show the provider's actual interval, reported USD
 Ollama Cloud's monthly credit display reads authoritative included balance, allowance and UTC period from its balance endpoint, with purchased credits separate; rolling activity dollars never stand in for subscription consumption.
 
 - **Fetch and parse.** Fetch `GET /api/balance` with the same bearer key as activity and no query parameters. Parse `included.balance_usd` as remaining included credits, `included.allowance_usd` as included credits available for the full period, `included.period.from` and `included.period.until` as the exact provider cycle, and `purchased.balance_usd` as remaining unexpired purchased credits. USD values must be finite and nonnegative; period bounds must be valid ordered UTC timestamps. Missing or malformed sections remain unknown, not zero, without discarding independent valid sections. Never require legacy session/weekly fields: the inspected response has none. When the balance API actually supplies legacy `session` or `weekly` `remaining_percent` and optional `resets_at`, the detail view may show those reported remaining shares and resets separately. Never invent those windows from activity or treat them as included-credit allowance.
-- **Monthly card.** Show "Included remaining" and the remaining USD against "Included allowance" for the full provider period, plus its actual start/end dates. The included period follows the plan's monthly reset schedule, including annual subscriptions: `from` is inclusive, `until` exclusive. The provider period is authoritative, not relabelled with the saved reset day. Any included-credit meter uses only balance and allowance: used share is `(allowance − balance) / allowance` when allowance is positive and the pair permits a meaningful share; zero allowance, missing values or inconsistent pairs get no fabricated percent or divide-by-zero. Exact remaining and allowance values remain visible even when a percent is not meaningful. Label any derived figure as included credits used, never total request value or total subscription spend. No inferred run-out or historical consumption chart is introduced by this balance reading.
-- **Purchased card section.** Show "Purchased remaining" separately with its USD balance. Purchased credits are not added to the included allowance, used-share numerator or monthly meter. Included exhaustion is not proof that calls cannot run: purchased credits may remain. No invented top-up history or expiry date is shown.
+- **Credits line.** Show "Included remaining" and the remaining USD against "Included allowance" for the full provider period, plus its actual start/end dates. The included period follows the plan's monthly reset schedule, including annual subscriptions: `from` is inclusive, `until` exclusive. The provider period is authoritative, not relabelled with the saved reset day. Any included-credit meter uses only balance and allowance: used share is `(allowance − balance) / allowance` when allowance is positive and the pair permits a meaningful share; zero allowance, missing values or inconsistent pairs get no fabricated percent or divide-by-zero. Exact remaining and allowance values remain visible even when a percent is not meaningful. Label any derived figure as included credits used, never total request value or total subscription spend. No inferred run-out or historical consumption chart is introduced by this balance reading. On the Usage page this is one line of the Ollama row (§app.insights/usage-cards): its meter block holds the `h3` "Included credits" (`#u-ollama-credits`), the as-of caption, the included figures, the used share with its track and the period, whose `from` and `until` each stay on one line; its trend block holds the purchased figure and any legacy session/weekly shares.
+- **Purchased credits.** Show "Purchased remaining" separately with its USD balance. Purchased credits are not added to the included allowance, used-share numerator or monthly meter. Included exhaustion is not proof that calls cannot run: purchased credits may remain. No invented top-up history or expiry date is shown.
 - **Independent freshness.** Activity and balance have independent last-success timestamps, errors and last-good readings in cache and wire data. Failure of one endpoint does not erase the other's success, block its display or advance the failed endpoint's timestamp. Kept balance after a failed fetch is explicitly marked as a previous reading with its own time and error; a fresh activity response cannot make that balance look current. The converse applies to kept activity. A balance whose provider period has ended is not a current included-credit reading, even if activity was just refreshed. Unknown or stale included credits never justify "All providers under limits." A kept reading is also previous when its own time is unknown, ahead of now or more than 10 minutes old. Refresh uses existing scheduling and locks, with no credential writes or token refresh.
 - **Legacy and fallback.** Continue reading legacy monthly percent responses/caches. When no valid provider balance period is available, the saved reset day remains a declared fallback for legacy monthly windows or an independently labelled subscription reset; it never turns activity into monthly consumption. Older caches and servers without balance data remain usable, with absent included/purchased values unknown. The authoritative balance endpoint supersedes speculative configurable-budget estimates; the user's personal amount is not a product default.
 
-## §app.insights/usage-cards — Usage cards
+## §app.insights/usage-cards — Usage rows
 
 ```html
-<article class="card usage-card" aria-labelledby="u-claude">
-  <header class="card-head">
-    <h3 class="card-title" id="u-claude">Claude</h3>
-    <span class="chip chip-warn"><i class="chip-dot"></i>Near limit</span>
-  </header>
-  <div class="card-body">
-    <div class="meter">
-      <p class="meter-head"><span class="meter-label">5-hour</span>
-        <span class="meter-value">96%<span class="meter-of"> used</span></span></p>
-      <div class="meter-track-wrap" aria-hidden="true">
-        <div class="meter-track"><span class="meter-fill meter-fill-warn" style="--meter-pct: 96%"></span></div>
-        <span class="meter-tick" style="--meter-at: 55%"></span>
+<div class="card usage-rows">
+  <article class="usage-row" aria-labelledby="u-claude">
+    <header class="usage-row-id">
+      <div class="usage-row-heading">
+        <h2 class="usage-row-title" id="u-claude">Claude</h2>
+        <p class="usage-row-plan text-caption text-muted">Claude · Max 20x</p>
       </div>
-      <div class="meter-context" title="2026-09-19T07:50:00Z">Resets in 2h 17m · 2h 43m of 5h</div>
+      <span class="chip chip-warn"><i class="chip-dot"></i>Near limit</span>
+    </header>
+    <div class="usage-row-lines">
+      <div class="usage-line">
+        <div class="meter usage-line-meter">
+          <p class="meter-head"><span class="meter-label">5-hour</span>
+            <span class="meter-value">96%<span class="meter-of"> used</span></span></p>
+          <div class="meter-track-wrap" aria-hidden="true">
+            <div class="meter-track"><span class="meter-fill meter-fill-warn" style="--meter-pct: 96%"></span></div>
+            <span class="meter-tick" style="--meter-at: 55%"></span>
+          </div>
+          <div class="meter-context" title="2026-09-19T07:50:00Z">Resets in 2h 17m · 2h 43m of 5h</div>
+        </div>
+        <div class="usage-line-trend">…burn lines, then the chart or strip (§app.insights/usage-burn)…</div>
+      </div>
+      <!-- or, instead of the lines: <p class="usage-note">Not signed in. Run <code>claude /login</code> …</p> -->
     </div>
-    <!-- or, instead of meters: <p class="usage-note">Not signed in. Run <code>claude /login</code> …</p> -->
-  </div>
-</article>
+    <!-- a Claude account: its .usage-logins, then the sign-in .usage-caption -->
+  </article>
+  …one article.usage-row per provider or Claude account…
+</div>
 ```
 
-- **Summary lead.** Above the grid, one `.usage-lead` line: one sentence per provider that needs
+- **Summary lead.** Above the rows, one `.usage-lead` line: one sentence per provider that needs
   attention, in payload order ("Claude's 5-hour window is rate-limited — resets in 1h 58m.",
   "DeepSeek is out of credit."), or "All providers under limits." when none does and every displayed quota-bearing provider has a current interpretable reading. When Ollama has activity but no current interpretable included-credit reading, the lead instead says "No reported limit needs attention. Ollama Cloud's included credits are unknown." if there is no attention sentence; with attention sentences it appends "Ollama Cloud's included credits are unknown." A stale balance is not a current reading. An authoritative positive-allowance included-credit reading may contribute its actual used share to attention status, never rolling activity dollars. Included exhaustion is described as "Ollama Cloud's included credits are used up.", not "Out of credit" or proof calls will fail, because purchased credits are separate. Claude's
   sentence reads the same login the sidebar foot's `C` does (§app.insights/sidebar-foot, **Which
@@ -728,22 +741,42 @@ Ollama Cloud's monthly credit display reads authoritative included balance, allo
   login is neither in its file nor in a keychain this server can read,
   §app.claude-logins/macos-keychain), one muted `.usage-note` under the lead says "On macOS, add
   your Claude login under Settings → Accounts."
-- **Cards.** There's one card per `providers[]` entry, in the order given: Claude, OpenAI,
-  Ollama Cloud, Z.ai, DeepSeek. Z.ai follows the system like every other provider: no brand color, and
-  the title is "Z.ai"; so does DeepSeek, titled "DeepSeek".
-- **Claude: one card per account.** When the payload carries `claudeLogins` (every Claude login on
+- **Rows.** The body under the lead is one `.card.usage-rows` holding one `article.usage-row` per
+  `providers[]` entry, in the order given: Claude, OpenAI, Ollama Cloud, Z.ai, DeepSeek. Each row
+  spans the card's width, rows are divided by a hairline, and a row is only as tall as its own
+  content. Its title is an `h2` whose id names the row (`aria-labelledby`). Z.ai follows the system
+  like every other provider: no brand color, and the title is "Z.ai"; so does DeepSeek, titled
+  "DeepSeek".
+  - **Identity and lines.** A row has an identity part — the title, the plan caption, the head
+    chip, a single login's chips, then a Claude account's logins list and the sign-in caption — and
+    its lines: one `.usage-line` per window, balance, extra usage or Ollama section, in the order
+    below. A line is a meter block (`.usage-line-meter`: the number, bar and reset) and a trend
+    block (`.usage-line-trend`: the burn lines, then the chart or strip, §app.insights/usage-burn),
+    left out when the line has nothing for it. A note that replaces the meters, the limit-reached
+    note and the last-stored-reading caption span the lines' full width.
+  - **Widths** (the named `insights` container). From 960px the identity part is a 15rem column
+    at the row's left with the lines beside it, and the row is as tall as the taller of the two.
+    From 640px to 959px the identity part is a head across the row (title and caption at the left,
+    the chip at the right), and the logins list and sign-in caption follow the lines. From 640px a
+    line's meter block is 18rem wide on every row, so every bar on the page starts at the same
+    left edge and has the same length, its trend block beside it. Under 640px everything stacks in
+    one column, a line's trend under its meter. The DOM order is the same at every width: head,
+    lines, logins, sign-in.
+  - **Nothing folded.** Charts and strips are always shown beside their meters; a row has no
+    disclosure.
+- **Claude: one row per account.** When the payload carries `claudeLogins` (every Claude login on
   this device, §app/claude-logins, in the device's order, `default` included; while the mesh is on,
   also every other login of the pool, §app.claude-logins/pool, each with its `holder`), Claude's
-  place holds one card per **account** instead of the single Claude card: logins with the same
-  `accountUuid` share one account's usage limits, so they share one card, where the first of them
+  place holds one row per **account** instead of the single Claude row: logins with the same
+  `accountUuid` share one account's usage limits, so they share one row, where the first of them
   falls in the order (§app.claude-logins/registry, **Accounts, then logins**). A login with no
-  account is a card of its own. An older server without the field gets the single card.
+  account is a row of its own. An older server without the field gets the single row.
   - The title is the account's email (else the login's label, else "Claude Code's own login"),
     wrapping rather than overflowing. Under it, the caption reads "Claude · {plan}" with the plan
     as people say it ("Max 20x", "Pro"; never a billing type such as `stripe_subscription`), then,
     for an account of one login, that login's name when it has one worth saying: "Claude Code's
     own login" for `default`, else its label.
-  - The account's usage is shown **once**, exactly like any provider card: meters, head chip,
+  - The account's usage is shown **once**, exactly like any provider row: meters, head chip,
     notes. Its reading is the freshest one among its logins that still has a window whose reset
     is ahead, else the freshest at all (an added login's own entry in the
     cache's `claudeAccounts`, `default`'s `providers`' `claude`, or, for a login another device
@@ -756,7 +789,8 @@ Ollama Cloud's monthly credit display reads authoritative included balance, allo
     "Not read yet. Its usage shows at the next refresh."; a login marked as needing sign-in is not
     fetched and, without a kept reading, says it is not fetched until Claude Code has signed it in
     again.
-  - **Its logins.** The body then lists the account's logins, compactly, under a caption "{n}
+  - **Its logins.** The row then lists the account's logins, compactly (in the identity column
+    from 960px, after the lines below that), under a caption "{n}
     logins in the pool" (the account's logins the pool has; `default` is never one of them, so it
     is listed but not counted) or, with none in the pool, "{n} logins on this device" — for an
     account of one login only when that login is in the pool ("1 login in the pool"). Each row: the login's name
@@ -764,7 +798,8 @@ Ollama Cloud's monthly credit display reads authoritative included balance, allo
     (**This device**, the holding device's name, **Free**, or **Stuck on** a device), and, for the
     login a new chat would start on — the first usable one in the device's order — a neutral
     `.chip.chip-count` "In use for new chats". An account of one login outside the pool (mesh off,
-    or `default`) shows its standing and that chip above the meters instead, with no list.
+    or `default`) shows its standing and that chip in its identity part, under the caption, instead,
+    with no list.
   - **Standing.** The chip speaks Settings → Accounts' words (§app.claude-logins/device-order):
     **Ready**, **Off**, **Limited until** a time, **Sign in again**, or **Not signed in** — and it
     never contradicts the head chip: a login whose recorded standing is ready while the account's
@@ -788,17 +823,17 @@ Ollama Cloud's monthly credit display reads authoritative included balance, allo
     (optional fields on `UsageWindow`), and is otherwise left out. Its reset is not read, so it
     has no reset line and no tick.
 - **DeepSeek: a balance, not meters.** DeepSeek has no usage or quota API — the only account
-  data is the prepaid credit — so its card carries `balance` and no windows. The body is one
-  `.meter` with no track: a `.meter-head` with `.meter-label` "Balance" and the money left in
+  data is the prepaid credit — so its row carries `balance` and no windows. Its one line's meter
+  block is a `.meter` with no track: a `.meter-head` with `.meter-label` "Balance" and the money left in
   `.meter-value` (`$4.29`, currency of the balance, `Intl.NumberFormat` `style:"currency"`), then a
   `.meter-context` with the non-zero parts of "Granted `$0.00`" and "Topped up `$4.29`" joined by
   " · ". With both at 0 that line is left out. There is **no percentage, no bar, and no reset
   line** — nothing resets; the balance goes down until it's topped up. When `available` is false the
-  head chip is `.chip.chip-error` "Out of credit" and a `.usage-note` under the balance reads "This
+  head chip is `.chip.chip-error` "Out of credit" and a full-width `.usage-note` after the balance line reads "This
   balance can't fund calls. They'll fail until it's topped up." A failed fetch that kept the balance
   says nothing: the balance reads as an ordinary one.
-- **Ollama activity.** An activity reading is shown as §app.insights/ollama-activity specifies, not as a monthly quota meter. The activity section has no limit chip, pace tick, quota burn or inferred reset; a separate authoritative included-credit section follows §app.insights/ollama-credits. Legacy monthly percent readings retain the monthly meter.
-- **Meters.** Each window gets a `.meter`. The number comes first, the bar second, and there's
+- **Ollama activity.** An activity reading is shown as §app.insights/ollama-activity specifies, not as a monthly quota meter. The activity section has no limit chip, pace tick, quota burn or inferred reset; a separate authoritative included-credit section follows §app.insights/ollama-credits. Legacy monthly percent readings retain the monthly meter. Ollama's sections are lines like any other: a credits line, an activity line, and, when it applies, a declared-reset line (§app.insights/ollama-credits, §app.insights/ollama-activity, §app.insights/usage-reset-day).
+- **Meters.** Each window gets a line whose meter block is a `.meter`. The number comes first, the bar second, and there's
   never a bar alone.
   - **Value.** `Math.round(pct)` followed by `%`. No decimals: the sources round, and a decimal
     claims precision we don't have. The fill's width is clamped to 100%.
@@ -821,10 +856,11 @@ Ollama Cloud's monthly credit display reads authoritative included balance, allo
   - **Fill color.** The fill is neutral. It gets `.meter-fill-warn` at ≥80% and
     `.meter-fill-error` at ≥100%. That matches the extension's own footer threshold, and it
     always pairs with the head chip. The foot's pace tones (§app.insights/pace-tick) are not
-    used here: on a card the pace is the tick and the context line.
-  - **Burn.** Under the context line, a meter may carry its burn lines (rate, run-out or the
-    percent at reset, last period) and, for a window of a day or more, a history chart
-    (§app.insights/usage-burn). The DeepSeek balance may carry its spend line the same way.
+    used here: on a row the pace is the tick and the context line.
+  - **Burn.** Beside the meter, its line's trend block may carry the burn lines (rate, run-out
+    or the percent at reset, last period) and, for a window of a day or more, a history chart, or,
+    under a day, the strip (§app.insights/usage-burn). The DeepSeek balance may carry its spend
+    line the same way.
 - **Head chip.** The worst window decides it. A window whose reset has already passed (the meter
   is a ghost) decides nothing. The words follow the skill's model-availability severities:
 
@@ -836,28 +872,28 @@ Ollama Cloud's monthly credit display reads authoritative included balance, allo
   | A 7-day, monthly, or MCP-uses window ≥ 100% | `.chip.chip-error` "Quota used" (waits for the reset) |
   | A balance with `available: false` | `.chip.chip-error` "Out of credit" (waits for a top-up) |
   | `error` set and `windows` (or a balance) kept | none: the kept reading is shown with no chip and no note, except Ollama's independently stale endpoint readings, which carry their own previous-reading time and error (§app.insights/ollama-credits) |
-- **Provider not ok.** Ollama's independent activity and balance sections may still show a valid kept reading with its own time and failure note when the other endpoint fails (§app.insights/ollama-credits). Otherwise the body is a single `.usage-note` (`nologin`, `expired`, `nokey`,
+- **Provider not ok.** Ollama's independent activity and balance sections may still show a valid kept reading with its own time and failure note when the other endpoint fails (§app.insights/ollama-credits). Otherwise the row's lines are a single full-width `.usage-note` (`nologin`, `expired`, `nokey`,
   `badkey`, `na`, or `error` with no windows; see §design/copy-deck), with no chip and no meters. Commands in
   the note go in `<code>`.
-  - `expired` (the provider refused the sign-in) has two notes, chosen from the card's `auth`.
+  - `expired` (the provider refused the sign-in) has two notes, chosen from the row's `auth`.
     When `auth` says the access token's own expiry has passed and does not say the refresh token
     has expired too, the note is the soft one: the token expired `{ago}`, and it renews the next
     time Claude Code runs (OpenAI signed in through pi: the next time pi uses OpenAI), after which
     usage updates. Nothing needs the user. In every other case — the refresh token has expired,
-    the card has no `auth`, or the access token has not reached its expiry (so it was revoked,
+    the row has no `auth`, or the access token has not reached its expiry (so it was revoked,
     not timed out) — the note stays "Sign-in expired. Run `claude /login` to renew it."
-- **Sign-in token.** A card whose `auth.kind` is `"oauth"` ends its body with one muted
-  `.usage-card-caption` line about the sign-in, after the meters or the note; an API-key
-  provider (`auth.kind: "apiKey"`) and a card without `auth` get none. Times follow
+- **Sign-in token.** A row whose `auth.kind` is `"oauth"` ends its identity part with one muted
+  `.usage-caption` line about the sign-in (under 960px of container width, after the lines and
+  the logins list); an API-key provider (`auth.kind: "apiKey"`) and a row without `auth` get none. Times follow
   §design/copy-deck: a clock (with the date when it isn't today) for when, a relative age for
   when it happened.
   - Valid access token: "Sign-in renews by `{expiresAt}`", plus " · last renewed `{ago}`" when
     `refreshedAt` is known. With `refreshedAt` and no `expiresAt` (the Codex CLI's sign-in): "Sign-in last renewed `{ago}`".
-  - Access token expired, refresh token not known to be expired, on a card whose state isn't
+  - Access token expired, refresh token not known to be expired, on a row whose state isn't
     `expired`: the soft sentence from the note above, as the caption (the meters are the reading
     from before it expired).
   - Refresh token expired: "Sign-in can't renew. Run `claude /login` to sign in again."
-  - On a card whose note is already the `expired` one, the caption is left out: the note says it.
+  - On a row whose note is already the `expired` one, the caption is left out: the note says it.
 - **Whole file.**
   - The Usage page's head meta always shows "Updated {rel}" from `fetchedAt`, or "Not read yet",
     then " · next refresh {in}" while `nextFetchAt` is ahead. With the server's own poller
@@ -867,10 +903,10 @@ Ollama Cloud's monthly credit display reads authoritative included balance, allo
   - `stale` is true when the file is more than 10 minutes old, which now means that this
     server's poller is failing or switched off and no TUI refreshed it either.
   - When `stale` is true and the last Refresh Usage failed, add a
-    `.banner.banner-warn` (`clock`) above the grid with the failure and a `Retry`. Old data on
+    `.banner.banner-warn` (`clock`) above the rows with the failure and a `Retry`. Old data on
     its own gets no banner: the head meta shows the age, and Refresh Usage fetches it. The
     meters still render.
-  - When `available` is false, replace the grid with one `.empty`. `missing` means unavailable,
+  - When `available` is false, replace the rows' card with one `.empty`. `missing` means unavailable,
     not an error. `corrupt` gets the error copy.
 
 ## §app.insights/pace-tick — Pace ticks
@@ -897,7 +933,7 @@ Fill past the tick means the quota is going faster than the window.
 - **Foot fill tone.** In the sidebar foot (§app.insights/sidebar-foot) a bar's fill is neutral
   ink, `warn` when its used share is more than 10 points ahead of its tick (`pct − 100 ×
   elapsed > 10`), and `error` at 90% or more. A bar with no tick is `warn` from 80%. The Usage
-  cards keep their own fill tones, which pair with the head chip (§app.insights/usage-cards).
+  rows keep their own fill tones, which pair with the head chip (§app.insights/usage-cards).
 
 ## §app.insights/usage-reset-day — Ollama Cloud's reset day
 
@@ -915,7 +951,7 @@ is offered from a drop in usage. Activity readings keep the provider's actual re
   changed day or a month rollover shows at once: Ollama's `month` window gains `startsAt` and
   `resetsAt` and is marked `declared: true`. `UsageInsight.ollamaResetDay` is the day, or `null`
   while none is set (absent from an older server, which offers no control).
-- **The card.** The reset-day control is a fallback: it remains available for legacy percent readings and for activity readings without a valid provider credit period. With an authoritative provider period it need not be shown. Without a valid provider credit period, an activity card labels its saved date as the declared subscription reset, separate from its reporting interval; that date supplies no quota denominator or monthly consumption. With a provider credit period the card uses that period for included credits, never overrides it with the saved day, and may retain the saved-day editor as an explicitly declared fallback. On a legacy `ok` Ollama card with no day set, the monthly meter's context reads, muted,
+- **The row.** The reset-day control is a fallback: it remains available for legacy percent readings and for activity readings without a valid provider credit period. With an authoritative provider period it need not be shown. Without a valid provider credit period, an activity row labels its saved date as the declared subscription reset, separate from its reporting interval; that date supplies no quota denominator or monthly consumption. With a provider credit period the row uses that period for included credits, never overrides it with the saved day, and may retain the saved-day editor as an explicitly declared fallback. On a legacy `ok` Ollama row with no day set, the monthly meter's context reads, muted,
   "Reset day unknown · " and a text button "Set". It opens an inline day-of-month field labelled
   "Reset day" (1–31): Enter or Save saves it (`PUT /api/insights/usage/reset-day`, `{provider:
   "ollama", day}`, which answers with the whole usage payload; `day: null` clears), Escape or
@@ -1010,19 +1046,23 @@ derives a declared subscription cycle from `usage-windows.json` as it reads (§a
 
 ## §app.insights/usage-burn — Usage burn: how fast a subscription is going
 
-**Each Usage card meter says how fast its window is being used, how that compares with the last
+**Each Usage row's meter says how fast its window is being used, how that compares with the last
 period, and when it runs out at this pace. The figures come from the provider's own percent, recorded
 over time on this device. Activity-only Ollama readings are not quota windows: their reported daily USD trend (§app.insights/ollama-activity) is not this percent history. They feed no percent series, inferred quota, period summary, run-out projection or previous-month consumption from raw totals; legacy Ollama percent readings keep this behavior.**
 
 ```html
-<div class="meter">
+<div class="usage-line">
+<div class="meter usage-line-meter">
   <p class="meter-head">…7-day … 58% used</p>
   <div class="meter-track-wrap">…</div>
   <div class="meter-context">Resets Oct 9 · day 4 of 7</div>
+</div>
+<div class="usage-line-trend">
   <p class="meter-context usage-burn-line">≈16%/day · at this pace used up <span class="text-mono">Wed 10:48 PM</span>,
     <span class="text-mono">19h</span> before reset <span class="chip chip-warn"><i class="chip-dot"></i>Runs out</span></p>
   <p class="meter-context usage-burn-line">Last 24h ≈22%/day · last week 81% (40% by this point)</p>
   <div class="usage-burn-chart">…</div>
+</div>
 </div>
 ```
 
@@ -1113,7 +1153,7 @@ over time on this device. Activity-only Ollama readings are not quota windows: t
     only, with no points.
   - Only the Usage page asks for them, so the payload the sidebar polls every 60 seconds stays
     small. The sidebar foot is unchanged.
-- **The lines.** Under the meter's reset line, `.meter-context.usage-burn-line` lines in
+- **The lines.** In the trend block beside the meter (§app.insights/usage-cards, under it below 640px), `.meter-context.usage-burn-line` lines in
   `--color-ink-2`, with times and durations in mono:
   - The rate: "≈21%/h" or "≈16%/day", with one decimal under 1.
   - Runs out before the reset: "at this pace used up `Wed 10:48 PM`, `19h` before reset",
@@ -1136,8 +1176,8 @@ over time on this device. Activity-only Ollama readings are not quota windows: t
     least 6 hours: "≈$1.20/day over 14 days · about `15 days` left at this pace". Nothing shows
     while it isn't going down.
 - **The chart.** A meter with a `history` key whose window is a day or more, with a known span,
-  its reset ahead and any period recorded, gets a chart under its lines, the meter's full width,
-  with a 64px plot. It is `aria-hidden`, because the lines carry its figures in words; the
+  its reset ahead and any period recorded, gets a chart under its lines, the trend block's full
+  width, with a 64px plot. It is `aria-hidden`, because the lines carry its figures in words; the
   stepper's buttons are the one control in it.
   - The y axis runs 0–100%, with a dotted 100% guide.
   - **This period:** a solid ink line of the recorded steps from the window start to now, ending
@@ -1449,7 +1489,7 @@ fetched except the lookups below.
     from now on each explanation's `createdAt`.
   - **Sort**: a select, `Newest First` (the default) or `Oldest First`, on `createdAt`.
 - **Grid.** `ul.explain-grid` of cards, 1 column; 2 columns once the `insights` container is at
-  least 640px wide, 3 at 1000px or more — the Usage grid's steps.
+  least 640px wide, 3 at 1000px or more.
 - **Card.** The explain tile (§chat.transcript/landing-page's former grid tile, `src/explain.css`):
   the thumbnail at 768px and up, the topic, `{relative time} · {model}`, the summary clamped to 3
   lines, and the advisory note when there is one. The thumbnail, topic, caption, summary and note

@@ -45,9 +45,9 @@ const event = (root: string, extra: Partial<HookInput>): HookInput => ({ session
 const context = (out: any): string => out?.hookSpecificOutput?.additionalContext ?? "";
 const C = ["-c", "user.email=t@t", "-c", "user.name=t"];
 
-test("specHookSettings: turn, pre and post (after ANY tool), run by node with the core and state dirs, nothing at Stop; withClaudeSettings keeps a sandbox's settings and hooks", () => {
+test("specHookSettings: turn, pre and post (after ANY tool, and after a failed or denied one), run by node with the core and state dirs, nothing at Stop; withClaudeSettings keeps a sandbox's settings and hooks", () => {
 	const settings = specHookSettings({ node: "/usr/bin/node", coreDir: "/c ore", stateDir: "/s" }) as any;
-	assert.deepEqual(Object.keys(settings.hooks).sort(), ["PostToolUse", "PreToolUse", "UserPromptSubmit"]);
+	assert.deepEqual(Object.keys(settings.hooks).sort(), ["PermissionDenied", "PostToolUse", "PostToolUseFailure", "PreToolUse", "UserPromptSubmit"]);
 	assert.equal(settings.hooks.PreToolUse[0].matcher, "*");
 	assert.equal(settings.hooks.PostToolUse[0].matcher, "*");
 	assert.equal(settings.hooks.PostToolUse[0].hooks[0].command, `/usr/bin/node ${SPEC_HOOK_SCRIPT} post --core '/c ore' --state /s`);
@@ -423,6 +423,18 @@ test("a failed call (PostToolUseFailure) closes the call: another process's late
 	assert.doesNotMatch(after, /\[spec census\]|src\/b\.txt/, `another process's commit after the failed call: ${after}`);
 	// Guard: a successful own write after all that still gets its note.
 	assert.match(context((await s.bash(root, "echo n > src/new.txt")).out), /New: src\/new\.txt → unclaimed/);
+	// A denied call (PermissionDenied) never ran: it closes too, so another process's commit after it is no note.
+	({ root, stateDir } = project());
+	await runHook("turn", event(root, {}), { core: CORE, stateDir });
+	const denied = { tool_name: "Bash", tool_use_id: "toolu_denied", tool_input: { command: "rm -rf src" } };
+	await runHook("pre", event(root, { hook_event_name: "PreToolUse", ...denied }), { core: CORE, stateDir });
+	const deny = (specHookSettings({ node: "node", coreDir: CORE, stateDir, script: "S" }) as any).hooks.PermissionDenied?.[0]?.hooks?.[0]?.command?.split(" ")[2];
+	assert.ok(deny, "a hook runs after a denied call");
+	assert.equal(context(await runHook(deny, event(root, { hook_event_name: "PermissionDenied", ...denied }), { core: CORE, stateDir })), "");
+	foreign(root);
+	s = failingSession(stateDir);
+	const afterDeny = context((await s.bash(root, "git log -1 --oneline")).out);
+	assert.doesNotMatch(afterDeny, /\[spec census\]|No draft yet/, `another process's commit after a denied call: ${afterDeny}`);
 });
 
 test("the script entry under a PATH whose `node` exits 1 (an untrusted mise.toml's shim): the census still runs; a census that does crash says why, its first stderr error line", () => {

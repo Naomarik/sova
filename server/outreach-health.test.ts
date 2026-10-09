@@ -56,3 +56,14 @@ test("never for connecting (a backoff wait included), open or linking; unreachab
   noteSenderStatus({ state: "open" }, T + 6 * MIN);
   assert.deepEqual(senderAttention(T + 6 * MIN), [], "it clears once the sender answers");
 });
+
+test("a down with a next try still ahead heals itself and never alerts; without one, or once it is overdue, it does", () => {
+  noteSenderState({ state: "down", why: "The reconnect limit of 3 an hour is reached.", retryAt: new Date(Date.now() + 30 * MIN).toISOString() });
+  assert.deepEqual(senderAttention(), [], "a self-healing wait");
+  resetSenderHealth();
+  noteSenderState({ state: "down", why: "The reconnect limit of 3 an hour is reached.", retryAt: new Date(T + 30 * MIN).toISOString() }, T);
+  assert.equal(senderAttention(T + 31 * MIN).length, 1, "the next try is overdue: it didn't heal");
+  resetSenderHealth();
+  noteSenderState({ state: "down", why: "No retry." });
+  assert.deepEqual(senderAttention().map((i) => i.kind), ["whatsapp-down"]);
+});

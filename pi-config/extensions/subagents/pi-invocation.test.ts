@@ -86,6 +86,12 @@ test("a mise shim on PATH is resolved once, from the host's cwd, never left to t
 	const node = { execPath: "/opt/runtime/node", bunVersion: undefined, miseWhich };
 	assert.deepEqual(resolvePiLaunch(host(node)), { command: realBun, prefix: [...bunGuardFlags(), cli], via: "package" });
 	assert.deepEqual(asked, [`${mise} bun ${app}`]);
+	// The host's cwd names none: Sova's own tree (the module's directory) is asked next.
+	asked.length = 0;
+	const moduleDir = path.join(app, "pi-config", "extensions", "subagents");
+	const fromModule = (m: string, name: string, cwd: string) => (asked.push(cwd), cwd === moduleDir ? realBun : undefined);
+	assert.equal(resolvePiLaunch(host({ ...node, cwd: root, miseWhich: fromModule })).command, realBun);
+	assert.deepEqual(asked, [root, moduleDir]);
 	// The shim can't name one: no Bun, the host's runtime.
 	assert.equal(resolvePiLaunch(host({ ...node, miseWhich: () => undefined })).command, "/opt/runtime/node");
 });

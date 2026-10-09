@@ -159,7 +159,11 @@ writer**).
     tree the call writes in (the cwd, a command's `cd`/`git -C`/`--root`, an
     edit's file) has its `git status` (paths and mtimes) compared with what the
     session saw; its baseline is taken at the run's start or just before the
-    first call that touches it. When a path is new
+    first call that touches it. Only what changes while one of the session's
+    own calls runs is its own: before each call (when no other is running),
+    what changed in a known tree since the last look, HEAD moved by another
+    process included, is taken in silently and left out of every note
+    (`settleCensus`; such a file the session then changes is its own). When a path is new
     (a commit's files count too), `census --changed --base <session-start
     HEAD> --own-base …` runs (`--spec` the draft this session created, else
     the newest one created since the session started, else in a linked
@@ -175,14 +179,19 @@ writer**).
     per tree, including when returning to a tree already seen. A census that
     can't run gives the model one line, `[spec census] incomplete: <why>; run
     census by hand`, once per cause per tree until a census there runs again;
-    there is no toast. Tools that cannot write the repo
+    a census that printed nothing names why (its first stderr error line, else
+    a timeout or its exit status); there is no toast. Tools that cannot write the repo
     (`CENSUS_SKIP_TOOLS`, exact names: read, grep, find, ls, align, the agent
     and team listing tools, agent_wait (it waits on workers and writes nothing
     to the repo), the link inbox tools; never bash) skip the census:
-    no look, no baseline move, so the next writing call reports it all. The same digest says, on the call
+    no look, no baseline move; what changed meanwhile is taken in before the next
+    writing call. The same digest says, on the call
     that did it, when the current spec (`manifest.json`, `claims/**`) was
-    written by hand: an edit or write call on it, or a shell command that is
-    neither a draft tool nor git and changed it; and when a git operation
+    written by hand: an edit or write call on it, or a shell command that
+    changed it, judged by the files, never the command's text (`handWritten`:
+    not while a merge, rebase, cherry-pick or revert is under way, nor bytes a
+    promotion receipt's `after` hashes record, nor bytes equal to HEAD's or the
+    default branch's); and when a git operation
     rewrote a commit a draft's evidence names (a rebase, reset or amend: the
     commit was on the branch before the call and isn't after), with the
     way back: `git rebase --abort` while the rebase is under way, else, with

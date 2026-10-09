@@ -3,8 +3,8 @@
 
 The spec tools preserve declared requirements, keep proposed changes separate, and report what
 was checked against particular inputs. Their checks establish structure and applicability, not
-semantic correctness. The minor mode adds task reminders and the census note, and never holds
-a turn's end; response wording is not proof that implementation and requirements agree.
+semantic correctness. The minor mode adds task reminders and the census note, names in a finished
+code-writing worker's summary the § its changes landed in, and never holds a turn's end; response wording is not proof that implementation and requirements agree.
 
 Complete graph queries remain available to machine consumers. Bounded packets deliver exact
 requirements within an explicit whole-response budget, with continuation and unknowns kept visible.
@@ -116,8 +116,15 @@ while one of the session's own tool calls runs is the session's: a file changed,
 between its calls (another process sharing the work tree, a worker, the user's editor) is taken in
 silently before the next call and left out of every count and line, so a session that changes
 nothing itself never gets a note or `No draft yet`. Such a file the session then changes itself is
-its own from that call on. A worker's changes reach the worker's own census note, never its
-parent's.
+its own from that call on. A call that fails (a shell command that exits non-zero; in Claude Code,
+a call that ends in `PostToolUseFailure` instead of `PostToolUse`) is closed exactly like one that
+succeeds: what changed while it ran is its own and gets the same note, and no later change between
+calls counts as the session's because of it. A call that never ran is closed without a census
+where the host says so (in pi, a call blocked or aborted before it started; in Claude Code, a
+denied call, `PermissionDenied`); any other call left open stops counting as running when the
+next prompt starts a run (in Claude Code, also after 15 minutes). A worker's changes reach the worker's own census note, never
+its parent's; when the worker settles, its parent gets one line naming where they landed
+(§tools.spec/worker-landed).
 
 - a header, "N changed file(s) in the boundary, M unclaimed", followed by "; K mapped outside the
   boundary" when K is above 0; it gives no foreign count;
@@ -144,6 +151,23 @@ own read-only tools and the team tools team_inbox, team_msg, team_ask, team_rost
 wake_nudge. A skipped call neither looks at the tree nor moves the census's baseline; what changed
 while it ran is taken in before the next call that can write, like any change between calls. Shell
 commands are never skipped.
+
+## §tools.spec/worker-landed — A finished worker names the § its changes landed in
+
+When a code-writing worker that a spec-on session started (pi or Claude Code, plain, sandboxed,
+hosted or a team member) settles, its summary carries one line after the worker's answer (after the preview, before the
+notice, when the answer is cut), so the answer's first line still opens the report: "Spec: this
+worker's changes landed in §a, §b (+N more)", with at most 5 §, followed by "; unclaimed: x, y
+(+N more)" (at most 3 files) when some of its changed files in the boundary have no claim (with
+none mapped: "Spec: this worker's changes landed in no claim; unclaimed: …"). The summary is the
+same text everywhere a settle reaches: the parent's `subagent-complete` message, `agent_wait`'s
+result, and a team member's completion routed to its coordinator. Its changes are the files its
+own census counted (§tools.spec/census-note) since it started: what another process changed
+between its calls is not among them, and a file it changed back drops out at its next census. The § are those its
+census mapped them to, with the draft it worked in when it had one. No line when none of its own
+changes is in the boundary or mapped by a claim, when its census never ran, and for a worker
+without the census (read-only, remote, or started before this change). It is the same line at
+every settle of that worker, never a per-call note, and nothing checks or acts on it.
 
 ## §tools.spec/write-guard — The direct-write note judges the files, not the command
 
@@ -202,7 +226,9 @@ Replies carry no spec lines but one, "Also updates §X: <what>" (below), which n
 no `Also changes:`, `Plumbing:`, `Deferred:` or `Spec check override:` line is asked for or checked. A turn with spec on ends when the model stops, as one
 with spec off does: nothing re-prompts it, and no warning, toast, hidden note, session record or
 card about the turn's spec changes is added, in a pi session, a pi worker or a Claude Code worker.
-A worker writes no spec ledger, and its parent reads none. A Claude Code worker started before
+A worker writes no spec ledger, and its parent reads none; the one line a finished worker's
+summary carries naming where its changes landed (§tools.spec/worker-landed) is read from the
+worker's census state, checks nothing and asks for nothing. A Claude Code worker started before
 this change that still calls the hook's `stop` step or passes `--ledger` gets nothing: the hook
 prints nothing and exits 0. A foreign § (one that existed before the task
 started) whose text the task's change contradicts, or where it changes what a user sees beyond

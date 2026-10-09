@@ -11137,7 +11137,10 @@
         "pi-config/extensions/mode/tests/spec-worker.mjs",
         "pi-config/extensions/claude-code/spec-hooks.test.ts",
         "pi-config/extensions/mode/README.md",
-        "pi-config/extensions/claude-code/README.md"
+        "pi-config/extensions/claude-code/README.md",
+        "pi-config/extensions/mode/spec-worker.ts",
+        "pi-config/extensions/mode/index.ts",
+        "pi-config/extensions/subagents/index.test.ts"
       ]
     },
     "§tools/spec": {
@@ -16707,6 +16710,24 @@
         "pi-config/extensions/claude-code/spec-hooks.test.ts",
         "pi-config/extensions/spec/core/sova-spec-draft.mjs",
         "pi-config/extensions/spec/tests/draft.test.mjs"
+      ]
+    },
+    "§tools.spec/worker-landed": {
+      "kind": "behavior",
+      "requires": [
+        "§tools.spec/census-note"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/mode/spec-guard.ts",
+        "pi-config/extensions/mode/spec-worker.ts",
+        "pi-config/extensions/mode/index.ts",
+        "pi-config/extensions/subagents/index.ts",
+        "pi-config/extensions/subagents/README.md",
+        "pi-config/extensions/mode/README.md",
+        "pi-config/extensions/claude-code/README.md",
+        "pi-config/extensions/subagents/tests/spec-landed.mjs"
       ]
     }
   },

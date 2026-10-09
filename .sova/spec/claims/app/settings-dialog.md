@@ -411,7 +411,7 @@ Changes like every gated form (§app.settings-dialog/save-bar):
 - **Visuals**, one switch, "Draw when it helps", with the hint "The align mode draws a wireframe or a
   flow on the alignment card when a picture explains faster than words. Applies to sessions you start
   after saving."
-- **Review**, one switch, "Adversarial review", with an **Experimental** chip beside its label and
+- **Review**, one switch, "Adversarial review", with no chip, and
   today's line, ending in when it applies: "In align sessions, a read-only reviewer checks the plan
   and the diff of risky work, at most once each per alignment. Applies to sessions you start after
   saving." (§chat.alignment-review/flag)
@@ -654,8 +654,7 @@ Discard button of its own: saving is the dialog's.
   (§app.settings-dialog/alignment); Save Changes writes the review switch to Sova's settings and the
   style and visuals to `mode-align.json`, each a write of its own, and the status line names the form
   "Alignment" whichever of the two failed.
-- **Experimental** holds no switch now: its panel says "Adversarial review is in Alignment, marked
-  Experimental. No other experiments right now." and nothing in it is ever unsaved. Adversarial
+- **Experimental** holds no switch now: its panel says "No experimental features right now." and nothing in it is ever unsaved. Adversarial
   review moved to Alignment; the Claude Code provider is no switch there, it is always on (§app.claude-code-provider/always-on).
 - **Not gated.** General, Themes and Typography change only this browser and still apply as you
   pick. Actions run at once and are never part of a draft: Retry, Try Again, Check Again, Themes'

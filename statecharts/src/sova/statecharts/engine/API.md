@@ -267,3 +267,10 @@ now releases it at once, after its own quiet row, and the release re-checks the 
 Anything else is ignored (no row). `host.rewindowHours(windowOf: (hold) => ms | null)` sends it for every
 hours wait whose window changed (the server, after a person's or the company's hours edit; its stamp must
 give the people's current effective records). A runtime JS act's `hours` reads JS data.
+**Outage waits.** Act meta `:outage true`: when a held act is released (or approved) and its fresh stamp carries
+`:outage {:why}` (its channel is down; the stamp's alone, a held payload's is dropped), it is held again with
+`:wait "outage" :until <first wait + hold_policy/outage-wait-ms (24 h)>`, the first wait kept in the payload as
+`:sova/outage-since`, so a flap never extends it. An hours wait comes first; never for an act not yet released
+(the operator's click, an attended turn). `sova/rewindow {id until: nil}` releases it (the channel is back; any
+other `until` is ignored); at its end it goes ahead under the fresh stamp, outage or not.
+`host.releaseOutageWaits()` sends that for every outage wait (the server, when the sender reads up again).

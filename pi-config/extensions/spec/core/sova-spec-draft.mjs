@@ -7,10 +7,12 @@
 //            [--path P]... [--log FILE] [--write]        record implementation + verification evidence
 //   promote NAME (--id §x... | --all) [--meta KEY]... [--file PATH]... [--plan SHA] [--write]
 //   recover [--write]                                    roll back an interrupted promotion
+//   drafts [--days N] [--worktrees]                      never writes: each draft's age, state and suggested action
+//   prune --approved FILE [--write]                      delete only the drafts FILE names (the user's approved list)
 //   merge-manifest [--base F --ours F --theirs F] [--write]  record-level 3-way merge of manifest.json (a Git conflict)
 //   merge-claims --base F --ours F --theirs F [--path P] [--write]  per-declaration 3-way merge of a claim file (a Git merge driver)
 // All take --root DIR (required) and [--json]. Writes happen only with --write, only under
-// .sova/spec/drafts/, except `promote --write`/`recover --write`, which also write .sova/spec/manifest.json
+// .sova/spec/drafts/ (`prune --write` deletes there, only drafts its list names), except `promote --write`/`recover --write`, which also write .sova/spec/manifest.json
 // and files in the claims tree, and the merge drivers, which write only the --ours file Git hands them. It runs
 // only the sibling core (`sova-spec.mjs`) and, in a Git project, read-only `git` plumbing (rev-parse, cat-file,
 // merge-base, and merge-file to stdout for a claim file the driver can't merge per declaration), always without a shell. It never runs a
@@ -28,7 +30,7 @@ import { constants } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { resolve, join, dirname, posix, relative } from "node:path";
-import { realpathSync } from "node:fs";
+import { realpathSync, existsSync } from "node:fs";
 import { tmpdir, hostname } from "node:os";
 import { fileURLToPath } from "node:url";
 import { createInspection, declarationSpans } from "./sova-spec.mjs";
@@ -66,9 +68,10 @@ const uniqSorted = (a) => [...new Set(a)].sort();
 // ---------------------------------------------------------------- args
 const FLAGS = { new: ["purpose", "write", "all"], status: [], diff: ["against"], check: ["base", "all"],
   evidence: ["id", "by", "verification", "commit", "snapshot", "doc-only", "path", "log", "write"],
-  promote: ["id", "all", "meta", "file", "plan", "write", "own-base"], recover: ["write"], "merge-manifest": ["base", "ours", "theirs", "write"],
+  promote: ["id", "all", "meta", "file", "plan", "write", "own-base", "days"], recover: ["write"],
+  drafts: ["days", "worktrees"], prune: ["approved", "write"], "merge-manifest": ["base", "ours", "theirs", "write"],
   "merge-claims": ["base", "ours", "theirs", "path", "write"] };
-const BOOL = new Set(["json", "write", "snapshot", "doc-only", "all"]), MULTI = new Set(["id", "path", "meta", "file", "own-base"]);
+const BOOL = new Set(["json", "write", "snapshot", "doc-only", "all", "worktrees"]), MULTI = new Set(["id", "path", "meta", "file", "own-base"]);
 function parseArgs(argv) {
   const o = { pos: [], id: [], path: [], meta: [], file: [], "own-base": [], seen: new Set() };
   for (let i = 0; i < argv.length; i++) {
@@ -76,7 +79,7 @@ function parseArgs(argv) {
     if (!a.startsWith("--")) { o.pos.push(a); continue; }
     const k = a.slice(2);
     if (BOOL.has(k)) { o[k] = true; o.seen.add(k); continue; }
-    if (!["root", "purpose", "against", "by", "verification", "commit", "log", "plan", "base", "ours", "theirs", ...MULTI].includes(k)) throw new Fail(2, "usage", `unknown flag ${a}`);
+    if (!["root", "purpose", "against", "by", "verification", "commit", "log", "plan", "base", "ours", "theirs", "days", "approved", ...MULTI].includes(k)) throw new Fail(2, "usage", `unknown flag ${a}`);
     if (i + 1 >= argv.length) throw new Fail(2, "usage", `${a} needs a value`);
     if (MULTI.has(k)) o[k].push(argv[++i]); else o[k] = argv[++i];
     o.seen.add(k);
@@ -86,6 +89,12 @@ function parseArgs(argv) {
   if (!FLAGS[cmd]) throw new Fail(2, "usage", cmd ? `unknown command ${cmd}` : "missing command");
   if (o.root === undefined) throw new Fail(2, "usage", "--root PROJECT is required");
   for (const k of o.seen) if (k !== "root" && k !== "json" && !FLAGS[cmd].includes(k)) throw new Fail(2, "usage", `--${k} does not apply to ${cmd}`);
+  if (o.days !== undefined && !/^[1-9][0-9]{0,3}$/.test(o.days)) throw new Fail(2, "usage", "--days takes a whole number of days, 1-9999");
+  if (cmd === "drafts" || cmd === "prune") {
+    if (name !== undefined) throw new Fail(2, "usage", `${cmd} takes no arguments`);
+    if (cmd === "prune" && (typeof o.approved !== "string" || !o.approved)) throw new Fail(2, "usage", "prune needs --approved FILE: the drafts the user approved for deletion, one per line");
+    return o;
+  }
   if (cmd === "recover" || cmd === "merge-manifest") {
     if (name !== undefined) throw new Fail(2, "usage", `${cmd} takes no arguments`);
     const sides = ["base", "ours", "theirs"].filter((k) => o[k] !== undefined).length;
@@ -124,7 +133,8 @@ function parseArgs(argv) {
 }
 const USAGE = "usage: sova-spec-draft <new NAME [--purpose T] | status NAME | diff NAME [--against base|current] | check NAME | " +
   "evidence NAME --id §x --by WHO --verification T (--commit REV|--snapshot|--doc-only) [--path P] [--log FILE] | " +
-  "promote NAME (--id §x|--all) [--meta K] [--file P] [--plan SHA] [--own-base REV]... | check NAME [--base REV] | recover | " +
+  "promote NAME (--id §x|--all) [--meta K] [--file P] [--plan SHA] [--own-base REV]... [--days N] | check NAME [--base REV] | recover | " +
+  "drafts [--days N] [--worktrees] | prune --approved FILE | " +
   "merge-manifest [--base F --ours F --theirs F] | merge-claims --base F --ours F --theirs F [--path P]> --root DIR [--write] [--json]";
 
 // ---------------------------------------------------------------- paths and bytes
@@ -1164,7 +1174,7 @@ async function cmdPromote(root, o) {
     // A preview: this promotion's own selected records are about to land, so they are not "left unpromoted".
     const l = landingOf(root, p.g, p.a, p.bases);
     if (l.unpromotedDrafts) l.unpromotedDrafts = l.unpromotedDrafts.map((d) => d.draft === o.name && samePath(d.worktree, root) ? { ...d, ids: d.ids.filter((id) => !p.out.ids.includes(id)) } : d).filter((d) => d.ids.length);
-    return { exit: p.refusals.length ? 1 : 0, written: false, ...p.out, ...l };
+    return { exit: p.refusals.length ? 1 : 0, written: false, ...p.out, ...l, ...(await staleDraftsNote(root, o)) };
   }
   return withLock(root, async () => {
     await refusePending(root);
@@ -1178,7 +1188,7 @@ async function cmdPromote(root, o) {
       after: Object.fromEntries(p.targets.filter((t) => t.storage !== "draft").map((t) => [t.path, t.after])) });
     const receipt = Buffer.from(JSON.stringify(d, null, 2) + "\n");
     await applyTxn(root, o.name, p.targets, p.cand, { before: p.a.sha, buf: receipt });
-    return { exit: 0, written: true, ...p.out, ...landingOf(root, p.g, p.a, p.bases) };
+    return { exit: 0, written: true, ...p.out, ...landingOf(root, p.g, p.a, p.bases), ...(await staleDraftsNote(root, o)) };
   });
 }
 
@@ -1289,6 +1299,181 @@ async function cmdRecover(root, o) {
     await rm(x.txn, { recursive: true, force: true });
     return { exit: 0, pending: false, written: true, ...view(x), action: "rolled back" };
   }, { takeOverDead: true });
+}
+
+// ---------------------------------------------------------------- drafts left behind, and the approved prune
+const DAY_MS = 86_400_000, STALE_DAYS = 7;
+const daysOf = (o) => (o.days === undefined ? STALE_DAYS : Number(o.days));
+// The draft names under one root's drafts directory (no lock, no .txn, no temp dirs). → [name]
+async function draftNames(root) {
+  const dir = await ownDir(root, DRAFTS, false);
+  if (!dir) return [];
+  return (await readdir(dir, { withFileTypes: true })).filter((e) => e.isDirectory() && NAME_RE.test(e.name)).map((e) => e.name).sort();
+}
+// Made, evidence recorded or promoted, whichever is latest. → ms | null
+function lastActivity(d) {
+  const t = [d?.createdAt, ...(Array.isArray(d?.evidence) ? d.evidence.map((e) => e?.recordedAt) : []), ...(Array.isArray(d?.promotions) ? d.promotions.map((p) => p?.at) : [])]
+    .map((x) => (typeof x === "string" ? Date.parse(x) : NaN)).filter(Number.isFinite);
+  return t.length ? Math.max(...t) : null;
+}
+// Every work tree of the root's repository, at the same project prefix, the root first. → [abs root]
+function worktreeRoots(root, g) {
+  const roots = [root];
+  if (!g.git) return roots;
+  const r = git(root, ["worktree", "list", "--porcelain", "-z"]);
+  if (r.status !== 0) return roots;
+  for (const f of r.out.split("\0")) if (f.startsWith("worktree ")) {
+    const p = g.prefix ? join(f.slice(9), g.prefix) : f.slice(9);
+    if (!roots.some((x) => samePath(x, p)) && existsSync(p)) roots.push(p);
+  }
+  return roots;
+}
+// One hash over draft.json and the proposal tree (spec/), so an approval names exactly what was reviewed. → hex | null
+async function draftHash(root, name) {
+  const raw = await readFileSafe(root, `${draftRel(name)}/draft.json`);
+  if (raw.state !== "present") return null;
+  try { return sha(`${raw.sha256}
+${treePrint(await readTree(root, `${draftRel(name)}/spec`, true))}`); } catch (e) { if (e instanceof Fail) return null; throw e; }
+}
+async function draftReport(root, name, now, days, tip, branch) {
+  const row = { name, worktree: root };
+  let a;
+  try { a = await analyze(root, name); } catch (e) {
+    if (!(e instanceof Fail)) throw e;
+    const raw = await readFileSafe(root, `${draftRel(name)}/draft.json`);
+    let d = null; try { d = JSON.parse(raw.buf.toString("utf8")); } catch {}
+    const last = lastActivity(d);
+    return { ...row, createdAt: d?.createdAt ?? null, lastActivity: last && new Date(last).toISOString(), ageDays: last && Math.floor((now - last) / DAY_MS),
+      state: "unreadable", reasons: [`${e.code}: ${e.message}`], suggest: "keep", pending: [], conflict: [], current: [], draftSha256: await draftHash(root, name) };
+  }
+  const s = await statusOut(root, a);
+  const promoted = new Set(a.d.promotions.flatMap((p) => p.ids ?? []));
+  let pending = s.ids.filter((i) => i.current === "pending").map((i) => i.id);
+  const conflict = s.ids.filter((i) => i.current === "conflict" && !promoted.has(i.id)).map((i) => i.id);
+  const current = s.ids.filter((i) => i.current === "already-current" || (i.current === "conflict" && promoted.has(i.id))).map((i) => i.id);
+  // Pending here but already on the default branch, byte for byte (its record, and every claim file it is in): this work
+  // tree's current lags the branch it was merged into. Any other difference keeps it pending.
+  const onBranch = [];
+  if (pending.length && tip) {
+    const g = await gitInfo(root), m = git(root, ["show", `${tip}:${g.prefix ? `${g.prefix}/` : ""}${SPEC}/manifest.json`]);
+    let tipClaims = null; try { tipClaims = m.status === 0 ? JSON.parse(m.out)?.claims ?? {} : null; } catch {}
+    if (tipClaims) for (const id of pending) {
+      const c = a.changed.get(id);
+      if (canon(recOf(a.prop, id)) === canon(tipClaims[id]) && c.files.every((f) => (blobAt(root, g, tip, `${SPEC}/${f}`).sha256 ?? null) === (a.prop.files.get(f)?.sha256 ?? null))) onBranch.push(id);
+    }
+    pending = pending.filter((id) => !onBranch.includes(id));
+    current.push(...onBranch);
+  }
+  const last = lastActivity(a.d), age = last === null ? null : Math.floor((now - last) / DAY_MS), old = age !== null && age > days;
+  const reasons = [];
+  // Landed: a commit the evidence for a pending id names is on the default branch, or this work tree's own branch
+  // was merged into it after the draft was made.
+  if (pending.length && tip) {
+    const onTip = (c) => git(root, ["merge-base", "--is-ancestor", c, tip]).status === 0;
+    const by = new Map();
+    for (const id of pending) {
+      const e = [...a.d.evidence].reverse().find((x) => x.ids.some((y) => y.id === id));
+      if (e?.mode === "commit" && resolveCommit(root, e.commit) === e.commit && onTip(e.commit)) by.set(e.commit, [...(by.get(e.commit) ?? []), id]);
+    }
+    for (const [c, ids] of by) reasons.push(`evidence commit ${c.slice(0, 12)} is on ${branch} (${ids.length === 1 ? ids[0] : `${ids.length} ids`})`);
+    const head = resolveCommit(root, "HEAD"), own = git(root, ["symbolic-ref", "--quiet", "--short", "HEAD"]).out?.trim();
+    if (!reasons.length && head && own && own !== branch && a.d.base.commit && head !== a.d.base.commit && onTip(head) &&
+        git(root, ["merge-base", "--is-ancestor", a.d.base.commit, head]).status === 0)
+      reasons.push(`this work tree's branch ${own} was merged into ${branch} after the draft was made`);
+  }
+  const landed = reasons.length > 0;
+  const state = pending.length ? (landed ? "landed" : old ? "old" : "active")
+    : conflict.length ? "superseded" : current.length ? "promoted" : old ? "empty" : "active";
+  if (state === "landed") {
+    reasons.push(`pending: ${pending.join(", ")}`);
+    const stale = s.ids.filter((i) => pending.includes(i.id) && i.evidence.state !== "valid").map((i) => `${i.id} (${i.evidence.state})`);
+    if (stale.length) reasons.push(`evidence to re-record before promoting: ${stale.join(", ")}`);
+  }
+  if (state === "old") reasons.push(`pending: ${pending.join(", ")}`, `no activity for ${age} days (limit ${days})`);
+  if (state === "superseded") reasons.push(`current changed differently: ${conflict.join(", ")}`, ...(current.length ? [`already current: ${current.join(", ")}`] : []));
+  const here = current.filter((id) => !onBranch.includes(id));
+  if (state === "promoted" && here.length) reasons.push(`already current: ${here.join(", ")}`);
+  if (onBranch.length) reasons.push(`already on ${branch} as this draft says it: ${onBranch.join(", ")}`);
+  if (state === "empty") reasons.push(`changes nothing, and no activity for ${age} days (limit ${days})`);
+  if (conflict.length && pending.length) reasons.push(`also in conflict: ${conflict.join(", ")}`);
+  if (s.proposedGraph.exit === 2) reasons.push("the draft graph does not load (exit 2)");
+  const suggest = state === "landed" ? "promote" : ["promoted", "superseded", "empty"].includes(state) ? "delete" : "keep";
+  return { ...row, purpose: a.d.purpose ?? null, createdAt: a.d.createdAt, lastActivity: last && new Date(last).toISOString(), ageDays: age,
+    state, reasons, suggest, pending, conflict, current, draftSha256: await draftHash(root, name) };
+}
+async function cmdDrafts(root, o) {
+  const g = await gitInfo(root), days = daysOf(o), now = Date.now();
+  const branch = g.git ? defaultBranch(root) : null, tip = branch && resolveCommit(root, `refs/heads/${branch}`);
+  const drafts = [];
+  for (const r of o.worktrees ? worktreeRoots(root, g) : [root]) {
+    let names;
+    try { names = await draftNames(r); } catch (e) { drafts.push({ name: null, worktree: r, state: "unreadable", reasons: [e.message], suggest: "keep" }); continue; }
+    for (const n of names) drafts.push(await draftReport(r, n, now, days, tip, branch));
+  }
+  const counts = {};
+  for (const d of drafts) counts[d.state] = (counts[d.state] ?? 0) + 1;
+  return { exit: drafts.some((d) => d.state !== "active") ? 1 : 0, defaultBranch: branch, days, counts, drafts };
+}
+// Other drafts in this root older than the age limit, from draft.json alone (cheap): `drafts` says which are left behind.
+async function staleDraftsNote(root, o) {
+  const days = daysOf(o), now = Date.now();
+  let n = 0;
+  for (const name of await draftNames(root).catch(() => [])) {
+    if (name === o.name) continue;
+    const raw = await readFileSafe(root, `${draftRel(name)}/draft.json`);
+    let d = null; try { d = JSON.parse(raw.buf.toString("utf8")); } catch {}
+    const last = lastActivity(d);
+    if (last === null || now - last > days * DAY_MS) n++;
+  }
+  return n ? { staleDrafts: { count: n, days, command: `sova-spec-draft.mjs drafts --root ${root}${o.days === undefined ? "" : ` --days ${days}`}` } } : {};
+}
+// The approved list: one draft per line, NAME [draftSha256]; `#` starts a comment. → [{name, sha256?}]
+async function approvedList(file) {
+  const r = await readOpen(resolve(file));
+  if (r.state !== "present") throw new Fail(2, "usage", `--approved ${file}: ${r.why ?? r.state}`);
+  const list = new Map();
+  for (const [i, raw] of r.buf.toString("utf8").split(/\r?\n/).entries()) {
+    const line = raw.replace(/#.*/, "").trim();
+    if (!line) continue;
+    const [name, h, ...more] = line.split(/\s+/);
+    if (!NAME_RE.test(name) || more.length || (h !== undefined && !HEX.test(h))) throw new Fail(2, "usage", `--approved ${file} line ${i + 1}: expected NAME [draftSha256], got "${line}"`);
+    if (list.has(name) && list.get(name).sha256 !== h) throw new Fail(2, "usage", `--approved ${file}: ${name} is listed twice with different hashes`);
+    list.set(name, { name, ...(h ? { sha256: h } : {}) });
+  }
+  return [...list.values()];
+}
+async function cmdPrune(root, o) {
+  const list = await approvedList(o.approved);
+  const inspect = async () => {
+    const refusals = [], targets = [];
+    if (await exists(join(root, TXN))) refusals.push({ code: "pending-transaction", message: `${TXN} exists: a promotion was interrupted; run recover first` });
+    for (const x of list) {
+      const dir = await ownDir(root, draftRel(x.name), false).catch((e) => { refusals.push({ code: "storage-refused", message: e.message }); return undefined; });
+      if (dir === undefined) continue;
+      if (dir === null) { refusals.push({ code: "draft-missing", message: `no draft ${draftRel(x.name)}` }); continue; }
+      const h = await draftHash(root, x.name);
+      if (x.sha256 && h !== x.sha256) { refusals.push({ code: "draft-changed", message: `${x.name}: draft.json and spec/ are not the ${x.sha256.slice(0, 12)} the list approved (changed since, or unreadable)` }); continue; }
+      targets.push({ name: x.name, draft: draftRel(x.name), draftSha256: h });
+    }
+    return { refusals, targets };
+  };
+  if (!o.write) {
+    const p = await inspect();
+    return { exit: p.refusals.length ? 1 : 0, written: false, deleted: [], wouldDelete: p.targets, refusals: p.refusals };
+  }
+  return withLock(root, async () => {
+    const p = await inspect();
+    if (p.refusals.length) throw new Fail(1, p.refusals[0].code, `prune refused (${p.refusals.length} reason(s)); nothing was deleted`, { written: false, deleted: [], wouldDelete: p.targets, refusals: p.refusals });
+    const dir = await ownDir(root, DRAFTS, false), deleted = [];
+    for (const t of p.targets) {
+      // Out of the name first, so a draft is either whole under its name or gone.
+      const gone = join(dir, `.prune-${randomBytes(6).toString("hex")}`);
+      await rename(join(dir, t.name), gone);
+      await rm(gone, { recursive: true, force: true });
+      deleted.push(t);
+    }
+    return { exit: 0, written: true, deleted, refusals: [] };
+  });
 }
 
 // ---------------------------------------------------------------- merge-manifest
@@ -1463,10 +1648,20 @@ function human(out) {
     for (const r of out.refusals ?? []) L.push(`  refused ${r.code}: ${r.message}`);
     for (const w of out.driftWarnings ?? []) L.push(`  warn drift: ${w}`);
     if (out.alsoChanges) L.push(`Foreign § this promotion changes: ${out.alsoChanges.join(", ") || "none"}`);
+    if (out.staleDrafts) L.push(`${out.staleDrafts.count} other draft(s) here had no activity for over ${out.staleDrafts.days} days: \`${out.staleDrafts.command}\` says which are left behind`);
     if (!out.written && !(out.refusals ?? []).length) L.push(`plan ${out.plan} — write with: promote ${out.name} … --plan ${out.plan} --write`);
   }
   if (out.command === "merge-manifest" && out.mode) L.push(`merge-manifest (${out.mode}): ${out.conflicts.length ? `${out.conflicts.length} conflict(s): ${out.conflicts.map((c) => `${c.kind} ${c.key}`).join(", ")}` : `${out.fromTheirs.length} key(s) from theirs`} ${out.written ? "(written)" : "(nothing written)"}`);
   if (out.command === "merge-claims" && out.mode) L.push(`merge-claims${out.path ? ` ${out.path}` : ""}: merged per ${out.merge === "declarations" ? "declaration" : "line (Git's merge)"}${out.conflicts.length ? `; ${out.conflicts.length} conflict(s): ${out.conflicts.join(", ")}` : ""} ${out.written ? "(written)" : "(nothing written)"}`);
+  if (out.command === "drafts" && out.drafts) {
+    L.push(`drafts: ${out.drafts.length} (${Object.entries(out.counts).map(([k, n]) => `${k} ${n}`).join(", ") || "none"}); default branch ${out.defaultBranch ?? "none"}, age limit ${out.days} days`);
+    for (const d of out.drafts) L.push(`  ${d.suggest.padEnd(7)} ${d.state.padEnd(10)} ${String(d.ageDays ?? "?").padStart(4)}d  ${d.name}${d.worktree !== out.root ? ` (${d.worktree})` : ""}${d.reasons.length ? `: ${d.reasons.join("; ")}` : ""}`);
+  }
+  if (out.command === "prune" && out.deleted) {
+    for (const t of out.written ? out.deleted : out.wouldDelete ?? []) L.push(`  ${out.written ? "deleted" : "would delete"} ${t.draft}`);
+    for (const r of out.refusals ?? []) L.push(`  refused ${r.code}: ${r.message}`);
+    if (!out.written && !(out.refusals ?? []).length) L.push("preview; nothing deleted — pass --write");
+  }
   if (out.command === "recover") L.push(out.pending === false ? "no pending promotion" : `pending promotion of draft ${out.draft}: ${(out.targets ?? []).map((t) => `${t.path} ${t.state}`).join(", ")}${out.action ? ` → ${out.action}` : ""}`);
   for (const f of out.findings) L.push(`${f.severity} ${f.code}: ${f.message}`);
   L.push(`note: ${NOTICE}`, `exit ${out.exit}`);
@@ -1488,7 +1683,7 @@ async function evaluate(argv, readPolicy, inputSources) {
     out.root = root;
     if (await ownDir(root, SPEC, false).catch(() => { throw new Fail(2, "symlink-refused", `${SPEC} or .sova is not a plain directory`); }) === null && o.cmd !== "new")
       throw new Fail(2, "draft-missing", `no ${SPEC} under ${root}`);
-    const cmds = { new: cmdNew, status: cmdStatus, diff: cmdDiff, check: cmdCheck, evidence: cmdEvidence, promote: cmdPromote, recover: cmdRecover, "merge-manifest": cmdMergeManifest, "merge-claims": cmdMergeClaims };
+    const cmds = { new: cmdNew, status: cmdStatus, diff: cmdDiff, check: cmdCheck, evidence: cmdEvidence, promote: cmdPromote, recover: cmdRecover, drafts: cmdDrafts, prune: cmdPrune, "merge-manifest": cmdMergeManifest, "merge-claims": cmdMergeClaims };
     out = { ...out, ...(await cmds[o.cmd](root, o)) };
   } catch (e) {
     if (!(e instanceof Fail)) e = new Fail(2, "internal", e.stack ?? String(e));

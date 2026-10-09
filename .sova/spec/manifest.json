@@ -12006,7 +12006,8 @@
       "evidence": "reviewed",
       "code": [
         "pi-config/extensions/claude-code/provider/stream.ts",
-        "pi-config/extensions/claude-code/provider/session-bridge.ts"
+        "pi-config/extensions/claude-code/provider/session-bridge.ts",
+        "pi-config/extensions/claude-code/provider/mcp-host.ts"
       ]
     },
     "§tools.spec/context-packets": {
@@ -16707,6 +16708,16 @@
         "pi-config/extensions/claude-code/spec-hooks.test.ts",
         "pi-config/extensions/spec/core/sova-spec-draft.mjs",
         "pi-config/extensions/spec/tests/draft.test.mjs"
+      ]
+    },
+    "§app.claude-code-provider/continuity": {
+      "kind": "behavior",
+      "requires": [
+        "§app/claude-code-provider"
+      ],
+      "authority": "accepted",
+      "code": [
+        "pi-config/extensions/claude-code/provider/session-bridge.ts"
       ]
     }
   },

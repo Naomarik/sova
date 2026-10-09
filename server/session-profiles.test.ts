@@ -165,7 +165,11 @@ describe("the model", () => {
     assert.equal(profileFileError({ ...CAPTAIN, minorModes: [1] }), `"minorModes" must be a list of names.`);
     // shared/ imports nothing, so it keeps its own copy of the mode extension's list.
     const { MINOR_MODES } = await import("./mode-state");
-    assert.deepEqual([...PROFILE_MINOR_MODES], [...MINOR_MODES]);
+    const { MINOR_SURFACES } = await import("../pi-config/extensions/mode/minor.ts");
+    assert.deepEqual([...PROFILE_MINOR_MODES], MINOR_MODES.filter((m) => MINOR_SURFACES[m] !== "web"));
+    // memory is web-only: a profile naming it is refused with its own sentence, never "unknown name".
+    assert.equal(profileFileError({ ...CAPTAIN, minorModes: ["spec", "memory"] }), `"minorModes": memory is for chats only: turn it on from a chat's mode menu.`);
+    assert.equal("memory" in Object.fromEntries((minors(["memory", "spec"]) ?? []).map((m) => [m, 1])), false, "parseProfile drops it");
   });
 
   test("capability-neutral: only model, effort, subagents, mode or minor modes", () => {

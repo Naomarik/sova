@@ -197,6 +197,8 @@ export function personSends(orgId: string, personId: string, titleOf: (sessionId
       channel: first.channel,
       event: last.event,
       ...(last.code ? { code: last.code } : {}),
+      // The number that reached them: its label and last 3 digits only (§app.outreach/log).
+      ...(first.senderLabel || first.from ? { from: { ...(first.senderLabel ? { label: first.senderLabel } : {}), ...(first.from ? { me: first.from } : {}) } } : {}),
     }))
     .sort((a, b) => b.at.localeCompare(a.at));
 }

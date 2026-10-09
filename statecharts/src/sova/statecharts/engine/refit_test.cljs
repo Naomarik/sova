@@ -732,6 +732,70 @@
       (is (= [(+ t0 8000000)] (map :until (core/holds eng)))))))
 
 
+;; ---- a released act whose channel is down waits for it, at most 24 h -----------------------------------
+
+(deftest a-released-act-waits-out-its-channels-outage-for-at-most-a-day
+  (let [down  (atom nil)  ; the stamp's outage at release (the host's last reading of the sender)
+        win   (atom nil)  ; and the person's next window, when off hours
+        eng   (parent (new-eng {:stamp (fn [_ _ _ _] (merge unattended {:hold-ms 0}
+                                                       (when @down {:outage {:why "WhatsApp is down."}})
+                                                       (when @win {:window @win})))}))
+        day   policy/outage-wait-ms
+        w1    (+ t0 3600000)
+        hold  #(first (core/holds eng))
+        sent  #(count (:messages (core/data eng "par")))]
+    (testing "the operator's own act, or one not yet released, never waits for the channel"
+      (core/send! eng "par" :message/send {:by "operator" :outage {:why "down"}} {:now t0})
+      (is (= 1 (sent)))
+      (is (empty? (core/holds eng))))
+    (core/send! eng "par" :message/send (assoc unattended :hold-ms 0 :window w1) {:now t0})
+    (is (= "hours" (:wait (hold))))
+    (testing "released while the channel is down: an outage wait, a day from its first wait"
+      (reset! down true)
+      (let [r (core/send! eng "par" :sova/hold-due {:id (:id (hold))} {:now w1})]
+        (is (= "outage" (:wait (:held (first (:steps r))))))
+        (is (= 1 (sent)) "not sent")
+        (is (= {:wait "outage" :until (+ w1 day)} (select-keys (hold) [:wait :until])))
+        (is (= (+ w1 day) (core/next-due-at eng)))))
+    (testing "an outage wait is never moved to a later end"
+      (let [r (core/send! eng "par" :sova/rewindow {:id (:id (hold)) :until (+ w1 5)} {:now (+ w1 1)})]
+        (is (not-any? :saved (:steps r))))
+      (is (= (+ w1 day) (:until (hold)))))
+    (testing "released again while still down (a flap): the same bound, from the first wait"
+      (core/send! eng "par" :sova/rewindow {:id (:id (hold)) :until nil} {:now (+ w1 2)})
+      (is (= {:wait "outage" :until (+ w1 day)} (select-keys (hold) [:wait :until])))
+      (is (= 1 (sent))))
+    (testing "released off hours: it waits for the window first, then the outage, still bound to its first wait"
+      (reset! win (+ w1 7200000))
+      (core/send! eng "par" :sova/rewindow {:id (:id (hold)) :until nil} {:now (+ w1 3)})
+      (is (= {:wait "hours" :until (+ w1 7200000)} (select-keys (hold) [:wait :until])))
+      (reset! win nil)
+      (core/fire-due! eng (+ w1 7200000))
+      (is (= {:wait "outage" :until (+ w1 day)} (select-keys (hold) [:wait :until])) "down again in hours: the first bound"))
+    (testing "the channel comes back: released at once, and it goes"
+      (reset! down nil)
+      (let [r (core/send! eng "par" :sova/rewindow {:id (:id (hold)) :until nil} {:now (+ w1 7200001)})]
+        (is (= [:sova/rewindow :message/send :hold/released] (map :event (:steps r)))))
+      (is (= 2 (sent)))
+      (is (empty? (core/holds eng))))
+    (testing "still down a day after its first wait: it goes ahead, and the channel refuses it"
+      (reset! down true)
+      (core/send! eng "par" :message/send (assoc unattended :hold-ms 0 :window (+ w1 8000000)) {:now (+ w1 7200002)})
+      (core/fire-due! eng (+ w1 8000000))
+      (is (= "outage" (:wait (hold))))
+      (let [r (core/fire-due! eng (+ w1 8000000 day))]
+        (is (= [:message/send :hold/released] (map :event (:steps r)))))
+      (is (= 3 (sent)))
+      (is (empty? (core/holds eng))))
+    (testing "cancelled while it waits: it never goes"
+      (core/send! eng "par" :message/send (assoc unattended :hold-ms 0 :window (+ w1 9000000 day)) {:now (+ w1 8000001 day)})
+      (core/fire-due! eng (+ w1 9000000 day))
+      (is (= "outage" (:wait (hold))))
+      (core/send! eng "par" :hold/cancel {:by "operator" :id (:id (hold))} {:now (+ w1 9000001 day)})
+      (is (empty? (core/holds eng)))
+      (is (nil? (core/next-due-at eng)))
+      (is (= 3 (sent))))))
+
 ;; ---- an answered fire-and-forget effect is saved as answered -------------------------------------------
 
 (def fire-and-forget-statechart

@@ -30,29 +30,36 @@ const { Sender } = await load("core.mjs");
 const { ipcSessions } = await load("ipc.mjs");
 
 /**
- * A paired sender for the home the environment names (as the fake child reads it), already
- * started. Every number exists except `absent` (digits); each send's receipts are delivered, then read.
+ * A sender for the home the environment names (as the fake child reads it), already started: paired
+ * unless `paired: false`. Every number exists except `absent` (digits); each send's receipts are
+ * delivered, then read. A link waits for the test: `qr` issues a QR, `scan` is the phone linking.
  */
-export function inProcessSender(o: { env: NodeJS.ProcessEnv; absent?: string[] }) {
+export function inProcessSender(o: { env: NodeJS.ProcessEnv; absent?: string[]; paired?: boolean; me?: string }) {
   // No gap between sends (3 s by default); the hour and day limits stay.
   const config = resolveConfig({ ...o.env, SOVA_WA_LIMITS: "0/20/60" });
   const absent = new Set(o.absent ?? []);
   const receipts: Array<() => void> = [];
   let current: Handlers | null = null;
+  let paired = o.paired ?? true;
   let n = 0;
   const driver = {
-    isPaired: () => true,
+    isPaired: () => paired,
     refreshVersion: async () => {},
-    wipe: async () => {},
-    async open({ handlers }: { link?: boolean; handlers: Handlers }) {
+    wipe: async () => {
+      paired = false;
+    },
+    async open({ link, handlers }: { link?: boolean; handlers: Handlers }) {
       current = handlers;
       const alive = () => current === handlers;
-      setImmediate(() => alive() && handlers.onOpen("0000000000"));
+      // A link waits for `qr` / `scan`; saved credentials open at once.
+      if (!link) setImmediate(() => alive() && (paired ? handlers.onOpen(o.me ?? "15550000123") : handlers.onQr("unexpected")));
       return {
         end: () => {
           if (alive()) current = null;
         },
-        logout: async () => {},
+        logout: async () => {
+          paired = false;
+        },
         onWhatsApp: async (digits: string) => ({ exists: !absent.has(digits), jid: `${digits}@s.whatsapp.net` }),
         async sendMessage() {
           const ref = `FAKE${(++n).toString(16).padStart(8, "0").toUpperCase()}`;
@@ -95,9 +102,23 @@ export function inProcessSender(o: { env: NodeJS.ProcessEnv; absent?: string[] }
   };
   start();
   return {
+    /** The socket it answers on. */
+    socket: config.socket as string,
+    /** How many messages it has sent. */
+    sent: () => n,
     connect,
     start,
     stop,
+    /** WhatsApp closes the connection with `code` (440: replaced, 403: blocked, 408 while linking: expired …). */
+    close: (code: number) => current?.onClose(code, "test"),
+    /** A link in progress gets a new QR. */
+    qr: (text: string) => current?.onQr(text),
+    /** The phone links: pair-success, then WhatsApp's restart request (515), as a real link ends. */
+    scan: () => {
+      paired = true;
+      current?.onClose(515, "restart required");
+    },
+    isPaired: () => paired,
     /** Let every receipt of the sends so far arrive, in order. */
     flushReceipts: () => {
       for (const r of receipts.splice(0)) r();

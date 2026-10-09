@@ -110,7 +110,7 @@ export interface PoToolHost {
       of its statechart sessions in full: configuration, the events enabled for this turn (with each refusal) and its declared corrections. */
   pipeline(q: { session?: string; includeQuiet?: boolean; limit?: number }): PipelineRead;
   /** Cancel or approve early one of the project's held acts, with a reason (the statechart's hold/cancel or hold/approve). */
-  decideHold(id: string, approve: boolean, reason: string): Promise<{ notSent?: { name: string; why: string } } | void>;
+  decideHold(id: string, approve: boolean, reason: string): Promise<{ notSent?: { name: string; why: string }; waits?: { until: string } } | void>;
   /** A declared correction (q9) on one of the project's statechart sessions, with its reason. */
   correct(session: string, event: string, payload: Record<string, unknown>, reason: string): Promise<{ held?: { id: string; until: number } }>;
   /** Free set-state (q9/r5): the engine takes it only in a turn the operator started. */
@@ -768,7 +768,7 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
       parameters: obj({ session: str("A statechart session id (build/…, or one this list names) to inspect."), quiet: { type: "boolean", description: "Include quiet feed rows (timers, leases, bookkeeping)." }, limit: int("Feed rows, default 40, at most 200.", { minimum: 1, maximum: 200 }) }),
       execute: read(async (q) => {
         const r = host.pipeline({ ...(typeof q.session === "string" && q.session.trim() ? { session: q.session.trim() } : {}), includeQuiet: q.quiet === true, limit: Math.min(200, Math.max(1, Number(q.limit) || 40)) });
-        const heldLine = (h: HeldAct) => `- ${h.id} · ${h.what} · ${h.wait === "hours" ? `waits for ${h.person ?? "the person"}'s working hours, until ${h.goesAt}` : h.reviewSince ? `waits for your review since ${h.reviewSince}` : `goes ahead at ${h.goesAt}`}${h.itemId ? ` · item ${h.itemId}` : ""}`;
+        const heldLine = (h: HeldAct) => `- ${h.id} · ${h.what} · ${h.wait === "hours" ? `waits for ${h.person ?? "the person"}'s working hours, until ${h.goesAt}` : h.wait === "outage" ? `waits for WhatsApp to come back, at most until ${h.goesAt} (then it is not sent)` : h.reviewSince ? `waits for your review since ${h.reviewSince}` : `goes ahead at ${h.goesAt}`}${h.itemId ? ` · item ${h.itemId}` : ""}`;
         if (r.kind === "session") {
           const lines = [
             `# ${r.id} (${r.statechart})`,
@@ -805,7 +805,12 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
         const out = await host.decideHold(id, q.op === "approve", reason);
         // §app.outreach/send: the released message did not go, so the approval never reads as ok.
         if (out?.notSent) throw new Refusal(`Approved ${id}, but the WhatsApp message to ${out.notSent.name} was not sent: ${out.notSent.why}`);
-        return { content: text(q.op === "approve" ? `Approved ${id}: it goes ahead now.` : `Cancelled ${id}: it will not go ahead.`), details: { id, op: q.op, note: `${q.op === "approve" ? "Approved" : "Cancelled"} a held act: ${cut(reason, 160)}` } };
+        const said = out?.waits
+          ? `Approved ${id}, but WhatsApp is down: the message waits for WhatsApp to come back, at most until ${out.waits.until}, and is not sent if WhatsApp is still down then. sova_pipeline lists it.`
+          : q.op === "approve"
+            ? `Approved ${id}: it goes ahead now.`
+            : `Cancelled ${id}: it will not go ahead.`;
+        return { content: text(said), details: { id, op: q.op, note: `${q.op === "approve" ? "Approved" : "Cancelled"} a held act: ${cut(reason, 160)}` } };
       }),
     },
     {

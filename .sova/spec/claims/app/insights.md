@@ -1298,7 +1298,7 @@ Sova that aren't archived.
   spend today · unmerged, with its `title`) leaves the page head and sits right-aligned on the
   count line directly above the board (`.board-caption`); below 1000px it stays in the head.
 - **Wide** (the `insights` container ≥1600px). Session takes the width the other columns leave
-  (never under 20rem), Activity a 13rem track, Workers 15rem, Worktrees 26rem, the actions their
+  (never under 20rem), Activity an 11rem track, Workers 17rem, Worktrees 26rem, the actions their
   fixed width, so Workers and Worktrees never wrap past their 2 lines.
 - **Page.** Only this page drops the 1280px page cap: side margins `--space-4` below 1600px and
   `--space-6` from there, the content capped at 2400px and centered; the head, the bar and the

@@ -1640,6 +1640,9 @@ export interface ModeInfo {
   strict: boolean;
   modes: { id: string; description: string }[];
   minors: { id: string; description: string }[];
+  /** The memory minor mode's choice (§chat/memory): in GET /api/mode the saved default new chats
+      start from (Settings' memory file), in a ChatModeResult that chat's own. Absent from older servers. */
+  memory?: MemoryModeInfo;
 }
 
 /** Delegate mode's four kinds of work, canonical order (pi-config/extensions/mode/delegate.ts). */
@@ -1766,6 +1769,169 @@ export interface HeldChatState {
     The same values reach every client of that chat as a "mode" server message. */
 export interface ChatModeResult extends ModeInfo {
   applies: ModeApplies;
+}
+
+// ---- Memory (§chat/memory) ------------------------------------------------------------------------
+// The `memory` minor mode: the model works from a summary of the whole chat (the VIEW: one-line
+// summaries, recent ones fine and old ones coarse) and opens any line word for word with its `zoom`
+// tool. Turned on from a chat's mode menu only (web; never the terminal, a worker or a profile) and,
+// for the Overseer, from its own toggle. Two types; each chat keeps its own type and view size.
+//
+// POST /api/mode?path=… { minorModes?, memory?: Partial<ChatMemoryChoice> } -> ChatModeResult
+//                                  `memory` alone is a valid body (a type or size change; kept even while
+//                                  memory is off). 400 a bad type or size; 400 "memory" in minorModes for a
+//                                  chat that can't have it (the Overseer: use its own route below; a baton or
+//                                  project-overseer session).
+// POST /api/mode?path=… { saveDefault: true } also saves this chat's memory choice as the default (the
+//                                  memory settings file's `default`).
+// POST /api/mode { minorModes?, memory? } (no path) writes the default only, as before.
+// GET  /api/memory?path=…        -> MemoryOutline (the lines the model sees now, oldest first; works for a
+//                                  chat that isn't open too. 400 no/bad path, 404 not a session)
+// GET  /api/memory/open?path=…&id=<first message>&n=<messages, a power of 2>
+//                                -> MemoryOpen (n > 1: the two lines under line id+n; n = 1: the message whole,
+//                                  long ones in pages). 400 bad id/n, 404 no such line yet
+// GET  /api/settings/memory      -> MemorySettingsInfo (<agent dir>/mode-memory.json; missing → defaults)
+// GET  /api/settings/memory/options -> DelegateOptions (the same discovery as spec/options)
+// PUT  /api/settings/memory MemorySettings -> MemorySaveResult (replaces the summarizer; `default` absent keeps
+//                                  the stored one. 400 bad shape; unverifiable or policy-denied models save
+//                                  with a warning. Every chat's summarizer reads it at its next summary)
+// GET  /api/overseer/memory      -> OverseerMemoryInfo
+// PUT  /api/overseer/memory { on?, type?, size? } -> OverseerMemoryInfo (kept in overseer.json; reaches the
+//                                  Overseer from its next turn. 400 bad body)
+// WS (chat): { type: "memory_status", status } after hello and on every change, only for a chat whose
+//                                  runtime has the memory engine (an ordinary chat, or the Overseer).
+//            The `mode` message carries `memory` (this chat's ChatMemoryChoice), so a type-only change
+//            sends a new `mode` message too.
+// Transcript: the model's recalls are tool rows (`zoom`, `date`) whose slim row summary
+//            (ToolRowInfo.summary) reads "Recalled messages 40–47" / "Recalled message 40" /
+//            "Date of message 40" (shared/memory.ts recallSummary).
+
+/** UniiChat (Victor Taelin's design: every message summarized into lines the model opens) or
+    zoomable compaction (Sova's: the chat stays as it is until it compacts, and the compacted part
+    becomes openable lines instead of a one-off summary). */
+export type MemoryType = "uniichat" | "zoomable";
+
+/** One type as the Memory type panel shows it. `detail`: the mode row's detail line while it is on. */
+export interface MemoryTypeInfo {
+  id: MemoryType;
+  /** "UniiChat" | "Zoomable compaction" */
+  label: string;
+  /** "by Victor Taelin" | "Sova" */
+  by: string;
+  description: string;
+  /** The mode row's one-line description while this type is chosen. */
+  rowDescription: string;
+  /** "UniiChat — by Victor Taelin" */
+  detail: string;
+  /** "Read the design ↗" target, when the type has a write-up. */
+  link?: string;
+  /** The view size (KB) a chat of this type uses until it picks one. */
+  defaultSize: number;
+}
+
+/** A chat's memory choice. `size`: the view grows to `size` KB, then merges down to half of it
+    (UniiChat's 64–128 KB is 128); for zoomable compaction, the size of the openable summary a
+    compaction leaves. */
+export interface ChatMemoryChoice {
+  type: MemoryType;
+  size: number;
+}
+
+/** ModeInfo.memory: the choice, plus what can be chosen. `sizes`: the panel's suggested sizes (KB);
+    any whole number in [MEMORY_SIZE_MIN, MEMORY_SIZE_MAX] is accepted. */
+export interface MemoryModeInfo extends ChatMemoryChoice {
+  types: MemoryTypeInfo[];
+  sizes: number[];
+}
+
+export const MEMORY_SIZE_MIN = 8;
+export const MEMORY_SIZE_MAX = 512;
+
+/**
+ * Where a chat's memory stands. `problem`, on any state but off: why summaries can't be written now
+ * (no usable summarizer model, the model policy refuses it, its login failed), in one sentence.
+ * - off: memory is off in this chat (summaries made earlier are kept).
+ * - preparing: turned on in a chat with history; the chat works normally until `done` reaches
+ *   `total` ("Preparing memory: 120 of 480 messages").
+ * - updating: a turn waits (at most 20 s) for the newest messages' summaries ("Updating memory…").
+ * - ready: in use; `background`: summaries (merges) still being written, which nothing waits on.
+ */
+export type MemoryStatus = (
+  | { state: "off" }
+  | { state: "preparing"; done: number; total: number }
+  | { state: "updating"; pending: number }
+  | { state: "ready"; messages: number; background: number }
+) & { problem?: string };
+
+/** One line of the view: the `n` messages from message `id` on, summarized. `text: null`: not
+    summarized yet. `entryId`/`lastEntryId`: the transcript entries of its first and last message,
+    for jump-to (null when the entry has no id). */
+export interface MemoryLine {
+  id: number;
+  n: number;
+  text: string | null;
+  entryId: string | null;
+  lastEntryId: string | null;
+}
+
+export type MemoryMessageKind = "user" | "sova" | "tool" | "echo" | "work" | "note";
+
+/** One logged message, whole. A long text is logged as several messages in a row (`page`). */
+export interface MemoryMessage {
+  id: number;
+  kind: MemoryMessageKind;
+  text: string;
+  entryId: string | null;
+  /** The entry's ISO time. */
+  at?: string;
+  page?: { index: number; of: number };
+}
+
+/** GET /api/memory. `lines`: UniiChat — the view the next turn sends; zoomable compaction — the lines
+    the newest compaction left (empty before one). */
+export interface MemoryOutline {
+  on: boolean;
+  type: MemoryType;
+  size: number;
+  status: MemoryStatus;
+  /** Messages logged from the chat's active branch. */
+  messages: number;
+  /** The view's size in bytes. */
+  bytes: number;
+  lines: MemoryLine[];
+}
+
+export type MemoryOpen = { lines: MemoryLine[] } | { message: MemoryMessage };
+
+/** <agent dir>/mode-memory.json. `summarizer`: who writes the summaries (default Claude Code
+    claude-haiku-5-5 at low effort); `default`: the choice new chats start from (Save as default). */
+export interface MemorySettings {
+  version: 1;
+  summarizer: { primary: WorkerChoice; fallback: WorkerChoice | null };
+  default?: ChatMemoryChoice;
+}
+
+export interface MemorySettingsInfo {
+  settings: MemorySettings;
+  /** What "Reset to defaults" fills in. */
+  defaults: MemorySettings;
+  backends: { id: DelegateBackendId; label: string; efforts: string[] }[];
+  types: MemoryTypeInfo[];
+  /** Absolute path of the file, for the screen's footnote. */
+  file: string;
+}
+
+export interface MemorySaveResult extends MemorySettingsInfo {
+  warnings: string[];
+}
+
+/** The Overseer's own memory switch (it has no mode menu). */
+export interface OverseerMemoryInfo extends ChatMemoryChoice {
+  on: boolean;
+  types: MemoryTypeInfo[];
+  sizes: number[];
+  /** The current Overseer file's memory; off while memory is off. */
+  status: MemoryStatus;
 }
 
 /** This chat's sandbox (pi-config/extensions/sandbox, §chat/sandbox), from the extension's newest
@@ -2057,7 +2223,10 @@ export type ChatServerMessage =
   | { type: "append"; items: TranscriptItem[] }
   /** THIS chat's own mode, and how the last switch applies to it. Sent after hello and after
       every switch of this chat. No other chat's switch, and no write of the default, sends one. */
-  | { type: "mode"; mode: string; minorModes: string[]; strict: boolean; applies: ModeApplies }
+  | { type: "mode"; mode: string; minorModes: string[]; strict: boolean; applies: ModeApplies; memory?: ChatMemoryChoice }
+  /** THIS chat's memory (§chat/memory): sent after hello and on every change, only when its runtime
+      has the memory engine. */
+  | { type: "memory_status"; status: MemoryStatus }
   /** THIS chat's sandbox, sent after hello and on every change, ONLY when its runtime has the
       sandbox extension's /sandbox command. Absent = no extension: no row, no shield. */
   | ({ type: "sandbox" } & SandboxInfo)

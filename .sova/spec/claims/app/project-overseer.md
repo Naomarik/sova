@@ -899,6 +899,14 @@ user row.
   button, Start Coding Session and the overseers' starts never send it: they cut the worktree at
   create, as above. In a project root that can't have worktrees (§app.project-overseer/coding-worktrees,
   **Where it can't**) it starts there as any start would, with that reason.
+- **In a folder of the project: `cwd`.** The body may also carry an absolute `cwd`, which New
+  Session's folder tab sends for a folder in the project (§app.projects/folder-sessions): the project
+  root, a folder inside it, or a folder inside one of its linked git worktrees, compared on
+  canonical paths. The session starts in that folder (with `"later"`: there, never moved to the
+  root). Anything else — a folder outside, a relative path, one that doesn't exist, a value that
+  isn't a string — is refused with 400 "{cwd} is not a folder in {project}: give the project root,
+  a folder inside it, or one inside its worktrees." and no session is started. Without it, the
+  root, as above.
 - **No first prompt.** Nothing is sent: the page toasts "Coding session started on sova/{name}."
   (in the root: "Coding session started in the project root.") and opens the session, where the
   operator writes the first message in the composer, with no length limit. A worktree session gets

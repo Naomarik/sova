@@ -5576,7 +5576,9 @@
         "public/icons/building.svg",
         "src/orgs.css",
         "server/org-sessions.ts",
-        "server/session-feed.ts"
+        "server/session-feed.ts",
+        "src/lib/built-once.ts",
+        "src/lib/built-once.browser.test.ts"
       ]
     },
     "§app.project-overseer/coding-mode": {
@@ -16858,6 +16860,44 @@
       ],
       "requires": [
         "§app.outreach/sender-route"
+      ]
+    },
+    "§app.projects/folder-sessions": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/project-folder.ts",
+        "server/project-sessions.ts",
+        "server/project-sessions.test.ts",
+        "server/project-overseer.ts",
+        "server/sessions-index.ts",
+        "server/org-sessions.ts",
+        "shared/protocol.ts",
+        "shared/project-overseer.ts",
+        "src/lib/new-session.ts",
+        "src/lib/new-session.test.ts",
+        "src/components/NewSessionDialog.tsx",
+        "src/lib/regions.ts",
+        "src/lib/regions.test.ts",
+        "src/lib/project-region.ts",
+        "src/lib/project-region.test.ts",
+        "src/lib/org-region.ts",
+        "src/lib/org-region.test.ts",
+        "src/lib/home-sessions.test.ts",
+        "src/lib/drag-archive.ts",
+        "src/components/Sidebar.tsx",
+        "src/lib/summary-diff.ts",
+        "src/components/SelectionToolbar.tsx"
+      ],
+      "requires": [
+        "§app.projects/list",
+        "§app.session-list/ordinary-surfaces",
+        "§app.session-list/organizations",
+        "§app.organizations/org-sessions",
+        "§app/new-session-dialog",
+        "§app.project-overseer/new-coding-session",
+        "§app.projects/seam"
       ]
     }
   },

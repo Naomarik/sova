@@ -389,6 +389,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Project tab states | Loading projects… · Couldn't read the projects. {message} · No projects on this host yet. Add one from Projects. |
 | Project tab, started (toast) | Coding session started in the project root. · mode not set: Started, but its mode could not be set. Set it from the chat's mode menu before you send. |
 | Project tab, 4xx (`.field-error` under the list) | {server message} |
+| This Computer, a folder in a project (§app.projects/folder-sessions) | second hint "This folder is in {project}: the session starts as one of its coding sessions." · toast: Coding session started in the project root. (the root) · Coding session of {project} started in {folder}. (a folder inside it or its worktrees) · 4xx: {server message} under the Folder field |
 
 ## §design.copy-deck/insights — Insights (§app/insights)
 

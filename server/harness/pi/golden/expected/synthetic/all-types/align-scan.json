@@ -82,7 +82,11 @@
       {
         "type": "custom",
         "id": "a0000009",
-        "parentId": "a0000008"
+        "parentId": "a0000008",
+        "customType": "sova-overseer-sent",
+        "data": {
+          "targetId": "a0000008"
+        }
       },
       {
         "type": "message",
@@ -578,7 +582,11 @@
       {
         "type": "custom",
         "id": "a0000009",
-        "parentId": "a0000008"
+        "parentId": "a0000008",
+        "customType": "sova-overseer-sent",
+        "data": {
+          "targetId": "a0000008"
+        }
       },
       {
         "type": "message",
@@ -1074,7 +1082,11 @@
       {
         "type": "custom",
         "id": "a0000009",
-        "parentId": "a0000008"
+        "parentId": "a0000008",
+        "customType": "sova-overseer-sent",
+        "data": {
+          "targetId": "a0000008"
+        }
       },
       {
         "type": "message",

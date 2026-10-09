@@ -37,6 +37,7 @@ import {
 } from "../accounts.ts";
 import type { ImageContent, Message, TextContent, Tool } from "@earendil-works/pi-ai";
 import { PiMcpHost, type HeldMcpCall, type McpContent, type McpToolResult } from "./mcp-host.ts";
+import { readMemoryView, type MemoryViewParts } from "./memory-view.ts";
 import { resolveUsageAttribution } from "../../llm-inflight/attribution.ts";
 import { createClaudeRequestObserver } from "../../llm-inflight/claude.ts";
 import { claudeCliId } from "../catalog.ts";
@@ -383,6 +384,47 @@ function imagesOf(content: unknown): ImageContent[] {
 	if (!Array.isArray(content)) return [];
 	return content.filter((b: unknown): b is ImageContent =>
 		!!b && typeof b === "object" && (b as { type?: unknown }).type === "image");
+}
+
+// ---------------------------------------------------------------------------
+// Memory views (Sova's memory minor mode, memory-view.ts)
+// ---------------------------------------------------------------------------
+
+/** The memory view a request's history opens with, or undefined. */
+export function memoryViewOf(messages: readonly Message[]): MemoryViewParts | undefined {
+	const first = messages.find((m) => m.role !== "system");
+	return first?.role === "user" ? readMemoryView(first.content) : undefined;
+}
+
+/** The system prompt a child is given: the session's, then a memory view's guide and stable prefix, which
+    change only when the view rebases, so they are read from the prompt cache under Claude Code's own mark. */
+export function memorySystemPrompt(systemPrompt: string, view: MemoryViewParts | undefined): string {
+	return view ? `${systemPrompt}\n\n${view.guide}\n\n${view.prefix}` : systemPrompt;
+}
+
+/**
+ * A restart's first user message when the history is a memory view followed by user messages only (a
+ * turn's start): the view's newer lines, then each message as written, with no restart preamble and
+ * nothing folded. undefined for any other history.
+ */
+export function memoryViewFrame(messages: readonly Message[]): { text: string; images: ImageContent[] } | undefined {
+	const rest = messages.filter((m) => m.role !== "system");
+	const view = rest[0]?.role === "user" ? readMemoryView(rest[0].content) : undefined;
+	if (!view || rest.length < 2 || rest.slice(1).some((m) => m.role !== "user")) return undefined;
+	const texts = [view.tail ?? "", ...rest.slice(1).map((m) => textOf(m.content))].filter((t) => t.length > 0);
+	return { text: texts.join("\n\n"), images: rest.slice(1).flatMap((m) => imagesOf(m.content)) };
+}
+
+/** The history with a memory view reduced to its newer lines: its guide and prefix ride the system prompt,
+    so a fold (a restart mid-turn) never sends them twice. */
+export function withoutMemoryPrefix(messages: readonly Message[]): Message[] {
+	const at = messages.findIndex((m) => m.role !== "system");
+	const view = at >= 0 && messages[at]!.role === "user" ? readMemoryView(messages[at]!.content) : undefined;
+	if (!view) return [...messages];
+	const out = [...messages];
+	const reduced: TextContent = { type: "text", text: view.tail ?? "(Your memory view is in the system prompt.)" };
+	out[at] = { ...(messages[at] as Extract<Message, { role: "user" }>), content: [reduced] };
+	return out;
 }
 
 /** A subagent retrieval tool, under pi's name or the CLI's `mcp__<server>__` one. */
@@ -1088,8 +1130,15 @@ class CliSession {
 			return;
 		}
 		if (plan.restart) {
+			// A memory view and the turn's own messages go as written (memory-view.ts): never folded.
+			const asIs = memoryViewFrame(request.messages);
+			if (asIs) {
+				debugLog({ event: "memory-view", session: this.piSessionId, chars: asIs.text.length, images: asIs.images.length });
+				this.sendUserMessage(asIs.text, asIs.images);
+				return;
+			}
 			const budget = foldBudgetChars(request, this.limits.maxFoldedChars);
-			const folded = foldHistory(request.messages, this.limits, plan.first ? "first" : "restarted", budget);
+			const folded = foldHistory(withoutMemoryPrefix(request.messages), this.limits, plan.first ? "first" : "restarted", budget);
 			// Tuning data, not an anomaly, so never the onDebug sink: compare
 			// `chars` with the next message_start's input tokens to check the
 			// budget's chars/4 guess against the real fold size.
@@ -1293,7 +1342,7 @@ class CliSession {
 
 		const fields: Record<string, unknown> = { sdkMcpServers: [MCP_SERVER_NAME] };
 		if (this.options.sendSystemPrompt !== false && request.systemPrompt) {
-			fields.systemPrompt = [request.systemPrompt];
+			fields.systemPrompt = [memorySystemPrompt(request.systemPrompt, memoryViewOf(request.messages))];
 			fields.systemPromptSnapshot = false;
 		}
 		const ack = await transport.control("initialize", fields);

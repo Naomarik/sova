@@ -16,13 +16,14 @@ import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { type Api, type AssistantMessageEvent, type Model, normalizeContext, Type, type Message, type Tool } from "@earendil-works/pi-ai";
 import {
-	claudeSessionId, FOLD_CHARS_PER_TOKEN, FOLD_LINE_HEADROOM, foldBudgetChars, foldHistory, foldSizeEstimate, getSessionBridge, isPrefix, LIMITS, MAX_FOLD_CHARS, MIN_FOLD_CHARS,
+	claudeSessionId, FOLD_CHARS_PER_TOKEN, FOLD_LINE_HEADROOM, foldBudgetChars, foldHistory, foldSizeEstimate, getSessionBridge, isPrefix, LIMITS, MAX_FOLD_CHARS, memorySystemPrompt, memoryViewFrame, MIN_FOLD_CHARS, withoutMemoryPrefix,
 	resetSessionBridge, SessionBridge, transcriptFingerprint, uuidv5, windowOverflow,
 } from "./session-bridge.ts";
 import { streamClaudeCode } from "./stream.ts";
 import { STATIC_MODELS } from "./index.ts";
 import type { ClaudeFrame, ClaudeTurnRequest } from "./types.ts";
 import type { ClaudeForkPoint } from "./fork-point.ts";
+import { memoryViewContent } from "./memory-view.ts";
 import { snapshot as llmSnapshot } from "../../llm-inflight/tracker.ts";
 
 // ---------------------------------------------------------------------------
@@ -662,6 +663,53 @@ test("a diverged transcript restarts the child with folded history", { timeout: 
 	assert.match(text, /different/);
 	assert.ok(!text.includes("\n## User\ntwo"), "the rewound message must not be replayed");
 	await bridge.disposeAll();
+});
+
+// Sova's memory mode (memory-view.ts, §chat.memory/turn): a history that opens with a memory view and is
+// otherwise new user messages is sent as written — the guide and stable prefix appended to the system
+// prompt, the newer lines and the turn's messages as the child's first user message — never folded.
+const memoryView = (prefix: string[], tail: string[]): Message => ({ role: "user", content: memoryViewContent("# Memory\nguide text", prefix, tail), timestamp: 1 });
+
+test("memory view: the guide and prefix ride the system prompt, the newer lines and the turn go as written", { timeout: 8000 }, async () => {
+	const { bridge, children, debug } = harness();
+	const history = [memoryView(["0+2|user: hi; sova: hello"], ["2+1|user: port 4810"]), user("standing note"), user("what port?")];
+	await collectAfter(bridge.runTurn(request(history, { systemPrompt: "BASE PROMPT" })), async () => {
+		const cli = await child(children, 1);
+		const init = await cli.waitFor((f) => f.request?.subtype === "initialize");
+		assert.deepEqual(init.request.systemPrompt, ["BASE PROMPT\n\n# Memory\nguide text\n\n<chat>\n0+2|user: hi; sova: hello\n</chat>"]);
+		await cli.handshake();
+		const sent = await cli.waitFor((f) => f.type === "user");
+		const text = sent.message.content.map((b: any) => b.text ?? "").join("");
+		assert.equal(text, "<chat> (continued: the newest lines)\n2+1|user: port 4810\n</chat>\n\nstanding note\n\nwhat port?");
+		assert.doesNotMatch(text, /restarted|conversation-history|lossy/, "no restart preamble");
+		cli.emitFrame({ type: "result", subtype: "success", is_error: false, result: "ok" });
+	});
+	// The next turn's view changed (a new line): a new child, again as written, with the same prefix.
+	const next = [memoryView(["0+2|user: hi; sova: hello"], ["2+1|user: port 4810", "3+1|user: what port?"]), user("and the host?")];
+	await collectAfter(bridge.runTurn(request(next, { systemPrompt: "BASE PROMPT" })), async () => {
+		const cli = await child(children, 2);
+		const init = await cli.waitFor((f) => f.request?.subtype === "initialize");
+		assert.match(init.request.systemPrompt[0], /<chat>\n0\+2\|user: hi; sova: hello\n<\/chat>$/);
+		await cli.handshake();
+		const sent = await cli.waitFor((f) => f.type === "user");
+		assert.match(sent.message.content.map((b: any) => b.text ?? "").join(""), /3\+1\|user: what port\?\n<\/chat>\n\nand the host\?$/);
+		cli.emitFrame({ type: "result", subtype: "success", is_error: false, result: "ok" });
+	});
+	assert.equal(debug.filter((d) => d.event === "fold").length, 0, "nothing was folded");
+	await bridge.disposeAll();
+});
+
+test("memory view: a history that isn't a view plus user messages folds, with the view cut to its newer lines", () => {
+	const view = memoryView(["0+1|user: a"], ["1+1|sova: b"]);
+	assert.equal(memoryViewFrame([view, user("x")])?.text.endsWith("x"), true);
+	assert.equal(memoryViewFrame([view]), undefined, "a view alone is no turn");
+	assert.equal(memoryViewFrame([view, user("x"), assistantWithCall("t1", "read", {})]), undefined, "mid-turn: fold");
+	assert.equal(memoryViewFrame([user("# Memory\nnot a view"), user("x")]), undefined, "one text block is never a view");
+	const reduced = withoutMemoryPrefix([view, user("x"), assistantWithCall("t1", "read", {})]);
+	assert.deepEqual(reduced[0]!.content, [{ type: "text", text: "<chat> (continued: the newest lines)\n1+1|sova: b\n</chat>" }]);
+	const folded = foldHistory(reduced, LIMITS, "restarted").text;
+	assert.doesNotMatch(folded, /0\+1\|user: a|guide/, "the prefix and guide are the system prompt's, never folded again");
+	assert.equal(memorySystemPrompt("P", undefined), "P");
 });
 
 test("a model change restarts rather than continuing on a stale child", { timeout: 8000 }, async () => {

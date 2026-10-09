@@ -148,69 +148,86 @@ function benchDraftReal(repo) {
 }
 
 // ---------------------------------------------------------------- (iii) driver merged the manifest, claims conflicted
-// recovery: "before" = PROMOTE.md as of bd597e20, read literally ("A conflict in claims/*.md is settled the same way:
-// master's file, then the branch's text again through a new draft"): checkout master's claims file, commit, re-apply.
-// "after" = the documented one-command path (manifest AND conflicted claims from master, never --ours), as P5 proposes.
-// Also runs each backticked `git checkout` PROMOTE.md documents (doc0, doc1, …), placeholders filled in.
-function addNote(root, name, id, title, after) {
-  draft(root, "new", name, "--write");
-  const rel = D(name, "claims/x/top.md");
-  const t = read(root, rel);
-  const at = t.indexOf(after) + after.length;
-  write(root, rel, t.slice(0, at) + `\n## ${id} — ${title}\n\n${title} says why.\n` + t.slice(at));
-  editJSON(root, D(name, "manifest.json"), (m) => { m.claims[id] = { kind: "note", authority: "accepted", requires: [] }; });
-  const ev = draft(root, "evidence", name, "--id", id, "--by", "bench", "--verification", "doc only", "--doc-only", "--write");
-  const pv = draft(root, "promote", name, "--id", id);
-  const pw = draft(root, "promote", name, "--id", id, "--plan", pv.j?.plan ?? "", "--write");
-  return { ev: ev.j?.exit, pv: pv.j?.exit, pw: pw.j?.exit, refusals: codes(pw.j), msg: (pw.j?.refusals ?? []).map((r) => r.message).join(" | ") };
+// Base: claims/x/top.md with §x/top and §x.top/a. Branch by adds §x.top/b after A and lands on master; branch bx adds
+// §x.top/n at the same spot (and, with extra, a new file claims/y/extra.md), then merges master: the manifest driver
+// merges, claims/x/top.md conflicts. Each recovery runs one `git checkout`, commits, checks, then re-applies:
+// "new" = a new draft re-adding bx's claims (PROMOTE.md at bd597e20), "same" = promote bx's draft again, same --id.
+// Fixed recoveries: ours (--ours on both files), claims-only (master's conflicted file: the bd597e20 claims sentence read
+// literally), both (master's manifest + conflicted file: the bd597e20 manifest-conflict command). doc<i>: each backticked
+// `git checkout` in PROMOTE.md, placeholders filled with this fixture's names.
+const CONFLICTED = ".sova/spec/claims/x/top.md", EXTRA = ".sova/spec/claims/y/extra.md";
+const N = { id: "§x.top/n", title: "N" }, B = { id: "§x.top/b", title: "B" }, Y = { id: "§y/extra", title: "Extra", file: "claims/y/extra.md" };
+function placeNote(root, name, n) {
+  if (n.file) write(root, D(name, n.file), `# ${n.id} — ${n.title}\n\n${n.title} says why.\n`);
+  else {
+    const rel = D(name, "claims/x/top.md"), t = read(root, rel), after = "A says why.\n", at = t.indexOf(after) + after.length;
+    write(root, rel, t.slice(0, at) + `\n## ${n.id} — ${n.title}\n\n${n.title} says why.\n` + t.slice(at));
+  }
+  editJSON(root, D(name, "manifest.json"), (m) => { m.claims[n.id] = { kind: "note", authority: "accepted", requires: [] }; });
 }
-function setupConflict() {
+function promoteIds(root, name, ids) {
+  const sel = ids.flatMap((i) => ["--id", i]);
+  const pv = draft(root, "promote", name, ...sel);
+  const pw = draft(root, "promote", name, ...sel, "--plan", pv.j?.plan ?? "", "--write");
+  return { pv: pv.j?.exit, pw: pw.j?.exit, refusals: codes(pw.j), msg: (pw.j?.refusals ?? []).map((r) => r.message).join(" | ") };
+}
+function addNotes(root, name, notes) {
+  draft(root, "new", name, "--write");
+  for (const n of notes) placeNote(root, name, n);
+  const ids = notes.map((n) => n.id);
+  const ev = draft(root, "evidence", name, ...ids.flatMap((i) => ["--id", i]), "--by", "bench", "--verification", "doc only", "--doc-only", "--write");
+  return { ev: ev.j?.exit, ...promoteIds(root, name, ids) };
+}
+function setupConflict(extra) {
   const root = tmp("merge");
   write(root, ".sova/spec/manifest.json", manifest({ "§x/top": { kind: "surface", authority: "accepted", requires: [] }, "§x.top/a": { kind: "note", authority: "accepted", requires: [] } }));
-  write(root, ".sova/spec/claims/x/top.md", "# §x/top — Top\n\nThe top.\n\n## §x.top/a — A\n\nA says why.\n");
+  write(root, CONFLICTED, "# §x/top — Top\n\nThe top.\n\n## §x.top/a — A\n\nA says why.\n");
   write(root, ".gitignore", "home/\n.sova/spec/drafts/\n");
   write(root, ".gitattributes", ".sova/spec/manifest.json merge=sova-spec-manifest\n");
   git(root, "init", "-q");
   git(root, "config", "merge.sova-spec-manifest.driver", `"${process.execPath}" "${DRAFT}" merge-manifest --root . --base %O --ours %A --theirs %B --write`);
   git(root, "add", "-A"); git(root, "commit", "-qm", "base");
   git(root, "checkout", "-qb", "by");
-  const by = addNote(root, "fb", "§x.top/b", "B", "A says why.\n");
+  const by = addNotes(root, "fb", [B]);
   git(root, "add", "-A"); git(root, "commit", "-qm", "by promotes B");
   git(root, "checkout", "-q", "master"); git(root, "merge", "-q", "--ff-only", "by");
   git(root, "checkout", "-qb", "bx", "master~1");
-  const bx = addNote(root, "fa", "§x.top/n", "N", "A says why.\n");
+  const bx = addNotes(root, "fa", extra ? [N, Y] : [N]);
   git(root, "add", "-A"); git(root, "commit", "-qm", "bx promotes N");
   const m = git(root, "merge", "master", "-m", "merge master");
   const unmerged = git(root, "diff", "--name-only", "--diff-filter=U").out.split("\n").filter(Boolean);
-  const manifestMerged = !unmerged.includes(".sova/spec/manifest.json") && /§x\.top\/b/.test(read(root, ".sova/spec/manifest.json")) && /§x\.top\/n/.test(read(root, ".sova/spec/manifest.json"));
-  return { root, setup: { by, bx, mergeStatus: m.status, unmerged, manifestMerged } };
+  const man = read(root, ".sova/spec/manifest.json");
+  return { root, setup: { by: by.pw, bx: bx.pw, mergeStatus: m.status, unmerged, manifestMerged: !unmerged.includes(".sova/spec/manifest.json") && man.includes(B.id) && man.includes(N.id) } };
 }
-const CONFLICTED = ".sova/spec/claims/x/top.md";
 const RECOVERIES = {
   ours: ["checkout", "--ours", "--", ".sova/spec/manifest.json", CONFLICTED],
   "claims-only": ["checkout", "master", "--", CONFLICTED],
   both: ["checkout", "master", "--", ".sova/spec/manifest.json", CONFLICTED],
 };
-// Every backticked `git checkout …` in PROMOTE.md, placeholders filled with this fixture's names.
 function docCommands() {
   const promote = read(SPEC, "PROMOTE.md");
   return [...new Set([...promote.matchAll(/`git (checkout [^`]*)`/g)].map((m) => m[1]))].map((text) => ({ text,
     args: text.replace(/<(master|main|default[^>]*|base[^>]*)>/g, "master").replace(/\.sova\/spec\/claims\/…|<[^>]*claims[^>]*>|…/g, CONFLICTED)
       .split(/\s+/).filter(Boolean) }));
 }
-function recover(args) {
-  const { root, setup } = setupConflict();
+function recover(args, { extra = false, reapply = "new" } = {}) {
+  const { root, setup } = setupConflict(extra);
   calls = 0;
   const co = git(root, ...args);
   git(root, "add", "-A"); git(root, "commit", "-qm", "resolve");
   const chk1 = core(root, "check");
-  rmSync(join(root, ".sova/spec/drafts"), { recursive: true, force: true });
-  const re = addNote(root, "fa2", "§x.top/n", "N", "A says why.\n");
+  const loadedAt = chk1.j?.exit <= 1 ? calls : null;
+  const notes = extra ? [N, Y] : [N];
+  let re;
+  if (reapply === "same") re = promoteIds(root, "fa", notes.map((n) => n.id));
+  else { rmSync(join(root, ".sova/spec/drafts"), { recursive: true, force: true }); re = addNotes(root, "fa2", notes); }
   const chk2 = core(root, "check");
   const t = read(root, CONFLICTED);
-  return { setup, checkout: { args: args.join(" "), status: co.status }, checkExitAfterResolve: chk1.j?.exit,
+  return { checkout: args.join(" "), checkoutStatus: co.status, reapply, checkExitAfterResolve: chk1.j?.exit,
     checkCodes: [...new Set((chk1.j?.findings ?? []).filter((f) => f.severity === "error").map((f) => f.code))],
-    reapply: re, checkExitFinal: chk2.j?.exit, hasB: t.includes("§x.top/b"), hasN: t.includes("§x.top/n"), calls };
+    reapplyPromote: re.pw, reapplyRefusals: re.refusals, reapplyMsg: re.msg, checkExitFinal: chk2.j?.exit,
+    kept: { B: t.includes(B.id), N: t.includes(N.id), ...(extra ? { Y: existsSync(join(root, EXTRA)) } : {}) },
+    callsToLoadingSpec: loadedAt, callsTotal: calls, setup };
 }
 // Longest run of words a message shares with a document.
 function shared(msg, doc) {
@@ -234,8 +251,12 @@ const out = {};
 if (only.has("where")) out.where = benchWhere();
 if (only.has("draft")) { out.draftFixture = benchDraftFixture(); if (realRepo) out.draftReal = benchDraftReal(resolve(realRepo)); }
 if (only.has("recovery")) {
-  out.recovery = Object.fromEntries(Object.entries(RECOVERIES).map(([k, a]) => [k, recover(a)]));
-  docCommands().forEach((c, i) => { out.recovery[`doc${i}`] = recover(c.args); });
-  out.docs = docText(out.recovery["claims-only"].reapply.msg);
+  out.recovery = {};
+  for (const extra of [false, true]) {
+    const tag = extra ? "+extra" : "";
+    for (const [k, a] of Object.entries(RECOVERIES)) out.recovery[k + tag] = recover(a, { extra });
+    docCommands().forEach((c, i) => { for (const reapply of ["new", "same"]) out.recovery[`doc${i}/${reapply}${tag}`] = recover(c.args, { extra, reapply }); });
+  }
+  out.docs = docText(out.recovery["claims-only"].reapplyMsg);
 }
 console.log(JSON.stringify(out, null, 2));

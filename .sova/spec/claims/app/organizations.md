@@ -478,7 +478,7 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
     the owner page, and the ones taken down, §app.owner-page/updates), `costs.json` (each session's
     title and token counts as last counted, by model, time and token kind, §app.project-costs/ledger),
     `usage.jsonl` (the reconciler's decide calls' usage, §app.project-costs/recording), and the
-    overseer's `overseer/` — `overseer.json` (autonomy, models, the coding sessions' mode, caps,
+    overseer's `overseer/` — `overseer.json` (autonomy, models, caps,
     watch, extra instructions), `notes.md`, `ideas/`, `todos.json` and `files.jsonl` (the files
     people sent, by name, size and status, never their bytes, which stay on the host that took
     them, §app/file-intake);

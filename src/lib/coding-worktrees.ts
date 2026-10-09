@@ -1,30 +1,18 @@
-// The project page's coding sessions (§app/project-overseer): their mode setting, their
+// The project page's coding sessions (§app/project-overseer): what they start in, their
 // worktrees and the operator's Merge and Remove, and the commit a promotion makes. Pure rules the
 // panel renders, so they run under tsx --test.
 
 import type { PromoteResult } from "../../shared/decisions";
-import type { CodingWorktree, ProjectCodingMode } from "../../shared/project-overseer";
+import { codingModeWords, type CodingModeNow, type CodingWorktree } from "../../shared/project-overseer";
 
-/** One choice in the "Coding sessions' mode" select; `auto` is Automatic (null in the settings). */
-export type CodingModeKey = "auto" | "normal" | "normal+spec" | "delegate" | "delegate+spec";
-
-export const CODING_MODE_KEYS: readonly CodingModeKey[] = ["auto", "normal", "normal+spec", "delegate", "delegate+spec"];
-
-/** A mode as the page says it: `normal`, `normal · spec`. */
-export const modeWords = (m: ProjectCodingMode): string => [m.mode, ...m.minorModes].join(" · ");
-
-export function codingModeKey(m: ProjectCodingMode | null): CodingModeKey {
-  if (!m) return "auto";
-  return (m.minorModes.includes("spec") ? `${m.mode}+spec` : m.mode) as CodingModeKey;
+/** The read-only line under "Coding sessions' mode": what a coding session started now gets (this computer's
+    defaults) and how to change it, split so the mode words go in mono. */
+export function codingModeHint(now: CodingModeNow): { before: string; mode: string; after: string } {
+  const mode = codingModeWords(now);
+  return now.subagents
+    ? { before: "Coding sessions start in ", mode, after: `, with the ${now.subagents.name} subagent profile: this computer's defaults. Save as default in any chat's mode menu changes them.` }
+    : { before: "Coding sessions start in ", mode, after: ": this computer's default mode. Save as default in any chat's mode menu changes it." };
 }
-
-export function codingModeOf(key: CodingModeKey): ProjectCodingMode | null {
-  if (key === "auto") return null;
-  const [mode, minor] = key.split("+") as ["normal" | "delegate", string | undefined];
-  return { mode, minorModes: minor ? [minor] : [] };
-}
-
-export const codingModeLabel = (key: CodingModeKey): string => (key === "auto" ? "Automatic" : modeWords(codingModeOf(key)!));
 
 // ---- coding sessions and their worktrees ------------------------------------------------------------
 

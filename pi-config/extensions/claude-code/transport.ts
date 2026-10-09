@@ -16,7 +16,7 @@ import * as path from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { claudeBaseEnv, type ClaudeAccountFailure } from "./accounts.ts";
 import { claudeCliId } from "./catalog.ts";
-import { fixedSettingsJson } from "./fixed-settings.ts";
+import { FIXED_CLAUDE_ENV, fixedSettingsJson } from "./fixed-settings.ts";
 import type { ClaudeRequestObserver } from "../llm-inflight/claude.ts";
 
 // ---------------------------------------------------------------------------
@@ -254,11 +254,11 @@ export function simulatedFailureEvents(failure: ClaudeAccountFailure, userUuid?:
 /** Preserve configured CLI authentication/routing (including API keys), but do
  * not inherit Claude's nested-session markers from the host shell, nor a
  * CLAUDE_CONFIG_DIR that names an added login's directory (accounts.ts). `extra`
- * is applied last, so a caller's variable is what the CLI sees. */
+ * is applied over it, so a caller's variable is what the CLI sees; only FIXED_CLAUDE_ENV goes over `extra`. */
 export function claudeEnv(extra?: Record<string, string>): NodeJS.ProcessEnv {
 	const env = claudeBaseEnv(process.env);
 	delete env.CLAUDECODE; delete env.CLAUDE_CODE_ENTRYPOINT;
-	Object.assign(env, extra);
+	Object.assign(env, extra, FIXED_CLAUDE_ENV);
 	return env;
 }
 

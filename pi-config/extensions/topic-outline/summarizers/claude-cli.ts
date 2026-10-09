@@ -17,7 +17,7 @@ import { SummarizerError } from "../types.ts";
 import { buildPrompt, parseSummarizerJson } from "./chain.ts";
 import { claudeBaseEnv, hostLogins } from "../../claude-code/accounts.ts";
 import { claudeCliId } from "../../claude-code/catalog.ts";
-import { fixedSettingsJson } from "../../claude-code/fixed-settings.ts";
+import { FIXED_CLAUDE_ENV, fixedSettingsJson } from "../../claude-code/fixed-settings.ts";
 import { beginClaudeOneShot } from "../../llm-inflight/claude.ts";
 import { resolveUsageAttribution } from "../../llm-inflight/attribution.ts";
 import { recordClaudeEnvelope } from "../../llm-inflight/record.ts";
@@ -52,6 +52,19 @@ export function claudeCliArgs(model: string, budgetUsd: number): string[] {
   ];
 }
 
+/**
+ * The one-shot's environment: `parent` less an inherited CLAUDE_CONFIG_DIR naming a login's directory
+ * (`default` is ~/.claude) and Claude's nested-session markers, the login's merged over it, and
+ * FIXED_CLAUDE_ENV over everything. Pure.
+ */
+export function claudeCliEnv(parent: NodeJS.ProcessEnv, login: Record<string, string>): NodeJS.ProcessEnv {
+  const env = claudeBaseEnv(parent);
+  delete env.CLAUDECODE;
+  delete env.CLAUDE_CODE_ENTRYPOINT;
+  delete env.CLAUDE_AGENT_SDK_VERSION;
+  return Object.assign(env, login, FIXED_CLAUDE_ENV);
+}
+
 export function createClaudeCliSummarizer(spec: SummarizerSpec, claudeBin: string): Summarizer {
   const timeoutMs = spec.timeoutMs ?? 45_000;
   const budget = spec.maxBudgetUsd ?? 0.05;
@@ -70,12 +83,7 @@ export function createClaudeCliSummarizer(spec: SummarizerSpec, claudeBin: strin
           reject(new SummarizerError(`cannot create temp dir: ${String(error)}`));
           return;
         }
-        // Less an inherited CLAUDE_CONFIG_DIR naming a login's directory: `default` is ~/.claude.
-        const env = claudeBaseEnv(process.env) as Record<string, string | undefined>;
-        delete env.CLAUDECODE;
-        delete env.CLAUDE_CODE_ENTRYPOINT;
-        delete env.CLAUDE_AGENT_SDK_VERSION;
-        Object.assign(env, loginEnv());
+        const env = claudeCliEnv(process.env, loginEnv());
         const args = claudeCliArgs(spec.model, budget);
         let child;
         try {

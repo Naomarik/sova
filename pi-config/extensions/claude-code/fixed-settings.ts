@@ -15,6 +15,12 @@ export const NO_ATTRIBUTION = { attribution: { commit: "", pr: "" } } as const;
  * MEMORY.md and its notes) into a request nor writes to it. Probed with CLI 2.1.295: on by default.
  */
 export const NO_AUTO_MEMORY = { autoMemoryEnabled: false } as const;
+/**
+ * The environment every model-calling `claude` spawn is given, applied last over whatever it inherits
+ * or a login merges. CLI 2.1.295 reads CLAUDE_CODE_DISABLE_AUTO_MEMORY before the setting: a falsy
+ * value ("0", "false") forces memory on despite NO_AUTO_MEMORY, so the variable is pinned to "1" too.
+ */
+export const FIXED_CLAUDE_ENV = { CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1" } as const;
 export const SOVA_FIXED_SETTINGS = { ...NO_ATTRIBUTION, ...NO_AUTO_MEMORY } as const;
 
 /** The one `--settings` value: `settings` (a caller's, e.g. the sandbox's) with the fixed settings merged over it. */

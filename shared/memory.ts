@@ -41,6 +41,9 @@ export function memoryTypeInfo(type: MemoryType): MemoryTypeInfo {
   return MEMORY_TYPE_INFO.find((t) => t.id === type) ?? MEMORY_TYPE_INFO[0]!;
 }
 
+/** Why the Overseer's coding-session tools (and the peer configure route they reach) refuse memory (§chat.memory/where). */
+export const MEMORY_CODING_REFUSAL = "Memory is for chats only: the user turns it on from a chat's mode menu, never in a coding session";
+
 /** What a chat with no choice of its own uses (before Save as default wrote one). */
 export const BUILTIN_MEMORY_CHOICE: ChatMemoryChoice = { type: "uniichat", size: 128 };
 

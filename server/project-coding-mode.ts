@@ -58,7 +58,8 @@ export function parseCodingMode(raw: unknown): ProjectCodingMode | null {
   if (!isObj(raw)) return null;
   const p = parseModePatch({ mode: raw.mode, minorModes: Array.isArray(raw.minorModes) ? raw.minorModes : [] });
   if ("error" in p || !p.mode || p.minorModes?.includes("align")) return null;
-  return { mode: p.mode, minorModes: p.minorModes ?? [] };
+  // A hand-edited "memory" is dropped: coding sessions never get memory (§chat.memory/where).
+  return { mode: p.mode, minorModes: (p.minorModes ?? []).filter((m) => m !== "memory") };
 }
 
 /** A PATCH's `codingMode`, strictly: null (Automatic) or `{ mode, minorModes? }`; a sentence on a problem. */

@@ -268,7 +268,7 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   model-discovery argv to the extension's, and `src/lib/show-changes-coverage.test.ts` imports
   `pi-config/extensions/show-changes/coverage.ts` (imports nothing) to pin the tool's hunk matching
   to `src/lib/changes-steps.ts`'s; beyond that, `catalog.ts` (with `context-window.ts`), `accounts.ts` and the
-  protocol set above and `provider/fork-point.ts` (through `fork/claude.ts`), the server never imports claude-code. `argv.ts` is also the quoting boundary: every path that reaches a far shell is
+  protocol set above and `provider/fork-point.ts` (through `fork/claude.ts`) and `fixed-settings.ts` (imports nothing: the `--settings` every `claude` spawn gets, no attribution and auto-memory off, §app.claude-code-provider/no-memory; `server/decide-llm.ts`, `session-autotitle.ts` and `claude-models.ts` import it), the server never imports claude-code. `argv.ts` is also the quoting boundary: every path that reaches a far shell is
   single-quote-escaped there, and callers spawn its argv without a local shell. The web mode switch calls that extension's
   `/mode` command handler directly (`ChatSession.applyMode`), so its arguments are a contract too.
   Sova has no sshfs/mount support: a remote session's cwd is always its local placeholder, and

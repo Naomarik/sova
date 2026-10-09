@@ -194,6 +194,28 @@ declarations were reordered, that holds a carriage return, or whose graph on any
 load, is still compared as a whole file. A merged file must read back as exactly the declarations
 it was merged from, byte for byte, or the promotion is refused as a conflict and nothing is written.
 
+## §tools.spec/git-merge — A Git merge of spec changes conflicts only on the same promise
+
+Two Git branches that each promoted spec changes merge without a conflict unless they changed the
+same promise. `.gitattributes` routes the claim files through the draft tool's `merge-claims`
+driver and `manifest.json` through `merge-manifest`; Git needs each defined once per clone, and the
+setup names no project path but the tools' own. `merge-claims` merges a claim file per declaration
+the same way promotion does (§tools.spec/span-promotion), with the merge base, ours and theirs in
+the roles of base, current and draft, so the merged file has the bytes the two promotions give when
+landed one after the other in one tree, in either order. The driver finds declarations from the
+file's own H1 and H2 headings, without loading the graph. When a declaration or a gap changed
+differently on both sides, a declaration was deleted on one side and changed on the other, the file
+can't be cut per declaration (no declarations, a carriage return, kept declarations reordered), or
+the merged file doesn't read back as the declarations it was merged from, the driver writes Git's
+own line merge with its conflict markers, so both sides' prose stays in the file, and Git reports
+the file as conflicted.
+
+A record's place in `manifest.json` doesn't depend on the order changes landed in. Promotion and
+`merge-manifest` put a record that is new to the manifest right before the first record of its own
+area (its identifier up to the `/`) that sorts after it, or else right after that area's last
+record; the first record of an area goes right before the first record whose area sorts after its
+own, or last. Records already in the manifest keep their place.
+
 ## §tools.spec/agreed-promotion — An agreed promise lands in the main spec before it is built
 
 A behavior or surface record may carry `agreed: {by, at}`: who made the decision it records, and

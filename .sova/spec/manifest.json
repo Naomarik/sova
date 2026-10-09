@@ -9968,7 +9968,9 @@
         "src/components/SettingsDialog.tsx",
         "src/lib/settings-nav.ts",
         "src/lib/settings-nav.test.ts",
-        "src/App.tsx"
+        "src/App.tsx",
+        "src/lib/profiles.ts",
+        "src/lib/profile-cards.test.ts"
       ],
       "requires": [
         "§chat.profiles/model",
@@ -10066,7 +10068,8 @@
         "profiles/mini-overseer.json",
         "shared/protocol.ts",
         "src/lib/summary-diff.test.ts",
-        "server/harness/state-kinds.ts"
+        "server/harness/state-kinds.ts",
+        "docs/profiles.md"
       ],
       "requires": []
     },

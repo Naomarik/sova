@@ -10,6 +10,8 @@ import {
 	censusStep,
 	freshCensusState,
 	manifestConflict,
+	claimsConflicts,
+	mergeRecovery,
 	unmergedPaths,
 	coreDir,
 	CENSUS_SKIP_TOOLS,
@@ -305,7 +307,7 @@ test("CensusHook on a real Git tree: bash-style writes are caught by the git del
 	}
 });
 
-test("a manifest.json in a Git conflict: the census says to run merge-manifest, once per conflict", async () => {
+test("a manifest.json in a Git conflict: the census says to run merge-manifest, then the one recovery, once per conflict", async () => {
 	assert.deepEqual(unmergedPaths("UU .sova/spec/manifest.json\0 M src/a.ts\0AA b\0"), [".sova/spec/manifest.json", "b"]);
 	assert.equal(manifestConflict({ top: "/r", head: "a", files: {}, unmerged: ["sub/.sova/spec/manifest.json"] }), "sub/.sova/spec/manifest.json");
 	assert.equal(manifestConflict({ top: "/r", head: "a", files: {} }), undefined);
@@ -332,10 +334,65 @@ test("a manifest.json in a Git conflict: the census says to run merge-manifest, 
 		assert.notEqual(git("merge", "side").status, 0, "the merge conflicts");
 		const first = await censusStep(state, { cwd: repo, toolName: "bash", input: { command: "git merge side" } }, CORE);
 		assert.match(first.result.text ?? "", /\.sova\/spec\/manifest\.json is in conflict: run `node ".*sova-spec-draft\.mjs" merge-manifest --root .* --write --json` first/);
-		assert.match(first.result.text ?? "", /If it refuses \(manifest-conflict\): take master's manifest and matching claims \(git checkout master -- …\), re-apply the branch's spec changes in a new draft, and promote\. Never take a side before merge-manifest has run\./);
+		assert.ok((first.result.text ?? "").includes(`If it refuses (manifest-conflict), or a claims file is in conflict: ${mergeRecovery("master")}. Never take a side before merge-manifest has run.`), first.result.text);
+		assert.doesNotMatch(first.result.text ?? "", /merge-claims driver/, "no claim file conflicts, so no driver setup");
 		state = first.state;
 		assert.equal((await censusStep(state, { cwd: repo, toolName: "read", input: {} }, CORE)).result.text, undefined, "said once per conflict");
 	} finally {
+		rmSync(repo, { recursive: true, force: true });
+	}
+});
+
+test("claim files alone in a Git conflict: the one recovery with the default branch, plus the merge-claims setup when it isn't configured", async () => {
+	assert.deepEqual(claimsConflicts({ top: "/r", head: "a", files: {}, unmerged: [".sova/spec/claims/a/x.md", "sub/.sova/spec/claims/b.md", "src/c.ts", ".sova/spec/manifest.json"] }), [".sova/spec/claims/a/x.md", "sub/.sova/spec/claims/b.md"]);
+	mkdirSync(scratchRoot, { recursive: true });
+	const repo = mkdtempSync(join(scratchRoot, "spec-claims-conflict-"));
+	// A clone's own config only: a merge-claims driver in the developer's global config would hide the setup line.
+	const env = { global: process.env.GIT_CONFIG_GLOBAL, nosystem: process.env.GIT_CONFIG_NOSYSTEM };
+	process.env.GIT_CONFIG_GLOBAL = join(repo, ".no-global-config");
+	process.env.GIT_CONFIG_NOSYSTEM = "1";
+	try {
+		const put = (rel: string, text: string) => {
+			mkdirSync(dirname(join(repo, rel)), { recursive: true });
+			writeFileSync(join(repo, rel), text);
+		};
+		const git = (...args: string[]) => spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-C", repo, ...args], { encoding: "utf8" });
+		put(".sova/spec/manifest.json", JSON.stringify({ formatVersion: 1, claims: { "§a/x": { kind: "note" } } }, null, 1));
+		put(".sova/spec/claims/a/x.md", "# §a/x\n\nX says base.\n");
+		git("init", "-q", "-b", "main");
+		git("add", "-A");
+		git("commit", "-qm", "base");
+		git("checkout", "-qb", "side");
+		put(".sova/spec/claims/a/x.md", "# §a/x\n\nX says side.\n");
+		git("commit", "-qam", "side");
+		git("checkout", "-q", "main");
+		put(".sova/spec/claims/a/x.md", "# §a/x\n\nX says main.\n");
+		git("commit", "-qam", "main");
+		const conflictOnce = async () => {
+			const state = (await censusStep(freshCensusState(), { cwd: repo, toolName: "", input: undefined }, CORE)).state;
+			assert.notEqual(git("merge", "side").status, 0, "the merge conflicts");
+			const text = (await censusStep(state, { cwd: repo, toolName: "bash", input: { command: "git merge side" } }, CORE)).result.text ?? "";
+			git("merge", "--abort");
+			return text;
+		};
+		const bare = await conflictOnce();
+		assert.ok(bare.startsWith(`${DIGEST_TAG} .sova/spec/claims/a/x.md is in conflict: ${mergeRecovery("main")}.`), bare);
+		assert.doesNotMatch(bare, /merge-manifest --root/, "the manifest merged: no merge-manifest step");
+		assert.match(bare, /The merge-claims driver isn't set up here, so claim files merged line by line; to merge them per declaration from now on, add `\.sova\/spec\/claims\/\*\*\/\*\.md merge=sova-spec-claims` to \.gitattributes and run `git config merge\.sova-spec-claims\.driver 'node ".*sova-spec-draft\.mjs" merge-claims --root \. --base %O --ours %A --theirs %B --path %P --write'` once per clone\./);
+		// The attribute in place: only the git config step is named.
+		put(".gitattributes", ".sova/spec/claims/**/*.md merge=sova-spec-claims\n");
+		git("add", ".gitattributes");
+		git("commit", "-qm", "attr");
+		const attrOnly = await conflictOnce();
+		assert.doesNotMatch(attrOnly, /\.gitattributes/);
+		assert.match(attrOnly, /to merge them per declaration from now on, run `git config merge\.sova-spec-claims\.driver/);
+		// Both in place (a driver that conflicts anyway: the same declaration on both sides): the recovery alone.
+		git("config", "merge.sova-spec-claims.driver", "false");
+		const configured = await conflictOnce();
+		assert.ok(configured.startsWith(`${DIGEST_TAG} .sova/spec/claims/a/x.md is in conflict: ${mergeRecovery("main")}.`), configured);
+		assert.doesNotMatch(configured, /merge-claims driver/);
+	} finally {
+		for (const [k, v] of [["GIT_CONFIG_GLOBAL", env.global], ["GIT_CONFIG_NOSYSTEM", env.nosystem]] as const) if (v === undefined) delete process.env[k]; else process.env[k] = v;
 		rmSync(repo, { recursive: true, force: true });
 	}
 });

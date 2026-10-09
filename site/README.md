@@ -2,9 +2,10 @@
 
 A static [Astro](https://astro.build) site for Sova, styled with the app's own design system:
 `src/styles/tokens.css` is a copy of `src/design/tokens.css`, and `src/styles/components.css` is a
-subset of `.claude/skills/fold-ai-dev-design/fold-ai-dev.css`. The product screens on the page are
-CSS mock-ups built from those classes, not screenshots; replace them with real captures from a
-hermetic agent directory before launch.
+subset of `.claude/skills/fold-ai-dev-design/fold-ai-dev.css`. The home page's product screens
+and its session video are real Sova, captured on demo data (see Screens and video below); the
+Mesh and Organizations pages, and the phone lock screen beside the Overseer, are CSS
+illustrations built from those classes.
 
 It ships static HTML and one stylesheet. The only JavaScript is two small inline scripts in
 `src/layouts/Base.astro` (the theme toggle and the copy button). No UI framework, no analytics,
@@ -51,6 +52,18 @@ Set `SOVA_SITE_URL` to the address the site is served from so link previews get 
   root packages (`pnpm install` at the root). It stops on an example that doesn't parse or draws
   with warnings, on a kind with no example, and when a View it hands a width to has changed. The
   build doesn't run it, so a stale file builds without complaint.
+- **Screens and video:** after a change to a captured screen in the app (its layout, labels or
+  styles) or to the demo data, run the capture again. All demo data and every scripted model
+  reply are in one plain-JSON file, `scripts/screens/story.json`; edit only that, then:
+  `pnpm run screens:check` (names each problem by line and column), `pnpm run screens` (the
+  screenshots whose inputs changed, as lossless WebP masters in `src/assets/screens/` with their
+  `manifest.json`), `pnpm run screens:video` (the session video in `public/video/`) and
+  `pnpm run screens:verify`. Commit the story with what they wrote. The pages take each image's
+  alt text and size from the manifest; the build turns the masters into AVIF and WebP and never
+  runs the capture, so a stale image builds without complaint. The capture needs the
+  repository's root install and build, the playwright skill's browser and, for the video,
+  `ffmpeg`; it runs Sova in a throwaway directory with nothing from `~/.pi`.
+  `scripts/screens/README.md` has the details and the privacy checks.
 
 ## The social card
 

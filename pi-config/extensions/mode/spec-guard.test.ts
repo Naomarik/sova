@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -26,7 +26,6 @@ import {
 	driftNote,
 	driftWarningsIn,
 	currentSpecPath,
-	sanctionedSpecWrite,
 	SpecWriteGuard,
 	viewChanged,
 	type CensusView,
@@ -110,8 +109,6 @@ test("promoteWrites: every argv that runs the draft tool (named, or through a va
 	// A heredoc body is dropped, and the command after it is still read.
 	assert.ok(promoteWrites("cat > n.md <<'EOF'\nnotes\nEOF\nnode $d promote feat --plan abc --write"));
 	assert.deepEqual(draftsCreated(["d=/c/sova-spec-draft.mjs; node $d new feat-b --write --root .", "echo node $d new fake --write"]), ["feat-b"]);
-	assert.ok(sanctionedSpecWrite('node "$d" promote feat --plan abc --write'), "a promote through $d is a sanctioned spec write");
-	assert.ok(!sanctionedSpecWrite("printf x > .sova/spec/manifest.json"));
 });
 
 const censusView = (over: Partial<CensusView> = {}): CensusView => ({
@@ -359,8 +356,6 @@ test("digest: the new changed files outside the boundary that no claim maps get 
 test("SpecWriteGuard (M2-B-s2-1's shape): a rebase after evidence and a hand edit of the manifest are said at once; a merge, git and the draft tools are not", async () => {
 	assert.ok(currentSpecPath("/w/.sova/spec/manifest.json") && currentSpecPath(".sova/spec/claims/app/x.md") && currentSpecPath("sub/.sova/spec/claims/a.md"));
 	assert.ok(!currentSpecPath("/w/.sova/spec/drafts/d/spec/manifest.json") && !currentSpecPath("/w/.sova/spec/drafts/d/spec/claims/a.md") && !currentSpecPath("/w/src/claims/a.ts"));
-	assert.ok(sanctionedSpecWrite('node "$core/sova-spec-draft.mjs" merge-manifest --root . --write') && sanctionedSpecWrite("git checkout master -- .sova/spec/manifest.json"));
-	assert.ok(!sanctionedSpecWrite("sed -i s/a/b/ .sova/spec/manifest.json") && !sanctionedSpecWrite("git add .sova && cp x .sova/spec/manifest.json"));
 	mkdirSync(scratchRoot, { recursive: true });
 	const dir = mkdtempSync(join(scratchRoot, "spec-writes-"));
 	const repo = join(dir, "repo");
@@ -429,12 +424,16 @@ test("SpecWriteGuard (M2-B-s2-1's shape): a rebase after evidence and a hand edi
 		const edit = (await guard.after("e", { cwd: dir, toolName: "edit", input: { path: join(wt, ".sova/spec/manifest.json") } })).text;
 		assert.equal(edit, `${DIGEST_TAG} you wrote the current spec directly (${join(wt, ".sova/spec/manifest.json")}): undo it; change claims in a draft and promote (manifest conflicts: merge-manifest).`);
 		assert.equal((await guard.after("e2", { cwd: wt, toolName: "write", input: { path: ".sova/spec/drafts/d/spec/manifest.json" } })).text, undefined);
-		const shell = await bash("s", `cd ${wt} && printf x >> .sova/spec/claims/a.md`, () => put(wt, ".sova/spec/claims/a.md", "x"));
-		assert.match(shell ?? "", /you wrote the current spec directly \(\.sova\/spec\/claims\/a\.md\)/);
+		// Mid-rebase a shell write is the rebase's resolution: the file state (a Git operation under way) excuses it, whatever the command says.
+		assert.equal(await bash("s", `cd ${wt} && printf x >> .sova/spec/claims/a.md`, () => put(wt, ".sova/spec/claims/a.md", "x")), undefined);
 		assert.equal(await bash("p", `cd ${wt} && node "$core/sova-spec-draft.mjs" promote d --write`, () => put(wt, ".sova/spec/claims/a.md", "y")), undefined, "the draft tools write the current spec");
 		assert.equal(await bash("c", `cd ${wt} && git checkout master -- .sova/spec/manifest.json`, () => git(wt, "checkout", "master", "--", ".sova/spec/manifest.json")), undefined);
 		git(wt, "rebase", "--abort");
 		assert.equal(head(wt), tip);
+		// With no Git operation under way, a shell write is a direct write; git restoring HEAD's bytes is not.
+		const shell = await bash("s2", `cd ${wt} && printf x >> .sova/spec/claims/a.md`, () => put(wt, ".sova/spec/claims/a.md", "x"));
+		assert.match(shell ?? "", /you wrote the current spec directly \(\.sova\/spec\/claims\/a\.md\)/);
+		assert.equal(await bash("s3", `cd ${wt} && git checkout -- .sova/spec/claims/a.md`, () => git(wt, "checkout", "--", ".sova/spec/claims/a.md")), undefined);
 		// A reset (no rebase under way) past the evidence: restore the branch.
 		const later = new CensusHook({ core: () => CORE });
 		await later.prime(wt);
@@ -543,5 +542,157 @@ test("two trees failing with different causes in one call: both lines are said",
 		assert.equal((r.failure ?? "").split("\n").length, 2);
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+// ── Quiet notes: only the session's own changes, the census failure's cause, the write guard on file state ──
+
+const G = ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"];
+/** A committed project under the scratch root: boundary src, §app/x claims src/a.txt; drafts ignored. */
+function quietProject(): string {
+	mkdirSync(scratchRoot, { recursive: true });
+	const at = mkdtempSync(join(scratchRoot, "spec-quiet-"));
+	const put = (rel: string, text: string) => (mkdirSync(dirname(join(at, rel)), { recursive: true }), writeFileSync(join(at, rel), text));
+	put(".sova/spec/manifest.json", JSON.stringify({ formatVersion: 1, grammar: { claimsRoot: "claims/", directoryKinds: ["section"] }, boundary: { include: ["src"], exclude: [] }, claims: { "§app/x": { kind: "behavior", requires: [], code: ["src/a.txt"] } } }, null, 2));
+	put(".sova/spec/claims/app/x.md", "# §app/x\n\nX does a thing.\n");
+	put("src/a.txt", "a\n");
+	put(".gitignore", ".sova/spec/drafts/\n");
+	for (const args of [["init", "-q", "-b", "main"], ["add", "-A"], ["commit", "-qm", "base"]]) assert.equal(spawnSync("git", [...G, "-C", at, ...args]).status, 0);
+	return at;
+}
+/** pi's two hooks around one tool call, as mode/index.ts runs them; a bash call's command really runs in between. */
+function quietSession(core = CORE) {
+	const census = new CensusHook({ core: () => core });
+	const guard = new SpecWriteGuard();
+	const commands: string[] = [];
+	let n = 0;
+	const call = async (cwd: string, toolName: string, input: Record<string, unknown>, effect: () => void) => {
+		const id = `q${n++}`;
+		const c = { cwd, toolName, input };
+		await guard.before(id, c);
+		await census.before(c);
+		effect();
+		if (toolName === "bash") commands.push(input.command as string);
+		const g = await guard.after(id, c);
+		const r = await census.after({ ...c, orphansSaid: g.lost, commands });
+		return [g.text, r.text, r.failure].filter(Boolean).join("\n");
+	};
+	return {
+		prime: (cwd: string) => census.prime(cwd),
+		bash: (cwd: string, command: string) => call(cwd, "bash", { command }, () => void spawnSync("bash", ["-c", command], { cwd })),
+		edit: (cwd: string, rel: string, text: string) => call(cwd, "edit", { path: rel }, () => (mkdirSync(dirname(join(cwd, rel)), { recursive: true }), writeFileSync(join(cwd, rel), text))),
+	};
+}
+const DRAFT_TOOL = join(CORE, "sova-spec-draft.mjs");
+const directWrites = (text: string) => (text.match(/you wrote the current spec directly/g) ?? []).length;
+
+test("a commit another process made between calls is no census note; the session's own edit and own commit still are, naming only its files", async () => {
+	const foreign = (at: string) => {
+		writeFileSync(join(at, "src/b.txt"), "theirs\n");
+		writeFileSync(join(at, "src/a.txt"), "theirs\n");
+		for (const args of [["add", "-A"], ["commit", "-qm", "elsewhere"]]) assert.equal(spawnSync("git", [...G, "-C", at, ...args]).status, 0);
+	};
+	const roots = [quietProject(), quietProject(), quietProject(), quietProject()];
+	try {
+		const [r1, r2, r3, r4] = roots as [string, string, string, string];
+		let s = quietSession();
+		await s.prime(r1);
+		foreign(r1);
+		const quiet = [await s.bash(r1, "ls"), await s.bash(r1, "git log -1 --oneline")].join("\n");
+		assert.doesNotMatch(quiet, /\[spec census\]|No draft yet/, `read-only calls after another process's commit: ${quiet}`);
+
+		s = quietSession();
+		await s.prime(r2);
+		foreign(r2);
+		const own = await s.edit(r2, "src/c.txt", "mine\n");
+		const neu = own.split("\n").find((l) => l.startsWith("New:")) ?? "";
+		assert.match(neu, /src\/c\.txt → unclaimed/, own);
+		assert.doesNotMatch(neu, /src\/a\.txt|src\/b\.txt/, `another process's files are not this session's: ${own}`);
+
+		s = quietSession();
+		await s.prime(r3);
+		const committed = await s.bash(r3, `echo d > src/d.txt && git ${G.join(" ")} add src/d.txt && git ${G.join(" ")} commit -qm d`);
+		assert.match(committed, /New: src\/d\.txt → unclaimed/, "a commit the session's own call made still counts");
+
+		s = quietSession();
+		await s.prime(r4);
+		assert.match(await s.bash(r4, "echo n > src/new.txt"), /src\/new\.txt → unclaimed/, "a planted unclaimed file is still flagged");
+	} finally {
+		for (const r of roots) rmSync(r, { recursive: true, force: true });
+	}
+});
+
+test("a `node` on PATH that exits 1 (an untrusted mise.toml's shim) doesn't stop the census; a census that does crash says why: its first stderr line", async () => {
+	const at = quietProject();
+	const shim = mkdtempSync(join(scratchRoot, "node-shim-"));
+	const broken = mkdtempSync(join(scratchRoot, "broken-core-"));
+	const path = process.env.PATH;
+	try {
+		writeFileSync(join(shim, "node"), "#!/bin/sh\necho 'mise ERROR Config file /x/mise.toml is not trusted. Trust it with `mise trust`.' >&2\nexit 1\n", { mode: 0o755 });
+		let s = quietSession();
+		await s.prime(at);
+		process.env.PATH = `${shim}:${path}`;
+		const ran = await s.edit(at, "src/c.txt", "mine\n");
+		process.env.PATH = path;
+		assert.match(ran, /New: src\/c\.txt → unclaimed/, `the census ran: ${ran}`);
+		assert.doesNotMatch(ran, /incomplete/);
+		writeFileSync(join(broken, "sova-spec.mjs"), "process.stderr.write('warming up\\nError: cannot read the claim map (EACCES)\\n'); process.exit(1);\n");
+		s = quietSession(broken);
+		await s.prime(at);
+		const text = await s.edit(at, "src/e.txt", "mine\n");
+		assert.match(text, /\[spec census\] incomplete: .*cannot read the claim map \(EACCES\)/, text);
+	} finally {
+		process.env.PATH = path;
+		for (const d of [at, shim, broken]) rmSync(d, { recursive: true, force: true });
+	}
+});
+
+test("the write guard reads file state: a promote through a wrapper script and `git checkout --ours` through a shell function in a merge are not direct writes; sed -i on claims and an Edit still are", async () => {
+	const roots = [quietProject(), quietProject(), quietProject()];
+	const bin = mkdtempSync(join(scratchRoot, "wrapper-"));
+	try {
+		const [r1, r2, r3] = roots as [string, string, string];
+		const claim = (at: string) => readFileSync(join(at, ".sova/spec/claims/app/x.md"), "utf8");
+		// A draft rewriting §app/x, accepted, evidence on HEAD; promoted by ship.sh, whose text names no draft tool.
+		let s = quietSession();
+		await s.prime(r1);
+		const setup = [await s.bash(r1, `node ${DRAFT_TOOL} new d1 --write --root . --json >/dev/null`)];
+		setup.push(await s.edit(r1, ".sova/spec/drafts/d1/spec/claims/app/x.md", "# §app/x\n\nX does two things.\n"));
+		const m = JSON.parse(readFileSync(join(r1, ".sova/spec/drafts/d1/spec/manifest.json"), "utf8"));
+		m.claims["§app/x"].authority = "accepted";
+		setup.push(await s.edit(r1, ".sova/spec/drafts/d1/spec/manifest.json", JSON.stringify(m, null, 2)));
+		setup.push(await s.bash(r1, `node ${DRAFT_TOOL} evidence d1 --id '§app/x' --by t --verification v --commit HEAD --write --root . --json >/dev/null`));
+		assert.equal(directWrites(setup.join("\n")), 0);
+		const ship = join(bin, "ship.sh");
+		writeFileSync(ship, `#!/bin/sh\nT="${DRAFT_TOOL}"\nP=$(node "$T" promote "$1" --id "$2" --root . --json | grep -o '"plan": *"[0-9a-f]*"' | grep -o '[0-9a-f]\\{64\\}')\nnode "$T" promote "$1" --id "$2" --root . --plan "$P" --write --json >/dev/null\n`, { mode: 0o755 });
+		const promoted = await s.bash(r1, `${ship} d1 '§app/x'`);
+		assert.match(claim(r1), /two things/, "the wrapper promoted");
+		assert.equal(directWrites(promoted), 0, `bytes a promotion wrote: ${promoted}`);
+		assert.equal(directWrites(await s.bash(r1, "sed -i 's/two/three/' .sova/spec/claims/app/x.md")), 1, "a hand edit after the promotion is still said");
+
+		// A claims conflict, resolved with --ours through a function whose text names no git subcommand.
+		const git = (...args: string[]) => assert.equal(spawnSync("git", [...G, "-C", r2, ...args]).status, 0, args.join(" "));
+		git("checkout", "-qb", "feat");
+		writeFileSync(join(r2, ".sova/spec/claims/app/x.md"), "# §app/x\n\nX does a feat thing.\n");
+		git("commit", "-qam", "feat");
+		git("checkout", "-q", "main");
+		writeFileSync(join(r2, ".sova/spec/claims/app/x.md"), "# §app/x\n\nX does a main thing.\n");
+		git("commit", "-qam", "main");
+		git("checkout", "-q", "feat");
+		s = quietSession();
+		await s.prime(r2);
+		const merge = await s.bash(r2, `git ${G.join(" ")} merge main`);
+		assert.ok(existsSync(join(r2, ".git/MERGE_HEAD")), "a merge is in progress");
+		const ours = await s.bash(r2, `g() { command git "$@"; }; g checkout --ours -- .sova/spec/claims/app/x.md`);
+		assert.match(claim(r2), /feat thing/);
+		assert.equal(directWrites(`${merge}\n${ours}`), 0, `merge resolution: ${merge} | ${ours}`);
+
+		s = quietSession();
+		await s.prime(r3);
+		assert.equal(directWrites(await s.bash(r3, "sed -i 's/a thing/a hand thing/' .sova/spec/claims/app/x.md")), 1, "sed -i on claims is a direct write");
+		assert.equal(directWrites(await s.edit(r3, ".sova/spec/claims/app/x.md", "# §app/x\n\nEdited.\n")), 1, "an Edit on claims is a direct write");
+	} finally {
+		for (const r of roots) rmSync(r, { recursive: true, force: true });
+		rmSync(bin, { recursive: true, force: true });
 	}
 });

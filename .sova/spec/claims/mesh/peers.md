@@ -6,6 +6,15 @@ sessions on its own disk (residence = ownership); a peer is another host whose s
 settings this host can reach. The tailnet is the gate: there is no Sova login, no per-pair token and
 no page-origin check.
 
+So this host dials a tailnet peer only at an address Tailscale binds to that peer's node identity.
+A peer named by a DNS name (its name, or the host of an `http` URL) is reached at the tailnet IP
+that Tailscale lists for exactly its node (IPv4 first, the same port), never wherever the name
+resolves; a node Tailscale doesn't list, or lists twice, reads as down. While Tailscale can't be
+asked, the address it last gave is used. An entry's IP literal or `https` URL is dialed as written
+(a non-tailnet IP only with a warning in the log), and a host in address-identity mode
+(§mesh.peers/address-identity) dials the entry's own tailnet IP, else its name. Discovery probes each
+node at its own tailnet address (§mesh.peers/discovery).
+
 ## §mesh.peers/off — With no peer configured, nothing changes
 
 The mesh is **on** exactly when this host's `peers.json` lists at least one peer. While it is off,

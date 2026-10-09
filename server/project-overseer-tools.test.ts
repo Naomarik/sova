@@ -50,7 +50,7 @@ after(() => rmSync(root, { recursive: true, force: true }));
 const ORG_PART_TOOLS = ["sova_start_gathering", "sova_offer", "sova_close_gathering", "sova_roster", "sova_decisions", "sova_reconcile", "sova_promote", "sova_send_status", "sova_send_to_person", "sova_owner_update"];
 
 let n = 0;
-function fake(opts: { attended?: boolean; autonomy?: Autonomy; settings?: Partial<ProjectOverseerSettings>; hostMode?: ProjectCodingMode; waiting?: Record<string, number>; builds?: CodingWorktree[]; refuse?: InstanceType<typeof OrgError>; previews?: PreviewView[]; previewHeld?: boolean } = {}) {
+function fake(opts: { attended?: boolean; autonomy?: Autonomy; settings?: Partial<ProjectOverseerSettings>; hostMode?: ProjectCodingMode; waiting?: Record<string, number>; asking?: string[]; builds?: CodingWorktree[]; refuse?: InstanceType<typeof OrgError>; previews?: PreviewView[]; previewHeld?: boolean } = {}) {
   const calls: string[] = [];
   /** The allowances a statechart refused, as the tools told the watch (limit/refused). */
   const limited: string[] = [];
@@ -70,6 +70,8 @@ function fake(opts: { attended?: boolean; autonomy?: Autonomy; settings?: Partia
     { id: "in-tree", path: "/s/in-tree.jsonl", cwd: "/.worktrees/proj-fix-abc123", title: "Worktree" } as SessionSummary,
     { id: "gone-tree", path: "/s/gone-tree.jsonl", cwd: "/.worktrees/proj-old-abc123", title: "Removed" } as SessionSummary,
   ];
+  // A session waiting on the operator's alignment answers carries its summary's `align` (set only while it waits).
+  for (const x of sessions) if (opts.asking?.includes(x.id)) x.align = { openDocs: 1, openQuestions: 2, questionDocs: 1 };
   const state = { attended: opts.attended ?? false };
   const host = {
     paths,
@@ -396,6 +398,25 @@ describe("coding sessions' modes (any mode, this computer's default unnamed; §a
     assert.deepEqual(f.calls, []);
     await f.run("sova_send", { session: "in-tree", text: "go" });
     assert.deepEqual(f.calls, ["send:in-tree"], "any other session still takes it");
+  });
+
+  test("a session waiting on alignment answers (any kind): a switch dropping align is refused before anything; keeping it is allowed", async () => {
+    const f = fake({ attended: true, asking: ["in-root"] });
+    for (const minor_modes of [["vis"], []])
+      await assert.rejects(
+        () => f.run("sova_send", { session: "in-root", text: "go", minor_modes }),
+        /^Error: It waits on the operator's alignment answers; align stays on until they answer\. Nothing was sent\.$/,
+        JSON.stringify(minor_modes),
+      );
+    assert.deepEqual([f.calls, f.modes, f.limited], [[], [], []], "nothing applied or sent, no cap");
+    await f.run("sova_send", { session: "in-root", text: "go", minor_modes: ["align", "vis"] });
+    await f.run("sova_send", { session: "in-root", text: "go", mode: "delegate" });
+    await f.run("sova_send", { session: "in-root", text: "go" });
+    assert.deepEqual(f.modes, [{ minorModes: ["align", "vis"] }, { mode: "delegate" }, null], "align kept, or minors untouched: allowed");
+    // Not waiting: align may go.
+    const g = fake({ attended: true });
+    await g.run("sova_send", { session: "in-root", text: "go", minor_modes: ["vis"] });
+    assert.deepEqual(g.calls, ["send:in-root"]);
   });
 
   test("sova_list_sessions marks a session waiting on the operator's alignment answers", () => {

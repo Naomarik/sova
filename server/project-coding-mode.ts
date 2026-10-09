@@ -124,6 +124,20 @@ export function checkedCodingModeChoice(req: ModeRequest, base: ProjectCodingMod
   return bad ? { error: bad } : c;
 }
 
+/** An Overseer's switch that would turn align off on a session waiting on the operator's alignment answers. */
+export const ALIGN_STAYS = "It waits on the operator's alignment answers; align stays on until they answer.";
+
+/**
+ * Whether an Overseer's mode switch must be refused (§app.project-overseer/coding-mode): the session waits on the
+ * operator's alignment answers (its summary's `align`, set only while it waits) and the minor modes it asks for — the
+ * whole set — leave align out. Turning align off would drop the questions from Needs you without an answer. A switch
+ * that names no minor modes keeps the session's own, so it keeps align. Pure.
+ */
+export function alignDropRefusal(waiting: boolean, minorModes: unknown): string | null {
+  if (!waiting || !Array.isArray(minorModes)) return null;
+  return minorModes.includes("align") ? null : ALIGN_STAYS;
+}
+
 /** The session kinds a verb playbook runs in (§app.project-runtime/verb-playbooks): the operator answers their
     questions, so they start with align on, and an Overseer never messages one that waits on them. */
 export const PLAYBOOK_RUN_KINDS: readonly string[] = ["onboard", "deploy-setup"];

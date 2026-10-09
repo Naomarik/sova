@@ -16732,7 +16732,8 @@
         "pi-config/extensions/claude-code/confined-launch.test.ts",
         "pi-config/extensions/claude-code/provider/bridge.test.ts",
         "server/decide-llm.test.ts",
-        "server/session-autotitle.test.ts"
+        "server/session-autotitle.test.ts",
+        "pi-config/extensions/claude-code/accounts.test.ts"
       ]
     }
   },

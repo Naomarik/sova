@@ -1,11 +1,11 @@
-// Run: pnpm test -- src/lib/profile-cards.test.ts. The profile cards' pure parts: the caption line,
-// the groups and the filter threshold, a card's unusable reason, the System context fold's open
+// Run: pnpm test -- src/lib/profile-cards.test.ts. The profile cards' pure parts: the caption line
+// and the Settings summary line, the groups and the filter threshold, a card's unusable reason, the System context fold's open
 // state, and which sessions the Profiles shelf and Recent list.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ListedProfile, ProfilesListing } from "../../shared/profiles";
 import type { SessionSummary } from "../../shared/protocol";
-import { CARD_FILTER_AFTER, cardCount, cardMatches, cardUnusable, pickerProfiles, profileCaption } from "./profiles";
+import { CARD_FILTER_AFTER, cardCount, cardMatches, cardUnusable, pickerProfiles, profileCaption, profileSummary } from "./profiles";
 import { recentEligible } from "./recent";
 import { setSetupContextOpen, setupContextOpen } from "./setup-fold";
 
@@ -53,6 +53,20 @@ test("a card's caption: what it sets, in order, else its description", () => {
   assert.equal(profileCaption({ subagents: "gone", description: "" }, SUBAGENTS), "subagents: gone", "an id this device lacks reads as the id");
   assert.equal(profileCaption({ thinking: "low", description: "" }), "low");
   assert.equal(profileCaption({ description: "Reads sessions; no shell." }, SUBAGENTS), "Reads sessions; no shell.");
+});
+
+test("a card's caption and the Settings summary add the mode and minor modes only when the profile sets them", () => {
+  assert.equal(
+    profileCaption({ thinking: "high", mode: "delegate", minorModes: ["align", "spec", "vis"], description: "ignored" }),
+    "high · delegate · align, spec, vis",
+  );
+  assert.equal(profileCaption({ minorModes: [], description: "ignored" }), "no minor modes", "[] is said, never left out");
+  assert.equal(profileCaption({ mode: "normal", description: "" }), "normal");
+  const sum = (p: Partial<Parameters<typeof profileSummary>[0]>) => profileSummary({ remove: [], grant: [], singleton: false, ...p });
+  assert.equal(sum({ grant: ["sessions.read"], singleton: true, mode: "delegate", minorModes: ["spec"] }), "reads sessions · One at a time · delegate · spec");
+  assert.equal(sum({ minorModes: [] }), "no minor modes");
+  assert.equal(sum({ remove: ["web"] }), "no web", "a profile that sets neither: as before");
+  assert.equal(sum({}), "Nothing changed");
 });
 
 test("the grid's groups leave hidden profiles out, never Default; the filter shows past 9 cards", () => {

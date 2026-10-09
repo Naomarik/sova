@@ -13,10 +13,12 @@
  *   3. This process is not a generic runtime (a compiled pi binary): re-run it.
  *   4. pi's package as the host's own code resolves it (node_modules walking up from this file, then
  *      from argv[1]): its `bin.pi` script, run on Bun.
- *   5. Last resort: `pi` looked up once on the host's PATH (a mise shim resolved from the host's cwd).
+ *   5. Last resort: `pi` looked up once on the host's PATH (a mise shim resolved from the host's cwd,
+ *      else from this module's own directory).
  *
  * The runtime for a script is Bun: this process when it is Bun, else `$SOVA_BUN`, else `bun` on
- * PATH (a mise shim resolved once from the host's cwd); with no Bun, this process's own runtime.
+ * PATH (a mise shim resolved once from the host's cwd, else from this module's own directory); with
+ * no Bun, this process's own runtime.
  * On Bun the worker never reads its cwd's `bunfig.toml` or `.env` (node doesn't either): a
  * project's preload would otherwise run inside pi, and its `.env` would change pi's environment.
  */
@@ -51,7 +53,7 @@ export interface PiLaunchHost {
 	currentScript?: string;
 	/** The directory module resolution starts from (this file's own). */
 	moduleDir: string;
-	/** The host's cwd, where a mise shim is resolved. */
+	/** The host's cwd, where a mise shim is resolved first. */
 	cwd: string;
 	/** `mise which <name>` run in `cwd` with `mise` the given binary; undefined when it fails. */
 	miseWhich?: (mise: string, name: string, cwd: string, env: NodeJS.ProcessEnv) => string | undefined;
@@ -113,8 +115,12 @@ function defaultMiseWhich(mise: string, name: string, cwd: string, env: NodeJS.P
 function lookUp(name: string, host: PiLaunchHost): string | undefined {
 	const found = whichOnPath(name, host.env);
 	if (!found || !isMiseShim(found)) return found;
-	const real = (host.miseWhich ?? defaultMiseWhich)(realpath(found), name, host.cwd, host.env);
-	return real && isExecutable(real) ? real : undefined;
+	// The host's cwd first, then Sova's own tree (its mise.toml pins bun): never a worker's.
+	for (const dir of new Set([host.cwd, host.moduleDir])) {
+		const real = (host.miseWhich ?? defaultMiseWhich)(realpath(found), name, dir, host.env);
+		if (real && isExecutable(real)) return real;
+	}
+	return undefined;
 }
 
 /**

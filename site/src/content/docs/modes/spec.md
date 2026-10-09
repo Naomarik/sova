@@ -41,6 +41,14 @@ and names the new ones. Read-only tools don't trigger it.
 If the change also alters a claim the task didn't start from, the agent asks you in its plan,
 in one question: "This also changes {claim}: {what}. OK?"
 
+## With align on too
+
+When you confirm an alignment, that go-ahead is also your agreement to the promises it decides.
+Before it builds anything, the agent writes each decision that changes behavior as a promise in a
+draft, stamps it with who agreed and when, and promotes the new ones into the spec right away, marked
+*agreed, not built*. The build then updates those same promises. If a later change edits the
+numbers or names in a promise you agreed to without a new agreement, promotion points it out.
+
 ## Finishing
 
 Once the agent stops editing, its next tool call carries one more line: **"Unread § your change

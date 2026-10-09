@@ -44,9 +44,9 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Org page link (org head) | wordless `arrow-right` · `aria-label` and `title`: Open the {org} page |
 | Project label | {project}, then its count · `title`: the project root (from its overseer's folder), else {project} · Unknown project · Other |
 | Project overseer eye (project heading, §app.session-list/organizations) | wordless `eye`, one mark at most: Busy's pulsing dot · the turn-error mark · the unread dot · `aria-label` and `title`: Open the {project} overseer, + " · working" / " · last turn failed" / " · new reply" |
-| Project groups (in order, each only with rows) | `Conversations` {n} · `title`: "Gathering sessions and offers sent to people." · `Conflicts to settle` {n} · `title`: "Sessions asking someone to settle two decisions that disagree." · `Builds` {n} · `title`: "Coding sessions this project started." |
+| Project groups (in order, each only with rows) | `Conversations` {n} · `title`: "Gathering sessions and offers sent to people." · `Conflicts to settle` {n} · `title`: "Sessions asking someone to settle two decisions that disagree." · `Sessions` {n} · `title`: "Coding sessions this project started, and the other sessions in its folder." · Projects region: `Sessions` {open n} · `title`: "Coding sessions this project started, and the other sessions in its folder; archived ones are in the Archive." |
 | States (Conversations, Conflicts to settle) | `Not started` {n} · `In progress` {n} · `Done` {n} (collapsed) |
-| Done (every group) | Done {n} · `title`: Conversations and Conflicts: "Done or closed, and the ones you archived." · Builds: "Merged, and the ones you archived." |
+| Done (every group) | Done {n} · `title`: Conversations and Conflicts: "Done or closed, and the ones you archived." · Sessions: "Merged, archived, or ended in a terminal." · Projects region's Sessions: "Merged, or ended in a terminal." |
 | Not started row, line 2 | "Link not sent yet" · "Not opened yet" · "Opened, no reply yet" · none while you hold it |
 | Settle row, line 2 | "In conflict: {area}" · not started: "In conflict: {area} · {hint}" |
 | Organizations spine door | wordless `building` over {n} · `aria-label` and `title`: Organizations · {n} sessions (1: "1 session"), + " · {k} waiting on you" while k ≥ 1 |

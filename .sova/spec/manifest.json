@@ -12608,7 +12608,15 @@
         "src/components/Sidebar.tsx",
         "src/lib/project-region.ts",
         "src/lib/project-region.test.ts",
-        "src/lib/projects.ts"
+        "src/lib/projects.ts",
+        "src/lib/regions.ts",
+        "src/lib/drag-archive.ts",
+        "src/lib/drag-archive.test.ts",
+        "src/lib/drag-overlay.ts",
+        "src/components/SelectionToolbar.tsx",
+        "src/components/ChatView.tsx",
+        "src/components/AgentsView.tsx",
+        "src/components/SessionDetails.tsx"
       ],
       "requires": [
         "§app.session-list/organizations"

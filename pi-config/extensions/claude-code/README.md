@@ -22,7 +22,7 @@ directly, never a shell alias. No credentials are copied into configuration.
 
 Use `agent_models` with `backend: "claude-code"`. The models are Sova's own Claude catalog
 (`catalog.ts`): one entry per real model, by the CLI's catalog id (`claude-opus-5-5`,
-`claude-sonnet-5-5`, `claude-fable-5-1`, `claude-haiku-4-5`) and name ("Opus 5.5"), with its
+`claude-sonnet-5-5`, `claude-fable-5-1`, `claude-haiku-5-5`) and name ("Opus 5.5"), with its
 window, output cap and efforts. No aliases and no `[1m]` forms: an old id typed into `agent_spawn`
 or `team_create` (`opus[1m]`, `claude-opus-5-5[1m]`) quietly runs as its catalog id, and an id the
 catalog doesn't know still runs, with a note. Every `--model` is a catalog id; an old id from a file (`opus[1m]`) is read through the
@@ -396,8 +396,8 @@ carried none; never the cumulative `total_cost_usd`). Esc / abort sends the CLI 
 effort, system-prompt or tool-set change between turns restarts the CLI process
 (`set_model` is probe-verified but v1 restarts for everything, see
 `provider/DESIGN-bridge.md`). Thinking levels map onto the CLI's effort ladder
-(`low`/`medium`/`high`/`xhigh`/`max`); `haiku` reports no efforts, so it has
-no thinking levels. The child gets `MCP_TOOL_TIMEOUT=86400000` so a held call
+(`low`/`medium`/`high`/`xhigh`/`max`); Haiku 4.5 (and the old `haiku` alias, which
+meant it) reports no efforts, so it has no thinking levels. The child gets `MCP_TOOL_TIMEOUT=86400000` so a held call
 outlives any pi tool (the CLI's own default is ~27.8 h; a stray value in the
 user's shell would otherwise truncate long tools with a synthetic timeout
 result), and `DISABLE_AUTO_COMPACT=1`, because pi owns compaction (below).

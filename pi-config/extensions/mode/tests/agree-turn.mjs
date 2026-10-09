@@ -44,8 +44,8 @@ git("commit", "-qm", "base");
 const { createAgentSession, DefaultResourceLoader, SessionManager, SettingsManager } = await jiti.import("@earendil-works/pi-coding-agent");
 const { createAssistantMessageEventStream, getCurrentSystemPrompt } = await jiti.import("@earendil-works/pi-ai");
 
-/** The Agree step's instruction: the word "agree" anywhere (absent without both modes), and with both its stable phrase and the command. */
-const AGREE = /\bagree\b/;
+/** The Agree step's instruction, in its stable words (the spec block may name the `agree` command on its own). */
+const AGREE = /this go-ahead is the Agree step/;
 const AGREE_STEP = /this go-ahead is the Agree step[\s\S]*sova-spec-draft\.mjs\\*"? agree\b/;
 
 const CREATE = {

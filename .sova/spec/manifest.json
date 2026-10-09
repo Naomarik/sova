@@ -2434,7 +2434,15 @@
         "server/mesh/mesh.test.ts",
         "server/mesh/peer-wire-test-fixtures.ts",
         "server/mesh/app-test-fixtures.ts",
-        "server/mesh/mesh.integration.test.ts"
+        "server/mesh/mesh.integration.test.ts",
+        "server/mesh/peer-address.ts",
+        "server/mesh/peer-address.test.ts",
+        "server/mesh/dial.ts",
+        "server/mesh/proxy.ts",
+        "server/mesh/resync.ts",
+        "server/mesh/resync-test-fixtures.ts",
+        "server/index.ts",
+        "docs/mesh.md"
       ]
     },
     "§mesh.remote-sessions/host-filter": {
@@ -2490,7 +2498,10 @@
         "server/mesh/paths.ts",
         "server/extensions.ts",
         "src/lib/api.ts",
-        "vite.config.ts"
+        "vite.config.ts",
+        "server/mesh/proxy-local.test.ts",
+        "server/mesh/proxy-pairing.test.ts",
+        "docs/mesh.md"
       ]
     },
     "§mesh.remote-sessions/routing": {
@@ -2513,7 +2524,8 @@
         "server/sync/index.ts",
         "server/sync/docs.test.ts",
         "server/sync/extensions.test.ts",
-        "server/sync/index.test.ts"
+        "server/sync/index.test.ts",
+        "server/sync/docs-grants.test.ts"
       ]
     },
     "§mesh.sync/logins": {
@@ -4416,7 +4428,9 @@
         "server/app.ts",
         "server/share-listener.integration.test.ts",
         "server/share-message.integration.test.ts",
-        "server/public-links.integration.test.ts"
+        "server/public-links.integration.test.ts",
+        "server/share/rate-limit.ts",
+        "server/share-rate-limit.test.ts"
       ],
       "requires": [
         "§app.baton/links",
@@ -8075,7 +8089,8 @@
         "server/claude-pool/pool-test-fixtures.ts",
         "server/claude-pool/agent.integration.test.ts",
         "scripts/claude-pool-e2e/run.mjs",
-        "server/app.ts"
+        "server/app.ts",
+        "server/claude-pool/doc.test.ts"
       ]
     },
     "§app.claude-logins/stuck": {
@@ -13966,7 +13981,8 @@
         "scripts/mesh-lab/e2e/m7-grants.test.mjs",
         "server/mesh/lan-mesh.test.ts",
         "server/mesh/lan-mesh.integration.test.ts",
-        "server/overseer-link-tools.test.ts"
+        "server/overseer-link-tools.test.ts",
+        "server/sync/docs-grants.test.ts"
       ]
     },
     "§mesh.lan/as-a-peer": {
@@ -13993,7 +14009,8 @@
       "requires": [
         "§mesh.lan/pairing",
         "§mesh.lan/reverse-channel",
-        "§mesh.peers/listener"
+        "§mesh.peers/listener",
+        "§mesh.remote-sessions/proxy"
       ]
     },
     "§mesh.lan/dialer": {

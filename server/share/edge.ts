@@ -17,9 +17,12 @@ import { FILE_MB, MB, PHOTO_MB } from "../../shared/baton";
 import { UPLOAD_BODY_SLACK } from "../baton-images";
 import { FILE_BODY_SLACK } from "../project-files";
 import { cappedWebSocketServer } from "../runtime-quirks";
+import { RateLimiter } from "./rate-limit";
 
 // The old client-address rule lives with the other trust helpers; its old import path stays.
 export { clientAddress };
+// The limiter lives in its own file (routes.ts builds its per-token ones at load); its old import path stays.
+export { RateLimiter };
 
 /**
  * The share edge (§app.baton/share-listener): what every share-serving `http.Server` does before a
@@ -27,7 +30,9 @@ export { clientAddress };
  * shapes on the RAW request target, before any URL parsing (which would resolve `..`, `%2e` and
  * the like): anything but an origin-form target whose path is one of those shapes is refused and
  * never reaches a router, so the operator app, /api/*, /ws/chat, /ws/watch, /peer/* and /ext/* do
- * not exist here. Then the per-address limit (keyed by trustedClient), the body cap and the
+ * not exist here. A service-worker script fetch (a `Service-Worker` header) is refused (404) on
+ * every share path and socket: the share origin is every routed host's, so no script on it may
+ * become a worker over all their links. Then the per-address limit (keyed by trustedClient), the body cap and the
  * timeouts, then the `dispatch` / `upgrade` hook.
  *
  * The hooks default to the in-process share app (server/share/routes.ts) and its WebSocket server,
@@ -111,23 +116,6 @@ const FILE_PATH = new RegExp(`^/api/h/${TOKEN}/file$`);
 const IMAGE_PATH = new RegExp(`^/api/h/${TOKEN}/img/`);
 /** The body cap for a judged path: the photo upload's own, the file upload's own, 16 KB for everything else. */
 export const bodyMaxFor = (pathname: string): number => (UPLOAD_PATH.test(pathname) ? UPLOAD_BODY_MAX : FILE_PATH.test(pathname) ? FILE_BODY_MAX : BODY_MAX);
-
-export class RateLimiter {
-  private hits = new Map<string, number[]>();
-  constructor(
-    private readonly limit: number,
-    private readonly windowMs = 60_000,
-  ) {}
-  /** Count one hit; true when over the limit. */
-  limited(key: string, now = Date.now()): boolean {
-    const recent = (this.hits.get(key) ?? []).filter((t) => now - t < this.windowMs);
-    const over = recent.length >= this.limit;
-    if (!over) recent.push(now);
-    this.hits.set(key, recent);
-    if (this.hits.size > 10_000) for (const [k, v] of this.hits) if (!v.some((t) => now - t < this.windowMs)) this.hits.delete(k);
-    return over;
-  }
-}
 
 const PAGE_SHELL = new RegExp(`^/[his]/${TOKEN}$`);
 /** A phone past the address limit reloading its link gets a page, not raw JSON. Static: no token,
@@ -357,6 +345,9 @@ function bodyTimer(req: IncomingMessage, res: ServerResponse, ms: number): void 
   res.once("close", clear);
 }
 
+/** Whether a request is a browser fetching a service-worker script (its `Service-Worker` header). */
+const isWorkerFetch = (req: IncomingMessage): boolean => req.headers["service-worker"] !== undefined;
+
 /** Build (not bind) a share server: tests bind it on port 0 (and may shorten the timeouts). */
 export function createShareServer(opts: ShareServerOptions = {}): Server {
   const local = opts.dispatch && opts.upgrade ? null : inProcessShare();
@@ -422,6 +413,9 @@ export function createShareServer(opts: ShareServerOptions = {}): Server {
   const serve = (req: IncomingMessage, res: ServerResponse): void => {
     const label = previewOf(req);
     if (label) return servePreview(req, res, label);
+    // A service-worker script fetch: no script on the share host, whoever's link served it, may
+    // become a worker over every host's links. A preview (its own origin) is never judged here.
+    if (isWorkerFetch(req)) return json(res, 404, { error: "Not found" });
     const target = rawTarget(req.url);
     if (!target) {
       json(res, 400, { error: "Bad request" });
@@ -463,6 +457,7 @@ export function createShareServer(opts: ShareServerOptions = {}): Server {
   const serveUpgrade = (req: IncomingMessage, socket: Duplex, head: Buffer): void => {
     const label = previewOf(req);
     if (label) return upgradePreview(req, socket, head, label);
+    if (isWorkerFetch(req)) return refuse(socket, 404, { error: "Not found" });
     const target = rawTarget(req.url);
     if (!target) {
       refuse(socket, 400, { error: "Bad request" });

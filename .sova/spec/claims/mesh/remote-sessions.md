@@ -14,6 +14,17 @@ client treats as final. A peer that takes the connection but sends no answer wit
 reported as timed out; an answer that has started is never cut off. A peer this host doesn't grant
 `full` (§mesh.peers/grants) learns nothing of this host or the browser from a forwarded request.
 
+A peer's REST answer reaches the browser on this host's origin, so it comes back hardened, whatever
+the peer's grant and whether it is a tailnet peer or a dial-out pairing (§mesh/lan): only the headers
+a page needs (content type, length, disposition and encoding, caching, the date, `Vary` and
+`X-Sova-Mesh`; never a cookie, redirect target, CORS grant, service-worker scope, preload or cache
+wipe), with `Content-Security-Policy: sandbox; default-src 'none'` and
+`X-Content-Type-Options: nosniff`. Only JSON, plain text and raster images (PNG, JPEG, GIF, WebP,
+AVIF, BMP) keep their type; any other body (HTML, SVG, XML, script, PDF, multipart, or none named)
+comes only as an `application/octet-stream` download, under the peer's own `attachment` file name
+when it gave one. A 401 or 407 from the peer reaches the browser as 502, so the page never takes a
+peer's answer for its own lock-out. WebSocket frames are not changed.
+
 ## §mesh.remote-sessions/list — One list across hosts
 
 While the mesh is on, the session list shows every host's sessions together. Which host a row

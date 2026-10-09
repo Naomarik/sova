@@ -32,6 +32,17 @@ Every request on it is checked once: the host asks its own Tailscale `whois` who
 serves only nodes in its `peers.json`. Sessions never move: each one is driven by the host whose
 disk holds it.
 
+The check runs the other way too. When a host calls a peer listed by name, it dials the tailnet IP
+that Tailscale lists for that peer's node, never wherever the name happens to resolve, so a spoofed
+DNS answer gets nothing. A peer Tailscale doesn't list shows as down. A peer `url` written as an IP
+address or an `https` URL is used as written. A non-tailnet IP still works, but Sova logs a
+warning, because nothing proves who answers there.
+
+A peer's answers reach your browser on this host's address, so they are cut down to what the page
+needs whatever the peer may do here. They carry no cookies or redirects and get a sandbox
+Content-Security-Policy. Anything other than JSON, plain text or a raster image arrives only as a
+download.
+
 ## Front door
 
 The Mesh page generates a [Caddy](https://caddyserver.com) configuration that sends the page to

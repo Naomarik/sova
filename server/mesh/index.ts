@@ -37,6 +37,7 @@ import { getIdentity, setIdentity, type TailnetStatus } from "./localapi";
 import { defaultSelfId, nextLabelAt, type PeerEntry, type PeersConfig, peerPort, peerUrl, peersFile, readPeers, SYNC_CATEGORIES, validatePeers, writePeers } from "./peers";
 import { localRequest, PROXIED_HEADER, peerSocketRoute, proxyTail, proxyPeer, upgradePeerSocket } from "./proxy";
 import { fetchPeer, setLanClients } from "./dial";
+import { candidateBase } from "./peer-address";
 import { ensureLanIdentity, LanRuntime, readLanIdentity } from "./lan";
 import { lanNodeId } from "./lan-cert";
 import { bootBuild } from "./build-id";
@@ -568,7 +569,10 @@ async function candidates(): Promise<MeshCandidate[]> {
         sova: "no",
       };
       if (!n.online || !n.name) return base;
-      const probe = await probeHello(peerUrl({ id: "x", label: "x", nodeId: n.nodeId, dnsName: n.name }));
+      // At the node's own tailnet address, never its name as some resolver answers it (§mesh/peers).
+      const at = candidateBase(n);
+      if (!at) return base;
+      const probe = await probeHello(at);
       if (probe.state === "refused") return { ...base, sova: "refused" };
       if (probe.state === "hidden") return { ...base, sova: "yes" }; // it lists this host and shows it nothing
       if (probe.hello) return { ...base, sova: "yes", hello: probe.hello };

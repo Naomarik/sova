@@ -155,7 +155,10 @@ whatever the user's own Claude Code settings say: the chat provider's child, Cla
 login's token refresh. Such a process never reads a project's memory folder
 (`<config dir>/projects/<project>/memory/`, its `MEMORY.md` and notes) into a request and never
 writes to it. The setting rides in the one `--settings` object each process is given, merged last,
-so a caller's settings (a sandboxed worker's included) cannot turn it back on. `claude auth` and
+so a caller's settings (a sandboxed worker's included) cannot turn it back on. Each such process's
+environment also sets `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` over anything inherited or a login adds,
+since Claude Code reads that variable before the setting and a `0` or `false` would force memory
+on. `claude auth` and
 `claude --version` runs make no model request and are left as they are.
 
 ## §app.claude-code-provider/model-identity — Which model answered, and a mismatch

@@ -55,7 +55,7 @@ import { rememberedWidth, setSpine, spine, spineWidth } from "./lib/spine";
 import { isOverviewHash, leaveOverview } from "./lib/overview-route";
 import { sessionsGlance } from "./lib/home-sessions";
 import { applySidebarWidth } from "./lib/sidebar-width";
-import { closeSettings, openSettings, settingsOpenAt } from "./lib/settings-nav";
+import { closeSettings, openSettings, settingsOpenAt, settingsTabFromHash } from "./lib/settings-nav";
 import type { RewindControl } from "./lib/inputs";
 import { activeTab, groupSendAll, home, setActiveTab, setAdopter, setHome, toast } from "./lib/ui-state";
 import { createPaneInsight } from "./lib/pane-insight";
@@ -106,6 +106,22 @@ function pathFromHash(): string | null {
 function redirectLegacyInsights() {
   const to = legacyInsightsTarget(location.hash);
   if (to) history.replaceState(history.state, "", to);
+}
+
+/** The route before this one, for a `#/settings/<tab>` link: the dialog opens over it. */
+let lastHash = "#/";
+/**
+ * `#/settings/<tab>` opens Settings at that tab over the screen it was followed from: the hash goes
+ * back to that screen's in place (no history entry, no hashchange), then callers parse it.
+ */
+function openSettingsFromHash() {
+  const tab = settingsTabFromHash(location.hash);
+  if (!tab) {
+    lastHash = location.hash || "#/";
+    return;
+  }
+  history.replaceState(history.state, "", lastHash);
+  openSettings(tab);
 }
 
 /** While a run is in flight, re-read the list often enough that the Busy chip clears itself when
@@ -322,6 +338,7 @@ export function App() {
   startRecentPreload(sidebarSessions);
 
   redirectLegacyInsights();
+  openSettingsFromHash();
   /** `#/overview`: the overview as a phone's own page (§app.shell/overview); wide, it is the
       empty main column as always. */
   const [overviewRoute, setOverviewRoute] = createSignal(isOverviewHash(location.hash));
@@ -484,6 +501,7 @@ export function App() {
   };
   const onHash = () => {
     redirectLegacyInsights();
+    openSettingsFromHash();
     resolveSessionIdRoute();
     setRoute(pathFromHash());
     setGroupRoute(groupRouteFromHash(location.hash));

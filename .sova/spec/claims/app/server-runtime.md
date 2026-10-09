@@ -37,6 +37,23 @@ test runner does the same, exiting 2 with one line that names `pnpm run test:nod
 file runs. A Bun server that fails to start fails like any other: nothing counts its boots and
 nothing switches to Node, and no `runtime-fallback.json` or `runtime-bun-boots` file is written.
 
+## §app.server-runtime/pi-workers — Pi workers run pi on Bun, the same from every folder
+
+- A pi worker (a subagent on the pi backend) starts the same pi on the same runtime whatever folder
+  it works in. The host finds pi once, at its first pi worker, and keeps it for its lifetime: pi's
+  own package as Sova's code installs it (that package's `pi` script), run on Bun. The Bun is the
+  server's own runtime when the server runs on Bun; otherwise `$SOVA_BUN`, else `bun` on the
+  server's `PATH`, a version-manager shim there resolved once from the server's own folder, else from
+  Sova's own tree; with no Bun at all, the server's own runtime runs the script.
+- The worker's folder never decides which pi or which runtime runs: a project whose version manager
+  selects another Node (one without pi, say) gets the same pi as any other. On Bun, pi reads neither
+  that folder's `bunfig.toml` nor its `.env`, as on Node.
+- `$SOVA_PI_CLI` names another pi entry: a script (`.js`, `.mjs`, `.cjs`, `.ts`) runs on the same
+  runtime, anything else runs as it is. A host that is pi itself (the TUI) re-runs its own pi
+  script on its own runtime. Only when pi's package can't be found does a worker run `pi` from the
+  server's `PATH`, looked up once in the same way.
+- A change to any of this takes effect at the server's next start.
+
 ## §app.server-runtime/health — The runtime in /api/health
 
 `GET /api/health` adds `runtime: {name, version, chosen}` to its answer

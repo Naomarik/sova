@@ -12021,6 +12021,19 @@
         "server/app.ts"
       ]
     },
+    "§tools.spec/draft-hygiene": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/draft-output"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+        "pi-config/extensions/spec/DRAFTS.md",
+        "pi-config/extensions/spec/PROMOTE.md"
+      ]
+    },
     "§tools.spec/inspection-safety": {
       "kind": "behavior",
       "authority": "accepted",

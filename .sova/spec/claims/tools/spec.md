@@ -15,6 +15,7 @@ so the agent chooses what it reads.
 A map (`map`) shows every area on one page, and `where` finds the claims for a source file or a name.
 Draft commands say what a draft introduced apart from what the spec already had, and a spec conflict
 a Git merge leaves has one recovery, given in the same words by the docs and the refusals.
+A report names the drafts left behind, and a prune deletes only the drafts on a list the user approved.
 Records may also declare `embeds` (surfaces drawn inside a claim), `core` and `about` (the target a
 note serves), and an `agreed` decision (who decided and when); the claims flagged `core` form an
 always-on frame that arrives with the first page of a `read`.
@@ -448,6 +449,30 @@ per-file list appears only with `--all`. A promotion preview or write gives, bes
 graph's warning count, how many of those warnings current does not already have
 (`warningsIntroduced`), and names at most five claims whose mapped code changed under unchanged
 prose, with their total count and the core `foreign --landing` command that lists every one.
+
+## §tools.spec/draft-hygiene — Drafts left behind are reported, and only an approved list is pruned
+
+`draft drafts` reads every draft of the project (`--worktrees`: of every Git work tree of its
+repository too) and writes nothing. Each draft gets its age (days since its last activity: made,
+evidence recorded or promoted), one state with the reasons for it, and a suggested action:
+`landed` (an id is still pending while its implementation is on the default branch: a commit its
+evidence names is in that branch, or the work tree's own branch was merged into it after the draft
+was made) suggests promote; `promoted` (every id is already current, was promoted by this draft
+before current moved on, or is on the default branch exactly as the draft says it), `superseded` (nothing pending, and an id current changed differently) and
+`empty` (it changes nothing and is older than the age limit) suggest delete; `old` (pending, older
+than the limit, 7 days unless `--days N`), `active` and `unreadable` suggest keep, `landed` with
+the ids whose evidence must be re-recorded first. The default branch is the one
+`promote` names (origin's HEAD, else `master`, else `main`); a project without Git gets no `landed`.
+It exits 1 when any draft is other than `active`.
+
+`draft prune --approved FILE` deletes only drafts the file names, one per line, each optionally
+followed by the `draftSha256` the report printed (one hash over its `draft.json` and `spec/`); without `--write` it only lists them. A name with
+no draft, a hash that no longer matches (the draft changed after it was approved), or an
+interrupted promotion refuses the whole prune, and nothing is deleted. No other command deletes a
+draft, and none suggests deleting one that still has a pending id.
+
+A promotion preview or write names, once, how many other drafts in its project are older than the
+age limit, with the `drafts` command that says which are left behind.
 
 ## §tools.spec/inspection-safety — Refused inputs are not inspected
 

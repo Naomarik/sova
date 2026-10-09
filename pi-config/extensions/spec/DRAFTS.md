@@ -24,6 +24,8 @@ node $d evidence NAME --id '§x' [--id …] --by WHO --verification TEXT \
 node $d agree NAME --id '§x' [--id …] --by WHO --verification TEXT [--at ISO] [--write]   --root DIR [--json]
 node $d promote NAME (--id '§x'… | --all) [--meta KEY]… [--file PATH]… [--plan SHA] [--write]  --root DIR [--json]
 node $d recover [--write]                               --root DIR [--json]
+node $d drafts [--days N] [--worktrees]                 --root DIR [--json]
+node $d prune --approved FILE [--write]                 --root DIR [--json]
 node $d merge-manifest [--base F --ours F --theirs F] [--write]   --root DIR [--json]
 node $d merge-claims --base F --ours F --theirs F [--path P] [--write]   --root DIR [--json]
 ```
@@ -286,6 +288,36 @@ fails closed with `lock-occupied` if the lock's contents changed, or if another 
 lock between the removal and the retake. The other writer's lock is left alone. No other command
 ever removes a lock. If the holder is on another host, check by hand, then delete
 `.sova/spec/drafts/.lock`.
+
+## Drafts left behind
+
+Drafts are local (`.sova/spec/drafts/` is not committed), so nothing removes one but a person.
+`drafts` reports every draft of the project (`--worktrees`: of every Git work tree of the
+repository too) and writes nothing. Each row has the draft's age in days since its last activity
+(made, evidence recorded, promoted), one state, its reasons, a suggested action and
+`draftSha256`, one hash over its `draft.json` and `spec/`:
+
+| state | meaning | suggests |
+|---|---|---|
+| `landed` | an id is pending while its implementation is on the default branch: a commit its evidence names is in that branch, or this work tree's branch was merged into it after the draft was made | promote (the reasons name evidence to re-record first) |
+| `promoted` | every id is already current, or this draft promoted it before current moved on, or the default branch already has it as the draft says it (its record and every claim file it is in, byte for byte: a work tree whose current lags the branch it was merged into) | delete |
+| `superseded` | nothing pending, and current changed an id differently | delete |
+| `empty` | changes nothing, older than the age limit | delete |
+| `old` | pending, no activity for longer than the age limit (`--days N`, default 7) | keep: ask whether it is still wanted |
+| `active` | anything else | keep |
+| `unreadable` | `status` refuses it (corrupt, base tampered) | keep: look by hand |
+
+The default branch is the one `promote` uses: origin's HEAD, else `master`, else `main`. A
+project without Git gets no `landed`. The exit is 1 when any draft is other than `active`.
+A promotion preview or write adds one line (`staleDrafts`) when other drafts in its project had
+no activity for longer than the age limit, with the `drafts` command to run.
+
+`prune --approved FILE` deletes drafts only from a list the user approved: one draft per line,
+`NAME` or `NAME draftSha256` (copy the hash from the report so a draft that changed after the
+approval is not deleted), `#` starts a comment. Without `--write` it lists what it would delete.
+A name with no draft, a hash that no longer matches, or an interrupted promotion (`.txn/`)
+refuses the whole prune and deletes nothing. It deletes nothing it was not given, and no other
+command deletes a draft.
 
 ## A manifest conflict in a Git merge
 

@@ -326,22 +326,28 @@ under `--setting-sources ""`, probed with CLI 2.1.282). Each hook is `node spec-
 Claude session:
 
 - `UserPromptSubmit`: primes the census baseline of the cwd's work tree. It does not inspect other
-  worktrees.
+  worktrees. A tree already known takes in what changed since the last look instead (below).
 - `PreToolUse`: nonblocking observation of the call's explicit destinations before it executes.
   This supplies the baseline for a shell edit in another worktree without scanning unrelated trees.
+  In a tree already known, while no other call of the session runs (`open`, by `tool_use_id`), what
+  changed since the last look changed between the session's calls: another process's commit or
+  edit, taken in silently and left out of every note (`settleCensus`, shared with the pi session).
 - `PostToolUse` (every tool, Bash included): the shared census step on a git-status delta, for each
   tree the call works in (its cwd, each `cd <dir>`, `git -C <dir>`, a file path); its
   `[spec census]` digest comes back as `additionalContext`. Each worktree keeps its own census
   state, so "No draft yet" does not start over when returning to a tree already seen. A census that
   can't run gives one line, `[spec census] incomplete: <why>; run census by hand`, once per cause per
-  work tree until a census there succeeds again (kept in the tree's census state, in the state file).
+  work tree until a census there succeeds again (kept in the tree's census state, in the state file);
+  a census that printed nothing names why (its first stderr error line, else a timeout or its exit status).
   The read-only tools (`READ_ONLY`, exact names: Read, Glob, Grep, LS, the web tools, TodoWrite,
   BashOutput and the team MCP tools `mcp__team__team_inbox`, `…team_msg`, `…team_ask`,
-  `…team_roster`, `…team_report`, `…wake_nudge`) are skipped whole: no git status, no census, so the
-  next writing call sees every change.
+  `…team_roster`, `…team_report`, `…wake_nudge`) are skipped whole: no git status, no census; what
+  changed meanwhile is taken in at the next writing call's pre hook.
   The same call runs the pi session's write guard (spec-guard's helpers; "before" is the tree the
   pre-call hook saw): an edit of the current `manifest.json` or `claims/**`, or a shell command
-  that writes them and is neither a draft tool nor git, gets "you wrote the current spec directly";
+  that writes them, judged by the files (`handWritten`: not during a merge, rebase, cherry-pick or
+  revert, nor bytes a promotion receipt's `after` hashes record or equal to HEAD's or the default
+  branch's), gets "you wrote the current spec directly";
   a git operation after which a draft's evidence commit left the branch gets the rebase note (abort
   a rebase under way, else the exact old tip to restore with a clean tree, then merge master in).
 

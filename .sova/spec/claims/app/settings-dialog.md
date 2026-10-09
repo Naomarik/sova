@@ -654,9 +654,9 @@ Discard button of its own: saving is the dialog's.
   (§app.settings-dialog/alignment); Save Changes writes the review switch to Sova's settings and the
   style and visuals to `mode-align.json`, each a write of its own, and the status line names the form
   "Alignment" whichever of the two failed.
-- **Experimental** holds no switch now: its panel says "No experiments right now." and nothing in it
-  is ever unsaved. Adversarial review moved to Alignment; the Claude Code provider is no switch
-  there, it is always on (§app.claude-code-provider/always-on).
+- **Experimental** holds no switch now: its panel says "Adversarial review is in Alignment, marked
+  Experimental. No other experiments right now." and nothing in it is ever unsaved. Adversarial
+  review moved to Alignment; the Claude Code provider is no switch there, it is always on (§app.claude-code-provider/always-on).
 - **Not gated.** General, Themes and Typography change only this browser and still apply as you
   pick. Actions run at once and are never part of a draft: Retry, Try Again, Check Again, Themes'
   Refresh, the Jev key's Save Key, Replace Key and Remove Key, Test Decisions, Tag Last 30 Days,

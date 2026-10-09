@@ -185,11 +185,15 @@ every settle of that worker, never a per-call note, and nothing checks or acts o
 At the first tool call after a session's last edit (a call that can write but changed nothing of
 the session's own, after one or more that did), the `[spec census]` note carries one line naming the
 foreign § the session's own changed files landed in that the session hasn't read: "Unread § your
-change landed in: read first §a, §b; named §c, §d". It is the same in pi sessions, pi workers and
+change landed in: read first §a, §b; +N more: <command>". It is the same in pi sessions, pi workers and
 Claude Code workers. The § come from `census --changed --related` (with the task's draft when it
 has one), in census-rank order (§tools.spec/census-rank), keeping only those a session's own
 changed file lands in: at most 5 are marked read first, the first of that order that score above
-zero or have a stale literal; every other one is named after them, on the same line, never dropped.
+zero or have a stale literal. Every other one is counted, never dropped: "+N more:" is followed by
+the exact census command the line came from (`node "$core/sova-spec.mjs" census --changed
+--related` with the same `--root`, `--base`, `--own-base` and `--spec`), whose output names each
+of them, so the line stays short however many § the change touched (under 300 characters for 25
+touched § with short ids). With none marked read first, it reads "N unread: <command>".
 A § with a stale literal says so beside its id: "(still states 12)". A § the session ran
 `sova-spec.mjs read` on, by its literal id in any of its shell commands so far (a read of a shell
 variable counts every § that command spells), counts as read; a §
@@ -268,7 +272,7 @@ guide fails its test when that rule gains a case the guide doesn't name or drops
 census note's `No draft yet` line says the same. While coding, the guide relies on the census note
 (§tools.spec/census-note), with no rule of one file per edit and no census run by hand. Before
 finishing it reads each § the census note's unread line (§tools.spec/unread-landed) marks read
-first; the rest are named, and `census --changed --related` gives the same ranking by hand. A worker's spec brief lists `toc`, `read` and
+first; the census command that line gives lists the rest. A worker's spec brief lists `toc`, `read` and
 `impact --near` among its read-only commands. The guide rides every turn, so a test caps its word
 count a few words above its length, and growing it is a deliberate change.
 

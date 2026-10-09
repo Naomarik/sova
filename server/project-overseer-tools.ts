@@ -12,7 +12,7 @@ import { type Redactor, redactingTool, serverRedactor } from "./overseer-redact"
 import { logAction, NOTES_MAX, readNotes, writeNotes } from "./overseer-store";
 import { addTodo, readTodos, removeTodo, TodoError, updateTodo } from "./overseer-todos";
 import { renderTranscript, sessionRef } from "./session-guards";
-import { describeCodingMode, profileName, type ModeRequest } from "./project-coding-mode";
+import { alignDropRefusal, describeCodingMode, profileName, type ModeRequest } from "./project-coding-mode";
 import { OrgError } from "./org-error";
 import { statechartInfo, statechartVersions } from "./statecharts";
 import type { ProjectOverseerPaths } from "./project-overseer-store";
@@ -744,6 +744,9 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
         if (otherIds.has(id)) throw new Refusal("That session is not a coding session: only its participants write in it.");
         const s = coding.find((x) => x.id === id);
         if (!s) throw new Refusal(`No coding session "${String(q.session ?? "").trim()}" in this project: pass an id sova_list_sessions lists.`);
+        // A session waiting on the operator's alignment answers keeps align on: a switch dropping it would clear them unanswered.
+        const drop = alignDropRefusal(!!s.align, m.mode?.minorModes);
+        if (drop) throw new Refusal(`${drop} Nothing was sent.`);
         // A verb playbook's run waiting on alignment answers is the operator's to answer (§app.project-overseer/coding-mode).
         const waiting = await host.playbookWaiting(s.id);
         if (waiting) throw new Refusal(`${waiting.title} is waiting on the operator's answers to its alignment questions. Tell the operator; never answer them. Nothing was sent.`);

@@ -98,6 +98,8 @@ export function inProcessSender(o: { env: NodeJS.ProcessEnv; absent?: string[] }
     connect,
     start,
     stop,
+    /** WhatsApp closes the connection with `code` (440: replaced, 403: blocked …). */
+    close: (code: number) => current?.onClose(code, "test"),
     /** Let every receipt of the sends so far arrive, in order. */
     flushReceipts: () => {
       for (const r of receipts.splice(0)) r();

@@ -1,5 +1,6 @@
 import { createSignal } from "solid-js";
-import type { OutreachFile, OutreachInfo, OutreachPatch, SenderRoute, SenderState } from "../../shared/outreach";
+import type { OutreachFile, OutreachInfo, OutreachPatch, SenderRoute, SenderStatus } from "../../shared/outreach";
+import { relativeIn, stampTime } from "./format";
 import { createDraftStore } from "./settings-draft";
 
 /**
@@ -30,6 +31,13 @@ async function call<T>(url: string, init?: RequestInit): Promise<T> {
 
 export const getOutreach = () => call<OutreachInfo>("/api/outreach", { cache: "no-store" });
 export const putOutreach = (patch: OutreachPatch) => call<OutreachInfo>("/api/outreach", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) });
+
+/** The sender's controls (§app.outreach/sender-controls): each answers the page's info afresh. */
+const post = (op: "reconnect" | "pause" | "start", body: unknown = {}) =>
+  call<OutreachInfo>(`/api/outreach/sender/${op}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const reconnectSender = () => post("reconnect");
+export const pauseSender = (on: boolean) => post("pause", { on });
+export const startSender = () => post("start");
 
 export type SenderChoice = "off" | "local" | "via";
 
@@ -67,16 +75,26 @@ export function outreachProblem(d: OutreachDraft): string | null {
   return null;
 }
 
-/** The sender's state in words (a chip and a sentence), as Settings shows it. */
-export function senderWords(state: SenderState, why?: string): { chip: string; tone: "success" | "warn" | "info" | undefined; text: string } {
-  switch (state) {
+/** When the next automatic attempt is: "2:32 PM, in 12m" (with the day when it isn't today). */
+const nextTry = (retryAt: string, now: number) => {
+  const rel = relativeIn(retryAt, now);
+  return `${stampTime(retryAt, now)}${rel ? `, ${rel}` : ""}`;
+};
+
+/** The sender's state in words (a chip and a sentence), as Settings shows it: why it stopped and when it tries again. */
+export function senderWords(s: Pick<SenderStatus, "state" | "why" | "retryAt" | "paused">, now = Date.now()): { chip: string; tone: "success" | "warn" | "info" | undefined; text: string } {
+  const why = s.why;
+  switch (s.state) {
     case "off":
       return { chip: "Off", tone: undefined, text: "Nothing is sent from this host." };
     case "unreachable":
       return { chip: "Not reachable", tone: "warn", text: `Not reachable: ${why ?? "the sender doesn't answer."}` };
     case "open":
-      return { chip: "Connected", tone: "success", text: "Connected: sends go at once." };
+      return s.paused
+        ? { chip: "Paused", tone: "warn", text: "Connected, but the sender is paused: every send through it is refused until it is resumed." }
+        : { chip: "Connected", tone: "success", text: "Connected: sends go at once." };
     case "connecting":
+      if (s.retryAt) return { chip: "Reconnecting", tone: "info", text: `${why ?? "The connection closed."} It tries again at ${nextTry(s.retryAt, now)}.` };
       return { chip: "Connecting", tone: "info", text: why ?? "Connecting to WhatsApp." };
     case "unpaired":
     case "linking":
@@ -84,12 +102,41 @@ export function senderWords(state: SenderState, why?: string): { chip: string; t
     case "logged-out":
       return { chip: "Logged out", tone: "warn", text: "Pair it again on the sender's host: sova-whatsapp pair." };
     case "replaced":
-      return { chip: "Replaced", tone: "warn", text: "Another copy of the sender took over this number." };
+      return { chip: "Replaced", tone: "warn", text: "Another copy of the sender took over this number. Stop that copy, then reconnect." };
     case "blocked":
-      return { chip: "Blocked", tone: "warn", text: why ?? "WhatsApp refused the account; sending is paused." };
+      // The sender's own why already says sending is paused: drop that, then say until when.
+      return { chip: "Blocked", tone: "warn", text: `${(why ?? "WhatsApp refused the account.").replace(/\s*Sending is paused\.$/, "")} Sending stays paused until the sender is resumed.` };
     case "down":
-      return { chip: "Down", tone: "warn", text: why ? `${why} Reconnect it on the sender's host.` : "Reconnect it on the sender's host." };
+      if (s.retryAt) return { chip: "Down", tone: "warn", text: `Waiting until ${nextTry(s.retryAt, now)} to reconnect. ${why ?? ""}`.trim() };
+      return { chip: "Down", tone: "warn", text: `${why ?? "The sender stopped."} It won't reconnect on its own: reconnect it.` };
   }
+}
+
+/** The figures under the state: since when, the number, sends and automatic reconnects against their limits. */
+export function senderFacts(s: SenderStatus, now = Date.now()): string[] {
+  const out: string[] = [];
+  if (s.since && s.state !== "open" && s.state !== "off") out.push(`Since ${stampTime(s.since, now)}`);
+  if (s.me) out.push(`Number ${s.me}`);
+  if (s.usage && s.limits) out.push(`Sends: ${s.usage.hour} of ${s.limits.perHour} this hour, ${s.usage.day} of ${s.limits.perDay} in 24 h`);
+  if (s.reconnects) out.push(`Automatic reconnects: ${s.reconnects.hour} of ${s.reconnects.perHour} this hour, ${s.reconnects.day} of ${s.reconnects.perDay} in 24 h`);
+  return out;
+}
+
+/**
+ * Which of the sender's controls this page offers now (§app.outreach/sender-controls). Reconnect: down,
+ * replaced, or a backoff wait; blocked only on the sender's own host, behind its warning. Pause/Resume:
+ * the sender's own host, while it answers. Start: the sender's own host, its unit installed and stopped.
+ */
+export function senderActions(info: Pick<OutreachInfo, "file" | "sender" | "unit">): { reconnect: false | "plain" | "blocked"; pause: null | "pause" | "resume"; start: boolean } {
+  const route = info.file.sender;
+  const local = typeof route === "object" && "local" in route;
+  const via = typeof route === "object" && "via" in route;
+  const s = info.sender;
+  const waiting = s.state === "down" || s.state === "replaced" || (s.state === "connecting" && !!s.retryAt);
+  const reconnect = local && s.state === "blocked" ? "blocked" : (local || via) && waiting ? "plain" : false;
+  const pause = local && s.state !== "off" && s.state !== "unreachable" ? (s.paused ? "resume" : "pause") : null;
+  const start = local && s.state === "unreachable" && !!info.unit && (info.unit.active === "inactive" || info.unit.active === "failed");
+  return { reconnect, pause, start };
 }
 
 const [info, setInfo] = createSignal<OutreachInfo | null>(null);

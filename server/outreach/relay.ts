@@ -7,9 +7,10 @@ import { localClient, newestSeq, receiptsSince } from "./whatsapp";
 /**
  * The relay (§app.outreach/sender-route): a host whose sender is local sends for the peers its
  * `acceptFrom` lists, over the peer listener (the caller is its verified StableID, never a body
- * field). Only `status`, `check`, `send` and `events`; linking, reconnecting, unlinking and pausing
- * are the sender host's own. A caller's idempotency key is namespaced by its StableID, and it gets
- * only the receipts of its own sends.
+ * field). `status`, `check`, `send` and `events`; and `reconnect` for a peer this host grants full
+ * control (the listener's `admin` capability, server/mesh/access.ts), never while the account is
+ * blocked (§app.outreach/sender-controls). Linking, unlinking and pausing are the sender host's own.
+ * A caller's idempotency key is namespaced by its StableID, and it gets only the receipts of its own sends.
  */
 
 export const accepts = (acceptFrom: "all" | string[], nodeId: string): boolean => acceptFrom === "all" || acceptFrom.includes(nodeId);
@@ -75,9 +76,20 @@ export function mountOutreachRelay(app: Hono, mesh: Pick<MeshApi, "requestPeer" 
     const events = receiptsSince(`${g.nodeId}:`, since).map((e) => ({ ...e, idem: String(e.idem).slice(g.nodeId.length + 1) }));
     return c.json({ seq: newestSeq(), events });
   });
+  // One immediate attempt, outside the budget. The listener let this through only with the admin grant.
+  // Blocked is the sender host's own call: a reconnect there risks a ban, so its own page warns first.
+  app.post("/api/peer/outreach/reconnect", async (c) => {
+    const g = gate(c);
+    if (g instanceof Response) return g;
+    const r = await call(c, "status", {});
+    if (r.status !== 200) return r;
+    const st = (await r.json()) as Frame;
+    if (st.state === "blocked") return c.json({ ok: false, code: "refused", retryable: false, why: "WhatsApp blocked this account: only the sender's own host reconnects it, after its ban-risk warning." }, 403);
+    return call(c, "reconnect", {});
+  });
   // Everything else under the prefix: the sender host's operator only.
   app.post("/api/peer/outreach/:op", (c) => {
     if (!mesh.requestPeer(c)) return c.json({ error: "Not found" }, 404);
-    return c.json({ ok: false, code: "refused", retryable: false, why: "Only the sender's own host links, reconnects, unlinks or pauses it." }, 403);
+    return c.json({ ok: false, code: "refused", retryable: false, why: "Only the sender's own host links, unlinks or pauses it." }, 403);
   });
 }

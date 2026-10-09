@@ -15,12 +15,20 @@
  * GET  /api/baton/:sid/outreach          -> BatonOutreach
  * POST /api/baton/:sid/send-link         body { person?, note? } -> SendAnswer | 409 { error }
  *
+ * The sender's controls (§app.outreach/sender-controls; main listener only, and never the Overseer's:
+ * a request carrying its sender header is 403):
+ * POST /api/outreach/sender/reconnect    {} -> OutreachInfo | 409 { error } (local, or relayed to a `via` peer)
+ * POST /api/outreach/sender/pause        { on: boolean } -> OutreachInfo | 409 { error } (local sender only)
+ * POST /api/outreach/sender/start        {} -> OutreachInfo | 409 { error } (local, its systemd unit inactive)
+ *
  * Peer routes (peer listener; the caller is its verified StableID), only on a host whose sender is
  * `local` and whose acceptFrom lists the caller (403 { code: "not-accepted" } / 404 { code: "no-sender" }):
  * POST /api/peer/outreach/status         {} -> the sender's status frame
  * POST /api/peer/outreach/check          { digits } -> { exists }
  * POST /api/peer/outreach/send           { idem, digits, text } -> { ref, at } | error frame (idem namespaced by the caller)
  * POST /api/peer/outreach/events         { since? } -> { seq, events: receipt events of this caller's sends }
+ * POST /api/peer/outreach/reconnect      {} -> the sender's answer; needs the `admin` grant (a full-control
+ *                                        peer), never while blocked (403 { code: "refused" })
  */
 
 export type ChannelId = "whatsapp";
@@ -48,13 +56,26 @@ export type OutreachPatch = Partial<Pick<OutreachFile, "sender" | "acceptFrom" |
 export interface SenderStatus {
   state: SenderState;
   why?: string;
+  /** ISO: the next automatic reconnect, while `connecting` waits on a backoff or `down` waits for the budget. */
+  retryAt?: string;
   /** The sender's own pause (blocked also sets it). */
   paused?: boolean;
   /** The linked number's last 3 digits, "…123". */
   me?: string;
   limits?: { gapS: number; perHour: number; perDay: number };
   usage?: { hour: number; day: number };
+  /** Automatic reconnects used and allowed (the reconnect budget). */
+  reconnects?: { hour: number; day: number; perHour: number; perDay: number };
   version?: string;
+  /** ISO: since when Sova has read this state (unreachable included); absent before a second reading. */
+  since?: string;
+}
+
+/** The sender's systemd user unit on this host, when it is installed and serves the socket Sova uses. */
+export interface SenderUnit {
+  name: string;
+  /** `systemctl --user show`'s ActiveState: Start is offered only while it is inactive or failed. */
+  active: string;
 }
 
 export interface OutreachInfo {
@@ -68,6 +89,20 @@ export interface OutreachInfo {
   peers: { nodeId: string; label: string }[];
   /** The file on disk could not be parsed (treated as off). */
   problem?: string;
+  /** The local sender's unit (Start Sender), when installed and serving this socket; absent otherwise. */
+  unit?: SenderUnit;
+}
+
+/** The states a person has to deal with: sends are refused at once, and Needs you says so (§app.outreach/sender-health). */
+export const SENDER_DOWN_STATES: ReadonlySet<SenderState> = new Set(["down", "logged-out", "replaced", "blocked", "unpaired"]);
+
+/** How long the sender may be unreachable before Needs you says so: a restart takes seconds. */
+export const SENDER_UNREACHABLE_ALERT_MS = 5 * 60_000;
+
+/** "WhatsApp is down: {why}" for a state that refuses sends, else null. */
+export function senderDownWhy(s: Pick<SenderStatus, "state" | "why">): string | null {
+  if (!SENDER_DOWN_STATES.has(s.state) && s.state !== "unreachable") return null;
+  return `WhatsApp is down: ${s.why ?? (s.state === "unreachable" ? "the sender doesn't answer." : `the sender is ${s.state}.`)}`;
 }
 
 export type SendOutcome = "sent" | "failed" | "refused";
@@ -96,7 +131,15 @@ export type SendLinkAnswer = SendAnswer;
 
 /** GET /api/baton/:sid/outreach: who Send on WhatsApp may go to now (the operator's own view). */
 export interface BatonOutreach {
-  people: { id: string; name: string; ready: boolean; why?: string; /** Their WhatsApp digits, for the wa.me fallback. */ wa?: string }[];
+  people: {
+    id: string;
+    name: string;
+    ready: boolean;
+    why?: string;
+    /** Why not ready, as the send log's code: `sender-down` means WhatsApp is down, so the strip offers the fallbacks at once. */
+    code?: string;
+    /** Their WhatsApp digits, for the wa.me fallback. */ wa?: string;
+  }[];
   operatorName: string;
   publicTitle: string;
 }
@@ -142,6 +185,7 @@ export const OUTREACH_NOT_READY = {
   "no-number": "No WhatsApp number on the roster.",
   off: "Outreach is off: set it up in Settings → Outreach.",
   paused: "Outreach is paused.",
+  "sender-paused": "WhatsApp sending is paused on the sender's host.",
 } as const;
 
 /** Why a link can't go (§app.outreach/links): the send log's `code` and the sentence. Never a URL or a number. */
@@ -177,6 +221,13 @@ export const NOT_SENT_REASONS: Record<string, string> = {
   unreachable: "the sender couldn't be reached",
   unknown: "the sender didn't say whether it went",
   "unknown-after-restart": "Sova restarted during the send",
+  "sender-down": "WhatsApp sending was down",
+  "sender-paused": "WhatsApp sending was paused on the sender's host",
+  "logged-out": "the phone unlinked the sender's device",
+  replaced: "another copy of the sender took over the number",
+  blocked: "WhatsApp refused the sender's account",
+  restricted: "WhatsApp restricted the sender's account",
+  unpaired: "no device is linked to the sender",
 };
 
 export const notSentReason = (code: string | undefined): string => (code && NOT_SENT_REASONS[code]) || (code ? `the send ended with code ${code}` : "the send didn't go");

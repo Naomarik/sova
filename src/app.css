@@ -543,6 +543,18 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .public-links-choice-name { color: var(--color-ink); }
 .public-links-choice-meta { font-size: var(--fs-caption); color: var(--color-ink-muted); }
 .public-links-gateway { gap: var(--space-4); }
+/* Settings → Outreach's sender panel (§app.settings-dialog/outreach): the state, its figures, and each
+   control with what it does on the line beside it (wrapping under it when the pane is narrow). */
+.outreach-sender { display: flex; flex-direction: column; gap: var(--space-2); }
+.outreach-state { display: flex; align-items: flex-start; gap: var(--space-2); }
+.outreach-state .chip { flex: none; }
+.outreach-state-text { color: var(--color-ink); }
+.outreach-facts { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.outreach-controls { display: flex; flex-direction: column; gap: var(--space-2); }
+.outreach-control { display: flex; flex-wrap: wrap; align-items: center; column-gap: var(--space-3); row-gap: var(--space-1); }
+.outreach-control > .button { flex: none; }
+.outreach-control > .field-hint { flex: 1 1 16rem; min-width: 0; }
+.outreach-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .public-links-row { display: flex; flex-wrap: wrap; gap: var(--space-3); }
 .public-links-row .settings-field { flex: 1 1 12rem; }
 .public-links-port { max-width: 9rem; }

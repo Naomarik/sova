@@ -43,7 +43,8 @@ then replays every kept event with `seq > since` (all kept events when `since` i
 → `{state, why?, retryAt?, paused, me?, limits, usage, reconnects, version}`
 
 - `state`: one of the states below. `why`: a sentence for every state but `open`.
-- `retryAt`: ISO time of the next automatic reconnect, when `connecting` waits on the backoff.
+- `retryAt`: ISO time of the next automatic reconnect: when `connecting` waits on the backoff, or when
+  `down` waits for the reconnect budget's next free slot (then it tries again on its own).
 - `me`: the linked number's last 3 digits as `"…123"`, when known. Never the full number.
 - `limits`: `{gapS, perHour, perDay}`; `usage`: `{hour, day}` sends counted against them.
 - `reconnects`: `{hour, day, perHour, perDay}`: automatic reconnects used and allowed.
@@ -73,7 +74,7 @@ Error codes:
 |---|---|---|
 | `invalid` | no | bad `digits`, `text` or `idem` |
 | `unpaired` | no | no linked device yet |
-| `not-connected` | yes | not `open` within the wait; nothing was sent (retryable `false` when the sender is `down`) |
+| `not-connected` | yes | not `open` within the wait; nothing was sent (with `retryAt` while a reconnect is due; retryable `false` when the sender is `down` with no next try) |
 | `not-on-whatsapp` | no | the number has no WhatsApp account |
 | `logged-out` | no | the phone unlinked this device |
 | `replaced` | no | another process opened these creds |
@@ -87,12 +88,16 @@ Error codes:
 ### Operator-only ops: the sender host only
 
 `pause`, `link`, `reconnect` and `unlink` act on the number itself, so only someone on the sender's
-host uses them: `sova-whatsapp pause | resume | pair | reconnect | unlink` on its socket (and Sova's own
-page there never sends them either). The sender cannot tell a relayed request from a local one, since
+host uses them: `sova-whatsapp pause | resume | pair | reconnect | unlink` on its socket, or Sova's
+own Settings → Outreach there, which sends `reconnect` and `pause` only when the operator presses
+Reconnect Now or Pause/Resume Sender, and never `link` or `unlink`. The sender cannot tell a relayed request from a local one, since
 the relay is a local client too, so the guarantee is the relay's: it forwards exactly `status`, `check`,
 `send` and `events`, each rebuilt from named fields (never a caller's frame passed through), and
-answers every other op with 403 `code: "refused"`. Keep it that way: an op added to the relay's
-allowlist becomes callable by every accepted peer. Nothing else reaches the socket from off the host:
+answers every other op with 403 `code: "refused"`, with one exception: Sova's relay also forwards
+`reconnect`, at `POST /api/peer/outreach/reconnect`, only for a peer the sender host's Sova grants
+admin (its Mesh page), and never while the sender is `blocked` (403 `refused`: only the sender's own
+host reconnects a blocked account). Keep it that way: an op added to the relay's allowlist becomes
+callable by every accepted peer. Nothing else reaches the socket from off the host:
 it is a Unix socket, `0600`, and the sender never listens on a network.
 
 - `pause {on: boolean}` → `{paused}`. Persisted. While paused, `send` answers `paused`; the connection
@@ -131,12 +136,16 @@ private keys included; see `src/quiet-console.mjs`), so a client never needs to 
 |---|---|---|
 | `unpaired` | no linked device in the auth dir | `link` |
 | `linking` | a `link` is waiting for the phone | the phone scans / types the code, or it times out |
-| `connecting` | opening, or waiting `retryAt` to reconnect after a transient close | `open`, or a failure below |
+| `connecting` | opening, or waiting `retryAt` to reconnect after a close WhatsApp or the network caused (428, 408, 503, 515, 500, an unknown code, a failed open) | `open`, or a failure below |
 | `open` | connected; sends go | a close |
 | `logged-out` | the phone unlinked the device (401); creds kept, nothing automatic | `unlink`, then `link` |
 | `replaced` | another process took the creds (440) | stop the other copy, then `reconnect` |
 | `blocked` | 403 on connect, or 463 on a send; sending paused | wait, then `reconnect` and `pause {on:false}` |
-| `down` | reconnect budget spent, 500, or a local error | `reconnect` |
+| `down` with `retryAt` | the reconnect budget is spent; it tries again on its own at `retryAt` (nothing persisted: a restart re-derives it from the budget) | `retryAt`, or `reconnect` |
+| `down` (held) | a second 405 (the sender needs an update), or an unreadable `state.json`; kept across restarts | `reconnect` |
+
+Held for a person (no automatic attempt, kept across restarts): `logged-out`, `replaced`, `blocked`
+and held `down`. A `down` an older sender saved for any other cause is dropped at start.
 
 ## The fake sender
 
@@ -150,5 +159,9 @@ does not have:
 - `{op: "fake", do: "close", code}`: the connection closes with that code (401, 440, 403, 500, 428, 515 …).
 - `{op: "fake", do: "ack-error", code}`: the next send is failed by WhatsApp with that code (463, 479).
 - `{op: "fake", do: "send-throw"}`: the next send throws inside the socket.
+- `{op: "fake", do: "open-fail", code}`: the next `code` (default 1) connection attempts can't be opened.
 
-`node scripts/fake-whatsapp-sender.mjs ctl <close|ack-error|send-throw> [code]` sends that op.
+`node scripts/fake-whatsapp-sender.mjs ctl <close|ack-error|send-throw|open-fail> [code]` sends that op.
+`SOVA_WA_FAKE_TIME_SCALE=<n>` runs the fake's clock `n` times faster than the wall's (with
+`SOVA_WA_RECONNECT_BUDGET=1/10` and 60, a spent budget's hour-long wait takes a minute); its
+`retryAt` and event times then run ahead of the wall clock.

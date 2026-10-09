@@ -30,7 +30,10 @@ you, an overseer (see below) ──▶ Sova: the project's send act ──▶ th
   so you can turn off just theirs. The log keeps its `pv_` id, never its URL.
 - **The sender** (`services/whatsapp`) is a separate, small program that holds the one WhatsApp
   connection of one number, as a linked device of your phone. It runs on one always-on host; every
-  other Sova host sends through that host's Sova. Sova never starts, pairs or unlinks it.
+  other Sova host sends through that host's Sova. Sova never pairs, unlinks, restarts or stops it.
+  Settings → Outreach shows its state live and, when you ask, reconnects it, pauses or resumes it,
+  or starts its stopped service once ([whatsapp.md](whatsapp.md#6-connect-sova)). While it is down,
+  Needs you says so, and a send is refused at once with the why.
 
 ## Who may send
 
@@ -41,7 +44,8 @@ you, an overseer (see below) ──▶ Sova: the project's send act ──▶ th
 - **A project overseer** at level L1 or above. In a turn you started, it goes at once. In its own
   runs (the watch, Look Now), each message waits in the project's hold, where you can cancel it; with "Messaging a person on WhatsApp" among the kinds it
   must confirm (on by default) it waits for that review too, and it goes only in the person's
-  working hours.
+  working hours. One that comes due while WhatsApp is down waits there for WhatsApp to come back,
+  at most 24 hours; then it is not sent, and Needs you says so.
 - A gathering's own model never sends.
 
 There is no consent switch: everyone on a roster agreed to be contacted when they were added.
@@ -65,4 +69,5 @@ Replies are not read: the sender drops incoming messages unread, and people answ
 
 The number's limits live in the sender, shared by every host that sends through it: by default one
 send every 3 seconds at most, 20 an hour, 60 a day. Settings → Outreach can pause all sending from
-a host. See [whatsapp.md](whatsapp.md#9-operate).
+a host, or, on the sender's host, pause the sender itself for every host. See
+[whatsapp.md](whatsapp.md#9-operate).

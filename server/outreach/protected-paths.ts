@@ -4,6 +4,7 @@ import { dirname, join, resolve, sep } from "node:path";
 import { keepSecrets } from "../overseer-deny";
 import { agentRoot, stateRoot } from "../state-root";
 import { defaultSenderHome, piDefaultSenderHome, readOutreach } from "./settings";
+import { reportedNumberAuthDirs } from "./whatsapp";
 
 /**
  * The sender's credentials are secret (§app.outreach/secrets): the directories and files the
@@ -11,11 +12,14 @@ import { defaultSenderHome, piDefaultSenderHome, readOutreach } from "./settings
  * covered from the next call after it is configured), and whether sandboxed agents are kept out.
  */
 
-/** Directories: the default sender home, pi's default one, the configured auth dir. */
+/** Directories: the default sender home, pi's default one, the configured auth dir; and each added number's home (its
+    socket's directory) and the auth directory its sender reports. */
 export function outreachSecretDirs(agentDir = agentRoot(), home = homedir()): string[] {
   const dirs = [defaultSenderHome(), join(home, ".pi", "agent", "sova", "whatsapp"), join(agentDir, "sova", "whatsapp"), piDefaultSenderHome()];
   const f = readOutreach();
   for (const d of [f.authDir, f.senderAuthDir]) if (d) dirs.push(d);
+  for (const n of f.numbers ?? []) dirs.push(dirname(n.socket));
+  dirs.push(...reportedNumberAuthDirs());
   return [...new Set(dirs.map((d) => resolve(d)))];
 }
 

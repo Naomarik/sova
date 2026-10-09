@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { clearSettingsSection, closeSettings, openSettings, SETTINGS_TABS, setSubagentSettingsPath, settingsOpenAt, settingsSection, subagentSettingsPath } from "./settings-nav";
+import { clearSettingsSection, closeSettings, openSettings, SETTINGS_TABS, setSubagentSettingsPath, settingsOpenAt, settingsSection, settingsTabFromHash, subagentSettingsPath } from "./settings-nav";
 
 test("Configure Spec opens Subagents at the Spec section, and a plain open asks for none", () => {
   openSettings("subagents", "spec");
@@ -55,4 +55,13 @@ test("closing Settings forgets the chat it was opened for", () => {
   openSettings("subagents");
   closeSettings();
   assert.equal(subagentSettingsPath(), undefined, "the next open starts with no chat's pick");
+});
+
+test("#/settings/<tab> names a tab (a Needs you row, a notification's tap); anything else names none", () => {
+  assert.equal(settingsTabFromHash("#/settings/outreach"), "outreach");
+  assert.equal(settingsTabFromHash("#/settings/public-links"), "public-links");
+  assert.equal(settingsTabFromHash("#/settings/nope"), null);
+  assert.equal(settingsTabFromHash("#/settings/outreach/x"), null);
+  assert.equal(settingsTabFromHash("#/settings"), null);
+  assert.equal(settingsTabFromHash("#/overseer"), null);
 });

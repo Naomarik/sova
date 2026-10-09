@@ -177,7 +177,7 @@ export function heldLine(what: string, goesAt: number, now: number): string {
 export interface HeldWait {
   what: string;
   goesAt: number;
-  wait?: "hold" | "hours";
+  wait?: "hold" | "hours" | "outage";
   person?: string;
   reviewSince?: number;
 }
@@ -206,7 +206,7 @@ function inWords(t: number, now: number): string {
 
 /**
  * A held act's sentence, whatever it waits on: the hold (r2's sentence), a person's working hours
- * (r7), or, past its hold, the overseer's approval (r8: an act on the project's confirm list waits
+ * (r7), WhatsApp coming back (a held WhatsApp message released while WhatsApp is down, at most 24 h), or, past its hold, the overseer's approval (r8: an act on the project's confirm list waits
  * for the overseer to approve or cancel it; the stall clock runs from the hold's end).
  */
 export function heldWaitLine(h: HeldWait, now: number): string {
@@ -220,6 +220,11 @@ export function heldWaitLine(h: HeldWait, now: number): string {
     // Named once: an act that already names them says "their".
     const whose = h.person && !what.includes(h.person) ? `${h.person}'s` : "their";
     return `${what} waits for ${whose} working hours: it starts at ${sendAt(h.goesAt, now)} your time (${rel}) unless you cancel it.`;
+  }
+  if (h.wait === "outage") {
+    const rel = inWords(h.goesAt, now);
+    if (!rel) return `${what} is starting now.`;
+    return `${what} waits for WhatsApp to come back: it goes when WhatsApp is back, and is not sent if WhatsApp is still down at ${sendAt(h.goesAt, now)} your time (${rel}). You can cancel it.`;
   }
   return heldLine(h.what, h.goesAt, now);
 }

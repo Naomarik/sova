@@ -143,7 +143,7 @@ test("logStamp: 24-hour clock today, date and clock before, year when not this y
   assert.equal(logStamp("nope", now), "");
 });
 
-test("heldWaitLine: the hold's r2 sentence; an hours wait's send time on your clock; a review wait's stall clock (r7, r8)", async () => {
+test("heldWaitLine: the hold's r2 sentence; an hours wait's send time on your clock; an outage wait's bound; a review wait's stall clock (r7, r8)", async () => {
   const { heldWaitLine, sendAt } = await import("./pipeline-view");
   const now = new Date(2026, 8, 30, 15, 0).getTime(); // a Wednesday
   const what = "A message to Sam Okafor";
@@ -159,6 +159,10 @@ test("heldWaitLine: the hold's r2 sentence; an hours wait's send time on your cl
   );
   assert.equal(heldWaitLine({ what, goesAt: tomorrow9, wait: "hours" }, now).includes("waits for their working hours"), true);
   assert.equal(heldWaitLine({ what, goesAt: now - 1, wait: "hours", person: "Sam" }, now), "A message to Sam Okafor is starting now.");
+  assert.equal(
+    heldWaitLine({ what: "A WhatsApp message to Sam Okafor", goesAt: tomorrow9, wait: "outage" }, now),
+    "A WhatsApp message to Sam Okafor waits for WhatsApp to come back: it goes when WhatsApp is back, and is not sent if WhatsApp is still down at Thu 09:00 your time (in 18h). You can cancel it.",
+  );
   assert.equal(
     heldWaitLine({ what, goesAt: now - 12 * 60_000, reviewSince: now - 12 * 60_000 }, now),
     "A message to Sam Okafor is waiting for the overseer's review, for 12m. It goes ahead only when the overseer approves it; you can cancel it.",

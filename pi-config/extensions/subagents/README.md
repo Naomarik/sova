@@ -692,6 +692,14 @@ assign non-overlapping edits or use separate worktrees. The parent conversation
 is not copied. Children load their own normal Pi context, skills, settings, and
 credentials for their cwd.
 
+Which pi a child runs is resolved once per host process (`pi-invocation.ts`), never from the
+child's cwd: `$SOVA_PI_CLI` when set; the host's own pi when the host is pi; else pi's package as
+this extension's own `node_modules` resolves it, its `pi` script run on Bun (the host when it is
+Bun, else `$SOVA_BUN`, else `bun` on `PATH`, a mise shim resolved from the host's cwd), with
+`--no-env-file --config=<null device> --no-install` so the cwd's `bunfig.toml` and `.env` are never
+read; only without the package, `pi` from the host's `PATH`. A child that exits with an error keeps
+the last 20 lines (2 KB) of its stderr in its error.
+
 Children launch with `--no-extensions`, so they do not receive the `agent_*`
 tools for recursive delegation. Parent extension-provided tools, providers,
 safety hooks, or overridden tool implementations are **not inherited** unless

@@ -933,7 +933,7 @@ itself.
   {target}? {why}", until the operator plans that target or dismisses it. Never a phone notification.
 - **Only real blockers are act.** The act tier — Needs you, the Overseer's "need you" count, its
   briefs and phone notifications — is exactly: open alignment questions on an unmerged branch, open dialogs, errored
-  turns, subagent errors, proposed playbook runs, failed deploys and deploy requests, and the baton and roster hand-offs and held acts below. A guess (a
+  turns, subagent errors, proposed playbook runs, failed deploys and deploy requests, WhatsApp sending down, and the baton and roster hand-offs and held acts below. A guess (a
   reply that seems to ask, a team that seems stalled) and a branch ready to merge are decide
   items: a line in the digest and a quiet mark on the session's row, never a brief.
 - **Nothing puts an item away.** The digest lists act items by the rules above and nothing else:
@@ -958,8 +958,15 @@ itself.
   live link exists for, "Send <name> their link: <question>".
 - **Needs you, a held act** (§app.project-overseer/holds): `held-act`, one per act a project's
   statechart holds before it reaches a person or the client's code, "{what} starts in {n} min unless
-  you cancel it.", carrying the hold (`held: {id, goesAt, what}`) so the list can offer Cancel.
+  you cancel it." (a WhatsApp message waiting for WhatsApp to come back, §app.outreach/send: "{what}
+  waits for WhatsApp to come back: it goes when WhatsApp is back, and is not sent if WhatsApp is
+  still down in {n} min."), carrying the hold (`held: {id, goesAt, what}`) so the list can offer Cancel.
   Never a phone notification.
+- **Needs you, WhatsApp sending down** (§app.outreach/sender-health): `whatsapp-down`, an item of
+  no session, one per WhatsApp sender in use (id `whatsapp-sender:<entry id>`), "WhatsApp sending is
+  down for {label}: {why}", opening Settings → Outreach, while that sender is down, logged out,
+  replaced, blocked or unpaired, or unreachable for 5 minutes; never while it is down with its next
+  automatic try still ahead.
 - **Needs you, a message not sent** (§app.outreach/send): `outreach-not-sent`, one per project
   overseer's WhatsApp send whose last outcome is refused, failed or unknown, "The WhatsApp message
   to {name} was not sent: {reason}.", opening the person's page, until a later send to that person

@@ -2904,7 +2904,10 @@
         "server/app.ts",
         "server/outreach/log.ts",
         "server/projects/playbook-review.ts",
-        "server/project-services/deploy-attention.ts"
+        "server/project-services/deploy-attention.ts",
+        "server/outreach/health.ts",
+        "server/project-holds.ts",
+        "server/outreach-health.test.ts"
       ],
       "requires": [
         "§app.overseer/seen"
@@ -4533,7 +4536,8 @@
         "src/lib/api.ts",
         "server/org-reload.test.ts",
         "server/orgs.ts",
-        "server/org-routes.test.ts"
+        "server/org-routes.test.ts",
+        "src/components/OrgWhatsAppCard.tsx"
       ],
       "requires": [
         "§app.organizations/org-cards",
@@ -9336,7 +9340,11 @@
         "server/orgs.ts",
         "server/reconcile.ts",
         "server/project-holds.ts",
-        "server/org-history-boot.test.ts"
+        "server/org-history-boot.test.ts",
+        "server/org-host/index.ts",
+        "server/statecharts.ts",
+        "src/lib/pipeline-view.test.ts",
+        "server/outreach.test.ts"
       ],
       "requires": [
         "§app.project-overseer/statecharts",
@@ -10586,7 +10594,8 @@
         "server/outreach.test.ts",
         "server/outreach/sender-test-fixtures.ts",
         "server/outreach-test-fixtures.ts",
-        "server/outreach.integration.test.ts"
+        "server/outreach.integration.test.ts",
+        "server/outreach-numbers.test.ts"
       ]
     },
     "§app.outreach/links": {
@@ -10629,7 +10638,10 @@
         "server/outreach.test.ts",
         "server/outreach/sender-test-fixtures.ts",
         "server/outreach-test-fixtures.ts",
-        "server/outreach.integration.test.ts"
+        "server/outreach.integration.test.ts",
+        "shared/outreach.ts",
+        "server/outreach/core.ts",
+        "server/outreach-numbers.test.ts"
       ],
       "requires": [
         "§app.organizations/workspace-repo"
@@ -10649,7 +10661,10 @@
         "server/outreach.test.ts",
         "server/outreach/sender-test-fixtures.ts",
         "server/outreach-test-fixtures.ts",
-        "server/outreach.integration.test.ts"
+        "server/outreach.integration.test.ts",
+        "server/outreach/whatsapp.ts",
+        "server/outreach/routes.ts",
+        "server/outreach-numbers.test.ts"
       ],
       "requires": [
         "§app.overseer/tools"
@@ -10681,7 +10696,20 @@
         "server/outreach/log.ts",
         "server/project-overseer.ts",
         "server/project-overseer-tools.ts",
-        "shared/outreach.ts"
+        "shared/outreach.ts",
+        "server/outreach/targets.ts",
+        "server/outreach/health.ts",
+        "server/org-engine.ts",
+        "server/org-host/index.ts",
+        "server/project-holds.ts",
+        "shared/pipeline.ts",
+        "src/lib/pipeline-view.ts",
+        "src/lib/pipeline-view.test.ts",
+        "server/outreach-numbers.test.ts",
+        "statecharts/src/sova/statecharts/engine/core.cljs",
+        "statecharts/src/sova/statecharts/engine/hold_policy.cljc",
+        "statecharts/src/sova/statecharts/placement.cljc",
+        "statecharts/src/sova/statecharts/engine/refit_test.cljs"
       ],
       "requires": [
         "§app.baton/links",
@@ -10737,7 +10765,10 @@
         "server/outreach/sender-test-fixtures.ts",
         "server/outreach-test-fixtures.ts",
         "server/outreach.integration.test.ts",
-        "server/app.ts"
+        "server/app.ts",
+        "shared/outreach.ts",
+        "server/outreach/targets.ts",
+        "server/outreach-link.test.ts"
       ],
       "requires": [
         "§mesh.peers/listener"
@@ -10752,7 +10783,11 @@
         "src/lib/outreach.ts",
         "src/components/SettingsDialog.tsx",
         "src/lib/settings-nav.ts",
-        "src/lib/settings-nav.test.ts"
+        "src/lib/settings-nav.test.ts",
+        "src/App.tsx",
+        "src/components/SenderLink.tsx",
+        "src/lib/outreach.test.ts",
+        "src/app.css"
       ],
       "requires": [
         "§app.settings-dialog/save-bar"
@@ -16707,6 +16742,111 @@
         "pi-config/extensions/claude-code/spec-hooks.test.ts",
         "pi-config/extensions/spec/core/sova-spec-draft.mjs",
         "pi-config/extensions/spec/tests/draft.test.mjs"
+      ]
+    },
+    "§app.outreach/org-sender": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/outreach/targets.ts",
+        "server/outreach/routes.ts",
+        "server/outreach/core.ts",
+        "server/outreach/whatsapp.ts",
+        "server/org-engine.ts",
+        "shared/outreach.ts",
+        "src/components/OrgWhatsAppCard.tsx",
+        "src/components/OrgsView.tsx",
+        "src/lib/outreach.ts",
+        "server/outreach-numbers.test.ts"
+      ],
+      "requires": [
+        "§app.outreach/sender-list",
+        "§app.outreach/send"
+      ]
+    },
+    "§app.outreach/sender-controls": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/outreach/routes.ts",
+        "server/outreach/unit.ts",
+        "server/outreach/relay.ts",
+        "server/outreach/whatsapp.ts",
+        "server/mesh/access.ts",
+        "shared/outreach.ts",
+        "src/components/OutreachSettings.tsx",
+        "src/lib/outreach.ts",
+        "src/lib/outreach.test.ts",
+        "server/outreach-unit.test.ts",
+        "server/outreach.test.ts",
+        "server/outreach-test-fixtures.ts",
+        "server/outreach/sender-test-fixtures.ts"
+      ],
+      "requires": [
+        "§app.outreach/sender-route",
+        "§mesh.peers/grants"
+      ]
+    },
+    "§app.outreach/sender-health": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/outreach/health.ts",
+        "server/outreach/core.ts",
+        "server/outreach/targets.ts",
+        "server/outreach/whatsapp.ts",
+        "server/overseer.ts",
+        "shared/outreach.ts",
+        "shared/protocol.ts",
+        "server/outreach-health.test.ts",
+        "server/outreach.test.ts",
+        "server/outreach-numbers.test.ts"
+      ],
+      "requires": [
+        "§app.overseer/attention-digest"
+      ]
+    },
+    "§app.outreach/sender-link": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/outreach/link.ts",
+        "server/outreach/routes.ts",
+        "server/outreach/whatsapp.ts",
+        "shared/outreach.ts",
+        "src/components/SenderLink.tsx",
+        "src/lib/outreach.ts",
+        "src/lib/qr.ts",
+        "src/lib/outreach.test.ts",
+        "server/outreach-link.test.ts",
+        "services/whatsapp/src/core.mjs"
+      ],
+      "requires": [
+        "§app.outreach/sender"
+      ]
+    },
+    "§app.outreach/sender-list": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/outreach/senders.ts",
+        "server/outreach/targets.ts",
+        "server/outreach/settings.ts",
+        "server/outreach/routes.ts",
+        "server/outreach/whatsapp.ts",
+        "shared/outreach.ts",
+        "src/components/OutreachSettings.tsx",
+        "src/lib/outreach.ts",
+        "src/lib/outreach.test.ts",
+        "server/outreach-link.test.ts"
+      ],
+      "requires": [
+        "§app.outreach/sender-route"
       ]
     }
   },

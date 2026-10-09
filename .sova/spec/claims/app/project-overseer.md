@@ -1061,7 +1061,10 @@ user row.
   dropped and logged with its sentence. An act counts against its allowance only when it is taken;
   a cancelled or dropped hold counts nothing. What the act then did is its own outcome, not the
   release's: a WhatsApp message that is refused or fails when it goes is "not sent", with its reason,
-  to the overseer's `sova_hold` approval, its feed and Needs you (§app.outreach/send).
+  to the overseer's `sova_hold` approval, its feed and Needs you (§app.outreach/send). One released
+  while its organization's WhatsApp number is down waits for that number to come back, held again
+  and still cancellable, at most 24 h from its first wait, then goes ahead and is not sent if the
+  number is still down (§app.outreach/send).
 - **How long.** `holdMin` in the project's `overseer.json`: a whole number of minutes from 0 to
   1440, default 10; 0 means nothing is held and each act goes ahead at once. `PATCH …/overseer
   {holdMin}` refuses any other value whole, 400, "The hold must be a whole number of minutes from 0

@@ -58,7 +58,7 @@ export function renderWhere(out) {
     if (f.state !== "read") L.push(`could not read ${out.query} (${f.state}): claims are listed from code lists only, unranked`);
     else if (!c.claims) L.push(c.candidates ? `${c.candidates} claim(s) have interface tokens that occur in it; ${Math.min(c.candidates, TOP)} shown` : "no claim's interface tokens occur in it either");
   } else {
-    if (out.pathLike) L.push(`no file ${out.query} under the root and no record lists it: searched as a token`);
+    if (out.note) L.push(out.note);
     L.push(c.claims ? `${out.query}: ${c.claims} claim(s) use it in backticks · defines ${c.defines} · mentions ${c.mentions}` : `${out.query}: no claim uses it in backticks`);
   }
   let head = null;
@@ -69,7 +69,7 @@ export function renderWhere(out) {
     else if (e.type === "unranked") L.push(`${base}${e.tokens ? "" : " · no interface token"}`);
     else L.push(`${base}`, `    as: ${ticks(e.spans)}`);
   }
-  if (out.shown < out.total) L.push(`${out.total - out.shown} more not shown: where '${out.query}'${out.mode === "token" ? " --token" : ""} --all`);
+  if (out.notShown) L.push(`${out.notShown} more not shown: ${out.hint}`);
   if (out.next) L.push(`more: where '${out.query}'${out.mode === "token" ? " --token" : ""}${out.all ? " --all" : ""} --cursor ${out.next}`);
   L.push(`exit ${out.exit}`);
   return L.join("\n") + "\n";
@@ -94,9 +94,15 @@ export function whereMain(argv, core) {
   if (mode === "path") r = byPath(ix, path, read);
   else r = byToken(ix, query.trim());
   const total = r.list.length, full = o.all ? r.list : r.list.slice(0, TOP);
-  const head = { tool: "sova-spec", command: "where", budget, query: mode === "path" ? path : query.trim(), mode, all: !!o.all,
-    ...(mode === "path" ? { file: { path, state: read.state, mapped: ix.code.has(path) } } : {}), ...(mode === "token" && !o.token && /^[\w.-][^\s]*\/[^\s/]+\.[A-Za-z0-9]+$/.test(path) ? { pathLike: true } : {}), counts: r.counts, total, shown: full.length };
-  const unknown = mode === "path" ? read.state !== "read" || !r.counts.claims : !r.counts.claims;
+  // A path-shaped argument that is no file under the root and no record's: say so in both forms, never a silent token search.
+  const pathLike = mode === "token" && !o.token && /^[\w.-][^\s]*\/[^\s/]+\.[A-Za-z0-9]+$/.test(path);
+  const absent = pathLike ? { file: { path, state: read.state === "missing" ? "absent" : read.state, mapped: false },
+    note: read.state === "missing" ? `no file ${path} under the root and no record lists it: searched as a token` : `${path} was not read (${read.state}) and no record lists it: searched as a token` } : {};
+  const notShown = total - full.length, q = mode === "path" ? path : query.trim();
+  const head = { tool: "sova-spec", command: "where", budget, query: q, mode, all: !!o.all,
+    ...(mode === "path" ? { file: { path, state: read.state, mapped: ix.code.has(path) } } : {}), ...(pathLike ? { pathLike: true, ...absent } : {}), counts: r.counts, total, shown: full.length,
+    ...(notShown ? { notShown, hint: `where '${q}'${mode === "token" ? " --token" : ""} --all` } : {}) };
+  const unknown = notShown > 0 || pathLike || (mode === "path" ? read.state !== "read" || !r.counts.claims : !r.counts.claims);
   const fp = fingerprintOf({ root: g.root, spec: o.spec, head, list: full });
   return paged({ command: "where", o, fp, list: full, render: renderWhere,
     build: (lines, at, next) => ({ ...head, exit: at < full.length || unknown ? 1 : 0, ...pageFields(full, lines, at, next), notice: WHERE_NOTICE }) });

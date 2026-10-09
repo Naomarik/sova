@@ -132,10 +132,45 @@ export function manifestConflict(view: GitView | undefined): string | undefined 
 	return view?.unmerged?.find((p) => p === `${SPEC_REL}/manifest.json` || p.endsWith(`/${SPEC_REL}/manifest.json`));
 }
 
-/** What to do about a conflicted manifest: the sanctioned command, spelled out. */
-export function manifestConflictNote(top: string, manifest: string, core: string): string {
+/** The spec claim files Git holds in conflict in this view, as top-relative paths. */
+export function claimsConflicts(view: GitView | undefined): string[] {
+	return view?.unmerged?.filter((p) => p.startsWith(`${SPEC_REL}/claims/`) || p.includes(`/${SPEC_REL}/claims/`)) ?? [];
+}
+
+/** The spec directory (top-relative) a conflicted spec path sits in. */
+const specDirOf = (path: string): string => path.slice(0, path.lastIndexOf(`${SPEC_REL}/`) + SPEC_REL.length);
+
+/** The one recovery for a spec conflict a Git merge leaves, in the draft tool's words (its mergeRecovery). */
+export function mergeRecovery(branch: string, specDir: string = SPEC_REL): string {
+	return `take ${branch}'s whole spec with \`git checkout --no-overlay ${branch} -- ${specDir}/manifest.json ${specDir}/claims\` ` +
+		"(never `--ours` and never one file at a time: the merge driver may already have merged the manifest, and the branch's other claim files would then lack their records), " +
+		"commit the merge, promote the branch's drafts again with the same `--id`s (re-record evidence that `status` calls stale; re-apply a draft that is gone in a new draft from current), then commit the claims";
+}
+
+/** The claims merge driver's one-time setup, for a clone where `claimsFile` conflicted without it; what is missing only. */
+export function claimsDriverSetup(core: string, specDir: string, attr: boolean, driver: boolean): string {
+	const steps = [
+		...(attr ? [] : [`add \`${specDir}/claims/**/*.md merge=sova-spec-claims\` to .gitattributes`]),
+		...(driver ? [] : [`run \`git config merge.sova-spec-claims.driver 'node "${join(core, "sova-spec-draft.mjs")}" merge-claims --root . --base %O --ours %A --theirs %B --path %P --write'\` once per clone`]),
+	];
+	return `The merge-claims driver isn't set up here, so claim files merged line by line; to merge them per declaration from now on, ${steps.join(" and ")}.`;
+}
+
+/** What to do about spec files Git holds in conflict: merge-manifest first when the manifest is, then the one recovery. */
+export function specConflictNote(top: string, conflict: { manifest?: string; claims: string[] }, core: string, branch = "master", setup?: string): string {
+	const { manifest, claims } = conflict;
+	const tail = setup ? ` ${setup}` : "";
+	if (!manifest) return `${DIGEST_TAG} ${capped(claims, FILE_CAP)} ${claims.length === 1 ? "is" : "are"} in conflict: ${mergeRecovery(branch, specDirOf(claims[0]))}.${tail}`;
 	const root = join(top, dirname(dirname(dirname(manifest))) === "." ? "" : dirname(dirname(dirname(manifest))));
-	return `${DIGEST_TAG} ${manifest} is in conflict: run \`node "${join(core, "sova-spec-draft.mjs")}" merge-manifest --root ${root} --write --json\` first, then stage it. If it refuses (manifest-conflict): take master's manifest and matching claims (git checkout master -- …), re-apply the branch's spec changes in a new draft, and promote. Never take a side before merge-manifest has run.`;
+	return `${DIGEST_TAG} ${manifest} is in conflict: run \`node "${join(core, "sova-spec-draft.mjs")}" merge-manifest --root ${root} --write --json\` first, then stage it. If it refuses (manifest-conflict), or a claims file is in conflict: ${mergeRecovery(branch, specDirOf(manifest))}. Never take a side before merge-manifest has run.${tail}`;
+}
+
+/** Whether the merge-claims driver routes `claimsFile` in the work tree at `top`: [attribute set, driver configured]. */
+async function claimsDriverState(top: string, claimsFile: string, io: SpecIO, signal?: AbortSignal): Promise<[boolean, boolean]> {
+	const opts = { cwd: top, timeout: TOOL_TIMEOUT_MS, signal };
+	const attr = await io.exec("git", ["check-attr", "merge", "--", claimsFile], opts);
+	const driver = await io.exec("git", ["config", "--get", "merge.sova-spec-claims.driver"], opts);
+	return [attr.code === 0 && attr.stdout.trim().endsWith(": merge: sova-spec-claims"), driver.code === 0 && driver.stdout.trim() !== ""];
 }
 
 /** Whether a rebase is under way in the work tree at `top` (its rebase-merge or rebase-apply dir exists). */
@@ -148,7 +183,7 @@ export async function rebaseUnderway(top: string, io: SpecIO = localIO, signal?:
 	return false;
 }
 
-/** A manifest conflict inside a rebase: merge-manifest is for merges; the rebase itself is the mistake. */
+/** A spec conflict inside a rebase: merge-manifest is for merges; the rebase itself is the mistake. */
 export const REBASE_CONFLICT_NOTE =
 	"A rebase is under way: abort it (`git rebase --abort`) and merge master in instead (never rebase after evidence, PROMOTE.md); run merge-manifest on that merge's conflict.";
 
@@ -488,17 +523,27 @@ function underRoot(top: string, root: string, path: string): string | undefined 
 
 /**
  * One step of the census: look at the tree, and when paths are new since `state`, run the census and
- * return the digest. A manifest.json Git holds in conflict is reported once per conflict, first, with
- * the sanctioned command. Returns the next state (a new object); never throws or rejects.
+ * return the digest. Spec files Git holds in conflict (the manifest, claim files) are reported once per
+ * conflict, first, with the sanctioned command and the one recovery. Returns the next state (a new object); never throws or rejects.
  */
 export async function censusStep(state: CensusState, call: CensusCall, core: string, io: SpecIO = localIO): Promise<{ state: CensusState; result: CensusResult }> {
 	const seen: { view?: GitView } = {};
 	const step = await censusDelta(state, call, core, io, seen);
-	const manifest = manifestConflict(seen.view);
-	if (!manifest || !seen.view) return step.state.conflict ? { state: { ...step.state, conflict: false }, result: step.result } : step;
+	const manifest = manifestConflict(seen.view), claims = claimsConflicts(seen.view);
+	if ((!manifest && !claims.length) || !seen.view) return step.state.conflict ? { state: { ...step.state, conflict: false }, result: step.result } : step;
 	if (step.state.conflict) return step;
-	const rebasing = await rebaseUnderway(seen.view.top, io, call.signal).catch(() => false);
-	const note = rebasing ? `${DIGEST_TAG} ${manifest} is in conflict. ${REBASE_CONFLICT_NOTE}` : manifestConflictNote(seen.view.top, manifest, core);
+	const top = seen.view.top;
+	const rebasing = await rebaseUnderway(top, io, call.signal).catch(() => false);
+	let note: string;
+	if (rebasing) {
+		const files = [...(manifest ? [manifest] : []), ...claims];
+		note = `${DIGEST_TAG} ${capped(files, FILE_CAP)} ${files.length === 1 ? "is" : "are"} in conflict. ${REBASE_CONFLICT_NOTE}`;
+	} else {
+		const branch = (await defaultBranch(top, io).catch(() => undefined)) ?? "master";
+		const [attr, driver] = claims.length ? await claimsDriverState(top, claims[0], io, call.signal).catch((): [boolean, boolean] => [true, true]) : [true, true];
+		const setup = attr && driver ? undefined : claimsDriverSetup(core, specDirOf(claims[0]), attr, driver);
+		note = specConflictNote(top, { manifest, claims }, core, branch, setup);
+	}
 	return { state: { ...step.state, conflict: true }, result: { ...step.result, text: step.result.text ? `${note}\n${step.result.text}` : note } };
 }
 

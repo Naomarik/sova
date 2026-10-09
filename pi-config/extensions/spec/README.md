@@ -149,6 +149,7 @@ node core/sova-spec-draft.mjs promote NAME (--id '<§id>' | --all) [--meta KEY] 
   [--plan SHA] --root DIR [--write] [--json]
 node core/sova-spec-draft.mjs recover --root DIR [--write] [--json]
 node core/sova-spec-draft.mjs merge-manifest --root DIR [--write] [--json]
+node core/sova-spec-draft.mjs merge-claims --base F --ours F --theirs F [--path P] --root DIR [--write] [--json]
 ```
 
 1. **`new`** copies the whole current manifest and claims tree into
@@ -189,6 +190,9 @@ node core/sova-spec-draft.mjs merge-manifest --root DIR [--write] [--json]
    by record (index stages base, ours, theirs) and refuses any key both sides
    changed differently. It is the only sanctioned way to settle that conflict;
    [PROMOTE.md](PROMOTE.md) has the rule.
+7. **`merge-claims`** is a Git merge driver for `claims/*.md`: the promotion's
+   per-declaration merge, with Git's own line merge and markers for what it
+   can't merge, so the same declaration changed on both sides still conflicts.
 
 When to draft, and how to keep a baseline apart from a feature, is in
 [`../mode/spec-mode.md`](../mode/spec-mode.md). Evidence is bytes, revisions and the recorder's statement.

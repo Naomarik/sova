@@ -24,6 +24,7 @@ node $d evidence NAME --id '§x' [--id …] --by WHO --verification TEXT \
 node $d promote NAME (--id '§x'… | --all) [--meta KEY]… [--file PATH]… [--plan SHA] [--write]  --root DIR [--json]
 node $d recover [--write]                               --root DIR [--json]
 node $d merge-manifest [--base F --ours F --theirs F] [--write]   --root DIR [--json]
+node $d merge-claims --base F --ours F --theirs F [--path P] [--write]   --root DIR [--json]
 ```
 
 Nothing is written without `--write`. Quote IDs, because `§` is not a shell word character.
@@ -271,8 +272,10 @@ ever removes a lock. If the holder is on another host, check by hand, then delet
 `merge-manifest` merges `.sova/spec/manifest.json` record by record: each claim record and each
 top-level key takes the side that changed it. The same key changed differently on both sides is
 refused (`manifest-conflict`, exit 1, `conflicts: [{key, kind}]`) and nothing is written. Claim prose
-files are never touched: a `claims/` conflict, or a refused key, takes the one recovery in
-PROMOTE.md ("A spec conflict in a Git merge"), which the refusal repeats. Keys keep ours' order; the output is 2-space JSON, as promotion writes it.
+files are `merge-claims`' (below); a `claims/` conflict, or a refused key, takes the one recovery in
+PROMOTE.md ("A spec conflict in a Git merge"), which the refusal repeats. Keys keep ours' order, except
+that a record only theirs has goes where promotion would put it (by its area and id), so the bytes don't
+depend on which side landed first; the output is 2-space JSON, as promotion writes it.
 
 - **During a conflicted `git merge`** (index stages 2 and 3 exist): `merge-manifest` previews,
   `merge-manifest --write` writes the merged manifest to the working tree. It never stages; run
@@ -288,6 +291,26 @@ PROMOTE.md ("A spec conflict in a Git merge"), which the refusal repeats. Keys k
 
   Git runs it at the repository top; it writes `%A` on success and exits 1 on a same-key conflict,
   which Git reports as a conflict with ours' bytes in place.
+
+## A claims conflict in a Git merge
+
+`merge-claims` is a Git merge driver for one claim file. It merges per declaration exactly as
+promotion does, with the merge base, ours and theirs as base, current and draft, so two branches
+that changed different declarations (or added H2s at one spot) merge into the bytes the two
+promotions give one after the other, in either order. It reads declarations from the file's own
+H1/H2 headings and loads no graph. When the same declaration or gap changed differently on both
+sides, or the file can't be cut per declaration (no declarations, a carriage return, reordered
+declarations), or the result doesn't read back as the declarations it came from, it writes Git's
+own line merge (`git merge-file`), markers and all, so no side's prose is lost, and exits 1
+(`claims-conflict`), which Git reports as a conflict, settled by the one recovery in PROMOTE.md.
+
+```sh
+echo '.sova/spec/claims/**/*.md merge=sova-spec-claims' >> .gitattributes
+git config merge.sova-spec-claims.driver \
+  'node "<core>/sova-spec-draft.mjs" merge-claims --root . --base %O --ours %A --theirs %B --path %P --write'
+```
+
+Without `--write` it only reports. It writes nothing but the `--ours` file.
 
 ## Limits, stated plainly
 

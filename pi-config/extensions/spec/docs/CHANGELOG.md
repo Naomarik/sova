@@ -326,23 +326,33 @@ The tools are Node standard library only. Nothing is installed.
    | `toc.mjs`, `read.mjs` | The pull path |
    | `map.mjs`, `where.mjs`, `graph.mjs` | The look views and `impact --near` |
    | `fields.mjs` | The optional record fields and the frame |
-   | `sova-spec-draft.mjs` | Drafts, evidence, promotion, `merge-manifest` |
+   | `sova-spec-draft.mjs` | Drafts, evidence, promotion, `merge-manifest`, `merge-claims` |
    | `sova-spec-review.mjs` | The review companion |
    | `sova-spec-assess.mjs` | The assessment companion |
 
    Copying only the entrypoints breaks the core at the first `toc`, `read` or `map`. A project that
    vendors under `.sova/spec/tools/` keeps the copies byte-identical to `core/` and treats them as
    foreign code until hashed.
-2. **Set up the manifest merge driver, once per clone.** Add `.sova/spec/manifest.json
-   merge=sova-spec-manifest` to `.gitattributes`, then:
+2. **Set up the merge drivers, once per clone.** Add these two lines to `.gitattributes`:
+
+   ```
+   .sova/spec/manifest.json merge=sova-spec-manifest
+   .sova/spec/claims/**/*.md merge=sova-spec-claims
+   ```
+
+   then:
 
    ```sh
    git config merge.sova-spec-manifest.driver \
      'node <tools dir>/sova-spec-draft.mjs merge-manifest --root . --base %O --ours %A --theirs %B --write'
+   git config merge.sova-spec-claims.driver \
+     'node <tools dir>/sova-spec-draft.mjs merge-claims --root . --base %O --ours %A --theirs %B --path %P --write'
    ```
 
-   Two branches that change different records then merge without a conflict. One record changed
-   differently on both sides still stops.
+   Two branches that change different records, or different declarations of one claim file, then
+   merge without a conflict, and the result doesn't depend on which landed first. One record or one
+   declaration changed differently on both sides still stops; a claim file keeps Git's conflict
+   markers with both sides' prose. A clone without the drivers gets Git's line merge, as before.
 3. **Optional record fields.** A project may add any of these:
 
    | Field | On | Means |

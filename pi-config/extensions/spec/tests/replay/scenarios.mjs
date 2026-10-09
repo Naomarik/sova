@@ -142,6 +142,7 @@ export async function merging(ctx) {
 
   rows.push(...sameSpot(ctx));
   rows.push(...manifestMerge(ctx));
+  rows.push(...claimsMergeRows(ctx));
   return rows;
 }
 
@@ -252,6 +253,140 @@ function manifestMerge(ctx) {
     guard("a.manifest-merge.two-records-merge", driven.merged && driven.both, `with the driver: ${driven.merged ? "merged" : "conflict"}, ${driven.both ? "both records present" : "a record missing"}`),
     guard("a.manifest-merge.same-record-stops", same.status !== 0, `the same record changed on both sides: ${same.status === 0 ? "merged" : "stopped"}`),
   ])];
+}
+
+const CLAIMS_ATTR = ".sova/spec/claims/**/*.md merge=sova-spec-claims";
+const MARKERS = /^(<<<<<<<|>>>>>>>|=======)/m;
+
+/** Whether the tree's draft tool has `merge-claims` (an old tree answers `command: null`, unknown command). */
+export function hasClaimsDriver(ctx) {
+  const r = ctx.tools.draft(ctx.ws.home, ctx.ws.home, ["merge-claims"]);
+  return r.json?.command === "merge-claims";
+}
+
+/** `standard`, with both drivers' attributes committed and each driver the tree has configured repo-locally. */
+function driven(ctx, label) {
+  const repo = standard(ctx, label);
+  repo.write(".gitattributes", `.sova/spec/manifest.json merge=sova-spec-manifest\n${CLAIMS_ATTR}\n`);
+  repo.commit("attributes", [".gitattributes"]);
+  const draftCli = join(ctx.tools.core, "sova-spec-draft.mjs");
+  repo.git(["config", "merge.sova-spec-manifest.driver", `"${process.execPath}" "${draftCli}" merge-manifest --root . --base %O --ours %A --theirs %B --write`]);
+  if (hasClaimsDriver(ctx)) repo.git(["config", "merge.sova-spec-claims.driver", `"${process.execPath}" "${draftCli}" merge-claims --root . --base %O --ours %A --theirs %B --path %P --write`]);
+  return repo;
+}
+
+const unmerged = (repo) => repo.git(["diff", "--name-only", "--diff-filter=U"]).stdout.split("\n").filter(Boolean).sort();
+
+/** Merge `theirs` into a new branch made at `ours`: the conflicted paths and the resulting files, then the merge is undone. */
+function mergeAt(repo, ours, theirs, files) {
+  repo.checkout("-b", `m-${ours}-${theirs}`, ours);
+  const m = repo.merge(theirs);
+  const conflicts = m.status === 0 ? [] : unmerged(repo);
+  const out = Object.fromEntries(files.map((f) => [f, repo.read(f)]));
+  if (m.status !== 0) repo.git(["merge", "--abort"], { allowFail: true });
+  return { status: m.status, conflicts, files: out };
+}
+
+/**
+ * The claims merge driver (`.gitattributes` → `merge-claims`) and landing-order-independent manifest keys.
+ * Two branches each promote a new H2 at the same spot of one claims file (the pair `sameSpot` lands in one tree),
+ * merged in both orders with both drivers configured: conflicted paths, and bytes against the in-tree promotion.
+ * Then the hand path PROMOTE.md documents for a conflicted claims file, counted in tool calls; the same H2 changed on
+ * both branches; a non-spec Markdown file changed at one spot on both.
+ */
+export function claimsMergeRows(ctx) {
+  const A = ["§a.top/zeta", "Zeta is added by A."], B = ["§a.top/alpha", "Alpha is added by B."];
+  const CLAIM = currentClaim("§a.top/one"), MANIFEST = ".sova/spec/manifest.json";
+  const stage = (repo, draft, [id, text]) => {
+    ctx.tools.draft(repo.root, ctx.ws.home, ["new", draft, "--write"]);
+    addH2(repo, draft, id, text);
+    docOnly(ctx, repo, draft, id);
+  };
+  // In one tree: both orders, the reference bytes.
+  const inTree = (order) => {
+    const repo = standard(ctx, `a-claims-tree-${order.join("")}`);
+    stage(repo, "da", A);
+    stage(repo, "db", B);
+    const out = order.map((k) => promote(ctx, repo, `d${k.toLowerCase()}`, (k === "A" ? A : B)[0]).refused.join("+") || "promoted");
+    return { out, claim: repo.read(CLAIM), manifest: repo.read(MANIFEST) };
+  };
+  const tAB = inTree(["A", "B"]), tBA = inTree(["B", "A"]);
+
+  // Across branches: x promotes A, y promotes B, from one base.
+  const repo = driven(ctx, "a-claims-git");
+  const base = repo.head();
+  repo.checkout("-b", "x", base); stage(repo, "da", A); const px = promote(ctx, repo, "da", A[0]);
+  repo.checkout("-b", "y", base); stage(repo, "db", B); const py = promote(ctx, repo, "db", B[0]);
+  const yx = mergeAt(repo, "y", "x", [CLAIM, MANIFEST]), xy = mergeAt(repo, "x", "y", [CLAIM, MANIFEST]);
+  const bothKept = (text) => text.includes(A[1]) && text.includes(B[1]) && text.includes("Plain H3 prose.") && text.includes("Two does Y.");
+  const clean = (r) => r.conflicts.length === 0 && r.status === 0;
+
+  // The documented hand path when the claims file conflicts (PROMOTE.md: master's file, then the branch's text again
+  // through a new draft), on y merging x; one tool call per step, as an agent would run them.
+  let handCalls = null, handEqual = null, handH2s = null;
+  if (!clean(yx)) {
+    let calls = 0;
+    const call = (fn) => { calls++; return fn(); };
+    repo.checkout("-b", "hand", "y");
+    call(() => repo.merge("x"));
+    call(() => unmerged(repo));                                                         // see what conflicted
+    call(() => repo.git(["checkout", "x", "--", MANIFEST, CLAIM]));                      // master's (x's) manifest and claims file
+    call(() => repo.commit("merge x, spec from x", [MANIFEST, CLAIM]));                  // conclude the merge
+    call(() => ctx.tools.draft(repo.root, ctx.ws.home, ["new", "db2", "--write"]));     // a new draft from current
+    call(() => replaceIn(repo, draftClaim("db2", "§a.top/one"), "## §a.top/two", `## ${B[0]}\n\n${B[1]}\n\n## §a.top/two`)); // re-add the H2
+    call(() => { const rel = ".sova/spec/drafts/db2/spec/manifest.json"; const m = JSON.parse(repo.read(rel)); m.claims[B[0]] = { kind: "note", authority: "accepted" }; repo.write(rel, JSON.stringify(m, null, 2) + "\n"); }); // and its record
+    call(() => docOnly(ctx, repo, "db2", B[0]));                                        // evidence
+    const pre = call(() => ctx.tools.draft(repo.root, ctx.ws.home, ["promote", "db2", "--id", B[0]]));       // preview
+    call(() => ctx.tools.draft(repo.root, ctx.ws.home, ["promote", "db2", "--id", B[0], "--plan", pre.json?.plan ?? "", "--write"]));
+    call(() => repo.commit("re-apply db", [".sova/spec"]));                             // commit the claims
+    handCalls = calls;
+    handEqual = repo.read(CLAIM) === tAB.claim;
+    handH2s = h2Order(repo.read(CLAIM)).join(",");
+  }
+
+  // Guard: the same H2 changed differently on each branch still conflicts, and neither sentence is lost.
+  const same = driven(ctx, "a-claims-same-h2");
+  const sBase = same.head();
+  for (const [b, who] of [["p", "P"], ["q", "Q"]]) {
+    same.checkout("-b", b, sBase);
+    // Promoting such an edit is a.same-h2's business; here only the merge of two promoted results counts.
+    replaceIn(same, CLAIM, "One does X.", `One does X, said by ${who}.`);
+    same.commit(`edit ${b}`, [CLAIM]);
+  }
+  const sm = mergeAt(same, "q", "p", [CLAIM]);
+  const sameText = sm.files[CLAIM];
+
+  // Guard: a non-spec Markdown file changed at one spot on both branches gets Git's own conflict, markers and all.
+  const plain = driven(ctx, "a-claims-non-spec");
+  const pBase = plain.head();
+  for (const b of ["u", "v"]) {
+    plain.checkout("-b", b, pBase);
+    plain.write("docs/notes.md", `notes\n${b} adds a line.\n`);
+    plain.commit(`notes ${b}`, ["docs/notes.md"]);
+  }
+  const pm = mergeAt(plain, "v", "u", ["docs/notes.md"]);
+  const attr = plain.git(["check-attr", "merge", "--", "docs/notes.md"]).stdout;
+
+  return [row("a", "a.target.claims-driver", {
+    driver: hasClaimsDriver(ctx) ? "configured" : "absent",
+    conflictsYX: yx.conflicts.length, conflictsXY: xy.conflicts.length, conflictedPaths: [...new Set([...yx.conflicts, ...xy.conflicts])].join(","),
+    equalsInTree: clean(yx) && clean(xy) && yx.files[CLAIM] === tAB.claim && xy.files[CLAIM] === tAB.claim,
+    ordersIdentical: yx.files[CLAIM] === xy.files[CLAIM], inTreeH2s: h2Order(tAB.claim).join(","), handCalls, handEqualsInTree: handEqual, handH2s,
+  }, [
+    guard("a.claims-driver.setup", px.refused.length === 0 && py.refused.length === 0 && tAB.out.concat(tBA.out).every((o) => o === "promoted") && tAB.claim === tBA.claim,
+      `branches: ${px.refused.join("+") || "promoted"}, ${py.refused.join("+") || "promoted"}; in tree: ${tAB.out.join(" ")} / ${tBA.out.join(" ")}, ${tAB.claim === tBA.claim ? "identical" : "differ"}`),
+    guard("a.claims-driver.no-prose-lost", bothKept(yx.files[CLAIM]) && bothKept(xy.files[CLAIM]) && (!clean(yx) || !MARKERS.test(yx.files[CLAIM])) && (!clean(xy) || !MARKERS.test(xy.files[CLAIM])),
+      "both new H2s, the H3 prose and §a.top/two's prose in the merged file, in both orders; markers only on a conflict"),
+    guard("a.claims-driver.same-h2-stops", sm.conflicts.includes(CLAIM), `the same H2 changed on both branches: ${sm.conflicts.join(",") || "merged"}`),
+    guard("a.claims-driver.same-h2-no-prose-lost", sameText.includes("said by P.") && sameText.includes("said by Q."), "both sentences in the conflicted file"),
+    guard("a.claims-driver.non-spec-untouched", /merge: unspecified$/.test(attr) && pm.conflicts.includes("docs/notes.md") && MARKERS.test(pm.files["docs/notes.md"]),
+      `docs/notes.md: ${attr.replace(/^.*: merge: /, "attribute ")}; ${pm.conflicts.length ? "Git's conflict" : "merged"}`),
+  ]), row("a", "a.target.manifest-order", {
+    inTreeIdentical: tAB.manifest === tBA.manifest,
+    gitIdentical: yx.files[MANIFEST] === xy.files[MANIFEST],
+    gitEqualsInTree: yx.files[MANIFEST] === tAB.manifest && xy.files[MANIFEST] === tAB.manifest,
+    manifestConflicts: [yx, xy].filter((r) => r.conflicts.includes(MANIFEST)).length,
+  })];
 }
 
 // ── (b) Evidence ─────────────────────────────────────────────────────────────

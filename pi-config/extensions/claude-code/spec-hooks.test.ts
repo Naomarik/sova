@@ -507,3 +507,26 @@ test("the write guard reads file state: a promote through a wrapper script and `
 	assert.equal(directWrites(await s.bash(root, "sed -i 's/a thing/a hand thing/' .sova/spec/claims/app/x.md")), 1, "sed -i on claims is a direct write");
 	assert.equal(directWrites(await s.edit(root, ".sova/spec/claims/app/x.md", "# §app/x\n\nEdited.\n")), 1, "an Edit on claims is a direct write");
 });
+
+test("a claims file a merge leaves in conflict gets the one recovery, with the default branch and the merge-claims setup; said once", async () => {
+	const { root, stateDir } = project();
+	git(root, ...C, "checkout", "-qb", "feat");
+	write(root, ".sova/spec/claims/app/x.md", "# §app/x\n\nX does a feat thing.\n");
+	git(root, ...C, "commit", "-qam", "feat");
+	git(root, "checkout", "-q", "main");
+	write(root, ".sova/spec/claims/app/x.md", "# §app/x\n\nX does a main thing.\n");
+	git(root, ...C, "commit", "-qam", "main");
+	git(root, "checkout", "-q", "feat");
+	const s = session(stateDir);
+	await s.turn(root);
+	// The clone's own config only: no merge-claims driver comes from the developer's global config.
+	const saved = process.env.GIT_CONFIG_GLOBAL;
+	process.env.GIT_CONFIG_GLOBAL = "/dev/null";
+	let note: string;
+	try { note = await s.bash(root, `git ${C.join(" ")} merge main`); } finally { if (saved === undefined) delete process.env.GIT_CONFIG_GLOBAL; else process.env.GIT_CONFIG_GLOBAL = saved; }
+	assert.ok(fs.existsSync(path.join(root, ".git/MERGE_HEAD")), "a merge is in progress");
+	assert.match(note, /\[spec census\] \.sova\/spec\/claims\/app\/x\.md is in conflict: take main's whole spec with `git checkout --no-overlay main -- \.sova\/spec\/manifest\.json \.sova\/spec\/claims` \(never `--ours`/);
+	assert.match(note, /then commit the claims\./);
+	assert.match(note, /The merge-claims driver isn't set up here/);
+	assert.equal(await s.bash(root, "true"), "", "said once per conflict");
+});

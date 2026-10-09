@@ -9,6 +9,28 @@ while the CLI turn stays open for pi's results. This surface holds what the prov
 that exchange. How the bridge launches a child, and what happens across a server restart, is
 §app.worker-restore/claude-bridge-restart.
 
+Pi owns the conversation and the tools; the Claude CLI is only the model. The chat's child is
+launched with no built-in tools (`--tools ''`), so every tool the model can call is one of pi's,
+served through Sova's in-process MCP server (`sdkMcpServers: ["sova"]`, `provider/mcp-host.ts`).
+Each call's history is the one pi hands the provider after its extensions' `context` hooks have
+run, so whatever an extension adds to a chat (tools, rewritten context, modes) reaches Claude Code
+chats too. Claude Code workers are the opposite case: they run the CLI with its own built-in tools
+(§app.subagents-pane/claude-code-workers).
+
+## §app.claude-code-provider/continuity — When the Claude process restarts
+
+One CLI child carries a chat across its turns, and within a turn the same child stays across
+every tool call: the CLI's call is held open until pi's result arrives on the next provider call.
+Before each turn the bridge checks that pi's history is a clean extension of what the child has
+already seen. It starts a new child when there is no live child, the child fell out of step with
+pi, its Claude login is leaving this device, an interrupted turn has not settled, the model,
+effort, system prompt, tool set or cwd changed, the history diverged (a rewind, branch, compaction
+or foreign append), pi answered only some of the child's tool calls or a result matches no held
+call, or there is nothing new to send. A new child gets the whole history folded into one user
+message, clipped to the fold budget. After a restart it opens "Your session was restarted, so this
+is a condensed, lossy replay of the conversation so far"; reasoning is left out and long tool
+output keeps only its head and tail.
+
 ## §app.claude-code-provider/invalid-tool-input — A tool call whose arguments are not valid JSON
 
 Claude sometimes streams a tool call whose arguments, once complete, are not valid JSON or are not

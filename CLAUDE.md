@@ -504,6 +504,8 @@ before you claim a feature.
   whether or not that mode is on; don't turn any mode on. Commands are in `.sova/spec/USAGE.md`.
 - A change to the spec tools themselves names the goal it serves in
   `pi-config/extensions/spec/docs/GOALS.md` and is measured against today's tools by the replay harness.
+- Before planning anything that changes what a Claude Code chat's model sees or which tools it has,
+  read §app/claude-code-provider: Sova owns the conversation and the tools; the CLI is only the model.
 
 ## Method
 

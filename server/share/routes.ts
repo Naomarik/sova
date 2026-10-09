@@ -16,6 +16,7 @@ import { ownerView } from "../owner-page";
 import { mountSessionShareRoutes } from "./session-routes";
 import { classify, recordOpen, recordRefused, recordShellFetch, type VisitLink } from "../visits";
 import { noteShareVisit } from "../visitor-identity";
+import { RateLimiter } from "./rate-limit";
 
 /**
  * The share listener's whole API (§app.baton/share-listener). Its own Hono app: nothing of the
@@ -32,7 +33,7 @@ export const SHARE_DIST = resolve(import.meta.dirname, "..", "..", "dist-share")
 const shareDist = (): string => process.env.SOVA_SHARE_DIST || SHARE_DIST;
 
 export const MESSAGES_PER_MINUTE = 10;
-const perToken = new Map<string, number[]>();
+const perToken = new RateLimiter(MESSAGES_PER_MINUTE);
 
 /** Visit logging (server/visits.ts) never fails or delays a request past its own write. */
 export function logVisit(token: string, what: string, fn: () => unknown): void {
@@ -44,52 +45,29 @@ export function logVisit(token: string, what: string, fn: () => unknown): void {
 }
 
 /** Sliding one-minute window per token; true when this message is over the limit. Tokens with no
-    message inside the window are dropped on the way, so the map holds only recent writers. */
-export function tokenLimited(token: string, now = Date.now()): boolean {
-  for (const [k, v] of perToken) if (k !== token && !v.some((t) => now - t < 60_000)) perToken.delete(k);
-  const recent = (perToken.get(token) ?? []).filter((t) => now - t < 60_000);
-  if (recent.length >= MESSAGES_PER_MINUTE) {
-    perToken.set(token, recent);
-    return true;
-  }
-  recent.push(now);
-  perToken.set(token, recent);
-  return false;
-}
+    message inside the window are dropped on the way (on every call while few are held, at most
+    once a second under a flood: server/share/rate-limit.ts), so the map holds only recent writers. */
+export const tokenLimited = (token: string, now = Date.now()): boolean => perToken.limited(token, now);
 
 /** How many tokens the per-token window holds (tests). */
 export const tokenWindowSize = (): number => perToken.size;
 
 /** Photo reads per token per minute (§app.baton/images): a thread full of photos, re-read on a reload. */
 export const IMAGE_GETS_PER_MINUTE = 240;
-const imageGets = new Map<string, number[]>();
+const imageGets = new RateLimiter(IMAGE_GETS_PER_MINUTE);
 
 /** Sliding one-minute window of photo reads per token; true when this one is over the limit. */
-export function imageTokenLimited(token: string, now = Date.now()): boolean {
-  for (const [k, v] of imageGets) if (k !== token && !v.some((t) => now - t < 60_000)) imageGets.delete(k);
-  const recent = (imageGets.get(token) ?? []).filter((t) => now - t < 60_000);
-  const over = recent.length >= IMAGE_GETS_PER_MINUTE;
-  if (!over) recent.push(now);
-  imageGets.set(token, recent);
-  return over;
-}
+export const imageTokenLimited = (token: string, now = Date.now()): boolean => imageGets.limited(token, now);
 
 /** A photo's own CSP: nothing runs, even if a browser were talked into rendering it as a page. */
 const IMAGE_CSP = "default-src 'none'; sandbox";
 
 /** Owner page reads per token per minute (a page re-reads every 60 s; this is the ceiling). */
 export const OWNER_GETS_PER_MINUTE = 120;
-const ownerGets = new Map<string, number[]>();
+const ownerGets = new RateLimiter(OWNER_GETS_PER_MINUTE);
 
 /** Sliding one-minute window of Owner page reads per token; true when this one is over the limit. */
-export function ownerTokenLimited(token: string, now = Date.now()): boolean {
-  for (const [k, v] of ownerGets) if (k !== token && !v.some((t) => now - t < 60_000)) ownerGets.delete(k);
-  const recent = (ownerGets.get(token) ?? []).filter((t) => now - t < 60_000);
-  const over = recent.length >= OWNER_GETS_PER_MINUTE;
-  if (!over) recent.push(now);
-  ownerGets.set(token, recent);
-  return over;
-}
+export const ownerTokenLimited = (token: string, now = Date.now()): boolean => ownerGets.limited(token, now);
 
 const SECURITY_HEADERS: Record<string, string> = {
   "Cache-Control": "no-store",

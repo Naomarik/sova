@@ -530,3 +530,45 @@ test("a claims file a merge leaves in conflict gets the one recovery, with the d
 	assert.match(note, /The merge-claims driver isn't set up here/);
 	assert.equal(await s.bash(root, "true"), "", "said once per conflict");
 });
+
+/** A committed project: six § map src/view.tsx (one names the head title's `aria-describedby`), §app/voice maps src/voice.ts. */
+function rankedProject(): { root: string; stateDir: string } {
+	const { root, stateDir } = project();
+	const claims: Record<string, unknown> = { "§app/head": { kind: "behavior", requires: [], code: ["src/view.tsx"] }, "§app/voice": { kind: "behavior", requires: [], code: ["src/voice.ts"] } };
+	for (const n of ["a", "b", "c", "d", "e"]) claims[`§app/other-${n}`] = { kind: "behavior", requires: [], code: ["src/view.tsx"] };
+	write(root, ".sova/spec/manifest.json", JSON.stringify({ formatVersion: 1, grammar: { claimsRoot: "claims/", directoryKinds: ["section"] }, boundary: { include: ["src"], exclude: [] }, claims }));
+	fs.rmSync(path.join(root, ".sova/spec/claims/app/x.md"));
+	write(root, ".sova/spec/claims/app/head.md", "# §app/head\n\nThe head title carries `aria-describedby` pointing at the context description.\n");
+	write(root, ".sova/spec/claims/app/voice.md", "# §app/voice\n\nA clip is at most 12 MB.\n");
+	for (const n of ["a", "b", "c", "d", "e"]) write(root, `.sova/spec/claims/app/other-${n}.md`, `# §app/other-${n}\n\nPane ${n} lists its workers.\n`);
+	write(root, "src/view.tsx", "export const Head = () => <h1>title</h1>;\n");
+	write(root, "src/voice.ts", "export const MAX = 12 * 1024 * 1024;\n");
+	git(root, "add", "-A");
+	git(root, ...C, "commit", "-qm", "ranked");
+	return { root, stateDir };
+}
+const UNREAD = /Unread § your change landed in:/;
+const unreadLines = (text: string) => text.split("\n").filter((l) => UNREAD.test(l));
+
+test("the unread line: once at the first call after the last edit, naming every unread § the change landed in; never after they are read or repeated; again for a new edit's new §", async () => {
+	const { root, stateDir } = rankedProject();
+	const s = session(stateDir);
+	await s.turn(root);
+	const view = ["§app/head", "§app/other-a", "§app/other-b", "§app/other-c", "§app/other-d", "§app/other-e"];
+	const edited = await s.edit(root, "src/view.tsx", 'export const Head = () => <h1 aria-describedby="context-desc">title</h1>;\n');
+	assert.match(edited, /§app\/head/, `the census digest maps the edit: ${edited}`);
+	assert.equal(unreadLines(edited).length, 0, "not on the edit itself");
+	const first = unreadLines(await s.bash(root, "git status --short"));
+	assert.equal(first.length, 1, `one line at the first call after the edit: ${first.join(" | ")}`);
+	for (const id of view) assert.ok(first[0]!.includes(id), `${id} named (none dropped): ${first[0]}`);
+	assert.ok(!first[0]!.includes("§app/voice"), "a § the change didn't touch is not named");
+	assert.ok(first[0]!.indexOf("§app/head") < Math.min(...view.slice(1).map((id) => first[0]!.indexOf(id))), `the § whose prose the change's tokens match ranks first: ${first[0]}`);
+	for (const id of view) assert.equal(unreadLines(await s.bash(root, `${process.execPath} ${CORE}/sova-spec.mjs read '${id}' --no-frame --root .`)).length, 0, `no line while reading ${id}`);
+	assert.equal(unreadLines(await s.bash(root, "git status --short")).length, 0, "all read: no line, and never a repeat");
+	assert.equal(unreadLines(await s.edit(root, "src/voice.ts", "export const MAX = 16 * 1024 * 1024;\n")).length, 0, "not on the edit itself");
+	const again = unreadLines(await s.bash(root, "git status --short"));
+	assert.equal(again.length, 1, `a new edit's new §: the line again: ${again.join(" | ")}`);
+	assert.ok(again[0]!.includes("§app/voice"));
+	for (const id of view) assert.ok(!again[0]!.includes(id), `${id} was read: not named again`);
+	assert.equal(unreadLines(await s.bash(root, "git status --short")).length, 0, "said once");
+});

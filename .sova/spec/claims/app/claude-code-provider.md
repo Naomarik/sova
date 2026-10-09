@@ -147,6 +147,17 @@ reaches a spawn is replaced by its catalog model first, and a chat child's launc
 id, so a chat whose model changed only from an old id to its catalog id restarts its child at most
 once. The usage ledger records the id passed as the model asked for.
 
+## §app.claude-code-provider/no-memory — Claude Code's auto-memory is always off
+
+Every `claude` process Sova or its extensions start runs with Claude Code's auto-memory off,
+whatever the user's own Claude Code settings say: the chat provider's child, Claude Code workers
+(confined or not), the summary line's summarizer, decisions, session titles, model discovery and a
+login's token refresh. Such a process never reads a project's memory folder
+(`<config dir>/projects/<project>/memory/`, its `MEMORY.md` and notes) into a request and never
+writes to it. The setting rides in the one `--settings` object each process is given, merged last,
+so a caller's settings (a sandboxed worker's included) cannot turn it back on. `claude auth` and
+`claude --version` runs make no model request and are left as they are.
+
 ## §app.claude-code-provider/model-identity — Which model answered, and a mismatch
 
 The model that answered is the API's own id on each reply (a message's `responseModel`, a worker

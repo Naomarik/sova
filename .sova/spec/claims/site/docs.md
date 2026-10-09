@@ -36,7 +36,7 @@ Needs you and notifications, and the terminal viewer.
 
 ## §site.docs/align-review — Adversarial review (`/docs/modes/align/review/`)
 
-The experimental review of an alignment's plan and implementation: turning it on, the Reviewer
+The review of an alignment's plan and implementation: turning it on, the Reviewer
 route, when it runs, blockers, and what the card shows.
 
 ## §site.docs/spec-mode — Spec (`/docs/modes/spec/`)

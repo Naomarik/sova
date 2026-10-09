@@ -2524,7 +2524,8 @@
         "server/sync/index.ts",
         "server/sync/docs.test.ts",
         "server/sync/extensions.test.ts",
-        "server/sync/index.test.ts"
+        "server/sync/index.test.ts",
+        "server/sync/docs-grants.test.ts"
       ]
     },
     "§mesh.sync/logins": {
@@ -13980,7 +13981,8 @@
         "scripts/mesh-lab/e2e/m7-grants.test.mjs",
         "server/mesh/lan-mesh.test.ts",
         "server/mesh/lan-mesh.integration.test.ts",
-        "server/overseer-link-tools.test.ts"
+        "server/overseer-link-tools.test.ts",
+        "server/sync/docs-grants.test.ts"
       ]
     },
     "§mesh.lan/as-a-peer": {

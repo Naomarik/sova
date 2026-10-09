@@ -89,7 +89,8 @@ including logins added later; after that, a login added later is not shared unti
 Turning a login off stops future exchanges of it
 with that peer, but it cannot recall a copy the peer already holds. The page says so, and points to
 logging that login out there or rotating it. A sync category the peer isn't granted is neither
-served, pushed, pulled nor merged with it, in either direction. Sync still replicates through other
+served, pushed, pulled nor merged with it, in either direction. Session profiles go only to a peer
+granted both settings and sessions (§mesh.sync/categories), and the settings switch says so. Sync still replicates through other
 hosts, each passing on what it took at its next exchange with that peer (its 5-minute reconcile, the
 peer coming back up, or a settings save), so the page warns that a category can reach the peer through any other host that shares it
 with that peer. The Claude login pool (§app.claude-logins/pool) goes with the logins grant: a peer

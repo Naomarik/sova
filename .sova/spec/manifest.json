@@ -4428,7 +4428,9 @@
         "server/app.ts",
         "server/share-listener.integration.test.ts",
         "server/share-message.integration.test.ts",
-        "server/public-links.integration.test.ts"
+        "server/public-links.integration.test.ts",
+        "server/share/rate-limit.ts",
+        "server/share-rate-limit.test.ts"
       ],
       "requires": [
         "§app.baton/links",

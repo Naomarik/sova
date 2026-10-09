@@ -57,12 +57,12 @@ Settings → Accounts' status line says the CLI could not be run (§app.claude-l
 
 Sova's own `<agent dir>/sova/settings.json` no longer holds a provider switch: a stored
 `experimental.claudeCodeProvider` is ignored, never written and never required. Its `experimental`
-object is a set of named boolean switches Sova knows (`adversarialReview`, §chat.alignment-review/flag),
-each off unless stored `true`.
-`PUT /api/settings` takes `{experimental: {...}}`: a known key must be a boolean (else 400), an
-unknown key is ignored, and a body without an `experimental` object is a 400. The write re-reads the
-file and replaces only the known keys the request carries, so any other key, old or another
-writer's, stays.
+object is a set of named boolean switches Sova knows (none right now: adversarial review moved to
+`alignment.review`, §chat.alignment-review/flag), each off unless stored `true`.
+`PUT /api/settings` takes `{experimental?: {...}, alignment?: {review?}}`: each part present must be
+an object and a known key a boolean (else 400), an unknown key is ignored, and a body that is not an
+object is a 400. The write re-reads the file and replaces only the known keys the request carries,
+so any other key, old or another writer's, stays.
 
 ## §app.claude-code-provider/catalog — Sova's own Claude model catalog
 

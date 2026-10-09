@@ -4,7 +4,8 @@
 A **project** is a folder (a git checkout root, or a plain folder) the operator has explicitly
 registered. Every registered project has the project page, its overseer, coding sessions with their
 worktrees, costs, previews and running instances (§app/project-services), whether or not an
-organization places it. An organization only **places** a project and adds its own concerns
+organization places it, and every session run in its folder is listed as its own, however it was started
+(§app.projects/folder-sessions). An organization only **places** a project and adds its own concerns
 (stakeholder, people, outreach, owner updates, requirements; §app/organizations). The project
 layer never knows organizations exist (§app.projects/seam).
 
@@ -85,11 +86,56 @@ for a project held on a peer (§mesh.remote-sessions/org-pages). API: `/api/proj
   declares one and the entry's service is ready (§app.project-services/services-ui).
 - The sidebar has a **Projects** region for standalone projects, shaped as one organization's
   project blocks in the Organizations region (§app.session-list/organizations): the project heading
-  with its overseer's eye, then its Builds. Its head carries **+** (Add Project) and an arrow to
+  with its overseer's eye, then its Builds: the coding sessions it started and the sessions in its
+  folder (§app.projects/folder-sessions), running or waiting, then a collapsed Done. Its head carries **+** (Add Project) and an arrow to
   `#/projects`; each project heading's name opens its page. With no project it says "No projects
   yet. Add a folder or a GitHub repository with +." It is listed once the session list loads, even
   empty, except when a search finds nothing in it. Where Needs you names where an item of a standalone project
   waits, it says Projects.
+
+## §app.projects/folder-sessions — A session in a project's folder is the project's
+
+A session that runs in a registered project's folder belongs to that project, however it was
+started: from the project, from New Session's folder tab, from a TUI or from Claude Code.
+
+- **Started from the folder tab, it is the project's coding session.** When the folder New
+  Session's This Computer tab holds is a registered, not archived project's root, a folder inside
+  it, or a folder inside one of its worktrees as Sova names them (the deepest root wins), Create
+  Session starts it exactly as the Project tab does (§app/new-session-dialog,
+  §app.project-overseer/new-coding-session): an `operator-coding` build with `worktree: "later"`,
+  on the project's coding model and thinking, in this computer's default mode, pinned, listed in the
+  Cost card, its later worktree adopted. It starts in the folder chosen, never moved to the root. This
+  holds for a project an organization places too: the start runs in that project's own engine.
+  Another Host (§mesh.remote-sessions/host-picker) and the Remote tab start plain sessions, as
+  before.
+- **`cwd` on the start.** `POST /api/projects/:pid/overseer/coding` takes an optional absolute
+  `cwd`: the project root, a folder inside it, or a folder inside one of the project's linked git
+  worktrees, compared on canonical (symlink-free) paths. Any other folder, a relative path or one
+  that doesn't exist is refused with 400 and nothing starts. With no `cwd` it starts in the root,
+  as before; the Project tab sends none.
+- **Every other session in the folder is listed as the project's.** Reading the list, a session no
+  marker or build claims belongs to the project whose folder its `cwd` is in, as
+  `SessionSummary.project` `{kind: "folder"}`, never `finished`: an overseer marker, then a build,
+  then the folder, in that order (a build keeps `coding` and its merged state). The folder is
+  matched once per distinct `cwd` per listing: the deepest non-archived project root the `cwd`
+  equals or sits under, by its path as written or its real path (a folder above the root never
+  matches); else, walking up to the first `.git`, a `.git` file naming `<checkout>/.git/worktrees/<n>`
+  makes it that checkout's (git is not run); else, for a folder that no longer exists, a path
+  under `<root's parent>/.worktrees/<root's name>-` makes it that root's. An archived project
+  never matches, and a remote session's placeholder folder never does.
+- **Shown in both places.** A folder session stays an ordinary session
+  (§app.session-list/ordinary-surfaces): Recent, Needs you, Live & web, Groups, the Archive and
+  its cleanup, and the overview list it as before, and it can be grouped. It is also listed with
+  its project: in the sidebar's Projects region for a standalone project
+  (§app.projects/list), in the Organizations region for a placed one
+  (§app.session-list/organizations), among the project's Builds — running or waiting while it is
+  live, or a web session not archived; otherwise in Done.
+- **A placed project's folder sessions are not organizational.** They carry no
+  `SessionSummary.org` (§app.organizations/org-sessions), so nothing an org session is refused
+  (forking, a profile, a link, a group) is refused to them. The org layer adds
+  `SessionSummary.folderOrg` (the org and project, as an org session's reference names them) so the
+  Organizations region can place them; the project layer never names the org
+  (§app.projects/seam).
 
 ## §app.projects/seam — The project layer never knows organizations exist
 

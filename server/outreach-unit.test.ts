@@ -38,8 +38,8 @@ test("Start is offered for the unit serving this socket while stopped, and runs 
     if (args[0] === "start") return (active = "active"), { code: 0, stdout: "" };
     return { code: 1, stdout: "" };
   });
-  assert.deepEqual(await senderUnit(sock, 1), { name: "sova-whatsapp.service", active: "inactive" });
-  assert.equal(await senderUnit(join(home, "other.sock"), 2), null, "a unit for another socket is not this sender's");
+  assert.deepEqual(await senderUnit(sock, undefined, 1), { name: "sova-whatsapp.service", active: "inactive" });
+  assert.equal(await senderUnit(join(home, "other.sock"), undefined, 2), null, "a unit for another socket is not this sender's");
   assert.deepEqual(await startSenderUnit(sock), { ok: true });
   assert.deepEqual(calls.filter((c) => c[0] === "start"), [["start", "sova-whatsapp.service"]]);
   const again = await startSenderUnit(sock);
@@ -50,9 +50,25 @@ test("Start is offered for the unit serving this socket while stopped, and runs 
 
 test("no systemd, no unit, or not loaded: nothing to offer", async () => {
   setSystemctlForTest(async () => ({ code: 0, stdout: "LoadState=not-found\nActiveState=inactive\n" }));
-  assert.equal(await senderUnit("/x.sock", 10), null);
+  assert.equal(await senderUnit("/x.sock", undefined, 10), null);
   setSystemctlForTest(async () => ({ code: 1, stdout: "" }));
-  assert.equal(await senderUnit("/x.sock", 20), null);
+  assert.equal(await senderUnit("/x.sock", undefined, 20), null);
   setSystemctlForTest(async () => ({ code: 0, stdout: "LoadState=loaded\nActiveState=inactive\n" }), "darwin");
-  assert.equal(await senderUnit("/x.sock", 30), null);
+  assert.equal(await senderUnit("/x.sock", undefined, 30), null);
+});
+
+test("an added number's sender is its own template instance, sova-whatsapp@<name>.service, and Start starts that one", async () => {
+  const sock = join(home, "wa-sales", "sender.sock");
+  const calls: string[][] = [];
+  setSystemctlForTest(async (args) => {
+    calls.push(args);
+    if (args[0] === "show" && args[1] === "sova-whatsapp@sales.service") return { code: 0, stdout: `LoadState=loaded\nActiveState=failed\nEnvironment=SOVA_WA_HOME=${join(home, "wa-sales")}\n` };
+    if (args[0] === "show") return { code: 0, stdout: `LoadState=loaded\nActiveState=inactive\nEnvironment=SOVA_WA_HOME=${join(home, "wa")}\n` };
+    if (args[0] === "start") return { code: 0, stdout: "" };
+    return { code: 1, stdout: "" };
+  });
+  assert.deepEqual(await senderUnit(sock, "sales", 100), { name: "sova-whatsapp@sales.service", active: "failed" });
+  assert.equal(await senderUnit(sock, undefined, 200), null, "this host's own unit serves another socket");
+  assert.deepEqual(await startSenderUnit(sock, "sales"), { ok: true });
+  assert.deepEqual(calls.filter((c) => c[0] === "start"), [["start", "sova-whatsapp@sales.service"]]);
 });

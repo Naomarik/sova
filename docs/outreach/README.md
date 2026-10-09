@@ -29,15 +29,19 @@ you, an overseer (see below) ──▶ Sova: the project's send act ──▶ th
   original does (never later), turned off with it, and listed with the previews as "sent to {name}"
   so you can turn off just theirs. The log keeps its `pv_` id, never its URL.
 - **The sender** (`services/whatsapp`) is a separate, small program that holds the one WhatsApp
-  connection of one number, as a linked device of your phone. It runs on one always-on host; every
-  other Sova host sends through that host's Sova, picked from Settings → Outreach's list of the
-  senders it can use (each with its number's last 3 digits, its state and its sends against the
-  limits). Sova never restarts or stops it. Settings → Outreach shows its state live and, when you
+  connection of one number, as a linked device of your phone. It runs on an always-on host; other
+  Sova hosts send through that host's Sova. A host can run several, one number each
+  ([whatsapp.md](whatsapp.md#run-a-second-number)). Settings → Outreach lists every number a host
+  can use (each with its label, its last 3 digits, its state and its sends against its own limits)
+  and marks one the default; each organization sends from the default or from the number its own
+  **WhatsApp Number** card picks, and only from that one: a message never moves to another number
+  when its own is down or at its limit. Sova never restarts or stops it. Settings → Outreach shows its state live and, when you
   ask, reconnects it, pauses or resumes it, or starts its stopped service once; on the sender's own
   host only, **Link a Phone** pairs it (a QR on the page, or a pairing code) and **Unlink This
   Number** logs it out and deletes its keys, after you type UNLINK
-  ([whatsapp.md](whatsapp.md#4-pair)). No other host and no agent can link or unlink it. While it is
-  down, Needs you says so, and a send is refused at once with the why.
+  ([whatsapp.md](whatsapp.md#4-pair)). No other host and no agent can link or unlink it. While a
+  number is down, Needs you says so for that number, and its organizations' sends are refused at
+  once with the why.
 
 ## Who may send
 
@@ -61,8 +65,9 @@ Replies are not read: the sender drops incoming messages unread, and people answ
   which project, gathering or preview, who sent it, sent / delivered / read / failed / refused /
   unknown). Never a number, a link, a token, a message id, the message or the note. `unknown` means
   the message left and no answer came back (a timeout, a dropped connection, a Sova restart mid-send):
-  it may have arrived, so the link it carried is kept, and it is never sent again on its own. A
-  person's page lists these under **Sent on WhatsApp**.
+  it may have arrived, so the link it carried is kept, and it is never sent again on its own. Each
+  line also says which number it went from (its label and last 3 digits). A person's page lists
+  these under **Sent on WhatsApp**, with the number that reached them.
 - **On the host that sent**, a short-lived map from WhatsApp's message reference to that line, so
   receipts find their send.
 - **In the sender's directory**, its credentials (the linked device: keep it secret, see
@@ -71,7 +76,7 @@ Replies are not read: the sender drops incoming messages unread, and people answ
 
 ## Limits
 
-The number's limits live in the sender, shared by every host that sends through it: by default one
+Each number's limits live in its sender, shared by every host that sends through it: by default one
 send every 3 seconds at most, 20 an hour, 60 a day. Settings → Outreach can pause all sending from
 a host, or, on the sender's host, pause the sender itself for every host. See
 [whatsapp.md](whatsapp.md#9-operate).

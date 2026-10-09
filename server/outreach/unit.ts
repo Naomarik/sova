@@ -5,14 +5,17 @@ import { join, resolve } from "node:path";
 import type { SenderUnit } from "../../shared/outreach";
 
 /**
- * The sender's systemd user unit (§app.outreach/sender-controls): Sova keeps the sender a separate
- * program, and only offers **Start Sender** while its unit is installed, serves the socket Sova uses,
- * and is inactive or failed. Start runs `systemctl --user start` once per press: never a restart,
+ * A sender's systemd user unit (§app.outreach/sender-controls): Sova keeps the sender a separate
+ * program, and only offers **Start Sender** while its unit is installed, serves that sender's socket,
+ * and is inactive or failed. This host's own sender is `sova-whatsapp.service`; a number added as
+ * `<name>` is the template instance `sova-whatsapp@<name>.service` (or the plain unit, if that serves its socket). Start runs `systemctl --user start` once per press: never a restart,
  * a stop, or a loop. Anything else (no systemd, another unit, an EnvironmentFile Sova can't read)
  * offers nothing.
  */
 
 export const SENDER_UNIT = "sova-whatsapp.service";
+/** The units that may serve a sender: an added number's template instance first. */
+export const unitNames = (name?: string): string[] => (name ? [`sova-whatsapp@${name}.service`, SENDER_UNIT] : [SENDER_UNIT]);
 
 export type Systemctl = (args: string[]) => Promise<{ code: number; stdout: string }>;
 
@@ -31,7 +34,7 @@ let platform: NodeJS.Platform = process.platform;
 export function setSystemctlForTest(fn: Systemctl | null, os: NodeJS.Platform = "linux"): void {
   systemctl = fn ?? realSystemctl;
   platform = fn ? os : process.platform;
-  cache = null;
+  cache.clear();
 }
 
 /** `Environment=A=1 B="two words"` as a map (systemd quotes a value with spaces). */
@@ -59,22 +62,25 @@ export function unitSocket(env: Record<string, string>, home = homedir()): strin
   return join(waHome, "sender.sock");
 }
 
-let cache: { socket: string; at: number; unit: SenderUnit | null } | null = null;
+const cache = new Map<string, { at: number; unit: SenderUnit | null }>();
 const CACHE_MS = 10_000;
 
-/** The unit when it is installed and serves `socket`; null otherwise. Read at most every 10 s. */
-export async function senderUnit(socket: string, now = Date.now()): Promise<SenderUnit | null> {
-  if (cache && cache.socket === socket && now - cache.at < CACHE_MS) return cache.unit;
-  const unit = await readUnit(socket);
-  cache = { socket, at: now, unit };
+/** The unit when one is installed and serves `socket` (`name`: an added number's); null otherwise. Read at most every 10 s. */
+export async function senderUnit(socket: string, name?: string, now = Date.now()): Promise<SenderUnit | null> {
+  const key = `${name ?? ""}\0${socket}`;
+  const hit = cache.get(key);
+  if (hit && now - hit.at < CACHE_MS) return hit.unit;
+  let unit: SenderUnit | null = null;
+  for (const n of unitNames(name)) if ((unit = await readUnit(n, socket))) break;
+  cache.set(key, { at: now, unit });
   return unit;
 }
 
-async function readUnit(socket: string): Promise<SenderUnit | null> {
+async function readUnit(name: string, socket: string): Promise<SenderUnit | null> {
   if (platform !== "linux") return null;
   let out: { code: number; stdout: string };
   try {
-    out = await systemctl(["show", SENDER_UNIT, "--property=LoadState,ActiveState,Environment"]);
+    out = await systemctl(["show", name, "--property=LoadState,ActiveState,Environment"]);
   } catch {
     return null;
   }
@@ -86,20 +92,20 @@ async function readUnit(socket: string): Promise<SenderUnit | null> {
   }
   if (props.LoadState !== "loaded" || !props.ActiveState) return null;
   if (unitSocket(parseEnvironment(props.Environment ?? "")) !== resolve(socket)) return null;
-  return { name: SENDER_UNIT, active: props.ActiveState };
+  return { name, active: props.ActiveState };
 }
 
 /** Whether Start may run now: installed, serving this socket, and not running. */
 export const startable = (u: SenderUnit | null | undefined): boolean => !!u && (u.active === "inactive" || u.active === "failed");
 
-/** One `systemctl --user start`, only while startable. */
-export async function startSenderUnit(socket: string): Promise<{ ok: true } | { ok: false; why: string }> {
-  cache = null;
-  const unit = await senderUnit(socket);
-  if (!unit) return { ok: false, why: `No ${SENDER_UNIT} user unit serves this host's sender socket, so Sova has nothing to start.` };
-  if (!startable(unit)) return { ok: false, why: `${SENDER_UNIT} is ${unit.active}: Sova starts it only while it is stopped.` };
-  const r = await systemctl(["start", SENDER_UNIT]).catch(() => ({ code: 1, stdout: "" }));
-  cache = null;
-  if (r.code !== 0) return { ok: false, why: `systemctl --user start ${SENDER_UNIT} failed (exit ${r.code}). See journalctl --user -u ${SENDER_UNIT}.` };
+/** One `systemctl --user start` of the unit serving `socket`, only while startable. */
+export async function startSenderUnit(socket: string, name?: string): Promise<{ ok: true } | { ok: false; why: string }> {
+  cache.clear();
+  const unit = await senderUnit(socket, name);
+  if (!unit) return { ok: false, why: `No ${unitNames(name).join(" or ")} user unit serves this sender's socket, so Sova has nothing to start.` };
+  if (!startable(unit)) return { ok: false, why: `${unit.name} is ${unit.active}: Sova starts it only while it is stopped.` };
+  const r = await systemctl(["start", unit.name]).catch(() => ({ code: 1, stdout: "" }));
+  cache.clear();
+  if (r.code !== 0) return { ok: false, why: `systemctl --user start ${unit.name} failed (exit ${r.code}). See journalctl --user -u ${unit.name}.` };
   return { ok: true };
 }

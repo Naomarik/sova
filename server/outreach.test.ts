@@ -481,7 +481,7 @@ describe("§app.outreach/sender-controls, /sender-health: the operator's own con
     assert.deepEqual([r.body.outcome, r.body.code], ["refused", "sender-down"]);
     assert.ok(Date.now() - t0 < 5000, "never the sender's 15 s wait");
     const items = senderAttention();
-    assert.deepEqual(items.map((i) => [i.kind, i.tier, i.detail, i.href]), [["whatsapp-down", "act", "WhatsApp sending is down: Another process opened these credentials (440).", "#/settings/outreach"]]);
+    assert.deepEqual(items.map((i) => [i.kind, i.tier, i.detail, i.href]), [["whatsapp-down", "act", "WhatsApp sending is down for This host: Another process opened these credentials (440).", "#/settings/outreach"]]);
     const rc = await post("reconnect");
     assert.equal(rc.status, 200, await rc.clone().text());
     await senderOpen();

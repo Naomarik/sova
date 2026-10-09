@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { OutreachInfo, SenderStatus } from "../../shared/outreach";
-import { entryChoice, entryPicked, outreachDraftOf, senderActions, senderFacts, senderUse, senderWords } from "./outreach";
+import { entryChoice, entryPicked, labelsOf, numberWords, outreachDraftOf, outreachProblem, routeOf, sameOutreach, senderActions, senderFacts, senderUse, senderWords } from "./outreach";
 
 const now = new Date(2026, 9, 9, 14, 20).getTime();
 const at = (h: number, m: number) => new Date(2026, 9, 9, h, m).toISOString();
@@ -30,8 +30,9 @@ test("the figures: since when, the number, sends and automatic reconnects agains
 });
 
 test("controls: Reconnect for down, replaced and a backoff wait, from either route; blocked only here, behind its warning; Pause and Start only here", () => {
-  const local = (sender: SenderStatus, unit?: OutreachInfo["unit"]) => senderActions({ file: { version: 1, sender: { local: {} }, acceptFrom: [], paused: false }, sender, ...(unit ? { unit } : {}) });
-  const via = (sender: SenderStatus) => senderActions({ file: { version: 1, sender: { via: { nodeId: "n" } }, acceptFrom: [], paused: false }, sender });
+  const local = (sender: SenderStatus, unit?: OutreachInfo["unit"]) => senderActions({ selected: "local", sender, ...(unit ? { unit } : {}) });
+  const via = (sender: SenderStatus) => senderActions({ selected: "peer:n", sender });
+  assert.deepEqual(senderActions({ selected: "local:sales", sender: { state: "down" } }), local({ state: "down" }), "an added number is this host's too");
   assert.deepEqual(local({ state: "down" }), { reconnect: "plain", pause: "pause", start: false, link: false, unlink: true });
   assert.deepEqual(local({ state: "replaced", paused: true }), { reconnect: "plain", pause: "resume", start: false, link: false, unlink: true });
   assert.deepEqual(local({ state: "blocked", paused: true }).reconnect, "blocked");
@@ -47,15 +48,14 @@ test("controls: Reconnect for down, replaced and a backoff wait, from either rou
 });
 
 test("Link a Phone and Unlink This Number: only on the sender's own host; link while unpaired, unlink while a device is linked, logged out included", () => {
-  const file = (sender: OutreachInfo["file"]["sender"]) => ({ version: 1 as const, sender, acceptFrom: [] as string[], paused: false });
-  const at = (sender: OutreachInfo["file"]["sender"], state: SenderStatus["state"]) => senderActions({ file: file(sender), sender: { state } });
+  const at = (selected: string | undefined, state: SenderStatus["state"]) => senderActions({ ...(selected ? { selected } : {}), sender: { state } });
   const states = ["off", "unreachable", "unpaired", "linking", "connecting", "open", "logged-out", "replaced", "blocked", "down"] as const;
-  const links = states.filter((s) => at({ local: {} }, s).link);
-  const unlinks = states.filter((s) => at({ local: {} }, s).unlink);
+  const links = states.filter((s) => at("local", s).link);
+  const unlinks = states.filter((s) => at("local:sales", s).unlink);
   assert.deepEqual(links, ["unpaired"]);
   assert.deepEqual(unlinks, ["connecting", "open", "logged-out", "replaced", "blocked", "down"]);
   for (const s of states) {
-    for (const r of [{ via: { nodeId: "n" } }, "off"] as const) {
+    for (const r of ["peer:n", undefined] as const) {
       const a = at(r, s);
       assert.equal(a.link || a.unlink, false, `${JSON.stringify(r)} ${s}: never from another host`);
     }
@@ -78,6 +78,24 @@ test("the list: each entry's use against its limits, and the setting each one st
   const viaGate = outreachDraftOf({ version: 1, sender: { via: { nodeId: "nGATE" } }, acceptFrom: [], paused: false });
   assert.equal(entryPicked(gate, viaGate), true);
   assert.equal(entryPicked(local, viaGate), false);
-  assert.deepEqual(entryChoice(gate), { sender: "via", viaNodeId: "nGATE" });
-  assert.deepEqual(entryChoice(local), { sender: "local", viaNodeId: "" });
+  assert.deepEqual(entryChoice(gate), { sender: "peer:nGATE" });
+  assert.deepEqual(entryChoice(local), { sender: "local" });
+});
+
+test("the draft: the default by entry id, added numbers and labels, round-tripping to the file an earlier version wrote", () => {
+  const old = { version: 1 as const, sender: { local: { socket: "/run/wa.sock" } }, acceptFrom: [] as string[], paused: false };
+  const d = outreachDraftOf(old);
+  assert.deepEqual([d.sender, d.socket, d.numbers, d.labels], ["local", "/run/wa.sock", [], {}]);
+  assert.equal(sameOutreach(d, old), true, "an earlier file reads as unchanged");
+  assert.deepEqual(routeOf(d), old.sender);
+  const two = { ...d, sender: "local:sales", numbers: [{ id: "sales", socket: "/run/sales.sock" }], labels: { local: "Office", "local:sales": " Sales ", "peer:n": "" } };
+  assert.deepEqual(routeOf(two), { number: { id: "sales" } });
+  assert.deepEqual(labelsOf(two), { local: "Office", "local:sales": "Sales" });
+  assert.equal(sameOutreach(two, old), false);
+  assert.equal(sameOutreach(two, { ...old, sender: { number: { id: "sales" } }, numbers: [{ id: "sales", socket: "/run/sales.sock" }], labels: { "local:sales": "Sales", local: "Office" } } as never), true);
+  assert.equal(outreachProblem(two), null);
+  assert.match(outreachProblem({ ...two, numbers: [] }) ?? "", /default number was removed/);
+  assert.match(outreachProblem({ ...two, labels: { local: "+971 50 123 4567" } }) ?? "", /phone number/);
+  assert.match(outreachProblem({ ...two, numbers: [{ id: "Sales!", socket: "/x" }] }) ?? "", /lowercase/);
+  assert.equal(numberWords({ label: "Sales", me: "…456" }), "Sales …456");
 });

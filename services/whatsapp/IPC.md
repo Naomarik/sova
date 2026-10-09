@@ -92,8 +92,11 @@ host uses them: `sova-whatsapp pause | resume | pair | reconnect | unlink` on it
 own Settings → Outreach there, which sends `reconnect` and `pause` only when the operator presses
 Reconnect Now or Pause/Resume Sender, `link` (and `link {cancel}`) only for Link a Phone (or Use a
 Pairing Code Instead, and Cancel), and `unlink` only for Unlink This Number after the operator typed
-UNLINK. Sova does so only while its own setting says the sender is on this host; it never sends any
-of them on its own, and its Overseer has no way to ask. The `qr` events and the pairing code reach
+UNLINK. Sova does so only for a sender its own setting lists on this host (its own, or a number added
+there, each a separate sender process with its own `SOVA_WA_HOME` and socket; IPC is unchanged and
+one connection is one number), naming the sender each request is for; it never sends any of them on
+its own, and its Overseer has no way to ask. Its relay serves peers through the host's default
+number only. The `qr` events and the pairing code reach
 the operator's page only, and only for a link the page started. The sender cannot tell a relayed request from a local one, since
 the relay is a local client too, so the guarantee is the relay's: it forwards exactly `status`, `check`,
 `send` and `events`, each rebuilt from named fields (never a caller's frame passed through), and

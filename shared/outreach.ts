@@ -30,6 +30,13 @@
  * The senders this host can use (§app.outreach/sender-list; main listener only, never the Overseer's):
  * GET  /api/outreach/senders             -> SenderList
  *
+ * Each organization's number (§app.outreach/org-sender; guarded the same):
+ * GET  /api/outreach/orgs/:orgId         -> OrgSenderView
+ * PUT  /api/outreach/orgs/:orgId         { sender: <entry id> | null } -> OrgSenderView | 400
+ *
+ * The controls and the link routes take `sender: <entry id>` in the body (GET: `?sender=`), and
+ * `GET /api/outreach?sender=<id>` answers that sender's state; absent: the default.
+ *
  * Peer routes (peer listener; the caller is its verified StableID), only on a host whose sender is
  * `local` and whose acceptFrom lists the caller (403 { code: "not-accepted" } / 404 { code: "no-sender" }):
  * POST /api/peer/outreach/status         {} -> the sender's status frame
@@ -45,11 +52,48 @@ export type ChannelId = "whatsapp";
 /** The sender IPC v1 states (services/whatsapp/IPC.md), plus this host's own two. */
 export type SenderState = "off" | "unreachable" | "unpaired" | "linking" | "connecting" | "open" | "logged-out" | "replaced" | "blocked" | "down";
 
-export type SenderRoute = "off" | { local: { socket?: string } } | { via: { nodeId: string } };
+/** The default sender: off, this host's own (`local`), a sender added on this host (`number`, by its name), or a peer's. */
+export type SenderRoute = "off" | { local: { socket?: string } } | { number: { id: string } } | { via: { nodeId: string } };
+
+/** A further sender on this host (§app.outreach/sender-list): its own process and socket; its entry id is `local:<id>`. */
+export interface LocalNumber {
+  id: string;
+  socket: string;
+}
+
+/** An added number's name: lowercase letters, digits and dashes, at most 32. */
+export const NUMBER_ID = /^[a-z0-9][a-z0-9-]{0,31}$/;
+/** A sender's entry id (§app.outreach/sender-list): `local`, `local:<name>` or `peer:<StableID>`. */
+export const ENTRY_ID = /^(local|local:[a-z0-9][a-z0-9-]{0,31}|peer:[A-Za-z0-9_-]{1,128})$/;
+export const LABEL_MAX = 24;
+
+/** Why a number's label can't be kept, or null: at most 24 characters, never 4 digits in a row (a label never holds a number). */
+export function labelProblem(label: string): string | null {
+  const t = label.trim();
+  if (!t) return "A label can't be empty.";
+  if (t.length > LABEL_MAX) return `A label is at most ${LABEL_MAX} characters.`;
+  if (/\d{4}/.test(t.replace(/[\s\-().+]/g, ""))) return "A label can't hold a phone number: use a name, like Office.";
+  return null;
+}
+
+/** The entry id of a route (null: off). */
+export function routeEntryId(route: SenderRoute): string | null {
+  if (route === "off") return null;
+  if ("local" in route) return "local";
+  if ("number" in route) return `local:${route.number.id}`;
+  return `peer:${route.via.nodeId}`;
+}
 
 export interface OutreachFile {
   version: 1;
+  /** The default sender (§app.outreach/sender-list); off sends nothing from this host. */
   sender: SenderRoute;
+  /** Further senders on this host, one number each. */
+  numbers?: LocalNumber[];
+  /** The operator's label per entry id. */
+  labels?: Record<string, string>;
+  /** Each organization's own pick, by entry id (§app.outreach/org-sender); absent: the default. */
+  orgs?: Record<string, string>;
   /** Which peers may send through this host's local sender. */
   acceptFrom: "all" | string[];
   /** Every send from this host is refused while on. */
@@ -60,7 +104,7 @@ export interface OutreachFile {
   senderAuthDir?: string;
 }
 
-export type OutreachPatch = Partial<Pick<OutreachFile, "sender" | "acceptFrom" | "paused" | "authDir">>;
+export type OutreachPatch = Partial<Pick<OutreachFile, "sender" | "acceptFrom" | "paused" | "authDir" | "numbers" | "labels">>;
 
 export interface SenderStatus {
   state: SenderState;
@@ -89,6 +133,8 @@ export interface SenderUnit {
 
 export interface OutreachInfo {
   file: OutreachFile;
+  /** The entry `sender`, `unit` and the controls are about (`?sender=<id>`, else the default); absent while off. */
+  selected?: string;
   sender: SenderStatus;
   /** Paths the Overseer's file tools deny now (§app.outreach/secrets). */
   protected: string[];
@@ -98,7 +144,7 @@ export interface OutreachInfo {
   peers: { nodeId: string; label: string }[];
   /** The file on disk could not be parsed (treated as off). */
   problem?: string;
-  /** The local sender's unit (Start Sender), when installed and serving this socket; absent otherwise. */
+  /** The selected local sender's unit (Start Sender), when installed and serving its socket; absent otherwise. */
   unit?: SenderUnit;
 }
 
@@ -124,17 +170,34 @@ export interface SenderLinkView {
   why?: string;
 }
 
-/** One sender this host can use (§app.outreach/sender-list); `id` names it in the list (`local`, `peer:<StableID>`). */
+/** One sender this host can use (§app.outreach/sender-list); `id` names it (`local`, `local:<name>`, `peer:<StableID>`). */
 export interface SenderEntry {
   id: string;
   where: "local" | "peer";
   /** The peer's StableID (where: peer). */
   nodeId?: string;
-  /** "This host", or the peer's name. */
+  /** An added number's socket (id `local:<name>`). */
+  socket?: string;
+  /** The operator's label, else "This host", the added number's name, or the peer's name. */
   label: string;
   status: SenderStatus;
-  /** It is the one this host's saved setting sends through. */
+  /** It is the default. */
   chosen: boolean;
+}
+
+/** GET /api/outreach/orgs/:orgId (§app.outreach/org-sender): the organization's number. */
+export interface OrgSenderView {
+  /** Outreach is off on this host: nothing goes, whatever the pick. */
+  off: boolean;
+  /** The organization's own pick, or null: the default. */
+  choice: string | null;
+  /** The number its messages go from now. */
+  effective?: { id: string; label: string; me?: string };
+  /** The pick names a number no longer on the list: the default is used. */
+  gone?: string;
+  /** The default's entry, for "Default ({label} …123)". */
+  default?: { id: string; label: string; me?: string };
+  options: { id: string; label: string; me?: string }[];
 }
 
 export interface SenderList {
@@ -147,10 +210,16 @@ export const SENDER_DOWN_STATES: ReadonlySet<SenderState> = new Set(["down", "lo
 /** How long the sender may be unreachable before Needs you says so: a restart takes seconds. */
 export const SENDER_UNREACHABLE_ALERT_MS = 5 * 60_000;
 
+/** Sova's own sentence for unpaired: the sender's points at its terminal command, Sova's at Settings (`sova-whatsapp status` keeps the sender's). */
+export const UNPAIRED_WHY = "No device is linked to the sender yet: link a phone in Settings → Outreach on the sender's host.";
+
+/** The why Sova says for a state: the sender's own, except unpaired's. */
+export const sovaWhy = (s: Pick<SenderStatus, "state" | "why">): string | undefined => (s.state === "unpaired" ? UNPAIRED_WHY : s.why);
+
 /** "WhatsApp is down: {why}" for a state that refuses sends, else null. */
 export function senderDownWhy(s: Pick<SenderStatus, "state" | "why">): string | null {
   if (!SENDER_DOWN_STATES.has(s.state) && s.state !== "unreachable") return null;
-  return `WhatsApp is down: ${s.why ?? (s.state === "unreachable" ? "the sender doesn't answer." : `the sender is ${s.state}.`)}`;
+  return `WhatsApp is down: ${sovaWhy(s) ?? (s.state === "unreachable" ? "the sender doesn't answer." : `the sender is ${s.state}.`)}`;
 }
 
 export type SendOutcome = "sent" | "failed" | "refused";
@@ -214,6 +283,10 @@ export interface OutreachLogLine {
   by: "operator" | "operator-via-overseer" | "project-overseer";
   event: OutreachEvent;
   code?: string;
+  /** The number it went from (§app.outreach/org-sender): its entry id, its label, and its last 3 digits "…123"; never the number. */
+  sender?: string;
+  senderLabel?: string;
+  from?: string;
 }
 
 /** A person page's sends (§app.outreach/log), newest first: the latest event of each. */
@@ -226,6 +299,8 @@ export interface PersonSendRow {
   channel: ChannelId;
   event: OutreachEvent;
   code?: string;
+  /** The number that reached them: its label and last 3 digits, when the log says. */
+  from?: { label?: string; me?: string };
 }
 
 /** Why a channel is not ready, as the strip's disabled button says it. */

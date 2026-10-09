@@ -49,10 +49,10 @@ export function setStampPeopleSource(fn: NonNullable<typeof stampPeopleSource>):
   stampPeopleSource = fn;
 }
 
-/** Why the channel an act goes out on is down now, as the act's `outage` (`{why}`), or null: server/outreach/core.ts
+/** Why the channel an act of org `orgId` goes out on is down now, as the act's `outage` (`{why}`), or null: server/outreach/core.ts
     registers it for `outreach/send` from its last reading of the sender. A released act whose stamp carries one waits
     for the channel in an outage hold (engine `:outage` act meta), at most 24 h from its first wait. */
-let stampOutageSource: ((event: string) => { why: string } | null) | null = null;
+let stampOutageSource: ((event: string, orgId: string) => { why: string } | null) | null = null;
 export function setStampOutageSource(fn: NonNullable<typeof stampOutageSource>): void {
   stampOutageSource = fn;
 }
@@ -143,7 +143,7 @@ export async function openOrgHost(opts: OpenOptions): Promise<OrgHostApi> {
         settings.defaults(),
         (projectId) => (projectId ? ceilingOf(opts.orgId, projectId) : null),
       );
-      const outage = stampOutageSource?.(event) ?? null;
+      const outage = stampOutageSource?.(event, opts.orgId) ?? null;
       return { ...env, ...(stampPeopleSource?.(opts.orgId, payload) ?? {}), ...(outage ? { outage } : {}) } as Envelope;
     };
     let host: OrgHostApi;

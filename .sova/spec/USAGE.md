@@ -101,7 +101,7 @@ in your reply ("Also updates §X: <what>"). A gap the foreign § already had (a 
 named) is not a change your task made, even when your feature now depends on that field: mention
 it, or open a baseline draft. Before finishing, read each § the census ranks read first (spec mode's one
 `Unread § your change landed in` line after your last edit; without it, `census --changed --related`'s `readFirst`);
-the rest are named. Every changed file in the boundary is claimed, and any changed file outside it whose change a user
+the rest are listed by the census command that line gives (or the census itself). Every changed file in the boundary is claimed, and any changed file outside it whose change a user
 sees is spec'd.
 Exempt work skips the draft, not the census.
 

@@ -557,19 +557,25 @@ const READ_FIRST = 5;
 
 /**
  * The unread line over the ranked census, the session's own files and its reads: the landed foreign §
- * in rank order, at most 5 marked read first (a score or a stale literal), the rest named. → {key, text?}:
+ * in rank order, at most 5 marked read first (a score or a stale literal), the rest counted with the command that lists them. → {key, text?}:
  * key is the landed set (unreadSaid); no text when none landed or every one was read.
  */
-export function unreadLine(v: RankedView, own: ReadonlySet<string>, read: ReadonlySet<string>): { key: string; text?: string } {
+export function unreadLine(v: RankedView, own: ReadonlySet<string>, read: ReadonlySet<string>, command = "census --changed --related"): { key: string; text?: string } {
 	const landed = v.rank.filter((r) => r.files.some((f) => own.has(f)));
 	const key = landed.map((r) => r.id).sort().join(",");
 	const unread = landed.filter((r) => !read.has(r.id));
 	if (!unread.length) return { key };
 	const first = unread.filter((r) => r.score > 0 || r.stale.length).slice(0, READ_FIRST);
-	const named = unread.filter((r) => !first.includes(r));
+	const more = unread.length - first.length;
 	const shown = (r: RankedView["rank"][number]) => (r.stale.length ? `${r.id} (still states ${r.stale.join(", ")})` : r.id);
-	const parts = [first.length ? `read first ${first.map(shown).join(", ")}` : "", named.length ? `named ${named.map(shown).join(", ")}` : ""].filter(Boolean);
-	return { key, text: `${DIGEST_TAG} ${UNREAD_PREFIX}${parts.join("; ")}` };
+	const rest = !first.length ? `${more} unread: ${command}` : more ? `; +${more} more: ${command}` : "";
+	return { key, text: `${DIGEST_TAG} ${UNREAD_PREFIX}${first.length ? `read first ${first.map(shown).join(", ")}` : ""}${rest}` };
+}
+
+/** The census the unread line came from, as a shell command printing every § it lists (human output: --json dropped). */
+function unreadCommand(args: string[]): string {
+	const q = (a: string) => (/^[\w@%+=:,./-]+$/.test(a) ? a : `'${a.replace(/'/g, "'\\''")}'`);
+	return `node "$core/sova-spec.mjs" ${args.filter((a) => a !== "--json").map(q).join(" ")}`;
 }
 
 /**
@@ -588,12 +594,12 @@ async function unreadStep(next: CensusState, call: CensusCall, view: GitView, co
 	const run = async (draft?: string) => {
 		const args = [tool, "census", "--changed", "--related", "--json", "--root", root, ...(next.base ? ["--base", next.base] : []), ...(next.ownBases ?? []).flatMap((rev) => ["--own-base", rev]), ...(draft ? ["--spec", draft] : [])];
 		const r = await io.exec("node", args, { cwd: root, timeout: TOOL_TIMEOUT_MS, signal: call.signal });
-		return { view: parseRanked(r.stdout), r };
+		return { view: parseRanked(r.stdout), r, args };
 	};
 	let r = await run(spec);
 	if (!r.view && spec) r = await run(); // an unreadable draft: the current spec still maps the files
 	if (!r.view) return failed(next, r.r.stdout.trim() ? "unusable census output" : `the census produced no output (${silentCause(r.r)})`);
-	const line = unreadLine(r.view, own, new Set(next.readIds ?? []));
+	const line = unreadLine(r.view, own, new Set(next.readIds ?? []), unreadCommand(r.args.slice(1)));
 	if (line.key === next.unreadSaid) return { state: next, result: {} };
 	next.unreadSaid = line.key;
 	return { state: next, result: line.text ? { text: line.text } : {} };

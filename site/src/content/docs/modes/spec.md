@@ -54,7 +54,7 @@ numbers or names in a promise you agreed to without a new agreement, promotion p
 Once the agent stops editing, its next tool call carries one more line: **"Unread § your change
 landed in"**. It names the claims the agent's own changed files land in that the agent hasn't read
 yet, ranked by the names, strings and numbers in the lines it changed: at most five are marked
-read first, and the rest are named on the same line. A claim that still states a value the change
+read first, and the rest are counted, followed by the one command that lists them. A claim that still states a value the change
 removed (say, "12 MB" after a limit went to 16 MB) says so and comes first. The agent reads the ones
 marked first. The line comes once, and again only when a later edit lands in other claims.
 

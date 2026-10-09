@@ -6,7 +6,33 @@ hand-written Markdown file in the site's docs collection, written in the user's 
 claims its record `requires`, and it promises nothing those claims don't say. The pages carry no §
 ids, no source paths and no API routes; this area is where a page's sources are recorded, so a
 change to a claim names the pages it reaches (`impact`) and a page names the claims it rests on
-(`where`). The site sits outside the spec's code boundary.
+(`where`). The docs pages, and the layout, styles and data they are built from, sit inside the spec's code boundary; the rest of the site (the landing, Mesh and Organizations pages, brand, icons, images, screenshots, mock-ups, tooling and generated files) is excluded from it on purpose.
+
+## §site.docs/frame — How a docs page is built
+
+Every `/docs/` page is one Markdown file in the docs collection (`src/content/docs/`); its path is
+its URL under `/docs/`, and an `index.md` is its folder's own page. Each file's front matter gives
+a title, a description, a group (Start, Modes, Features or Setup), an optional subgroup (Major or
+Minor, under Modes) and an order. Pages are listed by group in that order, then a group's own pages
+before each subgroup, then by `order`; the sidebar and Previous/Next follow that sequence. A page
+shows the shared header, the page list grouped with subgroups as labelled indented lists (a sticky
+sidebar from 1024px wide, a `<details>` menu above the page below that, no script), an eyebrow with
+the group or subgroup label, the title, the description as a lead, the body, Previous/Next links,
+and a footer with links to Sova home, Sova on GitHub, the licence and pi, and the revision and date the pages
+were written from the spec. Nothing on a page widens it: each table sits in its own sideways
+scrolling region named after the heading above it, code blocks scroll inside themselves and inline
+code breaks anywhere. Code blocks are plain, in the site's own colours, with no syntax highlighting.
+The site builds to static HTML and CSS.
+
+## §site.docs/chrome — The header and theme the docs pages share
+
+The docs pages share the site's base page and header. The header shows the Sova mark linking home,
+a "← Back to Sova" link, a Docs link marked current, Mesh and Organizations links where the bar has
+room, a GitHub link and a theme toggle. The site is dark by default, like the app; the toggle
+switches light and dark, sets the browser's theme colour, updates its label and pressed state, and
+is remembered in the browser so a later page opens in the saved theme without flashing the other.
+Every page has a Skip to Content link, a title and description with matching social-card metadata,
+and the site's fonts and colour tokens.
 
 ## §site.docs/index — Sova docs (`/docs/`)
 

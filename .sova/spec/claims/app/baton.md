@@ -253,8 +253,12 @@ once), **lease** (an offer's lock on its first taker).
   choose, and wait.
 - `goal_done({summary})`: the goal is met. An invisible `sova-baton-done` entry `{v:1, summary}`;
   the session is **done**, no one holds the baton, and the turn ends.
-- `record_decision({area, ownerArea, statement, quote})`: an invisible `sova-baton-decision` entry
-  `{v:1, area, ownerArea, statement, quote, by}` (`by` = the holder). `area` is the topic in a few
+- `record_decision({area, ownerArea, statement, quote, disposition?, options?, reason?, review?})`:
+  an invisible `sova-baton-decision` entry `{v:1, area, ownerArea, statement, quote, by, name}`
+  (`by` = the holder, `name` = what the conversation called them then; entries written before have
+  none), carrying the optional fields when given: `disposition` (`choose`, the default,
+  `reject`, `defer` or `do-not-do`), `options` (`{label, outcome, reason?}`, ids `o1`…`oN`), `reason` and
+  `review` (§app.org-history/negatives). `area` is the topic in a few
   words; `ownerArea` is one of the roster's decision areas or "none", checked against the roster
   (a value that is neither is refused, naming the choices: §app.requirements/owner-area). The turn
   goes on — unless the same reply also

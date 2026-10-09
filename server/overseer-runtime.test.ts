@@ -328,6 +328,11 @@ describe("turns the user did not start are read-only", () => {
     sova_navigate: { page: "usage" },
   };
   const READS = ["sova_attention", "sova_list_sessions", "sova_session", "sova_alignment", "sova_read_session", "sova_list_groups", "sova_list_targets", "sova_list_models", "sova_list_subagent_profiles", "sova_list_folders", "sova_ideas", "sova_todos", "sova_links", "sova_public_links", "sova_orgs", "sova_org_person", "sova_projects"];
+  /** Reads with a rule of their own: the organization's history only in a turn the operator started
+, refused with its own sentence otherwise, never the generic read-only one. */
+  const OPERATOR_TURN_READS: Record<string, { params: Record<string, unknown>; refusal: string }> = {
+    sova_org_history: { params: { org: "any", action: "search" }, refusal: "The organization's history is read only in a turn the operator started: ask them." },
+  };
   /** Reads by their parameters: sova_org_project without op reads (with op it acts, above). */
   const READ_CALLS: [string, Record<string, unknown>][] = [
     ["sova_org_project", { org: "any", project: "any" }],
@@ -337,7 +342,7 @@ describe("turns the user did not start are read-only", () => {
 
   test("every Overseer tool is classified: acting, allowed unattended, or a read", () => {
     const names = overseer.buildOverseerTools().map((t) => t.name).sort();
-    assert.deepEqual(names, [...new Set([...Object.keys(ACTING), ...Object.keys(ALLOWED), ...READS, ...READ_CALLS.map(([n]) => n)])].sort());
+    assert.deepEqual(names, [...new Set([...Object.keys(ACTING), ...Object.keys(ALLOWED), ...READS, ...READ_CALLS.map(([n]) => n), ...Object.keys(OPERATOR_TURN_READS)])].sort());
   });
 
   test("in a wake-up or brief turn every acting tool refuses, and says to ask with sova_card", async () => {
@@ -354,6 +359,8 @@ describe("turns the user did not start are read-only", () => {
       for (const [name, params] of Object.entries(ALLOWED)) assert.notEqual(await run(name, params), "readonly", `${name} stays allowed`);
       for (const name of READS) assert.notEqual(await run(name, {}), "readonly", `${name} stays allowed`);
       for (const [name, params] of READ_CALLS) assert.notEqual(await run(name, params), "readonly", `${name} without op stays allowed`);
+      for (const [name, { params, refusal }] of Object.entries(OPERATOR_TURN_READS))
+        await assert.rejects(tool(name).execute("tc", params, undefined, undefined, undefined as never) as Promise<unknown>, (e: Error) => e.message === refusal, `${name} in a ${unattended}`);
     }
     assert.match(UNATTENDED_REFUSAL, /sova_card/);
   });

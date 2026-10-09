@@ -132,26 +132,35 @@ describe("a project's coding sessions", async () => {
     const r0 = rowOf();
     assert.deepEqual(r0 && { state: r0.state, merged: r0.merged, ahead: r0.ahead, startedBy: r0.startedBy, branch: r0.branch, target: r0.target }, { state: "open", merged: false, ahead: 0, startedBy: "operator", branch: w.branch, target: "master" });
     await po.ensureProjectOverseer(project.id);
-    await assert.rejects(po.mergeCodingWorktree(project.id, started.sessionId), /has nothing to merge into master/);
-    writeFileSync(join(w.path, "login.txt"), "login\n");
-    // Uncommitted: refused, and the overseer is told (soon), so it can ask the session to commit.
-    await assert.rejects(po.mergeCodingWorktree(project.id, started.sessionId), /uncommitted changes in 1 file \(login.txt\)/);
-    const memo = store.readMemo(p);
-    assert.ok(
-      memo.pending.some((r) => r.startsWith('Merge Branch for "Build the login page" was refused: The worktree has uncommitted changes in 1 file')),
-      JSON.stringify(memo.pending),
-    );
-    assert.ok(memo.soonAt, "a look soon");
-    git(w.path, "add", "login.txt");
-    git(w.path, "-c", "user.email=t@example.invalid", "-c", "user.name=T", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "login");
-    // The reasons noted from here on (the watch keeps them until its next look).
-    const seen = store.readMemo(p).pending.length;
-    info = await po.mergeCodingWorktree(project.id, started.sessionId);
-    assert.equal(readFileSync(join(client, "login.txt"), "utf8"), "login\n");
-    // Merged: the overseer is told, soon, so it never waits on a merge that already happened (NEW-MS-3).
-    const merged = store.readMemo(p);
-    assert.deepEqual(merged.pending.slice(seen), [`The operator merged "Build the login page" (${w.branch}) into master.`]);
-    assert.ok(merged.soonAt, "a look soon");
+    // The watch's clock stands still from the first refusal to the merged reason's check: no tick comes due in
+    // between, so the look these reasons ask for soon is still pending when they are read (a tick would start it,
+    // and the run takes the reasons with it).
+    const frozenAt = Date.now();
+    po.setClockForTest(() => frozenAt);
+    try {
+      await assert.rejects(po.mergeCodingWorktree(project.id, started.sessionId), /has nothing to merge into master/);
+      writeFileSync(join(w.path, "login.txt"), "login\n");
+      // Uncommitted: refused, and the overseer is told (soon), so it can ask the session to commit.
+      await assert.rejects(po.mergeCodingWorktree(project.id, started.sessionId), /uncommitted changes in 1 file \(login.txt\)/);
+      const memo = store.readMemo(p);
+      assert.ok(
+        memo.pending.some((r) => r.startsWith('Merge Branch for "Build the login page" was refused: The worktree has uncommitted changes in 1 file')),
+        JSON.stringify(memo.pending),
+      );
+      assert.ok(memo.soonAt, "a look soon");
+      git(w.path, "add", "login.txt");
+      git(w.path, "-c", "user.email=t@example.invalid", "-c", "user.name=T", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "login");
+      // The reasons noted from here on (the watch keeps them until its next look).
+      const seen = store.readMemo(p).pending.length;
+      info = await po.mergeCodingWorktree(project.id, started.sessionId);
+      assert.equal(readFileSync(join(client, "login.txt"), "utf8"), "login\n");
+      // Merged: the overseer is told, soon, so it never waits on a merge that already happened (NEW-MS-3).
+      const merged = store.readMemo(p);
+      assert.deepEqual(merged.pending.slice(seen), [`The operator merged "Build the login page" (${w.branch}) into master.`]);
+      assert.ok(merged.soonAt, "a look soon");
+    } finally {
+      po.setClockForTest(null);
+    }
     assert.deepEqual([rowOf()?.state, rowOf()?.merged, !!rowOf()?.mergedAt], ["merged", true, true]);
     // The session is sent more work and commits again: git, not the record, says it is merged.
     const firstMerge = rowOf()!.mergedAt;
@@ -224,6 +233,27 @@ describe("a project's coding sessions", async () => {
     const info2 = await po.projectOverseerInfo(project.id);
     assert.equal(info2.worktrees.sessions.find((s) => s.sessionId === rows2.at(-1)!.sessionId)?.title, "Fix the footer");
     assert.deepEqual(modeEntries(row.path).at(-1)?.data.active, { version: 1, mode: "normal", strict: false, minorModes: ["spec"] });
+  });
+
+  test("an untitled coding session's history headline is never written from its prompt", async () => {
+    await po.ensureProjectOverseer(plain.id);
+    store.patchPoSettings(store.projectOverseerPaths(plain.id), { autonomy: "L3", holdMin: 0 });
+    const asked = po.toolsForTest(plain.id, { attended: true }).find((t) => t.name === "sova_create_session")!;
+    const EMAIL = "dana.untitled@example.com";
+    await asked.execute("t5", { gap: "none", prompt: `Write to ${EMAIL} about the export\nThen tidy up.` }, undefined, undefined, undefined as never).catch(() => {});
+    const made = readBuilds(plain.id).at(-1)!;
+    assert.equal(made.title, `Write to ${EMAIL} about the export`, "the row still shows the prompt's first line");
+    const h = hostOf(org.id).history;
+    const id = [...h.index.byKey.values()].find((e) => {
+      const ev = h.index.event(e);
+      return ev?.kind === "build.started" && JSON.stringify(ev).includes(made.sessionId);
+    });
+    assert.ok(id, "its build.started recorded");
+    assert.equal(h.event({ role: "operator" }, id!)?.rationale?.what, "Coding session started");
+    const dir = join(orgs.orgDir(org.id), "history");
+    const files = ["events", "rationale"].flatMap((d) => (existsSync(join(dir, d)) ? readdirSync(join(dir, d)).map((f) => join(dir, d, f)) : []));
+    assert.ok(files.length);
+    for (const f of files) assert.ok(!readFileSync(f, "utf8").includes(EMAIL), `${f} holds no word of the prompt`);
   });
 
   test("a plain folder: runs in the root with the reason; Automatic without a spec is normal", async () => {
@@ -456,7 +486,14 @@ describe("a project's coding sessions", async () => {
       () => asked.execute("f21b", { gap: "none", prompt: "Second", title: "Second" }, undefined, undefined, undefined as never),
       /1 of its coding sessions are running, and the limit is 1 at once\./,
     );
-    await hostOf(org.id).act(sid, "turn/ended", {}, { by: "system" } as never);
+    // The turn's end, as the runtime's agent_settled says it: its history headline names the session's given title.
+    await po.noteCodingSettled(row.path!);
+    assert.notEqual(hostOf(org.id).data(sid)?.turn, "working", "its statechart heard the turn end");
+    const h = hostOf(org.id).history;
+    const finished = [...h.index.byKey.values()].map((e) => h.index.event(e)).filter((ev) => ev?.kind === "build.finished" && JSON.stringify(ev).includes(row.sessionId));
+    // the second build's cap check heard the runtime idle (syncBuildTurn) and ended it too: each end names it
+    assert.ok(finished.length >= 1);
+    for (const ev of finished) assert.equal(h.event({ role: "operator" }, ev!.id)?.rationale?.what, "Coding session turn finished: Cap test");
     store.patchPoSettings(p, { caps: { codingRunning: 2 } });
   });
 
@@ -470,6 +507,14 @@ describe("a project's coding sessions", async () => {
     // Nothing promoted yet: a plain coding session, as before.
     const plain = await po.codeItem(project.id, { ideaId: "§gap/export" }).catch((e: Error) => assert.fail(e.message));
     assert.ok(!gapBuilds().some((b) => b.sessionId === plain.sessionId), "not the gap's");
+    // Its history names the gap it was started from (the id its act carried), never as a cause.
+    const hist = hostOf(org.id).history;
+    const ev = (key: string) => hist.index.entry(hist.index.byKey.get(key)!)!;
+    const gapEv = ev(`gap:${itemSid.slice(itemSid.lastIndexOf("/") + 1)}`);
+    const buildEv = ev(`sc:build/${project.id}/${plain.sessionId}`);
+    assert.equal(buildEv.kind, "build.started");
+    assert.deepEqual(buildEv.rels, [{ type: "named-target", event: gapEv.id }], "the plain build names its gap");
+    assert.deepEqual(buildEv.triggers, []);
     // A promoted decision of the gap: Start coding is the gap's build, on its Pipeline row.
     await hostOf(org.id).act(
       itemSid,

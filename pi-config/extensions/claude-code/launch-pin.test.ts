@@ -59,7 +59,7 @@ const handlers = { onChange() {}, onSettled() {}, onExit() {} };
 function hostEnv(extra: Record<string, string> = {}): Record<string, string | undefined> {
 	const env: Record<string, string | undefined> = { ...process.env };
 	delete env.CLAUDECODE; delete env.CLAUDE_CODE_ENTRYPOINT;
-	return { ...env, ...extra };
+	return { ...env, ...extra, CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1" };
 }
 const HEAD = ["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
 	"--include-partial-messages", "--replay-user-messages"];

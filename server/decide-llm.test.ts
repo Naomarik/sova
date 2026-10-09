@@ -147,9 +147,13 @@ describe("claude-code backend", () => {
   });
   test("structured_output envelope → answers; argv, private cwd (removed after), CLAUDECODE stripped", async () => {
     process.env.CLAUDECODE = "1";
+    const memory = process.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY;
+    process.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY = "0";
     const f = fakeSpawn(JSON.stringify({ type: "result", is_error: false, result: "", structured_output: good, usage: { input_tokens: 50, output_tokens: 9 } }));
-    const r = await createLlmProvider(cc, { spawn: f.spawn }).decide(req);
+    const r = await createLlmProvider(cc, { spawn: f.spawn, env: () => ({ CLAUDE_CODE_DISABLE_AUTO_MEMORY: "false" }) }).decide(req);
     delete process.env.CLAUDECODE;
+    if (memory === undefined) delete process.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY; else process.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY = memory;
+    assert.equal(f.seen[0]!.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY, "1", "an inherited 0 cannot force memory on");
     assert.equal(r.provider, "claude-code");
     assert.deepEqual(r.answers.asks, { type: "boolean", p: 0.8 });
     const s = f.seen[0]!;

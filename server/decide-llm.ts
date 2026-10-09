@@ -11,7 +11,7 @@ import { beginLlmCall } from "../pi-config/extensions/llm-inflight/tracker.ts";
 import { resolveUsageAttribution, withUsagePurpose } from "../pi-config/extensions/llm-inflight/attribution.ts";
 import { recordClaudeEnvelope } from "../pi-config/extensions/llm-inflight/record.ts";
 import { claudeCliId } from "../pi-config/extensions/claude-code/catalog.ts";
-import { fixedSettingsJson } from "../pi-config/extensions/claude-code/fixed-settings.ts";
+import { FIXED_CLAUDE_ENV, fixedSettingsJson } from "../pi-config/extensions/claude-code/fixed-settings.ts";
 import type { ModelPolicy, WorkerChoice } from "../shared/protocol";
 import {
   DecisionError,
@@ -401,7 +401,7 @@ function claudeSpawn(argv: string[], input: string, deps: LlmProviderDeps, timeo
       reject(fail("unavailable", `cannot create a temp dir: ${failureMessage(err)}`));
       return;
     }
-    const env = { ...process.env, ...(deps.env?.() ?? {}) } as Record<string, string | undefined>;
+    const env = { ...process.env, ...(deps.env?.() ?? {}), ...FIXED_CLAUDE_ENV } as Record<string, string | undefined>;
     delete env.CLAUDECODE;
     delete env.CLAUDE_CODE_ENTRYPOINT;
     delete env.CLAUDE_AGENT_SDK_VERSION;

@@ -95,6 +95,8 @@ test("merge-claims: the same declaration changed differently conflicts, with bot
   const r = driver(TOP, TOP.replace("One says X.", "One says X, ours."), TOP.replace("One says X.", "One says X, theirs."));
   assert.equal(r.j.exit, 1);
   assert.ok(r.j.conflicts.some((c) => c.includes("§a.top/one")), JSON.stringify(r.j));
+  // The refusal carries the one recovery for a spec conflict a Git merge leaves.
+  assert.match(JSON.stringify(r.j), /git checkout --no-overlay \w+ -- \.sova\/spec\/manifest\.json \.sova\/spec\/claims.*never `--ours`/, JSON.stringify(r.j));
   assert.match(r.text, /^<<<<<<< /m);
   assert.match(r.text, /One says X, ours\./);
   assert.match(r.text, /One says X, theirs\./);

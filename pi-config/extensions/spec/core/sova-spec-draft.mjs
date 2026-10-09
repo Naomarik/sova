@@ -1428,7 +1428,7 @@ async function cmdMergeClaims(root, o) {
   if (o.write) await save(r.out);
   const out = { mode: "driver", path, merge: "lines", conflicts: m.conflicts ?? [], ...(m.why ? { why: m.why } : {}), written: !!o.write };
   if (r.status === 0 && !m.conflicts) return { exit: 0, ...out };
-  throw new Fail(1, "claims-conflict", `${path ?? "the claim file"}: ${m.conflicts ? `changed differently on both sides: ${m.conflicts.join(", ")}` : `${m.why}, and Git's line merge conflicts`}; ${o.write ? "Git's conflict markers are in the file, with both sides' prose" : "nothing was written"}`, out);
+  throw new Fail(1, "claims-conflict", `${path ?? "the claim file"}: ${m.conflicts ? `changed differently on both sides: ${m.conflicts.join(", ")}` : `${m.why}, and Git's line merge conflicts`}; ${o.write ? "Git's conflict markers are in the file, with both sides' prose" : "nothing was written"}; then ${mergeRecovery(defaultBranch(root) || "master")}`, out);
 }
 
 // ---------------------------------------------------------------- output

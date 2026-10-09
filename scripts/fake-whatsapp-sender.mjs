@@ -13,7 +13,9 @@
 // minute), so a budget wait can be watched end to end; its times (retryAt, events) are on that fast clock.
 // A link (Settings' Link a Phone, or `sova-whatsapp pair`) issues a new fake QR every SOVA_WA_FAKE_QR_MS (3000),
 // 5 in all, then expires as WhatsApp's does (408); `ctl scan` is the phone scanning it (or typing the pairing
-// code), and the link succeeds. The fake QRs are random words, never a credential.
+// code), and the link succeeds. The fake QRs are random words, never a credential. A second number is a second
+// fake with its own SOVA_WA_HOME (its socket and lock there; `ctl` with the same SOVA_WA_HOME reaches it) and,
+// to tell them apart, SOVA_WA_FAKE_ME=<digits>, the number it links as (default 0000000000).
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { resolveConfig } from '../services/whatsapp/src/config.mjs'
@@ -70,7 +72,8 @@ process.on('exit', () => lock.release())
 const log = makeLog(env.SOVA_WA_LOG_LEVEL || 'info')
 const absent = new Set((env.SOVA_WA_FAKE_ABSENT || '').split(',').map((s) => s.trim()).filter(Boolean))
 const receipts = (env.SOVA_WA_FAKE_RECEIPTS ?? 'delivered,read').split(',').map((s) => s.trim()).filter((s) => s && s !== 'none')
-const ME = '0000000000'
+// The linked number's digits (Sova shows its last 3): SOVA_WA_FAKE_ME, so a second fake (its own SOVA_WA_HOME) reads apart.
+const ME = /^\d{7,15}$/.test(env.SOVA_WA_FAKE_ME || '') ? env.SOVA_WA_FAKE_ME : '0000000000'
 
 let paired = !argv.includes('--unpaired')
 let current = null // the open fake socket's handlers

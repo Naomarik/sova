@@ -14,7 +14,7 @@ const POLL_MS = 1_000;
  * Phone; the page reads the link every second while it runs and draws each new QR itself. The QR and
  * the pairing code live in this component's signals only, and go when the link ends.
  */
-export function SenderLink(props: { link: boolean; unlink: boolean; disabled: boolean; onChanged: (info?: OutreachInfo) => void }) {
+export function SenderLink(props: { sender?: string; link: boolean; unlink: boolean; disabled: boolean; onChanged: (info?: OutreachInfo) => void }) {
   const [view, setView] = createSignal<SenderLinkView | null>(null);
   const [error, setError] = createSignal<string | null>(null);
   const [busy, setBusy] = createSignal(false);
@@ -35,7 +35,7 @@ export function SenderLink(props: { link: boolean; unlink: boolean; disabled: bo
 
   // A link another tab of this page started is still shown here; a finished one is not.
   onMount(() => {
-    getLink().then((v) => (v.phase === "starting" || v.phase === "waiting") && setView(v), () => {});
+    getLink(props.sender).then((v) => (v.phase === "starting" || v.phase === "waiting") && setView(v), () => {});
   });
   let timer: ReturnType<typeof setInterval> | undefined;
   createEffect(
@@ -43,7 +43,7 @@ export function SenderLink(props: { link: boolean; unlink: boolean; disabled: bo
       clearInterval(timer);
       if (!on) return;
       timer = setInterval(() => {
-        getLink().then(
+        getLink(props.sender).then(
           (v) => {
             // Only the link this page follows: an idle answer means the server dropped it.
             if (!running()) return;
@@ -75,7 +75,7 @@ export function SenderLink(props: { link: boolean; unlink: boolean; disabled: bo
     setError(null);
     setUnlinked(null);
     try {
-      const v = await startLink(withPhone);
+      const v = await startLink(withPhone, props.sender);
       setView(v);
       setCodeEntry(false);
       announce(withPhone ? "The pairing code is ready." : "Scan the QR code with WhatsApp on the phone.");
@@ -96,7 +96,7 @@ export function SenderLink(props: { link: boolean; unlink: boolean; disabled: bo
     setBusy(true);
     try {
       // Cancelled by the operator: nothing to report, and Link a Phone is offered again below.
-      await cancelLink();
+      await cancelLink(props.sender);
       setView(null);
       announce("Linking was cancelled.");
       props.onChanged();
@@ -110,7 +110,7 @@ export function SenderLink(props: { link: boolean; unlink: boolean; disabled: bo
     setBusy(true);
     setError(null);
     try {
-      const info = await unlinkSender(typed());
+      const info = await unlinkSender(typed(), props.sender);
       setConfirming(false);
       setTyped("");
       setView(null);

@@ -103,7 +103,7 @@ describe("§app.outreach/sender-link", () => {
       assert.equal(r.status, 200, p);
       assert.doesNotMatch(await r.text(), /qr-secret/, p);
     }
-    assert.doesNotMatch(JSON.stringify([senderAttention(), senderReading()]), /qr-secret/);
+    assert.doesNotMatch(JSON.stringify([senderAttention(), senderReading("local")]), /qr-secret/);
     sender.scan();
     v = await until(view, (x) => x.phase === "linked");
     assert.equal(v.me, "…123");
@@ -198,7 +198,7 @@ describe("§app.outreach/sender-list", () => {
     ],
     peerStatus: async (nodeId: string) => (nodeId === "nGATE" ? { status: { state: "open", me: "…777" } as SenderStatus } : { why: nodeId === "nDESK" ? "It doesn't accept sends from this host." : "It has no sender of its own." }),
     localStatus: async () => ({ state: "unreachable", why: "The sender is not running (no socket answers)." }) as SenderStatus,
-    chosenStatus: async () => open,
+    usedStatus: async () => open,
     ...o,
   });
 
@@ -222,13 +222,34 @@ describe("§app.outreach/sender-list", () => {
   test("a chosen peer that no longer accepts this host is still listed, with why; one no longer a peer too", async () => {
     await json("PUT", "/api/outreach", { sender: { via: { nodeId: "nDESK" } } });
     const why: SenderStatus = { state: "unreachable", why: "The sender's host doesn't accept sends from this host (its Accept sends from)." };
-    const list = await listSenders(io({ chosenStatus: async () => why }));
+    const list = await listSenders(io({ usedStatus: async () => why }));
     assert.deepEqual(list.find((e) => e.id === "peer:nDESK"), { id: "peer:nDESK", where: "peer", nodeId: "nDESK", label: "Desk", status: why, chosen: true });
     assert.equal(list.some((e) => e.id === "peer:nPHONE"), false);
     await json("PUT", "/api/outreach", { sender: { via: { nodeId: "nGONE" } } });
-    const gone = await listSenders(io({ chosenStatus: async () => why }));
+    const gone = await listSenders(io({ usedStatus: async () => why }));
     assert.equal(gone.at(-1)!.id, "peer:nGONE");
     assert.equal(gone.at(-1)!.chosen, true);
+  });
+
+  test("numbers added on this host follow This host, each its own id, socket and label; a label never holds a number", async () => {
+    const r = await json("PUT", "/api/outreach", { sender: { number: { id: "sales" } }, numbers: [{ id: "sales", socket: "/tmp/sova-wa-sales.sock" }], labels: { local: "Office", "local:sales": "Sales" } });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    const list = await listSenders(io({ usedStatus: async (t) => ({ ...open, me: t.id === "local:sales" ? "…456" : "…123" }) }));
+    assert.deepEqual(
+      list.map((e) => [e.id, e.label, e.socket ?? null, e.status.me ?? null, e.chosen]),
+      [
+        ["local", "Office", null, null, false],
+        ["local:sales", "Sales", "/tmp/sova-wa-sales.sock", "…456", true],
+        ["peer:nGATE", "Gateway", null, "…777", false],
+      ],
+      "This host isn't in use (not the default, no organization picks it): it is probed, not read as used",
+    );
+    const bad = await json("PUT", "/api/outreach", { labels: { local: "+1 555 0100" } });
+    assert.equal(bad.status, 400);
+    assert.match(bad.body.error, /phone number/);
+    const gone = await json("PUT", "/api/outreach", { numbers: [] });
+    assert.equal(gone.status, 400, "the default can't be removed");
+    assert.equal((await json("PUT", "/api/outreach", { sender: { local: {} }, numbers: [], labels: {} })).status, 200);
   });
 
   test("the stored setting is the same shape it always was: an earlier file reads unchanged", async () => {

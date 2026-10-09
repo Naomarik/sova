@@ -1013,3 +1013,12 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .setup-context .icon-twist { flex: none; color: var(--color-ink-muted); transition: transform var(--dur-fast) var(--ease-standard); }
 .setup-context[open] > summary .icon-twist { transform: rotate(90deg); }
 .setup-context + .setup-group { border-top: 1px solid var(--color-border); }
+/* Several numbers (§app.outreach/sender-list): the default's mark, Manage, the managed number's head, Add a Number. */
+.sender-row { display: flex; flex-wrap: wrap; align-items: flex-start; column-gap: var(--space-3); row-gap: var(--space-1); }
+.sender-row > .toggle { flex: 1 1 18rem; min-width: 0; }
+.sender-row > .settings-field { flex-basis: 100%; }
+.sender-row-manage { flex: none; }
+.sender-row-default { font-size: var(--fs-caption); color: var(--color-ink-2); }
+.sender-manage { display: flex; flex-direction: column; gap: var(--space-2); }
+.sender-manage-head { margin: 0; font-size: var(--fs-body); font-weight: 600; }
+.sender-add { display: flex; flex-direction: column; gap: var(--space-2); }

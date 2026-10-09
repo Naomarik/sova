@@ -34,7 +34,7 @@ const { ipcSessions } = await load("ipc.mjs");
  * unless `paired: false`. Every number exists except `absent` (digits); each send's receipts are
  * delivered, then read. A link waits for the test: `qr` issues a QR, `scan` is the phone linking.
  */
-export function inProcessSender(o: { env: NodeJS.ProcessEnv; absent?: string[]; paired?: boolean }) {
+export function inProcessSender(o: { env: NodeJS.ProcessEnv; absent?: string[]; paired?: boolean; me?: string }) {
   // No gap between sends (3 s by default); the hour and day limits stay.
   const config = resolveConfig({ ...o.env, SOVA_WA_LIMITS: "0/20/60" });
   const absent = new Set(o.absent ?? []);
@@ -52,7 +52,7 @@ export function inProcessSender(o: { env: NodeJS.ProcessEnv; absent?: string[]; 
       current = handlers;
       const alive = () => current === handlers;
       // A link waits for `qr` / `scan`; saved credentials open at once.
-      if (!link) setImmediate(() => alive() && (paired ? handlers.onOpen("15550000123") : handlers.onQr("unexpected")));
+      if (!link) setImmediate(() => alive() && (paired ? handlers.onOpen(o.me ?? "15550000123") : handlers.onQr("unexpected")));
       return {
         end: () => {
           if (alive()) current = null;
@@ -102,6 +102,10 @@ export function inProcessSender(o: { env: NodeJS.ProcessEnv; absent?: string[]; 
   };
   start();
   return {
+    /** The socket it answers on. */
+    socket: config.socket as string,
+    /** How many messages it has sent. */
+    sent: () => n,
     connect,
     start,
     stop,

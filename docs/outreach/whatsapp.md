@@ -253,15 +253,27 @@ Pairing and unlinking happen only on the sender's host: its own Settings → Out
 Phone**, **Unlink This Number**) or `sova-whatsapp`. No other host can pair or unlink the number,
 and the relay refuses both. All hosts share the one number's limits.
 
-**Picking the sender.** Under **Sender**, Settings → Outreach lists every sender this host can use:
-**This host** (always listed; "No sender answers on this host." when none runs here), then each peer
-whose sender accepts this host, then **Off**. Each row shows the number's last 3 digits, its state,
-and its sends against the limits ("4 of 60 sent in 24 h, 1 of 20 this hour"). Pick one and **Save
-Changes**. A peer whose sender doesn't accept this host isn't listed until that host ticks yours
-under **Accept sends from**; **Check Again** reads the list again. The setting is stored as it
-always was (`outreach.json` `sender`), so a file from an earlier version keeps working.
+**Numbers and the default.** Under **Numbers**, Settings → Outreach lists every sender this host can
+use, one number each: **This host** (always listed; "No sender answers on this host." when none runs
+here), each number you added on this host ([Run a second number](#run-a-second-number)), then each
+peer whose sender accepts this host, then **Off**. Each row shows its label, the number's last 3
+digits, its state, and its sends against its own limits ("4 of 60 sent in 24 h, 1 of 20 this
+hour"). The row picked with its radio is the **default**; **Save Changes** saves it. A peer whose
+sender doesn't accept this host isn't listed until that host ticks yours under **Accept sends
+from**; **Check Again** reads the list again. A file from an earlier version keeps working: its
+`sender` is the default.
 
-**From Settings → Outreach** the sender's state is live (read every 5 seconds while the tab is open),
+**Each organization's number.** An organization's page has a **WhatsApp Number** card on its
+Workspace tab: **Default**, or one of the numbers above. Every message to that organization's people
+goes from that number only. When that number is down, paused or at its limit, a message is refused
+(or an overseer's held message waits, at most 24 hours) — it never goes from another number, so a
+second number is never a way around the limits. A person's page says which number reached them
+(its label and last 3 digits). If you remove the number an organization picked, it sends from the
+default, and its card says so.
+
+**From Settings → Outreach** one number at a time is managed (the default when the tab opens;
+**Manage** on another row shows its): its **Label** (a short name such as Office, never the
+number), and its state live (read every 5 seconds while the tab is open),
 with why it stopped, when it tries again, its sends and automatic reconnects against their limits,
 and these controls, each saying what it does under its button:
 
@@ -274,14 +286,16 @@ and these controls, each saying what it does under its button:
   separate switch that stops only this host's sends.
 - **Link a Phone** and **Unlink This Number**, on the sender's host only ([Pair](#4-pair),
   [Logged out](#logged-out)).
-- **Start Sender**, on the sender's host, while the sender doesn't answer and its `sova-whatsapp`
-  user unit ([Run it as a service](#5-run-it-as-a-service)) serves the socket Sova uses and is
-  stopped or failed: runs `systemctl --user start sova-whatsapp.service` once. Sova never restarts or
-  stops the sender.
+- **Start Sender**, on the sender's host, while the sender doesn't answer and its user unit
+  ([Run it as a service](#5-run-it-as-a-service): `sova-whatsapp.service`, or
+  `sova-whatsapp@<name>.service` for an added number) serves that sender's socket and is stopped or
+  failed: runs `systemctl --user start` on it once. Sova never restarts or stops a sender.
 
-While WhatsApp sending is down (down, logged out, replaced, blocked, unpaired, or unreachable for 5
-minutes), Needs you says so with a button to Settings → Outreach, and a phone notification
-("WhatsApp down") goes out if you have them on. Every terminal command below still works, and is
+While a number's sending is down (down, logged out, replaced, blocked, unpaired, or unreachable for 5
+minutes), Needs you says so for that number ("WhatsApp sending is down for Sales: …") with a button
+to Settings → Outreach, and a phone notification ("WhatsApp down") goes out if you have them on. Each
+number has its own item: one down never hides or clears another's. A number waiting out its
+reconnect limit (down, with its next try ahead) doesn't alert until that try is overdue. Every terminal command below still works, and is
 the way on a host without Sova's page.
 
 ## 7. Protect the credentials
@@ -442,6 +456,35 @@ From another host, check that the two are peers and that the sender's host allow
 If `run` exits with "another sender (pid N) holds …/sender.lock", a sender is already running on
 this host: `ps -p N` shows it (often a manual `run` next to the service). Stop that one; don't
 start a second.
+
+## Run a second number
+
+The sender is one number per process. A second number is a second sender with its own home (its
+credentials, lock, socket and limits), run next to the first:
+
+1. Pick a name, lowercase letters, digits and dashes (here `sales`), and its home, outside any
+   repository: `mkdir -m 700 ~/.pi/agent/sova/whatsapp-sales`. Hide it from sandboxed agents too:
+   add `$AGENT_DIR/sova/whatsapp-sales` to `hidden` in the sandbox policy ([Protect the
+   credentials](#7-protect-the-credentials)); Settings warns while it isn't.
+2. Run it as a template unit, so each number is one instance. Copy `sova-whatsapp.service.example`
+   to `~/.config/systemd/user/sova-whatsapp@.service` and set its home from the instance name:
+   ```ini
+   Environment=SOVA_WA_HOME=%h/.pi/agent/sova/whatsapp-%i
+   ```
+   then `systemctl --user daemon-reload && systemctl --user enable --now sova-whatsapp@sales`.
+   For terminal commands on it, set the same home: `SOVA_WA_HOME=~/.pi/agent/sova/whatsapp-sales
+   sova-whatsapp status`.
+3. In Settings → Outreach, **Add a Number**: the name `sales` and its socket,
+   `/home/<you>/.pi/agent/sova/whatsapp-sales/sender.sock` (absolute). **Save Changes**. Then
+   **Manage** it, give it a **Label**, and **Link a Phone** with the second phone.
+   Sova offers **Start Sender** for it when `sova-whatsapp@sales.service` serves that socket.
+4. Pick it for the organizations that should send from it (their **WhatsApp Number** card), or make
+   it the default.
+
+Peers send through a host's **default** number only (when it is on that host). Each number keeps
+its own limits and budget: the defaults are per number, so two numbers send at most twice as much
+in total, each within WhatsApp's limits for that number. **Remove Number** takes it off Sova's list;
+its sender and its linked phone stay until you `unlink` and stop it.
 
 ## Move the sender to another host
 

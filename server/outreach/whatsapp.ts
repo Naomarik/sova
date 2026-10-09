@@ -3,7 +3,8 @@ import { meshPeers, peerFetch } from "../mesh";
 import { noteSenderState, noteSenderStatus } from "./health";
 import { SenderClient, SenderUncertain, SenderUnreachable, type Frame, type SenderClientOptions, type SenderEvent } from "./ipc-client";
 import { noteLinkEvent } from "./link";
-import { localSocket, noteAuthDir, readOutreach } from "./settings";
+import { noteAuthDir } from "./settings";
+import { defaultTarget, LOCAL_ID, type SenderTarget } from "./targets";
 import type { Channel, ChannelSend, Receipt } from "./types";
 
 /**
@@ -18,26 +19,36 @@ import type { Channel, ChannelSend, Receipt } from "./types";
 const STATES: ReadonlySet<string> = new Set(["unpaired", "linking", "connecting", "open", "logged-out", "replaced", "blocked", "down"]);
 const RING = 500;
 
-let local: { path: string; client: SenderClient } | null = null;
+/** One connection per local sender (one number each), by its socket; each knows the entry id it serves now. */
+interface Local {
+  path: string;
+  id: string;
+  client: SenderClient;
+  /** Receipt events this sender sent, for the relay to hand each caller its own (newest last; seqs are this sender's). */
+  ring: SenderEvent[];
+}
+const locals = new Map<string, Local>();
+/** The auth directory each added number's sender reported, by its socket (§app.outreach/secrets), for the protected paths. */
+const numberAuthDirs = new Map<string, string>();
+export const reportedNumberAuthDirs = (): string[] => [...numberAuthDirs.values()];
+export const reportedAuthDirOf = (socket: string): string | undefined => numberAuthDirs.get(socket);
 let clientOptions: SenderClientOptions = {};
 const listeners: ((r: Receipt) => void)[] = [];
-/** Receipt events the local sender sent, for the relay to hand each caller its own (newest last). */
-const ring: SenderEvent[] = [];
 
-function onSenderEvent(e: SenderEvent): void {
-  // A QR is as good as the credentials: ./link.ts alone sees it, and only for a link this page started.
-  if (e.ev === "qr" || e.ev === "paired" || e.ev === "state") noteLinkEvent(e);
+function onSenderEvent(l: Local, e: SenderEvent): void {
+  // A QR is as good as the credentials: ./link.ts alone sees it, and only for a link this page started on this sender.
+  if (e.ev === "qr" || e.ev === "paired" || e.ev === "state") noteLinkEvent(l.id, e);
   if (e.ev === "state") {
     // A replayed event dates the state from when it happened, never later than now.
     const now = Date.now();
     const at = typeof e.at === "string" ? Date.parse(e.at) : NaN;
     const f = statusOf(e);
-    if (typeof e.state === "string" && STATES.has(e.state)) noteSenderState(f, Number.isFinite(at) ? Math.min(at, now) : now);
+    if (typeof e.state === "string" && STATES.has(e.state)) noteSenderState(l.id, f, Number.isFinite(at) ? Math.min(at, now) : now);
     return;
   }
   if (e.ev !== "receipt") return;
-  ring.push(e);
-  if (ring.length > RING) ring.splice(0, ring.length - RING);
+  l.ring.push(e);
+  if (l.ring.length > RING) l.ring.splice(0, l.ring.length - RING);
   const idem = typeof e.idem === "string" ? e.idem : "";
   if (idem.startsWith("local:")) dispatch(e);
 }
@@ -49,19 +60,28 @@ function dispatch(e: Frame): void {
   for (const cb of listeners) cb(r);
 }
 
-/** The local sender's client for the setting now; null when the sender is not local. */
-export function localClient(): SenderClient | null {
-  const path = localSocket(readOutreach().sender);
-  if (!path) {
-    local?.client.close();
-    local = null;
-    return null;
+function localOf(t: SenderTarget): Local {
+  const path = t.socket!;
+  let l = locals.get(path);
+  if (!l) {
+    const made: Local = { path, id: t.id, ring: [], client: null as unknown as SenderClient };
+    made.client = new SenderClient(path, (e) => onSenderEvent(made, e), clientOptions);
+    locals.set(path, made);
+    l = made;
   }
-  if (local?.path !== path) {
-    local?.client.close();
-    local = { path, client: new SenderClient(path, onSenderEvent, clientOptions) };
-  }
-  return local.client;
+  l.id = t.id;
+  return l;
+}
+
+/** The client of a sender on this host (`target`, else the default); null when it is a peer's, or off. */
+export function localClient(target: SenderTarget | null = defaultTarget()): SenderClient | null {
+  return target?.socket ? localOf(target).client : null;
+}
+
+/** The sender this host's relay serves its peers (§app.outreach/sender-route): the default, when it is on this host. */
+export function relayLocal(): Local | null {
+  const t = defaultTarget();
+  return t?.socket ? localOf(t) : null;
 }
 
 /** Tests: how the next local client connects (an in-memory sender, no retry gap); {} restores the socket. */
@@ -70,16 +90,16 @@ export function setSenderClientOptionsForTest(o: SenderClientOptions): void {
   resetLocalClient();
 }
 
-/** Drop the local connection (a save of the setting): the next use makes it afresh. */
+/** Drop the local connections (a save of the setting): the next use makes each afresh. */
 export function resetLocalClient(): void {
-  local?.client.close();
-  local = null;
+  for (const l of locals.values()) l.client.close();
+  locals.clear();
 }
 
-/** Receipt events of sends whose idem starts with `prefix`, after `since` (the relay). */
-export const receiptsSince = (prefix: string, since: number): SenderEvent[] =>
-  ring.filter((e) => e.seq > since && typeof e.idem === "string" && e.idem.startsWith(prefix));
-export const newestSeq = (): number => ring.at(-1)?.seq ?? 0;
+/** Receipt events of the relayed sender's sends whose idem starts with `prefix`, after `since` (the relay). */
+export const receiptsSince = (l: Local, prefix: string, since: number): SenderEvent[] =>
+  l.ring.filter((e) => e.seq > since && typeof e.idem === "string" && e.idem.startsWith(prefix));
+export const newestSeq = (l: Local): number => l.ring.at(-1)?.seq ?? 0;
 
 /** A sender frame as a status. */
 export function statusOf(f: Frame): SenderStatus {
@@ -167,9 +187,9 @@ export type ControlAnswer = { ok: true; frame: Frame } | { ok: false; why: strin
 const answerOf = (f: Frame): ControlAnswer =>
   f.ok === false ? { ok: false, why: typeof f.why === "string" ? f.why : "The sender refused.", ...(typeof f.code === "string" ? { code: f.code } : {}) } : { ok: true, frame: f };
 
-/** `reconnect {}`, `pause {on}` or `unlink {confirm: true}` on this host's own sender. Never the relay's: the routes call it for the operator only. */
-export async function localControl(op: "reconnect" | "pause" | "unlink", body: Frame = {}): Promise<ControlAnswer> {
-  const c = localClient();
+/** `reconnect {}`, `pause {on}` or `unlink {confirm: true}` on a sender of this host. Never the relay's: the routes call it for the operator only. */
+export async function localControl(target: SenderTarget | null, op: "reconnect" | "pause" | "unlink", body: Frame = {}): Promise<ControlAnswer> {
+  const c = localClient(target);
   if (!c) return { ok: false, why: "This host has no sender of its own." };
   try {
     const req = op === "pause" ? { on: body.on === true } : op === "unlink" ? { confirm: true } : {};
@@ -185,9 +205,8 @@ export async function localControl(op: "reconnect" | "pause" | "unlink", body: F
  * the setting's own client when it is that socket, else a connection made for this one question.
  */
 export async function probeLocal(path: string): Promise<SenderStatus> {
-  const c = localClient();
-  const own = c?.socketPath === path;
-  const client = own ? c! : new SenderClient(path, () => {}, { ...clientOptions, retryMs: 0 });
+  const own = locals.get(path)?.client;
+  const client = own ?? new SenderClient(path, () => {}, { ...clientOptions, retryMs: 0 });
   try {
     const f = await client.request("status", {}, 5_000);
     return f.ok === false ? { state: "down", why: String(f.why ?? "The sender refused.") } : statusOf(f);
@@ -242,36 +261,42 @@ export async function viaReconnect(nodeId: string): Promise<ControlAnswer> {
   return answerOf(f);
 }
 
+/** The target a call names, else the default; null while off. */
+const targetFor = (t: SenderTarget | null | undefined): SenderTarget | null => (t === undefined ? defaultTarget() : t);
+
 export const whatsapp: Channel = {
   id: "whatsapp",
-  async status() {
-    const route = readOutreach().sender;
-    if (route === "off") return noteSenderStatus({ state: "off" });
+  async status(target) {
+    const t = targetFor(target);
+    if (!t) return { state: "off" };
+    const route = t.route;
     let s: SenderStatus;
     try {
       if ("via" in route) s = statusOf(await viaCall(route.via.nodeId, "status"));
       else {
-        const c = localClient()!;
+        const c = localClient(t)!;
         const f = await c.request("status", {}, 10_000);
         const authDir = c.hello?.authDir;
-        if (typeof authDir === "string") noteAuthDir(authDir);
+        // Every local sender's auth directory is protected (§app.outreach/secrets): this host's own is recorded, an added number's kept in memory.
+        if (typeof authDir === "string") (t.id === LOCAL_ID ? noteAuthDir(authDir) : numberAuthDirs.set(t.socket!, authDir));
         s = f.ok === false ? { state: "down", why: String(f.why ?? "The sender refused.") } : statusOf(f);
       }
     } catch (err) {
       s = { state: "unreachable", why: err instanceof Error ? err.message : String(err) };
     }
-    return noteSenderStatus(s);
+    return noteSenderStatus(t.id, s, Date.now(), t.label);
   },
-  async send({ idem, address, text }) {
-    const route = readOutreach().sender;
-    if (route === "off") return failed("off", "Outreach is off: set it up in Settings → Outreach.");
+  async send({ idem, address, text, target }) {
+    const t = targetFor(target);
+    if (!t) return failed("off", "Outreach is off: set it up in Settings → Outreach.");
+    const route = t.route;
     try {
       if ("via" in route) {
         const r = sendResultOf(await viaCall(route.via.nodeId, "send", { idem, digits: address, text }));
         if (r.ok) pollVia(route.via.nodeId);
         return r;
       }
-      return sendResultOf(await localClient()!.request("send", { idem: `local:${idem}`, digits: address, text }));
+      return sendResultOf(await localClient(t)!.request("send", { idem: `local:${idem}`, digits: address, text }));
     } catch (err) {
       const why = err instanceof Error ? err.message : String(err);
       // Sent but unanswered: it may have gone (a Retry is still safe: the same idem never sends twice).

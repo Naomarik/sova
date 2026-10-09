@@ -13,6 +13,8 @@ import type { Frame, SenderClient, SenderEvent } from "./ipc-client";
 export const PHONE_DIGITS = /^\d{7,15}$/;
 
 interface Run {
+  /** The sender's entry id: only its events move this link, and only its page shows it. One link runs at a time. */
+  sender: string;
   mode: "qr" | "code";
   phase: "starting" | "waiting" | "linked" | "ended";
   qr?: string;
@@ -35,9 +37,9 @@ function end(r: Run, phase: "linked" | "ended", fields: { me?: string; why?: str
   if (fields.why) r.why = fields.why;
 }
 
-/** What the page sees now. */
-export function linkView(): SenderLinkView {
-  if (!run) return { phase: "idle" };
+/** What the page of sender `id` sees now. */
+export function linkView(id: string): SenderLinkView {
+  if (!run || run.sender !== id) return { phase: "idle" };
   const r = run;
   return {
     phase: r.phase,
@@ -50,10 +52,10 @@ export function linkView(): SenderLinkView {
   };
 }
 
-/** The local sender's events (./whatsapp.ts hands each one here): a new QR, the phone linked, or the link ended. */
-export function noteLinkEvent(e: SenderEvent): void {
+/** A local sender's events (./whatsapp.ts hands each one here): a new QR, the phone linked, or the link ended. */
+export function noteLinkEvent(id: string, e: SenderEvent): void {
   const r = run;
-  if (!live(r)) return;
+  if (!live(r) || r.sender !== id) return;
   if (e.ev === "qr") {
     if (r.mode !== "qr" || typeof e.qr !== "string") return;
     r.qr = e.qr;
@@ -72,10 +74,10 @@ export function noteLinkEvent(e: SenderEvent): void {
 const whyOf = (f: Frame, fallback: string) => (typeof f.why === "string" ? f.why : fallback);
 
 /** Start a link: a QR, or with `phone` a pairing code. Refusals keep any link already running as it is. */
-export async function startLink(client: SenderClient, phone?: string): Promise<{ ok: true; view: SenderLinkView } | { ok: false; why: string; code?: string }> {
+export async function startLink(id: string, client: SenderClient, phone?: string): Promise<{ ok: true; view: SenderLinkView } | { ok: false; why: string; code?: string }> {
   if (phone !== undefined && !PHONE_DIGITS.test(phone)) return { ok: false, code: "invalid", why: "The phone number must be 7 to 15 digits, country code first, no +." };
-  if (live(run)) return { ok: false, code: "busy", why: "A link is already in progress." };
-  const r: Run = { mode: phone ? "code" : "qr", phase: "starting", qrCount: 0, ...(phone ? { phoneTail: `…${phone.slice(-3)}` } : {}) };
+  if (live(run)) return { ok: false, code: "busy", why: run.sender === id ? "A link is already in progress." : "A link to another number is in progress: finish or cancel it first." };
+  const r: Run = { sender: id, mode: phone ? "code" : "qr", phase: "starting", qrCount: 0, ...(phone ? { phoneTail: `…${phone.slice(-3)}` } : {}) };
   run = r;
   let f: Frame;
   try {
@@ -96,11 +98,11 @@ export async function startLink(client: SenderClient, phone?: string): Promise<{
     if (typeof f.pairingCode === "string") r.code = f.pairingCode;
     r.phase = "waiting";
   }
-  return { ok: true, view: linkView() };
+  return { ok: true, view: linkView(id) };
 }
 
 /** End the link in progress (the sender's `link {cancel: true}`). */
-export async function cancelLink(client: SenderClient): Promise<{ ok: true; view: SenderLinkView } | { ok: false; why: string; code?: string }> {
+export async function cancelLink(id: string, client: SenderClient): Promise<{ ok: true; view: SenderLinkView } | { ok: false; why: string; code?: string }> {
   let f: Frame;
   try {
     f = await client.request("link", { cancel: true }, 10_000);
@@ -109,11 +111,11 @@ export async function cancelLink(client: SenderClient): Promise<{ ok: true; view
   }
   if (f.ok === false) {
     // Nothing runs on the sender: whatever this module still followed is over too.
-    if (f.code === "not-linking" && live(run)) end(run, "ended", { why: "Linking was cancelled." });
+    if (f.code === "not-linking" && live(run) && run.sender === id) end(run, "ended", { why: "Linking was cancelled." });
     else return { ok: false, why: whyOf(f, "The sender refused."), ...(typeof f.code === "string" ? { code: f.code } : {}) };
   }
-  if (live(run)) end(run, "ended", { why: "Linking was cancelled." });
-  return { ok: true, view: linkView() };
+  if (live(run) && run.sender === id) end(run, "ended", { why: "Linking was cancelled." });
+  return { ok: true, view: linkView(id) };
 }
 
 /** Forget the link (an unlink, a change of the setting): the page shows none. */

@@ -1,5 +1,5 @@
 import { createSignal } from "solid-js";
-import type { OutreachFile, OutreachInfo, OutreachPatch, SenderEntry, SenderLinkView, SenderList, SenderRoute, SenderStatus } from "../../shared/outreach";
+import { labelProblem, NUMBER_ID, routeEntryId, type LocalNumber, type OrgSenderView, type OutreachFile, type OutreachInfo, type OutreachPatch, type SenderEntry, type SenderLinkView, type SenderList, type SenderRoute, type SenderStatus } from "../../shared/outreach";
 import { relativeIn, stampTime } from "./format";
 import { createDraftStore } from "./settings-draft";
 
@@ -29,61 +29,99 @@ async function call<T>(url: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T;
 }
 
-export const getOutreach = () => call<OutreachInfo>("/api/outreach", { cache: "no-store" });
-export const putOutreach = (patch: OutreachPatch) => call<OutreachInfo>("/api/outreach", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) });
+/** `?sender=<id>` for one sender (§app.outreach/sender-list); none: the default. */
+const which = (id?: string) => (id ? `?sender=${encodeURIComponent(id)}` : "");
+export const getOutreach = (id?: string) => call<OutreachInfo>(`/api/outreach${which(id)}`, { cache: "no-store" });
+export const putOutreach = (patch: OutreachPatch, id?: string) =>
+  call<OutreachInfo>(`/api/outreach${which(id)}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) });
 
-/** The sender's controls (§app.outreach/sender-controls): each answers the page's info afresh. */
-const post = (op: "reconnect" | "pause" | "start", body: unknown = {}) =>
-  call<OutreachInfo>(`/api/outreach/sender/${op}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-export const reconnectSender = () => post("reconnect");
-export const pauseSender = (on: boolean) => post("pause", { on });
-export const startSender = () => post("start");
+/** A sender's controls (§app.outreach/sender-controls), naming the sender: each answers the page's info about it afresh. */
+const post = (op: "reconnect" | "pause" | "start", id: string | undefined, body: Record<string, unknown> = {}) =>
+  call<OutreachInfo>(`/api/outreach/sender/${op}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...body, ...(id ? { sender: id } : {}) }) });
+export const reconnectSender = (id?: string) => post("reconnect", id);
+export const pauseSender = (on: boolean, id?: string) => post("pause", id, { on });
+export const startSender = (id?: string) => post("start", id);
 
 /** Linking a phone (§app.outreach/sender-link): the answer carries the newest QR or code, never cached. */
 const json = (body: unknown): RequestInit => ({ method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-export const startLink = (phone?: string) => call<SenderLinkView>("/api/outreach/sender/link", json(phone ? { phone } : {}));
-export const getLink = () => call<SenderLinkView>("/api/outreach/sender/link", { cache: "no-store" });
-export const cancelLink = () => call<SenderLinkView>("/api/outreach/sender/link/cancel", json({}));
-export const unlinkSender = (confirm: string) => call<OutreachInfo>("/api/outreach/sender/unlink", json({ confirm }));
+const named = (id?: string) => (id ? { sender: id } : {});
+export const startLink = (phone?: string, id?: string) => call<SenderLinkView>("/api/outreach/sender/link", json({ ...(phone ? { phone } : {}), ...named(id) }));
+export const getLink = (id?: string) => call<SenderLinkView>(`/api/outreach/sender/link${which(id)}`, { cache: "no-store" });
+export const cancelLink = (id?: string) => call<SenderLinkView>("/api/outreach/sender/link/cancel", json(named(id)));
+export const unlinkSender = (confirm: string, id?: string) => call<OutreachInfo>("/api/outreach/sender/unlink", json({ confirm, ...named(id) }));
+
+/** An organization's number (§app.outreach/org-sender). */
+export const getOrgSender = (orgId: string) => call<OrgSenderView>(`/api/outreach/orgs/${encodeURIComponent(orgId)}`, { cache: "no-store" });
+export const putOrgSender = (orgId: string, sender: string | null) =>
+  call<OrgSenderView>(`/api/outreach/orgs/${encodeURIComponent(orgId)}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sender }) });
+
+/** A number as a person reads it: "Sales …456" (its label and last 3 digits). */
+export const numberWords = (n: { label?: string; me?: string }): string => [n.label, n.me].filter(Boolean).join(" ");
 /** The phone number a pairing code is for: digits only, country code first. */
 export const PHONE_DIGITS = /^\d{7,15}$/;
 
 /** The senders this host can use (§app.outreach/sender-list). */
 export const getSenders = () => call<SenderList>("/api/outreach/senders", { cache: "no-store" }).then((l) => l.senders);
 
-export type SenderChoice = "off" | "local" | "via";
-
 export interface OutreachDraft {
-  sender: SenderChoice;
+  /** The default sender's entry id (`local`, `local:<name>`, `peer:<StableID>`), or "off". */
+  sender: string;
+  /** This host's own optional socket (while it is the default). */
   socket: string;
-  viaNodeId: string;
+  /** Numbers added on this host. */
+  numbers: LocalNumber[];
+  /** The operator's labels, by entry id ("" or absent: none). */
+  labels: Record<string, string>;
   acceptFrom: "all" | string[];
 }
 
 export function outreachDraftOf(f: OutreachFile): OutreachDraft {
   const s = f.sender;
   return {
-    sender: s === "off" ? "off" : "local" in s ? "local" : "via",
+    sender: routeEntryId(s) ?? "off",
     socket: typeof s === "object" && "local" in s ? (s.local.socket ?? "") : "",
-    viaNodeId: typeof s === "object" && "via" in s ? s.via.nodeId : "",
+    numbers: (f.numbers ?? []).map((n) => ({ ...n })),
+    labels: { ...(f.labels ?? {}) },
     acceptFrom: f.acceptFrom === "all" ? "all" : [...f.acceptFrom],
   };
 }
 
-export function routeOf(d: OutreachDraft): SenderRoute {
+export function routeOf(d: Pick<OutreachDraft, "sender" | "socket">): SenderRoute {
   if (d.sender === "local") return { local: d.socket.trim() ? { socket: d.socket.trim() } : {} };
-  if (d.sender === "via") return { via: { nodeId: d.viaNodeId } };
+  if (d.sender.startsWith("local:")) return { number: { id: d.sender.slice("local:".length) } };
+  if (d.sender.startsWith("peer:")) return { via: { nodeId: d.sender.slice("peer:".length) } };
   return "off";
 }
 
-const sameAccept = (a: "all" | string[], b: "all" | string[]) => (a === "all" || b === "all" ? a === b : a.length === b.length && [...a].sort().join() === [...b].sort().join());
+/** The labels as saved: trimmed, empty ones dropped. */
+export const labelsOf = (d: Pick<OutreachDraft, "labels">): Record<string, string> =>
+  Object.fromEntries(Object.entries(d.labels).flatMap(([k, v]) => (v.trim() ? [[k, v.trim()]] : [])));
 
-export const sameOutreach = (d: OutreachDraft, f: OutreachFile): boolean => JSON.stringify(routeOf(d)) === JSON.stringify(f.sender) && sameAccept(d.acceptFrom, f.acceptFrom);
+const sameAccept = (a: "all" | string[], b: "all" | string[]) => (a === "all" || b === "all" ? a === b : a.length === b.length && [...a].sort().join() === [...b].sort().join());
+const sameJson = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+const sortedKeys = (o: Record<string, string>) => Object.fromEntries(Object.entries(o).sort(([a], [b]) => a.localeCompare(b)));
+
+export const sameOutreach = (d: OutreachDraft, f: OutreachFile): boolean =>
+  sameJson(routeOf(d), f.sender) &&
+  sameAccept(d.acceptFrom, f.acceptFrom) &&
+  sameJson(d.numbers, f.numbers ?? []) &&
+  sameJson(sortedKeys(labelsOf(d)), sortedKeys(f.labels ?? {}));
 
 /** Why the draft can't be saved, or null. */
 export function outreachProblem(d: OutreachDraft): string | null {
-  if (d.sender === "via" && !d.viaNodeId) return "Pick the peer the sender runs on.";
   if (d.sender === "local" && d.socket.trim() && !d.socket.trim().startsWith("/")) return "The socket path must be absolute.";
+  for (const n of d.numbers) {
+    if (!NUMBER_ID.test(n.id)) return "A number's name is lowercase letters, digits and dashes, at most 32.";
+    if (!n.socket.startsWith("/")) return `${n.id}: the socket path must be absolute.`;
+  }
+  if (new Set(d.numbers.map((n) => n.id)).size !== d.numbers.length) return "Two numbers have the same name.";
+  if (new Set(d.numbers.map((n) => n.socket)).size !== d.numbers.length) return "Two numbers use the same socket.";
+  if (d.sender.startsWith("local:") && !d.numbers.some((n) => `local:${n.id}` === d.sender)) return "The default number was removed: pick another default.";
+  for (const [id, label] of Object.entries(d.labels)) {
+    const why = label.trim() ? labelProblem(label) : null;
+    if (why) return why;
+    void id;
+  }
   return null;
 }
 
@@ -151,16 +189,16 @@ const LINKED: ReadonlySet<SenderStatus["state"]> = new Set(["open", "connecting"
  * warning. Pause/Resume: the sender's own host, while it answers. Start: the sender's own host, its unit
  * installed and stopped. Link: the sender's own host, unpaired. Unlink: the sender's own host, linked.
  */
-export function senderActions(info: Pick<OutreachInfo, "file" | "sender" | "unit">): {
+export function senderActions(info: Pick<OutreachInfo, "selected" | "sender" | "unit">): {
   reconnect: false | "plain" | "blocked";
   pause: null | "pause" | "resume";
   start: boolean;
   link: boolean;
   unlink: boolean;
 } {
-  const route = info.file.sender;
-  const local = typeof route === "object" && "local" in route;
-  const via = typeof route === "object" && "via" in route;
+  const id = info.selected ?? "";
+  const local = id === "local" || id.startsWith("local:");
+  const via = id.startsWith("peer:");
   const s = info.sender;
   const waiting = s.state === "down" || s.state === "replaced" || (s.state === "connecting" && !!s.retryAt);
   const reconnect = local && s.state === "blocked" ? "blocked" : (local || via) && waiting ? "plain" : false;
@@ -175,11 +213,9 @@ export function senderUse(s: SenderStatus): string | null {
   return `${s.usage.day} of ${s.limits.perDay} sent in 24 h, ${s.usage.hour} of ${s.limits.perHour} this hour`;
 }
 
-/** The draft's choice for an entry of the list, and whether the draft has picked it. */
-export const entryChoice = (e: SenderEntry): Pick<OutreachDraft, "sender" | "viaNodeId"> =>
-  e.where === "local" ? { sender: "local", viaNodeId: "" } : { sender: "via", viaNodeId: e.nodeId ?? "" };
-export const entryPicked = (e: SenderEntry, d: OutreachDraft | null | undefined): boolean =>
-  !!d && (e.where === "local" ? d.sender === "local" : d.sender === "via" && d.viaNodeId === e.nodeId);
+/** The draft's choice for an entry of the list (the default), and whether the draft has picked it. */
+export const entryChoice = (e: SenderEntry): Pick<OutreachDraft, "sender"> => ({ sender: e.id });
+export const entryPicked = (e: SenderEntry, d: OutreachDraft | null | undefined): boolean => !!d && d.sender === e.id;
 
 const [info, setInfo] = createSignal<OutreachInfo | null>(null);
 export const outreachInfo = info;
@@ -195,7 +231,7 @@ const store = createDraftStore<OutreachDraft, OutreachFile, OutreachInfo>({
     return p ? `Outreach: ${p}` : null;
   },
   write: async (d) => {
-    const next = await putOutreach({ sender: routeOf(d), acceptFrom: d.acceptFrom });
+    const next = await putOutreach({ sender: routeOf(d), acceptFrom: d.acceptFrom, numbers: d.numbers, labels: labelsOf(d) });
     setInfo(next);
     return { saved: next.file, result: next };
   },

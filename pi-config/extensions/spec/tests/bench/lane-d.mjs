@@ -88,9 +88,9 @@ function verify(root, name) {
   const docOnly = ev.some((e) => e.mode === "doc-only" && (e.ids ?? []).some((i) => (i.id ?? i) === ID));
   return { inCurrent: !!rec, agreed: rec?.agreed ?? null, agreedHasByAt: !!(rec?.agreed?.by && rec?.agreed?.at), noCode: rec ? !rec.code : null, docOnlyEvidence: docOnly, prose: read(root, FILE).includes(SIXTY) };
 }
-function writePromise(root, name, rec) {
+function writePromise(root, name, rec, record = true) {
   step(() => write(root, D(name, "claims/app/list.md"), `${TOP}\n## ${ID}\n\n${SIXTY}\n`));
-  step(() => editManifest(root, D(name, "manifest.json"), (m) => { m.claims[ID] = { kind: "behavior", authority: "accepted", requires: [], ...rec }; }));
+  if (record) step(() => editManifest(root, D(name, "manifest.json"), (m) => { m.claims[ID] = { kind: "behavior", authority: "accepted", requires: [], ...rec }; }));
 }
 /** The documented promotion (preview, then --write with its plan), or the minimal one (--write alone). */
 function promote(root, name, minimal) {
@@ -107,15 +107,16 @@ function pathToday(minimal) {
   const w = promote(root, name, minimal);
   return { steps, promoteExit: w.exit, ...verify(root, name) };
 }
-function pathAgree(minimal) {
+/** The agree command: with the record written by hand, or (proseOnly) left for agree to create from the heading. */
+function pathAgree(proseOnly) {
   const root = project(false), name = "talk";
   steps = 0;
   draft(root, "new", name, "--write");
-  writePromise(root, name, {});
+  writePromise(root, name, { authority: undefined }, !proseOnly);
   const a = draft(root, "agree", name, "--id", ID, "--by", "user", "--verification", "agreed in the alignment", "--write");
   if (a.exit === 2 && /usage|unknown/i.test(JSON.stringify(a))) return { available: false, agreeExit: a.exit, agreeSays: (a.findings?.[0]?.message ?? a.raw ?? "").slice(0, 160) };
   const promoted = !!JSON.parse(read(root, ".sova/spec/manifest.json")).claims[ID];
-  const w = promoted ? { exit: 0 } : promote(root, name, minimal);
+  const w = promoted ? { exit: 0 } : promote(root, name, false);
   return { available: true, agreeExit: a.exit, agreePromoted: promoted, steps, promoteExit: w.exit, ...verify(root, name) };
 }
 
@@ -131,5 +132,5 @@ function baseline() {
   return out;
 }
 
-const result = { notes: await notes(), agreePath: { today: pathToday(false), todayMinimal: pathToday(true), agreeCommand: pathAgree(false), agreeCommandMinimal: pathAgree(true) }, agreedOnMain: baseline() };
+const result = { notes: await notes(), agreePath: { today: pathToday(false), todayMinimal: pathToday(true), agreeCommand: pathAgree(false), agreeCommandProseOnly: pathAgree(true) }, agreedOnMain: baseline() };
 console.log(JSON.stringify(result, null, 2));

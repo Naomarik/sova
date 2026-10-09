@@ -405,7 +405,7 @@ function ExperimentalPanel() {
         Unfinished features. They can change or disappear, and they apply to sessions you start
         after switching them on — chats already open keep the setup they began with.
       </p>
-      <p class="field-hint">Adversarial review is in Alignment, marked Experimental. No other experiments right now.</p>
+      <p class="field-hint">No experimental features right now.</p>
       <Show when={webSettings.error}>
         <Banner tone="error" title="Couldn't read the experimental settings." body="Nothing was changed." />
       </Show>

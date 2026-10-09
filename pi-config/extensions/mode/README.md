@@ -323,7 +323,7 @@ they are listed, and a recommendation that names an option by its label reads
   transcript keeps its dim `── alignment v2 · questions open · 1/2 settled ──`
   marker, and nothing parses markdown any more.
 
-- **Adversarial review (experimental)** — behind the boolean launch flag
+- **Adversarial review** — behind the boolean launch flag
   `--adversarial-review` (off by default; Sova passes it per hosted session).
   Off, nothing here exists: the tool, its schema and the prompt are exactly as
   without the feature (`tests/review-smoke.mjs` pins them to a fixture). On,

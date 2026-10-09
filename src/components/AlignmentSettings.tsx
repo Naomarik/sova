@@ -10,7 +10,7 @@ import {
   type AlignmentSettings,
 } from "../lib/alignment-draft";
 import { sentence } from "./WorkerSlotRow";
-import { Banner, Chip } from "./ui";
+import { Banner } from "./ui";
 
 /**
  * Settings → Alignment (§app.settings-dialog/alignment): how the align mode plans with you — its
@@ -80,7 +80,7 @@ export function AlignmentSettings() {
         <legend class="settings-delegate-legend">Review</legend>
         <label class="toggle toggle-switch settings-team-enable">
           <span>
-            Adversarial review <Chip>Experimental</Chip>
+            Adversarial review
           </span>
           <input
             type="checkbox"

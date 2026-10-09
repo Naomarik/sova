@@ -673,7 +673,7 @@ export function SubagentProfilesSettings() {
                 "subagents-spec",
               )}
 
-              {/* Adversarial review (experimental): its section shows only while the switch is saved on. */}
+              {/* Adversarial review: its section shows only while the switch is saved on. */}
               <Show when={adversarialReview()}>
                 {section(
                   "reviewer",

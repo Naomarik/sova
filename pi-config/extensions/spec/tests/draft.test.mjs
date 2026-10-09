@@ -76,7 +76,9 @@ test("new previews without writing, then copies manifest and the whole claims tr
   assert.equal(p.exit, 0);
   assert.equal(p.written, false);
   assert.deepEqual(tree(root), before, "preview writes nothing");
-  assert.deepEqual(p.files.map((f) => f.path), ["manifest.json", "claims/a/top.md", "claims/b/other.md"]);
+  assert.equal(p.files, undefined, "the file list is behind --all");
+  assert.equal(p.fileCount, 3);
+  assert.deepEqual(run(root, "new", "f1", "--all").files.map((f) => f.path), ["manifest.json", "claims/a/top.md", "claims/b/other.md"]);
   newDraft(root);
   for (const side of ["base", "spec"]) for (const f of ["manifest.json", "claims/a/top.md", "claims/b/other.md"])
     assert.equal(read(root, `.sova/spec/drafts/f1/${side}/${f}`), read(root, `.sova/spec/${f}`), `${side}/${f}`);
@@ -127,7 +129,10 @@ test("no-Git, no-spec bootstrap: starter draft, snapshot evidence, promotion cre
   assert.equal(w.exit, 0, JSON.stringify(w.findings));
   assert.equal(read(root, ".sova/spec/claims/a/top.md"), "# §a/top\n\nExisting baseline behavior.\n");
   assert.equal(core(root, "check").exit, 0);
-  assert.equal(JSON.parse(read(root, ".sova/spec/drafts/boot/draft.json")).promotions.length, 1);
+  const receipts = JSON.parse(read(root, ".sova/spec/drafts/boot/draft.json")).promotions;
+  assert.equal(receipts.length, 1);
+  assert.deepEqual(receipts[0].after, { "claims/a/top.md": sha(read(root, ".sova/spec/claims/a/top.md")), "manifest.json": sha(read(root, ".sova/spec/manifest.json")) },
+    "the receipt records each written file's SHA-256 after the write");
   assert.equal(run(root, "status", "boot").ids[0].current, "already-current");
 });
 
@@ -515,4 +520,86 @@ syncBuiltinESMExports();\n`);
   assert.equal(r.status, 1, r.stdout);
   assert.deepEqual(codes(j), ["lock-occupied"]);
   assert.equal(read(root, ".sova/spec/drafts/.lock"), "1 elsewhere competitor t", "the competitor's lock is left alone");
+});
+
+// ---------------------------------------------------------------- output: what the draft introduced, apart from what was there
+test("check names what the draft introduced apart from the pre-existing warnings, which are counted, and stays short", () => {
+  const root = project();
+  editManifest(root, ".sova/spec/manifest.json", (m) => {
+    for (let i = 0; i < 10; i++) m.claims[`§a.top/u-${String.fromCharCode(97 + i)}`] = { kind: "behavior", authority: "accepted", code: ["lib/one.txt"] };
+  });
+  write(root, ".sova/spec/claims/a/top.md", TOP + Array.from({ length: 10 }, (_, i) => `\n## §a.top/u-${String.fromCharCode(97 + i)}\n\nIt does a thing.\n`).join(""));
+  assert.equal(core(root, "check").findings.filter((f) => f.code === "requires-uninvestigated").length, 10);
+  const n = newDraft(root);
+  assert.ok(JSON.stringify(n).length <= 1024, `new is a summary: ${JSON.stringify(n).length} B`);
+  const quiet = spawnSync(process.execPath, [CLI, "check", "f1", "--root", root, "--json"], { encoding: "utf8", env: fixtureEnv(root) });
+  assert.ok(Buffer.byteLength(quiet.stdout) < 2048, `nothing new: ${Buffer.byteLength(quiet.stdout)} B`);
+  assert.deepEqual(JSON.parse(quiet.stdout).introduced, []);
+  write(root, D("f1", "claims/c/new.md"), "# §c/new\n\nNew does a thing.\n");
+  editManifest(root, D("f1", "manifest.json"), (m) => { m.claims["§c/new"] = { kind: "behavior", authority: "accepted", requires: ["§c/missing"], code: ["lib/one.txt"] }; });
+  const r = spawnSync(process.execPath, [CLI, "check", "f1", "--root", root, "--json"], { encoding: "utf8", env: fixtureEnv(root) });
+  const j = JSON.parse(r.stdout);
+  assert.equal(r.status, j.exit);
+  assert.ok(Buffer.byteLength(r.stdout) < 2048, `one introduced: ${Buffer.byteLength(r.stdout)} B`);
+  assert.equal(j.introduced.length, 1, JSON.stringify(j.introduced));
+  assert.match(JSON.stringify(j.introduced[0]), /§c\/missing/, "the introduced finding names the dangling requires");
+  assert.deepEqual(j.preexisting, { "requires-uninvestigated": 10 });
+  assert.ok(j.exit >= 1, "an introduced dangling requires still fails the check");
+});
+
+// ---------------------------------------------------------------- Git: the driver merged the manifest, a claims file conflicted
+// extra: the branch's draft also adds a claims file of its own, which merges cleanly (the trap for taking only the conflicted file)
+for (const extra of [false, true]) test(`Git: when the driver merged the manifest and a claims file conflicted${extra ? " (and the branch added another claims file)" : ""}, the one documented recovery loads on the first try`, { skip: !hasGit }, () => {
+  const root = project({ spec: false });
+  const X = ".sova/spec/claims/x/top.md", Y = ".sova/spec/claims/y/extra.md";
+  write(root, ".sova/spec/manifest.json", manifest({ "§x/top": { kind: "surface", authority: "accepted", requires: [] }, "§x.top/a": { kind: "note", authority: "accepted", requires: [] } }));
+  write(root, X, "# §x/top\n\nThe top.\n\n## §x.top/a\n\nA says why.\n");
+  write(root, ".gitignore", "home/\n.sova/spec/drafts/\n");
+  write(root, ".gitattributes", ".sova/spec/manifest.json merge=sova-spec-manifest\n");
+  git(root, "init", "-q");
+  git(root, "config", "merge.sova-spec-manifest.driver", `"${process.execPath}" "${CLI}" merge-manifest --root . --base %O --ours %A --theirs %B --write`);
+  git(root, "add", "-A"); git(root, "commit", "-qm", "base");
+  const sel = (ids) => ids.flatMap((i) => ["--id", i]);
+  const addNotes = (name, ids) => {
+    rmSync(join(root, ".sova/spec/drafts"), { recursive: true, force: true });
+    newDraft(root, name);
+    for (const id of ids) {
+      if (id === "§y/extra") write(root, D(name, "claims/y/extra.md"), "# §y/extra\n\nExtra says why.\n");
+      else write(root, D(name, "claims/x/top.md"), read(root, D(name, "claims/x/top.md")).replace("A says why.\n", `A says why.\n\n## ${id}\n\n${id} says why.\n`));
+      editManifest(root, D(name, "manifest.json"), (m) => { m.claims[id] = { kind: "note", authority: "accepted", requires: [] }; });
+    }
+    assert.equal(run(root, "evidence", name, ...sel(ids), "--by", "t", "--verification", "doc", "--doc-only", "--write").exit, 0);
+    return run(root, "promote", name, ...sel(ids), "--write");
+  };
+  const mine = extra ? ["§x.top/n", "§y/extra"] : ["§x.top/n"];
+  git(root, "checkout", "-qb", "by");
+  assert.equal(addNotes("fb", ["§x.top/b"]).exit, 0);
+  git(root, "add", "-A"); git(root, "commit", "-qm", "by");
+  git(root, "checkout", "-q", "main"); git(root, "merge", "-q", "--ff-only", "by");
+  git(root, "checkout", "-qb", "bx", "main~1");
+  assert.equal(addNotes("fa", mine).exit, 0);
+  git(root, "add", "-A"); git(root, "commit", "-qm", "bx");
+  const m = spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-C", root, "merge", "main", "-m", "merge"], { encoding: "utf8", env: fixtureEnv(root) });
+  assert.equal(m.status, 1, "the claims file conflicts");
+  assert.deepEqual(git(root, "diff", "--name-only", "--diff-filter=U").split("\n"), [X], "the driver merged the manifest");
+  // PROMOTE.md's bullet for this case, and the command it gives, run literally
+  const promote = readFileSync(resolve(dirname(CLI), "../PROMOTE.md"), "utf8");
+  const bullet = promote.split(/\n(?=- )/).find((b) => /driver/i.test(b) && /claims/.test(b) && /merged/i.test(b));
+  assert.ok(bullet, "PROMOTE.md names the case where the driver merged the manifest and claims conflicted");
+  assert.match(bullet, /never[^.]*--ours/i, "it rules out --ours, which is the driver-merged manifest");
+  const cmd = /`(git checkout [^`]*manifest\.json[^`]*)`/.exec(bullet)?.[1];
+  assert.ok(cmd, "it gives one command taking the manifest and the conflicted claims files");
+  const literal = cmd.replace(/<[^>]*(master|main|default|base)[^>]*>|\bmaster\b/g, "main").replace(/<[^>]*claims[^>]*>|\.sova\/spec\/claims\/…|…/g, X);
+  const during = run(root, "promote", "fa", ...sel(mine));
+  assert.ok(during.exit >= 1, "promoting during the conflicted merge is refused");
+  assert.ok((during.refusals ?? []).some((r) => r.message.includes(literal)), `the refusal carries the same command: ${JSON.stringify(during.refusals)}`);
+  const args = literal.replace(/^git /, "").split(/\s+/);
+  git(root, ...args); git(root, "add", "-A"); git(root, "commit", "-qm", "resolved");
+  assert.ok(core(root, "check").exit <= 1, "the spec loads on the first try");
+  // re-apply: the branch's draft promoted again with the same --id (its evidence still holds)
+  const re = run(root, "promote", "fa", ...sel(mine), "--write");
+  assert.equal(re.exit, 0, JSON.stringify(re.refusals));
+  assert.ok(core(root, "check").exit <= 1);
+  assert.ok(read(root, X).includes("§x.top/b") && read(root, X).includes("§x.top/n"), "neither side's note is lost");
+  if (extra) assert.ok(existsSync(join(root, Y)), "the branch's own claims file is back");
 });

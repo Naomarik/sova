@@ -17,7 +17,7 @@ and any mistake in it.
 
 | Group | Where | Notes |
 |---|---|---|
-| **Built in** | `profiles/<id>.json` in Sova | Default (in code, changes nothing), Read-only reviewer, Mini overseer |
+| **Built in** | `profiles/<id>.json` in Sova | Default (in code, changes nothing), Read-only reviewer |
 | **This project** | `<project>/.sova/profiles/<id>.json` | Committed with the project. One file per profile |
 | **Yours** | `~/.pi/agent/sova/session-profiles.json` | `{"version": 1, "profiles": [...]}`. Every folder can use them. One of yours replaces a built-in one of the same id. With the mesh on, the whole file syncs to your other devices (the newest edit wins) |
 
@@ -56,6 +56,7 @@ skipped and shown in Settings → Profiles with the exact error. The others stil
 | `singleton` | no | `true`: **One at a time**, at most 1 live session per profile (per project for a project's profile) |
 | `limits` | no | Any of `hops` (3), `perMessage` (10), `perDay` (40), `targetsPerRun` (5), `perPair` (6): whole numbers from 1 |
 | `mode` | no | `normal` or `delegate`: the mode it starts in |
+| `minorModes` | no | The whole set of minor modes it starts with, any of `align`, `spec`, `vis` and `codemode`, in any order. `[]` starts with none. Absent: the default in `mode.json`. Picking a profile without it after one that had it puts the default back |
 | `model` | no | `"provider/model"`: the model the main thread starts on |
 | `thinking` | no | The main thread's effort: `off`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max` |
 | `subagents` | no | A subagent profile's id (Settings → Subagents), or `"off"`: what its workers, teams and spec writer use. Absent: this device's default |

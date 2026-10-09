@@ -23,6 +23,7 @@ const {
   parseProfile,
   profileFileError,
   PROFILE_ENTRY,
+  PROFILE_MINOR_MODES,
   REMOVABLE,
   sessionSentHeader,
   stripSessionHeader,
@@ -41,7 +42,6 @@ const { harnessEventOf } = await import("./harness/pi/session");
 
 const shipped = (id: string) => ({ ...(parseProfile(JSON.parse(readFileSync(new URL(`../profiles/${id}.json`, import.meta.url), "utf8"))) as Profile), source: "sova" as const });
 const reviewer = shipped("reviewer");
-const mini = shipped("mini-overseer");
 /** A project's One at a time profile that reads, messages and sees all: the fixture every captain test uses. */
 const CAPTAIN = {
   id: "captain",
@@ -55,6 +55,8 @@ const captainIn = (root: string) => ({ ...(parseProfile(CAPTAIN) as Profile), so
 const entry = (profile: unknown, id = "p") => ({ type: "custom", id, customType: PROFILE_ENTRY, data: { v: 1, profile } });
 
 /** A folder with `.sova/profiles/<id>.json` files. */
+/** A granting profile (reads and messages sessions in its project, can't edit, the Overseer may start it), read from its own project file. */
+const MINI = { id: "mini-overseer", label: "Mini overseer", icon: "network", remove: ["edit", "workers"], grant: ["sessions.read", "sessions.message"], overseerMayStart: true };
 function project(name: string, profiles: Record<string, unknown>, playbooks: Record<string, string> = {}): string {
   const root = join(dir, name);
   mkdirSync(join(root, ".sova", "profiles"), { recursive: true });
@@ -65,6 +67,7 @@ function project(name: string, profiles: Record<string, unknown>, playbooks: Rec
   }
   return root;
 }
+const mini = (await findProfile({ source: "project", id: "mini-overseer" }, project("mini-fixture", { "mini-overseer": MINI })))!;
 const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-c", "user.email=t@example.com", "-c", "user.name=t", "-c", "init.defaultBranch=master", ...args], { cwd, stdio: "pipe" });
 
 describe("the model", () => {
@@ -80,8 +83,9 @@ describe("the model", () => {
 
   test("the shipped profiles are files in their normal form, and only Default is in code", async () => {
     for (const p of [reviewer, mini]) assert.deepEqual(normalizeCaps(p.remove, p.grant), { remove: p.remove, grant: p.grant }, p.id);
+    assert.ok(mini.overseerMayStart);
     const src = await profileSources(null);
-    assert.deepEqual(src.builtins.map((p) => p.key), ["sova:default", "sova:mini-overseer", "sova:reviewer"]);
+    assert.deepEqual(src.builtins.map((p) => p.key), ["sova:default", "sova:reviewer"]);
     assert.deepEqual(src.problems, []);
     // Profile content only (ids, names, text): the file paths are left out, so the checkout's folder
     // name (a worktree "…-merged") can neither trip nor satisfy it.
@@ -147,9 +151,26 @@ describe("the model", () => {
     assert.equal((parseProfile({ id: "x", label: "X", subagents: "off" }) as Profile).subagents, "off");
   });
 
-  test("capability-neutral: only model, effort, subagents or mode", () => {
+  test("minorModes is the whole set: any order reads in the mode extension's, [] stays none, absent stays absent", async () => {
+    const minors = (v: unknown) => (parseProfile({ id: "x", label: "X", minorModes: v }) as Profile).minorModes;
+    assert.deepEqual(minors(["vis", "align", "spec", "vis"]), ["align", "spec", "vis"]);
+    assert.deepEqual(minors(["codemode"]), ["codemode"]);
+    assert.deepEqual(minors([]), [], "[] is kept: the session starts with none");
+    assert.equal("minorModes" in (parseProfile({ id: "x", label: "X" }) as Profile), false, "absent: mode.json's default");
+    // The file parse is strict about it.
+    assert.equal(profileFileError({ ...CAPTAIN, minorModes: ["spec", "align"] }), null);
+    assert.equal(profileFileError({ ...CAPTAIN, minorModes: [] }), null);
+    assert.equal(profileFileError({ ...CAPTAIN, minorModes: ["spec", "aling"] }), `"minorModes" has unknown name "aling". Known: align, spec, vis, codemode.`);
+    assert.equal(profileFileError({ ...CAPTAIN, minorModes: "spec" }), `"minorModes" must be a list of names.`);
+    assert.equal(profileFileError({ ...CAPTAIN, minorModes: [1] }), `"minorModes" must be a list of names.`);
+    // shared/ imports nothing, so it keeps its own copy of the mode extension's list.
+    const { MINOR_MODES } = await import("./mode-state");
+    assert.deepEqual([...PROFILE_MINOR_MODES], [...MINOR_MODES]);
+  });
+
+  test("capability-neutral: only model, effort, subagents, mode or minor modes", () => {
     const p = (extra: Record<string, unknown>) => parseProfile({ id: "x", label: "X", ...extra }) as Profile;
-    assert.equal(isCapabilityNeutral(p({ model: "a/b", thinking: "low", subagents: "off", mode: "delegate" })), true);
+    assert.equal(isCapabilityNeutral(p({ model: "a/b", thinking: "low", subagents: "off", mode: "delegate", minorModes: ["spec"] })), true);
     assert.equal(isCapabilityNeutral(p({ remove: ["web"] })), false);
     assert.equal(isCapabilityNeutral(p({ grant: ["sessions.read"] })), false);
     assert.equal(isCapabilityNeutral(p({ singleton: true })), false);
@@ -270,9 +291,9 @@ describe("where profiles come from (§chat.profiles/projects)", () => {
     assert.equal((await findProfile("reviewer", join(dir, "elsewhere-none")))?.label, "My reviewer", "yours replace the shipped one of that id");
     assert.equal((await findProfile({ source: "user", id: "reviewer" }, root))?.label, "My reviewer");
     assert.equal((await findProfile({ source: "sova", id: "reviewer" }, root)), null, "yours replaced it");
-    assert.equal((await findProfile("mini-overseer", root))?.source, "sova");
     assert.equal(await findProfile({ source: "project", id: "mine" }, root), null);
     rmSync(join(dir, "agent", "sova", "session-profiles.json"));
+    assert.equal((await findProfile("reviewer", join(dir, "elsewhere-none")))?.source, "sova", "a built-in nothing replaces");
   });
 
   test("a worktree or subfolder session's project is its main checkout: it sees the main checkout's profiles and playbooks", async () => {

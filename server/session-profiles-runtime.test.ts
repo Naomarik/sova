@@ -63,16 +63,21 @@ after(async () => {
   await disposeAllChats();
 });
 
-/** The project fixture (§chat.profiles/projects): `cwd` is a plain folder, so its own project. Its
-    One at a time captain reads, messages and sees all, and the Overseer may start it once approved. */
+/** The project fixtures (§chat.profiles/projects): `cwd` is a plain folder, so its own project. Its
+    One at a time captain reads, messages and sees all, and the Overseer may start it once approved.
+    Its mini overseer reads and messages sessions in its project, can't edit, and the Overseer may start it. */
 const CAPTAIN = { id: "captain", label: "Release captain", icon: "branch", remove: ["workers", "web"], grant: ["sessions.read", "sessions.message", "sessions.all"], singleton: true, overseerMayStart: true };
 mkdirSync(join(cwd, ".sova", "profiles"), { recursive: true });
-writeFileSync(join(cwd, ".sova", "profiles", "captain.json"), JSON.stringify(CAPTAIN));
-approve((await findProfile({ source: "project", id: "captain" }, cwd))!, { grant: CAPTAIN.grant as never, overseerMayStart: true });
-/** A shipped profile's snapshot, or the fixture captain's. */
+const MINI = { id: "mini-overseer", label: "Mini overseer", icon: "network", remove: ["edit", "workers"], grant: ["sessions.read", "sessions.message"], overseerMayStart: true };
+const FIXTURES: Record<string, object> = { captain: CAPTAIN, "mini-overseer": MINI };
+for (const f of Object.values(FIXTURES) as (typeof MINI)[]) {
+  writeFileSync(join(cwd, ".sova", "profiles", `${f.id}.json`), JSON.stringify(f));
+  approve((await findProfile({ source: "project", id: f.id }, cwd))!, { grant: f.grant as never, overseerMayStart: true });
+}
+/** A shipped profile's snapshot, or a project fixture's. */
 const profile = (id: string) =>
-  id === "captain"
-    ? { ...(parseProfile(CAPTAIN) as object), source: "project", project: cwd, projectName: "cwd" }
+  FIXTURES[id]
+    ? { ...(parseProfile(FIXTURES[id]) as object), source: "project", project: cwd, projectName: "cwd" }
     : { ...(parseProfile(JSON.parse(readFileSync(new URL(`../profiles/${id}.json`, import.meta.url), "utf8"))) as object), source: "sova" };
 const CAPTAIN_PICK = { source: "project" as const, id: "captain" };
 let n = 0;

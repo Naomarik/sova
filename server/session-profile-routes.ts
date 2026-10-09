@@ -3,6 +3,7 @@ import { keyOf, THINKING_LEVELS, type ListedProfile, type Profile, type Profiles
 import type { SessionSummary } from "../shared/protocol";
 import { acquireChat, disposeHeldChat, heldChat, setOpeningChoice, setSingletonCheck } from "./chat-manager";
 import { modelDenial, readModelPolicy } from "./model-policy";
+import { readMode, type ModePatch } from "./mode-state";
 import { listModels } from "./models";
 import { addProfile } from "./profiles-store";
 import { subagentProfilesInfo } from "./subagent-profiles";
@@ -36,8 +37,8 @@ let applying: Promise<unknown> = Promise.resolve();
 
 /**
  * Write a session's profile and reopen its runtime (§chat.profiles/applying). `by`: who picked it
- * when it wasn't the user on the empty screen. A profile's mode and model are applied in the same
- * step. Refused once a message is on the branch, mid-turn, TUI-live, for a foreign writer, for a
+ * when it wasn't the user on the empty screen. A profile's mode, minor modes and model are applied
+ * in the same step. Refused once a message is on the branch, mid-turn, TUI-live, for a foreign writer, for a
  * special session, and for a One at a time profile live elsewhere.
  */
 export function applyProfile(path: string, choice: ProfileChoice, by?: "overseer" | "start"): Promise<ApplyResult> {
@@ -85,12 +86,19 @@ async function applyNow(path: string, choice: ProfileChoice, by?: "overseer" | "
   const fresh = { model: !next?.model && !!prev?.model, thinking: !next?.thinking && !!prev?.thinking };
   const model = next?.model;
   const thinking = next?.thinking;
+  // Its mode and minor modes, pinned together; a field it doesn't set, after a profile that set it,
+  // goes back to mode.json's default (read, never written) and is pinned with the other.
+  const modePatch: ModePatch = {};
+  if (next?.mode) modePatch.mode = next.mode as ModePatch["mode"];
+  else if (prev?.mode) modePatch.mode = readMode().mode;
+  if (next?.minorModes) modePatch.minorModes = [...next.minorModes];
+  else if (prev?.minorModes) modePatch.minorModes = [...readMode().minorModes];
   try {
     chat.writeProfile({ v: 1, profile: next, ...(by ? { by } : {}) });
   } catch (err) {
     return { ok: false, status: 409, error: err instanceof Error ? err.message : String(err) };
   }
-  // Starts with: its mode (pinned), model, effort and subagent pick, before the reopen. None saves a default.
+  // Starts with: its mode and minor modes (pinned), model, effort and subagent pick, before the reopen. None saves a default.
   const failed: string[] = [];
   const step = async (what: string, run: () => unknown) => {
     try {
@@ -99,7 +107,7 @@ async function applyNow(path: string, choice: ProfileChoice, by?: "overseer" | "
       failed.push(`its ${what} wasn't (${err instanceof Error ? err.message : String(err)})`);
     }
   };
-  if (next?.mode) await step("mode", () => chat.switchMode({ mode: next.mode as "normal" | "delegate" }).then(() => chat.pinMode()));
+  if (modePatch.mode || modePatch.minorModes) await step("mode", () => chat.switchMode(modePatch).then(() => chat.pinMode()));
   if (model && model !== chat.harness.model()?.ref) await step("model", () => chat.setModelRef(model));
   if (thinking) await step("effort", () => chat.setThinking(thinking));
   if (subagents) await step("subagent profile", () => chat.switchSubagentProfile(subagents));

@@ -109,7 +109,13 @@ the playbook's own method appear there only as proposed diffs, never applied by 
 ## §tools.spec/census-note — The `[spec census]` note stays short
 
 After a tool call that brings new changed files, and only then, the `[spec census]` note says what
-the census found, the same in pi sessions, pi workers and Claude Code workers:
+the census found, the same in pi sessions, pi workers and Claude Code workers. Only what changes
+while one of the session's own tool calls runs is the session's: a file changed, or a commit made,
+between its calls (another process sharing the work tree, a worker, the user's editor) is taken in
+silently before the next call and left out of every count and line, so a session that changes
+nothing itself never gets a note or `No draft yet`. Such a file the session then changes itself is
+its own from that call on. A worker's changes reach the worker's own census note, never its
+parent's.
 
 - a header, "N changed file(s) in the boundary, M unclaimed", followed by "; K mapped outside the
   boundary" when K is above 0; it gives no foreign count;
@@ -123,14 +129,36 @@ the census found, the same in pi sessions, pi workers and Claude Code workers:
 It has no `Foreign §:` line, no `Rule:` line and no `New claims under a foreign §` pairs, and a newly
 touched foreign § alone never fires it. Returning to a work tree retains its census state. When the
 census can't run, the model gets one line, "[spec census] incomplete: <why>; run census by hand",
-once per cause per work tree until a census there succeeds again; there is no toast.
+once per cause per work tree until a census there succeeds again; there is no toast. When the
+census printed nothing, <why> carries the first error line it wrote to stderr (else its first
+stderr line), else that it timed out or its exit status. The census runs on the node the hook
+itself runs on, by absolute path, so a version manager's `node` shim on PATH that refuses an
+untrusted directory never stops it (under bun: the first `node` on PATH outside a shims directory).
 
 The census is skipped after a tool that cannot write the repository, by an explicit list of tool
 names: in pi, read, grep, find, ls, align, agent_list, agent_models, agent_transcript, agent_wait,
 team_list, team_inbox, team_roster, link_inbox, link_members and link_offers; in Claude Code, its
 own read-only tools and the team tools team_inbox, team_msg, team_ask, team_roster, team_report and
-wake_nudge. A skipped call neither looks at the tree nor moves the census's baseline, so the next
-call that can write reports every change since. Shell commands are never skipped.
+wake_nudge. A skipped call neither looks at the tree nor moves the census's baseline; what changed
+while it ran is taken in before the next call that can write, like any change between calls. Shell
+commands are never skipped.
+
+## §tools.spec/write-guard — The direct-write note judges the files, not the command
+
+The census note's write guard says "you wrote the current spec directly (<files>): undo it" for a
+current-spec file (`manifest.json` or a file under `claims/`) that a tool call changed by hand, the
+same in pi sessions, pi workers and Claude Code workers. An edit or write tool on such a file is
+always one. For a shell command, the guard looks at each current-spec file the call changed and
+never at the command's text, so a wrapper script, an alias or a shell function is judged like the
+tool it runs. A changed file is not a hand write when:
+
+- its bytes are what a promotion wrote: their SHA-256 matches the hash a promotion receipt
+  (`promotions[]` in a draft's `draft.json`) records for that file;
+- a merge, rebase, cherry-pick or revert is in progress in that work tree;
+- its bytes equal the file at HEAD or at the default branch's tip.
+
+Any other change, `sed -i` on a claim file for one, still gets the note. Each promotion receipt
+records, beside the files it wrote, each file's SHA-256 after the write (null for a file it removed).
 
 ## §tools.spec/mode-reading — Spec mode teaches contents first, then one passage
 

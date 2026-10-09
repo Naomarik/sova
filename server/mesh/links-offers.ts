@@ -12,7 +12,7 @@ import { randomBytes } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { type LinkMemberRef, type LinkOffer, type LinkOfferRecipient, OFFER_FINAL, OFFER_ID_RE, type OfferRefusal, type OfferRowState } from "../../shared/mesh-links";
-import { type LinkSandbox, linkSandbox, needsPrescan } from "../link-sandbox";
+import { type LinkSandbox, linkSandbox } from "../link-sandbox";
 import {
   checkDest,
   listOffer,
@@ -414,14 +414,11 @@ export class LinkTransfers {
           this.progress(o, row.to);
         },
         onExtracting: () => this.setRow(o, row, { state: "extracting" }),
-        ...(needsPrescan(sb, dest, prot)
-          ? {
-              prescan: async (members) => {
-                const no = await linkSandbox.prescan(members, { dest, roots: o.roots.map((x) => x.name), sandbox: sb, protectedRoots: prot });
-                if (no) throw new TransferError(no.reason, no.message);
-              },
-            }
-          : {}),
+        // Always, sandbox or not: the archive's shape and Sova's state are checked before tar runs.
+        prescan: async (members) => {
+          const no = await linkSandbox.prescan(members, { dest, roots: o.roots.map((x) => x.name), sandbox: sb, protectedRoots: prot });
+          if (no) throw new TransferError(no.reason, no.message);
+        },
       });
       const doneAt = this.now();
       this.setRow(o, row, { state: "done", received: r.received, doneAt, startedAt: doneAt - r.took });

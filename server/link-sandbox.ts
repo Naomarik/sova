@@ -1,17 +1,18 @@
 // A linked session's sandbox as the server must honour it when it moves files for that session
 // (§mesh.links/offers, §mesh.links/transfer): with the sandbox on, the server packs only what the
 // session's own tools could read and extracts only where they could write. Off, nothing but Sova's
-// own state is protected. The policy is the sandbox extension's, resolved by its own
+// own state and the archive's shape are checked. The policy is the sandbox extension's, resolved by its own
 // session-policy.ts from what the session's branch says (the `sandbox` entry, the tracked
 // worktrees), so the server and the extension never disagree. With the sandbox on and the policy
 // unresolvable, everything is refused (fail closed, as the tools do).
 //
 // Also the receiver's pre-scan (Q6): every member of a downloaded archive checked before `tar -x`
-// runs. Known limit: a sandboxed agent could plant a symlink in dest between the scan and the
+// runs, whatever the sandbox (GNU tar writes through a link already on disk in a member's parent
+// path, so a link one offer left could carry the next offer's files anywhere). Known limit: a sandboxed agent could plant a symlink in dest between the scan and the
 // extraction; closing that is confined extraction, later.
 import { lstatSync } from "node:fs";
 import { homedir } from "node:os";
-import { isAbsolute, join } from "node:path";
+import { basename, isAbsolute, join } from "node:path";
 import { canonicalize, hiddenBelow, isWithin, readDenial, type ResolvedPolicy, writeDenial } from "../pi-config/extensions/sandbox/policy.ts";
 import { resolveSessionPolicy } from "../pi-config/extensions/sandbox/session-policy.ts";
 import { restoreActive } from "../pi-config/extensions/sandbox/state.ts";
@@ -70,11 +71,6 @@ const unresolvedWhy = (error: string) => `the session's sandbox is on but its po
 /** The protected roots, canonical. */
 const protectedOf = (roots: readonly string[]): string[] => [...new Set(roots.map(canonicalize))];
 
-/** Whether the pre-scan must run at all: the sandbox is on, or a protected root lies under dest. */
-export function needsPrescan(sb: LinkSandbox, dest: string, protectedRoots: readonly string[]): boolean {
-  return sb.on || protectedOf(protectedRoots).some((p) => isWithin(p, dest));
-}
-
 /** The pre-scan's refusal, naming the first offending path. */
 export interface PrescanDenial {
   reason: "not-writable" | "protected" | "bad-dest";
@@ -95,8 +91,9 @@ function exists(p: string): boolean {
  * The pre-scan: every member of the archive (in order) before extraction into the canonical
  * `dest`. Refused: an absolute name or a `..`; a member whose parent is neither dest nor a directory
  * member seen earlier (tar would follow a symlink already there); a hard link to anything but an
- * earlier member; a member in a protected root; with the sandbox on, a member its tools couldn't
- * write. Null when every member passes. Throws what the reader throws (a corrupt archive).
+ * earlier member; a member in a protected root, also once its parent's links on disk are resolved
+ * (one planted earlier, or dest itself swapped for one); with the sandbox on, a member its tools
+ * couldn't write. Null when every member passes. Throws what the reader throws (a corrupt archive).
  */
 export async function prescan(
   members: AsyncIterable<TarMember>,
@@ -107,6 +104,8 @@ export async function prescan(
   const prot = protectedOf(protectedRoots);
   const dirs = new Set<string>();
   const seen = new Set<string>();
+  // Each parent directory as the disk resolves it now, once per scan.
+  const real = new Map<string, string>();
   for await (const m of members) {
     const name = clean(m.name);
     if (name === null) return { reason: "not-writable", path: m.name, message: `The archive names ${JSON.stringify(m.name)}, outside the destination; nothing was extracted.` };
@@ -123,6 +122,11 @@ export async function prescan(
     }
     const p = prot.find((r) => isWithin(abs, r));
     if (p) return { reason: "protected", path: abs, message: `${abs} is inside Sova's own state, which a transfer never writes; nothing was extracted.` };
+    let up = real.get(parent);
+    if (up === undefined) real.set(parent, (up = canonicalize(parent ? join(dest, parent) : dest)));
+    const at = join(up, basename(abs));
+    const q = prot.find((r) => isWithin(at, r));
+    if (q) return { reason: "protected", path: abs, message: `${abs} would be written into Sova's own state (${q}) through a link on disk; nothing was extracted.` };
     if (sb.on && "policy" in sb) {
       const why = writeDenial(sb.policy, abs, { creating: m.type === "dir" && !exists(abs) });
       if (why) return { reason: "not-writable", path: abs, message: `${abs} is not writable for this session in its sandbox (${why}); nothing was extracted.` };

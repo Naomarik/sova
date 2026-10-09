@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import { resolveSessionPolicy } from "../pi-config/extensions/sandbox/session-policy.ts";
 import { canonicalize } from "../pi-config/extensions/sandbox/policy.ts";
-import { linkSandbox, linkSandboxOf, type LinkSandbox, needsPrescan, prescan, sandboxOf } from "./link-sandbox";
+import { linkSandbox, linkSandboxOf, type LinkSandbox, prescan, sandboxOf } from "./link-sandbox";
 import type { TarMember } from "./mesh/tar-list";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-link-sandbox-")));
@@ -81,9 +81,6 @@ test("the checks: read, write and hiddenBelow through the policy; off allows eve
   assert.ok(linkSandbox.write(wsb, join(root, "elsewhere"), { creating: true }));
   assert.ok(linkSandbox.write(wsb, join(ws, ".git", "hooks", "x"), { creating: true }));
   assert.equal(linkSandbox.write({ on: false }, join(root, "elsewhere")), undefined);
-  assert.equal(needsPrescan({ on: false }, ws, [state]), false);
-  assert.equal(needsPrescan({ on: false }, home, [state]), true);
-  assert.equal(needsPrescan(wsb, ws, [state]), true);
 });
 
 test("pre-scan: structure, protected roots and the sandbox's read-only members", async () => {
@@ -119,6 +116,22 @@ test("pre-scan: an existing symlink in dest is replaced by the archive's own dir
   const sb: LinkSandbox = { on: true, policy: { ...policy(), writable: [dest] } };
   assert.equal(await prescan(members([{ name: "proj/", type: "dir" }, { name: "proj/k" }]), { dest: dest, sandbox: sb, protectedRoots: [state] }), null);
   assert.equal((await prescan(members([{ name: "proj/k" }]), { dest: dest, sandbox: sb, protectedRoots: [state] }))?.reason, "not-writable");
+});
+
+test("pre-scan, sandbox off: a member whose parent resolves into a protected root through a link on disk is refused", async () => {
+  const dest = join(root, "dest-off");
+  mkdirSync(join(dest, "real"), { recursive: true });
+  symlinkSync(state, join(dest, "proj"));
+  const off: LinkSandbox = { on: false };
+  const d = await prescan(members([{ name: "proj/", type: "dir" }, { name: "proj/mesh-access.json" }]), { dest, sandbox: off, protectedRoots: [state] });
+  assert.equal(d?.reason, "protected");
+  assert.equal(d?.path, join(dest, "proj", "mesh-access.json"));
+  // dest itself swapped for a link into the state root after it was checked.
+  const swapped = join(root, "swapped");
+  symlinkSync(state, swapped);
+  assert.equal((await prescan(members([{ name: "x" }]), { dest: swapped, sandbox: off, protectedRoots: [state] }))?.reason, "protected");
+  // A link member pointing into the state root still lands as a link; a plain tree passes.
+  assert.equal(await prescan(members([{ name: "real/", type: "dir" }, { name: "real/l", type: "symlink", linkname: state }, { name: "real/a" }]), { dest, sandbox: off, protectedRoots: [state] }), null);
 });
 
 /** A hand-made policy: the cwd writable, nothing hidden. */

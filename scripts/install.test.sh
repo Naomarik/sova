@@ -31,7 +31,7 @@ nopnpm=$tmp/sandbox-nopnpm       # npx but no pnpm: the installer runs pnpm thro
 nopm=$tmp/sandbox-nopm           # neither pnpm nor npx
 stubs=$tmp/stubs                 # not on any PATH; the pnpm stub lives here so npx can reach it
 mkdir -p "$sandbox" "$nogit" "$nopnpm" "$nopm" "$stubs"
-for c in basename bash cat chmod cmp cp dirname env grep head id ln mkdir mktemp mv printf readlink rm sed sh sleep sort touch wc; do
+for c in basename bash cat chmod cmp cp dirname env grep head id ln mkdir mktemp mv printf readlink rm rmdir sed sh sleep sort touch wc; do
 	for d in "$sandbox" "$nogit" "$nopnpm" "$nopm"; do ln -sf "$(command -v "$c")" "$d/$c"; done
 done
 for d in "$sandbox" "$nopnpm" "$nopm"; do ln -sf "$(command -v git)" "$d/git"; done  # $nogit has no git
@@ -158,7 +158,7 @@ STUB
 # start-server.sh: says how it was asked to start the server.
 cat > "$seed/scripts/start-server.sh" <<'STUB'
 #!/bin/sh
-printf 'start-server stub ran: SOVA_BUN=%s args=%s\n' "${SOVA_BUN:-}" "$*"
+printf 'start-server stub ran: SOVA_BUN=%s args=%s PORT=%s\n' "${SOVA_BUN:-}" "$*" "${PORT:-}"
 STUB
 chmod 755 "$seed/scripts/fetch-bun.sh" "$seed/scripts/start-server.sh"
 # pi-config: two extensions (a directory and a single file), a non-extension file, and the
@@ -229,6 +229,7 @@ CASE_PATH=$nogit run_install missing-git
 unset CASE_PATH
 check "$([ "$status" -ne 0 ] && echo true || echo false)" "missing git: exits nonzero"
 check "$(printf '%s' "$out" | grep -q 'git is not installed' && echo true || echo false)" "missing git: says which command"
+check "$(yes_if [ -z "$(printf '%s' "$out" | grep 'not installed' | grep pnpm)" ])" "missing git: does not ask for pnpm, which is optional"
 check "$([ ! -e "$home/.local/share/sova" ] && [ ! -e "$home/.local/bin/sova" ] && echo true || echo false)" \
 	"missing git: no install dir, no launcher"
 check "$(pi_untouched && echo true || echo false)" "missing git: ~/.pi untouched"
@@ -293,6 +294,7 @@ unset BUN_FAIL
 check "$(yes_if [ "$status" -ne 0 ])" "bun fails: exits nonzero"
 check "$(yes_if said 'could not install Bun; nothing was changed')" "bun fails: says nothing was changed"
 check "$(yes_if [ ! -e "$home/.local/share/sova" ] && [ ! -e "$home/.local/bin/sova" ])" "bun fails: no install dir, no launcher"
+check "$(yes_if [ ! -e "$home/.local" ])" "bun fails: no directory left that the run created"
 
 # 5. Re-running on our own clean clone with --reinstall rebuilds it and keeps working.
 home=$good_home
@@ -464,6 +466,9 @@ check "$(yes_if grep -qF "ExecStart=\"$home/.local/bin/sova\"" "$unit")" "system
 check "$(yes_if grep -q '^Environment=PORT=4899$' "$unit")" "systemd: the port"
 check "$(yes_if grep -q '^Environment="PATH=.*/opt/homebrew/bin.*"$' "$unit")" "systemd: PATH has Homebrew"
 check "$(yes_if grep -qF "$home/.local/bin" "$unit")" "systemd: PATH has ~/.local/bin"
+check "$(yes_if grep -q '^Restart=always$' "$unit")" "systemd: restarts whenever it exits, as the documented unit"
+check "$(yes_if grep -q '^RestartSec=2$' "$unit")" "systemd: RestartSec as the documented unit"
+check "$(yes_if grep -q '^TimeoutStopSec=90$' "$unit")" "systemd: a stop has 90 s to drain the workers"
 check "$(yes_if grep -q 'enable' "$case_dir/svc.log")" "systemd: enabled"
 check "$(yes_if grep -q 'systemctl --user start sova.service' "$case_dir/svc.log")" "systemd: started"
 # A changed definition is rewritten in place and reloaded; the service is not started twice.
@@ -481,9 +486,11 @@ plist=$home/Library/LaunchAgents/io.github.naomarik.sova.plist
 check "$([ "$status" -eq 0 ] && echo true || echo false)" "launchd: exits 0"
 check "$(yes_if grep -q 'sova-service v1' "$plist")" "launchd: the plist carries our marker"
 if command -v python3 >/dev/null 2>&1; then
-	parsed=$(python3 -c 'import plistlib,sys; p=plistlib.load(open(sys.argv[1],"rb")); print(p["Label"], p["ProgramArguments"][0], p["EnvironmentVariables"]["PORT"], p["KeepAlive"], p["RunAtLoad"]); print(p["EnvironmentVariables"]["PATH"])' "$plist" 2>&1 || true)
+	parsed=$(python3 -c 'import plistlib,sys; p=plistlib.load(open(sys.argv[1],"rb")); print(p["Label"], p["ProgramArguments"][0], p["EnvironmentVariables"]["PORT"], p["KeepAlive"], p["RunAtLoad"]); print(p["EnvironmentVariables"]["PATH"]); print(p["ThrottleInterval"], p["ExitTimeOut"], p["ProcessType"], p["EnvironmentVariables"]["LANG"])' "$plist" 2>/dev/null || true)
 	check "$(yes_if [ "$(printf '%s\n' "$parsed" | head -n 1)" = "io.github.naomarik.sova $home/.local/bin/sova 4800 True True" ])" \
 		"launchd: the plist parses, with the label, launcher, port and keep-alive"
+	check "$(yes_if [ "$(printf '%s\n' "$parsed" | sed -n 3p)" = "2 60 Interactive en_US.UTF-8" ])" \
+		"launchd: throttle, stop timeout, process type and LANG as the documented agent"
 	check "$(printf '%s' "$parsed" | grep -q '/opt/homebrew/bin' && echo true || echo false)" "launchd: PATH has Homebrew"
 fi
 check "$(yes_if grep -q 'launchctl bootstrap gui/' "$case_dir/svc.log")" "launchd: bootstrapped into the gui domain"
@@ -554,7 +561,87 @@ check "$(yes_if grep -qxF 'http://127.0.0.1:4811/#t=tok-of-the-install' "$tmp/la
 	"launcher open: the install's port, unlocked in the fragment"
 sova_cmd env -u PI_CODING_AGENT_DIR PORT=4999 "$home/.local/bin/sova" open
 check "$(yes_if grep -qxF 'http://127.0.0.1:4999/#t=tok-of-the-install' "$tmp/launcher-token/opened")" "launcher open: \$PORT wins"
+# --port without a service: plain `sova` serves on that port too, the one the summary names.
+check "$(yes_if said 'It serves http://127.0.0.1:4811')" "--port, no service: the summary names the port"
+sova_cmd env -u PORT "$home/.local/bin/sova"
+check "$(printf '%s' "$launch" | grep -q 'start-server stub ran: .* PORT=4811$' && echo true || echo false)" \
+	"--port, no service: sova serves on the install's port"
+sova_cmd env PORT=4999 "$home/.local/bin/sova"
+check "$(printf '%s' "$launch" | grep -q 'start-server stub ran: .* PORT=4999$' && echo true || echo false)" \
+	"--port, no service: \$PORT still wins"
+# With no browser opener, open says to paste the token and exits nonzero.
+printf 'tok-of-the-install\n' > "$home/.pi/agent/sova/auth-token"
+set +e; launch=$(env -u PI_CODING_AGENT_DIR PATH="$sandbox" "$home/.local/bin/sova" open 2>&1); lstatus=$?; set -e
+check "$(yes_if [ "$lstatus" -ne 0 ])" "launcher open, no opener: exits nonzero"
+check "$(printf '%s' "$launch" | grep -q "paste the token from 'sova token'" && echo true || echo false)" \
+	"launcher open, no opener: says to paste the token"
 rm "$home/.pi/agent/sova/auth-token"
+
+# 25. The ref: one that is neither a tag, a branch nor a commit stops the install before anything
+#     is written; the default branch is never installed in its place; the summary names the ref.
+CASE_REF=mastr run_install bad-ref
+check "$(yes_if [ "$status" -ne 0 ])" "bad ref: exits nonzero"
+check "$(yes_if said "'mastr' is not a tag or a branch")" "bad ref: names the ref"
+check "$(yes_if said 'Pass SOVA_REF=<tag, branch or commit>')" "bad ref: says to pass SOVA_REF"
+check "$(yes_if [ ! -e "$home/.local" ])" "bad ref: nothing written, not even ~/.local"
+check "$(yes_if pi_untouched)" "bad ref: ~/.pi untouched"
+CASE_REF=deadbeef1 run_install bad-commit
+check "$(yes_if [ "$status" -ne 0 ])" "bad commit: exits nonzero"
+check "$(yes_if said "'deadbeef1' is not a tag, a branch or a commit")" "bad commit: says so"
+check "$(yes_if said 'nothing was changed')" "bad commit: says nothing was changed"
+check "$(yes_if [ ! -e "$home/.local/share/sova" ] && [ ! -e "$home/.local/bin/sova" ])" "bad commit: no install dir, no launcher"
+check "$(yes_if [ -z "$(ls -d "$home/.local/share/.sova-staging."* 2>/dev/null)" ])" "bad commit: no staging dir left"
+check "$(yes_if [ ! -e "$home/.local" ])" "bad commit: no directory left that the run created (not even ~/.local)"
+mkdir -p "$home/.local/share/keep"
+CASE_REF=deadbeef1 inst
+check "$([ "$status" -ne 0 ] && [ -d "$home/.local/share/keep" ] && [ ! -e "$home/.local/bin" ] && echo true || echo false)" \
+	"bad commit: directories that were there stay; no launcher directory"
+# An existing install is left as it was by a bad ref.
+home=$good_home
+before_head=$(git -C "$home/.local/share/sova" rev-parse HEAD)
+CASE_REF=mastr inst
+check "$(yes_if [ "$status" -ne 0 ] && [ "$(git -C "$home/.local/share/sova" rev-parse HEAD)" = "$before_head" ])" \
+	"bad ref over an install: refused, the install unchanged"
+seed_master=$(git -C "$seed" rev-parse master)
+CASE_REF=master run_install ref-branch
+check "$(yes_if said "installed master (${seed_master:0:7})")" "ref, a branch: the summary names it and its commit"
+# With no SOVA_REF, the default is master (until a release commit sets its own tag).
+fresh_home ref-default
+set +e
+out=$(env -u SOVA_REF HOME="$home" PATH="$sandbox" SOVA_REPO="file://$seed" SOVA_TTY="$tmp/.no-tty" \
+	SVC_LOG="$tmp/ref-default/svc.log" SVC_STATE="$tmp/ref-default/svc" "$test_bash" "$installer" 2>&1)
+status=$?
+set -e
+check "$(yes_if [ "$status" -eq 0 ] && [ "$(git -C "$home/.local/share/sova" rev-parse HEAD)" = "$seed_master" ])" \
+	"ref, unset: installs master's latest commit"
+check "$(yes_if said "installed master (${seed_master:0:7})")" "ref, unset: the summary names master"
+seed_next=$(git -C "$seed" rev-parse next)
+CASE_REF=$seed_next run_install ref-commit
+check "$(yes_if [ "$status" -eq 0 ] && [ "$(git -C "$home/.local/share/sova" rev-parse HEAD)" = "$seed_next" ])" \
+	"ref, a commit: installs that commit"
+check "$(yes_if said "installed $seed_next")" "ref, a commit: the summary names it"
+
+# 26. Piped like curl | bash: a download cut short runs nothing, wherever it is cut, and an early
+#     failure still reads the whole script, so the writer never sees a closed pipe (curl's "(23)").
+total=$(wc -l < "$installer")
+for cut in 60 330 $((total - 1)); do
+	fresh_home "truncated-$cut"
+	set +e
+	out=$(head -n "$cut" "$installer" | env HOME="$home" PATH="$sandbox" SOVA_REPO="file://$seed" SOVA_REF=v0.1.0 \
+		SOVA_TTY="$tmp/.no-tty" SVC_LOG="$tmp/truncated-$cut/svc.log" SVC_STATE="$tmp/truncated-$cut/svc" "$test_bash" 2>&1)
+	set -e
+	check "$(yes_if [ ! -e "$home/.local" ] && pi_untouched)" "truncated at line $cut of $total: ran nothing"
+done
+fresh_home piped-early-failure
+# The writer pauses after the line the git check is on (a script run as it streams fails there and
+# closes the pipe), then writes the rest: a closed pipe kills it (141), as it fails curl.
+set +e
+out=$({ head -n 120 "$installer"; sleep 1; tail -n +121 "$installer"; } |
+	env HOME="$home" PATH="$nogit" SOVA_TTY="$tmp/.no-tty" "$test_bash" 2>&1
+	printf 'writer status %s\n' "${PIPESTATUS[0]}")
+set -e
+check "$(yes_if said 'git is not installed')" "piped, early failure: says why"
+check "$(yes_if said 'writer status 0')" "piped, early failure: the whole script was read (the writer saw no closed pipe)"
 
 # 24. The installer is bash 3.2 and BSD safe: it parses, and uses none of the GNU-only flags or
 #     bash 4 features that break on a stock Mac.

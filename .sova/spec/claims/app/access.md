@@ -2,8 +2,14 @@
 
 Sova's main listener serves one person on one machine, and it proves that with a per-install
 token rather than with the address it was reached on: a request is answered only when it carries
-the token, names a host this app is reachable at, and comes from a caller that is not another
-site acting on the person's behalf. The public side of
+the token (or is that machine's own browser opening the app, §app.access/gate), names a host this
+app is reachable at, and comes from a caller that is not another site acting on the person's
+behalf.
+
+It listens on `127.0.0.1:4800`, loopback only, unless the server is started with `HOST` or `PORT`
+set (`HOST=0.0.0.0` exposes it on every address of the machine on purpose; `PORT=0` takes any free
+port). The installed `sova` launcher passes both through to the server, and with no `PORT` set it starts
+the server on the port it was installed with (`--port`, default `4800`). The public side of
 Sova — the share listener and preview links — is not this claim: it keeps its own tokens and its
 own edge (§mesh.public, §app.baton/share-listener).
 
@@ -172,6 +178,8 @@ Every caller keeps working with no new step for the person:
   agent dir (`$PI_CODING_AGENT_DIR`, else the one the install used), and `open` opens
   `http://127.0.0.1:<PORT, else the install's port>/#t=<token>` in the browser; neither starts the
   server, and before the server ever minted a token both say to start it once and exit nonzero.
+  Plain `sova` serves on that same port. With no browser opener (`open` on macOS, `xdg-open`),
+  `open` says to paste the token from `sova token` into the page and exits nonzero.
 - **A local development server** that proxies to the app presents its own page as the app: it
   forwards the cookie, names the app's own host, and replaces an `Origin` naming the dev server
   itself (a loopback name, as the browser addressed it) with the app's, on requests and socket

@@ -9,7 +9,6 @@ import { type AdoptedStatus } from "./drivers";
 import { ProjectEngine, type Caller, type VerbAct } from "./engine";
 import { FakeHost } from "./fake-host";
 import { readRegistry } from "./store";
-import { approve, defHashOf } from "./trust";
 
 /**
  * Slot 0 adopts a unit Sova did not start (§app.project-services/adopt): read only, up, down, reset and
@@ -51,8 +50,6 @@ before(async () => {
   git(["init", "-q", "-b", "main"]);
   git(["add", "-A"]);
   git(["commit", "-q", "-m", "fixture"]);
-  const h = defHashOf(parseDefinition(JSON.stringify(def)));
-  approve(project, h, h);
   // The stand-in unit's port, answered by this process.
   host.listen(BASE, process.pid, project);
   engine = new ProjectEngine(

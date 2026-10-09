@@ -7,25 +7,42 @@
 // characters that never need encoding, so anything else in the hash is not this route.
 
 import { hostOf, orgHostOf, sessionHrefOn } from "./mesh";
+import { historyQueryOf, historyTailOf, historyViewOf, type HistoryView } from "./org-history-route";
 
 const ID_RE = /^[A-Za-z0-9_-]+$/;
 
-export const ORG_TABS = ["sessions", "people", "projects", "workspace"] as const;
+/** In the strip's order: History after Projects, before Workspace. The History tab's own address and
+    filters are lib/org-history-route's. */
+export const ORG_TABS = ["sessions", "people", "projects", "history", "workspace"] as const;
 export type OrgTab = (typeof ORG_TABS)[number];
 
 /** `host`: the peer the org is attached on (`?host=<id>`, §mesh.remote-sessions/org-pages); absent here. */
 export type OrgsRoute =
   | { kind: "list" }
-  /** No tab = Sessions; `start` implies Sessions. */
-  | { kind: "org"; id: string; start?: string; tab?: OrgTab; host?: string }
+  /** No tab = Sessions; `start` implies Sessions. `history` is set exactly when `tab` is "history". */
+  | { kind: "org"; id: string; start?: string; tab?: OrgTab; host?: string; history?: HistoryView }
   | { kind: "person"; id: string; personId: string; host?: string };
 
 export const ORGS_HREF = "#/orgs";
 
-/** The route, with the org's host when the hash names one (`…?host=<id>`, never on the list). */
+/** The route, with the org's host when the hash names one (`…?host=<id>`, never on the list). Only
+    the History tab takes more of a query (its filters, lib/org-history-route); anywhere else a query
+    other than `host=` is no route. */
 export function orgsRouteFromHash(hash: string): OrgsRoute | null {
+  const qi = hash.indexOf("?");
+  if (qi < 0) return hashRoute(hash);
+  const path = hash.slice(0, qi);
+  const query = hash.slice(qi + 1);
+  const hist = /^#\/orgs\/([^/?]+)\/history(\/.*)?$/.exec(path);
+  if (hist) {
+    const params = new URLSearchParams(query);
+    const r = historyRoute(hist[1]!, hist[2] ?? "", params);
+    if (!r || !params.has("host")) return r;
+    const host = params.get("host")!;
+    return host ? { ...r, host } : null;
+  }
   const q = /^(#\/orgs\/[^?]+)\?host=([^&]*)$/.exec(hash);
-  if (!q) return hashRoute(hash);
+  if (!q) return null;
   let host = "";
   try {
     host = decodeURIComponent(q[2]!);
@@ -36,8 +53,16 @@ export function orgsRouteFromHash(hash: string): OrgsRoute | null {
   return host && r && r.kind !== "list" ? { ...r, host } : null;
 }
 
+function historyRoute(id: string, tail: string, params: URLSearchParams): Extract<OrgsRoute, { kind: "org" }> | null {
+  if (!ID_RE.test(id)) return null;
+  const history = historyViewOf(tail, params);
+  return history ? { kind: "org", id, tab: "history", history } : null;
+}
+
 function hashRoute(hash: string): OrgsRoute | null {
   if (hash === ORGS_HREF || hash === `${ORGS_HREF}/`) return { kind: "list" };
+  const h = /^#\/orgs\/([^/]+)\/history(\/.*)?$/.exec(hash);
+  if (h) return historyRoute(h[1]!, h[2] ?? "", new URLSearchParams());
   const t = /^#\/orgs\/([^/]+)\/(sessions|people|projects|workspace)\/?$/.exec(hash);
   if (t) return ID_RE.test(t[1]!) ? { kind: "org", id: t[1]!, tab: t[2] as OrgTab } : null;
   const pp = /^#\/orgs\/([^/]+)\/people\/([^/]+)\/?$/.exec(hash);
@@ -57,6 +82,12 @@ const onHost = (id: string, tail: string): string => {
 export const orgHref = (id: string): string => onHost(id, "");
 /** One tab of an org's page. */
 export const orgTabHref = (id: string, tab: OrgTab): string => onHost(id, `/${tab}`);
+/** The History tab at one view: its selected event and filters in the address, the host last. */
+export function orgHistoryHref(id: string, view: HistoryView): string {
+  const host = orgHostOf(id);
+  const query = [historyQueryOf(view), host ? `host=${encodeURIComponent(host)}` : ""].filter(Boolean).join("&");
+  return `${ORGS_HREF}/${id}/history${historyTailOf(view)}${query ? `?${query}` : ""}`;
+}
 /** The org page with its start form aimed at one person. */
 export const startForHref = (orgId: string, personId: string): string => onHost(orgId, `/start/${personId}`);
 /** One person's page. */

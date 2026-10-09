@@ -126,8 +126,8 @@ async function readOne(dir: string, id: string, source: Source): Promise<{ info:
     body,
   };
   if (fields.promptHint) info.promptHint = fields.promptHint;
-  const approves = fields.approves?.trim();
-  if (approves === "definition" || approves === "deploy") info.approves = approves;
+  const proposes = fields.proposes?.trim();
+  if (proposes === "definition" || proposes === "deploy") info.proposes = proposes;
   const schedule = headerSchedule(fields, source);
   if (schedule) info.schedule = schedule;
   return { info, fields };

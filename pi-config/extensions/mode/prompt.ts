@@ -1,7 +1,8 @@
 /** The delegate system-prompt text, prompt composition, and status labels. Pure functions: unit-testable. */
 import { DELEGATE_PROFILE_INFO, DELEGATE_PROFILES, delegateDefaults, type DelegateProfileId, type WorkerChoice } from "./delegate.ts";
 import { ALIGN_FILE_SCHEMA } from "./align.ts";
-import { buildMinorPrompt, MINOR_MODES, promptedMinorModes, workerMinorModes, type MinorMode } from "./minor.ts";
+import { ALIGN_STYLE_LABELS, type AlignStyle } from "./align-settings.ts";
+import { ALIGN_STYLE_PARAGRAPHS, buildMinorPrompt, MINOR_MODES, promptedMinorModes, workerMinorModes, type AlignPromptOptions, type MinorMode } from "./minor.ts";
 import { routeAll, usable, type ProfileRoute, type SlotRoute } from "./routing.ts";
 import type { Mode, ModeState } from "./state.ts";
 
@@ -76,7 +77,7 @@ export function buildDelegatePrompt(routes: readonly ProfileRoute[]): string {
  * else" wins: the orchestrator spawns an implementation worker before any alignment is recorded, or
  * relays a planning worker's report as a freeform plan.
  */
-export const DELEGATE_ALIGN_BRIDGE = `The align minor mode is on and takes precedence over delegation: for any ask that needs alignment, spawn at most a non-editing Planning & specs worker to investigate (never the Investigation profile for this — it is design work). Workers have no align tool: tell the planning worker that its one permitted write is the alignment JSON (${ALIGN_FILE_SCHEMA}), at an absolute path outside the repository that you name in its prompt (e.g. /tmp/align-<topic>-<n>.json), so the worktree stays unchanged; then import it with align {op: "import", path: that same absolute path} — never relay or retype its plan as reply text. In a remote session (tools on a target) import is refused: have the worker put the JSON in its report and pass its fields to align create inline. Spawn no implementation worker until the user has confirmed and the alignment's status is implementing, and give implementation workers the decided questions (align get).`;
+export const DELEGATE_ALIGN_BRIDGE = `The align minor mode is on and takes precedence over delegation: for any ask that needs alignment, spawn at most a non-editing Planning & specs worker to investigate (never the Investigation profile for this — it is design work). Workers have no align tool: tell the planning worker that its one permitted write is the alignment JSON (${ALIGN_FILE_SCHEMA}), at an absolute path outside the repository that you name in its prompt (e.g. /tmp/align-<topic>-<n>.json), so the worktree stays unchanged; then import it with align {op: "import", path: that same absolute path} — never relay or retype its plan as reply text. In a remote session (tools on a target) import is refused: have the worker put the JSON in its report and pass its fields to align create inline. Spawn no implementation worker until the user has confirmed and the alignment's status is implementing, and give implementation workers the decided questions (align get). When the align instructions, or a later note, carry a "Writing style" paragraph, copy the one in effect word for word into the planning worker's prompt, so the JSON it writes follows it.`;
 
 /**
  * Appended to the spec block while a spec writer is set (spec.ts, mode-spec.json), under either major
@@ -97,27 +98,29 @@ export function buildSpecWriterPrompt(route: SlotRoute): string {
  * `writer` is the routed spec writer, or null when none is set. `headMinors` is the set of minor
  * modes the session's prompt was built with (the head, see index.ts), when it differs from the
  * active one: their blocks are the ones written, while the delegate block's align bridge follows the
- * active align (turning align on changes the tool set anyway, so it can't keep the prefix).
+ * active align (turning align on changes the tool set anyway, so it can't keep the prefix). `align`: the
+ * writing style and Visuals the head's align block was built with (absent: Default, Visuals off).
  */
 export function composePrompt(
 	state: Pick<ModeState, "mode" | "strict" | "minorModes">,
 	routes: readonly ProfileRoute[],
 	writer: SlotRoute | null = null,
 	headMinors: readonly MinorMode[] = state.minorModes,
+	align?: AlignPromptOptions,
 ): string | undefined {
 	const blocks: string[] = [];
 	if (state.mode === "delegate") {
 		const delegate = buildDelegatePrompt(routes);
 		blocks.push(state.minorModes.includes("align") ? `${delegate}\n\n${DELEGATE_ALIGN_BRIDGE}` : delegate);
 	}
-	for (const minor of promptedMinorModes(headMinors)) blocks.push(minorBlock(minor, writer));
+	for (const minor of promptedMinorModes(headMinors)) blocks.push(minorBlock(minor, writer, false, align));
 	return blocks.length > 0 ? blocks.join("\n\n") : undefined;
 }
 
-/** One minor mode's block exactly as the prompt carries it: spec gains the writer paragraph while a writer is set. */
-function minorBlock(minor: MinorMode, writer: SlotRoute | null, worker = false): string {
+/** One minor mode's block exactly as the prompt carries it: spec gains the writer paragraph while a writer is set, align its style and Visuals. */
+function minorBlock(minor: MinorMode, writer: SlotRoute | null, worker = false, align?: AlignPromptOptions): string {
 	if (worker) return buildWorkerMinorPrompt(minor);
-	const block = buildMinorPrompt(minor);
+	const block = buildMinorPrompt(minor, align);
 	return minor === "spec" && writer ? `${block}\n\n${buildSpecWriterPrompt(writer)}` : block;
 }
 
@@ -129,7 +132,8 @@ function minorBlock(minor: MinorMode, writer: SlotRoute | null, worker = false):
  * turned off gets a line saying its instructions no longer apply. Undefined when nothing changed.
  * `guides` in the result: the modes whose whole block this note carries. `worker`: a block goes in
  * its worker form (composeWorkerPrompt), and the caller passes only worker-scope modes. A promptless mode
- * (MINOR_PROMPTLESS: codemode) is never told: its tool is the whole switch.
+ * (MINOR_PROMPTLESS: codemode) is never told: its tool is the whole switch. `align`: the style and Visuals
+ * an align block this note carries is built with (the ones in effect now).
  */
 export function buildModeNote(
 	told: readonly MinorMode[],
@@ -137,6 +141,7 @@ export function buildModeNote(
 	known: { head: readonly MinorMode[]; guides: readonly MinorMode[] },
 	writer: SlotRoute | null = null,
 	worker = false,
+	align?: AlignPromptOptions,
 ): { text: string; guides: MinorMode[] } | undefined {
 	const where = (minor: MinorMode) => (known.head.includes(minor) ? "in your system prompt" : "given earlier in this conversation");
 	const parts: string[] = [];
@@ -153,7 +158,7 @@ export function buildModeNote(
 				parts.push(`Mode change: the user turned the ${minor} minor mode back on. Its instructions (the "# Minor mode: ${minor}" block ${where(minor)}) apply again from now on.`);
 			} else {
 				guides.push(minor);
-				parts.push(`Mode change: the user turned the ${minor} minor mode on. Its instructions follow and apply from now on, as if they were part of your system prompt.\n\n${minorBlock(minor, writer, worker)}`);
+				parts.push(`Mode change: the user turned the ${minor} minor mode on. Its instructions follow and apply from now on, as if they were part of your system prompt.\n\n${minorBlock(minor, writer, worker, align)}`);
 			}
 		}
 	}
@@ -161,11 +166,23 @@ export function buildModeNote(
 }
 
 /**
+ * The hidden note for a writing style changed after the model was told one (§chat.alignment/style):
+ * the new style's paragraph, superseding the earlier one, or, back to Default, that it no longer applies.
+ */
+export function buildAlignStyleNote(from: AlignStyle, to: AlignStyle): string {
+	const paragraph = ALIGN_STYLE_PARAGRAPHS[to];
+	if (paragraph === undefined) {
+		return `Writing style change: the user set the align writing style back to Default. The earlier "Writing style: ${ALIGN_STYLE_LABELS[from]}" paragraph no longer applies; write alignments at your usual level of detail from now on.`;
+	}
+	return `Writing style change: the user set the align writing style to ${ALIGN_STYLE_LABELS[to]}. It applies to every alignment you write or change from now on, instead of any earlier writing style:\n\n${paragraph}`;
+}
+
+/**
  * Appended to the spec block in a worker's prompt (never the parent's): spec-mode.md is written to the
  * session that plans, promotes and briefs, and stays byte-identical, so what differs for a worker is said
  * here. The parent promotes; the worker's brief can say otherwise.
  */
-export const SPEC_WORKER_NOTE = `You are a worker: a parent session started you, and it promotes. Your brief is your go-ahead. Work in the draft your brief names, or say which one you started. Do not promote, commit, or record \`--commit\` evidence unless your brief says to; say instead what is ready to promote. Put any flags as one question in your final report.`;
+export const SPEC_WORKER_NOTE = `You are a worker: a parent session started you, and it promotes. Your brief is your go-ahead. Work in the draft your brief names, or say which one you started. Do not promote, commit, or record \`--commit\` evidence unless your brief says to; say instead what is ready to promote. List each foreign § you updated in your final report.`;
 
 /** One minor mode's block as a worker receives it: spec gets the worker note, never the writer paragraph. */
 function buildWorkerMinorPrompt(mode: MinorMode): string {

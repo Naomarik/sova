@@ -8,7 +8,7 @@ import { claudeModelName } from "./format";
  * coordinator and monitor switches map onto the stored `teams` shape.
  */
 
-export type EditorSection = "delegate" | "teams" | "spec" | "reviewer";
+export type EditorSection = "delegate" | "teams" | "spec" | "reviewer" | "alignment";
 
 /**
  * A model's shortest readable form, the footprint's own rule (`shortModel` in
@@ -55,6 +55,37 @@ export function specSummary(p: SubagentProfile): string {
   return p.specWriter.fallback ? `${m} · 1 fallback` : m;
 }
 
+/** The align mode's writing style labels (pi-config/extensions/mode/align-settings.ts ALIGN_STYLE_LABELS). */
+export const ALIGN_STYLE_NAMES = { default: "Default", simplified: "Simplified", pm: "Project manager" } as const;
+type AlignOverride = NonNullable<SubagentProfile["alignment"]>;
+
+/** Alignment, closed (§chat.subagent-profiles/settings): "Host default", or what the profile overrides. */
+export function alignmentSummary(p: SubagentProfile): string {
+  const a = p.alignment;
+  const parts = [a?.style ? ALIGN_STYLE_NAMES[a.style] : undefined, a?.visuals === undefined ? undefined : a.visuals ? "visuals on" : "visuals off"].filter(Boolean);
+  return parts.length > 0 ? parts.join(" · ") : "Host default";
+}
+
+/**
+ * The profile's override after one choice: "host" stores no field, and both on "host" store no
+ * `alignment` at all, so a profile with no override is written exactly as before the field existed.
+ */
+export function withAlignment(p: SubagentProfile, patch: { style?: AlignOverride["style"] | "host"; visuals?: boolean | "host" }): SubagentProfile {
+  const next: AlignOverride = { ...(p.alignment ?? {}) };
+  if (patch.style !== undefined) {
+    if (patch.style === "host") delete next.style;
+    else next.style = patch.style;
+  }
+  if (patch.visuals !== undefined) {
+    if (patch.visuals === "host") delete next.visuals;
+    else next.visuals = patch.visuals;
+  }
+  const out: SubagentProfile = { ...p };
+  if (next.style === undefined && next.visuals === undefined) delete out.alignment;
+  else out.alignment = next;
+  return out;
+}
+
 /** Reviewer, closed: the reviewer's model, or that nothing reviews. */
 export function reviewerSummary(p: SubagentProfile): string {
   if (!p.reviewer) return "Off · no review";
@@ -96,6 +127,7 @@ function only(p: SubagentProfile, section: EditorSection): SubagentProfile {
   }
   if (section !== "spec") x.specWriter = null;
   if (section !== "reviewer") delete x.reviewer;
+  if (section !== "alignment") delete x.alignment;
   x.name = "x";
   return x;
 }
@@ -106,7 +138,7 @@ function only(p: SubagentProfile, section: EditorSection): SubagentProfile {
  */
 export function sectionProblems(p: SubagentProfile): Set<EditorSection> {
   const out = new Set<EditorSection>();
-  for (const s of ["delegate", "teams", "spec", "reviewer"] as const) if (profilesProblem({ version: 1, default: "off", profiles: [only(p, s)] })) out.add(s);
+  for (const s of ["delegate", "teams", "spec", "reviewer", "alignment"] as const) if (profilesProblem({ version: 1, default: "off", profiles: [only(p, s)] })) out.add(s);
   return out;
 }
 

@@ -696,19 +696,19 @@ function relatedOf(ctx, hits, related, own = () => false) {
     if (rec.kind === "behavior" && rec.requires === undefined)
       add("note", "touched-uninvestigated", `${id} is touched and has no requires key: dependencies not investigated`, { id });
     if (cur.has(id))
-      add("note", "touched-foreign", `${id} is foreign (the task didn't create it) and ${files.get(id).join(", ")} changed: read it with read '${id}'; flag it if a user sees a change there, even one your new claim describes; a gap it already had never flags, even one you now rely on`, { id });
+      add("note", "touched-foreign", `${id} is foreign (the task didn't create it) and ${files.get(id).join(", ")} changed: read it with read '${id}'; if a user sees a change there, even one your new claim describes, update it in your draft without asking and list it; a gap it already had never counts, even one you now rely on`, { id });
     return { id, kind: rec.kind, ...labelsOf(rec), created: !cur.has(id), file: d?.file, lines: d?.lines, files: files.get(id),
       requires: rec.requires ?? null, consumers: consumersOf(ctx, rev, id).map((c) => ({ id: c.id, depth: c.depth })) };
   });
   if (ctx.specRel !== DEFAULT_SPEC) for (const [p, kids] of ctx.children) if (cur.has(p)) for (const id of kids) if (!cur.has(id)) {
-    add("note", "child-under-foreign", `${id} is new under foreign ${p}: a user-visible addition there flags ${p}, even though ${id} describes it`, { id, parent: p });
+    add("note", "child-under-foreign", `${id} is new under foreign ${p}: a user-visible addition there is ${p}'s change too: update ${p} in your draft without asking and list it, even though ${id} describes it`, { id, parent: p });
     childUnderForeign.push({ id, parent: p });
   }
   // Surfaces first: they are the few that usually carry a visible change.
   const foreign = ids.filter((id) => cur.has(id)), surface = (id) => ctx.claims.get(id).kind === "surface";
   return { touched, foreign: [...foreign.filter(surface), ...foreign.filter((id) => !surface(id))], childUnderForeign, touchedIds: ids };
 }
-const FOREIGN_RULE = "flag any where a user sees a change, even one your new claim describes, wherever you put it; plumbing (a request, hook, helper or CSS class) never flags, nor a gap it already had, even one you now rely on";
+const FOREIGN_RULE = "update any where a user sees a change, even one your new claim describes, wherever you put it, in your draft without asking, and list it; plumbing (a request, hook, helper or CSS class) never counts, nor a gap it already had, even one you now rely on";
 // Pushed last, so a truncated tail of the findings still carries it; the rule leads, so a byte cut keeps it.
 const foreignSummary = (foreign) => foreign.length && add("note", "foreign-summary",
   `${FOREIGN_RULE.replace("any", "any foreign §")}: ${foreign.length} touched (${foreign.join(", ")})`, { ids: foreign });
@@ -1076,7 +1076,7 @@ function human(out) {
       ...(c.deleted ?? []).map((f) => `  deleted ${f}`), ...(c.symlinks ?? []).map((f) => `  symlink not followed ${f}`), ...(c.orphanedEvidence ?? []).map((e) => `  orphaned evidence ${e.commit.slice(0, 12)} (draft ${e.draft}: ${e.ids.join(", ")})`));
     const sum = out.findings.find((f) => f.code === "foreign-summary");
     if (sum) L.push(`${sum.severity} ${sum.code}: ${sum.message}`);
-    if (c.touched) L.push("touched § (read each; flag only a visible change in its area):", ...c.touched.map((t) => {
+    if (c.touched) L.push("touched § (read each; update and list only a visible change in its area):", ...c.touched.map((t) => {
       const lb = t.labels ? `; ${[t.labels.authority, t.labels.evidence].map((v) => v ?? "-").join("/")}` : "";
       const rq = t.requires === null ? "uninvestigated" : t.requires.join(", ") || "none declared";
       const cs = t.consumers.map((k) => `${k.id} (${k.depth})`).join(", ") || "none declared";

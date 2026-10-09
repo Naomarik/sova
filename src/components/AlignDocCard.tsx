@@ -1,7 +1,9 @@
 import { createContext, For, Show, useContext } from "solid-js";
 import type { AlignDocInfo, AlignQuestionInfo, AlignRowInfo } from "../../shared/protocol";
-import { ALIGN_STATUS_CHIP, alignStatusOf, cardSections, isOpenDoc, openCount, openLabel, optionLetter, QUESTION_CHIP, questionStateOf, recommendedOption, type AlignCardSection } from "../lib/align";
+import type { AlignVisualInfo } from "../../shared/protocol";
+import { ALIGN_STATUS_CHIP, alignStatusOf, alignStyleMark, cardSections, isOpenDoc, openCount, openLabel, optionLetter, QUESTION_CHIP, questionStateOf, recommendedOption, visualFence, type AlignCardSection } from "../lib/align";
 import { adversarialReview, planReviewRunning, REVIEW_ABOUT, reviewFoot, reviewLinesOf, reviewPhaseName } from "../lib/align-review";
+import { Markdown } from "./Markdown";
 import { Chip, Icon } from "./ui";
 import "../design/align-viewer.css";
 
@@ -29,13 +31,26 @@ export interface AlignAnswer {
   /** Why "Go With Recommendations" can't send now, else null. */
   goBlocked(): string | null;
   goWithRecommendations(doc: string): void;
-  /** Adversarial review is on in this chat (§chat.alignment-review/card): the foot offers Review Plan / Review Implementation. */
+  /**
+   * Adversarial review is on in this chat (§chat.alignment-review/card): its own flag, as its runtime
+   * started with it (the hello's `alignReview`), so the foot offers Review Plan / Review Implementation
+   * and the body shows its review lines only where a review op exists.
+   */
   review?(): boolean;
   /** Why a review button can't send now (no reviewer for the chat's profile, or Go's own blocks), else null. */
   reviewBlocked?(): string | null;
   requestReview?(doc: string, phase: "plan" | "diff"): void;
 }
 export const AlignAnswerContext = createContext<AlignAnswer | null>(null);
+
+/**
+ * Whether the card shows adversarial review: the chat's own flag where a chat provides one, else
+ * (a watch, a worker transcript, a server that doesn't say) the saved setting (§chat.alignment-review/flag).
+ */
+function useReviewOn(): () => boolean {
+  const ctx = useContext(AlignAnswerContext);
+  return () => (ctx?.review ? ctx.review() : adversarialReview());
+}
 
 /** A field's text with its inline code spans and bold runs, the two marks models put in these one-liners; no other markdown. */
 function Inline(props: { text: string }) {
@@ -101,8 +116,9 @@ export function AlignDocCard(props: { doc: AlignDocInfo; line?: string }) {
   const newest = () => !!ctx?.on() && ctx.current(props.doc.id)?.rev === props.doc.rev;
   /** Answerable: newest, open, with a question open. */
   const answer = () => (newest() && isOpenDoc(props.doc) && openCount(props.doc) > 0 ? ctx : null);
-  /** With adversarial review on: what the foot offers for review (a button, or the phase's verdict line). */
-  const review = () => (newest() && adversarialReview() && ctx?.review?.() ? reviewFoot(props.doc) : null);
+  const reviewOn = useReviewOn();
+  /** With adversarial review on in this chat: what the foot offers for review (a button, or the phase's verdict line). */
+  const review = () => (newest() && reviewOn() ? reviewFoot(props.doc) : null);
   const reviewButton = () => {
     const r = review();
     return r?.kind === "button" ? r : null;
@@ -116,7 +132,7 @@ export function AlignDocCard(props: { doc: AlignDocInfo; line?: string }) {
   /** The plan review is running on this alignment's newest revision (or with no context to tell):
       the review may still change anything, so the card holds to its header and one status line. */
   const planHeld = () => {
-    if (!adversarialReview() || !planReviewRunning(props.doc)) return false;
+    if (!reviewOn() || !planReviewRunning(props.doc)) return false;
     const cur = ctx?.current(props.doc.id);
     return !cur || cur.rev === props.doc.rev;
   };
@@ -142,6 +158,7 @@ export function AlignDocCard(props: { doc: AlignDocInfo; line?: string }) {
           <Show when={props.line}>
             <span class="align-doc-change"> · {props.line}</span>
           </Show>
+          <Show when={alignStyleMark(props.doc)}>{(mark) => <span class="align-doc-style"> · {mark()}</span>}</Show>
         </p>
       </header>
       <Show
@@ -215,6 +232,7 @@ function AlignDocBody(props: { doc: AlignDocInfo; answer?: AlignAnswer | null })
   return (
     <>
       <p class="align-doc-summary"><Inline text={props.doc.summary} /></p>
+      <Show when={props.doc.visual}>{(v) => <AlignVisual visual={v()} />}</Show>
       <Show when={props.doc.phase === "dropped" && props.doc.droppedWhy}>
         <p class="align-doc-dropped">Dropped: <Inline text={props.doc.droppedWhy ?? ""} /></p>
       </Show>
@@ -222,19 +240,35 @@ function AlignDocBody(props: { doc: AlignDocInfo; answer?: AlignAnswer | null })
       {/* The reading order is `cardSections`' own: the approach open between the summary and the
           questions, then the folded sections below the questions. */}
       <For each={sections().filter((s) => s.kind === "approach")}>{(s) => <AlignApproach section={s} />}</For>
+      {/* Technical notes, closed, right under the approach (§chat.alignment/card). */}
+      <For each={sections().filter((s) => s.kind === "technical")}>{(s) => <AlignSection section={s} />}</For>
       <Show when={props.doc.questions.length > 0}>
         <ol class="align-questions" aria-label="Questions">
           <For each={props.doc.questions}>{(q) => <AlignQuestion q={q} doc={props.doc.id} answer={props.answer} />}</For>
         </ol>
       </Show>
-      <For each={sections().filter((s) => s.kind !== "approach")}>{(s) => <AlignSection section={s} />}</For>
+      <For each={sections().filter((s) => s.kind !== "approach" && s.kind !== "technical")}>{(s) => <AlignSection section={s} />}</For>
     </>
+  );
+}
+
+/**
+ * A visual on the card (§chat.alignment/visuals): drawn as the chat draws a `vis` fence in a reply —
+ * the same figure, Source toggle and Copy — and, when its source doesn't parse, that source as a
+ * code block with the chat's own one line saying so.
+ */
+function AlignVisual(props: { visual: AlignVisualInfo }) {
+  return (
+    <div class="align-visual">
+      <Markdown text={visualFence(props.visual)} />
+    </div>
   );
 }
 
 /** The review record, one line per recorded phase and each open blocker with its check (§chat.alignment-review/card). Only with the feature on. */
 function AlignReviewLines(props: { doc: AlignDocInfo }) {
-  const lines = () => (adversarialReview() ? reviewLinesOf(props.doc) : []);
+  const reviewOn = useReviewOn();
+  const lines = () => (reviewOn() ? reviewLinesOf(props.doc) : []);
   return (
     <Show when={lines().length > 0}>
       <ul class="align-review" aria-label="Review">
@@ -343,6 +377,7 @@ function AlignQuestion(props: { q: AlignQuestionInfo; doc: string; answer?: Alig
       <Show when={props.q.context}>
         <p class="align-q-context"><Inline text={props.q.context ?? ""} /></p>
       </Show>
+      <Show when={props.q.visual}>{(v) => <AlignVisual visual={v()} />}</Show>
       <Show when={props.q.options?.length}>
         <ol class="align-q-options" aria-label="Options">
           <For each={props.q.options}>
@@ -471,24 +506,29 @@ function AlignApproach(props: { section: AlignCardSection }) {
 }
 
 function AlignSection(props: { section: AlignCardSection }) {
+  // Technical notes read like the approach they sit under: the id in its own column, the text in one.
+  const columns = () => props.section.kind === "technical";
   const list = () => (
     <For each={props.section.items}>
       {(item) => (
         <li>
-          <span class="text-mono align-item-id">{item.id}</span> <Inline text={item.body} />
+          <Show when={columns()} fallback={<><span class="text-mono align-item-id">{item.id}</span> <Inline text={item.body} /></>}>
+            <span class="text-mono align-item-id">{item.id}</span>
+            <span class="align-approach-text"><Inline text={item.body} /></span>
+          </Show>
         </li>
       )}
     </For>
   );
   return (
     <Show when={props.section.items.length > 0}>
-      <details class="disclosure align-section">
+      <details class={columns() ? "disclosure align-section align-technical" : "disclosure align-section"}>
         <summary class="disclosure-summary">
           <Icon name="chevron-right" small class="icon-twist" />
           {props.section.label} · <span class="text-num">{props.section.items.length}</span>
         </summary>
         <div class="disclosure-body">
-          <ul class="align-list">{list()}</ul>
+          <ul class={columns() ? "align-list align-approach-list" : "align-list"}>{list()}</ul>
         </div>
       </details>
     </Show>

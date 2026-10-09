@@ -46,7 +46,7 @@ const file = (profiles: SubagentProfile[]): SubagentProfilesFile => ({ version: 
 test("subagent-profiles.ts imports only node built-ins and builtins-only siblings, so Sova's server can import it", () => {
 	const source = fs.readFileSync(fileURLToPath(new URL("./subagent-profiles.ts", import.meta.url)), "utf8");
 	const specifiers = [...source.matchAll(/^import\s[^;]*?from\s+"([^"]+)"/gm)].map((m) => m[1]);
-	assert.deepEqual([...new Set(specifiers.filter((s) => !s!.startsWith("node:")))].sort(), ["../claude-code/catalog.ts", "../mode/delegate.ts", "../mode/spec.ts", "./team-defaults.ts"]);
+	assert.deepEqual([...new Set(specifiers.filter((s) => !s!.startsWith("node:")))].sort(), ["../claude-code/catalog.ts", "../mode/align-settings.ts", "../mode/delegate.ts", "../mode/spec.ts", "./team-defaults.ts"]);
 });
 
 test("parse: a valid file round-trips; every error is collected, not the first", () => {
@@ -321,4 +321,39 @@ test("seedReviewer: the default goes only to profiles without the key; None and 
 	fs.writeFileSync(subagentProfilesPath(dir), "{ nope");
 	assert.deepEqual(seedReviewer(dir), { ok: false, seeded: [] });
 	assert.equal(fs.readFileSync(subagentProfilesPath(dir), "utf8"), "{ nope");
+});
+
+test("alignment (writing style, Visuals): optional, field by field over the host's mode-align.json; no override reads as before", () => {
+	const parsed = parseSubagentProfiles(file([profile("old", "Old"), profile("pm", "PM", { alignment: { style: "pm" } }), profile("vis", "Vis", { alignment: { visuals: true } })]));
+	assert.ok(parsed.ok);
+	const [old, pm, vis] = parsed.value.profiles;
+	assert.equal("alignment" in old!, false, "a parse never adds the key");
+	assert.deepEqual(pm!.alignment, { style: "pm" });
+	assert.deepEqual(vis!.alignment, { visuals: true });
+	const dir = tempDir();
+	writeSubagentProfiles(dir, file([profile("old", "Old")]));
+	assert.equal(fs.readFileSync(subagentProfilesPath(dir), "utf8").includes("alignment"), false, "a profile without one writes none");
+	// Strict: never empty, nothing unknown, each value checked, named under the profile.
+	for (const [alignment, error] of [
+		[{}, /^profiles\[0\]\.alignment must set style or visuals/m],
+		[{ style: "expert" }, /^profiles\[0\]\.alignment\.style must be one of default, simplified, pm/m],
+		[{ visuals: "on" }, /^profiles\[0\]\.alignment\.visuals must be true or false/m],
+		[{ review: true }, /^profiles\[0\]\.alignment: unknown field "review"/m],
+	] as const) {
+		const bad = parseSubagentProfiles(file([profile("p", "P", { alignment: alignment as never })]));
+		assert.ok(!bad.ok && error.test(bad.errors.join("\n")), JSON.stringify(bad));
+	}
+	// Resolution order: the chat's pick, then this device's default; Off and the legacy files have none.
+	writeSubagentProfiles(dir, file([profile("old", "Old"), profile("pm", "PM", { alignment: { style: "pm", visuals: false } })]));
+	writeProfilesDefault(dir, { version: 1, default: "pm" });
+	assert.deepEqual(resolveSubagents(dir, undefined).alignment, { style: "pm", visuals: false }, "the default's");
+	assert.equal(resolveSubagents(dir, "old").alignment, null, "a pick with no override: the host's file");
+	assert.deepEqual(resolveSubagents(dir, "gone").alignment, { style: "pm", visuals: false }, "a dangling pick follows the default");
+	assert.equal(resolveSubagents(dir, OFF_PROFILE_ID).alignment, null);
+	fs.writeFileSync(subagentProfilesPath(dir), "{ not json");
+	assert.equal(resolveSubagents(dir, "pm").alignment, null, "an unusable library: the legacy files, no override");
+	// A profile with no override reads byte-identical to one from before the field existed.
+	const before = profile("old", "Old");
+	writeSubagentProfiles(dir, file([before]));
+	assert.equal(fs.readFileSync(subagentProfilesPath(dir), "utf8"), `${JSON.stringify(file([before]), null, 2)}\n`);
 });

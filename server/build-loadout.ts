@@ -3,7 +3,7 @@ import { existsSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { createSessionFile } from "./harness/pi/state";
 import { readAlignScan } from "./align-state";
-import { acquireChat, isSessionBusy, setOpeningChoice } from "./chat-manager";
+import { acquireChat, isSessionBusy, onAgentSettled, setOpeningChoice } from "./chat-manager";
 import { noteBuildMerged } from "./build-merged";
 import { mergeMode } from "./mode-state";
 import { OrgError } from "./org-error";
@@ -18,11 +18,14 @@ import { cutWorktree, gitRootOf, mergeBack, readWorktree, removeWorktree, uncomm
 import { teardownCopyOf } from "./project-services/checkout-teardown";
 import { mainMoved } from "./project-services/on-merge";
 import { runGit } from "../pi-config/extensions/worktrees/git.ts";
+import type { TrackedWorktree, WorktreesActive } from "../pi-config/extensions/worktrees/state.ts";
+import { readBranch } from "./harness/pi/reader";
 import { markSeen } from "./seen";
 import { cleanSessionTitle, readSessionTitles } from "./session-titles";
 import { getSessionSummary, indexedSessionPaths } from "./sessions-index";
 import { validateNewSessionCwd } from "./targets";
 import { addWebSession } from "./web-sessions";
+import { worktreesOf } from "./worktrees-state";
 import { markOwned } from "./write-guard";
 
 /**
@@ -55,6 +58,10 @@ export interface BuildRow {
   branchDeleted?: boolean;
   /** Why it runs in the root itself (a tail: "it isn't a Git repository."). */
   inRoot?: string;
+  /** Started with `worktree: "later"` and no worktree adopted yet: it runs in the project root until its session makes one. */
+  later?: true;
+  /** When its worktree was adopted (a `later` build's, made by its session's own `worktree` tool): its path is that tool's. */
+  adoptedAt?: string;
   /** Its title when it started (the one given, else the prompt's first line). */
   title?: string;
   /** An `operator-coding` build the global Overseer started for the operator (§app.overseer/org-attribution). */
@@ -100,6 +107,9 @@ export function buildSessionPath(sessionId: string): string | null {
   return p && existsSync(p) ? p : null;
 }
 
+/** Its title: the one given, else the prompt's first line; none with neither (New Coding Session). */
+const titleOf = (d: Record<string, unknown>): string => str(d.title) || (str(d.prompt) ? cleanSessionTitle((str(d.prompt).split("\n")[0] ?? "").slice(0, 80)) ?? "" : "");
+
 function rowOf(configuration: string[], d: Record<string, unknown>): BuildRow {
   const sessionId = str(d.sessionId);
   const path = buildSessionPath(sessionId);
@@ -114,7 +124,9 @@ function rowOf(configuration: string[], d: Record<string, unknown>): BuildRow {
     ...(d.removedAt != null ? { removed: isoOf(d.removedAt) } : {}),
     ...(d.branchDeleted === true ? { branchDeleted: true } : {}),
     ...(typeof d.inRoot === "string" && d.inRoot ? { inRoot: d.inRoot } : {}),
-    ...(typeof d.title === "string" && d.title ? { title: d.title } : {}),
+    ...(d.later === true && !(typeof d.branch === "string" && d.branch) ? { later: true as const } : {}),
+    ...(d.adoptedAt != null ? { adoptedAt: isoOf(d.adoptedAt) } : {}),
+    ...(titleOf(d) ? { title: titleOf(d) } : {}),
     ...(d.via === "overseer" ? { via: "overseer" as const } : {}),
     ...(d.kind === "onboard" ? { onboard: { startedBy: d.startedBy === "overseer" ? ("overseer" as const) : ("operator" as const) } } : {}),
     ...(typeof d.gap === "string" && d.gap ? { gap: d.gap } : {}),
@@ -157,10 +169,15 @@ export function readBuild(projectId: string, sessionId: string): BuildRow | null
   return d ? rowOf(host.configuration(sid) ?? [], d) : null;
 }
 
-/** Its worktree folder on this host: beside the repository's top, named after its branch (as cutWorktree made it). */
+/** Its worktree folder on this host: beside the repository's top, named after its branch (as cutWorktree made it); an
+    adopted one's is where its session's `worktree` tool made it, as that tool recorded it. */
 export async function withWorktreePath(row: BuildRow, root: string): Promise<(BuildRow & { worktree: WorktreeRecord }) | null> {
   if (!row.worktree) return null;
   if (row.worktree.path) return row as BuildRow & { worktree: WorktreeRecord };
+  if (row.adoptedAt) {
+    const own = await ownTreeOf(row.sessionId, row.worktree.branch);
+    if (own) return { ...row, worktree: { ...row.worktree, path: own.path } };
+  }
   const repo = await gitRootOf(root);
   const top = "reason" in repo ? root : repo.top;
   return { ...row, worktree: { ...row.worktree, path: worktreePathOf(top, row.worktree.branch) } };
@@ -290,6 +307,25 @@ const slugTitle = (sessionId: string, d: Record<string, unknown>): string => {
   return readSessionTitles()[sessionId] || given || prompt.split(/\s+/).slice(0, 8).join(" ") || str(d.title);
 };
 
+/** A note goes in only between turns (a running turn refuses it): now, or when the session's running turn settles. */
+async function noteBetweenTurns(path: string, sessionId: string, text: string): Promise<void> {
+  const chat = await acquireChat(path);
+  const write = async () => {
+    if (!(await chat.appendNote(CODING_WORKTREE_NOTE, text))) console.warn(`[build] ${sessionId}: its worktree note could not be written`);
+  };
+  if (!chat.harness.isRunning()) return write();
+  const off = onAgentSettled((p) => {
+    if (p !== chat.path) return;
+    // After the settle's own listeners (a prompt handed over inside it runs on): a turn running again waits for its end.
+    setTimeout(() => {
+      if (chat.disposed) return off();
+      if (chat.harness.isRunning()) return;
+      off();
+      void write();
+    }, 0);
+  });
+}
+
 export function registerBuildEffects(host: OrgHostApi, engine: string): void {
   host.effects.register("make-worktree", async (e) => {
     const { d, projectId, sessionId } = sessionOf(host, e);
@@ -301,6 +337,11 @@ export function registerBuildEffects(host: OrgHostApi, engine: string): void {
     if ("reason" in repo) {
       await createBuildSession(folder, sessionId, d);
       return { inRoot: repo.reason };
+    }
+    // worktree "later": nothing is cut and nothing named; the session's own `worktree` tool names its worktree later.
+    if (d.worktree === "later") {
+      await createBuildSession(folder, sessionId, d);
+      return { later: true };
     }
     const cut = await cutWorktree(repo as GitRoot, folder, slugTitle(sessionId, d));
     try {
@@ -337,10 +378,11 @@ export function registerBuildEffects(host: OrgHostApi, engine: string): void {
   });
 
   // New Coding Session: nothing is sent (the operator writes the first message); the commit paragraph goes in first, as a note.
+  // An adopted worktree's (worktree "later") may be adopted mid-turn, by the page's read: its note goes in once the turn ends.
   host.effects.register("worktree-note", async (e) => {
     const { sessionId } = sessionOf(host, e);
     if (seeded.has(sessionId)) return {};
-    if (!(await (await acquireChat(pathOrThrow(sessionId))).appendNote(CODING_WORKTREE_NOTE, str(e.text)))) console.warn(`[build] ${sessionId}: its worktree note could not be written`);
+    await noteBetweenTurns(pathOrThrow(sessionId), sessionId, str(e.text));
     return {};
   });
 
@@ -367,7 +409,7 @@ export function registerBuildEffects(host: OrgHostApi, engine: string): void {
     // Its title as the page shows it: a rename, the one it started with, the listing's (its first message), its branch.
     const path = buildSessionPath(sessionId);
     const listed = path ? (await getSessionSummary(path).catch(() => null))?.title : undefined;
-    const title = readSessionTitles()[sessionId] || str(d.title) || (listed && listed !== "Untitled" ? listed : "") || row.worktree.branch;
+    const title = readSessionTitles()[sessionId] || titleOf(d) || (listed && listed !== "Untitled" ? listed : "") || row.worktree.branch;
     const m = await mergeBack(row.worktree, root, title);
     noteBuildMerged(sessionId, true);
     // Main moved: its copy's onMerge services reload now, never holding up the merge (§app.project-services/on-merge).
@@ -393,13 +435,19 @@ export function registerBuildEffects(host: OrgHostApi, engine: string): void {
   // build not resumed yet would keep "working" forever: F-049/F-050's twin for coding sessions).
   void (async () => {
     for (const s of host.sessions("build")) {
-      if (s.running && s.data.turn === "working") await host.act(s.id, "turn/ended", {}, SYSTEM);
+      if (s.running && s.data.turn === "working") await turnEnded(host, s.id, {});
     }
   })().catch((err) => console.warn(`[build] ${engine}: resuming turns: ${err instanceof Error ? err.message : String(err)}`));
 }
 onOrgHostOpened(registerBuildEffects);
 
 const SYSTEM = { by: "system" } as unknown as Envelope;
+
+/** A build's turn ended, naming the session's given title (its history headline says it; never the prompt's line). */
+function turnEnded(host: OrgHostApi, sid: string, data: Record<string, unknown>) {
+  const title = str(host.data(sid)?.title);
+  return host.act(sid, "turn/ended", { ...data, ...(title ? { title } : {}) }, SYSTEM);
+}
 
 // ---- facts ---------------------------------------------------------------------------------------------
 
@@ -422,8 +470,9 @@ export async function syncBuildTurn(projectId: string, sid: string, path: string
   const workers = workingSubagents(path);
   if (working && d.turn !== "working") await host.act(sid, "turn/started", {}, SYSTEM);
   if (!working && d.turn === "working") {
+    await adoptWorktree(projectId, sid, str(d.sessionId));
     await probeAtTurnEnd(projectId, sid, str(d.sessionId));
-    await host.act(sid, "turn/ended", { questions: await openQuestionsAt(path) }, SYSTEM);
+    await turnEnded(host, sid, { questions: await openQuestionsAt(path) });
   }
   if (workers !== (typeof d.workers === "number" ? d.workers : 0)) await host.act(sid, "workers/changed", { n: workers }, SYSTEM);
 }
@@ -476,6 +525,74 @@ async function openQuestionsAt(path: string): Promise<number> {
   }
 }
 
+// ---- worktree "later": adopting the worktree its session makes -----------------------------------------------
+
+/** The git common directory of the checkout at `dir`: one per repository, whichever of its worktrees asks. Null when none. */
+async function commonDirOf(dir: string): Promise<string | null> {
+  if (!existsSync(dir)) return null;
+  const r = await runGit(["rev-parse", "--path-format=absolute", "--git-common-dir"], dir);
+  return r.code === 0 && r.stdout.trim() ? canonicalPath(r.stdout.trim()) : null;
+}
+
+/** A build's session's tracked worktrees (its `worktrees` entry), read from its file on this host. */
+async function sessionTrees(sessionId: string): Promise<WorktreesActive | undefined> {
+  const path = buildSessionPath(sessionId);
+  if (!path) return undefined;
+  try {
+    return worktreesOf(await readBranch(path));
+  } catch {
+    return undefined;
+  }
+}
+
+/** The tree its session recorded for `branch` (whatever its status since: a detach after adoption changes nothing). */
+async function ownTreeOf(sessionId: string, branch: string): Promise<TrackedWorktree | null> {
+  return (await sessionTrees(sessionId))?.trees.find((t) => t.session === sessionId && t.branch === branch) ?? null;
+}
+
+/**
+ * The worktree a `later` build adopts: the first its session made itself with the `worktree` tool (created by this
+ * session, not attached nor inherited; active or merged, never dropped) in the project's repository (the same git
+ * common directory as the root). Null when there is none yet.
+ */
+export async function adoptableTree(set: WorktreesActive | undefined, sessionId: string, root: string): Promise<TrackedWorktree | null> {
+  const own = (set?.trees ?? [])
+    .filter((t) => t.session === sessionId && t.how === "created" && (t.status === "active" || t.status === "merged"))
+    .sort((a, b) => a.at - b.at);
+  if (!own.length) return null;
+  const repo = await commonDirOf(root);
+  if (!repo) return null;
+  for (const t of own) if ((await commonDirOf(t.path)) === repo) return t;
+  return null;
+}
+
+/**
+ * A `later` build with no worktree yet adopts the one its session made, once: its branch, base and base branch as the
+ * tool recorded them, never renamed; with no base branch recorded, the branch the root has checked out now. True when
+ * the statechart took it. Called at the end of each of its turns and on each read of the project page.
+ */
+export async function adoptWorktree(projectId: string, sid: string, sessionId: string): Promise<boolean> {
+  if (!engineOf(projectId)) return false;
+  const host = projectHost(projectId);
+  const d = host.data(sid);
+  if (!d || d.later !== true || (typeof d.branch === "string" && d.branch)) return false;
+  try {
+    const root = projectOf(projectId).root;
+    const tree = await adoptableTree(await sessionTrees(sessionId), sessionId, root);
+    if (!tree) return false;
+    let target = tree.baseBranch;
+    if (!target) {
+      const repo = await gitRootOf(root);
+      if ("reason" in repo) return false;
+      target = repo.branch;
+    }
+    return (await host.act(sid, "worktree/adopted", { branch: tree.branch, base: tree.base, target }, SYSTEM)).taken;
+  } catch (err) {
+    console.warn(`[build] ${sessionId}: its worktree was not adopted: ${err instanceof Error ? err.message : String(err)}`);
+    return false;
+  }
+}
+
 /** A build's turn ended (agent_settled): the statechart hears the turn (and its end), so the overseer is told of its own. */
 export async function noteBuildSettled(path: string, failed: boolean): Promise<void> {
   const want = canonicalPath(path);
@@ -485,8 +602,10 @@ export async function noteBuildSettled(path: string, failed: boolean): Promise<v
     if (!hit) return;
     const host = hostOf(hit.engine);
     if (host.data(hit.sid)?.turn !== "working") await host.act(hit.sid, "turn/started", {}, SYSTEM);
+    // The worktree its turn made (worktree "later") first, so the probe reads its branch.
+    await adoptWorktree(hit.projectId, hit.sid, id);
     await probeAtTurnEnd(hit.projectId, hit.sid, id);
-    await host.act(hit.sid, "turn/ended", { failed, questions: await openQuestionsAt(p) }, SYSTEM);
+    await turnEnded(host, hit.sid, { failed, questions: await openQuestionsAt(p) });
     return;
   }
 }

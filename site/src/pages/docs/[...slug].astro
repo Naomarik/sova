@@ -1,0 +1,30 @@
+---
+// Every /docs page, /docs/ included: one Markdown file each, from the docs collection.
+import Docs from "../../layouts/Docs.astro";
+import { docSlug, sortedDocs, type DocEntry } from "../../data/docs";
+// The Vis page's examples, drawn by Sova's own vis code (scripts/vis-examples.mjs writes this file).
+import visExamples from "../../generated/vis-examples.html?raw";
+
+export async function getStaticPaths() {
+  const docs = await sortedDocs();
+  return docs.map((entry) => ({ params: { slug: docSlug(entry.id) || undefined }, props: { entry, docs } }));
+}
+
+interface Props { entry: DocEntry; docs: DocEntry[] }
+const { entry, docs } = Astro.props;
+
+// Each table goes in a region that scrolls sideways by itself, so a wide table never widens the
+// page. The region is named after the heading above it, for screen readers.
+let heading = entry.data.title;
+const html = (entry.rendered?.html ?? "").replace(/<h[23][^>]*>([\s\S]*?)<\/h[23]>|<table>[\s\S]*?<\/table>/g, (m, h) => {
+  if (h !== undefined) { heading = h.replace(/<[^>]+>/g, "").replace(/"/g, "&quot;"); return m; }
+  return `<div class="docs-table" role="region" tabindex="0" aria-label="${heading}">${m}</div>`;
+});
+// A page's `<!-- vis-examples -->` line becomes the examples (after the tables above are wrapped,
+// so a drawing's own table is left alone).
+const VIS_EXAMPLES = "<!-- vis-examples -->";
+const page = html.includes(VIS_EXAMPLES) ? html.replace(VIS_EXAMPLES, () => visExamples) : html;
+---
+<Docs entry={entry} docs={docs}>
+  <Fragment set:html={page} />
+</Docs>

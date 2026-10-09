@@ -14,7 +14,7 @@ import { home } from "../lib/ui-state";
 import { ensureRendered, entryIdOf, JUMP_EVENT, loadRow, registerRows, registerTranscript, transcriptRoot } from "../lib/jump";
 import type { RowTarget } from "../lib/older-rows";
 import type { ScrollSpot } from "../lib/transcript-cache";
-import { carriedStart, chunkStart, fillStops, FIRST_CHUNK, type ImagesAt, initialStart, lineCols, nextChunk, rowEstimate, rowIndexFor, windowId } from "../lib/tail-render";
+import { carriedStart, chunkStart, fillStops, FIRST_CHUNK, type ImagesAt, initialStart, jumpStart, lineCols, nextChunk, rowEstimate, rowIndexFor, windowId } from "../lib/tail-render";
 import { usePaneId } from "../lib/pane-scope";
 import { isHiddenBlock, liveHiddenCounts, splitHidden, thinkingHiddenLabel, toolsHiddenLabel, CARD_TOOLS } from "../lib/hidden-rows";
 import { chainRuns, type ChainRun } from "../lib/chain-rows";
@@ -734,8 +734,6 @@ export function HistoryItems(props: {
     const step = () => {
       cancel = null;
       if (fillStops(rows().length, start())) return;
-      // A jump's smooth scroll is under way: moving the content now would stop it short.
-      if (scroller.jumping()) return schedule();
       const next = buildChunk();
       if (!fillStops(rows().length, next)) schedule();
     };
@@ -750,25 +748,14 @@ export function HistoryItems(props: {
     // once every row held is built, the next older rows are fetched, and they land above the
     // window, where the fill builds them as any row not built yet.
     const older = props.older;
-    let later: ReturnType<typeof setTimeout> | undefined;
     const check = () => {
       const left = older?.left() ?? 0;
       if ((start() === 0 && (left === null || left <= 0)) || root.scrollTop >= NEAR_TOP_VIEWS * root.clientHeight) return;
-      // A jump's smooth scroll is under way (it may have landed near the top): rows landing above
-      // now would cut it short, as the fill knows too. Look again once it's over.
-      if (scroller.jumping()) {
-        clearTimeout(later);
-        later = setTimeout(check, 300);
-        return;
-      }
       if (start() > 0) buildChunk();
       else older?.more();
     };
     root.addEventListener("scroll", check, { passive: true });
-    onCleanup(() => {
-      clearTimeout(later);
-      root.removeEventListener("scroll", check);
-    });
+    onCleanup(() => root.removeEventListener("scroll", check));
     // After a change to what's held or built, when the frame has settled (a short list sits at the
     // top): a frame later, since the follow-scroll for the same change runs in that frame's
     // animation callbacks after this one is queued, and a check before it reads a view not yet at
@@ -779,7 +766,8 @@ export function HistoryItems(props: {
       ensure: (entryId) => {
         const i = rowIndexFor(ids(), entryId);
         if (i < 0) return false;
-        if (i < start()) buildFrom(i);
+        const from = jumpStart(i, start());
+        if (from < start()) buildFrom(from);
         return true;
       },
       older: () => {
@@ -1376,11 +1364,9 @@ interface ScrollerApi {
   root(): HTMLElement;
   /** Runs `build`, which adds rows above the ones on screen, and keeps the view where it was:
       at the bottom while following, else the same distance from the end. With `hold`, the row at
-      the top of the view also stays put while the rows just built are first drawn (not for a
-      jump, whose own scroll moves the view). */
+      the top of the view also stays put while the rows just built are first drawn; while a jump's
+      row is held (ThreadScroller `land`), that row stays put instead, with or without `hold`. */
   prepend(build: () => void, hold?: boolean): void;
-  /** A jump's smooth scroll is under way. */
-  jumping(): boolean;
 }
 const ScrollerContext = createContext<ScrollerApi | null>(null);
 /** The characters a message line held in the last transcript measured (`--entry-cols-measured`). */
@@ -1398,10 +1384,10 @@ function whenIdle(fn: () => void): () => void {
 
 /** Within this distance of the end, the transcript follows new content. */
 const FOLLOW_PX = 80;
-/** How long a jump's smooth scroll may take before a scroll near the bottom means following again. */
-const JUMP_SETTLE_MS = 1000;
-/** A jump's scroll is over once no scroll event has come for this long. */
-const JUMP_QUIET_MS = 150;
+/** A jump's row is held until it has needed no correction for this many frames in a row... */
+const JUMP_QUIET_FRAMES = 20;
+/** ...and for this long at most, unless rows are built above it meanwhile. */
+const JUMP_HOLD_MS = 2000;
 /** How long the row at the top of the view is held after rows were built above it (ThreadScroller
     `holdView`): they are drawn within a few frames. */
 const HOLD_MS = 600;
@@ -1453,6 +1439,7 @@ export function ThreadScroller(props: {
   /** How far the view was from the end when last read: 0 right after a scroll to the bottom. */
   let lastGap = 0;
   const toBottom = () => {
+    endJumpHold();
     el.scrollTop = el.scrollHeight;
     scrolledTop = el.scrollTop;
     lastGap = 0;
@@ -1498,28 +1485,15 @@ export function ThreadScroller(props: {
       },
     ),
   );
-  /** Until then a jump's own smooth scroll is under way: its first frames are still near the
-      bottom, and must not read as the user coming back to follow it. */
-  let jumpingUntil = 0;
-  /** A jump's scroll hasn't come to rest yet: a long smooth scroll outlasts JUMP_SETTLE_MS, and rows
-      built above meanwhile would leave it short of its target. Over at `scrollend`, or once no
-      scroll has come for JUMP_QUIET_MS (which also covers a jump that didn't need to scroll). */
-  let jumpScrolling = false;
-  let jumpQuiet: ReturnType<typeof setTimeout> | undefined;
-  const jumpScrolled = () => {
-    clearTimeout(jumpQuiet);
-    jumpQuiet = setTimeout(() => (jumpScrolling = false), JUMP_QUIET_MS);
-  };
-  onCleanup(() => clearTimeout(jumpQuiet));
   /**
    * The row at the top of the view, held for a moment after rows were built above it. Rows built
    * near the view are first drawn a few frames later, at their real height instead of their
    * estimate, and the browser's scroll anchoring doesn't always make up for rows it only just got
    * (Chrome 154, rows built a viewport above the view): the view then moved by the difference.
    * Corrected when the thread's size changes, after layout and before paint; the user's own
-   * scroll, or a jump, ends it.
+   * scroll, or a jump, ends it. A jump's row is held the same way (`land`, its `jump` state).
    */
-  let held: { row: HTMLElement; offset: number; until: number; at: number; swap?: true } | null = null;
+  let held: { row: HTMLElement; offset: number; until: number; at: number; swap?: true; jump?: { quiet: number; moved: boolean } } | null = null;
   const offsetOf = (row: HTMLElement) => row.getBoundingClientRect().top - el.getBoundingClientRect().top;
   const holdView = () => {
     const s = spot();
@@ -1549,13 +1523,61 @@ export function ThreadScroller(props: {
   };
   const keepHeld = () => {
     if (!held) return;
-    if (performance.now() > held.until || !held.row.isConnected || api.jumping()) {
+    if (performance.now() > held.until || !held.row.isConnected) {
       held = null;
       return;
     }
     const delta = offsetOf(held.row) - held.offset;
-    if (Math.abs(delta) >= 1) el.scrollTop += delta;
+    if (Math.abs(delta) >= 1) {
+      el.scrollTop += delta;
+      if (held.jump) held.jump.moved = true;
+    }
     held.at = el.scrollTop;
+  };
+  /**
+   * A jump (lib/jump JUMP_EVENT) lands at once, with no smooth scroll: following stops, as a scroll
+   * up would, and the row's center goes to the view's center (a row taller than the view fills it;
+   * one the view can't center, at the top or the end of the rows, goes as near as it can). The
+   * rows around it are then first drawn at their real heights, not their estimates, above it too,
+   * so it is held where it landed, corrected when the thread's size changes (after layout, before
+   * paint) and once a frame. How the hold ends: the frame loop below, `keepHeld`, `onScroll`,
+   * `onInput` and `endJumpHold`.
+   */
+  const land = (target: HTMLElement) => {
+    if (follow) {
+      follow = false;
+      setAway(props.count);
+    }
+    const view = el.getBoundingClientRect();
+    const box = target.getBoundingClientRect();
+    el.scrollTop += (box.top + box.bottom) / 2 - (view.top + view.bottom) / 2;
+    lastGap = el.scrollHeight - el.scrollTop - el.clientHeight;
+    const row = target.closest<HTMLElement>(".thread > .entry") ?? target;
+    const hold = { row, offset: offsetOf(row), until: performance.now() + JUMP_HOLD_MS, at: el.scrollTop, jump: { quiet: 0, moved: false } };
+    held = hold;
+    const frame = () => {
+      if (held !== hold) return;
+      keepHeld();
+      if (held !== hold) return;
+      hold.jump.quiet = hold.jump.moved || loadingAbove(row) ? 0 : hold.jump.quiet + 1;
+      hold.jump.moved = false;
+      if (hold.jump.quiet >= JUMP_QUIET_FRAMES) held = null;
+      else requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(frame);
+  };
+  /** An image still loading in the rows on screen above `row`: it may make them taller when it
+      does, so nothing having moved yet doesn't mean nothing will. Rows off screen are never looked
+      inside (measuring inside a skipped row lays it out). */
+  const loadingAbove = (row: Element) => {
+    const top = el.getBoundingClientRect().top;
+    for (let r = row.previousElementSibling; r && r.getBoundingClientRect().bottom > top; r = r.previousElementSibling)
+      for (const img of r.querySelectorAll("img")) if (!img.complete) return true;
+    return false;
+  };
+  /** Something else places the view: a jump's row is no longer held there. */
+  const endJumpHold = () => {
+    if (held?.jump) held = null;
   };
   /** The view's width at the last scroll event. */
   let scrolledWidth = 0;
@@ -1564,14 +1586,17 @@ export function ThreadScroller(props: {
   const onScroll = () => {
     const up = el.scrollTop < scrolledTop;
     scrolledTop = el.scrollTop;
-    if (jumpScrolling) jumpScrolled();
     // A scroll right after the reader's input, or right after one of theirs, is theirs too.
     const reader = readerInput();
     if (reader) readerAt = performance.now();
     // A scroll that moved the held row is the user's (the browser's anchoring keeps it in place);
-    // not across a swap (`holdAcrossSwap`).
+    // not across a swap (`holdAcrossSwap`): their input ends that. A jump's row (`land`) moves while
+    // the rows around it are first drawn, so only a scroll that moved it by just as much as the view
+    // moved (the view scrolled, the rows stayed) ends that one.
     if (held && el.scrollTop !== held.at) {
-      if (!held.swap && Math.abs(offsetOf(held.row) - held.offset) >= 1) held = null;
+      const moved = offsetOf(held.row) - held.offset;
+      const theirs = held.jump ? Math.abs(moved + el.scrollTop - held.at) < 1 : !held.swap && Math.abs(moved) >= 1;
+      if (theirs) held = null;
       else held.at = el.scrollTop;
     }
     lastGap = el.scrollHeight - el.scrollTop - el.clientHeight;
@@ -1587,7 +1612,9 @@ export function ThreadScroller(props: {
       reflowed = !first;
     }
     const near = lastGap < FOLLOW_PX;
-    if (near && performance.now() < jumpingUntil) return;
+    // A jump never brings following back, even one landing at the end right after a press in the
+    // transcript (a card reference), which would otherwise read as the reader's scroll.
+    if (near && held?.jump) return;
     // Only the view moving up stops following. Content landing below a following view (a queued
     // message drawn again after a switch back) lands in a task before the frame that settles it,
     // and the browser's scroll anchoring can move the view down meanwhile: that event finds the
@@ -1596,13 +1623,13 @@ export function ThreadScroller(props: {
     if (follow && !near && !up && !toggled) return settleSoon();
     if (near === follow) return;
     // Following comes back only by the reader's hand (§chat.transcript/turn-end-keeps-reader): their
-    // own scroll reaching the end of the rows as they stood (`endAt`), a jump's, a disclosure they
+    // own scroll reaching the end of the rows as they stood (`endAt`), a disclosure they
     // toggled, or the view resized. The browser taking a view that isn't following to the end
     // (clamped as rows below got shorter or left, or its anchoring adding rows inserted above an
     // anchor that then left) is not the reader coming back, even mid-scroll: the view stays where
     // it landed, with Jump to Latest.
     const reached = endAt - el.scrollTop - el.clientHeight < FOLLOW_PX;
-    if (near && !(reader && reached) && !jumpScrolling && !toggled && !reflowed) return;
+    if (near && !(reader && reached) && !toggled && !reflowed) return;
     follow = near;
     setAway(near ? null : props.count);
   };
@@ -1665,6 +1692,9 @@ export function ThreadScroller(props: {
       keepHeld();
       held = null;
     }
+    // A jump's row is corrected before each paint, so the view they saw is where it is; a
+    // correction now would undo the scroll their input may already have started.
+    endJumpHold();
     if (e.type === "pointerdown") pressing = true;
     // A wheel down at the end (of the rows as they stood) scrolls nothing, so no scroll event says
     // the reader is back there.
@@ -1737,6 +1767,7 @@ export function ThreadScroller(props: {
   /** The last row read's bottom at the bottom of the view, unless the reader has moved it since. */
   const placeAtRead = (row: HTMLElement) => {
     if (touched || !row.isConnected) return;
+    endJumpHold();
     el.scrollTop += row.getBoundingClientRect().bottom - el.getBoundingClientRect().bottom;
     lastGap = el.scrollHeight - el.scrollTop - el.clientHeight;
   };
@@ -1752,6 +1783,7 @@ export function ThreadScroller(props: {
     readTo = null;
     const top = el.scrollTop + row.getBoundingClientRect().bottom - el.getBoundingClientRect().bottom;
     if (el.scrollHeight - top - el.clientHeight < FOLLOW_PX) return false;
+    endJumpHold();
     el.scrollTop = top;
     lastGap = el.scrollHeight - el.scrollTop - el.clientHeight;
     follow = false;
@@ -1840,13 +1872,21 @@ export function ThreadScroller(props: {
       // The rows just added are above the view: not new content to follow. The view keeps its
       // distance from the end, which at the bottom is the bottom. The browser's own scroll
       // anchoring usually has done this already; then nothing is written, and a scroll under way
-      // (a jump) carries on.
+      // carries on.
       observer.takeRecords();
       const want = el.scrollHeight - fromEnd;
       if (Math.abs(el.scrollTop - want) >= 1) el.scrollTop = want;
-      if (hold && !follow) holdView();
+      const jump = held?.jump;
+      if (!jump) {
+        if (hold && !follow) holdView();
+        return;
+      }
+      // A jump's row is held (`land`): it stays where it is, through these rows' first drawing too.
+      keepHeld();
+      if (!held || held.jump !== jump) return;
+      held.until = Math.max(held.until, performance.now() + HOLD_MS);
+      jump.quiet = 0;
     },
-    jumping: () => performance.now() < jumpingUntil || jumpScrolling,
   };
   createEffect(on(() => props.resume, resumeFollowing, { defer: true }));
 
@@ -1904,6 +1944,7 @@ export function ThreadScroller(props: {
     const place = () => {
       const entry = ensureRendered(r.rowId, el)?.closest(".entry");
       if (!entry) return false;
+      endJumpHold();
       el.scrollTop += entry.getBoundingClientRect().top - el.getBoundingClientRect().top - r.offset;
       lastGap = el.scrollHeight - el.scrollTop - el.clientHeight;
       return true;
@@ -1946,19 +1987,16 @@ export function ThreadScroller(props: {
           el = node;
           if (cols) node.style.setProperty("--entry-cols-measured", String(cols));
           observer.observe(node, { childList: true, subtree: true, characterData: true });
-          // A jump (lib/jump) takes the view away from the bottom: stop following, as a scroll up would.
           node.addEventListener("click", onClick, true);
           node.addEventListener("toggle", onToggle, true);
           viewResized?.observe(node);
-          node.addEventListener("scrollend", () => (jumpScrolling = false));
           node.addEventListener(SWAP_EVENT, holdAcrossSwap);
-          node.addEventListener(JUMP_EVENT, () => {
-            jumpingUntil = performance.now() + JUMP_SETTLE_MS;
-            jumpScrolling = true;
-            jumpScrolled();
-            if (!follow) return;
-            follow = false;
-            setAway(props.count);
+          // A jump (lib/jump) lands here: cancelled, to tell it so.
+          node.addEventListener(JUMP_EVENT, (e) => {
+            const row = (e as CustomEvent<unknown>).detail;
+            if (!(row instanceof HTMLElement) || !node.contains(row)) return;
+            e.preventDefault();
+            land(row);
           });
           if (props.path) {
             const path = props.path;

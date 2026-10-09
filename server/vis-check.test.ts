@@ -235,7 +235,7 @@ async function scriptedSession(script: string[], visOn: () => boolean, queued: (
           models: [{ id: "scripted-1", name: "Scripted", reasoning: false, input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 100000, maxTokens: 1000 }],
           streamSimple,
         }),
-      visCheckExtension(() => ({ visOn, queued, writable: () => true })),
+      visCheckExtension(() => ({ visOn, visToolsOn: visOn, queued, writable: () => true })),
     ],
   });
   await resourceLoader.reload();

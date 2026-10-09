@@ -101,8 +101,8 @@ export interface PoToolHost {
   limitRefused(kind: PoLimitKind): Promise<void>;
   /** Both allowances' use and limits, from the watch statechart's ledgers. */
   allowance(): { message: AllowanceUse; today: AllowanceUse };
-  /** A `§gap/…` idea filed or dropped: the layer that tracks gaps hears it (nothing when none does). */
-  fileGap(ideaId: string): Promise<void>;
+  /** A `§gap/…` idea filed (with its title) or dropped: the layer that tracks gaps hears it (nothing when none does). */
+  fileGap(ideaId: string, title?: string): Promise<void>;
   dropGap(ideaId: string): Promise<void>;
   /** What is held for a later look now (sova_project). */
   held?(): HeldItem[];
@@ -192,7 +192,7 @@ export const COUNTS: Record<string, PoLimitKind> = (() => {
 
 /** Where a build's branch stands, as the project page reads it from git. Pure. */
 export function buildState(w: CodingWorktree): string {
-  if (w.state === "root") return `in the project root${w.inRoot ? ` (${w.inRoot.replace(/\.$/, "")})` : ""}`;
+  if (w.state === "root") return `in the project root${w.inRoot ? ` (${w.inRoot.replace(/\.$/, "")})` : w.later ? " until it makes a worktree" : ""}`;
   const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
   const out = [
     w.merged
@@ -357,7 +357,7 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
       name: "sova_project",
       label: "Project",
       description:
-        "The project at a glance: your autonomy, its builds (every coding session the project started: who started it, its branch, merged or not), its software (registered, stale, failed or awaiting approval; its services and isolation; the Project verbs playbook's run), its active previews, your limits (this message's and today's allowances, looks, at once) and what is held for a later look.",
+        "The project at a glance: your autonomy, its builds (every coding session the project started: who started it, its branch, merged or not), its software (registered, conforming, stale or failed; its services and isolation; the Project verbs playbook's run), its active previews, your limits (this message's and today's allowances, looks, at once) and what is held for a later look.",
       promptSnippet: "the project at a glance (builds, previews, limits)",
       parameters: obj({}),
       execute: read(async () => {
@@ -545,12 +545,12 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
             const have = ns === "gap" ? readManifest(p.ideas).ideas[key] : undefined;
             if (have) {
               if (have.status === "dropped") throw new Refusal(`${key} is dropped: set its status first (sova_idea status) to file it as a gap again.`);
-              await host.fileGap(key);
+              await host.fileGap(key, have.title);
               return { content: text(`Filed ${key} as a gap (the idea was already on the list; its text is unchanged).`), details: { id: key, op: "add", status: have.status } };
             }
             const r = addIdea({ id, title: q.title, text: q.text ?? "", tags }, p.ideas);
             // A gap is an item statechart from now on: its Pipeline row, its gatherings and builds (gap/file).
-            if (ns === "gap") await host.fileGap(r.id);
+            if (ns === "gap") await host.fileGap(r.id, r.title);
             return { content: text(`Filed ${r.id}.`), details: { id: r.id, op: "add", status: r.status } };
           }
           if (q.op === "append") {
@@ -882,7 +882,7 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
     (() => {
       const t = projectOverseerVerbsTool(projectEngine, { id: () => host.overseerId(), root: () => host.project().root, act: (verb, instance, detail) => host.servicesAct(verb, instance, detail), ...(host.onboard ? { onboard: (why: string) => host.onboard!(why) } : {}) });
       const exec = (id: string, params: any) => t.execute(id, params, undefined, undefined, undefined as never) as Promise<Out>;
-      // The engine's own refusal or failure (not-approved, needs-confirm, a verb that failed) comes back as the result,
+      // The engine's own refusal or failure (forbidden, needs-confirm, a verb that failed) comes back as the result,
       // never thrown: the model reads it whole, and the activity log records it refused with the engine's sentence.
       const acted = act("sova_project_verbs", async (params, id) => {
         const out = await exec(id, params);

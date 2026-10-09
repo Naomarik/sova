@@ -11,7 +11,9 @@ for sessions Sova holds and sessions it only watches, with one web-only shortcut
 holds, the card can tick recommendations to take, pick an option as a question's answer, and go
 with all of the recommendations (§chat.alignment/card).
 Those only compose an ordinary message for the agent to record, exactly as if it were typed; the
-TUI user types the same words.
+TUI user types the same words. How the agent writes alignments — its writing style — and whether it
+draws on the card (Visuals) are set in Settings → Alignment (§chat.alignment/settings-file,
+§chat.alignment/style, §chat.alignment/visuals).
 
 ## §chat.alignment/document — What an alignment holds
 
@@ -22,6 +24,15 @@ alternatives `xN`, questions `qN`. A question has a topic, the ask, optional con
 options (each a label and its trade-off), a **recommendation** (the choice and why), and, once
 answered, a **decision**: its text, who made it (`user`, or `accepted-recommendation` when the user
 took the recommendation), and when. A question can also be dropped, with why, and reopened.
+
+An alignment can also hold **technical notes** (`tN`, never reused like the other ids): the files,
+code and technical detail a plan written for a reader who doesn't read code leaves out of its other
+fields (§chat.alignment/style). A document records the **writing style** in effect at its latest
+change (`style`: `simplified` or `pm`; absent for Default). In a session started with Visuals on
+(§chat.alignment/visuals), a question can carry a **visual** `{kind, source}` — a `vis` drawing's
+kind and its source, the same text a `vis` fence would hold — and the document one of its own; at
+most 3 per alignment. A document without technical notes, a style or visuals reads exactly as before:
+each field is absent until something sets it.
 
 **Options are lettered** a, b, c… in their order, wherever they are listed, so the user can answer
 a question by its number and an option's letter ("3a": q3's option a). A recommendation **names an
@@ -51,9 +62,14 @@ a missing or unknown field before the tool runs. The ops (with the `adversarial-
 also `review` and `close_blocker`, and their refusals of implementing and done,
 §chat.alignment-review/op):
 
-- **create** `{title, summary, findings?, approach?, rejected?, questions?}` — a new document,
-  `al_N`. Every question needs a topic, an ask and a recommendation.
-- **import** `{path}` — a new document read from a JSON file (the create fields, nothing else), at
+- **create** `{title, summary, findings?, approach?, rejected?, technical?, questions?}` — a new
+  document, `al_N`. Every question needs a topic, an ask and a recommendation. In a session started
+  with Visuals on, create also takes the document's `visual?` and each question a `visual?`
+  (`{kind, source}`, §chat.alignment/visuals); without it neither field is in the schema or
+  accepted.
+- **import** `{path}` — a new document read from a JSON file (the create fields, `technical`
+  included and `visual` never: the agent adds visuals after the import with edit_question or
+  edit_doc; nothing else), at
   an **absolute** path (`~/` counts; a relative path is refused), so a planning worker can write the
   alignment and the agent imports it without retyping. The file's shape is described on the `path`
   field. Only a regular file up to 256 KB is read (a pipe, a device or a directory is refused before
@@ -62,12 +78,14 @@ also `review` and `close_blocker`, and their refusals of implementing and done,
   the path of the bad field. In a **remote session** (tools on a target) the file would be on the
   target, so `import` is refused with a reason, and the agent uses `create` with the file's fields.
   create or import comes first in its call, once.
-- **add** `{findings?, approach?, rejected?, questions?}` (at least one); **edit** `{id, text}`
-  replaces a finding's or step's whole text; **edit_question** `{q, topic?, ask?, context?,
-  options?, recommendation?}` (at least one; `context: ""` and `options: []` remove them);
-  **edit_rejected** `{id, option?, why?}`; **edit_doc** `{title?, summary?}`; **remove** `{ids}`
-  (findings, steps and rejected alternatives; a question is dropped instead, so its id keeps its
-  meaning).
+- **add** `{findings?, approach?, rejected?, technical?, questions?}` (at least one); **edit**
+  `{id, text}` replaces a finding's, step's or technical note's whole text; **edit_question** `{q,
+  topic?, ask?, context?, options?, recommendation?}` (at least one; `context: ""` and `options: []`
+  remove them; with Visuals on also `visual`, `null` removing it); **edit_rejected** `{id, option?,
+  why?}`; **edit_doc** `{title?, summary?}` (with Visuals on also `visual`, `null` removing it);
+  **remove** `{ids}` (findings, steps, rejected alternatives and technical notes; a question is
+  dropped instead, so its id keeps its meaning). A fourth visual, counting the questions' and the
+  document's, is refused.
 - **decide** `{q, decision}` records the user's own answer; **accept** `{qs: [ids]}` takes the
   recommendation as the decision for exactly those questions, recorded as accepted, and
   **accept_all** `{}` for every open one — never over a decided question (the user's answer is not
@@ -82,7 +100,9 @@ also `review` and `close_blocker`, and their refusals of implementing and done,
 - **get** — the document (or, with none named, every open one) as markdown, read-only: each
   option a paragraph of its own, `a. **{label}** — {trade-off}`, and the recommendation
   `Recommended: b — **{label}** — {why}` when it names an option, else
-  `Recommended: **{choice}** — {why}`.
+  `Recommended: **{choice}** — {why}`. Technical notes follow the approach under
+  "Technical notes", and a visual is its source in a `vis {kind}` code block, under its question
+  or after the summary.
 
 The tool's description and the ops' own descriptions tell the model how a reply maps onto ops:
 decide what the user answered, accept only what they told it to take the recommendation on, leave
@@ -137,6 +157,12 @@ any more, and they count toward no chip, row or digest.
   them first, an answer to only some is not a go-ahead — and `done` when finished. With Delegate on, the bridge paragraph says the same for the planning
   worker hand-off. The tool's own description and guidelines carry the core of it too, since they
   sit in pi's tools section.
+- **Writing style and Visuals.** A non-Default writing style adds its paragraph to the align block
+  (§chat.alignment/style), and Visuals on adds the visuals paragraph after it
+  (§chat.alignment/visuals); with Default and Visuals off the block is exactly as before. With
+  Delegate on, the bridge paragraph also tells the agent to copy the writing style paragraph, when the
+  align block or a later note carries one, word for word into the planning worker's brief; the bridge's
+  own words never depend on the style. The planning worker gets no `vis_guide` and writes no visuals.
 - **A hidden note on each user prompt.** While align is on and an alignment is open, each prompt the
   user sends carries a hidden message (`align-state`, never shown in the transcript) listing the
   open alignments, their status and their open questions with ids, lettered option labels
@@ -272,6 +298,17 @@ an `align` call: it is the message, not its working.
   earlier revisions draw no left guide rule, while keeping their indentation, like every disclosure
   (§chat.transcript/tokens). Earlier revisions
   still collapse to their one-line change summary and open to show that revision in place.
+- **Technical notes.** A document with technical notes shows them right under the approach, as a
+  closed disclosure "Technical notes · {n}", its notes listed by id like the approach steps (same
+  id column, same text column, the same inline code and bold). Review lines and blockers are never
+  folded into it, whatever the style.
+- **Writing style.** A document written in a non-Default style says so at the end of its meta line:
+  "· Simplified style" or "· Project manager style". Default adds nothing.
+- **Visuals.** A question's visual is drawn under its context, before its options, and the
+  document's under the summary, each with the chat's own `vis` drawing (the same figure, Source
+  toggle and Copy a `vis` fence in a reply gets). A visual whose source doesn't parse shows its
+  source as a code block with the chat's own one line saying it couldn't be drawn, as a reply's fence
+  does. A folded question draws its visual only once opened.
 - **Status chip**, dot and word, only once the document is past aligning: Confirmed (success),
   Implementing (accent), Done (success), Dropped (neutral). An aligning document shows none.
 - **Questions** show their parts distinctly: the ask, the context, the options as a list lettered
@@ -428,8 +465,82 @@ change parses only the lines appended since (a file that shrank or was rewritten
 The TUI draws each `align` call as one dim line naming the document and its ops, and its result as
 a compact card: the id, title, status and open count, the change line, and the open questions with
 their recommendations, by letter and label when one names an option (the whole document, options
-lettered, when the tool row is expanded). A widget above the editor
+lettered, with its technical notes and each visual as its source text, when the tool row is
+expanded). The TUI reads the writing style and Visuals from `mode-align.json` like Sova
+(§chat.alignment/settings-file); adversarial review stays `pi --adversarial-review` only. A widget above the editor
 lists the open alignments ("◇ align · al_3 2/7 open · al_2 implementing · alt+a view") while align is
 on. The viewer (`/align`, the viewer key) shows one document at a time as markdown, ←/→ switching
 between them; `/align status` lists them and `/align export [path]` writes them as markdown. An
 older session's `align-doc` entries keep their one-line transcript marker.
+
+## §chat.alignment/settings-file — `mode-align.json`
+
+The align mode's writing style and Visuals are one file, `<agent dir>/mode-align.json`, `{version:
+1, style, visuals}`: `style` is `default`, `simplified` or `pm` (Project manager), `visuals` a
+boolean. One module, `pi-config/extensions/mode/align-settings.ts` (node built-ins only, beside
+`mode/spec.ts`), owns it: the shape, a strict parse (another version, an unknown key, a style outside
+the three or a non-boolean `visuals` is malformed, with a sentence naming the field), a reader that
+reads a missing or malformed file as Default with Visuals off, and an atomic writer. Settings →
+Alignment writes it (§app.settings-dialog/alignment). The mode extension reads it, in the TUI and in
+every runtime Sova hosts — the style at each turn boundary, Visuals at each session start — and
+Sova's server reads Visuals at a chat's first start (§chat.alignment/visuals). With the mesh on it
+syncs like `mode-spec.json`: whole file, newest edit wins, checked with the module's own parser
+before it is written.
+
+Which style and Visuals a chat uses: its subagent profile's `alignment` override, field by field
+(§chat.subagent-profiles/file), else this file. A profile with no override reads exactly as this
+file does.
+
+## §chat.alignment/style — Writing style
+
+The writing style shapes what the agent writes into an alignment the user reads; it never changes
+the tool, the ops or what a review records.
+
+- **Default** adds no text: the align block is today's.
+- **Simplified** adds one paragraph: short sentences in everyday words; about 5 findings and 6
+  approach steps at most; a file named only when the user must recognise it; and each question's
+  context says what changes for the user with each answer.
+- **Project manager** adds one paragraph: the fields the user reads describe only screens,
+  controls, wording, states and flows — no file paths, function or component names, APIs or code;
+  questions a project manager can answer; and a consequence rule: a technical choice with an effect
+  a user would notice (speed, cost, data kept or lost, limits, something hard to undo) is asked as a
+  product question. "Never leave a decision out because it is technical." The technical detail goes in
+  the alignment's technical notes.
+
+**How it reaches a chat.** The style is read at each turn boundary. Its paragraph joins the align
+block when the prompt's head is built — the first run after the session's start or its last
+compaction (§chat.mode-menu/minor-toggle-keeps-prompt) — and the block is never rewritten
+mid-session. A later change reaches an open chat with align on as **one** hidden `mode-note` at its
+next run, once per change: the new style's paragraph, or, back to Default, that the earlier style
+paragraph no longer applies. The note's details record the style it told and the head's, so a
+reopened chat neither tells it twice nor loses what its head was built with. A head built in a style
+other than Default records that style when it is built; a chat with no such record whose head was
+sent since its last compaction (an older one included) had a Default head. So a chat reopened after
+the style changed, with no note yet, rebuilds its head byte for byte and gets the change as that one
+note at its next run. Nothing about the
+style rides the per-prompt `align-state` note. Align turned on later by a note carries the align
+block with the style in effect then.
+
+## §chat.alignment/visuals — Visuals
+
+With **Visuals** on, the align mode may draw on the alignment card (§chat.alignment/card): a
+question's or the document's `visual` (§chat.alignment/document).
+
+- **Start only.** Visuals reach a chat at its first start and never change for it: Sova records
+  them with the review flag in the chat's hidden `sova-align-launch` state entry
+  (§chat.alignment-review/flag) and every later start reuses it, handing the mode extension the
+  `align-visuals` flag (`on` or `off`); the TUI, with no such flag, reads `mode-align.json` (and the
+  chat's profile override) at session start.
+- **The prompt.** With align on, a paragraph after the align block (and after the style's): add a
+  visual only when it explains faster than words — a wireframe for a question about a screen, a flow,
+  state or steps for a change in behaviour; call `vis_guide` before the first visual of each kind;
+  in the Project manager style never the code, tree or layers kinds; after importing a planning
+  worker's file, add visuals with edit_question or edit_doc. Its words never depend on the style.
+- **The schema.** The `visual` fields are in the align tool's schema exactly when Visuals were on at
+  the start (§chat.alignment/tool); technical notes are in it whenever align is on.
+- **The vis tools.** One rule decides whether the vis tools are wanted: vis on, or align on with the
+  chat's Visuals. Every place that syncs them — the mode extension's `vis_guide` and, in Sova's hosted
+  sessions, `vis_check` at session start, after a switch made between runs, when a run starts and
+  when it settles — asks that rule, so the tool set changes only when its answer does, never each run.
+  The repair of a reply's broken `vis` fences (Sova's vis retry) stays with vis alone. A worker gets
+  neither tool.

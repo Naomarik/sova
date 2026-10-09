@@ -1,0 +1,29 @@
+---
+// Hero: one Delegate session on a desktop, captured from Sova on the screens story's demo data
+// (sidebar, chat, the session detail pane on its workers). The session video plays over the
+// desktop still (muted, looping, no script); with reduced motion its source never matches and
+// the still shows. data/screens.ts offers the video only when its shape is the still's, so it
+// fills the same screen area exactly: never cropped, never letterboxed. The foldable pair moved
+// to its own section below the hero (FoldDevice.astro).
+import { getImage } from "astro:assets";
+import Frame from "../Frame.astro";
+import Screen from "../Screen.astro";
+import { video } from "../../data/screens";
+
+const poster = video ? await getImage({ src: video.posterShot.image, format: "webp", width: 1600 }) : null;
+---
+<div class="devices">
+  <figure class="dev dev-desk">
+    <Frame strip={false} class="m-frame" caption="" decorative={false}>
+      <div class="screen-stack">
+        <Screen at="hero.desk" sizes="(min-width: 1120px) 1040px, 920px" eager />
+        {video && poster && (
+          <video class="screen-video" autoplay muted loop playsinline preload="metadata" poster={poster.src} width={video.width} height={video.height} aria-label={video.alt}>
+            <source media="(prefers-reduced-motion: no-preference)" type="video/mp4" src={video.file} />
+          </video>
+        )}
+      </div>
+    </Frame>
+    <figcaption class="dev-label">On your desk</figcaption>
+  </figure>
+</div>

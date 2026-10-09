@@ -304,7 +304,7 @@ user row.
 
 - Reads: `sova_project` (level, roster, gathering sessions, decisions by state and area, open
   conflicts, spec status, its builds, its limits, and a Software block: the registry's standing in
-  words, each service as name · kind · scope · isolation with its live state, approval, proof, the
+  words, each service as name · kind · scope · isolation with its live state, proof, the
   drifted paths and the playbook run, §app.project-runtime/registry), `sova_decisions` (with who, their exact words and each
   decision's owner area), `sova_list_sessions` / `sova_read_session` (the project's gathering sessions as their
   participants see them; the project's coding sessions, every one its statecharts record, the
@@ -312,7 +312,8 @@ user row.
   inside the project root; never another project's, an overseer's or a subagent's own), `sova_roster` (read: every person as the prompt's roster shows them, plus their status when not active, never contact; both it and `sova_project` name the main stakeholder, as the prompt
   does), `sova_todos` (operator turns only, §app.project-overseer/ideas-and-todos),
   `sova_previews` (the project's preview links, §app.project-overseer/previews; `sova_project`
-  lists its active ones too, under "Previews"), `sova_send_status` (below).
+  lists its active ones too, under "Previews"), `sova_send_status` (below), `sova_history` (its
+  project's history, §app.org-history/readers).
 - **Whether a message arrived.** `sova_send_status {person?, limit?, hours?}` (read) lists the
   project's WhatsApp sends from the send log (§app.outreach/log), newest first: each send's id,
   the person's name, what went (a gathering link, a preview, a note), who sent it (you, the
@@ -327,7 +328,8 @@ user row.
   it ("started by you" for its own, "started by the operator" for the operator's), working or idle,
   its branch, and whether that branch is merged, as the project page reads it from git
   (§app.project-overseer/coding-worktrees): "merged into {target}", "{n} commits not merged into
-  {target}", "no commits yet", "worktree removed", or "in the project root". `sova_project` has the
+  {target}", "no commits yet", "worktree removed", or "in the project root" ("in the project root until it makes a
+  worktree" for a `worktree: "later"` session that hasn't yet, §app.project-overseer/new-coding-session). `sova_project` has the
   same list under "Builds", newest first, so it never asks the operator to merge a branch that is
   already merged. A session is addressed by its id, bare or in any form the tools print it:
   `sova://s/<id>`, `s/<id>`, or a `[title](sova://s/<id>)` link; anything else is refused with "No
@@ -359,14 +361,19 @@ user row.
   project page), or ask with `sova_card`. `sova_decisions` shows each decision's owner area and
   whether its author owns it, so the check has what it needs. Reconcile is on by default, so
   `sova_reconcile` runs unless the operator turned it off in Settings → Decisions.
-- L0: `sova_note`, `sova_card`, `sova_idea`. L1: `sova_start_gathering` (one active roster
+- L0: `sova_note`, `sova_card`, `sova_idea`, `sova_decide` (a deliberate decision of its own,
+  an abstention included, recorded in the history and changing no statechart,
+  §app.org-history/negatives). L1: `sova_start_gathering` (one active roster
   person, or the operator), `sova_offer` (two or more), `sova_reconcile`,
   `sova_owner_update` (an update on the owner page, §app.owner-page/updates),
   `sova_send_to_person` (L1: a WhatsApp message to a roster person — their gathering link, a preview
   link, a note, or a link with a note; §app.outreach/decisions),
   `sova_close_gathering`; `sova_start_gathering` and `sova_offer` take an optional `abilities`
   within the project's ceiling (§app.baton/abilities), an optional `files: true` (file intake,
-  §app.baton/files) and a required `why`; `sova_files` (list a read, copy L3 unattended, delete in
+  §app.baton/files), an optional `preview` (the id, `pv_…`, of this project's preview the
+  conversation asks about: recorded with its start, §app.org-history/capture; it sends no link, and
+  one this project doesn't have is refused: "No such preview in this project: give a preview id
+  (pv_…) sova_preview lists.") and a required `why`; `sova_files` (list a read, copy L3 unattended, delete in
   the operator's turns only, §app.project-overseer/files); `sova_preview` start
   (a preview link of a coding session's app; its `off` runs at any level,
   §app.project-overseer/previews). L2: `sova_promote`,
@@ -381,7 +388,7 @@ user row.
   act, which starts the Project verbs playbook (§app.project-runtime/onboard): counted and held like
   a coding session's start, and refused for an unattended overseer while the project's software is
   registered and current. The overseer may start it when the Software standing is unregistered,
-  stale or failed; below L3 it raises a card instead; it never approves a definition or merges.
+  stale or failed; below L3 it raises a card instead; it never merges.
   Operator turns only: `sova_todo`.
 - **Every start names its gap.** `sova_start_gathering` and `sova_offer` take a required `gap`: a
   `§gap/…` idea of the project (the session becomes that gap's, §app.project-overseer/gaps), or
@@ -492,7 +499,9 @@ user row.
   new branch, cut from the commit the project root's checkout has checked out (`HEAD`), whose
   branch is the one it merges back into. The project root's checkout is never switched, and the
   session's cwd is the worktree (or, for a folder inside the root, the same folder inside the
-  worktree).
+  worktree). The one exception is a session started with `worktree: "later"`
+  (§app.project-overseer/new-coding-session): it starts in the project root, and its worktree is
+  the one it makes itself (**Adopted later**, below).
 - **A Project verbs run.** The coding session the Project verbs playbook runs in
   (§app.project-runtime/onboard) is listed with the others, by who really started it ("Started by
   the overseer" or "Started by you"), and labelled "Project verbs playbook run".
@@ -503,7 +512,10 @@ user row.
   Session, §app.project-overseer/new-coding-session) gets the same paragraph as a note before
   anything is sent: a `sova-coding-worktree` message in its transcript, shown in the chat and part
   of its model's context from the first message the operator sends. A session run in the project
-  root (no worktree) gets no such paragraph.
+  root (no worktree) gets no such paragraph. A `worktree: "later"` session gets the same note when
+  its worktree is adopted, naming the adopted branch and target, once: at once between turns, else
+  when its running turn ends. A session another writer holds (open in a terminal) gets none, since
+  Sova never writes into a file another process is writing.
 - **Names.** Branch `sova/<name>`, worktree `<parent of the repo's top level>/.worktrees/<repo
   folder name>-<name>`, outside the project root, as the `worktree` tool places its own
   (§chat.worktrees/tool). `<name>` is a slug of the session's title (the item's title, which names
@@ -512,7 +524,23 @@ user row.
   Coding Session; lower case, letters, digits and hyphens, at
   most 40 characters) and 6 random hex digits (`sova/payroll-export-3f9a1c`), so two hosts sharing
   the client repo never pick the same branch. The `sova/` prefix tells Sova's branches from the
-  owner's.
+  owner's. A `worktree: "later"` session's branch and worktree are the ones its own `worktree` tool
+  call named (`feat/<name>` at `<parent>/.worktrees/<repo>-<name>`, or the path the call gave),
+  taken as they are, never renamed and never `sova/…`.
+- **Adopted later.** A `worktree: "later"` session's row adopts the first worktree that session
+  itself creates with its `worktree` tool (the session's tracked set, §chat.worktrees/tool: made by
+  this session, not attached; active or already merged, never dropped) in the project's repository
+  (the same git common directory as the project root). It is checked at the end of each of the
+  session's turns, and on each read of the project page, so a session run in a terminal is
+  adopted too. The row records the tool's branch and path as named, its `base` as the tool's base,
+  and its `target` as the tool's base branch, or, when the tool recorded none, the branch the
+  project root has checked out then. From then on the row is a worktree row like any other: its
+  branch in mono, Merge Branch and Remove Worktree, merged read from git. A row adopts once and
+  holds one worktree: a later worktree, an attached one or one in another repository is never
+  adopted, and the session dropping its worktree after adoption changes nothing on the row. Until
+  it adopts, the row reads "In the project root until it makes a worktree.", offers neither
+  gesture, and Merge Branch or Remove Worktree asked of it are refused with "It runs in the project
+  root until it makes a worktree."
 - **Where it can't.** A project root that isn't inside a Git work tree, a repository with no commit
   yet, or a root checkout on a detached `HEAD` runs the session in the project root, as before.
   The page says why above the list ("Coding sessions run in the project root: it isn't a Git
@@ -826,6 +854,19 @@ user row.
   (§app.project-overseer/coding-mode), recorded as an `operator-coding` row (listed under Coding
   sessions as "Started by you", in the sidebar's Builds and the Cost card, never counted by the
   overseer's caps). It links no to-do or idea.
+- **Started before it is named: `worktree: "later"`.** The body may carry `worktree`, `"now"` (the
+  default, everything above) or `"later"`; any other value is refused with 400 "worktree is "now"
+  or "later"." and no session is started. `"later"` is for work not named yet, and is what New
+  Session's Project tab sends (§app/new-session-dialog): the session starts in the project root
+  with no worktree and no branch, and Sova names nothing for it (no `sova/coding-<hex>`; a `title`
+  still names the row and the session, never a branch). It is the same `operator-coding` row, on
+  the same coding settings, mode and pin. It gets no `sova-coding-worktree` note and no commit
+  paragraph at start; the conversation names its worktree later, with the session's own
+  `worktree` tool, and the project adopts it then (§app.project-overseer/coding-worktrees,
+  **Adopted later**). The answer carries no `worktree`. The project page's New Coding Session
+  button, Start Coding Session and the overseers' starts never send it: they cut the worktree at
+  create, as above. In a project root that can't have worktrees (§app.project-overseer/coding-worktrees,
+  **Where it can't**) it starts there as any start would, with that reason.
 - **No first prompt.** Nothing is sent: the page toasts "Coding session started on sova/{name}."
   (in the root: "Coding session started in the project root.") and opens the session, where the
   operator writes the first message in the composer, with no length limit. A worktree session gets
@@ -875,8 +916,11 @@ user row.
 - **In the workspace repo.** The portable statecharts' snapshots are files under `statecharts/` in the org's
   workspace repo, and the transition log is `statecharts/log/<yyyy-mm>.jsonl` there, committed with the
   workspace commits (§app.organizations/workspace-repo); the host-local statecharts live under
-  `<stateRoot>/statecharts/<org>/`. One step's snapshots and log rows are written together, through
-  a journal, so a crash never leaves half a step. Sova writes no `baton.json`, `decisions.json`,
+  `<stateRoot>/statecharts/<org>/`. One step's snapshots, log rows and history events (§app.org-history/durability) are written
+  together, through a journal, so a crash never leaves half a step. Each log row carries its own key
+  (`k`), so a replay writes it once. Any act may therefore be refused with "History can't be saved
+  right now: {why}. Nothing was done.", or answered "Saved, but not applied yet: it takes effect
+  when the workspace reloads." (§app.org-history/durability). Sova writes no `baton.json`, `decisions.json`,
   `conflicts.json`, `started.json`, `roster.json`, `projects.json`, `org.json`, overseer
   `state.json` or `holder.json`, and no pause list in the attach index.
 - **A statechart file that doesn't load** (a hand edit, conflict markers after a pull, an unknown
@@ -902,7 +946,8 @@ user row.
   what changed, and for a refusal its sentence. It never holds a link token or hash, a contact
   value (`[contact]`), the About text (its hash and length only) or anything a person wrote. The
   overseer's activity list, the Pipeline's timelines (§app.project-overseer/pipeline) and each
-  "Last looked" line are read from it.
+  "Last looked" line are read from it. Beside it, the org's history (§app/org-history) records each captured
+  happening with its actors, explicit links and recorded reasons; neither is the state.
 - **Versions and recovery.** Each statechart carries a version, and a snapshot saved by an older
   version is migrated when it loads, through each version's migration in turn; a statechart change never
   starts sessions fresh. A lost or broken snapshot is recovered from the workspace repo's history,

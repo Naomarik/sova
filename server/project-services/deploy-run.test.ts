@@ -4,13 +4,10 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
-import { parseDefinition } from "../../shared/project-contract";
-import { approveDeployRecipe, Deployer, deployNotes } from "./deploy";
-import { deployReview } from "./deploy-trust";
+import { Deployer, deployNotes } from "./deploy";
 import { ProjectEngine, type Caller } from "./engine";
 import { FakeHost } from "./fake-host";
 import { hostVarsFile } from "./store";
-import { approve, defHashOf } from "./trust";
 
 /**
  * deploy.plan and deploy.run (§app.project-services/deploy-plan, /deploy-run) against a fake target: a
@@ -98,8 +95,6 @@ before(async () => {
   commitAll("v1");
   git(["remote", "add", "origin", join(parent, "remote.git")]);
   git(["push", "-q", "-u", "origin", "main"]);
-  const def = parseDefinition(JSON.stringify(DEF()));
-  approve(project, defHashOf(def), defHashOf(def));
   setHost();
   const host = new FakeHost();
   // The credential check and the smoke tests as the real ones decide: the token's value, a RED file.
@@ -114,14 +109,9 @@ after(async () => {
   rmSync(parent, { recursive: true, force: true });
 });
 
-async function approveMain(): Promise<void> {
-  const review = deployReview(project, parseDefinition(git(["show", "HEAD:.sova/project.json"])).deploy!, "main");
-  await approveDeployRecipe(project, review.deployHash, "HEAD", review.keys);
-}
-
-test("plan: refused until the recipe is approved; the commit must be on the branch and pushed", async () => {
-  assert.equal((await deployer.run("deploy.plan", { project, target: "prod" }, op)).error?.code, "not-approved");
-  await approveMain();
+test("plan: main's recipe plans as written; the commit must be on the branch and pushed", async () => {
+  const first = await deployer.run("deploy.plan", { project, target: "prod" }, op);
+  assert.equal(first.error, undefined, first.error?.message);
   // A commit only on a side branch: not on main.
   git(["switch", "-q", "-c", "side"]);
   writeFileSync(join(project, "site", "side.html"), "x");
@@ -159,7 +149,6 @@ test("plan: a failed credential check is refused for good; main's dirty tree and
   writeFileSync(join(project, "RED"), "");
   commitAll("red");
   git(["push", "-q", "origin", "main"]);
-  await approveMain();
   const red = await deployer.run("deploy.plan", { project, target: "broken" }, op);
   assert.equal(red.error?.code, "needs-override", red.error?.message);
   assert.match(red.error!.message, /the required tests failed: the smoke selection/);

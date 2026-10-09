@@ -249,7 +249,7 @@ export const head = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 
 export const tail = (s: string, n: number) => (s.length > n ? `…${s.slice(s.length - n + 1)}` : s);
 
 /** A reply's closing spec lines (the spec mode's footer): cut before looking for an ask. */
-const FOOTER_RE = /(?:^|\n|\s{2,})(?:Also changes:|Deferred:|Spec check override:|Plumbing:)[^\n]*$/;
+const FOOTER_RE = /(?:^|\n|\s{2,})(?:Also changes:|Also updates\b|Deferred:|Spec check override:|Plumbing:)[^\n]*$/;
 
 /** The reply without its closing spec lines. */
 export function withoutFooter(text: string): string {

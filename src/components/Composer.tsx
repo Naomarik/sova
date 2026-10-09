@@ -3,7 +3,8 @@ import { releaseControl } from "../lib/release-control";
 import type { ChatClaudeLogin, ScheduleInfo, SlashCommand, UploadResult } from "../../shared/protocol";
 import { composerLogin } from "../lib/claude-login";
 import { runControls } from "../lib/compact";
-import { createTouchMode, enterSends } from "../lib/input-mode";
+import { createTouchMode, enterSends, refocusAfterSend, type SendPress } from "../lib/input-mode";
+import { keyboardIsUp, watchKeyboard } from "../lib/voice/keyboard";
 import { enterRunsLocal, insertCommand, localCommand, menuCommands, rankCommands, slashMenuSuppressed, slashTokenAt, type SlashToken } from "../lib/slash";
 import { commandOptionIds, SlashMenu } from "./SlashMenu";
 import {
@@ -252,6 +253,23 @@ export function Composer(props: {
   const [indexTick, setIndexTick] = createSignal(0);
   const mentionKey = (t: MentionToken) => `${t.start}:${t.query}`;
   let input!: HTMLTextAreaElement;
+  let sendButton: HTMLButtonElement | undefined;
+  /** How the current Send or Stop press began, taken by the click it ends in. */
+  let press: SendPress | null = null;
+  const notePress = (e: PointerEvent) => {
+    press = { touch: e.pointerType === "touch", focused: document.activeElement === input, keyboardUp: keyboardIsUp() };
+  };
+  const takePress = () => {
+    const p = press;
+    press = null;
+    return p;
+  };
+  /** After Send, Steer or Stop: back to the textarea, unless a tap would raise a keyboard that was down. */
+  const settleFocus = (p: SendPress | null) => {
+    if (refocusAfterSend(p)) input.focus();
+    // Chrome re-raises a focused textarea's keyboard when its value changes.
+    else if (document.activeElement === input) input.blur();
+  };
   let picker: HTMLInputElement | undefined;
   let list: HTMLUListElement | undefined;
   let indicator: HTMLButtonElement | undefined;
@@ -768,6 +786,7 @@ export function Composer(props: {
     ),
   );
   onMount(() => {
+    watchKeyboard();
     // Pasted files attach; a paste with text keeps its text, the files are ours either way. By hand,
     // not `onPaste`: Solid doesn't delegate paste, and closing must be able to take it off.
     input.addEventListener(
@@ -789,6 +808,9 @@ export function Composer(props: {
   let startingNew = false;
   const send = async (e?: Event) => {
     e?.preventDefault();
+    // Only a click on Send itself carries its press; Enter and Ctrl/⌘+Enter have none.
+    const sendPress = takePress();
+    const p = e instanceof SubmitEvent && e.submitter === sendButton ? sendPress : null;
     if (!canSend()) return;
     // "/agents" is ours: it opens the subagents pane instead of reaching a runtime whose own
     // monitor is TUI-only. With images attached it's a message like any other.
@@ -869,7 +891,7 @@ export function Composer(props: {
       rows.clear();
       setRejected([]);
     }
-    input.focus();
+    settleFocus(p);
   };
 
   const runStatus = () => (
@@ -1196,6 +1218,7 @@ export function Composer(props: {
               setMentionToken(null);
             }}
             onKeyDown={(e) => {
+              press = null;
               // A bare local command runs on the Enter that would send; in touch mode it's a newline.
               const runsLocal = enterSends(e, touch()) && enterRunsLocal(text(), e.key, e.shiftKey, localOpts());
               if (slashOpen() && !e.isComposing && !runsLocal) {
@@ -1256,8 +1279,10 @@ export function Composer(props: {
           <div class="composer-actions">
             <Show when={!props.readOnly}>
               <button
+                ref={sendButton}
                 type="submit"
                 class="button button-primary"
+                onPointerDown={notePress}
                 aria-disabled={canSend() ? undefined : "true"}
                 aria-describedby={paneId("composer-reason")}
               >
@@ -1276,9 +1301,11 @@ export function Composer(props: {
                 title="Stop"
                 aria-disabled={props.stopping || props.stopBlocked ? "true" : undefined}
                 aria-describedby={props.stopBlocked ? paneId("composer-reason") : undefined}
+                onPointerDown={notePress}
                 onClick={() => {
+                  const p = takePress();
                   if (!props.stopping && !props.stopBlocked) props.onAbort();
-                  input.focus();
+                  settleFocus(p);
                 }}
               >
                 <Icon name="stop" />

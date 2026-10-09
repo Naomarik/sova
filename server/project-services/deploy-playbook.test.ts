@@ -10,7 +10,7 @@ import { listPlaybooks } from "../playbooks";
 import * as pd from "../../playbooks/project-deploy/scripts/project-deploy.mjs";
 
 /**
- * The Project deploy playbook (§app.project-runtime/deploy-playbook): a verb playbook that approves
+ * The Project deploy playbook (§app.project-runtime/deploy-playbook): a verb playbook that proposes
  * `deploy`, asks before it writes, and only reads: its driver lists the repository's deploy
  * candidates without running one, and its check refuses what Sova's parser can't see (a literal
  * address, a shell string, a secret-looking value).
@@ -53,12 +53,12 @@ function repo(name: string, def?: object): string {
   return r;
 }
 
-test("the playbook is listed as a verb playbook that approves deploy", async () => {
+test("the playbook is listed as a verb playbook that proposes deploy", async () => {
   const cat = await listPlaybooks(dir);
   const pb = cat.playbooks.find((p) => p.id === "project-deploy");
   assert.ok(pb, "shipped");
   assert.equal(pb!.title, "Project deploy");
-  assert.equal(pb!.approves, "deploy");
+  assert.equal(pb!.proposes, "deploy");
 });
 
 test("its text: interview first, the only verbs it calls are the two that read, and it never runs a deploy", () => {

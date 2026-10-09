@@ -14,8 +14,8 @@ import {
   recordingText,
   unsupportedReason,
 } from "../lib/voice/format";
-import { insertsByTyping, spacedInsert, targetRange, wordCount, type SavedCaret } from "../lib/voice/insert";
-import { clickWasTouch, touchPress } from "../lib/voice/press";
+import { spacedInsert, targetRange, wordCount, type SavedCaret } from "../lib/voice/insert";
+import { keyboardIsUp, watchKeyboard } from "../lib/voice/keyboard";
 import { ensureVoiceStatus, refreshVoice, voiceStatus, watchVoice } from "../lib/voice/status";
 import { SPEECH_RMS } from "../lib/voice/wav";
 import { Icon } from "./ui";
@@ -37,11 +37,11 @@ export interface VoiceControl {
   seconds: Accessor<number>;
   level: Accessor<number>;
   error: Accessor<{ text: string; retry: boolean } | null>;
-  /** `touch`: the press was a touch, which must move no focus and raise no keyboard. */
-  press(touch: boolean): void;
+  /** `touch`: the press was a touch, whose recording drops the focus while the keyboard is down. */
+  press(touch?: boolean): void;
   cancel(): void;
-  retry(touch: boolean): void;
-  dismiss(touch: boolean): void;
+  retry(): void;
+  dismiss(): void;
   sheetOpen: Accessor<boolean>;
   closeSheet(): void;
 }
@@ -61,11 +61,10 @@ export function createVoiceInput(target: VoiceTarget): VoiceControl {
   let saved: SavedCaret | null = null;
   let kept: Clip | null = null;
   let backgrounded = false;
-  /** A touch press started, stopped or retried this clip: insert without typing. */
-  let touched = false;
   let clockTimer: ReturnType<typeof setInterval> | undefined;
 
   ensureVoiceStatus();
+  watchKeyboard();
 
   const stopClock = () => {
     clearInterval(clockTimer);
@@ -88,7 +87,7 @@ export function createVoiceInput(target: VoiceTarget): VoiceControl {
     const range = targetRange(el.value, { start: el.selectionStart ?? el.value.length, end: el.selectionEnd ?? el.value.length, focused }, saved);
     const ins = spacedInsert(el.value, range, text);
     if (!ins) return 0;
-    if (insertsByTyping(focused, touched)) {
+    if (focused) {
       el.setSelectionRange(range.start, range.end);
       // Native undo, the input event and the IME state, as if typed. Deprecated, still universal.
       if (document.execCommand("insertText", false, ins)) return wordCount(text);
@@ -162,11 +161,13 @@ export function createVoiceInput(target: VoiceTarget): VoiceControl {
   };
 
   const begin = (touch: boolean) => {
-    touched = touch;
     const el = target.input();
     saved = el
       ? { start: el.selectionStart ?? el.value.length, end: el.selectionEnd ?? el.value.length, focused: document.activeElement === el, value: el.value }
       : null;
+    // Android Chrome re-raises a focused textarea's keyboard as the phase changes: with it down,
+    // nothing stays focused, and the text goes in at the saved caret.
+    if (el && touch && saved?.focused && !keyboardIsUp()) el.blur();
     kept = null;
     backgrounded = false;
     setError(null);
@@ -228,12 +229,9 @@ export function createVoiceInput(target: VoiceTarget): VoiceControl {
     target.announce("Recording cancelled.");
   };
 
-  const press = (touch: boolean) => {
+  const press = (touch = false) => {
     const p = phase();
-    if (p === "recording") {
-      touched ||= touch;
-      return void stop();
-    }
+    if (p === "recording") return void stop();
     if (p === "starting" || p === "transcribing") return;
     const env = captureSupported();
     const why = unsupportedReason(env);
@@ -264,34 +262,21 @@ export function createVoiceInput(target: VoiceTarget): VoiceControl {
     error,
     press,
     cancel,
-    retry: (touch) => {
-      if (!kept) return;
-      touched ||= touch;
-      void transcribe(kept);
+    retry: () => {
+      if (kept) void transcribe(kept);
     },
-    dismiss: (touch) => {
+    dismiss: () => {
       kept = null;
       setError(null);
       setPhase("idle");
-      // The button that had focus is gone. Never after a touch press, nor on a touch-only device:
-      // focusing the textarea there raises the keyboard, which the mic never does on its own.
-      if (!touch && !matchMedia("(hover: none) and (pointer: coarse)").matches) target.input()?.focus({ preventScroll: true });
+      // The button that had focus is gone. Not on a touch-only device: focusing the textarea
+      // there raises the keyboard, which the mic never does on its own.
+      if (!matchMedia("(hover: none) and (pointer: coarse)").matches) target.input()?.focus({ preventScroll: true });
     },
     sheetOpen,
     closeSheet: () => setSheetOpen(false),
   };
 }
-
-/** A voice control's ref: its touch press runs `run(true)` without a tap (lib/voice/press). */
-const tap = (run: (touch: boolean) => void) => (el: HTMLElement) => onCleanup(touchPress(el, () => run(true)));
-
-/** A voice control's press guards and click: never focus on press; a click says if it was touch. */
-const pressProps = (run: (touch: boolean) => void) => ({
-  ref: tap(run),
-  onPointerDown: (e: PointerEvent) => e.preventDefault(),
-  onMouseDown: (e: MouseEvent) => e.preventDefault(),
-  onClick: (e: MouseEvent) => run(clickWasTouch(e)),
-});
 
 const RING_R = 20;
 const RING_C = 2 * Math.PI * RING_R;
@@ -322,14 +307,12 @@ export function VoiceButton(props: { voice: VoiceControl }) {
     return label();
   };
   let button!: HTMLButtonElement;
-  const press = pressProps(v.press);
+  /** The last pointerdown was a touch; a keyboard click has none. */
+  let touchDown = false;
   return (
     <>
       <button
-        ref={(el) => {
-          button = el;
-          press.ref(el);
-        }}
+        ref={button}
         type="button"
         class="button button-icon button-ghost voice-button"
         data-voice={v.phase() === "idle" && installing() ? "installing" : v.phase()}
@@ -337,10 +320,17 @@ export function VoiceButton(props: { voice: VoiceControl }) {
         title={title()}
         aria-disabled={unsupported || v.phase() === "transcribing" || v.phase() === "starting" ? "true" : undefined}
         aria-haspopup={setup() ? "dialog" : undefined}
-        // Keep the textarea's focus and selection; a touch moves no focus and raises no keyboard.
-        onPointerDown={press.onPointerDown}
-        onMouseDown={press.onMouseDown}
-        onClick={press.onClick}
+        // Keep the textarea's focus and selection: an open phone keyboard stays open.
+        onPointerDown={(e) => {
+          e.preventDefault();
+          touchDown = e.pointerType === "touch";
+        }}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => {
+          const touch = touchDown;
+          touchDown = false;
+          v.press(touch);
+        }}
       >
         <Icon name={v.phase() === "recording" ? "stop" : "mic"} />
         <Show when={installing() && v.phase() === "idle"}>
@@ -378,7 +368,7 @@ export function VoiceStrip(props: { voice: VoiceControl }) {
       <div class="voice-strip" role="group" aria-label="Dictation" data-voice={v.phase()}>
         <Show when={v.phase() === "starting"}>
           <span class="voice-strip-text">Starting the mic…</span>
-          <button type="button" class="button button-icon button-ghost" aria-label="Cancel Recording" title="Cancel Recording" {...pressProps(() => v.cancel())}>
+          <button type="button" class="button button-icon button-ghost" aria-label="Cancel Recording" title="Cancel Recording" onPointerDown={(e) => e.preventDefault()} onClick={() => v.cancel()}>
             <Icon name="close" small />
           </button>
         </Show>
@@ -391,7 +381,7 @@ export function VoiceStrip(props: { voice: VoiceControl }) {
               <span class="voice-level-fill" style={{ width: `${v.level()}%` }} />
             </span>
           </span>
-          <button type="button" class="button button-icon button-ghost" aria-label="Cancel Recording" title="Cancel Recording" {...pressProps(() => v.cancel())}>
+          <button type="button" class="button button-icon button-ghost" aria-label="Cancel Recording" title="Cancel Recording" onPointerDown={(e) => e.preventDefault()} onClick={() => v.cancel()}>
             <Icon name="close" small />
           </button>
         </Show>
@@ -404,11 +394,11 @@ export function VoiceStrip(props: { voice: VoiceControl }) {
               <Icon name="alert-circle" small />
               <span class="voice-strip-text voice-strip-error">{err().text}</span>
               <Show when={err().retry}>
-                <button type="button" class="button button-sm" {...pressProps(v.retry)}>
+                <button type="button" class="button button-sm" onPointerDown={(e) => e.preventDefault()} onClick={() => v.retry()}>
                   Try Again
                 </button>
               </Show>
-              <button type="button" class="button button-icon button-ghost" aria-label="Dismiss" title="Dismiss" {...pressProps(v.dismiss)}>
+              <button type="button" class="button button-icon button-ghost" aria-label="Dismiss" title="Dismiss" onClick={() => v.dismiss()}>
                 <Icon name="close" small />
               </button>
             </>

@@ -5,6 +5,7 @@ import type { SyncCategory } from "../../shared/protocol";
 import { parseTheme } from "../../shared/theme";
 import { parseDelegate } from "../../pi-config/extensions/mode/delegate.ts";
 import { parseSpec } from "../../pi-config/extensions/mode/spec.ts";
+import { ALIGN_SETTINGS_FILE, parseAlignSettingsText } from "../../pi-config/extensions/mode/align-settings.ts";
 import { parseProviderLimits } from "../../pi-config/extensions/provider-limits/gate.ts";
 import { parseUsageWindows, USAGE_WINDOWS_FILE } from "../../pi-config/extensions/usage-status/windows.ts";
 import { parseSubagentProfiles } from "../../pi-config/extensions/subagents/subagent-profiles.ts";
@@ -25,9 +26,9 @@ import { writeFileAtomic } from "./logins-stores";
  * host's business: never offered, never overwritten.
  *
  * Which state is synced (the rest is per host by design):
- * - settings: Sova's settings.json (Settings → Experimental's switches) and defaults.json (new-session
+ * - settings: Sova's settings.json (Settings → Alignment's review switch, Experimental's switches) and defaults.json (new-session
  *   model and thinking); pi's model-favorites.json and model-policy.json; the mode extension's
- *   mode.json (default mode), mode-delegate.json and mode-spec.json; the subagent profile library
+ *   mode.json (default mode), mode-delegate.json, mode-spec.json and mode-align.json; the subagent profile library
  *   subagent-profiles.json (its device default, subagent-profiles-default.json, never syncs:
  *   which profile new chats start from is each device's own); your session profiles, Sova's
  *   session-profiles.json (checked with its own strict parser).
@@ -171,6 +172,8 @@ export function settingsDocs(agentDir: string, stateDir: string): DocSpec[] {
         return o !== null && !("error" in parseSpec(o));
       },
     },
+    // The align mode's writing style and Visuals (§chat.alignment/settings-file), checked with its own strict parse.
+    { key: `settings:${ALIGN_SETTINGS_FILE}`, category: "settings", path: join(agentDir, ALIGN_SETTINGS_FILE), valid: (t) => parseAlignSettingsText(t).ok },
   ];
 }
 

@@ -471,7 +471,7 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	// Only what the task changed is claimed; neighbours are linked, never spec'd.
 	assert.match(spec, /Claim only files the task changed \(each record's `code`\); unchanged dependencies are not spec'd; `requires` names only existing claims\./);
 	// The finish gate: the census note's one unread line (no census by hand); the boundary is not an exemption.
-	assert.match(spec, /Before finishing:\n- Read each § the census note's `Unread § your change landed in` line \(once, after your last edit\) marks read first; the rest are named \(`census --changed --related` ranks by hand\)\. Every changed file in the boundary is claimed; any outside it whose change a user sees is spec'd\./, "the unread line replaces the census run by hand before finishing");
+	assert.match(spec, /Before finishing:\n- Read each § the census note's `Unread § your change landed in` line \(once, after your last edit\) marks read first; its `census --changed --related` command lists the rest\. Every changed file in the boundary is claimed; any outside it whose change a user sees is spec'd\./, "the unread line replaces the census run by hand before finishing");
 	assert.ok(spec.includes(`\`${UNREAD_PREFIX.replace(/: $/, "")}\``), "the guide names the hook's line in its own words");
 	// Promotion is no longer conditional on a commit: promote, or say why not.
 	assert.match(spec, /- Before promoting, read `\$core\/\.\.\/PROMOTE\.md`; promote what you verified, or say in your reply why not\./);

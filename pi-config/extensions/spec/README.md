@@ -388,7 +388,7 @@ that shows a first changed file in the boundary, or a new one, runs
 `census --changed` and appends a short `[spec census]` digest to that tool
 result, saying so when the session has no draft yet. At the first call after
 the session's last edit it runs `census --changed --related` once and adds one
-line, `Unread § your change landed in: read first …; named …`: the foreign §
+line, `Unread § your change landed in: read first …; +N more: <census command>`: the foreign §
 the session's own files landed in, in rank order, minus those it ran
 `sova-spec.mjs read` on; it says nothing again until an edit changes that set.
 That line replaces the census the guide used to ask for by hand before

@@ -697,7 +697,7 @@ function currentIds(root) {
   return new Set(cur ? Object.keys(cur.m.claims) : []);
 }
 
-// Every § a changed file lands in is foreign unless the task created it (only a draft read with --spec can).
+// Every § a changed file lands in is foreign unless the task created it (a draft read with --spec, or the range from the base).
 // With --related, each also gets its declared requires and transitive consumers, and a note. No flags are judged here.
 function relatedOf(ctx, hits, related, own = () => false) {
   const files = new Map(), childUnderForeign = [];
@@ -782,6 +782,8 @@ function censusChanged(ctx, { base, related, ownBase }, claimed) {
   if (!ch) return { census: null };
   const own = ownOf(ctx.root, ownBase);
   if (!own) return { census: null };
+  const atBase = idsAt(ctx.root, ch.commit);
+  if (!atBase) return { census: null };
   // The spec graph itself is never population, not even as outside.
   const paths = ch.paths.filter((p) => ![DEFAULT_SPEC, ctx.specRel].some((o) => p === o || p.startsWith(o + "/")));
   const files = [], symlinks = [], mappedOutside = [], deleted = [], gone = new Set();
@@ -800,7 +802,8 @@ function censusChanged(ctx, { base, related, ownBase }, claimed) {
   const { orphanedEvidence, draftScan } = orphaned(ctx.root);
   // Without a boundary no population is named: claims are still shown, nothing is judged unclaimed.
   const hits = [...files, ...deletedClaimed].sort().filter((p) => claimed.has(p)).map(entry);
-  const rel = relatedOf(ctx, [...hits, ...mappedOutside], related, own.is);
+  // A § the spec lacked at the base was created in the range (as `foreign --base` says): the task's own.
+  const rel = relatedOf(ctx, [...hits, ...mappedOutside], related, (id) => own.is(id) || !atBase.has(id));
   // The rule, then the foreign ids, near the top, so a truncated head still carries both.
   Object.assign(head, { foreignNote: FOREIGN_RULE.replace("any", "any of these"), foreign: rel.foreign, childUnderForeign: rel.childUnderForeign,
     ...(own.bases.length ? { own: own.list([...rel.touchedIds]), ownBases: own.bases } : {}) });
@@ -909,6 +912,23 @@ function ownOf(root, revs = []) {
   }
   const is = (id) => sets.every((k) => !k.has(id));
   return { is, list: (ids) => [...new Set(ids)].filter(is).sort(), bases };
+}
+// The ids the spec's manifest records at `commit`, read from Git objects; no spec there → none.
+// → Set | null (error added). An unreadable manifest counts as having every id, so nothing is called created.
+function idsAt(root, commit) {
+  const prefix = gitPrefix(root, "census --changed");
+  if (prefix === null) return null;
+  const key = `${commit}:${prefix ? `${prefix}/` : ""}${DEFAULT_SPEC}/manifest.json`;
+  const got = blobs(root, [key]);
+  if (!got) return null;
+  const text = got.get(key);
+  if (text == null) return new Set();
+  try {
+    const m = JSON.parse(text);
+    if (m && typeof m.claims === "object" && !Array.isArray(m.claims)) return new Set(Object.keys(m.claims));
+  } catch { /* reported below */ }
+  add("warn", "base-manifest-unreadable", `the manifest at ${commit.slice(0, 12)} can't be read; no § counts as created since the base`);
+  return { has: () => true };
 }
 const sortKeys = (v) => Array.isArray(v) ? v.map(sortKeys) : v && typeof v === "object" ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, sortKeys(v[k])])) : v;
 const canonRec = (v) => (v === undefined ? null : JSON.stringify(sortKeys(v)));

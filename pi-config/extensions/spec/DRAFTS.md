@@ -15,10 +15,10 @@ Like the other tools here, it needs only the Node standard library.
 
 ```sh
 d=core/sova-spec-draft.mjs   # or the installed copy; see README.md for the path rule
-node $d new NAME [--purpose TEXT] [--write]              --root DIR [--json]
+node $d new NAME [--purpose TEXT] [--all] [--write]      --root DIR [--json]
 node $d status NAME                                     --root DIR [--json]
 node $d diff NAME [--against base|current]              --root DIR [--json]
-node $d check NAME [--base REV]                         --root DIR [--json]
+node $d check NAME [--base REV] [--all]                 --root DIR [--json]
 node $d evidence NAME --id '§x' [--id …] --by WHO --verification TEXT \
         (--commit REV | --snapshot | --doc-only) [--path P]… [--log FILE] [--write]   --root DIR [--json]
 node $d promote NAME (--id '§x'… | --all) [--meta KEY]… [--file PATH]… [--plan SHA] [--write]  --root DIR [--json]
@@ -66,8 +66,12 @@ The machine can't tell which label is correct.
 
 ## Workflow
 
-1. **`new NAME --write`**, then edit `spec/`. `check NAME` runs the core over the draft graph
-   (`sova-spec.mjs check --spec .sova/spec/drafts/NAME/spec`). `status` and `diff` compare
+1. **`new NAME --write`**, then edit `spec/`. `new` reports the file count, bytes and one
+   `treeSha256` over what it copies (`--all` lists each file). `check NAME` runs the core over the
+   draft graph (`sova-spec.mjs check --spec .sova/spec/drafts/NAME/spec`) and splits its findings:
+   `introduced` lists those the draft's base does not have (and `coreFindings`/`frontier` hold only
+   those), `preexisting` counts the base's own by code (`--all` lists them too; with no loadable
+   base, everything is introduced). The exit status is the core's, as before. `status` and `diff` compare
    the draft against the baseline, or against current with `diff --against current`. None of
    these writes, and current stays byte-identical. `check` also reports drift (`drift`):
    - `removed-phrase-elsewhere` (warn): a two- or three-word phrase the draft removed from one §
@@ -132,7 +136,8 @@ again **per declaration** (see "Per-declaration merge" below); only what that fi
 | Refusal (exit 1) | Meaning |
 |---|---|
 | `evidence-missing` / `evidence-stale` | A selected ID has no applicable evidence. The reasons are listed. |
-| `conflict` | Both current and the draft changed the same declaration, gap or record, differently (or a file that can't be cut per declaration). The message names each one. Conflicting prose is never merged as text. Start a new draft from current. |
+| `conflict` | Both current and the draft changed the same declaration, gap or record, differently (or a file that can't be cut per declaration). The message names each one. Conflicting prose is never merged as text. Revert those declarations in the draft's `spec/` to their `base/` text and promote the rest, or start a new draft from current. |
+| `spec-merge-conflict` / `current-invalid` | A Git merge left spec files unmerged in the index, or current's graph doesn't load (exit 2). The message gives the one recovery PROMOTE.md gives ("A spec conflict in a Git merge"). |
 | `selection-incomplete` | A promoted file also carries changes to IDs you didn't select. Files move whole. |
 | `candidate-invalid` / `candidate-dangling` | The merged candidate graph (current plus the selected units) doesn't load in the core, or gains a dangling edge that current doesn't have. |
 | `candidate-label` / `authority-missing` | A selected ID that isn't being deleted is labelled `authority: "candidate"` in the draft, or declares no `authority`. This applies to a prose-only change too. |
@@ -267,9 +272,10 @@ ever removes a lock. If the holder is on another host, check by hand, then delet
 `merge-manifest` merges `.sova/spec/manifest.json` record by record: each claim record and each
 top-level key takes the side that changed it. The same key changed differently on both sides is
 refused (`manifest-conflict`, exit 1, `conflicts: [{key, kind}]`) and nothing is written. Claim prose
-files are `merge-claims`' (below). Keys keep ours' order, except that a record only theirs has goes
-where promotion would put it (by its area and id), so the bytes don't depend on which side landed
-first; the output is 2-space JSON, as promotion writes it.
+files are `merge-claims`' (below); a `claims/` conflict, or a refused key, takes the one recovery in
+PROMOTE.md ("A spec conflict in a Git merge"), which the refusal repeats. Keys keep ours' order, except
+that a record only theirs has goes where promotion would put it (by its area and id), so the bytes don't
+depend on which side landed first; the output is 2-space JSON, as promotion writes it.
 
 - **During a conflicted `git merge`** (index stages 2 and 3 exist): `merge-manifest` previews,
   `merge-manifest --write` writes the merged manifest to the working tree. It never stages; run
@@ -296,7 +302,7 @@ H1/H2 headings and loads no graph. When the same declaration or gap changed diff
 sides, or the file can't be cut per declaration (no declarations, a carriage return, reordered
 declarations), or the result doesn't read back as the declarations it came from, it writes Git's
 own line merge (`git merge-file`), markers and all, so no side's prose is lost, and exits 1
-(`claims-conflict`), which Git reports as a conflict.
+(`claims-conflict`), which Git reports as a conflict, settled by the one recovery in PROMOTE.md.
 
 ```sh
 echo '.sova/spec/claims/**/*.md merge=sova-spec-claims' >> .gitattributes

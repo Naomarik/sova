@@ -740,6 +740,9 @@ export function SubagentProfilesSettings() {
                                 )}
                               </For>
                             </select>
+                            <span class="select-caret" aria-hidden="true">
+                              ▾
+                            </span>
                           </span>
                         </label>
                         <label class="field settings-field">
@@ -760,6 +763,9 @@ export function SubagentProfilesSettings() {
                                 Off
                               </option>
                             </select>
+                            <span class="select-caret" aria-hidden="true">
+                              ▾
+                            </span>
                           </span>
                         </label>
                       </div>

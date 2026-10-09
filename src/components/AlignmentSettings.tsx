@@ -32,12 +32,14 @@ export function AlignmentSettings() {
   };
 
   return (
-    <>
+    <section class="settings-delegate">
       <p class="settings-intro">How the align mode plans with you.</p>
 
-      <fieldset class="field">
-        <legend class="field-label">Writing style</legend>
-        <div role="radiogroup" aria-label="Writing style" aria-describedby="align-style-hint">
+      <fieldset class="settings-delegate-profile">
+        <legend class="settings-delegate-legend" id="align-style-label">
+          Writing style
+        </legend>
+        <div role="radiogroup" aria-labelledby="align-style-label" aria-describedby="align-style-hint">
           <For each={ALIGN_STYLE_OPTIONS}>
             {(o) => (
               <label class="toggle public-links-choice">
@@ -51,13 +53,13 @@ export function AlignmentSettings() {
             )}
           </For>
         </div>
-        <p class="field-hint" id="align-style-hint">
+        <p class="field-hint settings-delegate-desc" id="align-style-hint">
           Reaches open chats at their next message.
         </p>
       </fieldset>
 
-      <fieldset class="field">
-        <legend class="field-label">Visuals</legend>
+      <fieldset class="settings-delegate-profile">
+        <legend class="settings-delegate-legend">Visuals</legend>
         <label class="toggle toggle-switch settings-team-enable">
           <span>Draw when it helps</span>
           <input
@@ -69,13 +71,13 @@ export function AlignmentSettings() {
           />
           <span class="toggle-box" />
         </label>
-        <p class="field-hint" id="align-visuals-hint">
+        <p class="field-hint settings-delegate-desc" id="align-visuals-hint">
           The align mode draws a wireframe or a flow on the alignment card when a picture explains faster than words. Applies to sessions you start after saving.
         </p>
       </fieldset>
 
-      <fieldset class="field">
-        <legend class="field-label">Review</legend>
+      <fieldset class="settings-delegate-profile">
+        <legend class="settings-delegate-legend">Review</legend>
         <label class="toggle toggle-switch settings-team-enable">
           <span>
             Adversarial review <Chip>Experimental</Chip>
@@ -89,12 +91,12 @@ export function AlignmentSettings() {
           />
           <span class="toggle-box" />
         </label>
-        <p class="field-hint" id="align-review-hint">
+        <p class="field-hint settings-delegate-desc" id="align-review-hint">
           In align sessions, a read-only reviewer checks the plan and the diff of risky work, at most once each per alignment. Applies to sessions you start after saving.
         </p>
       </fieldset>
 
-      <p class="field-hint">A subagent profile can set its own writing style and visuals (Settings → Subagents).</p>
+      <p class="field-hint settings-delegate-desc">A subagent profile can set its own writing style and visuals (Settings → Subagents).</p>
 
       <Show when={stored.error}>
         <Banner tone="error" title="Couldn't read the alignment settings." body="Nothing was changed." />
@@ -102,6 +104,6 @@ export function AlignmentSettings() {
       <Show when={alignmentSaveError()}>
         {(err) => <Banner tone="error" title="Couldn't save the change." body={`${sentence(err().message)} Your saved setting is unchanged.`} />}
       </Show>
-    </>
+    </section>
   );
 }

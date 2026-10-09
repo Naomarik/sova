@@ -3,6 +3,7 @@
 
 import type { TranscriptItem } from "../../shared/protocol";
 import { rowFacts } from "../../shared/wire-v1";
+import { recallSummary } from "../../shared/memory";
 
 export function isObj(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -109,6 +110,9 @@ export function codemodeTallyText(t: CodemodeTally): string {
 /** One-line summary of tool args for a collapsed card header (`name`: the tool, when its args read their own way). */
 export function argsSummary(args: unknown, name?: string): string {
   if (name === CODEMODE_TOOL && isObj(args) && typeof args.code === "string") return codemodeHead(args.code);
+  // A memory recall reads what it opened (§chat.memory/recall): "Recalled messages 40–47".
+  const recall = recallSummary(name, args);
+  if (recall) return recall;
   if (!isObj(args)) return typeof args === "string" ? args : "";
   for (const key of ["command", "path", "file_path", "pattern", "query", "url"]) {
     const v = args[key];

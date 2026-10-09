@@ -24,7 +24,7 @@ describe("parseModePatch (POST /api/mode body)", () => {
       const r = parseModePatch(body);
       assert.ok("error" in r, JSON.stringify(body));
     }
-    assert.match((parseModePatch({ minorModes: ["nope"] }) as { error: string }).error, /Unknown minor mode: nope \(known: align, spec, vis, codemode\)/);
+    assert.match((parseModePatch({ minorModes: ["nope"] }) as { error: string }).error, /Unknown minor mode: nope \(known: align, spec, vis, codemode, memory\)/);
   });
 
   test("codemode is a minor mode like the others: canonical order, and pinned like any", () => {
@@ -47,7 +47,7 @@ describe("parseModeRequest (whole POST /api/mode body)", () => {
   test("saveDefault never rides along with a mode: two intentions in one body, one of them silently losing", () => {
     const both = parseModeRequest({ saveDefault: true, mode: "delegate" });
     assert.ok("error" in both);
-    assert.match((both as { error: string }).error, /send no mode or minorModes/);
+    assert.match((both as { error: string }).error, /send no mode, minorModes or memory/);
     assert.ok("error" in parseModeRequest({ saveDefault: true, minorModes: [] }));
     assert.ok("error" in parseModeRequest({ saveDefault: "yes" }));
   });
@@ -132,7 +132,7 @@ describe("mode.json read/merge/write", () => {
     const info = modeInfo(readMode(file("absent.json")));
     assert.deepEqual(info.modes.map((m) => m.id), ["normal", "delegate"]);
     assert.match(info.modes[1]!.description, /^Orchestrate: /);
-    assert.deepEqual(info.minors.map((m) => m.id), ["align", "spec", "vis", "codemode"]);
+    assert.deepEqual(info.minors.map((m) => m.id), ["align", "spec", "vis", "codemode", "memory"]);
     assert.ok(info.minors[0]!.description.length > 0);
     assert.equal(info.minors[3]!.description, "Let the model run JavaScript that calls tools in parallel and filters their output (pi's codemode tool)");
   });

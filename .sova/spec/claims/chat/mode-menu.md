@@ -274,8 +274,9 @@ folds it into a new head, and the claude-code bridge restarts its CLI
 (measured: 53K–180K tokens per toggle).
 
 The tool list is another matter: turning `vis`, `align` or `codemode` on or off does change the
-active tools (`vis` adds or removes `vis_guide`, and in Sova's hosted sessions `vis_check` with it;
-`align` its `align` tool; `codemode` its `codemode` tool, §chat.mode-menu/codemode), while the
+active tools (`vis` adds or removes `vis_guide`, and in Sova's hosted sessions `vis_check` with it,
+unless align with the chat's Visuals still wants them, §chat.alignment/visuals; `align` its `align`
+tool, and with Visuals on the vis tools too; `codemode` its `codemode` tool, §chat.mode-menu/codemode), while the
 system prompt stays as it was (none of them adds a line to it). That is one tool-set change per
 toggle; in the plain TUI, where `vis` used to change no tool, it costs a prompt-cache rebuild.
 `codemode` has no block, so no note tells the model about it either: its tool is the whole switch.
@@ -291,6 +292,9 @@ once, as their net change.
   `spec`, with its writer paragraph), unless the block is already in context — in the head, or in an
   earlier note since the last compaction — when the note points back to it instead.
 - **Turning a mode off** says the mode is off and its earlier instructions no longer apply.
+- **Align writing style.** A change of the align writing style while align is on reaches the next
+  run in one hidden note of its own, the same way, even though no minor mode switched
+  (§chat.alignment/style); the align block in the head is never rewritten for it.
 - **Spec-writer routing.** If spec was enabled by a note rather than included in the head, a later
   change to its configured writer reaches the next run in a new hidden note, even though the set
   of active minor modes did not change. It supersedes the earlier route without resending the

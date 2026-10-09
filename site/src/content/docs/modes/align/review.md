@@ -1,6 +1,6 @@
 ---
 title: Adversarial review
-description: An experimental addition to align. A fresh, read-only reviewer checks the plan and the finished work of complex changes, at most once each, and its verdict is recorded on the alignment.
+description: An addition to align. A fresh, read-only reviewer checks the plan and the finished work of complex changes, at most once each, and its verdict is recorded on the alignment.
 group: Modes
 subgroup: Minor
 order: 5
@@ -8,8 +8,8 @@ order: 5
 
 ## Turn it on
 
-Adversarial review is **experimental** and off by default. Switch it on in Settings →
-**Experimental** → **Adversarial review**.
+Adversarial review is off by default. Switch it on in Settings →
+**Alignment** → **Adversarial review**.
 
 - It applies to sessions you start after saving it on. Chats already open keep what they started
   with.
@@ -28,7 +28,7 @@ one:
 | Fallback | Claude Code | Opus 5.5 | high |
 
 A profile whose reviewer you switched off, or set yourself, is never changed. Turning the
-experimental switch off and on again adds nothing.
+switch off and on again adds nothing.
 
 With the switch off, everything on this page is gone: no review guidance for the agent, no
 `/review`, no Reviewer section, and nothing extra on the cards.

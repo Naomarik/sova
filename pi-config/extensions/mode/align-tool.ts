@@ -17,6 +17,8 @@ import {
 	ALIGN_REVIEW_OPS,
 	ALIGN_REVIEW_STATES,
 	ALIGN_TOOL,
+	ALIGN_VISUAL_FIELDS,
+	ALIGN_VISUALS_MAX,
 	AlignError,
 	applyAlignCall,
 	type AlignDetails,
@@ -34,9 +36,17 @@ export interface AlignToolHost {
 	remoteTarget(): string | undefined;
 	/** The review ops' environment, only while the `adversarial-review` flag is on; undefined otherwise. */
 	review?(): AlignReviewEnv | undefined;
+	/** The writing style now (§chat.alignment/style), recorded on each document a call changes. */
+	style?(): "default" | "simplified" | "pm";
 }
 
-export const ALIGN_TOOL_DESCRIPTION = `Record alignments with the user: one document per concern (id al_N) with a title, a one-line summary, findings (f1, f2…), approach steps (a1…), rejected alternatives (x1…) and questions for the user (q1…), each question carrying your recommendation. Ids are assigned in order and never change or get reused.
+/** Which form of the tool is registered: the review ops, and the visual fields (§chat.alignment/visuals). */
+export interface AlignToolForm {
+	review?: boolean;
+	visual?: boolean;
+}
+
+export const ALIGN_TOOL_DESCRIPTION = `Record alignments with the user: one document per concern (id al_N) with a title, a one-line summary, findings (f1, f2…), approach steps (a1…), rejected alternatives (x1…), technical notes (t1…) and questions for the user (q1…), each question carrying your recommendation. Ids are assigned in order and never change or get reused.
 
 A call applies its ops in order to ONE alignment, atomically: if any op is invalid nothing changes and the error says why. To change an existing alignment pass doc ("al_2"); it is required while more than one is open. Each op takes only the fields its schema lists. The result lists the alignment's open questions.
 
@@ -68,29 +78,46 @@ const Recommendation = Type.Object(
 	{ choice: S("The answer you recommend (one of the options' labels when there are options)."), why: S("Why, in a sentence.") },
 	{ ...Strict, description: "Your recommended answer. Required: the user can accept it as is." },
 );
-const Question = Type.Object(
+const Visual = Type.Object(
 	{
-		topic: S('Short label, e.g. "Counter store".'),
-		ask: S("The question to the user, one sentence."),
-		context: Type.Optional(S("What the user needs to know to answer it (optional).")),
-		options: Type.Optional(Type.Array(Option, { description: "The real choices, each with its trade-off (optional)." })),
-		recommendation: Recommendation,
+		kind: S('The vis kind, e.g. "wireframe", "flow", "state", "steps" (call vis_guide with it first).', { pattern: "^[a-z]+$" }),
+		source: S("The drawing's source, exactly what the vis fence's body would be, in the syntax vis_guide returned."),
 	},
-	Strict,
+	{ ...Strict, description: `A drawing on the alignment card, only when it explains faster than words; at most ${ALIGN_VISUALS_MAX} per alignment.` },
 );
+const questionSchema = (visual: boolean) =>
+	Type.Object(
+		{
+			topic: S('Short label, e.g. "Counter store".'),
+			ask: S("The question to the user, one sentence."),
+			context: Type.Optional(S("What the user needs to know to answer it (optional).")),
+			options: Type.Optional(Type.Array(Option, { description: "The real choices, each with its trade-off (optional)." })),
+			recommendation: Recommendation,
+			...(visual ? { visual: Type.Optional(Visual) } : {}),
+		},
+		Strict,
+	);
 const Rejected = Type.Object({ option: S("The alternative you considered."), why: S("Why not.") }, Strict);
-const ITEMS = {
+const items = (visual: boolean) => ({
 	findings: Type.Array(S(), { description: "Facts you established that shape the plan; each becomes fN." }),
 	approach: Type.Array(S(), { description: "The plan's steps, in order; each becomes aN." }),
 	rejected: Type.Array(Rejected, { description: "Alternatives you ruled out; each becomes xN." }),
-	questions: Type.Array(Question, { description: "Decisions the user must make; each becomes qN." }),
+	technical: Type.Array(S(), { description: "Technical notes: the files, code and technical detail the other fields leave out (the writing style says when); each becomes tN." }),
+	questions: Type.Array(questionSchema(visual), { description: "Decisions the user must make; each becomes qN." }),
+});
+
+/** The visual fields' schemas, on the ops ALIGN_VISUAL_FIELDS names, only with Visuals on. */
+const VISUAL_FIELD_SCHEMAS: Record<string, TSchema> = {
+	create: Visual,
+	edit_question: Type.Union([Visual, Type.Null()], { description: "The question's drawing; null removes it." }),
+	edit_doc: Type.Union([Visual, Type.Null()], { description: "The alignment's own drawing, under its summary; null removes it." }),
 };
 
 /** Each op's field schemas; which are required comes from ALIGN_OP_FIELDS. */
-const OP_SCHEMAS: Record<AlignOpName, { description: string; fields: Record<string, TSchema> }> = {
+const opSchemas = (visual: boolean): Record<AlignOpName, { description: string; fields: Record<string, TSchema> }> => ({
 	create: {
 		description: "Start a new alignment (al_N) from the fields given here.",
-		fields: { title: S('Short name of the concern, e.g. "API rate limiting".'), summary: S("One line: what the concern is about."), ...ITEMS },
+		fields: { title: S('Short name of the concern, e.g. "API rate limiting".'), summary: S("One line: what the concern is about."), ...items(visual) },
 	},
 	import: {
 		description: "Start a new alignment from a JSON file a planning worker wrote. Never retype its content.",
@@ -100,10 +127,10 @@ const OP_SCHEMAS: Record<AlignOpName, { description: string; fields: Record<stri
 			),
 		},
 	},
-	add: { description: "Append items to the alignment; they get the next free ids. Give at least one list.", fields: ITEMS },
+	add: { description: "Append items to the alignment; they get the next free ids. Give at least one list.", fields: items(visual) },
 	edit: {
-		description: "Replace the text of a finding (fN) or an approach step (aN).",
-		fields: { id: S('The finding or step, e.g. "a2".', { pattern: "^[fa][1-9][0-9]*$" }), text: S("Its complete new text (the whole item, not a diff).") },
+		description: "Replace the text of a finding (fN), an approach step (aN) or a technical note (tN).",
+		fields: { id: S('The finding, step or technical note, e.g. "a2".', { pattern: "^[fat][1-9][0-9]*$" }), text: S("Its complete new text (the whole item, not a diff).") },
 	},
 	edit_question: {
 		description: "Change fields of a question; omitted fields stay. Does not decide it.",
@@ -122,8 +149,8 @@ const OP_SCHEMAS: Record<AlignOpName, { description: string; fields: Record<stri
 	},
 	edit_doc: { description: "Change the alignment's title and/or summary.", fields: { title: S(), summary: S() } },
 	remove: {
-		description: "Delete findings, approach steps or rejected alternatives. Questions are dropped instead (drop_question).",
-		fields: { ids: Type.Array(S(undefined, { pattern: "^[fax][1-9][0-9]*$" }), { description: 'e.g. ["f2", "a4"].', minItems: 1 }) },
+		description: "Delete findings, approach steps, rejected alternatives or technical notes. Questions are dropped instead (drop_question).",
+		fields: { ids: Type.Array(S(undefined, { pattern: "^[faxt][1-9][0-9]*$" }), { description: 'e.g. ["f2", "a4"].', minItems: 1 }) },
 	},
 	decide: {
 		description: "Record the user's own answer to one question, in their words. Only a question the user answered.",
@@ -177,24 +204,25 @@ const OP_SCHEMAS: Record<AlignOpName, { description: string; fields: Record<stri
 			evidence: S("One line: the check's passing result, the counter-evidence, or the user's words."),
 		},
 	},
-};
+});
 
-function opSchema(name: AlignOpName) {
-	const { description, fields } = OP_SCHEMAS[name];
+function opSchema(name: AlignOpName, visual: boolean) {
+	const { description, fields } = opSchemas(visual)[name];
 	const { required, atLeast } = ALIGN_OP_FIELDS[name];
 	const properties: Record<string, TSchema> = { op: Type.Literal(name) };
 	for (const [key, schema] of Object.entries(fields)) properties[key] = required.includes(key) ? schema : Type.Optional(schema);
+	if (visual) for (const key of ALIGN_VISUAL_FIELDS[name] ?? []) properties[key] = Type.Optional(VISUAL_FIELD_SCHEMAS[name]!);
 	// minProperties counts op itself: the required fields, plus atLeast of the optional ones.
 	return Type.Object(properties, { ...Strict, description, ...(atLeast ? { minProperties: 1 + required.length + atLeast } : {}) });
 }
 
-const parameters = (ops: readonly AlignOpName[]) =>
+const parameters = (ops: readonly AlignOpName[], visual = false) =>
 	Type.Object(
 		{
 			doc: Type.Optional(
 				S('The alignment to change, e.g. "al_2". Required while more than one alignment is open; omit for create, import and exempt.', { pattern: "^al_[1-9][0-9]*$" }),
 			),
-			ops: Type.Array(Type.Union(ops.map(opSchema)), { description: "Operations, applied in order. create or import must come first and appear once.", minItems: 1 }),
+			ops: Type.Array(Type.Union(ops.map((op) => opSchema(op, visual))), { description: "Operations, applied in order. create or import must come first and appear once.", minItems: 1 }),
 		},
 		Strict,
 	);
@@ -202,6 +230,9 @@ const parameters = (ops: readonly AlignOpName[]) =>
 export const ALIGN_PARAMETERS = parameters(ALIGN_OPS);
 /** With the `adversarial-review` flag on: the same schema plus the review ops. */
 export const ALIGN_REVIEW_PARAMETERS = parameters([...ALIGN_OPS, ...ALIGN_REVIEW_OPS]);
+/** The schema for a form: the review ops with review, the visual fields with Visuals (§chat.alignment/visuals). */
+export const alignParameters = (form: AlignToolForm) =>
+	form.visual ? parameters(form.review ? [...ALIGN_OPS, ...ALIGN_REVIEW_OPS] : ALIGN_OPS, true) : form.review ? ALIGN_REVIEW_PARAMETERS : ALIGN_PARAMETERS;
 
 /**
  * Appended to the description with the `adversarial-review` flag on (§chat.alignment-review/rules):
@@ -218,11 +249,13 @@ export const ALIGN_REVIEW_GUIDELINE =
 
 /**
  * Register the tool. `review`: the `adversarial-review` flag's form (the review ops in the schema,
- * the rules in the description and guidelines); without it, exactly the flag-off tool. The host
- * re-registers with review at session_start once the flag reads on (pi replaces a tool registered
- * again under its name).
+ * the rules in the description and guidelines); without it, exactly the flag-off tool. `visual`: the
+ * visual fields of a session started with Visuals on. The host re-registers at session_start whenever
+ * its form changes (pi replaces a tool registered again under its name).
  */
-export function registerAlignTool(pi: ExtensionAPI, host: AlignToolHost, review = false): void {
+export function registerAlignTool(pi: ExtensionAPI, host: AlignToolHost, form: AlignToolForm = {}): void {
+	const review = form.review === true;
+	const visual = form.visual === true;
 	pi.registerTool({
 		name: ALIGN_TOOL,
 		label: "Align",
@@ -231,7 +264,7 @@ export function registerAlignTool(pi: ExtensionAPI, host: AlignToolHost, review 
 		description: review ? `${ALIGN_TOOL_DESCRIPTION}\n\n${ALIGN_REVIEW_DESCRIPTION}` : ALIGN_TOOL_DESCRIPTION,
 		promptSnippet: ALIGN_PROMPT_SNIPPET,
 		promptGuidelines: review ? [...ALIGN_TOOL_GUIDELINES, ALIGN_REVIEW_GUIDELINE] : ALIGN_TOOL_GUIDELINES,
-		parameters: review ? ALIGN_REVIEW_PARAMETERS : ALIGN_PARAMETERS,
+		parameters: alignParameters(form),
 		// The state is shared: calls in one message apply one after another.
 		executionMode: "sequential",
 		async execute(_id, params, signal, _update, ctx) {
@@ -242,6 +275,8 @@ export function registerAlignTool(pi: ExtensionAPI, host: AlignToolHost, review 
 					now: new Date().toISOString(),
 					readFile: (path) => readAlignFile(ctx.cwd, path, host.remoteTarget()),
 					...(reviewEnv ? { review: reviewEnv } : {}),
+					...(visual ? { visuals: true } : {}),
+					...(host.style ? { style: host.style() } : {}),
 				});
 				if (outcome.details.doc) host.changed(outcome.details.doc);
 				return { content: [{ type: "text" as const, text: outcome.text }], details: outcome.details as AlignDetails };

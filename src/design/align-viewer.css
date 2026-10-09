@@ -209,7 +209,7 @@
 .align-doc-foot.card-foot { padding: var(--space-3) 0 0; margin-top: var(--space-1); }
 .align-doc-foot-hint { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); }
 
-/* Adversarial review (experimental): one caption line per phase under the summary, its phase as
+/* Adversarial review: one caption line per phase under the summary, its phase as
    a chip; each open blocker below it with its check. */
 .align-review { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-1); font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-2); }
 .align-review-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); }
@@ -233,6 +233,9 @@
 .align-approach-label { font-weight: var(--fw-semibold); color: var(--color-ink); }
 /* Steps number by their stable ids only (a1, a2…): no list marker, the id in a narrow column of
    its own, so a wrapped line aligns under the step's text. */
+/* A visual on the card (§chat.alignment/visuals): the chat's own vis figure, set off like a question's part. */
+.align-visual { margin: var(--space-2) 0; min-width: 0; }
+.align-visual .md { margin: 0; }
 .align-approach-list { list-style: none; padding-left: 0; }
 .align-approach-list > li { display: grid; grid-template-columns: var(--space-5) 1fr; align-items: baseline; column-gap: var(--space-1); }
 /* The step's whole inline-rich body is one span, so the li's two grid columns are the id and the

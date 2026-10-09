@@ -651,10 +651,11 @@
         "src/lib/release-control.test.ts"
       ],
       "requires": [
-        "§chat.images/composer-attachments"
+        "§chat.images/composer-attachments",
+        "§chat.voice/button"
       ],
       "authority": "accepted",
-      "evidence": "verified"
+      "evidence": "reviewed"
     },
     "§chat.composer/composer-flyout": {
       "kind": "behavior",
@@ -4008,11 +4009,6 @@
     },
     "§app.settings-dialog/save-bar": {
       "kind": "behavior",
-      "requires": [
-        "§app/settings-dialog",
-        "§app.settings-dialog/modes",
-        "§design.copy-deck/settings-modes-delegate"
-      ],
       "authority": "accepted",
       "evidence": "verified",
       "code": [
@@ -4038,7 +4034,15 @@
         "src/lib/baton-settings-draft.ts",
         "src/components/BatonSettings.tsx",
         "src/lib/push-draft.ts",
-        "src/components/PushSettings.tsx"
+        "src/components/PushSettings.tsx",
+        "src/lib/alignment-draft.ts",
+        "src/lib/alignment-draft.test.ts",
+        "src/components/AlignmentSettings.tsx"
+      ],
+      "requires": [
+        "§app/settings-dialog",
+        "§app.settings-dialog/modes",
+        "§design.copy-deck/settings-modes-delegate"
       ]
     },
     "§design.copy-deck/settings-experimental": {
@@ -6794,7 +6798,9 @@
         "pi-config/extensions/mode/align.test.ts",
         "pi-config/extensions/mode/tests/align-turn.mjs",
         "pi-config/extensions/mode/tests/smoke.mjs",
-        "pi-config/extensions/mode/README.md"
+        "pi-config/extensions/mode/README.md",
+        "pi-config/extensions/mode/align-settings.test.ts",
+        "pi-config/extensions/mode/tests/fixtures/flag-off-master.json"
       ],
       "requires": [
         "§chat.alignment/state",
@@ -6857,7 +6863,8 @@
         "pi-config/extensions/mode/tests/align-turn.mjs",
         "pi-config/extensions/mode/align-file.ts",
         "pi-config/extensions/mode/tests/align-old-ops.jsonl",
-        "pi-config/extensions/mode/README.md"
+        "pi-config/extensions/mode/README.md",
+        "pi-config/extensions/mode/tests/fixtures/flag-off-master.json"
       ],
       "requires": [
         "§chat.alignment/document"
@@ -6886,7 +6893,9 @@
       "code": [
         "pi-config/extensions/mode/README.md",
         "pi-config/extensions/mode/align.ts",
-        "pi-config/extensions/mode/index.ts"
+        "pi-config/extensions/mode/index.ts",
+        "src/components/AlignmentSettings.tsx",
+        "pi-config/extensions/mode/align-settings.ts"
       ]
     },
     "§app.requirements/owner-area": {
@@ -6948,10 +6957,6 @@
     },
     "§chat.markdown/visuals": {
       "kind": "behavior",
-      "requires": [
-        "§chat.markdown/code-blocks",
-        "§chat.markdown/streaming"
-      ],
       "authority": "accepted",
       "evidence": "verified",
       "code": [
@@ -7068,18 +7073,18 @@
         "server/vis-check.ts",
         "server/vis-check.test.ts",
         "src/vis/multimark.test.ts",
-        "shared/vis-frame-host.ts"
+        "shared/vis-frame-host.ts",
+        "server/vis-tools-sync.test.ts"
+      ],
+      "requires": [
+        "§chat.markdown/code-blocks",
+        "§chat.markdown/streaming"
       ]
     },
     "§chat.mode-menu/minor-toggle-keeps-prompt": {
       "kind": "behavior",
-      "requires": [
-        "§chat.mode-menu/prompt-holds-across-turn-starters",
-        "§chat.mode-menu/how-a-switch-reaches-the-chat",
-        "§app.worker-restore/claude-bridge-restart"
-      ],
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "pi-config/extensions/mode/index.ts",
         "pi-config/extensions/mode/vis-guide-tool.ts",
@@ -7094,7 +7099,14 @@
         "server/mode-state.test.ts",
         "pi-config/extensions/mode/minor.ts",
         "pi-config/extensions/claude-code/provider/session-bridge.ts",
-        "server/vis-check.ts"
+        "server/vis-check.ts",
+        "pi-config/extensions/mode/tests/style-turn.mjs",
+        "server/vis-tools-sync.test.ts"
+      ],
+      "requires": [
+        "§chat.mode-menu/prompt-holds-across-turn-starters",
+        "§chat.mode-menu/how-a-switch-reaches-the-chat",
+        "§app.worker-restore/claude-bridge-restart"
       ]
     },
     "§app.organizations/archive": {
@@ -12193,7 +12205,8 @@
         "server/subagent-profiles.ts",
         "server/subagent-profiles.test.ts",
         "server/sync/docs.ts",
-        "shared/subagent-profiles.ts"
+        "shared/subagent-profiles.ts",
+        "pi-config/extensions/mode/align-settings.ts"
       ]
     },
     "§chat.subagent-profiles/limit-row": {
@@ -12277,7 +12290,8 @@
         "server/delegate.ts",
         "server/spec-settings.ts",
         "server/team-defaults.ts",
-        "shared/team-defaults.ts"
+        "shared/team-defaults.ts",
+        "server/align-settings.ts"
       ]
     },
     "§chat.subagent-profiles/settings": {
@@ -12946,7 +12960,38 @@
         "src/components/SettingsDialog.tsx",
         "src/lib/experimental-draft.ts",
         "src/App.tsx",
-        "src/lib/align-review.ts"
+        "src/lib/align-review.ts",
+        "server/harness/state-kinds.ts",
+        "server/harness/state-kinds.test.ts",
+        "server/harness/pi/open.ts",
+        "server/align-launch.test.ts",
+        "server/tail-hello.integration.test.ts",
+        "src/components/ChatView.tsx",
+        "src/components/AlignDocCard.tsx",
+        "src/lib/align-review.test.ts",
+        "src/lib/alignment-draft.ts",
+        "src/components/AlignmentSettings.tsx",
+        "server/harness/pi/golden/session/S1-open-first-prompt.jsonl",
+        "server/harness/pi/golden/session/S12-link-delivery.jsonl",
+        "server/harness/pi/golden/session/S13-dialog-bridge.jsonl",
+        "server/harness/pi/golden/session/S14-model-thinking.jsonl",
+        "server/harness/pi/golden/session/S15-mode-command.jsonl",
+        "server/harness/pi/golden/session/S2-steer-mid-turn.jsonl",
+        "server/harness/pi/golden/session/S3-follow-up-queue.jsonl",
+        "server/harness/pi/golden/session/S4-abort.jsonl",
+        "server/harness/pi/golden/session/S5-rewind.jsonl",
+        "server/harness/pi/golden/session/S6-regenerate.jsonl",
+        "server/harness/pi/golden/session/S7-compact-manual.jsonl",
+        "server/harness/pi/golden/session/S8-compact-auto.jsonl",
+        "server/harness/pi/golden/session/S9-deferred-in-settle.jsonl",
+        "server/harness/pi/golden/state/G1-rewind-no-thinking.jsonl",
+        "server/harness/pi/golden/state/G1-rewind.jsonl",
+        "server/harness/pi/golden/state/G10-open-dispose.jsonl",
+        "server/harness/pi/golden/state/G2-sender-markers.jsonl",
+        "server/harness/pi/golden/state/G3-topic-delivered.jsonl",
+        "server/harness/pi/golden/state/G4-pristine-setup.jsonl",
+        "server/harness/pi/golden/state/G7-overseer-target.jsonl",
+        "server/harness/pi/golden/state/G9-dialog-answer.jsonl"
       ],
       "requires": [
         "§chat.alignment/tool"
@@ -16484,6 +16529,111 @@
     "§site/landing": {
       "kind": "note",
       "authority": "accepted",
+      "evidence": "reviewed"
+    },
+    "§app.settings-dialog/alignment": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/AlignmentSettings.tsx",
+        "src/lib/alignment-draft.ts",
+        "src/lib/alignment-draft.test.ts",
+        "src/components/SettingsDialog.tsx",
+        "src/lib/settings-nav.ts",
+        "src/lib/settings-nav.test.ts",
+        "src/lib/api.ts",
+        "src/App.tsx",
+        "server/align-settings.ts",
+        "server/app.ts",
+        "server/web-settings.ts",
+        "shared/protocol.ts"
+      ],
+      "requires": [
+        "§app/settings-dialog",
+        "§app.settings-dialog/save-bar",
+        "§chat.alignment/settings-file",
+        "§chat.alignment-review/flag",
+        "§design.copy-deck/settings-alignment"
+      ]
+    },
+    "§chat.alignment/settings-file": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/mode/align-settings.ts",
+        "pi-config/extensions/mode/align-settings.test.ts",
+        "server/align-settings.ts",
+        "server/app.ts",
+        "server/sync/docs.ts",
+        "shared/protocol.ts",
+        "pi-config/extensions/subagents/subagent-profiles.ts",
+        "pi-config/extensions/mode/README.md",
+        "pi-config/README.md",
+        "CLAUDE.md"
+      ],
+      "requires": [
+        "§chat.subagent-profiles/file"
+      ]
+    },
+    "§chat.alignment/style": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/mode/minor.ts",
+        "pi-config/extensions/mode/prompt.ts",
+        "pi-config/extensions/mode/state.ts",
+        "pi-config/extensions/mode/index.ts",
+        "pi-config/extensions/mode/align.ts",
+        "pi-config/extensions/mode/align-tool.ts",
+        "pi-config/extensions/mode/align-settings.test.ts",
+        "pi-config/extensions/mode/align.test.ts",
+        "pi-config/extensions/mode/tests/style-turn.mjs",
+        "pi-config/extensions/mode/README.md"
+      ],
+      "requires": [
+        "§chat.alignment/settings-file",
+        "§chat.mode-menu/minor-toggle-keeps-prompt",
+        "§chat.alignment/document"
+      ]
+    },
+    "§chat.alignment/visuals": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/mode/minor.ts",
+        "pi-config/extensions/mode/index.ts",
+        "pi-config/extensions/mode/align.ts",
+        "pi-config/extensions/mode/align-tool.ts",
+        "pi-config/extensions/mode/align-settings.test.ts",
+        "pi-config/extensions/mode/tests/style-turn.mjs",
+        "server/vis-check.ts",
+        "server/chat-manager.ts",
+        "server/harness/state-kinds.ts",
+        "server/harness/pi/open.ts",
+        "server/vis-tools-sync.test.ts",
+        "server/align-launch.test.ts",
+        "src/components/AlignDocCard.tsx",
+        "src/lib/align.ts",
+        "src/lib/align-card.test.ts"
+      ],
+      "requires": [
+        "§chat.alignment/settings-file",
+        "§chat.alignment/document",
+        "§chat.alignment/tool",
+        "§chat.alignment-review/flag",
+        "§chat.mode-menu/minor-toggle-keeps-prompt"
+      ]
+    },
+    "§design.copy-deck/settings-alignment": {
+      "kind": "note",
+      "authority": "accepted",
+      "about": [
+        "§app.settings-dialog/alignment"
+      ],
       "evidence": "reviewed"
     }
   },

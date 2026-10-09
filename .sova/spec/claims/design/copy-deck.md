@@ -582,9 +582,27 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 
 | Where | Copy |
 |---|---|
+| Intro | Unfinished features. They can change or disappear, and they apply to sessions you start after switching them on — chats already open keep the setup they began with. |
+| Empty state (no switch to show) | No experimental features right now. |
 | Load failed (banner-error) | **Couldn't read the experimental settings.** Nothing was changed. |
 | Buttons | none in the tab — the dialog footer's Discard Changes · Save Changes (§design.copy-deck/settings-modes-delegate) |
-| Save failed (banner-error under the switch; the unsaved switch stays) | **Couldn't save the change.** {reason}. Your saved setting is unchanged. |
+
+## §design.copy-deck/settings-alignment — Settings · Alignment (§app.settings-dialog/alignment)
+
+| Where | Copy |
+|---|---|
+| Intro | How the align mode plans with you. |
+| Group headings | Writing style · Visuals · Review |
+| Style options | **Default** Today's detail: files, code and technical trade-offs. · **Simplified** Short sentences in everyday words, fewer items. · **Project manager** Screens, wording and behaviour only; no code. Technical detail folded into notes. |
+| Style hint | Reaches open chats at their next message. |
+| Visuals switch · hint | Draw when it helps · The align mode draws a wireframe or a flow on the alignment card when a picture explains faster than words. Applies to sessions you start after saving. |
+| Review switch · hint | Adversarial review · In align sessions, a read-only reviewer checks the plan and the diff of risky work, at most once each per alignment. Applies to sessions you start after saving. |
+| Profiles line | A subagent profile can set its own writing style and visuals (Settings → Subagents). |
+| Load failed (banner-error) | **Couldn't read the alignment settings.** Nothing was changed. |
+| Save failed (banner-error at the form's end; the draft stays) | **Couldn't save the change.** {reason}. Your saved setting is unchanged. |
+| Card meta mark | · Simplified style · · Project manager style (none for Default) |
+| Card section | Technical notes · {n} |
+| Subagents profile control | Alignment · Writing style: Use host default · Default · Simplified · Project manager — Visuals: Use host default · On · Off |
 
 ## §design.copy-deck/settings-themes — Settings · Themes (§app/settings-dialog)
 

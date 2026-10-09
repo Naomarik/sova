@@ -35,7 +35,7 @@ import { contextOfBranch } from "./harness/pi/usage";
 import { extensionEntries } from "./harness/pi/state";
 import { isAlreadyProcessing } from "./harness/pi/session";
 import { isCompactionInProgress } from "./harness/pi/history-ops";
-import { BATON_SENT, FANOUT_MEMBER, LINK_MEMBER, LOADOUT, MODE, OVERSEER, OVERSEER_DIALOG_ANSWER, OVERSEER_SENT, PROFILE, SESSION_SENT, SUBAGENT_PROFILE, TOPIC_DELIVERED } from "./harness/state-kinds";
+import { ALIGN_LAUNCH, type AlignLaunchData, BATON_SENT, FANOUT_MEMBER, LINK_MEMBER, LOADOUT, MODE, OVERSEER, OVERSEER_DIALOG_ANSWER, OVERSEER_SENT, PROFILE, SESSION_SENT, SUBAGENT_PROFILE, TOPIC_DELIVERED } from "./harness/state-kinds";
 import { cutTail, type HistoryPart, pullFields } from "./tail-hello";
 import { isOverseerId } from "./overseer-store";
 import { attachStreamGuard, capsFor, type StreamTrip } from "./stream-guard";
@@ -54,7 +54,9 @@ import { loadoutOverrides, type LoadoutEntryData, type LoadoutState } from "./se
 import { RunState, SessionLimits, sessionPowersExtension } from "./session-powers";
 import { queuePushExtension, topicStore } from "./topics";
 import { noteUsageSession, registerUsageSession } from "../pi-config/extensions/llm-inflight/attribution.ts";
-import { readWebSettings } from "./web-settings";
+import { reviewSaved } from "./web-settings";
+import { visToolsWanted } from "../pi-config/extensions/mode/minor.ts";
+import { alignForPick } from "./align-settings";
 
 const GUARD_POLL_MS = 3000;
 /** Hosted workers' context fill, read off their transcripts' tails; shared, mtime-gated. */
@@ -92,23 +94,45 @@ export const currentLinkOrigin = (): string | null => linkOrigin;
  *   the listener is bound; workers and the TUI never get it, so they register no link tool. Beside it,
  *   this server's per-install token, which the link tools send back as `x-sova-token`
  *   (§app.access/callers). In-process only: never argv, never env.
- * - adversarial review: only while Settings → Experimental's Adversarial review is saved on
- *   (§chat.alignment-review/flag); read at each runtime start, so an open chat keeps what it began with.
+ * - adversarial review and the align mode's Visuals: what the chat's launch record says
+ *   (§chat.alignment-review/flag, §chat.alignment/visuals; ALIGN_LAUNCH, alignLaunchOf), so a chat keeps
+ *   what it began with across every later start. Without a record (a caller with no chat), the review
+ *   switch as saved now, and no Visuals flag (the extension then reads mode-align.json itself).
  */
-function sessionFlags(cwd: string, outline = true, linkTools: "member" | "legacy" = "legacy"): OpenFlags {
+function sessionFlags(cwd: string, outline = true, linkTools: "member" | "legacy" = "legacy", launch?: AlignLaunchData): OpenFlags {
   const flags: OpenFlags = { outline };
   const target = targetOfCwd(cwd);
   if (target) flags.target = target;
   flags.claudeCode = true;
-  if (readWebSettings().experimental.adversarialReview) flags.review = true;
+  if (launch ? launch.review : reviewSaved()) flags.review = true;
+  if (launch) flags.alignVisuals = launch.visuals;
   if (linkOrigin) flags.link = { origin: linkOrigin, token: sovaToken(), tools: linkTools };
   return flags;
 }
 
 /** The extension flags a runtime is handed: none for a loadout that loads no extension (a flag
     nobody registered only logs "Unknown option"), else sessionFlags. Exported for the tests. */
-export function extensionFlagsFor(cwd: string, outline: boolean, noExtensions: boolean, linkTools: "member" | "legacy" = "legacy"): Map<string, boolean | string> {
-  return noExtensions ? new Map() : extensionFlagValues(sessionFlags(cwd, outline, linkTools));
+export function extensionFlagsFor(cwd: string, outline: boolean, noExtensions: boolean, linkTools: "member" | "legacy" = "legacy", launch?: AlignLaunchData): Map<string, boolean | string> {
+  return noExtensions ? new Map() : extensionFlagValues(sessionFlags(cwd, outline, linkTools, launch));
+}
+
+/** A chat's launch values and whether its file holds them yet. */
+export interface AlignLaunch {
+  data: AlignLaunchData | null;
+  recorded: boolean;
+}
+
+/**
+ * What a chat's align mode starts with (§chat.alignment-review/flag, §chat.alignment/visuals): its launch
+ * record when the file has one (`recorded`), else what its first start takes now — the review switch as
+ * saved, and Visuals by the chat's subagent profile (its pick on the branch, else this device's default),
+ * else mode-align.json. The caller writes an unrecorded one with the chat's first message.
+ */
+export function alignLaunchOf(state: Pick<SessionState, "branch" | "file">): AlignLaunch & { data: AlignLaunchData } {
+  const recorded = state.file().first(ALIGN_LAUNCH)?.data;
+  if (recorded) return { data: recorded, recorded: true };
+  const pick = state.branch().latest(SUBAGENT_PROFILE)?.data.profile;
+  return { data: { v: 1, review: reviewSaved(), visuals: alignForPick(pick).visuals }, recorded: false };
 }
 
 /** The extensions every ordinary session loads beyond pi-config's: resource monitoring, inherited
@@ -756,6 +780,9 @@ class ChatSession {
   }
   /** This runtime's profile, set by openSession (null for special kinds). */
   profileState: ProfileState | null = null;
+  /** What this chat's align mode started with (review, Visuals), set by openSession; null in a chat built
+      without it (tests), which then reads the vis tools from its mode alone and sends no `alignReview`. */
+  alignLaunch: AlignLaunch | null = null;
   /** The `sova-loadout` entry this runtime was built with, and the loader's unfiltered lists
       (§chat.transcript/setup-card-toggles). Null for a special session, which keeps its own loadout. */
   loadoutState: LoadoutState | null = null;
@@ -1106,6 +1133,14 @@ class ChatSession {
       });
   }
 
+  /** The chat's launch record, written once with its first message (one of the open-time appends). */
+  recordAlignLaunch(): void {
+    const launch = this.alignLaunch;
+    if (!launch?.data || launch.recorded) return;
+    if (!this.harness.state.file().first(ALIGN_LAUNCH)) this.harness.state.append(ALIGN_LAUNCH, launch.data);
+    launch.recorded = true;
+  }
+
   /** Write the model and thinking entries the open queued (P1), e.g. to keep a fresh open's choice. */
   flushDeferredAppends(): void {
     for (const append of this.deferredAppends.splice(0)) append();
@@ -1349,12 +1384,22 @@ class ChatSession {
     }
   }
 
+  /**
+   * Whether the vis tools belong in this chat's loadout (§chat.alignment/visuals): the one rule
+   * (visToolsWanted) over this chat's mode and the Visuals its runtime started with. A chat built
+   * without launch values (tests) has no Visuals.
+   */
+  visToolsOn(): boolean {
+    return visToolsWanted(this.modeState.minorModes, this.alignLaunch?.data?.visuals ?? false);
+  }
+
   /** What the vis feedback extension asks this chat (server/vis-check.ts): its vis mode is this
       chat's own mode, a message queued behind the run goes before any retry, and a runtime that may
       no longer write the file adds nothing to it. */
   visCheckHost(): VisCheckHost {
     return {
       visOn: () => this.modeState.minorModes.includes("vis"),
+      visToolsOn: () => this.visToolsOn(),
       queued: () => this.queue.size > 0 || this.harness.queue.hasQueued(),
       writable: () => {
         if (this.disposed || this.foreignWrite) return false;
@@ -1797,7 +1842,7 @@ class ChatSession {
   private syncVisCheckTool(): void {
     if (this.disposed || this.harness.isRunning()) return;
     if (!this.harness.registeredTools().includes(VIS_CHECK_TOOL)) return;
-    const want = this.modeState.minorModes.includes("vis");
+    const want = this.visToolsOn();
     const current = this.harness.activeTools();
     const has = current.includes(VIS_CHECK_TOOL);
     if (want && !has) this.harness.setActiveTools([...current, VIS_CHECK_TOOL]);
@@ -2021,6 +2066,7 @@ class ChatSession {
       model: harness.model()?.ref ?? null,
       thinking: harness.thinking(),
       context: toContextInfo(contextOfBranch(branch), this.host.models),
+      ...(this.alignLaunch?.data ? { alignReview: this.alignLaunch.data.review } : {}),
     };
   }
 
@@ -3149,7 +3195,14 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
   // every build: a pick disposes the runtime, so a runtime never outlives the profile it has.
   const profile: ProfileState = { data: null, excluded: [] };
   const loadout: LoadoutState = { data: null };
+  // What the chat's align mode starts with (alignLaunchOf): its record once the file has one; until
+  // then the values its first build took, kept for every rebuild, and written with its first message.
+  const launch: AlignLaunch = { data: null, recorded: false };
   const build = async ({ cwd, read }: { cwd: string; read: OpenRead }): Promise<PiBuild> => {
+    if (!launch.recorded) {
+      const now = alignLaunchOf(read.state);
+      if (now.recorded || launch.data === null) Object.assign(launch, now);
+    }
     // The outline opt-in is declined for a session an older build marked as a group member, and
     // the FILE says so (FANOUT_MEMBER_ENTRY), not a flag threaded through acquireChat, so the
     // marker survives restarts. Nothing writes the marker any more. Everything else about the loadout — `target`,
@@ -3198,7 +3251,7 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
             ],
             ...overrides,
           },
-      flags: () => sessionFlags(cwd, outline, linkTools),
+      flags: () => sessionFlags(cwd, outline, linkTools, launch.data ?? undefined),
       // Removals: the SDK's excludeTools, a filter on the registry itself, so no extension's
       // setActiveTools or re-registration brings a removed tool back.
       exclude: (present) => (profile.excluded = snap?.remove.length ? excludedTools(snap.remove, present) : []),
@@ -3254,6 +3307,12 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
     }
     visHost.chat = chat;
     chat.deferredAppends = file.deferred;
+    // An ordinary chat's align launch record (a special loadout — the Overseer, a baton or project
+    // overseer session — runs no align mode, so its file gets none and its hello says no flag).
+    if (!specialFor(file.read, path)) {
+      chat.alignLaunch = launch;
+      if (!launch.recorded) chat.deferredAppends.push(() => chat.recordAlignLaunch());
+    }
     chat.profileState = profile;
     if (!specialFor(file.read, path)) chat.loadoutState = loadout;
     const kind = specialFor(file.read, path);

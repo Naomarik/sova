@@ -9,8 +9,9 @@ import { createSignal } from "solid-js";
 import type { AlignDocInfo, AlignReviewEntryInfo, AlignReviewPhaseInfo } from "../../shared/protocol";
 
 /**
- * Whether adversarial review is on (Settings → Experimental, the `adversarial-review` flag). Off
- * until something sets it: with it off no review line, button or Reviewer row renders anywhere.
+ * Whether adversarial review is saved on (Settings → Alignment, `alignment.review`). Off until
+ * something sets it. It gates the Reviewer row in Settings → Subagents; the card follows each chat's
+ * own flag (the hello's `alignReview`) and falls back to this only where no chat says one.
  */
 const [adversarialReview, setAdversarialReview] = createSignal(false);
 export { adversarialReview, setAdversarialReview };

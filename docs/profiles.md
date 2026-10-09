@@ -17,7 +17,7 @@ and any mistake in it.
 
 | Group | Where | Notes |
 |---|---|---|
-| **Built in** | `profiles/<id>.json` in Sova | Default (in code, changes nothing), Read-only reviewer, Mini overseer |
+| **Built in** | `profiles/<id>.json` in Sova | Default (in code, changes nothing), Read-only reviewer |
 | **This project** | `<project>/.sova/profiles/<id>.json` | Committed with the project. One file per profile |
 | **Yours** | `~/.pi/agent/sova/session-profiles.json` | `{"version": 1, "profiles": [...]}`. Every folder can use them. One of yours replaces a built-in one of the same id. With the mesh on, the whole file syncs to your other devices (the newest edit wins) |
 

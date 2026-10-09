@@ -133,7 +133,7 @@ export function mountClaudePool(app: Hono, mesh: MeshApi, paths: PoolPaths = def
     const from = peerCaller(mesh, c);
     if (!from || !current) return notFound(c);
     upNow.set(from, true);
-    const merged = current.receiveDoc(await body(c));
+    const merged = current.receiveDoc(await body(c), from);
     return merged ? c.json(merged) : c.json({ error: "Malformed pool document" }, 400);
   });
   app.post("/api/peer/claude-pool/lend", bodyLimit({ maxSize: 16 * 1024, onError: (c) => c.json({ error: "Too large" }, 413) }), async (c) => {

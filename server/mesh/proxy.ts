@@ -10,13 +10,14 @@ import { LAN_HOST } from "./lan-fetch";
 import { DENIED } from "../../shared/mesh-access";
 import { REFUSED_HEADER } from "./hello";
 import { isMeshOrPeerApi, judgedPath } from "./paths";
-import { type PeerEntry, peerUrl } from "./peers";
+import { forgetPeerAddress, verifiedPeerBase } from "./peer-address";
+import type { PeerEntry } from "./peers";
 
 // /peer/<id>/api/* and /peer/<id>/ws/* on the main listener: the browser's way to a session that
-// lives on another host. Transparent: the query goes verbatim, the answer comes back as the peer
-// sent it (bytes, status, headers), WS frames and close codes pass untouched. Only this host's
-// own failures are ours: 404 unknown peer, 502 peer down, 504 peer took the connection but sent
-// no response headers in time, 403 the peer's gate refused us.
+// lives on another host. The query goes verbatim; a REST answer comes back as the peer sent it
+// (bytes, status) with its headers hardened (hardenPeerResponse), WS frames and close codes pass
+// untouched. Only this host's own failures are ours: 404 unknown peer, 502 peer down, 504 peer took
+// the connection but sent no response headers in time, 403 the peer's gate refused us.
 
 const HOP_BY_HOP = ["connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailer", "transfer-encoding", "upgrade"];
 /** The Overseer's in-process sender secret (server/overseer-sender.ts OVERSEER_SENDER_HEADER): never
@@ -175,25 +176,26 @@ function whyDown(err: unknown): string {
   return e.cause?.code ?? e.cause?.message ?? e.message ?? String(err);
 }
 
-// A dial-out pairing's answers (§mesh.lan/as-a-peer) reach this host's browser origin from a machine
-// that may roam onto any network, so they are cut down to what a page needs: only the headers below,
-// never a redirect, cache wipe, service worker scope, CORS grant or preload; a sandbox CSP and
-// nosniff on everything; only JSON, plain text and raster images keep their type, and anything else
-// (HTML, SVG, XML, script, PDF, multipart, no type at all) is only ever a download. A 401 or 407
+// A peer's answers (§mesh.remote-sessions/proxy), a tailnet peer's or a dial-out pairing's, reach
+// this host's browser origin from a machine this host may restrict, so they are cut down to what a
+// page needs: only the headers below, never a cookie, redirect, cache wipe, service worker scope,
+// CORS grant or preload; a sandbox CSP and nosniff on everything; only JSON, plain text and raster
+// images keep their type, and anything else (HTML, SVG, XML, script, PDF, multipart, no type at all)
+// is only ever a download, under the peer's own attachment file name when it gave one. A 401 or 407
 // becomes 502: the page reads a 401 as "this browser is refused here" and would lock itself out.
-const PAIRING_HEADERS = new Set(["content-type", "content-length", "content-disposition", "content-encoding", "cache-control", "etag", "last-modified", "date", "vary", REFUSED_HEADER.toLowerCase()]);
+const PEER_HEADERS = new Set(["content-type", "content-length", "content-disposition", "content-encoding", "cache-control", "etag", "last-modified", "date", "vary", REFUSED_HEADER.toLowerCase()]);
 const PASSIVE_TYPES = new Set(["application/json", "text/plain", "image/png", "image/jpeg", "image/gif", "image/webp", "image/avif", "image/bmp", "application/octet-stream"]);
 
-/** The answer of a dial-out pairing, as the browser may see it. */
-export function hardenPairingResponse(res: Response): Response {
+/** A peer's answer, as the browser may see it. */
+export function hardenPeerResponse(res: Response): Response {
   const headers = new Headers();
   res.headers.forEach((v, k) => {
-    if (PAIRING_HEADERS.has(k.toLowerCase())) headers.append(k, v);
+    if (PEER_HEADERS.has(k.toLowerCase())) headers.append(k, v);
   });
   const essence = (headers.get("content-type") ?? "").split(";")[0]!.trim().toLowerCase();
   if (!PASSIVE_TYPES.has(essence) || essence === "application/octet-stream") {
     headers.set("content-type", "application/octet-stream");
-    headers.set("content-disposition", "attachment");
+    if (!/^attachment\s*(;|$)/i.test(headers.get("content-disposition") ?? "")) headers.set("content-disposition", "attachment");
   }
   headers.set("content-security-policy", "sandbox; default-src 'none'");
   headers.set("x-content-type-options", "nosniff");
@@ -227,7 +229,7 @@ async function proxyPairing(c: Context, peer: PeerEntry, tail: string, headers: 
     await res.body?.cancel();
     return c.json({ error: "peer refused", id: peer.id }, 403);
   }
-  return hardenPairingResponse(res);
+  return hardenPeerResponse(res);
 }
 
 /** `scrub`: this host restricts the peer (§mesh.peers/grants), so the request carries nothing of
@@ -247,9 +249,18 @@ export async function proxyPeer(c: Context, peer: PeerEntry, tail: string, scrub
   headers.set(PROXIED_HEADER, scrub ? SCRUBBED_HOST : host || "unknown");
   headers.set(RELAYED_HEADER, "1");
   if (peer.lan) return proxyPairing(c, peer, tail, headers);
-  const base = peerUrl(peer);
+  let base: string;
+  try {
+    base = await verifiedPeerBase(peer);
+  } catch (err) {
+    console.warn(`[mesh] ${peer.id}: ${c.req.method} ${tail} failed: ${whyDown(err)}`);
+    return c.json({ error: "peer down", id: peer.id }, 502);
+  }
   const go = await preflight(base);
-  if (!go) return c.json({ error: "peer down", id: peer.id }, 502);
+  if (!go) {
+    forgetPeerAddress(peer);
+    return c.json({ error: "peer down", id: peer.id }, 502);
+  }
   const stalled = new AbortController();
   const watched = go === "recent" ? watchStall(base, () => stalled.abort()) : () => {};
   // Not AbortSignal.timeout: the signal also governs the body, which must outlive the deadline.
@@ -275,6 +286,7 @@ export async function proxyPeer(c: Context, peer: PeerEntry, tail: string, scrub
       return c.json({ error: "peer timeout", id: peer.id }, 504);
     }
     notePeerReach(base, false);
+    forgetPeerAddress(peer);
     console.warn(`[mesh] ${peer.id}: ${c.req.method} ${tail} failed: ${stalled.signal.aborted ? "no answer, and the peer is unreachable" : whyDown(err)}`);
     return c.json({ error: "peer down", id: peer.id }, 502);
   }
@@ -284,11 +296,9 @@ export async function proxyPeer(c: Context, peer: PeerEntry, tail: string, scrub
     await res.body?.cancel();
     return c.json({ error: "peer refused", id: peer.id }, 403);
   }
-  // The peer's grant to this host doesn't cover it (§mesh.peers/grants): passed on as the peer sent
-  // it, marker included, so the page can tell "hidden" from "refused".
-  // Nor may a peer set or overwrite a cookie on this host's origin.
-  res.headers.delete("set-cookie");
-  return res;
+  // The peer's grant to this host doesn't cover it (§mesh.peers/grants): passed on, marker
+  // included, so the page can tell "hidden" from "refused".
+  return hardenPeerResponse(res);
 }
 
 export function upgradePeerSocket(req: IncomingMessage, socket: Duplex, head: Buffer, peer: PeerEntry | null, tail: string, search: string, scrub = false): void {
@@ -302,10 +312,21 @@ export function upgradePeerSocket(req: IncomingMessage, socket: Duplex, head: Bu
     upgradePairingSocket(req, socket, head, peer, tail, search, headers);
     return;
   }
-  const base = peerUrl(peer);
+  void verifiedPeerBase(peer).then(
+    (base) => upgradeTailnetSocket(req, socket, head, peer, base, tail, search, headers),
+    (err) => {
+      console.warn(`[mesh] ${peer.id}: ws ${tail} failed: ${whyDown(err)}`);
+      if (!socket.destroyed) refuse(socket, 502, { error: "peer down", id: peer.id });
+    },
+  );
+}
+
+/** A socket hop to a tailnet peer at its verified base URL. */
+function upgradeTailnetSocket(req: IncomingMessage, socket: Duplex, head: Buffer, peer: PeerEntry, base: string, tail: string, search: string, headers: Record<string, string>): void {
   void preflight(base).then((go) => {
     if (socket.destroyed) return; // the browser gave up first
     if (!go) {
+      forgetPeerAddress(peer);
       refuse(socket, 502, { error: "peer down", id: peer.id });
       return;
     }
@@ -318,6 +339,7 @@ export function upgradePeerSocket(req: IncomingMessage, socket: Duplex, head: Bu
       onError: (err) => {
         answered();
         notePeerReach(base, false);
+        forgetPeerAddress(peer);
         console.warn(`[mesh] ${peer.id}: ws ${tail} failed: ${stalled.signal.aborted ? "no answer, and the peer is unreachable" : whyDown(err)}`);
         return [502, { error: "peer down", id: peer.id }];
       },

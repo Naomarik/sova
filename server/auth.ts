@@ -11,6 +11,7 @@ import { consumeCode, mintCode } from "./auth-devices";
 import { isDirectLocal } from "./compression";
 import { DEFAULT_SERVE_PORT } from "./mesh/front-door";
 import { localRequest } from "./mesh/proxy";
+import { judgedPath } from "./mesh/paths";
 
 // The main listener's gate (§app.access/token, §app.access/gate): one per-install token, carried
 // as the install's cookie or an x-sova-token header, plus a Host rule and a cross-site rule that
@@ -238,14 +239,18 @@ function isTailnetName(name: string): boolean {
 /** What the gate reads of a request, from Hono or a raw upgrade alike. */
 interface Asked {
   method: string;
-  path: string;
+  /** The path as the router will route it (judgedPath: Hono decodes %XX before matching, so
+      "/%61pi/…" IS /api), or null when no one reading of it can be trusted. */
+  path: string | null;
   header: (name: string) => string | undefined;
 }
 
 /** Never asked for the token: the static shell and its assets (GET/HEAD outside the app's
-    dynamic families), the health check and the unlock route itself. */
+    dynamic families), the health check and the unlock route itself. A path that can't be judged,
+    or still holds an escape once decoded ("/%2561pi" routes as "/%61pi"), is never the shell. */
 const DYNAMIC = /^\/(?:api|ext|peer|explain|design|ws)(?:\/|$)/;
-const isShell = (a: Asked): boolean => (a.method === "GET" || a.method === "HEAD") && !DYNAMIC.test(a.path);
+const isShell = (a: Asked): boolean =>
+  (a.method === "GET" || a.method === "HEAD") && a.path !== null && !a.path.includes("%") && !DYNAMIC.test(a.path);
 const tokenExempt = (a: Asked): boolean =>
   isShell(a) || ((a.method === "GET" || a.method === "HEAD") && a.path === "/api/health") || (a.method === "POST" && a.path === "/api/auth/unlock");
 
@@ -401,7 +406,7 @@ function silentLocal(a: Asked, incoming: unknown): boolean {
 export function authGate(c: Context): Response | null {
   const env = c.env as { incoming?: unknown; meshPeer?: unknown } | undefined;
   if (!env?.incoming || env.meshPeer) return null;
-  const a: Asked = { method: c.req.method, path: new URL(c.req.url).pathname, header: (n: string) => c.req.header(n) };
+  const a: Asked = { method: c.req.method, path: judgedPath(new URL(c.req.url).pathname), header: (n: string) => c.req.header(n) };
   const status = verdict(a, { exempt: true });
   // A browser on this machine opening the app's own address is answered — and handed the install's
   // cookie — instead of meeting the unlock screen (silentLocal says why it's only the person at
@@ -426,7 +431,7 @@ function upgradeStatus(req: IncomingMessage): 401 | 403 | null {
     const v = req.headers[n];
     return Array.isArray(v) ? v.join(n === "cookie" ? "; " : ", ") : v;
   };
-  const path = new URL(req.url ?? "/", "http://localhost").pathname;
+  const path = judgedPath(new URL(req.url ?? "/", "http://localhost").pathname);
   return verdict({ method: "GET", path, header }, { exempt: false });
 }
 

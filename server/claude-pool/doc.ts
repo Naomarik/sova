@@ -12,6 +12,8 @@ import { groupByAccount, type ClaudeLoginIdentity } from "../../pi-config/extens
  *   winner is always a device that has them.
  * - logins: the union; a login's `addedAt`/`identity` come from whichever record has the older
  *   `addedAt` (the adder's), identity filled in from the other when absent.
+ * A peer's document passes `plausible` first, so no stamp far ahead of this clock, and no holder
+ * counter far ahead of ours, ever wins (one forged document could otherwise outrank every real edit).
  */
 
 export interface Reg<T> {
@@ -102,6 +104,50 @@ export function mergeDocs(a: PoolDoc, b: PoolDoc): PoolDoc {
   const logins: Record<string, PoolLogin> = { ...a.logins };
   for (const [id, login] of Object.entries(b.logins)) logins[id] = logins[id] ? mergeLogin(logins[id]!, login) : login;
   return { version: 1, keeper: mergeReg(a.keeper, b.keeper), order: mergeReg(a.order, b.order), logins };
+}
+
+// ---- a peer's implausible stamps -----------------------------------------------------------------
+
+/** How far ahead of this device's clock a peer's stamp may be. */
+export const MAX_POOL_SKEW_MS = 60 * 60_000;
+/** How far above ours a peer's holder counter may be for a login we know (handovers advance it by one). */
+export const MAX_SEQ_STEP = 10_000;
+/** The largest holder counter taken for a login new to this device. */
+const MAX_NEW_SEQ = 2 ** 32;
+
+const REG_FIELDS = ["label", "enabled", "pin", "standing", "returnAsk", "usage", "removed"] as const;
+/** A new login's field before anyone set it (what `newPoolLogin` leaves unset). */
+const UNSET: { [K in (typeof REG_FIELDS)[number]]: PoolLogin[K]["value"] } = { label: null, enabled: true, pin: null, standing: null, returnAsk: null, usage: null, removed: false };
+
+/**
+ * A peer's document with what no real edit could have written replaced, field by field, before it
+ * is merged: any `Reg` or holder stamped more than `MAX_POOL_SKEW_MS` ahead of `now`, and a holder
+ * counter more than `MAX_SEQ_STEP` above ours (above 2^32 for a login new here). Such a field reads
+ * as ours (unset, for a new login; a new login whose holder is ignored is not taken yet), so the
+ * merge with ours keeps ours. Once `now` passes a stamp, the same edit is taken: a peer merely
+ * ahead of time loses nothing. `ignored` names each field (`keeper`, `<login id>.<field>`).
+ */
+export function plausible(theirs: PoolDoc, ours: PoolDoc, now: number): { doc: PoolDoc; ignored: string[] } {
+  const ignored: string[] = [];
+  const limit = now + MAX_POOL_SKEW_MS;
+  const keep = <T>(name: string, their: Reg<T>, our: Reg<T>): Reg<T> => {
+    if (their.at <= limit) return their;
+    ignored.push(name);
+    return our;
+  };
+  const logins: Record<string, PoolLogin> = {};
+  for (const [id, login] of Object.entries(theirs.logins)) {
+    const our = ours.logins[id];
+    const badHolder = login.holder.at > limit || login.holder.seq > (our ? our.holder.seq + MAX_SEQ_STEP : MAX_NEW_SEQ);
+    if (badHolder) ignored.push(`${id}.holder`);
+    if (badHolder && !our) continue;
+    const next: PoolLogin = { ...login, holder: badHolder ? our!.holder : login.holder };
+    for (const f of REG_FIELDS) {
+      (next as unknown as Record<string, Reg<unknown>>)[f] = keep(`${id}.${f}`, login[f] as Reg<unknown>, (our ? our[f] : reg(UNSET[f], 0, "")) as Reg<unknown>);
+    }
+    logins[id] = next;
+  }
+  return { doc: { version: 1, keeper: keep("keeper", theirs.keeper, ours.keeper), order: keep("order", theirs.order, ours.order), logins }, ignored };
 }
 
 /** Same content (the merge's fixed point): no write, no push. */

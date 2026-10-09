@@ -33,6 +33,7 @@ test("stored tolerantly: anything unusable (align included) reads as Automatic",
   assert.deepEqual(parseCodingMode({ mode: "delegate", minorModes: ["spec"] }), { mode: "delegate", minorModes: ["spec"] });
   assert.deepEqual(parseCodingMode({ mode: "normal" }), { mode: "normal", minorModes: [] });
   assert.equal(store.parsePoSettings({}).codingMode, null);
+  assert.deepEqual(parseCodingMode({ mode: "normal", minorModes: ["spec", "memory"] }), { mode: "normal", minorModes: ["spec"] }, "a hand-edited memory is dropped");
 });
 
 test("patched strictly: a sentence for each problem; null goes back to Automatic", () => {
@@ -54,6 +55,7 @@ test("the overseer's request over the base: field by field, under the ceiling", 
   assert.match((codingModeChoice({ mode: "delegate" }, spec, spec) as { error: string }).error, /Delegate is off/);
   assert.match((codingModeChoice({ minor_modes: "spec" }, spec, null) as { error: string }).error, /minor_modes must be a list/);
   assert.equal((codingModeChoice({ minor_modes: ["bogus", "align"] }, spec, null) as { error: string }).error, "Unknown minor mode bogus: only spec is allowed.");
+  assert.equal((codingModeChoice({ minor_modes: ["spec", "memory"] }, spec, null) as { error: string }).error, "Unknown minor mode memory: only spec is allowed.");
   const del = { mode: "delegate" as const, minorModes: [] };
   assert.deepEqual(codingModeChoice({ minor_modes: ["spec"] }, del, del), { mode: { mode: "delegate", minorModes: ["spec"] } });
   assert.deepEqual(codingModeChoice({ mode: "normal", minor_modes: [] }, del, del), { mode: { mode: "normal", minorModes: [] } });

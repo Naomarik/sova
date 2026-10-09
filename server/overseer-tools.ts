@@ -55,6 +55,7 @@ import { singletonHolder } from "./session-profile";
 import { listPlaybooks } from "./playbooks";
 import { keyOf, singletonRunningText, titleCase } from "../shared/profiles";
 import { linkedPlaybook, missingPlaybookText, playbookTurnText } from "../shared/playbooks";
+import { MEMORY_CODING_REFUSAL } from "../shared/memory";
 
 export { renderTranscript, sessionRef };
 
@@ -1172,6 +1173,8 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
         let hasPrompt = typeof p.prompt === "string" && p.prompt.trim().length > 0;
         // Mode names are checked by the mode route's own parser before anything is created, so an
         // unknown one creates no session and takes no cap.
+        // Memory is never given to a coding session (§chat.memory/where), here or on a peer.
+        if (Array.isArray(p.minor_modes) && p.minor_modes.includes("memory")) throw new Refusal(`${MEMORY_CODING_REFUSAL}. No session was created.`);
         if (p.mode || p.minor_modes !== undefined) {
           const bad = parseModePatch({ ...(p.mode ? { mode: p.mode } : {}), ...(p.minor_modes !== undefined ? { minorModes: p.minor_modes } : {}) });
           if ("error" in bad) throw new Refusal(`${bad.error.replace("minorModes", "minor_modes")}. No session was created.`);
@@ -1308,6 +1311,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
         ["session"],
       ),
       execute: act("sova_set_session", async (p) => {
+        if (Array.isArray(p.minor_modes) && p.minor_modes.includes("memory")) throw new Refusal(`${MEMORY_CODING_REFUSAL}. Nothing was changed.`);
         const s = await resolveWritable(p.session);
         if (p.subagent_profile !== undefined) await checkSubagentProfile(p.subagent_profile);
         // The sandbox is checked before anything changes: lowering it needs this turn to be the user's

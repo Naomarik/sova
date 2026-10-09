@@ -1318,7 +1318,7 @@ const uniqOrdered = (a) => [...new Set(a)];
 // last record; an area's first record goes right before the first record whose area sorts after its own, or last.
 // Records already there keep their place.
 const areaOf = (id) => id.slice(0, id.indexOf("/") >>> 0);
-function withNewRecords(claims, added) {
+export function withNewRecords(claims, added) {
   const keys = Object.keys(claims);
   for (const id of Object.keys(added).sort()) {
     const area = areaOf(id), own = keys.flatMap((k, i) => (areaOf(k) === area ? [i] : []));

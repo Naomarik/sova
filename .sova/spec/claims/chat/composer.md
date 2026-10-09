@@ -178,9 +178,13 @@ are kept, and what the foot and its model indicator show.
 - **After Stop.** The status reads "Stopping…" until the turn settles. Then the run status
   disappears, and an info row says "Stopped by you at `1:43 PM`." (the transcript's stamp: a
   12-hour clock, with the date in front on another day).
-- **Focus.** Returns to the textarea after Send, Steer, or Stop. The mic never moves focus: its
-  press keeps the textarea's focus and selection, and dictated text lands at the caret
-  (§chat.voice/insertion) as part of the draft.
+- **Focus.** Returns to the textarea after Send, Steer, or Stop pressed with a mouse or pen, and
+  after an `Enter` or `Ctrl+Enter` / `⌘+Enter` send. After one pressed by touch it returns only if
+  the textarea had focus when the press began and the on-screen keyboard was up (up and down as in
+  §chat.voice/button); otherwise nothing is refocused, a textarea still focused with the keyboard
+  down loses focus, and a keyboard that was down stays down. The message is sent either way.
+  The mic never moves focus: its press keeps the textarea's focus and selection, and dictated
+  text lands at the caret (§chat.voice/insertion) as part of the draft.
 - **Drafts** are never discarded. The draft survives disable/enable, reconnects, and errors, and
   it survives a reload too. Each session's draft lives in two places:
   - **In memory, per session path.** This is the authority within a tab, so switching sessions

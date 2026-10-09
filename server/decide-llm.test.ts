@@ -155,6 +155,8 @@ describe("claude-code backend", () => {
     const s = f.seen[0]!;
     assert.equal(s.bin, "claude");
     assert.deepEqual(s.args, claudeArgs(cc, answerSchema(qs)));
+    assert.equal(s.args[s.args.indexOf("--setting-sources") + 1], "");
+    assert.equal(JSON.parse(s.args[s.args.indexOf("--settings") + 1]!).autoMemoryEnabled, false, "auto-memory off");
     for (const flag of ["--tools", "--strict-mcp-config", "--no-session-persistence", "--json-schema", "--max-budget-usd"]) assert.ok(s.args.includes(flag), flag);
     assert.equal(s.args[s.args.indexOf("--effort") + 1], "low");
     assert.equal(s.env.CLAUDECODE, undefined);

@@ -45,6 +45,7 @@ const success = (id: string, models: unknown) => ({ type: "control_response", re
 describe("Claude model discovery (server)", () => {
   test("argv is byte-identical to the claude-code extension's discovery argv", () => {
     assert.deepEqual([...CLAUDE_DISCOVERY_ARGV], buildDiscoveryArgv());
+    assert.equal(JSON.parse(CLAUDE_DISCOVERY_ARGV[CLAUDE_DISCOVERY_ARGV.indexOf("--settings") + 1]!).autoMemoryEnabled, false, "auto-memory off");
   });
 
   test("initialize-only handshake: ids, names, efforts and the resolved model (drift); nothing else retained", async () => {

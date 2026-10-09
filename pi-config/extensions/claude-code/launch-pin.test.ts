@@ -73,7 +73,7 @@ test("pin: a default Claude worker (sandbox off, no worktree) launches with exac
 		assert.equal(got.command, "claude");
 		assert.deepEqual(got.args, [...HEAD,
 			"--permission-mode", "bypassPermissions", "--permission-prompts", "none", "--setting-sources", "", "--strict-mcp-config",
-			"--settings", '{"attribution":{"commit":"","pr":""}}',
+			"--settings", '{"attribution":{"commit":"","pr":""},"autoMemoryEnabled":false}',
 			"--model", "claude-sonnet-5-5", "--effort", "medium", "--tools", "Bash,Read,Edit,Write,Glob,Grep"]);
 		assert.deepEqual(Object.keys(got.options).sort(), ["cwd", "detached", "env", "shell", "stdio"]);
 		assert.equal(got.options.cwd, cwd);
@@ -100,7 +100,7 @@ test("pin: a team member with a system prompt, spec hooks, an MCP server and a r
 		assert.deepEqual(got.args, [...HEAD,
 			"--permission-mode", "acceptEdits", "--permission-prompts", "host", "--setting-sources", "", "--strict-mcp-config",
 			"--permission-prompt-tool", "stdio", "--resume", resume,
-			"--settings", JSON.stringify({ ...JSON.parse(settingsJson), attribution: { commit: "", pr: "" } }),
+			"--settings", JSON.stringify({ ...JSON.parse(settingsJson), attribution: { commit: "", pr: "" }, autoMemoryEnabled: false }),
 			"--model", "claude-opus-5-5", "--effort", "high", "--tools", "Read,Bash", "--allowedTools", "Bash(git *)", "mcp__team",
 			"--append-system-prompt-file", "<private>/system.md", "--mcp-config", "<private>/mcp.json"]);
 		assert.equal(path.dirname(got.privateDir!), os.tmpdir(), "the private launch dir is under os.tmpdir()");
@@ -118,7 +118,7 @@ test("pin: a worker on an added login names that login's directory in CLAUDE_CON
 		}, handlers));
 		assert.deepEqual(got.args, [...HEAD,
 			"--permission-mode", "bypassPermissions", "--permission-prompts", "none", "--setting-sources", "", "--strict-mcp-config",
-			"--settings", '{"attribution":{"commit":"","pr":""}}', "--tools", ""]);
+			"--settings", '{"attribution":{"commit":"","pr":""},"autoMemoryEnabled":false}', "--tools", ""]);
 		assert.deepEqual(got.options.env, hostEnv({ CLAUDE_CONFIG_DIR: dir }));
 	} finally { fs.rmSync(cwd, { recursive: true, force: true }); }
 });

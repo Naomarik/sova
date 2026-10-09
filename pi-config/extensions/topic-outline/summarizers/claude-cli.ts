@@ -17,6 +17,7 @@ import { SummarizerError } from "../types.ts";
 import { buildPrompt, parseSummarizerJson } from "./chain.ts";
 import { claudeBaseEnv, hostLogins } from "../../claude-code/accounts.ts";
 import { claudeCliId } from "../../claude-code/catalog.ts";
+import { fixedSettingsJson } from "../../claude-code/fixed-settings.ts";
 import { beginClaudeOneShot } from "../../llm-inflight/claude.ts";
 import { resolveUsageAttribution } from "../../llm-inflight/attribution.ts";
 import { recordClaudeEnvelope } from "../../llm-inflight/record.ts";
@@ -33,6 +34,22 @@ interface ClaudeEnvelope {
   subtype?: string;
   terminal_reason?: string;
   api_error_status?: number;
+}
+
+/** The one-shot's argv: no tools, no user settings (the fixed ones only), no MCP, no session record. Pure. */
+export function claudeCliArgs(model: string, budgetUsd: number): string[] {
+  return [
+    "-p",
+    "--model", claudeCliId(model),
+    "--tools", "",
+    "--setting-sources", "",
+    "--settings", fixedSettingsJson(),
+    "--strict-mcp-config",
+    "--permission-mode", "dontAsk",
+    "--no-session-persistence",
+    "--output-format", "json",
+    "--max-budget-usd", budgetUsd.toFixed(2),
+  ];
 }
 
 export function createClaudeCliSummarizer(spec: SummarizerSpec, claudeBin: string): Summarizer {
@@ -59,17 +76,7 @@ export function createClaudeCliSummarizer(spec: SummarizerSpec, claudeBin: strin
         delete env.CLAUDE_CODE_ENTRYPOINT;
         delete env.CLAUDE_AGENT_SDK_VERSION;
         Object.assign(env, loginEnv());
-        const args = [
-          "-p",
-          "--model", claudeCliId(spec.model),
-          "--tools", "",
-          "--setting-sources", "",
-          "--strict-mcp-config",
-          "--permission-mode", "dontAsk",
-          "--no-session-persistence",
-          "--output-format", "json",
-          "--max-budget-usd", budget.toFixed(2),
-        ];
+        const args = claudeCliArgs(spec.model, budget);
         let child;
         try {
           child = spawn(claudeBin, args, { cwd, env: env as NodeJS.ProcessEnv, stdio: ["pipe", "pipe", "pipe"] });

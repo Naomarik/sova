@@ -255,6 +255,7 @@ describe("input, prompt and validation", () => {
     assert.equal(argv[argv.indexOf("--system-prompt") + 1], at.TITLE_SYSTEM_PROMPT);
     assert.equal(argv[argv.indexOf("--tools") + 1], "");
     assert.equal(argv[argv.indexOf("--setting-sources") + 1], "");
+    assert.equal(JSON.parse(argv[argv.indexOf("--settings") + 1]!).autoMemoryEnabled, false, "auto-memory off");
     assert.ok(argv.includes("--strict-mcp-config"));
     assert.ok(argv.includes("--no-session-persistence"));
     assert.ok(!argv.includes("--json-schema"));

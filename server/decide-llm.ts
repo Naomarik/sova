@@ -11,6 +11,7 @@ import { beginLlmCall } from "../pi-config/extensions/llm-inflight/tracker.ts";
 import { resolveUsageAttribution, withUsagePurpose } from "../pi-config/extensions/llm-inflight/attribution.ts";
 import { recordClaudeEnvelope } from "../pi-config/extensions/llm-inflight/record.ts";
 import { claudeCliId } from "../pi-config/extensions/claude-code/catalog.ts";
+import { fixedSettingsJson } from "../pi-config/extensions/claude-code/fixed-settings.ts";
 import type { ModelPolicy, WorkerChoice } from "../shared/protocol";
 import {
   DecisionError,
@@ -328,6 +329,7 @@ export function claudeArgs(choice: WorkerChoice, schema: Record<string, unknown>
     "--model", claudeCliId(choice.model),
     "--tools", "",
     "--setting-sources", "",
+    "--settings", fixedSettingsJson(),
     "--strict-mcp-config",
     "--permission-mode", "dontAsk",
     "--no-session-persistence",

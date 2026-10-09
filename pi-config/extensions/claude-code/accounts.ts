@@ -36,6 +36,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { keychainItemMtime, readKeychainCredentials, type KeychainOptions } from "./keychain.ts";
+import { fixedSettingsJson } from "./fixed-settings.ts";
 
 export const ACCOUNTS_FILE_NAME = "claude-accounts.json";
 export const ACCOUNTS_STATE_FILE_NAME = "claude-accounts-state.json";
@@ -560,7 +561,7 @@ function accessTokenOf(oauth: any): ClaudeAccessToken | undefined {
  */
 export const REFRESH_ARGV = [
 	"-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
-	"--tools", "", "--setting-sources", "", "--strict-mcp-config",
+	"--tools", "", "--setting-sources", "", "--settings", fixedSettingsJson(), "--strict-mcp-config",
 	"--permission-mode", "dontAsk", "--permission-prompts", "none",
 ] as const;
 export type RefreshImpl = (dir: string) => Promise<boolean>;

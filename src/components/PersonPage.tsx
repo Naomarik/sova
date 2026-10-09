@@ -28,6 +28,7 @@ import {
 } from "../lib/person-page";
 import { createPoll } from "../lib/poll";
 import { STATUS_CHIP, valueText, writerWord } from "../lib/profile-changes";
+import { numberWords } from "../lib/outreach";
 import { announce, copyText, toast } from "../lib/ui-state";
 import { InsightsPage } from "./InsightsPage";
 import { LinksBanner } from "./LinksBanner";
@@ -703,6 +704,7 @@ function LinksAndVisits(props: { data: PersonPageData; now: number; act: Act; on
                 </div>
                 <span class="list-meta person-row-meta">
                   <time title={exact(s.at)}>{relativeTime(s.at, props.now)}</time>
+                  <Show when={s.from}>{(f) => ` · from ${numberWords(f())}`}</Show>
                   <Show when={s.code}>{(c) => ` · ${c()}`}</Show>
                 </span>
               </li>

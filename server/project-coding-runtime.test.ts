@@ -86,7 +86,7 @@ describe("a project's coding sessions", async () => {
   let started: { path: string; sessionId: string } | null = null;
 
   test("Start coding session: its own worktree cut from HEAD, on its statechart at once, mode set and pinned before the prompt", async () => {
-    // The default equals what the project asks for: the extension alone would write no entry.
+    // A start names no mode: this computer's default, which the extension alone would write no entry for.
     writeDefault("normal", ["spec"]);
     const p = store.projectOverseerPaths(project.id);
     const todo = addTodo({ text: "Build the login page" }, p.todos, p.ideas);
@@ -127,7 +127,7 @@ describe("a project's coding sessions", async () => {
     const w = (await buildsOf(project.id, client)).find((r) => r.sessionId === started!.sessionId)!.worktree!;
     let info = await po.projectOverseerInfo(project.id);
     assert.equal(info.worktrees.available, true);
-    assert.deepEqual(info.codingModeNow, { mode: "normal", minorModes: ["spec"] });
+    assert.deepEqual({ mode: info.codingModeNow.mode, minorModes: info.codingModeNow.minorModes }, { mode: "delegate", minorModes: ["align"] }, "what one started now gets: this computer's default");
     const rowOf = () => info.worktrees.sessions.find((s) => s.sessionId === started!.sessionId);
     const r0 = rowOf();
     assert.deepEqual(r0 && { state: r0.state, merged: r0.merged, ahead: r0.ahead, startedBy: r0.startedBy, branch: r0.branch, target: r0.target }, { state: "open", merged: false, ahead: 0, startedBy: "operator", branch: w.branch, target: "master" });
@@ -205,11 +205,11 @@ describe("a project's coding sessions", async () => {
     assert.equal(po.codingFirstPrompt("Tidy up", undefined), "Tidy up");
   });
 
-  test("the overseer's sova_create_session: a worktree too, and the mode it asked for within the ceiling", async () => {
+  test("the overseer's sova_create_session: a worktree too, this computer's default unnamed, any mode it names", async () => {
     writeDefault("delegate", ["align", "spec"]);
     await po.ensureProjectOverseer(project.id);
     const tool = po.toolsForTest(project.id).find((t) => t.name === "sova_create_session")!;
-    // Unattended at L1: refused before anything. At L3, delegate without the operator's opt-in: refused.
+    // Unattended at L1: refused before anything. An unknown mode: refused before anything.
     await assert.rejects(tool.execute("t1", { gap: "none", prompt: "Build it" }, undefined, undefined, undefined as never), /needs L3/);
     store.patchPoSettings(store.projectOverseerPaths(project.id), { autonomy: "L3", holdMin: 0 });
     // q7: unattended, a build names the gap whose promoted decisions it builds; with none it is refused.
@@ -217,7 +217,7 @@ describe("a project's coding sessions", async () => {
     // In a turn the operator started it may start one tied to no gap.
     const asked = po.toolsForTest(project.id, { attended: true }).find((t) => t.name === "sova_create_session")!;
     const before = readBuilds(project.id).length;
-    await assert.rejects(asked.execute("t2", { gap: "none", prompt: "Build it", mode: "delegate" }, undefined, undefined, undefined as never), /Delegate is off/);
+    await assert.rejects(asked.execute("t2", { gap: "none", prompt: "Build it", mode: "turbo" }, undefined, undefined, undefined as never), /Unknown mode turbo: use normal or delegate\./);
     assert.equal(readBuilds(project.id).length, before, "nothing created");
     await asked.execute("t3", { gap: "none", prompt: "Build the API", title: "API" }, undefined, undefined, undefined as never).catch(() => {});
     const row = (await buildsOf(project.id, client)).find((r) => r.kind === "coding");
@@ -232,7 +232,16 @@ describe("a project's coding sessions", async () => {
     assert.equal(rows2.at(-1)!.title, "Fix the footer");
     const info2 = await po.projectOverseerInfo(project.id);
     assert.equal(info2.worktrees.sessions.find((s) => s.sessionId === rows2.at(-1)!.sessionId)?.title, "Fix the footer");
-    assert.deepEqual(modeEntries(row.path).at(-1)?.data.active, { version: 1, mode: "normal", strict: false, minorModes: ["spec"] });
+    assert.deepEqual(modeEntries(row.path).at(-1)?.data.active, { version: 1, mode: "delegate", strict: false, minorModes: ["align", "spec"] }, "unnamed: this computer's default");
+    // Any mode it names, minor modes included: no ceiling.
+    const before3 = readBuilds(project.id).length;
+    store.patchPoSettings(store.projectOverseerPaths(project.id), { caps: { createPerTurn: 10 } });
+    await asked.execute("t6", { gap: "none", prompt: "Draw it", mode: "normal", minor_modes: ["vis", "codemode"], subagent_profile: "off" }, undefined, undefined, undefined as never).catch(() => {});
+    const named = readBuilds(project.id).slice(before3)[0];
+    assert.ok(named?.path, "started");
+    assert.deepEqual(modeEntries(named.path).at(-1)?.data.active, { version: 1, mode: "normal", strict: false, minorModes: ["vis", "codemode"] });
+    const picked = (await acquireChat(named.path)).subagentProfileInfo().current;
+    assert.equal(picked.id, "off", "the profile it named, picked for that session");
   });
 
   test("an untitled coding session's history headline is never written from its prompt", async () => {
@@ -256,7 +265,8 @@ describe("a project's coding sessions", async () => {
     for (const f of files) assert.ok(!readFileSync(f, "utf8").includes(EMAIL), `${f} holds no word of the prompt`);
   });
 
-  test("a plain folder: runs in the root with the reason; Automatic without a spec is normal", async () => {
+  test("a plain folder: runs in the root with the reason, in this computer's default", async () => {
+    writeDefault("normal", ["vis"]);
     const p = store.projectOverseerPaths(plain.id);
     const todo = addTodo({ text: "Tidy up" }, p.todos, p.ideas);
     await po.codeItem(plain.id, { todoId: todo.id }).catch(() => null);
@@ -264,7 +274,7 @@ describe("a project's coding sessions", async () => {
     assert.ok(row?.path && !row.worktree, JSON.stringify(row));
     assert.equal(row.inRoot, "it isn't a Git repository.");
     assert.equal(JSON.parse(readFileSync(row.path!, "utf8").split("\n")[0]!).cwd, plainRoot);
-    assert.deepEqual(modeEntries(row.path).at(-1)?.data.active, { version: 1, mode: "normal", strict: false, minorModes: [] });
+    assert.deepEqual(modeEntries(row.path).at(-1)?.data.active, { version: 1, mode: "normal", strict: false, minorModes: ["vis"] });
     const info = await po.projectOverseerInfo(plain.id);
     assert.deepEqual({ available: info.worktrees.available, reason: info.worktrees.reason }, { available: false, reason: row.inRoot });
     const listed = info.worktrees.sessions.find((s) => s.sessionId === row.sessionId);
@@ -309,7 +319,7 @@ describe("a project's coding sessions", async () => {
     assert.deepEqual([row.kind, row.title, row.worktree?.branch], ["operator-coding", undefined, made.worktree!.branch], "the operator's, untitled, in its worktree");
     const lines = readFileSync(made.path, "utf8").trim().split("\n").map((l) => JSON.parse(l));
     assert.equal(lines[0].cwd, made.worktree!.path);
-    assert.deepEqual(modeEntries(made.path).at(-1)?.data.active, { version: 1, mode: "normal", strict: false, minorModes: ["spec"] }, "the project's mode, not the host's default");
+    assert.deepEqual(modeEntries(made.path).at(-1)?.data.active, { version: 1, mode: "delegate", strict: false, minorModes: ["align", "spec"] }, "this computer's default, pinned");
     assert.ok(!lines.some((e) => e.type === "message"), "nothing was sent: no user message, no reply");
     const notes = lines.filter((e) => e.type === "custom_message" && e.customType === po.CODING_WORKTREE_NOTE);
     assert.equal(notes.length, 1);
@@ -391,10 +401,12 @@ describe("a project's coding sessions", async () => {
     assert.equal(extensionFlagsFor(plainRoot, false, false, "member").get("sova-link-tools"), "member");
   });
 
-  test("F20 (r3): at L3 the item statechart's own build of a gap's promoted decisions gets the project's mode, then its first prompt", async () => {
+  test("F20 (r3): at L3 the item statechart's own build of a gap's promoted decisions gets this computer's default, then its first prompt", async () => {
     writeDefault("delegate", ["align"]);
-    // Automatic (no coding mode set): normal · spec, for a project with a spec.
-    await po.patchProjectOverseer(project.id, { autonomy: "L3", holdMin: 0, codingMode: null });
+    // A codingMode an older overseer.json holds is ignored: the default wins.
+    const pf = store.projectOverseerPaths(project.id).settings;
+    writeFileSync(pf, JSON.stringify({ ...JSON.parse(readFileSync(pf, "utf8")), codingMode: { mode: "normal", minorModes: ["spec"] } }));
+    await po.patchProjectOverseer(project.id, { autonomy: "L3", holdMin: 0 });
     const placement = orgs.placementSid(org.id, project.id);
     const itemSid = `item/${org.id}/${project.id}/g_build1`;
     const envelope = envelopeFor(org.id, project.id, { by: "overseer", attended: true });
@@ -419,7 +431,7 @@ describe("a project's coding sessions", async () => {
     const d = hostOf(org.id).data(sid) ?? {};
     assert.ok(hostOf(org.id).configuration(sid)?.includes("ready"), "its setup ended");
     assert.equal(d["modeNotSet"], undefined, "its mode was set");
-    assert.deepEqual(modeEntries(row.path).at(-1)?.data.active, { version: 1, mode: "normal", strict: false, minorModes: ["spec"] }, "the project's mode, never the default's");
+    assert.deepEqual(modeEntries(row.path).at(-1)?.data.active, { version: 1, mode: "delegate", strict: false, minorModes: ["align"] }, "this computer's default, never a stored codingMode");
     assert.match((await buildsOf(project.id, client)).find((r) => r.sessionId === row!.sessionId)?.worktree?.branch ?? "", /^sova\/build-gap-login-[0-9a-f]{6}$/, "its branch is named after its title");
     // No auth here: the runtime takes the prompt and its turn fails, so the file may never show it; the statechart's
     // log shows the first prompt sent and answered.
@@ -528,10 +540,11 @@ describe("a project's coding sessions", async () => {
     assert.equal(readBuild(project.id, onGap.sessionId)?.kind, "operator-coding", "still the operator's (never on the overseer's caps)");
   });
 
-  test("gathering sessions stay mode-less, whatever the project's coding mode and the default", async () => {
+  test("gathering sessions stay mode-less, whatever the default", async () => {
     const p = store.projectOverseerPaths(project.id);
     // No hold (q10): the unattended start goes at once, so its session exists to open.
-    store.patchPoSettings(p, { codingMode: { mode: "delegate", minorModes: ["spec"] }, holdMin: 0 });
+    writeDefault("delegate", ["spec"]);
+    store.patchPoSettings(p, { holdMin: 0 });
     const tool = po.toolsForTest(project.id).find((t) => t.name === "sova_start_gathering")!;
     const out = await tool.execute("g1", { gap: "none", person: "Tony", why: "Nobody has said this yet.", public_title: "Hosting", goal: "Where it runs", question: "Where does it run?" }, undefined, undefined, undefined as never);
     const path = (out.details as { path: string }).path;

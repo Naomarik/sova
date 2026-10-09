@@ -86,8 +86,13 @@ for a project held on a peer (§mesh.remote-sessions/org-pages). API: `/api/proj
   declares one and the entry's service is ready (§app.project-services/services-ui).
 - The sidebar has a **Projects** region for standalone projects, shaped as one organization's
   project blocks in the Organizations region (§app.session-list/organizations): the project heading
-  with its overseer's eye, then its Builds: the coding sessions it started and the sessions in its
-  folder (§app.projects/folder-sessions), running or waiting, then a collapsed Done. Its head carries **+** (Add Project) and an arrow to
+  with its overseer's eye, then its **Sessions**: the coding sessions it started and the sessions in its
+  folder (§app.projects/folder-sessions), running or waiting, then a collapsed Done (a build merged
+  per git, a folder session that is neither live nor an unarchived web session). An **archived**
+  session of any kind is never in the block nor its counts: it is in the Archive only
+  (§app.session-list/ordinary-surfaces); archiving a build says "Archived. Find it under Archive."
+  and unarchiving it "Moved back to {project}.". The project heading and the region head count
+  the open rows only (running or waiting, the overseer's eye never); Done counts its own. Its head carries **+** (Add Project) and an arrow to
   `#/projects`; each project heading's name opens its page. With no project it says "No projects
   yet. Add a folder or a GitHub repository with +." It is listed once the session list loads, even
   empty, except when a search finds nothing in it. Where Needs you names where an item of a standalone project
@@ -128,8 +133,9 @@ started: from the project, from New Session's folder tab, from a TUI or from Cla
   its cleanup, and the overview list it as before, and it can be grouped. It is also listed with
   its project: in the sidebar's Projects region for a standalone project
   (§app.projects/list), in the Organizations region for a placed one
-  (§app.session-list/organizations), among the project's Builds — running or waiting while it is
-  live, or a web session not archived; otherwise in Done.
+  (§app.session-list/organizations), among the project's Sessions — running or waiting while it is
+  live, or a web session not archived; otherwise in Done until it is archived. An archived one is
+  listed in the Archive only, never with its project.
 - **A placed project's folder sessions are not organizational.** They carry no
   `SessionSummary.org` (§app.organizations/org-sessions), so nothing an org session is refused
   (forking, a profile, a link, a group) is refused to them. The org layer adds

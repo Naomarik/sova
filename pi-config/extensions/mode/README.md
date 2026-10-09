@@ -205,8 +205,11 @@ writer**).
     relay, which has no sha, says to find it in `git reflog`); then merge
     master in instead. Both look at the trees the call works in (`cd`, `git -C`).
     Evidence commits `census --changed` reports as orphaned (`orphanedEvidence`)
-    that the guard didn't already name are relayed once; a manifest conflict
-    during a rebase says to abort it rather than run merge-manifest. A
+    that the guard didn't already name are relayed once. Spec files a merge
+    leaves in conflict get one note per conflict: merge-manifest first for the
+    manifest, then the one recovery (the default branch's whole spec), plus the
+    merge-claims driver setup when a claim file conflicted without it; during
+    a rebase it says to abort it rather than run merge-manifest. A
     promote call's `driftWarnings` (a removed quantity another § still states)
     are relayed on its result in the same `[spec census]` note, never a block.
     `PI_SPEC_CENSUS_HOOK=0` turns it off.

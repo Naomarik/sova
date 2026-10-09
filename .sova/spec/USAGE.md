@@ -98,8 +98,10 @@ describes it, in the parent's document or its own), update it in your draft (a r
 sketch line) without asking: the task's go-ahead covers it, even for an `agreed` record. List each
 in your reply ("Also updates §X: <what>"). A gap the foreign § already had (a field its prose never
 named) is not a change your task made, even when your feature now depends on that field: mention
-it, or open a baseline draft. Before finishing, run `census --changed` once more: every changed file in the boundary is
-claimed, and any changed file outside it whose change a user sees is spec'd.
+it, or open a baseline draft. Before finishing, read each § the census ranks read first (spec mode's one
+`Unread § your change landed in` line after your last edit; without it, `census --changed --related`'s `readFirst`);
+the rest are named. Every changed file in the boundary is claimed, and any changed file outside it whose change a user
+sees is spec'd.
 Exempt work skips the draft, not the census.
 
 ## Changing the docs

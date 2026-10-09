@@ -130,8 +130,9 @@ writer**).
   deliberate machine inspection and review. A page's success
   or `done` status is not complete context or proof of reading. It writes a claim for behavior no claim
   covers in a feature draft before coding, claims only the files the task
-  changed, checks with `census --changed` before finishing that none of them is
-  left unclaimed, and promotes what it verified (or says why it could not).
+  changed, leaves none of them unclaimed, reads before finishing each § the
+  census note's one `Unread § your change landed in` line marks read first
+  (the rest are named), and promotes what it verified (or says why it could not).
   Work that changes no behavior — refactors, tests, tooling — is exempt, and
   the agent says it is claiming the exemption. The documentation changes only
   through drafts; a promotion `conflict` is per declaration, and it is

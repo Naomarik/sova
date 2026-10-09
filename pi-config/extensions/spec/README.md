@@ -78,6 +78,20 @@ behavior without a `requires` key is a `touched-uninvestigated` note, so the
 exit code stays what the files make it. It lists what to read; it never judges
 a flag. `--related` without `--changed` is a usage error.
 
+With `--related` the census also ranks the foreign touched § by the change's own
+lines. From the added and removed lines (`git diff -U0` against the base; an
+untracked file's lines all count as added) it takes code-shaped names (an inner
+capital, `_`, `-`, `.` or `$`, or all capitals), short string literals and
+numbers of two or more digits, and scores each § by the ones its passage holds,
+each weighted by how rare it is across the spec's passages. A string or number
+the change removed and didn't add back that a § still states is `stale`, and a
+§ with one ranks first. `census.rank` lists each foreign touched § once with
+`rank`, `score`, `reason` (the matched names) and `stale` (also set on its
+`touched` entry); `census.readFirst` is the first 5 that score or are stale,
+`census.named` the rest, so none is dropped. Human output prints `read first:`
+and `named:` lines. The ranking is a literal match, never proof; nothing in it
+knows a project.
+
 Every § the task didn't create is foreign. The task created each § the spec
 lacks at `--base` (the `created` of `foreign --base`), so one it promoted and
 committed since the base is its own; with `--spec <draft spec dir>`, the ids
@@ -365,8 +379,14 @@ from `../mode/index.ts`; in Claude Code workers from the hooks the subagents
 spawn path installs): after any tool call, bash included, a `git status` delta
 that shows a first changed file in the boundary, or a new one, runs
 `census --changed` and appends a short `[spec census]` digest to that tool
-result, saying so when the session has no draft yet. Nothing runs at the end of
-a turn: a reply carries no spec lines, and a turn ends when the model stops.
+result, saying so when the session has no draft yet. At the first call after
+the session's last edit it runs `census --changed --related` once and adds one
+line, `Unread § your change landed in: read first …; named …`: the foreign §
+the session's own files landed in, in rank order, minus those it ran
+`sova-spec.mjs read` on; it says nothing again until an edit changes that set.
+That line replaces the census the guide used to ask for by hand before
+finishing. Nothing runs at the end of a turn: a reply carries no spec lines, and
+a turn ends when the model stops.
 
 These are post-operation diagnostics, not a write barrier. An unchanged claim
 whose mapped code changed is advisory: review the affected behavior rather than

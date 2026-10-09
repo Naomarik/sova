@@ -19,7 +19,7 @@ Paths are relative to `pi-config/extensions/` unless they start with `.sova/` or
 | Loading | `mode/minor.ts` | Reads `spec-mode.md` once at load (`SPEC_INSTRUCTIONS`, trailing whitespace trimmed) and extracts its one `sh` block as `SPEC_CORE_SHELL`, the line that finds the trusted tools. |
 | Prompt composition | `mode/prompt.ts` | `composePrompt` appends minor blocks after the major mode's in registry order; with a spec writer set, the spec block gains the writer paragraph (`buildSpecWriterPrompt`). `composeWorkerPrompt` gives a worker the spec block plus `SPEC_WORKER_NOTE`. |
 | Session hooks | `mode/index.ts` | `before_agent_start` injects the block. `tool_call`/`tool_result` run the census. Worker modes are published on an event. |
-| The census note | `mode/spec-guard.ts` (`CensusHook`, `CENSUS_SKIP_TOOLS`) | After a tool call that can write, it compares the work tree's `git status` with the last look. On the first changed file in the spec boundary, and on each new file, it runs `sova-spec.mjs census --changed` and appends a short `[spec census]` digest to that tool result. |
+| The census note | `mode/spec-guard.ts` (`CensusHook`, `CENSUS_SKIP_TOOLS`) | After a tool call that can write, it compares the work tree's `git status` with the last look. On the first changed file in the spec boundary, and on each new file, it runs `sova-spec.mjs census --changed` and appends a short `[spec census]` digest to that tool result. At the first call after the session's last edit it runs `census --changed --related` once and adds one line, `Unread § your change landed in`, naming the foreign § the session's own files landed in that it hasn't `read` (`specReads` over its shell commands), at most 5 marked read first, the rest named. |
 | Forbidden writes | `mode/spec-guard.ts` (`SpecWriteGuard`) | It says so, in the same digest, when the current spec is written by hand, or when commits that a draft's evidence names are rewritten. |
 | pi worker checks | `mode/spec-worker.ts` | The same census for a pi worker. Workers start with `--no-extensions`, so the spawn path loads this file with `-e`. |
 | Worker brief | `subagents/spec-brief.ts` | A fixed excerpt of `spec-mode.md` for a code-writing worker whose prompt doesn't already carry the spec block. Each rule is found by an anchor and quoted whole, so the brief is generated, never hand-copied. |
@@ -49,6 +49,10 @@ Paths are relative to `pi-config/extensions/` unless they start with `.sova/` or
      baseline.
    - The digest's "No draft yet" line prints once per session per work tree; a census that can't run is said
      once per cause per work tree.
+   - At the first call after the last edit (a call that can write but changed nothing of the session's
+     own), `unreadStep` ranks the touched foreign § by the changed lines (`census --changed --related`)
+     and says the unread line once per set of landed §; § the session ran `sova-spec.mjs read` on drop
+     out. This replaces the census the guide used to ask for by hand before finishing.
    - `PI_SPEC_CENSUS_HOOK=0` turns the census off.
 5. **Workers.** The subagents extension listens for the session's mode event. While spec is on, a
    code-writing worker gets these:
@@ -78,6 +82,8 @@ config. Without the driver, Git falls back to its line merge.
 |---|---|
 | What the guide teaches about reading | §tools.spec/mode-reading |
 | The census note | §tools.spec/census-note |
+| The unread line after the last edit | §tools.spec/unread-landed |
+| The census's ranking by changed lines | §tools.spec/census-rank |
 | A turn ends when the model stops | §tools.spec/no-turn-end-check |
 | Workers get the minor modes | §chat.mode-menu/workers |
 | The merge note | §chat.worktrees/merge-card |

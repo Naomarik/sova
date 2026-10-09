@@ -6,8 +6,13 @@ This page is for running a **checkout** of Sova: choosing its runtime, and keepi
 systemd user unit or a launchd agent you write yourself. If you installed with
 `scripts/install.sh`, you don't need it: the installer's `--service` flag (or yes at its prompt)
 installs its own login service, `~/.config/systemd/user/sova.service` on Linux or
-`~/Library/LaunchAgents/io.github.naomarik.sova.plist` on macOS. On Linux the unit below has the
-same name, so use one or the other, not both.
+`~/Library/LaunchAgents/io.github.naomarik.sova.plist` on macOS. It restarts and stops like the
+definitions below (`Restart=always`, `TimeoutStopSec=90`; on macOS `KeepAlive` and
+`ExitTimeOut` 60), runs the installed `sova` launcher, and has no `--links` step: the installer
+links the extensions itself on every update. It needs launchd or a systemd user manager: with no
+`systemctl` (a container, WSL1, a minimal distro), `--service` stops with an error; with no user
+manager running (a container, an SSH login without lingering), it writes the unit and prints the
+command to start it. On Linux the unit below has the same name, so use one or the other, not both.
 
 ## Bun or Node
 

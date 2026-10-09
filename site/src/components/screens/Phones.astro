@@ -1,0 +1,11 @@
+---
+// Check in from your phone: the Access page on a phone with its one-use code, and a session on a
+// phone waiting on an open question. Both captured in Sova's folded layout.
+import Screen from "../Screen.astro";
+
+const sizes = "(max-width: 599px) 78vw, 300px";
+---
+<div class="phones">
+  <div class="phone"><div class="phone-screen screen-fill"><Screen at="feature.phone-access" sizes={sizes} /></div></div>
+  <div class="phone"><div class="phone-screen screen-fill"><Screen at="feature.phone-question" sizes={sizes} /></div></div>
+</div>

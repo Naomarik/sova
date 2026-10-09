@@ -297,18 +297,32 @@
 .org-card-meta { margin: auto 0 0; padding-top: var(--space-1); font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); }
 .org-empty { align-items: flex-start; }
 
-/* An org's page: four tabs under the title (the problems and links banners stay above them). */
+/* An org's page: five tabs under the title (the problems and links banners stay above them). The
+   strip sits in its own container, `org-tabs`, so each step below asks the strip's real width (a
+   query on the page's box once left 480–560px windows overflowing: the page's padding moves the
+   two apart). */
+.org-tabs-box { container: org-tabs / inline-size; }
 .org-tabs { flex: none; flex-wrap: nowrap; scrollbar-width: thin; }
 .org-tabs > .tab { flex: none; }
 .org-tab-count { color: var(--color-ink-muted); font-weight: var(--fw-regular); }
 /* Something in the tab waits on the operator; the words are in the tab's hidden text and title. */
 .org-tab-dot { width: 8px; height: 8px; border-radius: var(--r-full); background: var(--status-warn); flex: none; }
 .org-tabpanel { display: flex; flex-direction: column; gap: var(--space-5); }
-/* A phone: the four tabs fit a 420px window with two-digit counts; narrower, the strip scrolls and
-   the selected tab is kept in view. */
-@container insights (max-width: 479px) {
+/* Narrower than the five tabs at full spacing: tighter spacing, then the caption size, so a 420px
+   window shows all five with up to three-digit counts (measured live). Narrower than that the strip
+   scrolls and the selected tab is kept in view. Every tab stays 44px tall. */
+@container org-tabs (max-width: 599px) {
   .org-tabs { gap: 0; }
-  .org-tabs > .tab { padding: 0 var(--space-1); gap: var(--space-1); }
+  .org-tabs > .tab { padding: 0 var(--space-2); gap: var(--space-1); }
+}
+@container org-tabs (max-width: 499px) {
+  .org-tabs > .tab { padding: 0 3px; gap: 2px; font-size: var(--fs-caption); }
+}
+/* A project page borrows the strip (`.org-tabs.project-tabs`) without the box: it keeps the phone
+   rule it always had, on the page's box. */
+@container insights (max-width: 479px) {
+  .project-tabs { gap: 0; }
+  .project-tabs > .tab { padding: 0 var(--space-1); gap: var(--space-1); }
 }
 
 /* The owner card (People tab, §app.owner-page/owner): the select, the link line, the buttons with

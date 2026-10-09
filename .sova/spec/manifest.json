@@ -2693,7 +2693,8 @@
       "evidence": "verified",
       "code": [
         "scripts/install.sh",
-        "scripts/install.test.sh"
+        "scripts/install.test.sh",
+        "scripts/install.integration.test.ts"
       ]
     },
     "§app.installer/service": {
@@ -2703,7 +2704,9 @@
       "evidence": "verified",
       "code": [
         "scripts/install.sh",
-        "scripts/install.test.sh"
+        "scripts/install.test.sh",
+        "scripts/install.integration.test.ts",
+        "docs/running-as-a-service.md"
       ]
     },
     "§app/installer": {
@@ -2712,7 +2715,8 @@
       "evidence": "verified",
       "code": [
         "scripts/install.sh",
-        "scripts/install.test.sh"
+        "scripts/install.test.sh",
+        "scripts/install.integration.test.ts"
       ]
     },
     "§app.extensions/cards": {
@@ -4180,7 +4184,10 @@
         "server/queue.test.ts",
         "server/baton-recount.ts",
         "server/index.ts",
-        "server/app.ts"
+        "server/app.ts",
+        "shared/baton.ts",
+        "server/record-decision-history.test.ts",
+        "server/harness/pi/golden/state/G6-baton-decision.jsonl"
       ],
       "requires": [
         "§app.baton/links"
@@ -4539,7 +4546,9 @@
         "server/reconcile.ts",
         "shared/decisions.ts",
         "server/org-routes.ts",
-        "server/org-holder.ts"
+        "server/org-holder.ts",
+        "server/decision-markers-attach.test.ts",
+        "server/org-history/bootstrap.test.ts"
       ],
       "requires": [
         "§app.organizations/workspace-repo",
@@ -4847,7 +4856,11 @@
         "server/spec-tool-fake.ts",
         "server/outreach/sender-test-fixtures.ts",
         "server/outreach-test-fixtures.ts",
-        "server/outreach.integration.test.ts"
+        "server/outreach.integration.test.ts",
+        "server/org-history-tools.ts",
+        "server/project-overseer.test.ts",
+        "server/baton.ts",
+        "server/org-history-preview.test.ts"
       ],
       "requires": [
         "§app.baton/goal-and-loadout",
@@ -4909,7 +4922,13 @@
         "src/lib/decisions-view.ts",
         "src/lib/decisions-view.test.ts",
         "src/lib/api.ts",
-        "src/projects.css"
+        "src/projects.css",
+        "statecharts/src/sova/statecharts/rules/baton.cljc",
+        "statecharts/src/sova/statecharts/baton.cljc",
+        "statecharts/test/sova/statecharts/refit/baton_test.cljc",
+        "server/decision-markers.test.ts",
+        "server/vendor/statecharts.js",
+        "src/components/ProjectOrgPart.tsx"
       ],
       "requires": [
         "§app.baton/hand-off"
@@ -7219,7 +7238,8 @@
         "server/search-tools-fake.ts",
         "server/overseer.ts",
         "server/org-about-privacy.test.ts",
-        "server/org-about-privacy.integration.test.ts"
+        "server/org-about-privacy.integration.test.ts",
+        "server/contact-redactor.test.ts"
       ],
       "requires": [
         "§app.organizations/privacy",
@@ -7236,7 +7256,9 @@
         "server/overseer-org-view.ts",
         "server/overseer-org-tools.ts",
         "server/overseer-org-tools.test.ts",
-        "server/search-tools-fake.ts"
+        "server/search-tools-fake.ts",
+        "server/org-history-tools.ts",
+        "server/overseer-runtime.test.ts"
       ],
       "requires": [
         "§app.organizations/org-cards",
@@ -9286,7 +9308,8 @@
         "server/baton.ts",
         "server/orgs.ts",
         "server/reconcile.ts",
-        "server/project-holds.ts"
+        "server/project-holds.ts",
+        "server/org-history-boot.test.ts"
       ],
       "requires": [
         "§app.project-overseer/statecharts",
@@ -11144,7 +11167,8 @@
         "src/lib/project-page.ts",
         "src/lib/project-page.test.ts",
         "src/projects.css",
-        "src/lib/projects-route.ts"
+        "src/lib/projects-route.ts",
+        "src/components/ProjectOrgPart.tsx"
       ]
     },
     "§chat.playbooks/bundles": {
@@ -16128,6 +16152,341 @@
         "site/README.md",
         "site/package.json"
       ]
+    },
+    "§app.installer/ref": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "scripts/install.sh",
+        "scripts/install.test.sh",
+        "scripts/install.integration.test.ts",
+        "site/src/data/site.ts"
+      ]
+    },
+    "§app.org-history/actors": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-overseer/autonomy-levels",
+        "§app.requirements/decisions"
+      ],
+      "code": [
+        "shared/org-history.ts",
+        "server/org-history/record.ts",
+        "server/org-history/history.test.ts",
+        "server/org-history/test-fixture.ts",
+        "server/org-history-capture.ts",
+        "server/record-decision-history.test.ts",
+        "server/decision-markers.test.ts",
+        "server/org-history-capture.test.ts",
+        "server/org-history-lineage.test.ts"
+      ]
+    },
+    "§app.org-history/capture": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/org-history-capture.ts",
+        "shared/org-history.ts",
+        "server/org-history/query.ts",
+        "server/org-history/history.test.ts",
+        "server/org-history/test-fixture.ts",
+        "server/org-history-capture.test.ts",
+        "server/org-history-effects.test.ts",
+        "server/orgs.ts",
+        "server/org-engine.ts",
+        "server/project-overseer.ts",
+        "shared/baton.ts",
+        "server/org-history-lineage.test.ts",
+        "server/org-history-preview.test.ts",
+        "server/baton.ts",
+        "server/overseer-org-part.ts",
+        "server/project-coding-runtime.test.ts"
+      ],
+      "requires": [
+        "§app.org-history/ledger",
+        "§app.project-overseer/statecharts"
+      ]
+    },
+    "§app.org-history/durability": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-overseer/statecharts",
+        "§app.requirements/decisions",
+        "§app.org-history/ledger"
+      ],
+      "code": [
+        "server/org-history/store.ts",
+        "server/org-history/service.ts",
+        "server/org-host/index.ts",
+        "server/org-host/store.ts",
+        "server/org-host/log.ts",
+        "server/org-host/journal.test.ts",
+        "server/org-history/history.test.ts",
+        "server/org-history/test-fixture.ts",
+        "statecharts/src/sova/statecharts/rules/baton.cljc",
+        "statecharts/src/sova/statecharts/baton.cljc",
+        "statecharts/test/sova/statecharts/refit/baton_test.cljc",
+        "server/decisions.ts",
+        "server/decision-markers.test.ts",
+        "server/vendor/statecharts.js",
+        "server/org-host/host.test.ts",
+        "server/org-host/privacy.test.ts",
+        "server/org-host/test-statechart.ts",
+        "server/org-history-capture.ts",
+        "server/org-history-outreach.test.ts",
+        "server/org-history-boot.test.ts",
+        "server/org-engine.ts",
+        "server/decision-markers-attach.test.ts"
+      ]
+    },
+    "§app.org-history/evidence": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.harness/reader",
+        "§app.harness/new-work"
+      ],
+      "code": [
+        "shared/org-history.ts",
+        "server/org-history/record.ts",
+        "server/org-history/history.test.ts",
+        "server/org-history/test-fixture.ts"
+      ]
+    },
+    "§app.org-history/ledger": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-overseer/statecharts",
+        "§app.organizations/workspace-repo"
+      ],
+      "code": [
+        "shared/org-history.ts",
+        "server/org-history/store.ts",
+        "server/org-history/record.ts",
+        "server/org-history/index.ts",
+        "server/org-history/history.test.ts",
+        "server/org-history/test-fixture.ts",
+        "server/org-history-capture.ts"
+      ]
+    },
+    "§app.org-history/links": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-overseer/statecharts"
+      ],
+      "code": [
+        "shared/org-history.ts",
+        "server/org-history/record.ts",
+        "server/org-history/query.ts",
+        "server/org-history/history.test.ts",
+        "server/org-history/test-fixture.ts",
+        "server/org-history-lineage.test.ts",
+        "server/org-history/index.ts",
+        "server/org-history/privacy.test.ts",
+        "server/org-history-annotations.test.ts",
+        "server/org-history-tools.ts",
+        "server/org-history-tools.test.ts"
+      ]
+    },
+    "§app.org-history/negatives": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.baton/hand-off",
+        "§app.project-overseer/tools",
+        "§app.requirements/decisions"
+      ],
+      "code": [
+        "server/baton-loadout.ts",
+        "server/org-history-tools.ts",
+        "server/project-overseer-tools.ts",
+        "shared/org-history.ts",
+        "server/org-history/record.ts",
+        "server/org-history/query.ts",
+        "server/org-history/history.test.ts",
+        "server/org-history/test-fixture.ts",
+        "server/org-history-tools.test.ts",
+        "shared/baton.ts",
+        "server/record-decision-history.test.ts"
+      ]
+    },
+    "§app.org-history/page": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.organizations/org-page",
+        "§app.organizations/project-page"
+      ],
+      "code": [
+        "src/components/OrgHistory.tsx",
+        "src/components/OrgHistoryInspector.tsx",
+        "src/components/OrgHistoryChain.tsx",
+        "src/lib/org-history-route.ts",
+        "src/lib/org-history-route.test.ts",
+        "src/lib/org-history-words.ts",
+        "src/lib/org-history-words.test.ts",
+        "src/lib/org-history-source.ts",
+        "src/lib/org-history-source.browser.test.ts",
+        "src/lib/org-history-chain.ts",
+        "src/lib/org-history-chain.test.ts",
+        "src/org-history.css",
+        "src/lib/orgs-route.ts",
+        "src/lib/orgs-route.test.ts",
+        "src/lib/org-tabs.ts",
+        "src/lib/org-tabs.test.ts",
+        "src/lib/org-page-route.ts",
+        "src/lib/api.ts",
+        "src/components/OrgsView.tsx",
+        "src/components/ProjectPage.tsx",
+        "src/components/ProjectOrgPart.tsx",
+        "src/lib/org-history-view.browser.test.ts",
+        "src/lib/org-history-chain-read.browser.test.ts",
+        "server/org-history/query.ts",
+        "src/lib/org-history-css.test.ts",
+        "src/orgs.css"
+      ]
+    },
+    "§app.org-history/portability": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.organizations/holder",
+        "§app.organizations/portability",
+        "§app.organizations/workspace-repo"
+      ],
+      "code": [
+        "shared/org-history.ts",
+        "server/org-history/portability.test.ts",
+        "server/org-history/history.test.ts",
+        "server/org-history/test-fixture.ts",
+        "server/org-history/attach.test.ts",
+        "server/org-history/bootstrap.ts",
+        "server/org-history/bootstrap.test.ts"
+      ]
+    },
+    "§app.org-history/rationale": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.organizations/workspace-repo"
+      ],
+      "code": [
+        "shared/org-history.ts",
+        "server/org-history-routes.ts",
+        "server/org-history/store.ts",
+        "server/org-history/index.ts",
+        "server/org-history/service.ts",
+        "server/org-history/history.test.ts",
+        "server/org-history/test-fixture.ts",
+        "server/org-history-routes.test.ts",
+        "server/org-history-annotations.ts",
+        "server/org-history-annotations.test.ts",
+        "server/org-history/query.ts"
+      ]
+    },
+    "§app.org-history/readers": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.organizations/about",
+        "§app.organizations/privacy",
+        "§app.project-overseer/tools",
+        "§app.overseer/org-reads",
+        "§app.overseer/org-projection",
+        "§mesh.remote-sessions/org-pages"
+      ],
+      "code": [
+        "server/org-history-routes.ts",
+        "server/org-history-tools.ts",
+        "server/project-overseer-tools.ts",
+        "server/overseer-tools.ts",
+        "server/org-history/query.ts",
+        "server/org-history/privacy.test.ts",
+        "server/org-history/history.test.ts",
+        "server/org-history/test-fixture.ts",
+        "server/org-host/privacy.test.ts",
+        "server/org-history-routes.test.ts",
+        "server/org-history-tools.test.ts",
+        "server/overseer-runtime.test.ts",
+        "server/org-history-surfaces.test.ts",
+        "server/org-history-annotations.test.ts"
+      ]
+    },
+    "§app.org-history/reads": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/org-history-routes.ts",
+        "server/org-history-tools.ts",
+        "server/org-history/index.ts",
+        "server/org-history/query.ts",
+        "server/org-history/service.ts",
+        "server/org-history/history.test.ts",
+        "server/org-history/test-fixture.ts",
+        "server/org-history-routes.test.ts",
+        "server/org-history-tools.test.ts",
+        "shared/org-history.ts",
+        "server/org-history/privacy.test.ts",
+        "server/org-history-lineage.test.ts"
+      ],
+      "requires": [
+        "§app.org-history/ledger",
+        "§app.org-history/readers"
+      ]
+    },
+    "§app.org-history/seams": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.harness/new-work",
+        "§app.projects/seam"
+      ],
+      "code": [
+        "shared/org-history.ts"
+      ]
+    },
+    "§app/org-history": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "shared/org-history.ts"
+      ]
+    },
+    "§site.landing/fold-device": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "site/src/components/screens/FoldDevice.astro",
+        "site/src/styles/mock.css",
+        "site/src/pages/index.astro"
+      ]
+    },
+    "§site/landing": {
+      "kind": "note",
+      "authority": "accepted",
+      "evidence": "reviewed"
     }
   },
   "boundary": {

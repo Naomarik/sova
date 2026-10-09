@@ -132,6 +132,17 @@ own read-only tools and the team tools team_inbox, team_msg, team_ask, team_rost
 wake_nudge. A skipped call neither looks at the tree nor moves the census's baseline, so the next
 call that can write reports every change since. Shell commands are never skipped.
 
+## §tools.spec/census-created — `census --changed` counts § created since its base as the task's own
+
+`census --changed --base <rev>` (the base is `HEAD` without the flag) treats a § the spec lacks at
+`<rev>` and has now as one the task created: the same set `foreign --base <rev>` reports as
+`created`. "Now" is the `--spec` draft when one is given, otherwise the working tree's
+`.sova/spec`, so a § the task promoted and committed after `<rev>` counts as its own just like one
+still in its draft. Such a § is never in `census.foreign` or the `foreign-summary` note, gets no
+`touched-foreign` note, and its `touched` entry (with `--related`) says `created: true`. A § that
+existed at `<rev>` stays foreign however the task changed it. With `--own-base` revisions, a §
+absent at every one of them is the task's own as well.
+
 ## §tools.spec/mode-reading — Spec mode teaches contents first, then one passage
 
 The spec minor mode's guide teaches the pull path. The agent finds its roots with `map` and `where`,

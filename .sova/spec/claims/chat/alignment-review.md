@@ -1,7 +1,7 @@
-# §chat/alignment-review — Adversarial review of alignments (experimental)
+# §chat/alignment-review — Adversarial review of alignments
 > Part of the Sova design spec · [overview](../design/overview.md)
 
-An experimental addition to alignments (§chat/alignment): in a session with the **align** minor
+An addition to alignments (§chat/alignment): in a session with the **align** minor
 mode on, a fresh, read-only reviewer checks the plan and the finished diff of Complex work, at most
 once each per alignment, and the result is recorded on the alignment itself. The session's model
 decides when; the user never has to ask, and nothing asks the user for approval to review.

@@ -38,6 +38,9 @@ export function makeWorld(ids: string[], clock: { now: number }, procScan: () =>
   const devices = new Map<string, Device>();
   const killed: number[] = [];
   const crashed = new Set<string>();
+  const logs: string[] = [];
+  /** Pairs ("a>b", either order) that never talk directly: the document goes through the others. */
+  const cut = new Set<string>();
   const build = (d: Omit<Device, "agent"> & { agent?: PoolAgent }): PoolAgent =>
     new PoolAgent({
       agentDir: d.agentDir,
@@ -58,7 +61,10 @@ export function makeWorld(ids: string[], clock: { now: number }, procScan: () =>
       crash: (step) => {
         if (devices.get(d.id)?.crashAt === step) { crashed.add(step); throw new Error(`crash at ${step}`); }
       },
-      log: process.env.POOL_TEST_LOG ? (m: string) => console.log(`[${d.id}] ${m}`) : () => {},
+      log: (m: string) => {
+        logs.push(`[${d.id}] ${m}`);
+        if (process.env.POOL_TEST_LOG) console.log(`[${d.id}] ${m}`);
+      },
     });
   // A peer as `from` reaches it: JSON on the wire, and an offline device answers nothing.
   const wire = <T>(v: T): T => JSON.parse(JSON.stringify(v));
@@ -66,13 +72,13 @@ export function makeWorld(ids: string[], clock: { now: number }, procScan: () =>
     const target = () => {
       const d = devices.get(to)!;
       const me = devices.get(from)!;
-      if (d.offline || me.offline) throw new Error(`${to} unreachable`);
+      if (d.offline || me.offline || cut.has(`${from}>${to}`) || cut.has(`${to}>${from}`)) throw new Error(`${to} unreachable`);
       return d.agent;
     };
     return {
       id: to,
       doc: async () => wire(target().doc()),
-      pushDoc: async (doc) => wire(target().receiveDoc(wire(doc))!),
+      pushDoc: async (doc) => wire(target().receiveDoc(wire(doc), from)!),
       lend: async (req) => wire(await target().lend(from, wire(req))),
       commit: async (req) => wire(await target().commit(from, wire(req))),
       giveBack: async (req) => wire(await target().receiveReturn(from, wire(req))),
@@ -95,6 +101,8 @@ export function makeWorld(ids: string[], clock: { now: number }, procScan: () =>
     dev,
     killed,
     crashed,
+    logs,
+    cut,
     /** The process on `id` died and started again: a fresh agent, the same files. */
     restart(id: string) {
       const d = dev(id);

@@ -222,7 +222,8 @@ links". When nothing answers in time, it replies with the state as it stands.
   withdrew the row first waits up to 3 s for that host's own close (§mesh.public/withdrawn-hop). A
   hop is tried once; a POST is never retried or replayed. At most 256 HTTP hops and 256 socket hops
   (`/ws/h` and `/ws/s` together, 4 per link) are open at once.
-- A hop's answer passes through without cookies or `x-sova-*` headers and always with
+- A hop's answer passes through without cookies, `x-sova-*`, `Service-Worker-Allowed` or
+  `Clear-Site-Data` headers (the share origin is every routed host's) and always with
   `Cache-Control: no-store`, `Referrer-Policy: no-referrer` and `nosniff`. A `p` hop is the
   exception: its answer (redirects, 502s and cookies included) passes as the minting host sent it,
   minus hop-by-hop and `x-sova-*` headers, with a preview's limits (§mesh.public/preview-limits),
@@ -234,11 +235,18 @@ links". When nothing answers in time, it replies with the state as it stands.
   page's messages keep the 1 KB cap before anything is forwarded; the host's messages to the page
   aren't capped by it. The origin's own closes (1000, 4000, 4410) and statuses (404, 410, 429) pass
   through as they are.
-- A hashed `/h/assets/<name>` comes from the gateway's own share build first, else from the first
-  live host whose snapshot listed the name, typed by its extension (js, css, woff2, svg, png; any
-  other is never fetched), capped at 5 MB while streaming. One name is typed by its exact name
-  instead: the frame host `vis-frame.html` is `text/html`, passed with the frame host's own
-  headers (§app.baton/share-listener); any other `.html` name is never fetched.
+- A hashed `/h/assets/<name>` comes from the gateway's own share build first, else from the live
+  host whose snapshot listed the name, typed by its extension (js, css, woff2, svg, png; any other
+  is never fetched), capped at 5 MB while streaming, and served with
+  `Content-Security-Policy: sandbox; default-src 'none'` (a script or SVG opened as a page runs
+  nothing on the share origin; loaded by the page, it works as before). When more than one live
+  host listed the name, the gateway serves it only once every one of them answered the same bytes
+  (SHA-256, each under the 5 MB cap): it keeps the agreed digest per name and set of listers, and
+  from then on serves the bytes of the first lister whose answer matches it. Until every lister
+  has answered alike, or while their bytes differ (logged with their nodes), the asset is 503. One
+  name is typed by its exact name instead: the frame host `vis-frame.html` is `text/html`, passed
+  from the first live host that listed it with the frame host's own headers
+  (§app.baton/share-listener); any other `.html` name is never fetched.
 
 ## §mesh.public/withdrawn-hop — A link its own host withdrew
 

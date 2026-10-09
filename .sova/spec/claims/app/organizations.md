@@ -158,7 +158,8 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
     the last commit (relative time with the exact stamp as its title, short sha, message) and
     "· uncommitted changes" while the repo has any, Commit Now, and the push remote. Commit Now
     says what it did: "Committed {short sha} and pushed.", "Committed {short sha}.", "Nothing new
-    to commit. Pushed the commits the remote lacked." or "Nothing new to commit."
+    to commit. Pushed the commits the remote lacked." or "Nothing new to commit." Then the
+    **WhatsApp Number** card (§app.outreach/org-sender): which number the org's messages go from.
 - **Counts.** Each tab's label is followed by a count: Sessions, every baton session of the org;
   People, every roster person (active, proposed and left); Projects, the projects not archived. History and
   Workspace show no count: History is a filtered read with its own count line, and Workspace
@@ -297,7 +298,7 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
   - **Sent on WhatsApp** (§app.outreach/log), after the owner links, when they were sent anything:
     one row per send, newest first: what went (the gathering's public title, "A preview" or "A
     message"), the latest event as a chip (Sent, Delivered, Read, Failed, Unknown, Not sent), when,
-    and a failure's code.
+    the number it went from ("from {label} …123") when the log says, and a failure's code.
   - **Visits**, newest first, one row per visit (§app.baton/visits): `Opened {session title}`
     (`Opened the owner page` for a visit through an owner link),
     the device family, `for about {duration}` once it lasted a minute or more, and the relative

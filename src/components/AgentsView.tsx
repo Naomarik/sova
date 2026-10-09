@@ -3,21 +3,25 @@ import { newestTopics, topicTime } from "../../shared/outline-order";
 import type { AgentsInsight, ContextInfo, OutlineTopic, SessionSummary, WorktreeStatus } from "../../shared/protocol";
 import { fetchSessionInsight, fetchWorktrees, getUsageSessions, getUsageToday } from "../lib/api";
 import {
+  allGone,
   BOARD_FILTERS,
   BOARD_PAGE,
   type BoardFilter,
+  boardGroups,
   type BoardRow,
   boardRows,
   boardTotals,
   filterCounts,
   gistTitle,
   inDefaultScope,
-  money,
+  linesShown,
+  orderTrees,
   ROW_TOPICS,
   rowDetail,
   rowHasDetail,
   sortRows,
   STATE_WORD,
+  teamChips,
   teamForLink,
   totalsLine,
   treeLines,
@@ -27,6 +31,7 @@ import {
   treeTitle,
   visibleRows,
   workersChips,
+  workersLine,
   WORKTREES_POLL_MS,
   worktreePathsKey,
 } from "../lib/agents-board";
@@ -45,7 +50,6 @@ import "../agents-board.css";
 import { ActionMenu } from "./ActionMenu";
 import { ContextRing } from "./ContextRing";
 import { CostsTab } from "./CostsTab";
-import { MoveToGroupMenu } from "./Groups";
 import { InsightsPage, ListSkeleton } from "./InsightsPage";
 import { TitleField } from "./SelectionToolbar";
 import { sessionHref } from "./Sidebar";
@@ -126,14 +130,22 @@ function TreeMergeMark(props: { tree: WorktreeStatus }) {
   );
 }
 
-function TreeLinesMark(props: { tree: WorktreeStatus }) {
+/** `+added −removed`; in the cell (`compact`) a pair over 9,999 shortens, the exact counts in its title. */
+function TreeLinesMark(props: { tree: WorktreeStatus; compact?: boolean }) {
   return (
     <Show when={treeLines(props.tree)}>
-      {(l) => (
-        <span class="board-lines text-mono text-num" aria-label={`${l().added} lines added, ${l().removed} removed`}>
-          <span class="git-add">+{l().added}</span> <span class="git-del">−{l().removed}</span>
-        </span>
-      )}
+      {(l) => {
+        const shown = () => (props.compact ? linesShown(l()) : { added: String(l().added), removed: String(l().removed), short: false });
+        return (
+          <span
+            class="board-lines text-mono text-num"
+            aria-label={`${l().added} lines added, ${l().removed} removed`}
+            title={shown().short ? `+${l().added.toLocaleString("en-US")} −${l().removed.toLocaleString("en-US")} lines` : undefined}
+          >
+            <span class="git-add">+{shown().added}</span> <span class="git-del">−{shown().removed}</span>
+          </span>
+        );
+      }}
     </Show>
   );
 }
@@ -158,49 +170,67 @@ function Dash(props: { words: string }) {
   );
 }
 
-/** One tree in the Worktrees cell: branch, merge reading, lines, uncommitted dot. */
+/**
+ * One tree in the Worktrees cell: branch, merge reading, lines, then the uncommitted dot and any
+ * "+N". Four slots, always there (empty when it has none), so from 768px the cell's grid lines
+ * the readings and counts of both trees up in columns.
+ */
 function TreeMark(props: { tree: WorktreeStatus; class?: string; children?: JSX.Element }) {
   return (
     <span class={props.class ? `board-tree ${props.class}` : "board-tree"}>
       <span class="board-tree-branch text-mono">{treeName(props.tree)}</span>
-      <TreeMergeMark tree={props.tree} />
-      <TreeLinesMark tree={props.tree} />
-      <DirtyMark tree={props.tree} />
-      {props.children}
+      <span class="board-tree-reading">
+        <TreeMergeMark tree={props.tree} />
+      </span>
+      <span class="board-tree-count">
+        <TreeLinesMark tree={props.tree} compact />
+      </span>
+      <span class="board-tree-end">
+        <DirtyMark tree={props.tree} />
+        {props.children}
+      </span>
     </span>
   );
 }
 
-/** The Worktrees cell: the first tree (two when the board is wide), and "+N" for the rest. */
+/**
+ * The Worktrees cell: at most 2 lines, the most useful trees first, "+N" for the rest on the
+ * second; folded, the first tree and "+N" for every other. Every tree gone: one muted line.
+ */
 function TreesCell(props: { trees: WorktreeStatus[] | undefined; down: boolean }) {
   return (
     <Show when={props.trees} fallback={<Dash words={props.down ? "Worktrees not read" : "Reading worktrees"} />}>
-      {(trees) => (
-        <Show when={trees()[0]} fallback={<Dash words="No worktree" />}>
-          {(t) => (
-            <span class="board-tree-set" title={trees().map(treeTitle).join("\n\n")}>
-              <TreeMark tree={t()} />
-              <Show when={trees()[1]}>
-                {(t2) => (
-                  <TreeMark tree={t2()} class="board-tree-wide">
-                    {/* Wide: the rest ride the second tree's line, so the cell stays two lines tall. */}
-                    <Show when={trees().length > 2}>
-                      <span class="board-tree-more-wide">
-                        <CountChip title={`${trees().length} worktrees`}>+{trees().length - 2}</CountChip>
-                      </span>
-                    </Show>
-                  </TreeMark>
-                )}
-              </Show>
-              <Show when={trees().length > 1}>
-                <span class="board-tree-more">
-                  <CountChip title={`${trees().length} worktrees`}>+{trees().length - 1}</CountChip>
+      {(trees) => {
+        const ordered = createMemo(() => orderTrees(trees()));
+        const title = () => trees().map(treeTitle).join("\n\n");
+        return (
+          <Show when={ordered()[0]} fallback={<Dash words="No worktree" />}>
+            {(t) => (
+              <Show when={!allGone(trees())} fallback={<span class="board-tree-gone" title={title()}>{trees().length} worktrees, all gone</span>}>
+                <span class="board-tree-set" title={title()}>
+                  <TreeMark tree={t()} />
+                  <Show when={ordered()[1]}>
+                    {(t2) => (
+                      <TreeMark tree={t2()} class="board-tree-second">
+                        <Show when={ordered().length > 2}>
+                          <span class="board-tree-more-second">
+                            <CountChip title={`${ordered().length} worktrees`}>+{ordered().length - 2}</CountChip>
+                          </span>
+                        </Show>
+                      </TreeMark>
+                    )}
+                  </Show>
+                  <Show when={ordered().length > 1}>
+                    <span class="board-tree-more">
+                      <CountChip title={`${ordered().length} worktrees`}>+{ordered().length - 1}</CountChip>
+                    </span>
+                  </Show>
                 </span>
               </Show>
-            </span>
-          )}
-        </Show>
-      )}
+            )}
+          </Show>
+        );
+      }}
     </Show>
   );
 }
@@ -441,13 +471,6 @@ function BoardRowView(props: { row: BoardRow; ctx: BoardCtx }) {
     const reason = archiveBlockReason({ ...x, busy: busyOf(x) });
     return { label: x.archived ? "Unarchive" : "Archive", blocked: reason ? `Can't archive: ${reason}.` : null };
   };
-  const runArchive = () => {
-    const a = archive();
-    if (!a || a.blocked) return;
-    const path = s().path;
-    const next = !s().archived;
-    void archiveSession(path, next, orgProjectOf(s())).then((ok) => ok && props.ctx.onArchiveChanged(path, next));
-  };
   const saveTitle = async (title: string | null) => {
     props.ctx.setRenaming(null);
     if (await renameSession(s(), title)) props.ctx.onRefresh();
@@ -467,7 +490,7 @@ function BoardRowView(props: { row: BoardRow; ctx: BoardCtx }) {
     if (sel && !sel.isCollapsed && sel.anchorNode && e.currentTarget.contains(sel.anchorNode)) return;
     location.hash = sessionHref(s().path);
   };
-  const workersLine = () => (r().total > 0 ? `${r().working}/${r().total} working` : "");
+  const teams = createMemo(() => teamChips(r().teams));
 
   return (
     <li class="board-row" id={`board-row-${s().id}`} data-state={r().state} classList={{ "board-row-open": open() && hasDetail() }} onClick={onRowClick}>
@@ -521,54 +544,66 @@ function BoardRowView(props: { row: BoardRow; ctx: BoardCtx }) {
             {/* Folded width: the Activity and Workers columns as one micro line. */}
             <p class="board-micro">
               <Show when={compactModel(s().model)}>{(m) => <span class="text-mono">{m()}</span>}</Show>
-              <Show when={workersLine()}>{(w) => <span>{w()}</span>}</Show>
+              <Show when={r().total > 0 && workersLine(r())}>{(w) => <span>{w()}</span>}</Show>
               <span>{relativeTime(s().lastActiveAt, props.ctx.now)}</span>
             </p>
           </div>
         </div>
 
+        {/* Each cell is at most 2 lines: what matters first, the rest muted under it. */}
         <div class="board-cell board-activity">
-          <span class="board-model text-mono" title={s().model ?? undefined}>
-            {compactModel(s().model) ?? "—"}
+          <span class="board-cell-line">
+            <StateChip row={r()} class="board-state-cell" />
+            <span class="board-when" title={s().lastActiveAt}>
+              {relativeTime(s().lastActiveAt, props.ctx.now)}
+            </span>
           </span>
-          <Show when={contextOf(s())}>{(c) => <ContextRing info={c()} />}</Show>
-          <span class="board-when" title={s().lastActiveAt}>
-            {relativeTime(s().lastActiveAt, props.ctx.now)}
+          <span class="board-cell-line board-cell-sub">
+            <span class="board-model text-mono" title={s().model ?? undefined}>
+              {compactModel(s().model) ?? "—"}
+            </span>
+            <Show when={contextOf(s())}>{(c) => <ContextRing info={c()} />}</Show>
           </span>
-          <StateChip row={r()} class="board-state-cell" />
         </div>
 
         <div class="board-cell board-workers">
-          <Show when={r().total > 0} fallback={<Dash words="No workers" />}>
-            <span class="board-count">
-              <span class="text-num">
-                {r().working}/{r().total}
-              </span>{" "}
-              working
-            </span>
-          </Show>
-          <For each={r().teams}>
-            {(t) => (
-              <a
-                class="chip chip-count"
-                href={agentsHref(teamKey(t))}
-                title={t.objective ? capTitle(`${t.name}: ${t.objective}`) : t.name}
-                onClick={(e) => {
-                  if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-                  e.preventDefault();
-                  props.ctx.onOpenAgents(s().path);
-                }}
-              >
-                {t.name}
-              </a>
-            )}
-          </For>
-          <Show when={props.ctx.workersSpend(s().id)}>
-            {(usd) => (
-              <span class="board-spend text-mono text-num" title="What its workers have spent, at any depth, at API prices">
-                {money(usd())}
+          <Show when={workersLine(r(), props.ctx.workersSpend(s().id))} fallback={<Dash words="No workers" />}>
+            {(line) => (
+              <span class="board-cell-line board-count text-num" title="Workers working, workers in all, and what they have spent, at any depth, at API prices">
+                {line()}
               </span>
             )}
+          </Show>
+          <Show when={teams().shown.length > 0}>
+            <span class="board-cell-line board-cell-sub board-teams">
+              <For each={teams().shown}>
+                {(t) => (
+                  <a
+                    class="chip chip-count board-team"
+                    href={agentsHref(teamKey(t))}
+                    title={t.objective ? capTitle(`${t.name}: ${t.objective}`) : t.name}
+                    onClick={(e) => {
+                      if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+                      e.preventDefault();
+                      props.ctx.onOpenAgents(s().path);
+                    }}
+                  >
+                    {t.name}
+                  </a>
+                )}
+              </For>
+              <Show when={teams().rest > 0}>
+                <button
+                  type="button"
+                  class="chip chip-count board-team board-team-more"
+                  aria-label={`${teams().rest} more ${teams().rest === 1 ? "team" : "teams"}: open the Agents tab of ${quoted(s().title)}`}
+                  title={`${r().teams.length} teams`}
+                  onClick={() => props.ctx.onOpenAgents(s().path)}
+                >
+                  +{teams().rest}
+                </button>
+              </Show>
+            </span>
           </Show>
         </div>
 
@@ -591,23 +626,6 @@ function BoardRowView(props: { row: BoardRow; ctx: BoardCtx }) {
           >
             <Icon name="info" />
           </button>
-          <Show when={archive()} fallback={<span class="board-act-gap board-act-wide" aria-hidden="true" />}>
-            {(a) => (
-              <button
-                type="button"
-                class="button button-icon button-ghost board-act board-act-wide"
-                aria-label={`${a().label} ${quoted(s().title)}`}
-                aria-disabled={a().blocked ? "true" : undefined}
-                title={a().blocked ?? `${a().label} session`}
-                onClick={runArchive}
-              >
-                <Icon name={s().archived ? "undo" : "archive"} />
-              </button>
-            )}
-          </Show>
-          <span class="board-act-wide board-move">
-            <MoveToGroupMenu session={s()} onChanged={props.ctx.onRefresh} iconOnly />
-          </span>
           <RowMenu row={r()} ctx={props.ctx} archive={archive()} />
         </div>
       </div>
@@ -716,8 +734,13 @@ export function AgentsView(props: {
     return extra ? [...list, extra] : list;
   });
   const byPath = createMemo(() => new Map(paged().map((r) => [r.session.path, r])));
-  /** Paths, not rows: a poll hands back fresh row objects, and a row keyed by its path keeps its DOM (and a rename field's focus). */
-  const pagedPaths = createMemo(() => paged().map((r) => r.session.path), undefined, { equals: (a, b) => a.length === b.length && a.every((p, i) => p === b[i]) });
+  /** The rendered rows under their headings: paging cuts the one sorted list, the groups only split what renders. */
+  const groups = createMemo(() => boardGroups(paged()));
+  /** A heading counts every row the chip and search show in its state, rendered or not. */
+  const groupCounts = createMemo(() => new Map(boardGroups(shown()).map((g) => [g.key, g.rows.length])));
+  /** Keys and paths, not rows: a poll hands back fresh row objects, and a row keyed by its path keeps its DOM (and a rename field's focus). */
+  const groupKeys = createMemo(() => groups().map((g) => g.key), undefined, { equals: sameList });
+  const headed = () => groupKeys().length > 1;
 
   /**
    * Which sessions the worktrees request names. The rendered rows — except under Unmerged, which
@@ -885,35 +908,36 @@ export function AgentsView(props: {
               }}
             />
           </label>
-          <div class="board-bar-line">
-            <div class="board-filters" role="group" aria-label="Filter sessions">
-              <For each={BOARD_FILTERS}>
-                {(f) => (
-                  <button
-                    type="button"
-                    class="board-filter"
-                    aria-pressed={filter() === f.id ? "true" : "false"}
-                    onClick={() => setFilter((cur) => (cur === f.id ? null : f.id))}
-                  >
-                    <Show when={filter() === f.id}>
-                      <Icon name="check" small />
-                    </Show>
-                    {f.label}
-                    <span class="board-filter-count text-num">{counts()[f.id]}</span>
-                  </button>
-                )}
-              </For>
-            </div>
+          <div class="board-filters" role="group" aria-label="Filter sessions">
+            <For each={BOARD_FILTERS}>
+              {(f) => (
+                <button
+                  type="button"
+                  class="board-filter"
+                  aria-pressed={filter() === f.id ? "true" : "false"}
+                  onClick={() => setFilter((cur) => (cur === f.id ? null : f.id))}
+                >
+                  <Show when={filter() === f.id}>
+                    <Icon name="check" small />
+                  </Show>
+                  {f.label}
+                  <span class="board-filter-count text-num">{counts()[f.id]}</span>
+                </button>
+              )}
+            </For>
+          </div>
+          {/* The count, and from 1000px the head's totals at its right, directly above the board. */}
+          <div class="board-caption">
+            <p class="board-count-line" aria-live="polite">
+              {shown().length} {shown().length === 1 ? "session" : "sessions"}
+              {filter() ? "" : query().trim() ? " across every session" : " live or open in Sova"}
+            </p>
             <Show when={meta()}>
               <p class="board-totals" title={metaTitle()}>
                 {meta()}
               </p>
             </Show>
           </div>
-          <p class="board-count-line" aria-live="polite">
-            {shown().length} {shown().length === 1 ? "session" : "sessions"}
-            {filter() ? "" : query().trim() ? " across every session" : " live or open in Sova"}
-          </p>
         </div>
 
         <Show
@@ -936,9 +960,25 @@ export function AgentsView(props: {
               <span>Worktrees</span>
               <span />
             </div>
-            <ul class="board-list" aria-label="Sessions">
-              <For each={pagedPaths()}>{(path) => <Show when={byPath().get(path)}>{(r) => <BoardRowView row={r()} ctx={ctx} />}</Show>}</For>
-            </ul>
+            <For each={groupKeys()}>
+              {(key) => {
+                const group = () => groups().find((g) => g.key === key);
+                const paths = createMemo(() => group()?.rows.map((r) => r.session.path) ?? [], undefined, { equals: sameList });
+                return (
+                  <>
+                    {/* A heading per state, only when more than one has rows; each group is its own list, named by it. */}
+                    <Show when={headed()}>
+                      <h2 class="board-group-head" id={`board-group-${key}`} data-state={key}>
+                        {group()?.label} · <span class="text-num">{groupCounts().get(key) ?? 0}</span>
+                      </h2>
+                    </Show>
+                    <ul class="board-list" aria-label={headed() ? undefined : "Sessions"} aria-labelledby={headed() ? `board-group-${key}` : undefined}>
+                      <For each={paths()}>{(path) => <Show when={byPath().get(path)}>{(r) => <BoardRowView row={r()} ctx={ctx} />}</Show>}</For>
+                    </ul>
+                  </>
+                );
+              }}
+            </For>
           </div>
           <Show when={shown().length > limit()}>
             <button type="button" class="button board-more-rows" onClick={() => setLimit((n) => n + BOARD_PAGE)}>
@@ -952,6 +992,8 @@ export function AgentsView(props: {
     </InsightsPage>
   );
 }
+
+const sameList = <T,>(a: readonly T[], b: readonly T[]) => a.length === b.length && a.every((x, i) => x === b[i]);
 
 /** Each chip's absence, in words, after the live fact. */
 const BOARD_EMPTY: Record<Exclude<BoardFilter, "live">, string> = {

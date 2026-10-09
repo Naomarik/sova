@@ -3,19 +3,25 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { AgentsInsight, LiveAgentSession, SessionSummary, TeamInfo, WorktreeStatus } from "../../shared/protocol";
 import {
+  allGone,
+  boardGroups,
   boardRows,
   boardState,
   boardTotals,
+  compactLines,
   filterCounts,
   gistTitle,
   hasUnmerged,
   inDefaultScope,
+  linesShown,
   matchesSearch,
   money,
+  orderTrees,
   passesFilter,
   rowDetail,
   rowHasDetail,
   sortRows,
+  teamChips,
   teamForLink,
   totalsLine,
   workersChips,
@@ -23,6 +29,7 @@ import {
   treeMerge,
   treeName,
   visibleRows,
+  workersLine,
   worktreePathsKey,
 } from "./agents-board";
 import { teamKey } from "./insights";
@@ -183,7 +190,7 @@ test("archive exclusion is only Needs you: other scopes, pins and state preceden
   assert.equal(passesFilter(blocked, "needs-you", undefined), false);
 });
 
-test("sort: working, then needs-you, then last active, newest first", () => {
+test("sort: needs-you, then working, then last active, newest first", () => {
   const rows = [
     { id: "idle-new", state: "idle", lastActive: 50 },
     { id: "needs-old", state: "needs-you", lastActive: 1 },
@@ -191,7 +198,7 @@ test("sort: working, then needs-you, then last active, newest first", () => {
     { id: "arch-newest", state: "archived", lastActive: 99 },
     { id: "work-new", state: "working", lastActive: 9 },
   ] as const;
-  assert.deepEqual(sortRows(rows).map((r) => r.id), ["work-new", "work-old", "needs-old", "arch-newest", "idle-new"]);
+  assert.deepEqual(sortRows(rows).map((r) => r.id), ["needs-old", "work-new", "work-old", "arch-newest", "idle-new"]);
 });
 
 test("search: every word, across title, gist, path and branch; a search with no chip looks everywhere", () => {
@@ -317,4 +324,74 @@ test("the open row: what it's about and where it stands, never the same fact twi
   const h = rowDetail(asks, []);
   assert.equal(h.reason, "2 open questions in al_2 Dropdown");
   assert.equal(h.questions, null);
+});
+
+test("groups: Needs you, Working, then the rest, each in the rows' own order; empty groups left out", () => {
+  const rows = [
+    { id: "w1", state: "working" },
+    { id: "i1", state: "idle" },
+    { id: "n1", state: "needs-you" },
+    { id: "a1", state: "archived" },
+    { id: "w2", state: "working" },
+  ] as const;
+  const groups = boardGroups(rows);
+  assert.deepEqual(
+    groups.map((g) => [g.key, g.label, g.rows.map((r) => r.id)]),
+    [
+      ["needs-you", "Needs you", ["n1"]],
+      ["working", "Working", ["w1", "w2"]],
+      ["idle", "Idle", ["i1", "a1"]],
+    ],
+  );
+  // Every row lands in exactly one group.
+  assert.equal(groups.reduce((n, g) => n + g.rows.length, 0), rows.length);
+  // Only archived rows in the last group: it says so. One group: one entry, so the view shows no heading.
+  assert.deepEqual(boardGroups([{ state: "archived" }, { state: "archived" }]).map((g) => g.label), ["Archived"]);
+  assert.deepEqual(boardGroups([]), []);
+});
+
+test("workers line: working over total, or a plain count while none works, with the spend when known", () => {
+  assert.equal(workersLine({ working: 9, total: 21 }, 610.1), "9/21 working · $610.10");
+  assert.equal(workersLine({ working: 0, total: 7 }, 24.83), "7 workers · $24.83");
+  assert.equal(workersLine({ working: 0, total: 1 }), "1 worker");
+  assert.equal(workersLine({ working: 2, total: 5 }), "2/5 working");
+  assert.equal(workersLine({ working: 0, total: 0 }, 3), "$3.00");
+  assert.equal(workersLine({ working: 0, total: 0 }), "");
+});
+
+test("team chips: at most two, working teams first, and how many are left", () => {
+  const t = (id: string, working: number) => ({ ...team(id, "/s/a.jsonl"), working });
+  const { shown, rest } = teamChips([t("a", 0), t("b", 0), t("c", 2), t("d", 0), t("e", 1)]);
+  assert.deepEqual(shown.map((x) => x.id), ["c", "e"]);
+  assert.equal(rest, 3);
+  assert.deepEqual(teamChips([t("a", 0)]), { shown: [t("a", 0)], rest: 0 });
+  assert.equal(teamChips([t("a", 0), t("b", 0), t("c", 0)], 3).rest, 0);
+});
+
+test("tree order: unmerged, uncommitted, merged, the rest, gone; ties keep the session's order", () => {
+  const trees = [
+    tree("/gone", { exists: false }),
+    tree("/merged", { merged: "ancestor" }),
+    tree("/nobase", { base: undefined }),
+    tree("/dirty-merged", { merged: "content", dirty: true }),
+    tree("/un1", { merged: "no" }),
+    tree("/un2", { merged: "no", dirty: true }),
+  ];
+  assert.deepEqual(orderTrees(trees).map((t) => t.path), ["/un1", "/un2", "/dirty-merged", "/merged", "/nobase", "/gone"]);
+  assert.equal(orderTrees(trees).length, trees.length);
+});
+
+test("all gone: two or more trees and none left; one gone tree still reads as a tree", () => {
+  const gone = (p: string) => tree(p, { exists: false });
+  assert.equal(allGone([gone("/a"), gone("/b")]), true);
+  assert.equal(allGone([gone("/a"), tree("/b")]), false);
+  assert.equal(allGone([gone("/a")]), false);
+  assert.equal(allGone([]), false);
+});
+
+test("line counts: exact up to 9,999; past it both of the pair shorten", () => {
+  assert.deepEqual(["0", "840", "8.8k", "10k", "326k", "1M", "1.2M"], [0, 840, 8825, 9999, 326035, 999_999, 1_234_567].map(compactLines));
+  assert.deepEqual(linesShown({ added: 326035, removed: 8825 }), { added: "326k", removed: "8.8k", short: true });
+  assert.deepEqual(linesShown({ added: 9999, removed: 12 }), { added: "9999", removed: "12", short: false });
+  assert.deepEqual(linesShown({ added: 3, removed: 10000 }), { added: "3", removed: "10k", short: true });
 });

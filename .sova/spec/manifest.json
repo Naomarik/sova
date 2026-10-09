@@ -560,7 +560,7 @@
     "§app/new-session-dialog": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "src/components/NewSessionDialog.tsx",
         "src/components/FolderPicker.tsx",
@@ -3157,7 +3157,9 @@
         "server/overseer-markers.test.ts",
         "server/search-tools-fake.ts",
         "server/test-wait.ts",
-        "server/project-overseer-routes.ts"
+        "server/project-overseer-routes.ts",
+        "server/session-prompt.ts",
+        "server/build-loadout.ts"
       ],
       "requires": [
         "§chat.transcript/message-actions"
@@ -4671,7 +4673,7 @@
     "§app.organizations/workspace-repo": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "server/workspace-git.ts",
         "server/orgs.ts",
@@ -5602,7 +5604,13 @@
         "src/lib/coding-worktrees.ts",
         "src/lib/coding-worktrees.test.ts",
         "src/lib/api.ts",
-        "server/build-loadout.ts"
+        "server/build-loadout.ts",
+        "server/overseer-org-tools.ts",
+        "server/overseer-org-tools.test.ts",
+        "server/overseer-tools.ts",
+        "server/overseer-runtime.test.ts",
+        "server/overseer-prompt.md",
+        "server/overseer-org-view.ts"
       ]
     },
     "§app.project-overseer/coding-worktrees": {
@@ -6844,7 +6852,8 @@
         "src/lib/agents-board.ts",
         "src/lib/summary-diff.ts",
         "src/design/base.css",
-        "shared/protocol.ts"
+        "shared/protocol.ts",
+        "server/harness/pi/golden/expected/synthetic/all-types/align-scan.json"
       ],
       "requires": [
         "§chat.alignment/state",
@@ -7243,7 +7252,9 @@
         "server/overseer-org-tools.ts",
         "server/overseer-org-tools.test.ts",
         "server/search-tools-fake.ts",
-        "shared/project-overseer.ts"
+        "shared/project-overseer.ts",
+        "server/project-coding-mode.ts",
+        "server/overseer-prompt.md"
       ],
       "requires": [
         "§app.project-overseer/identity",
@@ -7280,7 +7291,7 @@
     "§app.overseer/org-reads": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "server/overseer-tools.ts",
         "server/overseer-org-view.ts",
@@ -12314,7 +12325,7 @@
     "§chat.subagent-profiles/overseer": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "server/overseer-tools.ts",
         "server/overseer-runtime.test.ts",

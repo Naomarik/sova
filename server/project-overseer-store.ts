@@ -39,7 +39,6 @@ import { EXTRA_PROMPT_MAX, HISTORY_MAX, writeAtomic } from "./overseer-store";
 import { OrgError } from "./org-error";
 import { engineOf, projectDir, projectHost, projectSid, readProject, watchSid } from "./projects/spaces";
 import { checkAbilitiesPatch, parseAbilities } from "./gathering-abilities";
-import { checkCodingModePatch, parseCodingMode } from "./project-coding-mode";
 import { stateRoot } from "./state-root";
 
 /**
@@ -98,7 +97,6 @@ export function defaultPoSettings(): ProjectOverseerSettings {
     thinking: null,
     codingModel: null,
     codingThinking: null,
-    codingMode: null,
     gatheringModel: null,
     gatheringThinking: null,
     gatheringAbilities: null,
@@ -142,7 +140,6 @@ export function parsePoSettings(raw: unknown): ProjectOverseerSettings {
     thinking: typeof raw.thinking === "string" && raw.thinking.trim() ? raw.thinking.trim() : null,
     codingModel: typeof raw.codingModel === "string" && raw.codingModel.trim() ? raw.codingModel.trim() : null,
     codingThinking: typeof raw.codingThinking === "string" && raw.codingThinking.trim() ? raw.codingThinking.trim() : null,
-    codingMode: parseCodingMode(raw.codingMode),
     gatheringModel: typeof raw.gatheringModel === "string" && raw.gatheringModel.trim() ? raw.gatheringModel.trim() : null,
     gatheringThinking: typeof raw.gatheringThinking === "string" && raw.gatheringThinking.trim() ? raw.gatheringThinking.trim() : null,
     gatheringAbilities: parseAbilities(raw.gatheringAbilities),
@@ -212,6 +209,8 @@ export function fitThinking(next: ProjectOverseerSettings, patch: ProjectOversee
   }
 }
 
+export const CODING_MODE_GONE = "Projects have no coding mode: coding sessions start in this computer's default mode. Save as default in a chat's mode menu changes it.";
+
 /** A PATCH: strict (the first problem is the answer, as a sentence), then merged and written.
     `check` runs on the merged settings before anything is written (a throw writes nothing). */
 export function patchPoSettings(p: ProjectOverseerPaths, body: unknown, check?: (next: ProjectOverseerSettings, patch: ProjectOverseerPatch) => void): ProjectOverseerSettings {
@@ -228,11 +227,8 @@ export function patchPoSettings(p: ProjectOverseerPaths, body: unknown, check?: 
     if (v !== null && typeof v !== "string") throw new OrgError(`${k} must be a string or null`);
     next[k] = typeof v === "string" && v.trim() ? v.trim() : null;
   }
-  if (patch.codingMode !== undefined) {
-    const m = checkCodingModePatch(patch.codingMode);
-    if (m && "error" in m) throw new OrgError(m.error);
-    next.codingMode = m;
-  }
+  // Projects have no coding mode (§app.project-overseer/coding-mode): a patch naming one is refused, never ignored.
+  if ((body as Record<string, unknown>).codingMode !== undefined) throw new OrgError(CODING_MODE_GONE);
   if (patch.gatheringAbilities !== undefined) {
     const a = checkAbilitiesPatch(patch.gatheringAbilities);
     if (a && "error" in a) throw new OrgError(a.error);

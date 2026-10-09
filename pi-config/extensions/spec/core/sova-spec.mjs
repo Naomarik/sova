@@ -300,30 +300,47 @@ function scanDeclarations(root, ctx) {
   return parseDeclarations(ctx, bodies, decls);
 }
 
+// The H1/H2 headings that declare in one claim file's lines, in order; `report` hears what is wrong.
+function headingsOf(lines, rel, report = () => {}) {
+  const heads = [];
+  let fence = null;
+  lines.forEach((ln, i) => {
+    const f = /^ {0,3}(`{3,}|~{3,})/.exec(ln);
+    if (fence) { if (f && f[1][0] === fence[0] && f[1].length >= fence.length && !ln.trim().slice(f[1].length).trim()) fence = null; return; }
+    if (f) { fence = f[1]; return; }
+    const h = /^ {0,3}(#{1,6})(?:[ \t]+(.*))?$/.exec(ln);
+    if (!h) return;
+    const level = h[1].length, line = i + 1, at = { file: rel, line };
+    const tok = (h[2] ?? "").trim().split(/\s+/)[0];
+    // H3+ is plain prose inside the enclosing H1/H2 span; it may never declare.
+    if (level > 2) {
+      if (tok.startsWith("§")) return report("error", "heading-level", `H${level} cannot declare ${tok}; only H1/H2 declare`, at);
+      if (!heads.length) report("error", "heading-order", `H${level} precedes the file's H1 lede, so no passage contains it`, at);
+      return;
+    }
+    if (!tok.startsWith("§")) return report("error", "heading-invalid", `H${level} does not declare a § identifier`, at);
+    if (!ID_RE.test(tok)) return report("error", "id-invalid", `heading token ${tok} is not a full § identifier`, at);
+    heads.push({ id: tok, level, line });
+  });
+  return heads;
+}
+// H1 lede ends before the first H2; an H2 ends before the next heading. Spans are disjoint.
+function spanEnd(heads, k, lines) {
+  let end = (heads[k + 1]?.line ?? lines.length + 1) - 1;
+  while (end > heads[k].line && !lines[end - 1].trim()) end--;
+  return end;
+}
+// One claim file's declarations from its own headings, without a manifest or graph: [{id, level, lines: [a, b]}].
+export function declarationSpans(body) {
+  const lines = String(body).split(/\r?\n/), heads = headingsOf(lines, "");
+  return heads.map((h, k) => ({ id: h.id, level: h.level, lines: [h.line, spanEnd(heads, k, lines)] }));
+}
+
 // H1/H2 declarations of claim files [{rel (to the root), inClaims (to the claims root), body}], in order.
 function parseDeclarations(ctx, bodies, decls = new Map()) {
   for (const { rel, inClaims, body } of bodies) {
     const lines = body.split(/\r?\n/);
-    const heads = [];
-    let fence = null;
-    lines.forEach((ln, i) => {
-      const f = /^ {0,3}(`{3,}|~{3,})/.exec(ln);
-      if (fence) { if (f && f[1][0] === fence[0] && f[1].length >= fence.length && !ln.trim().slice(f[1].length).trim()) fence = null; return; }
-      if (f) { fence = f[1]; return; }
-      const h = /^ {0,3}(#{1,6})(?:[ \t]+(.*))?$/.exec(ln);
-      if (!h) return;
-      const level = h[1].length, line = i + 1, at = { file: rel, line };
-      const tok = (h[2] ?? "").trim().split(/\s+/)[0];
-      // H3+ is plain prose inside the enclosing H1/H2 span; it may never declare.
-      if (level > 2) {
-        if (tok.startsWith("§")) return add("error", "heading-level", `H${level} cannot declare ${tok}; only H1/H2 declare`, at);
-        if (!heads.length) add("error", "heading-order", `H${level} precedes the file's H1 lede, so no passage contains it`, at);
-        return;
-      }
-      if (!tok.startsWith("§")) return add("error", "heading-invalid", `H${level} does not declare a § identifier`, at);
-      if (!ID_RE.test(tok)) return add("error", "id-invalid", `heading token ${tok} is not a full § identifier`, at);
-      heads.push({ id: tok, level, line });
-    });
+    const heads = headingsOf(lines, rel, add);
     const first = lines.slice(0, (heads[0]?.line ?? lines.length + 1) - 1).findIndex((l) => l.trim());
     if (first >= 0) add("warn", "prose-outside-declaration", `text at line ${first + 1} precedes any § declaration, so no passage returns it`, { file: rel, line: first + 1 });
     const lede = heads[0]?.level === 1 ? heads[0].id : null;
@@ -335,9 +352,7 @@ function parseDeclarations(ctx, bodies, decls = new Map()) {
       else if (want.level !== h.level) add("error", "heading-level", `${h.id} must be an H${want.level}`, at);
       else if (h.level === 2 && parentOf(h.id, ctx.dirKinds) !== lede) add("error", "misfiled-declaration", `${h.id} is not a child of this file's lede`, at);
       if (decls.has(h.id)) return add("error", "duplicate-declaration", `${h.id} is also declared at ${decls.get(h.id).file}:${decls.get(h.id).line}`, at);
-      // H1 lede ends before the first H2; an H2 ends before the next heading. Spans are disjoint.
-      let end = (heads[k + 1]?.line ?? lines.length + 1) - 1;
-      while (end > h.line && !lines[end - 1].trim()) end--;
+      const end = spanEnd(heads, k, lines);
       decls.set(h.id, { file: rel, line: h.line, level: h.level, lines: [h.line, end], text: lines.slice(h.line - 1, end).join("\n") + "\n" });
     });
   }

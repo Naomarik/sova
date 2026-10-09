@@ -1,1 +1,2 @@
 .sova/spec/manifest.json merge=sova-spec-manifest
+.sova/spec/claims/**/*.md merge=sova-spec-claims

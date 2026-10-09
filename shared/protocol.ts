@@ -1798,8 +1798,9 @@ export interface ChatModeResult extends ModeInfo {
 // GET  /api/overseer/memory      -> OverseerMemoryInfo
 // PUT  /api/overseer/memory { on?, type?, size? } -> OverseerMemoryInfo (kept in overseer.json; reaches the
 //                                  Overseer from its next turn. 400 bad body)
-// WS (chat): { type: "memory_status", status } after hello and on every change, only for a chat whose
-//                                  runtime has the memory engine (an ordinary chat, or the Overseer).
+// WS (chat): { type: "memory_status", status } after hello while memory is on, and on every change
+//                                  (the turn it goes off included), only from a runtime with the memory
+//                                  engine (an ordinary chat, or the Overseer). No message: memory is off.
 //            The `mode` message carries `memory` (this chat's ChatMemoryChoice), so a type-only change
 //            sends a new `mode` message too.
 // Transcript: the model's recalls are tool rows (`zoom`, `date`) whose slim row summary
@@ -2224,8 +2225,8 @@ export type ChatServerMessage =
   /** THIS chat's own mode, and how the last switch applies to it. Sent after hello and after
       every switch of this chat. No other chat's switch, and no write of the default, sends one. */
   | { type: "mode"; mode: string; minorModes: string[]; strict: boolean; applies: ModeApplies; memory?: ChatMemoryChoice }
-  /** THIS chat's memory (§chat/memory): sent after hello and on every change, only when its runtime
-      has the memory engine. */
+  /** THIS chat's memory (§chat/memory): sent after hello while memory is on, and on every change once
+      it was on; never from a runtime without the memory engine. None received: memory is off. */
   | { type: "memory_status"; status: MemoryStatus }
   /** THIS chat's sandbox, sent after hello and on every change, ONLY when its runtime has the
       sandbox extension's /sandbox command. Absent = no extension: no row, no shield. */
@@ -3134,6 +3135,8 @@ export interface OverseerSettings {
   explorer: WorkerChoice;
   /** Resume the runs a server restart cut off (§app.overseer/auto-resume). Absent = on. */
   autoResume?: boolean;
+  /** The Overseer's memory (§chat.memory/overseer): its own switch, type and size. Absent = off. */
+  memory?: { on: boolean; type: MemoryType; size: number };
 }
 
 export interface OverseerSettingsInfo {

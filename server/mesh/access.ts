@@ -230,6 +230,8 @@ const SESSION_PREFIXES = [
   "targets",
   "models",
   "mode",
+  // A chat's memory outline (§chat.memory/status): read with the session it belongs to.
+  "memory",
   "subagents",
   "workers",
   "worktrees",

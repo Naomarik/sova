@@ -35,7 +35,7 @@ import { contextOfBranch } from "./harness/pi/usage";
 import { extensionEntries } from "./harness/pi/state";
 import { isAlreadyProcessing } from "./harness/pi/session";
 import { isCompactionInProgress } from "./harness/pi/history-ops";
-import { ALIGN_LAUNCH, type AlignLaunchData, BATON_SENT, FANOUT_MEMBER, LINK_MEMBER, LOADOUT, MODE, OVERSEER, OVERSEER_DIALOG_ANSWER, OVERSEER_SENT, PROFILE, SESSION_SENT, SUBAGENT_PROFILE, TOPIC_DELIVERED } from "./harness/state-kinds";
+import { ALIGN_LAUNCH, type AlignLaunchData, BATON_SENT, FANOUT_MEMBER, LINK_MEMBER, LOADOUT, MEMORY, MODE, OVERSEER, OVERSEER_DIALOG_ANSWER, OVERSEER_SENT, PROFILE, SESSION_SENT, SUBAGENT_PROFILE, TOPIC_DELIVERED } from "./harness/state-kinds";
 import { cutTail, type HistoryPart, pullFields } from "./tail-hello";
 import { isOverseerId } from "./overseer-store";
 import { attachStreamGuard, capsFor, type StreamTrip } from "./stream-guard";
@@ -47,6 +47,18 @@ import { forkCacheExtension } from "../pi-config/extensions/subagents/fork/cache
 import { codemodeFactory } from "./harness/pi/codemode";
 import { claimSessionSlot, holdingSlot } from "./provider-limits";
 import { VIS_CHECK_TOOL, visCheckExtension, type VisCheckHost } from "./vis-check";
+import { MEMORY_COMPACTION_REFUSAL, memoryExtension, type MemoryHost } from "./harness/pi/memory";
+import { ChatMemory } from "./memory/chat";
+import { readOverseerSettings } from "./overseer-store";
+
+/** The Overseer's memory choice as a record (overseer.json), or null: it then uses the saved default. */
+function overseerMemoryRecord(): { v: 1; type: "uniichat" | "zoomable"; size: number } | null {
+  const m = readOverseerSettings().memory;
+  return m ? { v: 1, type: m.type, size: m.size } : null;
+}
+import { withWebMinors } from "./memory/permit";
+import { applyMemoryPatch, saveDefaultMemoryChoice } from "./memory/settings";
+import { MEMORY_TOOLS } from "../shared/memory";
 import { projectEngine } from "./project-services/routes";
 import { projectVerbsExtension } from "./project-services/tools";
 import { excludedTools, GRANT_TOOLS, keyOf, KNOWN_REMOVABLE_TOOLS, singletonRaceText, type ProfileEntryData, type SessionSentData } from "../shared/profiles";
@@ -1685,7 +1697,7 @@ class ChatSession {
 
   modeMessage(): ChatServerMessage {
     const s = this.modeState;
-    return { type: "mode", mode: s.mode, minorModes: [...s.minorModes], strict: s.strict, applies: this.modeApplies };
+    return { type: "mode", mode: s.mode, minorModes: [...s.minorModes], strict: s.strict, applies: this.modeApplies, memory: this.memory.choiceNow() };
   }
 
   /**
@@ -1711,8 +1723,77 @@ class ChatSession {
     if (this.overseer) throw new ModeRefusedError();
     const refused = this.specialEntry?.refuses?.("mode");
     if (refused) throw new ModeRefusedError(refused);
-    await this.applyMode(mergeMode(this.modeState, patch));
-    return { ...modeInfo(this.modeState), applies: this.modeApplies };
+    // Memory runs in an ordinary chat's runtime (§chat.memory/where): a special loadout has no engine.
+    if (patch.minorModes?.includes("memory") && !this.modeState.minorModes.includes("memory") && !this.memoryAvailable())
+      throw new ModeRefusedError("Memory can't be turned on in this chat.");
+    if (patch.memory) this.writeMemoryChoice(patch.memory);
+    const wasOn = this.modeState.minorModes.includes("memory");
+    if (patch.mode !== undefined || patch.minorModes !== undefined) await this.applyMode(mergeMode(this.modeState, patch));
+    else this.broadcast(this.modeMessage());
+    const isOn = this.modeState.minorModes.includes("memory");
+    if (isOn && !wasOn) this.memory.turnedOn();
+    else if (isOn !== wasOn) this.memory.changed();
+    return { ...modeInfo(this.modeState, this.memory.choiceNow()), applies: this.modeApplies };
+  }
+
+  /** This chat's memory (§chat/memory): its choice, engine and status. */
+  private memoryRef: ChatMemory | undefined;
+  get memory(): ChatMemory {
+    this.memoryRef ??= new ChatMemory({
+      sessionId: () => this.harness.id,
+      cwd: () => this.harness.cwd || undefined,
+      branch: () => this.harness.branch(),
+      // The Overseer has no mode entry: its switch, type and size are overseer.json's (§chat.memory/overseer).
+      record: () => (this.overseer ? overseerMemoryRecord() : (this.harness.state.branch().latest(MEMORY)?.data ?? null)),
+      on: () => (this.overseer ? (readOverseerSettings().memory?.on ?? false) : this.modeState.minorModes.includes("memory")),
+      send: (msg) => this.broadcast(msg),
+    });
+    return this.memoryRef;
+  }
+
+  /** What the memory extension asks this chat (server/harness/pi/memory.ts). */
+  memoryHost(): MemoryHost {
+    return this.memory;
+  }
+
+  /** Whether this runtime has the memory engine (its recall tools are registered). */
+  memoryAvailable(): boolean {
+    try {
+      return MEMORY_TOOLS.every((t) => this.harness.registeredTools().includes(t));
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Write this chat's memory choice (§chat.memory/choice): a `sova-memory` record on its branch, the
+   * patch over the current choice. Kept while memory is off. Refused where a mode switch would be.
+   */
+  writeMemoryChoice(patch: Partial<{ type: "uniichat" | "zoomable"; size: number }>): void {
+    if (this.disposed || this.foreignWrite || this.hasForeignWrites()) throw new ModeRefusedError("This chat can't be written now.");
+    assertNotLive(this.path);
+    const cur = this.memory.choiceNow();
+    const next = applyMemoryPatch(cur, patch);
+    if (next.type === cur.type && next.size === cur.size && this.harness.state.branch().latest(MEMORY)) return;
+    const prev = this.harness.state.branch().latest(MEMORY)?.data;
+    this.flushDeferredAppends();
+    this.harness.state.append(MEMORY, { v: 1, type: next.type, size: next.size, ...(prev?.on !== undefined ? { on: prev.on } : {}) });
+    markOwned(this.path);
+  }
+
+  /** The Overseer's switch moved (server/memory/routes.ts): its tools follow between runs. */
+  memorySwitched(): void {
+    this.syncMemoryTools();
+  }
+
+  /** Between runs, the recall tools follow memory's switch at once (mid-run the run keeps its tools). */
+  private syncMemoryTools(): void {
+    if (this.disposed || this.harness.isRunning() || !this.memoryAvailable()) return;
+    const want = this.memory.choice().on;
+    const current = this.harness.activeTools();
+    const has = current.some((t) => MEMORY_TOOLS.includes(t));
+    if (want && !MEMORY_TOOLS.every((t) => current.includes(t))) this.harness.setActiveTools([...current.filter((t) => !MEMORY_TOOLS.includes(t)), ...MEMORY_TOOLS]);
+    else if (!want && has) this.harness.setActiveTools(current.filter((t) => !MEMORY_TOOLS.includes(t)));
   }
 
   /**
@@ -1770,7 +1851,8 @@ class ChatSession {
       throw new ModeRefusedError(`The subagent profile default was not saved, and the mode default was not touched: ${err instanceof Error ? err.message : String(err)}`);
     }
     try {
-      return modeInfo(writeMode(defaultPatchOf(this.modeState)));
+      saveDefaultMemoryChoice(this.memory.choiceNow());
+      return modeInfo(writeMode(defaultPatchOf(this.modeState)), this.memory.choiceNow());
     } catch (err) {
       throw new ModeRefusedError(`The subagent profile default "${profile}" WAS saved, but the mode default was not: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -1810,7 +1892,11 @@ class ChatSession {
       const ctx = this.harness.commandContext();
       this.flushDeferredAppends(); // open-time entries go before the extension's mode marker
       try {
-        for (const minor of MINOR_MODES) await cmd.handler(`${minor} ${state.minorModes.includes(minor) ? "on" : "off"}`, ctx);
+        // memory is web-only: the extension takes it on only while this switch is being applied (permit.ts).
+        const web = state.minorModes.includes("memory") && this.memoryAvailable() ? (["memory"] as const) : [];
+        await withWebMinors(this.harness.id, web, async () => {
+          for (const minor of MINOR_MODES) await cmd.handler(`${minor} ${state.minorModes.includes(minor) ? "on" : "off"}`, ctx);
+        });
         // Not awaited: after switching, setMode awaits the delegate routing probe (up to 15s).
         cmd.handler(state.mode, ctx).catch((err) => {
           console.error("[chat] /mode handler failed", err);
@@ -1823,8 +1909,10 @@ class ChatSession {
         applies = "new-chats";
       }
       if (!this.foreignWrite) markOwned(this.path); // the marker entry is our write
-      this.modeState = state; // the runtime took it: this is now this chat's mode
+      // The runtime took it: this is now this chat's mode (memory only where the engine runs: the extension refused it otherwise).
+      this.modeState = state.minorModes.includes("memory") && !this.memoryAvailable() ? { ...state, minorModes: state.minorModes.filter((m) => m !== "memory") } : state;
       this.syncVisCheckTool();
+      this.syncMemoryTools();
     }
     this.modeApplies = applies;
     this.broadcast(this.modeMessage());
@@ -2083,6 +2171,8 @@ class ChatSession {
     // would show an empty thread over a full queue.
     client.send({ type: "queue", items: this.queue.snapshot() });
     client.send(this.modeMessage());
+    // Only while memory is on (or was turned off since): absent means off (§chat.memory/status).
+    if (this.memoryAvailable() && this.memory.choice().on) client.send(this.memory.statusMessage());
     this.sendSandbox((m) => client.send(m));
     // Only when there is something to show: a profile, or a session still before its first message.
     if (this.profileState?.data?.profile || this.isPristine()) client.send(this.profileMessage());
@@ -2722,6 +2812,11 @@ class ChatSession {
    * pane by the hello that describes the branch before it.
    */
   private async compact(client: ChatClient, id: string, instructions: string | undefined): Promise<void> {
+    const memory = this.memoryAvailable() ? this.memory.choice() : undefined;
+    if (memory?.on && memory.type === "uniichat") {
+      client.send({ type: "compact_refused", id, reason: "cancelled", message: MEMORY_COMPACTION_REFUSAL });
+      return;
+    }
     if (this.compactRunning) {
       client.send({ type: "compact_refused", id, reason: "compacting", message: "A compaction is already running." });
       return;
@@ -2855,6 +2950,7 @@ class ChatSession {
     }
     this.modeState = chatModeOf(this.harness.state.branch());
     this.broadcast(this.modeMessage());
+    if (this.memoryAvailable()) this.memory.changed(); // the engine re-syncs on session_tree
     this.sendSandbox((m) => this.broadcast(m)); // the extension re-restores on session_tree too
     this.broadcast(this.loginAfterHello()); // the new branch's newest entry
     pushLinks(this); // after every hello, as attach() does
@@ -2955,6 +3051,7 @@ class ChatSession {
         .then(() => this.keepQueued((it) => !!it.baton))
         .catch((err) => console.warn(`[chat] queued messages not kept at close: ${err instanceof Error ? err.message : String(err)}`));
     this.disposed = true;
+    this.memoryRef?.dispose();
     this.queue.close(); // nothing more is handed to a runtime that is going away
     if (this.guardTimer) clearInterval(this.guardTimer);
     if (this.workersTimer) clearInterval(this.workersTimer);
@@ -3243,6 +3340,8 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
             extensionFactories: [
               ...DEFAULT_EXTENSION_FACTORIES,
               visCheckExtension(() => (visHost.chat && !visHost.chat.disposed ? visHost.chat.visCheckHost() : null)),
+              // The memory minor mode's engine (§chat/memory): idle until memory is turned on.
+              memoryExtension(() => (visHost.chat && !visHost.chat.disposed ? visHost.chat.memoryHost() : null)),
               // project_verbs: its own worktrees' running instances (server/project-services/tools.ts).
               projectVerbsExtension(projectEngine),
               // queue_push: every ordinary session can answer on a topic (§chat.topics/push).

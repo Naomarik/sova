@@ -60,10 +60,15 @@ export function resetSenderHealth(): void {
   last = null;
 }
 
-/** The state a person has to deal with now, from the last reading: a stop state, or unreachable for 5 minutes. */
+/**
+ * The state a person has to deal with now, from the last reading: a stop state, or unreachable for 5
+ * minutes. A `down` with its next try still ahead (the reconnect limit spent) heals itself and never
+ * alerts; once that try is overdue it didn't, and it does.
+ */
 export function senderAlert(now = Date.now()): SenderStatus | null {
   if (!last) return null;
   const s = last.status;
+  if (s.state === "down" && s.retryAt && Date.parse(s.retryAt) > now) return null;
   if (SENDER_DOWN_STATES.has(s.state)) return s;
   if (s.state === "unreachable" && now - last.since >= SENDER_UNREACHABLE_ALERT_MS) return s;
   return null;
@@ -75,7 +80,9 @@ export const SENDER_SETTINGS_HREF = "#/settings/outreach";
 /**
  * Needs you (§app.overseer/attention-digest): "WhatsApp sending is down: {why}", act tier, opening
  * Settings → Outreach; while the sender is down, logged out, replaced, blocked or unpaired, or
- * unreachable for 5 minutes. A sender that is connecting, a backoff wait included, never raises it.
+ * unreachable for 5 minutes. A sender that is connecting, a backoff wait included, or down with its
+ * next try still ahead (a self-healing wait), never raises it; nor, built from these items, does a
+ * phone notification (§app.notifications/delivery).
  */
 export function senderAttention(now = Date.now()): AttentionItem[] {
   const s = senderAlert(now);

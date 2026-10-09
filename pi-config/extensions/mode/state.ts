@@ -178,7 +178,7 @@ export const MODE_NOTE_TYPE = "mode-note";
 
 /**
  * A mode note's `details`: the minor modes in effect after it, and those whose whole guide it carried.
- * `style` / `headStyle`, only on a note that told the align writing style (§chat.alignment/style): the
+ * `style` / `headStyle`, only on a note that told the align writing style: the
  * style the model was told by it, and the one the prompt's align block was built with.
  */
 export interface ModeNoteDetails {
@@ -191,7 +191,7 @@ export interface ModeNoteDetails {
 
 /**
  * A `custom` entry (not in the model's context) the extension appends when a head is fixed with the align
- * block written in a style other than Default (§chat.alignment/style): the style the prompt's align block
+ * block written in a style other than Default: the style the prompt's align block
  * was built with, so a reopen rebuilds that head even when no note recorded it. A Default head writes
  * none: a head fixed since the last compaction that nothing records was built in Default.
  */

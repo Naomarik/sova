@@ -27,7 +27,7 @@ Documentation changes only through drafts, never by editing current `claims/` or
 - `promote <name> --id '<§id>'` previews; `--plan <sha> --write` applies. Promote only what is implemented and verified. A refusal is resolved, never forced. A `manifest.json` conflict: follow the census note. After an interruption, `recover`, then `recover --write`.
 
 Before finishing:
-- Run `node "$core/sova-spec.mjs" census --changed --root <project root> --json` (`--spec` the draft's `spec/` until promoted; `--base <rev>` once committed): every changed file in the boundary is claimed, any changed file outside it whose change a user sees is spec'd, and you have read each § it lists for your change.
+- Read each § the census note's `Unread § your change landed in` line (once, after your last edit) marks read first; the rest are named (`census --changed --related` ranks by hand). Every changed file in the boundary is claimed; any outside it whose change a user sees is spec'd.
 - Before promoting, read `$core/../PROMOTE.md`; promote what you verified, or say in your reply why not.
 
 The task's go-ahead authorizes its drafts, evidence and promotions as one bounded batch; no dialog per claim, and nothing at session start. It is not permission to commit: without that, leave evidence pending, and never commit unrelated changes. Review packets: `sova-spec-review.mjs`, see `$core/../README.md`. No check, record, evidence or promotion proves correctness; no tool checks meaning.

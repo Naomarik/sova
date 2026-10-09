@@ -622,6 +622,39 @@ test("a commit another process made between calls is no census note; the session
 	}
 });
 
+test("a call that never ran (blocked or aborted: no tool_result) is closed by its id: another process's later commit is no note; an errored call's own write still is", async () => {
+	const foreign = (at: string) => {
+		writeFileSync(join(at, "src/b.txt"), "theirs\n");
+		writeFileSync(join(at, "src/a.txt"), "theirs\n");
+		for (const args of [["add", "-A"], ["commit", "-qm", "elsewhere"]]) assert.equal(spawnSync("git", [...G, "-C", at, ...args]).status, 0);
+	};
+	const roots = [quietProject(), quietProject()];
+	try {
+		const [r1, r2] = roots as [string, string];
+		let hook = new CensusHook({ core: () => CORE });
+		await hook.prime(r1);
+		await hook.before({ id: "a", cwd: r1, toolName: "bash", input: { command: "true" } });
+		hook.close("a");
+		foreign(r1);
+		const b = { id: "b", cwd: r1, toolName: "bash", input: { command: "git log -1 --oneline" } };
+		await hook.before(b);
+		const quiet = await hook.after(b);
+		assert.doesNotMatch(`${quiet.text ?? ""}`, /\[spec census\]|No draft yet/, `after a closed call and another process's commit: ${quiet.text}`);
+
+		// An errored call (its tool_result comes): its own write is still its own.
+		hook = new CensusHook({ core: () => CORE });
+		await hook.prime(r2);
+		const c = { id: "c", cwd: r2, toolName: "bash", input: { command: "echo own > src/own.txt && false" } };
+		await hook.before(c);
+		writeFileSync(join(r2, "src/own.txt"), "own\n");
+		const own = await hook.after(c);
+		hook.close("c");
+		assert.match(own.text ?? "", /New: src\/own\.txt → unclaimed/, `${own.text}`);
+	} finally {
+		for (const r of roots) rmSync(r, { recursive: true, force: true });
+	}
+});
+
 test("a `node` on PATH that exits 1 (an untrusted mise.toml's shim) doesn't stop the census; a census that does crash says why: its first stderr line", async () => {
 	const at = quietProject();
 	const shim = mkdtempSync(join(scratchRoot, "node-shim-"));

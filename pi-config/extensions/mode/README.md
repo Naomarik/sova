@@ -163,7 +163,13 @@ writer**).
     own calls runs is its own: before each call (when no other is running),
     what changed in a known tree since the last look, HEAD moved by another
     process included, is taken in silently and left out of every note
-    (`settleCensus`; such a file the session then changes is its own). When a path is new
+    (`settleCensus`; such a file the session then changes is its own). A
+    failed call (an error result) is closed like any other; one blocked or
+    aborted before it ran (no `tool_result`) is closed at `tool_execution_end`
+    (`CensusHook.close`), so it never holds the settle off. Each tree's state
+    keeps `landed` (the session's own files the census maps, with their §);
+    a worker writes it to `SOVA_SPEC_LANDED_FILE` for its parent's one
+    landed line (subagents README). When a path is new
     (a commit's files count too), `census --changed --base <session-start
     HEAD> --own-base …` runs (`--spec` the draft this session created, else
     the newest one created since the session started, else in a linked

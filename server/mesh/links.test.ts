@@ -5,9 +5,10 @@
 // in-process (links-transfer-test-fixtures.ts). State lives in a throwaway dir, removed after.
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { PassThrough } from "node:stream";
 import { after, beforeEach, describe, test } from "node:test";
 import { Hono } from "hono";
 import { parseLinkMessage } from "../../shared/link-message";
@@ -28,6 +29,7 @@ import type { SessionSummary } from "../../shared/protocol";
 import { NotShared } from "./access";
 import { MeshLinks, MEMBER_CACHE_MS } from "./links";
 import { mountLinks } from "./links-routes";
+import type { TarRunner } from "./links-transfer";
 import { inProcessTar } from "./links-transfer-test-fixtures";
 import type { PeerEntry } from "./peers";
 
@@ -87,6 +89,8 @@ interface Host {
   /** The call goes and runs on the peer, but this host stops waiting at once (its hop timed out). */
   detachAnswer?: (peerId: string, path: string) => boolean;  /** The calls detachAnswer let run on. */
   detached: Array<Promise<void>>;
+  /** Packs its offers without their directory members, as a hostile sender's tar could. */
+  dirless?: boolean;
 }
 
 let hosts: Record<string, Host> = {};
@@ -210,7 +214,7 @@ function makeHost(id: string, label: string, opts: Partial<Host> = {}): Host {
     protectedRoots: () => [join(h.root, "state"), join(h.root, "sessions")],
     transferTimings: { idleMs: 2_000, downWaitMs: 100, maxBackoffMs: 50 },
     // Packs and pulls through the in-process tar; the host's own: links-transfer.integration.test.ts.
-    tar: inProcessTar,
+    tar: ((args, stdio) => (h.dirless ? dirlessTar : inProcessTar)(args, stdio)) as TarRunner,
   };
   // The earlier build's own refusal, word for word, in front of this host's routes.
   h.app.post("/api/peer/links", async (c, next) => {
@@ -248,6 +252,20 @@ async function until(ok: () => boolean, ms = 10_000, what = "the condition"): Pr
     await new Promise((r) => setTimeout(r, 20));
   }
 }
+
+/** inProcessTar, except that packing leaves out every member that is a directory on disk. */
+const dirlessTar: TarRunner = (args, stdio) => {
+  const child = inProcessTar(args, stdio);
+  if (!args.includes("-cf")) return child;
+  const dir = args[args.indexOf("-C") + 1]!;
+  const real = child.stdin!;
+  const front = new PassThrough();
+  const got: Buffer[] = [];
+  front.on("data", (c: Buffer) => got.push(c));
+  front.on("end", () => real.end(Buffer.concat(got).toString("utf8").split("\0").filter((m) => m && !lstatSync(join(dir, m)).isDirectory()).join("\0")));
+  Object.defineProperty(child, "stdin", { value: front });
+  return child;
+};
 
 /** A tar answer whose body breaks after `n` bytes, once. */
 function cutAfter(res: Response, h: Host, n: number): Response {
@@ -818,6 +836,12 @@ function makeTree(h: Host): string {
   return work;
 }
 
+/** Files under `dir`, created with their parents. */
+function makeTreeAt(dir: string, files: Record<string, string>): void {
+  mkdirSync(dir, { recursive: true });
+  for (const [n, v] of Object.entries(files)) writeFileSync(join(dir, n), v);
+}
+
 /** Every host's sessions work in their own dir, so offers resolve against real paths. */
 function workIn(h: Host, sid: string): string {
   const cwd = join(h.root, "work");
@@ -1001,6 +1025,47 @@ describe("file offers (§mesh.links/offers, §mesh.links/transfer)", () => {
     await until(() => rowFor(offerOf(A, id), B)?.state === "done", 15_000, "done after a resume");
     assert.ok((offerOf(B, id)!.recipients[0]!.retries ?? 0) >= 1);
     assert.equal(statSync(join(B.root, "work", "in", "proj", "rand.bin")).size, 300_000);
+  });
+
+  test("sandbox off: a second offer can't write through a link an earlier one left; nothing lands in Sova's state", async () => {
+    await link();
+    const state = join(B.root, "state");
+    mkdirSync(state, { recursive: true });
+    const work = join(A.root, "work");
+    // Offer 1 leaves proj/l -> B's state root: a symlink travels as a link, whatever its target.
+    mkdirSync(join(work, "e1", "proj"), { recursive: true });
+    symlinkSync(state, join(work, "e1", "proj", "l"));
+    const r1 = await offer({ paths: ["e1/proj"], dest: "in" });
+    await until(() => rowFor(offerOf(A, r1.json.offer.id), B)?.state === "done", 15_000, "offer 1 done");
+    assert.equal(readlinkSync(join(B.root, "work", "in", "proj", "l")), state);
+    // Offer 2 comes from a sender whose tar leaves the directories out: proj/l/mesh-access.json alone.
+    makeTreeAt(join(work, "e2", "proj", "l"), { "mesh-access.json": '{"grant":"full"}' });
+    A.dirless = true;
+    const r2 = await offer({ paths: ["e2/proj"], dest: "in" });
+    const id = r2.json.offer.id;
+    await until(() => ["done", "refused", "failed"].includes(rowFor(offerOf(A, id), B)?.state ?? ""), 15_000, "offer 2 final");
+    assert.equal(existsSync(join(state, "mesh-access.json")), false, "nothing written through the link");
+    const row = offerOf(B, id)!.recipients[0]!;
+    assert.equal(row.state, "refused");
+    assert.equal(row.reason, "not-writable");
+    assert.match(row.message ?? "", /proj\/l\/mesh-access\.json would be written through a path the archive didn't create as a directory; nothing was extracted/);
+  });
+
+  test("sandbox off: an offer into a dest that already holds its root lands again, links (relative and absolute) as they were", async () => {
+    await link();
+    const work = join(A.root, "work");
+    symlinkSync("src/a.txt", join(work, "proj", "rel"));
+    symlinkSync("/nowhere/at/all", join(work, "proj", "abs"));
+    const dest = join(B.root, "work", "in");
+    for (const body of ["one", "two"]) {
+      writeFileSync(join(work, "proj", "src", "a.txt"), body);
+      const r = await offer({ paths: ["proj", "notes.md"], dest: "in" });
+      await until(() => rowFor(offerOf(A, r.json.offer.id), B)?.state === "done", 15_000, `offer ${body} done`);
+      assert.equal(readFileSync(join(dest, "proj", "src", "a.txt"), "utf8"), body);
+    }
+    assert.equal(readlinkSync(join(dest, "proj", "rel")), "src/a.txt");
+    assert.equal(readlinkSync(join(dest, "proj", "abs")), "/nowhere/at/all");
+    assert.equal(readFileSync(join(dest, "notes.md"), "utf8"), "# notes\n");
   });
 
   test("the first failure wakes the sender at once; the rest finishing doesn't wake it again", async () => {

@@ -290,12 +290,12 @@ describe("resolveDest and checkDest", () => {
       assert.equal((await refusal(() => checkDest({ resolvedDest: d, rootNames: ["p"], protectedRoots, sandbox: null }))).reason, "protected", d);
     }
   });
-  test("a protected root under dest: refused only when an offered root lands on it; scanned otherwise", async () => {
+  test("a protected root under dest: refused only when an offered root lands on it; every pull is scanned, sandbox or not", async () => {
     const agentParent = join(tmp, "rcv");
     const e = await refusal(() => checkDest({ resolvedDest: agentParent, rootNames: ["agent"], protectedRoots, sandbox: null }));
     assert.equal(e.reason, "protected");
     assert.deepEqual(checkDest({ resolvedDest: agentParent, rootNames: ["proj"], protectedRoots, sandbox: null }), { scan: true });
-    assert.deepEqual(checkDest({ resolvedDest: join(cwd, "in"), rootNames: ["agent"], protectedRoots, sandbox: null }), { scan: false });
+    assert.deepEqual(checkDest({ resolvedDest: join(cwd, "in"), rootNames: ["agent"], protectedRoots, sandbox: null }), { scan: true });
   });
   test("a root name that isn't one plain component: bad-dest", async () => {
     for (const n of ["", ".", "..", "../x", "a/b"]) assert.equal((await refusal(() => checkDest({ resolvedDest: join(cwd, "in"), rootNames: [n], protectedRoots, sandbox: null }))).reason, "bad-dest", n);

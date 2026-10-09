@@ -64,6 +64,7 @@ import type {
   UsageInsight,
   UsageResetDayRequest,
   WebSettings,
+  AlignSettingsInfo,
   WorktreesInsight,
   MeshCandidate,
   MeshHello,
@@ -425,12 +426,19 @@ export const sendPushTest = () => request<PushTestResult>("/api/push/test", { me
     still listed. */
 export const getThemes = () => request<ThemeList>("/api/themes");
 
-/** Sova's own settings (GET /api/settings): Settings → Experimental's switches. */
+/** Sova's own settings (GET /api/settings): Settings → Alignment's review switch and Experimental's switches. */
 export const getWebSettings = () => request<WebSettings>("/api/settings");
 
-/** Save Settings → Experimental's switches; the server keeps every key the body doesn't name. */
-export const putWebSettings = (settings: WebSettings) =>
+/** Save part of Sova's own settings; the server keeps every key the body doesn't name. */
+export const putWebSettings = (settings: Partial<WebSettings>) =>
   request<WebSettings>("/api/settings", { method: "PUT", body: JSON.stringify(settings) });
+
+/** The align mode's writing style and Visuals (GET /api/settings/align, mode-align.json). */
+export const getAlignSettings = () => request<AlignSettingsInfo>("/api/settings/align");
+
+/** Replace the align mode's writing style and Visuals (the whole file). */
+export const putAlignSettings = (settings: AlignSettingsInfo["settings"]) =>
+  request<AlignSettingsInfo>("/api/settings/align", { method: "PUT", body: JSON.stringify(settings) });
 
 /** Whether the Claude Code CLI is usable, for Settings → Accounts' status line. */
 export const getClaudeCliStatus = () => request<ClaudeCliStatus>("/api/settings/claude-status");

@@ -8,6 +8,7 @@
  */
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { isAlignStyle, type AlignStyle } from "./align-settings.ts";
 import { MINOR_MODES, normalizeMinorModes, type MinorMode } from "./minor.ts";
 
 export type Mode = "normal" | "delegate";
@@ -175,11 +176,30 @@ export function restoreActive(entries: readonly { type: string; customType?: str
  */
 export const MODE_NOTE_TYPE = "mode-note";
 
-/** A mode note's `details`: the minor modes in effect after it, and those whose whole guide it carried. */
+/**
+ * A mode note's `details`: the minor modes in effect after it, and those whose whole guide it carried.
+ * `style` / `headStyle`, only on a note that told the align writing style: the
+ * style the model was told by it, and the one the prompt's align block was built with.
+ */
 export interface ModeNoteDetails {
 	v: 1;
 	minorModes: MinorMode[];
 	guides: MinorMode[];
+	style?: AlignStyle;
+	headStyle?: AlignStyle;
+}
+
+/**
+ * A `custom` entry (not in the model's context) the extension appends when a head is fixed with the align
+ * block written in a style other than Default: the style the prompt's align block
+ * was built with, so a reopen rebuilds that head even when no note recorded it. A Default head writes
+ * none: a head fixed since the last compaction that nothing records was built in Default.
+ */
+export const MODE_HEAD_TYPE = "mode-head";
+
+export interface ModeHeadRecord {
+	v: 1;
+	style: AlignStyle;
 }
 
 /**
@@ -193,6 +213,13 @@ export interface ModeHead {
 	head: MinorMode[] | undefined;
 	told: MinorMode[] | undefined;
 	guides: MinorMode[];
+	/** The newest style-telling note since that compaction: the align writing style told, and the head's. */
+	style?: { told: AlignStyle; head: AlignStyle };
+	/**
+	 * The style the head's align block was built with: the newest style note's, else its `mode-head` record,
+	 * else Default once a prompt was sent since that compaction; undefined while none has been.
+	 */
+	headStyle?: AlignStyle;
 }
 
 /**
@@ -202,19 +229,31 @@ export interface ModeHead {
  * before the last compaction are ignored: a compaction rebuilds the head from the active set.
  * Entries Sova writes (pinEntryFor) never carry `head`. Never throws.
  */
-export function restoreHead(entries: readonly { type: string; customType?: string; data?: unknown; details?: unknown }[]): ModeHead {
+export function restoreHead(entries: readonly { type: string; customType?: string; data?: unknown; details?: unknown; message?: unknown }[]): ModeHead {
 	let head: MinorMode[] | undefined;
 	let told: MinorMode[] | undefined;
+	let style: ModeHead["style"];
+	let recorded: AlignStyle | undefined;
+	let sent = false;
 	const guides = new Set<MinorMode>();
 	if (!Array.isArray(entries)) return { head, told, guides: [] };
 	for (let i = entries.length - 1; i >= 0; i--) {
 		const entry = entries[i];
 		if (!entry) continue;
 		if (entry.type === "compaction") break;
+		// A run started since that compaction (a user prompt, or a message an extension sent) sent the head;
+		// a run that compacted goes on with the old prompt, its later replies sending none.
+		if (entry.type === "custom_message" || (entry.type === "message" && (entry.message as { role?: unknown } | undefined)?.role === "user")) sent = true;
+		if (entry.type === "custom" && entry.customType === MODE_HEAD_TYPE) {
+			const data = entry.data as Partial<ModeHeadRecord> | null | undefined;
+			if (recorded === undefined && data?.v === 1 && isAlignStyle(data.style)) recorded = data.style;
+			continue;
+		}
 		if (entry.type === "custom_message" && entry.customType === MODE_NOTE_TYPE) {
 			const details = entry.details as Partial<ModeNoteDetails> | undefined;
 			if (details?.v !== 1 || !Array.isArray(details.minorModes)) continue;
 			told ??= normalizeMinorModes(details.minorModes);
+			if (style === undefined && isAlignStyle(details.style) && isAlignStyle(details.headStyle)) style = { told: details.style, head: details.headStyle };
 			for (const mode of normalizeMinorModes(details.guides)) guides.add(mode);
 			continue;
 		}
@@ -223,8 +262,11 @@ export function restoreHead(entries: readonly { type: string; customType?: strin
 			if (data && typeof data === "object" && Array.isArray(data.head)) head = normalizeMinorModes(data.head);
 		}
 	}
-	if (head === undefined) return { head, told: undefined, guides: [] };
-	return { head, told: told ?? [...head], guides: normalizeMinorModes([...guides]) };
+	// A head no entry records equals the active set, but the style it was built with is the entries' to say.
+	const headStyle = style?.head ?? recorded ?? (sent || head !== undefined ? "default" : undefined);
+	const styled = { ...(style ? { style } : {}), ...(headStyle ? { headStyle } : {}) };
+	if (head === undefined) return { head, told: undefined, guides: [], ...styled };
+	return { head, told: told ?? [...head], guides: normalizeMinorModes([...guides]), ...styled };
 }
 
 /** Read the defaults file; missing or corrupt files fall back to built-in defaults. Never throws. */

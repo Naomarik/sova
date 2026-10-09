@@ -120,3 +120,44 @@ test("strict on, vis on, delegate, vis off, normal: neither vis tool comes back 
   assert.deepEqual(visTools(chat), [], "back in normal: neither");
   await disposeHeldChat(path, "test done");
 });
+
+// Align on, Visuals on, vis off (§chat.alignment/visuals): one rule (visToolsWanted) decides the vis tools at
+// every site that syncs them — the mode extension's vis_guide, the vis-check extension's and the chat's
+// vis_check — so they come once, at the switch, and never flip from run to run.
+test("align on, Visuals on, vis off: two settled runs keep vis_check active, and setActiveTools changed it once", async () => {
+  const file = join(agentDir, "mode-align.json");
+  writeFileSync(file, JSON.stringify({ version: 1, style: "default", visuals: true }));
+  try {
+    const path = sessionFile();
+    const chat = await acquireChat(path);
+    assert.equal(chat.alignLaunch?.data?.visuals, true, "the chat's first start takes Visuals as saved");
+    assert.deepEqual(visTools(chat), [], "no align, no vis: neither");
+    // Every change of the loadout, whoever asks for it (an extension's setActiveTools or the chat's).
+    const session = piSession(chat) as unknown as { setActiveToolsByName(names: string[]): void };
+    const changes: { added: string[]; removed: string[] }[] = [];
+    const setTools = session.setActiveToolsByName.bind(session);
+    session.setActiveToolsByName = (names: string[]) => {
+      const before = chat.harness.activeTools();
+      setTools(names);
+      const after = chat.harness.activeTools();
+      changes.push({ added: after.filter((t) => !before.includes(t)), removed: before.filter((t) => !after.includes(t)) });
+    };
+    const touching = (tool: string) => changes.filter((c) => [...c.added, ...c.removed].includes(tool));
+
+    await set(chat, { minorModes: ["align"] });
+    assert.deepEqual(visTools(chat), VIS, "align on: both vis tools join at the switch, vis off");
+    const model = new ScriptedModel().attach(piSession(chat));
+    for (const text of ["first", "second"]) {
+      model.reply(async () => ({ text: "ok" }));
+      chat.handle(client, { type: "prompt", text });
+      await until(() => !chat.harness.isRunning());
+      await piSession(chat).waitForIdle();
+      assert.deepEqual(visTools(chat), VIS, `still both after the ${text} settled run`);
+    }
+    assert.deepEqual(touching("vis_check"), [{ added: ["vis_check"], removed: [] }], "setActiveTools changed vis_check once, at the switch, never at a run start or settle");
+    assert.equal(touching("vis_guide").length, 1, "and vis_guide once");
+    await disposeHeldChat(path, "test done");
+  } finally {
+    rmSync(file, { force: true });
+  }
+});

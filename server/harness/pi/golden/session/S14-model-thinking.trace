@@ -10,8 +10,9 @@ A {"type":"links","links":[]}
 B {"type":"links","links":[]}
 write {"id":"00000001","type":"model_change"}
 write {"id":"00000002","type":"thinking_level_change"}
+write {"id":"00000003","type":"custom","customType":"sova-align-launch"}
 sdk setModel ["scripted/scripted-think"]
-write {"id":"00000003","type":"model_change"}
+write {"id":"00000004","type":"model_change"}
 sdk setThinkingLevel ["off"]
 A {"type":"ui_request","id":"00000000-0000-7000-8000-000000000002","request":{"method":"setStatus","statusKey":"mode","statusText":"\u001b[38;5;102mnormal\u001b[39m","fireAndForget":true}}
 B {"type":"ui_request","id":"00000000-0000-7000-8000-000000000002","request":{"method":"setStatus","statusKey":"mode","statusText":"\u001b[38;5;102mnormal\u001b[39m","fireAndForget":true}}
@@ -21,7 +22,7 @@ A {"type":"thinking","level":"off"}
 B {"type":"thinking","level":"off"}
 step B sends {"type":"set_thinking","level":"high"}
 sdk setThinkingLevel ["high"]
-write {"id":"00000004","type":"thinking_level_change"}
+write {"id":"00000005","type":"thinking_level_change"}
 A {"type":"event","event":{"type":"thinking_level_changed","level":"high"}}
 A {"type":"ui_request","id":"00000000-0000-7000-8000-000000000003","request":{"method":"setStatus","statusKey":"mode","statusText":"\u001b[38;5;102mnormal\u001b[39m","fireAndForget":true}}
 B {"type":"ui_request","id":"00000000-0000-7000-8000-000000000003","request":{"method":"setStatus","statusKey":"mode","statusText":"\u001b[38;5;102mnormal\u001b[39m","fireAndForget":true}}
@@ -40,13 +41,13 @@ A {"type":"event","event":{"type":"agent_start"}}
 B {"type":"event","v":2,"event":{"type":"run.start"}}
 A {"type":"event","event":{"type":"turn_start"}}
 A {"type":"event","event":{"type":"message_start","message":{"role":"system","elided":true}}}
-write {"id":"00000005","type":"message","role":"system"}
-A {"type":"event","event":{"type":"message_end","message":{"role":"system","elided":true}},"entryId":"00000005"}
+write {"id":"00000006","type":"message","role":"system"}
+A {"type":"event","event":{"type":"message_end","message":{"role":"system","elided":true}},"entryId":"00000006"}
 A {"type":"event","event":{"type":"message_start","message":{"role":"user","content":[{"type":"text","text":"work"}],"timestamp":1000000000000}}}
 B {"type":"event","v":2,"event":{"type":"message.start","role":"user","text":"work","images":[]}}
-write {"id":"00000006","type":"message","role":"user"}
-A {"type":"event","event":{"type":"message_end","message":{"role":"user","content":[{"type":"text","text":"work"}],"timestamp":1000000000000}},"entryId":"00000006"}
-B {"type":"event","v":2,"event":{"type":"message.end","role":"user","entryId":"00000006"}}
+write {"id":"00000007","type":"message","role":"user"}
+A {"type":"event","event":{"type":"message_end","message":{"role":"user","content":[{"type":"text","text":"work"}],"timestamp":1000000000000}},"entryId":"00000007"}
+B {"type":"event","v":2,"event":{"type":"message.end","role":"user","entryId":"00000007"}}
 step A sends {"type":"set_model","ref":"scripted/scripted"}
 step B sends {"type":"set_thinking","level":"low"}
 B {"type":"error","code":"internal","message":"Cannot change thinking while the agent is running; wait or abort first"}
@@ -54,9 +55,9 @@ A {"type":"error","code":"internal","message":"Cannot switch models while the ag
 step release the reply
 A {"type":"event","event":{"type":"message_start","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted-think","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop","thinkingLevel":"high"}}}
 B {"type":"event","v":2,"event":{"type":"message.start","role":"assistant","model":"scripted/scripted-think","parts":[{"kind":"text","text":"ok"}]}}
-write {"id":"00000007","type":"message","role":"assistant"}
-A {"type":"event","event":{"type":"message_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted-think","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop","thinkingLevel":"high"}},"entryId":"00000007"}
-B {"type":"event","v":2,"event":{"type":"message.end","role":"assistant","entryId":"00000007","model":"scripted/scripted-think","parts":[{"kind":"text","text":"ok"}],"stop":"ok"}}
+write {"id":"00000008","type":"message","role":"assistant"}
+A {"type":"event","event":{"type":"message_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted-think","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop","thinkingLevel":"high"}},"entryId":"00000008"}
+B {"type":"event","v":2,"event":{"type":"message.end","role":"assistant","entryId":"00000008","model":"scripted/scripted-think","parts":[{"kind":"text","text":"ok"}],"stop":"ok"}}
 A {"type":"event","event":{"type":"turn_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted-think","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop","thinkingLevel":"high"},"toolResults":[]}}
 A {"type":"event","event":{"type":"agent_end","messages":[{"role":"system","elided":true},{"role":"user","content":[{"type":"text","text":"work"}],"timestamp":1000000000000},{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted-think","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop","thinkingLevel":"high"}],"willRetry":false}}
 A {"type":"event","event":{"type":"agent_settled"}}

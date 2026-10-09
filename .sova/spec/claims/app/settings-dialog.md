@@ -8,7 +8,7 @@ the session stays behind, closed by the scrim, Esc, or its Close button (Cancel 
 is unsaved, §app.settings-dialog/save-bar).
 
 The rail is the structure: each settings screen is one tab — General, Models, Accounts, Subagents,
-Profiles, Overseer, Notifications, Decisions, Summaries, Organizations, Themes, Mesh, Public links, Outreach, Voice, Experimental.
+Alignment, Profiles, Overseer, Notifications, Decisions, Summaries, Organizations, Themes, Mesh, Public links, Outreach, Voice, Experimental.
 Tabs move with the arrow keys as well as the pointer, and the selected tab has focus on open: the
 two have to name the same screen. The gear opens General; the mode menu's **Configure Delegate** gear
 (§chat/mode-menu) opens Subagents directly, and nothing else about the chat changes. Which tab is open lives in
@@ -397,9 +397,34 @@ broken. Polling stops when the tab loses focus or the dialog closes.
 While the list loads, the panel shows skeleton rows. If the folder can't be read, an error banner
 offers Retry and the built-in themes list anyway — the app's own themes don't depend on it.
 
+## §app.settings-dialog/alignment — Alignment
+
+The tab after Subagents, and the align mode's settings (§chat/alignment). It opens with one line:
+"How the align mode plans with you." Three groups follow, staged and saved with the dialog's Save
+Changes like every gated form (§app.settings-dialog/save-bar):
+
+- **Writing style**, a radiogroup of three, each option a label row with a one-line description:
+  **Default** "Today's detail: files, code and technical trade-offs.", **Simplified** "Short
+  sentences in everyday words, fewer items.", **Project manager** "Screens, wording and behaviour
+  only; no code. Technical detail folded into notes." Under it the hint "Reaches open chats at their
+  next message."
+- **Visuals**, one switch, "Draw when it helps", with the hint "The align mode draws a wireframe or a
+  flow on the alignment card when a picture explains faster than words. Applies to sessions you start
+  after saving."
+- **Review**, one switch, "Adversarial review", with no chip, and
+  today's line, ending in when it applies: "In align sessions, a read-only reviewer checks the plan
+  and the diff of risky work, at most once each per alignment. Applies to sessions you start after
+  saving." (§chat.alignment-review/flag)
+
+Under the groups one line says "A subagent profile can set its own writing style and visuals
+(Settings → Subagents)." Style and Visuals are stored in `<agent dir>/mode-align.json`
+(§chat.alignment/settings-file), Review in Sova's settings; one Save writes both, and a failure of
+either keeps the form's draft and shows the save-failed banner at its end. The defaults are Default,
+Visuals off and Review off.
+
 ## §app.settings-dialog/profiles — Profiles
 
-The tab after Subagents: every profile a session in the open session's folder can use
+The tab after Alignment: every profile a session in the open session's folder can use
 (§chat.profiles/projects), read-only. It opens with one line: "Profiles are files. Ask an agent to
 add or change one, or edit {path}." `{path}` is the project's `.sova/profiles/` folder (else your
 `session-profiles.json`), and a **File Format** link opens `docs/profiles.md`. Nothing here
@@ -578,7 +603,7 @@ Folders box or the tab writes nothing.
 
 Every Settings tab that writes a file on the server is Save-gated: **Models**, **Subagents**
 (the library and this device's default), **Overseer**, **Notifications** (the **Phone Notifications** form), **Decisions**, **Summaries**, **Organizations**,
-**Mesh** and **Experimental**. A change on them is staged, never written as it is made. No form has a Save or
+**Mesh**, **Alignment** and **Experimental**. A change on them is staged, never written as it is made. No form has a Save or
 Discard button of its own: saving is the dialog's.
 
 - **The footer.** Left to right: a status line, then **Discard Changes** (ghost), **Save Changes**
@@ -625,9 +650,12 @@ Discard button of its own: saving is the dialog's.
   can't be saved blank. A save refreshes the mesh state, so the new name shows everywhere at once.
   Enter in a Mesh field does nothing: Save writes every tab's edits, and a key press in one field
   doesn't.
-- **Experimental** holds the **Adversarial review** switch (§chat.alignment-review/flag), staged
-  and saved like every other gated form; the Claude Code provider is no switch there, it is always
-  on (§app.claude-code-provider/always-on).
+- **Alignment** stages its Writing style, Visuals and Adversarial review together
+  (§app.settings-dialog/alignment); Save Changes writes the review switch to Sova's settings and the
+  style and visuals to `mode-align.json`, each a write of its own, and the status line names the form
+  "Alignment" whichever of the two failed.
+- **Experimental** holds no switch now: its panel says "No experimental features right now." and nothing in it is ever unsaved. Adversarial
+  review moved to Alignment; the Claude Code provider is no switch there, it is always on (§app.claude-code-provider/always-on).
 - **Not gated.** General, Themes and Typography change only this browser and still apply as you
   pick. Actions run at once and are never part of a draft: Retry, Try Again, Check Again, Themes'
   Refresh, the Jev key's Save Key, Replace Key and Remove Key, Test Decisions, Tag Last 30 Days,

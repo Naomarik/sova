@@ -123,3 +123,19 @@ test("a role whose fields need fixing is said per role", () => {
   assert.equal(roleProblem(profile({ teams: same }), "monitor"), true);
   assert.equal(roleProblem(profile(), "monitor"), false);
 });
+
+test("Alignment: the summary says what the profile overrides; Use host default stores no field, both store no key", async () => {
+  const { alignmentSummary, withAlignment, sectionProblems } = await import("./subagent-editor");
+  const p = profile({ teams: null });
+  assert.equal(alignmentSummary(p), "Host default");
+  const pm = withAlignment(p, { style: "pm" });
+  assert.deepEqual(pm.alignment, { style: "pm" });
+  assert.equal(alignmentSummary(pm), "Project manager");
+  const both = withAlignment(pm, { visuals: true });
+  assert.equal(alignmentSummary(both), "Project manager · visuals on");
+  assert.equal(alignmentSummary(withAlignment(p, { visuals: false })), "visuals off");
+  const back = withAlignment(withAlignment(both, { style: "host" }), { visuals: "host" });
+  assert.equal("alignment" in back, false, "both on Use host default: no key, as before the field existed");
+  assert.equal("alignment" in p, false, "the input is never changed");
+  assert.equal(sectionProblems(both).has("alignment"), false, "a choice is always valid: the section never holds Save");
+});

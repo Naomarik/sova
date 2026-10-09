@@ -34,7 +34,8 @@ import { setShowSummaries, showSummaries } from "../lib/summary-line";
 import { compressWork, setCompressWork } from "../lib/work-compression";
 import { activeThemeId, applyTheme, droppedThemeId, reconcileTheme, typography } from "../lib/theme";
 import type { SettingsTab } from "../lib/settings-nav";
-import { applySaved, experimentalDraft, experimentalSaveError, experimentalSaving, setExperimentalDraft, setExperimentalSaved } from "../lib/experimental-draft";
+import { setExperimentalSaved } from "../lib/experimental-draft";
+import { AlignmentSettings } from "./AlignmentSettings";
 import { policyDraft, policySaveError, policySaving, setPolicyDraft, setPolicySaved } from "../lib/model-policy-draft";
 import { limitsDraft, limitsSaveError, limitsSaveResult, limitsSaving, setLimitsDraft, setLimitsSaved } from "../lib/provider-limits-draft";
 import { LIMIT_MAX, LIMIT_MIN, parseLimitField } from "../lib/provider-limits";
@@ -77,6 +78,7 @@ const TABS = [
   { id: "models", label: "Models", icon: "sliders" as const },
   { id: "accounts", label: "Accounts", icon: "refresh" as const },
   { id: "subagents", label: "Subagents", icon: "worker" as const },
+  { id: "alignment", label: "Alignment", icon: "check" as const },
   { id: "profiles", label: "Profiles", icon: "wrench" as const },
   { id: "overseer", label: "Overseer", icon: "eye" as const },
   { id: "notifications", label: "Notifications", icon: "bell" as const },
@@ -236,6 +238,12 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
           <Show when={tab() === "subagents"}>
             <div class="settings-panel" role="tabpanel" id="settings-panel-subagents" aria-labelledby="settings-tab-subagents"><SubagentProfilesSettings /></div>
           </Show>
+          {/* Mounted only while its tab is: both of its stores are read when it opens. */}
+          <Show when={tab() === "alignment"}>
+            <div class="settings-panel" role="tabpanel" id="settings-panel-alignment" aria-labelledby="settings-tab-alignment">
+              <AlignmentSettings />
+            </div>
+          </Show>
           <Show when={tab() === "profiles"}>
             <div class="settings-panel" role="tabpanel" id="settings-panel-profiles" aria-labelledby="settings-tab-profiles">
               <ProfilesSettingsSection cwd={props.cwd ?? null} />
@@ -381,16 +389,14 @@ function ClaudeCliStatusLine() {
  * Experimental: unfinished features, staged like every server-backed form and written by Save
  * Changes. The settings are read when the tab opens (the panel is mounted only while its tab is),
  * so each switch starts from what's saved; each is bound to experimentalDraft / setExperimentalDraft.
+ * None right now: the panel says so (adversarial review moved to Alignment).
  */
 function ExperimentalPanel() {
   const [webSettings] = createResource(() => getWebSettings());
   // setExperimentalSaved is untracked (settings-draft.ts), so this tracks the loaded settings only.
   createEffect(() => {
     const s = webSettings.error ? undefined : webSettings();
-    if (s) {
-      setExperimentalSaved(s.experimental);
-      applySaved(s.experimental);
-    }
+    if (s) setExperimentalSaved(s.experimental);
   });
 
   return (
@@ -399,30 +405,9 @@ function ExperimentalPanel() {
         Unfinished features. They can change or disappear, and they apply to sessions you start
         after switching them on — chats already open keep the setup they began with.
       </p>
-      <div>
-        <label class="toggle toggle-switch settings-team-enable">
-          <span>Adversarial review</span>
-          <input
-            type="checkbox"
-            checked={experimentalDraft()?.adversarialReview ?? false}
-            disabled={experimentalSaving() || experimentalDraft() === null}
-            aria-describedby="experimental-review-hint"
-            onChange={(e) => {
-              const d = experimentalDraft();
-              if (d) setExperimentalDraft({ ...d, adversarialReview: e.currentTarget.checked });
-            }}
-          />
-          <span class="toggle-box" />
-        </label>
-        <p class="field-hint" id="experimental-review-hint">
-          In align sessions, a read-only reviewer checks the plan and the diff of risky work, at most once each per alignment.
-        </p>
-      </div>
+      <p class="field-hint">No experimental features right now.</p>
       <Show when={webSettings.error}>
         <Banner tone="error" title="Couldn't read the experimental settings." body="Nothing was changed." />
-      </Show>
-      <Show when={experimentalSaveError()}>
-        {(err) => <Banner tone="error" title="Couldn't save the change." body={`${sentence(err().message)} Your saved setting is unchanged.`} />}
       </Show>
     </>
   );

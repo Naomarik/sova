@@ -7,6 +7,7 @@ import { createDraftStore, dirtyForms, formNames, gatedForms, resetAllDrafts, sa
 import { rebaseSummarizer, sameSummarizer, summarizerComplete } from "./summarizer-form";
 // Every Save-gated form's store, so the registry below is the app's whole registry.
 import "./decision-draft";
+import "./alignment-draft";
 import "./experimental-draft";
 import "./model-policy-draft";
 import "./overseer-draft";
@@ -60,7 +61,7 @@ test("the registry: every server-backed tab has a gated form, the browser-local 
   const real = gatedForms().filter((f) => !f.label.startsWith("Test"));
   assert.deepEqual(
     real.map((f) => `${f.tab}:${f.label}`),
-    ["models:Models", "subagents:Subagents", "overseer:Overseer", "decisions:Decisions", "summaries:Summaries", "mesh:Mesh", "experimental:Experimental"],
+    ["models:Models", "subagents:Subagents", "alignment:Alignment", "overseer:Overseer", "decisions:Decisions", "summaries:Summaries", "mesh:Mesh", "experimental:Experimental"],
   );
   assert.equal(formNames([]), "");
   assert.equal(formNames([{ label: "Models" }]), "Models");

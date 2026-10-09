@@ -43,6 +43,23 @@ function parse(args: string[]): { cmd: string; name: string; values: Map<string,
   return { cmd: args[0] ?? "", name: args[1] ?? "", values, flags };
 }
 
+// The real tool's withNewRecords (sova-spec-draft.mjs), mirrored; spec-tool-fake.test.ts holds the two together.
+// New records go right before the first record of the same area (the id up to "/") that sorts after them, else
+// right after that area's last record; an area's first record goes right before the first record whose area sorts
+// after its own, or last. Records already there keep their place.
+const areaOf = (id: string) => id.slice(0, id.indexOf("/") >>> 0);
+export function withNewRecords<T>(claims: Record<string, T>, added: Record<string, T>): Record<string, T> {
+  const keys = Object.keys(claims);
+  for (const id of Object.keys(added).sort()) {
+    const area = areaOf(id);
+    const own = keys.flatMap((k, i) => (areaOf(k) === area ? [i] : []));
+    let at = own.length ? (own.find((i) => keys[i]! > id) ?? own.at(-1)! + 1) : keys.findIndex((k) => areaOf(k) > area);
+    if (at < 0) at = keys.length;
+    keys.splice(at, 0, id);
+  }
+  return Object.fromEntries(keys.map((k) => [k, k in added ? added[k]! : claims[k]!]));
+}
+
 /** The claim file (relative to the spec dir) that declares `id`: `§ns/area` and `§ns.area/x` live in claims/ns/area.md. */
 function fileOf(id: string, claimsRoot: string): string {
   const lede = /^§([^./]+)\/([^/]+)$/.exec(id);
@@ -116,10 +133,13 @@ function run(root: string, args: string[]): ToolResult {
     if (values.get("--plan")?.[0] !== plan) return refused(1, "plan-stale", "the draft changed since the preview");
     const existed = existsSync(join(spec, "manifest.json"));
     const current: Manifest = existed ? readJson<Manifest>(join(spec, "manifest.json")) : { formatVersion: dm.formatVersion ?? 1, ...(dm.claimsRoot ? { claimsRoot: dm.claimsRoot } : {}), claims: {} };
+    const added: Manifest["claims"] = {};
     for (const id of ids) {
-      if (dm.claims[id]) current.claims[id] = dm.claims[id]!;
-      else delete current.claims[id];
+      if (!dm.claims[id]) delete current.claims[id];
+      else if (id in current.claims) current.claims[id] = dm.claims[id]!;
+      else added[id] = dm.claims[id]!;
     }
+    current.claims = withNewRecords(current.claims, added);
     for (const f of files) {
       mkdirSync(dirname(join(spec, f)), { recursive: true });
       cpSync(join(draftSpec, f), join(spec, f));

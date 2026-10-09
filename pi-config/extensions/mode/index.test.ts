@@ -25,7 +25,7 @@ import {
 } from "./prompt.ts";
 import { routeAll, routeWriter, type Discovery } from "./routing.ts";
 import { specDefaults, type SpecSettings } from "./spec.ts";
-import { DIGEST_TAG } from "./spec-guard.ts";
+import { DIGEST_TAG, UNREAD_PREFIX } from "./spec-guard.ts";
 import {
 	activeOf,
 	DEFAULT_ALIGN_VIEWER_SHORTCUT,
@@ -430,7 +430,7 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 		assert.ok(real, `${flag} is a real flag`);
 	}
 	for (const flag of ["--dir", "--whole", "--no-frame", "--near", "--cursor"]) assert.ok(flags.has(flag), `${flag} is named`);
-	for (const flag of ["--spec", "--commit", "--snapshot", "--doc-only", "--plan", "--write", "--verification", "--changed", "--base"]) assert.ok(flags.has(flag), `${flag} is named`);
+	for (const flag of ["--spec", "--commit", "--snapshot", "--doc-only", "--plan", "--write", "--verification", "--changed", "--related"]) assert.ok(flags.has(flag), `${flag} is named`);
 	// Every draft command the prompt names is one the draft tool advertises.
 	const draftUsage = usage("sova-spec-draft.mjs", "--no-such-flag");
 	for (const cmd of ["new", "status", "diff", "check", "evidence", "promote", "recover"]) {
@@ -470,8 +470,9 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	assert.ok(spec.indexOf("Before coding:") < spec.indexOf("before coding.") && spec.indexOf("before coding.") < spec.indexOf("Documentation changes only through drafts"), "the new claim is a before-coding step");
 	// Only what the task changed is claimed; neighbours are linked, never spec'd.
 	assert.match(spec, /Claim only files the task changed \(each record's `code`\); unchanged dependencies are not spec'd; `requires` names only existing claims\./);
-	// The finish gate: the changed-file census, run on the draft until it is promoted.
-	assert.match(spec, /Before finishing:\n- Run `node "\$core\/sova-spec\.mjs" census --changed --root <project root> --json` \(`--spec` the draft's `spec\/` until promoted; `--base <rev>` once committed\): every changed file in the boundary is claimed, any changed file outside it whose change a user sees is spec'd, and you have read each § it lists for your change\./, "one census before finishing; the boundary is not an exemption");
+	// The finish gate: the census note's one unread line (no census by hand); the boundary is not an exemption.
+	assert.match(spec, /Before finishing:\n- Read each § the census note's `Unread § your change landed in` line \(once, after your last edit\) marks read first; the rest are named \(`census --changed --related` ranks by hand\)\. Every changed file in the boundary is claimed; any outside it whose change a user sees is spec'd\./, "the unread line replaces the census run by hand before finishing");
+	assert.ok(spec.includes(`\`${UNREAD_PREFIX.replace(/: $/, "")}\``), "the guide names the hook's line in its own words");
 	// Promotion is no longer conditional on a commit: promote, or say why not.
 	assert.match(spec, /- Before promoting, read `\$core\/\.\.\/PROMOTE\.md`; promote what you verified, or say in your reply why not\./);
 	assert.doesNotMatch(spec, /Before `git commit`, if/, "the old conditional is gone");

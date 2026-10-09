@@ -360,6 +360,12 @@ export interface CensusState {
 	foreign?: Record<string, number>;
 	/** The session's own changed files the census maps, by spec-root path, with their § ([] = in the boundary, unclaimed): landedLine. */
 	landed?: Record<string, string[]>;
+	/** The § the session ran `sova-spec.mjs read` on (specReads), kept past a bounded command list. */
+	readIds?: string[];
+	/** An edit since the unread line was last weighed: the next call that changes nothing weighs it (unreadStep). */
+	unreadDue?: boolean;
+	/** The landed foreign § the unread line was last weighed for, sorted and joined: the same set stays quiet. */
+	unreadSaid?: string;
 }
 
 /** The digest's once-per-session lines, marked only on the note that printed them. */
@@ -500,6 +506,99 @@ export function readLandedLine(file: string): string | undefined {
 	}
 }
 
+const SPEC_ID = /§[a-z][a-z-]*(?:\.[a-z][a-z-]*)?\/[a-z][a-z-]*/g;
+const READ_VALUE_FLAGS = new Set(["--root", "--spec", "--budget", "--cursor"]);
+
+/**
+ * The § shell commands ran `sova-spec.mjs read` on, by literal id; a read of a `$` reference (a loop's
+ * variable) counts every § the command spells.
+ */
+export function specReads(commands: readonly string[]): string[] {
+	const ids = new Set<string>();
+	for (const command of commands)
+		for (const words of simpleCommands(command)) {
+			const at = words.findIndex((w) => /(?:^|\/)sova-spec\.mjs$/.test(w));
+			if (at < 0 || words[at + 1] !== "read") continue;
+			let arg: string | undefined;
+			for (let i = at + 2; i < words.length && arg === undefined; i++) {
+				if (READ_VALUE_FLAGS.has(words[i]!)) i++;
+				else if (!words[i]!.startsWith("--")) arg = words[i];
+			}
+			if (arg?.startsWith("§")) ids.add(arg);
+			else if (arg?.includes("$")) for (const m of command.matchAll(SPEC_ID)) ids.add(m[0]);
+		}
+	return [...ids].sort();
+}
+
+/** The ranked parts of a `census --changed --related --json`: each foreign touched § in rank order, with the files it lands in. */
+export interface RankedView {
+	rank: { id: string; score: number; stale: string[]; files: string[] }[];
+}
+export function parseRanked(stdout: string): RankedView | undefined {
+	let out: { exit?: unknown; census?: { rank?: unknown; touched?: unknown } | null };
+	try {
+		out = JSON.parse(stdout);
+	} catch {
+		return undefined;
+	}
+	const c = out?.census;
+	if (out?.exit === 2 || !c || !Array.isArray(c.rank) || !Array.isArray(c.touched)) return undefined;
+	const files = new Map<string, string[]>();
+	for (const t of c.touched as { id?: unknown; files?: unknown }[]) if (typeof t?.id === "string" && Array.isArray(t.files)) files.set(t.id, t.files as string[]);
+	return {
+		rank: (c.rank as { id?: unknown; score?: unknown; stale?: unknown }[])
+			.filter((r) => typeof r?.id === "string")
+			.map((r) => ({ id: r.id as string, score: typeof r.score === "number" ? r.score : 0, stale: Array.isArray(r.stale) ? (r.stale as string[]) : [], files: files.get(r.id as string) ?? [] })),
+	};
+}
+
+export const UNREAD_PREFIX = "Unread § your change landed in: ";
+const READ_FIRST = 5;
+
+/**
+ * The unread line over the ranked census, the session's own files and its reads: the landed foreign §
+ * in rank order, at most 5 marked read first (a score or a stale literal), the rest named. → {key, text?}:
+ * key is the landed set (unreadSaid); no text when none landed or every one was read.
+ */
+export function unreadLine(v: RankedView, own: ReadonlySet<string>, read: ReadonlySet<string>): { key: string; text?: string } {
+	const landed = v.rank.filter((r) => r.files.some((f) => own.has(f)));
+	const key = landed.map((r) => r.id).sort().join(",");
+	const unread = landed.filter((r) => !read.has(r.id));
+	if (!unread.length) return { key };
+	const first = unread.filter((r) => r.score > 0 || r.stale.length).slice(0, READ_FIRST);
+	const named = unread.filter((r) => !first.includes(r));
+	const shown = (r: RankedView["rank"][number]) => (r.stale.length ? `${r.id} (still states ${r.stale.join(", ")})` : r.id);
+	const parts = [first.length ? `read first ${first.map(shown).join(", ")}` : "", named.length ? `named ${named.map(shown).join(", ")}` : ""].filter(Boolean);
+	return { key, text: `${DIGEST_TAG} ${UNREAD_PREFIX}${parts.join("; ")}` };
+}
+
+/**
+ * The first call after the session's last edit: run the ranked census once and say the unread line,
+ * unless the landed set is the one last weighed. Clears unreadDue either way.
+ */
+async function unreadStep(next: CensusState, call: CensusCall, view: GitView, core: string, io: SpecIO): Promise<{ state: CensusState; result: CensusResult }> {
+	next.unreadDue = false;
+	const root = await findSpecRoot(call.cwd, (p) => io.exists(p));
+	const tool = join(core, "sova-spec.mjs");
+	if (!root || !next.landed || !(await io.exists(tool))) return { state: next, result: {} };
+	const own = new Set(Object.keys(next.landed));
+	for (const p of foreignUnder(next, view.top, root)) own.delete(p);
+	if (!own.size) return { state: next, result: {} };
+	const spec = await pickDraft(root, call.commands ?? [], call.sessionStart, io);
+	const run = async (draft?: string) => {
+		const args = [tool, "census", "--changed", "--related", "--json", "--root", root, ...(next.base ? ["--base", next.base] : []), ...(next.ownBases ?? []).flatMap((rev) => ["--own-base", rev]), ...(draft ? ["--spec", draft] : [])];
+		const r = await io.exec("node", args, { cwd: root, timeout: TOOL_TIMEOUT_MS, signal: call.signal });
+		return { view: parseRanked(r.stdout), r };
+	};
+	let r = await run(spec);
+	if (!r.view && spec) r = await run(); // an unreadable draft: the current spec still maps the files
+	if (!r.view) return failed(next, r.r.stdout.trim() ? "unusable census output" : `the census produced no output (${silentCause(r.r)})`);
+	const line = unreadLine(r.view, own, new Set(next.readIds ?? []));
+	if (line.key === next.unreadSaid) return { state: next, result: {} };
+	next.unreadSaid = line.key;
+	return { state: next, result: line.text ? { text: line.text } : {} };
+}
+
 /** The env var naming the file a worker's census state goes to, for its parent's landed line. */
 export const LANDED_FILE_ENV = "SOVA_SPEC_LANDED_FILE";
 
@@ -591,6 +690,15 @@ async function censusDelta(state: CensusState, call: CensusCall, core: string, i
 			const diff = await io.exec("git", ["diff", "--name-only", "-z", next.base, view.head], { cwd: view.top, timeout: TOOL_TIMEOUT_MS, signal: call.signal });
 			if (diff.code === 0) for (const p of diff.stdout.split("\0")) see(p);
 		}
+		// The § this session read so far, by its shell commands (unreadLine).
+		const command = call.toolName.toLowerCase() === "bash" ? (call.input as { command?: unknown } | undefined)?.command : undefined;
+		const reads = specReads([...(call.commands ?? []), ...(typeof command === "string" ? [command] : [])]);
+		if (reads.some((id) => !next.readIds?.includes(id))) next.readIds = [...new Set([...(next.readIds ?? []), ...reads])].sort();
+		// An edit: a path new, changed or gone since the last look, never one another process changed between calls.
+		const before = state.last?.files ?? {};
+		const edited = fresh.length > 0 || Object.keys({ ...before, ...view.files }).some((p) => before[p] !== view.files[p] && !(p in foreign));
+		if (edited) next.unreadDue = true;
+		else if (next.unreadDue) return await unreadStep(next, call, view, core, io);
 		if (!fresh.length) return { state: next, result: {} };
 		next.known.push(...fresh.filter((p) => !next.known.includes(p)));
 		// A bash call that ran the census itself already shows it: no note, but what it changed still lands.

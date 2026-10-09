@@ -23,6 +23,7 @@ const {
   parseProfile,
   profileFileError,
   PROFILE_ENTRY,
+  PROFILE_MINOR_MODES,
   REMOVABLE,
   sessionSentHeader,
   stripSessionHeader,
@@ -147,9 +148,26 @@ describe("the model", () => {
     assert.equal((parseProfile({ id: "x", label: "X", subagents: "off" }) as Profile).subagents, "off");
   });
 
-  test("capability-neutral: only model, effort, subagents or mode", () => {
+  test("minorModes is the whole set: any order reads in the mode extension's, [] stays none, absent stays absent", async () => {
+    const minors = (v: unknown) => (parseProfile({ id: "x", label: "X", minorModes: v }) as Profile).minorModes;
+    assert.deepEqual(minors(["vis", "align", "spec", "vis"]), ["align", "spec", "vis"]);
+    assert.deepEqual(minors(["codemode"]), ["codemode"]);
+    assert.deepEqual(minors([]), [], "[] is kept: the session starts with none");
+    assert.equal("minorModes" in (parseProfile({ id: "x", label: "X" }) as Profile), false, "absent: mode.json's default");
+    // The file parse is strict about it.
+    assert.equal(profileFileError({ ...CAPTAIN, minorModes: ["spec", "align"] }), null);
+    assert.equal(profileFileError({ ...CAPTAIN, minorModes: [] }), null);
+    assert.equal(profileFileError({ ...CAPTAIN, minorModes: ["spec", "aling"] }), `"minorModes" has unknown name "aling". Known: align, spec, vis, codemode.`);
+    assert.equal(profileFileError({ ...CAPTAIN, minorModes: "spec" }), `"minorModes" must be a list of names.`);
+    assert.equal(profileFileError({ ...CAPTAIN, minorModes: [1] }), `"minorModes" must be a list of names.`);
+    // shared/ imports nothing, so it keeps its own copy of the mode extension's list.
+    const { MINOR_MODES } = await import("./mode-state");
+    assert.deepEqual([...PROFILE_MINOR_MODES], [...MINOR_MODES]);
+  });
+
+  test("capability-neutral: only model, effort, subagents, mode or minor modes", () => {
     const p = (extra: Record<string, unknown>) => parseProfile({ id: "x", label: "X", ...extra }) as Profile;
-    assert.equal(isCapabilityNeutral(p({ model: "a/b", thinking: "low", subagents: "off", mode: "delegate" })), true);
+    assert.equal(isCapabilityNeutral(p({ model: "a/b", thinking: "low", subagents: "off", mode: "delegate", minorModes: ["spec"] })), true);
     assert.equal(isCapabilityNeutral(p({ remove: ["web"] })), false);
     assert.equal(isCapabilityNeutral(p({ grant: ["sessions.read"] })), false);
     assert.equal(isCapabilityNeutral(p({ singleton: true })), false);

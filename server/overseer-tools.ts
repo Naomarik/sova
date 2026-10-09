@@ -40,6 +40,7 @@ import { projectEngine } from "./project-services/routes";
 import { overseerVerbsTool, type LooseExec } from "./project-services/tools";
 import { operatorEnvelopeOf } from "./projects/spaces";
 import { orgConfirmLookup, orgTools } from "./overseer-org-tools";
+import { orgHistoryParams, orgHistoryRead } from "./org-history-tools";
 import { resolveAnyProject, resolveOrg, resolvePerson } from "./overseer-org-view";
 import { contactRedactor, loggedArgs } from "./overseer-org-view";
 import { linkState as shareLinkState, listShares, type ShareLinkRecord } from "./session-shares";
@@ -1624,6 +1625,17 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
       int,
       bool,
     }),
+    // The organization's history: read when the operator's turn asks for it.
+    {
+      name: "sova_org_history",
+      label: "Org history",
+      description:
+        "Read an organization's recorded history: what was requested, decided (decisions not to act included), held, refused, built and merged, who initiated, decided and carried it out, and the reason recorded at the time. " +
+        "search lists events; event reads one in full with its sources; trace follows its recorded causes and results; packet gives a bounded context. Only in a turn the operator started.",
+      promptSnippet: "read an organization's recorded history (who decided what, why, and what it led to)",
+      parameters: orgHistoryParams(),
+      execute: read(async (params) => ({ content: text(orgHistoryRead(params, host.attended())), details: {} })),
+    } as unknown as Tool,
   ];
   // Every tool, this list's and any added to it: no secret value in or out (overseer-redact.ts), and
   // no contact value out (§app.overseer/org-projection).

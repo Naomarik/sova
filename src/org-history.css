@@ -1,0 +1,390 @@
+/* The org page's History tab: filter bar, timeline, event detail and the
+   Causal View. Token values only. The tab is its own named container, `org-history`: the split
+   (timeline beside the detail) asks its own box, never the window, so a narrow pane in a wide
+   window gets the narrow layout. Narrow is the default; the split is the widening rule. */
+
+.orghist {
+  container: org-history / inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+  max-width: 1280px;
+}
+.orghist-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--space-2) var(--space-4); }
+.orghist-titles { display: flex; flex-direction: column; gap: 2px; min-width: min-content; }
+.orghist-coverage { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); }
+
+/* Timeline | Causal View: a view switch (two links, the current one marked), not a second tab strip. */
+.orghist-views { display: inline-flex; border: var(--stroke-icon) solid var(--color-border-strong); border-radius: var(--r-md); overflow: hidden; }
+.orghist-view {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--control-md);
+  padding: 0 var(--space-4);
+  color: var(--color-ink-2);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-medium);
+  text-decoration: none;
+  background: var(--color-surface);
+}
+.orghist-view + .orghist-view { border-left: var(--stroke-icon) solid var(--color-border-strong); }
+.orghist-view:hover { background: var(--color-sunken); color: var(--color-ink); }
+.orghist-view:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-width) * -1); }
+/* The current view: tint, and the weight, so it reads without the hue. */
+.orghist-view[aria-current="page"] { background: var(--color-accent-tint); color: var(--color-accent); font-weight: var(--fw-semibold); }
+.orghist-view[aria-disabled="true"] { color: var(--color-ink-muted); cursor: not-allowed; }
+
+/* ---- The filter bar: the skill's Filter bar, ported here (not in base.css): 44px controls on
+   sunken, the count inside the bar it answers to. A set filter is tinted AND says its value. */
+.orghist-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-sunken);
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-lg);
+}
+/* The filters are the bar's own items, so the count and Copy Context end the last row instead of
+   taking a row of their own. */
+.orghist-filters { display: contents; }
+.orghist-bar-end { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-inline-start: auto; }
+.orghist-count { margin: 0; font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-2); font-variant-numeric: tabular-nums; }
+
+.orghist-search { position: relative; display: inline-flex; align-items: center; flex: 1 1 10rem; min-width: 10rem; }
+.orghist-search > .icon { position: absolute; left: var(--space-3); color: var(--color-ink-muted); pointer-events: none; }
+.orghist-search > .input { padding-left: calc(var(--space-3) + 20px); }
+
+.orghist-select,
+.orghist-date {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-md);
+  padding-left: var(--space-3);
+  border: var(--stroke-icon) solid var(--color-border-strong);
+  border-radius: var(--r-md);
+  background: var(--color-surface);
+}
+.orghist-filter-label { font-size: var(--fs-caption); font-weight: var(--fw-medium); color: var(--color-ink-muted); white-space: nowrap; }
+/* The control sits inside the bordered filter: its own border goes, its 44px stays. */
+.orghist-select .select,
+.orghist-date .input { border: 0; background: transparent; min-height: calc(var(--control-md) - 3px); height: calc(var(--control-md) - 3px); font-size: var(--fs-caption); }
+/* As wide as the chosen value, not the longest option. */
+.orghist-select .select { width: auto; max-width: 11rem; field-sizing: content; }
+.orghist-date .input { width: auto; padding-right: var(--space-2); }
+.orghist-select:focus-within,
+.orghist-date:focus-within { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.orghist-select .select:focus-visible,
+.orghist-date .input:focus-visible { outline: none; }
+.orghist-filter-on { background: var(--color-accent-tint); border-color: var(--color-accent); }
+.orghist-filter-on > .orghist-filter-label { color: var(--color-accent); }
+
+/* Project: a disclosure holding a set of ticks, applied once. */
+.orghist-pick { position: relative; }
+.orghist-pick-button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-md);
+  padding: 0 var(--space-3);
+  border: var(--stroke-icon) solid var(--color-border-strong);
+  border-radius: var(--r-md);
+  background: var(--color-surface);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-medium);
+  color: var(--color-ink-muted);
+  cursor: pointer;
+  list-style: none;
+  white-space: nowrap;
+}
+.orghist-pick-button::-webkit-details-marker { display: none; }
+.orghist-pick-button:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.orghist-pick-button.orghist-filter-on { background: var(--color-accent-tint); border-color: var(--color-accent); color: var(--color-accent); }
+.orghist-pick-value { color: var(--color-ink); font-weight: var(--fw-regular); max-width: 14rem; overflow: hidden; text-overflow: ellipsis; }
+.orghist-pick-button.orghist-filter-on .orghist-pick-value { color: inherit; }
+.orghist-pick[open] > .orghist-pick-button .icon { transform: rotate(180deg); }
+.orghist-pick-panel {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + var(--space-1));
+  left: 0;
+  width: min(22rem, calc(100cqi - var(--space-5)));
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: var(--space-1);
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-md);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-2);
+}
+/* "All projects" is a plain toggle button beside the ticks, not a menu item: pressed shows like checked. */
+.orghist-pick-panel .popover-item[aria-pressed="true"] { background: var(--color-accent-tint); }
+.orghist-pick-panel .popover-item[aria-pressed="true"] > .popover-item-check { visibility: visible; }
+.orghist-pick-row { justify-content: flex-start; padding: 0 var(--space-3); border-radius: var(--r-sm); }
+.orghist-pick-row:hover { background: var(--color-sunken); }
+.orghist-pick-row:focus-within { outline: var(--focus-ring); outline-offset: calc(var(--focus-width) * -1); }
+.orghist-pick-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.orghist-pick-empty { padding: var(--space-2) var(--space-3); }
+.orghist-pick-foot { padding: var(--space-2) var(--space-2) var(--space-1); border-top: var(--stroke-thin) solid var(--color-border); margin-top: var(--space-1); }
+.orghist-pick-row .toggle-box { position: relative; }
+.orghist-pick-row input:checked + .toggle-box { background: var(--color-accent); border-color: var(--color-accent); }
+.orghist-pick-row input:checked + .toggle-box::after {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 1px;
+  width: 5px;
+  height: 10px;
+  border: solid var(--color-on-accent);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+/* More Filters: open, it takes a row of the bar for its controls. */
+.orghist-more-filters[open] { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); flex-basis: 100%; }
+.orghist-more-filters > summary { list-style: none; }
+.orghist-more-filters > summary::-webkit-details-marker { display: none; }
+.orghist-more-filters[open] > summary .icon { transform: rotate(180deg); }
+.orghist-more-panel { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+
+/* ---- The split: one column (the list, or the detail on its own page), then timeline 60% beside the
+   detail 40% once the tab's box is 1000px wide. */
+.orghist-split { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4); align-items: start; }
+.orghist-main, .orghist-inspector { min-width: 0; }
+/* Narrow: one of them at a time. The wide rule below repeats these selectors exactly, so it wins by
+   source order at equal specificity (a shorter selector there lost to these once: the timeline
+   vanished beside the detail with no way back). */
+.orghist[data-selected]:not([data-chain]) .orghist-main { display: none; }
+.orghist[data-selected][data-chain] .orghist-inspector { display: none; }
+/* A detail on its own view starts at its Back to History, not under the filter bar. */
+.orghist[data-selected]:not([data-chain]) .orghist-bar,
+.orghist[data-selected]:not([data-chain]) .orghist-views { display: none; }
+.orghist-back { align-self: flex-start; margin-bottom: var(--space-2); }
+@container org-history (min-width: 1000px) {
+  /* Wide: the timeline or the Causal View beside the detail. */
+  .orghist[data-selected] .orghist-split { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
+  .orghist[data-selected]:not([data-chain]) .orghist-main { display: block; }
+  .orghist[data-selected][data-chain] .orghist-inspector { display: block; }
+  .orghist[data-selected]:not([data-chain]) .orghist-bar { display: flex; }
+  .orghist[data-selected]:not([data-chain]) .orghist-views { display: inline-flex; }
+  .orghist .orghist-back { display: none; }
+  .orghist .orghist-root-detail { display: none; }
+  /* Beside the list the detail is one framed scroll region: the card's edge is the region's, and its head
+     (title, outcome, actions) stays while the body scrolls under it. */
+  .orghist-inspector {
+    position: sticky;
+    top: var(--space-3);
+    max-height: calc(100dvh - 120px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border: var(--stroke-thin) solid var(--color-border);
+    border-radius: var(--r-lg);
+    background: var(--color-surface);
+  }
+  .orghist-inspector .orghist-detail { border: 0; border-radius: 0; background: none; padding-top: 0; }
+  .orghist-inspector .orghist-detail-head {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    margin: 0 calc(var(--space-4) * -1);
+    padding: var(--space-4);
+    background: var(--color-surface);
+    border-bottom: var(--stroke-thin) solid var(--color-border);
+  }
+}
+
+/* ---- The timeline: day groups, then rows. A row is one link (44px+), the time mono, a quiet ring
+   marker on a thin neutral connector, the outcome a word with its dot. */
+.orghist-timeline { display: flex; flex-direction: column; gap: var(--space-2); }
+.orghist-empty { padding: var(--space-4) 0; }
+.orghist-day-label { padding-left: 0; position: sticky; top: 0; background: var(--color-bg); z-index: 1; }
+.orghist-rows { list-style: none; margin: 0; padding: 0; }
+.orghist-row-item { position: relative; }
+.orghist-row {
+  display: grid;
+  grid-template-columns: 4.75rem 16px minmax(0, 1fr);
+  gap: var(--space-2);
+  align-items: start;
+  min-height: var(--row-height);
+  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-2);
+  border-radius: var(--r-md);
+  color: inherit;
+  text-decoration: none;
+}
+.orghist-row:hover { background: var(--color-sunken); }
+.orghist-row:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-width) * -1); }
+.orghist-row-selected { background: var(--color-accent-tint); }
+.orghist-row-selected:hover { background: var(--color-accent-tint); }
+.orghist-time { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-muted); padding-top: 2px; white-space: nowrap; text-align: right; }
+/* The connector runs through every row's marker column; the ring sits on it at the title's line. */
+.orghist-marker { position: relative; align-self: stretch; }
+.orghist-marker::before { content: ""; position: absolute; left: 7px; top: calc(var(--space-2) * -1); bottom: calc(var(--space-2) * -1); width: var(--stroke-thin); background: var(--color-border); }
+.orghist-marker::after {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 6px;
+  width: 11px;
+  height: 11px;
+  box-sizing: border-box;
+  border-radius: var(--r-full);
+  border: var(--stroke-icon) solid var(--color-border-strong);
+  background: var(--color-bg);
+}
+.orghist-row-selected .orghist-marker::after { border-color: var(--color-accent); background: var(--color-accent); }
+.orghist-rows > .orghist-row-item:first-child .orghist-marker::before { top: 10px; }
+.orghist-rows > .orghist-row-item:last-child .orghist-marker::before { bottom: auto; height: 10px; }
+.orghist-row-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.orghist-row-top { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); }
+.orghist-headline { font-weight: var(--fw-medium); color: var(--color-ink); overflow-wrap: anywhere; }
+.orghist-row-meta { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); overflow-wrap: anywhere; }
+.orghist-project { color: var(--color-ink-2); }
+.orghist-outside { color: var(--status-info); }
+.orghist-reason { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-2); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.orghist-muted { color: var(--color-ink-muted); }
+.orghist-more { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); padding: var(--space-2) 0; }
+.orghist-more-note { font-size: var(--fs-caption); color: var(--color-ink-muted); }
+
+/* Show Details: the grouped lower-level events, indented under their row past the marker column. */
+.orghist-group { padding-left: calc(4.75rem + 16px + var(--space-4)); }
+.orghist-group-toggle { font-size: var(--fs-caption); padding: 0 var(--space-2); }
+.orghist-group-rows { list-style: none; margin: 0; padding: 0 0 var(--space-2) var(--space-3); border-left: var(--stroke-thin) solid var(--color-border); }
+.orghist-group-row { display: flex; align-items: center; gap: var(--space-2); min-height: var(--tap-min); font-size: var(--fs-caption); color: var(--color-ink-2); text-decoration: none; overflow-wrap: anywhere; }
+.orghist-group-row:hover { color: var(--color-ink); }
+.orghist-foot { max-width: 72ch; }
+
+/* ---- The event detail: three readable blocks first (what, reason, who), then the rest. */
+.orghist-detail { display: flex; flex-direction: column; gap: var(--space-4); padding: var(--space-4); border: var(--stroke-thin) solid var(--color-border); border-radius: var(--r-lg); background: var(--color-surface); }
+.orghist-detail-head { display: flex; flex-direction: column; gap: var(--space-2); }
+.orghist-detail-title { margin: 0; font-size: var(--fs-heading-m); line-height: var(--lh-heading-m); font-weight: var(--fw-semibold); color: var(--color-ink); overflow-wrap: anywhere; }
+.orghist-chips { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-2); }
+.orghist-detail-meta { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); overflow-wrap: anywhere; }
+.orghist-mono { font-family: var(--font-mono); font-size: var(--fs-mono); }
+.orghist-superseded { margin: 0; padding: var(--space-2) var(--space-3); border-radius: var(--r-md); background: var(--status-warn-bg); color: var(--color-ink); font-size: var(--fs-caption); }
+/* The app has no .button-row rule: here it is a wrapping row, every control on one centre line (an
+   <a class="button"> beside <button>s otherwise sits on the text baseline, a few px lower). */
+.orghist .button-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.orghist-block { display: flex; flex-direction: column; gap: var(--space-1); }
+.orghist-block > p { margin: 0; overflow-wrap: anywhere; }
+.orghist-block-title { margin: 0; font-family: var(--font-mono); font-size: var(--fs-micro); letter-spacing: var(--ls-eyebrow); text-transform: uppercase; color: var(--color-ink-muted); font-weight: var(--fw-semibold); }
+.orghist-what { color: var(--color-ink); }
+.orghist-caption { margin: 0; font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); overflow-wrap: anywhere; }
+/* The one write sits last, behind a divider, away from what the reader reads. */
+.orghist-detail-foot { display: flex; flex-direction: column; gap: var(--space-2); padding-top: var(--space-3); border-top: var(--stroke-thin) solid var(--color-border); }
+.orghist-confirm { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); border: var(--stroke-thin) solid var(--status-error); border-radius: var(--r-md); }
+.orghist-confirm > p { margin: 0; }
+.orghist-who dd { overflow-wrap: anywhere; }
+.orghist-who dd > .orghist-link { list-style: none; }
+
+.orghist-options, .orghist-links, .orghist-evidence { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.orghist-option, .orghist-link, .orghist-evidence-row { display: flex; flex-direction: column; gap: 2px; padding: var(--space-2) 0; }
+.orghist-option + .orghist-option, .orghist-link + .orghist-link, .orghist-evidence-row + .orghist-evidence-row { border-top: var(--stroke-thin) solid var(--color-border); }
+.orghist-option-head, .orghist-evidence-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); }
+.orghist-option-label { color: var(--color-ink); overflow-wrap: anywhere; }
+.orghist-link .chip { align-self: flex-start; }
+.orghist-link-rel { font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.orghist-link-causal { color: var(--color-ink-2); font-weight: var(--fw-medium); }
+.orghist-link-target { overflow-wrap: anywhere; min-height: 24px; }
+/* A boundary card: another project's event, reached by a recorded link and labelled as outside. */
+.orghist-link-boundary { padding: var(--space-2) var(--space-3); margin: var(--space-1) 0; border: var(--stroke-thin) dashed var(--color-border-strong); border-radius: var(--r-md); }
+.orghist-boundary-label { font-family: var(--font-mono); font-size: var(--fs-micro); letter-spacing: var(--ls-eyebrow); text-transform: uppercase; color: var(--status-info); }
+.orghist-quote { margin: var(--space-1) 0 0; padding: var(--space-2) var(--space-3); border-left: var(--stroke-icon) solid var(--color-border-strong); background: var(--color-sunken); border-radius: 0 var(--r-sm) var(--r-sm) 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.orghist-more-details { border-top: var(--stroke-thin) solid var(--color-border); padding-top: var(--space-1); }
+.orghist-summary { display: inline-flex; align-items: center; min-height: var(--tap-min); cursor: pointer; font-weight: var(--fw-semibold); color: var(--color-ink-2); }
+.orghist-summary:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.orghist-packet { margin: var(--space-2) 0 0; padding: var(--space-3); max-height: 24rem; overflow: auto; background: var(--color-sunken); border-radius: var(--r-sm); font-family: var(--font-mono); font-size: var(--fs-mono); line-height: var(--lh-mono); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--color-ink-2); }
+
+/* ---- The Causal View: one ordered list, no canvas, so it never scrolls sideways. Each card hangs on a
+   rail: solid where the edge is a trigger, dashed for any other relation. The edge's words sit between
+   the cards they join, never on a line. The selected event is the one tinted card. */
+.orghist-chain { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
+.orghist-chain-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: var(--space-1) var(--space-3); }
+/* Rail geometry, shared by every section: a rail sits --rail-x in from its list's edge, cards start
+   --gutter in, and a nested list steps in by --nest and joins its parent's rail with a short elbow. */
+.orghist-ladder { --rail-x: 9px; --gutter: var(--space-5); --nest: var(--space-5); --rail-w: var(--stroke-icon); --ring: 9px; display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
+.orghist-sect { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.orghist-sect-label { margin: 0; display: flex; align-items: center; gap: var(--space-2); font-family: var(--font-mono); font-size: var(--fs-micro); letter-spacing: var(--ls-eyebrow); text-transform: uppercase; color: var(--color-ink-muted); font-weight: var(--fw-semibold); }
+/* The key starts where the rail runs, so the rail drops from it. */
+.orghist-key { display: inline-block; width: 18px; height: 0; margin-left: calc(var(--rail-x) - var(--rail-w) / 2); border-top: var(--stroke-icon) dashed var(--color-ink-muted); }
+.orghist-key-causal { border-top-style: solid; border-top-color: var(--color-ink-2); }
+.orghist-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.orghist-steps-nested { position: relative; margin: var(--space-1) 0 0 var(--nest); }
+.orghist-steps-nested.orghist-steps-up { margin: 0 0 var(--space-1) var(--nest); }
+/* Each step carries its edge's style; every rail piece below reads it. */
+.orghist-step { position: relative; min-width: 0; --rail-style: dashed; --rail-color: var(--color-ink-muted); }
+.orghist-step[data-link="cause"] { --rail-style: solid; --rail-color: var(--color-ink-2); }
+.orghist-step[data-link="none"] { --rail-style: none; }
+.orghist-step-body { display: flex; flex-direction: column; gap: var(--space-1); padding-left: var(--gutter); }
+.orghist-step::before, .orghist-step > .orghist-step-body > .orghist-edge-words::before, .orghist-step > .orghist-step-body > .orghist-ev::after, .orghist-steps-nested::before {
+  content: none; position: absolute; width: 0; border-left: var(--rail-w) var(--rail-style) var(--rail-color); pointer-events: none;
+}
+/* Down (Led to, Related): the rail runs from the section's key through each card's ring and stops at the
+   last ring. A step that isn't last carries the rail its full height and across the gap below it; the
+   last one carries it through its words and down to its ring only. */
+.orghist-steps:not(.orghist-steps-up) > .orghist-step:not(:last-child)::before { content: ""; left: calc(var(--rail-x) - var(--rail-w) / 2); top: 0; bottom: calc(var(--space-1) * -1); }
+.orghist-steps:not(.orghist-steps-up) > .orghist-step:last-child > .orghist-step-body > .orghist-edge-words::before { content: ""; left: calc(var(--rail-x) - var(--rail-w) / 2 - var(--gutter)); top: 0; bottom: calc(var(--space-1) * -1); }
+.orghist-steps:not(.orghist-steps-up) > .orghist-step:last-child > .orghist-step-body > .orghist-ev::after { content: ""; left: calc(var(--rail-x) - var(--rail-w) / 2 - var(--gutter) - var(--stroke-thin)); top: calc(var(--space-1) * -1 - var(--stroke-thin)); height: calc(50% + var(--space-1)); }
+.orghist-steps:not(.orghist-steps-up) > .orghist-step:last-child:has(> .orghist-steps-nested) > .orghist-step-body > .orghist-ev::after { height: auto; bottom: calc(var(--space-1) * -1 - var(--stroke-thin)); }
+.orghist-sect > .orghist-steps:not(.orghist-steps-up) > .orghist-step:first-child::before,
+.orghist-sect > .orghist-steps:not(.orghist-steps-up) > .orghist-step:first-child:last-child > .orghist-step-body > .orghist-edge-words::before { top: calc(var(--space-1) * -1 - 0.5lh); }
+/* Up (Came from): mirrored. The rail leaves the first card at its ring and runs down into this event. */
+.orghist-steps-up > .orghist-step:not(:first-child)::before { content: ""; left: calc(var(--rail-x) - var(--rail-w) / 2); top: calc(var(--space-1) * -1); bottom: 0; }
+.orghist-steps-up > .orghist-step:first-child > .orghist-step-body > .orghist-ev::after { content: ""; left: calc(var(--rail-x) - var(--rail-w) / 2 - var(--gutter) - var(--stroke-thin)); top: 50%; bottom: calc(var(--space-1) * -1 - var(--stroke-thin)); }
+.orghist-steps-up > .orghist-step:first-child:has(> .orghist-steps-nested) > .orghist-step-body > .orghist-ev::after { top: calc(var(--space-1) * -1 - var(--stroke-thin)); }
+.orghist-steps-up > .orghist-step:first-child > .orghist-step-body > .orghist-edge-words::before { content: ""; left: calc(var(--rail-x) - var(--rail-w) / 2 - var(--gutter)); top: 0; bottom: 0; }
+.orghist-sect > .orghist-steps-up > .orghist-step:last-child::before,
+.orghist-sect > .orghist-steps-up > .orghist-step:first-child:last-child > .orghist-step-body > .orghist-edge-words::before { bottom: calc(var(--space-3) * -1); }
+/* A nested list's elbow: from the parent's rail, across by --nest, to where its own rail begins. */
+.orghist-steps-nested::before { content: ""; left: calc(var(--rail-x) - var(--rail-w) / 2 - var(--nest)); top: calc(var(--space-1) * -1); width: calc(var(--nest)); height: var(--space-1); border-bottom: var(--rail-w) var(--rail-style) var(--rail-color); border-bottom-left-radius: var(--r-sm); }
+.orghist-steps-nested.orghist-steps-up::before { top: auto; bottom: calc(var(--space-1) * -1); border-bottom: none; border-top: var(--rail-w) var(--rail-style) var(--rail-color); border-radius: 0 0 0 0; border-top-left-radius: var(--r-sm); }
+.orghist-edge-words { position: relative; }
+.orghist-edge-words { margin: 0; display: flex; align-items: center; gap: var(--space-2); min-height: 28px; font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-muted); overflow-wrap: anywhere; }
+.orghist-step[data-link="cause"] > .orghist-step-body > .orghist-edge-words { color: var(--color-ink-2); }
+.orghist-edge-words > span { font-family: var(--font-body); }
+/* "Trigger not recorded": words and a hollow ring, never a line. */
+.orghist-cap { margin: 0; position: relative; display: flex; align-items: center; min-height: 24px; padding-left: var(--gutter); font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.orghist-cap::before { content: ""; position: absolute; left: calc(var(--rail-x) - 3.5px); width: 7px; height: 7px; box-sizing: border-box; border-radius: var(--r-full); border: var(--stroke-icon) solid var(--color-ink-muted); }
+.orghist-empty-line { margin: 0; padding-left: var(--gutter); font-size: var(--fs-caption); color: var(--color-ink-muted); }
+
+.orghist-ev {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px var(--space-3);
+  align-items: start;
+  min-height: var(--row-height);
+  padding: var(--space-2) var(--space-3);
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-md);
+  background: var(--color-surface);
+  color: inherit;
+  text-decoration: none;
+}
+.orghist-ev:hover { background: var(--color-sunken); }
+.orghist-ev:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+/* The ring on the rail, centred on it at the card's middle, a gutter clear of the card's edge. */
+.orghist-ev::before { content: ""; position: absolute; z-index: 1; left: calc(var(--rail-x) - var(--ring) / 2 - var(--gutter) - var(--stroke-thin)); top: 50%; width: var(--ring); height: var(--ring); margin-top: calc(var(--ring) / -2); box-sizing: border-box; border-radius: var(--r-full); border: var(--stroke-icon) solid var(--color-border-strong); background: var(--color-bg); }
+.orghist-ev-boundary { border-style: dashed; border-color: var(--color-border-strong); }
+.orghist-ev-title { font-weight: var(--fw-medium); color: var(--color-ink); overflow-wrap: anywhere; }
+.orghist-ev > .chip { justify-self: end; }
+.orghist-ev-meta { grid-column: 1 / -1; font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); overflow-wrap: anywhere; }
+.orghist-ev-also { font-family: var(--font-mono); font-size: var(--fs-mono); }
+
+.orghist-root { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-3); border: var(--stroke-icon) solid var(--color-accent); border-radius: var(--r-md); background: var(--color-accent-tint); min-width: 0; }
+.orghist-root-eyebrow { font-family: var(--font-mono); font-size: var(--fs-micro); letter-spacing: var(--ls-eyebrow); text-transform: uppercase; color: var(--color-accent); font-weight: var(--fw-semibold); }
+.orghist-root-title { font-size: var(--fs-heading-s); line-height: var(--lh-heading-s); font-weight: var(--fw-semibold); color: var(--color-ink); overflow-wrap: anywhere; }
+.orghist-root-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); font-size: var(--fs-caption); color: var(--color-ink-2); }
+/* Below the wide split the detail isn't beside the chain: this is the way to it. */
+.orghist-root-detail { align-self: flex-start; display: inline-flex; align-items: center; min-height: var(--tap-min); font-size: var(--fs-caption); font-weight: var(--fw-medium); color: var(--color-accent); }
+
+@container org-history (max-width: 559px) {
+  .orghist-row { grid-template-columns: 3.75rem 16px minmax(0, 1fr); padding-right: var(--space-2); }
+  .orghist-group { padding-left: calc(3.75rem + 16px + var(--space-3)); }
+  .orghist-detail { padding: var(--space-3); }
+  .orghist-bar-end { margin-inline-start: 0; }
+}

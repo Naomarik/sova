@@ -124,8 +124,8 @@ export interface GapPart {
   buildTarget(gap: string): string;
   /** The live session of a §gap idea (items/code), or null. */
   ideaTarget(ideaId: string): string | null;
-  /** An idea took a §gap/ id (sova_idea, Add idea). */
-  filed(ideaId: string, envelope: Envelope): Promise<void>;
+  /** An idea took a §gap/ id (sova_idea, Add idea), with its title when it has one. */
+  filed(ideaId: string, envelope: Envelope, title?: string): Promise<void>;
   /** A §gap idea was dropped. */
   dropped(ideaId: string, envelope: Envelope): Promise<void>;
 }

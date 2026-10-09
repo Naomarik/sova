@@ -926,6 +926,55 @@ describe("a fold of a fold", async () => {
   });
 });
 
+describe("a pair with a side already in an open conflict waits for it", async () => {
+  const org = await orgs.createOrg({ name: "Gate", dir: join(tmp, "ws-wait") });
+  const client = join(tmp, "client-wait");
+  mkdirSync(client);
+  const project = await orgs.addProject(org.id, { name: "Suppliers", root: client });
+  const ann = await orgs.addPerson(org.id, { name: "Ann Wu", role: "CFO" });
+  const ben = await orgs.addPerson(org.id, { name: "Ben Ito", role: "Buyer" });
+  const cy = await orgs.addPerson(org.id, { name: "Cy Ruiz", role: "IT" });
+  const sa = await baton.createBaton({ orgId: org.id, projectId: project.id, to: ann.id, publicTitle: "Terms", goal: "g" });
+  const sb = await baton.createBaton({ orgId: org.id, projectId: project.id, to: ben.id, publicTitle: "Terms", goal: "g" });
+  const sc = await baton.createBaton({ orgId: org.id, projectId: project.id, to: cy.id, publicTitle: "Terms", goal: "g" });
+  const byId = () => new Map(reconcile.listDecisions(org.id, project.id).decisions.map((d) => [d.id, d]));
+  /** The pairs the decide seam was asked since request `from`, each as its two statements. */
+  const askedSince = (from: number) =>
+    requests.slice(from).flatMap((r) =>
+      Object.entries(r.questions)
+        .filter(([qid, q]) => q.type === "choice" && qid.startsWith("pair"))
+        .map(([, q]) => [...JSON.stringify(q.instructions).matchAll(/D\d+/g)].map((m) => (r.state as any).decisions[m[0]].statement).sort().join(" | ")),
+    );
+
+  test("a later pair sharing a side with a conflict opened in the same run is neither folded nor marked compared; it is asked once the conflict settles", async () => {
+    // A–B: different; A–C: conflict (30 vs 60 days); B–C: the same rule. Pairs are asked in order (A,B), (A,C), (B,C).
+    const a = `${sa.sessionId}:${(await say(sa.path, ann.id, "30 days.", { area: "payment terms", statement: "Suppliers are paid within 30 days.", quote: "30 days." })).markerId}`;
+    const b = `${sb.sessionId}:${(await say(sb.path, ben.id, "Two months.", { area: "payment terms", statement: "Suppliers are paid in two months.", quote: "Two months." })).markerId}`;
+    const c = `${sc.sessionId}:${(await say(sc.path, cy.id, "60 days.", { area: "payment terms", statement: "Suppliers are paid within 60 days. [same]", quote: "60 days." })).markerId}`;
+    let info = await reconcile.reconcileProject(org.id, project.id);
+    const open = info.conflicts.filter((k) => k.state === "open");
+    assert.equal(open.length, 1, JSON.stringify(info.conflicts.map((k) => [k.a, k.b])));
+    assert.deepEqual([open[0]!.a, open[0]!.b].sort(), [a, c].sort());
+    let d = byId();
+    assert.equal(d.get(c)!.supersededBy, undefined, "C is not folded into B while it is in conflict with A");
+    assert.equal(d.get(c)!.state, "conflict");
+    assert.deepEqual(d.get(b)!.folded ?? [], []);
+    assert.ok(!d.get(b)!.checkedWith?.includes(c) && !d.get(c)!.checkedWith?.includes(b), "the (B, C) pair waits, unmarked");
+    // The operator states the rule: it supersedes A and C; B is then compared with what is live.
+    const from = requests.length;
+    info = await reconcile.resolveConflict(org.id, project.id, open[0]!.id, { statement: "Suppliers are paid within 45 days." });
+    await reconcile.reconcileProject(org.id, project.id);
+    d = byId();
+    assert.ok(d.get(c)!.supersededBy && d.get(a)!.supersededBy, "settling superseded both sides");
+    const resolver = [...d.values()].find((x) => x.resolves === open[0]!.id)!;
+    assert.ok(
+      askedSince(from).includes(["Suppliers are paid in two months.", "Suppliers are paid within 45 days."].sort().join(" | ")),
+      `B is asked against the settlement: ${JSON.stringify(askedSince(from))}`,
+    );
+    assert.ok(d.get(b)!.checkedWith?.includes(resolver.id));
+  });
+});
+
 // The spec tool itself, against a project whose spec someone else already wrote: our records join it.
 // ---- owner areas end to end: a project with several owners ------------------------------------------------------------
 

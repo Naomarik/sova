@@ -1,5 +1,5 @@
 import type { Hold, Refusal, StampContext } from "./statecharts";
-import { OrgHost, type ActResult, type HostChange } from "./org-host";
+import { OrgHost, type ActResult, type HostChange, type OrgHostOptions } from "./org-host";
 import { OrgError } from "./org-error";
 import type { ActBy, Envelope } from "./org-envelope";
 import { projectOfSession, stampEnvelope, type StampWho } from "./org-stamp";
@@ -25,7 +25,7 @@ export type { ActResult, Effect, EffectOutcome, HostChange, HostProblem, Invocat
     tests may hand in a fake with the same shape. */
 export type OrgHostApi = Pick<
   OrgHost,
-  "paths" | "feed" | "effects" | "invocations" | "log" | "act" | "actNow" | "settle" | "start" | "setState" | "trial" | "explain" | "enabledEvents" | "configuration" | "data" | "sessions" | "holds" | "nextDueAt" | "fireDue" | "statechartOf" | "statechartInfo" | "problems" | "logAct" | "onChange" | "reload" | "close" | "rewindowHours" | "adopt" | "idle"
+  "paths" | "feed" | "effects" | "invocations" | "log" | "act" | "actNow" | "settle" | "start" | "setState" | "trial" | "explain" | "enabledEvents" | "configuration" | "data" | "sessions" | "holds" | "nextDueAt" | "fireDue" | "statechartOf" | "statechartInfo" | "problems" | "logAct" | "onChange" | "reload" | "close" | "rewindowHours" | "adopt" | "idle" | "setHistoryComposer" | "record" | "purgeRationale" | "history"
 >;
 
 /** Where a project's settings (overseer.json, as read now) come from: server/project-overseer-store.ts
@@ -53,13 +53,15 @@ export interface OpenOptions {
   orgId: string;
   workspaceDir: string;
   stateDir: string;
+  /** An org's history composer (server/orgs.ts passes it for an org's engine), used from its boot on. */
+  historyComposer?: OrgHostOptions["historyComposer"];
 }
 
 /** The host's `stamp` option (engine API): a fresh envelope for an act the engine delivers itself
     (a statechart's drive, a held act at its release). `who` is the act's original actor (default "statechart")
     and project: an act on a person or the org (a held roster approve) is still its project's act, so
     its level, pause, archive, ledgers and hold come from that project, never from defaults. */
-export type Stamp = (sid: string, event: string, payload: Record<string, unknown>, who?: StampContext) => Envelope;
+export type Stamp = (sid: string, event: string, payload: Record<string, unknown>, who?: StampContext, host?: OrgHostApi) => Envelope;
 
 /** The project an engine-delivered act belongs to: the original envelope's, else the payload's,
     else the target session's own. */
@@ -79,6 +81,14 @@ export function setOrgHostOpener(fn: Opener): void {
 }
 
 const hosts = new Map<string, OrgHostApi>();
+/** An engine while OrgHost.open runs (its boot resumes sessions and fires what is due, and those acts are
+    stamped): known to stamp-time reads only, never to hostOf, so nothing else sees it before it opened. */
+const booting = new Map<string, OrgHostApi>();
+
+/** The engine a stamp reads (the ceiling, the people an act reaches): the open one, else the one booting. */
+export function stampHostOf(engine: string): OrgHostApi | null {
+  return hosts.get(engine) ?? booting.get(engine) ?? null;
+}
 /** Each open engine's workspace-layout directory. */
 const dirs = new Map<string, string>();
 const opening = new Map<string, Promise<OrgHostApi>>();
@@ -110,12 +120,15 @@ export async function openOrgHost(opts: OpenOptions): Promise<OrgHostApi> {
   if (pending) return pending;
   const p = (async () => {
     let self: OrgHostApi | null = null;
-    const stamp: Stamp = (sid, _event, payload, who) => {
-      if (!self) throw new Error("The org engine stamped before it opened.");
-      const pid = stampProject(self, sid, payload, who);
+    const stamp: Stamp = (sid, _event, payload, who, booted) => {
+      // During open the engine hands itself in: its boot's releases are stamped from it, as they stand.
+      const host = self ?? booted ?? null;
+      if (!host) throw new Error("The org engine stamped before it opened.");
+      if (!self) booting.set(opts.orgId, host);
+      const pid = stampProject(host, sid, payload, who);
       const settings = settingsOf();
       const env = stampEnvelope(
-        self,
+        host,
         pid,
         { by: (who?.by as ActBy | undefined) ?? "statechart", ...(who?.overseerId ? { overseerId: who.overseerId } : {}), attended: false },
         (projectId) => settings.read(projectId, opts.workspaceDir),
@@ -124,7 +137,12 @@ export async function openOrgHost(opts: OpenOptions): Promise<OrgHostApi> {
       );
       return { ...env, ...(stampPeopleSource?.(opts.orgId, payload) ?? {}) } as Envelope;
     };
-    const host = await opener({ ...opts, stamp, clock: () => (testClock ? testClock() : Date.now()) });
+    let host: OrgHostApi;
+    try {
+      host = await opener({ ...opts, stamp, clock: () => (testClock ? testClock() : Date.now()) });
+    } finally {
+      booting.delete(opts.orgId);
+    }
     self = host;
     for (const fn of openedHooks) fn(host, opts.orgId);
     host.onChange((change) => {

@@ -21,12 +21,18 @@ listener. Every write runs in the project's one-job-at-a-time queue.
 
 - The source is the transcripts: every `sova-baton-decision` entry of the project's baton
   sessions (`{area, ownerArea, statement, quote, by}`; `ownerArea` is absent from entries recorded
-  before owner areas), read with Sova's own line parser. Each decision is a statechart
+  before owner areas; `disposition`, `options`, `reason` and `review` when the call gave them,
+  §app.baton/hand-off), read with Sova's own line parser. Each decision is a statechart
   (§app.project-overseer/statecharts), started when its entry is written, with its gathering
   session and that session's gap and conflict as its links; each conflict is a statechart too. What the
   reconciler decided about a decision is its statechart's state, in the org's workspace repo with the
   other statecharts. An entry with no statechart (the server stopped between the two) gets one when the
-  server starts and before the decisions are listed; none is ever dropped.
+  server starts and before the decisions are listed; none is ever dropped, it keeps the author id its entry
+  recorded (`by`), named as its entry saved them (an older entry: as the conversation names them when recovered,
+  shown on the decision's line and in the "Outside their area" chip's tooltip as "{name} (name at
+  recovery)", titled "This decision was recovered later; its name is the one this person had then,
+  not the one recorded when they decided."), or, when that author isn't part of the conversation, stays unrecovered and shows
+  on the Workspace tab as a problem (§app.org-history/durability), and its history event is recorded once with it (§app.org-history/durability).
 - A decision's id is `<sessionId>:<entry id of the decision>`, so two decisions stated in one
   message stay two. Its provenance is **who** (person id or `operator`, and their name when
   recorded), **session**, **entry** (the user message holding the quote: the nearest one up the

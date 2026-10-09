@@ -87,7 +87,11 @@ host rule: the app's static shell and assets (a `GET` or `HEAD` outside `/api`, 
 shows the unlock screen, and reach nothing else that way), `GET /api/health`,
 because it is how a front and a doctor ask which build runs, and `POST /api/auth/unlock`; nothing
 that reads or changes state is open beside them. Everything else on the listener, a route family
-added later included, is gated by default. `SOVA_AUTH=off` stops asking for the token, for a test
+added later included, is gated by default. A path is judged as the router will route it, never
+by its raw spelling: decoded once, with repeated slashes collapsed and letter case ignored, so
+`/%61pi/…`, `/API/…` or `//api/…` is `/api` and needs the token. A spelling that can't be judged
+that way (an encoded `.`, `/` or `\`, a bad escape, or a `%` still left after decoding) is never
+the shell and needs the token too. `SOVA_AUTH=off` stops asking for the token, for a test
 rig, and only while the server is bound to loopback; the host and cross-site rules hold anyway.
 
 **A browser on this machine is not asked.** Opening the app's own address on the machine Sova runs

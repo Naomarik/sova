@@ -1,6 +1,6 @@
 /** Rows for the ctrl+p "Mode" category. Pure: the palette type is imported as a type only. */
 import type { MenuItem } from "../command-palette/contracts.ts";
-import { MINOR_DESCRIPTIONS, MINOR_MODES, type MinorMode } from "./minor.ts";
+import { MINOR_DESCRIPTIONS, MINOR_MODES, MINOR_SURFACES, type MinorMode } from "./minor.ts";
 import { hasMinor, MODE_DESCRIPTIONS, MODES, type Mode, type ModeState } from "./state.ts";
 
 export interface ModeActions {
@@ -26,7 +26,8 @@ export function modeCategoryItems(getState: () => Pick<ModeState, "mode" | "mino
 		description: MODE_DESCRIPTIONS[mode],
 		run: () => actions.setMode(mode),
 	}));
-	const minors: MenuItem[] = MINOR_MODES.map((minor) => ({
+	// A web-only mode (memory) is turned on from Sova's menu alone: no row here.
+	const minors: MenuItem[] = MINOR_MODES.filter((minor) => MINOR_SURFACES[minor] !== "web").map((minor) => ({
 		id: `mode:minor:${minor}`,
 		label: minor,
 		description: MINOR_DESCRIPTIONS[minor],

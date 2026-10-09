@@ -234,6 +234,27 @@ assert.deepEqual(
 	{ version: 1, mode: "normal", strict: true, minorModes: ["align"] },
 	"minor switches snapshot the whole triple too",
 );
+// memory is web-only (§chat.memory/where): typed by hand it is refused, turned on only while Sova's
+// server applies a switch for this very session (the sova:web-minor hook); off is never refused.
+{
+	const WEB_MINOR = Symbol.for("sova:web-minor");
+	const count = modeEntries().length;
+	await commands.get("mode").handler("memory on", ctx);
+	assert.equal(modeEntries().length, count, "no hook: /mode memory on writes nothing");
+	assert.match(store.notices.at(-1).message, /memory is turned on from a Sova chat's mode menu/);
+	assert.doesNotMatch(store.status.get("mode"), /memory/);
+	ctx.sessionManager.getSessionId = () => "chat-a";
+	globalThis[WEB_MINOR] = (sid, minor) => sid === "chat-b" && minor === "memory";
+	await commands.get("mode").handler("memory on", ctx);
+	assert.equal(modeEntries().length, count, "a hook permitting another session permits nothing here");
+	globalThis[WEB_MINOR] = (sid, minor) => sid === "chat-a" && minor === "memory";
+	await commands.get("mode").handler("memory on", ctx);
+	assert.deepEqual(modeEntries().at(-1).data.active.minorModes, ["align", "memory"], "the server's switch turns it on");
+	delete globalThis[WEB_MINOR];
+	await commands.get("mode").handler("memory off", ctx);
+	assert.deepEqual(modeEntries().at(-1).data.active.minorModes, ["align"], "off needs no hook");
+	delete ctx.sessionManager.getSessionId;
+}
 const markerText = renderers.get("mode")({ data: { minor: "align", on: true } }, {}, ctx.ui.theme).render(80).join("");
 assert.match(markerText, /── align on ──/, "minor marker renders");
 assert.match(renderers.get("mode")({ data: { mode: "delegate" } }, {}, ctx.ui.theme).render(80).join(""), /── mode → delegate ──/);

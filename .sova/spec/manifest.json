@@ -16655,6 +16655,24 @@
         "§app.settings-dialog/alignment"
       ],
       "evidence": "reviewed"
+    },
+    "§tools.spec/git-merge": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/span-promotion"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/tests/claims-merge.test.mjs",
+        ".gitattributes",
+        "pi-config/extensions/spec/docs/CHANGELOG.md",
+        "pi-config/extensions/spec/PROMOTE.md",
+        "pi-config/extensions/spec/DRAFTS.md",
+        "pi-config/extensions/spec/README.md"
+      ]
     }
   },
   "boundary": {

@@ -18,6 +18,7 @@ Paths are relative to `pi-config/extensions/` unless they start with `.sova/` or
 | The guide | `mode/spec-mode.md` | The text injected while the mode is on. It is the only copy: everything else quotes or loads it. |
 | Loading | `mode/minor.ts` | Reads `spec-mode.md` once at load (`SPEC_INSTRUCTIONS`, trailing whitespace trimmed) and extracts its one `sh` block as `SPEC_CORE_SHELL`, the line that finds the trusted tools. |
 | Prompt composition | `mode/prompt.ts` | `composePrompt` appends minor blocks after the major mode's in registry order; with a spec writer set, the spec block gains the writer paragraph (`buildSpecWriterPrompt`). `composeWorkerPrompt` gives a worker the spec block plus `SPEC_WORKER_NOTE`. |
+| Agree step | `mode/align-tool.ts` (`alignSpecAgreeText`), `mode/index.ts` (`specOn`) | With align on too, the `align` call that sets an alignment implementing ends its result text (never its `details`) with the Agree step: write the decisions as promises in a draft, `agree` them (which promotes the ones that map no code). Neither mode's prompt block changes. |
 | Session hooks | `mode/index.ts` | `before_agent_start` injects the block. `tool_call`/`tool_result` run the census. Worker modes are published on an event. |
 | The census note | `mode/spec-guard.ts` (`CensusHook`, `CENSUS_SKIP_TOOLS`) | After a tool call that can write, it compares the work tree's `git status` with the last look. On the first changed file in the spec boundary, and on each new file, it runs `sova-spec.mjs census --changed` and appends a short `[spec census]` digest to that tool result. |
 | Forbidden writes | `mode/spec-guard.ts` (`SpecWriteGuard`) | It says so, in the same digest, when the current spec is written by hand, or when commits that a draft's evidence names are rewritten. |
@@ -50,13 +51,19 @@ Paths are relative to `pi-config/extensions/` unless they start with `.sova/` or
    - The digest's "No draft yet" line prints once per session per work tree; a census that can't run is said
      once per cause per work tree.
    - `PI_SPEC_CENSUS_HOOK=0` turns the census off.
-5. **Workers.** The subagents extension listens for the session's mode event. While spec is on, a
+5. **Agree, with align on too.** The user's go-ahead on an alignment is the spec's Agree step. The
+   `align` result that records status implementing tells the agent to write each decision that changes
+   behavior as a promise in a draft and run `sova-spec-draft.mjs agree` (it stamps `agreed: {by, at}`
+   and, for records with no code, records doc-only evidence and promotes them when promote's plan is
+   clean), before any code. The build updates the same records. `promote` notes `agreed-kept-on-change` when a later
+   change edits an agreed record's numbers or backticked tokens and keeps the old `agreed`.
+6. **Workers.** The subagents extension listens for the session's mode event. While spec is on, a
    code-writing worker gets these:
    - its mode prompt: the spec block plus `SPEC_WORKER_NOTE`, or, when that prompt doesn't carry the
      block, the generated brief;
    - its census: `spec-worker.ts` for a pi worker, or `spec-hooks.ts` through `--settings` for a Claude
      Code worker.
-6. **Merge.** A recorded worktree merge names the changed files no claim maps and any draft records
+7. **Merge.** A recorded worktree merge names the changed files no claim maps and any draft records
    left behind.
    - Git merges `manifest.json` through the driver.
    - If the driver refuses (both sides changed one record differently), the procedure in `../PROMOTE.md`

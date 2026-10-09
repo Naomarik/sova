@@ -21,6 +21,7 @@ node $d diff NAME [--against base|current]              --root DIR [--json]
 node $d check NAME [--base REV] [--all]                 --root DIR [--json]
 node $d evidence NAME --id '§x' [--id …] --by WHO --verification TEXT \
         (--commit REV | --snapshot | --doc-only) [--path P]… [--log FILE] [--write]   --root DIR [--json]
+node $d agree NAME --id '§x' [--id …] --by WHO --verification TEXT [--at ISO] [--write]   --root DIR [--json]
 node $d promote NAME (--id '§x'… | --all) [--meta KEY]… [--file PATH]… [--plan SHA] [--write]  --root DIR [--json]
 node $d recover [--write]                               --root DIR [--json]
 node $d merge-manifest [--base F --ours F --theirs F] [--write]   --root DIR [--json]
@@ -141,7 +142,8 @@ again **per declaration** (see "Per-declaration merge" below); only what that fi
 | `selection-incomplete` | A promoted file also carries changes to IDs you didn't select. Files move whole. |
 | `candidate-invalid` / `candidate-dangling` | The merged candidate graph (current plus the selected units) doesn't load in the core, or gains a dangling edge that current doesn't have. |
 | `candidate-label` / `authority-missing` | A selected ID that isn't being deleted is labelled `authority: "candidate"` in the draft, or declares no `authority`. This applies to a prose-only change too. |
-| `agreed-invalid` / `agreed-rewritten` | A selected record's `agreed` is malformed or sits on a note or section, or the draft removes the `agreed` current already has, or replaces it without rewording the prose or with an earlier `at` (see "Agreed, not built"). |
+| `agreed-invalid` / `agreed-rewritten` | A selected record's `agreed` is malformed or sits on a note or section, or the draft removes the `agreed` current already has, or replaces it without rewording the prose or with an earlier `at` (see "Agreed, not built"). `agree` refuses the same `agreed-rewritten` cases before it stamps, and refuses (`agree-refused`) an ID the draft has no prose for, or one that is a note or section. |
+| `agree-not-promoted` | `agree` stamped (and recorded evidence), but the promotion it previewed was not clean, so it wrote nothing to current. The message lists the plan's refusals, drift warnings, notes and foreign §; the output carries them under `promotion`. |
 | `base-untrusted` | The draft's baseline graph doesn't load in the core (exit 2), so changes can't be attributed to IDs. Start a new draft from a fixed current. |
 | `draft-invalid` | The draft's own graph doesn't load (exit 2). Run `check NAME` and fix it. |
 | `not-changed`, `plan-changed`, `nothing-to-write`, `pending-transaction`, `lock-occupied`, `race` | These mean what they say. |
@@ -195,6 +197,18 @@ agreed to (`at` may carry a time: `2026-10-05T14:30Z`), with `authority: "accept
 Then `evidence --doc-only` (the `--verification` text says where it was agreed) and promote. That
 records the decision, not that it was built.
 
+`agree NAME --id '§x'… --by WHO --verification TEXT [--write]` does all of that in one call, once
+the draft has the promise's prose. On each named behavior or surface it sets `agreed: {by, at}` (`at`
+is now, in UTC to the minute, unless `--at` gives an ISO date or time) and `authority: "accepted"`;
+a declaration with prose but no record gets one (an H1 is a surface, an H2 a behavior). For each
+one that maps no code and isn't labelled `reviewed` or `verified`, it records `--doc-only` evidence,
+with `--by` and `--verification` as given, and promotes it: when that promotion lands and when it
+doesn't is in PROMOTE.md ("Agreed, promoted by `agree`"). A record that maps code is only stamped:
+its build records commit or snapshot evidence. An `agreed` this draft already gave, by the same
+person, is kept, so running it again changes nothing. Without `--write` it previews. With the align
+minor mode on too, the align tool's result for the go-ahead (status implementing) tells the agent
+to do exactly this before building.
+
 - **Built** means the record has `code` and the `evidence` label `reviewed` or `verified`. So
   `--doc-only` is refused (`doc-only-refused`) for an agreed record that maps code or carries one of
   those labels; a record with no `agreed` at all is refused as before.
@@ -205,6 +219,12 @@ records the decision, not that it was built.
   the same promotion as the reworded prose, with an `at` not earlier than the old one. Changing
   `agreed` on unchanged prose, an earlier `at`, or removing `agreed` is refused (`agreed-rewritten`).
   Deleting the whole record is an ordinary deletion.
+- **A kept `agreed` on changed numbers.** The tool can't tell a rewording from a change of meaning,
+  so when a promotion changes an agreed record's prose, keeps the `agreed` current has, and adds or
+  removes a number (any token with a digit: `60` → `64`) or a backticked token, `promote` adds a
+  note to its output (`notes: [{code: "agreed-kept-on-change", id, agreed, removed, added,
+  message}]`), never a refusal. Read it: if the meaning changed, stamp the go-ahead that changed it
+  with `agree`; a rewording keeps `agreed` and needs nothing.
 - **Shape.** `agreed` must be an object with exactly a non-empty `by` and a real date `at`, on a
   behavior or surface; anything else is refused (`agreed-invalid`) at `evidence` and at `promote`.
 - It is a record field, not a label value: the core ignores record fields it doesn't know, while an

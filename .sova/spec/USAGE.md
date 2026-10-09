@@ -158,16 +158,20 @@ A draft is a proposal. Agreeing on it approves the intent, and makes nothing cur
 Documenting what the code already does, where the docs miss or misstate it, is its own draft.
 Don't mix it into a feature's draft.
 
-`.gitattributes` routes `manifest.json` through `merge-manifest`, so two branches that change
-different records merge without a conflict. Git needs the driver defined once per clone (worktrees
-share it):
+`.gitattributes` routes `manifest.json` through `merge-manifest` and the claim files through
+`merge-claims`, so two branches that change different records, or different declarations of one
+claim file, merge without a conflict, in the same bytes whichever landed first. Git needs each
+driver defined once per clone (worktrees share it):
 
 ```sh
 git config merge.sova-spec-manifest.driver \
   'node pi-config/extensions/spec/core/sova-spec-draft.mjs merge-manifest --root . --base %O --ours %A --theirs %B --write'
+git config merge.sova-spec-claims.driver \
+  'node pi-config/extensions/spec/core/sova-spec-draft.mjs merge-claims --root . --base %O --ours %A --theirs %B --path %P --write'
 ```
 
-Without it, Git falls back to its line merge. Both sides changing the same record still conflict.
+Without them, Git falls back to its line merge. Both sides changing the same record or the same
+declaration still conflict; `merge-claims` then leaves Git's conflict markers, with both sides' prose.
 
 [DRAFTS.md](../../pi-config/extensions/spec/DRAFTS.md) has the layout, the lock and the limits.
 

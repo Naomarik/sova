@@ -8,10 +8,12 @@
 //   promote NAME (--id §x... | --all) [--meta KEY]... [--file PATH]... [--plan SHA] [--write]
 //   recover [--write]                                    roll back an interrupted promotion
 //   merge-manifest [--base F --ours F --theirs F] [--write]  record-level 3-way merge of manifest.json (a Git conflict)
+//   merge-claims --base F --ours F --theirs F [--path P] [--write]  per-declaration 3-way merge of a claim file (a Git merge driver)
 // All take --root DIR (required) and [--json]. Writes happen only with --write, only under
 // .sova/spec/drafts/, except `promote --write`/`recover --write`, which also write .sova/spec/manifest.json
-// and files in the claims tree. It runs only the sibling core (`sova-spec.mjs`) and, in a Git project,
-// read-only `git` plumbing (rev-parse, cat-file, merge-base), always without a shell. It never runs a
+// and files in the claims tree, and the merge drivers, which write only the --ours file Git hands them. It runs
+// only the sibling core (`sova-spec.mjs`) and, in a Git project, read-only `git` plumbing (rev-parse, cat-file,
+// merge-base, and merge-file to stdout for a claim file the driver can't merge per declaration), always without a shell. It never runs a
 // project script and never implements anything.
 // Exit: 0 done / nothing outstanding; 1 refused or outstanding (conflict, evidence missing or stale,
 //       selection incomplete, lock held, pending transaction, race); 2 cannot (usage, corrupt draft,
@@ -29,7 +31,7 @@ import { resolve, join, dirname, posix, relative } from "node:path";
 import { realpathSync } from "node:fs";
 import { tmpdir, hostname } from "node:os";
 import { fileURLToPath } from "node:url";
-import { createInspection } from "./sova-spec.mjs";
+import { createInspection, declarationSpans } from "./sova-spec.mjs";
 
 const CORE = join(dirname(fileURLToPath(import.meta.url)), "sova-spec.mjs");
 const FORMAT = "sova-spec-draft/1";
@@ -64,7 +66,8 @@ const uniqSorted = (a) => [...new Set(a)].sort();
 // ---------------------------------------------------------------- args
 const FLAGS = { new: ["purpose", "write"], status: [], diff: ["against"], check: ["base"],
   evidence: ["id", "by", "verification", "commit", "snapshot", "doc-only", "path", "log", "write"],
-  promote: ["id", "all", "meta", "file", "plan", "write", "own-base"], recover: ["write"], "merge-manifest": ["base", "ours", "theirs", "write"] };
+  promote: ["id", "all", "meta", "file", "plan", "write", "own-base"], recover: ["write"], "merge-manifest": ["base", "ours", "theirs", "write"],
+  "merge-claims": ["base", "ours", "theirs", "path", "write"] };
 const BOOL = new Set(["json", "write", "snapshot", "doc-only", "all"]), MULTI = new Set(["id", "path", "meta", "file", "own-base"]);
 function parseArgs(argv) {
   const o = { pos: [], id: [], path: [], meta: [], file: [], "own-base": [], seen: new Set() };
@@ -87,6 +90,11 @@ function parseArgs(argv) {
     if (name !== undefined) throw new Fail(2, "usage", `${cmd} takes no arguments`);
     const sides = ["base", "ours", "theirs"].filter((k) => o[k] !== undefined).length;
     if (sides !== 0 && sides !== 3) throw new Fail(2, "usage", "merge-manifest takes all of --base, --ours and --theirs (a merge driver's %O %A %B), or none (the index stages)");
+    return o;
+  }
+  if (cmd === "merge-claims") {
+    if (name !== undefined) throw new Fail(2, "usage", `${cmd} takes no arguments`);
+    if (o.path.length > 1 || o.path.some((p) => !p || p.length > 4096 || /[\0-\x1f\x7f]/.test(p))) throw new Fail(2, "usage", "merge-claims takes at most one --path (the driver's %P)");
     return o;
   }
   if (name === undefined || rest.length) throw new Fail(2, "usage", `${cmd} takes exactly one draft NAME`);
@@ -117,7 +125,7 @@ function parseArgs(argv) {
 const USAGE = "usage: sova-spec-draft <new NAME [--purpose T] | status NAME | diff NAME [--against base|current] | check NAME | " +
   "evidence NAME --id §x --by WHO --verification T (--commit REV|--snapshot|--doc-only) [--path P] [--log FILE] | " +
   "promote NAME (--id §x|--all) [--meta K] [--file P] [--plan SHA] [--own-base REV]... | check NAME [--base REV] | recover | " +
-  "merge-manifest [--base F --ours F --theirs F]> --root DIR [--write] [--json]";
+  "merge-manifest [--base F --ours F --theirs F] | merge-claims --base F --ours F --theirs F [--path P]> --root DIR [--write] [--json]";
 
 // ---------------------------------------------------------------- paths and bytes
 function normRel(raw) {
@@ -1007,7 +1015,9 @@ async function plan(root, o) {
     const m = structuredClone(a.cur.manifest ?? {});
     for (const x of meta) if (x.merge === "apply") { if (a.prop.manifest[x.key] === undefined) delete m[x.key]; else m[x.key] = a.prop.manifest[x.key]; }
     m.claims ??= {};
-    for (const r of records) if (r.merge === "apply") { const p = recOf(a.prop, r.id); if (p === undefined) delete m.claims[r.id]; else m.claims[r.id] = p; }
+    const added = {};
+    for (const r of records) if (r.merge === "apply") { const p = recOf(a.prop, r.id); if (p === undefined) delete m.claims[r.id]; else if (r.id in m.claims) m.claims[r.id] = p; else added[r.id] = p; }
+    m.claims = withNewRecords(m.claims, added);
     manifestBuf = Buffer.from(JSON.stringify(m, null, 2) + "\n");
   }
   if (manifestBuf) cand.set("manifest.json", manifestBuf);
@@ -1248,8 +1258,8 @@ async function cmdRecover(root, o) {
 
 // ---------------------------------------------------------------- merge-manifest
 // Record-level three-way merge of manifest.json: each claim record and each top-level key merges on its own; the
-// same key changed differently on both sides is a conflict, and a conflict writes nothing. Claim prose files are not
-// touched: a claims file conflict is Git's (and yours) to resolve.
+// same key changed differently on both sides is a conflict, and a conflict writes nothing. Claim prose files are
+// merge-claims' (below).
 function mergeValue(b, o, t) {
   const [cb, co, ct] = [canon(b), canon(o), canon(t)];
   if (co === ct) return { v: o };
@@ -1268,6 +1278,21 @@ function mergeObjects(b, o, t, kind, conflicts, taken) {
   return out;
 }
 const uniqOrdered = (a) => [...new Set(a)];
+// Claim records with `added` (new to them) put in place, so the key order doesn't depend on landing order: right
+// before the first record of the same area (the id up to "/") that sorts after it, else right after that area's
+// last record; an area's first record goes right before the first record whose area sorts after its own, or last.
+// Records already there keep their place.
+const areaOf = (id) => id.slice(0, id.indexOf("/") >>> 0);
+function withNewRecords(claims, added) {
+  const keys = Object.keys(claims);
+  for (const id of Object.keys(added).sort()) {
+    const area = areaOf(id), own = keys.flatMap((k, i) => (areaOf(k) === area ? [i] : []));
+    let at = own.length ? own.find((i) => keys[i] > id) ?? own.at(-1) + 1 : keys.findIndex((k) => areaOf(k) > area);
+    if (at < 0) at = keys.length;
+    keys.splice(at, 0, id);
+  }
+  return Object.fromEntries(keys.map((k) => [k, k in added ? added[k] : claims[k]]));
+}
 function mergeManifests(bText, oText, tText) {
   const parse = (text, side) => {
     if (text === null || !text.trim()) return {};
@@ -1280,7 +1305,10 @@ function mergeManifests(bText, oText, tText) {
   const conflicts = [], taken = [];
   const meta = (m) => Object.fromEntries(Object.entries(m).filter(([k]) => k !== "claims"));
   const top = mergeObjects(meta(b), meta(o), meta(t), "meta", conflicts, taken);
-  const claims = mergeObjects(b.claims ?? {}, o.claims ?? {}, t.claims ?? {}, "claim", conflicts, taken);
+  const merged0 = mergeObjects(b.claims ?? {}, o.claims ?? {}, t.claims ?? {}, "claim", conflicts, taken);
+  // Ours' records in ours' order; records only theirs has go where promotion would have put them.
+  const claims = withNewRecords(Object.fromEntries(Object.entries(merged0).filter(([k]) => k in (o.claims ?? {}))),
+    Object.fromEntries(Object.entries(merged0).filter(([k]) => !(k in (o.claims ?? {})))));
   // Ours' key order, with claims where ours had them (or last).
   const merged = {};
   for (const k of uniqOrdered([...Object.keys(o), ...Object.keys(top), "claims"])) if (k === "claims") merged.claims = claims; else if (k in top) merged[k] = top[k];
@@ -1317,6 +1345,57 @@ async function cmdMergeManifest(root, o) {
   return { exit: 0, ...out, written: true, ...(driver ? {} : { next: `run sova-spec.mjs check, resolve any claims/ conflicts, then git add ${SPEC}/manifest.json` }) };
 }
 
+// ---------------------------------------------------------------- merge-claims
+// A Git merge driver for one claim file: the promotion's per-declaration merge (mergeSpans) with the merge base,
+// ours and theirs as base, current and draft. Declarations come from the file's own headings, as the core reads them,
+// without loading a graph (mid-merge, the rest of the tree may not load). Anything it can't merge per declaration
+// gets Git's own line merge, markers and all, so no side's prose is lost; a conflict exits 1 for Git to report.
+function cutText(text) {
+  const spans = declarationSpans(text);
+  if (new Set(spans.map((d) => d.id)).size !== spans.length) return null;
+  return cutFile(Buffer.from(text, "utf8"), new Map(spans.map((d) => [d.id, { file: "", lines: d.lines }])), "");
+}
+function mergeClaimTexts(bText, oText, tText) {
+  const cuts = [bText, oText, tText].map(cutText);
+  const m = cuts.every(Boolean) ? mergeSpans(...cuts) : null;
+  if (!m) return { why: "the file can't be merged per declaration (no declarations, a carriage return, or kept declarations reordered)" };
+  if (m.conflicts) return { conflicts: m.conflicts };
+  // Like promotion's read-back: the merged file must cut into exactly the declarations it was built from.
+  const back = cutText(m.text);
+  const same = back && back.spans.length === m.ids.size && back.spans.every((s) => m.ids.get(s.id) === s.text);
+  return same ? { text: m.text } : { why: "the per-declaration merge does not read back as the declarations it was built from" };
+}
+async function cmdMergeClaims(root, o) {
+  if ([o.base, o.ours, o.theirs].some((x) => x === undefined)) throw new Fail(2, "usage", "merge-claims takes all of --base, --ours and --theirs (a merge driver's %O %A %B)");
+  const read = async (p, side) => {
+    const r = await readOpen(resolve(p));
+    if (r.state === "absent" && side === "base") return "";
+    if (r.state !== "present") throw new Fail(2, "file-refused", `--${side} ${p}: ${r.why ?? r.state}`);
+    return r.buf.toString("utf8");
+  };
+  const texts = [await read(o.base, "base"), await read(o.ours, "ours"), await read(o.theirs, "theirs")];
+  const target = resolve(o.ours), path = o.path[0] ?? null;
+  const save = (data) => writeAtomic(dirname(target), posix.basename(target.split("\\").join("/")), data);
+  const m = mergeClaimTexts(...texts);
+  if (m.text !== undefined) {
+    if (o.write) await save(m.text);
+    return { exit: 0, mode: "driver", path, merge: "declarations", conflicts: [], written: !!o.write };
+  }
+  // Git's line merge of the three sides, as Git would have done without this driver.
+  const tmp = await mkdtemp(join(tmpdir(), "sova-spec-merge-claims-"));
+  let r;
+  try {
+    const f = ["ours", "base", "theirs"].map((n) => join(tmp, n));
+    await Promise.all([texts[1], texts[0], texts[2]].map((t, k) => writeFile(f[k], t)));
+    r = git(root, ["merge-file", "-p", "-L", "ours", "-L", "base", "-L", "theirs", ...f], true);
+  } finally { await rm(tmp, { recursive: true, force: true }); }
+  if (r.status === null || r.status < 0 || r.status > 127) throw new Fail(2, "git-failed", `git merge-file: ${r.error ?? r.err.trim()}`);
+  if (o.write) await save(r.out);
+  const out = { mode: "driver", path, merge: "lines", conflicts: m.conflicts ?? [], ...(m.why ? { why: m.why } : {}), written: !!o.write };
+  if (r.status === 0 && !m.conflicts) return { exit: 0, ...out };
+  throw new Fail(1, "claims-conflict", `${path ?? "the claim file"}: ${m.conflicts ? `changed differently on both sides: ${m.conflicts.join(", ")}` : `${m.why}, and Git's line merge conflicts`}; ${o.write ? "Git's conflict markers are in the file, with both sides' prose" : "nothing was written"}`, out);
+}
+
 // ---------------------------------------------------------------- output
 function human(out) {
   const L = [];
@@ -1347,6 +1426,7 @@ function human(out) {
     if (!out.written && !(out.refusals ?? []).length) L.push(`plan ${out.plan} — write with: promote ${out.name} … --plan ${out.plan} --write`);
   }
   if (out.command === "merge-manifest" && out.mode) L.push(`merge-manifest (${out.mode}): ${out.conflicts.length ? `${out.conflicts.length} conflict(s): ${out.conflicts.map((c) => `${c.kind} ${c.key}`).join(", ")}` : `${out.fromTheirs.length} key(s) from theirs`} ${out.written ? "(written)" : "(nothing written)"}`);
+  if (out.command === "merge-claims" && out.mode) L.push(`merge-claims${out.path ? ` ${out.path}` : ""}: merged per ${out.merge === "declarations" ? "declaration" : "line (Git's merge)"}${out.conflicts.length ? `; ${out.conflicts.length} conflict(s): ${out.conflicts.join(", ")}` : ""} ${out.written ? "(written)" : "(nothing written)"}`);
   if (out.command === "recover") L.push(out.pending === false ? "no pending promotion" : `pending promotion of draft ${out.draft}: ${(out.targets ?? []).map((t) => `${t.path} ${t.state}`).join(", ")}${out.action ? ` → ${out.action}` : ""}`);
   for (const f of out.findings) L.push(`${f.severity} ${f.code}: ${f.message}`);
   L.push(`note: ${NOTICE}`, `exit ${out.exit}`);
@@ -1368,7 +1448,7 @@ async function evaluate(argv, readPolicy, inputSources) {
     out.root = root;
     if (await ownDir(root, SPEC, false).catch(() => { throw new Fail(2, "symlink-refused", `${SPEC} or .sova is not a plain directory`); }) === null && o.cmd !== "new")
       throw new Fail(2, "draft-missing", `no ${SPEC} under ${root}`);
-    const cmds = { new: cmdNew, status: cmdStatus, diff: cmdDiff, check: cmdCheck, evidence: cmdEvidence, promote: cmdPromote, recover: cmdRecover, "merge-manifest": cmdMergeManifest };
+    const cmds = { new: cmdNew, status: cmdStatus, diff: cmdDiff, check: cmdCheck, evidence: cmdEvidence, promote: cmdPromote, recover: cmdRecover, "merge-manifest": cmdMergeManifest, "merge-claims": cmdMergeClaims };
     out = { ...out, ...(await cmds[o.cmd](root, o)) };
   } catch (e) {
     if (!(e instanceof Fail)) e = new Fail(2, "internal", e.stack ?? String(e));

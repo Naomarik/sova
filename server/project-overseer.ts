@@ -624,7 +624,10 @@ function toolHost(rt: Rt): PoToolHost {
       const out = await actOrThrow(e, h.sessionId, approve ? "hold/approve" : "hold/cancel", { id: h.id, reason }, envelope(), { settle: true });
       // What the released act did is its own outcome: one that did not go is never an approval that went.
       const notSent = approve ? releasedNotDoneOf(e, h, out) : null;
-      return notSent ? { notSent } : {};
+      if (notSent) return { notSent };
+      // §app.outreach/send: released while WhatsApp is down, the message waits for it in a new hold.
+      const outage = approve ? out.result?.steps.find((s) => s.event === h.event && s.held?.wait === "outage")?.held : undefined;
+      return outage ? { waits: { until: new Date(outage.until).toISOString() } } : {};
     },
     async correct(session, event, payload, reason) {
       const sid = projectSessionOrThrow(projectId, session);
@@ -1396,7 +1399,7 @@ export function lookAppendix(projectId: string, max = 20): string {
   if (held.length)
     parts.push(
       "Held acts (each goes ahead when its time comes unless cancelled; sova_hold approves or cancels, with a reason):",
-      ...held.map((h) => `- ${h.id} · ${h.what} · ${h.reviewSince ? `waits for your review since ${h.reviewSince}` : h.wait === "hours" ? `waits for ${h.person ?? "the person"}'s working hours, until ${h.goesAt}` : `goes ahead at ${h.goesAt}`}`),
+      ...held.map((h) => `- ${h.id} · ${h.what} · ${h.reviewSince ? `waits for your review since ${h.reviewSince}` : h.wait === "hours" ? `waits for ${h.person ?? "the person"}'s working hours, until ${h.goesAt}` : h.wait === "outage" ? `waits for WhatsApp to come back, at most until ${h.goesAt} (then it is not sent)` : `goes ahead at ${h.goesAt}`}`),
     );
   if (feed.length)
     parts.push(

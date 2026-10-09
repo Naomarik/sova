@@ -185,14 +185,8 @@ a Tailscale identity, and its calls never touch the tailnet listener.
   the connection, from its pin; nothing inside a request can name another.
 - What a host sends a pairing on its own initiative is limited by its grant to it, as for any peer.
 - A browser request a host passes to a pairing carries nothing of that host or the browser, whatever
-  the grant, as for a restricted peer. The pairing's answer comes back hardened: only the headers a
-  page needs (content type, length, disposition and encoding, caching, the date, `Vary` and
-  `X-Sova-Mesh`; never a cookie, redirect target, CORS grant, service-worker scope, preload or cache
-  wipe), with `Content-Security-Policy: sandbox; default-src 'none'` and
-  `X-Content-Type-Options: nosniff`. Only JSON, plain text and raster images (PNG, JPEG, GIF, WebP,
-  AVIF, BMP) keep their type; any other body (HTML, SVG, XML, script, PDF, multipart, or none named)
-  comes only as an `application/octet-stream` download. A 401 or 407 from the pairing reaches the
-  browser as 502, so the page never takes a pairing's answer for its own lock-out.
+  the grant, as for a restricted peer. The pairing's answer comes back hardened, as every peer's
+  does (§mesh.remote-sessions/proxy).
 - A relay never passes one pairing's requests to another host: the peer gate never forwards
   (§mesh.peers/listener).
 

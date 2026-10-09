@@ -65,6 +65,18 @@ export function createBaileysDriver({ authDir, deviceName, logLevel, log }) {
       })
       let firstQr
       const qrSeen = new Promise((r) => (firstQr = r))
+      // What the WebSocket itself says as it ends, for the close's log line (core.mjs wireWords): its close
+      // code (1006: no close frame came), and whether the server sent a stream error (WhatsApp's own 503, 515 …)
+      // or ended the stream first. Prepended, so it is known before Baileys's own listeners turn it into a
+      // connection.update; Baileys stops listening for the close once it ends the connection itself, so then
+      // no WebSocket code is known. Codes and flags only, never a reason's text or a stanza.
+      const wire = {}
+      sock.ws.prependListener('close', (code) => {
+        wire.wsCode = typeof code === 'number' ? code : undefined
+        wire.closeFrame = typeof code === 'number' && code !== 1006
+      })
+      sock.ws.prependListener('CB:xmlstreamend', () => (wire.streamEnd = true))
+      sock.ws.prependListener('CB:stream:error', () => (wire.streamError = true))
       sock.ev.on('creds.update', saveCreds)
       sock.ev.on('connection.update', (u) => {
         if (u.qr) {
@@ -74,7 +86,7 @@ export function createBaileysDriver({ authDir, deviceName, logLevel, log }) {
         if (u.connection === 'open') handlers.onOpen((sock.user?.id ?? '').split('@')[0].split(':')[0])
         if (u.connection === 'close') {
           const err = u.lastDisconnect?.error
-          handlers.onClose(err?.output?.statusCode, err?.message)
+          handlers.onClose(err?.output?.statusCode, err?.message, { ...wire })
         }
       })
       sock.ev.on('messages.update', (updates) => {

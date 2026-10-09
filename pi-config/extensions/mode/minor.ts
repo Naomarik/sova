@@ -1,6 +1,7 @@
 /** Minor modes: independently toggleable prompt biases on top of the major mode. Node builtins only: unit-testable. */
 
 import { readdirSync, readFileSync } from "node:fs";
+import type { AlignStyle } from "./align-settings.ts";
 
 export type MinorMode = "align" | "spec" | "vis" | "codemode";
 
@@ -74,6 +75,42 @@ On any prompt that implies work (a feature, an investigated fix, a refactor, a m
 Several alignments can be open at once, one per concern: each has its own id (al_N), and question ids (qN) never change. Name the alignment (doc) in every call while more than one is open. Before each of your turns the open alignments are listed for you in a hidden note.
 
 Exempt: questions and explanations, explicit commands to run, trivial one-line changes the user pointed at, follow-ups that plainly confirm, and prompts where the user says to skip alignment. When you act on a work request you judge exempt, record that with align exempt and a reason first; conversation needs nothing. When the ask already looks fully specified, still record a short alignment with your reading of it and ask the user to confirm. Bias heavily toward asking.`;
+
+/**
+ * The writing style's paragraph after the align block (§chat.alignment/style): none for Default, so a
+ * Default session's block is exactly ALIGN_INSTRUCTIONS. Keyed by align-settings.ts's AlignStyle.
+ */
+export const ALIGN_STYLE_PARAGRAPHS: Record<AlignStyle, string | undefined> = {
+	default: undefined,
+	simplified: `Writing style: Simplified. Write every field of an alignment the user reads (title, summary, findings, approach, rejected alternatives, and each question's topic, ask, context, options and recommendation) in short sentences and everyday words. Keep it small: about 5 findings and 6 approach steps at most. Name a file only when the user must recognise it. In each question's context, say what changes for the user with each answer. Put any technical detail the plan still needs in the alignment's technical notes (technical), not in those fields.`,
+	pm: `Writing style: Project manager. The user reads alignments as a project manager. The fields they read (title, summary, findings, approach, rejected alternatives, and each question's topic, ask, context, options and recommendation) describe only what a user sees and does: screens, controls, wording, states and flows. No file paths, no function or component names, no APIs, no code. Ask questions a project manager can answer. Consequence rule: any technical choice with an effect a user would notice (speed, cost, data kept or lost, limits, something hard to undo) is asked as a product question, in those terms. Never leave a decision out because it is technical. Put the technical detail — files, code, the technical trade-offs — in the alignment's technical notes (technical).`,
+};
+
+/**
+ * The paragraph after the align block (and the style's) while the session started with Visuals on
+ * (§chat.alignment/visuals). Its words never depend on the style, so it never changes mid-session.
+ */
+export const ALIGN_VISUALS_PARAGRAPH = `Visuals: you may draw on the alignment card. A question, or the alignment itself, can carry a visual {kind, source}: a vis drawing's kind and its source, exactly what a \`vis\` fence would hold, at most 3 per alignment. Add one only when it explains faster than words: a wireframe for a question about a screen; a flow, state or steps for a change in behaviour. Before the first visual of each kind, call vis_guide with that kind and use only the syntax it returns. In the Project manager writing style never use the code, tree or layers kinds. Visuals go in the align tool's visual fields, never as a vis fence in your reply; after importing a planning worker's file, add them with edit_question or edit_doc.`;
+
+/** The align options a block is built with: the writing style and Visuals (align-settings.ts). */
+export interface AlignPromptOptions {
+	style: AlignStyle;
+	visuals: boolean;
+}
+
+/** The align block as the prompt carries it: ALIGN_INSTRUCTIONS, then the style's paragraph, then Visuals'. */
+export function buildAlignPrompt(options: AlignPromptOptions = { style: "default", visuals: false }): string {
+	return [ALIGN_INSTRUCTIONS, ALIGN_STYLE_PARAGRAPHS[options.style], options.visuals ? ALIGN_VISUALS_PARAGRAPH : undefined].filter(Boolean).join("\n\n");
+}
+
+/**
+ * Whether the vis tools (vis_guide, and in Sova's hosted sessions vis_check) belong in the loadout: the
+ * vis minor mode is on, or align is on in a session that started with Visuals (§chat.alignment/visuals).
+ * The one rule every site that syncs them asks, so the tool set changes only when this answer does.
+ */
+export function visToolsWanted(minorModes: readonly MinorMode[], alignVisuals: boolean): boolean {
+	return minorModes.includes("vis") || (alignVisuals && minorModes.includes("align"));
+}
 
 /**
  * The spec mode's text is spec-mode.md beside this module, read once at load: the injected block is that file
@@ -163,8 +200,9 @@ const MINOR_INSTRUCTIONS: Record<MinorMode, string> = {
 	codemode: "",
 };
 
-export function buildMinorPrompt(mode: MinorMode): string {
-	return MINOR_INSTRUCTIONS[mode];
+/** One minor mode's block; align's carries its style and Visuals paragraphs (buildAlignPrompt). */
+export function buildMinorPrompt(mode: MinorMode, align?: AlignPromptOptions): string {
+	return mode === "align" ? buildAlignPrompt(align) : MINOR_INSTRUCTIONS[mode];
 }
 
 /** Canonical order, deduped, unknown names dropped. */

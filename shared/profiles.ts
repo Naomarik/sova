@@ -60,6 +60,10 @@ export type ThinkingLevel = (typeof THINKING_LEVELS)[number];
 /** A subagent profile id as its library spells it (lowercase letters, digits, dashes, at most 48), or "off". */
 const SUBAGENTS_RE = /^[a-z0-9](?:[a-z0-9-]{0,47})$/;
 export const isSubagentsRef = (v: unknown): v is string => typeof v === "string" && (v === "off" || SUBAGENTS_RE.test(v));
+/** The minor modes a profile's `minorModes` may name, in the mode extension's order: a copy of
+    pi-config's MINOR_MODES (this file imports nothing), pinned equal by session-profiles.test.ts. */
+export const PROFILE_MINOR_MODES = ["align", "spec", "vis", "codemode"] as const;
+export type ProfileMinorMode = (typeof PROFILE_MINOR_MODES)[number];
 
 export const PROFILE_ICONS = ["grid", "eye", "network", "branch", "wrench", "shield", "search", "terminal", "bulb", "building"] as const;
 export type ProfileIcon = (typeof PROFILE_ICONS)[number];
@@ -99,6 +103,8 @@ export interface Profile {
   limits: ProfileLimits;
   /** Starts with this mode ("normal" | "delegate"); absent = the session default. */
   mode?: string;
+  /** Starts with exactly these minor modes (PROFILE_MINOR_MODES order); [] = none; absent = the session default. */
+  minorModes?: ProfileMinorMode[];
   /** Starts with this model ref "provider/id"; absent = the session default. */
   model?: string;
   /** Starts with this thinking level (THINKING_LEVELS); absent = the session default. */
@@ -255,7 +261,7 @@ function num(v: unknown, fallback: number): number {
   return typeof v === "number" && Number.isInteger(v) && v >= 1 && v <= 10_000 ? v : fallback;
 }
 
-const PROFILE_FIELDS = ["id", "label", "icon", "description", "remove", "grant", "singleton", "limits", "mode", "model", "thinking", "subagents", "firstMessage", "playbook", "overseerMayStart"];
+const PROFILE_FIELDS = ["id", "label", "icon", "description", "remove", "grant", "singleton", "limits", "mode", "minorModes", "model", "thinking", "subagents", "firstMessage", "playbook", "overseerMayStart"];
 const PLAYBOOK_ID_RE = /^[a-z0-9][a-z0-9-]*$/;
 
 /**
@@ -268,14 +274,14 @@ export function profileFileError(raw: unknown): string | null {
   const o = raw as Record<string, unknown>;
   const unknown = Object.keys(o).filter((k) => !PROFILE_FIELDS.includes(k));
   if (unknown.length) return `Unknown field${unknown.length > 1 ? "s" : ""} ${unknown.map((k) => `"${k}"`).join(", ")}. Known: ${PROFILE_FIELDS.join(", ")}.`;
-  const list = (k: "remove" | "grant", known: readonly string[], retired: readonly string[] = []) => {
+  const list = (k: "remove" | "grant" | "minorModes", known: readonly string[], retired: readonly string[] = []) => {
     const v = o[k];
     if (v === undefined) return null;
     if (!Array.isArray(v) || v.some((x) => typeof x !== "string")) return `"${k}" must be a list of names.`;
     const bad = (v as string[]).filter((x) => !known.includes(x) && !retired.includes(x));
     return bad.length ? `"${k}" has unknown name${bad.length > 1 ? "s" : ""} ${bad.map((x) => `"${x}"`).join(", ")}. Known: ${known.join(", ")}.` : null;
   };
-  const listError = list("remove", REMOVABLE, RETIRED_REMOVABLE) ?? list("grant", GRANTABLE);
+  const listError = list("remove", REMOVABLE, RETIRED_REMOVABLE) ?? list("grant", GRANTABLE) ?? list("minorModes", PROFILE_MINOR_MODES);
   if (listError) return listError;
   for (const k of ["label", "description", "model", "firstMessage", "playbook"] as const)
     if (o[k] !== undefined && typeof o[k] !== "string") return `"${k}" must be text.`;
@@ -316,6 +322,8 @@ export function parseProfile(raw: unknown): Profile | { error: string } {
   const icon = (PROFILE_ICONS as readonly string[]).includes(o.icon as string) ? (o.icon as ProfileIcon) : "wrench";
   const str = (v: unknown, max: number) => (typeof v === "string" && v.trim() ? v.trim().slice(0, max) : undefined);
   const mode = o.mode === "normal" || o.mode === "delegate" ? o.mode : undefined;
+  // The whole set, known names only, in the mode extension's order; [] is kept (it starts with none).
+  const minorModes = Array.isArray(o.minorModes) ? PROFILE_MINOR_MODES.filter((m) => (o.minorModes as unknown[]).includes(m)) : undefined;
   const model = str(o.model, 200);
   const thinking = (THINKING_LEVELS as readonly unknown[]).includes(o.thinking) ? (o.thinking as ThinkingLevel) : undefined;
   const subagents = isSubagentsRef(o.subagents) ? o.subagents : undefined;
@@ -330,6 +338,7 @@ export function parseProfile(raw: unknown): Profile | { error: string } {
     singleton: o.singleton === true,
     limits,
     ...(mode ? { mode } : {}),
+    ...(minorModes ? { minorModes } : {}),
     ...(model ? { model } : {}),
     ...(thinking ? { thinking } : {}),
     ...(subagents ? { subagents } : {}),
@@ -356,7 +365,7 @@ export const isDefaultShape = (p: Pick<Profile, "remove" | "grant">) => p.remove
 
 /**
  * Capability-neutral: changes no capability or grant, isn't One at a time and
- * links no playbook or first message, so it sets only model, effort, subagents or mode. The shelf
+ * links no playbook or first message, so it sets only model, effort, subagents, mode or minor modes. The shelf
  * leaves these out. A stored snapshot missing a list reads as not changing it.
  */
 export const isCapabilityNeutral = (p: Partial<Pick<Profile, "remove" | "grant" | "singleton" | "playbook" | "firstMessage">>) =>

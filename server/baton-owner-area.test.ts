@@ -55,7 +55,7 @@ describe("owner areas in a gathering session", async () => {
     await assert.rejects(call({}), /Use one of/);
     assert.equal(appended.length, 0, "nothing recorded when refused");
     await call({ ownerArea: " Website" });
-    assert.deepEqual(appended.at(-1), { type: BATON_DECISION_ENTRY, data: { v: 1, area: "site structure / pages", ownerArea: "website", statement: "Two pages.", quote: "Just two pages.", by: alp.id } });
+    assert.deepEqual(appended.at(-1), { type: BATON_DECISION_ENTRY, data: { v: 1, area: "site structure / pages", ownerArea: "website", statement: "Two pages.", quote: "Just two pages.", by: alp.id, name: "Alperen Kaya" } });
     await call({ ownerArea: "none" });
     assert.equal(appended.at(-1)!.data.ownerArea, "none");
   });

@@ -47,8 +47,10 @@ tier and comes back is new again.
   questions waiting on your answer, §chat.alignment/session-mark; a stored choice for the kind it
   replaced, `asks-you`, carries over to it, and a client still sending that key is not refused), `error` (the
   last turn stopped with an error), `baton-needs-you` (a baton session waits on you), `worker-error`
-  (a subagent ended in an error) and `playbook-review` (a verb playbook's run proposes a change to
-  merge, §app.project-runtime/review). Each can be switched off; all are on by default
+  (a subagent ended in an error), `playbook-review` (a verb playbook's run proposes a change to
+  merge, §app.project-runtime/review) and `whatsapp-down` (a WhatsApp sender stopped and needs you,
+  §app.outreach/sender-health: each sender its own blocker, and a down sender still waiting for its
+  next automatic try none). Each can be switched off; all are on by default
   except `worker-error`. `looping` ("Subagent stuck") is retired: a stuck subagent is no longer a blocker
   (§app.overseer/attention-digest), so nothing could send it; a stored choice for it is dropped,
   and a client still sending that key is not refused. A reply that asks you (`asks-you`,
@@ -68,14 +70,16 @@ tier and comes back is new again.
   on the device instead of stacking. Blockers of several sessions: "{n} sessions need you", the
   body one line per session ("{session name} — {Kind}"), tag `sova:several`. A session's name is
   summary-first (§app.overseer/session-names). Kind words:
-  Needs input, Open questions, Error, Baton, Subagent error, Playbook needs you. While nothing could be sent
+  Needs input, Open questions, Error, Baton, Subagent error, Playbook needs you, WhatsApp down. A
+  blocker of no session (WhatsApp down) is titled with its kind word alone. While nothing could be sent
   (sending off, no contact, no device) the loop doesn't read the digest for this at all, and its
   first reading once something could be sent is a new baseline — the same outcome as dropping.
 - **Redacted.** Titles and details come from other sessions and show on a lock screen: both go
   through the server's redactor (§app.overseer/tools) before they are encrypted. Titles are cut at
   80 characters, the body at 300.
-- **A tap** opens that session (`#/sid/{sessionId}`) for one session, the Overseer (`#/overseer`)
-  for several. An open Sova window is focused and navigated in place; with none, a new one opens
+- **A tap** opens that session (`#/sid/{sessionId}`) for one session (for a blocker of no session,
+  its own page: WhatsApp down opens Settings → Outreach, `#/settings/outreach`), the Overseer
+  (`#/overseer`) for several. An open Sova window is focused and navigated in place; with none, a new one opens
   there.
 - **App badge.** Each notification carries how many sessions need you now; where the browser
   supports app badges (an installed app), the icon shows that number. An open Sova page keeps it

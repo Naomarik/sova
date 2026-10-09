@@ -5,7 +5,7 @@ import { createSignal } from "solid-js";
  * App state so a control deep in a pane — the mode menu's "Configure Delegate" — can open Settings
  * straight at the screen it's about, without threading a callback through every pane between.
  */
-export const SETTINGS_TABS = ["general", "models", "accounts", "subagents", "profiles", "overseer", "notifications", "decisions", "summaries", "organizations", "themes", "mesh", "public-links", "outreach", "voice", "experimental"] as const;
+export const SETTINGS_TABS = ["general", "models", "accounts", "subagents", "alignment", "profiles", "overseer", "notifications", "decisions", "summaries", "organizations", "themes", "mesh", "public-links", "outreach", "voice", "experimental"] as const;
 export type SettingsTab = (typeof SETTINGS_TABS)[number];
 
 const [openTab, setOpenTab] = createSignal<SettingsTab | null>(null);
@@ -33,6 +33,12 @@ export const settingsOpenAt = openTab;
 export function openSettings(tab: SettingsTab = "general", at: SettingsSection | null = null): void {
   setSection(at);
   setOpenTab(tab);
+}
+
+/** `#/settings/<tab>` (a Needs you row of no session, a phone notification's tap): the tab it names, else null. */
+export function settingsTabFromHash(hash: string): SettingsTab | null {
+  const m = /^#\/settings\/([a-z-]+)$/.exec(hash);
+  return SETTINGS_TABS.find((t) => t === m?.[1]) ?? null;
 }
 
 export function closeSettings(): void {

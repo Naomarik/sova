@@ -43,11 +43,14 @@ import { useMinuteNow } from "../lib/minute-clock";
 import { orgHref, orgSessionHref, orgTabHref, personHref, startForHref, takeStartParent, type OrgsRoute, type OrgTab } from "../lib/orgs-route";
 import { projectHref } from "../lib/projects-route";
 import { orgTabsOf } from "../lib/org-tabs";
+import { emptyFilters, type HistoryView } from "../lib/org-history-route";
+import { OrgHistory } from "./OrgHistory";
 import { announce, home, toast } from "../lib/ui-state";
 import { InsightsPage } from "./InsightsPage";
 import { meshPeers, orgHostOf } from "../lib/mesh";
 import { orgHostOffline } from "../lib/org-host-offline";
 import { LinksBanner } from "./LinksBanner";
+import { OrgWhatsAppCard } from "./OrgWhatsAppCard";
 import { OwnerCard } from "./OwnerCard";
 import { CompanyHoursCard } from "./CompanyHoursCard";
 import { PersonForm } from "./PersonForm";
@@ -86,6 +89,7 @@ export function OrgsView(props: { route: OrgsRoute; titleRef(el: HTMLHeadingElem
             id={id}
             start={page.start()}
             tab={page.tab()}
+            history={page.history()}
             titleRef={props.titleRef}
           />
         )}
@@ -295,7 +299,7 @@ function OrgList(props: { titleRef(el: HTMLHeadingElement): void }) {
 
 // ---- one org -------------------------------------------------------------------------------------
 
-function OrgPage(props: { id: string; start?: string; tab?: OrgTab; titleRef(el: HTMLHeadingElement): void }) {
+function OrgPage(props: { id: string; start?: string; tab?: OrgTab; history?: HistoryView; titleRef(el: HTMLHeadingElement): void }) {
   const org = createOrgSource(props.id);
   const [error, setError] = createSignal<string | null>(null);
   const [links, setLinks] = createSignal<OfferLink[] | null>(null);
@@ -380,8 +384,13 @@ function OrgPage(props: { id: string; start?: string; tab?: OrgTab; titleRef(el:
                   <CompanyHoursCard org={o()} act={act} />
                   <ProjectsSection org={o()} act={act} />
                 </Match>
+                <Match when={tab() === "history"}>
+                  {/* The org's recorded history: its own reads, the org for names. */}
+                  <OrgHistory org={o()} view={props.history ?? { filters: emptyFilters() }} />
+                </Match>
                 <Match when={tab() === "workspace"}>
                   <GitCard org={o()} act={act} />
+                  <OrgWhatsAppCard orgId={o().id} remoteHost={orgHostOf(o().id)} />
                 </Match>
               </Switch>
             </div>
@@ -415,6 +424,8 @@ function OrgTabs(props: { org: OrgDetail; tab: OrgTab }) {
     els[next]?.focus();
   };
   return (
+    // The box is the strip's container (orgs.css `org-tabs`): its steps ask the strip's own width.
+    <div class="org-tabs-box">
     <div class="tabs org-tabs" role="tablist" aria-label="Organization">
       <For each={tabs()}>
         {(t, i) => (
@@ -442,6 +453,7 @@ function OrgTabs(props: { org: OrgDetail; tab: OrgTab }) {
           </button>
         )}
       </For>
+    </div>
     </div>
   );
 }

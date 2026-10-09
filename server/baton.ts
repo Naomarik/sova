@@ -536,6 +536,8 @@ export interface CreateOptions {
   why?: string;
   /** Sova's own item for it (the operator's to-do it came from). */
   opItem?: string;
+  /** The project's preview it asks about (`pv_…`), checked by the caller: named in its act, so its record names it. */
+  preview?: string;
   /** A gap's item statechart (`item/…`): it starts the gathering (gather/start) and links it, instead of the project. */
   item?: string;
   /** With `item`: file it as the gap's planned gathering (gather/plan), started by the statechart itself at L1 (r3). */
@@ -610,6 +612,7 @@ export async function createBaton(input: BatonStartInput, opts: CreateOptions = 
     ...(opts.startedVia ? { startedVia: opts.startedVia } : {}),
     started: startedRecord(opts),
     ...(opts.opItem ? { opItem: opts.opItem } : {}),
+    ...(opts.preview ? { preview: opts.preview } : {}),
     leaseMs: leaseMs(),
     operatorName: operatorName(),
   };

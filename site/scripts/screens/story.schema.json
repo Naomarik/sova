@@ -1,0 +1,1185 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "story.schema.json",
+  "title": "Sova landing-site screens story",
+  "description": "All demo data and the scripted sessions behind the landing site's screenshots and video. Every generated file derives from this. See README.md next to it.",
+  "type": "object",
+  "required": [
+    "version",
+    "provider",
+    "models",
+    "viewports",
+    "project",
+    "sessions",
+    "shots",
+    "pageShots"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Editor hint: ./story.schema.json"
+    },
+    "note": {
+      "$ref": "#/$defs/Note"
+    },
+    "version": {
+      "const": 1,
+      "description": "The story format's version."
+    },
+    "provider": {
+      "$ref": "#/$defs/Id",
+      "description": "The provider name the director is registered under in the capture's models.json. Shows wherever Sova prints a full model ref."
+    },
+    "models": {
+      "type": "object",
+      "description": "Named model slots. A session, worker or the Overseer names one by its key.",
+      "propertyNames": {
+        "$ref": "#/$defs/Id"
+      },
+      "minProperties": 1,
+      "additionalProperties": {
+        "$ref": "#/$defs/Model"
+      }
+    },
+    "viewports": {
+      "type": "object",
+      "description": "Named browser viewports the shots and the video are taken at, in CSS pixels; the image is width x scale by height x scale pixels.",
+      "propertyNames": {
+        "$ref": "#/$defs/Id"
+      },
+      "minProperties": 1,
+      "additionalProperties": {
+        "$ref": "#/$defs/Viewport"
+      }
+    },
+    "project": {
+      "$ref": "#/$defs/Project"
+    },
+    "sessions": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Sidebar sessions. A session with `messages` is written to disk before Sova starts (the background). One with `script` is played live by the director.",
+      "items": {
+        "$ref": "#/$defs/Session"
+      }
+    },
+    "workers": {
+      "type": "object",
+      "description": "Workers a live session's `spawn` step starts, by id.",
+      "propertyNames": {
+        "$ref": "#/$defs/Id"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/Worker"
+      }
+    },
+    "overseer": {
+      "$ref": "#/$defs/Overseer"
+    },
+    "shots": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Every screenshot: which session, at which hold, in which viewport, what is opened.",
+      "items": {
+        "$ref": "#/$defs/Shot"
+      }
+    },
+    "video": {
+      "$ref": "#/$defs/Video"
+    },
+    "pageShots": {
+      "type": "object",
+      "description": "Which shot fills which slot on the site's pages (site/src/data/screens.ts reads them).",
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9-]*(\\.[a-z0-9-]+)*$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/Id"
+      }
+    }
+  },
+  "$defs": {
+    "Id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "description": "lowercase letters, digits and dashes, starting with a letter"
+    },
+    "Note": {
+      "type": "string",
+      "description": "A comment for people. Ignored by every generator."
+    },
+    "Text": {
+      "description": "Text: a string, or an array of lines joined with a line break.",
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "FileBody": {
+      "description": "A file's content: Text, or { \"file\": \"story/files/<name>\" } for a long body kept beside the story.",
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "file"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "file": {
+              "type": "string",
+              "pattern": "^story/files/[A-Za-z0-9._/-]+$"
+            },
+            "note": {
+              "$ref": "#/$defs/Note"
+            }
+          }
+        }
+      ]
+    },
+    "Offset": {
+      "type": "string",
+      "pattern": "^(now|-[0-9]+[smhd])$",
+      "description": "\"now\", or how long before the capture starts: -90s, -2m, -1h, -3d"
+    },
+    "Duration": {
+      "type": "string",
+      "pattern": "^[0-9]+(ms|s)$",
+      "description": "e.g. 35ms, 2s"
+    },
+    "RepoPath": {
+      "type": "string",
+      "pattern": "^(?!/)(?!.*(^|/)\\.\\.?(/|$))[A-Za-z0-9._@/-]+$",
+      "description": "a path relative to the demo repository's top level"
+    },
+    "Model": {
+      "type": "object",
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9.-]*$",
+          "description": "What the model is called. Sova labels Claude ids by name: claude-opus-5-5 reads \"Opus 5.5\"."
+        },
+        "name": {
+          "type": "string",
+          "description": "models.json display name (optional)."
+        },
+        "effort": {
+          "enum": [
+            "off",
+            "minimal",
+            "low",
+            "medium",
+            "high",
+            "xhigh"
+          ],
+          "description": "Thinking level a session or worker on it uses."
+        },
+        "contextWindow": {
+          "type": "integer",
+          "minimum": 1000,
+          "description": "Context window in tokens; the context rings are drawn against it. Default 200000."
+        },
+        "note": {
+          "$ref": "#/$defs/Note"
+        }
+      }
+    },
+    "Project": {
+      "type": "object",
+      "required": [
+        "name",
+        "path",
+        "commits"
+      ],
+      "additionalProperties": false,
+      "description": "The demo git repository every session works in.",
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/Id"
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^~/[A-Za-z0-9._/-]+$",
+          "description": "Where it lives under the capture's own home, e.g. ~/code/demo-app."
+        },
+        "commits": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": [
+              "message",
+              "files"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "message": {
+                "type": "string",
+                "minLength": 1
+              },
+              "files": {
+                "type": "object",
+                "description": "repo path -> content",
+                "propertyNames": {
+                  "$ref": "#/$defs/RepoPath"
+                },
+                "minProperties": 1,
+                "additionalProperties": {
+                  "$ref": "#/$defs/FileBody"
+                }
+              },
+              "note": {
+                "$ref": "#/$defs/Note"
+              }
+            }
+          }
+        },
+        "note": {
+          "$ref": "#/$defs/Note"
+        }
+      }
+    },
+    "Session": {
+      "type": "object",
+      "required": [
+        "id",
+        "title",
+        "at",
+        "model"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The sidebar title."
+        },
+        "at": {
+          "$ref": "#/$defs/Offset",
+          "description": "When it was last active (static), or when it starts (live: \"now\")."
+        },
+        "model": {
+          "$ref": "#/$defs/Id",
+          "description": "A key of `models`."
+        },
+        "modes": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "delegate",
+              "align"
+            ]
+          },
+          "description": "Live sessions only: Delegate and/or the align minor mode."
+        },
+        "messages": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/Step"
+          },
+          "description": "A finished background session, written to disk before Sova starts."
+        },
+        "script": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/Step"
+          },
+          "description": "A live session the director plays."
+        },
+        "note": {
+          "$ref": "#/$defs/Note"
+        }
+      }
+    },
+    "Worker": {
+      "type": "object",
+      "required": [
+        "model",
+        "task",
+        "script"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "model": {
+          "$ref": "#/$defs/Id"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The name the workers pane shows. Default: the worker's id."
+        },
+        "in": {
+          "$ref": "#/$defs/Id",
+          "description": "A worktree (by its create name) the worker starts in. Default: the session's folder."
+        },
+        "task": {
+          "$ref": "#/$defs/Text",
+          "description": "The worker's prompt. Must be unique: the director recognises the worker by it."
+        },
+        "script": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/Step"
+          }
+        },
+        "note": {
+          "$ref": "#/$defs/Note"
+        }
+      }
+    },
+    "Overseer": {
+      "type": "object",
+      "required": [
+        "model",
+        "script"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "model": {
+          "$ref": "#/$defs/Id"
+        },
+        "script": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/Step"
+          }
+        },
+        "note": {
+          "$ref": "#/$defs/Note"
+        }
+      }
+    },
+    "Step": {
+      "description": "One thing that happens: exactly one action key, plus an optional note.",
+      "type": "object",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/StepUser"
+        },
+        {
+          "$ref": "#/$defs/StepSay"
+        },
+        {
+          "$ref": "#/$defs/StepRead"
+        },
+        {
+          "$ref": "#/$defs/StepEdit"
+        },
+        {
+          "$ref": "#/$defs/StepWrite"
+        },
+        {
+          "$ref": "#/$defs/StepBash"
+        },
+        {
+          "$ref": "#/$defs/StepAlign"
+        },
+        {
+          "$ref": "#/$defs/StepDecide"
+        },
+        {
+          "$ref": "#/$defs/StepWorktree"
+        },
+        {
+          "$ref": "#/$defs/StepSpawn"
+        },
+        {
+          "$ref": "#/$defs/StepWait"
+        },
+        {
+          "$ref": "#/$defs/StepShowChanges"
+        },
+        {
+          "$ref": "#/$defs/StepTool"
+        },
+        {
+          "$ref": "#/$defs/StepError"
+        },
+        {
+          "$ref": "#/$defs/StepHold"
+        }
+      ]
+    },
+    "StepUser": {
+      "type": "object",
+      "required": [
+        "user"
+      ],
+      "additionalProperties": false,
+      "description": "A message the user sends (typed by the capture, or written for a static session).",
+      "properties": {
+        "user": {
+          "$ref": "#/$defs/Text"
+        },
+        "note": {
+          "$ref": "#/$defs/Note"
+        }
+      }
+    },
+    "StepSay": {
+      "type": "object",
+      "required": [
+        "say"
+      ],
+      "additionalProperties": false,
+      "description": "Reply text. Before a tool step it is the text the same reply starts with.",
+      "properties": {
+        "say": {
+          "$ref": "#/$defs/Text"
+        },
+        "note": {
+          "$ref": "#/$defs/Note"
+        }
+      }
+    },
+    "StepRead": {
+      "type": "object",
+      "required": [
+        "read"
+      ],
+      "additionalProperties": false,
+      "description": "The read tool on a repo file.",
+      "properties": {
+        "read": {
+          "$ref": "#/$defs/RepoPath"
+        },
+        "note": {
+          "$ref": "#/$defs/Note"
+        }
+      }
+    },
+    "StepEdit": {
+      "type": "object",
+      "required": [
+        "edit"
+      ],
+      "additionalProperties": false,
+      "description": "The edit tool: replace `old` with `new` in a repo file. The check replays it against the commits.",
+      "properties": {
+        "edit": {
+          "type": "object",
+          "required": [
+            "path",
+            "old",
+            "new"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "$ref": "#/$defs/RepoPath"
+            },
+            "old": {
+              "$ref": "#/$defs/Text"
+            },
+            "new": {
+              "$ref": "#/$defs/Text"
+            }
+          }
+        },
+        "note": {
+          "$ref": "#/$defs/Note"
+        }
+      }
+    },
+    "StepWrite": {
+      "type": "object",
+      "required": [
+        "write"
+      ],
+      "additionalProperties": false,
+      "description": "The write tool: create or replace a repo file.",
+      "properties": {
+        "write": {
+          "type": "object",
+          "required": [
+            "path",
+            "content"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "$ref": "#/$defs/RepoPath"
+            },
+            "content": {
+              "$ref": "#/$defs/FileBody"
+            }
+          }
+        },
+        "note": {
+          "$ref": "#/$defs/Note"
+        }
+      }
+    },
+    "StepBash": {
+      "type": "object",
+      "required": [
+        "bash"
+      ],
+      "additionalProperties": false,
+      "description": "The bash tool. Live, the command really runs in the demo repo; `output` is used only in a static session.",
+      "properties": {
+        "bash": {
+          "type": "object",
+          "required": [
+            "command"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "command": {
+              "type": "string",
+              "minLength": 1
+            },
+            "output": {
+              "$ref": "#/$defs/Text"
+            }
+          }
+        },
+        "note": {
+          "$ref": "#/$defs/Note"
+        }
+      }
+    },
+    "StepAlign": {
+      "type": "object",
+      "required": [
+        "align"
+      ],
+      "additionalProperties": false,
+      "description": "The align tool's create op: exactly its fields.",
+      "properties": {
+        "align": {
+          "type": "object",
+          "required": [
+            "title",
+            "summary"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "title": {
+              "type": "string",
+              "minLength": 1
+            },
+            "summary": {
+              "type": "string",
+              "minLength": 1
+            },
+            "findings": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "approach": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "rejected": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "option",
+                  "why"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "option": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "why": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            },
+            "questions": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "topic",
+                  "ask",
+                  "recommendation"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "topic": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "ask": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "context": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "options": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "label",
+                        "tradeoff"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "label": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "tradeoff": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      }
+                    }
+                  },
+                  "recommendation": {
+                    "type": "object",
+                    "required": [
+                      "choice",
+                      "why"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                      "choice": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "why": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "note": {
+          "$ref": "#/$defs/Note"
+        }
+      }
+    },
+    "StepDecide": {
+      "type": "object",
+      "required": [
+        "decide"
+      ],
+      "additionalProperties": false,
+      "description": "The align tool recording the user's answers (question id -> answer), then optionally moving the alignment's status.",
+      "properties": {
+        "decide": {
+          "type": "object",
+          "required": [
+            "answers"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "answers": {
+              "type": "object",
+              "propertyNames": {
+                "pattern": "^q[1-9][0-9]*$"
+              },
+              "minProperties": 1,
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "status": {
+              "enum": [
+                "implementing",
+                "done"
+              ]
+            }
+          }
+        },
+        "note": {
+          "$ref": "#/$defs/Note"
+        }
+      }
+    },
+    "StepWorktree": {
+      "type": "object",
+      "required": [
+        "worktree"
+      ],
+      "additionalProperties": false,
+      "description": "The worktree tool: create <name> (branch feat/<name>) or merge <name>.",
+      "properties": {
+        "worktree": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "create"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "create": {
+                  "$ref": "#/$defs/Id"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "merge"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "merge": {
+                  "$ref": "#/$defs/Id"
+                }
+              }
+            }
+          ]
+        },
+        "note": {
+          "$ref": "#/$defs/Note"
+        }
+      }
+    },
+    "StepSpawn": {
+      "type": "object",
+      "required": [
+        "spawn"
+      ],
+      "additionalProperties": false,
+      "description": "agent_spawn: one worker id, or several started in one call.",
+      "properties": {
+        "spawn": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Id"
+            },
+            {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/Id"
+              }
+            }
+          ]
+        },
+        "note": {
+          "$ref": "#/$defs/Note"
+        }
+      }
+    },
+    "StepWait": {
+      "type": "object",
+      "required": [
+        "wait"
+      ],
+      "additionalProperties": false,
+      "description": "agent_wait on these workers.",
+      "properties": {
+        "wait": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/Id"
+          }
+        },
+        "note": {
+          "$ref": "#/$defs/Note"
+        }
+      }
+    },
+    "StepShowChanges": {
+      "type": "object",
+      "required": [
+        "show_changes"
+      ],
+      "additionalProperties": false,
+      "description": "The show_changes tool. Every changed file must sit in exactly one step.",
+      "properties": {
+        "show_changes": {
+          "type": "object",
+          "required": [
+            "scope",
+            "title",
+            "steps"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "scope": {
+              "enum": [
+                "dirty",
+                "worktree"
+              ],
+              "description": "dirty: uncommitted changes; worktree: the branch against its base."
+            },
+            "worktree": {
+              "$ref": "#/$defs/Id",
+              "description": "A worktree by its create name. Default: the session's folder."
+            },
+            "title": {
+              "type": "string",
+              "minLength": 1
+            },
+            "steps": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "required": [
+                  "title",
+                  "files"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "why": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "buildsOn": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "files": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "$ref": "#/$defs/RepoPath"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "note": {
+          "$ref": "#/$defs/Note"
+        }
+      }
+    },
+    "StepTool": {
+      "type": "object",
+      "required": [
+        "tool"
+      ],
+      "additionalProperties": false,
+      "description": "Any other tool call, as the model would send it. A string \"$session:<id>\" anywhere in args becomes that session's real id.",
+      "properties": {
+        "tool": {
+          "type": "object",
+          "required": [
+            "name",
+            "args"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*$"
+            },
+            "args": {
+              "type": "object"
+            }
+          }
+        },
+        "note": {
+          "$ref": "#/$defs/Note"
+        }
+      }
+    },
+    "StepError": {
+      "type": "object",
+      "required": [
+        "error"
+      ],
+      "additionalProperties": false,
+      "description": "Static sessions only: the turn ended in this provider error.",
+      "properties": {
+        "error": {
+          "type": "string",
+          "minLength": 1
+        },
+        "note": {
+          "$ref": "#/$defs/Note"
+        }
+      }
+    },
+    "StepHold": {
+      "type": "object",
+      "required": [
+        "hold"
+      ],
+      "additionalProperties": false,
+      "description": "A named point. Before a reply or tool step: that reply waits here, mid-turn, until the capture releases it. Before a user step or at the end: the turn has ended.",
+      "properties": {
+        "hold": {
+          "$ref": "#/$defs/Id"
+        },
+        "note": {
+          "$ref": "#/$defs/Note"
+        }
+      }
+    },
+    "Shot": {
+      "type": "object",
+      "required": [
+        "id",
+        "session",
+        "at",
+        "viewport",
+        "alt"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "session": {
+          "$ref": "#/$defs/Id",
+          "description": "A session id, or \"overseer\" for the Overseer page, or \"access\" for the Access page."
+        },
+        "at": {
+          "$ref": "#/$defs/Id",
+          "description": "A hold in that session's (or its workers') script, \"end\" for once the script has finished, or \"start\" for a static session or page."
+        },
+        "viewport": {
+          "$ref": "#/$defs/Id",
+          "description": "A key of `viewports`."
+        },
+        "view": {
+          "enum": [
+            "chat",
+            "workers",
+            "changes",
+            "sidebar"
+          ],
+          "description": "What to open: the chat (default), the workers pane with `worker` selected, the changes viewer from the latest show_changes card, or the sidebar (phone)."
+        },
+        "worker": {
+          "$ref": "#/$defs/Id",
+          "description": "With view workers: the worker to select."
+        },
+        "scroll": {
+          "enum": [
+            "bottom",
+            "align",
+            "show_changes"
+          ],
+          "description": "Where the transcript is scrolled: the end (default), the alignment card, or the show_changes card."
+        },
+        "compose": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Text typed into the composer, unsent, before the shot (mid-turn it shows the Steer button)."
+        },
+        "clip": {
+          "type": "object",
+          "required": [
+            "x",
+            "y",
+            "width",
+            "height"
+          ],
+          "additionalProperties": false,
+          "description": "Crop, in CSS pixels of the viewport.",
+          "properties": {
+            "x": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "y": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "width": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "height": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "alt": {
+          "type": "string",
+          "minLength": 10,
+          "description": "The image's alt text on the page: what the screenshot shows, in words."
+        },
+        "note": {
+          "$ref": "#/$defs/Note"
+        }
+      }
+    },
+    "Video": {
+      "type": "object",
+      "required": [
+        "session",
+        "viewport",
+        "typing",
+        "chunk",
+        "beats",
+        "alt"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "session": {
+          "$ref": "#/$defs/Id",
+          "description": "The live session the video follows."
+        },
+        "viewport": {
+          "$ref": "#/$defs/Id",
+          "description": "A key of `viewports`."
+        },
+        "typing": {
+          "$ref": "#/$defs/Duration",
+          "description": "Delay per typed character."
+        },
+        "chunk": {
+          "$ref": "#/$defs/Duration",
+          "description": "Delay between streamed reply chunks."
+        },
+        "poster": {
+          "$ref": "#/$defs/Id",
+          "description": "A shot whose image is the video's poster. Default: the shot in the hero.desk slot."
+        },
+        "alt": {
+          "type": "string",
+          "minLength": 10,
+          "description": "What the video shows, in words (its aria-label)."
+        },
+        "beats": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": [
+              "do"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "do": {
+                "enum": [
+                  "type",
+                  "send",
+                  "release",
+                  "click",
+                  "pause"
+                ]
+              },
+              "step": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "type: index of a user step in the session's script."
+              },
+              "until": {
+                "$ref": "#/$defs/Id",
+                "description": "release: the hold to run to, or \"end\"."
+              },
+              "target": {
+                "enum": [
+                  "show_changes",
+                  "workers",
+                  "worker"
+                ],
+                "description": "click: what to click."
+              },
+              "worker": {
+                "$ref": "#/$defs/Id",
+                "description": "click worker: which one."
+              },
+              "for": {
+                "$ref": "#/$defs/Duration",
+                "description": "pause: how long."
+              },
+              "note": {
+                "$ref": "#/$defs/Note"
+              }
+            }
+          }
+        },
+        "note": {
+          "$ref": "#/$defs/Note"
+        }
+      }
+    },
+    "Viewport": {
+      "type": "object",
+      "required": [
+        "width",
+        "height",
+        "scale"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "width": {
+          "type": "integer",
+          "minimum": 200
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 200
+        },
+        "scale": {
+          "enum": [
+            1,
+            1.5,
+            2,
+            3
+          ],
+          "description": "Device pixel ratio."
+        },
+        "mobile": {
+          "const": true,
+          "description": "A touch device: mobile layout rules and touch events."
+        },
+        "note": {
+          "$ref": "#/$defs/Note"
+        }
+      }
+    }
+  }
+}

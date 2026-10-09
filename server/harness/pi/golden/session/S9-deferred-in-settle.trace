@@ -8,6 +8,7 @@ B {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now"}
 step A sends {"type":"prompt","text":"one","clientId":"c1"}
 write {"id":"00000001","type":"model_change"}
 write {"id":"00000002","type":"thinking_level_change"}
+write {"id":"00000003","type":"custom","customType":"sova-align-launch"}
 sdk prompt ["one",{"source":"interactive"}]
 A {"type":"send_ack","clientId":"c1","queued":false}
 A {"type":"links","links":[]}
@@ -16,18 +17,18 @@ A {"type":"event","event":{"type":"agent_start"}}
 B {"type":"event","v":2,"event":{"type":"run.start"}}
 A {"type":"event","event":{"type":"turn_start"}}
 A {"type":"event","event":{"type":"message_start","message":{"role":"system","elided":true}}}
-write {"id":"00000003","type":"message","role":"system"}
-A {"type":"event","event":{"type":"message_end","message":{"role":"system","elided":true}},"entryId":"00000003"}
+write {"id":"00000004","type":"message","role":"system"}
+A {"type":"event","event":{"type":"message_end","message":{"role":"system","elided":true}},"entryId":"00000004"}
 A {"type":"event","event":{"type":"message_start","message":{"role":"user","content":[{"type":"text","text":"one"}],"timestamp":1000000000000}}}
 B {"type":"event","v":2,"event":{"type":"message.start","role":"user","text":"one","images":[]}}
-write {"id":"00000004","type":"message","role":"user"}
-A {"type":"event","event":{"type":"message_end","message":{"role":"user","content":[{"type":"text","text":"one"}],"timestamp":1000000000000}},"entryId":"00000004"}
-B {"type":"event","v":2,"event":{"type":"message.end","role":"user","entryId":"00000004"}}
+write {"id":"00000005","type":"message","role":"user"}
+A {"type":"event","event":{"type":"message_end","message":{"role":"user","content":[{"type":"text","text":"one"}],"timestamp":1000000000000}},"entryId":"00000005"}
+B {"type":"event","v":2,"event":{"type":"message.end","role":"user","entryId":"00000005"}}
 A {"type":"event","event":{"type":"message_start","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"first"}],"stopReason":"stop","thinkingLevel":"off"}}}
 B {"type":"event","v":2,"event":{"type":"message.start","role":"assistant","model":"scripted/scripted","parts":[{"kind":"text","text":"first"}]}}
-write {"id":"00000005","type":"message","role":"assistant"}
-A {"type":"event","event":{"type":"message_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"first"}],"stopReason":"stop","thinkingLevel":"off"}},"entryId":"00000005"}
-B {"type":"event","v":2,"event":{"type":"message.end","role":"assistant","entryId":"00000005","model":"scripted/scripted","parts":[{"kind":"text","text":"first"}],"stop":"ok"}}
+write {"id":"00000006","type":"message","role":"assistant"}
+A {"type":"event","event":{"type":"message_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"first"}],"stopReason":"stop","thinkingLevel":"off"}},"entryId":"00000006"}
+B {"type":"event","v":2,"event":{"type":"message.end","role":"assistant","entryId":"00000006","model":"scripted/scripted","parts":[{"kind":"text","text":"first"}],"stop":"ok"}}
 A {"type":"event","event":{"type":"turn_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"first"}],"stopReason":"stop","thinkingLevel":"off"},"toolResults":[]}}
 A {"type":"event","event":{"type":"agent_end","messages":[{"role":"system","elided":true},{"role":"user","content":[{"type":"text","text":"one"}],"timestamp":1000000000000},{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"first"}],"stopReason":"stop","thinkingLevel":"off"}],"willRetry":false}}
 A {"type":"event","event":{"type":"agent_settled"}}
@@ -42,14 +43,14 @@ B {"type":"event","v":2,"event":{"type":"run.start"}}
 A {"type":"event","event":{"type":"turn_start"}}
 A {"type":"event","event":{"type":"message_start","message":{"role":"user","content":[{"type":"text","text":"in the settle"}],"timestamp":1000000000000}}}
 B {"type":"event","v":2,"event":{"type":"message.start","role":"user","text":"in the settle","images":[]}}
-write {"id":"00000006","type":"message","role":"user"}
-A {"type":"event","event":{"type":"message_end","message":{"role":"user","content":[{"type":"text","text":"in the settle"}],"timestamp":1000000000000}},"entryId":"00000006"}
-B {"type":"event","v":2,"event":{"type":"message.end","role":"user","entryId":"00000006"}}
+write {"id":"00000007","type":"message","role":"user"}
+A {"type":"event","event":{"type":"message_end","message":{"role":"user","content":[{"type":"text","text":"in the settle"}],"timestamp":1000000000000}},"entryId":"00000007"}
+B {"type":"event","v":2,"event":{"type":"message.end","role":"user","entryId":"00000007"}}
 A {"type":"event","event":{"type":"message_start","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[],"stopReason":"error","errorMessage":"scripted failure","thinkingLevel":"off"}}}
 B {"type":"event","v":2,"event":{"type":"message.start","role":"assistant","model":"scripted/scripted","parts":[]}}
-write {"id":"00000007","type":"message","role":"assistant"}
-A {"type":"event","event":{"type":"message_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[],"stopReason":"error","errorMessage":"scripted failure","thinkingLevel":"off"}},"entryId":"00000007"}
-B {"type":"event","v":2,"event":{"type":"message.end","role":"assistant","entryId":"00000007","model":"scripted/scripted","parts":[],"stop":"error","error":"scripted failure"}}
+write {"id":"00000008","type":"message","role":"assistant"}
+A {"type":"event","event":{"type":"message_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[],"stopReason":"error","errorMessage":"scripted failure","thinkingLevel":"off"}},"entryId":"00000008"}
+B {"type":"event","v":2,"event":{"type":"message.end","role":"assistant","entryId":"00000008","model":"scripted/scripted","parts":[],"stop":"error","error":"scripted failure"}}
 A {"type":"event","event":{"type":"turn_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[],"stopReason":"error","errorMessage":"scripted failure","thinkingLevel":"off"},"toolResults":[]}}
 A {"type":"event","event":{"type":"agent_end","messages":[{"role":"user","content":[{"type":"text","text":"in the settle"}],"timestamp":1000000000000},{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[],"stopReason":"error","errorMessage":"scripted failure","thinkingLevel":"off"}],"willRetry":false}}
 A {"type":"event","event":{"type":"agent_settled"}}

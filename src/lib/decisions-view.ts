@@ -120,3 +120,11 @@ export function alsoCarriesLine(d: Pick<DecisionRow, "id" | "folded">, byId: Rea
   if (!n) return null;
   return n === 1 ? "Also carries 1 more statement of the same decision, with its quote." : `Also carries ${n} more statements of the same decision, with their quotes.`;
 }
+
+/** Who stated a decision, by name: a decision recovered from a marker that kept no name carries the
+    name its person had when it was recovered, and says so, never passing it off as the name recorded
+    at the time. */
+export function provenanceName(p: Pick<DecisionRow, "name" | "nameAt">): { text: string; title?: string } {
+  if (p.nameAt !== "recovery") return { text: p.name };
+  return { text: `${p.name} (name at recovery)`, title: "This decision was recovered later; its name is the one this person had then, not the one recorded when they decided." };
+}

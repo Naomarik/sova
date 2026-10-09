@@ -8,11 +8,12 @@ B {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now"}
 step applyMode normal + align
 write {"id":"00000001","type":"model_change"}
 write {"id":"00000002","type":"thinking_level_change"}
+write {"id":"00000003","type":"custom","customType":"sova-align-launch"}
 sdk command /mode "align on"
-write {"id":"00000003","type":"custom","customType":"mode"}
-A {"type":"event","event":{"type":"entry_appended","entry":{"type":"custom","customType":"mode","data":{"minor":"align","on":true,"active":{"version":1,"mode":"normal","strict":false,"minorModes":["align"]}},"id":"00000003","parentId":"00000002","timestamp":"2000-01-01T00:00:00.000Z"}}}
-A {"type":"append","items":[{"id":"00000003","kind":"info","text":"Minor mode: align on","at":"2000-01-01T00:00:00.000Z","meta":{"type":"custom","customType":"mode"}}]}
-B {"type":"append","items":[{"id":"00000003","kind":"info","text":"Minor mode: align on","at":"2000-01-01T00:00:00.000Z","facts":{"setting":"mode"}}]}
+write {"id":"00000004","type":"custom","customType":"mode"}
+A {"type":"event","event":{"type":"entry_appended","entry":{"type":"custom","customType":"mode","data":{"minor":"align","on":true,"active":{"version":1,"mode":"normal","strict":false,"minorModes":["align"]}},"id":"00000004","parentId":"00000003","timestamp":"2000-01-01T00:00:00.000Z"}}}
+A {"type":"append","items":[{"id":"00000004","kind":"info","text":"Minor mode: align on","at":"2000-01-01T00:00:00.000Z","meta":{"type":"custom","customType":"mode"}}]}
+B {"type":"append","items":[{"id":"00000004","kind":"info","text":"Minor mode: align on","at":"2000-01-01T00:00:00.000Z","facts":{"setting":"mode"}}]}
 A {"type":"ui_request","id":"00000000-0000-7000-8000-000000000002","request":{"method":"setStatus","statusKey":"mode","statusText":"\u001b[38;5;140mnormal · align\u001b[39m","fireAndForget":true}}
 B {"type":"ui_request","id":"00000000-0000-7000-8000-000000000002","request":{"method":"setStatus","statusKey":"mode","statusText":"\u001b[38;5;140mnormal · align\u001b[39m","fireAndForget":true}}
 A {"type":"ui_request","id":"00000000-0000-7000-8000-000000000003","request":{"method":"notify","message":"Minor mode: align on","notifyType":"info","fireAndForget":true}}
@@ -43,19 +44,19 @@ A {"type":"event","event":{"type":"agent_start"}}
 B {"type":"event","v":2,"event":{"type":"run.start"}}
 A {"type":"event","event":{"type":"turn_start"}}
 A {"type":"event","event":{"type":"message_start","message":{"role":"system","elided":true}}}
-write {"id":"00000004","type":"message","role":"system"}
-A {"type":"event","event":{"type":"message_end","message":{"role":"system","elided":true}},"entryId":"00000004"}
+write {"id":"00000005","type":"message","role":"system"}
+A {"type":"event","event":{"type":"message_end","message":{"role":"system","elided":true}},"entryId":"00000005"}
 A {"type":"event","event":{"type":"message_start","message":{"role":"user","content":[{"type":"text","text":"work"}],"timestamp":1000000000000}}}
 B {"type":"event","v":2,"event":{"type":"message.start","role":"user","text":"work","images":[]}}
-write {"id":"00000005","type":"message","role":"user"}
-A {"type":"event","event":{"type":"message_end","message":{"role":"user","content":[{"type":"text","text":"work"}],"timestamp":1000000000000}},"entryId":"00000005"}
-B {"type":"event","v":2,"event":{"type":"message.end","role":"user","entryId":"00000005"}}
+write {"id":"00000006","type":"message","role":"user"}
+A {"type":"event","event":{"type":"message_end","message":{"role":"user","content":[{"type":"text","text":"work"}],"timestamp":1000000000000}},"entryId":"00000006"}
+B {"type":"event","v":2,"event":{"type":"message.end","role":"user","entryId":"00000006"}}
 step switchMode minorModes [] mid-turn
 sdk command /mode "align off"
-write {"id":"00000006","type":"custom","customType":"mode"}
-A {"type":"event","event":{"type":"entry_appended","entry":{"type":"custom","customType":"mode","data":{"minor":"align","on":false,"active":{"version":1,"mode":"normal","strict":false,"minorModes":[]},"head":["align"]},"id":"00000006","parentId":"00000005","timestamp":"2000-01-01T00:00:00.000Z"}}}
-A {"type":"append","items":[{"id":"00000006","kind":"info","text":"Minor mode: align off","at":"2000-01-01T00:00:00.000Z","meta":{"type":"custom","customType":"mode"}}]}
-B {"type":"append","items":[{"id":"00000006","kind":"info","text":"Minor mode: align off","at":"2000-01-01T00:00:00.000Z","facts":{"setting":"mode"}}]}
+write {"id":"00000007","type":"custom","customType":"mode"}
+A {"type":"event","event":{"type":"entry_appended","entry":{"type":"custom","customType":"mode","data":{"minor":"align","on":false,"active":{"version":1,"mode":"normal","strict":false,"minorModes":[]},"head":["align"]},"id":"00000007","parentId":"00000006","timestamp":"2000-01-01T00:00:00.000Z"}}}
+A {"type":"append","items":[{"id":"00000007","kind":"info","text":"Minor mode: align off","at":"2000-01-01T00:00:00.000Z","meta":{"type":"custom","customType":"mode"}}]}
+B {"type":"append","items":[{"id":"00000007","kind":"info","text":"Minor mode: align off","at":"2000-01-01T00:00:00.000Z","facts":{"setting":"mode"}}]}
 A {"type":"ui_request","id":"00000000-0000-7000-8000-000000000008","request":{"method":"setStatus","statusKey":"mode","statusText":"\u001b[38;5;102mnormal\u001b[39m","fireAndForget":true}}
 B {"type":"ui_request","id":"00000000-0000-7000-8000-000000000008","request":{"method":"setStatus","statusKey":"mode","statusText":"\u001b[38;5;102mnormal\u001b[39m","fireAndForget":true}}
 A {"type":"ui_request","id":"00000000-0000-7000-8000-000000000009","request":{"method":"notify","message":"Minor mode: align off","notifyType":"info","fireAndForget":true}}
@@ -78,9 +79,9 @@ got switchMode {"mode":"normal","minorModes":[],"strict":false,"applies":"after-
 step release the reply
 A {"type":"event","event":{"type":"message_start","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop","thinkingLevel":"off"}}}
 B {"type":"event","v":2,"event":{"type":"message.start","role":"assistant","model":"scripted/scripted","parts":[{"kind":"text","text":"ok"}]}}
-write {"id":"00000007","type":"message","role":"assistant"}
-A {"type":"event","event":{"type":"message_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop","thinkingLevel":"off"}},"entryId":"00000007"}
-B {"type":"event","v":2,"event":{"type":"message.end","role":"assistant","entryId":"00000007","model":"scripted/scripted","parts":[{"kind":"text","text":"ok"}],"stop":"ok"}}
+write {"id":"00000008","type":"message","role":"assistant"}
+A {"type":"event","event":{"type":"message_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop","thinkingLevel":"off"}},"entryId":"00000008"}
+B {"type":"event","v":2,"event":{"type":"message.end","role":"assistant","entryId":"00000008","model":"scripted/scripted","parts":[{"kind":"text","text":"ok"}],"stop":"ok"}}
 A {"type":"event","event":{"type":"turn_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop","thinkingLevel":"off"},"toolResults":[]}}
 A {"type":"event","event":{"type":"agent_end","messages":[{"role":"system","elided":true},{"role":"user","content":[{"type":"text","text":"work"}],"timestamp":1000000000000},{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop","thinkingLevel":"off"}],"willRetry":false}}
 A {"type":"event","event":{"type":"agent_settled"}}

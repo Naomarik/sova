@@ -213,6 +213,8 @@ const PEER_RULES: Array<[RegExp, Need]> = [
   // A session's transcript, read by id: it belongs to sessions, not links (§mesh.peers/grants).
   [/^\/api\/peer\/links\/read$/, "sessions"],
   [/^\/api\/peer\/links(?:\/.*)?$/, "links"],
+  // Reconnecting the sender is the host's own control: only a peer trusted with full control (§app.outreach/sender-controls).
+  [/^\/api\/peer\/outreach\/reconnect$/, "admin"],
   [/^\/api\/peer\/outreach\/[^/]+$/, "outreach"],
   [/^\/api\/peer\/share-gateway\/[^/]+$/, "share"],
 ];

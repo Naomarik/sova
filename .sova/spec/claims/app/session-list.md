@@ -710,8 +710,8 @@ place in Live & web (and Groups), but a session it lists is never a Recent row
 </details>
 ```
 
-- **Not a capability-neutral profile.** A profile that only sets model, effort, subagents or mode
-  (`SessionSummary.profile.neutral`, §chat.profiles/model) is not a shelf profile: its sessions get
+- **Not a capability-neutral profile.** A profile that only sets model, effort, subagents, mode
+  or minor modes (`SessionSummary.profile.neutral`, §chat.profiles/model) is not a shelf profile: its sessions get
   no rows here and it gets no sub-group or slot. They keep the head chip, the info row and the list
   badge (§chat.profiles/after-first-message).
 - **Rows**: every non-archived session on this host whose `SessionSummary.profile` is set and not neutral, under
@@ -784,6 +784,11 @@ thing it waits on being done.
   opening the project page (its Deploy panel). The head's count and the spine's door count them too, and
   the head's title says how many are deploy items ("The 2 sessions waiting on you, newest first, and 1
   deploy item." / "1 deploy item waiting on you.").
+- **WhatsApp sending down** (`whatsapp-down`, §app.outreach/sender-health), of no session too, lists
+  the same way, one row per sender: "WhatsApp sending", the digest's sentence and "Settings →
+  Outreach", opening Settings → Outreach, with an **Open Outreach Settings** button under it. The
+  head's count includes it, and its title names it ("… and 1 deploy item and WhatsApp sending." /
+  "WhatsApp sending waiting on you.").
 - **Rows** are the same `SessionRow` as everywhere else — rail, marks, meta line, accessible name —
   with one difference: **line 2 is the digest's sentence** for the session's newest act item
   ("3 open questions in al_3 Autonomy settings", "Waiting on a dialog.", "429 rate limited", "1 subagent ended in an error."), in place of the gist
@@ -793,7 +798,8 @@ thing it waits on being done.
 - **No row menu, no put-away.** A Needs you row carries no button of its own and no menu, except
   a session whose act item is a proposed playbook run (`playbook-review`,
   §app.project-runtime/review): under its row, **Merge Branch**, which acts
-  at once and says a refusal's reason under it. Otherwise: a press
+  at once and says a refusal's reason under it; and WhatsApp sending down's **Open Outreach
+  Settings**. Otherwise: a press
   held on it and let go selects it (§app.session-list/selecting-several-sessions), one that moves
   opens the drop overlay (§app.session-list/drop-overlay), and a right-click is the browser's, as
   on every other row.
@@ -1419,11 +1425,17 @@ whatever title that one session has.
 summary line sits right under it (§app.session-list/content-rules, "Row line 2"). So a title is
 2 to 5 words and at most 36 characters: a noun phrase, not a sentence and not an "X: Y" with a
 tail. It is the label the user scans and searches for, and the summary line already explains, so
-the title **never restates the summary line** (neither its wording nor its first words) and adds
-what it lacks. It names the subject the whole session is about, the thing built, fixed or
-decided, not the opening question when the session moved on and not one late side topic, in the
-user's own nouns, never a status (merged, shipped, restart). Rows that would otherwise look alike
-are told apart: a merge, release or push names the branches or features that landed, never just
+the title adds what the summary line lacks: it may share the summary line's subject words or
+phrase, and adds one concrete detail about that subject from the topic headings or the opening
+request (the user's own name for the thing, its cause or mechanism), so when such a detail is
+there it is **never merely the summary line shortened, reordered or reworded**. An accurate
+subject still comes first: it names the subject the whole session is about, the thing built,
+fixed or decided, which the topic headings, the overall purpose and the opening request name;
+topic bullets are secondary recent details that may sharpen it but never replace it, the added
+detail is never a late bullet or side issue, and with no relevant detail to add the title names
+the recognizable subject rather than inventing one. Not the opening question when the session
+truly moved on to another main goal, and not one late side topic, in the user's own nouns, never
+a status (merged, shipped, restart). Rows that would otherwise look alike are told apart: a merge, release or push names the branches or features that landed, never just
 "merging branches"; a rerun names its round or model. A title typed by hand keeps its own cap
 (80, `SESSION_TITLE_MAX`).
 
@@ -1446,12 +1458,17 @@ rules alone (the label rules above, sentence case, never name the app, with thre
 **no Sova or agent system prompt goes with it**, and the user message holds only, in this order:
 
 - its summary line (the last topic-outline snapshot's `overall`), labelled as already shown under
-  the title and not to be repeated;
-- that snapshot's topic headings in order, each with at most 2 of its bullets;
-- the session's first user message, whitespace collapsed, at most 600 characters (a wake nudge,
-  a partner's link message or a topic batch, §chat.topics/row, is not one, as for the derived
-  title), labelled as what the user came for;
-- or, with no summary line (the button only), its first 3 user messages instead.
+  the title and not to be copied, though its subject may be shared;
+- that snapshot's topic headings in order, labelled as the subjects, each with at most 2 of its
+  bullets, labelled as secondary recent details that may concern side issues;
+- the session's first user message, whitespace collapsed (a wake nudge, a partner's link message
+  or a topic batch, §chat.topics/row, is not one, as for the derived title), labelled as the
+  opening intent, which the session may have moved on from: whole up to 2000 characters; a longer
+  one is at most its first 1500 characters, then ` […] `, then at most its last 500, each part
+  trimmed inward to a word boundary when one lies within 40 characters of its cut, never splitting
+  a surrogate pair;
+- or, with no summary line (the button only), its first 3 user messages instead: the first as that
+  same excerpt, the second and third at most 600 characters each.
 
 **The session's current title is never in it**, whatever set it. On pi the call is
 `completeSimple` with that system prompt and one user message, temperature 0 and no reasoning

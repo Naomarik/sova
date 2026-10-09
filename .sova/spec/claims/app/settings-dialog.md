@@ -8,7 +8,7 @@ the session stays behind, closed by the scrim, Esc, or its Close button (Cancel 
 is unsaved, §app.settings-dialog/save-bar).
 
 The rail is the structure: each settings screen is one tab — General, Models, Accounts, Subagents,
-Profiles, Overseer, Notifications, Decisions, Summaries, Organizations, Themes, Mesh, Public links, Outreach, Voice, Experimental.
+Alignment, Profiles, Overseer, Notifications, Decisions, Summaries, Organizations, Themes, Mesh, Public links, Outreach, Voice, Experimental.
 Tabs move with the arrow keys as well as the pointer, and the selected tab has focus on open: the
 two have to name the same screen. The gear opens General; the mode menu's **Configure Delegate** gear
 (§chat/mode-menu) opens Subagents directly, and nothing else about the chat changes. Which tab is open lives in
@@ -397,9 +397,34 @@ broken. Polling stops when the tab loses focus or the dialog closes.
 While the list loads, the panel shows skeleton rows. If the folder can't be read, an error banner
 offers Retry and the built-in themes list anyway — the app's own themes don't depend on it.
 
+## §app.settings-dialog/alignment — Alignment
+
+The tab after Subagents, and the align mode's settings (§chat/alignment). It opens with one line:
+"How the align mode plans with you." Three groups follow, staged and saved with the dialog's Save
+Changes like every gated form (§app.settings-dialog/save-bar):
+
+- **Writing style**, a radiogroup of three, each option a label row with a one-line description:
+  **Default** "Today's detail: files, code and technical trade-offs.", **Simplified** "Short
+  sentences in everyday words, fewer items.", **Project manager** "Screens, wording and behaviour
+  only; no code. Technical detail folded into notes." Under it the hint "Reaches open chats at their
+  next message."
+- **Visuals**, one switch, "Draw when it helps", with the hint "The align mode draws a wireframe or a
+  flow on the alignment card when a picture explains faster than words. Applies to sessions you start
+  after saving."
+- **Review**, one switch, "Adversarial review", with no chip, and
+  today's line, ending in when it applies: "In align sessions, a read-only reviewer checks the plan
+  and the diff of risky work, at most once each per alignment. Applies to sessions you start after
+  saving." (§chat.alignment-review/flag)
+
+Under the groups one line says "A subagent profile can set its own writing style and visuals
+(Settings → Subagents)." Style and Visuals are stored in `<agent dir>/mode-align.json`
+(§chat.alignment/settings-file), Review in Sova's settings; one Save writes both, and a failure of
+either keeps the form's draft and shows the save-failed banner at its end. The defaults are Default,
+Visuals off and Review off.
+
 ## §app.settings-dialog/profiles — Profiles
 
-The tab after Subagents: every profile a session in the open session's folder can use
+The tab after Alignment: every profile a session in the open session's folder can use
 (§chat.profiles/projects), read-only. It opens with one line: "Profiles are files. Ask an agent to
 add or change one, or edit {path}." `{path}` is the project's `.sova/profiles/` folder (else your
 `session-profiles.json`), and a **File Format** link opens `docs/profiles.md`. Nothing here
@@ -408,8 +433,9 @@ a new session's screen (§chat.profiles/picker), and it is listed under Yours li
 
 - **The list**, in the picker's groups: **Built in** (Default first), **This project ({name})** and
   **Yours**. Each row has the profile's icon and label, its source badge, its summary line of what it
-  changes ("reads and messages sessions · no edit files · One at a time"; Default "Nothing
-  changed"), the playbook it links ("Runs {title}", or "Runs "{id}", not found here"), and its file's
+  changes ("reads and messages sessions · no edit files · One at a time", then its mode and minor
+  modes when it sets them, "· delegate · align, spec, vis", or "· no minor modes" for `[]`; Default
+  "Nothing changed"), the playbook it links ("Runs {title}", or "Runs "{id}", not found here"), and its file's
   path. Without a session folder, This project says "Open a session to see its project's profiles."
 - **Problems.** A file that couldn't be read is its own row under its group, with a **Can't be
   read** badge, its path and the exact error, so a mistake made by hand or by an agent shows here.
@@ -578,7 +604,7 @@ Folders box or the tab writes nothing.
 
 Every Settings tab that writes a file on the server is Save-gated: **Models**, **Subagents**
 (the library and this device's default), **Overseer**, **Notifications** (the **Phone Notifications** form), **Decisions**, **Summaries**, **Organizations**,
-**Mesh** and **Experimental**. A change on them is staged, never written as it is made. No form has a Save or
+**Mesh**, **Alignment** and **Experimental**. A change on them is staged, never written as it is made. No form has a Save or
 Discard button of its own: saving is the dialog's.
 
 - **The footer.** Left to right: a status line, then **Discard Changes** (ghost), **Save Changes**
@@ -625,9 +651,12 @@ Discard button of its own: saving is the dialog's.
   can't be saved blank. A save refreshes the mesh state, so the new name shows everywhere at once.
   Enter in a Mesh field does nothing: Save writes every tab's edits, and a key press in one field
   doesn't.
-- **Experimental** holds the **Adversarial review** switch (§chat.alignment-review/flag), staged
-  and saved like every other gated form; the Claude Code provider is no switch there, it is always
-  on (§app.claude-code-provider/always-on).
+- **Alignment** stages its Writing style, Visuals and Adversarial review together
+  (§app.settings-dialog/alignment); Save Changes writes the review switch to Sova's settings and the
+  style and visuals to `mode-align.json`, each a write of its own, and the status line names the form
+  "Alignment" whichever of the two failed.
+- **Experimental** holds no switch now: its panel says "No experimental features right now." and nothing in it is ever unsaved. Adversarial
+  review moved to Alignment; the Claude Code provider is no switch there, it is always on (§app.claude-code-provider/always-on).
 - **Not gated.** General, Themes and Typography change only this browser and still apply as you
   pick. Actions run at once and are never part of a draft: Retry, Try Again, Check Again, Themes'
   Refresh, the Jev key's Save Key, Replace Key and Remove Key, Test Decisions, Tag Last 30 Days,
@@ -915,23 +944,38 @@ sentence step shows that sentence on its status line; nothing is kept:
 
 ## §app.settings-dialog/outreach — Outreach
 
-Settings → Outreach (§app/outreach) sets how this host reaches the WhatsApp sender, after Public
-links in the rail. It is Save-gated (§app.settings-dialog/save-bar): **Sender** and **Accept sends
-from** are staged and written by Save Changes, as the form "Outreach".
+Settings → Outreach (§app/outreach) sets how this host reaches the WhatsApp sender of each number
+it sends from, after Public links in the rail. It is Save-gated (§app.settings-dialog/save-bar):
+**Numbers** (the default, added numbers, labels, This host's optional socket path) and **Accept
+sends from** are staged and written by Save
+Changes, as the form "Outreach". `#/settings/<tab>` (Needs you's Open Outreach Settings, a phone
+notification's tap) opens Settings at that tab over the screen it was followed from, the address
+put back to that screen's without a history entry.
 
-- **Sender**: **Off** · **This host** (the sender runs here; an optional socket path, placeholder
-  the default) · **Via a peer** (a select of this host's peers, §mesh/peers). Under it, the sender's
-  state as the server last read it, as a chip and a sentence: Off; "Not reachable: {why}";
-  Connected (with the number's last three digits); Connecting; Not paired ("Pair it on the sender's
-  host: sova-whatsapp pair."); Logged out ("Pair it again on the sender's host:
-  sova-whatsapp pair."); Replaced ("Another copy of the sender took over this number."); Blocked;
-  Down ("Reconnect it on the sender's host."). **Check Again** re-reads it at once.
-- **Accept sends from** (shown only while Sender is This host): **No other host** · **All peers** ·
-  a checkbox per peer; other hosts send through this host's sender only as listed here.
-- **Pause all sending**, a switch that applies at once (an action, not part of the draft): while on,
-  every send from this host is refused with "Outreach is paused.".
+- **Numbers** (§app.outreach/sender-list): each sender this host can use, its radio picking the
+  default, then **Off**; **Add a Number**; and under the list the managed number: its heading, its
+  **Label**, **Remove Number** for an added one, its state, its facts and its controls. The state is
+  as the server last read it, read again every 5 seconds while the page is open, as a chip and a
+  sentence: Off ("Nothing is sent from this host."); Not reachable ("Not reachable: {why}");
+  Connected ("Connected: sends go at once."), or Paused ("Connected, but the sender is paused: every
+  send through it is refused until it is resumed."); Reconnecting ("{why} It tries again at {time},
+  in {n}."); Connecting; Linking; Not paired ("Link a phone to send from: Link a Phone below, or
+  sova-whatsapp pair on this host.", or through a peer "Link a phone on the sender's host."); Logged
+  out ("The phone unlinked this device. Unlink this number, then link a phone again.", or through a
+  peer "Link it again on the sender's host."); Replaced ("Another copy of the sender took over this
+  number. Stop that copy, then reconnect."); Blocked ("{why} Sending stays paused until the sender
+  is resumed."); Down, waiting ("Waiting until {time}, in {n} to reconnect. {why}") or not ("{why}
+  It won't reconnect on its own: reconnect it."). The facts: since when (any state but Connected and
+  Off), the number's last three digits, sends and automatic reconnects against their limits this hour
+  and in 24 h. The controls are §app.outreach/sender-controls and §app.outreach/sender-link; **Check
+  Again** re-reads the state and the list at once.
+- **Accept sends from** (shown only while the default sender runs on this host: This host or an
+  added number): **No other host** · **All peers** · a checkbox per peer; other hosts send through this
+  host's default number only as listed here.
+- **Pause all sending from this host**, a switch that applies at once (an action, not part of the
+  draft): while on, every send from this host is refused with "Outreach is paused.".
 - **Protected paths**: the paths §app.outreach/secrets covers, one per line, under "Hidden from
-  the Overseer's file tools:"; a warn banner when the sender reports an auth directory that
-  sandboxed agents can still read.
+  the Overseer's file tools:"; a warn banner when the managed number's auth directory (the one its
+  sender reports, else the configured or default one) is one that sandboxed agents can still read.
 - A closing note: "Links you send stay in your own WhatsApp chat history: anyone with your phone
-  can open them." and a pointer to `docs/outreach/whatsapp.md`, the setup guide.
+  can open them." and a pointer to `docs/outreach/whatsapp.md`, the guide to installing a sender.

@@ -582,9 +582,27 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 
 | Where | Copy |
 |---|---|
+| Intro | Unfinished features. They can change or disappear, and they apply to sessions you start after switching them on — chats already open keep the setup they began with. |
+| Empty state (no switch to show) | No experimental features right now. |
 | Load failed (banner-error) | **Couldn't read the experimental settings.** Nothing was changed. |
 | Buttons | none in the tab — the dialog footer's Discard Changes · Save Changes (§design.copy-deck/settings-modes-delegate) |
-| Save failed (banner-error under the switch; the unsaved switch stays) | **Couldn't save the change.** {reason}. Your saved setting is unchanged. |
+
+## §design.copy-deck/settings-alignment — Settings · Alignment (§app.settings-dialog/alignment)
+
+| Where | Copy |
+|---|---|
+| Intro | How the align mode plans with you. |
+| Group headings | Writing style · Visuals · Review |
+| Style options | **Default** Today's detail: files, code and technical trade-offs. · **Simplified** Short sentences in everyday words, fewer items. · **Project manager** Screens, wording and behaviour only; no code. Technical detail folded into notes. |
+| Style hint | Reaches open chats at their next message. |
+| Visuals switch · hint | Draw when it helps · The align mode draws a wireframe or a flow on the alignment card when a picture explains faster than words. Applies to sessions you start after saving. |
+| Review switch · hint | Adversarial review · In align sessions, a read-only reviewer checks the plan and the diff of risky work, at most once each per alignment. Applies to sessions you start after saving. |
+| Profiles line | A subagent profile can set its own writing style and visuals (Settings → Subagents). |
+| Load failed (banner-error) | **Couldn't read the alignment settings.** Nothing was changed. |
+| Save failed (banner-error at the form's end; the draft stays) | **Couldn't save the change.** {reason}. Your saved setting is unchanged. |
+| Card meta mark | · Simplified style · · Project manager style (none for Default) |
+| Card section | Technical notes · {n} |
+| Subagents profile control | Alignment · Writing style: Use host default · Default · Simplified · Project manager — Visuals: Use host default · On · Off |
 
 ## §design.copy-deck/settings-themes — Settings · Themes (§app/settings-dialog)
 
@@ -766,9 +784,8 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 
 | Where | Copy |
 |---|---|
-| Mode select (beside the coding sessions' model and thinking) | label `Coding sessions' mode` · options `Automatic` · `normal` · `normal · spec` · `delegate` · `delegate · spec` — the mode ids in lower case, as the mode menu shows them (§chat/mode-menu) |
-| …its hint (`.field-hint`) | "Every coding session this project starts runs in it, yours included. One started now: {codingModeNow}." — `{codingModeNow}` in mono, `normal` or `normal · spec` |
-| …saved (toast) | "Coding sessions run {mode}." · Automatic: "Coding sessions' mode: Automatic." |
+| Mode line (read-only, beside the coding sessions' model and thinking) | label `Coding sessions' mode` · no picker · hint (`.field-hint`): "Coding sessions start in {mode}, with the {profile} subagent profile: this computer's defaults. Save as default in any chat's mode menu changes them." · with no default profile: "Coding sessions start in {mode}: this computer's default mode. Save as default in any chat's mode menu changes it." — `{mode}` in mono, the mode ids in lower case joined by " · " (`vis` said as "visuals") |
+| …a PATCH naming `codingMode` (400) | "Projects have no coding mode: coding sessions start in this computer's default mode. Save as default in a chat's mode menu changes it." |
 | List heading | `Coding sessions` — replaces "Sessions it started" for coding rows; gathering sessions and offers keep their own list |
 | Row | the title (a link on this host) · meta: "Started by the overseer", "Started by you" or "Started by you, via the Overseer" · `working` / `idle` · {relative time} · then the branch in mono: `sova/{name}` · not on this host: `sova/{name}` · "on another host" |
 | Above the list, when the project can't have worktrees | "Coding sessions run in the project root: {reason}" — `{reason}` one of "it isn't a Git repository." · "the repository has no commits yet." · "its checkout is on a detached HEAD." |
@@ -782,7 +799,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | New Coding Session | `New Coding Session` (secondary, terminal icon) on the `Coding sessions` heading · toast as Start Coding Session's, then the session opens · mode not set (`.field-error` under the heading): "Started, but its mode could not be set. Set it from the chat's mode menu before you send." · refused (`.field-error`): "{reason} No session was started." |
 | Start Coding Session (toast) | "Coding session started on sova/{name}." · in the root: "Coding session started in the project root." · mode not set (`.field-error`): "Started, but not prompted: its mode could not be set. Open it and send the message yourself." · no worktree (`.field-error`): "No session was started: its worktree could not be made ({git's first line})." |
 | Promote (Decisions tab, after a promotion) | "Promoted {n}. Committed {short sha} on {branch}." · skipped: the reason as §app.requirements/promotion-commit words it ("Not committed: …") · no Git: no second sentence |
-| Overseer tool refusals (the model reads them; the activity list shows them) | "Delegate is off for this project's coding sessions; the operator can allow it on the project page." · "Align needs someone to answer its questions, and nobody answers a coding session's." · "Spec is on for this project's coding sessions; only the operator can turn it off on the project page." · "Unknown mode {x}: use normal or delegate." · "Unknown minor mode {x}: only spec is allowed." · "Its worktree was removed, so it has no folder to work in." |
+| Overseer tool refusals (the model reads them; the activity list shows them) | "Unknown mode {x}: use normal or delegate." · "Unknown minor mode {x}: use align, spec, vis or codemode." · "Unknown subagent profile: {x}. sova_list_subagent_profiles lists them." · "It waits on the operator's alignment answers; align stays on until they answer." · "{run title} is waiting on the operator's answers to its alignment questions. Tell the operator; never answer them. Nothing was sent." · "Its worktree was removed, so it has no folder to work in." |
 
 ## §design.copy-deck/gathering-abilities — What a gathering session can do (§app.baton/abilities, §app.baton/read-link)
 

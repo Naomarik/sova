@@ -23,11 +23,14 @@ export const PUSH_KIND_LABEL: Record<PushKind, string> = {
   "baton-needs-you": "Baton",
   "worker-error": "Subagent error",
   "playbook-review": "Playbook needs you",
+  "whatsapp-down": "WhatsApp down",
 };
 
 const isPushKind = (k: string): k is PushKind => (PUSH_KINDS as readonly string[]).includes(k);
 
-type Blocker = Pick<AttentionItem, "id" | "kind" | "title" | "detail"> & Partial<Pick<AttentionItem, "name">>;
+type Blocker = Pick<AttentionItem, "id" | "kind" | "title" | "detail"> & Partial<Pick<AttentionItem, "name" | "path" | "href">>;
+/** A blocker of no session (WhatsApp down, §app.outreach/sender-health): its `href` is an app route of its own. */
+const sessionless = (b: Blocker) => b.path === "" && !!b.href?.startsWith("#/");
 /** A blocker's session as the notification names it: summary-first (§app.overseer/session-names). */
 const nameOf = (b: Blocker) => b.name || b.title || "Untitled session";
 
@@ -90,9 +93,10 @@ export function pushPayload(send: Blocker[], count: number, now: number, redacto
   if (sessions.length === 1) {
     const items = sessions[0]!;
     const first = items[0]!;
-    const title = clip(r.redact(`${labelOf(first.kind)} · ${nameOf(first)}`), TITLE_MAX);
+    const title = clip(r.redact(sessionless(first) ? labelOf(first.kind) : `${labelOf(first.kind)} · ${nameOf(first)}`), TITLE_MAX);
     const body = clip(r.redact(items.map((i) => i.detail ?? labelOf(i.kind)).join(" ")), BODY_MAX);
-    return { v: 1, title, body, tag: `sova:${first.id}`, hash: `#/sid/${encodeURIComponent(first.id)}`, count, ts: now };
+    const hash = sessionless(first) ? first.href! : `#/sid/${encodeURIComponent(first.id)}`;
+    return { v: 1, title, body, tag: `sova:${first.id}`, hash, count, ts: now };
   }
   const body = clip(r.redact(sessions.map((items) => `${nameOf(items[0]!)} — ${labelOf(items[0]!.kind)}`).join("\n")), BODY_MAX);
   return { v: 1, title: `${sessions.length} sessions need you`, body, tag: "sova:several", hash: "#/overseer", count, ts: now };

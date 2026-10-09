@@ -189,19 +189,21 @@ describe("input, prompt and validation", () => {
     ]);
     const prompt = at.buildTitlePrompt(input);
     // The summary line first, labelled as what the row already shows; the first message last.
-    assert.match(prompt, /^SUMMARY LINE \(already shown under the title; do not repeat it\):\nInline git diff viewer design\n/);
-    assert.ok(prompt.includes("TOPICS (in order):\n- Diff viewer layout\n  - one\n  - two\n- Hunk folding"));
+    assert.match(prompt, /^SUMMARY LINE \(already shown under the title; don't just copy it, though the title may share its subject\):\nInline git diff viewer design\n/);
+    assert.ok(prompt.includes("):\n- Diff viewer layout\n  - one\n  - two\n- Hunk folding"));
     assert.match(prompt, /\nFIRST MESSAGE \([^)]*\):\nPlease add a diff viewer to the session pane$/);
     assert.ok(prompt.indexOf("TOPICS") < prompt.indexOf("FIRST MESSAGE"));
     assert.ok(!prompt.includes("three"));
     assert.ok(!prompt.includes("Old gist"));
   });
 
-  test("without a summary line: the first 3 user messages, each cut to 600 characters", () => {
+  test("without a summary line: the first 3 user messages, the first whole up to 2000 characters, the others cut to 600", () => {
     const long = "x".repeat(700);
-    const p = at.buildTitlePrompt({ userMessages: [long, "two", "three"], topics: [] });
+    const p = at.buildTitlePrompt({ userMessages: [long, long, "three"], topics: [] });
     assert.ok(p.startsWith("FIRST MESSAGES:\n1. "));
-    assert.equal(p.split("\n")[1]!.length, 3 + 600);
+    assert.equal(p.split("\n")[1], `1. ${long}`);
+    assert.equal(p.split("\n")[2]!.length, 3 + 600);
+    assert.ok(p.split("\n")[2]!.endsWith("…"));
     assert.ok(p.includes("\n3. three"));
   });
 
@@ -224,18 +226,27 @@ describe("input, prompt and validation", () => {
     assert.equal(at.validateTitle(7), null);
   });
 
-  test("the rules ask for a short label that never restates the summary line", () => {
+  test("the rules ask for the accurate subject plus one relevant detail the summary line lacks, never a reworded summary line, with no overlap ban", () => {
     const p = at.TITLE_SYSTEM_PROMPT;
     assert.match(p, /2 to 5 words, at most 36 characters/);
     assert.match(p, /noun phrase/i);
     assert.match(p, /No "X: Y"/);
     assert.match(p, /summary line under it[^\n]*already explains it/);
-    assert.match(p, /Never reuse its wording or its first words/);
+    // The positive ask: one concrete detail about the main subject, from the headings or the opening.
+    assert.match(p, /Add what the summary line lacks: one concrete detail about that main subject, from the topic headings or the first message/);
+    // Sharing the subject is allowed; a shortened, reordered or reworded summary line is not, when a detail exists.
+    assert.match(p, /Sharing the summary line's subject words or phrase is fine, but when such a detail is there, never make the title just the summary line shortened, reordered or reworded/);
+    // Accuracy outranks novelty: the detail never comes from a side issue, and none is invented.
+    assert.match(p, /An accurate subject still comes first: never take the detail from a late bullet or side issue/);
+    assert.match(p, /when there is no relevant detail to add, name the recognizable subject rather than inventing one/);
+    assert.match(p, /Topic bullets are secondary recent details: they may sharpen the subject, never replace it/);
+    assert.match(p, /topic headings, the summary line's overall purpose and the first message name it/);
+    assert.ok(!/Never reuse its wording|its first words/.test(p), "the old no-overlap rule is gone");
     assert.match(p, /Merges, releases, pushes: name the first one or two branches or features that landed/);
     assert.ok(!/60 characters|2 to 7 words/.test(p));
     // Every example title the rules give passes the validator: the rules and the check agree.
     const examples = [...p.matchAll(/→ "([^"]+)"/g)].map((m) => m[1]!);
-    assert.ok(examples.length >= 3, examples.join(" | "));
+    assert.equal(examples.length, 3, examples.join(" | "));
     for (const e of examples) assert.equal(at.validateTitle(e), e, e);
   });
 
@@ -248,6 +259,169 @@ describe("input, prompt and validation", () => {
     assert.ok(argv.includes("--no-session-persistence"));
     assert.ok(!argv.includes("--json-schema"));
     assert.deepEqual(argv.slice(-2), ["--effort", "low"]);
+  });
+});
+
+describe("the first request and the subject hierarchy", () => {
+  // A first message shaped like the one that once lost its goal: setting first, the goal past 600.
+  const setting =
+    "So here's what I want. The new screen we have is very important. We have a profile picker, then the whole system context, which I don't need to look at all the time. " +
+    "The system context block should be collapsed by default, and then I can expand it and see everything that's already there, which is great. The repository row is good. " +
+    "We can probably keep that outside of the context block. But what I want is the following. I should be able to click on different profiles, kind of like our subagent profiles. ";
+  const goal = "The goal: a grid of one-click setup buttons, each a main model plus its helper models, so one press starts the session I want.";
+  const opening = (setting + "And to be clear about the shape of it, I mean real buttons, not a drop-down. ".repeat(20)).slice(0, 1060 - goal.length - 1) + " " + goal;
+  const lone = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+  const parts = (x: string) => {
+    const [head, tail, ...rest] = x.split(at.FIRST_REQUEST_GAP);
+    assert.equal(rest.length, 0, "exactly one gap marker");
+    return { head: head!, tail: tail! };
+  };
+
+  test("a 1060-character first message with its goal past 600 reaches the model whole, with or without a summary line", () => {
+    assert.equal(opening.length, 1060);
+    assert.ok(opening.indexOf(goal) > 600);
+    const withSummary = at.buildTitlePrompt({ userMessages: [opening], summaryLine: "One-click session setups", topics: [{ heading: "One-click setups", bullets: ["A side issue"] }] });
+    const without = at.buildTitlePrompt({ userMessages: [opening, "second"], topics: [] });
+    for (const p of [withSummary, without]) {
+      assert.ok(p.includes(opening), "the whole message, goal included");
+      assert.ok(!p.includes(at.FIRST_REQUEST_GAP) && !p.includes("…"));
+    }
+    assert.ok(withSummary.endsWith(`\n${opening}`));
+    assert.ok(without.includes(`\n1. ${opening}\n2. second`));
+  });
+
+  test("the thresholds: 2000 characters go in whole, 2001 are excerpted to a ≤1500 head, the marker and a ≤500 tail", () => {
+    assert.deepEqual([at.FIRST_REQUEST_WHOLE_MAX, at.FIRST_REQUEST_HEAD_MAX, at.FIRST_REQUEST_TAIL_MAX, at.FIRST_REQUEST_GAP, at.WORD_BOUNDARY_REACH], [2000, 1500, 500, " […] ", 40]);
+    const words = "alpha beta gamma delta ".repeat(100);
+    const exact = words.slice(0, 2000);
+    assert.equal(at.firstRequestExcerpt(exact), exact);
+    const over = words.slice(0, 2001);
+    const { head, tail } = parts(at.firstRequestExcerpt(over));
+    assert.ok(head.length <= 1500 && head.length >= 1500 - 40, `${head.length}`);
+    assert.ok(tail.length <= 500 && tail.length >= 500 - 40, `${tail.length}`);
+    // Whole words only: the head is a prefix ending at a space, the tail a suffix starting after one.
+    assert.ok(over.startsWith(head) && /\s/.test(over[head.length]!));
+    assert.ok(over.endsWith(tail) && /\s/.test(over[over.length - tail.length - 1]!));
+    assert.equal(at.firstRequestExcerpt(""), "");
+  });
+
+  test("a long message in both forms: the excerpt keeps its start and its end", () => {
+    const long = `START ${"filler words here ".repeat(200)}END goal stated last`;
+    assert.ok(long.length > 2000);
+    const ex = at.firstRequestExcerpt(long);
+    const s = at.buildTitlePrompt({ userMessages: [long], summaryLine: "Gist", topics: [] });
+    const n = at.buildTitlePrompt({ userMessages: [long, long], topics: [] });
+    assert.ok(s.endsWith(`\n${ex}`));
+    assert.ok(n.includes(`\n1. ${ex}\n2. `));
+    assert.ok(ex.startsWith("START ") && ex.endsWith("END goal stated last"));
+    // The second message keeps the 600 cut.
+    assert.equal(n.split("\n")[2]!.length, 3 + at.FIRST_MESSAGE_MAX);
+  });
+
+  test("a cut moves inward at most 40 characters to a space, never outward; with none in reach it stays put", () => {
+    const L = 2600;
+    const start = L - 500;
+    const at40 = (head: number, tail: number) => {
+      const c = Array.from({ length: L }, () => "x");
+      c[head] = " ";
+      c[tail] = " ";
+      return c.join("");
+    };
+    // Spaces 40 in: the head ends at 1460, the tail starts 40 later.
+    let p = parts(at.firstRequestExcerpt(at40(1460, start + 39)));
+    assert.equal(p.head.length, 1460);
+    assert.equal(p.tail.length, 460);
+    // 41 in: out of reach, so the plain cuts stand (never a space further out).
+    p = parts(at.firstRequestExcerpt(at40(1459, start + 40)));
+    assert.equal(p.head.length, 1500);
+    assert.equal(p.tail.length, 500);
+    // A space right at the cut: nothing moves.
+    p = parts(at.firstRequestExcerpt(at40(1500, start - 1)));
+    assert.equal(p.head.length, 1500);
+    assert.equal(p.tail.length, 500);
+    // No space at all.
+    p = parts(at.firstRequestExcerpt("x".repeat(L)));
+    assert.deepEqual([p.head.length, p.tail.length], [1500, 500]);
+  });
+
+  test("never splits a surrogate pair, at either cut", () => {
+    // "a" shifts the pairs so the head cut lands inside one; "b" does the same for the tail.
+    const text = `a${"😀".repeat(1100)}b`;
+    const ex = at.firstRequestExcerpt(text);
+    assert.ok(!lone.test(ex), "no lone surrogate");
+    const { head, tail } = parts(ex);
+    assert.equal(head.length, 1499);
+    assert.equal(tail.length, 499);
+    assert.ok(text.startsWith(head) && text.endsWith(tail));
+    // A pair across each plain cut, and a space 40 or 41 from that plain cut: the surrogate step
+    // counts toward the 40, so 41 away stays out of reach (the surrogate-safe cut stands).
+    const L = 2600;
+    const tailCut = L - 500;
+    const straddled = (headSpace: number, tailSpace: number) => {
+      const c = Array.from({ length: L }, () => "x");
+      [c[1499], c[1500]] = ["\uD83D", "\uDE00"];
+      [c[tailCut - 1], c[tailCut]] = ["\uD83D", "\uDE00"];
+      c[headSpace] = " ";
+      c[tailSpace] = " ";
+      return c.join("");
+    };
+    let s = straddled(1500 - 40, tailCut + 39);
+    let p = parts(at.firstRequestExcerpt(s));
+    assert.deepEqual([p.head.length, p.tail.length], [1460, 460]);
+    assert.ok(s.startsWith(p.head) && s.endsWith(p.tail));
+    s = straddled(1500 - 41, tailCut + 40);
+    p = parts(at.firstRequestExcerpt(s));
+    assert.deepEqual([p.head.length, p.tail.length], [1499, 499]);
+    assert.ok(!lone.test(p.head) && !lone.test(p.tail), "no lone surrogate");
+    assert.ok(s.startsWith(p.head) && s.endsWith(p.tail));
+    // Unicode words with spaces still trim to a word boundary.
+    const words = "café über naïve 日本語 ".repeat(200);
+    const w = parts(at.firstRequestExcerpt(words));
+    assert.ok(words.startsWith(w.head) && /\s/.test(words[w.head.length]!));
+    assert.ok(!lone.test(w.head + w.tail));
+  });
+
+  test("an empty first request still ends the prompt with its label", () => {
+    const p = at.buildTitlePrompt({ userMessages: [], summaryLine: "Gist", topics: [] });
+    assert.match(p, /\nFIRST MESSAGE \([^)]*\):\n$/);
+  });
+
+  test("the labels rank the subject: summary (may share its subject), headings as subjects, bullets secondary, the opening intent last", () => {
+    const p = at.buildTitlePrompt({ userMessages: ["Make one-click setup buttons"], summaryLine: "One-click session setups", topics: [{ heading: "One-click setups", bullets: ["New issue: a side bug"] }] });
+    const summary = p.indexOf("SUMMARY LINE (");
+    const topics = p.indexOf("\nTOPICS (");
+    const first = p.indexOf("\nFIRST MESSAGE (");
+    assert.ok(summary === 0 && summary < topics && topics < first);
+    assert.match(p, /SUMMARY LINE \([^)]*don't just copy it[^)]*may share its subject\)/);
+    assert.match(p, /TOPICS \([^)]*each heading is a subject[^)]*bullets are secondary recent details[^)]*side issues\)/);
+    assert.match(p, /FIRST MESSAGE \([^)]*opening intent[^)]*moved on[^)]*\)/);
+    assert.match(at.TITLE_SYSTEM_PROMPT, /If the session truly moved on to a new main goal, name that goal/);
+  });
+
+  test("every example adds a content word its summary line lacks, one shares a subject phrase, and none is the presets case", () => {
+    const pairs = [...at.TITLE_SYSTEM_PROMPT.matchAll(/"([^"]+)" → "([^"]+)"/g)].map((m) => ({ summary: m[1]!, title: m[2]! }));
+    assert.equal(pairs.length, 3);
+    for (const x of pairs) assert.equal(at.validateTitle(x.title), x.title, x.title);
+    // Content words: lower-cased word tokens (hyphenated words whole), function words dropped.
+    const STOP = new Set(["a", "an", "the", "and", "or", "of", "for", "to", "in", "on", "at", "by", "with", "from", "into", "then", "when", "is", "are", "its", "it", "as", "this", "that"]);
+    const content = (s: string) => (s.toLowerCase().match(/[\p{L}\p{N}]+(?:[-'’][\p{L}\p{N}]+)*/gu) ?? []).filter((w) => !STOP.has(w));
+    const added = (summary: string, title: string) => {
+      const have = new Set(content(summary));
+      return content(title).filter((w) => !have.has(w));
+    };
+    // The check tells the two cases apart: a reordered summary line (even with a stray "the") adds nothing.
+    assert.deepEqual(added("Dark mode for the settings dialog", "Settings dialog dark mode"), []);
+    assert.deepEqual(added("Settings dialog dark mode", "The settings dialog dark mode"), []);
+    assert.deepEqual(added("Fixing the settings dialog in dark mode", "Settings dialog contrast bug"), ["contrast", "bug"]);
+    for (const x of pairs) assert.ok(added(x.summary, x.title).length >= 1, `${x.title} adds nothing to "${x.summary}"`);
+    // At least one keeps the subject recognizable: two content words in a row taken from its summary line.
+    const bigrams = (ws: string[]) => ws.slice(1).map((w, i) => `${ws[i]} ${w}`);
+    const shared = pairs.filter((x) => {
+      const have = new Set(bigrams(content(x.summary)));
+      return bigrams(content(x.title)).some((b) => have.has(b));
+    });
+    assert.ok(shared.length >= 1, JSON.stringify(pairs));
+    assert.ok(pairs.every((x) => !/preset|setup|subagent/i.test(x.summary + x.title)));
   });
 });
 

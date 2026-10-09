@@ -17,6 +17,7 @@
  * (CensusState), so a caller whose hooks are separate processes can keep it in a file.
  */
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { posix } from "node:path";
 const { dirname, join, relative } = posix;
@@ -32,7 +33,8 @@ const SPEC_REL = ".sova/spec";
 
 /** The hook's view of the machine the tools run on. Methods may be sync or async. */
 export interface SpecIO {
-	exec(command: string, args: string[], options: { cwd: string; timeout: number; signal?: AbortSignal }): Promise<{ stdout: string; code: number }>;
+	/** `stderr` and `timedOut` are optional: an IO without them reports a silent failure by its exit status. */
+	exec(command: string, args: string[], options: { cwd: string; timeout: number; signal?: AbortSignal }): Promise<{ stdout: string; code: number; stderr?: string; timedOut?: boolean }>;
 	exists(path: string): boolean | Promise<boolean>;
 	/** Entry names; throws (or rejects) when the directory can't be read. */
 	readDir(path: string): string[] | Promise<string[]>;
@@ -42,15 +44,42 @@ export interface SpecIO {
 	mtime(path: string): number | undefined | Promise<number | undefined>;
 }
 
-/** This machine: node's own spawn (no shell) and fs. */
+/** Stderr kept per command: enough for its first lines. */
+const STDERR_CAP = 4096;
+
+/**
+ * The node binary the census runs on: the one this process runs on, by absolute path, never a `node`
+ * found on PATH (a version manager's shim there refuses a directory it doesn't trust, and a sandboxed
+ * worker can't trust it). Under bun, the first `node` on PATH outside a shims directory, else `node`.
+ */
+export function nodeBinary(env: Record<string, string | undefined> = process.env): string {
+	if (!(process.versions as Record<string, string | undefined>).bun) return process.execPath;
+	for (const dir of (env.PATH ?? "").split(":")) {
+		if (!dir || /(^|\/)shims\/?$/.test(dir)) continue;
+		try {
+			const candidate = join(dir, "node");
+			if (statSync(candidate).isFile()) return candidate;
+		} catch {
+			// Not here.
+		}
+	}
+	return "node";
+}
+const NODE_BIN = nodeBinary();
+
+/** This machine: node's own spawn (no shell) and fs; `node` is nodeBinary(). */
 export const localIO: SpecIO = {
 	exec: (command, args, { cwd, timeout, signal }) =>
 		new Promise((resolve) => {
 			let stdout = "";
-			const child = spawn(command, args, { cwd, shell: false, stdio: ["ignore", "pipe", "ignore"], timeout, signal });
+			let stderr = "";
+			const child = spawn(command === "node" ? NODE_BIN : command, args, { cwd, shell: false, stdio: ["ignore", "pipe", "pipe"], timeout, signal });
 			child.stdout.on("data", (chunk) => (stdout += chunk));
-			child.on("error", () => resolve({ stdout: "", code: 1 }));
-			child.on("close", (code) => resolve({ stdout, code: code ?? 1 }));
+			child.stderr.on("data", (chunk) => {
+				if (stderr.length < STDERR_CAP) stderr = (stderr + chunk).slice(0, STDERR_CAP);
+			});
+			child.on("error", (error) => resolve({ stdout: "", code: 1, stderr: error.message }));
+			child.on("close", (code, killed) => resolve({ stdout, code: code ?? 1, stderr, timedOut: code === null && killed !== null && !signal?.aborted }));
 		}),
 	exists: existsSync,
 	readDir: (path) => readdirSync(path),
@@ -290,6 +319,10 @@ export interface CensusState {
 	ownBases?: string[];
 	/** What the digest printed once and holds back after (absent in older state files). */
 	said?: CensusSaid;
+	/** HEAD and each changed path's mtime at the last look: what differs at the next call's start changed between calls. */
+	last?: { head: string | null; files: Record<string, number> };
+	/** Paths changed between the session's calls (another process's), each with its mtime then: kept out of every note. */
+	foreign?: Record<string, number>;
 }
 
 /** The digest's once-per-session lines, marked only on the note that printed them. */
@@ -417,10 +450,12 @@ async function censusDelta(state: CensusState, call: CensusCall, core: string, i
 			const main = await defaultBranch(view.top, io);
 			const tip = main ? (await io.exec("git", ["rev-parse", "--verify", "-q", `refs/heads/${main}`], { cwd: view.top, timeout: TOOL_TIMEOUT_MS })).stdout.trim() : "";
 			const ownBases = await ownBasesFor(view.top, view.head, tip || undefined, io);
-			Object.assign(next, freshCensusState(), { base: view.head, top: view.top, known: Object.keys(view.files), ...(ownBases.length ? { ownBases } : {}) });
+			Object.assign(next, freshCensusState(), { base: view.head, top: view.top, known: Object.keys(view.files), last: lookOf(view), ...(ownBases.length ? { ownBases } : {}) });
 			delete next.said;
+			delete next.foreign;
 			return { state: next, result: {} };
 		}
+		next.last = lookOf(view);
 		const known = new Set(next.known);
 		const fresh: string[] = [];
 		const see = (p: string) => {
@@ -429,6 +464,15 @@ async function censusDelta(state: CensusState, call: CensusCall, core: string, i
 				fresh.push(p);
 			}
 		};
+		// Another process's file this call changed again is the session's own from now on.
+		const foreign = { ...next.foreign };
+		for (const [p, mtime] of Object.entries(foreign))
+			if (view.files[p] !== undefined && view.files[p] !== mtime) {
+				delete foreign[p];
+				fresh.push(p);
+			}
+		if (Object.keys(foreign).length) next.foreign = foreign;
+		else delete next.foreign;
 		for (const p of Object.keys(view.files)) see(p);
 		if (next.base && view.head && view.head !== next.base) {
 			// Committed work leaves `git status`: what the commits since the base changed counts too.
@@ -436,7 +480,7 @@ async function censusDelta(state: CensusState, call: CensusCall, core: string, i
 			if (diff.code === 0) for (const p of diff.stdout.split("\0")) see(p);
 		}
 		if (!fresh.length) return { state: next, result: {} };
-		next.known.push(...fresh);
+		next.known.push(...fresh.filter((p) => !next.known.includes(p)));
 		if (ranCensus(call.toolName, call.input)) return { state: next, result: {} };
 		const root = await findSpecRoot(call.cwd, (p) => io.exists(p));
 		const tool = join(core, "sova-spec.mjs");
@@ -451,15 +495,15 @@ async function censusDelta(state: CensusState, call: CensusCall, core: string, i
 				const out = JSON.parse(r.stdout);
 				if (out.complete === false || out.census?.draftScan?.complete === false) incomplete = Array.isArray(out.incomplete) ? out.incomplete.join(", ") : "partial draft scan";
 			} catch { /* unusable output is reported below */ }
-			return { view: parseCensus(r.stdout), ran: r.stdout.trim() !== "", incomplete };
+			return { view: parseCensus(r.stdout), ran: r.stdout.trim() !== "", incomplete, silent: silentCause(r) };
 		};
 		const spec = await pickDraft(root, call.commands ?? [], call.sessionStart, io);
 		let r = await census(spec);
 		if (!r.view && spec) r = await census(); // an unreadable draft: the current spec still maps the files
-		if (!r.ran || !r.view) return failed(next, !r.ran ? "the census produced no output (timeout or crash)" : "unusable census output");
+		if (!r.ran || !r.view) return failed(next, !r.ran ? `the census produced no output (${r.silent})` : "unusable census output");
 		const freshRel = fresh.map((p) => underRoot(view.top, root, p)).filter((p): p is string => p !== undefined);
 		const orphans = (r.view.orphanedEvidence ?? []).filter((e) => !next.orphans?.includes(e.commit));
-		const { text: said, said: printed } = digestSaying(r.view, freshRel, next, Boolean(spec));
+		const { text: said, said: printed } = digestSaying(withoutPaths(r.view, foreignUnder(next, view.top, root)), freshRel, next, Boolean(spec));
 		if (said) {
 			next.reported = true;
 			next.said = printed;
@@ -484,6 +528,71 @@ export async function silentCensusStep(state: CensusState, call: CensusCall, cor
 	if (!step.result.failure) return step.state;
 	const { failSaid: _, ...rest } = step.state;
 	return state.failSaid ? { ...rest, failSaid: state.failSaid } : rest;
+}
+
+const lookOf = (view: GitView): NonNullable<CensusState["last"]> => ({ head: view.head, files: { ...view.files } });
+
+/**
+ * Before a call: what changed in a tree the session already knows since its last look there changed
+ * between the session's calls (another process sharing the tree, a worker, an editor). It is taken in
+ * silently: known, so never new, and recorded as foreign, so no count or line of a later note has it.
+ * A path the session itself changed before stays its own. Never throws; a tree not yet seen is left to
+ * the baseline.
+ */
+export async function settleCensus(state: CensusState, cwd: string, io: SpecIO = localIO, signal?: AbortSignal): Promise<CensusState> {
+	try {
+		if (!state.top) return state;
+		const view = await gitView(cwd, io, signal);
+		if (!view || view.top !== state.top) return state;
+		const next: CensusState = { ...state, known: [...state.known], last: lookOf(view) };
+		// An older state file has no last look: from here on it does.
+		if (!state.last) return next;
+		const known = new Set(next.known);
+		const foreign = { ...state.foreign };
+		const take = (p: string, mtime: number) => {
+			if (!p) return;
+			if (!known.has(p)) {
+				known.add(p);
+				next.known.push(p);
+				foreign[p] = mtime;
+			} else if (p in foreign) foreign[p] = mtime;
+		};
+		for (const [p, mtime] of Object.entries(view.files)) if (state.last.files[p] !== mtime) take(p, mtime);
+		if (state.last.head && view.head && view.head !== state.last.head) {
+			const diff = await io.exec("git", ["diff", "--name-only", "-z", state.last.head, view.head], { cwd: view.top, timeout: TOOL_TIMEOUT_MS, signal });
+			if (diff.code === 0) for (const p of diff.stdout.split("\0")) take(p, view.files[p] ?? 0);
+		}
+		if (Object.keys(foreign).length) next.foreign = foreign;
+		return next;
+	} catch {
+		return state;
+	}
+}
+
+/** The foreign paths of a tree's census state, relative to the spec root. */
+function foreignUnder(state: CensusState, top: string, root: string): Set<string> {
+	return new Set(Object.keys(state.foreign ?? {}).map((p) => underRoot(top, root, p)).filter((p): p is string => p !== undefined));
+}
+
+/** A census view without these paths: what changed between the session's calls never reaches a note. */
+export function withoutPaths(v: CensusView, drop: ReadonlySet<string>): CensusView {
+	if (!drop.size) return v;
+	const keep = (p: string) => !drop.has(p);
+	return {
+		...v,
+		claimed: v.claimed.filter((e) => keep(e.path)),
+		unclaimed: v.unclaimed && v.unclaimed.filter(keep),
+		mappedOutside: v.mappedOutside.filter((e) => keep(e.path)),
+		outside: v.outside && v.outside.filter(keep),
+	};
+}
+
+/** Why a census printed nothing: the first error line on its stderr (else its first line), else a timeout or its exit status. */
+export function silentCause(r: { code: number; stderr?: string; timedOut?: boolean }): string {
+	const lines = (r.stderr ?? "").split("\n").map((l) => l.trim()).filter(Boolean);
+	const line = lines.find((l) => /\berror\b|not trusted|untrusted|denied|fatal|cannot|can't/i.test(l)) ?? lines[0];
+	if (line) return line.length > 200 ? `${line.slice(0, 199)}…` : line;
+	return r.timedOut ? `timed out after ${TOOL_TIMEOUT_MS / 1000} s` : `exit ${r.code}`;
 }
 
 function failed(next: CensusState, why: string): { state: CensusState; result: CensusResult } {
@@ -520,6 +629,8 @@ export function callDirs(call: Pick<CensusCall, "cwd" | "toolName" | "input">): 
  */
 export class CensusHook {
 	private states = new Map<string, CensusState>();
+	/** Calls between their before and after: while one runs, what changes may be its own, so nothing is settled. */
+	private open = 0;
 	private chain: Promise<unknown> = Promise.resolve();
 	private readonly io: SpecIO;
 	private readonly core: () => string;
@@ -532,6 +643,7 @@ export class CensusHook {
 	/** A new session (or a switch to another): nothing seen yet. */
 	reset(): void {
 		this.states = new Map();
+		this.open = 0;
 	}
 
 	private async topOf(dir: string, signal?: AbortSignal): Promise<string | undefined> {
@@ -545,32 +657,44 @@ export class CensusHook {
 		return next;
 	}
 
-	/** Take a tree's baseline if it has none yet. */
-	private async baseline(dir: string, signal?: AbortSignal): Promise<void> {
+	/** Take a tree's baseline if it has none yet; else, with `settle`, take in what changed there since the last look (settleCensus). */
+	private async baseline(dir: string, signal?: AbortSignal, settle = false): Promise<void> {
 		const top = await this.topOf(dir, signal);
-		if (!top || this.states.has(top)) return;
+		if (!top) return;
+		const known = this.states.get(top);
+		if (known) {
+			if (settle) this.states.set(top, await settleCensus(known, dir, this.io, signal));
+			return;
+		}
 		const state = await silentCensusStep(freshCensusState(), { cwd: dir, toolName: "", input: undefined, signal }, this.core(), this.io);
 		this.states.set(top, state);
 	}
 
-	/** Take the baseline now (a run's start), so the run's first edit is already a delta. */
+	/** Take the baseline now (a run's start), so the run's first edit is already a delta; a known tree takes in what changed since. */
 	prime(cwd: string): Promise<CensusResult> {
+		this.open = 0;
 		return this.serial(async () => {
-			await this.baseline(cwd);
+			await this.baseline(cwd, undefined, true);
 			return {};
 		}, {});
 	}
 
-	/** Before a call: the baseline of each tree it will write in and the session hasn't seen yet. */
+	/**
+	 * Before a call: the baseline of each tree it will write in and the session hasn't seen yet and, when no
+	 * other call is running, what changed in the others since the session last looked (never its own).
+	 */
 	before(call: CensusCall): Promise<void> {
 		if (CENSUS_SKIP_TOOLS.has(call.toolName)) return Promise.resolve();
+		const alone = this.open === 0;
+		this.open++;
 		return this.serial(async () => {
-			for (const dir of callDirs(call)) await this.baseline(dir, call.signal);
+			for (const dir of callDirs(call)) await this.baseline(dir, call.signal, alone);
 		}, undefined);
 	}
 
 	after(call: CensusCall): Promise<CensusResult> {
 		if (CENSUS_SKIP_TOOLS.has(call.toolName)) return Promise.resolve({});
+		this.open = Math.max(0, this.open - 1);
 		return this.serial(async () => {
 			const texts: string[] = [];
 			const failures: string[] = [];
@@ -761,9 +885,75 @@ export function currentSpecPath(path: string): boolean {
 	return /(?:^|\/)\.sova\/spec\/(?:manifest\.json$|claims\/)/.test(path);
 }
 
-/** A shell command allowed to write the current spec: a draft tool (promote, merge-manifest, recover) or git itself. */
-export function sanctionedSpecWrite(command: string): boolean {
-	return /sova-spec-draft\.mjs/.test(command) || draftToolRuns(command).some((r) => ["promote", "recover", "merge-manifest"].includes(r.verb)) || /\bgit\b(?:\s+-[Cc]\s+\S+)*\s+(?:merge|checkout|restore|reset|rebase|pull|cherry-pick|revert|stash|switch|am)\b/.test(command);
+/** Whether Git is in the middle of a merge, rebase, cherry-pick or revert in the work tree at `top`. */
+export async function gitOperationUnderway(top: string, io: SpecIO = localIO, signal?: AbortSignal): Promise<boolean> {
+	for (const d of ["MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD"]) {
+		const r = await io.exec("git", ["rev-parse", "--git-path", d], { cwd: top, timeout: TOOL_TIMEOUT_MS, signal });
+		const path = r.code === 0 ? r.stdout.trim() : "";
+		if (path && (await io.exists(path.startsWith("/") ? path : join(top, path)))) return true;
+	}
+	return rebaseUnderway(top, io, signal);
+}
+
+/** The hashes promotion receipts (`promotions[].after` in each draft's draft.json) record, by spec-relative path. Unreadable drafts are skipped. */
+export async function promotedHashes(root: string, io: SpecIO = localIO): Promise<Map<string, Set<string | null>>> {
+	const out = new Map<string, Set<string | null>>();
+	let names: string[];
+	try {
+		names = await io.readDir(join(root, SPEC_REL, "drafts"));
+	} catch {
+		return out;
+	}
+	for (const draft of names) {
+		try {
+			const d = JSON.parse(await io.readFile(join(root, SPEC_REL, "drafts", draft, "draft.json"))) as { promotions?: unknown };
+			for (const p of Array.isArray(d.promotions) ? (d.promotions as { after?: unknown }[]) : [])
+				if (p?.after && typeof p.after === "object")
+					for (const [path, hash] of Object.entries(p.after as Record<string, unknown>))
+						if (typeof hash === "string" || hash === null) out.set(path, (out.get(path) ?? new Set()).add(hash));
+		} catch {
+			// Not a draft, or unreadable.
+		}
+	}
+	return out;
+}
+
+/**
+ * Of the current-spec files a shell call changed (top-relative), those written by hand, judged by the files
+ * and the tree, never by the command: none while a merge, rebase, cherry-pick or revert is under way; else
+ * each file except one whose bytes a promotion receipt records, or that equals its blob at HEAD or at the
+ * default branch's tip.
+ */
+export async function handWritten(top: string, paths: readonly string[], io: SpecIO = localIO, signal?: AbortSignal): Promise<string[]> {
+	if (!paths.length || (await gitOperationUnderway(top, io, signal))) return [];
+	const opts = { cwd: top, timeout: TOOL_TIMEOUT_MS, signal };
+	const receipts = new Map<string, Map<string, Set<string | null>>>();
+	const main = await defaultBranch(top, io);
+	const out: string[] = [];
+	for (const p of paths) {
+		const at = p.lastIndexOf(`${SPEC_REL}/`);
+		const root = join(top, p.slice(0, at));
+		if (!receipts.has(root)) receipts.set(root, await promotedHashes(root, io));
+		let bytes: string | undefined;
+		try {
+			bytes = await io.readFile(join(top, p));
+		} catch {
+			bytes = undefined;
+		}
+		const hash = bytes === undefined ? null : createHash("sha256").update(bytes).digest("hex");
+		if (receipts.get(root)!.get(p.slice(at + SPEC_REL.length + 1))?.has(hash)) continue;
+		if (bytes !== undefined) {
+			const blob = (await io.exec("git", ["hash-object", "--", p], opts)).stdout.trim();
+			let committed = false;
+			for (const rev of ["HEAD", ...(main ? [`refs/heads/${main}`] : [])]) {
+				const r = await io.exec("git", ["rev-parse", "-q", "--verify", `${rev}:${p}`], opts);
+				if (blob && r.code === 0 && r.stdout.trim() === blob) committed = true;
+			}
+			if (committed) continue;
+		}
+		out.push(p);
+	}
+	return out;
 }
 
 export const directWriteNote = (paths: readonly string[]): string =>
@@ -839,8 +1029,8 @@ interface GuardTree {
 
 /**
  * Two writes the draft discipline forbids, said the moment they happen, in the `[spec census]` digest:
- * the current spec changed by hand (an edit or write call on it, or a shell command that is no draft
- * tool and no git operation), and commits a draft's evidence names rewritten (a rebase, reset or amend:
+ * the current spec changed by hand (an edit or write call on it, or a shell command's change handWritten
+ * judges by the files, never the command's text), and commits a draft's evidence names rewritten (a rebase, reset or amend:
  * the evidence commit was on the branch before the call and isn't after). `before` looks at the trees a
  * call works in, `after` compares; both never throw. One instance per session; calls keyed by id.
  */
@@ -882,11 +1072,9 @@ export class SpecWriteGuard {
 			const notes: string[] = [];
 			for (const tree of await pending) {
 				const git = (args: string[]) => this.io.exec("git", args, { cwd: tree.top, timeout: TOOL_TIMEOUT_MS, signal: call.signal });
-				if (!sanctionedSpecWrite(command)) {
-					const now = await specFiles(tree.top, this.io, call.signal);
-					const written = Object.keys(now).filter((p) => tree.spec[p] !== now[p]);
-					if (written.length) notes.push(directWriteNote(written));
-				}
+				const spec = await specFiles(tree.top, this.io, call.signal);
+				const written = await handWritten(tree.top, Object.keys(spec).filter((p) => tree.spec[p] !== spec[p]), this.io, call.signal);
+				if (written.length) notes.push(directWriteNote(written));
 				if (!tree.evidence.length) continue;
 				const head = await git(["rev-parse", "--verify", "-q", "HEAD"]);
 				const now = head.code === 0 ? head.stdout.trim() : "";

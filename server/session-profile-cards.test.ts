@@ -3,7 +3,8 @@
 //
 // Profile cards in real runtimes: a pick sets the effort and the subagent pick with the entry, is
 // checked before anything is written, pins the device default when switching back from a card that
-// set subagents, never writes defaults.json; Save Current As Profile writes yours only.
+// set subagents, never writes defaults.json; its mode and minor modes are pinned together, and go
+// back to mode.json's default when switching back; Save Current As Profile writes yours only.
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -45,11 +46,19 @@ const YOURS = {
     { id: "dangling", label: "Gone subagents", subagents: "nope" },
     { id: "plain", label: "Plain", description: "Changes nothing." },
     { id: "gpt", label: "GPT high", model: "openai/gpt-5.5", thinking: "high" },
+    { id: "aligned", label: "Aligned delegate", mode: "delegate", minorModes: ["vis", "align", "spec"] },
+    { id: "spec-only", label: "Spec only", minorModes: ["spec"] },
+    { id: "no-minors", label: "No minors", minorModes: [] },
   ],
 };
 writeFileSync(yoursFile, JSON.stringify(YOURS, null, 2));
+// The default new sessions start from: normal, no minor modes.
+const modeFile = join(agentDir, "mode.json");
+const MODE_DEFAULT = JSON.stringify({ version: 1, mode: "normal", strict: false, minorModes: [] });
+writeFileSync(modeFile, MODE_DEFAULT);
 
-const { acquireChat, disposeAllChats } = await import("./chat-manager");
+const { restoreActive, MODE_ENTRY_TYPE } = await import("../pi-config/extensions/mode/state.ts");
+const { acquireChat, disposeAllChats, disposeHeldChat } = await import("./chat-manager");
 const { canonicalPath } = await import("./paths");
 const { applyProfile, profilesListing, saveCurrentProfile } = await import("./session-profile-routes");
 const { PROFILE_ENTRY } = await import("../shared/profiles");
@@ -155,6 +164,68 @@ describe("a card's effort and subagents", () => {
     assert.deepEqual(Object.keys(l.unusable ?? {}).sort(), ["user:dangling", "user:denied"]);
     assert.match(l.unusable!["user:denied"]!, /^Provider zai is turned off in Settings → Models/);
     assert.deepEqual(l.subagents?.map((s) => s.id), ["off", "house", "claude-subs"]);
+  });
+});
+
+/** The mode and minor modes the branch's newest mode entry pins, or null when none does. */
+const pinned = (path: string) => {
+  const a = restoreActive(entries(path) as never);
+  return a ? { mode: a.mode, minorModes: [...a.minorModes] } : null;
+};
+/** The mode a chat opened fresh on the session holds. */
+const reopened = async (path: string) => {
+  await disposeHeldChat(path, "test");
+  const s = (await acquireChat(path)).modeState;
+  return { mode: s.mode, minorModes: [...s.minorModes] };
+};
+
+describe("a card's mode and minor modes", () => {
+  test("a pick pins exactly its set with its mode, and a later mode.json edit never moves them", async () => {
+    const path = makeSession();
+    assert.deepEqual(await applyProfile(path, { ...yours, id: "aligned" }), { ok: true });
+    const want = { mode: "delegate", minorModes: ["align", "spec", "vis"] };
+    assert.deepEqual(pinned(path), want, "the branch's mode entry has them");
+    assert.deepEqual(await reopened(path), want, "a reopened chat holds them");
+    writeFileSync(modeFile, JSON.stringify({ version: 1, mode: "normal", strict: false, minorModes: ["codemode"] }));
+    try {
+      assert.deepEqual(await reopened(path), want, "mode.json moved; the session didn't");
+    } finally {
+      writeFileSync(modeFile, MODE_DEFAULT);
+    }
+  });
+
+  test("minorModes without mode keeps the session's mode; [] pins none over a default that has some", async () => {
+    const path = makeSession();
+    assert.deepEqual(await applyProfile(path, { ...yours, id: "spec-only" }), { ok: true });
+    assert.deepEqual(pinned(path), { mode: "normal", minorModes: ["spec"] });
+    writeFileSync(modeFile, JSON.stringify({ version: 1, mode: "normal", strict: false, minorModes: ["align"] }));
+    try {
+      const none = makeSession();
+      assert.deepEqual(await applyProfile(none, { ...yours, id: "no-minors" }), { ok: true });
+      assert.deepEqual(pinned(none), { mode: "normal", minorModes: [] });
+      assert.deepEqual(await reopened(none), { mode: "normal", minorModes: [] });
+    } finally {
+      writeFileSync(modeFile, MODE_DEFAULT);
+    }
+  });
+
+  test("switching back: Default or a card without them puts mode.json's mode and minor modes back, pinned, and never writes mode.json", async () => {
+    const def = { mode: "normal", minorModes: [] };
+    for (const back of [null, { ...yours, id: "plain" }]) {
+      const path = makeSession();
+      assert.deepEqual(await applyProfile(path, { ...yours, id: "aligned" }), { ok: true });
+      assert.deepEqual(await applyProfile(path, back), { ok: true });
+      assert.deepEqual(pinned(path), def, `after ${back ? "Plain" : "Default"}`);
+      assert.deepEqual(await reopened(path), def);
+    }
+    assert.equal(readFileSync(modeFile, "utf8"), MODE_DEFAULT, "mode.json is never written");
+  });
+
+  test("a card that sets neither, with none before it, writes no mode entry", async () => {
+    const path = makeSession();
+    assert.deepEqual(await applyProfile(path, { ...yours, id: "plain" }), { ok: true });
+    assert.deepEqual(await applyProfile(path, null), { ok: true });
+    assert.equal(entries(path).filter((e) => e.customType === MODE_ENTRY_TYPE).length, 0);
   });
 });
 

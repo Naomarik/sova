@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { clearSettingsSection, closeSettings, openSettings, SETTINGS_TABS, setSubagentSettingsPath, settingsOpenAt, settingsSection, subagentSettingsPath } from "./settings-nav";
+import { clearSettingsSection, closeSettings, openSettings, SETTINGS_TABS, setSubagentSettingsPath, settingsOpenAt, settingsSection, settingsTabFromHash, subagentSettingsPath } from "./settings-nav";
 
 test("Configure Spec opens Subagents at the Spec section, and a plain open asks for none", () => {
   openSettings("subagents", "spec");
@@ -26,8 +26,8 @@ test("Settings opens at the tab asked for, and closes", () => {
   closeSettings();
 });
 
-test("Accounts sits after Models, Subagents after Accounts, Profiles after Subagents, Overseer after Profiles, Notifications after Overseer and Decisions after Notifications, Public links after Mesh, Outreach after Public links, Voice after Outreach in the rail, and the dialog's rail is this list", () => {
-  assert.deepEqual([...SETTINGS_TABS], ["general", "models", "accounts", "subagents", "profiles", "overseer", "notifications", "decisions", "summaries", "organizations", "themes", "mesh", "public-links", "outreach", "voice", "experimental"]);
+test("Accounts sits after Models, Subagents after Accounts, Alignment after Subagents, Profiles after Alignment, Overseer after Profiles, Notifications after Overseer and Decisions after Notifications, Public links after Mesh, Outreach after Public links, Voice after Outreach in the rail, and the dialog's rail is this list", () => {
+  assert.deepEqual([...SETTINGS_TABS], ["general", "models", "accounts", "subagents", "alignment", "profiles", "overseer", "notifications", "decisions", "summaries", "organizations", "themes", "mesh", "public-links", "outreach", "voice", "experimental"]);
   // The dialog's own TABS must be the same ids in the same order (it is `satisfies`-typed against
   // SettingsTab, which catches an unknown id but not a missing or reordered one).
   const dialog = readFileSync(new URL("../components/SettingsDialog.tsx", import.meta.url), "utf8");
@@ -55,4 +55,13 @@ test("closing Settings forgets the chat it was opened for", () => {
   openSettings("subagents");
   closeSettings();
   assert.equal(subagentSettingsPath(), undefined, "the next open starts with no chat's pick");
+});
+
+test("#/settings/<tab> names a tab (a Needs you row, a notification's tap); anything else names none", () => {
+  assert.equal(settingsTabFromHash("#/settings/outreach"), "outreach");
+  assert.equal(settingsTabFromHash("#/settings/public-links"), "public-links");
+  assert.equal(settingsTabFromHash("#/settings/nope"), null);
+  assert.equal(settingsTabFromHash("#/settings/outreach/x"), null);
+  assert.equal(settingsTabFromHash("#/settings"), null);
+  assert.equal(settingsTabFromHash("#/overseer"), null);
 });

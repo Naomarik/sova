@@ -400,7 +400,7 @@ would list master's changes instead.
     had a failed Bash call.
 
 - **The Agree step made real; agreed kept across a meaning change is noted (lane D).**
-  - Branch: `feat/spec-agree-step` (master commit filled in when it lands).
+  - Merge: 2afd0aba ← `feat/spec-agree-step` @ 717dfad7.
   - Changed:
     - new draft command `agree NAME --id §x… --by WHO --verification TEXT [--at ISO] [--write]`:
       creates a missing record from the draft's prose heading, stamps `agreed {by, at}` and
@@ -413,12 +413,12 @@ would list master's changes instead.
       a number or backticked token while `agreed` stays the same.
   - §: +§tools.spec/agree-command, +§tools.spec/align-agree; §tools.spec/agreed-promotion,
     §tools.spec/mode-reading, §site.docs/spec-mode, §chat.alignment/tool reworded; §tools/spec
-    (child added).
+    (child added). Base: the previous master tip 6f98ff2f (the first parent is the lane branch).
   - Numbers: agree path 6 → 3 steps (5 → 3 minimal); agreed-kept notes on a 60 → 64 change 0 → 1;
     `agreed` records on master 0 (review 2026-10-24: none means cut `agreed`).
 
 - **Drafts left behind are reported, and only an approved list is pruned (lane E).**
-  - Branch: `feat/spec-draft-hygiene` (master commit filled in when it lands).
+  - Merge: 0134bf2c ← `feat/spec-draft-hygiene` @ 63c03607.
   - Changed:
     - new read-only `drafts [--days N] [--worktrees]`: each draft's age, one state (`landed`,
       `promoted`, `superseded`, `empty`, `old`, `active`, `unreadable`), reasons, a suggested action
@@ -427,13 +427,14 @@ would list master's changes instead.
       a missing name, a changed hash or a pending `.txn/` refuses the whole prune;
     - a promotion preview or write carries `staleDrafts` when other drafts are past the age limit;
       `DRAFTS.md` "Drafts left behind" and `PROMOTE.md` say what to do with it.
-  - §: +§tools.spec/draft-hygiene; §tools/spec reworded.
+  - §: +§tools.spec/draft-hygiene; §tools/spec reworded. Base: the previous master tip 2afd0aba
+    (the first parent is the lane branch).
   - Numbers: fixture checks 0/4 → 4/4; the main tree's 48 drafts in one read-only call (~21 s):
     promoted 24, superseded 20, landed 2, old 1, unreadable 1 (before: none reported); every Sova
     work tree (`--worktrees`, 255 drafts, 4 min 19 s): landed 18.
 
 - **Ranked finishing census and the unread line (lane B2).**
-  - Branch: `feat/spec-ranked-finish` (master commit filled in when it lands).
+  - Merge: 52afd0a8 ← `feat/spec-ranked-finish` @ cd8301e7, inside `feat/spec-unread-trim` (869f3141).
   - Changed:
     - `census --changed --related` ranks the foreign § a change touched by its changed lines (names,
       string and number literals from `git diff -U0`, added and removed) and adds `census.rank`,
@@ -446,9 +447,18 @@ would list master's changes instead.
       named".
   - §: +§tools.spec/census-rank, +§tools.spec/unread-landed; §tools.spec/census-note,
     §tools.spec/mode-reading, §site.docs/spec-mode reworded; §tools/spec (two children added).
+    Base: the previous master tip e4449e4a; computed together with the unread-line trim below.
   - Numbers: trial task (d), a rename: relevant § at ranks 1 and 3 of 25 (unranked before); the read
     first set is 5 § / 28.8 KB, down from 25 § / 116.3 KB. Probe (g), 12 → 16 MB: the § rank 1 of 7,
     flagged stale (before: listed 7th, not flagged). 0 touched § dropped in either.
+
+- **A shorter unread line.**
+  - Merge: 52afd0a8 ← `feat/spec-unread-trim`.
+  - Changed: the unread line names at most 5 read-first § then "+N more: <the exact census
+    command>", and that command lists the rest; `spec-mode.md` says so.
+  - §: §tools.spec/unread-landed, §tools.spec/mode-reading reworded. Base: the previous master tip
+    e4449e4a; computed together with lane B2 above.
+  - Numbers: 25-§ fixture, line 432 → 290 characters; all 25 § still listed by the command.
 
 ## Integration → master
 
@@ -553,13 +563,14 @@ The tools are Node standard library only. Nothing is installed.
      hides results, and `file.state: "absent"` for a path that isn't a file; both exit 1 (was 0).
      `draft check` splits `introduced` from `preexisting`; `new` lists files only with `--all`.
      `census --changed --base` leaves out § created in the range.
-   - **New commands** (once lanes D, E and B2 land): `drafts [--days N] [--worktrees]` and `prune
+   - **New commands** (lanes D, E and B2, now on master): `drafts [--days N] [--worktrees]` and `prune
      --approved FILE [--write]`; `agree NAME --id §x… --by WHO --verification TEXT [--write]`;
      `census --changed --related` gives `census.rank`, `census.readFirst` and `census.named`.
    - **Hooks.** The census hooks count only the session's own calls: changes made between calls,
      a worker's included, are silent. They run the census on their own node, and a Claude Code
-     worker's settings register `PostToolUseFailure` and `PermissionDenied`. Once B2 lands, the
-     hook's unread line ("Unread § your change landed in: read first …") replaces the finishing
+     worker's settings register `PostToolUseFailure` and `PermissionDenied`. The hook's unread
+     line ("Unread § your change landed in: read first …", then "+N more:" and the census command
+     that lists the rest) replaces the finishing
      census run by hand; update your agent instructions to read the § marked read first.
    - **Merge recovery.** A spec conflict a Git merge leaves is resolved one way only: `git checkout
      --no-overlay <default branch> -- .sova/spec/manifest.json .sova/spec/claims`, never `--ours`,

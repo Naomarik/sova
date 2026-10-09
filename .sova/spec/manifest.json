@@ -16859,6 +16859,33 @@
       "requires": [
         "§app.outreach/sender-route"
       ]
+    },
+    "§app.server-runtime/pi-workers": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/subagents/pi-invocation.ts",
+        "pi-config/extensions/subagents/pi-invocation.test.ts",
+        "pi-config/extensions/subagents/runner.ts",
+        "pi-config/extensions/subagents/README.md"
+      ],
+      "requires": [
+        "§app.server-runtime/choice"
+      ]
+    },
+    "§app.worker-restore/failure-reason": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/subagents/runner.ts",
+        "pi-config/extensions/subagents/runner.test.ts",
+        "pi-config/extensions/subagents/README.md"
+      ],
+      "requires": [
+        "§app.worker-restore/worker-record"
+      ]
     }
   },
   "boundary": {

@@ -160,6 +160,7 @@ const info = (over: Partial<DragInfo> = {}): DragInfo => ({
   groupId: null,
   org: false,
   orgProject: null,
+  archivedProject: null,
   peer: null,
   archive: { kind: "archive" },
   archived: false,

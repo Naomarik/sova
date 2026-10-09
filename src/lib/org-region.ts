@@ -1,8 +1,8 @@
 // The sidebar's Organizations region (§app.session-list/organizations): every organizational session
-// (`SessionSummary.org`), and only here; and, among its project's Builds, every session in a placed project's
-// folder (`folderOrg`), which is listed on the ordinary surfaces too. Last before the Archive: its own Needs you list first, then
+// (`SessionSummary.org`), and only here; and, among its project's Sessions, every session in a placed project's
+// folder (`folderOrg`) but an archived one, which is listed on the ordinary surfaces too. Last before the Archive: its own Needs you list first, then
 // org → project, each project's rows in groups — Conversations and Conflicts to settle (Not started /
-// In progress / Done) and Builds (active / Done). A project's current overseer is not a row but the
+// In progress / Done) and Sessions (active / Done). A project's current overseer is not a row but the
 // eye on its heading; its cleared conversations are in no region (its History).
 //
 // Pure on purpose, like `needs-you` and `group-open`: the grouping, order, counts, forced-open rules
@@ -39,8 +39,8 @@ export interface OrgProject {
   conversations: StateSplit;
   /** Settle sessions: a conflict's baton session, whoever started it. */
   conflicts: StateSplit;
-  /** Coding sessions the project started, and the sessions in its folder: running or waiting, then Done (a build merged
-      per git, or archived; a folder session once it is neither live nor an unarchived web session). */
+  /** The Sessions group: coding sessions the project started and the unarchived sessions in its folder; running or
+      waiting, then Done (a build merged per git, or archived; a folder session that is neither live nor a web session). */
   builds: { active: SessionSummary[]; done: SessionSummary[] };
   /** Rows in no group: a workspace file no project claims, a second "current" overseer. */
   other: SessionSummary[];
@@ -68,8 +68,10 @@ const isCurrentOverseer = (s: Pick<SessionSummary, "org">): boolean => s.org?.ki
 /** A session in a placed project's folder: an ordinary session the region lists under its project too. */
 export const isOrgFolderSession = (s: Pick<SessionSummary, "org" | "folderOrg" | "project">): boolean => !s.org && !!s.folderOrg && s.project?.kind === "folder";
 
-/** What the region holds: every org session but a cleared overseer conversation, and the placed projects' folder sessions. */
-export const inOrgRegion = (s: Pick<SessionSummary, "org" | "folderOrg" | "project">): boolean => (!!s.org && !isClearedOverseer(s)) || isOrgFolderSession(s);
+/** What the region holds: every org session but a cleared overseer conversation, and the placed projects' folder sessions
+    but an archived one (the Archive lists it; an archived org session stays here, in its group's Done). */
+export const inOrgRegion = (s: Pick<SessionSummary, "org" | "folderOrg" | "project"> & { archived?: boolean }): boolean =>
+  (!!s.org && !isClearedOverseer(s)) || (isOrgFolderSession(s) && s.archived !== true);
 
 /** A session of an archived project (§app.organizations/archive): in no org → project list, no
     heading, no eye, not counted; only the region's own Needs you still shows it while it waits. */
@@ -144,7 +146,7 @@ export function orgSections(sessions: readonly SessionSummary[]): OrgSection[] {
       if (row) p.other.push(row);
       continue;
     }
-    // A folder session is a build while it runs (live, or a web session not archived); otherwise Done.
+    // A folder session (never archived here) is open while it runs (live, or a web session); otherwise Done.
     if (!s.org) {
       (isTopSession(s) ? p.builds.active : p.builds.done).push(s);
       continue;

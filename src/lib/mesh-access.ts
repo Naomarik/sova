@@ -31,7 +31,7 @@ export const CAP_COPY: Record<MeshCap, { label: string; means: string }> = {
   sessions: { label: "Sessions", means: "Can start and drive sessions here, which run commands on this machine as you." },
   links: { label: "Links", means: "Can link its sessions to sessions here and send them files." },
   llm: { label: "LLM activity", means: "Sees how many LLM calls this host has in flight." },
-  "sync.settings": { label: "Sync settings", means: "Exchanges Sova and pi settings with this host." },
+  "sync.settings": { label: "Sync settings", means: "Exchanges Sova and pi settings with this host. Session profiles go only to hosts that also have Sessions." },
   "sync.themes": { label: "Sync themes", means: "Exchanges theme files with this host." },
   "sync.extensions": { label: "Sync extensions", means: "Sees this host's extensions and shares its own." },
   "sync.logins": { label: "Sync logins", means: "Exchanges the logins chosen below, and borrows and lends Claude logins with this host." },

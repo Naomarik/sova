@@ -140,6 +140,62 @@ describe("device credentials", () => {
   });
 });
 
+/** Other spellings of the app's dynamic routes, each with the path the router reaches (Hono
+    decodes %XX before matching), or null where no one reading can be trusted. Shared by both gates
+    below so the main listener and the peer listener read a spelling the same way. Dot segments,
+    which URL parsing resolves before any gate sees them, are auth-gate.integration.test.ts. */
+const SPELLINGS: Array<[raw: string, route: string | null]> = [
+  ["/%61pi/auth/token", "/api/auth/token"],
+  ["/%61pi/sessions/dir", "/api/sessions/dir"],
+  ["/%61%70%69/settings", "/api/settings"],
+  ["/%41PI/auth/token", "/api/auth/token"],
+  ["/API/auth/token", "/api/auth/token"],
+  ["//api/auth/token", "/api/auth/token"],
+  ["//%61pi//auth/token", "/api/auth/token"],
+  ["/%61pi/mesh", "/api/mesh"],
+  ["/%65xt/stub/api/rows", "/ext/stub/api/rows"],
+  ["/%70eer/b/api/health", "/peer/b/api/health"],
+  ["/%65xplain/x", "/explain/x"],
+  ["/%64esign/tokens.css", "/design/tokens.css"],
+  ["/%77s/chat", "/ws/chat"],
+  ["/%2561pi/auth/token", "/%61pi/auth/token"],
+  ["/api%2fauth%2ftoken", null],
+  ["/%61pi%5cauth/token", null],
+  ["/%61pi/auth/%zz", null],
+];
+
+describe("a dynamic route by any spelling", () => {
+  test("the shared normaliser reads every spelling as the route it reaches", async () => {
+    const { judgedPath } = await import("./mesh/paths");
+    for (const [raw, route] of SPELLINGS) assert.equal(judgedPath(raw), route, raw);
+  });
+
+  test("the main listener asks for the token: never the shell, never the answer", async () => {
+    for (const [raw] of SPELLINGS) {
+      for (const method of ["GET", "HEAD"]) {
+        const res = await send(method, raw);
+        assert.ok(res.status === 401 || res.status === 400 || res.status === 403, `${method} ${raw} answered ${res.status}`);
+        assert.equal(res.body.includes(token), false, `${method} ${raw} never carries the token`);
+      }
+    }
+  });
+
+  test("the peer listener reads the same spelling no more widely than the route it reaches", async () => {
+    const { peerMayReach } = await import("./mesh/listener");
+    for (const [raw, route] of SPELLINGS) {
+      if (peerMayReach(raw)) assert.ok(route !== null && peerMayReach(route), raw);
+    }
+    assert.equal(peerMayReach("/%61pi/mesh"), false, "this host's mesh config, encoded");
+    assert.equal(peerMayReach("/%61pi/sessions/dir"), true, "not vacuous: an encoded /api route a peer may reach");
+  });
+
+  test("a token holder still reaches an encoded route", async () => {
+    const res = await get("/%61pi/sessions/dir", { "x-sova-token": token });
+    assert.equal(res.status, 200);
+    assert.ok("sessionsDir" in JSON.parse(res.body));
+  });
+});
+
 describe("where the request comes from (403, even with a valid token)", () => {
   test("a foreign Host (DNS rebinding) is a 403; a forwarded-host header doesn't launder it", async () => {
     assert.equal((await get(PROTECTED, { Host: "evil.example" })).status, 403, "Host is judged before the token");

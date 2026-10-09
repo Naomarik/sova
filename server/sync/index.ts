@@ -162,6 +162,7 @@ export function mountSync(app: Hono, mesh: MeshApi, paths: SyncPaths = defaultPa
       peers: () => docPeers().map((p) => httpDocPeer(mesh, p.id)),
       categoryEnabled: categoryOn,
       shares: (peerId, c) => sharesWith(mesh, peerId, c === "settings" ? "sync.settings" : "sync.themes"),
+      allows: (peerId, cap) => sharesWith(mesh, peerId, cap),
     });
     rt.docs = docs;
     void docs

@@ -391,7 +391,12 @@ whether that device uses it (**held**) or keeps it for lending (**free**). It al
 pool's order and which device is the **keeper**. Each field merges on its own, the newest edit
 winning, so edits made on two devices to different fields or logins both survive; the holder
 merges by a counter that only the device that has the credentials advances, so every device
-converges on the true holder. A login can be added from any device; it starts held by that device.
+converges on the true holder. A device ignores, field by field, a peer's edit or holder stamped
+more than an hour ahead of its own clock, keeping its own value until its clock reaches that stamp
+(so devices whose clocks differ by less than an hour see no difference), and a peer's holder whose
+counter is more than 10,000 above its own for that login (above 2^32 for a login new to it); it
+logs each ignored field once per peer and document. So no single document can plant an edit (a
+removal, a keeper, a holder) that no later real edit outranks. A login can be added from any device; it starts held by that device.
 The pool's order keeps each account's logins together (§app.claude-logins/registry). A device
 follows the document for the logins it holds: their label, **Use** and order (the pool's order)
 are written into its registry when they differ, so a rename, a switch or a move made on any device

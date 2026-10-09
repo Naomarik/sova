@@ -516,20 +516,18 @@ export function resolveDest(dest: string, o: { cwd: string; home: string }): str
  * The checks before anything is pulled. Refused: dest inside Sova's state root or sessions dir,
  * or one of those under dest where an offered root would land on it (protected); dest an existing
  * non-directory (bad-dest); with the sandbox on, dest or a root under it not writable
- * (not-writable). `scan`: the downloaded archive must be pre-scanned before extraction (the
- * sandbox is on, or a protected root lies under dest).
+ * (not-writable). `scan`: the downloaded archive must be pre-scanned before extraction, always
+ * (a link already in dest, left by an earlier offer, is only caught member by member).
  */
-export function checkDest(o: { resolvedDest: string; rootNames: readonly string[]; protectedRoots: readonly string[]; sandbox: SandboxWrite | null }): { scan: boolean } {
+export function checkDest(o: { resolvedDest: string; rootNames: readonly string[]; protectedRoots: readonly string[]; sandbox: SandboxWrite | null }): { scan: true } {
   const dest = o.resolvedDest;
   // Root names come from the sender: each must be one plain path component.
   for (const n of o.rootNames)
     if (!n || n === "." || n === ".." || n.includes("/") || n.includes("\0")) throw new TransferError("bad-dest", `The offer names a root ${JSON.stringify(n)} that is not a plain name; nothing was pulled.`);
   const prot = [...new Set(o.protectedRoots.map(canonical))];
-  let under = false;
   for (const p of prot) {
     if (isWithin(dest, p)) throw new TransferError("protected", `${dest} is inside Sova's own state (${p}), which a transfer never writes.`);
     if (isWithin(p, dest)) {
-      under = true;
       const first = relative(dest, p).split(sep)[0]!;
       if (o.rootNames.includes(first)) throw new TransferError("protected", `${join(dest, first)} would reach into Sova's own state (${p}); choose another dest.`);
     }
@@ -553,7 +551,7 @@ export function checkDest(o: { resolvedDest: string; rootNames: readonly string[
       if (w) throw new TransferError("not-writable", `${at} is not writable for this session in its sandbox (${w}).`);
     }
   }
-  return { scan: !!o.sandbox || under };
+  return { scan: true };
 }
 
 // ---- pulling (the receiver) -------------------------------------------------------------------------

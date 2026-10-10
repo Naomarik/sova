@@ -15,7 +15,8 @@
 //   customType, display, details) and its place in the file kept:
 //   - "system" (the default): a pi 0.87 system-prompt message → `{"role":"system","elided":true}`. It is
 //     pi's prompt (tool texts, the repo's paths, the loaded extensions), not session state;
-//   - "notes": a custom_message's `content` → "<elided>" (hook notes carry the wall clock and prompt prose);
+//   - "notes": a custom_message's `content` → "<elided>" (hook notes carry the wall clock and prompt prose),
+//     and an overseer run note's `details.opening` and `details.told` (the prompt's values and fingerprints);
 //   - "tool-results": a toolResult message's `content` → "<elided>" (a tool's prose; its details stay).
 // Ids, uuids, ISO times and message timestamps keep their length; paths, literals and elided bodies need
 // not, since a temp dir's length is fixed by its mkdtemp pattern only on one machine.
@@ -69,7 +70,18 @@ function elideLine(line: string, elide: ReadonlySet<Elide>): string {
   } catch {
     return line;
   }
-  if (elide.has("notes") && e.type === "custom_message") return elideContent(line, e.content, '"<elided>"');
+  if (elide.has("notes") && e.type === "custom_message") {
+    // An overseer's run note also records the prompt's opening values and fingerprints of what it told
+    // (server/overseer-opening.ts): prompt prose and the wall clock, like the content.
+    let out = elideContent(line, e.content, '"<elided>"');
+    const d = (e as { details?: { opening?: unknown; told?: unknown } }).details;
+    for (const key of ["opening", "told"] as const) {
+      if (d?.[key] === undefined) continue;
+      const from = `"${key}":${JSON.stringify(d[key])}`;
+      out = out.split(from).join(`"${key}":"<elided>"`);
+    }
+    return out;
+  }
   if (elide.has("tool-results") && e.type === "message" && e.message?.role === "toolResult") return elideContent(line, e.message.content, '"<elided>"');
   return line;
 }

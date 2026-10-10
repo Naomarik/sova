@@ -57,9 +57,17 @@ export function toolCatalogue(tools: { name: string; promptSnippet?: string; des
  * session's queue as `delivery` (default a follow-up behind the turn; "steer" goes into the turn at
  * its next step), visible and removable there. With `sentBy` (the current Overseer's id, vouched
  * for by `overseerSender`) the message is marked as the Overseer's in the target's file once it
- * enters the context.
+ * enters the context. `opts.projectOverseer`: a project overseer's sova_send (Sova's own statechart effect,
+ * in-process, never a request), marked the same way, naming its conversation when known
+ * (§app.overseer/sent-marker), so it never counts as the user's answer (§chat.alignment/session-mark).
  */
-export async function promptSession(path: string, text: string, sentBy?: string, delivery: PromptDelivery = "followUp"): Promise<PromptResult> {
+export async function promptSession(
+  path: string,
+  text: string,
+  sentBy?: string,
+  delivery: PromptDelivery = "followUp",
+  opts?: { projectOverseer: string | undefined },
+): Promise<PromptResult> {
   if (!text.trim()) return { ok: false, status: 400, error: "text must not be blank" };
   const s = await getSessionSummary(path);
   if (!s) return { ok: false, status: 404, error: "Session file not found" };
@@ -80,7 +88,7 @@ export async function promptSession(path: string, text: string, sentBy?: string,
   const compacting = !chat.harness.isRunning() && chat.isCompacting();
   try {
     chat.assertModelAllowed();
-    const r = chat.acceptPrompt(text, undefined, "server", undefined, { delivery, ...(overseerId ? { sentByOverseer: { overseerId } } : {}) });
+    const r = chat.acceptPrompt(text, undefined, "server", undefined, { delivery, ...(overseerId ? { sentByOverseer: { overseerId } } : opts ? { sentByOverseer: opts.projectOverseer ? { overseerId: opts.projectOverseer } : {} } : {}) });
     queued = r.queued;
     void r.turn.catch((err) => chat.reportTurnFailure(err));
   } catch (err) {

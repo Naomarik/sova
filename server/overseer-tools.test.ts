@@ -889,4 +889,12 @@ describe("sandbox on sova_set_session and sova_create_session (§app.overseer/to
     assert.equal(clicked.states.get("new"), "off");
     assert.match(await harness({ card: [] }).run("sova_create_session", { host: "peer", cwd: "/w", sandbox: "on" }), /^ERROR: A sandbox can't be given with host\. No session was created\.$/);
   });
+
+  test("memory is never given to a coding session: create (here or on a peer) and set refuse before anything is touched (§chat.memory/where)", async () => {
+    const h = harness();
+    assert.match(await h.run("sova_create_session", { cwd: "/w", minor_modes: ["memory"], prompt: "go" }), /^ERROR: Memory is for chats only: .*\. No session was created\.$/);
+    assert.match(await h.run("sova_create_session", { host: "peer", cwd: "/w", minor_modes: ["spec", "memory"] }), /^ERROR: Memory is for chats only: .*\. No session was created\.$/);
+    assert.match(await h.run("sova_set_session", { session: "a", title: "renamed", minor_modes: ["memory"] }), /^ERROR: Memory is for chats only: .*\. Nothing was changed\.$/);
+    assert.deepEqual(h.calls, [], "nothing was created, renamed or switched");
+  });
 });

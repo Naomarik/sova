@@ -1065,3 +1065,50 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .sender-manage { display: flex; flex-direction: column; gap: var(--space-2); }
 .sender-manage-head { margin: 0; font-size: var(--fs-body); font-weight: 600; }
 .sender-add { display: flex; flex-direction: column; gap: var(--space-2); }
+
+
+/* ── Memory (§chat.mode-menu/memory-panel, §chat.composer/memory-status, §chat.transcript/recall-rows,
+   §app.subagents-pane/memory-outline, §app.overseer/memory-switch) ─────────────────────────────── */
+/* The memory row's detail line, under its description, while it is on. */
+.mode-menu-detail { color: var(--color-ink-2); }
+.memory-type-by { font-weight: var(--fw-regular); color: var(--color-ink-muted); }
+.memory-type-link .popover-item-label { color: var(--color-accent); }
+.memory-size-default { font-size: var(--fs-caption); color: var(--color-ink-muted); }
+/* The run-status row's memory piece shrinks before the triggers do, ending in an ellipsis. */
+.run-status > .run-status-memory { flex: 0 1 auto; min-width: 4em; }
+.run-status > .run-status-memory.run-status-link { flex: 0 1 auto; }
+/* A recall is quiet until opened: no card edge or fill. */
+.toolcard-recall:not(:has(> .toolcard-details[open])) { border-color: transparent; background: transparent; }
+/* The Session tab's Memory outline: one 12px step per level. */
+.memory-lines { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.memory-line-row { display: flex; align-items: flex-start; gap: var(--space-1); min-width: 0; }
+.memory-line-row > .button-icon { flex: none; color: var(--color-ink-muted); }
+.memory-line-open[aria-expanded="true"] .icon-twist { transform: rotate(90deg); }
+.memory-line-open .icon-twist { transition: transform var(--dur-fast) var(--ease-standard); }
+.memory-line-main {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: var(--space-2) 0;
+  font-size: var(--fs-caption);
+  color: var(--color-ink);
+  overflow-wrap: anywhere;
+}
+.memory-line-range { margin-right: var(--space-2); font-size: var(--fs-mono); color: var(--color-ink-muted); }
+.memory-line-pending { color: var(--color-ink-muted); }
+.memory-line-under { margin: 0 0 var(--space-2) var(--space-3); padding-left: var(--space-3); border-left: 1px solid var(--color-border); }
+.memory-message { display: flex; flex-direction: column; gap: var(--space-1); }
+.memory-message-text {
+  margin: 0;
+  max-height: 16em;
+  overflow: auto;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--r-sm);
+  background: var(--color-sunken);
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.memory-message-text:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.memory-outline-note { white-space: normal; }

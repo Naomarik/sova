@@ -20,7 +20,9 @@ import {
   type ModeState,
 } from "../pi-config/extensions/mode/state.ts";
 import type { StateView } from "../shared/harness";
-import type { ModeApplies, ModeInfo } from "../shared/protocol";
+import type { ChatMemoryChoice, MemoryModeInfo, ModeApplies, ModeInfo } from "../shared/protocol";
+import { MEMORY_SIZES, MEMORY_TYPE_INFO } from "../shared/memory";
+import { parseMemoryChoice } from "./memory/settings";
 import { stateViewOf } from "./harness/pi/state";
 import { MODE } from "./harness/state-kinds";
 
@@ -30,13 +32,19 @@ export { MINOR_MODES };
 export const MODE_FILE_NAME = "mode.json";
 export const modeFile = () => join(agentRoot(), MODE_FILE_NAME);
 
-export function modeInfo(state: ModeState): ModeInfo {
+/** The memory choice with what can be chosen (ModeInfo.memory). */
+export function memoryModeInfo(choice: ChatMemoryChoice): MemoryModeInfo {
+  return { type: choice.type, size: choice.size, types: [...MEMORY_TYPE_INFO], sizes: [...MEMORY_SIZES] };
+}
+
+export function modeInfo(state: ModeState, memory?: ChatMemoryChoice): ModeInfo {
   return {
     mode: state.mode,
     minorModes: [...state.minorModes],
     strict: state.strict,
     modes: MODES.map((id) => ({ id, description: MODE_DESCRIPTIONS[id] })),
     minors: MINOR_MODES.map((id) => ({ id, description: MINOR_DESCRIPTIONS[id] })),
+    ...(memory ? { memory: memoryModeInfo(memory) } : {}),
   };
 }
 
@@ -46,6 +54,8 @@ export interface ModePatch {
   mode?: ModeState["mode"];
   minorModes?: ModeState["minorModes"];
   strict?: ModeState["strict"];
+  /** The memory choice (§chat.memory/choice): a chat's own record, or with no path the saved default. */
+  memory?: Partial<ChatMemoryChoice>;
 }
 
 /** What POST /api/mode was asked to do: change a chat's mode (or the default file, without a path),
@@ -68,7 +78,13 @@ export function parseModePatch(body: unknown): ModePatch | { error: string } {
     if (unknown.length > 0) return { error: `Unknown minor mode: ${unknown.map(String).join(", ")} (known: ${MINOR_MODES.join(", ")})` };
     patch.minorModes = normalizeState({ minorModes: b.minorModes }).minorModes;
   }
-  if (patch.mode === undefined && patch.minorModes === undefined) return { error: "Nothing to change: send mode and/or minorModes" };
+  if (b.memory !== undefined) {
+    const memory = parseMemoryChoice(b.memory, true);
+    if ("error" in memory) return memory;
+    patch.memory = memory;
+  }
+  if (patch.mode === undefined && patch.minorModes === undefined && patch.memory === undefined)
+    return { error: "Nothing to change: send mode, minorModes and/or memory" };
   return patch;
 }
 
@@ -84,8 +100,8 @@ export function parseModeRequest(body: unknown): ModeRequest {
   const b = body !== null && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>) : null;
   if (b?.saveDefault !== undefined) {
     if (b.saveDefault !== true) return { error: "saveDefault must be true" };
-    if (b.mode !== undefined || b.minorModes !== undefined)
-      return { error: "saveDefault saves this chat's own mode: send no mode or minorModes with it" };
+    if (b.mode !== undefined || b.minorModes !== undefined || b.memory !== undefined)
+      return { error: "saveDefault saves this chat's own mode: send no mode, minorModes or memory with it" };
     return { kind: "saveDefault" };
   }
   const patch = parseModePatch(body);
@@ -98,14 +114,15 @@ export function parseModeRequest(body: unknown): ModeRequest {
  * pi-config/extensions/mode/index.ts), and nothing else, so shortcuts and any other field in the
  * file are kept by writeMode's re-read. The minors are copied, never shared with the chat's state.
  */
-export function defaultPatchOf(state: Pick<ModeState, "mode" | "strict" | "minorModes">): Required<ModePatch> {
+export function defaultPatchOf(state: Pick<ModeState, "mode" | "strict" | "minorModes">): Required<Omit<ModePatch, "memory">> {
   return { mode: state.mode, strict: state.strict, minorModes: [...state.minorModes] };
 }
 
 /** Fresh file + the patch's fields. Every field the patch doesn't carry (strict unless it does, shortcuts,
     future ones we know) is kept. */
 export function mergeMode(loaded: ModeState, patch: ModePatch): ModeState {
-  return normalizeState({ ...loaded, ...patch });
+  const { memory: _memory, ...modes } = patch;
+  return normalizeState({ ...loaded, ...modes });
 }
 
 export const readMode = (file = modeFile()): ModeState => loadState(file);

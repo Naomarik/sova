@@ -33,7 +33,11 @@ const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const FILE_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}\.jsonl$/;
 
 /** The dimensions a row is keyed by, besides its bucket and price band. */
-export const DIMS = ["owner", "parent", "worker", "kind", "purpose", "cwd", "project", "src", "provider", "model", "responseModel", "starter"] as const;
+export const DIMS = ["owner", "parent", "worker", "kind", "purpose", "cwd", "project", "src", "provider", "model", "responseModel", "starter", "launch"] as const;
+
+/** A record's `launch` as the `launch` dimension: `how/why/fallback` (fallback may be empty); null without one.
+    Last in DIMS, so a snapshot from before it reads as null (snapshots pad missing dimensions). */
+export const launchDim = (l: { how: string; why: string; fallback?: string } | undefined): string | null => (l ? `${l.how}/${l.why}/${l.fallback ?? ""}` : null);
 export type Dim = (typeof DIMS)[number];
 
 export interface Row {
@@ -367,7 +371,7 @@ export class Ledger {
     const pf = priced.status === "priced" ? priced.period : null;
     const tier = priced.status === "priced" ? priced.tier : null;
     const b = rec.ts - (rec.ts % BUCKET_MS);
-    const d = [r.owner, r.parent, r.worker ?? null, r.kind, r.purpose ?? null, r.cwd ?? null, r.project ?? null, r.src, r.provider, r.model, r.responseModel ?? null, r.starter ?? null].map(intern);
+    const d = [r.owner, r.parent, r.worker ?? null, r.kind, r.purpose ?? null, r.cwd ?? null, r.project ?? null, r.src, r.provider, r.model, r.responseModel ?? null, r.starter ?? null, launchDim(r.launch)].map(intern);
     const id = `${b}\u001f${d.join("\u001f")}\u001f${pk}\u001f${pf}\u001f${tier}`;
     let row = day.rows.get(id);
     if (!row) {

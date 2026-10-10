@@ -28,7 +28,8 @@ import { BatonStrip } from "./BatonStrip";
 import { sandboxOffMissing, type SandboxState } from "../lib/sandbox";
 import { approveSchedule, forkSession, getChatClaudeAccounts, getOverseerAutonomy, getSubagentProfiles, revokeOverseerPermit, revokeSchedule, setSandbox, setSessionArchived, wsUrl } from "../lib/api";
 import { adversarialReview, NO_REVIEWER, reviewRequestMessage } from "../lib/align-review";
-import type { OverseerAutonomy, ScheduleInfo, V1EventFrame, V2EventFrame } from "../../shared/protocol";
+import type { MemoryStatus, OverseerAutonomy, ScheduleInfo, V1EventFrame, V2EventFrame } from "../../shared/protocol";
+import { memoryRowWords, memoryTurnWords } from "../lib/memory-ui";
 import { LOGIN_UNCHANGED } from "../../shared/protocol";
 import { contextStateFor, windowOf } from "../lib/context";
 import {
@@ -122,6 +123,7 @@ import { inputTotal, lastInput as lastInputOf, newestOnly, newRows } from "../li
 import { createOlderRows } from "../lib/older-rows-view";
 import { alignRowFromDetails, foldAlignRows, recommendedOption, type AlignEntry } from "../lib/align";
 import { Composer, type ComposerReason } from "./Composer";
+import { OverseerMemoryMenu } from "./OverseerMemoryMenu";
 import { FlyoutSession, type LoginControl, type SandboxControl, type ThinkingControl, type UndoControl } from "./ComposerMenu";
 import { ConnectionBanner } from "./ConnectionBanner";
 import { SessionSetupCard } from "./SessionSetup";
@@ -513,6 +515,8 @@ export function ChatView(props: {
       session list counts (lib/known-before-mount), so the status row is there from the first
       frame and doesn't blink at the hello; never the working count, which only the socket gives. */
   const workersTotal = () => workersShown(workersSaid(), workerList().length, knownWorkers(props.summary?.() ?? { live: null }));
+  /** This chat's memory status (WS "memory_status"); null: off, or no message yet (§chat.composer/memory-status). */
+  const [memoryStatus, setMemoryStatus] = createSignal<MemoryStatus | null>(null);
   /** A compaction is in flight: a manual /compact runs with no turn, so `live.running` misses it. */
   const [compacting, setCompacting] = createSignal(false);
   let modelTimer: ReturnType<typeof setTimeout> | undefined;
@@ -681,6 +685,8 @@ export function ChatView(props: {
       switch (msg.type) {
         case "hello":
           dropNotFound();
+          // A hello starts the socket's account again: memory says itself right after it, or is off.
+          setMemoryStatus(null);
           cancelAnimationFrame(frame);
           frame = 0;
           queue = [];
@@ -892,7 +898,11 @@ export function ChatView(props: {
             }
           break;
         case "mode":
-          setModeState({ mode: msg.mode, minorModes: msg.minorModes, strict: msg.strict, applies: msg.applies });
+          setModeState({ mode: msg.mode, minorModes: msg.minorModes, strict: msg.strict, applies: msg.applies, ...(msg.memory ? { memory: msg.memory } : {}) });
+          break;
+        // This chat's memory (§chat.composer/memory-status): only while it is on, or the turn it goes off.
+        case "memory_status":
+          setMemoryStatus(msg.status.state === "off" ? null : msg.status);
           break;
         case "sandbox":
           setSandboxState({ on: msg.on, ...(msg.state ? { state: msg.state } : {}), enforcement: msg.enforcement, status: msg.status });
@@ -1983,7 +1993,8 @@ export function ChatView(props: {
         compacting={compacting()}
         stopping={live.stopping}
         stopBlocked={socket.status() !== "open"}
-        activity={live.activity ?? waitWords()}
+        activity={live.activity ?? (live.running ? memoryTurnWords(memoryStatus()) : null) ?? waitWords()}
+        memory={memoryRowWords(memoryStatus())}
         detail={runDetail(live)}
         workersWorking={workersWorking()}
         workersTotal={workersTotal()}
@@ -2005,6 +2016,8 @@ export function ChatView(props: {
         accessory={
           props.overseer
             ? () => (
+                <>
+                <OverseerMemoryMenu />
                 <QuickActions
                   actions={props.overseer!.quickActions()}
                   disabled={blocked()?.text ?? null}
@@ -2012,6 +2025,7 @@ export function ChatView(props: {
                     if (send(prompt, false, [])) focusComposer();
                   }}
                 />
+                </>
               )
             : undefined
         }

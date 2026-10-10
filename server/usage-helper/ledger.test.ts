@@ -313,3 +313,33 @@ test("one row per real Claude model (§app.insights/usage-model-rows): grouped b
   assert.equal(filtered.total.tokens.input, 1500, "the Opus 5.5 row");
   assert.ok(c.facets.models.some((m) => m.model === "claude-opus-5-5") && !c.facets.models.some((m) => m.model === "opus[1m]"));
 });
+
+test("re-sends (§app.insights/usage-resend): a conversation's folded and joined launches at their input and cache-write spend, by reason; resumes counted; workers and older records apart", () => {
+  const w = world();
+  w.clock.now = at("12:00", "2026-10-05");
+  const claude = { src: "claude" as const, provider: "claude-code-cli", model: "claude-opus-5-5", output: 500 };
+  w.write({ key: "c1", ts: at("10:00"), ...claude, input: 1000, launch: { how: "fresh", why: "new" } });
+  w.write({ key: "c2", ts: at("10:01"), ...claude, input: 5, cacheRead: 50_000 });
+  w.write({ key: "c3", ts: at("10:02"), ...claude, input: 10, cacheWrite: 200_000, launch: { how: "folded", why: "reaped" } });
+  w.write({ key: "c4", ts: at("10:03"), ...claude, input: 0, cacheWrite: 100_000, launch: { how: "joined", why: "process-start", fallback: "login-moved" } });
+  w.write({ key: "c5", ts: at("10:04"), ...claude, input: 3, cacheRead: 300_000, launch: { how: "resumed", why: "reaped" } });
+  w.write({ key: "w1", ts: at("10:05"), ...claude, owner: "w1", parent: "s1", worker: "ag_01", kind: "worker", input: 0, cacheWrite: 400_000, launch: { how: "folded", why: "ended" } });
+  w.write({ key: "s2", ts: at("10:06"), ...claude, owner: "s2", input: 0, cacheWrite: 900_000 });
+  const s = w.start();
+  const r = s.queries.session({ sid: "s1" }).resend!;
+  // $3/M input and $5/M 5-minute writes from the boundary: the output ($20/M) is not a re-send.
+  close(r.usd, 10 * 3e-6 + 200_000 * 5e-6 + 100_000 * 5e-6);
+  assert.deepEqual({ ...r, usd: 0, reasons: r.reasons.map((x) => ({ ...x, usd: 0 })) }, {
+    usd: 0, tokens: 300_010, launches: 2, resumed: 1, recorded: 4,
+    reasons: [
+      { why: "reaped", fallback: null, launches: 1, usd: 0, tokens: 200_010 },
+      { why: "process-start", fallback: "login-moved", launches: 1, usd: 0, tokens: 100_000 },
+    ],
+  });
+  close(r.reasons[0]!.usd, 10 * 3e-6 + 200_000 * 5e-6);
+  const top = s.queries.costs({ range: "7d", providers: [], models: [], tz: "UTC" }).topSessions;
+  close(top.find((t) => t.sid === "s1")!.resend!.usd, r.usd);
+  assert.equal(top.find((t) => t.sid === "w1")!.resend!.launches, 1, "a worker's own row has its own");
+  assert.equal(top.find((t) => t.sid === "s2")!.resend, undefined, "no launch recorded: no figure, never a guess");
+  assert.equal(s.queries.session({ sid: "s2" }).resend, undefined);
+});

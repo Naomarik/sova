@@ -61,7 +61,8 @@ export type ThinkingLevel = (typeof THINKING_LEVELS)[number];
 const SUBAGENTS_RE = /^[a-z0-9](?:[a-z0-9-]{0,47})$/;
 export const isSubagentsRef = (v: unknown): v is string => typeof v === "string" && (v === "off" || SUBAGENTS_RE.test(v));
 /** The minor modes a profile's `minorModes` may name, in the mode extension's order: a copy of
-    pi-config's MINOR_MODES (this file imports nothing), pinned equal by session-profiles.test.ts. */
+    pi-config's MINOR_MODES less its web-only ones (memory, which only a chat's own mode menu turns on;
+    this file imports nothing), pinned equal by session-profiles.test.ts. */
 export const PROFILE_MINOR_MODES = ["align", "spec", "vis", "codemode"] as const;
 export type ProfileMinorMode = (typeof PROFILE_MINOR_MODES)[number];
 
@@ -281,6 +282,9 @@ export function profileFileError(raw: unknown): string | null {
     const bad = (v as string[]).filter((x) => !known.includes(x) && !retired.includes(x));
     return bad.length ? `"${k}" has unknown name${bad.length > 1 ? "s" : ""} ${bad.map((x) => `"${x}"`).join(", ")}. Known: ${known.join(", ")}.` : null;
   };
+  // memory is turned on from a chat's own mode menu only (§chat.memory/where): a profile naming it is refused.
+  if (Array.isArray(o.minorModes) && o.minorModes.includes("memory"))
+    return `"minorModes": memory is for chats only: turn it on from a chat's mode menu.`;
   const listError = list("remove", REMOVABLE, RETIRED_REMOVABLE) ?? list("grant", GRANTABLE) ?? list("minorModes", PROFILE_MINOR_MODES);
   if (listError) return listError;
   for (const k of ["label", "description", "model", "firstMessage", "playbook"] as const)

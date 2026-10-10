@@ -129,6 +129,9 @@ export function Composer(props: {
   detail: RunDetail | null;
   /** A rare state that keeps its words on the row: "Compacting context", "Retrying after a provider error". */
   activity?: string | null;
+  /** This chat's memory in the run-status row (§chat.composer/memory-status): preparing's count, or
+      why summaries can't be written (a button to Settings → Memory). Null: nothing to say. */
+  memory?: { text: string; problem: boolean } | null;
   /** Subagents working now; after the turn settles they get their own status row. */
   workersWorking?: number;
   /** Every subagent this session has, working or settled, so the row survives going idle. */
@@ -898,7 +901,7 @@ export function Composer(props: {
     <>
         {/* One row, whichever of the three has something to say (they can coexist: the inputs
             trigger sits at its right end while a turn streams, and alone when nothing runs). */}
-        <Show when={controls().status || workersRow() || inputsRow() || inputsHeld() || alignRow() || props.cards?.length || runningRow() || permitsRow()}>
+        <Show when={controls().status || props.memory || workersRow() || inputsRow() || inputsHeld() || alignRow() || props.cards?.length || runningRow() || permitsRow()}>
           <p class="run-status">
             {/* One dot leads the row while anything works — the turn, a stop, a rare state, a
                 compaction or a subagent — and nothing else in the row pulses. */}
@@ -926,6 +929,22 @@ export function Composer(props: {
                   </span>
                 </span>
               </Show>
+            </Show>
+            <Show when={props.memory}>
+              {(m) => (
+                <Show
+                  when={m().problem}
+                  fallback={
+                    <span class="run-status-state run-status-memory" title={m().text}>
+                      <span class="run-status-words">{m().text}</span>
+                    </span>
+                  }
+                >
+                  <button type="button" class="run-status-link run-status-memory" title={`${m().text} Opens Settings → Memory.`} onClick={() => openSettings("memory")}>
+                    <span class="run-status-words">{m().text}</span>
+                  </button>
+                </Show>
+              )}
             </Show>
             <Show when={workersRow()}>
               {(row) => (

@@ -680,26 +680,48 @@ describe("sova_send into a session mid-turn (the in-process route, as the server
   });
 });
 
-describe("standing notes and the extra prompt are live: read at every run's start", () => {
-  test("a note or a Settings save reaches the very next run's prompt, without /clear", async () => {
+/** The run note a request carried (the hidden message every run a message starts gets): its text, or "". */
+function lastNote(context: unknown): string {
+  const messages = ((context as { messages?: { role: string; content: unknown }[] }).messages ?? []).filter((m) => m.role === "user");
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const c = messages[i]!.content;
+    const text = typeof c === "string" ? c : Array.isArray(c) ? c.map((b: { text?: unknown }) => (typeof b?.text === "string" ? b.text : "")).join("\n") : "";
+    if (text.includes("[now] It is ")) return text;
+  }
+  return "";
+}
+
+describe("standing notes and the extra prompt: fixed at opening, live through the run note", () => {
+  test("a note or a Settings save reaches the very next run in its note, without /clear, and the prompt never changes", async () => {
     writeOverseerSettings({ ...defaultSettings() });
     writeNotes("");
     const chat = await overseerChat();
     await userSends(chat, "hello");
-    assert.doesNotMatch(systemOf(contexts.at(-1)), /NOTE-ALPHA/);
+    const prompt = systemOf(contexts.at(-1));
+    const own = piSession(chat).systemPrompt;
 
     writeNotes("NOTE-ALPHA: ignore ~/scratch\n"); // what sova_note and PUT /api/overseer/notes write
     await userSends(chat, "what are my notes?");
-    assert.match(systemOf(contexts.at(-1)), /NOTE-ALPHA/, "the next user run carries the note");
+    assert.equal(systemOf(contexts.at(-1)), prompt, "the prompt stays as the conversation opened");
+    assert.match(lastNote(contexts.at(-1)), /\[changed\][\s\S]*## Standing notes \(now\)\n\nNOTE-ALPHA/, "the next user run's note carries the note");
 
     writeOverseerSettings({ ...defaultSettings(), extraSystemPrompt: "EXTRA-BETA: answer in French" });
     await chat.acceptPrompt(`${OVERSEER_BRIEF_PREFIX} x`, undefined, "server").turn;
-    assert.match(systemOf(contexts.at(-1)), /EXTRA-BETA/, "so does a brief, and so does the extra prompt");
-    assert.match(piSession(chat).systemPrompt, /NOTE-ALPHA[\s\S]*EXTRA-BETA/, "and the session's own prompt, between runs");
+    assert.equal(systemOf(contexts.at(-1)), prompt);
+    assert.match(lastNote(contexts.at(-1)), /## The user's extra instructions for you \(now\)\n\nEXTRA-BETA/, "so does a brief's, and so does the extra prompt");
+    assert.doesNotMatch(lastNote(contexts.at(-1)), /NOTE-ALPHA/, "a part is told once per change");
+    assert.equal(piSession(chat).systemPrompt, own, "and the session's own prompt, between runs");
+
+    await userSends(chat, "anything new?");
+    assert.doesNotMatch(lastNote(contexts.at(-1)), /\[changed\]/, "nothing changed since the last note");
+    writeNotes("");
+    writeOverseerSettings({ ...defaultSettings() });
   });
 
-  test("a run an extension's message starts gets them from its next request", async () => {
+  test("a run an extension's message starts keeps the prompt; the change reaches the next run with a note", async () => {
     const chat = await overseerChat();
+    await userSends(chat, "before");
+    const prompt = systemOf(contexts.at(-1));
     writeNotes("NOTE-GAMMA\n");
     const n = contexts.length;
     modelCalls.push(() => ({ toolCall: { name: "sova_navigate", arguments: { page: "usage" } } }));
@@ -707,42 +729,62 @@ describe("standing notes and the extra prompt are live: read at every run's star
     await settled(chat);
     const calls = contexts.slice(n);
     assert.equal(calls.length, 2);
-    assert.match(systemOf(calls[1]), /NOTE-GAMMA/);
-    assert.match(piSession(chat).systemPrompt, /NOTE-GAMMA/);
+    assert.equal(systemOf(calls[1]), prompt);
+    assert.doesNotMatch(piSession(chat).systemPrompt, /NOTE-GAMMA/);
+    await userSends(chat, "after");
+    assert.match(lastNote(contexts.at(-1)), /NOTE-GAMMA/);
+    writeNotes("");
   });
 
-  test("an unchanged prompt adds nothing: no system message between two runs", async () => {
+  test("the prompt adds nothing between runs: no system message for a note, a brief or the clock", async () => {
     const chat = await overseerChat();
     await userSends(chat, "one");
     const systems = () => piSession(chat).sessionManager.getEntries().filter((e) => e.type === "message" && e.message.role === "system").length;
     const before = systems();
     await userSends(chat, "two");
     await chat.acceptPrompt(`${OVERSEER_BRIEF_PREFIX} y`, undefined, "server").turn;
-    assert.equal(systems(), before);
     writeNotes("NOTE-DELTA\n");
     await userSends(chat, "three");
-    assert.equal(systems(), before + 1, "a changed note is one delta");
+    assert.equal(systems(), before, "a changed note is in the run note, never a prompt update");
     writeNotes("");
     writeOverseerSettings({ ...defaultSettings() });
+  });
+
+  test("the opening values are kept on the branch: a reopened runtime renders the same prompt", async () => {
+    const chat = await overseerChat();
+    await userSends(chat, "one");
+    const prompt = systemOf(contexts.at(-1));
+    writeNotes("NOTE-AFTER-OPENING\n");
+    // What a server restart does: the runtime is built again from the file.
+    const entries = piSession(chat).sessionManager.getEntries() as { type: string; details?: { opening?: unknown } }[];
+    assert.ok(entries.some((e) => e.type === "custom_message" && e.details?.opening), "the first run note records the opening values");
+    await disposeAllChats();
+    const again = await overseerChat();
+    assert.notEqual(again, chat, "a new runtime");
+    await userSends(again, "two");
+    assert.equal(systemOf(contexts.at(-1)), prompt);
+    writeNotes("");
   });
 });
 
 describe("the ideas backlog in the prompt, and explorers through the runtime's subagents extension", () => {
-  test("the ToC is live, never carries titles or prose, and an unchanged backlog adds nothing", async () => {
+  test("the ToC reaches the next run's note, never carries titles or prose, and the prompt never changes", async () => {
     writeOverseerSettings({ ...defaultSettings() });
     const chat = await overseerChat();
     addIdea({ id: "rt/live-toc", title: "TITLE-NOT-IN-PROMPT", text: "PROSE-NOT-IN-PROMPT" });
     await userSends(chat, "one");
-    assert.match(systemOf(contexts.at(-1)), /§rt \(1 open\): live-toc/);
-    assert.doesNotMatch(systemOf(contexts.at(-1)), /TITLE-NOT-IN-PROMPT|PROSE-NOT-IN-PROMPT/);
+    const both = () => `${systemOf(contexts.at(-1))}${lastNote(contexts.at(-1))}`;
+    assert.match(both(), /§rt \(1 open\): live-toc/);
+    assert.doesNotMatch(both(), /TITLE-NOT-IN-PROMPT|PROSE-NOT-IN-PROMPT/);
     const systems = () => piSession(chat).sessionManager.getEntries().filter((e) => e.type === "message" && e.message.role === "system").length;
     const before = systems();
     await userSends(chat, "two");
     await chat.acceptPrompt(`${OVERSEER_BRIEF_PREFIX} z`, undefined, "server").turn;
-    assert.equal(systems(), before, "the same backlog: the same bytes, no delta");
+    assert.doesNotMatch(lastNote(contexts.at(-1)), /Ideas backlog/, "the same backlog: nothing to tell");
     addIdea({ id: "rt/second", title: "Second" });
     await userSends(chat, "three");
-    assert.equal(systems(), before + 1, "a filed idea is one delta");
+    assert.match(lastNote(contexts.at(-1)), /## Ideas backlog \(its table of contents\) \(now\)[\s\S]*second/, "a filed idea is told in the next note");
+    assert.equal(systems(), before, "and never a prompt update");
   });
 
   test("sova_idea explore reaches agent_spawn in-process with the Overseer's own session, though the model can't call it", async () => {
@@ -762,7 +804,7 @@ describe("the ideas backlog in the prompt, and explorers through the runtime's s
     assert.equal(idea.explorerId, "ag_09");
     assert.equal(idea.status, "exploring");
     await userSends(chat, "how is it going?");
-    assert.match(systemOf(contexts.at(-1)), /explore-me \(exploring\) \[explorer ag_09\]/, "the next run's ToC maps the idea to its explorer");
+    assert.match(lastNote(contexts.at(-1)), /explore-me \(exploring\) \[explorer ag_09\]/, "the next run's note maps the idea to its explorer");
   });
 
   test("in a brief, explore refuses before any worker starts", async () => {
@@ -775,21 +817,23 @@ describe("the ideas backlog in the prompt, and explorers through the runtime's s
 });
 
 describe("the todos counts in the prompt", () => {
-  test("counts only, live at each run, and an unchanged list adds nothing", async () => {
+  test("counts only, told in the next run's note when they change, and the prompt never changes", async () => {
     const { addTodo, updateTodo } = await import("./overseer-todos");
     writeOverseerSettings({ ...defaultSettings() });
     const chat = await overseerChat();
     const t = addTodo({ text: "TODO-TEXT-NOT-IN-PROMPT" });
     await userSends(chat, "one");
-    assert.match(systemOf(contexts.at(-1)), /Todos checklist(\\n)+1 open, 0 done \(sova_todos lists them\)/);
-    assert.doesNotMatch(systemOf(contexts.at(-1)), /TODO-TEXT-NOT-IN-PROMPT/);
+    const both = () => `${systemOf(contexts.at(-1))}${lastNote(contexts.at(-1))}`;
+    assert.match(both(), /1 open, 0 done \(sova_todos lists them\)/);
+    assert.doesNotMatch(both(), /TODO-TEXT-NOT-IN-PROMPT/);
     const systems = () => piSession(chat).sessionManager.getEntries().filter((e) => e.type === "message" && e.message.role === "system").length;
     const before = systems();
     await userSends(chat, "two");
-    assert.equal(systems(), before, "the same list: the same bytes, no delta");
+    assert.doesNotMatch(lastNote(contexts.at(-1)), /Todos checklist/, "the same list: nothing to tell");
     updateTodo(t.id, { done: true });
     await userSends(chat, "three");
-    assert.equal(systems(), before + 1, "a ticked todo is one delta");
+    assert.match(lastNote(contexts.at(-1)), /## Todos checklist \(now\)\n\n\d+ open, [1-9]\d* done/, "a ticked todo is told in the next note");
+    assert.equal(systems(), before);
   });
 });
 

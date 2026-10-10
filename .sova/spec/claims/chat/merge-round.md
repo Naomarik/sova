@@ -3,7 +3,8 @@
 
 Sova's own repository ships one scheduled playbook, **Merge round** (`.sova/playbooks/merge-round/`),
 run by the project profile **Merge captain** (`.sova/profiles/merge-captain.json`, One at a time)
-every 30 minutes and after a Claude limit resets (§chat/schedules). A round finds finished branches,
+when a branch in its repository turns ready to merge (§chat.schedules/merge-ready), every 6 hours,
+and after a Claude limit resets (§chat/schedules). A round finds finished branches,
 checks each one, lands it on master, removes its worktree when git allows it, pushes it and
 restarts the live server when that is safe. The
 playbook is instructions to a model: what it promises is what it tells the captain to do, and what
@@ -33,27 +34,33 @@ after each landing, since every other branch is then checked against the new mas
   their counts, and which of them origin already has in public (masked).
 - **Intake.** A branch reaches the queue from the user, the Overseer or a session's message, in the
   order given.
-- **The poll.** Each round also reads, for every session `session_list` shows, its `session_detail`
-  worktree lines (`Worktree <branch>: Ready to merge …` or `… Waiting for your OK …`), the Ready to
-  merge chip's own rule set (§chat.worktrees/readiness), and records what it read with the driver's
-  `note`. The owner of a branch is the session whose detail lists it, never a guess from session
-  files, recorded by its full session id. A branch ahead of master that no session reports is listed
-  as **unowned** and never merged on the captain's own say: the user naming a branch to land is
-  that say, and counts as its owner's READY. Commits on master the captain didn't land (an owner's
-  own merge) get typecheck, tests and build before they are pushed.
+- **The board.** Each round reads Sova's merge board (§chat.worktrees/merge-board), the Ready to
+  merge chip's own rule set (§chat.worktrees/readiness), through the driver's `status`, whole and
+  never filtered through `grep`, `head` or `tail`. A wake whose Reason reads `Ready to merge: …`
+  names the branches that just turned ready. "Ready to merge" covers both chips, Ready to merge and
+  Waiting for your OK. The owner of a branch is the session the board names, never a guess from
+  session files or titles. An owner the board can't name yet (Sova hasn't read every session) is
+  unknown, left for a later round and never "no owner"; when the board is missing or old, owners
+  are unknown and nothing lands that round. A branch whose owner is archived, or whose worktree no
+  session tracks, is the user's call: told to the user once and never merged on the captain's own
+  say: the user naming a branch to land is that say, and counts as its owner's READY, recorded with
+  the driver's `note`. Commits on master the captain didn't land (an owner's own merge) get
+  typecheck, tests and build before they are pushed.
 - **Verify.** The chip can be wrong (it doesn't know intent, and its checks-passed isn't tied to
   the branch's head), so before accepting a branch the captain reads the owner's transcript
   (`session_read`) and the git state: commits ahead, a clean tree (the sandbox tests' own output
   apart), no TEMP, WIP, `fixup!`, `squash!` or `amend!` subject, and no open alignment questions.
-- **Asking the owner.** Every round the captain calls `queue_open` with `merge`, which gives it its
+- **Asking the owner.** Before landing any branch, plain Ready to merge included, the captain asks
+  its owner, never the user. Every round the captain calls `queue_open` with `merge`, which gives it its
   own topic, the same one each round while the session lives (§chat.topics/open). Unsure, and only
   when the owner session and all its workers are idle, the captain asks it with `session_send`
   whether the branch is ready at its current head, for an answer pushed to that topic with
   `queue_push`: `READY <branch> <sha>` or `NOT READY: <why>`. It doesn't poll: the answer arrives as
   a batch when the captain's turn ends or it is idle (§chat.topics/delivery). It asks through the
   driver's `ask` and pipes that batch into its `reply`. It never asks a busy session. "Waiting for
-  your OK" means ask, never merge. A branch its owner confirms at the head it reports, and that
-  passes every check, merges without asking the user. Notes arrive only between turns, so the
+  your OK" means ask the owner, never merge on the chip alone. A branch its owner confirms at the
+  head it reports, and that passes every check, merges without asking the user: that answer is the
+  OK. Notes arrive only between turns, so the
   captain reads the owner again just before landing; a hold that arrives after a landing is
   reported to the owner and the user, never undone. A session that needs to reach the captain is
   told the topic's name by `session_send`, never given a second topic; the captain itself answers
@@ -97,14 +104,17 @@ after each landing, since every other branch is then checked against the new mas
   leak scan, typecheck, build and census passing; the leak's branch never merged again; the backstop
   deleted when the user says). A branch is never scrubbed. Also the user's: waiving a hit, each
   time it recurs; names origin already has in public; a restart while sessions are busy; any deploy
-  to a peer; landing an unowned or unconfirmed branch. Everything else, a branch its owner calls
+  to a peer; landing a branch with no live owner (owner archived, or no session tracks its
+  worktree) or an unconfirmed one. Everything else, a branch its owner calls
   ready and checked green, lands and pushes without asking.
 - **Never:** force-push or rewrite pushed history; `filter-branch` or `read-tree` on master, or
   `update-ref` on it outside a scrub the user approved for that case; a private name written inline
   in a command; another session's project instance touched, or its worktree changed beyond the
   check's master merge (and a rebuilt `node_modules`), without its OK.
 - **The report** each round: shas merged, push result, restart state (with the busy
-  list), unowned branches, owners asked and their answers, anything handed back and why.
+  list), the branches with no live owner (each the first time it is the user's call), owners asked
+  and their answers, anything handed back and why. A quiet round (nothing asked, checked, landed or
+  pushed, and nothing new for the user) reports one line: "Nothing new on the merge board."
 
 ## §chat.merge-round/driver — The round's driver
 
@@ -122,10 +132,15 @@ shell and under a timeout.
   plain unit name holding no private name. A local path under the home directory is printed as
   `~/…`, and as `"$HOME"/…` in a command it prints, so the home path never shows and the path still
   works; a path that holds a private name beyond that home prefix is refused, never printed.
-- **It never reads sessions.** The session tools stay the only way to read them: the captain
-  records what it read with `note <branch> owner=<id> chip=ready|waiting|none idle=yes|no
-  [source=<word>]`. Its only HTTP is `GET /api/health`, best effort, to read the head the live
-  server started at.
+- **It reads Sova's board, never sessions.** Owners come from Sova's merge board file,
+  `<state root>/merge-board.json` (§chat.worktrees/merge-board); it never reads a session file,
+  never calls Sova's API about sessions and never holds Sova's token. A board that is missing, not
+  version 1, or written more than 5 minutes ago is not read: owners are unknown. Each board reading
+  of a branch (owner, owner status, state, reason) is kept in its state record. What the captain
+  learns another way it records with `note <branch> owner=<id> chip=ready|waiting|none idle=yes|no
+  [source=<word>]`, which names the owner only while it is newer than the board's reading; the
+  owner's status comes from the newest reading of that owner. Its only HTTP is `GET /api/health`,
+  best effort, to read the head the live server started at.
 - **The restart need** is the live server's `head` from `GET /api/health` against master: a
   restart is needed when a file that needs one (§chat.worktrees/readiness's rule) differs between
   them, so a branch its owner merged without the round counts as much as one `landed` recorded.
@@ -134,16 +149,22 @@ shell and under a timeout.
   interview, turns the push hold on when the settings file is missing at that first round, and says
   whether a restart is needed: one pending is confirmed once the restart need is none, and a need
   it finds is recorded as pending. **`names-answered`** lifts the hold once the user has answered.
-- **`status`** lists every local branch ahead of master that has a worktree: ahead and behind,
+- **`status`** lists every local branch ahead of master that has a worktree, grouped and sorted by
+  what to do next (to check, to land, to ask now, owner busy, owner archived, no session tracks,
+  owner unknown, not ready), with each group's count on its first line and the board's age and
+  unread sessions. Each branch shows the board's reason and its owner with that owner's status and
+  where that came from. When the board can't be read it says owners are unknown and why, lists git
+  facts only, and exits 2. Per branch: ahead and behind,
   uncommitted files (the sandbox tests' `FIRST-RUN.txt` and `NAIVE-RUN.txt` apart), a TEMP, WIP,
   `fixup!`, `squash!` or `amend!` subject, how many files a trial merge with master conflicts in
   (`git merge-tree --write-tree` into a throwaway object directory, so the repository is never
   written), the last commit's age, the recorded owner and ask, and whether landing it needs a
-  restart (§chat.worktrees/readiness's rule). A branch with no recorded owner is flagged unowned. It
+  restart (§chat.worktrees/readiness's rule). It
   also says whether the main checkout is on master, how many files are dirty there, and how far it
   is from origin/master.
 - **`ask <branch> topic=<name>`** needs the name `queue_open` gave the round's topic (a bare base
-  name is refused), and refuses an owner not recorded idle, a note older than 15 minutes, and an
+  name is refused), reads the board again, and refuses a branch with no known owner, an archived
+  owner (the user's call), an owner not idle, an owner reading older than 15 minutes, and an
   owner asked in the last 10 minutes. Otherwise it records the topic with the ask and prints the text
   to `session_send`: `Is <branch> ready to merge at its current head? Reply with queue_push, topic
   "<name>", text one line: READY <branch> <the head sha you checked>, or NOT READY: <why>.`, which
@@ -199,7 +220,9 @@ shell and under a timeout.
   lists the busy ones; 2 means it found no server or none of its records. It works out the restart
   need first, as `start` does, and prints the line only when one is needed, or pending and it can't
   tell. It never schedules or runs a restart itself.
-- **`report`** prints the round report's skeleton from the state.
+- **`report`** prints the round report's skeleton from the state, listing each branch with no live
+  owner once per head (`For you, once (no live owner): …`). A quiet round prints only `Nothing new on
+  the merge board.`
 
 The two rules it shares with the server, which subjects are temporary and which changed files need a
 restart, are copies, held equal to `server/merge-readiness.ts`'s by a test over an enumerated table;

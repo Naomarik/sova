@@ -1,6 +1,6 @@
 # P2.5 bridge design — session-bridge.ts + mcp-host.ts
 
-Author: bridge worker. Status: **design only, nothing built** — held pending platform's P0.5 spike verdict.
+Author: bridge worker. Status: **historical design note**, built since; the spec §app/claude-code-provider is current.
 Everything below is the CLEAN variant. The fallback plan is in the last section.
 
 ## 0. Evidence that the clean variant is protocol-supported

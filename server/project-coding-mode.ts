@@ -1,5 +1,7 @@
 import { codingModeWords, type CodingModeSwitch, type ProjectCodingMode } from "../shared/project-overseer";
 import { MINOR_MODES, parseModePatch, readMode } from "./mode-state";
+import { MINOR_SURFACES } from "../pi-config/extensions/mode/minor.ts";
+import { MEMORY_CODING_REFUSAL } from "../shared/memory";
 import type { SubagentProfilesInfo } from "../shared/subagent-profiles";
 import { requireSubagentProfile, subagentProfilesInfo } from "./subagent-profiles";
 
@@ -16,6 +18,9 @@ import { requireSubagentProfile, subagentProfilesInfo } from "./subagent-profile
  *   answers its questions; nobody else answers them, an Overseer never.
  */
 
+/** The minor modes a coding session can have: every one but the web-only ones (memory, §chat.memory/where). */
+const CODING_MINOR_MODES = MINOR_MODES.filter((m) => MINOR_SURFACES[m] !== "web");
+
 /** The names a request carries, checked with the copy's own sentences. */
 function checkNames(mode: unknown, minors: unknown): { mode?: ProjectCodingMode["mode"]; minorModes?: string[] } | { error: string } {
   const out: { mode?: ProjectCodingMode["mode"]; minorModes?: string[] } = {};
@@ -25,18 +30,20 @@ function checkNames(mode: unknown, minors: unknown): { mode?: ProjectCodingMode[
   }
   if (minors !== undefined) {
     if (!Array.isArray(minors)) return { error: 'minor_modes must be a list, e.g. ["spec"].' };
-    const unknown = minors.find((m) => typeof m !== "string" || !(MINOR_MODES as readonly string[]).includes(m));
-    if (unknown !== undefined) return { error: `Unknown minor mode ${String(unknown)}: use ${MINOR_MODES.slice(0, -1).join(", ")} or ${MINOR_MODES[MINOR_MODES.length - 1]}.` };
+    if (minors.includes("memory")) return { error: `${MEMORY_CODING_REFUSAL}.` };
+    const unknown = minors.find((m) => typeof m !== "string" || !(CODING_MINOR_MODES as readonly string[]).includes(m));
+    if (unknown !== undefined) return { error: `Unknown minor mode ${String(unknown)}: use ${CODING_MINOR_MODES.slice(0, -1).join(", ")} or ${CODING_MINOR_MODES[CODING_MINOR_MODES.length - 1]}.` };
     const p = parseModePatch({ minorModes: minors });
     out.minorModes = "error" in p ? [] : (p.minorModes ?? []);
   }
   return out;
 }
 
-/** This computer's default mode now (mode.json, the default every new session starts from). */
+/** This computer's default mode now (mode.json, the default every new session starts from), less memory:
+    coding sessions never get memory (§chat.memory/where). */
 export function hostDefaultMode(file?: string): ProjectCodingMode {
   const s = file ? readMode(file) : readMode();
-  return { mode: s.mode, minorModes: [...s.minorModes] };
+  return { mode: s.mode, minorModes: s.minorModes.filter((m) => m !== "memory") };
 }
 
 /** An Overseer's request (the tools' `mode` / `minor_modes` / `subagent_profile`), validated by name only. */

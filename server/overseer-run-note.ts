@@ -1,5 +1,6 @@
 import type { HBlock, HEntry } from "../shared/harness";
 import { OVERSEER_BRIEF_PREFIX, type SessionReadiness } from "../shared/protocol";
+import type { OpeningDetails } from "./overseer-opening";
 import { CARD_TOOL, CARDS_NOTE_MESSAGE, foldCardDetails, normalizeCardDetails, openCardsOf, type CardDetails, type OverseerCard } from "../shared/overseer-card";
 
 /**
@@ -39,7 +40,7 @@ export interface SessionNow {
 }
 
 /** The note's `details`: the blockers it listed as cleared, each `<key>@<brief ms>`, so a later note lists each once per brief. */
-export interface RunNoteDetails {
+export interface RunNoteDetails extends OpeningDetails {
   v: 1;
   cleared?: string[];
 }
@@ -123,6 +124,10 @@ export interface RunNoteInput {
   prompted?: readonly Touched[];
   /** Text from other sessions is redacted before it reaches the model. */
   redact?: (text: string) => string;
+  /** The `[changed]` part (overseer-opening.ts changedText), when a part of the prompt changed. */
+  changed?: string;
+  /** The opening values and told fingerprints to record (overseer-opening.ts). */
+  opening?: OpeningDetails;
 }
 
 /** The ids the note will ask `session` about: briefed blockers in the window, open cards' sessions,
@@ -134,13 +139,17 @@ export function runNoteSessionIds(branch: readonly HEntry[], now: number, prompt
   return [...ids];
 }
 
+/** The run note's first line: the time now, and that the system prompt's is when the conversation opened. */
+export const nowLine = (now: Date): string =>
+  `[now] It is ${now.toString()}. The time in your system prompt is when this conversation opened; read elapsed time from this line and from tool ages.`;
+
 /** The note's text and details. */
 export function runNote(input: RunNoteInput): { content: string; details: RunNoteDetails } {
   const now = input.now.getTime();
   const redact = input.redact ?? ((t: string) => t);
-  const parts = [
-    `[now] It is ${input.now.toString()}. The time in your system prompt is when this conversation opened; read elapsed time from this line and from tool ages.`,
-  ];
+  const parts = [nowLine(input.now)];
+  // What changed since the system prompt was written (overseer-opening.ts): already redacted.
+  if (input.changed) parts.push(input.changed);
 
   const listed = listedCleared(input.branch);
   const cleared: string[] = [];
@@ -178,7 +187,7 @@ export function runNote(input: RunNoteInput): { content: string; details: RunNot
   if (play) parts.push(redact(play));
 
   if (input.cardsText) parts.push(input.cardsText);
-  return { content: parts.join("\n\n"), details: { v: 1, ...(cleared.length ? { cleared } : {}) } };
+  return { content: parts.join("\n\n"), details: { v: 1, ...(cleared.length ? { cleared } : {}), ...input.opening } };
 }
 
 // ---- sessions in play (§app.overseer/sessions-in-play) -------------------------------------------

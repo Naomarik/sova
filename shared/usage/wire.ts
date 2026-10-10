@@ -102,6 +102,40 @@ export interface UsageSessionRow extends UsageSpend {
   project: string | null;
   /** Its newest call (ms). */
   lastAt: number;
+  /** What re-sending its history to a new Claude process cost, and why; absent when none of its
+      Claude launches recorded how it started (§app.insights/usage-resend). */
+  resend?: UsageResend;
+}
+
+/**
+ * A conversation's re-sends (§app.insights/usage-resend): the first call of each Claude Code launch
+ * whose `how` is `folded` or `joined` (usage-record.ts RESEND_HOWS), counted at its input and
+ * cache-write spend only (the reply's output is ordinary spend). Its own calls only, never its
+ * workers' or side calls'.
+ */
+export interface UsageResend {
+  /** Input + cache-write dollars of the re-sending calls (priced like every figure). */
+  usd: number;
+  /** Their input + cache-write tokens. */
+  tokens: number;
+  /** Launches that re-sent the history. */
+  launches: number;
+  /** Launches that picked up Claude's own saved copy instead (`how` `resumed`). */
+  resumed: number;
+  /** Every launch with `launch` recorded (fresh, resumed, re-sent, memory view). */
+  recorded: number;
+  /** One row per why × fallback of the re-sending launches, costliest first. */
+  reasons: UsageResendReason[];
+}
+
+export interface UsageResendReason {
+  /** Why the process started (usage-record.ts LAUNCH_WHYS: `reaped`, `process-start`, `system-prompt`, …). */
+  why: string;
+  /** Why a saved copy was not resumed (LAUNCH_FALLBACKS: `login-moved`, …), or null. */
+  fallback: string | null;
+  launches: number;
+  usd: number;
+  tokens: number;
 }
 
 /** One local day of the chart. */
@@ -212,6 +246,9 @@ export interface UsageSessionSpend {
   workers: UsageSpend;
   models: UsageSessionModelRow[];
   workerList: UsageWorkerRow[];
+  /** The session's own conversation's re-sends (UsageResend), absent when none of its Claude launches
+      recorded how it started. */
+  resend?: UsageResend;
   /** The newest call (ms), or null when nothing is recorded for it. */
   lastAt: number | null;
   prices: Pick<PricesInfo, "asOf">;

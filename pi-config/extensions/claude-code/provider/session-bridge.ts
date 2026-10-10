@@ -13,7 +13,9 @@
  * prefix; anything that is not a clean extension of what the CLI already saw
  * (a rewind, a branch, a compaction, a foreign append, a changed tool set or
  * system prompt, a model or effort change) restarts the child with the history
- * folded into one user message. The fold is lossy and says so.
+ * folded into one user message. The fold is lossy and says so. A new child for a
+ * chat whose last turn settled cleanly resumes that turn's Claude session instead
+ * (resume-record.ts), when pi's history continues it exactly on the same login.
  *
  * Verified against CLI 2.1.278 by the team's protocol spike:
  *   - `initialize` with `sdkMcpServers: ["sova"]` works under `-p` stream-json.
@@ -37,8 +39,11 @@ import {
 } from "../accounts.ts";
 import type { ImageContent, Message, TextContent, Tool } from "@earendil-works/pi-ai";
 import { PiMcpHost, type HeldMcpCall, type McpContent, type McpToolResult } from "./mcp-host.ts";
+import { readMemoryView, type MemoryViewParts } from "./memory-view.ts";
 import { resolveUsageAttribution } from "../../llm-inflight/attribution.ts";
 import { createClaudeRequestObserver } from "../../llm-inflight/claude.ts";
+import { defaultAgentDir, type UsageLaunch } from "../../llm-inflight/usage-record.ts";
+import { ResumeStore, type ResumeRecord } from "./resume-record.ts";
 import { claudeCliId } from "../catalog.ts";
 import {
 	parseClaudeFrame, parseToolInput, MCP_SERVER_NAME, MCP_TOOL_PREFIX,
@@ -229,7 +234,15 @@ export interface SessionBridgeOptions {
 	 * and a failure ends the turn (as before logins existed).
 	 */
 	logins?: ClaudeLoginSource;
+	/**
+	 * Where each pi session's resume record is kept on disk (resume-record.ts). Defaults to
+	 * `<agent dir>/claude-code/resume`; `false` keeps them in memory only.
+	 */
+	resumeDir?: string | false;
 }
+
+/** `<agent dir>/claude-code/resume`: the chats' resume records. */
+export const defaultResumeDir = (env: NodeJS.ProcessEnv = process.env): string => join(defaultAgentDir(env), "claude-code", "resume");
 
 /** What the bridge needs of the host's logins; accounts.ts ClaudeLogins is the real one. */
 export interface ClaudeLoginSource {
@@ -366,6 +379,19 @@ export function turnMeta(request: ClaudeTurnRequest, cwd: string): string {
 	return sha(claudeCliId(request.model), request.effort ?? "", request.systemPrompt ?? "", tools, cwd);
 }
 
+/** turnMeta's parts, each fingerprinted on its own: which one changed is a restart's recorded `why`. */
+export type MetaPart = "model" | "effort" | "system-prompt" | "tools" | "cwd";
+export function turnMetaParts(request: ClaudeTurnRequest, cwd: string): Record<MetaPart, string> {
+	const tools = request.tools.map((tool) => `${tool.name}\u0001${tool.description}\u0001${JSON.stringify(tool.parameters ?? {})}`).join("\u0002");
+	return { model: claudeCliId(request.model), effort: request.effort ?? "", "system-prompt": sha(request.systemPrompt ?? ""), tools: sha(tools), cwd };
+}
+
+/** The first part that differs between two turns' metas (`model` first), or undefined. */
+export function changedMetaPart(before: Record<MetaPart, string> | undefined, after: Record<MetaPart, string>): MetaPart | undefined {
+	if (!before) return undefined;
+	return (["model", "effort", "system-prompt", "tools", "cwd"] as const).find((part) => before[part] !== after[part]);
+}
+
 // ---------------------------------------------------------------------------
 // History folding
 // ---------------------------------------------------------------------------
@@ -383,6 +409,75 @@ function imagesOf(content: unknown): ImageContent[] {
 	if (!Array.isArray(content)) return [];
 	return content.filter((b: unknown): b is ImageContent =>
 		!!b && typeof b === "object" && (b as { type?: unknown }).type === "image");
+}
+
+// ---------------------------------------------------------------------------
+// Memory views (Sova's memory minor mode, memory-view.ts)
+// ---------------------------------------------------------------------------
+
+/** The memory view a request's history opens with, or undefined. */
+export function memoryViewOf(messages: readonly Message[]): MemoryViewParts | undefined {
+	const first = messages.find((m) => m.role !== "system");
+	return first?.role === "user" ? readMemoryView(first.content) : undefined;
+}
+
+/**
+ * CLI 2.1.295's split mark in an initialize `systemPrompt` (its own default prompt's static/dynamic boundary).
+ * On the first-party API the CLI sends the elements before it as one system block and the elements after it
+ * as another, each under its own cache mark (in place of the mark on its agent line: no extra mark).
+ * Elsewhere it drops the element and joins the rest with a blank line, the same text as without it.
+ */
+export const SYSTEM_PROMPT_BOUNDARY = "__SYSTEM_PROMPT_DYNAMIC_BOUNDARY__";
+
+/** The initialize `systemPrompt` a child is given: the session's, then past the boundary a memory view's
+    guide and stable prefix, which change only when the view rebases. Both are read from the prompt cache,
+    and a rebase re-writes the view's block alone where the CLI splits at the boundary. */
+export function memorySystemPrompt(systemPrompt: string, view: MemoryViewParts | undefined): string[] {
+	return view ? [systemPrompt, SYSTEM_PROMPT_BOUNDARY, `${view.guide}\n\n${view.prefix}`] : [systemPrompt];
+}
+
+/**
+ * A restart's first user message when the history is a memory view followed by user messages only (a
+ * turn's start): the view's newer lines, then each message as written, with no restart preamble and
+ * nothing folded. undefined for any other history.
+ */
+export function memoryViewFrame(messages: readonly Message[]): { text: string; images: ImageContent[] } | undefined {
+	const rest = messages.filter((m) => m.role !== "system");
+	const view = rest[0]?.role === "user" ? readMemoryView(rest[0].content) : undefined;
+	if (!view || rest.length < 2 || rest.slice(1).some((m) => m.role !== "user")) return undefined;
+	const texts = [view.tail ?? "", ...rest.slice(1).map((m) => textOf(m.content))].filter((t) => t.length > 0);
+	return { text: texts.join("\n\n"), images: rest.slice(1).flatMap((m) => imagesOf(m.content)) };
+}
+
+/** The history with a memory view reduced to its newer lines: its guide and prefix ride the system prompt,
+    so a fold (a restart mid-turn) never sends them twice. */
+export function withoutMemoryPrefix(messages: readonly Message[]): Message[] {
+	const at = messages.findIndex((m) => m.role !== "system");
+	const view = at >= 0 && messages[at]!.role === "user" ? readMemoryView(messages[at]!.content) : undefined;
+	if (!view) return [...messages];
+	const out = [...messages];
+	const reduced: TextContent = { type: "text", text: view.tail ?? "(Your memory view is in the system prompt.)" };
+	out[at] = { ...(messages[at] as Extract<Message, { role: "user" }>), content: [reduced] };
+	return out;
+}
+
+/**
+ * A request's declared layout: how its history reaches a new child when it is not a plain
+ * conversation. The memory view (memory-view.ts) is its one producer today. `systemPrompt` is the
+ * initialize prompt (the session's, then past the boundary what the layout keeps stable); `asIs` is
+ * the first user message when the history goes as written instead of folded; `rebuilds`: the history
+ * is rebuilt on purpose, so a resume record is never used for it.
+ */
+export interface RequestLayout {
+	systemPrompt(systemPrompt: string): string[];
+	asIs?: { text: string; images: ImageContent[] };
+	rebuilds: boolean;
+}
+
+export function requestLayoutOf(messages: readonly Message[]): RequestLayout {
+	const view = memoryViewOf(messages);
+	const asIs = view ? memoryViewFrame(messages) : undefined;
+	return { systemPrompt: (systemPrompt) => memorySystemPrompt(systemPrompt, view), ...(asIs ? { asIs } : {}), rebuilds: !!view };
 }
 
 /** A subagent retrieval tool, under pi's name or the CLI's `mcp__<server>__` one. */
@@ -893,6 +988,8 @@ class CliSession {
 	private restarting = false;
 	/** Children this bridge has launched; each one needs its own --session-id. */
 	private launchAttempt = 0;
+	/** The CLI holds records of this chat from before this bridge (a server restart): a "new" launch is a process-start. */
+	private launchedBefore = false;
 	private failure?: string;
 	/**
 	 * Why the child's conversation no longer matches what pi saw, if it does
@@ -920,8 +1017,24 @@ class CliSession {
 	private readonly loginHooks: () => SessionLoginHooks | undefined;
 	/** The live child's lease on its login (accounts.ts LoginUsers), while it runs on an added one. */
 	private lease?: { done(): void; active(): void };
+	/** The chats' resume records (resume-record.ts), shared by the bridge's sessions. */
+	private readonly resume?: ResumeStore;
+	/** Why this session object exists without a child: its previous one was reaped while idle. */
+	private readonly origin?: "reaped";
+	/** A one-shot request (compaction, a branch summary): never resumed, never recorded, never cached. */
+	private readonly oneShot: boolean;
+	/** Why the child is gone, when something here stopped it on purpose (a login pick, a leaving login). */
+	private stoppedWhy?: string;
+	/** The last turn's meta parts, for the `why` of a settings restart. */
+	private metaParts?: Record<MetaPart, string>;
+	/** How the live child started, for its first usage record (usage-record.ts `launch`); set once delivered. */
+	private launchSlot?: { value?: UsageLaunch };
 
-	constructor(piSessionId: string, options: SessionBridgeOptions, cwd: string, forkSeed?: ClaudeForkPoint, loginHooks: () => SessionLoginHooks | undefined = () => undefined) {
+	constructor(
+		piSessionId: string, options: SessionBridgeOptions, cwd: string, forkSeed?: ClaudeForkPoint,
+		loginHooks: () => SessionLoginHooks | undefined = () => undefined,
+		extra: { resume?: ResumeStore; origin?: "reaped"; oneShot?: boolean } = {},
+	) {
 		this.piSessionId = piSessionId;
 		this.options = options;
 		this.cwd = cwd;
@@ -929,6 +1042,9 @@ class CliSession {
 		this.loginHooks = loginHooks;
 		this.timings = { ...TIMINGS, ...options.timings };
 		this.limits = { ...LIMITS, ...options.limits };
+		this.resume = extra.resume;
+		this.origin = extra.origin;
+		this.oneShot = extra.oneShot === true;
 	}
 
 	isBusy(): boolean { return !!this.turn || this.calls.length > 0 || this.restarting; }
@@ -960,14 +1076,16 @@ class CliSession {
 		// nothing it says in reply can fall on the floor either.
 		if (plan.restart && plan.resume) {
 			try {
-				await this.restart(request, plan.reason, plan.resume);
+				const resumed = await this.restart(request, plan.reason, { id: plan.resume, login: plan.resumeLogin });
+				// The child is live, but not on the record's login: it gets the history folded.
+				if (!resumed) plan = { restart: true, reason: plan.reason, why: plan.why, fallback: "login-moved", results: [], users: [], first: !this.everStarted, started: true };
 			} catch (error) {
-				// The parent's record could not be resumed (gone, or refused): fold, as without a seed.
-				debugLog({ event: "fork-resume-failed", session: this.piSessionId, error: error instanceof Error ? error.message : String(error) });
-				plan = { restart: true, reason: "no live CLI process", results: [], users: [], first: !this.everStarted };
+				// The record could not be resumed (gone, or refused): fold, as without one.
+				debugLog({ event: "resume-failed", session: this.piSessionId, error: error instanceof Error ? error.message : String(error) });
+				plan = { restart: true, reason: "no live CLI process", why: plan.why, fallback: "resume-failed", results: [], users: [], first: !this.everStarted };
 			}
 		}
-		if (plan.restart && !plan.resume) await this.restart(request, plan.reason);
+		if (plan.restart && !plan.resume && !plan.started) await this.restart(request, plan.reason);
 		if (plan.restart && signal?.aborted) {
 			// The fresh child never got the history (or, resumed, the new messages); reusing it would drop them.
 			this.markDesynced("the turn was aborted before the restarted child was sent the history");
@@ -994,6 +1112,7 @@ class CliSession {
 			this.deliver(request, plan);
 			this.recorded = next;
 			this.meta = turnMeta(request, this.cwd);
+			this.metaParts = turnMetaParts(request, this.cwd);
 			yield* queue.drain();
 			drained = true;
 		} finally {
@@ -1021,25 +1140,32 @@ class CliSession {
 		if (!this.started || !this.transport || this.transport.isClosed() || this.transport.hasExited()) {
 			const fork = this.forkPlan(request, next);
 			if (fork) return fork;
-			return { restart: true, reason: "no live CLI process", results: [], users: [], first: !this.everStarted };
+			const why = this.oneShot ? "oneshot"
+				: this.stoppedWhy ?? (this.everStarted ? "ended" : this.origin ?? (this.firstFreeLaunch() > 0 ? "process-start" : "new"));
+			this.stoppedWhy = undefined;
+			const fold: TurnPlan = { restart: true, reason: "no live CLI process", why, results: [], users: [], first: !this.everStarted };
+			const resume = this.resumePlan(request, next);
+			if (!resume) return fold;
+			return "fallback" in resume ? { ...fold, fallback: resume.fallback } : { ...fold, reason: "picked up the chat's own Claude session", ...resume };
 		}
 		if (this.desynced) {
-			return { restart: true, reason: `the CLI fell out of step with pi: ${this.desynced}`, results: [], users: [] };
+			return { restart: true, reason: `the CLI fell out of step with pi: ${this.desynced}`, why: "desynced", results: [], users: [] };
 		}
 		if (this.login && this.options.logins?.leaving?.(this.login.id)) {
 			// Its login is going to another device: nothing may keep running on it (a refresh here
 			// would rotate the copy that moves). The restart takes the next login.
-			return { restart: true, reason: `Claude login ${this.login.label} is leaving this device`, results: [], users: [] };
+			return { restart: true, reason: `Claude login ${this.login.label} is leaving this device`, why: "login-leaving", results: [], users: [] };
 		}
 		if (this.abortPending) {
 			// Its late result would otherwise end this turn.
-			return { restart: true, reason: "an interrupted turn has not settled", results: [], users: [] };
+			return { restart: true, reason: "an interrupted turn has not settled", why: "aborted", results: [], users: [] };
 		}
 		if (this.meta !== undefined && this.meta !== turnMeta(request, this.cwd)) {
-			return { restart: true, reason: "model, effort, system prompt, tool set or cwd changed", results: [], users: [] };
+			const why = changedMetaPart(this.metaParts, turnMetaParts(request, this.cwd)) ?? "system-prompt";
+			return { restart: true, reason: "model, effort, system prompt, tool set or cwd changed", why, results: [], users: [] };
 		}
 		if (!isPrefix(this.recorded, next)) {
-			return { restart: true, reason: "transcript diverged (rewind, branch, compaction or foreign append)", results: [], users: [] };
+			return { restart: true, reason: "transcript diverged (rewind, branch, compaction or foreign append)", why: "diverged", results: [], users: [] };
 		}
 		const tail = request.messages.slice(this.recorded.length);
 		const results = tail.filter((m): m is Extract<Message, { role: "toolResult" }> => m.role === "toolResult");
@@ -1047,15 +1173,54 @@ class CliSession {
 		// and follow-ups queued in one tail must all reach the CLI.
 		const users = tail.filter((m) => m.role === "user");
 		if (this.calls.length && results.length !== this.calls.length) {
-			return { restart: true, reason: "pi answered only some of the CLI's tool calls", results: [], users: [] };
+			return { restart: true, reason: "pi answered only some of the CLI's tool calls", why: "tool-results", results: [], users: [] };
 		}
 		if (results.some((result) => !this.calls.some((call) => call.id === result.toolCallId))) {
-			return { restart: true, reason: "a tool result did not match a held call", results: [], users: [] };
+			return { restart: true, reason: "a tool result did not match a held call", why: "tool-results", results: [], users: [] };
 		}
 		if (!results.length && !users.length) {
-			return { restart: true, reason: "nothing new to send", results: [], users: [] };
+			return { restart: true, reason: "nothing new to send", why: "nothing-new", results: [], users: [] };
 		}
-		return { restart: false, reason: "", results, users };
+		return { restart: false, reason: "", why: "", results, users };
+	}
+
+	/**
+	 * A new child for a chat whose last turn settled cleanly: resume that turn's Claude session from
+	 * its record (resume-record.ts) when the meta is unchanged and pi's history is exactly the
+	 * recorded messages, then one finished assistant reply (the CLI's own, so it is in the record),
+	 * then user messages only. The login is checked once the child's login is chosen (spawnFresh).
+	 * Undefined without a record; `fallback` says why a record was not used.
+	 */
+	private resumePlan(request: ClaudeTurnRequest, next: string[]): Pick<TurnPlan, "users" | "resume" | "resumeLogin"> | { fallback: string } | undefined {
+		if (this.oneShot || !this.resume) return undefined;
+		const record = this.resume.get(this.piSessionId);
+		if (!record) return undefined;
+		// A memory view rebuilds its history on purpose: never resumed (§chat.memory/turn).
+		if (requestLayoutOf(request.messages).rebuilds) return { fallback: "memory-view" };
+		if (record.cwd !== this.cwd || record.meta !== turnMeta(request, this.cwd)) return { fallback: "settings-changed" };
+		if (next.length <= record.messages || next[record.messages - 1] !== record.prefix) return { fallback: "not-continuation" };
+		const tail = request.messages.slice(record.messages);
+		const reply = tail[0];
+		if (reply?.role !== "assistant" || reply.stopReason !== "stop") return { fallback: "not-continuation" };
+		const users = tail.slice(1);
+		if (!users.length || users.some((m) => m.role !== "user")) return { fallback: "not-continuation" };
+		return { users, resume: record.claudeSessionId, resumeLogin: record.login };
+	}
+
+	/**
+	 * After a turn whose result is a success, with every tool call answered and the child in step:
+	 * where a later child can pick this conversation up (resume-record.ts). Never for a one-shot or a
+	 * memory view, which rebuilds its history.
+	 */
+	private saveResume(turn: TurnState): void {
+		if (!this.resume || this.oneShot || !this.claudeId || !this.meta || !this.recorded.length) return;
+		if (this.calls.length || this.unmatched.length || this.desynced || this.abortPending) return;
+		if (requestLayoutOf(turn.request.messages).rebuilds) return;
+		const record: ResumeRecord = {
+			v: 1, claudeSessionId: this.claudeId, messages: this.recorded.length, prefix: this.recorded[this.recorded.length - 1]!,
+			cwd: this.cwd, login: this.login?.id ?? null, meta: this.meta, at: Date.now(),
+		};
+		this.resume.set(this.piSessionId, record);
 	}
 
 	/**
@@ -1073,7 +1238,7 @@ class CliSession {
 		if (tail.some((m) => m.role === "toolResult")) return undefined;
 		const users = tail.filter((m) => m.role === "user");
 		if (!users.length) return undefined;
-		return { restart: true, reason: "forked from the parent's Claude session", results: [], users, resume: seed.claudeSessionId };
+		return { restart: true, reason: "forked from the parent's Claude session", why: "fork", results: [], users, resume: seed.claudeSessionId };
 	}
 
 	/**
@@ -1082,14 +1247,29 @@ class CliSession {
 	 * keeps its result until it does.
 	 */
 	private deliver(request: ClaudeTurnRequest, plan: TurnPlan): void {
+		// Anything sent to the child from here on is a turn in progress: no record names it until it settles.
+		this.resume?.clear(this.piSessionId);
 		if (plan.restart && plan.resume) {
 			// The resumed record already holds the history; send only what is new to it.
+			this.launched({ how: "resumed", why: plan.why });
 			this.sendUsers(plan.users);
 			return;
 		}
 		if (plan.restart) {
+			// A memory view and the turn's own messages go as written (memory-view.ts): never folded.
+			const asIs = requestLayoutOf(request.messages).asIs;
+			if (asIs) {
+				debugLog({ event: "memory-view", session: this.piSessionId, chars: asIs.text.length, images: asIs.images.length });
+				this.launched({ how: "view", why: plan.why, ...(plan.fallback ? { fallback: plan.fallback } : {}) });
+				this.sendUserMessage(asIs.text, asIs.images);
+				return;
+			}
+			const foldable = request.messages.filter((m) => m.role !== "system");
+			// Only this turn's own user messages (an overseer's run note and its message): nothing is re-sent.
+			const how = plan.first ? (foldable.every((m) => m.role === "user") ? "fresh" : "joined") : "folded";
+			this.launched({ how, why: plan.why, ...(plan.fallback ? { fallback: plan.fallback } : {}) });
 			const budget = foldBudgetChars(request, this.limits.maxFoldedChars);
-			const folded = foldHistory(request.messages, this.limits, plan.first ? "first" : "restarted", budget);
+			const folded = foldHistory(withoutMemoryPrefix(request.messages), this.limits, plan.first ? "first" : "restarted", budget);
 			// Tuning data, not an anomaly, so never the onDebug sink: compare
 			// `chars` with the next message_start's input tokens to check the
 			// budget's chars/4 guess against the real fold size.
@@ -1121,6 +1301,14 @@ class CliSession {
 		}
 		this.settleCalls();
 		this.sendUsers(plan.users);
+	}
+
+	/** Note how the live child started; its first usage record carries it (usage-record.ts `launch`). */
+	private launched(launch: UsageLaunch): void {
+		// plan() decides before the login is chosen; the login's own records, read since, can show an earlier process.
+		if (launch.why === "new" && this.launchedBefore) launch = { ...launch, why: "process-start" };
+		if (this.launchSlot && !this.launchSlot.value) this.launchSlot.value = launch;
+		debugLog({ event: "launch", session: this.piSessionId, ...launch });
 	}
 
 	private sendUsers(users: readonly Message[]): void {
@@ -1158,18 +1346,25 @@ class CliSession {
 
 	// -- lifecycle ----------------------------------------------------------
 
-	private async restart(request: ClaudeTurnRequest, reason: string, resume?: string): Promise<void> {
+	/** Replace the child; true when it resumed `resume`, false when it started without it (a login moved). */
+	private async restart(request: ClaudeTurnRequest, reason: string, resume?: { id: string; login?: string | null }): Promise<boolean> {
 		this.restarting = true;
 		try {
-			await this.spawnFresh(request, reason, resume);
+			return await this.spawnFresh(request, reason, resume);
 		} finally {
 			this.restarting = false;
 		}
 	}
 
-	private async spawnFresh(request: ClaudeTurnRequest, reason: string, resume?: string): Promise<void> {
+	private async spawnFresh(request: ClaudeTurnRequest, reason: string, resume?: { id: string; login?: string | null }): Promise<boolean> {
 		if (this.started) await this.teardown(`restarting: ${reason}`);
 		await this.chooseLogin();
+		// A Claude session's record and cache belong to the login it ran on: another login never resumes it.
+		let resumeId = resume?.id;
+		if (resume && resume.login !== undefined && (this.login?.id ?? null) !== resume.login) {
+			debugLog({ event: "resume-skipped", session: this.piSessionId, why: "login-moved" });
+			resumeId = undefined;
+		}
 		this.failure = undefined;
 		this.recorded = [];
 		this.meta = undefined;
@@ -1177,16 +1372,17 @@ class CliSession {
 		// Start past every record on disk: the counter is only in memory, so
 		// after a process restart it would otherwise re-probe ids already taken.
 		this.launchAttempt = this.firstFreeLaunch();
+		if (this.launchAttempt > 0) this.launchedBefore = true;
 		// Walk forward until the CLI accepts an id: a collision is survivable and
 		// costs one fast-failing spawn, whereas reusing an id is fatal for good.
 		for (let probe = 0; probe <= SESSION_ID_PROBES; probe++) {
-			const why = await this.launchChild(request, claudeSessionId(this.piSessionId, this.launchAttempt), resume);
+			const why = await this.launchChild(request, claudeSessionId(this.piSessionId, this.launchAttempt), resumeId);
 			this.launchAttempt++;
 			if (why === undefined) {
 				// A fresh child has heard nothing yet; runTurn() sends the history.
 				this.desynced = undefined;
 				this.abortPending = false;
-				return;
+				return resumeId !== undefined;
 			}
 			if (why !== SESSION_ID_TAKEN) throw new Error(`Claude ${why}`);
 		}
@@ -1196,8 +1392,9 @@ class CliSession {
 	/** `launchAttempt`, or the launch after the last record on disk if that is later. Never throws. */
 	private firstFreeLaunch(): number {
 		try {
+			// The CLI writes its records under the directory of the login it runs on, once one is chosen.
 			const projectsRoot = this.options.projectsRoot
-				?? claudeProjectsRoot({ CLAUDE_CONFIG_DIR: this.options.env?.CLAUDE_CONFIG_DIR ?? process.env.CLAUDE_CONFIG_DIR });
+				?? claudeProjectsRoot({ CLAUDE_CONFIG_DIR: this.login?.env.CLAUDE_CONFIG_DIR ?? this.options.env?.CLAUDE_CONFIG_DIR ?? process.env.CLAUDE_CONFIG_DIR });
 			return nextFreeLaunch(this.piSessionId, { cwd: this.cwd, projectsRoot, from: this.launchAttempt });
 		} catch {
 			return this.launchAttempt; // the probes still cover it
@@ -1225,6 +1422,9 @@ class CliSession {
 		});
 		if ("error" in built) throw new Error(`Claude argv rejected: ${built.error}`);
 		const args = built.args;
+		// How this child came to its conversation: deliver() says, before anything is sent.
+		const launch: { value?: UsageLaunch } = {};
+		this.launchSlot = launch;
 
 		const host = new PiMcpHost({
 			tools: () => this.currentTools,
@@ -1257,7 +1457,7 @@ class CliSession {
 			// only (per Anthropic message, plus what the CLI's totals show beyond them), for this chat.
 			requestObserver: createClaudeRequestObserver({
 				countRequests: false,
-				usage: { bridge: true, model: claudeCliId(request.model), fresh: !resume, who: () => resolveUsageAttribution(this.piSessionId) },
+				usage: { bridge: true, model: claudeCliId(request.model), fresh: !resume, who: () => resolveUsageAttribution(this.piSessionId), launch: () => launch.value },
 			}),
 			hooks: {
 				onEvent: (event) => { if (current()) this.onEvent(event as unknown as Record<string, unknown>); },
@@ -1286,6 +1486,9 @@ class CliSession {
 				// pi's history over it. (Not DISABLE_COMPACT: that also removes
 				// the manual /compact.) CLI 2.1.282 reads it as a boolean env.
 				DISABLE_AUTO_COMPACT: "1",
+				// A one-shot's input is read once: sent uncached, it costs less than a cache write never
+				// read back (§app.claude-code-provider/oneshot-uncached). CLI 2.1.295 reads it as a boolean.
+				...(this.oneShot ? { DISABLE_PROMPT_CACHING: "1" } : {}),
 			},
 		});
 		this.started = true;
@@ -1293,7 +1496,7 @@ class CliSession {
 
 		const fields: Record<string, unknown> = { sdkMcpServers: [MCP_SERVER_NAME] };
 		if (this.options.sendSystemPrompt !== false && request.systemPrompt) {
-			fields.systemPrompt = [request.systemPrompt];
+			fields.systemPrompt = requestLayoutOf(request.messages).systemPrompt(request.systemPrompt);
 			fields.systemPromptSnapshot = false;
 		}
 		const ack = await transport.control("initialize", fields);
@@ -1344,6 +1547,8 @@ class CliSession {
 	private async abortTurn(): Promise<void> {
 		const transport = this.transport;
 		if (!transport || transport.isClosed()) { this.turn?.queue.end(); return; }
+		// An aborted turn's record ends mid-way: nothing may resume it.
+		this.resume?.clear(this.piSessionId);
 		// Held calls must go first: the CLI is blocked on them and would never
 		// reach the point where it can honour an interrupt.
 		this.rejectHeld("the turn was aborted");
@@ -1405,6 +1610,7 @@ class CliSession {
 		if (frame.type !== "init") turn.surfaced = true;
 		turn.queue.push(frame);
 		if (frame.type === "result") {
+			if (frame.outcome === "success" && !settling) this.saveResume(turn);
 			turn.queue.end();
 			return;
 		}
@@ -1479,7 +1685,11 @@ class CliSession {
 		try {
 			lease = logins.track(login.id, {
 				busy: () => this.transport === transport && this.isBusy(),
-				release: async () => { if (this.transport === transport && !this.isBusy()) await this.teardown(`Claude login ${login.label} is leaving this device`); },
+				release: async () => {
+					if (this.transport !== transport || this.isBusy()) return;
+					this.stoppedWhy = "login-leaving";
+					await this.teardown(`Claude login ${login.label} is leaving this device`);
+				},
 				pid: () => transport.pid,
 			});
 		} catch { return; }
@@ -1526,7 +1736,7 @@ class CliSession {
 		this.login = to;
 		this.announce(to, { from: was, to, text: manualSwitchText(was, to) });
 		debugLog({ event: "login-switch", session: this.piSessionId, from: was.id, to: to.id, kind: "manual" });
-		if (this.started) void this.teardown(`Claude login switched to ${to.label} (chosen by you)`);
+		if (this.started) { this.stoppedWhy = "login-picked"; void this.teardown(`Claude login switched to ${to.label} (chosen by you)`); }
 		return "switched";
 	}
 
@@ -1600,7 +1810,7 @@ class CliSession {
 		if (this.turn !== turn || turn.queue.isEnded()) return;
 		if (turn.signal?.aborted) { this.markDesynced("the turn was aborted while Claude switched logins"); turn.queue.end(); return; }
 		this.detector.reset();
-		this.deliver(turn.request, { restart: true, reason: change.text, results: [], users: [], first: turn.first });
+		this.deliver(turn.request, { restart: true, reason: change.text, why: "login-failover", results: [], users: [], first: turn.first });
 		this.recorded = transcriptFingerprint(turn.request.messages);
 		this.meta = turnMeta(turn.request, this.cwd);
 	}
@@ -1619,6 +1829,8 @@ class CliSession {
 	}
 
 	private markDesynced(reason: string): void {
+		// The child's conversation is no longer pi's: nothing may resume it.
+		this.resume?.clear(this.piSessionId);
 		if (this.desynced) return;
 		this.desynced = reason;
 		(this.options.onDebug ?? debugLog)({ event: "desynced", session: this.piSessionId, reason });
@@ -1864,6 +2076,10 @@ class CliSession {
 interface TurnPlan {
 	restart: boolean;
 	reason: string;
+	/** A restart's recorded reason (usage-record.ts LAUNCH_WHYS); "" when the child carries on. */
+	why: string;
+	/** Why a resume record was not used (LAUNCH_FALLBACKS). */
+	fallback?: string;
 	results: Extract<Message, { role: "toolResult" }>[];
 	/** New user messages since the last turn, oldest first. */
 	users: Message[];
@@ -1871,6 +2087,10 @@ interface TurnPlan {
 	first?: boolean;
 	/** Resume (and fork) this CLI session instead of folding: `users` is all it has not heard. */
 	resume?: string;
+	/** The login a resume record was saved on (null: none); a child on another one folds instead. */
+	resumeLogin?: string | null;
+	/** The restart already ran (a resume that fell back to folding on a live child). */
+	started?: boolean;
 }
 
 /** pi's tool result as an MCP `CallToolResult`. */
@@ -1907,10 +2127,15 @@ export class SessionBridge implements ClaudeSessionBridge {
 	private forkSeed?: ClaudeForkPoint;
 	/** pi session id -> the fork point it was seeded with, and its source (seedFork). */
 	private readonly seeds = new Map<string, { point: ClaudeForkPoint; from: string }>();
+	/** The chats' resume records (resume-record.ts). */
+	private readonly resume: ResumeStore;
+	/** pi sessions whose idle child was reaped: their next child records `reaped` as why it started. */
+	private readonly reaped = new Set<string>();
 
 	constructor(options: SessionBridgeOptions = {}) {
 		this.options = options;
 		this.limits = { ...LIMITS, ...options.limits };
+		this.resume = new ResumeStore(options.resumeDir === false ? undefined : (options.resumeDir ?? defaultResumeDir()));
 		this.forkSeed = options.forkFrom ?? decodeForkPoint((options.env?.[CLAUDE_FORK_ENV] ?? process.env[CLAUDE_FORK_ENV]));
 	}
 
@@ -2010,7 +2235,8 @@ export class SessionBridge implements ClaudeSessionBridge {
 			// A pi child forked from a Claude session (a background fork) or a fork Sova seeded gets
 			// the seed for its conversation; one-shot requests (compaction, branch summaries) never do.
 			const seed = oneShot ? undefined : this.takeSeed(key);
-			session = new CliSession(key, this.options, this.cwdFor(key), seed, () => this.logins.get(key));
+			const origin = this.reaped.delete(key) ? "reaped" as const : undefined;
+			session = new CliSession(key, this.options, this.cwdFor(key), seed, () => this.logins.get(key), { resume: this.resume, origin, oneShot });
 			this.sessions.set(key, session);
 		}
 		this.reapIdle(key);
@@ -2038,6 +2264,7 @@ export class SessionBridge implements ClaudeSessionBridge {
 	/** Called from the extension's `session_shutdown` hook. */
 	async disposeSession(piSessionId: string, reason = "pi session shut down"): Promise<void> {
 		this.cwds.delete(piSessionId);
+		this.reaped.delete(piSessionId);
 		this.logins.delete(piSessionId);
 		this.seeds.delete(piSessionId);
 		const session = this.sessions.get(piSessionId);
@@ -2067,6 +2294,7 @@ export class SessionBridge implements ClaudeSessionBridge {
 		for (let i = 0; i < excess && i < idle.length; i++) {
 			const [key, session] = idle[i]!;
 			this.sessions.delete(key);
+			this.reaped.add(key);
 			void session.teardown("idle session reaped");
 		}
 	}

@@ -32,6 +32,8 @@ A schedule has one to three triggers:
 
 Thirty minutes is the shortest interval, and a schedule fires at most 48 times a day. Only one run of a schedule is in flight at a time: while the last run is still working, a timed fire is skipped, and a `merge-ready` fire waits until that run is done.
 
+A `merge-ready` fire also waits until at least 30 minutes have passed since the schedule last fired for any reason. Branches that turn ready in the meantime are collected and named together in the next fire, so a run of finished branches wakes the session once, not once per branch. It never uses up the day's last fires that the schedule's timed triggers might need, so a backstop such as `every 6h` still runs.
+
 In the Playbooks dialog a schedule reads in words, for example "When a branch is ready to merge · Every 6 hours · Next 12:00 PM".
 
 ### Approving a schedule

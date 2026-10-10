@@ -13,6 +13,7 @@ import {
   mergeReadyReason,
   dayKey,
   fireHead,
+  maxFiresPerDay,
   hostZone,
   lateText,
   nextFire,
@@ -523,10 +524,21 @@ export class ScheduleKeeper {
       else prev.out = true;
     }
     if (!fresh.length) return;
+    // Held, unlogged and unseen, so they go out together later: within 30 minutes of this
+    // schedule's last fire of any trigger, and while that run is in flight.
+    const lastFire = s.fires[s.fires.length - 1];
+    if (lastFire && now - lastFire.at < MERGE_READY_QUIET_MS) return;
     const last = [...s.fires].reverse().find((f) => f.path);
-    if (last?.path && this.deps.busy(last.path)) return; // waits for the run in flight
+    if (last?.path && this.deps.busy(last.path)) return;
     fresh.sort((a, b) => a.branch.localeCompare(b.branch));
     for (const f of fresh) seen[f.path] = { branch: f.branch, at: now };
+    // The day's timed fires keep their room under the cap: merge-ready never takes it.
+    const tz = this.zone(ev.header);
+    const reserved = maxFiresPerDay(ev.header!.triggers!).n;
+    if (s.day?.key === dayKey(now, tz) && s.day.n >= MAX_FIRES_PER_DAY - reserved) {
+      this.log(s, MERGE_READY, "skipped", { why: `merge-ready leaves today's last ${reserved} of ${MAX_FIRES_PER_DAY} fires to the timed triggers` });
+      return;
+    }
     await this.fire(s, ev, MERGE_READY, undefined, mergeReadyReason(fresh));
   }
 

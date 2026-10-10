@@ -5461,6 +5461,26 @@
       },
       "evidence": "verified"
     },
+    "§app.insights/usage-resend-display": {
+      "kind": "behavior",
+      "requires": [
+        "§app.insights/usage-resend"
+      ],
+      "authority": "accepted",
+      "code": [
+        "src/lib/resend.ts",
+        "src/lib/resend.test.ts",
+        "src/components/ResendLine.tsx",
+        "src/components/CostsTab.tsx",
+        "src/components/SessionUsage.tsx",
+        "src/costs-tab.css"
+      ],
+      "evidence": "verified",
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:42Z"
+      }
+    },
     "§app.insights/worktrees-endpoint": {
       "kind": "behavior",
       "requires": [],

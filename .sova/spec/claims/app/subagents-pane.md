@@ -209,7 +209,8 @@ strip, empty or not: a tab that came and went would move the strip under the rea
 - **Usage** is what the session has spent, from the usage ledger (§app.insights/usage-ledger,
   `GET /api/usage/session`, polled while the tab shows). First the headline,
   `{n} tokens in and out · $x` (input + output; cache in its `title`; dollars at API prices,
-  subscriptions included). Then a table with one row per model × origin, the main thread first and
+  subscriptions included). Under it, when the session's own conversation re-sent its history, the
+  re-sent line (§app.insights/usage-resend-display). Then a table with one row per model × origin, the main thread first and
   then the biggest spender: Model · Where (Main thread, Side calls, Subagents) · In · Out ·
   Cache read · Cache write · Cost, with a **Main thread Σ** footer. Every branch counts, retries
   and housekeeping included; a fork counts only its own calls. Then this session's workers:

@@ -451,8 +451,9 @@ function.** Standalone `claude` use outside Sova and pi is not recorded.
   reports no tokens writes nothing. Each attempt of a retried call is its own record.
 - **How a Claude process started.** The first record of each Claude Code child the provider bridge
   launches for a conversation carries `launch`: `how` the conversation reached it (`fresh`, nothing
-  before the message; `resumed`, Claude's own saved copy picked up; `folded` or `joined`, the history
-  re-sent condensed in one message; `view`, a memory view sent as written), `why` it was started
+  before the turn's own user messages, so an overseer's first message with its run note is fresh;
+  `resumed`, Claude's own saved copy picked up; `folded` or `joined`, the history re-sent condensed
+  in one message; `view`, a memory view sent as written), `why` it was started
   (`new`, `process-start` after a server restart or a reopen, `reaped` after its idle process was
   closed, `ended`, `model`, `effort`, `system-prompt`, `tools`, `cwd`, `diverged`, `desynced`,
   `aborted`, `tool-results`, `nothing-new`, `login-leaving`, `login-picked`, `login-failover`,

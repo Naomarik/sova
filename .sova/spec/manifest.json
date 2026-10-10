@@ -1015,7 +1015,11 @@
         "server/harness/pi/memory.ts",
         "pi-config/extensions/claude-code/provider/memory-view.ts",
         "server/memory/prompts.ts",
-        "server/memory/chat-memory.test.ts"
+        "server/memory/chat-memory.test.ts",
+        "server/memory/tree.ts",
+        "server/memory/store.ts",
+        "server/memory/tree.test.ts",
+        "server/memory/engine.test.ts"
       ]
     },
     "§chat.memory/types": {
@@ -1050,7 +1054,8 @@
         "server/sessions-configure.ts",
         "server/overseer-tools.ts",
         "server/project-coding-mode.ts",
-        "shared/memory.ts"
+        "shared/memory.ts",
+        "server/harness/pi/golden/session/S15-mode-command.trace"
       ]
     },
     "§chat.memory/zoomable": {
@@ -16953,8 +16958,10 @@
       ],
       "authority": "accepted",
       "code": [
-        "pi-config/extensions/claude-code/provider/session-bridge.ts"
-      ]
+        "pi-config/extensions/claude-code/provider/session-bridge.ts",
+        "pi-config/extensions/claude-code/provider/bridge.test.ts"
+      ],
+      "evidence": "verified"
     }
   },
   "boundary": {

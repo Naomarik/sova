@@ -37,7 +37,11 @@ its head and tail. A restart costs a few seconds to launch the child, and the fo
 new prompt, so it is sent without help from the prompt cache. A history that starts with a memory
 view message (§chat.memory/turn, the declared shape of `provider/memory-view.ts`) and is otherwise
 only user messages is never folded: the view's guide and stable prefix are appended to the system
-prompt the child is given, and its newer lines and the messages after it go as the child's first
+prompt the child is given, past the CLI's own prompt boundary (`__SYSTEM_PROMPT_DYNAMIC_BOUNDARY__`,
+a separate element of the initialize `systemPrompt`), so on Anthropic's first-party API the CLI
+sends them as a second system block under its own cache mark (no mark added) and a rebase re-writes
+that block alone, the chat's system prompt read from the cache (elsewhere the CLI joins the two into
+one block as before); its newer lines and the messages after it go as the child's first
 user message, as written, with no restart preamble; a mid-turn restart folds the rest with the view
 reduced to its newer lines.
 

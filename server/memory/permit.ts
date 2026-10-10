@@ -10,6 +10,9 @@ function install(): void {
   if (typeof g[WEB_MINOR_HOOK] === "function") return;
   g[WEB_MINOR_HOOK] = (sessionId: string, minor: MinorMode): boolean => applying.get(sessionId)?.has(minor) ?? false;
 }
+// Installed at load, before any chat starts: its presence is how the mode extension knows it runs inside Sova's
+// server, where a chat adopting a saved default with memory keeps it (a terminal drops it).
+install();
 
 /** Run `fn` (the chat's own /mode handler calls) with `minors` permitted in `sessionId`, and only then. */
 export async function withWebMinors<T>(sessionId: string, minors: readonly MinorMode[], fn: () => Promise<T>): Promise<T> {

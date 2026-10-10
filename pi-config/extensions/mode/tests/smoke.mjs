@@ -449,6 +449,32 @@ store.branch = [];
 await hook("session_tree", { newLeafId: "a", oldLeafId: "c" });
 assert.deepEqual(getTools(), ["read", "bash", "edit", "write", "grep", "align"], "tree back off strict restores them (the default has align on)");
 
+// A saved default with memory on: memory is web-only (§chat.memory/where), so a terminal session adopting it
+// drops memory (status and active set alike), while a Sova-hosted chat (the sova:web-minor hook installed) keeps
+// it. mode.json itself is left as saved.
+{
+	const WEB_MINOR = Symbol.for("sova:web-minor");
+	let published;
+	const off = events.on("mode:state", (state) => (published = state));
+	writeDefault("normal", ["memory"]);
+	store.branch = [];
+	delete globalThis[WEB_MINOR];
+	await hook("session_start", { reason: "startup" });
+	assert.doesNotMatch(store.status.get("mode"), /memory/, "a terminal session's status never claims memory from the default");
+	assert.ok(!published.minorModes.includes("memory"), "nor does its active set");
+	await commands.get("mode").handler("status", ctx);
+	assert.match(store.notices.at(-1).message, /^minor: \(none\)$/m);
+	await hook("session_tree", { newLeafId: "a", oldLeafId: "b" });
+	assert.doesNotMatch(store.status.get("mode"), /memory/, "nor after /tree onto a branch without a snapshot");
+	assert.deepEqual(readDefault().minorModes, ["memory"], "mode.json keeps memory");
+	globalThis[WEB_MINOR] = () => false;
+	await hook("session_start", { reason: "startup" });
+	assert.match(store.status.get("mode"), /memory/, "a Sova-hosted chat adopts memory from the default");
+	assert.ok(published.minorModes.includes("memory"));
+	delete globalThis[WEB_MINOR];
+	off();
+}
+
 // Back to a plain default and a pristine branch for the scenarios below
 writeDefault("normal", []);
 await hook("session_start", { reason: "resume" });

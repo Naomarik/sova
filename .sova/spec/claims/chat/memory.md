@@ -69,7 +69,11 @@ A chat with no record uses the saved default (Settings' memory file `default`), 
 128 KB. The choice is kept while memory is off, survives reopen, rewind (a rewind past the record
 falls back to the one before it) and restart, and reaches every tab in the chat's `mode` message
 (`memory`), so a change of type alone is a new `mode` message. `Save as default` saves it with the
-chat's modes; the size accepts any whole number of KB from 8 to 512.
+chat's modes; the size accepts any whole number of KB from 8 to 512. Only a chat whose menu can turn
+memory on gets `memory` in its `mode` message and in a switch's result (`ChatModeResult`): a runtime
+without the memory engine (a baton, a project overseer, another special loadout), a session that
+refuses mode switches and the Overseer get none, so their menu shows no memory row, and a `{ memory }`
+or memory-on switch there is refused before anything is written.
 
 ## §chat.memory/log — The message log and its sidecar
 

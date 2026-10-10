@@ -37,6 +37,7 @@ import { announce } from "../lib/ui-state";
 import "../projects.css";
 import "../costs-tab.css";
 import { ActionMenu } from "./ActionMenu";
+import { ResendLine } from "./ResendLine";
 import { sessionHref } from "./Sidebar";
 import { Banner, Icon } from "./ui";
 
@@ -610,6 +611,7 @@ function TopSessions(props: { rows: UsageSessionRow[]; sessions: SessionSummary[
                     )}
                   </Show>
                 </span>
+                <ResendLine resend={r.resend} spendUsd={r.usd} of="its spend" />
               </span>
               <span class="cost-figure" title={spendTitle(r)}>
                 {usd(r.usd)}

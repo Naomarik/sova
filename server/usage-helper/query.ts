@@ -10,6 +10,8 @@ import {
   type UsageModelRow,
   type UsagePricing,
   type UsageRange,
+  type UsageResend,
+  type UsageResendReason,
   type UsageSessionModelRow,
   type UsageSessionRow,
   type UsageSessionSpend,
@@ -95,6 +97,56 @@ const roundAll = (t: CostTokens): CostTokens => ({
   cacheWrite1h: round(t.cacheWrite1h),
 });
 
+/** Launches whose `how` re-sent the whole history (usage-record.ts RESEND_HOWS). */
+const RESEND_HOWS = new Set(["folded", "joined"]);
+
+/**
+ * A conversation's Claude launches (§app.insights/usage-resend), from its rows' `launch` dimension
+ * (each row holds first calls only, so its call count is its launches): the re-sends priced at the
+ * first call's input and cache writes, by why and fallback.
+ */
+export class Resends {
+  recorded = 0;
+  resumed = 0;
+  private readonly reasons = new Map<string, UsageResendReason>();
+  addRow(launch: string, row: Row, price: RowPrice): void {
+    const [how = "", why = "", fallback = ""] = launch.split("/");
+    this.recorded += row.n;
+    if (how === "resumed") this.resumed += row.n;
+    if (!RESEND_HOWS.has(how)) return;
+    const usd = price.p.status === "priced" ? price.by[0] + price.by[3] + price.by[4] : 0;
+    this.add({ why, fallback: fallback || null, launches: row.n, usd, tokens: row.t[0] + row.t[3] + row.t[4] });
+  }
+  private add(r: UsageResendReason): void {
+    const key = `${r.why}/${r.fallback ?? ""}`;
+    const cur = this.reasons.get(key);
+    if (!cur) this.reasons.set(key, { ...r });
+    else {
+      cur.launches += r.launches;
+      cur.usd += r.usd;
+      cur.tokens += r.tokens;
+    }
+  }
+  merge(o: Resends): void {
+    this.recorded += o.recorded;
+    this.resumed += o.resumed;
+    for (const r of o.reasons.values()) this.add(r);
+  }
+  /** The wire's UsageResend; undefined when no launch was recorded. */
+  out(): UsageResend | undefined {
+    if (!this.recorded) return undefined;
+    const reasons = [...this.reasons.values()].map((r) => ({ ...r, usd: round(r.usd) })).sort((a, b) => b.usd - a.usd || b.tokens - a.tokens);
+    return {
+      usd: round(reasons.reduce((n, r) => n + r.usd, 0)),
+      tokens: reasons.reduce((n, r) => n + r.tokens, 0),
+      launches: reasons.reduce((n, r) => n + r.launches, 0),
+      resumed: this.resumed,
+      recorded: this.recorded,
+      reasons,
+    };
+  }
+}
+
 /** How a group's calls were priced: one status, or "mixed"; the newest priced call's key. */
 class Pricing {
   status: UsagePricing["status"] | null = null;
@@ -152,6 +204,8 @@ interface Entry {
   requested: Set<string>;
   acc: Acc;
   pricing: Pricing;
+  /** Its Claude launches, when its rows recorded any. */
+  resend: Resends | null;
 }
 
 /** Providers whose models are Claude's, named by Sova's Claude catalog. */
@@ -282,7 +336,7 @@ export class Queries {
     const ld = this.localDay(tz);
     const by = new Map<string, Entry>();
     for (const row of rows) {
-      const [owner, , , kind, , cwd, project, , provider, model, responseModel] = row.d;
+      const [owner, , , kind, , cwd, project, , provider, model, responseModel, , launch] = row.d;
       const local = ld(row.b);
       const shown = displayModel(provider!, model!, responseModel, row.a0);
       const id = `${local}\u001f${owner}\u001f${kind}\u001f${cwd}\u001f${project}\u001f${provider}\u001f${shown.model}\u001f${shown.asked ?? ""}`;
@@ -300,6 +354,7 @@ export class Queries {
           requested: new Set(),
           acc: new Acc(),
           pricing: new Pricing(),
+          resend: null,
         };
         by.set(id, e);
       }
@@ -307,6 +362,7 @@ export class Queries {
       const price = this.priceRow(row);
       e.acc.add(row, price);
       e.pricing.add(price.p, row.a1);
+      if (launch) (e.resend ??= new Resends()).addRow(launch, row, price);
     }
     const entries = [...by.values()];
     const byOwner = new Map<string, Entry[]>();
@@ -345,6 +401,7 @@ export class Queries {
     const byModel = new Map<string, { provider: string; model: string; asked: string | null; requested: Set<string>; acc: Acc; pricing: Pricing }>();
     const byProject = new Map<string, { project: string | null; cwd: string | null; acc: Acc }>();
     const sessions = new Map<string, Acc>();
+    const resends = new Map<string, Resends>();
     let first: string | null = null;
     for (const day of days) {
       for (const e of this.summary(day, tz)) {
@@ -367,6 +424,7 @@ export class Queries {
         const pk = e.project ? `p:${e.project}` : `c:${e.cwd ?? ""}`;
         get(byProject, pk, () => ({ project: e.project, cwd: e.project ? null : e.cwd, acc: new Acc() })).acc.merge(e.acc);
         if (e.owner) get(sessions, e.owner, () => new Acc()).merge(e.acc);
+        if (e.owner && e.resend && e.kind !== "oneshot") get(resends, e.owner, () => new Resends()).merge(e.resend);
       }
     }
     const start = from ?? first;
@@ -387,6 +445,7 @@ export class Queries {
       .slice(0, 20)
       .map(([sid, acc]) => {
         const o = this.ledger.owners.get(sid);
+        const resend = resends.get(sid)?.out();
         return {
           sid,
           kind: o?.kind ?? "main",
@@ -396,6 +455,7 @@ export class Queries {
           project: o?.project ?? null,
           lastAt: acc.lastAt,
           ...acc.spend(),
+          ...(resend ? { resend } : {}),
         };
       });
     return {
@@ -476,9 +536,11 @@ export class Queries {
     const workers = new Acc();
     const models = new Map<string, { origin: UsageSessionModelRow["origin"]; provider: string; model: string; asked: string | null; requested: Set<string>; acc: Acc; pricing: Pricing }>();
     const perWorker = new Map<string, Acc>();
+    const resend = new Resends();
     this.eachEntry(fam, (e) => {
       const owner = e.owner!;
       const origin = owner !== q.sid ? "worker" : e.kind === "oneshot" ? "oneshot" : "main";
+      if (origin === "main" && e.resend) resend.merge(e.resend);
       (origin === "worker" ? workers : origin === "oneshot" ? oneshots : own).merge(e.acc);
       if (origin === "worker") get(perWorker, owner, () => new Acc()).merge(e.acc);
       const m = get(models, `${origin}${e.provider}${e.model}${e.asked ?? ""}`, () => ({ origin, provider: e.provider, model: e.model, asked: e.asked, requested: new Set<string>(), acc: new Acc(), pricing: new Pricing() }));
@@ -513,6 +575,7 @@ export class Queries {
         .map((m): UsageSessionModelRow => ({ origin: m.origin, provider: m.provider, model: m.model, ...identity(m.model, m.asked, m.requested), ...m.acc.spend(), ...m.pricing.out(this.name) }))
         .sort((a, b) => b.usd - a.usd),
       workerList,
+      ...(resend.out() ? { resend: resend.out()! } : {}),
       lastAt: total.lastAt || null,
       prices: { asOf: this.prices.info().asOf },
     };

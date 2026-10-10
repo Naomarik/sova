@@ -3,7 +3,7 @@
 // 30-minute floor and the 48-a-day cap, the next fire, and daylight saving's gap and repeat.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { fireHead, maxFiresPerDay, nextFire, parseWhen, pinSource, scheduleOf, scheduleText, zonedTime, type Trigger } from "./schedules";
+import { fireHead, maxFiresPerDay, mergeReadyReason, nextFire, parseWhen, pinSource, scheduleOf, scheduleText, zonedTime, type Trigger } from "./schedules";
 import { parseWakeNudge, wakeTitle } from "./wake";
 
 const ok = (line: string): Trigger[] => {
@@ -31,6 +31,19 @@ test("the grammar: every trigger kind, case and spacing free", () => {
   assert.equal(scheduleText(ok("fri,mon,wed 09:00")), "Mon, Wed, Fri at 09:00");
   assert.equal(scheduleText(ok("every 1h")), "Every hour");
   assert.equal(scheduleText(ok("every 12h")), "Every 12 hours");
+});
+
+test("merge-ready: an event trigger with no times, its words, and the reason naming at most five branches", () => {
+  const t = ok(" Merge-Ready ;every 6h; claude-limit-reset");
+  assert.deepEqual(t.map((x) => x.src), ["merge-ready", "every 6h", "claude-limit-reset"]);
+  assert.equal(scheduleText(t), "When a branch is ready to merge · Every 6 hours · When a Claude limit resets");
+  assert.equal(nextFire(ok("merge-ready"), Date.now(), "UTC"), null, "no time of its own");
+  assert.equal(maxFiresPerDay(ok("merge-ready; every 30m")).n, 48, "it adds nothing to the per-day bound");
+  assert.notEqual(pinSource({ triggers: ok("merge-ready; every 6h") }, { key: "k", remove: [], grant: [], singleton: true, overseerMayStart: false }), pinSource({ triggers: ok("every 6h") }, { key: "k", remove: [], grant: [], singleton: true, overseerMayStart: false }), "adding it asks again");
+  assert.match(err("merge-ready-now"), /merge-ready/);
+  assert.equal(mergeReadyReason([{ branch: "feat/x", waiting: false }, { branch: "feat/y", waiting: true }]), "Ready to merge: feat/x, feat/y (waiting for an OK).");
+  const seven = ["a", "b", "c", "d", "e", "f", "g"].map((b) => ({ branch: `feat/${b}`, waiting: false }));
+  assert.equal(mergeReadyReason(seven), "Ready to merge: feat/a, feat/b, feat/c, feat/d, feat/e, and 2 more.");
 });
 
 test("one bad trigger makes the whole line invalid, with the exact error", () => {

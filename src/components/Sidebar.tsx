@@ -16,6 +16,7 @@ import {
   eyeLabel,
   doneOpen as doneOpenRule,
   isClearedOverseer,
+  listedOrgProjects,
   overseerEye,
   regionCount,
   rowLine,
@@ -1628,7 +1629,28 @@ export function Sidebar(props: {
    * Organizations (lib/org-region): the only place org sessions are listed. Its own Needs you first,
    * then org → project → groups (Conversations, Conflicts to settle, Builds), each with a Done tail. Open by default, a collapse remembered for the tab.
    */
-  const orgs = createMemo(() => orgSections(orgHits()));
+  // The registered projects, read again with the session list (a project added or archived moves
+  // both), at most every 15 seconds: the list reloads on every live event. The Organizations
+  // region lists each org's placed projects from it, sessions or not; Projects, the standalone ones.
+  const [projectList, { refetch: refetchProjects }] = createResource(() => listProjects().catch(() => null));
+  let projectsReadAt = Date.now();
+  createEffect(
+    on(
+      () => props.sessions,
+      () => {
+        if (Date.now() - projectsReadAt < 15_000) return;
+        projectsReadAt = Date.now();
+        void refetchProjects();
+      },
+      { defer: true },
+    ),
+  );
+  /** This host's placed projects the region lists (none while the host filter names a peer). */
+  const orgProjects = createMemo(() => {
+    const h = hostFilter();
+    return listedOrgProjects(projectList()?.projects, { query: query(), here: h === null || h === SELF_FILTER });
+  });
+  const orgs = createMemo(() => orgSections(orgHits(), orgProjects()));
   /** The region counts rows: a project's eye is not one. */
   const orgRowCount = () => regionCount(orgs());
   const orgTotal = () => regionCount(orgSections(all().filter(isOrgSession)));
@@ -1646,8 +1668,8 @@ export function Sidebar(props: {
   const waitingTitle = (k: number) => (k === 1 ? "1 session waiting on you." : `${k} sessions waiting on you.`);
   const orgNeedsTitle = (k: number) =>
     k === 1 ? "The 1 organization session waiting on you." : `The ${k} organization sessions waiting on you, newest first.`;
-  /** A project's label title: its root, read off the project overseer's folder, else its name. */
-  const projectTitle = (p: OrgProject) => (p.overseer ? tildePath(p.overseer.cwd, home()) : p.name);
+  /** A project's label title: its root, read off the project overseer's folder, else the project list's, else its name. */
+  const projectTitle = (p: OrgProject) => (p.overseer ? tildePath(p.overseer.cwd, home()) : p.root ? tildePath(p.root, home()) : p.name);
   /** Paths waiting on the operator, for the org heads' warn dot. */
   const orgWaiting = createMemo(() => new Set(orgNeedsYou().map((r) => r.session.path)));
   const waitingIn = (rows: readonly SessionSummary[]) => rows.filter((r) => orgWaiting().has(r.path)).length;
@@ -1687,21 +1709,6 @@ export function Sidebar(props: {
    * here, right before Organizations — each registered project's heading with its overseer's eye,
    * then its Builds. Open by default, a collapse remembered for the tab.
    */
-  // The registered projects, read again with the session list (a project added or archived moves
-  // both), at most every 15 seconds: the list reloads on every live event.
-  const [projectList, { refetch: refetchProjects }] = createResource(() => listProjects().catch(() => null));
-  let projectsReadAt = Date.now();
-  createEffect(
-    on(
-      () => props.sessions,
-      () => {
-        if (Date.now() - projectsReadAt < 15_000) return;
-        projectsReadAt = Date.now();
-        void refetchProjects();
-      },
-      { defer: true },
-    ),
-  );
   const projectHits = createMemo(() => hits().filter(inProjectsRegion));
   const projectsFound = createMemo(() => {
     const q = query().trim().toLowerCase();
@@ -2773,6 +2780,7 @@ export function Sidebar(props: {
                       <div class="org-project-head">
                         <h4 class="list-group-label org-project-label" title={p.name}>
                           <a class="org-project-name project-region-link" href={projectHref(p.id)}>
+                            <Icon name="folder" small class="org-project-icon" />
                             <bdi>{p.name}</bdi>
                           </a>
                           <span class="text-num">{p.builds.active.length + p.builds.done.length}</span>
@@ -2916,9 +2924,22 @@ export function Sidebar(props: {
                           <div class="org-project">
                             <div class="org-project-head">
                               <h4 class="list-group-label org-project-label" title={projectTitle(p)}>
-                                <span class="org-project-name">
-                                  <bdi>{p.name}</bdi>
-                                </span>
+                                {/* Its page is one click away; "Other" (no project) has no page. */}
+                                <Show
+                                  when={p.id}
+                                  fallback={
+                                    <span class="org-project-name">
+                                      <bdi>{p.name}</bdi>
+                                    </span>
+                                  }
+                                >
+                                  {(id) => (
+                                    <a class="org-project-name project-region-link" href={projectHref(id())}>
+                                      <Icon name="folder" small class="org-project-icon" />
+                                      <bdi>{p.name}</bdi>
+                                    </a>
+                                  )}
+                                </Show>
                                 <span class="text-num">{projectCount(p)}</span>
                               </h4>
                               <Show when={p.overseer}>{(po) => <OverseerEye session={po()} project={p.name} selected={props.selected} />}</Show>

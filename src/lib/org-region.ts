@@ -8,6 +8,7 @@
 // and aggregates run under tsx --test, and the sidebar keeps the (sessionStorage / memory) state.
 // Which group and state a row is in is decided in `rowGroup` and `orgRowState` alone.
 
+import type { ProjectSummary } from "../../shared/projects";
 import type { AttentionDigest, AttentionItem, SessionSummary } from "../../shared/protocol";
 import { needsYouRows, type NeedsYouRow } from "./needs-you";
 import { byRecentActivity } from "./recent";
@@ -32,6 +33,8 @@ export interface OrgProject {
   /** `projectId`, or "" for workspace files that belong to no project. */
   id: string;
   name: string;
+  /** The project's folder, from this host's project list (absent for a project known only by its sessions). */
+  root?: string;
   /** The current project overseer, drawn as the eye on the heading, never as a row. */
   overseer: SessionSummary | null;
   /** Gathering sessions and offers sent to people (not settle sessions). */
@@ -112,26 +115,39 @@ export const splitCount = (x: StateSplit): number => x.notStarted.length + x.inP
 const byName = (a: { name: string; id: string }, b: { name: string; id: string }) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id);
 
 /**
- * Org sessions of `sessions` into org → project → groups. Orgs and projects by name (ties on id), so
- * the containers stay put between polls; "Other" (no project) goes last.
+ * Org sessions of `sessions` into org → project → groups, plus every placed, unarchived project of
+ * `projects` (this host's project list), so a project with no session — and an org with only such
+ * projects — still has its heading. Orgs and projects by name (ties on id), so the containers stay
+ * put between polls; "Other" (no project) goes last.
  */
-export function orgSections(sessions: readonly SessionSummary[]): OrgSection[] {
+export function orgSections(sessions: readonly SessionSummary[], projects: readonly ProjectSummary[] = []): OrgSection[] {
   const orgs = new Map<string, { id: string; name: string; projects: Map<string, OrgProject> }>();
-  for (const s of sessions) {
-    const o = s.org;
-    if (!o || !inOrgRegion(s) || inArchivedProject(s)) continue;
-    let org = orgs.get(o.orgId);
-    if (!org) orgs.set(o.orgId, (org = { id: o.orgId, name: o.orgName || o.orgId, projects: new Map() }));
+  const orgOf = (id: string, name: string | undefined) => {
+    let org = orgs.get(id);
+    if (!org) orgs.set(id, (org = { id, name: name || id, projects: new Map() }));
     // A later row may carry the name an earlier one lacked.
-    if (o.orgName && org.name === o.orgId) org.name = o.orgName;
-    const pid = o.projectId ?? "";
+    if (name && org.name === id) org.name = name;
+    return org;
+  };
+  const projectOf = (org: { projects: Map<string, OrgProject> }, pid: string, name: string | undefined, root?: string) => {
     let p = org.projects.get(pid);
     if (!p)
       org.projects.set(
         pid,
-        (p = { id: pid, name: pid ? o.projectName || UNKNOWN_PROJECT : NO_PROJECT, overseer: null, conversations: emptySplit(), conflicts: emptySplit(), builds: { active: [], done: [] }, other: [] }),
+        (p = { id: pid, name: pid ? name || UNKNOWN_PROJECT : NO_PROJECT, overseer: null, conversations: emptySplit(), conflicts: emptySplit(), builds: { active: [], done: [] }, other: [] }),
       );
-    if (o.projectName && p.name === UNKNOWN_PROJECT) p.name = o.projectName;
+    if (name && p.name === UNKNOWN_PROJECT) p.name = name;
+    if (root && !p.root) p.root = root;
+    return p;
+  };
+  for (const pr of projects) {
+    if (pr.space.kind !== "org" || pr.archived) continue;
+    projectOf(orgOf(pr.space.orgId, pr.space.orgName), pr.id, pr.name, pr.root);
+  }
+  for (const s of sessions) {
+    const o = s.org;
+    if (!o || !inOrgRegion(s) || inArchivedProject(s)) continue;
+    const p = projectOf(orgOf(o.orgId, o.orgName), o.projectId ?? "", o.projectName);
     if (isCurrentOverseer(s)) {
       // Only one is current; should the list ever carry two, the newest is the eye and the other stays a row.
       const [eye, row] = !p.overseer ? [s, null] : byRecentActivity(s, p.overseer) < 0 ? [s, p.overseer] : [p.overseer, s];
@@ -159,6 +175,17 @@ export function orgSections(sessions: readonly SessionSummary[]): OrgSection[] {
         .sort((a, b) => Number(a.id === "") - Number(b.id === "") || byName(a, b)),
     }))
     .sort(byName);
+}
+
+/**
+ * The placed projects the region lists with or without sessions: this host's unarchived org
+ * projects (`here`: false while the host filter names a peer, whose projects this list doesn't
+ * hold). A search keeps those it finds by name, folder or org name.
+ */
+export function listedOrgProjects(projects: readonly ProjectSummary[] | null | undefined, input: { query: string; here: boolean }): ProjectSummary[] {
+  if (!projects || !input.here) return [];
+  const q = input.query.trim().toLowerCase();
+  return projects.filter((p) => p.space.kind === "org" && !p.archived && (!q || `${p.name} ${p.root} ${p.space.orgName}`.toLowerCase().includes(q)));
 }
 
 /** Every row a project draws, in group order. The eye is not a row. */

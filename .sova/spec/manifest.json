@@ -95,7 +95,9 @@
       "evidence": "verified",
       "code": [
         "src/lib/agents-board.ts",
-        "src/lib/agents-board.test.ts"
+        "src/lib/agents-board.test.ts",
+        "src/components/AgentsView.tsx",
+        "src/agents-board.css"
       ]
     },
     "§app.insights/tokens-motion-and-accessibility": {
@@ -117,13 +119,17 @@
         "src/components/UsageView.tsx",
         "src/lib/insights.ts",
         "server/insights.ts",
-        "shared/protocol.ts"
+        "shared/protocol.ts",
+        "src/components/UsageHistory.tsx",
+        "src/components/UsageOllama.tsx",
+        "src/design/base.css",
+        "src/lib/usage-rows.integration.test.ts"
       ]
     },
     "§app.insights/usage-page-and-agents-page": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/components/AgentsView.tsx",
         "src/lib/agents-board.ts",
@@ -133,7 +139,8 @@
         "src/components/CostsTab.tsx",
         "src/lib/agents-board.test.ts",
         "src/lib/api.ts",
-        "shared/usage/wire.ts"
+        "shared/usage/wire.ts",
+        "src/design/base.css"
       ]
     },
     "§app.session-list/accessibility": {
@@ -871,236 +878,6 @@
         "src/lib/markdown.ts"
       ]
     },
-    "§chat.memory/choice": {
-      "kind": "behavior",
-      "requires": [
-        "§chat/memory",
-        "§app.harness/state",
-        "§chat.mode-menu/menu"
-      ],
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "server/harness/state-kinds.ts",
-        "server/mode-state.ts",
-        "server/chat-manager.ts",
-        "server/memory/settings.ts",
-        "server/mode.ts",
-        "server/memory/chat-memory.test.ts"
-      ]
-    },
-    "§chat.memory/help": {
-      "kind": "behavior",
-      "requires": [
-        "§chat.memory/settings",
-        "§chat.memory/types",
-        "§chat.memory/tree",
-        "§chat.memory/turn",
-        "§chat.memory/zoomable",
-        "§chat.memory/summarizer"
-      ],
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "src/components/MemorySettings.tsx",
-        "src/components/HelpPopover.tsx",
-        "src/components/help-popover.css",
-        "src/lib/memory-help.ts",
-        "src/lib/memory-help.test.ts",
-        "src/lib/help-popover.ts",
-        "src/lib/help-popover.test.ts"
-      ],
-      "agreed": {
-        "by": "user",
-        "at": "2026-10-10T09:37Z"
-      }
-    },
-    "§chat.memory/log": {
-      "kind": "behavior",
-      "requires": [
-        "§chat/memory",
-        "§app.harness/reader"
-      ],
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "server/memory/log.ts",
-        "server/memory/store.ts",
-        "server/session-fork-routes.ts",
-        "server/sessions-index.ts",
-        "server/memory/engine.test.ts",
-        "server/archive-subagent-guard.test.ts"
-      ]
-    },
-    "§chat.memory/overseer": {
-      "kind": "behavior",
-      "requires": [
-        "§chat/memory",
-        "§chat.memory/where"
-      ],
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "server/memory/routes.ts",
-        "server/overseer.ts",
-        "server/memory/settings.test.ts"
-      ]
-    },
-    "§chat.memory/preparing": {
-      "kind": "behavior",
-      "requires": [
-        "§chat.memory/turn",
-        "§chat.memory/status"
-      ],
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "server/memory/engine.ts"
-      ]
-    },
-    "§chat.memory/recall": {
-      "kind": "behavior",
-      "requires": [
-        "§chat.memory/tree",
-        "§chat.transcript/slim-rows"
-      ],
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "server/memory/tools.ts",
-        "shared/memory.ts",
-        "src/lib/message.ts",
-        "shared/memory.test.ts"
-      ]
-    },
-    "§chat.memory/settings": {
-      "kind": "behavior",
-      "requires": [
-        "§chat/memory"
-      ],
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "server/memory/settings.ts",
-        "server/memory/routes.ts",
-        "server/memory/settings.test.ts"
-      ]
-    },
-    "§chat.memory/status": {
-      "kind": "behavior",
-      "requires": [
-        "§chat/memory"
-      ],
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "server/memory/routes.ts",
-        "shared/protocol.ts",
-        "server/chat-manager.ts",
-        "server/memory/chat.ts"
-      ]
-    },
-    "§chat.memory/summarizer": {
-      "kind": "behavior",
-      "requires": [
-        "§chat.memory/tree",
-        "§chat.memory/settings"
-      ],
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "server/memory/summarizer.ts",
-        "server/memory/prompts.ts",
-        "server/memory/settings.test.ts"
-      ]
-    },
-    "§chat.memory/tree": {
-      "kind": "behavior",
-      "requires": [
-        "§chat.memory/log"
-      ],
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "server/memory/tree.ts",
-        "server/memory/tree.test.ts",
-        "server/memory/engine.test.ts"
-      ]
-    },
-    "§chat.memory/turn": {
-      "kind": "behavior",
-      "requires": [
-        "§chat.memory/tree",
-        "§chat.memory/log",
-        "§chat.mode-menu/minor-toggle-keeps-prompt"
-      ],
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "server/memory/engine.ts",
-        "server/harness/pi/memory.ts",
-        "pi-config/extensions/claude-code/provider/memory-view.ts",
-        "server/memory/prompts.ts",
-        "server/memory/chat-memory.test.ts",
-        "server/memory/tree.ts",
-        "server/memory/store.ts",
-        "server/memory/tree.test.ts",
-        "server/memory/engine.test.ts"
-      ]
-    },
-    "§chat.memory/types": {
-      "kind": "behavior",
-      "requires": [
-        "§chat/memory"
-      ],
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "shared/memory.ts",
-        "shared/protocol.ts"
-      ]
-    },
-    "§chat.memory/where": {
-      "kind": "behavior",
-      "requires": [
-        "§chat/memory",
-        "§chat.mode-menu/how-a-switch-reaches-the-chat",
-        "§chat.mode-menu/workers",
-        "§chat.mode-menu/terminal"
-      ],
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "pi-config/extensions/mode/minor.ts",
-        "pi-config/extensions/mode/index.ts",
-        "pi-config/extensions/mode/palette.ts",
-        "server/memory/permit.ts",
-        "server/memory/permit.test.ts",
-        "pi-config/extensions/mode/tests/smoke.mjs",
-        "server/chat-manager.ts",
-        "shared/profiles.ts",
-        "server/sessions-configure.ts",
-        "server/overseer-tools.ts",
-        "server/project-coding-mode.ts",
-        "server/project-coding-mode.test.ts",
-        "shared/memory.ts",
-        "server/harness/pi/golden/session/S15-mode-command.trace"
-      ]
-    },
-    "§chat.memory/zoomable": {
-      "kind": "behavior",
-      "requires": [
-        "§chat.memory/tree",
-        "§chat.memory/types"
-      ],
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "server/memory/engine.ts",
-        "server/harness/pi/memory.ts",
-        "server/memory/chat-memory.test.ts"
-      ]
-    },
     "§chat.mode-menu/how-a-switch-reaches-the-chat": {
       "kind": "behavior",
       "authority": "accepted",
@@ -1582,19 +1359,6 @@
         "src/lib/markdown.ts",
         "src/components/Markdown.tsx",
         "src/lib/session-links.ts"
-      ]
-    },
-    "§chat/memory": {
-      "kind": "surface",
-      "requires": [
-        "§chat/mode-menu"
-      ],
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "server/memory/engine.ts",
-        "shared/memory.ts",
-        "shared/protocol.ts"
       ]
     },
     "§chat/mode-menu": {
@@ -2423,29 +2187,11 @@
       "kind": "behavior",
       "requires": [],
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "pi-config/extensions/claude-code/provider/session-bridge.ts",
         "pi-config/extensions/claude-code/provider/session-records.ts",
-        "pi-config/extensions/claude-code/provider/fork-point.ts",
-        "pi-config/extensions/claude-code/provider/resume-record.ts"
-      ],
-      "agreed": {
-        "by": "user",
-        "at": "2026-10-10T10:58Z"
-      }
-    },
-    "§app.worker-restore/failure-reason": {
-      "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "pi-config/extensions/subagents/runner.ts",
-        "pi-config/extensions/subagents/runner.test.ts",
-        "pi-config/extensions/subagents/README.md"
-      ],
-      "requires": [
-        "§app.worker-restore/worker-record"
+        "pi-config/extensions/claude-code/provider/fork-point.ts"
       ]
     },
     "§app.worker-restore/restore": {
@@ -3286,19 +3032,11 @@
         "server/overseer-todos.ts",
         "server/index.ts",
         "server/app.ts",
-        "server/overseer-mode.test.ts",
-        "server/overseer-opening.ts",
-        "server/overseer-opening.test.ts",
-        "server/overseer-runtime.test.ts",
-        "server/overseer-run-note.ts"
+        "server/overseer-mode.test.ts"
       ],
       "requires": [
         "§app.overseer/tools"
-      ],
-      "agreed": {
-        "by": "user",
-        "at": "2026-10-10T10:06Z"
-      }
+      ]
     },
     "§app.overseer/identity-and-clear": {
       "kind": "behavior",
@@ -3448,11 +3186,7 @@
       ],
       "requires": [
         "§app.overseer/tools"
-      ],
-      "agreed": {
-        "by": "user",
-        "at": "2026-10-10T10:38Z"
-      }
+      ]
     },
     "§app.overseer/tools": {
       "kind": "behavior",
@@ -5119,20 +4853,13 @@
         "src/projects.css",
         "server/overseer-org-part.ts",
         "server/overseer-org-part.test.ts",
-        "server/spec-tool-fake.ts",
-        "server/overseer-opening.ts",
-        "server/overseer-run-note.ts",
-        "server/project-overseer-opening.test.ts"
+        "server/spec-tool-fake.ts"
       ],
       "requires": [
         "§app.overseer/hosting",
         "§app.organizations/workspace-repo",
         "§chat/images"
-      ],
-      "agreed": {
-        "by": "user",
-        "at": "2026-10-10T10:06Z"
-      }
+      ]
     },
     "§app.project-overseer/tools": {
       "kind": "behavior",
@@ -5438,48 +5165,6 @@
         "src/lib/decisions-view.test.ts",
         "src/components/ProjectPage.tsx"
       ]
-    },
-    "§app.insights/usage-resend": {
-      "kind": "behavior",
-      "requires": [
-        "§app.insights/usage-ledger"
-      ],
-      "authority": "accepted",
-      "code": [
-        "server/usage-helper/query.ts",
-        "server/usage-helper/ledger.ts",
-        "shared/usage/wire.ts",
-        "server/claude-cache-check.ts",
-        "scripts/claude-cache-check.ts",
-        "server/claude-cache-check.test.ts",
-        "server/usage-helper/ledger.test.ts",
-        "package.json"
-      ],
-      "agreed": {
-        "by": "user",
-        "at": "2026-10-10T10:06Z"
-      },
-      "evidence": "verified"
-    },
-    "§app.insights/usage-resend-display": {
-      "kind": "behavior",
-      "requires": [
-        "§app.insights/usage-resend"
-      ],
-      "authority": "accepted",
-      "code": [
-        "src/lib/resend.ts",
-        "src/lib/resend.test.ts",
-        "src/components/ResendLine.tsx",
-        "src/components/CostsTab.tsx",
-        "src/components/SessionUsage.tsx",
-        "src/costs-tab.css"
-      ],
-      "evidence": "verified",
-      "agreed": {
-        "by": "user",
-        "at": "2026-10-10T10:42Z"
-      }
     },
     "§app.insights/worktrees-endpoint": {
       "kind": "behavior",
@@ -6441,11 +6126,7 @@
         "§app.organizations/workspace-repo",
         "§app.organizations/org-page",
         "§app.project-overseer/identity"
-      ],
-      "agreed": {
-        "by": "user",
-        "at": "2026-10-10T10:38Z"
-      }
+      ]
     },
     "§app.owner-page/content": {
       "kind": "behavior",
@@ -10984,27 +10665,6 @@
         "§app.organizations/workspace-repo"
       ]
     },
-    "§app.outreach/org-sender": {
-      "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "server/outreach/targets.ts",
-        "server/outreach/routes.ts",
-        "server/outreach/core.ts",
-        "server/outreach/whatsapp.ts",
-        "server/org-engine.ts",
-        "shared/outreach.ts",
-        "src/components/OrgWhatsAppCard.tsx",
-        "src/components/OrgsView.tsx",
-        "src/lib/outreach.ts",
-        "server/outreach-numbers.test.ts"
-      ],
-      "requires": [
-        "§app.outreach/sender-list",
-        "§app.outreach/send"
-      ]
-    },
     "§app.outreach/secrets": {
       "kind": "behavior",
       "authority": "accepted",
@@ -11107,90 +10767,6 @@
         "services/whatsapp/test/lock.test.mjs"
       ],
       "requires": []
-    },
-    "§app.outreach/sender-controls": {
-      "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "server/outreach/routes.ts",
-        "server/outreach/unit.ts",
-        "server/outreach/relay.ts",
-        "server/outreach/whatsapp.ts",
-        "server/mesh/access.ts",
-        "shared/outreach.ts",
-        "src/components/OutreachSettings.tsx",
-        "src/lib/outreach.ts",
-        "src/lib/outreach.test.ts",
-        "server/outreach-unit.test.ts",
-        "server/outreach.test.ts",
-        "server/outreach-test-fixtures.ts",
-        "server/outreach/sender-test-fixtures.ts"
-      ],
-      "requires": [
-        "§app.outreach/sender-route",
-        "§mesh.peers/grants"
-      ]
-    },
-    "§app.outreach/sender-health": {
-      "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "server/outreach/health.ts",
-        "server/outreach/core.ts",
-        "server/outreach/targets.ts",
-        "server/outreach/whatsapp.ts",
-        "server/overseer.ts",
-        "shared/outreach.ts",
-        "shared/protocol.ts",
-        "server/outreach-health.test.ts",
-        "server/outreach.test.ts",
-        "server/outreach-numbers.test.ts"
-      ],
-      "requires": [
-        "§app.overseer/attention-digest"
-      ]
-    },
-    "§app.outreach/sender-link": {
-      "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "server/outreach/link.ts",
-        "server/outreach/routes.ts",
-        "server/outreach/whatsapp.ts",
-        "shared/outreach.ts",
-        "src/components/SenderLink.tsx",
-        "src/lib/outreach.ts",
-        "src/lib/qr.ts",
-        "src/lib/outreach.test.ts",
-        "server/outreach-link.test.ts",
-        "services/whatsapp/src/core.mjs"
-      ],
-      "requires": [
-        "§app.outreach/sender"
-      ]
-    },
-    "§app.outreach/sender-list": {
-      "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "server/outreach/senders.ts",
-        "server/outreach/targets.ts",
-        "server/outreach/settings.ts",
-        "server/outreach/routes.ts",
-        "server/outreach/whatsapp.ts",
-        "shared/outreach.ts",
-        "src/components/OutreachSettings.tsx",
-        "src/lib/outreach.ts",
-        "src/lib/outreach.test.ts",
-        "server/outreach-link.test.ts"
-      ],
-      "requires": [
-        "§app.outreach/sender-route"
-      ]
     },
     "§app.outreach/sender-route": {
       "kind": "behavior",
@@ -12280,9 +11856,7 @@
       "code": [
         "server/overseer.ts",
         "server/overseer-run-note.ts",
-        "server/overseer-run-note.test.ts",
-        "server/overseer-opening.ts",
-        "server/overseer-opening.test.ts"
+        "server/overseer-run-note.test.ts"
       ],
       "requires": [
         "§app.overseer/confirm",
@@ -12290,11 +11864,7 @@
         "§app.overseer/attention-digest",
         "§chat.worktrees/readiness",
         "§app.overseer/tools"
-      ],
-      "agreed": {
-        "by": "user",
-        "at": "2026-10-10T10:06Z"
-      }
+      ]
     },
     "§app.overseer/session-truth": {
       "kind": "behavior",
@@ -12458,22 +12028,6 @@
         "server/app.ts"
       ]
     },
-    "§tools.spec/census-rank": {
-      "kind": "behavior",
-      "requires": [
-        "§tools.spec/census-created",
-        "§tools.spec/where-lookup"
-      ],
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "pi-config/extensions/spec/core/sova-spec.mjs",
-        "pi-config/extensions/spec/README.md",
-        "pi-config/extensions/spec/core/README.md",
-        "pi-config/extensions/spec/tests/census-rank.test.mjs",
-        "pi-config/extensions/spec/tests/core.test.mjs"
-      ]
-    },
     "§tools.spec/draft-hygiene": {
       "kind": "behavior",
       "authority": "accepted",
@@ -12485,25 +12039,6 @@
         "pi-config/extensions/spec/core/sova-spec-draft.mjs",
         "pi-config/extensions/spec/DRAFTS.md",
         "pi-config/extensions/spec/PROMOTE.md"
-      ]
-    },
-    "§tools.spec/git-merge": {
-      "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "verified",
-      "requires": [
-        "§tools.spec/span-promotion",
-        "§tools.spec/conflict-recovery"
-      ],
-      "code": [
-        "pi-config/extensions/spec/core/sova-spec-draft.mjs",
-        "pi-config/extensions/spec/core/sova-spec.mjs",
-        "pi-config/extensions/spec/tests/claims-merge.test.mjs",
-        ".gitattributes",
-        "pi-config/extensions/spec/docs/CHANGELOG.md",
-        "pi-config/extensions/spec/PROMOTE.md",
-        "pi-config/extensions/spec/DRAFTS.md",
-        "pi-config/extensions/spec/README.md"
       ]
     },
     "§tools.spec/inspection-safety": {
@@ -12572,8 +12107,7 @@
       "evidence": "reviewed",
       "code": [
         "pi-config/extensions/claude-code/provider/stream.ts",
-        "pi-config/extensions/claude-code/provider/session-bridge.ts",
-        "pi-config/extensions/claude-code/provider/mcp-host.ts"
+        "pi-config/extensions/claude-code/provider/session-bridge.ts"
       ]
     },
     "§tools.spec/context-packets": {
@@ -13084,7 +12618,8 @@
         "src/components/UsageView.tsx",
         "src/design/base.css",
         "shared/protocol.ts",
-        "server/insights.ts"
+        "server/insights.ts",
+        "src/components/UsageHistory.tsx"
       ]
     },
     "§app.insights/usage-reset-day": {
@@ -13098,7 +12633,8 @@
         "pi-config/extensions/usage-status/index.ts",
         "server/insights.ts",
         "shared/protocol.ts",
-        "src/components/UsageView.tsx"
+        "src/components/UsageView.tsx",
+        "src/components/UsageOllama.tsx"
       ]
     },
     "§app.projects/clone": {
@@ -13923,20 +13459,6 @@
         "server/runtime-choice.ts",
         "server/runtime-choice.test.ts",
         "server/runtime-choice.integration.test.ts"
-      ]
-    },
-    "§app.server-runtime/pi-workers": {
-      "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "pi-config/extensions/subagents/pi-invocation.ts",
-        "pi-config/extensions/subagents/pi-invocation.test.ts",
-        "pi-config/extensions/subagents/runner.ts",
-        "pi-config/extensions/subagents/README.md"
-      ],
-      "requires": [
-        "§app.server-runtime/choice"
       ]
     },
     "§app.server-runtime/quirks": {
@@ -14956,11 +14478,7 @@
       "requires": [
         "§app.insights/llm-inflight",
         "§app.project-costs/pricing"
-      ],
-      "agreed": {
-        "by": "user",
-        "at": "2026-10-10T10:06Z"
-      }
+      ]
     },
     "§mesh.remote-sessions/head-host-state": {
       "kind": "behavior",
@@ -15634,26 +15152,6 @@
         "pi-config/extensions/spec/tests/map-fields.test.mjs"
       ]
     },
-    "§tools.spec/unread-landed": {
-      "kind": "behavior",
-      "requires": [
-        "§tools.spec/census-note",
-        "§tools.spec/census-rank",
-        "§tools.spec/no-turn-end-check"
-      ],
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "pi-config/extensions/mode/spec-guard.ts",
-        "pi-config/extensions/mode/spec-guard.test.ts",
-        "pi-config/extensions/claude-code/spec-hooks.test.ts",
-        "pi-config/extensions/mode/spec-mode.md",
-        "pi-config/extensions/mode/README.md",
-        "pi-config/extensions/spec/docs/MODE.md",
-        "pi-config/extensions/spec/README.md",
-        "site/src/content/docs/modes/spec.md"
-      ]
-    },
     "§tools.spec/where-lookup": {
       "kind": "behavior",
       "authority": "accepted",
@@ -15796,7 +15294,9 @@
         "pi-config/extensions/usage-status/ollama.ts",
         "pi-config/extensions/usage-status/ollama.test.ts",
         "shared/protocol.ts",
-        "src/components/UsageView.tsx"
+        "src/components/UsageView.tsx",
+        "src/components/UsageHistory.tsx",
+        "src/design/base.css"
       ]
     },
     "§app.model-levels/cache": {
@@ -16086,49 +15586,6 @@
         "src/design/base.css"
       ]
     },
-    "§app.claude-code-provider/no-memory": {
-      "kind": "behavior",
-      "requires": [
-        "§app.claude-code-provider/pinned-model"
-      ],
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "pi-config/extensions/claude-code/fixed-settings.ts",
-        "pi-config/extensions/claude-code/transport.ts",
-        "pi-config/extensions/claude-code/transport.test.ts",
-        "pi-config/extensions/claude-code/accounts.ts",
-        "pi-config/extensions/topic-outline/summarizers/claude-cli.ts",
-        "server/decide-llm.ts",
-        "server/session-autotitle.ts",
-        "server/claude-models.ts",
-        "server/claude-models.test.ts",
-        "pi-config/extensions/topic-outline/claude-cli.test.ts",
-        "pi-config/extensions/claude-code/launch-pin.test.ts",
-        "pi-config/extensions/claude-code/runner.test.ts",
-        "pi-config/extensions/claude-code/confined-launch.test.ts",
-        "pi-config/extensions/claude-code/provider/bridge.test.ts",
-        "server/decide-llm.test.ts",
-        "server/session-autotitle.test.ts",
-        "pi-config/extensions/claude-code/accounts.test.ts"
-      ]
-    },
-    "§app.claude-code-provider/oneshot-uncached": {
-      "kind": "behavior",
-      "requires": [
-        "§app.claude-code-provider/continuity"
-      ],
-      "authority": "accepted",
-      "code": [
-        "pi-config/extensions/claude-code/provider/session-bridge.ts",
-        "pi-config/extensions/claude-code/provider/bridge.test.ts"
-      ],
-      "agreed": {
-        "by": "user",
-        "at": "2026-10-10T10:06Z"
-      },
-      "evidence": "verified"
-    },
     "§app.claude-code-provider/pinned-model": {
       "kind": "behavior",
       "requires": [
@@ -16358,7 +15815,9 @@
         "src/lib/ollama-usage.ts",
         "src/lib/ollama-usage.test.ts",
         "src/lib/ollama-card.integration.test.ts",
-        "src/lib/insights.test.ts"
+        "src/lib/insights.test.ts",
+        "src/components/UsageOllama.tsx",
+        "src/design/base.css"
       ]
     },
     "§app.insights/ollama-credits": {
@@ -16384,7 +15843,9 @@
         "src/lib/ollama-usage.ts",
         "src/lib/ollama-usage.test.ts",
         "src/lib/ollama-card.integration.test.ts",
-        "src/lib/insights.test.ts"
+        "src/lib/insights.test.ts",
+        "src/components/UsageOllama.tsx",
+        "src/design/base.css"
       ]
     },
     "§app.insights/usage-detail-reachability": {
@@ -16579,21 +16040,6 @@
         "site/src/content/docs/change-direction.md"
       ]
     },
-    "§site.docs/chrome": {
-      "kind": "behavior",
-      "requires": [
-        "§site.docs/frame"
-      ],
-      "authority": "accepted",
-      "evidence": "reviewed",
-      "code": [
-        "site/src/layouts/Base.astro",
-        "site/src/components/SiteNav.astro",
-        "site/src/data/site.ts",
-        "site/src/styles/site.css",
-        "site/src/styles/tokens.css"
-      ]
-    },
     "§site.docs/delegate": {
       "kind": "behavior",
       "requires": [
@@ -16620,23 +16066,6 @@
       "evidence": "reviewed",
       "code": [
         "site/src/content/docs/modes/delegate.md"
-      ]
-    },
-    "§site.docs/frame": {
-      "kind": "behavior",
-      "requires": [
-        "§site/docs"
-      ],
-      "authority": "accepted",
-      "evidence": "reviewed",
-      "code": [
-        "site/src/pages/docs/[...slug].astro",
-        "site/src/layouts/Docs.astro",
-        "site/src/components/DocsNav.astro",
-        "site/src/data/docs.ts",
-        "site/src/styles/docs.css",
-        "site/src/content.config.ts",
-        "site/astro.config.mjs"
       ]
     },
     "§site.docs/index": {
@@ -17313,6 +16742,9 @@
         "pi-config/extensions/mode/align-tool.ts",
         "pi-config/extensions/mode/align-settings.test.ts",
         "pi-config/extensions/mode/tests/style-turn.mjs",
+        "pi-config/extensions/mode/prompt.ts",
+        "pi-config/extensions/mode/align.test.ts",
+        "pi-config/extensions/mode/index.test.ts",
         "server/vis-check.ts",
         "server/chat-manager.ts",
         "server/harness/state-kinds.ts",
@@ -17376,6 +16808,42 @@
         "pi-config/extensions/spec/tests/census-base.test.mjs"
       ]
     },
+    "§tools.spec/write-guard": {
+      "kind": "behavior",
+      "requires": [
+        "§tools.spec/census-note",
+        "§tools.spec/promotion-integrity"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/mode/spec-guard.ts",
+        "pi-config/extensions/claude-code/spec-hooks.ts",
+        "pi-config/extensions/mode/spec-guard.test.ts",
+        "pi-config/extensions/claude-code/spec-hooks.test.ts",
+        "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+        "pi-config/extensions/spec/tests/draft.test.mjs"
+      ]
+    },
+    "§tools.spec/git-merge": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/span-promotion",
+        "§tools.spec/conflict-recovery"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/tests/claims-merge.test.mjs",
+        ".gitattributes",
+        "pi-config/extensions/spec/docs/CHANGELOG.md",
+        "pi-config/extensions/spec/PROMOTE.md",
+        "pi-config/extensions/spec/DRAFTS.md",
+        "pi-config/extensions/spec/README.md"
+      ]
+    },
     "§tools.spec/worker-landed": {
       "kind": "behavior",
       "requires": [
@@ -17394,40 +16862,205 @@
         "pi-config/extensions/subagents/tests/spec-landed.mjs"
       ]
     },
-    "§tools.spec/write-guard": {
+    "§app.outreach/org-sender": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/outreach/targets.ts",
+        "server/outreach/routes.ts",
+        "server/outreach/core.ts",
+        "server/outreach/whatsapp.ts",
+        "server/org-engine.ts",
+        "shared/outreach.ts",
+        "src/components/OrgWhatsAppCard.tsx",
+        "src/components/OrgsView.tsx",
+        "src/lib/outreach.ts",
+        "server/outreach-numbers.test.ts"
+      ],
+      "requires": [
+        "§app.outreach/sender-list",
+        "§app.outreach/send"
+      ]
+    },
+    "§app.outreach/sender-controls": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/outreach/routes.ts",
+        "server/outreach/unit.ts",
+        "server/outreach/relay.ts",
+        "server/outreach/whatsapp.ts",
+        "server/mesh/access.ts",
+        "shared/outreach.ts",
+        "src/components/OutreachSettings.tsx",
+        "src/lib/outreach.ts",
+        "src/lib/outreach.test.ts",
+        "server/outreach-unit.test.ts",
+        "server/outreach.test.ts",
+        "server/outreach-test-fixtures.ts",
+        "server/outreach/sender-test-fixtures.ts"
+      ],
+      "requires": [
+        "§app.outreach/sender-route",
+        "§mesh.peers/grants"
+      ]
+    },
+    "§app.outreach/sender-health": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/outreach/health.ts",
+        "server/outreach/core.ts",
+        "server/outreach/targets.ts",
+        "server/outreach/whatsapp.ts",
+        "server/overseer.ts",
+        "shared/outreach.ts",
+        "shared/protocol.ts",
+        "server/outreach-health.test.ts",
+        "server/outreach.test.ts",
+        "server/outreach-numbers.test.ts"
+      ],
+      "requires": [
+        "§app.overseer/attention-digest"
+      ]
+    },
+    "§app.outreach/sender-link": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/outreach/link.ts",
+        "server/outreach/routes.ts",
+        "server/outreach/whatsapp.ts",
+        "shared/outreach.ts",
+        "src/components/SenderLink.tsx",
+        "src/lib/outreach.ts",
+        "src/lib/qr.ts",
+        "src/lib/outreach.test.ts",
+        "server/outreach-link.test.ts",
+        "services/whatsapp/src/core.mjs"
+      ],
+      "requires": [
+        "§app.outreach/sender"
+      ]
+    },
+    "§app.outreach/sender-list": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/outreach/senders.ts",
+        "server/outreach/targets.ts",
+        "server/outreach/settings.ts",
+        "server/outreach/routes.ts",
+        "server/outreach/whatsapp.ts",
+        "shared/outreach.ts",
+        "src/components/OutreachSettings.tsx",
+        "src/lib/outreach.ts",
+        "src/lib/outreach.test.ts",
+        "server/outreach-link.test.ts"
+      ],
+      "requires": [
+        "§app.outreach/sender-route"
+      ]
+    },
+    "§app.server-runtime/pi-workers": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/subagents/pi-invocation.ts",
+        "pi-config/extensions/subagents/pi-invocation.test.ts",
+        "pi-config/extensions/subagents/runner.ts",
+        "pi-config/extensions/subagents/README.md"
+      ],
+      "requires": [
+        "§app.server-runtime/choice"
+      ]
+    },
+    "§app.worker-restore/failure-reason": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/subagents/runner.ts",
+        "pi-config/extensions/subagents/runner.test.ts",
+        "pi-config/extensions/subagents/README.md"
+      ],
+      "requires": [
+        "§app.worker-restore/worker-record"
+      ]
+    },
+    "§site.docs/chrome": {
+      "kind": "behavior",
+      "requires": [
+        "§site.docs/frame"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "site/src/layouts/Base.astro",
+        "site/src/components/SiteNav.astro",
+        "site/src/data/site.ts",
+        "site/src/styles/site.css",
+        "site/src/styles/tokens.css"
+      ]
+    },
+    "§site.docs/frame": {
+      "kind": "behavior",
+      "requires": [
+        "§site/docs"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "site/src/pages/docs/[...slug].astro",
+        "site/src/layouts/Docs.astro",
+        "site/src/components/DocsNav.astro",
+        "site/src/data/docs.ts",
+        "site/src/styles/docs.css",
+        "site/src/content.config.ts",
+        "site/astro.config.mjs"
+      ]
+    },
+    "§tools.spec/census-rank": {
+      "kind": "behavior",
+      "requires": [
+        "§tools.spec/census-created",
+        "§tools.spec/where-lookup"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/README.md",
+        "pi-config/extensions/spec/core/README.md",
+        "pi-config/extensions/spec/tests/census-rank.test.mjs",
+        "pi-config/extensions/spec/tests/core.test.mjs"
+      ]
+    },
+    "§tools.spec/unread-landed": {
       "kind": "behavior",
       "requires": [
         "§tools.spec/census-note",
-        "§tools.spec/promotion-integrity"
+        "§tools.spec/census-rank",
+        "§tools.spec/no-turn-end-check"
       ],
       "authority": "accepted",
       "evidence": "verified",
       "code": [
         "pi-config/extensions/mode/spec-guard.ts",
-        "pi-config/extensions/claude-code/spec-hooks.ts",
         "pi-config/extensions/mode/spec-guard.test.ts",
         "pi-config/extensions/claude-code/spec-hooks.test.ts",
-        "pi-config/extensions/spec/core/sova-spec-draft.mjs",
-        "pi-config/extensions/spec/tests/draft.test.mjs"
+        "pi-config/extensions/mode/spec-mode.md",
+        "pi-config/extensions/mode/README.md",
+        "pi-config/extensions/spec/docs/MODE.md",
+        "pi-config/extensions/spec/README.md",
+        "site/src/content/docs/modes/spec.md"
       ]
-    },
-    "§app.claude-code-provider/continuity": {
-      "kind": "behavior",
-      "requires": [
-        "§app/claude-code-provider"
-      ],
-      "authority": "accepted",
-      "code": [
-        "pi-config/extensions/claude-code/provider/session-bridge.ts",
-        "pi-config/extensions/claude-code/provider/bridge.test.ts",
-        "pi-config/extensions/claude-code/provider/resume-record.ts",
-        "pi-config/extensions/claude-code/provider/login-failover.test.ts"
-      ],
-      "evidence": "verified",
-      "agreed": {
-        "by": "user",
-        "at": "2026-10-10T10:06Z"
-      }
     }
   },
   "boundary": {

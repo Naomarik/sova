@@ -118,7 +118,7 @@ peer's sender may reconnect it too, when that peer grants it full control.
 
 ## §app.outreach/org-sender — Each organization picks the number it sends from
 
-- An organization's page, on its **Workspace** tab, has a **WhatsApp Number** card while the
+- An organization's page, on its **Settings** tab, has a **WhatsApp Number** card (after the workspace repo card) while the
   organization lives on this host: **Sends from**, a select of **Default ({label} …123)** and each
   number of Settings → Outreach's list ({label} …123), over "Messages to this organization's people
   go from this number. When it is down or at its limit, they wait or fail; they never go from

@@ -1768,7 +1768,9 @@ overseer is not a row but an **eye on its project's heading**, and its cleared c
 no region (they are in the overseer's own History, §app.project-overseer/page). Shape: its own
 **Needs you** list first, then **organization → project**, each project's rows in three groups:
 **Conversations** and **Conflicts to settle** (each split Not started / In progress / Done) and
-**Builds** (running or waiting, then Done), every Done collapsed.
+**Builds** (running or waiting, then Done), every Done collapsed. Every active project of an org
+is listed under it, with sessions or without, and its name opens its page, so a project is one
+click away from the pane.
 
 Standalone projects (§app.projects/standalone) have a **Projects** region of their own, right
 before Organizations and shaped like it with no organization level: each project's heading with its
@@ -1777,7 +1779,7 @@ conversations and coding sessions are listed there and on no ordinary surface, a
 organization's are here.
 
 ```html
-<!-- Omitted entirely when it has no row and no eye (with a query: 0 hits), like the Archive. -->
+<!-- Omitted entirely when it has no row, no eye and no listed project (with a query: 0 hits), like the Archive. -->
 <details class="sidebar-region sidebar-orgs" aria-labelledby="r-orgs" open>
   <!-- The Needs you head's pattern: the <summary> toggles, the <h2> is what the outline reads. -->
   <summary class="sidebar-orgs-summary">
@@ -1815,7 +1817,10 @@ organization's are here.
     <!-- one per project, by name; Other last -->
     <!-- the sticky project heading: the h4 is the outline's name, the eye sits beside it -->
     <div class="org-project-head">
-      <h4 class="list-group-label org-project-label" title="~/webapps/rakiba-site">Rakiba site <span class="text-num">6</span></h4>
+      <!-- the name is a link to the project's page (Other, with no project, is plain text) -->
+      <h4 class="list-group-label org-project-label" title="~/webapps/rakiba-site">
+        <a class="org-project-name project-region-link" href="#/projects/prj_…">…folder…<bdi>Rakiba site</bdi></a>
+        <span class="text-num">6</span></h4>
       <!-- only while the project has a current overseer; hung into the right gutter -->
       <a class="button button-icon button-ghost org-overseer" href="#/s/<its path>"
          aria-label="Open the Rakiba site overseer · working" title="Open the Rakiba site overseer · working"
@@ -1857,6 +1862,14 @@ organization's are here.
   field: a TUI-live org coding session, a web one, an archived one all live here and nowhere else in
   the pane — except a cleared overseer conversation, which no region lists. Rows are the unchanged `SessionRow` — rail (a TUI word included), unread dot, turn-error
   mark, needs-you mark, baton holder suffix, context ring — and open `#/s/<path>`.
+- **Which projects.** Every project this host's project list (`GET /api/projects`, §app.projects/list)
+  places in an org (`space.kind` `org`) and that isn't archived has its heading under its org,
+  with sessions or without, and an org with such a project has its section even with no session:
+  a project with no session is its heading alone (its linked name and a 0 count). The list is read
+  with the session list, as the Projects region reads it. It holds this host's projects only, so
+  it adds nothing while the host filter names a peer, and a peer's project is listed only through
+  its sessions. A search keeps a session-less project only when the search finds the project
+  (below).
 - **An archived project is left out** (§app.organizations/archive): a session whose `org` carries
   `projectArchived` is in no org → project list, its project has no heading and no eye, and it is
   not in the region's count (nor its org's). Only while it waits on the operator is it shown, in the
@@ -1893,8 +1906,18 @@ organization's are here.
   no project is "Other", which sorts last.
 - **The project level is a sticky label, not a section** (an `h4`, sticking like a folder label). Its
   `title` is the project root, `~`-shortened, read from the project overseer's folder when the region
-  holds one; otherwise the project's name (the list carries no project root). At
+  holds one, else from the project list's `root`; otherwise the project's name. The project's name
+  is a link to its page (`#/projects/<pid>`, with `?host=` for a peer's project,
+  §mesh.remote-sessions/org-pages), the Projects region's own link; "Other" (no project) is plain
+  text. At
   folded width only project labels stick; org summaries don't, so two sticky levels don't eat the screen.
+- **Three levels, told apart at a glance.** Organization, project and session rows each read as
+  their own level, in the Projects region too (its projects are the project level): an org head
+  is the pane's largest name (heading-s, semibold, full ink); a project head is a step down
+  (body size, semibold, full ink, a muted `folder` icon before the name), set in one step under
+  its org behind a guide rule that runs down the project's block; its groups and states keep their
+  quieter labels (the eyebrow and caption), and its rows are the unchanged rows. Counts stay muted.
+  Consecutive projects are split by space and a rule, at every width.
 - **Order inside a project.** Rows by `lastActiveAt`, newest first, ties on `createdAt` then `id`
   (`src/lib/session-order.ts`'s activity comparator): the question here is who replied.
 - **The project overseer's eye.** The project's current overseer (`org.kind` `overseer`, not
@@ -1936,7 +1959,8 @@ organization's are here.
   you row is not counted twice); while searching it reads "· {hits} of {total}". The eye is not a row
   and is not counted, and neither is a cleared overseer conversation. Each org's count stays visible
   open or closed, like a folder's in Live & web; each project counts all its rows, Done included, and
-  each group, state and Done counts its own.
+  each group, state and Done counts its own. A project with no session counts 0, and adds none to
+  its org's or the region's count; a region of such projects alone reads "· 0".
 - **Nothing waits unseen.** While any org session waits on you, the region head carries a warn chip —
   dot and word, "{k} waiting" — open or collapsed, and so does the spine door (below). Each org summary
   carries a wordless warn dot with its hidden clause (", {k} waiting on you") and the count in its
@@ -1964,8 +1988,11 @@ organization's are here.
   top of the usual fields, and a settle session on its conflict's area, so "rakiba", a person's name
   or "invoicing" finds it (§app.session-list/search). A
   search that hits a project's current overseer and nothing else there shows that project's heading
-  and eye with no rows.
-- **The spine** carries a door for the region, shown exactly when the region is on screen: the
+  and eye with no rows. A search also finds a listed project (above) by its name, its folder or
+  its org's name: its heading, linked, stays under its org with only the rows the search hit
+  (none, for a project with no session), and so does its org's section.
+- **The spine** carries a door for the region, shown exactly when the region is on screen (a
+  region of session-less projects alone included, its door reading 0): the
   `building` icon over the region head's count, named "Organizations · {n} sessions" in its `title`
   and `aria-label`, plus " · {k} waiting on you" and a warn dot at its corner while any org session
   waits (§app.session-list/spine). Pressing it expands the pane, scrolls the region into view and
@@ -2184,6 +2211,10 @@ record whose transcript is gone.
 - **Empty groups.** A group with no matching rows is hidden, and so is a region with none.
 - **Organization rows** also match on the org's name, the project's name and the baton holder's
   name (§app.session-list/organizations).
+- **Projects.** A project is found by its name or folder (an org's project by its org's name too),
+  in the Projects region and the Organizations region alike: its heading, its name a link to its
+  page, stays while the search is on, with no matching row under it when none of its sessions
+  match (§app.session-list/organizations, §app.projects/list).
 - **Every region.** The query filters the top region, Organizations and the Archive alike. While the query is
   non-empty, the Archive is forced open so matches are never hidden in a collapsed region.
   Clearing the query restores the stored open/closed choice. The count row

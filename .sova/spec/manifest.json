@@ -8949,6 +8949,7 @@
         "server/share/registry.ts",
         "server/share/registry-validation.ts",
         "server/share/registry-push.ts",
+        "server/share/share-dist.ts",
         "server/share/gateway-routes.ts",
         "server/share/gateway-client.ts",
         "server/share/links-events.ts",
@@ -8959,8 +8960,13 @@
         "server/share-security.test.ts",
         "server/share-security.integration.test.ts",
         "server/share-edge.test.ts",
-        "server/share-edge.integration.test.ts"
-      ]
+        "server/share-edge.integration.test.ts",
+        "server/share-router.integration.test.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-10T16:40Z"
+      }
     },
     "§mesh.public/routing": {
       "kind": "behavior",

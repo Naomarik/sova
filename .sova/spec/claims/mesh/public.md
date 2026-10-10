@@ -151,8 +151,9 @@ links". When nothing answers in time, it replies with the state as it stands.
   it, the session rows are sent without waiting for a mint. A mint that makes several links
   (one per recipient) is confirmed only when each of its own hashes was sent and accepted; an
   extension of links' expiry is no mint. It sends on every mint and
-  revoke, when it starts routed or its route changes, when the gateway comes up, and every 60
-  seconds while a snapshot is still owed. `seq` grows by one per snapshot and is kept in
+  revoke, when it starts routed or its route changes, when the gateway comes up, every 60
+  seconds while a snapshot is still owed, and, before a share page goes out, when its build's
+  asset names differ from those the gateway last accepted (waiting at most 5 seconds). `seq` grows by one per snapshot and is kept in
   `<stateRoot>/share-gateway-outbox.json` (0600) across restarts; the outbox records only that a
   snapshot is owed, and a retry sends the live set as it is then. Past 20,000 links or 512 KB the
   links expiring soonest are left out, with a log line. Every call goes to an address bound to the

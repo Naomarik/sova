@@ -56,8 +56,11 @@ model, and for the Overseer from its own switch (§chat.memory/overseer).
   `sova_create_session` and `sova_set_session` (here or on a peer) refuse a `minor_modes` list naming
   memory before anything is created or changed, and the peer route they reach (`POST
   /api/sessions/configure`) refuses it too (400), with "Memory is for chats only: the user turns it
-  on from a chat's mode menu, never in a coding session". A project's coding mode refuses it as an
-  unknown minor mode, and a stored one drops it.
+  on from a chat's mode menu, never in a coding session". Either Overseer's coding-session request
+  naming memory (the project overseer's `sova_create_session` and `sova_send`, the Overseer's
+  `sova_project_overseer` `code`) is refused the same way, before anything is created or sent; and a
+  coding session that names no minor modes starts on this computer's default without memory, even
+  when the saved default has it on.
 - A session whose saved mode has memory on (a web chat later opened in a terminal) keeps it in its
   saved mode, but nothing runs it there.
 

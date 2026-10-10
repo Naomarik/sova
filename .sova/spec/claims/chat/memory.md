@@ -48,7 +48,7 @@ model, and for the Overseer from its own switch (§chat.memory/overseer).
   applying a switch for that very session (the server's `sova:web-minor` hook); typed by hand (in a
   terminal or a web composer), and from `--minor`, it is refused with "memory is turned on from a
   Sova chat's mode menu". The terminal palette and minor shortcuts don't list it. Turning it off is
-  never refused.
+  never refused, and a switch sends it `/mode memory off` only in a chat where memory was on.
 - Workers never get it (`MINOR_WORKER.memory` is false, §chat.mode-menu/workers).
 - A session profile naming it is refused ("memory is for chats only: turn it on from a chat's mode
   menu"), and so is a switch of a baton or project-overseer session (400).
@@ -138,8 +138,13 @@ the turn's first request, and is the same for the turn's every request.
   20 seconds, then goes on anyway (a line not summarized yet reads "(not summarized yet: zoom it)");
   the composer shows "Updating memory…" meanwhile. Merges never hold a turn.
 - **The cache split.** The engine keeps a stable prefix of the view's lines and saves it beside the
-  chat: kept while it still leads the view and the lines after it stay under the larger of 1,536
-  bytes and a quarter of the prefix, else the whole view becomes the prefix (a rebase). The view
+  chat, with the bytes of newer lines the turns have sent since it was renewed. A rebase (the whole
+  view becoming the prefix) re-writes the prefix's cached block, counted as the chat's system prompt,
+  the guide and the prefix; a turn that keeps it re-writes only the newer lines. So the prefix is kept
+  while it still leads the view and the newer lines sent since it was renewed, this turn's included,
+  total at most that block (and at least 1,536 bytes); else the turn rebases. A merge batch that
+  rewrites a prefix line always rebases. With newer lines growing g bytes a turn, a chat rebases about
+  every √(2 · block / g) turns. The view
   message carries the guide with the prefix as one text block and the newer lines as another, and the
   guide tells the model the view may come in two places, read as one list.
 - **No compaction.** A UniiChat chat never compacts: pi's own compaction, Claude Code's automatic one

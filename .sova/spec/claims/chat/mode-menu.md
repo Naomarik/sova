@@ -11,8 +11,9 @@ Overseer's Quick Actions in this slot (§app.overseer/quick-actions).
 
 pi's mode extension (`pi-config/extensions/mode`) has one **major mode**, `normal` or
 `delegate`, and any set of **minor modes** (today `align`, `spec`, `vis`, which teaches the inline
-visuals of §chat.markdown/visuals, and `codemode`, §chat.mode-menu/codemode). Every chat with the
-extension offers all of them, in that order. What Delegate routes where is
+visuals of §chat.markdown/visuals, `codemode`, §chat.mode-menu/codemode, and `memory`, §chat/memory).
+Every chat with the extension offers all of them, in that order, except that only Sova's own mode menu
+turns `memory` on (§chat.memory/where). What Delegate routes where is
 Settings → Subagents (§app/settings-dialog), through this chat's subagent profile
 (§chat/subagent-profiles). The menu always offers its Subagents picker, in either major mode.
 
@@ -263,7 +264,7 @@ on the first turn, on later turns, or after the chat is reopened.
 
 ## §chat.mode-menu/minor-toggle-keeps-prompt — A minor toggle keeps the cached prompt
 
-Turning a minor mode (`align`, `spec`, `vis`, `codemode`) on or off mid-session never rewrites the
+Turning a minor mode (`align`, `spec`, `vis`, `codemode`, `memory`) on or off mid-session never rewrites the
 prompt the model already has, on any provider; the one exception is align while in Delegate, whose
 bridge paragraph in the Delegate block follows the active align. The `<mode>` section's minor blocks stay those of the **head**:
 the minor modes the first run after the session's start, or after its last compaction, was built
@@ -309,6 +310,10 @@ once, as their net change.
   active then, sends no note for them, and drops from its requests any older note the compaction
   kept in its recent tail, so no guide reaches the model twice.
 
+`memory` has no block and no note either: its guide rides its own view message, and what its switch
+changes is the history every request sends from the next turn on (§chat.memory/turn), plus its `zoom`
+and `date` tools.
+
 Not covered: `align`, `vis` and `codemode` also add or remove their tools, and a tool-set change
 breaks the cached prefix on every provider and restarts the claude-code CLI, note or not. A
 major-mode switch still changes the section, as before.
@@ -330,7 +335,9 @@ whether it reaches workers** (`MINOR_WORKER` in `pi-config/extensions/mode/minor
 over every minor mode, so a new one cannot be added without deciding): `spec` does; `align`
 does not (aligning is a conversation with the user, which a worker doesn't have), nor does `vis`
 (its visuals are for the user, and a worker's replies are read by its parent session), nor does
-`codemode` (it changes the chat's own tool set, and a worker's tools are its brief's).
+`codemode` (it changes the chat's own tool set, and a worker's tools are its brief's), nor does `memory`
+(it is the chat's own memory of its conversation; a worker starts fresh from its brief, and its report
+enters the parent's memory like any other message).
 
 - **What a worker gets.** While the parent chat has spec on, every worker it starts — pi or
   Claude Code, plain, remote, sandboxed, hosted, or a team member — gets the spec block
@@ -430,11 +437,14 @@ shortcuts and launch flags. Sova's menu runs the same `/mode` handler
 
 - **Bare `/mode`** opens the command palette (`ctrl+p`) at its **Mode** category: `normal` and
   `delegate` (the current one checked; Enter switches and closes), one row per minor mode with its
-  description and an on/off marker (Enter toggles it and the palette stays open), **align: open
+  description and an on/off marker (Enter toggles it and the palette stays open; `memory`, which only
+Sova's menu turns on, has no row), **align: open
   viewer**, and **save as default** last. Without a palette to open (outside the TUI, or the palette
   extension not loaded) it shows the status and the usage line instead; it never toggles anything.
 - **`/mode normal`**, **`/mode delegate`** switch the major mode. **`/mode <minor>`** toggles that
   minor mode and **`/mode <minor> on|off`** sets it; `/align on|off` does the same for align.
+  `/mode memory on` is refused with "memory is turned on from a Sova chat's mode menu"
+  (§chat.memory/where); `/mode memory off` works.
 - **`/mode status`** lists this session's mode, the default for new sessions, its subagent profile
   and where that came from, the Delegate routing, the spec writer, strict, the minor modes, the
   toggle shortcut, the alignments and the state file.
@@ -448,7 +458,8 @@ shortcuts and launch flags. Sova's menu runs the same `/mode` handler
   (`viewerShortcut`) opens the alignments viewer.
 - **Launch flags.** `pi --major delegate` and `pi --minor align,spec` (`none` for no minor modes)
   start a new session in that mode on top of the default and are written nowhere; a session's own
-  saved mode wins over them, and an unknown minor name is warned about.
+  saved mode wins over them, and an unknown minor name is warned about, as is `memory` (dropped: web only).
+  `minorShortcuts` binds no key to `memory`.
 - **The status line** in the TUI's footer reads the mode, then in Delegate `fallback:<profiles>`,
   `ask:<profiles>` and `strict`, then each minor mode on, then `writer:fallback` or `writer:ask`
   while spec's writer is off its primary route: dim in normal with no minor mode, accent otherwise,

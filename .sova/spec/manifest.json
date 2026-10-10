@@ -44,6 +44,38 @@
         "server/sessions-index.ts"
       ]
     },
+    "§app.insights/ollama-reset": {
+      "kind": "behavior",
+      "requires": [
+        "§app.insights/ollama-credits",
+        "§app.insights/ollama-activity",
+        "§app.insights/pace-tick",
+        "§app.insights/usage-burn",
+        "§mesh.sync/categories"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/insights.ts",
+        "server/usage-history.ts",
+        "server/app.ts",
+        "server/ollama-usage.test.ts",
+        "server/sync/docs.ts",
+        "shared/protocol.ts",
+        "src/components/UsageView.tsx",
+        "src/components/UsageOllama.tsx",
+        "src/lib/insights.ts",
+        "src/design/base.css",
+        "src/lib/ollama-card.integration.test.ts",
+        "pi-config/extensions/usage-status/index.ts",
+        "pi-config/extensions/usage-status/index.test.ts",
+        "server/insights-usage.test.ts",
+        "server/usage-history.test.ts",
+        "src/lib/insights.test.ts",
+        "src/lib/usage-burn.test.ts",
+        "server/sync/docs.test.ts"
+      ]
+    },
     "§app.insights/placement": {
       "kind": "behavior",
       "authority": "accepted",
@@ -13014,9 +13046,7 @@
     },
     "§app.insights/pace-tick": {
       "kind": "behavior",
-      "requires": [
-        "§app.insights/usage-reset-day"
-      ],
+      "requires": [],
       "authority": "accepted",
       "evidence": "verified",
       "code": [
@@ -13028,23 +13058,6 @@
         "shared/protocol.ts",
         "server/insights.ts",
         "src/components/UsageHistory.tsx"
-      ]
-    },
-    "§app.insights/usage-reset-day": {
-      "kind": "behavior",
-      "requires": [
-        "§mesh.sync/categories"
-      ],
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "src/design/base.css",
-        "src/lib/ollama-card.integration.test.ts",
-        "pi-config/extensions/usage-status/index.ts",
-        "server/insights.ts",
-        "shared/protocol.ts",
-        "src/components/UsageView.tsx",
-        "src/components/UsageOllama.tsx"
       ]
     },
     "§app.projects/clone": {
@@ -15694,7 +15707,6 @@
         "§app.insights/usage-cards",
         "§app.insights/usage-refresh",
         "§app.insights/pace-tick",
-        "§app.insights/usage-reset-day",
         "§app.insights/velocity-scrub",
         "§app.claude-logins/registry"
       ],
@@ -16254,7 +16266,6 @@
       "evidence": "verified",
       "requires": [
         "§app.insights/usage-refresh",
-        "§app.insights/usage-reset-day",
         "§app.insights/usage-cards",
         "§app.insights/usage-burn"
       ],
@@ -16286,7 +16297,6 @@
       "evidence": "verified",
       "requires": [
         "§app.insights/usage-refresh",
-        "§app.insights/usage-reset-day",
         "§app.insights/usage-cards"
       ],
       "code": [
@@ -16316,8 +16326,7 @@
       "evidence": "verified",
       "requires": [
         "§app.insights/ollama-activity",
-        "§app.insights/ollama-credits",
-        "§app.insights/usage-reset-day"
+        "§app.insights/ollama-credits"
       ],
       "code": [
         "pi-config/extensions/usage-status/index.ts",

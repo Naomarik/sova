@@ -1697,7 +1697,8 @@ class ChatSession {
 
   modeMessage(): ChatServerMessage {
     const s = this.modeState;
-    return { type: "mode", mode: s.mode, minorModes: [...s.minorModes], strict: s.strict, applies: this.modeApplies, memory: this.memory.choiceNow() };
+    // `memory` only where the menu can turn it on (§chat.memory/where): its absence hides the row.
+    return { type: "mode", mode: s.mode, minorModes: [...s.minorModes], strict: s.strict, applies: this.modeApplies, ...(this.memoryOffered() ? { memory: this.memory.choiceNow() } : {}) };
   }
 
   /**
@@ -1724,7 +1725,7 @@ class ChatSession {
     const refused = this.specialEntry?.refuses?.("mode");
     if (refused) throw new ModeRefusedError(refused);
     // Memory runs in an ordinary chat's runtime (§chat.memory/where): a special loadout has no engine.
-    if (patch.minorModes?.includes("memory") && !this.modeState.minorModes.includes("memory") && !this.memoryAvailable())
+    if (!this.memoryOffered() && (patch.memory || (patch.minorModes?.includes("memory") && !this.modeState.minorModes.includes("memory"))))
       throw new ModeRefusedError("Memory can't be turned on in this chat.");
     if (patch.memory) this.writeMemoryChoice(patch.memory);
     const wasOn = this.modeState.minorModes.includes("memory");
@@ -1733,7 +1734,7 @@ class ChatSession {
     const isOn = this.modeState.minorModes.includes("memory");
     if (isOn && !wasOn) this.memory.turnedOn();
     else if (isOn !== wasOn) this.memory.changed();
-    return { ...modeInfo(this.modeState, this.memory.choiceNow()), applies: this.modeApplies };
+    return { ...modeInfo(this.modeState, this.memoryOffered() ? this.memory.choiceNow() : undefined), applies: this.modeApplies };
   }
 
   /** This chat's memory (§chat/memory): its choice, engine and status. */
@@ -1754,6 +1755,12 @@ class ChatSession {
   /** What the memory extension asks this chat (server/harness/pi/memory.ts). */
   memoryHost(): MemoryHost {
     return this.memory;
+  }
+
+  /** Whether this chat's mode menu offers memory: an ordinary chat whose runtime has the engine (never the
+      Overseer, whose switch is its own, nor a session that refuses mode switches). */
+  memoryOffered(): boolean {
+    return !this.overseer && !this.specialEntry?.refuses?.("mode") && this.memoryAvailable();
   }
 
   /** Whether this runtime has the memory engine (its recall tools are registered). */
@@ -1851,8 +1858,9 @@ class ChatSession {
       throw new ModeRefusedError(`The subagent profile default was not saved, and the mode default was not touched: ${err instanceof Error ? err.message : String(err)}`);
     }
     try {
-      saveDefaultMemoryChoice(this.memory.choiceNow());
-      return modeInfo(writeMode(defaultPatchOf(this.modeState)), this.memory.choiceNow());
+      const memory = this.memoryOffered() ? this.memory.choiceNow() : undefined;
+      if (memory) saveDefaultMemoryChoice(memory);
+      return modeInfo(writeMode(defaultPatchOf(this.modeState)), memory);
     } catch (err) {
       throw new ModeRefusedError(`The subagent profile default "${profile}" WAS saved, but the mode default was not: ${err instanceof Error ? err.message : String(err)}`);
     }

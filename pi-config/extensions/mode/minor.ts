@@ -1,6 +1,7 @@
 /** Minor modes: independently toggleable prompt biases on top of the major mode. Node builtins only: unit-testable. */
 
 import { readdirSync, readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import type { AlignStyle } from "./align-settings.ts";
 
 export type MinorMode = "align" | "spec" | "vis" | "codemode";
@@ -66,8 +67,8 @@ export const ALIGN_INSTRUCTIONS = `# Minor mode: align
 Before building anything non-trivial, align with the user on what to build, and record every alignment with the \`align\` tool. Do not edit files or spawn implementation workers until the user has confirmed a plan.
 
 On any prompt that implies work (a feature, an investigated fix, a refactor, a migration, new files, or any multi-step change), do this first:
-1. Investigate the codebase and context behind the ask. In delegate mode give this to a non-editing Planning & specs worker (investigation that feeds a design is planning, not the Investigation profile); otherwise investigate yourself. Find the real constraints, existing patterns, and affected surfaces.
-2. Record the alignment with \`align\` create: a title, a one-line summary of the concern, findings, approach steps in order, rejected alternatives each with why, and only the questions that would materially change the work (architecture, UX, scope, trade-offs) — each with a topic, the ask, the context the user needs to answer it, options with their trade-offs when there are real choices, and your recommendation with why. When a planning worker produced it, have the worker write it as a JSON file in the create schema, at an absolute path outside the repository that you name, and import it with the import op and that absolute path; never retype or restyle it.
+1. Investigate the codebase and context behind the ask (in delegate mode, through a planning worker as the delegate block says): the real constraints, existing patterns, and affected surfaces.
+2. Record the alignment with \`align\` create (or import, for a planning worker's file): a title, a one-line summary of the concern, findings, approach steps in order, rejected alternatives each with why, and only the questions that would materially change the work (architecture, UX, scope, trade-offs) — each with a topic, the ask, the context the user needs to answer it, options with their trade-offs when there are real choices, and your recommendation with why.
 3. Never write an alignment as reply text: no freeform plan, no "open questions" section, no numbered list of decisions in prose. The user reads the alignment card. Your reply is a sentence or two naming the alignment (its id) and what you need from the user; don't restate its questions, options or recommendations.
 4. Stop and wait. The user answers in chat, often by question id ("q2: yes", "your recs") or by number and option letter ("3a" is q3's option a: decide it with that option's label). Record each answer they gave with decide (in their words), accept only the questions they told you to take your recommendation on (accept_all only when they said it for every open one), and leave the rest open; do it together with any other change, in one call. Change an alignment only through ops (add, edit, edit_question, remove, drop_question, reopen); never create it again to change it, and never re-ask a settled question.
 5. When the user confirms or says to go ahead, set status implementing before you build. A go-ahead with questions still open takes your recommendations for them: accept_all (or drop_question what no longer applies) earlier in the same call. An answer to only some questions is not a go-ahead: record it and leave the rest open. Never set status implementing while a question is open. Set status done when the work is finished and verified, or drop_alignment with a reason if it is abandoned.
@@ -90,7 +91,13 @@ export const ALIGN_STYLE_PARAGRAPHS: Record<AlignStyle, string | undefined> = {
  * The paragraph after the align block (and the style's) while the session started with Visuals on
  * (§chat.alignment/visuals). Its words never depend on the style, so it never changes mid-session.
  */
-export const ALIGN_VISUALS_PARAGRAPH = `Visuals: you may draw on the alignment card. A question, or the alignment itself, can carry a visual {kind, source}: a vis drawing's kind and its source, exactly what a \`vis\` fence would hold, at most 3 per alignment. Add one only when it explains faster than words: a wireframe for a question about a screen; a flow, state or steps for a change in behaviour. Before the first visual of each kind, call vis_guide with that kind and use only the syntax it returns. In the Project manager writing style never use the code, tree or layers kinds. Visuals go in the align tool's visual fields, never as a vis fence in your reply; after importing a planning worker's file, add them with edit_question or edit_doc.`;
+export const ALIGN_VISUALS_PARAGRAPH = `Visuals: a question, or the alignment itself, can carry a visual {kind, source} on the card (exactly what a \`vis\` fence would hold; at most 3 per alignment; never a vis fence in your reply). Draw one where it explains faster than words: a wireframe for a question about a screen; a flow, state or steps for a change in behaviour. Before the first visual of each kind, call vis_guide with that kind. In the Project manager writing style never use the code, tree or layers kinds.`;
+
+/**
+ * The vis guide's files as a worker can read them (it has no vis_guide): `shared.md`, then `<kind>.md`.
+ * The Delegate+align bridge names this directory to a planning worker in a Visuals chat.
+ */
+export const VIS_GUIDE_DIR = fileURLToPath(new URL("./vis/", import.meta.url));
 
 /** The align options a block is built with: the writing style and Visuals (align-settings.ts). */
 export interface AlignPromptOptions {

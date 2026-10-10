@@ -6,7 +6,7 @@
 //
 //   start                 this session's round begins (PI_SESSION_ID): interview?, push hold, restart needed or confirmed?
 //   names-answered        the user answered the start interview: lift the push hold
-//   status                every local branch ahead of master with a worktree, and the main checkout
+//   status                every local branch ahead of master with a worktree, joined to Sova's merge board and sorted by the next action; the main checkout
 //   note <branch> owner=<id> chip=ready|waiting|none idle=yes|no [source=<word>]
 //   ask <branch> topic=<name>  the session_send text for an idle owner, asking it to answer on the round's topic
 //   reply <branch>        stdin = the delivered topic batch (or the owner's session_read output): READY at this head, NOT READY, stale, no answer
@@ -18,8 +18,8 @@
 //   report                the round report's skeleton
 //
 // Exit 0: go. Exit 1: something to act on or decide. Exit 2: couldn't tell; fail closed.
-// It never reads sessions (the captain records what the session tools showed with `note`), never
-// restarts anything, never force-pushes, and masks every private name in what it prints or stores.
+// Owners come from Sova's merge board file (<state root>/merge-board.json); it never reads sessions,
+// never calls Sova's API about them and never holds Sova's token. It never restarts anything, never force-pushes, and masks every private name in what it prints or stores.
 // A restart is needed when the live server's head (GET /api/health) lacks master's runtime code.
 // Every child runs by argv with no shell, in its own process group, under a timeout.
 import { spawn } from "node:child_process";
@@ -241,6 +241,11 @@ function homesOf(home) {
   try { real = realpathSync(h); } catch {}
   return [...new Set([h, real])].sort((a, b) => b.length - a.length);
 }
+/** A path as the board writes it: the real path, else as given. */
+function canonicalPath(p) {
+  try { return realpathSync(p); } catch { return p; }
+}
+
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /** Each name masked, case-insensitively, longest first. */
@@ -327,6 +332,73 @@ export async function acquireLock(file, { pollMs = 5000, beatMs = 30_000, staleM
     }
     await new Promise((r) => setTimeout(r, pollMs));
   }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Sova's merge board (`<state root>/merge-board.json`, server/merge-board.ts): who owns which
+// worktree, as Sova's own readiness reads it. The driver reads the file; it never reads sessions,
+// never calls Sova's API about them, and never holds Sova's token.
+
+/** A board older than this can't be trusted: Sova rewrites it every minute while it runs. */
+export const BOARD_STALE_MS = 5 * 60_000;
+const BOARD_STATES = ["merged", "stale", "in-progress", "blocked", "ready", "waiting-approval", "removed"];
+const OWNER_STATUSES = ["idle", "busy", "archived"];
+
+/** "Ready to merge" covers both chips: Ready to merge, and Waiting for your OK. */
+export const isReadyState = (state) => state === "ready" || state === "waiting-approval";
+
+/** The board file's text → {ok: true, board: {at, pending, rows}} | {ok: false, why}. */
+export function parseBoard(text, now) {
+  let b;
+  try { b = JSON.parse(text); } catch { return { ok: false, why: "the merge board file isn't valid JSON" }; }
+  const at = Date.parse(b?.at);
+  if (b?.v !== 1 || !Array.isArray(b.rows) || !Number.isFinite(at)) return { ok: false, why: "the merge board file isn't one Sova wrote (version 1)" };
+  if (now - at > BOARD_STALE_MS) return { ok: false, why: `the merge board was written ${ago(now - at)} ago (Sova rewrites it every minute while it runs: is Sova running?)` };
+  const rows = b.rows.filter((r) =>
+    typeof r?.path === "string" && typeof r.branch === "string" && BOARD_STATES.includes(r.state) &&
+    typeof r.owner?.id === "string" && OWNER_STATUSES.includes(r.owner.status));
+  return { ok: true, board: { at, pending: Number.isSafeInteger(b.pending) && b.pending > 0 ? b.pending : 0, rows } };
+}
+
+/**
+ * Who owns a branch, and how fresh that is (§chat.merge-round/driver): the board's reading
+ * (`rec.board`) unless the captain's hand note (`rec.owner`, `rec.notedAt`) is newer, and then only
+ * for who the owner is. The owner's status (idle, busy, archived) and `at` come from the newest
+ * reading of that owner, the board's or the note's. → null when neither names one.
+ */
+export function ownerOf(rec) {
+  const note = rec?.owner ? { owner: rec.owner, status: rec.idle === "yes" ? "idle" : "busy", at: rec.notedAt ?? 0, from: "note" } : null;
+  const board = rec?.board?.owner ? { owner: rec.board.owner, status: rec.board.status, at: rec.board.at ?? 0, from: "board" } : null;
+  const who = note && (!board || note.at > board.at) ? note : board;
+  if (!who) return null;
+  const newest = [note, board].filter((r) => r?.owner === who.owner).sort((a, b) => b.at - a.at)[0];
+  return { owner: who.owner, from: who.from, status: newest.status, at: newest.at, via: newest.from };
+}
+
+/** What to do next with a branch, in the order `status` lists them. */
+export const GROUPS = [
+  ["check", "to check", "Owner confirmed at this head: check it"],
+  ["land", "to land", "Checked green at this head and master: land it"],
+  ["ask", "to ask now", "Ready to merge, owner idle: ask the owner now"],
+  ["busy", "owner busy", "Ready to merge, owner busy: ask on a later round"],
+  ["archived", "owner archived", "Owner archived: the user's call (tell the user once)"],
+  ["untracked", "no session tracks", "No session tracks this worktree: the user's call (tell the user once)"],
+  ["unknown", "owner unknown", "Owner unknown: Sova hasn't read every session yet"],
+  ["not-ready", "not ready", "Not ready"],
+];
+
+/** A branch's group: `rec` its state record, `row` its board row (or null), `pending` the board's unread sessions. */
+export function groupOf({ rec, row, head, master, pending }) {
+  const check = rec?.check;
+  if (check?.ok && check.head === head && check.masterSha === master) return "land";
+  if (rec?.answer?.kind === "ready" && rec.answer.head === head) return "check";
+  const own = ownerOf(rec);
+  if (!own) return pending > 0 ? "unknown" : "untracked";
+  if (own.status === "archived") return "archived";
+  if (rec?.answer?.kind === "not-ready" && rec.answer.head === head) return "not-ready";
+  const ready = row ? isReadyState(row.state) : rec?.chip === "ready" || rec?.chip === "waiting";
+  if (!ready) return "not-ready";
+  return own.status === "idle" ? "ask" : "busy";
 }
 
 export const ago = (ms) => (ms < 90_000 ? `${Math.round(ms / 1000)}s` : ms < 90 * 60_000 ? `${Math.round(ms / 60_000)}m` : ms < 48 * 3600_000 ? `${Math.round(ms / 3600_000)}h` : `${Math.round(ms / 86400_000)}d`);
@@ -429,6 +501,7 @@ class Round {
     this.settingsFile = join(this.stateRoot, "merge-round.json");
     this.dir = join(this.stateRoot, "playbooks", "merge-round");
     this.stateFile = join(this.dir, "state.json");
+    this.boardFile = join(this.stateRoot, "merge-board.json");
     this.specCore = process.env.SOVA_ROUND_SPEC_CORE || join(this.agent, "extensions", "spec", "core");
     this.pnpm = process.env.SOVA_ROUND_PNPM || "pnpm";
     this.healthUrl = process.env.SOVA_ROUND_HEALTH_URL || "http://127.0.0.1:4800/api/health";
@@ -545,6 +618,32 @@ class Round {
     if (was) return pend(`Restart pending since ${ago(this.now - was.since)} ago; ${need.why}, so it isn't confirmed.`);
     if (failClosed) return pend(`Whether the server runs master's code can't be told (${need.why}): a restart is treated as needed.`);
     return `Whether the server runs master's code can't be told: ${need.why}.`;
+  }
+
+  // --- the merge board --------------------------------------------------------------------
+
+  /** Sova's merge board → {ok: true, board} | {ok: false, why}. */
+  readBoard() {
+    let text;
+    try { text = readFileSync(this.boardFile, "utf8"); } catch (e) {
+      return { ok: false, why: e?.code === "ENOENT" ? "the merge board file is missing (Sova writes it every minute while it runs)" : `the merge board file can't be read (${e?.code ?? "error"})` };
+    }
+    return parseBoard(text, this.now);
+  }
+
+  /** The board's row for a worktree: same canonical path, same branch. Rows elsewhere are ignored. */
+  boardRow(board, path, branch) {
+    const want = canonicalPath(path);
+    return board.rows.find((r) => r.branch === branch && canonicalPath(r.path) === want) ?? null;
+  }
+
+  /** Records the board's reading of a branch in its state record (and forgets one the board no
+   *  longer shows, once it has read every session). */
+  recordBoard(st, branch, row, board) {
+    if (row) {
+      const rec = (st.branches[branch] ??= {});
+      rec.board = { owner: row.owner.id, status: row.owner.status, state: row.state, reason: row.reason ?? row.state, at: board.at };
+    } else if (board.pending === 0 && st.branches[branch]?.board) delete st.branches[branch].board;
   }
 
   // --- the repository ---------------------------------------------------------------------
@@ -668,34 +767,68 @@ class Round {
     const st = this.loadState();
     const { trees } = await this.repo();
     const master = await this.masterSha();
-    const lines = [];
+    const read = this.readBoard();
+    const board = read.ok ? read.board : null;
     const branches = [];
     for (const t of trees.slice(1)) {
       if (!t.branch || t.branch === "master") continue;
       const f = await this.branchFacts(t.branch, t.path, master);
       if (f.ahead === 0) continue;
       const conflicts = await this.trialConflicts(master, `refs/heads/${t.branch}`);
+      const head = t.head;
+      const row = board ? this.boardRow(board, t.path, t.branch) : null;
+      if (board) this.recordBoard(st, t.branch, row, board);
       const rec = st.branches[t.branch] ?? {};
-      const owned = !!rec.owner;
-      const b = { branch: t.branch, path: t.path, ahead: f.ahead, behind: f.behind, dirty: f.dirty.length, temp: !!f.temp, conflicts, lastCommitAgoMs: this.now - f.lastCommitAt, owner: rec.owner ?? null, chip: rec.chip ?? null, idle: rec.idle ?? null, notedAgoMs: rec.notedAt ? this.now - rec.notedAt : null, ask: rec.ask ? { agoMs: this.now - rec.ask.at, answer: rec.answer?.kind ?? null } : null, restartNeeded: f.changed.some(needsRestart), unowned: !owned };
-      branches.push(b);
-      const parts = [`+${f.ahead}/-${f.behind}`, f.dirty.length ? `${f.dirty.length} uncommitted (${f.dirty[0]}${f.dirty.length > 1 ? ` and ${f.dirty.length - 1} more` : ""})` : "clean"];
+      const own = board ? ownerOf(rec) : null;
+      const group = board ? groupOf({ rec, row, head, master, pending: board.pending }) : "unknown";
+      const parts = [];
+      parts.push(row ? row.reason : board ? "no readiness on the board" : "readiness unknown");
+      if (!board) parts.push("owner unknown");
+      else if (own) parts.push(`owner ${own.owner} ${own.status} (${own.via === "board" ? "board" : "your note"}, ${ago(this.now - own.at)} ago${own.from === "note" && own.via === "note" && rec.board ? "; your note is newer than the board" : ""})`);
+      else parts.push(board.pending ? `owner unknown: Sova hasn't read ${board.pending} session${board.pending === 1 ? "" : "s"} yet` : "no session tracks this worktree");
+      parts.push(`+${f.ahead}/-${f.behind}`, f.dirty.length ? `${f.dirty.length} uncommitted (${f.dirty[0]}${f.dirty.length > 1 ? ` and ${f.dirty.length - 1} more` : ""})` : "clean");
       if (f.temp) parts.push(`temporary commit: "${f.temp.slice(0, 60)}"`);
       parts.push(typeof conflicts === "number" ? (conflicts ? `conflicts with master in ${conflicts} file${conflicts === 1 ? "" : "s"}` : "merges cleanly") : conflicts);
-      parts.push(`last commit ${ago(b.lastCommitAgoMs)} ago`);
-      parts.push(owned ? `owner ${rec.owner} (chip ${rec.chip}, ${rec.idle === "yes" ? "idle" : "busy"}, noted ${ago(b.notedAgoMs)} ago)` : "UNOWNED");
-      if (rec.ask) parts.push(`asked ${ago(b.ask.agoMs)} ago${rec.answer ? `, answer ${rec.answer.kind}${rec.answer.head ? ` at ${rec.answer.head.slice(0, 7)}` : ""}` : ", no answer"}`);
+      parts.push(`last commit ${ago(this.now - f.lastCommitAt)} ago`);
+      if (rec.ask) parts.push(`asked ${ago(this.now - rec.ask.at)} ago${rec.answer ? `, answer ${rec.answer.kind}${rec.answer.head ? ` at ${rec.answer.head.slice(0, 7)}` : ""}` : ", no answer"}`);
       if (rec.check) parts.push(`last check: ${rec.check.ok ? "landable" : "needs work"} at ${rec.check.head.slice(0, 7)}`);
-      if (b.restartNeeded) parts.push("landing needs a restart");
-      lines.push(`${t.branch}: ${parts.join(" · ")}`);
+      const restartNeeded = f.changed.some(needsRestart);
+      if (restartNeeded) parts.push("landing needs a restart");
+      branches.push({
+        branch: t.branch, path: t.path, head, group, line: `${t.branch}: ${parts.join(" · ")}`,
+        state: row?.state ?? null, reason: row?.reason ?? null,
+        owner: own?.owner ?? null, ownerStatus: own?.status ?? null, ownerFrom: own?.from ?? null,
+        ahead: f.ahead, behind: f.behind, dirty: f.dirty.length, temp: !!f.temp, conflicts, lastCommitAgoMs: this.now - f.lastCommitAt,
+        ask: rec.ask ? { agoMs: this.now - rec.ask.at, answer: rec.answer?.kind ?? null } : null, restartNeeded,
+      });
+    }
+    const lines = [];
+    if (board) {
+      const n = (k) => branches.filter((b) => b.group === k).length;
+      lines.push(`Merge board (written ${ago(this.now - board.at)} ago${board.pending ? `, ${board.pending} session${board.pending === 1 ? "" : "s"} not read yet` : ""}): ${GROUPS.map(([k, short]) => `${n(k)} ${short}`).join(" · ")}.`);
+      for (const [k, , head] of GROUPS) {
+        const of = branches.filter((b) => b.group === k);
+        if (!of.length) continue;
+        lines.push(`== ${head} (${of.length})`);
+        for (const b of of) lines.push(b.line);
+      }
+    } else {
+      lines.push(`Owners unknown: ${read.why}. Git facts only; land nothing until the board is back.`);
+      for (const b of branches) lines.push(b.line);
     }
     if (!branches.length) lines.push("No local branch with a worktree is ahead of master.");
     const m = await this.mainFacts();
     lines.push(`Main checkout: ${m.onMaster ? "on master" : "NOT on master"}, ${m.dirty} uncommitted, ${m.ahead === null ? "no origin/master" : `+${m.ahead}/-${m.behind} vs origin/master`}.`);
     if (st.restart?.pending) lines.push(`Restart pending since ${ago(this.now - st.restart.since)} ago.`);
-    st.lastStatus = { at: this.now, unowned: branches.filter((b) => b.unowned).map((b) => b.branch) };
+    st.lastStatus = { at: this.now, board: !!board, forUser: branches.filter((b) => b.group === "archived" || b.group === "untracked").map((b) => ({ branch: b.branch, head: b.head, group: b.group })) };
     this.saveState();
-    return { exit: m.onMaster && m.dirty === 0 ? 0 : 1, lines, data: { master, branches, main: m }, next: "read each owner's session_detail, then `round.mjs note <branch> owner=<id> chip=… idle=…`" };
+    const first = (k) => branches.find((b) => b.group === k)?.branch;
+    const next = !board ? "say owners are unknown and why; land nothing this round"
+      : first("check") ? `round.mjs check ${first("check")}`
+      : first("land") ? `round.mjs land ${first("land")}`
+      : first("ask") ? `round.mjs ask ${first("ask")} topic=<your topic> (ask the owner, never the user)`
+      : "round.mjs report";
+    return { exit: !board ? 2 : m.onMaster && m.dirty === 0 ? 0 : 1, lines, data: { master, board: board ? { at: new Date(board.at).toISOString(), pending: board.pending } : { error: read.why }, branches: branches.map(({ line, ...b }) => b), main: m }, next };
   }
 
   async note() {
@@ -712,44 +845,52 @@ class Round {
     if (rec.owner && rec.owner !== kv.owner) { delete rec.ask; delete rec.answer; }
     Object.assign(rec, { owner: kv.owner, chip: kv.chip, idle: kv.idle, notedAt: this.now }, kv.source ? { source: kv.source } : {});
     this.saveState();
-    const next = kv.chip === "waiting" ? `round.mjs ask ${branch} (waiting means ask, never merge)` : kv.chip === "ready" ? `read the owner's latest messages, then round.mjs ask ${branch} or round.mjs check ${branch}` : `round.mjs ask ${branch} when unsure, if the owner is idle`;
+    const next = kv.chip === "waiting" ? `round.mjs ask ${branch} (waiting means ask the owner, never merge on the chip)` : kv.chip === "ready" ? `read the owner's latest messages, then round.mjs ask ${branch} or round.mjs check ${branch}` : `round.mjs ask ${branch} when unsure, if the owner is idle`;
     return { exit: 0, lines: [`Noted ${branch}: owner ${kv.owner}, chip ${kv.chip}, ${kv.idle === "yes" ? "idle" : "busy"}.`], next };
   }
 
   async ask() {
-    const { branch, head } = await this.branchArg();
+    const { branch, head, tree } = await this.branchArg();
     const kv = Object.fromEntries(this.args.slice(2).map((a) => { const i = a.indexOf("="); return i > 0 ? [a.slice(0, i), a.slice(i + 1)] : [a, ""]; }));
     const unknown = Object.keys(kv).filter((k) => k !== "topic");
     if (unknown.length) stop(2, `Unknown: ${unknown.join(", ")}.`);
     if (!TOPIC_NAME_RE.test(kv.topic ?? "")) stop(2, "topic=<name> is required: the name queue_open gave this round's topic (queue_open merge).");
     const topic = kv.topic;
     const st = this.loadState();
-    const rec = st.branches[branch];
-    if (!rec?.owner) stop(1, `No owner recorded for ${branch}: read session_detail and note it first.`, `round.mjs note ${branch} owner=<id> chip=… idle=…`);
-    if (rec.idle !== "yes") stop(1, `${rec.owner} was busy when noted: never ask a busy session. Try next round.`, "the next branch");
-    if (this.now - rec.notedAt > NOTE_FRESH_MS) stop(1, `The note on ${branch} is ${ago(this.now - rec.notedAt)} old: read session_detail again and note it.`, `round.mjs note ${branch} …`);
+    // The board's reading first: it may be newer than any note (§chat.merge-round/driver).
+    const read = this.readBoard();
+    if (read.ok && tree) this.recordBoard(st, branch, this.boardRow(read.board, tree, branch), read.board);
+    const rec = st.branches[branch] ?? {};
+    const own = ownerOf(rec);
+    if (!own) stop(1, `No owner known for ${branch}: ${read.ok ? (read.board.pending ? "Sova hasn't read every session yet" : "no session tracks its worktree, so it is the user's call") : `owners are unknown (${read.why})`}.`, read.ok && !read.board.pending ? "tell the user once; land it only on their word" : "round.mjs status on a later round");
+    if (own.status === "archived") stop(1, `${own.owner} is archived: it can't answer, so ${branch} is the user's call.`, "tell the user once; land it only on their word");
+    if (own.status !== "idle") stop(1, `${own.owner} was busy when last read: never ask a busy session. Try next round.`, "the next branch");
+    if (this.now - own.at > NOTE_FRESH_MS) stop(1, `The newest reading of ${own.owner} on ${branch} is ${ago(this.now - own.at)} old: run round.mjs status again (Sova rewrites its board every minute), or note it by hand.`, "round.mjs status");
     for (const [b, r] of Object.entries(st.branches)) {
-      if (r.ask?.owner === rec.owner && this.now - r.ask.at < ASK_GAP_MS) stop(1, `${rec.owner} was asked about ${b} ${ago(this.now - r.ask.at)} ago: wait for its answer on the topic first.`, `pipe the delivered batch into round.mjs reply ${b}`);
+      if (r.ask?.owner === own.owner && this.now - r.ask.at < ASK_GAP_MS) stop(1, `${own.owner} was asked about ${b} ${ago(this.now - r.ask.at)} ago: wait for its answer on the topic first.`, `pipe the delivered batch into round.mjs reply ${b}`);
     }
-    rec.ask = { at: this.now, owner: rec.owner, head, topic };
+    st.branches[branch] = rec;
+    rec.ask = { at: this.now, owner: own.owner, head, topic };
     delete rec.answer;
-    this.event("asked", { branch, owner: rec.owner });
+    this.event("asked", { branch, owner: own.owner });
     this.saveState();
-    return { exit: 0, lines: [`session_send to ${rec.owner}:`, askText(branch, topic)], data: { owner: rec.owner, topic, text: askText(branch, topic) }, next: `don't poll: the answer arrives as a "${topic}" batch when your turn ends or you are idle; pipe that batch into \`round.mjs reply ${branch}\`` };
+    return { exit: 0, lines: [`session_send to ${own.owner}:`, askText(branch, topic)], data: { owner: own.owner, topic, text: askText(branch, topic) }, next: `don't poll: the answer arrives as a "${topic}" batch when your turn ends or you are idle; pipe that batch into \`round.mjs reply ${branch}\`` };
   }
 
   async reply() {
     const { branch, head } = await this.branchArg();
     const st = this.loadState();
     const rec = st.branches[branch];
-    if (!rec?.owner) stop(1, `No owner recorded for ${branch}.`, `round.mjs note ${branch} …`);
+    // The owner the ask went to answers it; with no ask, whoever owns the branch now.
+    const owner = rec?.ask?.owner ?? ownerOf(rec)?.owner;
+    if (!owner) stop(1, `No owner known for ${branch}.`, "round.mjs status");
     if (process.stdin.isTTY) stop(2, "Pipe the delivered topic batch (or the owner's session_read output) into stdin.");
     const chunks = [];
     for await (const c of process.stdin) chunks.push(c);
     const r = replyOf(Buffer.concat(chunks).toString("utf8"), {
       branch,
       head,
-      owner: rec.owner,
+      owner,
       topic: rec.ask?.topic,
       askedAt: rec.ask?.at,
       since: rec.answer?.noteAt,
@@ -758,21 +899,21 @@ class Round {
     const a = r.answer;
     if (a.kind === "no-ask") stop(2, `No ask about ${branch} is recorded, so no batch answers one: ask first.`, `round.mjs ask ${branch} topic=<name>`);
     if (a.kind === "wrong-topic") stop(2, `That batch is on "${a.topic}", not this ask's topic "${rec.ask?.topic}".`);
-    if (a.kind === "wrong-session") stop(2, `That isn't a topic batch or ${rec.owner}'s session_read output (the header names another session, or none).`);
+    if (a.kind === "wrong-session") stop(2, `That isn't a topic batch or ${owner}'s session_read output (the header names another session, or none).`);
     // The owner's notes read here never count again (a batch piped twice, a reused topic).
     if (r.read.length) {
       rec.readNotes = [...(rec.readNotes ?? []), ...r.read].slice(-READ_NOTES_KEPT);
       this.saveState();
     }
-    if (a.kind === "old") return { exit: 1, lines: [`Nothing new from ${rec.owner} about ${branch}: its notes there were read already, or predate this ask or its recorded answer.`], next: "wait for the next batch on the topic, or ask again on a later round" };
-    if (a.kind === "none") return { exit: 1, lines: [`No answer yet from ${rec.owner} about ${branch}.`], next: "wait for the next batch on the topic, or ask again on a later round" };
-    if (a.kind === "stale") return { exit: 1, lines: [`Stale: ${rec.owner} answered READY at ${a.sha}, but ${branch} is at ${head.slice(0, 7)}.`], next: `ask again on a later round (round.mjs ask ${branch})` };
+    if (a.kind === "old") return { exit: 1, lines: [`Nothing new from ${owner} about ${branch}: its notes there were read already, or predate this ask or its recorded answer.`], next: "wait for the next batch on the topic, or ask again on a later round" };
+    if (a.kind === "none") return { exit: 1, lines: [`No answer yet from ${owner} about ${branch}.`], next: "wait for the next batch on the topic, or ask again on a later round" };
+    if (a.kind === "stale") return { exit: 1, lines: [`Stale: ${owner} answered READY at ${a.sha}, but ${branch} is at ${head.slice(0, 7)}.`], next: `ask again on a later round (round.mjs ask ${branch})` };
     const noteAt = r.noteAt !== undefined ? { noteAt: r.noteAt } : {};
     rec.answer = a.kind === "ready" ? { kind: "ready", head, at: this.now, ...noteAt } : { kind: "not-ready", why: a.why, head, at: this.now, ...noteAt };
-    this.event("answer", { branch, owner: rec.owner, answer: a.kind });
+    this.event("answer", { branch, owner, answer: a.kind });
     this.saveState();
-    if (a.kind === "ready") return { exit: 0, lines: [`${rec.owner}: READY ${branch} at ${head.slice(0, 7)} (its current head).`], next: `round.mjs check ${branch}` };
-    return { exit: 1, lines: [`${rec.owner}: NOT READY: ${a.why}`], next: "leave it queued and say why in the report" };
+    if (a.kind === "ready") return { exit: 0, lines: [`${owner}: READY ${branch} at ${head.slice(0, 7)} (its current head).`], next: `round.mjs check ${branch}` };
+    return { exit: 1, lines: [`${owner}: NOT READY: ${a.why}`], next: "leave it queued and say why in the report" };
   }
 
   async check() {
@@ -987,7 +1128,8 @@ class Round {
     if (scan.code === 1) return { exit: 1, lines: [...scan.lines, `Land nothing: ${branch} carries a leak-scan hit in commits origin/master doesn't have.`], next: "report the commit, file and line to the owner and the user; scrubbing unpushed commits is the user's call, case by case" };
     const path = homeShown(tree);
     const call = `worktree ${JSON.stringify({ action: "merge", path })}`;
-    const owner = rec.answer?.kind === "ready" ? `Owner ${rec.owner} said READY at ${rec.answer.head.slice(0, 7)}.` : rec.owner ? `No READY recorded from ${rec.owner}: land only if the owner has said it's ready at this head.` : "UNOWNED: never land it without the user's OK.";
+    const who = rec.ask?.owner ?? ownerOf(rec)?.owner;
+    const owner = rec.answer?.kind === "ready" ? `Owner ${who} said READY at ${rec.answer.head.slice(0, 7)}.` : who ? `No READY recorded from ${who}: land only if the owner has said it's ready at this head.` : "No owner known: never land it without the user's OK.";
     const scanned = scan.code === 0 ? [] : [...scan.lines, "The leak scan couldn't run here: push scans again."];
     return { exit: 0, lines: [`landable at ${head.slice(0, 7)} on master ${master.slice(0, 7)} (checked ${ago(this.now - c.at)} ago).`, ...scanned, owner, `call: ${call}`], data: { call: { action: "merge", path } }, next: `after the merge card, round.mjs landed ${branch}` };
   }
@@ -1041,8 +1183,9 @@ class Round {
     ];
     const clean = await this.cleanUp(main, branch, tree);
     if (clean.why) lines.push(`Clean up: ${clean.why}`);
-    if (rec.owner) {
-      lines.push(`session_send to ${rec.owner}, after the clean up:`, `${branch} is merged into master at ${master.slice(0, 7)}. Don't touch master; start any new work on a fresh branch.`);
+    const who = rec.ask?.owner ?? ownerOf(rec)?.owner;
+    if (who) {
+      lines.push(`session_send to ${who}, after the clean up:`, `${branch} is merged into master at ${master.slice(0, 7)}. Don't touch master; start any new work on a fresh branch.`);
       if (clean.commands) lines.push(`Only when the remove succeeded, add: Its worktree folder was removed.`);
     }
     const next = clean.commands
@@ -1155,10 +1298,17 @@ class Round {
     lines.push(`- Checks: ${checks.map((e) => `${e.branch} ${e.ok ? "landable" : `needs: ${st.branches[e.branch]?.check?.needs?.join("; ") ?? "?"}`}`).join(" · ") || "none run"}`);
     const rc = of("restart-check").at(-1);
     lines.push(`- Restart: ${st.restart?.pending ? `pending (${(st.restart.merges ?? []).map((m) => m.branch).join(", ") || `the server runs ${String(st.restart.serverHead ?? "?").slice(0, 7)}`})${rc ? `, ${rc.busy} busy at the last check` : ", not checked"}` : st.restart?.confirmedAt >= since ? "done and confirmed" : "none needed"}`);
-    lines.push(`- Unowned: ${st.lastStatus?.unowned?.join(", ") || "none"}`);
+    // Branches with no live owner reach the user once per branch and head (§chat.merge-round/round).
+    st.toldUser ??= {};
+    const forUser = (st.lastStatus?.forUser ?? []).filter((b) => st.toldUser[b.branch] !== `${b.head}:${b.group}`);
+    for (const b of forUser) st.toldUser[b.branch] = `${b.head}:${b.group}`;
+    lines.push(`- For you, once (no live owner): ${forUser.map((b) => `${b.branch} (${b.group === "archived" ? "owner archived, your call" : "no session tracks this worktree, your call"})`).join(", ") || "nothing new"}`);
     lines.push(`- Owners asked: ${of("asked").map((e) => { const a = ev.find((x) => x.kind === "answer" && x.branch === e.branch && x.at >= e.at); return `${e.owner} about ${e.branch}: ${a ? a.answer : "no answer yet"}`; }).join(" · ") || "none"}`);
     lines.push("- Handed back: (fill in: branch, owner, why)");
     if (sess.firstRound) lines.push("- Settings: (fill in the kinds and counts discover-names.mjs printed, and any names it says origin already has, masked as printed)");
+    this.saveState();
+    const quiet = !sess.firstRound && !sess.hold && !st.restart?.pending && !forUser.length && st.lastStatus?.board && st.lastStatus.at >= since && !["landed", "pushed", "push-refused", "check", "asked", "answer"].some((k) => of(k).length);
+    if (quiet) return { exit: 0, lines: ["Nothing new on the merge board."], next: "report exactly that one line, unless something was handed back; end the turn" };
     return { exit: 0, lines, next: "end the turn (or the restart call, if restart-check printed it)" };
   }
 }

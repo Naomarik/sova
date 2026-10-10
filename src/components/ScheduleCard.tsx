@@ -1,6 +1,6 @@
 import { createSignal, Show } from "solid-js";
 import type { PlaybookSchedule } from "../../shared/protocol";
-import { canApprove, canRevoke, runsAsText, scheduleStateText } from "../lib/schedules";
+import { canApprove, canRevoke, eventsText, runsAsText, scheduleStateText } from "../lib/schedules";
 import { Icon } from "./ui";
 
 /** The state as a chip: a dot and the word, never hue alone. */
@@ -43,7 +43,7 @@ export function ScheduleCard(props: { schedule: PlaybookSchedule; onApprove(): P
   };
   const detail = () => {
     const st = s();
-    if (st.state === "active") return st.next ? scheduleStateText(st) : "Runs when a Claude limit resets.";
+    if (st.state === "active") return st.next ? scheduleStateText(st) : eventsText(st);
     return st.reason ?? null;
   };
   return (

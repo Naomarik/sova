@@ -4,7 +4,7 @@
 // restart catch-up, the limit-reset continue, the automatic pause and the caps. Every session,
 // profile, login and clock is a fake; the store lives in a throwaway directory.
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -42,6 +42,8 @@ interface Harness {
   log(): { outcome: string; why?: string; trigger: string }[];
   /** A new keeper on the same store: a server restart. */
   restart(): Keeper;
+  /** The keeper's store file. */
+  file: string;
   pin(id?: string): Promise<string>;
 }
 
@@ -135,6 +137,7 @@ function harness(opts: { when?: string; singleton?: boolean; start?: string } = 
     turns,
     slots,
     board,
+    file,
     log: () =>
       readFileSync(logFile, "utf8")
         .trim()
@@ -503,6 +506,8 @@ test("merge-ready: a branch turning ready with an idle owner wakes the round onc
   // The busy owner goes idle: a new transition, and only that branch is named.
   h.board.value!.rows[0] = row("feat/busy", "ready", "idle");
   await tickAt(h, "2026-10-05T09:31:00Z");
+  assert.equal(h.woken.length, 0, "under 30 minutes since the schedule last fired: held");
+  await tickAt(h, "2026-10-05T09:32:00Z");
   assert.equal(h.woken.length, 1);
   assert.match(h.woken[0]!.text, /\nReason: Ready to merge: feat\/busy\.\nRun the playbook "Merge round" again/);
 });
@@ -560,13 +565,16 @@ test("merge-ready: waits, unlogged, while the last run goes, then names every br
   await tickAt(h, "2026-10-05T09:02:00Z");
   assert.equal(h.woken.length, 0);
   assert.equal(h.log().length, logged, "a wait logs nothing");
+  await tickAt(h, "2026-10-05T09:31:00Z");
+  assert.equal(h.woken.length, 0, "30 minutes passed, but the run is still going");
+  assert.equal(h.log().length, logged, "a wait logs nothing");
   h.busy.clear();
-  await tickAt(h, "2026-10-05T09:03:00Z");
+  await tickAt(h, "2026-10-05T09:32:00Z");
   assert.equal(h.woken.length, 1);
   assert.match(h.woken[0]!.text, /Reason: Ready to merge: feat\/b, feat\/c \(waiting for an OK\)\./);
 });
 
-test("merge-ready: the day's cap skips once and spends the transition; the reason names at most five", async () => {
+test("merge-ready: the running-at-once cap skips once and spends the transition; the reason names at most five", async () => {
   const h = harness({ when: "merge-ready", singleton: true });
   await approve(h);
   for (const b of ["a", "b", "c", "d", "e", "f", "g"]) h.board.value!.rows.push(row(`feat/${b}`, "ready"));
@@ -574,9 +582,40 @@ test("merge-ready: the day's cap skips once and spends the transition; the reaso
   assert.match(h.created[0]!.text, /Reason: Ready to merge: feat\/a, feat\/b, feat\/c, feat\/d, feat\/e, and 2 more\./);
   h.slots.free = 0;
   h.board.value!.rows.push(row("feat/h", "ready"));
-  await tickAt(h, "2026-10-05T09:01:00Z");
-  await tickAt(h, "2026-10-05T09:02:00Z");
+  await tickAt(h, "2026-10-05T09:31:00Z");
+  await tickAt(h, "2026-10-05T09:32:00Z");
   const skips = h.log().filter((l) => l.trigger === "merge-ready" && l.outcome === "skipped");
   assert.equal(skips.length, 1, "logged once");
   assert.equal(h.woken.length, 0);
+});
+
+test("merge-ready: one fire per 30 minutes per schedule; branches turning ready meanwhile go out together", async () => {
+  const h = harness({ when: "merge-ready; every 6h", singleton: true });
+  await approve(h);
+  const fires = () => h.created.length + h.woken.length;
+  h.board.value!.rows.push(row("feat/x", "ready"));
+  await tickAt(h, "2026-10-05T09:01:00Z");
+  assert.equal(fires(), 1);
+  h.board.value!.rows.push(row("feat/y", "ready"));
+  await tickAt(h, "2026-10-05T09:03:00Z");
+  assert.equal(fires(), 1, "inside 30 minutes of the last fire: held");
+  await tickAt(h, "2026-10-05T09:31:00Z");
+  assert.equal(fires(), 2);
+  assert.match(h.woken.at(-1)!.text, /\nReason: Ready to merge: feat\/y\.\n/);
+});
+
+test("merge-ready never takes the day's last fires from the timed triggers", async () => {
+  const h = harness({ when: "merge-ready; every 6h", singleton: true });
+  await approve(h);
+  await tickAt(h, "2026-10-05T09:00:00Z"); // primes the next timed fire (12:00)
+  // 44 fires already today: every 6h needs up to 4 of the 48, so merge-ready waits for tomorrow.
+  const store = JSON.parse(readFileSync(h.file, "utf8"));
+  store.schedules[0].day = { key: "2026-10-05", n: 44 };
+  writeFileSync(h.file, JSON.stringify(store));
+  h.board.value!.rows.push(row("feat/x", "ready"));
+  await tickAt(h, "2026-10-05T11:00:00Z");
+  assert.equal(h.created.length + h.woken.length, 0);
+  assert.match(h.log().at(-1)!.why!, /leaves today's last 4 of 48 fires to the timed triggers/);
+  await tickAt(h, "2026-10-05T12:00:00Z");
+  assert.equal(h.created.length, 1, "the 6-hour backstop still fires");
 });

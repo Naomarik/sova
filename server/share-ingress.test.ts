@@ -4,9 +4,9 @@
 // PI_CODING_AGENT_DIR, a fake LocalAPI (setIdentity), fake gateway deps, no sockets. The ingress over
 // real loopback sockets is share-ingress.integration.test.ts.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { after, afterEach, beforeEach, describe, test } from "node:test";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-share-ingress-")));
@@ -33,6 +33,9 @@ const { addressIdentity } = await import("./mesh/address-identity");
 const { peerUrl } = await import("./mesh/peers");
 const { meshApi } = await import("./mesh/index");
 const { previewAddress } = await import("./share/preview-address");
+const { createShareApp, PAGE_CSP } = await import("./share/routes");
+const { HOP_HEADERS_MS } = await import("./share/router");
+const { scratchRoot } = await import("./test-scratch");
 const { LINK_WARNINGS, MINT_ACK_TIMEOUT_MS, SHARE_PORT_DEFAULT } = await import("../shared/public-links");
 type PublicLinksFile = import("../shared/public-links").PublicLinksFile;
 type RegistrySnapshot = import("../shared/public-links").RegistrySnapshot;
@@ -1386,4 +1389,173 @@ test("a gateway whose info goes unanswered still loses its statement: the addres
   infoReply = async () => null;
   await gw.refreshGateway();
   assert.equal(addressNow().url, null);
+});
+
+// ---- a rebuilt share page's assets reach the gateway before the page (§mesh.public/registry) ----
+
+const INDEX_HTML = '<!doctype html><title>Shared</title><script type="module" src="/h/assets/index.js"></script>';
+const SHELLS = [`/h/${TOKEN}`, `/i/${TOKEN}`, `/s/${TOKEN}`];
+
+/** A stub share build at a scratch root, served through SOVA_SHARE_DIST; `undo` puts the env back. */
+function stubBuild(names: string[]) {
+  const dir = join(scratchRoot("sova-share-dist-"), "dist-share");
+  mkdirSync(join(dir, "assets"), { recursive: true });
+  writeFileSync(join(dir, "index.html"), INDEX_HTML);
+  for (const n of names) writeFileSync(join(dir, "assets", n), `/* ${n} */`);
+  const was = process.env.SOVA_SHARE_DIST;
+  process.env.SOVA_SHARE_DIST = dir;
+  return {
+    dir,
+    /** A rebuild: the hashed names change, as `vite build --mode share` renames them. */
+    rename(from: string, to: string) {
+      renameSync(join(dir, "assets", from), join(dir, "assets", to));
+    },
+    undo() {
+      process.env.SOVA_SHARE_DIST = was;
+      rmSync(dirname(dir), { recursive: true, force: true });
+    },
+  };
+}
+
+/** Let the in-process push run (endpoint, call, ack): immediates only, never the wall clock. */
+async function spin(cond: () => boolean, what: string) {
+  for (let i = 0; i < 2000; i++) {
+    if (cond()) return;
+    await tick();
+  }
+  throw new Error(`never happened: ${what}`);
+}
+
+/** A clock the test advances: ensureAssetsCurrent's wait ends only when `elapse()` is called. */
+function manualClock() {
+  const asked: number[] = [];
+  let release: (() => void) | null = null;
+  const undo = push.setAssetsWaitClock((ms) => {
+    asked.push(ms);
+    const d = deferred<void>();
+    release = () => d.resolve();
+    return { elapsed: d.promise, cancel: () => {} };
+  });
+  return { asked, elapse: () => release?.(), undo };
+}
+
+async function assertShell(res: Response) {
+  assert.equal(res.status, 200);
+  assert.equal(await res.text(), INDEX_HTML);
+  assert.equal(res.headers.get("content-security-policy"), PAGE_CSP);
+  assert.equal(res.headers.get("content-type"), "text/html; charset=utf-8");
+}
+
+test("a rebuilt share page: each shell (/h, /i, /s) answers only after the gateway acked a snapshot listing the new asset names", async () => {
+  clearStores();
+  const build = stubBuild(["index-AAAA1111.js", "index-AAAA1111.css"]);
+  const clock = manualClock();
+  try {
+    push.startRegistryPush();
+    await push.pushNow();
+    assert.deepEqual(pushed.at(-1)!.assets, ["index-AAAA1111.css", "index-AAAA1111.js"]);
+    const app = createShareApp();
+    let current = "index-AAAA1111.js";
+    for (const [i, path] of SHELLS.entries()) {
+      const next = `index-B${i}B${i}B${i}B${i}.js`;
+      build.rename(current, next);
+      current = next;
+      const order: string[] = [];
+      const gate = deferred<void>();
+      answer = async (s, node) => {
+        await gate.promise;
+        order.push(`ack ${s.assets.join(",")}`);
+        return { ok: true, seq: s.seq, publicUrl: urlOf(node) };
+      };
+      const sentBefore = pushed.length;
+      let answered = false;
+      const res = Promise.resolve(app.request(path)).then((r) => {
+        answered = true;
+        order.push("shell");
+        return r;
+      });
+      await spin(() => pushed.length > sentBefore, `the push for ${path}`);
+      assert.ok(pushed.at(-1)!.assets.includes(next), `${path}: the snapshot lists the rebuilt name`);
+      for (let k = 0; k < 20; k++) await tick();
+      assert.equal(answered, false, `${path}: the shell waits for the gateway's ack`);
+      gate.resolve();
+      await assertShell(await res);
+      assert.deepEqual(order, [`ack index-AAAA1111.css,${next}`, "shell"], path);
+      assert.equal(JSON.parse(readFileSync(push.outboxFile(), "utf8")).dirty, false, `${path}: nothing owed`);
+    }
+    assert.deepEqual(clock.asked, [push.ASSETS_WAIT_MS, push.ASSETS_WAIT_MS, push.ASSETS_WAIT_MS]);
+  } finally {
+    clock.undo();
+    build.undo();
+  }
+});
+
+test("an unchanged share build sends no snapshot and waits for nothing; nor does a host that isn't routed", async () => {
+  clearStores();
+  const build = stubBuild(["index-CCCC2222.js"]);
+  const clock = manualClock();
+  try {
+    push.startRegistryPush();
+    await push.pushNow();
+    const sent = pushed.length;
+    const app = createShareApp();
+    for (const path of SHELLS) await assertShell(await app.request(path));
+    assert.equal(pushed.length, sent, "no snapshot for a build the gateway already acked");
+    assert.deepEqual(clock.asked, [], "no wait");
+    push.stopRegistryPush();
+    // Not routed: a rebuild is nobody's to tell.
+    for (const s of [{ version: 1, route: "off" }, { version: 1, route: "self" }] as PublicLinksFile[]) {
+      setting = s;
+      push.startRegistryPush();
+      build.rename("index-CCCC2222.js", "index-DDDD3333.js");
+      for (const path of SHELLS) await assertShell(await app.request(path));
+      assert.equal(pushed.length, sent, JSON.stringify(s.route));
+      assert.deepEqual(clock.asked, [], JSON.stringify(s.route));
+      build.rename("index-DDDD3333.js", "index-CCCC2222.js");
+      push.stopRegistryPush();
+    }
+  } finally {
+    clock.undo();
+    build.undo();
+  }
+});
+
+test("a slow gateway: the shell answers when the 5 s wait ends, well before the gateway's own page wait; the snapshot stays owed", async () => {
+  clearStores();
+  const build = stubBuild(["index-EEEE4444.js"]);
+  const clock = manualClock();
+  try {
+    push.startRegistryPush();
+    await push.pushNow();
+    // The gateway now holds every push (as one answering in ~9 s would) until the test releases it.
+    const gate = deferred<void>();
+    answer = async (s, node) => {
+      await gate.promise;
+      return { ok: true, seq: s.seq, publicUrl: urlOf(node) };
+    };
+    build.rename("index-EEEE4444.js", "index-FFFF5555.js");
+    const app = createShareApp();
+    const sent = pushed.length;
+    let answered = 0;
+    // Two visitors at once share one push and one wait.
+    const both = [app.request(SHELLS[0]!), app.request(SHELLS[2]!)].map((p) => Promise.resolve(p).then((r) => (answered++, r)));
+    await spin(() => pushed.length > sent && clock.asked.length > 0, "the push and the wait");
+    for (let k = 0; k < 20; k++) await tick();
+    assert.equal(answered, 0, "waiting on the gateway");
+    assert.deepEqual(clock.asked, [push.ASSETS_WAIT_MS], "one wait, of ASSETS_WAIT_MS");
+    assert.ok(push.ASSETS_WAIT_MS <= 5_000 && push.ASSETS_WAIT_MS < HOP_HEADERS_MS, "inside the gateway's own wait for the page");
+    clock.elapse(); // 5 s pass; the gateway still hasn't answered
+    for (const r of await Promise.all(both)) await assertShell(r);
+    assert.equal(pushed.length, sent + 1, "one push for both pages");
+    assert.equal(JSON.parse(readFileSync(push.outboxFile(), "utf8")).dirty, true, "the snapshot is still owed");
+    // The gateway answers late: the names are acked, the outbox drains, the next page doesn't wait.
+    gate.resolve();
+    await spin(() => JSON.parse(readFileSync(push.outboxFile(), "utf8")).dirty === false, "the late ack");
+    await assertShell(await app.request(SHELLS[1]!));
+    assert.equal(pushed.length, sent + 1);
+    assert.deepEqual(clock.asked, [push.ASSETS_WAIT_MS]);
+  } finally {
+    clock.undo();
+    build.undo();
+  }
 });

@@ -21,7 +21,7 @@ import { previewAnswer, previewUpgradeAnswer } from "./preview-pages";
 import { createPreviewProxy, type PreviewProxy, PreviewSlots } from "./preview-proxy";
 import { offlineKind, offlineResponse, offlineUpgrade } from "./offline";
 import { acceptsNode, type GatewayRegistry, gatewayPublicUrl, gatewaySetting, type RegistryHit, shareRegistry } from "./registry";
-import { SHARE_DIST } from "./routes";
+import { shareDist } from "./share-dist";
 import { stripForwarded } from "./security";
 import { onPublicLinksChanged } from "./setting-events";
 import { createWsHop, WS_HOP_WITHDRAW_GRACE_MS, type WsHop } from "./ws-hop";
@@ -209,7 +209,7 @@ export function createGatewayRouter(opts: GatewayRouterOptions = {}): GatewayRou
   const peers = opts.peers ?? (() => meshApi.config()?.peers ?? []);
   const resolve = opts.resolve ?? ((peer: PeerEntry) => verifiedAddress(peer, process.env, peers));
   const isLocal = opts.isLocal ?? ((token, kind) => (kind === "h" ? findLink(token) : kind === "i" ? findPersonLink(token) : findShareLink(token)) !== null);
-  const hasAsset = opts.hasAsset ?? ((name) => existsSync(join(SHARE_DIST, "assets", name)));
+  const hasAsset = opts.hasAsset ?? ((name) => existsSync(join(shareDist(), "assets", name)));
   const strip = opts.strip ?? stripForwarded;
   const reachable = opts.preflight ?? preflight;
   const wsHop = opts.wsHop ?? createWsHop();

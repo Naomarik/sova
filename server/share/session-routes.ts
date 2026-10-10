@@ -10,6 +10,7 @@ import { classify, recordOpen, recordRefused, recordShellFetch, type SessionVisi
 import { noteShareVisit } from "../visitor-identity";
 import { RateLimiter, type ShareUpgrade } from "./edge";
 import { cappedWebSocketServer } from "../runtime-quirks";
+import { ensureAssetsCurrent } from "./registry-push";
 
 /**
  * The share listener's session share routes (§app/session-share): read-only, no POST.
@@ -101,7 +102,9 @@ function beforeOf(c: Context): number | undefined | null {
 }
 
 export function mountSessionShareRoutes(app: Hono, shareDist: () => string, pageCsp: string): void {
-  app.get("/s/:token", (c) => {
+  app.get("/s/:token", async (c) => {
+    // As /h/: a rebuilt page's assets are told to the gateway first.
+    await ensureAssetsCurrent();
     const index = join(shareDist(), "index.html");
     if (!existsSync(index)) return c.text("The share page is not built on this host.", 503);
     const ua = c.req.header("user-agent");

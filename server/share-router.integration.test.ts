@@ -4,11 +4,11 @@
 // message arriving, a socket closing, a hop reaching its gate), never a fixed sleep. routeOf in
 // process is share-router.test.ts.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, request, type IncomingHttpHeaders, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { after, test } from "node:test";
 import WebSocket, { WebSocketServer } from "ws";
 
@@ -967,4 +967,118 @@ test("a name two live hosts listed is 503 until every lister has answered; the f
   assert.equal((await get(`${g.base}/h/assets/one.js`)).status, 503, "a lister that never answered: no agreement yet");
   const frame = await get(`${g.base}/h/assets/${FRAME_HOST_NAME}`);
   assert.deepEqual([frame.status, frame.body, frame.headers["content-security-policy"]], [200, doc, FRAME_HOST_CSP]);
+});
+
+// ---- a rebuilt share page on a routed host (§mesh.public/registry) ----------------------------------
+
+test("a routed host's rebuilt share page: its new assets come through the gateway once the page was opened, with no other push", async () => {
+  const gwClient = await import("./share/gateway-client");
+  const push = await import("./share/registry-push");
+  const { ASSET_CSP } = await import("./share/router");
+  const { scratchRoot } = await import("./test-scratch");
+  // The routed host's own share build: a stub at a scratch root, read per request.
+  const dist = join(scratchRoot("sova-share-rebuild-"), "dist-share");
+  mkdirSync(join(dist, "assets"), { recursive: true });
+  const build = (name: string) => {
+    writeFileSync(join(dist, "index.html"), `<!doctype html><title>Shared</title><script type="module" src="/h/assets/${name}"></script>`);
+    writeFileSync(join(dist, "assets", name), `console.log(${JSON.stringify(name)})`);
+  };
+  const rebuild = (from: string, to: string) => {
+    renameSync(join(dist, "assets", from), join(dist, "assets", to));
+    build(to);
+  };
+  build("index-AAAA1111.js");
+  const wasDist = process.env.SOVA_SHARE_DIST;
+  process.env.SOVA_SHARE_DIST = dist;
+
+  // The routed host: the real share app (its page shells, its asset route) on a loopback port,
+  // standing in for its ingress (whose gate is share-ingress.integration.test.ts's).
+  const host = createShareServer({ client: (req) => req.socket.remoteAddress ?? "unknown" });
+  const hostPort = await listen(host);
+
+  // The gateway: its own registry, routing every token to the host. It shares this process (and so
+  // SOVA_SHARE_DIST) with the host, so its own share stands in for another machine's: no build of
+  // the host's names, no token minted (every in-process answer is its 404).
+  const file = join(root, `reg-rebuild.json`);
+  const reg = new GatewayRegistry({ file: () => file, validate: passing });
+  const tokens = { h: T("r"), i: T("q"), s: T("p") };
+  const routed = (Object.entries(tokens) as ["h" | "i" | "s", string][]).map(([kind, t]) => ({ h: hashToken(t), exp: Date.now() + 86_400_000, kind }));
+  const hooks = createGatewayRouter({
+    local: { dispatch: (_q, res) => void res.writeHead(404, { "Content-Type": "application/json" }).end('{"error":"Not found"}'), upgrade: (_q, socket) => void socket.destroy() },
+    registry: reg,
+    setting: () => GATEWAY,
+    publicUrl: () => GATEWAY.publicUrl,
+    peers: () => [PEER],
+    resolve: LOOPBACK,
+    isLocal: () => false,
+    hasAsset: () => false,
+    strip,
+    preflight: async () => true,
+    sweepMs: 0,
+  });
+  after(() => hooks.dispose());
+  const gwServer = createShareServer({ ...hooks, client: (req) => req.socket.remoteAddress ?? "unknown" });
+  const base = `http://127.0.0.1:${await listen(gwServer)}`;
+
+  // The host's registry push, to that gateway: each snapshot it sends is committed as sent (with
+  // the test's three routed links added, the host's own stores being empty), and acked.
+  const snapshots: RegistrySnapshot[] = [];
+  const undoDeps = gwClient.setGatewayDeps({
+    readSetting: () => ({ version: 1, route: { via: { nodeId: "n1" } } }),
+    peers: () => [PEER],
+    addressMode: () => false,
+    endpoint: async () => "http://gw-n1.test",
+    recordUrl: () => {},
+    call: async (url, init) => {
+      const path = new URL(url).pathname;
+      if (path === "/api/peer/hello") return { status: 200, body: { mesh: 1, shareGateway: { publicUrl: GATEWAY.publicUrl } } };
+      if (path === "/api/peer/share-gateway/info") return { status: 200, body: { publicUrl: GATEWAY.publicUrl, accepting: true, seq: null, kinds: ["h", "i", "s", "x"] } };
+      if (path === "/api/peer/share-gateway/links" && init?.method === "PUT") {
+        const snap = JSON.parse(String(init.body)) as RegistrySnapshot;
+        snapshots.push(snap);
+        const ack = reg.commit("n1", { ...snap, links: [...snap.links, ...routed], ingressPort: hostPort }, GATEWAY.publicUrl, { now: Date.now(), local: new Set(), live: () => true });
+        return { status: 200, body: ack };
+      }
+      return null;
+    },
+  });
+  try {
+    push.startRegistryPush();
+    await push.pushNow();
+    assert.deepEqual(snapshots.at(-1)?.assets, ["index-AAAA1111.js"]);
+    const page = await get(`${base}/h/${tokens.h}`);
+    assert.equal(page.status, 200);
+    assert.match(page.body, /index-AAAA1111\.js/);
+    assert.equal((await get(`${base}/h/assets/index-AAAA1111.js`)).status, 200);
+
+    let current = "index-AAAA1111.js";
+    for (const [i, path] of [`/h/${tokens.h}`, `/i/${tokens.i}`, `/s/${tokens.s}`].entries()) {
+      const next = `index-B${i}B${i}B${i}B${i}.js`;
+      rebuild(current, next);
+      current = next;
+      // Before anyone opened the rebuilt page, the gateway doesn't know the name: its own 404.
+      assert.equal((await get(`${base}/h/assets/${next}`)).status, 404, `${next} unlisted before the page`);
+      const sent = snapshots.length;
+      const shell = await get(`${base}${path}`);
+      assert.equal(shell.status, 200, path);
+      assert.match(shell.body, new RegExp(next.replace(".", "\\.")), `${path} names the rebuilt asset`);
+      const asset = await get(`${base}/h/assets/${next}`);
+      assert.equal(asset.status, 200, `${next} through the gateway`);
+      assert.equal(asset.body, `console.log(${JSON.stringify(next)})`);
+      assert.equal(asset.headers["content-security-policy"], ASSET_CSP);
+      assert.equal(asset.headers["content-type"], "text/javascript; charset=utf-8");
+      assert.equal(snapshots.length, sent + 1, `${path}: one snapshot, sent before the page`);
+    }
+    // Unchanged since: the page goes out with no snapshot.
+    const sent = snapshots.length;
+    assert.equal((await get(`${base}/h/${tokens.h}`)).status, 200);
+    assert.equal(snapshots.length, sent);
+  } finally {
+    push.stopRegistryPush();
+    undoDeps();
+    gwClient.resetGatewayClient();
+    if (wasDist === undefined) delete process.env.SOVA_SHARE_DIST;
+    else process.env.SOVA_SHARE_DIST = wasDist;
+    rmSync(dirname(dist), { recursive: true, force: true });
+  }
 });

@@ -196,6 +196,24 @@ describe("where memory can be turned on (§chat.memory/where)", () => {
   });
 });
 
+describe("memory is offered only where it can be turned on", () => {
+  test("an ordinary chat's mode message and switch result carry `memory`; a runtime without the engine's carry none and refuse it", async () => {
+    const { chat, log } = await openChat();
+    assert.deepEqual((chat.modeMessage() as { memory?: unknown }).memory, { type: "uniichat", size: 128 });
+    assert.ok((await chat.switchMode({ minorModes: [] })).memory, "the switch result too");
+    // A special loadout's runtime has no recall tools, so no engine (baton, project overseer, …).
+    chat.memoryAvailable = () => false;
+    assert.equal("memory" in chat.modeMessage(), false, "no memory row for the UI");
+    log.length = 0;
+    const r = await chat.switchMode({ minorModes: ["vis"] });
+    assert.equal("memory" in r, false);
+    assert.equal("memory" in (log.find((m) => m.type === "mode") ?? {}), false, "nor in the broadcast");
+    await assert.rejects(chat.switchMode({ minorModes: ["memory"] }), /Memory can't be turned on in this chat/);
+    await assert.rejects(chat.switchMode({ memory: { type: "zoomable" } }), /Memory can't be turned on in this chat/);
+    assert.equal(chat.harness.state.branch().latest(MEMORY), null, "nothing written");
+  });
+});
+
 describe("the memory choice is kept on the branch", () => {
   test("a type-only change writes a sova-memory record and a mode message; reopen and a rewind past it keep it", async () => {
     const { chat, path, log, model } = await openChat();

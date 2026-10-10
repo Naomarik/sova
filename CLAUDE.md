@@ -12,6 +12,15 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
 ## Layout & ownership
 
 - `shared/protocol.ts` — the REST/WS wire contract. Change only with team coordination.
+  `shared/memory.ts` (imports only protocol types) is the memory minor mode's half of it: the type copy, sizes,
+  the recall rows' summary and the coding-session refusal, read by server and `src/` alike (§chat/memory).
+- `server/memory/` — the memory minor mode's engine (§chat/memory), harness-neutral; pi's hooks for it are
+  `server/harness/pi/memory.ts`. Its files are Sova's own, never pi-config's: `<agent dir>/mode-memory.json`
+  (Settings → Memory: the summarizer's backend/model/effort and fallback, and the saved default type and size;
+  read by the server only) and one sidecar per chat, `<agent dir>/sova/memory/<session id>/` (`tree.jsonl` the
+  built summaries, `state.json` the saved views and cache prefixes), copied by "Fork from here" and removed when
+  the chat is archived or deleted. A chat's type and size are its `sova-memory` state entry; the Overseer's
+  switch is `overseer.json`'s `memory`.
 - `shared/harness.ts` — the harness contract: a types-only barrel over `shared/harness-core.ts`,
   `-tools`, `-history`, `-wire`, `-state`, `-session` (each imports only its siblings, with
   `import type`, and emits no code), what Sova code outside the adapter speaks instead of pi's
@@ -268,7 +277,7 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   model-discovery argv to the extension's, and `src/lib/show-changes-coverage.test.ts` imports
   `pi-config/extensions/show-changes/coverage.ts` (imports nothing) to pin the tool's hunk matching
   to `src/lib/changes-steps.ts`'s; beyond that, `catalog.ts` (with `context-window.ts`), `accounts.ts` and the
-  protocol set above and `provider/fork-point.ts` (through `fork/claude.ts`) and `fixed-settings.ts` (imports nothing: the `--settings` every `claude` spawn gets, no attribution and auto-memory off, §app.claude-code-provider/no-memory; `server/decide-llm.ts`, `session-autotitle.ts` and `claude-models.ts` import it), the server never imports claude-code. `argv.ts` is also the quoting boundary: every path that reaches a far shell is
+  protocol set above and `provider/fork-point.ts` (through `fork/claude.ts`) and `fixed-settings.ts` (imports nothing: the `--settings` every `claude` spawn gets, no attribution and auto-memory off, §app.claude-code-provider/no-memory; `server/decide-llm.ts`, `session-autotitle.ts`, `claude-models.ts` and `memory/summarizer.ts` import it) and `provider/memory-view.ts` (imports nothing: the memory view message's declared shape — the guide, the stable prefix, the newest lines — that `server/memory/engine.ts` builds and the bridge sends as written, §chat.memory/turn), the server never imports claude-code. `argv.ts` is also the quoting boundary: every path that reaches a far shell is
   single-quote-escaped there, and callers spawn its argv without a local shell. The web mode switch calls that extension's
   `/mode` command handler directly (`ChatSession.applyMode`), so its arguments are a contract too.
   Sova has no sshfs/mount support: a remote session's cwd is always its local placeholder, and

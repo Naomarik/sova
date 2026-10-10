@@ -429,6 +429,21 @@ context window]`.
 A clean append sends every user message pi added since the last turn (steering
 and queued follow-ups), in order, joined into one stream-json user message.
 
+**A memory view** (Sova's memory minor mode, `provider/memory-view.ts`) is
+the one context sent as written, never folded: a first user message of two
+or three text blocks — the guide opening `# Memory`, the stable prefix
+`<chat>…</chat>`, and optionally the newest lines `<chat> (continued: the
+newest lines)…</chat>` — followed by the run's own messages. The guide and
+the prefix go at the end of the system prompt the CLI is given (`initialize`),
+under Claude Code's own one-hour cache mark; only the newest lines and the
+run's messages go in the child's first user message, and the bridge adds no
+cache mark of its own (the CLI already uses three or four of the four
+allowed). Sova saves the prefix with the chat and changes it only when the
+view rebases, so a new process starts from the same cached system prompt; a
+changed prefix is a changed system prompt and restarts the child. Within a
+run, the view stays the same for every request, and the tool loop appends as
+usual.
+
 ### Compaction
 
 pi owns compaction; the CLI child's own auto-compact is off

@@ -63,6 +63,12 @@ model, and for the Overseer from its own switch (§chat.memory/overseer).
   when the saved default has it on.
 - A session whose saved mode has memory on (a web chat later opened in a terminal) keeps it in its
   saved mode, but nothing runs it there.
+- A saved default with memory on (`/mode default` or the menu's save, from a chat with memory) stays
+  in `mode.json` as saved, and a new or never-switched web chat starts with it. A terminal session
+  adopting that default (or a branch without a saved mode, after `/tree`) drops memory: its status
+  line, `/mode status`'s `minor:` line (its `default:` line still shows the file) and the active
+  minor modes it publishes don't list it. The extension tells the two
+  apart by the server's `sova:web-minor` hook, which Sova's server installs when it loads.
 
 ## §chat.memory/choice — Each chat's type and size
 

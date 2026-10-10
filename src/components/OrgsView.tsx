@@ -50,6 +50,7 @@ import { InsightsPage } from "./InsightsPage";
 import { meshPeers, orgHostOf } from "../lib/mesh";
 import { orgHostOffline } from "../lib/org-host-offline";
 import { LinksBanner } from "./LinksBanner";
+import { OrgWhatsAppCard } from "./OrgWhatsAppCard";
 import { OwnerCard } from "./OwnerCard";
 import { CompanyHoursCard } from "./CompanyHoursCard";
 import { PersonForm } from "./PersonForm";
@@ -390,6 +391,7 @@ function OrgPage(props: { id: string; start?: string; tab?: OrgTab; history?: Hi
                   <AboutCard org={o()} act={act} />
                   <CompanyHoursCard org={o()} act={act} />
                   <GitCard org={o()} act={act} />
+                  <OrgWhatsAppCard orgId={o().id} remoteHost={orgHostOf(o().id)} />
                 </Match>
               </Switch>
             </div>

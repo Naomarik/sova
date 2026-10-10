@@ -103,8 +103,8 @@ registered and current: the playbook has nothing to do.").
 
 `playbook` (optional, default `project-verbs`) names another verb playbook the project's folder lists
 (§app.project-runtime/verb-playbooks); the run's title is then "{its title}: {project}", and every
-sentence below names it by its title. The session runs in the project's coding mode with align on
-beside it (§app.project-overseer/coding-mode).
+sentence below names it by its title. The session starts in this computer's default mode with align
+on beside it (§app.project-overseer/coding-mode).
 
 The run's region moves idle → running → proposed (its branch has commits and its turn ended) →
 idle (merged, or its worktree removed); a run that ended with no commits returns to idle with the
@@ -287,12 +287,13 @@ review, the banner, the Needs-you item and Merge Branch name the playbook by its
 what it proposes. A playbook without `proposes:` (or with any other value) is not a verb playbook,
 and `verbs/onboard` refuses it: "{id} is not a verb playbook: its PLAYBOOK.md says no proposes:."
 
-A verb playbook's run may ask the operator. Its session runs with align on, beside the project's
-coding mode (§app.project-overseer/coding-mode), so a decision it can't make from the repository
-(which of two held ports to use, whether a resource is production data) is an alignment question,
-not a guess: its open questions are the session's `open-questions` Needs-you item and push
-(§chat.alignment/session-mark), and the run's region waits (§app.project-runtime/onboard). An
-ordinary project coding session never gets align.
+A verb playbook's run may ask the operator. Its session starts with align on, beside this
+computer's default mode (§app.project-overseer/coding-mode), so a decision it can't make from the
+repository (which of two held ports to use, whether a resource is production data) is an alignment
+question, not a guess: its open questions are the session's `open-questions` Needs-you item and push
+(§chat.alignment/session-mark), and the run's region waits (§app.project-runtime/onboard). Those
+answers are the operator's: the project overseer's `sova_send` to a run waiting on them is refused,
+and neither Overseer may turn align off on it while it waits (§app.project-overseer/coding-mode).
 
 ## §app.project-runtime/deploy-standing — Each deploy target's standing
 

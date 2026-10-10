@@ -2582,7 +2582,7 @@ export function Sidebar(props: {
             <details class="sidebar-region sidebar-needs-you" aria-labelledby="r-needs-you" open={needsYouRegionOpen()} onToggle={onNeedsYouToggle}>
               {/* The Groups head's pattern: the <summary> toggles, the <h2> is what the outline reads. */}
               <summary class="sidebar-needs-you-summary">
-                <h2 class="sidebar-region-head" id="r-needs-you" title={needsYouTitle(needsYou().length, needsYouProject().length)}>
+                <h2 class="sidebar-region-head" id="r-needs-you" title={needsYouTitle(needsYou().length, needsYouProject().filter((i) => i.kind !== "whatsapp-down").length, needsYouProject().some((i) => i.kind === "whatsapp-down"))}>
                   <Icon name="chevron-right" small class="icon-twist" />
                   Needs you <span class="sidebar-region-count">· {needsYouCount()}</span>
                 </h2>
@@ -2605,18 +2605,28 @@ export function Sidebar(props: {
                     </>
                   )}
                 </For>
-                {/* A project's deploy item, of no session: the row opens the project page, where its Deploy panel is. */}
+                {/* A project's deploy item, of no session: the row opens the project page, where its Deploy panel is.
+                    WhatsApp sending down: the row and its one button open Settings → Outreach (#/settings/outreach). */}
                 <For each={needsYouProject()}>
                   {(it) => (
-                    <li>
-                      <a class="list-row list-row-interactive org-needs-item" href={it.href} title={it.detail}>
-                        <span class="list-main">
-                          <span class="list-title">{it.title}</span>
-                          <span class="list-meta org-needs-item-detail">{it.detail}</span>
-                          <span class="list-meta">{it.where}</span>
-                        </span>
-                      </a>
-                    </li>
+                    <>
+                      <li>
+                        <a class="list-row list-row-interactive org-needs-item" href={it.href} title={it.detail}>
+                          <span class="list-main">
+                            <span class="list-title">{it.title}</span>
+                            <span class="list-meta org-needs-item-detail">{it.detail}</span>
+                            <span class="list-meta">{it.where}</span>
+                          </span>
+                        </a>
+                      </li>
+                      <Show when={it.kind === "whatsapp-down"}>
+                        <li class="needs-you-playbook">
+                          <a class="button button-sm" href={it.href}>
+                            Open Outreach Settings
+                          </a>
+                        </li>
+                      </Show>
+                    </>
                   )}
                 </For>
               </ul>

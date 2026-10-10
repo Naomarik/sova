@@ -26,6 +26,22 @@
 
 (def default-hold-ms (* 10 60 1000))
 
+(def outage-wait-ms
+  "How long a released act whose channel is down waits for it, from its first wait (the operator's
+   24 h: a project overseer's held WhatsApp message waits that long for WhatsApp to come back)."
+  (* 24 60 60 1000))
+
+(defn outage-wait
+  "Act meta `:outage true`: a released act whose envelope says its channel is down (the host stamps
+   `:outage {:why …}`) waits for it in a hold, `{:since :until}`, from its first wait
+   (`:sova/outage-since`, carried in the held payload) for `outage-wait-ms`; nil when the channel is up
+   or the wait is over (then it goes ahead, and the channel refuses it)."
+  [envelope now]
+  (when (map? (:outage envelope))
+    (let [since (or (:sova/outage-since envelope) now)
+          end   (+ since outage-wait-ms)]
+      (when (< now end) {:since since :until end}))))
+
 (defn- by-of [envelope] (let [b (:by envelope)] (if (keyword? b) (name b) b)))
 
 (defn hold-ms

@@ -78,6 +78,20 @@ behavior without a `requires` key is a `touched-uninvestigated` note, so the
 exit code stays what the files make it. It lists what to read; it never judges
 a flag. `--related` without `--changed` is a usage error.
 
+With `--related` the census also ranks the foreign touched § by the change's own
+lines. From the added and removed lines (`git diff -U0` against the base; an
+untracked file's lines all count as added) it takes code-shaped names (an inner
+capital, `_`, `-`, `.` or `$`, or all capitals), short string literals and
+numbers of two or more digits, and scores each § by the ones its passage holds,
+each weighted by how rare it is across the spec's passages. A string or number
+the change removed and didn't add back that a § still states is `stale`, and a
+§ with one ranks first. `census.rank` lists each foreign touched § once with
+`rank`, `score`, `reason` (the matched names) and `stale` (also set on its
+`touched` entry); `census.readFirst` is the first 5 that score or are stale,
+`census.named` the rest, so none is dropped. Human output prints `read first:`
+and `named:` lines. The ranking is a literal match, never proof; nothing in it
+knows a project.
+
 Every § the task didn't create is foreign. The task created each § the spec
 lacks at `--base` (the `created` of `foreign --base`), so one it promoted and
 committed since the base is its own; with `--spec <draft spec dir>`, the ids
@@ -145,10 +159,13 @@ node core/sova-spec-draft.mjs diff NAME [--against base|current] --root DIR [--j
 node core/sova-spec-draft.mjs check NAME --root DIR [--json]
 node core/sova-spec-draft.mjs evidence NAME --id '<§id>' --by WHO --verification TEXT \
   (--commit REV | --snapshot | --doc-only) [--path P] [--log FILE] --root DIR [--write] [--json]
+node core/sova-spec-draft.mjs agree NAME --id '<§id>' --by WHO --verification TEXT [--at ISO] \
+  --root DIR [--write] [--json]
 node core/sova-spec-draft.mjs promote NAME (--id '<§id>' | --all) [--meta KEY] [--file PATH] \
   [--plan SHA] --root DIR [--write] [--json]
 node core/sova-spec-draft.mjs recover --root DIR [--write] [--json]
 node core/sova-spec-draft.mjs merge-manifest --root DIR [--write] [--json]
+node core/sova-spec-draft.mjs merge-claims --base F --ours F --theirs F [--path P] --root DIR [--write] [--json]
 ```
 
 1. **`new`** copies the whole current manifest and claims tree into
@@ -182,13 +199,21 @@ node core/sova-spec-draft.mjs merge-manifest --root DIR [--write] [--json]
    load. Prose is compared per declaration (an H1 lede or H2 span): edits to
    different declarations of one file merge, and one declaration changed on both
    sides is a conflict, never merged as text. Current changes the draft doesn't
-   touch are kept.
+   touch are kept. A changed number or backticked token in an agreed record
+   whose `agreed` stays as current has it gets an `agreed-kept-on-change` note,
+   never a refusal.
+   **`agree`** stamps `agreed: {by, at}` on draft records the person agreed to,
+   and, for those that map no code, records `--doc-only` evidence and promotes
+   them when promote's plan is clean ([PROMOTE.md](PROMOTE.md)).
 5. **`recover`** rolls back an interrupted promotion. Until it runs, every
    other write refuses.
 6. **`merge-manifest`** resolves a Git merge conflict in `manifest.json` record
    by record (index stages base, ours, theirs) and refuses any key both sides
    changed differently. It is the only sanctioned way to settle that conflict;
    [PROMOTE.md](PROMOTE.md) has the rule.
+7. **`merge-claims`** is a Git merge driver for `claims/*.md`: the promotion's
+   per-declaration merge, with Git's own line merge and markers for what it
+   can't merge, so the same declaration changed on both sides still conflicts.
 
 When to draft, and how to keep a baseline apart from a feature, is in
 [`../mode/spec-mode.md`](../mode/spec-mode.md). Evidence is bytes, revisions and the recorder's statement.
@@ -361,8 +386,14 @@ from `../mode/index.ts`; in Claude Code workers from the hooks the subagents
 spawn path installs): after any tool call, bash included, a `git status` delta
 that shows a first changed file in the boundary, or a new one, runs
 `census --changed` and appends a short `[spec census]` digest to that tool
-result, saying so when the session has no draft yet. Nothing runs at the end of
-a turn: a reply carries no spec lines, and a turn ends when the model stops.
+result, saying so when the session has no draft yet. At the first call after
+the session's last edit it runs `census --changed --related` once and adds one
+line, `Unread § your change landed in: read first …; +N more: <census command>`: the foreign §
+the session's own files landed in, in rank order, minus those it ran
+`sova-spec.mjs read` on; it says nothing again until an edit changes that set.
+That line replaces the census the guide used to ask for by hand before
+finishing. Nothing runs at the end of a turn: a reply carries no spec lines, and
+a turn ends when the model stops.
 
 These are post-operation diagnostics, not a write barrier. An unchanged claim
 whose mapped code changed is advisory: review the affected behavior rather than

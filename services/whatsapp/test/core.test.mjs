@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { rig, baseConfig } from './helpers.mjs'
+import { rig, baseConfig, fakeClock } from './helpers.mjs'
 import { memoryStore } from '../src/store.mjs'
 import { HOUR, DAY, MINUTE } from '../src/core.mjs'
 
@@ -27,8 +27,9 @@ test('start: unpaired opens nothing; paired connects once and spends one reconne
 
 // ---- reconnect budget and backoff
 
-test('transient closes back off from 30 s, doubling, and stop at the hourly budget as down', async () => {
+test('transient closes back off from 30 s, doubling; past the hourly budget it waits down for the next slot, then reconnects on its own', async () => {
   const r = rig()
+  const first = r.clock.now()
   r.core.start() // attempt 1 of 3 this hour
   await r.open()
   await r.close(428)
@@ -44,14 +45,25 @@ test('transient closes back off from 30 s, doubling, and stop at the hourly budg
   assert.equal(r.driver.opens, 3)
   await r.close(503) // the budget (3/hour) is spent
   assert.equal(r.core.state, 'down')
-  assert.match(r.core.why, /budget/)
-  assert.deepEqual(r.store.state.hold.state, 'down')
-  await r.clock.tick(2 * HOUR)
-  assert.equal(r.driver.opens, 3, 'down never reconnects on its own')
+  assert.equal(r.core.why, 'WhatsApp closed the connection (503). The reconnect limit of 3 an hour is reached.')
+  assert.equal(r.core.retryAt, first + HOUR, 'the next free slot: the first attempt leaves the hour')
+  assert.equal(r.store.state.hold, null, 'a wait, not a hold: nothing for a restart to keep')
+  const st = r.core.status()
+  assert.equal(st.retryAt, new Date(first + HOUR).toISOString())
+  assert.deepEqual(st.reconnects, { hour: 3, day: 3, perHour: 3, perDay: 10 })
+  await r.clock.tick(first + HOUR - r.clock.now() - SECOND)
+  assert.equal(r.driver.opens, 3, 'nothing before the slot')
+  await r.clock.tick(SECOND)
+  assert.equal(r.driver.opens, 4, 'at the slot, one automatic attempt')
+  assert.equal(r.core.state, 'connecting')
+  assert.equal(r.store.state.reconnects.length, 4, 'it spent the freed slot')
+  await r.open()
+  assert.equal(r.core.state, 'open')
 })
 
-test('backoff caps at 30 minutes and the daily budget holds too', async () => {
+test('backoff caps at 30 minutes; past the daily budget it waits for the day\'s oldest attempt to leave', async () => {
   const r = rig({ config: baseConfig({ reconnectBudget: { perHour: 100, perDay: 10 } }) })
+  const first = r.clock.now()
   r.core.start()
   await r.clock.tick(0)
   const waits = []
@@ -64,7 +76,10 @@ test('backoff caps at 30 minutes and the daily budget holds too', async () => {
   assert.equal(r.store.state.reconnects.length, 10)
   await r.close(428)
   assert.equal(r.core.state, 'down')
-  assert.match(r.core.why, /last day/)
+  assert.match(r.core.why, /limit of 10 a day is reached/)
+  assert.equal(r.core.retryAt, first + DAY)
+  await r.clock.tick(first + DAY - r.clock.now())
+  assert.equal(r.driver.opens, 11)
 })
 
 test('an open that lasts 10 minutes resets the backoff', async () => {
@@ -79,38 +94,125 @@ test('an open that lasts 10 minutes resets the backoff', async () => {
   assert.equal(r.core.retryAt - r.clock.now(), 30 * SECOND)
 })
 
-test('the budget and a hold survive a restart: a new process stays down and opens nothing', async () => {
+test('a hold survives a restart: a new process stays replaced and opens nothing until the operator reconnects', async () => {
   const store = memoryStore()
   const a = rig({ store })
   a.core.start()
   await a.open()
-  await a.close(500)
-  assert.equal(a.core.state, 'down')
+  await a.close(440)
+  assert.equal(a.core.state, 'replaced')
   const b = rig({ store })
   b.core.start()
-  await b.clock.tick(HOUR)
-  assert.equal(b.core.state, 'down')
+  await b.clock.tick(DAY)
+  assert.equal(b.core.state, 'replaced')
   assert.equal(b.driver.opens, 0)
   // The operator's Reconnect clears the hold and connects outside the budget.
   assert.equal(b.core.reconnect().ok, true)
   await b.open()
   assert.equal(b.core.state, 'open')
   assert.equal(store.state.hold, null)
+  assert.equal(store.state.reconnects.length, 1, 'only the first start spent the budget')
 })
 
-test('the start itself spends the budget: restarts cannot loop past it', async () => {
+test('the start itself spends the budget: restarts cannot loop past it, and the next slot connects on its own', async () => {
   const store = memoryStore()
+  const clock = fakeClock()
+  const first = clock.now()
   for (let i = 0; i < 3; i++) {
-    const r = rig({ store })
+    const r = rig({ store, clock })
     r.core.start()
     await r.clock.tick(0)
     r.core.stop()
   }
-  const r = rig({ store })
+  const r = rig({ store, clock })
   r.core.start()
   await r.clock.tick(0)
   assert.equal(r.core.state, 'down')
+  assert.equal(r.core.why, 'The reconnect limit of 3 an hour is reached.')
+  assert.equal(r.core.retryAt, first + HOUR)
   assert.equal(r.driver.opens, 0)
+  await r.clock.tick(HOUR)
+  assert.equal(r.driver.opens, 1)
+})
+
+test('an open that throws during a scheduled reconnect is retried within the budget, then waits for the next slot: an hour on, a new connect', async () => {
+  const r = rig()
+  const first = r.clock.now()
+  r.core.start() // 1
+  await r.open()
+  await r.close(428) // 2, in 30 s
+  r.driver.openFail = 5
+  await r.clock.tick(30 * SECOND) // the scheduled open throws: 3, in 60 s
+  assert.equal(r.core.state, 'connecting')
+  assert.equal(r.core.why, 'The connection could not be opened: connect ECONNREFUSED')
+  await r.clock.tick(60 * SECOND) // throws again: the budget is spent
+  assert.equal(r.core.state, 'down')
+  assert.match(r.core.why, /^The connection could not be opened: connect ECONNREFUSED The reconnect limit of 3 an hour is reached\.$/)
+  assert.equal(r.core.retryAt, first + HOUR)
+  assert.equal(r.store.state.hold, null)
+  const opens = r.driver.opens
+  r.driver.openFail = 0
+  await r.clock.tick(HOUR)
+  assert.equal(r.driver.opens, opens + 1, 'a new connect, an hour on')
+  await r.open()
+  assert.equal(r.core.state, 'open')
+})
+
+test('a legacy saved down hold is dropped at start: with the budget refilled it connects at once, spent it waits', async () => {
+  const legacy = { state: 'down', why: 'Reconnect budget spent (3 in the last hour).' }
+  const store = memoryStore({ hold: { ...legacy }, reconnects: [Date.parse('2026-01-01T07:00:00Z')] })
+  const r = rig({ store })
+  r.core.start()
+  await r.clock.tick(0)
+  assert.equal(store.state.hold, null)
+  assert.equal(r.driver.opens, 1, 'connects at start')
+  assert.ok(r.logs.some((l) => /dropping a saved down hold \(Reconnect budget spent/.test(l)))
+  await r.open()
+  assert.equal(r.core.state, 'open')
+
+  const t = Date.parse('2026-01-01T09:00:00Z')
+  const spent = memoryStore({ hold: { ...legacy }, reconnects: [t - 50 * MINUTE, t - 40 * MINUTE, t - 30 * MINUTE] })
+  const w = rig({ store: spent })
+  w.core.start()
+  await w.clock.tick(0)
+  assert.equal(w.core.state, 'down')
+  assert.equal(w.core.retryAt, t + 10 * MINUTE)
+  await w.clock.tick(10 * MINUTE)
+  assert.equal(w.driver.opens, 1)
+
+  // Older holds of 500, an unknown close and a failed open go the same way.
+  for (const hold of [{ state: 'down', why: 'WhatsApp reported a bad session (500).', code: 500 }, { state: 'down', why: 'The connection could not be opened: x' }]) {
+    const o = rig({ store: memoryStore({ hold }) })
+    o.core.start()
+    await o.clock.tick(0)
+    assert.equal(o.driver.opens, 1, hold.why)
+  }
+})
+
+test('held for a person, kept at start: a second 405, an unreadable state.json, and the other holds', async () => {
+  for (const hold of [
+    { state: 'down', why: 'WhatsApp rejects this WA Web version (405) even after refetching it: update the sender.', code: 405 },
+    { state: 'down', why: 'state.json could not be read.', code: 'unreadable' },
+    { state: 'logged-out', why: 'x', code: 401 },
+    { state: 'blocked', why: 'x', code: 403 },
+  ]) {
+    const r = rig({ store: memoryStore({ hold: { ...hold } }) })
+    r.core.start()
+    await r.clock.tick(DAY)
+    assert.equal(r.core.state, hold.state)
+    assert.equal(r.core.retryAt, undefined)
+    assert.equal(r.driver.opens, 0, hold.why)
+  }
+})
+
+test('a budget of 0 never refills: held down for a person', async () => {
+  const r = rig({ config: baseConfig({ reconnectBudget: { perHour: 0, perDay: 0 } }) })
+  r.core.start()
+  await r.clock.tick(DAY)
+  assert.equal(r.core.state, 'down')
+  assert.equal(r.driver.opens, 0)
+  assert.match(r.core.why, /Automatic reconnects are off/)
+  assert.equal(r.store.state.hold.state, 'down')
 })
 
 // ---- close codes
@@ -119,9 +221,6 @@ for (const [code, state] of [
   [401, 'logged-out'],
   [440, 'replaced'],
   [403, 'blocked'],
-  [500, 'down'],
-  [411, 'down'],
-  [undefined, 'down'],
 ]) {
   test(`close ${code} → ${state}, held, never reconnected`, async () => {
     const r = rig()
@@ -136,6 +235,44 @@ for (const [code, state] of [
     if (code === 403) assert.equal(r.store.state.paused, true)
   })
 }
+
+for (const [code, why] of [
+  [500, 'WhatsApp reported a bad session (500).'],
+  [411, 'The connection closed with 411.'],
+  [undefined, 'The connection closed with no code.'],
+]) {
+  test(`close ${code} → connecting after a backoff, reconnected on its own`, async () => {
+    const r = rig()
+    r.core.start()
+    await r.open()
+    await r.close(code)
+    assert.equal(r.core.state, 'connecting')
+    assert.equal(r.core.why, why)
+    assert.equal(r.core.retryAt - r.clock.now(), 30 * SECOND)
+    assert.equal(r.store.state.hold, null)
+    await r.clock.tick(30 * SECOND)
+    assert.equal(r.driver.opens, 2)
+  })
+}
+
+test('every close logs what the WebSocket said: its code, a close frame or none, a stream error; never the reason', async () => {
+  const r = rig()
+  r.core.start()
+  await r.open()
+  await r.close(428, { wsCode: 1006, closeFrame: false })
+  await r.clock.tick(30 * SECOND)
+  await r.open()
+  await r.close(503, { streamError: true })
+  await r.clock.tick(60 * SECOND)
+  await r.open()
+  await r.close(515, { wsCode: 1000, closeFrame: true, streamEnd: true })
+  const closes = r.logs.filter((l) => l.includes('connection closed'))
+  assert.deepEqual(closes, [
+    'warn connection closed: 428 (test) [websocket 1006, no close frame]',
+    'warn connection closed: 503 (test) [server sent a stream error, websocket closed by the sender]',
+    'warn connection closed: 515 (test) [server ended the stream, websocket 1000, close frame received]',
+  ])
+})
 
 test('405 refetches the WA Web version once and retries at once; a second 405 is down', async () => {
   const r = rig()
@@ -329,6 +466,19 @@ test('a send waits for the connection up to the send wait, then says not-connect
   assert.equal(res.retryable, true)
 })
 
+test('a send while down waits for nothing: not-connected at once, retryable, with when it reconnects', async () => {
+  const r = rig({ config: baseConfig({ reconnectBudget: { perHour: 1, perDay: 10 } }) })
+  r.core.start()
+  await r.open()
+  await r.close(503)
+  assert.equal(r.core.state, 'down')
+  const res = await r.core.send(msg('local:down'))
+  assert.equal(res.code, 'not-connected')
+  assert.equal(res.retryable, true)
+  assert.equal(res.retryAt, new Date(r.core.retryAt).toISOString())
+  assert.match(res.why, /limit of 1 an hour/)
+})
+
 // ---- receipts
 
 test('receipts move forward only and carry the idem; unknown refs are ignored', async () => {
@@ -399,7 +549,22 @@ test('link with a phone returns a pairing code and shows no QR; an expired link 
   await r.close(408)
   assert.equal(r.events.filter((e) => e.ev === 'qr').length, 0)
   assert.equal(r.core.state, 'unpaired')
-  assert.match(r.core.why, /expired/)
+  assert.equal(r.core.why, 'The pairing code expired before it was typed on the phone.')
+})
+
+test('link {cancel}: ends a link in progress (unpaired, no more QR); refused when none runs', async () => {
+  const r = rig({ paired: false })
+  r.core.start()
+  assert.equal((await r.core.link({ cancel: true })).code, 'not-linking')
+  await r.core.link()
+  const h = r.driver.last
+  const res = await r.core.link({ cancel: true })
+  assert.deepEqual(res, { ok: true, state: 'unpaired' })
+  assert.equal(r.core.why, 'Linking was cancelled.')
+  h.handlers.onQr('2@late')
+  assert.equal(r.events.filter((e) => e.ev === 'qr').length, 0, 'a QR from the ended link is dropped')
+  assert.equal(r.core.state, 'unpaired')
+  assert.deepEqual(await r.core.link(), { ok: true, started: true }, 'a new link can start')
 })
 
 test('unlink needs confirm, logs out when connected and wipes the creds', async () => {

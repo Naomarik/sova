@@ -69,8 +69,9 @@ export interface Hold {
   counts?: string;
   reserve?: number;
   whileIn?: string;
-  /** r7: "hours" when it waits for the person's working hours (until the window opens). */
-  wait?: "hours";
+  /** r7: "hours" when it waits for the person's working hours (until the window opens); "outage" when a released
+      act waits for its channel to come back (until its 24 h bound). */
+  wait?: "hours" | "outage";
   /** q12: its kind is in the project's confirm list: it waits past `until` for approve or cancel. */
   confirm?: boolean;
   /** q12: past its end and still unreviewed (the stall clock runs from `until`). */

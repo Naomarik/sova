@@ -1055,9 +1055,10 @@ Organizations region's own Needs you, never the global one.
   or through the global Overseer in a turn the operator started (`sova_org` `about` and
   `revert_about`, §app.overseer/org-writes), which calls the same routes and is recorded
   `via: "overseer"`. No other model has a tool or a route that writes it.
-- **What the project overseer sees.** Its prompt (§app.project-overseer/identity), re-rendered at
-  every run so an edit reaches its next run with no Clear, carries after Sova's fixed prompt and
-  before the operator's extra instructions:
+- **What the project overseer sees.** Its prompt (§app.project-overseer/identity), fixed when its
+  conversation opened, carries after Sova's fixed prompt and before the operator's extra
+  instructions the text below as it was then; an edit reaches its next run with no Clear, as that
+  run's hidden note giving the section's new text:
 
   ```
   # About this organization (written by the operator)

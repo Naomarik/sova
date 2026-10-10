@@ -155,7 +155,8 @@ popover (§chat.subagent-profiles/menu), with Off first and the current profile 
 
 - **Choosing.** Picking a major mode switches this chat and keeps the menu open: the check moves
   and focus stays on the picked row. Picking the mode already checked does nothing. Toggling a
-  minor mode keeps the menu open too, so you can set several. While the switch is saving, the rows
+  minor mode keeps the menu open too, with focus on the toggled row, so you can set several. Once
+  a pick or toggle settles, saved or failed, focus is on that row even if the rows re-rendered. While the switch is saving, the rows
   are `aria-disabled`. A switch that fails shows its error banner in place, in the open menu, and
   the mode is unchanged. The menu closes on Configure Delegate or the spec gear, an outside click,
   `Esc`, or `Tab` out of it.

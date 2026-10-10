@@ -164,14 +164,24 @@ failed.
 
 Before **every** launch, the bridge takes as its launch number the larger of its in-memory
 count and one past the highest launch whose Claude record exists on disk
-(`~/.claude/projects/<cwd-slug>/<id>.jsonl`). The walk upward tolerates up to 32 missing records
+(`<Claude directory>/projects/<cwd-slug>/<id>.jsonl`, in the directory of the login the launch
+runs on: an added login's own, `~/.claude` for `default`). The walk upward tolerates up to 32 missing records
 in a row, because a failed launch can leave a gap. A restarted server therefore never collides
 with its own earlier launches, however many there were. The collision probe (33 tries) stays as
-a safety net. Nothing new is written to the pi
-session for this, and a restarted bridge never resumes a Claude session: pi's transcript remains
-the truth, re-sent by folding as before.
+a safety net. Nothing new is written to the pi session for this.
 
-The only resumes are forks, by two routes. A fork point names the parent's live CLI session id,
+pi's transcript remains the truth. A restarted server, or a bridge whose idle child was closed,
+picks up the chat's own last Claude session only through its resume record
+(§app.claude-code-provider/continuity: saved after each turn that settled cleanly and in step,
+`<agent dir>/claude-code/resume/<pi session id>.json`, and dropped once anything else is sent): the
+same login, unchanged model, effort, system prompt, tools and cwd, and pi's history exactly the
+recorded messages followed by one finished reply and new user messages. It resumes that record into
+a new one (`--resume <id> --fork-session`, under the next launch's id) and sends only the new user
+messages. In every other case (a record from mid-turn never exists, a login moved, a rewind or
+compaction, a memory-mode chat, a CLI that fails to resume) it re-sends the history by folding, as
+before, and the turn still completes.
+
+Forks resume too, by two routes. A fork point names the parent's live CLI session id,
 how many pi messages that session has heard, and their fingerprint; a bridge offers one only
 while its CLI child is running, idle, in step with pi and has heard at least one message.
 

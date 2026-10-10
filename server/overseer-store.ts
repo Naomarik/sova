@@ -183,6 +183,15 @@ export function parseSettings(raw: unknown, strict: boolean): OverseerSettings |
     if (!("error" in choice)) out.explorer = choice;
     else if (strict) return { error: `explorer: ${choice.error}` };
   }
+  if (raw.memory !== undefined) {
+    const m = raw.memory;
+    const ok = isObj(m) && typeof m.on === "boolean" && (m.type === "uniichat" || m.type === "zoomable") && Number.isInteger(m.size) && (m.size as number) >= 8 && (m.size as number) <= 512;
+    if (ok) out.memory = { on: m.on as boolean, type: m.type as "uniichat" | "zoomable", size: m.size as number };
+    else {
+      const e = fail("memory must be { on, type, size }");
+      if (e) return e;
+    }
+  }
   if (raw.autoResume !== undefined) {
     if (typeof raw.autoResume === "boolean") out.autoResume = raw.autoResume;
     else {

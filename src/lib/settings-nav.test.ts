@@ -27,7 +27,7 @@ test("Settings opens at the tab asked for, and closes", () => {
 });
 
 test("Accounts sits after Models, Subagents after Accounts, Alignment after Subagents, Profiles after Alignment, Overseer after Profiles, Notifications after Overseer and Decisions after Notifications, Public links after Mesh, Outreach after Public links, Voice after Outreach in the rail, and the dialog's rail is this list", () => {
-  assert.deepEqual([...SETTINGS_TABS], ["general", "models", "accounts", "subagents", "alignment", "profiles", "overseer", "notifications", "decisions", "summaries", "organizations", "themes", "mesh", "public-links", "outreach", "voice", "experimental"]);
+  assert.deepEqual([...SETTINGS_TABS], ["general", "models", "accounts", "subagents", "alignment", "profiles", "overseer", "notifications", "decisions", "summaries", "memory", "organizations", "themes", "mesh", "public-links", "outreach", "voice", "experimental"]);
   // The dialog's own TABS must be the same ids in the same order (it is `satisfies`-typed against
   // SettingsTab, which catches an unknown id but not a missing or reordered one).
   const dialog = readFileSync(new URL("../components/SettingsDialog.tsx", import.meta.url), "utf8");

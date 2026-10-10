@@ -11,6 +11,7 @@ import {
   type FileDiff,
 } from "../lib/diff";
 import { summaryStats } from "../lib/tool-diff-stats";
+import { MEMORY_TOOLS } from "../../shared/memory";
 import { copyText } from "../lib/ui-state";
 import type { ToolBody } from "../lib/tool-content";
 import type { TmpAttachment } from "../../shared/protocol";
@@ -27,6 +28,7 @@ const HEAD_LINES = 200;
 
 function toolIcon(name: string): IconName {
   if (name === CODEMODE_TOOL) return "code";
+  if (MEMORY_TOOLS.includes(name)) return "clock";
   if (name === "bash") return "terminal";
   if (["read", "write", "edit"].includes(name)) return "file";
   if (["grep", "find", "ls"].includes(name)) return "search";
@@ -192,6 +194,8 @@ export function ToolCard(props: ToolCardProps) {
   // Images the tool returned itself show under the summary row, open or closed.
   const hasImages = () => (props.images?.length ?? 0) > 0;
   const summary = () => props.summary ?? argsSummary(props.args, props.name);
+  /** A memory recall (§chat.transcript/recall-rows): a quiet row that reads what it opened, no tool name, no Done. */
+  const recall = () => MEMORY_TOOLS.includes(props.name);
   // A codemode script's calls: live from its updates' details, else as its row carries them.
   const tally = createMemo(() => {
     if (props.name !== CODEMODE_TOOL) return "";
@@ -217,7 +221,7 @@ export function ToolCard(props: ToolCardProps) {
   // The wrapper stays the same element whether or not images have arrived, so a live card that
   // gains its first image mid-stream keeps its open state.
   return (
-    <div class="toolcard" ref={wrap}>
+    <div class="toolcard" classList={{ "toolcard-recall": recall() }} ref={wrap}>
       <details
         class="toolcard-details"
         onToggle={(e) => {
@@ -229,7 +233,9 @@ export function ToolCard(props: ToolCardProps) {
         <summary class="toolcard-summary" onPointerEnter={reach} onFocus={reach}>
           <Icon name="chevron-right" small class="icon-twist" />
           <Icon name={toolIcon(props.name)} small />
-          <span class="toolcard-name">{props.name}</span>
+          <Show when={!recall()}>
+            <span class="toolcard-name">{props.name}</span>
+          </Show>
           <span class="toolcard-arg" title={summary()}>
             {summary()}
           </span>
@@ -244,7 +250,7 @@ export function ToolCard(props: ToolCardProps) {
                 Running
               </Chip>
             </Match>
-            <Match when={props.status === "done"}>
+            <Match when={props.status === "done" && !recall()}>
               <Chip tone="success">Done</Chip>
             </Match>
             <Match when={failed()}>

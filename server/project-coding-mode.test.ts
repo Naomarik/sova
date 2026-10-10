@@ -68,6 +68,15 @@ test("only unknown names are refused, each with its sentence", () => {
   assert.deepEqual(codingModeSwitch({}), { mode: null }, "naming nothing switches nothing");
 });
 
+test("memory is never a coding session's: refused when named, dropped from the default", () => {
+  const base = { mode: "normal" as const, minorModes: [] };
+  const refusal = "Memory is for chats only: the user turns it on from a chat's mode menu, never in a coding session.";
+  assert.equal((codingModeChoice({ minor_modes: ["spec", "memory"] }, base) as { error: string }).error, refusal);
+  assert.equal((codingModeSwitch({ minor_modes: ["memory"] }) as { error: string }).error, refusal);
+  writeDefault("normal", ["spec", "memory"]);
+  assert.deepEqual(hostDefaultMode(), { mode: "normal", minorModes: ["spec"] }, "a default with memory starts coding sessions without it");
+});
+
 test("subagent_profile: any profile here or off; an unknown one refused with where to look", () => {
   writeDefault("normal", []);
   assert.deepEqual(checkedCodingModeChoice({ subagent_profile: "big" }), { mode: { mode: "normal", minorModes: [], subagentProfile: "big" } });

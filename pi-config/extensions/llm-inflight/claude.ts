@@ -28,7 +28,7 @@ import type { UsageAttribution } from "./attribution.ts";
 import { createClaudeUsageCollector, fileBaselineStore, type ClaudeUsageCollector } from "./claude-usage.ts";
 import { claimUsageProvider, recordUsage } from "./record.ts";
 import { beginClaudeTurn, beginLlmCall, markDegraded, type LlmCallEnd } from "./tracker.ts";
-import { defaultAgentDir } from "./usage-record.ts";
+import { defaultAgentDir, type UsageLaunch } from "./usage-record.ts";
 
 export interface ClaudeRequestObserver {
 	/** One decoded stdout record. Never throws. */
@@ -62,6 +62,8 @@ export interface ClaudeUsageRecording {
 	baselineDir?: string;
 	/** A provider bridge: this observer records `claude-code-cli`'s calls, and the pi runtime no longer does. */
 	bridge?: boolean;
+	/** How this process started (a provider bridge's launch): read once, for its first root call's record. */
+	launch?: () => UsageLaunch | undefined;
 }
 
 /** `<agent dir>/usage/cc-baseline`: each Claude session's last cumulative total (a sibling of the ledger's `v1`). */
@@ -72,11 +74,18 @@ function usageCollector(rec: ClaudeUsageRecording): ClaudeUsageCollector | undef
 	try {
 		if (rec.bridge) claimUsageProvider("claude-code-cli");
 		const model = (answered: string) => (rec.model ? { model: rec.model, ...(answered && answered !== rec.model ? { responseModel: answered } : {}) } : { model: answered || "unknown" });
+		let launched = !rec.launch;
 		return createClaudeUsageCollector({
 			fresh: rec.fresh === true,
 			baseline: fileBaselineStore(rec.baselineDir ?? claudeBaselineDir()),
 			sink: {
 				call(c) {
+					// The process's first call of its own (not a Task subagent's) says how the process started.
+					let launch: UsageLaunch | undefined;
+					if (!launched && c.lane === "") {
+						launched = true;
+						try { launch = rec.launch?.(); } catch { launch = undefined; }
+					}
 					recordUsage({
 						src: "claude",
 						provider: "claude-code-cli",
@@ -85,6 +94,7 @@ function usageCollector(rec: ClaudeUsageRecording): ClaudeUsageCollector | undef
 						who: rec.who(c.claudeSession),
 						...(c.id ? { key: `cc:${c.id}` } : {}),
 						...(c.stop ? { stop: c.stop } : {}),
+						...(launch ? { launch } : {}),
 						ts: c.at,
 					});
 				},

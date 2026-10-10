@@ -6,6 +6,7 @@ import { formatTokens } from "../lib/context";
 import { compactModel, usageModelNote } from "../lib/format";
 import { createPoll, type Poll } from "../lib/poll";
 import { originLabel, spendTitle, spendUsd, spentAnything, spoken, usageTabRows } from "../lib/spend";
+import { ResendLine } from "./ResendLine";
 import { Banner } from "./ui";
 
 /** A session's spend moves with every call; the pane's head chip and Usage tab read it this often. */
@@ -79,6 +80,7 @@ export function SessionUsageTab(props: { spend: Poll<UsageSessionSpend>; workers
               <p class="text-mono" style={{ margin: 0 }} title={spendTitle(s().total)}>
                 {formatTokens(spoken(s().total))} tokens in and out · {spendUsd(s().total.usd)}
               </p>
+              <ResendLine resend={s().resend} spendUsd={s().own.usd} of="the main thread" />
               <Show when={rows().length > 0}>
                 <div class="md md-table-wrap usage-table-wrap">
                   <table class="usage-table">

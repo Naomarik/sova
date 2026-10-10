@@ -878,6 +878,236 @@
         "src/lib/markdown.ts"
       ]
     },
+    "§chat.memory/choice": {
+      "kind": "behavior",
+      "requires": [
+        "§chat/memory",
+        "§app.harness/state",
+        "§chat.mode-menu/menu"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/harness/state-kinds.ts",
+        "server/mode-state.ts",
+        "server/chat-manager.ts",
+        "server/memory/settings.ts",
+        "server/mode.ts",
+        "server/memory/chat-memory.test.ts"
+      ]
+    },
+    "§chat.memory/help": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.memory/settings",
+        "§chat.memory/types",
+        "§chat.memory/tree",
+        "§chat.memory/turn",
+        "§chat.memory/zoomable",
+        "§chat.memory/summarizer"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/MemorySettings.tsx",
+        "src/components/HelpPopover.tsx",
+        "src/components/help-popover.css",
+        "src/lib/memory-help.ts",
+        "src/lib/memory-help.test.ts",
+        "src/lib/help-popover.ts",
+        "src/lib/help-popover.test.ts"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T09:37Z"
+      }
+    },
+    "§chat.memory/log": {
+      "kind": "behavior",
+      "requires": [
+        "§chat/memory",
+        "§app.harness/reader"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/memory/log.ts",
+        "server/memory/store.ts",
+        "server/session-fork-routes.ts",
+        "server/sessions-index.ts",
+        "server/memory/engine.test.ts",
+        "server/archive-subagent-guard.test.ts"
+      ]
+    },
+    "§chat.memory/overseer": {
+      "kind": "behavior",
+      "requires": [
+        "§chat/memory",
+        "§chat.memory/where"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/memory/routes.ts",
+        "server/overseer.ts",
+        "server/memory/settings.test.ts"
+      ]
+    },
+    "§chat.memory/preparing": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.memory/turn",
+        "§chat.memory/status"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/memory/engine.ts"
+      ]
+    },
+    "§chat.memory/recall": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.memory/tree",
+        "§chat.transcript/slim-rows"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/memory/tools.ts",
+        "shared/memory.ts",
+        "src/lib/message.ts",
+        "shared/memory.test.ts"
+      ]
+    },
+    "§chat.memory/settings": {
+      "kind": "behavior",
+      "requires": [
+        "§chat/memory"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/memory/settings.ts",
+        "server/memory/routes.ts",
+        "server/memory/settings.test.ts"
+      ]
+    },
+    "§chat.memory/status": {
+      "kind": "behavior",
+      "requires": [
+        "§chat/memory"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/memory/routes.ts",
+        "shared/protocol.ts",
+        "server/chat-manager.ts",
+        "server/memory/chat.ts"
+      ]
+    },
+    "§chat.memory/summarizer": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.memory/tree",
+        "§chat.memory/settings"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/memory/summarizer.ts",
+        "server/memory/prompts.ts",
+        "server/memory/settings.test.ts"
+      ]
+    },
+    "§chat.memory/tree": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.memory/log"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/memory/tree.ts",
+        "server/memory/tree.test.ts",
+        "server/memory/engine.test.ts"
+      ]
+    },
+    "§chat.memory/turn": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.memory/tree",
+        "§chat.memory/log",
+        "§chat.mode-menu/minor-toggle-keeps-prompt"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/memory/engine.ts",
+        "server/harness/pi/memory.ts",
+        "pi-config/extensions/claude-code/provider/memory-view.ts",
+        "server/memory/prompts.ts",
+        "server/memory/chat-memory.test.ts",
+        "server/memory/tree.ts",
+        "server/memory/store.ts",
+        "server/memory/tree.test.ts",
+        "server/memory/engine.test.ts"
+      ]
+    },
+    "§chat.memory/types": {
+      "kind": "behavior",
+      "requires": [
+        "§chat/memory"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "shared/memory.ts",
+        "shared/protocol.ts"
+      ]
+    },
+    "§chat.memory/where": {
+      "kind": "behavior",
+      "requires": [
+        "§chat/memory",
+        "§chat.mode-menu/how-a-switch-reaches-the-chat",
+        "§chat.mode-menu/workers",
+        "§chat.mode-menu/terminal"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/mode/minor.ts",
+        "pi-config/extensions/mode/index.ts",
+        "pi-config/extensions/mode/palette.ts",
+        "server/memory/permit.ts",
+        "server/memory/permit.test.ts",
+        "pi-config/extensions/mode/tests/smoke.mjs",
+        "server/chat-manager.ts",
+        "shared/profiles.ts",
+        "server/sessions-configure.ts",
+        "server/overseer-tools.ts",
+        "server/project-coding-mode.ts",
+        "server/project-coding-mode.test.ts",
+        "shared/memory.ts",
+        "server/harness/pi/golden/session/S15-mode-command.trace"
+      ]
+    },
+    "§chat.memory/zoomable": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.memory/tree",
+        "§chat.memory/types"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/memory/engine.ts",
+        "server/harness/pi/memory.ts",
+        "server/memory/chat-memory.test.ts"
+      ]
+    },
     "§chat.mode-menu/how-a-switch-reaches-the-chat": {
       "kind": "behavior",
       "authority": "accepted",
@@ -1359,6 +1589,19 @@
         "src/lib/markdown.ts",
         "src/components/Markdown.tsx",
         "src/lib/session-links.ts"
+      ]
+    },
+    "§chat/memory": {
+      "kind": "surface",
+      "requires": [
+        "§chat/mode-menu"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/memory/engine.ts",
+        "shared/memory.ts",
+        "shared/protocol.ts"
       ]
     },
     "§chat/mode-menu": {
@@ -2187,12 +2430,17 @@
       "kind": "behavior",
       "requires": [],
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "pi-config/extensions/claude-code/provider/session-bridge.ts",
         "pi-config/extensions/claude-code/provider/session-records.ts",
-        "pi-config/extensions/claude-code/provider/fork-point.ts"
-      ]
+        "pi-config/extensions/claude-code/provider/fork-point.ts",
+        "pi-config/extensions/claude-code/provider/resume-record.ts"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:58Z"
+      }
     },
     "§app.worker-restore/restore": {
       "kind": "behavior",
@@ -3032,11 +3280,19 @@
         "server/overseer-todos.ts",
         "server/index.ts",
         "server/app.ts",
-        "server/overseer-mode.test.ts"
+        "server/overseer-mode.test.ts",
+        "server/overseer-opening.ts",
+        "server/overseer-opening.test.ts",
+        "server/overseer-runtime.test.ts",
+        "server/overseer-run-note.ts"
       ],
       "requires": [
         "§app.overseer/tools"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:06Z"
+      }
     },
     "§app.overseer/identity-and-clear": {
       "kind": "behavior",
@@ -3186,7 +3442,11 @@
       ],
       "requires": [
         "§app.overseer/tools"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:38Z"
+      }
     },
     "§app.overseer/tools": {
       "kind": "behavior",
@@ -4853,13 +5113,20 @@
         "src/projects.css",
         "server/overseer-org-part.ts",
         "server/overseer-org-part.test.ts",
-        "server/spec-tool-fake.ts"
+        "server/spec-tool-fake.ts",
+        "server/overseer-opening.ts",
+        "server/overseer-run-note.ts",
+        "server/project-overseer-opening.test.ts"
       ],
       "requires": [
         "§app.overseer/hosting",
         "§app.organizations/workspace-repo",
         "§chat/images"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:06Z"
+      }
     },
     "§app.project-overseer/tools": {
       "kind": "behavior",
@@ -5165,6 +5432,48 @@
         "src/lib/decisions-view.test.ts",
         "src/components/ProjectPage.tsx"
       ]
+    },
+    "§app.insights/usage-resend": {
+      "kind": "behavior",
+      "requires": [
+        "§app.insights/usage-ledger"
+      ],
+      "authority": "accepted",
+      "code": [
+        "server/usage-helper/query.ts",
+        "server/usage-helper/ledger.ts",
+        "shared/usage/wire.ts",
+        "server/claude-cache-check.ts",
+        "scripts/claude-cache-check.ts",
+        "server/claude-cache-check.test.ts",
+        "server/usage-helper/ledger.test.ts",
+        "package.json"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:06Z"
+      },
+      "evidence": "verified"
+    },
+    "§app.insights/usage-resend-display": {
+      "kind": "behavior",
+      "requires": [
+        "§app.insights/usage-resend"
+      ],
+      "authority": "accepted",
+      "code": [
+        "src/lib/resend.ts",
+        "src/lib/resend.test.ts",
+        "src/components/ResendLine.tsx",
+        "src/components/CostsTab.tsx",
+        "src/components/SessionUsage.tsx",
+        "src/costs-tab.css"
+      ],
+      "evidence": "verified",
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:42Z"
+      }
     },
     "§app.insights/worktrees-endpoint": {
       "kind": "behavior",
@@ -6144,7 +6453,11 @@
         "§app.organizations/workspace-repo",
         "§app.organizations/org-page",
         "§app.project-overseer/identity"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:38Z"
+      }
     },
     "§app.owner-page/content": {
       "kind": "behavior",
@@ -11924,7 +12237,9 @@
       "code": [
         "server/overseer.ts",
         "server/overseer-run-note.ts",
-        "server/overseer-run-note.test.ts"
+        "server/overseer-run-note.test.ts",
+        "server/overseer-opening.ts",
+        "server/overseer-opening.test.ts"
       ],
       "requires": [
         "§app.overseer/confirm",
@@ -11932,7 +12247,11 @@
         "§app.overseer/attention-digest",
         "§chat.worktrees/readiness",
         "§app.overseer/tools"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:06Z"
+      }
     },
     "§app.overseer/session-truth": {
       "kind": "behavior",
@@ -12155,6 +12474,24 @@
         "§app.overseer/confirm"
       ]
     },
+    "§app.claude-code-provider/continuity": {
+      "kind": "behavior",
+      "requires": [
+        "§app/claude-code-provider"
+      ],
+      "authority": "accepted",
+      "code": [
+        "pi-config/extensions/claude-code/provider/session-bridge.ts",
+        "pi-config/extensions/claude-code/provider/bridge.test.ts",
+        "pi-config/extensions/claude-code/provider/resume-record.ts",
+        "pi-config/extensions/claude-code/provider/login-failover.test.ts"
+      ],
+      "evidence": "verified",
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:06Z"
+      }
+    },
     "§app.claude-code-provider/invalid-tool-input": {
       "kind": "behavior",
       "requires": [],
@@ -12175,7 +12512,8 @@
       "evidence": "reviewed",
       "code": [
         "pi-config/extensions/claude-code/provider/stream.ts",
-        "pi-config/extensions/claude-code/provider/session-bridge.ts"
+        "pi-config/extensions/claude-code/provider/session-bridge.ts",
+        "pi-config/extensions/claude-code/provider/mcp-host.ts"
       ]
     },
     "§tools.spec/context-packets": {
@@ -14546,7 +14884,11 @@
       "requires": [
         "§app.insights/llm-inflight",
         "§app.project-costs/pricing"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:06Z"
+      }
     },
     "§mesh.remote-sessions/head-host-state": {
       "kind": "behavior",
@@ -15653,6 +15995,49 @@
         "src/components/ModelMenu.tsx",
         "src/design/base.css"
       ]
+    },
+    "§app.claude-code-provider/no-memory": {
+      "kind": "behavior",
+      "requires": [
+        "§app.claude-code-provider/pinned-model"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/claude-code/fixed-settings.ts",
+        "pi-config/extensions/claude-code/transport.ts",
+        "pi-config/extensions/claude-code/transport.test.ts",
+        "pi-config/extensions/claude-code/accounts.ts",
+        "pi-config/extensions/topic-outline/summarizers/claude-cli.ts",
+        "server/decide-llm.ts",
+        "server/session-autotitle.ts",
+        "server/claude-models.ts",
+        "server/claude-models.test.ts",
+        "pi-config/extensions/topic-outline/claude-cli.test.ts",
+        "pi-config/extensions/claude-code/launch-pin.test.ts",
+        "pi-config/extensions/claude-code/runner.test.ts",
+        "pi-config/extensions/claude-code/confined-launch.test.ts",
+        "pi-config/extensions/claude-code/provider/bridge.test.ts",
+        "server/decide-llm.test.ts",
+        "server/session-autotitle.test.ts",
+        "pi-config/extensions/claude-code/accounts.test.ts"
+      ]
+    },
+    "§app.claude-code-provider/oneshot-uncached": {
+      "kind": "behavior",
+      "requires": [
+        "§app.claude-code-provider/continuity"
+      ],
+      "authority": "accepted",
+      "code": [
+        "pi-config/extensions/claude-code/provider/session-bridge.ts",
+        "pi-config/extensions/claude-code/provider/bridge.test.ts"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:06Z"
+      },
+      "evidence": "verified"
     },
     "§app.claude-code-provider/pinned-model": {
       "kind": "behavior",

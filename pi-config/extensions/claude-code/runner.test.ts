@@ -61,6 +61,7 @@ test("direct persistent launch defaults to bypass, initialize gates input and pr
 	assert.equal(f.argv[f.argv.indexOf("--permission-prompts") + 1], "none");
 	assert.equal(f.argv[f.argv.indexOf("--tools") + 1], "");
 	assert.equal(f.argv[f.argv.indexOf("--setting-sources") + 1], "");
+	assert.equal(JSON.parse(f.argv[f.argv.indexOf("--settings") + 1]).autoMemoryEnabled, false, "a worker runs with auto-memory off");
 	assert.ok(f.argv.includes("--strict-mcp-config"));
 	assert.ok(!f.argv.some((s) => /dangerously|safe-mode/.test(s)));
 	assert.equal(f.spawnOptions.shell, false);
@@ -89,11 +90,11 @@ for (const permissionMode of [undefined, "bypassPermissions", "acceptEdits", "ma
 test("a sandboxed launch (settings, dontAsk, no host prompt) reaches the CLI as given; none by default", async (t) => {
 	const json = '{"sandbox":{"enabled":true}}';
 	const f = fixture({ settingsJson: json, permissionMode: "dontAsk" }); cleanup(t, f); await ready(f);
-	assert.deepEqual(JSON.parse(f.argv[f.argv.indexOf("--settings") + 1]), { ...JSON.parse(json), attribution: { commit: "", pr: "" } });
+	assert.deepEqual(JSON.parse(f.argv[f.argv.indexOf("--settings") + 1]), { ...JSON.parse(json), attribution: { commit: "", pr: "" }, autoMemoryEnabled: false });
 	assert.equal(f.argv[f.argv.indexOf("--permission-mode") + 1], "dontAsk");
 	assert.equal(f.argv[f.argv.indexOf("--permission-prompts") + 1], "none");
 	const plain = fixture(); cleanup(t, plain); await ready(plain);
-	assert.deepEqual(JSON.parse(plain.argv[plain.argv.indexOf("--settings") + 1]), { attribution: { commit: "", pr: "" } });
+	assert.deepEqual(JSON.parse(plain.argv[plain.argv.indexOf("--settings") + 1]), { attribution: { commit: "", pr: "" }, autoMemoryEnabled: false });
 });
 
 test("resume: --resume <id> with the sandbox settings and system prompt, idle after initialize, no user message, no completion", async (t) => {

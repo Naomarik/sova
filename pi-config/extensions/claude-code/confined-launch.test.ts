@@ -164,7 +164,7 @@ test("confined start: wrapped by the sandbox, Claude's own sandbox off, bypassPe
 	assert.equal(call.scope, "SCOPE");
 	assert.equal(child.command, "/fake/bwrap");
 	assert.deepEqual(child.argv.slice(0, 2), ["--wrapped", "claude"]);
-	assert.deepEqual(settingsOf(child.argv), { hooks: { Stop: [] }, sandbox: { enabled: false }, attribution: { commit: "", pr: "" } }, "the spec hooks stay, Claude's sandbox is off, no attribution");
+	assert.deepEqual(settingsOf(child.argv), { hooks: { Stop: [] }, sandbox: { enabled: false }, attribution: { commit: "", pr: "" }, autoMemoryEnabled: false }, "the spec hooks stay, Claude's sandbox is off, no attribution, auto-memory off (a confined worker too)");
 	assert.equal(child.argv[child.argv.indexOf("--permission-mode") + 1], "bypassPermissions");
 	assert.equal(child.fd3, `tok-${A}-1`, "the token arrives on fd 3");
 	assert.deepEqual(child.options.stdio, ["pipe", "pipe", "pipe", "pipe"]);

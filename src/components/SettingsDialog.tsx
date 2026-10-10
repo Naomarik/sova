@@ -62,6 +62,7 @@ import { PublicLinksSettingsSection } from "./PublicLinksSettings";
 import { OutreachSettingsSection } from "./OutreachSettings";
 import { PushSettingsSection } from "./PushSettings";
 import { SessionTitleSettingsSection } from "./SessionTitleSettings";
+import { MemorySettingsSection } from "./MemorySettings";
 import { SummarizerSettingsSection } from "./SummarizerSettings";
 import { BatonSettingsSection } from "./BatonSettings";
 import { ProfilesSettingsSection } from "./ProfilesSettings";
@@ -84,6 +85,7 @@ const TABS = [
   { id: "notifications", label: "Notifications", icon: "bell" as const },
   { id: "decisions", label: "Decisions", icon: "shield" as const },
   { id: "summaries", label: "Summaries", icon: "chat" as const },
+  { id: "memory", label: "Memory", icon: "clock" as const },
   { id: "organizations", label: "Organizations", icon: "network" as const },
   { id: "themes", label: "Themes", icon: "image" as const },
   { id: "mesh", label: "Mesh", icon: "branch" as const },
@@ -271,6 +273,11 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
             <div class="settings-panel" role="tabpanel" id="settings-panel-summaries" aria-labelledby="settings-tab-summaries">
               <SummarizerSettingsSection />
               <SessionTitleSettingsSection />
+            </div>
+          </Show>
+          <Show when={tab() === "memory"}>
+            <div class="settings-panel" role="tabpanel" id="settings-panel-memory" aria-labelledby="settings-tab-memory">
+              <MemorySettingsSection />
             </div>
           </Show>
           <Show when={tab() === "organizations"}>

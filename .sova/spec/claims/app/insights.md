@@ -449,6 +449,18 @@ function.** Standalone `claude` use outside Sova and pi is not recorded.
   (`title`, `decide`, `outline`, `vision`, `branch-summary`, `compaction`, `cache-warm`, …), the
   working directory and the org project when known, and a key that names the call. A call that
   reports no tokens writes nothing. Each attempt of a retried call is its own record.
+- **How a Claude process started.** The first record of each Claude Code child the provider bridge
+  launches for a conversation carries `launch`: `how` the conversation reached it (`fresh`, nothing
+  before the turn's own user messages, so an overseer's first message with its run note is fresh;
+  `resumed`, Claude's own saved copy picked up; `folded` or `joined`, the history re-sent condensed
+  in one message; `view`, a memory view sent as written), `why` it was started
+  (`new`, `process-start` after a server restart or a reopen, `reaped` after its idle process was
+  closed, `ended`, `model`, `effort`, `system-prompt`, `tools`, `cwd`, `diverged`, `desynced`,
+  `aborted`, `tool-results`, `nothing-new`, `login-leaving`, `login-picked`, `login-failover`,
+  `fork`, `oneshot`), and, when it could not resume a saved copy, `fallback`, why not
+  (`login-moved`, `not-continuation`, `settings-changed`, `memory-view`, `resume-failed`). Both are
+  short kebab-case words: the parse takes an unknown one as written, and a reader that predates the
+  field reads the record without it.
 - **Where.** `<agent dir>/usage/v1/<UTC day>/<producer>.jsonl`, one file per process and day, one
   writer per file, one appended line per call; the shape and its strict parse are
   `pi-config/extensions/llm-inflight/usage-record.ts` (builtins only). The server's own main loop
@@ -481,6 +493,44 @@ function.** Standalone `claude` use outside Sova and pi is not recorded.
   every 6 hours and on demand, and a pull only adds dated periods: an old period is never dropped
   or rewritten.
 
+## §app.insights/usage-resend — What re-sending a conversation's history cost
+
+The usage helper answers, per conversation, what was spent re-sending its history to a new Claude
+process and why, from the records' `launch` (§app.insights/usage-ledger). A re-send is the first
+call of a launch whose `how` is `folded` or `joined`; its cost is that call's input and cache-write
+spend at the price in force (its output is the reply, counted as usual). `GET /api/usage/session`
+and each of `GET /api/usage/costs`' top sessions carry `resend` when the conversation had any
+launch with `launch` recorded: the re-send dollars and tokens, how many launches re-sent and how
+many picked up Claude's saved copy, and the reasons (each `why` with its `fallback`), costliest
+first. A conversation's own calls only: its workers and side calls are not in it, and records from
+before the field existed count nothing. A developer check (`pnpm run claude:cache-check`) reads the
+ledger files only, never calls a model, and prints per kind of conversation the share of its Claude
+spend that went to re-sending history and the top reasons; for records without `launch` it
+estimates a re-send from the token pattern (a cache write over 5,000 tokens where the cache read
+falls short of the call before it by at least 5,000).
+
+## §app.insights/usage-resend-display — Re-sent history beside a conversation's spend
+
+Wherever a conversation's spend is shown with its re-sends (§app.insights/usage-resend) — each row
+of the Costs tab's Top sessions (§app.insights/cost-history) and the Spend section of the session
+pane's Usage tab (§app.subagents-pane/tabs), under its headline — one compact line says what
+re-sending its history cost: `Re-sent history {n}× · {$x} · {p}% of its spend` (the Usage tab:
+`of the main thread`, since the re-sends are the session's own conversation only; a share under 1%
+reads `under 1%`; with no price, the tokens stand in for the dollars and the share is left out).
+The re-sent dollars are already inside the spend beside it, never added to it. When the re-sends
+are a quarter of that spend or more, the line is set in ink rather than muted, so an expensive
+conversation stands out by its words and weight, never by color alone. The line is a disclosure
+(`<details>`), opened by a tap, a click or the keyboard, never by hover alone: inside, one sentence
+— "Each time, a new Claude process was sent the whole conversation again." — then one row per
+reason, costliest first, `{reason} · {n}× · {$x}`, the reason in plain words (server restarted or
+chat reopened, set aside while idle, settings or instructions changed, history rewound, branched or
+compacted, Claude login changed, …; a reason the browser doesn't know shows as written), with the
+reason Claude's saved copy wasn't picked up after it: `couldn't pick up its saved copy: {why}`
+(login moved, the history changed since, settings changed, memory mode rebuilds its history,
+picking up failed). When some launches picked up the saved copy instead, a last line says so:
+`Picked up Claude's saved copy instead {n}×.` A conversation that re-sent nothing shows no line,
+and neither does one whose launches were never recorded.
+
 ## §app.insights/cost-history — The Costs tab (`#/agents/costs`)
 
 **The Agents page has two tabs, Board (the board as it was, §app.insights/team-cards) and Costs,
@@ -494,7 +544,8 @@ which shows this device's spend at API prices from the usage ledger (§app.insig
 - **Sections.** Stats: Total, Main sessions, Workers, One-shots. A daily cost bar chart (local
   days). Tables by provider, by model (input · cache · output · cost), by kind and by project
   (the org project, else the working directory). Top sessions, most expensive first; a click opens
-  the session.
+  the session, and a row whose conversation re-sent its history says so under its name
+  (§app.insights/usage-resend-display).
 - **Prices.** "Prices as of {date}" with the last change found, and a **Refresh Prices** button that
   pulls the prices now (§app.insights/usage-ledger); it says so when pulling is off or the prices are
   still the starter list.

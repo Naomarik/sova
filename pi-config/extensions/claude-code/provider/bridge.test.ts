@@ -8,7 +8,7 @@
  */
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough, Writable } from "node:stream";
@@ -16,14 +16,16 @@ import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { type Api, type AssistantMessageEvent, type Model, normalizeContext, Type, type Message, type Tool } from "@earendil-works/pi-ai";
 import {
-	claudeSessionId, FOLD_CHARS_PER_TOKEN, FOLD_LINE_HEADROOM, foldBudgetChars, foldHistory, foldSizeEstimate, getSessionBridge, isPrefix, LIMITS, MAX_FOLD_CHARS, MIN_FOLD_CHARS,
-	resetSessionBridge, SessionBridge, transcriptFingerprint, uuidv5, windowOverflow,
+	claudeSessionId, FOLD_CHARS_PER_TOKEN, FOLD_LINE_HEADROOM, foldBudgetChars, foldHistory, foldSizeEstimate, getSessionBridge, isPrefix, LIMITS, MAX_FOLD_CHARS, memorySystemPrompt, memoryViewFrame, MIN_FOLD_CHARS, SYSTEM_PROMPT_BOUNDARY, withoutMemoryPrefix,
+	resetSessionBridge, SessionBridge, transcriptFingerprint, uuidv5, windowOverflow, type ClaudeLoginSource,
 } from "./session-bridge.ts";
 import { streamClaudeCode } from "./stream.ts";
 import { STATIC_MODELS } from "./index.ts";
 import type { ClaudeFrame, ClaudeTurnRequest } from "./types.ts";
 import type { ClaudeForkPoint } from "./fork-point.ts";
+import { memoryViewContent } from "./memory-view.ts";
 import { snapshot as llmSnapshot } from "../../llm-inflight/tracker.ts";
+import { parseUsageLine, type UsageRecord } from "../../llm-inflight/usage-record.ts";
 
 // ---------------------------------------------------------------------------
 // Fake CLI child
@@ -152,14 +154,18 @@ const EMPTY_PROJECTS = mkdtempSync(join(tmpdir(), "pi-bridge-projects-"));
 // /tmp is inode-limited on the dev machine: leave nothing behind.
 after(() => rmSync(EMPTY_PROJECTS, { recursive: true, force: true }));
 
-function harness({ refuseSessionId = 0, manualInitialize = false, projectsRoot = EMPTY_PROJECTS, limits, forkFrom, refuseResume = false }: { refuseSessionId?: number; manualInitialize?: boolean; projectsRoot?: string; limits?: Partial<typeof LIMITS>; forkFrom?: ClaudeForkPoint; refuseResume?: boolean } = {}) {
+/** `projectsRoot: null`: none given, the bridge finds the CLI's records itself. */
+function harness({ refuseSessionId = 0, manualInitialize = false, projectsRoot = EMPTY_PROJECTS, limits, forkFrom, refuseResume = false, resumeDir = false, logins }: { refuseSessionId?: number; manualInitialize?: boolean; projectsRoot?: string | null; limits?: Partial<typeof LIMITS>; forkFrom?: ClaudeForkPoint; refuseResume?: boolean; resumeDir?: string | false; logins?: ClaudeLoginSource } = {}) {
 	const children: FakeClaude[] = [];
 	const debug: Record<string, unknown>[] = [];
 	const bridge = new SessionBridge({
 		...(forkFrom ? { forkFrom } : {}),
+		...(logins ? { logins } : {}),
+		// Each test's own: a record another test saved for the same pi session id never reaches it.
+		resumeDir,
 		onDebug: (entry) => debug.push(entry),
 		cwd: "/tmp/pi-bridge-test",
-		projectsRoot,
+		...(projectsRoot === null ? {} : { projectsRoot }),
 		spawnImpl: ((command: string, argv: string[], options: any) => {
 			const child = new FakeClaude(command, argv, options, 5000 + children.length);
 			children.push(child);
@@ -395,6 +401,7 @@ test("pin (unwrapped provider): no built-in tools, no settings sources, no ambie
 	const after = (flag: string) => cli.argv[cli.argv.indexOf(flag) + 1];
 	assert.ok(cli.argv.includes("--tools") && after("--tools") === "", "--tools '' (no Bash, Read, Edit, Write, …)");
 	assert.ok(cli.argv.includes("--setting-sources") && after("--setting-sources") === "", "--setting-sources '' (no user or project hooks, permissions or MCP servers)");
+	assert.equal(JSON.parse(after("--settings")).autoMemoryEnabled, false, "auto-memory off: no MEMORY.md read into a request, none written");
 	assert.ok(cli.argv.includes("--strict-mcp-config"), "--strict-mcp-config (only the configured servers)");
 	assert.ok(!cli.argv.includes("--mcp-config"), "and none configured: its one server, sova, is answered in-process");
 	assert.equal(cli.argv.filter((a) => a === "--tools").length, 1, "one --tools, never widened by a later one");
@@ -661,6 +668,53 @@ test("a diverged transcript restarts the child with folded history", { timeout: 
 	assert.match(text, /different/);
 	assert.ok(!text.includes("\n## User\ntwo"), "the rewound message must not be replayed");
 	await bridge.disposeAll();
+});
+
+// Sova's memory mode (memory-view.ts, §chat.memory/turn): a history that opens with a memory view and is
+// otherwise new user messages is sent as written — the guide and stable prefix appended to the system
+// prompt, the newer lines and the turn's messages as the child's first user message — never folded.
+const memoryView = (prefix: string[], tail: string[]): Message => ({ role: "user", content: memoryViewContent("# Memory\nguide text", prefix, tail), timestamp: 1 });
+
+test("memory view: the guide and prefix ride the system prompt, the newer lines and the turn go as written", { timeout: 8000 }, async () => {
+	const { bridge, children, debug } = harness();
+	const history = [memoryView(["0+2|user: hi; sova: hello"], ["2+1|user: port 4810"]), user("standing note"), user("what port?")];
+	await collectAfter(bridge.runTurn(request(history, { systemPrompt: "BASE PROMPT" })), async () => {
+		const cli = await child(children, 1);
+		const init = await cli.waitFor((f) => f.request?.subtype === "initialize");
+		assert.deepEqual(init.request.systemPrompt, ["BASE PROMPT", SYSTEM_PROMPT_BOUNDARY, "# Memory\nguide text\n\n<chat>\n0+2|user: hi; sova: hello\n</chat>"], "the view goes past the boundary: its own cached block");
+		await cli.handshake();
+		const sent = await cli.waitFor((f) => f.type === "user");
+		const text = sent.message.content.map((b: any) => b.text ?? "").join("");
+		assert.equal(text, "<chat> (continued: the newest lines)\n2+1|user: port 4810\n</chat>\n\nstanding note\n\nwhat port?");
+		assert.doesNotMatch(text, /restarted|conversation-history|lossy/, "no restart preamble");
+		cli.emitFrame({ type: "result", subtype: "success", is_error: false, result: "ok" });
+	});
+	// The next turn's view changed (a new line): a new child, again as written, with the same prefix.
+	const next = [memoryView(["0+2|user: hi; sova: hello"], ["2+1|user: port 4810", "3+1|user: what port?"]), user("and the host?")];
+	await collectAfter(bridge.runTurn(request(next, { systemPrompt: "BASE PROMPT" })), async () => {
+		const cli = await child(children, 2);
+		const init = await cli.waitFor((f) => f.request?.subtype === "initialize");
+		assert.match(init.request.systemPrompt[2], /<chat>\n0\+2\|user: hi; sova: hello\n<\/chat>$/);
+		await cli.handshake();
+		const sent = await cli.waitFor((f) => f.type === "user");
+		assert.match(sent.message.content.map((b: any) => b.text ?? "").join(""), /3\+1\|user: what port\?\n<\/chat>\n\nand the host\?$/);
+		cli.emitFrame({ type: "result", subtype: "success", is_error: false, result: "ok" });
+	});
+	assert.equal(debug.filter((d) => d.event === "fold").length, 0, "nothing was folded");
+	await bridge.disposeAll();
+});
+
+test("memory view: a history that isn't a view plus user messages folds, with the view cut to its newer lines", () => {
+	const view = memoryView(["0+1|user: a"], ["1+1|sova: b"]);
+	assert.equal(memoryViewFrame([view, user("x")])?.text.endsWith("x"), true);
+	assert.equal(memoryViewFrame([view]), undefined, "a view alone is no turn");
+	assert.equal(memoryViewFrame([view, user("x"), assistantWithCall("t1", "read", {})]), undefined, "mid-turn: fold");
+	assert.equal(memoryViewFrame([user("# Memory\nnot a view"), user("x")]), undefined, "one text block is never a view");
+	const reduced = withoutMemoryPrefix([view, user("x"), assistantWithCall("t1", "read", {})]);
+	assert.deepEqual(reduced[0]!.content, [{ type: "text", text: "<chat> (continued: the newest lines)\n1+1|sova: b\n</chat>" }]);
+	const folded = foldHistory(reduced, LIMITS, "restarted").text;
+	assert.doesNotMatch(folded, /0\+1\|user: a|guide/, "the prefix and guide are the system prompt's, never folded again");
+	assert.deepEqual(memorySystemPrompt("P", undefined), ["P"], "no view: no boundary");
 });
 
 test("a model change restarts rather than continuing on a stale child", { timeout: 8000 }, async () => {
@@ -2533,4 +2587,206 @@ test("a bridge session's CLI reports its running turn (partial) and never counts
 	assert.equal(llmSnapshot().claudeTurns, base.claudeTurns, "the turn ended");
 	await bridge.disposeAll();
 	assert.deepEqual([llmSnapshot().active, llmSnapshot().claudeTurns], [base.active, base.claudeTurns]);
+});
+
+// ---------------------------------------------------------------------------
+// Picking a chat up again: resume records, launch reasons, one-shots uncached
+// ---------------------------------------------------------------------------
+
+/** Run `fn` with this process's usage ledger in a temporary agent dir; `read` returns its records. */
+async function withLedger<T>(fn: (read: () => UsageRecord[]) => Promise<T>): Promise<T> {
+	const dir = mkdtempSync(join(tmpdir(), "pi-bridge-ledger-"));
+	const before = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = dir;
+	const read = (): UsageRecord[] => {
+		const root = join(dir, "usage", "v1");
+		const out: UsageRecord[] = [];
+		let days: string[] = [];
+		try { days = readdirSync(root); } catch { return out; }
+		for (const day of days) for (const f of readdirSync(join(root, day))) {
+			for (const line of readFileSync(join(root, day, f), "utf8").split("\n")) {
+				const r = line ? parseUsageLine(line) : null;
+				if (r) out.push(r);
+			}
+		}
+		return out.sort((a, b) => a.ts - b.ts);
+	};
+	try {
+		return await fn(read);
+	} finally {
+		if (before === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = before;
+		rmSync(dir, { recursive: true, force: true });
+	}
+}
+
+/** One clean turn on child `n`: handshake, the user message it was sent, a text answer. */
+async function cleanTurn(bridge: SessionBridge, children: FakeClaude[], n: number, req: ClaudeTurnRequest, answer: string): Promise<Record<string, any>> {
+	let sent: Record<string, any> = {};
+	await collectAfter(bridge.runTurn(req), async () => {
+		const cli = await child(children, n);
+		await cli.handshake();
+		sent = await cli.waitFor((f) => f.type === "user");
+		for (const frame of finalTextFrames(answer)) cli.emitFrame(frame);
+	});
+	return sent;
+}
+
+const resumeArgs = (cli: FakeClaude) => (cli.argv.includes("--resume") ? cli.argv.slice(cli.argv.indexOf("--resume"), cli.argv.indexOf("--resume") + 3) : []);
+
+test("a chat whose idle child was reaped picks up its own Claude session: A, B, then A resumes A's record and sends only the new message", { timeout: 10000 }, async () => {
+	await withLedger(async (ledger) => {
+		const { bridge, children } = harness({ limits: { maxIdleSessions: 1 } });
+		const a1 = [user("a1")];
+		await cleanTurn(bridge, children, 1, request(a1, { sessionId: "A" }), "ok a1");
+		await cleanTurn(bridge, children, 2, request([user("b1")], { sessionId: "B" }), "ok b1");
+		for (let i = 0; i < 200 && !children[0]!.exited; i++) await new Promise((r) => setTimeout(r, 5));
+		assert.equal(children[0]!.exited, true, "A's idle child was reaped");
+		const sent = await cleanTurn(bridge, children, 3, request([...a1, assistantText("ok a1"), user("a2")], { sessionId: "A" }), "ok a2");
+		assert.deepEqual(resumeArgs(children[2]!), ["--resume", claudeSessionId("A", 0), "--fork-session"]);
+		assert.deepEqual(sent.message.content, [{ type: "text", text: "a2" }], "only the new message, nothing folded");
+		// A, B, then A again (the test registers no owners: the order is the launches').
+		assert.deepEqual(ledger().filter((r) => r.launch).map((r) => r.launch), [{ how: "fresh", why: "new" }, { how: "fresh", why: "new" }, { how: "resumed", why: "reaped" }]);
+		await bridge.disposeAll();
+	});
+});
+
+test("after a server restart a chat resumes its record only when its history continues it exactly", { timeout: 10000 }, async () => {
+	const resumeDir = mkdtempSync(join(tmpdir(), "pi-bridge-resume-"));
+	const projectsRoot = mkdtempSync(join(tmpdir(), "pi-bridge-projects-"));
+	try {
+		await withLedger(async (ledger) => {
+			const first = harness({ resumeDir, projectsRoot });
+			const m1 = [user("one")];
+			await cleanTurn(first.bridge, first.children, 1, request(m1), "reply one");
+			assert.ok(readFileSync(join(resumeDir, "pi-session-1.json"), "utf8").includes(claudeSessionId("pi-session-1", 0)), "the record is on disk");
+			// The CLI's record of launch 0, as the real CLI leaves it.
+			mkdirSync(join(projectsRoot, "-tmp-pi-bridge-test"), { recursive: true });
+			writeFileSync(join(projectsRoot, "-tmp-pi-bridge-test", `${claudeSessionId("pi-session-1", 0)}.jsonl`), "{}\n");
+			await first.bridge.disposeAll("server stopping");
+
+			// A rewind: the history no longer continues the record. It folds, and says why.
+			const rewound = harness({ resumeDir, projectsRoot });
+			await collectAfter(rewound.bridge.runTurn(request([user("one, edited"), assistantText("x"), user("two")])), async () => {
+				const cli = await child(rewound.children, 1);
+				await cli.handshake();
+				const sent = await cli.waitFor((f) => f.type === "user");
+				assert.deepEqual(resumeArgs(cli), []);
+				assert.match(sent.message.content[0].text, /^<conversation-history>/);
+				for (const frame of finalTextFrames("folded")) cli.emitFrame(frame);
+			});
+			await rewound.bridge.disposeAll();
+			assert.deepEqual(ledger().filter((r) => r.launch).map((r) => r.launch).at(-1), { how: "joined", why: "process-start", fallback: "not-continuation" });
+		});
+		// A clean record again, then a restart whose history continues it: resumed.
+		await withLedger(async (ledger) => {
+			const before = harness({ resumeDir, projectsRoot });
+			await cleanTurn(before.bridge, before.children, 1, request([user("one")]), "reply one");
+			await before.bridge.disposeAll("server stopping");
+			const after = harness({ resumeDir, projectsRoot });
+			const sent = await cleanTurn(after.bridge, after.children, 1, request([user("one"), assistantText("reply one"), user("two")]), "reply two");
+			assert.equal(resumeArgs(after.children[0]!)[0], "--resume");
+			assert.deepEqual(sent.message.content, [{ type: "text", text: "two" }]);
+			assert.deepEqual(ledger().filter((r) => r.launch).map((r) => r.launch).at(-1), { how: "resumed", why: "process-start" });
+			await after.bridge.disposeAll();
+		});
+	} finally {
+		rmSync(resumeDir, { recursive: true, force: true });
+		rmSync(projectsRoot, { recursive: true, force: true });
+	}
+});
+
+test("a record never names a turn in progress: a restart mid-turn folds", { timeout: 10000 }, async () => {
+	const resumeDir = mkdtempSync(join(tmpdir(), "pi-bridge-resume-"));
+	try {
+		const first = harness({ resumeDir });
+		await cleanTurn(first.bridge, first.children, 1, request([user("one")]), "reply one");
+		assert.equal(existsSync(join(resumeDir, "pi-session-1.json")), true);
+		// The next turn reaches the child and stops at a tool call: its record is gone.
+		const m2 = [user("one"), assistantText("reply one"), user("read it")];
+		await collectAfter(first.bridge.runTurn(request(m2)), async () => {
+			const cli = first.children[0]!;
+			await cli.waitFor((f) => f.type === "user" && f.message.content[0].text === "read it");
+			for (const frame of toolUseFrames("toolu_9", "read", { path: "a" })) cli.emitFrame(frame);
+		});
+		assert.equal(existsSync(join(resumeDir, "pi-session-1.json")), false, "a turn in progress leaves no record");
+		await first.bridge.disposeAll("server stopping");
+		const after = harness({ resumeDir });
+		await collectAfter(after.bridge.runTurn(request([...m2, assistantWithCall("toolu_9", "read", { path: "a" }), toolResult("toolu_9", "read", "body")])), async () => {
+			const cli = await child(after.children, 1);
+			await cli.handshake();
+			const sent = await cli.waitFor((f) => f.type === "user");
+			assert.deepEqual(resumeArgs(cli), []);
+			assert.match(sent.message.content[0].text, /^<conversation-history>/);
+			for (const frame of finalTextFrames("done")) cli.emitFrame(frame);
+		});
+		await after.bridge.disposeAll();
+	} finally {
+		rmSync(resumeDir, { recursive: true, force: true });
+	}
+});
+
+test("a memory-mode chat never resumes: its history is rebuilt on purpose", { timeout: 10000 }, async () => {
+	const { bridge, children } = harness({ limits: { maxIdleSessions: 1 } });
+	const view = { role: "user", content: memoryViewContent("# Memory\nguide", ["line 1"], []), timestamp: 1 } as Message;
+	await cleanTurn(bridge, children, 1, request([view, user("q1")], { sessionId: "M" }), "a1");
+	await cleanTurn(bridge, children, 2, request([user("b1")], { sessionId: "B" }), "ok b1");
+	await cleanTurn(bridge, children, 3, request([view, user("q1"), assistantText("a1"), user("q2")], { sessionId: "M" }), "a2");
+	assert.deepEqual(resumeArgs(children[2]!), []);
+	await bridge.disposeAll();
+});
+
+test("a settings restart records which part changed", { timeout: 10000 }, async () => {
+	await withLedger(async (ledger) => {
+		const { bridge, children } = harness();
+		const m1 = [user("one")];
+		await cleanTurn(bridge, children, 1, request(m1, { systemPrompt: "Now: 10:00" }), "r1");
+		await cleanTurn(bridge, children, 2, request([...m1, assistantText("r1"), user("two")], { systemPrompt: "Now: 10:05" }), "r2");
+		assert.deepEqual(ledger().filter((r) => r.launch).map((r) => r.launch), [{ how: "fresh", why: "new" }, { how: "folded", why: "system-prompt" }]);
+		await bridge.disposeAll();
+	});
+});
+
+test("a first launch whose turn is only user messages (an overseer's run note and the operator's message) is fresh, not a re-send", { timeout: 10000 }, async () => {
+	await withLedger(async (ledger) => {
+		const { bridge, children } = harness();
+		await cleanTurn(bridge, children, 1, request([user("run note"), user("hi")]), "hello");
+		assert.deepEqual(ledger().filter((r) => r.launch).map((r) => r.launch), [{ how: "fresh", why: "new" }]);
+		await bridge.disposeAll();
+	});
+});
+
+test("after a server restart on an added login, the CLI's records are found in that login's directory: the launch is process-start and takes the next id", { timeout: 10000 }, async () => {
+	const configDir = mkdtempSync(join(tmpdir(), "pi-bridge-login-"));
+	try {
+		await withLedger(async (ledger) => {
+			// The CLI's record of launch 0, written before the restart into the login's own directory.
+			mkdirSync(join(configDir, "projects", "-tmp-pi-bridge-test"), { recursive: true });
+			writeFileSync(join(configDir, "projects", "-tmp-pi-bridge-test", `${claudeSessionId("pi-session-1", 0)}.jsonl`), "{}\n");
+			const login = { id: "l-1", label: "work", env: { CLAUDE_CONFIG_DIR: configDir } };
+			const logins: ClaudeLoginSource = { select: () => login, failover: () => undefined, recordFailure: () => {} };
+			const { bridge, children } = harness({ projectsRoot: null, logins });
+			await cleanTurn(bridge, children, 1, request([user("one"), assistantText("reply one"), user("two")]), "reply two");
+			const argv = children[0]!.argv;
+			assert.equal(argv[argv.indexOf("--session-id") + 1], claudeSessionId("pi-session-1", 1));
+			assert.deepEqual(ledger().filter((r) => r.launch).map((r) => r.launch), [{ how: "joined", why: "process-start" }]);
+			await bridge.disposeAll();
+		});
+	} finally {
+		rmSync(configDir, { recursive: true, force: true });
+	}
+});
+
+test("a one-shot request runs with the prompt cache off; a chat's child keeps it", { timeout: 10000 }, async () => {
+	const { bridge, children } = harness();
+	await collectAfter(bridge.runTurn({ model: "sonnet", sessionId: "summary-uuid", tools: [], messages: [user("summarize")] }), async () => {
+		const cli = await child(children, 1);
+		await cli.handshake();
+		await cli.waitFor((f) => f.type === "user");
+		for (const frame of finalTextFrames("summary")) cli.emitFrame(frame);
+	});
+	assert.equal(children[0]!.env.DISABLE_PROMPT_CACHING, "1");
+	await cleanTurn(bridge, children, 2, request([user("hi")]), "hello");
+	assert.equal(children[1]!.env.DISABLE_PROMPT_CACHING, undefined);
+	await bridge.disposeAll();
 });

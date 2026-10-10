@@ -10,7 +10,7 @@ import {
 	SPEC_HOOK_SCRIPT, readState, runHook, specHookSettings, statePath, withClaudeSettings,
 	type HookInput,
 } from "./spec-hooks.ts";
-import { buildClaudeArgv, NO_ATTRIBUTION } from "./transport.ts";
+import { buildClaudeArgv, SOVA_FIXED_SETTINGS } from "./transport.ts";
 
 const CORE = fs.realpathSync(fileURLToPath(new URL("../spec/core", import.meta.url)));
 const roots: string[] = [];
@@ -56,10 +56,10 @@ test("specHookSettings: turn, pre and post (after ANY tool, and after a failed o
 	assert.equal(merged.hooks.PostToolUse.length, 2, "appended after the base's own PostToolUse hook");
 	assert.equal(merged.hooks.PostToolUse[0].hooks[0].command, "own");
 	assert.throws(() => withClaudeSettings("[]", settings), /JSON object/);
-	// buildClaudeArgv carries it in the one --settings, attribution merged over it.
+	// buildClaudeArgv carries it in the one --settings, the fixed settings (attribution, auto-memory) merged over it.
 	const built = buildClaudeArgv({ permissionMode: "bypassPermissions", permissionModes: ["bypassPermissions"], hostPermissions: false, settingsJson: withClaudeSettings(undefined, settings) });
 	const flag = JSON.parse(built.args![built.args!.indexOf("--settings") + 1]);
-	assert.deepEqual(flag, { ...settings, ...NO_ATTRIBUTION });
+	assert.deepEqual(flag, { ...settings, ...SOVA_FIXED_SETTINGS });
 });
 
 test("state paths: a session id never escapes the state dir", () => {

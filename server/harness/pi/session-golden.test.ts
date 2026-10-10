@@ -181,7 +181,12 @@ function projected(json: string): string | null {
   return JSON.stringify(m, (_k, v) => {
     const role = v && typeof v === "object" ? (v as { role?: unknown }).role : undefined;
     if (role === "system") return { role: "system", elided: true };
-    if (role === "custom" && "content" in v) return { ...v, content: "<elided>" };
+    if (role === "custom" && "content" in v) {
+      // An overseer run note's opening values and told fingerprints are prompt prose and the wall clock too.
+      const d = (v as { details?: Record<string, unknown> }).details;
+      const details = d && typeof d === "object" ? Object.fromEntries(Object.entries(d).map(([k, x]) => [k, k === "opening" || k === "told" ? "<elided>" : x])) : d;
+      return { ...v, content: "<elided>", ...(d === undefined ? {} : { details }) };
+    }
     return v;
   });
 }

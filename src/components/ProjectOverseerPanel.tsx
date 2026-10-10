@@ -37,7 +37,7 @@ import {
 } from "../lib/api";
 import type { GatheringAbilities } from "../../shared/baton";
 import { ABILITIES_KEYS, abilitiesKey, abilitiesLabel, abilitiesOfKey, abilitiesWords, drawHtmlSavedToast, drawHtmlSettable, type AbilitiesKey } from "../lib/gathering-abilities";
-import { CODING_MODE_KEYS, codingModeKey, codingModeLabel, codingModeOf, folderNote, mergeGate, mergeNote, modeWords, offersMerge, offersRemove, removeGate, startedBy, worktreeOrder, type CodingModeKey } from "../lib/coding-worktrees";
+import { codingModeHint, folderNote, mergeGate, mergeNote, offersMerge, offersRemove, removeGate, startedBy, worktreeOrder } from "../lib/coding-worktrees";
 import { relativeTime, tildePath } from "../lib/format";
 import { hostLabel, projectHostOf } from "../lib/mesh";
 import { unchangedError } from "../lib/unchanged-error";
@@ -292,10 +292,7 @@ export function OverseerSettings(props: { po: ProjectOverseer; /** An organizati
                 </SessionModel>
               </Show>
               <SessionModel info={i()} host={po().host()} kind="coding" label="Coding sessions" save={async (x) => po().info.set(await patch(x))}>
-                <CodingMode
-                  info={i()}
-                  onSave={(key) => po().run(() => patch({ codingMode: codingModeOf(key) }), key === "auto" ? "Coding sessions' mode: Automatic." : `Coding sessions run ${codingModeLabel(key)}.`)}
-                />
+                <CodingMode info={i()} />
               </SessionModel>
             </div>
           </section>
@@ -856,36 +853,21 @@ function GatheringAbilitiesField(props: { info: ProjectOverseerInfo; onSave(set:
 }
 
 /**
- * The mode every coding session it starts gets (sova_create_session, Start Coding Session).
- * Automatic follows the project: spec on when it has one. Delegate is the operator's opt-in; the
- * overseer may ask for it only when chosen here.
+ * What coding sessions start in (§app.project-overseer/coding-mode): read-only. A project has no mode of
+ * its own: unnamed, a coding session starts in this computer's default mode and subagent profile, which
+ * Save as default in any chat's mode menu changes.
  */
-function CodingMode(props: { info: ProjectOverseerInfo; onSave(key: CodingModeKey): Promise<boolean> }) {
-  const key = () => codingModeKey(props.info.settings.codingMode ?? null);
-  const now = () => props.info.codingModeNow;
+function CodingMode(props: { info: ProjectOverseerInfo }) {
+  const hint = () => codingModeHint(props.info.codingModeNow);
   return (
-    <label class="field">
+    <div class="field">
       <span class="field-label">Coding sessions' mode</span>
-      <select
-        class="select"
-        aria-describedby="project-coding-mode-hint"
-        onChange={async (e) => {
-          const el = e.currentTarget;
-          if (!(await props.onSave(el.value as CodingModeKey))) el.value = key();
-        }}
-      >
-        <For each={CODING_MODE_KEYS}>
-          {(k) => (
-            <option value={k} selected={k === key()}>
-              {codingModeLabel(k)}
-            </option>
-          )}
-        </For>
-      </select>
-      <span class="field-hint" id="project-coding-mode-hint">
-        Every coding session this project starts runs in it, yours included. One started now: <span class="orgs-mono">{modeWords(now())}</span>.
+      <span class="field-hint">
+        {hint().before}
+        <span class="orgs-mono">{hint().mode}</span>
+        {hint().after}
       </span>
-    </label>
+    </div>
   );
 }
 

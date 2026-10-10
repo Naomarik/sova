@@ -14,9 +14,12 @@
  *   `git -C <dir>`, a file path), before it runs. In a tree already known, and at a turn's start,
  *   what changed since the last look changed between the session's calls (another process): taken in
  *   silently, kept out of every note (settleCensus), unless another call of this session is running.
- * - PostToolUse (`post`, any tool, Bash included): the census step (censusStep, the same one the pi
- *   session runs) on a git-status delta, its `[spec census]` digest and the write guard's notes
- *   returned as additionalContext. A census that can't run is said once per cause per work tree
+ * - PostToolUse and PostToolUseFailure (`post`, any tool, Bash included): the census step (censusStep,
+ *   the same one the pi session runs) on a git-status delta, its `[spec census]` digest and the write
+ *   guard's notes returned as additionalContext. A failed call (a Bash command that exits non-zero)
+ *   comes as PostToolUseFailure and is closed the same way: its own writes still count, and it stops
+ *   holding the settle off.
+ * - PermissionDenied (`deny`): the call never ran, so it stops counting as running, with no census. A census that can't run is said once per cause per work tree
  *   (censusStep keeps that in the tree's CensusState, which this state file holds), until a census
  *   there succeeds again.
  *
@@ -51,7 +54,7 @@ interface HookMatcher { matcher?: string; hooks: HookEntry[] }
 
 const shellQuote = (value: string): string => /^[A-Za-z0-9_./-]+$/.test(value) ? value : `'${value.replace(/'/g, "'\\''")}'`;
 
-/** The `hooks` settings block for the three events, run by `node` (the parent's runtime). */
+/** The `hooks` settings block for the five events, run by `node` (the parent's runtime). */
 export function specHookSettings(o: { node: string; coreDir: string; stateDir: string; script?: string }): Settings {
 	const command = (event: string): HookEntry => ({
 		type: "command",
@@ -63,6 +66,10 @@ export function specHookSettings(o: { node: string; coreDir: string; stateDir: s
 			UserPromptSubmit: [{ hooks: [command("turn")] }],
 			PreToolUse: [{ matcher: "*", hooks: [command("pre")] }],
 			PostToolUse: [{ matcher: "*", hooks: [command("post")] }],
+			// A failed call (Bash exiting non-zero) skips PostToolUse: the same step closes it.
+			PostToolUseFailure: [{ matcher: "*", hooks: [command("post")] }],
+			// A denied call never ran: it is closed, nothing else.
+			PermissionDenied: [{ matcher: "*", hooks: [command("deny")] }],
 		},
 	};
 }
@@ -109,7 +116,7 @@ export interface HookState {
 	open?: Record<string, string>;
 }
 const MAX_COMMANDS = 200;
-/** A call whose post hook never came (it failed, or was denied) stops counting as running after this long. */
+/** A call whose post or deny hook never came (blocked by another hook, interrupted) stops counting as running after this long. */
 const OPEN_TTL_MS = 15 * 60_000;
 const freshState = (): HookState => ({ version: 1, sessionStart: new Date().toISOString(), census: freshCensusState(), commands: [], turn: {} });
 
@@ -233,7 +240,17 @@ export async function onPost(input: HookInput, ctx: HookContext): Promise<HookOu
 	}
 	const text = texts.join("\n");
 	if (!text) return undefined;
-	return { hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext: text } };
+	const hookEventName = input.hook_event_name === "PostToolUseFailure" ? "PostToolUseFailure" : "PostToolUse";
+	return { hookSpecificOutput: { hookEventName, additionalContext: text } };
+}
+
+/** A denied call (PermissionDenied) never ran: it stops counting as running; no census, nothing said. */
+export async function onDeny(input: HookInput, ctx: HookContext): Promise<HookOutput> {
+	if (input.tool_use_id && ctx.state.open) {
+		delete ctx.state.open[input.tool_use_id];
+		if (!Object.keys(ctx.state.open).length) delete ctx.state.open;
+	}
+	return undefined;
 }
 
 /**
@@ -270,7 +287,7 @@ export async function writeGuard(tool: string, input: HookInput, cwd: string, be
  * other event) does nothing; `ledger` is accepted from workers started before the turn-end check went.
  */
 export async function runHook(event: string, input: HookInput, o: { core: string; stateDir: string; io?: SpecIO; ledger?: string }): Promise<HookOutput> {
-	const run = event === "turn" ? onTurn : event === "pre" ? onPre : event === "post" ? onPost : undefined;
+	const run = event === "turn" ? onTurn : event === "pre" ? onPre : event === "post" ? onPost : event === "deny" ? onDeny : undefined;
 	const file = input.session_id ? statePath(o.stateDir, input.session_id) : undefined;
 	if (!run || !file) return undefined;
 	const ctx: HookContext = { core: o.core, state: readState(file), io: o.io ?? localIO };
@@ -285,7 +302,7 @@ async function main(argv: string[]): Promise<void> {
 	const flag = (name: string) => { const i = argv.indexOf(name); return i > 0 ? argv[i + 1] : undefined; };
 	const core = flag("--core"), stateDir = flag("--state");
 	// `stop` comes from workers spawned before the turn-end check went: nothing to read or say.
-	if (!core || !stateDir || !["turn", "pre", "post"].includes(event)) return;
+	if (!core || !stateDir || !["turn", "pre", "post", "deny"].includes(event)) return;
 	const chunks: Buffer[] = [];
 	for await (const chunk of process.stdin) chunks.push(chunk as Buffer);
 	const input = JSON.parse(Buffer.concat(chunks).toString("utf8")) as HookInput;

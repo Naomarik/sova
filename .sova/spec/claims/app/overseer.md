@@ -1108,12 +1108,28 @@ host's session files. The reply is never changed, and the client still links eve
 - **One button, Quick Actions,** sits at the right end of the Overseer's composer foot, in the
   slot the mode switch holds in every other chat (the Overseer has none, §app.overseer/hosting).
   It opens a flyout listing the quick actions, each with its label and a short description.
-  Picking one sends its prompt (queued as a follow-up while a turn runs).
+  Picking one sends its prompt (queued as a follow-up while a turn runs). The Overseer's memory
+  switch sits just before it (§app.overseer/memory-switch).
 - While the composer is disabled the button still opens, and each quick action carries the
   disabled reason instead of running.
 - Defaults: **What Needs Me**, **What Finished**, **What's Running**, **Tidy Up**, **Where Was I**.
 - They are editable in Settings → Overseer (label, description, prompt; add, remove, reorder,
   reset to defaults).
+
+## §app.overseer/memory-switch — The Overseer's memory switch
+
+The Overseer has no mode menu, so its memory (§chat.memory/overseer) has its own control: a ghost
+button in its composer foot, before Quick Actions, reading "memory" with a check while it is on
+and a clock while it is off (named "Overseer memory: on" or "…: off"). It opens a popover with the
+same rows as the mode menu's Memory type panel (§chat.mode-menu/memory-panel): first a `memory`
+checkbox row like the mode menu's (its description the chosen type's, its detail line the type's
+while on), then the types, UniiChat's "Read the design ↗", and Summary size. The switch is read
+once for its label and again at each opening; a failed read shows "Couldn't read the Overseer's
+memory." Each pick writes `PUT /api/overseer/memory` at once and keeps the popover open (a pick of
+the current type or size writes nothing); the foot line reads "From the Overseer's next turn. Its
+coding sessions never get memory." A refused write shows "Couldn't change the Overseer's memory."
+with the reason, and its memory is unchanged. Its run-status row shows memory's status
+like any chat's (§chat.composer/memory-status).
 
 ## §app.overseer/head-layout — The head at every width
 

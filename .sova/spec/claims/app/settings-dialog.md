@@ -8,7 +8,7 @@ the session stays behind, closed by the scrim, Esc, or its Close button (Cancel 
 is unsaved, §app.settings-dialog/save-bar).
 
 The rail is the structure: each settings screen is one tab — General, Models, Accounts, Subagents,
-Alignment, Profiles, Overseer, Notifications, Decisions, Summaries, Organizations, Themes, Mesh, Public links, Outreach, Voice, Experimental.
+Alignment, Profiles, Overseer, Notifications, Decisions, Summaries, Memory, Organizations, Themes, Mesh, Public links, Outreach, Voice, Experimental.
 Tabs move with the arrow keys as well as the pointer, and the selected tab has focus on open: the
 two have to name the same screen. The gear opens General; the mode menu's **Configure Delegate** gear
 (§chat/mode-menu) opens Subagents directly, and nothing else about the chat changes. Which tab is open lives in
@@ -310,6 +310,35 @@ the sweep's next run.
   "Couldn't shorten the titles." with the reason, and nothing was changed by it beyond the titles
   already written.
 
+## §app.settings-dialog/memory — Memory
+
+The tab after Summaries: which model writes memory's summaries (§chat.memory/summarizer), in
+`<agent dir>/mode-memory.json` (`GET`/`PUT /api/settings/memory`). Its heading, **Summarizer**, has
+the "How memory works" `?` beside it (§chat.memory/help); an intro says that with memory on a small
+model summarizes each message into lines the chat's model works from, and that a change applies
+from each chat's next summary.
+
+- **Primary and an optional Fallback**, each the Delegate row — Backend, Model, Effort
+  (`WorkerSlotRow`), its model lists from `GET /api/settings/memory/options` with that row's
+  "not offered" and "not verified" notes, but without the "off for subagents" marks (a summarizer
+  is not a worker; a model turned off in Settings → Models still says so) — and the Fallback
+  switch; with it off, "No fallback: when the primary can't run, summaries wait until it can."
+  The default is Claude Code `claude-haiku-5-5` (Haiku 5.5) at effort `low`, no fallback;
+  **Reset to Defaults** in the section heading fills it in and saves nothing, disabled while the
+  form already shows it.
+- **Picks wait for Save** (§app.settings-dialog/save-bar), as "Memory" in the footer. Save waits
+  for a model and an effort in every row and a fallback that isn't the primary ("Memory needs a
+  primary model.", …). A failed save keeps the draft under "Couldn't save the memory settings."
+  with the reason; a save the server notes (an unverified or turned-off model) says "Saved, with
+  notes." and lists them.
+- A failed read says "Couldn't load the memory settings." with Try Again; a failed check of the
+  offered models says "Couldn't check which models are offered." with Check Again, the saved
+  choices marked not verified.
+- The default memory type and size new chats start from are the mode menu's Save as default
+  (§chat.mode-menu/memory-panel); a save here keeps them. The footnote says so under the file's
+  path ("Stored in ~/….json. The memory type new chats start from is saved from a chat's mode
+  menu, with Save as default.").
+
 ## §app.settings-dialog/themes — Themes
 
 The eighth tab. It lists every theme the app can find — the ones shipped with it and the ones
@@ -603,7 +632,7 @@ Folders box or the tab writes nothing.
 ## §app.settings-dialog/save-bar — One Save in the footer, one close-hold
 
 Every Settings tab that writes a file on the server is Save-gated: **Models**, **Subagents**
-(the library and this device's default), **Overseer**, **Notifications** (the **Phone Notifications** form), **Decisions**, **Summaries**, **Organizations**,
+(the library and this device's default), **Overseer**, **Notifications** (the **Phone Notifications** form), **Decisions**, **Summaries**, **Memory**, **Organizations**,
 **Mesh**, **Alignment** and **Experimental**. A change on them is staged, never written as it is made. No form has a Save or
 Discard button of its own: saving is the dialog's.
 

@@ -2,8 +2,9 @@
 
 The site's front page (`/`) introduces Sova to someone who has not installed it. It shows the
 product through real captures of the app (the screens manifest) rather than drawings, and it
-works at every width from a small phone to a wide desktop without sideways scrolling. The site
-sits outside the spec's code boundary.
+works at every width from a small phone to a wide desktop without sideways scrolling. The landing
+page, its mock-ups, screenshots and brand artwork are excluded from the spec's code boundary on
+purpose: the spec covers the site's docs only (§site/docs).
 
 ## §site.landing/fold-device — The foldable in "Off the desk"
 

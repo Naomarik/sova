@@ -96,6 +96,15 @@ describe("pushPayload", () => {
     assert.equal(p.tag, "sova:several");
     assert.equal(p.hash, "#/overseer");
   });
+  test("WhatsApp down, of no session: its kind word as the title, its sentence, its own tag, opens Settings → Outreach", () => {
+    const wa = { id: "whatsapp-sender", path: "", kind: "whatsapp-down", title: "WhatsApp sending", detail: "WhatsApp sending is down: x.", href: "#/settings/outreach" } as never;
+    const p = pushPayload([wa], 1, 5, plain);
+    assert.deepEqual([p.title, p.body, p.tag, p.hash], ["WhatsApp down", "WhatsApp sending is down: x.", "sova:whatsapp-sender", "#/settings/outreach"]);
+    const d = pushDecision({ ...base, current: [wa], announced: new Set() });
+    assert.deepEqual(keysOf(d), ["whatsapp-sender:whatsapp-down"], "on by default, sent once until it clears");
+    const off = pushDecision({ ...base, settings: { ...settings(), kinds: { ...settings().kinds, "whatsapp-down": false } }, current: [wa], announced: new Set() });
+    assert.deepEqual(off.send, [], "its own switch");
+  });
   test("title and body go through the redactor, and are capped", () => {
     const secret = "sk-live-0123456789abcdefXYZ";
     const r = new Redactor([], {});

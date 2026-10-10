@@ -784,6 +784,11 @@ thing it waits on being done.
   opening the project page (its Deploy panel). The head's count and the spine's door count them too, and
   the head's title says how many are deploy items ("The 2 sessions waiting on you, newest first, and 1
   deploy item." / "1 deploy item waiting on you.").
+- **WhatsApp sending down** (`whatsapp-down`, §app.outreach/sender-health), of no session too, lists
+  the same way, one row per sender: "WhatsApp sending", the digest's sentence and "Settings →
+  Outreach", opening Settings → Outreach, with an **Open Outreach Settings** button under it. The
+  head's count includes it, and its title names it ("… and 1 deploy item and WhatsApp sending." /
+  "WhatsApp sending waiting on you.").
 - **Rows** are the same `SessionRow` as everywhere else — rail, marks, meta line, accessible name —
   with one difference: **line 2 is the digest's sentence** for the session's newest act item
   ("3 open questions in al_3 Autonomy settings", "Waiting on a dialog.", "429 rate limited", "1 subagent ended in an error."), in place of the gist
@@ -793,7 +798,8 @@ thing it waits on being done.
 - **No row menu, no put-away.** A Needs you row carries no button of its own and no menu, except
   a session whose act item is a proposed playbook run (`playbook-review`,
   §app.project-runtime/review): under its row, **Merge Branch**, which acts
-  at once and says a refusal's reason under it. Otherwise: a press
+  at once and says a refusal's reason under it; and WhatsApp sending down's **Open Outreach
+  Settings**. Otherwise: a press
   held on it and let go selects it (§app.session-list/selecting-several-sessions), one that moves
   opens the drop overlay (§app.session-list/drop-overlay), and a right-click is the browser's, as
   on every other row.

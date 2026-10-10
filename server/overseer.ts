@@ -26,6 +26,7 @@ import { type AttentionRow, blockerCount, blockerKey, buildDigest, mergedBranch,
 import { readIndex, stakeholderAttention } from "./orgs";
 import { heldAttention } from "./project-holds";
 import { conflictAttention } from "./decisions";
+import { senderAttention } from "./outreach/health";
 import { notSentAttention } from "./outreach/log";
 import { readinessChecksOf, restartItems } from "./merge-readiness";
 import {
@@ -358,7 +359,8 @@ export function attentionDigest(): Promise<ReturnType<typeof buildDigest>> {
     // (the refit), and the one restart item of the whole server (§chat.worktrees/readiness), never one per session.
     // A deploy target whose latest deploy failed, and an overseer's request to deploy (§app.project-services/deploy-status).
     const deploys = await deployAttentionItems().catch(() => []);
-    return buildDigest(rows, Date.now(), homedir(), [...stakeholderAttention(), ...heldAttention(), ...notSentAttention(), ...conflictAttention(), ...restartItems(sessions), ...deploys]);
+    // WhatsApp sending down (§app.outreach/sender-health): from the sender's last reading, no round trip.
+    return buildDigest(rows, Date.now(), homedir(), [...stakeholderAttention(), ...heldAttention(), ...notSentAttention(), ...senderAttention(), ...conflictAttention(), ...restartItems(sessions), ...deploys]);
   })();
   digestMemo = { at: now, value };
   value.catch(() => {

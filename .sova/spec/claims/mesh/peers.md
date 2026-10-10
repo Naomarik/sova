@@ -78,7 +78,9 @@ The capabilities are:
 - the LLM in-flight count (§app.insights/llm-inflight);
 - each sync category (settings, themes, extensions, logins);
 - outreach (§app.outreach/sender-route) and share (§mesh/public);
-- admin: renaming this host, its Browser access, settings and every other write.
+- admin: renaming this host, its Browser access, settings and every other write, and reconnecting
+  this host's WhatsApp sender for the peer (§app.outreach/sender-controls), which the outreach
+  capability alone never allows.
 
 Starting a session runs commands as the user, so the page says that granting sessions grants
 everything else in effect, and that the finer switches matter only while sessions is off.

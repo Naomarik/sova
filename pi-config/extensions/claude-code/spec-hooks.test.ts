@@ -45,9 +45,9 @@ const event = (root: string, extra: Partial<HookInput>): HookInput => ({ session
 const context = (out: any): string => out?.hookSpecificOutput?.additionalContext ?? "";
 const C = ["-c", "user.email=t@t", "-c", "user.name=t"];
 
-test("specHookSettings: turn, pre and post (after ANY tool), run by node with the core and state dirs, nothing at Stop; withClaudeSettings keeps a sandbox's settings and hooks", () => {
+test("specHookSettings: turn, pre and post (after ANY tool, and after a failed or denied one), run by node with the core and state dirs, nothing at Stop; withClaudeSettings keeps a sandbox's settings and hooks", () => {
 	const settings = specHookSettings({ node: "/usr/bin/node", coreDir: "/c ore", stateDir: "/s" }) as any;
-	assert.deepEqual(Object.keys(settings.hooks).sort(), ["PostToolUse", "PreToolUse", "UserPromptSubmit"]);
+	assert.deepEqual(Object.keys(settings.hooks).sort(), ["PermissionDenied", "PostToolUse", "PostToolUseFailure", "PreToolUse", "UserPromptSubmit"]);
 	assert.equal(settings.hooks.PreToolUse[0].matcher, "*");
 	assert.equal(settings.hooks.PostToolUse[0].matcher, "*");
 	assert.equal(settings.hooks.PostToolUse[0].hooks[0].command, `/usr/bin/node ${SPEC_HOOK_SCRIPT} post --core '/c ore' --state /s`);
@@ -369,6 +369,74 @@ test("a commit another process made between calls is no census note; the worker'
 	assert.match(await s.bash(root, "echo n > src/new.txt"), /src\/new\.txt → unclaimed/, "a planted unclaimed file is still flagged");
 });
 
+/**
+ * A Claude session whose Bash calls really run; a call that exits non-zero goes to PostToolUseFailure, never
+ * PostToolUse, and runs a hook only if specHookSettings registers one for it (the event word in its command).
+ */
+function failingSession(stateDir: string) {
+	const o = { core: CORE, stateDir };
+	const failure = (specHookSettings({ node: "node", coreDir: CORE, stateDir, script: "S" }) as any).hooks.PostToolUseFailure?.[0]?.hooks?.[0]?.command?.split(" ")[2] as string | undefined;
+	let n = 0;
+	return {
+		turn: (cwd: string) => runHook("turn", event(cwd, { hook_event_name: "UserPromptSubmit" }), o),
+		bash: async (cwd: string, command: string) => {
+			const tool_use_id = `toolu_${++n}`, tool_input = { command };
+			await runHook("pre", event(cwd, { hook_event_name: "PreToolUse", tool_name: "Bash", tool_use_id, tool_input }), o);
+			const status = spawnSync("bash", ["-c", command], { cwd }).status;
+			if (status === 0) return { failed: false, out: await runHook("post", event(cwd, { hook_event_name: "PostToolUse", tool_name: "Bash", tool_use_id, tool_input, tool_response: {} }), o) as any };
+			const input = { hook_event_name: "PostToolUseFailure", tool_name: "Bash", tool_use_id, tool_input, error: `Exit code ${status}` } as Partial<HookInput>;
+			return { failed: true, out: failure ? await runHook(failure, event(cwd, input), o) as any : undefined };
+		},
+	};
+}
+
+test("a failed call (PostToolUseFailure) closes the call: another process's later commit is no note; the failed command's own write is noted at the failed call", async () => {
+	const settings = specHookSettings({ node: "/usr/bin/node", coreDir: CORE, stateDir: "/s" }) as any;
+	assert.equal(settings.hooks.PostToolUseFailure?.[0]?.matcher, "*", "a hook runs after a failed call of any tool");
+	const foreign = (root: string) => {
+		write(root, "src/b.txt", "theirs\n");
+		write(root, "src/a.txt", "theirs\n");
+		git(root, ...C, "add", "-A");
+		git(root, ...C, "commit", "-qm", "elsewhere");
+	};
+	// A read-only call that fails (a grep with no match), then another process commits, then a read-only call.
+	let { root, stateDir } = project();
+	let s = failingSession(stateDir);
+	await s.turn(root);
+	const grep = await s.bash(root, "grep -q nomatch src/a.txt");
+	assert.ok(grep.failed);
+	foreign(root);
+	const quiet = [context(grep.out), context((await s.bash(root, "git log -1 --oneline")).out)].join("\n");
+	assert.doesNotMatch(quiet, /\[spec census\]|No draft yet/, `read-only calls after a failed call and another process's commit: ${quiet}`);
+
+	// Guard: a failing command's own write is still this session's, said by the failed call's own hook.
+	({ root, stateDir } = project());
+	s = failingSession(stateDir);
+	await s.turn(root);
+	const own = await s.bash(root, "echo own > src/own.txt && false");
+	assert.ok(own.failed);
+	assert.equal(own.out?.hookSpecificOutput?.hookEventName, "PostToolUseFailure");
+	assert.match(context(own.out), /New: src\/own\.txt → unclaimed/, context(own.out));
+	assert.match(context(own.out), /No draft yet/);
+	foreign(root);
+	const after = context((await s.bash(root, "git log -1 --oneline")).out);
+	assert.doesNotMatch(after, /\[spec census\]|src\/b\.txt/, `another process's commit after the failed call: ${after}`);
+	// Guard: a successful own write after all that still gets its note.
+	assert.match(context((await s.bash(root, "echo n > src/new.txt")).out), /New: src\/new\.txt → unclaimed/);
+	// A denied call (PermissionDenied) never ran: it closes too, so another process's commit after it is no note.
+	({ root, stateDir } = project());
+	await runHook("turn", event(root, {}), { core: CORE, stateDir });
+	const denied = { tool_name: "Bash", tool_use_id: "toolu_denied", tool_input: { command: "rm -rf src" } };
+	await runHook("pre", event(root, { hook_event_name: "PreToolUse", ...denied }), { core: CORE, stateDir });
+	const deny = (specHookSettings({ node: "node", coreDir: CORE, stateDir, script: "S" }) as any).hooks.PermissionDenied?.[0]?.hooks?.[0]?.command?.split(" ")[2];
+	assert.ok(deny, "a hook runs after a denied call");
+	assert.equal(context(await runHook(deny, event(root, { hook_event_name: "PermissionDenied", ...denied }), { core: CORE, stateDir })), "");
+	foreign(root);
+	s = failingSession(stateDir);
+	const afterDeny = context((await s.bash(root, "git log -1 --oneline")).out);
+	assert.doesNotMatch(afterDeny, /\[spec census\]|No draft yet/, `another process's commit after a denied call: ${afterDeny}`);
+});
+
 test("the script entry under a PATH whose `node` exits 1 (an untrusted mise.toml's shim): the census still runs; a census that does crash says why, its first stderr error line", () => {
 	const { root, stateDir } = project();
 	const shim = fs.mkdtempSync(path.join(os.tmpdir(), "node-shim-"));
@@ -438,4 +506,76 @@ test("the write guard reads file state: a promote through a wrapper script and `
 	await s.turn(root);
 	assert.equal(directWrites(await s.bash(root, "sed -i 's/a thing/a hand thing/' .sova/spec/claims/app/x.md")), 1, "sed -i on claims is a direct write");
 	assert.equal(directWrites(await s.edit(root, ".sova/spec/claims/app/x.md", "# §app/x\n\nEdited.\n")), 1, "an Edit on claims is a direct write");
+});
+
+test("a claims file a merge leaves in conflict gets the one recovery, with the default branch and the merge-claims setup; said once", async () => {
+	const { root, stateDir } = project();
+	git(root, ...C, "checkout", "-qb", "feat");
+	write(root, ".sova/spec/claims/app/x.md", "# §app/x\n\nX does a feat thing.\n");
+	git(root, ...C, "commit", "-qam", "feat");
+	git(root, "checkout", "-q", "main");
+	write(root, ".sova/spec/claims/app/x.md", "# §app/x\n\nX does a main thing.\n");
+	git(root, ...C, "commit", "-qam", "main");
+	git(root, "checkout", "-q", "feat");
+	const s = session(stateDir);
+	await s.turn(root);
+	// The clone's own config only: no merge-claims driver comes from the developer's global config.
+	const saved = process.env.GIT_CONFIG_GLOBAL;
+	process.env.GIT_CONFIG_GLOBAL = "/dev/null";
+	let note: string;
+	try { note = await s.bash(root, `git ${C.join(" ")} merge main`); } finally { if (saved === undefined) delete process.env.GIT_CONFIG_GLOBAL; else process.env.GIT_CONFIG_GLOBAL = saved; }
+	assert.ok(fs.existsSync(path.join(root, ".git/MERGE_HEAD")), "a merge is in progress");
+	assert.match(note, /\[spec census\] \.sova\/spec\/claims\/app\/x\.md is in conflict: take main's whole spec with `git checkout --no-overlay main -- \.sova\/spec\/manifest\.json \.sova\/spec\/claims` \(never `--ours`/);
+	assert.match(note, /then commit the claims\./);
+	assert.match(note, /The merge-claims driver isn't set up here/);
+	assert.equal(await s.bash(root, "true"), "", "said once per conflict");
+});
+
+/** A committed project: six § map src/view.tsx (one names the head title's `aria-describedby`), §app/voice maps src/voice.ts. */
+function rankedProject(others = ["a", "b", "c", "d", "e"]): { root: string; stateDir: string } {
+	const { root, stateDir } = project();
+	const claims: Record<string, unknown> = { "§app/head": { kind: "behavior", requires: [], code: ["src/view.tsx"] }, "§app/voice": { kind: "behavior", requires: [], code: ["src/voice.ts"] } };
+	for (const n of others) claims[`§app/other-${n}`] = { kind: "behavior", requires: [], code: ["src/view.tsx"] };
+	write(root, ".sova/spec/manifest.json", JSON.stringify({ formatVersion: 1, grammar: { claimsRoot: "claims/", directoryKinds: ["section"] }, boundary: { include: ["src"], exclude: [] }, claims }));
+	fs.rmSync(path.join(root, ".sova/spec/claims/app/x.md"));
+	write(root, ".sova/spec/claims/app/head.md", "# §app/head\n\nThe head title carries `aria-describedby` pointing at the context description.\n");
+	write(root, ".sova/spec/claims/app/voice.md", "# §app/voice\n\nA clip is at most 12 MB.\n");
+	for (const n of others) write(root, `.sova/spec/claims/app/other-${n}.md`, `# §app/other-${n}\n\nPane ${n} lists its workers.\n`);
+	write(root, "src/view.tsx", "export const Head = () => <h1>title</h1>;\n");
+	write(root, "src/voice.ts", "export const MAX = 12 * 1024 * 1024;\n");
+	git(root, "add", "-A");
+	git(root, ...C, "commit", "-qm", "ranked");
+	return { root, stateDir };
+}
+const UNREAD = /Unread § your change landed in:/;
+const unreadLines = (text: string) => text.split("\n").filter((l) => UNREAD.test(l));
+/** Runs the command after the unread line's "more:"/"unread:" in a shell with $core set, from `root`: its output. */
+function listedBy(line: string, root: string): string {
+	const cmd = line.slice(line.search(/(more|unread): node /)).replace(/^(more|unread): /, "");
+	const r = spawnSync("sh", ["-c", cmd], { cwd: root, env: { ...process.env, core: CORE }, encoding: "utf8" });
+	return r.stdout;
+}
+
+test("the unread line: once at the first call after the last edit, naming every unread § the change landed in; never after they are read or repeated; again for a new edit's new §", async () => {
+	const { root, stateDir } = rankedProject();
+	const s = session(stateDir);
+	await s.turn(root);
+	const view = ["§app/head", "§app/other-a", "§app/other-b", "§app/other-c", "§app/other-d", "§app/other-e"];
+	const edited = await s.edit(root, "src/view.tsx", 'export const Head = () => <h1 aria-describedby="context-desc">title</h1>;\n');
+	assert.match(edited, /§app\/head/, `the census digest maps the edit: ${edited}`);
+	assert.equal(unreadLines(edited).length, 0, "not on the edit itself");
+	const first = unreadLines(await s.bash(root, "git status --short"));
+	assert.equal(first.length, 1, `one line at the first call after the edit: ${first.join(" | ")}`);
+	assert.match(first[0]!, /read first §app\/head; \+5 more: node "\$core\/sova-spec\.mjs" census --changed --related /, first[0]);
+	const listed = listedBy(first[0]!, root);
+	for (const id of view) assert.ok(listed.includes(id), `${id} listed by the line's command (none dropped): ${listed}`);
+	assert.ok(!first[0]!.includes("§app/voice"), "a § the change didn't touch is not named");
+		for (const id of view) assert.equal(unreadLines(await s.bash(root, `${process.execPath} ${CORE}/sova-spec.mjs read '${id}' --no-frame --root .`)).length, 0, `no line while reading ${id}`);
+	assert.equal(unreadLines(await s.bash(root, "git status --short")).length, 0, "all read: no line, and never a repeat");
+	assert.equal(unreadLines(await s.edit(root, "src/voice.ts", "export const MAX = 16 * 1024 * 1024;\n")).length, 0, "not on the edit itself");
+	const again = unreadLines(await s.bash(root, "git status --short"));
+	assert.equal(again.length, 1, `a new edit's new §: the line again: ${again.join(" | ")}`);
+	assert.ok(again[0]!.includes("§app/voice"));
+	for (const id of view) assert.ok(!again[0]!.includes(id), `${id} was read: not named again`);
+	assert.equal(unreadLines(await s.bash(root, "git status --short")).length, 0, "said once");
 });

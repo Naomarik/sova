@@ -128,11 +128,7 @@ test("validators: the consumers' defaults are valid, garbage is not; theme files
   assert.equal(specs["settings:provider-limits.json"]!.valid(JSON.stringify({ version: 1, limits: { zai: 5 } })), true);
   assert.equal(specs["settings:provider-limits.json"]!.valid(JSON.stringify({ version: 1, limits: { zai: 0 } })), false);
   assert.equal(specs["settings:provider-limits.json"]!.valid(JSON.stringify({ version: 1, limits: {}, extra: true })), false);
-  assert.equal(specs["settings:usage-windows.json"]!.path, "/a/usage-windows.json");
-  assert.equal(specs["settings:usage-windows.json"]!.valid(JSON.stringify({ version: 1, ollama: { resetDay: 14 } })), true);
-  assert.equal(specs["settings:usage-windows.json"]!.valid(JSON.stringify({ version: 1 })), true);
-  assert.equal(specs["settings:usage-windows.json"]!.valid(JSON.stringify({ version: 1, ollama: { resetDay: 32 } })), false);
-  assert.equal(specs["settings:usage-windows.json"]!.valid("not json"), false);
+  assert.equal(specs["settings:usage-windows.json"], undefined, "Ollama's old declared reset day is no longer a document");
   assert.equal(specs["settings:sova/settings.json"]!.valid("{}"), false);
   // Yours: the whole file, checked with the profile store's strict parser.
   const yours = specs["settings:sova/session-profiles.json"]!;

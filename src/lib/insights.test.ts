@@ -649,20 +649,11 @@ test("windowPace: the elapsed share and its words; no tick once the reset passed
   assert.equal(windowPace({ label: "7d", pct: 0, resetsAt: inMs(8 * D), startsAt: inMs(D) }, NOW)!.elapsed, 0);
 });
 
-test("windowPace: a declared month counts calendar days, Feb clamped from day 31", () => {
-  // The server's window for reset day 31, read on Feb 10 2027 (local): Jan 31 → Feb 28.
-  const now = new Date(2027, 1, 10, 15).getTime();
-  const w = { label: "month", pct: 40, startsAt: new Date(2027, 0, 31).toISOString(), resetsAt: new Date(2027, 1, 28).toISOString(), declared: true as const };
-  assert.equal(windowPace(w, now)!.progress, "day 11 of 28");
-  // Reset day 14: Sep 14 → Oct 14 is 30 days, and Oct 1 is its 18th.
-  const oct = { label: "month", pct: 97, startsAt: new Date(2026, 8, 14).toISOString(), resetsAt: new Date(2026, 9, 14).toISOString(), declared: true as const };
-  assert.equal(windowPace(oct, new Date(2026, 9, 1, 9).getTime())!.progress, "day 18 of 30");
-  // Its words: the reset is a date, with no clock time.
-  const at = new Date(2026, 9, 1, 9).getTime();
-  assert.equal(paceWords(oct, at), `Monthly: 97% used · day 18 of 30 · resets ${shortDate(Date.parse(oct.resetsAt), at)}`);
-  assert.equal(shortDate(Date.parse(oct.resetsAt), at), "Oct 14");
-  // And the card says the date, never a countdown to that midnight.
-  assert.equal(meterReset(oct, at)!.lead, "Resets Oct 14 · day 18 of 30");
+test("windowPace: a month with no reset (Ollama's legacy percent) has no tick, progress or reset words", () => {
+  const w = { label: "month", pct: 40 };
+  assert.equal(windowPace(w, NOW), null);
+  assert.equal(meterReset(w, NOW), null);
+  assert.equal(paceWords(w, NOW), "Monthly: 40% used");
 });
 
 test("paceTone: error at 90%, warn more than 10 points ahead of the tick, else from 80% without one", () => {

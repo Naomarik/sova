@@ -3,106 +3,6 @@ import type { UsageProvider } from "../../shared/protocol";
 import { calendarDay, clockTime, dateClock, stampTime } from "../lib/format";
 import { activityMetrics, activityTrend, currentIncluded, endpointPrevious, includedCreditPct, reportedMoney } from "../lib/ollama-usage";
 
-/** Ollama's declared reset day on its card: the day (null: none set) and how to save one. */
-export interface ResetDayControl {
-  day: number | null;
-  save(day: number | null): Promise<void>;
-}
-
-/**
- * "Set" / "Change" and the inline day-of-month field it opens (§app.insights/usage-reset-day):
- * Enter or Save sends a day of 1–31, Escape or Cancel closes, Clear (once set) removes it.
- */
-export function ResetDay(props: { c: ResetDayControl }) {
-  const [open, setOpen] = createSignal(false);
-  const [value, setValue] = createSignal("");
-  const [error, setError] = createSignal<string | null>(null);
-  const [busy, setBusy] = createSignal(false);
-  let input: HTMLInputElement | undefined;
-  const start = () => {
-    setValue(props.c.day !== null ? String(props.c.day) : "");
-    setError(null);
-    setOpen(true);
-    queueMicrotask(() => input?.focus());
-  };
-  const send = async (day: number | null) => {
-    setBusy(true);
-    try {
-      await props.c.save(day);
-      setOpen(false);
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
-  const submit = () => {
-    const v = value().trim();
-    const day = Number(v);
-    if (!/^\d{1,2}$/.test(v) || day < 1 || day > 31) return setError("Enter a day from 1 to 31.");
-    void send(day);
-  };
-  return (
-    <Show
-      when={open()}
-      fallback={
-        <button type="button" class="usage-reset-day-link" onClick={start}>
-          {props.c.day === null ? "Set" : "Change"}
-        </button>
-      }
-    >
-      <form
-        class="usage-reset-day-field"
-        // Our own message, not the browser's bubble: a day outside 1–31 says it in the card.
-        noValidate
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (!busy()) submit();
-        }}
-      >
-        <label for="usage-reset-day-input">Reset day</label>
-        <input
-          ref={input}
-          id="usage-reset-day-input"
-          class="input"
-          type="number"
-          inputmode="numeric"
-          min="1"
-          max="31"
-          value={value()}
-          aria-invalid={error() ? "true" : undefined}
-          aria-describedby={error() ? "usage-reset-day-error" : undefined}
-          onInput={(e) => setValue(e.currentTarget.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") {
-              e.preventDefault();
-              setOpen(false);
-            }
-          }}
-        />
-        <button type="submit" class="button button-sm" aria-disabled={busy() ? "true" : undefined}>
-          Save
-        </button>
-        <Show when={props.c.day !== null}>
-          <button type="button" class="button button-sm button-ghost" aria-disabled={busy() ? "true" : undefined} onClick={() => !busy() && void send(null)}>
-            Clear
-          </button>
-        </Show>
-        <button type="button" class="button button-sm button-ghost" onClick={() => setOpen(false)}>
-          Cancel
-        </button>
-      </form>
-      <Show when={error()}>
-        {(m) => (
-          <p class="usage-reset-day-error" id="usage-reset-day-error" role="alert">
-            {m()}
-          </p>
-        )}
-      </Show>
-    </Show>
-  );
-}
-
 /** The daily chart's height, its widest bar pitch and the narrowest. */
 const DAILY_H = 64;
 const DAILY_PITCH_MAX = 32;
@@ -172,10 +72,9 @@ function dayLabel(b: { date: string; from: string }, now: number): string {
 
 /**
  * Ollama's lines (§app.insights/ollama-credits, §app.insights/ollama-activity): included credits
- * and activity, each a meter block and a trend block, then the declared reset when it applies.
- * Its sources are separate from quota windows and the device's API-price ledger.
+ * and activity, each a meter block and a trend block. Its sources are separate from quota windows and the device's API-price ledger.
  */
-export function OllamaLines(props: { p: UsageProvider; now: number; resetDay?: ResetDayControl }) {
+export function OllamaLines(props: { p: UsageProvider; now: number }) {
   const activity = () => props.p.activity;
   const credits = () => props.p.credits;
   const period = () => credits()?.data?.included?.period;
@@ -280,13 +179,6 @@ export function OllamaLines(props: { p: UsageProvider; now: number; resetDay?: R
               </div>
             </Show>
           </section>
-        )}
-      </Show>
-      <Show when={!period() && props.p.windows.length === 0 && props.resetDay}>
-        {(c) => (
-          <div class="meter-context usage-declared-reset">
-            Declared subscription reset: {c().day === null ? "Unknown" : `day ${c().day} of each month`} · <ResetDay c={c()} />
-          </div>
         )}
       </Show>
     </>

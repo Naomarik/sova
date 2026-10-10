@@ -2541,10 +2541,9 @@ export interface WorkerResumeResult { worker: WorkerInfo | null }
 export interface UsageWindow { label: string; pct: number; resetsAt?: string; /** Raw counts when the provider exposes them (e.g. z.ai MCP calls: used/limit). */
   used?: number; limit?: number; /** Model-family scope when the window only covers a subset (e.g. Claude's "7d scoped" Fable window). */
   scope?: string; /** Provider-flagged binding constraint (currently active limit). */
-  active?: boolean; /** When the window began, when its own data says (OpenAI: resetsAt minus its length; Ollama: the
-      user's reset day). Absent: its length is its label's, if the label states one (§app.insights/pace-tick). */
-  startsAt?: string; /** The reset is the user's declared day (usage-windows.json), not the provider's answer. */
-  declared?: true; /** How fast it is going, from this device's recorded readings (§app.insights/usage-burn). Absent from an older server. */
+  active?: boolean; /** When the window began, when its own data says (OpenAI: resetsAt minus its length).
+      Absent: its length is its label's, if the label states one (§app.insights/pace-tick). */
+  startsAt?: string; /** How fast it is going, from this device's recorded readings (§app.insights/usage-burn). Absent from an older server. */
   burn?: UsageBurn; /** Its keys in the usage history, whenever it has a series (even with no burn): the charts and the 5-hour strip ask the history route with them. */
   history?: { series: string; window: string } }
 /**
@@ -2670,17 +2669,11 @@ export interface UsageInsight {
       (§app.insights/usage-cards). Absent from an older server; the page then shows the
       one Claude card from `providers`. */
   claudeLogins?: UsageClaudeLogin[];
-  /** Ollama Cloud's declared reset day (usage-windows.json, §app.insights/usage-reset-day): 1..31,
-      or null while none is set. Absent from an older server. */
-  ollamaResetDay?: number | null;
   /** macOS only: Claude Code's own login is in neither `.credentials.json` nor a keychain this
       server can read (§app.claude-logins/macos-keychain); the page says to add it under Settings →
       Accounts. Absent otherwise. */
   claudeOwnLoginUnreadable?: true;
 }
-/** `PUT /api/insights/usage/reset-day`: set (1..31) or clear (null) a provider's declared reset
-    day; answers with the whole UsageInsight. */
-export interface UsageResetDayRequest { provider: "ollama"; day: number | null }
 /** One Claude login's card on the Usage page. Identity and standing only: never a token. */
 export interface UsageClaudeLogin {
   /** `default` (Claude Code's own directory) or `l-` and 8 hex digits. */

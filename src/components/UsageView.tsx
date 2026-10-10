@@ -1,6 +1,6 @@
 import { createSignal, For, type JSX, Match, onCleanup, Show, Switch } from "solid-js";
 import type { UsageBalance, UsageClaudeLogin, UsageInsight, UsageProvider, UsageWindow } from "../../shared/protocol";
-import { putUsageResetDay, refreshUsage } from "../lib/api";
+import { refreshUsage } from "../lib/api";
 import { balanceBurnLine, burnLines, chartSpan, shortSpan } from "../lib/usage-burn";
 import { duration, relativeIn, relativeTime } from "../lib/format";
 import {
@@ -34,13 +34,13 @@ import type { Poll } from "../lib/poll";
 import { InsightsPage, iso } from "./InsightsPage";
 import { Banner, Chip, CountChip, Icon } from "./ui";
 import { BurnChart, BurnLines, BurnStrip, Track } from "./UsageHistory";
-import { OllamaLines, ResetDay, type ResetDayControl } from "./UsageOllama";
+import { OllamaLines } from "./UsageOllama";
 
 /**
  * One window's summary (number, bar, reset, uses and burn), paired with its history.
  * The rate stays with the reading rather than leaving an empty column beside a tall chart.
  */
-function WindowLine(props: { w: UsageWindow; now: number; past?: string; resetDay?: ResetDayControl }) {
+function WindowLine(props: { w: UsageWindow; now: number; past?: string }) {
   const reset = () => meterReset(props.w, props.now, props.past);
   /** The window already reset: the reading describes a window that's gone. */
   const past = () => Boolean(reset()?.time);
@@ -64,32 +64,13 @@ function WindowLine(props: { w: UsageWindow; now: number; past?: string; resetDa
           </span>
         </p>
         <Track pct={props.w.pct} at={at()} />
-        <Show
-          when={reset()}
-          fallback={
-            <Show when={props.resetDay}>
-              {(c) => (
-                <div class="meter-context">
-                  Reset day unknown · <ResetDay c={c()} />
-                </div>
-              )}
-            </Show>
-          }
-        >
+        <Show when={reset()}>
           {(r) => (
             <div class="meter-context" title={props.w.resetsAt}>
               {r().lead}
               <Show when={r().time}>
                 <span class="text-mono">{r().time}</span>
                 {r().rest}
-              </Show>
-              <Show when={props.resetDay}>
-                {(c) => (
-                  <>
-                    {" · "}
-                    <ResetDay c={c()} />
-                  </>
-                )}
               </Show>
             </div>
           )}
@@ -206,8 +187,6 @@ export function UsageRow(props: {
   noSignIn?: boolean;
   /** A ghost meter's sentence in place of "New reading at the next refresh." (a free login's figures). */
   past?: string;
-  /** Ollama's declared reset day, on its monthly meter. */
-  resetDay?: ResetDayControl;
 }) {
   const problem = (): UsageLine | null => (props.note ? { rest: props.note } : providerProblem(props.p, props.now));
   const signIn = () => (props.noSignIn ? null : authCaption(props.p, props.now));
@@ -229,11 +208,11 @@ export function UsageRow(props: {
           when={problem()}
           fallback={
             <>
-              <Show when={props.p.balance} fallback={<For each={props.p.windows}>{(w) => <WindowLine w={w} now={props.now} past={props.past} resetDay={w.label === "month" ? props.resetDay : undefined} />}</For>}>
+              <Show when={props.p.balance} fallback={<For each={props.p.windows}>{(w) => <WindowLine w={w} now={props.now} past={props.past} />}</For>}>
                 {(b) => <BalanceLine b={b()} />}
               </Show>
               <Show when={props.p.id === "ollama" && (props.p.activity || props.p.credits)}>
-                <OllamaLines p={props.p} now={props.now} resetDay={props.resetDay} />
+                <OllamaLines p={props.p} now={props.now} />
               </Show>
               <Show when={extraUsageMeter(props.p)}>{(x) => <ExtraLine x={x()} />}</Show>
               <Show when={props.p.limitReached}>
@@ -383,7 +362,7 @@ function UsageSkeleton() {
 }
 
 /** Separate provider surfaces, keeping every account of Claude together in payload order. */
-export function UsageGroups(props: { data: UsageInsight; now: number; resetDay?: ResetDayControl }) {
+export function UsageGroups(props: { data: UsageInsight; now: number }) {
   return (
     <div class="usage-groups">
       <For each={props.data.providers}>
@@ -391,7 +370,7 @@ export function UsageGroups(props: { data: UsageInsight; now: number; resetDay?:
           const logins = () => p.id === "claude" && props.data.claudeLogins?.length ? props.data.claudeLogins : null;
           return (
             <section class="card usage-rows" aria-labelledby={logins() ? "u-claude-group" : `u-${p.id}`}>
-              <Show when={logins()} fallback={<UsageRow p={p} now={props.now} resetDay={p.id === "ollama" ? props.resetDay : undefined} />}>
+              <Show when={logins()} fallback={<UsageRow p={p} now={props.now} />}>
                 {(accounts) => <>
                   <h2 class="usage-group-title" id="u-claude-group">{PROVIDER_NAME.claude}</h2>
                   <ClaudeAccountRows logins={accounts()} now={props.now} />
@@ -418,11 +397,6 @@ function UsageBody(props: {
 }) {
   const u = () => props.usage.data();
   const age = () => props.now - (u()?.fetchedAt ?? props.now);
-  /** Ollama's reset-day control, from a server that sends the day (an older one offers none). */
-  const resetDay = (d: UsageInsight): ResetDayControl | undefined =>
-    d.ollamaResetDay === undefined
-      ? undefined
-      : { day: d.ollamaResetDay, save: async (day) => props.usage.set(await putUsageResetDay(day)) };
   const retry = () => (
     <button type="button" class="button button-sm" aria-disabled={props.refreshing ? "true" : undefined} onClick={() => !props.refreshing && props.onRefresh()}>
       Retry
@@ -472,7 +446,7 @@ function UsageBody(props: {
             <Show when={data().claudeOwnLoginUnreadable}>
               <p class="usage-note">On macOS, add your Claude login under Settings → Accounts.</p>
             </Show>
-            <UsageGroups data={data()} now={props.now} resetDay={resetDay(data())} />
+            <UsageGroups data={data()} now={props.now} />
           </>
         )}
       </Match>

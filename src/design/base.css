@@ -4787,29 +4787,6 @@ a.group-picker-tile[aria-disabled="true"] { cursor: default; color: var(--color-
   width: 1px;
   background: var(--color-ink);
 }
-/* Ollama's declared reset day (§app.insights/usage-reset-day): a text button in the context
-   line, and the inline day field it opens. */
-/* "Set" / "Change": a quiet text button inside the muted line, underlined so it reads as one. */
-.usage-reset-day-link {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: var(--tap-min);
-  min-height: var(--tap-min);
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--color-ink-2);
-  font: inherit;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  cursor: pointer;
-}
-.usage-reset-day-link:hover { color: var(--color-ink); }
-.usage-reset-day-link:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); border-radius: var(--r-sm); }
-.usage-reset-day-field { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin: 0; font-size: var(--fs-caption); }
-.usage-reset-day-field .input { width: 7ch; min-height: var(--tap-min); }
-.usage-reset-day-error { margin: 0; font-size: var(--fs-caption); color: var(--status-error); }
 
 
 /* ---- SIDEBAR FOOT. Two rows, the doorways to #/usage and #/agents: always
@@ -5087,10 +5064,6 @@ a.group-picker-tile[aria-disabled="true"] { cursor: default; color: var(--color-
 .usage-credit-figures { display: grid; gap: var(--space-2) var(--space-5); margin-block: var(--space-2); }
 .usage-credit-meter { width: 100%; max-width: 18rem; }
 .usage-activity { padding-top: var(--space-4); border-top: var(--stroke-thin) solid var(--color-border); }
-.usage-declared-reset { padding-top: var(--space-3); border-top: var(--stroke-thin) solid var(--color-border); }
-/* The opened day field sits a gap under the "Declared subscription reset" line, not against it. */
-.usage-declared-reset .usage-reset-day-field { margin-top: var(--space-2); }
-.usage-declared-reset .usage-reset-day-error { margin-top: var(--space-1); }
 .usage-row .usage-logins { grid-area: logins; }
 .usage-row-auth { grid-area: auth; }
 /* The number reads first: weight, not size or hue. */

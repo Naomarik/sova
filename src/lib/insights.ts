@@ -203,10 +203,8 @@ export function meterReset(w: UsageWindow, now: number, past = "New reading at t
   const r = resetWhen(w.resetsAt, now);
   if (!r) return null;
   if (r.past) return { lead: "Reset at ", time: clockTime(w.resetsAt!), rest: `. ${past}` };
-  // A declared reset (the user's day) is a date, never a countdown to a midnight we computed.
-  const when = w.declared ? shortDate(Date.parse(w.resetsAt!), now) : r.when;
   const progress = windowPace(w, now)?.progress;
-  return { lead: `Resets ${when}${progress ? ` \u00b7 ${progress}` : ""}` };
+  return { lead: `Resets ${r.when}${progress ? ` \u00b7 ${progress}` : ""}` };
 }
 
 // ---- Pace (§app.insights/pace-tick): how much of the window has gone, beside how much is used ----
@@ -231,13 +229,6 @@ export function windowSpan(w: UsageWindow): { start: number; end: number } | nul
   return Number.isNaN(start) || start >= end ? null : { start, end };
 }
 
-/** Whole local calendar days from `a` to `b` (a declared month counts days, not 24h blocks). */
-function calendarDays(a: number, b: number): number {
-  const x = new Date(a);
-  const y = new Date(b);
-  return Math.round((Date.UTC(y.getFullYear(), y.getMonth(), y.getDate()) - Date.UTC(x.getFullYear(), x.getMonth(), x.getDate())) / DAY_MS);
-}
-
 /**
  * The pace of a window at `now`: `elapsed`, the share of its span gone (0..1, the tick), and
  * `progress` in words, "day 4 of 7" (a day or more) or "2h 10m of 5h". Null — no tick — when
@@ -250,8 +241,8 @@ export function windowPace(w: UsageWindow, now: number): { elapsed: number; prog
   const gone = Math.max(0, now - span.start);
   const elapsed = Math.min(1, gone / len);
   if (len < DAY_MS) return { elapsed, progress: `${duration(gone)} of ${duration(len)}` };
-  const total = w.declared ? calendarDays(span.start, span.end) : Math.round(len / DAY_MS);
-  const day = (w.declared ? calendarDays(span.start, now) : Math.floor(gone / DAY_MS)) + 1;
+  const total = Math.round(len / DAY_MS);
+  const day = Math.floor(gone / DAY_MS) + 1;
   return { elapsed, progress: `day ${Math.min(total, Math.max(1, day))} of ${total}` };
 }
 
@@ -267,17 +258,14 @@ export function paceTone(pct: number, elapsed: number | null): "warn" | "error" 
 
 /**
  * One window in words: "7-day: 50% used · day 4 of 7 · resets Oct 9 10:00 PM". The progress only
- * with a tick, the reset only when one is ahead; a declared reset is its date alone.
+ * with a tick, the reset only when one is ahead.
  */
 export function paceWords(w: UsageWindow, now: number): string {
   const parts = [`${windowLabel(w)}: ${pct(w)}% used`];
   const p = windowPace(w, now);
   if (p) parts.push(p.progress);
   const r = resetWhen(w.resetsAt, now);
-  if (r && !r.past) {
-    const at = Date.parse(w.resetsAt!);
-    parts.push(`resets ${w.declared ? shortDate(at, now) : stampTime(at, now)}`);
-  }
+  if (r && !r.past) parts.push(`resets ${stampTime(Date.parse(w.resetsAt!), now)}`);
   return parts.join(" \u00b7 ");
 }
 

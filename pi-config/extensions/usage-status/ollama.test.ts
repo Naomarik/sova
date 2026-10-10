@@ -214,5 +214,5 @@ test("pure TUI detail/footer present balances, cached included tokens, missing m
  assert.equal(ollamaCompact({ state: "na", activity: o.activity }, at), "oll act 9 req · credits ?");
  assert.equal(ollamaCompact({ state: "ok", usedPct: 42 }, at), undefined, "legacy footer stays on its original percentage renderer");
  assert.equal(ollamaCompact({ state: "ok", usedPct: 42, credits: { error: "ollama balance unavailable" } }, at), undefined, "an unavailable new endpoint does not replace the legacy percent footer");
- assert.deepEqual(ollamaDetail({ state: "ok", usedPct: 42 }, at), [], "legacy detail stays on its original declared-month renderer");
+ assert.deepEqual(ollamaDetail({ state: "ok", usedPct: 42 }, at), [], "legacy detail stays on its original monthly renderer");
 });

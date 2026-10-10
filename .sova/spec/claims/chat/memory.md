@@ -206,6 +206,29 @@ memory choice new chats start from. A missing or malformed file reads as the def
 `default` keeps the stored one); the write is atomic, and a model the policy refuses or that can't be
 verified saves with a warning.
 
+## §chat.memory/help — How memory works
+
+Settings → Memory has a small `?` button beside its heading (accessible name "How memory works",
+`aria-expanded` while open). With a mouse, hovering it (or focusing it from the keyboard) shows the
+one-line hint "How memory works"; a click or a tap opens the explanation, so a phone never needs
+hover. It opens as a small card anchored to the button, and as a bottom sheet below the 768px
+breakpoint, over a dimmed backdrop. It is a labelled dialog with an × button. Escape (which leaves
+Settings open) and the × close it with focus back on the `?`; so does a click or tap outside it, or
+focus moving out of it, leaving focus where the user put it. A tap outside the sheet closes only the
+sheet.
+
+It has two tabs, UniiChat and Zoomable compaction, opening on the saved default type when Settings
+has one, else UniiChat. Each tab says in 3–4 plain sentences how its type works and shows 2 static
+drawings drawn by the chat's own `vis` renderer (no Source or Copy, no model call): UniiChat's what
+the model reads each turn and how lines merge and open back into messages, crediting "by Victor
+Taelin" with "Read the design ↗" (§chat.memory/types); Zoomable compaction's the chat before and
+after it compacts. Under the tabs, "What the settings change" says what Summary size (each chat's,
+from the mode menu's Memory type panel) and the summarizer's model and effort (this page; Haiku 5.5
+at low effort by default) trade off. Its figures are the engine's: lines asked for at about 500
+characters, the sizes and defaults of `shared/memory.ts`, and a turn's 20-second wait
+(§chat.memory/tree, §chat.memory/turn, §chat.memory/zoomable). The `?` and its card or sheet are one
+reusable component.
+
 ## §chat.memory/overseer — The Overseer's memory
 
 The Overseer has no mode menu; its memory is a switch of its own, `GET`/`PUT /api/overseer/memory`

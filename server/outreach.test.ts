@@ -9,7 +9,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, before, describe, test } from "node:test";
 import { Hono } from "hono";
-import { ABSENT, agent, ann, app, bob, cleanup, gathering, gone, json, logOf, org, project, root, senderOpen, sendLink } from "./outreach-test-fixtures";
+import { ABSENT, agent, ann, app, bob, cleanup, gathering, gone, json, logOf, noSystemd, org, project, root, senderOpen, sendLink } from "./outreach-test-fixtures";
 import { inProcessSender } from "./outreach/sender-test-fixtures";
 import type { Channel, ChannelSend } from "./outreach/types";
 
@@ -24,6 +24,7 @@ const { SecretGuard } = await import("./overseer-deny");
 const po = await import("./project-overseer");
 const { hostOf } = await import("./org-engine");
 const { listPreviews, mintPreview } = await import("./preview-links");
+const { OVERSEER_SENDER_HEADER } = await import("./overseer-sender");
 
 const sender = inProcessSender({ env: process.env, absent: [ABSENT] });
 setSenderClientOptionsForTest({ connect: sender.connect, retryMs: 0 });
@@ -189,16 +190,17 @@ describe("§app.outreach/send-link", () => {
     assert.equal(r2.body.error, "Bob does not hold the baton, so there is no link to send.");
   });
 
-  test("the sender is down: failed, retryable, with why; nothing stays minted", async () => {
+  test("the sender is not running: refused at once, WhatsApp is down with why; nothing minted", async () => {
     stopSender();
     const sid = await gathering(ann.id);
     const n = batonById(sid)!.row.handoffs.at(-1)!.n;
     const before = liveLinks(sid, n).map((l) => l.hash);
     const r = await sendLink(sid);
-    assert.equal(r.body.outcome, "failed");
-    assert.equal(r.body.code, "unreachable");
-    assert.equal(r.body.retryable, true);
-    assert.deepEqual(liveLinks(sid, n).map((l) => l.hash), before, "nothing new stays minted; the older link is untouched");
+    assert.equal(r.body.outcome, "refused");
+    assert.equal(r.body.code, "sender-down");
+    assert.equal(r.body.why, "WhatsApp is down: The sender is not running (no socket answers).");
+    assert.deepEqual(liveLinks(sid, n).map((l) => l.hash), before, "nothing new minted; the older link is untouched");
+    assert.deepEqual([logOf().at(-1)!.event, logOf().at(-1)!.code], ["refused", "sender-down"]);
     const info = await json("GET", "/api/outreach");
     assert.equal(info.body.sender.state, "unreachable");
   });
@@ -442,3 +444,182 @@ describe("§app.outreach/secrets", () => {
     assert.ok(info.body.protected.includes(custom));
   });
 });
+
+describe("§app.outreach/sender-controls, /sender-health: the operator's own controls, Needs you, and an honest strip", () => {
+  const post = (op: string, body: unknown = {}, headers: Record<string, string> = {}, env?: unknown) =>
+    app.request(`/api/outreach/sender/${op}`, { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(body) }, env as never);
+  const strip = async (sid: string) => (await json("GET", `/api/baton/${sid}/outreach`)).body.people as { id: string; ready: boolean; why?: string; code?: string }[];
+
+  before(async () => {
+    sender.start();
+    await json("PUT", "/api/outreach", { sender: { local: {} }, paused: false, acceptFrom: ["nDESK"] });
+    await senderOpen();
+  });
+
+  test("only the operator's own browser: 404 relayed or from a peer, 403 for the Overseer's in-process call, which no tool makes", async () => {
+    for (const op of ["reconnect", "pause", "start"]) {
+      assert.equal((await post(op, { on: true }, { "X-Sova-Relayed": "1" })).status, 404, op);
+      assert.equal((await post(op, { on: true }, {}, { meshPeer: { id: "p" } })).status, 404, op);
+      const o = await post(op, { on: true }, { [OVERSEER_SENDER_HEADER]: "anything" });
+      assert.equal(o.status, 403, op);
+      assert.match(((await o.json()) as { error: string }).error, /Only the operator controls the WhatsApp sender/);
+    }
+    const tools = [...po.toolsForTest(project.id)].map((t) => JSON.stringify(t));
+    assert.ok(!tools.some((t) => /outreach\/sender/.test(t)), "no project overseer tool names the controls");
+    const { readFileSync } = await import("node:fs");
+    for (const f of ["overseer-tools.ts", "overseer-org-tools.ts", "project-overseer-tools.ts"]) assert.doesNotMatch(readFileSync(join(import.meta.dirname, f), "utf8"), /outreach\/sender/, f);
+  });
+
+  test("replaced: the strip says WhatsApp is down before any send, a send is refused at once, Needs you says so; Reconnect Now brings it back", async () => {
+    const { senderAttention } = await import("./outreach/health");
+    const sid = await gathering(ann.id);
+    sender.close(440);
+    const people = await strip(sid);
+    assert.deepEqual(people.map((p) => [p.ready, p.code, p.why]), [[false, "sender-down", "WhatsApp is down: Another process opened these credentials (440)."]]);
+    const t0 = Date.now();
+    const r = await sendLink(sid);
+    assert.deepEqual([r.body.outcome, r.body.code], ["refused", "sender-down"]);
+    assert.ok(Date.now() - t0 < 5000, "never the sender's 15 s wait");
+    const items = senderAttention();
+    assert.deepEqual(items.map((i) => [i.kind, i.tier, i.detail, i.href]), [["whatsapp-down", "act", "WhatsApp sending is down for This host: Another process opened these credentials (440).", "#/settings/outreach"]]);
+    const rc = await post("reconnect");
+    assert.equal(rc.status, 200, await rc.clone().text());
+    await senderOpen();
+    assert.deepEqual(senderAttention(), [], "it clears once the sender is open");
+    assert.deepEqual((await strip(sid)).map((p) => p.ready), [true]);
+    // Already open: the sender's own refusal, as a 409 with its sentence.
+    const again = await post("reconnect");
+    assert.equal(again.status, 409);
+    assert.equal(((await again.json()) as { error: string }).error, "Already connected.");
+  });
+
+  test("Pause Sender pauses the sender itself (every host's sends), apart from this host's switch; the strip says why; Resume Sender undoes it", async () => {
+    assert.equal((await post("pause", {})).status, 400);
+    const p = await post("pause", { on: true });
+    assert.equal(p.status, 200);
+    assert.equal(((await p.json()) as { sender: { paused: boolean }; file: { paused: boolean } }).sender.paused, true);
+    assert.equal((await json("GET", "/api/outreach")).body.file.paused, false, "this host's own switch is untouched");
+    const sid = await gathering(ann.id);
+    assert.deepEqual((await strip(sid)).map((x) => [x.code, x.why]), [["sender-paused", "WhatsApp sending is paused on the sender's host."]]);
+    const r = await post("pause", { on: false });
+    assert.equal(((await r.json()) as { sender: { paused: boolean } }).sender.paused, false);
+    assert.deepEqual((await strip(sid)).map((x) => x.ready), [true]);
+  });
+
+  test("a project overseer's held message due while WhatsApp is down waits in the hold for WhatsApp (at most 24 h), and goes when it is back", async () => {
+    const { heldActs, heldAttention } = await import("./project-holds");
+    const { setOrgClockForTest } = await import("./org-engine");
+    await po.ensureProjectOverseer(project.id);
+    await po.patchProjectOverseer(project.id, { autonomy: "L1", holdMin: 10 });
+    const tool = (name: string) => po.toolsForTest(project.id).find((t) => t.name === name)!;
+    const run = (name: string, args: Record<string, unknown>) => tool(name).execute("t", args as never, undefined, undefined, undefined as never);
+    const mine = () => logOf().filter((l) => l.by === "project-overseer");
+    const outage = () => hostOf(org.id).holds().filter((h) => h.event === "outreach/send" && h.wait === "outage");
+    const ref = () => {
+      const h = hostOf(org.id).holds().find((x) => x.event === "outreach/send")!;
+      return `${h.sessionId}:${h.id}`;
+    };
+    const before = mine().length;
+    await run("sova_send_to_person", { person: "Ann", note: "Your prototype is ready." });
+    sender.close(440);
+    await senderSettled("replaced");
+    const approved = JSON.stringify((await run("sova_hold", { op: "approve", id: ref(), reason: "test: go now" })).content);
+    assert.match(approved, /but WhatsApp is down: the message waits for WhatsApp to come back, at most until /);
+    assert.equal(mine().length, before, "nothing sent, nothing refused");
+    const [w] = outage();
+    assert.ok(w, "it waits in the project's hold");
+    assert.ok(Math.abs(w.until - (Date.now() + 24 * 3_600_000)) < 60_000, "a day from its first wait");
+    const listed = heldActs(project.id).find((h) => h.wait === "outage");
+    assert.equal(listed?.what, "A WhatsApp message to Ann");
+    assert.match(heldAttention().find((i) => i.held?.wait === "outage")?.detail ?? "", /^A WhatsApp message to Ann waits for WhatsApp to come back: it goes when WhatsApp is back/);
+    // Back up: it goes on its own.
+    assert.equal((await post("reconnect")).status, 200);
+    await senderOpen();
+    const end = Date.now() + 8000;
+    while (mine().length === before && Date.now() < end) await new Promise((r) => setTimeout(r, 50));
+    assert.deepEqual(mine().slice(before).map((l) => l.event), ["sent"]);
+    assert.deepEqual(outage(), []);
+
+    // Still down a day after its first wait: it goes ahead, is refused sender-down, and its project's Needs you says so.
+    await run("sova_send_to_person", { person: "Ann", note: "Second note." });
+    sender.close(440);
+    await senderSettled("replaced");
+    await run("sova_hold", { op: "approve", id: ref(), reason: "test: go now" });
+    const bound = outage()[0]!.until;
+    setOrgClockForTest(() => bound + 1);
+    try {
+      hostOf(org.id).fireDue();
+      const end2 = Date.now() + 8000;
+      while (mine().length === before + 1 && Date.now() < end2) await new Promise((r) => setTimeout(r, 50));
+    } finally {
+      setOrgClockForTest(null);
+    }
+    const last = mine().at(-1)!;
+    assert.deepEqual([last.event, last.code], ["refused", "sender-down"]);
+    assert.deepEqual(outage(), []);
+    const feed = hostOf(org.id).feed(project.id, { newestFirst: true });
+    assert.match(feed.find((f) => f.event === "outreach/not-sent")?.refused ?? "", /^Not sent to Ann: WhatsApp is down: /);
+    assert.equal((await post("reconnect")).status, 200);
+    await senderOpen();
+  });
+
+  test("the relay reconnects for a full-control peer, never a blocked account; the sender's own host does, and Resume lifts the block's pause", async () => {
+    const relay = new Hono<{ Bindings: { meshPeer?: unknown } }>();
+    const peers = [{ id: "desk", label: "Desk", nodeId: "nDESK", dnsName: "desk" }];
+    mountOutreachRelay(relay as unknown as Hono, { requestPeer: (c) => ((c.env as { meshPeer?: any })?.meshPeer ?? null), peers: () => peers as any });
+    const call = (op: string) => relay.request(`/api/peer/outreach/${op}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }, { meshPeer: peers[0] });
+    sender.close(440);
+    await senderSettled("replaced");
+    const ok = await call("reconnect");
+    assert.equal(ok.status, 200);
+    assert.equal(((await ok.json()) as { ok: boolean }).ok, true);
+    await senderOpen();
+    sender.close(403);
+    await senderSettled("blocked");
+    const refused = await call("reconnect");
+    assert.equal(refused.status, 403);
+    assert.equal(((await refused.json()) as { code: string }).code, "refused");
+    assert.equal((await call("pause")).status, 403, "pausing stays the host's own");
+    assert.equal((await post("reconnect")).status, 200, "the host's own page may, after its warning");
+    await senderOpen();
+    const info = (await json("GET", "/api/outreach")).body;
+    assert.equal(info.sender.paused, true, "a reconnect leaves the block's pause on");
+    await post("pause", { on: false });
+  });
+
+  test("Start Sender: offered only while the local sender doesn't answer and its unit serving this socket is stopped; one systemctl start", async () => {
+    const { setSystemctlForTest } = await import("./outreach/unit");
+    const calls: string[][] = [];
+    setSystemctlForTest(async (args) => {
+      calls.push(args);
+      if (args[0] === "show") return { code: 0, stdout: `LoadState=loaded\nActiveState=inactive\nEnvironment=PI_CODING_AGENT_DIR=${agent}\n` };
+      if (args[0] === "start") sender.start();
+      return { code: 0, stdout: "" };
+    });
+    try {
+      assert.equal((await json("GET", "/api/outreach")).body.unit, undefined, "running: nothing to start");
+      assert.equal((await post("start")).status, 409);
+      stopSender();
+      await senderSettled("unreachable");
+      const info = (await json("GET", "/api/outreach")).body;
+      assert.deepEqual(info.unit, { name: "sova-whatsapp.service", active: "inactive" });
+      const r = await post("start");
+      assert.equal(r.status, 200, await r.clone().text());
+      assert.deepEqual(calls.filter((c) => c[0] === "start"), [["start", "sova-whatsapp.service"]]);
+      await senderOpen();
+    } finally {
+      noSystemd();
+    }
+  });
+});
+
+/** Polls the outreach status until the sender reads `state`. */
+async function senderSettled(state: string, ms = 10_000): Promise<void> {
+  const end = Date.now() + ms;
+  let s = (await json("GET", "/api/outreach")).body.sender.state;
+  while (s !== state && Date.now() < end) {
+    await new Promise((r) => setTimeout(r, 20));
+    s = (await json("GET", "/api/outreach")).body.sender.state;
+  }
+  assert.equal(s, state);
+}

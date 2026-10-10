@@ -86,10 +86,13 @@ const NEXT = {
   blocked: 'wait a day or more, lower the limits, then sova-whatsapp reconnect and sova-whatsapp resume',
   down: 'fix the cause, then sova-whatsapp reconnect',
 }
+// `down` with a next try is a wait: it reconnects on its own then.
+const WAITING = 'none: it reconnects on its own at the next try (sova-whatsapp reconnect tries now)'
 
 function describeStatus(s) {
   const lines = [`state:      ${s.state}${s.why ? ` — ${s.why}` : ''}`]
-  if (NEXT[s.state]) lines.push(`next step:  ${NEXT[s.state]} (docs/outreach/whatsapp.md, "Recover")`)
+  const next = s.state === 'down' && s.retryAt ? WAITING : NEXT[s.state]
+  if (next) lines.push(`next step:  ${next} (docs/outreach/whatsapp.md, "Recover")`)
   if (s.retryAt) lines.push(`next try:   ${s.retryAt}`)
   lines.push(`paused:     ${s.paused ? 'yes' : 'no'}`)
   if (s.me) lines.push(`linked to:  ${s.me}`)

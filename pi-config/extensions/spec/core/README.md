@@ -202,8 +202,9 @@ read the current words.
 lists or that exists under the root; it is read with the core's own refusal rules. `mode: "path"`:
 `file: {path, state, mapped}`, then `ranked` lines (`score`, `shared` tokens, rarest first), then
 `unranked` lines (claims listing the file that share no token), top 10 unless `--all` (`total`,
-`shown`). An unmapped file lists up to 10 `candidate` lines (a name match, never a mapping), exit 1;
-an unreadable file keeps its claims unranked, exit 1. `mode: "token"`: `defines` lines (the token in
+`shown`; a cut list adds `notShown` and the `--all` `hint`, exit 1). An unmapped file lists up to 10 `candidate` lines (a name match, never a mapping), exit 1;
+an unreadable file keeps its claims unranked, exit 1. A path-shaped argument that is no file and no record's is searched as a token with `pathLike`,
+`file: {path, state: "absent", mapped: false}` and a `note`, exit 1. `mode: "token"`: `defines` lines (the token in
 the claim's heading or first sentence) then `mentions` lines, each with the matching backticked
 `spans`. An interface token is a backticked span (fences and comments masked) of 3+ characters with
 a letter and a separator, bracket or sigil, an inner capital, or all capitals; it occurs in a file
@@ -351,7 +352,13 @@ in refusal output. Git still runs with fsmonitor disabled and without a local sh
   is absent; `consumers` are transitive reverse `requires`, as `impact` computes them. A touched
   behavior without `requires` is a `touched-uninvestigated` note, never a warning, so the exit
   code is unchanged. Without `--related` the output is exactly as above. `--related` without
-  `--changed` is a usage error.
+  `--changed` is a usage error. It also ranks the foreign touched § by the changed lines (git diff
+  -U0 from the base; an untracked file is all added): `rank: [{id, rank, score, reason, stale}]` in
+  rank order (a § with a `stale` literal, one the change removed that its passage still states,
+  first; then score, the sum of the rarity weights of the code-shaped names, string literals and
+  2+-digit numbers its passage holds; then fewer mapped code files; then id), `readFirst` (at most
+  5 with a score or a stale literal) and `named` (every other one). Each foreign `touched` entry
+  carries its `rank`, `score`, `reason` and `stale` too.
 - **Foreign §s (every census --changed).** Reading `.sova/spec`, nothing is *created*. With
   `--spec DIR` (other than `.sova/spec`), an id is created when DIR's manifest has it and
   `.sova/spec/manifest.json` does not (a missing or unreadable current manifest counts as empty; its

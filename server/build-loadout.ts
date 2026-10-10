@@ -11,9 +11,9 @@ import { workingSubagents } from "./live";
 import { hostOf, isOrgHostOpen, onOrgChange, onOrgHostOpened, openEngineIds, type Effect, type OrgHostApi } from "./org-engine";
 import type { Envelope } from "./org-envelope";
 import { canonicalPath } from "./paths";
-import { projectOf } from "./project-overseer-store";
+import { projectOf, projectOverseerPaths, readPoState } from "./project-overseer-store";
 import { buildSid, engineOf, projectHost } from "./projects/spaces";
-import type { ProjectCodingMode } from "../shared/project-overseer";
+import type { CodingModeSwitch, ProjectCodingMode } from "../shared/project-overseer";
 import { cutWorktree, gitRootOf, mergeBack, readWorktree, removeWorktree, uncommitted, worktreePathOf, type GitRoot, type WorktreeReading, type WorktreeRecord } from "./project-worktrees";
 import { teardownCopyOf } from "./project-services/checkout-teardown";
 import { mainMoved } from "./project-services/on-merge";
@@ -272,24 +272,50 @@ async function createBuildSession(cwd: string, sessionId: string, d: Record<stri
 /** `customType` of the note a coding session started with no prompt gets: its worktree paragraph. */
 export const CODING_WORKTREE_NOTE = "sova-coding-worktree";
 
+/** What a mode switch left a coding session on: when it applies, its mode, and its subagent profile's name. */
+export interface CodingModeApplied {
+  applies: "now" | "after-turn";
+  mode: ProjectCodingMode;
+  profile: string | null;
+}
+
 /**
- * Set a coding session's mode and pin it (§app.project-overseer/tools, Modes): the mode extension's
- * own handler (applyMode), then the `mode` entry Sova writes itself, so the session keeps this mode
- * whatever mode.json says later. Throws when either can't be done: the caller then sends no prompt.
- * Returns when the switch applies (a running turn finishes in the old mode).
+ * Set a coding session's mode and pin it (§app.project-overseer/coding-mode): the mode extension's
+ * own handler (applyMode) over what it names (a partial switch keeps the rest of the session's own
+ * mode), then the `mode` entry Sova writes itself, so the session keeps this mode whatever mode.json
+ * says later, then the subagent profile it names, picked for this session only. Throws when any of it
+ * can't be done: the caller then sends no prompt. Says when the switch applies (a running turn
+ * finishes in the old mode) and what the session is on.
  */
-export async function applyCodingMode(path: string, mode: ProjectCodingMode): Promise<"now" | "after-turn"> {
+export async function applyCodingMode(path: string, mode: CodingModeSwitch): Promise<CodingModeApplied> {
   const chat = await acquireChat(path);
-  const plan = await chat.applyMode(mergeMode(chat.modeState, { mode: mode.mode, minorModes: mode.minorModes as never }));
-  if (plan !== "command")
-    throw new OrgError(plan === "unsupported" ? "the mode extension is not loaded in it" : "it is open in another writer (a terminal, or a process Sova doesn't know)", 409);
-  if (!chat.pinMode()) throw new OrgError("its mode entry could not be written", 409);
-  return chat.harness.isRunning() ? "after-turn" : "now";
+  const patch = { ...(mode.mode ? { mode: mode.mode } : {}), ...(mode.minorModes ? { minorModes: mode.minorModes as never } : {}) };
+  if (Object.keys(patch).length || mode.subagentProfile === undefined) {
+    const plan = await chat.applyMode(mergeMode(chat.modeState, patch));
+    if (plan !== "command")
+      throw new OrgError(plan === "unsupported" ? "the mode extension is not loaded in it" : "it is open in another writer (a terminal, or a process Sova doesn't know)", 409);
+    if (!chat.pinMode()) throw new OrgError("its mode entry could not be written", 409);
+  }
+  const profile = mode.subagentProfile !== undefined ? (await chat.switchSubagentProfile(mode.subagentProfile)).current.name : chat.subagentProfileInfo().current.name;
+  const now = chat.modeState;
+  return { applies: chat.harness.isRunning() ? "after-turn" : "now", mode: { mode: now.mode, minorModes: [...now.minorModes] }, profile: profile ?? null };
 }
 
 function sessionOf(host: OrgHostApi, e: Effect): { d: Record<string, unknown>; projectId: string; sessionId: string } {
   const d = host.data(e.sessionId) ?? {};
   return { d, projectId: str(d.projectId), sessionId: str(d.sessionId) };
+}
+
+/** The project overseer's conversation id, for the mark on a message its sova_send hands in: the effect's session is a
+    build (its `projectId`) or the project statechart (its `id`). Undefined when it can't be read: the mark then names none. */
+function projectOverseerIdOf(host: OrgHostApi, e: Effect): string | undefined {
+  const d = host.data(e.sessionId) ?? {};
+  const projectId = str(d.projectId) || str(d.id);
+  try {
+    return projectId ? (readPoState(projectOverseerPaths(projectId))?.current ?? undefined) : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function pathOrThrow(sessionId: string): string {
@@ -392,11 +418,11 @@ export function registerBuildEffects(host: OrgHostApi, engine: string): void {
     const overseer = await import("./session-prompt");
     const path = typeof e.session === "string" ? await overseer.pathOfId(e.session) : pathOrThrow(sessionOf(host, e).sessionId);
     if (!path) throw new Error("That session is not on this host.");
-    let modeApplies: "now" | "after-turn" | undefined;
-    if (e.mode) modeApplies = await applyCodingMode(path, e.mode as ProjectCodingMode);
-    const r = await overseer.promptSession(path, str(e.text));
+    const applied = e.mode ? await applyCodingMode(path, e.mode as CodingModeSwitch) : null;
+    // The project overseer's message, marked as an Overseer's (§app.overseer/sent-marker): never the operator's answer.
+    const r = await overseer.promptSession(path, str(e.text), undefined, "followUp", { projectOverseer: projectOverseerIdOf(host, e) });
     if (!r.ok) throw new Error(r.error);
-    return { queued: r.queued, ...(modeApplies ? { modeApplies } : {}) };
+    return { queued: r.queued, ...(applied ? { modeApplies: applied.applies, modeNow: applied.mode, profile: applied.profile } : {}) };
   });
 
   host.effects.register("merge", async (e) => {

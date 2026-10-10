@@ -24,7 +24,7 @@ export const CARRIED_RULES: readonly CarriedRule[] = [
 	{ anchor: "Where the task needs a change", sentences: 1 },
 	{ anchor: "Documentation changes only through drafts", sentences: 1 },
 	{ anchor: "Documenting what the code already does", sentences: 1 },
-	{ anchor: "Run `node \"$core/sova-spec.mjs\" census --changed", sentences: 1 },
+	{ anchor: "Read each § the census note's `Unread § your change landed in` line", sentences: 2 },
 	{ anchor: "The task's go-ahead authorizes", sentences: 2 },
 ];
 

@@ -1004,6 +1004,31 @@ describe("a model, thinking level or mode the Overseer sets applies to that sess
     assert.equal(pristine(created[n]!), true, "and no prompt reached it");
   });
 
+  test("sova_set_session never turns align off on a session waiting on alignment answers; keeping align on is allowed", async () => {
+    writeOverseerSettings({ ...defaultSettings() });
+    heldOnCreate = false;
+    let s: { id: string; path: string };
+    try {
+      s = await newSession();
+    } finally {
+      heldOnCreate = true;
+    }
+    // One open alignment question, the newest thing on the branch: the session waits on the user.
+    const { applyAlignCall } = await import("../pi-config/extensions/mode/align.ts");
+    const now = new Date().toISOString();
+    const { details } = applyAlignCall([], { ops: [{ op: "create", title: "Ports", summary: "Which ports.", questions: [{ topic: "Web", ask: "Which web port?", recommendation: { choice: "4000", why: "free" } }] }] }, { now, readFile: () => "" });
+    const line = { type: "message", id: "a1b2c3d4", parentId: null, timestamp: now, message: { role: "toolResult", toolCallId: "call_align1", toolName: "align", content: [{ type: "text", text: "ok" }], details, isError: false, timestamp: Date.now() } };
+    writeFileSync(s.path, `${JSON.stringify(line)}\n`, { flag: "a" });
+    markOwned(s.path);
+    assert.equal((await getSessionSummary(s.path))?.align?.openQuestions, 1, "it waits");
+    await userSends(await overseerChat(), "set its modes");
+    await assert.rejects(result("sova_set_session", { session: s.id, minor_modes: ["vis"] }), /It waits on the operator's alignment answers; align stays on until they answer\. Nothing was changed\./);
+    const pins = () => entriesOf(s.path).filter((e) => e.type === "custom" && e.customType === "mode");
+    assert.deepEqual(pins(), [], "nothing applied");
+    await result("sova_set_session", { session: s.id, minor_modes: ["align", "vis"] });
+    assert.deepEqual((pins().at(-1)?.data?.active as { minorModes?: string[] } | undefined)?.minorModes, ["align", "vis"], "align kept: allowed");
+  });
+
   test("sova_set_session on an empty session leaves the defaults file byte-identical", async () => {
     writeOverseerSettings({ ...defaultSettings() });
     mkdirSync(join(agentDir, "sova"), { recursive: true });

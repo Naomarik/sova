@@ -9,10 +9,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter, getEventListeners } from "node:events";
 import { spawn, type ChildProcess } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { BUILTIN_TOOLS, getPiInvocation, PI_PACKAGE, type SpawnOptions, SubagentRunner } from "./runner.ts";
+import { BUILTIN_TOOLS, STDERR_TAIL_BYTES, STDERR_TAIL_LINES, stderrTail, type SpawnOptions, SubagentRunner } from "./runner.ts";
 import { LLM_STATUS_KEY, snapshot as llmSnapshot } from "../llm-inflight/tracker.ts";
 
 for (const exitMode of ["natural", "term", "kill"]) test(`detached pipe holder cannot hang Pi closure (${exitMode})`, { skip: process.platform === "win32", timeout: 5000 }, async (t) => {
@@ -249,30 +246,35 @@ test("spawn args: model, effort, tools, no-extensions, system prompt", async () 
 	await fin(h);
 });
 
-test("getPiInvocation re-invokes argv[1] only when that script belongs to pi itself", async () => {
-	const root = await mkdtemp(path.join(tmpdir(), "pi-invocation-"));
-	try {
-		// A host that loads this extension inside its own process (Sova's server): argv[1] exists
-		// but it is not pi, so the worker must be the real `pi` — re-running that file is what killed
-		// every pi-backend worker spawned from a Sova-hosted session.
-		await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "sova" }));
-		const host = path.join(root, "server.ts");
-		await writeFile(host, "");
-		assert.deepEqual(getPiInvocation(["--mode", "rpc"], host), { command: "pi", args: ["--mode", "rpc"] });
+test("a pi child that exits early keeps the tail of its stderr in its error", async () => {
+	// The bare `pi exited with code 1` hid why a worker died (a mise shim refusing the cwd's node).
+	const h = makeRunner();
+	h.child.stderr.push("mise ERROR No version is set for shim: pi\n");
+	h.child.stderr.push("Set a global default version with one of the following:\nmise use -g node@25.2.1\n\n");
+	await flush();
+	h.child.close(1);
+	await flush();
+	assert.equal(h.runner.status, "error");
+	assert.equal(
+		h.runner.error,
+		"pi exited with code 1\nmise ERROR No version is set for shim: pi\nSet a global default version with one of the following:\nmise use -g node@25.2.1",
+	);
+	await fin(h);
 
-		// pi itself: re-invoke this script under this runtime.
-		const piDir = path.join(root, "node_modules", "@earendil-works", "pi-coding-agent");
-		await mkdir(path.join(piDir, "dist"), { recursive: true });
-		await writeFile(path.join(piDir, "package.json"), JSON.stringify({ name: PI_PACKAGE }));
-		const cli = path.join(piDir, "dist", "cli.js");
-		await writeFile(cli, "");
-		assert.deepEqual(getPiInvocation(["--mode", "rpc"], cli), { command: process.execPath, args: [cli, "--mode", "rpc"] });
+	const quiet = makeRunner();
+	quiet.child.close(2);
+	await flush();
+	assert.equal(quiet.runner.error, "pi exited with code 2", "nothing on stderr: the bare message");
+	await fin(quiet);
+});
 
-		// A script that is not there at all is never re-invoked (the shipped example's own rule).
-		assert.deepEqual(getPiInvocation([], path.join(root, "gone.js")), { command: "pi", args: [] });
-	} finally {
-		await rm(root, { recursive: true, force: true });
-	}
+test("stderrTail keeps the newest 20 lines and at most 2 KB", () => {
+	const lines = Array.from({ length: 30 }, (_, i) => `line ${i}`);
+	assert.equal(stderrTail(lines.join("\n")), lines.slice(-STDERR_TAIL_LINES).join("\n"));
+	const long = stderrTail(`${"a".repeat(5000)}\n${"é".repeat(3000)}`);
+	assert.ok(Buffer.byteLength(long) <= STDERR_TAIL_BYTES);
+	assert.ok(!long.includes("a") && !long.includes("\uFFFD"), "the newest bytes, never a split character");
+	assert.equal(stderrTail("\n  \n"), "");
 });
 
 test("env is merged over the parent's environment only when given", async () => {
@@ -2207,7 +2209,8 @@ test("every other model keeps --model argv and never sends set_model", async () 
 	const h = makeRunner({ model: "ollama-cloud/kimi-k3", effort: "low" });
 	await boot(h.child);
 	const args = h.spawnCalls[0].args;
-	assert.deepEqual(args, ["--mode", "rpc", "--model", "ollama-cloud/kimi-k3", "--thinking", "low", "--no-extensions"]);
+	// pi's own arguments, after the launch's prefix (the runtime's flags and pi's script, pi-invocation.ts).
+	assert.deepEqual(args.slice(args.indexOf("--mode")), ["--mode", "rpc", "--model", "ollama-cloud/kimi-k3", "--thinking", "low", "--no-extensions"]);
 	assert.deepEqual(h.child.sentLines().map((l) => l.type), ["get_state", "prompt"]);
 	assert.equal(h.runner.status, "running");
 	await fin(h);

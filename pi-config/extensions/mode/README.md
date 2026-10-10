@@ -130,8 +130,9 @@ writer**).
   deliberate machine inspection and review. A page's success
   or `done` status is not complete context or proof of reading. It writes a claim for behavior no claim
   covers in a feature draft before coding, claims only the files the task
-  changed, checks with `census --changed` before finishing that none of them is
-  left unclaimed, and promotes what it verified (or says why it could not).
+  changed, leaves none of them unclaimed, reads before finishing each § the
+  census note's one `Unread § your change landed in` line marks read first
+  (its command lists the rest), and promotes what it verified (or says why it could not).
   Work that changes no behavior — refactors, tests, tooling — is exempt, and
   the agent says it is claiming the exemption. The documentation changes only
   through drafts; a promotion `conflict` is per declaration, and it is
@@ -159,7 +160,17 @@ writer**).
     tree the call writes in (the cwd, a command's `cd`/`git -C`/`--root`, an
     edit's file) has its `git status` (paths and mtimes) compared with what the
     session saw; its baseline is taken at the run's start or just before the
-    first call that touches it. When a path is new
+    first call that touches it. Only what changes while one of the session's
+    own calls runs is its own: before each call (when no other is running),
+    what changed in a known tree since the last look, HEAD moved by another
+    process included, is taken in silently and left out of every note
+    (`settleCensus`; such a file the session then changes is its own). A
+    failed call (an error result) is closed like any other; one blocked or
+    aborted before it ran (no `tool_result`) is closed at `tool_execution_end`
+    (`CensusHook.close`), so it never holds the settle off. Each tree's state
+    keeps `landed` (the session's own files the census maps, with their §);
+    a worker writes it to `SOVA_SPEC_LANDED_FILE` for its parent's one
+    landed line (subagents README). When a path is new
     (a commit's files count too), `census --changed --base <session-start
     HEAD> --own-base …` runs (`--spec` the draft this session created, else
     the newest one created since the session started, else in a linked
@@ -175,14 +186,19 @@ writer**).
     per tree, including when returning to a tree already seen. A census that
     can't run gives the model one line, `[spec census] incomplete: <why>; run
     census by hand`, once per cause per tree until a census there runs again;
-    there is no toast. Tools that cannot write the repo
+    a census that printed nothing names why (its first stderr error line, else
+    a timeout or its exit status); there is no toast. Tools that cannot write the repo
     (`CENSUS_SKIP_TOOLS`, exact names: read, grep, find, ls, align, the agent
     and team listing tools, agent_wait (it waits on workers and writes nothing
     to the repo), the link inbox tools; never bash) skip the census:
-    no look, no baseline move, so the next writing call reports it all. The same digest says, on the call
+    no look, no baseline move; what changed meanwhile is taken in before the next
+    writing call. The same digest says, on the call
     that did it, when the current spec (`manifest.json`, `claims/**`) was
-    written by hand: an edit or write call on it, or a shell command that is
-    neither a draft tool nor git and changed it; and when a git operation
+    written by hand: an edit or write call on it, or a shell command that
+    changed it, judged by the files, never the command's text (`handWritten`:
+    not while a merge, rebase, cherry-pick or revert is under way, nor bytes a
+    promotion receipt's `after` hashes record, nor bytes equal to HEAD's or the
+    default branch's); and when a git operation
     rewrote a commit a draft's evidence names (a rebase, reset or amend: the
     commit was on the branch before the call and isn't after), with the
     way back: `git rebase --abort` while the rebase is under way, else, with
@@ -190,8 +206,11 @@ writer**).
     relay, which has no sha, says to find it in `git reflog`); then merge
     master in instead. Both look at the trees the call works in (`cd`, `git -C`).
     Evidence commits `census --changed` reports as orphaned (`orphanedEvidence`)
-    that the guard didn't already name are relayed once; a manifest conflict
-    during a rebase says to abort it rather than run merge-manifest. A
+    that the guard didn't already name are relayed once. Spec files a merge
+    leaves in conflict get one note per conflict: merge-manifest first for the
+    manifest, then the one recovery (the default branch's whole spec), plus the
+    merge-claims driver setup when a claim file conflicted without it; during
+    a rebase it says to abort it rather than run merge-manifest. A
     promote call's `driftWarnings` (a removed quantity another § still states)
     are relayed on its result in the same `[spec census]` note, never a block.
     `PI_SPEC_CENSUS_HOOK=0` turns it off.

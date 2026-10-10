@@ -247,6 +247,17 @@ above stay as history.
 - **Agreement with the landing card.** The card's g rows equal the landing card's, apart from one new
   information-only row.
 
+## After the landing: audit, trial, lanes (2026-10-09/10)
+
+A session audit of three buckets of spec-on sessions and a trial of the tools on real tasks found where
+the system cost attention without paying for it: census notes in sessions that edited nothing, census
+failures from an untrusted mise shim, `where` hiding results with exit 0, 40 KB `draft check` output,
+a merge recovery the docs couldn't complete, claim files that conflicted on parallel promotions, and 48
+drafts left behind. Wave 0 measured the agent arm on master bd597e20 as the baseline (pull, answered
+97.5 / 99.5 of 138). Each fix then ran as a lane with a builder and a measurer: checks written to fail
+first, BEFORE taken on a pristine archive of the base, AFTER on the commit. Lanes A, B1, C, F and G
+landed; D, E and B2 were on their branches at the time of writing. CHANGELOG.md has each lane's numbers.
+
 ## Lessons
 
 - **A seam only a trial merge shows.** Rule A and M6 each passed their tests alone. Merged together

@@ -627,13 +627,13 @@ Both pages share one shell: a `.session-head` and a `.insights.pane` containing
   <a class="button button-icon button-ghost app-back" href="#/" aria-label="Back to Sessions">…</a>
   <div class="session-head-main">
     <h1 class="session-head-title" tabindex="-1">Agents</h1>
-    <p class="session-head-meta">2 working · 5 live · $3.40 today · 3 unmerged</p>
+    <p class="session-head-meta">2 working · 5 live · $3.40 today · 3 unmerged</p>   <!-- Costs tab only -->
   </div>
   <button class="button button-icon button-ghost" aria-label="Refresh Agents">…refresh…</button>
 </header>
 <section class="insights pane" aria-label="Agents">
   <div class="insights-inner">
-    <div class="board-bar">…search · filter chips · "{n} sessions live or open in Sova"…</div>
+    <div class="board-bar">…search · filter chips · "{n} sessions live or open in Sova" with the totals (the head meta's only copy on this tab)…</div>
     <div class="card board">…one .board-row per session…</div>   <!-- none: ONE .empty instead -->
   </div>
 </section>
@@ -652,7 +652,9 @@ Both pages share one shell: a `.session-head` and a `.insights.pane` containing
   call of every kind (§app.insights/usage-ledger, `GET /api/usage/today`; left out before its
   first answer and while nothing was spent today), and distinct
   unmerged branches among the worktrees read so far (left out before the first reading). The
-  line's `title` says what each figure counts.
+  line's `title` says what each figure counts. It shows once at every width: on the Board tab
+  only on the count line directly above the board (§app.insights/team-cards), never in the head;
+  on the Costs tab, which has no count line, in the head.
 - **Grid (Usage).** `.insights-grid` has 1 column. It becomes 2 columns when the `insights`
   container is at least 640px wide, and 3 at 1000px or more. The container is named, per the skill.
 - **Polling** (frontend's call on intervals). Update in place and keep scroll position and
@@ -1218,18 +1220,22 @@ Sova that aren't archived.
     <button class="board-filter" aria-pressed="true">…check… Live <span class="board-filter-count">3</span></button>
     …Needs you · Has workers · Unmerged · Archived…
   </div>
-  <p class="board-count-line" aria-live="polite">5 sessions live or open in Sova</p>
+  <div class="board-caption">
+    <p class="board-count-line" aria-live="polite">5 sessions live or open in Sova</p>
+    <p class="board-totals">2 working · 5 live · $3.40 today · 3 unmerged</p>   <!-- every width; the only copy on the Board tab -->
+  </div>
 </div>
 <div class="card board">
   <div class="board-head" aria-hidden="true">Session · Activity · Workers · Worktrees</div>   <!-- desktop only -->
-  <ul class="board-list" aria-label="Sessions">
-    <li class="board-row" data-state="working">          <!-- working | needs-you | idle | archived; a click on it opens the session -->
+  <h2 class="board-group-head" data-state="needs-you" id="board-group-needs-you">Needs you · 2</h2>   <!-- only when 2+ groups show -->
+  <ul class="board-list" aria-labelledby="board-group-needs-you">   <!-- one group: aria-label="Sessions" -->
+    <li class="board-row" data-state="needs-you">          <!-- working | needs-you | idle | archived; a click on it opens the session -->
       <div class="board-line">
-        <div class="board-cell board-session">rail · twist (aria-expanded; only when the open row has something to say) · title · gist</div>
-        <div class="board-cell board-activity">model · context ring · 5m ago · state chip</div>
-        <div class="board-cell board-workers">2/5 working · team chip → its Session details pane, on Agents · $1.20</div>
-        <div class="board-cell board-trees">feat/x · ↑3 ↓1 · +120 −4 · dirty dot · +1</div>
-        <div class="board-cell board-actions">Open · Session details (aria-expanded) · Archive · Move into group · ⋯</div>
+        <div class="board-cell board-session">rail · twist (aria-expanded; only when the open row has something to say) · title (+ visually hidden ", Needs you") / gist</div>
+        <div class="board-cell board-activity">model · context ring · 5m ago</div>   <!-- one muted line -->
+        <div class="board-cell board-workers">2/5 working · $1.20 / team chip · team chip · +3 → its Session details pane, on Agents</div>
+        <div class="board-cell board-trees">feat/x · ↑3 ↓1 · +120 −4 · dirty dot / feat/y · merged · +1</div>
+        <div class="board-cell board-actions">Open · Session details (aria-expanded) · ⋯</div>
       </div>
       <div class="board-detail">   <!-- open rows only: in the title column, behind a guide rule under the twist -->
         <p class="board-reason">…why it needs you…</p>
@@ -1243,13 +1249,21 @@ Sova that aren't archived.
 </div>
 ```
 
-- **State.** One per row, on its rail (a colored left edge) and in a chip with a dot and the
-  word: **Needs you** when the session waits on input or has an extension dialog open; else
+- **State.** One per row, on its rail (a colored left edge) and under its group's heading; no
+  row carries a state chip at any width. A row's state reaches screen readers as visually
+  hidden text after its title (", Needs you", ", Working", ", Idle", ", Archived"), so it is
+  never carried by the rail's color or the heading alone. The states: **Needs you** when the session waits on input or has an extension dialog open; else
   **Working** when its turn runs or any of its workers works; else **Needs you** when its last
   turn failed or stopped on an error, or it has open alignment questions, or its decision marks (an unseen reply that asks you, unseen
   looping, a stuck subagent) say so; else **Idle**, or **Archived** for an archived session nothing runs in. The
-  chip's `title` says why a row needs you, and the open row says it in a line.
-- **Sort.** Working first, then Needs you, then the rest; within each, last active first.
+  open row says why a row needs you, in a line.
+- **Sort.** Needs you first, then Working, then the rest; within each, last active first.
+- **Groups.** The rendered rows sit under a heading per state, in that order: "Needs you · {n}",
+  "Working · {n}", "Idle · {n}" (the rest; "Archived · {n}" when every one of them is archived),
+  each in its rail's color, with {n} the rows the chip and search show in that state, rendered or
+  not. Each group is its own list, named by its heading. When only one group has rows, no heading
+  shows, the one list is named "Sessions", and the set filter chip names the state; nothing
+  else is added. Headings scroll with the rows; none is pinned.
 - **Filter chips.** One at a time, a second press clears it; each shows its count, and a set one
   carries a check as well as the tint. **Live**: a TUI or runtime reports on it. **Needs you**:
   in that state, anywhere in the list, but never archived sessions. Its rows and count exclude
@@ -1265,39 +1279,54 @@ Sova that aren't archived.
 - **Search.** Every word must appear in the title, original title, gist, path, cwd, or a tree's
   branch or path. With no chip it searches every session, not only the default scope; a chip
   still narrows it.
-- **Paging.** 50 rows render; "Show {n} More" adds 50.
+- **Paging.** 50 rows render; "Show {n} More" adds 50. Paging counts the one sorted list, and
+  the groups split only the rows it renders.
 - **Row click.** A click or tap anywhere on a row that isn't a control (the title, the gist, the
   open row, its bare surface), at every width, opens the session, as Open does. Every control
-  keeps its own action and never opens it: the twist, the team chips, the action buttons, ⋯ and
+  keeps its own action and never opens it: the twist, the team chips and their `+{n}`, the action buttons, ⋯ and
   its menu, and the rename field with its hint. A click that ends a text selection inside the row
   doesn't open it, nor does one with a modifier key. The row itself takes no focus: Open is its
   keyboard target.
-- **Columns** (the `insights` container ≥1000px). Session: the title as plain text, the gist
-  (`outlineGist`, else the now line, else the cwd in mono). Activity: the compact
-  model, the context ring (the sidebar row's rule: the open view's live fill wins, never without a
-  window), last active in relative time, the state chip. Workers:
-  `{working}/{total} working`, a count chip per team, the workers' spend at API prices, at any
-  depth, from the usage ledger (§app.insights/usage-ledger). A team chip is
-  a link to `#/agents/{teamKey}`; a click on it opens that session's Session details pane in place
-  on its Agents tab. Worktrees: see §app.insights/subagent-cards. Actions: Open, Session
-  details, Archive or Unarchive, Move into group (the session pane's group menu, icon only), and ⋯. The head's totals line (working ·
-  live · spend today · unmerged, with its `title`) leaves the page head and sits right-aligned on
-  the filter line (`.board-totals`); below 1000px it stays in the head.
-- **Wide** (the `insights` container ≥1600px). Session takes the extra width (titles and gists
-  show in full where they fit); Activity is one line (model, ring, last active, state chip) in a
-  15rem track, Workers 8rem, Worktrees 22rem, the actions their fixed width.
+- **Columns** (the `insights` container ≥1000px). Every row is at most 2 lines tall (an open
+  row adds its detail below), and every cell fits in those 2 lines. Session: the title as plain
+  text, then the gist (`outlineGist`, else the now line, else the cwd in mono), each one line.
+  Activity: one muted line, the compact model, the context ring (the sidebar row's rule: the open
+  view's live fill wins, never without a window) and last active in relative time ("Opus 5.5 ·
+  ◔ · 5m ago"). Workers: `{working}/{total} working`, or `{total} workers` while none
+  works, then the workers' spend at API prices, at any depth, from the usage ledger
+  (§app.insights/usage-ledger) ("9/21 working · $610.10"); under it at most 2 team chips, working
+  teams first, then a `+{n}` count chip for the rest. A team chip is a link to
+  `#/agents/{teamKey}`; a click on it, or on `+{n}`, opens that session's Session details pane in
+  place on its Agents tab. Worktrees: see §app.insights/subagent-cards. Actions: Open, Session
+  details and ⋯; Archive and Move to group are in ⋯ only.
+- **Totals.** The totals line (working · live · spend today · unmerged, with its `title`,
+  §app.insights/usage-page-and-agents-page) shows once on the Board tab at every width: on the
+  count line directly above the board (`.board-caption`), never in the page head. From 768px it
+  sits right-aligned on the count's line; below that it takes its own line under the count.
+- **Desktop** (the `insights` container 1000–1599px, e.g. a 1300px window with the sidebar
+  open). The title and the branches get the room: Activity shows the context ring and the age
+  only ("◔ · 5m ago"), its model kept for screen readers and in the age's hover title; the team
+  chips collapse into one `{n} teams` count chip (`1 team`) that opens the same pane as `+{n}`;
+  the readings and line counts take only their content's width, the branch the rest; and the
+  Session and Worktrees tracks share equally what Activity (5.5rem) and Workers (8–9.5rem)
+  leave, with `--space-2` between columns, so a
+  typical title shows whole and a branch shows at least 16 characters.
+- **Wide** (the `insights` container ≥1600px). Session takes the width the other columns leave
+  (never under 20rem), Activity a 10rem track, Workers 17rem, Worktrees 28rem, the actions their
+  fixed width, so Workers and Worktrees never wrap past their 2 lines.
 - **Page.** Only this page drops the 1280px page cap: side margins `--space-4` below 1600px and
   `--space-6` from there, the content capped at 2400px and centered; the head, the bar and the
   board share the same left and right edges. Other insights pages keep 1280px.
-- **Condensed** (768–999px): Activity sits over Workers in one column; the actions are Open,
-  Session details and ⋯. **Folded** (<768px): stacked rows — title with the state chip, the gist, a micro line
-  (model · workers · last active), the worktree chips — and ⋯ is the door to every action. Every
-  target is 44px.
+- **Condensed** (768–999px): one column holds the Activity line over the Workers cell's first
+  line (the team chips are left out); the actions are Open, Session
+  details and ⋯. **Folded** (<768px): stacked rows — the title across the full width, the gist, a micro line
+  (model · `{working}/{total} working` or `{total} workers` · last active), the worktree chips — and
+  ⋯ is the door to every action. The group headings show at every width. Every target is 44px.
 - **Session details.** The info button (`aria-controls="session-pane"`, named "Session details of
   “{title}”") opens that session's Session detail pane (§app/subagents-pane) on its Session tab in
   place: the board stays on `#/agents`, and no session view opens. `aria-expanded` says whether
   the pane shows this row's session. Its own row's button closes it; another row's switches it
-  to that session, on Session again. A team chip opens the same pane on its Agents tab, and never
+  to that session, on Session again. A team chip (or its `+{n}`) opens the same pane on its Agents tab, and never
   closes it: on that session already, it only switches the tab. The pane follows the shell's
   bands, so from 1280px it takes a column and the board beside it reflows, usually to its folded
   layout, where ⋯ is the door; below 1280px it covers the actions, and its own close comes first.
@@ -1346,18 +1375,24 @@ and whenever that set of rows changes. Readings are kept per session across requ
 or missing route (an older server) shows "—" in every row it hasn't read, and nothing else: no
 banner, no toast.
 
-- **Cell.** The first tree: its branch in mono (`detached` on a detached HEAD, the folder name
-  when it's gone), then **merged** (a success chip) when the tip is in the base, **content
-  merged** when merging would change nothing, else `↑{ahead} ↓{behind}` in mono; `+{added}
-  −{removed}` when the branch changes any line; a dot for uncommitted changes (its word for AT
-  and in the `title`). More trees: a `+{n}` count chip; at ≥1600px the second tree shows too, stacked
-  under the first, before it. The cell's `title` states every tree.
+- **Cell.** At most 2 lines, one tree each, the most useful first: unmerged, then those with
+  uncommitted changes, then merged, then the rest, then gone (each kind in the session's own
+  order). A line: the branch in mono (`detached` on a detached HEAD, the folder name when it's
+  gone), then **merged** (a success chip) when the tip is in the base, **content merged** when
+  merging would change nothing, else `↑{ahead} ↓{behind}` in mono; `+{added} −{removed}` when the
+  branch changes any line; a dot for uncommitted changes (its word for AT and in the `title`).
+  The readings and line counts of the 2 lines line up in columns on the right, and the branch
+  takes what's left. When either count is over 9,999, both shorten (`+326k −8.8k`), the exact
+  numbers in the counts' `title`. More trees: a `+{n}` count chip ends the second line. When the
+  session has 2 or more trees and every one is gone, the cell is one muted line, "{n} worktrees,
+  all gone". The cell's `title` states every tree.
   No tree: "—". A tree that's gone reads "gone"; a git failure "unreadable"; no base "no base".
 - **Open row.** Worktree lines only when the session has 2 or more trees, or one with
   uncommitted changes (a single clean tree is the cell already): one line per tree, with branch,
   the same reading, lines, "uncommitted" in words, "a worker's" when a worker's cwd is the source,
   and the path in mono.
-- **Folded.** The cell sits under the session as chips; a row with no tree drops it.
+- **Folded.** The cell sits under the session as chips: the first tree in that order, then
+  `+{n}` for the rest; a row with no tree drops it.
 
 ## §app.insights/worktrees-endpoint — Which worktrees a session touched
 

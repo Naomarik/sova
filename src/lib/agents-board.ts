@@ -144,11 +144,44 @@ export function matchesSearch(r: Pick<BoardRow, "session">, query: string, trees
   return words.every((w) => hay.includes(w));
 }
 
-const RANK: Record<BoardState, number> = { working: 0, "needs-you": 1, idle: 2, archived: 2 };
+const RANK: Record<BoardState, number> = { "needs-you": 0, working: 1, idle: 2, archived: 2 };
 
-/** Working first, then needs-you, then by last active, newest first. A new array. */
+/** Needs-you first, then working, then by last active, newest first. A new array. */
 export function sortRows<R extends Pick<BoardRow, "state" | "lastActive">>(rows: readonly R[]): R[] {
   return [...rows].sort((a, b) => RANK[a.state] - RANK[b.state] || b.lastActive - a.lastActive);
+}
+
+/** A heading's group: the sort's three ranks. */
+export type BoardGroupKey = "needs-you" | "working" | "idle";
+export interface BoardGroup<R> {
+  key: BoardGroupKey;
+  /** "Needs you", "Working", "Idle"; "Archived" when every row of the last group is archived. */
+  label: string;
+  rows: R[];
+}
+
+const GROUP_OF: Record<BoardState, BoardGroupKey> = { "needs-you": "needs-you", working: "working", idle: "idle", archived: "idle" };
+
+/** The rows split under their headings, in sort order, each keeping the rows' own order; empty groups left out. */
+export function boardGroups<R extends Pick<BoardRow, "state">>(rows: readonly R[]): BoardGroup<R>[] {
+  const out: BoardGroup<R>[] = (["needs-you", "working", "idle"] as const).map((key) => ({ key, label: "", rows: [] }));
+  for (const r of rows) out.find((g) => g.key === GROUP_OF[r.state])!.rows.push(r);
+  for (const g of out) g.label = g.key === "idle" && g.rows.length > 0 && g.rows.every((r) => r.state === "archived") ? "Archived" : STATE_WORD[g.key];
+  return out.filter((g) => g.rows.length > 0);
+}
+
+/** "9/21 working · $610.10", or "7 workers · $24.83" while none works; the spend only when given,
+    alone when no worker is counted any more; "" with neither. */
+export function workersLine(r: Pick<BoardRow, "working" | "total">, spend: number | null = null): string {
+  if (r.total <= 0) return spend !== null ? money(spend) : "";
+  const count = r.working > 0 ? `${r.working}/${r.total} working` : `${r.total} ${r.total === 1 ? "worker" : "workers"}`;
+  return spend !== null ? `${count} · ${money(spend)}` : count;
+}
+
+/** The team chips a row shows: at most `max`, working teams first (each side in its own order), and how many are left. */
+export function teamChips<T extends Pick<TeamInfo, "working">>(teams: readonly T[], max = 2): { shown: T[]; rest: number } {
+  const ordered = [...teams.filter((t) => t.working > 0), ...teams.filter((t) => t.working <= 0)];
+  return { shown: ordered.slice(0, max), rest: Math.max(0, ordered.length - max) };
 }
 
 /**
@@ -255,6 +288,36 @@ export function treeName(t: WorktreeStatus): string {
 /** Lines the branch adds and removes, when both were read and it changes any. */
 export const treeLines = (t: WorktreeStatus): { added: number; removed: number } | null =>
   t.added !== undefined && t.removed !== undefined && t.added + t.removed > 0 ? { added: t.added, removed: t.removed } : null;
+
+/** How useful a tree is in the cell, lower first: unmerged, uncommitted, merged, the rest, gone. */
+function treeRank(t: WorktreeStatus): number {
+  if (!t.exists) return 4;
+  if (t.merged === "no") return 0;
+  if (t.dirty) return 1;
+  if (t.merged === "ancestor" || t.merged === "content") return 2;
+  return 3;
+}
+
+/** The trees in the cell's order, most useful first; each kind keeps the session's own order. A new array. */
+export const orderTrees = (trees: readonly WorktreeStatus[]): WorktreeStatus[] =>
+  trees.map((t, i) => [t, i] as const).sort(([a, i], [b, j]) => treeRank(a) - treeRank(b) || i - j).map(([t]) => t);
+
+/** Two or more trees, and every one is gone: the cell says so in one line. */
+export const allGone = (trees: readonly WorktreeStatus[]): boolean => trees.length > 1 && trees.every((t) => !t.exists);
+
+/** A line count in at most 4 characters: `840`, `8.8k`, `326k`, `1.2M`. */
+export function compactLines(n: number): string {
+  const short = (v: number, unit: string) => `${v < 10 ? Math.round(v * 10) / 10 : Math.round(v)}${unit}`;
+  if (n < 1000) return String(n);
+  if (n < 999_500) return short(n / 1000, "k");
+  return short(n / 1_000_000, "M");
+}
+
+/** The counts a cell prints: exact, or both shortened when either is over 9,999 (one pair, one scale). */
+export function linesShown(l: { added: number; removed: number }): { added: string; removed: string; short: boolean } {
+  const short = Math.max(l.added, l.removed) > 9999;
+  return short ? { added: compactLines(l.added), removed: compactLines(l.removed), short } : { added: String(l.added), removed: String(l.removed), short };
+}
 
 /** One sentence for a tree's title: branch, base, the reading, and uncommitted work. */
 export function treeTitle(t: WorktreeStatus): string {

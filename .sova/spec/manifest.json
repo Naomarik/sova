@@ -95,7 +95,9 @@
       "evidence": "verified",
       "code": [
         "src/lib/agents-board.ts",
-        "src/lib/agents-board.test.ts"
+        "src/lib/agents-board.test.ts",
+        "src/components/AgentsView.tsx",
+        "src/agents-board.css"
       ]
     },
     "§app.insights/tokens-motion-and-accessibility": {

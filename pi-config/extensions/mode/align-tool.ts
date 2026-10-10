@@ -11,7 +11,7 @@ import { ALIGN_FILE_MAX_BYTES, readAlignFile } from "./align-file.ts";
 import { renderAlignCall, renderAlignResult } from "./align-ui.ts";
 import {
 	ALIGN_BLOCKER_CLOSES,
-	ALIGN_FILE_SCHEMA,
+	alignFileSchema,
 	ALIGN_OP_FIELDS,
 	ALIGN_OPS,
 	ALIGN_REVIEW_OPS,
@@ -61,7 +61,6 @@ Example: the user replied "q2: weekly is fine; take your rec on q4", and asked t
 export const ALIGN_TOOL_GUIDELINES = [
 	"While the align minor mode is on, record every alignment (a plan, open questions, decisions the user must make) with the align tool — never as reply text or a numbered list in prose; the user reads the alignment card, so keep the reply to a sentence or two.",
 	"Record the user's answers by question id (\"3a\" is q3's option a: decide it with that option's label): decide the ones they answered, in their words; accept only the ones they told you to take your recommendation on (accept_all only when they said it for every open question); leave the rest open. Change an alignment only with ops; never create it again.",
-	"When a planning worker wrote the alignment as a JSON file, use import with the file's absolute path; never retype its plan.",
 	"Set status implementing before building, never while a question is open, and done when finished and verified; use exempt with a reason for a work request that needs no alignment.",
 ];
 
@@ -123,7 +122,7 @@ const opSchemas = (visual: boolean): Record<AlignOpName, { description: string; 
 		description: "Start a new alignment from a JSON file a planning worker wrote. Never retype its content.",
 		fields: {
 			path: S(
-				`Absolute path of the JSON file (the worker writes it outside the repo, e.g. under ~/.cache). A regular file up to ${ALIGN_FILE_MAX_BYTES / 1024} KB, holding exactly: ${ALIGN_FILE_SCHEMA}. Unknown keys are rejected. Refused in a remote session (tools on a target): there, use create with the file's fields.`,
+				`Absolute path of the JSON file (the worker writes it outside the repo, e.g. under ~/.cache). A regular file up to ${ALIGN_FILE_MAX_BYTES / 1024} KB, holding exactly: ${alignFileSchema(visual)}. Unknown keys are rejected. Refused in a remote session (tools on a target): there, use create with the file's fields.`,
 			),
 		},
 	},

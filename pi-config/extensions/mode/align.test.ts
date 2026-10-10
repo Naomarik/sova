@@ -36,6 +36,8 @@ import {
 	type AlignEnv,
 	type AlignOpName,
 	ALIGN_FILE_SCHEMA,
+	alignFileSchema,
+	unfencedVisSource,
 	ALIGN_VISUALS_MAX,
 	ALIGN_VISUAL_FIELDS,
 } from "./align.ts";
@@ -640,13 +642,58 @@ test("technical notes: tN ids from create, add, edit and remove like findings; a
 	assert.equal(normalizeAlignDetails(broken)?.doc, undefined);
 });
 
-test("import: the file takes technical, never visual", () => {
+test("import: the file takes technical always, and visual exactly when the session started with Visuals on", () => {
 	files["/tmp/tech.json"] = JSON.stringify({ title: "T", summary: "S.", technical: ["a note"] });
 	assert.deepEqual(run([{ ops: [{ op: "import", path: "/tmp/tech.json" }] }]).docs[0]!.technical, [{ id: "t1", text: "a note" }]);
-	files["/tmp/vis.json"] = JSON.stringify({ title: "T", summary: "S.", visual: { kind: "flow", source: "a -> b" } });
-	throwsAlign(() => applyAlignCall([], { ops: [{ op: "import", path: "/tmp/vis.json" }] }, { ...env, visuals: true }), /unknown field "visual"/);
+	const visual = { kind: "wireframe", source: 'screen "Export"' };
+	files["/tmp/vis.json"] = JSON.stringify({ title: "T", summary: "S.", visual, questions: [{ ...Q("Screen"), visual }] });
+	throwsAlign(() => applyAlignCall([], { ops: [{ op: "import", path: "/tmp/vis.json" }] }, env), /unknown field "visual"/);
+	const imported = applyAlignCall([], { ops: [{ op: "import", path: "/tmp/vis.json" }] }, { ...env, visuals: true });
+	assert.deepEqual(imported.details.doc!.visual, visual);
+	assert.deepEqual(imported.details.doc!.questions[0]!.visual, visual);
+	assert.deepEqual(imported.details.changes, [{ kind: "created", fromFile: true }]);
+	// The file's own visuals count toward the cap like create's.
+	files["/tmp/four.json"] = JSON.stringify({ title: "T", summary: "S.", visual, questions: [1, 2, 3].map((n) => ({ ...Q(`S${n}`), visual })) });
+	throwsAlign(() => applyAlignCall([], { ops: [{ op: "import", path: "/tmp/four.json" }] }, { ...env, visuals: true }), /would carry 4 visuals: at most 3/);
+	// The schema the worker is given says so, and only with Visuals.
+	assert.equal(ALIGN_FILE_SCHEMA, alignFileSchema(false));
 	assert.match(ALIGN_FILE_SCHEMA, /"technical"\?: \[string/);
 	assert.doesNotMatch(ALIGN_FILE_SCHEMA, /visual/);
+	assert.equal(alignFileSchema(true).match(/"visual"\?: \{"kind": string, "source": string\}/g)?.length, 2, "the document's and each question's");
+	assert.equal(alignFileSchema(true).replaceAll(`, "visual"?: {"kind": string, "source": string}`, ""), ALIGN_FILE_SCHEMA, "nothing else differs");
+});
+
+test("visuals: a source written as a whole vis fence is stored as its body; any other source as given", () => {
+	const body = 'screen "Sessions"\nheader "Sessions"\n  icon "search"';
+	const on = { ...env, visuals: true };
+	for (const wrapped of [`\`\`\`vis wireframe\n${body}\n\`\`\``, `\n\`\`\`\`vis\n${body}\n\`\`\`\`\n`, `~~~vis wireframe\n${body}\n~~~`]) {
+		assert.equal(unfencedVisSource(wrapped), body);
+		files["/tmp/fenced.json"] = JSON.stringify({ title: "T", summary: "S.", questions: [{ ...Q("Screen"), visual: { kind: "wireframe", source: wrapped } }] });
+		assert.equal(applyAlignCall([], { ops: [{ op: "import", path: "/tmp/fenced.json" }] }, on).details.doc!.questions[0]!.visual!.source, body);
+	}
+	// Not a whole fence: kept as given (a mismatched closer, another language, text around it, a bare body).
+	for (const kept of [`\`\`\`vis wireframe\n${body}\n~~~`, `\`\`\`mermaid\n${body}\n\`\`\``, `see:\n\`\`\`vis\n${body}\n\`\`\``, body]) assert.equal(unfencedVisSource(kept), kept);
+	throwsAlign(() => applyAlignCall([], { ops: [{ ...CREATE, visual: { kind: "flow", source: "```vis flow\n\n```" } }] }, on), /source must be the drawing's source, non-empty/);
+});
+
+test("visuals: a create or import that leaves the new alignment without a visual says so, only with Visuals on", () => {
+	const REMINDER = /al_1 has no visual\. Visuals are on: if a question is about a screen, or the change is a flow, draw it now with edit_question \{q, visual\} or edit_doc \{visual\}, before you reply\./;
+	const on = { ...env, visuals: true };
+	files["/tmp/plain.json"] = JSON.stringify({ title: "T", summary: "S.", questions: [Q("Screen")] });
+	for (const op of [CREATE, { op: "import", path: "/tmp/plain.json" }]) {
+		const bare = applyAlignCall([], { ops: [op] }, on);
+		assert.match(bare.text, REMINDER, `${op.op}: none drawn`);
+		assert.doesNotMatch(applyAlignCall([], { ops: [op] }, env).text, /has no visual/, `${op.op}: Visuals off`);
+		// The details are the same as without the line: only the answer's text carries it.
+		assert.deepEqual(bare.details, applyAlignCall([], { ops: [op] }, env).details);
+	}
+	const drawn = applyAlignCall([], { ops: [{ ...CREATE, visual: { kind: "flow", source: "a -> b" } }] }, on);
+	assert.doesNotMatch(drawn.text, /has no visual/, "one drawn: no line");
+	// Added in the same call: no line either.
+	assert.doesNotMatch(applyAlignCall([], { ops: [CREATE, { op: "edit_doc", visual: { kind: "flow", source: "a -> b" } }] }, on).text, /has no visual/);
+	// Only at a start: a later change to an alignment with no visual stays quiet.
+	const created = applyAlignCall([], { ops: [CREATE] }, on).details.doc!;
+	assert.doesNotMatch(applyAlignCall([created], { ops: [{ op: "decide", q: "q1", decision: "Full" }] }, on).text, /has no visual/);
 });
 
 test("visuals: only in a session started with Visuals on; on questions and the document, at most 3, null removes", () => {

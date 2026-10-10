@@ -1,8 +1,8 @@
 /** The delegate system-prompt text, prompt composition, and status labels. Pure functions: unit-testable. */
 import { DELEGATE_PROFILE_INFO, DELEGATE_PROFILES, delegateDefaults, type DelegateProfileId, type WorkerChoice } from "./delegate.ts";
-import { ALIGN_FILE_SCHEMA } from "./align.ts";
+import { alignFileSchema } from "./align.ts";
 import { ALIGN_STYLE_LABELS, type AlignStyle } from "./align-settings.ts";
-import { ALIGN_STYLE_PARAGRAPHS, buildMinorPrompt, MINOR_MODES, promptedMinorModes, workerMinorModes, type AlignPromptOptions, type MinorMode } from "./minor.ts";
+import { ALIGN_STYLE_PARAGRAPHS, buildMinorPrompt, MINOR_MODES, promptedMinorModes, VIS_GUIDE_DIR, workerMinorModes, type AlignPromptOptions, type MinorMode } from "./minor.ts";
 import { routeAll, usable, type ProfileRoute, type SlotRoute } from "./routing.ts";
 import type { Mode, ModeState } from "./state.ts";
 
@@ -48,7 +48,7 @@ Keep local: questions, conversation, requested command runs, pointed-at one-line
 Profiles — pass the backend, model and effort exactly as written:
 {PROFILES}
 
-Pick by the work, not the cost: investigation that feeds a design or plan is Planning & specs, not Investigation; unsure between Routine and Complex, choose Complex. Planning & specs and Investigation workers must not edit files: say so in their prompt. Workers keep their usual permissions, so that rule is prompt-level — check the worktree is unchanged after them. The one exception is a planning worker's alignment JSON (align on), written outside the repository.
+Pick by the work, not the cost: investigation that feeds a design or plan is Planning & specs, not Investigation; unsure between Routine and Complex, choose Complex. Planning & specs and Investigation workers must not edit files: say so in their prompt. Workers keep their usual permissions, so that rule is prompt-level — check the worktree is unchanged after them.
 If a spawn fails because its model is unavailable, retry once with that profile's fallback only if one is listed above as its fallback, and say so; otherwise, or if the fallback fails too, ask the user which model to use, with the reason — never substitute one of your own. When the user names a backend, model or effort for a task, that choice wins over the profile; the user's model settings still apply at spawn, and a spawn they refuse is reported to the user, not rerouted.
 
 Worker prompts are self-contained: goal, files, conventions, verification, report-back. Batch independent spawns with non-overlapping files. Before reporting: read the diffs, run the project's tests or type checks — effort shapes how workers think, never how hard you check. Steer wrong work with agent_steer or respawn; never silently redo it; never present a worker report as your own (state what changed, what you verified, what remains).`;
@@ -73,11 +73,25 @@ export function buildDelegatePrompt(routes: readonly ProfileRoute[]): string {
 }
 
 /**
+ * The paragraph a planning worker's prompt carries in a Visuals chat (§chat.alignment/visuals), copied word
+ * for word: the worker has no vis_guide, so it reads the guide's files.
+ */
+export const PLANNER_VISUALS_PARAGRAPH = `Drawings: where a picture explains faster than words (a wireframe for a question about a screen; a flow, state or steps for a change in behaviour), give that question, or the alignment, a "visual", at most 3 in all. In the Project manager writing style never use the code, tree or layers kinds. Before drawing a kind, read shared.md and <kind>.md in ${VIS_GUIDE_DIR} and use only that syntax.`;
+
+/**
  * Appended to the delegate block while align is also on. Without it the delegate block's "delegate all
  * else" wins: the orchestrator spawns an implementation worker before any alignment is recorded, or
- * relays a planning worker's report as a freeform plan.
+ * relays a planning worker's report as a freeform plan. The planning worker's whole hand-off is said
+ * here, once. `visuals` (the chat's, fixed at its start): the file schema carries `visual`, and the
+ * worker's prompt gets the drawing paragraph, so the import brings the drawings with it.
  */
-export const DELEGATE_ALIGN_BRIDGE = `The align minor mode is on and takes precedence over delegation: for any ask that needs alignment, spawn at most a non-editing Planning & specs worker to investigate (never the Investigation profile for this — it is design work). Workers have no align tool: tell the planning worker that its one permitted write is the alignment JSON (${ALIGN_FILE_SCHEMA}), at an absolute path outside the repository that you name in its prompt (e.g. /tmp/align-<topic>-<n>.json), so the worktree stays unchanged; then import it with align {op: "import", path: that same absolute path} — never relay or retype its plan as reply text. In a remote session (tools on a target) import is refused: have the worker put the JSON in its report and pass its fields to align create inline. Spawn no implementation worker until the user has confirmed and the alignment's status is implementing, and give implementation workers the decided questions (align get). When the align instructions, or a later note, carry a "Writing style" paragraph, copy the one in effect word for word into the planning worker's prompt, so the JSON it writes follows it.`;
+export function buildDelegateAlignBridge(visuals = false): string {
+	const draw = visuals ? ` Visuals are on: also copy this paragraph word for word into its prompt:\n\n${PLANNER_VISUALS_PARAGRAPH}` : "";
+	return `The align minor mode is on and takes precedence over delegation: for any ask that needs alignment, spawn at most one non-editing Planning & specs worker to investigate (never the Investigation profile: it is design work). Workers have no align tool: tell the planning worker that its one permitted write is the alignment JSON (${alignFileSchema(visuals)}), at an absolute path outside the repository that you name in its prompt (e.g. /tmp/align-<topic>-<n>.json); then import it with align {op: "import", path: that same absolute path} — never relay or retype its plan. In a remote session (tools on a target) import is refused: have the worker put the JSON in its report and pass its fields to align create. Spawn no implementation worker until the user has confirmed and the alignment's status is implementing, and give implementation workers the decided questions (align get). When the align instructions, or a later note, carry a "Writing style" paragraph, copy the one in effect word for word into the planning worker's prompt, so the JSON it writes follows it.${draw}`;
+}
+
+/** The bridge in a chat without Visuals. */
+export const DELEGATE_ALIGN_BRIDGE = buildDelegateAlignBridge();
 
 /**
  * Appended to the spec block while a spec writer is set (spec.ts, mode-spec.json), under either major
@@ -111,7 +125,7 @@ export function composePrompt(
 	const blocks: string[] = [];
 	if (state.mode === "delegate") {
 		const delegate = buildDelegatePrompt(routes);
-		blocks.push(state.minorModes.includes("align") ? `${delegate}\n\n${DELEGATE_ALIGN_BRIDGE}` : delegate);
+		blocks.push(state.minorModes.includes("align") ? `${delegate}\n\n${buildDelegateAlignBridge(align?.visuals === true)}` : delegate);
 	}
 	for (const minor of promptedMinorModes(headMinors)) blocks.push(minorBlock(minor, writer, false, align));
 	return blocks.length > 0 ? blocks.join("\n\n") : undefined;

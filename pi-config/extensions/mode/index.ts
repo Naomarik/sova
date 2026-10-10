@@ -83,6 +83,7 @@ import { DELEGATE_PROFILE_INFO, DELEGATE_PROFILES, delegateKey, type DelegateBac
 import { WorkerProbe } from "./discovery.ts";
 import { MODE_WORKER_DISCOVER_EVENT, MODE_WORKER_EVENT, WORKER_ROLE_DISCOVER_EVENT, WORKER_ROLE_EVENT, type ModeWorkerEvent } from "./events.ts";
 import {
+	adoptableMinorModes,
 	CODEMODE_TOOL,
 	isMinorMode,
 	MINOR_MODES,
@@ -632,11 +633,13 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	/**
 	 * Resolve this session's active state: a snapshot on the branch wins, else the launch flags on
 	 * top of the default (first start only), else the default as it is now. Adopting the default
-	 * appends nothing, so merely opening a session never writes to its transcript.
+	 * appends nothing, so merely opening a session never writes to its transcript. Outside Sova's server
+	 * the default's web-only minor modes are dropped (§chat.memory/where); the file keeps them.
 	 */
 	function restoreActiveState(reason: string | undefined, ctx: ExtensionContext): void {
 		config = loadState(STATE_FILE);
 		let next = activeOf(config);
+		next = { ...next, minorModes: adoptableMinorModes(next.minorModes) };
 		let restored: ModeActive | undefined;
 		try {
 			// A worker ignores the branch: a fork copied the parent's own snapshots onto it.

@@ -83,6 +83,16 @@ export function webMinorRefusal(minor: MinorMode, sessionId: string | undefined)
 }
 
 /**
+ * The minor modes of mode.json's default a session adopting it keeps: all of them inside Sova's server
+ * (WEB_MINOR_HOOK installed, so a web chat started from a default with memory gets it), else only the
+ * ones that run everywhere: a terminal would show a web-only mode that nothing runs.
+ */
+export function adoptableMinorModes(minors: readonly MinorMode[]): MinorMode[] {
+	if (typeof (globalThis as Record<symbol, unknown>)[WEB_MINOR_HOOK] === "function") return [...minors];
+	return minors.filter((minor) => MINOR_SURFACES[minor] !== "web");
+}
+
+/**
  * Minor modes with no prompt block and no mode note (§chat.mode-menu/codemode): the tool they put in the
  * loadout is the whole mode, and its own description is the guide. A record over the union, like MINOR_WORKER.
  */

@@ -42,7 +42,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Organizations Needs you row | line 2: the digest's sentence, else "{from} → you: {question}" · "Send {to} their link: {question}" · "Approve {name} ({role}) proposed by {by}?" · `title`: every sentence, newest first · line 3: {time} · {org} · {project} (no project: {time} · {org}) |
 | Org section head | {org}, wordless warn dot with hidden ", {k} waiting on you", then its count · `title`: "{n} sessions in {org}." + " {k} waiting on you." when k ≥ 1 |
 | Org page link (org head) | wordless `arrow-right` · `aria-label` and `title`: Open the {org} page |
-| Project label | {project}, then its count · `title`: the project root (from its overseer's folder), else {project} · Unknown project · Other |
+| Project label | a muted `folder` icon, {project} as a link to its page (Other: plain text), then its count (0 for a project with no session) · `title`: the project root (from its overseer's folder, else the project list's), else {project} · Unknown project · Other |
 | Project overseer eye (project heading, §app.session-list/organizations) | wordless `eye`, one mark at most: Busy's pulsing dot · the turn-error mark · the unread dot · `aria-label` and `title`: Open the {project} overseer, + " · working" / " · last turn failed" / " · new reply" |
 | Project groups (in order, each only with rows) | `Conversations` {n} · `title`: "Gathering sessions and offers sent to people." · `Conflicts to settle` {n} · `title`: "Sessions asking someone to settle two decisions that disagree." · `Builds` {n} · `title`: "Coding sessions this project started." |
 | States (Conversations, Conflicts to settle) | `Not started` {n} · `In progress` {n} · `Done` {n} (collapsed) |

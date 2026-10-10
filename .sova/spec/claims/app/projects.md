@@ -86,7 +86,11 @@ for a project held on a peer (§mesh.remote-sessions/org-pages). API: `/api/proj
 - The sidebar has a **Projects** region for standalone projects, shaped as one organization's
   project blocks in the Organizations region (§app.session-list/organizations): the project heading
   with its overseer's eye, then its Builds. Its head carries **+** (Add Project) and an arrow to
-  `#/projects`; each project heading's name opens its page. With no project it says "No projects
+  `#/projects`; each project heading's name opens its page, and its heading has the
+  Organizations region's project level (§app.session-list/organizations "Three levels"). A
+  search finds a project by its name or folder and keeps its heading with no row under it when
+  none of its sessions match. A placed project is the Organizations region's, listed there under
+  its org, with sessions or without, from the same project list. With no project it says "No projects
   yet. Add a folder or a GitHub repository with +." It is listed once the session list loads, even
   empty, except when a search finds nothing in it. Where Needs you names where an item of a standalone project
   waits, it says Projects.
@@ -164,7 +168,7 @@ for a project held on a peer (§mesh.remote-sessions/org-pages). API: `/api/proj
   kill mid-import) finishes it: the copy again (idempotent), the org's open loads the files and
   places the project, then the re-derivation, commit and clean-up run. Until then the project opens
   nowhere and its standalone sessions are not listed.
-- **The picker.** The org's Projects tab has an **Import a Project** row under the Add Project form,
+- **The picker.** The org's Projects tab has an **Import a Project** row under the Add Project form, both behind its **Add Project** button (§app.organizations/org-page),
   shown while any standalone project is on this host: a select of them (name and folder) and
   **Import Project**. The server's confirm sentence then shows as a warning with **Import** and
   **Cancel**; Import sends `confirm: true` and says "{project} is in {org} now.", and a refusal shows

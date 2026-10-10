@@ -5034,7 +5034,7 @@ a.group-picker-tile[aria-disabled="true"] { cursor: default; color: var(--color-
    session (the sidebar's group-label style, the item's chips or id at its right end), a row per
    worker. Capped and left-aligned: a row stretched across a wide pane is hard to read. The
    section's empty card takes the same cap, so a Teams empty above a Subagents list lines up
-   with it. (The Usage page is a grid of provider cards, below.) */
+   with it. (The Usage page is one card of provider rows, below.) */
 .insights-list,
 .insights-section > .card { max-width: 720px; }
 .insights-group + .insights-group { border-top: var(--stroke-thin) solid var(--color-border); }
@@ -5045,28 +5045,62 @@ a.group-picker-tile[aria-disabled="true"] { cursor: default; color: var(--color-
 .insights-skeleton-head { display: block; width: 88px; height: 11px; margin: 0; }
 .insights-skeleton-row { display: block; width: 100%; height: 20px; margin: 0; }
 
-/* Usage: a summary sentence, then one card per provider in a grid — 1 column, 2 when the
-   named insights container is at least 640px, 3 at 1000px. Each card stacks its meters. */
+/* Usage (§app.insights/usage-cards): a summary sentence, then one card of full-width rows, one per
+   provider or Claude account, divided by hairlines; a row is only as tall as its own content.
+   A row is its identity (title, caption, chip, a login's chips, the logins list, the sign-in
+   caption) and its lines, one per window: a meter block, the same 18rem on every row from 640px
+   so every bar starts at one edge and has one length, beside a trend block (burn lines, chart or
+   strip). Under 640px it all stacks; 640–959px the identity is a head across the row and the
+   logins and sign-in follow the lines (their DOM order); from 960px the identity, logins and
+   sign-in are a 15rem column at the row's left. */
 .usage-lead { margin: 0; max-width: 72ch; font-size: var(--fs-body); line-height: var(--lh-body); color: var(--color-ink); }
-.insights-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4); }
-@container insights (min-width: 640px) {
-  .insights-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+/* The rows' floating readouts are portaled out, but the chart's pin label sits above its plot. */
+.usage-rows { overflow: visible; }
+.usage-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "id" "lines" "logins" "auth";
+  column-gap: var(--space-5);
+  padding: var(--space-4);
 }
-@container insights (min-width: 1000px) {
-  .insights-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-}
-.usage-card .card-body { display: flex; flex-direction: column; gap: var(--space-4); }
+.usage-row + .usage-row { border-top: var(--stroke-thin) solid var(--color-border); }
+/* Row gaps as margins: a row with no logins or no sign-in leaves no empty gap behind. */
+.usage-row > * + * { margin-top: var(--space-3); }
+.usage-row-id { grid-area: id; display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: var(--space-2) var(--space-3); min-width: 0; }
+/* Title over its plan caption; the chip keeps the head's right end; a login's chips get a line. */
+.usage-row-heading { flex: 1; min-width: 0; }
+.usage-row-id > .usage-login-standing { flex-basis: 100%; }
+/* A Claude account's title is its email: it may wrap anywhere rather than overflow. */
+.usage-row-title { margin: 0; font-size: var(--fs-heading-s); line-height: var(--lh-heading-s); font-weight: var(--fw-semibold); color: var(--color-ink); overflow-wrap: anywhere; }
+.usage-row-plan,
+.usage-caption { margin: 0; }
+.usage-row-lines { grid-area: lines; display: flex; flex-direction: column; gap: var(--space-5); min-width: 0; }
+.usage-line { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-2) var(--space-5); }
+.usage-line-meter,
+.usage-line-trend { min-width: 0; }
+.usage-line-trend { display: flex; flex-direction: column; gap: var(--space-1); }
+.usage-line-trend:empty { display: none; }
+.usage-row .usage-logins { grid-area: logins; }
+.usage-row-auth { grid-area: auth; }
 /* The number reads first: weight, not size or hue. */
-.usage-card .meter-value { font-weight: var(--fw-semibold); }
-/* Title over its plan caption; the chip keeps the head's right end. */
-.usage-card-heading { flex: 1; min-width: 0; }
-.usage-card-plan,
-.usage-card-caption { margin: 0; }
+.usage-row .meter-value { font-weight: var(--fw-semibold); }
+@container insights (min-width: 640px) {
+  .usage-line { grid-template-columns: 18rem minmax(0, 1fr); }
+}
+@container insights (min-width: 960px) {
+  .usage-row {
+    grid-template-columns: 15rem minmax(0, 1fr);
+    grid-template-rows: auto auto 1fr;
+    grid-template-areas: "id lines" "logins lines" "auth lines";
+  }
+  .usage-row > .usage-row-lines { margin-top: 0; }
+  .usage-row-id { flex-direction: column; flex-wrap: nowrap; justify-content: flex-start; }
+  .usage-row-heading { flex: none; }
+  .usage-row-id > .usage-login-standing { flex-basis: auto; }
+}
 .usage-note { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-2); }
-/* A Claude account's card (§app.insights/usage-cards): the email is the title, so it may wrap
-   anywhere rather than overflow. Its logins follow the meters as compact rows divided by hairlines:
-   the name, then its chips (they wrap under the name on a narrow card). */
-.usage-login-title { white-space: normal; overflow-wrap: anywhere; }
+/* A Claude account's logins: compact rows divided by hairlines, the name, then its chips (they
+   wrap under the name where the column is narrow). */
 .usage-login-standing { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin: 0; }
 .usage-logins { display: flex; flex-direction: column; gap: var(--space-1); }
 .usage-logins-caption { margin: 0; }
@@ -5075,6 +5109,20 @@ a.group-picker-tile[aria-disabled="true"] { cursor: default; color: var(--color-
 .usage-logins-row:last-child { padding-bottom: 0; }
 .usage-logins-name { color: var(--color-ink); font-weight: var(--fw-medium); overflow-wrap: anywhere; min-width: 0; }
 .usage-note code { font-family: var(--font-mono); font-size: var(--fs-mono); }
+/* Ollama (§app.insights/ollama-credits, §app.insights/ollama-activity): a period's bounds each on
+   one line, so it wraps at the arrow; the daily bars at their measured width, from the left; the
+   date list in as many columns as fit. */
+.usage-period { white-space: nowrap; }
+.usage-daily { width: 100%; }
+.usage-daily-bars { display: block; }
+.usage-daily-bar { fill: var(--color-ink-2); }
+.usage-daily-bar-partial { fill: var(--color-ink-muted); }
+.usage-daily-gap { fill: none; stroke: var(--color-ink-muted); stroke-width: 1; stroke-dasharray: 2 2; }
+.usage-daily-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(26ch, 1fr)); gap: 0 var(--space-4); list-style: none; margin: 0; padding: 0; }
+/* The first-load skeleton in the rows' shape. */
+.usage-skeleton-title { display: block; width: 120px; height: 14px; margin: 0; }
+.usage-skeleton-label { display: block; width: 88px; height: 11px; }
+.usage-skeleton-track { display: block; width: 100%; height: 6px; margin: 0; }
 /* Usage burn (§app.insights/usage-burn): the lines under a meter's reset line, in ink-2 (they are
    the answer, not metadata); a run-out's warn chip ends its line. */
 .usage-burn-line { color: var(--color-ink-2); }

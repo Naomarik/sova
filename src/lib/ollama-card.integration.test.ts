@@ -5,7 +5,7 @@ import type { UsageProvider } from "../../shared/protocol";
 const { importSsr } = await import("./align-card-ssr.mjs");
 const solid = await import("solid-js");
 const { renderToString } = await import("solid-js/web");
-const { dateClock, stampTime } = await import("./format");
+const { clockTime, dateClock, stampTime } = await import("./format");
 const { UsageRow } = await importSsr(new URL("../components/UsageView.tsx", import.meta.url), (s: string) => import.meta.resolve(s));
 const now = Date.parse("2026-03-03T12:00:00Z");
 const from = "2026-03-01T00:00:00Z", until = "2026-03-03T12:00:00Z";
@@ -76,6 +76,18 @@ test("rendered zero allowance/missing amounts have no fabricated percent; legacy
  const old = words(draw({ id: "ollama", state: "ok", windows: [{ label: "month", pct: 42 }] }));
  assert.match(old, /Monthly 42% used/);
  assert.ok(!old.includes("Daily reported USD"));
+});
+
+test("a day split into buckets labels each with its 12-hour local clock, never a 24-hour time", () => {
+ const value = p();
+ const a = value.activity!.data!;
+ a.from = "2026-03-02T00:00:00Z";
+ a.until = "2026-03-03T00:00:00Z";
+ a.buckets = [{ from: "2026-03-02T00:00:00Z", until: "2026-03-02T15:00:00Z", usage_usd: 1, partial: false }, { from: "2026-03-02T15:00:00Z", until: "2026-03-03T00:00:00Z", usage_usd: 2, partial: false }];
+ const text = words(draw(value));
+ assert.ok(text.includes(`Mon Mar 2 ${clockTime("2026-03-02T15:00:00Z")} · $2.00`), text);
+ assert.match(clockTime("2026-03-02T15:00:00Z"), /^\d{1,2}:\d{2} [AP]M$/);
+ assert.ok(!/\b(1[3-9]|2[0-3]):\d{2}\b/.test(text), "no 24-hour time");
 });
 
 test("rendered times follow the viewer's zone; daily buckets keep their UTC calendar day", () => {

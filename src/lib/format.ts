@@ -1,5 +1,6 @@
 // The clock, the stamp and the relative time are pi-config's `stamp` formatter, so the TUI's
 // transcript stamps and every time in Sova read the same ("1:43 PM", "Mar 4 1:43 PM", "5m ago").
+import { clockTime } from "../../pi-config/extensions/stamp/format.ts";
 export { agoTime, clockTime, relativeTime, stampAgo, stampTime } from "../../pi-config/extensions/stamp/format.ts";
 // Claude model names and ids are Sova's Claude catalog (claude-code/catalog.ts, which imports
 // nothing): the one copy the extension, the server and the web app read.
@@ -126,6 +127,25 @@ export function shortDate(t: number, now = Date.now()): string {
   const d = new Date(t);
   const sameYear = d.getFullYear() === new Date(now).getFullYear();
   return `${MONTHS[d.getMonth()]} ${d.getDate()}${sameYear ? "" : `, ${d.getFullYear()}`}`;
+}
+
+/** A local date and clock, the date always shown: "Oct 1 3:30 PM" ("Oct 1, 2025 3:30 PM" in
+    another year). "" when unreadable. */
+export function dateClock(t: string | number, now = Date.now()): string {
+  const ms = typeof t === "number" ? t : Date.parse(t);
+  return Number.isFinite(ms) ? `${shortDate(ms, now)} ${clockTime(ms)}` : "";
+}
+
+/** A calendar day as written, never shifted by time zone: "2026-10-02" → "Fri Oct 2" ("Fri Oct
+    2, 2025" in another year). Anything else is returned unchanged. */
+export function calendarDay(ymd: string, now = Date.now()): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd);
+  if (!m) return ymd;
+  const [y, mo, day] = [Number(m[1]), Number(m[2]) - 1, Number(m[3])];
+  const d = new Date(Date.UTC(y, mo, day));
+  if (d.getUTCMonth() !== mo) return ymd;
+  const year = d.getUTCFullYear() === new Date(now).getFullYear() ? "" : `, ${d.getUTCFullYear()}`;
+  return `${["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][d.getUTCDay()]} ${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}${year}`;
 }
 
 /** 50000 → "50,000". */

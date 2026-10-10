@@ -1230,8 +1230,8 @@ Sova that aren't archived.
   <ul class="board-list" aria-labelledby="board-group-needs-you">   <!-- one group: aria-label="Sessions" -->
     <li class="board-row" data-state="needs-you">          <!-- working | needs-you | idle | archived; a click on it opens the session -->
       <div class="board-line">
-        <div class="board-cell board-session">rail · twist (aria-expanded; only when the open row has something to say) · title / gist</div>
-        <div class="board-cell board-activity">state chip · 5m ago / model · context ring</div>
+        <div class="board-cell board-session">rail · twist (aria-expanded; only when the open row has something to say) · title (+ visually hidden ", Needs you") / gist</div>
+        <div class="board-cell board-activity">model · context ring · 5m ago</div>   <!-- one muted line -->
         <div class="board-cell board-workers">2/5 working · $1.20 / team chip · team chip · +3 → its Session details pane, on Agents</div>
         <div class="board-cell board-trees">feat/x · ↑3 ↓1 · +120 −4 · dirty dot / feat/y · merged · +1</div>
         <div class="board-cell board-actions">Open · Session details (aria-expanded) · ⋯</div>
@@ -1248,18 +1248,21 @@ Sova that aren't archived.
 </div>
 ```
 
-- **State.** One per row, on its rail (a colored left edge) and in a chip with a dot and the
-  word: **Needs you** when the session waits on input or has an extension dialog open; else
+- **State.** One per row, on its rail (a colored left edge) and under its group's heading; no
+  row carries a state chip at any width. A row's state reaches screen readers as visually
+  hidden text after its title (", Needs you", ", Working", ", Idle", ", Archived"), so it is
+  never carried by the rail's color or the heading alone. The states: **Needs you** when the session waits on input or has an extension dialog open; else
   **Working** when its turn runs or any of its workers works; else **Needs you** when its last
   turn failed or stopped on an error, or it has open alignment questions, or its decision marks (an unseen reply that asks you, unseen
   looping, a stuck subagent) say so; else **Idle**, or **Archived** for an archived session nothing runs in. The
-  chip's `title` says why a row needs you, and the open row says it in a line.
+  open row says why a row needs you, in a line.
 - **Sort.** Needs you first, then Working, then the rest; within each, last active first.
 - **Groups.** The rendered rows sit under a heading per state, in that order: "Needs you · {n}",
   "Working · {n}", "Idle · {n}" (the rest; "Archived · {n}" when every one of them is archived),
   each in its rail's color, with {n} the rows the chip and search show in that state, rendered or
   not. Each group is its own list, named by its heading. When only one group has rows, no heading
-  shows and the one list is named "Sessions". Headings scroll with the rows; none is pinned.
+  shows, the one list is named "Sessions", and the set filter chip names the state; nothing
+  else is added. Headings scroll with the rows; none is pinned.
 - **Filter chips.** One at a time, a second press clears it; each shows its count, and a set one
   carries a check as well as the tint. **Live**: a TUI or runtime reports on it. **Needs you**:
   in that state, anywhere in the list, but never archived sessions. Its rows and count exclude
@@ -1286,9 +1289,9 @@ Sova that aren't archived.
 - **Columns** (the `insights` container ≥1000px). Every row is at most 2 lines tall (an open
   row adds its detail below), and every cell fits in those 2 lines. Session: the title as plain
   text, then the gist (`outlineGist`, else the now line, else the cwd in mono), each one line.
-  Activity: the state chip and last active in relative time ("Working · just now"), then, muted,
-  the compact model and the context ring (the sidebar row's rule: the open view's live fill wins,
-  never without a window). Workers: `{working}/{total} working`, or `{total} workers` while none
+  Activity: one muted line, the compact model, the context ring (the sidebar row's rule: the open
+  view's live fill wins, never without a window) and last active in relative time ("Opus 5.5 ·
+  ◔ · 5m ago"). Workers: `{working}/{total} working`, or `{total} workers` while none
   works, then the workers' spend at API prices, at any depth, from the usage ledger
   (§app.insights/usage-ledger) ("9/21 working · $610.10"); under it at most 2 team chips, working
   teams first, then a `+{n}` count chip for the rest. A team chip is a link to
@@ -1298,14 +1301,14 @@ Sova that aren't archived.
   spend today · unmerged, with its `title`) leaves the page head and sits right-aligned on the
   count line directly above the board (`.board-caption`); below 1000px it stays in the head.
 - **Wide** (the `insights` container ≥1600px). Session takes the width the other columns leave
-  (never under 20rem), Activity an 11rem track, Workers 17rem, Worktrees 26rem, the actions their
+  (never under 20rem), Activity a 10rem track, Workers 17rem, Worktrees 28rem, the actions their
   fixed width, so Workers and Worktrees never wrap past their 2 lines.
 - **Page.** Only this page drops the 1280px page cap: side margins `--space-4` below 1600px and
   `--space-6` from there, the content capped at 2400px and centered; the head, the bar and the
   board share the same left and right edges. Other insights pages keep 1280px.
-- **Condensed** (768–999px): one column holds the Activity cell's first line over the Workers
-  cell's first line (the model and the team chips are left out); the actions are Open, Session
-  details and ⋯. **Folded** (<768px): stacked rows — title with the state chip, the gist, a micro line
+- **Condensed** (768–999px): one column holds the Activity line over the Workers cell's first
+  line (the team chips are left out); the actions are Open, Session
+  details and ⋯. **Folded** (<768px): stacked rows — the title across the full width, the gist, a micro line
   (model · `{working}/{total} working` or `{total} workers` · last active), the worktree chips — and
   ⋯ is the door to every action. The group headings show at every width. Every target is 44px.
 - **Session details.** The info button (`aria-controls="session-pane"`, named "Session details of

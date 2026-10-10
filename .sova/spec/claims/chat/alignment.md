@@ -68,8 +68,9 @@ also `review` and `close_blocker`, and their refusals of implementing and done,
   (`{kind, source}`, §chat.alignment/visuals); without it neither field is in the schema or
   accepted.
 - **import** `{path}` — a new document read from a JSON file (the create fields, `technical`
-  included and `visual` never: the agent adds visuals after the import with edit_question or
-  edit_doc; nothing else), at
+  included, and in a session started with Visuals on also the document's and each question's
+  `visual?`, exactly as create takes them; without Visuals a `visual` in the file is refused as an
+  unknown key; nothing else), at
   an **absolute** path (`~/` counts; a relative path is refused), so a planning worker can write the
   alignment and the agent imports it without retyping. The file's shape is described on the `path`
   field. Only a regular file up to 256 KB is read (a pipe, a device or a directory is refused before
@@ -122,8 +123,11 @@ the results' snapshots (§chat.alignment/state), never the calls' arguments.
 
 The tool's answer is a compact echo of what is still open: the touched document's id, title,
 status and "k of n open", one line per open question with its recommendation (by letter and label
-when it names an option), and one line naming the other open alignments. A call that sets a document implementing
-while the spec minor mode is on also ends with the spec's Agree step (§tools.spec/align-agree).
+when it names an option), and one line naming the other open alignments. In a session started with
+Visuals on, a create or import whose new document carries no visual adds one line after them
+(§chat.alignment/visuals); the result's details are the same either way. A call that sets a
+document implementing while the spec minor mode is on also ends with the spec's Agree step
+(§tools.spec/align-agree).
 
 ## §chat.alignment/state — The state lives in the tool results
 
@@ -144,26 +148,36 @@ any more, and they count toward no chip, row or digest.
 
 ## §chat.alignment/model — What keeps the agent on it
 
-- **Instructions.** The align prompt block tells the agent to record every alignment with the tool
-  and never as reply text (no freeform plan, no numbered list of decisions in prose), to have a
-  planning worker write the alignment JSON for `import` at an absolute path outside
-  the repository that the agent names (with Delegate on, the delegate block's no-edit rule for
-  planning workers names this one file as its exception; in a remote session the worker reports the
-  JSON and the agent creates inline), to change a document only
+- **Instructions.** The align prompt block tells the agent to investigate before it records,
+  to record every alignment with the tool
+  and never as reply text (no freeform plan, no numbered list of decisions in prose), to change a document only
   through ops and never by re-creating it, to read "3a" as q3's option a and decide it with that
   option's label, to record answers with `decide` (what the user answered) and
   `accept` (only what they told it to take the recommendation on, leaving the rest open), to use
   `exempt` for a work request that needs no alignment, and to mark `implementing` before building —
   never while a question is open; a go-ahead with questions still open takes the recommendations for
-  them first, an answer to only some is not a go-ahead — and `done` when finished. With Delegate on, the bridge paragraph says the same for the planning
-  worker hand-off. The tool's own description and guidelines carry the core of it too, since they
-  sit in pi's tools section.
+  them first, an answer to only some is not a go-ahead — and `done` when finished. The planning
+  worker hand-off is said once, in the bridge paragraph that follows the delegate block while
+  Delegate and align are both on: the investigation goes to at most one non-editing Planning & specs
+  worker (never the Investigation profile), whose one permitted write is the alignment JSON for
+  `import` at an absolute path outside the repository that the agent names (the delegate block's
+  own no-edit rule names no exception: the bridge does; in a remote session the worker reports the
+  JSON and the agent creates inline), and the agent imports that file, never retyping it. The tool's
+  own description and guidelines carry the core of it too, since they sit in pi's tools section.
 - **Writing style and Visuals.** A non-Default writing style adds its paragraph to the align block
   (§chat.alignment/style), and Visuals on adds the visuals paragraph after it
   (§chat.alignment/visuals); with Default and Visuals off the block is exactly as before. With
   Delegate on, the bridge paragraph also tells the agent to copy the writing style paragraph, when the
   align block or a later note carries one, word for word into the planning worker's brief; the bridge's
-  own words never depend on the style. The planning worker gets no `vis_guide` and writes no visuals.
+  own words never depend on the style. In a chat started with Visuals on, the bridge also has the
+  planning worker draw: the file schema it quotes carries the document's and each question's
+  `visual`, and it gives the agent a paragraph to copy word for word into the worker's brief —
+  draw where a picture explains faster than words (a wireframe for a question about a screen; a
+  flow, state or steps for a change in behaviour), at most 3, in the Project manager style never the
+  code, tree or layers kinds, after reading `shared.md` and the
+  kind's own file in the vis guide's directory, named by its absolute path (the worker has no
+  `vis_guide`). Visuals are fixed at the chat's start, so this never changes the bridge
+  mid-session.
 - **A hidden note on each user prompt.** While align is on and an alignment is open, each prompt the
   user sends carries a hidden message (`align-state`, never shown in the transcript) listing the
   open alignments, their status and their open questions with ids, lettered option labels
@@ -533,13 +547,21 @@ question's or the document's `visual` (§chat.alignment/document).
   (§chat.alignment-review/flag) and every later start reuses it, handing the mode extension the
   `align-visuals` flag (`on` or `off`); the TUI, with no such flag, reads `mode-align.json` (and the
   chat's profile override) at session start.
-- **The prompt.** With align on, a paragraph after the align block (and after the style's): add a
-  visual only when it explains faster than words — a wireframe for a question about a screen, a flow,
-  state or steps for a change in behaviour; call `vis_guide` before the first visual of each kind;
-  in the Project manager style never the code, tree or layers kinds; after importing a planning
-  worker's file, add visuals with edit_question or edit_doc. Its words never depend on the style.
+- **The prompt.** With align on, a paragraph after the align block (and after the style's): visuals
+  go in the align tool's `visual` fields, never as a vis fence in the reply; add one only when it
+  explains faster than words — a wireframe for a question about a screen, a flow, state or steps for
+  a change in behaviour; call `vis_guide` before the first visual of each kind; in the Project
+  manager style never the code, tree or layers kinds. Its words never depend on the style. With
+  Delegate on, the planning worker draws them into the file it writes (§chat.alignment/model).
 - **The schema.** The `visual` fields are in the align tool's schema exactly when Visuals were on at
-  the start (§chat.alignment/tool); technical notes are in it whenever align is on.
+  the start (§chat.alignment/tool), the import file's included; technical notes are in it whenever
+  align is on. A `source` written as a whole `vis` fence (its opening ```` ```vis ```` line, the body,
+  and a matching closing fence, nothing around them) is stored as the body inside it, so it draws;
+  any other source is stored as given.
+- **The reminder.** In a chat started with Visuals on, a create or import whose new alignment
+  carries no visual ends its answer with one line: the alignment has no visual, and if a question
+  is about a screen or the change is a flow, draw it now with edit_question or edit_doc, before the
+  reply. It never adds one itself, and nothing else changes.
 - **The vis tools.** One rule decides whether the vis tools are wanted: vis on, or align on with the
   chat's Visuals. Every place that syncs them — the mode extension's `vis_guide` and, in Sova's hosted
   sessions, `vis_check` at session start, after a switch made between runs, when a run starts and

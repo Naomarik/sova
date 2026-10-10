@@ -1902,8 +1902,13 @@ class ChatSession {
       try {
         // memory is web-only: the extension takes it on only while this switch is being applied (permit.ts).
         const web = state.minorModes.includes("memory") && this.memoryAvailable() ? (["memory"] as const) : [];
+        const memoryWasOn = this.modeState.minorModes.includes("memory");
         await withWebMinors(this.harness.id, web, async () => {
-          for (const minor of MINOR_MODES) await cmd.handler(`${minor} ${state.minorModes.includes(minor) ? "on" : "off"}`, ctx);
+          for (const minor of MINOR_MODES) {
+            const on = state.minorModes.includes(minor);
+            if (minor === "memory" && !on && !memoryWasOn) continue; // nothing to turn off
+            await cmd.handler(`${minor} ${on ? "on" : "off"}`, ctx);
+          }
         });
         // Not awaited: after switching, setMode awaits the delegate routing probe (up to 15s).
         cmd.handler(state.mode, ctx).catch((err) => {

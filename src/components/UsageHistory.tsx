@@ -172,6 +172,12 @@ function BurnReadout(props: { reading: ReturnType<typeof readoutAt> }) {
   );
 }
 
+/** A zero-only recording needs no plot; a positive past period must remain browsable. */
+export function zeroOnlyHistory(pct: number, current: readonly UsageHistoryPoint[], past: readonly UsageHistoryPeriod[]): boolean {
+  return pct === 0 && current.every((p) => p.pct === 0)
+    && past.every((p) => p.hitAt === undefined && (p.final === undefined || p.final === 0) && p.points.every((point) => point.pct === 0));
+}
+
 /**
  * A day-plus window's history chart (§app.insights/usage-burn): this period, the last one aligned
  * by share, the line at this pace, now, the run-out pin and a labelled day axis. Its periods come
@@ -249,6 +255,7 @@ export function BurnChart(props: { w: UsageWindow; span: Span; now: number }) {
 
   return (
     <Show when={recorded()}>
+      <Show when={!zeroOnlyHistory(props.w.pct, current(), past())} fallback={<p class="meter-context usage-history-empty">0% used · {title()}</p>}>
       <div class="usage-burn-chart">
         <div class="usage-burn-stepper">
           <button type="button" class="button button-ghost button-icon usage-burn-step" aria-label={`Earlier ${noun()}`} aria-disabled={at() >= past().length ? "true" : undefined} onClick={() => go(1)}>
@@ -340,6 +347,7 @@ export function BurnChart(props: { w: UsageWindow; span: Span; now: number }) {
         <FloatReadout x={pick()!.x} y={pick()!.y} touch={pick()!.touch} measureKey={reading()}>
           <BurnReadout reading={reading()!} />
         </FloatReadout>
+      </Show>
       </Show>
     </Show>
   );

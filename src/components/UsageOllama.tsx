@@ -173,35 +173,36 @@ export function OllamaLines(props: { p: UsageProvider; now: number; resetDay?: R
       <Show
         when={credits()}
         fallback={
-          <section class="usage-line" aria-labelledby="u-ollama-credits">
-            <div class="usage-line-meter stack stack-2">
-              <h3 id="u-ollama-credits" class="text-heading-s">Included credits</h3>
-              <p class="meter-context">No balance reading yet.</p>
+          <section class="usage-credits stack stack-2" aria-labelledby="u-ollama-credits">
+            <h3 id="u-ollama-credits" class="text-heading-s">Included credits</h3>
+            <p class="meter-context">No balance reading yet.</p>
+            <div class="usage-credit-figures">
               <p class="meter-head"><span class="meter-label">Included remaining</span><span class="meter-value">Unknown</span></p>
               <p class="meter-head"><span class="meter-label">Included allowance</span><span class="meter-value">Unknown</span></p>
-            </div>
-            <div class="usage-line-trend">
               <p class="meter-head"><span class="meter-label">Purchased remaining</span><span class="meter-value">Unknown</span></p>
             </div>
           </section>
         }
       >
         {(r) => (
-          <section class="usage-line" aria-labelledby="u-ollama-credits">
+          <section class="usage-credits stack stack-2" aria-labelledby="u-ollama-credits">
             <div class="usage-line-meter stack stack-2">
               <h3 id="u-ollama-credits" class="text-heading-s">Included credits</h3>
               <p class="usage-caption text-caption text-muted">
                 {previousCredits() ? "Previous reading · as of " : "As of "}
-                {time(r().fetchedAt)}
+                <span class="usage-period">{time(r().fetchedAt)}</span>
                 <Show when={r().error}> · {r().error}</Show>
               </p>
               <div class="meter">
-                <p class="meter-head"><span class="meter-label">Included remaining</span><span class="meter-value">{reportedMoney(r().data?.included?.balance_usd)}</span></p>
-                <p class="meter-head"><span class="meter-label">Included allowance</span><span class="meter-value">{reportedMoney(r().data?.included?.allowance_usd)}</span></p>
+                <div class="usage-credit-figures">
+                  <p class="meter-head"><span class="meter-label">Included remaining</span><span class="meter-value">{reportedMoney(r().data?.included?.balance_usd)}</span></p>
+                  <p class="meter-head"><span class="meter-label">Included allowance</span><span class="meter-value">{reportedMoney(r().data?.included?.allowance_usd)}</span></p>
+                  <p class="meter-head"><span class="meter-label">Purchased remaining</span><span class="meter-value">{reportedMoney(r().data?.purchased?.balance_usd)}</span></p>
+                </div>
                 <Show when={includedCreditPct(r().data) !== undefined}>
                   <p class="meter-context">{Math.round(includedCreditPct(r().data)!)}% included credits used</p>
                   <Show when={currentIncluded(props.p, props.now)}>
-                    <div class="meter-track" aria-hidden="true">
+                    <div class="meter-track usage-credit-meter" aria-hidden="true">
                       <span class="meter-fill" style={{ "--meter-pct": `${includedCreditPct(r().data)}%` }} />
                     </div>
                   </Show>
@@ -216,7 +217,6 @@ export function OllamaLines(props: { p: UsageProvider; now: number; resetDay?: R
               </div>
             </div>
             <div class="usage-line-trend">
-              <p class="meter-head"><span class="meter-label">Purchased remaining</span><span class="meter-value">{reportedMoney(r().data?.purchased?.balance_usd)}</span></p>
               <For each={(["session", "weekly"] as const).filter((k) => r().data?.[k])}>
                 {(k) => (
                   <p class="meter-context">
@@ -231,26 +231,24 @@ export function OllamaLines(props: { p: UsageProvider; now: number; resetDay?: R
       </Show>
       <Show when={activity()}>
         {(r) => (
-          <section class="usage-line" aria-labelledby="u-ollama-activity">
-            <div class="usage-line-meter stack stack-2">
+          <section class="usage-line usage-activity" aria-labelledby="u-ollama-activity">
+            <header class="usage-line-head stack stack-2">
               <h3 id="u-ollama-activity" class="text-heading-s">Activity</h3>
               <p class="usage-caption text-caption text-muted">
                 {endpointPrevious(r(), props.now) ? "Previous reading · as of " : "As of "}
-                {time(r().fetchedAt)}
+                <span class="usage-period">{time(r().fetchedAt)}</span>
                 <Show when={r().error}> · {r().error}</Show>
               </p>
               <Show when={r().data}>
-                {(a) => (
-                  <>
-                    <p class="meter-context text-mono">
-                      <Period from={a().from} until={a().until} /> · end exclusive · {a().scope}
-                    </p>
-                    <For each={activityMetrics(a())}>{(m) => <p class="meter-head"><span class="meter-label">{m.label}</span><span class="meter-value">{m.value}</span></p>}</For>
-                    <p class="meter-context">Request value, including plan and purchased credits—not subscription spend. Usage may be delayed.</p>
-                  </>
-                )}
+                {(a) => <p class="meter-context text-mono"><Period from={a().from} until={a().until} /> · end exclusive · {a().scope}</p>}
               </Show>
-            </div>
+            </header>
+            <Show when={r().data}>
+              {(a) => <div class="usage-line-meter stack stack-2">
+                <For each={activityMetrics(a())}>{(m) => <p class="meter-head"><span class="meter-label">{m.label}</span><span class="meter-value">{m.value}</span></p>}</For>
+                <p class="meter-context">Request value, including plan and purchased credits—not subscription spend. Usage may be delayed.</p>
+              </div>}
+            </Show>
             <Show when={r().data}>
               <div class="usage-line-trend">
                 <h4 class="text-caption">Daily reported USD</h4>
@@ -272,9 +270,9 @@ export function OllamaLines(props: { p: UsageProvider; now: number; resetDay?: R
       </Show>
       <Show when={!period() && props.p.windows.length === 0 && props.resetDay}>
         {(c) => (
-          <p class="meter-context">
+          <div class="meter-context usage-declared-reset">
             Declared subscription reset: {c().day === null ? "Unknown" : `day ${c().day} of each month`} · <ResetDay c={c()} />
-          </p>
+          </div>
         )}
       </Show>
     </>

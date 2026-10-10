@@ -37,9 +37,8 @@ import { BurnChart, BurnLines, BurnStrip, Track } from "./UsageHistory";
 import { OllamaLines, ResetDay, type ResetDayControl } from "./UsageOllama";
 
 /**
- * One window's line (§app.insights/usage-cards): the meter block (number, bar, reset, uses) and,
- * beside it, the trend block — how fast it is going and, a day or more long, its history
- * (§app.insights/usage-burn). A window with nothing to say there has no trend block.
+ * One window's summary (number, bar, reset, uses and burn), paired with its history.
+ * The rate stays with the reading rather than leaving an empty column beside a tall chart.
  */
 function WindowLine(props: { w: UsageWindow; now: number; past?: string; resetDay?: ResetDayControl }) {
   const reset = () => meterReset(props.w, props.now, props.past);
@@ -48,6 +47,7 @@ function WindowLine(props: { w: UsageWindow; now: number; past?: string; resetDa
   /** The pace tick, while the window has a known span and its reset is ahead. */
   const at = () => (past() ? null : (windowPace(props.w, props.now)?.elapsed ?? null));
   const burn = () => burnLines(props.w, props.now);
+  const strip = () => Boolean(props.w.history && shortSpan(props.w));
   return (
     <div class="usage-line">
       <div class="meter usage-line-meter" classList={{ "meter-ghost": past() }}>
@@ -95,10 +95,13 @@ function WindowLine(props: { w: UsageWindow; now: number; past?: string; resetDa
           )}
         </Show>
         <Show when={usesLine(props.w)}>{(u) => <p class="meter-context">{u()}</p>}</Show>
+        <Show when={!strip() && burn().length > 0}>
+          <div class="usage-window-burn"><BurnLines lines={burn()} /></div>
+        </Show>
       </div>
-      <Show when={burn().length > 0 || props.w.history || props.w.burn}>
+      <Show when={props.w.history || props.w.burn}>
         <div class="usage-line-trend">
-          <BurnLines lines={burn()} />
+          <Show when={strip()}><BurnLines lines={burn()} /></Show>
           <Show when={(props.w.history || props.w.burn) && chartSpan(props.w, props.now)}>{(span) => <BurnChart w={props.w} span={span()} now={props.now} />}</Show>
           {/* Under a day (the 5-hour window): no chart, a strip of its past windows instead. */}
           <Show when={props.w.history && shortSpan(props.w)}>
@@ -213,9 +216,9 @@ export function UsageRow(props: {
     <article class="usage-row" aria-labelledby={headId()}>
       <header class="usage-row-id">
         <div class="usage-row-heading">
-          <h2 class="usage-row-title" id={headId()}>
-            {props.title ?? PROVIDER_NAME[props.p.id]}
-          </h2>
+          <Show when={props.title} fallback={<h2 class="usage-row-title" id={headId()}>{PROVIDER_NAME[props.p.id]}</h2>}>
+            <h3 class="usage-row-title" id={headId()}>{props.title}</h3>
+          </Show>
           <Show when={props.plan ?? planLabel(props.p)}>{(plan) => <p class="usage-row-plan text-caption text-muted">{plan()}</p>}</Show>
         </div>
         <Show when={providerChip(props.p, props.now)}>{(c) => <Chip tone={c().tone}>{c().text}</Chip>}</Show>
@@ -344,8 +347,7 @@ export function ClaudeAccountRows(props: { logins: UsageClaudeLogin[]; now: numb
 
 /**
  * First-load placeholder in the rows' shape, shown only once the page has been loading for
- * 300ms: one card of a row per provider the page can show (claude, openai, ollama, zai,
- * deepseek), each a title beside 2 meter lines.
+ * 300ms: one card per provider the page can show, each a title beside 2 meter lines.
  */
 function UsageSkeleton() {
   const [show, setShow] = createSignal(false);
@@ -353,10 +355,10 @@ function UsageSkeleton() {
   onCleanup(() => clearTimeout(t));
   return (
     <Show when={show()}>
-      <div class="card usage-rows usage-skeleton" aria-hidden="true">
+      <div class="usage-groups usage-skeleton" aria-hidden="true">
         <For each={Array.from({ length: 5 })}>
           {() => (
-            <div class="usage-row">
+            <div class="card usage-rows"><div class="usage-row">
               <div class="usage-row-id">
                 <span class="skeleton skeleton-line usage-skeleton-title" />
               </div>
@@ -372,11 +374,34 @@ function UsageSkeleton() {
                   )}
                 </For>
               </div>
-            </div>
+            </div></div>
           )}
         </For>
       </div>
     </Show>
+  );
+}
+
+/** Separate provider surfaces, keeping every account of Claude together in payload order. */
+export function UsageGroups(props: { data: UsageInsight; now: number; resetDay?: ResetDayControl }) {
+  return (
+    <div class="usage-groups">
+      <For each={props.data.providers}>
+        {(p) => {
+          const logins = () => p.id === "claude" && props.data.claudeLogins?.length ? props.data.claudeLogins : null;
+          return (
+            <section class="card usage-rows" aria-labelledby={logins() ? "u-claude-group" : `u-${p.id}`}>
+              <Show when={logins()} fallback={<UsageRow p={p} now={props.now} resetDay={p.id === "ollama" ? props.resetDay : undefined} />}>
+                {(accounts) => <>
+                  <h2 class="usage-group-title" id="u-claude-group">{PROVIDER_NAME.claude}</h2>
+                  <ClaudeAccountRows logins={accounts()} now={props.now} />
+                </>}
+              </Show>
+            </section>
+          );
+        }}
+      </For>
+    </div>
   );
 }
 
@@ -447,15 +472,7 @@ function UsageBody(props: {
             <Show when={data().claudeOwnLoginUnreadable}>
               <p class="usage-note">On macOS, add your Claude login under Settings → Accounts.</p>
             </Show>
-            <div class="card usage-rows">
-              <For each={data().providers}>
-                {(p) => (
-                  <Show when={p.id === "claude" && data().claudeLogins?.length ? data().claudeLogins : null} fallback={<UsageRow p={p} now={props.now} resetDay={p.id === "ollama" ? resetDay(data()) : undefined} />}>
-                    {(logins) => <ClaudeAccountRows logins={logins()} now={props.now} />}
-                  </Show>
-                )}
-              </For>
-            </div>
+            <UsageGroups data={data()} now={props.now} resetDay={resetDay(data())} />
           </>
         )}
       </Match>

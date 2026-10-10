@@ -172,10 +172,9 @@ function BurnReadout(props: { reading: ReturnType<typeof readoutAt> }) {
   );
 }
 
-/** A zero-only recording needs no plot; a positive past period must remain browsable. */
+/** A zero-only first period needs no plot; every closed period stays browsable, even at zero. */
 export function zeroOnlyHistory(pct: number, current: readonly UsageHistoryPoint[], past: readonly UsageHistoryPeriod[]): boolean {
-  return pct === 0 && current.every((p) => p.pct === 0)
-    && past.every((p) => p.hitAt === undefined && (p.final === undefined || p.final === 0) && p.points.every((point) => point.pct === 0));
+  return pct === 0 && current.every((p) => p.pct === 0) && past.length === 0;
 }
 
 /**

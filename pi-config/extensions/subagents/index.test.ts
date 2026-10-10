@@ -4411,7 +4411,7 @@ test("spec on: every code-writing worker (pi, claude-code, team member) gets the
 		const claude = created[1];
 		assert.equal(claude.systemPrompt, `Own words.\n\n${brief}`);
 		const hooks = JSON.parse(claude.settingsJson).hooks;
-		assert.deepEqual(Object.keys(hooks).sort(), ["PostToolUse", "PreToolUse", "UserPromptSubmit"], "nothing at the turn's end");
+		assert.deepEqual(Object.keys(hooks).sort(), ["PermissionDenied", "PostToolUse", "PostToolUseFailure", "PreToolUse", "UserPromptSubmit"], "nothing at the turn's end");
 		const post = hooks.PostToolUse[0];
 		assert.equal(post.matcher, "*", "after ANY tool, Bash included");
 		assert.ok(post.hooks[0].command.includes(SPEC_HOOK_SCRIPT) && post.hooks[0].command.includes(" post --core "));

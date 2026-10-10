@@ -38,6 +38,17 @@ export interface AlignToolHost {
 	review?(): AlignReviewEnv | undefined;
 	/** The writing style now (§chat.alignment/style), recorded on each document a call changes. */
 	style?(): "default" | "simplified" | "pm";
+	/** Whether the spec minor mode is on now: a go-ahead then is also the spec's Agree step. */
+	specOn?(): boolean;
+}
+
+/**
+ * Appended to the result text (never `details`) of the call that sets an alignment implementing while
+ * the spec minor mode is on: agreeing in align and changing the spec are one act. `$core` is the spec
+ * block's trusted-tools prefix, which is in context whenever spec is on.
+ */
+export function alignSpecAgreeText(docId: string): string {
+	return `Spec mode is on too, so this go-ahead is the Agree step. Before building, write each decision of ${docId} that changes behavior as a promise in a spec draft (a new claim, or the claim it changes), then run \`node "$core/sova-spec-draft.mjs" agree <draft> --id '<§id>' --by <who gave the go-ahead> --verification "${docId} go-ahead" --root <project root> --json --write\`. For records that map no code, \`agree\` records doc-only evidence and promotes them itself when the plan is clean; if it says agree-not-promoted, resolve what it lists and promote. A changed claim that maps code keeps its new \`agreed\` in the draft and lands with the build. The build updates those same records. Skip this when no decision changes behavior.`;
 }
 
 /** Which form of the tool is registered: the review ops, and the visual fields (§chat.alignment/visuals). */
@@ -278,7 +289,9 @@ export function registerAlignTool(pi: ExtensionAPI, host: AlignToolHost, form: A
 					...(host.style ? { style: host.style() } : {}),
 				});
 				if (outcome.details.doc) host.changed(outcome.details.doc);
-				return { content: [{ type: "text" as const, text: outcome.text }], details: outcome.details as AlignDetails };
+				const goAhead = outcome.details.doc && outcome.details.changes.some((c) => c.kind === "status" && c.to === "implementing");
+				const text = goAhead && host.specOn?.() ? `${outcome.text}\n\n${alignSpecAgreeText(outcome.details.doc!.id)}` : outcome.text;
+				return { content: [{ type: "text" as const, text }], details: outcome.details as AlignDetails };
 			} catch (error) {
 				if (error instanceof AlignError) throw new Error(`${error.message}. Nothing was changed.`);
 				throw error;

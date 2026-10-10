@@ -241,3 +241,7 @@ Settings → Subagents instead. Nothing switches automatically, and there is no 
   that session's pick, never the default, and the result says so. An id this host can't resolve is
   refused before anything changes; with `host`, the peer's own list is asked first, and a peer
   that doesn't know the id (or can't answer) refuses the create before anything is made there.
+- A project's coding sessions take a profile the same way: the Overseer's `sova_project_overseer`
+  `code` and a project overseer's `sova_create_session` and `sova_send` take `subagent_profile`, and a
+  project overseer has `sova_list_subagent_profiles` too; with none named, a coding session picks
+  nothing and runs on this computer's default (§app.project-overseer/coding-mode).

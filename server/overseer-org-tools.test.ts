@@ -488,6 +488,20 @@ describe("the organization tools (§app.overseer/org-tools)", async () => {
     const page = await app.request(`/api/projects/${project.id}/overseer/items/code`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt: "x", title: "y" }) });
     assert.equal(page.status, 400);
     await piSession(await acquireChat(row.path!)).waitForIdle();
+    // Any mode it names (§app.project-overseer/coding-mode); an unknown name starts nothing and takes nothing.
+    const refused = await call("sova_project_overseer", { op: "code", org: org.id, project: project.id, prompt: "p", title: "t", mode: "turbo" });
+    assert.match(refused.text, /Unknown mode turbo: use normal or delegate\. No session was started\./);
+    const unknownProfile = await call("sova_project_overseer", { op: "code", org: org.id, project: project.id, prompt: "p", title: "t", subagent_profile: "nope" });
+    assert.match(unknownProfile.text, /Unknown subagent profile: nope\. sova_list_subagent_profiles lists them\./);
+    assert.equal(limits.count("create"), 1, "no session counted for a refusal");
+    const named = await call("sova_project_overseer", { op: "code", org: org.id, project: project.id, prompt: "Draw the flow", title: "Flow", mode: "delegate", minor_modes: ["vis", "align"] });
+    assert.ok(named.ok, named.text);
+    assert.match(named.text, /, mode delegate · align · visuals/);
+    const path = readBuilds(project.id).find((r) => r.sessionId === (named.details as { session: string }).session)!.path!;
+    const pin = readFileSync(path, "utf8").trim().split("\n").map((l) => JSON.parse(l)).filter((e) => e.type === "custom" && e.customType === "mode").at(-1);
+    assert.deepEqual(pin?.data.active.minorModes, ["align", "vis"]);
+    assert.equal(pin?.data.active.mode, "delegate");
+    await piSession(await acquireChat(path)).waitForIdle();
   });
 
   test("sova_public_links: the one read that gives the live kept link; its log line counts, never a link (§app.overseer/org-projection)", async () => {

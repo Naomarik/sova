@@ -10,6 +10,7 @@ import { cardHeader } from "./overseer-tools";
 import { createBaton, handoffTo, offerTo, projectAbilities } from "./baton";
 import type { OperatorBy } from "./orgs";
 import { ABILITIES_PARAM, overseerAbilities } from "./gathering-abilities";
+import { checkedCodingModeChoice, describeCodingMode, profileWords } from "./project-coding-mode";
 import type { ToolCall } from "./overseer-idea-tools";
 import { orgOfProject, readHistory } from "./orgs";
 import {
@@ -759,7 +760,6 @@ export function orgTools(d: OrgToolDeps): Tool[] {
     thinking: "thinking",
     coding_model: "codingModel",
     coding_thinking: "codingThinking",
-    coding_mode: "codingMode",
     gathering_model: "gatheringModel",
     gathering_thinking: "gatheringThinking",
     watch: "watch",
@@ -772,10 +772,10 @@ export function orgTools(d: OrgToolDeps): Tool[] {
     name: "sova_project_overseer",
     label: "Project overseer",
     description:
-      "A project's overseer, for the user (only in a turn the user started). start (create it, as Start Overseer). settings {autonomy?, model?, thinking?, coding_model?, coding_thinking?, coding_mode?, gathering_model?, gathering_thinking?, watch?, watch_gap_min?, soon_look_sec?, caps?, extra_instructions?}: one change, refused whole as the page's is. run_now (Run Now). clear (a new conversation; only in the turn a confirm card's click opened, listing the project). " +
+      "A project's overseer, for the user (only in a turn the user started). start (create it, as Start Overseer). settings {autonomy?, model?, thinking?, coding_model?, coding_thinking?, gathering_model?, gathering_thinking?, watch?, watch_gap_min?, soon_look_sec?, caps?, extra_instructions?}: one change, refused whole as the page's is. run_now (Run Now). clear (a new conversation; only in the turn a confirm card's click opened, listing the project). " +
       "idea {action: add|edit, id?, title?, text?, status?} and todo {action: add|edit|tick|untick|remove, id?, text?, idea?}: the project's ideas and to-dos. " +
       "message {text}: send words into the overseer's conversation as the user (idle it starts a turn; mid-turn it waits as a follow-up); it counts as a prompt to another session. Never a /command, never the About text or a cost figure. " +
-      "code {prompt?, title?, item?, model?, thinking?}: start a coding session as the project's (its own worktree, the project's coding mode), from an item (a td_ to-do or an § idea) or from prompt and title; it counts as a session created. Talk to a coding session with sova_send.",
+      "code {prompt?, title?, item?, model?, thinking?, mode?, minor_modes?, subagent_profile?}: start a coding session as the project's (its own worktree; any mode, minor modes and subagent profile you name, else this computer's default), from an item (a td_ to-do or an § idea) or from prompt and title; it counts as a session created. Talk to a coding session with sova_send; never answer its alignment questions: they are the user's. Its reply names the mode and profile it started with.",
     promptSnippet: "start, set up, run, clear, message or give ideas/to-dos to a project's overseer; start a coding session as the project's",
     parameters: obj(
       {
@@ -787,7 +787,6 @@ export function orgTools(d: OrgToolDeps): Tool[] {
         thinking: str("settings: its thinking level; code: the coding session's."),
         coding_model: str("settings: coding sessions' model, or \"\" for its own."),
         coding_thinking: str("settings: coding sessions' thinking."),
-        coding_mode: { type: ["object", "null"], description: 'settings: {mode: "normal"|"delegate", minorModes: [] | ["spec"]}, or null for Automatic.' },
         gathering_model: str("settings: gathering sessions' model, or \"\" for its own."),
         gathering_thinking: str("settings: gathering sessions' thinking."),
         watch: bool("settings: watch the project on its own."),
@@ -803,6 +802,9 @@ export function orgTools(d: OrgToolDeps): Tool[] {
         idea: str("todo: the § id of an idea it belongs to."),
         prompt: str("code: the first prompt (default: the item's text)."),
         item: str("code: a to-do (td_…) or idea (§…) of the project to start from, and link it."),
+        mode: str("code: normal | delegate. Omitted: this computer's default."),
+        minor_modes: { type: "array", items: { type: "string" }, description: 'code: the minor modes on, the whole set: any of align, spec, vis, codemode; [] turns them all off. Omitted: this computer\'s default.' },
+        subagent_profile: str("code: a subagent profile id or off (sova_list_subagent_profiles), for that session only. Omitted: this computer's default."),
       },
       ["op", "project"],
     ),
@@ -894,6 +896,9 @@ export function orgTools(d: OrgToolDeps): Tool[] {
           case "code": {
             const item = typeof p.item === "string" && p.item.trim() ? p.item.trim() : "";
             if (!item && (typeof p.prompt !== "string" || !p.prompt.trim() || typeof p.title !== "string" || !p.title.trim())) throw refuse("Give an item (td_… or §…), or both prompt and title.");
+            // Any mode and profile; an unknown name is refused before anything is taken (§app.project-overseer/coding-mode).
+            const chose = checkedCodingModeChoice({ mode: p.mode, minor_modes: p.minor_modes, subagent_profile: p.subagent_profile });
+            if ("error" in chose) throw refuse(`${chose.error} No session was started.`);
             const slot = d.slot();
             if ("refusal" in slot) throw refuse(slot.refusal);
             try {
@@ -903,13 +908,16 @@ export function orgTools(d: OrgToolDeps): Tool[] {
                 ...(typeof p.title === "string" && p.title.trim() ? { title: p.title } : {}),
                 ...(typeof p.model === "string" && p.model ? { model: p.model } : {}),
                 ...(typeof p.thinking === "string" && p.thinking ? { thinking: p.thinking } : {}),
+                ...(p.mode !== undefined && p.mode !== null && p.mode !== "" ? { mode: p.mode } : {}),
+                ...(p.minor_modes !== undefined && p.minor_modes !== null ? { minor_modes: p.minor_modes } : {}),
+                ...(typeof p.subagent_profile === "string" && p.subagent_profile ? { subagent_profile: p.subagent_profile } : {}),
               };
               const r = await counted("create", async () => ok(await d.call("POST", `${at}/items/code`, body), "Starting the coding session", 201));
               d.started(r.path, !r.notPrompted);
               const title = cut(typeof p.title === "string" && p.title.trim() ? p.title : item || String(p.prompt ?? ""), 60);
               return {
                 content: text(
-                  `Started [${title.replace(/[[\]]/g, "")}](sova://s/${r.sessionId}) as ${project.name}'s coding session, ${r.worktree ? `on the branch ${r.worktree.branch} in ${r.worktree.path}` : `in the project root${r.note ? `: ${r.note}` : ""}`}.${r.notPrompted ? ` ${r.notPrompted}` : ""}`,
+                  `Started [${title.replace(/[[\]]/g, "")}](sova://s/${r.sessionId}) as ${project.name}'s coding session, ${r.worktree ? `on the branch ${r.worktree.branch} in ${r.worktree.path}` : `in the project root${r.note ? `: ${r.note}` : ""}`}, mode ${describeCodingMode(chose.mode)}${profileWords(chose.mode.subagentProfile)}.${r.notPrompted ? ` ${r.notPrompted}` : ""}`,
                 ),
                 details: { ...details, session: r.sessionId, path: r.path },
               };

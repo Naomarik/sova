@@ -13,7 +13,7 @@ import { PACKET_PARTS, PACKET_HELP, packetBudget, packetError, packetOrder, pack
 import { tocMain, pullCommand } from "./toc.mjs";
 import { readMain } from "./read.mjs";
 import { fieldShape, checkFields, frameOf, frameFinding, aboutDelivered } from "./fields.mjs";
-import { lookCommand, graphMain, nearMain } from "./graph.mjs";
+import { lookCommand, graphMain, nearMain, occurs } from "./graph.mjs";
 import { mapMain } from "./map.mjs";
 import { whereMain } from "./where.mjs";
 
@@ -300,30 +300,47 @@ function scanDeclarations(root, ctx) {
   return parseDeclarations(ctx, bodies, decls);
 }
 
+// The H1/H2 headings that declare in one claim file's lines, in order; `report` hears what is wrong.
+function headingsOf(lines, rel, report = () => {}) {
+  const heads = [];
+  let fence = null;
+  lines.forEach((ln, i) => {
+    const f = /^ {0,3}(`{3,}|~{3,})/.exec(ln);
+    if (fence) { if (f && f[1][0] === fence[0] && f[1].length >= fence.length && !ln.trim().slice(f[1].length).trim()) fence = null; return; }
+    if (f) { fence = f[1]; return; }
+    const h = /^ {0,3}(#{1,6})(?:[ \t]+(.*))?$/.exec(ln);
+    if (!h) return;
+    const level = h[1].length, line = i + 1, at = { file: rel, line };
+    const tok = (h[2] ?? "").trim().split(/\s+/)[0];
+    // H3+ is plain prose inside the enclosing H1/H2 span; it may never declare.
+    if (level > 2) {
+      if (tok.startsWith("§")) return report("error", "heading-level", `H${level} cannot declare ${tok}; only H1/H2 declare`, at);
+      if (!heads.length) report("error", "heading-order", `H${level} precedes the file's H1 lede, so no passage contains it`, at);
+      return;
+    }
+    if (!tok.startsWith("§")) return report("error", "heading-invalid", `H${level} does not declare a § identifier`, at);
+    if (!ID_RE.test(tok)) return report("error", "id-invalid", `heading token ${tok} is not a full § identifier`, at);
+    heads.push({ id: tok, level, line });
+  });
+  return heads;
+}
+// H1 lede ends before the first H2; an H2 ends before the next heading. Spans are disjoint.
+function spanEnd(heads, k, lines) {
+  let end = (heads[k + 1]?.line ?? lines.length + 1) - 1;
+  while (end > heads[k].line && !lines[end - 1].trim()) end--;
+  return end;
+}
+// One claim file's declarations from its own headings, without a manifest or graph: [{id, level, lines: [a, b]}].
+export function declarationSpans(body) {
+  const lines = String(body).split(/\r?\n/), heads = headingsOf(lines, "");
+  return heads.map((h, k) => ({ id: h.id, level: h.level, lines: [h.line, spanEnd(heads, k, lines)] }));
+}
+
 // H1/H2 declarations of claim files [{rel (to the root), inClaims (to the claims root), body}], in order.
 function parseDeclarations(ctx, bodies, decls = new Map()) {
   for (const { rel, inClaims, body } of bodies) {
     const lines = body.split(/\r?\n/);
-    const heads = [];
-    let fence = null;
-    lines.forEach((ln, i) => {
-      const f = /^ {0,3}(`{3,}|~{3,})/.exec(ln);
-      if (fence) { if (f && f[1][0] === fence[0] && f[1].length >= fence.length && !ln.trim().slice(f[1].length).trim()) fence = null; return; }
-      if (f) { fence = f[1]; return; }
-      const h = /^ {0,3}(#{1,6})(?:[ \t]+(.*))?$/.exec(ln);
-      if (!h) return;
-      const level = h[1].length, line = i + 1, at = { file: rel, line };
-      const tok = (h[2] ?? "").trim().split(/\s+/)[0];
-      // H3+ is plain prose inside the enclosing H1/H2 span; it may never declare.
-      if (level > 2) {
-        if (tok.startsWith("§")) return add("error", "heading-level", `H${level} cannot declare ${tok}; only H1/H2 declare`, at);
-        if (!heads.length) add("error", "heading-order", `H${level} precedes the file's H1 lede, so no passage contains it`, at);
-        return;
-      }
-      if (!tok.startsWith("§")) return add("error", "heading-invalid", `H${level} does not declare a § identifier`, at);
-      if (!ID_RE.test(tok)) return add("error", "id-invalid", `heading token ${tok} is not a full § identifier`, at);
-      heads.push({ id: tok, level, line });
-    });
+    const heads = headingsOf(lines, rel, add);
     const first = lines.slice(0, (heads[0]?.line ?? lines.length + 1) - 1).findIndex((l) => l.trim());
     if (first >= 0) add("warn", "prose-outside-declaration", `text at line ${first + 1} precedes any § declaration, so no passage returns it`, { file: rel, line: first + 1 });
     const lede = heads[0]?.level === 1 ? heads[0].id : null;
@@ -335,9 +352,7 @@ function parseDeclarations(ctx, bodies, decls = new Map()) {
       else if (want.level !== h.level) add("error", "heading-level", `${h.id} must be an H${want.level}`, at);
       else if (h.level === 2 && parentOf(h.id, ctx.dirKinds) !== lede) add("error", "misfiled-declaration", `${h.id} is not a child of this file's lede`, at);
       if (decls.has(h.id)) return add("error", "duplicate-declaration", `${h.id} is also declared at ${decls.get(h.id).file}:${decls.get(h.id).line}`, at);
-      // H1 lede ends before the first H2; an H2 ends before the next heading. Spans are disjoint.
-      let end = (heads[k + 1]?.line ?? lines.length + 1) - 1;
-      while (end > h.line && !lines[end - 1].trim()) end--;
+      const end = spanEnd(heads, k, lines);
       decls.set(h.id, { file: rel, line: h.line, level: h.level, lines: [h.line, end], text: lines.slice(h.line - 1, end).join("\n") + "\n" });
     });
   }
@@ -682,7 +697,7 @@ function currentIds(root) {
   return new Set(cur ? Object.keys(cur.m.claims) : []);
 }
 
-// Every § a changed file lands in is foreign unless the task created it (only a draft read with --spec can).
+// Every § a changed file lands in is foreign unless the task created it (a draft read with --spec, or the range from the base).
 // With --related, each also gets its declared requires and transitive consumers, and a note. No flags are judged here.
 function relatedOf(ctx, hits, related, own = () => false) {
   const files = new Map(), childUnderForeign = [];
@@ -712,6 +727,100 @@ const FOREIGN_RULE = "update any where a user sees a change, even one your new c
 // Pushed last, so a truncated tail of the findings still carries it; the rule leads, so a byte cut keeps it.
 const foreignSummary = (foreign) => foreign.length && add("note", "foreign-summary",
   `${FOREIGN_RULE.replace("any", "any foreign §")}: ${foreign.length} touched (${foreign.join(", ")})`, { ids: foreign });
+
+// ---------------------------------------------------------------- rank: touched § by the changed lines
+// Names, string literals and numbers a change's lines carry; a § scores the rarity-weighted ones its passage holds.
+// Nothing here knows a project: every token comes from the diff or the spec.
+const READ_FIRST = 5, DIFF_CAP = 8 * 1024 * 1024, STRINGS_CAP = 400;
+const NAME_RE = /[A-Za-z_$][\w$]*(?:-[A-Za-z0-9_$]+)*(?:\.[A-Za-z_$][\w$]*(?:-[A-Za-z0-9_$]+)*)*/g;
+const NUM_RE = /(?<![\w.])\d+(?:\.\d+)?(?![\w])/g;
+const STR_RE = /(["'`])((?:\\.|(?!\1)[^\\\n])*)\1/g;
+// Code-shaped: an inner capital, `_`, `-`, `.` or `$`, or all capitals; plain words collide with English prose.
+const codeShaped = (t) => t.length >= 3 && (/[A-Z]/.test(t.slice(1)) || /[_$.-]/.test(t) || /^[A-Z][A-Z0-9_]+$/.test(t));
+// Each name once, a dotted chain also as its parts.
+function namesOf(text, keep = () => true, out = new Set()) {
+  for (const m of text.matchAll(NAME_RE)) for (const t of [m[0], ...(m[0].includes(".") ? m[0].split(".") : [])]) if (keep(t)) out.add(t);
+  return out;
+}
+const numbersOf = (text, out = new Set()) => { for (const m of text.matchAll(NUM_RE)) if (m[0].split(".")[0].length >= 2) out.add(m[0]); return out; };
+// A string literal's text, its `${…}` parts dropped: 3..80 characters with a letter, one line.
+function stringsOf(line, out) {
+  for (const m of line.matchAll(STR_RE))
+    for (const part of m[2].split(/\$\{[^}]*\}/)) {
+      const s = part.trim();
+      if (s.length >= 3 && s.length <= 80 && /[A-Za-z]/.test(s)) out.add(s);
+    }
+  return out;
+}
+const TOKEN_KINDS = ["names", "strings", "numbers"];
+const lineTokens = () => ({ names: new Set(), strings: new Set(), numbers: new Set() });
+function takeLine(acc, line) {
+  namesOf(line, codeShaped, acc.names);
+  stringsOf(line, acc.strings);
+  numbersOf(line.replace(STR_RE, " "), acc.numbers);
+}
+// The added and removed lines of each path (git diff -U0 from the base; an untracked file is all added).
+// → Map(path → {added, removed}) of tokens; hunks under a header no path matches go to every path.
+function changedLines(root, commit, paths) {
+  const by = new Map(paths.map((p) => [p, { added: lineTokens(), removed: lineTokens() }]));
+  if (!paths.length) return by;
+  // Fixed prefixes: a user's diff.mnemonicPrefix or diff.noprefix would change the headers.
+  const r = git(root, ["-c", "core.quotePath=false", "diff", "-U0", "--no-color", "--src-prefix=a/", "--dst-prefix=b/", "--no-renames", "--no-ext-diff", "--no-textconv", "--relative", commit, "--", ...paths]);
+  if (r.status !== 0) { add("note", "rank-diff-failed", `git diff for the ranking failed: ${r.error ?? r.err.trim()}; § are ranked without hunks`); return by; }
+  const heads = new Map(paths.map((p) => [`diff --git a/${p} b/${p}`, p])), seen = new Set(), loose = { added: lineTokens(), removed: lineTokens() };
+  let cur = null, bytes = 0;
+  for (const line of r.out.split("\n")) {
+    if (line.startsWith("diff --git ")) { cur = heads.has(line) ? by.get(heads.get(line)) : loose; if (heads.has(line)) seen.add(heads.get(line)); continue; }
+    if (!cur || line.startsWith("+++ ") || line.startsWith("--- ")) continue;
+    if ((bytes += line.length) > DIFF_CAP) { add("note", "rank-diff-capped", `the diff passed ${DIFF_CAP} bytes; later lines were not ranked`); break; }
+    if (line[0] === "+") takeLine(cur.added, line.slice(1));
+    else if (line[0] === "-") takeLine(cur.removed, line.slice(1));
+  }
+  for (const p of paths) {
+    const mine = by.get(p);
+    for (const k of ["added", "removed"]) for (const f of TOKEN_KINDS) for (const t of loose[k][f]) mine[k][f].add(t);
+    if (seen.has(p)) continue;
+    // No hunk: an untracked file (all its lines are added), or one git named some other way.
+    let text = null;
+    try { text = readInput(root, p); } catch { /* deleted or unreadable: nothing added */ }
+    if (text !== null && text.length <= DIFF_CAP && !text.includes("\0")) for (const line of text.split("\n")) takeLine(mine.added, line);
+  }
+  return by;
+}
+// Rank the foreign touched § (ids, with the changed paths each lands in) by those lines.
+// → {rank: [{id, rank, score, reason, stale}], readFirst, named}
+function rankTouched(ctx, commit, ids, filesOf) {
+  const lines = changedLines(ctx.root, commit, [...new Set(ids.flatMap((id) => filesOf(id)))].sort());
+  const all = [...ctx.decls.keys()].filter((id) => ctx.claims.has(id)), text = (id) => ctx.decls.get(id)?.text ?? "";
+  // Every candidate token, then how many passages hold each: a passage's names and numbers once, strings by search.
+  const cand = lineTokens();
+  for (const v of lines.values()) for (const k of ["added", "removed"]) for (const f of TOKEN_KINDS) for (const t of v[k][f]) cand[f].add(t);
+  const strings = [...cand.strings].slice(0, STRINGS_CAP), nums = [...cand.numbers], df = new Map(), held = new Map();
+  for (const id of all) {
+    const t = text(id), inText = numbersOf(t);
+    const has = new Set([...namesOf(t, (w) => cand.names.has(w)), ...nums.filter((n) => inText.has(n)), ...strings.filter((s) => occurs(t, s))]);
+    held.set(id, has);
+    for (const w of has) df.set(w, (df.get(w) ?? 0) + 1);
+  }
+  const weight = (t) => Math.log((all.length + 1) / (df.get(t) ?? 1));
+  const rows = ids.map((id) => {
+    const toks = { added: lineTokens(), removed: lineTokens() };
+    for (const p of filesOf(id)) for (const k of ["added", "removed"]) for (const f of TOKEN_KINDS) for (const t of lines.get(p)?.[k][f] ?? []) toks[k][f].add(t);
+    const has = held.get(id) ?? new Set();
+    const mine = new Set(["added", "removed"].flatMap((k) => TOKEN_KINDS.flatMap((f) => [...toks[k][f]])));
+    const reason = [...mine].filter((t) => has.has(t)).sort((a, b) => weight(b) - weight(a) || (a < b ? -1 : 1));
+    // A literal the change removed and didn't add back, that the § still states.
+    const gone = [...toks.removed.strings, ...toks.removed.numbers].filter((t) => !toks.added.strings.has(t) && !toks.added.numbers.has(t));
+    const stale = [...new Set(gone)].filter((t) => has.has(t)).sort();
+    return { id, score: Math.round(reason.reduce((s, t) => s + weight(t), 0) * 100) / 100, reason, stale };
+  });
+  // Equal scores: the § that maps fewer code files is the more specific to each of them.
+  const breadth = (id) => new Set(ctx.claims.get(id).code ?? []).size;
+  rows.sort((a, b) => (b.stale.length > 0) - (a.stale.length > 0) || b.score - a.score || breadth(a.id) - breadth(b.id) || (a.id < b.id ? -1 : 1));
+  const rank = rows.map((r, i) => ({ id: r.id, rank: i + 1, score: r.score, reason: r.reason, stale: r.stale }));
+  const readFirst = rank.filter((r) => r.score > 0 || r.stale.length).slice(0, READ_FIRST).map((r) => r.id);
+  return { rank, readFirst, named: rank.map((r) => r.id).filter((id) => !readFirst.includes(id)) };
+}
 
 // Evidence commits the project's drafts name that HEAD no longer contains: a rebase (or reset) rewrote them.
 // Read-only: each draft.json, then `git merge-base --is-ancestor`. → [{draft, commit, ids}], one note each.
@@ -767,6 +876,8 @@ function censusChanged(ctx, { base, related, ownBase }, claimed) {
   if (!ch) return { census: null };
   const own = ownOf(ctx.root, ownBase);
   if (!own) return { census: null };
+  const atBase = idsAt(ctx.root, ch.commit);
+  if (!atBase) return { census: null };
   // The spec graph itself is never population, not even as outside.
   const paths = ch.paths.filter((p) => ![DEFAULT_SPEC, ctx.specRel].some((o) => p === o || p.startsWith(o + "/")));
   const files = [], symlinks = [], mappedOutside = [], deleted = [], gone = new Set();
@@ -785,11 +896,19 @@ function censusChanged(ctx, { base, related, ownBase }, claimed) {
   const { orphanedEvidence, draftScan } = orphaned(ctx.root);
   // Without a boundary no population is named: claims are still shown, nothing is judged unclaimed.
   const hits = [...files, ...deletedClaimed].sort().filter((p) => claimed.has(p)).map(entry);
-  const rel = relatedOf(ctx, [...hits, ...mappedOutside], related, own.is);
+  // A § the spec lacked at the base was created in the range (as `foreign --base` says): the task's own.
+  const rel = relatedOf(ctx, [...hits, ...mappedOutside], related, (id) => own.is(id) || !atBase.has(id));
   // The rule, then the foreign ids, near the top, so a truncated head still carries both.
   Object.assign(head, { foreignNote: FOREIGN_RULE.replace("any", "any of these"), foreign: rel.foreign, childUnderForeign: rel.childUnderForeign,
     ...(own.bases.length ? { own: own.list([...rel.touchedIds]), ownBases: own.bases } : {}) });
   const touched = related ? { touched: rel.touched } : {};
+  if (related) {
+    // Ranked by the changed lines: every foreign touched § once, the first few marked read first.
+    const byId = new Map(rel.touched.map((t) => [t.id, t]));
+    const r = rankTouched(ctx, ch.commit, rel.foreign, (id) => byId.get(id).files);
+    for (const x of r.rank) Object.assign(byId.get(x.id), { rank: x.rank, score: x.score, reason: x.reason, stale: x.stale });
+    Object.assign(touched, r);
+  }
   if (!bd) { foreignSummary(rel.foreign); return { census: { ...head, boundary: null, claimed: hits, unclaimed: null, outside: null, deleted, orphanedEvidence, draftScan, ...touched } }; }
   const unclaimed = files.filter((p) => !claimed.has(p));
   for (const p of unclaimed) add("warn", "changed-unclaimed", `${p} changed and no record's code claims it`, { file: p });
@@ -894,6 +1013,23 @@ function ownOf(root, revs = []) {
   }
   const is = (id) => sets.every((k) => !k.has(id));
   return { is, list: (ids) => [...new Set(ids)].filter(is).sort(), bases };
+}
+// The ids the spec's manifest records at `commit`, read from Git objects; no spec there → none.
+// → Set | null (error added). An unreadable manifest counts as having every id, so nothing is called created.
+function idsAt(root, commit) {
+  const prefix = gitPrefix(root, "census --changed");
+  if (prefix === null) return null;
+  const key = `${commit}:${prefix ? `${prefix}/` : ""}${DEFAULT_SPEC}/manifest.json`;
+  const got = blobs(root, [key]);
+  if (!got) return null;
+  const text = got.get(key);
+  if (text == null) return new Set();
+  try {
+    const m = JSON.parse(text);
+    if (m && typeof m.claims === "object" && !Array.isArray(m.claims)) return new Set(Object.keys(m.claims));
+  } catch { /* reported below */ }
+  add("warn", "base-manifest-unreadable", `the manifest at ${commit.slice(0, 12)} can't be read; no § counts as created since the base`);
+  return { has: () => true };
 }
 const sortKeys = (v) => Array.isArray(v) ? v.map(sortKeys) : v && typeof v === "object" ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, sortKeys(v[k])])) : v;
 const canonRec = (v) => (v === undefined ? null : JSON.stringify(sortKeys(v)));
@@ -1076,7 +1212,15 @@ function human(out) {
       ...(c.deleted ?? []).map((f) => `  deleted ${f}`), ...(c.symlinks ?? []).map((f) => `  symlink not followed ${f}`), ...(c.orphanedEvidence ?? []).map((e) => `  orphaned evidence ${e.commit.slice(0, 12)} (draft ${e.draft}: ${e.ids.join(", ")})`));
     const sum = out.findings.find((f) => f.code === "foreign-summary");
     if (sum) L.push(`${sum.severity} ${sum.code}: ${sum.message}`);
-    if (c.touched) L.push("touched § (read each; update and list only a visible change in its area):", ...c.touched.map((t) => {
+    if (c.rank) {
+      // Why each read-first § ranks: its heaviest matched names, then any literal it still states that the change removed.
+      const why = (id) => {
+        const x = c.rank.find((r) => r.id === id);
+        return [x.reason.slice(0, 4).join(", ") + (x.reason.length > 4 ? ` +${x.reason.length - 4}` : ""), x.stale.length ? `still states ${x.stale.join(", ")}` : ""].filter(Boolean).join("; ");
+      };
+      L.push(`read first (ranked by the changed lines): ${c.readFirst.map((id) => `${id} (${why(id)})`).join(", ") || "none"}`, `named: ${c.named.join(", ") || "none"}`);
+    }
+    if (c.touched) L.push("touched § (read each marked read first, the rest are named; update and list only a visible change in its area):", ...c.touched.map((t) => {
       const lb = t.labels ? `; ${[t.labels.authority, t.labels.evidence].map((v) => v ?? "-").join("/")}` : "";
       const rq = t.requires === null ? "uninvestigated" : t.requires.join(", ") || "none declared";
       const cs = t.consumers.map((k) => `${k.id} (${k.depth})`).join(", ") || "none declared";

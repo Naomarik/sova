@@ -197,6 +197,7 @@ describe("the route classifier", () => {
     assert.equal(need("GET", "/api/peer/links/read"), "sessions");
     assert.equal(need("GET", "/api/peer/links/x/offers/y/tar"), "links");
     assert.equal(need("POST", "/api/peer/outreach/send"), "outreach");
+    assert.equal(need("POST", "/api/peer/outreach/reconnect"), "admin", "reconnecting the sender needs full control, not outreach");
     assert.equal(need("PUT", "/api/peer/share-gateway/links"), "share");
     assert.deepEqual(classifyRequest("GET", "/api/peer/something-new"), { need: "full", rule: "default" });
   });

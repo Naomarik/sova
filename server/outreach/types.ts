@@ -1,4 +1,5 @@
 import type { ChannelId, SenderStatus } from "../../shared/outreach";
+import type { SenderTarget } from "./targets";
 
 /**
  * A channel adapter (§app.outreach/channels): the core hands it an address it resolved, the rendered
@@ -14,8 +15,10 @@ export interface Receipt {
 
 export interface Channel {
   id: ChannelId;
-  status(): Promise<SenderStatus>;
-  send(input: { idem: string; address: string; text: string }): Promise<ChannelSend>;
+  /** One sender's status (`target`, else the default; null: off), noted in ./health.ts. */
+  status(target?: SenderTarget | null): Promise<SenderStatus>;
+  /** Through `target` only (else the default): a send never moves to another sender. */
+  send(input: { idem: string; address: string; text: string; target?: SenderTarget | null }): Promise<ChannelSend>;
   /** Receipts of this host's sends, by the ref `send` answered. */
   onReceipt(cb: (r: Receipt) => void): void;
 }

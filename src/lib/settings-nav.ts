@@ -35,6 +35,12 @@ export function openSettings(tab: SettingsTab = "general", at: SettingsSection |
   setOpenTab(tab);
 }
 
+/** `#/settings/<tab>` (a Needs you row of no session, a phone notification's tap): the tab it names, else null. */
+export function settingsTabFromHash(hash: string): SettingsTab | null {
+  const m = /^#\/settings\/([a-z-]+)$/.exec(hash);
+  return SETTINGS_TABS.find((t) => t === m?.[1]) ?? null;
+}
+
 export function closeSettings(): void {
   setSubagentPath(undefined);
   setOpenTab(null);

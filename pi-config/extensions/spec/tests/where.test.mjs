@@ -84,3 +84,34 @@ test("where TOKEN: claims that define it (heading or first sentence) before thos
   assert.equal(cli(root, ["where"]).j.code, "usage");
   assert.match(cli(root, ["where", "--help"]).j.help, /^where <path\|token>/);
 });
+
+test("where --json never hides results silently: past the top 10 it says how many more and how to page them, and text and JSON agree", () => {
+  const root = fixture();
+  const m = JSON.parse(readFileSync(join(root, ".sova/spec/manifest.json"), "utf8"));
+  const ids = Array.from({ length: 12 }, (_, i) => `§foo/part-${String.fromCharCode(97 + i)}`);
+  for (const id of ids) {
+    m.claims[id] = { kind: "note", requires: [] };
+    write(root, `.sova/spec/claims/foo/${id.split("/")[1]}.md`, `# ${id} — Part\n\nThis part passes \`Foo\` along.\n`);
+  }
+  write(root, ".sova/spec/manifest.json", JSON.stringify(m));
+  const { j } = cli(root, ["where", "Foo"]);
+  assert.equal(j.total, 12);
+  assert.equal(j.shown, 10);
+  const hidden = j.total - j.shown;
+  const signalled = (j.status === "more" && typeof j.next === "string") || (j.notShown === hidden && typeof j.hint === "string");
+  assert.ok(signalled, `2 hidden results carry a signal: ${JSON.stringify({ status: j.status, remaining: j.remaining, next: j.next, notShown: j.notShown, hint: j.hint })}`);
+  const text = cli(root, ["where", "Foo"], { json: false }).r.stdout;
+  assert.equal((text.match(/^  §/gm) ?? []).length, j.shown, "text lists what JSON shows");
+  assert.equal(Number(/^(\d+) more not shown/m.exec(text)?.[1]), hidden, "text and JSON name the same hidden count");
+  const all = j.next ? pages(root, ["where", "Foo"], 12000).flatMap((p) => p.lines) : cli(root, ["where", "Foo", "--all"]).j.lines;
+  assert.deepEqual(new Set(all.map((l) => l.id)), new Set(ids), "following the signal reaches every claim");
+});
+
+test("where --json on a path that does not exist says the file is absent, then searches it as a token", () => {
+  const root = fixture();
+  const { j } = cli(root, ["where", "src/no-such-file.ts"]);
+  assert.equal(j.file?.state, "absent", JSON.stringify(j));
+  assert.match(JSON.stringify([j.note, j.notes, j.message, j.unknowns, j.file]), /no file|absent|does not exist|not found/i, "a note says so");
+  assert.equal(j.exit, 1);
+  assert.equal(cli(root, ["where", "src/editor.ts"]).j.file.state, "read", "an existing path is still read");
+});

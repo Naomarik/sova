@@ -99,6 +99,12 @@ placement.
   keeps them current); a baton re-reckons an open offer's reach from an invitee's `effective-hours`, so
   a company edit re-arms reach timers; hours waits are re-armed by the host (`sova/rewindow`, engine).
   Looks and held acts that reach nobody read no hours. Tests: `company_hours_test`.
+- **Outage waits (WhatsApp down)**: act meta `:outage true` on placement `outreach/send`; a released act whose
+  fresh stamp carries `:outage {:why}` (the host's last reading of the sender says down) waits in an outage hold
+  (`:wait "outage"`), at most `hold_policy/outage-wait-ms` (24 h) from its first wait (`:sova/outage-since`, kept in
+  the held payload), in hours only (an hours wait comes first), cancellable like any hold; the host releases it
+  when the channel is back (`sova/rewindow` with `until` nil); at its bound it goes ahead and the channel refuses
+  it. Tests: `refit_test` `a-released-act-waits-out-its-channels-outage-for-at-most-a-day`.
 - **r8 / q12 review**: `:confirm-kind` on every held act (F12; `base/start-kind`: "offer" for ≥2
   targets); `b/hold-review` on each statechart with held acts: `hold/approve` (approve early, L0, reason) and,
   on `hold/waiting`, a soon `hold/review` reason to the project's watch, naming the hold as

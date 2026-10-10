@@ -24,6 +24,7 @@ const KIND: Record<PushKind, { label: string; hint: string }> = {
   "baton-needs-you": { label: "Baton", hint: "A baton session waits on you." },
   "worker-error": { label: "Subagent error", hint: "A subagent ended in an error." },
   "playbook-review": { label: "Playbook needs you", hint: "A playbook run proposes a change to approve and merge." },
+  "whatsapp-down": { label: "WhatsApp down", hint: "WhatsApp sending stopped and needs you: down, logged out, blocked, or the sender unreachable." },
 };
 
 /**

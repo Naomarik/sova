@@ -6,12 +6,9 @@
 
 /* ---- The page: no 1280 cap (other insights pages keep it). Head, bar and board share edges. ---- */
 .insights.agents-page > .insights-inner { max-width: 2400px; }
-/* The head sits beside the pane, not in it, so it measures itself: same width as the pane. */
+/* The head sits beside the pane, not in it, so it measures itself: same width as the pane. On the
+   Board tab it carries no totals (they're on the count line); on Costs it does, at every width. */
 .session-head.agents-page { container: agents-head / inline-size; }
-@container agents-head (min-width: 1000px) {
-  /* The totals move onto the count line above the board. */
-  .session-head.agents-page .session-head-meta { display: none; }
-}
 @container agents-head (min-width: 1600px) {
   /* A container query never styles its own container, so the head's children carry the offset:
      the head's own padding (space-4 left, space-3 right) plus this lands on the board's edges. */
@@ -51,9 +48,10 @@
 .board-filter:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
 .board-filter[aria-pressed="true"] { background: var(--color-accent-tint); border-color: var(--color-accent); color: var(--color-ink); font-weight: var(--fw-medium); }
 .board-filter-count { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-muted); }
-/* The count, and at ≥1000 the head's totals at its right: one caption line directly above the board. */
-.board-caption { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-2); }
-.board-totals { display: none; margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: var(--fs-caption); color: var(--color-ink-muted); white-space: nowrap; }
+/* The count and the totals, the totals' only place on this tab, directly above the board: under the
+   count when folded, at its right from 768. */
+.board-caption { display: flex; flex-direction: column; gap: 2px var(--space-3); margin-bottom: var(--space-2); }
+.board-totals { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: var(--fs-caption); color: var(--color-ink-muted); white-space: nowrap; }
 .board-count-line { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); white-space: nowrap; }
 .board-more-rows { align-self: flex-start; }
 
@@ -165,6 +163,7 @@
 button.board-team { flex: none; font: inherit; font-family: var(--font-mono); font-size: var(--fs-micro); cursor: pointer; }
 button.board-team:hover { color: var(--color-ink); border-color: var(--color-border-strong); }
 button.board-team:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.board-team.board-team-all { display: none; }
 .board-dash { color: var(--color-ink-muted); }
 
 /* Folded: the first tree and "+N" as chips. Unfolded (below): a grid of 2 lines. */
@@ -245,6 +244,7 @@ button.board-team:focus-visible { outline: var(--focus-ring); outline-offset: va
   .board-tree > :empty { display: inline-flex; }
   .board-tree-count { justify-self: end; }
   .board-tree-more { display: none; }
+  .board-caption { flex-direction: row; align-items: baseline; justify-content: space-between; }
 }
 
 /* ---- Desktop: the five columns, each cell 2 lines ---- */
@@ -257,7 +257,6 @@ button.board-team:focus-visible { outline: var(--focus-ring); outline-offset: va
   }
   .board-cell.board-activity, .board-cell.board-workers { align-self: center; }
   .board-workers .board-cell-sub { display: flex; }
-  .board-totals { display: block; }
   .board-head {
     display: grid;
     padding: var(--space-2);
@@ -270,6 +269,31 @@ button.board-team:focus-visible { outline: var(--focus-ring); outline-offset: va
     color: var(--color-ink-muted);
   }
 }
+/* ---- Desktop band (1000–1599): the title and the branches get the room. Activity is the ring and
+   the age (the model stays for AT and in the age's title), the team chips one "{n} teams" chip,
+   the readings and counts their content's width, and Session and Worktrees share the rest. ---- */
+@container insights (1000px <= width < 1600px) {
+  .board-line,
+  .board-head {
+    grid-template-columns: minmax(0, 1fr) 5.5rem minmax(8rem, 9.5rem) minmax(0, 1fr) calc(var(--control-md) * 3 + var(--space-1) * 2);
+    column-gap: var(--space-2);
+  }
+  .board-activity-line .board-model {
+    position: absolute;
+    width: 1px; height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+  .board-activity-line .board-when::before { content: none; }
+  .board-activity-line .context-ring + .board-when::before { content: "·"; }
+  .board-team:not(.board-team-all) { display: none; }
+  .board-team.board-team-all { display: inline-block; }
+  .board-tree-set { column-gap: var(--space-1); }
+  .board-tree-branch { margin-right: var(--space-1); }
+  .board-tree-reading, .board-tree-count, .board-tree-end { gap: var(--space-1); }
+}
+
 /* The head's Session label starts where the titles do, past the twist. */
 .board-head > :first-child { padding-left: calc(var(--control-md) + var(--space-1)); }
 

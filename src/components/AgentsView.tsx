@@ -546,7 +546,7 @@ function BoardRowView(props: { row: BoardRow; ctx: BoardCtx }) {
               {compactModel(s().model) ?? "—"}
             </span>
             <Show when={contextOf(s())}>{(c) => <ContextRing info={c()} />}</Show>
-            <span class="board-when" title={s().lastActiveAt}>
+            <span class="board-when" title={s().model ? `${s().model}\n${s().lastActiveAt}` : s().lastActiveAt}>
               {relativeTime(s().lastActiveAt, props.ctx.now)}
             </span>
           </span>
@@ -589,6 +589,16 @@ function BoardRowView(props: { row: BoardRow; ctx: BoardCtx }) {
                   +{teams().rest}
                 </button>
               </Show>
+              {/* From 1000 to 1599px the chips collapse into this one count. */}
+              <button
+                type="button"
+                class="chip chip-count board-team board-team-all"
+                aria-label={`${teamsWord(r().teams.length)}: open the Agents tab of ${quoted(s().title)}`}
+                title={r().teams.map((t) => t.name).join(", ")}
+                onClick={() => props.ctx.onOpenAgents(s().path)}
+              >
+                {teamsWord(r().teams.length)}
+              </button>
             </span>
           </Show>
         </div>
@@ -854,7 +864,7 @@ export function AgentsView(props: {
   return (
     <InsightsPage
       title="Agents"
-      meta={meta() ? <span title={metaTitle()}>{meta()}</span> : undefined}
+      meta={onCosts() && meta() ? <span title={metaTitle()}>{meta()}</span> : undefined}
       refreshLabel="Refresh Agents"
       onRefresh={() => {
         props.agents.refetch();
@@ -912,7 +922,7 @@ export function AgentsView(props: {
               )}
             </For>
           </div>
-          {/* The count, and from 1000px the head's totals at its right, directly above the board. */}
+          {/* The count and the totals, directly above the board: on this tab the totals are never in the head. */}
           <div class="board-caption">
             <p class="board-count-line" aria-live="polite">
               {shown().length} {shown().length === 1 ? "session" : "sessions"}
@@ -978,6 +988,8 @@ export function AgentsView(props: {
     </InsightsPage>
   );
 }
+
+const teamsWord = (n: number) => `${n} ${n === 1 ? "team" : "teams"}`;
 
 const sameList = <T,>(a: readonly T[], b: readonly T[]) => a.length === b.length && a.every((x, i) => x === b[i]);
 

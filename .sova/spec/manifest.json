@@ -1707,7 +1707,9 @@
       "code": [
         "src/components/UsageView.tsx",
         "src/lib/insights.ts",
-        "pi-config/extensions/usage-status/index.ts"
+        "pi-config/extensions/usage-status/index.ts",
+        "src/components/UsageHistory.tsx",
+        "src/components/UsageOllama.tsx"
       ]
     },
     "§design.copy-deck/live-watch": {
@@ -16273,7 +16275,9 @@
         "src/lib/ollama-card.integration.test.ts",
         "src/lib/insights.test.ts",
         "src/components/UsageOllama.tsx",
-        "src/design/base.css"
+        "src/design/base.css",
+        "src/lib/format.ts",
+        "src/lib/format.test.ts"
       ]
     },
     "§app.insights/ollama-credits": {
@@ -16301,7 +16305,9 @@
         "src/lib/ollama-card.integration.test.ts",
         "src/lib/insights.test.ts",
         "src/components/UsageOllama.tsx",
-        "src/design/base.css"
+        "src/design/base.css",
+        "src/lib/format.ts",
+        "src/lib/format.test.ts"
       ]
     },
     "§app.insights/usage-detail-reachability": {

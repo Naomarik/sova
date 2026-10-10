@@ -17,7 +17,7 @@ A session is listed when one of these holds:
 - It's idle with open alignment questions, and its branch isn't merged yet.
 - A baton hand-off is waiting on you.
 
-Some things are worth a look but don't block anything, so they never get a row here: a reply that seems to ask you something, a team that has gone quiet, a stuck subagent, or a worktree that's ready to merge. Those show as a quiet mark on the session's own row instead.
+Some things are worth a look but don't block anything, so they never get a row here: a reply that seems to ask you something, a team that has gone quiet, a stuck subagent, or a worktree that's ready to merge. Those show as a quiet mark on the session's own row instead. A [scheduled playbook](/docs/playbooks-and-schedules/) can act on branches ready to merge for you: the Merge round wakes when one turns ready, asks its owner, and lands it.
 
 A subagent you killed yourself isn't listed, and neither is one that ended only because the Sova server restarted. A subagent error stops counting once you've opened the session, or once the session has finished a turn since.
 

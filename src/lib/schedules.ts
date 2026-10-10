@@ -29,6 +29,13 @@ export function scheduleLine(s: PlaybookSchedule, now = Date.now()): string {
   return `${s.text} · ${scheduleStateText(s, now)}`;
 }
 
+/** An approved schedule with only event triggers has no next time: when it runs instead,
+    "Runs when a branch is ready to merge." (the trigger words, from the schedule's own text). */
+export function eventsText(s: PlaybookSchedule): string {
+  const events = (s.text ?? "").split(" · ").filter((t) => t.startsWith("When ")).map((t) => t.slice(5));
+  return events.length ? `Runs when ${events.join(" or when ")}.` : "Approved";
+}
+
 /** Whether Approve Schedule applies (not approved yet, or paused and waiting for a new approval). */
 export const canApprove = (s: PlaybookSchedule): boolean => !!s.pin && (s.state === "needs-approval" || (s.state === "paused" && !!s.id));
 

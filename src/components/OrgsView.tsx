@@ -40,7 +40,7 @@ import { aboutChangeWord, aboutCount, aboutLength, aboutOverCap, aboutPreview } 
 import { orgPageRoute } from "../lib/org-page-route";
 import { createOrgSource } from "../lib/org-source";
 import { useMinuteNow } from "../lib/minute-clock";
-import { orgHref, orgSessionHref, orgTabHref, personHref, startForHref, takeStartParent, type OrgsRoute, type OrgTab } from "../lib/orgs-route";
+import { DEFAULT_ORG_TAB, orgHref, orgSessionHref, orgTabHref, personHref, startForHref, takeStartParent, type OrgsRoute, type OrgTab } from "../lib/orgs-route";
 import { projectHref } from "../lib/projects-route";
 import { orgTabsOf } from "../lib/org-tabs";
 import { emptyFilters, type HistoryView } from "../lib/org-history-route";
@@ -315,8 +315,8 @@ function OrgPage(props: { id: string; start?: string; tab?: OrgTab; history?: Hi
       return false;
     }
   };
-  /** A start link opens Sessions whatever tab was named; no tab is Sessions too. */
-  const tab = (): OrgTab => (props.start ? "sessions" : (props.tab ?? "sessions"));
+  /** A start link opens Sessions whatever tab was named; no tab is Projects. */
+  const tab = (): OrgTab => (props.start ? "sessions" : (props.tab ?? DEFAULT_ORG_TAB));
   return (
     <InsightsPage
       title={org.data()?.name ?? "Organization"}
@@ -362,6 +362,9 @@ function OrgPage(props: { id: string; start?: string; tab?: OrgTab; history?: Hi
             <OrgTabs org={o()} tab={tab()} />
             <div class="org-tabpanel" role="tabpanel" id="org-tabpanel" aria-labelledby={`org-tab-${tab()}`}>
               <Switch>
+                <Match when={tab() === "projects"}>
+                  <ProjectsSection org={o()} act={act} />
+                </Match>
                 <Match when={tab() === "sessions"}>
                   <BatonSection
                     org={o()}
@@ -378,16 +381,14 @@ function OrgPage(props: { id: string; start?: string; tab?: OrgTab; history?: Hi
                   <PeopleSection org={o()} act={act} />
                   <ChangesSection org={o()} act={act} />
                 </Match>
-                <Match when={tab() === "projects"}>
-                  <AboutCard org={o()} act={act} />
-                  <CompanyHoursCard org={o()} act={act} />
-                  <ProjectsSection org={o()} act={act} />
-                </Match>
                 <Match when={tab() === "history"}>
                   {/* The org's recorded history: its own reads, the org for names. */}
                   <OrgHistory org={o()} view={props.history ?? { filters: emptyFilters() }} />
                 </Match>
-                <Match when={tab() === "workspace"}>
+                {/* The org's own settings: what overseers read about it, its hours, then its repo. */}
+                <Match when={tab() === "settings"}>
+                  <AboutCard org={o()} act={act} />
+                  <CompanyHoursCard org={o()} act={act} />
                   <GitCard org={o()} act={act} />
                 </Match>
               </Switch>
@@ -1203,11 +1204,59 @@ function ProjectsSection(props: { org: OrgDetail; act: Act }) {
   // Archived projects leave the list for a disclosure under it (§app.organizations/archive).
   const live = () => props.org.projectList.filter((p) => !p.archived);
   const archived = () => props.org.projectList.filter((p) => p.archived);
+  // The list leads the tab; Add Project and Import a Project wait behind one button, unfolded at
+  // first only while the org has no project at all (there is nothing else to do here then).
+  const [adding, setAdding] = createSignal(props.org.projectList.length === 0);
   return (
     <section class="card orgs-section" aria-labelledby="orgs-projects">
-      <h2 class="orgs-h2" id="orgs-projects">
-        Projects
-      </h2>
+      <div class="orgs-head">
+        <h2 class="orgs-h2" id="orgs-projects">
+          Projects
+        </h2>
+        <button
+          type="button"
+          class="button button-sm"
+          aria-expanded={adding() ? "true" : "false"}
+          aria-controls={adding() ? "orgs-add-project" : undefined}
+          onClick={() => setAdding((v) => !v)}
+        >
+          <Icon name="plus" small />
+          Add Project
+        </button>
+      </div>
+      <Show when={adding()}>
+        <div class="orgs-add-project" id="orgs-add-project">
+          <form
+            class="orgs-inline orgs-project-form"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              const added = (r: unknown): string => {
+                const x = r as OrgDetail & { normalizedFrom?: string };
+                const at = x.normalizedFrom ? projectAt(x.normalizedFrom, x.projectList) : null;
+                return at ? `Added ${tildePath(at.root, home())}, the checkout root of ${tildePath(x.normalizedFrom!, home())}.` : "Project added.";
+              };
+              if (await props.act(() => addOrgProject(props.org.id, root().trim(), name().trim() || undefined), added)) {
+                setName("");
+                setRoot("");
+                setAdding(false);
+              }
+            }}
+          >
+            <label class="field">
+              <span class="field-label">Project name</span>
+              <input class="input" value={name()} onInput={(e) => setName(e.currentTarget.value)} maxlength={80} placeholder="The folder's name" />
+            </label>
+            <label class="field orgs-grow">
+              <span class="field-label">Folder</span>
+              <input class="input input-mono" value={root()} onInput={(e) => setRoot(e.currentTarget.value)} placeholder="/path/to/project" required />
+            </label>
+            <button type="submit" class="button">
+              Add Project
+            </button>
+          </form>
+          <ImportProjectRow org={props.org} act={props.act} onImported={() => setAdding(false)} />
+        </div>
+      </Show>
       <Show when={props.org.projectList.length > 0 && costs()}>
         {(c) => (
           <p class="orgs-line orgs-projects-cost">
@@ -1275,34 +1324,6 @@ function ProjectsSection(props: { org: OrgDetail; act: Act }) {
           </ul>
         </details>
       </Show>
-      <form
-        class="orgs-inline orgs-project-form"
-        onSubmit={async (e) => {
-          e.preventDefault();
-          const added = (r: unknown): string => {
-            const x = r as OrgDetail & { normalizedFrom?: string };
-            const at = x.normalizedFrom ? projectAt(x.normalizedFrom, x.projectList) : null;
-            return at ? `Added ${tildePath(at.root, home())}, the checkout root of ${tildePath(x.normalizedFrom!, home())}.` : "Project added.";
-          };
-          if (await props.act(() => addOrgProject(props.org.id, root().trim(), name().trim() || undefined), added)) {
-            setName("");
-            setRoot("");
-          }
-        }}
-      >
-        <label class="field">
-          <span class="field-label">Project name</span>
-          <input class="input" value={name()} onInput={(e) => setName(e.currentTarget.value)} maxlength={80} placeholder="The folder's name" />
-        </label>
-        <label class="field orgs-grow">
-          <span class="field-label">Folder</span>
-          <input class="input input-mono" value={root()} onInput={(e) => setRoot(e.currentTarget.value)} placeholder="/path/to/project" required />
-        </label>
-        <button type="submit" class="button">
-          Add Project
-        </button>
-      </form>
-      <ImportProjectRow org={props.org} act={props.act} />
     </section>
   );
 }
@@ -1311,7 +1332,7 @@ function ProjectsSection(props: { org: OrgDetail; act: Act }) {
  * Import a Project (§app.projects/import): a standalone project of this host moves into the org. The server words
  * the confirm (what gets committed where); Import sends it confirmed. Shown while any standalone project is here.
  */
-function ImportProjectRow(props: { org: OrgDetail; act: Act }) {
+function ImportProjectRow(props: { org: OrgDetail; act: Act; onImported?: () => void }) {
   const [projects, { refetch }] = createResource(
     () => props.org.id,
     () => listProjects().then((l) => l.projects.filter((p) => p.space.kind === "standalone")).catch(() => []),
@@ -1339,6 +1360,7 @@ function ImportProjectRow(props: { org: OrgDetail; act: Act }) {
     if (ok && confirm) {
       setPicked("");
       void refetch();
+      props.onImported?.();
     }
   };
   return (

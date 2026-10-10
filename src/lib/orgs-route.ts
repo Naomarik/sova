@@ -1,6 +1,6 @@
 // The organizations page (§app/organizations): `#/orgs` lists the orgs attached to this host,
-// `#/orgs/<id>` shows one on its Sessions tab, `#/orgs/<id>/<tab>` on a tab (sessions, people,
-// projects, workspace; §app.organizations/org-page), `#/orgs/<id>/start/<person id>` on Sessions
+// `#/orgs/<id>` shows one on its Projects tab, `#/orgs/<id>/<tab>` on a tab (projects, sessions,
+// people, history, settings; §app.organizations/org-page), `#/orgs/<id>/start/<person id>` on Sessions
 // with the start form open and aimed at that person (spawn-for-person, §app.organizations/referrals),
 // and `#/orgs/<id>/people/<person id>` is one person's page (§app.organizations/person-page). A
 // project's page is `#/projects/<id>` (lib/projects-route), placed or not. Ids are the server's (`org_…`, `p_…`, uuid session ids): plain
@@ -11,15 +11,17 @@ import { historyQueryOf, historyTailOf, historyViewOf, type HistoryView } from "
 
 const ID_RE = /^[A-Za-z0-9_-]+$/;
 
-/** In the strip's order: History after Projects, before Workspace. The History tab's own address and
-    filters are lib/org-history-route's. */
-export const ORG_TABS = ["sessions", "people", "projects", "history", "workspace"] as const;
+/** In the strip's order: Projects first (the bare org opens there), History after People, Settings
+    last. The History tab's own address and filters are lib/org-history-route's. */
+export const ORG_TABS = ["projects", "sessions", "people", "history", "settings"] as const;
 export type OrgTab = (typeof ORG_TABS)[number];
+/** The tab a bare `#/orgs/<id>` opens on. */
+export const DEFAULT_ORG_TAB: OrgTab = "projects";
 
 /** `host`: the peer the org is attached on (`?host=<id>`, §mesh.remote-sessions/org-pages); absent here. */
 export type OrgsRoute =
   | { kind: "list" }
-  /** No tab = Sessions; `start` implies Sessions. `history` is set exactly when `tab` is "history". */
+  /** No tab = Projects; `start` implies Sessions. `history` is set exactly when `tab` is "history". */
   | { kind: "org"; id: string; start?: string; tab?: OrgTab; host?: string; history?: HistoryView }
   | { kind: "person"; id: string; personId: string; host?: string };
 
@@ -63,7 +65,7 @@ function hashRoute(hash: string): OrgsRoute | null {
   if (hash === ORGS_HREF || hash === `${ORGS_HREF}/`) return { kind: "list" };
   const h = /^#\/orgs\/([^/]+)\/history(\/.*)?$/.exec(hash);
   if (h) return historyRoute(h[1]!, h[2] ?? "", new URLSearchParams());
-  const t = /^#\/orgs\/([^/]+)\/(sessions|people|projects|workspace)\/?$/.exec(hash);
+  const t = /^#\/orgs\/([^/]+)\/(projects|sessions|people|settings)\/?$/.exec(hash);
   if (t) return ID_RE.test(t[1]!) ? { kind: "org", id: t[1]!, tab: t[2] as OrgTab } : null;
   const pp = /^#\/orgs\/([^/]+)\/people\/([^/]+)\/?$/.exec(hash);
   if (pp) return ID_RE.test(pp[1]!) && ID_RE.test(pp[2]!) ? { kind: "person", id: pp[1]!, personId: pp[2]! } : null;
@@ -72,6 +74,15 @@ function hashRoute(hash: string): OrgsRoute | null {
   const id = m[1]!;
   if (m[2] === undefined) return { kind: "org", id };
   return ID_RE.test(m[2]) ? { kind: "org", id, start: m[2] } : null;
+}
+
+/**
+ * The address an older org address moved to, or null: the Workspace tab is Settings now, so
+ * `#/orgs/<id>/workspace` (its `?host=` kept) is replaced with `#/orgs/<id>/settings`.
+ */
+export function movedOrgHash(hash: string): string | null {
+  const m = /^#\/orgs\/([^/?]+)\/workspace\/?(\?host=[^&]*)?$/.exec(hash);
+  return m && ID_RE.test(m[1]!) ? `${ORGS_HREF}/${m[1]}/settings${m[2] ?? ""}` : null;
 }
 
 /** An address inside org `id`'s pages; an org on a peer carries its host, so a reload opens it there. */

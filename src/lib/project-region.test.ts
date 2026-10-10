@@ -5,6 +5,7 @@ import type { ProjectSummary } from "../../shared/projects";
 import type { SessionSummary } from "../../shared/protocol";
 import { inProjectsRegion, isStandaloneProjectSession, projectBlocks, projectRowCount } from "./project-region";
 import { isOrdinarySession, sidebarRegion } from "./regions";
+import { listedOrgProjects, orgSections } from "./org-region";
 
 const at = (day: number) => `2026-01-${String(day).padStart(2, "0")}T00:00:00Z`;
 const session = (id: string, extra: Partial<SessionSummary> = {}): SessionSummary =>
@@ -63,6 +64,20 @@ test("blocks: every registered standalone project by name, its overseer as the e
     ],
   );
   assert.equal(projectRowCount(blocks), 4, "the eye is not a row");
+});
+
+test("one project list, two regions: every unarchived project is listed exactly once — standalone in Projects, placed under its org — sessions or none", () => {
+  const list = [
+    registered("pa", "Zeta"),
+    registered("pc", "Alpha"),
+    registered("pd", "Gone", { archived: { at: at(3) } }),
+    registered("pb", "Placed", { space: { kind: "org", orgId: "o1", orgName: "Org" } }),
+    registered("pe", "Placed quiet", { space: { kind: "org", orgId: "o2", orgName: "Other org" } }),
+  ];
+  const sessions = [session("b1", proj("pa", "coding")), session("pl", { ...proj("pb", "coding"), org: placedOrg })];
+  const inProjects = projectBlocks(sessions.filter(inProjectsRegion), list).map((b) => b.id);
+  const inOrgs = orgSections(sessions, listedOrgProjects(list, { query: "", here: true })).flatMap((o) => o.projects.map((p) => p.id));
+  assert.deepEqual([...inProjects, ...inOrgs].sort(), ["pa", "pb", "pc", "pe"], "each once, the archived one nowhere");
 });
 
 test("before the project list is read, a session still names its project", () => {

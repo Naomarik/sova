@@ -82,10 +82,10 @@ test("burn words stay with the meter instead of leaving dead space beside its hi
 });
 
 const { zeroOnlyHistory } = await importSsr(new URL("../components/UsageHistory.tsx", import.meta.url), (s: string) => import.meta.resolve(s));
-test("only zero-only history compacts; past samples, summaries and limit hits remain browsable", () => {
+test("only a zero-only first period compacts; every past period stays browsable, including zero", () => {
   const zero = [{ t: now - 1, pct: 0 }, { t: now, pct: 0 }];
   assert.equal(zeroOnlyHistory(0, zero, []), true);
-  assert.equal(zeroOnlyHistory(0, zero, [{ points: zero, final: 0 }]), true);
+  assert.equal(zeroOnlyHistory(0, zero, [{ points: zero, final: 0 }]), false);
   assert.equal(zeroOnlyHistory(1, zero, []), false);
   assert.equal(zeroOnlyHistory(0, [{ t: now, pct: 1 }], []), false);
   assert.equal(zeroOnlyHistory(0, zero, [{ points: [{ t: now, pct: 20 }], final: 0 }]), false);

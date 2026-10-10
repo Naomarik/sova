@@ -957,7 +957,7 @@ user row.
   `state.json` or `holder.json`, and no pause list in the attach index.
 - **A statechart file that doesn't load** (a hand edit, conflict markers after a pull, an unknown
   version) is a workspace problem, shown as the others are (§app.organizations/org-page: the banner
-  and the Workspace tab's dot) as "{file} can't be read: {why}"; so is a journal or a log file that
+  and the Settings tab's dot) as "{file} can't be read: {why}"; so is a journal or a log file that
   doesn't parse; the rest of the org loads, nothing overwrites
   the file, and every act that would reach that session is refused whole with "The workspace repo
   has a problem: {file} can't be read. Fix or restore it, then reload." until **Reload** on the

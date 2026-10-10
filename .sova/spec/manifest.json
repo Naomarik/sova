@@ -2423,12 +2423,17 @@
       "kind": "behavior",
       "requires": [],
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "pi-config/extensions/claude-code/provider/session-bridge.ts",
         "pi-config/extensions/claude-code/provider/session-records.ts",
-        "pi-config/extensions/claude-code/provider/fork-point.ts"
-      ]
+        "pi-config/extensions/claude-code/provider/fork-point.ts",
+        "pi-config/extensions/claude-code/provider/resume-record.ts"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:06Z"
+      }
     },
     "§app.worker-restore/failure-reason": {
       "kind": "behavior",
@@ -3281,11 +3286,19 @@
         "server/overseer-todos.ts",
         "server/index.ts",
         "server/app.ts",
-        "server/overseer-mode.test.ts"
+        "server/overseer-mode.test.ts",
+        "server/overseer-opening.ts",
+        "server/overseer-opening.test.ts",
+        "server/overseer-runtime.test.ts",
+        "server/overseer-run-note.ts"
       ],
       "requires": [
         "§app.overseer/tools"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:06Z"
+      }
     },
     "§app.overseer/identity-and-clear": {
       "kind": "behavior",
@@ -3435,7 +3448,11 @@
       ],
       "requires": [
         "§app.overseer/tools"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:38Z"
+      }
     },
     "§app.overseer/tools": {
       "kind": "behavior",
@@ -5102,13 +5119,20 @@
         "src/projects.css",
         "server/overseer-org-part.ts",
         "server/overseer-org-part.test.ts",
-        "server/spec-tool-fake.ts"
+        "server/spec-tool-fake.ts",
+        "server/overseer-opening.ts",
+        "server/overseer-run-note.ts",
+        "server/project-overseer-opening.test.ts"
       ],
       "requires": [
         "§app.overseer/hosting",
         "§app.organizations/workspace-repo",
         "§chat/images"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:06Z"
+      }
     },
     "§app.project-overseer/tools": {
       "kind": "behavior",
@@ -5414,6 +5438,28 @@
         "src/lib/decisions-view.test.ts",
         "src/components/ProjectPage.tsx"
       ]
+    },
+    "§app.insights/usage-resend": {
+      "kind": "behavior",
+      "requires": [
+        "§app.insights/usage-ledger"
+      ],
+      "authority": "accepted",
+      "code": [
+        "server/usage-helper/query.ts",
+        "server/usage-helper/ledger.ts",
+        "shared/usage/wire.ts",
+        "server/claude-cache-check.ts",
+        "scripts/claude-cache-check.ts",
+        "server/claude-cache-check.test.ts",
+        "server/usage-helper/ledger.test.ts",
+        "package.json"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:06Z"
+      },
+      "evidence": "verified"
     },
     "§app.insights/worktrees-endpoint": {
       "kind": "behavior",
@@ -6375,7 +6421,11 @@
         "§app.organizations/workspace-repo",
         "§app.organizations/org-page",
         "§app.project-overseer/identity"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:38Z"
+      }
     },
     "§app.owner-page/content": {
       "kind": "behavior",
@@ -12210,7 +12260,9 @@
       "code": [
         "server/overseer.ts",
         "server/overseer-run-note.ts",
-        "server/overseer-run-note.test.ts"
+        "server/overseer-run-note.test.ts",
+        "server/overseer-opening.ts",
+        "server/overseer-opening.test.ts"
       ],
       "requires": [
         "§app.overseer/confirm",
@@ -12218,7 +12270,11 @@
         "§app.overseer/attention-digest",
         "§chat.worktrees/readiness",
         "§app.overseer/tools"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:06Z"
+      }
     },
     "§app.overseer/session-truth": {
       "kind": "behavior",
@@ -14880,7 +14936,11 @@
       "requires": [
         "§app.insights/llm-inflight",
         "§app.project-costs/pricing"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:06Z"
+      }
     },
     "§mesh.remote-sessions/head-host-state": {
       "kind": "behavior",
@@ -16032,6 +16092,22 @@
         "server/session-autotitle.test.ts",
         "pi-config/extensions/claude-code/accounts.test.ts"
       ]
+    },
+    "§app.claude-code-provider/oneshot-uncached": {
+      "kind": "behavior",
+      "requires": [
+        "§app.claude-code-provider/continuity"
+      ],
+      "authority": "accepted",
+      "code": [
+        "pi-config/extensions/claude-code/provider/session-bridge.ts",
+        "pi-config/extensions/claude-code/provider/bridge.test.ts"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:06Z"
+      },
+      "evidence": "verified"
     },
     "§app.claude-code-provider/pinned-model": {
       "kind": "behavior",
@@ -17323,9 +17399,15 @@
       "authority": "accepted",
       "code": [
         "pi-config/extensions/claude-code/provider/session-bridge.ts",
-        "pi-config/extensions/claude-code/provider/bridge.test.ts"
+        "pi-config/extensions/claude-code/provider/bridge.test.ts",
+        "pi-config/extensions/claude-code/provider/resume-record.ts",
+        "pi-config/extensions/claude-code/provider/login-failover.test.ts"
       ],
-      "evidence": "verified"
+      "evidence": "verified",
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:06Z"
+      }
     }
   },
   "boundary": {

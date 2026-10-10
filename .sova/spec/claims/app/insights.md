@@ -449,6 +449,17 @@ function.** Standalone `claude` use outside Sova and pi is not recorded.
   (`title`, `decide`, `outline`, `vision`, `branch-summary`, `compaction`, `cache-warm`, …), the
   working directory and the org project when known, and a key that names the call. A call that
   reports no tokens writes nothing. Each attempt of a retried call is its own record.
+- **How a Claude process started.** The first record of each Claude Code child the provider bridge
+  launches for a conversation carries `launch`: `how` the conversation reached it (`fresh`, nothing
+  before the message; `resumed`, Claude's own saved copy picked up; `folded` or `joined`, the history
+  re-sent condensed in one message; `view`, a memory view sent as written), `why` it was started
+  (`new`, `process-start` after a server restart or a reopen, `reaped` after its idle process was
+  closed, `ended`, `model`, `effort`, `system-prompt`, `tools`, `cwd`, `diverged`, `desynced`,
+  `aborted`, `tool-results`, `nothing-new`, `login-leaving`, `login-picked`, `login-failover`,
+  `fork`, `oneshot`), and, when it could not resume a saved copy, `fallback`, why not
+  (`login-moved`, `not-continuation`, `settings-changed`, `memory-view`, `resume-failed`). Both are
+  short kebab-case words: the parse takes an unknown one as written, and a reader that predates the
+  field reads the record without it.
 - **Where.** `<agent dir>/usage/v1/<UTC day>/<producer>.jsonl`, one file per process and day, one
   writer per file, one appended line per call; the shape and its strict parse are
   `pi-config/extensions/llm-inflight/usage-record.ts` (builtins only). The server's own main loop
@@ -480,6 +491,22 @@ function.** Standalone `claude` use outside Sova and pi is not recorded.
   checked-in seed is only the starting copy when that file is missing. The server pulls models.dev
   every 6 hours and on demand, and a pull only adds dated periods: an old period is never dropped
   or rewritten.
+
+## §app.insights/usage-resend — What re-sending a conversation's history cost
+
+The usage helper answers, per conversation, what was spent re-sending its history to a new Claude
+process and why, from the records' `launch` (§app.insights/usage-ledger). A re-send is the first
+call of a launch whose `how` is `folded` or `joined`; its cost is that call's input and cache-write
+spend at the price in force (its output is the reply, counted as usual). `GET /api/usage/session`
+and each of `GET /api/usage/costs`' top sessions carry `resend` when the conversation had any
+launch with `launch` recorded: the re-send dollars and tokens, how many launches re-sent and how
+many picked up Claude's saved copy, and the reasons (each `why` with its `fallback`), costliest
+first. A conversation's own calls only: its workers and side calls are not in it, and records from
+before the field existed count nothing. A developer check (`pnpm run claude:cache-check`) reads the
+ledger files only, never calls a model, and prints per kind of conversation the share of its Claude
+spend that went to re-sending history and the top reasons; for records without `launch` it
+estimates a re-send from the token pattern (a cache write over 5,000 tokens where the cache read
+falls short of the call before it by at least 5,000).
 
 ## §app.insights/cost-history — The Costs tab (`#/agents/costs`)
 

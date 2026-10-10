@@ -27,9 +27,24 @@ pi, its Claude login is leaving this device, an interrupted turn has not settled
 effort, system prompt, tool set or cwd changed, the history diverged (a rewind, branch, compaction
 or foreign append), pi answered only some of the child's tool calls or a result matches no held
 call, or there is nothing new to send. A new child gets the whole history folded into one user
-message, clipped to the fold budget, except the first child of a forked session: it resumes the
-parent's Claude session and sends only the new user messages when the transcript extends exactly
-the prefix that session heard, with the same cwd and no tool results after it. A replaced live
+message, clipped to the fold budget, except in two cases where it resumes a Claude session
+(`--resume <id> --fork-session`, under its own new session id) and sends only the new user
+messages. The first child of a forked session resumes the parent's Claude session when the
+transcript extends exactly the prefix that session heard, with the same cwd and no tool results
+after it. And a chat picks up its own last Claude session (§app.worker-restore/claude-bridge-restart)
+when its child was closed while idle (more idle children than the bridge keeps), ended, or went with
+a server restart: after each turn whose result is a success, with no tool call left open and the
+child in step with pi, the bridge saves a resume record for the pi session (the Claude session id,
+how many pi messages it heard and their fingerprint, the cwd, the login, and the fingerprint of the
+model, effort, system prompt, tools and cwd), in memory and in
+`<agent dir>/claude-code/resume/<pi session id>.json`; it drops the record as soon as it sends the
+child anything else, and whenever the child falls out of step or a turn is aborted. A new child
+resumes from the record only when the model, effort, system prompt, tools and cwd are unchanged, it
+runs on the same login, and pi's history is exactly the recorded messages, then one finished
+assistant reply, then user messages only; never for a chat whose history opens with a memory view
+(those rebuild their history on purpose). Otherwise, and when the CLI fails to resume the record, it
+folds as before and the turn still completes. Each new child's first usage record says how it
+started and why (§app.insights/usage-ledger `launch`). A replaced live
 child's fold opens "Your session was restarted, so this is a condensed, lossy replay of the
 conversation so far", and a first child for a conversation that already has history opens "This
 conversation started before you joined it"; reasoning is left out and long tool output keeps only
@@ -44,6 +59,15 @@ that block alone, the chat's system prompt read from the cache (elsewhere the CL
 one block as before); its newer lines and the messages after it go as the child's first
 user message, as written, with no restart preamble; a mid-turn restart folds the rest with the view
 reduced to its newer lines.
+
+## §app.claude-code-provider/oneshot-uncached — One-off summaries skip the prompt cache
+
+A one-shot request on the bridge (pi's compaction and branch summaries: no tools, under a session
+id no pi session announced) runs its child with Claude Code's prompt caching off
+(`DISABLE_PROMPT_CACHING=1` in its environment), since its input is read once and never again:
+it is sent as plain input instead of being written to the cache, which costs more. Its spend is
+recorded as before. A chat's own children, workers and the topic outline's `claude -p` keep the
+cache as they are.
 
 ## §app.claude-code-provider/invalid-tool-input — A tool call whose arguments are not valid JSON
 

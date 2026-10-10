@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { acquireLock, busyOf, dirtyPaths, expandArgs, failingTestFiles, hasScript, homeShown, needsRestart, parseBatch, parseReply, replyOf, shellPath, suiteOf, tempCommitOf, timeoutFor, touchesSpecReplay } from "../scripts/round.mjs";
+import { acquireLock, busyOf, dirtyPaths, expandArgs, failingTestFiles, groupOf, hasScript, homeShown, needsRestart, ownerOf, parseBatch, parseBoard, parseReply, replyOf, shellPath, suiteOf, tempCommitOf, timeoutFor, touchesSpecReplay } from "../scripts/round.mjs";
 
 const ROUND = fileURLToPath(new URL("../scripts/round.mjs", import.meta.url));
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
@@ -30,6 +30,17 @@ const systemctlLog = join(root, "systemctl.log");
 const settingsFile = join(agent, "sova", "merge-round.json");
 const SETTINGS = { privateNames: [PLANTED, root, basename(root)], kinds: { [PLANTED]: "user", [root]: "home", [basename(root)]: "home" }, restartUnit: "sova-runtime.service" };
 const stateFile = join(agent, "sova", "playbooks", "merge-round", "state.json");
+const boardFile = join(agent, "sova", "merge-board.json");
+/** Sova's merge board as the server writes it (server/merge-board.ts): rows [branch, state, owner, status, path?]. */
+const writeBoard = (rows, { pending = 0, at = Date.now() } = {}) => {
+  mkdirSync(dirname(boardFile), { recursive: true });
+  const words = { "waiting-approval": "Waiting for your OK", ready: "Ready to merge" };
+  const iso = new Date(at).toISOString();
+  writeFileSync(boardFile, JSON.stringify({
+    v: 1, at: iso, read: 10, pending,
+    rows: rows.map(([branch, state, owner, status, path = wt(branch)]) => ({ path, branch, repo: join(main, ".git"), state, reason: `${words[state] ?? "In progress"} · reason`, readAt: iso, owner: { id: owner, status, profile: null, lastActiveAt: iso } })),
+  }));
+};
 const outputs = [];
 
 const gitEnv = { GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: join(root, "gitconfig") };
@@ -287,15 +298,61 @@ test("start without settings turns the push hold on, and push refuses under it",
   assert.equal((statSync(stateFile).mode & 0o777).toString(8), "600");
 });
 
-test("status: each kind of branch, masked names, and the shared object store untouched", async () => {
+test("status without the board: git facts, owners unknown and why, exit 2", async () => {
   mkdirSync(dirname(settingsFile), { recursive: true });
   writeFileSync(settingsFile, JSON.stringify(SETTINGS, null, 2));
+  rmSync(boardFile, { force: true });
+  const r = await run(["status"]);
+  assert.equal(r.code, 2, r.out);
+  assert.match(r.out.split("\n")[0], /^Owners unknown: the merge board file is missing/);
+  assert.match(r.out, /^feat\/clean: readiness unknown · owner unknown · \+1\/-\d+ · clean · merges cleanly/m);
+  assert.match(r.out, /next: say owners are unknown and why; land nothing this round/);
+  writeBoard([], { at: Date.now() - 6 * 60_000 });
+  const stale = await run(["status"]);
+  assert.equal(stale.code, 2, stale.out);
+  assert.match(stale.out, /^Owners unknown: the merge board was written 6m ago/);
+  writeFileSync(boardFile, "{not json");
+  assert.match((await run(["status"])).out, /^Owners unknown: the merge board file isn't valid JSON/);
+});
+
+test("status: the whole board sorted by the next action, counts first, owners from the board", async () => {
+  writeBoard([
+    ["feat/clean", "waiting-approval", OWNER, "idle"],
+    ["feat/firstrun", "ready", "0199cccc-busy", "busy"],
+    ["feat/dirty", "ready", "0199dddd-archived", "archived"],
+    ["feat/temp", "in-progress", "0199eeee-temp", "idle"],
+    ["feat/slow", "ready", "0199ffff-elsewhere", "idle", join(root, "not-a-worktree")],
+    ["feat/manifest", "ready", "0199ffff-moved", "idle", wt("feat/conflict")],
+  ]);
   const objects = objectFiles();
   const r = await run(["status"]);
   assert.equal(r.code, 0, r.out);
   assert.deepEqual(objectFiles(), objects, "merge-tree wrote into the shared object store");
-  const line = (b) => r.out.split("\n").find((l) => l.startsWith(`${b}:`)) ?? "";
-  assert.match(line("feat/clean"), /\+1\/-\d+ · clean · merges cleanly .*UNOWNED · landing needs a restart/);
+  const out = r.out.split("\n");
+  assert.match(out[0], /^Merge board \(written \d+s ago\): 0 to check · 0 to land · 1 to ask now · 1 owner busy · 1 owner archived · 4 no session tracks · 0 owner unknown · 1 not ready\.$/);
+  const at = (re) => out.findIndex((l) => re.test(l));
+  assert.ok(at(/^== Ready to merge, owner idle: ask the owner now \(1\)$/) === at(/^feat\/clean: /) - 1, "under its group's head");
+  const order = ["feat/clean", "feat/firstrun", "feat/dirty", "feat/conflict", "feat/temp"].map((b) => at(new RegExp(`^${b}: `)));
+  assert.deepEqual([...order].sort((a, b) => a - b), order, "ask, busy, archived, untracked, not ready");
+  const line = (b) => out.find((l) => l.startsWith(`${b}:`)) ?? "";
+  assert.ok(line("feat/clean").startsWith(`feat/clean: Waiting for your OK · reason · owner ${OWNER} idle (board, `), line("feat/clean"));
+  assert.match(line("feat/clean"), /\+1\/-\d+ · clean · merges cleanly .* · landing needs a restart$/);
+  assert.match(line("feat/dirty"), /owner 0199dddd-archived archived/);
+  assert.match(line("feat/conflict"), /no readiness on the board · no session tracks this worktree/, "a row for its path on another branch is not its row");
+  assert.match(line("feat/slow"), /no session tracks this worktree/, "a row outside this repository's worktrees is ignored");
+  assert.match(line("feat/temp"), /temporary commit: "TEMP: trying something"/);
+  assert.match(line("feat/firstrun"), / · clean · /);
+  assert.match(line("feat/dirty"), /1 uncommitted \(junk\.txt\)/);
+  assert.match(line("feat/conflict"), /conflicts with master in 1 file/);
+  assert.match(line("feat/manifest"), /conflicts with master in 1 file/);
+  assert.match(r.out, /next: round\.mjs ask feat\/clean topic=<your topic> \(ask the owner, never the user\)/);
+  assert.equal(state().branches["feat/clean"].board.owner, OWNER, "the board's owner is recorded");
+  // While Sova hasn't read every session, a worktree with no row is unknown, never untracked.
+  writeBoard([["feat/clean", "waiting-approval", OWNER, "idle"]], { pending: 7 });
+  const partial = await run(["status"]);
+  assert.match(partial.out.split("\n")[0], /, 7 sessions not read yet\): .* 0 no session tracks · \d+ owner unknown/);
+  assert.match(partial.out, /^feat\/conflict: no readiness on the board · owner unknown: Sova hasn't read 7 sessions yet/m);
+  rmSync(boardFile, { force: true });
   assert.match(line("feat/temp"), /temporary commit: "TEMP: trying something"/);
   assert.match(line("feat/firstrun"), / · clean · /);
   assert.match(line("feat/dirty"), /1 uncommitted \(junk\.txt\)/);
@@ -303,9 +360,11 @@ test("status: each kind of branch, masked names, and the shared object store unt
   assert.match(line("feat/manifest"), /conflicts with master in 1 file/);
   assert.match(r.out, /feat\/\[private name\]-notes: /);
   assert.match(r.out, /Main checkout: on master, 0 uncommitted, \+1\/-0 vs origin\/master/);
+  writeBoard([["feat/clean", "waiting-approval", OWNER, "idle"]]);
   const j = await run(["status", "--json"]);
   const parsed = JSON.parse(j.out);
-  assert.equal(parsed.branches.find((b) => b.branch === "feat/clean").unowned, true);
+  assert.deepEqual([parsed.branches.find((b) => b.branch === "feat/clean").group, parsed.branches.find((b) => b.branch === "feat/temp").group], ["ask", "untracked"]);
+  rmSync(boardFile, { force: true });
 });
 
 test("note, ask and reply: never a busy owner, never twice in a row, never the sha", async () => {
@@ -839,5 +898,80 @@ test("start confirms a restart from /api/health, and report gives the skeleton",
   const rep = await run(["report"]);
   assert.equal(rep.code, 0, rep.out);
   assert.match(rep.out, /^- Merged: /m);
-  assert.match(rep.out, /^- Unowned: /m);
+  assert.match(rep.out, /^- For you, once \(no live owner\): /m);
+});
+
+test("report: a branch with no live owner reaches the user once; a quiet round is one line", async () => {
+  writeBoard([["feat/dirty", "ready", "0199dddd-archived", "archived"]]);
+  assert.equal((await run(["start"])).code, 0);
+  assert.equal((await run(["status"])).code, 0);
+  const first = await run(["report"]);
+  assert.match(first.out, /^- For you, once \(no live owner\): .*feat\/dirty \(owner archived, your call\).*feat\/slow \(no session tracks this worktree, your call\)/m);
+  assert.equal((await run(["status"])).code, 0);
+  const again = await run(["report"]);
+  assert.equal(again.out.split("\n")[0], "Nothing new on the merge board.", again.out);
+  rmSync(boardFile, { force: true });
+});
+
+test("b1: the driver never reads Sova's token, and the board works with the token file unreadable", async () => {
+  assert.doesNotMatch(readFileSync(ROUND, "utf8"), /auth-token|Authorization|x-sova-token/);
+  const token = join(agent, "sova", "auth-token");
+  writeFileSync(token, "secret-token\n");
+  chmodSync(token, 0o000);
+  try {
+    writeBoard([["feat/slow", "ready", OWNER, "idle"]]);
+    const r = await run(["status"]);
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, new RegExp(`^feat/slow: Ready to merge · reason · owner ${OWNER} idle \\(board`, "m"));
+  } finally {
+    chmodSync(token, 0o600);
+    rmSync(token, { force: true });
+    rmSync(boardFile, { force: true });
+  }
+});
+
+test("b2: the board's newer reading beats an older note: idle and fresh, so ask prints the text", async () => {
+  const branch = "feat/firstrun";
+  assert.equal((await run(["note", branch, `owner=${OWNER}`, "chip=ready", "idle=no"])).code, 0);
+  // An hour passes (the note and every ask are moved back an hour, as the clock would move on).
+  const st = state();
+  st.branches[branch].notedAt -= 3600_000;
+  for (const r of Object.values(st.branches)) if (r.ask) r.ask.at -= 3600_000;
+  writeFileSync(stateFile, JSON.stringify(st));
+  const refused = await run(["ask", branch, `topic=${TOPIC}`]);
+  assert.equal(refused.code, 1, "with no board, the hour-old busy note refuses");
+  // The board now reads the owner idle.
+  writeBoard([[branch, "ready", OWNER, "idle"]]);
+  const ask = await run(["ask", branch, `topic=${TOPIC}`]);
+  assert.equal(ask.code, 0, ask.out);
+  assert.ok(ask.out.includes(`session_send to ${OWNER}:`), ask.out);
+  assert.ok(ask.out.includes(`Is ${branch} ready to merge at its current head? Reply with queue_push, topic "${TOPIC}"`), ask.out);
+  // A hand note newer than the board names the owner, and only that.
+  assert.equal((await run(["note", branch, "owner=0199aaaa-other", "chip=ready", "idle=yes"])).code, 0);
+  assert.equal(ownerOf(state().branches[branch]).owner, "0199aaaa-other");
+  rmSync(boardFile, { force: true });
+});
+
+test("pure board rules: the file's shape, the owner rule and the groups", () => {
+  const now = Date.parse("2026-10-05T10:00:00Z");
+  const file = (o) => JSON.stringify(o);
+  assert.equal(parseBoard(file({ v: 1, at: "2026-10-05T09:59:00Z", pending: 2, rows: [{ path: "/w", branch: "b", state: "ready", owner: { id: "o", status: "idle" } }, { path: "/x" }] }), now).board.rows.length, 1);
+  assert.equal(parseBoard(file({ v: 2, at: "2026-10-05T09:59:00Z", rows: [] }), now).ok, false);
+  assert.equal(parseBoard(file({ v: 1, at: "2026-10-05T09:54:00Z", rows: [] }), now).ok, false, "over 5 minutes old");
+  const board = { owner: "A", status: "idle", at: 2000 };
+  assert.deepEqual(ownerOf({ owner: "A", idle: "no", notedAt: 1000, board }), { owner: "A", from: "board", status: "idle", at: 2000, via: "board" });
+  assert.deepEqual(ownerOf({ owner: "B", idle: "yes", notedAt: 3000, board }), { owner: "B", from: "note", status: "idle", at: 3000, via: "note" });
+  assert.deepEqual(ownerOf({ owner: "A", idle: "no", notedAt: 3000, board }), { owner: "A", from: "note", status: "busy", at: 3000, via: "note" }, "the newest reading of that owner");
+  assert.equal(ownerOf({}), null);
+  const g = (rec, row, pending = 0) => groupOf({ rec, row, head: "h", master: "m", pending });
+  const row = (state) => ({ state });
+  assert.equal(g({ check: { ok: true, head: "h", masterSha: "m" } }, null), "land");
+  assert.equal(g({ answer: { kind: "ready", head: "h" }, board }, row("ready")), "check");
+  assert.equal(g({ board }, row("waiting-approval")), "ask");
+  assert.equal(g({ board: { ...board, status: "busy" } }, row("ready")), "busy");
+  assert.equal(g({ board: { ...board, status: "archived" } }, row("in-progress")), "archived");
+  assert.equal(g({}, null), "untracked");
+  assert.equal(g({}, null, 3), "unknown");
+  assert.equal(g({ board }, row("in-progress")), "not-ready");
+  assert.equal(g({ board, answer: { kind: "not-ready", head: "h" } }, row("ready")), "not-ready");
 });

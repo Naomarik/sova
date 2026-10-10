@@ -435,7 +435,12 @@ or three text blocks — the guide opening `# Memory`, the stable prefix
 `<chat>…</chat>`, and optionally the newest lines `<chat> (continued: the
 newest lines)…</chat>` — followed by the run's own messages. The guide and
 the prefix go at the end of the system prompt the CLI is given (`initialize`),
-under Claude Code's own one-hour cache mark; only the newest lines and the
+past the CLI's own `__SYSTEM_PROMPT_DYNAMIC_BOUNDARY__` element
+(`SYSTEM_PROMPT_BOUNDARY`): on the first-party API, CLI 2.1.295 sends the
+prompt before it and the view after it as two system blocks, each under one of
+Claude Code's own one-hour cache marks (the agent line's mark moves to them),
+so a rebase re-writes the view's block and reads Sova's prompt from the cache;
+elsewhere it joins them into one block, as without it. Only the newest lines and the
 run's messages go in the child's first user message, and the bridge adds no
 cache mark of its own (the CLI already uses three or four of the four
 allowed). Sova saves the prefix with the chat and changes it only when the

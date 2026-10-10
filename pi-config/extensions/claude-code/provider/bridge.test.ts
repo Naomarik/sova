@@ -16,7 +16,7 @@ import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { type Api, type AssistantMessageEvent, type Model, normalizeContext, Type, type Message, type Tool } from "@earendil-works/pi-ai";
 import {
-	claudeSessionId, FOLD_CHARS_PER_TOKEN, FOLD_LINE_HEADROOM, foldBudgetChars, foldHistory, foldSizeEstimate, getSessionBridge, isPrefix, LIMITS, MAX_FOLD_CHARS, memorySystemPrompt, memoryViewFrame, MIN_FOLD_CHARS, withoutMemoryPrefix,
+	claudeSessionId, FOLD_CHARS_PER_TOKEN, FOLD_LINE_HEADROOM, foldBudgetChars, foldHistory, foldSizeEstimate, getSessionBridge, isPrefix, LIMITS, MAX_FOLD_CHARS, memorySystemPrompt, memoryViewFrame, MIN_FOLD_CHARS, SYSTEM_PROMPT_BOUNDARY, withoutMemoryPrefix,
 	resetSessionBridge, SessionBridge, transcriptFingerprint, uuidv5, windowOverflow,
 } from "./session-bridge.ts";
 import { streamClaudeCode } from "./stream.ts";
@@ -676,7 +676,7 @@ test("memory view: the guide and prefix ride the system prompt, the newer lines 
 	await collectAfter(bridge.runTurn(request(history, { systemPrompt: "BASE PROMPT" })), async () => {
 		const cli = await child(children, 1);
 		const init = await cli.waitFor((f) => f.request?.subtype === "initialize");
-		assert.deepEqual(init.request.systemPrompt, ["BASE PROMPT\n\n# Memory\nguide text\n\n<chat>\n0+2|user: hi; sova: hello\n</chat>"]);
+		assert.deepEqual(init.request.systemPrompt, ["BASE PROMPT", SYSTEM_PROMPT_BOUNDARY, "# Memory\nguide text\n\n<chat>\n0+2|user: hi; sova: hello\n</chat>"], "the view goes past the boundary: its own cached block");
 		await cli.handshake();
 		const sent = await cli.waitFor((f) => f.type === "user");
 		const text = sent.message.content.map((b: any) => b.text ?? "").join("");
@@ -689,7 +689,7 @@ test("memory view: the guide and prefix ride the system prompt, the newer lines 
 	await collectAfter(bridge.runTurn(request(next, { systemPrompt: "BASE PROMPT" })), async () => {
 		const cli = await child(children, 2);
 		const init = await cli.waitFor((f) => f.request?.subtype === "initialize");
-		assert.match(init.request.systemPrompt[0], /<chat>\n0\+2\|user: hi; sova: hello\n<\/chat>$/);
+		assert.match(init.request.systemPrompt[2], /<chat>\n0\+2\|user: hi; sova: hello\n<\/chat>$/);
 		await cli.handshake();
 		const sent = await cli.waitFor((f) => f.type === "user");
 		assert.match(sent.message.content.map((b: any) => b.text ?? "").join(""), /3\+1\|user: what port\?\n<\/chat>\n\nand the host\?$/);
@@ -709,7 +709,7 @@ test("memory view: a history that isn't a view plus user messages folds, with th
 	assert.deepEqual(reduced[0]!.content, [{ type: "text", text: "<chat> (continued: the newest lines)\n1+1|sova: b\n</chat>" }]);
 	const folded = foldHistory(reduced, LIMITS, "restarted").text;
 	assert.doesNotMatch(folded, /0\+1\|user: a|guide/, "the prefix and guide are the system prompt's, never folded again");
-	assert.equal(memorySystemPrompt("P", undefined), "P");
+	assert.deepEqual(memorySystemPrompt("P", undefined), ["P"], "no view: no boundary");
 });
 
 test("a model change restarts rather than continuing on a stale child", { timeout: 8000 }, async () => {

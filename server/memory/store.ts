@@ -21,6 +21,8 @@ export interface MemoryFileState {
   merging: boolean;
   /** The view lines a turn's stable prefix held, as last sent (the cache split). */
   prefix?: string[];
+  /** Tail bytes the turns sent since that prefix was renewed (the cache split's cost so far). */
+  prefixSent?: number;
   cview: NodeRef[];
   cmerging: boolean;
   /** The compaction view's lines in the summarizer's system prompt, as last sent. */
@@ -41,6 +43,7 @@ function parseState(raw: unknown): MemoryFileState {
   s.merging = r.merging === true;
   s.cmerging = r.cmerging === true;
   if (isLines(r.prefix)) s.prefix = r.prefix;
+  if (typeof r.prefixSent === "number" && Number.isFinite(r.prefixSent) && r.prefixSent >= 0) s.prefixSent = r.prefixSent;
   if (isLines(r.cprefix)) s.cprefix = r.cprefix;
   return s;
 }

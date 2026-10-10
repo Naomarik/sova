@@ -110,7 +110,8 @@ export function memoryExtension(host: () => MemoryHost | null) {
           const c = on();
           if (!c?.on || c.type !== "uniichat") return;
           const k = inputIndex(event.messages as { role?: string }[]);
-          const tv = await h.engine().turnView(toolCtx(ctx).branch(), c.size);
+          // The system prompt shares the prefix's cached block where the provider joins them (splitView).
+          const tv = await h.engine().turnView(toolCtx(ctx).branch(), c.size, Buffer.byteLength(ctx.getSystemPrompt()));
           if (!tv) return; // still preparing: the turn goes out as without memory
           run.view = { k, content: tv.content, ts: Date.now() };
         }

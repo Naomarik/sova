@@ -146,6 +146,72 @@ describe("the cache split", () => {
     const prefix = L(20);
     const merged = ["0+2|merged", ...prefix.slice(2), ...L(2, 20)];
     assert.equal(splitView(merged, prefix, merged.length).rebased, true);
+    assert.equal(splitView(merged, prefix, merged.length, { fixed: 1e9, sent: 0 }).rebased, true, "whatever a rebase costs");
+  });
+
+  /** Turns that each add `perTurn` lines (~73 B each) to a view that never merges: what each split did. */
+  const simulate = (turns: number, perTurn: number, fixed: number | undefined) => {
+    let prefix: string[] | undefined;
+    let sent = 0;
+    let lines: string[] = [];
+    const out: { rebased: boolean; written: number }[] = [];
+    for (let t = 0; t < turns; t++) {
+      lines = [...lines, ...L(perTurn, lines.length)];
+      const s = splitView(lines, prefix, lines.length, fixed === undefined ? undefined : { fixed, sent });
+      const block = (fixed ?? 0) + Buffer.byteLength(s.prefix.join("\n"));
+      // Bytes written to the cache this turn: the whole block on a rebase, else the tail.
+      out.push({ rebased: s.rebased, written: s.rebased ? block : Buffer.byteLength(s.tail.join("\n")) });
+      prefix = s.prefix;
+      sent = s.sent;
+    }
+    return out;
+  };
+
+  test("with a cost, the tails sent since a rebase total at most the block a rebase re-writes", () => {
+    const prefix = L(40); // 40 lines of 73 B
+    const fixed = 4000;
+    const block = fixed + Buffer.byteLength(prefix.join("\n"));
+    const one = splitView([...prefix, ...L(10, 40)], prefix, 50, { fixed, sent: 0 });
+    assert.deepEqual([one.rebased, one.sent], [false, Buffer.byteLength(L(10, 40).join("\n"))], "sent counts this tail");
+    const near = splitView([...prefix, ...L(10, 40)], prefix, 50, { fixed, sent: block - one.sent });
+    assert.equal(near.rebased, false, "exactly the block: kept");
+    const over = splitView([...prefix, ...L(10, 40)], prefix, 50, { fixed, sent: block - one.sent + 1 });
+    assert.deepEqual([over.rebased, over.prefix.length, over.sent], [true, 50, 0], "past it: a rebase, the count starts over");
+    const placeholders = splitView([...prefix, ...L(10, 40)], undefined, 45, { fixed, sent: 0 });
+    assert.equal(placeholders.sent, Buffer.byteLength(L(5, 45).join("\n")), "a rebase's own tail (lines not built yet) counts");
+  });
+
+  test("a 35k-token prompt in the block: rebases about every √(2·block/growth) turns, far rarer than the quarter rule", () => {
+    const prompt = 120_000; // ≈ 35k tokens of system prompt sharing the prefix's block
+    const growth = 20 * 73; // ≈ 1.4 KB of new lines a turn
+    const weighed = simulate(60, 20, prompt);
+    const quarter = simulate(60, 20, undefined);
+    const rebases = (r: { rebased: boolean }[]) => r.filter((x) => x.rebased).length;
+    const expected = 60 / Math.sqrt((2 * (prompt + 30 * growth)) / growth);
+    assert.ok(rebases(weighed) >= 2 && rebases(weighed) <= Math.ceil(expected) + 2, `weighed: ${rebases(weighed)} rebases (≈${expected.toFixed(1)} expected)`);
+    assert.ok(rebases(quarter) >= 2 * rebases(weighed), `weighed ${rebases(weighed)} rebases, the quarter rule ${rebases(quarter)}`);
+    // Bytes written with the prompt counted, either rule (the quarter rule's rebases re-write the prompt too).
+    const written = (r: { rebased: boolean; written: number }[], fixed: number) => r.reduce((a, x) => a + x.written + (x.rebased ? fixed : 0), 0);
+    assert.ok(written(weighed, 0) < 0.7 * written(quarter, prompt), `weighed ${written(weighed, 0)} B vs quarter ${written(quarter, prompt)} B`);
+    // Within a quarter of the best fixed rebase period, found by trying them all.
+    const periodic = (p: number) => {
+      let total = 0;
+      for (let t = 0, base = 0; t < 60; t++) {
+        if (t % p === 0) (base = (t + 1) * growth), (total += prompt + base);
+        else total += (t + 1) * growth - base;
+      }
+      return total;
+    };
+    const best = Math.min(...Array.from({ length: 60 }, (_, k) => periodic(k + 1)));
+    assert.ok(written(weighed, 0) <= 1.25 * best, `weighed ${written(weighed, 0)} B vs the best period's ${best} B`);
+  });
+
+  test("the prompt's size is weighed: a bigger prompt keeps the prefix longer", () => {
+    const rebases = (fixed: number) => simulate(60, 20, fixed).filter((x) => x.rebased).length;
+    const small = rebases(2_000);
+    const big = rebases(120_000);
+    assert.ok(big < small, `120 KB prompt: ${big} rebases; 2 KB: ${small}`);
+    assert.ok(small < 30, "even a small block keeps the prefix more than every other turn once it holds the view");
   });
 });
 

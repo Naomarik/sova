@@ -147,6 +147,7 @@ export class MemoryEngine implements Tree {
       cmerging: false,
     };
     delete this.state.prefix;
+    delete this.state.prefixSent;
     delete this.state.cprefix;
     this.store.saveState(this.state);
     this.leafQueue = this.leafQueue.filter((i) => i < d);
@@ -325,9 +326,10 @@ export class MemoryEngine implements Tree {
   /**
    * The view a UniiChat turn sends in place of its history (§chat.memory/turn): every message before the
    * turn's input, once the newest leaves are built (at most the wait), merged per the chat's size, and
-   * split for the cache. undefined while the chat is still being prepared: the turn goes out as usual.
+   * split for the cache. `promptBytes` is the chat's system prompt, which a rebase may re-write with the
+   * prefix (splitView). undefined while the chat is still being prepared: the turn goes out as usual.
    */
-  async turnView(branch: readonly HEntry[], sizeKB: number): Promise<TurnView | undefined> {
+  async turnView(branch: readonly HEntry[], sizeKB: number, promptBytes = 0): Promise<TurnView | undefined> {
     this.sync(branch);
     const T = messagesBefore(branch, inputStart(branch));
     if (this.preparing && this.unbuiltLeaves(T) > PREPARE_SLACK) return undefined;
@@ -349,8 +351,9 @@ export class MemoryEngine implements Tree {
     const max = sizeKB * 1024;
     const merged = mergeView(this, view, T, max, max / 2, this.state.merging);
     const lines = merged.view.map((r) => lineOf(this, r));
-    const split = splitView(lines, this.state.prefix, builtPrefix(this, merged.view).length);
-    this.state = { ...this.state, view: merged.view, merging: merged.merging, prefix: split.prefix };
+    const cost = { fixed: promptBytes + bytes(TURN_GUIDE), sent: this.state.prefixSent ?? 0 };
+    const split = splitView(lines, this.state.prefix, builtPrefix(this, merged.view).length, cost);
+    this.state = { ...this.state, view: merged.view, merging: merged.merging, prefix: split.prefix, prefixSent: split.sent };
     this.store.saveState(this.state);
     this.emit();
     return {

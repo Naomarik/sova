@@ -893,7 +893,10 @@
         "server/chat-manager.ts",
         "server/memory/settings.ts",
         "server/mode.ts",
-        "server/memory/chat-memory.test.ts"
+        "server/memory/chat-memory.test.ts",
+        "src/components/MemoryTypePanel.tsx",
+        "src/lib/memory-ui.ts",
+        "src/lib/memory-ui.test.ts"
       ]
     },
     "§chat.memory/help": {
@@ -950,7 +953,8 @@
       "code": [
         "server/memory/routes.ts",
         "server/overseer.ts",
-        "server/memory/settings.test.ts"
+        "server/memory/settings.test.ts",
+        "src/components/OverseerMemoryMenu.tsx"
       ]
     },
     "§chat.memory/preparing": {
@@ -962,7 +966,9 @@
       "authority": "accepted",
       "evidence": "verified",
       "code": [
-        "server/memory/engine.ts"
+        "server/memory/engine.ts",
+        "src/lib/memory-ui.ts",
+        "src/lib/memory-ui.test.ts"
       ]
     },
     "§chat.memory/recall": {
@@ -990,7 +996,8 @@
       "code": [
         "server/memory/settings.ts",
         "server/memory/routes.ts",
-        "server/memory/settings.test.ts"
+        "server/memory/settings.test.ts",
+        "src/lib/memory-settings-draft.ts"
       ]
     },
     "§chat.memory/status": {
@@ -1004,7 +1011,10 @@
         "server/memory/routes.ts",
         "shared/protocol.ts",
         "server/chat-manager.ts",
-        "server/memory/chat.ts"
+        "server/memory/chat.ts",
+        "src/components/MemoryOutline.tsx",
+        "src/lib/memory-ui.ts",
+        "src/lib/memory-ui.test.ts"
       ]
     },
     "§chat.memory/summarizer": {
@@ -1052,7 +1062,9 @@
         "server/memory/tree.ts",
         "server/memory/store.ts",
         "server/memory/tree.test.ts",
-        "server/memory/engine.test.ts"
+        "server/memory/engine.test.ts",
+        "src/lib/memory-ui.ts",
+        "src/lib/memory-ui.test.ts"
       ]
     },
     "§chat.memory/types": {
@@ -1064,7 +1076,10 @@
       "evidence": "verified",
       "code": [
         "shared/memory.ts",
-        "shared/protocol.ts"
+        "shared/protocol.ts",
+        "src/components/MemoryTypePanel.tsx",
+        "src/lib/memory-ui.ts",
+        "src/lib/memory-ui.test.ts"
       ]
     },
     "§chat.memory/where": {
@@ -12239,7 +12254,10 @@
         "server/overseer-run-note.ts",
         "server/overseer-run-note.test.ts",
         "server/overseer-opening.ts",
-        "server/overseer-opening.test.ts"
+        "server/overseer-opening.test.ts",
+        "server/harness/pi/golden/session/S11-overseer.jsonl",
+        "server/harness/pi/golden/state/G7-overseer-cleared.jsonl",
+        "server/harness/pi/golden/state/G7-overseer-first.jsonl"
       ],
       "requires": [
         "§app.overseer/confirm",
@@ -12513,7 +12531,8 @@
       "code": [
         "pi-config/extensions/claude-code/provider/stream.ts",
         "pi-config/extensions/claude-code/provider/session-bridge.ts",
-        "pi-config/extensions/claude-code/provider/mcp-host.ts"
+        "pi-config/extensions/claude-code/provider/mcp-host.ts",
+        "pi-config/extensions/claude-code/provider/DESIGN-bridge.md"
       ]
     },
     "§tools.spec/context-packets": {
@@ -16020,7 +16039,8 @@
         "pi-config/extensions/claude-code/provider/bridge.test.ts",
         "server/decide-llm.test.ts",
         "server/session-autotitle.test.ts",
-        "pi-config/extensions/claude-code/accounts.test.ts"
+        "pi-config/extensions/claude-code/accounts.test.ts",
+        "pi-config/extensions/topic-outline/test.mjs"
       ]
     },
     "§app.claude-code-provider/oneshot-uncached": {

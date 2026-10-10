@@ -315,6 +315,25 @@
         "src/components/SettingsDialog.tsx"
       ]
     },
+    "§app.settings-dialog/memory": {
+      "kind": "behavior",
+      "requires": [
+        "§app.settings-dialog/modes",
+        "§app.settings-dialog/save-bar",
+        "§app.settings-dialog/summaries"
+      ],
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/MemorySettings.tsx",
+        "src/lib/memory-settings-draft.ts",
+        "src/components/SettingsDialog.tsx",
+        "src/lib/settings-nav.ts",
+        "src/lib/api.ts",
+        "src/lib/memory-ui.test.ts",
+        "src/lib/settings-nav.test.ts"
+      ]
+    },
     "§app.settings-dialog/models": {
       "kind": "behavior",
       "authority": "accepted",
@@ -434,6 +453,23 @@
         "server/usage-helper/query.ts",
         "shared/usage/wire.ts",
         "shared/protocol.ts"
+      ]
+    },
+    "§app.subagents-pane/memory-outline": {
+      "kind": "behavior",
+      "requires": [
+        "§app.subagents-pane/tabs",
+        "§chat.timeline/jumping"
+      ],
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/MemoryOutline.tsx",
+        "src/components/SessionPane.tsx",
+        "src/lib/memory-ui.ts",
+        "src/lib/api.ts",
+        "src/lib/memory-ui.test.ts",
+        "src/app.css"
       ]
     },
     "§app.subagents-pane/motion": {
@@ -694,6 +730,21 @@
         "src/design/base.css"
       ]
     },
+    "§chat.composer/memory-status": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.transcript/streaming"
+      ],
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/Composer.tsx",
+        "src/components/ChatView.tsx",
+        "src/lib/memory-ui.ts",
+        "src/lib/memory-ui.test.ts",
+        "src/app.css"
+      ]
+    },
     "§chat.composer/tokens": {
       "kind": "note",
       "authority": "accepted",
@@ -893,10 +944,7 @@
         "server/chat-manager.ts",
         "server/memory/settings.ts",
         "server/mode.ts",
-        "server/memory/chat-memory.test.ts",
-        "src/components/MemoryTypePanel.tsx",
-        "src/lib/memory-ui.ts",
-        "src/lib/memory-ui.test.ts"
+        "server/memory/chat-memory.test.ts"
       ]
     },
     "§chat.memory/help": {
@@ -953,8 +1001,7 @@
       "code": [
         "server/memory/routes.ts",
         "server/overseer.ts",
-        "server/memory/settings.test.ts",
-        "src/components/OverseerMemoryMenu.tsx"
+        "server/memory/settings.test.ts"
       ]
     },
     "§chat.memory/preparing": {
@@ -966,9 +1013,7 @@
       "authority": "accepted",
       "evidence": "verified",
       "code": [
-        "server/memory/engine.ts",
-        "src/lib/memory-ui.ts",
-        "src/lib/memory-ui.test.ts"
+        "server/memory/engine.ts"
       ]
     },
     "§chat.memory/recall": {
@@ -996,8 +1041,7 @@
       "code": [
         "server/memory/settings.ts",
         "server/memory/routes.ts",
-        "server/memory/settings.test.ts",
-        "src/lib/memory-settings-draft.ts"
+        "server/memory/settings.test.ts"
       ]
     },
     "§chat.memory/status": {
@@ -1011,10 +1055,7 @@
         "server/memory/routes.ts",
         "shared/protocol.ts",
         "server/chat-manager.ts",
-        "server/memory/chat.ts",
-        "src/components/MemoryOutline.tsx",
-        "src/lib/memory-ui.ts",
-        "src/lib/memory-ui.test.ts"
+        "server/memory/chat.ts"
       ]
     },
     "§chat.memory/summarizer": {
@@ -1062,9 +1103,7 @@
         "server/memory/tree.ts",
         "server/memory/store.ts",
         "server/memory/tree.test.ts",
-        "server/memory/engine.test.ts",
-        "src/lib/memory-ui.ts",
-        "src/lib/memory-ui.test.ts"
+        "server/memory/engine.test.ts"
       ]
     },
     "§chat.memory/types": {
@@ -1076,10 +1115,7 @@
       "evidence": "verified",
       "code": [
         "shared/memory.ts",
-        "shared/protocol.ts",
-        "src/components/MemoryTypePanel.tsx",
-        "src/lib/memory-ui.ts",
-        "src/lib/memory-ui.test.ts"
+        "shared/protocol.ts"
       ]
     },
     "§chat.memory/where": {
@@ -1133,6 +1169,26 @@
         "server/app.ts",
         "pi-config/extensions/mode/index.ts",
         "src/components/Thread.tsx"
+      ]
+    },
+    "§chat.mode-menu/memory-panel": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.mode-menu/menu",
+        "§chat.subagent-profiles/menu",
+        "§design/menu-rows"
+      ],
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/ModeMenu.tsx",
+        "src/components/MemoryTypePanel.tsx",
+        "src/lib/memory-ui.ts",
+        "src/lib/mode-menu.ts",
+        "src/lib/api.ts",
+        "src/components/ChatView.tsx",
+        "src/lib/memory-ui.test.ts",
+        "src/app.css"
       ]
     },
     "§chat.mode-menu/menu": {
@@ -1533,6 +1589,18 @@
       "kind": "note",
       "authority": "migrated",
       "evidence": "unreviewed"
+    },
+    "§chat.transcript/recall-rows": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.transcript/slim-rows"
+      ],
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/ToolCard.tsx",
+        "src/app.css"
+      ]
     },
     "§chat.transcript/states": {
       "kind": "behavior",
@@ -3347,6 +3415,23 @@
         "src/lib/card-refs.ts"
       ],
       "requires": []
+    },
+    "§app.overseer/memory-switch": {
+      "kind": "behavior",
+      "requires": [
+        "§app.overseer/quick-actions",
+        "§chat.mode-menu/memory-panel"
+      ],
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/OverseerMemoryMenu.tsx",
+        "src/components/MemoryTypePanel.tsx",
+        "src/components/ChatView.tsx",
+        "src/lib/api.ts",
+        "src/lib/memory-ui.test.ts",
+        "src/lib/memory-ui.ts"
+      ]
     },
     "§app.overseer/navigation": {
       "kind": "behavior",

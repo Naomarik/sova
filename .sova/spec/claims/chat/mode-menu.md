@@ -411,6 +411,35 @@ chat's other tools, several at once, and filters their output before the model r
 - **With spec on**, a `[spec census]` or spec-guard note about a call the script made is repeated on
   the script's own result, the one the model reads (§tools.spec/census-note).
 
+## §chat.mode-menu/memory-panel — The memory row and its Memory type panel
+
+The `memory` row is in a chat's minor modes only while that chat's `mode` message carries `memory`
+(its choice of type and size, which a chat whose runtime can run memory sends, §chat.memory/where);
+a chat whose message has none lists the other minor modes and no memory row. It is the last minor
+row, after `codemode`, a checkbox like the others: clicking it turns memory on or off and keeps the
+menu open. Its description is the chosen type's row description and, while memory is on, its detail
+line names the type ("UniiChat — by Victor Taelin", "Zoomable compaction — Sova").
+
+- **The panel.** A chevron button at the row's right end (a `menuitem` beside the checkbox, never
+  inside it, named "Memory type", with a 44px target, next in the roving focus) swaps the menu for
+  the **Memory type** panel in the same popover, the Subagents picker's pattern: a Back header
+  titled "Memory type", then, under a **Type** label, one `menuitemradio` row per type — its name, its author ("by Victor
+  Taelin", "Sova") and its one-line description, the chat's type checked — with UniiChat's "Read the
+  design ↗" under it, a link (a sibling of the row, opening Taelin's write-up in a new tab).
+- **Size.** Under the types, **Summary size**: one `menuitemradio` row per suggested size, the
+  chat's size checked and a size outside the list shown as its own checked row. For UniiChat a size
+  reads as the range the view keeps, "64–128 KB" for 128 (it grows to the size and merges to half
+  of it); for zoomable compaction as the size the compacted lines get, "32 KB". The type's own
+  default size says "default".
+- **Picking** a type or a size posts `{ memory: { type } }` or `{ memory: { size } }` for this chat
+  (§chat.memory/choice) and keeps the panel open; the check moves when the chat's `mode` message
+  says so. The foot line reads "This chat only. Kept while memory is off." While a pick is saving
+  the rows are `aria-disabled`; a refused pick shows "Couldn't change memory." with the reason, and
+  the choice is unchanged.
+- **Save as default** saves the chat's type and size with its modes (§chat.memory/choice), and
+  reads "Already the default" only while they also match the saved default (`GET /api/mode`'s
+  `memory`).
+
 ## §chat.mode-menu/strict — strict: Delegate without edit and write
 
 `strict` is a per-session flag that, while the chat is in Delegate, takes the `edit` and `write`
@@ -486,6 +515,7 @@ What the trigger and the menu show in each state, from a mode not known yet to a
 | Default save failed | Error banner "Couldn't save the default." with the reason. The mode is unchanged |
 | Already the default | `Already the default` with the check, `aria-disabled` |
 | Load failed | Error banner "Couldn't load the modes." |
+| Memory type or size refused (§chat.mode-menu/memory-panel) | Error banner "Couldn't change memory." with the reason, in the panel. The choice is unchanged |
 
 ## §chat.mode-menu/tokens — Tokens
 

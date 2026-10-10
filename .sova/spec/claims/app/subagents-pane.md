@@ -194,7 +194,8 @@ strip, empty or not: a tab that came and went would move the strip under the rea
   and the selected tab is scrolled into view (to the nearest edge) when the pane opens and whenever
   the tab changes, so a tab a door opened is never off-screen at 375px.
 - **Session** is what the session is, in this order: Path (with Copy Session Path and Copy Resume
-  Command), Context, Repository, Worktrees (§chat.worktrees/pane), Identity, Compactions, Changes.
+  Command), Context, Repository, Worktrees (§chat.worktrees/pane), Identity, Compactions, Changes, and Memory
+  (§app.subagents-pane/memory-outline).
   The session's actions sit at the right end of the Path heading row, so they add no row of their
   own and the path wraps below them at full width: Move into group (a small square folder icon,
   named "Move into group", opening the group menu anchored to it) and, for web sessions only, to
@@ -227,6 +228,37 @@ strip, empty or not: a tab that came and went would move the strip under the rea
   "Sharing, {n} viewing now"; at zero there is no chip and the name is "Sharing".
 - **Timeline** is §chat/timeline, **Agents** the list and transcript below; **Skills** says which
   skills loaded and when, and **Explain** lists the session's /explain pages.
+
+## §app.subagents-pane/memory-outline — Memory in the Session tab
+
+The Session tab ends in a read-only **Memory** section, after Changes, holding the lines the model
+sees now (`GET /api/memory?path=…`, §chat.memory/status), oldest first. It shows while the chat's
+memory is on, or off with lines kept from when it was on; a session with neither has no section.
+It is read when the tab opens, when the section is opened, and every 10 seconds while it is open
+and memory is on. Nothing in it changes memory.
+
+- **The heading** is a disclosure, folded at first: "Memory", then its type (", off" after it
+  while memory is off), its line count and the view's size against the chat's ("UniiChat · 312
+  lines · 96 KB of 128 KB").
+- **States.** Off: "Memory is off, so the model sees the whole chat. These lines are kept for
+  when it's back on." Preparing: "Preparing memory: 120 of 480 messages. Until it's ready the
+  model sees the chat as usual." Zoomable compaction with no compaction yet: "{n} messages
+  summarized so far. Nothing has compacted yet, so the model sees the chat as usual." No messages
+  yet: "No messages yet." UniiChat with messages but no lines yet: "No lines yet." A status
+  `problem` shows as a warning banner, "Memory can't write summaries right now.", with its
+  sentence. A failed first read says "Couldn't read this chat's memory." with Try Again; a failed
+  later read keeps the lines on screen.
+- **A line** is a row: its messages in mono ("40–47", or "12" for one message), then its text, or
+  "Not summarized yet." in muted text. A line of several messages has a disclosure button
+  (`aria-expanded`, named "Open messages 40–47") that reads the two lines under it
+  (`GET /api/memory/open`, once) and shows them indented under it behind a thin rule, down to single
+  messages; a single message opens onto its kind (You, Sova, Tool call, Tool result, Worker, Note),
+  its time, "part 2 of 3" for a message logged in parts (§chat.memory/log), and its text, scrolling
+  inside a capped box. Opening says "Loading…" while it waits and "Couldn't open
+  these messages." with Try Again on failure.
+- **Jump.** Each line has a "Show in transcript" button that lands on its first message's row
+  (the transcript's jump, §chat.timeline/jumping); in the drawer band the pane closes on the jump.
+  A message the transcript doesn't hold says "That message isn't in the transcript on screen."
 
 ## §app.subagents-pane/body-list-transcript — Body: list | transcript
 

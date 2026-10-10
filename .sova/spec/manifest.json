@@ -347,6 +347,25 @@
         "src/components/SettingsDialog.tsx"
       ]
     },
+    "§app.settings-dialog/memory": {
+      "kind": "behavior",
+      "requires": [
+        "§app.settings-dialog/modes",
+        "§app.settings-dialog/save-bar",
+        "§app.settings-dialog/summaries"
+      ],
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/MemorySettings.tsx",
+        "src/lib/memory-settings-draft.ts",
+        "src/components/SettingsDialog.tsx",
+        "src/lib/settings-nav.ts",
+        "src/lib/api.ts",
+        "src/lib/memory-ui.test.ts",
+        "src/lib/settings-nav.test.ts"
+      ]
+    },
     "§app.settings-dialog/models": {
       "kind": "behavior",
       "authority": "accepted",
@@ -466,6 +485,23 @@
         "server/usage-helper/query.ts",
         "shared/usage/wire.ts",
         "shared/protocol.ts"
+      ]
+    },
+    "§app.subagents-pane/memory-outline": {
+      "kind": "behavior",
+      "requires": [
+        "§app.subagents-pane/tabs",
+        "§chat.timeline/jumping"
+      ],
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/MemoryOutline.tsx",
+        "src/components/SessionPane.tsx",
+        "src/lib/memory-ui.ts",
+        "src/lib/api.ts",
+        "src/lib/memory-ui.test.ts",
+        "src/app.css"
       ]
     },
     "§app.subagents-pane/motion": {
@@ -724,6 +760,21 @@
         "src/components/SessionView.tsx",
         "src/components/VoiceInput.tsx",
         "src/design/base.css"
+      ]
+    },
+    "§chat.composer/memory-status": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.transcript/streaming"
+      ],
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/Composer.tsx",
+        "src/components/ChatView.tsx",
+        "src/lib/memory-ui.ts",
+        "src/lib/memory-ui.test.ts",
+        "src/app.css"
       ]
     },
     "§chat.composer/tokens": {
@@ -1152,6 +1203,26 @@
         "src/components/Thread.tsx"
       ]
     },
+    "§chat.mode-menu/memory-panel": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.mode-menu/menu",
+        "§chat.subagent-profiles/menu",
+        "§design/menu-rows"
+      ],
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/ModeMenu.tsx",
+        "src/components/MemoryTypePanel.tsx",
+        "src/lib/memory-ui.ts",
+        "src/lib/mode-menu.ts",
+        "src/lib/api.ts",
+        "src/components/ChatView.tsx",
+        "src/lib/memory-ui.test.ts",
+        "src/app.css"
+      ]
+    },
     "§chat.mode-menu/menu": {
       "kind": "behavior",
       "authority": "accepted",
@@ -1550,6 +1621,18 @@
       "kind": "note",
       "authority": "migrated",
       "evidence": "unreviewed"
+    },
+    "§chat.transcript/recall-rows": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.transcript/slim-rows"
+      ],
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/ToolCard.tsx",
+        "src/app.css"
+      ]
     },
     "§chat.transcript/states": {
       "kind": "behavior",
@@ -3366,6 +3449,23 @@
         "src/lib/card-refs.ts"
       ],
       "requires": []
+    },
+    "§app.overseer/memory-switch": {
+      "kind": "behavior",
+      "requires": [
+        "§app.overseer/quick-actions",
+        "§chat.mode-menu/memory-panel"
+      ],
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/OverseerMemoryMenu.tsx",
+        "src/components/MemoryTypePanel.tsx",
+        "src/components/ChatView.tsx",
+        "src/lib/api.ts",
+        "src/lib/memory-ui.test.ts",
+        "src/lib/memory-ui.ts"
+      ]
     },
     "§app.overseer/navigation": {
       "kind": "behavior",
@@ -12273,7 +12373,10 @@
         "server/overseer-run-note.ts",
         "server/overseer-run-note.test.ts",
         "server/overseer-opening.ts",
-        "server/overseer-opening.test.ts"
+        "server/overseer-opening.test.ts",
+        "server/harness/pi/golden/session/S11-overseer.jsonl",
+        "server/harness/pi/golden/state/G7-overseer-cleared.jsonl",
+        "server/harness/pi/golden/state/G7-overseer-first.jsonl"
       ],
       "requires": [
         "§app.overseer/confirm",
@@ -12547,7 +12650,8 @@
       "code": [
         "pi-config/extensions/claude-code/provider/stream.ts",
         "pi-config/extensions/claude-code/provider/session-bridge.ts",
-        "pi-config/extensions/claude-code/provider/mcp-host.ts"
+        "pi-config/extensions/claude-code/provider/mcp-host.ts",
+        "pi-config/extensions/claude-code/provider/DESIGN-bridge.md"
       ]
     },
     "§tools.spec/context-packets": {
@@ -16037,7 +16141,8 @@
         "pi-config/extensions/claude-code/provider/bridge.test.ts",
         "server/decide-llm.test.ts",
         "server/session-autotitle.test.ts",
-        "pi-config/extensions/claude-code/accounts.test.ts"
+        "pi-config/extensions/claude-code/accounts.test.ts",
+        "pi-config/extensions/topic-outline/test.mjs"
       ]
     },
     "§app.claude-code-provider/oneshot-uncached": {

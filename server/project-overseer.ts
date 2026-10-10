@@ -41,7 +41,8 @@ import { gitRootOf, readWorktree } from "./project-worktrees";
 import { hostOf, isOrgHostOpen, onOrgHostOpened, setOrgClockForTest, type InvocationReport } from "./org-engine";
 import { pathOfId, sessionActivity, toolCatalogue } from "./session-prompt";
 import { CARDS_NOTE_MESSAGE, cardsNote } from "../shared/overseer-card";
-import { cardsOnBranch } from "./overseer-run-note";
+import { cardsOnBranch, nowLine } from "./overseer-run-note";
+import { changedText, openingOn, toldOn, type LivePart } from "./overseer-opening";
 import { RootConfinement } from "./overseer-deny";
 import { sessionAttachmentsDir } from "./attachments";
 import { overseerFileTools } from "./overseer-file-tools";
@@ -444,7 +445,14 @@ export async function patchProjectOverseer(projectId: string, body: unknown): Pr
 
 // ---- the prompt ------------------------------------------------------------------------------------
 
-export function renderProjectOverseerPrompt(projectId: string, tools: { name: string; promptSnippet?: string; description: string }[], template = readFileSync(PROMPT_FILE, "utf8"), now = new Date()): string {
+/**
+ * The values a project overseer's prompt is rendered from, as they are now: every placeholder but
+ * {{TOOLS}} (the runtime's own), each contributed section under `section:<its first line>` in order,
+ * and `EXTRA` (the operator's extra instructions, redacted; empty when none). A conversation keeps
+ * the values it opened with (overseer-opening.ts): the prompt is rendered from those, and what
+ * changed since is told in the run note.
+ */
+export function projectOverseerValues(projectId: string, now = new Date()): Record<string, string> {
   const p = projectOverseerPaths(projectId);
   const project = projectOf(projectId);
   const settings = readPoSettings(p);
@@ -453,6 +461,7 @@ export function renderProjectOverseerPrompt(projectId: string, tools: { name: st
   const r = serverRedactor();
   const notes = readNotes(p.notes).trim();
   const values: Record<string, string> = {
+    NOW: now.toString(),
     PROJECT: project.name,
     AUTONOMY: `${eff.autonomy} — ${autonomyMeaning(eff.autonomy, placed)}`,
     AUTONOMY_REASON: eff.reason ? ` (${eff.reason})` : "",
@@ -461,18 +470,44 @@ export function renderProjectOverseerPrompt(projectId: string, tools: { name: st
     CODING_MODE: codingModeNowWords(),
     IDEAS: r.redact(promptToc(readManifest(p.ideas), readPoState(p)?.current ?? "")),
     NOTES: notes ? r.redact(notes.slice(0, 4000)) : "(none yet)",
-    TOOLS: toolCatalogue(tools),
-    NOW: now.toString(),
   };
-  const extra = settings.extraSystemPrompt.trim();
   // What another layer adds (an org's roster, gap guidance, About text): after Sova's fixed prompt, before the
   // project's own instructions (which win).
-  const sections = contributedPrompt(engineOrThrow(projectId), projectId);
+  for (const x of contributedPrompt(engineOrThrow(projectId), projectId)) values[`section:${x.split("\n", 1)[0]}`] = x;
+  const extra = settings.extraSystemPrompt.trim();
+  values.EXTRA = extra ? r.redact(extra) : "";
+  return values;
+}
+
+/** The prompt from `values` (projectOverseerValues, as they are now or as the conversation opened). */
+export function projectOverseerPromptFrom(values: Readonly<Record<string, string>>, tools: { name: string; promptSnippet?: string; description: string }[], template = readFileSync(PROMPT_FILE, "utf8")): string {
+  const all: Record<string, string> = { ...values, TOOLS: toolCatalogue(tools) };
+  const sections = Object.entries(values).filter(([k]) => k.startsWith("section:")).map(([, v]) => v);
   return (
-    template.replace(/\{\{([A-Z_]+)\}\}/g, (_, k: string) => values[k] ?? "") +
+    template.replace(/\{\{([A-Z_]+)\}\}/g, (_, k: string) => all[k] ?? "") +
     sections.map((x) => `\n\n${x}`).join("") +
-    (extra ? `\n\n# The operator's extra instructions\n\n${r.redact(extra)}` : "")
+    (values.EXTRA ? `\n\n# The operator's extra instructions\n\n${values.EXTRA}` : "")
   );
+}
+
+/** The parts of a project overseer's prompt that can change while it runs, from its values. */
+export function projectLiveParts(values: Readonly<Record<string, string>>): LivePart[] {
+  const v = (k: string) => values[k] ?? "";
+  return [
+    { key: "PROJECT", title: "The project's name", text: v("PROJECT") },
+    { key: "AUTONOMY", title: "Level in force now", text: `${v("AUTONOMY")}${v("AUTONOMY_REASON")}` },
+    { key: "CAPS", title: "Limits", text: v("CAPS") },
+    { key: "CODING_MODE", title: "The mode a coding session you start with no mode named starts in", text: v("CODING_MODE") },
+    { key: "ROOT", title: "Root", text: v("ROOT") },
+    { key: "IDEAS", title: "Ideas", text: v("IDEAS") },
+    { key: "NOTES", title: "Your standing notes", text: v("NOTES") },
+    ...Object.entries(values).filter(([k]) => k.startsWith("section:")).map(([key, text]) => ({ key, title: key.slice("section:".length).replace(/^#+\s*/, ""), text })),
+    { key: "EXTRA", title: "The operator's extra instructions", text: v("EXTRA") },
+  ];
+}
+
+export function renderProjectOverseerPrompt(projectId: string, tools: { name: string; promptSnippet?: string; description: string }[], template = readFileSync(PROMPT_FILE, "utf8"), now = new Date()): string {
+  return projectOverseerPromptFrom(projectOverseerValues(projectId, now), tools, template);
 }
 
 /** An organization places the project (its part adds gathering, promotion and the roster); else it stands alone. */
@@ -1048,6 +1083,8 @@ registerSpecialLoadout({
     const template = readFileSync(PROMPT_FILE, "utf8");
     const settings = readPoSettings(p);
     const defaults = loadDefaults();
+    /** This conversation's opening values (overseer-opening.ts), once a run has read or set them. */
+    let opened: Record<string, string> | undefined;
     return {
       resourceLoaderOptions: {
         // None of the operator's pi-config extensions, skills or templates: no mode, no subagents,
@@ -1065,10 +1102,19 @@ registerSpecialLoadout({
             factory: (pi) => {
               for (const t of tools) pi.registerTool(toPiTool(t));
               pi.on("before_agent_start", (event, ctx) => {
-                event.systemPromptOptions.appendSystemPrompt = renderProjectOverseerPrompt(rt.projectId, tools, template);
-                // The open cards, hidden, as the Overseer's (§app.overseer/confirm).
-                const note = cardsNote(cardsOnBranch(toolCtx(ctx).branch()), false, sessionActivity());
-                return note ? { message: { customType: CARDS_NOTE_MESSAGE, content: note, display: false as const } } : undefined;
+                const branch = toolCtx(ctx).branch();
+                const recorded = openingOn(branch);
+                // The prompt stays as the conversation opened (§app.project-overseer/identity): the
+                // values its first run note recorded, or now's for a conversation that has none yet.
+                opened = recorded ?? opened ?? projectOverseerValues(rt.projectId);
+                event.systemPromptOptions.appendSystemPrompt = projectOverseerPromptFrom(opened, tools, template);
+                // The hidden run note: the time now, what changed since the prompt, the open cards (§app.overseer/confirm).
+                const now = new Date();
+                const changed = changedText(projectLiveParts(projectOverseerValues(rt.projectId, now)), toldOn(branch, projectLiveParts(opened)));
+                const cards = cardsNote(cardsOnBranch(branch), false, sessionActivity());
+                const content = [nowLine(now), changed.text, cards].filter((x): x is string => !!x).join("\n\n");
+                const details = { v: 1, ...(recorded ? {} : { opening: opened }), ...(Object.keys(changed.told).length ? { told: changed.told } : {}) };
+                return { message: { customType: CARDS_NOTE_MESSAGE, content, display: false as const, details } };
               });
               pi.on("session_compact", (_event, ctx) => {
                 const note = cardsNote(cardsOnBranch(toolCtx(ctx).branch()), true, sessionActivity());

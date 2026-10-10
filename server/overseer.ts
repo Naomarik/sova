@@ -88,6 +88,7 @@ import { UnreadReplies } from "./unread-replies";
 import { cleanupSessions, getSessionSummary, idOf, indexedSessionPaths, lastReplyAtOf, listSessionFiles, listSessions } from "./sessions-index";
 import { getSessionInsight } from "./insights";
 import { branchLabels, cardsOnBranch, runNote, runNoteSessionIds, type SessionNow, sessionsInPlay, sessionsInPlayText, type Touched } from "./overseer-run-note";
+import { changedText, openingOn, toldOn, type LivePart, type OpeningDetails } from "./overseer-opening";
 import { assistantText, ID_NOTE_MESSAGE, idCheckNote } from "./overseer-id-check";
 import { meshApi } from "./mesh";
 import { probePeer } from "./mesh/hello";
@@ -741,7 +742,7 @@ export async function revokePermit(id: string): Promise<{ ok: true } | { ok: fal
  * archived), then the open cards (§app.overseer/confirm). One message, so it stays the cards note
  * the attendance rule treats as state. A failure to read the sessions still sends the time and the cards.
  */
-export async function runNoteMessage(branch: readonly HEntry[], now = new Date()): Promise<{ message: { customType: string; content: string; display: false; details?: unknown } }> {
+export async function runNoteMessage(branch: readonly HEntry[], now = new Date(), prompt: { changed?: string; opening?: OpeningDetails } = {}): Promise<{ message: { customType: string; content: string; display: false; details?: unknown } }> {
   const cardsText = cardsNote(cardsOnBranch(branch), false, sessionActivity());
   let note: { content: string; details: unknown };
   try {
@@ -757,10 +758,11 @@ export async function runNoteMessage(branch: readonly HEntry[], now = new Date()
       prompted,
       ...(cardsText ? { cardsText } : {}),
       redact: (t) => serverRedactor().redact(t),
+      ...prompt,
     });
   } catch (err) {
     console.warn("[overseer] run note without sessions:", err instanceof Error ? err.message : String(err));
-    note = runNote({ now, branch: [], act: { keys: new Set(), complete: false }, session: () => null, ...(cardsText ? { cardsText } : {}) });
+    note = runNote({ now, branch: [], act: { keys: new Set(), complete: false }, session: () => null, ...(cardsText ? { cardsText } : {}), ...prompt });
   }
   return { message: { customType: CARDS_NOTE_MESSAGE, content: note.content, display: false, details: note.details } };
 }
@@ -852,29 +854,55 @@ export function countRunning(paths: Iterable<string>, isRunning: (path: string) 
 }
 
 
+/**
+ * The values the Overseer's prompt is rendered from, as they are now: the time, the standing notes,
+ * the ideas' table of contents, the todos' counts, the caps and `EXTRA` (the user's extra
+ * instructions as their prompt part, redacted; empty when none). A conversation keeps the values it
+ * opened with (overseer-opening.ts); what changed since is told in its run note.
+ */
+export function overseerValues(settings: OverseerSettings, now = new Date(), redactor: () => Redactor = serverRedactor): Record<string, string> {
+  const notes = readNotes().trim();
+  const c = settings.caps;
+  return {
+    NOW: now.toString(),
+    NOTES: notes ? redactor().redact(notes.slice(0, 4000)) : "(none yet)",
+    IDEAS: redactor().redact(promptToc(readManifest(), readOverseerState()?.current ?? "")),
+    TODOS: promptTodos(readTodos()),
+    CAPS: `${c.createPerTurn} new sessions, ${c.promptsPerTurn} prompts to other sessions or explorers, ${c.archivesPerTurn} archive operations, ${c.explorePerTurn} explorers launched, ${c.linksPerTurn} links made, ${c.orgWritesPerTurn} organization writes, ${c.gatherPerTurn} gathering sessions or offers started; at most ${c.concurrentSessions} sessions you started running at once`,
+    EXTRA: extraInstructions(settings.extraSystemPrompt, redactor).join(""),
+  };
+}
+
+/** The parts of the Overseer's prompt that can change while it runs, from its values. */
+export function overseerLiveParts(values: Readonly<Record<string, string>>): LivePart[] {
+  const v = (k: string) => values[k] ?? "";
+  return [
+    { key: "NOTES", title: "Standing notes", text: v("NOTES") },
+    { key: "IDEAS", title: "Ideas backlog (its table of contents)", text: v("IDEAS") },
+    { key: "TODOS", title: "Todos checklist", text: v("TODOS") },
+    { key: "CAPS", title: "Limits per message from the user", text: v("CAPS") },
+    { key: "EXTRA", title: "The user's extra instructions for you", text: v("EXTRA").replace(/^# The user's extra instructions for you\n\n/, "") },
+  ];
+}
+
 /** The Overseer's prompt, rendered from the repo's .md (the runtime reads the .md once, so an edit
-    to it applies at the next open; notes and caps are whatever the files say now). */
+    to it applies at the next open) with `values` (overseerValues: now's, or the conversation's opening ones). */
 export function renderOverseerPrompt(
   tools: { name: string; promptSnippet?: string; description: string }[],
   settings: OverseerSettings,
   template = readFileSync(PROMPT_FILE, "utf8"),
   now = new Date(),
   redactor: () => Redactor = serverRedactor,
+  values: Readonly<Record<string, string>> = overseerValues(settings, now, redactor),
 ): string {
-  const notes = readNotes().trim();
-  const c = settings.caps;
-  const ideas = redactor().redact(promptToc(readManifest(), readOverseerState()?.current ?? ""));
   return template
     .replaceAll("{{TOOLS}}", toolCatalogue(tools))
-    .replaceAll("{{IDEAS}}", ideas)
-    .replaceAll("{{TODOS}}", promptTodos(readTodos()))
-    .replaceAll("{{NOTES}}", notes ? redactor().redact(notes.slice(0, 4000)) : "(none yet)")
-    .replaceAll("{{NOW}}", now.toString())
+    .replaceAll("{{IDEAS}}", values.IDEAS ?? "")
+    .replaceAll("{{TODOS}}", values.TODOS ?? "")
+    .replaceAll("{{NOTES}}", values.NOTES ?? "")
+    .replaceAll("{{NOW}}", values.NOW ?? now.toString())
     .replaceAll("{{HOME}}", homedir())
-    .replaceAll(
-      "{{CAPS}}",
-      `${c.createPerTurn} new sessions, ${c.promptsPerTurn} prompts to other sessions or explorers, ${c.archivesPerTurn} archive operations, ${c.explorePerTurn} explorers launched, ${c.linksPerTurn} links made, ${c.orgWritesPerTurn} organization writes, ${c.gatherPerTurn} gathering sessions or offers started; at most ${c.concurrentSessions} sessions you started running at once`,
-    );
+    .replaceAll("{{CAPS}}", values.CAPS ?? "");
 }
 
 /** The user's extra instructions (Settings → Overseer) as a prompt part, none when blank. Redacted
@@ -888,10 +916,11 @@ export function extraInstructions(extra: string, redactor: () => Redactor = serv
 export const buildOverseerTools = () => overseerTools(host, limits);
 
 /**
- * The Overseer's appended prompt, kept live: the standing notes, the caps and the user's extra
- * instructions are re-read at the start of every run, so a `sova_note` or a Settings save applies
- * from the next run, with no /clear. The rest (the .md, the tool list, the time it was opened) is
- * fixed per runtime, so an unchanged prompt stays byte-identical and the provider's cache holds.
+ * The Overseer's appended prompt, fixed at opening (§app.overseer/hosting): rendered from the values
+ * the conversation opened with (its first run note's `opening`, overseer-opening.ts), so it stays
+ * byte-identical across runs, runtimes and server restarts and the provider's cache holds. The notes,
+ * ideas, todos, caps and extra instructions are re-read at every run, and what changed since the
+ * Overseer was last told goes in that run's note (`noteParts`), never into this prompt.
  *
  * Two places need it. A run started by a message (the user's, a brief, a wake-up) builds its prompt
  * from `before_agent_start`, which sets it. A run started by an extension's message
@@ -904,6 +933,8 @@ class LivePrompt {
   readonly parts: string[] = [];
   private base: string[] = [];
   private readonly built = new WeakMap<object, string>();
+  /** The conversation's opening values, once a run has read them from its branch or set them. */
+  private opened?: Record<string, string>;
   constructor(
     private readonly tools: { name: string; promptSnippet?: string; description: string }[],
     private readonly template: string,
@@ -915,16 +946,36 @@ class LivePrompt {
     this.refresh();
     return this.parts;
   }
-  /** Re-read notes and settings into `parts`; returns the text the SDK joins them to. */
-  refresh(): string {
-    const settings = readOverseerSettings();
-    const next = [...this.base, renderOverseerPrompt(this.tools, settings, this.template, this.openedAt), ...extraInstructions(settings.extraSystemPrompt)];
+  /** The opening values: the branch's recorded ones, else those this runtime set, else now's (not kept
+      until a branch is known: the loader asks before the conversation is read). */
+  private opening(branch?: readonly HEntry[]): Record<string, string> {
+    const recorded = branch ? openingOn(branch) : undefined;
+    if (recorded) return (this.opened = recorded);
+    if (this.opened) return this.opened;
+    const now = overseerValues(readOverseerSettings(), this.openedAt);
+    if (branch) this.opened = now;
+    return now;
+  }
+  /** Fill `parts` from the opening values; returns the text the SDK joins them to. */
+  refresh(branch?: readonly HEntry[]): string {
+    const values = this.opening(branch);
+    const next = [...this.base, renderOverseerPrompt(this.tools, readOverseerSettings(), this.template, this.openedAt, serverRedactor, values), ...(values.EXTRA ? [values.EXTRA] : [])];
     this.parts.splice(0, this.parts.length, ...next);
     return next.join("\n\n");
   }
-  /** A run starts: bring the session's base options to the current text (a no-op when unchanged). */
-  rebase(session: Pick<HarnessSession, "refreshSystemPrompt">): void {
-    const text = this.refresh();
+  /** A run's note parts (overseer-opening.ts): what changed since the Overseer was last told, and the details to record. */
+  noteParts(branch: readonly HEntry[], now: Date): { changed?: string; opening: OpeningDetails } {
+    const recorded = openingOn(branch);
+    const opened = this.opening(branch);
+    const changed = changedText(overseerLiveParts(overseerValues(readOverseerSettings(), now)), toldOn(branch, overseerLiveParts(opened)));
+    return {
+      ...(changed.text ? { changed: changed.text } : {}),
+      opening: { ...(recorded ? {} : { opening: opened }), ...(Object.keys(changed.told).length ? { told: changed.told } : {}) },
+    };
+  }
+  /** A run starts: bring the session's base options to the opening text (a no-op when unchanged). */
+  rebase(session: Pick<HarnessSession, "refreshSystemPrompt" | "branch">): void {
+    const text = this.refresh(session.branch());
     if (this.built.get(session) === text) return;
     this.built.set(session, text);
     // The SDK rebuilds the base prompt options from the loader's parts (quirk P19).
@@ -956,8 +1007,10 @@ setOverseerRuntime({
               // hidden message, never the system prompt (a prompt change restarts a Claude Code CLI
               // and breaks the cache): persisted, so a restart or a fold keeps it.
               pi.on("before_agent_start", async (event, ctx) => {
-                event.systemPromptOptions.appendSystemPrompt = prompt.refresh();
-                return runNoteMessage(toolCtx(ctx).branch());
+                const branch = toolCtx(ctx).branch();
+                event.systemPromptOptions.appendSystemPrompt = prompt.refresh(branch);
+                const now = new Date();
+                return runNoteMessage(branch, now, prompt.noteParts(branch, now));
               });
               // The id check (§app.overseer/id-check): a run that linked a session id this host has no
               // file for leaves a hidden note naming the nearest real id. Sent while the run still

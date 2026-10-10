@@ -94,7 +94,8 @@ mesh off, or only one host known, nothing is shown.
 
 An organization attached on a peer has pages on every host's page, as its sessions do. The sidebar's
 Organizations region heads such an org with a link that carries the org's host
-(`#/orgs/<id>?host=<peer>`, the host of its sessions' rows), and so do the org page's own links: its
+(`#/orgs/<id>?host=<peer>`, the host of its sessions' rows), and its projects' names with links that carry it
+(`#/projects/<pid>?host=<peer>`), and so do the org page's own links: its
 tabs, its projects, the project overseer, its people and their pages
 (`#/projects/<pid>?host=<peer>`, `#/orgs/<id>/people/<pid>?host=<peer>`), so a reload
 or a shared link opens it on the right host. A standalone project on a peer is the same: its

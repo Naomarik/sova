@@ -185,7 +185,7 @@ strip, empty or not: a tab that came and went would move the strip under the rea
 
 - **Which tab opens.** Every door names its own tab (the head's Session details button, the
   remote chip, and the Agents board's Session details button and ⋯ item: Session; the board's ⋯
-  Open Subagents, and its team chips and `#/agents/{teamKey}` links: Agents; the composer's subagents row: Agents; the Timeline doors,
+  Open Subagents, its team chips, their `+{n}` chip and the `{n} teams` chip that stands for them from 1000 to 1599px, and `#/agents/{teamKey}` links: Agents; the composer's subagents row: Agents; the Timeline doors,
   §chat.timeline/opening-it; the head's token chip: Usage). The pane keeps the chosen tab per
   session path, in memory only. With none kept, it opens on Agents when a worker is working at
   open, else on Session, settled once at open so the tab never moves when the last worker
@@ -209,8 +209,7 @@ strip, empty or not: a tab that came and went would move the strip under the rea
 - **Usage** is what the session has spent, from the usage ledger (§app.insights/usage-ledger,
   `GET /api/usage/session`, polled while the tab shows). First the headline,
   `{n} tokens in and out · $x` (input + output; cache in its `title`; dollars at API prices,
-  subscriptions included). Under it, when the session's own conversation re-sent its history, the
-  re-sent line (§app.insights/usage-resend-display). Then a table with one row per model × origin, the main thread first and
+  subscriptions included). Then a table with one row per model × origin, the main thread first and
   then the biggest spender: Model · Where (Main thread, Side calls, Subagents) · In · Out ·
   Cache read · Cache write · Cost, with a **Main thread Σ** footer. Every branch counts, retries
   and housekeeping included; a fork counts only its own calls. Then this session's workers:

@@ -5,11 +5,11 @@ import type { UsageProvider } from "../../shared/protocol";
 const { importSsr } = await import("./align-card-ssr.mjs");
 const solid = await import("solid-js");
 const { renderToString } = await import("solid-js/web");
-const { UsageCard } = await importSsr(new URL("../components/UsageView.tsx", import.meta.url), (s: string) => import.meta.resolve(s));
+const { UsageRow } = await importSsr(new URL("../components/UsageView.tsx", import.meta.url), (s: string) => import.meta.resolve(s));
 const now = Date.parse("2026-03-03T12:00:00Z");
 const from = "2026-03-01T00:00:00Z", until = "2026-03-03T12:00:00Z";
 const p = (extra: Partial<UsageProvider> = {}): UsageProvider => ({ id: "ollama", state: "na", windows: [], activity: { fetchedAt: now, data: { range: "7d", scope: "self", from, until, totals: { request_count: 9, input_tokens: 12, cached_input_tokens: 5 }, buckets: [{ from, until: "2026-03-02T00:00:00Z", usage_usd: 0, partial: false }, { from: "2026-03-03T00:00:00Z", until, usage_usd: 1.25, partial: true }] } }, credits: { fetchedAt: now, data: { included: { balance_usd: 8, allowance_usd: 17, period: { from, until: "2026-04-01T00:00:00Z" } }, purchased: { balance_usd: 3 } } }, ...extra });
-const draw = (value: UsageProvider, resetDay?: unknown) => renderToString(() => solid.createComponent(UsageCard, { p: value, now, resetDay }));
+const draw = (value: UsageProvider, resetDay?: unknown) => renderToString(() => solid.createComponent(UsageRow, { p: value, now, resetDay }));
 const words = (html: string) => html.replace(/<!--.*?-->/g, "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ");
 
 test("rendered modern Usage card shows independent authoritative included/purchased amounts, exact UTC period and activity interval", () => {

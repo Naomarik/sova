@@ -1,16 +1,14 @@
 /* The Agents board (#/agents): one row per session; what it's about, where it stands and its
    worktrees folded inside. A click on the row's non-control surface opens the session. Token values only. It measures the `insights` pane it lives in, never the window:
    stacked rows below 768 (folded), a condensed 4-column row to 1000, the full 5 columns from
-   there, and at 1600 a wide page: the session takes the extra width. */
+   there, and at 1600 a wide page: the session takes the extra width. Unfolded, every row is at
+   most 2 lines tall and every cell fits in them. */
 
 /* ---- The page: no 1280 cap (other insights pages keep it). Head, bar and board share edges. ---- */
 .insights.agents-page > .insights-inner { max-width: 2400px; }
-/* The head sits beside the pane, not in it, so it measures itself: same width as the pane. */
+/* The head sits beside the pane, not in it, so it measures itself: same width as the pane. On the
+   Board tab it carries no totals (they're on the count line); on Costs it does, at every width. */
 .session-head.agents-page { container: agents-head / inline-size; }
-@container agents-head (min-width: 1000px) {
-  /* The totals move onto the filter bar. */
-  .session-head.agents-page .session-head-meta { display: none; }
-}
 @container agents-head (min-width: 1600px) {
   /* A container query never styles its own container, so the head's children carry the offset:
      the head's own padding (space-4 left, space-3 right) plus this lands on the board's edges. */
@@ -50,20 +48,37 @@
 .board-filter:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
 .board-filter[aria-pressed="true"] { background: var(--color-accent-tint); border-color: var(--color-accent); color: var(--color-ink); font-weight: var(--fw-medium); }
 .board-filter-count { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-muted); }
-/* The filters, and at ≥1000 the head's totals beside them, right-aligned. */
-.board-bar-line { display: flex; align-items: center; gap: var(--space-3); }
-.board-bar-line > .board-filters { flex: 1; min-width: 0; }
-.board-totals { display: none; margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); white-space: nowrap; }
-.board-count-line { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); }
+/* The count and the totals, the totals' only place on this tab, directly above the board: under the
+   count when folded, at its right from 768. */
+.board-caption { display: flex; flex-direction: column; gap: 2px var(--space-3); margin-bottom: var(--space-2); }
+.board-totals { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: var(--fs-caption); color: var(--color-ink-muted); white-space: nowrap; }
+.board-count-line { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); white-space: nowrap; }
 .board-more-rows { align-self: flex-start; }
 
 /* ---- The board ---- */
 .board-list { list-style: none; margin: 0; padding: 0; }
+/* A heading per state, in its rail's color, starting where the titles do. Only with 2+ groups. */
+.board-group-head {
+  margin: 0;
+  padding: var(--space-3) var(--space-2) var(--space-1) calc(var(--space-2) + var(--control-md) + var(--space-1));
+  border-top: var(--stroke-thin) solid var(--color-border);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-medium);
+  line-height: var(--lh-caption);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--color-ink-muted);
+}
+.board-group-head:first-child, .board-head + .board-group-head { border-top: 0; }
+.board-group-head[data-state="needs-you"] { color: var(--status-warn); }
+.board-group-head[data-state="working"] { color: var(--color-accent); }
+.board-group-head + .board-list > .board-row:first-child { border-top: var(--stroke-thin) solid var(--color-border); }
 .board-row { position: relative; cursor: pointer; transition: background var(--dur-fast) var(--ease-standard); }
 .board-row:hover { background: var(--color-sunken); }
 .board-rename { cursor: auto; }
 .board-row + .board-row { border-top: var(--stroke-thin) solid var(--color-border); }
-/* The state rail: the row's left edge. Decorative — the chip carries the word. */
+/* The state rail: the row's left edge. Decorative — the heading and a hidden word after the title say it. */
 .board-rail { position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--color-border); }
 .board-row[data-state="working"] .board-rail { background: var(--color-accent); }
 .board-row[data-state="needs-you"] .board-rail { background: var(--status-warn); }
@@ -115,7 +130,6 @@
   font-weight: var(--fw-medium);
   color: var(--color-ink);
 }
-.board-state-inline { flex: none; }
 .board-rename { display: flex; flex-direction: column; gap: var(--space-1); padding-right: var(--space-2); }
 .board-rename .group-field { flex-wrap: wrap; }
 .board-rename .input { flex: 1; min-width: 12rem; }
@@ -134,16 +148,32 @@
 .board-micro { display: flex; flex-wrap: wrap; gap: 0 var(--space-2); margin: 0; font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); }
 .board-micro > * + *::before { content: "·"; margin-right: var(--space-2); }
 
-.board-model { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-mono); }
-.board-when { white-space: nowrap; color: var(--color-ink-muted); }
-.board-count { white-space: nowrap; }
-.board-spend { font-size: var(--fs-mono); color: var(--color-ink-muted); }
+/* One line of a 2-line cell: never wraps; what doesn't fit is cut. The second line is muted. */
+.board-cell-line { display: flex; align-items: center; gap: var(--space-2); min-width: 0; max-width: 100%; white-space: nowrap; }
+.board-cell-sub { color: var(--color-ink-muted); }
+/* Activity is one muted line: model · ring · age; the age never cuts, the model gives first. */
+.board-activity-line { color: var(--color-ink-muted); }
+.board-activity-line .board-when { flex: none; }
+.board-activity-line .board-when::before { content: "·"; margin-right: var(--space-2); }
+.board-model { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-mono); }
+.board-when { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-ink-muted); }
+.board-count { display: block; overflow: hidden; text-overflow: ellipsis; }
+.board-teams { gap: var(--space-1); }
+.board-team { display: inline-block; flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+button.board-team { flex: none; font: inherit; font-family: var(--font-mono); font-size: var(--fs-micro); cursor: pointer; }
+button.board-team:hover { color: var(--color-ink); border-color: var(--color-border-strong); }
+button.board-team:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.board-team.board-team-all { display: none; }
 .board-dash { color: var(--color-ink-muted); }
 
-.board-tree-set { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); min-width: 0; max-width: 100%; }
-.board-tree-more, .board-tree-more-wide { flex: none; display: inline-flex; }
-.board-tree.board-tree-wide, .board-tree-more-wide { display: none; }
-.board-tree { display: inline-flex; align-items: center; gap: var(--space-2); min-width: 0; max-width: 100%; }
+/* Folded: the first tree and "+N" as chips. Unfolded (below): a grid of 2 lines. */
+.board-tree-set { display: inline-flex; flex-wrap: nowrap; align-items: center; gap: var(--space-1) var(--space-2); min-width: 0; max-width: 100%; }
+.board-tree-more, .board-tree-more-second { flex: none; display: inline-flex; }
+.board-tree.board-tree-second { display: none; }
+.board-tree { display: inline-flex; flex: 0 1 auto; align-items: center; gap: var(--space-2); min-width: 0; max-width: 100%; }
+.board-tree > :empty { display: none; }
+.board-tree-reading, .board-tree-count, .board-tree-end { display: inline-flex; align-items: center; gap: var(--space-2); white-space: nowrap; }
+.board-tree-gone { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-ink-muted); }
 .board-tree-branch { min-width: 4ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-mono); color: var(--color-ink); }
 .board-ahead, .board-lines { flex: none; font-size: var(--fs-mono); white-space: nowrap; }
 .board-ahead { color: var(--color-ink-2); }
@@ -153,8 +183,7 @@
 
 /* Folded: the ⋯ is the one door to the actions. */
 .board-actions { display: flex; flex-wrap: nowrap; justify-content: flex-end; gap: var(--space-1); }
-.board-act, .board-act-wide { display: none; }
-.board-act-gap { width: var(--control-md); }
+.board-act { display: none; }
 
 /* ---- The open row: where the session stands, what it's about, and its worktrees ----
    Its children sit in the title column at every width (8 + 44 + 4 = 56px), behind one guide rule
@@ -187,34 +216,47 @@
 
 .board-head { display: none; }
 
-/* ---- Unfolded, condensed: Activity over Workers in one column; Open and ⋯ ---- */
+/* ---- Unfolded, condensed: the Activity line over Workers' first line in one column; Open, details and ⋯ ---- */
 @container insights (min-width: 768px) {
   .board-line {
-    grid-template-columns: minmax(0, 2fr) minmax(0, 1.2fr) minmax(0, 1.2fr) calc(var(--control-md) * 3 + var(--space-1) * 2);
+    grid-template-columns: minmax(0, 1.6fr) minmax(9.5rem, 1fr) minmax(0, 1.5fr) calc(var(--control-md) * 3 + var(--space-1) * 2);
     grid-template-areas: "session activity trees actions" "session workers trees actions";
     gap: 2px var(--space-3);
     padding: var(--space-1) var(--space-2) var(--space-1) var(--space-2);
   }
-  .board-cell.board-activity, .board-cell.board-workers { display: flex; flex-wrap: nowrap; }
+  .board-cell.board-activity, .board-cell.board-workers { display: flex; flex-direction: column; flex-wrap: nowrap; align-items: stretch; justify-content: center; gap: 2px; }
+  .board-workers .board-cell-sub { display: none; }
   .board-activity { align-self: end; }
   .board-workers { align-self: start; }
   .board-trees { padding-left: 0; }
   .board-trees:has(> .board-dash) { display: flex; }
-  .board-state-inline, .board-micro { display: none; }
-  .board-act:not(.board-act-wide) { display: inline-flex; }
+  .board-micro { display: none; }
+  .board-act { display: inline-flex; }
+  /* The trees: 2 lines on one grid, so both lines' readings and counts share columns. */
+  .board-tree-set {
+    display: grid;
+    grid-template-columns: minmax(4ch, 1fr) auto auto auto;
+    align-items: center;
+    gap: 2px var(--space-2);
+    width: 100%;
+  }
+  .board-tree, .board-tree.board-tree-second { display: contents; }
+  .board-tree > :empty { display: inline-flex; }
+  .board-tree-count { justify-self: end; }
+  .board-tree-more { display: none; }
+  .board-caption { flex-direction: row; align-items: baseline; justify-content: space-between; }
 }
 
-/* ---- Desktop: the five columns, and every action as its own button ---- */
+/* ---- Desktop: the five columns, each cell 2 lines ---- */
 @container insights (min-width: 1000px) {
   .board-line,
   .board-head {
-    grid-template-columns: minmax(0, 2.2fr) minmax(0, 1fr) minmax(0, 0.6fr) minmax(0, 1.7fr) calc(var(--control-md) * 5 + var(--space-1) * 4);
+    grid-template-columns: minmax(0, 2fr) 10rem minmax(9rem, 0.8fr) minmax(0, 2.2fr) calc(var(--control-md) * 3 + var(--space-1) * 2);
     grid-template-areas: "session activity workers trees actions";
     column-gap: var(--space-3);
   }
-  .board-cell.board-activity, .board-cell.board-workers { align-self: center; flex-wrap: wrap; }
-  .board-act-wide { display: inline-flex; }
-  .board-totals { display: block; }
+  .board-cell.board-activity, .board-cell.board-workers { align-self: center; }
+  .board-workers .board-cell-sub { display: flex; }
   .board-head {
     display: grid;
     padding: var(--space-2);
@@ -227,17 +269,38 @@
     color: var(--color-ink-muted);
   }
 }
+/* ---- Desktop band (1000–1599): the title and the branches get the room. Activity is the ring and
+   the age (the model stays for AT and in the age's title), the team chips one "{n} teams" chip,
+   the readings and counts their content's width, and Session and Worktrees share the rest. ---- */
+@container insights (1000px <= width < 1600px) {
+  .board-line,
+  .board-head {
+    grid-template-columns: minmax(0, 1fr) 5.5rem minmax(8rem, 9.5rem) minmax(0, 1fr) calc(var(--control-md) * 3 + var(--space-1) * 2);
+    column-gap: var(--space-2);
+  }
+  .board-activity-line .board-model {
+    position: absolute;
+    width: 1px; height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+  .board-activity-line .board-when::before { content: none; }
+  .board-activity-line .context-ring + .board-when::before { content: "·"; }
+  .board-team:not(.board-team-all) { display: none; }
+  .board-team.board-team-all { display: inline-block; }
+  .board-tree-set { column-gap: var(--space-1); }
+  .board-tree-branch { margin-right: var(--space-1); }
+  .board-tree-reading, .board-tree-count, .board-tree-end { gap: var(--space-1); }
+}
+
 /* The head's Session label starts where the titles do, past the twist. */
 .board-head > :first-child { padding-left: calc(var(--control-md) + var(--space-1)); }
 
-/* ---- Wide: the session takes the extra width; Activity on one line; two trees before "+N" ---- */
+/* ---- Wide: the session gives up its spare room, so Workers and Worktrees keep to 2 lines ---- */
 @container insights (min-width: 1600px) {
   .board-line,
   .board-head {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 15rem) minmax(0, 8rem) minmax(0, 22rem) calc(var(--control-md) * 5 + var(--space-1) * 4);
+    grid-template-columns: minmax(20rem, 1fr) 10rem 17rem 28rem calc(var(--control-md) * 3 + var(--space-1) * 2);
   }
-  .board-cell.board-activity { flex-wrap: nowrap; }
-  .board-tree-set { flex-direction: column; align-items: flex-start; }
-  .board-tree.board-tree-wide, .board-tree-more-wide { display: inline-flex; }
-  .board-tree-more { display: none; }
 }

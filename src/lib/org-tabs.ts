@@ -6,7 +6,7 @@ import type { OrgTab } from "./orgs-route";
 export interface OrgTabInfo {
   id: OrgTab;
   label: string;
-  /** Shown after the label; null = no count (Workspace has nothing to count). */
+  /** Shown after the label; null = no count (History and Settings have nothing to count). */
   count: number | null;
   /** Things in this tab that wait on the operator; > 0 shows the dot. */
   waiting: number;
@@ -33,14 +33,6 @@ export function orgTabsOf(o: TabSource): OrgTabInfo[] {
   const words = (parts: string[]) => parts.filter(Boolean).join(" · ");
   return [
     {
-      id: "sessions",
-      label: "Sessions",
-      count: o.batons.length,
-      waiting: replies + links,
-      waitingText: words([replies ? `${replies} to answer` : "", links ? `${plural(links, "link")} to send` : ""]),
-    },
-    { id: "people", label: "People", count: o.roster.length, waiting: proposed, waitingText: proposed ? `${plural(proposed, "person", "people")} to approve` : "" },
-    {
       id: "projects",
       label: "Projects",
       // Archived projects are not counted (§app.organizations/archive).
@@ -52,11 +44,21 @@ export function orgTabsOf(o: TabSource): OrgTabInfo[] {
         held ? plural(held, "held act") : "",
       ]),
     },
+    {
+      id: "sessions",
+      label: "Sessions",
+      count: o.batons.length,
+      waiting: replies + links,
+      waitingText: words([replies ? `${replies} to answer` : "", links ? `${plural(links, "link")} to send` : ""]),
+    },
+    { id: "people", label: "People", count: o.roster.length, waiting: proposed, waitingText: proposed ? `${plural(proposed, "person", "people")} to approve` : "" },
     // An open-ended record, not a list size: no count, and nothing in it waits.
     { id: "history", label: "History", count: null, waiting: 0, waitingText: "" },
+    // The org's own settings (About, Company hours, the workspace repo): nothing to count; the
+    // repo's file problems and a failed commit or push are its dot.
     {
-      id: "workspace",
-      label: "Workspace",
+      id: "settings",
+      label: "Settings",
       count: null,
       waiting: repo,
       waitingText: words([o.problems.length ? `${plural(o.problems.length, "file problem")}` : "", o.git.lastError ? "the last commit or push failed" : ""]),

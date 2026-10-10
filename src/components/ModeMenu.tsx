@@ -73,7 +73,7 @@ const memoryOf = (m: ModeInfo): ChatMemoryChoice | null => (m.memory ? { type: m
 
 /**
  * The composer foot's mode switch: a trigger plus a native popover menu. One major mode
- * (menuitemradio, picking closes), any minor modes (menuitemcheckbox, toggling stays open) and the
+ * (menuitemradio, picking stays open), any minor modes (menuitemcheckbox, toggling stays open) and the
  * Subagents group, whose one row swaps the menu for the profile picker panel (the composer
  * flyout's panel pattern) and back. The mode and the pick are per chat: only this chat follows.
  */
@@ -271,10 +271,8 @@ export function ModeMenu(props: { control: ModeControl }) {
     const c = current();
     if (!c || busy()) return;
     let patch: { mode?: string; minorModes?: string[] };
+    // A pick, like a toggle, keeps the menu open: the check moves and focus stays on the row.
     if (it.kind === "radio") {
-      closedByChoice = true;
-      closeMenu();
-      trigger.focus();
       if (it.id === c.mode) return;
       patch = { mode: it.id };
     } else {
@@ -287,9 +285,15 @@ export function ModeMenu(props: { control: ModeControl }) {
     } catch (err) {
       const why = (err instanceof Error ? err.message : String(err)).replace(/\.$/, "");
       setError({ title: "Couldn't switch the mode.", body: `${why}. Your mode is unchanged.` });
-      if (it.kind === "radio") await openMenu(true); // show why, in place
     } finally {
       setBusy(false);
+      // The rows re-render as the mode arrives, which can drop focus to <body>: once that settles,
+      // put it back on the row just chosen, unless the menu closed or focus moved elsewhere in it.
+      requestAnimationFrame(() => {
+        if (!menu.matches(":popover-open") || menu.contains(document.activeElement)) return;
+        const at = items().findIndex((x) => x.id === it.id);
+        if (at >= 0) focusItem(at);
+      });
     }
   };
 
@@ -323,7 +327,7 @@ export function ModeMenu(props: { control: ModeControl }) {
     }
   };
 
-  /** A profile pick: this chat only; the menu closes and the trigger retakes focus. */
+  /** A profile pick: this chat only; the main panel returns, focus on the Subagents row. */
   const chooseProfile = async (id: string) => {
     if (busy()) return;
     setBusy(true);
@@ -331,9 +335,7 @@ export function ModeMenu(props: { control: ModeControl }) {
     try {
       const r = await pickSubagentProfile(props.control.path, id, host());
       setProfiles(r);
-      closedByChoice = true;
-      closeMenu();
-      trigger.focus();
+      closePicker();
       announce(`Subagent profile: ${r.current.name}.${r.applies === "after-turn" ? " Applies from your next message." : ""} Running workers keep their models.`);
     } catch (err) {
       const why = (err instanceof Error ? err.message : String(err)).replace(/\.$/, "");

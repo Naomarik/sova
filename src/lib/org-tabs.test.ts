@@ -2,22 +2,28 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { OrgBatonRow, OrgGitStatus, Person } from "../../shared/orgs";
 import { orgTabsOf, stakeholderToPick } from "./org-tabs";
+import { ORG_TABS } from "./orgs-route";
 
 const git: OrgGitStatus = { remote: null, lastCommit: null, lastError: null, dirty: false };
 const baton = (waiting?: OrgBatonRow["waiting"]): OrgBatonRow => ({ sessionId: "s", path: "/p", publicTitle: "t", projectId: "j", state: "open", holder: null, createdAt: "", ...(waiting ? { waiting } : {}) });
 const person = (status: Person["status"]): Person => ({ id: "p", orgId: "o", name: "n", status, contact: {}, role: "", decides: [], skills: [], competence: {}, language: "", voice: "" });
 
-test("an empty org: counts 0, History and Workspace uncounted, no dots", () => {
+test("an empty org: Projects first, counts 0, History and Settings uncounted, no dots", () => {
   const tabs = orgTabsOf({ batons: [], roster: [], projectList: [], problems: [], git });
   assert.deepEqual(
     tabs.map((t) => [t.id, t.count, t.waiting, t.waitingText]),
     [
+      ["projects", 0, 0, ""],
       ["sessions", 0, 0, ""],
       ["people", 0, 0, ""],
-      ["projects", 0, 0, ""],
       ["history", null, 0, ""],
-      ["workspace", null, 0, ""],
+      ["settings", null, 0, ""],
     ],
+  );
+  assert.deepEqual(
+    tabs.map((t) => t.id),
+    [...ORG_TABS],
+    "the strip's tabs are the route's, in its order",
   );
 });
 
@@ -38,8 +44,8 @@ test("each tab counts its own rows and dots what waits inside it", () => {
   assert.equal(by.people!.waitingText, "1 person to approve");
   assert.equal(by.projects!.waiting, 2);
   assert.equal(by.projects!.waitingText, "2 conflicts to settle");
-  assert.equal(by.workspace!.waiting, 2);
-  assert.equal(by.workspace!.waitingText, "1 file problem · the last commit or push failed");
+  assert.equal(by.settings!.waiting, 2, "the workspace repo's problems wait in Settings");
+  assert.equal(by.settings!.waitingText, "1 file problem · the last commit or push failed");
 });
 
 test("a project whose main stakeholder left waits in Projects until one is picked", () => {

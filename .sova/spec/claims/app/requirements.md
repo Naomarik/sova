@@ -32,7 +32,7 @@ listener. Every write runs in the project's one-job-at-a-time queue.
   shown on the decision's line and in the "Outside their area" chip's tooltip as "{name} (name at
   recovery)", titled "This decision was recovered later; its name is the one this person had then,
   not the one recorded when they decided."), or, when that author isn't part of the conversation, stays unrecovered and shows
-  on the Workspace tab as a problem (§app.org-history/durability), and its history event is recorded once with it (§app.org-history/durability).
+  on the Settings tab as a problem (§app.org-history/durability), and its history event is recorded once with it (§app.org-history/durability).
 - A decision's id is `<sessionId>:<entry id of the decision>`, so two decisions stated in one
   message stay two. Its provenance is **who** (person id or `operator`, and their name when
   recorded), **session**, **entry** (the user message holding the quote: the nearest one up the

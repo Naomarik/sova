@@ -386,7 +386,18 @@ function visualInput(value: unknown, where: string): AlignVisual {
 	const kind = text(v.kind, `${where}.kind`);
 	need(/^[a-z]+$/.test(kind), `${where}.kind must be one vis kind word, e.g. "wireframe" (call vis_guide for the kinds)`);
 	need(typeof v.source === "string" && v.source.trim() !== "", `${where}.source must be the drawing's source, non-empty`);
-	return { kind, source: (v.source as string).replace(/\s+$/, "") };
+	const source = unfencedVisSource(v.source as string);
+	need(source.trim() !== "", `${where}.source must be the drawing's source, non-empty`);
+	return { kind, source: source.replace(/\s+$/, "") };
+}
+
+/**
+ * A source written as a whole `vis` fence (its ```vis <kind> line and closing fence around the body, as a
+ * planning worker writing a file tends to) is the body inside it; any other source is as given.
+ */
+export function unfencedVisSource(source: string): string {
+	const m = /^\s*(`{3,}|~{3,})[ \t]*vis(?:[ \t]+[a-z]+)?[ \t]*\r?\n([\s\S]*?)\r?\n[ \t]*\1[ \t]*\s*$/.exec(source);
+	return m ? m[2]! : source;
 }
 
 function rejectedInput(value: unknown, where: string): { option: string; why: string } {
@@ -413,8 +424,8 @@ export const DOC_INPUT_KEYS = ["title", "summary", "findings", "approach", "reje
 
 /**
  * Strict: every field typed, nothing unknown. `where` prefixes each message ("import /tmp/x.json").
- * `visuals`: the document's and the questions' `visual` are taken too (create in a session started
- * with Visuals on; an import's file never holds them).
+ * `visuals`: the document's and the questions' `visual` are taken too (create, or an import's file,
+ * in a session started with Visuals on).
  */
 export function parseDocInput(value: unknown, where: string, visuals = false): AlignDocInput {
 	const keys: readonly string[] = visuals ? [...DOC_INPUT_KEYS, "visual"] : DOC_INPUT_KEYS;
@@ -434,8 +445,15 @@ export function parseDocInput(value: unknown, where: string, visuals = false): A
 	return doc;
 }
 
-/** The JSON a planning worker writes for `import`: said once, for the tool's schema and the prompts. */
-export const ALIGN_FILE_SCHEMA = `{"title": string, "summary": string (one line), "findings"?: [string], "approach"?: [string, in order], "rejected"?: [{"option": string, "why": string}], "technical"?: [string (a technical note)], "questions"?: [{"topic": string, "ask": string, "context"?: string, "options"?: [{"label": string, "tradeoff": string}], "recommendation": {"choice": string, "why": string}}]}`;
+/**
+ * The JSON a planning worker writes for `import`: said once, for the tool's schema and the prompts. With
+ * Visuals on (§chat.alignment/visuals) the document and each question may carry a `visual`, as create takes it.
+ */
+export function alignFileSchema(visuals = false): string {
+	const visual = visuals ? `, "visual"?: {"kind": string, "source": string}` : "";
+	return `{"title": string, "summary": string (one line), "findings"?: [string], "approach"?: [string, in order], "rejected"?: [{"option": string, "why": string}], "technical"?: [string (a technical note)], "questions"?: [{"topic": string, "ask": string, "context"?: string, "options"?: [{"label": string, "tradeoff": string}], "recommendation": {"choice": string, "why": string}${visual}}]${visual}}`;
+}
+export const ALIGN_FILE_SCHEMA = alignFileSchema();
 
 // ── Operations ───────────────────────────────────────────────────────────────
 
@@ -749,7 +767,7 @@ export function applyAlignCall(docs: readonly AlignDocument[], input: unknown, e
 				const at = /position (\d+)/.exec(error instanceof Error ? error.message : "")?.[1];
 				throw new AlignError(`import ${path}: not valid JSON${at ? ` (near position ${at})` : ""}`);
 			}
-			parsed = parseDocInput(json, `import ${path}`);
+			parsed = parseDocInput(json, `import ${path}`, visuals);
 		} else {
 			parsed = parseDocInput(Object.fromEntries([...DOC_INPUT_KEYS, ...(visuals ? ["visual"] : [])].map((k) => [k, o[k]])), "ops[0] (create)", visuals);
 		}
@@ -954,6 +972,10 @@ export function applyAlignCall(docs: readonly AlignDocument[], input: unknown, e
 	if (doc && changed && !creates) {
 		doc.rev += 1;
 		doc.updatedAt = env.now;
+	}
+	// A start without a drawing in a Visuals chat: said at the moment it can still be added (§chat.alignment/visuals).
+	if (doc && creates && visuals && visualCount(doc) === 0) {
+		extra.push(`${doc.id} has no visual. Visuals are on: if a question is about a screen, or the change is a flow, draw it now with edit_question {q, visual} or edit_doc {visual}, before you reply.`);
 	}
 	const after = doc && changed ? upsert(docs, doc) : docs;
 	const details: AlignDetails = { v: 1, changes, line: changeLine(changes) };

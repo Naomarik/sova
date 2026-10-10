@@ -1,12 +1,14 @@
 // Run: npx tsx --test src/lib/org-region.test.ts
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import type { ProjectSummary } from "../../shared/projects";
 import type { AttentionItem, SessionOrg, SessionSummary } from "../../shared/protocol";
 import {
   eyeLabel,
   doneOpen,
   inArchivedProject,
   inOrgRegion,
+  listedOrgProjects,
   NO_PROJECT,
   orgRowState,
   overseerEye,
@@ -302,4 +304,63 @@ test("orgProjectItems: held acts first, soonest to go ahead on top; then conflic
     items: [it("stake", "project-stakeholder", 5), it("late", "held-act", 9, 2000), it("soon", "held-act", 1, 1000), it("conf", "conflict-to-operator", 7), it("sess", "needs-input", 99), it("unsent", "outreach-not-sent", 6)],
   };
   assert.deepEqual(orgProjectItems(digest).map((x) => x.id), ["soon", "late", "conf", "unsent", "stake"]);
+});
+
+const placed = (id: string, name: string, orgId: string, orgName: string, extra: Partial<ProjectSummary> = {}): ProjectSummary => ({
+  id,
+  name,
+  root: `/w/${id}`,
+  origin: "folder",
+  createdAt: at(1),
+  space: { kind: "org", orgId, orgName },
+  ...extra,
+});
+
+test("every active placed project has its heading, with sessions or none; an org with only session-less projects has its section; rows count, headings don't", () => {
+  const projects = [
+    placed("p1", "Rakiba site", "o1", "Mamluk Arabia"),
+    placed("p3", "Admin", "o1", "Mamluk Arabia"),
+    placed("q1", "Quiet app", "o9", "Quiet Co"),
+    placed("old", "Old site", "o1", "Mamluk Arabia", { archived: { at: at(2) } }),
+    { ...placed("s1", "Solo", "-", "-"), space: { kind: "standalone" } } as ProjectSummary,
+  ];
+  const sections = orgSections([session("a1", { org: org() }), session("a2", { org: org({ kind: "coding" }) })], projects);
+  assert.deepEqual(
+    sections.map((o) => [o.name, o.projects.map((p) => [p.name, projectCount(p)])]),
+    [
+      ["Mamluk Arabia", [["Admin", 0], ["Rakiba site", 2]]],
+      ["Quiet Co", [["Quiet app", 0]]],
+    ],
+    "the archived project and the standalone one are not listed; the session-less org is",
+  );
+  assert.equal(sections[0]!.projects.find((p) => p.id === "p1")!.root, "/w/p1", "the list's folder rides along for the heading's title");
+  assert.equal(orgCount(sections[1]!), 0);
+  assert.equal(regionCount(sections), 2, "a session-less project adds no row");
+  assert.equal(regionCount(orgSections([], projects)), 0);
+  assert.equal(orgSections([], projects).length, 2, "a region of session-less projects alone still has its sections");
+  // A session row of a listed project lands under the same heading, not a second one.
+  assert.equal(orgSections([session("q", { org: org({ orgId: "o9", orgName: "Quiet Co", projectId: "q1", projectName: "Quiet app" }) })], projects)[1]!.projects.length, 1);
+  // The list's name wins an "Unknown project" a session row would give.
+  assert.equal(orgSections([session("u", { org: org({ projectId: "p3", projectName: undefined }) })], projects)[0]!.projects.find((p) => p.id === "p3")!.name, "Admin");
+});
+
+test("which placed projects the region lists: this host's unarchived org projects; a search keeps those found by name, folder or org; none under a peer's host filter", () => {
+  const projects = [
+    placed("p1", "Rakiba site", "o1", "Mamluk Arabia"),
+    placed("p2", "Ledger", "o1", "Mamluk Arabia", { root: "/srv/books" }),
+    placed("q1", "Quiet app", "o9", "Quiet Co"),
+    placed("old", "Rakiba old", "o1", "Mamluk Arabia", { archived: { at: at(2) } }),
+    { ...placed("s1", "Rakiba solo", "-", "-"), space: { kind: "standalone" } } as ProjectSummary,
+  ];
+  const list = (query: string, here = true) => listedOrgProjects(projects, { query, here }).map((p) => p.id);
+  assert.deepEqual(list(""), ["p1", "p2", "q1"]);
+  assert.deepEqual(list("  RAKIBA "), ["p1"], "by name, case-insensitive; never an archived or standalone one");
+  assert.deepEqual(list("books"), ["p2"], "by folder");
+  assert.deepEqual(list("quiet co"), ["q1"], "by its org's name");
+  assert.deepEqual(list("nothing here"), []);
+  assert.deepEqual(list("", false), [], "the host filter names a peer: this host's list adds nothing");
+  assert.deepEqual(listedOrgProjects(null, { query: "", here: true }), [], "not read yet");
+  // A search that finds a project but none of its sessions keeps its heading with no row.
+  const hit = orgSections([], listedOrgProjects(projects, { query: "ledger", here: true }));
+  assert.deepEqual(hit.map((o) => [o.name, o.projects.map((p) => [p.name, projectCount(p)])]), [["Mamluk Arabia", [["Ledger", 0]]]]);
 });

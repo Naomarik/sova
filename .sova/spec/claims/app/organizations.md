@@ -10,10 +10,11 @@ Orgs open as a page, `#/orgs` (the list) and `#/orgs/<id>` (one org), with a bac
 landing page like Usage and Agents. The entry point is the landing page's Organizations card, its
 last section (§chat.transcript/landing-page): totals across every org, the most recently active
 orgs as links, and a link to `#/orgs`, shown whether or not any org exists. The sidebar has no
-navigation row for orgs; it lists their sessions in its Organizations region, each org's head linking
-to its page (§app.session-list/organizations). `#/orgs` is
+navigation row for orgs; it lists their projects and sessions in its Organizations region, each org's
+head linking to its page and each project's name to the project's page
+(§app.session-list/organizations). `#/orgs` is
 a grid of organization cards (§app.organizations/org-cards); an org's page has five tabs, each in
-the URL (§app.organizations/org-page); each roster person has a page of their own,
+the URL, and opens on its Projects (§app.organizations/org-page); each roster person has a page of their own,
 `#/orgs/<id>/people/<pid>` (§app.organizations/person-page).
 
 ## §app.organizations/registry — Attached orgs and residence
@@ -114,7 +115,23 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
   (`POST /api/orgs/:id/reload`) and shows the page it answers: with no problem left the banners go
   and the toast says "Reloaded. Everything in the workspace loads now.", otherwise the rest stay
   and it says "Reloaded. {1 problem remains|n problems remain}: fix or restore it, then reload
-  again."; a failed Reload shows in the page's error banner. The tabs:
+  again."; a failed Reload shows in the page's error banner. The tabs, in the strip's order:
+  - **Projects**, the tab an org opens on: the org's projects first, at the top of the tab, each row
+    one link to its project page `#/projects/<pid>` (folder icon, name, folder path, the project's
+    cost at API prices, a trailing chevron) under the org's total (§app.project-costs/org-rollup).
+    The card's head carries one **Add Project** button (`aria-expanded`), which unfolds, between the
+    head and the list, the Add Project form (`Project name`, optional: the folder's name; `Folder`;
+    its own **Add Project** submit), which registers the folder and places it in this org
+    (§app.projects/placement), then, while any standalone project is on this host, the Import a
+    Project row (§app.projects/import); pressing the button again folds them, and a project added
+    or imported folds them too. They are folded when the tab opens, except while the org has no
+    project at all (archived ones included), when they open unfolded. With no project the list's
+    line reads "No projects yet. A project is a folder that hand-off sessions and its overseer work
+    in." Archived projects are not in that list: a collapsed **Archived Projects ({n})** disclosure
+    under it (absent with none) lists them, each row the same link with the archive's age and
+    **Unarchive** (§app.organizations/archive). With every project archived, the list's line reads
+    "The 1 project here is archived. Unarchive one below, or add a project." (or "All {n} projects
+    here are archived. …") instead of "No projects yet."
   - **Sessions**: the hand-off sessions list, and the start form behind a `Start a Hand-off
     Session` button (closed by default; `Cancel` closes it; a started session closes it). Its
     project select leaves archived projects out. With no project yet (none that isn't archived) it
@@ -134,46 +151,38 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
     link was ever minted for them on this host and no visit exists; no line otherwise. The card has
     no History disclosure: a person's history and its Revert buttons are on their page. A
     person's name in Recent Profile Changes links to their page too.
-  - **Projects**: the About this organization card (§app.organizations/about), then the org's projects, each row one link to its project page `#/projects/<pid>` (folder icon, name,
-    folder path, the project's cost at API prices, a trailing chevron) under the org's total
-    (§app.project-costs/org-rollup), and the Add Project form (`Project name`, optional: the
-    folder's name; `Folder`), which
-    registers the folder and places it in this org (§app.projects/placement), then, while any
-    standalone project is on this host, the Import a Project row (§app.projects/import); with none,
-    "No projects yet. A project is a folder that hand-off sessions and its overseer work in."
-    Archived projects are not in that list: a collapsed **Archived Projects ({n})** disclosure
-    under it (absent with none) lists them, each row the same link with the archive's age and
-    **Unarchive** (§app.organizations/archive). With every project archived, the list's line reads
-    "The 1 project here is archived. Unarchive one below, or add a project." (or "All {n} projects
-    here are archived. …") instead of "No projects yet."
-- **Rows and width.** A hand-off session row's title and meta line wrap rather than truncate. Each
-  card on the org list, org and project pages stops at 880px wide, left-aligned, except the
-  project page's Overview, whose cards fill its columns (§app.organizations/project-page). The project
-  page's title, cut with an ellipsis when it doesn't fit, carries the whole project name as its
-  tooltip (`title`).
   - **History**: the org's history, its timeline, filters, event detail and causal view
     (§app.org-history/page).
-  - **Workspace**: the workspace repo card: how often changes are committed ("Changes are
+  - **Settings**: the org's own settings, in this order: the About this organization card
+    (§app.organizations/about), the Company hours card (§app.organizations/working-hours), then
+    the workspace repo card: how often changes are committed ("Changes are
     committed hourly[ and pushed to the remote], when there are any. Commit Now does it at once."),
     the last commit (relative time with the exact stamp as its title, short sha, message) and
     "· uncommitted changes" while the repo has any, Commit Now, and the push remote. Commit Now
     says what it did: "Committed {short sha} and pushed.", "Committed {short sha}.", "Nothing new
     to commit. Pushed the commits the remote lacked." or "Nothing new to commit." Then the
     **WhatsApp Number** card (§app.outreach/org-sender): which number the org's messages go from.
-- **Counts.** Each tab's label is followed by a count: Sessions, every baton session of the org;
-  People, every roster person (active, proposed and left); Projects, the projects not archived. History and
-  Workspace show no count: History is a filtered read with its own count line, and Workspace
-  holds one repo, not a list.
+- **Rows and width.** A hand-off session row's title and meta line wrap rather than truncate. Each
+  card on the org list, org and project pages stops at 880px wide, left-aligned, except the
+  project page's Overview, whose cards fill its columns (§app.organizations/project-page). The project
+  page's title, cut with an ellipsis when it doesn't fit, carries the whole project name as its
+  tooltip (`title`).
+- **Counts.** Each tab's label is followed by a count: Projects, the projects not archived;
+  Sessions, every baton session of the org; People, every roster person (active, proposed and
+  left). History and Settings show no count: History is a filtered read with its own count line,
+  and Settings holds the org's own settings, not a list.
 - **Needs-you dot.** A tab carries a warn dot, with its words as hidden text and as the tab's
   title, when something in it waits on the operator, by the same definitions as the card
-  (§app.organizations/org-cards): Sessions — sessions the operator holds unanswered (`{n} to
-  answer`) and sessions with a link to send (`{n} link(s) to send`); People — proposed people
-  (`{n} to approve`); Projects — open conflicts routed to the operator with no session
-  (`{n} conflict(s) to settle`) and held acts (`{n} held act(s)`); Workspace — file problems in the repo and a failed last commit
-  or push. A session row with a link to send shows a `Link to send` warn chip in place of `Open`.
-- **In the URL.** `#/orgs/<id>/sessions`, `/people`, `/projects`, `/history` (and
-  `/history/events/<event id>`, §app.org-history/page), `/workspace`; the bare
-  `#/orgs/<id>` is Sessions. `#/orgs/<id>/start/<person>` opens Sessions with the start form open
+  (§app.organizations/org-cards), whichever tab is open: Projects — open conflicts routed to the
+  operator with no session (`{n} conflict(s) to settle`) and held acts (`{n} held act(s)`);
+  Sessions — sessions the operator holds unanswered (`{n} to answer`) and sessions with a link to
+  send (`{n} link(s) to send`); People — proposed people (`{n} to approve`); Settings — file
+  problems in the workspace repo and a failed last commit or push. A session row with a link to
+  send shows a `Link to send` warn chip in place of `Open`.
+- **In the URL.** `#/orgs/<id>/projects`, `/sessions`, `/people`, `/history` (and
+  `/history/events/<event id>`, §app.org-history/page), `/settings`; the bare
+  `#/orgs/<id>` is Projects. An older `#/orgs/<id>/workspace` address (its `?host=` kept) is
+  replaced (`location.replace`, no history entry) with the Settings tab's. `#/orgs/<id>/start/<person>` opens Sessions with the start form open
   and that person ticked — on load, and whenever the hash changes to it while the page shows.
   Closing the form (Cancel, or a session started) replaces the hash with `#/orgs/<id>/sessions`,
   so a reload doesn't reopen it, and every link afterwards (a session row, the sidebar) still
@@ -697,7 +706,8 @@ Organizations region's own Needs you, never the global one.
 - **Company hours, the default.** The org may have a time zone and working hours of its own, in
   the same shape; they are not private. A person with no hours of their own uses the company's;
   their own win when set; with neither, they are always in hours. Only the operator sets them, on
-  the org page's Projects tab in a "Company hours" card below About, with the hint "The default
+  the org page's Settings tab in a "Company hours" card below About and above the workspace repo
+  card (§app.organizations/org-page), with the hint "The default
   for anyone without working hours of their own; theirs win when set. What Sova starts on its own,
   and what the overseer does unattended, waits for them. Yours go at once." The card shows them as
   the Hours row does ("Mon–Fri 09:00–17:00 · Europe/Istanbul", "{zone} · no hours set"), or "None
@@ -1031,8 +1041,8 @@ Organizations region's own Needs you, never the global one.
   blank means none. It is its own file, never in the org's statechart, so nothing that reads the org
   (its summary, the share hub's name lookup) carries it, and the transition log records only its
   hash and length. A PATCH ignores a `notes` field.
-- **Editing.** On the org page's Projects tab, a card **About this organization**, above the
-  projects (§app.organizations/org-page): the hint "Every project overseer in this organization
+- **Editing.** On the org page's Settings tab, a card **About this organization**, the tab's first,
+  above Company hours (§app.organizations/org-page): the hint "Every project overseer in this organization
   reads this at its next run, and the Overseer when it looks it up for you. Nothing else does: not
   hand-off sessions, share pages, wrap-ups or coding sessions.", a textarea (at most 4,000 characters) with a live `{n} / 4,000` counter, and
   **Save** and **Cancel**, both disabled until the text differs from what is saved (Cancel puts the
@@ -1055,10 +1065,9 @@ Organizations region's own Needs you, never the global one.
   or through the global Overseer in a turn the operator started (`sova_org` `about` and
   `revert_about`, §app.overseer/org-writes), which calls the same routes and is recorded
   `via: "overseer"`. No other model has a tool or a route that writes it.
-- **What the project overseer sees.** Its prompt (§app.project-overseer/identity), fixed when its
-  conversation opened, carries after Sova's fixed prompt and before the operator's extra
-  instructions the text below as it was then; an edit reaches its next run with no Clear, as that
-  run's hidden note giving the section's new text:
+- **What the project overseer sees.** Its prompt (§app.project-overseer/identity), re-rendered at
+  every run so an edit reaches its next run with no Clear, carries after Sova's fixed prompt and
+  before the operator's extra instructions:
 
   ```
   # About this organization (written by the operator)

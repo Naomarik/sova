@@ -1,9 +1,9 @@
 // The align mode's settings file and what it adds to the prompt (§chat.alignment/settings-file,
 // §chat.alignment/style, §chat.alignment/visuals). Node builtins only: node --test align-settings.test.ts
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import test from "node:test";
 import {
 	alignSettingsDefaults,
@@ -15,8 +15,9 @@ import {
 	resolveAlign,
 	saveAlignSettings,
 } from "./align-settings.ts";
-import { ALIGN_INSTRUCTIONS, ALIGN_STYLE_PARAGRAPHS, ALIGN_VISUALS_PARAGRAPH, buildAlignPrompt, buildMinorPrompt, visToolsWanted } from "./minor.ts";
-import { buildAlignStyleNote, buildModeNote, composePrompt, DEFAULT_ROUTES, DELEGATE_ALIGN_BRIDGE } from "./prompt.ts";
+import { alignFileSchema } from "./align.ts";
+import { ALIGN_INSTRUCTIONS, ALIGN_STYLE_PARAGRAPHS, ALIGN_VISUALS_PARAGRAPH, buildAlignPrompt, buildMinorPrompt, VIS_GUIDE_DIR, visToolsWanted } from "./minor.ts";
+import { buildAlignStyleNote, buildDelegateAlignBridge, buildModeNote, composePrompt, DEFAULT_ROUTES, DELEGATE_ALIGN_BRIDGE, PLANNER_VISUALS_PARAGRAPH } from "./prompt.ts";
 import { MODE_NOTE_TYPE, restoreHead } from "./state.ts";
 
 const dir = mkdtempSync(join(tmpdir(), "align-settings-"));
@@ -99,19 +100,42 @@ test("the paragraphs: Default adds no text; Simplified and Project manager add e
 	assert.match(ALIGN_VISUALS_PARAGRAPH, /call vis_guide with that kind/);
 	assert.match(ALIGN_VISUALS_PARAGRAPH, /In the Project manager writing style never use the code, tree or layers kinds/);
 	assert.doesNotMatch(ALIGN_VISUALS_PARAGRAPH, /Writing style:/, "its words never depend on the style");
+	assert.match(ALIGN_VISUALS_PARAGRAPH, /never a vis fence in your reply/);
+	// The planning worker's drawings come in its file (the bridge), so the paragraph has no after-import step.
+	assert.doesNotMatch(ALIGN_VISUALS_PARAGRAPH, /import|planning worker/);
 });
 
-test("composePrompt: the head's align block carries the style and Visuals; the Delegate bridge never depends on them", () => {
+test("composePrompt: the head's align block carries the style and Visuals; the Delegate bridge follows Visuals, never the style", () => {
 	const align = { mode: "normal" as const, strict: false, minorModes: ["align" as const] };
 	assert.equal(composePrompt(align, DEFAULT_ROUTES), ALIGN_INSTRUCTIONS, "no options: today");
 	assert.equal(composePrompt(align, DEFAULT_ROUTES, null, align.minorModes, { style: "default", visuals: false }), ALIGN_INSTRUCTIONS);
 	assert.equal(composePrompt(align, DEFAULT_ROUTES, null, align.minorModes, { style: "pm", visuals: false }), `${ALIGN_INSTRUCTIONS}\n\n${ALIGN_STYLE_PARAGRAPHS.pm}`);
 	const delegate = { ...align, mode: "delegate" as const };
-	const pm = composePrompt(delegate, DEFAULT_ROUTES, null, delegate.minorModes, { style: "pm", visuals: true })!;
-	const plain = composePrompt(delegate, DEFAULT_ROUTES, null, delegate.minorModes, { style: "default", visuals: false })!;
-	assert.ok(pm.includes(DELEGATE_ALIGN_BRIDGE) && plain.includes(DELEGATE_ALIGN_BRIDGE), "the same bridge in either");
+	const bridgeOf = (options: { style: "default" | "simplified" | "pm"; visuals: boolean }) => {
+		const text = composePrompt(delegate, DEFAULT_ROUTES, null, delegate.minorModes, options)!;
+		return text.slice(text.indexOf("The align minor mode is on"), text.indexOf("# Minor mode: align"));
+	};
+	for (const style of ["default", "simplified", "pm"] as const) {
+		assert.equal(bridgeOf({ style, visuals: false }), `${DELEGATE_ALIGN_BRIDGE}\n\n`, `${style}, Visuals off: the plain bridge`);
+		assert.equal(bridgeOf({ style, visuals: true }), `${buildDelegateAlignBridge(true)}\n\n`, `${style}, Visuals on: the drawing bridge`);
+	}
+	assert.equal(composePrompt(delegate, DEFAULT_ROUTES)!.includes(DELEGATE_ALIGN_BRIDGE), true, "no options: Visuals off");
 	assert.match(DELEGATE_ALIGN_BRIDGE, /copy the one in effect word for word into the planning worker's prompt/);
 	assert.match(DELEGATE_ALIGN_BRIDGE, /"technical"\?: \[string/, "the file schema the worker writes carries technical notes");
+	// Visuals on: the schema the worker writes takes visuals, and its prompt gets the drawing paragraph, word for word.
+	const drawing = buildDelegateAlignBridge(true);
+	assert.ok(drawing.startsWith(DELEGATE_ALIGN_BRIDGE.replace(alignFileSchema(false), alignFileSchema(true))), "the same bridge, with the visual schema");
+	assert.ok(drawing.endsWith(`Visuals are on: also copy this paragraph word for word into its prompt:\n\n${PLANNER_VISUALS_PARAGRAPH}`));
+	assert.doesNotMatch(DELEGATE_ALIGN_BRIDGE, /visual|Drawings/i);
+	assert.match(PLANNER_VISUALS_PARAGRAPH, /a wireframe for a question about a screen; a flow, state or steps for a change in behaviour/);
+	assert.match(PLANNER_VISUALS_PARAGRAPH, /at most 3 in all/);
+	assert.ok(PLANNER_VISUALS_PARAGRAPH.includes(`read shared.md and <kind>.md in ${VIS_GUIDE_DIR} and use only that syntax`));
+	// The directory it names is the one vis_guide reads: each taught kind's file and shared.md are there.
+	assert.ok(isAbsolute(VIS_GUIDE_DIR) && VIS_GUIDE_DIR.endsWith("/vis/"));
+	for (const name of ["shared", "wireframe", "flow", "state", "steps"]) assert.ok(existsSync(join(VIS_GUIDE_DIR, `${name}.md`)), name);
+	assert.doesNotMatch(PLANNER_VISUALS_PARAGRAPH, /Writing style/, "its words never depend on the style");
+	assert.match(PLANNER_VISUALS_PARAGRAPH, /Project manager writing style never use the code, tree or layers kinds/);
+	assert.equal(PLANNER_VISUALS_PARAGRAPH.match(/Project manager/g)?.length, 1, "the ban sentence is its only style mention");
 	// Align off: no paragraph anywhere, whatever the style.
 	assert.equal(composePrompt({ ...align, minorModes: [] }, DEFAULT_ROUTES, null, [], { style: "pm", visuals: true }), undefined);
 	// Align turned on by a note: the block it carries is written in the style now.

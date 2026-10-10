@@ -294,7 +294,7 @@ org page's History tab; the overseers read it through bounded, cited reads.
   (§app.org-history/actors). A recovery the statechart would refuse (its author is neither the
   operator nor someone the conversation recorded as a participant or a hand-off's person) is asked
   first and never taken: no step, no activity row, no history event, at any start. The entry stays
-  as it is, unrecovered, and is tried again at every server start, and the org's Workspace tab shows
+  as it is, unrecovered, and is tried again at every server start, and the org's Settings tab shows
   it as a problem, "A decision recorded in {conversation title} couldn't be recovered: {who}
   isn't part of that conversation.", {who} being the name the entry kept, else today's name for
   that person (any other refusal the statechart gives is quoted after the
@@ -392,7 +392,7 @@ org page's History tab; the overseers read it through bounded, cited reads.
 
 ## §app.org-history/page — The History tab
 
-- **The tab.** The org page gets a fifth tab, **History**, after Projects and before Workspace
+- **The tab.** The org page has a **History** tab, the fourth, after People and before Settings
   (`#/orgs/<id>/history`), with no count and no needs-you dot. One event's detail is
   `#/orgs/<id>/history/events/<event id>`. The filters and the view are in the URL's query
   (`project=<pid>,<pid>`, `kind=`, `actor=`, `initiation=`, `from=`, `to=` as dates, `q=`,

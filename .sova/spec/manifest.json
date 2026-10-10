@@ -13036,6 +13036,8 @@
       "authority": "accepted",
       "evidence": "verified",
       "code": [
+        "src/design/base.css",
+        "src/lib/ollama-card.integration.test.ts",
         "pi-config/extensions/usage-status/index.ts",
         "server/insights.ts",
         "shared/protocol.ts",
@@ -15697,6 +15699,7 @@
       "authority": "accepted",
       "evidence": "verified",
       "code": [
+        "src/lib/usage-rows.integration.test.ts",
         "server/insights.ts",
         "server/usage-history.ts",
         "server/ollama-usage.test.ts",

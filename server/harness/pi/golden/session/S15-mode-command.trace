@@ -1,10 +1,10 @@
 step attach A, B
 A {"type":"hello","isStreaming":false,"isCompacting":false,"model":"scripted/scripted","thinking":"off","items":[]}
 A {"type":"queue","items":[]}
-A {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now"}
+A {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now","memory":{"type":"uniichat","size":128}}
 B {"type":"hello","isStreaming":false,"isCompacting":false,"model":"scripted/scripted","thinking":"off","items":[]}
 B {"type":"queue","items":[]}
-B {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now"}
+B {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now","memory":{"type":"uniichat","size":128}}
 step applyMode normal + align
 write {"id":"00000001","type":"model_change"}
 write {"id":"00000002","type":"thinking_level_change"}
@@ -29,11 +29,14 @@ B {"type":"ui_request","id":"00000000-0000-7000-8000-000000000005","request":{"m
 sdk command /mode "codemode off"
 A {"type":"ui_request","id":"00000000-0000-7000-8000-000000000006","request":{"method":"setStatus","statusKey":"mode","statusText":"\u001b[38;5;140mnormal · align\u001b[39m","fireAndForget":true}}
 B {"type":"ui_request","id":"00000000-0000-7000-8000-000000000006","request":{"method":"setStatus","statusKey":"mode","statusText":"\u001b[38;5;140mnormal · align\u001b[39m","fireAndForget":true}}
-sdk command /mode "normal"
+sdk command /mode "memory off"
 A {"type":"ui_request","id":"00000000-0000-7000-8000-000000000007","request":{"method":"setStatus","statusKey":"mode","statusText":"\u001b[38;5;140mnormal · align\u001b[39m","fireAndForget":true}}
 B {"type":"ui_request","id":"00000000-0000-7000-8000-000000000007","request":{"method":"setStatus","statusKey":"mode","statusText":"\u001b[38;5;140mnormal · align\u001b[39m","fireAndForget":true}}
-A {"type":"mode","mode":"normal","minorModes":["align"],"strict":false,"applies":"now"}
-B {"type":"mode","mode":"normal","minorModes":["align"],"strict":false,"applies":"now"}
+sdk command /mode "normal"
+A {"type":"ui_request","id":"00000000-0000-7000-8000-000000000008","request":{"method":"setStatus","statusKey":"mode","statusText":"\u001b[38;5;140mnormal · align\u001b[39m","fireAndForget":true}}
+B {"type":"ui_request","id":"00000000-0000-7000-8000-000000000008","request":{"method":"setStatus","statusKey":"mode","statusText":"\u001b[38;5;140mnormal · align\u001b[39m","fireAndForget":true}}
+A {"type":"mode","mode":"normal","minorModes":["align"],"strict":false,"applies":"now","memory":{"type":"uniichat","size":128}}
+B {"type":"mode","mode":"normal","minorModes":["align"],"strict":false,"applies":"now","memory":{"type":"uniichat","size":128}}
 got applyMode "command"
 step pinMode
 got pinMode true
@@ -57,24 +60,27 @@ write {"id":"00000007","type":"custom","customType":"mode"}
 A {"type":"event","event":{"type":"entry_appended","entry":{"type":"custom","customType":"mode","data":{"minor":"align","on":false,"active":{"version":1,"mode":"normal","strict":false,"minorModes":[]},"head":["align"]},"id":"00000007","parentId":"00000006","timestamp":"2000-01-01T00:00:00.000Z"}}}
 A {"type":"append","items":[{"id":"00000007","kind":"info","text":"Minor mode: align off","at":"2000-01-01T00:00:00.000Z","meta":{"type":"custom","customType":"mode"}}]}
 B {"type":"append","items":[{"id":"00000007","kind":"info","text":"Minor mode: align off","at":"2000-01-01T00:00:00.000Z","facts":{"setting":"mode"}}]}
-A {"type":"ui_request","id":"00000000-0000-7000-8000-000000000008","request":{"method":"setStatus","statusKey":"mode","statusText":"\u001b[38;5;102mnormal\u001b[39m","fireAndForget":true}}
-B {"type":"ui_request","id":"00000000-0000-7000-8000-000000000008","request":{"method":"setStatus","statusKey":"mode","statusText":"\u001b[38;5;102mnormal\u001b[39m","fireAndForget":true}}
-A {"type":"ui_request","id":"00000000-0000-7000-8000-000000000009","request":{"method":"notify","message":"Minor mode: align off","notifyType":"info","fireAndForget":true}}
-B {"type":"ui_request","id":"00000000-0000-7000-8000-000000000009","request":{"method":"notify","message":"Minor mode: align off","notifyType":"info","fireAndForget":true}}
+A {"type":"ui_request","id":"00000000-0000-7000-8000-000000000009","request":{"method":"setStatus","statusKey":"mode","statusText":"\u001b[38;5;102mnormal\u001b[39m","fireAndForget":true}}
+B {"type":"ui_request","id":"00000000-0000-7000-8000-000000000009","request":{"method":"setStatus","statusKey":"mode","statusText":"\u001b[38;5;102mnormal\u001b[39m","fireAndForget":true}}
+A {"type":"ui_request","id":"00000000-0000-7000-8000-000000000010","request":{"method":"notify","message":"Minor mode: align off","notifyType":"info","fireAndForget":true}}
+B {"type":"ui_request","id":"00000000-0000-7000-8000-000000000010","request":{"method":"notify","message":"Minor mode: align off","notifyType":"info","fireAndForget":true}}
 sdk command /mode "spec off"
-A {"type":"ui_request","id":"00000000-0000-7000-8000-000000000010","request":{"method":"setStatus","statusKey":"mode","statusText":"\u001b[38;5;102mnormal\u001b[39m","fireAndForget":true}}
-B {"type":"ui_request","id":"00000000-0000-7000-8000-000000000010","request":{"method":"setStatus","statusKey":"mode","statusText":"\u001b[38;5;102mnormal\u001b[39m","fireAndForget":true}}
-sdk command /mode "vis off"
 A {"type":"ui_request","id":"00000000-0000-7000-8000-000000000011","request":{"method":"setStatus","statusKey":"mode","statusText":"\u001b[38;5;102mnormal\u001b[39m","fireAndForget":true}}
 B {"type":"ui_request","id":"00000000-0000-7000-8000-000000000011","request":{"method":"setStatus","statusKey":"mode","statusText":"\u001b[38;5;102mnormal\u001b[39m","fireAndForget":true}}
-sdk command /mode "codemode off"
+sdk command /mode "vis off"
 A {"type":"ui_request","id":"00000000-0000-7000-8000-000000000012","request":{"method":"setStatus","statusKey":"mode","statusText":"\u001b[38;5;102mnormal\u001b[39m","fireAndForget":true}}
 B {"type":"ui_request","id":"00000000-0000-7000-8000-000000000012","request":{"method":"setStatus","statusKey":"mode","statusText":"\u001b[38;5;102mnormal\u001b[39m","fireAndForget":true}}
-sdk command /mode "normal"
+sdk command /mode "codemode off"
 A {"type":"ui_request","id":"00000000-0000-7000-8000-000000000013","request":{"method":"setStatus","statusKey":"mode","statusText":"\u001b[38;5;102mnormal\u001b[39m","fireAndForget":true}}
 B {"type":"ui_request","id":"00000000-0000-7000-8000-000000000013","request":{"method":"setStatus","statusKey":"mode","statusText":"\u001b[38;5;102mnormal\u001b[39m","fireAndForget":true}}
-A {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"after-turn"}
-B {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"after-turn"}
+sdk command /mode "memory off"
+A {"type":"ui_request","id":"00000000-0000-7000-8000-000000000014","request":{"method":"setStatus","statusKey":"mode","statusText":"\u001b[38;5;102mnormal\u001b[39m","fireAndForget":true}}
+B {"type":"ui_request","id":"00000000-0000-7000-8000-000000000014","request":{"method":"setStatus","statusKey":"mode","statusText":"\u001b[38;5;102mnormal\u001b[39m","fireAndForget":true}}
+sdk command /mode "normal"
+A {"type":"ui_request","id":"00000000-0000-7000-8000-000000000015","request":{"method":"setStatus","statusKey":"mode","statusText":"\u001b[38;5;102mnormal\u001b[39m","fireAndForget":true}}
+B {"type":"ui_request","id":"00000000-0000-7000-8000-000000000015","request":{"method":"setStatus","statusKey":"mode","statusText":"\u001b[38;5;102mnormal\u001b[39m","fireAndForget":true}}
+A {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"after-turn","memory":{"type":"uniichat","size":128}}
+B {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"after-turn","memory":{"type":"uniichat","size":128}}
 got switchMode {"mode":"normal","minorModes":[],"strict":false,"applies":"after-turn"}
 step release the reply
 A {"type":"event","event":{"type":"message_start","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop","thinkingLevel":"off"}}}
@@ -86,5 +92,5 @@ A {"type":"event","event":{"type":"turn_end","message":{"role":"assistant","api"
 A {"type":"event","event":{"type":"agent_end","messages":[{"role":"system","elided":true},{"role":"user","content":[{"type":"text","text":"work"}],"timestamp":1000000000000},{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop","thinkingLevel":"off"}],"willRetry":false}}
 A {"type":"event","event":{"type":"agent_settled"}}
 B {"type":"event","v":2,"event":{"type":"run.settled"}}
-A {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now"}
-B {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now"}
+A {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now","memory":{"type":"uniichat","size":128}}
+B {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now","memory":{"type":"uniichat","size":128}}

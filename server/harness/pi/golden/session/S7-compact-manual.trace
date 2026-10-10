@@ -1,10 +1,10 @@
 step attach A, B
 A {"type":"hello","isStreaming":false,"isCompacting":false,"model":"scripted/scripted","thinking":"off","items":[]}
 A {"type":"queue","items":[]}
-A {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now"}
+A {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now","memory":{"type":"uniichat","size":128}}
 B {"type":"hello","isStreaming":false,"isCompacting":false,"model":"scripted/scripted","thinking":"off","items":[]}
 B {"type":"queue","items":[]}
-B {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now"}
+B {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now","memory":{"type":"uniichat","size":128}}
 step A sends {"type":"prompt","text":"one","clientId":"c-one"}
 write {"id":"00000001","type":"model_change"}
 write {"id":"00000002","type":"thinking_level_change"}
@@ -70,8 +70,8 @@ A {"type":"event","event":{"type":"compaction_end","reason":"manual","result":{"
 B {"type":"event","v":2,"event":{"type":"activity","what":"compaction","phase":"end","wrote":true}}
 A {"type":"hello","isStreaming":false,"isCompacting":false,"model":"scripted/scripted","thinking":"off","items":["00000001 info","00000002 info","00000005 user","00000006:0 assistant-text","00000007 user","00000008:0 assistant-text","00000009 info"]}
 B {"type":"hello","isStreaming":false,"isCompacting":false,"model":"scripted/scripted","thinking":"off","items":["00000001 info","00000002 info","00000005 user","00000006:0 assistant-text","00000007 user","00000008:0 assistant-text","00000009 info"]}
-A {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now"}
-B {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now"}
+A {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now","memory":{"type":"uniichat","size":128}}
+B {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now","memory":{"type":"uniichat","size":128}}
 A {"type":"queue","items":[{"id":"c3","kind":"followUp","state":"queued","text":"during","origin":"client"}]}
 B {"type":"queue","items":[{"id":"c3","kind":"followUp","state":"queued","text":"during","origin":"client"}]}
 A {"type":"compacted","id":"k1","entryId":"00000009","tokensBefore":1234}

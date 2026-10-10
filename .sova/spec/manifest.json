@@ -871,6 +871,202 @@
         "src/lib/markdown.ts"
       ]
     },
+    "§chat.memory/choice": {
+      "kind": "behavior",
+      "requires": [
+        "§chat/memory",
+        "§app.harness/state",
+        "§chat.mode-menu/menu"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/harness/state-kinds.ts",
+        "server/mode-state.ts",
+        "server/chat-manager.ts",
+        "server/memory/settings.ts",
+        "server/mode.ts",
+        "server/memory/chat-memory.test.ts"
+      ]
+    },
+    "§chat.memory/log": {
+      "kind": "behavior",
+      "requires": [
+        "§chat/memory",
+        "§app.harness/reader"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/memory/log.ts",
+        "server/memory/store.ts",
+        "server/session-fork-routes.ts",
+        "server/sessions-index.ts",
+        "server/memory/engine.test.ts",
+        "server/archive-subagent-guard.test.ts"
+      ]
+    },
+    "§chat.memory/overseer": {
+      "kind": "behavior",
+      "requires": [
+        "§chat/memory",
+        "§chat.memory/where"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/memory/routes.ts",
+        "server/overseer.ts",
+        "server/memory/settings.test.ts"
+      ]
+    },
+    "§chat.memory/preparing": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.memory/turn",
+        "§chat.memory/status"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/memory/engine.ts"
+      ]
+    },
+    "§chat.memory/recall": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.memory/tree",
+        "§chat.transcript/slim-rows"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/memory/tools.ts",
+        "shared/memory.ts",
+        "src/lib/message.ts",
+        "shared/memory.test.ts"
+      ]
+    },
+    "§chat.memory/settings": {
+      "kind": "behavior",
+      "requires": [
+        "§chat/memory"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/memory/settings.ts",
+        "server/memory/routes.ts",
+        "server/memory/settings.test.ts"
+      ]
+    },
+    "§chat.memory/status": {
+      "kind": "behavior",
+      "requires": [
+        "§chat/memory"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/memory/routes.ts",
+        "shared/protocol.ts",
+        "server/chat-manager.ts",
+        "server/memory/chat.ts"
+      ]
+    },
+    "§chat.memory/summarizer": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.memory/tree",
+        "§chat.memory/settings"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/memory/summarizer.ts",
+        "server/memory/prompts.ts",
+        "server/memory/settings.test.ts"
+      ]
+    },
+    "§chat.memory/tree": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.memory/log"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/memory/tree.ts",
+        "server/memory/tree.test.ts",
+        "server/memory/engine.test.ts"
+      ]
+    },
+    "§chat.memory/turn": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.memory/tree",
+        "§chat.memory/log",
+        "§chat.mode-menu/minor-toggle-keeps-prompt"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/memory/engine.ts",
+        "server/harness/pi/memory.ts",
+        "pi-config/extensions/claude-code/provider/memory-view.ts",
+        "server/memory/prompts.ts",
+        "server/memory/chat-memory.test.ts"
+      ]
+    },
+    "§chat.memory/types": {
+      "kind": "behavior",
+      "requires": [
+        "§chat/memory"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "shared/memory.ts",
+        "shared/protocol.ts"
+      ]
+    },
+    "§chat.memory/where": {
+      "kind": "behavior",
+      "requires": [
+        "§chat/memory",
+        "§chat.mode-menu/how-a-switch-reaches-the-chat",
+        "§chat.mode-menu/workers",
+        "§chat.mode-menu/terminal"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/mode/minor.ts",
+        "pi-config/extensions/mode/index.ts",
+        "pi-config/extensions/mode/palette.ts",
+        "server/memory/permit.ts",
+        "server/chat-manager.ts",
+        "shared/profiles.ts",
+        "server/sessions-configure.ts",
+        "server/overseer-tools.ts",
+        "server/project-coding-mode.ts",
+        "shared/memory.ts"
+      ]
+    },
+    "§chat.memory/zoomable": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.memory/tree",
+        "§chat.memory/types"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/memory/engine.ts",
+        "server/harness/pi/memory.ts",
+        "server/memory/chat-memory.test.ts"
+      ]
+    },
     "§chat.mode-menu/how-a-switch-reaches-the-chat": {
       "kind": "behavior",
       "authority": "accepted",
@@ -1352,6 +1548,19 @@
         "src/lib/markdown.ts",
         "src/components/Markdown.tsx",
         "src/lib/session-links.ts"
+      ]
+    },
+    "§chat/memory": {
+      "kind": "surface",
+      "requires": [
+        "§chat/mode-menu"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/memory/engine.ts",
+        "shared/memory.ts",
+        "shared/protocol.ts"
       ]
     },
     "§chat/mode-menu": {

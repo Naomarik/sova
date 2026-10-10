@@ -34,7 +34,12 @@ child's fold opens "Your session was restarted, so this is a condensed, lossy re
 conversation so far", and a first child for a conversation that already has history opens "This
 conversation started before you joined it"; reasoning is left out and long tool output keeps only
 its head and tail. A restart costs a few seconds to launch the child, and the folded history is a
-new prompt, so it is sent without help from the prompt cache.
+new prompt, so it is sent without help from the prompt cache. A history that starts with a memory
+view message (§chat.memory/turn, the declared shape of `provider/memory-view.ts`) and is otherwise
+only user messages is never folded: the view's guide and stable prefix are appended to the system
+prompt the child is given, and its newer lines and the messages after it go as the child's first
+user message, as written, with no restart preamble; a mid-turn restart folds the rest with the view
+reduced to its newer lines.
 
 ## §app.claude-code-provider/invalid-tool-input — A tool call whose arguments are not valid JSON
 

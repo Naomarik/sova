@@ -508,6 +508,28 @@ spend that went to re-sending history and the top reasons; for records without `
 estimates a re-send from the token pattern (a cache write over 5,000 tokens where the cache read
 falls short of the call before it by at least 5,000).
 
+## §app.insights/usage-resend-display — Re-sent history beside a conversation's spend
+
+Wherever a conversation's spend is shown with its re-sends (§app.insights/usage-resend) — each row
+of the Costs tab's Top sessions (§app.insights/cost-history) and the Spend section of the session
+pane's Usage tab (§app.subagents-pane/tabs), under its headline — one compact line says what
+re-sending its history cost: `Re-sent history {n}× · {$x} · {p}% of its spend` (the Usage tab:
+`of the main thread`, since the re-sends are the session's own conversation only; a share under 1%
+reads `under 1%`; with no price, the tokens stand in for the dollars and the share is left out).
+The re-sent dollars are already inside the spend beside it, never added to it. When the re-sends
+are a quarter of that spend or more, the line is set in ink rather than muted, so an expensive
+conversation stands out by its words and weight, never by color alone. The line is a disclosure
+(`<details>`), opened by a tap, a click or the keyboard, never by hover alone: inside, one sentence
+— "Each time, a new Claude process was sent the whole conversation again." — then one row per
+reason, costliest first, `{reason} · {n}× · {$x}`, the reason in plain words (server restarted or
+chat reopened, set aside while idle, settings or instructions changed, history rewound, branched or
+compacted, Claude login changed, …; a reason the browser doesn't know shows as written), with the
+reason Claude's saved copy wasn't picked up after it: `couldn't pick up its saved copy: {why}`
+(login moved, the history changed since, settings changed, memory mode rebuilds its history,
+picking up failed). When some launches picked up the saved copy instead, a last line says so:
+`Picked up Claude's saved copy instead {n}×.` A conversation that re-sent nothing shows no line,
+and neither does one whose launches were never recorded.
+
 ## §app.insights/cost-history — The Costs tab (`#/agents/costs`)
 
 **The Agents page has two tabs, Board (the board as it was, §app.insights/team-cards) and Costs,
@@ -521,7 +543,8 @@ which shows this device's spend at API prices from the usage ledger (§app.insig
 - **Sections.** Stats: Total, Main sessions, Workers, One-shots. A daily cost bar chart (local
   days). Tables by provider, by model (input · cache · output · cost), by kind and by project
   (the org project, else the working directory). Top sessions, most expensive first; a click opens
-  the session.
+  the session, and a row whose conversation re-sent its history says so under its name
+  (§app.insights/usage-resend-display).
 - **Prices.** "Prices as of {date}" with the last change found, and a **Refresh Prices** button that
   pulls the prices now (§app.insights/usage-ledger); it says so when pulling is off or the prices are
   still the starter list.

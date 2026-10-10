@@ -23,6 +23,10 @@ test("rendered modern Usage card shows independent authoritative included/purcha
  assert.match(text, /Included remaining \$8\.00/);
  assert.match(text, /Included allowance \$17\.00/);
  assert.match(text, /Purchased remaining \$3\.00/);
+ const figures = html.match(/<div class="usage-credit-figures">([\s\S]*?)<\/div>/)?.[1];
+ assert.ok(figures, "credits share one figures block");
+ assert.match(words(figures), /Included remaining \$8\.00 Included allowance \$17\.00 Purchased remaining \$3\.00/);
+ assert.match(html, /<span class="usage-period">2026-03-03T12:00:00\.000Z<\/span>/, "raw as-of timestamp stays intact");
  assert.match(text, /2026-04-01T00:00:00Z UTC/);
  assert.match(text, /2026-03-03T12:00:00Z UTC/);
  assert.match(text, /Reported USD Unknown/);
@@ -51,6 +55,7 @@ test("rendered stale balance does not borrow fresh activity time; provider perio
  assert.match(only, /Included remaining Unknown/);
  assert.match(only, /Purchased remaining Unknown/);
  assert.match(only, /Declared subscription reset: day 14 of each month/);
+ assert.match(draw(p({ credits: undefined }), { day: null, save: async () => {} }), /<div class="meter-context usage-declared-reset">/, "the inline form has a flow-content parent, never a paragraph");
 });
 
 test("rendered zero allowance/missing amounts have no fabricated percent; legacy still has the original monthly meter", () => {

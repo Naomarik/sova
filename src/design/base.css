@@ -4791,6 +4791,11 @@ a.group-picker-tile[aria-disabled="true"] { cursor: default; color: var(--color-
    line, and the inline day field it opens. */
 /* "Set" / "Change": a quiet text button inside the muted line, underlined so it reads as one. */
 .usage-reset-day-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--tap-min);
+  min-height: var(--tap-min);
   padding: 0;
   border: 0;
   background: none;
@@ -4803,7 +4808,7 @@ a.group-picker-tile[aria-disabled="true"] { cursor: default; color: var(--color-
 .usage-reset-day-link:hover { color: var(--color-ink); }
 .usage-reset-day-link:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); border-radius: var(--r-sm); }
 .usage-reset-day-field { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin: 0; font-size: var(--fs-caption); }
-.usage-reset-day-field .input { width: 7ch; min-height: var(--control-sm); }
+.usage-reset-day-field .input { width: 7ch; min-height: var(--tap-min); }
 .usage-reset-day-error { margin: 0; font-size: var(--fs-caption); color: var(--status-error); }
 
 
@@ -5034,7 +5039,7 @@ a.group-picker-tile[aria-disabled="true"] { cursor: default; color: var(--color-
    session (the sidebar's group-label style, the item's chips or id at its right end), a row per
    worker. Capped and left-aligned: a row stretched across a wide pane is hard to read. The
    section's empty card takes the same cap, so a Teams empty above a Subagents list lines up
-   with it. (The Usage page is one card of provider rows, below.) */
+   with it. (The Usage page has separate provider surfaces, below.) */
 .insights-list,
 .insights-section > .card { max-width: 720px; }
 .insights-group + .insights-group { border-top: var(--stroke-thin) solid var(--color-border); }
@@ -5045,17 +5050,13 @@ a.group-picker-tile[aria-disabled="true"] { cursor: default; color: var(--color-
 .insights-skeleton-head { display: block; width: 88px; height: 11px; margin: 0; }
 .insights-skeleton-row { display: block; width: 100%; height: 20px; margin: 0; }
 
-/* Usage (§app.insights/usage-cards): a summary sentence, then one card of full-width rows, one per
-   provider or Claude account, divided by hairlines; a row is only as tall as its own content.
-   A row is its identity (title, caption, chip, a login's chips, the logins list, the sign-in
-   caption) and its lines, one per window: a meter block, the same 18rem on every row from 640px
-   so every bar starts at one edge and has one length, beside a trend block (burn lines, chart or
-   strip). Under 640px it all stacks; 640–959px the identity is a head across the row and the
-   logins and sign-in follow the lines (their DOM order); from 960px the identity, logins and
-   sign-in are a 15rem column at the row's left. */
+/* Separate provider surfaces; Claude accounts share one surface. Within each window the
+   meter and its burn summary sit beside its history, with no detached rate column. */
 .usage-lead { margin: 0; max-width: 72ch; font-size: var(--fs-body); line-height: var(--lh-body); color: var(--color-ink); }
 /* The rows' floating readouts are portaled out, but the chart's pin label sits above its plot. */
+.usage-groups { display: flex; flex-direction: column; gap: var(--space-5); }
 .usage-rows { overflow: visible; }
+.usage-group-title { margin: 0; padding: var(--space-3) var(--space-4); font-size: var(--fs-heading-s); line-height: var(--lh-heading-s); font-weight: var(--fw-semibold); background: var(--color-sunken); border-bottom: var(--stroke-thin) solid var(--color-border); border-radius: var(--r-lg) var(--r-lg) 0 0; }
 .usage-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -5080,12 +5081,21 @@ a.group-picker-tile[aria-disabled="true"] { cursor: default; color: var(--color-
 .usage-line-trend { min-width: 0; }
 .usage-line-trend { display: flex; flex-direction: column; gap: var(--space-1); }
 .usage-line-trend:empty { display: none; }
+.usage-window-burn { display: flex; flex-direction: column; gap: var(--space-1); margin-top: var(--space-2); }
+.usage-line-head { grid-column: 1 / -1; min-width: 0; }
+.usage-history-empty { padding-block: var(--space-2); }
+.usage-credit-figures { display: grid; gap: var(--space-2) var(--space-5); margin-block: var(--space-2); }
+.usage-credit-meter { width: 100%; max-width: 18rem; }
+.usage-activity { padding-top: var(--space-4); border-top: var(--stroke-thin) solid var(--color-border); }
+.usage-declared-reset { padding-top: var(--space-3); border-top: var(--stroke-thin) solid var(--color-border); }
 .usage-row .usage-logins { grid-area: logins; }
 .usage-row-auth { grid-area: auth; }
 /* The number reads first: weight, not size or hue. */
 .usage-row .meter-value { font-weight: var(--fw-semibold); }
 @container insights (min-width: 640px) {
   .usage-line { grid-template-columns: 18rem minmax(0, 1fr); }
+  .usage-credit-figures { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .usage-credit-figures .meter-head { flex-direction: column; align-items: flex-start; gap: var(--space-1); }
 }
 @container insights (min-width: 960px) {
   .usage-row {
@@ -5136,7 +5146,7 @@ a.group-picker-tile[aria-disabled="true"] { cursor: default; color: var(--color-
 .usage-burn-figure { position: relative; display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-micro); line-height: var(--lh-micro); color: var(--color-ink-muted); }
 .usage-burn-chart-pinned { padding-top: calc(var(--fs-micro) * 1.3 + 2px); }
 /* The period stepper: "‹ Week of Sep 25 ›", 44px targets, the name between them. */
-.usage-burn-stepper { display: flex; align-items: center; gap: var(--space-1); margin: 0 calc(-1 * var(--space-2)); }
+.usage-burn-stepper { display: flex; align-items: center; gap: var(--space-1); margin: 0; }
 .usage-burn-period { flex: 1; min-width: 0; text-align: center; font-size: var(--fs-caption); font-weight: var(--fw-medium); color: var(--color-ink-2); }
 .usage-burn-step[aria-disabled="true"] { opacity: .4; cursor: default; }
 /* The 5-hour strip: one bar per past window, ink-2, warn at 100%; the picked one outlined in accent. */

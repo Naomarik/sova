@@ -101,6 +101,7 @@ import { MODE_DISCOVER_EVENT, MODE_STATE_EVENT, type ModeStateEvent } from "../m
 import { MODE_WORKER_DISCOVER_EVENT, MODE_WORKER_EVENT, parseModeWorkerEvent, type ModeWorkerEvent } from "../mode/events.ts";
 import { specHookSettings, withClaudeSettings } from "../claude-code/spec-hooks.ts";
 import { ASSESSMENT_OWNER_ENV, ASSESSMENT_WORKER_ENV, ASSESSMENT_TEAM_ENV } from "../mode/spec-assessment.ts";
+import { LANDED_FILE_ENV, readLandedLine } from "../mode/spec-guard.ts";
 import { DEFAULT_CLAUDE_TOOLS } from "../claude-code/transport.ts";
 import { canonicalClaudeId, unverifiedClaudeNote } from "../claude-code/catalog.ts";
 import { USAGE_PARENT_ENV } from "../llm-inflight/attribution.ts";
@@ -1053,6 +1054,15 @@ export function registerSubagents(
 			.filter(Boolean)
 			.join("\n");
 	};
+	/** Where each code-writing worker's census state is, by worker ID (set at spawn, spec on). */
+	const landedSources = new Map<string, { file: string } | { stateDir: string }>();
+	/** A settled worker's one line naming the § its own changes landed in (its census state), if any. */
+	const landedOf = (a: Worker): string | undefined => {
+		const source = landedSources.get(a.id);
+		if (!source || !a.isSettled()) return undefined;
+		if ("file" in source) return readLandedLine(source.file);
+		return a.sessionId && /^[A-Za-z0-9_-]{1,128}$/.test(a.sessionId) ? readLandedLine(path.join(source.stateDir, `${a.sessionId}.json`)) : undefined;
+	};
 	const summaryHeader = (a: Worker) =>
 		[
 			`### ${a.id} (${a.name}) — ${a.status}${a.taskOutcome ? ` · task ${a.taskOutcome}` : ""}`,
@@ -1062,12 +1072,18 @@ export function registerSubagents(
 		]
 			.filter(Boolean)
 			.join("\n");
-	const summary = (a: Worker) =>
+	const answerSummary = (a: Worker) =>
 		// Busy workers show live tool activity instead of a premature "no output";
 		// settled ones keep the final-answer line the completion message quotes.
 		`${summaryHeader(a)}\n${a.finalOutput() || (a.isSettled() ? "(no output for this task)" : recentActivity(a))}`;
+	/** A text with the worker's landed line last: after the answer, so the answer's first line stays the report's preview (server/reports.ts). */
+	const withLanded = (a: Worker, text: string) => {
+		const line = landedOf(a);
+		return line ? `${text}\n\n${line}` : text;
+	};
+	const summary = (a: Worker) => withLanded(a, answerSummary(a));
 	/**
-	 * A cut completion message: the preview, one line naming the final answer's size and a
+	 * A cut completion message: the preview, the worker's landed line if any, one line naming the final answer's size and a
 	 * private file holding it verbatim, then the trailer Sova's report parser anchors on
 	 * (server/reports.ts), which must stay the last line.
 	 */
@@ -1080,7 +1096,7 @@ export function registerSubagents(
 		} catch {
 			where = `${answer ? "Final answer" : "Full message"}: ${count((answer || text).length)} chars; page it with agent_transcript {"id":"${a.id}","offset":0}.`;
 		}
-		return `${text.slice(0, WAKE_PREVIEW_CHARS)}\n[${where}]\n[Use agent_transcript for more.]`;
+		return `${withLanded(a, text.slice(0, WAKE_PREVIEW_CHARS))}\n[${where}]\n[Use agent_transcript for more.]`;
 	};
 	/** agent_wait calls in flight per worker ID: their returned summaries are the parent's copy of a settle.
 	 *  A hold reason of its own for paths that have no run events. */
@@ -1175,10 +1191,11 @@ export function registerSubagents(
 			/* Session replacement can invalidate the UI. */
 		}
 		try {
-			const text = summary(a);
+			const text = answerSummary(a);
 			// A worker the parent stopped itself does not need to wake the parent.
 			const wake = route.wake;
-			const content = text.length > WAKE_PREVIEW_CHARS ? completionPreview(a, text) : text;
+			// The landed line goes after the (possibly cut) answer, never cut with it.
+			const content = text.length > WAKE_PREVIEW_CHARS ? completionPreview(a, text) : withLanded(a, text);
 			// An agent_wait in this run (or one collecting this worker) may return this settle itself; hold it
 			// until the run's release point (or the wait) shows whether it did.
 			if (parentLoops > 0 || (collecting.get(a.id) ?? 0) > 0) {
@@ -1393,7 +1410,7 @@ export function registerSubagents(
 				if (modePrompt) prepared = { ...prepared, systemPrompt: [prepared.systemPrompt ?? spec.systemPrompt, modePrompt].filter(Boolean).join("\n\n") };
 				return { spec, cwd, model: spec.model, tools: remote ? [] : spec.tools, systemPrompt: spec.systemPrompt,
 					extensions: undefined, forkSession: undefined, backend, prepared, flags: undefined, remoteMcp,
-					givenModes: modePrompt ? [...modes!.minorModes] : [], confined: confined ? { root: tree?.path, specHooks } : undefined };
+					givenModes: modePrompt ? [...modes!.minorModes] : [], confined: confined ? { root: tree?.path, specHooks } : undefined, landed: specHooks };
 			}
 			if (spec.backendOptions !== undefined) throw new Error("backendOptions are not supported by the pi backend.");
 			const definition = spec.agentType !== undefined ? loadDefinition(spec.agentType) : undefined;
@@ -1459,6 +1476,8 @@ export function registerSubagents(
 				// A tree-config worker is started with spec on (modeFlags); older records say nothing.
 				givenModes: treeConfig ? [modeFlags!.minor] : modePrompt ? [...modes!.minorModes] : [],
 				confined: undefined,
+				// Its census (spec-worker.ts, or a tree-config worker's whole mode extension) writes what landed.
+				landed: specOn && !remote && writesCode(tools),
 			};
 		});
 		const resuming = request.resume;
@@ -1474,7 +1493,7 @@ export function registerSubagents(
 		const launched: string[] = [];
 		const earlySettled = new Set<Worker>();
 		try {
-			for (const [index, { spec, cwd, model, tools, systemPrompt, extensions, forkSession, backend, prepared: backendPrepared, flags, remoteMcp, treeConfig, givenModes, confined }] of prepared.entries()) {
+			for (const [index, { spec, cwd, model, tools, systemPrompt, extensions, forkSession, backend, prepared: backendPrepared, flags, remoteMcp, treeConfig, givenModes, confined, landed }] of prepared.entries()) {
 				for (let i = 0; i < (spec.count ?? 1); i++) {
 					const base = spec.name ?? spec.agentType ?? "agent";
 					const id = resuming ? resuming.id : `ag_${String(++counter).padStart(2, "0")}`;
@@ -1497,7 +1516,13 @@ export function registerSubagents(
 						[ASSESSMENT_WORKER_ENV]: id,
 						[ASSESSMENT_TEAM_ENV]: request.team?.teamId ?? "",
 					} : baseEnv;
-					const env = usageEnv ? { ...specEnv, ...usageEnv } : specEnv;
+					// A code-writing worker's census state, where its settle's landed line is read: a Claude worker's hook
+					// state (by its session id, in its hook state dir), a pi worker's own file (named in its env).
+					const landedFile = landed && !backend ? path.join(agentDir(), SPEC_HOOK_STATE, "landed", `${workerKey(id)}.json`) : undefined;
+					if (landed) landedSources.set(id, landedFile ? { file: landedFile } : { stateDir: confined ? path.join(agentDir(), SPEC_HOOK_STATE, "workers", workerKey(id)) : path.join(agentDir(), SPEC_HOOK_STATE) });
+					else landedSources.delete(id);
+					if (landedFile && !resuming) fs.rmSync(landedFile, { force: true });
+					const env = usageEnv || landedFile ? { ...specEnv, ...usageEnv, ...(landedFile ? { [LANDED_FILE_ENV]: landedFile } : {}) } : specEnv;
 					const name = (spec.count ?? 1) > 1 ? `${base}-${i + 1}` : base;
 					// Hosted: the runner's spawnImpl starts a detached host instead of the worker itself.
 					const hostedWorker = !resuming && hosting.active();
@@ -1732,15 +1757,16 @@ export function registerSubagents(
 	const deliverCompletion = async (to: PersistedMember, a: Worker, verb: string): Promise<void> => {
 		const info = teams.memberInfo(a.id);
 		if (!info) return;
-		let text = summary(a);
-		if (text.length > WAKE_PREVIEW_CHARS) {
+		let text = answerSummary(a);
+		if (text.length <= WAKE_PREVIEW_CHARS) text = withLanded(a, text);
+		else {
 			let where = "";
 			try {
 				where = ` Whole answer: ${writeSnapshot("pi-subagents-report-", `${a.id}-final-answer.md`, a.finalOutput() || text)}.`;
 			} catch {
 				/* The preview still goes out. */
 			}
-			text = `${text.slice(0, WAKE_PREVIEW_CHARS)}\n[Cut at ${count(WAKE_PREVIEW_CHARS)} of ${count(text.length)} chars.${where} Ask ${info.member.role} with team_msg for more.]`;
+			text = `${withLanded(a, text.slice(0, WAKE_PREVIEW_CHARS))}\n[Cut at ${count(WAKE_PREVIEW_CHARS)} of ${count(text.length)} chars.${where} Ask ${info.member.role} with team_msg for more.]`;
 		}
 		const body = [
 			`[Team report from ${info.member.role} (${a.id}), ${info.team.id}: ${verb} — routed to you as coordinator]`,

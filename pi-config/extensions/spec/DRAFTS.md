@@ -21,9 +21,13 @@ node $d diff NAME [--against base|current]              --root DIR [--json]
 node $d check NAME [--base REV] [--all]                 --root DIR [--json]
 node $d evidence NAME --id '§x' [--id …] --by WHO --verification TEXT \
         (--commit REV | --snapshot | --doc-only) [--path P]… [--log FILE] [--write]   --root DIR [--json]
+node $d agree NAME --id '§x' [--id …] --by WHO --verification TEXT [--at ISO] [--write]   --root DIR [--json]
 node $d promote NAME (--id '§x'… | --all) [--meta KEY]… [--file PATH]… [--plan SHA] [--write]  --root DIR [--json]
 node $d recover [--write]                               --root DIR [--json]
+node $d drafts [--days N] [--worktrees]                 --root DIR [--json]
+node $d prune --approved FILE [--write]                 --root DIR [--json]
 node $d merge-manifest [--base F --ours F --theirs F] [--write]   --root DIR [--json]
+node $d merge-claims --base F --ours F --theirs F [--path P] [--write]   --root DIR [--json]
 ```
 
 Nothing is written without `--write`. Quote IDs, because `§` is not a shell word character.
@@ -140,7 +144,8 @@ again **per declaration** (see "Per-declaration merge" below); only what that fi
 | `selection-incomplete` | A promoted file also carries changes to IDs you didn't select. Files move whole. |
 | `candidate-invalid` / `candidate-dangling` | The merged candidate graph (current plus the selected units) doesn't load in the core, or gains a dangling edge that current doesn't have. |
 | `candidate-label` / `authority-missing` | A selected ID that isn't being deleted is labelled `authority: "candidate"` in the draft, or declares no `authority`. This applies to a prose-only change too. |
-| `agreed-invalid` / `agreed-rewritten` | A selected record's `agreed` is malformed or sits on a note or section, or the draft removes the `agreed` current already has, or replaces it without rewording the prose or with an earlier `at` (see "Agreed, not built"). |
+| `agreed-invalid` / `agreed-rewritten` | A selected record's `agreed` is malformed or sits on a note or section, or the draft removes the `agreed` current already has, or replaces it without rewording the prose or with an earlier `at` (see "Agreed, not built"). `agree` refuses the same `agreed-rewritten` cases before it stamps, and refuses (`agree-refused`) an ID the draft has no prose for, or one that is a note or section. |
+| `agree-not-promoted` | `agree` stamped (and recorded evidence), but the promotion it previewed was not clean, so it wrote nothing to current. The message lists the plan's refusals, drift warnings, notes and foreign §; the output carries them under `promotion`. |
 | `base-untrusted` | The draft's baseline graph doesn't load in the core (exit 2), so changes can't be attributed to IDs. Start a new draft from a fixed current. |
 | `draft-invalid` | The draft's own graph doesn't load (exit 2). Run `check NAME` and fix it. |
 | `not-changed`, `plan-changed`, `nothing-to-write`, `pending-transaction`, `lock-occupied`, `race` | These mean what they say. |
@@ -194,6 +199,18 @@ agreed to (`at` may carry a time: `2026-10-05T14:30Z`), with `authority: "accept
 Then `evidence --doc-only` (the `--verification` text says where it was agreed) and promote. That
 records the decision, not that it was built.
 
+`agree NAME --id '§x'… --by WHO --verification TEXT [--write]` does all of that in one call, once
+the draft has the promise's prose. On each named behavior or surface it sets `agreed: {by, at}` (`at`
+is now, in UTC to the minute, unless `--at` gives an ISO date or time) and `authority: "accepted"`;
+a declaration with prose but no record gets one (an H1 is a surface, an H2 a behavior). For each
+one that maps no code and isn't labelled `reviewed` or `verified`, it records `--doc-only` evidence,
+with `--by` and `--verification` as given, and promotes it: when that promotion lands and when it
+doesn't is in PROMOTE.md ("Agreed, promoted by `agree`"). A record that maps code is only stamped:
+its build records commit or snapshot evidence. An `agreed` this draft already gave, by the same
+person, is kept, so running it again changes nothing. Without `--write` it previews. With the align
+minor mode on too, the align tool's result for the go-ahead (status implementing) tells the agent
+to do exactly this before building.
+
 - **Built** means the record has `code` and the `evidence` label `reviewed` or `verified`. So
   `--doc-only` is refused (`doc-only-refused`) for an agreed record that maps code or carries one of
   those labels; a record with no `agreed` at all is refused as before.
@@ -204,6 +221,12 @@ records the decision, not that it was built.
   the same promotion as the reworded prose, with an `at` not earlier than the old one. Changing
   `agreed` on unchanged prose, an earlier `at`, or removing `agreed` is refused (`agreed-rewritten`).
   Deleting the whole record is an ordinary deletion.
+- **A kept `agreed` on changed numbers.** The tool can't tell a rewording from a change of meaning,
+  so when a promotion changes an agreed record's prose, keeps the `agreed` current has, and adds or
+  removes a number (any token with a digit: `60` → `64`) or a backticked token, `promote` adds a
+  note to its output (`notes: [{code: "agreed-kept-on-change", id, agreed, removed, added,
+  message}]`), never a refusal. Read it: if the meaning changed, stamp the go-ahead that changed it
+  with `agree`; a rewording keeps `agreed` and needs nothing.
 - **Shape.** `agreed` must be an object with exactly a non-empty `by` and a real date `at`, on a
   behavior or surface; anything else is refused (`agreed-invalid`) at `evidence` and at `promote`.
 - It is a record field, not a label value: the core ignores record fields it doesn't know, while an
@@ -266,13 +289,45 @@ lock between the removal and the retake. The other writer's lock is left alone. 
 ever removes a lock. If the holder is on another host, check by hand, then delete
 `.sova/spec/drafts/.lock`.
 
+## Drafts left behind
+
+Drafts are local (`.sova/spec/drafts/` is not committed), so nothing removes one but a person.
+`drafts` reports every draft of the project (`--worktrees`: of every Git work tree of the
+repository too) and writes nothing. Each row has the draft's age in days since its last activity
+(made, evidence recorded, promoted), one state, its reasons, a suggested action and
+`draftSha256`, one hash over its `draft.json` and `spec/`:
+
+| state | meaning | suggests |
+|---|---|---|
+| `landed` | an id is pending while its implementation is on the default branch: a commit its evidence names is in that branch, or this work tree's branch was merged into it after the draft was made | promote (the reasons name evidence to re-record first) |
+| `promoted` | every id is already current, or this draft promoted it before current moved on, or the default branch already has it as the draft says it (its record and every claim file it is in, byte for byte: a work tree whose current lags the branch it was merged into) | delete |
+| `superseded` | nothing pending, and current changed an id differently | delete |
+| `empty` | changes nothing, older than the age limit | delete |
+| `old` | pending, no activity for longer than the age limit (`--days N`, default 7) | keep: ask whether it is still wanted |
+| `active` | anything else | keep |
+| `unreadable` | `status` refuses it (corrupt, base tampered) | keep: look by hand |
+
+The default branch is the one `promote` uses: origin's HEAD, else `master`, else `main`. A
+project without Git gets no `landed`. The exit is 1 when any draft is other than `active`.
+A promotion preview or write adds one line (`staleDrafts`) when other drafts in its project had
+no activity for longer than the age limit, with the `drafts` command to run.
+
+`prune --approved FILE` deletes drafts only from a list the user approved: one draft per line,
+`NAME` or `NAME draftSha256` (copy the hash from the report so a draft that changed after the
+approval is not deleted), `#` starts a comment. Without `--write` it lists what it would delete.
+A name with no draft, a hash that no longer matches, or an interrupted promotion (`.txn/`)
+refuses the whole prune and deletes nothing. It deletes nothing it was not given, and no other
+command deletes a draft.
+
 ## A manifest conflict in a Git merge
 
 `merge-manifest` merges `.sova/spec/manifest.json` record by record: each claim record and each
 top-level key takes the side that changed it. The same key changed differently on both sides is
 refused (`manifest-conflict`, exit 1, `conflicts: [{key, kind}]`) and nothing is written. Claim prose
-files are never touched: a `claims/` conflict, or a refused key, takes the one recovery in
-PROMOTE.md ("A spec conflict in a Git merge"), which the refusal repeats. Keys keep ours' order; the output is 2-space JSON, as promotion writes it.
+files are `merge-claims`' (below); a `claims/` conflict, or a refused key, takes the one recovery in
+PROMOTE.md ("A spec conflict in a Git merge"), which the refusal repeats. Keys keep ours' order, except
+that a record only theirs has goes where promotion would put it (by its area and id), so the bytes don't
+depend on which side landed first; the output is 2-space JSON, as promotion writes it.
 
 - **During a conflicted `git merge`** (index stages 2 and 3 exist): `merge-manifest` previews,
   `merge-manifest --write` writes the merged manifest to the working tree. It never stages; run
@@ -288,6 +343,26 @@ PROMOTE.md ("A spec conflict in a Git merge"), which the refusal repeats. Keys k
 
   Git runs it at the repository top; it writes `%A` on success and exits 1 on a same-key conflict,
   which Git reports as a conflict with ours' bytes in place.
+
+## A claims conflict in a Git merge
+
+`merge-claims` is a Git merge driver for one claim file. It merges per declaration exactly as
+promotion does, with the merge base, ours and theirs as base, current and draft, so two branches
+that changed different declarations (or added H2s at one spot) merge into the bytes the two
+promotions give one after the other, in either order. It reads declarations from the file's own
+H1/H2 headings and loads no graph. When the same declaration or gap changed differently on both
+sides, or the file can't be cut per declaration (no declarations, a carriage return, reordered
+declarations), or the result doesn't read back as the declarations it came from, it writes Git's
+own line merge (`git merge-file`), markers and all, so no side's prose is lost, and exits 1
+(`claims-conflict`), which Git reports as a conflict, settled by the one recovery in PROMOTE.md.
+
+```sh
+echo '.sova/spec/claims/**/*.md merge=sova-spec-claims' >> .gitattributes
+git config merge.sova-spec-claims.driver \
+  'node "<core>/sova-spec-draft.mjs" merge-claims --root . --base %O --ours %A --theirs %B --path %P --write'
+```
+
+Without `--write` it only reports. It writes nothing but the `--ours` file.
 
 ## Limits, stated plainly
 

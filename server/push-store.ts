@@ -66,6 +66,7 @@ export const DEFAULT_KINDS: Record<PushKind, boolean> = {
   "baton-needs-you": true,
   "worker-error": false,
   "playbook-review": true,
+  "whatsapp-down": true,
 };
 
 export function defaultPushSettings(): PushSettings {

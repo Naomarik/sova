@@ -197,3 +197,25 @@ test("a per-declaration merge is deterministic: preview and write agree on the p
   assert.ok(codes(w).includes("plan-changed"));
   assert.equal(read(root, FILE), TOP.replace("Two does Y.", "Two does Y3."));
 });
+
+test("two drafts each adding a record at one spot land in the same bytes, manifest included, whichever lands first", () => {
+  const land = (order) => {
+    const root = project();
+    for (const [name, id] of [["fa", "§a.top/zeta"], ["fb", "§a.top/alpha"]]) {
+      newDraft(root, name);
+      write(root, D(name, "claims/a/top.md"), insertAfterOne(TOP, id, `${id} is a note.`));
+      editManifest(root, D(name, "manifest.json"), (m) => { m.claims[id] = { kind: "note", authority: "accepted" }; });
+      assert.equal(run(root, "evidence", name, "--id", id, "--by", "tester", "--verification", "read it", "--doc-only", "--write").exit, 0);
+    }
+    for (const [name, id] of order) {
+      const p = run(root, "promote", name, "--id", id);
+      assert.equal(run(root, "promote", name, "--id", id, "--plan", p.plan, "--write").exit, 0, JSON.stringify(p.refusals));
+    }
+    return { claims: read(root, FILE), manifest: read(root, ".sova/spec/manifest.json") };
+  };
+  const ab = land([["fa", "§a.top/zeta"], ["fb", "§a.top/alpha"]]), ba = land([["fb", "§a.top/alpha"], ["fa", "§a.top/zeta"]]);
+  assert.equal(ab.claims, ba.claims);
+  assert.equal(ab.manifest, ba.manifest);
+  // the records that were there keep their order
+  assert.deepEqual(Object.keys(JSON.parse(ab.manifest).claims).filter((k) => k in CLAIMS), Object.keys(CLAIMS));
+});

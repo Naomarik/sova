@@ -162,6 +162,9 @@ try {
     } else if (beat.do === "pause") await page.waitForTimeout(durationMs(beat.for));
     await leakGate(page, patterns, `video beat ${i}`);
   }
+  // The screencast sends a frame only when the page changes, so a still page at the end (the
+  // last beat's pause) arrives as no frames at all: the last frame is held until this moment.
+  const endT = Date.now() / 1000;
   await cdp.send("Page.stopScreencast");
   await page.waitForTimeout(300);
   await ctx.close();
@@ -171,12 +174,12 @@ try {
   // Each frame cut to exactly the viewport (refused if it shows less of the page than that).
   const cropped = await cropToViewport(frames, vp, join(root, "frames-viewport"));
   console.log(`frames: ${Math.round(frames[0].w)}x${Math.round(frames[0].h)} CSS px filmed, cropped to the ${vp.width}x${vp.height} viewport at ${cropped.width}x${cropped.height} px`);
-  const list = cropped.frames.map((f, k) => `file '${f.file}'\nduration ${Math.max(0.001, ((frames[k + 1]?.t ?? f.t + 1 / 30) - f.t)).toFixed(4)}`).join("\n");
+  const list = cropped.frames.map((f, k) => `file '${f.file}'\nduration ${Math.max(0.001, ((frames[k + 1]?.t ?? Math.max(f.t + 1 / 30, endT)) - f.t)).toFixed(4)}`).join("\n");
   writeFileSync(join(root, "frames.txt"), `${list}\nfile '${cropped.frames.at(-1).file}'\n`);
   mkdirSync(VIDEO_DIR, { recursive: true });
   const out = join(VIDEO_DIR, FILE);
   execFileSync("ffmpeg", ["-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", join(root, "frames.txt"), "-vf", "fps=30,scale=trunc(min(1600\\,iw)/2)*2:-2:flags=lanczos,format=yuv420p", "-c:v", "libx264", "-preset", "slow", "-crf", "24", "-profile:v", "high", "-movflags", "+faststart", "-an", out], { stdio: "inherit" });
-  const seconds = frames.at(-1).t - frames[0].t;
+  const seconds = Math.max(frames.at(-1).t, endT) - frames[0].t;
   const bytes = statSync(out).size;
   // The encoded size, as the file has it (the manifest and the page's shape check rely on it).
   const [w, h] = execFileSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "csv=p=0", out]).toString().trim().split(",").map(Number);

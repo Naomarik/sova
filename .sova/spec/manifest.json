@@ -11173,9 +11173,41 @@
         "server/vis-check.test.ts"
       ]
     },
+    "§tools.spec/agree-command": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "requires": [
+        "§tools.spec/agreed-promotion"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+        "pi-config/extensions/spec/tests/agree-command.test.mjs",
+        "pi-config/extensions/spec/DRAFTS.md",
+        "pi-config/extensions/spec/PROMOTE.md",
+        "pi-config/extensions/spec/README.md"
+      ]
+    },
+    "§tools.spec/align-agree": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "requires": [
+        "§tools.spec/agree-command",
+        "§tools.spec/agreed-promotion",
+        "§tools.spec/mode-reading"
+      ],
+      "code": [
+        "pi-config/extensions/mode/align-tool.ts",
+        "pi-config/extensions/mode/index.ts",
+        "pi-config/extensions/mode/tests/agree-turn.mjs",
+        "pi-config/extensions/spec/docs/MODE.md"
+      ]
+    },
     "§tools.spec/census-note": {
       "kind": "behavior",
-      "requires": [],
+      "requires": [
+        "§tools.spec/conflict-recovery",
+        "§tools.spec/git-merge"
+      ],
       "authority": "accepted",
       "evidence": "verified",
       "code": [
@@ -11185,7 +11217,10 @@
         "pi-config/extensions/mode/tests/spec-worker.mjs",
         "pi-config/extensions/claude-code/spec-hooks.test.ts",
         "pi-config/extensions/mode/README.md",
-        "pi-config/extensions/claude-code/README.md"
+        "pi-config/extensions/claude-code/README.md",
+        "pi-config/extensions/mode/spec-worker.ts",
+        "pi-config/extensions/mode/index.ts",
+        "pi-config/extensions/subagents/index.test.ts"
       ]
     },
     "§tools/spec": {
@@ -11986,6 +12021,54 @@
         "src/lib/qr-reference.json",
         "src/lib/qr.ts",
         "server/app.ts"
+      ]
+    },
+    "§tools.spec/census-rank": {
+      "kind": "behavior",
+      "requires": [
+        "§tools.spec/census-created",
+        "§tools.spec/where-lookup"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/README.md",
+        "pi-config/extensions/spec/core/README.md",
+        "pi-config/extensions/spec/tests/census-rank.test.mjs",
+        "pi-config/extensions/spec/tests/core.test.mjs"
+      ]
+    },
+    "§tools.spec/draft-hygiene": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/draft-output"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+        "pi-config/extensions/spec/DRAFTS.md",
+        "pi-config/extensions/spec/PROMOTE.md"
+      ]
+    },
+    "§tools.spec/git-merge": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/span-promotion",
+        "§tools.spec/conflict-recovery"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/tests/claims-merge.test.mjs",
+        ".gitattributes",
+        "pi-config/extensions/spec/docs/CHANGELOG.md",
+        "pi-config/extensions/spec/PROMOTE.md",
+        "pi-config/extensions/spec/DRAFTS.md",
+        "pi-config/extensions/spec/README.md"
       ]
     },
     "§tools.spec/inspection-safety": {
@@ -15097,6 +15180,26 @@
         "pi-config/extensions/spec/tests/map-fields.test.mjs"
       ]
     },
+    "§tools.spec/unread-landed": {
+      "kind": "behavior",
+      "requires": [
+        "§tools.spec/census-note",
+        "§tools.spec/census-rank",
+        "§tools.spec/no-turn-end-check"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/mode/spec-guard.ts",
+        "pi-config/extensions/mode/spec-guard.test.ts",
+        "pi-config/extensions/claude-code/spec-hooks.test.ts",
+        "pi-config/extensions/mode/spec-mode.md",
+        "pi-config/extensions/mode/README.md",
+        "pi-config/extensions/spec/docs/MODE.md",
+        "pi-config/extensions/spec/README.md",
+        "site/src/content/docs/modes/spec.md"
+      ]
+    },
     "§tools.spec/where-lookup": {
       "kind": "behavior",
       "authority": "accepted",
@@ -15124,6 +15227,7 @@
       "code": [
         "pi-config/extensions/spec/core/sova-spec-draft.mjs",
         "pi-config/extensions/spec/tests/agreed.test.mjs",
+        "pi-config/extensions/spec/tests/agreed-kept.test.mjs",
         "pi-config/extensions/spec/DRAFTS.md",
         "pi-config/extensions/spec/PROMOTE.md"
       ],
@@ -15156,7 +15260,8 @@
         "§tools.spec/frame",
         "§tools.spec/context-packets",
         "§tools.spec/field-promotion",
-        "§tools.spec/census-note"
+        "§tools.spec/census-note",
+        "§tools.spec/agree-command"
       ],
       "authority": "accepted",
       "evidence": "verified",
@@ -16140,6 +16245,7 @@
       "requires": [
         "§tools/spec",
         "§tools.spec/mode-reading",
+        "§tools.spec/align-agree",
         "§tools.spec/census-note",
         "§tools.spec/no-turn-end-check",
         "§tools.spec/review-playbook",
@@ -16715,7 +16821,8 @@
         "pi-config/extensions/spec/core/sova-spec-draft.mjs",
         "pi-config/extensions/spec/PROMOTE.md",
         "pi-config/extensions/spec/DRAFTS.md",
-        "pi-config/extensions/spec/tests/draft.test.mjs"
+        "pi-config/extensions/spec/tests/draft.test.mjs",
+        "pi-config/extensions/spec/tests/claims-merge.test.mjs"
       ]
     },
     "§tools.spec/draft-output": {
@@ -16738,6 +16845,24 @@
         "pi-config/extensions/spec/core/sova-spec.mjs",
         "pi-config/extensions/spec/README.md",
         "pi-config/extensions/spec/tests/census-base.test.mjs"
+      ]
+    },
+    "§tools.spec/worker-landed": {
+      "kind": "behavior",
+      "requires": [
+        "§tools.spec/census-note"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/mode/spec-guard.ts",
+        "pi-config/extensions/mode/spec-worker.ts",
+        "pi-config/extensions/mode/index.ts",
+        "pi-config/extensions/subagents/index.ts",
+        "pi-config/extensions/subagents/README.md",
+        "pi-config/extensions/mode/README.md",
+        "pi-config/extensions/claude-code/README.md",
+        "pi-config/extensions/subagents/tests/spec-landed.mjs"
       ]
     },
     "§tools.spec/write-guard": {

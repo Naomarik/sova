@@ -47,6 +47,19 @@ test("a record round-trips through its line in canonical order, unknown fields d
 	assert.equal(formatUsageRecord(shuffled), line);
 });
 
+test("a launch round-trips, takes an unknown word as written, and a malformed one refuses the record", () => {
+	const launched = record({ src: "claude", provider: "claude-code-cli", launch: { how: "folded", why: "reaped", fallback: "login-moved" } });
+	const line = formatUsageRecord(launched);
+	assert.deepEqual(parseUsageLine(line!), launched);
+	// A newer reason parses as written: no schema change for a new word.
+	assert.deepEqual(normalizeUsageRecord({ ...launched, launch: { how: "teleported", why: "moon-phase", extra: 1 } })?.launch, { how: "teleported", why: "moon-phase" });
+	for (const bad of ["folded", { how: "folded" }, { how: "Folded", why: "new" }, { how: "folded", why: "new", fallback: 3 }, null])
+		assert.equal(normalizeUsageRecord({ ...launched, launch: bad }), null, JSON.stringify(bad));
+	// An older reader drops what it doesn't know and keeps the record (the field is additive).
+	const { launch: _drop, ...older } = launched;
+	assert.deepEqual(normalizeUsageRecord({ ...older, launchV2: { how: "x" } }), older);
+});
+
 test("the strict parse refuses any wrong known field, a partial line and a non-record", () => {
 	const bad: Record<string, unknown>[] = [
 		{ v: 2 },

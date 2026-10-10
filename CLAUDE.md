@@ -153,7 +153,7 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   §app.insights/usage-ledger): `<agent dir>/usage/v1/<UTC day>/<producer>.jsonl`, one record per
   model call `{v: 1, key, ts, device, producer, src, provider, model, responseModel?, input, output,
   cacheRead, cacheWrite, cacheWrite1h?, owner, parent, worker?, kind, purpose?, cwd?, project?, starter?,
-  stop?}`, written at each call's end by llm-inflight (one writer per file: the process's producer
+  stop?, launch?}` (`launch` `{how, why, fallback?}` on the first call of each Claude Code process the bridge launches for a conversation), written at each call's end by llm-inflight (one writer per file: the process's producer
   id) and by the server's own one-shots, read only by the server's usage helper (its strict parse
   `parseUsageLine`), which prices every spend figure Sova shows; beside it llm-inflight keeps
   `<agent dir>/usage/cc-baseline/<claude session id>.json` `{v: 1, at, models}` (`claude-usage.ts`: each

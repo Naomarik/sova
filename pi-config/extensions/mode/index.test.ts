@@ -238,15 +238,16 @@ test("composePrompt joins the delegate block and minor blocks", () => {
 	assert.doesNotMatch(both, /\{[A-Z_]+\}/);
 
 	const align = buildMinorPrompt("align");
-	assert.match(align, /non-editing Planning & specs worker/);
-	assert.match(align, /not the Investigation profile/);
+	// The planning worker hand-off is said once, in the bridge: the align block only points at it.
+	assert.match(align, /in delegate mode, through a planning worker as the delegate block says/);
+	assert.doesNotMatch(align, /Planning & specs|Investigation profile|absolute path/);
 	assert.match(align, /Stop and wait/);
 	assert.match(align, /Exempt/);
 	assert.match(align, /never re-ask a settled question/);
 	// Every alignment goes through the tool, never prose; answers and lifecycle through ops.
 	assert.match(align, /record every alignment with the `align` tool/);
 	assert.match(align, /Never write an alignment as reply text/);
-	assert.match(align, /import it with the import op and that absolute path/);
+	assert.match(align, /\(or import, for a planning worker's file\)/);
 	assert.match(align, /decide \(in their words\), accept only the questions they told you to take your recommendation on/);
 	assert.match(align, /leave the rest open/);
 	assert.match(align, /Never set status implementing while a question is open/);
@@ -265,12 +266,14 @@ test("composePrompt joins the delegate block and minor blocks", () => {
 		assert.doesNotMatch(text, /fromFile|create \+|\bdrop \{|\{why\}|exempt with why|accept \{q|q: "open"/);
 		for (const op of text.match(/\b(?:accept|drop|edit)_[a-z]+\b/g) ?? []) assert.ok((ALIGN_OPS as readonly string[]).includes(op), op);
 	}
-	// The planner's one write is named, absolute and outside the repo, and the delegate block's
-	// no-edit rule names that same exception, so the two never contradict each other.
+	// The planner's one write is named, absolute and outside the repo, by the bridge alone: the delegate
+	// block's no-edit rule names no exception, and the bridge that grants it follows it whenever align is on.
 	assert.match(DELEGATE_ALIGN_BRIDGE, /one permitted write is the alignment JSON/);
 	assert.match(DELEGATE_ALIGN_BRIDGE, /absolute path outside the repository that you name in its prompt/);
-	assert.match(buildDelegatePrompt([]), /must not edit files[^\n]*The one exception is a planning worker's alignment JSON \(align on\), written outside the repository\./);
-	assert.match(align, /absolute path outside the repository/);
+	for (const delegateBlock of [buildDelegatePrompt([]), buildDelegatePrompt(ALL_OK)]) {
+		assert.match(delegateBlock, /must not edit files: say so in their prompt/);
+		assert.doesNotMatch(delegateBlock, /exception|alignment JSON/);
+	}
 	assert.ok(DELEGATE_ALIGN_BRIDGE.includes(ALIGN_FILE_SCHEMA), "the bridge quotes the one file schema");
 	assert.match(DELEGATE_ALIGN_BRIDGE, /status is implementing/);
 });

@@ -119,13 +119,17 @@
         "src/components/UsageView.tsx",
         "src/lib/insights.ts",
         "server/insights.ts",
-        "shared/protocol.ts"
+        "shared/protocol.ts",
+        "src/components/UsageHistory.tsx",
+        "src/components/UsageOllama.tsx",
+        "src/design/base.css",
+        "src/lib/usage-rows.integration.test.ts"
       ]
     },
     "§app.insights/usage-page-and-agents-page": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/components/AgentsView.tsx",
         "src/lib/agents-board.ts",
@@ -135,7 +139,8 @@
         "src/components/CostsTab.tsx",
         "src/lib/agents-board.test.ts",
         "src/lib/api.ts",
-        "shared/usage/wire.ts"
+        "shared/usage/wire.ts",
+        "src/design/base.css"
       ]
     },
     "§app.session-list/accessibility": {
@@ -12023,22 +12028,6 @@
         "server/app.ts"
       ]
     },
-    "§tools.spec/census-rank": {
-      "kind": "behavior",
-      "requires": [
-        "§tools.spec/census-created",
-        "§tools.spec/where-lookup"
-      ],
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "pi-config/extensions/spec/core/sova-spec.mjs",
-        "pi-config/extensions/spec/README.md",
-        "pi-config/extensions/spec/core/README.md",
-        "pi-config/extensions/spec/tests/census-rank.test.mjs",
-        "pi-config/extensions/spec/tests/core.test.mjs"
-      ]
-    },
     "§tools.spec/draft-hygiene": {
       "kind": "behavior",
       "authority": "accepted",
@@ -12050,25 +12039,6 @@
         "pi-config/extensions/spec/core/sova-spec-draft.mjs",
         "pi-config/extensions/spec/DRAFTS.md",
         "pi-config/extensions/spec/PROMOTE.md"
-      ]
-    },
-    "§tools.spec/git-merge": {
-      "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "verified",
-      "requires": [
-        "§tools.spec/span-promotion",
-        "§tools.spec/conflict-recovery"
-      ],
-      "code": [
-        "pi-config/extensions/spec/core/sova-spec-draft.mjs",
-        "pi-config/extensions/spec/core/sova-spec.mjs",
-        "pi-config/extensions/spec/tests/claims-merge.test.mjs",
-        ".gitattributes",
-        "pi-config/extensions/spec/docs/CHANGELOG.md",
-        "pi-config/extensions/spec/PROMOTE.md",
-        "pi-config/extensions/spec/DRAFTS.md",
-        "pi-config/extensions/spec/README.md"
       ]
     },
     "§tools.spec/inspection-safety": {
@@ -12648,7 +12618,8 @@
         "src/components/UsageView.tsx",
         "src/design/base.css",
         "shared/protocol.ts",
-        "server/insights.ts"
+        "server/insights.ts",
+        "src/components/UsageHistory.tsx"
       ]
     },
     "§app.insights/usage-reset-day": {
@@ -12662,7 +12633,8 @@
         "pi-config/extensions/usage-status/index.ts",
         "server/insights.ts",
         "shared/protocol.ts",
-        "src/components/UsageView.tsx"
+        "src/components/UsageView.tsx",
+        "src/components/UsageOllama.tsx"
       ]
     },
     "§app.projects/clone": {
@@ -15180,26 +15152,6 @@
         "pi-config/extensions/spec/tests/map-fields.test.mjs"
       ]
     },
-    "§tools.spec/unread-landed": {
-      "kind": "behavior",
-      "requires": [
-        "§tools.spec/census-note",
-        "§tools.spec/census-rank",
-        "§tools.spec/no-turn-end-check"
-      ],
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "pi-config/extensions/mode/spec-guard.ts",
-        "pi-config/extensions/mode/spec-guard.test.ts",
-        "pi-config/extensions/claude-code/spec-hooks.test.ts",
-        "pi-config/extensions/mode/spec-mode.md",
-        "pi-config/extensions/mode/README.md",
-        "pi-config/extensions/spec/docs/MODE.md",
-        "pi-config/extensions/spec/README.md",
-        "site/src/content/docs/modes/spec.md"
-      ]
-    },
     "§tools.spec/where-lookup": {
       "kind": "behavior",
       "authority": "accepted",
@@ -15342,7 +15294,9 @@
         "pi-config/extensions/usage-status/ollama.ts",
         "pi-config/extensions/usage-status/ollama.test.ts",
         "shared/protocol.ts",
-        "src/components/UsageView.tsx"
+        "src/components/UsageView.tsx",
+        "src/components/UsageHistory.tsx",
+        "src/design/base.css"
       ]
     },
     "§app.model-levels/cache": {
@@ -15861,7 +15815,9 @@
         "src/lib/ollama-usage.ts",
         "src/lib/ollama-usage.test.ts",
         "src/lib/ollama-card.integration.test.ts",
-        "src/lib/insights.test.ts"
+        "src/lib/insights.test.ts",
+        "src/components/UsageOllama.tsx",
+        "src/design/base.css"
       ]
     },
     "§app.insights/ollama-credits": {
@@ -15887,7 +15843,9 @@
         "src/lib/ollama-usage.ts",
         "src/lib/ollama-usage.test.ts",
         "src/lib/ollama-card.integration.test.ts",
-        "src/lib/insights.test.ts"
+        "src/lib/insights.test.ts",
+        "src/components/UsageOllama.tsx",
+        "src/design/base.css"
       ]
     },
     "§app.insights/usage-detail-reachability": {
@@ -16784,6 +16742,9 @@
         "pi-config/extensions/mode/align-tool.ts",
         "pi-config/extensions/mode/align-settings.test.ts",
         "pi-config/extensions/mode/tests/style-turn.mjs",
+        "pi-config/extensions/mode/prompt.ts",
+        "pi-config/extensions/mode/align.test.ts",
+        "pi-config/extensions/mode/index.test.ts",
         "server/vis-check.ts",
         "server/chat-manager.ts",
         "server/harness/state-kinds.ts",
@@ -16847,24 +16808,6 @@
         "pi-config/extensions/spec/tests/census-base.test.mjs"
       ]
     },
-    "§tools.spec/worker-landed": {
-      "kind": "behavior",
-      "requires": [
-        "§tools.spec/census-note"
-      ],
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "pi-config/extensions/mode/spec-guard.ts",
-        "pi-config/extensions/mode/spec-worker.ts",
-        "pi-config/extensions/mode/index.ts",
-        "pi-config/extensions/subagents/index.ts",
-        "pi-config/extensions/subagents/README.md",
-        "pi-config/extensions/mode/README.md",
-        "pi-config/extensions/claude-code/README.md",
-        "pi-config/extensions/subagents/tests/spec-landed.mjs"
-      ]
-    },
     "§tools.spec/write-guard": {
       "kind": "behavior",
       "requires": [
@@ -16882,36 +16825,41 @@
         "pi-config/extensions/spec/tests/draft.test.mjs"
       ]
     },
-    "§site.docs/chrome": {
+    "§tools.spec/git-merge": {
       "kind": "behavior",
-      "requires": [
-        "§site.docs/frame"
-      ],
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/span-promotion",
+        "§tools.spec/conflict-recovery"
+      ],
       "code": [
-        "site/src/layouts/Base.astro",
-        "site/src/components/SiteNav.astro",
-        "site/src/data/site.ts",
-        "site/src/styles/site.css",
-        "site/src/styles/tokens.css"
+        "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/tests/claims-merge.test.mjs",
+        ".gitattributes",
+        "pi-config/extensions/spec/docs/CHANGELOG.md",
+        "pi-config/extensions/spec/PROMOTE.md",
+        "pi-config/extensions/spec/DRAFTS.md",
+        "pi-config/extensions/spec/README.md"
       ]
     },
-    "§site.docs/frame": {
+    "§tools.spec/worker-landed": {
       "kind": "behavior",
       "requires": [
-        "§site/docs"
+        "§tools.spec/census-note"
       ],
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
-        "site/src/pages/docs/[...slug].astro",
-        "site/src/layouts/Docs.astro",
-        "site/src/components/DocsNav.astro",
-        "site/src/data/docs.ts",
-        "site/src/styles/docs.css",
-        "site/src/content.config.ts",
-        "site/astro.config.mjs"
+        "pi-config/extensions/mode/spec-guard.ts",
+        "pi-config/extensions/mode/spec-worker.ts",
+        "pi-config/extensions/mode/index.ts",
+        "pi-config/extensions/subagents/index.ts",
+        "pi-config/extensions/subagents/README.md",
+        "pi-config/extensions/mode/README.md",
+        "pi-config/extensions/claude-code/README.md",
+        "pi-config/extensions/subagents/tests/spec-landed.mjs"
       ]
     },
     "§app.outreach/org-sender": {
@@ -17044,6 +16992,74 @@
       ],
       "requires": [
         "§app.worker-restore/worker-record"
+      ]
+    },
+    "§site.docs/chrome": {
+      "kind": "behavior",
+      "requires": [
+        "§site.docs/frame"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "site/src/layouts/Base.astro",
+        "site/src/components/SiteNav.astro",
+        "site/src/data/site.ts",
+        "site/src/styles/site.css",
+        "site/src/styles/tokens.css"
+      ]
+    },
+    "§site.docs/frame": {
+      "kind": "behavior",
+      "requires": [
+        "§site/docs"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "site/src/pages/docs/[...slug].astro",
+        "site/src/layouts/Docs.astro",
+        "site/src/components/DocsNav.astro",
+        "site/src/data/docs.ts",
+        "site/src/styles/docs.css",
+        "site/src/content.config.ts",
+        "site/astro.config.mjs"
+      ]
+    },
+    "§tools.spec/census-rank": {
+      "kind": "behavior",
+      "requires": [
+        "§tools.spec/census-created",
+        "§tools.spec/where-lookup"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/README.md",
+        "pi-config/extensions/spec/core/README.md",
+        "pi-config/extensions/spec/tests/census-rank.test.mjs",
+        "pi-config/extensions/spec/tests/core.test.mjs"
+      ]
+    },
+    "§tools.spec/unread-landed": {
+      "kind": "behavior",
+      "requires": [
+        "§tools.spec/census-note",
+        "§tools.spec/census-rank",
+        "§tools.spec/no-turn-end-check"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/mode/spec-guard.ts",
+        "pi-config/extensions/mode/spec-guard.test.ts",
+        "pi-config/extensions/claude-code/spec-hooks.test.ts",
+        "pi-config/extensions/mode/spec-mode.md",
+        "pi-config/extensions/mode/README.md",
+        "pi-config/extensions/spec/docs/MODE.md",
+        "pi-config/extensions/spec/README.md",
+        "site/src/content/docs/modes/spec.md"
       ]
     }
   },

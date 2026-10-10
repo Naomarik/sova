@@ -17,7 +17,7 @@ import { fileURLToPath } from "node:url";
 import { type Api, type AssistantMessageEvent, type Model, normalizeContext, Type, type Message, type Tool } from "@earendil-works/pi-ai";
 import {
 	claudeSessionId, FOLD_CHARS_PER_TOKEN, FOLD_LINE_HEADROOM, foldBudgetChars, foldHistory, foldSizeEstimate, getSessionBridge, isPrefix, LIMITS, MAX_FOLD_CHARS, memorySystemPrompt, memoryViewFrame, MIN_FOLD_CHARS, SYSTEM_PROMPT_BOUNDARY, withoutMemoryPrefix,
-	resetSessionBridge, SessionBridge, transcriptFingerprint, uuidv5, windowOverflow,
+	resetSessionBridge, SessionBridge, transcriptFingerprint, uuidv5, windowOverflow, type ClaudeLoginSource,
 } from "./session-bridge.ts";
 import { streamClaudeCode } from "./stream.ts";
 import { STATIC_MODELS } from "./index.ts";
@@ -154,16 +154,18 @@ const EMPTY_PROJECTS = mkdtempSync(join(tmpdir(), "pi-bridge-projects-"));
 // /tmp is inode-limited on the dev machine: leave nothing behind.
 after(() => rmSync(EMPTY_PROJECTS, { recursive: true, force: true }));
 
-function harness({ refuseSessionId = 0, manualInitialize = false, projectsRoot = EMPTY_PROJECTS, limits, forkFrom, refuseResume = false, resumeDir = false }: { refuseSessionId?: number; manualInitialize?: boolean; projectsRoot?: string; limits?: Partial<typeof LIMITS>; forkFrom?: ClaudeForkPoint; refuseResume?: boolean; resumeDir?: string | false } = {}) {
+/** `projectsRoot: null`: none given, the bridge finds the CLI's records itself. */
+function harness({ refuseSessionId = 0, manualInitialize = false, projectsRoot = EMPTY_PROJECTS, limits, forkFrom, refuseResume = false, resumeDir = false, logins }: { refuseSessionId?: number; manualInitialize?: boolean; projectsRoot?: string | null; limits?: Partial<typeof LIMITS>; forkFrom?: ClaudeForkPoint; refuseResume?: boolean; resumeDir?: string | false; logins?: ClaudeLoginSource } = {}) {
 	const children: FakeClaude[] = [];
 	const debug: Record<string, unknown>[] = [];
 	const bridge = new SessionBridge({
 		...(forkFrom ? { forkFrom } : {}),
+		...(logins ? { logins } : {}),
 		// Each test's own: a record another test saved for the same pi session id never reaches it.
 		resumeDir,
 		onDebug: (entry) => debug.push(entry),
 		cwd: "/tmp/pi-bridge-test",
-		projectsRoot,
+		...(projectsRoot === null ? {} : { projectsRoot }),
 		spawnImpl: ((command: string, argv: string[], options: any) => {
 			const child = new FakeClaude(command, argv, options, 5000 + children.length);
 			children.push(child);
@@ -2743,6 +2745,36 @@ test("a settings restart records which part changed", { timeout: 10000 }, async 
 		assert.deepEqual(ledger().filter((r) => r.launch).map((r) => r.launch), [{ how: "fresh", why: "new" }, { how: "folded", why: "system-prompt" }]);
 		await bridge.disposeAll();
 	});
+});
+
+test("a first launch whose turn is only user messages (an overseer's run note and the operator's message) is fresh, not a re-send", { timeout: 10000 }, async () => {
+	await withLedger(async (ledger) => {
+		const { bridge, children } = harness();
+		await cleanTurn(bridge, children, 1, request([user("run note"), user("hi")]), "hello");
+		assert.deepEqual(ledger().filter((r) => r.launch).map((r) => r.launch), [{ how: "fresh", why: "new" }]);
+		await bridge.disposeAll();
+	});
+});
+
+test("after a server restart on an added login, the CLI's records are found in that login's directory: the launch is process-start and takes the next id", { timeout: 10000 }, async () => {
+	const configDir = mkdtempSync(join(tmpdir(), "pi-bridge-login-"));
+	try {
+		await withLedger(async (ledger) => {
+			// The CLI's record of launch 0, written before the restart into the login's own directory.
+			mkdirSync(join(configDir, "projects", "-tmp-pi-bridge-test"), { recursive: true });
+			writeFileSync(join(configDir, "projects", "-tmp-pi-bridge-test", `${claudeSessionId("pi-session-1", 0)}.jsonl`), "{}\n");
+			const login = { id: "l-1", label: "work", env: { CLAUDE_CONFIG_DIR: configDir } };
+			const logins: ClaudeLoginSource = { select: () => login, failover: () => undefined, recordFailure: () => {} };
+			const { bridge, children } = harness({ projectsRoot: null, logins });
+			await cleanTurn(bridge, children, 1, request([user("one"), assistantText("reply one"), user("two")]), "reply two");
+			const argv = children[0]!.argv;
+			assert.equal(argv[argv.indexOf("--session-id") + 1], claudeSessionId("pi-session-1", 1));
+			assert.deepEqual(ledger().filter((r) => r.launch).map((r) => r.launch), [{ how: "joined", why: "process-start" }]);
+			await bridge.disposeAll();
+		});
+	} finally {
+		rmSync(configDir, { recursive: true, force: true });
+	}
 });
 
 test("a one-shot request runs with the prompt cache off; a chat's child keeps it", { timeout: 10000 }, async () => {

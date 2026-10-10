@@ -988,6 +988,8 @@ class CliSession {
 	private restarting = false;
 	/** Children this bridge has launched; each one needs its own --session-id. */
 	private launchAttempt = 0;
+	/** The CLI holds records of this chat from before this bridge (a server restart): a "new" launch is a process-start. */
+	private launchedBefore = false;
 	private failure?: string;
 	/**
 	 * Why the child's conversation no longer matches what pi saw, if it does
@@ -1263,7 +1265,8 @@ class CliSession {
 				return;
 			}
 			const foldable = request.messages.filter((m) => m.role !== "system");
-			const how = plan.first ? (foldable.length === 1 && foldable[0]!.role === "user" ? "fresh" : "joined") : "folded";
+			// Only this turn's own user messages (an overseer's run note and its message): nothing is re-sent.
+			const how = plan.first ? (foldable.every((m) => m.role === "user") ? "fresh" : "joined") : "folded";
 			this.launched({ how, why: plan.why, ...(plan.fallback ? { fallback: plan.fallback } : {}) });
 			const budget = foldBudgetChars(request, this.limits.maxFoldedChars);
 			const folded = foldHistory(withoutMemoryPrefix(request.messages), this.limits, plan.first ? "first" : "restarted", budget);
@@ -1302,6 +1305,8 @@ class CliSession {
 
 	/** Note how the live child started; its first usage record carries it (usage-record.ts `launch`). */
 	private launched(launch: UsageLaunch): void {
+		// plan() decides before the login is chosen; the login's own records, read since, can show an earlier process.
+		if (launch.why === "new" && this.launchedBefore) launch = { ...launch, why: "process-start" };
 		if (this.launchSlot && !this.launchSlot.value) this.launchSlot.value = launch;
 		debugLog({ event: "launch", session: this.piSessionId, ...launch });
 	}
@@ -1367,6 +1372,7 @@ class CliSession {
 		// Start past every record on disk: the counter is only in memory, so
 		// after a process restart it would otherwise re-probe ids already taken.
 		this.launchAttempt = this.firstFreeLaunch();
+		if (this.launchAttempt > 0) this.launchedBefore = true;
 		// Walk forward until the CLI accepts an id: a collision is survivable and
 		// costs one fast-failing spawn, whereas reusing an id is fatal for good.
 		for (let probe = 0; probe <= SESSION_ID_PROBES; probe++) {
@@ -1386,8 +1392,9 @@ class CliSession {
 	/** `launchAttempt`, or the launch after the last record on disk if that is later. Never throws. */
 	private firstFreeLaunch(): number {
 		try {
+			// The CLI writes its records under the directory of the login it runs on, once one is chosen.
 			const projectsRoot = this.options.projectsRoot
-				?? claudeProjectsRoot({ CLAUDE_CONFIG_DIR: this.options.env?.CLAUDE_CONFIG_DIR ?? process.env.CLAUDE_CONFIG_DIR });
+				?? claudeProjectsRoot({ CLAUDE_CONFIG_DIR: this.login?.env.CLAUDE_CONFIG_DIR ?? this.options.env?.CLAUDE_CONFIG_DIR ?? process.env.CLAUDE_CONFIG_DIR });
 			return nextFreeLaunch(this.piSessionId, { cwd: this.cwd, projectsRoot, from: this.launchAttempt });
 		} catch {
 			return this.launchAttempt; // the probes still cover it

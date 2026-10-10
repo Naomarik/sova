@@ -889,6 +889,28 @@
         "server/memory/chat-memory.test.ts"
       ]
     },
+    "§chat.memory/help": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.memory/settings",
+        "§chat.memory/types",
+        "§chat.memory/tree",
+        "§chat.memory/turn",
+        "§chat.memory/zoomable",
+        "§chat.memory/summarizer"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/MemorySettings.tsx",
+        "src/components/HelpPopover.tsx",
+        "src/components/help-popover.css",
+        "src/lib/memory-help.ts",
+        "src/lib/memory-help.test.ts",
+        "src/lib/help-popover.ts",
+        "src/lib/help-popover.test.ts"
+      ]
+    },
     "§chat.memory/log": {
       "kind": "behavior",
       "requires": [

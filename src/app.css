@@ -435,21 +435,64 @@ html, body { overflow: clip; overscroll-behavior: none; }
   margin-left: auto;
   margin-right: calc(var(--space-4) * -1 + var(--space-1));
 }
-/* Projects: sticky labels, not sections — one level of sticking inside the pane. */
+/* Three levels, told apart at a glance (§app.session-list/organizations): an org is the pane's
+   largest name, a project a step down with its folder icon, set in under its org behind a guide
+   rule, and the rows (13.5px medium) under that. Group and state labels stay quiet eyebrows;
+   counts stay muted mono at every level. */
+.org-label {
+  font-family: var(--font-body);
+  font-size: var(--fs-heading-s);
+  line-height: var(--lh-heading-s);
+  font-weight: var(--fw-semibold);
+  color: var(--color-ink);
+}
+.org-label:hover { color: var(--color-ink); }
+.org-label > .text-num,
+.org-project-label > .text-num {
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  font-weight: var(--fw-regular);
+  color: var(--color-ink-muted);
+}
+.org-section[open] { padding-bottom: var(--space-2); }
+/* Projects: sticky labels, not sections — one level of sticking inside the pane. Under an org the
+   block steps in so its guide rule falls under the org's chevron; the Projects region has no org
+   level, so its blocks start at the edge. */
 .org-project {
   padding-left: calc(var(--space-1) / 2);
   border-left: calc(var(--stroke-thin) * 2) solid var(--color-border);
 }
+.org-section > .org-project { margin-left: var(--space-5); }
+.org-project + .org-project { margin-top: var(--space-3); }
 .org-project-label {
   position: sticky;
   top: 0;
   z-index: 1;
   background: var(--color-surface);
+  padding-top: 0;
+  padding-bottom: 0;
+  padding-left: var(--space-3);
+  min-height: var(--row-height);
+  font-family: var(--font-body);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  font-weight: var(--fw-semibold);
   text-transform: none;
   letter-spacing: 0;
-  font-size: var(--fs-mono);
+  color: var(--color-ink);
 }
-.org-project-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The name is the heading's link to the project page: the whole name and its icon, 44px tall. */
+.org-project-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--row-height);
+}
+.org-project-name > bdi { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.org-project-icon { flex: none; width: 16px; height: 16px; color: var(--color-ink-muted); }
+.org-project-name:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); border-radius: var(--r-xs); }
 /* The Projects region (§app.projects/list): its head's Add Project and page link are quiet 44px
    icons like an org head's; a project's name opens its page. */
 .sidebar-projects .sidebar-region-head > .org-link {

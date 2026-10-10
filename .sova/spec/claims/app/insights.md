@@ -627,13 +627,13 @@ Both pages share one shell: a `.session-head` and a `.insights.pane` containing
   <a class="button button-icon button-ghost app-back" href="#/" aria-label="Back to Sessions">…</a>
   <div class="session-head-main">
     <h1 class="session-head-title" tabindex="-1">Agents</h1>
-    <p class="session-head-meta">2 working · 5 live · $3.40 today · 3 unmerged</p>
+    <p class="session-head-meta">2 working · 5 live · $3.40 today · 3 unmerged</p>   <!-- Costs tab only -->
   </div>
   <button class="button button-icon button-ghost" aria-label="Refresh Agents">…refresh…</button>
 </header>
 <section class="insights pane" aria-label="Agents">
   <div class="insights-inner">
-    <div class="board-bar">…search · filter chips · "{n} sessions live or open in Sova" (≥1000px: with the head meta at its right)…</div>
+    <div class="board-bar">…search · filter chips · "{n} sessions live or open in Sova" with the totals (the head meta's only copy on this tab)…</div>
     <div class="card board">…one .board-row per session…</div>   <!-- none: ONE .empty instead -->
   </div>
 </section>
@@ -652,8 +652,9 @@ Both pages share one shell: a `.session-head` and a `.insights.pane` containing
   call of every kind (§app.insights/usage-ledger, `GET /api/usage/today`; left out before its
   first answer and while nothing was spent today), and distinct
   unmerged branches among the worktrees read so far (left out before the first reading). The
-  line's `title` says what each figure counts. From 1000px wide it leaves the head for the right
-  end of the count line directly above the board (§app.insights/team-cards).
+  line's `title` says what each figure counts. It shows once at every width: on the Board tab
+  only on the count line directly above the board (§app.insights/team-cards), never in the head;
+  on the Costs tab, which has no count line, in the head.
 - **Grid (Usage).** `.insights-grid` has 1 column. It becomes 2 columns when the `insights`
   container is at least 640px wide, and 3 at 1000px or more. The container is named, per the skill.
 - **Polling** (frontend's call on intervals). Update in place and keep scroll position and
@@ -1221,7 +1222,7 @@ Sova that aren't archived.
   </div>
   <div class="board-caption">
     <p class="board-count-line" aria-live="polite">5 sessions live or open in Sova</p>
-    <p class="board-totals">2 working · 5 live · $3.40 today · 3 unmerged</p>   <!-- ≥1000px only -->
+    <p class="board-totals">2 working · 5 live · $3.40 today · 3 unmerged</p>   <!-- every width; the only copy on the Board tab -->
   </div>
 </div>
 <div class="card board">
@@ -1297,9 +1298,19 @@ Sova that aren't archived.
   teams first, then a `+{n}` count chip for the rest. A team chip is a link to
   `#/agents/{teamKey}`; a click on it, or on `+{n}`, opens that session's Session details pane in
   place on its Agents tab. Worktrees: see §app.insights/subagent-cards. Actions: Open, Session
-  details and ⋯; Archive and Move to group are in ⋯ only. The head's totals line (working · live ·
-  spend today · unmerged, with its `title`) leaves the page head and sits right-aligned on the
-  count line directly above the board (`.board-caption`); below 1000px it stays in the head.
+  details and ⋯; Archive and Move to group are in ⋯ only.
+- **Totals.** The totals line (working · live · spend today · unmerged, with its `title`,
+  §app.insights/usage-page-and-agents-page) shows once on the Board tab at every width: on the
+  count line directly above the board (`.board-caption`), never in the page head. From 768px it
+  sits right-aligned on the count's line; below that it takes its own line under the count.
+- **Desktop** (the `insights` container 1000–1599px, e.g. a 1300px window with the sidebar
+  open). The title and the branches get the room: Activity shows the context ring and the age
+  only ("◔ · 5m ago"), its model kept for screen readers and in the age's hover title; the team
+  chips collapse into one `{n} teams` count chip (`1 team`) that opens the same pane as `+{n}`;
+  the readings and line counts take only their content's width, the branch the rest; and the
+  Session and Worktrees tracks share equally what Activity (5.5rem) and Workers (8–9.5rem)
+  leave, with `--space-2` between columns, so a
+  typical title shows whole and a branch shows at least 16 characters.
 - **Wide** (the `insights` container ≥1600px). Session takes the width the other columns leave
   (never under 20rem), Activity a 10rem track, Workers 17rem, Worktrees 28rem, the actions their
   fixed width, so Workers and Worktrees never wrap past their 2 lines.

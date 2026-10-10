@@ -1054,6 +1054,7 @@
         "server/sessions-configure.ts",
         "server/overseer-tools.ts",
         "server/project-coding-mode.ts",
+        "server/project-coding-mode.test.ts",
         "shared/memory.ts",
         "server/harness/pi/golden/session/S15-mode-command.trace"
       ]

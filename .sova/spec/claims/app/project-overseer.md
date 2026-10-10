@@ -488,7 +488,7 @@ user row.
 - **Any mode, for both Overseers.** The project overseer's `sova_create_session` and `sova_send`,
   and the Overseer's `sova_project_overseer` `code` (§app.overseer/org-project-overseers), take
   `mode` (`normal` or `delegate`), `minor_modes` (the whole set on: any of `align`, `spec`, `vis`,
-  `codemode`; `[]` turns them all off) and `subagent_profile` (an id in this computer's subagent
+  `codemode`, never `memory` (§chat.memory/where); `[]` turns them all off) and `subagent_profile` (an id in this computer's subagent
   profiles, or `off`; the project overseer's `sova_list_subagent_profiles` lists them). There is no
   ceiling: any mode, any minor modes and any profile are taken. On a start, what the call names
   replaces that part of this computer's default and the rest is the default's; a named profile is

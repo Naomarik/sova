@@ -1,7 +1,7 @@
 /**
- * The `/usage` command's arguments, through the extension's own handler: `reset-day ollama
- * <1-31|clear>` writes usage-windows.json in any session, before the TUI check, and plain `/usage`
- * outside the TUI keeps its old answer. pi-tui is stubbed (it isn't installed beside pi-config).
+ * The `/usage` command's arguments, through the extension's own handler: it takes none, any
+ * argument gets its usage line in any session (and writes nothing, a stale usage-windows.json
+ * included), and plain `/usage` outside the TUI keeps its old answer. pi-tui is stubbed (it isn't installed beside pi-config).
  */
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
@@ -37,20 +37,16 @@ function harness(mode: string) {
 
 const file = path.join(AGENT, "usage-windows.json");
 
-test("/usage reset-day ollama <n|clear> writes the file in a session without the TUI", async () => {
-	const { usage, ctx, notes } = harness("rpc");
-	await usage.handler("reset-day ollama 14", ctx);
-	assert.deepEqual(JSON.parse(fs.readFileSync(file, "utf8")), { version: 1, ollama: { resetDay: 14 } });
-	await usage.handler("reset-day ollama 0", ctx);
-	await usage.handler("reset-day ollama clear", ctx);
-	assert.deepEqual(JSON.parse(fs.readFileSync(file, "utf8")), { version: 1 });
-	await usage.handler("nonsense", ctx);
-	assert.deepEqual(notes, [
-		["Ollama Cloud resets on day 14 of each month.", "info"],
-		["Usage: /usage reset-day ollama <1-31|clear>", "warning"],
-		["Ollama Cloud's reset day is cleared.", "info"],
-		["Usage: /usage [reset-day ollama <1-31|clear>]", "warning"],
-	]);
+test("/usage with any argument says its usage, opens nothing and leaves usage-windows.json alone", async () => {
+	const stale = JSON.stringify({ version: 1, ollama: { resetDay: 14 } });
+	fs.writeFileSync(file, stale);
+	for (const mode of ["rpc", "tui"]) {
+		const { usage, ctx, notes } = harness(mode);
+		await usage.handler("reset-day ollama 14", ctx);
+		await usage.handler("nonsense", ctx);
+		assert.deepEqual(notes, [["Usage: /usage", "warning"], ["Usage: /usage", "warning"]]);
+	}
+	assert.equal(fs.readFileSync(file, "utf8"), stale);
 });
 
 test("plain /usage outside the TUI still says it needs the TUI", async () => {
@@ -59,9 +55,7 @@ test("plain /usage outside the TUI still says it needs the TUI", async () => {
 	assert.deepEqual(notes, [["The /usage screen requires Pi's interactive TUI.", "warning"]]);
 });
 
-test("/usage completes its arguments", () => {
+test("/usage offers no argument completions", () => {
 	const { usage } = harness("tui");
-	assert.deepEqual(usage.getArgumentCompletions("re")?.map((i: { value: string }) => i.value), ["reset-day ollama ", "reset-day ollama clear"]);
-	assert.deepEqual(usage.getArgumentCompletions("reset-day ollama c")?.map((i: { value: string }) => i.value), ["reset-day ollama clear"]);
-	assert.equal(usage.getArgumentCompletions("x"), null);
+	assert.equal(usage.getArgumentCompletions, undefined);
 });

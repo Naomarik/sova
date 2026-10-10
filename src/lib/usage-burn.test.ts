@@ -123,11 +123,11 @@ test("the 5-hour window: per hour, a countdown, and the previous window whenever
   assert.deepEqual(burnLines({ ...z, burn: zb }, NOW).map(text), ["≈11%/h · on pace for 55% at reset · last window 41% (19% by this point)"]);
 });
 
-test("a declared Ollama month: its own span; the recent 3 days join the first line and the last month takes the second", () => {
+test("a month with its own span (as older history recorded Ollama's): the recent 3 days join the first line and the last month takes the second", () => {
   const start = Date.parse("2026-10-01T00:00:00Z");
   const end = Date.parse("2026-10-31T00:00:00Z");
   const now = start + (11 * D + 8 * H);
-  const w: UsageWindow = { label: "month", pct: 34, startsAt: iso(start), resetsAt: iso(end), declared: true };
+  const w: UsageWindow = { label: "month", pct: 34, startsAt: iso(start), resetsAt: iso(end) };
   const prev = { startsAt: Date.parse("2026-09-01T00:00:00Z"), resetsAt: start };
   const share = (now - start) / (end - start);
   const h: BurnHistory = {
@@ -137,7 +137,7 @@ test("a declared Ollama month: its own span; the recent 3 days join the first li
   };
   const b = windowBurn(w, now, h, { series: "ollama", window: "month" })!;
   assert.deepEqual(burnLines({ ...w, burn: b }, now).map(text), ["≈3%/day · on pace for 90% at reset · last 3 days ≈4%/day", "Last month 72% (27% by this point)"]);
-  // With no reset day the month has no span: a rate over history only.
+  // Ollama's legacy month has no span: a rate over history only.
   const bare: UsageWindow = { label: "month", pct: 34 };
   assert.equal(windowBurn(bare, now, none, { series: "ollama", window: "month" }), null, "no history yet");
   const nb = windowBurn(bare, now, { current: [{ t: now - 5 * D, pct: 19 }], previous: null, since: null }, { series: "ollama", window: "month" })!;

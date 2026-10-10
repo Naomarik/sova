@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { usageProvider, withBurn, withDeclaredReset } from "./insights";
+import { usageProvider, withBurn } from "./insights";
 import { readingsOf } from "./usage-history";
 import { fetchOllamaPair, normalizeOllama, type CacheFile } from "../pi-config/extensions/usage-status/fetch.ts";
 const at = Date.parse("2026-03-03T12:00:00Z");
@@ -18,7 +18,6 @@ test("server validates persisted modern readings and keeps independent times/err
  assert.equal(p.activity!.data!.totals.input_tokens, 12);
  assert.equal(p.activity!.data!.totals.cached_input_tokens, 5);
  assert.ok(!JSON.stringify(p).includes("discard"));
- assert.deepEqual(withDeclaredReset(p, 14, at).windows, []);
  assert.deepEqual(withBurn(p, "ollama", at), p);
 });
 
@@ -51,13 +50,12 @@ test("persisted activity requires requests and a boolean partial flag, independe
  assert.equal(legacyMetrics.activity!.data!.buckets[0]!.usage_usd, undefined);
 });
 
-test("legacy cache percent remains a declared monthly window, authoritative provider periods supersede saved reset days", () => {
+test("legacy cache percent remains a monthly window with no reset; an authoritative provider period supersedes it", () => {
  const old = usageProvider("ollama", { state: "ok", usedPct: 42 }, undefined);
  assert.deepEqual(old.windows, [{ label: "month", pct: 42 }]);
- assert.equal(withDeclaredReset(old, 14, at).windows[0]!.declared, true);
  const modern = usageProvider("ollama", { state: "ok", usedPct: 42, credits: { data: credits, fetchedAt: at } }, undefined);
  assert.deepEqual(modern.windows, []);
- assert.equal(withDeclaredReset(modern, 14, at).credits!.data!.included!.period!.until, "2026-04-01T00:00:00.000Z");
+ assert.equal(modern.credits!.data!.included!.period!.until, "2026-04-01T00:00:00.000Z");
  const zero = usageProvider("ollama", { state: "ok", usedPct: 0 }, undefined);
  assert.equal(zero.windows[0]!.pct, 0);
 });
@@ -72,7 +70,7 @@ test("fresh legacy usage survives balance503 in monthly history; usage503 with f
   };
   const result = await fetchOllamaPair(previous, () => stamp, { key: "synthetic-key", request });
   const cache: CacheFile = JSON.parse(JSON.stringify({ schemaVersion: 3, fetchedAt: stamp, nextFetchAt: stamp + 150_000, ollama: result.data, errors: result.error ? { ollama: result.error } : {} }));
-  return { cache, samples: readingsOf(cache, { accounts: {}, ollamaMonth: () => ({ startsAt: "2026-03-01T00:00:00Z", resetsAt: "2026-04-01T00:00:00Z" }) }) };
+  return { cache, samples: readingsOf(cache, { accounts: {} }) };
  };
  const reverse = await roundtrip(503, 200);
  assert.equal(reverse.cache.errors.ollama, "ollama activity HTTP 503");
@@ -81,7 +79,7 @@ test("fresh legacy usage survives balance503 in monthly history; usage503 with f
  const fresh = await roundtrip(200, 503);
  assert.equal(fresh.cache.errors.ollama, "ollama balance HTTP 503");
  assert.equal(fresh.cache.ollama!.state, "ok");
- assert.deepEqual(fresh.samples, [{ series: "ollama", window: "month", label: "month", t: stamp, pct: 37.5, startsAt: Date.parse("2026-03-01T00:00:00Z"), resetsAt: Date.parse("2026-04-01T00:00:00Z") }], "balance failure must not suppress a successful legacy usage sample");
+ assert.deepEqual(fresh.samples, [{ series: "ollama", window: "month", label: "month", t: stamp, pct: 37.5 }], "balance failure must not suppress a successful legacy usage sample");
 });
 
 test("legacy history uses validated usage-endpoint time, rejects retained or malformed status, and supports old caches", () => {
@@ -98,7 +96,7 @@ test("legacy history uses validated usage-endpoint time, rejects retained or mal
 
 test("activity dollars and authoritative credits never enter percentage history, including mixed/old-looking caches", () => {
  const cache = (ollama: unknown) => ({ fetchedAt: at, nextFetchAt: at + 150_000, errors: {}, ollama }) as CacheFile;
- const samples = (o: unknown) => readingsOf(cache(o), { accounts: {}, ollamaMonth: () => ({ startsAt: "2026-03-01T00:00:00Z", resetsAt: "2026-04-01T00:00:00Z" }) });
+ const samples = (o: unknown) => readingsOf(cache(o), { accounts: {} });
  assert.deepEqual(samples({ state: "na", activity: { data: activity, fetchedAt: at } }), []);
  assert.deepEqual(samples({ state: "na", credits: { data: credits, fetchedAt: at } }), []);
  assert.deepEqual(samples({ state: "ok", usedPct: 42, credits: { data: credits, fetchedAt: at } }), []);

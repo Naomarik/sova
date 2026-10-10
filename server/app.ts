@@ -45,7 +45,7 @@ import { addWebSession } from "./web-sessions";
 import { draftForClient, setDraft } from "./drafts";
 import { worktreeInsights } from "./worktrees";
 import { DiffError, gitDiffs, scopeFromQuery } from "./git-diff";
-import { getAgentsInsight, getHiddenWorkers, getSessionInsight, setInsightLinks, getUsageHistory, getUsageInsight, getUsageStrip, refreshUsageInsight, setUsageResetDay } from "./insights";
+import { getAgentsInsight, getHiddenWorkers, getSessionInsight, setInsightLinks, getUsageHistory, getUsageInsight, getUsageStrip, refreshUsageInsight } from "./insights";
 import { registerUsageRoutes } from "./usage-routes";
 import { archiveSession, cleanupSessions, getSessionSummary, idOf, listCwds, listSessionFiles, listSessions, onSessionArchived } from "./sessions-index";
 import { cleanSessionTitle, readSessionTitleRecords, SESSION_TITLE_MAX, setSessionTitle } from "./session-titles";
@@ -1209,22 +1209,6 @@ export function buildApp(deps: AppDeps) {
       return c.json(await refreshUsageInsight());
     } catch (err) {
       return c.json({ error: (err as Error).message || "usage refresh failed" }, 502);
-    }
-  });
-
-  // Ollama Cloud's declared reset day (usage-windows.json); answers with the whole usage payload.
-  app.put("/api/insights/usage/reset-day", async (c) => {
-    let body: unknown;
-    try {
-      body = await c.req.json();
-    } catch {
-      return c.json({ error: "Invalid JSON" }, 400);
-    }
-    try {
-      const out = await setUsageResetDay(body);
-      return "error" in out ? c.json(out, 400) : c.json(out);
-    } catch (err) {
-      return c.json({ error: (err as Error).message || "couldn't save the reset day" }, 500);
     }
   });
 

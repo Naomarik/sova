@@ -70,7 +70,6 @@ import type {
   UsageHistory,
   UsageHistoryStrip,
   UsageInsight,
-  UsageResetDayRequest,
   WebSettings,
   AlignSettingsInfo,
   WorktreesInsight,
@@ -897,9 +896,6 @@ export const fetchUsageHistory = (series: string, window: string, at: number | n
 /** A 5-hour meter's strip: its last 30 days of closed windows, summaries only (§app.insights/usage-burn). */
 export const fetchUsageStrip = (series: string, window: string) =>
   request<UsageHistoryStrip>(`/api/insights/usage/history?series=${encodeURIComponent(series)}&window=${encodeURIComponent(window)}&strip=1`);
-/** Ollama Cloud's declared reset day (1..31, or null to clear; §app.insights/usage-reset-day): answers with the whole usage payload. */
-export const putUsageResetDay = (day: number | null) =>
-  request<UsageInsight>("/api/insights/usage/reset-day", { method: "PUT", body: JSON.stringify({ provider: "ollama", day } satisfies UsageResetDayRequest) });
 
 export const fetchAgents = () => request<AgentsInsight>("/api/insights/agents");
 

@@ -17,7 +17,6 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { ClaudeLogins, DEFAULT_LOGIN_ID, planLabel, recordedLogin } from "../claude-code/accounts.ts";
 import { type CacheFile, type ClaudeData, describeErrors, errMessage, firstReadyLogin, refreshCache, type Window } from "./fetch";
-import { monthlyWindow, readUsageWindows, runResetDay } from "./windows.ts";
 import { ollamaCompact, ollamaDetail } from "./ollama-presentation.ts";
 
 const HOME = os.homedir();
@@ -208,17 +207,12 @@ function renderUsageScreen(
 		const oRows: string[] = [];
 		if (o) oRows.push(...ollamaDetail(o, now).map((s) => dim(s)));
 		if (o?.state === "ok" && !o.activity?.data && !o.credits?.data?.included?.period) {
-			// The month's reset is the user's declared day (usage-windows.json), never Ollama's answer.
-			const day = readUsageWindows().ollama?.resetDay;
-			oRows.push(windowRow("monthly", { pct: o.usedPct, resetsAt: day ? monthlyWindow(day, now).resetsAt : undefined }) + (day ? dim("  (set)") : ""));
+			// A legacy percent reports no reset, and none is derived.
+			oRows.push(windowRow("monthly", { pct: o.usedPct }));
 		}
 		else if (o?.state === "nokey") oRows.push(note("no key"));
 		else if (o?.state === "badkey") oRows.push(note("bad key", "warning"));
 		else if (o?.state === "na" && !oRows.length) oRows.push(note("n/a"));
-		if (o?.activity?.data && !o.credits?.data?.included?.period) {
-			const day = readUsageWindows().ollama?.resetDay;
-			if (day) oRows.push(dim(`Declared subscription reset: ${monthlyWindow(day, now).resetsAt} (set)`));
-		}
 		block("Ollama Cloud", undefined, Boolean(o), o?.activity || o?.credits ? undefined : errors.ollama, oRows);
 
 		const x = cache.openai;
@@ -698,21 +692,12 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	const USAGE_ARGS = ["reset-day ollama ", "reset-day ollama clear"];
 	pi.registerCommand("usage", {
-		description: "Show Ollama Cloud / OpenAI Codex / Claude / Z.ai / DeepSeek usage detail with reset times and balances; or: reset-day ollama <1-31|clear>",
-		getArgumentCompletions: (argumentPrefix) => {
-			const items = USAGE_ARGS.filter((value) => value.startsWith(argumentPrefix.trimStart())).map((value) => ({ value, label: value.trim() }));
-			return items.length > 0 ? items : null;
-		},
+		description: "Show Ollama Cloud / OpenAI Codex / Claude / Z.ai / DeepSeek usage detail with reset times and balances",
 		handler: async (args, ctx) => {
-			// Arguments first, before the TUI check: `/usage reset-day` works in any session.
-			const arg = args.trim();
-			if (arg) {
-				const reset = /^reset-day(?:\s+(.*))?$/i.exec(arg);
-				const r = reset ? runResetDay(reset[1] ?? "") : { message: "Usage: /usage [reset-day ollama <1-31|clear>]", level: "warning" as const };
-				ctx.ui.notify(r.message, r.level);
-				if (reset) footerTui?.requestRender();
+			// It takes no argument, in any session.
+			if (args.trim()) {
+				ctx.ui.notify("Usage: /usage", "warning");
 				return;
 			}
 			if (ctx.mode !== "tui") {

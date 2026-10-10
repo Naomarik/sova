@@ -10,7 +10,7 @@ const { UsageRow } = await importSsr(new URL("../components/UsageView.tsx", impo
 const now = Date.parse("2026-03-03T12:00:00Z");
 const from = "2026-03-01T00:00:00Z", until = "2026-03-03T12:00:00Z";
 const p = (extra: Partial<UsageProvider> = {}): UsageProvider => ({ id: "ollama", state: "na", windows: [], activity: { fetchedAt: now, data: { range: "7d", scope: "self", from, until, totals: { request_count: 9, input_tokens: 12, cached_input_tokens: 5 }, buckets: [{ from, until: "2026-03-02T00:00:00Z", usage_usd: 0, partial: false }, { from: "2026-03-03T00:00:00Z", until, usage_usd: 1.25, partial: true }] } }, credits: { fetchedAt: now, data: { included: { balance_usd: 8, allowance_usd: 17, period: { from, until: "2026-04-01T00:00:00Z" } }, purchased: { balance_usd: 3 } } }, ...extra });
-const draw = (value: UsageProvider, resetDay?: unknown) => renderToString(() => solid.createComponent(UsageRow, { p: value, now, resetDay }));
+const draw = (value: UsageProvider) => renderToString(() => solid.createComponent(UsageRow, { p: value, now }));
 const words = (html: string) => html.replace(/<!--.*?-->/g, "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ");
 
 const iso = (ms: number) => new Date(ms).toISOString();
@@ -52,18 +52,20 @@ test("rendered modern Usage card shows independent authoritative included/purcha
  assert.ok(!text.includes("undefined"));
 });
 
-test("rendered stale balance does not borrow fresh activity time; provider period is not overwritten by saved reset day", () => {
+test("rendered stale balance does not borrow fresh activity time; no declared reset or reset-day control in any case", () => {
  const value = p();
  value.credits = { ...value.credits!, fetchedAt: now - 60_000, error: "ollama balance HTTP 503" };
- const text = words(draw(value, { day: 14, save: async () => {} }));
+ const text = words(draw(value));
  assert.ok(text.includes(`Previous reading · as of ${stampTime(now - 60_000, now)} · ollama balance HTTP 503`));
  assert.ok(text.includes(`Activity As of ${stampTime(now, now)} `));
  assert.ok(!text.includes("Declared subscription reset"), "provider period is authoritative");
- const only = words(draw(p({ credits: undefined }), { day: 14, save: async () => {} }));
+ const bare = draw(p({ credits: undefined }));
+ const only = words(bare);
  assert.match(only, /Included remaining Unknown/);
  assert.match(only, /Purchased remaining Unknown/);
- assert.match(only, /Declared subscription reset: day 14 of each month/);
- assert.match(draw(p({ credits: undefined }), { day: null, save: async () => {} }), /<div class="meter-context usage-declared-reset">/, "the inline form has a flow-content parent, never a paragraph");
+ assert.ok(!/Declared subscription reset|Reset day|usage-reset-day|usage-declared-reset/.test(bare), "no reset-day line or control without a provider period");
+ const legacy = draw(p({ state: "ok", windows: [{ label: "month", pct: 42 }], activity: undefined, credits: undefined }));
+ assert.ok(!/Reset day|usage-reset-day|Resets /.test(legacy), "a legacy month has no reset line and no Set control");
 });
 
 test("rendered zero allowance/missing amounts have no fabricated percent; legacy still has the original monthly meter", () => {

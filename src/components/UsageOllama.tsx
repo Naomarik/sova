@@ -1,5 +1,6 @@
 import { createSignal, For, onCleanup, Show } from "solid-js";
 import type { UsageProvider } from "../../shared/protocol";
+import { calendarDay, clockTime, dateClock, stampTime } from "../lib/format";
 import { activityMetrics, activityTrend, currentIncluded, endpointPrevious, includedCreditPct, reportedMoney } from "../lib/ollama-usage";
 
 /** Ollama's declared reset day on its card: the day (null: none set) and how to save one. */
@@ -147,13 +148,26 @@ function DailyBars(props: { days: ReturnType<typeof activityTrend> }) {
   );
 }
 
-/** "{from} → {until} UTC": each bound on one line, so a wrap falls at the arrow. */
-function Period(props: { from: string; until: string }) {
+/** A local time with its exact ISO in `title`, on one line: the stamp ("12:00 PM", "Oct 8 3:12
+    PM"), or with `date` the date always shown ("Oct 1 3:30 PM"). Raw text when unreadable. */
+function Time(props: { iso: string; now: number; date?: boolean }) {
+  const text = () => (props.date ? dateClock(props.iso, props.now) : stampTime(props.iso, props.now)) || props.iso;
+  return <time class="usage-period" datetime={props.iso} title={props.iso}>{text()}</time>;
+}
+
+/** "{from} → {until}" in local time: each bound on one line, so a wrap falls at the arrow. */
+function Period(props: { from: string; until: string; now: number }) {
   return (
     <>
-      <span class="usage-period">{props.from}</span> → <span class="usage-period">{props.until}</span> UTC
+      <Time iso={props.from} now={props.now} date /> → <Time iso={props.until} now={props.now} date />
     </>
   );
+}
+
+/** A daily-list entry's day: its UTC calendar date, plus a split day's local bucket clock. */
+function dayLabel(b: { date: string; from: string }, now: number): string {
+  const day = calendarDay(b.date.slice(0, 10), now);
+  return b.date.length > 10 ? `${day} ${clockTime(b.from)}` : day;
 }
 
 /**
@@ -166,7 +180,7 @@ export function OllamaLines(props: { p: UsageProvider; now: number; resetDay?: R
   const credits = () => props.p.credits;
   const period = () => credits()?.data?.included?.period;
   const previousCredits = () => endpointPrevious(credits(), props.now) || (!!period() && (Date.parse(period()!.from) > props.now || Date.parse(period()!.until) <= props.now));
-  const time = (t: number | undefined) => (t === undefined ? "time unknown" : new Date(t).toISOString());
+  const asOf = (t: number | undefined) => (t === undefined ? "time unknown" : <Time iso={new Date(t).toISOString()} now={props.now} />);
   const trend = () => (activity()?.data ? activityTrend(activity()!.data!) : []);
   return (
     <>
@@ -190,7 +204,7 @@ export function OllamaLines(props: { p: UsageProvider; now: number; resetDay?: R
               <h3 id="u-ollama-credits" class="text-heading-s">Included credits</h3>
               <p class="usage-caption text-caption text-muted">
                 {previousCredits() ? "Previous reading · as of " : "As of "}
-                <span class="usage-period">{time(r().fetchedAt)}</span>
+                {asOf(r().fetchedAt)}
                 <Show when={r().error}> · {r().error}</Show>
               </p>
               <div class="meter">
@@ -209,8 +223,8 @@ export function OllamaLines(props: { p: UsageProvider; now: number; resetDay?: R
                 </Show>
                 <Show when={period()} fallback={<p class="meter-context">Included period: Unknown</p>}>
                   {(p) => (
-                    <p class="meter-context text-mono">
-                      <Period from={p().from} until={p().until} /> · end exclusive
+                    <p class="meter-context">
+                      <Period from={p().from} until={p().until} now={props.now} /> · end exclusive
                     </p>
                   )}
                 </Show>
@@ -221,7 +235,7 @@ export function OllamaLines(props: { p: UsageProvider; now: number; resetDay?: R
                 {(k) => (
                   <p class="meter-context">
                     {k === "session" ? "Session" : "Weekly"}: {r().data![k]!.remaining_percent}% remaining
-                    <Show when={r().data![k]!.resets_at}> · resets {r().data![k]!.resets_at}</Show>
+                    <Show when={r().data![k]!.resets_at}>{(at) => <> · resets <Time iso={at()} now={props.now} /></>}</Show>
                   </p>
                 )}
               </For>
@@ -236,11 +250,11 @@ export function OllamaLines(props: { p: UsageProvider; now: number; resetDay?: R
               <h3 id="u-ollama-activity" class="text-heading-s">Activity</h3>
               <p class="usage-caption text-caption text-muted">
                 {endpointPrevious(r(), props.now) ? "Previous reading · as of " : "As of "}
-                <span class="usage-period">{time(r().fetchedAt)}</span>
+                {asOf(r().fetchedAt)}
                 <Show when={r().error}> · {r().error}</Show>
               </p>
               <Show when={r().data}>
-                {(a) => <p class="meter-context text-mono"><Period from={a().from} until={a().until} /> · end exclusive · {a().scope}</p>}
+                {(a) => <p class="meter-context"><Period from={a().from} until={a().until} now={props.now} /> · end exclusive · {a().scope}</p>}
               </Show>
             </header>
             <Show when={r().data}>
@@ -257,7 +271,7 @@ export function OllamaLines(props: { p: UsageProvider; now: number; resetDay?: R
                   <For each={trend()}>
                     {(b) => (
                       <li title={`${b.from} → ${b.until} UTC`}>
-                        <span class="text-mono">{b.date}</span> · {reportedMoney(b.usd)}
+                        {dayLabel(b, props.now)} · {reportedMoney(b.usd)}
                         {b.partial ? " · Partial" : ""}
                       </li>
                     )}

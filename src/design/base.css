@@ -5088,6 +5088,9 @@ a.group-picker-tile[aria-disabled="true"] { cursor: default; color: var(--color-
 .usage-credit-meter { width: 100%; max-width: 18rem; }
 .usage-activity { padding-top: var(--space-4); border-top: var(--stroke-thin) solid var(--color-border); }
 .usage-declared-reset { padding-top: var(--space-3); border-top: var(--stroke-thin) solid var(--color-border); }
+/* The opened day field sits a gap under the "Declared subscription reset" line, not against it. */
+.usage-declared-reset .usage-reset-day-field { margin-top: var(--space-2); }
+.usage-declared-reset .usage-reset-day-error { margin-top: var(--space-1); }
 .usage-row .usage-logins { grid-area: logins; }
 .usage-row-auth { grid-area: auth; }
 /* The number reads first: weight, not size or hue. */

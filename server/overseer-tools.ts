@@ -56,6 +56,7 @@ import { listPlaybooks } from "./playbooks";
 import { keyOf, singletonRunningText, titleCase } from "../shared/profiles";
 import { linkedPlaybook, missingPlaybookText, playbookTurnText } from "../shared/playbooks";
 import { MEMORY_CODING_REFUSAL } from "../shared/memory";
+import { alignDropRefusal } from "./project-coding-mode";
 
 export { renderTranscript, sessionRef };
 
@@ -1313,6 +1314,9 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
       execute: act("sova_set_session", async (p) => {
         if (Array.isArray(p.minor_modes) && p.minor_modes.includes("memory")) throw new Refusal(`${MEMORY_CODING_REFUSAL}. Nothing was changed.`);
         const s = await resolveWritable(p.session);
+        // A session waiting on the user's alignment answers keeps align on (§app.project-overseer/coding-mode): checked first.
+        const drop = alignDropRefusal(!!s.align, p.minor_modes);
+        if (drop) throw new Refusal(`${drop} Nothing was changed.`);
         if (p.subagent_profile !== undefined) await checkSubagentProfile(p.subagent_profile);
         // The sandbox is checked before anything changes: lowering it needs this turn to be the user's
         // click on a card that lists this session (§app.overseer/tools), never an approval for later.

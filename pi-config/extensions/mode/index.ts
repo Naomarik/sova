@@ -110,7 +110,7 @@ import { applyModeSection, buildAlignStyleNote, buildModeNote, buildSpecWriterPr
 import { backendsOf, describeChoice, routeAll, routeNotice, routeWriter, slotNotice, usable, type Discovery, type ProfileRoute, type SlotRoute } from "./routing.ts";
 import { SPEC_WRITER_LABEL, specBackends, specKey } from "./spec.ts";
 import { OFF_PROFILE_ID, pickEntryFor, profilesReader, resolveSubagents, restorePick, type ResolvedSubagents } from "../subagents/subagent-profiles.ts";
-import { bashCommands, CensusHook, driftNote, SpecWriteGuard } from "./spec-guard.ts";
+import { bashCommands, CensusHook, driftNote, LANDED_FILE_ENV, SpecWriteGuard, writeLanded } from "./spec-guard.ts";
 import {
 	activeOf,
 	DEFAULT_ALIGN_VIEWER_SHORTCUT,
@@ -896,6 +896,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		remoteTarget: () => remoteTarget,
 		review: () => (reviewOn() ? { reviewer: reviewerSlot, startText: reviewStartText } : undefined),
 		style: () => alignNow().style,
+		specOn: () => hasMinor(active, "spec"),
 	};
 	registerAlignTool(pi, alignHost);
 	/** The align tool's form now registered: review ops, visual fields (re-registered when either changes). */
@@ -1295,13 +1296,19 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	pi.on("tool_call", async (event, ctx) => {
 		if (!specOn() || process.env.PI_SPEC_CENSUS_HOOK === "0") return;
 		await specWrites.before(event.toolCallId, { cwd: ctx.cwd, toolName: event.toolName, input: event.input, signal: ctx.signal });
-		await specCensus.before({ cwd: ctx.cwd, toolName: event.toolName, input: event.input, signal: ctx.signal });
+		await specCensus.before({ id: event.toolCallId, cwd: ctx.cwd, toolName: event.toolName, input: event.input, signal: ctx.signal });
+	});
+
+	// A call blocked or aborted before it ran gets no tool_result: it stops counting as running.
+	pi.on("tool_execution_end", async (event) => {
+		specCensus.close(event.toolCallId);
 	});
 
 	pi.on("tool_result", async (event, ctx) => {
 		if (!specOn() || process.env.PI_SPEC_CENSUS_HOOK === "0") return;
 		const { text: forbidden, lost } = await specWrites.after(event.toolCallId, { cwd: ctx.cwd, toolName: event.toolName, input: event.input, signal: ctx.signal });
 		const { text: census, failure } = await specCensus.after({
+			id: event.toolCallId,
 			cwd: ctx.cwd,
 			orphansSaid: lost,
 			toolName: event.toolName,
@@ -1310,6 +1317,8 @@ export default function modeExtension(pi: ExtensionAPI): void {
 			commands: bashCommands(ctx.sessionManager.getBranch()),
 			sessionStart: ctx.sessionManager.getHeader()?.timestamp,
 		});
+		// A worker on its worktree's own agent dir: its census state, for its parent's landed line.
+		writeLanded(process.env[LANDED_FILE_ENV], specCensus.snapshot());
 		// A failure reaches the model (F12): a census it expected and didn't get must not read as "all clear".
 		const text = [forbidden, driftNote(event.toolName, event.input, event.content), census, failure].filter(Boolean).join("\n");
 		const parent = (event as { parentToolCallId?: unknown }).parentToolCallId;

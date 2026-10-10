@@ -18,7 +18,7 @@
  */
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { posix } from "node:path";
 const { dirname, join, relative } = posix;
 
@@ -132,10 +132,45 @@ export function manifestConflict(view: GitView | undefined): string | undefined 
 	return view?.unmerged?.find((p) => p === `${SPEC_REL}/manifest.json` || p.endsWith(`/${SPEC_REL}/manifest.json`));
 }
 
-/** What to do about a conflicted manifest: the sanctioned command, spelled out. */
-export function manifestConflictNote(top: string, manifest: string, core: string): string {
+/** The spec claim files Git holds in conflict in this view, as top-relative paths. */
+export function claimsConflicts(view: GitView | undefined): string[] {
+	return view?.unmerged?.filter((p) => p.startsWith(`${SPEC_REL}/claims/`) || p.includes(`/${SPEC_REL}/claims/`)) ?? [];
+}
+
+/** The spec directory (top-relative) a conflicted spec path sits in. */
+const specDirOf = (path: string): string => path.slice(0, path.lastIndexOf(`${SPEC_REL}/`) + SPEC_REL.length);
+
+/** The one recovery for a spec conflict a Git merge leaves, in the draft tool's words (its mergeRecovery). */
+export function mergeRecovery(branch: string, specDir: string = SPEC_REL): string {
+	return `take ${branch}'s whole spec with \`git checkout --no-overlay ${branch} -- ${specDir}/manifest.json ${specDir}/claims\` ` +
+		"(never `--ours` and never one file at a time: the merge driver may already have merged the manifest, and the branch's other claim files would then lack their records), " +
+		"commit the merge, promote the branch's drafts again with the same `--id`s (re-record evidence that `status` calls stale; re-apply a draft that is gone in a new draft from current), then commit the claims";
+}
+
+/** The claims merge driver's one-time setup, for a clone where `claimsFile` conflicted without it; what is missing only. */
+export function claimsDriverSetup(core: string, specDir: string, attr: boolean, driver: boolean): string {
+	const steps = [
+		...(attr ? [] : [`add \`${specDir}/claims/**/*.md merge=sova-spec-claims\` to .gitattributes`]),
+		...(driver ? [] : [`run \`git config merge.sova-spec-claims.driver 'node "${join(core, "sova-spec-draft.mjs")}" merge-claims --root . --base %O --ours %A --theirs %B --path %P --write'\` once per clone`]),
+	];
+	return `The merge-claims driver isn't set up here, so claim files merged line by line; to merge them per declaration from now on, ${steps.join(" and ")}.`;
+}
+
+/** What to do about spec files Git holds in conflict: merge-manifest first when the manifest is, then the one recovery. */
+export function specConflictNote(top: string, conflict: { manifest?: string; claims: string[] }, core: string, branch = "master", setup?: string): string {
+	const { manifest, claims } = conflict;
+	const tail = setup ? ` ${setup}` : "";
+	if (!manifest) return `${DIGEST_TAG} ${capped(claims, FILE_CAP)} ${claims.length === 1 ? "is" : "are"} in conflict: ${mergeRecovery(branch, specDirOf(claims[0]))}.${tail}`;
 	const root = join(top, dirname(dirname(dirname(manifest))) === "." ? "" : dirname(dirname(dirname(manifest))));
-	return `${DIGEST_TAG} ${manifest} is in conflict: run \`node "${join(core, "sova-spec-draft.mjs")}" merge-manifest --root ${root} --write --json\` first, then stage it. If it refuses (manifest-conflict): take master's manifest and matching claims (git checkout master -- …), re-apply the branch's spec changes in a new draft, and promote. Never take a side before merge-manifest has run.`;
+	return `${DIGEST_TAG} ${manifest} is in conflict: run \`node "${join(core, "sova-spec-draft.mjs")}" merge-manifest --root ${root} --write --json\` first, then stage it. If it refuses (manifest-conflict), or a claims file is in conflict: ${mergeRecovery(branch, specDirOf(manifest))}. Never take a side before merge-manifest has run.${tail}`;
+}
+
+/** Whether the merge-claims driver routes `claimsFile` in the work tree at `top`: [attribute set, driver configured]. */
+async function claimsDriverState(top: string, claimsFile: string, io: SpecIO, signal?: AbortSignal): Promise<[boolean, boolean]> {
+	const opts = { cwd: top, timeout: TOOL_TIMEOUT_MS, signal };
+	const attr = await io.exec("git", ["check-attr", "merge", "--", claimsFile], opts);
+	const driver = await io.exec("git", ["config", "--get", "merge.sova-spec-claims.driver"], opts);
+	return [attr.code === 0 && attr.stdout.trim().endsWith(": merge: sova-spec-claims"), driver.code === 0 && driver.stdout.trim() !== ""];
 }
 
 /** Whether a rebase is under way in the work tree at `top` (its rebase-merge or rebase-apply dir exists). */
@@ -148,7 +183,7 @@ export async function rebaseUnderway(top: string, io: SpecIO = localIO, signal?:
 	return false;
 }
 
-/** A manifest conflict inside a rebase: merge-manifest is for merges; the rebase itself is the mistake. */
+/** A spec conflict inside a rebase: merge-manifest is for merges; the rebase itself is the mistake. */
 export const REBASE_CONFLICT_NOTE =
 	"A rebase is under way: abort it (`git rebase --abort`) and merge master in instead (never rebase after evidence, PROMOTE.md); run merge-manifest on that merge's conflict.";
 
@@ -323,6 +358,14 @@ export interface CensusState {
 	last?: { head: string | null; files: Record<string, number> };
 	/** Paths changed between the session's calls (another process's), each with its mtime then: kept out of every note. */
 	foreign?: Record<string, number>;
+	/** The session's own changed files the census maps, by spec-root path, with their § ([] = in the boundary, unclaimed): landedLine. */
+	landed?: Record<string, string[]>;
+	/** The § the session ran `sova-spec.mjs read` on (specReads), kept past a bounded command list. */
+	readIds?: string[];
+	/** An edit since the unread line was last weighed: the next call that changes nothing weighs it (unreadStep). */
+	unreadDue?: boolean;
+	/** The landed foreign § the unread line was last weighed for, sorted and joined: the same set stays quiet. */
+	unreadSaid?: string;
 }
 
 /** The digest's once-per-session lines, marked only on the note that printed them. */
@@ -334,6 +377,8 @@ export const freshCensusState = (): CensusState => ({ base: null, top: null, kno
 
 /** One tool call, as the census needs it; no pi types. */
 export interface CensusCall {
+	/** The tool call's id: what lets a call that never ran be closed (CensusHook.close). */
+	id?: string;
 	cwd: string;
 	toolName: string;
 	input: unknown;
@@ -413,6 +458,167 @@ export function digestSaying(v: CensusView, fresh: readonly string[], state: Pic
 	return { text: lines.join("\n"), said };
 }
 
+/**
+ * The session's own files the census maps (`fresh`, plus earlier ones it still lists), by path, with
+ * their §; [] for one in the boundary no claim maps. A file the census no longer lists drops out.
+ */
+export function landedFrom(v: CensusView, fresh: readonly string[], prior: CensusState["landed"]): CensusState["landed"] {
+	const mapped = new Map<string, string[]>();
+	for (const e of v.claimed) mapped.set(e.path, e.claims);
+	for (const p of v.unclaimed ?? []) mapped.set(p, []);
+	for (const e of v.mappedOutside) mapped.set(e.path, e.claims);
+	const out: Record<string, string[]> = {};
+	for (const p of new Set([...Object.keys(prior ?? {}), ...fresh])) {
+		const claims = mapped.get(p);
+		if (claims) out[p] = [...claims];
+	}
+	return Object.keys(out).length ? out : undefined;
+}
+
+export const LANDED_PREFIX = "Spec: this worker's changes landed in ";
+const LANDED_ID_CAP = 5;
+const LANDED_FILE_CAP = 3;
+
+/** A finished worker's one line: the § its own changes landed in, then its unclaimed files; undefined when none landed. */
+export function landedLine(states: Iterable<CensusState | undefined>): string | undefined {
+	const ids: string[] = [], unclaimed: string[] = [];
+	for (const s of states)
+		for (const [p, claims] of Object.entries(s?.landed ?? {})) {
+			if (!claims.length && !unclaimed.includes(p)) unclaimed.push(p);
+			for (const id of claims) if (!ids.includes(id)) ids.push(id);
+		}
+	if (!ids.length && !unclaimed.length) return undefined;
+	return `${LANDED_PREFIX}${ids.length ? capped(ids, LANDED_ID_CAP) : "no claim"}${unclaimed.length ? `; unclaimed: ${capped(unclaimed, LANDED_FILE_CAP)}` : ""}`;
+}
+
+/**
+ * landedLine over a worker's census state file: `{ census?, censuses? }` (a Claude Code worker's hook
+ * state, a pi worker's spec-worker file). Missing or unreadable: undefined.
+ */
+export function readLandedLine(file: string): string | undefined {
+	try {
+		const value = JSON.parse(readFileSync(file, "utf8")) as { census?: CensusState; censuses?: Record<string, CensusState> };
+		const trees: Record<string, CensusState> = { ...value?.censuses };
+		if (value?.census?.top && !trees[value.census.top]) trees[value.census.top] = value.census;
+		return landedLine(Object.values(trees));
+	} catch {
+		return undefined;
+	}
+}
+
+const SPEC_ID = /§[a-z][a-z-]*(?:\.[a-z][a-z-]*)?\/[a-z][a-z-]*/g;
+const READ_VALUE_FLAGS = new Set(["--root", "--spec", "--budget", "--cursor"]);
+
+/**
+ * The § shell commands ran `sova-spec.mjs read` on, by literal id; a read of a `$` reference (a loop's
+ * variable) counts every § the command spells.
+ */
+export function specReads(commands: readonly string[]): string[] {
+	const ids = new Set<string>();
+	for (const command of commands)
+		for (const words of simpleCommands(command)) {
+			const at = words.findIndex((w) => /(?:^|\/)sova-spec\.mjs$/.test(w));
+			if (at < 0 || words[at + 1] !== "read") continue;
+			let arg: string | undefined;
+			for (let i = at + 2; i < words.length && arg === undefined; i++) {
+				if (READ_VALUE_FLAGS.has(words[i]!)) i++;
+				else if (!words[i]!.startsWith("--")) arg = words[i];
+			}
+			if (arg?.startsWith("§")) ids.add(arg);
+			else if (arg?.includes("$")) for (const m of command.matchAll(SPEC_ID)) ids.add(m[0]);
+		}
+	return [...ids].sort();
+}
+
+/** The ranked parts of a `census --changed --related --json`: each foreign touched § in rank order, with the files it lands in. */
+export interface RankedView {
+	rank: { id: string; score: number; stale: string[]; files: string[] }[];
+}
+export function parseRanked(stdout: string): RankedView | undefined {
+	let out: { exit?: unknown; census?: { rank?: unknown; touched?: unknown } | null };
+	try {
+		out = JSON.parse(stdout);
+	} catch {
+		return undefined;
+	}
+	const c = out?.census;
+	if (out?.exit === 2 || !c || !Array.isArray(c.rank) || !Array.isArray(c.touched)) return undefined;
+	const files = new Map<string, string[]>();
+	for (const t of c.touched as { id?: unknown; files?: unknown }[]) if (typeof t?.id === "string" && Array.isArray(t.files)) files.set(t.id, t.files as string[]);
+	return {
+		rank: (c.rank as { id?: unknown; score?: unknown; stale?: unknown }[])
+			.filter((r) => typeof r?.id === "string")
+			.map((r) => ({ id: r.id as string, score: typeof r.score === "number" ? r.score : 0, stale: Array.isArray(r.stale) ? (r.stale as string[]) : [], files: files.get(r.id as string) ?? [] })),
+	};
+}
+
+export const UNREAD_PREFIX = "Unread § your change landed in: ";
+const READ_FIRST = 5;
+
+/**
+ * The unread line over the ranked census, the session's own files and its reads: the landed foreign §
+ * in rank order, at most 5 marked read first (a score or a stale literal), the rest counted with the command that lists them. → {key, text?}:
+ * key is the landed set (unreadSaid); no text when none landed or every one was read.
+ */
+export function unreadLine(v: RankedView, own: ReadonlySet<string>, read: ReadonlySet<string>, command = "census --changed --related"): { key: string; text?: string } {
+	const landed = v.rank.filter((r) => r.files.some((f) => own.has(f)));
+	const key = landed.map((r) => r.id).sort().join(",");
+	const unread = landed.filter((r) => !read.has(r.id));
+	if (!unread.length) return { key };
+	const first = unread.filter((r) => r.score > 0 || r.stale.length).slice(0, READ_FIRST);
+	const more = unread.length - first.length;
+	const shown = (r: RankedView["rank"][number]) => (r.stale.length ? `${r.id} (still states ${r.stale.join(", ")})` : r.id);
+	const rest = !first.length ? `${more} unread: ${command}` : more ? `; +${more} more: ${command}` : "";
+	return { key, text: `${DIGEST_TAG} ${UNREAD_PREFIX}${first.length ? `read first ${first.map(shown).join(", ")}` : ""}${rest}` };
+}
+
+/** The census the unread line came from, as a shell command printing every § it lists (human output: --json dropped). */
+function unreadCommand(args: string[]): string {
+	const q = (a: string) => (/^[\w@%+=:,./-]+$/.test(a) ? a : `'${a.replace(/'/g, "'\\''")}'`);
+	return `node "$core/sova-spec.mjs" ${args.filter((a) => a !== "--json").map(q).join(" ")}`;
+}
+
+/**
+ * The first call after the session's last edit: run the ranked census once and say the unread line,
+ * unless the landed set is the one last weighed. Clears unreadDue either way.
+ */
+async function unreadStep(next: CensusState, call: CensusCall, view: GitView, core: string, io: SpecIO): Promise<{ state: CensusState; result: CensusResult }> {
+	next.unreadDue = false;
+	const root = await findSpecRoot(call.cwd, (p) => io.exists(p));
+	const tool = join(core, "sova-spec.mjs");
+	if (!root || !next.landed || !(await io.exists(tool))) return { state: next, result: {} };
+	const own = new Set(Object.keys(next.landed));
+	for (const p of foreignUnder(next, view.top, root)) own.delete(p);
+	if (!own.size) return { state: next, result: {} };
+	const spec = await pickDraft(root, call.commands ?? [], call.sessionStart, io);
+	const run = async (draft?: string) => {
+		const args = [tool, "census", "--changed", "--related", "--json", "--root", root, ...(next.base ? ["--base", next.base] : []), ...(next.ownBases ?? []).flatMap((rev) => ["--own-base", rev]), ...(draft ? ["--spec", draft] : [])];
+		const r = await io.exec("node", args, { cwd: root, timeout: TOOL_TIMEOUT_MS, signal: call.signal });
+		return { view: parseRanked(r.stdout), r, args };
+	};
+	let r = await run(spec);
+	if (!r.view && spec) r = await run(); // an unreadable draft: the current spec still maps the files
+	if (!r.view) return failed(next, r.r.stdout.trim() ? "unusable census output" : `the census produced no output (${silentCause(r.r)})`);
+	const line = unreadLine(r.view, own, new Set(next.readIds ?? []), unreadCommand(r.args.slice(1)));
+	if (line.key === next.unreadSaid) return { state: next, result: {} };
+	next.unreadSaid = line.key;
+	return { state: next, result: line.text ? { text: line.text } : {} };
+}
+
+/** The env var naming the file a worker's census state goes to, for its parent's landed line. */
+export const LANDED_FILE_ENV = "SOVA_SPEC_LANDED_FILE";
+
+/** The census state, by tree, where the parent reads it (readLandedLine); a write that fails is skipped. */
+export function writeLanded(file: string | undefined, censuses: Record<string, CensusState>): void {
+	if (!file) return;
+	try {
+		mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
+		const tmp = `${file}.${process.pid}.tmp`;
+		writeFileSync(tmp, JSON.stringify({ censuses }), { mode: 0o600 });
+		renameSync(tmp, file);
+	} catch { /* the parent gets no line; the worker is never stopped */ }
+}
+
 /** A git-top-relative path as the spec root sees it, or undefined outside the root. */
 function underRoot(top: string, root: string, path: string): string | undefined {
 	const rel = relative(top, root);
@@ -422,17 +628,27 @@ function underRoot(top: string, root: string, path: string): string | undefined 
 
 /**
  * One step of the census: look at the tree, and when paths are new since `state`, run the census and
- * return the digest. A manifest.json Git holds in conflict is reported once per conflict, first, with
- * the sanctioned command. Returns the next state (a new object); never throws or rejects.
+ * return the digest. Spec files Git holds in conflict (the manifest, claim files) are reported once per
+ * conflict, first, with the sanctioned command and the one recovery. Returns the next state (a new object); never throws or rejects.
  */
 export async function censusStep(state: CensusState, call: CensusCall, core: string, io: SpecIO = localIO): Promise<{ state: CensusState; result: CensusResult }> {
 	const seen: { view?: GitView } = {};
 	const step = await censusDelta(state, call, core, io, seen);
-	const manifest = manifestConflict(seen.view);
-	if (!manifest || !seen.view) return step.state.conflict ? { state: { ...step.state, conflict: false }, result: step.result } : step;
+	const manifest = manifestConflict(seen.view), claims = claimsConflicts(seen.view);
+	if ((!manifest && !claims.length) || !seen.view) return step.state.conflict ? { state: { ...step.state, conflict: false }, result: step.result } : step;
 	if (step.state.conflict) return step;
-	const rebasing = await rebaseUnderway(seen.view.top, io, call.signal).catch(() => false);
-	const note = rebasing ? `${DIGEST_TAG} ${manifest} is in conflict. ${REBASE_CONFLICT_NOTE}` : manifestConflictNote(seen.view.top, manifest, core);
+	const top = seen.view.top;
+	const rebasing = await rebaseUnderway(top, io, call.signal).catch(() => false);
+	let note: string;
+	if (rebasing) {
+		const files = [...(manifest ? [manifest] : []), ...claims];
+		note = `${DIGEST_TAG} ${capped(files, FILE_CAP)} ${files.length === 1 ? "is" : "are"} in conflict. ${REBASE_CONFLICT_NOTE}`;
+	} else {
+		const branch = (await defaultBranch(top, io).catch(() => undefined)) ?? "master";
+		const [attr, driver] = claims.length ? await claimsDriverState(top, claims[0], io, call.signal).catch((): [boolean, boolean] => [true, true]) : [true, true];
+		const setup = attr && driver ? undefined : claimsDriverSetup(core, specDirOf(claims[0]), attr, driver);
+		note = specConflictNote(top, { manifest, claims }, core, branch, setup);
+	}
 	return { state: { ...step.state, conflict: true }, result: { ...step.result, text: step.result.text ? `${note}\n${step.result.text}` : note } };
 }
 
@@ -453,6 +669,7 @@ async function censusDelta(state: CensusState, call: CensusCall, core: string, i
 			Object.assign(next, freshCensusState(), { base: view.head, top: view.top, known: Object.keys(view.files), last: lookOf(view), ...(ownBases.length ? { ownBases } : {}) });
 			delete next.said;
 			delete next.foreign;
+			delete next.landed;
 			return { state: next, result: {} };
 		}
 		next.last = lookOf(view);
@@ -479,13 +696,23 @@ async function censusDelta(state: CensusState, call: CensusCall, core: string, i
 			const diff = await io.exec("git", ["diff", "--name-only", "-z", next.base, view.head], { cwd: view.top, timeout: TOOL_TIMEOUT_MS, signal: call.signal });
 			if (diff.code === 0) for (const p of diff.stdout.split("\0")) see(p);
 		}
+		// The § this session read so far, by its shell commands (unreadLine).
+		const command = call.toolName.toLowerCase() === "bash" ? (call.input as { command?: unknown } | undefined)?.command : undefined;
+		const reads = specReads([...(call.commands ?? []), ...(typeof command === "string" ? [command] : [])]);
+		if (reads.some((id) => !next.readIds?.includes(id))) next.readIds = [...new Set([...(next.readIds ?? []), ...reads])].sort();
+		// An edit: a path new, changed or gone since the last look, never one another process changed between calls.
+		const before = state.last?.files ?? {};
+		const edited = fresh.length > 0 || Object.keys({ ...before, ...view.files }).some((p) => before[p] !== view.files[p] && !(p in foreign));
+		if (edited) next.unreadDue = true;
+		else if (next.unreadDue) return await unreadStep(next, call, view, core, io);
 		if (!fresh.length) return { state: next, result: {} };
 		next.known.push(...fresh.filter((p) => !next.known.includes(p)));
-		if (ranCensus(call.toolName, call.input)) return { state: next, result: {} };
+		// A bash call that ran the census itself already shows it: no note, but what it changed still lands.
+		const handRun = ranCensus(call.toolName, call.input);
 		const root = await findSpecRoot(call.cwd, (p) => io.exists(p));
 		const tool = join(core, "sova-spec.mjs");
 		if (!root) return { state: next, result: {} };
-		if (!(await io.exists(tool))) return failed(next, "trusted census unavailable");
+		if (!(await io.exists(tool))) return handRun ? { state: next, result: {} } : failed(next, "trusted census unavailable");
 		const census = async (spec?: string) => {
 			const own = (next.ownBases ?? []).flatMap((rev) => ["--own-base", rev]);
 			const args = [tool, "census", "--changed", "--json", "--root", root, ...(next.base ? ["--base", next.base] : []), ...own, ...(spec ? ["--spec", spec] : [])];
@@ -500,10 +727,17 @@ async function censusDelta(state: CensusState, call: CensusCall, core: string, i
 		const spec = await pickDraft(root, call.commands ?? [], call.sessionStart, io);
 		let r = await census(spec);
 		if (!r.view && spec) r = await census(); // an unreadable draft: the current spec still maps the files
-		if (!r.ran || !r.view) return failed(next, !r.ran ? `the census produced no output (${r.silent})` : "unusable census output");
 		const freshRel = fresh.map((p) => underRoot(view.top, root, p)).filter((p): p is string => p !== undefined);
+		const own = r.view && withoutPaths(r.view, foreignUnder(next, view.top, root));
+		if (own) {
+			const landed = landedFrom(own, freshRel, next.landed);
+			if (landed) next.landed = landed;
+			else delete next.landed;
+		}
+		if (handRun) return { state: next, result: {} };
+		if (!r.ran || !r.view || !own) return failed(next, !r.ran ? `the census produced no output (${r.silent})` : "unusable census output");
 		const orphans = (r.view.orphanedEvidence ?? []).filter((e) => !next.orphans?.includes(e.commit));
-		const { text: said, said: printed } = digestSaying(withoutPaths(r.view, foreignUnder(next, view.top, root)), freshRel, next, Boolean(spec));
+		const { text: said, said: printed } = digestSaying(own, freshRel, next, Boolean(spec));
 		if (said) {
 			next.reported = true;
 			next.said = printed;
@@ -631,6 +865,8 @@ export class CensusHook {
 	private states = new Map<string, CensusState>();
 	/** Calls between their before and after: while one runs, what changes may be its own, so nothing is settled. */
 	private open = 0;
+	/** The ids of the open calls that carried one: a call that never ran is closed by id (close). */
+	private pending = new Set<string>();
 	private chain: Promise<unknown> = Promise.resolve();
 	private readonly io: SpecIO;
 	private readonly core: () => string;
@@ -644,6 +880,21 @@ export class CensusHook {
 	reset(): void {
 		this.states = new Map();
 		this.open = 0;
+		this.pending.clear();
+	}
+
+	/** Each work tree's census state, by top: what a worker's landed line is read from. */
+	snapshot(): Record<string, CensusState> {
+		return Object.fromEntries(this.states);
+	}
+
+	/**
+	 * A call that never ran (blocked or aborted before it started): it gets no after, so it stops counting
+	 * as open here, with no census (it changed nothing). A call already closed by after is left alone.
+	 */
+	close(id: string): void {
+		if (!this.pending.delete(id)) return;
+		this.open = Math.max(0, this.open - 1);
 	}
 
 	private async topOf(dir: string, signal?: AbortSignal): Promise<string | undefined> {
@@ -673,6 +924,7 @@ export class CensusHook {
 	/** Take the baseline now (a run's start), so the run's first edit is already a delta; a known tree takes in what changed since. */
 	prime(cwd: string): Promise<CensusResult> {
 		this.open = 0;
+		this.pending.clear();
 		return this.serial(async () => {
 			await this.baseline(cwd, undefined, true);
 			return {};
@@ -687,6 +939,7 @@ export class CensusHook {
 		if (CENSUS_SKIP_TOOLS.has(call.toolName)) return Promise.resolve();
 		const alone = this.open === 0;
 		this.open++;
+		if (call.id) this.pending.add(call.id);
 		return this.serial(async () => {
 			for (const dir of callDirs(call)) await this.baseline(dir, call.signal, alone);
 		}, undefined);
@@ -694,7 +947,8 @@ export class CensusHook {
 
 	after(call: CensusCall): Promise<CensusResult> {
 		if (CENSUS_SKIP_TOOLS.has(call.toolName)) return Promise.resolve({});
-		this.open = Math.max(0, this.open - 1);
+		// A failed call (an error result) is closed here like any other: what it changed is its own.
+		if (!call.id || this.pending.delete(call.id) || !this.pending.size) this.open = Math.max(0, this.open - 1);
 		return this.serial(async () => {
 			const texts: string[] = [];
 			const failures: string[] = [];

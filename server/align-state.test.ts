@@ -235,6 +235,19 @@ describe("SessionSummary.align: only while the session waits on the user, with a
     assert.equal((await summaryOf(path))?.openQuestions, 2);
   });
 
+  test("a message an Overseer sent is never the user's answer: still waiting, with every question open; the user's own reply ends it", async () => {
+    const [three] = calls([{ ops: [{ op: "create", title: "Ports", summary: "Which ports.", questions: [Q("Web"), Q("Api"), Q("Db")] }] }]);
+    const a = result(three, "u1");
+    const sent = (id: string, parentId: string, targetId: string) => ({ type: "custom", id, parentId, customType: "sova-overseer-sent", data: { v: 1, targetId, overseerId: "po-1" } });
+    const path = session("overseer-sent", [a, user("o1", a.id, "Use 4000 for the web, your call on the rest."), sent("m1", "o1", "o1")]);
+    assert.deepEqual(await summaryOf(path), { openDocs: 1, openQuestions: 3, questionDocs: 1, lead: { id: "al_1", title: "Ports" } }, "an Overseer's message keeps the wait");
+    // Unmarked, the same words are the user's: the wait ends.
+    const typed = session("user-typed", [a, user("o1", a.id, "Use 4000 for the web, your call on the rest.")]);
+    assert.equal(await summaryOf(typed), undefined);
+    appendFileSync(path, line(user("u2", "m1", "q1: 4000, q2: your rec, q3: your rec")));
+    assert.equal(await summaryOf(path), undefined, "the operator's own reply ends it");
+  });
+
   test("align off on the branch: nothing can answer them, so nothing counts; on again, it does", async () => {
     const a = result(created, "u1");
     const path = session("align-off", [mode("m0", "u1", ["align"]), { ...a, parentId: "m0" }]);

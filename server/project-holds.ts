@@ -42,7 +42,7 @@ function heldActOf(engine: string, h: Hold): HeldAct {
     goesAt: iso(h.until),
     since: iso(h.since),
     ...(h.by === "overseer" || h.by === "statechart" ? { by: h.by } : {}),
-    ...(h.wait === "hours" ? { wait: "hours" as const, ...(person ? { person } : {}) } : {}),
+    ...(h.wait === "hours" ? { wait: "hours" as const, ...(person ? { person } : {}) } : h.wait === "outage" ? { wait: "outage" as const } : {}),
     ...(h.waiting ? { reviewSince: iso(h.until) } : {}),
   };
 }
@@ -88,7 +88,12 @@ export function heldAttention(): AttentionItem[] {
         tier: "act",
         kind: "held-act",
         since: Date.parse(h.since) || 0,
-        detail: h.wait === "hours" ? `${h.what} waits for ${h.person ?? "the person"}'s working hours: it starts in ${mins} min unless you cancel it.` : `${h.what} starts in ${mins} min unless you cancel it.`,
+        detail:
+          h.wait === "hours"
+            ? `${h.what} waits for ${h.person ?? "the person"}'s working hours: it starts in ${mins} min unless you cancel it.`
+            : h.wait === "outage"
+              ? `${h.what} waits for WhatsApp to come back: it goes when WhatsApp is back, and is not sent if WhatsApp is still down in ${mins} min.`
+              : `${h.what} starts in ${mins} min unless you cancel it.`,
         href: `#/projects/${encodeURIComponent(h.projectId)}`,
         ...(space?.kind === "org" && p
           ? { org: { orgId: space.orgId, orgName: space.orgName, projectId: p.id, projectName: p.name, ...(p.archived ? { projectArchived: true as const } : {}) } }

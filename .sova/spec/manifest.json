@@ -560,7 +560,7 @@
     "§app/new-session-dialog": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "src/components/NewSessionDialog.tsx",
         "src/components/FolderPicker.tsx",
@@ -2401,6 +2401,19 @@
         "pi-config/extensions/claude-code/provider/fork-point.ts"
       ]
     },
+    "§app.worker-restore/failure-reason": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/subagents/runner.ts",
+        "pi-config/extensions/subagents/runner.test.ts",
+        "pi-config/extensions/subagents/README.md"
+      ],
+      "requires": [
+        "§app.worker-restore/worker-record"
+      ]
+    },
     "§app.worker-restore/restore": {
       "kind": "behavior",
       "requires": [
@@ -3118,7 +3131,10 @@
         "server/app.ts",
         "server/outreach/log.ts",
         "server/projects/playbook-review.ts",
-        "server/project-services/deploy-attention.ts"
+        "server/project-services/deploy-attention.ts",
+        "server/outreach/health.ts",
+        "server/project-holds.ts",
+        "server/outreach-health.test.ts"
       ],
       "requires": [
         "§app.overseer/seen"
@@ -3368,7 +3384,9 @@
         "server/overseer-markers.test.ts",
         "server/search-tools-fake.ts",
         "server/test-wait.ts",
-        "server/project-overseer-routes.ts"
+        "server/project-overseer-routes.ts",
+        "server/session-prompt.ts",
+        "server/build-loadout.ts"
       ],
       "requires": [
         "§chat.transcript/message-actions"
@@ -4747,7 +4765,8 @@
         "src/lib/api.ts",
         "server/org-reload.test.ts",
         "server/orgs.ts",
-        "server/org-routes.test.ts"
+        "server/org-routes.test.ts",
+        "src/components/OrgWhatsAppCard.tsx"
       ],
       "requires": [
         "§app.organizations/org-cards",
@@ -4881,7 +4900,7 @@
     "§app.organizations/workspace-repo": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "server/workspace-git.ts",
         "server/orgs.ts",
@@ -5812,7 +5831,13 @@
         "src/lib/coding-worktrees.ts",
         "src/lib/coding-worktrees.test.ts",
         "src/lib/api.ts",
-        "server/build-loadout.ts"
+        "server/build-loadout.ts",
+        "server/overseer-org-tools.ts",
+        "server/overseer-org-tools.test.ts",
+        "server/overseer-tools.ts",
+        "server/overseer-runtime.test.ts",
+        "server/overseer-prompt.md",
+        "server/overseer-org-view.ts"
       ]
     },
     "§app.project-overseer/coding-worktrees": {
@@ -7054,7 +7079,8 @@
         "src/lib/agents-board.ts",
         "src/lib/summary-diff.ts",
         "src/design/base.css",
-        "shared/protocol.ts"
+        "shared/protocol.ts",
+        "server/harness/pi/golden/expected/synthetic/all-types/align-scan.json"
       ],
       "requires": [
         "§chat.alignment/state",
@@ -7453,7 +7479,9 @@
         "server/overseer-org-tools.ts",
         "server/overseer-org-tools.test.ts",
         "server/search-tools-fake.ts",
-        "shared/project-overseer.ts"
+        "shared/project-overseer.ts",
+        "server/project-coding-mode.ts",
+        "server/overseer-prompt.md"
       ],
       "requires": [
         "§app.project-overseer/identity",
@@ -7490,7 +7518,7 @@
     "§app.overseer/org-reads": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "server/overseer-tools.ts",
         "server/overseer-org-view.ts",
@@ -9550,7 +9578,11 @@
         "server/orgs.ts",
         "server/reconcile.ts",
         "server/project-holds.ts",
-        "server/org-history-boot.test.ts"
+        "server/org-history-boot.test.ts",
+        "server/org-host/index.ts",
+        "server/statecharts.ts",
+        "src/lib/pipeline-view.test.ts",
+        "server/outreach.test.ts"
       ],
       "requires": [
         "§app.project-overseer/statecharts",
@@ -10800,7 +10832,8 @@
         "server/outreach.test.ts",
         "server/outreach/sender-test-fixtures.ts",
         "server/outreach-test-fixtures.ts",
-        "server/outreach.integration.test.ts"
+        "server/outreach.integration.test.ts",
+        "server/outreach-numbers.test.ts"
       ]
     },
     "§app.outreach/links": {
@@ -10843,10 +10876,34 @@
         "server/outreach.test.ts",
         "server/outreach/sender-test-fixtures.ts",
         "server/outreach-test-fixtures.ts",
-        "server/outreach.integration.test.ts"
+        "server/outreach.integration.test.ts",
+        "shared/outreach.ts",
+        "server/outreach/core.ts",
+        "server/outreach-numbers.test.ts"
       ],
       "requires": [
         "§app.organizations/workspace-repo"
+      ]
+    },
+    "§app.outreach/org-sender": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/outreach/targets.ts",
+        "server/outreach/routes.ts",
+        "server/outreach/core.ts",
+        "server/outreach/whatsapp.ts",
+        "server/org-engine.ts",
+        "shared/outreach.ts",
+        "src/components/OrgWhatsAppCard.tsx",
+        "src/components/OrgsView.tsx",
+        "src/lib/outreach.ts",
+        "server/outreach-numbers.test.ts"
+      ],
+      "requires": [
+        "§app.outreach/sender-list",
+        "§app.outreach/send"
       ]
     },
     "§app.outreach/secrets": {
@@ -10863,7 +10920,10 @@
         "server/outreach.test.ts",
         "server/outreach/sender-test-fixtures.ts",
         "server/outreach-test-fixtures.ts",
-        "server/outreach.integration.test.ts"
+        "server/outreach.integration.test.ts",
+        "server/outreach/whatsapp.ts",
+        "server/outreach/routes.ts",
+        "server/outreach-numbers.test.ts"
       ],
       "requires": [
         "§app.overseer/tools"
@@ -10895,7 +10955,20 @@
         "server/outreach/log.ts",
         "server/project-overseer.ts",
         "server/project-overseer-tools.ts",
-        "shared/outreach.ts"
+        "shared/outreach.ts",
+        "server/outreach/targets.ts",
+        "server/outreach/health.ts",
+        "server/org-engine.ts",
+        "server/org-host/index.ts",
+        "server/project-holds.ts",
+        "shared/pipeline.ts",
+        "src/lib/pipeline-view.ts",
+        "src/lib/pipeline-view.test.ts",
+        "server/outreach-numbers.test.ts",
+        "statecharts/src/sova/statecharts/engine/core.cljs",
+        "statecharts/src/sova/statecharts/engine/hold_policy.cljc",
+        "statecharts/src/sova/statecharts/placement.cljc",
+        "statecharts/src/sova/statecharts/engine/refit_test.cljs"
       ],
       "requires": [
         "§app.baton/links",
@@ -10936,6 +11009,90 @@
       ],
       "requires": []
     },
+    "§app.outreach/sender-controls": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/outreach/routes.ts",
+        "server/outreach/unit.ts",
+        "server/outreach/relay.ts",
+        "server/outreach/whatsapp.ts",
+        "server/mesh/access.ts",
+        "shared/outreach.ts",
+        "src/components/OutreachSettings.tsx",
+        "src/lib/outreach.ts",
+        "src/lib/outreach.test.ts",
+        "server/outreach-unit.test.ts",
+        "server/outreach.test.ts",
+        "server/outreach-test-fixtures.ts",
+        "server/outreach/sender-test-fixtures.ts"
+      ],
+      "requires": [
+        "§app.outreach/sender-route",
+        "§mesh.peers/grants"
+      ]
+    },
+    "§app.outreach/sender-health": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/outreach/health.ts",
+        "server/outreach/core.ts",
+        "server/outreach/targets.ts",
+        "server/outreach/whatsapp.ts",
+        "server/overseer.ts",
+        "shared/outreach.ts",
+        "shared/protocol.ts",
+        "server/outreach-health.test.ts",
+        "server/outreach.test.ts",
+        "server/outreach-numbers.test.ts"
+      ],
+      "requires": [
+        "§app.overseer/attention-digest"
+      ]
+    },
+    "§app.outreach/sender-link": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/outreach/link.ts",
+        "server/outreach/routes.ts",
+        "server/outreach/whatsapp.ts",
+        "shared/outreach.ts",
+        "src/components/SenderLink.tsx",
+        "src/lib/outreach.ts",
+        "src/lib/qr.ts",
+        "src/lib/outreach.test.ts",
+        "server/outreach-link.test.ts",
+        "services/whatsapp/src/core.mjs"
+      ],
+      "requires": [
+        "§app.outreach/sender"
+      ]
+    },
+    "§app.outreach/sender-list": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/outreach/senders.ts",
+        "server/outreach/targets.ts",
+        "server/outreach/settings.ts",
+        "server/outreach/routes.ts",
+        "server/outreach/whatsapp.ts",
+        "shared/outreach.ts",
+        "src/components/OutreachSettings.tsx",
+        "src/lib/outreach.ts",
+        "src/lib/outreach.test.ts",
+        "server/outreach-link.test.ts"
+      ],
+      "requires": [
+        "§app.outreach/sender-route"
+      ]
+    },
     "§app.outreach/sender-route": {
       "kind": "behavior",
       "authority": "accepted",
@@ -10951,7 +11108,10 @@
         "server/outreach/sender-test-fixtures.ts",
         "server/outreach-test-fixtures.ts",
         "server/outreach.integration.test.ts",
-        "server/app.ts"
+        "server/app.ts",
+        "shared/outreach.ts",
+        "server/outreach/targets.ts",
+        "server/outreach-link.test.ts"
       ],
       "requires": [
         "§mesh.peers/listener"
@@ -10966,7 +11126,11 @@
         "src/lib/outreach.ts",
         "src/components/SettingsDialog.tsx",
         "src/lib/settings-nav.ts",
-        "src/lib/settings-nav.test.ts"
+        "src/lib/settings-nav.test.ts",
+        "src/App.tsx",
+        "src/components/SenderLink.tsx",
+        "src/lib/outreach.test.ts",
+        "src/app.css"
       ],
       "requires": [
         "§app.settings-dialog/save-bar"
@@ -11339,9 +11503,41 @@
         "server/vis-check.test.ts"
       ]
     },
+    "§tools.spec/agree-command": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "requires": [
+        "§tools.spec/agreed-promotion"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+        "pi-config/extensions/spec/tests/agree-command.test.mjs",
+        "pi-config/extensions/spec/DRAFTS.md",
+        "pi-config/extensions/spec/PROMOTE.md",
+        "pi-config/extensions/spec/README.md"
+      ]
+    },
+    "§tools.spec/align-agree": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "requires": [
+        "§tools.spec/agree-command",
+        "§tools.spec/agreed-promotion",
+        "§tools.spec/mode-reading"
+      ],
+      "code": [
+        "pi-config/extensions/mode/align-tool.ts",
+        "pi-config/extensions/mode/index.ts",
+        "pi-config/extensions/mode/tests/agree-turn.mjs",
+        "pi-config/extensions/spec/docs/MODE.md"
+      ]
+    },
     "§tools.spec/census-note": {
       "kind": "behavior",
-      "requires": [],
+      "requires": [
+        "§tools.spec/conflict-recovery",
+        "§tools.spec/git-merge"
+      ],
       "authority": "accepted",
       "evidence": "verified",
       "code": [
@@ -11351,7 +11547,10 @@
         "pi-config/extensions/mode/tests/spec-worker.mjs",
         "pi-config/extensions/claude-code/spec-hooks.test.ts",
         "pi-config/extensions/mode/README.md",
-        "pi-config/extensions/claude-code/README.md"
+        "pi-config/extensions/claude-code/README.md",
+        "pi-config/extensions/mode/spec-worker.ts",
+        "pi-config/extensions/mode/index.ts",
+        "pi-config/extensions/subagents/index.test.ts"
       ]
     },
     "§tools/spec": {
@@ -12154,6 +12353,54 @@
         "server/app.ts"
       ]
     },
+    "§tools.spec/census-rank": {
+      "kind": "behavior",
+      "requires": [
+        "§tools.spec/census-created",
+        "§tools.spec/where-lookup"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/README.md",
+        "pi-config/extensions/spec/core/README.md",
+        "pi-config/extensions/spec/tests/census-rank.test.mjs",
+        "pi-config/extensions/spec/tests/core.test.mjs"
+      ]
+    },
+    "§tools.spec/draft-hygiene": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/draft-output"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+        "pi-config/extensions/spec/DRAFTS.md",
+        "pi-config/extensions/spec/PROMOTE.md"
+      ]
+    },
+    "§tools.spec/git-merge": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/span-promotion",
+        "§tools.spec/conflict-recovery"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/tests/claims-merge.test.mjs",
+        ".gitattributes",
+        "pi-config/extensions/spec/docs/CHANGELOG.md",
+        "pi-config/extensions/spec/PROMOTE.md",
+        "pi-config/extensions/spec/DRAFTS.md",
+        "pi-config/extensions/spec/README.md"
+      ]
+    },
     "§tools.spec/inspection-safety": {
       "kind": "behavior",
       "authority": "accepted",
@@ -12494,7 +12741,7 @@
     "§chat.subagent-profiles/overseer": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "server/overseer-tools.ts",
         "server/overseer-runtime.test.ts",
@@ -13571,6 +13818,20 @@
         "server/runtime-choice.ts",
         "server/runtime-choice.test.ts",
         "server/runtime-choice.integration.test.ts"
+      ]
+    },
+    "§app.server-runtime/pi-workers": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/subagents/pi-invocation.ts",
+        "pi-config/extensions/subagents/pi-invocation.test.ts",
+        "pi-config/extensions/subagents/runner.ts",
+        "pi-config/extensions/subagents/README.md"
+      ],
+      "requires": [
+        "§app.server-runtime/choice"
       ]
     },
     "§app.server-runtime/quirks": {
@@ -15264,6 +15525,26 @@
         "pi-config/extensions/spec/tests/map-fields.test.mjs"
       ]
     },
+    "§tools.spec/unread-landed": {
+      "kind": "behavior",
+      "requires": [
+        "§tools.spec/census-note",
+        "§tools.spec/census-rank",
+        "§tools.spec/no-turn-end-check"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/mode/spec-guard.ts",
+        "pi-config/extensions/mode/spec-guard.test.ts",
+        "pi-config/extensions/claude-code/spec-hooks.test.ts",
+        "pi-config/extensions/mode/spec-mode.md",
+        "pi-config/extensions/mode/README.md",
+        "pi-config/extensions/spec/docs/MODE.md",
+        "pi-config/extensions/spec/README.md",
+        "site/src/content/docs/modes/spec.md"
+      ]
+    },
     "§tools.spec/where-lookup": {
       "kind": "behavior",
       "authority": "accepted",
@@ -15291,6 +15572,7 @@
       "code": [
         "pi-config/extensions/spec/core/sova-spec-draft.mjs",
         "pi-config/extensions/spec/tests/agreed.test.mjs",
+        "pi-config/extensions/spec/tests/agreed-kept.test.mjs",
         "pi-config/extensions/spec/DRAFTS.md",
         "pi-config/extensions/spec/PROMOTE.md"
       ],
@@ -15323,7 +15605,8 @@
         "§tools.spec/frame",
         "§tools.spec/context-packets",
         "§tools.spec/field-promotion",
-        "§tools.spec/census-note"
+        "§tools.spec/census-note",
+        "§tools.spec/agree-command"
       ],
       "authority": "accepted",
       "evidence": "verified",
@@ -16171,6 +16454,21 @@
         "site/src/content/docs/change-direction.md"
       ]
     },
+    "§site.docs/chrome": {
+      "kind": "behavior",
+      "requires": [
+        "§site.docs/frame"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "site/src/layouts/Base.astro",
+        "site/src/components/SiteNav.astro",
+        "site/src/data/site.ts",
+        "site/src/styles/site.css",
+        "site/src/styles/tokens.css"
+      ]
+    },
     "§site.docs/delegate": {
       "kind": "behavior",
       "requires": [
@@ -16197,6 +16495,23 @@
       "evidence": "reviewed",
       "code": [
         "site/src/content/docs/modes/delegate.md"
+      ]
+    },
+    "§site.docs/frame": {
+      "kind": "behavior",
+      "requires": [
+        "§site/docs"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "site/src/pages/docs/[...slug].astro",
+        "site/src/layouts/Docs.astro",
+        "site/src/components/DocsNav.astro",
+        "site/src/data/docs.ts",
+        "site/src/styles/docs.css",
+        "site/src/content.config.ts",
+        "site/astro.config.mjs"
       ]
     },
     "§site.docs/index": {
@@ -16334,6 +16649,7 @@
       "requires": [
         "§tools/spec",
         "§tools.spec/mode-reading",
+        "§tools.spec/align-agree",
         "§tools.spec/census-note",
         "§tools.spec/no-turn-end-check",
         "§tools.spec/review-playbook",
@@ -16909,7 +17225,8 @@
         "pi-config/extensions/spec/core/sova-spec-draft.mjs",
         "pi-config/extensions/spec/PROMOTE.md",
         "pi-config/extensions/spec/DRAFTS.md",
-        "pi-config/extensions/spec/tests/draft.test.mjs"
+        "pi-config/extensions/spec/tests/draft.test.mjs",
+        "pi-config/extensions/spec/tests/claims-merge.test.mjs"
       ]
     },
     "§tools.spec/draft-output": {
@@ -16932,6 +17249,24 @@
         "pi-config/extensions/spec/core/sova-spec.mjs",
         "pi-config/extensions/spec/README.md",
         "pi-config/extensions/spec/tests/census-base.test.mjs"
+      ]
+    },
+    "§tools.spec/worker-landed": {
+      "kind": "behavior",
+      "requires": [
+        "§tools.spec/census-note"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/mode/spec-guard.ts",
+        "pi-config/extensions/mode/spec-worker.ts",
+        "pi-config/extensions/mode/index.ts",
+        "pi-config/extensions/subagents/index.ts",
+        "pi-config/extensions/subagents/README.md",
+        "pi-config/extensions/mode/README.md",
+        "pi-config/extensions/claude-code/README.md",
+        "pi-config/extensions/subagents/tests/spec-landed.mjs"
       ]
     },
     "§tools.spec/write-guard": {
@@ -16976,6 +17311,114 @@
       {
         "path": "site/pnpm-lock.yaml",
         "reason": "generated by pnpm from site/package.json"
+      },
+      {
+        "path": "site/pnpm-workspace.yaml",
+        "reason": "pnpm tooling, not documentation"
+      },
+      {
+        "path": "site/package.json",
+        "reason": "build tooling (dependencies and scripts), not documentation"
+      },
+      {
+        "path": "site/tsconfig.json",
+        "reason": "TypeScript tooling, not documentation"
+      },
+      {
+        "path": "site/.gitignore",
+        "reason": "tooling, not documentation"
+      },
+      {
+        "path": "site/README.md",
+        "reason": "contributor notes for the site, not documentation the site shows"
+      },
+      {
+        "path": "site/brand",
+        "reason": "brand artwork, not documented"
+      },
+      {
+        "path": "site/public",
+        "reason": "static fonts, icons, images and video: assets, not documented"
+      },
+      {
+        "path": "site/scripts",
+        "reason": "screen-capture and generator tooling, not documentation"
+      },
+      {
+        "path": "site/src/generated",
+        "reason": "generated files, not documented"
+      },
+      {
+        "path": "site/src/assets",
+        "reason": "screenshots, not documented"
+      },
+      {
+        "path": "site/src/icons",
+        "reason": "icon artwork, not documented"
+      },
+      {
+        "path": "site/src/pages/index.astro",
+        "reason": "landing/marketing page, not documentation: the spec covers the site's docs only"
+      },
+      {
+        "path": "site/src/pages/mesh.astro",
+        "reason": "landing/marketing page, not documentation: the spec covers the site's docs only"
+      },
+      {
+        "path": "site/src/pages/orgs.astro",
+        "reason": "landing/marketing page, not documentation: the spec covers the site's docs only"
+      },
+      {
+        "path": "site/src/components/mocks",
+        "reason": "demo mock-ups for the landing pages, not documented"
+      },
+      {
+        "path": "site/src/components/screens",
+        "reason": "landing screenshot frames and devices, not documented"
+      },
+      {
+        "path": "site/src/components/Mark.astro",
+        "reason": "the logo, not documented"
+      },
+      {
+        "path": "site/src/components/Icon.astro",
+        "reason": "icon renderer for src/icons, not documented"
+      },
+      {
+        "path": "site/src/components/Frame.astro",
+        "reason": "landing product frame for mock-ups, not documented"
+      },
+      {
+        "path": "site/src/components/Screen.astro",
+        "reason": "landing screenshot component, not documented"
+      },
+      {
+        "path": "site/src/components/ContextRing.astro",
+        "reason": "part of the Mesh page's mock-up, not documented"
+      },
+      {
+        "path": "site/src/components/ThemeGrid.astro",
+        "reason": "landing page's theme showcase, not documented"
+      },
+      {
+        "path": "site/src/components/InstallBlock.astro",
+        "reason": "used only by the landing, Mesh and Organizations pages; no docs page renders it"
+      },
+      {
+        "path": "site/src/data/screens.ts",
+        "reason": "landing screenshots' data, not documented"
+      },
+      {
+        "path": "site/src/data/themes.ts",
+        "reason": "landing theme showcase data, not documented"
+      },
+      {
+        "path": "site/src/styles/mock.css",
+        "reason": "landing frames, devices and mock-ups, not documented"
+      },
+      {
+        "path": "site/src/styles/components.css",
+        "reason": "the mock-ups' design-system subset, not documentation styling"
       }
     ]
   }

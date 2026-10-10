@@ -3196,6 +3196,7 @@ export type AttentionKind =
   | "deploy-failed"       // act tier, never pushed: a deploy target's latest deploy failed, its verify failed or its runner stopped (§app.project-services/deploy-status; no session: `path` "", `href` the project page)
   | "deploy-request"      // act tier, never pushed: an overseer asks the operator to deploy (deploy.request; no session: `path` "", `href` the project page)
   | "outreach-not-sent"   // act tier, never pushed: a project overseer's WhatsApp send was refused or failed (no session: `path` "", `href` the person's page)
+  | "whatsapp-down"       // act tier, pushed (kind `whatsapp-down`): WhatsApp sending is down, logged out, replaced, blocked, unpaired, or unreachable 5 min (§app.outreach/sender-health; no session: `path` "", `href` "#/settings/outreach")
   | "conflict-to-operator" // decide tier, never pushed: an open conflict routed to the operator (or unrouted) with no settle session (no session: `path` "", `href` the project page)
   | "asks-you"        // decide tier: decisions' guess that the last reply of a turn with no open alignment question asks the user something
   | "ready-to-merge"  // decide tier: a worktree is ready, or ready and waiting for the go-ahead (SessionSummary.readiness)
@@ -3237,8 +3238,9 @@ export interface AttentionItem {
     id: string;
     goesAt: number;
     what: string;
-    /** "hours": it waits for a person's working hours (r7), `goesAt` is when their window opens; absent: the hold (r2). */
-    wait?: "hold" | "hours";
+    /** "hours": it waits for a person's working hours (r7), `goesAt` is when their window opens; "outage": a WhatsApp
+        message waits for WhatsApp to come back, `goesAt` is its 24 h bound (then it is not sent); absent: the hold (r2). */
+    wait?: "hold" | "hours" | "outage";
     /** An hours wait's person, by display name. */
     person?: string;
     /** ms epoch: the hold ended and it waits for the overseer to approve it (r8: an act on the project's confirm list); the row's stall clock runs from here. */
@@ -3556,8 +3558,8 @@ export const OVERSEER_BRIEF_PREFIX = "[overseer-brief]";
 
 /** The act-tier kinds a phone notification can be about (server/attention.ts). */
 /** "looping" (Subagent stuck) is retired: a stuck subagent is a decide item, never a blocker. */
-export type PushKind = "needs-input" | "open-questions" | "error" | "baton-needs-you" | "worker-error" | "playbook-review";
-export const PUSH_KINDS: readonly PushKind[] = ["needs-input", "open-questions", "error", "baton-needs-you", "worker-error", "playbook-review"];
+export type PushKind = "needs-input" | "open-questions" | "error" | "baton-needs-you" | "worker-error" | "playbook-review" | "whatsapp-down";
+export const PUSH_KINDS: readonly PushKind[] = ["needs-input", "open-questions", "error", "baton-needs-you", "worker-error", "playbook-review", "whatsapp-down"];
 
 /** `<stateRoot>/push.json`. */
 export interface PushSettings {

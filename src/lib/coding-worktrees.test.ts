@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { CodingWorktree } from "../../shared/project-overseer";
-import { CODING_MODE_KEYS, codingModeKey, folderNote, codingModeLabel, codingModeOf, mergeGate, mergeNote, modeWords, offersMerge, offersRemove, promotionCommitLine, removeGate, startedBy, worktreeOrder } from "./coding-worktrees";
+import { codingModeHint, folderNote, mergeGate, mergeNote, offersMerge, offersRemove, promotionCommitLine, removeGate, startedBy, worktreeOrder } from "./coding-worktrees";
 
 const wt = (over: Partial<CodingWorktree> = {}): CodingWorktree => ({
   sessionId: "s1",
@@ -23,14 +23,15 @@ const wt = (over: Partial<CodingWorktree> = {}): CodingWorktree => ({
   ...over,
 }) as CodingWorktree;
 
-test("mode keys round-trip; Automatic is null", () => {
-  for (const k of CODING_MODE_KEYS) assert.equal(codingModeKey(codingModeOf(k)), k);
-  assert.equal(codingModeOf("auto"), null);
-  assert.deepEqual(codingModeOf("delegate+spec"), { mode: "delegate", minorModes: ["spec"] });
-  assert.equal(codingModeKey({ mode: "normal", minorModes: [] }), "normal");
-  assert.equal(codingModeLabel("normal+spec"), "normal · spec");
-  assert.equal(codingModeLabel("auto"), "Automatic");
-  assert.equal(modeWords({ mode: "normal", minorModes: [] }), "normal");
+test("the read-only mode line: this computer's defaults, mode words in mono, vis said as visuals", () => {
+  const h = codingModeHint({ mode: "delegate", minorModes: ["spec", "vis"], subagents: { id: "house", name: "House" } });
+  assert.equal(h.mode, "delegate · spec · visuals");
+  assert.equal(
+    h.before + h.mode + h.after,
+    "Coding sessions start in delegate · spec · visuals, with the House subagent profile: this computer's defaults. Save as default in any chat's mode menu changes them.",
+  );
+  const none = codingModeHint({ mode: "normal", minorModes: [], subagents: null });
+  assert.equal(none.before + none.mode + none.after, "Coding sessions start in normal: this computer's default mode. Save as default in any chat's mode menu changes it.");
 });
 
 test("gestures: which are offered", () => {

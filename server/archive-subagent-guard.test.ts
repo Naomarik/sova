@@ -141,3 +141,23 @@ test("archive cleanup skips a session with subagents working, as busy, and delet
   assert.equal(r.skipped.busy, 1);
   assert.ok(existsSync(path));
 });
+
+test("archiving or deleting a chat removes its memory; a refused archive keeps it (§chat.memory/log)", async () => {
+  const { memoryDir } = await import("./memory/store");
+  const withMemory = (id: string) => {
+    mkdirSync(memoryDir(id), { recursive: true });
+    writeFileSync(join(memoryDir(id), "state.json"), "{}");
+    return session(id);
+  };
+  const busy = withMemory("mem-busy");
+  live("own.json", process.pid, busy, 1);
+  assert.equal((await archiveSession(busy, true)).ok, false);
+  assert.ok(existsSync(memoryDir("mem-busy")), "refused: nothing removed");
+  const archived = withMemory("mem-archived");
+  assert.ok((await archiveSession(archived, true)).ok);
+  assert.equal(existsSync(memoryDir("mem-archived")), false);
+  const deleted = withMemory("mem-deleted");
+  setArchived("mem-deleted", true);
+  assert.equal((await cleanupSessions({ mode: "paths", paths: [deleted], dryRun: false })).deletedCount, 1);
+  assert.equal(existsSync(memoryDir("mem-deleted")), false);
+});

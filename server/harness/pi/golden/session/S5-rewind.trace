@@ -1,10 +1,10 @@
 step attach A, B
 A {"type":"hello","isStreaming":false,"isCompacting":false,"model":"scripted/scripted","thinking":"off","items":[]}
 A {"type":"queue","items":[]}
-A {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now"}
+A {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now","memory":{"type":"uniichat","size":128}}
 B {"type":"hello","isStreaming":false,"isCompacting":false,"model":"scripted/scripted","thinking":"off","items":[]}
 B {"type":"queue","items":[]}
-B {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now"}
+B {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now","memory":{"type":"uniichat","size":128}}
 step A sends {"type":"prompt","text":"one","clientId":"c-one"}
 write {"id":"00000001","type":"model_change"}
 write {"id":"00000002","type":"thinking_level_change"}
@@ -60,8 +60,8 @@ B {"type":"ui_request","id":"00000000-0000-7000-8000-000000000002","request":{"m
 write {"id":"00000009","type":"custom","customType":"sova-rewind"}
 A {"type":"hello","isStreaming":false,"isCompacting":false,"model":"scripted/scripted","thinking":"off","items":["00000001 info","00000002 info","00000005 user","00000006:0 assistant-text"]}
 B {"type":"hello","isStreaming":false,"isCompacting":false,"model":"scripted/scripted","thinking":"off","items":["00000001 info","00000002 info","00000005 user","00000006:0 assistant-text"]}
-A {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now"}
-B {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now"}
+A {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now","memory":{"type":"uniichat","size":128}}
+B {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now","memory":{"type":"uniichat","size":128}}
 A {"type":"rewound","id":"r1","entryId":"00000007","editorText":"two"}
 A {"type":"links","links":[]}
 B {"type":"links","links":[]}
@@ -69,8 +69,8 @@ step dispose; reopen
 step attach A, B
 A {"type":"hello","isStreaming":false,"isCompacting":false,"model":"scripted/scripted","thinking":"off","items":["00000001 info","00000002 info","00000005 user","00000006:0 assistant-text"]}
 A {"type":"queue","items":[]}
-A {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now"}
+A {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now","memory":{"type":"uniichat","size":128}}
 B {"type":"hello","isStreaming":false,"isCompacting":false,"model":"scripted/scripted","thinking":"off","items":["00000001 info","00000002 info","00000005 user","00000006:0 assistant-text"]}
 B {"type":"queue","items":[]}
-B {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now"}
+B {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now","memory":{"type":"uniichat","size":128}}
 got leaf "00000009"

@@ -13,6 +13,7 @@ import { paneShares } from "../lib/pane-shares";
 import { sharingTabLabel } from "../lib/session-shares";
 import { RemotePaneStatus } from "./RemoteStatus";
 import { SessionDetails, SharingSection } from "./SessionDetails";
+import { MemoryOutlineSection } from "./MemoryOutline";
 import { SessionTimeline } from "./SessionTimeline";
 import { createSessionSpend, SessionUsageTab } from "./SessionUsage";
 import { type AgentsView, SubagentPane } from "./SubagentPane";
@@ -226,6 +227,7 @@ export function SessionPane(props: {
               now={props.now}
               onArchiveChanged={props.onArchiveChanged}
               onGroupsChanged={props.onGroupsChanged}
+              onClose={props.onClose}
             />
           </Match>
           <Match when={tab() === "timeline"}>
@@ -304,6 +306,8 @@ function SessionTab(props: {
   now: number;
   onArchiveChanged(path: string, archived: boolean): void;
   onGroupsChanged(): void;
+  /** Closes the pane: a memory line's jump from the drawer band would otherwise land behind it. */
+  onClose?: () => void;
 }) {
   /** The gauge's reading; "compacted" is re-derived from the items. */
   const context = () => {
@@ -329,6 +333,7 @@ function SessionTab(props: {
         onGroupsChanged={props.onGroupsChanged}
         gitChanged={props.insight.changed}
       />
+      <MemoryOutlineSection path={props.path} now={props.now} onClose={props.onClose} />
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import type { SessionConfigure, SessionConfigureResult } from "../shared/mesh-links";
 import type { SessionSummary } from "../shared/protocol";
+import { MEMORY_CODING_REFUSAL } from "../shared/memory";
 import { acquireChat, isSessionBusy } from "./chat-manager";
 import { workingSubagents } from "./live";
 import { parseModePatch, type ModePatch } from "./mode-state";
@@ -29,6 +30,8 @@ export function parseConfigure(body: unknown): { req: SessionConfigure; patch: M
   if (b.thinking !== undefined && (typeof b.thinking !== "string" || !THINKING_LEVELS.includes(b.thinking)))
     return { error: `thinking must be one of: ${THINKING_LEVELS.join(", ")}` };
   let patch: ModePatch | null = null;
+  // The Overseer's route to a peer's session: memory is never given to a coding session (§chat.memory/where).
+  if (Array.isArray(b.minorModes) && b.minorModes.includes("memory")) return { error: MEMORY_CODING_REFUSAL };
   if (b.mode !== undefined || b.minorModes !== undefined) {
     const p = parseModePatch({ ...(b.mode !== undefined ? { mode: b.mode } : {}), ...(b.minorModes !== undefined ? { minorModes: b.minorModes } : {}) });
     if ("error" in p) return { error: p.error };

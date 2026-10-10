@@ -249,6 +249,15 @@ writer**).
   chat alike, a Claude Code one included. Never reaches workers. With
   spec on, a census or guard note for a call a script made is repeated on the
   script's own result, the one the model reads.
+- **memory** — Sova's endless chat (its engine is Sova's, `server/memory/`):
+  the model works from summaries of the whole chat and opens any part with
+  `zoom`/`date`. Web-only (`MINOR_SURFACES` in `minor.ts`): the extension takes
+  `/mode memory on` only while Sova's server applies a switch for that very
+  session, through the `sova:web-minor` hook (`WEB_MINOR_HOOK`,
+  `webMinorRefusal`); typed by hand, from `--minor`, a profile, the palette or
+  a shortcut it is refused or not offered, and workers never get it. Turning
+  it off always works. Like codemode it has no prompt block and no mode note
+  (`MINOR_PROMPTLESS`): its guide rides the view message Sova sends.
 
 Like the major mode, the prompt is read per turn, so toggles apply from the
 next prompt. The active triple (`mode`, `strict`, `minorModes`) is published

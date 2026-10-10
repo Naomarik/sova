@@ -6,9 +6,9 @@ import { Figure } from "./Figure";
 import { KINDS } from "./registry";
 import type { ViewProps } from "./types";
 
-/** One lazy component per View module (several fence words share one View). */
+/** One lazy component per View module (several fence words share one View); the help card draws with it too. */
 const views = new Map<unknown, Component<ViewProps<VisBase>>>();
-function viewFor(kind: string): Component<ViewProps<VisBase>> {
+export function viewFor(kind: string): Component<ViewProps<VisBase>> {
   const entry = KINDS[kind]!;
   let view = views.get(entry.view);
   if (!view) {

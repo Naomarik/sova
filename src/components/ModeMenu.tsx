@@ -1,5 +1,7 @@
 import { createMemo, createSignal, For, Show, type Accessor } from "solid-js";
-import type { ChatServerMessage, ModeApplies, ModeInfo } from "../../shared/protocol";
+import type { ChatMemoryChoice, ChatServerMessage, MemoryType, ModeApplies, ModeInfo } from "../../shared/protocol";
+import { memoryRowText, sameMemoryChoice } from "../lib/memory-ui";
+import { focusPanel, MemoryTypePanel, panelKeys } from "./MemoryTypePanel";
 import { getMode, getSubagentProfiles, pickSubagentProfile, postMode, putSubagentProfiles, saveModeDefault } from "../lib/api";
 import type { SubagentProfilesInfo } from "../../shared/subagent-profiles";
 import { filterProfiles, FOOT_NOTE, isDefaultAll, isDefaultMode, modeSummary, noProfileMatch, nextSetup, savedAnnounce, saveLabel, saveTitle, type ShownMode } from "../lib/mode-menu";
@@ -37,6 +39,13 @@ const CONFIGURE_SPEC: Item = {
   label: "Configure Spec",
   description: "Which worker writes the spec",
 };
+/** The chevron beside memory's row: opens the Memory type panel (§chat.mode-menu/memory-panel). */
+const MEMORY_TYPE: Item = {
+  kind: "action",
+  id: "memory-type",
+  label: "Memory type",
+  description: "Choose this chat's memory type and summary size",
+};
 /** The Subagents group row: opens the profile picker panel. */
 const SUBAGENTS: Item = {
   kind: "action",
@@ -58,6 +67,9 @@ const [info, setInfo] = createSignal<ModeInfo | null>(null);
  */
 const [defaultMode, setDefaultMode] = createSignal<ShownMode | null>(null);
 const shownOf = (m: Pick<ModeInfo, "mode" | "minorModes" | "strict">): ShownMode => ({ mode: m.mode, minorModes: [...m.minorModes], strict: m.strict });
+/** The memory choice new chats start from (GET /api/mode's `memory`, or the save's answer); null unknown. */
+const [defaultMemory, setDefaultMemory] = createSignal<ChatMemoryChoice | null>(null);
+const memoryOf = (m: ModeInfo): ChatMemoryChoice | null => (m.memory ? { type: m.memory.type, size: m.memory.size } : null);
 
 /**
  * The composer foot's mode switch: a trigger plus a native popover menu. One major mode
@@ -89,6 +101,15 @@ export function ModeMenu(props: { control: ModeControl }) {
   const [search, setSearch] = createSignal("");
   const [pActive, setPActive] = createSignal(0);
   const [saveName, setSaveName] = createSignal<string | null>(null);
+  // The Memory type panel (§chat.mode-menu/memory-panel), the picker's sibling in the same popover.
+  let memPanelEl: HTMLDivElement | undefined;
+  const [memPanel, setMemPanel] = createSignal(false);
+  const [memError, setMemError] = createSignal<string | null>(null);
+  /** This chat's memory choice, as its "mode" message says it; absent where memory can't run. */
+  const memChoice = createMemo(() => {
+    const m = props.control.state()?.memory;
+    return m ? { type: m.type, size: m.size } : null;
+  }, null, { equals: (a, b) => a === b || (!!a && !!b && sameMemoryChoice(a, b)) });
 
   const profileName = () => profiles()?.current.name ?? "…";
   const listed = createMemo(() => profiles()?.profiles ?? []);
@@ -107,7 +128,16 @@ export function ModeMenu(props: { control: ModeControl }) {
     // one row of its own group, last.
     return [
       ...i.modes.flatMap((m) => (m.id === "delegate" ? [{ kind: "radio" as const, ...m }, CONFIGURE_DELEGATE] : [{ kind: "radio" as const, ...m }])),
-      ...i.minors.flatMap((m) => (m.id === "spec" ? [{ kind: "check" as const, ...m }, CONFIGURE_SPEC] : [{ kind: "check" as const, ...m }])),
+      ...i.minors.flatMap((m) =>
+        m.id === "spec"
+          ? [{ kind: "check" as const, ...m }, CONFIGURE_SPEC]
+          : m.id === "memory"
+            ? // Only where this chat's mode message carries a memory choice: its runtime can run memory.
+              memChoice()
+              ? [{ kind: "check" as const, ...m }, MEMORY_TYPE]
+              : []
+            : [{ kind: "check" as const, ...m }],
+      ),
       SUBAGENTS,
     ];
   });
@@ -133,7 +163,7 @@ export function ModeMenu(props: { control: ModeControl }) {
    * and the library's own `default`, so the answer is the file's, not a guess from the last press
    * or from a switch's reply.
    */
-  const alreadyDefault = () => isDefaultAll(defaultMode(), shown(), profiles());
+  const alreadyDefault = () => isDefaultAll(defaultMode(), shown(), profiles()) && (!memChoice() || sameMemoryChoice(defaultMemory(), memChoice()));
   const saveState = (): "idle" | "saving" | "done" => (saving() ? "saving" : alreadyDefault() ? "done" : "idle");
 
   const focusItem = (i: number) => {
@@ -157,6 +187,31 @@ export function ModeMenu(props: { control: ModeControl }) {
     setPicker(false);
     focusItem(items().findIndex((it) => it.id === SUBAGENTS.id));
   };
+  const openMemPanel = () => {
+    setMemError(null);
+    setMemPanel(true);
+    queueMicrotask(() => focusPanel(memPanelEl));
+  };
+  const closeMemPanel = () => {
+    setMemPanel(false);
+    focusItem(items().findIndex((it) => it.id === MEMORY_TYPE.id));
+  };
+  /** A type or size for this chat (§chat.memory/choice): the menu stays open; the check moves with the "mode" message. */
+  const pickMemory = async (patch: { type?: MemoryType; size?: number }) => {
+    if (busy()) return;
+    const c = memChoice();
+    if (c && (patch.type ?? c.type) === c.type && (patch.size ?? c.size) === c.size) return;
+    setBusy(true);
+    setMemError(null);
+    try {
+      setInfo(await postMode({ memory: patch }, props.control.path));
+    } catch (err) {
+      const why = (err instanceof Error ? err.message : String(err)).replace(/\.$/, "");
+      setMemError(`${why}. Your memory choice is unchanged.`);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const openMenu = async (keepError = false) => {
     if (open()) return;
@@ -168,6 +223,8 @@ export function ModeMenu(props: { control: ModeControl }) {
     tabbedAway = false;
     if (!keepError) setError(null);
     setPicker(false);
+    setMemPanel(false);
+    setMemError(null);
     setSearch("");
     setSaveName(null);
     menu.showPopover();
@@ -181,8 +238,10 @@ export function ModeMenu(props: { control: ModeControl }) {
       const read = await getMode(host());
       setInfo(read);
       setDefaultMode(shownOf(read));
+      setDefaultMemory(memoryOf(read));
     } catch {
       setDefaultMode(null);
+      setDefaultMemory(null);
       if (!info()) setError({ title: "Couldn't load the modes.", body: "Your mode is unchanged. Close this and try again." });
     }
     const at = items().findIndex((it) => it.kind === "radio" && checked(it));
@@ -195,6 +254,10 @@ export function ModeMenu(props: { control: ModeControl }) {
   const activate = async (it: Item) => {
     if (it.id === SUBAGENTS.id) {
       openPicker();
+      return;
+    }
+    if (it.id === MEMORY_TYPE.id) {
+      openMemPanel();
       return;
     }
     if (it.kind === "action") {
@@ -224,6 +287,13 @@ export function ModeMenu(props: { control: ModeControl }) {
       setError({ title: "Couldn't switch the mode.", body: `${why}. Your mode is unchanged.` });
     } finally {
       setBusy(false);
+      // The rows re-render as the mode arrives, which can drop focus to <body>: once that settles,
+      // put it back on the row just chosen, unless the menu closed or focus moved elsewhere in it.
+      requestAnimationFrame(() => {
+        if (!menu.matches(":popover-open") || menu.contains(document.activeElement)) return;
+        const at = items().findIndex((x) => x.id === it.id);
+        if (at >= 0) focusItem(at);
+      });
     }
   };
 
@@ -245,6 +315,7 @@ export function ModeMenu(props: { control: ModeControl }) {
     try {
       const written = await saveModeDefault(props.control.path); // the file as written, not this chat's copy
       setDefaultMode(shownOf(written));
+      setDefaultMemory(memoryOf(written));
       setInfo((i) => i ?? written); // the lists, in case the open-time read failed
       setProfiles(await getSubagentProfiles(props.control.path, host()));
       announce(savedAnnounce(shown(), profiles()?.current.name ?? null));
@@ -300,6 +371,10 @@ export function ModeMenu(props: { control: ModeControl }) {
   };
 
   const onKeyDown = (e: KeyboardEvent) => {
+    if (memPanel()) {
+      if (memPanelEl) panelKeys(e, memPanelEl);
+      return;
+    }
     if (picker()) {
       const target = e.target as HTMLElement | null;
       if (target === nameInput) return; // the name field keeps its own keys
@@ -385,7 +460,15 @@ export function ModeMenu(props: { control: ModeControl }) {
       <Icon name="check" small class="popover-item-check" />
       <span class="popover-item-text">
         <span class="popover-item-label">{p.it.label ?? p.it.id}</span>
-        <span class="popover-item-desc">{p.it.id === "delegate" ? `Profile: ${profileName()}` : p.it.description}</span>
+        <Show
+          when={p.it.id === "memory"}
+          fallback={<span class="popover-item-desc">{p.it.id === "delegate" ? `Profile: ${profileName()}` : p.it.description}</span>}
+        >
+          <span class="popover-item-desc">{memoryRowText(info()?.memory?.types, memChoice() ?? undefined, checked(p.it)).description}</span>
+          <Show when={memoryRowText(info()?.memory?.types, memChoice() ?? undefined, checked(p.it)).detail}>
+            {(d) => <span class="popover-item-desc mode-menu-detail">{d()}</span>}
+          </Show>
+        </Show>
       </span>
     </div>
   );
@@ -398,6 +481,7 @@ export function ModeMenu(props: { control: ModeControl }) {
       id={itemId(p.it)}
       tabindex={active() === p.index ? 0 : -1}
       aria-label={p.it.label}
+      aria-haspopup={p.it.id === MEMORY_TYPE.id ? "true" : undefined}
       title={p.it.label}
       onClick={() => {
         setActive(p.index);
@@ -405,7 +489,7 @@ export function ModeMenu(props: { control: ModeControl }) {
       }}
       onFocus={() => setActive(p.index)}
     >
-      <Icon name="settings" small />
+      <Icon name={p.it.id === MEMORY_TYPE.id ? "chevron-right" : "settings"} small />
     </button>
   );
   /** A row, with its gear beside it when an action follows it in the roving order. */
@@ -482,6 +566,35 @@ export function ModeMenu(props: { control: ModeControl }) {
         </Show>
         <Show when={error()}>{(e) => <Banner tone="error" title={e().title} body={e().body} />}</Show>
 
+        <Show
+          when={!memPanel()}
+          fallback={
+            <>
+              {/* The Memory type panel (§chat.mode-menu/memory-panel): Back, the types and sizes, a foot line. */}
+              <div class="composer-flyout-head">
+                <button type="button" class="button button-sm button-ghost composer-flyout-back" onClick={closeMemPanel}>
+                  <Icon name="chevron-left" small />
+                  Back
+                </button>
+                <span class="model-menu-head-title">Memory type</span>
+              </div>
+              <Show when={memError()}>{(why) => <Banner tone="error" title="Couldn't change memory." body={why()} />}</Show>
+              <div ref={memPanelEl}>
+                <MemoryTypePanel
+                  idPrefix={paneId("memory-panel")}
+                  types={info()?.memory?.types}
+                  sizes={info()?.memory?.sizes}
+                  choice={memChoice()}
+                  busy={busy()}
+                  onPick={(patch) => void pickMemory(patch)}
+                />
+              </div>
+              <div class="mode-menu-foot">
+                <p class="mode-menu-foot-line">This chat only. Kept while memory is off.</p>
+              </div>
+            </>
+          }
+        >
         <Show
           when={!picker()}
           fallback={
@@ -668,6 +781,7 @@ export function ModeMenu(props: { control: ModeControl }) {
               {saveLabel(saveState())}
             </button>
           </div>
+        </Show>
         </Show>
       </div>
     </>

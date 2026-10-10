@@ -7,7 +7,7 @@
  */
 import type { UsageAttribution } from "./attribution.ts";
 import { producerId } from "./tracker.ts";
-import { appendUsageRecord, defaultAgentDir, readDeviceId, type UsageRecord, type UsageSource } from "./usage-record.ts";
+import { appendUsageRecord, defaultAgentDir, readDeviceId, type UsageLaunch, type UsageRecord, type UsageSource } from "./usage-record.ts";
 
 export interface UsageTokens {
 	input: number;
@@ -27,6 +27,8 @@ export interface RecordUsageInput {
 	/** The call's name (usage-record.ts `key`); default `<producer>:<seq>`. */
 	key?: string;
 	stop?: string;
+	/** How the Claude Code process this call opens started (its first call only). */
+	launch?: UsageLaunch;
 	/** The call's end (default now). */
 	ts?: number;
 }
@@ -87,6 +89,7 @@ export function usageRecordOf(input: RecordUsageInput, agentDir: string = defaul
 		...(w.project ? { project: w.project } : {}),
 		...(w.starter ? { starter: w.starter } : {}),
 		...(stop ? { stop } : {}),
+		...(input.launch ? { launch: input.launch } : {}),
 	};
 }
 

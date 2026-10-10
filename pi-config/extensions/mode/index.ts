@@ -83,16 +83,28 @@ import { DELEGATE_PROFILE_INFO, DELEGATE_PROFILES, delegateKey, type DelegateBac
 import { WorkerProbe } from "./discovery.ts";
 import { MODE_WORKER_DISCOVER_EVENT, MODE_WORKER_EVENT, WORKER_ROLE_DISCOVER_EVENT, WORKER_ROLE_EVENT, type ModeWorkerEvent } from "./events.ts";
 import {
+	adoptableMinorModes,
 	CODEMODE_TOOL,
 	isMinorMode,
 	MINOR_MODES,
+	MINOR_SURFACES,
 	normalizeMinorModes,
 	parseMinorFlag,
 	SCRIPT_ONLY_EXPOSURES,
 	visToolsWanted,
+	webMinorRefusal,
 	workerMinorModes,
 	type MinorMode,
 } from "./minor.ts";
+
+/** The session a context belongs to, or undefined when it has none to name. */
+function sessionIdOf(ctx: ExtensionContext): string | undefined {
+	try {
+		return ctx.sessionManager.getSessionId();
+	} catch {
+		return undefined;
+	}
+}
 import { ALIGN_SETTINGS_FILE, alignSettingsReader, resolveAlign, type AlignStyle } from "./align-settings.ts";
 import { MODE_CATEGORY_ID, modeCategoryItems } from "./palette.ts";
 import { applyModeSection, buildAlignStyleNote, buildModeNote, buildSpecWriterPrompt, composePrompt, composeWorkerPrompt, DEFAULT_ROUTES, statusLabel } from "./prompt.ts";
@@ -568,6 +580,13 @@ export default function modeExtension(pi: ExtensionAPI): void {
 			renderStatus(ctx);
 			return;
 		}
+		// A web-only mode (memory) is turned on only by Sova's server, applying a switch for this session.
+		const refused = on ? webMinorRefusal(minor, sessionIdOf(ctx)) : undefined;
+		if (refused) {
+			ctx.ui.notify(`Minor mode ${minor} not turned on: ${refused}`, "warning");
+			renderStatus(ctx);
+			return;
+		}
 		active = withMinor(active, minor, on);
 		publishActive();
 		appendSwitch({ minor, on });
@@ -614,11 +633,13 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	/**
 	 * Resolve this session's active state: a snapshot on the branch wins, else the launch flags on
 	 * top of the default (first start only), else the default as it is now. Adopting the default
-	 * appends nothing, so merely opening a session never writes to its transcript.
+	 * appends nothing, so merely opening a session never writes to its transcript. Outside Sova's server
+	 * the default's web-only minor modes are dropped (§chat.memory/where); the file keeps them.
 	 */
 	function restoreActiveState(reason: string | undefined, ctx: ExtensionContext): void {
 		config = loadState(STATE_FILE);
 		let next = activeOf(config);
+		next = { ...next, minorModes: adoptableMinorModes(next.minorModes) };
 		let restored: ModeActive | undefined;
 		try {
 			// A worker ignores the branch: a fork copied the parent's own snapshots onto it.
@@ -637,7 +658,16 @@ export default function modeExtension(pi: ExtensionAPI): void {
 			if (flag !== undefined) next = { ...next, mode: flag };
 			const minorFlag = parseMinorFlag(pi.getFlag("minor"));
 			if (minorFlag) {
-				next = { ...next, minorModes: minorFlag.minorModes };
+				// A web-only mode can't be started from a flag: it is dropped, with a warning.
+				const webOnly = minorFlag.minorModes.filter((minor) => MINOR_SURFACES[minor] === "web");
+				next = { ...next, minorModes: minorFlag.minorModes.filter((minor) => MINOR_SURFACES[minor] !== "web") };
+				if (webOnly.length > 0) {
+					try {
+						ctx.ui.notify(`--minor ${webOnly.join(", ")}: ${webOnly.map((minor) => webMinorRefusal(minor, undefined)).join("; ")}`, "warning");
+					} catch {
+						// The warning is best-effort.
+					}
+				}
 				if (minorFlag.unknown.length > 0) {
 					try {
 						ctx.ui.notify(`Unknown minor mode in --minor: ${minorFlag.unknown.join(", ")} (known: ${MINOR_MODES.join(", ")})`, "warning");
@@ -1151,7 +1181,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 
 	for (const minor of MINOR_MODES) {
 		const shortcut = config.minorShortcuts?.[minor];
-		if (shortcut === undefined) continue;
+		if (shortcut === undefined || MINOR_SURFACES[minor] === "web") continue;
 		pi.registerShortcut(shortcut as KeyId, {
 			description: `Toggle the ${minor} minor mode`,
 			handler: async (ctx) => setMinor(minor, !hasMinor(active, minor), ctx),

@@ -5205,6 +5205,24 @@
         "src/components/SessionDetails.tsx"
       ]
     },
+    "§chat.worktrees/merge-board": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/merge-board.ts",
+        "server/merge-board.test.ts",
+        "server/merge-readiness.ts",
+        "server/schedule-routes.ts"
+      ],
+      "requires": [
+        "§chat.worktrees/readiness"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:39Z"
+      }
+    },
     "§chat.worktrees/merge-card": {
       "kind": "behavior",
       "requires": [
@@ -10429,7 +10447,11 @@
         "§chat.playbooks/what-gets-sent",
         "§chat.profiles/limits",
         "§app.overseer/auto-resume"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:39Z"
+      }
     },
     "§chat.schedules/header": {
       "kind": "behavior",
@@ -10445,7 +10467,11 @@
       "requires": [
         "§chat.playbooks/where-playbooks-come-from",
         "§chat.profiles/projects"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:39Z"
+      }
     },
     "§chat.schedules/limit-reset": {
       "kind": "behavior",
@@ -10473,7 +10499,31 @@
       ],
       "requires": [
         "§chat.schedules/fire"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:39Z"
+      }
+    },
+    "§chat.schedules/merge-ready": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "shared/schedules.ts",
+        "server/schedules.ts",
+        "server/schedule-routes.ts",
+        "shared/schedules.test.ts",
+        "server/schedules.test.ts"
+      ],
+      "requires": [
+        "§chat.schedules/fire",
+        "§chat.schedules/limits"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:39Z"
+      }
     },
     "§chat.schedules/where-shown": {
       "kind": "behavior",
@@ -10497,7 +10547,11 @@
         "§app.overseer/approvals",
         "§chat.transcript/transcript-items",
         "§app.overseer/proactivity"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:39Z"
+      }
     },
     "§chat/schedules": {
       "kind": "surface",
@@ -11717,8 +11771,13 @@
       "requires": [
         "§chat.schedules/fire",
         "§chat.worktrees/readiness",
-        "§chat.profiles/singleton"
-      ]
+        "§chat.profiles/singleton",
+        "§chat.worktrees/merge-board"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:39Z"
+      }
     },
     "§chat/merge-round": {
       "kind": "surface",
@@ -11726,7 +11785,11 @@
       "evidence": "reviewed",
       "code": [
         ".sova/playbooks/merge-round/PLAYBOOK.md"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:39Z"
+      }
     },
     "§chat.merge-round/driver": {
       "kind": "behavior",
@@ -11739,8 +11802,13 @@
       ],
       "requires": [
         "§chat.merge-round/private-names",
-        "§chat.worktrees/readiness"
-      ]
+        "§chat.worktrees/readiness",
+        "§chat.worktrees/merge-board"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:39Z"
+      }
     },
     "§app.access/callers": {
       "kind": "behavior",
@@ -16138,13 +16206,18 @@
         "§app/notifications",
         "§app.notifications/delivery",
         "§app.notifications/settings",
-        "§app.settings-dialog/overseer"
+        "§app.settings-dialog/overseer",
+        "§chat/merge-round"
       ],
       "authority": "accepted",
       "evidence": "reviewed",
       "code": [
         "site/src/content/docs/needs-you.md"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:39Z"
+      }
     },
     "§site.docs/overseer": {
       "kind": "behavior",
@@ -16167,13 +16240,18 @@
         "§app.overseer/attention-digest",
         "§app.overseer/proactivity",
         "§app.overseer/dialog-answers",
-        "§app.settings-dialog/overseer"
+        "§app.settings-dialog/overseer",
+        "§chat/merge-round"
       ],
       "authority": "accepted",
       "evidence": "reviewed",
       "code": [
         "site/src/content/docs/overseer.md"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:39Z"
+      }
     },
     "§site.docs/phone": {
       "kind": "behavior",
@@ -16197,6 +16275,30 @@
       "code": [
         "site/src/content/docs/phone.md"
       ]
+    },
+    "§site.docs/playbooks-and-schedules": {
+      "kind": "behavior",
+      "requires": [
+        "§chat/playbooks",
+        "§chat/schedules",
+        "§chat.schedules/header",
+        "§chat.schedules/approval",
+        "§chat.schedules/fire",
+        "§chat.schedules/limits",
+        "§chat.schedules/where-shown",
+        "§chat/merge-round",
+        "§chat.merge-round/round",
+        "§chat.worktrees/merge-board"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "site/src/content/docs/playbooks-and-schedules.md"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:39Z"
+      }
     },
     "§site.docs/spec-mode": {
       "kind": "behavior",

@@ -132,6 +132,18 @@ test("an inherited CLAUDE_CONFIG_DIR naming a login's directory is not default: 
 	}
 });
 
+test("every spawn env pins CLAUDE_CODE_DISABLE_AUTO_MEMORY=1: an inherited 0 or a caller's false cannot force memory on", () => {
+	assert.equal(claudeBaseEnv({ CLAUDE_CODE_DISABLE_AUTO_MEMORY: "0" }).CLAUDE_CODE_DISABLE_AUTO_MEMORY, "1");
+	const inherited = process.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY;
+	process.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY = "0";
+	try {
+		assert.equal(claudeEnv().CLAUDE_CODE_DISABLE_AUTO_MEMORY, "1");
+		assert.equal(claudeEnv({ CLAUDE_CONFIG_DIR: "/l", CLAUDE_CODE_DISABLE_AUTO_MEMORY: "false" }).CLAUDE_CODE_DISABLE_AUTO_MEMORY, "1");
+	} finally {
+		if (inherited === undefined) delete process.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY; else process.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY = inherited;
+	}
+});
+
 test("a login's directory: a wrong link is re-pointed; a link into the login itself is refused", (t) => {
 	const s = sandbox(t);
 	const dir = ensureLoginDir(s.agentDir, A, s.claudeDir);

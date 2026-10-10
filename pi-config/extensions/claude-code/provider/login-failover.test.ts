@@ -13,6 +13,7 @@ import type { Message, Tool } from "@earendil-works/pi-ai";
 import { SessionBridge } from "./session-bridge.ts";
 import { pickChatLogin } from "./login-command.ts";
 import type { ClaudeFrame, ClaudeTurnRequest } from "./types.ts";
+import { parseUsageLine } from "../../llm-inflight/usage-record.ts";
 import { ACCOUNTS_DEV_ENV, ClaudeLogins, loginDir, loginUsers, markLeaving, readLeaving, readLoginPicks, updateAccounts, writeAccounts, type ClaudeLoginEntry } from "../accounts.ts";
 
 /** A CLI child that answers initialize, and answers each user message with `reply(frame)`'s events. */
@@ -357,4 +358,26 @@ test("a pick of the chat's own login changes nothing; an unusable one, or one mi
 	s.logins.recordFailure({ id: B, label: "b@example.com", env: {}, accountUuid: "acct-b" }, { kind: "limit", resetsAt: Date.now() + 3_600_000 });
 	await assert.rejects(pick(B), /limited until/);
 	await assert.rejects(pick("l-0000dead"), /no such Claude login/);
+});
+
+test("a chat's saved Claude session never moves to another login: picked up on B it folds, says login-moved, and the turn completes", { timeout: 8000 }, async (t) => {
+	const s = setup(t, (login) => ANSWER(`ok from ${login}`));
+	signIn(s.agentDir);
+	// This process's ledger, in the test's agent dir.
+	const before = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = s.agentDir;
+	t.after(() => { if (before === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = before; });
+	await collect(s.bridge.runTurn(request([user("hi")])));
+	assert.equal(s.loginOf(s.children[0]!), A);
+	assert.equal(await pickChatLogin(B, { id: "pi-session-1", branch: branchOf(s.entries) }, { bridge: s.bridge, logins: s.logins }), "switched");
+	for (let i = 0; i < 200 && !s.children[0]!.exited; i++) await new Promise((r) => setTimeout(r, 5));
+	// The history continues the record exactly; only the login differs.
+	const second = await collect(s.bridge.runTurn(request([user("hi"), said("ok from l-0000000a"), user("again")])));
+	assert.equal((second.at(-1) as any).outcome, "success");
+	assert.equal(s.loginOf(s.children[1]!), B);
+	assert.match(JSON.stringify(s.children[1]!.users[0]!.message.content), /conversation-history/, "folded, not resumed");
+	const day = path.join(s.agentDir, "usage", "v1");
+	const launches = fs.readdirSync(day).flatMap((d) => fs.readdirSync(path.join(day, d)).flatMap((f) => fs.readFileSync(path.join(day, d, f), "utf8").split("\n")))
+		.map((line) => (line ? parseUsageLine(line) : null)).filter((r) => r?.launch).sort((a, b) => a!.ts - b!.ts).map((r) => r!.launch);
+	assert.deepEqual(launches, [{ how: "fresh", why: "new" }, { how: "folded", why: "login-picked", fallback: "login-moved" }]);
 });

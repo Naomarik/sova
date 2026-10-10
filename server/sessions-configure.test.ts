@@ -26,6 +26,12 @@ test("an unknown mode, minor mode or thinking level refuses the whole call", () 
   assert.ok(ok.patch);
 });
 
+test("memory is never given to a coding session over this route (§chat.memory/where)", () => {
+  const r = parseConfigure({ path: "/x.jsonl", minorModes: ["spec", "memory"] });
+  assert.ok("error" in r);
+  assert.match(r.error, /Memory is for chats only/);
+});
+
 test("refusals: special sessions, TUI-live, archived, mid-turn, subagents working", () => {
   const s = { title: "t", live: null, archived: false } as unknown as SessionSummary;
   assert.equal(configureRefusal(s, false, 0), null);

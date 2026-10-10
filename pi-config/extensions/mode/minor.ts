@@ -4,10 +4,10 @@ import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { AlignStyle } from "./align-settings.ts";
 
-export type MinorMode = "align" | "spec" | "vis" | "codemode";
+export type MinorMode = "align" | "spec" | "vis" | "codemode" | "memory";
 
 /** Registry order: the canonical order for state, status, and prompt composition. */
-export const MINOR_MODES: readonly MinorMode[] = ["align", "spec", "vis", "codemode"];
+export const MINOR_MODES: readonly MinorMode[] = ["align", "spec", "vis", "codemode", "memory"];
 
 export function isMinorMode(value: unknown): value is MinorMode {
 	return typeof value === "string" && (MINOR_MODES as readonly string[]).includes(value);
@@ -18,6 +18,7 @@ export const MINOR_DESCRIPTIONS: Record<MinorMode, string> = {
 	spec: "Scope work from the project's .sova/spec documentation, propose changes in drafts, and promote them once implemented",
 	vis: "Draw small inline visuals (vis fences: flow, sequence, tree, timeline, chart, …) when a picture explains faster than prose",
 	codemode: "Let the model run JavaScript that calls tools in parallel and filters their output (pi's codemode tool)",
+	memory: "Endless chat: the model works from a summary of the whole chat and opens any part of it word for word",
 };
 
 /** The tool the codemode minor mode puts in the loadout: pi's own `codemode` (builtin:codemode in the CLI). */
@@ -39,7 +40,58 @@ export const MINOR_WORKER: Record<MinorMode, boolean> = {
 	spec: true,
 	vis: false,
 	codemode: false,
+	memory: false,
 };
+
+/**
+ * Where each minor mode can be turned on (§chat.memory/where). `everywhere`: the terminal's /mode,
+ * palette, shortcuts and --minor, Sova's menu, the Overseer's coding sessions and session profiles.
+ * `web`: only Sova's own mode menu, for a mode whose engine runs inside Sova's server (memory): the
+ * extension takes `/mode <minor> on` only while the server is applying a switch for that very session
+ * (WEB_MINOR_HOOK), never typed by hand or from --minor, and lists no palette row or shortcut for it.
+ * Turning one off is never refused. A record over the union, like MINOR_WORKER.
+ */
+export const MINOR_SURFACES: Record<MinorMode, "everywhere" | "web"> = {
+	align: "everywhere",
+	spec: "everywhere",
+	vis: "everywhere",
+	codemode: "everywhere",
+	memory: "web",
+};
+
+/** The minor modes only Sova's menu turns on, in registry order. */
+export const WEB_ONLY_MINOR_MODES: readonly MinorMode[] = MINOR_MODES.filter((mode) => MINOR_SURFACES[mode] === "web");
+
+/**
+ * The server's hook (globalThis, Symbol.for): `(sessionId, minor) => boolean`, true only while Sova's server
+ * applies a switch that turns `minor` on in that session (server/memory/permit.ts). Unset (a terminal, a
+ * worker), nothing web-only can be turned on.
+ */
+export const WEB_MINOR_HOOK = Symbol.for("sova:web-minor");
+
+/** Why turning `minor` on is refused in `sessionId` here, or undefined when it may be. */
+export function webMinorRefusal(minor: MinorMode, sessionId: string | undefined): string | undefined {
+	if (MINOR_SURFACES[minor] !== "web") return undefined;
+	const hook = (globalThis as Record<symbol, unknown>)[WEB_MINOR_HOOK];
+	if (typeof hook === "function" && sessionId !== undefined) {
+		try {
+			if ((hook as (sessionId: string, minor: MinorMode) => unknown)(sessionId, minor) === true) return undefined;
+		} catch {
+			// A failing hook permits nothing.
+		}
+	}
+	return `${minor} is turned on from a Sova chat's mode menu`;
+}
+
+/**
+ * The minor modes of mode.json's default a session adopting it keeps: all of them inside Sova's server
+ * (WEB_MINOR_HOOK installed, so a web chat started from a default with memory gets it), else only the
+ * ones that run everywhere: a terminal would show a web-only mode that nothing runs.
+ */
+export function adoptableMinorModes(minors: readonly MinorMode[]): MinorMode[] {
+	if (typeof (globalThis as Record<symbol, unknown>)[WEB_MINOR_HOOK] === "function") return [...minors];
+	return minors.filter((minor) => MINOR_SURFACES[minor] !== "web");
+}
 
 /**
  * Minor modes with no prompt block and no mode note (§chat.mode-menu/codemode): the tool they put in the
@@ -50,6 +102,8 @@ export const MINOR_PROMPTLESS: Record<MinorMode, boolean> = {
 	spec: false,
 	vis: false,
 	codemode: true,
+	// Its guide rides its own view message (Sova's memory engine), never the mode section or a note.
+	memory: true,
 };
 
 /** The minor modes of `minorModes` that carry a prompt block, in their order. */
@@ -205,6 +259,7 @@ const MINOR_INSTRUCTIONS: Record<MinorMode, string> = {
 	vis: VIS_INSTRUCTIONS,
 	// Promptless (MINOR_PROMPTLESS): never composed.
 	codemode: "",
+	memory: "",
 };
 
 /** One minor mode's block; align's carries its style and Visuals paragraphs (buildAlignPrompt). */

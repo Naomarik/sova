@@ -377,3 +377,27 @@ and a reading stands for a while before it is read again:
   stood the 5 minutes, or when the session is settled (§app/idle-git-cache) and its answer is 10
   seconds old: that look returns the answer it has at once, and the re-read shows on the next one. A look at an archived, idle session re-reads them under its own rule
   (§app/idle-git-cache, "Archived-idle exception").
+
+## §chat.worktrees/merge-board — The merge board file
+
+Sova keeps its readiness view (§chat.worktrees/readiness) of every tracked worktree in one file,
+`<state root>/merge-board.json`, so a playbook's script learns who owns which branch with no token
+and no HTTP call (the merge round's driver, §chat.merge-round/driver); the schedule keeper's
+`merge-ready` trigger reads the same board in-process.
+
+- **What it holds.** `{v: 1, at, read, pending, rows}`: when it was written, how many sessions
+  readiness has read and how many it hasn't yet (`pending`: while above 0, a missing row is
+  unknown, never "no owner"). A row per worktree path: its canonical `path`, `branch`, `repo` (the
+  common git directory, read from the worktree's `.git` entry without running git; null when
+  unreadable), readiness `state` and `reason`, `readAt`, and its `owner`: session id, status
+  `idle` | `busy` | `archived`, profile id (null for Default) and last activity. Rows are sorted by
+  path.
+- **Who owns a row.** Built only from readiness's own last answers, never by reading git or a
+  session file for it. Sessions readiness never covers are left out, and so are sessions running
+  as the merge captain's profile (`merge-captain`), which attach worktrees only to check them. When
+  several sessions track one path, one not archived wins, then the most recently active. An owner
+  is busy while its turn runs, a worker is working, or it holds a queued message.
+- **When it is written.** Every minute while the server runs (first about 10 seconds after start),
+  replaced whole by atomic rename, mode 0600. A rebuild lists the sessions and waits up to 20
+  seconds for the readiness reads that listing asked for; concurrent asks share one rebuild. A
+  write that fails is logged and the board is still used in-process.

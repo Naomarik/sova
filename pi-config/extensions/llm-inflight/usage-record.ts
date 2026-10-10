@@ -114,7 +114,51 @@ export interface UsageRecord {
 	starter?: UsageStarter;
 	/** The reply's stop reason as reported (`stop`, `toolUse`, `error`, `aborted`, …). */
 	stop?: string;
+	/** On the first call of a Claude Code process the provider bridge launched for a conversation: how
+	    it started and why (UsageLaunch). Absent on every other call. */
+	launch?: UsageLaunch;
 }
+
+/**
+ * How a Claude Code process reached its conversation, on that process's first record. `how`
+ * (LAUNCH_HOWS): `fresh` (nothing came before the message), `resumed` (Claude's own saved copy
+ * picked up, `--resume`), `folded` / `joined` (the history re-sent condensed in one message: after a
+ * restart, or to a first process for a conversation that already had history), `view` (a memory
+ * view sent as written). `why` (LAUNCH_WHYS) it started; `fallback` (LAUNCH_FALLBACKS), when a saved
+ * copy existed or was tried, why it was not resumed. Any short kebab-case word parses, so a new
+ * reason needs no schema change; readers group unknown ones as they are.
+ */
+export interface UsageLaunch {
+	how: string;
+	why: string;
+	fallback?: string;
+}
+
+export const LAUNCH_HOWS = ["fresh", "resumed", "folded", "joined", "view"] as const;
+/** The `how`s that re-sent the conversation's history in full. */
+export const RESEND_HOWS: readonly string[] = ["folded", "joined"];
+export const LAUNCH_WHYS = [
+	"new",
+	"process-start",
+	"reaped",
+	"ended",
+	"model",
+	"effort",
+	"system-prompt",
+	"tools",
+	"cwd",
+	"diverged",
+	"desynced",
+	"aborted",
+	"tool-results",
+	"nothing-new",
+	"login-leaving",
+	"login-picked",
+	"login-failover",
+	"fork",
+	"oneshot",
+] as const;
+export const LAUNCH_FALLBACKS = ["login-moved", "not-continuation", "settings-changed", "memory-view", "resume-failed"] as const;
 
 /** Above any real call: a bound on a buggy report, never reached. */
 export const MAX_RECORD_TOKENS = 1e10;
@@ -123,6 +167,8 @@ export const MAX_RECORD_BYTES = 4096;
 
 const PRODUCER_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const PURPOSE_RE = /^[a-z][a-z0-9-]{0,31}$/;
+/** A launch's how, why or fallback: the purpose's shape. */
+const word = (v: unknown): v is string => typeof v === "string" && PURPOSE_RE.test(v);
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** A producer id that can name a file. */
@@ -173,6 +219,12 @@ export function normalizeUsageRecord(value: unknown): UsageRecord | null {
 	if (r.project !== undefined && !text(r.project, 64)) return null;
 	if (r.starter !== undefined && !USAGE_STARTERS.includes(r.starter as UsageStarter)) return null;
 	if (r.stop !== undefined && !text(r.stop, 32)) return null;
+	let launch: UsageLaunch | undefined;
+	if (r.launch !== undefined) {
+		const l = r.launch;
+		if (!isObj(l) || !word(l.how) || !word(l.why) || (l.fallback !== undefined && !word(l.fallback))) return null;
+		launch = { how: l.how, why: l.why, ...(l.fallback !== undefined ? { fallback: l.fallback as string } : {}) };
+	}
 	return {
 		v: 1,
 		key: r.key,
@@ -197,6 +249,7 @@ export function normalizeUsageRecord(value: unknown): UsageRecord | null {
 		...(r.project !== undefined ? { project: r.project as string } : {}),
 		...(r.starter !== undefined ? { starter: r.starter as UsageStarter } : {}),
 		...(r.stop !== undefined ? { stop: r.stop as string } : {}),
+		...(launch ? { launch } : {}),
 	};
 }
 

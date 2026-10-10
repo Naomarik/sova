@@ -31,7 +31,7 @@ const cliList: ClaudeModel[] = [
   { id: "opus", name: "Opus", resolvedModel: "claude-opus-5-5", efforts: ALL_CLAUDE },
   { id: "fable", name: "Fable", resolvedModel: "claude-fable-5-1", efforts: ALL_CLAUDE },
   { id: "sonnet", name: "Sonnet", resolvedModel: "claude-sonnet-5-5", efforts: ALL_CLAUDE },
-  { id: "haiku", name: "Haiku", resolvedModel: "claude-haiku-4-5-20251001" },
+  { id: "haiku", name: "Haiku", resolvedModel: "claude-haiku-5-5" },
   { id: "claude-opus-4-8", name: "Opus 4.8", resolvedModel: "claude-opus-4-8", efforts: ALL_CLAUDE },
 ];
 const piModels = [

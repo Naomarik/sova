@@ -59,7 +59,7 @@ which is also its live view: its tool calls render as tool cards as they happen.
   in it that leads elsewhere is refused); another conversation's attachments and the rest of Sova's
   state stay refused, and `grep`, `find` and `ls` never reach it. The prompt says so. No shell, no
   edit or write tool. Its prompt is Sova's
-  (`server/project-overseer-prompt.md`), re-rendered at every run with the project, the level in
+  (`server/project-overseer-prompt.md`), rendered once, when the conversation opens, with the time it opened, the project, the level in
   force (a standalone project's with the standalone level meanings, and only its coding-session, prompt
   and look limits; gathering sessions and promotions appear only while placed), the caps, while placed
   the organization's sections (the roster: each active person's name, id, role, language, decision
@@ -67,8 +67,19 @@ which is also its live view: its tool calls render as tool cards as they happen.
   language, register), never contact details; the project's main stakeholder, "Main stakeholder: {name}: decides every
   area of this project that no one else on the roster decides."; the gap guidance), its ideas, a line saying the operator's to-dos are the operator's own
   list (never their text: it reads them with `sova_todos` when the operator asks,
-  §app.project-overseer/ideas-and-todos), its notes, while placed the organization's About text (§app.organizations/about) and, last, the operator's extra instructions. Model and thinking from `overseer.json`, else the new-session
-  defaults; the composer's picks are saved there.
+  §app.project-overseer/ideas-and-todos), its notes, while placed the organization's About text (§app.organizations/about) and, last, the operator's extra instructions. The prompt then stays
+  byte for byte the same for the whole conversation, across runs, runtimes and server restarts
+  (the opening values are kept in the first run note's details on the branch), so a Claude Code
+  overseer never restarts and re-sends its history for a change of time, notes, ideas, level,
+  limits, coding mode, roster, guidance, About text or extra instructions. Every run a message
+  starts (the operator's, the Overseer's, an automatic look) carries one hidden run note, in the
+  same hidden message as the open cards: the time now, and under `[changed]` the whole current
+  text of each of those parts that differs from what it was last told (the prompt's opening
+  text, or the newest note since the last compaction that gave it), saying it replaces that part
+  of the prompt; each part is told once per change, as in the global Overseer's run note
+  (§app.overseer/run-note). The prompt file and the tool list are read when the runtime opens.
+  Model and thinking from `overseer.json`, else the new-session defaults; the composer's picks
+  are saved there.
 - **Extra instructions.** The project page's Settings tab has an **Extra instructions** field, after
   the coding sessions' mode line and before Limits: the hint "Added last to this overseer's prompt, after
   the organization's About text, and they win over it. It reads them at its next run.", a textarea
@@ -488,7 +499,7 @@ user row.
 - **Any mode, for both Overseers.** The project overseer's `sova_create_session` and `sova_send`,
   and the Overseer's `sova_project_overseer` `code` (§app.overseer/org-project-overseers), take
   `mode` (`normal` or `delegate`), `minor_modes` (the whole set on: any of `align`, `spec`, `vis`,
-  `codemode`; `[]` turns them all off) and `subagent_profile` (an id in this computer's subagent
+  `codemode`, never `memory` (§chat.memory/where); `[]` turns them all off) and `subagent_profile` (an id in this computer's subagent
   profiles, or `off`; the project overseer's `sova_list_subagent_profiles` lists them). There is no
   ceiling: any mode, any minor modes and any profile are taken. On a start, what the call names
   replaces that part of this computer's default and the rest is the default's; a named profile is

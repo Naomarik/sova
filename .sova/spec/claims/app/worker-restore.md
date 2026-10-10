@@ -164,7 +164,8 @@ failed.
 
 Before **every** launch, the bridge takes as its launch number the larger of its in-memory
 count and one past the highest launch whose Claude record exists on disk
-(`~/.claude/projects/<cwd-slug>/<id>.jsonl`). The walk upward tolerates up to 32 missing records
+(`<Claude directory>/projects/<cwd-slug>/<id>.jsonl`, in the directory of the login the launch
+runs on: an added login's own, `~/.claude` for `default`). The walk upward tolerates up to 32 missing records
 in a row, because a failed launch can leave a gap. A restarted server therefore never collides
 with its own earlier launches, however many there were. The collision probe (33 tries) stays as
 a safety net. Nothing new is written to the pi session for this.

@@ -3,8 +3,9 @@
 
 The spec tools preserve declared requirements, keep proposed changes separate, and report what
 was checked against particular inputs. Their checks establish structure and applicability, not
-semantic correctness. The minor mode adds task reminders and the census note, and never holds
-a turn's end; response wording is not proof that implementation and requirements agree.
+semantic correctness. The minor mode adds task reminders and the census note, names once after a
+session's last edit the foreign § its change landed in that it hasn't read, names in a finished
+code-writing worker's summary the § its changes landed in, and never holds a turn's end; response wording is not proof that implementation and requirements agree.
 
 Complete graph queries remain available to machine consumers. Bounded packets deliver exact
 requirements within an explicit whole-response budget, with continuation and unknowns kept visible.
@@ -14,6 +15,7 @@ so the agent chooses what it reads.
 A map (`map`) shows every area on one page, and `where` finds the claims for a source file or a name.
 Draft commands say what a draft introduced apart from what the spec already had, and a spec conflict
 a Git merge leaves has one recovery, given in the same words by the docs and the refusals.
+A report names the drafts left behind, and a prune deletes only the drafts on a list the user approved.
 Records may also declare `embeds` (surfaces drawn inside a claim), `core` and `about` (the target a
 note serves), and an `agreed` decision (who decided and when); the claims flagged `core` form an
 always-on frame that arrives with the first page of a `read`.
@@ -111,13 +113,20 @@ the playbook's own method appear there only as proposed diffs, never applied by 
 ## §tools.spec/census-note — The `[spec census]` note stays short
 
 After a tool call that brings new changed files, and only then, the `[spec census]` note says what
-the census found, the same in pi sessions, pi workers and Claude Code workers. Only what changes
+the census found (the one exception is the unread line, §tools.spec/unread-landed), the same in pi sessions, pi workers and Claude Code workers. Only what changes
 while one of the session's own tool calls runs is the session's: a file changed, or a commit made,
 between its calls (another process sharing the work tree, a worker, the user's editor) is taken in
 silently before the next call and left out of every count and line, so a session that changes
 nothing itself never gets a note or `No draft yet`. Such a file the session then changes itself is
-its own from that call on. A worker's changes reach the worker's own census note, never its
-parent's.
+its own from that call on. A call that fails (a shell command that exits non-zero; in Claude Code,
+a call that ends in `PostToolUseFailure` instead of `PostToolUse`) is closed exactly like one that
+succeeds: what changed while it ran is its own and gets the same note, and no later change between
+calls counts as the session's because of it. A call that never ran is closed without a census
+where the host says so (in pi, a call blocked or aborted before it started; in Claude Code, a
+denied call, `PermissionDenied`); any other call left open stops counting as running when the
+next prompt starts a run (in Claude Code, also after 15 minutes). A worker's changes reach the worker's own census note, never
+its parent's; when the worker settles, its parent gets one line naming where they landed
+(§tools.spec/worker-landed).
 
 - a header, "N changed file(s) in the boundary, M unclaimed", followed by "; K mapped outside the
   boundary" when K is above 0; it gives no foreign count;
@@ -126,10 +135,20 @@ parent's.
   a file no claim maps still reads `unclaimed`;
 - one line for the new files outside the boundary that no claim maps: "Outside the boundary, no
   claim maps: a, b (+N more): spec any whose change a user sees";
-- the write guard, orphaned-evidence, manifest-conflict and promote drift notes, when they apply.
+- the write guard, orphaned-evidence, spec-conflict and promote drift notes, when they apply;
+- at the first call after the session's last edit, the one `Unread § your change landed in` line
+  (§tools.spec/unread-landed).
+
+The spec-conflict note comes first, once per conflict, when Git holds spec files unmerged. A
+conflicted `manifest.json` gets the `merge-manifest --write` command to run first and, if it
+refuses, §tools.spec/conflict-recovery's recovery; claim files in conflict with the manifest merged
+get that recovery alone (from "take"). Both name the project's default branch where the recovery says
+`master`. When a claim file conflicts and the `merge-claims` driver (§tools.spec/git-merge) isn't
+set up for it in that clone, the note ends with the one-time setup. During a rebase it says to abort
+the rebase instead.
 
 It has no `Foreign §:` line, no `Rule:` line and no `New claims under a foreign §` pairs, and a newly
-touched foreign § alone never fires it. Returning to a work tree retains its census state. When the
+touched foreign § alone never fires it (the unread line alone lists foreign § to read). Returning to a work tree retains its census state. When the
 census can't run, the model gets one line, "[spec census] incomplete: <why>; run census by hand",
 once per cause per work tree until a census there succeeds again; there is no toast. When the
 census printed nothing, <why> carries the first error line it wrote to stderr (else its first
@@ -144,6 +163,47 @@ own read-only tools and the team tools team_inbox, team_msg, team_ask, team_rost
 wake_nudge. A skipped call neither looks at the tree nor moves the census's baseline; what changed
 while it ran is taken in before the next call that can write, like any change between calls. Shell
 commands are never skipped.
+
+## §tools.spec/worker-landed — A finished worker names the § its changes landed in
+
+When a code-writing worker that a spec-on session started (pi or Claude Code, plain, sandboxed,
+hosted or a team member) settles, its summary carries one line after the worker's answer (after the preview, before the
+notice, when the answer is cut), so the answer's first line still opens the report: "Spec: this
+worker's changes landed in §a, §b (+N more)", with at most 5 §, followed by "; unclaimed: x, y
+(+N more)" (at most 3 files) when some of its changed files in the boundary have no claim (with
+none mapped: "Spec: this worker's changes landed in no claim; unclaimed: …"). The summary is the
+same text everywhere a settle reaches: the parent's `subagent-complete` message, `agent_wait`'s
+result, and a team member's completion routed to its coordinator. Its changes are the files its
+own census counted (§tools.spec/census-note) since it started: what another process changed
+between its calls is not among them, and a file it changed back drops out at its next census. The § are those its
+census mapped them to, with the draft it worked in when it had one. No line when none of its own
+changes is in the boundary or mapped by a claim, when its census never ran, and for a worker
+without the census (read-only, remote, or started before this change). It is the same line at
+every settle of that worker, never a per-call note, and nothing checks or acts on it.
+
+## §tools.spec/unread-landed — Once after the last edit, one line names the unread § the change landed in
+
+At the first tool call after a session's last edit (a call that can write but changed nothing of
+the session's own, after one or more that did), the `[spec census]` note carries one line naming the
+foreign § the session's own changed files landed in that the session hasn't read: "Unread § your
+change landed in: read first §a, §b; +N more: <command>". It is the same in pi sessions, pi workers and
+Claude Code workers. The § come from `census --changed --related` (with the task's draft when it
+has one), in census-rank order (§tools.spec/census-rank), keeping only those a session's own
+changed file lands in: at most 5 are marked read first, the first of that order that score above
+zero or have a stale literal. Every other one is counted, never dropped: "+N more:" is followed by
+the exact census command the line came from (`node "$core/sova-spec.mjs" census --changed
+--related` with the same `--root`, `--base`, `--own-base` and `--spec`), whose output names each
+of them, so the line stays short however many § the change touched (under 300 characters for 25
+touched § with short ids). With none marked read first, it reads "N unread: <command>".
+A § with a stale literal says so beside its id: "(still states 12)". A § the session ran
+`sova-spec.mjs read` on, by its literal id in any of its shell commands so far (a read of a shell
+variable counts every § that command spells), counts as read; a §
+the task created is never listed, nor one only another process's changes landed in. The line is
+said once per set of landed §: it stays quiet until a later edit changes that set, and says nothing
+when every one of them was read. A call that edits never carries it; a tool the census skips
+(§tools.spec/census-note) is not the call after the edit, so the line comes with the next call that
+can write. Like every census note it checks nothing and holds nothing: the turn still ends when the
+model stops (§tools.spec/no-turn-end-check).
 
 ## §tools.spec/write-guard — The direct-write note judges the files, not the command
 
@@ -173,6 +233,25 @@ still in its draft. Such a § is never in `census.foreign` or the `foreign-summa
 existed at `<rev>` stays foreign however the task changed it. With `--own-base` revisions, a §
 absent at every one of them is the task's own as well.
 
+## §tools.spec/census-rank — `census --changed --related` ranks touched § by the changed lines
+
+`census --changed --related` ranks the foreign § the changed files land in by the change's own
+lines. From the added and removed lines of each changed file a claim maps (`git diff -U0` against
+the base; an untracked file's lines all count as added) it takes code-shaped names (with an inner
+capital, `_`, `-`, `.` or `$`, or all capitals), the text of short string literals, and numbers of
+two or more digits. A § scores the sum of the weights of the distinct ones its passage (heading,
+prose, backticked tokens and fenced examples) contains as whole names, each weighing more the fewer
+of the spec's passages contain it, as `where` weighs a file's tokens (§tools.spec/where-lookup). A
+string or number the change removed and didn't add back that a § still states is a `stale` literal
+of that §; a § with one ranks above every § without. `census.rank` lists each foreign touched §
+once, best first (an equal score puts the § mapping fewer code files first, then goes by id), with its `score`, `reason` (the matched names, heaviest first) and
+`stale` literals; `census.readFirst` is its first 5 that score above zero or have a stale literal,
+and `census.named` every other one, so each is in exactly one of the two. The text output prints a
+`read first (ranked by the changed lines):` line, each § with its heaviest names and stale
+literals, and a `named:` line. Nothing in the ranking knows a project: the names come from
+the diff and the spec. A rank is a literal match, never proof that a § is or isn't affected; without
+`--related` the census does not rank.
+
 ## §tools.spec/mode-reading — Spec mode teaches contents first, then one passage
 
 The spec minor mode's guide teaches the pull path. The agent finds its roots with `map` and `where`,
@@ -189,10 +268,12 @@ The guide's promotion lines agree with the draft tool: doc-only evidence covers 
 agreed records without code (§tools.spec/agreed-promotion) and a change to `embeds`, `about` or
 `core` alone (§tools.spec/field-promotion); a test drives the draft tool's doc-only rule, so the
 guide fails its test when that rule gains a case the guide doesn't name or drops one it does. For a
-`manifest.json` conflict it sends the agent to the census note. The exemption from drafts is decided from passages read, and the
+`manifest.json` conflict it sends the agent to the census note. For a decision the user agreed to, it points to `agree`
+(§tools.spec/agree-command) in one line, and to PROMOTE.md for when that lands. The exemption from drafts is decided from passages read, and the
 census note's `No draft yet` line says the same. While coding, the guide relies on the census note
-(§tools.spec/census-note), with no rule of one file per edit and no census run by hand; one
-`census --changed` runs before finishing. A worker's spec brief lists `toc`, `read` and
+(§tools.spec/census-note), with no rule of one file per edit and no census run by hand. Before
+finishing it reads each § the census note's unread line (§tools.spec/unread-landed) marks read
+first; the census command that line gives lists the rest. A worker's spec brief lists `toc`, `read` and
 `impact --near` among its read-only commands. The guide rides every turn, so a test caps its word
 count a few words above its length, and growing it is a deliberate change.
 
@@ -202,7 +283,9 @@ Replies carry no spec lines but one, "Also updates §X: <what>" (below), which n
 no `Also changes:`, `Plumbing:`, `Deferred:` or `Spec check override:` line is asked for or checked. A turn with spec on ends when the model stops, as one
 with spec off does: nothing re-prompts it, and no warning, toast, hidden note, session record or
 card about the turn's spec changes is added, in a pi session, a pi worker or a Claude Code worker.
-A worker writes no spec ledger, and its parent reads none. A Claude Code worker started before
+A worker writes no spec ledger, and its parent reads none; the one line a finished worker's
+summary carries naming where its changes landed (§tools.spec/worker-landed) is read from the
+worker's census state, checks nothing and asks for nothing. A Claude Code worker started before
 this change that still calls the hook's `stop` step or passes `--ledger` gets nothing: the hook
 prints nothing and exits 0. A foreign § (one that existed before the task
 started) whose text the task's change contradicts, or where it changes what a user sees beyond
@@ -235,6 +318,29 @@ declarations were reordered, that holds a carriage return, or whose graph on any
 load, is still compared as a whole file. A merged file must read back as exactly the declarations
 it was merged from, byte for byte, or the promotion is refused as a conflict and nothing is written.
 
+## §tools.spec/git-merge — A Git merge of spec changes conflicts only on the same promise
+
+Two Git branches that each promoted spec changes merge without a conflict unless they changed the
+same promise. `.gitattributes` routes the claim files through the draft tool's `merge-claims`
+driver and `manifest.json` through `merge-manifest`; Git needs each defined once per clone, and the
+setup names no project path but the tools' own. `merge-claims` merges a claim file per declaration
+the same way promotion does (§tools.spec/span-promotion), with the merge base, ours and theirs in
+the roles of base, current and draft, so the merged file has the bytes the two promotions give when
+landed one after the other in one tree, in either order. The driver finds declarations from the
+file's own H1 and H2 headings, without loading the graph. When a declaration or a gap changed
+differently on both sides, a declaration was deleted on one side and changed on the other, the file
+can't be cut per declaration (no declarations, a carriage return, kept declarations reordered), or
+the merged file doesn't read back as the declarations it was merged from, the driver writes Git's
+own line merge with its conflict markers, so both sides' prose stays in the file, and Git reports
+the file as conflicted; its refusal (`claims-conflict`) then gives §tools.spec/conflict-recovery's
+recovery in the same words, with the project's default branch.
+
+A record's place in `manifest.json` doesn't depend on the order changes landed in. Promotion and
+`merge-manifest` put a record that is new to the manifest right before the first record of its own
+area (its identifier up to the `/`) that sorts after it, or else right after that area's last
+record; the first record of an area goes right before the first record whose area sorts after its
+own, or last. Records already in the manifest keep their place.
+
 ## §tools.spec/conflict-recovery — A spec conflict has one recovery, said the same way everywhere
 
 A promotion conflict within one tree (current changed a declaration the draft changed too) is
@@ -250,7 +356,8 @@ merge, promote the branch's drafts again with the same `--id`s (re-recording evi
 calls stale; a draft that is gone is re-applied in a new draft from current), then commit the
 claims. Followed literally, it leaves a spec whose graph loads and a re-promotion that lands on the
 first try. The refusal names the project's own default branch where PROMOTE.md says `master`.
-`merge-manifest`'s `manifest-conflict` refusal carries it, and so does a promotion refused because
+`merge-manifest`'s `manifest-conflict` refusal carries it, so does `merge-claims`' `claims-conflict`
+(§tools.spec/git-merge), and so does a promotion refused because
 spec files are still unmerged in Git's index (`spec-merge-conflict`) or because the current spec's
 graph does not load (`current-invalid`).
 
@@ -272,6 +379,44 @@ refused, and an agreed record that maps code still needs commit or snapshot evid
 An `agreed` that is not an object with a non-empty `by` and a valid date `at`, or that sits on a
 note or section, is refused at evidence and at promotion. `agreed` is a record field, not a label
 value, so a core that predates it still loads a manifest carrying it.
+When a promotion changes an agreed record's prose but keeps the `agreed` current has, and a number
+or a backticked token in that prose was added or removed, the promotion carries a note
+(`agreed-kept-on-change`, never a refusal) naming who the kept `agreed` credits, and when, and the
+changed tokens: a change of meaning needs a new agreement (§tools.spec/agree-command), while a
+rewording that changes no number or token gets no note.
+
+## §tools.spec/agree-command — One command agrees, and lands what isn't built
+
+`agree <draft> --id '<§id>'… --by <who> --verification <text>` writes the decision into the draft:
+on each named behavior or surface it sets `agreed: {by, at}`, with `at` the current UTC time to the
+minute unless `--at` gives an ISO date or time, and `authority: "accepted"`. A promise with prose in
+the draft but no record gets one (an H1 is a surface, an H2 a behavior). An `agreed` this draft
+already gave, by the same person, is kept, so a second run changes nothing. It refuses what
+promotion would: a note or section, an id with no prose in the draft, a record current already has
+agreed whose prose the draft leaves unchanged, and an `at` earlier than current's.
+
+For each record that maps no code and is not labelled built, the same call records doc-only
+evidence with `--by` and `--verification` as given, then runs promotion's own plan for those
+records and applies it only when that plan is clean: no refusal, no drift warning, no note, and no
+foreign § beyond a parent gaining the new claim. Its output then names what it promoted, the plan
+hash and the files written. Otherwise it writes nothing to the main spec, exits 1
+(`agree-not-promoted`) with the plan's findings, and the agent takes the ordinary path. A record
+that maps code is only stamped, never promoted by `agree`: its build records commit or snapshot
+evidence and promotes with a preview. Without `--write` it only previews and writes nothing.
+
+## §tools.spec/align-agree — With align on too, the go-ahead is the Agree step
+
+With the align minor mode also on, agreeing in align and changing the spec are one act. When an
+`align` call sets an alignment implementing while the spec minor mode is on, its result text (never
+its `details`) ends with a paragraph telling the agent that this go-ahead is the Agree step: before
+building, it writes each decision that changes behavior as a promise in a spec draft (a new claim,
+or the claim the decision changes) and runs `agree` with `--by` the person who gave the go-ahead and
+the alignment's id in `--verification`, which lands the records that map no code in the main spec,
+so it says who decided before any code exists. If `agree` reports the promotion not clean, the
+agent resolves what it lists and promotes. A changed claim that already maps code keeps its new
+`agreed` in the draft and lands with the build, and the build updates those same records. With
+spec off, or align off, nothing is added, and neither mode's prompt block carries this step: it
+rides only that one result. What the align tool records is unchanged.
 
 ## §tools.spec/field-promotion — A record-field-only change lands on doc-only evidence
 
@@ -308,6 +453,30 @@ per-file list appears only with `--all`. A promotion preview or write gives, bes
 graph's warning count, how many of those warnings current does not already have
 (`warningsIntroduced`), and names at most five claims whose mapped code changed under unchanged
 prose, with their total count and the core `foreign --landing` command that lists every one.
+
+## §tools.spec/draft-hygiene — Drafts left behind are reported, and only an approved list is pruned
+
+`draft drafts` reads every draft of the project (`--worktrees`: of every Git work tree of its
+repository too) and writes nothing. Each draft gets its age (days since its last activity: made,
+evidence recorded or promoted), one state with the reasons for it, and a suggested action:
+`landed` (an id is still pending while its implementation is on the default branch: a commit its
+evidence names is in that branch, or the work tree's own branch was merged into it after the draft
+was made) suggests promote; `promoted` (every id is already current, was promoted by this draft
+before current moved on, or is on the default branch exactly as the draft says it), `superseded` (nothing pending, and an id current changed differently) and
+`empty` (it changes nothing and is older than the age limit) suggest delete; `old` (pending, older
+than the limit, 7 days unless `--days N`), `active` and `unreadable` suggest keep, `landed` with
+the ids whose evidence must be re-recorded first. The default branch is the one
+`promote` names (origin's HEAD, else `master`, else `main`); a project without Git gets no `landed`.
+It exits 1 when any draft is other than `active`.
+
+`draft prune --approved FILE` deletes only drafts the file names, one per line, each optionally
+followed by the `draftSha256` the report printed (one hash over its `draft.json` and `spec/`); without `--write` it only lists them. A name with
+no draft, a hash that no longer matches (the draft changed after it was approved), or an
+interrupted promotion refuses the whole prune, and nothing is deleted. No other command deletes a
+draft, and none suggests deleting one that still has a pending id.
+
+A promotion preview or write names, once, how many other drafts in its project are older than the
+age limit, with the `drafts` command that says which are left behind.
 
 ## §tools.spec/inspection-safety — Refused inputs are not inspected
 

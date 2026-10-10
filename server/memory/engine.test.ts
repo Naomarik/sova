@@ -106,6 +106,26 @@ describe("the engine", () => {
     assert.equal(t2!.rebased, false);
   });
 
+  test("the system prompt's size is weighed, and the tails sent are counted across engines", async () => {
+    // Each turn adds ~2 KB of lines; turn n's view is everything before its last message.
+    const all = Array.from({ length: 17 }, (_, k) => (k % 2 ? reply(`r${k} ${"x".repeat(1000)}`) : user(`u${k} ${"y".repeat(1000)}`)));
+    const turns = (n: number) => all.slice(0, 2 * n + 1);
+    const run = async (promptBytes: number) => {
+      const { e, dir, deps } = engine({ summarize: async () => ({ text: "s".repeat(400), model: "f" }) });
+      const out: boolean[] = [];
+      let eng = e;
+      for (let n = 0; n < 8; n++) {
+        if (n === 4) eng = new MemoryEngine(e.sessionId, new MemoryStore(dir), deps); // a restart mid-way
+        out.push((await eng.turnView(turns(n), 128, promptBytes))!.rebased);
+      }
+      return out;
+    };
+    const small = await run(0);
+    const big = await run(120_000);
+    assert.deepEqual(big, [true, false, false, false, false, false, false, false], "a 120 KB prompt: the prefix is kept");
+    assert.ok(small.filter(Boolean).length >= 3, `no prompt: rebases as the tails add up (${small})`);
+  });
+
   test("the turn waits for the newest summaries, at most the wait, then goes on with placeholders", async () => {
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));

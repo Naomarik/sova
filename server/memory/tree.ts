@@ -153,21 +153,44 @@ export interface Split {
   tail: string[];
   /** The prefix was renewed at this split. */
   rebased: boolean;
+  /** Tail bytes sent since the prefix was last renewed, this split's included (0 without a cost). */
+  sent: number;
 }
+
+/** What a rebase re-writes and what the tails re-wrote so far, for a split that weighs one against the other. */
+export interface SplitCost {
+  /** Bytes a rebase re-writes besides the prefix's own lines: what shares its cached block (prompt, guide). */
+  fixed: number;
+  /** Tail bytes sent since the prefix was last renewed (the previous split's `sent`). */
+  sent: number;
+}
+
+/** The smallest tail a split keeps a prefix for, bytes. */
+export const TAIL_FLOOR = 1536;
 
 /**
  * The cache split (§chat.memory/turn, spike cache-fix): keep the previous prefix while it still leads the
- * view, line for line, and the lines after it stay under the larger of 1,536 bytes and a quarter of the
- * prefix; else rebase: the view's built lines up to its first placeholder become the prefix.
+ * view, line for line, and the lines after it stay small; else rebase: the view's built lines up to its
+ * first placeholder become the prefix. With a cost (a turn), "small" weighs the two writes: a turn that
+ * keeps the prefix re-writes its tail, a rebase re-writes the prefix's whole cached block (`fixed` plus the
+ * prefix), so the prefix is kept while the tails sent since it was renewed, this one included, total at
+ * most that block (and at least TAIL_FLOOR). Tails growing by g bytes a turn then rebase about every
+ * √(2·block/g) turns, the fewest bytes written per turn. Without a cost (the summarizer's compaction
+ * view): the tail stays under the larger of TAIL_FLOOR and a quarter of the prefix.
  */
-export function splitView(lines: readonly string[], previous: readonly string[] | undefined, builtLines: number): Split {
+export function splitView(lines: readonly string[], previous: readonly string[] | undefined, builtLines: number, cost?: SplitCost): Split {
   if (previous && previous.length <= lines.length && previous.every((l, k) => l === lines[k])) {
     const tail = lines.slice(previous.length);
-    const limit = Math.max(1536, bytes(previous.join("\n")) / 4);
-    if (bytes(tail.join("\n")) <= limit) return { prefix: [...previous], tail, rebased: false };
+    const tailBytes = tail.length ? bytes(tail.join("\n")) : 0;
+    const prefixBytes = bytes(previous.join("\n"));
+    if (cost) {
+      const sent = cost.sent + tailBytes;
+      if (sent <= Math.max(TAIL_FLOOR, cost.fixed + prefixBytes)) return { prefix: [...previous], tail, rebased: false, sent };
+    } else if (tailBytes <= Math.max(TAIL_FLOOR, prefixBytes / 4)) return { prefix: [...previous], tail, rebased: false, sent: 0 };
   }
   const n = Math.min(builtLines, lines.length);
-  return { prefix: lines.slice(0, n), tail: lines.slice(n), rebased: true };
+  const tail = lines.slice(n);
+  return { prefix: lines.slice(0, n), tail, rebased: true, sent: cost && tail.length ? bytes(tail.join("\n")) : 0 };
 }
 
 /** `s` cut to at most `n` bytes at its last sentence end (else at a word, else anywhere), never inside a

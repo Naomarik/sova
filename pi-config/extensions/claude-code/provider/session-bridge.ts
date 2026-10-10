@@ -396,10 +396,19 @@ export function memoryViewOf(messages: readonly Message[]): MemoryViewParts | un
 	return first?.role === "user" ? readMemoryView(first.content) : undefined;
 }
 
-/** The system prompt a child is given: the session's, then a memory view's guide and stable prefix, which
-    change only when the view rebases, so they are read from the prompt cache under Claude Code's own mark. */
-export function memorySystemPrompt(systemPrompt: string, view: MemoryViewParts | undefined): string {
-	return view ? `${systemPrompt}\n\n${view.guide}\n\n${view.prefix}` : systemPrompt;
+/**
+ * CLI 2.1.295's split mark in an initialize `systemPrompt` (its own default prompt's static/dynamic boundary).
+ * On the first-party API the CLI sends the elements before it as one system block and the elements after it
+ * as another, each under its own cache mark (in place of the mark on its agent line: no extra mark).
+ * Elsewhere it drops the element and joins the rest with a blank line, the same text as without it.
+ */
+export const SYSTEM_PROMPT_BOUNDARY = "__SYSTEM_PROMPT_DYNAMIC_BOUNDARY__";
+
+/** The initialize `systemPrompt` a child is given: the session's, then past the boundary a memory view's
+    guide and stable prefix, which change only when the view rebases. Both are read from the prompt cache,
+    and a rebase re-writes the view's block alone where the CLI splits at the boundary. */
+export function memorySystemPrompt(systemPrompt: string, view: MemoryViewParts | undefined): string[] {
+	return view ? [systemPrompt, SYSTEM_PROMPT_BOUNDARY, `${view.guide}\n\n${view.prefix}`] : [systemPrompt];
 }
 
 /**
@@ -1342,7 +1351,7 @@ class CliSession {
 
 		const fields: Record<string, unknown> = { sdkMcpServers: [MCP_SERVER_NAME] };
 		if (this.options.sendSystemPrompt !== false && request.systemPrompt) {
-			fields.systemPrompt = [memorySystemPrompt(request.systemPrompt, memoryViewOf(request.messages))];
+			fields.systemPrompt = memorySystemPrompt(request.systemPrompt, memoryViewOf(request.messages));
 			fields.systemPromptSnapshot = false;
 		}
 		const ack = await transport.control("initialize", fields);

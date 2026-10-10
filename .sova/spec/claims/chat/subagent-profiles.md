@@ -137,8 +137,9 @@ Delegate's row detail line reads "Profile: <name>".
   (e.g. `Opus 5.5 · Fable 5.1 · Sonnet 5.5`, §app.claude-code-provider/model-names; Off reads "the agent
   picks") — then **Manage Profiles…**, which opens Settings → Subagents, and **Save Current as
   Profile**, which asks for a name inline and saves what this chat uses now as a new profile (not
-  offered while the chat is on Off: it configures nothing). Picking a row switches this chat only,
-  closes the menu and returns focus to the trigger.
+  offered while the chat is on Off: it configures nothing). Picking a row switches this chat only
+  and returns to the main panel, with focus on the Subagents row; the menu stays open. Manage
+  Profiles… closes the menu.
 - **The default.** The footer's save-as-default button also covers the profile: it reads
   "Already the default" only when this chat's mode, strict flag, minor modes **and** subagent
   profile all match what new sessions start from, and pressing it saves both.

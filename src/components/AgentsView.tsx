@@ -53,7 +53,7 @@ import { CostsTab } from "./CostsTab";
 import { InsightsPage, ListSkeleton } from "./InsightsPage";
 import { TitleField } from "./SelectionToolbar";
 import { sessionHref } from "./Sidebar";
-import { Chip, CountChip, Icon, type Tone } from "./ui";
+import { Chip, CountChip, Icon } from "./ui";
 
 /** What a row needs from the page: the shared state and the gestures that reach past the board. */
 interface BoardCtx {
@@ -81,8 +81,6 @@ interface BoardCtx {
 /** Spend moves with every call, but a minute is fresh enough for a head figure and a row's chip. */
 const USAGE_POLL_MS = 60_000;
 
-const STATE_TONE: Record<BoardRow["state"], Tone | "accent" | undefined> = { working: "accent", "needs-you": "warn", idle: undefined, archived: undefined };
-
 /** A turn in flight as this tab knows it, newer than the list (the sidebar's rule). */
 const busyOf = (s: SessionSummary) => !s.live && !!(localRunning()[s.path] ?? s.busy);
 
@@ -92,16 +90,6 @@ function contextOf(s: SessionSummary): ContextInfo | null {
   if (live === "compacted") return null;
   if (live) return live;
   return s.context && s.context.window ? s.context : null;
-}
-
-function StateChip(props: { row: BoardRow; class?: string }) {
-  return (
-    <span class={props.class}>
-      <Chip tone={STATE_TONE[props.row.state]} live={props.row.state === "working"} title={props.row.reason ?? undefined}>
-        {STATE_WORD[props.row.state]}
-      </Chip>
-    </span>
-  );
 }
 
 /** A tree's merge reading: a success chip when merged, else ↑ahead ↓behind, else a muted word. */
@@ -518,7 +506,8 @@ function BoardRowView(props: { row: BoardRow; ctx: BoardCtx }) {
                   <span class="board-title" title={s().originalTitle ? `${s().title}\nOriginally ${quoted(s().originalTitle!)}` : s().title}>
                     {s().title}
                   </span>
-                  <StateChip row={r()} class="board-state-inline" />
+                  {/* The rail and the group heading show the state; this says it to a screen reader. */}
+                  <span class="visually-hidden">, {STATE_WORD[r().state]}</span>
                 </p>
               }
             >
@@ -552,17 +541,14 @@ function BoardRowView(props: { row: BoardRow; ctx: BoardCtx }) {
 
         {/* Each cell is at most 2 lines: what matters first, the rest muted under it. */}
         <div class="board-cell board-activity">
-          <span class="board-cell-line">
-            <StateChip row={r()} class="board-state-cell" />
-            <span class="board-when" title={s().lastActiveAt}>
-              {relativeTime(s().lastActiveAt, props.ctx.now)}
-            </span>
-          </span>
-          <span class="board-cell-line board-cell-sub">
+          <span class="board-cell-line board-activity-line">
             <span class="board-model text-mono" title={s().model ?? undefined}>
               {compactModel(s().model) ?? "—"}
             </span>
             <Show when={contextOf(s())}>{(c) => <ContextRing info={c()} />}</Show>
+            <span class="board-when" title={s().lastActiveAt}>
+              {relativeTime(s().lastActiveAt, props.ctx.now)}
+            </span>
           </span>
         </div>
 

@@ -80,7 +80,7 @@
 .board-row:hover { background: var(--color-sunken); }
 .board-rename { cursor: auto; }
 .board-row + .board-row { border-top: var(--stroke-thin) solid var(--color-border); }
-/* The state rail: the row's left edge. Decorative — the chip carries the word. */
+/* The state rail: the row's left edge. Decorative — the heading and a hidden word after the title say it. */
 .board-rail { position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--color-border); }
 .board-row[data-state="working"] .board-rail { background: var(--color-accent); }
 .board-row[data-state="needs-you"] .board-rail { background: var(--status-warn); }
@@ -132,7 +132,6 @@
   font-weight: var(--fw-medium);
   color: var(--color-ink);
 }
-.board-state-inline { flex: none; }
 .board-rename { display: flex; flex-direction: column; gap: var(--space-1); padding-right: var(--space-2); }
 .board-rename .group-field { flex-wrap: wrap; }
 .board-rename .input { flex: 1; min-width: 12rem; }
@@ -154,7 +153,10 @@
 /* One line of a 2-line cell: never wraps; what doesn't fit is cut. The second line is muted. */
 .board-cell-line { display: flex; align-items: center; gap: var(--space-2); min-width: 0; max-width: 100%; white-space: nowrap; }
 .board-cell-sub { color: var(--color-ink-muted); }
-.board-state-cell { display: inline-flex; flex: none; }
+/* Activity is one muted line: model · ring · age; the age never cuts, the model gives first. */
+.board-activity-line { color: var(--color-ink-muted); }
+.board-activity-line .board-when { flex: none; }
+.board-activity-line .board-when::before { content: "·"; margin-right: var(--space-2); }
 .board-model { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-mono); }
 .board-when { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-ink-muted); }
 .board-count { display: block; overflow: hidden; text-overflow: ellipsis; }
@@ -215,21 +217,21 @@ button.board-team:focus-visible { outline: var(--focus-ring); outline-offset: va
 
 .board-head { display: none; }
 
-/* ---- Unfolded, condensed: Activity's first line over Workers' in one column; Open, details and ⋯ ---- */
+/* ---- Unfolded, condensed: the Activity line over Workers' first line in one column; Open, details and ⋯ ---- */
 @container insights (min-width: 768px) {
   .board-line {
-    grid-template-columns: minmax(0, 1.5fr) minmax(9.5rem, 1fr) minmax(0, 1.5fr) calc(var(--control-md) * 3 + var(--space-1) * 2);
+    grid-template-columns: minmax(0, 1.6fr) minmax(9.5rem, 1fr) minmax(0, 1.5fr) calc(var(--control-md) * 3 + var(--space-1) * 2);
     grid-template-areas: "session activity trees actions" "session workers trees actions";
     gap: 2px var(--space-3);
     padding: var(--space-1) var(--space-2) var(--space-1) var(--space-2);
   }
   .board-cell.board-activity, .board-cell.board-workers { display: flex; flex-direction: column; flex-wrap: nowrap; align-items: stretch; justify-content: center; gap: 2px; }
-  .board-activity .board-cell-sub, .board-workers .board-cell-sub { display: none; }
+  .board-workers .board-cell-sub { display: none; }
   .board-activity { align-self: end; }
   .board-workers { align-self: start; }
   .board-trees { padding-left: 0; }
   .board-trees:has(> .board-dash) { display: flex; }
-  .board-state-inline, .board-micro { display: none; }
+  .board-micro { display: none; }
   .board-act { display: inline-flex; }
   /* The trees: 2 lines on one grid, so both lines' readings and counts share columns. */
   .board-tree-set {
@@ -249,12 +251,12 @@ button.board-team:focus-visible { outline: var(--focus-ring); outline-offset: va
 @container insights (min-width: 1000px) {
   .board-line,
   .board-head {
-    grid-template-columns: minmax(0, 1.5fr) minmax(9.5rem, 1fr) minmax(0, 1.1fr) minmax(0, 1.8fr) calc(var(--control-md) * 3 + var(--space-1) * 2);
+    grid-template-columns: minmax(0, 2fr) 10rem minmax(9rem, 0.8fr) minmax(0, 2.2fr) calc(var(--control-md) * 3 + var(--space-1) * 2);
     grid-template-areas: "session activity workers trees actions";
     column-gap: var(--space-3);
   }
   .board-cell.board-activity, .board-cell.board-workers { align-self: center; }
-  .board-activity .board-cell-sub, .board-workers .board-cell-sub { display: flex; }
+  .board-workers .board-cell-sub { display: flex; }
   .board-totals { display: block; }
   .board-head {
     display: grid;
@@ -275,6 +277,6 @@ button.board-team:focus-visible { outline: var(--focus-ring); outline-offset: va
 @container insights (min-width: 1600px) {
   .board-line,
   .board-head {
-    grid-template-columns: minmax(20rem, 1fr) 11rem 17rem 26rem calc(var(--control-md) * 3 + var(--space-1) * 2);
+    grid-template-columns: minmax(20rem, 1fr) 10rem 17rem 28rem calc(var(--control-md) * 3 + var(--space-1) * 2);
   }
 }

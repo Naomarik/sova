@@ -799,6 +799,18 @@ export function readinessChecksOf(sessionPath: string): ReadinessChecks | undefi
   return checksBySession.get(sessionPath);
 }
 
+/** The last background answer for a session, without queueing a read: `known` false while it was
+    never read (right after a start), so a reader tells "not read yet" from "tracks nothing"
+    (the merge board, §chat.worktrees/merge-board). `at` is when it was computed. */
+export function readinessReading(sessionPath: string): { known: false } | { known: true; at: number; value?: SessionReadiness } {
+  const hit = cache.get(sessionPath);
+  if (!hit) return { known: false };
+  return { known: true, at: hit.at, ...(hit.value ? { value: hit.value } : {}) };
+}
+
+/** Whether readiness ever covers this session (worker, Overseer, baton and remote sessions never). */
+export const readinessCovers = (s: SessionSummary): boolean => !excluded(s);
+
 /** A worktree's readiness from the session's cached answer (the Session tab's rows). */
 export function treeReadinessOf(sessionPath: string, treePath: string): WorktreeReadiness | undefined {
   inspected(sessionPath);

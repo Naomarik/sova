@@ -224,6 +224,13 @@ export function ModeMenu(props: { control: ModeControl }) {
       setError({ title: "Couldn't switch the mode.", body: `${why}. Your mode is unchanged.` });
     } finally {
       setBusy(false);
+      // The rows re-render as the mode arrives, which can drop focus to <body>: once that settles,
+      // put it back on the row just chosen, unless the menu closed or focus moved elsewhere in it.
+      requestAnimationFrame(() => {
+        if (!menu.matches(":popover-open") || menu.contains(document.activeElement)) return;
+        const at = items().findIndex((x) => x.id === it.id);
+        if (at >= 0) focusItem(at);
+      });
     }
   };
 

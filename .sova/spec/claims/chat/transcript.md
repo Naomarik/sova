@@ -547,7 +547,7 @@ Driven by `ChatServerMessage.event`. Streaming working blocks follow the same br
   **Screen readers hear the words once in either form**: the one words span is visible in the wide
   form and visually hidden in the narrow one, and the icon and the dot are `aria-hidden`.
   **Stopping and the rare states keep their words in both forms**, after the dot: "Stopping…",
-  "Compacting context", "Retrying after a provider error", "Waiting for zai · 5 of 5 in use" (§app.provider-limits/waiting-shown). Short of room they end in an ellipsis,
+  "Compacting context", "Retrying after a provider error", "Updating memory…" (§chat.composer/memory-status), "Waiting for zai · 5 of 5 in use" (§app.provider-limits/waiting-shown). Short of room they end in an ellipsis,
   with the whole text in the tooltip; in the narrow form they give way first, down to about 4em of
   their words. The row is shared: it also carries the subagents trigger (§app/subagents-pane)
   and the inputs trigger ("7 inputs", which opens the Timeline with Inputs Only on, §chat/timeline), and it
@@ -874,6 +874,15 @@ shows exactly what it showed before.
   While a reply streams, its rows show everything as they always did.
 - **Full content where it's needed.** Copying, the Changes viewer and every server-side reader
   (the Overseer's session reads) still get every tool's whole arguments and output.
+
+## §chat.transcript/recall-rows — Memory recalls are quiet rows
+
+A memory recall — the model's `zoom` or `date` call (§chat.memory/recall) — draws as a slim, quiet
+tool row: the folded line the row carries ("Recalled messages 40–47",
+"Recalled message 40", "Date of message 40"; while it streams, the same line from its arguments),
+in muted text after the clock icon, with no tool name, no "Done" chip and, folded, no card edge or
+fill. "Running" and "Failed" still show. It opens
+like any tool card, onto what the recall returned.
 
 ## §chat.transcript/recent-preload — Recent sessions open at once
 

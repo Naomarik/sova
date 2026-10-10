@@ -41,7 +41,22 @@ and names the new ones. Read-only tools don't trigger it.
 If the change also alters a claim the task didn't start from, the agent asks you in its plan,
 in one question: "This also changes {claim}: {what}. OK?"
 
+## With align on too
+
+When you confirm an alignment, that go-ahead is also your agreement to the promises it decides.
+Before it builds anything, the agent writes each decision that changes behavior as a promise in a
+draft, stamps it with who agreed and when, and promotes the new ones into the spec right away, marked
+*agreed, not built*. The build then updates those same promises. If a later change edits the
+numbers or names in a promise you agreed to without a new agreement, promotion points it out.
+
 ## Finishing
+
+Once the agent stops editing, its next tool call carries one more line: **"Unread § your change
+landed in"**. It names the claims the agent's own changed files land in that the agent hasn't read
+yet, ranked by the names, strings and numbers in the lines it changed: at most five are marked
+read first, and the rest are counted, followed by the one command that lists them. A claim that still states a value the change
+removed (say, "12 MB" after a limit went to 16 MB) says so and comes first. The agent reads the ones
+marked first. The line comes once, and again only when a later edit lands in other claims.
 
 When the work is done, the agent checks each promise it changed against what it built, records
 what it checked, and promotes the drafts it verified. The session promotes its own drafts.

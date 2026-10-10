@@ -5,13 +5,20 @@
 //   check NAME [--base REV]                              the sibling core's `check` over the draft graph, plus drift checks
 //   evidence NAME --id §x... --by WHO --verification TEXT (--commit REV | --snapshot | --doc-only)
 //            [--path P]... [--log FILE] [--write]        record implementation + verification evidence
+//   agree NAME --id §x... --by WHO --verification TEXT [--at ISO] [--write]
+//                                                        stamp agreed {by, at}; with no code, doc-only evidence + a clean promote
 //   promote NAME (--id §x... | --all) [--meta KEY]... [--file PATH]... [--plan SHA] [--write]
 //   recover [--write]                                    roll back an interrupted promotion
+//   drafts [--days N] [--worktrees]                      never writes: each draft's age, state and suggested action
+//   prune --approved FILE [--write]                      delete only the drafts FILE names (the user's approved list)
 //   merge-manifest [--base F --ours F --theirs F] [--write]  record-level 3-way merge of manifest.json (a Git conflict)
+//   merge-claims --base F --ours F --theirs F [--path P] [--write]  per-declaration 3-way merge of a claim file (a Git merge driver)
 // All take --root DIR (required) and [--json]. Writes happen only with --write, only under
-// .sova/spec/drafts/, except `promote --write`/`recover --write`, which also write .sova/spec/manifest.json
-// and files in the claims tree. It runs only the sibling core (`sova-spec.mjs`) and, in a Git project,
-// read-only `git` plumbing (rev-parse, cat-file, merge-base), always without a shell. It never runs a
+// .sova/spec/drafts/ (`prune --write` deletes there, only drafts its list names), except `promote --write`/`recover --write`
+// (and `agree --write`, through promote), which also write .sova/spec/manifest.json
+// and files in the claims tree, and the merge drivers, which write only the --ours file Git hands them. It runs
+// only the sibling core (`sova-spec.mjs`) and, in a Git project, read-only `git` plumbing (rev-parse, cat-file,
+// merge-base, and merge-file to stdout for a claim file the driver can't merge per declaration), always without a shell. It never runs a
 // project script and never implements anything.
 // Exit: 0 done / nothing outstanding; 1 refused or outstanding (conflict, evidence missing or stale,
 //       selection incomplete, lock held, pending transaction, race); 2 cannot (usage, corrupt draft,
@@ -26,10 +33,10 @@ import { constants } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { resolve, join, dirname, posix, relative } from "node:path";
-import { realpathSync } from "node:fs";
+import { realpathSync, existsSync } from "node:fs";
 import { tmpdir, hostname } from "node:os";
 import { fileURLToPath } from "node:url";
-import { createInspection } from "./sova-spec.mjs";
+import { createInspection, declarationSpans } from "./sova-spec.mjs";
 
 const CORE = join(dirname(fileURLToPath(import.meta.url)), "sova-spec.mjs");
 const FORMAT = "sova-spec-draft/1";
@@ -64,8 +71,11 @@ const uniqSorted = (a) => [...new Set(a)].sort();
 // ---------------------------------------------------------------- args
 const FLAGS = { new: ["purpose", "write", "all"], status: [], diff: ["against"], check: ["base", "all"],
   evidence: ["id", "by", "verification", "commit", "snapshot", "doc-only", "path", "log", "write"],
-  promote: ["id", "all", "meta", "file", "plan", "write", "own-base"], recover: ["write"], "merge-manifest": ["base", "ours", "theirs", "write"] };
-const BOOL = new Set(["json", "write", "snapshot", "doc-only", "all"]), MULTI = new Set(["id", "path", "meta", "file", "own-base"]);
+  agree: ["id", "by", "verification", "at", "write"],
+  promote: ["id", "all", "meta", "file", "plan", "write", "own-base", "days"], recover: ["write"],
+  drafts: ["days", "worktrees"], prune: ["approved", "write"], "merge-manifest": ["base", "ours", "theirs", "write"],
+  "merge-claims": ["base", "ours", "theirs", "path", "write"] };
+const BOOL = new Set(["json", "write", "snapshot", "doc-only", "all", "worktrees"]), MULTI = new Set(["id", "path", "meta", "file", "own-base"]);
 function parseArgs(argv) {
   const o = { pos: [], id: [], path: [], meta: [], file: [], "own-base": [], seen: new Set() };
   for (let i = 0; i < argv.length; i++) {
@@ -73,7 +83,7 @@ function parseArgs(argv) {
     if (!a.startsWith("--")) { o.pos.push(a); continue; }
     const k = a.slice(2);
     if (BOOL.has(k)) { o[k] = true; o.seen.add(k); continue; }
-    if (!["root", "purpose", "against", "by", "verification", "commit", "log", "plan", "base", "ours", "theirs", ...MULTI].includes(k)) throw new Fail(2, "usage", `unknown flag ${a}`);
+    if (!["root", "purpose", "against", "by", "verification", "at", "commit", "log", "plan", "base", "ours", "theirs", "days", "approved", ...MULTI].includes(k)) throw new Fail(2, "usage", `unknown flag ${a}`);
     if (i + 1 >= argv.length) throw new Fail(2, "usage", `${a} needs a value`);
     if (MULTI.has(k)) o[k].push(argv[++i]); else o[k] = argv[++i];
     o.seen.add(k);
@@ -83,10 +93,21 @@ function parseArgs(argv) {
   if (!FLAGS[cmd]) throw new Fail(2, "usage", cmd ? `unknown command ${cmd}` : "missing command");
   if (o.root === undefined) throw new Fail(2, "usage", "--root PROJECT is required");
   for (const k of o.seen) if (k !== "root" && k !== "json" && !FLAGS[cmd].includes(k)) throw new Fail(2, "usage", `--${k} does not apply to ${cmd}`);
+  if (o.days !== undefined && !/^[1-9][0-9]{0,3}$/.test(o.days)) throw new Fail(2, "usage", "--days takes a whole number of days, 1-9999");
+  if (cmd === "drafts" || cmd === "prune") {
+    if (name !== undefined) throw new Fail(2, "usage", `${cmd} takes no arguments`);
+    if (cmd === "prune" && (typeof o.approved !== "string" || !o.approved)) throw new Fail(2, "usage", "prune needs --approved FILE: the drafts the user approved for deletion, one per line");
+    return o;
+  }
   if (cmd === "recover" || cmd === "merge-manifest") {
     if (name !== undefined) throw new Fail(2, "usage", `${cmd} takes no arguments`);
     const sides = ["base", "ours", "theirs"].filter((k) => o[k] !== undefined).length;
     if (sides !== 0 && sides !== 3) throw new Fail(2, "usage", "merge-manifest takes all of --base, --ours and --theirs (a merge driver's %O %A %B), or none (the index stages)");
+    return o;
+  }
+  if (cmd === "merge-claims") {
+    if (name !== undefined) throw new Fail(2, "usage", `${cmd} takes no arguments`);
+    if (o.path.length > 1 || o.path.some((p) => !p || p.length > 4096 || /[\0-\x1f\x7f]/.test(p))) throw new Fail(2, "usage", "merge-claims takes at most one --path (the driver's %P)");
     return o;
   }
   if (name === undefined || rest.length) throw new Fail(2, "usage", `${cmd} takes exactly one draft NAME`);
@@ -105,6 +126,11 @@ function parseArgs(argv) {
     if (o.commit !== undefined && !/^[A-Za-z0-9][A-Za-z0-9._/~^@{}-]{0,199}$/.test(o.commit)) throw new Fail(2, "usage", "--commit is not a plain revision name");
     if (o["doc-only"] && o.path.length) throw new Fail(2, "usage", "--doc-only takes no --path");
   }
+  if (cmd === "agree") {
+    if (!o.id.length) throw new Fail(2, "usage", "agree needs at least one --id");
+    text("by", 128); text("verification", 8000);
+    if (o.at !== undefined && agreedProblem({ kind: "behavior", agreed: { by: o.by, at: o.at } })) throw new Fail(2, "usage", "--at takes an ISO date, optionally with a time (2026-10-05 or 2026-10-05T14:30Z)");
+  }
   if (cmd === "promote") {
     if (!o.id.length && !o.all && !o.meta.length && !o.file.length) throw new Fail(2, "usage", "promote needs --id, --meta, --file or --all");
     if (o.all && (o.id.length || o.meta.length || o.file.length)) throw new Fail(2, "usage", "--all selects everything; do not combine it with --id/--meta/--file");
@@ -116,8 +142,10 @@ function parseArgs(argv) {
 }
 const USAGE = "usage: sova-spec-draft <new NAME [--purpose T] | status NAME | diff NAME [--against base|current] | check NAME | " +
   "evidence NAME --id §x --by WHO --verification T (--commit REV|--snapshot|--doc-only) [--path P] [--log FILE] | " +
-  "promote NAME (--id §x|--all) [--meta K] [--file P] [--plan SHA] [--own-base REV]... | check NAME [--base REV] | recover | " +
-  "merge-manifest [--base F --ours F --theirs F]> --root DIR [--write] [--json]";
+  "agree NAME --id §x --by WHO --verification T [--at ISO] | " +
+  "promote NAME (--id §x|--all) [--meta K] [--file P] [--plan SHA] [--own-base REV]... [--days N] | check NAME [--base REV] | recover | " +
+  "drafts [--days N] [--worktrees] | prune --approved FILE | " +
+  "merge-manifest [--base F --ours F --theirs F] | merge-claims --base F --ours F --theirs F [--path P]> --root DIR [--write] [--json]";
 
 // ---------------------------------------------------------------- paths and bytes
 function normRel(raw) {
@@ -838,6 +866,19 @@ async function drift(root, a, g, baseRev) {
   return { base, removedElsewhere: removedElsewhere.slice(0, MAX_REMOVED), proseUnchanged };
 }
 
+// An agreed record's prose changed under the `agreed` current has: the numbers and backticked tokens that came or went,
+// current's prose against the draft's (the words that `agreed` was kept for).
+// A rewording that changes neither says nothing. → note | null
+const bodyOf = (t) => (t ?? "").split("\n").filter((l) => !/^#{1,2}\s+§/.test(l)).join("\n");
+const exactTokens = (t) => new Set([...tokens(t).filter((x) => /\d/.test(x)), ...(bodyOf(t).match(/`[^`\n]+`/g) ?? [])]);
+function agreedKeptOnChange(a, id, was, curDecls) {
+  const [before, after] = [declText(a.cur, curDecls.get(id)), declText(a.prop, a.pc.decls.get(id))].map((t) => exactTokens(t ?? ""));
+  const removed = [...before].filter((x) => !after.has(x)), added = [...after].filter((x) => !before.has(x));
+  if (!removed.length && !added.length) return null;
+  const by = obj(was) ? `${was.by} at ${was.at}` : JSON.stringify(was);
+  return { code: "agreed-kept-on-change", id, agreed: was, removed, added,
+    message: `${id}'s prose changed (${[...removed.map((x) => `-${x}`), ...added.map((x) => `+${x}`)].join(", ")}) but it keeps agreed ${by}: if the meaning changed, that agreement doesn't cover it; stamp the go-ahead that did with \`agree\`` };
+}
 const removedText = (r) => `the draft removed "${r.phrase}" from ${r.id}, but ${r.alsoIn.join(", ")} still say${r.alsoIn.length === 1 ? "s" : ""} it${r.near ? ` (near ${r.near.join(", ")})` : ""}: read them; if the fact changed, change it there too (each is a foreign §)`;
 const citedText = (r, base) => `the draft edited a line of ${r.citedBy.join(", ")} that cites ${r.id}, and ${r.files.join(", ")} changed since ${base.slice(0, 12)}, but ${r.id}'s prose is as it was: read it; if what it says changed, edit it in this draft (it is a foreign §)`;
 
@@ -962,6 +1003,79 @@ async function cmdEvidence(root, o) {
   });
 }
 
+// The Agree step in one call: stamp who agreed, and when, on draft records (creating the record of a declaration
+// that has prose but none), record doc-only evidence for those that map no code, and promote those through promote's
+// own plan, only when that plan is clean: no refusal, no drift warning, no note, no foreign § beyond a parent gaining it. Anything else leaves
+// the current spec as it was and points to the ordinary path. A record that maps code is only stamped.
+const AGREE_NEXT = "evidence --commit (or --snapshot), then promote --id … to preview, then promote … --plan SHA --write";
+async function cmdAgree(root, o) {
+  const at = o.at ?? `${new Date().toISOString().slice(0, 16)}Z`;
+  const build = async () => {
+    const a = await analyze(root, o.name);
+    const ids = uniqSorted(o.id).map((id) => {
+      if (!a.pc.decls.has(id)) throw new Fail(1, "agree-refused", `${id} has no prose in draft ${o.name}; write the promise in the draft first`);
+      // A promise with prose but no record yet gets one: an H1 is a surface, an H2 a behavior.
+      const rec = recOf(a.prop, id) ?? { kind: declText(a.prop, a.pc.decls.get(id))?.startsWith("# ") ? "surface" : "behavior", authority: "accepted" };
+      if (!obj(rec) || !AGREED_KINDS.has(rec.kind)) throw new Fail(1, "agree-refused", `${id} is a ${rec?.kind}; only ${[...AGREED_KINDS].join(" and ")} records are agreed`);
+      // Agreed in this draft already, by the same person: kept, so running it again changes nothing.
+      const mine = obj(rec.agreed) && rec.agreed.by === o.by && o.at === undefined && canon(rec.agreed) !== canon(recOf(a.base, id)?.agreed);
+      const agreed = mine ? rec.agreed : { by: o.by, at }, was = recOf(a.cur, id)?.agreed;
+      if (was !== undefined && canon(was) !== canon(agreed)) {
+        if (a.bc.decls.get(id)?.textSha256 === a.pc.decls.get(id)?.textSha256)
+          throw new Fail(1, "agreed-rewritten", `${id} was agreed ${JSON.stringify(was)} in current and this draft leaves its prose unchanged; a new agreement comes with the prose it changes`);
+        if (obj(was) && typeof was.at === "string" && Date.parse(agreed.at) < Date.parse(was.at)) throw new Fail(1, "agreed-rewritten", `${id}: agreed at ${agreed.at} is earlier than current's ${was.at}`);
+      }
+      const record = { ...rec, authority: "accepted", agreed };
+      const docOnly = !(rec.code ?? []).length && !BUILT_LABELS.has(rec.evidence);
+      return { id, kind: rec.kind, agreed, record, created: !recOf(a.prop, id), stamped: canon(recOf(a.prop, id)) !== canon(record), docOnly };
+    });
+    return { a, ids };
+  };
+  const show = ({ ids }) => ({ name: o.name, ids: ids.map(({ record, ...x }) => x),
+    notPromoted: ids.filter((x) => !x.docOnly).map((x) => ({ id: x.id, why: "it maps code or is labelled built: agree only stamps it", next: AGREE_NEXT })) });
+  const first = await build();
+  if (!o.write) return { exit: 0, written: false, ...show(first) };
+  const now = await withLock(root, async () => {
+    await refusePending(root);
+    const now = await build();
+    if (JSON.stringify(show(now)) !== JSON.stringify(show(first))) throw new Fail(1, "race", "the draft changed while the agreement was prepared; retry");
+    if (now.ids.some((x) => x.stamped)) {
+      const m = structuredClone(now.a.prop.manifest);
+      m.claims ??= {};
+      for (const x of now.ids) m.claims[x.id] = x.record;
+      await writeAtomic(await ownDir(root, `${now.a.rel}/spec`, false), "manifest.json", JSON.stringify(m, null, 2) + "\n");
+    }
+    return now;
+  });
+  const docOnly = now.ids.filter((x) => x.docOnly).map((x) => x.id);
+  const out = { exit: 0, written: true, ...show(now) };
+  if (!docOnly.length) return out;
+  const stage = (what, e) => { if (e instanceof Fail) { e.message = `agreed is stamped in the draft, but ${what}: ${e.message}`; e.out = { ...out, ...(e.out ?? {}) }; } return e; };
+  // Doc-only evidence, unless what is recorded already covers the record and prose as they are.
+  const g = await gitInfo(root), a = await analyze(root, o.name);
+  const needs = [];
+  for (const id of docOnly) if ((await evidenceState(root, a, g, a.changed.get(id) ?? { id, binding: {}, code: [] })).state !== "valid") needs.push(id);
+  if (needs.length) {
+    try { out.evidenceRecordedAt = (await cmdEvidence(root, { ...o, id: needs, "doc-only": true, snapshot: false, commit: undefined, path: [], log: undefined, write: true })).recordedAt; }
+    catch (e) { throw stage("its doc-only evidence was not recorded", e); }
+  }
+  // Promote's own plan, previewed; applied only when nothing in it would make a person look twice.
+  const po = { name: o.name, id: docOnly, all: false, file: [], meta: [], "own-base": [] };
+  const p = await plan(root, po);
+  // A new claim under an existing parent marks the parent child-added: that is the claim itself, not a foreign edit;
+  // and the records this call agreed to are its own, wherever they already are.
+  const foreign = p.out.alsoChangesDetail.filter((x) => x.change !== "child-added" && !docOnly.includes(x.id));
+  if (!p.refusals.length && !p.targets.length) return { ...out, promotion: { written: false, ids: docOnly, plan: p.planSha, alreadyCurrent: true } };
+  const why = [...p.refusals.map((r) => `refused ${r.code}: ${r.message}`), ...p.out.driftWarnings.map((w) => `warn drift: ${w}`),
+    ...p.out.notes.map((n) => `note ${n.code}: ${n.message}`), ...foreign.map((x) => `it also changes foreign ${x.id} (${x.change})`)];
+  const preview = { plan: p.planSha, refusals: p.out.refusals, driftWarnings: p.out.driftWarnings, notes: p.out.notes, alsoChanges: p.out.alsoChanges };
+  if (why.length) throw new Fail(1, "agree-not-promoted", `agreed is stamped in the draft, but its promotion is not clean, so nothing was written to the current spec: ${why.join("; ")}. Resolve it, then promote ${o.name} --id … to preview, then --plan SHA --write`, { ...out, promotion: { written: false, ids: docOnly, ...preview } });
+  try {
+    const r = await cmdPromote(root, { ...po, plan: p.planSha, write: true });
+    return { ...out, promotion: { written: true, ids: r.ids, plan: r.plan, targets: r.targets, alsoChanges: r.alsoChanges } };
+  } catch (e) { throw stage("its promotion was refused", e); }
+}
+
 // Build the promotion: selected units, conflicts, evidence, the full candidate tree, and the file plan.
 // The one recovery for a spec conflict a Git merge leaves; PROMOTE.md says it in the same words, with `master` for the default branch.
 const mergeRecovery = (branch) => `take ${branch}'s whole spec with \`git checkout --no-overlay ${branch} -- ${SPEC}/manifest.json ${SPEC}/claims\` ` +
@@ -982,6 +1096,7 @@ async function plan(root, o) {
     ? `${unmerged.join(", ")} is unmerged in Git's index: run merge-manifest, then --write, and stage it; if it refuses, ${mergeRecovery(branch)}`
     : `${unmerged.join(", ")} ${unmerged.length === 1 ? "is" : "are"} unmerged in Git's index: ${mergeRecovery(branch)}`);
   const curJ = a.cur.exists ? await runCore(root, SPEC) : null;
+  const curDecls = new Map((curJ?.declarations ?? []).map((d) => [d.id, { ...d, file: d.file.startsWith(`${SPEC}/`) ? d.file.slice(SPEC.length + 1) : d.file }]));
   if (curJ?.exit === 2) refuse("current-invalid", `the current spec's graph does not load (exit 2: ${curJ.findings.filter((f) => f.severity === "error").slice(0, 3).map((f) => `${f.code} ${f.message}`).join("; ")}); if a Git merge left it so, ${mergeRecovery(branch)}`);
   const undeclared = a.files.filter((f) => f.merge !== "unchanged" && !f.ids.length);
   const ids = new Set(o.all ? a.changed.keys() : o.id);
@@ -1001,6 +1116,7 @@ async function plan(root, o) {
     if (u.merge === "conflict") refuse("conflict", `${u.what} changed in current since the draft was made, differently; current and draft are left as they are: ${IN_TREE_RECOVERY}`);
 
   // Every selected ID that stays current must say, explicitly, that it is not a proposal.
+  const notes = [];
   for (const id of [...ids].filter((x) => a.changed.has(x) && !a.changed.get(x).deleted).sort()) {
     const auth = recOf(a.prop, id)?.authority;
     if (auth === "candidate") refuse("candidate-label", `${id} is still labelled authority "candidate" in the draft; a promoted record is current, so relabel it ("accepted" once the user adopted it) before recording evidence`);
@@ -1013,6 +1129,11 @@ async function plan(root, o) {
       if (now === undefined) refuse("agreed-rewritten", `${id} was agreed ${JSON.stringify(was)} in current; agreed is removed only by deleting the whole record`);
       else if (!a.changed.get(id).text) refuse("agreed-rewritten", `${id} was agreed ${JSON.stringify(was)} in current and its prose is unchanged; agreed is replaced only when the promotion rewords the prose it was given for`);
       else if (!bad && obj(was) && typeof was.at === "string" && Date.parse(now.at) < Date.parse(was.at)) refuse("agreed-rewritten", `${id}: the new agreed at ${now.at} is earlier than current's ${was.at}`);
+    }
+    // Reworded under the `agreed` current has: a number or code token that changed may be a new decision nobody agreed to.
+    if (was !== undefined && canon(now) === canon(was) && a.changed.get(id).text) {
+      const n = agreedKeptOnChange(a, id, was, curDecls);
+      if (n) notes.push(n);
     }
   }
   const evidence = [];
@@ -1033,7 +1154,9 @@ async function plan(root, o) {
     const m = structuredClone(a.cur.manifest ?? {});
     for (const x of meta) if (x.merge === "apply") { if (a.prop.manifest[x.key] === undefined) delete m[x.key]; else m[x.key] = a.prop.manifest[x.key]; }
     m.claims ??= {};
-    for (const r of records) if (r.merge === "apply") { const p = recOf(a.prop, r.id); if (p === undefined) delete m.claims[r.id]; else m.claims[r.id] = p; }
+    const added = {};
+    for (const r of records) if (r.merge === "apply") { const p = recOf(a.prop, r.id); if (p === undefined) delete m.claims[r.id]; else if (r.id in m.claims) m.claims[r.id] = p; else added[r.id] = p; }
+    m.claims = withNewRecords(m.claims, added);
     manifestBuf = Buffer.from(JSON.stringify(m, null, 2) + "\n");
   }
   if (manifestBuf) cand.set("manifest.json", manifestBuf);
@@ -1072,7 +1195,7 @@ async function plan(root, o) {
   const dr = a.bc.exit !== 2 && a.pc.exit !== 2 ? await drift(root, a, g, undefined) : null;
   const driftWarnings = dr ? [...dr.removedElsewhere.map(removedText), ...dr.proseUnchanged.filter((r) => r.citedBy).map((r) => citedText(r, dr.base))] : [];
   return { a, g, bases, cand, targets, planSha, refusals, out: {
-    name: o.name, ids: [...ids].sort(), alsoChanges: also.map((x) => x.id), alsoChangesDetail: also, driftWarnings, meta: meta.map((m) => m.key), files: files.map((f) => ({ path: f.path, merge: f.merge, ids: f.ids })),
+    name: o.name, ids: [...ids].sort(), alsoChanges: also.map((x) => x.id), alsoChangesDetail: also, driftWarnings, notes, meta: meta.map((m) => m.key), files: files.map((f) => ({ path: f.path, merge: f.merge, ids: f.ids })),
     records: records.map((r) => ({ id: r.id, merge: r.merge })), evidence, candidate, bootstrap,
     targets: targets.map((t) => ({ ...t, action: t.before === null ? "create" : t.after === null ? "delete" : "replace" })), plan: planSha, refusals } };
 }
@@ -1154,7 +1277,7 @@ async function cmdPromote(root, o) {
     // A preview: this promotion's own selected records are about to land, so they are not "left unpromoted".
     const l = landingOf(root, p.g, p.a, p.bases);
     if (l.unpromotedDrafts) l.unpromotedDrafts = l.unpromotedDrafts.map((d) => d.draft === o.name && samePath(d.worktree, root) ? { ...d, ids: d.ids.filter((id) => !p.out.ids.includes(id)) } : d).filter((d) => d.ids.length);
-    return { exit: p.refusals.length ? 1 : 0, written: false, ...p.out, ...l };
+    return { exit: p.refusals.length ? 1 : 0, written: false, ...p.out, ...l, ...(await staleDraftsNote(root, o)) };
   }
   return withLock(root, async () => {
     await refusePending(root);
@@ -1168,7 +1291,7 @@ async function cmdPromote(root, o) {
       after: Object.fromEntries(p.targets.filter((t) => t.storage !== "draft").map((t) => [t.path, t.after])) });
     const receipt = Buffer.from(JSON.stringify(d, null, 2) + "\n");
     await applyTxn(root, o.name, p.targets, p.cand, { before: p.a.sha, buf: receipt });
-    return { exit: 0, written: true, ...p.out, ...landingOf(root, p.g, p.a, p.bases) };
+    return { exit: 0, written: true, ...p.out, ...landingOf(root, p.g, p.a, p.bases), ...(await staleDraftsNote(root, o)) };
   });
 }
 
@@ -1281,10 +1404,185 @@ async function cmdRecover(root, o) {
   }, { takeOverDead: true });
 }
 
+// ---------------------------------------------------------------- drafts left behind, and the approved prune
+const DAY_MS = 86_400_000, STALE_DAYS = 7;
+const daysOf = (o) => (o.days === undefined ? STALE_DAYS : Number(o.days));
+// The draft names under one root's drafts directory (no lock, no .txn, no temp dirs). → [name]
+async function draftNames(root) {
+  const dir = await ownDir(root, DRAFTS, false);
+  if (!dir) return [];
+  return (await readdir(dir, { withFileTypes: true })).filter((e) => e.isDirectory() && NAME_RE.test(e.name)).map((e) => e.name).sort();
+}
+// Made, evidence recorded or promoted, whichever is latest. → ms | null
+function lastActivity(d) {
+  const t = [d?.createdAt, ...(Array.isArray(d?.evidence) ? d.evidence.map((e) => e?.recordedAt) : []), ...(Array.isArray(d?.promotions) ? d.promotions.map((p) => p?.at) : [])]
+    .map((x) => (typeof x === "string" ? Date.parse(x) : NaN)).filter(Number.isFinite);
+  return t.length ? Math.max(...t) : null;
+}
+// Every work tree of the root's repository, at the same project prefix, the root first. → [abs root]
+function worktreeRoots(root, g) {
+  const roots = [root];
+  if (!g.git) return roots;
+  const r = git(root, ["worktree", "list", "--porcelain", "-z"]);
+  if (r.status !== 0) return roots;
+  for (const f of r.out.split("\0")) if (f.startsWith("worktree ")) {
+    const p = g.prefix ? join(f.slice(9), g.prefix) : f.slice(9);
+    if (!roots.some((x) => samePath(x, p)) && existsSync(p)) roots.push(p);
+  }
+  return roots;
+}
+// One hash over draft.json and the proposal tree (spec/), so an approval names exactly what was reviewed. → hex | null
+async function draftHash(root, name) {
+  const raw = await readFileSafe(root, `${draftRel(name)}/draft.json`);
+  if (raw.state !== "present") return null;
+  try { return sha(`${raw.sha256}
+${treePrint(await readTree(root, `${draftRel(name)}/spec`, true))}`); } catch (e) { if (e instanceof Fail) return null; throw e; }
+}
+async function draftReport(root, name, now, days, tip, branch) {
+  const row = { name, worktree: root };
+  let a;
+  try { a = await analyze(root, name); } catch (e) {
+    if (!(e instanceof Fail)) throw e;
+    const raw = await readFileSafe(root, `${draftRel(name)}/draft.json`);
+    let d = null; try { d = JSON.parse(raw.buf.toString("utf8")); } catch {}
+    const last = lastActivity(d);
+    return { ...row, createdAt: d?.createdAt ?? null, lastActivity: last && new Date(last).toISOString(), ageDays: last && Math.floor((now - last) / DAY_MS),
+      state: "unreadable", reasons: [`${e.code}: ${e.message}`], suggest: "keep", pending: [], conflict: [], current: [], draftSha256: await draftHash(root, name) };
+  }
+  const s = await statusOut(root, a);
+  const promoted = new Set(a.d.promotions.flatMap((p) => p.ids ?? []));
+  let pending = s.ids.filter((i) => i.current === "pending").map((i) => i.id);
+  const conflict = s.ids.filter((i) => i.current === "conflict" && !promoted.has(i.id)).map((i) => i.id);
+  const current = s.ids.filter((i) => i.current === "already-current" || (i.current === "conflict" && promoted.has(i.id))).map((i) => i.id);
+  // Pending here but already on the default branch, byte for byte (its record, and every claim file it is in): this work
+  // tree's current lags the branch it was merged into. Any other difference keeps it pending.
+  const onBranch = [];
+  if (pending.length && tip) {
+    const g = await gitInfo(root), m = git(root, ["show", `${tip}:${g.prefix ? `${g.prefix}/` : ""}${SPEC}/manifest.json`]);
+    let tipClaims = null; try { tipClaims = m.status === 0 ? JSON.parse(m.out)?.claims ?? {} : null; } catch {}
+    if (tipClaims) for (const id of pending) {
+      const c = a.changed.get(id);
+      if (canon(recOf(a.prop, id)) === canon(tipClaims[id]) && c.files.every((f) => (blobAt(root, g, tip, `${SPEC}/${f}`).sha256 ?? null) === (a.prop.files.get(f)?.sha256 ?? null))) onBranch.push(id);
+    }
+    pending = pending.filter((id) => !onBranch.includes(id));
+    current.push(...onBranch);
+  }
+  const last = lastActivity(a.d), age = last === null ? null : Math.floor((now - last) / DAY_MS), old = age !== null && age > days;
+  const reasons = [];
+  // Landed: a commit the evidence for a pending id names is on the default branch, or this work tree's own branch
+  // was merged into it after the draft was made.
+  if (pending.length && tip) {
+    const onTip = (c) => git(root, ["merge-base", "--is-ancestor", c, tip]).status === 0;
+    const by = new Map();
+    for (const id of pending) {
+      const e = [...a.d.evidence].reverse().find((x) => x.ids.some((y) => y.id === id));
+      if (e?.mode === "commit" && resolveCommit(root, e.commit) === e.commit && onTip(e.commit)) by.set(e.commit, [...(by.get(e.commit) ?? []), id]);
+    }
+    for (const [c, ids] of by) reasons.push(`evidence commit ${c.slice(0, 12)} is on ${branch} (${ids.length === 1 ? ids[0] : `${ids.length} ids`})`);
+    const head = resolveCommit(root, "HEAD"), own = git(root, ["symbolic-ref", "--quiet", "--short", "HEAD"]).out?.trim();
+    if (!reasons.length && head && own && own !== branch && a.d.base.commit && head !== a.d.base.commit && onTip(head) &&
+        git(root, ["merge-base", "--is-ancestor", a.d.base.commit, head]).status === 0)
+      reasons.push(`this work tree's branch ${own} was merged into ${branch} after the draft was made`);
+  }
+  const landed = reasons.length > 0;
+  const state = pending.length ? (landed ? "landed" : old ? "old" : "active")
+    : conflict.length ? "superseded" : current.length ? "promoted" : old ? "empty" : "active";
+  if (state === "landed") {
+    reasons.push(`pending: ${pending.join(", ")}`);
+    const stale = s.ids.filter((i) => pending.includes(i.id) && i.evidence.state !== "valid").map((i) => `${i.id} (${i.evidence.state})`);
+    if (stale.length) reasons.push(`evidence to re-record before promoting: ${stale.join(", ")}`);
+  }
+  if (state === "old") reasons.push(`pending: ${pending.join(", ")}`, `no activity for ${age} days (limit ${days})`);
+  if (state === "superseded") reasons.push(`current changed differently: ${conflict.join(", ")}`, ...(current.length ? [`already current: ${current.join(", ")}`] : []));
+  const here = current.filter((id) => !onBranch.includes(id));
+  if (state === "promoted" && here.length) reasons.push(`already current: ${here.join(", ")}`);
+  if (onBranch.length) reasons.push(`already on ${branch} as this draft says it: ${onBranch.join(", ")}`);
+  if (state === "empty") reasons.push(`changes nothing, and no activity for ${age} days (limit ${days})`);
+  if (conflict.length && pending.length) reasons.push(`also in conflict: ${conflict.join(", ")}`);
+  if (s.proposedGraph.exit === 2) reasons.push("the draft graph does not load (exit 2)");
+  const suggest = state === "landed" ? "promote" : ["promoted", "superseded", "empty"].includes(state) ? "delete" : "keep";
+  return { ...row, purpose: a.d.purpose ?? null, createdAt: a.d.createdAt, lastActivity: last && new Date(last).toISOString(), ageDays: age,
+    state, reasons, suggest, pending, conflict, current, draftSha256: await draftHash(root, name) };
+}
+async function cmdDrafts(root, o) {
+  const g = await gitInfo(root), days = daysOf(o), now = Date.now();
+  const branch = g.git ? defaultBranch(root) : null, tip = branch && resolveCommit(root, `refs/heads/${branch}`);
+  const drafts = [];
+  for (const r of o.worktrees ? worktreeRoots(root, g) : [root]) {
+    let names;
+    try { names = await draftNames(r); } catch (e) { drafts.push({ name: null, worktree: r, state: "unreadable", reasons: [e.message], suggest: "keep" }); continue; }
+    for (const n of names) drafts.push(await draftReport(r, n, now, days, tip, branch));
+  }
+  const counts = {};
+  for (const d of drafts) counts[d.state] = (counts[d.state] ?? 0) + 1;
+  return { exit: drafts.some((d) => d.state !== "active") ? 1 : 0, defaultBranch: branch, days, counts, drafts };
+}
+// Other drafts in this root older than the age limit, from draft.json alone (cheap): `drafts` says which are left behind.
+async function staleDraftsNote(root, o) {
+  const days = daysOf(o), now = Date.now();
+  let n = 0;
+  for (const name of await draftNames(root).catch(() => [])) {
+    if (name === o.name) continue;
+    const raw = await readFileSafe(root, `${draftRel(name)}/draft.json`);
+    let d = null; try { d = JSON.parse(raw.buf.toString("utf8")); } catch {}
+    const last = lastActivity(d);
+    if (last === null || now - last > days * DAY_MS) n++;
+  }
+  return n ? { staleDrafts: { count: n, days, command: `sova-spec-draft.mjs drafts --root ${root}${o.days === undefined ? "" : ` --days ${days}`}` } } : {};
+}
+// The approved list: one draft per line, NAME [draftSha256]; `#` starts a comment. → [{name, sha256?}]
+async function approvedList(file) {
+  const r = await readOpen(resolve(file));
+  if (r.state !== "present") throw new Fail(2, "usage", `--approved ${file}: ${r.why ?? r.state}`);
+  const list = new Map();
+  for (const [i, raw] of r.buf.toString("utf8").split(/\r?\n/).entries()) {
+    const line = raw.replace(/#.*/, "").trim();
+    if (!line) continue;
+    const [name, h, ...more] = line.split(/\s+/);
+    if (!NAME_RE.test(name) || more.length || (h !== undefined && !HEX.test(h))) throw new Fail(2, "usage", `--approved ${file} line ${i + 1}: expected NAME [draftSha256], got "${line}"`);
+    if (list.has(name) && list.get(name).sha256 !== h) throw new Fail(2, "usage", `--approved ${file}: ${name} is listed twice with different hashes`);
+    list.set(name, { name, ...(h ? { sha256: h } : {}) });
+  }
+  return [...list.values()];
+}
+async function cmdPrune(root, o) {
+  const list = await approvedList(o.approved);
+  const inspect = async () => {
+    const refusals = [], targets = [];
+    if (await exists(join(root, TXN))) refusals.push({ code: "pending-transaction", message: `${TXN} exists: a promotion was interrupted; run recover first` });
+    for (const x of list) {
+      const dir = await ownDir(root, draftRel(x.name), false).catch((e) => { refusals.push({ code: "storage-refused", message: e.message }); return undefined; });
+      if (dir === undefined) continue;
+      if (dir === null) { refusals.push({ code: "draft-missing", message: `no draft ${draftRel(x.name)}` }); continue; }
+      const h = await draftHash(root, x.name);
+      if (x.sha256 && h !== x.sha256) { refusals.push({ code: "draft-changed", message: `${x.name}: draft.json and spec/ are not the ${x.sha256.slice(0, 12)} the list approved (changed since, or unreadable)` }); continue; }
+      targets.push({ name: x.name, draft: draftRel(x.name), draftSha256: h });
+    }
+    return { refusals, targets };
+  };
+  if (!o.write) {
+    const p = await inspect();
+    return { exit: p.refusals.length ? 1 : 0, written: false, deleted: [], wouldDelete: p.targets, refusals: p.refusals };
+  }
+  return withLock(root, async () => {
+    const p = await inspect();
+    if (p.refusals.length) throw new Fail(1, p.refusals[0].code, `prune refused (${p.refusals.length} reason(s)); nothing was deleted`, { written: false, deleted: [], wouldDelete: p.targets, refusals: p.refusals });
+    const dir = await ownDir(root, DRAFTS, false), deleted = [];
+    for (const t of p.targets) {
+      // Out of the name first, so a draft is either whole under its name or gone.
+      const gone = join(dir, `.prune-${randomBytes(6).toString("hex")}`);
+      await rename(join(dir, t.name), gone);
+      await rm(gone, { recursive: true, force: true });
+      deleted.push(t);
+    }
+    return { exit: 0, written: true, deleted, refusals: [] };
+  });
+}
+
 // ---------------------------------------------------------------- merge-manifest
 // Record-level three-way merge of manifest.json: each claim record and each top-level key merges on its own; the
-// same key changed differently on both sides is a conflict, and a conflict writes nothing. Claim prose files are not
-// touched: a claims file conflict is Git's (and yours) to resolve.
+// same key changed differently on both sides is a conflict, and a conflict writes nothing. Claim prose files are
+// merge-claims' (below).
 function mergeValue(b, o, t) {
   const [cb, co, ct] = [canon(b), canon(o), canon(t)];
   if (co === ct) return { v: o };
@@ -1303,6 +1601,21 @@ function mergeObjects(b, o, t, kind, conflicts, taken) {
   return out;
 }
 const uniqOrdered = (a) => [...new Set(a)];
+// Claim records with `added` (new to them) put in place, so the key order doesn't depend on landing order: right
+// before the first record of the same area (the id up to "/") that sorts after it, else right after that area's
+// last record; an area's first record goes right before the first record whose area sorts after its own, or last.
+// Records already there keep their place.
+const areaOf = (id) => id.slice(0, id.indexOf("/") >>> 0);
+export function withNewRecords(claims, added) {
+  const keys = Object.keys(claims);
+  for (const id of Object.keys(added).sort()) {
+    const area = areaOf(id), own = keys.flatMap((k, i) => (areaOf(k) === area ? [i] : []));
+    let at = own.length ? own.find((i) => keys[i] > id) ?? own.at(-1) + 1 : keys.findIndex((k) => areaOf(k) > area);
+    if (at < 0) at = keys.length;
+    keys.splice(at, 0, id);
+  }
+  return Object.fromEntries(keys.map((k) => [k, k in added ? added[k] : claims[k]]));
+}
 function mergeManifests(bText, oText, tText) {
   const parse = (text, side) => {
     if (text === null || !text.trim()) return {};
@@ -1315,7 +1628,10 @@ function mergeManifests(bText, oText, tText) {
   const conflicts = [], taken = [];
   const meta = (m) => Object.fromEntries(Object.entries(m).filter(([k]) => k !== "claims"));
   const top = mergeObjects(meta(b), meta(o), meta(t), "meta", conflicts, taken);
-  const claims = mergeObjects(b.claims ?? {}, o.claims ?? {}, t.claims ?? {}, "claim", conflicts, taken);
+  const merged0 = mergeObjects(b.claims ?? {}, o.claims ?? {}, t.claims ?? {}, "claim", conflicts, taken);
+  // Ours' records in ours' order; records only theirs has go where promotion would have put them.
+  const claims = withNewRecords(Object.fromEntries(Object.entries(merged0).filter(([k]) => k in (o.claims ?? {}))),
+    Object.fromEntries(Object.entries(merged0).filter(([k]) => !(k in (o.claims ?? {})))));
   // Ours' key order, with claims where ours had them (or last).
   const merged = {};
   for (const k of uniqOrdered([...Object.keys(o), ...Object.keys(top), "claims"])) if (k === "claims") merged.claims = claims; else if (k in top) merged[k] = top[k];
@@ -1352,6 +1668,57 @@ async function cmdMergeManifest(root, o) {
   return { exit: 0, ...out, written: true, ...(driver ? {} : { next: `run sova-spec.mjs check, resolve any claims/ conflicts, then git add ${SPEC}/manifest.json` }) };
 }
 
+// ---------------------------------------------------------------- merge-claims
+// A Git merge driver for one claim file: the promotion's per-declaration merge (mergeSpans) with the merge base,
+// ours and theirs as base, current and draft. Declarations come from the file's own headings, as the core reads them,
+// without loading a graph (mid-merge, the rest of the tree may not load). Anything it can't merge per declaration
+// gets Git's own line merge, markers and all, so no side's prose is lost; a conflict exits 1 for Git to report.
+function cutText(text) {
+  const spans = declarationSpans(text);
+  if (new Set(spans.map((d) => d.id)).size !== spans.length) return null;
+  return cutFile(Buffer.from(text, "utf8"), new Map(spans.map((d) => [d.id, { file: "", lines: d.lines }])), "");
+}
+function mergeClaimTexts(bText, oText, tText) {
+  const cuts = [bText, oText, tText].map(cutText);
+  const m = cuts.every(Boolean) ? mergeSpans(...cuts) : null;
+  if (!m) return { why: "the file can't be merged per declaration (no declarations, a carriage return, or kept declarations reordered)" };
+  if (m.conflicts) return { conflicts: m.conflicts };
+  // Like promotion's read-back: the merged file must cut into exactly the declarations it was built from.
+  const back = cutText(m.text);
+  const same = back && back.spans.length === m.ids.size && back.spans.every((s) => m.ids.get(s.id) === s.text);
+  return same ? { text: m.text } : { why: "the per-declaration merge does not read back as the declarations it was built from" };
+}
+async function cmdMergeClaims(root, o) {
+  if ([o.base, o.ours, o.theirs].some((x) => x === undefined)) throw new Fail(2, "usage", "merge-claims takes all of --base, --ours and --theirs (a merge driver's %O %A %B)");
+  const read = async (p, side) => {
+    const r = await readOpen(resolve(p));
+    if (r.state === "absent" && side === "base") return "";
+    if (r.state !== "present") throw new Fail(2, "file-refused", `--${side} ${p}: ${r.why ?? r.state}`);
+    return r.buf.toString("utf8");
+  };
+  const texts = [await read(o.base, "base"), await read(o.ours, "ours"), await read(o.theirs, "theirs")];
+  const target = resolve(o.ours), path = o.path[0] ?? null;
+  const save = (data) => writeAtomic(dirname(target), posix.basename(target.split("\\").join("/")), data);
+  const m = mergeClaimTexts(...texts);
+  if (m.text !== undefined) {
+    if (o.write) await save(m.text);
+    return { exit: 0, mode: "driver", path, merge: "declarations", conflicts: [], written: !!o.write };
+  }
+  // Git's line merge of the three sides, as Git would have done without this driver.
+  const tmp = await mkdtemp(join(tmpdir(), "sova-spec-merge-claims-"));
+  let r;
+  try {
+    const f = ["ours", "base", "theirs"].map((n) => join(tmp, n));
+    await Promise.all([texts[1], texts[0], texts[2]].map((t, k) => writeFile(f[k], t)));
+    r = git(root, ["merge-file", "-p", "-L", "ours", "-L", "base", "-L", "theirs", ...f], true);
+  } finally { await rm(tmp, { recursive: true, force: true }); }
+  if (r.status === null || r.status < 0 || r.status > 127) throw new Fail(2, "git-failed", `git merge-file: ${r.error ?? r.err.trim()}`);
+  if (o.write) await save(r.out);
+  const out = { mode: "driver", path, merge: "lines", conflicts: m.conflicts ?? [], ...(m.why ? { why: m.why } : {}), written: !!o.write };
+  if (r.status === 0 && !m.conflicts) return { exit: 0, ...out };
+  throw new Fail(1, "claims-conflict", `${path ?? "the claim file"}: ${m.conflicts ? `changed differently on both sides: ${m.conflicts.join(", ")}` : `${m.why}, and Git's line merge conflicts`}; ${o.write ? "Git's conflict markers are in the file, with both sides' prose" : "nothing was written"}; then ${mergeRecovery(defaultBranch(root) || "master")}`, out);
+}
+
 // ---------------------------------------------------------------- output
 function human(out) {
   const L = [];
@@ -1377,16 +1744,35 @@ function human(out) {
   }
   if (out.command === "evidence" && out.ids) L.push(`evidence ${out.mode}${out.commit ? ` ${out.commit}` : ""} for ${out.ids.map((i) => i.id).join(", ")} ${out.written ? "(recorded)" : "(preview; nothing written — pass --write)"}`,
     ...out.inputs.map((i) => `  ${i.path} ${i.state}${i.sha256 ? ` ${i.sha256.slice(0, 12)}` : ""}`));
+  if (out.command === "agree" && out.ids) {
+    L.push(`agree ${out.name}: ${out.written ? "stamped in the draft" : "preview; nothing written — pass --write"}`,
+      ...out.ids.map((i) => `  ${i.id} agreed by ${i.agreed.by} at ${i.agreed.at}${i.created ? " (record created)" : ""}${i.stamped ? "" : " (already so)"}; ${i.docOnly ? "doc-only" : "maps code: stamped only"}`));
+    for (const n of out.notPromoted ?? []) L.push(`  not promoted ${n.id}: ${n.why}; next: ${n.next}`);
+    const p = out.promotion;
+    if (p) L.push(p.written ? `promoted ${p.ids.join(", ")} (plan ${p.plan}): ${p.targets.map((t) => `${t.action} ${SPEC}/${t.path}`).join(", ")}` : p.alreadyCurrent ? `already current: ${p.ids.join(", ")}` : `not promoted: ${p.ids.join(", ")} (plan ${p.plan})`);
+  }
   if (out.command === "promote" && out.targets) {
     L.push(`promote ${out.name}: ${out.ids.join(", ") || "(no ids)"} ${out.written ? "(written)" : "(preview; nothing written)"}`);
     for (const e of out.evidence) L.push(`  evidence ${e.id} ${e.state}${e.state !== "valid" ? `: ${e.reasons.join("; ")}` : ""}`);
     for (const t of out.targets) L.push(`  ${t.action.padEnd(7)} ${SPEC}/${t.path}`);
     for (const r of out.refusals ?? []) L.push(`  refused ${r.code}: ${r.message}`);
     for (const w of out.driftWarnings ?? []) L.push(`  warn drift: ${w}`);
+    for (const n of out.notes ?? []) L.push(`  note ${n.code}: ${n.message}`);
     if (out.alsoChanges) L.push(`Foreign § this promotion changes: ${out.alsoChanges.join(", ") || "none"}`);
+    if (out.staleDrafts) L.push(`${out.staleDrafts.count} other draft(s) here had no activity for over ${out.staleDrafts.days} days: \`${out.staleDrafts.command}\` says which are left behind`);
     if (!out.written && !(out.refusals ?? []).length) L.push(`plan ${out.plan} — write with: promote ${out.name} … --plan ${out.plan} --write`);
   }
   if (out.command === "merge-manifest" && out.mode) L.push(`merge-manifest (${out.mode}): ${out.conflicts.length ? `${out.conflicts.length} conflict(s): ${out.conflicts.map((c) => `${c.kind} ${c.key}`).join(", ")}` : `${out.fromTheirs.length} key(s) from theirs`} ${out.written ? "(written)" : "(nothing written)"}`);
+  if (out.command === "merge-claims" && out.mode) L.push(`merge-claims${out.path ? ` ${out.path}` : ""}: merged per ${out.merge === "declarations" ? "declaration" : "line (Git's merge)"}${out.conflicts.length ? `; ${out.conflicts.length} conflict(s): ${out.conflicts.join(", ")}` : ""} ${out.written ? "(written)" : "(nothing written)"}`);
+  if (out.command === "drafts" && out.drafts) {
+    L.push(`drafts: ${out.drafts.length} (${Object.entries(out.counts).map(([k, n]) => `${k} ${n}`).join(", ") || "none"}); default branch ${out.defaultBranch ?? "none"}, age limit ${out.days} days`);
+    for (const d of out.drafts) L.push(`  ${d.suggest.padEnd(7)} ${d.state.padEnd(10)} ${String(d.ageDays ?? "?").padStart(4)}d  ${d.name}${d.worktree !== out.root ? ` (${d.worktree})` : ""}${d.reasons.length ? `: ${d.reasons.join("; ")}` : ""}`);
+  }
+  if (out.command === "prune" && out.deleted) {
+    for (const t of out.written ? out.deleted : out.wouldDelete ?? []) L.push(`  ${out.written ? "deleted" : "would delete"} ${t.draft}`);
+    for (const r of out.refusals ?? []) L.push(`  refused ${r.code}: ${r.message}`);
+    if (!out.written && !(out.refusals ?? []).length) L.push("preview; nothing deleted — pass --write");
+  }
   if (out.command === "recover") L.push(out.pending === false ? "no pending promotion" : `pending promotion of draft ${out.draft}: ${(out.targets ?? []).map((t) => `${t.path} ${t.state}`).join(", ")}${out.action ? ` → ${out.action}` : ""}`);
   for (const f of out.findings) L.push(`${f.severity} ${f.code}: ${f.message}`);
   L.push(`note: ${NOTICE}`, `exit ${out.exit}`);
@@ -1408,7 +1794,7 @@ async function evaluate(argv, readPolicy, inputSources) {
     out.root = root;
     if (await ownDir(root, SPEC, false).catch(() => { throw new Fail(2, "symlink-refused", `${SPEC} or .sova is not a plain directory`); }) === null && o.cmd !== "new")
       throw new Fail(2, "draft-missing", `no ${SPEC} under ${root}`);
-    const cmds = { new: cmdNew, status: cmdStatus, diff: cmdDiff, check: cmdCheck, evidence: cmdEvidence, promote: cmdPromote, recover: cmdRecover, "merge-manifest": cmdMergeManifest };
+    const cmds = { new: cmdNew, status: cmdStatus, diff: cmdDiff, check: cmdCheck, evidence: cmdEvidence, agree: cmdAgree, promote: cmdPromote, recover: cmdRecover, drafts: cmdDrafts, prune: cmdPrune, "merge-manifest": cmdMergeManifest, "merge-claims": cmdMergeClaims };
     out = { ...out, ...(await cmds[o.cmd](root, o)) };
   } catch (e) {
     if (!(e instanceof Fail)) e = new Fail(2, "internal", e.stack ?? String(e));

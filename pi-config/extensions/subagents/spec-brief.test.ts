@@ -19,7 +19,7 @@ Trusted tools: start each bash command that runs them with exactly \`core=/agent
 - Where the task needs a change that contradicts its text or adds what a user sees that it lacks, even one your new claim describes, update it in your draft without asking (the go-ahead covers it and restamps any \`agreed\`), never for a gap it already had or a defect; list each foreign § your draft or workers edit in your reply: "Also updates §X: <what>".
 - Documentation changes only through drafts, never by editing current \`claims/\` or \`manifest.json\`: \`node "$core/sova-spec-draft.mjs" <command> --root <project root> --json\`.
 - Documenting what the code already does is its own baseline draft, never mixed into a feature draft.
-- Run \`node "$core/sova-spec.mjs" census --changed --root <project root> --json\` (\`--spec\` the draft's \`spec/\` until promoted; \`--base <rev>\` once committed): every changed file in the boundary is claimed, any changed file outside it whose change a user sees is spec'd, and you have read each § it lists for your change.
+- Read each § the census note's \`Unread § your change landed in\` line (once, after your last edit) marks read first; its \`census --changed --related\` command lists the rest. Every changed file in the boundary is claimed; any outside it whose change a user sees is spec'd.
 - The task's go-ahead authorizes its drafts, evidence and promotions as one bounded batch; no dialog per claim, and nothing at session start. It is not permission to commit: without that, leave evidence pending, and never commit unrelated changes.`;
 
 test("spec-mode.md still carries every rule the worker brief quotes, and the brief is the pinned text", () => {

@@ -1460,8 +1460,9 @@
     "§design.copy-deck/insights": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
+        "src/components/UsageHistory.tsx",
         "src/components/UsageView.tsx",
         "src/lib/insights.ts",
         "pi-config/extensions/usage-status/index.ts"
@@ -12630,6 +12631,8 @@
       "authority": "accepted",
       "evidence": "verified",
       "code": [
+        "src/design/base.css",
+        "src/lib/ollama-card.integration.test.ts",
         "pi-config/extensions/usage-status/index.ts",
         "server/insights.ts",
         "shared/protocol.ts",
@@ -15287,6 +15290,7 @@
       "authority": "accepted",
       "evidence": "verified",
       "code": [
+        "src/lib/usage-rows.integration.test.ts",
         "server/insights.ts",
         "server/usage-history.ts",
         "server/ollama-usage.test.ts",

@@ -410,6 +410,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Active window badge (`active:true`) | Active (neutral `.chip-count` in the meter label) · `title`: The window your current model counts against |
 | MCP uses context | {used} of {limit} uses, e.g. "0 of 1,000 uses" (comma thousands). Shown when the window carries both `used` and `limit`, otherwise left out |
 | Meter value | `{pct}%` used |
+| Zero-only first recorded period (compact, no past period) | 0% used · {period title} (same period title as the chart stepper) |
 | Balance (DeepSeek) | label Balance · value `$4.29` (currency of the balance) · context: the non-zero parts of Granted `$0.00` · Topped up `$4.29`, joined by ` · `, omitted when both are 0 |
 | Out of credit note | This balance can't fund calls. They'll fail until it's topped up. |
 | Meter context | Resets in {2h 17m} (under 24h) · Resets {Sep 25} · declared reset: Resets {Oct 14} · with a tick, then ` · day {4} of {7}` (under a day: ` · {2h 43m} of {5h}`) · reset already passed: Reset at `{HH:MM}`. New reading at the next refresh. · a free login's figures: Reset at `{HH:MM}`. Not read while it is free. |

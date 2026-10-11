@@ -18,6 +18,11 @@ import { BOARD_EVERY_MS, BoardSource, mergeBoardFile, rowsIn } from "./merge-boa
 import { readinessCovers, readinessIdle, readinessReading } from "./merge-readiness";
 import type { HEntry } from "../shared/harness";
 import { readBranch } from "./harness/pi/reader";
+import { configureAutomationSession, createAutomationSession } from "./automation-session";
+import { hostIdentity } from "./org-holder";
+import { playbookPayload } from "./playbook-payload";
+import { getSessionSummary } from "./sessions-index";
+import { readAutomations } from "./automation-files";
 
 /**
  * The playbook schedules' keeper, wired to the real server (§chat/schedules), and their routes.
@@ -68,6 +73,15 @@ export async function lastTurn(path: string): Promise<{ failed: boolean; at: num
   return null;
 }
 
+/** The playbook block for a session (§chat.schedules/delivery): its held branch, else its file. */
+async function payloadFor(path: string | null, bundle: { id: string; dir: string; entry: string }) {
+  if (!path) return playbookPayload(bundle, null);
+  const held = heldChat(path);
+  const branch = held?.harness.branch() ?? (await readBranch(path));
+  const cwd = held?.harness.cwd || (await getSessionSummary(path))?.cwd || bundle.dir;
+  return playbookPayload(bundle, { branch, cwd });
+}
+
 /** Held and running a turn, or holding a queued message. */
 function heldBusy(path: string): boolean {
   const chat = heldChat(path);
@@ -98,6 +112,11 @@ export function startScheduleKeeper(request: AppRequest): ScheduleKeeper {
     lateAfterMs: Math.max(60_000, 2 * tickMs * speed),
     readPlaybook: readProjectPlaybook,
     findProfile: (id, root) => findProfile(id, root),
+    automations: readAutomations,
+    createForAutomation: (root, a, text, title) => createAutomationSession(request, root, a, text, title),
+    configure: configureAutomationSession,
+    payload: payloadFor,
+    hostId: () => hostIdentity().id,
     sessions: () => listSessions(),
     busy: heldBusy,
     freeSlots: freeRunSlots,
@@ -157,28 +176,36 @@ export function registerScheduleRoutes(app: Hono): void {
     const catalog = await listPlaybooks(cwd);
     const keeper = scheduleKeeper();
     if (!keeper || catalog.project.state !== "ok" || !cwd) return c.json(catalog);
-    return c.json(await keeper.decorate(catalog, await projectRootOf(cwd)));
+    return c.json(await keeper.decorate(catalog, await projectRootOf(cwd)).catch(() => catalog));
   });
-  app.get("/api/schedules", async (c) => c.json({ schedules: (await scheduleKeeper()?.list()) ?? [] }, 200, { "Cache-Control": "no-store" }));
+  app.get("/api/schedules", async (c) => {
+    try {
+      return c.json({ schedules: (await scheduleKeeper()?.list()) ?? [] }, 200, { "Cache-Control": "no-store" });
+    } catch (err) {
+      // A store that can't be read is refused, never shown as empty (§chat.schedules/store).
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 503);
+    }
+  });
   // Approve: the user's click only, never the Overseer (§chat.schedules/approval).
   app.post("/api/schedules/approve", async (c) => {
     if (overseerSender(c.req.header(OVERSEER_SENDER_HEADER))) return c.json({ error: "Only the user approves a schedule, in Sova." }, 403);
-    const body = (await c.req.json().catch(() => null)) as { cwd?: unknown; playbook?: unknown; pin?: unknown } | null;
+    const body = (await c.req.json().catch(() => null)) as { cwd?: unknown; playbook?: unknown; automation?: unknown; pin?: unknown } | null;
     const cwd = str(body?.cwd);
     const playbook = str(body?.playbook);
+    const automation = str(body?.automation);
     const pin = str(body?.pin);
-    if (!cwd || !playbook || !pin) return c.json({ error: "Expected {cwd, playbook, pin}" }, 400);
+    if (!cwd || !(playbook || automation) || !pin) return c.json({ error: "Expected {cwd, playbook, pin} or {cwd, automation, pin}" }, 400);
     const root = await projectRootOf(cwd);
     const keeper = scheduleKeeper();
     if (!root || !keeper) return c.json({ error: `${cwd} is not a local project.` }, 404);
-    const r = await keeper.approve(root, playbook, pin);
+    const r = await keeper.approve(root, automation ? { automation } : { playbook }, pin).catch((err: unknown) => ({ ok: false as const, status: 409 as const, error: err instanceof Error ? err.message : String(err) }));
     return r.ok ? c.json(r.schedule) : c.json({ error: r.error }, r.status);
   });
   app.post("/api/schedules/revoke", async (c) => {
     const body = (await c.req.json().catch(() => null)) as { id?: unknown } | null;
     const id = str(body?.id);
     if (!id) return c.json({ error: "Expected {id}" }, 400);
-    const r = (await scheduleKeeper()?.revoke(id)) ?? { ok: false as const, status: 404 as const, error: `No schedule ${id}.` };
+    const r = (await scheduleKeeper()?.revoke(id).catch((err: unknown) => ({ ok: false as const, status: 409 as const, error: err instanceof Error ? err.message : String(err) }))) ?? { ok: false as const, status: 404 as const, error: `No schedule ${id}.` };
     return r.ok ? c.json({ ok: true }) : c.json({ error: r.error }, r.status);
   });
 }

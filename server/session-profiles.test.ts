@@ -30,7 +30,7 @@ const {
 } = await import("../shared/profiles");
 type Profile = import("../shared/profiles").Profile;
 type SessionSummary = import("../shared/protocol").SessionSummary;
-const { linkedPlaybook, missingPlaybookText, playbookTurnText } = await import("../shared/playbooks");
+const { linkedPlaybook, playbookTurnText } = await import("../shared/playbooks");
 const { readProfiles } = await import("./profiles-store");
 const { findProfile, profileSources } = await import("./profile-sources");
 const { approve, trustFile } = await import("./profile-trust");
@@ -144,7 +144,10 @@ describe("the model", () => {
     assert.match(profileFileError({ ...CAPTAIN, remove: ["shel"] }) ?? "", /"remove" has unknown name "shel"/);
     assert.match(profileFileError({ ...CAPTAIN, grant: ["sessions.write"] }) ?? "", /"grant" has unknown name/);
     assert.match(profileFileError({ ...CAPTAIN, limits: { perDay: 0 } }) ?? "", /"limits.perDay" must be a whole number/);
-    assert.match(profileFileError({ ...CAPTAIN, playbook: "../x" }) ?? "", /"playbook" must be a playbook's id/);
+    // The retired playbook link (§chat.profiles/playbook): accepted whatever it says, and dropped.
+    assert.equal(profileFileError({ ...CAPTAIN, playbook: "../x" }), null);
+    assert.equal(profileFileError({ ...CAPTAIN, playbook: "merge-round" }), null);
+    assert.equal("playbook" in (parseProfile({ ...CAPTAIN, playbook: "merge-round" }) as object), false);
     assert.match(profileFileError({ ...CAPTAIN, singleton: "yes" }) ?? "", /"singleton" must be true or false/);
     assert.match(profileFileError({ ...CAPTAIN, thinking: "hot" }) ?? "", /^"thinking" must be one of off, minimal, low, medium, high, xhigh, max\./);
     assert.match(profileFileError({ ...CAPTAIN, thinking: 3 }) ?? "", /^"thinking" must be one of/);
@@ -191,7 +194,7 @@ describe("the model", () => {
     assert.equal(isCapabilityNeutral(p({ remove: ["web"] })), false);
     assert.equal(isCapabilityNeutral(p({ grant: ["sessions.read"] })), false);
     assert.equal(isCapabilityNeutral(p({ singleton: true })), false);
-    assert.equal(isCapabilityNeutral(p({ playbook: "release" })), false);
+    assert.equal(isCapabilityNeutral(p({ playbook: "release" })), true, "a retired playbook key changes nothing");
     assert.equal(isCapabilityNeutral(p({ firstMessage: "go" })), false);
     // The summary field says so, and a custom board pick never does.
     assert.equal(profileField({ v: 1, profile: { ...p({ model: "a/b" }), source: "user" } })?.neutral, true);
@@ -368,7 +371,7 @@ describe("approving what a project's profile may do (§chat.profiles/trust)", ()
   });
 });
 
-describe("a profile's linked playbook (§chat.profiles/playbook)", () => {
+describe("a playbook's turn and its lookup by id (the setup recipes, §app.project-runtime/onboard)", () => {
   const pb = (source: "sova" | "user" | "project", id = "merge-round") => ({ id, title: `T ${source}`, description: "", source, dir: `/abs/${source}/${id}`, entry: "PLAYBOOK.md" as const, body: "# Body\n" });
   test("the turn is exactly the Playbooks dialog's, with the message box's text as the user's", () => {
     const p = pb("project");
@@ -382,7 +385,6 @@ describe("a profile's linked playbook (§chat.profiles/playbook)", () => {
     assert.equal(linkedPlaybook(all, "merge-round", undefined)?.source, "project");
     assert.equal(linkedPlaybook([pb("sova")], "merge-round", "project")?.source, "sova");
     assert.equal(linkedPlaybook(all, "nope", "project"), null);
-    assert.equal(missingPlaybookText("nope"), 'This profile runs the playbook "nope", but this folder has no playbook with that id.');
   });
 });
 

@@ -1947,6 +1947,7 @@ export function ChatView(props: {
                             path={props.path}
                             cwd={props.summary?.()?.cwd ?? null}
                             info={info()}
+                            live={{ mode: modeState()?.mode, minorModes: modeState()?.minorModes, model: model(), thinking: thinking() }}
                             race={profileRace()}
                             blocked={blocked()?.text ?? offNow() ?? null}
                             onRunPlaybook={(pb) => {

@@ -61,7 +61,7 @@ import { applyMemoryPatch, saveDefaultMemoryChoice } from "./memory/settings";
 import { MEMORY_TOOLS } from "../shared/memory";
 import { projectEngine } from "./project-services/routes";
 import { projectVerbsExtension } from "./project-services/tools";
-import { excludedTools, GRANT_TOOLS, keyOf, KNOWN_REMOVABLE_TOOLS, singletonRaceText, type ProfileEntryData, type SessionSentData } from "../shared/profiles";
+import { excludedTools, GRANT_TOOLS, keyOf, KNOWN_REMOVABLE_TOOLS, parseMine, singletonRaceText, type ProfileEntryData, type SessionSentData } from "../shared/profiles";
 import { loadoutOverrides, type LoadoutEntryData, type LoadoutState } from "./session-loadout";
 import { RunState, SessionLimits, sessionPowersExtension } from "./session-powers";
 import { queuePushExtension, topicStore } from "./topics";
@@ -1643,6 +1643,7 @@ class ChatSession {
       tools: active,
       removed: [...(this.profileState?.excluded ?? [])].filter((t) => this.harness.registeredTools().includes(t) || ["bash", "edit", "write"].includes(t)),
       granted,
+      ...(data?.profile && parseMine(data.mine) ? { mine: parseMine(data.mine) } : {}),
     };
   }
 

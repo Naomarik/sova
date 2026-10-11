@@ -834,6 +834,10 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .profile-tile-off .profile-tile-head > .icon { opacity: 0.6; }
 .profile-tile-off .profile-tile-label { color: var(--color-ink-muted); font-weight: var(--fw-regular); }
 .profile-tile-off .profile-tile-caption { color: var(--status-warn); }
+/* A One at a time profile live in another session: a link that opens it, not a pick. Same shape as
+   a card; its arrow (where a picked card has its check) and the Active chip say where it goes. */
+.profile-tile-active { text-decoration: none; }
+.profile-tile-active .profile-tile-check { color: var(--color-ink-muted); }
 /* Phone-narrow (the picker's own box under 480px): one column of single-line cards, so more fit
    above the fold. Icon, label, caption, chips and check share one 44px line (chips that don't fit
    take a second); the caption truncates first, and the label keeps up to 65% of the card before

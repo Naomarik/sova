@@ -1,9 +1,9 @@
 import type { Hono } from "hono";
-import { keyOf, THINKING_LEVELS, type ListedProfile, type Profile, type ProfilesListing } from "../shared/profiles";
+import { DEFAULT_PROFILE, keyOf, parseMine, THINKING_LEVELS, type ListedProfile, type Profile, type ProfileMine, type ProfilesListing } from "../shared/profiles";
 import type { SessionSummary } from "../shared/protocol";
 import { acquireChat, disposeHeldChat, heldChat, setOpeningChoice, setSingletonCheck } from "./chat-manager";
 import { modelDenial, readModelPolicy } from "./model-policy";
-import { readMode, type ModePatch } from "./mode-state";
+import { parseModePatch, readMode, type ModePatch } from "./mode-state";
 import { listModels } from "./models";
 import { addProfile } from "./profiles-store";
 import { subagentProfilesInfo } from "./subagent-profiles";
@@ -65,7 +65,13 @@ async function applyNow(path: string, choice: ProfileChoice, by?: "overseer" | "
     return { ok: false, status: 409, error: err instanceof Error ? err.message : String(err) };
   }
   const next = r.profile;
-  const prev = chat.profileState?.data?.profile ?? null;
+  const prevData = chat.profileState?.data ?? null;
+  const prev = prevData?.profile ?? null;
+  // What My settings puts back: what the session had at its first profile pick, carried from one
+  // profile to the next, and replayed (then dropped) when My settings is picked again.
+  const remembered = prev ? parseMine(prevData?.mine) : undefined;
+  const mine = next ? (prev ? remembered : mineOf(chat)) : undefined;
+  const restore = !next ? remembered : undefined;
   // Everything the pick sets is checked here first, so a pick that can't apply writes nothing.
   if (next?.model) {
     const why = modelDenial(readModelPolicy(), next.model) ?? (await chat.harness.findModel(next.model).then((f) => (f.ok ? null : f.error)));
@@ -73,28 +79,50 @@ async function applyNow(path: string, choice: ProfileChoice, by?: "overseer" | "
   }
   if (next?.thinking && !(THINKING_LEVELS as readonly string[]).includes(next.thinking))
     return { ok: false, status: 400, error: `${next.label} can't be picked here: "${next.thinking}" isn't an effort level.` };
-  // Switching back from a profile that set subagents pins the device default, since a pick can't be
-  // cleared; a chat that never had a pick gets none.
+  // Switching back from a profile that set subagents pins the remembered pick, else the device
+  // default, since a pick can't be cleared; a chat that never had a pick gets none.
   let subagents = next?.subagents;
-  if (!subagents && prev?.subagents && chat.subagentPick !== undefined) subagents = subagentProfilesInfo().default;
+  const own = restore?.subagents && !subagentsUnusable(restore.subagents) ? restore.subagents : undefined;
+  if (!subagents && own) subagents = own !== chat.subagentPick ? own : undefined;
+  else if (!subagents && prev?.subagents && chat.subagentPick !== undefined) subagents = subagentProfilesInfo().default;
   if (subagents) {
     const why = (next?.subagents ? subagentsUnusable(next.subagents) : null) ?? chat.subagentSwitchRefusal();
-    if (why) return { ok: false, status: 400, error: `${next?.label ?? "Default"} can't be picked here: ${why}` };
+    if (why) return { ok: false, status: 400, error: `${next?.label ?? DEFAULT_PROFILE.label} can't be picked here: ${why}` };
   }
   // A profile without a model or effort, after one that set it: back to what a new session opens on
-  // (the new-session default when usable, else pi's own; read, never written), by a fresh reopen below.
+  // (the new-session default when usable, else pi's own; read, never written), by a fresh reopen
+  // below. My settings puts back the remembered ones instead, a model that can't be used now aside.
+  let model = next?.model;
+  let thinking = next?.thinking;
   const fresh = { model: !next?.model && !!prev?.model, thinking: !next?.thinking && !!prev?.thinking };
-  const model = next?.model;
-  const thinking = next?.thinking;
+  if (restore?.model && restore.model !== chat.harness.model()?.ref) {
+    const usable = !modelDenial(readModelPolicy(), restore.model) && (await chat.harness.findModel(restore.model).then((f) => f.ok, () => false));
+    if (usable) (model = restore.model), (fresh.model = false);
+  } else if (restore?.model) fresh.model = false;
+  // The effort after the model: a model switch re-clamps it.
+  if (restore?.thinking && (THINKING_LEVELS as readonly string[]).includes(restore.thinking) && (model || restore.thinking !== chat.harness.thinking()))
+    (thinking = restore.thinking as Profile["thinking"]), (fresh.thinking = false);
+  else if (restore?.thinking === chat.harness.thinking()) fresh.thinking = false;
   // Its mode and minor modes, pinned together; a field it doesn't set, after a profile that set it,
-  // goes back to mode.json's default (read, never written) and is pinned with the other.
+  // goes back to mode.json's default (read, never written) and is pinned with the other. My settings
+  // puts back the remembered pair when it differs from now.
   const modePatch: ModePatch = {};
-  if (next?.mode) modePatch.mode = next.mode as ModePatch["mode"];
-  else if (prev?.mode) modePatch.mode = readMode().mode;
-  if (next?.minorModes) modePatch.minorModes = [...next.minorModes];
-  else if (prev?.minorModes) modePatch.minorModes = [...readMode().minorModes];
+  const back = restore ? parseModePatch({ mode: restore.mode, minorModes: restore.minorModes }) : null;
+  if (back && !("error" in back)) {
+    const now = chat.modeState;
+    const want = back.minorModes ?? [];
+    if (back.mode !== now.mode || want.length !== now.minorModes.length || want.some((m) => !now.minorModes.includes(m))) {
+      modePatch.mode = back.mode;
+      modePatch.minorModes = [...want];
+    }
+  } else {
+    if (next?.mode) modePatch.mode = next.mode as ModePatch["mode"];
+    else if (prev?.mode) modePatch.mode = readMode().mode;
+    if (next?.minorModes) modePatch.minorModes = [...next.minorModes];
+    else if (prev?.minorModes) modePatch.minorModes = [...readMode().minorModes];
+  }
   try {
-    chat.writeProfile({ v: 1, profile: next, ...(by ? { by } : {}) });
+    chat.writeProfile({ v: 1, profile: next, ...(by ? { by } : {}), ...(mine ? { mine } : {}) });
   } catch (err) {
     return { ok: false, status: 409, error: err instanceof Error ? err.message : String(err) };
   }
@@ -120,8 +148,21 @@ async function applyNow(path: string, choice: ProfileChoice, by?: "overseer" | "
     });
     await disposeHeldChat(path, "Applying the profile.");
   }
-  if (failed.length) return { ok: false, status: 409, error: `${next?.label ?? "Default"} was picked, but ${failed.join(", and ")}.` };
+  if (failed.length) return { ok: false, status: 409, error: `${next?.label ?? DEFAULT_PROFILE.label} was picked, but ${failed.join(", and ")}.` };
   return { ok: true };
+}
+
+/** What a session has now, as My settings remembers it at its first profile pick. */
+function mineOf(chat: { modeState: { mode: string; minorModes: readonly string[] }; harness: { model(): { ref: string } | null | undefined; thinking(): string }; subagentPick: string | undefined }): ProfileMine {
+  const ref = chat.harness.model()?.ref;
+  const thinking = chat.harness.thinking();
+  return {
+    mode: chat.modeState.mode,
+    minorModes: [...chat.modeState.minorModes],
+    ...(ref ? { model: ref } : {}),
+    ...((THINKING_LEVELS as readonly string[]).includes(thinking) ? { thinking } : {}),
+    ...(chat.subagentPick ? { subagents: chat.subagentPick } : {}),
+  };
 }
 
 /** Why a profile's subagent profile can't be picked on this device, or null. */

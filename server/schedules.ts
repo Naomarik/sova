@@ -547,7 +547,8 @@ export class ScheduleKeeper {
   /**
    * The playbook a session's schedule runs (§chat.schedules/playbook-read): the schedule whose own
    * session it is, or whose fires went to it, or (a new session whose fire isn't recorded yet) the
-   * schedule running the playbook `hint` names, delivered there from that very folder. Read only.
+   * approved schedule running the playbook `hint` names, delivered there from that very folder. A
+   * session keeps reading what it was delivered after a revoke. Read only.
    */
   async bundleFor(sessionId: string, hint?: { id: string; dir?: string }): Promise<(BundleRef & { title: string }) | null> {
     let store: ScheduleStore;
@@ -556,7 +557,7 @@ export class ScheduleKeeper {
     } catch {
       return null;
     }
-    const mine = store.schedules.filter((s) => s.approved && (s.session?.id === sessionId || s.fires.some((f) => f.sessionId === sessionId)));
+    const mine = store.schedules.filter((s) => s.session?.id === sessionId || s.fires.some((f) => f.sessionId === sessionId));
     const candidates = mine.length ? mine : hint ? store.schedules.filter((s) => s.approved && s.playbook === hint.id) : [];
     for (const s of candidates) {
       const pb = await this.deps.readPlaybook(s.root, s.playbook).catch(() => null);

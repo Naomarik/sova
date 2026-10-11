@@ -10,19 +10,17 @@ import {
   powersText,
   REMOVABLE,
   singletonRunningText,
-  sourceOf,
   titleCase,
   type Grantable,
   type ListedProfile,
   type Removable,
 } from "../../shared/profiles";
-import type { ChatProfileInfo, PlaybookInfo } from "../../shared/protocol";
+import type { ChatProfileInfo } from "../../shared/protocol";
 import { approveProfile, fetchProfiles, pickProfile, saveCurrentProfile, type ProfilePickRef } from "../lib/api";
 import { allProfiles, cardUnusable, changeRows, defaultTools, guardrailNote, isMySettings, mySettingsCaption, pickerProfiles, pickRef, type MySettingsState } from "../lib/profiles";
 import { openSettings } from "../lib/settings-nav";
 import { toast } from "../lib/ui-state";
 import { PROFILE_GRID_CUSTOM, ProfileGrid } from "./ProfileGrid";
-import { ProfilePlaybookCard } from "./ProfilePlaybookCard";
 import { Banner, Icon } from "./ui";
 
 /** Sessions whose Custom board is open, by path (module state: see `board`). */
@@ -44,10 +42,6 @@ export function ProfilePicker(props: {
   race?: { label: string; running: { id: string; path: string; title: string } } | null;
   /** Put a profile's first message in an empty composer. */
   onFirstMessage?: (text: string) => void;
-  /** Why sending isn't possible now, for Run Playbook (the composer's own reason), or null. */
-  blocked?: string | null;
-  /** Run Playbook (§chat.profiles/playbook): send the linked playbook's turn; false = refused. */
-  onRunPlaybook?: (playbook: PlaybookInfo) => boolean;
 }) {
   const [listing, { refetch, mutate }] = createResource(() => fetchProfiles(props.cwd).catch(() => undefined));
   // Save Current As Profile's form.
@@ -351,17 +345,6 @@ export function ProfilePicker(props: {
               </Show>
             </div>
             <Show when={note()}>{(n) => <Banner tone="info" title={n()} />}</Show>
-            <Show when={p().playbook}>
-              {(id) => (
-                <ProfilePlaybookCard
-                  cwd={props.cwd}
-                  playbook={id()}
-                  source={p().custom ? undefined : sourceOf(p())}
-                  blocked={props.blocked ?? null}
-                  onRun={(pb) => props.onRunPlaybook?.(pb) ?? false}
-                />
-              )}
-            </Show>
           </>
         )}
       </Show>

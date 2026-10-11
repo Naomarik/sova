@@ -52,9 +52,7 @@ import { cut, Refusal, renderTranscript, sessionRef, text, writableRefusal } fro
 import { findProfile } from "./profile-sources";
 import { approvalRefusal } from "./profile-trust";
 import { singletonHolder } from "./session-profile";
-import { listPlaybooks } from "./playbooks";
 import { keyOf, singletonRunningText, titleCase } from "../shared/profiles";
-import { linkedPlaybook, missingPlaybookText, playbookTurnText } from "../shared/playbooks";
 import { MEMORY_CODING_REFUSAL } from "../shared/memory";
 import { alignDropRefusal } from "./project-coding-mode";
 
@@ -1201,15 +1199,6 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
           if (!prof.overseerMayStart)
             throw new Refusal(`The ${prof.label} profile isn't marked "The Overseer may start it" (in its file), so you can't start it. No session was created; ask the user to start it or to allow it.`);
           if (prof.approval === "needed") throw new Refusal(`${approvalRefusal(prof)} No session was created.`);
-          // A profile that runs a playbook (§chat.profiles/playbook): its turn is the first message,
-          // with the prompt as its text, so it counts as a prompt below.
-          if (prof.playbook) {
-            const catalog = await listPlaybooks(where ?? undefined);
-            const pb = linkedPlaybook(catalog.playbooks, prof.playbook, prof.source);
-            if (!pb) throw new Refusal(`${missingPlaybookText(prof.playbook)} No session was created.`);
-            p = { ...p, prompt: playbookTurnText(pb, typeof p.prompt === "string" ? p.prompt : "") };
-            hasPrompt = true;
-          }
           p = { ...p, profile: { source: prof.source, id: prof.id } };
           if (prof.singleton) {
             const holder = singletonHolder(keyOf(prof), await host.sessions());

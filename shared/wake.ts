@@ -11,8 +11,9 @@
 //
 // A playbook schedule's fire (§chat.schedules/fire, server/schedules.ts) is a wake too, tagged
 // `[schedule s1]`, with an optional "Late by … (Sova was not running)." line and its reason; what
-// follows is its instruction (a whole playbook, for a new session), so only the two lines after the
-// tag are read.
+// follows is its instruction and the playbook block (§chat.schedules/delivery), so only the two lines
+// after the tag are read, and the block's opening tag for its load.
+import { parseBlockTags, type Load } from "./playbook-delivery";
 
 const TAG_RE = /^\[wake_nudge (n\d+)\]/;
 const SCHEDULE_TAG_RE = /^\[schedule (s\d+)\] Scheduled run fired /;
@@ -26,6 +27,8 @@ export interface WakeInfo {
   reason?: string; // absent when the extension wrote "Reason: (none)"
   /** A playbook schedule's fire (`[schedule sN]`), not a wake_nudge. */
   schedule?: true;
+  /** The playbook its block carried, and how (§chat.schedules/delivery). */
+  playbook?: { id: string; load: Load };
 }
 
 /** Parses a wake-nudge message by its tag alone. The tag must open the first line; a later line
@@ -43,6 +46,8 @@ export function parseWakeNudge(text: string | null | undefined): WakeInfo | null
       const reason = REASON_RE.exec(line.trim());
       if (reason) info.reason = reason[1];
     }
+    const tag = parseBlockTags(text)[0];
+    if (tag) info.playbook = { id: tag.id, load: tag.load };
     return info;
   }
   const m = TAG_RE.exec(first);

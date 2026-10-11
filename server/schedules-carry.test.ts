@@ -406,6 +406,20 @@ describe("the playbook inside every fire (§chat.schedules/delivery)", () => {
     assert.equal(load(text), "unchanged");
   });
 
+  test("playbook_read's lookup: the session's own schedule, also after a revoke; an unknown session only by an approved schedule's delivered folder", async () => {
+    const { w, k } = await approved();
+    await fireAt(w, k, "2026-10-05T12:00:30Z");
+    const own = w.store().schedules[0]!.session!;
+    assert.equal((await k.bundleFor(own.id))?.dir, w.pbDir);
+    // A brand-new session whose fire isn't recorded yet: by the delivered folder, exactly.
+    assert.equal((await k.bundleFor("new-one", { id: "merge-round", dir: w.pbDir }))?.dir, w.pbDir);
+    assert.equal(await k.bundleFor("new-one", { id: "merge-round", dir: "/elsewhere/merge-round" }), null);
+    assert.equal((await k.revoke("s1")).ok, true);
+    assert.equal((await k.bundleFor(own.id))?.dir, w.pbDir, "a run under way keeps its playbook");
+    assert.equal(await k.bundleFor("stranger", { id: "merge-round", dir: w.pbDir }), null, "revoked: no stranger reads through it");
+    assert.equal(await k.bundleFor("stranger"), null);
+  });
+
   test("a row another device runs fires nothing here", async () => {
     const { w, k } = await approved();
     w.state.host = "h_another1";

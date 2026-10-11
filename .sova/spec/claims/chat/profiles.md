@@ -35,14 +35,16 @@ once the first message is sent, and kept by the session itself. The UI says
 - **Capability-neutral.** A profile that removes and grants nothing, isn't One at a time, and links
   no playbook and no first message (so it sets only model, effort, subagents, mode or minor modes) is
   capability-neutral.
-- **Where profiles come from** is §chat.profiles/projects: **Default** in code (nothing changed),
-  the **Built in** files Sova ships (**Read-only reviewer**: reads sessions; no shell, edits or
-  workers; the Overseer may start it), **Yours**, and **This project**'s files. Sova writes only Yours, and only when
+- **Where profiles come from** is §chat.profiles/projects: **Default** in code (no profile, nothing
+  changed: the picker's **My settings**), the **Built in** files Sova ships (none today), **Yours**,
+  and **This project**'s files. Sova writes only Yours, and only when
   you save one (§chat.profiles/picker's Save Current As Profile).
 - **The session keeps its own copy.** A session's profile is its invisible `custom` entry
   `customType: "sova-profile"`, data `{v: 1, profile: {…the whole profile…, source, project?,
   projectName?}}` or `{v: 1, profile: null}` (Default), newest on the branch wins. `source` is
-  `sova`, `user` or `project`, and a project profile keeps its project's root and name. An older
+  `sova`, `user` or `project`, and a project profile keeps its project's root and name. An entry
+  with a profile may carry `mine: {mode, minorModes, model?, thinking?, subagents?}`, what the
+  session had before its first profile pick (§chat.profiles/applying). An older
   entry's `builtin: true` reads as `sova`. It is never LLM context, the TUI ignores it, and it draws
   no transcript row of its own. Changing, hiding or deleting a profile's file never changes a session
   that already has one. No entry means Default, exactly as before profiles existed.
@@ -60,12 +62,16 @@ Overseer, project overseers, baton, organization and TUI-live sessions show no p
   the session's; one card is in the tab order. Arrow keys move focus between cards, Home and End to
   the first and last, and Enter, Space or a click picks (moving focus never picks: every pick
   reopens the runtime). The focused card shows the focus ring, and focus is back on the picked card
-  once the runtime has reopened. Cards fill the session column (at most `--measure`, the message cap of
+  once the runtime has reopened. A One at a time profile live in another session is no radio but a
+  link to that session (§chat.profiles/singleton): it keeps its place among the cards, Tab reaches
+  it there like any link, and the arrow keys skip it. Cards fill the session column (at most `--measure`, the message cap of
   §chat.transcript/transcript-items) in as many columns as fit at 220px or wider. Where the picker is narrower than 480px (a phone), the cards are one column of single-line
   cards: icon, label, caption and chips on one 44px line (chips that don't fit take a second), the
   caption cut short with an ellipsis first, the label keeping up to about two thirds of the card
-  before it is cut. A card that can't be used keeps its whole reason, on its own line below. **Built in** comes first (Default, then the shipped profiles), then **This project ({name})**, then **Yours**, each under its own label; hidden
-  profiles are left out, and Default can't be hidden. A last card, **Custom…**, opens the capability
+  before it is cut. A card that can't be used keeps its whole reason, on its own line below. **My settings** comes
+  first, a card under no label; then **Yours**, then **This project ({name})**, each under its own
+  label (a profile file Sova itself ships, of which there are none today, would follow under **Built
+  in**); hidden profiles are left out, and My settings can't be hidden. A last card, **Custom…**, opens the capability
   board. With more than 9 cards, a **Find a profile** field above the grid filters them by name.
   While a profile file here can't be read, a muted line under the grid says "{n} profile files have
   mistakes. See Manage Profiles." ("1 profile file has mistakes.") **Manage Profiles** opens
@@ -74,17 +80,24 @@ Overseer, project overseers, baton, organization and TUI-live sessions show no p
   "{model} · {effort} · subagents: {footprint} · {mode} · {minor modes}" (the model's short name,
   the effort level, the subagent profile's footprint, its distinct primary models, or "off", the
   mode's name, and the minor modes it starts with, e.g. "align, spec, vis", or "no minor modes"
-  for `[]`), or its description when it sets none of them. Chips say **Running** (a One at a time profile already live in another
-  session), **Needs approval** (an unapproved project profile, §chat.profiles/trust) and **One at a
-  time**.
+  for `[]`), or its description when it sets none of them. Chips say **Active** (a One at a time
+  profile live in another session, in place of One at a time), **Needs approval** (an unapproved
+  project profile, §chat.profiles/trust) and **One at a time** (one live nowhere else).
 - **A card that can't be used here** is disabled (`aria-disabled`, still focusable so its reason is
   read), with the reason as its caption, in the warn tone, and as its title, and a click on it does
   nothing. It looks off by shape as well as tone: no fill and a dashed edge, a muted label and
   dimmed icon, a not-allowed pointer, and no change on hover. It is off because its model is turned off in Settings → Models (that page's sentence),
   has no credentials on this host ("No credentials here for {model}."), or its subagent profile
   isn't in this device's library ("Its subagent profile "{id}" isn't in this device's library.").
-- **Default shows nearly nothing**: its card checked and one muted line, "Everything a new session
-  has today: {n} tools, no session powers."
+- **My settings** is the session with no profile (`profile: null`; Default, whose id stays
+  `default`): what you set by hand on this new session. Its card's caption says that in a few
+  words, "{mode} · {minor modes} · {model} · {effort}" (e.g. "Delegate · Align · Opus 5.5 · high":
+  the mode's name, the minor modes that are on, capitalised and left out when none, the model's
+  short name and the effort), cut short with an ellipsis where it doesn't fit. While no profile is
+  picked it reads the session as it is now; once one is, it reads what picking My settings would
+  put back (§chat.profiles/applying), or "Your own settings" when the session's entry doesn't say.
+  Picked, it shows one muted line: "No profile: the settings you chose, {n} tools, no session
+  powers."
 - **Save Current As Profile**, beside Manage Profiles, asks for a name and saves this session's
   model, effort and subagent pick (its own pick, when it has one; none otherwise, so the profile
   follows the device's default) as a new capability-neutral profile in Yours
@@ -93,19 +106,20 @@ Overseer, project overseers, baton, organization and TUI-live sessions show no p
   "{name}". Pick another name."), and a Yours file that can't be read refuses with its error and is
   never overwritten. A refusal stays under the name field ("Couldn't save {name}. {reason}"), the
   field marked invalid and the form open, until the name changes or the form closes.
-- **Any other profile** shows its one-line description, then **What changes** (vs Default): a row per
+- **Any other profile** shows its one-line description, then **What changes** (vs My settings): a row per
   grant, `+` and tinted, with its limits under Message other sessions ("Up to {hops} hops · {n} sends
   per message you send · {n} a day on its own · {n} to one session per 10 min"), then a row per
-  removal, `−`, naming its tools. A folded line follows: "Same as Default: {n} tools. Show All", which
-  lists them. A One at a time profile adds that badge.
+  removal, `−`, naming its tools. A folded line follows: "Same as My settings: {n} tools. Show All",
+  which lists them. A One at a time profile adds that badge.
 - **Guardrail note.** While anything is removed and the shell is kept, an info note says "The shell
   is on, so removals are guardrails, not a boundary. Bash can still change files and call Sova's
   API." With the shell removed: "The shell is off, so these removals hold."
 - Under it, muted: "Fixed once you send your first message."
 - **Custom…** opens the capability board: one toggle per removable capability ("on" = kept) and per
   grant, starting from the profile picked before. A toggle it can't change right now is disabled
-  with its reason in its title (§chat.profiles/enforcement's workers rule). Its head reads "{label},
-  edited" once it differs from where it started, with **Reset**. Every flip applies at once, like a
+  with its reason in its title (§chat.profiles/enforcement's workers rule). Its head names where it
+  started ("My settings" with no profile) and reads "{label}, edited" ("My settings, edited") once it
+  differs from there, with **Reset**. Every flip applies at once, like a
   pick. The board changes this session only and never makes a profile: profiles are files
   (§chat.profiles/projects).
 - **A profile that links a playbook** shows its playbook card under What changes
@@ -132,8 +146,19 @@ Overseer, project overseers, baton, organization and TUI-live sessions show no p
   has no credentials on this host or isn't a model here, whose effort isn't one of the levels, or
   whose subagent profile isn't in this device's library is refused (400) with a sentence that says
   which, and nothing is written.
-- **Switching back.** A pick made while the session's current profile sets `subagents`, of a
-  profile that sets none (Default included), pins this device's default subagent profile (`off`
+- **My settings comes back as you left it.** The first pick of a profile on a session with none
+  remembers what the session has then, in that entry's `mine` (§chat.profiles/model): its mode and
+  minor modes, model, effort, and its own subagent pick (none when it follows the device's
+  default). A pick of another profile, or a Custom… flip, carries the same `mine` forward. A pick of
+  My settings (`null`) replays it, each part only where it differs from now: the mode and minor
+  modes (pinned together), the model, the effort and the subagent pick; with no pick of its own to
+  put back, a session a profile gave a pick gets this device's default, as below. A remembered
+  model that can't be used now (turned off, no credentials, gone) falls to the new-session one, as
+  below. Back on My settings the entry is `{v: 1, profile: null}` with no `mine`, so the next first
+  pick remembers afresh. Like every pick, only before the first message.
+- **Switching back.** Without a `mine` to replay (an entry an older build wrote), and for a pick of
+  another profile that doesn't set a field, these hold. A pick made while the session's current
+  profile sets `subagents`, of a profile that sets none (Default included), pins this device's default subagent profile (`off`
   when the default is Off or missing) as the session's pick, since a pick is newest-wins and can't
   be cleared; a session with no pick entry gets none. Likewise a pick of a profile without `model`
   or `thinking`, made while the current profile sets it, puts back the model or effort a new
@@ -149,7 +174,8 @@ Overseer, project overseers, baton, organization and TUI-live sessions show no p
 - The chat socket sends a `profile` message after `hello`, whenever there is something to show (a
   profile, or a session still before its first message): the branch's profile (or null), who
   picked it, whether it is `locked`, the runtime's active tool names, the tools its removals took
-  away and the tools its grants added. The client never keeps its own tool list. A Default session
+  away and the tools its grants added, and, with a profile, the entry's `mine` (what My settings
+  would put back). The client never keeps its own tool list. A Default session
   with a message on its branch gets none, so its socket frames are as before.
 
 ## §chat.profiles/enforcement — What a profile changes in the runtime
@@ -260,9 +286,17 @@ Enforced in the tool, never by the prompt; each has a default and is editable pe
   counts from the moment the profile is picked for it, so a session that carries a profile is
   listed even before its first message (an empty session is otherwise never listed), where it can
   be opened or archived.
-- **Picking a running one** never makes a second: the pick stays as it was and a warn alert says
-  "{label} is already running. It's set to One at a time, so only 1 session can use it.", with
-  **Open the Running {Label}** and **Pick Another Profile**. The server refuses the pick the same way.
+- **A running one opens instead.** While a One at a time profile is live in another session (the
+  listing's `running`), its picker card is a link that opens that session (`#/sid/{id}`) in one
+  click, with an **Active** chip in place of One at a time and the caption "Opens the running
+  session: {title}". It never picks, so it is no radio (§chat.profiles/picker). The picker reads the
+  listing again whenever the window regains focus, so a profile stopped elsewhere turns back into a
+  card that picks, with its One at a time chip.
+- **Picking a running one** never makes a second. The server refuses the pick (409, with the
+  session that has it); when that refusal reaches the picker (it started elsewhere after the
+  listing was read), the pick stays as it was and a warn alert says "{label} is already running.
+  It's set to One at a time, so only 1 session can use it.", with **Open the Running {Label}** and
+  **Pick Another Profile**.
 - **Race at Send.** When another session took it between the pick and the first message, Send is
   refused and the draft kept: "{label} started in another session. Nothing was sent. Open it or pick
   another profile."
@@ -276,8 +310,9 @@ Enforced in the tool, never by the prompt; each has a default and is editable pe
   project. Any other local folder is its own project, with no walk up to a parent. The project's
   name is its root folder's name. A relative or remote cwd has no project; that is decided before any
   filesystem call, as for playbooks (§chat.playbooks/the-project-listing).
-- **Four sources.** **Default** is in code and changes nothing. **Built in**: one JSON file per
-  profile in `profiles/` at the Sova repo root (Read-only reviewer). **Yours**:
+- **Four sources.** **Default** is in code and changes nothing (the picker's My settings). **Built
+  in**: one JSON file per profile in `profiles/` at the Sova repo root; Sova ships none today, and a
+  missing folder lists none. **Yours**:
   `<state root>/session-profiles.json` `{version: 1, profiles: [...]}`. **This project**:
   `<project root>/.sova/profiles/<id>.json`, one profile per file, whose `id` must equal the file's
   name.

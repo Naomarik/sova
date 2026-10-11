@@ -698,7 +698,7 @@ place in Live & web (and Groups), but a session it lists is never a Recent row
   <summary class="sidebar-region-head"><span>Profiles</span><span class="sidebar-region-count">· 3</span></summary>
   <!-- one sub-group per profile in use -->
   <div class="profile-shelf-group">
-    <p class="profile-shelf-head">…icon… Read-only reviewer <span class="text-muted">2 live</span>
+    <p class="profile-shelf-head">…icon… Docs reviewer <span class="text-muted">2 live</span>
       <button class="button button-sm button-ghost">Run</button></p>
     <ul class="list">…session rows…</ul>
   </div>
@@ -730,7 +730,7 @@ place in Live & web (and Groups), but a session it lists is never a Recent row
   project profile, else in the open session's folder. It is `POST /api/sessions` with `cwd` and
   `profile`. Start on a One at a time profile that is live answers with the picker's alert
   (§chat.profiles/singleton) as a toast with **Open the Running {Label}**.
-- **New Session** is one button: the session it makes starts as Default, and its empty screen is
+- **New Session** is one button: the session it makes starts with no profile (My settings), and its empty screen is
   where a profile is picked.
 
 ## §app.session-list/needs-you — Needs you

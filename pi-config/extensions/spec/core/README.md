@@ -212,8 +212,8 @@ names ×1, prose ×2 and an H2's area heading ×1, words lower-cased, split at h
 and words under 3 characters dropped, a light suffix stemmer (path-shaped names kept whole and
 unstemmed); rows under 0.35 × the best score drop unless the heading holds every query word.
 `counts.topic`, `topicTerms` (the query words searched) and `topicNotice` are added; `notice` speaks
-for name matches. Top 10: name rows first, topic rows keep up to 3 places when names would fill
-them; exit 0 when either kind found a claim, 1 when neither did or a name row was cut (cut topic
+for name matches. Top 10: name rows first, unchanged, and topic rows fill only the places they leave
+free; exit 0 when either kind found a claim, 1 when neither did or a name row was cut (cut topic
 rows are counted in `notShown`, not an unknown). An interface token is a backticked span (fences and comments masked) of 3+ characters with
 a letter and a separator, bracket or sigil, an inner capital, or all capitals; it occurs in a file
 with no `[A-Za-z0-9_$]` on either side, and weighs `ln((records + 1) / records using it)`.

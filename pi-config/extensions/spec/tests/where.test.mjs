@@ -156,25 +156,35 @@ test("where: a claim found by name is not repeated as a topic row; a file keeps 
   assert.equal(cli(root, ["where", "src/editor.ts", "src/save.ts"]).j.mode, "token", "only a single argument is read as a file");
 });
 
-test("where: name rows come first and topic rows keep three of the ten shown; a cut name row exits 1, a cut topic row does not", () => {
+test("where: name rows keep their top ten and topic rows fill only the places left free; a cut name row exits 1, a cut topic row does not", () => {
   const root = fixture();
   const m = JSON.parse(readFileSync(join(root, ".sova/spec/manifest.json"), "utf8"));
   const add = (id, prose) => {
     m.claims[id] = { kind: "note", requires: [] };
     write(root, `.sova/spec/claims/${id.slice(1).split("/")[0]}/${id.split("/")[1]}.md`, `# ${id} — Part\n\n${prose}\n`);
   };
-  for (let i = 0; i < 12; i++) add(`§foo/name-${String.fromCharCode(97 + i)}`, "This part passes `Foo` along.");
+  for (let i = 0; i < 10; i++) add(`§foo/name-${String.fromCharCode(97 + i)}`, "This part passes `Foo` along.");
   for (let i = 0; i < 4; i++) add(`§bar/word-${String.fromCharCode(97 + i)}`, "This part is about foo, in plain words.");
   for (let i = 0; i < 13; i++) add(`§gad/get-${String.fromCharCode(97 + i)}`, "A gizmo turns.");
   write(root, ".sova/spec/manifest.json", JSON.stringify(m));
   const { j } = cli(root, ["where", "Foo"]);
-  assert.deepEqual([j.counts.claims, j.counts.topic, j.total, j.shown, j.notShown], [12, 4, 16, 10, 6]);
-  assert.deepEqual(j.lines.map((l) => l.type), [...Array(7).fill("defines"), ...Array(3).fill("topic")]);
-  assert.equal(j.exit, 1, "name rows were left out");
+  assert.deepEqual([j.counts.claims, j.counts.topic, j.total, j.shown, j.notShown], [10, 4, 14, 10, 4]);
+  assert.deepEqual(j.lines.map((l) => l.type), Array(10).fill("defines"), "ten name rows fill the ten: no topic row displaces one");
+  assert.equal(j.exit, 0, "every name row is shown");
   assert.equal(j.hint, "where 'Foo' --token --all");
   const all = cli(root, ["where", "Foo", "--all"]).j;
-  assert.equal(all.lines.length, 16);
+  assert.equal(all.lines.length, 14);
   assert.equal(all.exit, 0);
+  add("§foo/name-x", "This part passes `Foo` along."); add("§foo/name-y", "This part passes `Foo` along.");
+  write(root, ".sova/spec/manifest.json", JSON.stringify(m));
+  const cut = cli(root, ["where", "Foo"]).j;
+  assert.deepEqual([cut.counts.claims, cut.shown, cut.notShown, cut.exit], [12, 10, 6, 1], "name rows left out: exit 1");
+  assert.ok(cut.lines.every((l) => l.type === "defines"));
+  add("§bar/plain", "A draftid named in plain words.");
+  write(root, ".sova/spec/manifest.json", JSON.stringify(m));
+  const free = cli(root, ["where", "draftId"]).j;
+  assert.deepEqual(free.lines.slice(0, 2).map((l) => l.type), ["defines", "mentions"]);
+  assert.ok(free.lines.slice(2).length > 0 && free.lines.slice(2).every((l) => l.type === "topic") && free.exit === 0, "topic rows fill the places name rows leave free");
   const tail = cli(root, ["where", "gizmo"]).j;
   assert.deepEqual([tail.counts.topic, tail.shown, tail.notShown, tail.exit], [13, 10, 3, 0], "topic rows past the ten are counted, and the answer still succeeds");
   assert.match(cli(root, ["where", "gizmo"], { json: false }).r.stdout, /^3 more not shown: where 'gizmo' --token --all$/m);

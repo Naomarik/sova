@@ -12,7 +12,8 @@ requirements within an explicit whole-response budget, with continuation and unk
 Beside the full-closure packet, a contents view (`toc`) lists a claim's one-hop neighbours with what
 each is and why it is linked, and single-passage reads (`read`) return one claim without its chain,
 so the agent chooses what it reads.
-A map (`map`) shows every area on one page, and `where` finds the claims for a source file or a name.
+A map (`map`) shows every area on one page, and `where` finds the claims for a source file or a name,
+and ranks claims by the words of a topic.
 Draft commands say what a draft introduced apart from what the spec already had, and a spec conflict
 a Git merge leaves has one recovery, given in the same words by the docs and the refusals.
 A report names the drafts left behind, and a prune deletes only the drafts on a list the user approved.
@@ -587,7 +588,8 @@ The command may follow its flags. They store nothing and run no project code.
 
 The read-only `where <path|token>` command answers "which promises cover this?". A path is a file a
 record's `code` lists or that exists under the project root; anything else is a token, and `--token`
-forces that reading. A path-shaped argument that is neither is searched as a token, and both the
+forces that reading. Several unquoted words are read together, as one token, exactly as the same
+words quoted. A path-shaped argument that is neither is searched as a token, and both the
 text and the JSON form say that no such file exists under the root and no record lists it (JSON:
 `file.state` `absent` and a `note`), exit 1. For a path it lists every claim whose `code` names the file, ranked by the interface tokens in
 the claim's own passage that also occur in the file, each shown with the tokens it shares. An
@@ -600,14 +602,46 @@ count over the records using it), and a claim's score is the sum over the tokens
 sharing no token follow the ranked ones in id order, with their `code` list as the only link. The
 first ten are shown; how many more there are and the `--all` flag that lists every one, none
 dropped, are named in the text and in the JSON form alike (`notShown`, `hint`), and a cut list exits
-1, never a complete answer. A file no record lists is reported as listed by no claim, exit
+1, never a complete answer (ranked topic rows aside, §tools.spec/where-topic). A file no record lists is reported as listed by no claim, exit
 1, with up to ten claims whose interface tokens occur in it under a heading that calls them unmapped
 candidates, a name match and not a mapping, and never as an empty success. The file is read only
 through the core's own refusal rules (inside the root, no symlink on its path, a regular file), and
 only the one file asked about; a file it cannot read is reported as not read, with why, exit 1, and
 its claims are still listed, unranked. For a token it lists the claims whose backticked spans equal
 it or contain it as a whole name: first those that use it in their heading or first sentence, as
-defining it, then the rest, as mentioning it; none found is exit 1.
+defining it, then the rest, as mentioning it, and then ranks the claims by the token's words as a
+topic (§tools.spec/where-topic, which also says how the two kinds share the ten shown); neither
+finding a claim is exit 1.
+
+## §tools.spec/where-topic — `where` also ranks claims by the words of a topic
+
+When `where` reads its argument as a token rather than a file, it also searches it as a topic, so a
+claim is found by the words a person would use for it, not only by a backticked name: `where summary
+tree` finds the claim titled "The summary tree and the view". Several unquoted words are one query,
+the same as those words quoted; a single argument that is a file keeps the path reading, and a file
+read as a path is never searched as a topic. The query and every claim and area passage are cut into words the same
+way: lower case, a path-shaped name kept whole, other words split at hyphens (`read-only` is `read`
+and `only`), short words and common English words dropped, and a plain suffix stripped from the
+rest, so `trees` finds `tree`. Each claim and area is scored by field-weighted BM25 over its
+heading, its first sentence, its backticked names, its prose and, for a claim inside an area, that
+area's heading: a query word counts more the fewer passages use
+it, more the more often a field holds it (with diminishing returns), more in a short field than a
+long one, and most in the heading. A row scoring below a fixed fraction of the best one is dropped,
+unless its heading holds every query word; equal scores go by id. The ranking is computed from the
+claim files on each call, in the core alone: no index is stored, nothing is fetched or run, and the
+same spec and query give the same rows.
+
+Topic matches are rows of their own kind, `topic`, under their own heading, which calls them ranked
+word matches, neither name matches nor mappings; each shows its score and the query words it matched
+(JSON: `score`, `matched`). `counts.topic` counts them, beside the name counts; the JSON form adds a
+`topicNotice` saying a topic row is a word match to read, never proof of what the claim covers, while
+its `notice` speaks for name matches only. A claim listed as defining or mentioning the name is not
+repeated as a topic row. Name rows come first, then topic rows; the name rows shown without `--all`
+are the same ten as without topic search, and topic rows fill only the places of the ten that name
+rows leave free; `notShown` and the hint count the rows of both kinds left out. The answer exits 0 when either kind found a claim, so a
+topic-only hit is a success; it exits 1 when neither found one, when a name row was left out of the
+ten, or when the argument is path-shaped and no such file exists. Topic rows left out of the ten are
+counted and named, but as the ranking's tail they don't make the answer incomplete.
 
 ## §tools.spec/near-impact — `impact --near` lists what a change could reach, one hop at a time
 

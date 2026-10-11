@@ -17594,6 +17594,26 @@
         "pi-config/extensions/spec/tests/census-base.test.mjs"
       ]
     },
+    "§tools.spec/where-topic": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/where-lookup"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/where.mjs",
+        "pi-config/extensions/spec/core/topic.mjs",
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/tests/where.test.mjs",
+        "pi-config/extensions/spec/core/README.md",
+        "pi-config/extensions/spec/README.md"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-11T07:56Z"
+      }
+    },
     "§tools.spec/worker-landed": {
       "kind": "behavior",
       "requires": [

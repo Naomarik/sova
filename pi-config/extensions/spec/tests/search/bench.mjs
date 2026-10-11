@@ -4,7 +4,9 @@
 // scores the order of the § ids it lists against the judged targets.
 //
 //   node bench.mjs [--set dev|<path>] [--cli <sova-spec.mjs>] [--root <project root>]
-//                  [--label <name>] [--quoted] [--no-write]
+//                  [--label <name>] [--quoted] [--ranks] [--no-write]
+//
+// --ranks also prints, for a dev run, one line per query: id, primary rank, any rank, gap, query, top 3.
 //
 // Ranking: the ids of the answer's `lines`, in order, first appearance only; whatever the line's type.
 // --quoted passes the query as one argument instead (`where 'summary tree'`), for a CLI that refuses
@@ -74,7 +76,7 @@ function git(root, args) {
   try { return execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim(); } catch { return ""; }
 }
 
-export function run({ set = "dev", cli, root, label, quoted = false, write = true } = {}) {
+export function run({ set = "dev", cli, root, label, quoted = false, ranks = false, write = true } = {}) {
   root = path.resolve(root ?? path.join(HERE, "../../../../.."));
   cli = path.resolve(cli ?? path.join(HERE, "../../core/sova-spec.mjs"));
   const file = set === "dev" ? path.join(HERE, "judgments.dev.json") : path.resolve(set);
@@ -112,6 +114,7 @@ export function run({ set = "dev", cli, root, label, quoted = false, write = tru
   const out = { meta, groups, rows: setName === "dev" ? rows : undefined };
   const md = render(meta, groups, setName === "dev" ? rows : null);
   process.stdout.write(table(meta, groups));
+  if (ranks && setName === "dev") for (const r of rows) process.stdout.write(`${r.id}\t${r.rankPrimary ?? "-"}\t${r.rankAny ?? "-"}\t${r.vocabularyGap ? "gap" : ""}\t${r.query}\t${r.top.join(" ")}\n`);
   if (write) {
     const dir = path.join(HERE, "results");
     fs.mkdirSync(dir, { recursive: true });
@@ -160,7 +163,7 @@ function render(meta, groups, rows) {
 
 function main(argv) {
   const arg = (name) => { const i = argv.indexOf(name); return i >= 0 ? argv[i + 1] : undefined; };
-  run({ set: arg("--set") ?? "dev", cli: arg("--cli"), root: arg("--root"), label: arg("--label"), quoted: argv.includes("--quoted"), write: !argv.includes("--no-write") });
+  run({ set: arg("--set") ?? "dev", cli: arg("--cli"), root: arg("--root"), label: arg("--label"), quoted: argv.includes("--quoted"), ranks: argv.includes("--ranks"), write: !argv.includes("--no-write") });
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main(process.argv.slice(2));

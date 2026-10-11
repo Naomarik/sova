@@ -67,7 +67,7 @@ import { promptToc, readManifest } from "./overseer-ideas";
 import { promptTodos, readTodos } from "./overseer-todos";
 import type { SubagentTool } from "./overseer-idea-tools";
 import { workerDenial } from "./delegate";
-import { BUILTIN_ALLOWED, overseerTools, type OverseerToolHost, renderTranscript, TurnLimits } from "./overseer-tools";
+import { BUILTIN_ALLOWED, overseerTools, type OverseerToolHost, renderTranscript, TurnLimits, UNATTENDED_WRITE_REFUSAL } from "./overseer-tools";
 import { UserTurns } from "./user-turns";
 import { OVERSEER_SENDER_HEADER, overseerSender, senderSecret } from "./overseer-sender";
 
@@ -78,7 +78,7 @@ import { actsText, carriedRules, clickWrote, coveringPermit, foldPermits, type P
 import { readAliases, sessionName, setAlias } from "./session-names";
 import { RESUME_DELAY_MS, resumeInterrupted, runLedger } from "./auto-resume";
 import { schedulesForWire } from "./schedules";
-import { overseerFileTools } from "./overseer-file-tools";
+import { overseerFileTools, ownStateRoots } from "./overseer-file-tools";
 import { OverseerGuard } from "./overseer-deny";
 import { projectOverseerOfPath } from "./project-overseer-store";
 import { type Redactor, redactExtensionMessages, serverRedactor } from "./overseer-redact";
@@ -1047,8 +1047,14 @@ setOverseerRuntime({
         appendSystemPromptOverride: (base) => prompt.seed(base),
       },
       tools: [...tools.map((t) => t.name), ...BUILTIN_ALLOWED, ...MEMORY_TOOLS],
-      // read/grep/find/ls reach anywhere except secret files and the attached orgs' workspaces (overseer-deny.ts).
-      customTools: overseerFileTools(overseerDir(), () => new OverseerGuard(readIndex().orgs.map((o) => o.dir))),
+      // read/grep/find/ls reach anywhere except secret files and the attached orgs' workspaces (overseer-deny.ts);
+      // write/edit the same, never Sova's or pi's own state, and only in a turn the user started.
+      customTools: overseerFileTools(overseerDir(), () => new OverseerGuard(readIndex().orgs.map((o) => o.dir)), undefined, undefined, {
+        protectedRoots: ownStateRoots,
+        attended: () => turns.attended(),
+        unattended: UNATTENDED_WRITE_REFUSAL,
+        log: (line) => logAction({ at: new Date().toISOString(), overseerId: readOverseerState()?.current ?? "", ...line }),
+      }),
       model: settings.model,
       thinking: settings.thinking,
     };

@@ -1,10 +1,8 @@
 import { createResource, createSignal, For, onMount, Show } from "solid-js";
-import { DEFAULT_PROFILE_ID, powersText, type ListedProfile, type ProfileProblem, type ProfileSource, type ProfilesListing } from "../../shared/profiles";
-import type { PlaybookCatalog } from "../../shared/protocol";
-import { linkedPlaybook } from "../../shared/playbooks";
-import { approveProfile, fetchPlaybooks, fetchProfiles, setProfileHidden } from "../lib/api";
+import { powersText, type ListedProfile, type ProfileProblem, type ProfileSource, type ProfilesListing } from "../../shared/profiles";
+import { approveProfile, fetchProfiles, setProfileHidden } from "../lib/api";
 import { tildePath } from "../lib/format";
-import { profileIconName, profileSummary } from "../lib/profiles";
+import { isMySettings, profileIconName, profileSummary } from "../lib/profiles";
 import { home, toast } from "../lib/ui-state";
 import { Banner, Icon } from "./ui";
 
@@ -20,7 +18,6 @@ const SOURCE_BADGE: Record<ProfileSource, string> = { sova: "Built in", project:
  */
 export function ProfilesSettingsSection(props: { cwd: string | null }) {
   const [listing, { refetch, mutate }] = createResource(() => fetchProfiles(props.cwd));
-  const [playbooks] = createResource(() => fetchPlaybooks(props.cwd).catch(() => undefined as PlaybookCatalog | undefined));
   const [busy, setBusy] = createSignal<string | null>(null);
   onMount(() => void refetch());
   const path = (p: string) => tildePath(p, home());
@@ -40,15 +37,12 @@ export function ProfilesSettingsSection(props: { cwd: string | null }) {
     }
   };
   const problemsOf = (source: ProfileSource) => (listing()?.problems ?? []).filter((x) => x.source === source);
+  /** The profiles Sova ships: the listing's built-ins less Default (My settings), which is no profile. */
+  const shipped = (l: ProfilesListing) => l.builtins.filter((p) => !isMySettings(p));
 
   const Row = (rp: { p: ListedProfile }) => {
     const p = rp.p;
     const hidden = () => listing()?.hidden.includes(p.key) ?? false;
-    const runs = () => {
-      if (!p.playbook) return null;
-      const pb = linkedPlaybook(playbooks()?.playbooks ?? [], p.playbook, p.source);
-      return pb ? `Runs ${pb.title}` : `Runs "${p.playbook}", not found here`;
-    };
     return (
       <li class="profiles-row">
         <Icon name={profileIconName(p.icon)} small />
@@ -63,7 +57,6 @@ export function ProfilesSettingsSection(props: { cwd: string | null }) {
             </Show>
           </span>
           <span class="profile-muted">{profileSummary(p)}</span>
-          <Show when={runs()}>{(r) => <span class="profile-muted">{r()}</span>}</Show>
           <Show when={p.file}>{(f) => <span class="profile-muted text-mono profiles-row-file">{path(f())}</span>}</Show>
           <Show when={p.approval === "needed"}>
             <span class="profiles-row-ask">It asks to {powersText(p)}. Approve it before a session can use it.</span>
@@ -80,16 +73,14 @@ export function ProfilesSettingsSection(props: { cwd: string | null }) {
               Approve
             </button>
           </Show>
-          <Show when={!(p.source === "sova" && p.id === DEFAULT_PROFILE_ID)}>
-            <button
-              type="button"
-              class="button button-sm button-ghost"
-              disabled={busy() === p.key}
-              onClick={() => void act(p.key, () => setProfileHidden(p.key, !hidden(), props.cwd), `Couldn't change ${p.label}.`)}
-            >
-              {hidden() ? "Show In Picker" : "Hide From Picker"}
-            </button>
-          </Show>
+          <button
+            type="button"
+            class="button button-sm button-ghost"
+            disabled={busy() === p.key}
+            onClick={() => void act(p.key, () => setProfileHidden(p.key, !hidden(), props.cwd), `Couldn't change ${p.label}.`)}
+          >
+            {hidden() ? "Show In Picker" : "Hide From Picker"}
+          </button>
         </div>
       </li>
     );
@@ -135,7 +126,13 @@ export function ProfilesSettingsSection(props: { cwd: string | null }) {
       <Show when={listing()}>
         {(l) => (
           <>
-            <Group title="Built in" label="Built-in profiles" profiles={l().builtins} problems={problemsOf("sova")} />
+            <h4 class="text-eyebrow profiles-group-head">Yours</h4>
+            <Show when={l().error}>{(e) => <Banner tone="error" title="Your profiles couldn't be read." body={e()} />}</Show>
+            <Show when={l().yours.length} fallback={<Show when={!l().error}><p class="profile-muted">None yet. Yours are in {path(l().yoursFile)}, and every folder can use them.</p></Show>}>
+              <ul class="profiles-list" aria-label="Your profiles">
+                <For each={l().yours}>{(p) => <Row p={p} />}</For>
+              </ul>
+            </Show>
             <Group
               title={l().project.state === "ok" ? `This project (${l().project.name})` : "This project"}
               label="This project's profiles"
@@ -149,12 +146,9 @@ export function ProfilesSettingsSection(props: { cwd: string | null }) {
                     : (l().project.message ?? "This session's folder has no project profiles.")
               }
             />
-            <h4 class="text-eyebrow profiles-group-head">Yours</h4>
-            <Show when={l().error}>{(e) => <Banner tone="error" title="Your profiles couldn't be read." body={e()} />}</Show>
-            <Show when={l().yours.length} fallback={<Show when={!l().error}><p class="profile-muted">None yet. Yours are in {path(l().yoursFile)}, and every folder can use them.</p></Show>}>
-              <ul class="profiles-list" aria-label="Your profiles">
-                <For each={l().yours}>{(p) => <Row p={p} />}</For>
-              </ul>
+            {/* Only real profiles: My settings is no profile, and lives on the new session screen alone. */}
+            <Show when={shipped(l()).length || problemsOf("sova").length}>
+              <Group title="Built in" label="Built-in profiles" profiles={shipped(l())} problems={problemsOf("sova")} />
             </Show>
           </>
         )}

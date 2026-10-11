@@ -4,6 +4,9 @@ import { ApiError, connectTarget, createSession, fetchTargets, getSessionSummary
 import { tildePath } from "../lib/format";
 import { hiddenFolder, setShowHiddenFolders, showHiddenFolders } from "../lib/hidden-folders";
 import {
+  folderProjectHint,
+  folderStart,
+  folderStartedToast,
   hiddenRecentNote,
   type NewSessionWhere,
   projectAt,
@@ -90,9 +93,10 @@ export function NewSessionDialog(props: {
   const tabs = createMemo(() => tabsForHost(host()));
   onMount(() => (field ?? tabEls[tabs().findIndex((t) => t.id === where())])?.focus());
 
-  // The Project tab: this host's projects, fetched the first time it shows.
+  // This host's projects: the Project tab lists them, and This Computer starts a folder in one as that project's
+  //. Fetched once this host's Project or This Computer tab shows.
   const [projectsWanted, setProjectsWanted] = createSignal(false);
-  createEffect(() => where() === "project" && setProjectsWanted(true));
+  createEffect(() => (where() === "project" || (where() === "local" && host() === null)) && setProjectsWanted(true));
   const [projects] = createResource(projectsWanted, () => listProjects());
   const projectList = createMemo(() => (projects.error ? [] : projectChoices(projects()?.projects ?? [])));
   /** A project the user picked; until then, the one the open session's folder is in. */
@@ -193,12 +197,20 @@ export function NewSessionDialog(props: {
     setRechecks(0);
   };
 
+  /** What This Computer's Create Session does with the folder it holds: a project's start there, or a plain session. */
+  const localStart = createMemo(() => folderStart(projectList(), cwd().trim(), host()));
+  const localProject = () => {
+    const ls = localStart();
+    return ls.kind === "project" ? ls.project : null;
+  };
+  /** Still reading this host's projects: a folder in one must not start as a plain session in the meantime. */
+  const projectsPending = () => host() === null && projects.loading;
   const ready = () =>
-    where() === "project" ? !!projectId() : where() === "local" ? !!cwd().trim() : !!place().target && !!place().remoteCwd;
+    where() === "project" ? !!projectId() : where() === "local" ? !!cwd().trim() && !projectsPending() : !!place().target && !!place().remoteCwd;
 
   /** The Project tab's Create Session: a project coding session in the root, its worktree adopted later. Once started it
       never comes back to the error path: an unreadable summary closes the dialog and opens the session by its path. */
-  const startProjectSession = (pid: string) =>
+  const startProjectSession = (pid: string, at?: { cwd: string; started: string }) =>
     startInProject(
       pid,
       { start: startProjectCoding, summary: getSessionSummaryById },
@@ -210,6 +222,7 @@ export function NewSessionDialog(props: {
           location.hash = href;
         },
       },
+      at,
     );
 
   const submit = async (e?: Event) => {
@@ -223,6 +236,12 @@ export function NewSessionDialog(props: {
         await startProjectSession(projectId()!);
         return;
       }
+      const ls = localStart();
+      if (where() === "local" && ls.kind === "project") {
+        const root = ls.cwd.replace(/\/+$/, "") === ls.project.root.replace(/\/+$/, "");
+        await startProjectSession(ls.project.id, { cwd: ls.cwd, started: folderStartedToast(ls.project.name, tildePath(ls.cwd, home()), root) });
+        return;
+      }
       const p = place();
       const h = host();
       const s = await createSession(where() === "local" ? cwd().trim() : { target: p.target!, remoteCwd: p.remoteCwd }, h);
@@ -231,7 +250,7 @@ export function NewSessionDialog(props: {
       props.onCreated(s);
     } catch (err) {
       if (err instanceof ApiError && err.status >= 400 && err.status < 500) {
-        setFieldError(err.message || (where() === "project" ? "No session was started." : "That folder doesn't exist. Pick one that does."));
+        setFieldError(err.message || (where() === "project" || localProject() ? "No session was started." : "That folder doesn't exist. Pick one that does."));
         setPicking(false);
         if (where() === "project") (projectListEl?.querySelector<HTMLElement>('[aria-selected="true"]') ?? projectListEl)?.focus();
         else field?.focus();
@@ -450,7 +469,7 @@ export function NewSessionDialog(props: {
                   aria-expanded={picking() ? "true" : "false"}
                   aria-controls="ns-picker"
                   aria-invalid={fieldError() ? "true" : undefined}
-                  aria-describedby="ns-cwd-hint ns-cwd-error"
+                  aria-describedby={localProject() ? "ns-cwd-hint ns-cwd-project ns-cwd-error" : "ns-cwd-hint ns-cwd-error"}
                   onClick={() => setPicking((v) => !v)}
                 >
                   <span class="folder-field-value truncate" classList={{ "folder-field-empty": !cwd() }}>
@@ -461,6 +480,14 @@ export function NewSessionDialog(props: {
                 <span class="field-hint" id="ns-cwd-hint">
                   pi runs in this folder and can read and change files in it.
                 </span>
+                {/* A folder in a project starts as that project's coding session. */}
+                <Show when={localProject()}>
+                  {(p) => (
+                    <span class="field-hint" id="ns-cwd-project">
+                      {folderProjectHint(p().name)}
+                    </span>
+                  )}
+                </Show>
                 <span class="field-error" id="ns-cwd-error">
                   {fieldError()}
                 </span>

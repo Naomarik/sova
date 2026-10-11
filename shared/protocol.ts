@@ -138,8 +138,9 @@ export interface SessionSummary {
   /** Present on a project overseer's own session (§app/project-overseer): which project it
       oversees. Like `overseer`, it is never classified, tagged or listed for attention. */
   projectOverseer?: { projectId: string };
-  /** A registered project's session (§app/projects): its overseer's conversations and the coding
-      sessions it started, standalone or placed in an organization. */
+  /** A registered project's session (§app/projects): its overseer's conversations, the coding
+      sessions it started, and any other session whose folder is the project's (`kind: "folder"`,
+      still an ordinary session), standalone or placed in an organization. */
   project?: SessionProject;
   /** An ORGANIZATIONAL session (§app.session-list/organizations): the org's own records make it one —
       every file in an attached org's workspace `sessions/` (baton sessions, offers, the project
@@ -149,6 +150,10 @@ export interface SessionSummary {
       project root, a fork or copy of an org session, and anything on a host where the org is not
       attached are ordinary. The sidebar lists these only in its Organizations region. Safe by absence. */
   org?: SessionOrg;
+  /** A `folder` session (`project.kind`) of a project an attached organization places: that org and project, so the
+      Organizations region lists it under the project too. Not `org`: the session stays
+      ordinary everywhere else. Safe by absence. */
+  folderOrg?: SessionOrgRef;
   /** The session's profile (§chat.profiles/model), from the newest `sova-profile` entry before its
       first user message; absent for Default. */
   profile?: SessionProfileField;
@@ -958,6 +963,8 @@ export interface PlaybookSchedule {
   pin?: string;
   /** The next time fire, ISO (active only). */
   next?: string;
+  /** An automation file's id (§chat.schedules/automation-file): approve with `{cwd, automation, pin}`. */
+  automation?: string;
 }
 
 /** One fire of a schedule, as the permits panel lists it. */
@@ -977,6 +984,9 @@ export interface ScheduleInfo extends PlaybookSchedule {
   playbook: string;
   title: string;
   fires: ScheduleFire[];
+  /** Its sessions for the Automations group (§app.session-list/automations), newest first: an
+      automation's own session, then the sessions its fires started or woke. */
+  sessions?: string[];
 }
 
 /** GET /api/playbooks?cwd=<project cwd>  (cwd optional) */
@@ -2108,6 +2118,8 @@ export interface ChatProfileInfo {
   removed: string[];
   /** The session tools the grants added. */
   granted: string[];
+  /** With a profile: what picking My settings puts back (the entry's `mine`, §chat.profiles/applying). */
+  mine?: import("./profiles").ProfileMine;
 }
 
 /** Why a `queue_remove` was refused, and nothing was removed.
@@ -3261,8 +3273,9 @@ export interface SessionOrgRef {
 export interface SessionProject {
   projectId: string;
   projectName: string;
-  /** `overseer`: one of its overseer's conversations; `coding`: a coding session the project started. */
-  kind: "overseer" | "coding";
+  /** `overseer`: one of its overseer's conversations; `coding`: a coding session the project started; `folder`: any
+      other session in the project's folder (its root, inside it, or one of its worktrees), never `finished`. */
+  kind: "overseer" | "coding" | "folder";
   /** A cleared (not the current) overseer conversation, or a build git says is merged. */
   finished?: true;
   /** The project is archived. */

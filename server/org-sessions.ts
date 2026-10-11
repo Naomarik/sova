@@ -17,8 +17,8 @@ import { projectOverseerPaths, readPoMarker, readPoState } from "./project-overs
  * - every coding session a project's build statechart records (`coding` from its overseer,
  *   `operator-coding` from Start coding session), by session id.
  * A fork or copy of any of these has its own id and lives in the pi sessions dir, so it is ordinary;
- * so is a session the operator opens by hand in a project root, and everything of an org that is
- * not attached on this host.
+ * so is a session the operator opens by hand in a project root (it only gets `folderOrg`, below), and everything
+ * of an org that is not attached on this host.
  */
 
 /** The build kinds that make a session one of the project's coding sessions. */
@@ -27,9 +27,11 @@ export const ORG_CODING_KINDS: ReadonlySet<BuildKind> = new Set(["coding", "oper
 export interface OrgLookup {
   /** `SessionSummary.org` for a file and its session id, or undefined (ordinary). */
   of(path: string, id: string): SessionOrg | undefined;
+  /** The attached org that places a project, as an org session's reference names it, or undefined. */
+  placing(projectId: string): SessionOrgRef | undefined;
 }
 
-const NONE: OrgLookup = { of: () => undefined };
+const NONE: OrgLookup = { of: () => undefined, placing: () => undefined };
 
 /**
  * One lookup per listing: each org's names, batons, overseer states and builds are read at
@@ -97,7 +99,15 @@ export function orgLookup(): OrgLookup {
   let coding: Map<string, { orgId: string; dir: string; projectId: string; row: BuildRow }> | null = null;
   const codingOf = (id: string) => (coding ??= codingSessions(orgs)).get(id);
 
+  const placings = new Map<string, SessionOrgRef | undefined>();
   return {
+    placing(projectId) {
+      if (!placings.has(projectId)) {
+        const o = orgs.find((x) => namesOf(x.id, x.dir).projects.has(projectId));
+        placings.set(projectId, o ? ref(o.id, o.dir, projectId) : undefined);
+      }
+      return placings.get(projectId);
+    },
     of(path, id) {
       const ws = orgOfSessionPath(path);
       if (ws) {
@@ -154,10 +164,13 @@ contributeSessions({
   lookup() {
     const orgs = orgLookup();
     return {
-      of(path, id) {
+      of(path, id, project) {
         const baton = batonSummaryField(path);
         const org = orgs.of(path, id);
-        return baton || org ? { ...(baton ? { baton } : {}), ...(org ? { org } : {}) } : undefined;
+        // A session in a placed project's folder stays ordinary (no `org`); the Organizations region still lists it under
+        // the project.
+        const folderOrg = !org && project?.kind === "folder" ? orgs.placing(project.projectId) : undefined;
+        return baton || org || folderOrg ? { ...(baton ? { baton } : {}), ...(org ? { org } : {}), ...(folderOrg ? { folderOrg } : {}) } : undefined;
       },
     };
   },

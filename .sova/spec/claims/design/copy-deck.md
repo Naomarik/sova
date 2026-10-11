@@ -44,9 +44,9 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Org page link (org head) | wordless `arrow-right` · `aria-label` and `title`: Open the {org} page |
 | Project label | a muted `folder` icon, {project} as a link to its page (Other: plain text), then its count (0 for a project with no session) · `title`: the project root (from its overseer's folder, else the project list's), else {project} · Unknown project · Other |
 | Project overseer eye (project heading, §app.session-list/organizations) | wordless `eye`, one mark at most: Busy's pulsing dot · the turn-error mark · the unread dot · `aria-label` and `title`: Open the {project} overseer, + " · working" / " · last turn failed" / " · new reply" |
-| Project groups (in order, each only with rows) | `Conversations` {n} · `title`: "Gathering sessions and offers sent to people." · `Conflicts to settle` {n} · `title`: "Sessions asking someone to settle two decisions that disagree." · `Builds` {n} · `title`: "Coding sessions this project started." |
+| Project groups (in order, each only with rows) | `Conversations` {n} · `title`: "Gathering sessions and offers sent to people." · `Conflicts to settle` {n} · `title`: "Sessions asking someone to settle two decisions that disagree." · `Sessions` {n} · `title`: "Coding sessions this project started, and the other sessions in its folder." · Projects region: `Sessions` {open n} · `title`: "Coding sessions this project started, and the other sessions in its folder; archived ones are in the Archive." |
 | States (Conversations, Conflicts to settle) | `Not started` {n} · `In progress` {n} · `Done` {n} (collapsed) |
-| Done (every group) | Done {n} · `title`: Conversations and Conflicts: "Done or closed, and the ones you archived." · Builds: "Merged, and the ones you archived." |
+| Done (every group) | Done {n} · `title`: Conversations and Conflicts: "Done or closed, and the ones you archived." · Sessions: "Merged, archived, or ended in a terminal." · Projects region's Sessions: "Merged, or ended in a terminal." |
 | Not started row, line 2 | "Link not sent yet" · "Not opened yet" · "Opened, no reply yet" · none while you hold it |
 | Settle row, line 2 | "In conflict: {area}" · not started: "In conflict: {area} · {hint}" |
 | Organizations spine door | wordless `building` over {n} · `aria-label` and `title`: Organizations · {n} sessions (1: "1 session"), + " · {k} waiting on you" while k ≥ 1 |
@@ -389,6 +389,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Project tab states | Loading projects… · Couldn't read the projects. {message} · No projects on this host yet. Add one from Projects. |
 | Project tab, started (toast) | Coding session started in the project root. · mode not set: Started, but its mode could not be set. Set it from the chat's mode menu before you send. |
 | Project tab, 4xx (`.field-error` under the list) | {server message} |
+| This Computer, a folder in a project (§app.projects/folder-sessions) | second hint "This folder is in {project}: the session starts as one of its coding sessions." · toast: Coding session started in the project root. (the root) · Coding session of {project} started in {folder}. (a folder inside it or its worktrees) · 4xx: {server message} under the Folder field |
 
 ## §design.copy-deck/insights — Insights (§app/insights)
 

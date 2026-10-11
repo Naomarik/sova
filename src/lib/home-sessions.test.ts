@@ -69,3 +69,18 @@ test("Last active skips a profile session, however new: Profiles lists it", () =
   const withProfile = [...list, session("p", { profile, origin: "web", lastActiveAt: "2026-02-01T00:00:00Z" })];
   assert.equal(sessionsGlance(withProfile, undefined, "badge").last?.id, "a");
 });
+
+test("a session in a project's folder: Live & web, Last active and Needs you count it, a build does not", () => {
+  const folder = { projectId: "p", projectName: "P", kind: "folder" } as SessionSummary["project"];
+  const coding = { projectId: "p", projectName: "P", kind: "coding" } as SessionSummary["project"];
+  const rows = [
+    ...list,
+    session("f", { project: folder, live: { pid: 2, status: "idle" } as SessionSummary["live"], lastActiveAt: "2026-02-01T00:00:00Z" }),
+    session("k", { project: coding, origin: "web", lastActiveAt: "2026-03-01T00:00:00Z" }),
+  ];
+  const g = sessionsGlance(rows, { items: [act("f", 50), act("k", 60), act("a", 1)] }, "badge");
+  assert.equal(g.live, 4, "the live folder session is Live & web (with a, b and c); the web build is not");
+  assert.equal(g.last?.id, "f");
+  assert.equal(g.needsYou, 2, "the waiting folder session is in Needs you; the build waits in its region");
+  assert.deepEqual(g.needsYouFirst.map((s) => s.id), ["f", "a"]);
+});

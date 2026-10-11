@@ -1,4 +1,4 @@
-import { archivedDropToast, orgProjectOf } from "../lib/drag-archive";
+import { archivedDropToast, archivedProjectOf } from "../lib/drag-archive";
 import { batch, createEffect, createMemo, createResource, createSignal, For, Match, on, onCleanup, Show, Switch, untrack, type JSX } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
@@ -97,7 +97,6 @@ import { usePaneAnnounce, usePaneId, usePaneScope } from "../lib/pane-scope";
 import { visibleCount } from "../lib/hidden-rows";
 import { isChangeRow, isProfileRow, isLoginNoteRow } from "../lib/change-rows";
 import { ProfilePicker } from "./ProfilePicker";
-import { playbookTurnText } from "../../shared/playbooks";
 import type { RewindControl, RewindResult } from "../lib/inputs";
 import type { RewindRefusal } from "../../shared/protocol";
 import { COMPACT_IMAGES_REFUSAL, compactCommand } from "../../shared/compact";
@@ -367,7 +366,7 @@ export function ChatView(props: {
       refreshAutonomy();
     }
   };
-  const approveScheduleFromPanel = (s: ScheduleInfo) => scheduleAct(() => approveSchedule({ cwd: s.root, playbook: s.playbook, pin: s.pin ?? "" }));
+  const approveScheduleFromPanel = (s: ScheduleInfo) => scheduleAct(() => approveSchedule({ cwd: s.root, ...(s.automation ? { automation: s.automation } : { playbook: s.playbook }), pin: s.pin ?? "" }));
   const revokeScheduleFromPanel = (id: string) => scheduleAct(() => revokeSchedule(id));
   const jumpToCardId = (id: string) => {
     const card = cards().cards.get(id);
@@ -414,8 +413,6 @@ export function ChatView(props: {
   const [resume, setResume] = createSignal(0);
   /** Queued steers/follow-ups a Stop drained, handed back to the composer. */
   const [restored, setRestored] = createSignal<{ text: string } | null>(null);
-  /** Run Playbook sent the message box's text: the composer empties (§chat.profiles/playbook). */
-  const [taken, setTaken] = createSignal<{ at: number } | null>(null);
   const [everOpened, setEverOpened] = createSignal(false);
   /** The model this visit's socket said (hello, "model"); undefined until it has. */
   const [saidModel, setModel] = createSignal<string | null | undefined>(undefined);
@@ -1695,7 +1692,7 @@ export function ChatView(props: {
     setArchiving(true);
     try {
       const res = await setSessionArchived(props.path, true);
-      toast(archivedDropToast(!!res.deleted, orgProjectOf(props.summary?.() ?? {})).text);
+      toast(archivedDropToast(!!res.deleted, archivedProjectOf(props.summary?.() ?? {})).text);
       props.onArchiveChanged?.(props.path, true);
       if (!scope.id) location.hash = "#/";
     } catch (err) {
@@ -1947,15 +1944,8 @@ export function ChatView(props: {
                             path={props.path}
                             cwd={props.summary?.()?.cwd ?? null}
                             info={info()}
+                            live={{ mode: modeState()?.mode, minorModes: modeState()?.minorModes, model: model(), thinking: thinking() }}
                             race={profileRace()}
-                            blocked={blocked()?.text ?? offNow() ?? null}
-                            onRunPlaybook={(pb) => {
-                              // The message box is the playbook's text (§chat.profiles/playbook); a
-                              // new session's first message, so never a steer.
-                              if (!send(playbookTurnText(pb, drafts.get(props.path) ?? ""), false, [])) return false;
-                              setTaken({ at: Date.now() });
-                              return true;
-                            }}
                             onFirstMessage={(text) => {
                               if (!drafts.get(props.path)?.trim()) setDraftText(props.path, text);
                             }}
@@ -2056,7 +2046,6 @@ export function ChatView(props: {
         onDraft={setHasDraft}
         onAbort={abort}
         restored={restored()}
-        taken={taken()}
       />
       </FlyoutSession.Provider>
       <Show when={showPlaybooks()}>

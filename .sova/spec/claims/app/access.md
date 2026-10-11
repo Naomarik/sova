@@ -179,11 +179,14 @@ Every caller keeps working with no new step for the person:
   host that installed the launcher); a rig that starts its own servers pins one token for
   them with `SOVA_TOKEN`, or reads each server's file.
 - **`sova token` and `sova open`** are the installed launcher's: `token` prints the token from the
-  agent dir (`$PI_CODING_AGENT_DIR`, else the one the install used), and `open` opens
-  `http://127.0.0.1:<PORT, else the install's port>/#t=<token>` in the browser; neither starts the
-  server, and before the server ever minted a token both say to start it once and exit nonzero.
-  Plain `sova` serves on that same port. With no browser opener (`open` on macOS, `xdg-open`),
-  `open` says to paste the token from `sova token` into the page and exits nonzero.
+  agent dir (`$PI_CODING_AGENT_DIR`, else the one the install used), and before the server ever
+  minted a token says to start it once and exits nonzero; it never starts the server. `open` is
+  `sova app`, what the app entry runs (§app.installer/app-entry): it starts the server when nothing
+  answers on the port, then opens `http://127.0.0.1:<PORT, else the install's port>/#t=<token>` in
+  a bare app window of a Chromium-family browser, or as a tab of the default browser when there is
+  none. Plain `sova` serves on that same port. With neither such a browser nor a browser opener
+  (`open` on macOS, `xdg-open`), `open` says to paste the token from `sova token` into the page
+  and exits nonzero.
 - **A local development server** that proxies to the app presents its own page as the app: it
   forwards the cookie, names the app's own host, and replaces an `Origin` naming the dev server
   itself (a loopback name, as the browser addressed it) with the app's, on requests and socket

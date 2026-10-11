@@ -1,14 +1,16 @@
 import { spawn } from "node:child_process";
 import { constants, existsSync } from "node:fs";
-import { access, readdir, readFile, stat } from "node:fs/promises";
+import { access, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import {
+  createEditToolDefinition,
   createFindToolDefinition,
   createGrepToolDefinition,
   createLsToolDefinition,
   createReadToolDefinition,
+  createWriteToolDefinition,
   DEFAULT_MAX_BYTES,
   detectSupportedImageMimeTypeFromFile,
   formatSize,
@@ -16,9 +18,10 @@ import {
   truncateLine,
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import { type RootConfinement, SecretGuard } from "./overseer-deny";
+import { type RootConfinement, SecretGuard, WriteGuard } from "./overseer-deny";
 import { type Redactor, redactingTool, serverRedactor } from "./overseer-redact";
-import { agentRoot } from "./state-root";
+import { reservedRoots } from "./projects/contributions";
+import { agentRoot, stateRoot } from "./state-root";
 
 /**
  * The Overseer's read, grep, find and ls: pi's own tools, except that no secret file
@@ -43,6 +46,7 @@ export function overseerFileTools(
   secrets: () => SecretGuard = () => new SecretGuard(),
   redactor: () => Redactor = serverRedactor,
   confine?: () => RootConfinement,
+  writes?: FileWrites,
 ): ToolDefinition[] {
   // `forRead`: the confinement's read-only folders open too (read's guard only).
   const guard = (forRead = false): PathGuard => {
@@ -104,8 +108,96 @@ export function overseerFileTools(
       },
     },
     { ...grep, execute: (_id, params, signal, _onUpdate, ctx) => guardedGrep(params as GrepParams, ctx?.cwd || cwd, signal, guard()) } as ToolDefinition,
-    // Their output is redacted; their arguments (paths, a pattern) are left as given: they store nothing.
+    ...(writes ? writeTools(cwd, writes, () => new WriteGuard(secrets(), writes.protectedRoots(), confine?.())) : []),
+    // Their output is redacted; their arguments (paths, a pattern, a file's content) are left as given:
+    // a redacted content or oldText would write or match something else.
   ].map((t) => redactingTool(t as ToolDefinition, redactor, { args: false }));
+}
+
+/** Sova's and pi's own state, which no write reaches: the agent dir (the state root is inside it,
+    named too in case it ever moves), `~/.pi`, and the folders a project layer reserves (an attached
+    org's workspace). Read per call: an org attached since counts. */
+export const ownStateRoots = (): string[] => [agentRoot(), stateRoot(), join(homedir(), ".pi"), ...reservedRoots()];
+
+/** What write and edit need beyond the read rules (§app.overseer/tools, §app.project-overseer/tools). */
+export interface FileWrites {
+  /** Folders no write reaches, whatever the read rules allow: Sova's and pi's state, reserved roots. */
+  protectedRoots(): string[];
+  /** The run is the user's (the operator's): a write runs only then. */
+  attended(): boolean;
+  /** The refusal in any other run. */
+  unattended: string;
+  /** One action-log line per call, refused or not: the path and the bytes written, never the content. */
+  log(line: { toolCallId: string; tool: string; args: { path?: string; bytes?: number }; outcome: "ok" | "refused" | "error"; error?: string }): void;
+}
+
+/** pi's write and edit, each path through `guard()` (fresh per call: symlinks may have changed). */
+function writeTools(cwd: string, writes: FileWrites, guard: () => WriteGuard): ToolDefinition[] {
+  const write = createWriteToolDefinition(cwd);
+  const edit = createEditToolDefinition(cwd);
+  /** Runs one call: refused unattended, every path checked, logged once. pi may wrap an operation's
+      error in its own sentence; a refusal comes back as the guard said it. */
+  const guarded =
+    (name: string, run: (g: (p: string) => void, wrote: (bytes: number) => void, args: unknown[]) => Promise<unknown>) =>
+    async (...args: unknown[]) => {
+      const params = args[1] as { path?: unknown } | undefined;
+      const path = typeof params?.path === "string" ? params.path : undefined;
+      let refusal: string | null = null;
+      let bytes: number | undefined;
+      const log = (outcome: "ok" | "refused" | "error", error?: string) =>
+        writes.log({ toolCallId: String(args[0] ?? ""), tool: name, args: { ...(path !== undefined ? { path } : {}), ...(bytes !== undefined ? { bytes } : {}) }, outcome, ...(error !== undefined ? { error } : {}) });
+      try {
+        if (!writes.attended()) {
+          refusal = writes.unattended;
+          throw new Error(refusal);
+        }
+        const g = guard();
+        const check = (p: string) => {
+          const why = g.problem(p);
+          if (why) {
+            refusal = why;
+            throw new Error(why);
+          }
+        };
+        if (path !== undefined) check(resolveArg(path, (args[4] as { cwd?: string } | undefined)?.cwd || cwd));
+        const out = await run(check, (n) => (bytes = n), args);
+        log("ok");
+        return out;
+      } catch (err) {
+        if (refusal) {
+          log("refused", refusal);
+          throw new Error(refusal);
+        }
+        const message = err instanceof Error ? err.message : String(err);
+        log("error", message);
+        throw err instanceof Error ? err : new Error(message);
+      }
+    };
+  return [
+    {
+      ...write,
+      execute: guarded("write", (check, wrote, args) =>
+        createWriteToolDefinition(cwd, {
+          operations: {
+            mkdir: async (dir) => (check(dir), void (await mkdir(dir, { recursive: true }))),
+            writeFile: async (p, content) => (check(p), await writeFile(p, content, "utf-8"), wrote(Buffer.byteLength(content))),
+          },
+        }).execute(...(args as Parameters<typeof write.execute>)),
+      ),
+    } as ToolDefinition,
+    {
+      ...edit,
+      execute: guarded("edit", (check, wrote, args) =>
+        createEditToolDefinition(cwd, {
+          operations: {
+            access: async (p) => (check(p), access(p, constants.R_OK | constants.W_OK)),
+            readFile: async (p) => (check(p), readFile(p)),
+            writeFile: async (p, content) => (check(p), await writeFile(p, content, "utf-8"), wrote(Buffer.byteLength(content))),
+          },
+        }).execute(...(args as Parameters<typeof edit.execute>)),
+      ),
+    } as ToolDefinition,
+  ];
 }
 
 /** What the tools ask of a path: refuse it (`check`), or leave it out of a result (`isSecret`). */

@@ -698,7 +698,7 @@ place in Live & web (and Groups), but a session it lists is never a Recent row
   <summary class="sidebar-region-head"><span>Profiles</span><span class="sidebar-region-count">· 3</span></summary>
   <!-- one sub-group per profile in use -->
   <div class="profile-shelf-group">
-    <p class="profile-shelf-head">…icon… Read-only reviewer <span class="text-muted">2 live</span>
+    <p class="profile-shelf-head">…icon… Docs reviewer <span class="text-muted">2 live</span>
       <button class="button button-sm button-ghost">Run</button></p>
     <ul class="list">…session rows…</ul>
   </div>
@@ -730,7 +730,7 @@ place in Live & web (and Groups), but a session it lists is never a Recent row
   project profile, else in the open session's folder. It is `POST /api/sessions` with `cwd` and
   `profile`. Start on a One at a time profile that is live answers with the picker's alert
   (§chat.profiles/singleton) as a toast with **Open the Running {Label}**.
-- **New Session** is one button: the session it makes starts as Default, and its empty screen is
+- **New Session** is one button: the session it makes starts with no profile (My settings), and its empty screen is
   where a profile is picked.
 
 ## §app.session-list/needs-you — Needs you
@@ -1751,7 +1751,13 @@ for the same reason: something other than the operator runs them.
   ordinary or coding session has run there: the operator codes there.
 
 The rule is one predicate on the client, `isOrdinarySession` in `src/lib/regions.ts`: a main thread
-(not a worker, not an Overseer file) with no `org`. It is deliberately **not** folded into
+(not a worker, not an Overseer file) with no `org` that no registered project owns. A project owns
+its overseer's conversations and its builds (`project.kind` `overseer` or `coding`), which its own
+region lists (§app.projects/list), until the operator archives a standalone project's build: then it
+is ordinary again and lives in the Archive (and its cleanup) like any archived session, never in the
+project's block; a session only in a project's folder (`project.kind` `folder`,
+with `folderOrg` but never `org` when an organization places the project,
+§app.projects/folder-sessions) stays ordinary, and is listed with its project as well. It is deliberately **not** folded into
 `isMainThread`, which the Organizations region, the Overseer page and the Agents board still read.
 A server or mesh peer that sends no `org` leaves the session ordinary, exactly as it is listed today.
 
@@ -1768,15 +1774,20 @@ overseer is not a row but an **eye on its project's heading**, and its cleared c
 no region (they are in the overseer's own History, §app.project-overseer/page). Shape: its own
 **Needs you** list first, then **organization → project**, each project's rows in three groups:
 **Conversations** and **Conflicts to settle** (each split Not started / In progress / Done) and
-**Builds** (running or waiting, then Done), every Done collapsed. Every active project of an org
+**Sessions** (running or waiting, then Done), every Done collapsed. Its Sessions also list the sessions
+in a placed project's folder (§app.projects/folder-sessions), which are not organization sessions and
+stay on the ordinary surfaces too; an archived one is in the Archive only. Every active project of an org
 is listed under it, with sessions or without, and its name opens its page, so a project is one
 click away from the pane.
 
 Standalone projects (§app.projects/standalone) have a **Projects** region of their own, right
 before Organizations and shaped like it with no organization level: each project's heading with its
-overseer's eye, then its Builds (§app.projects/list). A standalone project's overseer
+overseer's eye, then its Sessions (§app.projects/list). A standalone project's overseer
 conversations and coding sessions are listed there and on no ordinary surface, as an
-organization's are here.
+organization's are here, until a coding session is archived: it then moves to the Archive. The other
+sessions in its folder (`project.kind` `folder`, §app.projects/folder-sessions) are listed in its
+Sessions as well while not archived, and stay on the ordinary surfaces. Unlike this region, the
+Projects region never lists an archived session and counts open rows only (§app.projects/list).
 
 ```html
 <!-- Omitted entirely when it has no row, no eye and no listed project (with a query: 0 hits), like the Archive. -->
@@ -1849,9 +1860,9 @@ organization's are here.
       …the same three states; each row's line 2 names what is in conflict: "In conflict: invoicing"…
     </section>
     <section class="org-group">
-      <h5 class="org-group-label" title="Coding sessions this project started.">Builds <span class="text-num">3</span></h5>
+      <h5 class="org-group-label" title="Coding sessions this project started, and the other sessions in its folder.">Sessions <span class="text-num">3</span></h5>
       <ul class="list">…running or waiting…</ul>
-      <details class="archive-date org-done">…Done: merged (per git) or archived…</details>
+      <details class="archive-date org-done">…Done: merged (per git), archived, or ended in a terminal; summary title "Merged, archived, or ended in a terminal."…</details>
     </section>
   </details>
 </details>
@@ -1861,7 +1872,11 @@ organization's are here.
   same hit list every region reads, after the host filter and the query. `org` wins over every other
   field: a TUI-live org coding session, a web one, an archived one all live here and nowhere else in
   the pane — except a cleared overseer conversation, which no region lists. Rows are the unchanged `SessionRow` — rail (a TUI word included), unread dot, turn-error
-  mark, needs-you mark, baton holder suffix, context ring — and open `#/s/<path>`.
+  mark, needs-you mark, baton holder suffix, context ring — and open `#/s/<path>`. A session in a
+  placed project's folder (no `org`; `SessionSummary.folderOrg` names the org and project,
+  §app.projects/folder-sessions) is a row in its project's Sessions too, never in the region's Needs
+  you (the global one lists it), and never once archived (the Archive lists it);
+  `folderOrg.projectArchived` leaves it out with its project.
 - **Which projects.** Every project this host's project list (`GET /api/projects`, §app.projects/list)
   places in an org (`space.kind` `org`) and that isn't archived has its heading under its org,
   with sessions or without, and an org with such a project has its section even with no session:
@@ -1940,7 +1955,7 @@ organization's are here.
     whoever started them — the operator's Reconcile or re-route, a project overseer's reconcile, or
     the run Sova starts itself after a resolution. Each row's line 2 names what is in conflict:
     "In conflict: {area}".
-  - **Builds**: its coding sessions (`org.kind` `coding`: the overseer's, Start Coding Session's and New Coding Session's).
+  - **Sessions**: its coding sessions (`org.kind` `coding`: the overseer's, Start Coding Session's and New Coding Session's), and the sessions in its folder (`folderOrg`).
   - A workspace file no project claims (`other`) is a plain row under its project ("Other"), with no
     group.
 - **The three states** of a conversation or a settle session, each a label with its count, shown only
@@ -1950,10 +1965,15 @@ organization's are here.
   "Link not sent yet" (no live link), "Opened, no reply yet" (a person opened a link, `baton.opened`),
   else "Not opened yet"; one the operator holds (Needs you says it) has none. On a settle row the hint
   follows the conflict: "In conflict: {area} · Opened, no reply yet".
-- **Builds** list the running and waiting ones (the row's own rail says which); a build **merged**
-  (per git, `org.finished`) or archived is in the group's Done.
+- **Sessions** list the running and waiting ones (the row's own rail says which); a build **merged**
+  (per git, `org.finished`) or archived is in the group's Done. A folder session is running or
+  waiting while it is live, or a web session not archived (its Live & web rule); otherwise it is in
+  Done, and once archived it is not in the region at all.
 - **Done** is a collapsed tail in each group (memory only, like the Archive's date sections), omitted
-  when empty; it replaces the old per-project Finished list. A **cleared overseer conversation** (an
+  when empty; it replaces the old per-project Finished list. Like a folder's rows
+  (§app.session-list/content-rules), a Done builds its rows only once it is first open (by the
+  operator, a search or the selected session) and keeps them after it closes, so a project whose
+  folder holds hundreds of finished sessions costs its Done head alone. A **cleared overseer conversation** (an
   `overseer` session that is finished) is listed nowhere in the pane: its overseer's History opens it.
 - **Counts are sessions.** The region head counts every row it holds once, Done included (a Needs
   you row is not counted twice); while searching it reads "· {hits} of {total}". The eye is not a row
@@ -1972,7 +1992,8 @@ organization's are here.
   choice: while a search is on (with every org and Done that holds a hit); and while the selected
   session (from the URL) is inside — then its org and, if needed, its Done are forced open too, so
   its `aria-current` row, or its project's `aria-current` eye, is visible (the Archive's case 2: it
-  doesn't close under the operator while they're on that session).
+  doesn't close under the operator while they're on that session). A folder session forces nothing
+  open, here or in the Projects region: it is also in its ordinary place.
 - **The org link.** Each org summary ends with a 44px ghost icon link to `#/orgs/<id>`, hung into the
   right gutter like a group's `⋯`; it stops its own click and keydown so it doesn't also toggle the org.
   Names truncate with an ellipsis, the full name in `title`.

@@ -22,16 +22,54 @@ export function profileIconName(icon: string | undefined): IconName {
   return (known as string[]).includes(icon ?? "") ? (icon as IconName) : "wrench";
 }
 
-/** The pickers' groups (§chat.profiles/picker): Built in (Default always), This project, Yours, each without the hidden ones. */
-export function pickerProfiles(l: ProfilesListing | undefined): { builtins: ListedProfile[]; project: ListedProfile[]; projectName: string | null; yours: ListedProfile[] } {
-  if (!l) return { builtins: [], project: [], projectName: null, yours: [] };
-  const shown = (p: ListedProfile) => (p.source === "sova" && p.id === DEFAULT_PROFILE_ID) || !l.hidden.includes(p.key);
+/** Whether a listed profile is Default, the picker's My settings (no profile). */
+export const isMySettings = (p: Pick<ListedProfile, "source" | "id">) => p.source === "sova" && p.id === DEFAULT_PROFILE_ID;
+
+/**
+ * The picker's groups (§chat.profiles/picker), in its order: My settings (always, never hidden),
+ * Yours, This project, then the profiles Sova ships, each without the hidden ones.
+ */
+export function pickerProfiles(l: ProfilesListing | undefined): { mine: ListedProfile | null; yours: ListedProfile[]; project: ListedProfile[]; projectName: string | null; builtins: ListedProfile[] } {
+  if (!l) return { mine: null, yours: [], project: [], projectName: null, builtins: [] };
+  const shown = (p: ListedProfile) => !l.hidden.includes(p.key);
   return {
-    builtins: l.builtins.filter(shown),
+    mine: l.builtins.find(isMySettings) ?? null,
+    yours: l.yours.filter(shown),
     project: l.project.profiles.filter(shown),
     projectName: l.project.state === "ok" ? (l.project.name ?? null) : null,
-    yours: l.yours.filter(shown),
+    builtins: l.builtins.filter((p) => !isMySettings(p) && shown(p)),
   };
+}
+
+/** The grid's sections in the picker's order, each with its label (none for My settings), empty ones left out. */
+export function pickerSections(g: ReturnType<typeof pickerProfiles>): { id: "mine" | "yours" | "project" | "builtins"; label: string | null; cards: ListedProfile[] }[] {
+  const all = [
+    { id: "mine" as const, label: null, cards: g.mine ? [g.mine] : [] },
+    { id: "yours" as const, label: "Yours", cards: g.yours },
+    { id: "project" as const, label: `This project (${g.projectName ?? "this folder"})`, cards: g.project },
+    { id: "builtins" as const, label: "Built in", cards: g.builtins },
+  ];
+  return all.filter((s) => s.cards.length > 0);
+}
+
+/** The settings My settings stands for: the session's own, now or as remembered (§chat.profiles/picker). */
+export interface MySettingsState {
+  mode?: string | null;
+  minorModes?: readonly string[] | null;
+  model?: string | null;
+  thinking?: string | null;
+}
+
+const capital = (s: string) => (s ? s[0]!.toUpperCase() + s.slice(1) : s);
+
+/** My settings' caption: "Delegate · Align, Spec · Opus 5.5 · high", each part only when known; "Your own settings" when none is. */
+export function mySettingsCaption(s: MySettingsState | null | undefined): string {
+  const parts: string[] = [];
+  if (s?.mode) parts.push(capital(s.mode));
+  if (s?.minorModes?.length) parts.push(s.minorModes.map(capital).join(", "));
+  if (s?.model) parts.push(modelLabel(s.model) ?? s.model);
+  if (s?.thinking) parts.push(s.thinking);
+  return parts.length ? parts.join(" · ") : "Your own settings";
 }
 
 /** Every profile the listing has, in the pickers' order, hidden ones included. */
@@ -58,7 +96,7 @@ function modeParts(p: Pick<Profile, "mode" | "minorModes">): string[] {
   return [...(p.mode ? [p.mode] : []), ...(p.minorModes ? [p.minorModes.length ? p.minorModes.join(", ") : "no minor modes"] : [])];
 }
 
-/** One row of "What changes vs Default". */
+/** One row of "What changes vs My settings". */
 export interface ChangeRow {
   sign: "+" | "−";
   cap: Removable | Grantable;
@@ -66,7 +104,7 @@ export interface ChangeRow {
   detail: string;
 }
 
-/** The rows a profile changes, grants first (§chat.profiles/picker). `present`: the tools Default has here. */
+/** The rows a profile changes, grants first (§chat.profiles/picker). `present`: the tools My settings has here. */
 export function changeRows(p: Pick<Profile, "remove" | "grant" | "limits">, present: readonly string[]): ChangeRow[] {
   const rows: ChangeRow[] = [];
   for (const g of GRANTABLE)
@@ -91,7 +129,7 @@ export function changeRows(p: Pick<Profile, "remove" | "grant" | "limits">, pres
   return rows;
 }
 
-/** The tools Default would have in this runtime: what is active, less the grants, plus what the removals took. */
+/** The tools My settings (no profile) would have in this runtime: what is active, less the grants, plus what the removals took. */
 export function defaultTools(info: Pick<ChatProfileInfo, "tools" | "granted" | "removed">): string[] {
   return [...info.tools.filter((t) => !info.granted.includes(t)), ...info.removed].sort();
 }
@@ -107,8 +145,8 @@ export function guardrailNote(remove: readonly string[]): string | null {
 /** The grid shows a Find a profile field past this many cards (Custom… included). */
 export const CARD_FILTER_AFTER = 9;
 
-/** How many cards the grid draws: every shown profile, plus Custom…. */
-export const cardCount = (g: ReturnType<typeof pickerProfiles>): number => g.builtins.length + g.project.length + g.yours.length + 1;
+/** How many cards the grid draws: My settings, every shown profile, plus Custom…. */
+export const cardCount = (g: ReturnType<typeof pickerProfiles>): number => (g.mine ? 1 : 0) + g.yours.length + g.project.length + g.builtins.length + 1;
 
 /** Whether a profile matches the Find a profile field (by name, ignoring case; an empty query matches all). */
 export const cardMatches = (p: Pick<Profile, "label">, query: string): boolean => !query.trim() || p.label.toLowerCase().includes(query.trim().toLowerCase());

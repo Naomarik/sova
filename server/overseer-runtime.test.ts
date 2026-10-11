@@ -83,10 +83,11 @@ const { getSessionSummary } = await import("./sessions-index");
 const overseer = await import("./overseer");
 const sessionPrompt = await import("./session-prompt");
 const sender_ = await import("./overseer-sender");
-const { DEFAULT_CAPS, defaultSettings, overseerTurnFile, readOverseerSettings, writeNotes, writeOverseerSettings } = await import("./overseer-store");
+const { DEFAULT_CAPS, defaultSettings, overseerActionsFile, overseerTurnFile, readOverseerSettings, writeNotes, writeOverseerSettings } = await import("./overseer-store");
 const { OVERSEER_BRIEF_PREFIX } = await import("../shared/protocol");
 const { addIdea, getIdea } = await import("./overseer-ideas");
-const { UNATTENDED_REFUSAL } = await import("./overseer-tools");
+const { UNATTENDED_REFUSAL, UNATTENDED_WRITE_REFUSAL } = await import("./overseer-tools");
+const { STATE_WRITE_REFUSAL } = await import("./overseer-deny");
 
 after(async () => {
   await disposeAllChats();
@@ -1109,5 +1110,56 @@ describe("the id check after a run (§app.overseer/id-check)", () => {
     await userSends(chat, "thanks");
     assert.ok(entered.at(-1)!.attended, "the note never made the user's run read-only");
     assert.ok(JSON.stringify(contexts.slice(seen)).includes(`${typo} is no session here`));
+  });
+});
+
+describe("write and edit run only in a turn the user started (§app.overseer/tools)", () => {
+  const work = realpathSync(mkdtempSync(join(tmpdir(), "sova-overseer-write-")));
+  after(() => rmSync(work, { recursive: true, force: true }));
+  /** What each tool the SDK ran answered, in order. */
+  function answers(chat: Chat): { list: string[]; off: () => void } {
+    const list: string[] = [];
+    const off = piSession(chat).subscribe((e) => {
+      if (e.type !== "tool_execution_end") return;
+      const r = (e as { result?: { content?: { type: string; text?: string }[] } }).result;
+      list.push((r?.content ?? []).map((c) => c.text ?? "").join(""));
+    });
+    return { list, off };
+  }
+  const writes = () =>
+    readFileSync(overseerActionsFile(), "utf8").trim().split("\n").map((l) => JSON.parse(l)).filter((a: { tool: string }) => a.tool === "write" || a.tool === "edit");
+
+  test("the user's turn writes, logged with its path and bytes; a brief's turn refuses; Sova's own state refuses in any turn", async () => {
+    writeOverseerSettings({ ...defaultSettings() });
+    const chat = await overseerChat();
+    const said = answers(chat);
+    const mine = join(work, ".sova", "automations", "merge-round.json");
+    modelCalls.push(() => ({ toolCall: { name: "write", arguments: { path: mine, content: "{\"when\":\"9:00\"}" } } }));
+    await userSends(chat, "write the automation");
+    await settled(chat);
+    assert.equal(readFileSync(mine, "utf8"), "{\"when\":\"9:00\"}");
+
+    const theirs = join(work, "from-a-brief.json");
+    modelCalls.push(() => ({ toolCall: { name: "write", arguments: { path: theirs, content: "x" } } }));
+    await chat.acceptPrompt(`${OVERSEER_BRIEF_PREFIX} fix the file`, undefined, "server").turn;
+    await settled(chat);
+    assert.equal(existsSync(theirs), false, "nothing written in a brief's turn");
+
+    const settings = join(agentDir, "sova", "overseer.json");
+    const before = readFileSync(settings, "utf8");
+    modelCalls.push(() => ({ toolCall: { name: "edit", arguments: { path: settings, edits: [{ oldText: "{", newText: "{\"caps\":{}," }] } } }));
+    await userSends(chat, "raise your own limits");
+    await settled(chat);
+    said.off();
+    assert.equal(readFileSync(settings, "utf8"), before, "its own settings are never written");
+
+    assert.deepEqual(said.list, [`Successfully wrote to ${mine}`, UNATTENDED_WRITE_REFUSAL, STATE_WRITE_REFUSAL]);
+    const logged = writes().slice(-3).map((a: { tool: string; args: unknown; outcome: string; error?: string }) => [a.tool, a.args, a.outcome, a.error ?? null]);
+    assert.deepEqual(logged, [
+      ["write", { path: mine, bytes: 15 }, "ok", null],
+      ["write", { path: theirs }, "refused", UNATTENDED_WRITE_REFUSAL],
+      ["edit", { path: settings }, "refused", STATE_WRITE_REFUSAL],
+    ]);
+    assert.doesNotMatch(JSON.stringify(writes()), /9:00/, "no content in the log");
   });
 });

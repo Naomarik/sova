@@ -180,6 +180,9 @@ export const TOOL_NEEDS: Record<string, Need> = (() => {
   return out;
 })();
 
+/** write and edit in a run the operator did not start, at every level (§app.project-overseer/tools). */
+export const PO_UNATTENDED_WRITE_REFUSAL = "Writing a file is the operator's: ask with sova_card.";
+
 /** Why an operator-only tool may not run in this turn, or null: the to-do list is theirs (the one rule the statecharts don't hold). Pure. */
 export function operatorOnlyRefusal(name: string, attended: boolean): string | null {
   if (attended || (name !== "sova_todos" && name !== "sova_todo")) return null;
@@ -989,5 +992,5 @@ export function copyLinkLine(v: PreviewView): string {
   return `- ${v.id} · running copy ${v.instance}, endpoint ${v.endpoint ?? `port ${v.port}`}, on ${v.branch ?? "the main checkout"} · shared by ${who} · ${state} · ${when} · send it by its id`;
 }
 
-/** The built-ins it has besides its own tools: read-only file access in the project root. */
-export const PO_BUILTINS = ["read", "grep", "find", "ls"];
+/** The built-ins it has besides its own tools: file access in the project root (write and edit in the operator's turns only). */
+export const PO_BUILTINS = ["read", "grep", "find", "ls", "write", "edit"];

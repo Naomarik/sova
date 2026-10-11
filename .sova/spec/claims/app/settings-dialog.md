@@ -460,17 +460,19 @@ add or change one, or edit {path}." `{path}` is the project's `.sova/profiles/` 
 writes a profile; the one profile Sova writes is a new one of yours, from Save Current As Profile on
 a new session's screen (§chat.profiles/picker), and it is listed under Yours like any other.
 
-- **The list**, in the picker's groups: **Built in** (Default first), **This project ({name})** and
-  **Yours**. Each row has the profile's icon and label, its source badge, its summary line of what it
-  changes ("reads and messages sessions · no edit files · One at a time", then its mode and minor
-  modes when it sets them, "· delegate · align, spec, vis", or "· no minor modes" for `[]`; Default
-  "Nothing changed"), the playbook it links ("Runs {title}", or "Runs "{id}", not found here"), and its file's
+- **The list** holds real profiles only: **Yours**, then **This project ({name})**, then **Built
+  in** only while Sova ships a profile file or one of them can't be read (it ships none today).
+  There is no Default row: the picker's My settings is no profile, and exists only on the new
+  session screen. Each row has the profile's icon and label, its source badge, its summary line of
+  what it changes ("reads and messages sessions · no edit files · One at a time", then its mode and
+  minor modes when it sets them, "· delegate · align, spec, vis", or "· no minor modes" for `[]`;
+  "Nothing changed" when it changes none of these), the playbook it links ("Runs {title}", or "Runs "{id}", not found here"), and its file's
   path. Without a session folder, This project says "Open a session to see its project's profiles."
 - **Problems.** A file that couldn't be read is its own row under its group, with a **Can't be
   read** badge, its path and the exact error, so a mistake made by hand or by an agent shows here.
 - **Approve** on a project profile that needs approval (§chat.profiles/trust), beside a line naming
   the powers it asks for; once approved the row says "Approved".
-- **Hide From Picker** on every profile but Default (**Show In Picker** and a **Hidden** badge once
+- **Hide From Picker** on every profile (**Show In Picker** and a **Hidden** badge once
   hidden). Hiding and approving save at once; nothing here goes through the dialog's footer.
 
 ## §app.settings-dialog/overseer — Overseer

@@ -48,10 +48,11 @@ import { sessionAttachmentsDir } from "./attachments";
 import { overseerFileTools } from "./overseer-file-tools";
 import { getIdea, promptToc, readManifest, readProse, updateIdea } from "./overseer-ideas";
 import { redactExtensionMessages, serverRedactor } from "./overseer-redact";
-import { readNotes } from "./overseer-store";
+import { logAction, readNotes } from "./overseer-store";
 import { readTodos, updateTodo } from "./overseer-todos";
 import { UserTurns } from "./user-turns";
 import { canonicalPath } from "./paths";
+import { startableIn } from "./project-folder";
 import { isViewing, markSeen, readSeen } from "./seen";
 import { cleanSessionTitle, readSessionTitles, setSessionTitle } from "./session-titles";
 import { getSessionSummary, idOf, indexedSessionPaths, listSessions } from "./sessions-index";
@@ -120,7 +121,7 @@ import {
   writePoSettings,
   type ProjectOverseerPaths,
 } from "./project-overseer-store";
-import { PO_BUILTINS, projectOverseerTools, type PoToolHost } from "./project-overseer-tools";
+import { PO_BUILTINS, PO_UNATTENDED_WRITE_REFUSAL, projectOverseerTools, type PoToolHost } from "./project-overseer-tools";
 
 /**
  * The project overseer (§app/project-overseer): one special session per project. Like the
@@ -1133,10 +1134,22 @@ registerSpecialLoadout({
       // Sova's own state (overseer-deny.ts), whatever the root holds; read also opens this
       // conversation's own attachments folder (what the operator pastes into it). This loadout is
       // this conversation's: a clear opens the next one with its own.
-      customTools: overseerFileTools(project.root, undefined, undefined, () => {
-        const own = sessionAttachmentsDir(idOf(path));
-        return new RootConfinement(projectOf(rt.projectId).root, confinedOut(), own ? [own] : []);
-      }),
+      // write/edit the same, never into the attachments folder, and only in a run the operator started.
+      customTools: overseerFileTools(
+        project.root,
+        undefined,
+        undefined,
+        () => {
+          const own = sessionAttachmentsDir(idOf(path));
+          return new RootConfinement(projectOf(rt.projectId).root, confinedOut(), own ? [own] : []);
+        },
+        {
+          protectedRoots: confinedOut,
+          attended: () => rt.turns.attended(),
+          unattended: PO_UNATTENDED_WRITE_REFUSAL,
+          log: (line) => logAction({ at: new Date().toISOString(), overseerId: readPoState(p)?.current ?? "", ...line }, p.actions),
+        },
+      ),
       model: settings.model ?? defaults.model ?? null,
       thinking: settings.thinking ?? defaults.thinking ?? null,
     };
@@ -1250,7 +1263,7 @@ function overseerEnvelope(projectId: string, paths: ProjectOverseerPaths, attend
  * linked to nothing, and no reason to look: the overseer sees it when it next looks.
  */
 export async function startCoding(projectId: string, body: CodingStartInput): Promise<CodingStartResult> {
-  projectOf(projectId);
+  const project = projectOf(projectId);
   if (body && typeof body === "object" && "prompt" in body) throw new OrgError("This starts a session with no first prompt. To send one, start it from a to-do or idea (items/code).", 400);
   const worktree = body && typeof body === "object" && "worktree" in body ? body.worktree : "now";
   if (worktree !== "now" && worktree !== "later") throw new OrgError('worktree is "now" or "later".', 400);
@@ -1258,7 +1271,12 @@ export async function startCoding(projectId: string, body: CodingStartInput): Pr
   const title = str(body?.title);
   const model = str(body?.model);
   const thinking = str(body?.thinking);
+  // A folder in the project (New Session's folder tab): the root, inside it, or inside one of its worktrees.
+  const cwd = body && typeof body === "object" && "cwd" in body ? body.cwd : undefined;
+  if (cwd !== undefined && (typeof cwd !== "string" || !startableIn(project.root, cwd)))
+    throw new OrgError(`${typeof cwd === "string" ? cwd : "cwd"} is not a folder in ${project.name}: give the project root, a folder inside it, or one inside its worktrees.`, 400);
   const made = await startCodingSession(projectId, {
+    ...(cwd ? { cwd: canonicalPath(cwd) } : {}),
     ...(title ? { title: title.slice(0, 80) } : {}),
     ...(model ? { model } : {}),
     ...(thinking ? { thinking } : {}),

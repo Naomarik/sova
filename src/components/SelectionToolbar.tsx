@@ -1,6 +1,7 @@
 import { createEffect, createMemo, createSignal, For, on, Show } from "solid-js";
 import { SESSION_TITLE_MAX, type SessionSummary } from "../../shared/protocol";
 import { assignSessionGroup, setSessionArchived } from "../lib/api";
+import { isOwnedSession } from "../lib/regions";
 import { renameSession } from "../lib/session-actions";
 import { inPlaceTitleEnd } from "../lib/title-field";
 import {
@@ -116,8 +117,10 @@ export function SelectionToolbar(props: { sessions: SessionSummary[]; onRefresh(
   /** An organization's or a project's session: it lives in that region, never in a group. */
   const ownedRow = (path: string): boolean => {
     const x = props.sessions.find((r) => r.path === path);
-    return !!(x?.org || x?.project);
+    return !!x && isOwnedSession(x);
   };
+  /** An organization's session: archiving it sends it to its project's Done, not the Archive. */
+  const orgRow = (path: string): boolean => !!props.sessions.find((r) => r.path === path)?.org;
   const plan = createMemo(() => selectionPlan(chosen()));
   const [renaming, setRenaming] = createSignal(false);
   /** An action in flight belongs to the TAB, not to this component instance: the toolbar is
@@ -175,7 +178,8 @@ export function SelectionToolbar(props: { sessions: SessionSummary[]; onRefresh(
         }
       }
       const failedPaths = new Set(failed.map((f) => f.path));
-      const org = p.eligible.filter((s) => !failedPaths.has(s.path) && ownedRow(s.path)).length;
+      // Only an organization's session goes to its project's Done; a standalone project's build goes to the Archive.
+      const org = p.eligible.filter((s) => !failedPaths.has(s.path) && orgRow(s.path)).length;
       const sentence = archiveSummary({ mode: p.mode, done, blocked: p.blocked, failed, org });
       toast(sentence);
       announce(sentence);

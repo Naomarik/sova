@@ -23,7 +23,7 @@ const po = await import("./project-overseer");
 // The spec draft tool in-process (server/spec-tool-fake.ts; reconcile.integration.test.ts runs the real one).
 (await import("./spec-draft-writer")).setDraftToolForTest((await import("./spec-tool-fake")).fakeDraftTool());
 const store = await import("./project-overseer-store");
-const { PO_BUILTINS, TOOL_NEEDS } = await import("./project-overseer-tools");
+const { PO_BUILTINS, PO_UNATTENDED_WRITE_REFUSAL, TOOL_NEEDS } = await import("./project-overseer-tools");
 const { acquireChat, disposeAllChats, ModeRefusedError, BusyError } = await import("./chat-manager");
 const { promptSession } = await import("./session-prompt");
 const { canonicalPath } = await import("./paths");
@@ -79,7 +79,7 @@ describe("a project overseer", async () => {
     assert.equal((await po.ensureProjectOverseer(project.id)).id, made.id, "single conversation per project");
   });
 
-  test("opens as a project overseer: its tools + read-only file tools, no pi-config extension, no modes", async () => {
+  test("opens as a project overseer: its tools + its file tools, no pi-config extension, no modes", async () => {
     const { path } = await po.ensureProjectOverseer(project.id);
     const chat = await acquireChat(path);
     assert.equal(chat.special, "project-overseer");
@@ -88,7 +88,8 @@ describe("a project overseer", async () => {
     // org history's (sova_history, sova_decide).
     const want = [...new Set([...Object.keys(TOOL_NEEDS), "sova_decisions", "sova_offer", "sova_send_status", "sova_history", "sova_decide", ...PO_BUILTINS])].sort();
     assert.deepEqual([...piSession(chat).getActiveToolNames()].sort(), want);
-    assert.deepEqual(piSession(chat).getAllTools().map((t) => t.name).sort(), want, "no bash, edit, write or extension tool");
+    assert.deepEqual(piSession(chat).getAllTools().map((t) => t.name).sort(), want, "no bash or extension tool");
+    for (const t of ["write", "edit"]) assert.ok(want.includes(t), t);
     const loaded = piRuntime(chat).services.resourceLoader.getExtensions().extensions.map((e) => e.path);
     assert.deepEqual(loaded, ["<inline:sova-project-overseer>"]);
     await assert.rejects(() => chat.switchMode({ mode: "delegate" } as never), ModeRefusedError);
@@ -196,6 +197,21 @@ describe("its reach: the project root only", async () => {
     assert.match(await run("ls", { path: join(root, "ws4") }), /^ERROR: .*outside the project root/);
     assert.match(await run("grep", { pattern: "context", path: box }), /^ERROR: .*outside the project root/);
     assert.match(await run("find", { pattern: "*", path: root }), /^ERROR: .*outside the project root/);
+  });
+
+  test("its write and edit are the operator's: a run it did not get from them (a fresh runtime) writes nothing, and the action log says so", async () => {
+    assert.equal(po.attendedForTest(project.id), false);
+    const target = join(projRoot, ".sova", "auto.json");
+    assert.equal(await run("write", { path: target, content: "{}" }), `ERROR: ${PO_UNATTENDED_WRITE_REFUSAL}`);
+    assert.equal(await run("edit", { path: "README.md", edits: [{ oldText: "inside", newText: "changed" }] }), `ERROR: ${PO_UNATTENDED_WRITE_REFUSAL}`);
+    assert.equal(existsSync(target), false);
+    assert.equal(readFileSync(join(projRoot, "README.md"), "utf8"), "inside\n");
+    const logged = readFileSync(store.projectOverseerPaths(project.id).actions, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+    const last = logged.slice(-2).map((a: { tool: string; args: unknown; outcome: string; error?: string }) => [a.tool, a.args, a.outcome, a.error]);
+    assert.deepEqual(last, [
+      ["write", { path: target }, "refused", PO_UNATTENDED_WRITE_REFUSAL],
+      ["edit", { path: "README.md" }, "refused", PO_UNATTENDED_WRITE_REFUSAL],
+    ]);
   });
 
   test("only the project's own context files load, never the host's", async () => {

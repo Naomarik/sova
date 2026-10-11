@@ -1,4 +1,4 @@
-import { realpathSync, statSync } from "node:fs";
+import { lstatSync, readlinkSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { agentRoot, stateRoot } from "./state-root";
@@ -251,6 +251,86 @@ export class RootConfinement {
     const forms = [resolve(p), realpathLoose(p)];
     if (!forms.every((c) => this.roots.some((r) => within(c, r)))) return outsideRootRefusal(this.root);
     if (forms.some((c) => this.excluded.some((d) => within(c, d)))) return EXCLUDED_REFUSAL;
+    return null;
+  }
+  check(p: string): void {
+    const why = this.problem(p);
+    if (why) throw new Error(why);
+  }
+  /** Why `p` may not be written, or null: `problem` with the write sentences. The `readable` folders
+      never open to a write. */
+  writeProblem(p: string): string | null {
+    const why = this.problem(p);
+    if (why === EXCLUDED_REFUSAL) return EXCLUDED_WRITE_REFUSAL;
+    return why === null ? null : outsideRootWriteRefusal(this.root);
+  }
+}
+
+/** `p`, then each path its last component links to, in turn (at most 40 links, as the kernel follows). */
+function linkChain(p: string): string[] {
+  const out = [resolve(p)];
+  for (let i = 0; i < 40; i++) {
+    const cur = out[out.length - 1]!;
+    let next: string;
+    try {
+      if (!lstatSync(cur).isSymbolicLink()) break;
+      next = resolve(realpathLoose(dirname(cur)), readlinkSync(cur));
+    } catch {
+      break;
+    }
+    if (out.includes(next)) break;
+    out.push(next);
+  }
+  return out;
+}
+
+/** What write and edit answer (§app.overseer/tools); the read sentences say "read". */
+export const STATE_WRITE_REFUSAL = "That folder is Sova's or pi's own state; the Overseer can't write there.";
+export const WORKSPACE_WRITE_REFUSAL = "That folder is an organization's workspace; the Overseer can't write there.";
+export const SECRET_WRITE_REFUSAL = "That file holds credentials; the Overseer can't write it.";
+export const HARDLINK_WRITE_REFUSAL = "That file has more than one hard link; the Overseer can't write it.";
+export const outsideRootWriteRefusal = (root: string) => `That path is outside the project root ${root}; the project overseer writes only inside it.`;
+export const EXCLUDED_WRITE_REFUSAL = "That folder holds an organization's workspace or Sova's own state; the project overseer can't write there.";
+
+/**
+ * Where write and edit may go: everywhere the read guard allows, except Sova's and pi's own state
+ * (`protectedRoots`: the agent dir with the state root in it, `~/.pi`, the folders a project layer
+ * reserves), and never a file with another hard link, which could be one of those under another
+ * name. With `confine` (the project overseer's), the root's own rules come first, with its read-only
+ * folders closed. Every path is checked as written and at its realpath, like the read rules.
+ */
+export class WriteGuard {
+  private readonly protectedRoots: string[];
+  constructor(
+    private readonly read: SecretGuard,
+    protectedRoots: readonly string[],
+    private readonly confine?: RootConfinement,
+  ) {
+    this.protectedRoots = protectedRoots.flatMap((r) => [...new Set([resolve(r), realpathLoose(r)])]);
+  }
+  /** Why `p` (absolute) may not be written, or null when it may. A symlink is judged at every link
+      it leads through too: a dangling one has no realpath, but a write creates its target. */
+  problem(p: string): string | null {
+    for (const hop of linkChain(p)) {
+      const why = this.problemAt(hop);
+      if (why) return why;
+    }
+    return null;
+  }
+  private problemAt(p: string): string | null {
+    const why = this.confine?.writeProblem(p);
+    if (why) return why;
+    const forms = [resolve(p), realpathLoose(p)];
+    if (forms.some((c) => this.protectedRoots.some((r) => within(c, r)))) return this.confine ? EXCLUDED_WRITE_REFUSAL : STATE_WRITE_REFUSAL;
+    if (this.read instanceof OverseerGuard && this.read.inWorkspace(p)) return WORKSPACE_WRITE_REFUSAL;
+    if (this.read.isSecret(p)) return SECRET_WRITE_REFUSAL;
+    let st;
+    try {
+      st = statSync(p, { throwIfNoEntry: false });
+    } catch {
+      st = undefined;
+    }
+    if (st?.isFile() && st.nlink > 1) return HARDLINK_WRITE_REFUSAL;
     return null;
   }
   check(p: string): void {

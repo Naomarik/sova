@@ -638,7 +638,12 @@ apply the same rule, as the Overseer's flag does (§app.overseer/identity-and-cl
 - Names come from the org's and the project's statecharts.
 
 **Not organizational**, and listed as today:
-- sessions the operator opens by hand in a project folder — a project root may be their everyday repo;
+- sessions the operator opens by hand in a project folder — a project root may be their everyday repo.
+  They are the project's all the same (§app.projects/folder-sessions): `project.kind` `folder`, and
+  for a project placed in an attached org `SessionSummary.folderOrg` (the org and project, never
+  `org`), so the Organizations region lists them in their project's Builds while they stay ordinary
+  everywhere else. One started from New Session's folder tab in a project's folder is an
+  `operator-coding` build, organizational as above;
 - sessions the main Overseer starts in a project folder with `sova_create_session`. A coding
   session it starts as the project's (`sova_project_overseer` `code`,
   §app.overseer/org-project-overseers) is an `operator-coding` row, and a gathering session it

@@ -834,6 +834,10 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .profile-tile-off .profile-tile-head > .icon { opacity: 0.6; }
 .profile-tile-off .profile-tile-label { color: var(--color-ink-muted); font-weight: var(--fw-regular); }
 .profile-tile-off .profile-tile-caption { color: var(--status-warn); }
+/* A One at a time profile live in another session: a link that opens it, not a pick. Same shape as
+   a card; its arrow (where a picked card has its check) and the Active chip say where it goes. */
+.profile-tile-active { text-decoration: none; }
+.profile-tile-active .profile-tile-check { color: var(--color-ink-muted); }
 /* Phone-narrow (the picker's own box under 480px): one column of single-line cards, so more fit
    above the fold. Icon, label, caption, chips and check share one 44px line (chips that don't fit
    take a second); the caption truncates first, and the label keeps up to 65% of the card before
@@ -874,20 +878,6 @@ html, body { overflow: clip; overscroll-behavior: none; }
   gap: var(--space-2);
 }
 .profile-changes-head { display: flex; align-items: baseline; gap: var(--space-2); margin: 0; }
-/* The empty screen's playbook card (§chat.profiles/playbook): the profile box's frame. */
-.profile-playbook {
-  border: var(--stroke-thin) solid var(--color-border);
-  border-radius: var(--r-md);
-  background: var(--color-surface);
-  padding: var(--space-3) var(--space-4);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-.profile-playbook-head { display: flex; align-items: center; gap: var(--space-2); color: var(--color-ink-muted); }
-.profile-playbook-title { margin: 0; font-weight: var(--fw-medium); color: var(--color-ink); }
-.profile-playbook-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
-.profile-playbook-view { width: min(760px, calc(100vw - 2 * var(--space-4))); }
 /* A playbook's schedule (§chat.schedules/where-shown): the Playbooks dialog's step-2 card, in the
    profile box's frame, and the row's extra line. */
 .schedule-card {
@@ -909,7 +899,6 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .schedule-card-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 /* Inline, so the row's one-line ellipsis still applies to it. */
 .playbook-schedule-line .icon { vertical-align: -2px; margin-right: var(--space-1); }
-.profile-playbook-body { max-height: min(70vh, 720px); overflow: auto; }
 .profile-changes-head .chip { margin-left: auto; }
 .profile-change-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
 .profile-change {

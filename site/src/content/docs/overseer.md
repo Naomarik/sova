@@ -7,7 +7,7 @@ order: 12
 
 Ask the **Overseer** what needs you, what finished, or where you left off. Ask it to start sessions, send prompts, or tidy up. When a request is ambiguous or risky, it asks first.
 
-It has no shell and edits no files. It acts only through Sova, with limits you set.
+It has no shell. It acts through Sova, with limits you set, and writes files only in turns you start.
 
 ## Open it
 
@@ -30,6 +30,7 @@ The Overseer is always in the normal mode, with no minor modes, so its composer 
 - **Answer a dialog** that's waiting in a session Sova runs. The session's transcript shows "Overseer chose: …". It never answers in a session that's open in a terminal.
 - **Keep notes for itself.** Standing notes are instructions it reads every turn; it can add to them, and you can edit them in Settings → Overseer.
 - **Keep your ideas and todos.** Say "it'd be nice if…" and it files an idea; say "remind me to…" and it adds a todo. It says what it filed in one line and starts nothing. The **Ideas** and **Todos** buttons in its head open each list.
+- **Write and edit files** wherever it can read, for small changes such as an automation in a project's `.sova/` folder. It leaves code changes to coding sessions, and says what it changed. It never writes Sova's or pi's own files (its settings, your approvals, schedules or sessions), an organization's workspace, or a credentials file. An automation it edits keeps running, as after your own edit.
 
 It can't send to a session that's open in a terminal, archived, or a worker, and it never sends to itself.
 

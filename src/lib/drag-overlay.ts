@@ -127,8 +127,10 @@ export interface DragInfo {
   groupId: string | null;
   /** An organization's session: never joins a group (taking one out is fine). */
   org: boolean;
-  /** The project an org session's archive toasts name (drag-archive's `orgProjectOf`). */
+  /** The project the unarchive (Undo) toast names (drag-archive's `orgProjectOf`). */
   orgProject: string | null;
+  /** The project the archive toast names: an org session's only (drag-archive's `archivedProjectOf`). */
+  archivedProject: string | null;
   /** The peer's label, for a session that lives on another host; null on this one. */
   peer: string | null;
   archive: ArchiveDrag;

@@ -11,9 +11,12 @@ after it succeeded (the previous install kept until then, and restored on failur
 `sova` launcher (default `~/.local/bin/sova`). The launcher runs the server on that Bun (`sova
 --node` runs it on Node instead), on `PORT` when set, else the install's port (`--port`, default
 `4800`, the port its closing message names), except `sova token`,
-which prints the install's access token, and `sova open`, which opens the browser at the app
-already unlocked (§app.access/callers); its closing message says both. An install directory that
-is not a clean clone of Sova, or a launcher this script did not write, is refused and left alone.
+which prints the install's access token, and `sova app` (or `sova open`), which opens the app
+already unlocked in a window of its own, starting the server first when it is not running
+(§app.access/callers); its closing message says both. Beside the launcher it writes an entry in
+the desktop's app launcher that runs `sova app` (§app.installer/app-entry). An install directory
+that is not a clean clone of Sova, or a launcher or app entry this script did not write, is
+refused and left alone.
 
 Beyond that it links Sova's pi extensions into the agent directory (§app.installer/pi-extensions),
 says what Claude Code's models need (§app.installer/claude-code-provider), and offers a login
@@ -82,6 +85,59 @@ systemd user unit on Linux (`~/.config/systemd/user/sova.service`, or under
   the definition, does not start it, and says so.
 - Where neither launchd nor a systemd user manager is available, it says so and installs none.
 
+## §app.installer/app-entry — An app-launcher entry that opens Sova in its own window
+
+On Linux and macOS, every run writes, along with the `sova` launcher, an entry in the desktop's
+app launcher named **Sova**, with Sova's icon, that runs `<bin dir>/sova app`: Sova opens in a
+bare app window of a Chromium-family browser — no tabs, no address bar, no toolbar — already
+unlocked. `--no-app-entry`
+(or `SOVA_NO_APP_ENTRY=1` in the installer's environment) writes none and leaves an existing one
+as it is.
+
+- **Linux.** `${XDG_DATA_HOME:-~/.local/share}/applications/sova.desktop` (`Exec=<bin dir>/sova
+  app`, `Icon=sova`, `Terminal=false`), and the install's 512px icon (`public/icons/pwa-512.png`)
+  at `.../icons/hicolor/512x512/apps/sova.png`. `update-desktop-database` and
+  `gtk-update-icon-cache` run after a change only when they are installed.
+- **macOS.** `~/Applications/Sova.app`, a bundle (`io.github.naomarik.sova.app`) whose executable
+  runs `<bin dir>/sova app`, with an icon built from the same PNG by `sips` and `iconutil` (no icon
+  when either is missing). It shows no Dock icon of its own: the window is the browser's.
+- **Ours, or refused.** The `.desktop` file and the bundle's `Info.plist` carry a marker. A file
+  at either path that this script did not write, or any file at the icon's path while no
+  `.desktop` of ours is there, is refused before anything is installed, named, and left alone, with a
+  pointer to `--no-app-entry`. Ours is rewritten only when its content would change
+  (§app.installer/idempotent).
+- **The browser.** `sova app` picks, on Linux, the default browser (`xdg-settings get
+  default-web-browser`) when it is Chrome, Chromium, Brave, Edge, Vivaldi or Helium, run as its
+  `.desktop` file's `Exec` names it; else the first of `google-chrome-stable`, `google-chrome`,
+  `chromium`, `chromium-browser`, `brave`, `brave-browser`, `microsoft-edge` and `vivaldi` on
+  `PATH`. On macOS it picks the default https handler when it is one of Google Chrome, Chromium,
+  Brave Browser, Microsoft Edge, Vivaldi or Helium, else the first of those found in
+  `/Applications` or `~/Applications`, and runs the bundle's executable itself. It opens
+  `--app=http://127.0.0.1:<port>/#t=<token>` with `--no-first-run --no-default-browser-check`
+  and no debugging port, and returns while the window stays open.
+- **A profile of its own.** The browser runs with `--user-data-dir` set to a folder reserved for
+  Sova — `${XDG_CONFIG_HOME:-~/.config}/sova-browser` on Linux, `~/Library/Application
+  Support/sova-browser` on macOS — so it never shares the person's browsing profile, and the
+  window opens as its own app even while that browser is already running. On Linux a new profile
+  is seeded to use the system title bar (`custom_chrome_frame` off) and to skip the first-run page.
+- **No such browser.** With none of them installed, `sova app` opens the same unlocked URL as a
+  tab in the default browser (`open` on macOS, `xdg-open`), and the installer's closing message
+  says an app window needs Chrome, Chromium, Brave, Edge or Vivaldi — only when none is found.
+  Browsers installed only as a Flatpak are not found.
+- **Starting the server.** When nothing answers `GET /api/health` on the port, `sova app` starts
+  the server before opening the window: through the login service when the installer's is
+  installed and the port is the install's (`systemctl --user start sova.service`; `launchctl
+  kickstart` of the agent, or `launchctl bootstrap` when it is not loaded), else — or when that
+  command fails — the launcher itself in the background, with its output in
+  `<agent dir>/sova/app-server.log` and the directories the installer found its tools in added to
+  its `PATH`. It waits up to 20 seconds for the health check to answer, then reads the token
+  (which a first start mints) and opens the window. A server it started keeps running after the window closes. When it does
+  not answer in time, or the background server exits first, it says so with where its output is —
+  a desktop notification (`notify-send` on Linux, `osascript` on macOS) as well as on stderr — and
+  exits nonzero, opening nothing.
+- **Removing it.** Deleting the entry (`sova.desktop` and the icon, or `Sova.app`) and the
+  profile folder removes everything it added; the uninstall steps in the docs list them.
+
 ## §app.installer/idempotent — Re-running changes nothing
 
 Running the installer again with the same inputs leaves the machine as it was.
@@ -89,8 +145,8 @@ Running the installer again with the same inputs leaves the machine as it was.
 - **Same commit, no rebuild.** When the install directory already holds the commit the ref
   resolves to, with its build and dependencies in place, it is not cloned, installed or built
   again. `--reinstall` rebuilds anyway.
-- **Files rewritten only when they differ.** The launcher, the extension links and the service
-  definition are written only when their content would change.
+- **Files rewritten only when they differ.** The launcher, the app entry and its icon, the
+  extension links and the service definition are written only when their content would change.
 - **The service reloads only on a change.** A service whose definition is unchanged and running
   is left running; a changed definition is updated in place and reloaded; a code update restarts
   it. A second instance is never started.

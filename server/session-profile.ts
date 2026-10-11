@@ -51,8 +51,16 @@ export function profileField(d: ProfileEntryData | null | undefined): SessionPro
   };
 }
 
-/** A pick as the route receives it: an id or `{source, id}`, a custom board `{remove, grant, from?}`, or null. */
-export type ProfileChoice = ProfilePick | { remove: string[]; grant: string[]; from?: ProfilePick } | null;
+/** The key of a snapshot given whole by the server itself (an automation's session, §chat.schedules/automation-file):
+    a symbol, so no request body can carry one. */
+const INLINE = Symbol("sova:inline-profile");
+export type InlineChoice = { readonly [INLINE]: SnapshotProfile };
+/** An automation's settings and permissions as its session's profile: approved with the automation, not as a profile. */
+export const inlineChoice = (snapshot: SnapshotProfile): InlineChoice => ({ [INLINE]: snapshot });
+
+/** A pick as the route receives it: an id or `{source, id}`, a custom board `{remove, grant, from?}`, or null
+    (and, from the server only, an inline snapshot). */
+export type ProfileChoice = ProfilePick | { remove: string[]; grant: string[]; from?: ProfilePick } | InlineChoice | null;
 
 const isPick = (v: unknown): v is ProfilePick =>
   typeof v === "string" ||
@@ -69,6 +77,7 @@ export type Resolved = { ok: true; profile: SnapshotProfile | null; listed?: Lis
 /** The snapshot a pick writes for a session in `cwd`, or an error sentence. An unapproved project profile is refused. */
 export async function resolveChoice(choice: ProfileChoice, cwd?: string | null): Promise<Resolved> {
   if (choice === null || choice === DEFAULT_PROFILE_ID) return { ok: true, profile: null };
+  if (typeof choice === "object" && INLINE in choice) return { ok: true, profile: choice[INLINE] };
   if (isPick(choice)) {
     const id = typeof choice === "string" ? choice : choice.id;
     if (id === DEFAULT_PROFILE_ID && (typeof choice === "string" || choice.source === "sova")) return { ok: true, profile: null };

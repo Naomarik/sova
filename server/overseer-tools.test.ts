@@ -85,10 +85,11 @@ describe("the prompt and the tool set stay in step", () => {
     assert.match(prompt, /\[redacted\]/, "the redaction rule");
   });
 
-  test("the allowlist is the sova_* tools plus read-only built-ins and wake_nudge: no bash, edit, write or subagents", () => {
+  test("the allowlist is the sova_* tools plus the file built-ins (write and edit guarded) and wake_nudge: no bash or subagents", () => {
     const names = [...buildOverseerTools().map((t) => t.name), ...BUILTIN_ALLOWED];
-    assert.ok(names.every((n) => n.startsWith("sova_") || ["read", "grep", "find", "ls", "wake_nudge"].includes(n)));
-    for (const banned of ["bash", "edit", "write", "agent_spawn", "team_create"]) assert.ok(!names.includes(banned));
+    assert.ok(names.every((n) => n.startsWith("sova_") || ["read", "grep", "find", "ls", "write", "edit", "wake_nudge"].includes(n)));
+    for (const want of ["write", "edit"]) assert.ok(names.includes(want));
+    for (const banned of ["bash", "agent_spawn", "team_create"]) assert.ok(!names.includes(banned));
   });
 
   test("sova_card never ends the turn; its details are the card, and a later call sees it", async () => {

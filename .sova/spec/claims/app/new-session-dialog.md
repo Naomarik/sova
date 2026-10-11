@@ -20,6 +20,7 @@ opens a folder picker in place, under the field, inside the same dialog.
         …chevron-down, class="icon icon-sm icon-twist" (turns 180° while open)…
       </button>
       <span class="field-hint" id="ns-cwd-hint">pi runs in this folder and can read and change files in it.</span>
+      <span class="field-hint" id="ns-cwd-project">This folder is in sova: the session starts as one of its coding sessions.</span>  <!-- only for a folder in a project; then also in the field's aria-describedby -->
       <span class="field-error" id="ns-cwd-error"><!-- on error only --></span>
     </div>
 
@@ -142,6 +143,17 @@ sidebar or by the Overseer (§workspace.groups/making-a-comparison).
   hidden while the picker is open, since Recent is there.
 - **Submitting.** Create Session posts `{cwd}`. While pending, the button shows "Creating…" and
   is `aria-disabled`. Enter inside the picker never submits.
+- **A folder in a project** (§app.projects/folder-sessions). While the Host is this one and the
+  chosen folder is a listed project's root, inside it, or inside one of its worktrees as Sova names
+  them (`<root's parent>/.worktrees/<root's name>-…`; the deepest root wins), a second hint line
+  under the Folder field says "This folder is in {project}: the session starts as one of its coding
+  sessions." and Create Session starts it as the Project tab does, in that folder: `POST
+  /api/projects/:pid/overseer/coding` `{worktree: "later", cwd}`. The toast says "Coding session
+  started in the project root." for the root, else "Coding session of {project} started in
+  {folder}." (the folder with `~`), or the mode sentence when its mode couldn't be set; a 4xx
+  shows the server's message under the Folder field. The projects are read when This Computer
+  first shows (the Project tab's list); until they answer, Create Session stays `aria-disabled`,
+  and a failed read starts plain sessions.
 - **On success.** Close the dialog, navigate to the new session, and focus the composer, except
   on a touch-only device (`(hover: none) and (pointer: coarse)`), where that would raise the
   keyboard over the empty session. There the user taps the composer.
@@ -329,7 +341,7 @@ branch, so the tab asks for nothing that names anything.
 </div>
 ```
 
-- **The list.** `GET /api/projects`, fetched the first time the tab shows: every project on this
+- **The list.** `GET /api/projects`, fetched the first time this tab or This Computer shows: every project on this
   host that isn't archived, sorted by name (case-insensitive). Each row shows the name, the root
   (with `~`, muted mono) and a chip with its organization's name, or "Standalone" for a project in
   no organization. Click or Enter/Space selects one; double-click selects it and submits.

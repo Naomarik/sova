@@ -43,8 +43,8 @@ import { removeMemory } from "./memory/store";
  * this module imports none of it.
  */
 export interface SessionsPart {
-  /** Once per listing pass: the fields of one file, or undefined. */
-  lookup(): { of(path: string, id: string): Pick<SessionSummary, "baton" | "org"> | undefined };
+  /** Once per listing pass: the fields of one file, or undefined. `project`: what the project layer says of it. */
+  lookup(): { of(path: string, id: string, project?: SessionSummary["project"]): Pick<SessionSummary, "baton" | "org" | "folderOrg"> | undefined };
   /** Why the file may never be deleted here, or null. */
   keeps?(path: string): string | null;
 }
@@ -53,14 +53,14 @@ export function contributeSessions(part: SessionsPart): void {
   sessionParts.push(part);
 }
 
-/** One listing pass's lookups: every contributed part's, then the project layer's. */
-function fieldLookup(): (path: string, id: string) => Pick<SessionSummary, "baton" | "org" | "project" | "projectOverseer"> {
+/** One listing pass's lookups: the project layer's (by marker, build, then the session's folder), then every contributed part's. */
+function fieldLookup(): (path: string, id: string, cwd?: string) => Pick<SessionSummary, "baton" | "org" | "folderOrg" | "project" | "projectOverseer"> {
   const parts = sessionParts.map((p) => p.lookup());
   const projects = projectSessionLookup();
-  return (path, id) => {
-    const out: Pick<SessionSummary, "baton" | "org" | "project" | "projectOverseer"> = {};
-    for (const l of parts) Object.assign(out, l.of(path, id) ?? {});
-    const project = projects.of(path, id);
+  return (path, id, cwd) => {
+    const out: Pick<SessionSummary, "baton" | "org" | "folderOrg" | "project" | "projectOverseer"> = {};
+    const project = projects.of(path, id, cwd);
+    for (const l of parts) Object.assign(out, l.of(path, id, project) ?? {});
     if (project) out.project = project;
     if (!out.baton) {
       const po = projectOverseerOfPath(path);
@@ -909,7 +909,7 @@ async function buildSessions(): Promise<SessionSummary[]> {
     let preview: string | undefined;
     // A baton or project overseer file is never a husk: a fresh baton held by the operator (or
     // waiting for its first link) needs them before anyone has written in it.
-    const special = fields(s.path, s.id);
+    const special = fields(s.path, s.id, s.cwd);
     if (s.title === "Untitled") {
       const st2 = await stat(s.path).catch(() => null);
       if (st2 && (await isZeroInput(s.path, st2.size))) {
@@ -986,7 +986,7 @@ export async function getSessionSummary(path: string, resolveWindow?: WindowReso
     ...heldChatField(s.path),
     ...attentionFields(s, l, ownRec, readSeen()),
     ...decisionFields(s, l, ownRec, readSeen(), readDecisionSettings().features.attention),
-    ...fieldLookup()(s.path, s.id),
+    ...fieldLookup()(s.path, s.id, s.cwd),
   };
   const readiness = readinessOverlay(row);
   return redactPreviewLinksDeep(readiness ? { ...row, readiness } : row);

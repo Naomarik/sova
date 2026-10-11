@@ -129,3 +129,12 @@ The dev and held-out scores don't depend on this: no query there has 8 or more n
 - Unchanged: `where summary tree` gives §chat.memory/tree first, exit 0. `where UniiChat` gives §chat.memory/turn, then §chat.memory/types, exit 0. The dev bench is unchanged (R@1 42.3%, R@3 59.6%, MRR 0.532, R@3-any 71.2%, exit 0×52).
 
 **Verdict: ready to land at f078bfdd** (code at 3165c3c1). Every verification item passes.
+
+## Landing check at 1ecd9cf9 (after f432b58c, the master merge 72bf9f1c and the promotion)
+
+1. Spec tests: PASS. 554 tests: 552 pass, 2 skipped, 0 fail.
+2. Name lookups: PASS. The same 110 queries, comparing the a9b87037 core with the 1ecd9cf9 core, are 110/110 identical on name and path rows, counts and exit. This holds on the a9b87037 spec and tree (from `git archive`) and on the merged 1ecd9cf9 spec. No key lost.
+3. Promotion: PASS. manifest.json has §tools.spec/where-topic (behavior, accepted/verified, requires §tools.spec/where-lookup, 6 code files); §tools.spec/where-lookup and §tools/spec are accepted/verified. claims/tools/spec.md carries the new section and the edited sentences. `draft status where-topic` shows all 3 ids `already-current`. `check` shows 144 warnings, no errors: 143 `requires-uninvestigated` and 1 `code-missing` (src/components/ProfilePlaybookCard.tsx for §chat.profiles/picker) that came from master (also absent on master), not from this branch.
+4. `git status`: PASS, clean.
+
+f432b58c (-tion/-sion words stay whole) leaves the dev bench unchanged when run on the a9b87037 spec: R@1 42.3%, R@3 59.6%, MRR 0.532, R@3-any 71.2%, vocabulary gap R@3 42.9% / MRR 0.274. Per-query primary ranks are identical. The only change is the order of two non-target rows in one query's top three, and mean bytes go 2653 → 2652. The held-out numbers above are for 0b43feb9. The shipped ranker differs from it by this stemmer change and by the D1 fix, and neither was measured on held-out (by design: that set ran once and is now public).

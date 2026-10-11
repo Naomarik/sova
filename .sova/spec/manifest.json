@@ -3041,6 +3041,28 @@
         "src/components/MeshSettings.tsx"
       ]
     },
+    "§app.installer/app-entry": {
+      "kind": "behavior",
+      "requires": [
+        "§app/installer",
+        "§app.installer/service",
+        "§app.access/token",
+        "§app.access/unlock"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "scripts/install.sh",
+        "scripts/install.test.sh",
+        "README.md",
+        "docs/getting-started.md",
+        "site/src/content/docs/install.md"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-11T11:27Z"
+      }
+    },
     "§app.installer/claude-code-provider": {
       "kind": "behavior",
       "requires": [],
@@ -3059,7 +3081,11 @@
       "code": [
         "scripts/install.sh",
         "scripts/install.test.sh"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-11T11:27Z"
+      }
     },
     "§app.installer/pi-extensions": {
       "kind": "behavior",
@@ -3102,7 +3128,11 @@
         "scripts/install.sh",
         "scripts/install.test.sh",
         "scripts/install.integration.test.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-11T11:27Z"
+      }
     },
     "§app.extensions/cards": {
       "kind": "behavior",
@@ -12287,7 +12317,11 @@
         "docs/public-links.md",
         "README.md",
         "vite.config.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-11T11:27Z"
+      }
     },
     "§app.access/gate": {
       "kind": "behavior",
@@ -16601,7 +16635,11 @@
         "public/sw.js",
         "src/sw-register.ts",
         "index.html"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-11T11:27Z"
+      }
     },
     "§chat.mode-menu/terminal": {
       "kind": "behavior",
@@ -16781,7 +16819,11 @@
       "evidence": "reviewed",
       "code": [
         "site/src/content/docs/install.md"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-11T11:27Z"
+      }
     },
     "§site.docs/modes": {
       "kind": "behavior",

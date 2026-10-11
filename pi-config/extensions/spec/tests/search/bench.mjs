@@ -13,7 +13,8 @@
 // several words. Only what one call prints counts (no --all, no cursor): that is what the agent sees.
 // Metrics, over primary targets: R@1, R@3, MRR (1/rank of the first primary; 0 when absent).
 // R@3 any also counts acceptable targets. Split by vocabulary gap (no stem of the query in its
-// primary target's title or what). Bytes are the answer's stdout; exit is the CLI's exit code.
+// primary target's title or what) and by leak band (under 0.5 / 0.5 and up), so leaky queries
+// can't carry the headline. Bytes are the answer's stdout; exit is the CLI's exit code.
 //
 // The dev set's result file lists every query; any other set's lists aggregates only, so a
 // held-out run never writes its queries into the repo.
@@ -92,7 +93,7 @@ export function run({ set = "dev", cli, root, label, quoted = false, ranks = fal
     const stdout = p.stdout ?? "";
     const { ids, parsed } = rankingOf(stdout);
     rows.push({
-      id: q.id, query: q.query, vocabularyGap: !!q.vocabularyGap, targets: q.targets,
+      id: q.id, query: q.query, vocabularyGap: !!q.vocabularyGap, leak: q.leak ?? null, targets: q.targets,
       exit: p.status ?? `signal ${p.signal}`, parsed, bytes: Buffer.byteLength(stdout), ms: Math.round(ms),
       results: ids.length, top: ids.slice(0, 3), ...scoreOne(ids, q.targets),
     });
@@ -101,6 +102,8 @@ export function run({ set = "dev", cli, root, label, quoted = false, ranks = fal
     all: aggregate(rows),
     "vocabulary gap": aggregate(rows.filter((r) => r.vocabularyGap)),
     "word overlap": aggregate(rows.filter((r) => !r.vocabularyGap)),
+    "leak under 0.5": aggregate(rows.filter((r) => r.leak !== null && r.leak < 0.5)),
+    "leak 0.5 and up": aggregate(rows.filter((r) => r.leak !== null && r.leak >= 0.5)),
   };
   const head = git(root, ["rev-parse", "--short=8", "HEAD"]);
   const coreRel = path.relative(root, path.dirname(cli));

@@ -7,8 +7,7 @@ import { topicIndex, topicRank } from "./topic.mjs";
 
 const WHERE_NOTICE = "A shared token is a literal name match, never proof that the claim covers that code. Only a record's code list maps a file.";
 const TOPIC_NOTICE = "A topic row is a ranked match of the query's words in the claim's text, never proof of what the claim covers: read it to judge.";
-// Name rows come first; topic rows keep up to TOPIC_KEEP of the TOP shown when name rows would fill them.
-const TOP = 10, SHOW = 8, TOPIC_KEEP = 3;
+const TOP = 10, SHOW = 8;
 const ticks = (ts) => ts.slice(0, SHOW).map((t) => `\`${t}\``).join(", ") + (ts.length > SHOW ? ` … +${ts.length - SHOW}` : "");
 
 const claimLine = (ix, id) => {
@@ -107,7 +106,8 @@ export function whereMain(argv, core) {
     topic = topicRank(topicIndex(ix), query.trim());
     const rows = topic.rows.filter((t) => !named.has(t.id)).map((t) => ({ type: "topic", ...claimLine(ix, t.id), score: t.score, matched: t.matched }));
     r.counts.topic = rows.length;
-    const names = o.all ? r.list.length : Math.min(r.list.length, TOP - Math.min(rows.length, TOPIC_KEEP));
+    // Name rows keep their top ten unchanged; topic rows fill only the places they leave free.
+    const names = o.all ? r.list.length : Math.min(r.list.length, TOP);
     full = [...r.list.slice(0, names), ...(o.all ? rows : rows.slice(0, TOP - names))];
     total = r.list.length + rows.length; cut = r.list.length - names;
   }

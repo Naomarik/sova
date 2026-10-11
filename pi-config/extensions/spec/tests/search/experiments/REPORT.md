@@ -67,8 +67,10 @@ The lexical ranker wins MRR.
 
 ## How names and topics share the top 10
 
-Name rows come first, then topic rows. Topic rows keep up to 3 of the 10 places when name rows would
-fill all of them. A claim found by name is not repeated as a topic row. Topic rows left out are counted
+Name rows come first, then topic rows. The name rows shown are the same ten as before topic search;
+topic rows fill only the places they leave free. (The first version saved 3 places for topic rows;
+the review found that changed existing name answers, D1, and 3165c3c1 removed it. The dev numbers are
+unchanged, since no dev or held-out query has 8 or more name matches.) A claim found by name is not repeated as a topic row. Topic rows left out are counted
 in `notShown` and the `--all` hint, but they don't make the answer exit 1. Exit 0 means either kind
 found a claim. Exit 1 means neither did, or a name row was cut, or the argument looked like a path to a
 file that doesn't exist.
@@ -82,9 +84,9 @@ file that doesn't exist.
   - neither kind finding a claim is exit 1;
   - the cut-list exit 1 rule excludes ranked topic rows.
 - Also updates **§tools/spec**: `where` also ranks claims by the words of a topic.
-- Evidence: `--commit f5bbf841` on all three, valid. `check` reports only the 143 pre-existing
+- Evidence: `--commit 3165c3c1` on all three, valid. `check` reports only the 143 pre-existing
   `requires-uninvestigated`.
-- Promote preview is clean: plan `9c96215c30fd3d68087bb6ba774f31a6b081e3e962218bb39185b2f10f289235`
+- Promote preview is clean: plan `94ae9039df04dee065b8df0c6022354848e7919b6f652cfce5a45644aad64baa`
   (`promote where-topic --id '§tools.spec/where-topic' --id '§tools.spec/where-lookup' --id '§tools/spec'`).
 - **Master has moved** since the branch point a9b87037 (project-folder-sessions merges, with spec
   promotions). PROMOTE.md asks for `git merge master` before promoting; that is left for landing.
@@ -103,7 +105,8 @@ The replay suite was not run (it is the landing gate).
 - topic rows have their own kind, heading, `topicNotice` and counts;
 - no claim is repeated across name and topic rows;
 - path mode is kept, and only a single argument is read as a file;
-- the 7 + 3 sharing, with a cut name row exiting 1 and a cut topic row not.
+- ten name rows keep all ten places (exit 0), topic rows fill only free places, a cut name row exits 1
+  and a cut topic row does not.
 
 The census ranking path (`graph.mjs`'s weight) is untouched, and `census-rank.test.mjs` passes.
 
@@ -112,6 +115,7 @@ The census ranking path (`graph.mjs`'s weight) is untouched, and `census-rank.te
 - 62e2aa94: checkpoint, topic rows wired in.
 - 0b43feb9: frozen ranker, docs, LOG, side trial.
 - f5bbf841: the topic heading names the area-heading field (no ranking change; dev numbers reproduce).
+- 3165c3c1: review D1, name rows keep their top ten (dev numbers unchanged).
 
 ## Environment note
 

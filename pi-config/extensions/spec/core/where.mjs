@@ -53,7 +53,7 @@ function byToken(ix, token) {
 const HEADS = { ranked: "ranked by interface tokens shared with the file", unranked: "listing the file, no interface token shared (code list only)",
   candidate: "UNMAPPED CANDIDATES: no record lists this file; these claims' interface tokens occur in it (a name match, not a mapping)",
   defines: "defines it (in its heading or first sentence)", mentions: "mentions it",
-  topic: "TOPIC MATCHES: ranked by the query's words in heading, first sentence, names and prose (a word match, not a name match or a mapping)" };
+  topic: "TOPIC MATCHES: ranked by the query's words in heading, first sentence, names, prose and area heading (a word match, not a name match or a mapping)" };
 export function renderWhere(out) {
   const L = [], c = out.counts;
   if (out.mode === "path") {

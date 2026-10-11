@@ -194,6 +194,27 @@ export interface ProfileEntryData {
   profile: SnapshotProfile | null;
   /** Who picked it, when not the user on the empty screen. */
   by?: "overseer" | "start";
+  /** With a profile: what the session had before its first profile pick, which picking My settings puts back. */
+  mine?: ProfileMine;
+}
+
+/** What a session had by hand before its first profile pick (§chat.profiles/applying): its mode and
+    minor modes, model ref, effort and its own subagent pick (absent: it followed the device default). */
+export interface ProfileMine {
+  mode: string;
+  minorModes: string[];
+  model?: string;
+  thinking?: string;
+  subagents?: string;
+}
+
+/** A `mine` from untrusted entry data, or undefined when it isn't one. */
+export function parseMine(v: unknown): ProfileMine | undefined {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return undefined;
+  const o = v as Record<string, unknown>;
+  if (typeof o.mode !== "string" || !Array.isArray(o.minorModes) || o.minorModes.some((m) => typeof m !== "string")) return undefined;
+  const opt = (k: "model" | "thinking" | "subagents") => (typeof o[k] === "string" && o[k] ? { [k]: o[k] as string } : {});
+  return { mode: o.mode, minorModes: [...(o.minorModes as string[])], ...opt("model"), ...opt("thinking"), ...opt("subagents") };
 }
 
 /** A snapshot's or summary field's source (an older entry has only `builtin`). */
@@ -226,12 +247,13 @@ export function stripSessionHeader(text: string): string {
 
 export const DEFAULT_PROFILE_ID = "default";
 
-/** Default: nothing changed. The one profile in code; every other is a file (§chat.profiles/projects). */
+/** Default, the picker's My settings: no profile, nothing changed. The one profile in code; every
+    other is a file (§chat.profiles/projects). */
 export const DEFAULT_PROFILE: Profile = {
   id: DEFAULT_PROFILE_ID,
-  label: "Default",
+  label: "My settings",
   icon: "grid",
-  description: "Everything a new session has today.",
+  description: "The settings you chose for this session.",
   remove: [],
   grant: [],
   singleton: false,

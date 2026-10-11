@@ -65,20 +65,19 @@ after(async () => {
 
 /** The project fixtures (§chat.profiles/projects): `cwd` is a plain folder, so its own project. Its
     One at a time captain reads, messages and sees all, and the Overseer may start it once approved.
-    Its mini overseer reads and messages sessions in its project, can't edit, and the Overseer may start it. */
+    Its mini overseer reads and messages sessions in its project, can't edit, and the Overseer may start it.
+    Its read-only reviewer reads sessions, has no shell, edits or workers, and the Overseer may start it. */
 const CAPTAIN = { id: "captain", label: "Release captain", icon: "branch", remove: ["workers", "web"], grant: ["sessions.read", "sessions.message", "sessions.all"], singleton: true, overseerMayStart: true };
 mkdirSync(join(cwd, ".sova", "profiles"), { recursive: true });
 const MINI = { id: "mini-overseer", label: "Mini overseer", icon: "network", remove: ["edit", "workers"], grant: ["sessions.read", "sessions.message"], overseerMayStart: true };
-const FIXTURES: Record<string, object> = { captain: CAPTAIN, "mini-overseer": MINI };
+const REVIEWER = { id: "reviewer", label: "Read-only reviewer", icon: "eye", remove: ["shell", "edit", "workers"], grant: ["sessions.read"], overseerMayStart: true };
+const FIXTURES: Record<string, object> = { captain: CAPTAIN, "mini-overseer": MINI, reviewer: REVIEWER };
 for (const f of Object.values(FIXTURES) as (typeof MINI)[]) {
   writeFileSync(join(cwd, ".sova", "profiles", `${f.id}.json`), JSON.stringify(f));
   approve((await findProfile({ source: "project", id: f.id }, cwd))!, { grant: f.grant as never, overseerMayStart: true });
 }
-/** A shipped profile's snapshot, or a project fixture's. */
-const profile = (id: string) =>
-  FIXTURES[id]
-    ? { ...(parseProfile(FIXTURES[id]) as object), source: "project", project: cwd, projectName: "cwd" }
-    : { ...(parseProfile(JSON.parse(readFileSync(new URL(`../profiles/${id}.json`, import.meta.url), "utf8"))) as object), source: "sova" };
+/** A project fixture's snapshot. */
+const profile = (id: string) => ({ ...(parseProfile(FIXTURES[id]) as object), source: "project", project: cwd, projectName: "cwd" });
 const CAPTAIN_PICK = { source: "project" as const, id: "captain" };
 let n = 0;
 /** A web session file: its header, and a profile entry when given. */
@@ -460,7 +459,7 @@ describe("the Overseer may start only profiles marked for it (§app.overseer/too
     assert.deepEqual(busy.requests, []);
     const free = harness([]);
     await free.call({ cwd, profile: "reviewer" });
-    assert.match(free.requests[0] ?? "", /^\/api\/sessions .*"profile":\{"source":"sova","id":"reviewer"\}/);
+    assert.match(free.requests[0] ?? "", /^\/api\/sessions .*"profile":\{"source":"project","id":"reviewer"\}/);
   });
 
   test("a profile that links a playbook: the playbook's turn is the first prompt, it takes the prompt caps, and a missing one refuses first", async () => {

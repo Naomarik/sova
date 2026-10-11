@@ -2113,6 +2113,8 @@ export interface ChatProfileInfo {
   removed: string[];
   /** The session tools the grants added. */
   granted: string[];
+  /** With a profile: what picking My settings puts back (the entry's `mine`, §chat.profiles/applying). */
+  mine?: import("./profiles").ProfileMine;
 }
 
 /** Why a `queue_remove` was refused, and nothing was removed.

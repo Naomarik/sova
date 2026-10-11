@@ -40,8 +40,14 @@ const { profileField, profileOnBranch, resolveChoice, singletonHolder } = await 
 const { RunState, SessionLimits, resetPairSends, visibleTo } = await import("./session-powers");
 const { harnessEventOf } = await import("./harness/pi/session");
 
-const shipped = (id: string) => ({ ...(parseProfile(JSON.parse(readFileSync(new URL(`../profiles/${id}.json`, import.meta.url), "utf8"))) as Profile), source: "sova" as const });
-const reviewer = shipped("reviewer");
+/** A built-in profile of this test's own (Sova ships none): reads sessions, no shell, edits or
+    workers, the Overseer may start it. Its file is in SHIPPED, the fixture `profiles/` folder. */
+const REVIEWER = { id: "reviewer", label: "Read-only reviewer", icon: "eye", remove: ["shell", "edit", "workers"], grant: ["sessions.read"], overseerMayStart: true };
+const SHIPPED = join(dir, "shipped");
+mkdirSync(SHIPPED, { recursive: true });
+writeFileSync(join(SHIPPED, "reviewer.json"), JSON.stringify(REVIEWER));
+const shippedDeps = { shippedDir: SHIPPED };
+const reviewer = { ...(parseProfile(REVIEWER) as Profile), source: "sova" as const };
 /** A project's One at a time profile that reads, messages and sees all: the fixture every captain test uses. */
 const CAPTAIN = {
   id: "captain",
@@ -81,10 +87,17 @@ describe("the model", () => {
     assert.equal(lockedReason("web", ["web", "workers"]), null);
   });
 
-  test("the shipped profiles are files in their normal form, and only Default is in code", async () => {
+  test("Sova ships no profile file: only Default (My settings) is built in, in code", async () => {
+    const src = await profileSources(null);
+    assert.deepEqual(src.builtins.map((p) => p.key), ["sova:default"]);
+    assert.equal(src.builtins[0]!.label, "My settings");
+    assert.deepEqual(src.problems, [], "a missing profiles/ folder lists none, and is no problem");
+  });
+
+  test("a shipped profile file is listed after Default, in its normal form", async () => {
     for (const p of [reviewer, mini]) assert.deepEqual(normalizeCaps(p.remove, p.grant), { remove: p.remove, grant: p.grant }, p.id);
     assert.ok(mini.overseerMayStart);
-    const src = await profileSources(null);
+    const src = await profileSources(null, shippedDeps);
     assert.deepEqual(src.builtins.map((p) => p.key), ["sova:default", "sova:reviewer"]);
     assert.deepEqual(src.problems, []);
     // Profile content only (ids, names, text): the file paths are left out, so the checkout's folder
@@ -231,9 +244,12 @@ describe("the snapshot a session keeps", () => {
   });
 
   test("a custom pick is its own snapshot, named after where it started", async () => {
-    const r = await resolveChoice({ remove: ["web"], grant: ["sessions.read"], from: { source: "sova", id: "reviewer" } });
+    const root = project("custom-from", { reviewer: REVIEWER });
+    const r = await resolveChoice({ remove: ["web"], grant: ["sessions.read"], from: { source: "project", id: "reviewer" } }, root);
     assert.ok(r.ok && r.profile);
     assert.equal(r.ok && r.profile?.label, "Read-only reviewer, edited");
+    const fromMine = await resolveChoice({ remove: ["web"], grant: [] });
+    assert.equal(fromMine.ok && fromMine.profile?.label, "Custom", "one made from My settings");
     assert.deepEqual(r.ok && r.profile?.remove, ["workers", "web"]);
     const none = await resolveChoice({ remove: [], grant: [] });
     assert.ok(none.ok && none.profile === null);
@@ -292,12 +308,13 @@ describe("where profiles come from (§chat.profiles/projects)", () => {
     mkdirSync(join(dir, "agent", "sova"), { recursive: true });
     writeFileSync(join(dir, "agent", "sova", "session-profiles.json"), JSON.stringify({ version: 1, profiles: [{ id: "reviewer", label: "My reviewer" }, { id: "mine", label: "Mine" }] }));
     assert.equal((await findProfile("reviewer", root))?.label, "Project reviewer");
-    assert.equal((await findProfile("reviewer", join(dir, "elsewhere-none")))?.label, "My reviewer", "yours replace the shipped one of that id");
+    assert.equal((await findProfile("reviewer", join(dir, "elsewhere-none"), shippedDeps))?.label, "My reviewer", "yours replace the shipped one of that id");
     assert.equal((await findProfile({ source: "user", id: "reviewer" }, root))?.label, "My reviewer");
-    assert.equal((await findProfile({ source: "sova", id: "reviewer" }, root)), null, "yours replaced it");
+    assert.equal((await findProfile({ source: "sova", id: "reviewer" }, root, shippedDeps)), null, "yours replaced it");
     assert.equal(await findProfile({ source: "project", id: "mine" }, root), null);
     rmSync(join(dir, "agent", "sova", "session-profiles.json"));
-    assert.equal((await findProfile("reviewer", join(dir, "elsewhere-none")))?.source, "sova", "a built-in nothing replaces");
+    assert.equal((await findProfile("reviewer", join(dir, "elsewhere-none"), shippedDeps))?.source, "sova", "a built-in nothing replaces");
+    assert.equal(await findProfile("reviewer", join(dir, "elsewhere-none")), null, "and Sova itself ships none");
   });
 
   test("a worktree or subfolder session's project is its main checkout: it sees the main checkout's profiles and playbooks", async () => {

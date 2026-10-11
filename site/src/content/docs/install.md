@@ -33,6 +33,7 @@ What it puts on your machine:
 
 - **Sova itself** in `~/.local/share/sova`, with its Bun inside it.
 - **A launcher**, `~/.local/bin/sova`.
+- **Sova in your app launcher**, with its icon: `~/.local/share/applications/sova.desktop` on Linux, `~/Applications/Sova.app` on macOS. It's written on every run, and a file of the same name the installer didn't write stops it before it changes anything (`--no-app-entry` leaves the entry out).
 - **Sova's pi extensions**, linked one by one into `~/.pi/agent/extensions/` (or your `$PI_CODING_AGENT_DIR`). They're links, not copies, so an update brings them along. Anything already there that isn't Sova's own link is left alone, and the installer tells you which extension it skipped.
 - **A login service**, only if you say yes.
 
@@ -40,26 +41,27 @@ It writes none of pi's configuration: no `settings.json`, `models.json`, `auth.j
 
 ## Start it and open it
 
-```sh
-sova
-```
-
-Keep it running while you use the app; `Ctrl+C` stops it. Then, in another terminal:
+Click **Sova** in your app launcher, or run:
 
 ```sh
 sova open
 ```
 
-That opens your browser at Sova, already signed in. Sessions you already have in `~/.pi/agent` show up right away.
+Either one starts the server in the background if it isn't running (through the login service, if you installed one), waits for it, and opens Sova already signed in, in a window of its own with no tabs or address bar. Sessions you already have in `~/.pi/agent` show up right away. The server keeps running after you close the window.
+
+The window is Chrome, Chromium, Brave, Edge or Vivaldi (your default browser if it's one of them), with a browser profile kept for Sova alone: `~/.config/sova-browser` on Linux, `~/Library/Application Support/sova-browser` on macOS. Without any of them, Sova opens as a tab of your default browser instead, and the installer tells you so. A browser installed only as a Flatpak isn't found.
+
+To run the server in a terminal yourself, run `sova`; `Ctrl+C` stops it.
 
 | Command | Does |
 |---|---|
 | `sova` | Runs the server, on Bun. |
 | `sova --node` | Runs the server on Node instead. |
-| `sova open` | Opens the app in your browser, signed in. |
+| `sova open` | Starts the server if needed, then opens the app in its own window, signed in. |
+| `sova app` | The same as `sova open`; what the app launcher's Sova runs. |
 | `sova token` | Prints this install's access token. |
 
-`sova open` and `sova token` don't start the server. Before the server has run once there's no token yet, and both tell you to start it first. On a machine with no browser opener, such as a server you reach over SSH, `sova open` says so; open the page yourself and paste the token from `sova token`.
+A server `sova open` starts writes its output to `~/.pi/agent/sova/app-server.log`. If it doesn't answer within 20 seconds, you get a notification naming that log, and nothing opens. `sova token` never starts the server; before it has run once there's no token yet, and it tells you to start it first. On a machine with no browser opener, such as a server you reach over SSH, `sova open` says so; open the page yourself and paste the token from `sova token`.
 
 ## The access token
 
@@ -81,6 +83,7 @@ curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/master/scripts/instal
 | `--no-service` | Doesn't install it, and doesn't ask. |
 | `--port <n>` | The port `sova` and the login service run Sova on. 4800 by default. |
 | `--no-extensions` | Links no pi extensions (links already there stay). |
+| `--no-app-entry` | Adds no Sova to your app launcher (an entry already there stays). `SOVA_NO_APP_ENTRY=1` does the same. |
 | `--dir <path>` | Installs Sova there instead of `~/.local/share/sova`. |
 | `--bin <path>` | Puts the launcher there instead of `~/.local/bin`. |
 | `--reinstall` | Rebuilds even when the install is already up to date. |
@@ -97,7 +100,7 @@ It needs launchd or a systemd user manager. In a container or on another machine
 
 ## Run it again
 
-Running the install command again updates to master's latest commit (or the latest of the `SOVA_REF` you set); pass the same options as before, since a run without `--port` goes back to 4800. Running it with the same inputs changes nothing. An install already at the requested version isn't rebuilt (`--reinstall` rebuilds it anyway), files are rewritten only when they'd change, and a service is reloaded only when its definition changed and restarted only when the code did. A second copy is never started.
+Running the install command again updates to master's latest commit (or the latest of the `SOVA_REF` you set); pass the same options as before, since a run without `--port` goes back to 4800 and a run without `--no-app-entry` writes the app entry. Running it with the same inputs changes nothing. An install already at the requested version isn't rebuilt (`--reinstall` rebuilds it anyway), files are rewritten only when they'd change, and a service is reloaded only when its definition changed and restarted only when the code did. A second copy is never started.
 
 ## Remove it
 
@@ -122,6 +125,19 @@ Then remove the extension links (use your `$PI_CODING_AGENT_DIR` in place of `~/
 ```sh
 find ~/.pi/agent/extensions -maxdepth 1 -lname "$HOME/.local/share/sova/*" -delete
 rm -rf ~/.local/share/sova ~/.local/bin/sova
+```
+
+Then the app entry and the browser profile its window uses. On Linux:
+
+```sh
+rm -f ~/.local/share/applications/sova.desktop ~/.local/share/icons/hicolor/512x512/apps/sova.png
+rm -rf ~/.config/sova-browser
+```
+
+On macOS:
+
+```sh
+rm -rf ~/Applications/Sova.app ~/Library/Application\ Support/sova-browser
 ```
 
 Your pi sessions and credentials, and Sova's own state in `~/.pi/agent/sova/`, stay. So do pnpm's package store and cache, which other projects may share. If nothing else on the machine uses pnpm, you can remove them too (on Linux):

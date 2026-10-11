@@ -285,9 +285,10 @@ export function lateText(ms: number): string {
 
 // ── The fired message ───────────────────────────────────────────────────────────────────────────
 
-/** The fire line, the optional late line and the reason, as a wake card parses them (shared/wake.ts). */
-export function fireHead(id: string, trigger: string, playbook: string, reason: string, lateMs?: number): string {
-  const lines = [`[schedule ${id}] Scheduled run fired (${trigger}, playbook ${playbook}).`];
+/** The fire line, the optional late line and the reason, as a wake card parses them (shared/wake.ts).
+    An automation file's fire names the automation (§chat.schedules/fire). */
+export function fireHead(id: string, trigger: string, playbook: string, reason: string, lateMs?: number, what: "playbook" | "automation" = "playbook"): string {
+  const lines = [`[schedule ${id}] Scheduled run fired (${trigger}, ${what} ${playbook}).`];
   if (lateMs !== undefined) lines.push(`Late by ${lateText(lateMs)} (Sova was not running).`);
   lines.push(`Reason: ${reason}`);
   return lines.join("\n");

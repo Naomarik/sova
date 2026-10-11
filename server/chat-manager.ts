@@ -48,6 +48,8 @@ import { codemodeFactory } from "./harness/pi/codemode";
 import { claimSessionSlot, holdingSlot } from "./provider-limits";
 import { VIS_CHECK_TOOL, visCheckExtension, type VisCheckHost } from "./vis-check";
 import { MEMORY_COMPACTION_REFUSAL, memoryExtension, type MemoryHost } from "./harness/pi/memory";
+import { playbookExtension } from "./harness/pi/playbook";
+import { playbookHost } from "./playbook-host";
 import { ChatMemory } from "./memory/chat";
 import { readOverseerSettings } from "./overseer-store";
 
@@ -3356,6 +3358,8 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
               visCheckExtension(() => (visHost.chat && !visHost.chat.disposed ? visHost.chat.visCheckHost() : null)),
               // The memory minor mode's engine (§chat/memory): idle until memory is turned on.
               memoryExtension(() => (visHost.chat && !visHost.chat.disposed ? visHost.chat.memoryHost() : null)),
+              // playbook_read, once a schedule's fire delivered a playbook here (§chat.schedules/playbook-read).
+              playbookExtension(playbookHost),
               // project_verbs: its own worktrees' running instances (server/project-services/tools.ts).
               projectVerbsExtension(projectEngine),
               // queue_push: every ordinary session can answer on a topic (§chat.topics/push).

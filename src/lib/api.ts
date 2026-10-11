@@ -462,8 +462,10 @@ export const fetchPlaybooks = (cwd: string | null, host?: string | null) =>
 
 /** Approve a playbook's schedule (§chat.schedules/approval): `pin` is what the user was shown; a
     changed file refuses (409). Only a click in Sova calls this. */
-export const approveSchedule = (body: { cwd: string; playbook: string; pin: string }, host?: string | null) =>
+export const approveSchedule = (body: { cwd: string; playbook?: string; automation?: string; pin: string }, host?: string | null) =>
   request<ScheduleInfo>(hostUrl(host, "/api/schedules/approve"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+/** Every schedule this host knows of, with its sessions (the Automations group, §app.session-list/automations). */
+export const fetchSchedules = () => request<{ schedules: ScheduleInfo[] }>("/api/schedules");
 /** Revoke a schedule's approval: it fires nothing more and reads Needs approval again. */
 export const revokeSchedule = (id: string, host?: string | null) =>
   request<{ ok: true }>(hostUrl(host, "/api/schedules/revoke"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id }) });

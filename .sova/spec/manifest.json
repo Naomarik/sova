@@ -1551,7 +1551,11 @@
         "server/transcript.ts",
         "src/components/SessionDetails.tsx",
         "src/components/SessionView.tsx"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-11T08:41Z"
+      }
     },
     "§chat.transcript/landing-page": {
       "kind": "behavior",
@@ -10470,7 +10474,11 @@
         "§chat.profiles/singleton",
         "§app.session-list/needs-you",
         "§app.session-list/groups"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-11T08:41Z"
+      }
     },
     "§app.settings-dialog/profiles": {
       "kind": "behavior",
@@ -10490,7 +10498,11 @@
         "§chat.profiles/model",
         "§chat.profiles/projects",
         "§chat.profiles/trust"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-11T08:41Z"
+      }
     },
     "§chat.profiles/after-first-message": {
       "kind": "behavior",
@@ -10522,7 +10534,11 @@
       "requires": [
         "§chat.profiles/model",
         "§chat.subagent-profiles/resolution"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-11T08:41Z"
+      }
     },
     "§chat.profiles/delivery": {
       "kind": "behavior",
@@ -10578,13 +10594,16 @@
         "server/session-profile.ts",
         "server/sessions-index.ts",
         "server/session-profiles.test.ts",
-        "profiles/reviewer.json",
         "shared/protocol.ts",
         "src/lib/summary-diff.test.ts",
         "server/harness/state-kinds.ts",
         "docs/profiles.md"
       ],
-      "requires": []
+      "requires": [],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-11T08:41Z"
+      }
     },
     "§chat.profiles/picker": {
       "kind": "behavior",
@@ -10607,7 +10626,11 @@
       "requires": [
         "§chat.profiles/model",
         "§chat.transcript/setup-card"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-11T08:41Z"
+      }
     },
     "§chat.profiles/session-tools": {
       "kind": "behavior",
@@ -10638,12 +10661,17 @@
         "server/chat-manager.ts",
         "server/index.ts",
         "server/app.ts",
-        "server/overseer-tools.ts"
+        "server/overseer-tools.ts",
+        "src/components/ProfileGrid.tsx"
       ],
       "requires": [
         "§chat.profiles/model",
         "§chat.profiles/applying"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-11T08:41Z"
+      }
     },
     "§chat/profiles": {
       "kind": "surface",
@@ -10781,7 +10809,6 @@
         "server/project-root.ts",
         "server/profile-sources.ts",
         "shared/profiles.ts",
-        "profiles/reviewer.json",
         "docs/profiles.md",
         "server/profiles-store.ts",
         "server/playbooks.ts",
@@ -10791,7 +10818,11 @@
       ],
       "requires": [
         "§chat.profiles/model"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-11T08:41Z"
+      }
     },
     "§chat.profiles/trust": {
       "kind": "behavior",

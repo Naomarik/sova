@@ -1,8 +1,6 @@
 import { createResource, createSignal, For, onMount, Show } from "solid-js";
 import { powersText, type ListedProfile, type ProfileProblem, type ProfileSource, type ProfilesListing } from "../../shared/profiles";
-import type { PlaybookCatalog } from "../../shared/protocol";
-import { linkedPlaybook } from "../../shared/playbooks";
-import { approveProfile, fetchPlaybooks, fetchProfiles, setProfileHidden } from "../lib/api";
+import { approveProfile, fetchProfiles, setProfileHidden } from "../lib/api";
 import { tildePath } from "../lib/format";
 import { isMySettings, profileIconName, profileSummary } from "../lib/profiles";
 import { home, toast } from "../lib/ui-state";
@@ -20,7 +18,6 @@ const SOURCE_BADGE: Record<ProfileSource, string> = { sova: "Built in", project:
  */
 export function ProfilesSettingsSection(props: { cwd: string | null }) {
   const [listing, { refetch, mutate }] = createResource(() => fetchProfiles(props.cwd));
-  const [playbooks] = createResource(() => fetchPlaybooks(props.cwd).catch(() => undefined as PlaybookCatalog | undefined));
   const [busy, setBusy] = createSignal<string | null>(null);
   onMount(() => void refetch());
   const path = (p: string) => tildePath(p, home());
@@ -46,11 +43,6 @@ export function ProfilesSettingsSection(props: { cwd: string | null }) {
   const Row = (rp: { p: ListedProfile }) => {
     const p = rp.p;
     const hidden = () => listing()?.hidden.includes(p.key) ?? false;
-    const runs = () => {
-      if (!p.playbook) return null;
-      const pb = linkedPlaybook(playbooks()?.playbooks ?? [], p.playbook, p.source);
-      return pb ? `Runs ${pb.title}` : `Runs "${p.playbook}", not found here`;
-    };
     return (
       <li class="profiles-row">
         <Icon name={profileIconName(p.icon)} small />
@@ -65,7 +57,6 @@ export function ProfilesSettingsSection(props: { cwd: string | null }) {
             </Show>
           </span>
           <span class="profile-muted">{profileSummary(p)}</span>
-          <Show when={runs()}>{(r) => <span class="profile-muted">{r()}</span>}</Show>
           <Show when={p.file}>{(f) => <span class="profile-muted text-mono profiles-row-file">{path(f())}</span>}</Show>
           <Show when={p.approval === "needed"}>
             <span class="profiles-row-ask">It asks to {powersText(p)}. Approve it before a session can use it.</span>

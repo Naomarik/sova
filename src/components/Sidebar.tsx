@@ -1,4 +1,5 @@
 import { ProfileShelf } from "./ProfileShelf";
+import { AutomationsShelf } from "./AutomationsShelf";
 import type { ArchiveMutation } from "../lib/optimistic-archive";
 import { profileIconName } from "../lib/profiles";
 import { builtOnceOpen } from "../lib/built-once";
@@ -2722,6 +2723,9 @@ export function Sidebar(props: {
             searching={!!query().trim()}
             row={(s) => <SessionRow session={s} selected={props.selected} now={props.now} targets={targets()} />}
           />
+
+          {/* Automations, under Profiles (§app.session-list/automations): the sessions Sova's schedules run, a shortcut. */}
+          <AutomationsShelf sessions={all()} searching={!!query().trim()} row={(s) => <SessionRow session={s} selected={props.selected} now={props.now} targets={targets()} />} />
 
           {/* Hidden when a search empties it            </details>
           </Show>

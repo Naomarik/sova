@@ -963,6 +963,8 @@ export interface PlaybookSchedule {
   pin?: string;
   /** The next time fire, ISO (active only). */
   next?: string;
+  /** An automation file's id (§chat.schedules/automation-file): approve with `{cwd, automation, pin}`. */
+  automation?: string;
 }
 
 /** One fire of a schedule, as the permits panel lists it. */
@@ -982,6 +984,9 @@ export interface ScheduleInfo extends PlaybookSchedule {
   playbook: string;
   title: string;
   fires: ScheduleFire[];
+  /** Its sessions for the Automations group (§app.session-list/automations), newest first: an
+      automation's own session, then the sessions its fires started or woke. */
+  sessions?: string[];
 }
 
 /** GET /api/playbooks?cwd=<project cwd>  (cwd optional) */

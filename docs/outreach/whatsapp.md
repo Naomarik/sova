@@ -264,7 +264,7 @@ from**; **Check Again** reads the list again. A file from an earlier version kee
 `sender` is the default.
 
 **Each organization's number.** An organization's page has a **WhatsApp Number** card on its
-Workspace tab: **Default**, or one of the numbers above. Every message to that organization's people
+Settings tab: **Default**, or one of the numbers above. Every message to that organization's people
 goes from that number only. When that number is down, paused or at its limit, a message is refused
 (or an overseer's held message waits, at most 24 hours) — it never goes from another number, so a
 second number is never a way around the limits. A person's page says which number reached them

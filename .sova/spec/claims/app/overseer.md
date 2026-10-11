@@ -67,12 +67,20 @@ are atomic tmp+rename.
   either reaches the model as `[redacted]`. The ideas backlog's table of contents rides in it too
   (§app.overseer/ideas), never an idea's text, and so do the todos' open and done counts
   (§app.overseer/todos), never a todo's text.
-- **Live.** The notes, the limits, the ideas table of contents, the todos counts and the extra system prompt are read again at the start of every
-  run, so a `sova_note`, a `sova_idea`, a `sova_todo`, a notes, idea or todo edit or a Settings save reaches the Overseer from its next run (the
-  next message, brief or wake-up), with no `/clear`. A run an extension's message starts (an
-  `/explain` result, a worker's report) picks them up from its next request. The rest of the prompt
-  (the prompt file, the tool list, the time it opened) is fixed for the runtime, so an unchanged
-  prompt adds nothing to the conversation and a change adds one prompt update.
+- **Fixed at opening, live through the run note.** The prompt is rendered with the values as they
+  were when the conversation opened (the time it opened, the notes, the limits, the ideas table of
+  contents, the todos counts and the extra system prompt) and stays byte for byte the same for the
+  whole conversation, across runs, runtimes and server restarts, so the provider's cache holds and a
+  Claude Code chat never restarts for it. The opening values are kept in the first run note's
+  details on the branch. The notes, the limits, the ideas table of contents, the todos counts and the
+  extra system prompt are still read again at the start of every run: when one differs from what the
+  Overseer was last told (the prompt's opening text, or the newest run note since the last compaction
+  that gave it), the run note (§app.overseer/run-note) gives its whole current text, which replaces
+  the prompt's, so a `sova_note`, a `sova_idea`, a `sova_todo`, a notes, idea or todo edit or a
+  Settings save reaches the Overseer from its next run (the next message, brief or wake-up), with no
+  `/clear`. A run an extension's message starts (an `/explain` result, a worker's report) has no run
+  note and gets them at the next run that has one. The prompt file and the tool list are read when
+  the runtime opens; a change to either (a Sova update) changes the prompt once.
 - **Tools.** The session runs with an allowlist: every `sova_*` tool, `read`, `grep`, `find`,
   `ls` and `wake_nudge`. It never has `bash`, `edit`, `write` or subagent tools: the only
   subagents it can start are ideas' explorers, through `sova_idea` (§app.overseer/explorer).
@@ -576,6 +584,14 @@ who the run belongs to (§app.overseer/tools).
   prompt's time is when the conversation opened and that elapsed time is read from this and from
   tool ages. The system prompt itself stays as it was opened (§app.overseer/hosting), so its cache
   holds.
+- **What changed since the prompt.** Next, under `[changed]`, each of the standing notes, the
+  limits, the ideas table of contents, the todos counts and the user's extra instructions whose
+  current text differs from what the Overseer was last told, with its whole current text (redacted
+  as in the prompt) and a line saying it replaces that part of the system prompt; one that became
+  empty says so. A part is told once per change: the note's details record a fingerprint of each
+  part as told, and a later note repeats a part only when it changed again, or when a compaction
+  came after the note that told it. The first run note of a conversation records the opening values
+  the prompt is rendered from.
 - **Cleared since briefed.** Each blocker a brief (§app.overseer/proactivity) on the branch named in
   the last 24 hours that is not a Needs-you item now is listed as cleared, with the session as a
   link, the blocker's kind, why, and when it was briefed. Why is the first that holds: the session is
@@ -1092,12 +1108,28 @@ host's session files. The reply is never changed, and the client still links eve
 - **One button, Quick Actions,** sits at the right end of the Overseer's composer foot, in the
   slot the mode switch holds in every other chat (the Overseer has none, §app.overseer/hosting).
   It opens a flyout listing the quick actions, each with its label and a short description.
-  Picking one sends its prompt (queued as a follow-up while a turn runs).
+  Picking one sends its prompt (queued as a follow-up while a turn runs). The Overseer's memory
+  switch sits just before it (§app.overseer/memory-switch).
 - While the composer is disabled the button still opens, and each quick action carries the
   disabled reason instead of running.
 - Defaults: **What Needs Me**, **What Finished**, **What's Running**, **Tidy Up**, **Where Was I**.
 - They are editable in Settings → Overseer (label, description, prompt; add, remove, reorder,
   reset to defaults).
+
+## §app.overseer/memory-switch — The Overseer's memory switch
+
+The Overseer has no mode menu, so its memory (§chat.memory/overseer) has its own control: a ghost
+button in its composer foot, before Quick Actions, reading "memory" with a check while it is on
+and a clock while it is off (named "Overseer memory: on" or "…: off"). It opens a popover with the
+same rows as the mode menu's Memory type panel (§chat.mode-menu/memory-panel): first a `memory`
+checkbox row like the mode menu's (its description the chosen type's, its detail line the type's
+while on), then the types, UniiChat's "Read the design ↗", and Summary size. The switch is read
+once for its label and again at each opening; a failed read shows "Couldn't read the Overseer's
+memory." Each pick writes `PUT /api/overseer/memory` at once and keeps the popover open (a pick of
+the current type or size writes nothing); the foot line reads "From the Overseer's next turn. Its
+coding sessions never get memory." A refused write shows "Couldn't change the Overseer's memory."
+with the reason, and its memory is unchanged. Its run-status row shows memory's status
+like any chat's (§chat.composer/memory-status).
 
 ## §app.overseer/head-layout — The head at every width
 
@@ -1246,8 +1278,8 @@ extension's limit of 30 fires without input restarts only on a person's input.
 `overseer-notes.md` holds standing instructions that survive `/clear`. The `sova_note` tool
 appends to it or replaces it, and it is editable in Settings → Overseer. `sova_note` stores a
 secret value as `[redacted]` (§app.overseer/tools); a user's own edit is stored as typed, and reaches
-the prompt redacted. Its text is included in the Overseer's prompt (capped), read again at the start of every run, so an edit applies from the next
-run (§app.overseer/hosting). No Settings save deletes a note `sova_note` wrote: a save leaves the file
+the prompt redacted. Its text as the conversation opened is in the Overseer's prompt (capped); it is read again at the start of every run, so an
+edit applies from the next run, given whole in that run's hidden note (§app.overseer/hosting, §app.overseer/run-note). No Settings save deletes a note `sova_note` wrote: a save leaves the file
 alone unless the user edited the notes; a note the Overseer appended meanwhile is kept after the
 user's edit; and if the Overseer rewrote them meanwhile the save refuses and says so. `PUT
 /api/overseer/notes` takes an optional `base` (the text the edit started from) and answers 409 with

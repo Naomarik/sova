@@ -8,7 +8,6 @@ import { parseDelegate } from "../../pi-config/extensions/mode/delegate.ts";
 import { parseSpec } from "../../pi-config/extensions/mode/spec.ts";
 import { ALIGN_SETTINGS_FILE, parseAlignSettingsText } from "../../pi-config/extensions/mode/align-settings.ts";
 import { parseProviderLimits } from "../../pi-config/extensions/provider-limits/gate.ts";
-import { parseUsageWindows, USAGE_WINDOWS_FILE } from "../../pi-config/extensions/usage-status/windows.ts";
 import { parseSubagentProfiles } from "../../pi-config/extensions/subagents/subagent-profiles.ts";
 import { parseProfilesFile } from "../profiles-store";
 import { clockSkewed } from "./logins-merge";
@@ -160,9 +159,6 @@ export function settingsDocs(agentDir: string, stateDir: string): DocSpec[] {
         return o !== null && parseProviderLimits(o).ok;
       },
     },
-    // Ollama Cloud's declared reset day: its key travels with the logins, so every device reads
-    // the same subscription (§app.insights/usage-reset-day).
-    { key: `settings:${USAGE_WINDOWS_FILE}`, category: "settings", path: join(agentDir, USAGE_WINDOWS_FILE), valid: (t) => parseUsageWindows(t).ok },
     { key: "settings:mode.json", category: "settings", path: join(agentDir, "mode.json"), valid: (t) => jsonObject(t) !== null },
     { key: "settings:subagent-profiles.json", category: "settings", path: join(agentDir, "subagent-profiles.json"), valid: (t) => parseSubagentProfiles(t).ok },
     {

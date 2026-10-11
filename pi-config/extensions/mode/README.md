@@ -109,8 +109,11 @@ full post-switch snapshot, which is what makes the state per session (see
 Minor modes are extra instructions toggled independently of the major mode:
 zero or more can be active at once, in normal or delegate. Their blocks
 are appended after the delegate block (when in delegate) in registry order
-(`align`, then `spec`). Only `align` adds a bridge sentence to the delegate
-block; `spec` composes with either major mode and with `align` unchanged, and
+(`align`, then `spec`). Only `align` adds a bridge paragraph to the delegate
+block (the planning worker hand-off, said only there; with Visuals it also
+quotes the file schema with `visual` and a drawing paragraph to copy into the
+worker's prompt, naming the vis guide's directory, since a worker has no
+`vis_guide`); `spec` composes with either major mode and with `align` unchanged, and
 carries one paragraph of its own when a spec writer is set (see **Spec
 writer**).
 
@@ -246,6 +249,15 @@ writer**).
   chat alike, a Claude Code one included. Never reaches workers. With
   spec on, a census or guard note for a call a script made is repeated on the
   script's own result, the one the model reads.
+- **memory** — Sova's endless chat (its engine is Sova's, `server/memory/`):
+  the model works from summaries of the whole chat and opens any part with
+  `zoom`/`date`. Web-only (`MINOR_SURFACES` in `minor.ts`): the extension takes
+  `/mode memory on` only while Sova's server applies a switch for that very
+  session, through the `sova:web-minor` hook (`WEB_MINOR_HOOK`,
+  `webMinorRefusal`); typed by hand, from `--minor`, a profile, the palette or
+  a shortcut it is refused or not offered, and workers never get it. Turning
+  it off always works. Like codemode it has no prompt block and no mode note
+  (`MINOR_PROMPTLESS`): its guide rides the view message Sova sends.
 
 Like the major mode, the prompt is read per turn, so toggles apply from the
 next prompt. The active triple (`mode`, `strict`, `minorModes`) is published
@@ -277,7 +289,9 @@ op, each with exactly its fields, the required ones required: `create` (inline),
 `import` (`path`: a JSON file a planning worker wrote at an absolute path
 outside the repository, validated strictly; only a regular file up to 256 KB,
 and refused in a remote session, whose files live on the target: create inline
-there; the file takes `technical`, never `visual`), `add`, `edit` (a finding's,
+there; the file takes `technical`, and with Visuals the document's and each
+question's `visual`; with Visuals, a create or import that leaves the new
+alignment without a visual adds one line to its answer saying so), `add`, `edit` (a finding's,
 step's or technical note's `text`), `edit_question` (with Visuals, `visual`,
 `null` removing it), `edit_rejected`, `edit_doc` (title, summary; with Visuals,
 `visual`), `remove`, `decide`, `accept`
@@ -585,7 +599,9 @@ the align mode's writing style and Visuals; Sova's Settings → Alignment writes
 - `visuals` is read once, at session start: the `align-visuals` flag (`on` |
   `off`, which Sova passes from each chat's launch record) wins; without it the
   file is read. With align on it adds `ALIGN_VISUALS_PARAGRAPH` after the block
-  (and the style's), the `visual` fields to the align tool's schema, and the vis
+  (and the style's), the `visual` fields to the align tool's schema (the import
+  file's too), in Delegate the drawing half of the bridge
+  (`buildDelegateAlignBridge(true)`, `PLANNER_VISUALS_PARAGRAPH`), and the vis
   tools to the loadout even with vis off (`visToolsWanted`, the one rule Sova's
   `vis_check` follows too).
 - A subagent profile's optional `alignment` (`{style?, visuals?}`) overrides the

@@ -35,6 +35,7 @@ import { listGeneration } from "./list-generation";
 import { projectOverseerOfPath } from "./project-overseer-store";
 import { projectCodingIds, projectKeeps, projectSessionLookup } from "./project-sessions";
 import { reservedRoots } from "./projects/contributions";
+import { removeMemory } from "./memory/store";
 
 /**
  * What another layer adds to the list (organizations: a baton session's `baton`, an org session's `org`), and
@@ -999,6 +1000,8 @@ export function onSessionArchived(fn: (sessionId: string) => void): () => void {
   return () => archivedListeners.delete(fn);
 }
 function sessionArchived(id: string): void {
+  // Archiving or deleting a chat removes its memory (§chat.memory/log); turning it on again prepares anew.
+  removeMemory(id);
   for (const fn of archivedListeners) {
     try {
       fn(id);

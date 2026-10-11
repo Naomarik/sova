@@ -17,7 +17,7 @@ The Overseer is always in the normal mode, with no minor modes, so its composer 
 
 ## What it reads
 
-- **What needs you.** The same news as the sidebar's [Needs you](/docs/needs-you/) list, plus the items worth a decision (a branch ready to merge, a reply that seems to ask you something) and what's just for your information (what's running, a session close to its context limit).
+- **What needs you.** The same news as the sidebar's [Needs you](/docs/needs-you/) list, plus the items worth a decision (a branch ready to merge, a reply that seems to ask you something) and what's just for your information (what's running, a session close to its context limit). In Sova's own repository the [Merge round](/docs/playbooks-and-schedules/#example-the-merge-round) picks up branches ready to merge by itself, asking each branch's owner first.
 - **Sessions.** The list, one session's details and what's true of it now, its alignments, and a bounded slice of its transcript. Text it reads from another session is treated as untrusted.
 - **Your setup.** Groups, remote targets, models, subagent profiles, and recent folders.
 

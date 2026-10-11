@@ -11,8 +11,9 @@ Overseer's Quick Actions in this slot (§app.overseer/quick-actions).
 
 pi's mode extension (`pi-config/extensions/mode`) has one **major mode**, `normal` or
 `delegate`, and any set of **minor modes** (today `align`, `spec`, `vis`, which teaches the inline
-visuals of §chat.markdown/visuals, and `codemode`, §chat.mode-menu/codemode). Every chat with the
-extension offers all of them, in that order. What Delegate routes where is
+visuals of §chat.markdown/visuals, `codemode`, §chat.mode-menu/codemode, and `memory`, §chat/memory).
+Every chat with the extension offers all of them, in that order, except that only Sova's own mode menu
+turns `memory` on (§chat.memory/where). What Delegate routes where is
 Settings → Subagents (§app/settings-dialog), through this chat's subagent profile
 (§chat/subagent-profiles). The menu always offers its Subagents picker, in either major mode.
 
@@ -153,9 +154,13 @@ popover (§chat.subagent-profiles/menu), with Off first and the current profile 
   `strict: off|on` — the one flag the menu does not switch — then "A switch here is this chat's
   own. New sessions start from the default."
 
-- **Choosing.** Picking a major mode closes the menu and returns focus to the trigger, like the
-  terminal palette. Toggling a minor mode keeps the menu open, so you can set several. While the
-  switch is saving, the rows are `aria-disabled`.
+- **Choosing.** Picking a major mode switches this chat and keeps the menu open: the check moves
+  and focus stays on the picked row. Picking the mode already checked does nothing. Toggling a
+  minor mode keeps the menu open too, with focus on the toggled row, so you can set several. Once
+  a pick or toggle settles, saved or failed, focus is on that row even if the rows re-rendered. While the switch is saving, the rows
+  are `aria-disabled`. A switch that fails shows its error banner in place, in the open menu, and
+  the mode is unchanged. The menu closes on Configure Delegate or the spec gear, an outside click,
+  `Esc`, or `Tab` out of it.
 - **Configure Delegate** is an icon-only gear at the right end of Delegate's row: a real
   `button` with `role="menuitem"`, a sibling of the `menuitemradio` (never nested in it) inside a
   `role="none"` wrapper, with a `--tap-min` target. It comes right after Delegate in the same
@@ -263,7 +268,7 @@ on the first turn, on later turns, or after the chat is reopened.
 
 ## §chat.mode-menu/minor-toggle-keeps-prompt — A minor toggle keeps the cached prompt
 
-Turning a minor mode (`align`, `spec`, `vis`, `codemode`) on or off mid-session never rewrites the
+Turning a minor mode (`align`, `spec`, `vis`, `codemode`, `memory`) on or off mid-session never rewrites the
 prompt the model already has, on any provider; the one exception is align while in Delegate, whose
 bridge paragraph in the Delegate block follows the active align. The `<mode>` section's minor blocks stay those of the **head**:
 the minor modes the first run after the session's start, or after its last compaction, was built
@@ -309,6 +314,10 @@ once, as their net change.
   active then, sends no note for them, and drops from its requests any older note the compaction
   kept in its recent tail, so no guide reaches the model twice.
 
+`memory` has no block and no note either: its guide rides its own view message, and what its switch
+changes is the history every request sends from the next turn on (§chat.memory/turn), plus its `zoom`
+and `date` tools.
+
 Not covered: `align`, `vis` and `codemode` also add or remove their tools, and a tool-set change
 breaks the cached prefix on every provider and restarts the claude-code CLI, note or not. A
 major-mode switch still changes the section, as before.
@@ -330,7 +339,9 @@ whether it reaches workers** (`MINOR_WORKER` in `pi-config/extensions/mode/minor
 over every minor mode, so a new one cannot be added without deciding): `spec` does; `align`
 does not (aligning is a conversation with the user, which a worker doesn't have), nor does `vis`
 (its visuals are for the user, and a worker's replies are read by its parent session), nor does
-`codemode` (it changes the chat's own tool set, and a worker's tools are its brief's).
+`codemode` (it changes the chat's own tool set, and a worker's tools are its brief's), nor does `memory`
+(it is the chat's own memory of its conversation; a worker starts fresh from its brief, and its report
+enters the parent's memory like any other message).
 
 - **What a worker gets.** While the parent chat has spec on, every worker it starts — pi or
   Claude Code, plain, remote, sandboxed, hosted, or a team member — gets the spec block
@@ -400,6 +411,35 @@ chat's other tools, several at once, and filters their output before the model r
 - **With spec on**, a `[spec census]` or spec-guard note about a call the script made is repeated on
   the script's own result, the one the model reads (§tools.spec/census-note).
 
+## §chat.mode-menu/memory-panel — The memory row and its Memory type panel
+
+The `memory` row is in a chat's minor modes only while that chat's `mode` message carries `memory`
+(its choice of type and size, which a chat whose runtime can run memory sends, §chat.memory/where);
+a chat whose message has none lists the other minor modes and no memory row. It is the last minor
+row, after `codemode`, a checkbox like the others: clicking it turns memory on or off and keeps the
+menu open. Its description is the chosen type's row description and, while memory is on, its detail
+line names the type ("UniiChat — by Victor Taelin", "Zoomable compaction — Sova").
+
+- **The panel.** A chevron button at the row's right end (a `menuitem` beside the checkbox, never
+  inside it, named "Memory type", with a 44px target, next in the roving focus) swaps the menu for
+  the **Memory type** panel in the same popover, the Subagents picker's pattern: a Back header
+  titled "Memory type", then, under a **Type** label, one `menuitemradio` row per type — its name, its author ("by Victor
+  Taelin", "Sova") and its one-line description, the chat's type checked — with UniiChat's "Read the
+  design ↗" under it, a link (a sibling of the row, opening Taelin's write-up in a new tab).
+- **Size.** Under the types, **Summary size**: one `menuitemradio` row per suggested size, the
+  chat's size checked and a size outside the list shown as its own checked row. For UniiChat a size
+  reads as the range the view keeps, "64–128 KB" for 128 (it grows to the size and merges to half
+  of it); for zoomable compaction as the size the compacted lines get, "32 KB". The type's own
+  default size says "default".
+- **Picking** a type or a size posts `{ memory: { type } }` or `{ memory: { size } }` for this chat
+  (§chat.memory/choice) and keeps the panel open; the check moves when the chat's `mode` message
+  says so. The foot line reads "This chat only. Kept while memory is off." While a pick is saving
+  the rows are `aria-disabled`; a refused pick shows "Couldn't change memory." with the reason, and
+  the choice is unchanged.
+- **Save as default** saves the chat's type and size with its modes (§chat.memory/choice), and
+  reads "Already the default" only while they also match the saved default (`GET /api/mode`'s
+  `memory`).
+
 ## §chat.mode-menu/strict — strict: Delegate without edit and write
 
 `strict` is a per-session flag that, while the chat is in Delegate, takes the `edit` and `write`
@@ -430,11 +470,14 @@ shortcuts and launch flags. Sova's menu runs the same `/mode` handler
 
 - **Bare `/mode`** opens the command palette (`ctrl+p`) at its **Mode** category: `normal` and
   `delegate` (the current one checked; Enter switches and closes), one row per minor mode with its
-  description and an on/off marker (Enter toggles it and the palette stays open), **align: open
+  description and an on/off marker (Enter toggles it and the palette stays open; `memory`, which only
+Sova's menu turns on, has no row), **align: open
   viewer**, and **save as default** last. Without a palette to open (outside the TUI, or the palette
   extension not loaded) it shows the status and the usage line instead; it never toggles anything.
 - **`/mode normal`**, **`/mode delegate`** switch the major mode. **`/mode <minor>`** toggles that
   minor mode and **`/mode <minor> on|off`** sets it; `/align on|off` does the same for align.
+  `/mode memory on` is refused with "memory is turned on from a Sova chat's mode menu"
+  (§chat.memory/where); `/mode memory off` works.
 - **`/mode status`** lists this session's mode, the default for new sessions, its subagent profile
   and where that came from, the Delegate routing, the spec writer, strict, the minor modes, the
   toggle shortcut, the alignments and the state file.
@@ -448,7 +491,8 @@ shortcuts and launch flags. Sova's menu runs the same `/mode` handler
   (`viewerShortcut`) opens the alignments viewer.
 - **Launch flags.** `pi --major delegate` and `pi --minor align,spec` (`none` for no minor modes)
   start a new session in that mode on top of the default and are written nowhere; a session's own
-  saved mode wins over them, and an unknown minor name is warned about.
+  saved mode wins over them, and an unknown minor name is warned about, as is `memory` (dropped: web only).
+  `minorShortcuts` binds no key to `memory`.
 - **The status line** in the TUI's footer reads the mode, then in Delegate `fallback:<profiles>`,
   `ask:<profiles>` and `strict`, then each minor mode on, then `writer:fallback` or `writer:ask`
   while spec's writer is off its primary route: dim in normal with no minor mode, accent otherwise,
@@ -471,6 +515,7 @@ What the trigger and the menu show in each state, from a mode not known yet to a
 | Default save failed | Error banner "Couldn't save the default." with the reason. The mode is unchanged |
 | Already the default | `Already the default` with the check, `aria-disabled` |
 | Load failed | Error banner "Couldn't load the modes." |
+| Memory type or size refused (§chat.mode-menu/memory-panel) | Error banner "Couldn't change memory." with the reason, in the panel. The choice is unchanged |
 
 ## §chat.mode-menu/tokens — Tokens
 

@@ -138,4 +138,7 @@ Your standing notes:
 
 {{TOOLS}}
 
-Now: {{NOW}}
+This conversation opened at {{NOW}}; the hidden `[now]` line on each run says the time now. This
+prompt keeps the project, level, limits, coding mode, ideas, notes, the organization's sections and
+the operator's extra instructions as they were then; when one changes, the next run's hidden
+`[changed]` part gives its new text, which replaces it here.

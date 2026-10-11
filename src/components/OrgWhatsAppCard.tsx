@@ -8,7 +8,7 @@ import { Banner } from "./ui";
 const LIVE_MS = 10_000;
 
 /**
- * An organization's WhatsApp Number card (§app.outreach/org-sender), on its page's Workspace tab: Default or one
+ * An organization's WhatsApp Number card (§app.outreach/org-sender), on its page's Settings tab: Default or one
  * of the numbers Settings → Outreach lists, saved at once. Host-local, so only an organization on this host shows
  * the select; one on another host points at its own host's page.
  */

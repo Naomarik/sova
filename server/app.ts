@@ -34,7 +34,7 @@ import { mountPublicLinks } from "./public-links-routes";
 import { mountShareGateway } from "./share/gateway-routes";
 import { mountOutreachRelay } from "./outreach/relay";
 import { mountOutreach } from "./outreach/routes";
-import { getModelRuntime, heldChat, ModeRefusedError } from "./chat-manager";
+import { getModelRuntime, heldChat, heldChats, ModeRefusedError } from "./chat-manager";
 import { canonicalPath, resolveSessionPath, SESSIONS_DIR } from "./paths";
 import { agentRoot, stateRoot } from "./state-root";
 import { runtimeInfo } from "./runtime-choice";
@@ -45,7 +45,7 @@ import { addWebSession } from "./web-sessions";
 import { draftForClient, setDraft } from "./drafts";
 import { worktreeInsights } from "./worktrees";
 import { DiffError, gitDiffs, scopeFromQuery } from "./git-diff";
-import { getAgentsInsight, getHiddenWorkers, getSessionInsight, setInsightLinks, getUsageHistory, getUsageInsight, getUsageStrip, refreshUsageInsight, setUsageResetDay } from "./insights";
+import { getAgentsInsight, getHiddenWorkers, getSessionInsight, setInsightLinks, getUsageHistory, getUsageInsight, getUsageStrip, refreshUsageInsight } from "./insights";
 import { registerUsageRoutes } from "./usage-routes";
 import { archiveSession, cleanupSessions, getSessionSummary, idOf, listCwds, listSessionFiles, listSessions, onSessionArchived } from "./sessions-index";
 import { cleanSessionTitle, readSessionTitleRecords, SESSION_TITLE_MAX, setSessionTitle } from "./session-titles";
@@ -90,6 +90,8 @@ import { parseSessionTitleSettings, readSessionTitleSettings, sessionTitleSettin
 import type { LlmRuntime } from "./decide-llm";
 import { claudeLoginEnv, registerClaudeAccountRoutes } from "./claude-accounts";
 import { modeInfo, parseModeRequest, readMode } from "./mode-state";
+import { defaultMemoryChoice } from "./memory/settings";
+import { registerMemoryRoutes } from "./memory/routes";
 import { parseSandboxBody } from "./sandbox-state";
 import { WORKER_ID_RE } from "./worker-resume";
 import { meshApi, meshRoutes } from "./mesh";
@@ -901,6 +903,15 @@ export function buildApp(deps: AppDeps) {
   // Sova's UI no longer PUTs it (Settings → Subagents edits it per profile); it seeds the profile
   // library and is its fallback. The file is the mode extension's; every session with spec on re-reads it at its next turn boundary, in either
   // major mode. Discovery and the save check are Delegate's.
+  // The memory minor mode (§chat/memory): the Session pane's outline, Settings → Memory, the Overseer's switch.
+  registerMemoryRoutes(app, {
+    resolvePath: (raw) => (raw === undefined ? null : resolveSessionPath(raw)),
+    held: (path) => heldChat(path),
+    overseer: () => heldChats().find((c) => c.overseer),
+    readBranch,
+    sources: delegateSources,
+  });
+
   app.get("/api/settings/spec", (c) => c.json(specInfo()));
   app.get("/api/settings/spec/options", async (c) => c.json(await specOptions(delegateSources)));
   app.put("/api/settings/spec", async (c) => {
@@ -998,7 +1009,7 @@ export function buildApp(deps: AppDeps) {
   // The mode is per session. ~/.pi/agent/mode.json is the default new sessions
   // start from; GET reads it, POST without ?path= writes it and changes no open chat. A switch never writes
   // it (chat-manager switchMode): the default moves when a caller asks for exactly that.
-  app.get("/api/mode", (c) => c.json(modeInfo(readMode())));
+  app.get("/api/mode", (c) => c.json(modeInfo(readMode(), defaultMemoryChoice())));
 
   // With ?path=<session .jsonl>: switch that one held chat, from its next message (server/chat-manager
   // applyMode), or with { saveDefault: true } make that chat's own mode the default, switching nothing
@@ -1198,22 +1209,6 @@ export function buildApp(deps: AppDeps) {
       return c.json(await refreshUsageInsight());
     } catch (err) {
       return c.json({ error: (err as Error).message || "usage refresh failed" }, 502);
-    }
-  });
-
-  // Ollama Cloud's declared reset day (usage-windows.json); answers with the whole usage payload.
-  app.put("/api/insights/usage/reset-day", async (c) => {
-    let body: unknown;
-    try {
-      body = await c.req.json();
-    } catch {
-      return c.json({ error: "Invalid JSON" }, 400);
-    }
-    try {
-      const out = await setUsageResetDay(body);
-      return "error" in out ? c.json(out, 400) : c.json(out);
-    } catch (err) {
-      return c.json({ error: (err as Error).message || "couldn't save the reset day" }, 500);
     }
   });
 

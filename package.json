@@ -23,6 +23,7 @@
     "dev:hermetic:node": "SOVA_RUNTIME=node pnpm run dev:hermetic",
     "prices:update": "tsx scripts/prices-update.mjs",
     "claude:catalog": "node scripts/claude-catalog.mjs",
+    "claude:cache-check": "node --import tsx scripts/claude-cache-check.ts",
     "voice:install": "tsx scripts/voice.ts",
     "statecharts": "tsx scripts/statecharts.ts",
     "statecharts:watch": "node scripts/statecharts-watch.mjs",

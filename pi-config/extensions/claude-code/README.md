@@ -22,7 +22,7 @@ directly, never a shell alias. No credentials are copied into configuration.
 
 Use `agent_models` with `backend: "claude-code"`. The models are Sova's own Claude catalog
 (`catalog.ts`): one entry per real model, by the CLI's catalog id (`claude-opus-5-5`,
-`claude-sonnet-5-5`, `claude-fable-5-1`, `claude-haiku-4-5`) and name ("Opus 5.5"), with its
+`claude-sonnet-5-5`, `claude-fable-5-1`, `claude-haiku-5-5`) and name ("Opus 5.5"), with its
 window, output cap and efforts. No aliases and no `[1m]` forms: an old id typed into `agent_spawn`
 or `team_create` (`opus[1m]`, `claude-opus-5-5[1m]`) quietly runs as its catalog id, and an id the
 catalog doesn't know still runs, with a note. Every `--model` is a catalog id; an old id from a file (`opus[1m]`) is read through the
@@ -403,8 +403,8 @@ carried none; never the cumulative `total_cost_usd`). Esc / abort sends the CLI 
 effort, system-prompt or tool-set change between turns restarts the CLI process
 (`set_model` is probe-verified but v1 restarts for everything, see
 `provider/DESIGN-bridge.md`). Thinking levels map onto the CLI's effort ladder
-(`low`/`medium`/`high`/`xhigh`/`max`); `haiku` reports no efforts, so it has
-no thinking levels. The child gets `MCP_TOOL_TIMEOUT=86400000` so a held call
+(`low`/`medium`/`high`/`xhigh`/`max`); Haiku 4.5 (and the old `haiku` alias, which
+meant it) reports no efforts, so it has no thinking levels. The child gets `MCP_TOOL_TIMEOUT=86400000` so a held call
 outlives any pi tool (the CLI's own default is ~27.8 h; a stray value in the
 user's shell would otherwise truncate long tools with a synthetic timeout
 result), and `DISABLE_AUTO_COMPACT=1`, because pi owns compaction (below).
@@ -435,6 +435,26 @@ context window]`.
 
 A clean append sends every user message pi added since the last turn (steering
 and queued follow-ups), in order, joined into one stream-json user message.
+
+**A memory view** (Sova's memory minor mode, `provider/memory-view.ts`) is
+the one context sent as written, never folded: a first user message of two
+or three text blocks — the guide opening `# Memory`, the stable prefix
+`<chat>…</chat>`, and optionally the newest lines `<chat> (continued: the
+newest lines)…</chat>` — followed by the run's own messages. The guide and
+the prefix go at the end of the system prompt the CLI is given (`initialize`),
+past the CLI's own `__SYSTEM_PROMPT_DYNAMIC_BOUNDARY__` element
+(`SYSTEM_PROMPT_BOUNDARY`): on the first-party API, CLI 2.1.295 sends the
+prompt before it and the view after it as two system blocks, each under one of
+Claude Code's own one-hour cache marks (the agent line's mark moves to them),
+so a rebase re-writes the view's block and reads Sova's prompt from the cache;
+elsewhere it joins them into one block, as without it. Only the newest lines and the
+run's messages go in the child's first user message, and the bridge adds no
+cache mark of its own (the CLI already uses three or four of the four
+allowed). Sova saves the prefix with the chat and changes it only when the
+view rebases, so a new process starts from the same cached system prompt; a
+changed prefix is a changed system prompt and restarts the child. Within a
+run, the view stays the same for every request, and the tool loop appends as
+usual.
 
 ### Compaction
 

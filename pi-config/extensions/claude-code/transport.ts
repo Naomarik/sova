@@ -16,6 +16,7 @@ import * as path from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { claudeBaseEnv, type ClaudeAccountFailure } from "./accounts.ts";
 import { claudeCliId } from "./catalog.ts";
+import { FIXED_CLAUDE_ENV, fixedSettingsJson } from "./fixed-settings.ts";
 import type { ClaudeRequestObserver } from "../llm-inflight/claude.ts";
 
 // ---------------------------------------------------------------------------
@@ -253,11 +254,11 @@ export function simulatedFailureEvents(failure: ClaudeAccountFailure, userUuid?:
 /** Preserve configured CLI authentication/routing (including API keys), but do
  * not inherit Claude's nested-session markers from the host shell, nor a
  * CLAUDE_CONFIG_DIR that names an added login's directory (accounts.ts). `extra`
- * is applied last, so a caller's variable is what the CLI sees. */
+ * is applied over it, so a caller's variable is what the CLI sees; only FIXED_CLAUDE_ENV goes over `extra`. */
 export function claudeEnv(extra?: Record<string, string>): NodeJS.ProcessEnv {
 	const env = claudeBaseEnv(process.env);
 	delete env.CLAUDECODE; delete env.CLAUDE_CODE_ENTRYPOINT;
-	Object.assign(env, extra);
+	Object.assign(env, extra, FIXED_CLAUDE_ENV);
 	return env;
 }
 
@@ -405,17 +406,12 @@ export interface ClaudeArgvOptions {
 	forkSession?: boolean;
 	/**
 	 * `--settings` JSON (the sandbox extension's, while a session's sandbox is on). It must parse to an
-	 * object; buildClaudeArgv merges NO_ATTRIBUTION over it and passes the result as the one `--settings`.
+	 * object; buildClaudeArgv merges SOVA_FIXED_SETTINGS (no attribution, auto-memory off) over it and
+	 * passes the result as the one `--settings`.
 	 */
 	settingsJson?: string;
 }
-/**
- * Always sent: no "Co-Authored-By" commit trailer, no "Generated with Claude Code" PR footer.
- * `--setting-sources ""` keeps the user's own settings (and any attribution choice in them) out,
- * so this rides on `--settings`, which applies regardless. The CLI takes one `--settings` (a
- * repeat overwrites), so it is merged into the caller's JSON, and wins over it.
- */
-export const NO_ATTRIBUTION = { attribution: { commit: "", pr: "" } } as const;
+export { NO_ATTRIBUTION, NO_AUTO_MEMORY, SOVA_FIXED_SETTINGS } from "./fixed-settings.ts";
 export type ClaudeArgvResult =
 	| { args: string[]; mcpServers: [string, ClaudeMcpServerEntry][]; error?: undefined }
 	| { args?: undefined; mcpServers?: undefined; error: string };
@@ -451,7 +447,7 @@ export function buildClaudeArgv(o: ClaudeArgvOptions): ClaudeArgvResult {
 		if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return { error: "Invalid settingsJson: must be a JSON object" };
 		settings = parsed as Record<string, unknown>;
 	}
-	args.push("--settings", JSON.stringify({ ...settings, ...NO_ATTRIBUTION }));
+	args.push("--settings", fixedSettingsJson(settings));
 	// A catalog id, an old id read as the catalog model it means (§app.claude-code-provider/pinned-model).
 	if (o.model) args.push("--model", claudeCliId(o.model));
 	if (o.effort) args.push("--effort", o.effort);
@@ -469,11 +465,11 @@ export function buildClaudeArgv(o: ClaudeArgvOptions): ClaudeArgvResult {
 	}
 	return { args, mcpServers };
 }
-/** Initialize-only argv: no tools, no settings, no prompts. */
+/** Initialize-only argv: no tools, no user settings (the fixed ones only), no prompts. */
 export function buildDiscoveryArgv(): string[] {
 	return [
 		"-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
-		"--tools", "", "--setting-sources", "", "--strict-mcp-config",
+		"--tools", "", "--setting-sources", "", "--settings", fixedSettingsJson(), "--strict-mcp-config",
 		"--permission-mode", "dontAsk", "--permission-prompts", "none",
 	];
 }

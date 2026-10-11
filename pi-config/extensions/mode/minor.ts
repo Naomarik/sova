@@ -1,12 +1,13 @@
 /** Minor modes: independently toggleable prompt biases on top of the major mode. Node builtins only: unit-testable. */
 
 import { readdirSync, readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import type { AlignStyle } from "./align-settings.ts";
 
-export type MinorMode = "align" | "spec" | "vis" | "codemode";
+export type MinorMode = "align" | "spec" | "vis" | "codemode" | "memory";
 
 /** Registry order: the canonical order for state, status, and prompt composition. */
-export const MINOR_MODES: readonly MinorMode[] = ["align", "spec", "vis", "codemode"];
+export const MINOR_MODES: readonly MinorMode[] = ["align", "spec", "vis", "codemode", "memory"];
 
 export function isMinorMode(value: unknown): value is MinorMode {
 	return typeof value === "string" && (MINOR_MODES as readonly string[]).includes(value);
@@ -17,6 +18,7 @@ export const MINOR_DESCRIPTIONS: Record<MinorMode, string> = {
 	spec: "Scope work from the project's .sova/spec documentation, propose changes in drafts, and promote them once implemented",
 	vis: "Draw small inline visuals (vis fences: flow, sequence, tree, timeline, chart, …) when a picture explains faster than prose",
 	codemode: "Let the model run JavaScript that calls tools in parallel and filters their output (pi's codemode tool)",
+	memory: "Endless chat: the model works from a summary of the whole chat and opens any part of it word for word",
 };
 
 /** The tool the codemode minor mode puts in the loadout: pi's own `codemode` (builtin:codemode in the CLI). */
@@ -38,7 +40,58 @@ export const MINOR_WORKER: Record<MinorMode, boolean> = {
 	spec: true,
 	vis: false,
 	codemode: false,
+	memory: false,
 };
+
+/**
+ * Where each minor mode can be turned on (§chat.memory/where). `everywhere`: the terminal's /mode,
+ * palette, shortcuts and --minor, Sova's menu, the Overseer's coding sessions and session profiles.
+ * `web`: only Sova's own mode menu, for a mode whose engine runs inside Sova's server (memory): the
+ * extension takes `/mode <minor> on` only while the server is applying a switch for that very session
+ * (WEB_MINOR_HOOK), never typed by hand or from --minor, and lists no palette row or shortcut for it.
+ * Turning one off is never refused. A record over the union, like MINOR_WORKER.
+ */
+export const MINOR_SURFACES: Record<MinorMode, "everywhere" | "web"> = {
+	align: "everywhere",
+	spec: "everywhere",
+	vis: "everywhere",
+	codemode: "everywhere",
+	memory: "web",
+};
+
+/** The minor modes only Sova's menu turns on, in registry order. */
+export const WEB_ONLY_MINOR_MODES: readonly MinorMode[] = MINOR_MODES.filter((mode) => MINOR_SURFACES[mode] === "web");
+
+/**
+ * The server's hook (globalThis, Symbol.for): `(sessionId, minor) => boolean`, true only while Sova's server
+ * applies a switch that turns `minor` on in that session (server/memory/permit.ts). Unset (a terminal, a
+ * worker), nothing web-only can be turned on.
+ */
+export const WEB_MINOR_HOOK = Symbol.for("sova:web-minor");
+
+/** Why turning `minor` on is refused in `sessionId` here, or undefined when it may be. */
+export function webMinorRefusal(minor: MinorMode, sessionId: string | undefined): string | undefined {
+	if (MINOR_SURFACES[minor] !== "web") return undefined;
+	const hook = (globalThis as Record<symbol, unknown>)[WEB_MINOR_HOOK];
+	if (typeof hook === "function" && sessionId !== undefined) {
+		try {
+			if ((hook as (sessionId: string, minor: MinorMode) => unknown)(sessionId, minor) === true) return undefined;
+		} catch {
+			// A failing hook permits nothing.
+		}
+	}
+	return `${minor} is turned on from a Sova chat's mode menu`;
+}
+
+/**
+ * The minor modes of mode.json's default a session adopting it keeps: all of them inside Sova's server
+ * (WEB_MINOR_HOOK installed, so a web chat started from a default with memory gets it), else only the
+ * ones that run everywhere: a terminal would show a web-only mode that nothing runs.
+ */
+export function adoptableMinorModes(minors: readonly MinorMode[]): MinorMode[] {
+	if (typeof (globalThis as Record<symbol, unknown>)[WEB_MINOR_HOOK] === "function") return [...minors];
+	return minors.filter((minor) => MINOR_SURFACES[minor] !== "web");
+}
 
 /**
  * Minor modes with no prompt block and no mode note (§chat.mode-menu/codemode): the tool they put in the
@@ -49,6 +102,8 @@ export const MINOR_PROMPTLESS: Record<MinorMode, boolean> = {
 	spec: false,
 	vis: false,
 	codemode: true,
+	// Its guide rides its own view message (Sova's memory engine), never the mode section or a note.
+	memory: true,
 };
 
 /** The minor modes of `minorModes` that carry a prompt block, in their order. */
@@ -66,8 +121,8 @@ export const ALIGN_INSTRUCTIONS = `# Minor mode: align
 Before building anything non-trivial, align with the user on what to build, and record every alignment with the \`align\` tool. Do not edit files or spawn implementation workers until the user has confirmed a plan.
 
 On any prompt that implies work (a feature, an investigated fix, a refactor, a migration, new files, or any multi-step change), do this first:
-1. Investigate the codebase and context behind the ask. In delegate mode give this to a non-editing Planning & specs worker (investigation that feeds a design is planning, not the Investigation profile); otherwise investigate yourself. Find the real constraints, existing patterns, and affected surfaces.
-2. Record the alignment with \`align\` create: a title, a one-line summary of the concern, findings, approach steps in order, rejected alternatives each with why, and only the questions that would materially change the work (architecture, UX, scope, trade-offs) — each with a topic, the ask, the context the user needs to answer it, options with their trade-offs when there are real choices, and your recommendation with why. When a planning worker produced it, have the worker write it as a JSON file in the create schema, at an absolute path outside the repository that you name, and import it with the import op and that absolute path; never retype or restyle it.
+1. Investigate the codebase and context behind the ask (in delegate mode, through a planning worker as the delegate block says): the real constraints, existing patterns, and affected surfaces.
+2. Record the alignment with \`align\` create (or import, for a planning worker's file): a title, a one-line summary of the concern, findings, approach steps in order, rejected alternatives each with why, and only the questions that would materially change the work (architecture, UX, scope, trade-offs) — each with a topic, the ask, the context the user needs to answer it, options with their trade-offs when there are real choices, and your recommendation with why.
 3. Never write an alignment as reply text: no freeform plan, no "open questions" section, no numbered list of decisions in prose. The user reads the alignment card. Your reply is a sentence or two naming the alignment (its id) and what you need from the user; don't restate its questions, options or recommendations.
 4. Stop and wait. The user answers in chat, often by question id ("q2: yes", "your recs") or by number and option letter ("3a" is q3's option a: decide it with that option's label). Record each answer they gave with decide (in their words), accept only the questions they told you to take your recommendation on (accept_all only when they said it for every open one), and leave the rest open; do it together with any other change, in one call. Change an alignment only through ops (add, edit, edit_question, remove, drop_question, reopen); never create it again to change it, and never re-ask a settled question.
 5. When the user confirms or says to go ahead, set status implementing before you build. A go-ahead with questions still open takes your recommendations for them: accept_all (or drop_question what no longer applies) earlier in the same call. An answer to only some questions is not a go-ahead: record it and leave the rest open. Never set status implementing while a question is open. Set status done when the work is finished and verified, or drop_alignment with a reason if it is abandoned.
@@ -90,7 +145,13 @@ export const ALIGN_STYLE_PARAGRAPHS: Record<AlignStyle, string | undefined> = {
  * The paragraph after the align block (and the style's) while the session started with Visuals on
  * (§chat.alignment/visuals). Its words never depend on the style, so it never changes mid-session.
  */
-export const ALIGN_VISUALS_PARAGRAPH = `Visuals: you may draw on the alignment card. A question, or the alignment itself, can carry a visual {kind, source}: a vis drawing's kind and its source, exactly what a \`vis\` fence would hold, at most 3 per alignment. Add one only when it explains faster than words: a wireframe for a question about a screen; a flow, state or steps for a change in behaviour. Before the first visual of each kind, call vis_guide with that kind and use only the syntax it returns. In the Project manager writing style never use the code, tree or layers kinds. Visuals go in the align tool's visual fields, never as a vis fence in your reply; after importing a planning worker's file, add them with edit_question or edit_doc.`;
+export const ALIGN_VISUALS_PARAGRAPH = `Visuals: a question, or the alignment itself, can carry a visual {kind, source} on the card (exactly what a \`vis\` fence would hold; at most 3 per alignment; never a vis fence in your reply). Draw one where it explains faster than words: a wireframe for a question about a screen; a flow, state or steps for a change in behaviour. Before the first visual of each kind, call vis_guide with that kind. In the Project manager writing style never use the code, tree or layers kinds.`;
+
+/**
+ * The vis guide's files as a worker can read them (it has no vis_guide): `shared.md`, then `<kind>.md`.
+ * The Delegate+align bridge names this directory to a planning worker in a Visuals chat.
+ */
+export const VIS_GUIDE_DIR = fileURLToPath(new URL("./vis/", import.meta.url));
 
 /** The align options a block is built with: the writing style and Visuals (align-settings.ts). */
 export interface AlignPromptOptions {
@@ -198,6 +259,7 @@ const MINOR_INSTRUCTIONS: Record<MinorMode, string> = {
 	vis: VIS_INSTRUCTIONS,
 	// Promptless (MINOR_PROMPTLESS): never composed.
 	codemode: "",
+	memory: "",
 };
 
 /** One minor mode's block; align's carries its style and Visuals paragraphs (buildAlignPrompt). */

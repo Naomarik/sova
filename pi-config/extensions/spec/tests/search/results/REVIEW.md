@@ -120,3 +120,12 @@ The dev and held-out scores don't depend on this: no query there has 8 or more n
   works: `--token` doesn't suppress topic rows.
 - Sandbox: `mise trust` fails because `~/.local/state` is read-only. Use
   `MISE_TRUSTED_CONFIG_PATHS=<worktree>`. `/tmp` and the handoffs folder are also read-only.
+
+## Recheck after the D1 fix (3165c3c1, approved by the coordinator; HEAD f078bfdd)
+
+- **D1: RESOLVED.** I reran the same 110-query comparison (80 tokens, 25 `code` paths, 5 edge cases) between a9b87037 and a core extracted at 3165c3c1: **110/110 identical** on name and path rows (types and ids), counts and exit. The only JSON changes are added keys (`topicTerms`, `topicNotice`, `counts.topic`, plus `notShown`/`hint` when topic rows are left out); no key lost. `where base.css` now shows 9 name rows + 1 topic row, `notShown` 4, exit 0, the same exit as a9b87037. The held-out set was not rerun.
+- **Draft matches code: PASS.** The §tools.spec/where-topic sentence now says the name rows shown are the same ten as without topic search, and topic rows fill only the places name rows leave free. `where.mjs` drops `TOPIC_KEEP` (`names = min(name rows, 10)`). `draft check where-topic` introduces no findings. Evidence on all three ids is valid at 3165c3c1.
+- **Tests: PASS.** 553 tests: 551 pass, 2 skipped, 0 fail.
+- Unchanged: `where summary tree` gives §chat.memory/tree first, exit 0. `where UniiChat` gives §chat.memory/turn, then §chat.memory/types, exit 0. The dev bench is unchanged (R@1 42.3%, R@3 59.6%, MRR 0.532, R@3-any 71.2%, exit 0×52).
+
+**Verdict: ready to land at f078bfdd** (code at 3165c3c1). Every verification item passes.

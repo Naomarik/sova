@@ -77,6 +77,8 @@ const GLOBS = [
   "src/vis/**/*.test.ts",
   // The model-levels core (builtins only) that Sova's pi adapter imports.
   "pi-config/extensions/model-levels/*.test.ts",
+  // The Claude Code bridge's memory-view layout (pi-free, pure): a chat that stops caching its view fails here.
+  "pi-config/extensions/claude-code/provider/memory-layout.test.ts",
 ];
 const isBrowserTest = (f) => f.endsWith(".browser.test.ts");
 /** Each tier's recorded wall times, and how many files it runs at once. */

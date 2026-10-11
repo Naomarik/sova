@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ORG_TABS, orgHref, orgsRouteFromHash, orgTabHref, personHref, startForHref } from "./orgs-route";
+import { DEFAULT_ORG_TAB, movedOrgHash, ORG_TABS, orgHref, orgsRouteFromHash, orgTabHref, personHref, startForHref } from "./orgs-route";
 
 test("the list, one org, a start", () => {
   assert.deepEqual(orgsRouteFromHash("#/orgs"), { kind: "list" });
@@ -15,13 +15,25 @@ test("one person's page; the bare People tab stays a tab", () => {
   assert.deepEqual(orgsRouteFromHash("#/orgs/org_ab12/people"), { kind: "org", id: "org_ab12", tab: "people" });
 });
 
-test("a tab: sessions, people, projects, workspace; the bare org is Sessions by default (no tab key)", () => {
+test("a tab: projects, sessions, people, history, settings; the bare org opens on Projects (no tab key)", () => {
   assert.deepEqual(orgsRouteFromHash("#/orgs/org_ab12/people"), { kind: "org", id: "org_ab12", tab: "people" });
   assert.deepEqual(orgsRouteFromHash("#/orgs/org_ab12/projects"), { kind: "org", id: "org_ab12", tab: "projects" }, "no project id: the tab");
-  assert.deepEqual(orgsRouteFromHash("#/orgs/org_ab12/workspace/"), { kind: "org", id: "org_ab12", tab: "workspace" });
+  assert.deepEqual(orgsRouteFromHash("#/orgs/org_ab12/settings/"), { kind: "org", id: "org_ab12", tab: "settings" });
   for (const tab of ORG_TABS)
     assert.deepEqual(orgsRouteFromHash(orgTabHref("org_x", tab)), { kind: "org", id: "org_x", tab, ...(tab === "history" ? { history: { filters: { projects: [] } } } : {}) });
-  assert.deepEqual(ORG_TABS, ["sessions", "people", "projects", "history", "workspace"], "History after Projects, before Workspace");
+  assert.deepEqual(ORG_TABS, ["projects", "sessions", "people", "history", "settings"], "Projects first, History after People, Settings last");
+  assert.equal(DEFAULT_ORG_TAB, "projects", "the bare org opens on Projects");
+  assert.equal(DEFAULT_ORG_TAB, ORG_TABS[0], "…the strip's first tab");
+});
+
+test("the Workspace tab moved to Settings: its old address is replaced, host kept; nothing else moves", () => {
+  assert.equal(orgsRouteFromHash("#/orgs/org_ab12/workspace"), null, "no longer a route of its own");
+  assert.equal(movedOrgHash("#/orgs/org_ab12/workspace"), "#/orgs/org_ab12/settings");
+  assert.equal(movedOrgHash("#/orgs/org_ab12/workspace/"), "#/orgs/org_ab12/settings");
+  assert.equal(movedOrgHash("#/orgs/org_ab12/workspace?host=vps"), "#/orgs/org_ab12/settings?host=vps");
+  assert.deepEqual(orgsRouteFromHash(movedOrgHash("#/orgs/org_ab12/workspace?host=vps")!), { kind: "org", id: "org_ab12", tab: "settings", host: "vps" });
+  for (const h of ["#/orgs/org_ab12", "#/orgs/org_ab12/settings", "#/orgs/org_ab12/projects", "#/orgs/a b/workspace", "#/orgs/org_1/workspace/x", "#/orgs/org_1/Workspace", "#/s/orgs/org_1/workspace"])
+    assert.equal(movedOrgHash(h), null, h);
 });
 
 test("a project inside an org is no route: projects live at #/projects/<id>", () => {
@@ -77,7 +89,7 @@ test("an org on a peer (§mesh.remote-sessions/org-pages): every href of it carr
     assert.equal(startForHref("org_far", "p_1"), "#/orgs/org_far/start/p_1?host=vps");
     assert.equal(personHref("org_far", "p_1"), "#/orgs/org_far/people/p_1?host=vps");
     assert.deepEqual(orgsRouteFromHash(orgHref("org_far")), { kind: "org", id: "org_far", host: "vps" });
-    assert.deepEqual(orgsRouteFromHash(orgTabHref("org_far", "workspace")), { kind: "org", id: "org_far", tab: "workspace", host: "vps" });
+    assert.deepEqual(orgsRouteFromHash(orgTabHref("org_far", "settings")), { kind: "org", id: "org_far", tab: "settings", host: "vps" });
     assert.deepEqual(orgsRouteFromHash(personHref("org_far", "p_1")), { kind: "person", id: "org_far", personId: "p_1", host: "vps" });
     assert.equal(orgHref("org_here"), "#/orgs/org_here");
     assert.equal(orgsRouteFromHash("#/orgs/org_x?host="), null);

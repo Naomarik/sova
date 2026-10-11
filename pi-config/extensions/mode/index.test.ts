@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
-import { ALIGN_INSTRUCTIONS, buildMinorPrompt, CODEMODE_TOOL, isMinorMode, MINOR_DESCRIPTIONS, MINOR_MODES, MINOR_PROMPTLESS, MINOR_WORKER, type MinorMode, normalizeMinorModes, parseMinorFlag, promptedMinorModes, SCRIPT_ONLY_EXPOSURES, SPEC_CORE_SHELL, SPEC_INSTRUCTIONS, stripVisComments, VIS_FILES, VIS_INSTRUCTIONS, VIS_KIND_FILES, VIS_KINDS, visGuide, visOverview, workerMinorModes } from "./minor.ts";
+import { ALIGN_INSTRUCTIONS, buildMinorPrompt, CODEMODE_TOOL, isMinorMode, MINOR_DESCRIPTIONS, MINOR_MODES, MINOR_PROMPTLESS, MINOR_SURFACES, MINOR_WORKER, type MinorMode, normalizeMinorModes, parseMinorFlag, promptedMinorModes, SCRIPT_ONLY_EXPOSURES, SPEC_CORE_SHELL, SPEC_INSTRUCTIONS, stripVisComments, VIS_FILES, VIS_INSTRUCTIONS, VIS_KIND_FILES, VIS_KINDS, visGuide, visOverview, WEB_MINOR_HOOK, WEB_ONLY_MINOR_MODES, webMinorRefusal, workerMinorModes } from "./minor.ts";
 import { parseModeWorkerEvent } from "./events.ts";
 import { MODE_CATEGORY_ID, modeCategoryItems } from "./palette.ts";
 import { ALIGN_FILE_SCHEMA, ALIGN_NUDGE_TEXT, ALIGN_OPS } from "./align.ts";
@@ -238,15 +238,16 @@ test("composePrompt joins the delegate block and minor blocks", () => {
 	assert.doesNotMatch(both, /\{[A-Z_]+\}/);
 
 	const align = buildMinorPrompt("align");
-	assert.match(align, /non-editing Planning & specs worker/);
-	assert.match(align, /not the Investigation profile/);
+	// The planning worker hand-off is said once, in the bridge: the align block only points at it.
+	assert.match(align, /in delegate mode, through a planning worker as the delegate block says/);
+	assert.doesNotMatch(align, /Planning & specs|Investigation profile|absolute path/);
 	assert.match(align, /Stop and wait/);
 	assert.match(align, /Exempt/);
 	assert.match(align, /never re-ask a settled question/);
 	// Every alignment goes through the tool, never prose; answers and lifecycle through ops.
 	assert.match(align, /record every alignment with the `align` tool/);
 	assert.match(align, /Never write an alignment as reply text/);
-	assert.match(align, /import it with the import op and that absolute path/);
+	assert.match(align, /\(or import, for a planning worker's file\)/);
 	assert.match(align, /decide \(in their words\), accept only the questions they told you to take your recommendation on/);
 	assert.match(align, /leave the rest open/);
 	assert.match(align, /Never set status implementing while a question is open/);
@@ -265,12 +266,14 @@ test("composePrompt joins the delegate block and minor blocks", () => {
 		assert.doesNotMatch(text, /fromFile|create \+|\bdrop \{|\{why\}|exempt with why|accept \{q|q: "open"/);
 		for (const op of text.match(/\b(?:accept|drop|edit)_[a-z]+\b/g) ?? []) assert.ok((ALIGN_OPS as readonly string[]).includes(op), op);
 	}
-	// The planner's one write is named, absolute and outside the repo, and the delegate block's
-	// no-edit rule names that same exception, so the two never contradict each other.
+	// The planner's one write is named, absolute and outside the repo, by the bridge alone: the delegate
+	// block's no-edit rule names no exception, and the bridge that grants it follows it whenever align is on.
 	assert.match(DELEGATE_ALIGN_BRIDGE, /one permitted write is the alignment JSON/);
 	assert.match(DELEGATE_ALIGN_BRIDGE, /absolute path outside the repository that you name in its prompt/);
-	assert.match(buildDelegatePrompt([]), /must not edit files[^\n]*The one exception is a planning worker's alignment JSON \(align on\), written outside the repository\./);
-	assert.match(align, /absolute path outside the repository/);
+	for (const delegateBlock of [buildDelegatePrompt([]), buildDelegatePrompt(ALL_OK)]) {
+		assert.match(delegateBlock, /must not edit files: say so in their prompt/);
+		assert.doesNotMatch(delegateBlock, /exception|alignment JSON/);
+	}
 	assert.ok(DELEGATE_ALIGN_BRIDGE.includes(ALIGN_FILE_SCHEMA), "the bridge quotes the one file schema");
 	assert.match(DELEGATE_ALIGN_BRIDGE, /status is implementing/);
 });
@@ -304,7 +307,7 @@ test("vis_guide: the shared rules then the kind's file, for the listed kinds onl
 });
 
 test("spec: a registered minor mode, composed after align and never bridged", () => {
-	assert.deepEqual(MINOR_MODES, ["align", "spec", "vis", "codemode"], "registry order is prompt and status order");
+	assert.deepEqual(MINOR_MODES, ["align", "spec", "vis", "codemode", "memory"], "registry order is prompt and status order");
 	assert.deepEqual(Object.keys(MINOR_DESCRIPTIONS), [...MINOR_MODES], "one description per minor mode, nothing else");
 	assert.deepEqual(parseMinorFlag("spec,align"), { minorModes: ["align", "spec"], unknown: [] });
 	const spec = buildMinorPrompt("spec");
@@ -853,8 +856,8 @@ test("modeCategoryItems: radio major modes, live minor toggles", async () => {
 	const rows = modeCategoryItems(() => state, actions);
 	assert.deepEqual(
 		rows.map((row) => row.id),
-		["mode:normal", "mode:delegate", ...MINOR_MODES.map((minor) => `mode:minor:${minor}`), "mode:align:view", "mode:default:save"],
-		"two major rows, then one row per minor mode, then the align viewer, then save as default",
+		["mode:normal", "mode:delegate", ...MINOR_MODES.filter((minor) => minor !== "memory").map((minor) => `mode:minor:${minor}`), "mode:align:view", "mode:default:save"],
+		"two major rows, then one row per minor mode but the web-only memory, then the align viewer, then save as default",
 	);
 	const defaultRow = rows.at(-1);
 	assert.ok(defaultRow?.run && !defaultRow.toggle, "save-as-default runs, not toggles");
@@ -1005,6 +1008,28 @@ test("composePrompt takes a ModeActive, so the per-session state drives the turn
 });
 
 // ── Workers (§chat.mode-menu/workers) ────────────────────────────────────────
+
+test("MINOR_SURFACES: memory alone is web-only, and only the server's hook for that session turns it on", () => {
+	assert.deepEqual(Object.keys(MINOR_SURFACES).sort(), [...MINOR_MODES].sort());
+	assert.deepEqual(WEB_ONLY_MINOR_MODES, ["memory"]);
+	assert.equal(MINOR_WORKER.memory, false, "workers never get memory");
+	assert.equal(MINOR_PROMPTLESS.memory, true, "its guide rides its view message, never the mode section");
+	assert.equal(webMinorRefusal("spec", undefined), undefined);
+	assert.match(webMinorRefusal("memory", "s1") ?? "", /mode menu/);
+	const g = globalThis as Record<symbol, unknown>;
+	try {
+		g[WEB_MINOR_HOOK] = (sid: string, minor: string) => sid === "s1" && minor === "memory";
+		assert.equal(webMinorRefusal("memory", "s1"), undefined);
+		assert.match(webMinorRefusal("memory", "s2") ?? "", /mode menu/);
+		assert.match(webMinorRefusal("memory", undefined) ?? "", /mode menu/, "no session id, no permit");
+		g[WEB_MINOR_HOOK] = () => {
+			throw new Error("boom");
+		};
+		assert.match(webMinorRefusal("memory", "s1") ?? "", /mode menu/, "a failing hook permits nothing");
+	} finally {
+		delete g[WEB_MINOR_HOOK];
+	}
+});
 
 test("MINOR_WORKER declares every minor mode, and nothing else: spec reaches workers, align and vis do not", () => {
 	assert.deepEqual(Object.keys(MINOR_WORKER).sort(), [...MINOR_MODES].sort());

@@ -36,6 +36,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { keychainItemMtime, readKeychainCredentials, type KeychainOptions } from "./keychain.ts";
+import { FIXED_CLAUDE_ENV, fixedSettingsJson } from "./fixed-settings.ts";
 
 export const ACCOUNTS_FILE_NAME = "claude-accounts.json";
 export const ACCOUNTS_STATE_FILE_NAME = "claude-accounts-state.json";
@@ -217,11 +218,12 @@ export function claudeJsonPath(dir: string, isDefault: boolean, env: NodeJS.Proc
  * The environment a `claude` spawn starts from: `env` without an inherited `CLAUDE_CONFIG_DIR`
  * that names a login's directory, so a spawn on `default` (whose choice sets nothing) runs on
  * Claude Code's own directory. A chosen login's `CLAUDE_CONFIG_DIR` is merged over this.
+ * FIXED_CLAUDE_ENV goes over any inherited value.
  */
 export function claudeBaseEnv(env: NodeJS.ProcessEnv = process.env, agentDir?: string): NodeJS.ProcessEnv {
 	const out = { ...env };
 	if (out.CLAUDE_CONFIG_DIR !== undefined && !ownClaudeConfigDir(out, agentDir)) delete out.CLAUDE_CONFIG_DIR;
-	return out;
+	return Object.assign(out, FIXED_CLAUDE_ENV);
 }
 export const accountsPath = (agentDir: string): string => path.join(agentDir, ACCOUNTS_FILE_NAME);
 export const accountsStatePath = (agentDir: string): string => path.join(agentDir, ACCOUNTS_STATE_FILE_NAME);
@@ -560,7 +562,7 @@ function accessTokenOf(oauth: any): ClaudeAccessToken | undefined {
  */
 export const REFRESH_ARGV = [
 	"-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
-	"--tools", "", "--setting-sources", "", "--strict-mcp-config",
+	"--tools", "", "--setting-sources", "", "--settings", fixedSettingsJson(), "--strict-mcp-config",
 	"--permission-mode", "dontAsk", "--permission-prompts", "none",
 ] as const;
 export type RefreshImpl = (dir: string) => Promise<boolean>;

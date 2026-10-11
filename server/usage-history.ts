@@ -64,12 +64,12 @@ export function labelSpanMs(label: string): number | null {
   return Number(m[1]) * unit;
 }
 
-/** What identifies a reading's period: a declared month's start, else its reset. */
+/** What identifies a reading's period: its start when it carries one, else its reset. */
 const anchor = (s: UsageSample) => s.startsAt ?? s.resetsAt;
 
 /**
- * Whether `next` is a reading of the period `prev` belongs to: the anchor (reset, or a declared
- * month's start) within the tolerance and the percent not dropped. A window with no anchor starts
+ * Whether `next` is a reading of the period `prev` belongs to: the anchor (its start when it
+ * carries one, else its reset) within the tolerance and the percent not dropped. A window with no anchor starts
  * a new period only when the percent drops; one that gains an anchor starts one.
  */
 export function samePeriod(prev: UsageSample, next: UsageSample, label: string): boolean {
@@ -172,8 +172,6 @@ function claudeReadings(series: string, t: number, data: unknown): UsageReading[
 export interface SampleInput {
   /** login id → its account's uuid; a login without one (identity not known yet) is skipped. */
   accounts: Readonly<Record<string, string | undefined>>;
-  /** Ollama's declared month at a time (§app.insights/usage-reset-day), or null when no day is set. */
-  ollamaMonth?: (t: number) => { startsAt: string; resetsAt: string } | null;
 }
 
 /**
@@ -181,7 +179,8 @@ export interface SampleInput {
  * login stamped with its own fetchedAt; a login with no known account, or none at all, is left
  * out. Other providers: stamped with the cache's fetchedAt, and left out while their `errors`
  * entry is set (a failed fetch keeps the old value under a fresh cache time). New Ollama caches
- * use the usage endpoint's own successful time/error independently of balance.
+ * use the usage endpoint's own successful time/error independently of balance. A legacy Ollama
+ * percent reports no reset, so it is recorded with none.
  */
 export function readingsOf(cache: CacheFile, input: SampleInput): UsageReading[] {
   const out: UsageReading[] = [];
@@ -219,10 +218,7 @@ export function readingsOf(cache: CacheFile, input: SampleInput): UsageReading[]
   const ollama = rawOllama?.state === "ok" && finite(usageTime) ? rawOllama : null;
   const modernCredits = ollama && isRec(ollama.credits) && isRec(ollama.credits.data) && isRec(ollama.credits.data.included) && isRec(ollama.credits.data.included.period);
   if (ollama && finite(ollama.usedPct) && !isRec(ollama.activity) && !modernCredits) {
-    const month = input.ollamaMonth?.(usageTime!) ?? null;
-    const resetsAt = time(month?.resetsAt);
-    const startsAt = time(month?.startsAt);
-    out.push({ series: "ollama", window: "month", label: "month", t: usageTime!, pct: ollama.usedPct, ...(resetsAt !== undefined && startsAt !== undefined ? { resetsAt, startsAt } : {}) });
+    out.push({ series: "ollama", window: "month", label: "month", t: usageTime!, pct: ollama.usedPct });
   }
   const deepseek = ok("deepseek");
   if (deepseek && Array.isArray(deepseek.balances)) {

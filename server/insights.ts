@@ -40,8 +40,6 @@ import type { LinkedAgentInfo } from "../shared/mesh-links";
 import { claudeLoginIds, forceRefresh, parseActivity, parseCredits, parseReading, type CacheFile } from "../pi-config/extensions/usage-status/fetch.ts";
 import { balanceBurn, type BurnHistory, windowBurn } from "../src/lib/usage-burn";
 import { type PeriodSummary, readingsOf, samePeriod, splitPeriods, splitRuns, summarizePeriod, type UsageSample, usageHistory, type WindowSummary, windowKey } from "./usage-history";
-// Ollama's declared reset day (usage-windows.json), the same sanctioned surface (builtins only).
-import { monthlyWindow, readUsageWindows, setOllamaResetDay } from "../pi-config/extensions/usage-status/windows.ts";
 import { ownClaudeLoginUnreadable, readAuthStatus, readClaudeLoginAuth } from "./auth-status";
 import { ClaudeAccountsService } from "./claude-accounts";
 import { hasPage, listExplanations, sortExplanations } from "./explanations";
@@ -433,20 +431,17 @@ export async function getUsageInsight(): Promise<UsageInsight> {
   const read = absent.length === 0 ? d.providers : d.providers.map((p) => (absent.includes(p.id) ? lastKnown(p) : p));
   // Sign-in facts come from the credential files, per request (memoized there), never from the cache.
   const auth = await readAuthStatus();
-  // Ollama's month is derived from the declared day now, never cached: a changed day or a month
-  // rollover shows at once (§app.insights/usage-reset-day).
-  const ollamaResetDay = readUsageWindows(agentRoot()).ollama?.resetDay ?? null;
   const now = Date.now();
-  const declared = read.map((p) => withDeclaredReset(auth[p.id] ? { ...p, auth: auth[p.id] } : p, ollamaResetDay, now));
-  const own = declared.find((p) => p.id === "claude");
+  const signedIn = read.map((p) => (auth[p.id] ? { ...p, auth: auth[p.id] } : p));
+  const own = signedIn.find((p) => p.id === "claude");
   const logins = own ? await readClaudeLogins(own, ownFetchedAt, claudeAccounts) : undefined;
   // How fast each window is going, from this device's recorded readings (§app.insights/usage-burn).
   const ownAccount = logins?.find((l) => l.id === "default")?.accountUuid;
-  const providers = declared.map((p) => withBurn(p, p.id === "claude" ? (ownAccount ? `claude:${ownAccount}` : null) : p.id, now));
+  const providers = signedIn.map((p) => withBurn(p, p.id === "claude" ? (ownAccount ? `claude:${ownAccount}` : null) : p.id, now));
   const claudeLogins = logins?.map((l) => (l.accountUuid ? { ...l, usage: withBurn(l.usage, `claude:${l.accountUuid}`, now) } : l));
   // macOS only: Claude Code's own login in neither its file nor a readable keychain (§app.claude-logins/macos-keychain).
   const ownUnreadable = await ownClaudeLoginUnreadable();
-  return { ...d, providers, ...(claudeLogins ? { claudeLogins } : {}), ollamaResetDay, ...(ownUnreadable ? { claudeOwnLoginUnreadable: true as const } : {}), stale: d.fetchedAt !== null && now - d.fetchedAt > USAGE_STALE_MS };
+  return { ...d, providers, ...(claudeLogins ? { claudeLogins } : {}), ...(ownUnreadable ? { claudeOwnLoginUnreadable: true as const } : {}), stale: d.fetchedAt !== null && now - d.fetchedAt > USAGE_STALE_MS };
 }
 
 // ---------------------------------------------------------------------------
@@ -586,33 +581,10 @@ export function recordUsage(cache: CacheFile): void {
     claudeAccountsService ??= new ClaudeAccountsService();
     const accounts: Record<string, string | undefined> = {};
     for (const l of claudeAccountsService.info().logins) accounts[l.id] = l.identity?.accountUuid ?? undefined;
-    const resetDay = readUsageWindows(agentRoot()).ollama?.resetDay ?? null;
-    usageHistory().record(readingsOf(cache, { accounts, ollamaMonth: (t) => (resetDay === null ? null : monthlyWindow(resetDay, t)) }));
+    usageHistory().record(readingsOf(cache, { accounts }));
   } catch (err) {
     warnOnce("usage-history", `usage history not recorded: ${(err as Error).message}`);
   }
-}
-
-/**
- * `PUT /api/insights/usage/reset-day` `{provider: "ollama", day: 1..31 | null}`: writes the declared
- * day through the extension's writer, then serves usage with it. `error` for a body it refuses.
- */
-export async function setUsageResetDay(body: unknown): Promise<UsageInsight | { error: string }> {
-  if (!isRec(body) || body.provider !== "ollama") return { error: 'provider must be "ollama"' };
-  const day = body.day;
-  if (day !== null && !(typeof day === "number" && Number.isInteger(day) && day >= 1 && day <= 31)) return { error: "day must be a whole day from 1 to 31, or null" };
-  setOllamaResetDay(day, agentRoot());
-  return getUsageInsight();
-}
-
-/**
- * Ollama's `month` window with the span the declared reset day gives it at `now` (`startsAt`,
- * `resetsAt`, `declared: true`); any other provider, or no day, as it is.
- */
-export function withDeclaredReset(p: UsageProvider, resetDay: number | null, now: number): UsageProvider {
-  if (p.id !== "ollama" || resetDay === null) return p;
-  const span = monthlyWindow(resetDay, now);
-  return { ...p, windows: p.windows.map((w) => (w.label === "month" ? { ...w, ...span, declared: true as const } : w)) };
 }
 
 /**

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { compactModel, modelLabel, modelMismatch, relativeIn, shortModel, usageModelNote } from "./format";
+import { calendarDay, clockTime, compactModel, dateClock, modelLabel, modelMismatch, relativeIn, shortDate, shortModel, usageModelNote } from "./format";
 
 test("shortModel drops the provider only", () => {
   assert.equal(shortModel("anthropic/claude-opus-5"), "claude-opus-5");
@@ -60,4 +60,31 @@ test("relativeIn: a future time as 'in {rel}'; passed or unreadable is null", ()
   assert.equal(relativeIn(at(0), now), null);
   assert.equal(relativeIn(at(-5000), now), null);
   assert.equal(relativeIn("nope", now), null);
+});
+
+test("dateClock: local date and clock, the date always shown; another year adds it", () => {
+  const now = Date.parse("2026-10-09T12:00:00Z");
+  const t = Date.parse("2026-10-01T15:30:00Z");
+  assert.equal(dateClock(t, now), `${shortDate(t, now)} ${clockTime(t)}`);
+  assert.match(dateClock(t, now), /^[A-Z][a-z]{2} \d{1,2} \d{1,2}:\d{2} [AP]M$/);
+  assert.match(dateClock("2025-06-15T12:00:00Z", now), /^Jun 1[45], 2025 \d{1,2}:\d{2} [AP]M$/);
+  assert.equal(dateClock("nope", now), "");
+});
+
+test("calendarDay: the date as written in any time zone, never shifted", () => {
+  const now = Date.parse("2026-10-09T12:00:00Z");
+  const tz = process.env.TZ;
+  try {
+    for (const zone of ["UTC", "Pacific/Kiritimati", "America/Los_Angeles"]) {
+      process.env.TZ = zone;
+      assert.equal(calendarDay("2026-10-02", now), "Fri Oct 2", zone);
+      assert.equal(calendarDay("2026-03-01", now), "Sun Mar 1", zone);
+    }
+  } finally {
+    if (tz === undefined) delete process.env.TZ;
+    else process.env.TZ = tz;
+  }
+  assert.equal(calendarDay("2025-12-31", now), "Wed Dec 31, 2025");
+  assert.equal(calendarDay("2026-02-30", now), "2026-02-30");
+  assert.equal(calendarDay("Oct 2", now), "Oct 2");
 });

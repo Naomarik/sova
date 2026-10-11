@@ -12,6 +12,15 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
 ## Layout & ownership
 
 - `shared/protocol.ts` — the REST/WS wire contract. Change only with team coordination.
+  `shared/memory.ts` (imports only protocol types) is the memory minor mode's half of it: the type copy, sizes,
+  the recall rows' summary and the coding-session refusal, read by server and `src/` alike (§chat/memory).
+- `server/memory/` — the memory minor mode's engine (§chat/memory), harness-neutral; pi's hooks for it are
+  `server/harness/pi/memory.ts`. Its files are Sova's own, never pi-config's: `<agent dir>/mode-memory.json`
+  (Settings → Memory: the summarizer's backend/model/effort and fallback, and the saved default type and size;
+  read by the server only) and one sidecar per chat, `<agent dir>/sova/memory/<session id>/` (`tree.jsonl` the
+  built summaries, `state.json` the saved views and cache prefixes), copied by "Fork from here" and removed when
+  the chat is archived or deleted. A chat's type and size are its `sova-memory` state entry; the Overseer's
+  switch is `overseer.json`'s `memory`.
 - `shared/harness.ts` — the harness contract: a types-only barrel over `shared/harness-core.ts`,
   `-tools`, `-history`, `-wire`, `-state`, `-session` (each imports only its siblings, with
   `import type`, and emits no code), what Sova code outside the adapter speaks instead of pi's
@@ -135,16 +144,11 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   `{v: 1, pid, sessionId?, kind, at}`, `wants/<pid>-<n>.json` (the same plus `since`),
   `lowered.json` `{v: 1, limit, until}` and the claim `lock` — which every pi process (TUI, hosted
   sessions, pi workers via their `-e` list) and Sova's own one-shots claim through, and which Sova
-  reads by session id for the waiting state; usage-status
-  (`pi-config/extensions/usage-status/windows.ts`, builtins only): `usage-windows.json`
-  `{version: 1, ollama?: {resetDay: 1..31}}` (missing or unreadable = unknown; written by the Usage
-  page's Ollama card and by `/usage reset-day ollama <1-31|clear>`, whose argument is a contract
-  too; synced like the policy), from which the server derives Ollama's monthly window as it reads
-  usage; the usage ledger (`pi-config/extensions/llm-inflight/usage-record.ts`, builtins only,
+  reads by session id for the waiting state; the usage ledger (`pi-config/extensions/llm-inflight/usage-record.ts`, builtins only,
   §app.insights/usage-ledger): `<agent dir>/usage/v1/<UTC day>/<producer>.jsonl`, one record per
   model call `{v: 1, key, ts, device, producer, src, provider, model, responseModel?, input, output,
   cacheRead, cacheWrite, cacheWrite1h?, owner, parent, worker?, kind, purpose?, cwd?, project?, starter?,
-  stop?}`, written at each call's end by llm-inflight (one writer per file: the process's producer
+  stop?, launch?}` (`launch` `{how, why, fallback?}` on the first call of each Claude Code process the bridge launches for a conversation), written at each call's end by llm-inflight (one writer per file: the process's producer
   id) and by the server's own one-shots, read only by the server's usage helper (its strict parse
   `parseUsageLine`), which prices every spend figure Sova shows; beside it llm-inflight keeps
   `<agent dir>/usage/cc-baseline/<claude session id>.json` `{v: 1, at, models}` (`claude-usage.ts`: each
@@ -220,8 +224,7 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   writer and strict parse; the watcher does not watch it, so an edit reaches a running server only
   at its restart),
   `server/insights.ts` imports
-  `pi-config/extensions/usage-status/fetch.ts` and `windows.ts` (`server/sync/docs.ts` imports
-  `windows.ts` too, for the file's sync registration; fetch.ts imports `claude-code/accounts.ts`, builtins
+  `pi-config/extensions/usage-status/fetch.ts` (fetch.ts imports `claude-code/accounts.ts`, builtins
   only, to fetch each login's usage; `server/auth-status.ts`, `server/claude-login-state.ts` and
   the pool agent `server/claude-pool/` import `accounts.ts` too), the server imports
   `pi-config/extensions/claude-code/catalog.ts` (imports nothing: Sova's own Claude model catalog,
@@ -268,7 +271,7 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   model-discovery argv to the extension's, and `src/lib/show-changes-coverage.test.ts` imports
   `pi-config/extensions/show-changes/coverage.ts` (imports nothing) to pin the tool's hunk matching
   to `src/lib/changes-steps.ts`'s; beyond that, `catalog.ts` (with `context-window.ts`), `accounts.ts` and the
-  protocol set above and `provider/fork-point.ts` (through `fork/claude.ts`), the server never imports claude-code. `argv.ts` is also the quoting boundary: every path that reaches a far shell is
+  protocol set above and `provider/fork-point.ts` (through `fork/claude.ts`) and `fixed-settings.ts` (imports nothing: the `--settings` every `claude` spawn gets, no attribution and auto-memory off, §app.claude-code-provider/no-memory; `server/decide-llm.ts`, `session-autotitle.ts`, `claude-models.ts` and `memory/summarizer.ts` import it) and `provider/memory-view.ts` (imports nothing: the memory view message's declared shape — the guide, the stable prefix, the newest lines — that `server/memory/engine.ts` builds and the bridge sends as written, §chat.memory/turn), the server never imports claude-code. `argv.ts` is also the quoting boundary: every path that reaches a far shell is
   single-quote-escaped there, and callers spawn its argv without a local shell. The web mode switch calls that extension's
   `/mode` command handler directly (`ChatSession.applyMode`), so its arguments are a contract too.
   Sova has no sshfs/mount support: a remote session's cwd is always its local placeholder, and
@@ -504,6 +507,8 @@ before you claim a feature.
   whether or not that mode is on; don't turn any mode on. Commands are in `.sova/spec/USAGE.md`.
 - A change to the spec tools themselves names the goal it serves in
   `pi-config/extensions/spec/docs/GOALS.md` and is measured against today's tools by the replay harness.
+- Before planning anything that changes what a Claude Code chat's model sees or which tools it has,
+  read §app/claude-code-provider: Sova owns the conversation and the tools; the CLI is only the model.
 
 ## Method
 

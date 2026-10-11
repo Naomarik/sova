@@ -396,6 +396,24 @@ it.
   shows a `.banner-error` in the transcript's banner slot, exactly like a refused model switch
   (§chat.model-menu/errors). The level on screen never changes on a refusal.
 
+## §chat.composer/memory-status — Memory in the run-status row
+
+The run-status row says what the chat's memory is doing, from the chat's `memory_status`
+messages (§chat.memory/status); a chat that never got one has memory off and the row says nothing
+about it.
+
+- **Updating.** While a turn waits for the newest summaries (`updating`, at most 20 s), the turn's
+  words read "Updating memory…" as a rare state does (after "Stopping…", a compaction's or a retry's
+  words, before a provider wait's).
+- **Preparing.** While memory is being prepared in a chat with history (`preparing`), the row
+  carries "Preparing memory: 120 of 480 messages" (digits, the server's counts), idle or not, so
+  the row shows for it alone. Short of room it ends in an ellipsis, with the whole text in its
+  tooltip.
+- **A problem.** A status with a `problem` shows the problem's sentence in the row in place of the
+  preparing words, led by "Memory: " unless it already starts with "Memory", as a button that opens
+  Settings → Memory.
+- **Ready** shows nothing: merges written in the background never reach the row. `off` clears it.
+
 ## §chat.composer/sandbox-shield — Sandbox shield
 
 While this chat's runtime has the sandbox extension, the composer foot shows a shield at its

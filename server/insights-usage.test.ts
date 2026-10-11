@@ -325,35 +325,17 @@ test("Claude Code's own login is dated by the cache's claudeFetchedAt, else the 
   assert.equal(older?.fetchedAt, (await getUsageInsight()).fetchedAt);
 });
 
-test("Ollama's month takes its span from the declared reset day as usage is read, never from the cache", async () => {
-  const { setUsageResetDay, withDeclaredReset } = await import("./insights");
+test("Ollama's legacy month has no reset or start, a stale usage-windows.json is ignored, and the payload has no reset day", async () => {
   writeCache({});
-  rmSync(join(agentDir, "usage-windows.json"), { force: true });
-  const unset = await getUsageInsight();
-  assert.equal(unset.ollamaResetDay, null);
-  assert.deepEqual(byId(unset.providers, "ollama").windows, [{ label: "month", pct: 75.6 }], "no day: no reset, no start");
-  const set = await setUsageResetDay({ provider: "ollama", day: 14 });
-  assert.ok(!("error" in set));
-  assert.equal(set.ollamaResetDay, 14);
-  const w = byId(set.providers, "ollama").windows[0]!;
-  assert.equal(w.declared, true);
-  const start = new Date(w.startsAt!);
-  const end = new Date(w.resetsAt!);
-  assert.deepEqual([start.getDate(), start.getHours(), end.getDate(), end.getHours()], [14, 0, 14, 0]);
-  assert.ok(start.getTime() <= Date.now() && Date.now() < end.getTime());
-  // The cache file itself never gains it.
-  assert.equal(JSON.parse(readFileSync(usageFile, "utf8")).ollama.resetsAt, undefined);
-  assert.deepEqual(JSON.parse(readFileSync(join(agentDir, "usage-windows.json"), "utf8")), { version: 1, ollama: { resetDay: 14 } });
-  // A rollover shows without a fetch: the same reading, read a month on.
-  const p = byId(set.providers, "ollama");
-  const later = withDeclaredReset({ ...p, windows: [{ label: "month", pct: 75.6 }] }, 14, end.getTime() + 3_600_000).windows[0]!;
-  assert.equal(later.startsAt, w.resetsAt);
-  // Other providers never gain a declared reset.
-  assert.equal(byId(set.providers, "openai").windows[0]!.declared, undefined);
-  const cleared = await setUsageResetDay({ provider: "ollama", day: null });
-  assert.ok(!("error" in cleared) && cleared.ollamaResetDay === null);
-  for (const bad of [{ provider: "openai", day: 3 }, { provider: "ollama", day: 0 }, { provider: "ollama", day: 32 }, { provider: "ollama", day: 2.5 }, { provider: "ollama" }, null])
-    assert.ok("error" in (await setUsageResetDay(bad)), JSON.stringify(bad));
+  writeFileSync(join(agentDir, "usage-windows.json"), JSON.stringify({ version: 1, ollama: { resetDay: 14 } }));
+  try {
+    const u = await getUsageInsight();
+    assert.deepEqual(byId(u.providers, "ollama").windows.map(({ burn: _b, history: _h, ...w }) => w), [{ label: "month", pct: 75.6 }], "no reset, no start, no declared flag");
+    assert.equal("ollamaResetDay" in u, false);
+    assert.deepEqual(JSON.parse(readFileSync(join(agentDir, "usage-windows.json"), "utf8")), { version: 1, ollama: { resetDay: 14 } }, "left as it was, never deleted");
+  } finally {
+    rmSync(join(agentDir, "usage-windows.json"), { force: true });
+  }
 });
 
 test("burn (§app.insights/usage-burn): each window's rates, projection and last period from the recorded history; the chart's periods from the history route", async () => {
@@ -452,7 +434,7 @@ test("past periods (§app.insights/usage-burn): the last month falls back to its
   writeFileSync(join(dir, `${new Date(now).toISOString().slice(0, 10)}.jsonl`), lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
   useUsageHistoryForTests(new UsageHistory({ dir }));
   try {
-    const p = withBurn({ id: "ollama", state: "ok", windows: [{ label: "month", pct: 34, startsAt: new Date(start).toISOString(), resetsAt: new Date(end).toISOString(), declared: true }] }, "ollama", now);
+    const p = withBurn({ id: "ollama", state: "ok", windows: [{ label: "month", pct: 34, startsAt: new Date(start).toISOString(), resetsAt: new Date(end).toISOString() }] }, "ollama", now);
     const w = p.windows[0]!;
     assert.deepEqual(w.history, { series: "ollama", window: "month" });
     assert.equal(w.burn?.last?.pct, 72, "last month's final, from its summary");

@@ -14,6 +14,14 @@ import type {
   SessionsDirInfo,
   AttentionDigest,
   ChatModeResult,
+  ChatMemoryChoice,
+  MemoryOpen,
+  MemoryOutline,
+  MemorySaveResult,
+  MemorySettings,
+  MemorySettingsInfo,
+  MemoryType,
+  OverseerMemoryInfo,
   ClaudeAccountsInfo,
   ClaudePoolInfo,
   ClaudeCliStatus,
@@ -62,7 +70,6 @@ import type {
   UsageHistory,
   UsageHistoryStrip,
   UsageInsight,
-  UsageResetDayRequest,
   WebSettings,
   AlignSettingsInfo,
   WorktreesInsight,
@@ -469,7 +476,7 @@ export const getMode = (host?: string | null) => request<ModeInfo>(hostUrl(host,
  * follows, from its next message, the reply says how (ChatModeResult.applies), and mode.json is not
  * written. Without `path` this writes the default for new sessions instead and changes no open chat.
  */
-export const postMode = (patch: { mode?: string; minorModes?: string[] }, path?: string) =>
+export const postMode = (patch: { mode?: string; minorModes?: string[]; memory?: Partial<ChatMemoryChoice> }, path?: string) =>
   request<ModeInfo | ChatModeResult>(`/api/mode${path ? `?path=${encodeURIComponent(path)}` : ""}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -484,6 +491,19 @@ export const saveModeDefault = (path: string) =>
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ saveDefault: true }),
   });
+
+/** The memory minor mode (§chat/memory): a chat's outline for the Session pane, the lines under one
+    of its lines, Settings → Memory and the Overseer's own switch. */
+export const getMemoryOutline = (path: string) => request<MemoryOutline>(`/api/memory?path=${encodeURIComponent(path)}`);
+export const openMemoryLine = (path: string, id: number, n: number) =>
+  request<MemoryOpen>(`/api/memory/open?path=${encodeURIComponent(path)}&id=${id}&n=${n}`);
+export const getMemorySettings = () => request<MemorySettingsInfo>("/api/settings/memory");
+export const getMemoryOptions = () => request<DelegateOptions>("/api/settings/memory/options");
+export const putMemorySettings = (settings: MemorySettings) =>
+  request<MemorySaveResult>("/api/settings/memory", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(settings) });
+export const getOverseerMemory = () => request<OverseerMemoryInfo>("/api/overseer/memory");
+export const putOverseerMemory = (patch: { on?: boolean; type?: MemoryType; size?: number }) =>
+  request<OverseerMemoryInfo>("/api/overseer/memory", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) });
 
 /** POST /api/sandbox?path=… { state, on }: set that held chat's sandbox state (§chat.sandbox/states)
     from its next tool call. `on` rides along for a host whose server predates the three states
@@ -876,9 +896,6 @@ export const fetchUsageHistory = (series: string, window: string, at: number | n
 /** A 5-hour meter's strip: its last 30 days of closed windows, summaries only (§app.insights/usage-burn). */
 export const fetchUsageStrip = (series: string, window: string) =>
   request<UsageHistoryStrip>(`/api/insights/usage/history?series=${encodeURIComponent(series)}&window=${encodeURIComponent(window)}&strip=1`);
-/** Ollama Cloud's declared reset day (1..31, or null to clear; §app.insights/usage-reset-day): answers with the whole usage payload. */
-export const putUsageResetDay = (day: number | null) =>
-  request<UsageInsight>("/api/insights/usage/reset-day", { method: "PUT", body: JSON.stringify({ provider: "ollama", day } satisfies UsageResetDayRequest) });
 
 export const fetchAgents = () => request<AgentsInsight>("/api/insights/agents");
 

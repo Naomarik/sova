@@ -44,6 +44,38 @@
         "server/sessions-index.ts"
       ]
     },
+    "§app.insights/ollama-reset": {
+      "kind": "behavior",
+      "requires": [
+        "§app.insights/ollama-credits",
+        "§app.insights/ollama-activity",
+        "§app.insights/pace-tick",
+        "§app.insights/usage-burn",
+        "§mesh.sync/categories"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/insights.ts",
+        "server/usage-history.ts",
+        "server/app.ts",
+        "server/ollama-usage.test.ts",
+        "server/sync/docs.ts",
+        "shared/protocol.ts",
+        "src/components/UsageView.tsx",
+        "src/components/UsageOllama.tsx",
+        "src/lib/insights.ts",
+        "src/design/base.css",
+        "src/lib/ollama-card.integration.test.ts",
+        "pi-config/extensions/usage-status/index.ts",
+        "pi-config/extensions/usage-status/index.test.ts",
+        "server/insights-usage.test.ts",
+        "server/usage-history.test.ts",
+        "src/lib/insights.test.ts",
+        "src/lib/usage-burn.test.ts",
+        "server/sync/docs.test.ts"
+      ]
+    },
     "§app.insights/placement": {
       "kind": "behavior",
       "authority": "accepted",
@@ -119,13 +151,17 @@
         "src/components/UsageView.tsx",
         "src/lib/insights.ts",
         "server/insights.ts",
-        "shared/protocol.ts"
+        "shared/protocol.ts",
+        "src/components/UsageHistory.tsx",
+        "src/components/UsageOllama.tsx",
+        "src/design/base.css",
+        "src/lib/usage-rows.integration.test.ts"
       ]
     },
     "§app.insights/usage-page-and-agents-page": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/components/AgentsView.tsx",
         "src/lib/agents-board.ts",
@@ -135,7 +171,8 @@
         "src/components/CostsTab.tsx",
         "src/lib/agents-board.test.ts",
         "src/lib/api.ts",
-        "shared/usage/wire.ts"
+        "shared/usage/wire.ts",
+        "src/design/base.css"
       ]
     },
     "§app.session-list/accessibility": {
@@ -310,6 +347,25 @@
         "src/components/SettingsDialog.tsx"
       ]
     },
+    "§app.settings-dialog/memory": {
+      "kind": "behavior",
+      "requires": [
+        "§app.settings-dialog/modes",
+        "§app.settings-dialog/save-bar",
+        "§app.settings-dialog/summaries"
+      ],
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/MemorySettings.tsx",
+        "src/lib/memory-settings-draft.ts",
+        "src/components/SettingsDialog.tsx",
+        "src/lib/settings-nav.ts",
+        "src/lib/api.ts",
+        "src/lib/memory-ui.test.ts",
+        "src/lib/settings-nav.test.ts"
+      ]
+    },
     "§app.settings-dialog/models": {
       "kind": "behavior",
       "authority": "accepted",
@@ -429,6 +485,23 @@
         "server/usage-helper/query.ts",
         "shared/usage/wire.ts",
         "shared/protocol.ts"
+      ]
+    },
+    "§app.subagents-pane/memory-outline": {
+      "kind": "behavior",
+      "requires": [
+        "§app.subagents-pane/tabs",
+        "§chat.timeline/jumping"
+      ],
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/MemoryOutline.tsx",
+        "src/components/SessionPane.tsx",
+        "src/lib/memory-ui.ts",
+        "src/lib/api.ts",
+        "src/lib/memory-ui.test.ts",
+        "src/app.css"
       ]
     },
     "§app.subagents-pane/motion": {
@@ -689,6 +762,21 @@
         "src/design/base.css"
       ]
     },
+    "§chat.composer/memory-status": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.transcript/streaming"
+      ],
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/Composer.tsx",
+        "src/components/ChatView.tsx",
+        "src/lib/memory-ui.ts",
+        "src/lib/memory-ui.test.ts",
+        "src/app.css"
+      ]
+    },
     "§chat.composer/tokens": {
       "kind": "note",
       "authority": "accepted",
@@ -873,6 +961,236 @@
         "src/lib/markdown.ts"
       ]
     },
+    "§chat.memory/choice": {
+      "kind": "behavior",
+      "requires": [
+        "§chat/memory",
+        "§app.harness/state",
+        "§chat.mode-menu/menu"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/harness/state-kinds.ts",
+        "server/mode-state.ts",
+        "server/chat-manager.ts",
+        "server/memory/settings.ts",
+        "server/mode.ts",
+        "server/memory/chat-memory.test.ts"
+      ]
+    },
+    "§chat.memory/help": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.memory/settings",
+        "§chat.memory/types",
+        "§chat.memory/tree",
+        "§chat.memory/turn",
+        "§chat.memory/zoomable",
+        "§chat.memory/summarizer"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/MemorySettings.tsx",
+        "src/components/HelpPopover.tsx",
+        "src/components/help-popover.css",
+        "src/lib/memory-help.ts",
+        "src/lib/memory-help.test.ts",
+        "src/lib/help-popover.ts",
+        "src/lib/help-popover.test.ts"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T09:37Z"
+      }
+    },
+    "§chat.memory/log": {
+      "kind": "behavior",
+      "requires": [
+        "§chat/memory",
+        "§app.harness/reader"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/memory/log.ts",
+        "server/memory/store.ts",
+        "server/session-fork-routes.ts",
+        "server/sessions-index.ts",
+        "server/memory/engine.test.ts",
+        "server/archive-subagent-guard.test.ts"
+      ]
+    },
+    "§chat.memory/overseer": {
+      "kind": "behavior",
+      "requires": [
+        "§chat/memory",
+        "§chat.memory/where"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/memory/routes.ts",
+        "server/overseer.ts",
+        "server/memory/settings.test.ts"
+      ]
+    },
+    "§chat.memory/preparing": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.memory/turn",
+        "§chat.memory/status"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/memory/engine.ts"
+      ]
+    },
+    "§chat.memory/recall": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.memory/tree",
+        "§chat.transcript/slim-rows"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/memory/tools.ts",
+        "shared/memory.ts",
+        "src/lib/message.ts",
+        "shared/memory.test.ts"
+      ]
+    },
+    "§chat.memory/settings": {
+      "kind": "behavior",
+      "requires": [
+        "§chat/memory"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/memory/settings.ts",
+        "server/memory/routes.ts",
+        "server/memory/settings.test.ts"
+      ]
+    },
+    "§chat.memory/status": {
+      "kind": "behavior",
+      "requires": [
+        "§chat/memory"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/memory/routes.ts",
+        "shared/protocol.ts",
+        "server/chat-manager.ts",
+        "server/memory/chat.ts"
+      ]
+    },
+    "§chat.memory/summarizer": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.memory/tree",
+        "§chat.memory/settings"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/memory/summarizer.ts",
+        "server/memory/prompts.ts",
+        "server/memory/settings.test.ts"
+      ]
+    },
+    "§chat.memory/tree": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.memory/log"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/memory/tree.ts",
+        "server/memory/tree.test.ts",
+        "server/memory/engine.test.ts"
+      ]
+    },
+    "§chat.memory/turn": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.memory/tree",
+        "§chat.memory/log",
+        "§chat.mode-menu/minor-toggle-keeps-prompt"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/memory/engine.ts",
+        "server/harness/pi/memory.ts",
+        "pi-config/extensions/claude-code/provider/memory-view.ts",
+        "server/memory/prompts.ts",
+        "server/memory/chat-memory.test.ts",
+        "server/memory/tree.ts",
+        "server/memory/store.ts",
+        "server/memory/tree.test.ts",
+        "server/memory/engine.test.ts"
+      ]
+    },
+    "§chat.memory/types": {
+      "kind": "behavior",
+      "requires": [
+        "§chat/memory"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "shared/memory.ts",
+        "shared/protocol.ts"
+      ]
+    },
+    "§chat.memory/where": {
+      "kind": "behavior",
+      "requires": [
+        "§chat/memory",
+        "§chat.mode-menu/how-a-switch-reaches-the-chat",
+        "§chat.mode-menu/workers",
+        "§chat.mode-menu/terminal"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/mode/minor.ts",
+        "pi-config/extensions/mode/index.ts",
+        "pi-config/extensions/mode/palette.ts",
+        "server/memory/permit.ts",
+        "server/memory/permit.test.ts",
+        "pi-config/extensions/mode/tests/smoke.mjs",
+        "server/chat-manager.ts",
+        "shared/profiles.ts",
+        "server/sessions-configure.ts",
+        "server/overseer-tools.ts",
+        "server/project-coding-mode.ts",
+        "server/project-coding-mode.test.ts",
+        "shared/memory.ts",
+        "server/harness/pi/golden/session/S15-mode-command.trace"
+      ]
+    },
+    "§chat.memory/zoomable": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.memory/tree",
+        "§chat.memory/types"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/memory/engine.ts",
+        "server/harness/pi/memory.ts",
+        "server/memory/chat-memory.test.ts"
+      ]
+    },
     "§chat.mode-menu/how-a-switch-reaches-the-chat": {
       "kind": "behavior",
       "authority": "accepted",
@@ -883,6 +1201,26 @@
         "server/app.ts",
         "pi-config/extensions/mode/index.ts",
         "src/components/Thread.tsx"
+      ]
+    },
+    "§chat.mode-menu/memory-panel": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.mode-menu/menu",
+        "§chat.subagent-profiles/menu",
+        "§design/menu-rows"
+      ],
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/ModeMenu.tsx",
+        "src/components/MemoryTypePanel.tsx",
+        "src/lib/memory-ui.ts",
+        "src/lib/mode-menu.ts",
+        "src/lib/api.ts",
+        "src/components/ChatView.tsx",
+        "src/lib/memory-ui.test.ts",
+        "src/app.css"
       ]
     },
     "§chat.mode-menu/menu": {
@@ -1284,6 +1622,18 @@
       "authority": "migrated",
       "evidence": "unreviewed"
     },
+    "§chat.transcript/recall-rows": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.transcript/slim-rows"
+      ],
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/ToolCard.tsx",
+        "src/app.css"
+      ]
+    },
     "§chat.transcript/states": {
       "kind": "behavior",
       "authority": "accepted",
@@ -1354,6 +1704,19 @@
         "src/lib/markdown.ts",
         "src/components/Markdown.tsx",
         "src/lib/session-links.ts"
+      ]
+    },
+    "§chat/memory": {
+      "kind": "surface",
+      "requires": [
+        "§chat/mode-menu"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/memory/engine.ts",
+        "shared/memory.ts",
+        "shared/protocol.ts"
       ]
     },
     "§chat/mode-menu": {
@@ -1459,7 +1822,9 @@
       "code": [
         "src/components/UsageView.tsx",
         "src/lib/insights.ts",
-        "pi-config/extensions/usage-status/index.ts"
+        "pi-config/extensions/usage-status/index.ts",
+        "src/components/UsageHistory.tsx",
+        "src/components/UsageOllama.tsx"
       ]
     },
     "§design.copy-deck/live-watch": {
@@ -2182,12 +2547,17 @@
       "kind": "behavior",
       "requires": [],
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "pi-config/extensions/claude-code/provider/session-bridge.ts",
         "pi-config/extensions/claude-code/provider/session-records.ts",
-        "pi-config/extensions/claude-code/provider/fork-point.ts"
-      ]
+        "pi-config/extensions/claude-code/provider/fork-point.ts",
+        "pi-config/extensions/claude-code/provider/resume-record.ts"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:58Z"
+      }
     },
     "§app.worker-restore/restore": {
       "kind": "behavior",
@@ -3027,11 +3397,19 @@
         "server/overseer-todos.ts",
         "server/index.ts",
         "server/app.ts",
-        "server/overseer-mode.test.ts"
+        "server/overseer-mode.test.ts",
+        "server/overseer-opening.ts",
+        "server/overseer-opening.test.ts",
+        "server/overseer-runtime.test.ts",
+        "server/overseer-run-note.ts"
       ],
       "requires": [
         "§app.overseer/tools"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:06Z"
+      }
     },
     "§app.overseer/identity-and-clear": {
       "kind": "behavior",
@@ -3071,6 +3449,23 @@
         "src/lib/card-refs.ts"
       ],
       "requires": []
+    },
+    "§app.overseer/memory-switch": {
+      "kind": "behavior",
+      "requires": [
+        "§app.overseer/quick-actions",
+        "§chat.mode-menu/memory-panel"
+      ],
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/OverseerMemoryMenu.tsx",
+        "src/components/MemoryTypePanel.tsx",
+        "src/components/ChatView.tsx",
+        "src/lib/api.ts",
+        "src/lib/memory-ui.test.ts",
+        "src/lib/memory-ui.ts"
+      ]
     },
     "§app.overseer/navigation": {
       "kind": "behavior",
@@ -3181,7 +3576,11 @@
       ],
       "requires": [
         "§app.overseer/tools"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:38Z"
+      }
     },
     "§app.overseer/tools": {
       "kind": "behavior",
@@ -4848,13 +5247,20 @@
         "src/projects.css",
         "server/overseer-org-part.ts",
         "server/overseer-org-part.test.ts",
-        "server/spec-tool-fake.ts"
+        "server/spec-tool-fake.ts",
+        "server/overseer-opening.ts",
+        "server/overseer-run-note.ts",
+        "server/project-overseer-opening.test.ts"
       ],
       "requires": [
         "§app.overseer/hosting",
         "§app.organizations/workspace-repo",
         "§chat/images"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:06Z"
+      }
     },
     "§app.project-overseer/tools": {
       "kind": "behavior",
@@ -5161,6 +5567,48 @@
         "src/components/ProjectPage.tsx"
       ]
     },
+    "§app.insights/usage-resend": {
+      "kind": "behavior",
+      "requires": [
+        "§app.insights/usage-ledger"
+      ],
+      "authority": "accepted",
+      "code": [
+        "server/usage-helper/query.ts",
+        "server/usage-helper/ledger.ts",
+        "shared/usage/wire.ts",
+        "server/claude-cache-check.ts",
+        "scripts/claude-cache-check.ts",
+        "server/claude-cache-check.test.ts",
+        "server/usage-helper/ledger.test.ts",
+        "package.json"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:06Z"
+      },
+      "evidence": "verified"
+    },
+    "§app.insights/usage-resend-display": {
+      "kind": "behavior",
+      "requires": [
+        "§app.insights/usage-resend"
+      ],
+      "authority": "accepted",
+      "code": [
+        "src/lib/resend.ts",
+        "src/lib/resend.test.ts",
+        "src/components/ResendLine.tsx",
+        "src/components/CostsTab.tsx",
+        "src/components/SessionUsage.tsx",
+        "src/costs-tab.css"
+      ],
+      "evidence": "verified",
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:42Z"
+      }
+    },
     "§app.insights/worktrees-endpoint": {
       "kind": "behavior",
       "requires": [],
@@ -5199,6 +5647,24 @@
         "server/worktrees-state.ts",
         "src/components/SessionDetails.tsx"
       ]
+    },
+    "§chat.worktrees/merge-board": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/merge-board.ts",
+        "server/merge-board.test.ts",
+        "server/merge-readiness.ts",
+        "server/schedule-routes.ts"
+      ],
+      "requires": [
+        "§chat.worktrees/readiness"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:39Z"
+      }
     },
     "§chat.worktrees/merge-card": {
       "kind": "behavior",
@@ -6123,7 +6589,11 @@
         "§app.organizations/workspace-repo",
         "§app.organizations/org-page",
         "§app.project-overseer/identity"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:38Z"
+      }
     },
     "§app.owner-page/content": {
       "kind": "behavior",
@@ -8481,6 +8951,7 @@
         "server/share/registry.ts",
         "server/share/registry-validation.ts",
         "server/share/registry-push.ts",
+        "server/share/share-dist.ts",
         "server/share/gateway-routes.ts",
         "server/share/gateway-client.ts",
         "server/share/links-events.ts",
@@ -8491,8 +8962,13 @@
         "server/share-security.test.ts",
         "server/share-security.integration.test.ts",
         "server/share-edge.test.ts",
-        "server/share-edge.integration.test.ts"
-      ]
+        "server/share-edge.integration.test.ts",
+        "server/share-router.integration.test.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-10T16:40Z"
+      }
     },
     "§mesh.public/routing": {
       "kind": "behavior",
@@ -10426,7 +10902,11 @@
         "§chat.playbooks/what-gets-sent",
         "§chat.profiles/limits",
         "§app.overseer/auto-resume"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:39Z"
+      }
     },
     "§chat.schedules/header": {
       "kind": "behavior",
@@ -10442,7 +10922,11 @@
       "requires": [
         "§chat.playbooks/where-playbooks-come-from",
         "§chat.profiles/projects"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:39Z"
+      }
     },
     "§chat.schedules/limit-reset": {
       "kind": "behavior",
@@ -10470,7 +10954,31 @@
       ],
       "requires": [
         "§chat.schedules/fire"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:39Z"
+      }
+    },
+    "§chat.schedules/merge-ready": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "shared/schedules.ts",
+        "server/schedules.ts",
+        "server/schedule-routes.ts",
+        "shared/schedules.test.ts",
+        "server/schedules.test.ts"
+      ],
+      "requires": [
+        "§chat.schedules/fire",
+        "§chat.schedules/limits"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:39Z"
+      }
     },
     "§chat.schedules/where-shown": {
       "kind": "behavior",
@@ -10494,7 +11002,11 @@
         "§app.overseer/approvals",
         "§chat.transcript/transcript-items",
         "§app.overseer/proactivity"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:39Z"
+      }
     },
     "§chat/schedules": {
       "kind": "surface",
@@ -11714,8 +12226,13 @@
       "requires": [
         "§chat.schedules/fire",
         "§chat.worktrees/readiness",
-        "§chat.profiles/singleton"
-      ]
+        "§chat.profiles/singleton",
+        "§chat.worktrees/merge-board"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:39Z"
+      }
     },
     "§chat/merge-round": {
       "kind": "surface",
@@ -11723,7 +12240,11 @@
       "evidence": "reviewed",
       "code": [
         ".sova/playbooks/merge-round/PLAYBOOK.md"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:39Z"
+      }
     },
     "§chat.merge-round/driver": {
       "kind": "behavior",
@@ -11736,8 +12257,13 @@
       ],
       "requires": [
         "§chat.merge-round/private-names",
-        "§chat.worktrees/readiness"
-      ]
+        "§chat.worktrees/readiness",
+        "§chat.worktrees/merge-board"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:39Z"
+      }
     },
     "§app.access/callers": {
       "kind": "behavior",
@@ -11853,7 +12379,12 @@
       "code": [
         "server/overseer.ts",
         "server/overseer-run-note.ts",
-        "server/overseer-run-note.test.ts"
+        "server/overseer-run-note.test.ts",
+        "server/overseer-opening.ts",
+        "server/overseer-opening.test.ts",
+        "server/harness/pi/golden/session/S11-overseer.jsonl",
+        "server/harness/pi/golden/state/G7-overseer-cleared.jsonl",
+        "server/harness/pi/golden/state/G7-overseer-first.jsonl"
       ],
       "requires": [
         "§app.overseer/confirm",
@@ -11861,7 +12392,11 @@
         "§app.overseer/attention-digest",
         "§chat.worktrees/readiness",
         "§app.overseer/tools"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:06Z"
+      }
     },
     "§app.overseer/session-truth": {
       "kind": "behavior",
@@ -12119,6 +12654,24 @@
         "§app.overseer/confirm"
       ]
     },
+    "§app.claude-code-provider/continuity": {
+      "kind": "behavior",
+      "requires": [
+        "§app/claude-code-provider"
+      ],
+      "authority": "accepted",
+      "code": [
+        "pi-config/extensions/claude-code/provider/session-bridge.ts",
+        "pi-config/extensions/claude-code/provider/bridge.test.ts",
+        "pi-config/extensions/claude-code/provider/resume-record.ts",
+        "pi-config/extensions/claude-code/provider/login-failover.test.ts"
+      ],
+      "evidence": "verified",
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:06Z"
+      }
+    },
     "§app.claude-code-provider/invalid-tool-input": {
       "kind": "behavior",
       "requires": [],
@@ -12139,7 +12692,9 @@
       "evidence": "reviewed",
       "code": [
         "pi-config/extensions/claude-code/provider/stream.ts",
-        "pi-config/extensions/claude-code/provider/session-bridge.ts"
+        "pi-config/extensions/claude-code/provider/session-bridge.ts",
+        "pi-config/extensions/claude-code/provider/mcp-host.ts",
+        "pi-config/extensions/claude-code/provider/DESIGN-bridge.md"
       ]
     },
     "§tools.spec/context-packets": {
@@ -12638,9 +13193,7 @@
     },
     "§app.insights/pace-tick": {
       "kind": "behavior",
-      "requires": [
-        "§app.insights/usage-reset-day"
-      ],
+      "requires": [],
       "authority": "accepted",
       "evidence": "verified",
       "code": [
@@ -12650,21 +13203,8 @@
         "src/components/UsageView.tsx",
         "src/design/base.css",
         "shared/protocol.ts",
-        "server/insights.ts"
-      ]
-    },
-    "§app.insights/usage-reset-day": {
-      "kind": "behavior",
-      "requires": [
-        "§mesh.sync/categories"
-      ],
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "pi-config/extensions/usage-status/index.ts",
         "server/insights.ts",
-        "shared/protocol.ts",
-        "src/components/UsageView.tsx"
+        "src/components/UsageHistory.tsx"
       ]
     },
     "§app.projects/clone": {
@@ -14516,7 +15056,11 @@
       "requires": [
         "§app.insights/llm-inflight",
         "§app.project-costs/pricing"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:06Z"
+      }
     },
     "§mesh.remote-sessions/head-host-state": {
       "kind": "behavior",
@@ -15338,13 +15882,13 @@
         "§app.insights/usage-cards",
         "§app.insights/usage-refresh",
         "§app.insights/pace-tick",
-        "§app.insights/usage-reset-day",
         "§app.insights/velocity-scrub",
         "§app.claude-logins/registry"
       ],
       "authority": "accepted",
       "evidence": "verified",
       "code": [
+        "src/lib/usage-rows.integration.test.ts",
         "server/insights.ts",
         "server/usage-history.ts",
         "server/ollama-usage.test.ts",
@@ -15352,7 +15896,9 @@
         "pi-config/extensions/usage-status/ollama.ts",
         "pi-config/extensions/usage-status/ollama.test.ts",
         "shared/protocol.ts",
-        "src/components/UsageView.tsx"
+        "src/components/UsageView.tsx",
+        "src/components/UsageHistory.tsx",
+        "src/design/base.css"
       ]
     },
     "§app.model-levels/cache": {
@@ -15642,6 +16188,50 @@
         "src/design/base.css"
       ]
     },
+    "§app.claude-code-provider/no-memory": {
+      "kind": "behavior",
+      "requires": [
+        "§app.claude-code-provider/pinned-model"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/claude-code/fixed-settings.ts",
+        "pi-config/extensions/claude-code/transport.ts",
+        "pi-config/extensions/claude-code/transport.test.ts",
+        "pi-config/extensions/claude-code/accounts.ts",
+        "pi-config/extensions/topic-outline/summarizers/claude-cli.ts",
+        "server/decide-llm.ts",
+        "server/session-autotitle.ts",
+        "server/claude-models.ts",
+        "server/claude-models.test.ts",
+        "pi-config/extensions/topic-outline/claude-cli.test.ts",
+        "pi-config/extensions/claude-code/launch-pin.test.ts",
+        "pi-config/extensions/claude-code/runner.test.ts",
+        "pi-config/extensions/claude-code/confined-launch.test.ts",
+        "pi-config/extensions/claude-code/provider/bridge.test.ts",
+        "server/decide-llm.test.ts",
+        "server/session-autotitle.test.ts",
+        "pi-config/extensions/claude-code/accounts.test.ts",
+        "pi-config/extensions/topic-outline/test.mjs"
+      ]
+    },
+    "§app.claude-code-provider/oneshot-uncached": {
+      "kind": "behavior",
+      "requires": [
+        "§app.claude-code-provider/continuity"
+      ],
+      "authority": "accepted",
+      "code": [
+        "pi-config/extensions/claude-code/provider/session-bridge.ts",
+        "pi-config/extensions/claude-code/provider/bridge.test.ts"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:06Z"
+      },
+      "evidence": "verified"
+    },
     "§app.claude-code-provider/pinned-model": {
       "kind": "behavior",
       "requires": [
@@ -15852,7 +16442,6 @@
       "evidence": "verified",
       "requires": [
         "§app.insights/usage-refresh",
-        "§app.insights/usage-reset-day",
         "§app.insights/usage-cards",
         "§app.insights/usage-burn"
       ],
@@ -15871,7 +16460,11 @@
         "src/lib/ollama-usage.ts",
         "src/lib/ollama-usage.test.ts",
         "src/lib/ollama-card.integration.test.ts",
-        "src/lib/insights.test.ts"
+        "src/lib/insights.test.ts",
+        "src/components/UsageOllama.tsx",
+        "src/design/base.css",
+        "src/lib/format.ts",
+        "src/lib/format.test.ts"
       ]
     },
     "§app.insights/ollama-credits": {
@@ -15880,7 +16473,6 @@
       "evidence": "verified",
       "requires": [
         "§app.insights/usage-refresh",
-        "§app.insights/usage-reset-day",
         "§app.insights/usage-cards"
       ],
       "code": [
@@ -15897,7 +16489,11 @@
         "src/lib/ollama-usage.ts",
         "src/lib/ollama-usage.test.ts",
         "src/lib/ollama-card.integration.test.ts",
-        "src/lib/insights.test.ts"
+        "src/lib/insights.test.ts",
+        "src/components/UsageOllama.tsx",
+        "src/design/base.css",
+        "src/lib/format.ts",
+        "src/lib/format.test.ts"
       ]
     },
     "§app.insights/usage-detail-reachability": {
@@ -15906,8 +16502,7 @@
       "evidence": "verified",
       "requires": [
         "§app.insights/ollama-activity",
-        "§app.insights/ollama-credits",
-        "§app.insights/usage-reset-day"
+        "§app.insights/ollama-credits"
       ],
       "code": [
         "pi-config/extensions/usage-status/index.ts",
@@ -16222,13 +16817,18 @@
         "§app/notifications",
         "§app.notifications/delivery",
         "§app.notifications/settings",
-        "§app.settings-dialog/overseer"
+        "§app.settings-dialog/overseer",
+        "§chat/merge-round"
       ],
       "authority": "accepted",
       "evidence": "reviewed",
       "code": [
         "site/src/content/docs/needs-you.md"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:39Z"
+      }
     },
     "§site.docs/overseer": {
       "kind": "behavior",
@@ -16251,13 +16851,18 @@
         "§app.overseer/attention-digest",
         "§app.overseer/proactivity",
         "§app.overseer/dialog-answers",
-        "§app.settings-dialog/overseer"
+        "§app.settings-dialog/overseer",
+        "§chat/merge-round"
       ],
       "authority": "accepted",
       "evidence": "reviewed",
       "code": [
         "site/src/content/docs/overseer.md"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:39Z"
+      }
     },
     "§site.docs/phone": {
       "kind": "behavior",
@@ -16281,6 +16886,30 @@
       "code": [
         "site/src/content/docs/phone.md"
       ]
+    },
+    "§site.docs/playbooks-and-schedules": {
+      "kind": "behavior",
+      "requires": [
+        "§chat/playbooks",
+        "§chat/schedules",
+        "§chat.schedules/header",
+        "§chat.schedules/approval",
+        "§chat.schedules/fire",
+        "§chat.schedules/limits",
+        "§chat.schedules/where-shown",
+        "§chat/merge-round",
+        "§chat.merge-round/round",
+        "§chat.worktrees/merge-board"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "site/src/content/docs/playbooks-and-schedules.md"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-10T10:39Z"
+      }
     },
     "§site.docs/spec-mode": {
       "kind": "behavior",
@@ -16826,6 +17455,9 @@
         "pi-config/extensions/mode/align-tool.ts",
         "pi-config/extensions/mode/align-settings.test.ts",
         "pi-config/extensions/mode/tests/style-turn.mjs",
+        "pi-config/extensions/mode/prompt.ts",
+        "pi-config/extensions/mode/align.test.ts",
+        "pi-config/extensions/mode/index.test.ts",
         "server/vis-check.ts",
         "server/chat-manager.ts",
         "server/harness/state-kinds.ts",

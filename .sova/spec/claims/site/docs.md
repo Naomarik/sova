@@ -106,12 +106,24 @@ cleaning up), and how you read what changed as numbered steps.
 ## §site.docs/needs-you — Needs you (`/docs/needs-you/`)
 
 The sidebar list of sessions waiting on you, the Overseer's attention digest, and the same news as
-phone notifications, with their settings.
+phone notifications, with their settings. A worktree ready to merge is a quiet mark, not a row, and
+a scheduled playbook (the Merge round) can act on it: it wakes when one turns ready, asks its owner,
+and lands it.
 
 ## §site.docs/overseer — The Overseer (`/docs/overseer/`)
 
 The session that reads every other session and acts on them through Sova: what it is, what it may
-do and when it asks first, its notes, ideas and to-dos, and its settings.
+do and when it asks first, its notes, ideas and to-dos, and its settings. Its news of branches
+ready to merge links to the Merge round, which in Sova's own repository picks those up by itself,
+asking each branch's owner first.
+
+## §site.docs/playbooks-and-schedules — Playbooks and schedules (`/docs/playbooks-and-schedules/`)
+
+Running a playbook from the composer's Playbooks dialog; a project playbook's schedule: who fires
+it, its triggers (times, intervals, `claude-limit-reset`, `merge-ready`) and their limits, how a
+`merge-ready` fire waits and collects branches, and approving or revoking it. Then the Merge round
+as the worked example: its schedule, the merge board, asking the owner, what comes to the user
+(branches with no live owner, once each) and the one-line quiet round.
 
 ## §site.docs/phone — Check in from your phone (`/docs/phone/`)
 

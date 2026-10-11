@@ -3,7 +3,7 @@
 // idle session reads as idle; the live-record cases drop a presence file with an alive foreign
 // pid (1) into the temp live dir and remove it after.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
@@ -95,6 +95,20 @@ test("fork route: a happy fork is a web-owned session with a parent reference", 
     "through the selected reply, nothing later",
   );
   assert.equal(readFileSync(path, "utf8"), before, "the source bytes never change");
+});
+
+test("fork route: the fork's memory starts as a copy of its source's (§chat.memory/log)", async () => {
+  const path = source(conversation("src-memory", later));
+  const { memoryDir } = await import("./memory/store");
+  mkdirSync(memoryDir("src-memory"), { recursive: true });
+  writeFileSync(join(memoryDir("src-memory"), "tree.jsonl"), '{"marker":1}\n');
+  const res = await post({ path, entryId: "a1" });
+  assert.equal(res.status, 201);
+  const fork = (await res.json()) as { id: string };
+  assert.equal(readFileSync(join(memoryDir(fork.id), "tree.jsonl"), "utf8"), '{"marker":1}\n');
+  const bare = await post({ path: source(conversation("src-no-memory", later)), entryId: "a1" });
+  assert.equal(bare.status, 201);
+  assert.equal(existsSync(memoryDir(((await bare.json()) as { id: string }).id)), false, "a source without memory gives none");
 });
 
 test("fork route: held runtime checks streaming, compaction and queued sends without modifying the source", async (t) => {

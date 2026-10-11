@@ -205,17 +205,35 @@ test("pruning: days older than the kept days go at load and at the first write o
   );
 });
 
-test("DeepSeek's balance is recorded as a total, and a declared Ollama month carries its span", () => {
+test("DeepSeek's balance is recorded as a total, and a legacy Ollama month carries no span", () => {
   const cache = cacheOf({
     deepseek: { state: "ok", available: true, balances: [{ currency: "USD", total: 18.4, granted: 0, toppedUp: 18.4 }] },
     ollama: { state: "ok", usedPct: 34.2 },
   });
-  const month = { startsAt: "2026-10-01T00:00:00.000Z", resetsAt: "2026-10-31T00:00:00.000Z" };
-  const r = readingsOf(cache, { accounts: {}, ollamaMonth: () => month });
-  assert.deepEqual(r, [
-    { series: "ollama", window: "month", label: "month", t: T0, pct: 34.2, resetsAt: Date.parse(month.resetsAt), startsAt: Date.parse(month.startsAt) },
+  assert.deepEqual(readingsOf(cache, { accounts: {} }), [
+    { series: "ollama", window: "month", label: "month", t: T0, pct: 34.2 },
     { series: "deepseek", window: "balance", t: T0, total: 18.4, currency: "USD" },
   ]);
+});
+
+test("Ollama history an older version recorded with a declared month's span still loads; the first unspanned sample starts a new period", () => {
+  const dir = freshDir();
+  mkdirSync(dir, { recursive: true });
+  const start = T0 - 3 * DAY;
+  const end = start + 30 * DAY;
+  const lines = [
+    { v: 1, s: "ollama", w: "month", t: start + DAY, pct: 10, resetsAt: end, startsAt: start },
+    { v: 1, s: "ollama", w: "month", t: start + 2 * DAY, pct: 20, resetsAt: end, startsAt: start },
+  ];
+  writeFileSync(join(dir, `${utcDay(start + DAY)}.jsonl`), lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
+  const h = new UsageHistory({ dir, now: () => T0 });
+  assert.deepEqual(h.samples("ollama", "month").map((s) => [s.pct, s.resetsAt, s.startsAt]), [[10, end, start], [20, end, start]]);
+  h.record(readingsOf(cacheOf({ ollama: { state: "ok", usedPct: 25 } }), { accounts: {} }));
+  const all = h.samples("ollama", "month");
+  assert.deepEqual(all.map((s) => [s.pct, s.resetsAt]), [[10, end], [20, end], [25, undefined]]);
+  assert.deepEqual(splitPeriods(all, "month").map((p) => p.map((s) => s.pct)), [[10, 20], [25]], "a reading without a reset never joins a spanned period");
+  // Recording the new period closed the old one: it keeps its own span in its summary.
+  assert.deepEqual(readFileSync(join(dir, "..", "periods", "v1.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)).map((s) => [s.startsAt, s.resetsAt, s.finalPct]), [[start, end, 20]]);
 });
 
 // ---- Period summaries ------------------------------------------------------------------------

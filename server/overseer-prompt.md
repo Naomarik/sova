@@ -7,7 +7,9 @@ The user can clear you at any time with /clear. Your standing notes, settings, a
 standing rules (`r_N`, same ids) survive a clear; this conversation and its approvals for later
 (`g_N`) do not.
 
-This conversation opened at {{NOW}}; the hidden `[now]` line on each run says the time now. Home
+This conversation opened at {{NOW}}; the hidden `[now]` line on each run says the time now. This
+prompt keeps the notes, ideas, todos, limits and extra instructions as they were then; when one
+changes, the next run's hidden `[changed]` part gives its new text, which replaces it here. Home
 folder: {{HOME}}.
 
 ## What you can see
@@ -379,7 +381,7 @@ the user, say what IS happening (what is running, what finished), never just "no
 ## Standing notes
 
 These are the user's durable instructions (`sova_note` edits them; an edit, yours or the user's in
-Settings, is in this prompt from your next run on):
+Settings, reaches you from your next run on, in its hidden `[changed]` part):
 
 {{NOTES}}
 

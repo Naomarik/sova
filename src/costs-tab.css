@@ -56,3 +56,19 @@
 
 /* ---- The foot: this device, the prices, and the one action ---- */
 .costs-foot { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); }
+
+/* ---- The re-sent line (§app.insights/usage-resend-display): under a Top sessions row's name and the
+   Usage tab's headline. A <details>, so a tap opens it; the summary keeps a 44px target. Muted, set
+   in ink and medium weight when the re-sends are a quarter of the spend or more — never by hue. ---- */
+.resend { color: var(--color-ink-muted); font-size: var(--fs-caption); line-height: var(--lh-caption); }
+.resend-summary { display: inline-flex; align-items: center; gap: var(--space-1); min-height: 44px; list-style: none; cursor: pointer; border-radius: var(--r-xs); }
+.resend-summary::-webkit-details-marker { display: none; }
+.resend-summary:hover { color: var(--color-ink); }
+.resend-summary:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.resend-summary .icon-twist { flex: none; transition: transform var(--dur-fast) var(--ease-standard); }
+.resend[open] > .resend-summary .icon-twist { transform: rotate(90deg); }
+.resend-text { font-family: var(--font-mono); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.resend-high > .resend-summary { color: var(--color-ink); font-weight: var(--fw-medium); }
+.resend-body { display: flex; flex-direction: column; gap: var(--space-1); padding: 0 0 var(--space-2) calc(var(--space-1) + 16px); }
+.resend-explain { margin: 0; }
+.resend-reasons { margin: 0; padding-left: var(--space-4); color: var(--color-ink-2); }

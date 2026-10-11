@@ -1,19 +1,19 @@
 step attach A, B
 A {"type":"hello","isStreaming":false,"isCompacting":false,"model":"scripted/scripted","thinking":"off","items":["00000001 info"]}
 A {"type":"queue","items":[]}
-A {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now"}
+A {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now","memory":{"type":"uniichat","size":128}}
 B {"type":"hello","isStreaming":false,"isCompacting":false,"model":"scripted/scripted","thinking":"off","items":["00000001 info"]}
 B {"type":"queue","items":[]}
-B {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now"}
+B {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now","memory":{"type":"uniichat","size":128}}
 step detach A, B; dispose
 step reopen
 step attach A, B
 A {"type":"hello","isStreaming":false,"isCompacting":false,"model":"scripted/scripted","thinking":"off","items":["00000001 info"]}
 A {"type":"queue","items":[]}
-A {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now"}
+A {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now","memory":{"type":"uniichat","size":128}}
 B {"type":"hello","isStreaming":false,"isCompacting":false,"model":"scripted/scripted","thinking":"off","items":["00000001 info"]}
 B {"type":"queue","items":[]}
-B {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now"}
+B {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now","memory":{"type":"uniichat","size":128}}
 step A sends {"type":"prompt","text":"hello","clientId":"c1"}
 write {"id":"00000002","type":"thinking_level_change"}
 write {"id":"00000003","type":"custom","customType":"sova-align-launch"}

@@ -1,0 +1,186 @@
+import { createSignal, For, onCleanup, Show } from "solid-js";
+import type { UsageProvider } from "../../shared/protocol";
+import { calendarDay, clockTime, dateClock, stampTime } from "../lib/format";
+import { activityMetrics, activityTrend, currentIncluded, endpointPrevious, includedCreditPct, reportedMoney } from "../lib/ollama-usage";
+
+/** The daily chart's height, its widest bar pitch and the narrowest. */
+const DAILY_H = 64;
+const DAILY_PITCH_MAX = 32;
+const DAILY_PITCH_MIN = 4;
+
+/**
+ * "Daily reported USD" as bars (§app.insights/ollama-activity): measured to its block's width, a
+ * fixed pitch from the left edge, partial days muted, a missing amount a dashed base. Before it is
+ * measured (and on the server) it draws at the widest pitch. `aria-hidden`: the date list under it
+ * carries the figures.
+ */
+function DailyBars(props: { days: ReturnType<typeof activityTrend> }) {
+  const [width, setWidth] = createSignal(0);
+  const measure = (el: HTMLDivElement) => {
+    const ro = new ResizeObserver(() => setWidth(Math.floor(el.clientWidth)));
+    ro.observe(el);
+    onCleanup(() => ro.disconnect());
+  };
+  const n = () => Math.max(1, props.days.length);
+  const pitch = () => (width() > 0 ? Math.max(DAILY_PITCH_MIN, Math.min(DAILY_PITCH_MAX, Math.floor(width() / n()))) : DAILY_PITCH_MAX);
+  const bar = () => Math.max(2, pitch() - Math.max(1, Math.round(pitch() * 0.3)));
+  const scale = () => Math.max(0.01, ...props.days.map((b) => b.usd ?? 0));
+  const height = (usd: number) => Math.max(1, (usd / scale()) * (DAILY_H - 4));
+  return (
+    <div ref={measure} class="usage-daily">
+      <svg class="usage-daily-bars" width={n() * pitch()} height={DAILY_H} viewBox={`0 0 ${n() * pitch()} ${DAILY_H}`} aria-hidden="true">
+        <For each={props.days}>
+          {(b, i) => (
+            <Show when={b.usd !== undefined} fallback={<path class="usage-daily-gap" d={`M${i() * pitch()},${DAILY_H - 2} h${bar()}`} />}>
+              <rect
+                class="usage-daily-bar"
+                classList={{ "usage-daily-bar-partial": b.partial }}
+                x={i() * pitch()}
+                y={DAILY_H - 1 - height(b.usd!)}
+                width={bar()}
+                height={height(b.usd!)}
+              />
+            </Show>
+          )}
+        </For>
+      </svg>
+    </div>
+  );
+}
+
+/** A local time with its exact ISO in `title`, on one line: the stamp ("12:00 PM", "Oct 8 3:12
+    PM"), or with `date` the date always shown ("Oct 1 3:30 PM"). Raw text when unreadable. */
+function Time(props: { iso: string; now: number; date?: boolean }) {
+  const text = () => (props.date ? dateClock(props.iso, props.now) : stampTime(props.iso, props.now)) || props.iso;
+  return <time class="usage-period" datetime={props.iso} title={props.iso}>{text()}</time>;
+}
+
+/** "{from} → {until}" in local time: each bound on one line, so a wrap falls at the arrow. */
+function Period(props: { from: string; until: string; now: number }) {
+  return (
+    <>
+      <Time iso={props.from} now={props.now} date /> → <Time iso={props.until} now={props.now} date />
+    </>
+  );
+}
+
+/** A daily-list entry's day: its UTC calendar date, plus a split day's local bucket clock. */
+function dayLabel(b: { date: string; from: string }, now: number): string {
+  const day = calendarDay(b.date.slice(0, 10), now);
+  return b.date.length > 10 ? `${day} ${clockTime(b.from)}` : day;
+}
+
+/**
+ * Ollama's lines (§app.insights/ollama-credits, §app.insights/ollama-activity): included credits
+ * and activity, each a meter block and a trend block. Its sources are separate from quota windows and the device's API-price ledger.
+ */
+export function OllamaLines(props: { p: UsageProvider; now: number }) {
+  const activity = () => props.p.activity;
+  const credits = () => props.p.credits;
+  const period = () => credits()?.data?.included?.period;
+  const previousCredits = () => endpointPrevious(credits(), props.now) || (!!period() && (Date.parse(period()!.from) > props.now || Date.parse(period()!.until) <= props.now));
+  const asOf = (t: number | undefined) => (t === undefined ? "time unknown" : <Time iso={new Date(t).toISOString()} now={props.now} />);
+  const trend = () => (activity()?.data ? activityTrend(activity()!.data!) : []);
+  return (
+    <>
+      <Show
+        when={credits()}
+        fallback={
+          <section class="usage-credits stack stack-2" aria-labelledby="u-ollama-credits">
+            <h3 id="u-ollama-credits" class="text-heading-s">Included credits</h3>
+            <p class="meter-context">No balance reading yet.</p>
+            <div class="usage-credit-figures">
+              <p class="meter-head"><span class="meter-label">Included remaining</span><span class="meter-value">Unknown</span></p>
+              <p class="meter-head"><span class="meter-label">Included allowance</span><span class="meter-value">Unknown</span></p>
+              <p class="meter-head"><span class="meter-label">Purchased remaining</span><span class="meter-value">Unknown</span></p>
+            </div>
+          </section>
+        }
+      >
+        {(r) => (
+          <section class="usage-credits stack stack-2" aria-labelledby="u-ollama-credits">
+            <div class="usage-line-meter stack stack-2">
+              <h3 id="u-ollama-credits" class="text-heading-s">Included credits</h3>
+              <p class="usage-caption text-caption text-muted">
+                {previousCredits() ? "Previous reading · as of " : "As of "}
+                {asOf(r().fetchedAt)}
+                <Show when={r().error}> · {r().error}</Show>
+              </p>
+              <div class="meter">
+                <div class="usage-credit-figures">
+                  <p class="meter-head"><span class="meter-label">Included remaining</span><span class="meter-value">{reportedMoney(r().data?.included?.balance_usd)}</span></p>
+                  <p class="meter-head"><span class="meter-label">Included allowance</span><span class="meter-value">{reportedMoney(r().data?.included?.allowance_usd)}</span></p>
+                  <p class="meter-head"><span class="meter-label">Purchased remaining</span><span class="meter-value">{reportedMoney(r().data?.purchased?.balance_usd)}</span></p>
+                </div>
+                <Show when={includedCreditPct(r().data) !== undefined}>
+                  <p class="meter-context">{Math.round(includedCreditPct(r().data)!)}% included credits used</p>
+                  <Show when={currentIncluded(props.p, props.now)}>
+                    <div class="meter-track usage-credit-meter" aria-hidden="true">
+                      <span class="meter-fill" style={{ "--meter-pct": `${includedCreditPct(r().data)}%` }} />
+                    </div>
+                  </Show>
+                </Show>
+                <Show when={period()} fallback={<p class="meter-context">Included period: Unknown</p>}>
+                  {(p) => (
+                    <p class="meter-context">
+                      <Period from={p().from} until={p().until} now={props.now} /> · end exclusive
+                    </p>
+                  )}
+                </Show>
+              </div>
+            </div>
+            <div class="usage-line-trend">
+              <For each={(["session", "weekly"] as const).filter((k) => r().data?.[k])}>
+                {(k) => (
+                  <p class="meter-context">
+                    {k === "session" ? "Session" : "Weekly"}: {r().data![k]!.remaining_percent}% remaining
+                    <Show when={r().data![k]!.resets_at}>{(at) => <> · resets <Time iso={at()} now={props.now} /></>}</Show>
+                  </p>
+                )}
+              </For>
+            </div>
+          </section>
+        )}
+      </Show>
+      <Show when={activity()}>
+        {(r) => (
+          <section class="usage-line usage-activity" aria-labelledby="u-ollama-activity">
+            <header class="usage-line-head stack stack-2">
+              <h3 id="u-ollama-activity" class="text-heading-s">Activity</h3>
+              <p class="usage-caption text-caption text-muted">
+                {endpointPrevious(r(), props.now) ? "Previous reading · as of " : "As of "}
+                {asOf(r().fetchedAt)}
+                <Show when={r().error}> · {r().error}</Show>
+              </p>
+              <Show when={r().data}>
+                {(a) => <p class="meter-context"><Period from={a().from} until={a().until} now={props.now} /> · end exclusive · {a().scope}</p>}
+              </Show>
+            </header>
+            <Show when={r().data}>
+              {(a) => <div class="usage-line-meter stack stack-2">
+                <For each={activityMetrics(a())}>{(m) => <p class="meter-head"><span class="meter-label">{m.label}</span><span class="meter-value">{m.value}</span></p>}</For>
+                <p class="meter-context">Request value, including plan and purchased credits—not subscription spend. Usage may be delayed.</p>
+              </div>}
+            </Show>
+            <Show when={r().data}>
+              <div class="usage-line-trend">
+                <h4 class="text-caption">Daily reported USD</h4>
+                <DailyBars days={trend()} />
+                <ul class="meter-context usage-daily-list">
+                  <For each={trend()}>
+                    {(b) => (
+                      <li title={`${b.from} → ${b.until} UTC`}>
+                        {dayLabel(b, props.now)} · {reportedMoney(b.usd)}
+                        {b.partial ? " · Partial" : ""}
+                      </li>
+                    )}
+                  </For>
+                </ul>
+              </div>
+            </Show>
+          </section>
+        )}
+      </Show>
+    </>
+  );
+}

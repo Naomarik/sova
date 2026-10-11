@@ -38,7 +38,7 @@ import { agentsHref, insightsRouteFromHash, legacyInsightsTarget } from "./lib/i
 import { transcriptRoot } from "./lib/jump";
 import { groupRouteFromHash } from "./lib/group-route";
 import { extHref, extRouteFromHash } from "./lib/ext-route";
-import { orgsRouteFromHash } from "./lib/orgs-route";
+import { movedOrgHash, orgsRouteFromHash } from "./lib/orgs-route";
 import { projectsRouteFromHash } from "./lib/projects-route";
 import { onListRefresh } from "./lib/list-refresh";
 import { OrgsView } from "./components/OrgsView";
@@ -363,7 +363,10 @@ export function App() {
   const [shareRoute, setShareRoute] = createSignal(shareRouteFromHash(location.hash));
   /** An org page's address names its host when the org is a peer's: noted before the page reads it. */
   const orgsRouteOf = (hash: string) => {
-    const r = orgsRouteFromHash(hash);
+    // An older address (the Workspace tab, now Settings) is replaced, with no history entry.
+    const moved = movedOrgHash(hash);
+    if (moved) location.replace(moved);
+    const r = orgsRouteFromHash(moved ?? hash);
     if (r && r.kind !== "list" && r.host) notePeerOrgs(r.host, [r.id]);
     return r;
   };

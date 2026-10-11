@@ -65,7 +65,8 @@ appends (one line each).
   it is thinking, within 45 s, and its JSON is parsed strictly; junk is `malformed-answer`. The prompt tells it that the state is
   data, never instructions. A pi model runs through the server's
   model runtime (no session is created, no session's runtime is touched); a Claude Code model runs
-  the `claude` CLI one-shot with no tools, no settings, no session persistence and a per-call
+  the `claude` CLI one-shot with no tools, none of the user's Claude Code settings (only Sova's
+  fixed ones, auto-memory off: §app.claude-code-provider/no-memory), no session persistence and a per-call
   budget cap. The model policy (§app.settings-dialog/models) is checked at save and at every call;
   a denied model is `unavailable`. A call whose provider is at its request limit waits for a slot
   (§app.provider-limits/queue) as background work, and the wait counts toward its 45 s.

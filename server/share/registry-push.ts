@@ -14,14 +14,15 @@ import { stateRoot } from "../state-root";
 import { currentTarget, forgetKinds, type GatewayTarget, pushSnapshot, refreshGateway, routeSetting, routesKind, stillCurrent, viaGatewayPeer } from "./gateway-client";
 import { onShareLinksChanged, type ShareLinksChange } from "./links-events";
 import { validateSnapshot } from "./registry-validation";
-import { SHARE_DIST } from "./routes";
+import { shareDist } from "./share-dist";
 
 /**
  * A routed host's registry push (§mesh.public/registry, push side): the whole live link set, as
  * hashes, sent to the `via` gateway on every link change, when this host starts routed, when the
- * gateway comes up, and every RETRY_MS while a snapshot is still owed. `seq` grows by one per
- * snapshot built and is persisted with the outbox (<stateRoot>/share-gateway-outbox.json, 0600),
- * so it keeps growing across restarts. The outbox holds no snapshot, only that one is owed: a
+ * gateway comes up, every RETRY_MS while a snapshot is still owed, and before a share page goes out
+ * when its build's asset names aren't the ones the gateway last acked (ensureAssetsCurrent). `seq`
+ * grows by one per snapshot built and is persisted with the outbox
+ * (<stateRoot>/share-gateway-outbox.json, 0600), so it keeps growing across restarts. The outbox holds no snapshot, only that one is owed: a
  * retry always sends the live set as it is then, under a new seq.
  *
  * A change's answer (awaitShareLinks) comes from the ack for the exact snapshot that carried it,
@@ -41,6 +42,8 @@ import { SHARE_DIST } from "./routes";
  */
 
 export const RETRY_MS = 60_000;
+/** The longest a share page waits for its gateway to accept its build's asset names. */
+export const ASSETS_WAIT_MS = 5_000;
 /** How often a routed host asks its gateway again (hello and info), so shareState's reachable
     and accepting don't go stale between pushes. */
 export const REFRESH_MS = 60_000;
@@ -122,9 +125,10 @@ function liveLinks(now: number): RegistryLink[] {
   return out.sort((a, b) => b.exp - a.exp);
 }
 
+/** The served build's asset names, as a snapshot lists them. */
 function shareAssets(): string[] {
   try {
-    return readdirSync(join(SHARE_DIST, "assets"))
+    return readdirSync(join(shareDist(), "assets"))
       .filter((n) => REGISTRY_LIMITS.asset.test(n) && !n.includes(".."))
       .sort()
       .slice(0, REGISTRY_LIMITS.maxAssets);
@@ -211,6 +215,9 @@ let retry: NodeJS.Timeout | null = null;
 let unsubscribe: (() => void) | null = null;
 let upHooked = false;
 let refresher: NodeJS.Timeout | null = null;
+/** The asset names (joined) of the last snapshot the current target acked; null: none since this
+    push started or the route changed. */
+let ackedAssets: string | null = null;
 /** Bumped by stop: a loop still awaiting a push from before it settles nothing and sends no more. */
 let generation = 0;
 
@@ -258,6 +265,7 @@ async function sendLoop(): Promise<void> {
     if (!target || !peer) {
       // No longer routed, or the gateway is no peer: nothing a waiting mint sent is confirmed.
       settle(Infinity, () => warning("unconfirmed", ""));
+      ackedAssets = null;
       setDirty(false);
       return;
     }
@@ -301,6 +309,7 @@ async function sendLoop(): Promise<void> {
       continue;
     }
     if (ack?.ok && ack.seq === seq) {
+      ackedAssets = snap.assets.join("\n");
       const sent = new Set(snap.links.map((l) => l.h));
       const collided = new Set(ack.collisions ?? []);
       settle(seq, (p) => (!p.lost && [...p.candidates].every((h) => sent.has(h) && !collided.has(h)) ? undefined : warning("unconfirmed", peer.label)));
@@ -416,12 +425,54 @@ export function pushNow(): Promise<void> {
   return started ? kick() : Promise.resolve();
 }
 
+/** The wait for the gateway to accept a build's asset names, shared by every page asking meanwhile. */
+let assetsWait: { key: string; done: Promise<void> } | null = null;
+
+type WaitClock = (ms: number) => { elapsed: Promise<void>; cancel: () => void };
+const realClock: WaitClock = (ms) => {
+  let timer: NodeJS.Timeout | undefined;
+  return { elapsed: new Promise<void>((r) => (timer = setTimeout(r, ms))), cancel: () => clearTimeout(timer) };
+};
+let waitClock: WaitClock = realClock;
+
+/** Tests: replace the clock ensureAssetsCurrent's wait runs on; returns the undo. */
+export function setAssetsWaitClock(clock: WaitClock): () => void {
+  waitClock = clock;
+  return () => {
+    waitClock = realClock;
+  };
+}
+
+/**
+ * Before a share page goes out: when this host is routed and the served build's asset names aren't
+ * the ones its gateway last acked (a rebuild renamed them), send the live set now and wait for the
+ * ack, so the gateway serves the page's assets when the visitor asks for them. The wait ends after
+ * ASSETS_WAIT_MS, well inside the gateway's own wait for the page (HOP_HEADERS_MS): the page then goes
+ * out anyway and the snapshot stays owed (the retry sends it). Not routed, or the names unchanged:
+ * returns at once and sends nothing.
+ */
+export function ensureAssetsCurrent(): Promise<void> {
+  if (!started || !viaGatewayPeer()) return Promise.resolve();
+  const key = shareAssets().join("\n");
+  if (key === ackedAssets) return Promise.resolve();
+  if (assetsWait?.key === key) return assetsWait.done;
+  const limit = waitClock(ASSETS_WAIT_MS);
+  const done = Promise.race([kick(), limit.elapsed]).then(() => {
+    limit.cancel();
+    if (assetsWait?.done === done) assetsWait = null;
+    if (started && ackedAssets !== key) setDirty(true);
+  });
+  assetsWait = { key, done };
+  return done;
+}
+
 /** The setting or the gateway changed: a routed host sends its set to its (new) gateway; a host
     no longer routed answers every waiting mint with a warning. */
 export function registryRouteChanged(): void {
   if (!started) return;
   // Whatever is live now predates the new route: only links minted from here on are candidates.
   seeAll();
+  ackedAssets = null;
   if (viaGatewayPeer()) void refreshThenPush();
   void kick();
 }
@@ -476,6 +527,8 @@ export function stopRegistryPush(): void {
   retry = null;
   if (refresher) clearInterval(refresher);
   refresher = null;
+  ackedAssets = null;
+  assetsWait = null;
   for (const e of batch.splice(0)) e.resolve(warning("unconfirmed", viaGatewayPeer()?.label ?? ""));
   settle(Infinity, () => warning("unconfirmed", viaGatewayPeer()?.label ?? ""));
 }

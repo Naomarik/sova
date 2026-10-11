@@ -48,7 +48,7 @@ import { sessionAttachmentsDir } from "./attachments";
 import { overseerFileTools } from "./overseer-file-tools";
 import { getIdea, promptToc, readManifest, readProse, updateIdea } from "./overseer-ideas";
 import { redactExtensionMessages, serverRedactor } from "./overseer-redact";
-import { readNotes } from "./overseer-store";
+import { logAction, readNotes } from "./overseer-store";
 import { readTodos, updateTodo } from "./overseer-todos";
 import { UserTurns } from "./user-turns";
 import { canonicalPath } from "./paths";
@@ -121,7 +121,7 @@ import {
   writePoSettings,
   type ProjectOverseerPaths,
 } from "./project-overseer-store";
-import { PO_BUILTINS, projectOverseerTools, type PoToolHost } from "./project-overseer-tools";
+import { PO_BUILTINS, PO_UNATTENDED_WRITE_REFUSAL, projectOverseerTools, type PoToolHost } from "./project-overseer-tools";
 
 /**
  * The project overseer (§app/project-overseer): one special session per project. Like the
@@ -1134,10 +1134,22 @@ registerSpecialLoadout({
       // Sova's own state (overseer-deny.ts), whatever the root holds; read also opens this
       // conversation's own attachments folder (what the operator pastes into it). This loadout is
       // this conversation's: a clear opens the next one with its own.
-      customTools: overseerFileTools(project.root, undefined, undefined, () => {
-        const own = sessionAttachmentsDir(idOf(path));
-        return new RootConfinement(projectOf(rt.projectId).root, confinedOut(), own ? [own] : []);
-      }),
+      // write/edit the same, never into the attachments folder, and only in a run the operator started.
+      customTools: overseerFileTools(
+        project.root,
+        undefined,
+        undefined,
+        () => {
+          const own = sessionAttachmentsDir(idOf(path));
+          return new RootConfinement(projectOf(rt.projectId).root, confinedOut(), own ? [own] : []);
+        },
+        {
+          protectedRoots: confinedOut,
+          attended: () => rt.turns.attended(),
+          unattended: PO_UNATTENDED_WRITE_REFUSAL,
+          log: (line) => logAction({ at: new Date().toISOString(), overseerId: readPoState(p)?.current ?? "", ...line }, p.actions),
+        },
+      ),
       model: settings.model ?? defaults.model ?? null,
       thinking: settings.thinking ?? defaults.thinking ?? null,
     };

@@ -164,6 +164,11 @@ export const UNATTENDED_REFUSAL =
   "the user adopted covers this act. Stop, and raise a sova_card card that says what you would do and why; the user's click " +
   "starts a turn in which you may act.";
 
+/** write and edit in such a turn (§app.overseer/tools): no approval or rule ever covers a file. */
+export const UNATTENDED_WRITE_REFUSAL =
+  "This turn was not started by the user (it is a brief, a wake-up or another automatic message), so no file is written here. " +
+  "Stop, and raise a sova_card card that says what you would write and why; the user's click starts a turn in which you may write it.";
+
 /** The sandbox states, loosest first (§chat.sandbox/states), and how the tools name them. */
 export type SandboxState = "off" | "subagents" | "on";
 const SANDBOX_STATES: readonly SandboxState[] = ["off", "subagents", "on"];
@@ -1682,5 +1687,5 @@ export function contactRedactingTool<T extends ToolSpec>(tool: T): T {
   } as T;
 }
 
-/** Every tool name the Overseer has: its own plus the read-only built-ins and wake_nudge. */
-export const BUILTIN_ALLOWED = ["read", "grep", "find", "ls", "wake_nudge"];
+/** Every tool name the Overseer has: its own plus the file built-ins (write and edit guarded, overseer-file-tools.ts) and wake_nudge. */
+export const BUILTIN_ALLOWED = ["read", "grep", "find", "ls", "write", "edit", "wake_nudge"];

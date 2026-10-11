@@ -310,7 +310,9 @@ else about the shell changes.
 ## §app.shell/installable — The app installs like an app
 
 The web app can be added to a phone's Home Screen or installed from a desktop browser, and it then
-opens in its own window with no browser bar.
+opens in its own window with no browser bar. On a Mac or Linux desktop where Sova was installed
+with the installer, its app-launcher entry already opens Sova that way, unlocked, with no step in
+the browser (§app.installer/app-entry).
 
 - **The manifest** (`public/manifest.webmanifest`, linked from `index.html`) names it `sova`, starts
   at `/` with the whole origin in scope, asks for `display: standalone`, and carries 192px and 512px

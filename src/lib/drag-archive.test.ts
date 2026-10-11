@@ -3,7 +3,7 @@
 // when it can't, and what the drop says.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { archiveDragOf, archivedDropToast, archiveTileReason, blockedDropSentence, orgProjectOf, unarchivedToast } from "./drag-archive";
+import { archiveDragOf, archivedDropToast, archivedProjectOf, archiveTileReason, blockedDropSentence, orgProjectOf, unarchivedToast } from "./drag-archive";
 import type { SelectableSession } from "./session-selection";
 
 const row = (over: Partial<SelectableSession> = {}): SelectableSession => ({
@@ -72,4 +72,14 @@ test("an org session goes to its group's Done list in its project, and back to i
   assert.equal(unarchivedToast(project), "Moved back to Rakiba site.");
   assert.equal(unarchivedToast(orgProjectOf({})), "Moved back to Live & web.", "an ordinary session is unchanged");
   assert.equal(archivedDropToast(true, project).undo, false, "a deleted never-sent session is still deleted");
+  assert.equal(archivedProjectOf({ org }), "Rakiba site");
+});
+
+test("a standalone project's build goes to the Archive when archived, and back to its project when unarchived", () => {
+  const build = { project: { projectId: "p", projectName: "sova", kind: "coding" as const } };
+  assert.equal(archivedDropToast(false, archivedProjectOf(build)).text, "Archived. Find it under Archive.");
+  assert.equal(unarchivedToast(orgProjectOf(build)), "Moved back to sova.");
+  const folder = { project: { projectId: "p", projectName: "sova", kind: "folder" as const } };
+  assert.equal(archivedProjectOf(folder), null);
+  assert.equal(unarchivedToast(orgProjectOf(folder)), "Moved back to Live & web.", "a folder session is ordinary");
 });

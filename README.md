@@ -31,8 +31,10 @@ curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/master/scripts/instal
 Until the first release is tagged, this installs the `master` branch; running it again updates to
 master's latest commit.
 
-Then run `sova`, and `sova open` to open **http://127.0.0.1:4800** already unlocked. Uses your
-existing pi provider login.
+Then click **Sova** in your app launcher (or run `sova open`): it starts the server if it isn't
+running and opens **http://127.0.0.1:4800** already unlocked, in a window of its own when Chrome,
+Chromium, Brave, Edge or Vivaldi is installed. `sova` runs the server in a terminal instead. Uses
+your existing pi provider login.
 [First-time login or command not found?](docs/getting-started.md) ·
 [Run a checkout as a service, on Bun or Node](docs/running-as-a-service.md)
 

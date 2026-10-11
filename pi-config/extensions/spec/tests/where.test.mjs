@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { symlinkSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fixture, cli, pages, write } from "./map-fixture.mjs";
+import { termsOf } from "../core/topic.mjs";
 
 test("where PATH: every claim whose code lists the file, ranked by the rare interface tokens they share with it", () => {
   const root = fixture();
@@ -188,4 +189,11 @@ test("where: name rows keep their top ten and topic rows fill only the places le
   const tail = cli(root, ["where", "gizmo"]).j;
   assert.deepEqual([tail.counts.topic, tail.shown, tail.notShown, tail.exit], [13, 10, 3, 0], "topic rows past the ten are counted, and the answer still succeeds");
   assert.match(cli(root, ["where", "gizmo"], { json: false }).r.stdout, /^3 more not shown: where 'gizmo' --token --all$/m);
+});
+
+test("topic words: a word's -s, -ed and -ing forms land on one term, and -tion words are not cut to a shorter word", () => {
+  assert.deepEqual(termsOf("mentioned functioning"), termsOf("mention function"));
+  assert.deepEqual(termsOf("mentions sessions trees"), termsOf("mention session tree"));
+  assert.notDeepEqual(termsOf("caption"), termsOf("caps"));
+  assert.deepEqual(termsOf("read-only spec/rules.md"), ["spec/rules.md", "read", "spec", "rule"]);
 });

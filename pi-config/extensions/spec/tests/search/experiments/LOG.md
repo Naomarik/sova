@@ -110,3 +110,16 @@ Reading: dense alone loses to the lexical ranker everywhere (MRR 0.36–0.41 vs 
 vocabulary-gap queries it was expected to help (gap R@3 0–14 %). Fusion lifts R@3-any (up to 80.8 %) and
 R@3 (65.4 % at w 0.5 with MiniLM) but lowers MRR and R@1 — the same shape foldaidev measured. Not a reason
 to add a 700 MB dependency to Sova, which the user ruled out anyway.
+| stem-tion-kept | `{}` | 42.3 | 59.6 | 0.532 | 71.2 | 42.9 / 0.274 | 62.2 / 0.573 | 2652 | 31275f8e · 56bf32a3 | F1 (diff review): -tion/-sion no longer stripped, so -ed/-ing forms of one word land on one term (mentioned=mention). From frozen-defaults / 3165c3c1. |
+| stem-fixpoint | `{}` | 42.3 | 59.6 | 0.532 | 71.2 | 42.9 / 0.274 | 62.2 / 0.573 | 2652 | 31275f8e · 9ba5313c | F1 alternative: the old one-pass stripper looped to a fixpoint (-tion still stripped; stops under 3 letters), for comparison with stem-tion-kept |
+
+## After the freeze: the word-ending fix (diff review F1)
+
+The one-pass stripper cut -tion/-sion, so `mention` → `men` while `mentioned` → `mention` (and `caption`
+→ `cap`, colliding with `caps`). Two fixes were run on dev through the CLI (rows `stem-tion-kept` and
+`stem-fixpoint` above): keeping -tion/-sion whole, and looping the old stripper to a fixpoint. Both tie
+the frozen ranker exactly on dev (R@1 42.3 %, R@3 59.6 %, MRR 0.532, R@3-any 71.2 %, every group equal).
+**Kept: -tion/-sion stay whole** — it unifies a word's forms (mentioned = mention) without the
+fixpoint's collisions (`caption` = `cap`), and adds no loop. For the record only, the published
+(no longer held out) set with the fix: R@1 41.7 %, R@3 64.6 %, MRR 0.552, R@3-any 77.1 % (48 queries;
+leak under 0.5 MRR 0.366, leak 0.5 and up 0.792), the same as its one held-out run at 0b43feb9. Not used to tune.

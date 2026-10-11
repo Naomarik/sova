@@ -23,13 +23,14 @@ const PATHISH = /[A-Za-z0-9_.-]*\/[A-Za-z0-9_./-]+|\b[A-Za-z0-9_-]+\.(?:md|mjs|j
 const WORDS = /[\p{L}\p{N}][\p{L}\p{N}'’]*/gu;
 
 // A light suffix stripper, not Porter. Paths are never stemmed: `spec/rules` and `spec/rule` are different files.
+// -tion and -sion stay, so a word's -ed and -ing forms land on its own term (mentioned = mention, not men).
 export function stem(w) {
   if (w.includes("/") || w.includes(".")) return w;
   return w
     .replace(/ies$/, "y")
     .replace(/(sses|shes|ches|xes)$/, (m) => m.slice(0, -2))
     .replace(/([^s])s$/, "$1")
-    .replace(/(ingly|edly|ing|ed|ly|ness|ment|tions?|sions?)$/, "")
+    .replace(/(ingly|edly|ing|ed|ly|ness|ment)$/, "")
     .replace(/(.)\1$/, "$1") || w;
 }
 

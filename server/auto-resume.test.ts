@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
-import { type InFlight, RESUME_TEXT, resumeInterrupted, resumeBriefText, RunLedger, type ResumeDeps } from "./auto-resume";
+import { CRASH_RESUME_TEXT, type InFlight, RESUME_TEXT, resumeInterrupted, resumeBriefText, RunLedger, type ResumeDeps } from "./auto-resume";
 
 const dir = mkdtempSync(join(tmpdir(), "sova-auto-resume-"));
 after(() => rmSync(dir, { recursive: true, force: true }));
@@ -100,5 +100,17 @@ describe("resuming", () => {
     const out = await resumeInterrupted(runs(["/a", { since: 1 }]), h.d, marks);
     assert.equal(out.skipped[0]!.why, "That is a baton session: only its participants write in it.");
     assert.match(resumeBriefText(out), /not resumed: \[Fix sandbox menu\]\(sova:\/\/s\/a\) — That is a baton session/);
+  });
+
+  test("a chat whose own process died gets the crash text, and its brief says a chat process stopped (§app.chat-processes/crash)", async () => {
+    const texts: string[] = [];
+    const h = deps({ prompt: async (_p, text) => void texts.push(text) });
+    const out = await resumeInterrupted(runs(["/b", { since: 1 }]), h.d, marks, "crash");
+    assert.deepEqual(texts, [CRASH_RESUME_TEXT]);
+    assert.deepEqual(out.resumed, [{ id: "b", name: "B work" }]);
+    assert.match(h.briefs[0]!, /^A chat process stopped unexpectedly\. 1 interrupted session resumed:/);
+    const again = deps({ prompt: async () => assert.fail("never twice") });
+    const twice = await resumeInterrupted(runs(["/b", { since: 1, auto: true }]), again.d, marks, "crash");
+    assert.equal(twice.skipped[0]!.why, "it was cut off again while resuming");
   });
 });

@@ -30,6 +30,8 @@ import { onWire, withRows } from "./wire-rows";
 import type { CompactOutcome, DialogBridge, EntryId, HarnessEvent, HarnessSession, HEntry, HookCtx, ImageInput, SessionState, SessionStateWriter, StateKind, StateView, ToolCtx, ToolResult, ToolSpec, ToolUpdate } from "../shared/harness";
 import { branchOf, historyOf, lineHeader, readPi, storedAsString } from "./harness/pi/reader";
 import { stateView } from "./harness/state-view";
+import { LiveTail } from "./chat-runtime/live-tail";
+import { takeWriterLock, type WriterLock, WriterLockHeld } from "./chat-runtime/writer-lock";
 import { extensionFlagValues, getModelRuntime, openPiSession, type OpenFlags, type OpenRead, type PiBuild, type PiModelRuntime, warmClaudeCodeProvider as warmPiProvider } from "./harness/pi/open";
 import type { PiLoaderOptions, PiToolDefinition } from "./harness/pi/extension-types";
 import { PiChatHost } from "./harness/pi/host";
@@ -2254,9 +2256,11 @@ class ChatSession {
     }
   }
 
-  hello(): Extract<ChatServerMessage, { type: "hello" }> {
+  /** `live`: with the reply in flight so far (a wire-2 client's hello, §chat.transcript/streaming). */
+  hello(live = false): Extract<ChatServerMessage, { type: "hello" }> {
     const harness = this.harness;
     const branch = harness.branch();
+    const tail = live ? this.liveTail.snapshot() : undefined;
     return {
       type: "hello",
       items: rowsOf(branch),
@@ -2266,12 +2270,16 @@ class ChatSession {
       thinking: harness.thinking(),
       context: toContextInfo(contextOfBranch(branch), this.host.models),
       ...(this.alignLaunch?.data ? { alignReview: this.alignLaunch.data.review } : {}),
+      ...(tail ? { live: tail } : {}),
     };
   }
 
+  /** The reply in flight, folded from the wire-2 events broadcast (server/chat-runtime/live-tail.ts). */
+  private readonly liveTail = new LiveTail();
+
   attach(client: ChatClient): void {
     this.clients.add(client);
-    const hello = this.hello();
+    const hello = this.hello(client.wire === 2);
     // A tail client's older rows go last, after the state its first paint needs, and in this same
     // synchronous step, so no event, append or other hello can come between them.
     const cut = client.tail ? cutHello(hello, !client.pull) : null;
@@ -3134,6 +3142,9 @@ class ChatSession {
       return;
     }
     let on2: (ChatServerMessage | V2EventFrame)[] | undefined;
+    // Every live event folds into the reply so far, whoever is attached: a pane that joins later
+    // starts from it.
+    if (msg.type === "event") for (const f of (on2 ??= onWire(msg, 2))) if (f.type === "event" && "v" in f && f.v === 2) this.liveTail.apply(f.event);
     for (const c of this.clients) {
       if (c.wire === 2) for (const m of (on2 ??= onWire(msg, 2))) c.send(m);
       else c.send(msg);
@@ -3607,6 +3618,27 @@ function hearRuns(
 
 async function openSession(path: string, onDisposed: () => void): Promise<ChatSession> {
   if (!existsSync(path)) throw new Error(`Session file not found: ${path}`);
+  // One writer per session file, across this server and its chat processes (§app.chat-processes/wire):
+  // held from the open to the chat's dispose. Another live holder refuses as another writer does.
+  let lock: WriterLock;
+  try {
+    lock = takeWriterLock(path, { unit: process.env.SOVA_CHAT_UNIT ?? null });
+  } catch (err) {
+    if (err instanceof WriterLockHeld) throw new BusyError(err.message, "recent");
+    throw err;
+  }
+  try {
+    return await openLocked(path, () => {
+      lock.release();
+      onDisposed();
+    });
+  } catch (err) {
+    lock.release();
+    throw err;
+  }
+}
+
+async function openLocked(path: string, onDisposed: () => void): Promise<ChatSession> {
   // Merely opening (browsing) a session never modifies its file: the model/thinking entries pi records
   // while building it wait in `file.deferred` for the first prompt (server/harness/pi/open.ts, P1).
   const file = await openPiSession(path, cwdOverride(path));

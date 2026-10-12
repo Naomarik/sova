@@ -2739,6 +2739,8 @@
       "code": [
         "server/write-guard.ts",
         "server/chat-manager.ts",
+        "server/index.ts",
+        "server/shutdown-own-writes.test.ts",
         "src/components/SessionView.tsx"
       ]
     },

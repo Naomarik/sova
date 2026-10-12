@@ -925,7 +925,9 @@ keeps the size and modification time it last left each file in, in `owned-writes
 Sova's state root (the most recent 500), and a file whose size and time both still match opens
 for chat at once. A stat is recorded only where the write is certainly the server's: a file it
 just created, an entry a runtime it held just appended, and a stretch its write guard verified
-entry by entry as its own. Any later append by anyone breaks the match, and a TUI-live session is
+entry by entry as its own. A reply a server stop cuts off is one of these: the stop waits (a few
+seconds at most) for each abort to write it, and each chat records it as it closes, before its
+runtime finishes shutting down, so the next start can resume that chat (§app.overseer/auto-resume). Any later append by anyone breaks the match, and a TUI-live session is
 refused before this check. A missing or corrupt file means nothing is known to be the server's,
 and the 120-second rule applies.
 

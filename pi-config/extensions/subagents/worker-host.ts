@@ -94,7 +94,8 @@ export interface WorkerCursor {
 export type WorkerFeedFrame =
 	| { t: "state"; cursor: WorkerCursor; state: WorkerState }
 	/** A wire-1 pi event (pi's rpc toJsonEvent shape), one of WORKER_FEED_EVENTS; an `agent_settled`
-	    carries `settleKey`, the key its WorkerState.lastSettled will have. */
+	    carries `settleKey`, the key its WorkerState.lastSettled will have, and `settleEntryId`, its
+	    lastSettled.entryId, when known. */
 	| { t: "event"; cursor: WorkerCursor; event: unknown }
 	/** Resync: read the file, then wait for `state`. */
 	| { t: "gap" }

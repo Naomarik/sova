@@ -287,10 +287,6 @@ async function shutdown() {
     console.error("[server] shutdown took over 20 s; exiting");
     process.exit(1);
   }, 20_000).unref();
-  // Hosted subagent workers (PI_WORKER_TRANSPORT=host) outlive this process: the
-  // subagents extension's session_shutdown detaches them instead of killing them.
-  // No-op for the default inline transport. See pi-config/extensions/subagents/hosting.ts.
-  (globalThis as Record<symbol, unknown>)[Symbol.for("sova:detach-workers")] = true;
   claudeAccounts.dispose();
   meshResync.dispose();
   // Stop every turn first: a turn still streaming keeps the CPU busy through every await below.

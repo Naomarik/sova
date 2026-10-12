@@ -109,8 +109,8 @@ test("recorder: lost/killed statuses; untracked workers write nothing; a throwin
 
 // ── manager wiring ──────────────────────────────────────────────────────────
 
-/** hosted: PI_WORKER_TRANSPORT=host equivalent with a private registry root (the fake runners ignore spawnImpl, so no host starts). */
-function harness(hosted = true) {
+/** The manager over fake workers, with a private agent dir. */
+function harness() {
 	const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-registry-test-"));
 	const tools = new Map<string, any>();
 	const events = new Map<string, any>();
@@ -144,7 +144,7 @@ function harness(hosted = true) {
 		};
 		workers.push(w);
 		return w;
-	}, { hosting: { root, enabled: hosted }, agentDir: path.join(root, "agent") });
+	}, { agentDir: path.join(root, "agent") });
 	const call = (name: string, params: any) => tools.get(name).execute("t", params, undefined, () => {}, ctx);
 	return {
 		appended, workers, call, root, start: () => events.get("session_start")({}, ctx),
@@ -181,8 +181,8 @@ test("manager: team members carry teamId and role in their registry spec", async
 	await h.close();
 });
 
-test("inline transport: the durable record is written all the same, but no registry directory and no host", async () => {
-	const h = harness(false);
+test("the durable record is written; nothing else is kept beside it (no keeper registry, no host)", async () => {
+	const h = harness();
 	h.start();
 	await h.call("agent_spawn", { prompt: "task one", name: "one" });
 	h.workers[0].sessionId = "pi-sess";

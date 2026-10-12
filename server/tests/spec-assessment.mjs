@@ -1,5 +1,6 @@
-// Actual common team spawn -> scripted RPC child running the pinned SDK/spec-worker -> owner reopen -> explicit companion CLI.
-// No model/network requests. The spawnImpl replaces only the CLI transport, not the worker's SDK lifecycle.
+// Actual common team spawn -> a chat worker (ChatWorker) on a fixture worker host whose child runs the pinned SDK/spec-worker
+// -> owner reopen -> explicit companion CLI. No model/network requests. The host stands in only for Sova's server and the
+// worker's chat process transport, not the worker's SDK lifecycle.
 // The spec core's sova-spec-assess.mjs is a trap that records each call, then runs the real companion: neither the
 // worker, the owner nor a spec-on mode session calls it by itself; only the operator's explicit CLI calls reach it.
 import "../../pi-config/extensions/claude-code/tests/hermetic-env.mjs";
@@ -18,10 +19,50 @@ const { createAgentSession, DefaultResourceLoader, SettingsManager, SessionManag
 const { createAssistantMessageEventStream } = await jiti.import("@earendil-works/pi-ai");
 initTheme(); // Match an actual host's theme initialization; never manually enable an extension tool.
 const { registerSubagents } = await jiti.import(path.resolve(here, "../../pi-config/extensions/subagents/index.ts"));
-const { SubagentRunner } = await jiti.import(path.resolve(here, "../../pi-config/extensions/subagents/runner.ts"));
+const { ChatWorker } = await jiti.import(path.resolve(here, "../../pi-config/extensions/subagents/chat-worker.ts"));
 const { computeReadiness, configureReadiness, resetReadiness, readinessChecksOf } = await jiti.import(path.resolve(here, "../merge-readiness.ts"));
 const { callAssessment } = await jiti.import(path.resolve(here, "../../pi-config/extensions/mode/spec-assessment.ts"));
 const realCore = path.resolve(here, "../../pi-config/extensions/spec/core");
+
+/**
+ * Sova's worker host as a parent sees it (worker-host.ts), over the `--worker` fixture child: a start runs the child with
+ * the spec's env, delivers the task, and feeds its pi events back; a send is its next prompt; a stop ends it.
+ */
+function fixtureHost(childEnv) {
+ const workers = new Map();
+ const frame = (w, f) => { w.frames.push(f); for (const fn of [...w.watchers]) fn(f); };
+ const state = (w, patch) => { w.state = { ...w.state, ...patch }; frame(w, { t: "state", cursor: { proc: "fixture", seq: ++w.seq }, state: w.state }); };
+ const request = (w, cmd) => new Promise((resolve) => { w.pending.set(cmd.id, resolve); w.child.stdin.write(`${JSON.stringify(cmd)}\n`); });
+ return {
+  workers,
+  async start(req) {
+   const child = spawn(process.execPath, [fileURLToPath(import.meta.url), "--worker"], { cwd: req.spec.cwd, env: { ...process.env, ...req.spec.env, ...childEnv }, stdio: ["pipe", "pipe", "inherit"] });
+   const w = { req, child, frames: [], watchers: new Set(), seq: 0, pending: new Map(), n: 0, settles: 0, lastKey: null, state: { status: "starting", sessionId: "", sessionFile: "", pid: child.pid, model: req.spec.model, thinking: req.spec.thinking, lastSettled: null, queue: { steering: [], followUp: [] } } };
+   createInterface({ input: child.stdout }).on("line", (line) => {
+    const msg = JSON.parse(line);
+    if (msg.type === "response") return w.pending.get(msg.id)?.(msg);
+    if (msg.type === "agent_settled") {
+     const key = `${w.lastKey}#${++w.settles}`;
+     frame(w, { t: "event", cursor: { proc: "fixture", seq: ++w.seq }, event: { ...msg, settleKey: key } });
+     return state(w, { status: "idle", lastSettled: { key, outcome: "success" } });
+    }
+    frame(w, { t: "event", cursor: { proc: "fixture", seq: ++w.seq }, event: msg });
+   });
+   const got = await request(w, { id: `s${++w.n}`, type: "get_state" });
+   const chatId = got.data.sessionId;
+   w.state = { ...w.state, sessionId: chatId, sessionFile: got.data.sessionFile };
+   workers.set(chatId, w);
+   if (req.task !== null) { w.lastKey = `${req.key}:task`; void request(w, { id: `p${++w.n}`, type: "prompt", message: req.task }); state(w, { status: "running" }); }
+   return { chatId, sessionId: chatId, sessionFile: got.data.sessionFile, workerId: req.spec.parent.workerId, kind: req.spec.kind, placement: "child", pid: child.pid, state: "open" };
+  },
+  async send(chatId, input) { const w = workers.get(chatId); w.lastKey = input.key; await request(w, { id: `p${++w.n}`, type: "prompt", message: input.text }); state(w, { status: "running" }); return { queued: false }; },
+  async abort(chatId) { const w = workers.get(chatId); await request(w, { id: `a${++w.n}`, type: "abort" }); },
+  async stop(chatId) { const w = workers.get(chatId); if (!w || w.child.exitCode !== null) return; const gone = new Promise((r) => w.child.once("close", r)); w.child.kill("SIGTERM"); await gone; frame(w, { t: "ended", cause: "killed" }); },
+  watch(chatId, _cursor, fn) { const w = workers.get(chatId); fn({ t: "state", cursor: { proc: "fixture", seq: w.seq }, state: w.state }); w.watchers.add(fn); return () => w.watchers.delete(fn); },
+  async list() { return []; },
+  async stopAll() { await Promise.all([...workers.keys()].map((id) => this.stop(id))); },
+ };
+}
 
 function provider(script, probe) {
  return pi => pi.registerProvider("scripted", { baseUrl: "http://localhost", apiKey: "unused", api: "openai-completions", models: [{ id: "assessment", name: "Scripted", reasoning: false, input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 100000, maxTokens: 1000 }],
@@ -65,7 +106,7 @@ if (process.argv.includes("--worker")) {
  const store = path.join(cwd, ".sova/spec/assessments");
  const receipts = () => existsSync(store) ? readdirSync(store).filter(n => !n.startsWith(".")) : [];
  const taskEntries = manager => manager.getEntries().filter(e => e.type === "custom" && /^spec-assessment/.test(e.customType));
- let session, runners = [];
+ let session, runners = [], host;
  try {
   mkdirSync(path.join(cwd, ".sova/spec/claims/demo"), { recursive: true }); mkdirSync(path.join(cwd, "src"));
   const core = path.join(agentDir, "extensions/spec/core"); mkdirSync(core, { recursive: true });
@@ -80,22 +121,22 @@ if (process.argv.includes("--worker")) {
   await callAssessment(core, cwd, ["status", "--owner-session", "nobody"]); assert.equal(calls().length, 1, "the trap records a real transport call"); rmSync(marker);
   // Dirty before the task starts: a late baseline would have subtracted it, a known base keeps it visible.
   writeFileSync(path.join(cwd, "src/other.ts"), "export const other = 2;\n");
+  host = fixtureHost({ SOVA_ASSESS_TEST_CWD: cwd, SOVA_ASSESS_TEST_AGENT: agentDir, SOVA_ASSESS_TEST_PROBE: probe });
   const parentScript = [{ tool: "team_create", args: { name: "assessment fixture", objective: "Change the value", members: [{ role: "author", prompt: "Change value to 90.", tools: ["read", "write", "bash"], wake: false }] } }, { text: "Team started." }];
   const manager = SessionManager.create(cwd, path.join(agentDir, "sessions/owner"));
   const loader = new DefaultResourceLoader({ cwd, agentDir, noExtensions: true, extensionFactories: [provider(parentScript), pi => {
    pi.events.on("mode:discover", () => pi.events.emit("mode:state", { version: 1, minorModes: ["spec"] }));
    registerSubagents(pi, (options, handlers) => {
-    const runner = new SubagentRunner({ ...options, spawnImpl: (_command, args, spawnOptions) => {
-     assert.ok(args.includes(path.resolve(here, "../../pi-config/extensions/mode/spec-worker.ts")), "actual common code-writing worker path injected the worker's spec checks");
-     return spawn(process.execPath, [fileURLToPath(import.meta.url), "--worker"], { ...spawnOptions, env: { ...spawnOptions.env, SOVA_ASSESS_TEST_CWD: cwd, SOVA_ASSESS_TEST_AGENT: agentDir, SOVA_ASSESS_TEST_PROBE: probe } });
-    } }, handlers); runners.push(runner); return runner;
-   }, { agentDir, policyFile: path.join(agentDir, "absent-policy.json"), hosting: { enabled: false } });
+    assert.ok(options.extensions.includes(path.resolve(here, "../../pi-config/extensions/mode/spec-worker.ts")), "actual common code-writing worker path injected the worker's spec checks");
+    const runner = new ChatWorker(options, handlers, { host, parent: { sessionId: "owner", path: "owner" }, start: { key: `owner:${options.id}:1`, defaultSessionDir: () => path.join(agentDir, "sessions/worker") } });
+    runners.push(runner); return runner;
+   }, { agentDir, policyFile: path.join(agentDir, "absent-policy.json") });
   }] });
   await loader.reload();
   ({ session } = await createAgentSession({ cwd, agentDir, resourceLoader: loader, settingsManager: SettingsManager.inMemory(), sessionManager: manager }));
   await session.setModel(session.modelRuntime.getModel("scripted", "assessment"));
   await session.prompt("Start the team");
-  assert.equal(runners.length, 1, "actual team_create launched a real runner");
+  assert.equal(runners.length, 1, "actual team_create launched a chat worker");
   const worker = runners[0], until = Date.now() + 30_000;
   while (!worker.isSettled() && Date.now() < until) await new Promise(r => setTimeout(r, 25));
   assert.equal(worker.taskOutcome, "success", worker.error ?? worker.finalOutput());
@@ -162,5 +203,5 @@ if (process.argv.includes("--worker")) {
   assert.deepEqual(taskEntries(restored), [], "opening creates no assessment task");
   assert.deepEqual(calls(), [], "the mode session ran no assessment"); assert.deepEqual(receipts(), ["operator-review"], "the explicit receipt is untouched");
   console.log(JSON.stringify({ result: "pass", commonTeamSpawn: true, actualWorkerSdk: true, parentReopened: true, automaticCalls: 0, explicitCli: { base: prepared.query.base, changedFiles: prepared.changedFiles, assessmentState: status.assessmentState }, unchangedGate: result.trees[0].why }));
- } finally { if (session) await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" }); await Promise.all(runners.map(r => r.dispose())); session?.dispose(); rmSync(scratch, { recursive: true, force: true }); }
+ } finally { if (session) await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" }); await Promise.all(runners.map(r => r.dispose())); await host?.stopAll(); session?.dispose(); rmSync(scratch, { recursive: true, force: true }); }
 }

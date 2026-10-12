@@ -52,6 +52,12 @@ export interface WorkerLaunchSpec {
 }
 
 type Append = (customType: string, data: WorkerManifestRecord) => void;
+
+/** The key (and final entry id) of the run a worker chat just settled (chat-worker.ts), written with the settle. */
+const settleField = (worker: Worker, field: "settleKey" | "settleEntryId"): string | undefined => {
+	const value = (worker as { settleKey?: unknown; settleEntryId?: unknown })[field];
+	return typeof value === "string" && value ? value : undefined;
+};
 /** A worker's lifetime usage (any base carried over a resume included). */
 type UsageOf = (worker: Worker) => TokenCounts;
 interface Tracked { identity: string; busy: boolean; finished: boolean }
@@ -149,6 +155,8 @@ export class WorkerRegistryRecorder {
 			status: "waiting",
 			...(worker.taskOutcome ? { taskOutcome: worker.taskOutcome } : {}),
 			settledAt: Date.now(),
+			...(settleField(worker, "settleKey") ? { settleKey: settleField(worker, "settleKey") } : {}),
+			...(settleField(worker, "settleEntryId") ? { settleEntryId: settleField(worker, "settleEntryId") } : {}),
 			usageSnapshot: this.snapshot(worker),
 		});
 	}

@@ -331,6 +331,12 @@ export interface WorkerManifest {
 	error?: string;
 	/** Last settle (ms epoch). */
 	settledAt?: number;
+	/** The key of that settle's run (a worker chat's WorkerState.lastSettled.key): a parent that picks the
+	    worker back up announces a settle under another key, once. */
+	settleKey?: string;
+	/** The entry id of that run's final assistant message, when known: a parent that picks the worker
+	    back up after its process was reopened compares the file's last settled run with it. */
+	settleEntryId?: string;
 	/**
 	 * When the worker was brought back idle by a resume. A record carrying it
 	 * clears status, taskOutcome, endedAt and error folded so far; its own fields

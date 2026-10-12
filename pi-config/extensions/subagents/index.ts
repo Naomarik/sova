@@ -18,7 +18,10 @@ import { TeamModal } from "./team-modal.ts";
 import { attachTeamWidget, type TeamWidgetHandle, type TeamWidgetUi } from "./team-widget.ts";
 import { piModels, matchingModels, type CatalogModel } from "./models.ts";
 import { backendDenial, policyDenial, readPolicy } from "./policy.ts";
-import { BUILTIN_TOOLS as BUILTIN_TOOL_NAMES, claudeCodeProviderLoad, rpcScopedModel, SubagentRunner } from "./runner.ts";
+import { BUILTIN_TOOLS as BUILTIN_TOOL_NAMES, claudeCodeProviderLoad, rpcScopedModel } from "./runner.ts";
+import { ChatWorker } from "./chat-worker.ts";
+import { workerHostOf } from "./fork/background.ts";
+import { NO_WORKER_HOST } from "./worker-host.ts";
 import { BACKEND_DIALOG_EVENT, BACKEND_DISCOVER_EVENT, BACKEND_REGISTER_EVENT, type BackendDialogEvent, type BackendRegistration, type SteerMode, type SteerResult, type Worker, type WorkerFactory } from "./contracts.ts";
 import {
 	MAX_LABEL_CHARS,
@@ -84,7 +87,6 @@ import { WorkerRegistryRecorder, type WorkerLaunchSpec } from "./registry.ts";
 import { manifestModes, readWorkerManifests, resolvedModel, viewWorker, type FoldedWorkerManifest, type WorkerTranscriptView } from "./worker-transcript.ts";
 import { defaultWorkerTranscriptAdapters } from "./adapters/index.ts";
 import { RestoredWorker, isRestored } from "./restored.ts";
-import { WorkerHosting, detachRequested, type HostingOptions } from "./hosting.ts";
 import { placeholderDir, placeholderRoot, toRemotePath } from "../remote/argv.ts";
 import { REMOTE_DISCOVER_EVENT, REMOTE_SESSION_EVENT, type RemoteSessionEvent } from "../remote/workers.ts";
 import { SANDBOX_DISCOVER_EVENT, SANDBOX_STATE_EVENT, type SandboxStateEvent, type WorkerLaunch } from "../sandbox/state.ts";
@@ -94,7 +96,6 @@ import { ASSESSMENT_OWNER_ENV, ASSESSMENT_WORKER_ENV, ASSESSMENT_TEAM_ENV } from
 import { LANDED_FILE_ENV, readLandedLine } from "../mode/spec-guard.ts";
 import { canonicalClaudeId, claudeBareId, claudeOffer, unverifiedClaudeNote } from "../claude-code/catalog.ts";
 import { CLAUDE_CODE_BACKEND, claudeOnPi, continuationMessage, continuationOptions, continuationTools, seedContinuationSession } from "./claude-workers.ts";
-import { USAGE_PARENT_ENV } from "../llm-inflight/attribution.ts";
 import { workerSpecBrief, writesCode } from "./spec-brief.ts";
 import { restoreActive as restoreWorktrees, treeOf, workerCwdRefusal as worktreeCwdRefusal, type WorktreesActive } from "../worktrees/state.ts";
 
@@ -279,8 +280,8 @@ export const SPEC_WORKER_EXTENSION = realpathOr(path.join(SELF_DIR, "..", "mode"
  */
 export const PROVIDER_LIMITS_EXTENSION = realpathOr(path.join(SELF_DIR, "..", "provider-limits", "index.ts"));
 /**
- * The LLM-call counter (llm-inflight/, a sibling extension), loaded after the limits into every pi
- * worker: the worker reports its calls in flight to this process's runner, which counts them here.
+ * The LLM-call counter (llm-inflight/, a sibling extension). No worker loads it any more (a worker
+ * chat counts its calls in its own process); an earlier worker's recorded extensions still name it.
  */
 export const LLM_INFLIGHT_EXTENSION = realpathOr(path.join(SELF_DIR, "..", "llm-inflight", "index.ts"));
 /**
@@ -433,8 +434,6 @@ interface TeamIdentity { role: string; orchestrator: boolean; duty?: MemberDuty;
 export interface SubagentsOptions {
 	mailboxRoot?: string;
 	mailboxPollMs?: number;
-	/** Detachable workers (hosting.ts): registry root, forced enablement, host timings. */
-	hosting?: HostingOptions;
 	/** Model policy file override (policy.ts); the real one is shared with Sova. */
 	policyFile?: string;
 	/** Agent dir for team-defaults.json, handover notes and the usage-status cache; default getAgentDir(). */
@@ -444,8 +443,6 @@ export interface SubagentsOptions {
 }
 /** A lifecycle fact of a coordinated team, appended to the owner session (the action history is memory only). */
 export { TEAM_EVENT_ENTRY_TYPE };
-/** Emit to re-scan the registry and adopt this session's detached workers now. */
-export const WORKERS_ADOPT_EVENT = "subagents:workers-adopt";
 
 function resolvePath(value: string, cwd: string): string {
 	const raw = value.startsWith("@") ? value.slice(1) : value;
@@ -583,7 +580,7 @@ const toolResult = (text: string, details: Record<string, unknown> = {}, bounded
 /** Factory injection is for offline lifecycle/tool tests; normal Pi loading uses the default export. */
 export function registerSubagents(
 	pi: ExtensionAPI,
-	createRunner: RunnerFactory = (o, h) => new SubagentRunner(o, h),
+	injectedRunner?: RunnerFactory,
 	options: SubagentsOptions = {},
 ): void {
 	const agents: Worker[] = [];
@@ -704,8 +701,28 @@ export function registerSubagents(
 	// with their transcript view. Those on the active branch are listed as RestoredWorkers;
 	// the rest only count toward the lifetime Σ. A resumed worker leaves this map.
 	const restoredViews = new Map<string, { manifest: FoldedWorkerManifest; view: WorkerTranscriptView }>();
-	// Detachable workers: host processes that outlive this manager (see hosting.ts).
-	const hosting = new WorkerHosting(options.hosting);
+	// Every worker is a chat process of its own, started through Sova's worker host (worker-host.ts):
+	// it outlives this manager, which lets go of it at shutdown and picks it back up at the next start.
+	let workerHost = pi.events ? workerHostOf(pi.events) : undefined;
+	// A start's key (idempotent with the host): this session, the worker, this manager's launch.
+	const launchNonce = Math.random().toString(36).slice(2, 8);
+	let launches_ = 0;
+	const parentOf = (ctx: ExtensionContext | undefined) => {
+		const sessionId = ctx?.sessionManager.getSessionId?.();
+		const file = ctx?.sessionManager.getSessionFile?.();
+		return sessionId && file ? { sessionId, path: file } : undefined;
+	};
+	const createRunner: RunnerFactory = injectedRunner ?? ((o, h) => {
+		const host = workerHost?.current();
+		if (!host) throw new Error(`A worker ${NO_WORKER_HOST}`);
+		const parent = parentOf(activeCtx);
+		if (!parent) throw new Error("Workers need a saved parent session; this session has no session file yet.");
+		return new ChatWorker(o, h, {
+			host,
+			parent,
+			start: { key: `${parent.sessionId}:${o.id}:${launchNonce}.${++launches_}`, defaultSessionDir: (cwd) => path.join(agentDir(), "sessions", sessionDirName(cwd)) },
+		});
+	});
 	let counter = 0;
 	let groupCounter = 0;
 	let activeCtx: ExtensionContext | undefined;
@@ -903,7 +920,6 @@ export function registerSubagents(
 		releaseHeldNudges();
 		for (const a of agents) {
 			registry.observe(a);
-			hosting.observe(a);
 		}
 		publishWorkers();
 		try {
@@ -987,7 +1003,7 @@ export function registerSubagents(
 		// Constructors may synchronously report failure before their worker is
 		// registered. The post-spawn refresh handles those; never retain them here.
 		if (shuttingDown || !agents.includes(a)) return;
-		registry.finish(a, hosting.lost(a.id) ? "lost" : undefined);
+		registry.finish(a);
 		successionCheck(a);
 		retireCheck(a);
 		if (a.isFinished()) forgetMemberTimers(a.id);
@@ -1376,7 +1392,7 @@ export function registerSubagents(
 			// Spec on: a code-writing worker gets the brief (below) and the census hook; a worktree-config worker
 			// already loads the whole mode extension, and a remote one runs its tools elsewhere.
 			const specWorker = specOn && !remote && !treeConfig && writesCode(tools);
-			const sources = [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, ...(remote ? [REMOTE_EXTENSION] : []), ...(treeConfig ? [treeConfig.modeExtension] : []), ...(specWorker ? [SPEC_WORKER_EXTENSION] : []), ...(own ?? [])];
+			const sources = [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, ...(remote ? [REMOTE_EXTENSION] : []), ...(treeConfig ? [treeConfig.modeExtension] : []), ...(specWorker ? [SPEC_WORKER_EXTENSION] : []), ...(own ?? [])];
 			const modeFlags = treeConfig ? { major: "normal", minor: "spec" } : undefined;
 			// The sandbox's answer for a pi worker: its extension and flags (the parent's scope while on; in a
 			// tracked worktree, narrowed to it, or write-only while off).
@@ -1419,7 +1435,6 @@ export function registerSubagents(
 		const group: AgentGroup = { id: groupId, label, createdAt: Date.now(), agents: [] };
 		let committed = false;
 		let abandoned = false;
-		const launched: string[] = [];
 		const earlySettled = new Set<Worker>();
 		try {
 			for (const [index, { spec, cwd, model, tools, systemPrompt, extensions, forkSession, backend, prepared: backendPrepared, flags, treeConfig, givenModes, landed }] of prepared.entries()) {
@@ -1433,9 +1448,6 @@ export function registerSubagents(
 					// A worker on its worktree's agent dir: pi resolves everything there (never written to disk).
 					const tooling = teamMember ? memberTooling(spec.backend ?? "pi") : "none";
 					const baseEnv = treeConfig ? { ...memberVars, ...treeConfig.env } : tooling === "pi" ? memberVars : undefined;
-					// The usage ledger's parent (llm-inflight attribution.ts): a pi worker reads it itself.
-					const parentSid = ctx.sessionManager.getSessionId?.();
-					const usageEnv = parentSid ? { [USAGE_PARENT_ENV]: `${parentSid}:${id}` } : undefined;
 					const specEnv = specOn && !remote ? {
 						...(backendPrepared?.env as Record<string, string> | undefined), ...baseEnv,
 						[ASSESSMENT_OWNER_ENV]: ctx.sessionManager.getSessionId?.() ?? "",
@@ -1447,25 +1459,8 @@ export function registerSubagents(
 					if (landedFile) landedSources.set(id, { file: landedFile });
 					else landedSources.delete(id);
 					if (landedFile && !resuming) fs.rmSync(landedFile, { force: true });
-					const env = usageEnv || landedFile ? { ...specEnv, ...usageEnv, ...(landedFile ? { [LANDED_FILE_ENV]: landedFile } : {}) } : specEnv;
+					const env = landedFile ? { ...specEnv, [LANDED_FILE_ENV]: landedFile } : specEnv;
 					const name = (spec.count ?? 1) > 1 ? `${base}-${i + 1}` : base;
-					// Hosted: the runner's spawnImpl starts a detached host instead of the worker itself.
-					const hostedWorker = !resuming && hosting.active();
-					if (hostedWorker) launched.push(id);
-					const hosted = hostedWorker
-						? hosting.launch({
-							id, groupId, groupLabel: request.groupLabel, name, backend: spec.backend ?? "pi",
-							spec: {
-								prompt: spec.prompt, backend: spec.backend ?? "pi", name, cwd, wake: spec.wake ?? true,
-								...(model === undefined ? {} : { model }),
-								...(spec.effort === undefined ? {} : { effort: spec.effort }),
-								...(tools === undefined ? {} : { tools }),
-								...(spec.backendOptions === undefined ? {} : { backendOptions: spec.backendOptions }),
-								...(extensions === undefined ? {} : { extensions }),
-							},
-							...(teamMember ? { team: { teamId: request.team!.teamId, role: teamMember.role, ...(teamMember.orchestrator ? { orchestrator: true } : {}) } } : {}),
-						})
-						: {};
 					const runner = (backend?.create ?? createRunner)(
 						{
 							model,
@@ -1479,8 +1474,7 @@ export function registerSubagents(
 							...backendPrepared,
 							backend: spec.backend ?? "pi",
 							...(env ? { env } : {}),
-							...(treeConfig ? { sessionDir: treeConfig.sessionDir, approve: true } : {}),
-							...hosted,
+							...(treeConfig ? { sessionDir: treeConfig.sessionDir } : {}),
 							...(resuming ? { resume: { ...(resuming.sessionId ? { sessionId: resuming.sessionId } : {}), ...(resuming.sessionFile ? { sessionFile: resuming.sessionFile } : {}), ...(resuming.startedAt ? { startedAt: resuming.startedAt } : {}) } } : {}),
 							id,
 							groupId,
@@ -1496,7 +1490,6 @@ export function registerSubagents(
 						},
 					);
 					group.agents.push(runner);
-					hosting.bind(id, runner);
 					workerModes.set(runner, givenModes);
 					if (sandboxNotes[index] !== undefined) workerSandbox.set(runner, sandboxNotes[index]!);
 					// What resume needs to start it again: the raw spec (resolved again against the
@@ -1524,8 +1517,6 @@ export function registerSubagents(
 			// disposal) ends only at confirmed termination, never because a kill
 			// promise resolved early or the caller stopped waiting.
 			for (const worker of group.agents) rollingBack.add(worker);
-			// A registry entry whose factory threw has no runner to finalize it.
-			for (const id of launched) if (!group.agents.some((worker) => worker.id === id)) hosting.discard(id);
 			const cleanup = group.agents.map(async (worker) => {
 				try { await worker.kill("spawn batch rolled back after factory failure"); }
 				catch { await worker.dispose(); }
@@ -1870,7 +1861,8 @@ export function registerSubagents(
 	// team is not paused awaiting a resume) is held, not delivered, and goes out at the first
 	// refresh that sees a teammate working again (every worker state change and every accepted
 	// steer schedules one). A paused team's nudges always fire: the resume check must run.
-	interface PendingNudge { id: string; reason: string; fireAt: number; createdAt: number; timer: ReturnType<typeof setTimeout> }
+	/** `timer`: none once it came due (held). */
+	interface PendingNudge { id: string; reason: string; fireAt: number; createdAt: number; timer?: ReturnType<typeof setTimeout> }
 	interface NudgeState { seq: number; idleFires: number; active: Map<string, PendingNudge>; held?: PendingNudge }
 	const nudges = new Map<string, NudgeState>();
 	/** Teams whose monitor sent "pause" and not yet "resume". */
@@ -1886,12 +1878,59 @@ export function registerSubagents(
 		if (!state) nudges.set(workerId, (state = { seq: 0, idleFires: 0, active: new Map() }));
 		return state;
 	};
+	// Kept in the mailbox (nudges.json) on every change, and re-armed by the next manager with their
+	// held state: a parent's reload or restart never drops a monitor's scheduled wakes.
+	const nudgesFile = () => (mailboxRoot ? path.join(mailboxRoot, "nudges.json") : undefined);
+	const plainNudge = ({ timer: _t, ...n }: PendingNudge) => n;
+	const saveNudges = () => {
+		const file = nudgesFile();
+		if (!file || shuttingDown) return;
+		const out: Record<string, { seq: number; idleFires: number; active: Omit<PendingNudge, "timer">[]; held?: Omit<PendingNudge, "timer"> }> = {};
+		for (const [workerId, state] of nudges) {
+			out[workerId] = { seq: state.seq, idleFires: state.idleFires, active: [...state.active.values()].map(plainNudge), ...(state.held ? { held: plainNudge(state.held) } : {}) };
+		}
+		try {
+			fs.writeFileSync(`${file}.tmp`, `${JSON.stringify(out)}\n`, { mode: 0o600 });
+			fs.renameSync(`${file}.tmp`, file);
+		} catch {
+			/* Kept in memory; the next change writes again. */
+		}
+	};
+	const loadNudges = () => {
+		const file = nudgesFile();
+		if (!file) return;
+		let saved: Record<string, { seq?: unknown; idleFires?: unknown; active?: unknown; held?: unknown }>;
+		try {
+			saved = JSON.parse(fs.readFileSync(file, "utf8"));
+		} catch {
+			return;
+		}
+		const nudgeOf = (v: unknown): PendingNudge | undefined => {
+			const n = v as Partial<PendingNudge> | null;
+			return n && typeof n.id === "string" && typeof n.fireAt === "number" ? { id: n.id, reason: typeof n.reason === "string" ? n.reason : "", fireAt: n.fireAt, createdAt: typeof n.createdAt === "number" ? n.createdAt : n.fireAt } : undefined;
+		};
+		for (const [workerId, v] of Object.entries(saved ?? {})) {
+			if (nudges.has(workerId) || !v) continue;
+			const state: NudgeState = { seq: Number(v.seq) || 0, idleFires: Number(v.idleFires) || 0, active: new Map() };
+			for (const raw of Array.isArray(v.active) ? v.active : []) {
+				const n = nudgeOf(raw);
+				if (!n) continue;
+				// One that came due while no parent was here fires now.
+				n.timer = coordinationTimer(() => fireNudge(workerId, n.id), Math.max(0, n.fireAt - Date.now()));
+				state.active.set(n.id, n);
+			}
+			const held = nudgeOf(v.held);
+			if (held) state.held = held;
+			nudges.set(workerId, state);
+		}
+	};
 	const describeNudge = (n: PendingNudge) => `${n.id} at ${new Date(n.fireAt).toISOString()} (in ${fmtDur(n.fireAt - Date.now())})${n.reason ? `: ${n.reason}` : ""}`;
 	const fireNudge = (workerId: string, id: string) => {
 		const state = nudges.get(workerId);
 		const n = state?.active.get(id);
 		if (!state || !n) return;
 		state.active.delete(id);
+		saveNudges();
 		const worker = agents.find((a) => a.id === workerId);
 		const teamId = teams.teamOf(workerId);
 		if (shuttingDown || !worker || worker.isFinished() || !teamId) return;
@@ -1899,6 +1938,7 @@ export function registerSubagents(
 		if (!working && !pausedTeams.has(teamId)) {
 			// Nobody to watch: hold one wake until a teammate works again (later ones collapse into it).
 			state.held ??= n;
+			saveNudges();
 			return;
 		}
 		deliverNudge(state, worker, teamId, n, working);
@@ -1907,6 +1947,7 @@ export function registerSubagents(
 		const workerId = worker.id;
 		if (working) state.idleFires = 0;
 		else state.idleFires++;
+		saveNudges();
 		const now = Date.now();
 		const text = [
 			`[wake_nudge ${n.id}] Scheduled wakeup fired (set ${fmtDur(now - n.createdAt)} ago)${released ? "; held while no teammate was working, delivered now that one is" : ""}.`,
@@ -1931,7 +1972,11 @@ export function registerSubagents(
 			if (!n) continue;
 			const worker = agents.find((a) => a.id === workerId);
 			const teamId = teams.teamOf(workerId);
-			if (!worker || worker.isFinished() || !teamId) { state.held = undefined; continue; }
+			if (!worker || worker.isFinished() || !teamId) {
+				// Not (yet) picked back up after a reload: kept for when it is.
+				if (worker || reattaching === undefined) { state.held = undefined; saveNudges(); }
+				continue;
+			}
 			const working = teamWorking(teamId, workerId);
 			if (!working && !pausedTeams.has(teamId)) continue;
 			state.held = undefined;
@@ -1950,12 +1995,14 @@ export function registerSubagents(
 		if (request.action === "cancel") {
 			if (request.id && state.held?.id === request.id) {
 				state.held = undefined;
+				saveNudges();
 				return { text: `Cancelled ${request.id}.`, details: details() };
 			}
 			const n = request.id ? state.active.get(request.id) : undefined;
 			if (!n) throw new Error(`No pending nudge "${request.id ?? ""}".`);
 			clearTimeout(n.timer);
 			state.active.delete(n.id);
+			saveNudges();
 			return { text: `Cancelled ${n.id}.`, details: details() };
 		}
 		const teamId = teams.teamOf(workerId);
@@ -1968,6 +2015,7 @@ export function registerSubagents(
 		const timer = coordinationTimer(() => fireNudge(workerId, id), fireAt - now);
 		const n: PendingNudge = { id, reason: request.reason?.trim() ?? "", fireAt, createdAt: now, timer };
 		state.active.set(id, n);
+		saveNudges();
 		return { text: `Scheduled ${describeNudge(n)}\nWakes you as [wake_nudge ${id}]; end your turn now.`, details: details() };
 	};
 
@@ -2042,7 +2090,7 @@ export function registerSubagents(
 	const forgetMemberTimers = (workerId: string) => {
 		const state = nudges.get(workerId);
 		if (state) for (const n of state.active.values()) clearTimeout(n.timer);
-		nudges.delete(workerId);
+		if (nudges.delete(workerId)) saveNudges();
 		for (const h of handovers.values()) if (h.oldId === workerId) {
 			if (h.timer) clearTimeout(h.timer);
 			handovers.delete(h.newId);
@@ -2068,15 +2116,19 @@ export function registerSubagents(
 	// processes, and nothing here can create or stop a worker.
 	let mailboxRoot: string | undefined = options.mailboxRoot;
 	let mailboxTimer: ReturnType<typeof setInterval> | undefined;
-	let mailboxOwned = false;
+	/** The kept wake_nudges were re-armed (once per manager, with the mailbox). */
+	let nudgesLoaded = false;
 	const memberDir = (teamId: string, workerId: string) => path.join(mailboxRoot!, teamId, workerId);
 	const ensureMailbox = (): string => {
-		if (!mailboxRoot && hosting.active()) {
-			// Detachable members keep their mailbox across restarts; pending requests are answered after re-adoption.
-			mailboxRoot = hosting.mailboxRoot();
-		} else if (!mailboxRoot) {
-			mailboxRoot = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-teams-"));
-			mailboxOwned = true;
+		if (!mailboxRoot) {
+			// Beside the session's handover notes, and kept: a reattached or resumed member keeps its inbox,
+			// and requests written while the parent was away are handled at the next poll.
+			mailboxRoot = path.join(agentDir(), "sova", "teams", sessionDirKey(activeCtx?.sessionManager.getSessionId?.(), unsavedSessionKey), "mailbox");
+			fs.mkdirSync(mailboxRoot, { recursive: true, mode: 0o700 });
+		}
+		if (!nudgesLoaded) {
+			nudgesLoaded = true;
+			loadNudges();
 		}
 		if (!mailboxTimer) {
 			mailboxTimer = setInterval(pollMailbox, options.mailboxPollMs ?? MAILBOX_POLL_MS);
@@ -3628,100 +3680,99 @@ export function registerSubagents(
 		},
 	});
 	/**
-	 * Re-adopt this owner session's detached workers (hosting.ts): a living host
-	 * is attached and its whole output replayed through a runner in adopt mode;
-	 * a dead host's log is replayed and the worker finalized (state "lost" if it
-	 * died mid-turn; its backend session id stays in the registry for a manual
-	 * resume, never an automatic one). Completions after the earlier manager's
-	 * consumed offset notify and wake exactly like live ones.
+	 * Pick back up this session's workers that still run (§app.chat-processes/workers): each one the
+	 * host lists that this session's records know replaces its restored entry with a live worker. Its
+	 * transcript so far is the record's and the file's; the host's feed brings the rest. A run that
+	 * settled while no parent was here is announced once (chat-worker.ts), waking like a live one.
 	 */
-	let adopting: Promise<void> | undefined;
-	const adoptWorkers = (ctx: ExtensionContext): Promise<void> => {
-		if (!hosting.active()) return Promise.resolve();
-		adopting ??= (async () => {
+	let reattaching: Promise<void> | undefined;
+	const reattach = (ctx: ExtensionContext): Promise<void> => {
+		const host = workerHost?.current();
+		const parent = parentOf(ctx);
+		if (!host || !parent) return Promise.resolve();
+		reattaching ??= (async () => {
 			try {
-				for (const { dir, meta } of hosting.candidates()) {
+				let refs: Awaited<ReturnType<typeof host.list>>;
+				try {
+					refs = await host.list();
+				} catch {
+					return; // No server to ask: they stay listed restored; the next start asks again.
+				}
+				for (const ref of refs) {
 					if (shuttingDown) return;
-					if (agents.some((a) => a.id === meta.id && !isRestored(a))) continue;
-					if (meta.backend === CLAUDE_CODE_BACKEND) {
-						// A native Claude Code worker (it ran the CLI's own tools) has no runner any more: its
-						// host is stopped and archived, and its record lists it restored; a resume continues
-						// it on Sova's tools (claude-workers.ts).
-						hosting.retire(dir, meta);
-						continue;
-					}
-					const backend = meta.backend === "pi" ? undefined : backends.get(meta.backend);
-					if (meta.backend !== "pi" && !backend) continue; // Its extension is not loaded (yet); stays detached.
-					let prepared: Record<string, unknown> = {};
-					try {
-						// Permission policy and handlers; nothing is spawned.
-						prepared = backend?.prepare?.({ ...meta.spec }, ctx) ?? {};
-					} catch {
-						prepared = {};
-					}
-					const adoption = await hosting.adopt(dir, meta);
-					if (!adoption) continue;
-					if (shuttingDown) { hosting.abandon(meta.id); return; }
+					// Hidden chats are their own clients' (fork/background.ts, btw).
+					if (ref.kind !== "worker") continue;
+					if (agents.some((a) => a.id === ref.workerId && !isRestored(a))) continue;
+					const ghost = agents.find((a): a is RestoredWorker => a.id === ref.workerId && isRestored(a));
+					const manifest = ghost?.manifest ?? restoredViews.get(ref.workerId)?.manifest;
+					if (!manifest) continue; // Not this session's record (another branch's process): left alone.
+					// A worker resumed since runs in its recorded session: another chat of the same id is not it.
+					if (manifest.ref?.locator && manifest.ref.locator !== ref.sessionFile && refs.some((r) => r.workerId === ref.workerId && r.sessionFile === manifest.ref!.locator)) continue;
+					const launch = (manifest.launch ?? {}) as Partial<WorkerLaunchSpec>;
+					const cwd = launch.cwd ?? manifest.spec?.cwd ?? ctx.cwd;
 					let worker: Worker;
 					try {
-						worker = (backend?.create ?? createRunner)(
+						worker = new ChatWorker(
 							{
-								model: meta.spec.model,
-								effort: meta.spec.effort,
-								tools: meta.spec.tools,
-								extensions: meta.spec.extensions,
-								...prepared,
-								...adoption.options,
-								backend: meta.backend,
-								id: meta.id,
-								groupId: meta.groupId,
-								name: meta.name,
-								task: meta.spec.prompt,
-								cwd: meta.spec.cwd,
-								wake: meta.spec.wake,
+								id: ref.workerId,
+								groupId: manifest.groupId ?? "run_restored",
+								name: manifest.name ?? manifest.team?.role ?? ref.workerId,
+								task: ghost?.task ?? manifest.spec?.taskPreview ?? "",
+								cwd: ghost?.cwd ?? cwd,
+								wake: manifest.spec?.wake ?? true,
+								backend: "pi",
+								...(launch.model ?? manifest.spec?.model ? { model: launch.model ?? manifest.spec?.model } : {}),
+								...(launch.effort ?? manifest.spec?.effort ? { effort: launch.effort ?? manifest.spec?.effort } : {}),
+								...(launch.tools ? { tools: [...launch.tools] } : {}),
+								...(launch.extensions ? { extensions: [...launch.extensions] } : {}),
 							},
 							{ onChange: scheduleRefresh, onSettled, onExit },
+							{
+								host,
+								parent,
+								attach: {
+									ref,
+									...(ghost ? { seed: { transcript: ghost.transcript, usage: ghost.usage, status: ghost.status, taskOutcome: ghost.taskOutcome, error: ghost.error, startedAt: ghost.startedAt, model: ghost.model, effort: ghost.effort } } : {}),
+									...(manifest.settleKey ? { settleKey: manifest.settleKey } : {}),
+									...(manifest.settleEntryId ? { settleEntryId: manifest.settleEntryId } : {}),
+									...(manifest.settledAt ?? manifest.resumedAt ? { settledAt: Math.max(manifest.settledAt ?? 0, manifest.resumedAt ?? 0) } : {}),
+								},
+							},
 						);
 					} catch {
-						hosting.abandon(meta.id);
 						continue;
 					}
-					hosting.bind(meta.id, worker);
 					try {
-						const outside = remoteSessionFor(ctx) ? undefined : worktreeCwdRefusal({ sessionCwd: ctx.cwd, cwd: meta.spec.cwd, set: restoreWorktrees(ctx.sessionManager.getBranch()) });
-						if (outside) outsideWorktrees.add(meta.id);
-						else outsideWorktrees.delete(meta.id);
+						const outside = remoteSessionFor(ctx) ? undefined : worktreeCwdRefusal({ sessionCwd: ctx.cwd, cwd: worker.cwd, set: restoreWorktrees(ctx.sessionManager.getBranch()) });
+						if (outside) outsideWorktrees.add(worker.id);
+						else outsideWorktrees.delete(worker.id);
 					} catch {
 						// Unknowable: not flagged.
 					}
-					// Its host kept it running: the live worker replaces its restored entry (its
-					// replayed log carries all its usage, so the restored view leaves the Σ).
-					for (const ghost of agents.filter((a) => a.id === meta.id && isRestored(a))) removeWorker(ghost);
-					restoredViews.delete(meta.id);
-					let group = groups.find((g) => g.id === meta.groupId);
+					// It ran on: the live worker replaces its restored entry (its usage is its whole session's).
+					for (const old of agents.filter((a) => a.id === ref.workerId && isRestored(a))) removeWorker(old);
+					restoredViews.delete(ref.workerId);
+					const groupId = manifest.groupId ?? "run_restored";
+					let group = groups.find((g) => g.id === groupId);
 					if (!group) {
-						group = { id: meta.groupId, label: meta.groupLabel ?? `${meta.groupId} · re-adopted`, createdAt: meta.createdAt, agents: [] };
+						group = { id: groupId, label: `${groupId} · re-adopted`, createdAt: manifest.firstAt ?? Date.now(), agents: [] };
 						groups.push(group);
 					}
 					group.agents.push(worker);
 					agents.push(worker);
 					registry.resume(worker);
-					if (meta.team && teams.adoptHistoryTeam(meta.team.teamId)) {
+					if (manifest.team && teams.adoptHistoryTeam(manifest.team.teamId)) {
 						ensureMailbox();
 						wakeRejoinedMonitor(worker);
 					}
 				}
 			} finally {
-				adopting = undefined;
+				reattaching = undefined;
 				refresh();
 			}
 		})();
-		return adopting;
+		return reattaching;
 	};
-	const unregisterAdoptListener = pi.events?.on(WORKERS_ADOPT_EVENT, (data: unknown) => {
-		if (shuttingDown || !activeCtx || (data as { version?: unknown } | null)?.version !== 1) return;
-		void adoptWorkers(activeCtx);
-	});
 	pi.on("session_start", (_event, ctx) => {
 		activeCtx = ctx;
 		parentLoops = 0;
@@ -3750,18 +3801,14 @@ export function registerSubagents(
 		// A paused team stays paused across a reload: its resume check must still fire while it is idle.
 		pausedTeams.clear();
 		for (const teamId of pausedTeamsFrom(ctx.sessionManager.getBranch?.() ?? [])) pausedTeams.add(teamId);
-		hosting.setOwner(ctx.sessionManager.getSessionId?.(), ctx.sessionManager.getSessionFile?.());
-		// Asynchronous (transcript reads): earlier processes' workers appear once read.
-		void restoreWorkers(ctx).catch(() => { /* Best effort: the records stay for the next start. */ });
-		if (hosting.active()) {
-			try {
-				hosting.reap();
-			} catch {
-				/* Archiving stale entries is best effort. */
-			}
-			// Asynchronous: pings and replays must not block session startup.
-			void adoptWorkers(ctx);
-		}
+		// The session's worker host, asked again (it is bound to the session now starting).
+		workerHost?.dispose();
+		workerHost = pi.events ? workerHostOf(pi.events) : undefined;
+		// Asynchronous (transcript reads): earlier processes' workers appear once read, then those
+		// still running are picked back up.
+		void restoreWorkers(ctx)
+			.catch(() => { /* Best effort: the records stay for the next start. */ })
+			.then(() => (shuttingDown ? undefined : reattach(ctx)));
 		refresh();
 	});
 	pi.on("session_tree", (_event, ctx) => {
@@ -3794,8 +3841,6 @@ export function registerSubagents(
 		releaseHeld(() => true, aborted ? false : undefined);
 	});
 	pi.on("session_shutdown", async () => {
-		// Read at dispose time: the embedding process sets it only when it is going away.
-		const detach = detachRequested();
 		// Best effort: leftovers reach the transcript without starting a turn.
 		collecting.clear();
 		try {
@@ -3806,7 +3851,6 @@ export function registerSubagents(
 		held.clear();
 		shuttingDown = true;
 		unregisterWorkersListener?.();
-		unregisterAdoptListener?.();
 		publishWorkers();
 		unregisterBackendListener?.();
 		unregisterRemoteListener?.();
@@ -3841,13 +3885,13 @@ export function registerSubagents(
 		overlayHandle = undefined;
 		backendDialogs.clear();
 		composingEditor = false;
-		// Detach leaves hosted workers running for the next manager; anything
-		// whose teardown already began (agent_kill, failed spawn) still finishes.
-		const detached = detach
-			? hosting.detachAll((a) => !rollingBack.has(a) && !a.isFinished() && !a.isStopping?.())
-			: new Set<string>();
-		await Promise.all([...agents, ...rollingBack].filter((a) => rollingBack.has(a) || !detached.has(a.id)).map((a) => a.dispose()));
-		hosting.clear();
+		// Every worker runs on and is picked back up by the next manager (dispose lets go); a failed
+		// batch's workers are still stopped.
+		await Promise.all([
+			...agents.filter((a) => !rollingBack.has(a)).map((a) => a.dispose()),
+			...[...rollingBack].map((a) => Promise.resolve().then(() => a.kill("spawn batch rolled back after factory failure")).catch(() => a.dispose())),
+		]);
+		workerHost?.dispose();
 		rollingBack.clear();
 		agents.length = 0;
 		groups.length = 0;
@@ -3856,17 +3900,9 @@ export function registerSubagents(
 		registry.clear();
 		restoredViews.clear();
 		restoreGeneration++;
-		// Only a root this instance created is removed; an injected root is the caller's.
-		// A registry mailbox goes only once no worker of this owner remains to use it.
-		if (mailboxRoot && (mailboxOwned || (!options.mailboxRoot && !detached.size && hosting.ownerEmpty()))) {
-			try {
-				fs.rmSync(mailboxRoot, { recursive: true, force: true });
-			} catch {
-				/* Temp cleanup is best effort. */
-			}
-		}
-		mailboxRoot = undefined;
-		mailboxOwned = false;
+		// The mailbox and its nudges are kept for the next manager (§teams.defaults/wake-nudge).
+		mailboxRoot = options.mailboxRoot;
+		nudgesLoaded = false;
 	});
 }
 

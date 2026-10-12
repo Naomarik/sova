@@ -96,7 +96,7 @@ function manager(file: ReturnType<typeof sessionFile>, options: Options = {}) {
 		getActiveTools: () => ["read"],
 		sendMessage: (...m: any[]) => messages.push(m),
 	} as any, factory as any, {
-		policyFile: NO_POLICY_FILE, hosting: { enabled: false },
+		policyFile: NO_POLICY_FILE,
 		...(options.agentDir ? { agentDir: options.agentDir } : {}), ...(options.mailboxRoot ? { mailboxRoot: options.mailboxRoot, mailboxPollMs: 10 } : {}),
 	});
 	const call = (name: string, params: any) => tools.get(name).execute("t", params, undefined, () => {}, ctx);

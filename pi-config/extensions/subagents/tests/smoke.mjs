@@ -1,11 +1,11 @@
-// Real Pi startup/teardown. --live provider/model additionally makes two small model calls.
+// Real Pi startup/teardown: the extension loads and registers /agents. (A live worker run is the chat-runtime trial's.)
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { StringDecoder } from "node:string_decoder";
 import fs from "node:fs";
 import path from "node:path";
-import { cli, jiti, root } from "./runtime.mjs";
+import { cli, root } from "./runtime.mjs";
 
 // Offline, never the host's agent dir or Claude directory: a throwaway home before anything under
 // test loads (pi writes auth.json and models-store.json there). --live's model calls need the real one.
@@ -83,67 +83,6 @@ try {
 	if (process.platform === "linux") assert.equal(fs.existsSync(`/proc/${child.pid}`), false);
 }
 
-const liveIndex = process.argv.indexOf("--live");
-if (liveIndex >= 0) {
-	const model = process.argv[liveIndex + 1];
-	assert.ok(model?.includes("/"), "Usage: node tests/smoke.mjs --live provider/model");
-	const { SubagentRunner } = await jiti.import(path.join(root, "runner.ts"));
-	// The runner normally executes inside Pi; give its CLI reinvocation logic that same argv.
-	const oldScript = process.argv[1];
-	process.argv[1] = cli;
-	let trackedChild;
-	let resolveSettled;
-	let settled = new Promise((resolve) => {
-		resolveSettled = resolve;
-	});
-	const runner = new SubagentRunner(
-		{
-			id: "smoke",
-			groupId: "smoke",
-			name: "smoke",
-			cwd: root,
-			model,
-			effort: "off",
-			tools: [],
-			task: "Reply with exactly SUBAGENT_SMOKE_FIRST and no other text.",
-			spawnImpl(command, args, options) {
-				trackedChild = spawn(command, args, options);
-				return trackedChild;
-			},
-		},
-		{ onChange() {}, onExit() {}, onSettled: () => resolveSettled() },
-	);
-	process.argv[1] = oldScript;
-	try {
-		await deadline(settled, 90000, "first task");
-		assert.equal(runner.taskOutcome, "success", runner.error);
-		assert.equal(runner.finalOutput().trim(), "SUBAGENT_SMOKE_FIRST");
-		assert.ok(runner.sessionId);
-		assert.ok(runner.sessionFile);
-		assert.ok(fs.statSync(runner.sessionFile).isFile(), "child session must actually be persisted");
-		settled = new Promise((resolve) => {
-			resolveSettled = resolve;
-		});
-		const accepted = await runner.steer("Reply with exactly SUBAGENT_SMOKE_SECOND and no other text.");
-		assert.equal(accepted.ok, true, accepted.reason);
-		await deadline(settled, 90000, "steered task");
-		assert.equal(runner.taskOutcome, "success", runner.error);
-		assert.equal(runner.finalOutput().trim(), "SUBAGENT_SMOKE_SECOND");
-		await deadline(runner.kill("smoke test complete"), 10000, "worker kill");
-		assert.equal(runner.status, "killed");
-		console.log(
-			`PASS: real model task, idle steering, fresh output, persisted session, and awaited shutdown (${model}).`,
-		);
-	} finally {
-		try {
-			await deadline(runner.dispose(), 10000, "worker cleanup");
-		} finally {
-			if (trackedChild && trackedChild.exitCode === null && trackedChild.signalCode === null) {
-				const stopped = once(trackedChild, "close");
-				trackedChild.kill("SIGKILL");
-				await deadline(stopped, 5000, "emergency cleanup");
-			}
-			if (trackedChild && process.platform === "linux") assert.equal(fs.existsSync(`/proc/${trackedChild.pid}`), false);
-		}
-	}
-}
+// A real model run of a worker needs Sova's server (a worker is a chat process it starts): that is the
+// chat-runtime trial's (scripts/chat-runtime-trial, its worker checks), never this file's.
+if (process.argv.includes("--live")) console.log("SKIP: --live moved to the chat-runtime trial (workers run as chat processes of Sova's server).");

@@ -239,8 +239,9 @@ if (cmd === "prepare") {
 // A stand-in transient unit plays the server (sova-probe-standin-<pid>.service, Restart=always). Its
 // script launches the probe host as `systemd-run --user --slice=<test slice> --collect
 // --property=KillMode=mixed --property=TimeoutStopSec=30` (its own transient unit, outside the
-// stand-in's cgroup), then sleeps. We restart the stand-in and check the probe's pid is still alive,
-// still in its own unit, and that the stand-in came back with a new pid; then stop the probe's unit
+// stand-in's cgroup; its output goes to the marker file, not the journal), then sleeps. We restart
+// the stand-in and check the probe's pid is still alive, still in its own unit, and that the
+// stand-in came back with a new pid; then stop the probe's unit
 // and check the chat disposed on SIGTERM. Everything is stopped after. Needs the user bus: a Sova
 // worker's sandbox has none, so run it from a plain shell.
 async function survive() {
@@ -259,6 +260,7 @@ echo "standin start $$" >> '${marker}'
 if ! systemctl --user is-active --quiet '${probeUnit}.service'; then
   systemd-run --user --slice='${slice}' --collect --property=KillMode=mixed --property=TimeoutStopSec=30 --unit='${probeUnit}' \\
     --setenv=PI_CODING_AGENT_DIR='${AGENT}' --setenv=SOVA_PRICES_FETCH=off --working-directory='${ROOT}' \\
+    --property=StandardOutput=append:'${marker}' --property=StandardError=append:'${marker}' \\
     '${execFileSync("sh", ["-c", `command -v ${BUN}`], { encoding: "utf8" }).trim()}' '${HOST}' --new '${PROJ}' --hold >> '${marker}' 2>&1
 fi
 exec sleep infinity

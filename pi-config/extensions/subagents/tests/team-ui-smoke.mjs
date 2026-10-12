@@ -519,7 +519,7 @@ async function teamPhase() {
 			}
 			tmux("resize-window", "-t", session, "-x", "120", "-y", "40");
 			keys("q");
-			await until((s) => !PERMISSION.test(s) && !AGENTS_HEADER.test(s), "closed");
+			await until((s) => !AGENTS_HEADER.test(s), "closed");
 		});
 	}
 

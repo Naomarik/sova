@@ -517,6 +517,12 @@ Driven by `ChatServerMessage.event`. Streaming working blocks follow the same br
   class `message-streaming`. Its head is `author` + `<span class="live-dot"></span>`.
   `text_delta` appends into its body; `thinking_delta` feeds a streaming `.disclosure` placed
   before it. `toolcall_start` adds a `.toolcard` with the Running chip.
+- **Joining mid-reply.** A browser that connects or reconnects while a reply streams shows the
+  reply so far, from the hello's `live` snapshot: its thinking, text and tool calls, and each tool
+  still running with its output so far. It then keeps streaming into that same message from the next
+  delta, so nothing shows twice and nothing from before the reconnect is missing. Seeding the reply
+  announces nothing and does nothing a turn's start does. A hello without `live` (an older server,
+  or nothing streaming) shows only what streams after it, as before.
 - **Run status.** Above the textarea, inside `.composer-inner`:
   `<p class="run-status"><span class="live-dot"></span><span class="run-status-state" title="Working · running bash"><span class="icon icon-sm run-status-narrow" style="--icon: url(/icons/wrench.svg)" aria-hidden="true"></span><span class="run-status-say">Working<span class="run-status-detail">· running bash</span></span></span></p>`.
   **One live dot leads the row whenever the session has work in flight**: a turn, Stopping, a
@@ -921,8 +927,10 @@ can't identify, and no TUI claims it, so we only read it. Chatting here would pu
 file." The age is live: it counts on while the banner is up, instead of freezing at connect time.
 
 The server's own writes are not "a process we can't identify", **across a restart too**. It
-keeps the size and modification time it last left each file in, in `owned-writes.json` under
-Sova's state root (the most recent 500), and a file whose size and time both still match opens
+keeps the size and modification time it or one of its chat processes last left each file in, in
+`owned-writes.json` under Sova's state root (the most recent 500); each process that records one
+locks the file for the moment it takes, so two processes recording at once never lose each other's
+record, and a file whose size and time both still match opens
 for chat at once. A stat is recorded only where the write is certainly the server's: a file it
 just created, an entry a runtime it held just appended, and a stretch its write guard verified
 entry by entry as its own. A reply a server stop cuts off is one of these: the stop waits (a few

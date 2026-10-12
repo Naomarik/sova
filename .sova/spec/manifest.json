@@ -1815,7 +1815,11 @@
         "src/design/base.css",
         "public/icons/bulb.svg",
         "public/icons/wrench.svg",
-        "src/components/Thread.tsx"
+        "src/components/Thread.tsx",
+        "shared/protocol.ts",
+        "server/chat-runtime/live-tail.ts",
+        "server/chat-manager.ts",
+        "server/chat-joins.test.ts"
       ]
     },
     "§chat.transcript/tokens": {
@@ -2882,7 +2886,9 @@
         "server/chat-manager.ts",
         "server/index.ts",
         "server/shutdown-own-writes.test.ts",
-        "src/components/SessionView.tsx"
+        "src/components/SessionView.tsx",
+        "server/chat-host.ts",
+        "server/chat-runtime/writer-lock.ts"
       ]
     },
     "§chat.images/resize-notes": {

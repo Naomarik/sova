@@ -283,7 +283,7 @@ async function shutdown() {
   markShutdown();
   // The aborts below settle every run: the ledger keeps them as cut off (§app.overseer/auto-resume).
   runLedger.freeze();
-  for (const chat of chatHandles()) if (chat.mirror.running) chat.abort().catch(() => {});
+  const aborts = chatHandles().filter((chat) => chat.mirror.running).map((chat) => chat.abort().catch(() => {}));
   usagePoller.stop();
   // A plateau's held-back last reading is written, so the next start knows how long it lasted.
   try {
@@ -298,6 +298,9 @@ async function shutdown() {
   stopMesh();
   stopShareRuntime();
   await stopVoice();
+  // Each cut-off reply is written by its abort: settled first, so each chat's close records it as
+  // the server's own write (§chat.transcript/own-writes-across-restart) and the next start can resume it.
+  await Promise.race([Promise.all(aborts), new Promise((r) => setTimeout(r, 3000))]);
   await Promise.race([disposeAllChats(), new Promise((r) => setTimeout(r, 3000))]);
   // Every visit with an open share socket is seen now, so the commit below carries it.
   try {

@@ -60,8 +60,19 @@ const REPO = join(dirname(fileURLToPath(import.meta.url)), "..");
 const READY_WAIT_MS = 10_000;
 
 let host: ChatHost = { mode: "in", why: "the server has not started its chats yet" };
-/** Where ordinary chats run on this server, and why (GET /api/health `chatHost`). */
+/** Where ordinary chats run on this server, and why (logged in full at start). */
 export const chatHostStatus = (): ChatHost => host;
+
+/** The same for GET /api/health, which answers without sign-in: the mode and a fixed short reason,
+    never a value from the environment or a probe's own text. */
+export function chatHostHealth(): { mode: "in" | "out"; why: string } {
+  const w = host.why;
+  if (host.mode === "out") return { mode: "out", why: /detached/.test(w) ? "test driver" : "systemd user units" };
+  if (!w.startsWith("SOVA_CHAT_HOST=out")) return { mode: "in", why: /not started/.test(w) ? "starting" : "switch off" };
+  if (/Linux-only/.test(w)) return { mode: "in", why: "not Linux" };
+  if (/Bun/.test(w)) return { mode: "in", why: "server not on Bun" };
+  return { mode: "in", why: "no systemd user manager" };
+}
 
 const log = (line: string) => console.log(`[chat-host] ${line}`);
 
@@ -126,7 +137,7 @@ class ChatHostRouter {
         if (path) this.forget(path);
       },
       drain: (id, reason) => this.handleOf(id)?.drain(reason) ?? Promise.resolve({ ok: false }),
-      reapClaude: (id) => this.handleOf(id)?.releaseIdleModelChild(),
+      reapClaude: (id) => this.handleOf(id)?.releaseIdleModelChild() ?? Promise.resolve("none" as const),
       lockHeld: (path) => {
         const l = readLock(path);
         return !!l && holderAlive(l);
@@ -161,8 +172,10 @@ class ChatHostRouter {
     return path ? this.remotes.get(path) : undefined;
   }
 
+  /** Done with this chat's process: its panes still here reconnect quietly (the chat reopens on demand). */
   private forget(path: string): void {
     const h = this.remotes.get(path);
+    h?.endPanes("Reconnecting. Your draft is kept.", "reloaded");
     if (h) this.paths.delete(h.mirror.sessionId);
     this.remotes.delete(path);
     setRemoteHosted(path, null);
@@ -361,7 +374,7 @@ class ChatHostRouter {
     this.forget(path);
     // Step 0 (design §4.5): the dead process held the lock and nobody wrote since it ended.
     const lock = readLock(path);
-    if (lock && pid !== null && lock.pid === pid) {
+    if (lock && pid !== null && lock.pid === pid && !holderAlive(lock)) {
       try {
         if (statSync(path).mtimeMs <= Date.parse(d.at)) markOwned(path);
       } catch {

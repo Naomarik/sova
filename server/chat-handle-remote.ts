@@ -84,8 +84,16 @@ export class RemoteChatHandle extends ChatHandle {
   repoint(link: Link, at: RemoteWhere = this.at, mirror?: ChatRuntimeMirror): void {
     this.at = at;
     this.ended = false;
-    if (mirror) this.mirror = mirror;
     this.bind(link);
+    if (mirror) {
+      // A reload's replacement: the old process told every pane to reconnect, and each comes back.
+      this.mirror = mirror;
+      this.clients.clear();
+      this.ids.clear();
+    } else {
+      // The same process, linked again: the panes still here (or attached while it was down) attach anew.
+      for (const [clientId, client] of this.clients) this.sendAttach(clientId, client);
+    }
   }
 
   private bind(link: Link): void {
@@ -161,6 +169,11 @@ export class RemoteChatHandle extends ChatHandle {
     const clientId = randomUUID();
     this.clients.set(clientId, client);
     this.ids.set(client, clientId);
+    // With the link down this sends nothing: the pane is attached when the chat is linked again
+    // (repoint), or told it stopped (endPanes).
+    this.sendAttach(clientId, client);
+  }
+  private sendAttach(clientId: string, client: ChatClient): void {
     this.link.send({
       t: "client.attach",
       clientId,
@@ -181,14 +194,15 @@ export class RemoteChatHandle extends ChatHandle {
 
   /** Every pane is told `message` and its socket closed, so it reconnects (a death, or a chat this
       server can no longer talk to). The handle is done. */
-  endPanes(message: string): void {
+  endPanes(message: string, code: "internal" | "reloaded" = "internal"): void {
     this.ended = true;
     this.failPending();
     for (const c of this.clients.values()) {
-      c.send({ type: "error", code: "internal", message });
-      c.close?.(4500, "chat process stopped");
+      c.send({ type: "error", code, message });
+      c.close?.(4500, code === "internal" ? "chat process stopped" : "chat closed");
     }
     this.clients.clear();
+    this.ids.clear();
   }
 
   // ---- kernel and pushes ------------------------------------------------------------------------------

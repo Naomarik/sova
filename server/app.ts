@@ -1,7 +1,7 @@
 // The server's Hono app and its routes (buildApp), with nothing started: no listener, no
 // usage-helper child, no timers or loops. server/index.ts builds it, listens and boots everything
 // else; tests build it to drive routes through app.request() (no socket).
-import { chatHostStatus } from "./chat-host";
+import { chatHostHealth } from "./chat-host";
 import { holderAlive, readLock } from "./chat-runtime/writer-lock";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
@@ -214,7 +214,7 @@ export function buildApp(deps: AppDeps) {
 
   // What this process runs (§chat.profiles/live-commit): its start and its checkout's commit then, and how
   // many entries its pi can't read it has met (§app.harness/unknown-entries; a number only, the route is open).
-  app.get("/api/health", (c) => c.json({ ok: true, startedAt: SERVER_STARTED_AT, head: SERVER_HEAD, runtime: SERVER_RUNTIME, chatHost: chatHostStatus(), unknownEntries: unknownEntries() }));
+  app.get("/api/health", (c) => c.json({ ok: true, startedAt: SERVER_STARTED_AT, head: SERVER_HEAD, runtime: SERVER_RUNTIME, chatHost: chatHostHealth(), unknownEntries: unknownEntries() }));
   // A browser's way in (§app.access/unlock): the token it was given sets the install's cookie.
   app.post("/api/auth/unlock", bodyLimit({ maxSize: 4096 }), unlock);
   // Both routes stay behind the gate, and refuse peer-listener and relayed calls as well.

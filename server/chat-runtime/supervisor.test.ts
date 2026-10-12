@@ -89,6 +89,7 @@ test("a chat process that dies is reported once, with systemd's exit and its las
   const d = new FakeDriver();
   const { sup, deaths, owned } = make(d);
   const rec = await sup.start(chat);
+  sup.noteConnected("c1");
   d.die(rec.unit, ["boot", "TypeError: boom", "sova-chat-test01-c1.service: Main process exited, code=exited, status=1/FAILURE", "sova-chat-test01-c1.service: Failed with result 'exit-code'."]);
   await sup.tick();
   await sup.tick();
@@ -107,6 +108,7 @@ test("a signal death reads as crashed with the signal; a unit gone without a wor
   const d = new FakeDriver();
   const { sup, deaths } = make(d);
   const r1 = await sup.start(chat);
+  sup.noteConnected("c1");
   d.die(r1.unit, []);
   assert.equal(await sup.check("c1"), "died");
   assert.equal(deaths[0]!.cause, "lost");
@@ -114,6 +116,26 @@ test("a signal death reads as crashed with the signal; a unit gone without a wor
   d.die(r2.unit, ["Main process exited, code=exited, status=0/SUCCESS"]);
   assert.equal(await sup.check("c2"), "ended");
   assert.equal(deaths.length, 1);
+});
+
+test("a chat that ends before its first hello did not start: logged and handed to the router, never a death", async () => {
+  const d = new FakeDriver();
+  const failed: string[] = [];
+  const lines: string[] = [];
+  const { sup, deaths } = make(d, { onBootFailed: (id, x) => void failed.push(`${id}:${x.exit}`), log: (l) => void lines.push(l) });
+  const rec = await sup.start(chat);
+  d.die(rec.unit, ["chat-runtime: build b fails to boot (test)", "Main process exited, code=exited, status=3/NOTIMPLEMENTED"]);
+  assert.equal(await sup.check("c1"), "boot-failed");
+  assert.deepEqual(failed, ["c1:3"]);
+  assert.equal(deaths.length, 0);
+  assert.ok(lines.some((l) => /c1: its process did not start .*exit 3.*fails to boot/.test(l)));
+  assert.deepEqual(readdirSync(reg), []);
+  assert.throws(() => readFileSync(join(dir, "deaths.jsonl")), "not in the deaths log");
+  // No hello in time: given up, also a failed start.
+  await sup.start({ ...chat, chatId: "c2" });
+  await sup.lost("c2", "no hello in 10 s");
+  assert.deepEqual(failed, ["c1:3", "c2:null"]);
+  assert.equal(deaths.length, 0);
 });
 
 test("a stop of the supervisor's own, or an exit the chat announced, is no death", async () => {
@@ -134,6 +156,7 @@ test("a chat that stops answering is stopped and reported lost", async () => {
   const d = new FakeDriver();
   const { sup, deaths } = make(d);
   const rec = await sup.start(chat);
+  sup.noteConnected("c1");
   await sup.lost("c1", "no hello in 60 s");
   assert.deepEqual(d.stopped, [rec.unit]);
   assert.deepEqual([deaths[0]!.cause, deaths[0]!.detail], ["lost", "no hello in 60 s"]);

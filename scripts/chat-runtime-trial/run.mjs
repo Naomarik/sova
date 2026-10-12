@@ -1632,7 +1632,7 @@ async function t21() {
   await turn(o, "say ok");
   const sid = entries(path)[0]?.id;
   const ppid = chatPid(path);
-  const usage0 = usageRecords().length;
+  const usage0 = new Set(usageRecords().map((r) => r.key));
   // /explain, still running when the parent reloads.
   prompt(s, "/explain [explain 30] the trial topic");
   const ex = await workerOf(path, (r) => r.kind === "explain");
@@ -1681,7 +1681,7 @@ async function t21() {
   const hidden = mockLog(mock.log).filter((e) => !e.event && ["explain", "handoff", "btw"].includes(e.scenario));
   R.check(hidden.length >= 3 && hidden.every((e) => e.pid && !parents.has(e.pid)), `t21: every hidden chat's model call came from a process other than the parent's and the server's (${hidden.map((e) => `${e.scenario}@${e.pid}`).join(", ")})`);
   await sleep(2000);
-  const counted = usageRecords().slice(usage0).filter((r) => r.parent === sid);
+  const counted = usageRecords().filter((r) => !usage0.has(r.key) && r.parent === sid);
   R.check(counted.length >= hidden.length, `t21: the hidden chats' calls are in the usage ledger, attributed to the parent (${counted.length} records for ${hidden.length} calls; owners ${[...new Set(counted.map((r) => r.owner))].join(", ")})`);
   // /btw:summarize: a second, tool-less hidden chat; its summary goes to the parent once confirmed.
   let f = s2.got.length;

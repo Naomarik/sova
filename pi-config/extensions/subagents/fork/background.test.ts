@@ -9,17 +9,8 @@ import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { CLAUDE_FORK_ENV, decodeForkPoint } from "../../claude-code/provider/fork-point.ts";
-import {
-	NO_WORKER_HOST,
-	WORKER_HOST_DISCOVER_EVENT,
-	WORKER_HOST_EVENT,
-	type WorkerCursor,
-	type WorkerFeedFrame,
-	type WorkerHost,
-	type WorkerRef,
-	type WorkerStart,
-	type WorkerState,
-} from "../worker-host.ts";
+import { FakeWorkerHost } from "../tests/fake-worker-host.ts";
+import { NO_WORKER_HOST, WORKER_HOST_DISCOVER_EVENT, WORKER_HOST_EVENT, type WorkerHost } from "../worker-host.ts";
 import {
 	CHILD_EXTENSION,
 	claudeForkPointFor,
@@ -33,59 +24,11 @@ import {
 } from "./background.ts";
 import { decodePolicy, FORK_POLICY_ENV } from "./mirror.ts";
 
-/** An in-memory worker host: records starts and stops, and lets a test push feed frames. */
-class FakeHost implements WorkerHost {
-	starts: WorkerStart[] = [];
-	stops: { chatId: string; reason: string }[] = [];
-	watchers = new Map<string, (f: WorkerFeedFrame) => void>();
-	refs: WorkerRef[] = [];
-	refuse?: string;
-	private seq = 0;
-
-	refFor(workerId: string, kind: WorkerRef["kind"] = "explain", extra: Partial<WorkerRef> = {}): WorkerRef {
-		return { chatId: `chat-${workerId}`, sessionId: `sid-${workerId}`, sessionFile: `/sessions/${workerId}.jsonl`, workerId, kind, placement: "unit", pid: 77, state: "open", ...extra };
-	}
-	async start(req: WorkerStart): Promise<WorkerRef> {
-		this.starts.push(req);
-		if (this.refuse) throw new Error(this.refuse);
-		const ref = this.refFor(req.spec.parent.workerId, req.spec.kind);
-		this.refs.push(ref);
-		return ref;
-	}
-	async send(): Promise<{ queued: boolean }> {
-		return { queued: false };
-	}
-	async abort(): Promise<void> {}
-	async stop(chatId: string, reason: string): Promise<void> {
-		this.stops.push({ chatId, reason });
-		this.refs = this.refs.filter((ref) => ref.chatId !== chatId);
-	}
-	watch(chatId: string, _cursor: WorkerCursor | null, fn: (f: WorkerFeedFrame) => void): () => void {
-		this.watchers.set(chatId, fn);
-		return () => {
-			if (this.watchers.get(chatId) === fn) this.watchers.delete(chatId);
-		};
-	}
-	async list(): Promise<WorkerRef[]> {
-		return [...this.refs];
-	}
-	cursor(): WorkerCursor {
-		return { proc: "p1", seq: ++this.seq };
-	}
-	event(chatId: string, event: Record<string, unknown>): void {
-		this.watchers.get(chatId)?.({ t: "event", cursor: this.cursor(), event });
-	}
-	state(chatId: string, state: Partial<WorkerState>): void {
-		this.watchers.get(chatId)?.({
-			t: "state",
-			cursor: this.cursor(),
-			state: { status: "running", sessionId: "", sessionFile: "", pid: 77, model: null, thinking: null, lastSettled: null, queue: { steering: [], followUp: [] }, ...state },
-		});
-	}
-	ended(chatId: string, frame: Omit<Extract<WorkerFeedFrame, { t: "ended" }>, "t">): void {
-		this.watchers.get(chatId)?.({ t: "ended", ...frame });
-	}
-}
+/** The fork's chat in the fake host, by its run id. */
+const chatOf = (host: FakeWorkerHost, id: string): string => host.get(id).ref.chatId;
+/** Every stop the fake host was asked for, in start order. */
+const stopsOf = (host: FakeWorkerHost): { workerId: string; reason: string }[] =>
+	[...host.workers.values()].flatMap((w) => w.stops.map((reason) => ({ workerId: w.ref.workerId, reason })));
 
 const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
@@ -105,7 +48,7 @@ function spec(host: WorkerHost | undefined, extra: Partial<BackgroundForkSpec> =
 }
 
 test("a background fork starts one hidden chat that forks the copy with the parent's tools, the marker first and child.ts last, and reports its outcome once", async () => {
-	const host = new FakeHost();
+	const host = new FakeWorkerHost();
 	const settles: BackgroundForkResult[] = [];
 	const handle = startBackgroundFork(spec(host, { model: "zai/glm-5.3", effort: "high", forkSession: "/agent/explanations/.forks/vector-clocks-1.jsonl" }), { onSettled: (r) => settles.push(r) });
 	await flush();
@@ -125,24 +68,24 @@ test("a background fork starts one hidden chat that forks the copy with the pare
 	assert.equal(start.spec.lowered, true);
 	assert.deepEqual(start.session, { fork: { from: "/agent/explanations/.forks/vector-clocks-1.jsonl", dir: "/agent/explanations/.forks/vector-clocks-1" } });
 	assert.equal(start.task, "write the page");
-	assert.equal(handle.sessionId, "sid-vector-clocks-1");
-	assert.equal(handle.sessionFile, "/sessions/vector-clocks-1.jsonl");
+	assert.equal(handle.sessionId, chatOf(host, "vector-clocks-1"));
+	assert.equal(handle.sessionFile, `/fake/sessions/${chatOf(host, "vector-clocks-1")}.jsonl`);
 
-	const chat = "chat-vector-clocks-1";
+	const chat = chatOf(host, "vector-clocks-1");
 	host.event(chat, { type: "agent_start" });
 	host.event(chat, { type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "wrote the page" }], provider: "zai", model: "glm-5.4", stopReason: "stop" } });
 	host.event(chat, { type: "agent_settled" });
 	assert.equal(settles.length, 1);
 	assert.deepEqual(settles[0], { outcome: "success", finalOutput: "wrote the page", model: "zai/glm-5.4" });
-	assert.equal(host.watchers.size, 0, "a settled fork is no longer watched");
+	assert.equal(host.get("vector-clocks-1").watchers.size, 0, "a settled fork is no longer watched");
 
 	await handle.stop();
-	assert.deepEqual(host.stops, [{ chatId: chat, reason: "explain stopped" }], "stop ends the fork's chat");
+	assert.deepEqual(stopsOf(host), [{ workerId: "vector-clocks-1", reason: "explain stopped" }], "stop ends the fork's chat");
 	assert.equal(settles.length, 1, "stopping after a recorded run does not settle twice");
 });
 
 test("an unforked child starts a new session; web search loads after the marker and before child.ts", async () => {
-	const host = new FakeHost();
+	const host = new FakeWorkerHost();
 	startBackgroundFork(spec(host, { extensions: ["/agent/npm/node_modules/pi-web-access"] }), { onSettled: () => {} });
 	await flush();
 	assert.deepEqual(host.starts[0]!.session, { new: { dir: "/agent/explanations/.forks/vector-clocks-1" } });
@@ -154,7 +97,7 @@ test("an unforked child starts a new session; web search loads after the marker 
 
 test("a claude-code-cli model loads the claude-code extension before child.ts, with its provider flag; the fork point travels only with a fork", async () => {
 	const fork = { v: 1 as const, claudeSessionId: "3708bfa3-4e74-5f1f-a32e-cd209e9231e1", messages: 4, prefix: "abc", cwd: "/repo" };
-	const host = new FakeHost();
+	const host = new FakeWorkerHost();
 	startBackgroundFork(spec(host, { model: "claude-code-cli/opus[1m]", forkSession: "/tmp/copy.jsonl", claudeFork: fork, extensions: ["/web"] }), { onSettled: () => {} });
 	startBackgroundFork(spec(host, { id: "plain", model: "zai/glm-5.3", forkSession: "/tmp/copy.jsonl", extensions: ["/web"] }), { onSettled: () => {} });
 	startBackgroundFork(spec(host, { id: "unforked", model: "claude-code-cli/opus", claudeFork: fork }), { onSettled: () => {} });
@@ -188,8 +131,7 @@ test("claudeForkPointFor: only a claude-code-cli model looks for the parent's li
 
 test("no worker host refuses the start at once; a start the host refuses settles as an error", async () => {
 	assert.throws(() => startBackgroundFork(spec(undefined), { onSettled: () => {} }), new RegExp(NO_WORKER_HOST));
-	const host = new FakeHost();
-	host.refuse = "Workers need Bun to run Sova's chat runtime";
+	const host = new FakeWorkerHost({ failStart: () => "Workers need Bun to run Sova's chat runtime" });
 	const settles: BackgroundForkResult[] = [];
 	startBackgroundFork(spec(host), { onSettled: (r) => settles.push(r) });
 	await flush();
@@ -197,19 +139,19 @@ test("no worker host refuses the start at once; a start the host refuses settles
 });
 
 test("the run's outcome: a failed turn is an error, a successful auto-retry clears it, an aborted turn is aborted", async () => {
-	const host = new FakeHost();
+	const host = new FakeWorkerHost();
 	const settles: BackgroundForkResult[] = [];
 	startBackgroundFork(spec(host, { id: "a" }), { onSettled: (r) => settles.push(r) });
 	startBackgroundFork(spec(host, { id: "b" }), { onSettled: (r) => settles.push(r) });
 	startBackgroundFork(spec(host, { id: "c" }), { onSettled: (r) => settles.push(r) });
 	await flush();
-	host.event("chat-a", { type: "message_end", message: { role: "assistant", content: [], stopReason: "error", errorMessage: "429" } });
-	host.event("chat-a", { type: "agent_settled" });
-	host.event("chat-b", { type: "message_end", message: { role: "assistant", content: [], stopReason: "error", errorMessage: "overloaded" } });
-	host.event("chat-b", { type: "auto_retry_end", success: true });
-	host.event("chat-b", { type: "agent_settled" });
-	host.event("chat-c", { type: "message_end", message: { role: "assistant", content: "half", stopReason: "aborted" } });
-	host.event("chat-c", { type: "agent_settled" });
+	host.event(chatOf(host, "a"), { type: "message_end", message: { role: "assistant", content: [], stopReason: "error", errorMessage: "429" } });
+	host.event(chatOf(host, "a"), { type: "agent_settled" });
+	host.event(chatOf(host, "b"), { type: "message_end", message: { role: "assistant", content: [], stopReason: "error", errorMessage: "overloaded" } });
+	host.event(chatOf(host, "b"), { type: "auto_retry_end", success: true });
+	host.event(chatOf(host, "b"), { type: "agent_settled" });
+	host.event(chatOf(host, "c"), { type: "message_end", message: { role: "assistant", content: "half", stopReason: "aborted" } });
+	host.event(chatOf(host, "c"), { type: "agent_settled" });
 	assert.deepEqual(
 		settles.map((r) => [r.outcome, r.error, r.finalOutput]),
 		[
@@ -221,17 +163,17 @@ test("the run's outcome: a failed turn is an error, a successful auto-retry clea
 });
 
 test("the fork's chat ending: a final death settles as an error with its detail, a stop as aborted; idle, reload and a crash resume do not settle", async () => {
-	const host = new FakeHost();
+	const host = new FakeWorkerHost();
 	const settles: BackgroundForkResult[] = [];
 	startBackgroundFork(spec(host, { id: "d" }), { onSettled: (r) => settles.push(r) });
 	startBackgroundFork(spec(host, { id: "k" }), { onSettled: (r) => settles.push(r) });
 	await flush();
-	host.ended("chat-d", { cause: "idle" });
-	host.ended("chat-d", { cause: "reload" });
-	host.ended("chat-d", { cause: "died", resuming: true, detail: "exit 1" });
+	host.end(chatOf(host, "d"), { cause: "idle" });
+	host.end(chatOf(host, "d"), { cause: "reload" });
+	host.end(chatOf(host, "d"), { cause: "died", resuming: true, detail: "exit 1" });
 	assert.equal(settles.length, 0);
-	host.ended("chat-d", { cause: "died", detail: "This worker's process stopped unexpectedly (exit 1)" });
-	host.ended("chat-k", { cause: "killed" });
+	host.end(chatOf(host, "d"), { cause: "died", detail: "This worker's process stopped unexpectedly (exit 1)" });
+	host.end(chatOf(host, "k"), { cause: "killed" });
 	assert.deepEqual(
 		settles.map((r) => [r.outcome, r.error]),
 		[
@@ -242,33 +184,40 @@ test("the fork's chat ending: a final death settles as an error with its detail,
 });
 
 test("stop before the run settles ends its chat and settles it once, as aborted", async () => {
-	const host = new FakeHost();
+	const host = new FakeWorkerHost();
 	const settles: BackgroundForkResult[] = [];
 	const handle = startBackgroundFork(spec(host), { onSettled: (r) => settles.push(r) });
 	await handle.stop();
-	host.ended("chat-vector-clocks-1", { cause: "killed" });
-	assert.deepEqual(host.stops.map((s) => s.chatId), ["chat-vector-clocks-1"]);
+	host.end(chatOf(host, "vector-clocks-1"), { cause: "killed" });
+	assert.deepEqual(stopsOf(host).map((s) => s.workerId), ["vector-clocks-1"]);
 	assert.deepEqual(settles.map((r) => r.outcome), ["aborted"]);
 });
 
 test("detach stops watching and leaves the fork running", async () => {
-	const host = new FakeHost();
+	const host = new FakeWorkerHost();
 	const settles: BackgroundForkResult[] = [];
 	const handle = startBackgroundFork(spec(host), { onSettled: (r) => settles.push(r) });
 	await flush();
 	handle.detach();
-	host.event("chat-vector-clocks-1", { type: "agent_settled" });
+	host.event(chatOf(host, "vector-clocks-1"), { type: "agent_settled" });
 	assert.equal(settles.length, 0);
-	assert.equal(host.stops.length, 0);
-	assert.equal(host.refs.length, 1);
+	assert.equal(stopsOf(host).length, 0);
+	assert.equal((await host.list()).length, 1, "the fork still runs");
 });
 
 test("reattach watches the parent's running forks of its kind again, stops the ones no run claims, and settles a fork that finished meanwhile from its file", async () => {
 	const dir = mkdtempSync(join(tmpdir(), "bgfork-"));
 	try {
-		const file = join(dir, "done.jsonl");
+		const host = new FakeWorkerHost({ sessionDir: dir });
+		const begin = (id: string, kind: "explain" | "handoff" = "explain") => startBackgroundFork(spec(host, { id, kind }), { onSettled: () => {} });
+		for (const id of ["live", "done", "orphan", "gone"]) begin(id);
+		begin("other-kind", "handoff");
+		await flush();
+		// The parent's session closes: its handles detach; the chats keep running.
+		for (const w of host.workers.values()) w.watchers.clear();
+		host.end(chatOf(host, "gone"), { cause: "died", detail: "exit 1" });
 		writeFileSync(
-			file,
+			host.get("done").ref.sessionFile,
 			[
 				{ type: "session", id: "s" },
 				{ type: "message", id: "1", message: { role: "user", content: "write" } },
@@ -278,26 +227,18 @@ test("reattach watches the parent's running forks of its kind again, stops the o
 				.map((e) => JSON.stringify(e))
 				.join("\n"),
 		);
-		const host = new FakeHost();
-		host.refs = [
-			host.refFor("live"),
-			host.refFor("done", "explain", { sessionFile: file, state: "idle" }),
-			host.refFor("orphan"),
-			host.refFor("other-kind", "handoff"),
-			host.refFor("gone", "explain", { state: "ended" }),
-		];
+		host.state(chatOf(host, "done"), { status: "idle", lastSettled: { key: "k:task", outcome: "success" } });
+
 		const settles = new Map<string, BackgroundForkResult>();
 		const handles = await reattachBackgroundForks(host, "explain", "explain", (id) => (id === "live" || id === "done" ? { onSettled: (r) => settles.set(id, r) } : undefined));
 		assert.deepEqual([...handles.keys()].sort(), ["done", "live"]);
-		assert.deepEqual(host.stops, [{ chatId: "chat-orphan", reason: "no explain run records it" }], "a fork no run claims is stopped; another kind and an ended chat are left alone");
+		assert.deepEqual(stopsOf(host), [{ workerId: "orphan", reason: "no explain run records it" }], "a fork no run claims is stopped; another kind and an ended chat are left alone");
+		assert.deepEqual(settles.get("done"), { outcome: "success", finalOutput: "the page is written", model: "zai/glm-5.3" }, "settled meanwhile: from its file, at once");
 
-		host.state("chat-done", { status: "idle", sessionFile: file, lastSettled: { key: "k:task", outcome: "success" } });
-		assert.deepEqual(settles.get("done"), { outcome: "success", finalOutput: "the page is written", model: "zai/glm-5.3" });
-
-		host.state("chat-live", { status: "running" });
+		host.state(chatOf(host, "live"), { status: "running" });
 		assert.equal(settles.has("live"), false);
-		host.event("chat-live", { type: "message_end", message: { role: "assistant", content: "done", stopReason: "stop" } });
-		host.event("chat-live", { type: "agent_settled" });
+		host.event(chatOf(host, "live"), { type: "message_end", message: { role: "assistant", content: "done", stopReason: "stop" } });
+		host.event(chatOf(host, "live"), { type: "agent_settled" });
 		assert.equal(settles.get("live")?.outcome, "success");
 		assert.equal(settles.get("live")?.finalOutput, "done");
 	} finally {
@@ -313,7 +254,7 @@ test("forkResultFromFile: an error run carries the host's error, a missing file 
 test("workerHostOf takes the host Sova announces on the session's events, and asks for it once", () => {
 	const handlers = new Map<string, (data: unknown) => void>();
 	const emitted: string[] = [];
-	const host = new FakeHost();
+	const host = new FakeWorkerHost();
 	const events = {
 		on: (channel: string, handler: (data: unknown) => void) => {
 			handlers.set(channel, handler);

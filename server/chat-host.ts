@@ -250,9 +250,10 @@ export class ChatHostRouter {
   }
 
   /** Send `open` on `link` and wait for its answer: the mirror, or its refusal thrown. */
-  private async openOn(link: Link, path: string, sessionId: string, force: boolean, kind: OpenKind = null): Promise<ChatRuntimeMirror> {
-    // A special chat's loadout is the server's word on it at each open (its refusal: no open).
-    const special: SpecialSpec | undefined = kind && kind !== "powers" ? await specialSpecFor(kind, path) : undefined;
+  private async openOn(link: Link, path: string, sessionId: string, force: boolean, kind: OpenKind = null, built?: SpecialSpec): Promise<ChatRuntimeMirror> {
+    // A special chat's loadout is the server's word on it at each open (its refusal: no open); a
+    // start built it already, before its process was spawned.
+    const special: SpecialSpec | undefined = built ?? (kind && kind !== "powers" ? await specialSpecFor(kind, path) : undefined);
     const id = randomUUID();
     const answer = awaitFrame(link, "opened", 60_000, (f) => f.id === id);
     const origin = currentLinkOrigin();
@@ -365,7 +366,7 @@ export class ChatHostRouter {
     const summary = await getSessionSummary(path).catch(() => null);
     if (!summary || summary.workerSession) return null;
     // A special kind's refusal (a previous conversation is read-only) comes before any process starts.
-    if (kind && kind !== "powers") await specialHostOf(kind)?.spec(path);
+    const special = kind && kind !== "powers" ? await specialSpecFor(kind, path) : undefined;
     // The cheap refusals first, as the in-process open makes them: no process for a doomed open.
     assertNotLive(path);
     assertOpenConfig(path);
@@ -395,11 +396,11 @@ export class ChatHostRouter {
       return null;
     }
     try {
-      const mirror = await this.openOn(link, path, rec.chatId, force, kind);
+      const mirror = await this.openOn(link, path, rec.chatId, force, kind, special);
       const h = this.adoptHandle(rec, link, mirror);
       // Its kind's every-open hook (the Overseer's mode, a baton's abilities), before anyone has it.
-      const special = kindOfMirror(mirror);
-      if (special && special !== "powers") await specialHostOf(special)?.opened?.(h);
+      const opened = kindOfMirror(mirror);
+      if (opened && opened !== "powers") await specialHostOf(opened)?.opened?.(h);
       this.pushSpecial(h);
       return h;
     } catch (err) {

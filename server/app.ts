@@ -97,7 +97,7 @@ import { WORKER_ID_RE } from "./worker-resume";
 import { meshApi, meshRoutes } from "./mesh";
 import { mountDetails } from "./mesh/details";
 import { mountResync } from "./mesh/resync";
-import { probePeer } from "./mesh/hello";
+import { probePeer, servedPage, stampBuild } from "./mesh/hello";
 import { LINK_LIVE, meshLinks } from "./mesh/links";
 import { mountLinks } from "./mesh/links-routes";
 import { deliverLinkMessage, heldSessionPath, notifyLinksChanged, setLinksSource } from "./link-delivery";
@@ -1626,11 +1626,18 @@ export function buildApp(deps: AppDeps) {
 
   // Built frontend (vite build → dist/) with SPA fallback. Checked per request so a build made
   // after the server started is picked up.
+  // The page itself always goes out stamped with its build (mesh/hello `stampBuild`), so a tab knows the build it runs.
   const hasDist = () => existsSync(join(DIST_DIR, "index.html"));
   const staticFiles = serveStatic({ root: DIST_DIR });
   const spaIndex = serveStatic({ root: DIST_DIR, path: "index.html" });
-  app.use("*", (c, next) => (hasDist() ? staticFiles(c, next) : next()));
-  app.get("*", (c, next) => (hasDist() ? spaIndex(c, next) : next()));
+  const isPage = (path: string) => path === "/" || path === "/index.html";
+  app.use("*", (c, next) => (hasDist() && !isPage(c.req.path) ? staticFiles(c, next) : next()));
+  app.get("*", async (c, next) => {
+    if (!hasDist()) return next();
+    const page = servedPage();
+    if (page) return c.html(stampBuild(page.html, page.build));
+    return spaIndex(c, next);
+  });
 
   return { app, autoTitleSweep, claudeAccounts, meshResync };
 }

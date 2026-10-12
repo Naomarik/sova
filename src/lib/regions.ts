@@ -36,6 +36,11 @@ export const isProjectOwned = (s: Pick<SessionSummary, "project">): boolean => !
 export const isArchivedStandaloneBuild = (s: Pick<SessionSummary, "org" | "project"> & { archived?: boolean }): boolean =>
   !s.org && s.project?.kind === "coding" && s.archived === true;
 
+/** A standalone project's coding session the operator started (`project.operator`), not one its overseer started: it lives in
+    the project's block, and Recent lists it too (§app.session-list/recent). A server that sends no `operator` marks none. */
+export const isOperatorBuild = (s: Pick<SessionSummary, "workerSession" | "overseer" | "org" | "project">): boolean =>
+  isMainThread(s) && !s.org && s.project?.kind === "coding" && s.project.operator === true;
+
 /** An organization's or a project's own session: it lives in that region and never joins a group (the drag lock, bulk
     Move to Group, the archive toasts). A session only in a project's folder is not owned. */
 export const isOwnedSession = (s: Pick<SessionSummary, "org" | "project">): boolean => isOrgSession(s) || isProjectOwned(s);

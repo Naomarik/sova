@@ -28,7 +28,7 @@ import {
 } from "./lib/api";
 import { socketReconnects } from "./lib/socket";
 import { actSessionCount, setAppBadge } from "./lib/push";
-import { firstBaseline, helloStep, HELLO_POLL_MS, meshReadInit, pathOfViewKey, sessionViewKey, watchMove, HOST_CONFIRM_MS, seedPeerList, setHostCheck, type HelloBaseline, type PendingHost, type HelloChange, sessionHrefOn } from "./lib/mesh";
+import { firstBaseline, helloStep, pageBuild, HELLO_POLL_MS, meshReadInit, pathOfViewKey, sessionViewKey, watchMove, HOST_CONFIRM_MS, seedPeerList, setHostCheck, type HelloBaseline, type PendingHost, type HelloChange, sessionHrefOn } from "./lib/mesh";
 import { noteSessionsHidden, sessionsHiddenBy } from "./lib/mesh";
 import { hostLabel, hostOf, isMeshHash, joinHostLists, linkedSessionRow, meshRetryDelay, meshState, meshOn, meshPeers, mergePeerLists, noteHost, notePeerOrgs, notePeerProjects, notePeerSessions, peerInfo, peerUnavailable, sameMeshInfo, sessionRouteFromHash, setMeshState } from "./lib/mesh";
 import { isOverseerHash, isOverseerShortcut, OVERSEER_HASH, OVERSEER_POLL_MS, overseerHistoryId } from "./lib/overseer";
@@ -563,8 +563,8 @@ export function App() {
     let base = helloBase();
     if (!base) {
       // The first hello may already come from another host (a failover right after load): the
-      // host is the one that served the page; only protocol and build are learnt from the hello.
-      base = firstBaseline(servedBy, now);
+      // host is the one that served the page; the build is the page's own stamp when it carries one.
+      base = firstBaseline(servedBy, now, pageBuild());
       setHelloBase(base);
     }
     const step = helloStep(base, now, pendingHost, Date.now());

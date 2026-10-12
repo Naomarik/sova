@@ -37,24 +37,42 @@ function ownFingerprint(): { protocol: string; version: string } {
 }
 
 // The served build: re-hashed only when index.html's mtime or size changes, so a hello is a stat.
-let buildCache: { key: string; build: string } | null = null;
-function ownBuild(): string | undefined {
+let buildCache: { key: string; build: string; html: string } | null = null;
+/** The page the server serves (dist/index.html) and its build, or null with none built (dev server behind Vite). */
+export function servedPage(): { html: string; build: string } | null {
   let key: string;
   try {
     const st = statSync(INDEX_FILE);
     key = `${st.mtimeMs}:${st.size}`;
   } catch {
     buildCache = null;
-    return undefined; // no build served (dev server behind Vite, or not built yet)
+    return null; // no build served (dev server behind Vite, or not built yet)
   }
   if (buildCache?.key !== key) {
     try {
-      buildCache = { key, build: createHash("sha256").update(readFileSync(INDEX_FILE)).digest("hex").slice(0, 16) };
+      const bytes = readFileSync(INDEX_FILE);
+      buildCache = { key, build: pageBuildOf(bytes), html: bytes.toString("utf8") };
     } catch {
-      return undefined;
+      return null;
     }
   }
-  return buildCache.build;
+  return buildCache;
+}
+const ownBuild = (): string | undefined => servedPage()?.build;
+
+/** A page's build: the first 16 hex of its sha256 (what the hello's `build` reports). */
+export const pageBuildOf = (bytes: Buffer | string): string => createHash("sha256").update(bytes).digest("hex").slice(0, 16);
+
+/** The meta a served page carries its build in (§mesh.front-door/stale-tab); src/lib/mesh.ts `pageBuild` reads it. */
+export const PAGE_BUILD_META = "sova-build";
+
+/**
+ * The page as served: index.html with its own build stamped in its head, so a tab knows which build
+ * it runs even when the service worker hands it an older cached copy of the page.
+ */
+export function stampBuild(html: string, build: string): string {
+  const at = html.indexOf("</head>");
+  return at < 0 ? html : `${html.slice(0, at)}<meta name="${PAGE_BUILD_META}" content="${build}">${html.slice(at)}`;
 }
 
 // The public-links gateway advertisement (§mesh.public/gateway): an optional field outside

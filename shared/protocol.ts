@@ -3276,6 +3276,9 @@ export interface SessionProject {
   /** `overseer`: one of its overseer's conversations; `coding`: a coding session the project started; `folder`: any
       other session in the project's folder (its root, inside it, or one of its worktrees), never `finished`. */
   kind: "overseer" | "coding" | "folder";
+  /** `coding` only: the operator started it (New Session in the project's folder, or New Coding Session), not the
+      project's overseer. Absent from an older server: read as the overseer's. */
+  operator?: true;
   /** A cleared (not the current) overseer conversation, or a build git says is merged. */
   finished?: true;
   /** The project is archived. */

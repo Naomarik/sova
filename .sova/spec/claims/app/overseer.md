@@ -1226,6 +1226,8 @@ checked (§app.overseer/head-layout). The ⋯ item is there at every width ⋯ s
 - A brief is a snapshot of the moment it was sent. When a blocker it named clears, the next run's
   note says so (§app.overseer/run-note); no brief is sent for a blocker clearing.
 - Which needs-you items count as new is §app.overseer/brief-repeat's rule.
+- A brief that could not be sent (the Overseer's chat couldn't be opened or reached) is not lost: its
+  blockers stay new, and the next check (every 20 s) tries again.
 
 ## §app.overseer/brief-repeat — When a briefed blocker is briefed again
 

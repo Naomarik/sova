@@ -40,7 +40,8 @@
         "server/auto-resume.ts",
         "server/overseer.ts",
         "server/ws.ts",
-        "server/chat-manager.ts"
+        "server/chat-manager.ts",
+        "server/chat-runtime/inflight.ts"
       ],
       "requires": [
         "§app/chat-processes",
@@ -75,13 +76,82 @@
         "server/project-services/tools.ts",
         "server/project-services/note.ts",
         "server/chat-handle-remote.ts",
-        "server/chat-host.ts"
+        "server/chat-host.ts",
+        "server/session-powers.ts",
+        "server/chat-host.test.ts",
+        "server/chat-runtime/host.test.ts"
       ],
       "requires": [
         "§app/chat-processes",
         "§chat.topics/push",
         "§app.project-services/instance-note"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-12T18:54Z"
+      }
+    },
+    "§app.chat-processes/server-messages": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "server/chat-runtime/methods.ts",
+        "server/chat-handle-remote.ts",
+        "server/overseer.ts",
+        "server/project-overseer.ts",
+        "server/baton-wrapup.ts",
+        "server/chat-handle-remote.test.ts",
+        "server/session-prompt.ts",
+        "server/auto-resume.ts",
+        "server/chat-runtime/methods.test.ts"
+      ],
+      "requires": [
+        "§app/chat-processes"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-12T18:54Z"
+      }
+    },
+    "§app.chat-processes/special-kinds": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "server/chat-special.ts",
+        "server/chat-host.ts",
+        "server/chat-handle.ts",
+        "server/chat-handle-remote.ts",
+        "server/overseer.ts",
+        "server/project-overseer.ts",
+        "server/baton-loadout.ts",
+        "server/baton-wrapup.ts",
+        "server/chat-runtime/host.ts",
+        "server/org-engine.ts",
+        "server/org-engine.test.ts",
+        "server/baton-process.test.ts",
+        "server/chat-handle-remote.test.ts",
+        "server/chat-trial-routes.ts",
+        "server/org-host/index.ts",
+        "server/org-host/host.test.ts",
+        "server/project-overseer-tools.ts",
+        "server/overseer-tools.ts",
+        "server/baton-view.ts",
+        "server/chat-runtime/trial-s3-acts.integration.test.ts",
+        "server/chat-runtime/trial-s3-baton.integration.test.ts",
+        "server/chat-runtime/trial-s3-looks-powers.integration.test.ts",
+        "server/chat-runtime/trial-s3-overseer.integration.test.ts",
+        "server/chat-runtime/host.test.ts"
+      ],
+      "requires": [
+        "§app/chat-processes",
+        "§app.chat-processes/server-actions",
+        "§app.chat-processes/crash",
+        "§app.harness/session-special"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-12T18:54Z"
+      }
     },
     "§app.chat-processes/supervision": {
       "kind": "behavior",
@@ -93,7 +163,8 @@
         "server/chat-runtime/supervisor-standin.ts",
         "server/chat-runtime/supervisor.integration.test.ts",
         "server/project-services/drivers.ts",
-        "server/chat-host.ts"
+        "server/chat-host.ts",
+        "pi-config/extensions/claude-code/provider/children.ts"
       ],
       "requires": [
         "§app/chat-processes",
@@ -111,13 +182,18 @@
         "server/index.ts",
         "server/ws.ts",
         "server/overseer.ts",
-        "server/chat-joins.test.ts"
+        "server/chat-joins.test.ts",
+        "server/chat-runtime/own-pids.test.ts"
       ],
       "requires": [
         "§app/chat-processes",
         "§app.overseer/auto-resume",
         "§app.harness/session-open"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-12T19:45Z"
+      }
     },
     "§app.chat-processes/wire": {
       "kind": "note",
@@ -126,7 +202,8 @@
         "shared/chat-runtime-wire.ts",
         "server/chat-runtime/link.ts",
         "server/chat-runtime/main.ts",
-        "server/chat-runtime/writer-lock.ts"
+        "server/chat-runtime/writer-lock.ts",
+        "shared/chat-runtime-wire.test.ts"
       ],
       "requires": [
         "§app/chat-processes"
@@ -770,7 +847,11 @@
         "server/chat-runtime/trial-hosting.integration.test.ts",
         "server/chat-runtime/trial-restart-more.integration.test.ts",
         "server/chat-runtime/trial-restart.integration.test.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-12T18:54Z"
+      }
     },
     "§app/extension-dialogs": {
       "kind": "surface",
@@ -3759,7 +3840,11 @@
       "requires": [
         "§app.overseer/attention-digest",
         "§app.overseer/tools"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-12T18:54Z"
+      }
     },
     "§app.overseer/quick-actions": {
       "kind": "behavior",
@@ -7679,7 +7764,8 @@
         "server/spec-tool-fake.ts",
         "server/decisions-routes.test.ts",
         "server/baton-handoff.test.ts",
-        "server/project-overseer-tools.ts"
+        "server/project-overseer-tools.ts",
+        "shared/decisions.test.ts"
       ]
     },
     "§app.project-overseer/new-coding-session": {
@@ -10803,11 +10889,16 @@
       "code": [
         "server/session-powers.ts",
         "server/session-profiles.test.ts",
-        "server/session-profiles-runtime.test.ts"
+        "server/session-profiles-runtime.test.ts",
+        "server/session-powers.integration.test.ts"
       ],
       "requires": [
         "§chat.profiles/session-tools"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-12T18:54Z"
+      }
     },
     "§chat.profiles/model": {
       "kind": "behavior",
@@ -15523,13 +15614,19 @@
         "server/live.ts",
         "server/live.test.ts",
         "server/chat-handle-remote.ts",
-        "server/chat-host.ts"
+        "server/chat-host.ts",
+        "server/chat-runtime/methods.ts",
+        "server/chat-runtime/mirror.ts"
       ],
       "requires": [
         "§app.harness/boundary",
         "§app.harness/wire",
         "§app.harness/reader"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-12T18:54Z"
+      }
     },
     "§app.harness/session-history": {
       "kind": "behavior",
@@ -15617,13 +15714,22 @@
         "server/models.ts",
         "server/chat-handle.ts",
         "server/chat-handle.test.ts",
-        "shared/chat-runtime.ts"
+        "shared/chat-runtime.ts",
+        "server/chat-special.ts",
+        "server/author-context.ts",
+        "server/chat-special.test.ts",
+        "server/harness/pi/special-model-view.test.ts",
+        "server/harness/pi/golden/special-model-view.json"
       ],
       "requires": [
         "§app.harness/boundary",
         "§app.harness/reader",
         "§app.harness/state"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-12T18:54Z"
+      }
     },
     "§app.harness/state": {
       "kind": "behavior",

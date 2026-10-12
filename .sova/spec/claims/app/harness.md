@@ -192,7 +192,7 @@ like to the server (`shared/chat-runtime.ts`): commands that are calls with ids,
 result or a typed refusal (busy, refused, config) that is thrown again as the error class the chat
 threw; a state mirror read without asking; lifecycle events numbered for a reader that missed some;
 and browser frames passed through. The handle has two forms. A chat in the server's process (every
-chat with `SOVA_CHAT_HOST` off, and the special ones always) runs a command as the chat's own method
+chat with `SOVA_CHAT_HOST` off, and a worker's own session file and the hidden chats always) runs a command as the chat's own method
 at once, and the mirror reads the chat as it is. A chat in a process of its own (§app/chat-processes)
 gets each command over its socket and answers it there, a refusal as the same typed refusal; the
 mirror is the copy the chat last sent, which it sends before answering a command that changed it;
@@ -294,12 +294,19 @@ chat where its loadout asks for it (the Overseer, a project overseer); the serve
 from the chat's mirror, or from the call of the tool it is running. Rebuilding the Overseer's
 system prompt from its refreshed parts at a run's start is the chat's driving-session call, made
 when the loadout's text for the run changed; the pi quirk behind it stays in the quirk registry.
-Switching a baton session's active tools goes through the handle. The tools whose state lives in
-the server (the Overseer's, a project overseer's, a baton's) stay in the server: the chat
-registers each one's declaration and runs it as a call with an effect id of its own, and a call
-delivered again is answered with its first run's outcome, never run twice. Within that call the
-Overseer reads the chat's branch and entries, writes its approvals' uses and calls its subagent
-tools, as Sova tools. The extension factories of these loadouts are typed from the adapter's extension types
+Switching a baton session's active tools goes through the handle. Their loadouts are data (`SpecialSpec`,
+`shared/chat-runtime.ts`) that the server builds for each open, turned into the chat's loadout by one
+chat-side extension (`server/chat-special.ts`), plus hooks the server answers: each run's prompt and
+run note, a compaction's note, the reply's end; the kinds' own hooks (`SpecialHost`,
+`server/chat-handle.ts`) live in the server only. The tools whose state lives in the server (the
+Overseer's, a project overseer's, a baton's, and the file tools of the first two) stay in the
+server: the chat registers each one's declaration and runs it as a call with an effect id of its
+own, and a call delivered again is answered with its first run's outcome, never run twice. A tool
+whose arguments are rewritten before they are checked names a rule the chat runs itself (a baton's
+owner area, matched to the roster's spelling; pi's edit arguments). Within that call the tool reads
+the chat's branch and entries, writes into the chat (a baton's tools through its extension's own
+writer, so the entry is announced as before; the Overseer's approvals' uses) and calls the chat's
+subagent tools, by calls back to the chat, as Sova tools. The extension factories of these loadouts are typed from the adapter's extension types
 (`server/harness/pi/extension-types.ts`), and so are Sova's other inline extensions (the vis check,
 topics, the resource monitor, the project services), the loadout's skills override and the context
 windows read off the model runtime. Nothing a client, a session file, an extension or a model sees

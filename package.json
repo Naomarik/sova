@@ -12,7 +12,6 @@
     "auth:token": "node scripts/sova-token.mjs",
     "dev:server": "node scripts/dev-server.mjs",
     "dev:server:tsx": "tsx watch server/index.ts",
-    "dev:server:detached": "PI_WORKER_TRANSPORT=host node scripts/dev-server.mjs",
     "dev:web": "vite",
     "hermetic:agent-dir": "node scripts/hermetic-agent-dir.mjs",
     "e2e:settings-footer-save": "node scripts/e2e/settings-footer-save.mjs",

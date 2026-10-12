@@ -694,7 +694,7 @@ export function registerSubagents(
 	const workerSandbox = new WeakMap<Worker, string>();
 	/** What a worker was given: its start's, else (restored) its record's; undefined when unknown. */
 	const modesOf = (a: Worker): string[] | undefined => workerModes.get(a) ?? (isRestored(a) ? manifestModes(a.manifest) : undefined);
-	// Hosted workers re-adopted with a cwd this session no longer allows (§chat.worktrees/workers):
+	// Workers reattached with a cwd this session no longer allows (§chat.worktrees/workers):
 	// kept running, flagged in agent_list.
 	const outsideWorktrees = new Set<string>();
 	// Workers of earlier processes, from the manifest fold at session_start: every branch's,
@@ -2545,7 +2545,7 @@ export function registerSubagents(
 			...pick(continuing ? continuationOptions(launch.backendOptions) : launch.backendOptions, "backendOptions"),
 			...(launch.useWorktreeConfig === true ? { useWorktreeConfig: true } : {}),
 		} as Spec;
-		// Team membership: its history team becomes live again (as when a hosted member is re-adopted).
+		// Team membership: its history team becomes live again (as when a member is reattached).
 		let team: BatchRequest["team"];
 		if (manifest.team && teams.adoptHistoryTeam(manifest.team.teamId)) {
 			const teamName = teamViews().find((t) => t.id === manifest.team!.teamId)?.name ?? manifest.team.teamId;

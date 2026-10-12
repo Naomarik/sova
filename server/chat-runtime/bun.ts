@@ -1,7 +1,7 @@
 // The Bun a worker chat's process runs on (al_3 stage 4, §app.chat-processes/workers): the server's
 // own runtime when it is Bun, else `$SOVA_BUN`, else `bun` on the server's PATH, a mise shim resolved
 // from Sova's own folder (never a worker's cwd, whose mise config must not pick the runtime). Found
-// once, and kept. The rules the RPC workers' launcher had for Bun (pi-invocation.ts), without pi.
+// once, and kept.
 import { execFileSync } from "node:child_process";
 import { accessSync, constants, realpathSync, statSync } from "node:fs";
 import { basename, delimiter, isAbsolute, join, resolve } from "node:path";

@@ -849,7 +849,7 @@ export class TeamStore {
 	}
 
 	/**
-	 * A history team whose workers were re-adopted from detached hosts is live
+	 * A history team whose workers were reattached or resumed is live
 	 * again: it moves to the session teams (create-time defaults are not
 	 * persisted, so team_add then applies none). True if the team is live now.
 	 */

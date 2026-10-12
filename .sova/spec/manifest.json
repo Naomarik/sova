@@ -2191,7 +2191,9 @@
         "src/lib/setup-fold.ts",
         "src/app.css",
         "src/design/base.css",
-        "src/lib/profile-cards.test.ts"
+        "src/lib/profile-cards.test.ts",
+        "server/session-tools.ts",
+        "server/session-tools.test.ts"
       ]
     },
     "§chat.transcript/setup-card-context": {
@@ -15360,7 +15362,13 @@
         "server/harness/pi/package.ts",
         "server/mesh/hello.ts",
         "server/sync/logins-stores.ts",
-        "server/app.ts"
+        "server/app.ts",
+        "server/chat-handle.ts",
+        "server/chat-handle.test.ts",
+        "shared/chat-runtime.ts",
+        "server/automation-session.ts",
+        "server/live.ts",
+        "server/live.test.ts"
       ],
       "requires": [
         "§app.harness/boundary",
@@ -15450,7 +15458,10 @@
         "server/project-services/note.ts",
         "server/project-services/tools.ts",
         "server/session-loadout.ts",
-        "server/models.ts"
+        "server/models.ts",
+        "server/chat-handle.ts",
+        "server/chat-handle.test.ts",
+        "shared/chat-runtime.ts"
       ],
       "requires": [
         "§app.harness/boundary",

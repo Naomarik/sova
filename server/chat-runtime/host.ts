@@ -12,7 +12,6 @@ import type { ChatCall, ChatLifecycleEvent, ChatMethod, ChatMethods, ChatStateMi
 import {
   CHAT_WIRE_MIN_PROTO,
   CHAT_WIRE_PROTO,
-  type ChatAskMethod,
   type ChatAsks,
   type ChatCodeState,
   type ChatRuntimeMirror,
@@ -96,7 +95,9 @@ interface PendingTool {
   resolve(outcome: ServerToolOutcome<ToolResult>): void;
 }
 
-const NOTHING: { [M in ChatAskMethod]: ChatAsks[M]["result"] } = {
+/** The asks that read as nothing without a server (ASK_POLICY "nothing"). */
+type NothingAsk = "project.note" | "playbook.bundleFor" | "playbook.reprime" | "links" | "singleton";
+const NOTHING: { [M in NothingAsk]: ChatAsks[M]["result"] } = {
   "project.note": null,
   "playbook.bundleFor": null,
   "playbook.reprime": null,
@@ -333,7 +334,7 @@ export class ChatRuntimeHost {
     (globalThis as Record<symbol, unknown>)[LINK_LIVE] = (sessionId: string) => this.liveIds.has(sessionId);
   }
 
-  private ask<M extends ChatAskMethod>(method: M, args: ChatAsks[M]["args"]): Promise<ChatAsks[M]["result"]> {
+  private ask<M extends NothingAsk>(method: M, args: ChatAsks[M]["args"]): Promise<ChatAsks[M]["result"]> {
     const link = this.link;
     if (!link?.isOpen || !link.compatible) return Promise.resolve(NOTHING[method]);
     const id = `a${++this.askN}`;

@@ -154,9 +154,16 @@ export interface ServerToolDecl {
   parameters: { readonly [key: string]: unknown };
   executionMode?: "sequential" | "parallel";
   exposure?: "model-only";
-  /** The server rewrites the arguments before the chat checks them against `parameters`. */
-  prepares?: true;
+  /** The arguments are rewritten before the chat checks them against `parameters`, by a rule the
+      chat runs itself (pi asks for them synchronously, so no server call can do it). `true`: the
+      spec's own `prepareArguments`, in the server's process only, until each spec names its rule. */
+  prepares?: PrepareRule | true;
 }
+
+/** How a declaration's arguments are rewritten, chat-side, from data alone. "owner-area": an owner
+    area folded to one of `parameters.properties.ownerArea.enum` (shared/decisions.ts); "pi-edit":
+    pi's own edit tool's legacy shapes (server/harness/pi/tools.ts piPrepare). */
+export type PrepareRule = "owner-area" | "pi-edit";
 
 /** One run of a server-hosted tool, chat → server. `effectId` is the same for every delivery of one
     tool call of one chat: a delivery the server has seen is answered with that run's outcome, never
@@ -235,6 +242,9 @@ export interface ChatSendInput {
   track?: boolean;
   /** Named on the next run's `run.start` (ChatRunEvent), whichever run starts next. */
   runTag?: string;
+  /** A send delivered again under the same key (a retry after a lost reply, an invocation resumed
+      after a server restart) gets the first one's receipt back and starts no turn. */
+  key?: string;
 }
 
 /** The send was accepted: queued behind a run, or its turn started (`turnId` when tracked). */
@@ -354,3 +364,77 @@ export type ChatClientFrame =
   | { type: "client.msg"; chatId: ChatId; clientId: string; msg: ChatClientMessage }
   | { type: "client.detach"; chatId: ChatId; clientId: string }
   | { type: "client.send"; chatId: ChatId; clientId: string; json: string };
+
+// ---- special loadouts (al_3 stage 3) ---------------------------------------------------------------
+
+/**
+ * A special loadout as the chat gets it (the Overseer, a project overseer, a baton): data only, built
+ * by the kind's host on the server for every open, local or remote. One chat-side extension turns it
+ * into the loadout; whatever reads or changes shared state stays on the server (served tools, hooks
+ * the server answers, actions).
+ */
+export interface SpecialSpec {
+  kind: ChatSpecialKind;
+  /** The inline extension's name, unchanged. */
+  extension: "sova-overseer" | "sova-project-overseer" | "sova-baton";
+  /** The folder the chat runs in on this host, or null: the header's. */
+  cwd: string | null;
+  /** Served, registered by the extension, in loadout order. */
+  tools: ServerToolDecl[];
+  /** Served, given as the SDK's customTools (the file tools), in order. */
+  customTools: ServerToolDecl[];
+  /** The tool allowlist. */
+  allow: string[];
+  loader: {
+    noExtensions?: true;
+    noSkills?: true;
+    noPromptTemplates?: true;
+    noThemes?: true;
+    noContextFiles?: true;
+    /** "user-then-ours": the append override keeps the user's APPEND_SYSTEM.md parts, then `append`
+        (the Overseer); "none": no appended parts (project overseer, baton). */
+    append: "user-then-ours" | "none";
+    /** The project overseer's context files: those inside `root`, outside `out` (projectContextFiles). */
+    contextFilesWithin?: { root: string; out: string[] };
+  };
+  model: string | null;
+  thinking: string | null;
+  memory?: true;
+  attribution?: true;
+  background?: true;
+  replyText?: true;
+  /** The usage kind the chat's requests are noted under (the Overseer, a project overseer). */
+  usage?: "overseer";
+  /** The hooks the server answers besides runStart (always installed). */
+  hooks: { compact?: true; agentEnd?: true };
+  /** The context hook, chat-side. */
+  context: "redact" | "baton";
+  refuses: { mode?: string; rewind?: string; regenerate?: string };
+  /** The composer's prompt and steer go through the `@clientSend` action. */
+  clientSend?: true;
+  /** A composer model or thinking change goes to the `@saveChoice` action. */
+  saveChoice?: true;
+  /** Why the composer is closed, or null; updated by `push special`. */
+  composerClosed: string | null;
+  /** The run-start answer for the branch at open, so a process always has one. */
+  start: RunStartAnswer;
+}
+
+/** The server's answer to a special loadout's run start; the last one is kept for a run that starts
+    while no server answers. */
+export interface RunStartAnswer {
+  /** systemPromptOptions fields set verbatim (the baton: customPrompt, appendSystemPrompt "",
+      contextFiles [], skills [], cwd "(none)"; the project overseer: appendSystemPrompt). */
+  prompt: { appendSystemPrompt?: string; customPrompt?: string; contextFiles?: []; skills?: []; cwd?: string };
+  /** The Overseer's own appended parts: the chat sets appendSystemPrompt to the user's base parts,
+      then these, joined by blank lines. */
+  append?: string[];
+  /** The hidden message before_agent_start returns (run note, cards note). */
+  message?: { customType: string; content: string; display: false; details?: unknown };
+  /** Declarations registered again (the baton's record_decision with the roster's owner areas now). */
+  reregister?: ServerToolDecl[];
+  /** setActiveTools for this run (the baton's abilities now). */
+  activeTools?: string[];
+  /** The baton's context pack for this run's requests. */
+  baton?: { names: Record<string, string>; holder: string | null; holderTexts: string[]; vocabulary: string[] };
+}

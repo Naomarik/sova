@@ -31,7 +31,7 @@
 //     t9        an outside SIGTERM to a chat process with a pane attached: the pane gets a quiet
 //               reloaded (no crash text), reconnects within seconds and gets a fresh hello
 //     stage 3 (stage3-design.md §10.2):
-//     t10       the Overseer out: sova_list_sessions, read, edit (applied; a bad one refused), sova_note, sova_idea explore (the explorer a
+//     t10       the Overseer out: sova_list_sessions, read, edit (applied; a bad one refused), sova_note, sova_idea explore (the explorer a worker chat; was a
 //               child of its process); the run note in the file
 //     t11       a restart mid an Overseer's served tool: unknown, ran once; a message queued before the
 //               restart reaches the next server's limits (reset)
@@ -870,7 +870,7 @@ async function t6() {
 }
 
 // T10: the Overseer in its own process: a served read tool, a served file tool, an acting tool and an
-// explorer (its worker a child of the Overseer's process); the run note is in the file.
+// explorer (stage 4: a worker chat of the Overseer's, a process of its own); the run note is in the file.
 async function t10() {
   writeFileSync(join(proj, "trial-read.txt"), "READ-ME-TRIAL\n");
   const ov = await openOn(await overseer());
@@ -900,8 +900,10 @@ async function t10() {
   R.check(r5.length === 1 && /Launched/.test(JSON.stringify(r5[0])), `t10: sova_idea explore launched the explorer (${resultText(r5[0])})`);
   await waitFor(() => mockLog(mock.log).some((e) => e.tag === "explorer"), 30000);
   await sleep(1500);
-  const workers = pid ? tree(pid).filter((p) => p.pid !== pid && /--mode rpc/.test(p.cmd)) : [];
-  R.check(workers.length === 1, `t10: the explorer is a child of the Overseer's process (${workers.map((w) => w.pid).join(", ") || "none"})`);
+  // Stage 4: the explorer is a worker chat of the Overseer's, in a process of its own.
+  const ex = workerRecords(ov.path).find((r) => r.kind === "worker");
+  const expid = ex && chatPid(ex.path);
+  R.check(expid && expid !== pid && mockLog(mock.log).some((e) => e.tag === "explorer" && e.pid === expid), `t10: the explorer is a worker chat of the Overseer's in a process of its own (${expid || "none"}, Overseer ${pid})`);
   await mock.plain("");
   const runNotes = entries(ov.path).filter((e) => JSON.stringify(e).includes("[now] It is")).length;
   R.check(runNotes >= 1, `t10: the run note is in the file (${runNotes})`);
@@ -1623,17 +1625,34 @@ async function t20() {
   if (!R.check(w2, "t20: the second worker is recorded")) return;
   await waitFor(() => mockLog(mock.log).some((e) => e.tag === "t20b"), 60000);
   await sleep(3000);
+  // A chat process logs nothing while it runs well, so the trial writes a line into its log (the
+  // detached driver's file; under systemd, the journal: skipped) before each kill.
+  const unit = String(record(w2.path)?.unit ?? "").replace(/\.service$/, "");
+  const logDirs = [join(sova, "chats", "logs"), join(sova, "chats", "children", "logs")];
+  const logFile = () => logDirs.map((d) => join(d, `${unit}.log`)).find((x) => existsSync(x)) ?? null;
+  const mark = (text) => {
+    const file = logFile();
+    if (file) writeFileSync(file, `${text}\n`, { flag: "a" });
+    return file;
+  };
+  const marked = driver !== "systemd" && unit ? mark("TRIAL-MARK-ONE") : null;
   const k1 = chatPid(w2.path);
   process.kill(k1, "SIGKILL");
   await waitFor(() => chatPid(w2.path) && chatPid(w2.path) !== k1 && askedBy(chatPid(w2.path)).some((e) => e.tag === "resume"), 60000);
   await sleep(2000);
   const k2 = chatPid(w2.path);
+  if (marked) mark("TRIAL-MARK-TWO");
   if (k2) process.kill(k2, "SIGKILL");
   R.note(`t20: killed the second worker twice (${k1}, then its resume ${k2})`);
   await s.until((m) => m.type === "workers" && m.workers?.some((x) => x.name === "trial-t20b" && x.outcome === "error"), 60000, "the second worker errors", from).catch(() => null);
   const failed = (await agentList({ path, s })).find((a) => a.name === "trial-t20b");
   R.check(failed?.status === "error" && /stopped unexpectedly/.test(failed?.error ?? ""), `t20: the second death is an error saying the process stopped unexpectedly (${failed?.status}: ${failed?.error?.slice(0, 200)})`);
-  R.check(/Last output/.test(failed?.error ?? ""), "t20: the error carries the last output");
+  if (marked) {
+    R.check(/Last output[\s\S]*TRIAL-MARK-TWO/.test(failed?.error ?? ""), `t20: the error carries the last output (the line written to its log before the second kill)`);
+    // The first process's log survives the reopen (the line written before the first kill is kept).
+    const kept = logDirs.flatMap((d) => (existsSync(d) ? readdirSync(d).filter((x) => x.startsWith(unit)).map((x) => join(d, x)) : [])).filter((x) => readFileSync(x, "utf8").includes("TRIAL-MARK-ONE"));
+    R.check(kept.length >= 1, `t20: the first process's log is kept across the crash reopen (${kept.map(baseName).join(", ") || "lost"})`);
+  } else R.note("t20: no log file to mark (systemd journal); the last-output text is unit-tested");
   await sleep(8000);
   R.check(userEntriesWith(w2.path, CRASH_RESUME_TEXT) === 1 && resumeDecisions(w2.path).filter((a) => a.outcome === "ok").length <= 1, `t20: no second continue (${userEntriesWith(w2.path, CRASH_RESUME_TEXT)}; decisions ${fmtDecisions(resumeDecisions(w2.path))})`);
   noRpc("t20");
@@ -1803,6 +1822,20 @@ async function t23() {
   await boot();
 }
 
+/** Every live record (<agent>/sessions/live/*): its pid, session file, heartbeat and presence.llm. */
+function liveDump() {
+  const dir = join(agent, "sessions", "live");
+  let files = [];
+  try {
+    files = readdirSync(dir);
+  } catch {}
+  return files.map((f) => {
+    const r = readJson(join(dir, f)) ?? {};
+    const llm = r.presence?.llm;
+    return `${f}: pid ${r.pid} ${baseName(r.session?.sessionFile)} hb ${r.heartbeat} llm ${llm ? JSON.stringify({ producer: llm.producer, active: llm.active, folded: llm.folded }) : "-"}`;
+  });
+}
+
 // T24: llm-inflight: during a worker's model call (its parent idle), /ws/watch?feed=llm counts it
 // once, never twice through a live record; after the worker ends its tokens stay in the ring.
 async function t24() {
@@ -1811,7 +1844,7 @@ async function t24() {
   feed.ws.on("message", (d) => {
     try {
       const m = JSON.parse(String(d));
-      if (m.type === "llm_local") seen.push({ at: Date.now(), count: m.local?.count });
+      if (m.type === "llm_local") seen.push({ at: Date.now(), count: m.local?.count, live: liveDump() });
     } catch {}
   });
   await feed.opened;
@@ -1828,7 +1861,8 @@ async function t24() {
   R.check(last === 1 && counts.every((n) => n <= 1), `t24: the worker's one call is counted once (latest ${last}, max ${Math.max(0, ...counts)})`);
   // What was asked of the model meanwhile, beside each count over one: who else had a call open.
   const asks = mockLog(mock.log).filter((e) => e.scenario && Date.parse(e.at) >= t0).map((e) => `${e.at.slice(11, 23)} pid ${e.pid} ${e.scenario}${e.tag ? ` #${e.tag}` : ""}${e.afterTool ? " (after a tool)" : ""}`);
-  R.note(`t24: counts over time: ${seen.map((x) => `${new Date(x.at).toISOString().slice(11, 23)}=${x.count}`).join(", ")}`);
+  R.note(`t24: counts over time (server ${srv.pid()}, parent ${chatPid(path)}): ${seen.map((x) => `${new Date(x.at).toISOString().slice(11, 23)}=${x.count}`).join(", ")}`);
+  for (const x of seen) R.note(`t24: live at ${new Date(x.at).toISOString().slice(11, 23)} (count ${x.count}): ${x.live.join(" | ") || "none"}`);
   R.note(`t24: model calls since the feed opened: ${asks.join("; ")}`);
   const done = await workerDone(s, "trial-t24w");
   R.check(done?.outcome === "success", `t24: the worker finished (outcome ${done?.outcome})`);

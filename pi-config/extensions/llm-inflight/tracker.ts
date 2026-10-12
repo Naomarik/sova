@@ -11,9 +11,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 
-/** The setStatus key a pi worker reports its counts under, on its RPC stdout (index.ts). */
-export const LLM_STATUS_KEY = "sova-llm-inflight";
-
 export type LlmCallSource = "runtime" | "claude-oneshot" | "jev";
 
 /** What one process publishes (its live record's `presence.llm`), and what a child reports. */

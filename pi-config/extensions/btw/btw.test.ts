@@ -98,7 +98,8 @@ class BtwHost extends FakeWorkerHost {
 		this.pending.delete(chatId);
 		const w = this.get(chatId);
 		const from = w.frames.length;
-		this.turn(chatId, { user: asked.text, reply: `answer to ${asked.text}`, key: asked.key });
+		// The host names a settle by the send before it and its count in the process.
+		this.turn(chatId, { user: asked.text, reply: `answer to ${asked.text}`, key: `${asked.key}#1` });
 		const ends = w.frames.slice(from).flatMap((f) => (f.t === "event" && (f.event as any).type === "message_end" ? [f.event as any] : []));
 		const lines = ends.map((e) => JSON.stringify({ type: "message", id: e.entryId, message: e.message }));
 		appendFileSync(w.ref.sessionFile, `${lines.join("\n")}\n`);
@@ -563,6 +564,23 @@ test("a reload mid-question leaves the chat running; the reopened session reatta
 	await third.run("btw", "follow-up");
 	assert.equal(host.starts.length, 1, "the follow-up continues the reattached chat");
 	assert.equal(third.entries.filter((e) => e.customType === "btw-note").length, 2);
+});
+
+test("an answer whose feed was missed (a gap) is read from the chat's file when its state says it settled", async () => {
+	const h = harness();
+	h.host.hold = true;
+	const asked = h.run("btw", "missed?");
+	await tick();
+	const w = h.host.get(chatIds(h.host)[0]!);
+	const watchers = [...w.watchers];
+	w.watchers.clear();
+	h.host.finish(w.ref.chatId);
+	for (const fn of watchers) w.watchers.add(fn);
+	h.host.state(w.ref.chatId, {});
+	await asked;
+	const note = h.entries.find((e) => e.customType === "btw-note");
+	assert.equal(note?.details.answer, "answer to missed?");
+	assert.equal(note?.details.entryId, answerIds(h.host)[0]);
 });
 
 test("at session_start a btw chat of another mode than the restored thread is stopped and records nothing", async () => {

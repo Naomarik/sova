@@ -113,7 +113,14 @@ export default function compactHandoff(pi: ExtensionAPI, options: CompactHandoff
 	const now = options.now ?? Date.now;
 	const start = options.start ?? startBackgroundFork;
 	const forkPointOf = options.claudeForkPoint ?? claudeForkPointFor;
-	const announced = options.workerHost ? undefined : workerHostOf(pi.events);
+	/** The session whose closed predecessor's run waits to be reattached, until Sova announces its host. */
+	let attachCtx: ExtensionContext | undefined;
+	// Sova announces the host at its own session_start, which may come after ours.
+	const announced = options.workerHost
+		? undefined
+		: workerHostOf(pi.events, () => {
+				if (attachCtx) startReattach(attachCtx);
+			});
 	const hostOf = options.workerHost ?? (() => announced?.current());
 	const reattachForks = options.reattach ?? reattachBackgroundForks;
 	/** The fork under way, per pi session: from the command until it settles. */
@@ -158,6 +165,7 @@ export default function compactHandoff(pi: ExtensionAPI, options: CompactHandoff
 	 */
 	let reconciledFor: string | undefined;
 	const reconcile = async (ctx: ExtensionContext): Promise<void> => {
+		if (attachCtx) startReattach(attachCtx);
 		await reattached;
 		try {
 			const sessionId = idOf(ctx);
@@ -394,6 +402,7 @@ export default function compactHandoff(pi: ExtensionAPI, options: CompactHandoff
 		const rows = new Map(stillRunning(ctx.sessionManager.getBranch() as BranchEntry[]).map((data) => [data.id, data]));
 		const root = runsRoot(dirOf());
 		const handles = await reattachForks(host, "handoff", WORKER_NAME, (id) => {
+			if (runs.get(sessionId)?.id === id) return null; // Already watched by this session.
 			const row = rows.get(id);
 			if (!row || runs.has(sessionId)) return undefined;
 			const run: Run = { id, sessionId, focus: row.focus ?? "", dir: join(root, id), ctx, settled: false, cancelled: false, closing: false };
@@ -407,11 +416,18 @@ export default function compactHandoff(pi: ExtensionAPI, options: CompactHandoff
 			else void handle.stop().catch(() => {});
 		}
 	};
-	pi.on("session_start", (_event, ctx) => {
+	/** Reattach now, or once Sova announces the host. A second call is harmless. */
+	const startReattach = (ctx: ExtensionContext): void => {
+		if (!hostOf()) {
+			attachCtx = ctx;
+			return;
+		}
+		attachCtx = undefined;
 		try {
 			reattached = reattach(ctx).catch(() => {});
 		} catch { /* no session to read */ }
-	});
+	};
+	pi.on("session_start", (_event, ctx) => startReattach(ctx));
 
 	// After any compaction: the newest note on this branch, hidden, right after the summary. No
 	// turn: idle, it is appended at once; during a run pi appends it at the run's next turn boundary.

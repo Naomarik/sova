@@ -46,7 +46,9 @@ function sessionFile(dir: string): string {
 }
 
 /** `live`: the fork chats the worker host still runs for this session (a reopened session reattaches them). */
-function harness(options: { agentDir?: string; now?: () => number; file?: string | null; model?: { provider: string; id: string }; startThrows?: boolean; branch?: BranchEntry[]; live?: string[] } = {}) {
+function harness(options: { agentDir?: string; now?: () => number; file?: string | null; model?: { provider: string; id: string }; startThrows?: boolean; branch?: BranchEntry[]; live?: string[]; lateHost?: boolean } = {}) {
+	/** `lateHost`: the host comes on pi.events, announced only when the test calls `announce` (after session_start). */
+	const bus = new Map<string, ((data: unknown) => void)[]>();
 	const handlers = new Map<string, Handler[]>();
 	const commands = new Map<string, { handler: (args: string, ctx: any) => Promise<void> }>();
 	const branch: BranchEntry[] = options.branch ?? [{ type: "message", id: "u0", message: { role: "user", content: "earlier work" } }];
@@ -67,7 +69,15 @@ function harness(options: { agentDir?: string; now?: () => number; file?: string
 			branch.push({ type: "custom_message", id: nextId(), customType: message.customType, details: message.details });
 		},
 		appendEntry(customType: string, data: unknown) { branch.push({ type: "custom", id: nextId(), customType, data }); },
-		events: { on: () => () => {}, emit() {} },
+		events: {
+			on: (name: string, fn: (data: unknown) => void) => {
+				bus.set(name, [...(bus.get(name) ?? []), fn]);
+				return () => {};
+			},
+			emit: (name: string, data: unknown) => {
+				for (const fn of bus.get(name) ?? []) fn(data);
+			},
+		},
 	} as unknown as ExtensionAPI;
 	const ctx = {
 		cwd,
@@ -88,7 +98,7 @@ function harness(options: { agentDir?: string; now?: () => number; file?: string
 		agentDir: options.agentDir ? () => options.agentDir! : undefined,
 		now: options.now ?? (() => NOW),
 		claudeForkPoint: () => undefined,
-		workerHost: () => ({}) as WorkerHost,
+		...(options.lateHost ? {} : { workerHost: () => ({}) as WorkerHost }),
 		start: (spec, h) => {
 			if (options.startThrows) throw new Error("a background fork needs Sova's chat runtime");
 			return handleOf(newFork(spec, h));
@@ -140,7 +150,8 @@ function harness(options: { agentDir?: string; now?: () => number; file?: string
 		return entry;
 	};
 	const rows = () => branch.filter((e) => e.type === "custom" && e.customType === RUN_ENTRY).map((e) => e.data as any);
-	return { pi, ctx, state, branch, sent, compacts, notes, forks, fire, run, settleMain, compaction, rows, cwd, nextId };
+	const announce = () => (pi as any).events.emit("sova:worker-host", { version: 1, host: {} as WorkerHost });
+	return { pi, ctx, state, branch, sent, compacts, notes, forks, fire, run, settleMain, compaction, rows, cwd, nextId, announce };
 }
 
 const NOTE = "Decided: keep v1 shape.\nRe-read docs/plan.md and §chat.slash-commands/compact-handoff.";
@@ -423,6 +434,22 @@ test("shutdown leaves the fork running and writes nothing; the reopened session 
 	assert.equal(again.rows()[1].focus, "why");
 	assert.equal(reattached.stopped, 1, "its chat is stopped once the run is recorded");
 	assert.equal(again.compacts.length, 1);
+});
+
+test("a host Sova announces after the session started still gets the run reattached, never interrupted", async () => {
+	const agent = temp();
+	const h = harness({ agentDir: agent });
+	await h.run("why");
+	const fork = h.forks[0]!;
+	await h.fire({ type: "session_shutdown" });
+	const again = harness({ agentDir: agent, branch: h.branch, live: [fork.spec.id], lateHost: true });
+	again.fire({ type: "session_start" });
+	again.announce();
+	await tick();
+	await again.fire({ type: "before_agent_start" });
+	assert.deepEqual(again.rows().map((r) => r.status), ["running"]);
+	again.forks[0]!.settle({ finalOutput: `<handoff>${NOTE}</handoff>` });
+	assert.deepEqual(again.rows().map((r) => r.status), ["running", "saved"]);
 });
 
 test("a run whose fork is gone when the session reopens settles as interrupted at the next prompt, once", async () => {

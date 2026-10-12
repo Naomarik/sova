@@ -1,7 +1,7 @@
 /**
- * Offline tests for /explain. No model requests and no real pi process: the
- * child is a fake RPC process injected through the runner's spawnImpl seam, and
- * every store is a temp directory. Run with:
+ * Offline tests for /explain. No model requests and no process: the child's start
+ * is the ExplainHost `start` seam (a fake background fork), and every store is a
+ * temp directory. Run with:
  *
  *   node --test index.test.ts
  */

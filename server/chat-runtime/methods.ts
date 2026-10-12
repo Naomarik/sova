@@ -210,6 +210,8 @@ export const METHODS: Impl = {
   },
   // Whatever records this process's runs: the server's run ledger, or a chat process's marker.
   markResuming: (chat) => (markRunResuming(chat.path), null),
+  // A worker chat's feed ring is its process's (host.ts); a chat in this process keeps none.
+  feedSince: () => ({ gap: true }),
 };
 
 /** The reply a call that threw answers with: its typed refusal, or an error with its message. A

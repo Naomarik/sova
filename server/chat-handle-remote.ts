@@ -430,9 +430,8 @@ export class RemoteChatHandle extends ChatHandle {
           }),
         },
       });
-      // A server action (a reserved @name) answers with its own result, as the loopback does (actionOutcome).
-      const answer = call.name.startsWith("@") && outcome.ok ? ({ ok: true, result: outcome.result.details } as typeof outcome) : outcome;
-      link.send({ t: "tool.result", effectId: call.effectId, outcome: answer });
+      // A server action's ToolResult goes as it is: the chat process takes its own result from its details.
+      link.send({ t: "tool.result", effectId: call.effectId, outcome });
     } catch (err) {
       link.send({ t: "tool.result", effectId: call.effectId, outcome: { ok: false, error: { message: err instanceof Error ? err.message : String(err) } } });
     } finally {

@@ -441,12 +441,24 @@ export function helloChange(was: HelloBaseline, now: HelloBaseline): HelloChange
 }
 
 /**
+ * The build of the page this tab runs: the server stamps it into every index.html it serves
+ * (server/mesh/hello.ts `stampBuild`). Undefined without the stamp (the Vite dev server, an older host).
+ */
+export function pageBuild(doc: Pick<Document, "querySelector"> | undefined = typeof document === "undefined" ? undefined : document): string | undefined {
+  return doc?.querySelector('meta[name="sova-build"]')?.getAttribute("content") || undefined;
+}
+
+/**
  * The tab's baseline from its first hello and the host GET /api/mesh first named. That host served
  * the page, so it is the baseline's host even when the hello already comes from another (a failover
- * between load and the first hello); the first hello only supplies protocol and build.
+ * between load and the first hello); the first hello only supplies protocol, and the build only when
+ * the page carries none of its own (`page`, pageBuild). The page's own build wins: a tab the service
+ * worker started from an older cached page would otherwise take the new build as its own and never
+ * offer the reload.
  */
-export function firstBaseline(servedBy: { id: string; label: string } | null, hello: HelloBaseline): HelloBaseline {
-  return servedBy ? { ...hello, id: servedBy.id, label: servedBy.label } : hello;
+export function firstBaseline(servedBy: { id: string; label: string } | null, hello: HelloBaseline, page?: string): HelloBaseline {
+  const own = page ? { ...hello, build: page } : hello;
+  return servedBy ? { ...own, id: servedBy.id, label: servedBy.label } : own;
 }
 
 /** A host change counts once a second hello, at least this much later, answers from the same new host. */

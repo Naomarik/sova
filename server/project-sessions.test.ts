@@ -23,7 +23,8 @@ const { buildApp } = await import("./app");
 buildApp({ extensionEntriesOf: async () => [] });
 const orgs = await import("./orgs");
 const po = await import("./project-overseer");
-const { registerProjectIn, setProjectArchived } = await import("./projects/spaces");
+const { engineOf, registerProjectIn, setProjectArchived } = await import("./projects/spaces");
+const { seedBuild } = await import("./org-test-fixtures");
 const { projectSessionLookup } = await import("./project-sessions");
 const { folderMatcher } = await import("./project-folder");
 const { getSessionSummary } = await import("./sessions-index");
@@ -167,7 +168,17 @@ describe("a session's folder makes it the project's", () => {
     assert.equal(projectSessionLookup().of(overseer.path, overseer.id, sova)?.kind, "overseer");
     const build = await po.startCoding(sovaP.id, { worktree: "later", cwd: join(sova, "server") });
     const row = projectSessionLookup().of(build.path, build.sessionId, join(sova, "server"));
-    assert.deepEqual(row, { projectId: sovaP.id, projectName: "sova", kind: "coding" });
+    assert.deepEqual(row, { projectId: sovaP.id, projectName: "sova", kind: "coding", operator: true });
+  });
+
+  test("who started a build: the operator's is marked operator, the overseer's is not", async () => {
+    const mine = await po.startCoding(sovaP.id, { worktree: "later", cwd: sova });
+    const listedMine = await getSessionSummary(mine.path);
+    assert.deepEqual(listedMine?.project, { projectId: sovaP.id, projectName: "sova", kind: "coding", operator: true });
+    const path = sessionIn(sova, "44444444-4444-4444-8444-444444444444");
+    await seedBuild(engineOf(sovaP.id)!, sovaP.id, { sessionId: "44444444-4444-4444-8444-444444444444", kind: "coding", path });
+    const theirs = projectSessionLookup().of(path, "44444444-4444-4444-8444-444444444444", sova);
+    assert.deepEqual(theirs, { projectId: sovaP.id, projectName: "sova", kind: "coding" }, "the overseer's build carries no operator");
   });
 });
 

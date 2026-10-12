@@ -163,3 +163,18 @@ test("a profile session is never in Recent, live or a custom pick: Profiles list
   assert.equal(recentEligible(plain), true);
   assert.deepEqual(ids(recentSessions([live, pick, plain], 5)), ["plain"]);
 });
+
+test("a project coding session the operator started is in Recent; one the overseer started is not", () => {
+  const project = (extra: Partial<NonNullable<SessionSummary["project"]>>) => ({ projectId: "p", projectName: "P", kind: "coding", ...extra }) as SessionSummary["project"];
+  const at = (id: string, day: string, extra: Partial<SessionSummary>) => ({ ...session({ id, lastActiveAt: `2026-01-${day}T00:00:00Z` }), ...extra }) as SessionSummary;
+  const mine = at("mine", "09", { project: project({ operator: true }), origin: "web" });
+  const theirs = at("theirs", "08", { project: project({}), origin: "web" });
+  // An older server marks no build: it reads as the overseer's.
+  const unmarked = at("unmarked", "07", { project: { projectId: "p", projectName: "P", kind: "coding" } });
+  const mineArchived = at("mine-archived", "06", { project: project({ operator: true }), archived: true });
+  const placed = at("placed", "05", { project: project({ operator: true }), org: { orgId: "o", orgName: "O", projectId: "p", projectName: "P", kind: "coding" } as SessionSummary["org"] });
+  const worker = at("worker", "04", { project: project({ operator: true }), workerSession: true });
+  const overseer = at("overseer", "03", { project: { projectId: "p", projectName: "P", kind: "overseer" } });
+  const plain = session({ id: "plain", lastActiveAt: "2026-01-02T00:00:00Z" });
+  assert.deepEqual(ids(recentSessions([plain, overseer, worker, placed, mineArchived, unmarked, theirs, mine], 20)), ["mine", "plain"]);
+});

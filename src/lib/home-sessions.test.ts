@@ -84,3 +84,10 @@ test("a session in a project's folder: Live & web, Last active and Needs you cou
   assert.equal(g.needsYou, 2, "the waiting folder session is in Needs you; the build waits in its region");
   assert.deepEqual(g.needsYouFirst.map((s) => s.id), ["f", "a"]);
 });
+
+test("Last active is Recent's first row: the operator's own build counts, Live & web still does not", () => {
+  const mine = { projectId: "p", projectName: "P", kind: "coding", operator: true } as SessionSummary["project"];
+  const g = sessionsGlance([...list, session("k", { project: mine, origin: "web", lastActiveAt: "2026-03-01T00:00:00Z" })], undefined, "badge");
+  assert.equal(g.last?.id, "k");
+  assert.equal(g.live, 3, "a, b and c: the build lives in its project's block");
+});

@@ -1,5 +1,5 @@
 import type { SessionProject } from "../shared/protocol";
-import { readEngineBuilds, type BuildRow } from "./build-loadout";
+import { buildStartedBy, readEngineBuilds, type BuildRow } from "./build-loadout";
 import { buildMerged } from "./build-merged";
 import { openEngineIds } from "./org-engine";
 import { readPoMarker, readPoState } from "./project-overseer-store";
@@ -67,7 +67,12 @@ export function projectSessionLookup(): ProjectSessionLookup {
       if (c && projects.has(c.projectId)) {
         // A build merged per git is finished.
         const merged = buildMerged(c.row, projects.get(c.projectId)!.root);
-        return { ...ref(c.projectId), kind: "coding", ...(merged ? { finished: true as const } : {}) };
+        return {
+          ...ref(c.projectId),
+          kind: "coding",
+          ...(buildStartedBy(c.row) === "operator" ? { operator: true as const } : {}),
+          ...(merged ? { finished: true as const } : {}),
+        };
       }
       // Any other session in its folder: the project's, never finished.
       const pid = cwd ? folder(cwd) : null;

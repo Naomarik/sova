@@ -32,7 +32,8 @@ export function sessionsGlance(
   const ordinary = main.filter(isOrdinarySession);
   const rows = needsYouRows(digest, ordinary);
   const shown = needsYouShown(proactivity, rows.length);
-  const eligible = ordinary.filter(recentEligible).sort(byRecentActivity);
+  // Recent's first row: its rule also takes the operator's own project coding sessions (lib/recent).
+  const eligible = main.filter(recentEligible).sort(byRecentActivity);
   return {
     total: main.length,
     folders: new Set(main.map((s) => s.cwd)).size,

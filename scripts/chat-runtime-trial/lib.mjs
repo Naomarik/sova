@@ -94,7 +94,9 @@ export function fakeClaude(scratch) {
   const login = join(scratch, "claude-login");
   mkdirSync(bin, { recursive: true });
   mkdirSync(login, { recursive: true });
-  writeFileSync(join(bin, "claude"), `#!/bin/sh\nexec node ${join(ROOT, "scripts", "fake-claude.mjs")} "$@"\n`, { mode: 0o755 });
+  // Each call is logged (<scratch>/fake-claude-calls.log: its arguments), so a trial can show a
+  // one-shot reached the fake.
+  writeFileSync(join(bin, "claude"), `#!/bin/sh\necho "$$ $*" >> ${join(scratch, "fake-claude-calls.log")}\nexec node ${join(ROOT, "scripts", "fake-claude.mjs")} "$@"\n`, { mode: 0o755 });
   writeFileSync(join(login, ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: "fake", refreshToken: "fake", expiresAt: Date.now() + 8 * 3600_000 } }), { mode: 0o600 });
   writeFileSync(join(login, ".claude.json"), JSON.stringify({ oauthAccount: { emailAddress: "trial@example.invalid" } }));
   return { claudeBin: bin, claudeLogin: login };

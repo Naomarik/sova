@@ -63,6 +63,19 @@ function providerIdsOf(sessionId: string): string[] {
   }
   return ids;
 }
+/** What this process reports of a session it hosts (a chat process puts it in its mirror). */
+export function hostedFacts(path: string): { title?: string; workers: WorkerInfo[]; toolsRunning: number; lastToolEnd: number } | null {
+  const h = hosted.get(path);
+  return h ? { ...(h.title ? { title: h.title } : {}), workers: h.workers, toolsRunning: h.toolsRunning, lastToolEnd: h.lastToolEnd } : null;
+}
+
+/** The chats this server runs in processes of their own, as their mirrors report them (server/chat-host.ts). */
+const remoteHosted = new Map<string, { sessionId: string; cwd?: string; title?: string; workers: WorkerInfo[]; toolsRunning: number; lastToolEnd: number; pid: number }>();
+export function setRemoteHosted(path: string, entry: { sessionId: string; cwd?: string; title?: string; workers: WorkerInfo[]; toolsRunning: number; lastToolEnd: number; pid: number } | null): void {
+  if (entry) remoteHosted.set(path, entry);
+  else remoteHosted.delete(path);
+}
+
 /** Per hosted runtime: re-ask its subagents extension for its workers. */
 const workerRequesters = new Map<string, { token: object; ask: () => void }>();
 
@@ -292,8 +305,15 @@ export class ResourceMonitor {
         workers: h.workers, providerIds: h.providerIds,
         toolInWindow: h.toolsRunning > 0 || h.lastToolEnd >= this.prevAt,
       }));
+      for (const [path, r] of remoteHosted) {
+        if (hosted.has(path)) continue;
+        out.push({
+          path, sessionId: r.sessionId, ...(r.cwd ? { cwd: r.cwd } : {}), ...(r.title ? { title: r.title } : {}),
+          workers: r.workers, providerIds: providerIdsOf(r.sessionId), toolInWindow: r.toolsRunning > 0 || r.lastToolEnd >= this.prevAt, pid: r.pid,
+        });
+      }
       for (const c of held?.() ?? []) {
-        if (hosted.has(c.path)) continue;
+        if (hosted.has(c.path) || remoteHosted.has(c.path)) continue;
         out.push({ path: c.path, sessionId: c.sessionId, ...(c.cwd ? { cwd: c.cwd } : {}), workers: [], providerIds: providerIdsOf(c.sessionId), toolInWindow: false });
       }
       return out;

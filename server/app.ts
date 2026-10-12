@@ -1,6 +1,8 @@
 // The server's Hono app and its routes (buildApp), with nothing started: no listener, no
 // usage-helper child, no timers or loops. server/index.ts builds it, listens and boots everything
 // else; tests build it to drive routes through app.request() (no socket).
+import { chatHostStatus } from "./chat-host";
+import { holderAlive, readLock } from "./chat-runtime/writer-lock";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import type { IncomingMessage } from "node:http";
@@ -212,7 +214,7 @@ export function buildApp(deps: AppDeps) {
 
   // What this process runs (§chat.profiles/live-commit): its start and its checkout's commit then, and how
   // many entries its pi can't read it has met (§app.harness/unknown-entries; a number only, the route is open).
-  app.get("/api/health", (c) => c.json({ ok: true, startedAt: SERVER_STARTED_AT, head: SERVER_HEAD, runtime: SERVER_RUNTIME, unknownEntries: unknownEntries() }));
+  app.get("/api/health", (c) => c.json({ ok: true, startedAt: SERVER_STARTED_AT, head: SERVER_HEAD, runtime: SERVER_RUNTIME, chatHost: chatHostStatus(), unknownEntries: unknownEntries() }));
   // A browser's way in (§app.access/unlock): the token it was given sets the install's cookie.
   app.post("/api/auth/unlock", bodyLimit({ maxSize: 4096 }), unlock);
   // Both routes stay behind the gate, and refuse peer-listener and relayed calls as well.
@@ -246,7 +248,13 @@ export function buildApp(deps: AppDeps) {
     // a live link, which restarts a claude-code chat's CLI).
     const made = await createWebSessionFile(c, cwd, linkMember ? [[LINK_MEMBER, { v: 1 }]] : undefined);
     if (made instanceof Response) return made;
-    if (subagentProfile !== undefined) appendToClosedFile(made.path, SUBAGENT_PROFILE, { v: 1, profile: subagentProfile });
+    if (subagentProfile !== undefined) {
+      // A file no chat holds, here or in a process of its own (§app.chat-processes/wire): only then is
+      // appending to it from outside safe. The file was just created, so this never trips today.
+      const lock = readLock(made.path);
+      if (chatHandle(made.path) || (lock && holderAlive(lock))) return c.json({ error: "That session is open in a chat process." }, 409);
+      appendToClosedFile(made.path, SUBAGENT_PROFILE, { v: 1, profile: subagentProfile });
+    }
     if (!start || !pick) return c.json(made, 201);
     const applied = await applyProfile(made.path, pick, start.by ?? "start");
     if (!applied.ok) return c.json({ error: `Created the session, but its profile was not set: ${applied.error}`, session: made }, applied.status);

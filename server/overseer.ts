@@ -42,7 +42,7 @@ import {
   serveTools,
   setOverseerRuntime,
 } from "./chat-handle";
-import { activityOf, failedWorkersOf, isOwnPid, readLiveRecords, workerErrorTimesOf, workingSubagents } from "./live";
+import { activityOf, failedWorkersOf, readLiveRecords, workerErrorTimesOf, workingSubagents } from "./live";
 import { endedByRestart, restartWindow } from "./server-stop";
 import { listModels, contextWindow } from "./models";
 import { modelDenial, readModelPolicy } from "./model-policy";
@@ -75,7 +75,7 @@ import { contactRedactor } from "./overseer-org-view";
 import { CARDS_NOTE_MESSAGE, cardsNote, clickItems, foldCards, matchCardClick } from "../shared/overseer-card";
 import { actsText, carriedRules, clickWrote, coveringPermit, foldPermits, type Permit, permitFromClick, RULE_ENTRY, type RuleEntry, sessionsText } from "../shared/overseer-grants";
 import { readAliases, sessionName, setAlias } from "./session-names";
-import { RESUME_DELAY_MS, resumeInterrupted, runLedger } from "./auto-resume";
+import { RESUME_DELAY_MS, type ResumeDeps, resumeInterrupted, runLedger } from "./auto-resume";
 import { schedulesForWire } from "./schedules";
 import { overseerFileTools, ownStateRoots } from "./overseer-file-tools";
 import { OverseerGuard } from "./overseer-deny";
@@ -319,7 +319,9 @@ export function attentionDigest(): Promise<ReturnType<typeof buildDigest>> {
     for (const r of records) {
       if (!r.sessionFile) continue;
       const prev = byPath.get(r.sessionFile);
-      const skip = isOwnPid(r.pid) ? restartEnded : undefined;
+      // Only this process's own records: a chat process's workers outlive the restart, so an error
+      // of theirs is real (§app.chat-processes/survives-restart).
+      const skip = r.pid === process.pid ? restartEnded : undefined;
       const failed = failedWorkersOf(r.rec, skip);
       const since = activityOf(r.rec)?.since ?? 0;
       byPath.set(r.sessionFile, {
@@ -1226,26 +1228,45 @@ export function startAutoResume(): void {
   const runs = runLedger.takeInterrupted();
   if (!runs.size) return;
   const timer = setTimeout(() => {
-    const settings = readOverseerSettings();
-    void resumeInterrupted(runs, {
-      enabled: settings.autoResume !== false,
-      session: async (path) => {
-        const s = await getSessionSummary(path);
-        if (!s) return null;
-        return { ...s, name: sessionName(s, readAliases()[s.id]), projectOverseer: !!projectOverseerOfPath(path) };
-      },
-      freeSlots: () => readOverseerSettings().caps.concurrentSessions - countRunning(started, running, promptedAt),
-      prompt: async (path, text) => {
-        const r = await promptSession(path, text, readOverseerState()?.current);
-        if (!r.ok) throw new Error(r.error);
-        host.started(path, true);
-      },
-      log: (path, outcome, why) =>
-        logAction({ at: new Date().toISOString(), overseerId: readOverseerState()?.current ?? "", toolCallId: "", tool: "auto_resume", args: { path }, outcome, ...(why ? { error: why } : {}) }),
-      brief: sendBrief,
-    }).catch((err) => console.warn("[auto-resume] failed:", err instanceof Error ? err.message : String(err)));
+    void resumeInterrupted(runs, resumeDeps()).catch((err) => console.warn("[auto-resume] failed:", err instanceof Error ? err.message : String(err)));
   }, RESUME_DELAY_MS);
   timer.unref();
+}
+
+/**
+ * A chat in a process of its own died with a run in flight (§app.chat-processes/crash): resume it
+ * once, a few seconds later, under the same gates as a restart's resume. Its next run is marked a
+ * resume in the chat's own process (`before`), which the send then opens.
+ */
+export function resumeCrashedChat(path: string, since: number, before: (path: string) => Promise<void>): void {
+  const timer = setTimeout(() => {
+    const deps = resumeDeps();
+    void resumeInterrupted(new Map([[path, { since }]]), { ...deps, prompt: async (p, text) => (await before(p), deps.prompt(p, text)) }, { markResuming: () => {} }, "crash").catch((err) =>
+      console.warn("[auto-resume] failed:", err instanceof Error ? err.message : String(err)),
+    );
+  }, RESUME_DELAY_MS);
+  timer.unref();
+}
+
+function resumeDeps(): ResumeDeps {
+  const settings = readOverseerSettings();
+  return {
+    enabled: settings.autoResume !== false,
+    session: async (path) => {
+      const s = await getSessionSummary(path);
+      if (!s) return null;
+      return { ...s, name: sessionName(s, readAliases()[s.id]), projectOverseer: !!projectOverseerOfPath(path) };
+    },
+    freeSlots: () => readOverseerSettings().caps.concurrentSessions - countRunning(started, running, promptedAt),
+    prompt: async (path, text) => {
+      const r = await promptSession(path, text, readOverseerState()?.current);
+      if (!r.ok) throw new Error(r.error);
+      host.started(path, true);
+    },
+    log: (path, outcome, why) =>
+      logAction({ at: new Date().toISOString(), overseerId: readOverseerState()?.current ?? "", toolCallId: "", tool: "auto_resume", args: { path }, outcome, ...(why ? { error: why } : {}) }),
+    brief: sendBrief,
+  };
 }
 
 let ticking = false;

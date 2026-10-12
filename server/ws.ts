@@ -50,6 +50,7 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
   const client: ChatClient = {
     send: (msg) => sendJson(ws, msg),
     sendRaw: (json) => sendRaw(ws, json),
+    close: (code, reason) => ws.close(code, reason),
     ...(wire === 2 ? { wire: 2 as const } : {}),
     ...(ask.tail ? { tail: true } : {}),
     ...(ask.tail && ask.pull ? { pull: { prefetch: ask.prefetch } } : {}),

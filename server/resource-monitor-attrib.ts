@@ -117,6 +117,9 @@ export interface HostedInfo {
   providerIds: readonly string[];
   /** A tool was running during the tick's window (for `exited-tools`). */
   toolInWindow: boolean;
+  /** The session's own chat process, when it runs in one (§app/chat-processes): it and everything
+      it starts are the session's. */
+  pid?: number;
 }
 
 /** Who a process is charged to. `session` absent with `worker` set: a worker no join tied to a
@@ -164,6 +167,7 @@ function indexHosted(hosted: readonly HostedInfo[]) {
   const byWorkerId = new Map<string, Owner[]>();
   for (const h of hosted) {
     byFile.set(h.path, { session: h.path, via: "env" });
+    if (h.pid) byPid.set(h.pid, { session: h.path, via: "descendant" });
     for (const id of h.providerIds) byClaude.set(id, { session: h.path, via: "session-id" });
     for (const w of h.workers) {
       if (w.pid) byPid.set(w.pid, { session: h.path, worker: w.id, via: "worker-pid" });

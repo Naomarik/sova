@@ -364,6 +364,9 @@ export interface ChatClient {
   /** …and fetches the older rows itself (`?tail=rest`, server/transcript-rows.ts): no history is
       pushed, and its hellos carry `olderSummary` (and `prefetch`, for a browser on this machine). */
   pull?: { prefetch: boolean };
+  /** End this browser's socket (server/ws.ts): a chat whose process died tells it so, then closes
+      it so it reconnects (§app.chat-processes/crash). */
+  close?(code: number, reason: string): void;
 }
 
 const wireOfClient = (client: ChatClient) => client.wire ?? 1;
@@ -3334,12 +3337,25 @@ function pushLinks(chat: ChatSession, client?: ChatClient): void {
 /** A link message landed, or a link was made or ended: push `links` to every held chat of those
     sessions, and to the Overseer's, whose pane lists every link on this host. */
 export function notifyLinksChanged(sessionIds: readonly string[]): void {
+  for (const fn of linksListeners) fn(sessionIds);
   const ids = new Set(sessionIds);
   for (const chat of heldChats()) {
     if (!chat.clients.size) continue;
     if (chat.overseer || ids.has(chat.harness.id)) pushLinks(chat);
   }
 }
+
+/** Who else hears a links change: the chats in processes of their own (server/chat-handle.ts). */
+const linksListeners = new Set<(sessionIds: readonly string[]) => void>();
+export function onLinksNotified(fn: (sessionIds: readonly string[]) => void): () => void {
+  linksListeners.add(fn);
+  return () => linksListeners.delete(fn);
+}
+/** A session's `links` rows from this server's source, for a chat that asks from its own process. */
+export const linksFor = (sessionId: string, path: string): Promise<LinkedAgentInfo[]> => (linksSource ? linksSource(sessionId, path) : Promise.resolve([]));
+/** This server's singleton check, for a chat that asks from its own process. */
+export const singletonFor = (key: string, path: string): Promise<{ id: string; path: string; title: string } | null> =>
+  singletonCheck ? singletonCheck(key, path) : Promise.resolve(null);
 
 /** Every chat's lifecycle events, numbered across this runtime (shared/chat-runtime.ts
     ChatLifecycleEvent); the server hears them through server/chat-handle.ts. The newest are kept,
@@ -3548,8 +3564,9 @@ export function serverToolSpec(chatId: string, decl: ServerToolDecl): ToolSpec {
   };
 }
 
-/** The served tools of that name, as this chat registers them. */
-const servedSpecs = (chatId: string, name: string): ToolSpec[] => (servedDecls ?? []).filter((d) => d.name === name).map((d) => serverToolSpec(chatId, d));
+/** The served tools whose names `which` takes, as this chat registers them (`queue_push`'s extension also
+    carries any test-only one the server serves, after it). */
+const servedSpecs = (chatId: string, which: (name: string) => boolean): ToolSpec[] => (servedDecls ?? []).filter((d) => which(d.name)).map((d) => serverToolSpec(chatId, d));
 
 /** What one chat's special loadout hears of its runs, across the runtimes it builds. */
 interface RunHearing {
@@ -3714,11 +3731,11 @@ async function openLocked(path: string, onDisposed: () => void): Promise<ChatSes
               playbookExtension(chatHosts.playbook ?? playbookHost),
               // project_verbs: its own worktrees' running instances (server/project-services/tools.ts).
               servedDecls
-                ? servedToolsExtension("sova-project-verbs", servedSpecs(path, "project_verbs"), chatHosts.instanceNote ?? ((ctx) => sessionInstanceNote(projectEngine, ctx)))
+                ? servedToolsExtension("sova-project-verbs", servedSpecs(path, (n) => n === "project_verbs"), chatHosts.instanceNote ?? ((ctx) => sessionInstanceNote(projectEngine, ctx)))
                 : projectVerbsExtension(projectEngine),
               // queue_push: every ordinary session can answer on a topic (§chat.topics/push).
               servedDecls
-                ? servedToolsExtension("sova-topics", servedSpecs(path, "queue_push"))
+                ? servedToolsExtension("sova-topics", servedSpecs(path, (n) => n !== "project_verbs"))
                 : queuePushExtension({ sessionId: () => read.id, title: () => titleOf(read.branch()) }),
               ...powers,
             ],

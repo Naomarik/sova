@@ -13,6 +13,8 @@ import { stateRoot } from "./state-root";
  */
 
 export const RESUME_TEXT = "The Sova server restarted and cut off your last turn. Continue where you left off.";
+/** A chat in a process of its own whose process died with a run in flight (§app.chat-processes/crash). */
+export const CRASH_RESUME_TEXT = "This chat's process stopped unexpectedly and cut off your last turn. Continue where you left off.";
 /** How long after start the resume waits, so the server is up before runs begin. */
 export const RESUME_DELAY_MS = 5000;
 
@@ -106,7 +108,12 @@ export interface ResumeOutcome {
 }
 
 /** Resume what the last stop cut off, oldest run first. */
-export async function resumeInterrupted(runs: Map<string, InFlight>, deps: ResumeDeps, ledger: Pick<RunLedger, "markResuming"> = runLedger): Promise<ResumeOutcome> {
+export async function resumeInterrupted(
+  runs: Map<string, InFlight>,
+  deps: ResumeDeps,
+  ledger: Pick<RunLedger, "markResuming"> = runLedger,
+  why: "restart" | "crash" = "restart",
+): Promise<ResumeOutcome> {
   const out: ResumeOutcome = { resumed: [], skipped: [] };
   if (!deps.enabled || runs.size === 0) return out;
   const order = [...runs.entries()].sort((a, b) => a[1].since - b[1].since);
@@ -126,7 +133,7 @@ export async function resumeInterrupted(runs: Map<string, InFlight>, deps: Resum
     else {
       try {
         ledger.markResuming(path);
-        await deps.prompt(path, RESUME_TEXT);
+        await deps.prompt(path, why === "crash" ? CRASH_RESUME_TEXT : RESUME_TEXT);
         out.resumed.push({ id: s.id, name: s.name });
         deps.log(path, "ok");
       } catch (err) {
@@ -134,14 +141,14 @@ export async function resumeInterrupted(runs: Map<string, InFlight>, deps: Resum
       }
     }
   }
-  if (out.resumed.length || out.skipped.length) await deps.brief(resumeBriefText(out)).catch(() => {});
+  if (out.resumed.length || out.skipped.length) await deps.brief(resumeBriefText(out, why)).catch(() => {});
   return out;
 }
 
 /** The brief's body (after the brief prefix): each session as an in-app link. */
-export function resumeBriefText(o: ResumeOutcome): string {
+export function resumeBriefText(o: ResumeOutcome, why: "restart" | "crash" = "restart"): string {
   const link = (x: { id: string | null; name: string }) => (x.id ? `[${x.name.replace(/[[\]]/g, "")}](sova://s/${x.id})` : x.name);
-  const lines = [`The server restarted. ${o.resumed.length} interrupted session${o.resumed.length === 1 ? "" : "s"} resumed${o.skipped.length ? `, ${o.skipped.length} not` : ""}:`];
+  const lines = [`${why === "crash" ? "A chat process stopped unexpectedly." : "The server restarted."} ${o.resumed.length} interrupted session${o.resumed.length === 1 ? "" : "s"} resumed${o.skipped.length ? `, ${o.skipped.length} not` : ""}:`];
   for (const r of o.resumed) lines.push(`- resumed: ${link(r)}`);
   for (const r of o.skipped) lines.push(`- not resumed: ${link(r)} — ${r.why}`);
   return lines.join("\n");

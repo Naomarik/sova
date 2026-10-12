@@ -67,6 +67,8 @@ test("boots, says ready, opens its chat, serves a browser, and drains on purpose
   link.send({ t: "drain", id: "d1", reason: "idle", force: false });
   assert.deepEqual(await exit, { t: "exit", cause: "idle" });
   assert.deepEqual(await p.exited, { code: 0, signal: null });
+  // Said in its log too, for a supervisor that heard no frame (the format is its parser's).
+  assert.match(p.out(), new RegExp(`\\[chat-runtime\\] exit idle \\(pid ${p.child.pid}\\)`));
 });
 
 test("SIGTERM closes it as the operator's stop", { timeout: 60_000 }, async () => {
@@ -83,9 +85,13 @@ test("SIGTERM closes it as the operator's stop", { timeout: 60_000 }, async () =
   const exit = awaitFrame(link, "exit", 30_000);
   p.child.kill("SIGTERM");
   assert.deepEqual(await exit, { t: "exit", cause: "operator" });
+  const exits: string[] = [];
+  link.on("exit", (f) => exits.push(f.cause));
   // The pane reconnects quietly, as after a reload.
   assert.deepEqual(JSON.parse(sends.at(-1)!), { type: "error", code: "reloaded", message: "Reconnecting. Your draft is kept." });
   assert.deepEqual(await p.exited, { code: 0, signal: null });
+  assert.deepEqual(exits, [], "one exit frame, not two");
+  assert.match(p.out(), new RegExp(`\\[chat-runtime\\] exit operator \\(pid ${p.child.pid}\\)`));
 });
 
 test("the failed-start test hook exits before it listens", { timeout: 30_000 }, async () => {

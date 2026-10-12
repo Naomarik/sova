@@ -967,8 +967,11 @@ async function t12a() {
 }
 
 // T12b: a server restart mid baton reply: the reply finishes; one reply/writing and one reply/ended;
-// the boot sweep ended nothing.
+// the boot sweep ended nothing. Then a restart mid the baton's served test tool (design §10.3 A):
+// outcome unknown, ran once.
 async function t12b() {
+  await teardown();
+  await boot({ extra: { SOVA_CHAT_TEST_SERVED: "1" } });
   const { o, b, sid, path } = await batonSetup();
   const t0 = Date.now();
   await participantSays(b.link, "[long 30 #b12b] reply at length");
@@ -988,6 +991,21 @@ async function t12b() {
   R.check(ended.length === 1, `t12b: one reply/ended in the org log (${ended.length}: ${ended.map((r) => r.by).join(", ")})`);
   const refused = orgLog(o).filter((r) => r.event === "reply/ended" && String(r.session ?? "").includes(sid) && r.at >= t0 && r.refused);
   R.check(refused.length === 0, `t12b: the boot sweep ended nothing for it (${refused.length} refused reply/ended)`);
+  // The served test tool, cut by a restart.
+  const before = toolResults(path).length;
+  const sent = await participantSays(b.link, "[served] run it");
+  R.check(sent.status < 300, `t12b: the participant's second message was taken (${sent.status} ${sent.body.slice(0, 100)})`);
+  await waitFor(() => servedLog().some((e) => e.event === "start"), 30000, 250);
+  await sleep(1500);
+  await restart();
+  await waitFor(() => toolResults(path).length > before, 60000);
+  await sleep(2000);
+  const cut = toolResults(path).slice(before);
+  R.check(cut.length === 1 && /outcome is unknown/.test(JSON.stringify(cut[0])), `t12b: the baton's cut served call reports outcome unknown (${resultText(cut[0])})`);
+  const starts = servedLog().filter((e) => e.event === "start").length;
+  R.check(starts === 1, `t12b: the served call ran once (${starts} starts)`);
+  await teardown();
+  await boot();
 }
 
 // T12c: take-back while the baton replies: when the route answers, "(taken back)" is in the

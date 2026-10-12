@@ -267,6 +267,10 @@ class LiveMirror implements ChatStateMirror {
   get dialogs() {
     return this.chat.pendingDialogs();
   }
+  get mode() {
+    const s = this.chat.modeState;
+    return { mode: s.mode, minorModes: [...s.minorModes], strict: s.strict };
+  }
   get held(): HeldChatState {
     const chat = this.chat;
     const s = chat.modeState;

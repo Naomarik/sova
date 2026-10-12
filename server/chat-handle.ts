@@ -73,9 +73,11 @@ export { BusyError, ConfigError, ModeRefusedError, RefusedError, onChatEvent, ch
 export type { ChatClient };
 export {
   activeConfigFailure,
+  assertOpenConfig,
   assertNotLive,
   currentLinkOrigin,
   openKindOf,
+  recordConfigFailure,
   takeOpeningChoice,
   busyRefusal,
   cwdOverride,

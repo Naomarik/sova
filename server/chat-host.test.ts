@@ -106,7 +106,14 @@ function setup(o: { out?: boolean } = {}) {
   }) as never;
   const router = new ChatHostRouter(++epoch, "b1", { driver, connect, out: () => o.out ?? true, supervisor });
   // The next server: a router over the same units (a restart), with a higher epoch.
-  const again = () => new ChatHostRouter(++epoch, "b1", { driver, connect, out: () => o.out ?? true, supervisor });
+  // `delayMs`: each of its connects takes that long first (a slow take-back).
+  const again = (delayMs = 0) =>
+    new ChatHostRouter(++epoch, "b1", {
+      driver,
+      connect: delayMs ? (((sock: string, opts: never) => new Promise((r) => setTimeout(r, delayMs)).then(() => (connect as (s: string, o: never) => Promise<unknown>)(sock, opts))) as never) : connect,
+      out: () => o.out ?? true,
+      supervisor,
+    });
   return { router, driver, hosts, exits, connects: () => connects, again, connect: connect as typeof import("./chat-runtime/link").connectLink, supervisor };
 }
 
@@ -217,6 +224,25 @@ test("after a restart, a taken-back chat's server-hosted tools run here: a call 
       Promise.race([p.then(() => "ran", (e: Error) => e.message), new Promise<string>((r) => setTimeout(() => r("no answer"), 3_000))]);
     assert.equal(await answer(queued), "ran", "the queued call ran once the chat was taken back");
     assert.equal(await answer(serverToolSpec(s.path, decl).execute("tc-2", { ms: 0 }, undefined, undefined, undefined)), "ran", "a new call runs too");
+  } finally {
+    next.detach();
+  }
+});
+
+test("opening a chat while the next server is still taking chats back waits for it: the surviving process, never a second one", async () => {
+  const t = setup();
+  const s = session();
+  const first = await t.router.acquire(s.path, false);
+  assert.equal(first?.where, "process");
+  t.router.detach();
+  const next = t.again(300);
+  try {
+    next.start();
+    // No ready() first: an open that comes before the take-back is done (a boot sweep, a slow build).
+    const h = await next.acquire(s.path, false);
+    assert.equal(h?.where, "process", "the chat taken back");
+    assert.equal(t.driver.started.length, 1, "no second unit");
+    assert.equal(t.connects(), 2, "the first open and the take-back: no start attempted meanwhile");
   } finally {
     next.detach();
   }

@@ -65,6 +65,9 @@ import { markOwned, recentForeignWriteAgeSec } from "./write-guard";
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..");
 /** How long a browser's connect waits for the chats a previous server left running to be taken back. */
 const READY_WAIT_MS = 10_000;
+/** How long opening a chat waits for that take-back: past its own one-minute retries, so a chat whose
+    process survived is never started a second time. */
+const TAKE_BACK_MAX_MS = 120_000;
 
 let host: ChatHost = { mode: "in", why: "the server has not started its chats yet" };
 /** Where ordinary chats run on this server, and why (logged in full at start). */
@@ -326,6 +329,10 @@ export class ChatHostRouter {
   ready(): Promise<void> {
     return Promise.race([this.readyP, new Promise<void>((r) => setTimeout(r, READY_WAIT_MS))]);
   }
+  /** The take-back itself (each chat has a minute to answer), bounded only against a hang. */
+  private takenBack(): Promise<void> {
+    return Promise.race([this.readyP, new Promise<void>((r) => setTimeout(r, TAKE_BACK_MAX_MS).unref?.())]);
+  }
   get(path: string): ChatHandle | undefined {
     const h = this.remotes.get(path);
     return h && !h.closed ? h : undefined;
@@ -335,6 +342,9 @@ export class ChatHostRouter {
   }
 
   async acquire(path: string, force: boolean): Promise<ChatHandle | null> {
+    // A chat a previous server left running is this one's once it is taken back: never started anew
+    // meanwhile, however long the take-back takes (a browser's connect waits only READY_WAIT_MS).
+    await this.takenBack();
     const open = this.remotes.get(path);
     if (open && !open.closed) {
       // "Chat anyway" reopens it in its process, and that close drops what this server serves it: served again.
@@ -498,7 +508,12 @@ export function startChatHost(): void {
     ready: () => Promise.race([boot, new Promise<void>((r) => setTimeout(r, 2 * READY_WAIT_MS))]),
     get: (path) => router?.get(path),
     all: () => router?.all() ?? [],
-    acquire: (path, force) => (router ? router.acquire(path, force) : Promise.resolve(null)),
+    // Opening waits for the router itself (the server's build can take seconds to compute): a chat is
+    // never opened here while a process of its own may still hold it.
+    acquire: async (path, force) => {
+      await Promise.race([boot, new Promise<void>((r) => setTimeout(r, TAKE_BACK_MAX_MS).unref?.())]);
+      return router ? router.acquire(path, force) : null;
+    },
     close: (path, message) => (router ? router.close(path, message) : Promise.resolve(false)),
     composersChanged: () => router?.composersChanged(),
   });

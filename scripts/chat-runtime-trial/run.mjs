@@ -1485,9 +1485,11 @@ async function t18b() {
   prompt(s, "[long 40 #t18p] the parent's own long reply");
   await s.until(delta(/part 3\//), 60000, "the parent streams", from);
   const ppid = chatPid(path);
+  const asked0 = mockLog(mock.log).length;
   process.kill(ppid, "SIGKILL");
   R.note(`t18b: killed the parent's process ${ppid}`);
-  await waitFor(() => mockLog(mock.log).some((e) => e.tag === "resume" && e.pid && e.pid !== ppid && e.pid !== wpid), 60000);
+  // The parent's crash resume, from its new process (an earlier check's resumes are older lines).
+  await waitFor(() => mockLog(mock.log).slice(asked0).some((e) => e.tag === "resume" && e.pid && e.pid !== ppid && e.pid !== wpid), 60000);
   R.check(userEntriesWith(path, CRASH_RESUME_TEXT) === 1, `t18b: the parent's crash "continue" was sent once (${userEntriesWith(path, CRASH_RESUME_TEXT)})`);
   R.check(chatPid(w.path) === wpid && alive(wpid), `t18b: the worker kept its process through the parent's crash (pid ${wpid} → ${chatPid(w.path) || "none"})`);
   R.check(userEntriesWith(w.path, CRASH_RESUME_TEXT) === 0, "t18b: the worker was sent no continue");

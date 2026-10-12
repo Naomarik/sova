@@ -22,7 +22,8 @@ major mode. While it's on, the agent gets a guide to the project's spec tools an
 The guide has the agent read before it writes:
 
 1. Find the claims the task starts from with a search by a few words of the task, a file
-   or a name, and the spec's map when that finds nothing or the task spans a whole area.
+   or a name, plus one look at every area's title to catch a better area than the search found,
+   and the spec's full map when the task spans a whole area.
 2. Look at each claim's neighbours before reading them, and check what a claim it will change
    reaches.
 3. Read each claim it starts from, and each linked claim that could matter, one passage at a time.

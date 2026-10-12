@@ -25,7 +25,7 @@ to assert that those decisions have been implemented.
 | `core/packet.mjs` | The standalone core's bounded packet serialization and stateless navigation module |
 | `core/toc.mjs`, `core/read.mjs` | Pull: `toc`, a one-hop contents view (what, why, size per line), and `read`, one exact passage without its chain |
 | `core/fields.mjs` | The optional record fields `embeds`, `core` (the always-on frame stream, capped at 12,000 bytes) and `about` |
-| `core/graph.mjs`, `core/map.mjs`, `core/where.mjs` | Look: `map` (every area on one page), `where` (the claims for a file or a name), `impact --near` (one reverse hop) and `graph --json` (the computed graph, paged) |
+| `core/graph.mjs`, `core/map.mjs`, `core/where.mjs` | Look: `map` (every area on one page), `where` (the claims for a file or a name, plus claims ranked by a topic's words; `core/topic.mjs` ranks), `impact --near` (one reverse hop) and `graph --json` (the computed graph, paged) |
 | `core/README.md` | The core's reference: commands, exit codes, the manifest format it reads, evidence states |
 | `core/sova-spec-draft.mjs` | Drafts: full-copy proposals of `.sova/spec`, their evidence, and guarded promotion into the current docs |
 | `DRAFTS.md` | The draft workflow's reference |
@@ -38,7 +38,7 @@ to assert that those decisions have been implemented.
 ## Core (read-only)
 
 ```sh
-node core/sova-spec.mjs <map [namespace | '<§id>'] | where <path|name> [--token] [--all] | graph --json> [--cursor TOKEN] [--budget BYTES] [--root DIR] [--spec DIR] [--json]
+node core/sova-spec.mjs <map [namespace | '<§id>'] | where <path|name|topic words…> [--token] [--all] | graph --json> [--cursor TOKEN] [--budget BYTES] [--root DIR] [--spec DIR] [--json]
 node core/sova-spec.mjs toc '<§id>' --dir out|in|down|up|mentions [--cursor TOKEN] [--budget BYTES] [--root DIR] [--spec DIR] [--json]
 node core/sova-spec.mjs <read '<§id>' [--whole] [--no-frame] | read --frame> [--cursor TOKEN] [--budget BYTES] [--root DIR] [--spec DIR] [--json]
 node core/sova-spec.mjs impact '<§id>' --near [--cursor TOKEN] [--budget BYTES] [--root DIR] [--spec DIR] [--json]

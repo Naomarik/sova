@@ -1,0 +1,85 @@
+{
+  "meta": {
+    "date": "2026-10-11T08:32:55.255Z",
+    "label": "winner-0b43feb9",
+    "set": "heldout",
+    "file": "(outside the repo)/judgments.heldout.json",
+    "cli": "pi-config/extensions/spec/core/sova-spec.mjs",
+    "head": "0b43feb9",
+    "coreDirty": false,
+    "args": "unquoted words",
+    "judgmentsSpecCommit": "a9b87037"
+  },
+  "groups": {
+    "all": {
+      "n": 48,
+      "r1": 0.4166666666666667,
+      "r3": 0.6458333333333334,
+      "mrr": 0.5519345238095238,
+      "r3any": 0.7708333333333334,
+      "meanBytes": 2677,
+      "medianBytes": 2757,
+      "maxBytes": 3028,
+      "meanResults": 9.6,
+      "exits": {
+        "0": 48
+      }
+    },
+    "vocabulary gap": {
+      "n": 6,
+      "r1": 0,
+      "r3": 0.16666666666666666,
+      "mrr": 0.05555555555555555,
+      "r3any": 0.5,
+      "meanBytes": 2763,
+      "medianBytes": 2797,
+      "maxBytes": 2875,
+      "meanResults": 10,
+      "exits": {
+        "0": 6
+      }
+    },
+    "word overlap": {
+      "n": 42,
+      "r1": 0.47619047619047616,
+      "r3": 0.7142857142857143,
+      "mrr": 0.6228458049886622,
+      "r3any": 0.8095238095238095,
+      "meanBytes": 2665,
+      "medianBytes": 2755,
+      "maxBytes": 3028,
+      "meanResults": 9.5,
+      "exits": {
+        "0": 42
+      }
+    },
+    "leak under 0.5": {
+      "n": 27,
+      "r1": 0.18518518518518517,
+      "r3": 0.48148148148148145,
+      "mrr": 0.3654761904761905,
+      "r3any": 0.7037037037037037,
+      "meanBytes": 2727,
+      "medianBytes": 2814,
+      "maxBytes": 3028,
+      "meanResults": 9.7,
+      "exits": {
+        "0": 27
+      }
+    },
+    "leak 0.5 and up": {
+      "n": 21,
+      "r1": 0.7142857142857143,
+      "r3": 0.8571428571428571,
+      "mrr": 0.7916666666666666,
+      "r3any": 0.8571428571428571,
+      "meanBytes": 2612,
+      "medianBytes": 2720,
+      "maxBytes": 2877,
+      "meanResults": 9.4,
+      "exits": {
+        "0": 21
+      }
+    }
+  }
+}

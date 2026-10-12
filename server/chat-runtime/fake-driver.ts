@@ -1,5 +1,7 @@
 import type { Driver, UnitSpec, UnitStatus } from "../project-services/drivers";
 
+type Line = string | { t: string; text: string };
+
 /**
  * A Driver whose units are entries in a map, for unit tests of the chat supervisor and its callers:
  * nothing is started. A test flips a unit's state (`die`, `exiting`) and reads what was asked
@@ -7,7 +9,7 @@ import type { Driver, UnitSpec, UnitStatus } from "../project-services/drivers";
  */
 export class FakeDriver implements Driver {
   readonly id = "systemd" as const;
-  readonly table = new Map<string, { spec: UnitSpec; status: UnitStatus; logs: string[] }>();
+  readonly table = new Map<string, { spec: UnitSpec; status: UnitStatus; logs: Line[] }>();
   started: UnitSpec[] = [];
   stopped: string[] = [];
   /** Make the next `start` throw this (a systemd-run failure). */
@@ -42,7 +44,7 @@ export class FakeDriver implements Driver {
     return [];
   }
   async logs(unit: string, lines: number) {
-    return (this.table.get(unit)?.logs ?? []).slice(-lines).map((text) => ({ t: "", text }));
+    return (this.table.get(unit)?.logs ?? []).slice(-lines).map((l) => (typeof l === "string" ? { t: "", text: l } : l));
   }
   async runOnce(): Promise<never> {
     throw new Error("the fake driver runs no waited-for units");
@@ -50,8 +52,8 @@ export class FakeDriver implements Driver {
   async units(prefix: string) {
     return [...this.table.keys()].filter((u) => u.startsWith(prefix));
   }
-  /** The unit's process ends: collected at once (`--collect`), its journal left behind. */
-  die(unit: string, logs: string[] = []) {
+  /** The unit's process ends: collected at once (`--collect`), its journal left behind (a line with its time, or text alone). */
+  die(unit: string, logs: Line[] = []) {
     const u = this.table.get(unit);
     if (!u) return;
     u.status = { state: "missing", pid: null };

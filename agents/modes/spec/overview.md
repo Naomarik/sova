@@ -43,7 +43,7 @@ The requirement is §tools/spec (`.sova/spec/claims/tools/spec.md`); MODE.md des
   machine, when a landing touches `spec/core/`, `spec/tests/replay/`, `mode/spec-guard.ts` or
   `claude-code/spec-hooks.ts`. Without `SOVA_SPEC_REPLAY=1` every test in it skips.
 - **One copy of the tools.** The spec tools exist only in `core/`, run through the installed extension (`$core`).
-  No project, Sova included, keeps a copy; a copy found in a project is that project's code and is never run.
+  No project, Sova included, keeps a copy; a copy found in a project is that project's code, never run without asking.
 
 ## While working
 

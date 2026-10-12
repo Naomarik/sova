@@ -1,8 +1,8 @@
 import { mkdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
-import type { HEntry, SessionStateWriter, StateKind, ToolSpec } from "../shared/harness";
-import { createSessionFile, toolStateWriter } from "./harness/pi/state";
-import { toolCtx, toPiTool } from "./harness/pi/tools";
+import type { RunStartAnswer, ServerToolDecl } from "../shared/chat-runtime";
+import type { EntryId, HEntry, StateKind, ToolSpec } from "../shared/harness";
+import { createSessionFile } from "./harness/pi/state";
 import { BATON, BATON_DECISION, BATON_DONE, BATON_EFFECT_KINDS, BATON_HANDOFF, BATON_LEASE, BATON_OFFER, BATON_PROPOSAL } from "./harness/state-kinds";
 import {
   abilitiesOf,
@@ -24,7 +24,7 @@ import { confirmFileTool, FILE_TOOLS, FILES_ON, inspectFilesTool, noteRunModel }
 import { GATHERING_VIS_GUIDE } from "./baton-vis-guide";
 import { areaKeyOf, decisionProvenance, ownerAreaChoices, pickOwnerArea, quoteCheckOf, type DecisionDisposition } from "./decisions";
 import type { Provenance } from "./org-history-capture";
-import { OWNER_AREA_NONE } from "../shared/decisions";
+import { OWNER_AREA_NONE, prepareOwnerArea } from "../shared/decisions";
 import type { Person } from "../shared/orgs";
 import type { QuoteCheck } from "../shared/org-history";
 import { handoffChosen } from "./baton-guards";
@@ -32,7 +32,7 @@ import { inlineOperatorImages } from "./baton-images";
 import { readBatonSettings } from "./baton-settings";
 import { authorNotes, labelAuthors } from "./baton-view";
 import { runWrapup, WRAPUP_SYSTEM, WRAPUP_TOOL, wrapupActive, wrapupTool } from "./baton-wrapup";
-import { acquireChatHandle, BusyError, type ChatHandle, RefusedError, registerSpecialLoadout, serveTools, type SessionMarks } from "./chat-handle";
+import { acquireChatHandle, BusyError, type ChatHandle, declOfTool, RefusedError, registerSpecialHost, serverToolCall, serveTools, type SessionMarks } from "./chat-handle";
 import { hostOf, onOrgChange, onOrgHostOpened, type Effect, type OrgHostApi } from "./org-engine";
 import type { Step } from "./statecharts";
 import type { Envelope } from "./org-envelope";
@@ -46,7 +46,7 @@ import { refreshShare, streamShare } from "./share/hub";
 import { addWebSession } from "./web-sessions";
 import { loadDefaults } from "./web-defaults";
 import { markOwned } from "./write-guard";
-import { redactPhrases, secretPhrases } from "./baton-view";
+import { batonContextPhrases, redactContext } from "./baton-view";
 
 /**
  * The baton runtime (§app.baton/goal-and-loadout, /hand-off): what a baton session file opens with.
@@ -157,14 +157,14 @@ async function interruptReply(chat: ChatHandle): Promise<void> {
   await chat.interruptKeepingQueued();
 }
 
-export { LIMIT_QUESTION };
+export { LIMIT_QUESTION, redactContext };
 
 /**
  * While a tool of the session runs, the extension's own writer writes its transcript entries
  * (the statechart's `baton-entry` effects of that step run inside the call, before it returns).
  */
-const toolAppend = new Map<string, SessionStateWriter>();
-async function inTool<T>(sessionId: string, state: SessionStateWriter, f: () => Promise<T>): Promise<T> {
+const toolAppend = new Map<string, BatonWriter>();
+async function inTool<T>(sessionId: string, state: BatonWriter, f: () => Promise<T>): Promise<T> {
   toolAppend.set(sessionId, state);
   try {
     return await f();
@@ -181,8 +181,22 @@ async function modelAct(sessionId: string, event: string, payload: Record<string
   if (!out.taken) throw new Error(out.refusal?.sentence ?? "That can't be done now.");
 }
 
-/** The tools, bound to one session. `state` is the extension's own writer (`toolStateWriter`). */
-export function batonTools(sessionId: string, state: SessionStateWriter): ToolSpec[] {
+/** How a baton tool writes into its chat: within the run of the tool, through the special extension's
+    own writer (entry_appended fires, so share pages refresh), wherever the chat runs. */
+export interface BatonWriter {
+  append<T>(kind: StateKind<T>, data: T): EntryId | Promise<EntryId>;
+}
+/** The writer of the served call this code runs inside (§app.harness/session-special). */
+export const runWriter: BatonWriter = {
+  append(kind, data) {
+    const run = serverToolCall();
+    if (!run) throw new Error("A baton tool writes only within its own call.");
+    return run.chat.append(kind, data, { announce: true });
+  },
+};
+
+/** The tools, bound to one session. `state`: how they write (the run's writer; a test's own). */
+export function batonTools(sessionId: string, state: BatonWriter = runWriter): ToolSpec[] {
   const hit = batonById(sessionId);
   const roster = hit ? readRoster(hit.row.orgId) : [];
   const [handTo, goalDone, ...rest] = conversationTools(sessionId, state);
@@ -233,7 +247,7 @@ export function dispositionOf(params: Record<string, unknown>): DecisionDisposit
 
 /** record_decision, its owner areas listed as the roster has them now (the call itself always
     checks the roster as it is then). */
-export function recordDecisionTool(sessionId: string, state: SessionStateWriter, roster: readonly Person[]): ToolSpec {
+export function recordDecisionTool(sessionId: string, state: BatonWriter, roster: readonly Person[]): ToolSpec {
   return {
     name: "record_decision",
     label: "Record decision",
@@ -259,12 +273,10 @@ export function recordDecisionTool(sessionId: string, state: SessionStateWriter,
     ) as any,
     // Before pi's schema check: a case or spacing variant becomes the roster's spelling, and an
     // unknown value is refused with every choice named (the enum's own error names none).
-    prepareArguments(args: unknown) {
-      const hit = batonById(sessionId);
-      if (!hit || typeof args !== "object" || args === null) return args as any;
-      const owner = pickOwnerArea(readRoster(hit.row.orgId), (args as { ownerArea?: unknown }).ownerArea);
-      if (!owner.ok) throw new Error(owner.error);
-      return { ...(args as object), ownerArea: owner.ownerArea } as any;
+    // A rule the chat runs itself, from the declaration's own enum (shared/decisions.ts).
+    prepareRule: "owner-area",
+    prepareArguments(this: ToolSpec, args: unknown) {
+      return prepareOwnerArea(this.parameters, args) as any;
     },
     async execute(_id, params: any, _signal, _update, ctx) {
       const hit = batonById(sessionId);
@@ -291,7 +303,7 @@ export function recordDecisionTool(sessionId: string, state: SessionStateWriter,
       const entry: BatonDecisionData = { v: 1, area, ownerArea: payload.ownerArea, statement, quote, by, ...(name ? { name } : {}), ...(disposition ?? {}) };
       // The marker's own id (the writer's answer; the leaf only when the harness doesn't say): two decisions
       // in one message are two markers, so two decisions.
-      const marker = state.append(BATON_DECISION, entry) || ctx?.leafId() || `${Date.now()}`;
+      const marker = (await state.append(BATON_DECISION, entry)) || ctx?.leafId() || `${Date.now()}`;
       const branch = ctx?.branch() ?? [];
       const entryId = quoteEntryOf(branch, marker);
       const byId = new Map<string, HEntry>();
@@ -318,7 +330,7 @@ const RECORDED_WORDS: Record<QuoteCheck, string> = {
 };
 
 /** hand_to, goal_done, propose_roster_edit and the wrap-up's tool. */
-function conversationTools(sessionId: string, state: SessionStateWriter): ToolSpec[] {
+function conversationTools(sessionId: string, state: BatonWriter): ToolSpec[] {
   return [
     {
       name: "hand_to",
@@ -350,7 +362,7 @@ function conversationTools(sessionId: string, state: SessionStateWriter): ToolSp
         // The move's transcript entry, numbered as the statechart numbered it.
         const after = batonById(sessionId)!.row;
         const h = after.handoffs[after.handoffs.length - 1]!;
-        state.append(BATON_HANDOFF, { v: 1, n: h.n, from: h.from, to: h.to, question: h.question, briefing: h.briefing } satisfies BatonHandoffData);
+        await state.append(BATON_HANDOFF, { v: 1, n: h.n, from: h.from, to: h.to, question: h.question, briefing: h.briefing } satisfies BatonHandoffData);
         refreshShare(sessionId);
         return { ...say(`Handed to ${nameOf(row.orgId, h.to)}. Your turn has ended.`), terminate: true };
       },
@@ -434,54 +446,26 @@ function batchEndsTurn(branch: readonly HEntry[]): boolean {
   return false;
 }
 
-/** The text of the people's messages in a model context (the conversation's own words). */
-const userTexts = (messages: readonly unknown[]): string[] =>
-  messages.flatMap((m) => {
-    const msg = m as { role?: string; content?: unknown };
-    if (msg.role !== "user") return [];
-    return [typeof msg.content === "string" ? msg.content : Array.isArray(msg.content) ? msg.content.map((b: any) => (b?.type === "text" ? String(b.text ?? "") : "")).join("") : ""];
-  });
-
 /** The holder's profile phrases that are secrets in this model context: none that is ordinary
     vocabulary (a name, role, decision area, the title, or what someone wrote here). */
 export function holderPhrases(row: Pick<BatonSession, "orgId" | "holder" | "publicTitle">, messages: readonly unknown[]): string[] {
-  if (!row.holder || row.holder === OPERATOR) return [];
-  const roster = readRoster(row.orgId);
-  const holder = roster.find((p) => p.id === row.holder);
-  return holder ? secretPhrases(profileRedactTexts(holder), [...publicTerms(roster), row.publicTitle, ...userTexts(messages)]) : [];
+  return batonContextPhrases(holderPack(row), messages);
 }
 
-/** Redact message text for the model's own context: secrets everywhere, and the holder's profile
-    phrases from the model's own earlier replies. What people wrote reaches it as they wrote it. */
-export function redactContext<M>(messages: M[], phrases: readonly string[]): M[] {
-  const secrets = serverRedactor();
-  const redactMsgs = redactExtensionMessages(messages, secrets);
-  if (!phrases.length) return redactMsgs;
-  let changed = redactMsgs !== messages;
-  const out = redactMsgs.map((m) => {
-    const msg = m as { role?: string; content?: unknown };
-    if (msg.role !== "assistant") return m;
-    if (typeof msg.content === "string") {
-      const t = redactPhrases(msg.content, phrases);
-      if (t === msg.content) return m;
-      changed = true;
-      return { ...msg, content: t } as M;
-    }
-    if (!Array.isArray(msg.content)) return m;
-    let hit = false;
-    const content = msg.content.map((b: any) => {
-      if (b?.type !== "text" || typeof b.text !== "string") return b;
-      const t = redactPhrases(b.text, phrases);
-      if (t === b.text) return b;
-      hit = true;
-      return { ...b, text: t };
-    });
-    if (!hit) return m;
-    changed = true;
-    return { ...msg, content } as M;
-  });
-  return changed ? out : messages;
+/** What a run's context hook needs to know of the holder (RunStartAnswer.baton, minus the names). */
+function holderPack(row: Pick<BatonSession, "orgId" | "holder" | "publicTitle">): { holderTexts: string[]; vocabulary: string[] } {
+  if (!row.holder || row.holder === OPERATOR) return { holderTexts: [], vocabulary: [] };
+  const roster = readRoster(row.orgId);
+  const holder = roster.find((p) => p.id === row.holder);
+  return holder ? { holderTexts: profileRedactTexts(holder), vocabulary: [...publicTerms(roster), row.publicTitle] } : { holderTexts: [], vocabulary: [] };
 }
+
+/** A baton chat's context pack for one run (§app.harness/session-special): the names its authors go
+    by, its holder, and the holder's phrases that are secrets here, as data the chat's context hook reads. */
+export function batonPack(row: Pick<BatonSession, "orgId" | "holder" | "publicTitle">): NonNullable<RunStartAnswer["baton"]> {
+  return { names: namesOf(row.orgId), holder: row.holder ?? null, ...holderPack(row) };
+}
+
 
 // ---- the baton statechart's effects, facts and wrap-up (registered on every org's engine) -----------------------
 
@@ -497,7 +481,7 @@ async function hasEntry(chat: ChatHandle, key: string): Promise<boolean> {
 /** Write a transcript entry the statechart asked for: through the running tool, now, or once the run settles. */
 async function writeEntry(sessionId: string, entry: BatonEntry): Promise<void> {
   const inTurn = toolAppend.get(sessionId);
-  if (inTurn) return void inTurn.append(entry.kind, entry.data);
+  if (inTurn) return void (await inTurn.append(entry.kind, entry.data));
   const hit = batonById(sessionId);
   if (!hit) return;
   const path = sessionPathOf(hit.dir, hit.row);
@@ -690,84 +674,96 @@ const isBatonMarked = (s: SessionMarks) => s.state.file().has(BATON);
 /** Baton chats whose reply is being written: from the run's first event (or its first text) to its settle. */
 const writing = new Set<string>();
 
-registerSpecialLoadout({
+/** The owner areas each baton chat's record_decision offers now (its schema's enum, as JSON). */
+const offered = new Map<string, string>();
+const EVERY_MESSAGE = "Every message in a baton session is someone's: it can't be rewound or regenerated.";
+
+/** The served tools of one open, their declarations. */
+function batonDecls(path: string, sessionId: string): ServerToolDecl[] {
+  const tools = [...batonTools(sessionId), readLinkTool(sessionId), inspectFilesTool(sessionId), confirmFileTool(sessionId)];
+  serveTools(path, tools);
+  return tools.map(declOfTool);
+}
+
+/** A run's prompt options (§app.baton/goal-and-loadout): its own system prompt, nothing of the operator's setup. */
+function batonPrompt(sessionId: string, photos: boolean): RunStartAnswer["prompt"] {
+  return { customPrompt: wrapupActive(sessionId) ? WRAPUP_SYSTEM : renderBatonPrompt(sessionId, undefined, photos), appendSystemPrompt: "", contextFiles: [], skills: [], cwd: "(none)" };
+}
+
+registerSpecialHost({
   kind: "baton",
   // The org's workspace repo on THIS host: a restored clone lives elsewhere than the header's cwd.
   cwd: (path) => batonOfPath(path)?.dir ?? null,
   // The marker AND a registry row in an attached org: a copy of the file anywhere else (a fork, a
   // detached org) opens as an ordinary session.
   matches: (sm, path) => isBatonMarked(sm) && !!batonOfPath(path),
-  async loadout(path) {
+  async spec(path) {
     const hit = batonOfPath(path);
     if (!hit) throw new Error("Not a registered baton session.");
     const sessionId = hit.row.sessionId;
     const defaults = loadDefaults();
+    offered.set(path, JSON.stringify(ownerAreaSchema(readRoster(hit.row.orgId)).enum));
     return {
-      resourceLoaderOptions: {
-        noExtensions: true,
-        noSkills: true,
-        noPromptTemplates: true,
-        noThemes: true,
-        noContextFiles: true,
-        // Not the operator's APPEND_SYSTEM.md: nothing of their own setup reaches an outsider's model.
-        appendSystemPromptOverride: () => [],
-        extensionFactories: [
-          {
-            name: "sova-baton",
-            factory: (pi) => {
-              const state = toolStateWriter(pi);
-              // Its tools' state lives in this server: hosted here, run through the chat's loopback.
-              for (const t of serveTools(path, [...batonTools(sessionId, state), readLinkTool(sessionId), inspectFilesTool(sessionId), confirmFileTool(sessionId)]))
-                pi.registerTool(toPiTool(t));
-              let offered = JSON.stringify(ownerAreaSchema(readRoster(hit.row.orgId)).enum);
-              pi.on("before_agent_start", (event, ctx) => {
-                // The owner areas follow the roster: a change reaches the schema at the next run
-                // (§app.requirements/owner-area). Re-registering refreshes the tool registry, which
-                // re-activates every allowed tool, so the conversation's own set is restored.
-                if (!wrapupActive(sessionId)) {
-                  const roster = readRoster(hit.row.orgId);
-                  const now = JSON.stringify(ownerAreaSchema(roster).enum);
-                  if (now !== offered) {
-                    offered = now;
-                    for (const t of serveTools(path, [recordDecisionTool(sessionId, state, roster)])) pi.registerTool(toPiTool(t));
-                  }
-                  // Its abilities as they are now: the operator may have changed them since the last run.
-                  pi.setActiveTools(activeBatonTools(sessionId));
-                }
-                const o = event.systemPromptOptions;
-                // Photos as this run can take them: on in Settings, and its model sees images.
-                const photos = readBatonSettings().photos.enabled && !!ctx?.model?.input?.includes("image");
-                // inspect_files shows an image only to a model that sees images.
-                noteRunModel(sessionId, !!ctx?.model?.input?.includes("image"));
-                o.customPrompt = wrapupActive(sessionId) ? WRAPUP_SYSTEM : renderBatonPrompt(sessionId, undefined, photos);
-                o.appendSystemPrompt = "";
-                o.contextFiles = [];
-                o.skills = [];
-                o.cwd = "(none)";
-              });
-              pi.on("context", (event, ctx) => {
-                const row = batonById(sessionId)?.row;
-                const redacted = redactContext(event.messages, row ? holderPhrases(row, event.messages) : []);
-                // Who wrote each message, added after the redaction (names are no secret).
-                const branch = ctx ? toolCtx(ctx).branch() : [];
-                const messages = row ? labelAuthors(redacted, authorNotes(branch, namesOf(row.orgId), row.holder), event.messages) : redacted;
-                return messages === event.messages ? undefined : { messages };
-              });
-            },
-          },
-        ],
-      },
-      tools: [...LOADOUT_TOOLS],
+      kind: "baton",
+      extension: "sova-baton",
+      cwd: hit.dir,
+      // Its tools' state lives in this server: served, run through the chat's loopback.
+      tools: batonDecls(path, sessionId),
+      customTools: [],
+      allow: [...LOADOUT_TOOLS],
+      // Not the operator's APPEND_SYSTEM.md: nothing of their own setup reaches an outsider's model.
+      loader: { noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true, append: "none" },
       model: hit.row.model ?? defaults.model ?? null,
       thinking: hit.row.thinking ?? defaults.thinking ?? null,
+      replyText: true,
+      hooks: {},
+      context: "baton",
+      refuses: { mode: "A baton session has no mode.", rewind: EVERY_MESSAGE, regenerate: EVERY_MESSAGE },
+      clientSend: true,
+      composerClosed: null,
+      start: { prompt: batonPrompt(sessionId, false), baton: batonPack(hit.row) },
     };
+  },
+  async adopt(path) {
+    const hit = batonOfPath(path);
+    if (!hit) return;
+    offered.set(path, JSON.stringify(ownerAreaSchema(readRoster(hit.row.orgId)).enum));
+    batonDecls(path, hit.row.sessionId);
+  },
+  async runStart(path, _ctx, { images }) {
+    const hit = batonOfPath(path);
+    if (!hit) throw new Error("Not a registered baton session.");
+    const sessionId = hit.row.sessionId;
+    const answer: RunStartAnswer = { prompt: {} };
+    if (!wrapupActive(sessionId)) {
+      // The owner areas follow the roster: a change reaches the schema at the next run
+      // (§app.requirements/owner-area). Re-registering refreshes the tool registry, which
+      // re-activates every allowed tool, so the conversation's own set is restored.
+      const roster = readRoster(hit.row.orgId);
+      const now = JSON.stringify(ownerAreaSchema(roster).enum);
+      if (now !== offered.get(path)) {
+        offered.set(path, now);
+        const t = recordDecisionTool(sessionId, runWriter, roster);
+        serveTools(path, [t]);
+        answer.reregister = [declOfTool(t)];
+      }
+      // Its abilities as they are now: the operator may have changed them since the last run.
+      answer.activeTools = activeBatonTools(sessionId);
+    }
+    // Photos as this run can take them: on in Settings, and its model sees images.
+    const photos = readBatonSettings().photos.enabled && images;
+    // inspect_files shows an image only to a model that sees images.
+    noteRunModel(sessionId, images);
+    answer.prompt = batonPrompt(sessionId, photos);
+    const row = batonById(sessionId)?.row;
+    if (row) answer.baton = batonPack(row);
+    return answer;
   },
   async opened(chat) {
     // The wrap-up's tool is in the allowlist, and active only during the wrap-up turn; read_link
     // only while the session can read links.
     await chat.setActiveTools(activeBatonTools(chat.mirror.sessionId));
   },
-  replyText: true,
   runEvent(path, e) {
     const sessionId = batonOfPath(path)?.row.sessionId;
     if (!sessionId) return;
@@ -818,9 +814,5 @@ registerSpecialLoadout({
     if (!sessionId) return;
     undoNote(sessionId);
     void replyFact(sessionId, "reply/ended");
-  },
-  refuses(gesture) {
-    if (gesture === "mode") return "A baton session has no mode.";
-    return "Every message in a baton session is someone's: it can't be rewound or regenerated.";
   },
 });

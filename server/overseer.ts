@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { agentRoot } from "./state-root";
-import { toolCtx, toPiTool } from "./harness/pi/tools";
+import { fromPiToolDefinition } from "./harness/pi/tools";
 import { createSessionFile } from "./harness/pi/state";
 import { GRANT, GRANT_USE, OVERSEER, REVOKE, RULE } from "./harness/state-kinds";
 import { loadPolicyFile, policyFilePath } from "../pi-config/extensions/sandbox/policy.ts";
@@ -39,8 +39,10 @@ import {
   isSessionBusy,
   serverToolCall,
   type ServerToolRun,
+  declOfTool,
+  isOverseerFile,
+  registerSpecialHost,
   serveTools,
-  setOverseerRuntime,
 } from "./chat-handle";
 import { activityOf, failedWorkersOf, readLiveRecords, workerErrorTimesOf, workingSubagents } from "./live";
 import { endedByRestart, restartWindow } from "./server-stop";
@@ -95,7 +97,8 @@ import { meshLinks } from "./mesh/links";
 import type { PeerLinkRead } from "../shared/mesh-links";
 import { rowsOf } from "./transcript";
 import { branchOf, joinedText, lineEntry, parsePi, readBranch } from "./harness/pi/reader";
-import type { HEntry } from "../shared/harness";
+import type { HEntry, ToolSpec } from "../shared/harness";
+import type { ServerToolDecl } from "../shared/chat-runtime";
 import { archiveWorktrees } from "./archive-worktrees";
 import { markOwned } from "./write-guard";
 import { signalTextOf, teamStallOf } from "./signals-store";
@@ -639,7 +642,9 @@ const host: OverseerToolHost = {
   aliases: () => readAliases(),
   setAlias: (id, alias) => setAlias(id, alias),
   used(id, tool, sessions, toolCallId) {
-    overseerRun()?.chat.append(GRANT_USE, { v: 1, id, tool, sessions, toolCallId, at: new Date().toISOString() });
+    overseerRun()
+      ?.chat.append(GRANT_USE, { v: 1, id, tool, sessions, toolCallId, at: new Date().toISOString() })
+      .catch((err) => console.warn("[overseer] approval use not recorded:", err instanceof Error ? err.message : String(err)));
   },
   explorer: () => readOverseerSettings().explorer,
   explorerCwd: () => overseerDir(),
@@ -837,7 +842,11 @@ export async function compactNoteMessage(branch: readonly HEntry[], now = Date.n
  * session it linked is a file on this host. Names come summary-first and are redacted.
  */
 export async function idNoteMessage(messages: readonly unknown[]): Promise<{ customType: string; content: string; display: false; details: unknown } | null> {
-  const note = await idCheckNote(assistantText(messages), {
+  return idNoteForText(assistantText(messages));
+}
+/** The same for a run's assistant text, as the chat sends it. */
+export async function idNoteForText(text: string): Promise<{ customType: string; content: string; display: false; details: unknown } | null> {
+  const note = await idCheckNote(text, {
     known: async (id) => (await pathOfId(id)) !== null,
     allIds: async () => (await listSessionFiles()).map(idOf),
     name: async (id) => {
@@ -971,6 +980,12 @@ class LivePrompt {
     if (branch) this.opened = now;
     return now;
   }
+  /** The Overseer's own parts as a run on `branch` has them (none of the user's): what the chat
+      appends after the user's own (RunStartAnswer.append). */
+  ours(branch?: readonly HEntry[]): string[] {
+    this.refresh(branch);
+    return this.parts.slice(this.base.length);
+  }
   /** Fill `parts` from the opening values; returns the text the SDK joins them to. */
   refresh(branch?: readonly HEntry[]): string {
     const values = this.opening(branch);
@@ -990,69 +1005,52 @@ class LivePrompt {
   }
 }
 
-setOverseerRuntime({
-  async loadout(path) {
+/** The Overseer's prompt as each of its chats opened it (a conversation's LivePrompt; a clear opens the next one). */
+const prompts = new Map<string, LivePrompt>();
+const promptOf = (path: string, tools = buildOverseerTools()): LivePrompt => {
+  let p = prompts.get(path);
+  if (!p) prompts.set(path, (p = new LivePrompt(tools, readFileSync(PROMPT_FILE, "utf8"), new Date())));
+  return p;
+};
+
+/** The Overseer's file tools, served (§app.chat-processes/server-actions): read/grep/find/ls reach anywhere
+    except secret files and the attached orgs' workspaces (overseer-deny.ts); write/edit the same, never
+    Sova's or pi's own state, and only in a turn the user started. */
+const overseerFileSpecs = () =>
+  overseerFileTools(overseerDir(), () => new OverseerGuard(readIndex().orgs.map((o) => o.dir)), undefined, undefined, {
+    protectedRoots: ownStateRoots,
+    attended: () => attended(),
+    unattended: UNATTENDED_WRITE_REFUSAL,
+    log: (line) => logAction({ at: new Date().toISOString(), overseerId: readOverseerState()?.current ?? "", ...line }),
+  }).map((def) => fromPiToolDefinition(def, def.prepareArguments ? "pi-edit" : undefined));
+
+/** The tools' declarations of one open, served for this chat. */
+const declsOf = (path: string, specs: ToolSpec[]): ServerToolDecl[] => {
+  serveTools(path, specs);
+  return specs.map(declOfTool);
+};
+
+registerSpecialHost({
+  kind: "overseer",
+  matches: (marks) => isOverseerFile(marks),
+  async spec(path) {
     const st = readOverseerState();
     if (!st || idOf(path) !== st.current)
       throw new BusyError("This is a previous Overseer conversation. It is read-only; the eye button opens the current one.", "busy");
     const settings = readOverseerSettings();
     const tools = buildOverseerTools();
-    const prompt = new LivePrompt(tools, readFileSync(PROMPT_FILE, "utf8"), new Date());
+    // A new loadout: the prompt as this build opens it.
+    prompts.delete(path);
+    const prompt = promptOf(path, tools);
+    const files = overseerFileSpecs();
     return {
-      resourceLoaderOptions: {
-        extensionFactories: [
-          {
-            name: "sova-overseer",
-            factory: (pi) => {
-              for (const t of serveTools(path, tools)) pi.registerTool(toPiTool(t));
-              // A run started by a message: its prompt, with the notes and settings as they are now.
-              // The run note (the time now, what cleared) and the open cards ride the prompt as a
-              // hidden message, never the system prompt (a prompt change restarts a Claude Code CLI
-              // and breaks the cache): persisted, so a restart or a fold keeps it.
-              pi.on("before_agent_start", async (event, ctx) => {
-                const branch = toolCtx(ctx).branch();
-                event.systemPromptOptions.appendSystemPrompt = prompt.refresh(branch);
-                const now = new Date();
-                return runNoteMessage(branch, now, prompt.noteParts(branch, now));
-              });
-              // The id check (§app.overseer/id-check): a run that linked a session id this host has no
-              // file for leaves a hidden note naming the nearest real id. Sent while the run still
-              // streams, so the SDK appends it once the run's last message is in; the reply is never changed.
-              pi.on("agent_end", async (event) => {
-                try {
-                  const note = await idNoteMessage(event.messages);
-                  if (note) pi.sendMessage(note);
-                } catch (err) {
-                  console.warn("[overseer] id check skipped:", err instanceof Error ? err.message : String(err));
-                }
-              });
-              // A compaction summarizes the card results away: the exact open cards, once, after it.
-              // The sessions in play go with them (§app.overseer/sessions-in-play), even with no card open.
-              pi.on("session_compact", async (_event, ctx) => {
-                const note = await compactNoteMessage(toolCtx(ctx).branch());
-                if (note) pi.sendMessage(note);
-              });
-              // Worker reports and other extension messages reach the model redacted, like every tool's output.
-              pi.on("context", (event) => {
-                const messages = redactExtensionMessages(event.messages, serverRedactor());
-                return messages === event.messages ? undefined : { messages };
-              });
-            },
-          },
-        ],
-        // The OVERRIDE, not appendSystemPrompt: passing appendSystemPrompt suppresses discovery of
-        // the user's own APPEND_SYSTEM.md, and the override keeps it (resource-loader.js:386-396).
-        appendSystemPromptOverride: (base) => prompt.seed(base),
-      },
-      tools: [...tools.map((t) => t.name), ...BUILTIN_ALLOWED, ...MEMORY_TOOLS],
-      // read/grep/find/ls reach anywhere except secret files and the attached orgs' workspaces (overseer-deny.ts);
-      // write/edit the same, never Sova's or pi's own state, and only in a turn the user started.
-      customTools: overseerFileTools(overseerDir(), () => new OverseerGuard(readIndex().orgs.map((o) => o.dir)), undefined, undefined, {
-        protectedRoots: ownStateRoots,
-        attended: () => attended(),
-        unattended: UNATTENDED_WRITE_REFUSAL,
-        log: (line) => logAction({ at: new Date().toISOString(), overseerId: readOverseerState()?.current ?? "", ...line }),
-      }),
+      kind: "overseer",
+      extension: "sova-overseer",
+      cwd: null,
+      tools: declsOf(path, tools),
+      customTools: declsOf(path, files),
+      allow: [...tools.map((t) => t.name), ...BUILTIN_ALLOWED, ...MEMORY_TOOLS],
+      loader: { append: "user-then-ours" },
       model: settings.model,
       thinking: settings.thinking,
       // Its memory, when its own switch is on (§chat.memory/overseer): the same engine as a chat's.
@@ -1063,11 +1061,39 @@ setOverseerRuntime({
       attribution: true,
       // Its model requests are background work under a provider's request limit (§app.provider-limits/queue).
       background: true,
-      // A run starts: the session's base options at the opening text (a no-op when unchanged).
-      promptAtRunStart: (branch) => prompt.refresh(branch),
+      usage: "overseer",
+      hooks: { compact: true, agentEnd: true },
+      context: "redact",
+      refuses: {},
+      saveChoice: true,
+      composerClosed: null,
+      start: { prompt: {}, append: prompt.ours() },
     };
   },
-  saveChoice(patch) {
+  async adopt(path) {
+    overseerPath = path;
+    serveTools(path, [...buildOverseerTools(), ...overseerFileSpecs()]);
+  },
+  // A run started by a message: its prompt, with the notes and settings as they are now. The run
+  // note (the time now, what cleared) and the open cards ride the prompt as a hidden message, never
+  // the system prompt (a prompt change restarts a Claude Code CLI and breaks the cache): persisted,
+  // so a restart or a fold keeps it.
+  async runStart(path, ctx) {
+    const prompt = promptOf(path);
+    const branch = ctx.branch();
+    const append = prompt.ours(branch);
+    const now = new Date();
+    const { message } = await runNoteMessage(branch, now, prompt.noteParts(branch, now));
+    return { prompt: {}, append, message };
+  },
+  // A compaction summarizes the card results away: the exact open cards, once, after it. The
+  // sessions in play go with them (§app.overseer/sessions-in-play), even with no card open.
+  compact: async (_path, ctx) => (await compactNoteMessage(ctx.branch())) ?? null,
+  // The id check (§app.overseer/id-check): a run that linked a session id this host has no file for
+  // leaves a hidden note naming the nearest real id. Sent while the run still streams, so the SDK
+  // appends it once the run's last message is in; the reply is never changed.
+  agentEnd: (_path, text) => idNoteForText(text),
+  saveChoice(_path, patch) {
     patchOverseerSettings(patch);
   },
   opened: (chat) => {

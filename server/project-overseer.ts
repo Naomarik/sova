@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, relative } from "node:path";
 import { agentRoot } from "./state-root";
-import { toolCtx, toPiTool } from "./harness/pi/tools";
+import { fromPiToolDefinition } from "./harness/pi/tools";
 import { createSessionFile } from "./harness/pi/state";
 import { PROJECT_OVERSEER } from "./harness/state-kinds";
 import {
@@ -29,9 +29,9 @@ import {
 import type { OverseerState } from "../shared/protocol";
 import { noteBuildMerged } from "./build-merged";
 import { adoptWorktree, buildSessionPath, buildSetupEnded, buildSid, buildStartedBy, newBuildSessionId, noteBuildSettled, noteBuildStarted, probeBuild, readBuild, readBuilds, syncBuildTurn, syncProjectBuilds, withWorktreePath } from "./build-loadout";
-import { acquireChatHandle, BusyError, chatHandle, closeChat, isSessionBusy, onAgentSettled, onAgentStarted, registerSpecialLoadout, serverToolCall, serveTools, type SessionMarks } from "./chat-handle";
+import { acquireChatHandle, BusyError, chatHandle, closeChat, isSessionBusy, onAgentSettled, onAgentStarted, declOfTool, registerSpecialHost, serverToolCall, serveTools, type SessionMarks } from "./chat-handle";
 import type { ChatStreamTrip } from "../shared/chat-runtime";
-import type { HEntry } from "../shared/harness";
+import type { HEntry, ToolSpec } from "../shared/harness";
 import { shuttingDown } from "./wrapup-recovery";
 import { listModels } from "./models";
 import { workingSubagents } from "./live";
@@ -1056,7 +1056,36 @@ export function projectContextFiles<T extends { path: string }>(files: T[], root
     and Sova's state (the host's link store, every session). */
 const confinedOut = () => [...reservedRoots(), agentRoot(), join(homedir(), ".pi")];
 
-registerSpecialLoadout({
+/** Each conversation's opening values (overseer-opening.ts), once a run has read or set them. */
+const openedValues = new Map<string, Record<string, string>>();
+/** Each conversation's tools and prompt template, as its loadout was last built. */
+const builtFor = new Map<string, { tools: ToolSpec[]; template: string }>();
+
+/** The project overseer's file tools, served (§app.chat-processes/server-actions): read/grep/find/ls
+    in the project root only, never a secret file, a reserved folder or Sova's own state
+    (overseer-deny.ts), whatever the root holds; read also opens this conversation's own attachments
+    folder (what the operator pastes into it). write/edit the same, never into the attachments
+    folder, and only in a run the operator started. */
+function poFileSpecs(path: string, rt: Rt): ToolSpec[] {
+  const p = projectOverseerPaths(rt.projectId);
+  return overseerFileTools(
+    projectOf(rt.projectId).root,
+    undefined,
+    undefined,
+    () => {
+      const own = sessionAttachmentsDir(idOf(path));
+      return new RootConfinement(projectOf(rt.projectId).root, confinedOut(), own ? [own] : []);
+    },
+    {
+      protectedRoots: confinedOut,
+      attended: () => rt.attended(),
+      unattended: PO_UNATTENDED_WRITE_REFUSAL,
+      log: (line) => logAction({ at: new Date().toISOString(), overseerId: readPoState(p)?.current ?? "", ...line }, p.actions),
+    },
+  ).map((def) => fromPiToolDefinition(def, def.prepareArguments ? "pi-edit" : undefined));
+}
+
+registerSpecialHost({
   kind: "project-overseer",
   // The project's root on THIS host, not the one the file's header recorded where it was created.
   cwd(path) {
@@ -1080,7 +1109,7 @@ registerSpecialLoadout({
       return false;
     }
   },
-  async loadout(path) {
+  async spec(path) {
     const rt = rtOfPath(path);
     const p = projectOverseerPaths(rt.projectId);
     if (readPoState(p)?.current !== sessionIdOfFile(path))
@@ -1088,81 +1117,66 @@ registerSpecialLoadout({
     rt.chatId = path;
     const project = projectOf(rt.projectId);
     const tools = projectOverseerTools(toolHost(rt));
-    const template = readFileSync(PROMPT_FILE, "utf8");
     const settings = readPoSettings(p);
     const defaults = loadDefaults();
-    /** This conversation's opening values (overseer-opening.ts), once a run has read or set them. */
-    let opened: Record<string, string> | undefined;
+    // This build's conversation: its opening values once a run reads or sets them.
+    openedValues.delete(path);
+    builtFor.set(path, { tools, template: readFileSync(PROMPT_FILE, "utf8") });
+    serveTools(path, tools);
+    const files = poFileSpecs(path, rt);
+    serveTools(path, files);
     return {
-      resourceLoaderOptions: {
-        // None of the operator's pi-config extensions, skills or templates: no mode, no subagents,
-        // no input rewriting. The project's own context files (AGENTS.md) stay; the host's (the
-        // agent dir's, and those of folders above the root, like the home folder's) don't.
-        agentsFilesOverride: ({ agentsFiles }) => ({ agentsFiles: projectContextFiles(agentsFiles, project.root) }),
-        noExtensions: true,
-        noSkills: true,
-        noPromptTemplates: true,
-        noThemes: true,
-        appendSystemPromptOverride: () => [],
-        extensionFactories: [
-          {
-            name: "sova-project-overseer",
-            factory: (pi) => {
-              // Its tools' state lives in this server: hosted here, run through the chat's loopback.
-              for (const t of serveTools(path, tools)) pi.registerTool(toPiTool(t));
-              pi.on("before_agent_start", (event, ctx) => {
-                const branch = toolCtx(ctx).branch();
-                const recorded = openingOn(branch);
-                // The prompt stays as the conversation opened (§app.project-overseer/identity): the
-                // values its first run note recorded, or now's for a conversation that has none yet.
-                opened = recorded ?? opened ?? projectOverseerValues(rt.projectId);
-                event.systemPromptOptions.appendSystemPrompt = projectOverseerPromptFrom(opened, tools, template);
-                // The hidden run note: the time now, what changed since the prompt, the open cards (§app.overseer/confirm).
-                const now = new Date();
-                const changed = changedText(projectLiveParts(projectOverseerValues(rt.projectId, now)), toldOn(branch, projectLiveParts(opened)));
-                const cards = cardsNote(cardsOnBranch(branch), false, sessionActivity());
-                const content = [nowLine(now), changed.text, cards].filter((x): x is string => !!x).join("\n\n");
-                const details = { v: 1, ...(recorded ? {} : { opening: opened }), ...(Object.keys(changed.told).length ? { told: changed.told } : {}) };
-                return { message: { customType: CARDS_NOTE_MESSAGE, content, display: false as const, details } };
-              });
-              pi.on("session_compact", (_event, ctx) => {
-                const note = cardsNote(cardsOnBranch(toolCtx(ctx).branch()), true, sessionActivity());
-                if (note) pi.sendMessage({ customType: CARDS_NOTE_MESSAGE, content: note, display: false });
-              });
-              pi.on("context", (event) => {
-                const messages = redactExtensionMessages(event.messages, serverRedactor());
-                return messages === event.messages ? undefined : { messages };
-              });
-            },
-          },
-        ],
-      },
-      tools: [...tools.map((t) => t.name), ...PO_BUILTINS],
-      // read/grep/find/ls in the project root only, never a secret file, a reserved folder or
-      // Sova's own state (overseer-deny.ts), whatever the root holds; read also opens this
-      // conversation's own attachments folder (what the operator pastes into it). This loadout is
-      // this conversation's: a clear opens the next one with its own.
-      // write/edit the same, never into the attachments folder, and only in a run the operator started.
-      customTools: overseerFileTools(
-        project.root,
-        undefined,
-        undefined,
-        () => {
-          const own = sessionAttachmentsDir(idOf(path));
-          return new RootConfinement(projectOf(rt.projectId).root, confinedOut(), own ? [own] : []);
-        },
-        {
-          protectedRoots: confinedOut,
-          attended: () => rt.attended(),
-          unattended: PO_UNATTENDED_WRITE_REFUSAL,
-          log: (line) => logAction({ at: new Date().toISOString(), overseerId: readPoState(p)?.current ?? "", ...line }, p.actions),
-        },
-      ),
+      kind: "project-overseer",
+      extension: "sova-project-overseer",
+      cwd: this.cwd!(path),
+      tools: tools.map(declOfTool),
+      customTools: files.map(declOfTool),
+      allow: [...tools.map((t) => t.name), ...PO_BUILTINS],
+      // None of the operator's pi-config extensions, skills or templates: no mode, no subagents,
+      // no input rewriting. The project's own context files (AGENTS.md) stay; the host's (the
+      // agent dir's, and those of folders above the root, like the home folder's) don't.
+      loader: { noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, append: "none", contextFilesWithin: { root: project.root, out: confinedOut() } },
       model: settings.model ?? defaults.model ?? null,
       thinking: settings.thinking ?? defaults.thinking ?? null,
       // An operator's message makes the run theirs: the watch's message allowance, the write rule.
       attribution: true,
+      usage: "overseer",
+      hooks: { compact: true },
+      context: "redact",
+      refuses: { mode: "The project overseer has no modes." },
+      saveChoice: true,
+      composerClosed: this.composerClosed!(path),
+      start: { prompt: {} },
     };
+  },
+  async adopt(path) {
+    const rt = rtOfPath(path);
+    rt.chatId = path;
+    serveTools(path, [...projectOverseerTools(toolHost(rt)), ...poFileSpecs(path, rt)]);
+  },
+  async runStart(path, ctx) {
+    const rt = rtOfPath(path);
+    let built = builtFor.get(path);
+    if (!built) builtFor.set(path, (built = { tools: projectOverseerTools(toolHost(rt)), template: readFileSync(PROMPT_FILE, "utf8") }));
+    const { tools, template } = built;
+    const branch = ctx.branch();
+    const recorded = openingOn(branch);
+    // The prompt stays as the conversation opened (§app.project-overseer/identity): the values its
+    // first run note recorded, or now's for a conversation that has none yet.
+    const opened = recorded ?? openedValues.get(path) ?? projectOverseerValues(rt.projectId);
+    openedValues.set(path, opened);
+    const appendSystemPrompt = projectOverseerPromptFrom(opened, tools, template);
+    // The hidden run note: the time now, what changed since the prompt, the open cards (§app.overseer/confirm).
+    const now = new Date();
+    const changed = changedText(projectLiveParts(projectOverseerValues(rt.projectId, now)), toldOn(branch, projectLiveParts(opened)));
+    const cards = cardsNote(cardsOnBranch(branch), false, sessionActivity());
+    const content = [nowLine(now), changed.text, cards].filter((x): x is string => !!x).join("\n\n");
+    const details = { v: 1, ...(recorded ? {} : { opening: opened }), ...(Object.keys(changed.told).length ? { told: changed.told } : {}) };
+    return { prompt: { appendSystemPrompt }, message: { customType: CARDS_NOTE_MESSAGE, content, display: false as const, details } };
+  },
+  async compact(_path, ctx) {
+    const note = cardsNote(cardsOnBranch(ctx.branch()), true, sessionActivity());
+    return note ? { customType: CARDS_NOTE_MESSAGE, content: note, display: false as const } : null;
   },
   runEvent(path, event) {
     const rt = rtOfPath(path);
@@ -1184,9 +1198,6 @@ registerSpecialLoadout({
     const rt = rtOfPath(path);
     const p = projectOverseerPaths(rt.projectId);
     writePoSettings(p, { ...readPoSettings(p), ...(patch.model ? { model: patch.model } : {}), ...(patch.thinking ? { thinking: patch.thinking } : {}) });
-  },
-  refuses(gesture) {
-    return gesture === "mode" ? "The project overseer has no modes." : null;
   },
   // An archived project's overseer is paused: its composer takes nothing (§app.organizations/archive).
   composerClosed(path) {

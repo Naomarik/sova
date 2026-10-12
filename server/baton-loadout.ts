@@ -32,7 +32,8 @@ import { inlineOperatorImages } from "./baton-images";
 import { readBatonSettings } from "./baton-settings";
 import { authorNotes, labelAuthors } from "./baton-view";
 import { runWrapup, WRAPUP_SYSTEM, WRAPUP_TOOL, wrapupActive, wrapupTool } from "./baton-wrapup";
-import { acquireChatHandle, BusyError, type ChatHandle, declOfTool, RefusedError, registerSpecialHost, serverToolCall, serveTools, type SessionMarks } from "./chat-handle";
+import { acquireChatHandle, BusyError, type ChatHandle, chatHandle, chatsReady, declOfTool, RefusedError, registerSpecialHost, serverToolCall, serveTools, type SessionMarks } from "./chat-handle";
+import { UNREACHABLE } from "./chat-handle-remote";
 import { hostOf, onOrgChange, onOrgHostOpened, type Effect, type OrgHostApi } from "./org-engine";
 import type { Step } from "./statecharts";
 import type { Envelope } from "./org-envelope";
@@ -142,8 +143,15 @@ export function ownerAreaSchema(roster: readonly Person[]) {
   };
 }
 
-/** Sessions whose reply the stop-reply effect is stopping (it reports the reply's end itself). */
-const stopping = new Set<string>();
+/**
+ * Sessions whose reply the stop-reply effect is stopping (it reports the reply's end itself): the run
+ * it stopped (its run.start's number; null when none had started), and whether it is still stopping
+ * it. That run's own settle is never the reply's end, whenever it arrives (a chat in its own process
+ * may tell it after the stop's answer); a settle while the stop runs is not either.
+ */
+const stopping = new Map<string, { run: number | null; active: boolean }>();
+/** The number of each baton chat's run in progress (its run.start's), by path. */
+const runOfChat = new Map<string, number>();
 
 /**
  * Stop the reply being written, for an operator's move that can't wait (Take back, a hand-off, an
@@ -492,7 +500,8 @@ async function writeEntry(sessionId: string, entry: BatonEntry): Promise<void> {
   try {
     await chat.appendStateRow(entry.kind, entry.data);
   } catch (err) {
-    if (err instanceof BusyError) waitingEntries.set(path, [entry]);
+    // Refused for now, or its process is reconnecting: written when it settles or is linked again.
+    if (err instanceof BusyError || (err instanceof Error && err.message === UNREACHABLE)) waitingEntries.set(path, [entry]);
     else throw err;
   }
 }
@@ -606,11 +615,13 @@ export function registerBatonEffects(host: OrgHostApi, orgId: string): void {
     const chat = await acquireChatHandle(sessionPathOf(hit.dir, hit.row));
     // The stopped run's own end is not the reply's end yet: the messages queued behind it are written
     // first, then the statechart hears it ended and makes the move it held (its entry comes after them).
-    stopping.add(sessionId);
+    const stop = { run: runOfChat.get(chat.path) ?? null, active: true };
+    stopping.set(sessionId, stop);
     try {
       await interruptReply(chat);
     } finally {
-      stopping.delete(sessionId);
+      stop.active = false;
+      if (stop.run === null && stopping.get(sessionId) === stop) stopping.delete(sessionId);
     }
     if (!chat.mirror.running && !chat.mirror.starting) await replyFact(sessionId, "reply/ended");
     return {};
@@ -627,8 +638,12 @@ export function registerBatonEffects(host: OrgHostApi, orgId: string): void {
   host.invocations.register("sova/wrapup", {
     start(inv, report) {
       const sessionId = sidOfEffect({ sessionId: inv.sessionId } as Effect);
-      void runWrapup(sessionId, activeBatonTools(sessionId))
-        .then((out) => report(out.error ? "stopped" : "finished", out.error, { applied: out.applied, refused: out.refused }))
+      void runWrapup(sessionId, activeBatonTools(sessionId), inv.invokeId)
+        .then((out) => {
+          // Cut off by this server's stop while it runs on in its own process: the next server picks it up.
+          if (out.cutOff) return;
+          report(out.error ? "stopped" : "finished", out.error, { applied: out.applied, refused: out.refused });
+        })
         .catch((err) => report("stopped", err instanceof Error ? err.message : String(err)));
     },
     stop() {},
@@ -636,10 +651,15 @@ export function registerBatonEffects(host: OrgHostApi, orgId: string): void {
 
   // After a restart no reply runs: every session whose statechart still says one does hears it ended, cold ones
   // included, on this very host (it may not be registered as open yet while its opened hooks run; a reply left
-  // "starting" would stay so forever, its lease never lapsing: F-049/F-050).
+  // "starting" would stay so forever, its lease never lapsing: F-049/F-050). A reply still running in its
+  // chat's own process is spared: its own end ends it (§app.chat-processes/special-kinds).
   void (async () => {
+    await chatsReady();
     for (const s of host.sessions("baton")) {
       if (!s.running || !s.data.reply || s.data.reply === "idle") continue;
+      const hit = batonById(sidOfEffect({ sessionId: s.id } as Effect));
+      const chat = hit ? chatHandle(sessionPathOf(hit.dir, hit.row)) : undefined;
+      if (chat?.where === "process" && (chat.mirror.running || chat.mirror.starting)) continue;
       const out = await host.act(s.id, "reply/ended", {}, { by: "system" } as unknown as Envelope);
       if (!out.taken) console.warn(`[baton] ${orgId}: ending the reply cut off in ${s.id}: ${out.refusal?.sentence ?? "not taken"}`);
     }
@@ -764,9 +784,10 @@ registerSpecialHost({
     // only while the session can read links.
     await chat.setActiveTools(activeBatonTools(chat.mirror.sessionId));
   },
-  runEvent(path, e) {
+  runEvent(path, e, n) {
     const sessionId = batonOfPath(path)?.row.sessionId;
     if (!sessionId) return;
+    if (e.type === "run.start") runOfChat.set(path, n);
     // The wrap-up's words are nobody's business on a share page, and its turn is no reply.
     // The runtime took the turn (its first event, before any text: a model may think or call tools first): the reply
     // is being written, so its end renews the lease and applies what waited for it.
@@ -785,11 +806,24 @@ registerSpecialHost({
     } else if (e.type === "message.end" || e.type === "run.settled" || e.type === "entry.appended") refreshShare(sessionId);
     if (e.type === "run.settled") {
       writing.delete(path);
+      const run = runOfChat.get(path) ?? null;
+      runOfChat.delete(path);
       // Entries that arrived mid-run (the transcript takes none then).
       setTimeout(() => void flushEntries(path).catch(() => {}), 0);
+      // A stopped run's own end: the stop reports the reply's end itself.
+      const stop = stopping.get(sessionId);
+      const stopped = !!stop && (stop.active || (stop.run !== null && stop.run === run));
+      if (stop && !stop.active && stop.run === run) stopping.delete(sessionId);
       // The reply's end: the statechart renews the lease, applies a move held for it, the budget stop, the wrap-up.
-      if (!wrapupActive(sessionId) && !stopping.has(sessionId)) void replyFact(sessionId, "reply/ended");
+      if (!wrapupActive(sessionId) && !stopped) void replyFact(sessionId, "reply/ended");
     }
+  },
+  // Its chat's process died mid-reply: the reply ended for the statechart, once, unless a stop reports it.
+  died(path) {
+    const sessionId = batonOfPath(path)?.row.sessionId;
+    runOfChat.delete(path);
+    if (!sessionId || !writing.delete(path)) return;
+    if (!wrapupActive(sessionId) && !stopping.get(sessionId)?.active) void replyFact(sessionId, "reply/ended");
   },
   clientSend(path, msg) {
     const hit = batonOfPath(path);

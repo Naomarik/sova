@@ -68,7 +68,7 @@ import type { ActResult } from "./org-host";
 import type { Envelope, LedgerCounts } from "./org-envelope";
 import { ledgerOf } from "./org-stamp";
 import { rowsOf } from "./transcript";
-import { readBranch } from "./harness/pi/reader";
+import { joinedText, readBranch } from "./harness/pi/reader";
 import { UnreadReplies } from "./unread-replies";
 import { loadDefaults } from "./web-defaults";
 import { addWebSession } from "./web-sessions";
@@ -1388,7 +1388,9 @@ export async function messageProjectOverseer(projectId: string, text: unknown, o
   const path = st ? await pathOfId(st.current) : null;
   if (!st || !path || !projectOverseerOfPath(path)) throw new OrgError(`${project.name} has no overseer yet. Start it first (op start).`, 409);
   const chat = await acquireChatHandle(path);
-  const { queued } = await chat.send({ text: t, origin: "client", checkModel: true, sentByOverseer: { overseerId } });
+  // Keyed by the Overseer's tool call: delivered again (a dropped link), it is one message.
+  const effectId = serverToolCall()?.call.effectId;
+  const { queued } = await chat.send({ text: t, origin: "client", checkModel: true, sentByOverseer: { overseerId }, ...(effectId ? { key: `po-msg:${effectId}` } : {}) });
   return { queued, sessionId: st.current, path };
 }
 
@@ -1489,10 +1491,14 @@ async function runLook(projectId: string, text: string, report: InvocationReport
     if (!path) return report("not-started", "no conversation yet");
     const po = await acquireChatHandle(path);
     await po.assertModelAllowed();
-    const from = (await po.branch()).length;
-    const receipt = await po.send({ text: `${text}${lookAppendix(projectId)}`, origin: "server", track: true, runTag: `${LOOK_TAG}${runId ?? ""}` });
+    const before = (await po.branch()).length;
+    // Keyed by the run (§app.chat-processes/server-messages): a look the next server resumes while its
+    // turn still runs in the chat's own process (or ended there meanwhile) gets the first receipt back
+    // and waits for that turn; it is never sent twice.
+    const receipt = await po.send({ text: `${text}${lookAppendix(projectId)}`, origin: "server", track: true, runTag: `${LOOK_TAG}${runId ?? ""}`, ...(runId ? { key: `look:${runId}` } : {}) });
     const end = async (err?: string) => {
-      const e = runEnd(await po.branch(), po.mirror.streamTrip, from, err);
+      const branch = await po.branch();
+      const e = runEnd(branch, po.mirror.streamTrip, lookFrom(branch, text, before), err);
       // Cut off by this process's shutdown: the next start's resume records it (the statechart's `sova/resumed`).
       if (e.outcome === "cut-off") return;
       report(e.outcome === "finished" ? "finished" : "stopped", e.detail);
@@ -1504,10 +1510,31 @@ async function runLook(projectId: string, text: string, report: InvocationReport
         off();
         void end();
       });
-    } else void po.turnEnd(receipt).then((t) => end(t.ok ? undefined : t.error));
+    } else
+      void po.turnEnd(receipt).then(
+        (t) => end(t.ok ? undefined : t.error),
+        (err) => {
+          // This server is stopping: the next one resumes the look (a chat in its own process runs on).
+          if (shuttingDown()) return;
+          report("stopped", po.where === "process" && po.closed ? LOOK_PROCESS_DIED : err instanceof Error ? err.message : String(err));
+        },
+      );
   } catch (err) {
     report("not-started", err instanceof Error ? err.message : String(err));
   }
+}
+
+/** A look whose project overseer's process died before its turn ended (§app.chat-processes/special-kinds). */
+export const LOOK_PROCESS_DIED = "The project overseer's process stopped unexpectedly.";
+
+/** Where a look's run begins on `branch`: its message (the latest user entry with the look's text), or
+    the branch's length before it was sent (a message the branch doesn't show). */
+function lookFrom(branch: readonly HEntry[], text: string, before: number): number {
+  for (let i = branch.length - 1; i >= 0; i--) {
+    const h = branch[i]!;
+    if (h.kind === "user" && joinedText(h, { images: false }).startsWith(text)) return Math.min(i, before);
+  }
+  return before;
 }
 
 onOrgHostOpened((host, engine) => {

@@ -94,8 +94,8 @@ export interface ResumeDeps {
   session(path: string): Promise<{ id: string; title: string; name: string; archived?: boolean; live?: unknown; overseer?: boolean; projectOverseer?: boolean; baton?: unknown; workerSession?: unknown } | null>;
   /** Free running-at-once slots of the Overseer's cap. */
   freeSlots(): number;
-  /** Send the resume message; throws with the refusal. */
-  prompt(path: string, text: string): Promise<void>;
+  /** Send the resume message; throws with the refusal. `key`: sent again, it is accepted once (§app.chat-processes/server-messages). */
+  prompt(path: string, text: string, key?: string): Promise<void>;
   /** Log one resume (overseer-actions.jsonl). */
   log(path: string, outcome: "ok" | "refused", why?: string): void;
   /** One brief to the Overseer (sent only under Brief Me). */
@@ -133,7 +133,7 @@ export async function resumeInterrupted(
     else {
       try {
         ledger.markResuming(path);
-        await deps.prompt(path, why === "crash" ? CRASH_RESUME_TEXT : RESUME_TEXT);
+        await deps.prompt(path, why === "crash" ? CRASH_RESUME_TEXT : RESUME_TEXT, `resume:${path}:${run.since}`);
         out.resumed.push({ id: s.id, name: s.name });
         deps.log(path, "ok");
       } catch (err) {

@@ -67,6 +67,8 @@ export async function promptSession(
   sentBy?: string,
   delivery: PromptDelivery = "followUp",
   opts?: { projectOverseer: string | undefined },
+  /** The send's key (§app.chat-processes/server-messages): sent again, it is accepted once. */
+  key?: string,
 ): Promise<PromptResult> {
   if (!text.trim()) return { ok: false, status: 400, error: "text must not be blank" };
   const s = await getSessionSummary(path);
@@ -87,7 +89,7 @@ export async function promptSession(
   let queued: boolean;
   const compacting = !chat.mirror.running && chat.mirror.compacting;
   try {
-    const r = await chat.send({ text, origin: "server", checkModel: true, delivery, ...(overseerId ? { sentByOverseer: { overseerId } } : opts ? { sentByOverseer: opts.projectOverseer ? { overseerId: opts.projectOverseer } : {} } : {}) });
+    const r = await chat.send({ text, origin: "server", checkModel: true, delivery, ...(key ? { key } : {}), ...(overseerId ? { sentByOverseer: { overseerId } } : opts ? { sentByOverseer: opts.projectOverseer ? { overseerId: opts.projectOverseer } : {} } : {}) });
     queued = r.queued;
   } catch (err) {
     return { ok: false, status: 409, error: err instanceof Error ? err.message : String(err) };

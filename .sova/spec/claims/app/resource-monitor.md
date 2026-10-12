@@ -91,6 +91,9 @@ says that it isn't.
   exited between two ticks (seen only through the server's `cutime`), charged to the one hosted
   session that was running a tool in that window, else to nobody (`exited-tools`); and a process
   whose cwd lies in exactly one hosted session's cwd (`cwd`).
+- **A chat in a process of its own** (§app/chat-processes) is not under the server: its process and
+  everything it starts are charged to its session through that process's pid (`descendant`), and
+  its workers, title and tool activity come from what the chat process reports to the server.
 - **A worker row** shows its **whole subtree's** CPU% and memory, and opens to its heaviest
   descendants by short command (`java … clojure.main`).
 - **What is left over is named, not dropped.** `unownedWorkers` are workers whose session no join

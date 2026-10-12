@@ -267,9 +267,8 @@ Enforced in the tool, never by the prompt; each has a default and is editable pe
 - **Head chip.** A session with a profile shows a chip in the session head: its icon and label
   (icon only in a narrow head). It opens a popover: one sentence ("A {label} session. It {powers}
   and keeps {n} of {m} tools{ with Web off}."), what is added and removed, "Fixed when the first
-  message was sent.", and, while the profile it came from still exists, **Run Again** (a new session
-  in this session's folder with this profile picked, opened on its empty screen,
-  §app.session-list/profile-shelf) and **Manage Profiles** (Settings → Profiles), "Changes reach new
+  message was sent.", and, while the profile it came from still exists, **Run Again** (below) and
+  **Manage Profiles** (Settings → Profiles), "Changes reach new
   sessions only.", and for a live One at a time session **Stop {Label}**, which archives it. A
   project profile's chip title and the popover's name read "{label} · {project}". Default shows no chip, and neither does a session before its first
   message (the picker is there instead).
@@ -277,6 +276,14 @@ Enforced in the tool, never by the prompt; each has a default and is editable pe
   a message is on the branch. Before that, the entry draws nothing and doesn't count as a row,
   so the empty state stays.
 - **List badge.** The session's row in the list carries the profile's icon, its label as the title.
+  The list has no region of its own for profile sessions: each row stays where the session lives
+  (Live & web, its groups, its project's block, the Archive) and, like any session, can be a Recent
+  row (§app.session-list/recent).
+- **Run Again** makes a new session in this session's folder with this profile picked and opens it
+  on its empty screen, where the picker, and a linked playbook's card, show it
+  (§chat.profiles/picker). Nothing is sent. It is `POST /api/sessions` with `cwd` and `profile`. On a
+  One at a time profile that is live it answers with the picker's alert (§chat.profiles/singleton)
+  as a toast with **Open the Running {Label}**.
 
 ## §chat.profiles/singleton — One at a time
 

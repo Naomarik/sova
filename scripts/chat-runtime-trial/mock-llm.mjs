@@ -29,6 +29,8 @@
 //              over 15 steps, ending "COMPACT-SUMMARY"
 //   [big N]    N thousand characters of text at once (history enough for a compaction to cut)
 //   the crash-resume text: as [long 20 #resume]
+//   no tag: the tags last set with POST /trial/plain {"text": "[long 30 #look]"} ("" clears them),
+//              so a message the server writes (a look, a brief, an explorer's seed) can be scripted
 //   anything else: "ok"
 // A request whose newest message is a tool result gets the scenario's closing text.
 import { appendFileSync } from "node:fs";
@@ -47,10 +49,21 @@ const textOf = (content) =>
   typeof content === "string" ? content : Array.isArray(content) ? content.map((p) => p?.text ?? "").join("") : "";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let n = 0;
+const TAGGED = /\[(long|bash|big|call|served|served-late|served-quick|spawn|ask)\b/;
+/** The tags an untagged message gets ("" none): set with POST /trial/plain {text}. */
+let plainAs = "";
 
 const server = createServer(async (req, res) => {
   let body = "";
   for await (const c of req) body += c;
+  if (req.url === "/trial/plain") {
+    try {
+      plainAs = String(JSON.parse(body).text ?? "");
+    } catch {}
+    if (log) appendFileSync(log, JSON.stringify({ at: new Date().toISOString(), event: "plain", text: plainAs }) + "\n");
+    res.writeHead(200, { "content-type": "application/json" });
+    return res.end("{}");
+  }
   let ask = {};
   try {
     ask = body ? JSON.parse(body) : {};
@@ -72,11 +85,14 @@ const server = createServer(async (req, res) => {
   // so a trial can kill the process again while the resume runs.
   // It comes first: a process killed mid-reply wrote no reply, so the cut-off prompt is still among
   // the trailing user messages.
-  const long = /process stopped unexpectedly and cut off/.test(userText) ? [null, "20", "resume"] : /\[long (\d+)(?: #([\w-]+))?\]/.exec(userText);
-  const bash = /\[bash (\d+)\]/.exec(userText);
-  const big = /\[big (\d+)\]/.exec(userText);
-  const anyCall = /\[call ([\w-]+) (\{.*?\})\]/.exec(userText);
-  const scenario = compact ? "compact" : big ? "big" : long ? "long" : bash ? "bash" : anyCall ? "call" : /\[served-late\]/.test(userText) ? "served-late" : /\[served-quick\]/.test(userText) ? "served-quick" : /\[served\]/.test(userText) ? "served" : /\[spawn\]/.test(userText) ? "spawn" : /\[ask\]/.test(userText) ? "ask" : "plain";
+  // A message the server writes (a look, a brief, an explorer's seed) carries no tag: it gets the
+  // tags the trial set with POST /trial/plain, if any.
+  const tags = TAGGED.test(userText) || !plainAs ? userText : `${userText}\n${plainAs}`;
+  const long = /process stopped unexpectedly and cut off/.test(tags) ? [null, "20", "resume"] : /\[long (\d+)(?: #([\w-]+))?\]/.exec(tags);
+  const bash = /\[bash (\d+)\]/.exec(tags);
+  const big = /\[big (\d+)\]/.exec(tags);
+  const anyCall = /\[call ([\w-]+) (\{.*\})\]/.exec(tags);
+  const scenario = compact ? "compact" : big ? "big" : long ? "long" : bash ? "bash" : anyCall ? "call" : /\[served-late\]/.test(tags) ? "served-late" : /\[served-quick\]/.test(tags) ? "served-quick" : /\[served\]/.test(tags) ? "served" : /\[spawn\]/.test(tags) ? "spawn" : /\[ask\]/.test(tags) ? "ask" : "plain";
   const entry = { n: id, at: new Date().toISOString(), scenario, tag: long?.[2] ?? null, afterTool, toolText: toolText.slice(0, 300), anyResume, userText: userText.slice(0, 300), messages: msgs.length };
   if (log) appendFileSync(log, JSON.stringify(entry) + "\n");
 

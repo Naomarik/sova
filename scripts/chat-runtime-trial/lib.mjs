@@ -11,7 +11,9 @@ import { join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { WebSocket } from "ws";
 
-export const ROOT = resolve(import.meta.dirname, "..", "..");
+// The tree the server runs from: this checkout, or CHAT_TRIAL_ROOT (a snapshot of a commit, so a trial
+// never boots a tree that others are editing).
+export const ROOT = process.env.CHAT_TRIAL_ROOT ? resolve(process.env.CHAT_TRIAL_ROOT) : resolve(import.meta.dirname, "..", "..");
 const HERE = import.meta.dirname;
 export { sleep };
 
@@ -69,6 +71,15 @@ export function buildAgentDir(scratch, { mockPort, auth } = {}) {
   // through it.
   rmSync(modelsFile, { force: true });
   writeFileSync(modelsFile, JSON.stringify(models, null, 2));
+  // The mock is the default model too: chats the server starts on their own (a project overseer's
+  // look, a baton, an explorer) never reach for a real one.
+  const settingsFile = join(agent, "settings.json");
+  const settings = existsSync(settingsFile) ? JSON.parse(readFileSync(settingsFile, "utf8")) : {};
+  rmSync(settingsFile, { force: true });
+  writeFileSync(settingsFile, JSON.stringify({ ...settings, defaultProvider: "trial", defaultModel: "m1" }, null, 2));
+  // The Overseer on the mock, its explorer a pi worker on the mock (the default is Claude Code).
+  mkdirSync(join(agent, "sova"), { recursive: true });
+  writeFileSync(join(agent, "sova", "overseer.json"), JSON.stringify({ version: 1, model: "trial/m1", explorer: { backend: "pi", model: "trial/m1", effort: "medium" } }, null, 2));
   mkdirSync(join(agent, "extensions"), { recursive: true });
   copyFileSync(join(HERE, "trial-dialog.ts"), join(agent, "extensions", "trial-dialog.ts"));
   if (auth) copyFileSync(auth, join(agent, "auth.json"));
@@ -82,7 +93,10 @@ export async function startMock({ port, log, step }) {
     child.stdout.once("data", (d) => ok(String(d)));
     child.once("exit", (c) => fail(new Error(`mock llm exited ${c}`)));
   });
-  return { child, port: JSON.parse(line).port, log, stop: () => child.kill("SIGTERM") };
+  const mockPort = JSON.parse(line).port;
+  /** What a message with no tag gets from now on (mock-llm.mjs POST /trial/plain); "" clears it. */
+  const plain = (text) => fetch(`http://127.0.0.1:${mockPort}/trial/plain`, { method: "POST", body: JSON.stringify({ text }) }).then((r) => r.text());
+  return { child, port: mockPort, log, plain, stop: () => child.kill("SIGTERM") };
 }
 /** The mock's log as records. */
 export const mockLog = (file) => (existsSync(file) ? readFileSync(file, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)) : []);

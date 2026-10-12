@@ -24,11 +24,26 @@
 //               quiet moment, never mid-reply; the new process reports b
 //     t4fail    a replacement that fails to boot: the rollout halts, the old process stays, "failed"
 //     t5        the switch off: today's behaviour (the restart cuts the reply off; one "continue")
-//     t6        with the switch on, the Overseer's chat stays in the server
+//     t6        (T6', stage 3) with the switch on, the Overseer, a project overseer, a baton and a
+//               powers chat each run in a process (a unit) of their own; a worker's session does not
 //     t7        q5: a server-hosted action cut by a restart reports "outcome unknown" and ran once
 //     t8        two servers on different agent dirs never adopt or stop each other's chats
 //     t9        an outside SIGTERM to a chat process with a pane attached: the pane gets a quiet
 //               reloaded (no crash text), reconnects within seconds and gets a fresh hello
+//     stage 3 (stage3-design.md §10.2):
+//     t10       the Overseer out: sova_list_sessions, read, sova_note, sova_idea explore (the explorer a
+//               child of its process); the run note in the file
+//     t11       a restart mid an Overseer's served tool: unknown, ran once; a message queued before the
+//               restart reaches the next server's limits (reset)
+//     t12a      a baton: a participant's message through the share hub; record_decision's owner area in
+//               the roster's spelling, its quote checked
+//     t12b      a restart mid baton reply: it finishes; one reply/writing, one reply/ended
+//     t12c      take-back mid reply: "(taken back)" in the file when the route answers; one reply/ended
+//     t13       a project overseer's look across a restart: one look message, reported once
+//     t14       a brief while the Overseer reloads: one brief turn (needs SOVA_OVERSEER_TICK_MS)
+//     t15       kill -9 of a baton mid-reply: the pane's error, reply/ended once, no "continue"
+//     t16       a powers chat's session_send to another process (hop header); a restart mid-send
+//               delivers at most once
 //     real      (only with --model) t1 on a real model
 //     plumbing  (only when asked) the trial's stage-3 steps work: an Overseer tool call, an org with a
 //               baton, a project overseer and a look now
@@ -48,7 +63,7 @@
 // Writes <scratch>/results.json (every check, pass/fail, details) and keeps server-*.log and
 // mock.jsonl beside it. Exit 0 when every check passed, 1 when one failed, 2 on a setup problem.
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -78,7 +93,7 @@ const opt = (name, fallback) => {
   const i = argv.indexOf(`--${name}`);
   return i >= 0 && argv[i + 1] !== undefined ? argv[i + 1] : fallback;
 };
-const ALL = ["t1", "t1b", "t1c", "t1d", "t1e", "t1f", "t2", "t3", "t4", "t4fail", "t5", "t6", "t7", "t8", "t9"];
+const ALL = ["t1", "t1b", "t1c", "t1d", "t1e", "t1f", "t2", "t3", "t4", "t4fail", "t5", "t6", "t7", "t8", "t9", "t10", "t11", "t12a", "t12b", "t12c", "t13", "t14", "t15", "t16"];
 const valued = new Set(["--port", "--scratch", "--slice", "--model", "--auth", "--mode", "--driver"]);
 const asked = argv.filter((a, i) => !a.startsWith("--") && !valued.has(argv[i - 1]));
 for (const a of asked) if (![...ALL, "plumbing", "real", "all"].includes(a)) (console.error(`unknown check ${a}; checks: ${ALL.join(" ")} real`), process.exit(2));
@@ -189,6 +204,8 @@ const fmtDecisions = (ds) => ds.map((a) => `${a.outcome}${a.error ? `: ${a.error
 
 let srv = null;
 let base = "";
+/** The share listener of the current server (baton links' pages: /api/h/<token>/...). */
+let shareBase = "";
 let c = null;
 let n = 0;
 async function boot(o = {}) {
@@ -196,12 +213,16 @@ async function boot(o = {}) {
   const url = `http://127.0.0.1:${port}`;
   // A fixed build unless the check sets one: the worktree is edited while the trial runs, and a build
   // taken from the dirty tree would move between restarts and reload chats mid-check.
-  const env = serverEnv({ agent: o.agent ?? agent, port, on: o.on ?? true, driver, slice: driver === "systemd" ? slice : undefined, idleMs: o.idleMs, build: o.build ?? "trial-fixed", failBoot: o.failBoot, extra: o.extra });
+  // A share listener of its own on loopback, so a trial can post as a baton's participant.
+  const sharePort = await freePort();
+  const extra = { SOVA_SHARE_HOST: "127.0.0.1", SOVA_SHARE_PORT: String(sharePort), ...(o.extra ?? {}) };
+  const env = serverEnv({ agent: o.agent ?? agent, port, on: o.on ?? true, driver, slice: driver === "systemd" ? slice : undefined, idleMs: o.idleMs, build: o.build ?? "trial-fixed", failBoot: o.failBoot, extra });
   const s = server({ tag: `${tag}-${++n}`, env, mode, log: join(scratch, `server-${n}.log`) });
   s.up();
   await healthy(url);
   const cl = client(url, tokenOf(o.agent ?? agent));
   if (!o.agent) {
+    shareBase = `http://127.0.0.1:${sharePort}`;
     srv = s;
     c = cl;
     base = url;
@@ -262,9 +283,12 @@ let orgs = 0;
 /** An org in the scratch dir with one project (the trial's proj) and one person. */
 async function orgSetup(cl = c) {
   const org = await post("/api/orgs", { name: `Trial ${++orgs}`, dir: join(scratch, `ws-${orgs}`) }, cl);
-  const pg = await post(`/api/orgs/${org.id}/projects`, { name: "Portal", root: proj }, cl);
-  const pp = await post(`/api/orgs/${org.id}/people`, { name: "Dana", role: "Staff" }, cl);
-  return { orgId: org.id, projectId: pg.projectList[0].id, personId: pp.roster.find((x) => x.name === "Dana").id };
+  // One project per folder: each org's project gets a folder of its own.
+  const root = join(scratch, `proj-${orgs}`);
+  mkdirSync(root, { recursive: true });
+  const pg = await post(`/api/orgs/${org.id}/projects`, { name: "Portal", root }, cl);
+  const pp = await post(`/api/orgs/${org.id}/people`, { name: "Dana", role: "Staff", decides: ["Billing"] }, cl);
+  return { orgId: org.id, projectId: pg.projectList[0].id, personId: pp.roster.find((x) => x.name === "Dana").id, ws: org.dir };
 }
 /** The project's overseer, created if it has none: {path, id, ...}. */
 const projectOverseer = (projectId, cl = c) => post(`/api/projects/${projectId}/overseer`, {}, cl);
@@ -649,35 +673,6 @@ async function t5() {
   await boot();
 }
 
-async function t6() {
-  // The Overseer's chat: opened as the page opens it, then looked for among the chat processes.
-  const st = await c.api("/api/overseer").catch(() => null);
-  const path = st?.path ?? st?.current?.path ?? st?.session?.path;
-  if (!R.check(path, `t6: the Overseer's session is found (${JSON.stringify(st)?.slice(0, 160)})`)) return;
-  const s = await chat(c, path);
-  await sleep(2000);
-  R.check(!record(path), "t6: the Overseer's chat has no chat process (it stays in the server)");
-  // Its live record (<agent>/sessions/live/*.json) names the server's own pid.
-  const liveDir = join(agent, "sessions", "live");
-  const lives = (() => {
-    try {
-      return readdirSync(liveDir).map((f) => readJson(join(liveDir, f))).filter((r) => r && baseName(r.sessionFile) === baseName(path));
-    } catch {
-      return [];
-    }
-  })();
-  // (An open chat with no turn yet may have none.)
-  if (lives.length) R.check(lives.every((r) => r.pid === srv.pid()), `t6: the Overseer's live record has the server's pid (${lives.map((r) => r.pid).join(", ")} vs ${srv.pid()})`);
-  else R.note("t6: the Overseer's chat has no live record yet");
-  s.close();
-  // The control: an ordinary chat on the same server does get one.
-  const o = await newChat();
-  prompt(o.s, "say ok");
-  await settled(o.s, 0, 60000);
-  R.check(chatPid(o.path), "t6: an ordinary chat on the same server runs in its own process (the switch is on)");
-  o.s.close();
-}
-
 async function t7() {
   // Needs the server's test-only served tool (trial_served_sleep, on with SOVA_CHAT_TEST_SERVED=1).
   await teardown();
@@ -768,6 +763,362 @@ async function t9() {
   s2?.close();
 }
 
+// ── stage 3: the Overseer, project overseers, batons and powers chats (stage3-design.md §10.2) ───
+
+/** Waits until `cond()` holds (true) or `ms` passed (false). */
+async function waitFor(cond, ms, every = 500) {
+  const end = Date.now() + ms;
+  for (;;) {
+    if (await cond()) return true;
+    if (Date.now() > end) return false;
+    await sleep(every);
+  }
+}
+const toolResults = (path) => entries(path).filter((e) => e.type === "message" && e.message?.role === "toolResult");
+const resultText = (e) => JSON.stringify(e?.message?.content ?? "").slice(0, 200);
+/** Where the chat runs: "process" (a live chat process of its own, not the server) or "server". */
+const whereOf = (path) => {
+  const pid = chatPid(path);
+  return pid && pid !== srv.pid() ? "process" : "server";
+};
+/** A user prompt into an open chat, waited for until its run settled; the tool results it added. */
+async function turn(o, text, ms = 60000) {
+  const from = o.s.got.length;
+  const before = toolResults(o.path).length;
+  prompt(o.s, text);
+  await settled(o.s, from, ms);
+  await sleep(500);
+  return toolResults(o.path).slice(before);
+}
+/** A fresh ordinary chat given session powers (an inline profile: read, message, all sessions). */
+async function powersChat() {
+  const { path } = await post("/api/sessions", { cwd: proj });
+  await post("/api/sessions/profile", { path, profile: { remove: [], grant: ["sessions.read", "sessions.message", "sessions.all"] } });
+  return openOn(path);
+}
+/** The org's statechart log rows (portable and host-local), oldest first. */
+function orgLog(o) {
+  const dirs = [join(o.ws, "statecharts", "log"), join(sova, "statecharts", o.orgId, "log")];
+  const rows = [];
+  for (const d of dirs) {
+    let files = [];
+    try {
+      files = readdirSync(d).filter((f) => f.endsWith(".jsonl"));
+    } catch {}
+    for (const f of files) rows.push(...readLines(join(d, f)));
+  }
+  return rows.sort((a, b) => a.at - b.at);
+}
+/** Rows of `event` on the baton session `sid` since `t0`, taken (not refused). */
+const batonRows = (o, sid, event, t0 = 0) => orgLog(o).filter((r) => r.event === event && String(r.session ?? "").includes(sid) && r.at >= t0 && !r.refused);
+/** A participant's message through the share hub (the baton link's page). */
+async function participantSays(link, text) {
+  const token = String(link).split("/").pop();
+  const res = await fetch(`${shareBase}/api/h/${token}/message`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
+  return { status: res.status, body: await res.text() };
+}
+/** An org and a baton held by Dana, its chat on the mock. */
+async function batonSetup() {
+  const o = await orgSetup();
+  const b = await startBaton(o);
+  return { o, b, sid: b.sessionId, path: b.path };
+}
+
+// T6': with the switch on, the Overseer, a project overseer, a baton and a powers chat each run in a
+// process of their own; a worker's session file stays in the server.
+async function t6() {
+  const ov = await openOn(await overseer());
+  await turn(ov, "say ok");
+  const o = await orgSetup();
+  const po = await projectOverseer(o.projectId);
+  const poc = await openOn(po.path);
+  await turn(poc, "say ok");
+  const b = await startBaton(o);
+  const bc = await chat(c, b.path);
+  await waitFor(() => chatPid(b.path), 15000);
+  const pw = await powersChat();
+  await turn(pw, "say ok");
+  const w = await newChat();
+  prompt(w.s, "[spawn] start a worker");
+  await w.s.until((m) => m.type === "workers" && m.working >= 1, 60000, "a working worker");
+  await sleep(2000);
+  const kinds = [["the Overseer", ov.path], ["a project overseer", po.path], ["a baton", b.path], ["a powers chat", pw.path], ["an ordinary chat", w.path]];
+  for (const [label, path] of kinds) R.check(whereOf(path) === "process", `t6: ${label} runs in a process of its own (pid ${chatPid(path) || "none"}, server ${srv.pid()})`);
+  const pids = kinds.map(([, p]) => chatPid(p)).filter(Boolean);
+  R.check(new Set(pids).size === kinds.length, `t6: each in a process of its own (${pids.join(", ")})`);
+  if (driver === "systemd") {
+    const units = kinds.map(([, p]) => record(p)?.unit).filter(Boolean);
+    R.check(new Set(units).size === kinds.length, `t6: each in a unit of its own (${units.join(", ")})`);
+    for (const [label, p] of kinds.slice(0, 4)) {
+      const cg = (() => {
+        try {
+          return readFileSync(`/proc/${chatPid(p)}/cgroup`, "utf8").trim();
+        } catch {
+          return "";
+        }
+      })();
+      R.check(cg.includes(`/${slice}/`), `t6: ${label}'s cgroup is under the stand-in slice (${cg})`);
+    }
+  }
+  // The worker's own session file: no chat process of its own (stage 4).
+  const known = new Set(kinds.map(([, p]) => baseName(p)));
+  const others = allRecords().filter((r) => !known.has(baseName(r.sessionPath)) && alive(r.pid));
+  R.check(others.length === 0, `t6: no other chat process (a worker's session stays in the server) (${others.map((r) => baseName(r.sessionPath)).join(", ") || "none"})`);
+  for (const x of [ov, poc, pw, w]) x.s.close();
+  bc.close();
+}
+
+// T10: the Overseer in its own process: a served read tool, a served file tool, an acting tool and an
+// explorer (its worker a child of the Overseer's process); the run note is in the file.
+async function t10() {
+  writeFileSync(join(proj, "trial-read.txt"), "READ-ME-TRIAL\n");
+  const ov = await openOn(await overseer());
+  await turn(ov, "say ok");
+  const pid = chatPid(ov.path);
+  R.check(whereOf(ov.path) === "process", `t10: the Overseer runs in a process of its own (pid ${pid || "none"})`);
+  const r1 = await turn(ov, "[call sova_list_sessions {}]");
+  R.check(r1.length === 1 && !r1[0].message.isError, `t10: sova_list_sessions answered (${resultText(r1[0])})`);
+  const r2 = await turn(ov, `[call read {"path":"${join(proj, "trial-read.txt")}"}]`);
+  R.check(r2.length === 1 && /READ-ME-TRIAL/.test(JSON.stringify(r2[0])), `t10: the read file tool answered with the file (${resultText(r2[0])})`);
+  const r3 = await turn(ov, '[call sova_note {"op":"append","text":"TRIAL-NOTE one"}]');
+  const notes = (await c.api("/api/overseer/notes"))?.text ?? "";
+  R.check(r3.length === 1 && !r3[0].message.isError && notes.split("TRIAL-NOTE one").length === 2, `t10: sova_note (attended) wrote the note once (${resultText(r3[0])})`);
+  await turn(ov, '[call sova_idea {"op":"add","id":"§trial/explore","title":"Trial explore","text":"Explore it."}]');
+  await mock.plain("[long 40 #explorer]");
+  const r5 = await turn(ov, '[call sova_idea {"op":"explore","id":"§trial/explore"}]');
+  R.check(r5.length === 1 && /Launched/.test(JSON.stringify(r5[0])), `t10: sova_idea explore launched the explorer (${resultText(r5[0])})`);
+  await waitFor(() => mockLog(mock.log).some((e) => e.tag === "explorer"), 30000);
+  await sleep(1500);
+  const workers = tree(pid).filter((p) => p.pid !== pid && /--mode rpc/.test(p.cmd));
+  R.check(workers.length === 1, `t10: the explorer is a child of the Overseer's process (${workers.map((w) => w.pid).join(", ") || "none"})`);
+  await mock.plain("");
+  const runNotes = entries(ov.path).filter((e) => JSON.stringify(e).includes("[now] It is")).length;
+  R.check(runNotes >= 1, `t10: the run note is in the file (${runNotes})`);
+  ov.s.close();
+}
+
+// T11: a server restart mid served tool of the Overseer: outcome unknown, ran once; a message queued
+// before the restart enters while no server runs, and its run facts reach the next server (the limits
+// reset is in the file).
+async function t11() {
+  await teardown();
+  await boot({ extra: { SOVA_CHAT_TEST_SERVED: "1" } });
+  const ov = await openOn(await overseer());
+  await turn(ov, "say ok");
+  prompt(ov.s, "[served] run it");
+  await ov.s.until(isEvent("tool.start"), 60000, "the served call starts");
+  await sleep(1500);
+  prompt(ov.s, "TRIAL-B say ok");
+  await sleep(500);
+  ov.s.close();
+  await srv.down();
+  await sleep(8000);
+  // The counters as a brief would have left them: only a user message's run facts reset them.
+  const turnFile = join(sova, "overseer-turn.json");
+  writeFileSync(turnFile, `${JSON.stringify({ version: 1, used: { create: 2, prompt: 1, archive: 0, explore: 0, link: 0, org: 0, gather: 0 } })}\n`);
+  srv.up();
+  await healthy(base);
+  R.note(`t11: server down 8 s, back as pid ${srv.pid()}`);
+  await waitFor(() => mockLog(mock.log).some((e) => /TRIAL-B/.test(e.userText ?? "")), 90000);
+  await waitFor(() => readJson(turnFile)?.used?.create === 0, 30000);
+  await sleep(1500);
+  const results = toolResults(ov.path).filter((e) => /trial_served_sleep|outcome is unknown|SERVED-DONE/.test(JSON.stringify(e)));
+  R.check(results.length === 1 && /outcome is unknown/.test(JSON.stringify(results[0])), `t11: the tool result is the unknown-outcome text (${resultText(results[0])})`);
+  const starts = readLines(join(sova, "chats", "test-served.jsonl")).filter((e) => e.event === "start").length;
+  R.check(starts === 1, `t11: the action ran once (${starts} starts)`);
+  R.check(mockLog(mock.log).filter((e) => /TRIAL-B/.test(e.userText ?? "") && !e.afterTool).length === 1, "t11: the queued message ran once");
+  R.check(userEntriesWith(ov.path, "TRIAL-B") === 1, `t11: the queued message is in the file once (${userEntriesWith(ov.path, "TRIAL-B")})`);
+  R.check(readJson(turnFile)?.used?.create === 0, `t11: the user message's run facts reached the next server: the limits were reset (${JSON.stringify(readJson(turnFile)?.used)})`);
+  R.check(whereOf(ov.path) === "process", "t11: the Overseer still runs in its process");
+  await teardown();
+  await boot();
+}
+
+// T12a: a participant's message through the share hub; record_decision with a case variant of an owner
+// area is recorded in the roster's spelling, its quote checked.
+async function t12a() {
+  const { o, b, path } = await batonSetup();
+  const quote = "We will bill through Stripe from May";
+  const args = { area: "invoicing", ownerArea: "billing", statement: "Bill through Stripe from May.", quote };
+  const sent = await participantSays(b.link, `${quote}.\n[call record_decision ${JSON.stringify(args)}]`);
+  R.check(sent.status < 300, `t12a: the share hub took the participant's message (${sent.status} ${sent.body.slice(0, 120)})`);
+  await waitFor(() => toolResults(path).length > 0, 60000);
+  await sleep(2000);
+  R.check(whereOf(path) === "process", `t12a: the baton runs in a process of its own (pid ${chatPid(path) || "none"})`);
+  const res = toolResults(path).find((e) => /record_decision/.test(JSON.stringify(e)) || e.message?.toolName === "record_decision");
+  R.check(res && !res.message.isError, `t12a: record_decision succeeded (${resultText(res)})`);
+  const dec = entries(path).filter((e) => e.customType === "sova-baton-decision" || /sova-baton-decision/.test(e.customType ?? ""));
+  const all = JSON.stringify(dec);
+  R.check(dec.length >= 1 && /"ownerArea":"Billing"/.test(all), `t12a: the owner area is the roster's spelling, Billing (${all.slice(0, 200)})`);
+  // The quote check is the org history's evidence (<workspace>/history/events/<yyyy-mm>.jsonl).
+  const hist = (() => {
+    try {
+      return readdirSync(join(o.ws, "history", "events")).flatMap((f) => readLines(join(o.ws, "history", "events", f)));
+    } catch {
+      return [];
+    }
+  })();
+  const checks = [...JSON.stringify(hist).matchAll(/"check":"([a-z-]+)"/g)].map((m) => m[1]);
+  R.check(checks.length === 1 && checks[0] === "checked", `t12a: the quote check is checked (${checks.join(", ") || "none"})`);
+}
+
+// T12b: a server restart mid baton reply: the reply finishes; one reply/writing and one reply/ended;
+// the boot sweep ended nothing.
+async function t12b() {
+  const { o, b, sid, path } = await batonSetup();
+  const t0 = Date.now();
+  await participantSays(b.link, "[long 30 #b12b] reply at length");
+  await waitFor(() => mockLog(mock.log).some((e) => e.tag === "b12b"), 30000);
+  await sleep(3000);
+  const pid1 = chatPid(path);
+  await restart();
+  R.check(pid1 && chatPid(path) === pid1, `t12b: the baton's process survived the restart (${pid1} → ${chatPid(path)})`);
+  await waitFor(() => mockLog(mock.log).some((e) => e.event === "done" && e.tag === "b12b"), 60000);
+  await waitFor(() => batonRows(o, sid, "reply/ended", t0).length > 0, 20000);
+  await sleep(3000);
+  const msgs = turnAssistants(path, "[long 30 #b12b]");
+  R.check(msgs.length === 1 && textOfMsg(msgs[0]).includes("REPLY-DONE b12b"), `t12b: the reply finished, one assistant entry (${msgs.map((m) => m.stopReason).join(", ")})`);
+  const writing = batonRows(o, sid, "reply/writing", t0);
+  const ended = batonRows(o, sid, "reply/ended", t0);
+  R.check(writing.length === 1, `t12b: one reply/writing in the org log (${writing.length})`);
+  R.check(ended.length === 1, `t12b: one reply/ended in the org log (${ended.length}: ${ended.map((r) => r.by).join(", ")})`);
+  const refused = orgLog(o).filter((r) => r.event === "reply/ended" && String(r.session ?? "").includes(sid) && r.at >= t0 && r.refused);
+  R.check(refused.length === 0, `t12b: the boot sweep ended nothing for it (${refused.length} refused reply/ended)`);
+}
+
+// T12c: take-back while the baton replies: when the route answers, "(taken back)" is in the
+// transcript; one reply/ended.
+async function t12c() {
+  const { o, b, sid, path } = await batonSetup();
+  const t0 = Date.now();
+  await participantSays(b.link, "[long 40 #b12c] reply at length");
+  await waitFor(() => mockLog(mock.log).some((e) => e.tag === "b12c"), 30000);
+  await sleep(2000);
+  R.check(whereOf(path) === "process", `t12c: the baton runs in a process of its own (pid ${chatPid(path) || "none"})`);
+  await post(`/api/baton/${sid}/take`);
+  const taken = entries(path).filter((e) => JSON.stringify(e).includes('"question":"(taken back)"')).length;
+  R.check(taken === 1, `t12c: when the route answered, the "(taken back)" entry was in the transcript (${taken})`);
+  await sleep(6000);
+  const ended = batonRows(o, sid, "reply/ended", t0);
+  R.check(ended.length === 1, `t12c: one reply/ended (${ended.length})`);
+}
+
+// T13: a project overseer's look across a server restart: one look message, reported once, no second
+// look turn.
+async function t13() {
+  const o = await orgSetup();
+  const po = await projectOverseer(o.projectId);
+  await mock.plain("[long 30 #look]");
+  const t0 = Date.now();
+  await lookNow(o.projectId);
+  await waitFor(() => mockLog(mock.log).some((e) => e.tag === "look"), 30000);
+  await sleep(3000);
+  R.check(whereOf(po.path) === "process", `t13: the project overseer runs in a process of its own (pid ${chatPid(po.path) || "none"})`);
+  const pid1 = chatPid(po.path);
+  await restart();
+  R.check(pid1 && chatPid(po.path) === pid1, `t13: the project overseer's process survived (${pid1} → ${chatPid(po.path)})`);
+  await waitFor(() => mockLog(mock.log).some((e) => e.event === "done" && e.tag === "look"), 60000);
+  const finished = () => orgLog(o).filter((r) => (r.event === "look/finished" || r.event === "look/stopped") && r.at >= t0);
+  await waitFor(() => finished().length > 0, 30000);
+  await sleep(5000);
+  await mock.plain("");
+  const users = entries(po.path).filter((e) => e.type === "message" && e.message?.role === "user");
+  R.check(users.length === 1, `t13: one look message in the file (${users.length})`);
+  R.check(mockLog(mock.log).filter((e) => e.tag === "look" && e.scenario).length === 1, "t13: the model was asked for the look once (no second sova/look turn)");
+  const f = finished();
+  R.check(f.length === 1 && f[0].event === "look/finished", `t13: the look was reported once, finished (${f.map((r) => r.event).join(", ") || "none"})`);
+}
+
+// T14: a brief while the Overseer's process reloads (Reload now just before the tick): one brief turn.
+// Needs the brief tick short (SOVA_OVERSEER_TICK_MS) and proactivity "brief".
+async function t14() {
+  await teardown();
+  const ovFile = join(sova, "overseer.json");
+  const ovSettings = readJson(ovFile);
+  writeFileSync(ovFile, JSON.stringify({ ...ovSettings, proactivity: "brief" }));
+  try {
+    await boot({ build: "trial-a", extra: { SOVA_OVERSEER_TICK_MS: "500" } });
+    const ov = await openOn(await overseer());
+    await turn(ov, "say ok");
+    ov.s.close();
+    await restart({ [KNOBS.build]: "trial-b" });
+    const ov2 = await chat(c, ov.path);
+    const pidA = chatPid(ov.path);
+    // The blocker (a chat waiting on a dialog) and the reload at the same moment.
+    const blocker = await newChat();
+    prompt(blocker.s, "[ask] ask me");
+    await blocker.s.until(isConfirm, 60000, "the dialog");
+    ov2.send({ type: "reload_code" });
+    await waitFor(() => userEntriesWith(ov.path, "[overseer-brief]") > 0, 60000);
+    await sleep(8000);
+    R.check(chatPid(ov.path) && chatPid(ov.path) !== pidA, `t14: the Overseer reloaded (pid ${pidA} → ${chatPid(ov.path)})`);
+    const briefs = userEntriesWith(ov.path, "[overseer-brief]");
+    R.check(briefs === 1, `t14: one brief turn (${briefs})`);
+    R.check(mockLog(mock.log).filter((e) => /\[overseer-brief\]/.test(e.userText ?? "") && !e.afterTool).length === 1, "t14: the model was asked for the brief once");
+    ov2.close();
+    blocker.s.close();
+  } finally {
+    writeFileSync(ovFile, JSON.stringify(ovSettings));
+    await teardown();
+    await boot();
+  }
+}
+
+// T15: kill -9 of the baton's process mid-reply: the pane's error, reply/ended once, no "continue";
+// reopening spawns a new process.
+async function t15() {
+  const { o, b, sid, path } = await batonSetup();
+  const pane = await chat(c, path);
+  const t0 = Date.now();
+  await participantSays(b.link, "[long 40 #b15] reply at length");
+  await waitFor(() => mockLog(mock.log).some((e) => e.tag === "b15"), 30000);
+  await sleep(2000);
+  const pid1 = chatPid(path);
+  if (!R.check(pid1 && whereOf(path) === "process", `t15: the baton runs in a process of its own (pid ${pid1 || "none"})`)) return;
+  const from = pane.got.length;
+  process.kill(pid1, "SIGKILL");
+  const err = await pane.until((m) => m.type === "error" && /stopped unexpectedly/.test(m.message ?? ""), 20000, "the pane's error", from).catch(() => null);
+  R.check(err, `t15: the pane got the stopped-unexpectedly error (${err?.message?.slice(0, 100)})`);
+  await sleep(8000);
+  const ended = batonRows(o, sid, "reply/ended", t0);
+  R.check(ended.length === 1, `t15: reply/ended once (${ended.length})`);
+  R.check(userEntriesWith(path, CRASH_RESUME_TEXT) === 0 && userEntriesWith(path, RESUME_TEXT) === 0, "t15: no continue was sent");
+  const again = await chat(c, path);
+  await waitFor(() => chatPid(path), 15000);
+  R.check(chatPid(path) && chatPid(path) !== pid1, `t15: reopening spawns a new process (${pid1} → ${chatPid(path) || "none"})`);
+  again.close();
+}
+
+// T16: a powers chat in its own process sends to an ordinary chat in another (the hop header arrives);
+// a restart mid-send is unknown or delivered, never twice.
+async function t16() {
+  const target = await newChat();
+  await turn({ path: target.path, s: target.s }, "say ok");
+  const targetId = entries(target.path)[0]?.id;
+  const pw = await powersChat();
+  await turn(pw, "say ok");
+  R.check(whereOf(pw.path) === "process" && chatPid(pw.path) !== chatPid(target.path), `t16: the powers chat and its target run in processes of their own (${chatPid(pw.path)}, ${chatPid(target.path)})`);
+  const r = await turn(pw, `[call session_send {"session":"${targetId}","text":"HOP-ONE hello"}]`);
+  R.check(r.length === 1 && !r[0].message.isError, `t16: session_send answered (${resultText(r[0])})`);
+  await waitFor(() => userEntriesWith(target.path, "HOP-ONE") > 0, 30000);
+  const got = entries(target.path).filter((e) => e.type === "message" && e.message?.role === "user" && JSON.stringify(e.message.content).includes("HOP-ONE"));
+  R.check(got.length === 1 && /hop/i.test(JSON.stringify(got[0])), `t16: the message arrived once, with its hop header (${JSON.stringify(got[0]?.message?.content)?.slice(0, 160)})`);
+  // A send cut by a restart: the stop lands as the model makes the call.
+  const from = pw.s.got.length;
+  const before = toolResults(pw.path).length;
+  pw.s.send({ type: "prompt", text: `[call session_send {"session":"${targetId}","text":"HOP-TWO hello"}]`, clientId: `trial-${Date.now()}` });
+  await pw.s.until(isEvent("tool.start"), 60000, "the send starts", from);
+  pw.s.close();
+  await restart();
+  await waitFor(() => toolResults(pw.path).length > before, 60000);
+  await sleep(5000);
+  const two = userEntriesWith(target.path, "HOP-TWO");
+  const last = toolResults(pw.path).at(-1);
+  R.note(`t16: the cut send's result: ${resultText(last)}; HOP-TWO in the target ${two}×`);
+  R.check(two <= 1, `t16: one message at most in the target (${two})`);
+  R.check(two === 1 || /outcome is unknown/.test(JSON.stringify(last)), "t16: when nothing arrived, the result says the outcome is unknown");
+}
+
 /** The stage-3 steps work on this server, wherever these chats run: an Overseer turn calling one of
     its server-state tools, an org with a project, a person and a baton, a project overseer and a look
     asked for now. Not in the default set: it checks the trial's own plumbing. */
@@ -790,7 +1141,7 @@ async function plumbing() {
 
 // ── run ─────────────────────────────────────────────────────────────────────────────────────────
 
-const table = { t1: () => t1(), t1b, t1c, t1d, t1e, t1f, t2, t3, t4, t4fail, t5, t6, t7, t8, t9, plumbing, real: () => t1(opt("model")) };
+const table = { t1: () => t1(), t1b, t1c, t1d, t1e, t1f, t2, t3, t4, t4fail, t5, t6, t7, t8, t9, t10, t11, t12a, t12b, t12c, t13, t14, t15, t16, plumbing, real: () => t1(opt("model")) };
 let code = 0;
 try {
   await boot();

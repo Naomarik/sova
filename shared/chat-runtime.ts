@@ -115,7 +115,65 @@ export interface ChatStateMirror {
   profile: ProfileEntryData | null;
   /** An ordinary chat's context-file and skill switches; null for a special loadout. */
   loadout: { off: ChatLoadoutChoice | null; toggleable: boolean } | null;
+  /** A loadout that tells the person's turns apart (the Overseer, a project overseer): the run in
+      progress answers a message the person sent from a composer (§app.overseer/input-source).
+      False anywhere else. */
+  attended: boolean;
+  /** The confirm card whose click opened the person's part of the run in progress, or null. */
+  confirmedCard: string | null;
 }
+
+/**
+ * What a special loadout hears of its chat's runs, in the order and at the moment the chat's own
+ * stream has them (in place of the driving session itself). Delivered live, never kept: a consumer
+ * that missed some reads the mirror.
+ */
+export type ChatRunEvent =
+  /** A run began. `tag`: the first run since a send that named one (`ChatSendInput.runTag`). */
+  | { type: "run.start"; tag?: string }
+  /** A message the person sent from a composer entered the context: the run is theirs from here
+      (`card`: a confirm card's click sent it). Only where the loadout tells turns apart. */
+  | { type: "user.entered"; card: string | null }
+  /** The person's message, sent by a click on a confirm card (`card`), ended: its entry is written
+      right after this event. */
+  | { type: "user.end"; card: string }
+  /** The reply so far, its text blocks only, while it streams (a loadout that asks for it). */
+  | { type: "reply.text"; text: string }
+  | { type: "message.end" }
+  | { type: "entry.appended" }
+  | { type: "run.settled" };
+
+/** A tool whose state lives in the server (the Overseer's, a project overseer's, a baton's), as the
+    chat declares it to its model: data only. The chat runs it by calling the server (ServerToolCall). */
+export interface ServerToolDecl {
+  name: string;
+  label: string;
+  description: string;
+  promptSnippet?: string;
+  promptGuidelines?: string[];
+  parameters: { readonly [key: string]: unknown };
+  executionMode?: "sequential" | "parallel";
+  exposure?: "model-only";
+  /** The server rewrites the arguments before the chat checks them against `parameters`. */
+  prepares?: true;
+}
+
+/** One run of a server-hosted tool, chat → server. `effectId` is the same for every delivery of one
+    tool call of one chat: a delivery the server has seen is answered with that run's outcome, never
+    run again. `attended`/`card`: the chat's turn as it stood when the call was made. */
+export interface ServerToolCall {
+  effectId: string;
+  chatId: ChatId;
+  toolCallId: string;
+  name: string;
+  params: unknown;
+  attended: boolean;
+  card: string | null;
+}
+
+/** How a server-hosted tool's run ended, server → chat. A server that stopped while the tool ran
+    answers no outcome at all; the chat says "outcome unknown" (al_3 q5, stage 3). */
+export type ServerToolOutcome<R = unknown> = { ok: true; result: R } | { ok: false; error: { message: string } };
 
 /** A lifecycle event of a chat, numbered per runtime. Delivery is at least once: a consumer that
     reconnects asks for the events `since` the last seq it saw, and acts idempotently. */
@@ -171,6 +229,8 @@ export interface ChatSendInput {
   report?: boolean;
   /** Keep the turn's end for one `turnEnd` call (default false). */
   track?: boolean;
+  /** Named on the next run's `run.start` (ChatRunEvent), whichever run starts next. */
+  runTag?: string;
 }
 
 /** The send was accepted: queued behind a run, or its turn started (`turnId` when tracked). */

@@ -34,17 +34,18 @@ import {
   BusyError,
   type ChatHandle,
   chatHandle,
-  chatHandleOf,
   closeChat,
   getModelRuntime,
   isSessionBusy,
+  serverToolCall,
+  type ServerToolRun,
+  serveTools,
   setOverseerRuntime,
 } from "./chat-handle";
 import { activityOf, failedWorkersOf, isOwnPid, readLiveRecords, workerErrorTimesOf, workingSubagents } from "./live";
 import { endedByRestart, restartWindow } from "./server-stop";
 import { listModels, contextWindow } from "./models";
 import { modelDenial, readModelPolicy } from "./model-policy";
-import { markBackground } from "../pi-config/extensions/provider-limits/gate.ts";
 import {
   DEFAULT_CAPS,
   DEFAULT_EXPLORER,
@@ -67,7 +68,6 @@ import { promptTodos, readTodos } from "./overseer-todos";
 import type { SubagentTool } from "./overseer-idea-tools";
 import { workerDenial } from "./delegate";
 import { BUILTIN_ALLOWED, overseerTools, type OverseerToolHost, renderTranscript, TurnLimits, UNATTENDED_WRITE_REFUSAL } from "./overseer-tools";
-import { UserTurns } from "./user-turns";
 import { OVERSEER_SENDER_HEADER, overseerSender, senderSecret } from "./overseer-sender";
 
 import { onSessionPrompted, pathOfId, promptSession, sessionActivity, toolCatalogue, type PromptDelivery, type PromptResult } from "./session-prompt";
@@ -95,7 +95,7 @@ import { meshLinks } from "./mesh/links";
 import type { PeerLinkRead } from "../shared/mesh-links";
 import { rowsOf } from "./transcript";
 import { branchOf, joinedText, lineEntry, parsePi, readBranch } from "./harness/pi/reader";
-import type { HarnessSession, HEntry } from "../shared/harness";
+import type { HEntry } from "../shared/harness";
 import { archiveWorktrees } from "./archive-worktrees";
 import { markOwned } from "./write-guard";
 import { signalTextOf, teamStallOf } from "./signals-store";
@@ -248,7 +248,6 @@ export async function clearOverseer(): Promise<OverseerInfo> {
     await closeChat(oldPath, "The Overseer was cleared. Opening the new conversation.");
   }
   limits.reset();
-  turns.reset();
   const made = createOverseerFile(carried);
   const { state, dropped } = rotateState(readOverseerState(), made.id);
   writeOverseerState(state);
@@ -456,14 +455,29 @@ async function applySettingsNow(): Promise<void> {
 
 // ---- the runtime loadout ---------------------------------------------------------------------------
 
-/** Per-turn caps, shared by the tools and the chat runtime's `userSend` (a user message resets
-    them). Kept in a file, so a restart mid-sequence doesn't renew the budget. */
+/** Per-turn caps, shared by the tools and the chat's run events (a user message resets them). Kept
+    in a file, so a restart mid-sequence doesn't renew the budget. */
 const limits = new TurnLimits(overseerTurnFile());
-/** Who started the turn the Overseer is in: the caps' reset and the unattended read-only rule both
-    read it, so they can never disagree. Starts unattended (fail closed), so does a restart. */
-const turns = new UserTurns();
+/** The chat of the Overseer's current conversation, once opened. */
+let overseerPath: string | null = null;
+/**
+ * Who started the turn the Overseer is in, as its chat tells (UserTurns, by the object the user's
+ * message reaches the agent as): the caps' reset and the unattended read-only rule both read it, so
+ * they can never disagree. A server-hosted tool reads it as its call carried it; anything else reads
+ * the chat. Starts unattended (fail closed), so does a restart.
+ */
+function attended(): boolean {
+  const run = serverToolCall();
+  if (run && run.call.chatId === overseerPath) return run.call.attended;
+  return (overseerPath ? chatHandle(overseerPath)?.mirror.attended : false) ?? false;
+}
 /** Whether the Overseer is answering the user right now. Exported for the tests. */
-export const attendedForTest = () => turns.attended();
+export const attendedForTest = () => attended();
+/** The run of the Overseer's server-hosted tool this code runs inside, or undefined. */
+function overseerRun(): ServerToolRun | undefined {
+  const run = serverToolCall();
+  return run && run.call.chatId === overseerPath ? run : undefined;
+}
 
 /** Sessions the Overseer created or prompted, for the running-at-once cap. */
 const started = new Set<string>();
@@ -528,10 +542,6 @@ async function peerSession(peerId: string, id: string): Promise<SessionSummary |
   }
   return null;
 }
-
-/** The Overseer runtime's driving session (watchSession): its registered tools include the subagents
-    extension's tools, which the explorer routes call in-process (overseer-idea-tools.ts). */
-let overseerSession: HarnessSession | null = null;
 
 const host: OverseerToolHost = {
   request: (path, init) => {
@@ -610,25 +620,30 @@ const host: OverseerToolHost = {
   worktrees: archiveWorktrees(readBranch),
   runningStarted: () => countRunning(started, running, promptedAt),
   counted: (path) => countRunning(started.has(path) ? [path] : [], running, promptedAt) > 0,
-  attended: () => turns.attended(),
-  confirmed: () => confirmedItems(turns.confirmedCard(), overseerSession ? overseerSession.branch() : []),
+  attended: () => attended(),
+  confirmed: () => {
+    const run = overseerRun();
+    return confirmedItems(run ? run.call.card : null, run ? run.chat.branch() : []);
+  },
   // Approvals and rules (§app.overseer/approvals): read from the current runtime's file each call,
   // so a revoke applies from the next act on.
   permit(tool, sessions) {
-    if (!overseerSession) return null;
+    const run = overseerRun();
+    if (!run) return null;
     const now = Date.now();
-    const p = coveringPermit(foldPermits(overseerSession.branch(), overseerSession.entries(), now), tool, sessions, now);
+    const p = coveringPermit(foldPermits(run.chat.branch(), run.chat.entries(), now), tool, sessions, now);
     return p ? { id: p.id, label: permitLabel(p) } : null;
   },
   aliases: () => readAliases(),
   setAlias: (id, alias) => setAlias(id, alias),
   used(id, tool, sessions, toolCallId) {
-    if (overseerSession) overseerSession.state.append(GRANT_USE, { v: 1, id, tool, sessions, toolCallId, at: new Date().toISOString() });
+    overseerRun()?.chat.append(GRANT_USE, { v: 1, id, tool, sessions, toolCallId, at: new Date().toISOString() });
   },
   explorer: () => readOverseerSettings().explorer,
   explorerCwd: () => overseerDir(),
   subagent: (name) => {
-    const tool = overseerSession?.registeredTool(name);
+    // The subagents extension's tools, called in-process within this tool's run (overseer-idea-tools.ts).
+    const tool = overseerRun()?.chat.tool(name);
     return tool ? (tool as unknown as SubagentTool) : null;
   },
 };
@@ -924,13 +939,13 @@ export const buildOverseerTools = () => overseerTools(host, limits);
  * from `before_agent_start`, which sets it. A run started by an extension's message
  * (`sendMessage(…, {triggerTurn:true})`) skips that hook and builds later requests from the
  * session's base options, which the SDK builds from the loader's parts: `parts` is that very array,
- * refilled in place, and `rebase` has the session rebuild them (at every run's start).
+ * refilled in place at every run's start, and the chat has the session rebuild them when the text
+ * changed (SpecialLoadoutResult.promptAtRunStart).
  */
 class LivePrompt {
   /** The array the resource loader holds (the user's APPEND_SYSTEM.md parts, then ours). */
   readonly parts: string[] = [];
   private base: string[] = [];
-  private readonly built = new WeakMap<object, string>();
   /** The conversation's opening values, once a run has read them from its branch or set them. */
   private opened?: Record<string, string>;
   constructor(
@@ -971,18 +986,7 @@ class LivePrompt {
       opening: { ...(recorded ? {} : { opening: opened }), ...(Object.keys(changed.told).length ? { told: changed.told } : {}) },
     };
   }
-  /** A run starts: bring the session's base options to the opening text (a no-op when unchanged). */
-  rebase(session: Pick<HarnessSession, "refreshSystemPrompt" | "branch">): void {
-    const text = this.refresh(session.branch());
-    if (this.built.get(session) === text) return;
-    this.built.set(session, text);
-    // The SDK rebuilds the base prompt options from the loader's parts (quirk P19).
-    session.refreshSystemPrompt();
-  }
 }
-
-/** The prompt of the runtime built last (there is one Overseer runtime at a time); taken by its session in watchSession. */
-let livePrompt: LivePrompt | null = null;
 
 setOverseerRuntime({
   async loadout(path) {
@@ -992,14 +996,13 @@ setOverseerRuntime({
     const settings = readOverseerSettings();
     const tools = buildOverseerTools();
     const prompt = new LivePrompt(tools, readFileSync(PROMPT_FILE, "utf8"), new Date());
-    livePrompt = prompt;
     return {
       resourceLoaderOptions: {
         extensionFactories: [
           {
             name: "sova-overseer",
             factory: (pi) => {
-              for (const t of tools) pi.registerTool(toPiTool(t));
+              for (const t of serveTools(path, tools)) pi.registerTool(toPiTool(t));
               // A run started by a message: its prompt, with the notes and settings as they are now.
               // The run note (the time now, what cleared) and the open cards ride the prompt as a
               // hidden message, never the system prompt (a prompt change restarts a Claude Code CLI
@@ -1044,7 +1047,7 @@ setOverseerRuntime({
       // write/edit the same, never Sova's or pi's own state, and only in a turn the user started.
       customTools: overseerFileTools(overseerDir(), () => new OverseerGuard(readIndex().orgs.map((o) => o.dir)), undefined, undefined, {
         protectedRoots: ownStateRoots,
-        attended: () => turns.attended(),
+        attended: () => attended(),
         unattended: UNATTENDED_WRITE_REFUSAL,
         log: (line) => logAction({ at: new Date().toISOString(), overseerId: readOverseerState()?.current ?? "", ...line }),
       }),
@@ -1052,45 +1055,42 @@ setOverseerRuntime({
       thinking: settings.thinking,
       // Its memory, when its own switch is on (§chat.memory/overseer): the same engine as a chat's.
       memory: true,
+      // The user's message makes the run theirs (and the caps renew) when it enters the context.
+      // Every run starts unattended, and a brief, a wake-up or an extension's message never does:
+      // read-only, on the same budget.
+      attribution: true,
+      // Its model requests are background work under a provider's request limit (§app.provider-limits/queue).
+      background: true,
+      // A run starts: the session's base options at the opening text (a no-op when unchanged).
+      promptAtRunStart: (branch) => prompt.refresh(branch),
     };
   },
   saveChoice(patch) {
     patchOverseerSettings(patch);
   },
-  opened: (chat) => keepNormal(chatHandleOf(chat)),
-  // The user's message goes to the SDK through userSend; the run becomes theirs (and the caps
-  // renew) when the message that call produced enters the context. Every run starts unattended, and
-  // a brief, a wake-up or an extension's message never goes through it: read-only, on the same budget.
-  watchSession(session) {
-    overseerSession = session;
-    // Its model requests are background work under a provider's request limit (§app.provider-limits/queue).
-    markBackground(session.id);
-    turns.watch(session);
-    const prompt = livePrompt;
-    session.subscribe((event) => {
-      if (event.type === "run.start") prompt?.rebase(session);
-      if (turns.observe(event)) limits.reset();
-      // A click that approves for later or adopts a rule: the server writes it, once the click's
-      // message is in the file (the SDK appends it right after this event's listeners run).
-      if (event.type === "message.end" && event.role === "user" && turns.confirmedCard()) {
-        const card = turns.confirmedCard();
-        setImmediate(() => {
-          try {
-            const w = permitOnClick(card, session.branch(), session.entries());
-            if (w) {
-              const state = session.state;
-              if (w.type === RULE_ENTRY) state.append(RULE, w.data);
-              else state.append(GRANT, w.data);
-            }
-          } catch (err) {
-            console.warn("[overseer] approval not written:", err instanceof Error ? err.message : String(err));
-          }
-        });
-      }
-    });
+  opened: (chat) => {
+    overseerPath = chat.path;
+    return keepNormal(chat);
   },
-  userSend(send, confirm) {
-    return turns.send(send, confirm);
+  runEvent(path, event) {
+    overseerPath = path;
+    if (event.type === "user.entered") limits.reset();
+    // A click that approves for later or adopts a rule: the server writes it, once the click's
+    // message is in the file (the chat writes it right after this event).
+    if (event.type === "user.end") {
+      const card = event.card;
+      setImmediate(() => {
+        const chat = chatHandle(path);
+        if (!chat) return;
+        void Promise.all([chat.branch(), chat.entries()])
+          .then(([branch, entries]) => {
+            const w = permitOnClick(card, branch, entries);
+            if (!w) return;
+            return w.type === RULE_ENTRY ? chat.appendState(RULE, w.data) : chat.appendState(GRANT, w.data);
+          })
+          .catch((err) => console.warn("[overseer] approval not written:", err instanceof Error ? err.message : String(err)));
+      });
+    }
   },
 });
 

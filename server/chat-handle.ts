@@ -5,6 +5,7 @@
 // lifecycle events numbered per runtime; browser frames passed through. Today the chat runs in this
 // process: a call runs the chat's method at once (its guards run at the moment of the call, exactly
 // as a direct call did) and its answer comes back as a reply.
+import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import type {
   ChatCall,
@@ -20,14 +21,21 @@ import type {
   ChatStateMirror,
   ChatTopicBatch,
   ChatTurnEnd,
+  ServerToolCall,
+  ServerToolDecl,
+  ServerToolOutcome,
 } from "../shared/chat-runtime";
-import type { StateKind } from "../shared/harness";
+import type { StateKind, ToolCtx, ToolResult, ToolSpec } from "../shared/harness";
 import type { ChatClientMessage, HeldChatState } from "../shared/protocol";
 import {
   acquireChat,
   BusyError,
   type ChatClient,
   type ChatSession,
+  type OverseerRuntime as ChatOverseerRuntime,
+  registerSpecialLoadout as registerChatSpecialLoadout,
+  setOverseerRuntime as setChatOverseerRuntime,
+  type SpecialLoadout as ChatSpecialLoadout,
   chatEventsSince,
   ConfigError,
   drainQueueThenAbort,
@@ -37,6 +45,11 @@ import {
   ModeRefusedError,
   onChatEvent,
   RefusedError,
+  type ServerToolChat,
+  type ServerToolLocal,
+  type ServerToolPort,
+  serverToolSpec,
+  setServerToolPort,
 } from "./chat-manager";
 import { stateKindOf } from "./harness/state-kinds";
 import { mergeMode } from "./mode-state";
@@ -99,15 +112,25 @@ type Impl = { [M in ChatMethod]: (chat: ChatSession, args: ChatMethods[M]["args"
 const METHODS: Impl = {
   send(chat, a, ctx) {
     if (a.checkModel) chat.assertModelAllowed();
-    const { queued, turn } = chat.acceptPrompt(a.text, a.images, a.origin ?? "server", a.clientId, {
-      ...(a.replay ? { replay: true } : {}),
-      ...(a.sentByOverseer ? { sentByOverseer: a.sentByOverseer } : {}),
-      ...(a.sentByBaton ? { sentByBaton: a.sentByBaton } : {}),
-      ...(a.sentBySession ? { sentBySession: a.sentBySession } : {}),
-      ...(a.delivery ? { delivery: a.delivery } : {}),
-      ...(a.confirm ? { confirm: a.confirm } : {}),
-      ...(a.byPerson ? { byPerson: true as const } : {}),
-    });
+    // The next run names the tag, unless the chat refuses this message.
+    const tagWas = chat.runTag.next;
+    if (a.runTag !== undefined) chat.runTag.next = a.runTag;
+    let accepted: ReturnType<ChatSession["acceptPrompt"]>;
+    try {
+      accepted = chat.acceptPrompt(a.text, a.images, a.origin ?? "server", a.clientId, {
+        ...(a.replay ? { replay: true } : {}),
+        ...(a.sentByOverseer ? { sentByOverseer: a.sentByOverseer } : {}),
+        ...(a.sentByBaton ? { sentByBaton: a.sentByBaton } : {}),
+        ...(a.sentBySession ? { sentBySession: a.sentBySession } : {}),
+        ...(a.delivery ? { delivery: a.delivery } : {}),
+        ...(a.confirm ? { confirm: a.confirm } : {}),
+        ...(a.byPerson ? { byPerson: true as const } : {}),
+      });
+    } catch (err) {
+      if (a.runTag !== undefined) chat.runTag.next = tagWas;
+      throw err;
+    }
+    const { queued, turn } = accepted;
     const report = a.report !== false;
     const ended = turn.then(
       (): ChatTurnEnd => ({ ok: true }),
@@ -315,6 +338,12 @@ class LiveMirror implements ChatStateMirror {
     const chat = this.chat;
     return chat.loadoutState ? { off: chat.loadoutState.data, toggleable: chat.loadoutToggleable } : null;
   }
+  get attended() {
+    return this.chat.userTurns?.attended() ?? false;
+  }
+  get confirmedCard() {
+    return this.chat.userTurns?.confirmedCard() ?? null;
+  }
 }
 
 /** One held chat, as the server talks to it. */
@@ -513,14 +542,23 @@ const handleOf = (chat: ChatSession): ChatHandle => {
   return h;
 };
 
-/** The handle of a chat a loadout hook was given (`opened`): loadout policy runs with the chat,
-    and talks to it the way the server does. */
-export const chatHandleOf = handleOf;
-
 // The loadout policy of the special kinds (the Overseer, batons, project overseers): registered by
-// the modules that own them, run where the chat runs (server/chat-manager.ts openSession).
-export { registerSpecialLoadout, setOverseerRuntime } from "./chat-manager";
-export type { ChatSession, OverseerRuntime, SessionMarks, SpecialKind, SpecialLoadout } from "./chat-manager";
+// the modules that own them, run where the chat runs (server/chat-manager.ts openSession). Its hooks
+// get the chat's handle, never the chat: loadout policy talks to it the way the server does.
+
+/** A special kind's loadout policy (chat-manager's SpecialLoadout), its `opened` given the handle. */
+export type SpecialLoadout = Omit<ChatSpecialLoadout, "opened"> & { opened?(chat: ChatHandle): Promise<void> };
+export function registerSpecialLoadout(s: SpecialLoadout): void {
+  const { opened, ...rest } = s;
+  registerChatSpecialLoadout({ ...rest, ...(opened ? { opened: (chat: ChatSession) => opened(handleOf(chat)) } : {}) });
+}
+/** The Overseer's loadout policy (chat-manager's OverseerRuntime), its `opened` given the handle. */
+export type OverseerRuntime = Omit<ChatOverseerRuntime, "opened"> & { opened(chat: ChatHandle): Promise<void> };
+export function setOverseerRuntime(r: OverseerRuntime): void {
+  const { opened, ...rest } = r;
+  setChatOverseerRuntime({ ...rest, opened: (chat: ChatSession) => opened(handleOf(chat)) });
+}
+export type { SessionMarks, SpecialKind, SpecialLoadoutResult } from "./chat-manager";
 
 /**
  * Get (or open) the chat for a session file. Refused (BusyError) when a TUI owns it, or unless
@@ -562,3 +600,93 @@ export function pendingDialogCount(path: string): number {
 export const heldChatState = (path: string): HeldChatState | undefined => chatHandle(path)?.mirror.held;
 
 export type { ChatLifecycleEvent };
+
+// ---- server-hosted tools: the server's side of the loopback -------------------------------------
+
+/** The tools each chat's loadout hosts here, by chat and name: their state lives in this server, so
+    their specs never leave it; the chat gets each one's declaration (data) and runs it by a call. */
+const hostedTools = new Map<ChatId, Map<string, ToolSpec>>();
+let serving = false;
+/** Wired at the first hosted tool, not at import: this module and the chat's import each other. */
+function serveOnce(): void {
+  if (serving) return;
+  serving = true;
+  setServerToolPort(port);
+  onChatEvent((e) => {
+    if (e.type === "closed") hostedTools.delete(e.chatId);
+  });
+}
+
+/** A tool's declaration: what the chat declares to its model, nothing it runs. */
+function declOf(spec: ToolSpec): ServerToolDecl {
+  return {
+    name: spec.name,
+    label: spec.label,
+    description: spec.description,
+    ...(spec.promptSnippet !== undefined ? { promptSnippet: spec.promptSnippet } : {}),
+    ...(spec.promptGuidelines !== undefined ? { promptGuidelines: spec.promptGuidelines } : {}),
+    parameters: spec.parameters,
+    ...(spec.executionMode !== undefined ? { executionMode: spec.executionMode } : {}),
+    ...(spec.exposure !== undefined ? { exposure: spec.exposure } : {}),
+    ...(spec.prepareArguments ? { prepares: true as const } : {}),
+  };
+}
+
+/**
+ * Host tools for one chat (a loadout's: the Overseer's, a project overseer's, a baton's): each spec
+ * stays here, and what the chat registers is its declaration, run through the loopback with an
+ * effect id per run. A spec hosted again under the same name replaces the one before.
+ */
+export function serveTools(chatId: ChatId, specs: readonly ToolSpec[]): ToolSpec[] {
+  serveOnce();
+  let mine = hostedTools.get(chatId);
+  if (!mine) hostedTools.set(chatId, (mine = new Map()));
+  for (const spec of specs) mine.set(spec.name, spec);
+  return specs.map((spec) => serverToolSpec(chatId, declOf(spec)));
+}
+
+/** A server-hosted tool's run in progress, as the server code it calls reads it (serverToolCall). */
+export interface ServerToolRun {
+  call: ServerToolCall;
+  ctx: ToolCtx | undefined;
+  chat: ServerToolChat;
+}
+const runs = new AsyncLocalStorage<ServerToolRun>();
+/** The server-hosted tool run this code runs inside (across its awaits), or undefined. */
+export const serverToolCall = (): ServerToolRun | undefined => runs.getStore();
+
+/** Runs by effect id: in flight, then the last few hundred outcomes, so a call delivered again is
+    answered with its first run's outcome and never runs twice. */
+const effects = new Map<string, Promise<ServerToolOutcome<ToolResult>>>();
+const EFFECTS_KEPT = 256;
+
+async function runServerTool(call: ServerToolCall, local: ServerToolLocal): Promise<ServerToolOutcome<ToolResult>> {
+  const spec = hostedTools.get(call.chatId)?.get(call.name);
+  if (!spec) return { ok: false, error: { message: `No such tool here: ${call.name}` } };
+  try {
+    const result = await runs.run({ call, ctx: local.ctx, chat: local.chat }, () => spec.execute(call.toolCallId, call.params, local.signal, local.onUpdate, local.ctx));
+    return { ok: true, result };
+  } catch (err) {
+    local.error = err;
+    return { ok: false, error: { message: errorText(err) } };
+  }
+}
+
+/** One delivery of a server-hosted tool's call (what a chat's socket hands the server, stage 3). */
+export const deliverServerToolCall = (call: ServerToolCall, local: ServerToolLocal): Promise<ServerToolOutcome<ToolResult>> => port.call(call, local);
+
+const port: ServerToolPort = {
+  call(call, local) {
+    let outcome = effects.get(call.effectId);
+    if (!outcome) {
+      outcome = runServerTool(call, local);
+      effects.set(call.effectId, outcome);
+      while (effects.size > EFFECTS_KEPT) effects.delete(effects.keys().next().value!);
+    }
+    return outcome;
+  },
+  prepare(chatId, name, args) {
+    const spec = hostedTools.get(chatId)?.get(name);
+    return spec?.prepareArguments ? spec.prepareArguments(args) : args;
+  },
+};

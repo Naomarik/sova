@@ -95,10 +95,10 @@ describe("a project overseer", async () => {
     await assert.rejects(() => chat.switchMode({ mode: "delegate" } as never), ModeRefusedError);
   });
 
-  test("operator sends go through the kind's own userSend; a fresh runtime is unattended (fail closed)", async () => {
+  test("the chat tells the operator's sends apart; a fresh runtime is unattended (fail closed)", async () => {
     const { path } = await po.ensureProjectOverseer(project.id);
     const chat = await acquireChat(path);
-    assert.ok(chat.specialEntry?.userSend, "the kind hands operator sends through its own userSend");
+    assert.ok(chat.userTurns, "its loadout asks the chat to tell the operator's turns apart");
     assert.equal(po.attendedForTest(project.id), false, "starts unattended (fail closed)");
   });
 

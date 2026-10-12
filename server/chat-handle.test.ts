@@ -10,7 +10,8 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, test } from "node:test";
-import type { ChatLifecycleEvent } from "../shared/chat-runtime";
+import type { ChatLifecycleEvent, ServerToolCall } from "../shared/chat-runtime";
+import type { ToolSpec } from "../shared/harness";
 
 const agentDir = mkdtempSync(join(tmpdir(), "sova-chat-handle-test-"));
 process.on("exit", () => rmSync(agentDir, { recursive: true, force: true }));
@@ -21,8 +22,25 @@ mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 const cwd = join(agentDir, "cwd");
 mkdirSync(cwd, { recursive: true });
 
-const { acquireChatHandle, BusyError, chatEventsSince, chatHandle, closeChat, ConfigError, disposeAllChats, errorOfRefusal, failureReply, isSessionBusy, ModeRefusedError, onChatEvent, RefusedError, refusalOf } =
-  await import("./chat-handle");
+const {
+  acquireChatHandle,
+  BusyError,
+  chatEventsSince,
+  chatHandle,
+  closeChat,
+  ConfigError,
+  deliverServerToolCall,
+  disposeAllChats,
+  errorOfRefusal,
+  failureReply,
+  isSessionBusy,
+  ModeRefusedError,
+  onChatEvent,
+  RefusedError,
+  refusalOf,
+  serverToolCall,
+  serveTools,
+} = await import("./chat-handle");
 const { canonicalPath } = await import("./paths");
 
 after(async () => {
@@ -110,6 +128,61 @@ test("closing a chat is an event with a higher seq than any before, kept for a l
   );
 });
 
+test("a server-hosted tool: the chat gets its declaration as data; each run is a call the server runs once per effect id", async () => {
+  const path = session();
+  await acquireChatHandle(path, true);
+  const runs: { params: unknown; call: ServerToolCall | undefined }[] = [];
+  const spec: ToolSpec = {
+    name: "sova_probe",
+    label: "Probe",
+    description: "A tool whose state lives in the server.",
+    parameters: { type: "object", properties: { n: { type: "number" } } },
+    prepareArguments: (args) => ({ ...(args as object), prepared: true }),
+    async execute(_id, params) {
+      runs.push({ params, call: serverToolCall()?.call });
+      await new Promise((r) => setTimeout(r, 1)); // the run's context survives its awaits
+      if ((params as { n?: number }).n === 0) throw new RefusedError("zero is refused");
+      return { content: [{ type: "text", text: `ran ${runs.length}` }], details: { seen: serverToolCall()?.call.toolCallId } };
+    },
+  };
+  const [tool] = serveTools(path, [spec]);
+  assert.deepEqual(JSON.parse(JSON.stringify(tool)), {
+    name: "sova_probe",
+    label: "Probe",
+    description: "A tool whose state lives in the server.",
+    parameters: { type: "object", properties: { n: { type: "number" } } },
+  }, "the chat holds the declaration; what runs it stays here");
+  assert.deepEqual(tool!.prepareArguments!({ n: 1 }), { n: 1, prepared: true }, "the server prepares the arguments");
+
+  const out = await tool!.execute("tc-1", { n: 1 }, undefined, undefined, undefined);
+  assert.deepEqual(out, { content: [{ type: "text", text: "ran 1" }], details: { seen: "tc-1" } });
+  const call = runs[0]!.call!;
+  assert.equal(call.chatId, path);
+  assert.equal(call.toolCallId, "tc-1");
+  assert.equal(call.attended, false, "an ordinary chat's turn is nobody's to attend");
+  assert.match(call.effectId, /#tc-1#/);
+  assert.deepEqual(JSON.parse(JSON.stringify(call)), call, "a call is plain data");
+
+  // The same tool call id again (a model may repeat one) is a new run with an effect id of its own.
+  await tool!.execute("tc-1", { n: 2 }, undefined, undefined, undefined);
+  assert.equal(runs.length, 2);
+  assert.notEqual(runs[1]!.call!.effectId, call.effectId);
+
+  // A call delivered again is answered with its first run's outcome, and never runs twice.
+  const local = { signal: undefined, onUpdate: undefined, ctx: undefined, chat: { branch: () => [], entries: () => [], append: () => "", tool: () => undefined } };
+  const again: ServerToolCall = { ...call, effectId: "fx-again", params: { n: 3 } };
+  const [first, second] = await Promise.all([deliverServerToolCall(again, { ...local }), deliverServerToolCall(again, { ...local })]);
+  assert.deepEqual(first, second);
+  assert.equal(runs.length, 3);
+  assert.deepEqual(await deliverServerToolCall(again, { ...local }), first, "and after it ended");
+  assert.equal(runs.length, 3);
+
+  // A refusal reaches the chat as the error the tool threw; across a socket, its message.
+  await assert.rejects(tool!.execute("tc-2", { n: 0 }, undefined, undefined, undefined), (e) => e instanceof RefusedError && e.message === "zero is refused");
+  assert.deepEqual(await deliverServerToolCall({ ...call, effectId: "fx-zero", params: { n: 0 } }, { ...local }), { ok: false, error: { message: "zero is refused" } });
+  assert.equal(serverToolCall(), undefined, "outside a run, no run");
+});
+
 test("server code reaches a chat only through its handle: nothing outside the chat's host imports chat-manager", () => {
   const root = join(dirname(fileURLToPath(import.meta.url)), "..");
   // The chat's host: the handle itself and the pi adapter the chat runs on.
@@ -120,4 +193,27 @@ test("server code reaches a chat only through its handle: nothing outside the ch
     .filter((f) => /from "(?:\.\.?\/)+(?:[\w-]+\/)*chat-manager(?:\.ts)?"/.test(readFileSync(join(root, f), "utf8")));
   assert.deepEqual(importers.filter((f) => !allowed.has(f)), []);
   assert.deepEqual([...allowed].filter((f) => !importers.includes(f)), [], "an allowed file that no longer imports it leaves the list");
+});
+
+test("nothing outside the chat's host is handed a chat or its driving session", () => {
+  const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+  // The code, its comments left out (prose may name what it explains).
+  const code = (f: string) =>
+    readFileSync(join(root, f), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/.*$/gm, "");
+  const files = globSync("{server,shared,src}/**/*.{ts,tsx}", { cwd: root })
+    .map((f) => relative(root, join(root, f)))
+    .filter((f) => !/\.test\.tsx?$/.test(f) && !f.startsWith("server/harness/") && !f.startsWith("shared/harness") && f !== "server/chat-manager.ts" && f !== "server/chat-handle.ts");
+  // The handle hands out no chat: no ChatSession, no hook that gets one, no way back to one.
+  const handle = code("server/chat-handle.ts");
+  assert.doesNotMatch(handle, /export (type )?\{[^}]*\bChatSession\b/, "chat-handle re-exports no ChatSession");
+  assert.doesNotMatch(handle, /export const chatHandleOf/, "no handle is made from a chat outside the host");
+  assert.deepEqual(files.filter((f) => /\bChatSession\b/.test(code(f))), [], "no server module names the chat itself");
+  // A driving session reaches only the chat's own helpers, which the chat hands it (its stream guard,
+  // its person's turns); loadout policy hears its runs as data (ChatRunEvent). The list only shrinks.
+  const helpers = new Set(["server/stream-guard.ts", "server/user-turns.ts"]);
+  const reach = files.filter((f) => /\bHarnessSession\b/.test(code(f)));
+  assert.deepEqual(reach.filter((f) => !helpers.has(f)), [], "a driving session outside the chat's own helpers");
+  assert.deepEqual([...helpers].filter((f) => !reach.includes(f)), [], "a helper that no longer takes one leaves the list");
 });

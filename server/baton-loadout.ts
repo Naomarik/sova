@@ -30,9 +30,9 @@ import type { QuoteCheck } from "../shared/org-history";
 import { handoffChosen } from "./baton-guards";
 import { inlineOperatorImages } from "./baton-images";
 import { readBatonSettings } from "./baton-settings";
-import { authorNotes, labelAuthors, streamingText } from "./baton-view";
+import { authorNotes, labelAuthors } from "./baton-view";
 import { runWrapup, WRAPUP_SYSTEM, WRAPUP_TOOL, wrapupActive, wrapupTool } from "./baton-wrapup";
-import { acquireChatHandle, BusyError, type ChatHandle, chatHandleOf, RefusedError, registerSpecialLoadout, type SessionMarks } from "./chat-handle";
+import { acquireChatHandle, BusyError, type ChatHandle, RefusedError, registerSpecialLoadout, serveTools, type SessionMarks } from "./chat-handle";
 import { hostOf, onOrgChange, onOrgHostOpened, type Effect, type OrgHostApi } from "./org-engine";
 import type { Step } from "./statecharts";
 import type { Envelope } from "./org-envelope";
@@ -687,6 +687,8 @@ onOrgChange((_orgId, change) => {
 
 
 const isBatonMarked = (s: SessionMarks) => s.state.file().has(BATON);
+/** Baton chats whose reply is being written: from the run's first event (or its first text) to its settle. */
+const writing = new Set<string>();
 
 registerSpecialLoadout({
   kind: "baton",
@@ -714,10 +716,9 @@ registerSpecialLoadout({
             name: "sova-baton",
             factory: (pi) => {
               const state = toolStateWriter(pi);
-              for (const t of batonTools(sessionId, state)) pi.registerTool(toPiTool(t));
-              pi.registerTool(toPiTool(readLinkTool(sessionId)));
-              pi.registerTool(toPiTool(inspectFilesTool(sessionId)));
-              pi.registerTool(toPiTool(confirmFileTool(sessionId)));
+              // Its tools' state lives in this server: hosted here, run through the chat's loopback.
+              for (const t of serveTools(path, [...batonTools(sessionId, state), readLinkTool(sessionId), inspectFilesTool(sessionId), confirmFileTool(sessionId)]))
+                pi.registerTool(toPiTool(t));
               let offered = JSON.stringify(ownerAreaSchema(readRoster(hit.row.orgId)).enum);
               pi.on("before_agent_start", (event, ctx) => {
                 // The owner areas follow the roster: a change reaches the schema at the next run
@@ -728,7 +729,7 @@ registerSpecialLoadout({
                   const now = JSON.stringify(ownerAreaSchema(roster).enum);
                   if (now !== offered) {
                     offered = now;
-                    pi.registerTool(toPiTool(recordDecisionTool(sessionId, state, roster)));
+                    for (const t of serveTools(path, [recordDecisionTool(sessionId, state, roster)])) pi.registerTool(toPiTool(t));
                   }
                   // Its abilities as they are now: the operator may have changed them since the last run.
                   pi.setActiveTools(activeBatonTools(sessionId));
@@ -764,38 +765,35 @@ registerSpecialLoadout({
   async opened(chat) {
     // The wrap-up's tool is in the allowlist, and active only during the wrap-up turn; read_link
     // only while the session can read links.
-    const h = chatHandleOf(chat);
-    await h.setActiveTools(activeBatonTools(h.mirror.sessionId));
+    await chat.setActiveTools(activeBatonTools(chat.mirror.sessionId));
   },
-  watchSession(session, path) {
+  replyText: true,
+  runEvent(path, e) {
     const sessionId = batonOfPath(path)?.row.sessionId;
     if (!sessionId) return;
-    let writing = false;
-    session.subscribe((e) => {
-      // The wrap-up's words are nobody's business on a share page, and its turn is no reply.
-      // The runtime took the turn (its first event, before any text: a model may think or call tools first): the reply
-      // is being written, so its end renews the lease and applies what waited for it.
-      if (e.type === "run.start" && !wrapupActive(sessionId) && !writing) {
-        writing = true;
-        void replyFact(sessionId, "reply/writing");
-      }
-      if (e.type === "message.update" && e.role === "assistant") {
-        if (!wrapupActive(sessionId)) {
-          streamShare(sessionId, streamingText(e.handle));
-          if (!writing) {
-            writing = true;
-            void replyFact(sessionId, "reply/writing");
-          }
+    // The wrap-up's words are nobody's business on a share page, and its turn is no reply.
+    // The runtime took the turn (its first event, before any text: a model may think or call tools first): the reply
+    // is being written, so its end renews the lease and applies what waited for it.
+    if (e.type === "run.start" && !wrapupActive(sessionId) && !writing.has(path)) {
+      writing.add(path);
+      void replyFact(sessionId, "reply/writing");
+    }
+    if (e.type === "reply.text") {
+      if (!wrapupActive(sessionId)) {
+        streamShare(sessionId, e.text);
+        if (!writing.has(path)) {
+          writing.add(path);
+          void replyFact(sessionId, "reply/writing");
         }
-      } else if (e.type === "message.end" || e.type === "run.settled" || e.type === "entry.appended") refreshShare(sessionId);
-      if (e.type === "run.settled") {
-        writing = false;
-        // Entries that arrived mid-run (the transcript takes none then).
-        setTimeout(() => void flushEntries(path).catch(() => {}), 0);
-        // The reply's end: the statechart renews the lease, applies a move held for it, the budget stop, the wrap-up.
-        if (!wrapupActive(sessionId) && !stopping.has(sessionId)) void replyFact(sessionId, "reply/ended");
       }
-    });
+    } else if (e.type === "message.end" || e.type === "run.settled" || e.type === "entry.appended") refreshShare(sessionId);
+    if (e.type === "run.settled") {
+      writing.delete(path);
+      // Entries that arrived mid-run (the transcript takes none then).
+      setTimeout(() => void flushEntries(path).catch(() => {}), 0);
+      // The reply's end: the statechart renews the lease, applies a move held for it, the budget stop, the wrap-up.
+      if (!wrapupActive(sessionId) && !stopping.has(sessionId)) void replyFact(sessionId, "reply/ended");
+    }
   },
   clientSend(path, msg) {
     const hit = batonOfPath(path);
@@ -812,15 +810,14 @@ registerSpecialLoadout({
       throw err;
     }
     // Its reply started with the accepted message (the statechart's reply region).
-    // The runtime refused the message after all: it neither counts nor clears Needs you.
-    return {
-      by: OPERATOR,
-      undo: () => {
-        undoNote(sessionId);
-        void replyFact(sessionId, "reply/ended");
-      },
-      ...(inlined.images.length ? { text: inlined.text, images: inlined.images } : {}),
-    };
+    return { by: OPERATOR, ...(inlined.images.length ? { text: inlined.text, images: inlined.images } : {}) };
+  },
+  // The runtime refused the message after all: it neither counts nor clears Needs you.
+  clientSendRefused(path) {
+    const sessionId = batonOfPath(path)?.row.sessionId;
+    if (!sessionId) return;
+    undoNote(sessionId);
+    void replyFact(sessionId, "reply/ended");
   },
   refuses(gesture) {
     if (gesture === "mode") return "A baton session has no mode.";

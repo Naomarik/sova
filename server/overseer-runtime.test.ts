@@ -239,6 +239,18 @@ describe("per-turn caps follow the user's messages", () => {
   });
 });
 
+describe("a brief's key (§app.chat-processes/server-messages)", () => {
+  test("a retry of the brief not yet sent is the same message; once sent, the same blockers later are a new one", () => {
+    const { key, sent } = overseer.briefKeyForTest;
+    sent();
+    const first = key("d1", 1000);
+    assert.equal(key("d1", 21_000), first, "the next check retries the same brief");
+    assert.notEqual(key("d2", 21_000), first, "other blockers, another brief");
+    sent();
+    assert.notEqual(key("d1", 7_200_000), first, "the same blockers briefed again later: a new key, whatever the chat remembers");
+  });
+});
+
 describe("the running-at-once cap under parallel calls", () => {
   test("parallel creates each see the others' reservations: with a cap of 1, one passes", async () => {
     writeOverseerSettings({ ...defaultSettings(), caps: { ...DEFAULT_CAPS, createPerTurn: 10, promptsPerTurn: 10, concurrentSessions: 1 } });

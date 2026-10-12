@@ -59,8 +59,8 @@ also update Y" list live in its guide: read the guide of every area your task to
   4810, `SOVA_PORT=<n>` for another; it copies no auth, copy `auth.json` in by hand). Create, archive,
   restart and mutate sessions, workers and settings freely; never restart `sova-runtime.service` to
   test. A feature that mutates nothing and needs real sessions to compare against may read real
-  state, never through a second server (a server on the real `~/.pi` still writes; there is no
-  read-only mode): copy the sessions into `.agent`, or view them through the live server. Details
+  state, never through a second server (a server on the real `~/.pi` still writes: seen marks,
+  summaries, titles, signals, worker restores; there is no read-only mode): copy the sessions into `.agent`, or view them through the live server. Details
   and gaps: testing guide.
 - `pnpm run typecheck` and `pnpm run build` must pass.
 - Tests (testing guide): `pnpm test` is the unit tier, in-process only; run it constantly.
@@ -90,10 +90,11 @@ the in-memory subagent registry; hosted chats survive (JSONL; the webapp reconne
   ending at once (a turn another session starts in those 30 s can still be cut off). If `systemd-run`
   fails (a sandboxed session can't reach the user bus, by design), never work around it: ask the user.
   Confirm afterwards with `GET /api/health` (`startedAt`, `head`).
-- The verb form (Sova as its own project; slot 0 adopts `sova-runtime.service`): the operator's Apply
-  on the Services tab, or `sova-project apply --checkout ~/webapps/sova --confirm` (`--project` alone
-  is refused). Refused while any hosted session is busy (your own turn too, so an agent never gets it
-  through); otherwise it schedules `scripts/sova-restart-gate.mjs` 30 s out, which re-checks and
+- The verb form (Sova as its own project, `.sova/project.json`; slot 0 adopts
+  `sova-runtime.service`): the operator's Apply on the Services tab, or
+  `sova-project apply --checkout ~/webapps/sova --confirm` (`--project` alone is refused,
+  `invalid-request`). Refused while any hosted session is busy (your own turn too, so an agent never
+  gets it through); otherwise it schedules `scripts/sova-restart-gate.mjs` 30 s out, which re-checks and
   restarts only if nothing is busy (else exit 75, logged in
   `<state root>/project-services/logs/restart-gate.log`). up, down, reset and teardown of slot 0 are
   refused. Never run the gate script against `sova-runtime.service` by hand or point a test at it:
@@ -157,8 +158,8 @@ messages and `§workspace.groups/decisions`):
   greps and test counts say what's there; `git show <sha>:<file>` and `git merge-base --is-ancestor`
   say since when. Name the commit a claim is true at, and read the live tree, not an archive of it.
 - **A frame that is confirming itself feels exactly like a frame that is correct.** When a class is
-  salient every event reads into it; a count of instances is an instrument too: measure it, don't
-  repeat it.
+  salient every event reads into it and the pattern-match feels like recognition; a count of
+  instances is an instrument too: measure it, don't repeat it.
 
 ## The pi boundary (detail: [agents/server/harness/overview.md](agents/server/harness/overview.md))
 

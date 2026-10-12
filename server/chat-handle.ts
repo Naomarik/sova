@@ -769,6 +769,28 @@ function trialServedSleep(): ToolSpec {
   };
 }
 
+/**
+ * Test only (SOVA_CHAT_TEST_SERVED=1 with SOVA_CHAT_TEST_ACT_DELAY_MS, the chat-runtime trial): an
+ * acting tool waits that long, `before` its act or `after` it (logged and done), as
+ * SOVA_CHAT_TEST_ACT_DELAY_AT says (default after), so a trial can restart the server inside a real
+ * act. Each wait is logged beside trial_served_sleep's runs. A no-op otherwise.
+ */
+export async function trialActWait(at: "before" | "after", tool: string, toolCallId: string, signal?: AbortSignal): Promise<void> {
+  const ms = Number(process.env.SOVA_CHAT_TEST_ACT_DELAY_MS);
+  if (process.env.SOVA_CHAT_TEST_SERVED !== "1" || !(ms > 0)) return;
+  if ((process.env.SOVA_CHAT_TEST_ACT_DELAY_AT === "before" ? "before" : "after") !== at) return;
+  const log = (event: string) => {
+    mkdirSync(join(stateRoot(), "chats"), { recursive: true });
+    appendFileSync(join(stateRoot(), "chats", "test-served.jsonl"), `${JSON.stringify({ event, tool, toolCallId, effectId: serverToolCall()?.call.effectId, at: Date.now() })}\n`);
+  };
+  log("act-wait");
+  await new Promise<void>((done) => {
+    const t = setTimeout(done, ms);
+    signal?.addEventListener("abort", () => (clearTimeout(t), done()), { once: true });
+  });
+  log("act-done");
+}
+
 /** One ask of a chat process, answered from this server's own sources. */
 export async function answerChatAsk(path: string, method: ChatAskMethod, args: unknown): Promise<unknown> {
   const a = (args ?? {}) as Record<string, any>;

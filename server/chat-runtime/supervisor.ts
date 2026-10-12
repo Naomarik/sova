@@ -264,9 +264,22 @@ const isUp = (s: UnitStatus) => s.state === "active" || s.state === "activating"
 /** The unit and its main process are gone (a deactivating unit still has its pid). */
 const isGone = (s: UnitStatus) => !isUp(s) && s.pid === null;
 
+/** The cause a chat process logged on its way out (`[chat-runtime] exit <cause> (pid <n>)`, main.ts),
+    for process `pid`: an end it announced even when no server was linked to hear its `exit` frame. */
+export function announcedExit(lines: readonly string[], pid: number | null): ExitCause | null {
+  if (pid === null) return null;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const m = /\[chat-runtime\] exit (\w+) \(pid (\d+)\)/.exec(lines[i]!);
+    if (m && Number(m[2]) === pid) return m[1] as ExitCause;
+  }
+  return null;
+}
+
 /** systemd's own account of how a unit's main process ended, from its journal lines. */
 export function exitOfLog(lines: readonly string[]): { exit: number | null; signal: string | null } | null {
   for (let i = lines.length - 1; i >= 0; i--) {
+    // A clean exit is not "Main process exited" but the unit deactivating (older systemd: "Succeeded.").
+    if (/: (Deactivated successfully|Succeeded)\.$/.test(lines[i]!)) return { exit: 0, signal: null };
     const m = /Main process exited, code=(\w+), status=(\d+)(?:\/(\w+))?/.exec(lines[i]!);
     if (!m) continue;
     return m[1] === "exited" ? { exit: Number(m[2]), signal: null } : { exit: null, signal: m[3] ?? `signal ${m[2]}` };
@@ -430,7 +443,11 @@ export class ChatSupervisor {
 
   /** How `rec`'s unit ended, read now: null when it ended cleanly (exit 0: an operator stop, no death). */
   private async deathOf(rec: ChatRecord, st: UnitStatus): Promise<ChatDeath | null> {
-    const logs = (await this.deps.driver.logs(rec.unit, LOG_TAIL * 3).catch(() => [])).map((l) => l.text);
+    // This run's lines only (the journal keeps earlier runs of the same unit name).
+    const since = Date.parse(rec.startedAt);
+    const logs = (await this.deps.driver.logs(rec.unit, LOG_TAIL * 3, Number.isFinite(since) ? since : undefined).catch(() => [])).map((l) => l.text);
+    // It said why it exits, with no server linked to hear it: no death.
+    if (announcedExit(logs, rec.pid)) return null;
     // A collected unit is gone at once: its journal still says how its main process ended.
     const said = exitOfLog(logs);
     const exit = st.exit ?? said?.exit ?? null;

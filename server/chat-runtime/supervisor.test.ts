@@ -118,6 +118,26 @@ test("a signal death reads as crashed with the signal; a unit gone without a wor
   assert.equal(deaths.length, 1);
 });
 
+test("an exit the chat logged (no server linked to hear its frame), or systemd's clean deactivation, is no death", async () => {
+  assert.deepEqual(exitOfLog(["sova-chat-x.service: Deactivated successfully."]), { exit: 0, signal: null });
+  const d = new FakeDriver();
+  const { sup, deaths } = make(d);
+  const r1 = await sup.start(chat);
+  sup.noteConnected("c1");
+  d.die(r1.unit, ["[chat-runtime] SIGTERM: closing", `[chat-runtime] exit operator (pid ${r1.pid})`]);
+  assert.equal(await sup.check("c1"), "ended");
+  const r2 = await sup.start({ ...chat, chatId: "c2" });
+  sup.noteConnected("c2");
+  d.die(r2.unit, ["sova-chat-test01-c2.service: Deactivated successfully."]);
+  assert.equal(await sup.check("c2"), "ended");
+  // Another process's line (an earlier run of the unit) says nothing about this one.
+  const r3 = await sup.start({ ...chat, chatId: "c3" });
+  sup.noteConnected("c3");
+  d.die(r3.unit, ["[chat-runtime] exit idle (pid 1)"]);
+  assert.equal(await sup.check("c3"), "died");
+  assert.deepEqual(deaths.map((x) => x.chatId), ["c3"]);
+});
+
 test("a chat that ends before its first hello did not start: logged and handed to the router, never a death", async () => {
   const d = new FakeDriver();
   const failed: string[] = [];

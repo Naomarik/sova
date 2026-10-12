@@ -1,4 +1,4 @@
-/** Config loading for topic-outline: global file, project override only when trusted. */
+/** Config loading for topic-outline: the agent dir's file, project override only when trusted. */
 
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -15,7 +15,6 @@ export const DEFAULT_CONFIG: OutlineConfig = {
   trigger: { debounceMs: 3_000, minNewMessages: 2 },
   shareWithSessions: "now-only",
   shareLastHeading: true,
-  claudeBin: join(homedir(), ".local/bin/claude"),
   limits: { maxTopics: 40, maxBullets: 3 },
 };
 
@@ -71,12 +70,21 @@ function merge(raw: Record<string, unknown> | undefined, base: OutlineConfig): O
   return config;
 }
 
+/** The agent dir pi runs with: PI_CODING_AGENT_DIR (a leading ~ expanded), else ~/.pi/agent. */
+export function agentDir(env: NodeJS.ProcessEnv = process.env): string {
+  const dir = env.PI_CODING_AGENT_DIR?.trim();
+  if (!dir) return join(homedir(), ".pi/agent");
+  if (dir === "~") return homedir();
+  return dir.startsWith("~/") ? join(homedir(), dir.slice(2)) : dir;
+}
+
 /**
- * Global config at ~/.pi/agent/topic-outline.json always applies.
- * Project-local .pi/topic-outline.json applies only when the project is trusted.
+ * The agent dir's topic-outline.json always applies (~/.pi/agent on the live server; a hermetic
+ * server's own dir, never the user's). Project-local .pi/topic-outline.json applies only when the
+ * project is trusted.
  */
 export function loadConfig(cwd: string, projectTrusted: boolean, configDir?: string): OutlineConfig {
-  const globalDir = configDir ?? join(homedir(), ".pi/agent");
+  const globalDir = configDir ?? agentDir();
   let config = merge(readJson(join(globalDir, "topic-outline.json")), DEFAULT_CONFIG);
   if (projectTrusted && cwd) {
     config = merge(readJson(join(cwd, ".pi", "topic-outline.json")), config);

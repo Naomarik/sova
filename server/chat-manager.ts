@@ -3122,6 +3122,10 @@ class ChatSession {
     if (held.get(this.path) === this) held.delete(this.path); // a reload may already hold a newer one
     this.onDisposed();
     emitChatEvent(this.path, "closed");
+    // Recorded now as well as after: the run's last entry (a reply a shutdown cut off) is already
+    // written, and a stop that ends the process before the runtime's own dispose returns must not
+    // leave it reading as another process's write (§chat.transcript/own-writes-across-restart).
+    this.recordOwnWrites();
     try {
       await this.host.dispose();
     } catch (err) {

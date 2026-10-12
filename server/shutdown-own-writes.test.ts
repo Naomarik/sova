@@ -1,0 +1,79 @@
+// Run: npx tsx --test server/shutdown-own-writes.test.ts (or npm test). Uses a throwaway
+// PI_CODING_AGENT_DIR in the OS temp dir; ~/.pi is never read or written.
+//
+// §chat.transcript/own-writes-across-restart: a reply a server stop cuts off is written by the stop's
+// abort, and that entry is the server's own write, even when the process ends before the runtime's
+// own dispose returns (the shutdown races the disposes against a few seconds, then exits). Without
+// the record, the next server read the file as changed by a process it can't identify, and refused
+// to auto-resume the chat (§app.overseer/auto-resume) for 120 s.
+import assert from "node:assert/strict";
+import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { after, test } from "node:test";
+import { piSession } from "./harness/pi/testing/handle";
+
+const agentDir = realpathSync(mkdtempSync(join(tmpdir(), "sova-shutdown-own-writes-")));
+process.on("exit", () => rmSync(agentDir, { recursive: true, force: true }));
+process.env.PI_CODING_AGENT_DIR = agentDir;
+
+const { acquireChat, disposeAllChats } = await import("./chat-manager");
+const { SessionManager } = await import("@earendil-works/pi-coding-agent");
+const { canonicalPath } = await import("./paths");
+const { markOwned, recentForeignWriteAgeSec } = await import("./write-guard");
+
+after(async () => {
+  await Promise.race([disposeAllChats(), new Promise((r) => setTimeout(r, 1000))]);
+});
+
+const TEST_MODEL = {
+  id: "stub", name: "stub", api: "stub", provider: "stub", baseUrl: "http://127.0.0.1:9", reasoning: false, input: ["text"],
+  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 100_000, maxTokens: 1000,
+};
+const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
+
+async function until(cond: () => boolean, ms = 30_000): Promise<void> {
+  const end = Date.now() + ms;
+  while (!cond()) {
+    if (Date.now() > end) throw new Error("timed out");
+    await new Promise((r) => setTimeout(r, 5));
+  }
+}
+
+test("a reply the stop's abort ended is recorded as ours before the runtime's dispose returns", async () => {
+  const sm = SessionManager.create(agentDir);
+  writeFileSync(sm.getSessionFile()!, `${JSON.stringify(sm.getHeader())}\n`, { flag: "wx" });
+  const path = canonicalPath(sm.getSessionFile()!);
+  markOwned(path);
+  const chat = await acquireChat(path);
+  const session = piSession(chat) as unknown as {
+    _modelRuntime: { hasConfiguredAuth(p: string): boolean };
+    agent: { state: { model: unknown }; getApiKey: unknown; streamFunction: unknown };
+  };
+  session._modelRuntime.hasConfiguredAuth = () => true;
+  session.agent.state.model = TEST_MODEL;
+  session.agent.getApiKey = async () => "stub";
+  // A reply that streams until it is aborted, then ends as aborted (the partial reply pi writes).
+  session.agent.streamFunction = async (_m: unknown, _c: unknown, opts: { signal?: AbortSignal }) => {
+    const partial = { role: "assistant", api: "stub", provider: "stub", model: "stub", timestamp: Date.now(), content: [{ type: "text", text: "so far" }], usage };
+    await new Promise<void>((r) => (opts.signal?.aborted ? r() : opts.signal?.addEventListener("abort", () => r(), { once: true })));
+    const message = { ...partial, stopReason: "aborted", errorMessage: "Request was aborted" };
+    return {
+      async *[Symbol.asyncIterator]() {
+        yield { type: "error", reason: "aborted", error: message };
+      },
+      result: async () => message,
+    };
+  };
+  void chat.acceptPrompt("a long reply", undefined, "server").turn.catch(() => {});
+  await until(() => piSession(chat).isStreaming);
+  const before = piSession(chat).sessionManager.getEntries().length;
+  // The stop: abort the run (index.ts shutdown), then dispose with a runtime whose own dispose never
+  // returns, as when the process exits first.
+  await chat.harness.abort();
+  assert.ok(piSession(chat).sessionManager.getEntries().length > before, "the abort wrote the cut-off reply");
+  (chat as unknown as { host: { dispose(): Promise<void> } }).host.dispose = () => new Promise(() => {});
+  void chat.dispose();
+  await until(() => chat.disposed);
+  assert.equal(recentForeignWriteAgeSec(path), null, "the cut-off reply is the server's own write");
+});

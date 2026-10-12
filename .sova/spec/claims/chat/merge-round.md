@@ -241,8 +241,8 @@ or the other sessions on a busy machine:
   `scripts/nice.mjs`, the same lowering `pnpm test` gets; a tree without that script runs it
   unchanged.
 - **The spec replay suite is a landing gate.** When the commits `check` would land touch
-  `pi-config/extensions/spec/core/`, `pi-config/extensions/mode/spec-guard.ts`,
-  `pi-config/extensions/claude-code/spec-hooks.ts` or `pi-config/extensions/spec/tests/replay/`,
+  `pi-config/extensions/spec/core/`, `pi-config/extensions/mode/spec-guard.ts` or
+  `pi-config/extensions/spec/tests/replay/`,
   and the branch's tree has `pi-config/extensions/spec/tests/replay/replay.test.mjs`, `check` runs
   `node --test tests/replay/*.test.mjs` in `pi-config/extensions/spec`, through `scripts/nice.mjs`
   and with `SOVA_SPEC_REPLAY=1`, as a step like the others (its log, its timeout); a failure or a

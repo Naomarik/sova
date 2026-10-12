@@ -2477,10 +2477,8 @@
         "pi-config/extensions/sandbox/backends/linux-bwrap.ts",
         "pi-config/extensions/sandbox/tests/policy.unit.test.ts",
         "pi-config/extensions/sandbox/launch.ts",
-        "pi-config/extensions/sandbox/tests/launch.unit.test.ts",
         "pi-config/extensions/subagents/host.ts",
-        "pi-config/extensions/sandbox/tests/claude-confine.mjs",
-        "pi-config/extensions/sandbox/tests/claude-worker.mjs"
+        "pi-config/extensions/sandbox/tests/index.unit.test.ts"
       ],
       "agreed": {
         "by": "naomarik",
@@ -5863,7 +5861,6 @@
         "pi-config/extensions/sandbox/tests/unit/linux-bwrap.unit.test.ts",
         "pi-config/extensions/sandbox/launch.ts",
         "pi-config/extensions/sandbox/tools.ts",
-        "pi-config/extensions/sandbox/tests/launch.unit.test.ts",
         "pi-config/extensions/sandbox/tests/tools.unit.test.ts",
         "pi-config/extensions/sandbox/README.md"
       ]

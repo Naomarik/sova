@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -550,11 +551,14 @@ test("the chat env: the server's minus the deny list, Sova's bun and the resolve
 });
 
 test("the socket lives under the state root, or in the runtime dir when that path would not fit", () => {
-  assert.equal(chatSocketPath("0123456789abcdef-xyz", { root: "/a/chats" }), "/a/chats/s/0123456789ab.sock");
-  assert.equal(chatSocketPath("abc", { root: "/a/chats", suffix: "-r2" }), "/a/chats/s/abc-r2.sock");
+  const abc = createHash("sha256").update("abc").digest("hex").slice(0, 16);
+  assert.equal(chatSocketPath("abc", { root: "/a/chats" }), `/a/chats/s/${abc}.sock`);
+  assert.equal(chatSocketPath("abc", { root: "/a/chats", suffix: "-r2" }), `/a/chats/s/${abc}-r2.sock`);
   const deep = `/${"d".repeat(120)}/chats`;
-  assert.equal(chatSocketPath("abc", { root: deep, runtimeDir: "/run/user/1000", hash: "h1" }), "/run/user/1000/sova-chats-h1/abc.sock");
-  assert.equal(chatSocketPath("abc", { root: deep, runtimeDir: undefined, tmp: "/tmp", hash: "h1" }), "/tmp/sova-chats-h1/abc.sock");
+  assert.equal(chatSocketPath("abc", { root: deep, runtimeDir: "/run/user/1000", hash: "h1" }), `/run/user/1000/sova-chats-h1/${abc}.sock`);
+  assert.equal(chatSocketPath("abc", { root: deep, runtimeDir: undefined, tmp: "/tmp", hash: "h1" }), `/tmp/sova-chats-h1/${abc}.sock`);
+  // Two session ids made in the same millisecond (UUIDv7: the same first 12 characters) get sockets of their own.
+  assert.notEqual(chatSocketPath("0199bbbb-0000-7000-8000-000000000001", { root: "/a/chats" }), chatSocketPath("0199bbbb-0000-7000-8000-000000000002", { root: "/a/chats" }));
 });
 
 test("the controller epoch only grows, across starts and a clock that went back", () => {
@@ -649,5 +653,21 @@ test("a chat started while adoption runs is not stopped as unrecorded", async ()
   await second.sup.adopt();
   assert.deepEqual(d.stopped, []);
   assert.ok(second.sup.record("c5"));
+});
+
+test("a chat an older build started keeps the socket path its record names: adoption hands that one back", async () => {
+  const d = new FakeDriver();
+  mkdirP(reg);
+  const legacy = "/a/chats/s/0199bbbb0000.sock"; // the old naming: the id's first 12 characters
+  await d.start({ unit: "sova-chat-test01-0199bbbb-0000-7000-8000-000000000001", argv: [], cwd: "/", env: {} });
+  writeFileSync(
+    join(reg, "0199bbbb-0000-7000-8000-000000000001.json"),
+    JSON.stringify({ chatId: "0199bbbb-0000-7000-8000-000000000001", sessionPath: "/s/x.jsonl", cwd: "/", unit: "sova-chat-test01-0199bbbb-0000-7000-8000-000000000001", pid: 1000, sock: legacy, epoch: 1, startedAt: "t" }),
+  );
+  const { sup } = make(d, { socketPath: (id, suffix) => chatSocketPath(id, { root: "/a/chats", ...(suffix ? { suffix } : {}) }) });
+  const { adopted } = await sup.adopt();
+  assert.equal(adopted[0]!.sock, legacy, "the router connects to the recorded path (chat-host takeBack: rec.sock)");
+  assert.equal(sup.record("0199bbbb-0000-7000-8000-000000000001")!.sock, legacy);
+  assert.deepEqual(d.stopped, []);
 });
 

@@ -11,7 +11,8 @@ import { after, test } from "node:test";
  * - detached test driver (no user bus needed): the server is a plain process killed outright;
  * - systemd (only with SOVA_TEST_SYSTEMD=1 and a user manager answering): the server is a stand-in
  *   unit (KillMode=control-group, Restart=always, as the live one) restarted with systemctl, the chat
- *   a unit in a test slice. Never sova-runtime.service, never sova-chats.slice.
+ *   a unit in a top-level test slice (no dash: a dash nests a slice under its prefix). Never
+ *   sova-runtime.service, never sova-chats.slice.
  */
 
 const FIXTURE = join(import.meta.dirname, "supervisor-standin.ts");
@@ -99,7 +100,7 @@ test("systemd: a chat unit survives a restart of the stand-in server unit, outsi
   const { agent, out } = scratch();
   const tag = `${process.pid}`;
   const parent = `sova-standin-sup-${tag}`;
-  const slice = `sova-chats-test-${tag}.slice`;
+  const slice = `sovasupint${tag}.slice`;
   const env = { ...process.env, PI_CODING_AGENT_DIR: agent, SOVA_CHAT_SLICE: slice };
   const sh = (...a: string[]) => spawnSync("systemctl", ["--user", ...a], { encoding: "utf8" });
   try {
@@ -137,7 +138,7 @@ test("systemd: a chat unit survives a restart of the stand-in server unit, outsi
 
 test("systemd: with no server running, a chat killed is one death (KILL, from the journal); a chat stopped cleanly is none", { skip: systemd ? false : "set SOVA_TEST_SYSTEMD=1 with a user manager (run by the coordinator from a plain shell)" }, async () => {
   const { agent, out } = scratch();
-  const slice = `sova-chats-test-${process.pid}-d.slice`;
+  const slice = `sovasupint${process.pid}d.slice`;
   const env = { ...process.env, PI_CODING_AGENT_DIR: agent, SOVA_CHAT_SLICE: slice };
   const sh = (...a: string[]) => spawnSync("systemctl", ["--user", ...a], { encoding: "utf8" });
   const unitFile = () => JSON.parse(readFileSync(join(agent, "sova", "chats", "registry", "standin-chat-1.json"), "utf8")).unit as string;

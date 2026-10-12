@@ -570,10 +570,11 @@ export class WorkerRegistry {
   }
   private async startFor(parent: Parent, req: WorkerStart): Promise<WorkerRef> {
     const p = req?.spec?.parent;
-    if (!p || p.sessionId !== parent.sessionId || p.path !== parent.path) throw new Error("A worker chat is started by its own parent session only.");
+    if (!p || p.sessionId !== parent.sessionId) throw new Error("A worker chat is started by its own parent session only.");
     const known = this.keys.get(req.key);
     if (known) this.mine(parent, known);
-    return this.start(req);
+    // Its parent's file as the link or binding names it (canonical), never as the request spells it.
+    return this.start(p.path === parent.path ? req : { ...req, spec: { ...req.spec, parent: { ...p, path: parent.path } } });
   }
 
   /** The worker host of a parent chat in this process. */

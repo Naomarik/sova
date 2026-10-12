@@ -338,16 +338,6 @@ test("a failover before the first hello still reads as a failover (qa F4)", () =
   assert.equal(firstBaseline(null, b), b);
 });
 
-test("the page's own build is the baseline's, never the first hello's: an older cached page offers the reload at once", () => {
-  const hello = { id: "a", label: "Host A", protocol: "p1", build: "new" };
-  // The service worker served the cached shell of an older build; the first hello already comes from the new one.
-  const base = firstBaseline({ id: "a", label: "Host A" }, hello, "old");
-  assert.deepEqual(base, { id: "a", label: "Host A", protocol: "p1", build: "old" });
-  assert.deepEqual(helloStep(base, hello, null, 0), { change: { protocol: false, build: true, host: null }, pending: null });
-  // A page with no stamp (dev server, older host) learns the build from the hello, as before.
-  assert.equal(helloChange(firstBaseline({ id: "a", label: "Host A" }, hello, undefined), hello), null);
-});
-
 test("one answer from another host is not a failover; a second from it, 1 s or more later, is (lab L1)", () => {
   const a = { id: "a", label: "Host A", protocol: "p1", build: "b1" };
   const b = { ...a, id: "b", label: "Host B" };

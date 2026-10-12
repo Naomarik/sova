@@ -20,14 +20,6 @@ A tab that reconnects to a different host or a different Sova version notices it
 offers to reload, rather than running old code against a new server. A host change is announced only
 once it is confirmed, never on one request answered by another host during a network stall.
 
-The build a tab compares against is the one its own page carries: the server stamps every
-`index.html` it serves with its build (`<meta name="sova-build">`, the same value as the hello's
-`build`), and the tab reads it from the page it runs, never from the first answer it gets. So a tab
-that started from an older page (the installed app's cached shell, served while the host was
-unreachable or restarting) offers the reload on its first check, even when the first host it
-reaches already serves the new build. A page without the stamp (a dev server, an older host) takes
-the first hello's build, as before.
-
 ## §mesh.front-door/config — The order and the configuration
 
 The Mesh page shows the front door's host order, which the user can change, and the reverse-proxy

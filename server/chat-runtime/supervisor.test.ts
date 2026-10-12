@@ -151,6 +151,17 @@ test("systemd's journal, as a real user manager writes it: a stop by request, a 
   assert.equal(exitOfLog([started, "chat output"]), null);
 });
 
+test("a signal the driver saw itself (the detached driver) is the death's signal, not its exit 128", async () => {
+  const d = new FakeDriver();
+  const { sup, deaths } = make(d);
+  const rec = await sup.start(chat);
+  sup.noteConnected("c1");
+  d.die(rec.unit);
+  d.table.get(rec.unit)!.status = { state: "failed", pid: null, exit: 128, signal: "SIGKILL" };
+  await sup.check("c1");
+  assert.deepEqual([deaths[0]!.cause, deaths[0]!.exit, deaths[0]!.signal], ["crashed", null, "KILL"]);
+});
+
 test("a death carries when systemd wrote down the end, when the journal has it", async () => {
   const d = new FakeDriver();
   const { sup, deaths } = make(d);

@@ -590,7 +590,9 @@ async function t6() {
 }
 
 async function t7() {
-  // Needs the server's test-only served tool (trial_served_sleep).
+  // Needs the server's test-only served tool (trial_served_sleep, on with SOVA_CHAT_TEST_SERVED=1).
+  await teardown();
+  await boot({ extra: { SOVA_CHAT_TEST_SERVED: "1" } });
   const { path, s } = await newChat();
   prompt(s, "[served] run it");
   await s.until(isEvent("tool.start"), 60000, "the served call starts");
@@ -605,6 +607,8 @@ async function t7() {
   const runs = readLines(join(sova, "chats", "test-served.jsonl")).filter((e) => e.event === "start");
   R.check(runs.length === 1, `t7: the action ran once (${runs.length} starts)`);
   s2.close();
+  await teardown();
+  await boot();
 }
 
 async function t8() {

@@ -232,7 +232,6 @@ export function classifyArgv(argv: string[], comm = ""): ArgvInfo {
   if (!argv.length) return { kind: "other", cmd: comm ? `[${comm}]` : "?" };
   const exe = base(argv[0]!);
   const rest = argv.slice(1);
-  if (exe === "pi") return { kind: "pi-worker", cmd: cut(["pi", ...rest.map(shortArg)].join(" ")) };
   // Claude Code: its own binary, or node running its cli.js.
   const claudeAt = exe === "claude" ? 0 : /^(node|bun)$/.test(exe) && argv[1] && /claude(-code)?\/cli\.m?js$|\/claude$/.test(argv[1]) ? 1 : -1;
   if (claudeAt >= 0) {

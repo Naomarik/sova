@@ -148,8 +148,6 @@ export interface AttribInput {
       or Claude Code tool): every child inherits them too, so they say nothing. */
   serverEnv?: ProcEnv;
   hosted: readonly HostedInfo[];
-  /** pi worker pid → its own session file, from the live records (`p<pid>-*.json`). */
-  liveRecordPids: ReadonlyMap<number, string>;
   /** A process in a chat's unit of its own → that chat's process (the unit holds what the chat started,
       reparented or not). */
   unitOf?: ReadonlyMap<number, number>;
@@ -196,7 +194,7 @@ function indexHosted(hosted: readonly HostedInfo[]) {
 
 /**
  * Charge every measured process to a session and worker, strongest evidence first: the
- * runtime's worker pid, a claude session uuid, a pi worker's live record, a team member's env,
+ * runtime's worker pid, a claude session uuid, a team member's env,
  * the PI_SESSION_FILE pi's bash tool sets, then the nearest charged ancestor, then sid memory,
  * then (heuristic) cwd. A direct child of the server that looks like a worker and matched
  * nothing becomes an unowned worker, and its subtree goes with it.
@@ -211,11 +209,6 @@ export function attribute(input: AttribInput): Attribution {
     if (p.argv.claudeSession) {
       const o = idx.byClaude.get(p.argv.claudeSession);
       if (o) return o;
-    }
-    if (p.argv.kind === "pi-worker") {
-      const file = input.liveRecordPids.get(s.pid);
-      const o = file ? idx.byFile.get(file) : undefined;
-      if (o?.worker) return { ...o, via: "live-record" };
     }
     if (p.env.team) {
       const list = (idx.byWorkerId.get(p.env.team.workerId) ?? []).filter((o) => {
@@ -267,7 +260,7 @@ export function attribute(input: AttribInput): Attribution {
       if (o) owner = { ...o, via: "descendant" };
     }
     // A worker-looking child of the server that matched nothing is its own (unowned) group.
-    if (!owner && ppid === serverPid && (p.argv.kind === "pi-worker" || p.argv.kind === "claude-worker"))
+    if (!owner && ppid === serverPid && (p.argv.kind === "claude-worker"))
       owner = { worker: `unowned:${pid}`, via: "descendant" };
     if (owner) owners.set(pid, owner);
     state.set(pid, 1);

@@ -12,7 +12,7 @@
 // Parsers: resource-monitor-proc.ts. CPU fold, joins, sid memory: resource-monitor-attrib.ts.
 // Ring, rollups, disk log: resource-monitor-history.ts.
 
-import { closeSync, openSync, readdirSync, readFileSync, readSync as readFd } from "node:fs";
+import { closeSync, openSync, readdirSync, readSync as readFd } from "node:fs";
 import { readFile, readlink } from "node:fs/promises";
 import { availableParallelism, freemem, loadavg, platform, totalmem } from "node:os";
 import { join } from "node:path";
@@ -27,7 +27,6 @@ import type {
 import {
   attribute, cpuKey, foldCpu, SidMemory, type AttribProc, type CpuPrev, type HostedInfo, type Owner, type WorkerInfo,
 } from "./resource-monitor-attrib";
-import { canonicalPath } from "./paths";
 import { toolCtx } from "./harness/pi/tools";
 import { MonitorLog, MonitorRing, Rollup, type TickPoint } from "./resource-monitor-history";
 import {
@@ -178,8 +177,6 @@ export interface MonitorOptions {
   cgroupRoot?: string;
   /** Where the 30s log goes (<stateRoot>/monitor). */
   logDir: string;
-  /** Live records dir (pi worker pid → its session file). */
-  liveDir?: string;
   intervalMs?: number;
   serverPid?: number;
   clkTck?: number;
@@ -214,9 +211,6 @@ interface ProcState {
   swapBytes?: number;
   swapAt: number;
   stat: ProcStat;
-  liveRecordChecked?: boolean;
-  /** From its live record: the pi worker's own session file. */
-  liveFile?: string;
 }
 
 const BATCH = 48;
@@ -260,7 +254,6 @@ export class ResourceMonitor {
   readonly clkTck: number;
   private readonly now: () => number;
   private readonly log: MonitorLog;
-  private readonly liveDir?: string;
   private readonly hostedOf: () => HostedInfo[];
   private readonly plat: string;
   readonly ring = new MonitorRing(720);
@@ -297,8 +290,6 @@ export class ResourceMonitor {
   private tickMs: number[] = [];
   private startedAt = 0;
   private lastRotate = 0;
-  private liveNames = new Map<number, string>();
-  private liveNamesAt = 0;
   private treeDeepAt = 0;
   private lastPiWorkerMiss = 0;
   private snap: MonitorSnapshot | null = null;
@@ -315,7 +306,6 @@ export class ResourceMonitor {
     this.clkTck = opts.clkTck ?? 100;
     this.now = opts.now ?? Date.now;
     this.log = new MonitorLog(opts.logDir);
-    this.liveDir = opts.liveDir;
     this.plat = opts.platform ?? platform();
     this.titleOf = opts.titleOf;
     this.idleEvery = Math.max(1, Math.round(opts.idleEvery ?? IDLE_EVERY));
@@ -642,9 +632,8 @@ export class ResourceMonitor {
       const hostedNow = this.hostedOf();
       const byPid = new Map<number, AttribProc>();
       for (const p of live.values()) byPid.set(p.stat.pid, { stat: p.stat, argv: p.argv, env: p.env, ...(p.cwd ? { cwd: p.cwd } : {}) });
-      const liveRecordPids = this.liveRecordPids(live, hostedNow, at);
       const { owners, inTree } = attribute({
-        procs: byPid, serverPid: this.serverPid, hosted: hostedNow, liveRecordPids, sids: this.sids,
+        procs: byPid, serverPid: this.serverPid, hosted: hostedNow, sids: this.sids,
         serverEnv: this.serverEnv, unitOf: this.unitOf,
       });
       this.sids.learn(byPid, owners, at);
@@ -705,46 +694,6 @@ export class ResourceMonitor {
     } finally {
       this.running = false;
     }
-  }
-
-  /** pi worker pid → its session file, from the live records' names (`p<pid>-*.json`), read
-      only for pi processes nothing else matched, once per process. */
-  private liveRecordPids(live: ReadonlyMap<string, ProcState>, hostedNow: readonly HostedInfo[], at: number): Map<number, string> {
-    const out = new Map<number, string>();
-    if (!this.liveDir) return out;
-    const known = new Set(hostedNow.flatMap((h) => h.workers.map((w) => w.pid)).filter(Boolean));
-    const wanted = [...live.values()].filter((p) => p.argv.kind === "pi-worker" && !known.has(p.stat.pid));
-    if (!wanted.length) return out;
-    if (at - this.liveNamesAt >= 30_000) {
-      this.liveNamesAt = at;
-      this.liveNames.clear();
-      try {
-        for (const name of readdirSync(this.liveDir)) {
-          const m = /^p(\d+)-.*\.json$/.exec(name);
-          if (m) this.liveNames.set(Number(m[1]), name);
-        }
-      } catch { /* no live dir */ }
-    }
-    for (const p of wanted) {
-      const cached = p.liveFile;
-      if (cached) {
-        out.set(p.stat.pid, cached);
-        continue;
-      }
-      if (p.liveRecordChecked) continue;
-      const name = this.liveNames.get(p.stat.pid);
-      if (!name) continue;
-      p.liveRecordChecked = true;
-      try {
-        const rec = JSON.parse(readFileSync(join(this.liveDir, name), "utf8")) as { session?: { sessionFile?: unknown; pid?: unknown } };
-        if (rec.session?.pid === p.stat.pid && typeof rec.session.sessionFile === "string") {
-          const file = canonicalPath(rec.session.sessionFile);
-          p.liveFile = file;
-          out.set(p.stat.pid, file);
-        }
-      } catch { /* mid-write or malformed */ }
-    }
-    return out;
   }
 
   private hostNumbers(): MonitorSnapshot["host"] {

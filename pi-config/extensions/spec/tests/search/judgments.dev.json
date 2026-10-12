@@ -1,0 +1,776 @@
+{
+  "version": 1,
+  "set": "dev",
+  "about": "Topic searches for `sova-spec where`, from real asks (user prompts to sessions, paraphrased; commit subjects on master) fixed before their targets were labelled. Targets: primary = the claim a builder on that ask should open first; acceptable = also a good first open.",
+  "spec": {
+    "commit": "a9b87037a6fd443bcc7aebeb96634ceab4e6bb18",
+    "note": "targets, leak and vocabularyGap were judged against the spec at this commit"
+  },
+  "split": {
+    "rule": "Stratified by source (user ask / commit subject) x leak band (0 / under 0.5 / 0.5 and up). Within each stratum, queries sort by sha256 of their text (lowercased, whitespace collapsed) and alternate dev, held-out, dev, ...; the two known failures (\"summary tree\", \"UniiChat\") are pinned to dev and lead their stratum."
+  },
+  "leak": {
+    "measure": "fraction of the query's distinct stems (tests/search/text.mjs) found in its first primary target's title or what, as toc reports them; vocabularyGap = 0 overlap",
+    "median": 0.333,
+    "mean": 0.428,
+    "buckets": {
+      "0": 7,
+      "(0,0.25]": 16,
+      "(0.25,0.5)": 5,
+      "[0.5,0.75)": 15,
+      "[0.75,1]": 9
+    },
+    "vocabularyGap": 7
+  },
+  "queries": [
+    {
+      "id": "a02",
+      "query": "git info in session detail",
+      "source": "ask 2026-09-23: show git info (branch, files changed) on the session detail screen",
+      "targets": {
+        "primary": [
+          "§chat.transcript/setup-card-repository"
+        ],
+        "acceptable": [
+          "§chat.transcript/setup-card"
+        ]
+      },
+      "leak": 0.25,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a04",
+      "query": "welcome message skills loaded",
+      "source": "ask 2026-09-23: new-session welcome shows skills, context files and their sizes",
+      "targets": {
+        "primary": [
+          "§chat.transcript/setup-card"
+        ],
+        "acceptable": [
+          "§chat.transcript/setup-card-skills",
+          "§chat.transcript/setup-card-context"
+        ]
+      },
+      "leak": 0,
+      "vocabularyGap": true
+    },
+    {
+      "id": "a05",
+      "query": "new session card commit messages",
+      "source": "ask 2026-09-23: the new session card shows the last 3 commit messages",
+      "targets": {
+        "primary": [
+          "§chat.transcript/setup-card-figures"
+        ],
+        "acceptable": [
+          "§chat.transcript/setup-card-repository"
+        ]
+      },
+      "leak": 0.8,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a08",
+      "query": "collapse left menu thin rail",
+      "source": "ask 2026-09-23: a collapse button that turns the left menu into a thin rail",
+      "targets": {
+        "primary": [
+          "§app.session-list/spine"
+        ],
+        "acceptable": []
+      },
+      "leak": 0.2,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a09",
+      "query": "drag session to archive",
+      "source": "ask 2026-09-23: drag a session into the chat window onto an archive drop zone",
+      "targets": {
+        "primary": [
+          "§app.session-list/drop-overlay"
+        ],
+        "acceptable": [
+          "§app.session-list/regions-top-and-archive"
+        ]
+      },
+      "leak": 0.667,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a10",
+      "query": "favorites in model selector",
+      "source": "ask 2026-09-24: add favorites to the model selector in the chat input",
+      "targets": {
+        "primary": [
+          "§chat.model-menu/favorites"
+        ],
+        "acceptable": [
+          "§chat.model-menu/content-and-order"
+        ]
+      },
+      "leak": 0.667,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a12",
+      "query": "usage panel redesign",
+      "source": "ask 2026-09-24: the usage panel needs a redesign",
+      "targets": {
+        "primary": [
+          "§app.insights/usage-cards"
+        ],
+        "acceptable": [
+          "§app.insights/usage-page-and-agents-page"
+        ]
+      },
+      "leak": 0.333,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a13",
+      "query": "topic count usage circle",
+      "source": "ask 2026-09-24: topic count and usage circle touch and are misaligned",
+      "targets": {
+        "primary": [
+          "§app.session-list/anatomy"
+        ],
+        "acceptable": [
+          "§app.session-list/content-rules"
+        ]
+      },
+      "leak": 0,
+      "vocabularyGap": true
+    },
+    {
+      "id": "a15",
+      "query": "wake up nudge",
+      "source": "ask 2026-09-25: does the wake-up nudge fire when the browser is not focused",
+      "targets": {
+        "primary": [
+          "§teams.defaults/wake-nudge"
+        ],
+        "acceptable": [
+          "§chat.transcript/transcript-items"
+        ]
+      },
+      "leak": 1,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a20",
+      "query": "team member cap",
+      "source": "ask 2026-09-25: the team member cap is biting long teams",
+      "targets": {
+        "primary": [
+          "§app.teams/seats"
+        ],
+        "acceptable": []
+      },
+      "leak": 0.667,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a21",
+      "query": "overseer model choice becomes default",
+      "source": "ask 2026-09-25: a model picked when the watcher creates a session becomes everyone's default",
+      "targets": {
+        "primary": [
+          "§app.overseer/tools"
+        ],
+        "acceptable": [
+          "§chat.model-menu/saved-default"
+        ]
+      },
+      "leak": 0.2,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a22",
+      "query": "save button grayed out until change",
+      "source": "ask 2026-09-26: settings forms get one save button, grayed out until a change",
+      "targets": {
+        "primary": [
+          "§app.settings-dialog/save-bar"
+        ],
+        "acceptable": []
+      },
+      "leak": 0.167,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a28",
+      "query": "overseer boot sessions with minor modes",
+      "source": "ask 2026-09-26: let the watcher start sessions with minor modes at creation",
+      "targets": {
+        "primary": [
+          "§app.overseer/tools"
+        ],
+        "acceptable": []
+      },
+      "leak": 0.2,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a33",
+      "query": "subagent pane nothing running",
+      "source": "ask 2026-09-27: the subagent pane shows nothing running when something is",
+      "targets": {
+        "primary": [
+          "§app.subagents-pane/hidden-workers"
+        ],
+        "acceptable": [
+          "§app/subagents-pane",
+          "§app.subagents-pane/worker-rows"
+        ]
+      },
+      "leak": 0.25,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a35",
+      "query": "mesh out of sync resync button",
+      "source": "ask 2026-09-28: a button to resync a host that is out of sync after upgrades",
+      "targets": {
+        "primary": [
+          "§mesh.peers/resync"
+        ],
+        "acceptable": [
+          "§mesh.ui/card"
+        ]
+      },
+      "leak": 0,
+      "vocabularyGap": true
+    },
+    {
+      "id": "a36",
+      "query": "open questions bubble icon",
+      "source": "ask 2026-09-28: drop the chat bubble icon by the open question count",
+      "targets": {
+        "primary": [
+          "§chat.alignment/session-mark"
+        ],
+        "acceptable": [
+          "§app.session-list/anatomy"
+        ]
+      },
+      "leak": 0.5,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a38",
+      "query": "page jank switching sessions",
+      "source": "ask 2026-09-28: layout shift when switching sessions, buttons above composer flicker in",
+      "targets": {
+        "primary": [
+          "§chat.composer/known-on-switch"
+        ],
+        "acceptable": [
+          "§chat.transcript/rendering"
+        ]
+      },
+      "leak": 0.25,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a41",
+      "query": "people send us files",
+      "source": "ask 2026-09-30: people reached through an organization can send files",
+      "targets": {
+        "primary": [
+          "§app.baton/files"
+        ],
+        "acceptable": [
+          "§app/file-intake"
+        ]
+      },
+      "leak": 0.333,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a42",
+      "query": "playbooks in recent tab",
+      "source": "ask 2026-09-30: playbook sessions should not appear in the recent tab",
+      "targets": {
+        "primary": [
+          "§app.session-list/profile-shelf"
+        ],
+        "acceptable": [
+          "§app.session-list/recent"
+        ]
+      },
+      "leak": 0,
+      "vocabularyGap": true
+    },
+    {
+      "id": "a45",
+      "query": "placeholder cut off mobile",
+      "source": "ask 2026-10-01: the composer placeholder gets cut off on mobile",
+      "targets": {
+        "primary": [
+          "§chat.composer/behavior"
+        ],
+        "acceptable": [
+          "§chat.composer/anatomy"
+        ]
+      },
+      "leak": 0,
+      "vocabularyGap": true
+    },
+    {
+      "id": "a48",
+      "query": "card choices per item",
+      "source": "ask 2026-10-01: per-item choices on the watcher's cards are shared by every item",
+      "targets": {
+        "primary": [
+          "§app.overseer/confirm"
+        ],
+        "acceptable": []
+      },
+      "leak": 0.25,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a54",
+      "query": "indent line under chevron",
+      "source": "ask 2026-10-02: remove the indent line under the chevron when expanded",
+      "targets": {
+        "primary": [
+          "§chat.transcript/tokens"
+        ],
+        "acceptable": [
+          "§chat.transcript/transcript-items"
+        ]
+      },
+      "leak": 0,
+      "vocabularyGap": true
+    },
+    {
+      "id": "a58",
+      "query": "timeline inputs only",
+      "source": "ask 2026-10-03: bug in session detail timeline with Inputs Only checked",
+      "targets": {
+        "primary": [
+          "§chat.timeline/inputs-only"
+        ],
+        "acceptable": []
+      },
+      "leak": 0.667,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a60",
+      "query": "remember scroll position switching sessions",
+      "source": "ask 2026-10-03: switching sessions loses the scroll position",
+      "targets": {
+        "primary": [
+          "§chat.transcript/rendering"
+        ],
+        "acceptable": [
+          "§chat.transcript/jump-landing"
+        ]
+      },
+      "leak": 0.2,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a62",
+      "query": "mesh without tailnet LAN IP",
+      "source": "ask 2026-10-04: a mesh host on the local network, entered by IP, not on the tailnet",
+      "targets": {
+        "primary": [
+          "§mesh/lan"
+        ],
+        "acceptable": [
+          "§mesh.lan/pairing",
+          "§mesh.peers/address-identity"
+        ]
+      },
+      "leak": 0.2,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a63",
+      "query": "overseer register a project",
+      "source": "ask 2026-10-04: the watcher should register a project when asked",
+      "targets": {
+        "primary": [
+          "§app.overseer/org-project-add"
+        ],
+        "acceptable": [
+          "§app.projects/registration"
+        ]
+      },
+      "leak": 0.667,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a64",
+      "query": "lift sandbox for subagents",
+      "source": "ask 2026-10-04: a main thread's subagents sometimes need their sandbox lifted",
+      "targets": {
+        "primary": [
+          "§chat.sandbox/states"
+        ],
+        "acceptable": [
+          "§chat.sandbox/workers"
+        ]
+      },
+      "leak": 0.667,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a65",
+      "query": "rename sessions automatically button",
+      "source": "ask 2026-10-04: a button to rename sessions automatically",
+      "targets": {
+        "primary": [
+          "§app.session-list/auto-titles"
+        ],
+        "acceptable": [
+          "§app.session-list/selecting-several-sessions"
+        ]
+      },
+      "leak": 0.5,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a67",
+      "query": "session from different host stand out",
+      "source": "ask 2026-10-04: a session from another host should stand out, green pin",
+      "targets": {
+        "primary": [
+          "§app.shell/remote-session-chips"
+        ],
+        "acceptable": [
+          "§mesh.remote-sessions/head-host"
+        ]
+      },
+      "leak": 0.2,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a68",
+      "query": "scroll jumps down when settles",
+      "source": "ask 2026-10-05: scrolled up reading, the scroll jumps down when the reply settles",
+      "targets": {
+        "primary": [
+          "§chat.transcript/turn-end-keeps-reader"
+        ],
+        "acceptable": []
+      },
+      "leak": 0.25,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a69",
+      "query": "subscription usage velocity",
+      "source": "ask 2026-10-06: usage velocity and history per subscription card",
+      "targets": {
+        "primary": [
+          "§app.insights/usage-burn"
+        ],
+        "acceptable": [
+          "§app.insights/pace-tick"
+        ]
+      },
+      "leak": 0.667,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a70",
+      "query": "drop to archive text changing",
+      "source": "ask 2026-10-06: drag menu text like \"Drop to archive\" changes and janks",
+      "targets": {
+        "primary": [
+          "§app.session-list/drop-overlay"
+        ],
+        "acceptable": []
+      },
+      "leak": 0.25,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a72",
+      "query": "voice calibration cutting off",
+      "source": "ask 2026-10-06: voice calibration says it cuts off mid-sentence on the phone",
+      "targets": {
+        "primary": [
+          "§app.settings-dialog/voice-calibration"
+        ],
+        "acceptable": []
+      },
+      "leak": 0.5,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a78",
+      "query": "adversarial review settings toggle",
+      "source": "ask 2026-10-08: move adversarial review into an Alignment settings section, toggleable",
+      "targets": {
+        "primary": [
+          "§app.settings-dialog/alignment"
+        ],
+        "acceptable": [
+          "§chat.alignment-review/flag"
+        ]
+      },
+      "leak": 0.25,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a79",
+      "query": "keyboard comes up after send",
+      "source": "ask 2026-10-09: on the phone, hitting send brings the keyboard up",
+      "targets": {
+        "primary": [
+          "§chat.composer/behavior"
+        ],
+        "acceptable": []
+      },
+      "leak": 0.25,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a80",
+      "query": "mode menu stays open",
+      "source": "ask 2026-10-09: the mode menu collapses as soon as a major mode is picked",
+      "targets": {
+        "primary": [
+          "§chat.mode-menu/menu"
+        ],
+        "acceptable": []
+      },
+      "leak": 0.5,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a83",
+      "query": "UniiChat",
+      "source": "ask 2026-10-10: is the UniiChat memory mode working end to end",
+      "targets": {
+        "primary": [
+          "§chat.memory/types"
+        ],
+        "acceptable": [
+          "§chat.memory/turn",
+          "§chat/memory"
+        ]
+      },
+      "leak": 1,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a84",
+      "query": "summary tree",
+      "source": "known failure: a topic search that returns nothing today",
+      "targets": {
+        "primary": [
+          "§chat.memory/tree"
+        ],
+        "acceptable": [
+          "§chat.memory/summarizer"
+        ]
+      },
+      "leak": 1,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a90",
+      "query": "memory mode summary size",
+      "source": "ask 2026-10-10: the memory menu's summary size does not show the current default",
+      "targets": {
+        "primary": [
+          "§chat.mode-menu/memory-panel"
+        ],
+        "acceptable": [
+          "§chat.memory/choice"
+        ]
+      },
+      "leak": 0.75,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a92",
+      "query": "duplicate opus models",
+      "source": "ask 2026-10-06: two identical Opus models are listed",
+      "targets": {
+        "primary": [
+          "§app.claude-code-provider/catalog"
+        ],
+        "acceptable": [
+          "§app.claude-code-provider/legacy-ids"
+        ]
+      },
+      "leak": 0.333,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a93",
+      "query": "model effort levels wrong",
+      "source": "ask 2026-10-06: a model's effort levels in the catalog are wrong",
+      "targets": {
+        "primary": [
+          "§app/model-levels"
+        ],
+        "acceptable": [
+          "§app.model-levels/scope"
+        ]
+      },
+      "leak": 0.5,
+      "vocabularyGap": false
+    },
+    {
+      "id": "a96",
+      "query": "merge captain misses merge ready",
+      "source": "ask 2026-10-09: the merge captain misses things that are merge ready",
+      "targets": {
+        "primary": [
+          "§chat/merge-round"
+        ],
+        "acceptable": [
+          "§chat.merge-round/round",
+          "§chat.worktrees/readiness"
+        ]
+      },
+      "leak": 0.5,
+      "vocabularyGap": false
+    },
+    {
+      "id": "c01",
+      "query": "company hours",
+      "source": "commit 72c07cd6: company hours, the default",
+      "targets": {
+        "primary": [
+          "§app.organizations/working-hours"
+        ],
+        "acceptable": []
+      },
+      "leak": 0.5,
+      "vocabularyGap": false
+    },
+    {
+      "id": "c03",
+      "query": "front door failover",
+      "source": "commit f82dd702: mesh ui front-door failover without a false turn error",
+      "targets": {
+        "primary": [
+          "§mesh.front-door/failover"
+        ],
+        "acceptable": [
+          "§mesh/front-door"
+        ]
+      },
+      "leak": 1,
+      "vocabularyGap": false
+    },
+    {
+      "id": "c11",
+      "query": "markdown syntax highlighting replies",
+      "source": "commit deab3e9e: markdown rendering and syntax highlighting for replies",
+      "targets": {
+        "primary": [
+          "§chat/markdown"
+        ],
+        "acceptable": []
+      },
+      "leak": 0.25,
+      "vocabularyGap": false
+    },
+    {
+      "id": "c13",
+      "query": "resource monitor memory scale",
+      "source": "commit 4afba184: resource monitor indent levels, memory scale",
+      "targets": {
+        "primary": [
+          "§app.resource-monitor/screen"
+        ],
+        "acceptable": []
+      },
+      "leak": 0,
+      "vocabularyGap": true
+    },
+    {
+      "id": "c14",
+      "query": "group prompt all-or-nothing",
+      "source": "commit bb872e28: a group prompt is all-or-nothing",
+      "targets": {
+        "primary": [
+          "§workspace.groups/the-group-composer"
+        ],
+        "acceptable": [
+          "§workspace.groups/decisions"
+        ]
+      },
+      "leak": 0.5,
+      "vocabularyGap": false
+    },
+    {
+      "id": "c15",
+      "query": "timeline newest first",
+      "source": "commit 69a459d7: the Timeline reads newest first",
+      "targets": {
+        "primary": [
+          "§chat/timeline"
+        ],
+        "acceptable": [
+          "§chat.timeline/rows"
+        ]
+      },
+      "leak": 0.333,
+      "vocabularyGap": false
+    },
+    {
+      "id": "c16",
+      "query": "project page tabs",
+      "source": "commit 0231ebf6: project page summary header and tabs",
+      "targets": {
+        "primary": [
+          "§app.organizations/project-page"
+        ],
+        "acceptable": []
+      },
+      "leak": 1,
+      "vocabularyGap": false
+    },
+    {
+      "id": "c19",
+      "query": "deploy rollback",
+      "source": "commit 9b254389: deploy logs, rollback, request",
+      "targets": {
+        "primary": [
+          "§app.project-services/deploy-status"
+        ],
+        "acceptable": []
+      },
+      "leak": 1,
+      "vocabularyGap": false
+    },
+    {
+      "id": "c22",
+      "query": "transcript newest rows first",
+      "source": "commit d74fb79f: transcript builds the newest rows first",
+      "targets": {
+        "primary": [
+          "§chat.transcript/rendering"
+        ],
+        "acceptable": []
+      },
+      "leak": 0.75,
+      "vocabularyGap": false
+    },
+    {
+      "id": "c26",
+      "query": "installer defaults to master",
+      "source": "commit ac117834: the installer defaults to master until a release tag",
+      "targets": {
+        "primary": [
+          "§app.installer/ref"
+        ],
+        "acceptable": []
+      },
+      "leak": 0.333,
+      "vocabularyGap": false
+    }
+  ]
+}

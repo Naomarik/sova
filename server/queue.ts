@@ -192,7 +192,7 @@ export interface QueueDeps {
    *
    * Exists for one state, which is reachable and otherwise permanent: a message can be in the
    * SDK's real queue with NO run active, because `steer()` awaits the extension `input` handlers
-   * before queueing and the turn it meant to interrupt can end first (CLAUDE.md's vision-delegate
+   * before queueing and the turn it meant to interrupt can end first (agents/server/harness/overview.md, the vision-delegate
    * window). Nothing drains a queue while the agent is idle, and this queue refuses to hand
    * anything over while the SDK holds something — so without a wake the user's next message waits
    * for ever behind a message that is itself waiting for a run that will never start.
@@ -510,7 +510,7 @@ export class WebQueue {
       // Every caller does `void this.pump()`, so an escaping rejection is an UNHANDLED REJECTION,
       // and Node's default since v15 (`--unhandled-rejections=throw`) TERMINATES THE PROCESS. For
       // Sova that is the server: every chat session in it, and every hosted worker spawned by
-      // one — the worker-suicide hazard CLAUDE.md documents for the dev-server restart, reached
+      // one — the worker-suicide hazard AGENTS.md documents for a server restart, reached
       // here by a disk error instead. Measured, not reasoned: a synchronously throwing dep gave
       // "caught by the caller of enqueue(): NO / unhandled rejections observed: 1".
       //

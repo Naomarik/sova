@@ -145,7 +145,7 @@ test("apply of an adopted slot 0: the operator, confirmed, nothing busy; then 'r
   assert.equal(scheduled.length, 1);
 });
 
-test("apply names its instance: the main checkout (CLAUDE.md's `sova-project apply --checkout <main> --confirm`) is slot 0; the project alone is refused, nothing scheduled", async () => {
+test("apply names its instance: the main checkout (AGENTS.md's `sova-project apply --checkout <main> --confirm`) is slot 0; the project alone is refused, nothing scheduled", async () => {
   const bare = await engine.run("apply", { project, confirm: true }, op);
   assert.equal(bare.error?.code, "invalid-request", "a project names no instance: apply never guesses one");
   assert.match(bare.error!.message, /apply needs an instance \(or the checkout it runs\)/);

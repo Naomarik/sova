@@ -182,7 +182,7 @@ const SKILL = resolve(REPO, ".claude/skills/playwright/scripts");
     node_modules, refused when that resolves outside this worktree. */
 export async function startBrowser() {
   for (const p of [SKILL, join(SKILL, "node_modules")]) {
-    if (!existsSync(p)) throw new Error(`${p} is missing: install the playwright skill's packages (CLAUDE.md: Playwright in a fresh worktree)`);
+    if (!existsSync(p)) throw new Error(`${p} is missing: install the playwright skill's packages (agents/frontend/overview.md: Playwright in a fresh worktree)`);
     const real = realpathSync(p);
     if (real !== REPO && !real.startsWith(`${REPO}/`)) throw new Error(`${p} resolves to ${real}, outside ${REPO}: refusing to use it`);
   }

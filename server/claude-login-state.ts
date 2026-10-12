@@ -1,5 +1,5 @@
 import { agentRoot } from "./state-root";
-// The claude-code extension's own registry and its session entry (node built-ins only). See CLAUDE.md.
+// The claude-code extension's own registry and its session entry (node built-ins only). See agents/extensions/claude-code/overview.md.
 import { ClaudeLogins, planLabel } from "../pi-config/extensions/claude-code/accounts.ts";
 import type { ChatClaudeLogin, ChatServerMessage } from "../shared/protocol";
 import { poolAgent } from "./claude-pool/index";

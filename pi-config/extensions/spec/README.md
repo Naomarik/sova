@@ -11,7 +11,7 @@ standard library and import nothing from pi, Sova or the rest of pi-config.
 The `spec` minor mode (`../mode/`) uses these tools for coding work. Its text,
 [`../mode/spec-mode.md`](../mode/spec-mode.md), is the discipline: when to run
 them and what to do with the output. A project may point its agents at that
-file without the mode, as Sova's `CLAUDE.md` does; that instruction alone does
+file without the mode, as Sova's `AGENTS.md` does; that instruction alone does
 not activate the mode's automatic checks. With the mode on, its hooks run
 census and change checks. Sova's requirements reconciler is another consumer:
 it uses drafts and doc-only evidence to publish accepted decision notes, not

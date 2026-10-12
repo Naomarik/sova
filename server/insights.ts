@@ -36,7 +36,7 @@ import type {
 import type { HEntry } from "../shared/harness";
 import type { LinkedAgentInfo } from "../shared/mesh-links";
 // The usage-status extension's fetch/cache core. Part of the sanctioned pi-config import
-// surface (node builtins only, like extensions/mode/state.ts) — see CLAUDE.md.
+// surface (node builtins only, like extensions/mode/state.ts) — see agents/extensions/overview.md.
 import { claudeLoginIds, forceRefresh, parseActivity, parseCredits, parseReading, type CacheFile } from "../pi-config/extensions/usage-status/fetch.ts";
 import { balanceBurn, type BurnHistory, windowBurn } from "../src/lib/usage-burn";
 import { type PeriodSummary, readingsOf, samePeriod, splitPeriods, splitRuns, summarizePeriod, type UsageSample, usageHistory, type WindowSummary, windowKey } from "./usage-history";

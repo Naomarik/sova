@@ -274,7 +274,7 @@ export function LinkThreadView(props: {
     }
   };
   // By value: the row object is new on every frame and poll, and on() would fire on each
-  // (CLAUDE.md, Method). The key and the traffic signature are strings, so only a change refetches.
+  // (agents/frontend/overview.md, Conventions). The key and the traffic signature are strings, so only a change refetches.
   const key = createMemo(() => `${props.row.key}\n${hostKey()}`);
   const signature = createMemo(() => threadSignature(props.row));
   createEffect(

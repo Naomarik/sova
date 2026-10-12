@@ -4,7 +4,7 @@
 // Restarts the server on watched-file changes like `tsx watch`, but HOLDS the restart while
 // any hosted session has subagents working or a turn in flight (read from the sessions
 // extension's live records for this server's pid). A restart kills spawned workers and wipes
-// the in-memory subagent registry (see CLAUDE.md "Dev-server restart pitfall"); this gate
+// the in-memory subagent registry (see AGENTS.md "Live server restart" and agents/server/overview.md "Dev watcher"); this gate
 // makes that opt-in again: press `r` (or SIGUSR2) to force.
 //
 //   node scripts/dev-server.mjs            # pnpm run dev:server

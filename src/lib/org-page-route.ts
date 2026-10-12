@@ -28,8 +28,8 @@ export function orgPageRoute(route: Accessor<OrgsRoute>): { start: Accessor<stri
 
 /** The History tab's view as scalars behind equality-gated memos (a background re-read keeps
     the selection, the filters, open disclosures and focus). The route hands a new view
-    object per hash change, and `on(() => view().event)` would re-fire on every one of them (CLAUDE.md,
-    Method); these change only when the value does. `filters` stays the same object until the filter
+    object per hash change, and `on(() => view().event)` would re-fire on every one of them (agents/frontend/overview.md,
+    Conventions); these change only when the value does. `filters` stays the same object until the filter
     key changes. */
 export function historyViewMemos(view: Accessor<HistoryView>): {
   filtersKey: Accessor<string>;

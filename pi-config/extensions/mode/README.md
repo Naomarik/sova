@@ -145,7 +145,7 @@ writer**).
   whitespace, and its one `sh` block is the shell prefix `minor.ts` exports as
   `SPEC_CORE_SHELL`. A missing, repeated or multi-line block fails the load. A
   project may point its agents at the same file without the mode; Sova's
-  `CLAUDE.md` does. The tools it runs without asking are the three linked into
+  `AGENTS.md` does. The tools it runs without asking are the three linked into
   the agent directory (`<agent dir>/extensions/spec/core/`, resolved like pi's
   own agent dir: an exact `~` or a leading `~/` is home), always through that
   `sh` recipe, never a guessed path. A copy inside the

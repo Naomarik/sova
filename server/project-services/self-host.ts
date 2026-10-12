@@ -9,7 +9,7 @@ import { servicesRoot, stateHash } from "./store";
 
 /**
  * Sova hosting itself (§app.project-services/self-host): the checkout this server's code was loaded
- * from, and whether any session it hosts is busy (CLAUDE.md "Live server restart": a fresh live
+ * from, and whether any session it hosts is busy (AGENTS.md "Live server restart": a fresh live
  * record of this server's pid with a working subagent or a turn in flight).
  */
 

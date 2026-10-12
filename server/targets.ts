@@ -2,7 +2,7 @@
 // remote session its identity, a bounded reachability probe and the remote folder browser.
 // Schema, validation and every command line come from pi-config's remote argv builder, imported like
 // server/mode-state.ts imports the mode extension's pure modules (node builtins only; nothing else
-// from pi-config). See CLAUDE.md.
+// from pi-config). See agents/extensions/remote/overview.md.
 import { type ChildProcessByStdio, spawn } from "node:child_process";
 import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, posix, sep } from "node:path";

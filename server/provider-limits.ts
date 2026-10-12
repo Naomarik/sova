@@ -1,6 +1,6 @@
 import { agentRoot } from "./state-root";
 // The provider-limits extension's own file and gate (node builtins only): the shape, the strict
-// parse, the atomic write, the defaults a missing file stands for, and the queue files. See CLAUDE.md.
+// parse, the atomic write, the defaults a missing file stands for, and the queue files. See agents/extensions/provider-limits/overview.md.
 import {
   acquireSlot,
   DEFAULT_PROVIDER_LIMITS,

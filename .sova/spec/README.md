@@ -52,7 +52,7 @@ instructions that point at them go in together, so no link lands dangling:
 ```sh
 git add .sova/spec/.gitignore .sova/spec/README.md .sova/spec/USAGE.md .sova/spec/manifest.json \
   .sova/spec/claims .sova/spec/tools pi-config/extensions/spec
-git add -p CLAUDE.md CONTRIBUTING.md pi-config/README.md pi-config/extensions/mode \
+git add -p AGENTS.md agents CONTRIBUTING.md pi-config/README.md pi-config/extensions/mode \
   .claude/skills/fold-ai-dev-design/SKILL.md .claude/skills/fold-ai-dev-design/.build/audit.mjs
 git diff --cached --stat
 ```

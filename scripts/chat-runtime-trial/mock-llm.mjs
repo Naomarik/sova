@@ -44,8 +44,10 @@ const server = createServer(async (req, res) => {
     ask = body ? JSON.parse(body) : {};
   } catch {}
   const msgs = ask.messages ?? [];
-  const lastUser = [...msgs].reverse().find((m) => m.role === "user");
-  const userText = textOf(lastUser?.content);
+  // The trailing user messages (the prompt, and anything the server adds beside it, such as an
+  // instance note) after the last assistant message: the tag is in one of them.
+  const since = msgs.slice(msgs.findLastIndex((m) => m.role === "assistant") + 1).filter((m) => m.role === "user");
+  const userText = since.map((m) => textOf(m.content)).join("\n");
   const last = msgs[msgs.length - 1];
   const afterTool = last?.role === "tool";
   const toolText = afterTool ? textOf(last.content) : "";

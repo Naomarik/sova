@@ -443,8 +443,8 @@ test("actions: a call under an effect id of their own; unknown after a drop, nev
   assert.equal(c.toolCallId, "@clientSend");
   assert.deepEqual(c.params, { images: 0, text: "hi" });
   assert.match(c.effectId, /#@clientSend#/);
-  // The server runs an action as a served tool: the action's own result is the ToolResult's details.
-  t.ctl.server.send({ t: "tool.result", effectId: c.effectId, outcome: { ok: true, result: { content: [], details: { by: "op" } } } });
+  // The server answers an action with the action's own result.
+  t.ctl.server.send({ t: "tool.result", effectId: c.effectId, outcome: { ok: true, result: { by: "op" } } });
   assert.deepEqual(await sent, { ok: true, result: { by: "op" } });
 
   const lost = t.host.action("@saveChoice", { thinking: "high" });
@@ -526,13 +526,13 @@ test("session powers in a chat process: reads wait for the server; a send is an 
   const out = ((await listed).content[0] as { text: string }).text;
   assert.match(out, /^1 session\.\n- s2 · "Other" · .* · hosted here$/);
 
-  // session_send delivered: the server's PowersHost.send result, as the action's details, is the tool's answer.
+  // session_send delivered: the server's PowersHost.send result, the action's own result, is the tool's answer.
   const delivered = tools.find((x) => x.name === "session_send")!.execute("s0", { session: "s2", text: "first" }, undefined, undefined, undefined as never);
   await settle();
   answer("powers.session", other);
   await settle();
   const first = calls.find((c) => c.call.name === "@powers.send")!;
-  t.ctl.server.send({ t: "tool.result", effectId: first.call.effectId, outcome: { ok: true, result: { content: [], details: { ok: true, queued: false, kind: "prompt" } } } });
+  t.ctl.server.send({ t: "tool.result", effectId: first.call.effectId, outcome: { ok: true, result: { ok: true, queued: false, kind: "prompt" } } });
   const okResult = await delivered;
   assert.match((okResult.content[0] as { text: string }).text, /^Sent to \[Other\]\(sova:\/\/s\/s2\) \(hop 1\)\.$/);
   assert.equal(limits.counts().own, 1);

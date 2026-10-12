@@ -508,9 +508,8 @@ export class ChatRuntimeHost {
       attended: turns?.attended() ?? false,
       card: turns?.confirmedCard() ?? null,
     };
-    // The server runs an action as a served tool: its own result is the ToolResult's details (as the
-    // in-process loopback answers it, chat-handle.ts actionOutcome).
-    return this.queueTool(call, null).then((out) => (out.ok ? { ok: true, result: (out.result as ToolResult | undefined)?.details } : out));
+    // The server answers an action's tool.result with the action's own result (chat-handle-remote.ts).
+    return this.queueTool(call, null);
   }
 
   /**

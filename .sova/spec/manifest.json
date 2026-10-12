@@ -14038,7 +14038,7 @@
         "server/project-services/adopt.test.ts",
         "server/project-services/adopt.integration.test.ts",
         "server/project-services/restart-gate.test.ts",
-        "CLAUDE.md"
+        "AGENTS.md"
       ]
     },
     "§app.project-services/on-merge": {
@@ -14137,7 +14137,9 @@
         "scripts/run-tests.mjs",
         ".sova/project.json",
         "README.md",
-        "CLAUDE.md",
+        "AGENTS.md",
+        "agents/server/overview.md",
+        "agents/testing/overview.md",
         "CONTRIBUTING.md"
       ],
       "requires": []
@@ -16009,7 +16011,7 @@
         "server/search-tools-fake.ts",
         "server/org-about-privacy.test.ts",
         "server/org-about-privacy.integration.test.ts",
-        "CLAUDE.md"
+        "agents/testing/overview.md"
       ],
       "requires": [
         "§app.server-runtime/choice"
@@ -16171,7 +16173,8 @@
         "server/run-tests-changed.test.ts",
         "server/harness-boundary.test.ts",
         "package.json",
-        "CLAUDE.md"
+        "AGENTS.md",
+        "agents/testing/overview.md"
       ],
       "requires": [
         "§app.server-runtime/choice"
@@ -17575,7 +17578,7 @@
         "pi-config/extensions/subagents/subagent-profiles.ts",
         "pi-config/extensions/mode/README.md",
         "pi-config/README.md",
-        "CLAUDE.md"
+        "agents/modes/align/overview.md"
       ],
       "requires": [
         "§chat.subagent-profiles/file"

@@ -428,7 +428,7 @@ no disabled composer with a reason either. The one exception is a restored worke
 server restart; it was mid-task at {HH:MM}, and that turn never finished."). The pane offers no
 resume: that is the parent agent's `agent_resume` or `/agent-resume` (§app.worker-restore/resume).
 A worker that had ended shows no note. The transcript itself stays read-only. A worker's session belongs to its worker, and the
-webapp never writes to it (CLAUDE.md: no file locking).
+webapp never writes to it (AGENTS.md: no file locking).
 
 ```html
 <div class="subagents-view">

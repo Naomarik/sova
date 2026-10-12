@@ -172,6 +172,8 @@ export interface ChatDeath {
   detail?: string;
   /** The unit's last log lines (its journal), oldest first. */
   logTail: string[];
+  /** When the unit's main process ended, from the journal line saying so (systemd); absent when unknown (the detached driver). */
+  endedAt?: string;
   at: string;
 }
 
@@ -458,7 +460,11 @@ export class ChatSupervisor {
   private async deathOf(rec: ChatRecord, st: UnitStatus): Promise<ChatDeath | null> {
     // This run's lines only (the journal keeps earlier runs of the same unit name).
     const since = Date.parse(rec.startedAt);
-    const read = async () => (await this.deps.driver.logs(rec.unit, LOG_TAIL * 3, Number.isFinite(since) ? since : undefined).catch(() => [])).map((l) => l.text);
+    let entries: { t: string; text: string }[] = [];
+    const read = async () => {
+      entries = await this.deps.driver.logs(rec.unit, LOG_TAIL * 3, Number.isFinite(since) ? since : undefined).catch(() => []);
+      return entries.map((l) => l.text);
+    };
     // The journal can lag the process's end by a moment: with no account of how it ended yet, read again
     // a few times before calling it lost.
     let logs = await read();
@@ -474,6 +480,9 @@ export class ChatSupervisor {
     const signal = said?.signal ?? null;
     if (exit === 0 && signal === null) return null;
     const tail = logs.filter((l) => !/(Main process exited|Failed with result|Consumed .* CPU time|^Stopped |^Started |^Stopping |Deactivated successfully)/.test(l)).slice(-LOG_TAIL);
+    // When systemd wrote down the end: its "Main process exited" line, else the unit's failing or stopping.
+    const last = (re: RegExp) => [...entries].reverse().find((e) => e.t && re.test(e.text))?.t;
+    const endedAt = last(/Main process exited/) ?? last(/(Failed with result|^Stopped )/);
     return {
       chatId: rec.chatId,
       sessionPath: rec.sessionPath,
@@ -483,6 +492,7 @@ export class ChatSupervisor {
       signal,
       ...(st.detail ? { detail: st.detail } : {}),
       logTail: tail,
+      ...(endedAt ? { endedAt } : {}),
       at: new Date(this.now()).toISOString(),
     };
   }

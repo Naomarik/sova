@@ -151,6 +151,26 @@ test("systemd's journal, as a real user manager writes it: a stop by request, a 
   assert.equal(exitOfLog([started, "chat output"]), null);
 });
 
+test("a death carries when systemd wrote down the end, when the journal has it", async () => {
+  const d = new FakeDriver();
+  const { sup, deaths } = make(d);
+  const rec = await sup.start(chat);
+  sup.noteConnected("c1");
+  d.die(rec.unit, [
+    { t: "2026-10-12T10:00:00.000Z", text: "boom" },
+    { t: "2026-10-12T10:00:01.250Z", text: "sova-chat-test01-c1.service: Main process exited, code=exited, status=1/FAILURE" },
+    { t: "2026-10-12T10:00:01.260Z", text: "sova-chat-test01-c1.service: Failed with result 'exit-code'." },
+  ]);
+  clock += 5_000;
+  await sup.check("c1");
+  assert.equal(deaths[0]!.endedAt, "2026-10-12T10:00:01.250Z");
+  const r2 = await sup.start({ ...chat, chatId: "c2" });
+  sup.noteConnected("c2");
+  d.die(r2.unit, ["Main process exited, code=killed, status=9/KILL"]);
+  await sup.check("c2");
+  assert.equal(deaths[1]!.endedAt, undefined, "no time in the log: none claimed");
+});
+
 test("a log that lags the process's end is read again before the chat is called lost", async () => {
   const d = new FakeDriver();
   let reads = 0;

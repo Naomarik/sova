@@ -68,6 +68,7 @@ describe("WorkerFeed", () => {
     assert.deepEqual(feed.settled, { key: "k:task#1", entryId: "e2", outcome: "success" });
     assert.deepEqual(out.map((f) => (f.event as { type: string }).type), ["message_end", "message_end", "agent_settled"]);
     assert.equal((out[2]!.event as { settleKey?: string }).settleKey, "k:task#1");
+    assert.equal((out[2]!.event as { settleEntryId?: string }).settleEntryId, "e2");
   });
 
   test("since: the frames after a seq of this process; another process or one out of the ring is a gap", () => {

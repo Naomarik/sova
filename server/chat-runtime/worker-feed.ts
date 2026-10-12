@@ -76,7 +76,7 @@ export class WorkerFeed {
       return this.out(() => {
         this.settle();
         // The parent's record keeps this key with the settle's announcement (picked back up, it announces a settle once).
-        this.emit({ ...event, settleKey: this.settled!.key });
+        this.emit({ ...event, settleKey: this.settled!.key, ...(this.settled!.entryId ? { settleEntryId: this.settled!.entryId } : {}) });
       });
     }
     if (event.type !== "message_end" || !("handle" in e)) return this.out(event);

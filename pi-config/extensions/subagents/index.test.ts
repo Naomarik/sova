@@ -7,7 +7,7 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 import { createAgentSession, DefaultResourceLoader, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import * as os from "node:os";
-import { CLAUDE_CODE_EXTENSION, LLM_INFLIGHT_EXTENSION, MARKER_EXTENSION, MODEL_LEVELS_EXTENSION, PROVIDER_LIMITS_EXTENSION, SPEC_CORE_DIR, SPEC_WORKER_EXTENSION, SPEC_HOOK_STATE, MEMBER_EXTENSION, REMOTE_EXTENSION, registerSubagents, boundedText, installedPackageDir, type SubagentsOptions } from "./index.ts";
+import { CLAUDE_CODE_EXTENSION, MARKER_EXTENSION, MODEL_LEVELS_EXTENSION, PROVIDER_LIMITS_EXTENSION, SPEC_CORE_DIR, SPEC_WORKER_EXTENSION, SPEC_HOOK_STATE, MEMBER_EXTENSION, REMOTE_EXTENSION, registerSubagents, boundedText, installedPackageDir, type SubagentsOptions } from "./index.ts";
 import { CLAUDE_PROVIDER_FLAG } from "../claude-code/provider/index.ts";
 import { claudeOffer } from "../claude-code/catalog.ts";
 import { placeholderDir } from "../remote/argv.ts";
@@ -19,7 +19,9 @@ import { workerSpecBrief } from "./spec-brief.ts";
 import { SANDBOX_DISCOVER_EVENT, SANDBOX_STATE_EVENT, type SandboxStateEvent, type WorkerLaunch } from "../sandbox/state.ts";
 import { MODE_WORKER_DISCOVER_EVENT, MODE_WORKER_EVENT, WORKER_ROLE_DISCOVER_EVENT, WORKER_ROLE_EVENT, type ModeWorkerEvent } from "../mode/events.ts";
 import workerMarkExtension from "./worker-mark.ts";
-import { CLAUDE_CODE_PROVIDER_FLAG, SubagentRunner } from "./runner.ts";
+import { CLAUDE_CODE_PROVIDER_FLAG } from "./runner.ts";
+import { ChatWorker } from "./chat-worker.ts";
+import type { WorkerHost } from "./worker-host.ts";
 import { MEMBER_ENV, awaitResponse, decodeMemberContext, memberPaths, memberToolNames, readInbox, requestId, writeRequest, type MailboxRequest } from "./mailbox.ts";
 
 import { BACKEND_DIALOG_EVENT, BACKEND_REGISTER_EVENT, BACKEND_DISCOVER_EVENT, registerBackend, type BackendRegistration } from "./contracts.ts";
@@ -833,7 +835,8 @@ for (const throwsAfterCallback of [false, true]) test(`constructor settlement wa
 	const h = harness();
 	const backend = fakeBackend([]);
 	backend.create = (options, handlers) => {
-		const worker = new SubagentRunner({ ...options, spawnImpl: () => { throw new Error("synchronous spawn failure"); } }, handlers);
+		const refusing = { start: () => { throw new Error("synchronous spawn failure"); } } as unknown as WorkerHost;
+		const worker = new ChatWorker(options, handlers, { host: refusing, parent: { sessionId: "s", path: "/s.jsonl" }, start: { key: "k", defaultSessionDir: () => "/d" } });
 		assert.equal(worker.status, "error");
 		assert.equal(h.messages.length, 0, "no wake before registration");
 		assert.equal(h.notices.length, 0);
@@ -1846,7 +1849,7 @@ test("child extensions: remote sources pass, missing paths fail, this extension 
 	const h = harness();
 	try {
 		await h.call("agent_spawn", { prompt: "task", extensions: ["npm:definitely-not-installed-xyz", "git:github.com/x/y"] });
-		assert.deepEqual(h.workers[0].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, "npm:definitely-not-installed-xyz", "git:github.com/x/y"]);
+		assert.deepEqual(h.workers[0].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, "npm:definitely-not-installed-xyz", "git:github.com/x/y"]);
 		await assert.rejects(
 			h.call("agent_spawn", { prompt: "task", extensions: ["./definitely-missing-extension.ts"] }),
 			/not found/,
@@ -2460,7 +2463,7 @@ test("team members get a parent-issued identity, private mailbox and only the me
 		assert.deepEqual(r.details.members.map((m: any) => [m.workerId, m.orchestrator]), [["ag_01", true], ["ag_02", undefined], ["ag_03", undefined]]);
 		const lead = h.workers.find((w: any) => w.id === "ag_01");
 		const dev = h.workers.find((w: any) => w.id === "ag_02");
-		assert.deepEqual(lead.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, MEMBER_EXTENSION], "the marker, then member.ts, never the manager");
+		assert.deepEqual(lead.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, MEMBER_EXTENSION], "the marker, then member.ts, never the manager");
 		assert.deepEqual(lead.tools, ["read"], "the built-in allowlist is unchanged; the runner restricts by exclusion when extensions are present");
 		const me = h.memberOf("ag_01")!;
 		assert.deepEqual({ ...me, dir: undefined }, { version: 1, teamId: "team_01", teamName: "Crew", workerId: "ag_01", role: "lead", orchestrator: true, dir: undefined });
@@ -2471,7 +2474,7 @@ test("team members get a parent-issued identity, private mailbox and only the me
 		assert.equal(created.length, 0, "no native Claude process");
 		const claude = h.workers.find((w: any) => w.id === "ag_03");
 		assert.equal(claude.model, "claude-code-cli/claude-sonnet-5-5");
-		assert.deepEqual(claude.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, MEMBER_EXTENSION, CLAUDE_CODE_EXTENSION]);
+		assert.deepEqual(claude.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, MEMBER_EXTENSION, CLAUDE_CODE_EXTENSION]);
 		assert.equal(claude.mcpServers, undefined);
 		const writer = h.memberOf("ag_03")!;
 		assert.deepEqual({ ...writer, dir: undefined }, { version: 1, teamId: "team_01", teamName: "Crew", workerId: "ag_03", role: "writer", orchestrator: false, dir: undefined });
@@ -2489,7 +2492,7 @@ test("team members get a parent-issued identity, private mailbox and only the me
 		await assert.rejects(h.call("agent_spawn", { prompt: "x", extensions: [MEMBER_EXTENSION] }), /do not nest/);
 		await h.call("agent_spawn", { prompt: "plain", wake: false });
 		assert.equal(h.workers.at(-1).env, undefined);
-		assert.deepEqual(h.workers.at(-1).extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION]);
+		assert.deepEqual(h.workers.at(-1).extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION]);
 		await assert.rejects(
 			h.call("team_add", { team: "Crew", members: [{ role: "boss", prompt: "t", orchestrator: true, backend: "other" }] }),
 			/must use the pi or claude-code backend/,
@@ -2668,18 +2671,23 @@ test("team_ask surfaces a team-question message that starts an idle parent turn 
 	} finally { await h.cleanup(); }
 });
 
-test("the mailbox root is created only for teams, and an owned root is removed on shutdown", async () => {
-	const h = harness(eventBus(), { mailboxPollMs: 10 });
+test("the mailbox root is created only for teams, beside the session's handover notes, and kept at shutdown", async () => {
+	const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-agent-"));
 	let root: string | undefined;
 	try {
-		await h.call("agent_spawn", { prompt: "plain", wake: false });
-		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }] });
-		const me = decodeMemberContext(h.workers[1].env[MEMBER_ENV])!;
-		root = path.dirname(path.dirname(me.dir));
-		assert.ok(path.basename(root).startsWith("pi-subagents-teams-"));
-		assert.ok(fs.existsSync(me.dir));
-	} finally { await h.close(); }
-	assert.ok(root && !fs.existsSync(root), "owned root removed at shutdown");
+		const h = harness(eventBus(), { mailboxPollMs: 10, agentDir });
+		try {
+			await h.call("agent_spawn", { prompt: "plain", wake: false });
+			assert.ok(!fs.existsSync(path.join(agentDir, "sova", "teams")), "no team, no mailbox");
+			await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }] });
+			const me = decodeMemberContext(h.workers[1].env[MEMBER_ENV])!;
+			root = path.dirname(path.dirname(me.dir));
+			assert.equal(path.basename(root), "mailbox");
+			assert.equal(path.dirname(path.dirname(root)), path.join(agentDir, "sova", "teams"));
+			assert.ok(fs.existsSync(me.dir));
+		} finally { await h.close(); }
+		assert.ok(root && fs.existsSync(root), "kept for the next manager");
+	} finally { fs.rmSync(agentDir, { recursive: true, force: true }); }
 	// An injected root belongs to the caller and survives.
 	const injected = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-injected-"));
 	try {
@@ -2715,7 +2723,7 @@ test("a remote session's workers run on the target: pi and claude-code workers l
 		assert.match(spawned.content[0].text, /^Remote session: workers run on target box in \/srv\/app\.$/m, "the parent can see it runs the remote wiring");
 		assert.match((await h.call("agent_list")).content[0].text, /Remote session: workers run on target box in \/srv\/app\./);
 		const piWorker = h.workers[0];
-		assert.deepEqual(piWorker.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, REMOTE_EXTENSION], "the marker and the remote extension, nothing else");
+		assert.deepEqual(piWorker.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, REMOTE_EXTENSION], "the marker and the remote extension, nothing else");
 		assert.deepEqual(piWorker.flags, { target: "box" });
 		assert.equal(piWorker.cwd, h.ctx.cwd, "the session's placeholder is the local cwd");
 		assert.deepEqual(piWorker.tools, ["read", "bash"], "the allowlist is unchanged; the runner restricts by exclusion when extensions are present");
@@ -2726,7 +2734,7 @@ test("a remote session's workers run on the target: pi and claude-code workers l
 		assert.equal(created.length, 0, "no native Claude process");
 		assert.equal(claude.model, "claude-code-cli/claude-sonnet-5-5");
 		assert.deepEqual(claude.tools, ["read"], "Claude's names map to Sova's, which run on the target");
-		assert.deepEqual(claude.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, REMOTE_EXTENSION, CLAUDE_CODE_EXTENSION]);
+		assert.deepEqual(claude.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, REMOTE_EXTENSION, CLAUDE_CODE_EXTENSION]);
 		assert.deepEqual(claude.flags, { target: "box", [CLAUDE_CODE_PROVIDER_FLAG]: true });
 		assert.equal(claude.cwd, placeholderDir(agentDir, "box", "/srv/app/sub/dir"), "its local cwd is the placeholder of that far directory");
 		assert.equal(claude.systemPrompt, "be terse");
@@ -2735,10 +2743,10 @@ test("a remote session's workers run on the target: pi and claude-code workers l
 		// A team member of a remote session gets both extensions, on either backend.
 		await h.call("team_create", { name: "Crew", objective: "o", members: [{ role: "lead", prompt: "t", orchestrator: true }, { role: "writer", prompt: "w", backend: "claude-code" }] });
 		const lead = h.workers.find((w: any) => w.id === "ag_03");
-		assert.deepEqual(lead.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, REMOTE_EXTENSION, MEMBER_EXTENSION]);
+		assert.deepEqual(lead.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, REMOTE_EXTENSION, MEMBER_EXTENSION]);
 		assert.deepEqual(lead.flags, { target: "box" });
 		const writer = h.workers.find((w: any) => w.id === "ag_04");
-		assert.deepEqual(writer.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, REMOTE_EXTENSION, MEMBER_EXTENSION, CLAUDE_CODE_EXTENSION]);
+		assert.deepEqual(writer.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, REMOTE_EXTENSION, MEMBER_EXTENSION, CLAUDE_CODE_EXTENSION]);
 		assert.ok(decodeMemberContext(writer.env[MEMBER_ENV]));
 
 		// A cwd the parent cannot resolve, and a backend without remote tooling, are refused before any worker starts.
@@ -2760,7 +2768,7 @@ test("the placeholder cwd alone identifies a remote session when the remote exte
 	const h = remoteHarness(agentDir, false);
 	try {
 		await h.call("agent_spawn", { prompt: "pi task" });
-		assert.deepEqual(h.workers[0].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, REMOTE_EXTENSION]);
+		assert.deepEqual(h.workers[0].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, REMOTE_EXTENSION]);
 		assert.deepEqual(h.workers[0].flags, { target: "box" });
 		// The announcement wins over the placeholder, and carries what the placeholder cannot say.
 		h.bus.emit(REMOTE_SESSION_EVENT, { version: 1, target: "box", farCwd: "/srv/app", channelOff: true });
@@ -2789,7 +2797,7 @@ test("a local session's workers are untouched by the remote wiring", async () =>
 		assert.doesNotMatch(spawned.content[0].text, /Remote session/);
 		assert.doesNotMatch((await h.call("agent_list")).content[0].text, /Remote session/);
 		assert.equal(h.workers[0].flags, undefined);
-		assert.deepEqual(h.workers[0].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION]);
+		assert.deepEqual(h.workers[0].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION]);
 		await h.call("agent_spawn", { prompt: "claude task", backend: "native-cli" });
 		assert.equal(created[0].mcpServers, undefined);
 		assert.equal(created[0].env, undefined);
@@ -2803,9 +2811,7 @@ test("worker session marker: every pi worker loads worker-mark.ts first; another
 	assert.equal(path.dirname(MARKER_EXTENSION), path.dirname(MEMBER_EXTENSION), "a sibling of member.ts, under this extension's own directory");
 	assert.ok(fs.existsSync(PROVIDER_LIMITS_EXTENSION), "the request limits load right after the marker");
 	assert.equal(path.basename(path.dirname(PROVIDER_LIMITS_EXTENSION)), "provider-limits");
-	assert.ok(fs.existsSync(LLM_INFLIGHT_EXTENSION), "the LLM-call counter loads right after the limits");
-	assert.equal(path.basename(path.dirname(LLM_INFLIGHT_EXTENSION)), "llm-inflight");
-	assert.ok(fs.existsSync(MODEL_LEVELS_EXTENSION), "the model levels load right after the counter");
+	assert.ok(fs.existsSync(MODEL_LEVELS_EXTENSION), "the model levels load right after the limits (a worker chat counts its own model calls)");
 	assert.equal(path.basename(path.dirname(MODEL_LEVELS_EXTENSION)), "model-levels");
 	const h = harness();
 	const created: any[] = [];
@@ -2815,11 +2821,11 @@ test("worker session marker: every pi worker loads worker-mark.ts first; another
 		assert.equal(h.workers[0].extensions[0], MARKER_EXTENSION, "a plain worker");
 		assert.doesNotMatch(plain.content[0].text, /extensions=/, "the spawn summary does not list the marker");
 		const given = await h.call("agent_spawn", { prompt: "given", extensions: ["npm:definitely-not-installed-xyz"] });
-		assert.deepEqual(h.workers[1].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, "npm:definitely-not-installed-xyz"], "a worker with its own extensions");
+		assert.deepEqual(h.workers[1].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, "npm:definitely-not-installed-xyz"], "a worker with its own extensions");
 		assert.match(given.content[0].text, /  extensions=npm:definitely-not-installed-xyz(  |$)/m, "only the user's extensions are listed");
 		await h.call("team_create", { name: "Crew", objective: "o", members: [{ role: "lead", prompt: "t", orchestrator: true }, { role: "writer", prompt: "w", backend: "native-cli" }] });
 		const member = h.workers.at(-1);
-		assert.deepEqual(member.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, MEMBER_EXTENSION], "a team member");
+		assert.deepEqual(member.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, MEMBER_EXTENSION], "a team member");
 		await h.call("agent_spawn", { prompt: "claude", backend: "native-cli" });
 		assert.equal(created.length, 2);
 		for (const other of created) assert.equal(other.extensions.length, 0, "another backend's workers are untouched");
@@ -2925,14 +2931,14 @@ test("a pi worker on a claude-code-cli model gets the claude-code extension and 
 		await h.call("agent_spawn", { prompt: "1M task", model: "claude-code-cli/claude-opus-5-5", effort: "low" });
 		const scoped = h.workers[0];
 		assert.equal(scoped.model, "claude-code-cli/claude-opus-5-5", "the ref reaches the runner unchanged; the runner sets it over RPC");
-		assert.deepEqual(scoped.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, CLAUDE_CODE_EXTENSION], "the marker, then the claude-code extension");
+		assert.deepEqual(scoped.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, CLAUDE_CODE_EXTENSION], "the marker, then the claude-code extension");
 		assert.deepEqual(scoped.flags, { "claude-code-provider": true });
 		assert.equal(CLAUDE_CODE_EXTENSION, path.join(fs.realpathSync(path.resolve(fileURLToPath(new URL("../claude-code", import.meta.url)))), "index.ts"), "the sibling directory, by real path");
 		assert.equal(CLAUDE_CODE_PROVIDER_FLAG, CLAUDE_PROVIDER_FLAG, "the switch the provider extension registers");
 		await h.call("agent_spawn", { prompt: "plain task", model: "ollama-cloud/kimi-k3" });
 		const plain = h.workers[1];
 		assert.equal(plain.model, "ollama-cloud/kimi-k3");
-		assert.deepEqual(plain.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION]);
+		assert.deepEqual(plain.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION]);
 		assert.equal(plain.flags, undefined);
 	} finally { await h.close(); }
 });
@@ -2958,7 +2964,7 @@ test("pin: with the sandbox off and no worktree, a claude-code worker's launch o
 		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code", systemPrompt: "be terse", wake: false });
 		const want = {
 			model: "claude-code-cli/claude-sonnet-5-5", effort: "medium", tools: ["read", "bash", "edit", "write", "grep", "find", "ls"], systemPrompt: "be terse",
-			extensions: [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, CLAUDE_CODE_EXTENSION], forkSession: undefined,
+			extensions: [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, CLAUDE_CODE_EXTENSION], forkSession: undefined,
 			backendOptions: undefined, flags: { [CLAUDE_CODE_PROVIDER_FLAG]: true }, backend: "pi", groupId: "run_01", name: "agent", task: "claude task", cwd: h.ctx.cwd, wake: false,
 		};
 		const shape = (w: any) => ({ ...launchShape(w), id: undefined });
@@ -2981,18 +2987,18 @@ test("sandbox off: workers launch exactly as without the sandbox extension; on: 
 		await h.call("agent_spawn", { prompt: "pi task" });
 		await h.call("agent_spawn", { prompt: "claude task", backend: "native-cli", backendOptions: { permissionMode: "bypassPermissions" } });
 		assert.deepEqual(launchShape(h.workers[1]), launchShape(h.workers[0]), "an off parent's pi worker is today's");
-		assert.deepEqual(h.workers[1].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION]);
+		assert.deepEqual(h.workers[1].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION]);
 		assert.equal(h.workers[1].flags, undefined);
 		assert.deepEqual(launchShape(created[1]), launchShape(created[0]), "an off parent's claude worker is today's");
 		assert.ok(!("settingsJson" in created[1]) && !("permissionMode" in created[1]));
 
 		h.bus.emit(SANDBOX_STATE_EVENT, SANDBOX_ON);
 		await h.call("agent_spawn", { prompt: "pi task" });
-		assert.deepEqual(h.workers[2].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, SANDBOX_DIR]);
+		assert.deepEqual(h.workers[2].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, SANDBOX_DIR]);
 		assert.deepEqual(h.workers[2].flags, WORKER_FLAGS, "the extension's flags, as is");
 		// Naming the extension itself neither loads it twice nor drops the flag.
 		await h.call("agent_spawn", { prompt: "pi task", extensions: [path.join(SANDBOX_DIR, "index.ts")] });
-		assert.deepEqual(h.workers[3].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, SANDBOX_DIR]);
+		assert.deepEqual(h.workers[3].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, SANDBOX_DIR]);
 		assert.deepEqual(h.workers[3].flags, WORKER_FLAGS);
 		await h.call("agent_spawn", { prompt: "pi task", model: "test/model" });
 		assert.deepEqual(h.workers[4].flags, WORKER_FLAGS);
@@ -3015,7 +3021,7 @@ test("sandbox on: a claude-code worker is sandboxed as a pi worker (the extensio
 		const claude = h.workers[0];
 		assert.equal(asked.length, 1, "asked once, as for any pi worker");
 		assert.equal(asked[0].backend, "pi");
-		assert.deepEqual(claude.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, SANDBOX_DIR, CLAUDE_CODE_EXTENSION]);
+		assert.deepEqual(claude.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, SANDBOX_DIR, CLAUDE_CODE_EXTENSION]);
 		assert.deepEqual(claude.flags, { ...WORKER_FLAGS, [CLAUDE_CODE_PROVIDER_FLAG]: true });
 		assert.equal(claude.confine, undefined);
 		assert.equal(claude.backendOptions, undefined);
@@ -3056,7 +3062,7 @@ test("sandbox: the state is asked for at load, malformed announcements are ignor
 	try {
 		r.bus.emit(SANDBOX_STATE_EVENT, SANDBOX_ON);
 		await r.call("agent_spawn", { prompt: "pi task" });
-		assert.deepEqual(r.workers[0].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, REMOTE_EXTENSION]);
+		assert.deepEqual(r.workers[0].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, REMOTE_EXTENSION]);
 		assert.deepEqual(r.workers[0].flags, { target: "box" });
 	} finally {
 		await r.close();
@@ -3588,6 +3594,33 @@ test("the monitor: roster with context, thresholds and usage; notices recorded; 
 		dev.status = "running";
 		assert.equal((await h.ask("ag_03", { type: "nudge", nudge: { action: "schedule", delay: "10m" } })).ok, true, "a working teammate resets the count");
 	} finally { await h.cleanup(); }
+});
+
+test("pending wake_nudges are kept in the mailbox on each change, and the next manager re-arms them", async () => {
+	const h = coordinatedHarness(DEFAULTS_FILE);
+	const mail = path.join(h.root, "mail");
+	const kept = () => JSON.parse(fs.readFileSync(path.join(mail, "nudges.json"), "utf8"));
+	let next: ReturnType<typeof coordinatedHarness> | undefined;
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }] });
+		await h.ask("ag_03", { type: "nudge", nudge: { action: "schedule", delay: "1h", reason: "next check" } });
+		await h.ask("ag_03", { type: "nudge", nudge: { action: "schedule", delay: "2h", reason: "later" } });
+		assert.deepEqual(kept().ag_03.active.map((n: any) => [n.id, n.reason]), [["n1", "next check"], ["n2", "later"]]);
+		await h.ask("ag_03", { type: "nudge", nudge: { action: "cancel", id: "n2" } });
+		assert.deepEqual(kept().ag_03.active.map((n: any) => n.id), ["n1"]);
+		await h.close();
+		assert.deepEqual(kept().ag_03.active.map((n: any) => n.id), ["n1"], "a closing manager keeps them");
+		// The next manager on the same mailbox: n1 is armed again for the time left.
+		next = coordinatedHarness();
+		const again = harness(eventBus(), { mailboxRoot: mail, mailboxPollMs: 10, agentDir: next.agentDir, setTimer: (fn, ms) => { next!.timers.push({ fn, ms }); return { fn, ms } as any; } });
+		await again.call("team_create", { name: "Other", objective: "o", members: [{ role: "dev", prompt: "p" }] });
+		const armed = next.timers.find((t) => t.ms > 3_500_000 && t.ms <= 3_600_000);
+		assert.ok(armed, `n1 re-armed (${next.timers.map((t) => t.ms).join(", ")})`);
+		await again.close();
+	} finally {
+		fs.rmSync(h.root, { recursive: true, force: true });
+		await next?.cleanup();
+	}
 });
 
 test("team_succeed starts <role>-<n+1> on the same backend/model/effort; team_ready or the timeout retires the old member", async () => {
@@ -4203,7 +4236,7 @@ test("worktrees: a worker starts only in the session cwd or an active tracked wo
 		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_OFF, workerLaunch });
 		// Nothing tracked: only the session cwd (and below it).
 		await h.call("agent_spawn", { prompt: "here", cwd: "extensions" });
-		assert.deepEqual(h.workers[0].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION], "no confinement in the session cwd");
+		assert.deepEqual(h.workers[0].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION], "no confinement in the session cwd");
 		for (const backend of [undefined, "claude-code"])
 			await assert.rejects(h.call("agent_spawn", { prompt: "there", cwd: wt, backend }), /outside this session's cwd and its worktrees \(none tracked\)/);
 		await assert.rejects(h.call("team_create", { name: "T", objective: "o", members: [{ role: "dev", prompt: "p", cwd: wt }] }), /outside this session's cwd/);
@@ -4212,14 +4245,14 @@ test("worktrees: a worker starts only in the session cwd or an active tracked wo
 		await h.call("agent_spawn", { prompt: "in tree", cwd: path.join(wt, "src") });
 		const pi = h.workers.at(-1);
 		assert.deepEqual(flagsFor, [wt], "confined to the worktree's top level, not its subdir");
-		assert.deepEqual(pi.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, SANDBOX_DIR]);
+		assert.deepEqual(pi.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, SANDBOX_DIR]);
 		assert.deepEqual(pi.flags, { sandbox: "on", "sandbox-parent": JSON.stringify({ version: 1, writeOnly: true, writable: [wt] }) });
 		// Claude Code: a pi worker, confined to the worktree the same way (write-only while off).
 		await h.call("agent_spawn", { prompt: "claude in tree", cwd: wt, backend: "claude-code" });
 		const claude = h.workers.at(-1);
 		assert.equal(created.length, 0);
 		assert.deepEqual(flagsFor, [wt, wt]);
-		assert.deepEqual(claude.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, SANDBOX_DIR, CLAUDE_CODE_EXTENSION]);
+		assert.deepEqual(claude.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, SANDBOX_DIR, CLAUDE_CODE_EXTENSION]);
 		assert.deepEqual(claude.flags, { sandbox: "on", "sandbox-parent": JSON.stringify({ version: 1, writeOnly: true, writable: [wt] }), [CLAUDE_CODE_PROVIDER_FLAG]: true });
 		assert.equal(claude.cwd, wt);
 		// Another backend cannot be confined to it.
@@ -4266,7 +4299,7 @@ test("sandbox Off (§chat.sandbox/states): a worktree's workers start unconfined
 		// Off: the sandbox answers none for every worker, and says workers off.
 		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_OFF, workers: "off", workerLaunch: () => ({ kind: "none" }) });
 		await h.call("agent_spawn", { prompt: "pi off", cwd: wt });
-		assert.deepEqual(h.workers.at(-1).extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION], "no sandbox extension, no flags");
+		assert.deepEqual(h.workers.at(-1).extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION], "no sandbox extension, no flags");
 		assert.equal(h.workers.at(-1).flags, undefined);
 		await h.call("agent_spawn", { prompt: "claude off", cwd: wt, backend: "claude-code" });
 		assert.deepEqual(h.workers.at(-1).flags, { [CLAUDE_CODE_PROVIDER_FLAG]: true }, "a Claude Code worker is not confined either");
@@ -4323,8 +4356,8 @@ test("worktrees: useWorktreeConfig runs a pi worker on <worktree>/.agent with it
 		assert.deepEqual(w.env, { PI_CODING_AGENT_DIR: path.join(wt, ".agent") });
 		assert.equal(w.sessionDir, path.join(parentAgent, "sessions", `--${wt.slice(1).replace(/\//g, "-")}--`));
 		assert.ok(fs.existsSync(w.sessionDir));
-		assert.equal(w.approve, true);
-		assert.deepEqual(w.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, mode, SANDBOX_DIR], "the tree's mode by its real path; never its subagents");
+		assert.equal(w.approve, undefined, "a worker trusts its project's files as every chat does: nothing to pass");
+		assert.deepEqual(w.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, mode, SANDBOX_DIR], "the tree's mode by its real path; never its subagents");
 		assert.deepEqual(w.flags, { major: "normal", minor: "spec", sandbox: "on", "sandbox-parent": wt });
 		const record = h.appended.find((e) => e.customType === "subagents-worker-manifest" && e.data.launch);
 		assert.equal(record.data.launch.useWorktreeConfig, true);
@@ -4362,17 +4395,17 @@ test("spec on: every code-writing worker (pi, claude-code, team member) gets the
 		await h.call("agent_spawn", { prompt: "pi task", systemPrompt: "Be terse." });
 		assert.equal(h.workers[2].systemPrompt, `Be terse.\n\n${brief}`);
 		// pi workers run with --no-extensions: the census hook comes in by -e, a sibling of subagents/.
-		assert.deepEqual(h.workers[2].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, SPEC_WORKER_EXTENSION]);
+		assert.deepEqual(h.workers[2].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, SPEC_WORKER_EXTENSION]);
 		assert.equal(SPEC_WORKER_EXTENSION, fs.realpathSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "mode", "spec-worker.ts")));
 		assert.equal(h.workers[2].env?.[LEDGER_ENV], undefined, "no spec ledger");
 		await h.call("agent_spawn", { prompt: "reader", tools: ["read", "grep"] });
 		assert.equal(h.workers[3].systemPrompt, undefined, "a worker that cannot write gets no brief");
-		assert.deepEqual(h.workers[3].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION], "nor the census hook");
+		assert.deepEqual(h.workers[3].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION], "nor the census hook");
 		// A claude-code worker is a pi worker: the same brief and census hook, its landed file named in its env.
 		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code", systemPrompt: "Own words." });
 		const claude = h.workers[4];
 		assert.equal(claude.systemPrompt, `Own words.\n\n${brief}`);
-		assert.deepEqual(claude.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, SPEC_WORKER_EXTENSION, CLAUDE_CODE_EXTENSION]);
+		assert.deepEqual(claude.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, SPEC_WORKER_EXTENSION, CLAUDE_CODE_EXTENSION]);
 		assert.equal(claude.settingsJson, undefined, "no Claude Code hooks");
 		assert.ok(Object.values(claude.env ?? {}).some((v) => typeof v === "string" && v.includes(path.join(SPEC_HOOK_STATE, "landed"))), "its landed file is named in its env");
 		assert.equal(claude.env?.[LEDGER_ENV], undefined);
@@ -4386,9 +4419,9 @@ test("spec on: every code-writing worker (pi, claude-code, team member) gets the
 		] });
 		const [a, b] = h.workers.slice(-2);
 		assert.ok(a.systemPrompt.endsWith(brief), "a claude member");
-		assert.deepEqual(a.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, SPEC_WORKER_EXTENSION, MEMBER_EXTENSION, CLAUDE_CODE_EXTENSION]);
+		assert.deepEqual(a.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, SPEC_WORKER_EXTENSION, MEMBER_EXTENSION, CLAUDE_CODE_EXTENSION]);
 		assert.ok(b.systemPrompt.endsWith(brief), "a pi member");
-		assert.deepEqual(b.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, SPEC_WORKER_EXTENSION, MEMBER_EXTENSION], "a pi member gets the census hook too");
+		assert.deepEqual(b.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, SPEC_WORKER_EXTENSION, MEMBER_EXTENSION], "a pi member gets the census hook too");
 		assert.equal(b.env?.[LEDGER_ENV], undefined, "and no ledger beside its member identity");
 		assert.ok(Object.keys(b.env).length > 1);
 
@@ -4517,7 +4550,7 @@ test("spec on with the parent's worker modes (mode:worker) too: the spec block c
 		h.bus.emit(MODE_WORKER_EVENT, SPEC_ON);
 		await h.call("agent_spawn", { prompt: "pi task", systemPrompt: "Be terse." });
 		assert.equal(h.workers[0].systemPrompt, `Be terse.\n\n${WORKER_BLOCK}`, "the mode prompt, no brief on top");
-		assert.deepEqual(h.workers[0].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, MODEL_LEVELS_EXTENSION, SPEC_WORKER_EXTENSION]);
+		assert.deepEqual(h.workers[0].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, SPEC_WORKER_EXTENSION]);
 		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code", systemPrompt: "Own words." });
 		assert.equal(h.workers[1].systemPrompt, `Own words.\n\n${WORKER_BLOCK}`);
 		assert.ok(!h.workers[1].systemPrompt.includes(brief));

@@ -62,6 +62,7 @@ import {
   titleOf,
 } from "../chat-manager";
 import { listGeneration } from "../list-generation";
+import { decodeWorkers } from "../insights";
 import { readOwnLiveRecords, workerCountsOf } from "../live";
 import { hostedFacts } from "../resource-monitor";
 import { type PowersHost, type PowersSendResult, setPowersHost } from "../session-powers";
@@ -180,7 +181,12 @@ export class ChatRuntimeHost {
   private lastGeneration = listGeneration();
   private quietSince: number;
   private wasQuiet = true;
+  /** Quiet but for workers in processes of their own, which a reload keeps (they are reattached). */
+  private reloadQuietSince: number;
+  private wasReloadQuiet = true;
   private workersWorking = 0;
+  /** Of those, another backend's: they run inside this process and would end with it. */
+  private workersInProcess = 0;
   private poke: NodeJS.Timeout | null = null;
   private readonly ticker: NodeJS.Timeout;
   private closing = false;
@@ -198,6 +204,7 @@ export class ChatRuntimeHost {
     this.now = o.now ?? Date.now;
     this.log = o.log ?? ((l) => console.error(`[chat-runtime] ${l}`));
     this.quietSince = this.now();
+    this.reloadQuietSince = this.quietSince;
     this.recorder = new InflightRecorder(() => o.sessionId);
     onChatEvent((e) => this.onEvent(e));
     setWorkerHostSource((parent) => this.workers.bind(parent));
@@ -398,6 +405,7 @@ export class ChatRuntimeHost {
       }
       this.setState("open");
       this.quietSince = this.now();
+      this.reloadQuietSince = this.quietSince;
       reply({ t: "opened", id: f.id, ok: true, mirror: this.mirror() });
       this.lastMirror = JSON.stringify(this.mirror());
     } catch (err) {
@@ -748,6 +756,7 @@ export class ChatRuntimeHost {
     try {
       const rec = readOwnLiveRecords().get(this.o.path);
       this.workersWorking = workerCountsOf(rec?.rec)?.working ?? 0;
+      this.workersInProcess = inProcessWorking(rec?.rec);
     } catch {
       // the live dir mid-write: next tick
     }
@@ -778,8 +787,9 @@ export class ChatRuntimeHost {
   }
 
   /** Nothing in flight: no run, compaction, start, queue, dialog, working worker, server call or
-      action, unacked run fact or wait-ask. */
-  private quietOf(m: ChatStateMirror): boolean {
+      action, unacked run fact or wait-ask. For a reload, only a worker inside this process counts:
+      the rest run in processes of their own and are reattached (§app.chat-processes/code-pickup). */
+  private quietOf(m: ChatStateMirror, reload = false): boolean {
     return (
       !m.running &&
       !m.compacting &&
@@ -787,7 +797,7 @@ export class ChatRuntimeHost {
       m.queue.web === 0 &&
       !m.queue.agent &&
       m.dialogs.length === 0 &&
-      this.workersWorking === 0 &&
+      (reload ? this.workersInProcess : this.workersWorking) === 0 &&
       this.tools.size === 0 &&
       this.workers.pending === 0 &&
       this.outbox.length === 0 &&
@@ -806,11 +816,16 @@ export class ChatRuntimeHost {
     const chat = this.chat!;
     const base = mirrorOf(chat);
     const quiet = this.quietOf(base);
+    const reloadQuiet = this.quietOf(base, true);
     const hooks = this.hooksWaiting();
     if (quiet !== this.wasQuiet) {
       this.wasQuiet = quiet;
       this.quietSince = this.now();
-      if (!quiet) this.reloadAsked = false;
+    }
+    if (reloadQuiet !== this.wasReloadQuiet) {
+      this.wasReloadQuiet = reloadQuiet;
+      this.reloadQuietSince = this.now();
+      if (!reloadQuiet) this.reloadAsked = false;
     }
     return {
       ...base,
@@ -821,7 +836,8 @@ export class ChatRuntimeHost {
         quiet,
         since: this.quietSince,
         clients: this.clientCount(),
-        workersWorking: this.workersWorking,
+        // What holds a reload: "Reloads when its workers finish" (src/lib/code-state.ts).
+        workersWorking: this.workersInProcess,
         serverCalls: this.tools.size - (hooks - this.waits.size),
         outbox: this.outbox.length,
         hooks,
@@ -869,7 +885,7 @@ export class ChatRuntimeHost {
     if (code.state === "current") return client.send({ type: "code", state: "current" } as ChatServerMessage);
     if (code.state === "reloading") return client.send(codeMessage(code) as ChatServerMessage);
     this.codeSaid = null; // failed: try again, as older
-    if (this.wasQuiet && this.chat && this.quietOf(mirrorOf(this.chat))) this.requestReload(false);
+    if (this.wasReloadQuiet && this.chat && this.quietOf(mirrorOf(this.chat), true)) this.requestReload(false);
     else {
       this.reloadPending = true;
       this.codeChanged();
@@ -883,16 +899,16 @@ export class ChatRuntimeHost {
   }
 
   /** Older and quiet: a reload is asked for once per quiet stretch: at once with nobody attached, or
-      after the dwell; a pending "Reload now" at the first quiet moment. Working workers block it
-      (they'd die with the process): they are part of quiet. */
+      after the dwell; a pending "Reload now" at the first quiet moment. Workers in processes of
+      their own don't hold it; another backend's working worker does (it'd end with the process). */
   private considerReload(): void {
-    if (this.reloadAsked || !this.wasQuiet || this.code().state !== "older") return;
+    if (this.reloadAsked || !this.wasReloadQuiet || this.code().state !== "older") return;
     if (this.reloadPending) {
       this.reloadPending = false;
       this.requestReload(false);
       return;
     }
-    if (this.clientCount() === 0 || this.now() - this.quietSince >= this.settings.reloadDwellMs) this.requestReload(true);
+    if (this.clientCount() === 0 || this.now() - this.reloadQuietSince >= this.settings.reloadDwellMs) this.requestReload(true);
   }
 
   // ---- closing ------------------------------------------------------------------------------------
@@ -902,7 +918,7 @@ export class ChatRuntimeHost {
     if (this.closing) return void answer({ t: "drained", id: f.id, ok: true });
     const chat = this.chat;
     if (chat && !chat.disposed && !f.force) {
-      const quiet = this.quietOf(mirrorOf(chat));
+      const quiet = this.quietOf(mirrorOf(chat), f.reason === "reload");
       if (!quiet) return void answer({ t: "drained", id: f.id, ok: false, why: "busy" });
       if (f.reason === "idle" && this.clientCount() > 0) return void answer({ t: "drained", id: f.id, ok: false, why: "attached" });
     }
@@ -947,6 +963,17 @@ export class ChatRuntimeHost {
   heldChat(): ChatSession | undefined {
     return heldChat(this.o.path);
   }
+}
+
+/** Backends whose workers are chat processes of their own (§app.chat-processes/workers); any other
+    registered backend's worker runs inside its parent's process. */
+const CHAT_PROCESS_BACKENDS = new Set(["pi", "claude-code"]);
+
+/** A live record's working workers that run inside this process (another backend's); the record
+    never drops a working one for size. */
+function inProcessWorking(rec: unknown): number {
+  const presence = (rec as { presence?: Record<string, unknown> } | undefined)?.presence;
+  return decodeWorkers(presence).filter((w) => w.working && !CHAT_PROCESS_BACKENDS.has(w.backend ?? "pi")).length;
 }
 
 function codeMessage(code: ChatCodeState): { type: "code"; state: ChatCodeState["state"]; pending?: boolean; detail?: string } {

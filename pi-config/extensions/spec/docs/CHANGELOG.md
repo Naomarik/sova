@@ -483,7 +483,7 @@ would list master's changes instead.
     edge cases) identical to a9b87037 on rows, counts and exit, no JSON key lost. Agent A/B with the
     old mode text (GLM 5.3 medium, 24 questions × 2 reps, the same tools in both arms): no measurable
     difference, because agents rarely used it (`map` in every run, `where` nearly always with one
-    word): correct 90 and 87 of 96, about 55k tokens per run in both. Hence the mode text change below.
+    word): correct 90 of 96 with the old search and 87 with topic search, about 55k tokens per run in both. Hence the mode text change below.
 
 ### 2026-10-12
 

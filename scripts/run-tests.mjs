@@ -79,6 +79,8 @@ const GLOBS = [
   "pi-config/extensions/model-levels/*.test.ts",
   // The Claude Code bridge's memory-view layout (pi-free, pure): a chat that stops caching its view fails here.
   "pi-config/extensions/claude-code/provider/memory-layout.test.ts",
+  // Which Claude program every spawn runs (builtins only; the server imports it).
+  "pi-config/extensions/claude-code/claude-executable.test.ts",
 ];
 const isBrowserTest = (f) => f.endsWith(".browser.test.ts");
 /** Each tier's recorded wall times, and how many files it runs at once. */

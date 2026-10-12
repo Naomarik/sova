@@ -83,7 +83,17 @@ export function buildAgentDir(scratch, { mockPort, auth } = {}) {
   mkdirSync(join(agent, "extensions"), { recursive: true });
   copyFileSync(join(HERE, "trial-dialog.ts"), join(agent, "extensions", "trial-dialog.ts"));
   if (auth) copyFileSync(auth, join(agent, "auth.json"));
-  return { agent, proj, ...fakeClaude(scratch) };
+  const fake = fakeClaude(scratch);
+  // topic-outline reads ~/.pi/agent/topic-outline.json and spawns ~/.local/bin/claude whatever the
+  // agent dir: in the trial's project (trusted here) its own config sends the outline's one-shot to
+  // the fake claude instead (only a trusted project's .pi/topic-outline.json applies).
+  const trustFile = join(agent, "trust.json");
+  const trust = existsSync(trustFile) ? JSON.parse(readFileSync(trustFile, "utf8")) : {};
+  rmSync(trustFile, { force: true });
+  writeFileSync(trustFile, JSON.stringify({ ...trust, [proj]: true }, null, 2));
+  mkdirSync(join(proj, ".pi"), { recursive: true });
+  writeFileSync(join(proj, ".pi", "topic-outline.json"), JSON.stringify({ claudeBin: join(fake.claudeBin, "claude"), summarizers: [{ backend: "claude-code", model: "claude-sonnet-5-5", timeoutMs: 20000 }] }, null, 2));
+  return { agent, proj, ...fake };
 }
 
 /** scripts/fake-claude.mjs as `claude` (a shim dir to put first on the server's PATH) and a login

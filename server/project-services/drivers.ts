@@ -99,6 +99,9 @@ export interface SystemdUnitOptions {
   envFile?: (unit: string) => string;
 }
 
+/** Whether an `EnvironmentFile=` can carry `name=value`: a variable name, and a value on one line. */
+export const envFileKeeps = (name: string, value: string): boolean => /^[A-Za-z_][A-Za-z0-9_]*$/.test(name) && !/[\n\r]/.test(value);
+
 /** An `EnvironmentFile=` body for `env`: one single-quoted assignment per line, double-quoted with
     backslash escapes when the value holds a single quote. A name that is no variable name, or a value
     with a line break, is left out (pure, for tests). */
@@ -106,7 +109,7 @@ export function envFileText(env: Record<string, string>): string {
   const lines: string[] = [];
   for (const k of Object.keys(env).sort()) {
     const v = env[k]!;
-    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(k) || /[\n\r]/.test(v)) continue;
+    if (!envFileKeeps(k, v)) continue;
     lines.push(v.includes("'") ? `${k}="${v.replace(/[\\"$`]/g, (c) => "\\" + c)}"` : `${k}='${v}'`);
   }
   return lines.length ? `${lines.join("\n")}\n` : "";

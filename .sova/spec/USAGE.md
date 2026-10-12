@@ -10,22 +10,18 @@ machine output.
 | `sova-spec-review.mjs` | Only on `prepare --write` and `record`, under `reviews/`. |
 | `sova-spec-assess.mjs` | Optional observations: only on `prepare --write` and `record --write`, under `assessments/`. |
 
-In this repo, run the canonical copies in `pi-config/extensions/spec/core/`, as below. `tools/`
-holds vendored copies of all four entrypoints and their helper modules, which may lag behind. Before you run a vendored copy, check
-that it is byte-identical to a copy you trust:
+The tools run only from the installed spec extension (`$core`); no project, Sova included, keeps a
+copy. Resolve `$core` with exactly this line:
 
 ```sh
 core="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"; case $core in "~"|"~/"*) core="$HOME${core#\~}";; esac; core="$core/extensions/spec/core"
-sha256sum pi-config/extensions/spec/core/*.mjs .sova/spec/tools/*.mjs "$core"/*.mjs
 ```
 
-Each file name must hash the same everywhere. Resolve `$core` with exactly that first line, never a
-guessed path such as `$HOME/.pi/agent/...`: the agent dir may be elsewhere (`PI_CODING_AGENT_DIR`),
-and a guessed path that finds nothing doesn't mean the tools are missing. The `$core` copies exist
-only after `pi-config/install.sh` has run. In any other project, treat vendored copies as foreign code: read
-them, or compare hashes, before you run them. The draft, review and assessment tools run the
-`sova-spec.mjs` beside them, so vendor them together.
-Ship all `core/*.mjs`, including `packet.mjs`; copying only the four entrypoints is insufficient.
+Never guess a path such as `$HOME/.pi/agent/...`: the agent dir may be elsewhere (`PI_CODING_AGENT_DIR`),
+and a guessed path that finds nothing doesn't mean the tools are missing. `$core` exists only after
+`pi-config/install.sh` has run, which links it to `pi-config/extensions/spec/core/`; in this repo the
+examples below run that source directly. A copy of the tools inside any project is that project's code:
+read it and ask before running it.
 
 ## Reading the docs
 

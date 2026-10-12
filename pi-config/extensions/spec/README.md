@@ -419,11 +419,9 @@ asking.
 ignores `PI_AGENT_DIR`. If `PI_AGENT_DIR` points somewhere else, the links land
 where pi, and this path, never look.
 
-A project may vendor its own copies, for example under `.sova/spec/tools/`. The
-companion and the draft tool run the `sova-spec.mjs` in their own directory,
-so vendor the files together. Vendored copies are the project's code, not these
-tools. The minor mode reads them, or compares their hashes with the trusted copies, and asks
-before running them. It never runs any other project script, install or
+The installed extension is the only supported way to run these tools. A copy
+inside a project is that project's code, not these tools, and is never run without
+asking: the minor mode reads it and asks first. It never runs any other project script, install or
 network command to get a spec tool. When no trusted copy is reachable, the
 agent says so and reads the manifest and claim files directly. That happens on
 a remote target, for example, where tools run on a machine without the agent

@@ -1,5 +1,5 @@
 ---
-watches: ["pi-config/extensions/spec/**", "pi-config/extensions/mode/spec*.ts", "pi-config/extensions/mode/spec-mode.md", "pi-config/extensions/claude-code/spec-hooks.ts", "pi-config/extensions/subagents/spec-brief.ts", "pi-config/extensions/worktrees/spec.ts", ".sova/spec/tools/**"]
+watches: ["pi-config/extensions/spec/**", "pi-config/extensions/mode/spec*.ts", "pi-config/extensions/mode/spec-mode.md", "pi-config/extensions/claude-code/spec-hooks.ts", "pi-config/extensions/subagents/spec-brief.ts", "pi-config/extensions/worktrees/spec.ts"]
 alsoUpdate: ["pi-config/extensions/spec/docs/CHANGELOG.md"]
 ---
 # spec
@@ -42,11 +42,8 @@ The requirement is §tools/spec (`.sova/spec/claims/tools/spec.md`); MODE.md des
 - **Never run the replay suite while working.** `tests/replay` is a landing gate the merge round runs, one at a time per
   machine, when a landing touches `spec/core/`, `spec/tests/replay/`, `mode/spec-guard.ts` or
   `claude-code/spec-hooks.ts`. Without `SOVA_SPEC_REPLAY=1` every test in it skips.
-- **The vendored copy.** `.sova/spec/tools/` is a vendored copy of `core/*.mjs`, the example `spec/README.md` and the
-  CHANGELOG's upgrade steps describe: it stays byte-identical to `core/`. Nothing in Sova runs it (agents run the
-  trusted `$core` copy). No script syncs it, so a change to `core/*.mjs` copies every `core/*.mjs` (not `README.md`)
-  into `.sova/spec/tools/` in the same commit; check with the `sha256sum` line in `.sova/spec/USAGE.md`. As of this
-  guide it lags: three files differ and `topic.mjs` is missing.
+- **One copy of the tools.** The spec tools exist only in `core/`, run through the installed extension (`$core`).
+  No project, Sova included, keeps a copy; a copy found in a project is that project's code, never run without asking.
 
 ## While working
 
@@ -76,5 +73,4 @@ The requirement is §tools/spec (`.sova/spec/claims/tools/spec.md`); MODE.md des
   (`tests/usage.test.mjs` pins it to the commands).
 - **`spec-mode.md`:** `mode/index.test.ts`'s pins, the brief's anchors (`subagents/spec-brief.test.ts`), the site
   page, and an UPGRADING step.
-- **`.sova/spec/tools/`:** re-copied with any `core/*.mjs` change (above).
-- Commit spec docs and tools by explicit path, as `.sova/spec/README.md` shows; drafts and reviews stay local.
+- Commit spec docs by explicit path, as `.sova/spec/README.md` shows; drafts and reviews stay local.

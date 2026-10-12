@@ -55,7 +55,8 @@ test("a chat starts as its own unit, is recorded with its pid, socket and epoch,
   const { sup, owned, launched } = make(d);
   const rec = await sup.start(chat);
   assert.equal(rec.unit, "sova-chat-test01-c1");
-  assert.equal(d.started[0]!.cwd, "/w");
+  assert.equal(d.started[0]!.cwd, join(import.meta.dirname, "..", ".."), "the repository root, never the chat's cwd");
+  assert.equal(rec.cwd, "/w");
   assert.deepEqual(d.started[0]!.argv, ["/opt/bun/bun", "server/chat-runtime/main.ts"]);
   assert.deepEqual(launched, [{ unit: "sova-chat-test01-c1", sock: "/s/c1.sock", epoch: 7 }]);
   assert.equal(rec.pid, 1000);

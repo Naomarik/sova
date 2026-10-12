@@ -1652,10 +1652,10 @@ async function t21() {
   await waitFor(metaOk, 90000);
   R.check(metaOk(), "t21: /explain wrote its page and meta.json to the store");
   await sleep(5000);
-  const raw = readFileSync(path, "utf8");
-  R.check(!/interrupted/i.test(raw.split("\n").filter((l) => /explain/i.test(l)).join("\n")), "t21: the /explain run is never marked interrupted across the parent's reload");
-  const docs = entries(path).filter((e) => JSON.stringify(e).includes("explain-doc"));
-  R.check(docs.length === 1, `t21: the /explain row settled once (explain-doc entries ${docs.length})`);
+  // The run's row is an explain-doc entry, appended at the start (status running) and again when
+  // it settles: one settled entry, none interrupted or failed.
+  const docs = entries(path).filter((e) => e.customType === "explain-doc").map((e) => e.data ?? {});
+  R.check(docs.filter((d) => d.status !== "running").length === 1 && docs.every((d) => !["interrupted", "failed"].includes(d.status) && !d.error), `t21: the /explain row settled once, never interrupted (${docs.map((d) => d.status ?? (d.summary ? "settled" : "?")).join(", ")})`);
   // /compact-handoff.
   const p2 = chatPid(path);
   prompt(s2, "/compact-handoff [handoff 5]");
@@ -1673,7 +1673,7 @@ async function t21() {
   R.check(entries(path).some((e) => e.customType === "btw-note" && JSON.stringify(e).includes("BTW-ANSWER t21")), "t21: /btw's answer is persisted as a btw-note");
   // Who asked the model, and what was counted.
   const parents = new Set([ppid, p2, chatPid(path), srv.pid()]);
-  const hidden = mockLog(mock.log).filter((e) => ["explain", "handoff", "btw"].includes(e.scenario));
+  const hidden = mockLog(mock.log).filter((e) => !e.event && ["explain", "handoff", "btw"].includes(e.scenario));
   R.check(hidden.length >= 3 && hidden.every((e) => e.pid && !parents.has(e.pid)), `t21: every hidden chat's model call came from a process other than the parent's and the server's (${hidden.map((e) => `${e.scenario}@${e.pid}`).join(", ")})`);
   await sleep(2000);
   const counted = usageRecords().slice(usage0).filter((r) => r.parent === sid || r.owner === sid);

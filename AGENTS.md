@@ -107,6 +107,9 @@ The server runs on Bun; Node only when the user asks (server guide). An agent ne
 
 ## Working rules
 
+- When planning a Sova feature, only Sova matters: ignore the pi TUI and standalone Claude Code
+  (sessions run outside Sova). Never widen scope, add questions or add work to cover them. Sova's
+  own claude-code backend and its workers are Sova and count.
 - Never use Opus 5 (`claude-opus-5`). "opus" means Opus 5.5: claude-code `claude-opus-5-5` (an old
   alias such as `opus[1m]` runs as its catalog id; `pi-config/extensions/claude-code/catalog.ts` names
   every model).

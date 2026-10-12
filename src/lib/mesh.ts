@@ -311,13 +311,13 @@ export function linkedSessionRow(
 
 /**
  * Each peer's rows. A peer that is down keeps its last rows (the server sends them as `stale`, and
- * a list this page already had stands in when it sends none), marked down by the sidebar rather
- * than vanishing. A peer no longer in peers.json is dropped.
+ * a list this page already had stands in when it sends none): the sidebar lists them only while
+ * its host filter names that peer (`listedWhileDown`). A peer no longer in peers.json is dropped.
  */
 /**
  * After a confirmed host change: the old host's sessions, as this tab last listed them, stand in as
- * that peer's list until the peer answers, so they stay in the sidebar (marked down while it is)
- * instead of vanishing. A list the peer already sent wins.
+ * that peer's list until the peer answers, so they are at hand (listed as `listedWhileDown` says
+ * while it is down) instead of lost. A list the peer already sent wins.
  */
 export function seedPeerList(
   lists: ReadonlyMap<string, SessionSummary[]>,
@@ -389,6 +389,17 @@ export function passesHostFilter(filter: string | null, path: string): boolean {
   const host = hostOf(path);
   return filter === SELF_FILTER ? host === null : host === filter;
 }
+
+/** The peers not answering (`down`; a skewed peer answers and is not among them). */
+export const downPeerIds = (peers: readonly PeerStatus[]): Set<string> =>
+  new Set(peers.filter((p) => p.state === "down").map((p) => p.id));
+
+/**
+ * Whether a session on `host` (null: here) is listed at all. A down peer's remembered rows are
+ * kept but listed nowhere unless the host filter names that peer; they are back once it answers.
+ */
+export const listedWhileDown = (host: string | null, filter: string | null, down: ReadonlySet<string>): boolean =>
+  host === null || !down.has(host) || filter === host;
 
 /** Waits between tries at GET /api/mesh after a failure that may pass (ms), the last one repeating. */
 const MESH_RETRY_MS = [5_000, 15_000, 30_000, 60_000];

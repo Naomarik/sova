@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, test } from "node:test";
 import type { LlmFeedMessage, LlmInflight, SessionFeedMessage } from "../shared/protocol";
-import { hostCount, LlmInflightHub, meshTotal, parseProcessLlm, type LiveEntry, type LlmProcessSnapshot, type HubTimers, type OwnCounter, type PeerSocket, type PeerState, type TokenRing, type UnadoptedWorker, MAX_CALLS, MAX_SLOT_TOKENS } from "./llm-inflight";
+import { hostCount, LlmInflightHub, meshTotal, parseProcessLlm, type LiveEntry, type LlmProcessSnapshot, type HubTimers, type OwnCounter, type PeerSocket, type PeerState, type TokenRing, MAX_CALLS, MAX_SLOT_TOKENS } from "./llm-inflight";
 
 const NOW = 1_000_000;
 const OWN_PID = 100;
@@ -67,9 +67,7 @@ describe("hostCount", () => {
   });
 });
 
-describe("hostCount: folded children and unadopted workers", () => {
-  const c = (active: number, over: Partial<NonNullable<UnadoptedWorker["counts"]>> = {}) => ({ active, approximate: 0, claudeTurns: 0, degraded: false, ...over });
-
+describe("hostCount: folded children", () => {
   test("a worker folded into its parent adds nothing of its own (it also loads the sessions extension)", () => {
     const parent = entry(1, { active: 3, folded: ["p2"] });
     assert.deepEqual(hostCount(snap(), [parent, entry(2, { active: 1 })], NOW, all), { count: 3, approximate: 0, partial: false, gaps: [] });
@@ -87,18 +85,6 @@ describe("hostCount: folded children and unadopted workers", () => {
 
   test("this server's own folded workers are never added again", () => {
     assert.equal(hostCount(snap({ active: 2, folded: ["p5"] }), [entry(5, { active: 2 })], NOW, all).count, 2);
-  });
-
-  test("an unadopted worker adds its last own count once; one that never reported is unreported, never 0", () => {
-    const got = hostCount(snap(), [], NOW, all, [{ key: "a/1", producer: "w7", counts: c(1) }, { key: "a/2", counts: null }]);
-    assert.deepEqual(got, { count: 1, approximate: 0, partial: true, gaps: [{ reason: "unreported", processes: 1 }] });
-    assert.deepEqual(hostCount(snap(), [], NOW, all, [{ key: "a/3", counts: c(1, { claudeTurns: 1 }) }]).gaps, [{ reason: "claude-internal" }]);
-  });
-
-  test("adoption: the parent folds the worker, so the reader's copy adds nothing; nor does one with its own record", () => {
-    const parent = entry(1, { active: 1, folded: ["w7"] });
-    assert.equal(hostCount(snap(), [parent], NOW, all, [{ key: "a/1", producer: "w7", counts: c(1) }]).count, 1);
-    assert.equal(hostCount(snap(), [entry(7, { active: 1, producer: "w7" })], NOW, all, [{ key: "a/1", producer: "w7", counts: c(1) }]).count, 1);
   });
 
   test("bounds: an oversized or malformed folded list, or a count past the cap, is degraded and capped", () => {
@@ -461,39 +447,6 @@ describe("the live-record watch comes back", () => {
   });
 });
 
-describe("the worker registry is read per sweep, never per call", () => {
-  test("100 own begin/end changes cause no registry read; the sweep does; an adoption between reads counts once", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "llm-reg-"));
-    const own = new FakeOwn();
-    let reads = 0;
-    let registry: UnadoptedWorker[] = [{ key: "a/1", producer: "w7", counts: { active: 1, approximate: 0, claudeTurns: 0, degraded: false } }];
-    const time = virtualTime();
-    const hub = new LlmInflightHub({ own, liveDir: dir, alive: () => true, debounceMs: 1, sweepMs: 150, workers: () => (reads++, registry), now: time.now, timers: time.timers });
-    const got: SessionFeedMessage[] = [];
-    try {
-      hub.addBrowser((m) => got.push(m));
-      assert.equal(reads, 1, "one read when counting starts");
-      for (let i = 0; i < 100; i++) own.set({ active: (i + 1) % 2 }); // ends at 0
-      await time.advance(30);
-      assert.equal(reads, 1, "begin/end recounts from the held snapshot");
-      assert.equal(inflights(got).at(-1)!.count, 1, "own 0 + the unadopted worker's 1");
-      // the worker is adopted: its parent's record names it, before the registry is read again
-      writeFileSync(join(dir, "p3-x.json"), JSON.stringify({ session: { pid: 3 }, heartbeat: Date.now(), presence: { llm: snap({ producer: "p3", pid: 3, active: 1, folded: ["w7"] }) } }));
-      await until(() => time.waiting(1) > 0, "the watch event's debounce");
-      await time.advance(40);
-      assert.equal(reads, 1);
-      assert.equal(inflights(got).at(-1)!.count, 1, "counted once: the held copy is excluded by the parent's folded");
-      registry = [];
-      await time.advance(200);
-      assert.equal(reads >= 2, true, "the sweep refreshed it");
-      assert.equal(inflights(got).at(-1)!.count, 1);
-    } finally {
-      hub.stop();
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
-});
-
 // ---- output tokens ---------------------------------------------------------------------------
 
 const S = Math.floor(NOW / 30_000);
@@ -522,18 +475,17 @@ describe("tokens: one host", () => {
     assert.equal(hostCount(snap(), [entry(1, { tokens: ringAt(S, { 59: 3 }) })], NOW, all).tokens, undefined);
   });
 
-  test("folded producers add no tokens; a process, worker or own without a ring, or any gap, is partial", () => {
+  test("folded producers add no tokens; a process or own without a ring, or any gap, is partial", () => {
     const own = snap({ tokens: ringAt(S, {}) });
     const parent = entry(1, { active: 1, folded: ["p2", "w9"], tokens: ringAt(S, { 59: 5 }) });
     const child = entry(2, { active: 1, tokens: ringAt(S, { 59: 100 }) });
-    const worker: UnadoptedWorker = { key: "o/w9", producer: "w9", counts: { active: 0, approximate: 0, claudeTurns: 0, degraded: false }, tokens: ringAt(S, { 59: 1000 }) };
-    const got = hostCount(own, [parent, child], NOW, all, [worker]);
+    const worker = entry(9, { producer: "w9", tokens: ringAt(S, { 59: 1000 }) });
+    const got = hostCount(own, [parent, child, worker], NOW, all);
     assert.deepEqual(tail(got.tokens, 1), [5], "only the parent's ring: it already holds its workers'");
     assert.equal(got.tokens!.partial, false);
     assert.equal(hostCount(own, [entry(3, {})], NOW, all).tokens!.partial, true, "an older counter: its tokens unknown");
     assert.equal(hostCount(own, [entry(3, { tokens: ringAt(S, {}, true) })], NOW, all).tokens!.partial, true, "a process that says its own ring is partial");
     assert.equal(hostCount(snap({ tokens: ringAt(S, {}, true) }), [], NOW, all).tokens!.partial, true);
-    assert.equal(hostCount(own, [], NOW, all, [{ key: "o/x", producer: "x", counts: { active: 0, approximate: 0, claudeTurns: 0, degraded: false } }]).tokens!.partial, true, "a worker that reported no ring");
     assert.equal(hostCount(own, [entry(4, null)], NOW, all).tokens!.partial, true, "an unreported process");
     assert.equal(hostCount(own, [entry(5, { claudeTurns: 1, tokens: ringAt(S, {}) })], NOW, all).tokens!.partial, true, "a Claude Code turn's internal calls");
   });
@@ -547,18 +499,18 @@ describe("tokens: one host", () => {
   test("a departed producer's ring stays until it ages out, unless a counted process now folds it", () => {
     const own = snap({ tokens: ringAt(S, {}) });
     const retained = new Map<string, TokenRing>();
-    hostCount(own, [entry(1, { tokens: ringAt(S, { 59: 40, 0: 2 }) }), entry(2, { tokens: ringAt(S, { 59: 9 }) })], NOW, all, [], retained);
+    hostCount(own, [entry(1, { tokens: ringAt(S, { 59: 40, 0: 2 }) }), entry(2, { tokens: ringAt(S, { 59: 9 }) })], NOW, all, retained);
     // p1 exits (its record gone); p2's pid dies
-    const gone = hostCount(own, [entry(2, { tokens: ringAt(S, { 59: 9 }) })], NOW, (pid) => pid !== 2, [], retained);
+    const gone = hostCount(own, [entry(2, { tokens: ringAt(S, { 59: 9 }) })], NOW, (pid) => pid !== 2, retained);
     assert.deepEqual(tail(gone.tokens, 1), [49], "both still in the window");
-    const later = hostCount(own, [], NOW + 30_000, all, [], retained);
+    const later = hostCount(own, [], NOW + 30_000, all, retained);
     assert.deepEqual(tail(later.tokens, 2), [49, 0], "aged by one slot");
     assert.equal(later.tokens!.out[0], 0, "its oldest slot aged out");
-    assert.equal(hostCount(own, [], NOW + 60 * 30_000, all, [], retained).tokens!.out.every((n) => n === 0), true);
+    assert.equal(hostCount(own, [], NOW + 60 * 30_000, all, retained).tokens!.out.every((n) => n === 0), true);
     assert.equal(retained.size, 0, "forgotten once aged out");
     // adopted: now folded into another process's count, whose ring holds it
-    hostCount(own, [entry(1, { tokens: ringAt(S, { 59: 40 }) })], NOW, all, [], retained);
-    const adopted = hostCount(own, [entry(3, { folded: ["p1"], tokens: ringAt(S, { 59: 40 }) })], NOW, all, [], retained);
+    hostCount(own, [entry(1, { tokens: ringAt(S, { 59: 40 }) })], NOW, all, retained);
+    const adopted = hostCount(own, [entry(3, { folded: ["p1"], tokens: ringAt(S, { 59: 40 }) })], NOW, all, retained);
     assert.deepEqual(tail(adopted.tokens, 1), [40], "never twice");
     assert.equal(retained.has("p1"), false);
   });

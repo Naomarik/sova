@@ -51,7 +51,6 @@ import { initRestartWindow, markServerStop } from "./server-stop";
 import { configureSessionFeed, nudgeMarks, publishFeed } from "./session-feed";
 import { configureLlmInflight } from "./llm-inflight";
 import { snapshot as llmSnapshot, subscribe as onLlmChange } from "../pi-config/extensions/llm-inflight/tracker.ts";
-import { readUnadoptedWorkers } from "../pi-config/extensions/llm-inflight/hosted.ts";
 import { verifiedPeerSocket } from "./mesh/peer-address";
 import { peerUrl } from "./mesh/peers";
 import { onTagsChanged } from "./session-tags";
@@ -213,7 +212,6 @@ configureSessionFeed({ list: listSessions });
 configureLlmInflight({
   own: { snapshot: llmSnapshot, subscribe: onLlmChange },
   liveDir: LIVE_DIR,
-  workers: () => readUnadoptedWorkers(),
   mesh: {
     // A dial-out pairing has no URL to open a feed to (§mesh/lan): its count isn't shown here.
     // `url` names the peer's entry; the feed opens at its verified address (§mesh/peers).

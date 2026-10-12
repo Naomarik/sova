@@ -35,8 +35,7 @@ export interface LlmProcessSnapshot {
   claudeTurns: number;
   degraded: boolean;
   /** The producer ids of every child process whose calls this count already includes (a worker
-      reporting to its parent, transitively): a live record or an unadopted worker of one of
-      these adds nothing. */
+      reporting to its parent, transitively): a live record of one of these adds nothing. */
   folded?: string[];
   /** Its ended calls' output tokens (absent from an older counter: unknown). */
   tokens?: TokenRing;
@@ -99,17 +98,6 @@ function sameTokens(a: LlmTokens | undefined, b: LlmTokens | undefined): boolean
   const [older, newer] = a.end <= b.end ? [a, b] : [b, a];
   const aligned = alignRing(older, newer.end);
   return newer.out.every((n, i) => n === aligned[i]);
-}
-
-/** A live detached worker no running parent has adopted (pi-config llm-inflight/hosted.ts):
-    its last own count, or null when it never reported one (a Claude Code worker, an old host). */
-export interface UnadoptedWorker {
-  key: string;
-  producer?: string;
-  counts: { active: number; approximate: number; claudeTurns: number; degraded: boolean } | null;
-  folded?: string[];
-  /** Its last reported ring; absent = its tokens are unknown. */
-  tokens?: TokenRing;
 }
 
 /** This process's counter. */
@@ -183,14 +171,14 @@ export const EMPTY: LlmInflight = { count: 0, approximate: 0, partial: false, ga
  * producer are this process's hosted chats, already in `own`. A process some counted process
  * has folded in (a worker reporting to its parent) adds nothing of its own.
  * A dead pid counts nothing; a process whose records are all stale, or none reports, is
- * `unreported`. An unadopted detached worker adds its last own count, or is `unreported`.
+ * `unreported`.
  *
  * Tokens (only when `own` has a ring): every counted ring summed at `now`'s slot; one missing (an
  * older counter, a worker that never reported) makes them partial, as does any gap. `retained`,
  * kept by the caller across calls, holds each counted producer's last ring: one no longer counted
  * (gone, dead, stale) still adds it until it ages out, unless a counted process now folds it.
  */
-export function hostCount(own: LlmProcessSnapshot, entries: Iterable<LiveEntry>, now: number, alive: (pid: number) => boolean, workers: readonly UnadoptedWorker[] = [], retained?: Map<string, TokenRing>): LlmInflight {
+export function hostCount(own: LlmProcessSnapshot, entries: Iterable<LiveEntry>, now: number, alive: (pid: number) => boolean, retained?: Map<string, TokenRing>): LlmInflight {
   const byPid = new Map<number, LiveEntry[]>();
   for (const e of entries) {
     if (e.pid === own.pid || e.llm?.producer === own.producer) continue;
@@ -207,7 +195,6 @@ export function hostCount(own: LlmProcessSnapshot, entries: Iterable<LiveEntry>,
   }
   const folded = new Set<string>(own.folded);
   for (const p of procs) for (const f of p.llm?.folded ?? []) folded.add(f);
-  for (const w of workers) for (const f of w.folded ?? []) folded.add(f);
 
   const counted = new Set<string>([own.producer]);
   let total = own.active;
@@ -244,14 +231,6 @@ export function hostCount(own: LlmProcessSnapshot, entries: Iterable<LiveEntry>,
     counted.add(llm.producer);
     add(llm);
     addTokens(llm.producer, llm.tokens);
-  }
-  for (const w of workers) {
-    if (w.producer !== undefined && (folded.has(w.producer) || counted.has(w.producer))) continue;
-    if (w.producer !== undefined) counted.add(w.producer);
-    if (w.counts) {
-      add(w.counts);
-      addTokens(w.producer, w.tokens);
-    } else unreported++;
   }
   // Departed producers: their last ring until it ages out, unless someone counted folds it now.
   if (retained) {
@@ -362,11 +341,6 @@ export interface MeshPeersSource {
 export interface LlmInflightOptions {
   own: OwnCounter;
   liveDir: string;
-  /** Live detached workers no running parent has adopted. Read once when counting starts and
-      then once per sweep, never per call: a begin or end only recounts from what is held. An
-      adoption between two reads is still counted once, because the adopting parent names the
-      worker it now counts (its `folded`); one that can't be named reads as unknown meanwhile. */
-  workers?: () => readonly UnadoptedWorker[];
   mesh?: MeshPeersSource;
   now?: () => number;
   alive?: (pid: number) => boolean;
@@ -436,8 +410,6 @@ export class LlmInflightHub {
   private readonly browsers = new Set<(msg: SessionFeedMessage) => void>();
   private readonly locals = new Set<(msg: LlmFeedMessage) => void>();
   private readonly entries = new Map<string, LiveEntry>();
-  /** The unadopted workers as last read (refreshWorkers). */
-  private workers: readonly UnadoptedWorker[] = [];
   /** Each counted producer's last ring, and each counted peer instance's: kept until it ages out. */
   private readonly retained = new Map<string, TokenRing>();
   private readonly peerRetained = new Map<string, TokenRing>();
@@ -492,7 +464,7 @@ export class LlmInflightHub {
 
   /** This host's own count (own process + live records as last read). */
   local(): LlmInflight {
-    return hostCount(this.opts.own.snapshot(), this.entries.values(), this.now(), this.alive, this.workers, this.retained);
+    return hostCount(this.opts.own.snapshot(), this.entries.values(), this.now(), this.alive, this.retained);
   }
 
   total(): LlmInflight {
@@ -521,7 +493,6 @@ export class LlmInflightHub {
     this.offOwn?.();
     this.offOwn = null;
     this.entries.clear();
-    this.workers = [];
     this.retained.clear();
     this.peerRetained.clear();
     this.lastLocal = this.lastTotal = null;
@@ -534,7 +505,6 @@ export class LlmInflightHub {
   private start(): void {
     if (this.sweep) return;
     this.rescan();
-    this.refreshWorkers();
     this.attachWatcher();
     this.offOwn = this.opts.own.subscribe(() => this.schedule());
     this.sweeps = 0;
@@ -543,19 +513,10 @@ export class LlmInflightHub {
       // again, and rescans until it holds: the fallback lasts only as long as the cause.
       if (!this.watcher && this.attachWatcher()) this.rescan();
       else if (++this.sweeps % RESCAN_EVERY === 0 || !this.watcher) this.rescan();
-      this.refreshWorkers();
       this.reconcilePeers();
       this.checkPeers();
       this.emit();
     }, this.opts.sweepMs ?? SWEEP_MS);
-  }
-
-  private refreshWorkers(): void {
-    try {
-      this.workers = this.opts.workers?.() ?? [];
-    } catch {
-      this.workers = [{ key: "?", counts: null }]; // unreadable: unknown, never 0
-    }
   }
 
   /** Watch the live dir; false when it can't be watched now (missing, or the watch failed). */

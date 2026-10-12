@@ -1,6 +1,6 @@
 import { execFile, execFileSync, spawn } from "node:child_process";
 import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
-import { isAbsolute, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { hostProcTable, procfsTable, unitMembers, type ProcTable } from "./proctable";
 import { logsDir, procsDir } from "./store";
 
@@ -88,15 +88,43 @@ export const realExec: Exec = (file, args, opts = {}) =>
 
 export const SLICE = "sova-services.slice";
 
+/** How a long-running unit is made, for a caller other than project services (the chat supervisor):
+    its slice, its stop grace, and `restart: false` for no `Restart=` (the caller decides restarts). */
+export interface SystemdUnitOptions {
+  slice?: string;
+  timeoutStopSec?: number;
+  restart?: boolean;
+  /** The unit's env goes in this file (mode 0600, written at start) as `EnvironmentFile=`, never in
+      systemd-run's argv, which every user on the host can read. */
+  envFile?: (unit: string) => string;
+}
+
+/** An `EnvironmentFile=` body for `env`: one single-quoted assignment per line, double-quoted with
+    backslash escapes when the value holds a single quote. A name that is no variable name, or a value
+    with a line break, is left out (pure, for tests). */
+export function envFileText(env: Record<string, string>): string {
+  const lines: string[] = [];
+  for (const k of Object.keys(env).sort()) {
+    const v = env[k]!;
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(k) || /[\n\r]/.test(v)) continue;
+    lines.push(v.includes("'") ? `${k}="${v.replace(/[\\"$`]/g, (c) => "\\" + c)}"` : `${k}='${v}'`);
+  }
+  return lines.length ? `${lines.join("\n")}\n` : "";
+}
+
 /** The `systemd-run` argv that starts `spec` as a transient user service (pure, for tests). A waited-for run is
     not `--quiet`: its summary on exit carries the memory peak. A command named by a relative path
     (`.sova/bin/setup`) is made absolute against `cwd`: systemd-run resolves it against its own
     directory, not the unit's, and refuses to start the unit when it is not there. */
-export function systemdRunArgv(spec: UnitSpec, once?: { timeoutSec: number }): string[] {
-  const a = ["--user", `--unit=${spec.unit}`, `--slice=${SLICE}`, "--collect", ...(once ? [] : ["--quiet"]), `--working-directory=${spec.cwd}`, "--property=StandardInput=null"];
+export function systemdRunArgv(spec: UnitSpec, once?: { timeoutSec: number }, unitOpts: SystemdUnitOptions = {}): string[] {
+  const a = ["--user", `--unit=${spec.unit}`, `--slice=${unitOpts.slice ?? SLICE}`, "--collect", ...(once ? [] : ["--quiet"]), `--working-directory=${spec.cwd}`, "--property=StandardInput=null"];
   if (once) a.push("--wait", "--property=KillMode=control-group", `--property=RuntimeMaxSec=${once.timeoutSec}`);
-  else a.push("--property=KillMode=mixed", "--property=TimeoutStopSec=15", "--property=Restart=on-failure", "--property=RestartSec=2");
-  for (const k of Object.keys(spec.env).sort()) a.push(`--setenv=${k}=${spec.env[k]}`);
+  else {
+    a.push("--property=KillMode=mixed", `--property=TimeoutStopSec=${unitOpts.timeoutStopSec ?? 15}`);
+    if (unitOpts.restart !== false) a.push("--property=Restart=on-failure", "--property=RestartSec=2");
+  }
+  if (unitOpts.envFile) a.push(`--property=EnvironmentFile=${unitOpts.envFile(spec.unit)}`);
+  else for (const k of Object.keys(spec.env).sort()) a.push(`--setenv=${k}=${spec.env[k]}`);
   const [cmd, ...args] = spec.argv;
   a.push("--", ...(cmd !== undefined && cmd.includes("/") && !isAbsolute(cmd) ? [resolve(spec.cwd, cmd), ...args] : spec.argv));
   return a;
@@ -165,14 +193,22 @@ export class SystemdDriver implements Driver {
   readonly id = "systemd" as const;
   /** Per unit: the message of the last waited-for run systemd-run could not start, which its journal lacks. */
   private launchFailures = new Map<string, { at: number; lines: string[] }>();
-  constructor(private readonly exec: Exec = realExec) {}
+  constructor(
+    private readonly exec: Exec = realExec,
+    private readonly unitOpts: SystemdUnitOptions = {},
+  ) {}
   async available() {
     const r = await this.exec("systemctl", ["--user", "show", "--property=Version"], { timeoutMs: 5_000 });
     return r.code === 0 ? { ok: true, detail: `systemd user manager (${r.stdout.trim()})` } : { ok: false, detail: `no systemd user manager reachable: ${r.stderr.trim() || `exit ${r.code}`}` };
   }
   async start(spec: UnitSpec) {
     await this.exec("systemctl", ["--user", "reset-failed", `${spec.unit}.service`]);
-    const r = await this.exec("systemd-run", systemdRunArgv(spec));
+    if (this.unitOpts.envFile) {
+      const file = this.unitOpts.envFile(spec.unit);
+      mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
+      writeFileSync(file, envFileText(spec.env), { mode: 0o600 });
+    }
+    const r = await this.exec("systemd-run", systemdRunArgv(spec, undefined, this.unitOpts));
     if (r.code !== 0) throw new DriverError(`systemd-run failed: ${r.stderr.trim() || `exit ${r.code}`}`);
   }
   async stop(unit: string) {
@@ -232,7 +268,7 @@ export class SystemdDriver implements Driver {
     };
     if (spec.signal?.aborted) onAbort();
     else spec.signal?.addEventListener("abort", onAbort, { once: true });
-    const r = await this.exec("systemd-run", systemdRunArgv(spec, { timeoutSec: spec.timeoutSec }), { timeoutMs: (spec.timeoutSec + 30) * 1000 });
+    const r = await this.exec("systemd-run", systemdRunArgv(spec, { timeoutSec: spec.timeoutSec }, this.unitOpts), { timeoutMs: (spec.timeoutSec + 30) * 1000 });
     spec.signal?.removeEventListener("abort", onAbort);
     const ms = Date.now() - t0;
     const timedOut = !aborted && ms >= spec.timeoutSec * 1000;
@@ -412,6 +448,9 @@ export interface DetachedOptions {
   restart?: boolean;
   /** The delay before such a start, and the watch's tick. */
   restartMs?: number;
+  /** Where unit records and logs live (default: project services' `procs/` and `logs/`). */
+  procsDir?: () => string;
+  logsDir?: () => string;
 }
 
 /** At most this many starts of one unit in RESTART_WINDOW_MS, then it stays failed (systemd's default burst). */
@@ -448,8 +487,10 @@ export class DetachedDriver implements Driver {
     this.table = opts.table ?? hostProcTable();
     this.restartMs = opts.restartMs ?? 2_000;
   }
-  private recFile = (unit: string) => join(procsDir(), `${unit}.json`);
-  private logFile = (unit: string) => join(logsDir(), `${unit}.log`);
+  private procsDir = () => (this.opts.procsDir ?? procsDir)();
+  private logsDir = () => (this.opts.logsDir ?? logsDir)();
+  private recFile = (unit: string) => join(this.procsDir(), `${unit}.json`);
+  private logFile = (unit: string) => join(this.logsDir(), `${unit}.log`);
   private rec(unit: string): ProcRecord | null {
     try {
       return JSON.parse(readFileSync(this.recFile(unit), "utf8")) as ProcRecord;
@@ -473,8 +514,8 @@ export class DetachedDriver implements Driver {
     return { ok: true, detail: `detached sessions, processes read from ${this.table.kind === "procfs" ? "/proc" : `ps${this.table.sessions ? "" : " (no session ids: process trees and groups)"}`}` };
   }
   private spawnUnit(spec: UnitSpec): Promise<ProcRecord> {
-    mkdirSync(procsDir(), { recursive: true });
-    mkdirSync(logsDir(), { recursive: true });
+    mkdirSync(this.procsDir(), { recursive: true });
+    mkdirSync(this.logsDir(), { recursive: true });
     const fd = openSync(this.logFile(spec.unit), "a");
     return new Promise((ok, fail) => {
       let child;
@@ -636,7 +677,7 @@ export class DetachedDriver implements Driver {
   }
   async runOnce(spec: OnceSpec) {
     const t0 = Date.now();
-    mkdirSync(logsDir(), { recursive: true });
+    mkdirSync(this.logsDir(), { recursive: true });
     // Each waited-for run's output starts fresh: its log is that run's alone.
     const fd = openSync(this.logFile(spec.unit), "w");
     return await new Promise<RunOnceResult>((done) => {
@@ -697,7 +738,7 @@ export class DetachedDriver implements Driver {
   }
   async units(prefix: string) {
     try {
-      return readdirSync(procsDir())
+      return readdirSync(this.procsDir())
         .filter((f) => f.endsWith(".json") && f.startsWith(prefix))
         .map((f) => f.slice(0, -5));
     } catch {

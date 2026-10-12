@@ -38,6 +38,7 @@ import { cachedTitleOf, getSessionSummary, lastReplyOf, listSessions, onSessionA
 import { startScheduleKeeper } from "./schedule-routes";
 import { attachWebSockets, upgradeSovaSocket, upgradeSovaStreamSocket } from "./ws";
 import { detachChatHost, startChatHost } from "./chat-host";
+import { expectChatRouter } from "./chat-handle";
 import { meshApi, startMesh, stopMesh } from "./mesh";
 import { captureBootBuild } from "./mesh/build-id";
 import { meshLinks } from "./mesh/links";
@@ -136,6 +137,9 @@ setAuthHosts(() => {
 // The chat processes a previous server left running are this server's own before anything reads the
 // live records: never a terminal holding their file while the chat host takes them back (§app.chat-processes/survives-restart).
 claimRecordedChats(addOwnPid);
+// A baton's boot sweep (its org opens just below) waits for the chats to be taken back: a reply still
+// running in its own process is not ended (§app.chat-processes/special-kinds).
+expectChatRouter();
 
 // Every attached org's engine opens before the first request (its pages and share links read it).
 // An import a stop cut off finishes (§app.projects/import): its copy before the orgs open, the rest after.

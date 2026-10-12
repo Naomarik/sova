@@ -192,7 +192,6 @@ startScheduleKeeper((path, init) => app.request(path, init));
 // Samples CPU and memory in the background from startup, open modal or not (§app.resource-monitor/sampling-and-history).
 startResourceMonitor({
   logDir: join(stateRoot(), "monitor"),
-  liveDir: LIVE_DIR,
   held: () => chatHandles().map((c) => ({ path: c.path, sessionId: c.mirror.sessionId, cwd: c.mirror.cwd })),
   titleOf: cachedTitleOf,
 });

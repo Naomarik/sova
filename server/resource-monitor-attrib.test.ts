@@ -101,8 +101,8 @@ const hostedA = (over: Partial<HostedInfo> = {}): HostedInfo => ({
   path: "/s/a.jsonl", sessionId: "sess-a", cwd: "/work/a", workers: [], providerIds: [0, 1, 2].map((n) => claudeSessionId("sess-a", n)),
   toolInWindow: false, ...over,
 });
-const run = (procs: Map<number, AttribProc>, hosted: HostedInfo[], extra: { live?: Map<number, string>; sids?: SidMemory; serverEnv?: { sessionFile?: string } } = {}) =>
-  attribute({ procs, serverPid: SERVER, hosted, liveRecordPids: extra.live ?? new Map(), sids: extra.sids ?? new SidMemory(new Set([SERVER])),
+const run = (procs: Map<number, AttribProc>, hosted: HostedInfo[], extra: { sids?: SidMemory; serverEnv?: { sessionFile?: string } } = {}) =>
+  attribute({ procs, serverPid: SERVER, hosted, sids: extra.sids ?? new SidMemory(new Set([SERVER])),
     ...(extra.serverEnv ? { serverEnv: extra.serverEnv } : {}) });
 
 describe("attribute", () => {
@@ -153,12 +153,6 @@ describe("attribute", () => {
     assert.deepEqual(owners.get(301), { session: "/s/a.jsonl", via: "session-id" });
     // Unmatched worker-looking child of the server: its own unowned group, not dropped.
     assert.deepEqual(owners.get(302), { worker: "unowned:302", via: "descendant" });
-  });
-
-  test("pi worker via its live record's session file", () => {
-    const procs = table(proc(st(SERVER, 1)), proc(st(400, SERVER), ["pi"]));
-    const { owners } = run(procs, [hostedA({ workers: [{ id: "ag_03", sessionFile: "/s/worker.jsonl" }] })], { live: new Map([[400, "/s/worker.jsonl"]]) });
-    assert.deepEqual(owners.get(400), { session: "/s/a.jsonl", worker: "ag_03", via: "live-record" });
   });
 
   test("team env: only when exactly one session has that worker id (and team)", () => {

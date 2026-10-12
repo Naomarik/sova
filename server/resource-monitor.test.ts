@@ -182,7 +182,7 @@ describe("sampler over a fixture /proc", () => {
     // A new worker the runtime has not published: unowned, not dropped.
     hosted = [hostedA({ workers: [] })];
     now += 5000;
-    fx = fixture("unit", [...base, { pid: 500, ppid: SERVER, argv: ["pi"], start: now / 1000 - BOOT, utime: 30 }], { unit: true });
+    fx = fixture("unit", [...base, { pid: 500, ppid: SERVER, argv: ["claude", "-p"], start: now / 1000 - BOOT, utime: 30 }], { unit: true });
     await m.tick();
     // First listed this tick: read from the next one (it would have been charged to its parent
     // had it exited meanwhile).
@@ -191,7 +191,7 @@ describe("sampler over a fixture /proc", () => {
     now += 5000;
     await m.tick();
     const u = m.snapshot()!.unownedWorkers.find((x) => x.id === "unowned:500")!;
-    assert.ok(u, "unowned pi worker");
+    assert.ok(u, "unowned Claude CLI");
     assert.equal(u.cpuPct, 6, "a fresh process counts its whole life");
     assert.equal(m.snapshot()!.unownedWorkers.find((x) => x.id === "unowned:200")?.procCount, 3, "ag_01 lost its pid: its subtree stays together");
   });

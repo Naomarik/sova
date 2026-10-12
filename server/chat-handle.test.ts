@@ -5,9 +5,10 @@
 // the caller as the class the chat threw, an answer is the chat's own, the mirror reads the chat as
 // it is, and lifecycle events carry increasing seqs a consumer can ask again for.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { globSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, relative } from "node:path";
+import { fileURLToPath } from "node:url";
 import { after, test } from "node:test";
 import type { ChatLifecycleEvent } from "../shared/chat-runtime";
 
@@ -107,4 +108,18 @@ test("closing a chat is an event with a higher seq than any before, kept for a l
     chatEventsSince(before).filter((e) => e.chatId === path),
     closed,
   );
+});
+
+test("server code reaches a chat only through its handle: nothing outside the chat's host imports chat-manager", () => {
+  const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+  // The chat's host: the handle itself and the pi adapter the chat runs on. The one file left is the
+  // Overseer's memory engine hook, loadout policy that runs with the chat (it moves with the special
+  // loadouts, al_3 stage 3); the list only shrinks.
+  const allowed = new Set(["server/chat-handle.ts", "server/overseer.ts"]);
+  const importers = globSync("{server,shared,src}/**/*.{ts,tsx}", { cwd: root })
+    .map((f) => relative(root, join(root, f)))
+    .filter((f) => !/\.test\.tsx?$/.test(f) && !f.startsWith("server/harness/") && f !== "server/chat-manager.ts")
+    .filter((f) => /from "(?:\.\.?\/)+(?:[\w-]+\/)*chat-manager(?:\.ts)?"/.test(readFileSync(join(root, f), "utf8")));
+  assert.deepEqual(importers.filter((f) => !allowed.has(f)), []);
+  assert.deepEqual([...allowed].filter((f) => !importers.includes(f)), [], "an allowed file that no longer imports it leaves the list");
 });

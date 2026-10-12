@@ -32,7 +32,6 @@ Ship all `core/*.mjs`, including `packet.mjs`; copying only the four entrypoints
 ```sh
 node pi-config/extensions/spec/core/sova-spec.mjs check
 node pi-config/extensions/spec/core/sova-spec.mjs map                              # every area on one page
-node pi-config/extensions/spec/core/sova-spec.mjs map --titles                     # every area's § id and title, nothing else
 node pi-config/extensions/spec/core/sova-spec.mjs where server/chat-manager.ts    # the claims for a file or a name
 node pi-config/extensions/spec/core/sova-spec.mjs where session share link expiry # the claims whose words match a topic
 node pi-config/extensions/spec/core/sova-spec.mjs toc '§workspace.groups/decisions' --dir out
@@ -46,8 +45,7 @@ node pi-config/extensions/spec/core/sova-spec.mjs check --spec .sova/spec/drafts
 ```
 
 The reading path is contents first, then one passage, as spec mode teaches it:
-- **`where <path|name|topic words>`** and **`map --titles`** (every area's title, to catch a
-  better area than the hits) find the roots for a task; **`map`** orients a whole area.
+- **`where <path|name|topic words>`** and **`map`** find the roots for a task.
 - **`toc §id --dir out|in|down|up|mentions`** lists the claims one hop away in one direction, a
   line each saying what it is, why it is linked and what reading it costs, and delivers no passage.
 - **`read §id`** returns one passage without its chain (an H1 gives its lede unless `--whole`).

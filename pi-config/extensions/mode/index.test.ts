@@ -441,7 +441,7 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 		assert.match(spec, new RegExp(`\`${cmd}\\b`), `${cmd} is named`);
 	}
 	// Task reading pulls: contents, then one passage; whole-chain packet/scope remain machine inspection.
-	assert.match(spec, /only reads: `where <path\|name\|topic words>`, `map \[--titles\]`, `toc '<§id>' --dir out\|in\|down\|up\|mentions`, `read '<§id>' \[--whole\] \[--no-frame\]`, `impact '<§id>' \[--near\]`, `check`, `census`, and whole-chain `packet`\/`scope '<§id>'` \(machine inspection\); `--cursor <next>` continues a page; `--spec <dir>` reads a draft\./);
+	assert.match(spec, /only reads: `where <path\|name\|topic words>`, `map`, `toc '<§id>' --dir out\|in\|down\|up\|mentions`, `read '<§id>' \[--whole\] \[--no-frame\]`, `impact '<§id>' \[--near\]`, `check`, `census`, and whole-chain `packet`\/`scope '<§id>'` \(machine inspection\); `--cursor <next>` continues a page; `--spec <dir>` reads a draft\./);
 	for (const cmd of ["foreign", "map", "where", "toc", "read"]) assert.doesNotMatch(usage("sova-spec.mjs", cmd), /unknown command/, `${cmd} is a core command`);
 	assert.doesNotMatch(spec, /--budget/, "every default budget fits a passage: the guide spends no words on it");
 	// A project's copy is foreign code: inspected and asked about, never run blind.
@@ -450,12 +450,11 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	assert.match(spec, /Without trusted tools, say so and read the files directly/);
 	// The discipline, one assertion per rule.
 	assert.match(spec, /It needs no Git or prior docs;/, "any project, no incumbent prose");
-	assert.match(spec, /Before coding:\n1\. Find roots with `where` and 3–5 of the task's words, never one \(`where password reset email expiry`\), or a path or name; once per task, also scan `map --titles` for an area that fits the task better than the hits' areas \(full `map` only to orient or for a whole-area task\)\. Take the best hits or that area as roots: `toc` each `--dir out` \(an area: `--dir down`\), and `impact --near` any you will change\./, "contents before reading, and reverse impact before changing");
-	// A word search finds roots first; the area titles, once per task, catch a better area than the hits; the whole map orients.
+	assert.match(spec, /Before coding:\n1\. Find roots with `where` and 3–5 of the task's words, never one \(`where password reset email expiry`\), or a path or name; if no hit fits, try other words once, then `map` \(also for a whole-area task\)\. `toc` each `--dir out` \(an area: `--dir down`\), and `impact --near` any you will change\./, "contents before reading, and reverse impact before changing");
+	// A word search finds roots first; the whole map is the fallback, after one retry.
 	const step1 = spec.match(/\n1\. ([^\n]*)/)?.[1] ?? "";
 	assert.ok(step1.indexOf("`where`") >= 0 && step1.indexOf("`where`") < step1.indexOf("`map`"), "step 1 names where before map");
-	assert.match(step1, /once per task, also scan `map --titles`/, "the area titles once per task, beside the search");
-	assert.ok(step1.indexOf("`map --titles`") < step1.indexOf("full `map`"), "titles first, the full map only to orient or for a whole area");
+	assert.match(step1, /try other words once/, "one retry with other words before the map");
 	assert.match(spec, /`read` each root and every `requires` line whose "what" doesn't rule it out, and any other line touching the task; `toc` what you read to go further\./, "the root itself is read, and a dependency is read unless its what rules it out: never skipped for a missing why");
 	assert.match(spec, /Every `read` after the first adds `--no-frame`\. Work from read passages as written; finish fragments at `end == total`\./, "the frame once; literal passages; finish exact fragments");
 	assert.match(spec, /2\. Track unread\/unknowns: an unread link isn't absent, "uninvestigated" isn't none\./, "didn't open never reads as nothing there");
@@ -507,7 +506,7 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	// Agreed decisions: one pointer to the shortcut, whose rules PROMOTE.md says once; the Agree step itself rides the align result.
 	assert.match(spec, /For decisions the user agreed to, `agree <name> --id '<§id>' --by <who> --verification <text> --write` stamps `agreed` and promotes what maps no code \(`\$core\/\.\.\/PROMOTE\.md`\)\./);
 	assert.ok(!spec.includes("Agree step"), "the Agree step is the align result's, never the guide's");
-	assert.ok(spec.split(/\s+/).length <= 892, "short enough to ride every turn: growing it is a deliberate change");
+	assert.ok(spec.split(/\s+/).length <= 868, "short enough to ride every turn: growing it is a deliberate change");
 });
 
 test("spec: the guide's doc-only cases are the draft tool's: each one it names is accepted, and every case the tool's rule lists is named", () => {

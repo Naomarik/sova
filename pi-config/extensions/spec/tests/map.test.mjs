@@ -2,8 +2,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { fixture, cli, pages, write, CORE } from "./map-fixture.mjs";
 
 test("map: every area with its lede's first sentence, label counts, crossing edges, hubs and gaps; agreement absent, never 0", () => {
@@ -68,44 +66,6 @@ test("map pages under a small budget with a stateless cursor, losing no line; fl
   const help = cli(root, ["map", "--help"]).j;
   assert.match(help.help, /^map \[namespace \| §ns\/name\]/);
   assert.equal(cli(root, ["map"], { budget: 5 }).j.code, "usage");
-});
-
-test("map --titles: one line per area, its § id and heading title only; a namespace limits it; a § id is refused; pages like map", () => {
-  const root = fixture();
-  const { j } = cli(root, ["map", "--titles"]);
-  assert.equal(j.status, "done");
-  assert.equal(j.titles, true);
-  assert.deepEqual(j.counts, { areas: 9 });
-  const areas = cli(root, ["map"]).j.lines.filter((l) => l.type === "area");
-  assert.deepEqual(j.lines, areas.map((a) => ({ id: a.id, title: a.title })), "every area, in map's order, nothing but id and title");
-  const text = cli(root, ["map", "--titles"], { json: false }).r.stdout;
-  assert.equal(text, ["map --titles: 9 area(s)", ...areas.map((a) => `${a.id} — ${a.title}`), "listed 9 · not listed 0", "exit 0", ""].join("\n"));
-  assert.ok(Buffer.byteLength(text) < Buffer.byteLength(cli(root, ["map"], { json: false }).r.stdout) / 3, "a small part of the full map");
-  const ns = cli(root, ["--titles", "map", "ot"]).j;
-  assert.deepEqual(ns.lines.map((l) => l.id), areas.filter((a) => a.namespace === "ot").map((a) => a.id));
-  assert.equal(ns.namespace, "ot");
-  assert.match(cli(root, ["map", "ot", "--titles"], { json: false }).r.stdout, /^map --titles ot: 7 area\(s\)\n§ot\/base — Base\n/);
-  assert.equal(cli(root, ["map", "--titles", "zz"]).j.code, "unknown-namespace");
-  const area = cli(root, ["map", "--titles", "§ed/seed"]).j;
-  assert.equal(area.code, "usage");
-  assert.equal(area.exit, 2);
-  assert.match(cli(root, ["map", "--help"]).j.help, /\[--titles\]/);
-  // Paging: enough areas that 1,024 bytes can't hold them.
-  const manifest = JSON.parse(readFileSync(join(root, ".sova/spec/manifest.json"), "utf8"));
-  for (const n of "abcdefghijklmnopqrst") {
-    manifest.claims[`§pad/area-${n}`] = { kind: "note", requires: [] };
-    write(root, `.sova/spec/claims/pad/area-${n}.md`, `# §pad/area-${n} — Padding area ${n}\n\nOne of many areas.\n`);
-  }
-  write(root, ".sova/spec/manifest.json", JSON.stringify(manifest));
-  const all = cli(root, ["map", "--titles"]).j.lines;
-  assert.equal(all.length, 29);
-  const ps = pages(root, ["map", "--titles"], 1024);
-  assert.ok(ps.length > 1);
-  assert.deepEqual(ps.flatMap((p) => p.lines), all, "no line lost or repeated");
-  assert.ok(ps.slice(0, -1).every((p) => p.exit === 1 && p.status === "more"));
-  const more = cli(root, ["map", "--titles"], { json: false, budget: 1024 }).r.stdout;
-  assert.match(more, /^more: map --titles --cursor \S+$/m);
-  assert.equal(cli(root, ["map", "--cursor", ps[0].next]).j.code, "token-mismatch-or-stale", "a titles cursor never continues the full map");
 });
 
 test("graph --json: one paged payload of nodes and edges by kind; text prints counts only; never written", () => {

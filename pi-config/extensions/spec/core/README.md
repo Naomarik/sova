@@ -11,7 +11,7 @@ node sova-spec.mjs read   §ns/name      [--whole] [--no-frame] | read --frame [
 node sova-spec.mjs scope  §ns/name      [--root DIR] [--spec DIR] [--json] [--budget BYTES]
 node sova-spec.mjs impact §ns/name      [--root DIR] [--spec DIR] [--json]
 node sova-spec.mjs impact §ns/name --near [--json] [--budget BYTES] [--cursor TOKEN] [--root DIR] [--spec DIR]
-node sova-spec.mjs map    [namespace | §ns/name] [--titles] [--json] [--budget BYTES] [--cursor TOKEN] [--root DIR] [--spec DIR]
+node sova-spec.mjs map    [namespace | §ns/name] [--json] [--budget BYTES] [--cursor TOKEN] [--root DIR] [--spec DIR]
 node sova-spec.mjs where  <path|token|topic words…> [--token] [--all] [--json] [--budget BYTES] [--cursor TOKEN] [--root DIR] [--spec DIR]
 node sova-spec.mjs graph                [--json] [--budget BYTES] [--cursor TOKEN] [--root DIR] [--spec DIR]
 node sova-spec.mjs census               [--root DIR] [--spec DIR] [--json]
@@ -187,9 +187,7 @@ refusal as small JSON. Nothing is stored.
 `evidence` and `unlabelled`, `requiresOut`, `requiresIn`: `requires` and `embeds` edges across the area's boundary), then
 `type: "hub"` (`path`, `records`: the ten code files the most records list). `counts` holds
 `namespaces`, `areas`, `claims`, `labels`, `agreedNotBuilt` and `gaps` (`uninvestigated`, `noCode`, `noProse`,
-`noInterfaceToken`). A namespace limits all of it. `--titles` (with or without a namespace) lists
-only `{id, title}` lines, one per area, with `titles: true` and `counts: {areas}`; text prints
-`§id — Title` lines; a §id with `--titles` is a usage refusal; `map` without it is unchanged. A §id shows its area (an H2 shows its parent's):
+`noInterfaceToken`). A namespace limits all of it. A §id shows its area (an H2 shows its parent's):
 `type: "claim"` lines (H1 first, then declaration order; `requires` is `null` when the key is
 absent, `requiredBy` counting requirers and embedders, `agreed` and `built` when the record carries
 `agreed`), `out` and `in` crossing edges (`from`, `to`, `kind` `requires|embeds`), and `token` lines

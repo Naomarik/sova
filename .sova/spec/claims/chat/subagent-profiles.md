@@ -18,7 +18,9 @@ four screens. A profile holds:
 
 Profiles are unlimited and named by the user. The main thread's own model is not part of a
 profile. These are distinct from session profiles (§chat/profiles): the picker and settings tab
-identify the setup as "Subagent profiles" or "Subagents".
+identify the setup as "Subagent profiles" or "Subagents". With the mesh on, the library is shared
+by every device profile by profile, and when another device's copy changes it, Settings → Subagents
+says so for a day and can put the previous library back (§chat.subagent-profiles/replaced).
 
 ## §chat.subagent-profiles/file — The file
 
@@ -56,10 +58,17 @@ identify the setup as "Subagent profiles" or "Subagents".
   postpones seeding until it is fixed, preserving its warning through legacy resolution. A library
   found without a default file (one was removed) is not re-seeded: the default reads as `"off"`
   until the user saves one. The seeded setup preserves the legacy routing until the user changes it. The write never replaces a file another process made first.
+  The seeded library is dated as old: its file's modification time is set to the Unix epoch, so
+  with the mesh on, a library edited on any other device wins over it, while a device alone keeps
+  it (§mesh.sync/profile-library).
 - **The legacy files stay.** Nothing deletes or rewrites `mode-delegate.json`,
   `team-defaults.json` or `mode-spec.json`; they are only the last fallback.
-- **Mesh.** With the mesh on, the library syncs like the other settings documents (whole file,
-  newest edit wins, checked with the module's own parser before it is written). The default file
+- **Mesh.** With the mesh on, the library syncs profile by profile (§mesh.sync/profile-library):
+  a device adds or changes only the profiles it has and never erases one it lacks, a deleted
+  profile stays deleted, and two edits to one profile resolve newest-wins for that profile only.
+  Every merged library is checked with the module's own parser before it is written, and its
+  shape stays exactly the file above: the merge's per-profile dates and deletions live in Sova's
+  sync state, never in the file. The default file
   never syncs: which profile new chats start from is each device's own, exactly as which profile
   each chat uses stays with that chat (§chat.subagent-profiles/resolution).
 
@@ -194,6 +203,24 @@ profile in its mode menu; new chats start on the default."
   edits hold a close. Going back keeps them: the list then offers only that profile's Edit, so
   another profile can't be opened over them, and Discard Changes or Save Changes frees the rest.
 - A save reaches every chat on that profile from its next turn or team action.
+
+## §chat.subagent-profiles/replaced — When another device's copy changed the library
+
+When sync changed this device's library with another device's copy (§mesh.sync/kept-copies) in
+the last 24 hours, Settings → Subagents' list shows one info notice above its actions, for the
+newest such change, until it is restored:
+
+- **Title.** "Replaced by Zen's copy at 2:01 PM." when a profile here was changed or removed;
+  "Zen's copy added Fast at 2:01 PM." when it only added profiles. The device is named as this
+  device's Mesh page names it (its label), else by its id; the time is a stamp (the 12-hour clock,
+  with the date when it isn't today).
+- **Body.** What changed, by profile name ("Added Fast; changed Deep; removed Old."), then
+  "Your previous library is kept on this device."
+- **Restore Previous Library** writes the kept version back as a new edit, through the library's
+  own strict parse: it is then this device's newest edit, and syncs like any other, so profiles the
+  other copy added are deleted on every device and its changes undone. It waits while the dialog
+  holds unsaved Subagents edits. A restore that fails says so in an error banner and leaves the
+  library as it is. After a restore, the notice is gone.
 
 ## §chat.subagent-profiles/editor-rows — How the editor lays out its rows
 

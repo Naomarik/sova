@@ -91,7 +91,7 @@ export interface OverseerToolHost extends IdeaToolHost {
   checks?(path: string): ReadinessChecks | undefined;
   /** A hosted chat's live-pending dialogs and queue; null when this server doesn't hold it. */
   held(path: string): { streaming: boolean; queued: number; dialogs: { id: string; method: string; title: string; message?: string; options?: string[] }[] } | null;
-  answerDialog(path: string, dialogId: string, value: unknown, answer: string): void;
+  answerDialog(path: string, dialogId: string, value: unknown, answer: string): unknown;
   /** Open (or reuse) this server's runtime for a session, as a browser's chat socket would. */
   open(path: string): Promise<void>;
   setModel(path: string, ref: string): Promise<void>;
@@ -1507,7 +1507,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
           value = yes;
           shown = yes ? "Yes" : "No";
         }
-        host.answerDialog(s.path, d.id, value, shown);
+        await host.answerDialog(s.path, d.id, value, shown);
         return { content: text(`Answered "${cut(d.title, 100)}" in ${link(s)}: ${shown}.`), details: { id: s.id, dialog: d.id, answer: shown } };
       }),
     },

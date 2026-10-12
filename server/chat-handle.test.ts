@@ -20,7 +20,7 @@ mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 const cwd = join(agentDir, "cwd");
 mkdirSync(cwd, { recursive: true });
 
-const { acquireChatHandle, BusyError, chatEventsSince, chatHandle, closeChat, ConfigError, disposeAllChats, errorOfRefusal, isSessionBusy, ModeRefusedError, onChatEvent, RefusedError, refusalOf } =
+const { acquireChatHandle, BusyError, chatEventsSince, chatHandle, closeChat, ConfigError, disposeAllChats, errorOfRefusal, failureReply, isSessionBusy, ModeRefusedError, onChatEvent, RefusedError, refusalOf } =
   await import("./chat-handle");
 const { canonicalPath } = await import("./paths");
 
@@ -58,6 +58,8 @@ test("a refusal crosses as its kind and comes back as the class the chat threw",
     assert.equal(back.message, err.message);
   }
   assert.equal(refusalOf(new Error("anything else")), null);
+  assert.deepEqual(failureReply("c1", new BusyError("a TUI has it", "busy")), { id: "c1", ok: false, refusal: { kind: "busy", code: "busy", message: "a TUI has it" } });
+  assert.deepEqual(failureReply("c2", new Error("boom")), { id: "c2", ok: false, error: { message: "boom" } });
 });
 
 test("commands answer with the chat's own results, and a failed one throws the chat's own error", async () => {

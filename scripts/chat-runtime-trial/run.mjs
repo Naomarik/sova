@@ -1046,8 +1046,8 @@ async function t12c() {
   R.check(stopped.length === 1 && stopped[0].stopReason === "aborted", `t12c: the reply stays whole as a stopped reply (${stopped.map((m) => m.stopReason).join(", ")})`);
 }
 
-// T13: a project overseer's look across a server restart: one look message, reported once, no second
-// look turn.
+// T13: a project overseer's look across a server restart (the ruling): one look message, one turn, the
+// watch's resume records it cut off once and never reports or re-runs it.
 async function t13() {
   const o = await orgSetup();
   const po = await projectOverseer(o.projectId);

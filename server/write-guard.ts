@@ -79,8 +79,9 @@ const OWNED_LOCK_STALE_MS = 10_000;
 const pause = new Int32Array(new SharedArrayBuffer(4));
 
 /** Take owned-writes.json's lock (O_EXCL), waiting up to 2 s; its release, or null when it stayed
-    held (the record is then written unlocked, as before the lock existed). */
-function lockOwned(lock: string): (() => void) | null {
+    held (the record is then written unlocked, as before the lock existed). Any small state file the
+    server and its chat processes all rewrite takes its lock the same way (session-limits.json). */
+export function lockOwned(lock: string): (() => void) | null {
   const until = Date.now() + OWNED_LOCK_WAIT_MS;
   for (;;) {
     try {

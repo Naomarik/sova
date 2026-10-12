@@ -12,7 +12,7 @@ import { resolveSessionPath } from "./paths";
 import { findProfile, profileSources, readHidden, setHidden } from "./profile-sources";
 import { approve } from "./profile-trust";
 import { projectRootOf } from "./project-root";
-import { setPowersHost } from "./session-powers";
+import { type PowersHost, type PowersSend, type PowersSendResult, sendInviting, setPowersHost } from "./session-powers";
 import { resolveChoice, singletonHolder, SingletonRefusal, snapshotKey, type ProfileChoice } from "./session-profile";
 import { getSessionSummary, listSessions } from "./sessions-index";
 import { rowsOf } from "./transcript";
@@ -306,7 +306,33 @@ setSingletonCheck(async (key, path) => {
   return holder ? holderOf(holder) : null;
 });
 
-setPowersHost({
+/** A session message handed to its target by this server (a chat here, or a chat process's
+    `@powers.send` action): the target's own checks, then its send, marked as the sender's. */
+async function sendToSession({ path, text, delivery, from }: PowersSend): Promise<PowersSendResult> {
+  const s = await getSessionSummary(path);
+  if (!s) return { ok: false, error: "That session no longer exists." };
+  if (s.live) return { ok: false, error: `"${s.title}" is open in a terminal (pid ${s.live.pid}), so it is read-only.` };
+  let chat;
+  try {
+    chat = await acquireChatHandle(path);
+  } catch (err) {
+    return { ok: false, error: `"${s.title}" can't take messages now: ${err instanceof Error ? err.message : String(err)}` };
+  }
+  // A pristine One at a time session's first message: the same check as its composer's.
+  const single = chat.mirror.profile?.profile;
+  if (single?.singleton && chat.mirror.pristine && singletonHolder(snapshotKey(single), await listSessions(), path))
+    return { ok: false, error: `${single.label} is set to One at a time and runs in another session, so "${s.title}" takes no first message.` };
+  try {
+    const r = await chat.send({ text, origin: "server", checkModel: true, ...(delivery ? { delivery } : {}), sentBySession: from });
+    return { ok: true, queued: r.queued, kind: r.queued ? (delivery ?? "followUp") : "prompt" };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/** Session powers as this server answers them: the tools of a chat it hosts, and the asks and
+    `@powers.send` action of a chat in a process of its own (chat-handle.ts answerChatAsk). */
+export const powersHost: PowersHost = {
   sessions: () => listSessions(),
   async session(id) {
     const s = (await listSessions()).find((x) => x.id === id);
@@ -319,25 +345,6 @@ setPowersHost({
     return chat ? { streaming: chat.mirror.running, queued: chat.mirror.queue.web } : null;
   },
   projectRoot: (cwd) => projectRootOf(cwd),
-  async send(path, text, delivery, from) {
-    const s = await getSessionSummary(path);
-    if (!s) return { ok: false, error: "That session no longer exists." };
-    if (s.live) return { ok: false, error: `"${s.title}" is open in a terminal (pid ${s.live.pid}), so it is read-only.` };
-    let chat;
-    try {
-      chat = await acquireChatHandle(path);
-    } catch (err) {
-      return { ok: false, error: `"${s.title}" can't take messages now: ${err instanceof Error ? err.message : String(err)}` };
-    }
-    // A pristine One at a time session's first message: the same check as its composer's.
-    const single = chat.mirror.profile?.profile;
-    if (single?.singleton && chat.mirror.pristine && singletonHolder(snapshotKey(single), await listSessions(), path))
-      return { ok: false, error: `${single.label} is set to One at a time and runs in another session, so "${s.title}" takes no first message.` };
-    try {
-      const r = await chat.send({ text, origin: "server", checkModel: true, ...(delivery ? { delivery } : {}), sentBySession: from });
-      return { ok: true, queued: r.queued, kind: r.queued ? (delivery ?? "followUp") : "prompt" };
-    } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
-    }
-  },
-});
+  send: (a) => sendInviting(a, sendToSession),
+};
+setPowersHost(powersHost);

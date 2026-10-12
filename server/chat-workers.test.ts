@@ -312,13 +312,16 @@ describe("WorkerRegistry", () => {
     const ref = await r.bind(PARENT).start(start("k", null));
     const other = r.bind({ sessionId: "other", path: "/p/other.jsonl" });
     await assert.rejects(other.start(start("k2", null)), /its own parent session only/);
+    // The path is the binding's, whatever the request spells.
+    const spelled = await r.bind(PARENT).start({ ...start("k3", null), spec: { ...start().spec, parent: { sessionId: "sid", path: "/p/./parent.jsonl", workerId: "ag_02" } } });
+    assert.equal(r.record(spelled.chatId)!.parent.path, "/p/parent.jsonl");
     await assert.rejects(other.start({ ...start("k", null), spec: { ...start().spec, parent: { sessionId: "other", path: "/p/other.jsonl", workerId: "ag_01" } } }), /No worker chat .* for this session/);
     await assert.rejects(other.send(ref.chatId, { text: "x", delivery: "prompt", key: "x" }), /No worker chat .* for this session/);
     await assert.rejects(other.abort(ref.chatId), /for this session/);
     await assert.rejects(other.stop(ref.chatId, "x"), /for this session/);
     assert.throws(() => other.watch(ref.chatId, null, () => {}), /for this session/);
     assert.deepEqual(await other.list(), []);
-    assert.equal((await r.bind(PARENT).list()).length, 1);
+    assert.equal((await r.bind(PARENT).list()).length, 2);
   });
 
   test("a parent in a process of its own is the one its link names, never the frame", async () => {

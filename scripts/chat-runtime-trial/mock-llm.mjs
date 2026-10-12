@@ -17,6 +17,12 @@
 //              "[long 60 #worker] worker", then (once the tool answered) a short text
 //   [ask]      first a call to the trial_ask tool (trial-dialog.ts: it opens a confirm dialog), then
 //              a text quoting the tool's answer
+//   [bash N]   first a bash call `sleep N; echo BASH-DONE`, then a text quoting its output
+//   [served]   first a call to the test-only server-hosted tool trial_served_sleep (a server test hook
+//              registers it; it sleeps 10 s), then a text quoting its result
+//   [compact]  (pi's compaction request: "context checkpoint summary" in the prompt) a summary streamed
+//              over 15 steps, ending "COMPACT-SUMMARY"
+//   the crash-resume text: as [long 20 #resume]
 //   anything else: "ok"
 // A request whose newest message is a tool result gets the scenario's closing text.
 import { appendFileSync } from "node:fs";
@@ -51,11 +57,15 @@ const server = createServer(async (req, res) => {
   const last = msgs[msgs.length - 1];
   const afterTool = last?.role === "tool";
   const toolText = afterTool ? textOf(last.content) : "";
-  const anyResume = msgs.some((m) => m.role === "user" && /server restarted/i.test(textOf(m.content)));
+  const anyResume = msgs.some((m) => m.role === "user" && /server restarted|process stopped unexpectedly/i.test(textOf(m.content)));
   const id = ++n;
-  const long = /\[long (\d+)(?: #([\w-]+))?\]/.exec(userText);
-  const scenario = long ? "long" : /\[spawn\]/.test(userText) ? "spawn" : /\[ask\]/.test(userText) ? "ask" : "plain";
-  const entry = { n: id, at: new Date().toISOString(), scenario, tag: long?.[2] ?? null, afterTool, anyResume, userText: userText.slice(0, 300), messages: msgs.length };
+  const compact = msgs.some((m) => /context checkpoint summary/i.test(textOf(m.content)));
+  // A crash resume ("This chat's process stopped unexpectedly…") gets a 20-part reply tagged resume,
+  // so a trial can kill the process again while the resume runs.
+  const long = /\[long (\d+)(?: #([\w-]+))?\]/.exec(userText) ?? (/process stopped unexpectedly and cut off/.test(userText) ? [null, "20", "resume"] : null);
+  const bash = /\[bash (\d+)\]/.exec(userText);
+  const scenario = compact ? "compact" : long ? "long" : bash ? "bash" : /\[served\]/.test(userText) ? "served" : /\[spawn\]/.test(userText) ? "spawn" : /\[ask\]/.test(userText) ? "ask" : "plain";
+  const entry = { n: id, at: new Date().toISOString(), scenario, tag: long?.[2] ?? null, afterTool, toolText: toolText.slice(0, 300), anyResume, userText: userText.slice(0, 300), messages: msgs.length };
   if (log) appendFileSync(log, JSON.stringify(entry) + "\n");
 
   res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
@@ -91,6 +101,24 @@ const server = createServer(async (req, res) => {
     chunk({}, { finish_reason: "stop" });
     usage(500, parts * 4);
     if (log) appendFileSync(log, JSON.stringify({ n: id, at: new Date().toISOString(), event: "done", tag: long[2] ?? null }) + "\n");
+  } else if (scenario === "compact") {
+    chunk({ role: "assistant", content: "" });
+    for (let i = 1; i <= 15 && !closed; i++) {
+      chunk({ content: `summary step ${i}. ` });
+      await sleep(step);
+    }
+    if (closed) {
+      if (log) appendFileSync(log, JSON.stringify({ n: id, at: new Date().toISOString(), event: "cut-off", scenario }) + "\n");
+      return;
+    }
+    chunk({ content: "COMPACT-SUMMARY" });
+    chunk({}, { finish_reason: "stop" });
+    usage(500, 60);
+    if (log) appendFileSync(log, JSON.stringify({ n: id, at: new Date().toISOString(), event: "done", scenario }) + "\n");
+  } else if (scenario === "bash" && !afterTool) {
+    call("bash", { command: `sleep ${bash[1]}; echo BASH-DONE` });
+  } else if (scenario === "served" && !afterTool) {
+    call("trial_served_sleep", { ms: 10000 });
   } else if (scenario === "spawn" && !afterTool) {
     call("agent_spawn", { prompt: "[long 60 #worker] worker", model: "trial/m1", name: "trial-worker" });
   } else if (scenario === "ask" && !afterTool) {

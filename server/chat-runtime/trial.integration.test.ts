@@ -1,10 +1,7 @@
-// Run: pnpm test:int -- server/chat-runtime/trial.integration.test.ts. al_3 stage 2 end to end: each
-// test runs scripts/chat-runtime-trial/run.mjs on one check, against a hermetic server of its own (a
-// scratch agent dir, a free port, the mock LLM in its own process) and reads the check's results.
-// With the switch on, the server runs as a stand-in unit sova-trial-server-<pid>.service and its chats
-// as units in the stand-in slice sova-trial-<pid>.slice: never sova-runtime.service, never
-// sova-chats.slice, never ~/.pi. Those need the systemd user manager and are skipped without one (a
-// sandboxed shell); the switch-off check runs the server as a plain child and needs none.
+// Run: pnpm test:int -- server/chat-runtime/trial.integration.test.ts. al_3 stage 2 end to end
+// (.agent/sova-runtime/stage2-design.md §8.2): each test runs scripts/chat-runtime-trial/run.mjs on
+// one check, against a hermetic server of its own (a scratch agent dir, a free port, the mock LLM in
+// its own process), and reads that check's results. Never sova-runtime.service, never ~/.pi.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
@@ -15,8 +12,6 @@ import { after, describe, test } from "node:test";
 const RUN = resolve(import.meta.dirname, "..", "..", "scripts", "chat-runtime-trial", "run.mjs");
 const root = mkdtempSync(join(tmpdir(), "sova-chat-trial-"));
 after(() => rmSync(root, { recursive: true, force: true }));
-/** Whether the systemd user manager answers. */
-const bus = spawnSync("systemctl", ["--user", "show", "-p", "Version", "--value"], { stdio: "pipe" }).status === 0;
 
 type Check = { ok?: boolean; what?: string; detail?: string | null; note?: string };
 
@@ -35,15 +30,24 @@ function trial(check: string, extra: string[] = []): Check[] {
   return checks;
 }
 
-describe("chat runtime stage 2, switch on (stand-in units)", { skip: bus ? false : "no systemd user manager here" }, () => {
-  test("a reply in flight survives a server restart: completes once, no 'continue', reconnect shows it", () => void trial("restart"));
-  test("a worker the chat spawned survives the restart and finishes", () => void trial("worker"));
-  test("a dialog open across the restart stays open and its answer lands", () => void trial("dialog"));
-  test("a killed chat process is resumed once and the crash reported", () => void trial("crash"));
-  test("an idle chat's process stops after the idle time; reopening shows its history", () => void trial("idle", ["--idle-ms", "15000"]));
-  test("new code: badge, reload at the quiet moment, Reload now", () => void trial("build"));
-});
-
-describe("chat runtime stage 2, switch off", () => {
-  test("behaviour is today's: no chat unit, the restart cuts the reply off, auto-resume tries it once", () => void trial("off", ["--mode", "child"]));
+// stage2-design.md §8.2: the server a plain child, its chats on the detached test driver
+// (SOVA_CHAT_DRIVER=detached), so these need no user bus. The systemd pass (§8.3) is run.mjs --mode unit.
+const T: [string, string][] = [
+  ["t1", "T1: a reply in flight survives a server restart (same pid, hello.live, one entry, no resume)"],
+  ["t1b", "T1b: a bash call across the restart returns once"],
+  ["t1c", "T1c: a dialog open across the restart is re-sent and answered"],
+  ["t1d", "T1d: a steer queued before the restart is delivered once"],
+  ["t1e", "T1e: a compaction across the restart completes and is written once"],
+  ["t1f", "T1f: a worker across the restart keeps its pid and reports once"],
+  ["t2", "T2: a killed chat process: pane error, new process, one crash continue, never twice"],
+  ["t3", "T3: idle stop only when quiet and unattended; reopens on attach"],
+  ["t4", "T4: new code: older badge, reload at a quiet moment, Reload now, never mid-reply"],
+  ["t4fail", "T4: a replacement that fails to boot halts the rollout and keeps the old process"],
+  ["t5", "T5: the switch off is today's behaviour"],
+  ["t6", "T6: the Overseer's chat stays in the server with the switch on"],
+  ["t7", "T7: a server-hosted action cut by a restart reports outcome unknown and ran once"],
+  ["t8", "T8: two servers never adopt or stop each other's chats"],
+];
+describe("chat runtime stage 2 (hermetic server, detached chat processes)", () => {
+  for (const [check, name] of T) test(name, { timeout: 600_000 }, () => void trial(check, ["--mode", "child", "--driver", "detached"]));
 });

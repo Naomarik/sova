@@ -714,7 +714,10 @@ export class ChatSupervisor {
     for (const unit of this.replacementClaims.keys()) named.add(unit);
     for (const unit of await this.deps.driver.units(this.prefix).catch(() => [] as string[])) {
       if (named.has(unit)) continue;
-      this.log(`${unit}: no chat records it; stopping it`);
+      // A process still running that no chat records is stopped, and said; what is left of one that
+      // already ended (the detached driver keeps its file) is only cleared away.
+      const st = await this.deps.driver.status(unit).catch(() => null);
+      if (st && (isUp(st) || st.pid !== null)) this.log(`${unit}: no chat records it; stopping it`);
       await this.deps.driver.stop(unit).catch(() => {});
     }
     return { adopted, died };

@@ -671,3 +671,16 @@ test("a chat an older build started keeps the socket path its record names: adop
   assert.deepEqual(d.stopped, []);
 });
 
+test("adoption says it stops only a running unrecorded unit; what is left of an ended one is cleared quietly", async () => {
+  const d = new FakeDriver();
+  await d.start({ unit: "sova-chat-test01-live", argv: [], cwd: "/", env: {} });
+  await d.start({ unit: "sova-chat-test01-ended", argv: [], cwd: "/", env: {} });
+  d.die("sova-chat-test01-ended");
+  // The fake drops a unit on stop; a dead one stays listed until then, as the detached driver's file does.
+  const lines: string[] = [];
+  const { sup } = make(d, { log: (l) => lines.push(l) });
+  await sup.adopt();
+  assert.deepEqual(d.stopped.sort(), ["sova-chat-test01-ended", "sova-chat-test01-live"]);
+  assert.deepEqual(lines.filter((l) => l.includes("no chat records it")), ["sova-chat-test01-live: no chat records it; stopping it"]);
+});
+

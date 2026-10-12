@@ -138,6 +138,19 @@ test("an exit the chat logged (no server linked to hear its frame), or systemd's
   assert.deepEqual(deaths.map((x) => x.chatId), ["c3"]);
 });
 
+test("systemd's journal, as a real user manager writes it: a stop by request, a kill, an earlier run of the same unit", () => {
+  const u = "sova-chat-2e4b56-standin-chat-1.service";
+  const started = `Started [systemd-run] /opt/bun/bin/bun -e "…"`;
+  const killed = [started, `${u}: Sent signal SIGKILL to main process 1059474 (bun)`, `${u}: Main process exited, code=killed, status=9/KILL`, `${u}: Failed with result 'signal'.`];
+  const stoppedClean = [started, `Stopping [systemd-run] /opt/bun/bin/bun -e "…"…`, `Stopped [systemd-run] /opt/bun/bin/bun -e "…".`];
+  assert.deepEqual(exitOfLog(killed), { exit: null, signal: "KILL" });
+  assert.deepEqual(exitOfLog(stoppedClean), { exit: 0, signal: null }, "a clean stop logs neither Main process exited nor Deactivated");
+  assert.deepEqual(exitOfLog([...killed, ...stoppedClean]), { exit: 0, signal: null }, "an earlier run's kill says nothing about this run");
+  assert.deepEqual(exitOfLog([started, `${u}: State 'stop-sigterm' timed out. Killing.`, `${u}: Main process exited, code=killed, status=9/KILL`, `${u}: Failed with result 'timeout'.`, `Stopped [systemd-run] x.`]), { exit: null, signal: "KILL" }, "killed at the end of the stop grace is no clean stop");
+  assert.deepEqual(exitOfLog([started, `${u}: Failed with result 'oom-kill'.`]), { exit: null, signal: "oom-kill" });
+  assert.equal(exitOfLog([started, "chat output"]), null);
+});
+
 test("a log that lags the process's end is read again before the chat is called lost", async () => {
   const d = new FakeDriver();
   let reads = 0;

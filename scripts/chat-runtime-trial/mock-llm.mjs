@@ -34,7 +34,7 @@
 //              are "[long L #tag-i] worker i" named trial-worker-i
 //   [spawn-claude S #tag]  agent_spawn with one claude-code worker (scripts/fake-claude.mjs answers
 //              it), named trial-claude, its prompt "[fake-slow S] claude worker #tag" (S ms, default 20000)
-//   [explain S]  /explain's child: S text parts first (default 0), then the page written to the
+//   [explain S]  (in /explain's topic) the child, whose prompt names the store: S text parts first (default 0), then the page written to the
 //              index.html its prompt names, then its meta.json (summary "EXPLAIN-SUMMARY"), then
 //              "EXPLAIN-DONE"
 //   [handoff S]  /compact-handoff's child (or any prompt asking for a <handoff> block): S parts
@@ -175,7 +175,7 @@ const server = createServer(async (req, res) => {
   const calls = /\[call [\w-]+ \{/.test(tags) ? parseCalls(tags) : [];
   const spawnN = /\[spawn(?: (\d+))?(?: (\d+))?(?: #([\w-]+))?\]/.exec(tags);
   const spawnClaude = /\[spawn-claude(?: (\d+))?(?: #([\w-]+))?\]/.exec(tags);
-  const explain = /\[explain(?: (\d+))?\]/.exec(tags);
+  const explain = /Where the page goes/.test(tags) ? /\[explain(?: (\d+))?\]/.exec(tags) : null;
   const handoff = /\[handoff(?: (\d+))?\]/.exec(tags) ?? (/End your reply with the note inside <handoff>/.test(tags) ? [null, null] : null);
   const btw = /\[btw(?: #([\w-]+))?\]/.exec(tags);
   const scenario = compact ? "compact" : resume ? "long" : firstTag === "call" ? "call" : big ? "big" : long ? "long" : bash ? "bash" : calls.length ? "call" : /\[served-late\]/.test(tags) ? "served-late" : /\[served-quick\]/.test(tags) ? "served-quick" : /\[served\]/.test(tags) ? "served" : spawnClaude ? "spawn-claude" : spawnN ? "spawn" : /\[ask\]/.test(tags) ? "ask" : explain ? "explain" : handoff ? "handoff" : btw ? "btw" : "plain";

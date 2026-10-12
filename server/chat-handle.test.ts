@@ -40,6 +40,9 @@ const {
   refusalOf,
   serverToolCall,
   serveTools,
+  chatsReady,
+  expectChatRouter,
+  setChatRouter,
 } = await import("./chat-handle");
 const { canonicalPath } = await import("./paths");
 
@@ -222,4 +225,22 @@ test("nothing outside the chat's host is handed a chat or its driving session", 
   const reach = files.filter((f) => /\bHarnessSession\b/.test(code(f)));
   assert.deepEqual(reach.filter((f) => !helpers.has(f)), [], "a driving session outside the chat's own helpers");
   assert.deepEqual([...helpers].filter((f) => !reach.includes(f)), [], "a helper that no longer takes one leaves the list");
+});
+
+test("a server that will install a router makes boot readers wait for it: chats a previous server left running are taken back first", async () => {
+  expectChatRouter();
+  let ready = false;
+  const waiting = chatsReady().then(() => (ready = true));
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(ready, false, "no router yet: not \"none\", just not yet");
+  let release!: () => void;
+  const taken = new Promise<void>((r) => (release = r));
+  setChatRouter({ ready: () => taken, get: () => undefined, all: () => [], acquire: async () => null, close: async () => false });
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(ready, false, "the router is there, taking chats back");
+  release();
+  await waiting;
+  assert.equal(ready, true);
+  setChatRouter(null);
+  await chatsReady(); // with none expected and none installed: at once
 });

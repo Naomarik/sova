@@ -21,7 +21,7 @@ symlinkSync(resolve(import.meta.dirname, "..", "pi-config", "extensions"), join(
 
 const orgs = await import("./orgs");
 const baton = await import("./baton");
-const { BATON_TOOLS, LOADOUT_TOOLS } = await import("./baton-loadout");
+const { activeBatonTools, BATON_TOOLS, LOADOUT_TOOLS } = await import("./baton-loadout");
 const { acquireChat, disposeAllChats, ModeRefusedError } = await import("./chat-manager");
 const { specialHostOf } = await import("./chat-handle");
 const { normalizeEntry } = await import("./transcript");
@@ -50,6 +50,19 @@ describe("a baton session's runtime", async () => {
     assert.ok(!piSession(chat).getActiveToolNames().includes("write_profile_updates"), "the wrap-up tool is never active in the conversation");
     const loaded = piRuntime(chat).services.resourceLoader.getExtensions().extensions.map((e) => e.path);
     assert.deepEqual(loaded, ["<inline:sova-baton>"], "no pi-config extension loads");
+  });
+
+  test("the chat-runtime trial's slow served tool stays active only under its test switch", () => {
+    const was = process.env.SOVA_CHAT_TEST_SERVED;
+    try {
+      delete process.env.SOVA_CHAT_TEST_SERVED;
+      assert.ok(!activeBatonTools(c.sessionId).includes("trial_served_sleep"));
+      process.env.SOVA_CHAT_TEST_SERVED = "1";
+      assert.ok(activeBatonTools(c.sessionId).includes("trial_served_sleep"));
+    } finally {
+      if (was === undefined) delete process.env.SOVA_CHAT_TEST_SERVED;
+      else process.env.SOVA_CHAT_TEST_SERVED = was;
+    }
   });
 
   test("control: an ordinary session in the same agent dir does load the pi-config extensions", async () => {

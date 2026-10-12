@@ -279,7 +279,12 @@ export class LinkRefused extends Error {
   }
 }
 
-/** Dial a chat process at `sockPath` and take control: its hello, and the link (pinging). */
+/**
+ * Dial a chat process at `sockPath` and take control: its hello, and the link (pinging). A refusal of
+ * the control (a stale or busy epoch) ends the link with reason "refused" rather than rejecting here:
+ * race `link.closed` against the first frame awaited next (`opened`, or `state` on adoption), as
+ * `awaitFrame` does, which rejects with LinkRefused.
+ */
 export async function connectLink(sockPath: string, opts: ConnectLinkOptions): Promise<{ link: Link; hello: HelloFrame }> {
   const until = Date.now() + (opts.retryForMs ?? 0);
   for (;;) {

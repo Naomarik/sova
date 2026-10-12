@@ -275,15 +275,17 @@ async function checkOff() {
   const attempts = resumeAttempts(path);
   const log = mockLog(mock.log);
   R.check(log.some((e) => e.event === "cut-off"), "switch off: the restart cut the reply off (as today)");
-  R.check(attempts.length === 1, `switch off: auto-resume tried the chat once (${attempts.map((a) => `${a.outcome}${a.error ? `: ${a.error}` : ""}`).join("; ") || "none"})`);
-  if (attempts[0]?.outcome === "ok") {
-    const s2 = await chat(c, path);
-    await settled(s2, 0).catch(() => {});
-    await sleep(1500);
-    const { rows } = await assistantTexts(c, path);
-    R.check(mockLog(mock.log).filter((e) => e.anyResume && !e.afterTool).length === 1 && has(rows, RESUME_TEXT), "switch off: the resume reached the model once with today's text");
-    s2.close();
-  }
+  R.check(attempts.length === 1 && attempts[0].outcome === "ok", `switch off: auto-resume resumed the chat once (${attempts.map((a) => `${a.outcome}${a.error ? `: ${a.error}` : ""}`).join("; ") || "none"})`);
+  if (attempts[0]?.outcome !== "ok") return;
+  const s2 = await chat(c, path);
+  await settled(s2, 0).catch(() => {});
+  await sleep(1500);
+  const { rows } = await assistantTexts(c, path);
+  // A request carrying the resume as its new message: the model was asked to continue.
+  const asked = mockLog(mock.log).filter((e) => e.scenario && /server restarted/i.test(e.userText ?? "")).length;
+  const inTranscript = JSON.stringify(rows).split(RESUME_TEXT).length - 1;
+  R.check(asked === 1 && inTranscript === 1, `switch off: the "continue" message was delivered exactly once (model asked ${asked}×, transcript holds it ${inTranscript}×)`);
+  s2.close();
 }
 
 // ── run ─────────────────────────────────────────────────────────────────────────────────────────

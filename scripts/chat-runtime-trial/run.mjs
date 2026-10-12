@@ -239,7 +239,7 @@ const prompt = (s, text) => s.send({ type: "prompt", text, clientId: `trial-${Da
 const isEvent = (t) => (m) => m.type === "event" && m.event?.type === t;
 const settled = (s, from = 0, ms = 180000) => s.until(isEvent("run.settled"), ms, "run.settled", from);
 const delta = (re) => (m) => m.type === "event" && m.event?.type === "part.delta" && re.test(m.event.delta ?? "");
-const liveText = (hello) => (hello.live?.message?.parts ?? []).filter((p) => p.type === "text").map((p) => p.text ?? "").join("");
+const liveText = (hello) => (hello.live?.message?.parts ?? []).filter((p) => (p.kind ?? p.type) === "text").map((p) => p.text ?? "").join("");
 /** The common restart assertions of T1 and its variants: same pid, no resume of any kind, ledger clear. */
 function noResume(path, label) {
   R.check(userEntriesWith(path, RESUME_TEXT) === 0 && userEntriesWith(path, CRASH_RESUME_TEXT) === 0, `${label}: no user entry holds a "continue" text`);

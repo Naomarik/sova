@@ -2,7 +2,7 @@
 // One table for both places a chat runs: server/chat-handle.ts runs it for a chat in the server's
 // process, server/chat-runtime/host.ts for the chat a chat process hosts, answering its socket's calls.
 import { randomUUID } from "node:crypto";
-import type { ChatCall, ChatMethod, ChatMethods, ChatRefusal, ChatReply, ChatTurnEnd } from "../../shared/chat-runtime";
+import type { ChatCall, ChatMethod, ChatMethods, ChatRefusal, ChatReply, ChatSendReceipt, ChatTurnEnd } from "../../shared/chat-runtime";
 import type { StateKind } from "../../shared/harness";
 import { acquireChat, assertNotLive, BusyError, type ChatSession, ConfigError, drainQueueThenAbort, emitChatEvent, markRunResuming, ModeRefusedError, RefusedError } from "../chat-manager";
 import { stateKindOf } from "../harness/state-kinds";
@@ -24,9 +24,32 @@ const kindOf = (type: string): StateKind<unknown> => {
   return kind;
 };
 
-/** What one chat's commands share: its tracked turns, until each is asked for once. */
+/** What one chat's commands share: its tracked turns, until each is asked for once (a keyed one:
+    twice, or for KEPT_MS), and the receipts of its keyed sends (KEYS_MAX, each for KEPT_MS). */
 export interface CallCtx {
   turns: Map<string, Promise<ChatTurnEnd>>;
+  /** A keyed send's key → its first receipt, oldest first. */
+  keys?: Map<string, { receipt: ChatSendReceipt; at: number }>;
+  /** A keyed, tracked turn → how many more asks it answers, and since when it is kept. */
+  kept?: Map<string, { left: number; at: number }>;
+  now?: () => number;
+}
+
+/** How long a keyed send's receipt, and its tracked turn's end, are kept (al_3 stage 3 §5.1). */
+export const KEPT_MS = 60 * 60_000;
+/** Keyed sends remembered per chat. */
+export const KEYS_MAX = 256;
+/** Asks a keyed turn's end answers: the first, and one retry after a lost reply. */
+const KEPT_ASKS = 2;
+
+/** Forget keys and kept turns older than KEPT_MS. */
+function prune(ctx: CallCtx, now: number): void {
+  for (const [key, k] of ctx.keys ?? []) if (now - k.at >= KEPT_MS) ctx.keys!.delete(key);
+  for (const [turnId, k] of ctx.kept ?? [])
+    if (now - k.at >= KEPT_MS) {
+      ctx.kept!.delete(turnId);
+      ctx.turns.delete(turnId);
+    }
 }
 
 type Impl = { [M in ChatMethod]: (chat: ChatSession, args: ChatMethods[M]["args"], ctx: CallCtx) => ChatMethods[M]["result"] | Promise<ChatMethods[M]["result"]> };
@@ -34,6 +57,12 @@ type Impl = { [M in ChatMethod]: (chat: ChatSession, args: ChatMethods[M]["args"
 /** Each command, run on the chat. A method that throws a refusal answers with that refusal. */
 export const METHODS: Impl = {
   send(chat, a, ctx) {
+    // A send delivered again under its key (a retry after a lost reply, an invocation resumed after a
+    // server restart): the first receipt, and no second turn.
+    const now = (ctx.now ?? Date.now)();
+    prune(ctx, now);
+    const known = a.key !== undefined ? ctx.keys?.get(a.key) : undefined;
+    if (known) return known.receipt;
     if (a.checkModel) chat.assertModelAllowed();
     // The next run names the tag, unless the chat refuses this message.
     const tagWas = chat.runTag.next;
@@ -62,14 +91,27 @@ export const METHODS: Impl = {
         return { ok: false, error: errorText(err) };
       },
     );
-    if (!a.track || queued) return { queued, turnId: null };
-    const turnId = randomUUID();
-    ctx.turns.set(turnId, ended);
-    return { queued, turnId };
+    let receipt: ChatSendReceipt = { queued, turnId: null };
+    if (a.track && !queued) {
+      const turnId = randomUUID();
+      ctx.turns.set(turnId, ended);
+      if (a.key !== undefined) (ctx.kept ??= new Map()).set(turnId, { left: KEPT_ASKS, at: now });
+      receipt = { queued, turnId };
+    }
+    if (a.key !== undefined) {
+      const keys = (ctx.keys ??= new Map());
+      keys.set(a.key, { receipt, at: now });
+      while (keys.size > KEYS_MAX) keys.delete(keys.keys().next().value!);
+    }
+    return receipt;
   },
   turnEnd(_chat, { turnId }, ctx) {
+    prune(ctx, (ctx.now ?? Date.now)());
     const ended = ctx.turns.get(turnId);
     if (!ended) throw new Error("That turn is not tracked.");
+    const kept = ctx.kept?.get(turnId);
+    if (kept && --kept.left > 0) return ended;
+    ctx.kept?.delete(turnId);
     ctx.turns.delete(turnId);
     return ended;
   },

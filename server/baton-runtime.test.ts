@@ -23,6 +23,7 @@ const orgs = await import("./orgs");
 const baton = await import("./baton");
 const { BATON_TOOLS, LOADOUT_TOOLS } = await import("./baton-loadout");
 const { acquireChat, disposeAllChats, ModeRefusedError } = await import("./chat-manager");
+const { specialHostOf } = await import("./chat-handle");
 const { normalizeEntry } = await import("./transcript");
 const { canonicalPath } = await import("./paths");
 const { sessionItems } = await import("./attention");
@@ -65,9 +66,9 @@ describe("a baton session's runtime", async () => {
 
   test("the operator's composer writes only while holding the baton; no mode, no rewind", async () => {
     const chat = await acquireChat(c.path);
-    assert.throws(() => chat.specialEntry!.clientSend!(c.path, { images: 0, text: "" }), /Tony holds the baton\. Take it back to write\./);
+    assert.throws(() => specialHostOf("baton")!.clientSend!(c.path, { images: 0, text: "" }), /Tony holds the baton\. Take it back to write\./);
     await assert.rejects(() => chat.switchMode({ mode: "delegate" } as never), ModeRefusedError);
-    assert.match(chat.specialEntry!.refuses!("rewind") ?? "", /can't be rewound/);
+    assert.match(chat.specialRefuses("rewind") ?? "", /can't be rewound/);
   });
 
   test("/ws/chat: a composer send while someone else holds the baton is a refusal (code refused), not an internal error", async () => {

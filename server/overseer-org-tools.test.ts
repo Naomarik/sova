@@ -48,6 +48,7 @@ const { registerProjectOverseerRoutes } = await import("./project-overseer-route
 const { registerProjectRoutes } = await import("./projects/routes");
 const { registerDecisionRoutes } = await import("./decisions-routes");
 const { acquireChat, disposeAllChats } = await import("./chat-manager");
+const { specialHostOf } = await import("./chat-handle");
 const { settled } = await import("./workspace-git");
 const { canonicalPath } = await import("./paths");
 const { markOwned } = await import("./write-guard");
@@ -610,9 +611,9 @@ describe("archive a project (§app.organizations/archive)", async () => {
     const { path } = await po.ensureProjectOverseer(project.id);
     await setProjectArchived(project.id, true);
     const chat = await acquireChat(path);
-    assert.equal(chat.specialEntry?.composerClosed?.(path), "Old Site is archived. Unarchive it to use its overseer.");
+    assert.equal(specialHostOf("project-overseer")!.composerClosed!(path), "Old Site is archived. Unarchive it to use its overseer.");
     await setProjectArchived(project.id, false);
-    assert.equal(chat.specialEntry?.composerClosed?.(path), null);
+    assert.equal(specialHostOf("project-overseer")!.composerClosed!(path), null);
   });
 });
 

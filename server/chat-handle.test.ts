@@ -136,8 +136,9 @@ test("a server-hosted tool: the chat gets its declaration as data; each run is a
     name: "sova_probe",
     label: "Probe",
     description: "A tool whose state lives in the server.",
-    parameters: { type: "object", properties: { n: { type: "number" } } },
-    prepareArguments: (args) => ({ ...(args as object), prepared: true }),
+    parameters: { type: "object", properties: { n: { type: "number" }, ownerArea: { type: "string", enum: ["Finance", "none"] } } },
+    prepareRule: "owner-area",
+    prepareArguments: (args) => args,
     async execute(_id, params) {
       runs.push({ params, call: serverToolCall()?.call });
       await new Promise((r) => setTimeout(r, 1)); // the run's context survives its awaits
@@ -150,9 +151,10 @@ test("a server-hosted tool: the chat gets its declaration as data; each run is a
     name: "sova_probe",
     label: "Probe",
     description: "A tool whose state lives in the server.",
-    parameters: { type: "object", properties: { n: { type: "number" } } },
+    parameters: { type: "object", properties: { n: { type: "number" }, ownerArea: { type: "string", enum: ["Finance", "none"] } } },
   }, "the chat holds the declaration; what runs it stays here");
-  assert.deepEqual(tool!.prepareArguments!({ n: 1 }), { n: 1, prepared: true }, "the server prepares the arguments");
+  assert.deepEqual(tool!.prepareArguments!({ n: 1, ownerArea: " finance" }), { n: 1, ownerArea: "Finance" }, "the chat prepares the arguments by the rule the declaration names");
+  assert.throws(() => serveTools(path, [{ ...spec, prepareRule: undefined }]), /must name its prepare rule/);
 
   const out = await tool!.execute("tc-1", { n: 1 }, undefined, undefined, undefined);
   assert.deepEqual(out, { content: [{ type: "text", text: "ran 1" }], details: { seen: "tc-1" } });
@@ -169,7 +171,7 @@ test("a server-hosted tool: the chat gets its declaration as data; each run is a
   assert.notEqual(runs[1]!.call!.effectId, call.effectId);
 
   // A call delivered again is answered with its first run's outcome, and never runs twice.
-  const local = { signal: undefined, onUpdate: undefined, ctx: undefined, chat: { branch: () => [], entries: () => [], append: () => "", tool: () => undefined } };
+  const local = { signal: undefined, onUpdate: undefined, ctx: undefined, chat: { branch: () => [], entries: () => [], append: async () => "", tool: () => undefined } };
   const again: ServerToolCall = { ...call, effectId: "fx-again", params: { n: 3 } };
   const [first, second] = await Promise.all([deliverServerToolCall(again, { ...local }), deliverServerToolCall(again, { ...local })]);
   assert.deepEqual(first, second);
@@ -186,8 +188,8 @@ test("a server-hosted tool: the chat gets its declaration as data; each run is a
 test("server code reaches a chat only through its handle: nothing outside the chat's host imports chat-manager", () => {
   const root = join(dirname(fileURLToPath(import.meta.url)), "..");
   // The chat's host: the handle itself, the commands and mirror it shares with a chat process's host
-  // (server/chat-runtime/), and the pi adapter the chat runs on.
-  const allowed = new Set(["server/chat-handle.ts", "server/chat-runtime/host.ts", "server/chat-runtime/methods.ts", "server/chat-runtime/mirror.ts"]);
+  // (server/chat-runtime/), a special loadout's chat side (its port's type), and the pi adapter the chat runs on.
+  const allowed = new Set(["server/chat-handle.ts", "server/chat-runtime/host.ts", "server/chat-runtime/methods.ts", "server/chat-runtime/mirror.ts", "server/chat-special.ts"]);
   const importers = globSync("{server,shared,src}/**/*.{ts,tsx}", { cwd: root })
     .map((f) => relative(root, join(root, f)))
     .filter((f) => !/\.test\.tsx?$/.test(f) && !f.startsWith("server/harness/") && f !== "server/chat-manager.ts")

@@ -18,6 +18,9 @@ import type {
   ChatModePatch,
   ChatRefusal,
   ChatReply,
+  ChatRunEvent,
+  ChatSpecialKind,
+  RunStartAnswer,
   ChatSendInput,
   ChatSendReceipt,
   ChatStateMirror,
@@ -26,19 +29,21 @@ import type {
   ServerToolCall,
   ServerToolDecl,
   ServerToolOutcome,
+  SpecialSpec,
 } from "../shared/chat-runtime";
 import type { ChatAskMethod, ServerToolCtxWire } from "../shared/chat-runtime-wire";
-import type { HookCtx, StateKind, ToolCtx, ToolResult, ToolSpec } from "../shared/harness";
+import type { HookCtx, ImageInput, StateKind, ToolCtx, ToolResult, ToolSpec } from "../shared/harness";
 import type { ChatClientMessage, HeldChatState } from "../shared/protocol";
 import {
   acquireChat,
   BusyError,
   type ChatClient,
   type ChatSession,
-  type OverseerRuntime as ChatOverseerRuntime,
-  registerSpecialLoadout as registerChatSpecialLoadout,
-  setOverseerRuntime as setChatOverseerRuntime,
-  type SpecialLoadout as ChatSpecialLoadout,
+  isOverseerFile,
+  type LocalSpecials,
+  type SessionMarks,
+  setLocalSpecials,
+  type SpecialPort,
   chatEventsSince,
   ConfigError,
   disposeHeldChat,
@@ -327,23 +332,160 @@ const handleOf = (chat: ChatSession): ChatHandle => {
   return h;
 };
 
-// The loadout policy of the special kinds (the Overseer, batons, project overseers): registered by
-// the modules that own them, run where the chat runs (server/chat-manager.ts openSession). Its hooks
-// get the chat's handle, never the chat: loadout policy talks to it the way the server does.
+// The special kinds (the Overseer, batons, project overseers; §app.harness/session-special): each one's
+// server side, registered by the module that owns it. A chat gets its loadout as data (SpecialSpec)
+// and asks the rest of its kind through its SpecialPort: here a loopback (LocalSpecialPort), in a
+// chat process of its own its socket. Its hooks get the chat's handle, never the chat.
 
-/** A special kind's loadout policy (chat-manager's SpecialLoadout), its `opened` given the handle. */
-export type SpecialLoadout = Omit<ChatSpecialLoadout, "opened"> & { opened?(chat: ChatHandle): Promise<void> };
-export function registerSpecialLoadout(s: SpecialLoadout): void {
-  const { opened, ...rest } = s;
-  registerChatSpecialLoadout({ ...rest, ...(opened ? { opened: (chat: ChatSession) => opened(handleOf(chat)) } : {}) });
+/** The server's side of a special kind. */
+export interface SpecialHost {
+  kind: ChatSpecialKind;
+  /** The kind a file opens as (the Overseer's is isOverseerFile, always tried first). */
+  matches(marks: SessionMarks, path: string): boolean;
+  /** The directory its chat opens in on THIS host, or null (not this kind's file): used instead of
+      the header's cwd, which records the host the file was created on. */
+  cwd?(path: string): string | null;
+  /** The loadout for an open (local or remote), its tools served for this chat; throws the kind's
+      refusal (a previous conversation is read-only) before anything is built or spawned. */
+  spec(path: string): Promise<SpecialSpec>;
+  /** A chat process this server took back (no open): serve its tools and rebuild per-chat state. */
+  adopt(path: string): Promise<void>;
+  runStart(path: string, ctx: HookCtx, a: { images: boolean }): Promise<RunStartAnswer>;
+  compact?(path: string, ctx: HookCtx): Promise<RunStartAnswer["message"] | null>;
+  agentEnd?(path: string, text: string): Promise<RunStartAnswer["message"] | null>;
+  /** Each run event of the kind's chat, inside the chat's own event (here) or in arrival order (a chat process). */
+  runEvent?(path: string, e: ChatRunEvent): void;
+  /** Every open, once bound. */
+  opened?(chat: ChatHandle): Promise<void>;
+  /** A message from this server's own composer: who sent it, or throw a refusal the client is told.
+      `text` and `images`, when given, are what is sent instead. */
+  clientSend?(path: string, msg: { images: number; text: string }): { by: string; text?: string; images?: ImageInput[] };
+  /** The runtime refused the message `clientSend` attributed after all. */
+  clientSendRefused?(path: string): void;
+  /** The composer changed the chat's model or thinking (`save: true`): the kind keeps it. */
+  saveChoice?(path: string, patch: { model?: string; thinking?: string }): void;
+  /** Its composer takes nothing right now (a message for the client), or null. */
+  composerClosed?(path: string): string | null;
+  /** Its chat's process died: the kind cleans up what the run left in its own state. */
+  died?(path: string): void;
 }
-/** The Overseer's loadout policy (chat-manager's OverseerRuntime), its `opened` given the handle. */
-export type OverseerRuntime = Omit<ChatOverseerRuntime, "opened"> & { opened(chat: ChatHandle): Promise<void> };
-export function setOverseerRuntime(r: OverseerRuntime): void {
-  const { opened, ...rest } = r;
-  setChatOverseerRuntime({ ...rest, opened: (chat: ChatSession) => opened(handleOf(chat)) });
+const specialHosts: SpecialHost[] = [];
+/** Each chat's kind, as its spec was last built or its process taken back. */
+const kindOfChat = new Map<ChatId, ChatSpecialKind>();
+
+export function registerSpecialHost(h: SpecialHost): void {
+  if (!specialHosts.some((x) => x.kind === h.kind)) specialHosts.push(h);
+  setLocalSpecials(localSpecials);
 }
-export type { SessionMarks, SpecialKind, SpecialLoadoutResult } from "./chat-manager";
+export const specialHostOf = (kind: ChatSpecialKind): SpecialHost | undefined => specialHosts.find((h) => h.kind === kind);
+/** The special kind a session file opens as: the Overseer's first, then each registered kind. */
+export function specialKindOf(marks: SessionMarks, path: string): ChatSpecialKind | null {
+  if (isOverseerFile(marks)) return "overseer";
+  return specialHosts.find((h) => h.kind !== "overseer" && h.matches(marks, path))?.kind ?? null;
+}
+
+/** The server actions a special chat calls (§app.chat-processes/server-actions), as served tools of
+    reserved names: never declared to the model, run under the same effect ids. */
+function specialActions(h: SpecialHost, path: string): ToolSpec[] {
+  const action = (name: string, run: (params: any) => unknown): ToolSpec => ({
+    name,
+    label: name,
+    description: "A server action (never declared to a model).",
+    parameters: { type: "object" },
+    async execute(_id, params) {
+      return { content: [], details: (await run(params)) ?? null };
+    },
+  });
+  return [
+    ...(h.clientSend ? [action("@clientSend", (m) => h.clientSend!(path, { images: Number(m?.images) || 0, text: String(m?.text ?? "") }))] : []),
+    ...(h.clientSendRefused ? [action("@clientSendRefused", () => h.clientSendRefused!(path))] : []),
+    ...(h.saveChoice ? [action("@saveChoice", (patch) => h.saveChoice!(path, patch ?? {}))] : []),
+  ];
+}
+
+/** A special chat's spec, with its server actions served, and the test-only slow tool when the
+    trial asks for it (SOVA_CHAT_TEST_SERVED=1, last in its tools and allowlist). */
+export async function specialSpecFor(kind: ChatSpecialKind, path: string): Promise<SpecialSpec> {
+  const h = specialHostOf(kind);
+  if (!h) throw new Error(kind === "overseer" ? "The Overseer is not available on this server." : "This chat's kind is not available here.");
+  const spec = await h.spec(path);
+  kindOfChat.set(path, kind);
+  serveTools(path, specialActions(h, path));
+  if (process.env.SOVA_CHAT_TEST_SERVED === "1") {
+    const sleep = trialServedSleep();
+    spec.tools = [...spec.tools, ...serveTools(path, [sleep]).map(() => declOfTool(sleep))];
+    spec.allow = [...spec.allow, sleep.name];
+  }
+  return spec;
+}
+
+/** A special chat process this server took back: its kind serves it again. */
+export async function adoptSpecial(kind: ChatSpecialKind, path: string): Promise<void> {
+  const h = specialHostOf(kind);
+  if (!h) return;
+  kindOfChat.set(path, kind);
+  await h.adopt(path);
+  serveTools(path, specialActions(h, path));
+  if (process.env.SOVA_CHAT_TEST_SERVED === "1") serveTools(path, [trialServedSleep()]);
+}
+
+/** A server action's outcome as a port answers it: the action's own result. */
+const actionOutcome = (out: ServerToolOutcome<ToolResult>): ServerToolOutcome<unknown> => (out.ok ? { ok: true, result: out.result.details } : out);
+
+/** The loopback to a special kind, for a chat in this process. */
+class LocalSpecialPort implements SpecialPort {
+  private actions = 0;
+  constructor(
+    private readonly host: SpecialHost,
+    private readonly path: string,
+  ) {}
+  private async ctxOf(local: { ctx: HookCtx } | undefined, leafId: string | null): Promise<HookCtx> {
+    return local?.ctx ?? fileHookCtx(this.path, { sessionId: chatHandle(this.path)?.mirror.sessionId ?? "", leafId });
+  }
+  async runStart(a: { leafId: string | null; images: boolean }, local?: { ctx: HookCtx }) {
+    return this.host.runStart(this.path, await this.ctxOf(local, a.leafId), { images: a.images });
+  }
+  async compact(a: { leafId: string | null }, local?: { ctx: HookCtx }) {
+    return this.host.compact ? this.host.compact(this.path, await this.ctxOf(local, a.leafId)) : null;
+  }
+  async agentEnd(a: { text: string }) {
+    return this.host.agentEnd ? this.host.agentEnd(this.path, a.text) : null;
+  }
+  runEvent(e: ChatRunEvent): void {
+    this.host.runEvent?.(this.path, e);
+  }
+  action(name: "@clientSend" | "@clientSendRefused" | "@saveChoice", args: unknown): Promise<ServerToolOutcome<unknown>> {
+    const call: ServerToolCall = { effectId: `${this.path}#${name}#${++this.actions}#${randomUUID()}`, chatId: this.path, toolCallId: name, name, params: args, attended: false, card: null };
+    const none = () => {
+      throw new Error("A server action reads nothing of its chat.");
+    };
+    return deliverServerToolCall(call, { signal: undefined, onUpdate: undefined, ctx: undefined, chat: { branch: none, entries: none, append: none, tool: () => undefined } }).then(actionOutcome);
+  }
+  composerClosed(): string | null {
+    return this.host.composerClosed?.(this.path) ?? null;
+  }
+}
+
+const localSpecials: LocalSpecials = {
+  kindOf: specialKindOf,
+  cwd(path) {
+    for (const h of specialHosts) {
+      const cwd = h.cwd?.(path);
+      if (cwd) return cwd;
+    }
+    return undefined;
+  },
+  spec: specialSpecFor,
+  port(kind, path) {
+    const h = specialHostOf(kind);
+    if (!h) throw new Error("This chat's kind is not available here.");
+    return new LocalSpecialPort(h, path);
+  },
+  async opened(kind, chat) {
+    await specialHostOf(kind)?.opened?.(handleOf(chat));
+  },
+};
+export type { SessionMarks, SpecialKind } from "./chat-manager";
 
 /**
  * Get (or open) the chat for a session file. Refused (BusyError) when a TUI owns it, or unless
@@ -434,7 +576,7 @@ function serveOnce(): void {
 }
 
 /** A tool's declaration: what the chat declares to its model, nothing it runs. */
-function declOf(spec: ToolSpec): ServerToolDecl {
+export function declOfTool(spec: ToolSpec): ServerToolDecl {
   return {
     name: spec.name,
     label: spec.label,
@@ -444,7 +586,7 @@ function declOf(spec: ToolSpec): ServerToolDecl {
     parameters: spec.parameters,
     ...(spec.executionMode !== undefined ? { executionMode: spec.executionMode } : {}),
     ...(spec.exposure !== undefined ? { exposure: spec.exposure } : {}),
-    ...(spec.prepareArguments ? { prepares: true as const } : {}),
+    ...(spec.prepareRule ? { prepares: spec.prepareRule } : {}),
   };
 }
 
@@ -455,10 +597,12 @@ function declOf(spec: ToolSpec): ServerToolDecl {
  */
 export function serveTools(chatId: ChatId, specs: readonly ToolSpec[]): ToolSpec[] {
   serveOnce();
+  for (const spec of specs)
+    if (spec.prepareArguments && !spec.prepareRule) throw new Error(`${spec.name}: a served tool that rewrites its arguments must name its prepare rule.`);
   let mine = hostedTools.get(chatId);
   if (!mine) hostedTools.set(chatId, (mine = new Map()));
   for (const spec of specs) mine.set(spec.name, spec);
-  return specs.map((spec) => serverToolSpec(chatId, declOf(spec)));
+  return specs.map((spec) => serverToolSpec(chatId, declOfTool(spec)));
 }
 
 /** A server-hosted tool's run in progress, as the server code it calls reads it (serverToolCall). */
@@ -501,10 +645,6 @@ const port: ServerToolPort = {
     }
     return outcome;
   },
-  prepare(chatId, name, args) {
-    const spec = hostedTools.get(chatId)?.get(name);
-    return spec?.prepareArguments ? spec.prepareArguments(args) : args;
-  },
 };
 
 // ---- a chat in a process of its own: what the server answers it (§app.chat-processes/server-actions) --
@@ -531,7 +671,7 @@ export function servedToolsFor(chatId: ChatId, sessionId: string, title: () => s
   const specs: ToolSpec[] = [sessionVerbsTool(() => projectEngine()), queuePushTool({ sessionId: () => sessionId, title })];
   if (process.env.SOVA_CHAT_TEST_SERVED === "1") specs.push(trialServedSleep());
   serveTools(chatId, specs);
-  return specs.map(declOf);
+  return specs.map(declOfTool);
 }
 
 /** Test only (SOVA_CHAT_TEST_SERVED=1, the chat-runtime trial): a served tool that sleeps `ms` and logs
@@ -573,8 +713,19 @@ export async function answerChatAsk(path: string, method: ChatAskMethod, args: u
       return linksFor(a.sessionId, a.path ?? path);
     case "singleton":
       return singletonFor(a.key, a.path ?? path);
+    case "special.runStart":
+    case "special.compact":
+    case "special.agentEnd": {
+      const kind = kindOfChat.get(path);
+      const h = kind ? specialHostOf(kind) : undefined;
+      if (!h) throw new Error("This chat is no special kind's here.");
+      if (method === "special.agentEnd") return h.agentEnd ? h.agentEnd(path, String(a.text ?? "")) : null;
+      const ctx = await fileHookCtx(path, { sessionId: chatHandle(path)?.mirror.sessionId ?? "", leafId: a.leafId ?? null });
+      if (method === "special.compact") return h.compact ? h.compact(path, ctx) : null;
+      return h.runStart(path, ctx, { images: !!a.images });
+    }
   }
   throw new Error(`Unknown ask: ${String(method)}`);
 }
 
-export { emitChatEvent, onLinksNotified };
+export { emitChatEvent, isOverseerFile, onLinksNotified };

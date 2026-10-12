@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { runLedger } from "./auto-resume";
 import { closeSync, existsSync, openSync, readSync } from "node:fs";
-import type { ChatDialogInfo, ChatLifecycleEvent, ChatRunEvent, ServerToolCall, ServerToolDecl, ServerToolOutcome } from "../shared/chat-runtime";
+import type { ChatDialogInfo, ChatLifecycleEvent, ChatRunEvent, ChatSpecialKind, RunStartAnswer, ServerToolCall, ServerToolDecl, ServerToolOutcome, SpecialSpec } from "../shared/chat-runtime";
+import { prepareOwnerArea } from "../shared/decisions";
 import { LOGIN_UNCHANGED } from "../shared/protocol";
 import { type BatonSentData, OPERATOR } from "../shared/baton";
 import type { ChatClaudeLogin, ChatClientMessage, ChatModeResult, ChatServerMessage, HeldChatState, V1EventFrame, V2EventFrame, ModeApplies, ModeInfo, OverseerDialogAnswerData, OverseerSentMarkerData, QueueItem, RegenerateRefusal, SandboxApplyResult, SandboxInfo, SlashCommand, TranscriptItem, WorkerInfo } from "../shared/protocol";
@@ -39,7 +40,9 @@ import { contextOfBranch } from "./harness/pi/usage";
 import { extensionEntries } from "./harness/pi/state";
 import { isAlreadyProcessing } from "./harness/pi/session";
 import { isCompactionInProgress } from "./harness/pi/history-ops";
-import { ALIGN_LAUNCH, type AlignLaunchData, BATON_SENT, FANOUT_MEMBER, LINK_MEMBER, LOADOUT, MEMORY, MODE, OVERSEER, OVERSEER_DIALOG_ANSWER, OVERSEER_SENT, PROFILE, SESSION_SENT, SUBAGENT_PROFILE, TOPIC_DELIVERED } from "./harness/state-kinds";
+import { ALIGN_LAUNCH, type AlignLaunchData, BATON_SENT, FANOUT_MEMBER, LINK_MEMBER, LOADOUT, MEMORY, MODE, OVERSEER, OVERSEER_DIALOG_ANSWER, OVERSEER_SENT, PROFILE, SESSION_SENT, SUBAGENT_PROFILE, TOPIC_DELIVERED, stateKindOf } from "./harness/state-kinds";
+import { piPrepare, toPiTool } from "./harness/pi/tools";
+import { specialLoadout, specialWriter } from "./chat-special";
 import { cutTail, type HistoryPart, pullFields } from "./tail-hello";
 import { isOverseerId } from "./overseer-store";
 import { attachStreamGuard, capsFor, type StreamTrip } from "./stream-guard";
@@ -563,111 +566,93 @@ export function isOverseerFile(s: SessionMarks): boolean {
   return isOverseerId(s.id) && s.state.file().has(OVERSEER);
 }
 
-/**
- * What an Overseer runtime gets instead of the ordinary loadout (server/overseer.ts registers it,
- * so this module never imports the Overseer and the dependency points one way). `loadout` throws a
- * BusyError for an Overseer file that is not the current one: previous conversations are read-only.
- */
-export interface OverseerRuntime {
-  loadout(path: string): Promise<{
-    resourceLoaderOptions: PiLoaderOptions;
-    /** The tool allowlist: built-in, extension and inline tools alike. */
-    tools: string[];
-    /** SDK custom tools: they replace a built-in or an extension's tool of the same name (the
-        Overseer's secret-guarded read/grep/find/ls). */
-    customTools?: PiToolDefinition[];
-    /** From overseer.json, never defaults.json. */
-    model: string | null;
-    thinking: string | null;
-    /** Run the memory engine (§chat/memory) in this loadout, as an ordinary chat does: the chat binds
-        it to itself, after the loadout's own extensions. */
-    memory?: boolean;
-    /** Tell the person's turns apart (§app.overseer/input-source): a message the person sent from a
-        composer is marked by the object it reaches the agent as, and the run it enters is theirs
-        (ChatStateMirror.attended, ChatRunEvent user.entered). */
-    attribution?: boolean;
-    /** Its model requests are background work under a provider's request limit (§app.provider-limits/queue). */
-    background?: boolean;
-    /** The system prompt's text as a run starting on this branch should have it: when it changed since
-        the last run, the base prompt is rebuilt from the loader's parts (quirk P19). */
-    promptAtRunStart?(branch: readonly HEntry[]): string;
-  }>;
-  /** The composer changed the Overseer's model or thinking: write it back to overseer.json. */
-  saveChoice(patch: { model?: string; thinking?: string }): void;
-  /** Every open of an Overseer runtime, once bound: brings its mode back to normal with no minor
-      modes, whatever its branch restored. */
-  opened(chat: ChatSession): Promise<void>;
-  /** Each run event of the Overseer's chat, inside the chat's own event. A message the user sent
-      from the UI (a prompt, a steer, a regenerate, a confirm card's click; `origin` "client") makes
-      the run the user's (`user.entered`), whatever an extension's `input` handler or a template made
-      of its text: full tools, and the per-turn caps start over. Server-started runs (a brief, a
-      wake-up) never do. */
-  runEvent(path: string, event: ChatRunEvent): void;
-}
-
-let overseerRuntime: OverseerRuntime | null = null;
-export function setOverseerRuntime(r: OverseerRuntime): void {
-  overseerRuntime = r;
-}
-
-/** What a special session's runtime gets instead of the ordinary loadout. */
-export type SpecialLoadoutResult = Awaited<ReturnType<OverseerRuntime["loadout"]>>;
-export type SpecialKind = "overseer" | "baton" | "project-overseer";
+/** The special kinds (§app.harness/session-special): the Overseer, a project overseer, a baton session. */
+export type SpecialKind = ChatSpecialKind;
 
 /**
- * A kind of special session other than the Overseer (§app/baton): recognised by its file, given its
- * own loadout. The Overseer is always matched first (`specialFor`), so a file carrying both markers
- * opens as the Overseer's, exactly as before this registry existed. Registered by the module that
- * owns the kind (server/baton-loadout.ts), so this module never imports it.
+ * What a special chat asks of its kind, which lives in the server (§app.chat-processes/special-kinds):
+ * in the server's process a loopback to the kind's SpecialHost (server/chat-handle.ts), in a chat
+ * process of its own the chat's socket (server/chat-runtime/host.ts). `local`: what only the loopback
+ * reads (the run's live context).
  */
-export interface SpecialLoadout {
-  kind: Exclude<SpecialKind, "overseer">;
-  matches(s: SessionMarks, path: string): boolean;
-  loadout(path: string): Promise<SpecialLoadoutResult>;
-  /** Every open, once bound. */
-  opened?(chat: ChatSession): Promise<void>;
-  /** Each run event of this kind's chat, inside the chat's own event. */
-  runEvent?(path: string, event: ChatRunEvent): void;
-  /** Its run events carry the streaming reply's text (`reply.text`). */
-  replyText?: boolean;
-  /** A message from this server's own composer (/ws/chat prompt or steer): who sent it, or throw a
-      refusal the client is told. Absent: sent as usual, unattributed. `text` and `images`, when
-      given, are what is sent instead (a baton session's attached images, inline). */
-  clientSend?(path: string, msg: { images: number; text: string }): { by: string; text?: string; images?: ImageInput[] };
-  /** The runtime refused the message `clientSend` attributed after all: put back what the kind
-      recorded for it. */
-  clientSendRefused?(path: string): void;
-  /** A client gesture this kind refuses (a message for the client), or null. */
-  refuses?(gesture: "rewind" | "regenerate" | "mode"): string | null;
-  /** Its composer takes nothing right now (a message for the client), or null: an archived
-      project's overseer (§app.organizations/archive). */
-  composerClosed?(path: string): string | null;
-  /** The composer changed this runtime's model or thinking (`save: true`): the kind keeps it. */
-  saveChoice?(path: string, patch: { model?: string; thinking?: string }): void;
-  /** The directory this kind's runtime opens in on THIS host, or null (not this kind's file): used
-      instead of the header's cwd, which records the host the file was created on — an org's
-      workspace session restored onto another host keeps the old host's path there. */
-  cwd?(path: string): string | null;
-}
-const specialLoadouts: SpecialLoadout[] = [];
-export function registerSpecialLoadout(s: SpecialLoadout): void {
-  if (!specialLoadouts.some((x) => x.kind === s.kind)) specialLoadouts.push(s);
+export interface SpecialPort {
+  runStart(a: { leafId: string | null; images: boolean }, local?: { ctx: HookCtx }): Promise<RunStartAnswer>;
+  compact(a: { leafId: string | null }, local?: { ctx: HookCtx }): Promise<RunStartAnswer["message"] | null>;
+  agentEnd(a: { text: string }): Promise<RunStartAnswer["message"] | null>;
+  /** Each run event, in the chat's own event; never awaited. */
+  runEvent(e: ChatRunEvent): void;
+  /** A server action under an effect id of its own (a composer's message, a model choice saved). */
+  action(name: "@clientSend" | "@clientSendRefused" | "@saveChoice", args: unknown): Promise<ServerToolOutcome<unknown>>;
+  /** Why the composer is closed now, read live (the loopback); absent: the spec's, as last pushed. */
+  composerClosed?(): string | null;
 }
 
-/** A registered kind's working directory for this file on this host, or undefined: the header's. */
+/**
+ * The server's kinds as a chat in its own process reaches them (server/chat-handle.ts installs this,
+ * so this module never imports a kind and the dependency points one way). Never consulted for a
+ * chat whose spec was set (setSpecialSpec): a chat process takes its kind and loadout from its open.
+ */
+export interface LocalSpecials {
+  /** The kind a session file opens as (the Overseer's first), or null. */
+  kindOf(marks: SessionMarks, path: string): SpecialKind | null;
+  /** The directory a kind's chat opens in on this host, or undefined: the header's. */
+  cwd(path: string): string | undefined;
+  /** The loadout of one build, the kind's tools served for this chat; throws the kind's refusal. */
+  spec(kind: SpecialKind, path: string): Promise<SpecialSpec>;
+  /** The loopback to the kind. */
+  port(kind: SpecialKind, path: string): SpecialPort;
+  /** Every open, once bound (the kind's `opened`, with the chat's handle). */
+  opened(kind: SpecialKind, chat: ChatSession): Promise<void>;
+}
+let localSpecials: LocalSpecials | null = null;
+export function setLocalSpecials(s: LocalSpecials): void {
+  localSpecials = s;
+}
+
+/** Specs and ports given before an open (a chat process: from the server's `open`), by path. */
+const presetSpecs = new Map<string, SpecialSpec>();
+const presetPorts = new Map<string, SpecialPort>();
+export function setSpecialSpec(path: string, spec: SpecialSpec | null): void {
+  if (spec) presetSpecs.set(path, spec);
+  else presetSpecs.delete(path);
+}
+export function setSpecialPort(path: string, port: SpecialPort | null): void {
+  if (port) presetPorts.set(path, port);
+  else presetPorts.delete(path);
+}
+/** The spec a chat process was given for this path, if any. */
+export const specialSpecOf = (path: string): SpecialSpec | undefined => presetSpecs.get(path);
+/** The server's word on the composer of a special chat in this process (`push special`). */
+export function setSpecialComposerClosed(path: string, text: string | null): void {
+  const spec = presetSpecs.get(path);
+  if (spec) spec.composerClosed = text;
+  const chat = held.get(path);
+  if (chat?.specialSpec) chat.specialSpec.composerClosed = text;
+}
+
+/** A special kind's working directory for this file on this host, or undefined: the header's. */
 export function cwdOverride(path: string): string | undefined {
-  for (const s of specialLoadouts) {
-    const cwd = s.cwd?.(path);
-    if (cwd) return cwd;
-  }
-  return undefined;
+  const preset = presetSpecs.get(path);
+  if (preset) return preset.cwd ?? undefined;
+  return localSpecials?.cwd(path);
 }
 
-/** The special kind a session file opens as: the Overseer's first, then each registered kind. */
-function specialFor(marks: SessionMarks, path: string): { kind: SpecialKind; entry: SpecialLoadout | null } | null {
-  if (isOverseerFile(marks)) return { kind: "overseer", entry: null };
-  const entry = specialLoadouts.find((s) => s.matches(marks, path));
-  return entry ? { kind: entry.kind, entry } : null;
+/** The special kind a session file opens as: the one its open was given, else the server's kinds
+    (the Overseer's first). With no kinds here, an Overseer file is still the Overseer's. */
+function specialFor(marks: SessionMarks, path: string): SpecialKind | null {
+  const preset = presetSpecs.get(path);
+  if (preset) return preset.kind;
+  if (localSpecials) return localSpecials.kindOf(marks, path);
+  return isOverseerFile(marks) ? "overseer" : null;
+}
+
+/** One build's special loadout: its spec and the port to its kind. */
+async function specialOf(kind: SpecialKind, path: string): Promise<{ spec: SpecialSpec; port: SpecialPort }> {
+  const spec = presetSpecs.get(path);
+  const port = presetPorts.get(path);
+  if (spec && port) return { spec, port };
+  if (!localSpecials) throw new Error(kind === "overseer" ? "The Overseer is not available on this server." : "This chat's kind is not available here.");
+  return { spec: await localSpecials.spec(kind, path), port: localSpecials.port(kind, path) };
 }
 
 /**
@@ -679,7 +664,7 @@ export async function openKindOf(path: string): Promise<SpecialKind | "powers" |
   const file = await readPi(path);
   const all = stateView(file.entries);
   const kind = specialFor({ id: file.header?.id ?? "", state: { file: () => all } }, path);
-  if (kind) return kind.kind;
+  if (kind) return kind;
   return stateView(branchOf(file.entries)).latest(PROFILE)?.data?.profile?.grant.length ? "powers" : null;
 }
 
@@ -890,8 +875,11 @@ class ChatSession {
   disposed = false;
   /** The special kind this runtime is (set by openSession from the file's marker), else null. */
   special: SpecialKind | null = null;
-  /** The registered loadout of a non-Overseer special kind. */
-  specialEntry: SpecialLoadout | null = null;
+  /** A special chat's loadout (the last build's) and the port to its kind. */
+  specialSpec: SpecialSpec | null = null;
+  specialPort: SpecialPort | null = null;
+  /** Composer messages a kind attributes (`@clientSend`), one at a time, in order. */
+  private clientSends: Promise<void> = Promise.resolve();
   /** The person's turns, where the loadout tells them apart (SpecialLoadoutResult.attribution). */
   userTurns: UserTurns | null = null;
   /** The tag the next run's `run.start` names (ChatSendInput.runTag), until a run starts. */
@@ -899,6 +887,25 @@ class ChatSession {
   /** This runtime is the Overseer's. */
   get overseer(): boolean {
     return this.special === "overseer";
+  }
+  /** A client gesture this special kind refuses (a message for the client), or null. */
+  specialRefuses(gesture: "rewind" | "regenerate" | "mode"): string | null {
+    return this.specialSpec?.refuses[gesture] ?? null;
+  }
+  /** Why this special chat's composer takes nothing right now, or null. */
+  private composerClosed(): string | null {
+    if (!this.specialSpec) return null;
+    return this.specialPort?.composerClosed ? this.specialPort.composerClosed() : this.specialSpec.composerClosed;
+  }
+  /** The composer changed a special chat's model or thinking (`save: true`): its kind keeps it. */
+  private saveSpecialChoice(patch: { model?: string; thinking?: string }): void {
+    if (!this.specialSpec?.saveChoice || !this.specialPort) return;
+    this.specialPort.action("@saveChoice", patch).then(
+      (out) => {
+        if (!out.ok) console.warn(`[chat] ${this.special}'s model choice not saved: ${out.error.message}`);
+      },
+      (err) => console.warn(`[chat] ${this.special}'s model choice not saved: ${err instanceof Error ? err.message : String(err)}`),
+    );
   }
   /** Texts sent here whose user entry still needs its sender marker. */
   private senderMarks: SenderMark[] = [];
@@ -1850,7 +1857,7 @@ class ChatSession {
    */
   async switchMode(patch: ModePatch): Promise<ChatModeResult> {
     if (this.overseer) throw new ModeRefusedError();
-    const refused = this.specialEntry?.refuses?.("mode");
+    const refused = this.specialRefuses("mode");
     if (refused) throw new ModeRefusedError(refused);
     // Memory runs in an ordinary chat's runtime (§chat.memory/where): a special loadout has no engine.
     if (!this.memoryOffered() && (patch.memory || (patch.minorModes?.includes("memory") && !this.modeState.minorModes.includes("memory"))))
@@ -1888,7 +1895,7 @@ class ChatSession {
   /** Whether this chat's mode menu offers memory: an ordinary chat whose runtime has the engine (never the
       Overseer, whose switch is its own, nor a session that refuses mode switches). */
   memoryOffered(): boolean {
-    return !this.overseer && !this.specialEntry?.refuses?.("mode") && this.memoryAvailable();
+    return !this.overseer && !this.specialRefuses("mode") && this.memoryAvailable();
   }
 
   /** Whether this runtime has the memory engine (its recall tools are registered). */
@@ -1955,13 +1962,13 @@ class ChatSession {
   /** Why switchSubagentProfile would refuse right now (short of an unknown id), or null: a profile
       pick checks this before it writes anything. */
   subagentSwitchRefusal(): string | null {
-    if (this.disposed || this.overseer || this.specialEntry?.refuses?.("mode") || this.hasForeignWrites()) return "This session's subagent profile can't be switched here.";
+    if (this.disposed || this.overseer || this.specialRefuses("mode") || this.hasForeignWrites()) return "This session's subagent profile can't be switched here.";
     if (!this.modeCommand()) return "The mode extension isn't loaded in this chat.";
     return null;
   }
 
   async switchSubagentProfile(id: unknown) {
-    if (this.disposed || this.overseer || this.specialEntry?.refuses?.("mode") || this.hasForeignWrites()) throw new ModeRefusedError();
+    if (this.disposed || this.overseer || this.specialRefuses("mode") || this.hasForeignWrites()) throw new ModeRefusedError();
     assertNotLive(this.path);
     const profile = requireSubagentProfile(id);
     if (!this.modeCommand()) throw new ModeRefusedError("The mode extension isn't loaded in this chat.");
@@ -1974,7 +1981,7 @@ class ChatSession {
 
   async saveModeDefault(): Promise<ModeInfo> {
     if (this.overseer) throw new ModeRefusedError();
-    const refused = this.specialEntry?.refuses?.("mode");
+    const refused = this.specialRefuses("mode");
     if (refused) throw new ModeRefusedError(refused);
     const profile = this.subagentProfileInfo().current.id;
     if (profile === null) throw new ModeRefusedError("Fix the subagent profiles file before saving the default.");
@@ -2692,10 +2699,9 @@ class ChatSession {
     // Overseer acting on a session, Settings → Overseer) never becomes anyone's default.
     if (opts.save !== true) return;
     // The level too: setModel re-clamped it, and the next conversation is seeded from the file.
-    if (this.overseer) overseerRuntime?.saveChoice({ model: ref, thinking: this.harness.thinking() });
-    else if (this.specialEntry?.saveChoice) this.specialEntry.saveChoice(this.path, { model: ref, thinking: this.harness.thinking() });
-    // Another special kind (a baton) keeps the pick in its own file only: never the host's default.
-    else if (!this.specialEntry && this.isPristine()) saveDefaults({ model: ref });
+    // A special kind keeps it as it says (a baton: in its own file only, never the host's default).
+    if (this.special) this.saveSpecialChoice({ model: ref, thinking: this.harness.thinking() });
+    else if (this.isPristine()) saveDefaults({ model: ref });
   }
 
   /** Change thinking level: the `set_thinking` path, shared like setModelRef (and saved, like it,
@@ -2721,10 +2727,9 @@ class ChatSession {
         items: [{ id: `thinking-${Date.now()}`, kind: "info", meta: { type: "thinking_level_change" }, text: `Thinking: ${after}` }],
       });
     if (opts.save !== true) return after;
-    if (this.overseer) overseerRuntime?.saveChoice({ thinking: after });
-    else if (this.specialEntry?.saveChoice) this.specialEntry.saveChoice(this.path, { thinking: after });
+    if (this.special) this.saveSpecialChoice({ thinking: after });
     // A session with no messages yet: this level is also the next new session's default (never a special kind's).
-    else if (!this.specialEntry && this.isPristine()) saveDefaults({ thinking: after });
+    else if (this.isPristine()) saveDefaults({ thinking: after });
     return after;
   }
 
@@ -2736,6 +2741,30 @@ class ChatSession {
     // mid-turn — switches are idle-only), so the limit row never has to read the provider out of text.
     const provider = this.harness.model()?.provider;
     this.broadcast({ type: "error", code, message: err instanceof Error ? err.message : String(err), ...(provider ? { provider } : {}) });
+  }
+
+  /** A composer message its kind attributes (a baton session: only while the operator holds the
+      baton): the kind decides who sent it, before anything is queued or written; a refusal from
+      acceptPrompt itself is handed back to the kind. */
+  private async clientSend(port: SpecialPort, client: ChatClient, msg: Extract<ChatClientMessage, { type: "prompt" | "steer" }>, clientId: string | undefined, fail: (err: unknown) => void): Promise<void> {
+    const out = await port.action("@clientSend", { images: msg.images?.length ?? 0, text: String(msg.text ?? "") });
+    if (!out.ok) throw "unknown" in out ? new Error(out.error.message) : new RefusedError(out.error.message);
+    const sent = out.result as { by: string; text?: string; images?: ImageInput[] };
+    const own = parseImages(msg.images);
+    const images = sent.images?.length ? [...(own ?? []), ...sent.images] : own;
+    let accepted: ReturnType<ChatSession["acceptPrompt"]>;
+    try {
+      accepted = this.acceptPrompt(sent.text ?? String(msg.text ?? ""), images, "client", clientId, {
+        sentByBaton: { by: sent.by },
+        ...(msg.type === "steer" ? { delivery: "steer" as const } : {}),
+      });
+    } catch (err) {
+      void port.action("@clientSendRefused", {}).catch(() => {});
+      throw err;
+    }
+    const { queued, turn } = accepted;
+    if (clientId) client.send({ type: "send_ack", clientId, queued });
+    turn.catch(fail);
   }
 
   handle(client: ChatClient, msg: ChatClientMessage): void {
@@ -2772,7 +2801,7 @@ class ChatSession {
         case "prompt":
         case "steer": {
           // A kind whose composer is closed right now (an archived project's overseer).
-          const closed = this.specialEntry?.composerClosed?.(this.path);
+          const closed = this.composerClosed();
           if (closed) {
             fail(new BusyError(closed, "busy"));
             return;
@@ -2798,24 +2827,11 @@ class ChatSession {
           // the operator holds the baton) decides here, before anything is queued or written.
           // The model gate runs first, so a refusal never counts against the kind (a baton's budget);
           // a refusal from acceptPrompt itself is handed back through `undo`.
-          if (this.specialEntry?.clientSend) {
+          if (this.specialSpec?.clientSend && this.specialPort) {
             this.assertModelAllowed();
-            const sent = this.specialEntry.clientSend(this.path, { images: msg.images?.length ?? 0, text: String(msg.text ?? "") });
-            const own = parseImages(msg.images);
-            const images = sent.images?.length ? [...(own ?? []), ...sent.images] : own;
-            let accepted: ReturnType<ChatSession["acceptPrompt"]>;
-            try {
-              accepted = this.acceptPrompt(sent.text ?? String(msg.text ?? ""), images, "client", clientId, {
-                sentByBaton: { by: sent.by },
-                ...(msg.type === "steer" ? { delivery: "steer" as const } : {}),
-              });
-            } catch (err) {
-              this.specialEntry.clientSendRefused?.(this.path);
-              throw err;
-            }
-            const { queued, turn } = accepted;
-            if (clientId) client.send({ type: "send_ack", clientId, queued });
-            turn.catch(fail);
+            const port = this.specialPort;
+            const step = this.clientSends.then(() => this.clientSend(port, client, msg, clientId, fail));
+            this.clientSends = step.catch(fail);
             return;
           }
           if (msg.type === "steer") {
@@ -2867,7 +2883,7 @@ class ChatSession {
           return;
         }
         case "regenerate": {
-          const refused = this.specialEntry?.refuses?.("regenerate");
+          const refused = this.specialRefuses("regenerate");
           if (refused) throw new Error(refused);
           this.regenerate(client, String(msg.id ?? ""), String(msg.entryId ?? "")).catch(fail);
           return;
@@ -2888,7 +2904,7 @@ class ChatSession {
           }
           return;
         case "rewind": {
-          const refused = this.specialEntry?.refuses?.("rewind");
+          const refused = this.specialRefuses("rewind");
           if (refused) throw new Error(refused);
           this.rewind(client, String(msg.id ?? ""), String(msg.entryId ?? "")).catch(fail);
           return;
@@ -3490,15 +3506,9 @@ export function heldChatState(path: string): HeldChatState | undefined {
   };
 }
 
-async function overseerLoadout(path: string) {
-  if (!overseerRuntime) throw new Error("The Overseer is not available on this server.");
-  return overseerRuntime.loadout(path);
-}
-
-/** Bring an opened Overseer runtime to overseer.json's model and thinking, without the composer's
-    write-back (the setting is already what it says). Stale or unauthenticated choices are skipped. */
-async function syncOverseerModel(chat: ChatSession, path: string): Promise<void> {
-  const want = await overseerLoadout(path);
+/** Bring an opened Overseer runtime to overseer.json's model and thinking (its spec's), without the
+    composer's write-back (the setting is already what it says). Stale or unauthenticated choices are skipped. */
+async function syncOverseerModel(chat: ChatSession, want: Pick<SpecialSpec, "model" | "thinking">): Promise<void> {
   const harness = chat.harness;
   if (want.model && want.model !== (harness.model()?.ref ?? null) && modelAllowed(readModelPolicy(), want.model)) {
     const found = await harness.findModel(want.model).catch(() => null);
@@ -3511,16 +3521,20 @@ async function syncOverseerModel(chat: ChatSession, path: string): Promise<void>
 // ---- server-hosted tools: the chat's side of the loopback ----------------------------------------
 
 /** What a server-hosted tool reads and writes of the chat that runs it, beyond its ToolCtx. In one
-    process it is the chat itself; a chat in its own process sends the reads with the call and takes
-    the writes and nested calls as calls of their own (al_3 stage 3). */
+    process it is the chat itself; a chat in its own process sends the reads with the call and runs
+    the writes and nested calls as calls back to it, within the call (§app.harness/session-special). */
 export interface ServerToolChat {
-  /** The active branch, root first. */
+  /** The active branch at the call, plus what this call appended since (root first). */
   branch(): HEntry[];
-  /** Every entry of the session file, any branch. */
+  /** Every entry of the file at the call, plus this call's appends. */
   entries(): HEntry[];
-  append<T>(kind: StateKind<T>, data: T): EntryId;
-  /** A tool the chat's runtime registered (the subagents extension's), to call within this call. */
-  tool(name: string): ToolSpec | undefined;
+  /** Append a state record within this call. `announce`: through the special extension's own writer
+      (entry_appended fires: a baton's share refresh), else the chat's state writer. Resolves to the
+      new entry's id; it is the leaf after. */
+  append<T>(kind: StateKind<T>, data: T, o?: { announce?: boolean }): Promise<EntryId>;
+  /** A tool the chat's runtime registered (the subagents extension's), run by the chat within this
+      call, with the call's own context and abort signal. */
+  tool(name: string): { execute(toolCallId: string, params: unknown): Promise<ToolResult> } | undefined;
 }
 /** What travels with a server-hosted tool's call only while chat and server share a process. */
 export interface ServerToolLocal {
@@ -3534,9 +3548,33 @@ export interface ServerToolLocal {
 /** The server's side of server-hosted tools (server/chat-handle.ts installs it). */
 export interface ServerToolPort {
   call(call: ServerToolCall, local: ServerToolLocal): Promise<ServerToolOutcome<ToolResult>>;
-  /** The declaration's `prepares`: the server rewrites the arguments (in one process only: pi asks
-      for them synchronously). */
-  prepare(chatId: string, name: string, args: unknown): unknown;
+}
+
+/** A declaration's prepare rule, run by the chat (pi asks for the arguments synchronously): pure,
+    from the declaration's own data. */
+function prepareOf(decl: ServerToolDecl): ((args: unknown) => unknown) | undefined {
+  if (decl.prepares === "owner-area") return (args) => prepareOwnerArea(decl.parameters, args);
+  if (decl.prepares === "pi-edit") return piPrepare("pi-edit");
+  return undefined;
+}
+
+/** Append within a server-hosted call (the chat's side of `ServerToolChat.append`): through the special
+    extension's own writer when `announce`, else the chat's state writer; the new entry, now the leaf. */
+export async function appendForCall(path: string, kind: string, data: unknown, announce: boolean): Promise<{ entryId: string; entry: HEntry }> {
+  const chat = held.get(path);
+  if (!chat || chat.disposed) throw new Error("This chat is closed.");
+  const k = stateKindOf(kind);
+  if (!k) throw new Error(`Unknown state kind: ${kind}`);
+  let id: EntryId = "";
+  if (announce) {
+    const write = specialWriter(path);
+    if (!write) throw new Error("This chat has no special loadout to write through.");
+    write.append(k, data);
+  } else id = chat.harness.state.append(k, data);
+  const branch = chat.harness.branch();
+  const entry = (id ? branch.find((h) => h.id === id) : undefined) ?? branch[branch.length - 1];
+  if (!entry?.id) throw new Error("The entry was not written.");
+  return { entryId: entry.id, entry };
 }
 let serverToolPort: ServerToolPort | null = null;
 export function setServerToolPort(port: ServerToolPort): void {
@@ -3554,10 +3592,11 @@ const portOrThrow = (): ServerToolPort => {
  * ToolCtx is the chat's own (ServerToolChat).
  */
 export function serverToolSpec(chatId: string, decl: ServerToolDecl): ToolSpec {
-  const { prepares, ...fields } = decl;
+  const { prepares: _rule, ...fields } = decl;
+  const prepare = prepareOf(decl);
   return {
     ...fields,
-    ...(prepares ? { prepareArguments: (args: unknown) => portOrThrow().prepare(chatId, decl.name, args) } : {}),
+    ...(prepare ? { prepareArguments: prepare } : {}),
     async execute(toolCallId, params, signal, onUpdate, ctx) {
       const chat = heldChat(chatId);
       if (!chat) throw new Error("This chat is closed.");
@@ -3578,8 +3617,13 @@ export function serverToolSpec(chatId: string, decl: ServerToolDecl): ToolSpec {
         chat: {
           branch: () => [...chat.harness.branch()],
           entries: () => [...chat.harness.entries()],
-          append: (kind, data) => chat.harness.state.append(kind, data),
-          tool: (name) => chat.harness.registeredTool(name),
+          append: async (kind, data, o) => {
+            if (!o?.announce) return chat.harness.state.append(kind, data);
+            const write = specialWriter(chatId);
+            if (!write) throw new Error("This chat has no special loadout to write through.");
+            return write.append(kind, data);
+          },
+          tool: (name) => chat.harness.registeredTool(name) as unknown as ReturnType<ServerToolChat["tool"]>,
         },
       };
       const out = await portOrThrow().call(call, local);
@@ -3620,13 +3664,13 @@ function hearRuns(
   session: HarnessSession,
   path: string,
   runs: RunHearing,
-  o: { hook: Pick<SpecialLoadout, "runEvent"> | null; replyText: boolean; prompt?: (branch: readonly HEntry[]) => string },
+  o: { port: SpecialPort | null; replyText: boolean; prompt?: (branch: readonly HEntry[]) => string },
 ): void {
   const turns = runs.turns;
   turns?.watch(session);
   const emit = (event: ChatRunEvent) => {
     try {
-      o.hook?.runEvent?.(path, event);
+      o.port?.runEvent(event);
     } catch (err) {
       console.error("[chat] run event listener failed", err);
     }
@@ -3697,6 +3741,8 @@ async function openLocked(path: string, onDisposed: () => void): Promise<ChatSes
   // A special loadout's run events and the person's turns (SpecialLoadoutResult.attribution): one
   // for the chat, kept across the runtimes it builds.
   const runs: RunHearing = { turns: null, tag: {} };
+  /** The last build's special loadout, if this chat is a special kind's. */
+  const last: { special: { spec: SpecialSpec; port: SpecialPort } | null } = { special: null };
   const build = async ({ cwd, read }: { cwd: string; read: OpenRead }): Promise<PiBuild> => {
     if (!launch.recorded) {
       const now = alignLaunchOf(read.state);
@@ -3710,11 +3756,23 @@ async function openLocked(path: string, onDisposed: () => void): Promise<ChatSes
     // loadout: its prompt appended after the user's APPEND_SYSTEM.md, its sova_* tools, a tool
     // allowlist, no topic outline (nobody lists it), and its model from overseer.json.
     const kind = specialFor(read, path);
-    const special = kind ? (kind.entry ? await kind.entry.loadout(path) : await overseerLoadout(path)) : null;
+    const special = kind ? await specialOf(kind, path) : null;
+    last.special = special;
+    const spec = special?.spec ?? null;
     // A loadout that loads no extension never registers the provider itself: it waits for the
     // runtime's own start, when this process started it (the server at boot; a chat's own process).
-    if (special?.resourceLoaderOptions.noExtensions && runtimeWarm) await runtimeWarm;
-    if (special?.attribution) runs.turns ??= new UserTurns();
+    if (spec?.loader.noExtensions && runtimeWarm) await runtimeWarm;
+    if (spec?.attribution) runs.turns ??= new UserTurns();
+    // The memory minor mode's engine (§chat/memory), bound to the chat that hosts this runtime.
+    const memory = () => memoryExtension(() => (visHost.chat && !visHost.chat.disposed ? visHost.chat.memoryHost() : null));
+    // A special loadout, built from its spec (server/chat-special.ts): its tools and file tools are the server's.
+    const built = special
+      ? specialLoadout(path, special.spec, special.port, {
+          tool: (decl) => toPiTool(serverToolSpec(path, decl)) as PiToolDefinition,
+          memory,
+          log: (line) => console.warn(`[chat] ${kind}: ${line}`),
+        })
+      : null;
     // An ordinary chat gets the default extensions plus the vis feedback extension
     // (server/vis-check.ts); the special loadouts keep exactly their own.
     const data = special ? null : (read.state.branch().latest(PROFILE)?.data ?? null);
@@ -3739,13 +3797,9 @@ async function openLocked(path: string, onDisposed: () => void): Promise<ChatSes
     const outline = special ? false : !isFanoutMember(read);
     // A link member's tools are fixed by its creation marker, read at every build (§mesh.links/tools).
     const linkTools = isLinkMember(read) ? "member" : "legacy";
-    // The memory minor mode's engine (§chat/memory), bound to the chat that hosts this runtime.
-    const memory = () => memoryExtension(() => (visHost.chat && !visHost.chat.disposed ? visHost.chat.memoryHost() : null));
     return {
-      loader: special
-        ? special.memory
-          ? { ...special.resourceLoaderOptions, extensionFactories: [...(special.resourceLoaderOptions.extensionFactories ?? []), memory()] }
-          : special.resourceLoaderOptions
+      loader: built
+        ? built.loader
         : {
             extensionFactories: [
               ...DEFAULT_EXTENSION_FACTORIES,
@@ -3770,7 +3824,7 @@ async function openLocked(path: string, onDisposed: () => void): Promise<ChatSes
       // Removals: the SDK's excludeTools, a filter on the registry itself, so no extension's
       // setActiveTools or re-registration brings a removed tool back.
       exclude: (present) => (profile.excluded = snap?.remove.length ? excludedTools(snap.remove, present) : []),
-      ...(special ? { tools: special.tools, ...(special.customTools ? { customTools: special.customTools } : {}) } : {}),
+      ...(built ? { tools: built.allow, ...(built.customTools.length ? { customTools: built.customTools } : {}) } : {}),
       // A session with no messages yet starts from the saved new-session defaults (web-defaults.ts):
       // the stored model ref is resolved against models with configured auth and the SDK clamps the
       // stored level to the model's ladder. Anything stale or unauthenticated is skipped, so a bad
@@ -3779,7 +3833,7 @@ async function openLocked(path: string, onDisposed: () => void): Promise<ChatSes
         if (read.branch().some((h) => h.kind === "user")) return null;
         const opening = openingChoices.get(path);
         openingChoices.delete(path);
-        const defaults = special ? { model: special.model ?? undefined, thinking: special.thinking ?? undefined } : { ...loadDefaults(), ...opening };
+        const defaults = spec ? { model: spec.model ?? undefined, thinking: spec.thinking ?? undefined } : { ...loadDefaults(), ...opening };
         return {
           // A stored default the user has since turned off is stale like any other: skipped here, so
           // the session opens on pi's own default rather than on a model it would refuse to send with.
@@ -3798,12 +3852,12 @@ async function openLocked(path: string, onDisposed: () => void): Promise<ChatSes
         // A special loadout hears its runs, and tells a message the user sent from every other by
         // the object it reaches the Agent as, from here: where its own watch was, so every listener
         // keeps its place in the order.
-        if (kind && special) {
-          if (special.background) markBackground(session.id);
+        if (special && built) {
+          if (special.spec.background) markBackground(session.id);
           hearRuns(session, path, runs, {
-            hook: kind.kind === "overseer" ? overseerRuntime : kind.entry,
-            replyText: !!kind.entry?.replyText,
-            ...(special.promptAtRunStart ? { prompt: special.promptAtRunStart } : {}),
+            port: special.port,
+            replyText: !!special.spec.replyText,
+            ...(built.promptAtRunStart ? { prompt: built.promptAtRunStart } : {}),
           });
         }
       },
@@ -3832,36 +3886,38 @@ async function openLocked(path: string, onDisposed: () => void): Promise<ChatSes
     chat.deferredAppends = file.deferred;
     // An ordinary chat's align launch record (a special loadout — the Overseer, a baton or project
     // overseer session — runs no align mode, so its file gets none and its hello says no flag).
-    if (!specialFor(file.read, path)) {
+    const kind = specialFor(file.read, path);
+    if (!kind) {
       chat.alignLaunch = launch;
       if (!launch.recorded) chat.deferredAppends.push(() => chat.recordAlignLaunch());
     }
     chat.profileState = profile;
     chat.userTurns = runs.turns;
     chat.runTag = runs.tag;
-    if (!specialFor(file.read, path)) chat.loadoutState = loadout;
-    const kind = specialFor(file.read, path);
+    if (!kind) chat.loadoutState = loadout;
     // The usage ledger (llm-inflight attribution.ts): this chat's calls are its own, an Overseer's or
     // a project overseer's as `overseer`. Registered here as well as by the extension at
     // session_start, since a special loadout may not load it.
     const usageSid = file.read.id;
-    if (kind?.kind === "overseer" || kind?.kind === "project-overseer") noteUsageSession(usageSid, { kind: "overseer" });
+    if (last.special?.spec.usage === "overseer") noteUsageSession(usageSid, { kind: "overseer" });
     unregisterUsage = registerUsageSession(usageSid, { kind: "main", ...(openCwd ? { cwd: openCwd } : {}), parent: null });
-    if (kind && kind.kind !== "overseer") {
-      chat.special = kind.kind;
-      chat.specialEntry = kind.entry;
-      await kind.entry?.opened?.(chat);
+    if (kind && last.special) {
+      chat.special = kind;
+      chat.specialSpec = last.special.spec;
+      chat.specialPort = last.special.port;
     }
-    if (kind?.kind === "overseer") {
-      chat.special = "overseer";
+    // A chat process's kind is opened by its server, once the open is answered (server/chat-host.ts).
+    const local = !presetSpecs.has(path);
+    if (kind && kind !== "overseer" && local) await localSpecials?.opened(kind, chat);
+    if (kind === "overseer" && last.special) {
       // A conversation that already has messages keeps the model its file records (the SDK restores
       // it); overseer.json is the Overseer's setting, so bring the runtime to it now. The appends
       // this makes are still deferred (the hold is live until `restoreAppends`), so opening writes
       // nothing, like any other open.
-      await syncOverseerModel(chat, path).catch((err) =>
+      await syncOverseerModel(chat, last.special.spec).catch((err) =>
         console.warn(`[overseer] model sync skipped: ${err instanceof Error ? err.message : String(err)}`),
       );
-      await overseerRuntime?.opened(chat);
+      if (local) await localSpecials?.opened(kind, chat);
     }
     held.set(path, chat);
     sessionsChanged(); // its row now carries `chat` (heldChatState)

@@ -485,6 +485,15 @@ async function t3() {
 }
 
 const codeMsgs = (s, from = 0) => s.got.slice(from).filter((m) => m.type === "code");
+/** Waits (up to 90 s: a replacement boots under whatever load the machine has) until the chat runs in a
+    new process on build b; between the old process's exit and the new record there is no pid. */
+async function waitReloaded(path, oldPid) {
+  for (let i = 0; i < 180; i++) {
+    const p = chatPid(path);
+    if (p && p !== oldPid && record(path)?.build === "trial-b") return;
+    await sleep(500);
+  }
+}
 async function t4() {
   await teardown();
   await boot({ build: "trial-a" });
@@ -525,10 +534,10 @@ async function t4() {
     await sleep(500);
   }
   R.check(mockLog(mock.log).some((e) => e.event === "done" && e.tag === "t4b") && turnAssistants(B.path, "[long 30 #t4b]").length === 1, "t4: B's reply ran to its end, never cut by a reload");
-  for (let i = 0; i < 60 && chatPid(B.path) === pidB; i++) await sleep(500);
+  await waitReloaded(B.path, pidB);
   const recB = record(B.path);
   R.check(chatPid(B.path) && chatPid(B.path) !== pidB && recB?.build === "trial-b", `t4: B (Reload now while busy) reloaded at its quiet moment (pid ${pidB} → ${chatPid(B.path)}, build ${recB?.build})`);
-  for (let i = 0; i < 60 && chatPid(C.path) === pidC; i++) await sleep(500);
+  await waitReloaded(C.path, pidC);
   R.check(chatPid(C.path) && chatPid(C.path) !== pidC && record(C.path)?.build === "trial-b", `t4: an idle unattended chat reloaded by itself (pid ${pidC} → ${chatPid(C.path)}, build ${record(C.path)?.build})`);
   // A: attached, so it waits for the dwell; Reload now reloads at once.
   R.check(chatPid(A.path) === pidA, "t4: A, attached, did not reload by itself");
@@ -536,7 +545,7 @@ async function t4() {
   a2.send({ type: "reload_code" });
   const reloaded = await a2.until((m) => m.type === "error" && m.code === "reloaded", 40000, "the reloaded notice", from).catch(() => null);
   R.check(reloaded, "t4: Reload now reloaded the chat (an error frame with code reloaded)");
-  for (let i = 0; i < 40 && chatPid(A.path) === pidA; i++) await sleep(500);
+  await waitReloaded(A.path, pidA);
   const a3 = await chat(c, A.path);
   await sleep(2000);
   R.check(chatPid(A.path) !== pidA && record(A.path)?.build === "trial-b", `t4: A runs a new process on build b (pid ${pidA} → ${chatPid(A.path)})`);

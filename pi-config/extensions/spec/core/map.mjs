@@ -1,12 +1,10 @@
-// Orientation: every area on one page (`map`), one namespace (`map ns`), or one area (`map §ns/name`);
-// `--titles` lists only each area's § id and heading title.
+// Orientation: every area on one page (`map`), one namespace (`map ns`), or one area (`map §ns/name`).
 // Node stdlib only; reads the parsed graph only and never writes.
 import { whatOf, titleOf, fingerprintOf, boundedRefusal, emit } from "./toc.mjs";
 import { lookArgs, idArg, openSpec, refuse, indexOf, depsOf, namespaceOf, labelsOf, labelText, isInterface, paged, pageFields,
   agreedCounts, agreedText, agreementOf, agreementText } from "./graph.mjs";
 
 const MAP_NOTICE = "Computed from declared records and claim text; counts are declarations, never proof. agreed records who made the decision and when, never that anyone read the current words.";
-const TITLES_NOTICE = "Each area's § id and heading title only; map without --titles adds what each area holds.";
 const HUBS = 10;
 
 // Counts by declared label over ids: {authority: {accepted: n}, evidence: {…}, unlabelled: n}.
@@ -124,38 +122,17 @@ export function renderMap(out) {
   return L.join("\n") + "\n";
 }
 
-// --titles: one line per area, its § id and heading title, nothing else.
-export function renderTitles(out) {
-  const L = [`map --titles${out.namespace ? ` ${out.namespace}` : ""}: ${out.counts.areas} area(s)`];
-  for (const e of out.lines) L.push(`${e.id} — ${e.title}`);
-  L.push(`listed ${out.lines.length} · not listed ${out.remaining}`);
-  if (out.next) L.push(`more: map --titles${out.arg ? ` '${out.arg}'` : ""} --cursor ${out.next}`);
-  L.push(`exit ${out.exit}`);
-  return L.join("\n") + "\n";
-}
-function titlesMain(o, raw, g, core) {
-  const ix = indexOf(g.ctx, core.parentOf);
-  if (raw !== undefined && !ix.areas.some((a) => namespaceOf(a) === raw)) return emit(boundedRefusal("map", o.budget, "unknown-namespace", { message: `no area in namespace ${raw}` }), o.json, renderTitles);
-  const list = ix.areas.filter((a) => raw === undefined || namespaceOf(a) === raw).map((a) => ({ id: a, title: titleOf(g.ctx.decls.get(a)) }));
-  const head = { tool: "sova-spec", command: "map", titles: true, budget: o.budget, ...(raw !== undefined ? { arg: raw, namespace: raw } : {}), counts: { areas: list.length } };
-  const fp = fingerprintOf({ root: g.root, spec: o.spec, head, list });
-  return paged({ command: "map", o, fp, list, render: renderTitles,
-    build: (lines, at, next) => ({ ...head, exit: at < list.length ? 1 : 0, ...pageFields(list, lines, at, next), notice: TITLES_NOTICE }) });
-}
-
 export function mapMain(argv, core) {
-  const o = lookArgs(argv, "map", { bools: ["--titles"], defaultBudget: 32768 });
+  const o = lookArgs(argv, "map", { defaultBudget: 32768 });
   const done = (out) => emit(out, o.json, renderMap);
   const budget = o.budget ?? 1024;
   if (o.help) return done({ tool: "sova-spec", command: "map", exit: 0, status: "done", budget,
-    help: "map [namespace | §ns/name] [--titles] [--json] [--budget BYTES] [--cursor TOKEN] [--root DIR] [--spec DIR]; default budget 32768, supported 1024..32768" });
+    help: "map [namespace | §ns/name] [--json] [--budget BYTES] [--cursor TOKEN] [--root DIR] [--spec DIR]; default budget 32768, supported 1024..32768" });
   if (o.usage || o.pos.length > 1) return done(boundedRefusal("map", budget, "usage", { message: o.usage ?? "map takes at most one namespace or §id" }));
   const raw = o.pos[0], id = raw?.startsWith("§") ? idArg(raw) : null;
   if (raw !== undefined && !id && !/^[a-z][a-z-]*$/.test(raw)) return done(boundedRefusal("map", budget, "usage", { message: `not a namespace or § identifier: ${raw}` }));
-  if (o.titles && id) return done(boundedRefusal("map", budget, "usage", { message: "map --titles takes a namespace, not a § identifier" }));
   const g = openSpec(o, core);
   if (g.refused) return done(refuse("map", budget, g));
-  if (o.titles) return titlesMain(o, raw, g, core);
   const ix = indexOf(g.ctx, core.parentOf), notes = [];
   if (id?.alias) notes.push({ code: "id-alias", message: `${id.alias} is not a § identifier; read as ${id.id}` });
   let r, areaId = null;

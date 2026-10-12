@@ -653,6 +653,12 @@ async function t7() {
   R.check(results.length === 1 && /outcome is unknown/.test(JSON.stringify(results[0])), `t7: the chat's tool result is the unknown-outcome text (${JSON.stringify(results[0]?.message?.content)?.slice(0, 160)})`);
   const runs = readLines(join(sova, "chats", "test-served.jsonl")).filter((e) => e.event === "start");
   R.check(runs.length === 1, `t7: the action ran once (${runs.length} starts)`);
+  // A new call from the adopted chat, after the restart: the new server serves its tools too.
+  const before = entries(path).filter((e) => e.message?.role === "toolResult").length;
+  prompt(s2, "[served-quick] again");
+  for (let i = 0; i < 40 && entries(path).filter((e) => e.message?.role === "toolResult").length === before; i++) await sleep(500);
+  const quick = entries(path).filter((e) => e.message?.role === "toolResult").slice(before);
+  R.check(quick.length === 1 && /SERVED-DONE/.test(JSON.stringify(quick[0])), `t7: an adopted chat's new server-hosted call runs on the new server (${JSON.stringify(quick[0]?.message?.content)?.slice(0, 120)})`);
   s2.close();
   // An undelivered call: the chat makes it while the server is down; it runs once the server is back.
   const late = await newChat();
@@ -667,7 +673,7 @@ async function t7() {
   const lateResult = entries(late.path).filter((e) => e.type === "message" && e.message?.role === "toolResult");
   R.check(lateResult.length === 1 && /SERVED-DONE/.test(JSON.stringify(lateResult[0])), `t7: a call made while the server was down ran once it came back (${JSON.stringify(lateResult[0]?.message?.content)?.slice(0, 120)})`);
   const all = readLines(join(sova, "chats", "test-served.jsonl"));
-  R.check(all.filter((e) => e.event === "start").length === 2 && all.filter((e) => e.event === "end").length === 1, `t7: the late call ran exactly once, to its end (${all.map((e) => e.event).join(", ")})`);
+  R.check(all.filter((e) => e.event === "start").length === 3 && all.filter((e) => e.event === "end").length === 2, `t7: the late call ran exactly once, to its end (${all.map((e) => e.event).join(", ")})`);
   await teardown();
   await boot();
 }

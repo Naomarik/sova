@@ -1,0 +1,9 @@
+// Run: pnpm test:int -- server/chat-runtime/trial-restart-more.integration.test.ts. al_3 stage 2 end to end, compaction and workers across a restart, the switch off (the harness:
+// scripts/chat-runtime-trial/trial-test.ts).
+import { trialSuite } from "../../scripts/chat-runtime-trial/trial-test";
+
+trialSuite("chat runtime stage 2: compaction and workers across a restart, the switch off", [
+  ["t1e", "T1e: a compaction across the restart completes and is written once"],
+  ["t1f", "T1f: a worker across the restart keeps its pid and reports once"],
+  ["t5", "T5: the switch off is today's behaviour"],
+]);

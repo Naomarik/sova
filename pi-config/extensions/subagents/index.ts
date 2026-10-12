@@ -3643,6 +3643,13 @@ export function registerSubagents(
 				for (const { dir, meta } of hosting.candidates()) {
 					if (shuttingDown) return;
 					if (agents.some((a) => a.id === meta.id && !isRestored(a))) continue;
+					if (meta.backend === CLAUDE_CODE_BACKEND) {
+						// A native Claude Code worker (it ran the CLI's own tools) has no runner any more: its
+						// host is stopped and archived, and its record lists it restored; a resume continues
+						// it on Sova's tools (claude-workers.ts).
+						hosting.retire(dir, meta);
+						continue;
+					}
 					const backend = meta.backend === "pi" ? undefined : backends.get(meta.backend);
 					if (meta.backend !== "pi" && !backend) continue; // Its extension is not loaded (yet); stays detached.
 					let prepared: Record<string, unknown> = {};

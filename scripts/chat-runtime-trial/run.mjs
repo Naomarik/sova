@@ -33,7 +33,7 @@
 // Writes <scratch>/results.json (every check, pass/fail, details) and keeps the server's and the
 // mock's logs beside it. Exit 0 when every check passed, 1 when one failed, 2 on a setup problem.
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -105,7 +105,21 @@ async function newChat(c, model = "trial/m1") {
 const prompt = (s, text) => s.send({ type: "prompt", text, clientId: `trial-${Date.now()}` });
 const settled = (s, from) => s.until((m) => m.type === "event" && m.event?.type === "run.settled", 180000, "run.settled", from);
 const has = (rows, text) => JSON.stringify(rows).includes(text);
-const unitOf = (path) => chatUnits(slice).find((u) => u.state === "active");
+/** The chat's unit, as the supervisor's registry record names it (<state root>/chats/registry/<chatId>.json
+    {chatId, sessionPath, unit, pid, startedAt, build}), when that unit is active. */
+const unitOf = (path) => {
+  const name = path.split("/").pop();
+  const dir = join(agent, "sova", "chats", "registry");
+  let recs = [];
+  try {
+    recs = readdirSync(dir).map((f) => JSON.parse(readFileSync(join(dir, f), "utf8")));
+  } catch {}
+  const rec = recs.find((r) => String(r.sessionPath ?? "").endsWith(name));
+  if (!rec?.unit) return null;
+  const unit = rec.unit.endsWith(".service") ? rec.unit : `${rec.unit}.service`;
+  const state = show(unit, "ActiveState");
+  return state === "active" ? { unit, pid: Number(show(unit, "MainPID")), state, cgroup: show(unit, "ControlGroup"), slice: show(unit, "Slice"), record: rec } : null;
+};
 /** The server's auto-resume decisions on this chat (overseer-actions.jsonl), oldest first. */
 const resumeAttempts = (path) => {
   const name = path.split("/").pop();
@@ -127,7 +141,7 @@ async function checkRestart(c) {
   prompt(s, "[long 40 #r1] write a long reply");
   await s.until((m) => m.type === "event" && m.event?.type === "part.delta" && /part 5\//.test(m.event.delta), 60000, "five parts streamed");
   const u1 = unitOf(path);
-  R.check(u1, "the chat runs as its own unit in the stand-in slice", JSON.stringify(chatUnits(slice)));
+  R.check(u1 && u1.slice === slice, `the chat runs as its own unit in the stand-in slice (${u1?.unit} in ${u1?.slice})`, JSON.stringify(chatUnits(slice)));
   if (u1) R.check(!u1.cgroup.startsWith(srv.cgroup()), `the chat's cgroup (${u1.cgroup}) is outside the server's (${srv.cgroup()})`);
   s.close();
   await restart();
@@ -237,7 +251,8 @@ async function checkIdle(c) {
   R.check(has(s2.hello.items, "ok"), "reopening shows the chat's history");
   prompt(s2, "say ok again");
   await settled(s2, 0);
-  R.check(unitOf(path), "a new turn runs in a new chat process");
+  const u2 = unitOf(path);
+  R.check(u2 && u2.pid !== u?.pid, `a new turn runs in a new chat process (pid ${u?.pid} → ${u2?.pid})`);
   s2.close();
 }
 

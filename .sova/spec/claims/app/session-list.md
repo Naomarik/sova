@@ -829,7 +829,8 @@ five minutes ago is three collapsed sections down — and it is the single most 
 for.
 
 Recent is a **shortcut, not a place a session lives.** Every row in it is still in Live & web or
-the Archive underneath (organization sessions are never eligible), exactly as a grouped session keeps its row in its region (§app.session-list/groups):
+the Archive underneath, or, for a coding session the operator started in a project, among that
+project's Sessions in the Projects region (§app.projects/list) (organization sessions are never eligible), exactly as a grouped session keeps its row in its region (§app.session-list/groups):
 nothing is moved, nothing is hidden, and closing the gap between two copies of one row is not
 something the user has to think about. It follows from that that Recent has **no actions of its
 own** — no drag target, no remove, no count control. Every gesture a row has, it has where it
@@ -861,6 +862,14 @@ or an organization session, in any state — live, busy, unread or just replied)
 for, and the pane rule files that under the Archive. Archiving is the user saying "done with
 this", so an archived session never reappears here; that is the one gesture Recent has to honour,
 or the archive gesture doesn't work.
+- **The operator's own coding sessions are eligible too.** A coding session the operator started in
+a standalone project (New Session in the project's folder, or the project's New Coding Session,
+§app.projects/folder-sessions: `SessionSummary.project` `{kind: "coding", operator: true}`, no `org`)
+is the operator's own thread, so Recent lists it under the same rules (not archived, not a profile
+session, by activity) while it stays listed among its project's Sessions. A build the project's
+overseer started on its own (`kind: "coding"` without `operator`) never is, nor is any session a
+server that sends no `operator` marks, nor an organization's. Live & web and the Archive are
+unchanged: such a session lives in its project's block, and Recent only says it once more.
 - **Order: most recently active first**, by `SessionSummary.lastActiveAt`. **That field is the
 session file's mtime** and the list carries no other activity signal, so it moves for anything that
 writes to the session — a reply, a tool result, an outline snapshot, a background subagent's turn.
@@ -1738,7 +1747,9 @@ for the same reason: something other than the operator runs them.
 - **Recent** (§app.session-list/recent), the spine's tiles, and the overview's `Last active` / `Resume`
   (§chat.transcript/landing-page) — enforced in Recent's own eligibility rule, so every caller gets it;
   these also leave out profile sessions (`SessionSummary.profile` set and not `neutral`), which
-  Profiles lists (§app.session-list/profile-shelf);
+  Profiles lists (§app.session-list/profile-shelf), and, of the sessions a project owns, add back
+  the one kind the operator started: a standalone project's coding session marked `operator`
+  (§app.session-list/recent), which stays in its project's block too;
 - **Live & web** and the **Archive** with its date sections, their counts and their spine doors
   (§app.session-list/regions-top-and-archive), and the overview's `{live} live` count;
 - the **Archive cleanup**: its counts, its sweeps and its one-session list (§app.session-list/archive-cleanup;

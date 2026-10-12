@@ -38,6 +38,8 @@ import {
   sessionHrefOn,
   effectiveHostFilter,
   passesHostFilter,
+  downPeerIds,
+  listedWhileDown,
   SELF_FILTER,
   meshRetryDelay,
   helloChange,
@@ -240,6 +242,18 @@ test("the host filter narrows to one host's sessions, this host's included", () 
   assert.equal(passesHostFilter("laptop", B), false);
   assert.equal(passesHostFilter(SELF_FILTER, B), true);
   assert.equal(passesHostFilter(SELF_FILTER, A), false);
+});
+
+test("a down peer's rows are listed nowhere unless the host filter names it; every other host's always are", () => {
+  const peers = [peer("laptop", "down"), peer("vps", "skewed"), peer("desk", "up"), peer("old", "refused")];
+  const down = downPeerIds(peers);
+  assert.deepEqual([...down], ["laptop"], "only a peer not answering is down: a skewed one answers");
+  assert.equal(listedWhileDown("laptop", null, down), false, "All hosts leaves it out");
+  assert.equal(listedWhileDown("laptop", SELF_FILTER, down), false);
+  assert.equal(listedWhileDown("laptop", "desk", down), false);
+  assert.equal(listedWhileDown("laptop", "laptop", down), true, "chosen in the host filter: its rows show");
+  for (const host of [null, "vps", "desk", "old"]) assert.equal(listedWhileDown(host, null, down), true, `${host} is listed`);
+  assert.equal(listedWhileDown("laptop", null, downPeerIds([peer("laptop", "up")])), true, "answering again: back everywhere");
 });
 
 test("GET /api/mesh is asked again only after a failure that may pass", () => {

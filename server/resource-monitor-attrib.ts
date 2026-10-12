@@ -120,6 +120,9 @@ export interface HostedInfo {
   /** The session's own chat process, when it runs in one (§app/chat-processes): it and everything
       it starts are the session's. */
   pid?: number;
+  /** A worker chat's process (its own chat process, with `pid`): it, everything it starts and its
+      session file are charged to its parent session and that worker, never to a session of its own. */
+  worker?: { parentPath: string; workerId: string };
 }
 
 /** Who a process is charged to. `session` absent with `worker` set: a worker no join tied to a
@@ -166,6 +169,13 @@ function indexHosted(hosted: readonly HostedInfo[]) {
   const byFile = new Map<string, Owner>();
   const byWorkerId = new Map<string, Owner[]>();
   for (const h of hosted) {
+    if (h.worker) {
+      const o = { session: h.worker.parentPath, worker: h.worker.workerId };
+      byFile.set(h.path, { ...o, via: "env" });
+      if (h.pid) byPid.set(h.pid, { ...o, via: "worker-pid" });
+      for (const id of h.providerIds) byClaude.set(id, { ...o, via: "session-id" });
+      continue;
+    }
     byFile.set(h.path, { session: h.path, via: "env" });
     if (h.pid) byPid.set(h.pid, { session: h.path, via: "descendant" });
     for (const id of h.providerIds) byClaude.set(id, { session: h.path, via: "session-id" });
@@ -257,7 +267,7 @@ export function attribute(input: AttribInput): Attribution {
   for (const pid of procs.keys()) if (pid !== serverPid) resolve(pid);
 
   // Orphans: sid memory, then cwd within exactly one hosted session's cwd (heuristic).
-  const cwds = input.hosted.filter((h) => h.cwd && h.cwd !== "/").map((h) => ({ cwd: h.cwd!, path: h.path }));
+  const cwds = input.hosted.filter((h) => !h.worker && h.cwd && h.cwd !== "/").map((h) => ({ cwd: h.cwd!, path: h.path }));
   for (const [pid, p] of procs) {
     if (pid === serverPid || owners.has(pid)) continue;
     const bySid = input.sids.lookup(p.stat, procs);

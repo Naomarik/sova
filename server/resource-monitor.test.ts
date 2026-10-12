@@ -11,7 +11,7 @@ const root = mkdtempSync(join(tmpdir(), "sova-monitor-"));
 process.env.PI_CODING_AGENT_DIR = join(root, "agent"); // before paths.ts computes its dirs
 after(() => rmSync(root, { recursive: true, force: true }));
 
-const { ResourceMonitor, decodeWorkerEvent, monitorExtension } = await import("./resource-monitor");
+const { ResourceMonitor, decodeWorkerEvent, monitorExtension, setRemoteHosted } = await import("./resource-monitor");
 type HostedInfo = import("./resource-monitor-attrib").HostedInfo;
 
 const BOOT = 1_790_000_000; // btime, seconds
@@ -268,6 +268,29 @@ describe("sampler over a fixture /proc", () => {
     await m.tick();
     const own = m.snapshot()!.sessions.find((x) => x.sessionPath === "/s/baton.jsonl")!.own[0]!;
     assert.deepEqual([own.pid, own.kind, own.via], [210, "claude-provider", "session-id"]);
+  });
+
+  test("a worker chat's process (its mirror names the worker) is its parent's worker row, never a session of its own", async () => {
+    const fx = fixture("worker-chat", [
+      { pid: SERVER, ppid: 1, argv: ["node"] },
+      { pid: 450, ppid: SERVER, argv: ["bun", "server/chat-runtime/main.ts"] },
+      { pid: 500, ppid: SERVER, argv: ["bun", "server/chat-runtime/main.ts"], utime: 10 }, // child placement
+      { pid: 501, ppid: 500, argv: ["zsh", "-c", "make"] },
+    ], { unit: false });
+    const m = new ResourceMonitor({ procRoot: fx.proc, logDir: join(root, "worker-chat-log"), serverPid: SERVER, eventLoop: false, platform: "linux" });
+    const facts = { workers: [], toolsRunning: 0, lastToolEnd: 0 };
+    setRemoteHosted("/s/a.jsonl", { sessionId: "sess-a", ...facts, workers: [{ id: "ag_09", name: "tester", status: "running" }], pid: 450 });
+    setRemoteHosted("/s/w.jsonl", { sessionId: "sess-w", ...facts, toolsRunning: 1, pid: 500, worker: { parentPath: "/s/a.jsonl", parentSessionId: "sess-a", workerId: "ag_09" } });
+    try {
+      await m.tick();
+      const s = m.snapshot()!;
+      assert.deepEqual(s.sessions.map((x) => x.sessionPath), ["/s/a.jsonl"]);
+      const w = s.sessions[0]!.workers[0]!;
+      assert.deepEqual([w.id, w.name, w.pid, w.via, w.procCount], ["ag_09", "tester", 500, "worker-pid", 2]);
+    } finally {
+      setRemoteHosted("/s/a.jsonl", null);
+      setRemoteHosted("/s/w.jsonl", null);
+    }
   });
 
   test("a .service cgroup the server merely inherited (started from a shell in the unit) is tree scope", () => {

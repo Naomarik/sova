@@ -1844,7 +1844,7 @@ async function t24() {
   feed.ws.on("message", (d) => {
     try {
       const m = JSON.parse(String(d));
-      if (m.type === "llm_local") seen.push({ at: Date.now(), count: m.local?.count, live: liveDump() });
+      if (m.type === "llm_local") seen.push({ at: Date.now(), count: m.local?.count, approximate: m.local?.approximate ?? 0, live: liveDump() });
     } catch {}
   });
   await feed.opened;
@@ -1855,13 +1855,26 @@ async function t24() {
   await waitFor(() => mockLog(mock.log).some((e) => e.tag === "t24w"), 60000);
   const from = feed.got.length;
   await sleep(6000);
-  const counts = feed.got.slice(from).filter((m) => m.type === "llm_local").map((m) => m.local?.count);
-  const last = feed.got.filter((m) => m.type === "llm_local").at(-1)?.local?.count;
+  // Exact calls only: a `claude -p` one-shot (the parent's topic outline, on the fake claude) is
+  // counted approximate, spawn to exit.
+  const exact = (m) => (m.local?.count ?? 0) - (m.local?.approximate ?? 0);
+  const counts = feed.got.slice(from).filter((m) => m.type === "llm_local").map(exact);
+  const last = exact(feed.got.filter((m) => m.type === "llm_local").at(-1));
   R.note(`t24: counts while the worker's call runs: ${counts.join(", ") || "(no change)"}; latest ${last}`);
-  R.check(last === 1 && counts.every((n) => n <= 1), `t24: the worker's one call is counted once (latest ${last}, max ${Math.max(0, ...counts)})`);
+  R.check(last === 1 && counts.every((n) => n <= 1), `t24: the worker's one call is counted once (exact calls: latest ${last}, max ${Math.max(0, ...counts)})`);
+  const oneShots = (() => {
+    try {
+      return readFileSync(join(scratch, "fake-claude-calls.log"), "utf8").split("\n").filter((l) => / -p( |$)/.test(l));
+    } catch {
+      return [];
+    }
+  })();
+  const status = await c.api("/api/settings/claude-status").catch((e) => ({ error: String(e.message ?? e) }));
+  R.check(/fake/i.test(status?.version ?? ""), `t24: the server's claude is the fake one (${JSON.stringify(status).slice(0, 160)})`);
+  R.note(`t24: claude one-shots that reached the fake claude so far: ${oneShots.length}${oneShots.length ? ` (${oneShots.at(-1).slice(0, 120)})` : ""}`);
   // What was asked of the model meanwhile, beside each count over one: who else had a call open.
   const asks = mockLog(mock.log).filter((e) => e.scenario && Date.parse(e.at) >= t0).map((e) => `${e.at.slice(11, 23)} pid ${e.pid} ${e.scenario}${e.tag ? ` #${e.tag}` : ""}${e.afterTool ? " (after a tool)" : ""}`);
-  R.note(`t24: counts over time (server ${srv.pid()}, parent ${chatPid(path)}): ${seen.map((x) => `${new Date(x.at).toISOString().slice(11, 23)}=${x.count}`).join(", ")}`);
+  R.note(`t24: counts over time (server ${srv.pid()}, parent ${chatPid(path)}): ${seen.map((x) => `${new Date(x.at).toISOString().slice(11, 23)}=${x.count}${x.approximate ? ` (${x.approximate} approximate)` : ""}`).join(", ")}`);
   for (const x of seen) R.note(`t24: live at ${new Date(x.at).toISOString().slice(11, 23)} (count ${x.count}): ${x.live.join(" | ") || "none"}`);
   R.note(`t24: model calls since the feed opened: ${asks.join("; ")}`);
   const done = await workerDone(s, "trial-t24w");

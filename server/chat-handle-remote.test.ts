@@ -127,15 +127,20 @@ test("a special chat's run events reach its kind once, in order, and are acknowl
     runEvent: (_path, e, n) => void heard.push([e.type, n]),
   });
   const { h, link } = handle({ special: "baton" });
+  const acks = () => link.sent.filter((f) => f.t === "run.ack");
   link.deliver({ t: "run", n: 1, event: { type: "run.start" } });
-  link.deliver({ t: "run", n: 2, event: { type: "run.settled" } });
-  link.deliver({ t: "run", n: 2, event: { type: "run.settled" } }); // told again (a resend): heard once
+  assert.deepEqual(acks(), [{ t: "run.ack", n: 1 }], "a fact is acknowledged at once");
+  link.deliver({ t: "run", n: 2, event: { type: "reply.text", text: "hi" } });
+  assert.equal(acks().length, 1, "a tick waits for the batch");
+  link.deliver({ t: "run", n: 3, event: { type: "run.settled" } });
+  link.deliver({ t: "run", n: 3, event: { type: "run.settled" } }); // told again (a resend): heard once
   assert.deepEqual(heard, [
     ["run.start", 1],
-    ["run.settled", 2],
+    ["reply.text", 2],
+    ["run.settled", 3],
   ]);
   await tick(250);
-  assert.deepEqual(link.sent.filter((f) => f.t === "run.ack"), [{ t: "run.ack", n: 2 }]);
+  assert.deepEqual(acks().at(-1), { t: "run.ack", n: 3 });
   h.bye();
 });
 

@@ -119,6 +119,27 @@ describe("attribute", () => {
     assert.deepEqual([...inTree].sort(), [200, 201, 202]);
   });
 
+  test("a worker chat's process (a unit, outside the server): it, its tools, its Claude CLI and its session file are its parent's worker", () => {
+    const workerChat = { path: "/s/w.jsonl", sessionId: "sess-w", cwd: "/work/a", workers: [], providerIds: [0, 1].map((n) => claudeSessionId("sess-w", n)),
+      toolInWindow: false, pid: 500, worker: { parentPath: "/s/a.jsonl", workerId: "ag_09" } } satisfies HostedInfo;
+    const procs = table(
+      proc(st(SERVER, 1), ["node", "server/index.ts"]),
+      proc(st(500, 1), ["bun", "server/chat-runtime/main.ts"]),
+      proc(st(501, 500), ["claude", "-p", "--session-id", claudeSessionId("sess-w", 1)]),
+      proc(st(502, 500), ["zsh", "-c", "make"]),
+      proc(st(600, 1, { sid: 600 }), ["bash"], { sessionFile: "/s/w.jsonl" }),
+      proc(st(700, 1, { sid: 700 }), ["make"], {}, "/work/a/sub"),
+    );
+    const { owners } = run(procs, [hostedA(), workerChat]);
+    const ag = { session: "/s/a.jsonl", worker: "ag_09" };
+    assert.deepEqual(owners.get(500), { ...ag, via: "worker-pid" });
+    assert.deepEqual(owners.get(501), { ...ag, via: "session-id" });
+    assert.deepEqual(owners.get(502), { ...ag, via: "descendant" });
+    assert.deepEqual(owners.get(600), { ...ag, via: "env" });
+    assert.ok(![...owners.values()].some((o) => o.session === "/s/w.jsonl"), "never a session of its own");
+    assert.deepEqual(owners.get(700), { session: "/s/a.jsonl", via: "cwd" }, "the cwd heuristic sees only the parent");
+  });
+
   test("claude uuids: a worker's --resume id, and a hosted session's provider via claudeSessionId(id, n)", () => {
     const provider = claudeSessionId("sess-a", 2);
     const procs = table(

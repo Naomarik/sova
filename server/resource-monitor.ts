@@ -70,21 +70,20 @@ export function hostedFacts(path: string): { title?: string; workers: WorkerInfo
 }
 
 /** The chats this server runs in processes of their own, as their mirrors report them (server/chat-host.ts). */
-const remoteHosted = new Map<string, { sessionId: string; cwd?: string; title?: string; workers: WorkerInfo[]; toolsRunning: number; lastToolEnd: number; pid: number }>();
-export function setRemoteHosted(
-  path: string,
-  entry: {
-    sessionId: string;
-    cwd?: string;
-    title?: string;
-    workers: WorkerInfo[];
-    toolsRunning: number;
-    lastToolEnd: number;
-    pid: number;
-    /** A worker chat's process (al_3 stage 4): whose worker it is. */
-    worker?: { parentPath: string; parentSessionId: string; workerId: string };
-  } | null,
-): void {
+interface RemoteHosted {
+  sessionId: string;
+  cwd?: string;
+  title?: string;
+  workers: WorkerInfo[];
+  toolsRunning: number;
+  lastToolEnd: number;
+  pid: number;
+  /** A worker chat's process (al_3 stage 4): whose worker it is. Charged to that parent and worker,
+      never a session of its own. */
+  worker?: { parentPath: string; parentSessionId: string; workerId: string };
+}
+const remoteHosted = new Map<string, RemoteHosted>();
+export function setRemoteHosted(path: string, entry: RemoteHosted | null): void {
   if (entry) remoteHosted.set(path, entry);
   else remoteHosted.delete(path);
 }
@@ -322,7 +321,9 @@ export class ResourceMonitor {
         if (hosted.has(path)) continue;
         out.push({
           path, sessionId: r.sessionId, ...(r.cwd ? { cwd: r.cwd } : {}), ...(r.title ? { title: r.title } : {}),
-          workers: r.workers, providerIds: providerIdsOf(r.sessionId), toolInWindow: r.toolsRunning > 0 || r.lastToolEnd >= this.prevAt, pid: r.pid,
+          workers: r.workers, providerIds: providerIdsOf(r.sessionId), pid: r.pid,
+          toolInWindow: !r.worker && (r.toolsRunning > 0 || r.lastToolEnd >= this.prevAt),
+          ...(r.worker ? { worker: { parentPath: r.worker.parentPath, workerId: r.worker.workerId } } : {}),
         });
       }
       for (const c of held?.() ?? []) {
@@ -758,7 +759,8 @@ export class ResourceMonitor {
     loopMs: { p50: number; p99: number; max: number };
   }): MonitorSnapshot {
     const { at, live, fold, owners, inTree, hostedNow, pct } = t;
-    const hostedBy = new Map(hostedNow.map((h) => [h.path, h]));
+    // A worker chat's entry is charged to its parent (attribution), never a session row of its own.
+    const hostedBy = new Map(hostedNow.filter((h) => !h.worker).map((h) => [h.path, h]));
     const procs: MonitorProc[] = [];
     let server: ProcState | undefined;
     let serverKidsPct = 0;

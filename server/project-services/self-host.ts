@@ -2,7 +2,7 @@ import { execFileSync, spawn } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { activityOf, readLiveRecords, WORKING_FRESH_MS, workerCountsOf } from "../live";
+import { activityOf, isOwnPid, readLiveRecords, WORKING_FRESH_MS, workerCountsOf } from "../live";
 import { LIVE_DIR } from "../paths";
 import { realExec, type Exec } from "./drivers";
 import { servicesRoot, stateHash } from "./store";
@@ -32,7 +32,7 @@ export function hostedBusy(now = Date.now()): string | null {
   let workers = 0;
   let turns = 0;
   for (const r of readLiveRecords({ includeOwn: true })) {
-    if (r.pid !== process.pid) continue;
+    if (!isOwnPid(r.pid)) continue;
     const beat = typeof r.rec?.heartbeat === "number" ? r.rec.heartbeat : 0;
     if (now - beat > WORKING_FRESH_MS) continue;
     if ((workerCountsOf(r.rec)?.working ?? 0) > 0) workers++;

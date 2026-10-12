@@ -12,7 +12,7 @@ process.env.PI_CODING_AGENT_DIR = agentDir; // before the modules below compute 
 const liveDir = join(agentDir, "sessions", "live");
 mkdirSync(liveDir, { recursive: true });
 
-const { readLiveRecords, readLive } = await import("./live");
+const { addOwnPid, isOwnPid, readLiveRecords, readLive, readOwnLiveRecords } = await import("./live");
 
 const record = (sessionFile: string, status: string, pid = process.ppid) => JSON.stringify({ session: { pid, sessionFile, status: "active" }, presence: { status }, heartbeat: Date.now() });
 
@@ -43,4 +43,20 @@ test("a malformed record is skipped until it changes; dead pids and our own pid 
   writeFileSync(join(liveDir, "p4-dead.json"), record(b, "idle", 2 ** 22 + 12345));
   assert.equal(readLiveRecords({ includeOwn: true }).length, 2, "a dead pid never counts");
   for (const f of ["p2-b.json", "p3-own.json", "p4-dead.json"]) rmSync(join(liveDir, f));
+});
+
+test("own records are those of every process hosting this server's chats, not only this one", () => {
+  const c = join(agentDir, "sessions", "c.jsonl");
+  // process.ppid stands in for a chat this server hosts in a process of its own: alive, not this pid.
+  writeFileSync(join(liveDir, "p5-c.json"), record(c, "idle"));
+  assert.equal(isOwnPid(process.pid), true, "this process always hosts");
+  assert.equal(isOwnPid(process.ppid), false);
+  assert.equal(readLive().get(c)?.status, "idle", "another process's record reads as another writer");
+  assert.equal(readOwnLiveRecords().has(c), false);
+  const remove = addOwnPid(process.ppid);
+  assert.equal(readLive().get(c), undefined, "a hosted chat's process is never an outside writer");
+  assert.equal(readOwnLiveRecords().get(c)?.pid, process.ppid, "its record is this server's own");
+  remove();
+  assert.equal(readLive().get(c)?.status, "idle", "gone from the set, it is a writer again");
+  rmSync(join(liveDir, "p5-c.json"));
 });

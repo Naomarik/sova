@@ -3030,15 +3030,8 @@
         "src/App.tsx",
         "src/lib/mesh.ts",
         "server/mesh/hello.ts",
-        "src/lib/socket.ts",
-        "server/app.ts",
-        "server/mesh/hello.test.ts",
-        "src/lib/mesh.test.ts"
-      ],
-      "agreed": {
-        "by": "naomarik",
-        "at": "2026-10-12T07:55Z"
-      }
+        "src/lib/socket.ts"
+      ]
     },
     "§mesh/front-door": {
       "kind": "surface",

@@ -600,6 +600,10 @@ export class ChatSupervisor {
 
   /** Report `rec`'s death once: written to its record and the deaths log first, the record removed once the report was delivered. */
   private async report(rec: ChatRecord, death: ChatDeath, logged = false): Promise<void> {
+    // A newer process of the same chat (a worker's crash resume) already took the id: this report is
+    // late, and neither its tracking nor its record is touched.
+    const now = this.chats.get(rec.chatId);
+    if (now && now.rec !== rec && now.rec.startedAt !== rec.startedAt) return this.log(`${rec.chatId}: a late death report of an earlier process, dropped`);
     this.write({ ...rec, death });
     if (!logged) {
       try {

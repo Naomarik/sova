@@ -43,8 +43,8 @@ Paths are relative to `pi-config/extensions/` unless they start with `.sova/` or
    - its `--doc-only` cases are the draft tool's own;
    - its word count is capped.
 3. **Find the tools.** The guide's `sh` line resolves `$core` to `<agent dir>/extensions/spec/core`, where
-   `pi-config/install.sh` links these tools. The agent runs only that trusted copy. A project's own
-   vendored copy under `.sova/spec/tools/` is foreign code, read before it is run.
+   `pi-config/install.sh` links these tools. The agent runs only that trusted copy. A copy inside a
+   project is foreign code, never run without asking; the installed extension is the only supported way to run the tools.
 4. **Census while working.** After each tool call (bash included), `CensusHook` compares `git status`.
    - Tools that cannot write are skipped by name (`CENSUS_SKIP_TOOLS`). A skipped call doesn't move the
      baseline.

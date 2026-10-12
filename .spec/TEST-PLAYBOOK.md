@@ -49,7 +49,7 @@ verdict's `reason`.
 | `pi-config/extensions/mode/spec-mode.md` | The discipline text. The mode injects it; Sova's `AGENTS.md` points at it |
 | `pi-config/extensions/mode/minor.ts`, `index.ts`, `prompt.ts`, `index.test.ts`, `tests/smoke.mjs` | The minor mode, its composition and tests |
 | `AGENTS.md` (section "Product documentation") | Sova's standing rule: follow `spec-mode.md` whether or not the mode is on; never turn a mode on |
-| `.sova/spec/{README.md,USAGE.md,manifest.json,.gitignore}`, `claims/`, `tools/` | Sova's own documentation and its vendored tools |
+| `.sova/spec/{README.md,USAGE.md,manifest.json,.gitignore}`, `claims/` | Sova's own documentation |
 
 The system in one paragraph each:
 
@@ -93,7 +93,7 @@ The system in one paragraph each:
 State observed while writing (2026-09-23), **for orientation only; never assert these numbers**:
 `check` on the candidate exits 1 with 23 claim files, 190 records (120 behavior, 52 note, 18 surface),
 all `migrated`/`unreviewed`, 21 `requires` edges on 8 records, 112 `requires-uninvestigated` warnings,
-0 code paths; the vendored `.sova/spec/tools/*.mjs` hashed equal to the canonical `core/*.mjs`. Rows
+0 code paths. Rows
 compute expectations from the files at run time.
 
 ## 2. Hard rules
@@ -384,7 +384,7 @@ guard snapshot and compare (`guard.mjs compare … --worktree "$CO"`, saved as
 
 | Wave | Who | Rows |
 |---|---|---|
-| W1 setup evidence | you | ISO-1..5 (from S2–S5 output), T-VENDOR |
+| W1 setup evidence | you | ISO-1..5 (from S2–S5 output) |
 | W2 existing suites | you or 1 mechanical worker | T-SPEC, T-MODE, T-SMOKE, T-SERVER |
 | W3 mechanical | mechanical workers, one category group each: CORE; DR-NEW..DR-EV; DR-PR..DR-MAL; RV + SEC; LIVE + PUB + CAN + REG + SEM | all M rows |
 | W4 offline CLI | 1 mechanical worker | MODE-1, 2, 3, 7, 9, 10, 12, 13, CAN-4, CAN-5 (C rows plus the two prefix/install M rows) |
@@ -730,7 +730,6 @@ prose is true of code.
 | T-MODE | The mode's unit tests pass (spec-mode.md byte identity, prefix resolution, named tools and flags, composition) | T | `node --test index.test.ts delegate.test.ts routing.test.ts align.test.ts` in `$CO/pi-config/extensions/mode` | Exit 0, `fail 0`; no writes in `$CO` |
 | T-SMOKE | The mode drives the real `index.ts` through pi's runtime: toggles, status, composition, session markers | T | `node tests/smoke.mjs` in `$CO/pi-config/extensions/mode` (it makes its own temp agent dir under `$TMPDIR`) | Exit 0, "mode smoke tests passed"; pi version recorded |
 | T-SERVER | Sova's server lists and accepts the spec minor mode | T | `server/mode-state.test.ts` via the checkout's `tsx`; needs `authorize.dependencyInstall` | Exit 0; else BLOCKED "dependencies not authorized" |
-| T-VENDOR | The vendored tools equal the canonical ones in the candidate | T | `sha256sum $CO/pi-config/extensions/spec/core/*.mjs $CO/.sova/spec/tools/*.mjs` | Each file name hashes the same in both places |
 
 ### 10.3 Read-only core (CORE)
 
@@ -888,11 +887,10 @@ Run each case against the draft tool (as evidence input and inside the spec tree
 | PUB-3 | Claims publish as Markdown only: every `*.md` under `claims/` outside the re-ignored `node_modules/`, `dist/`, `tmp/` and `.agent/` directories (topic-named ones such as `secrets.md` included) is publishable despite the root `*secret*`/`*credential*` rules, and nothing else under `claims/` is | M | Fixture Git repo (built with `fx`) holding `$CO/.gitignore` (the root file), `$CO/.sova/spec/{.gitignore,README.md,USAGE.md,manifest.json,claims,tools}`, plus a read-only copy of MAIN's `.git/info/exclude` as the fixture's `.git/info/exclude`. Add `claims/app/secrets.md` and `claims/secrets/topic.md` (expected trackable), and `claims/secrets/config.json`, `claims/credentials/config.txt`, `claims/app/.env`, `claims/node_modules/pkg/README.md` (expected ignored). Classify each exact path with plain `git check-ignore -q -- <path>` (exit 0 = ignored), then run `git add -n` over the README's documented `.sova/spec` paths | The two topic files are not ignored and appear in the `add -n` output; the other four are ignored and absent. Every current `claims/**/*.md` (the observer lists them from `$CO`), `manifest.json`, `README.md`, `USAGE.md`, `.gitignore` and `tools/*.mjs` appear in the `add -n` output. Never classify from `check-ignore -v` output or from its exit status over several paths: `-v` also prints the negation rule (`!/claims/**/*.md`) for paths that are trackable. The contract is Markdown only under `claims/`; support files live outside `claims/` or need an explicit policy review, so any non-`.md` file found under the current `claims/` is reported |
 | PUB-4 | Snapshot bytes stay local | M | In the PUB-1 repo, after a draft snapshot and a review packet exist: plain `git check-ignore -q -- <path>` on each exact file under `drafts/*/evidence/objects/` and `reviews/objects/` | Every one ignored |
 
-### 10.9 Canonical, vendored and standalone tools (CAN)
+### 10.9 Canonical and standalone tools (CAN)
 
 | ID | Claim | Tier | Scenario | Oracle |
 |---|---|---|---|---|
-| CAN-1 | The documented hash check detects a drifted vendored copy | M | Fixture copy of `tools/`; change one byte; run USAGE's `sha256sum` line against the copy and the candidate's `core/` | Mismatch visible for exactly that file |
 | CAN-2 | Draft and review tools run only their sibling core | M | Copy the draft tool alone into a dir (no sibling core) and run `check NAME` / `status NAME` on a fixture draft; copy the draft and review tools beside a fake `sova-spec.mjs` printing `{"tool":"x"}` and run `check NAME` and `prepare` | `core-contract` (or `core-unavailable`) exit 2 each time; no other core is ever run (a sentinel-writing `sova-spec.mjs` elsewhere on the path stays unrun) |
 | CAN-3 | The tools are standalone: Node builtins only, runnable from a copy outside any repo | M | Copy `$CO/pi-config/extensions/spec/core/` to a fixture dir; run `check`, a draft `new --write` and a review preview on a fixture from there | Works; closure (ISO-4) lists only `node:` specifiers |
 | CAN-4 | The spec directory is not a pi extension and does not disturb pi's loader | C | `$RUN/agent/extensions/spec` linked; run `pi --offline --no-approve --no-skills --no-prompt-templates --session-dir "$RUN/sessions" -e "$RUN/harness/capture-provider.ts" --model capture/capture-1 -p probe </dev/null` **with** extension discovery (no `--no-extensions`), env from `run.mjs` | No `index.ts`/`package.json` in the dir; pi exits 0; stderr has no load error |

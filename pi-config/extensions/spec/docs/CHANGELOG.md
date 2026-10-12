@@ -504,6 +504,17 @@ would list master's changes instead.
     worded unlike the spec, where a plausible wrong hit replaces the overview the area list gave. A
     titles-only area list (`map --titles`, read once per task beside `where`) was tried and dropped:
     −11 / 288 correct, 3 wrong (ad3a61e3, reverted in 9116abae).
+- **The installed extension is the only way to run the spec tools.**
+  - Commit: the one titled "spec: the installed extension is the only spec tools; remove Sova's stale
+    bundled copy", branch `feat/spec-single-source`; not on master yet: the merge round folds it in.
+  - Changed:
+    - bundled copies are no longer supported: agents run the tools only from the installed extension
+      (`$core`), and a copy inside a project is that project's code, read and never run without asking;
+      `README.md`, `docs/MODE.md` and the UPGRADING steps say so;
+    - Sova removed its own copy, `.sova/spec/tools/` (it lagged `core/`), with its hash check in
+      `.sova/spec/USAGE.md` and the playbook's T-VENDOR and CAN-1 rows.
+  - §: none.
+  - Upgrade: a project holding a copy of the tools deletes it and runs the installed extension.
 
 ## Integration → master
 
@@ -531,7 +542,9 @@ hashes are not on master; they are listed only to map old references.
 
 The tools are Node standard library only. Nothing is installed.
 
-1. **Copy every `core/*.mjs`.** Vendor them together. The entrypoints load sibling modules:
+1. **Install the extension.** Run `pi-config/install.sh`; agents run the tools from `$core`, never
+   from a copy inside the project. A project still holding a copy deletes it. The entrypoints load
+   sibling modules, all in `core/`:
 
    | Module | Role |
    |---|---|
@@ -544,9 +557,6 @@ The tools are Node standard library only. Nothing is installed.
    | `sova-spec-review.mjs` | The review companion |
    | `sova-spec-assess.mjs` | The assessment companion |
 
-   Copying only the entrypoints breaks the core at the first `toc`, `read` or `map`. A project that
-   vendors under `.sova/spec/tools/` keeps the copies byte-identical to `core/` and treats them as
-   foreign code until hashed.
 2. **Set up the merge drivers, once per clone.** Add these two lines to `.gitattributes`:
 
    ```

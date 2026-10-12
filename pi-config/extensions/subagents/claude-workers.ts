@@ -104,6 +104,8 @@ export function continuationTools(tools: readonly string[] | undefined): string[
 		const mapped = CLAUDE_TOOL_NAMES[name] ?? (CLAUDE_WORKER_TOOLS.includes(name) ? name : undefined);
 		if (mapped && !out.includes(mapped)) out.push(mapped);
 	}
+	// Tools were recorded but none maps: keep read, which the handoff needs to open the old transcript.
+	if (tools.length > 0 && out.length === 0) out.push("read");
 	return out;
 }
 

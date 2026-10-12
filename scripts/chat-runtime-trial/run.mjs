@@ -1033,8 +1033,11 @@ async function t12c() {
   await sleep(6000);
   const ended = batonRows(o, sid, "reply/ended", t0);
   R.check(ended.length === 1, `t12c: one reply/ended (${ended.length})`);
+  // A take-back during a reply is held (pending-move, stop-reply) and delivered again once the reply
+  // ended (envelope sova/pending): one row that moved the baton to the operator, at most one held.
   const takes = orgLog(o).filter((r) => /take-back/.test(r.event) && String(r.session ?? "").includes(sid) && r.at >= t0 && !r.refused);
-  R.check(takes.length === 1, `t12c: one take-back row in the org log (${takes.map((r) => r.event).join(", ")})`);
+  const moved = takes.filter((r) => (r.after ?? []).includes("with-operator") && !(r.before ?? []).includes("with-operator"));
+  R.check(moved.length === 1 && takes.length - moved.length <= 1, `t12c: one take-back moved the baton, at most one held before it (${takes.map((r) => `${r.event}${r.envelope?.["sova/pending"] ? " (pending)" : ""}`).join(", ")})`);
   const all = entries(path).filter((e) => JSON.stringify(e).includes('"question":"(taken back)"')).length;
   R.check(all === 1, `t12c: exactly one "(taken back)" entry (${all})`);
   const stopped = turnAssistants(path, "[long 40 #b12c]");
@@ -1191,8 +1194,9 @@ async function t12d() {
   R.check(res.length === 1 && /Handed to Bob/.test(JSON.stringify(res[0])), `t12d: one hand_to result, handed to Bob (${resultText(res[0])})`);
   const moves = orgLog(o).filter((r) => /hand-to/.test(r.event) && String(r.session ?? "").includes(sid) && r.at >= t0 && !r.refused);
   R.check(moves.length === 1, `t12d: one hand-to row in the org log (${moves.map((r) => r.event).join(", ")})`);
-  const handoffs = entries(path).filter((e) => e.customType === "sova-baton-handoff");
-  R.check(handoffs.length === 1, `t12d: one hand-off entry (${handoffs.length})`);
+  // The baton's start wrote one hand-off (operator → Dana) before: count this move's, to Bob.
+  const handoffs = entries(path).filter((e) => e.customType === "sova-baton-handoff" && e.data?.to === bobId);
+  R.check(handoffs.length === 1, `t12d: one hand-off entry to Bob (${handoffs.length})`);
   R.check(batonRows(o, sid, "reply/writing", t0).length === 1, `t12d: one reply/writing (${batonRows(o, sid, "reply/writing", t0).length})`);
   R.check(batonRows(o, sid, "reply/ended", t0).length === 1, `t12d: one reply/ended (${batonRows(o, sid, "reply/ended", t0).length})`);
 }

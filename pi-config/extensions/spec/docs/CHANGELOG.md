@@ -460,6 +460,10 @@ would list master's changes instead.
     e4449e4a; computed together with lane B2 above.
   - Numbers: 25-§ fixture, line 432 → 290 characters; all 25 § still listed by the command.
 
+### 2026-10-12
+
+- **Spec mode finds roots with a word search first (M2b).** `feat/spec-where-first`: step 1 is `where` with 3–5 of the task's words, one retry with other words, then `map`; §tools.spec/mode-reading reworded. Numbers (blind-graded, 36 questions × 2 reps, GLM 5.3 high and DeepSeek Flash 4.1 low): median tokens per run −27% to −37% in all four sets; correct 265 / 288 against 270 / 288, wrong 2 against 1; a titles-only area list was tried and dropped (−11 / 288, 3 wrong).
+
 ## Integration → master
 
 The integration merges after 96ab3014 and the master commits that re-applied them. The integration

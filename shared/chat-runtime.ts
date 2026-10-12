@@ -172,8 +172,12 @@ export interface ServerToolCall {
 }
 
 /** How a server-hosted tool's run ended, server → chat. A server that stopped while the tool ran
-    answers no outcome at all; the chat says "outcome unknown" (al_3 q5, stage 3). */
-export type ServerToolOutcome<R = unknown> = { ok: true; result: R } | { ok: false; error: { message: string } };
+    answers no outcome at all; the chat's own side then says so (`unknown`, al_3 q5) and never
+    sends the call again. */
+export type ServerToolOutcome<R = unknown> =
+  | { ok: true; result: R }
+  | { ok: false; error: { message: string } }
+  | { ok: false; unknown: true; error: { message: string } };
 
 /** A lifecycle event of a chat, numbered per runtime. Delivery is at least once: a consumer that
     reconnects asks for the events `since` the last seq it saw, and acts idempotently. */

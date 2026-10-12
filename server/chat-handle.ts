@@ -6,6 +6,8 @@
 // process: a call runs the chat's method at once (its guards run at the moment of the call, exactly
 // as a direct call did) and its answer comes back as a reply.
 import { AsyncLocalStorage } from "node:async_hooks";
+import { appendFileSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import type {
   ChatCall,
@@ -25,7 +27,8 @@ import type {
   ServerToolDecl,
   ServerToolOutcome,
 } from "../shared/chat-runtime";
-import type { StateKind, ToolCtx, ToolResult, ToolSpec } from "../shared/harness";
+import type { ChatAskMethod, ServerToolCtxWire } from "../shared/chat-runtime-wire";
+import type { HookCtx, StateKind, ToolCtx, ToolResult, ToolSpec } from "../shared/harness";
 import type { ChatClientMessage, HeldChatState } from "../shared/protocol";
 import {
   acquireChat,
@@ -38,10 +41,14 @@ import {
   type SpecialLoadout as ChatSpecialLoadout,
   chatEventsSince,
   ConfigError,
+  disposeHeldChat,
   drainQueueThenAbort,
   emitChatEvent,
   heldChat,
   heldChats,
+  linksFor,
+  onLinksNotified,
+  singletonFor,
   ModeRefusedError,
   onChatEvent,
   RefusedError,
@@ -54,12 +61,22 @@ import {
 import { type CallCtx, failureReply, refusalOf, runMethod } from "./chat-runtime/methods";
 import { LiveMirror } from "./chat-runtime/mirror";
 import type { LoadoutEntryData } from "./session-loadout";
+import { branchOf, readPi, strictBranchTo } from "./harness/pi/reader";
+import { stateView } from "./harness/state-view";
+import { playbookHost } from "./playbook-host";
+import { projectEngine } from "./project-services/routes";
+import { sessionInstanceNote, sessionVerbsTool } from "./project-services/tools";
+import { stateRoot } from "./state-root";
+import { queuePushTool } from "./topics";
 
 export { BusyError, ConfigError, ModeRefusedError, RefusedError, onChatEvent, chatEventsSince };
 export type { ChatClient };
 export {
   activeConfigFailure,
   assertNotLive,
+  currentLinkOrigin,
+  openKindOf,
+  takeOpeningChoice,
   busyRefusal,
   cwdOverride,
   disposeAllChats,
@@ -89,45 +106,25 @@ export function errorOfRefusal(r: ChatRefusal): Error {
 
 const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
-/** One held chat, as the server talks to it. */
-export class ChatHandle {
+/** One held chat, as the server talks to it: in this process (LocalChatHandle) or in a process of
+    its own (RemoteChatHandle, server/chat-handle-remote.ts, §app/chat-processes). The typed commands
+    are the same for both; each is one `call`. */
+export abstract class ChatHandle {
+  /** Where the chat runs: this server's process, or a chat process of its own. */
+  abstract readonly where: "server" | "process";
   /** What the server may read without asking (see ChatStateMirror). */
-  readonly mirror: ChatStateMirror;
-  private readonly ctx: CallCtx = { turns: new Map() };
-  private calls = 0;
-
-  constructor(private readonly chat: ChatSession) {
-    this.mirror = new LiveMirror(chat);
-  }
-
-  get chatId(): ChatId {
-    return this.chat.path;
-  }
+  abstract readonly mirror: ChatStateMirror;
+  abstract readonly chatId: ChatId;
   /** The session file this chat hosts (its id, today). */
-  get path(): string {
-    return this.chat.path;
-  }
-  get closed(): boolean {
-    return this.chat.disposed;
-  }
-
-  /**
-   * One command: its result, or its refusal thrown as the error class it names. It runs at once:
-   * whatever the method does before its first await happens inside this call, as it did when callers
-   * called the chat directly. In one process the caller gets the very error the chat threw (its
-   * class, its fields; failureReply is what crosses a socket), and the answer takes no turn of the
-   * event loop of its own beyond the promise's: the order callers rely on against the chat's own
-   * events (a settle, a statechart's next effect) was built on direct calls.
-   */
-  call<M extends ChatMethod>(method: M, args: ChatMethods[M]["args"]): Promise<ChatMethods[M]["result"]> {
-    const call: ChatCall<M> = { id: `c${++this.calls}`, epoch: EPOCH, chatId: this.chat.path, method, args };
-    try {
-      const out = runMethod(this.chat, call, this.ctx);
-      return out instanceof Promise ? out : Promise.resolve(out);
-    } catch (err) {
-      return Promise.reject(err);
-    }
-  }
+  abstract readonly path: string;
+  abstract readonly closed: boolean;
+  /** One command: its result, or its refusal thrown as the error class it names. */
+  abstract call<M extends ChatMethod>(method: M, args: ChatMethods[M]["args"]): Promise<ChatMethods[M]["result"]>;
+  /** A browser joins: it gets the chat's hello and state, then everything the chat sends. */
+  abstract attach(client: ChatClient): void;
+  /** A message from that browser. */
+  abstract clientMessage(client: ChatClient, msg: ChatClientMessage): void;
+  abstract detach(client: ChatClient): void;
 
   // ---- the commands, typed ------------------------------------------------------------------------
 
@@ -261,14 +258,57 @@ export class ChatHandle {
   workerInfo(id: string) {
     return this.call("workerInfo", { id });
   }
+  /** The chat's next run is a resume: cut off again, it is not resumed a second time. */
+  markResuming(): Promise<null> {
+    return this.call("markResuming", {});
+  }
+}
 
-  // ---- browser frames -------------------------------------------------------------------------------
+/** A chat in this server's process: a call runs the chat's method at once. */
+export class LocalChatHandle extends ChatHandle {
+  readonly where = "server" as const;
+  /** What the server may read without asking (see ChatStateMirror). */
+  readonly mirror: ChatStateMirror;
+  private readonly ctx: CallCtx = { turns: new Map() };
+  private calls = 0;
 
-  /** A browser joins: it gets the chat's hello and state, then everything the chat sends. */
+  constructor(private readonly chat: ChatSession) {
+    super();
+    this.mirror = new LiveMirror(chat);
+  }
+
+  get chatId(): ChatId {
+    return this.chat.path;
+  }
+  /** The session file this chat hosts (its id, today). */
+  get path(): string {
+    return this.chat.path;
+  }
+  get closed(): boolean {
+    return this.chat.disposed;
+  }
+
+  /**
+   * One command: its result, or its refusal thrown as the error class it names. It runs at once:
+   * whatever the method does before its first await happens inside this call, as it did when callers
+   * called the chat directly. In one process the caller gets the very error the chat threw (its
+   * class, its fields; failureReply is what crosses a socket), and the answer takes no turn of the
+   * event loop of its own beyond the promise's: the order callers rely on against the chat's own
+   * events (a settle, a statechart's next effect) was built on direct calls.
+   */
+  call<M extends ChatMethod>(method: M, args: ChatMethods[M]["args"]): Promise<ChatMethods[M]["result"]> {
+    const call: ChatCall<M> = { id: `c${++this.calls}`, epoch: EPOCH, chatId: this.chat.path, method, args };
+    try {
+      const out = runMethod(this.chat, call, this.ctx);
+      return out instanceof Promise ? out : Promise.resolve(out);
+    } catch (err) {
+      return Promise.reject(err);
+    }
+  }
+
   attach(client: ChatClient): void {
     this.chat.attach(client);
   }
-  /** A message from that browser. */
   clientMessage(client: ChatClient, msg: ChatClientMessage): void {
     this.chat.handle(client, msg);
   }
@@ -281,7 +321,7 @@ export class ChatHandle {
 const handles = new WeakMap<ChatSession, ChatHandle>();
 const handleOf = (chat: ChatSession): ChatHandle => {
   let h = handles.get(chat);
-  if (!h) handles.set(chat, (h = new ChatHandle(chat)));
+  if (!h) handles.set(chat, (h = new LocalChatHandle(chat)));
   return h;
 };
 
@@ -308,24 +348,55 @@ export type { SessionMarks, SpecialKind, SpecialLoadoutResult } from "./chat-man
  * `force`, when another process may be writing it; ConfigError when it can't be opened at all.
  */
 export async function acquireChatHandle(path: string, force = false): Promise<ChatHandle> {
+  if (router) {
+    // A chat a previous server left running is taken back before anything decides where it runs.
+    await router.ready();
+    if (!heldChat(path)) {
+      const remote = await router.acquire(path, force);
+      if (remote) return remote;
+    }
+  }
   return handleOf(await acquireChat(path, force));
 }
 
 /** The open chat for a session file (already through resolveSessionPath), or undefined. */
 export const chatHandle = (path: string): ChatHandle | undefined => {
   const chat = heldChat(path);
-  return chat ? handleOf(chat) : undefined;
+  return chat ? handleOf(chat) : router?.get(path);
 };
 
-/** Every chat this server holds open. */
-export const chatHandles = (): ChatHandle[] => heldChats().map(handleOf);
+/** Every chat this server holds open, here or in processes of their own. */
+export const chatHandles = (): ChatHandle[] => [...heldChats().map(handleOf), ...(router?.all() ?? [])];
+
+/**
+ * Where chats run besides this process (server/chat-host.ts, §app/chat-processes): installed at start
+ * when ordinary chats run in processes of their own. Unset, every chat runs here.
+ */
+export interface ChatRouter {
+  /** Resolves once the chats a previous server left running are taken back (bounded). */
+  ready(): Promise<void>;
+  /** The chat of this path in a process of its own, if one is open. */
+  get(path: string): ChatHandle | undefined;
+  all(): ChatHandle[];
+  /** The chat in a process of its own (taken back, or started), or null: open it in this process. */
+  acquire(path: string, force: boolean): Promise<ChatHandle | null>;
+  /** Close it for good (archive): its panes are told to reconnect. False: none open there. */
+  close(path: string, message: string): Promise<boolean>;
+}
+let router: ChatRouter | null = null;
+export function setChatRouter(r: ChatRouter | null): void {
+  router = r;
+}
 
 /** The open chat of a session id, or undefined. */
 export const chatHandleById = (sessionId: string): ChatHandle | undefined => chatHandles().find((h) => h.mirror.sessionId === sessionId);
 
 /** Close a held chat for good (archive/close): every open tab is told to reconnect, and the session
     reopens on demand. A running turn is aborted and its workers die with it. False: none held. */
-export { disposeHeldChat as closeChat } from "./chat-manager";
+export async function closeChat(path: string, message: string): Promise<boolean> {
+  if (await disposeHeldChat(path, message)) return true;
+  return router ? router.close(path, message) : false;
+}
 
 /** SessionSummary.busy: this server holds the chat and a run is in progress. */
 export function isSessionBusy(path: string): boolean {
@@ -433,3 +504,75 @@ const port: ServerToolPort = {
     return spec?.prepareArguments ? spec.prepareArguments(args) : args;
   },
 };
+
+// ---- a chat in a process of its own: what the server answers it (§app.chat-processes/server-actions) --
+
+/** The ToolCtx of a call a chat process made: its session file read up to the leaf it named. */
+export async function fileHookCtx(path: string, w: Partial<ServerToolCtxWire> & { sessionId: string }): Promise<HookCtx> {
+  const file = await readPi(path);
+  const branch = strictBranchTo(file, w.leafId ?? null) ?? branchOf(file.entries);
+  const state = stateView(branch);
+  return {
+    sessionId: w.sessionId,
+    cwd: w.cwd ?? file.header?.cwd ?? "",
+    leafId: () => w.leafId ?? null,
+    branch: () => branch,
+    state: () => state,
+    key: path,
+    title: () => w.title ?? undefined,
+  };
+}
+
+/** The server-hosted tools of an ordinary chat in a process of its own, hosted here: their
+    declarations go to the chat in its `open`, in loadout order. `title`: the chat's name now. */
+export function servedToolsFor(chatId: ChatId, sessionId: string, title: () => string): ServerToolDecl[] {
+  const specs: ToolSpec[] = [sessionVerbsTool(() => projectEngine()), queuePushTool({ sessionId: () => sessionId, title })];
+  if (process.env.SOVA_CHAT_TEST_SERVED === "1") specs.push(trialServedSleep());
+  serveTools(chatId, specs);
+  return specs.map(declOf);
+}
+
+/** Test only (SOVA_CHAT_TEST_SERVED=1, the chat-runtime trial): a served tool that sleeps `ms` and logs
+    each run's start and end, so a trial can tell a run that happened once from one run twice. */
+function trialServedSleep(): ToolSpec {
+  const log = (event: string, effectId: string | undefined) => {
+    mkdirSync(join(stateRoot(), "chats"), { recursive: true });
+    appendFileSync(join(stateRoot(), "chats", "test-served.jsonl"), `${JSON.stringify({ event, effectId, at: Date.now() })}\n`);
+  };
+  return {
+    name: "trial_served_sleep",
+    label: "Trial served sleep",
+    description: "Test only: sleeps for ms milliseconds on the server.",
+    parameters: { type: "object", properties: { ms: { type: "number" } }, required: ["ms"] },
+    async execute(_id, params: { ms?: number }, signal) {
+      const effectId = serverToolCall()?.call.effectId;
+      log("start", effectId);
+      await new Promise<void>((done) => {
+        const t = setTimeout(done, Math.max(0, Number(params?.ms) || 0));
+        signal?.addEventListener("abort", () => (clearTimeout(t), done()), { once: true });
+      });
+      log("end", effectId);
+      return { content: [{ type: "text", text: "SERVED-DONE" }], details: null };
+    },
+  };
+}
+
+/** One ask of a chat process, answered from this server's own sources. */
+export async function answerChatAsk(path: string, method: ChatAskMethod, args: unknown): Promise<unknown> {
+  const a = (args ?? {}) as Record<string, any>;
+  switch (method) {
+    case "project.note":
+      return sessionInstanceNote(() => projectEngine(), await fileHookCtx(path, { sessionId: a.sessionId, cwd: a.cwd, leafId: a.leafId ?? null }));
+    case "playbook.bundleFor":
+      return playbookHost.bundleFor(a.sessionId, a.hint);
+    case "playbook.reprime":
+      return playbookHost.reprime(await fileHookCtx(path, { sessionId: a.sessionId, leafId: a.leafId ?? null }));
+    case "links":
+      return linksFor(a.sessionId, a.path ?? path);
+    case "singleton":
+      return singletonFor(a.key, a.path ?? path);
+  }
+  throw new Error(`Unknown ask: ${String(method)}`);
+}
+
+export { emitChatEvent, onLinksNotified };

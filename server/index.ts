@@ -37,6 +37,7 @@ import { startSharedUsageHelper, stopSharedUsageHelper } from "./usage-helper/cl
 import { cachedTitleOf, getSessionSummary, lastReplyOf, listSessions, onSessionArchived, onSummaryLineChanged } from "./sessions-index";
 import { startScheduleKeeper } from "./schedule-routes";
 import { attachWebSockets, upgradeSovaSocket, upgradeSovaStreamSocket } from "./ws";
+import { detachChatHost, startChatHost } from "./chat-host";
 import { meshApi, startMesh, stopMesh } from "./mesh";
 import { captureBootBuild } from "./mesh/build-id";
 import { meshLinks } from "./mesh/links";
@@ -155,6 +156,9 @@ server.on("error", (err) => {
   console.error("[server] listen failed:", err.message);
   process.exit(1);
 });
+// Where ordinary chats run, and the chats a previous server left running taken back: a browser's
+// connect waits for that (bounded) rather than open a chat its process still holds (§app/chat-processes).
+startChatHost();
 attachWebSockets(server);
 
 // The previous server's stop mark: the workers its stop ended are no errors (server/server-stop.ts).
@@ -283,7 +287,11 @@ async function shutdown() {
   markShutdown();
   // The aborts below settle every run: the ledger keeps them as cut off (§app.overseer/auto-resume).
   runLedger.freeze();
-  const aborts = chatHandles().filter((chat) => chat.mirror.running).map((chat) => chat.abort().catch(() => {}));
+  // Only chats in this process: a chat in a process of its own runs on, its reply included
+  // (§app.chat-processes/survives-restart), and never enters the ledger.
+  const aborts = chatHandles().filter((chat) => chat.where === "server" && chat.mirror.running).map((chat) => chat.abort().catch(() => {}));
+  // Each chat process is told goodbye and let go of, never stopped.
+  detachChatHost();
   usagePoller.stop();
   // A plateau's held-back last reading is written, so the next start knows how long it lasted.
   try {
@@ -308,7 +316,8 @@ async function shutdown() {
   } catch (err) {
     console.warn(`[server] visit flush failed: ${err instanceof Error ? err.message : String(err)}`);
   }
-  // After the runtimes' last writes: whatever changed in a workspace repo since its last commit.
+  // After the runtimes' last writes: whatever changed in a workspace repo since its last commit. A chat
+  // in its own process may still be writing: the commit takes what is there, the next one the rest.
   await closeAllOrgHosts().catch(() => {});
   await Promise.race([flushWorkspaces(attachedWorkspaces(), "shutdown").catch(() => []), new Promise((r) => setTimeout(r, 10_000))]);
   process.exit(0);

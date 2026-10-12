@@ -25,6 +25,7 @@ import type {
   WorkerFeedFrame,
   WorkerKind,
   WorkerSpec,
+  WorkerState,
 } from "./chat-runtime";
 import type { LlmProcessSnapshot } from "../pi-config/extensions/llm-inflight/tracker";
 import type { HEntry } from "./harness-history";
@@ -36,8 +37,8 @@ import type { ChatClientMessage, SessionInsight, SessionSummary, TranscriptItem 
     chats only.
     3 (al_3 stage 4): worker chats (`open.worker`, the `feed` and `feedSince`), a parent chat's worker
     host over its link (`wk*`), the mirror's `worker` and `llm`. A proto-2 peer refuses `open.worker`
-    ("needs protocol 3") and runs its own workers as before. Spoken once the runtime serves them. */
-export const CHAT_WIRE_PROTO = 2;
+    ("needs protocol 3") and runs its own workers as before. */
+export const CHAT_WIRE_PROTO = 3;
 export const CHAT_WIRE_MIN_PROTO = 1;
 /** A frame above this is a protocol error: the link closes. */
 export const FRAME_MAX_BYTES = 64 * 1024 * 1024;
@@ -183,8 +184,9 @@ export interface ChatRuntimeMirror extends ChatStateMirror {
   claude: "none" | "idle" | "busy";
   /** What the server's resource monitor shows for the chat. */
   monitor: { title?: string; workers: ChatMonitorWorker[]; toolsRunning: number; lastToolEnd: number };
-  /** A worker chat (proto 3): whose and what, so a server that takes the process back knows it. */
-  worker?: { parentSessionId: string; workerId: string; kind: WorkerKind };
+  /** A worker chat (proto 3): whose and what, so a server that takes the process back knows it; its
+      feed's process id (WorkerCursor.proc) and how its last run settled. */
+  worker?: { parentSessionId: string; workerId: string; kind: WorkerKind; proc: string; lastSettled: WorkerState["lastSettled"] };
   /** This process's model-call counts (proto 3), counted into the server's in-flight view. */
   llm?: LlmProcessSnapshot;
 }

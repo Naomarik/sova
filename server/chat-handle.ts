@@ -100,6 +100,7 @@ export {
   setLinksSource,
   setOpeningChoice,
   setSingletonCheck,
+  setWorkerHostSource,
   warmChatRuntime,
 } from "./chat-manager";
 

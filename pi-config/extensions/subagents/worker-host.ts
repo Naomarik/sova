@@ -139,5 +139,8 @@ export const WORKER_FEED_EVENTS = [
 	"extension_error",
 ] as const;
 
+/** pi's built-in tools: a worker's `builtins` list keeps those it names and excludes the rest. */
+export const BUILTIN_TOOLS: readonly string[] = ["read", "bash", "powershell", "edit", "write", "grep", "find", "ls"];
+
 /** What a worker start or a team tool answers where no Sova server hosts the session (the pi TUI). */
 export const NO_WORKER_HOST = "needs Sova's chat runtime";

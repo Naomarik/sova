@@ -53,6 +53,8 @@ export interface OpenFlags {
   review?: boolean;
   alignVisuals?: boolean;
   link?: { origin: string; token: string; tools: "member" | "legacy" };
+  /** A worker chat's own extension flags (`--name value` on an RPC worker's argv), set last. */
+  extra?: Record<string, string | true>;
 }
 
 /** The flags as pi's extension flag values, in the order they have always been set. */
@@ -67,6 +69,7 @@ export function extensionFlagValues(f: OpenFlags): Map<string, boolean | string>
     flags.set("sova-link-token", f.link.token);
     flags.set("sova-link-tools", f.link.tools);
   }
+  for (const [name, value] of Object.entries(f.extra ?? {})) flags.set(name, value);
   return flags;
 }
 
@@ -140,7 +143,8 @@ async function servicesForCwd(cwd: string, modelRuntime: ModelRuntime, flags: ()
   const services = await createAgentSessionServices({
     cwd,
     modelRuntime,
-    extensionFlagValues: resourceLoaderOptions.noExtensions ? new Map() : extensionFlagValues(flags()),
+    // A loader that loads no extension reads no flag; a worker's loads only its own sources, which do.
+    extensionFlagValues: resourceLoaderOptions.noExtensions && !resourceLoaderOptions.additionalExtensionPaths?.length ? new Map() : extensionFlagValues(flags()),
     resourceLoaderOptions,
   });
   lowerToolCommands(services.settingsManager);

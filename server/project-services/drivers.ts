@@ -1,5 +1,6 @@
 import { execFile, execFileSync, spawn } from "node:child_process";
 import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
+import { setPriority } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { hostProcTable, procfsTable, unitMembers, type ProcTable } from "./proctable";
 import { logsDir, procsDir } from "./store";
@@ -16,6 +17,8 @@ export interface UnitSpec {
   argv: string[];
   cwd: string;
   env: Record<string, string>;
+  /** The niceness its processes start at (a worker chat's), else the caller's. */
+  nice?: number;
 }
 
 export type UnitState = "active" | "activating" | "inactive" | "failed" | "missing";
@@ -128,6 +131,7 @@ export function systemdRunArgv(spec: UnitSpec, once?: { timeoutSec: number }, un
     a.push("--property=KillMode=mixed", `--property=TimeoutStopSec=${unitOpts.timeoutStopSec ?? 15}`);
     if (unitOpts.restart !== false) a.push("--property=Restart=on-failure", "--property=RestartSec=2");
   }
+  if (spec.nice) a.push(`--property=Nice=${spec.nice}`);
   if (unitOpts.envFile) a.push(`--property=EnvironmentFile=${unitOpts.envFile(spec.unit)}`);
   else for (const k of Object.keys(spec.env).sort()) a.push(`--setenv=${k}=${spec.env[k]}`);
   const [cmd, ...args] = spec.argv;
@@ -538,6 +542,14 @@ export class DetachedDriver implements Driver {
       child.once("spawn", () => {
         closeSync(fd);
         const pid = child.pid!;
+        // Lowered before it starts anything of its own (what it forks inherits the niceness).
+        if (spec.nice) {
+          try {
+            setPriority(pid, spec.nice);
+          } catch {
+            // not permitted: it runs at the caller's priority
+          }
+        }
         const rec: ProcRecord = { pid, start: this.table.startOf(pid) ?? "", clock: this.table.kind, argv: spec.argv, cwd: spec.cwd, env: spec.env, at: new Date().toISOString() };
         this.exits.delete(spec.unit);
         this.signals.delete(spec.unit);

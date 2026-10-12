@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { runLedger } from "./auto-resume";
 import { closeSync, existsSync, openSync, readSync } from "node:fs";
-import type { ChatDialogInfo, ChatLifecycleEvent, ChatRunEvent, ChatSpecialKind, RunStartAnswer, ServerToolCall, ServerToolDecl, ServerToolOutcome, SpecialSpec } from "../shared/chat-runtime";
+import type { ChatDialogInfo, ChatLifecycleEvent, ChatRunEvent, ChatSpecialKind, RunStartAnswer, ServerToolCall, ServerToolDecl, ServerToolOutcome, SpecialSpec, WorkerHost, WorkerSpec } from "../shared/chat-runtime";
+import { BUILTIN_TOOLS as WORKER_BUILTIN_TOOLS, WORKER_HOST_DISCOVER_EVENT, WORKER_HOST_EVENT, type WorkerHostAnnouncement } from "../pi-config/extensions/subagents/worker-host.ts";
 import { prepareOwnerArea } from "../shared/decisions";
 import { LOGIN_UNCHANGED } from "../shared/protocol";
 import { type BatonSentData, OPERATOR } from "../shared/baton";
@@ -34,14 +35,14 @@ import { stateView } from "./harness/state-view";
 import { LiveTail } from "./chat-runtime/live-tail";
 import { takeWriterLock, type WriterLock, WriterLockHeld } from "./chat-runtime/writer-lock";
 import { extensionFlagValues, getModelRuntime, openPiSession, type OpenFlags, type OpenRead, type PiBuild, type PiModelRuntime, warmClaudeCodeProvider as warmPiProvider } from "./harness/pi/open";
-import type { PiLoaderOptions, PiToolDefinition } from "./harness/pi/extension-types";
+import type { PiExtensionAPI, PiLoaderOptions, PiToolDefinition } from "./harness/pi/extension-types";
 import { PiChatHost } from "./harness/pi/host";
 import { contextOfBranch } from "./harness/pi/usage";
 import { extensionEntries } from "./harness/pi/state";
 import { isAlreadyProcessing } from "./harness/pi/session";
 import { isCompactionInProgress } from "./harness/pi/history-ops";
 import { ALIGN_LAUNCH, type AlignLaunchData, BATON_SENT, FANOUT_MEMBER, LINK_MEMBER, LOADOUT, MEMORY, MODE, OVERSEER, OVERSEER_DIALOG_ANSWER, OVERSEER_SENT, PROFILE, SESSION_SENT, SUBAGENT_PROFILE, TOPIC_DELIVERED, stateKindOf } from "./harness/state-kinds";
-import { piPrepare, toPiTool } from "./harness/pi/tools";
+import { piPrepare, toolCtx, toPiTool } from "./harness/pi/tools";
 import { forgetSpecial, specialLoadout, specialWriter } from "./chat-special";
 import { cutTail, type HistoryPart, pullFields } from "./tail-hello";
 import { isOverseerId } from "./overseer-store";
@@ -622,6 +623,69 @@ export function setSpecialPort(path: string, port: SpecialPort | null): void {
 }
 /** The spec a chat process was given for this path, if any. */
 export const specialSpecOf = (path: string): SpecialSpec | undefined => presetSpecs.get(path);
+
+/** Worker loadouts given before an open (a worker chat's process: from the server's `open`), by path. */
+const presetWorkers = new Map<string, WorkerSpec>();
+export function setWorkerSpec(path: string, spec: WorkerSpec | null): void {
+  if (spec) presetWorkers.set(path, spec);
+  else presetWorkers.delete(path);
+}
+/** The worker loadout a chat process was given for this path, if any. */
+export const workerSpecOf = (path: string): WorkerSpec | undefined => presetWorkers.get(path);
+
+/**
+ * Where a parent chat's workers are started (§app.chat-processes/workers): the server's worker
+ * registry for a chat in its process, the chat process's link to its server for one in a process of
+ * its own. Bound per session; null where neither is installed (no worker host is announced).
+ */
+let workerHostSource: ((parent: { sessionId: string; path: string }) => WorkerHost) | null = null;
+export function setWorkerHostSource(source: ((parent: { sessionId: string; path: string }) => WorkerHost) | null): void {
+  workerHostSource = source;
+}
+
+/**
+ * The inline extension that announces the session's worker host on its bus (WORKER_HOST_EVENT, again
+ * on each discover), bound to the session it runs: the subagents extension and the hidden chats start
+ * every worker through it.
+ */
+function workerHostExtension(pi: PiExtensionAPI): void {
+  let announcement: WorkerHostAnnouncement | null = null;
+  const announce = () => {
+    if (announcement) pi.events?.emit(WORKER_HOST_EVENT, announcement);
+  };
+  pi.events?.on(WORKER_HOST_DISCOVER_EVENT, announce);
+  pi.on("session_start", (_event, ctx) => {
+    const c = toolCtx(ctx);
+    const host = c.key && workerHostSource ? workerHostSource({ sessionId: c.sessionId, path: c.key }) : null;
+    announcement = host ? { version: 1, host } : null;
+    announce();
+  });
+}
+
+/**
+ * One build of a worker chat (design §2.3): its own extensions only, in its order, discovery off; its
+ * flags; the built-ins outside its list excluded (extension tools never filtered); its appended
+ * prompt; its model and thinking as a fresh session takes them. Nothing of an ordinary chat.
+ */
+function workerBuild(w: WorkerSpec): PiBuild {
+  return {
+    loader: {
+      noExtensions: true,
+      additionalExtensionPaths: [...w.extensions],
+      extensionFactories: [],
+      ...(w.appendSystemPrompt ? { appendSystemPrompt: [w.appendSystemPrompt] } : {}),
+    },
+    flags: () => ({ extra: w.flags }),
+    exclude: () => (w.builtins === null ? [] : WORKER_BUILTIN_TOOLS.filter((t) => !w.builtins!.includes(t))),
+    // Its project's local files are trusted (`--approve`): the SDK's services trust them for every chat.
+    opening: () => ({
+      ...(w.model ? { model: w.model } : {}),
+      ...(w.thinking ? { thinking: w.thinking } : {}),
+      fresh: { model: !!w.model, thinking: !!w.thinking },
+    }),
+    forkCacheRouting: false,
+  };
+}
 /** The server's word on the composer of a special chat in this process (`push special`). */
 export function setSpecialComposerClosed(path: string, text: string | null): void {
   const spec = presetSpecs.get(path);
@@ -877,6 +941,8 @@ class ChatSession {
   special: SpecialKind | null = null;
   /** A special chat's loadout (the last build's) and the port to its kind. */
   specialSpec: SpecialSpec | null = null;
+  /** A worker chat's loadout (§app.chat-processes/workers), else null. */
+  workerSpec: WorkerSpec | null = null;
   specialPort: SpecialPort | null = null;
   /** Composer messages a kind attributes (`@clientSend`), one at a time, in order. */
   private clientSends: Promise<void> = Promise.resolve();
@@ -3745,7 +3811,10 @@ async function openLocked(path: string, onDisposed: () => void): Promise<ChatSes
   const runs: RunHearing = { turns: null, tag: {} };
   /** The last build's special loadout, if this chat is a special kind's. */
   const last: { special: { spec: SpecialSpec; port: SpecialPort } | null } = { special: null };
+  const worker = presetWorkers.get(path) ?? null;
   const build = async ({ cwd, read }: { cwd: string; read: OpenRead }): Promise<PiBuild> => {
+    // A worker chat (§app.chat-processes/workers) is its loadout and nothing else.
+    if (worker) return workerBuild(worker);
     if (!launch.recorded) {
       const now = alignLaunchOf(read.state);
       if (now.recorded || launch.data === null) Object.assign(launch, now);
@@ -3805,6 +3874,8 @@ async function openLocked(path: string, onDisposed: () => void): Promise<ChatSes
         : {
             extensionFactories: [
               ...DEFAULT_EXTENSION_FACTORIES,
+              // Its workers' and hidden chats' host (§app.chat-processes/workers).
+              { name: "sova-worker-host", factory: workerHostExtension },
               visCheckExtension(() => (visHost.chat && !visHost.chat.disposed ? visHost.chat.visCheckHost() : null)),
               // The memory minor mode's engine (§chat/memory): idle until memory is turned on.
               memory(),
@@ -3887,6 +3958,25 @@ async function openLocked(path: string, onDisposed: () => void): Promise<ChatSes
     }
     visHost.chat = chat;
     chat.deferredAppends = file.deferred;
+    if (worker) {
+      chat.workerSpec = worker;
+      // Its calls are its parent's worker's in the usage ledger (the extension's env attribution, gone).
+      unregisterUsage = registerUsageSession(file.read.id, {
+        kind: "worker",
+        ...(openCwd ? { cwd: openCwd } : {}),
+        parent: worker.parent.sessionId,
+        worker: worker.parent.workerId,
+      });
+      try {
+        await bringWorkerModel(chat, worker);
+      } catch (err) {
+        await chat.dispose();
+        throw err;
+      }
+      held.set(path, chat);
+      sessionsChanged();
+      return chat;
+    }
     // An ordinary chat's align launch record (a special loadout — the Overseer, a baton or project
     // overseer session — runs no align mode, so its file gets none and its hello says no flag).
     const kind = specialFor(file.read, path);
@@ -3931,6 +4021,24 @@ async function openLocked(path: string, onDisposed: () => void): Promise<ChatSes
   } finally {
     file.restoreAppends();
   }
+}
+
+/**
+ * A worker's model when the open could not take it (a `claude-code-cli` id the catalog lacks: its
+ * provider registers it at session_start, after the build), and its thinking again on that model, set
+ * before any task is sent; a model that can't be set fails the start, never running on another.
+ */
+async function bringWorkerModel(chat: ChatSession, w: WorkerSpec): Promise<void> {
+  if (!w.model || chat.harness.model()?.ref === w.model) return;
+  try {
+    await chat.setModelRef(w.model);
+  } catch (err) {
+    const provider = w.model.slice(0, w.model.indexOf("/"));
+    throw new Error(
+      `Model ${w.model} could not be set on the worker (${err instanceof Error ? err.message : String(err)}); the task was not started. The ${provider} provider must be registered in the worker (the claude-code extension with --claude-code-provider).`,
+    );
+  }
+  if (w.thinking) chat.setThinking(w.thinking);
 }
 
 /**

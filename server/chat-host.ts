@@ -30,11 +30,12 @@ import {
   adoptSpecial,
   servedToolsFor,
   setChatRouter,
+  setWorkerHostSource,
   specialHostOf,
   specialSpecFor,
   takeOpeningChoice,
 } from "./chat-handle";
-import type { ChatSpecialKind, SpecialSpec } from "../shared/chat-runtime";
+import type { ChatSpecialKind, SpecialSpec, WorkerSpec } from "../shared/chat-runtime";
 import { type HeldRequests, holdRequests, RemoteChatHandle, type RemoteHooks } from "./chat-handle-remote";
 import { awaitFrame, connectLink, type Link } from "./chat-runtime/link";
 import { takeInflight } from "./chat-runtime/inflight";
@@ -47,11 +48,18 @@ import {
   ChatSupervisor,
   chatDriver,
   chatEnv,
+  childDriver,
+  childrenRoot,
+  childUnitPrefix,
   chooseChatHost,
   nextEpoch,
   supervisorConfig,
 } from "./chat-runtime/supervisor";
 import { holderAlive, readLock, releaseLockOf } from "./chat-runtime/writer-lock";
+import { chatBun, NO_BUN } from "./chat-runtime/bun";
+import { WORKER_PROTO } from "./chat-runtime/worker-port";
+import { type Placement, type WorkerProcesses, type WorkerRecord, WorkerRegistry } from "./chat-workers";
+import { readWorkerNice } from "./process-priority";
 import type { Driver } from "./project-services/drivers";
 import { addOwnPid } from "./live";
 import { bootBuildChecked } from "./mesh/build-id";
@@ -59,7 +67,7 @@ import { meshLinks } from "./mesh/links";
 import { resumeCrashedChat } from "./overseer";
 import { setRemoteHosted } from "./resource-monitor";
 import { getSessionSummary } from "./sessions-index";
-import { agentRoot } from "./state-root";
+import { agentRoot, stateRoot } from "./state-root";
 import { markOwned, recentForeignWriteAgeSec } from "./write-guard";
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -109,10 +117,22 @@ export interface RouterDeps {
   out?: () => boolean;
   /** Where the supervisor keeps its records and sockets, and its units' prefix. */
   supervisor?: Pick<SupervisorDeps, "registryDir" | "deathsFile" | "socketPath" | "unitPrefix">;
+  /** The same for workers placed as the server's children (their driver, records and prefix). */
+  children?: Pick<SupervisorDeps, "registryDir" | "deathsFile" | "socketPath" | "unitPrefix"> & { driver?: Driver };
+  /** Where the worker registry keeps its records. */
+  workersDir?: () => string;
 }
 
 export class ChatHostRouter {
   private readonly remotes = new Map<string, RemoteChatHandle>();
+  /** Worker chats' session files: their handles are the registry's, never a browser's chat. */
+  private readonly workerPaths = new Set<string>();
+  /** Where each worker chat's process runs (which supervisor has it), by chat id. */
+  private readonly placed = new Map<string, Placement>();
+  /** Every worker, team member and hidden chat (§app.chat-processes/workers). */
+  readonly workers: WorkerRegistry;
+  /** Workers placed as this server's own detached children. */
+  private readonly childSup: ChatSupervisor;
   /** Session id (the supervisor's chat id) → session file. */
   private readonly paths = new Map<string, string>();
   private readonly starting = new Map<string, Promise<ChatHandle | null>>();
@@ -134,26 +154,44 @@ export class ChatHostRouter {
     this.connect = deps.connect ?? connectLink;
     this.out = deps.out ?? (() => host.mode === "out");
     this.settings = { ...DEFAULT_RUNTIME_SETTINGS, idleStopMin: cfg.idleMs / 60_000 };
-    this.sup = new ChatSupervisor({
-      driver: deps.driver ?? chatDriver(cfg),
-      ...deps.supervisor,
+    // A worker chat's process gets its loadout's environment and agent dir, the server's state root
+    // for its bookkeeping, Bun however the server runs, and the worker niceness.
+    const launch: SupervisorDeps["launch"] = (c) => {
+      const w = this.workers?.record(c.chatId);
+      const bun = w ? (chatBun() ?? process.execPath) : process.execPath;
+      return {
+        argv: [bun, join(REPO, "server", "chat-runtime", "main.ts")],
+        env: chatEnv({
+          serverEnv: process.env,
+          bun,
+          claude: claudePath(),
+          home: homedir(),
+          agentDir: w?.spec.agentDir ?? agentRoot(),
+          extra: {
+            ...w?.spec.env,
+            ...(w?.spec.agentDir ? { SOVA_CHAT_STATE_ROOT: stateRoot() } : {}),
+            SOVA_CHAT_SOCK: c.sock,
+            SOVA_CHAT_PATH: c.sessionPath,
+            SOVA_CHAT_ID: c.chatId,
+            SOVA_CHAT_UNIT: c.unit,
+            SOVA_CHAT_BUILD: build,
+          },
+        }),
+        build,
+        ...(w?.spec.lowered ? { nice: readWorkerNice() } : {}),
+      };
+    };
+    const common = {
       epoch,
       idleMs: cfg.idleMs,
       claudeIdleMax: cfg.claudeIdleMax,
-      launch: (c) => ({
-        argv: [process.execPath, join(REPO, "server", "chat-runtime", "main.ts")],
-        env: chatEnv({
-          serverEnv: process.env,
-          bun: process.execPath,
-          claude: claudePath(),
-          home: homedir(),
-          agentDir: agentRoot(),
-          extra: { SOVA_CHAT_SOCK: c.sock, SOVA_CHAT_PATH: c.sessionPath, SOVA_CHAT_ID: c.chatId, SOVA_CHAT_UNIT: c.unit, SOVA_CHAT_BUILD: build },
-        }),
-        build,
-      }),
-      onDeath: (d) => this.died(d),
-      onBootFailed: (id, d) => {
+      launch,
+      onDeath: (d: ChatDeath) => this.died(d),
+      onBootFailed: (id: string, d: ChatDeath) => {
+        if (this.workers.has(id)) {
+          log(`worker chat ${id}: its process did not start (${d.detail ?? d.cause})`);
+          return;
+        }
         log(`${id}: did not start (${d.detail ?? d.cause}); it runs in the server until it restarts`);
         this.inprocOnly.add(d.sessionPath);
         this.forget(d.sessionPath);
@@ -164,12 +202,29 @@ export class ChatHostRouter {
       },
       drain: (id, reason) => this.handleOf(id)?.drain(reason) ?? Promise.resolve({ ok: false }),
       reapClaude: (id) => this.handleOf(id)?.releaseIdleModelChild() ?? Promise.resolve("none" as const),
-      lockHeld: (path) => {
+      lockHeld: (path: string) => {
         const l = readLock(path);
         return !!l && holderAlive(l);
       },
       ownPid: addOwnPid,
+    } satisfies Omit<SupervisorDeps, "driver">;
+    // The units' supervisor first: it takes over the pids claimed at start (claimRecordedChats).
+    this.sup = new ChatSupervisor({ ...common, driver: deps.driver ?? chatDriver(cfg), ...deps.supervisor });
+    const { driver: childDrv, ...childDeps } = deps.children ?? {};
+    this.childSup = new ChatSupervisor({
+      ...common,
+      driver: childDrv ?? childDriver(),
+      registryDir: () => join(childrenRoot(), "registry"),
+      deathsFile: () => join(childrenRoot(), "deaths.jsonl"),
+      unitPrefix: childUnitPrefix(),
+      ...childDeps,
     });
+    const procs: WorkerProcesses = {
+      start: (rec, prefer) => this.startWorker(rec, prefer),
+      stop: (rec) => this.stopWorker(rec),
+      placement: () => (this.out() ? "unit" : "child"),
+    };
+    this.workers = new WorkerRegistry(procs, deps.workersDir ? { dir: deps.workersDir } : {});
     this.rollout = new Rollout<Link>({
       supervisor: this.sup,
       waitReady: linkWaitReady({ epoch, build, settings: this.settings }),
@@ -177,13 +232,20 @@ export class ChatHostRouter {
       open: async (id, rep, link) => {
         if (!link) throw new Error("no link to the replacement");
         const before = this.remotes.get(rep.sessionPath);
-        const mirror = await this.openOn(link, rep.sessionPath, id, false, before ? kindOfMirror(before.mirror) : null);
+        const mirror = await this.openOn(link, rep.sessionPath, id, false, before ? kindOfMirror(before.mirror) : null, undefined, this.workers.record(id)?.spec);
         const h = this.remotes.get(rep.sessionPath);
         if (h) h.repoint(link, { unit: rep.unit, pid: rep.pid ?? 0 }, mirror);
         else this.adoptHandle(rep, link, mirror);
       },
       setCode: (id, state, detail) => this.handleOf(id)?.pushCode(state, detail),
-      onReloadOpenFailed: (_id, path, reason) => {
+      onReloadOpenFailed: (id, path, reason) => {
+        if (this.workers.has(id)) {
+          // A worker never runs in the server: it waits, and its next instruction starts it again.
+          log(`worker chat ${path}: ${reason}`);
+          this.forget(path);
+          this.workers.onExit(id, "closed");
+          return;
+        }
         log(`${path}: ${reason}; it runs in the server until it restarts`);
         this.inprocOnly.add(path);
         this.forget(path);
@@ -203,26 +265,57 @@ export class ChatHostRouter {
   private forget(path: string): void {
     const h = this.remotes.get(path);
     h?.endPanes("Reconnecting. Your draft is kept.", "reloaded");
-    if (h) this.paths.delete(h.mirror.sessionId);
+    if (h) {
+      this.paths.delete(h.mirror.sessionId);
+      this.workers.parentUnlinked(h);
+    }
     this.remotes.delete(path);
     setRemoteHosted(path, null);
+  }
+
+  /** The supervisor that runs chat `chatId`'s process: the children's for a worker placed so. */
+  private supOf(chatId: string): ChatSupervisor {
+    return this.placed.get(chatId) === "child" ? this.childSup : this.sup;
   }
 
   private readonly hooks: RemoteHooks = {
     state: (h) => {
       const m = h.mirror;
-      this.sup.noteIdle(m.sessionId, m.quiet.quiet && m.quiet.clients === 0, m.quiet.since);
-      this.sup.noteClaude(m.sessionId, m.claude);
-      setRemoteHosted(h.path, { sessionId: m.sessionId, cwd: m.cwd, ...(m.monitor.title ? { title: m.monitor.title } : {}), workers: m.monitor.workers, toolsRunning: m.monitor.toolsRunning, lastToolEnd: m.monitor.lastToolEnd, pid: h.at.pid });
+      const sup = this.supOf(m.sessionId);
+      sup.noteIdle(m.sessionId, m.quiet.quiet && m.quiet.clients === 0, m.quiet.since);
+      sup.noteClaude(m.sessionId, m.claude);
+      const w = this.workerPaths.has(h.path) ? this.workers.record(m.sessionId) : undefined;
+      setRemoteHosted(h.path, {
+        sessionId: m.sessionId,
+        cwd: m.cwd,
+        ...(m.monitor.title ? { title: m.monitor.title } : {}),
+        workers: m.monitor.workers,
+        toolsRunning: m.monitor.toolsRunning,
+        lastToolEnd: m.monitor.lastToolEnd,
+        pid: h.at.pid,
+        ...(w ? { worker: { parentPath: w.parent.path, parentSessionId: w.parent.sessionId, workerId: w.parent.workerId } } : {}),
+      });
+      if (w) this.workers.onState(h);
     },
     exit: (h, cause) => {
-      this.sup.expectExit(h.mirror.sessionId, cause);
+      const id = h.mirror.sessionId;
+      this.supOf(id).expectExit(id, cause);
       // A reload's replacement takes the handle over (rollout's open); anything else is done.
       if (cause !== "reload") this.forget(h.path);
+      if (this.workers.has(id)) this.workers.onExit(id, cause);
     },
-    linkEnd: (h, end) => void this.linkEnded(h, end),
-    reload: (h, auto) => void this.rollout.request(h.mirror.sessionId, { auto }).catch((err) => log(`reload of ${h.path} failed: ${err instanceof Error ? err.message : String(err)}`)),
+    linkEnd: (h, end) => {
+      this.workers.parentUnlinked(h);
+      void this.linkEnded(h, end);
+    },
+    reload: (h, auto) => {
+      // A worker placed as this server's child ends with it: it never reloads on its own.
+      if (this.placed.get(h.mirror.sessionId) === "child") return;
+      void this.rollout.request(h.mirror.sessionId, { auto }).catch((err) => log(`reload of ${h.path} failed: ${err instanceof Error ? err.message : String(err)}`));
+    },
     linkLive: (id) => meshLinks.inLiveLink(id),
+    feed: (h, f) => this.workers.onFeed(h, f),
+    worker: (h, f) => this.workers.serve(h, f),
   };
 
   /** A link ended without the chat saying it exits: reconnect while its unit is up, else it is the
@@ -235,11 +328,12 @@ export class ChatHostRouter {
       return;
     }
     const id = h.mirror.sessionId;
+    const sup = this.supOf(id);
     const until = Date.now() + 30_000;
     while (Date.now() < until && this.remotes.get(h.path) === h) {
-      const state = await this.sup.check(id).catch(() => "unknown" as const);
+      const state = await sup.check(id).catch(() => "unknown" as const);
       if (state !== "up") return;
-      const rec = this.sup.record(id);
+      const rec = sup.record(id);
       if (!rec) return;
       try {
         const { link } = await this.connect(rec.sock, { epoch: this.epoch, build: this.build, settings: this.settings, since: h.lastSeq });
@@ -249,15 +343,24 @@ export class ChatHostRouter {
         await new Promise((r) => setTimeout(r, 1_000));
       }
     }
-    if (this.remotes.get(h.path) === h) await this.sup.lost(id, "it stopped answering").catch(() => {});
+    if (this.remotes.get(h.path) === h) await sup.lost(id, "it stopped answering").catch(() => {});
   }
 
   /** Send `open` on `link` and wait for its answer: the mirror, or its refusal thrown. */
-  private async openOn(link: Link, path: string, sessionId: string, force: boolean, kind: OpenKind = null, built?: SpecialSpec): Promise<ChatRuntimeMirror> {
+  private async openOn(link: Link, path: string, sessionId: string, force: boolean, kind: OpenKind = null, built?: SpecialSpec, worker?: WorkerSpec): Promise<ChatRuntimeMirror> {
+    const id = randomUUID();
+    if (worker) {
+      // A worker chat opens as its loadout says, with nothing an ordinary chat is served.
+      const answer = awaitFrame(link, "opened", 60_000, (f) => f.id === id);
+      link.send({ t: "open", id, path, force, link: null, served: [], worker });
+      const f: FrameOf<"opened"> = await answer;
+      if (f.ok) return f.mirror;
+      if (f.refusal) throw errorOfRefusal(f.refusal);
+      throw new Error(f.error?.message ?? "The worker chat did not open in its process.");
+    }
     // A special chat's loadout is the server's word on it at each open (its refusal: no open); a
     // start built it already, before its process was spawned.
     const special: SpecialSpec | undefined = built ?? (kind && kind !== "powers" ? await specialSpecFor(kind, path) : undefined);
-    const id = randomUUID();
     const answer = awaitFrame(link, "opened", 60_000, (f) => f.id === id);
     const origin = currentLinkOrigin();
     const opening = takeOpeningChoice(path);
@@ -292,9 +395,13 @@ export class ChatHostRouter {
   /** Take back what a previous server left running (before any chat socket is served). */
   start(): void {
     this.readyP = (async () => {
+      // Workers a previous server ran as its children ended with it (a crash, a SIGKILL: stopped now).
+      for (const rec of await this.childSup.stopAll()) log(`worker chat ${rec.chatId}: left by the previous server; stopped`);
       const { adopted } = await this.sup.adopt();
       await Promise.all(adopted.map((rec) => this.takeBack(rec)));
+      this.workers.settleBoot();
       this.sup.watch(2_000);
+      this.childSup.watch(2_000);
     })().catch((err) => log(`taking chats back failed: ${err instanceof Error ? err.message : String(err)}`));
   }
 
@@ -309,6 +416,14 @@ export class ChatHostRouter {
         // The calls it queued while no server was there come at once, before its state: kept for the handle.
         const held = holdRequests(link);
         const state = await awaitFrame(link, "state", 5_000);
+        // A worker chat is the registry's: nothing is served to it.
+        if (state.mirror.worker) {
+          this.workerPaths.add(rec.sessionPath);
+          this.placed.set(rec.chatId, "unit");
+          const h = this.adoptHandle(rec, link, state.mirror, held);
+          if (!this.workers.adopt(h)) log(`${rec.chatId}: a worker chat no worker record names`);
+          return;
+        }
         // Its server-hosted tools run here now, as for a chat this server opened (the same specs: the
         // chat declared them at its open).
         const kind = kindOfMirror(state.mirror);
@@ -335,13 +450,15 @@ export class ChatHostRouter {
   }
   get(path: string): ChatHandle | undefined {
     const h = this.remotes.get(path);
-    return h && !h.closed ? h : undefined;
+    return h && !h.closed && !this.workerPaths.has(path) ? h : undefined;
   }
   all(): ChatHandle[] {
-    return [...this.remotes.values()].filter((h) => !h.closed);
+    return [...this.remotes.values()].filter((h) => !h.closed && !this.workerPaths.has(h.path));
   }
 
   async acquire(path: string, force: boolean): Promise<ChatHandle | null> {
+    // A worker chat's own file is never opened as a chat here (the in-process open refuses it).
+    if (this.workerPaths.has(path)) return null;
     // A chat a previous server left running is this one's once it is taken back: never started anew
     // meanwhile, however long the take-back takes (a browser's connect waits only READY_WAIT_MS).
     await this.takenBack();
@@ -438,9 +555,96 @@ export class ChatHostRouter {
     return true;
   }
 
+  // ---- worker chats (§app.chat-processes/workers) ----------------------------------------------------
+
+  /** Start worker chat `rec` in a process of its own (a unit, else a child of this server) and open it
+      as its loadout; a unit that does not start or answer falls back to a child, logged. */
+  private async startWorker(rec: WorkerRecord, prefer: Placement): Promise<{ handle: RemoteChatHandle; placement: Placement }> {
+    if (!chatBun()) throw new Error(NO_BUN);
+    await this.takenBack();
+    let placement: Placement = prefer === "unit" && this.out() ? "unit" : "child";
+    for (;;) {
+      this.placed.set(rec.chatId, placement);
+      this.workerPaths.add(rec.path);
+      try {
+        return { handle: await this.openWorker(placement === "unit" ? this.sup : this.childSup, rec), placement };
+      } catch (err) {
+        const why = err instanceof Error ? err.message : String(err);
+        if (placement === "unit" && err instanceof NoProcess) {
+          log(`worker chat ${rec.chatId}: its unit did not start (${why}); it runs as this server's child`);
+          placement = "child";
+          continue;
+        }
+        this.placed.delete(rec.chatId);
+        this.workerPaths.delete(rec.path);
+        throw err instanceof NoProcess ? new Error(`The worker's process did not start: ${why}`) : err;
+      }
+    }
+  }
+
+  private async openWorker(sup: ChatSupervisor, w: WorkerRecord): Promise<RemoteChatHandle> {
+    let rec: ChatRecord;
+    try {
+      rec = await sup.start({ chatId: w.chatId, sessionPath: w.path, cwd: w.spec.cwd });
+    } catch (err) {
+      throw new NoProcess(err instanceof Error ? err.message : String(err));
+    }
+    let link: Link;
+    try {
+      const c = await this.connect(rec.sock, { epoch: this.epoch, build: this.build, settings: this.settings, since: null, retryForMs: 10_000 });
+      link = c.link;
+      sup.noteConnected(rec.chatId);
+      if (c.hello.proto < WORKER_PROTO) throw new Error(`its process speaks protocol ${c.hello.proto}, below ${WORKER_PROTO}`);
+      if (c.hello.state === "booting") await awaitFrame(link, "hello", 30_000, (h) => h.state !== "booting");
+    } catch (err) {
+      await sup.lost(rec.chatId, `no hello: ${err instanceof Error ? err.message : String(err)}`).catch(() => {});
+      throw new NoProcess(err instanceof Error ? err.message : String(err));
+    }
+    try {
+      const mirror = await this.openOn(link, w.path, w.chatId, false, null, undefined, w.spec);
+      return this.adoptHandle(rec, link, mirror);
+    } catch (err) {
+      // The open itself failed (a model that can't be set, a refusal): the start fails with its reason.
+      sup.expectExit(rec.chatId, "refused");
+      link.close();
+      await sup.stop(rec.chatId, "refused").catch(() => {});
+      throw err;
+    }
+  }
+
+  /** Stop worker chat `rec`'s process (a kill): resolves once it is gone. */
+  private async stopWorker(rec: WorkerRecord): Promise<void> {
+    const sup = this.supOf(rec.chatId);
+    const h = this.remotes.get(rec.path);
+    sup.expectExit(rec.chatId, "archived");
+    const r = h && !h.closed ? await h.drain("archived", { force: true, message: "This worker was stopped." }) : { ok: false };
+    if (r.ok) await sup.awaitExit(rec.chatId);
+    await sup.stop(rec.chatId, "archived").catch(() => {});
+    this.forget(rec.path);
+    this.placed.delete(rec.chatId);
+  }
+
+  /** At shutdown: the workers this server runs as its children stop with it, recorded as such. */
+  async stopChildren(): Promise<void> {
+    await Promise.all(
+      this.workers.children().map(async (rec) => {
+        if (this.placed.get(rec.chatId) === "child") {
+          const h = this.remotes.get(rec.path);
+          this.childSup.expectExit(rec.chatId, "operator");
+          if (h && !h.closed) await h.drain("operator", { force: true, withinMs: 5_000 }).catch(() => {});
+          await this.childSup.stop(rec.chatId, "operator").catch(() => {});
+          this.forget(rec.path);
+        }
+        this.workers.serverStopped(rec.chatId);
+      }),
+    );
+    this.childSup.detach();
+  }
+
   /** A chat process died (§app.chat-processes/crash): its panes are told, its last writes are the
       server's while it still held the file's lock, and a run it had in flight is resumed once. */
   private died(d: ChatDeath): void {
+    if (this.workers.has(d.chatId)) return this.workerDied(d);
     const path = d.sessionPath;
     const h = this.remotes.get(path);
     const special = h ? kindOfMirror(h.mirror) : null;
@@ -467,12 +671,26 @@ export class ChatHostRouter {
       });
   }
 
+  /** A worker chat's process died: the registry's death rule (§app.chat-processes/worker-crash). Its
+      lock is let go first, so a crash resume can open the file again. */
+  private workerDied(d: ChatDeath): void {
+    const pid = this.remotes.get(d.sessionPath)?.at.pid ?? this.supOf(d.chatId).record(d.chatId)?.pid ?? null;
+    this.forget(d.sessionPath);
+    this.placed.delete(d.chatId);
+    const lock = readLock(d.sessionPath);
+    if (lock && pid !== null && lock.pid === pid && !holderAlive(lock)) releaseLockOf(d.sessionPath, lock);
+    this.workers.died(d, takeInflight(d.chatId));
+  }
+
   /** The server is stopping: chats in their own process run on; each is told goodbye, never stopped. */
   detach(): void {
-    for (const h of this.remotes.values()) h.bye();
+    for (const [path, h] of this.remotes) if (!this.workerPaths.has(path) || this.placed.get(h.mirror.sessionId) !== "child") h.bye();
     this.sup.detach();
   }
 }
+
+/** A worker's unit (or child) did not start or never answered: its start may fall back to a child. */
+class NoProcess extends Error {}
 
 /** What a chat opens as, for where it runs: a special kind, a powers profile, or null (ordinary). */
 type OpenKind = Awaited<ReturnType<typeof openKindOf>>;
@@ -504,6 +722,32 @@ export function startChatHost(): void {
     router.start();
     await router.ready();
   })().catch((err) => log(`start failed: ${err instanceof Error ? err.message : String(err)}`));
+  // Every parent chat in this process starts its workers here, once the router is up.
+  setWorkerHostSource((parent) => {
+    const later = <T,>(fn: (r: ChatHostRouter) => Promise<T>): Promise<T> =>
+      Promise.race([boot, new Promise<void>((r) => setTimeout(r, TAKE_BACK_MAX_MS).unref?.())]).then(() => {
+        if (!router) throw new Error("The Sova server's chat host did not start.");
+        return fn(router);
+      });
+    return {
+      start: (req) => later((r) => r.workers.start(req)),
+      send: (chatId, input) => later((r) => r.workers.send(chatId, input)),
+      abort: (chatId) => later((r) => r.workers.abort(chatId)),
+      stop: (chatId, reason) => later((r) => r.workers.stop(chatId, reason)),
+      list: () => later(async (r) => r.workers.list(parent.sessionId)),
+      watch: (chatId, cursor, fn) => {
+        let off: (() => void) | null = null;
+        let gone = false;
+        void later(async (r) => {
+          if (!gone) off = r.workers.watch(chatId, cursor, fn);
+        }).catch((err) => fn({ t: "ended", cause: "died", detail: err instanceof Error ? err.message : String(err) }));
+        return () => {
+          gone = true;
+          off?.();
+        };
+      },
+    };
+  });
   setChatRouter({
     ready: () => Promise.race([boot, new Promise<void>((r) => setTimeout(r, 2 * READY_WAIT_MS))]),
     get: (path) => router?.get(path),
@@ -522,6 +766,16 @@ export function startChatHost(): void {
 /** At shutdown: let go of every chat process (they run on), never stop one. */
 export function detachChatHost(): void {
   router?.detach();
+}
+
+/** At shutdown, before detachChatHost: the workers this server runs as its children stop with it. */
+export async function stopWorkerChildren(): Promise<void> {
+  await router?.stopChildren();
+}
+
+/** Parent session `sessionId` was archived or deleted: its workers stop. */
+export async function stopWorkersOf(sessionId: string, reason: string): Promise<void> {
+  await router?.workers.stopAllOf(sessionId, reason);
 }
 
 /** The handle `chatHandle` finds, if it is a chat process's (tests, health). */

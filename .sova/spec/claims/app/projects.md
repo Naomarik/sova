@@ -122,6 +122,12 @@ started: from the project, from New Session's folder tab, from a TUI or from Cla
   worktrees, compared on canonical (symlink-free) paths. Any other folder, a relative path or one
   that doesn't exist is refused with 400 and nothing starts. With no `cwd` it starts in the root,
   as before; the Project tab sends none.
+- **Who started a build.** A coding session the operator started (an `operator-coding` build: the
+  folder tab or the project's New Coding Session; or a Project verbs run the operator started — the
+  project page's "Started by" rule) is listed as `SessionSummary.project`
+  `{kind: "coding", operator: true}`; one the project's overseer started has no `operator`. The
+  marker is additive: an older server sends none, which reads as the overseer's. It is how the
+  operator's own coding sessions also reach Recent (§app.session-list/recent).
 - **Every other session in the folder is listed as the project's.** Reading the list, a session no
   marker or build claims belongs to the project whose folder its `cwd` is in, as
   `SessionSummary.project` `{kind: "folder"}`, never `finished`: an overseer marker, then a build,

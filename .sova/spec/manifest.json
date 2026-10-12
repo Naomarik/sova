@@ -257,8 +257,15 @@
       "code": [
         "src/lib/recent.ts",
         "src/lib/recent.test.ts",
-        "src/lib/profile-cards.test.ts"
-      ]
+        "src/lib/profile-cards.test.ts",
+        "src/lib/regions.ts",
+        "src/lib/home-sessions.ts",
+        "src/lib/home-sessions.test.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-12T07:55Z"
+      }
     },
     "§app.session-list/regions-top-and-archive": {
       "kind": "behavior",
@@ -3023,8 +3030,15 @@
         "src/App.tsx",
         "src/lib/mesh.ts",
         "server/mesh/hello.ts",
-        "src/lib/socket.ts"
-      ]
+        "src/lib/socket.ts",
+        "server/app.ts",
+        "server/mesh/hello.test.ts",
+        "src/lib/mesh.test.ts"
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-12T07:55Z"
+      }
     },
     "§mesh/front-door": {
       "kind": "surface",
@@ -6054,7 +6068,11 @@
         "src/lib/session-selection.test.ts",
         "src/components/Sidebar.tsx",
         "server/worker-sessions.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-12T07:55Z"
+      }
     },
     "§app.session-list/organizations": {
       "kind": "behavior",
@@ -17785,7 +17803,8 @@
         "src/lib/drag-archive.ts",
         "src/components/Sidebar.tsx",
         "src/lib/summary-diff.ts",
-        "src/components/SelectionToolbar.tsx"
+        "src/components/SelectionToolbar.tsx",
+        "server/build-loadout.ts"
       ],
       "requires": [
         "§app.projects/list",
@@ -17795,7 +17814,11 @@
         "§app/new-session-dialog",
         "§app.project-overseer/new-coding-session",
         "§app.projects/seam"
-      ]
+      ],
+      "agreed": {
+        "by": "naomarik",
+        "at": "2026-10-12T07:55Z"
+      }
     },
     "§app.server-runtime/pi-workers": {
       "kind": "behavior",

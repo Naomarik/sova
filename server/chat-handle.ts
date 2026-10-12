@@ -18,6 +18,7 @@ import type {
   ChatSendInput,
   ChatSendReceipt,
   ChatStateMirror,
+  ChatTopicBatch,
   ChatTurnEnd,
 } from "../shared/chat-runtime";
 import type { StateKind } from "../shared/harness";
@@ -30,6 +31,7 @@ import {
   chatEventsSince,
   ConfigError,
   drainQueueThenAbort,
+  emitChatEvent,
   heldChat,
   heldChats,
   ModeRefusedError,
@@ -96,6 +98,7 @@ type Impl = { [M in ChatMethod]: (chat: ChatSession, args: ChatMethods[M]["args"
 /** Each command, run on the chat. A method that throws a refusal answers with that refusal. */
 const METHODS: Impl = {
   send(chat, a, ctx) {
+    if (a.checkModel) chat.assertModelAllowed();
     const { queued, turn } = chat.acceptPrompt(a.text, a.images, a.origin ?? "server", a.clientId, {
       ...(a.replay ? { replay: true } : {}),
       ...(a.sentByOverseer ? { sentByOverseer: a.sentByOverseer } : {}),
@@ -125,6 +128,12 @@ const METHODS: Impl = {
     return ended;
   },
   assertModelAllowed: (chat) => (chat.assertModelAllowed(), null),
+  deliverTopicBatch: (chat, batch) =>
+    chat.deliverTopicBatch({
+      ...batch,
+      entered: () => emitChatEvent(chat.path, "topicEntered", batch.batch),
+      gone: () => emitChatEvent(chat.path, "topicGone", batch.batch),
+    }),
   deliverToAgent: (chat, { text }) => chat.deliverToAgent(text),
   setModel: async (chat, { ref, save }) => (await chat.setModelRef(ref, save === undefined ? {} : { save }), null),
   setThinking: (chat, { level, save }) => chat.setThinking(level, save === undefined ? {} : { save }),
@@ -169,6 +178,28 @@ const METHODS: Impl = {
       ...(base?.baseContext ? { context: base.baseContext.map((path) => ({ path })) } : {}),
       ...(base?.baseSkills ? { skills: base.baseSkills } : {}),
     };
+  },
+  memoryOutline: (chat) => (chat.memoryAvailable() ? chat.memory.outline() : null),
+  memoryOpen: (chat, { id, n }) => {
+    if (!chat.memoryAvailable()) return { state: "unavailable" };
+    let engine;
+    try {
+      engine = chat.memory.engine();
+    } catch {
+      return { state: "no-engine" };
+    }
+    try {
+      return { state: "ok", open: engine.open(id, n) };
+    } catch (err) {
+      return { state: "refused", error: errorText(err) };
+    }
+  },
+  memoryStatus: (chat) => chat.memory.status(),
+  memorySettingsChanged: (chat, { turnedOn }) => {
+    if (turnedOn) chat.memory.turnedOn();
+    else chat.memory.changed();
+    chat.memorySwitched();
+    return null;
   },
   sandboxInfo: (chat) => chat.sandboxInfo(),
   applySandbox: (chat, { state }) => chat.applySandbox(state),
@@ -222,7 +253,7 @@ class LiveMirror implements ChatStateMirror {
   }
   get model() {
     const m = this.chat.harness.model();
-    return m ? { ref: m.ref, provider: m.provider } : null;
+    return m ? { ref: m.ref, provider: m.provider, images: m.images } : null;
   }
   get thinking() {
     return this.chat.harness.thinking();
@@ -321,6 +352,9 @@ export class ChatHandle {
   assertModelAllowed(): Promise<null> {
     return this.call("assertModelAllowed", {});
   }
+  deliverTopicBatch(batch: ChatTopicBatch) {
+    return this.call("deliverTopicBatch", batch);
+  }
   deliverToAgent(text: string): Promise<"started" | "delivered"> {
     return this.call("deliverToAgent", { text });
   }
@@ -412,6 +446,18 @@ export class ChatHandle {
   }
   resources() {
     return this.call("resources", {});
+  }
+  memoryOutline() {
+    return this.call("memoryOutline", {});
+  }
+  memoryOpen(id: number, n: number) {
+    return this.call("memoryOpen", { id, n });
+  }
+  memoryStatus() {
+    return this.call("memoryStatus", {});
+  }
+  memorySettingsChanged(turnedOn: boolean): Promise<null> {
+    return this.call("memorySettingsChanged", { turnedOn });
   }
   sandboxInfo() {
     return this.call("sandboxInfo", {});

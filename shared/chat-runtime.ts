@@ -17,7 +17,10 @@ import type {
   ChatMemoryChoice,
   ChatModeResult,
   HeldChatState,
+  MemoryOpen,
+  MemoryOutline,
   ModeInfo,
+  OverseerMemoryInfo,
   SandboxApplyResult,
   SandboxInfo,
   WorkerInfo,
@@ -82,7 +85,8 @@ export interface ChatStateMirror {
   compacting: boolean;
   /** A turn was handed to the agent and has not started yet. */
   starting: boolean;
-  model: { ref: string; provider: string } | null;
+  /** `images`: the model takes images. */
+  model: { ref: string; provider: string; images: boolean } | null;
   thinking: string;
   leafId: string | null;
   /** Sova's web queue length, and whether the agent itself still holds queued messages. */
@@ -114,9 +118,20 @@ export interface ChatLifecycleEvent {
   seq: number;
   chatId: ChatId;
   /** started: a run began (agent_start). settled: a run settled. receiverIdle: a run settled or a
-      compaction ended (a topic receiver may take its next batch). closed: the chat closed. */
-  type: "started" | "settled" | "receiverIdle" | "closed";
+      compaction ended (a topic receiver may take its next batch). closed: the chat closed.
+      topicEntered / topicGone: a topic batch handed over entered the transcript, or never will. */
+  type: "started" | "settled" | "receiverIdle" | "closed" | "topicEntered" | "topicGone";
   at: number;
+  /** The topic batch's id, on topicEntered and topicGone. */
+  batch?: string;
+}
+
+/** A topic batch to hand to a receiver's agent (§chat.topics/delivery). */
+export interface ChatTopicBatch {
+  text: string;
+  topic: string;
+  batch: string;
+  items: { id: string; from: { sessionId: string; title: string }; at: string }[];
 }
 
 /** Why a command was refused, by what the caller can do about it. Anything else is an error. */
@@ -145,6 +160,8 @@ export interface ChatSendInput {
   delivery?: "steer" | "followUp";
   confirm?: string;
   byPerson?: true;
+  /** Refused first when the chat's model is turned off in the model policy (assertModelAllowed). */
+  checkModel?: boolean;
   /** A failure of the turn it starts is reported to the chat's panes (default true). */
   report?: boolean;
   /** Keep the turn's end for one `turnEnd` call (default false). */
@@ -166,6 +183,8 @@ export interface ChatMethods {
   turnEnd: { args: { turnId: string }; result: ChatTurnEnd };
   /** Throws the model policy's refusal for the chat's current model. */
   assertModelAllowed: { args: Record<string, never>; result: null };
+  /** A topic batch, only ever as a new turn; its fate arrives as topicEntered or topicGone. */
+  deliverTopicBatch: { args: ChatTopicBatch; result: "started" | "busy" | "paused" | "closed" };
   /** A link message into the agent (§mesh.links). */
   deliverToAgent: { args: { text: string }; result: "started" | "delivered" };
   setModel: { args: { ref: string; save?: boolean }; result: null };
@@ -211,6 +230,17 @@ export interface ChatMethods {
   resources: { args: Record<string, never>; result: HarnessResources };
   sandboxInfo: { args: Record<string, never>; result: SandboxInfo | null };
   applySandbox: { args: { state: SandboxState }; result: SandboxApplyResult };
+  /** The memory outline (§chat/memory), or null where the chat runs no memory engine. */
+  memoryOutline: { args: Record<string, never>; result: MemoryOutline | null };
+  /** One node of the memory, opened: unavailable (no engine here: read the file), no-engine (it
+      could not be built), refused (no such node). */
+  memoryOpen: {
+    args: { id: number; n: number };
+    result: { state: "unavailable" } | { state: "no-engine" } | { state: "ok"; open: MemoryOpen } | { state: "refused"; error: string };
+  };
+  memoryStatus: { args: Record<string, never>; result: OverseerMemoryInfo["status"] };
+  /** The Overseer's memory setting changed (overseer.json): turned on now, or changed otherwise. */
+  memorySettingsChanged: { args: { turnedOn: boolean }; result: null };
   resumeWorker: { args: { id: string }; result: { ok: true } | { ok: false; status: 404 | 409; error: string } };
   workerInfo: { args: { id: string }; result: WorkerInfo | null };
 }

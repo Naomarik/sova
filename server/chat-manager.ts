@@ -3196,6 +3196,8 @@ const LISTENER_NAME: Record<ChatLifecycleEvent["type"], string> = {
   settled: "agent_settled",
   receiverIdle: "receiver-idle",
   closed: "closed",
+  topicEntered: "topic-entered",
+  topicGone: "topic-gone",
 };
 /** Listeners run inside the event, each on its own: one that throws is logged and the rest still run. */
 export function onChatEvent(fn: (event: ChatLifecycleEvent) => void): () => void {
@@ -3204,8 +3206,8 @@ export function onChatEvent(fn: (event: ChatLifecycleEvent) => void): () => void
 }
 /** The kept events with a seq above `seq`, oldest first. */
 export const chatEventsSince = (seq: number): ChatLifecycleEvent[] => recentEvents.filter((e) => e.seq > seq);
-function emitChatEvent(chatId: string, type: ChatLifecycleEvent["type"]): void {
-  const event: ChatLifecycleEvent = { seq: ++eventSeq, chatId, type, at: Date.now() };
+export function emitChatEvent(chatId: string, type: ChatLifecycleEvent["type"], batch?: string): void {
+  const event: ChatLifecycleEvent = { seq: ++eventSeq, chatId, type, at: Date.now(), ...(batch ? { batch } : {}) };
   recentEvents.push(event);
   if (recentEvents.length > EVENTS_KEPT) recentEvents.shift();
   for (const fn of eventListeners) {

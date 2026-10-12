@@ -34,7 +34,7 @@ import { mountPublicLinks } from "./public-links-routes";
 import { mountShareGateway } from "./share/gateway-routes";
 import { mountOutreachRelay } from "./outreach/relay";
 import { mountOutreach } from "./outreach/routes";
-import { getModelRuntime, heldChat, heldChats, ModeRefusedError } from "./chat-manager";
+import { chatHandle, chatHandles, getModelRuntime, ModeRefusedError } from "./chat-handle";
 import { canonicalPath, resolveSessionPath, SESSIONS_DIR } from "./paths";
 import { agentRoot, stateRoot } from "./state-root";
 import { runtimeInfo } from "./runtime-choice";
@@ -860,13 +860,13 @@ export function buildApp(deps: AppDeps) {
   };
   app.get("/api/settings/delegate", (c) => c.json(delegateInfo()));
   app.get("/api/settings/delegate/options", async (c) => c.json(await delegateOptions(delegateSources)));
-  app.get("/api/settings/subagents", (c) => {
+  app.get("/api/settings/subagents", async (c) => {
     const raw = c.req.query("path");
     if (raw === undefined) return c.json(subagentProfilesInfo());
     const path = resolveSessionPath(raw);
     if (!path) return c.json({ error: "Invalid session path" }, 400);
-    const chat = heldChat(path);
-    return chat ? c.json(chat.subagentProfileInfo()) : c.json({ error: "Open the chat first" }, 404);
+    const chat = chatHandle(path);
+    return chat ? c.json(await chat.subagentProfileInfo()) : c.json({ error: "Open the chat first" }, 404);
   });
   app.put("/api/settings/subagents", async (c) => {
     const result = await saveSubagentProfiles(await c.req.json().catch(() => null), delegateSources);
@@ -890,7 +890,7 @@ export function buildApp(deps: AppDeps) {
   app.post("/api/subagents", async (c) => {
     const path = resolveSessionPath(c.req.query("path"));
     if (!path) return c.json({ error: "Invalid session path" }, 400);
-    const chat = heldChat(path);
+    const chat = chatHandle(path);
     if (!chat) return c.json({ error: "Open the chat first" }, 404);
     try { return c.json(await chat.switchSubagentProfile((await c.req.json()).profile)); }
     catch (err) { return c.json({ error: err instanceof Error ? err.message : String(err) }, 409); }
@@ -913,8 +913,8 @@ export function buildApp(deps: AppDeps) {
   // The memory minor mode (§chat/memory): the Session pane's outline, Settings → Memory, the Overseer's switch.
   registerMemoryRoutes(app, {
     resolvePath: (raw) => (raw === undefined ? null : resolveSessionPath(raw)),
-    held: (path) => heldChat(path),
-    overseer: () => heldChats().find((c) => c.overseer),
+    held: (path) => chatHandle(path),
+    overseer: () => chatHandles().find((c) => c.mirror.special === "overseer"),
     readBranch,
     sources: delegateSources,
   });
@@ -1048,12 +1048,12 @@ export function buildApp(deps: AppDeps) {
       // A chat's own mode is what is saved, so there has to be a chat: no path is a 400, not a write
       // of whatever the file already says.
       if (path === null) return c.json({ error: "saveDefault needs ?path=: it saves that chat's own mode" }, 400);
-      const chat = heldChat(path);
+      const chat = chatHandle(path);
       if (!chat) return c.json({ error: "That session isn't open on this server; open the chat first" }, 404);
       return modeRefusal(c, () => chat.saveModeDefault());
     }
     if (path === null) return c.json(await switchMode(request.patch));
-    const chat = heldChat(path);
+    const chat = chatHandle(path);
     if (!chat) return c.json({ error: "That session isn't open on this server; open the chat first" }, 404);
     return modeRefusal(c, () => chat.switchMode(request.patch));
   });
@@ -1071,7 +1071,7 @@ export function buildApp(deps: AppDeps) {
     }
     const parsed = parseSandboxBody(body);
     if ("error" in parsed) return c.json({ error: parsed.error }, 400);
-    const chat = heldChat(path);
+    const chat = chatHandle(path);
     if (!chat) return c.json({ error: "That session isn't open on this server; open the chat first" }, 404);
     return c.json(await chat.applySandbox(parsed.state));
   });
@@ -1083,11 +1083,11 @@ export function buildApp(deps: AppDeps) {
     if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
     const id = c.req.query("id") ?? "";
     if (!WORKER_ID_RE.test(id)) return c.json({ error: "Invalid or missing ?id= (a worker id like ag_03)" }, 400);
-    const chat = heldChat(path);
+    const chat = chatHandle(path);
     if (!chat) return c.json({ error: "That session isn't open on this server; open the chat first" }, 404);
     const outcome = await chat.resumeWorker(id);
     if (!outcome.ok) return c.json({ error: outcome.error }, outcome.status);
-    return c.json({ worker: chat.workerInfo(id) } satisfies WorkerResumeResult);
+    return c.json({ worker: await chat.workerInfo(id) } satisfies WorkerResumeResult);
   });
 
   app.get("/api/transcript", async (c) => {
@@ -1133,10 +1133,7 @@ export function buildApp(deps: AppDeps) {
     const path = resolveSessionPath(c.req.query("path"));
     if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
     if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
-    const items = await piToolContent(path, ids, () => {
-      const chat = heldChat(path);
-      return chat ? chat.harness.branch() : undefined;
-    });
+    const items = await piToolContent(path, ids, async () => chatHandle(path)?.branch());
     return c.json({ items } satisfies ToolContentResponse);
   });
 

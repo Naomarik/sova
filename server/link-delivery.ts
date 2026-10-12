@@ -10,17 +10,17 @@
 // (heldSessionPath).
 import { existsSync } from "node:fs";
 import type { LinkRefusal, PeerLinkMessageResult } from "../shared/mesh-links";
-import { acquireChat, BusyError, heldChats } from "./chat-manager";
+import { acquireChatHandle, BusyError, chatHandleById } from "./chat-handle";
 import { projectOverseerOfPath } from "./project-overseer-store";
 import { getSessionSummary } from "./sessions-index";
 
-export { notifyLinksChanged, setLinkOrigin, setLinksSource } from "./chat-manager";
+export { notifyLinksChanged, setLinkOrigin, setLinksSource } from "./chat-handle";
 
 const refused = (reason: LinkRefusal, message: string): PeerLinkMessageResult => ({ state: "refused", reason, message });
 
 /** The runtime this server holds for a session id, as its path; null when none is held. */
 export function heldSessionPath(sessionId: string): string | null {
-  return heldChats().find((c) => c.harness.id === sessionId)?.path ?? null;
+  return chatHandleById(sessionId)?.path ?? null;
 }
 
 /**
@@ -44,22 +44,22 @@ export async function deliverLinkMessage(path: string, framed: string): Promise<
     if (s.live) return refused("tui-live", `It is open in a terminal (pid ${s.live.pid}), so its host must not write to it.`);
     let chat;
     try {
-      chat = await acquireChat(path);
+      chat = await acquireChatHandle(path);
     } catch (err) {
       return fromError(err);
     }
     // The file's own marker, for a special session the summary could not tell (a baton file whose
     // workspace moved, say): the runtime knows what it is.
-    if (chat.special) return refused("special", "That is an Overseer, project-overseer or baton session.");
+    if (chat.mirror.special) return refused("special", "That is an Overseer, project-overseer or baton session.");
     // The model policy first, by itself: its `input` handler would swallow the message silently,
     // and it is the one refusal that says which switch to move.
     try {
-      chat.assertModelAllowed();
+      await chat.assertModelAllowed();
     } catch (err) {
       return refused("model-off", err instanceof Error ? err.message : String(err));
     }
     try {
-      return { state: chat.deliverToAgent(framed) };
+      return { state: await chat.deliverToAgent(framed) };
     } catch (err) {
       return fromError(err);
     }

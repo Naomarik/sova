@@ -76,9 +76,11 @@ also update Y" list live in its guide: read the guide of every area your task to
 
 The live server on 127.0.0.1:4800 is the systemd user unit `sova-runtime.service` (macOS: a launchd
 agent, server guide). It has no file watcher: an edit to `server/**`, `shared/**` or
-`pi-config/extensions/mode/**` goes live only on `systemctl --user restart sova-runtime.service`. That
-restart kills every worker a hosted session spawned (they are the server's child processes) and zeroes
-the in-memory subagent registry; hosted chats survive (JSONL; the webapp reconnects).
+`pi-config/extensions/mode/**` goes live only on `systemctl --user restart sova-runtime.service`. With
+the chat switch off, that restart ends every worker, team member and hidden chat (they are the server's
+child processes); their parents' records keep them, listed restored and resumable with `agent_resume`.
+With it on (`SOVA_CHAT_HOST=out`, Linux), they run in units of their own and their parents reattach to
+them. Hosted chats survive either way (JSONL; the webapp reconnects).
 
 - After a server-side change, say it is not live yet and needs that restart.
 - Before any restart, read the live records `~/.pi/agent/sessions/live/p<server-pid>-*.json`

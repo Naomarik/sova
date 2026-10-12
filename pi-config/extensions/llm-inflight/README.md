@@ -19,10 +19,10 @@ At that same end each call also appends one usage record, its token counts only 
   `floor(ms / 30000)`); `subscribe(fn)` is called only when those change (the ring moving with
   time is no change). The end takes the call's tokens: `end({output, since?, at?})`. `withinLlmCall`/`currentLlmCall` scope one call
   to the code below it (the provider-limits gate marks that very call waiting in a cooldown; a call
-  begun inside is a new call, never suppressed). `setChildCounts` holds a worker's reported counts
-  (replaced, never added), their rings summed with the process's own; a child forgotten while
-  summed leaves its ring in a retired ring until it ages out (`{retire: false}`, a detached
-  worker that goes on reporting it itself, drops it). A child that reported no ring makes
+  begun inside is a new call, never suppressed). `setChildCounts` holds a child process's reported counts
+  (replaced, never added; Sova's server keeps one per chat process), their rings summed with the process's own; a child forgotten while
+  summed leaves its ring in a retired ring until it ages out (`{retire: false}`, a child that
+  goes on reporting it itself elsewhere, drops it). A child that reported no ring makes
   `tokens.partial`. `markDegraded` and `beginClaudeTurn` report what can't be seen.
 - `runtime.ts` (builtins only; Sova imports it): `instrumentModelRuntime(runtime)` wraps
   `stream`, `streamSimple`, `streamDeferred` and `cancelDeferred` on one pi `ModelRuntime`
@@ -45,22 +45,13 @@ At that same end each call also appends one usage record, its token counts only 
   `claudeTurns` (the count is partial) rather than guessed. `beginClaudeOneShot()` counts a `claude -p --output-format json` spawn to exit, as approximate
   (with no tokens).
 - `index.ts` (the extension): instruments `ctx.modelRegistry`'s runtime at `session_start` and
-  before each turn; with no runtime to instrument the process is degraded. In a pi worker (the
-  `subagents:worker` role, RPC mode) it reports its counts to the session that runs it with a
-  fire-and-forget `setStatus("sova-llm-inflight", json)`, only when they change; the subagents
-  runner folds that into its own process's counts until the worker exits.
-
-- `hosted.ts` (builtins only; Sova imports it): `readUnadoptedWorkers(root?)` finds hosted workers
-  left running with no manager (after a restart, before re-adoption). A manager holds the worker's
-  `adopt.lock` while it runs the worker, and its own count includes that worker. A worker whose host
-  lives with no live lock holder is unadopted: its counts come from the host's `llm.json` (the
-  worker's latest report, which `subagents/host.ts` rewrites only when it changes, and zeroes when
-  the worker exits), or `null` (unknown) for a worker that never reported. Reads are cached by file stat; nothing is scanned per token. A detached transport emits
-  `detached`, and the runner then stops counting the worker.
-- **Never twice:** a snapshot's `folded` lists the producer ids of every worker whose counts it
-  includes, transitively (a worker reports its own producer and its own `folded`). A reader skips
-  any record or worker file whose producer is already folded into a count it took. This covers a
-  worker that also loads the sessions extension (the agent_spawn `extensions` parameter allows it).
+  before each turn; with no runtime to instrument the process is degraded. No worker loads it: a
+  worker is a chat process of its own, whose runtime Sova instruments and whose counts the server
+  takes from that process (`setChildCounts("chat:<session id>")`, server/chat-host.ts).
+- **Never twice:** a snapshot's `folded` lists the producer ids of every child process whose counts
+  it includes, transitively (a child reports its own producer and its own `folded`). A reader skips
+  any record whose producer is already folded into a count it took. This covers a chat process
+  that also publishes a live record of its own.
 
 ## The usage ledger
 
@@ -88,9 +79,8 @@ token counts only, never a price):
   Sova's chat manager for its hosted chats, `noteUsageSession` for an Overseer's kind). Otherwise
   the caller's `withUsageContext({owner, cwd, purpose, kind, project, starter})` (an
   AsyncLocalStorage scope, so concurrent side calls keep their own), else the process's only
-  session, else none. `withUsagePurpose` marks a side call that never falls back. A pi worker
-  names its parent from `PI_USAGE_PARENT=<parent session>:<worker id>`, which the subagents
-  extension sets at every spawn (a Claude Code worker's runner reads it from its spawn options).
+  session, else none. `withUsagePurpose` marks a side call that never falls back. A worker chat
+  is registered by Sova's chat manager with its parent session and worker id, from its loadout.
 
 ## Who counts what
 

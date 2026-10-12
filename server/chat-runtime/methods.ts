@@ -4,8 +4,7 @@
 import { randomUUID } from "node:crypto";
 import type { ChatCall, ChatMethod, ChatMethods, ChatRefusal, ChatReply, ChatTurnEnd } from "../../shared/chat-runtime";
 import type { StateKind } from "../../shared/harness";
-import { runLedger } from "../auto-resume";
-import { acquireChat, assertNotLive, BusyError, type ChatSession, ConfigError, drainQueueThenAbort, emitChatEvent, ModeRefusedError, RefusedError } from "../chat-manager";
+import { acquireChat, assertNotLive, BusyError, type ChatSession, ConfigError, drainQueueThenAbort, emitChatEvent, markRunResuming, ModeRefusedError, RefusedError } from "../chat-manager";
 import { stateKindOf } from "../harness/state-kinds";
 import { mergeMode } from "../mode-state";
 
@@ -165,8 +164,8 @@ export const METHODS: Impl = {
     await acquireChat(chat.path, true);
     return "reloaded";
   },
-  // The server's run ledger records this chat's runs; a chat process records its own (its host).
-  markResuming: (chat) => (runLedger.markResuming(chat.path), null),
+  // Whatever records this process's runs: the server's run ledger, or a chat process's marker.
+  markResuming: (chat) => (markRunResuming(chat.path), null),
 };
 
 /** The reply a call that threw answers with: its typed refusal, or an error with its message. A

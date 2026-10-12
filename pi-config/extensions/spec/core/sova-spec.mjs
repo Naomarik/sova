@@ -91,7 +91,7 @@ function parseArgs(argv) {
   if (!o.usage && o.ownBase.length && !(cmd === "foreign" || o.changed)) o.usage = "--own-base applies to foreign and census --changed only";
   return o;
 }
-const USAGE = "usage: sova-spec <map [namespace | §id] | where <path|token|topic words…> [--token] [--all] | toc §id --dir out|in|down|up|mentions | read §id [--whole] [--no-frame] | read --frame | impact §id --near | graph | " +
+const USAGE = "usage: sova-spec <map [namespace | §id] [--titles] | where <path|token|topic words…> [--token] [--all] | toc §id --dir out|in|down|up|mentions | read §id [--whole] [--no-frame] | read --frame | impact §id --near | graph | " +
   `packet §id [--part ${PACKET_PARTS.join("|")}] | scope §id | impact §id | check | census [--changed [--base REV] [--related] [--own-base REV]...] | foreign --base REV [--head REV | --spec DIR] [--own-base REV]... [--landing [--drafts DIR]...]> [--root DIR] [--spec DIR] [--json] [--budget BYTES] [--cursor TOKEN]`;
 
 // --spec: a project-relative directory holding manifest.json (default .sova/spec). → {rel} | {why}

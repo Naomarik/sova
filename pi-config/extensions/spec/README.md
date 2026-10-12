@@ -38,7 +38,7 @@ to assert that those decisions have been implemented.
 ## Core (read-only)
 
 ```sh
-node core/sova-spec.mjs <map [namespace | '<§id>'] | where <path|name|topic words…> [--token] [--all] | graph --json> [--cursor TOKEN] [--budget BYTES] [--root DIR] [--spec DIR] [--json]
+node core/sova-spec.mjs <map [namespace | '<§id>'] [--titles] | where <path|name|topic words…> [--token] [--all] | graph --json> [--cursor TOKEN] [--budget BYTES] [--root DIR] [--spec DIR] [--json]
 node core/sova-spec.mjs toc '<§id>' --dir out|in|down|up|mentions [--cursor TOKEN] [--budget BYTES] [--root DIR] [--spec DIR] [--json]
 node core/sova-spec.mjs <read '<§id>' [--whole] [--no-frame] | read --frame> [--cursor TOKEN] [--budget BYTES] [--root DIR] [--spec DIR] [--json]
 node core/sova-spec.mjs impact '<§id>' --near [--cursor TOKEN] [--budget BYTES] [--root DIR] [--spec DIR] [--json]
@@ -46,7 +46,8 @@ node core/sova-spec.mjs packet '<§id>' [--part prose|inventory|frontier|code|fi
 node core/sova-spec.mjs <check | census [--changed [--base <rev>] [--related]] | foreign --base <rev> [--head <rev>] | scope '<§id>' [--budget <bytes>] | impact '<§id>'> [--root DIR] [--spec DIR] [--json]
 ```
 
-The reading path is contents first, then one passage: `map` and `where` find the roots, `toc`
+The reading path is contents first, then one passage: `where` and `map --titles` (every area's
+title) find the roots, `map` orients a whole area, `toc`
 lists one hop of neighbours, `read` returns one passage, and `impact --near` lists what a change
 could reach (`core/README.md`, "Pull" and "Look"). `packet` is the bounded full-closure path: compact JSON, exact text (not summaries), default
 12,000 UTF-8 bytes for the entire response including metadata and newline. Explicit budgets

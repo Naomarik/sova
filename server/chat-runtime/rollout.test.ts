@@ -95,7 +95,7 @@ test("an open that fails on the replacement: it goes as an expected end, the loc
   assert.equal(await r.request("a", { auto: true }), "failed");
   assert.deepEqual(calls.slice(-3), ["repoint a u-a-r1", "stop-chat a reload", "unlocked /s/a.jsonl"]);
   assert.deepEqual(failed, ["a /s/a.jsonl the chat did not open on the new code: refused: config"]);
-  assert.equal(codes.at(-1), "a:failed:the chat did not open on the new code: refused: config");
+  assert.deepEqual(codes, ["a:reloading"], "no failed badge: the chat opens in the server, on current code");
   assert.ok(r.halted);
 });
 

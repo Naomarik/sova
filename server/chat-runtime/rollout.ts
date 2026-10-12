@@ -103,13 +103,14 @@ export class Rollout<L = unknown> {
       await sup.stop(chatId, "reload");
       if (!(await sup.waitUnlocked(rep.sessionPath))) this.log(`${chatId}: the replacement's writer lock is still held`);
       this.deps.onReloadOpenFailed?.(chatId, rep.sessionPath, reason);
-      return this.fail(chatId, null, reason);
+      // The chat now opens in the server, on its code: "failed" is the rollout's halt record only, never its badge.
+      return this.fail(chatId, null, reason, false);
     }
     this.log(`${chatId}: reloaded into ${rep.unit}`);
     return "reloaded";
   }
 
-  private async fail(chatId: string, rep: ChatRecord | null, error: string): Promise<ReloadOutcome> {
+  private async fail(chatId: string, rep: ChatRecord | null, error: string, shown = true): Promise<ReloadOutcome> {
     let reason = error;
     if (rep) {
       const tail = await this.deps.logTail?.(rep.unit).catch(() => []);
@@ -118,7 +119,7 @@ export class Rollout<L = unknown> {
     }
     this.halted ??= `${chatId}: ${reason}`;
     this.log(`${chatId}: could not start on new code (${reason}); automatic reloads stop until the server restarts`);
-    this.deps.setCode(chatId, "failed", reason);
+    if (shown) this.deps.setCode(chatId, "failed", reason);
     return "failed";
   }
 }

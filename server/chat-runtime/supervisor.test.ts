@@ -304,14 +304,14 @@ test("a reload replacement runs beside the chat under its own unit and socket, t
 
 test("knobs: slice, test driver, idle minutes and the Claude cap from the server's env", () => {
   assert.deepEqual(supervisorConfig({}), { slice: "sova-chats.slice", driver: "systemd", idleMs: 30 * 60_000, claudeIdleMax: 4 });
-  assert.deepEqual(supervisorConfig({ SOVA_CHAT_SLICE: "sova-chats-test.slice", SOVA_CHAT_DRIVER: "detached", SOVA_CHAT_IDLE_MIN: "0.05", SOVA_CHAT_CLAUDE_IDLE_MAX: "1" }), {
+  assert.deepEqual(supervisorConfig({ SOVA_CHAT_SLICE: "sova-chats-test.slice", SOVA_CHAT_DRIVER: "detached", SOVA_CHAT_IDLE_MS: "3000", SOVA_CHAT_CLAUDE_IDLE_MAX: "1" }), {
     slice: "sova-chats-test.slice",
     driver: "detached",
     idleMs: 3_000,
     claudeIdleMax: 1,
   });
-  assert.equal(supervisorConfig({ SOVA_CHAT_IDLE_MIN: "0" }).idleMs, 0);
-  assert.equal(supervisorConfig({ SOVA_CHAT_IDLE_MIN: "soon" }).idleMs, 30 * 60_000);
+  assert.equal(supervisorConfig({ SOVA_CHAT_IDLE_MS: "0" }).idleMs, 0);
+  assert.equal(supervisorConfig({ SOVA_CHAT_IDLE_MS: "soon" }).idleMs, 30 * 60_000);
   assert.equal(chatDriver({ slice: "x", driver: "detached" }).id, "detached");
 });
 

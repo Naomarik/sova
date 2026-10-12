@@ -62,6 +62,8 @@ export class Link {
   readonly closed: Promise<LinkEnd>;
   /** Whether the peer's protocol is one this side speaks beyond the kernel frames. */
   compatible = true;
+  /** The protocol the peer speaks (its hello's or control's): a proto-1 peer gets no stage-3 frames. */
+  peerProto = CHAT_WIRE_PROTO;
   private readonly log: (line: string) => void;
 
   constructor(
@@ -247,6 +249,7 @@ export async function serveLink(sockPath: string, opts: ServeLinkOptions): Promi
       epoch = control.epoch;
       // A server too old or too new for anything but the kernel frames may still drain this chat.
       link.compatible = protoCompatible(control.proto, control.proto - 1);
+      link.peerProto = control.proto;
       const before = controller;
       controller = link;
       if (before?.isOpen) before.close({ reason: "replaced" });
@@ -337,6 +340,7 @@ export async function connectLink(sockPath: string, opts: ConnectLinkOptions): P
       });
     });
     link.compatible = protoCompatible(hello.proto, hello.minProto);
+    link.peerProto = hello.proto;
     link.send({
       t: "control",
       proto: CHAT_WIRE_PROTO,

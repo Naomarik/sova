@@ -2,7 +2,19 @@
 // any chunking, and a broken stream (oversize, empty, not UTF-8, not JSON, no type) is refused.
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { encodeFrame, FrameDecoder, FrameError, protoCompatible, type ChatWireFrame } from "./chat-runtime-wire";
+import type { SpecialSpec } from "./chat-runtime";
+import {
+  ASK_POLICY,
+  CHAT_WIRE_MIN_PROTO,
+  CHAT_WIRE_PROTO,
+  encodeFrame,
+  FrameDecoder,
+  FrameError,
+  protoCompatible,
+  SERVER_ACTIONS,
+  type ChatWireFrame,
+} from "./chat-runtime-wire";
+import type { HEntry } from "./harness-history";
 
 const frames: ChatWireFrame[] = [
   { t: "ping", n: 1 },
@@ -117,7 +129,63 @@ describe("protocol versions", () => {
     assert.equal(protoCompatible(7, 6, own), false);
     assert.equal(protoCompatible(Number.NaN, 0, own), false);
   });
-  test("this build speaks to itself", () => {
+  test("this build speaks to itself, and to a stage-2 (proto 1) peer either way", () => {
+    assert.equal(CHAT_WIRE_PROTO, 2);
+    assert.equal(protoCompatible(CHAT_WIRE_PROTO, CHAT_WIRE_MIN_PROTO), true);
+    // a proto-1 runtime's hello, read by this server; a proto-1 server's control, read by this runtime
     assert.equal(protoCompatible(1, 1), true);
+    assert.equal(protoCompatible(1, 0), true);
+    // what a proto-1 side computes for this build's frames
+    assert.equal(protoCompatible(CHAT_WIRE_PROTO, CHAT_WIRE_MIN_PROTO, { proto: 1, minProto: 1 }), true);
+  });
+});
+
+describe("stage-3 frames (proto 2)", () => {
+  const spec: SpecialSpec = {
+    kind: "baton",
+    extension: "sova-baton",
+    cwd: "/w/b",
+    tools: [{ name: "record_decision", label: "Record decision", description: "d", parameters: { type: "object" }, prepares: "owner-area" }],
+    customTools: [],
+    allow: ["record_decision"],
+    loader: { noExtensions: true, append: "none" },
+    model: null,
+    thinking: null,
+    replyText: true,
+    hooks: {},
+    context: "baton",
+    refuses: { mode: "no modes here" },
+    clientSend: true,
+    composerClosed: null,
+    start: { prompt: { customPrompt: "p", appendSystemPrompt: "", contextFiles: [], skills: [], cwd: "(none)" }, baton: { names: { u1: "Ann" }, holder: "u1", holderTexts: [], vocabulary: [] } },
+  };
+  const entry = { kind: "custom", id: "e2", parentId: "e1", timestamp: "2026-10-12T00:00:00.000Z", customType: "x", data: { a: 1 } } as unknown as HEntry;
+  const s3: ChatWireFrame[] = [
+    { t: "open", id: "o1", path: "/s.jsonl", force: false, link: null, served: [], special: spec },
+    { t: "run", n: 1, event: { type: "run.start", tag: "look:1" } },
+    { t: "run", n: 2, event: { type: "user.end", card: "c1" } },
+    { t: "run.ack", n: 2 },
+    { t: "ask", id: "a1", method: "special.runStart", args: { leafId: null, images: true } },
+    { t: "answer", id: "a1", ok: true, result: spec.start },
+    { t: "tool.call", call: { effectId: "e#1", chatId: "/s.jsonl", toolCallId: "@clientSend", name: "@clientSend", params: { images: 0, text: "hi" }, attended: true, card: null }, ctx: { sessionId: "s", cwd: "/w", leafId: null, title: null } },
+    { t: "tool.back", effectId: "e#1", id: "b1", op: "append", kind: "baton-x", data: { a: 1 }, announce: true },
+    { t: "tool.back", effectId: "e#1", id: "b2", op: "tool", name: "agent_spawn", toolCallId: "tc", params: { task: "t" } },
+    { t: "tool.backResult", id: "b1", ok: true, result: { entryId: "e2", entry } },
+    { t: "tool.backResult", id: "b2", ok: false, error: { message: "That tool call is no longer running." } },
+    { t: "push", kind: "special", composerClosed: "This project is archived." },
+  ];
+  test("round-trip through the codec", () => {
+    const d = new FrameDecoder();
+    assert.deepEqual(
+      s3.flatMap((f) => d.push(encodeFrame(f))),
+      s3,
+    );
+  });
+  test("every ask has a policy; the stage-2 asks read as nothing, the new ones wait", () => {
+    for (const m of ["project.note", "playbook.bundleFor", "playbook.reprime", "links", "singleton"] as const) assert.equal(ASK_POLICY[m], "nothing", m);
+    for (const [m, p] of Object.entries(ASK_POLICY)) if (m.startsWith("special.") || m.startsWith("powers.")) assert.equal(p, "wait", m);
+  });
+  test("server actions are reserved names no tool can take", () => {
+    for (const a of SERVER_ACTIONS) assert.match(a, /^@/);
   });
 });

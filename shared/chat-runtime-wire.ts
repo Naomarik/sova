@@ -14,15 +14,22 @@ import type {
   ChatLifecycleEvent,
   ChatRefusal,
   ChatReply,
+  ChatRunEvent,
   ChatStateMirror,
+  RunStartAnswer,
   ServerToolCall,
   ServerToolDecl,
   ServerToolOutcome,
+  SpecialSpec,
 } from "./chat-runtime";
+import type { HEntry } from "./harness-history";
 import type { ToolResult } from "./harness-tools";
-import type { ChatClientMessage } from "./protocol";
+import type { ChatClientMessage, SessionInsight, SessionSummary, TranscriptItem } from "./protocol";
 
-export const CHAT_WIRE_PROTO = 1;
+/** 2 (al_3 stage 3): special loadouts (`open.special`), wait-asks, server actions, call-backs inside
+    a served call, run events with acks, `push special`, keyed sends. A proto-1 peer gets ordinary
+    chats only. */
+export const CHAT_WIRE_PROTO = 2;
 export const CHAT_WIRE_MIN_PROTO = 1;
 /** A frame above this is a protocol error: the link closes. */
 export const FRAME_MAX_BYTES = 64 * 1024 * 1024;
@@ -118,6 +125,8 @@ export type ChatOpenFrame =
       link: { origin: string; token: string } | null;
       /** The ordinary server-hosted tools' declarations, in loadout order. */
       served: ServerToolDecl[];
+      /** A special loadout (proto 2): the chat opens as that kind, never as an ordinary chat. */
+      special?: SpecialSpec;
     }
   | { t: "opened"; id: string; ok: true; mirror: ChatRuntimeMirror }
   | { t: "opened"; id: string; ok: false; refusal?: ChatRefusal; error?: { message: string } };
@@ -147,8 +156,19 @@ export interface ChatRuntimeMirror extends ChatStateMirror {
   startedAt: number;
   code: ChatCodeState;
   /** `quiet`: no run, compaction, start, web or agent queue, dialog, working worker or
-      server-hosted call in flight. `since`: when quiet last began (or ended). */
-  quiet: { quiet: boolean; since: number; clients: number; workersWorking: number; serverCalls: number };
+      server-hosted call in flight, nor (proto 2) an unacked run fact, wait-ask or action. `since`:
+      when quiet last began (or ended). */
+  quiet: {
+    quiet: boolean;
+    since: number;
+    clients: number;
+    workersWorking: number;
+    serverCalls: number;
+    /** Run facts the server hasn't acked (proto 2; absent from a proto-1 runtime). */
+    outbox?: number;
+    /** Wait-asks and actions waiting on the server (proto 2; absent from a proto-1 runtime). */
+    hooks?: number;
+  };
   /** The chat's Claude CLI child, for the cap across chat processes. */
   claude: "none" | "idle" | "busy";
   /** What the server's resource monitor shows for the chat. */
@@ -202,8 +222,48 @@ export interface ChatAsks {
   "playbook.reprime": { args: { sessionId: string; leafId: string | null }; result: { block: string; playbook: string; sha: string } | null };
   links: { args: { sessionId: string; path: string }; result: unknown[] };
   singleton: { args: { key: string; path: string }; result: { id: string; path: string; title: string } | null };
+  // proto 2, policy "wait":
+  "special.runStart": { args: { leafId: string | null; images: boolean }; result: RunStartAnswer };
+  "special.compact": { args: { leafId: string | null }; result: RunStartAnswer["message"] | null };
+  "special.agentEnd": { args: { text: string }; result: RunStartAnswer["message"] | null };
+  "powers.sessions": { args: Record<string, never>; result: SessionSummary[] };
+  "powers.session": { args: { id: string }; result: SessionSummary | null };
+  "powers.transcript": { args: { path: string }; result: TranscriptItem[] };
+  "powers.insight": { args: { path: string }; result: SessionInsight | null };
+  "powers.held": { args: { path: string }; result: { streaming: boolean; queued: number } | null };
+  "powers.projectRoot": { args: { cwd: string }; result: string | null };
 }
 export type ChatAskMethod = keyof ChatAsks;
+
+/**
+ * What an ask does without a server. "nothing": with no controller linked, or after 10 s, it reads
+ * as nothing (the stage-2 asks: a missing note or link list is harmless). "wait": queued while no
+ * controller is linked and sent again to the next one; after serverToolWaitMs it fails (the caller
+ * falls back to its last answer, or fails its tool with NOT_RUN_NO_SERVER).
+ */
+export const ASK_POLICY: Record<ChatAskMethod, "nothing" | "wait"> = {
+  "project.note": "nothing",
+  "playbook.bundleFor": "nothing",
+  "playbook.reprime": "nothing",
+  links: "nothing",
+  singleton: "nothing",
+  "special.runStart": "wait",
+  "special.compact": "wait",
+  "special.agentEnd": "wait",
+  "powers.sessions": "wait",
+  "powers.session": "wait",
+  "powers.transcript": "wait",
+  "powers.insight": "wait",
+  "powers.held": "wait",
+  "powers.projectRoot": "wait",
+};
+
+/** Server actions (proto 2): calls that change server state but are no model's tool. They ride the
+    tool.call / tool.update / tool.result / tool.abort frames under these reserved names, with the
+    same effect ids and the same "outcome unknown" and "didn't run" rules, and are never declared to
+    a model. */
+export const SERVER_ACTIONS = ["@clientSend", "@clientSendRefused", "@saveChoice", "@powers.send"] as const;
+export type ServerActionName = (typeof SERVER_ACTIONS)[number];
 export type ChatAskWire =
   | { t: "ask"; id: string; method: ChatAskMethod; args: unknown }
   | { t: "answer"; id: string; ok: true; result: unknown }
@@ -216,7 +276,30 @@ export type ChatPushWire =
   | { t: "push"; kind: "build"; build: string }
   | { t: "push"; kind: "settings"; settings: ChatRuntimeSettings }
   /** The rollout's word on this chat's code: a replacement is starting, or failed to (`detail`). */
-  | { t: "push"; kind: "code"; state: ChatCodeState["state"]; detail?: string };
+  | { t: "push"; kind: "code"; state: ChatCodeState["state"]; detail?: string }
+  /** A special loadout's composer closed (why) or open again (null) (proto 2; sent at control and
+      whenever it may have changed). */
+  | { t: "push"; kind: "special"; composerClosed: string | null };
+
+/**
+ * Call-backs inside a served call (proto 2), server → runtime, each answered once: the tool appends
+ * a state record to the chat (`announce`: through the special extension, so entry_appended fires),
+ * or runs a tool the chat registered (the subagents extension's) with the call's own ctx and abort.
+ * A call-back whose parent call is no longer pending is refused.
+ */
+export type ToolBackWire =
+  | { t: "tool.back"; effectId: string; id: string; op: "append"; kind: string; data: unknown; announce: boolean }
+  | { t: "tool.back"; effectId: string; id: string; op: "tool"; name: string; toolCallId: string; params: unknown }
+  | { t: "tool.backResult"; id: string; ok: true; result: { entryId: string; entry: HEntry } | ToolResult }
+  | { t: "tool.backResult"; id: string; ok: false; error: { message: string } };
+
+/**
+ * A special loadout's run events (proto 2), runtime → server, in the order the chat has them; `n`
+ * increases per process. Facts (run.start, user.entered, user.end, run.settled) are kept until acked
+ * and sent again, in order, at the next control; ticks (reply.text, message.end, entry.appended) are
+ * dropped while no server is linked. `run.ack` is cumulative, sent after handling (batched ≤ 200 ms).
+ */
+export type ChatRunWire = { t: "run"; n: number; event: ChatRunEvent } | { t: "run.ack"; n: number };
 
 /** The runtime asks the server's rollout to reload it on current code. */
 export type ChatRequestWire = { t: "reload.request"; auto: boolean };
@@ -229,6 +312,8 @@ export type ChatWireFrame =
   | ChatStateWire
   | ChatEventWire
   | ServerToolWire
+  | ToolBackWire
+  | ChatRunWire
   | ChatAskWire
   | ChatPushWire
   | ChatRequestWire;

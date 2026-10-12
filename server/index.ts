@@ -58,7 +58,8 @@ import { terminalSession } from "./decide-settings";
 import { MergeFollowUps } from "./merge-followup";
 import { configureReadiness } from "./merge-readiness";
 import { startSessionTags } from "./tags-backfill";
-import { readLiveRecords } from "./live";
+import { addOwnPid, readLiveRecords } from "./live";
+import { claimRecordedChats } from "./chat-runtime/supervisor";
 import { startResourceMonitor, stopResourceMonitor } from "./resource-monitor";
 import { defaultAdapters } from "./worker-adapters";
 import { serverRedactor } from "./overseer-redact";
@@ -131,6 +132,10 @@ setAuthHosts(() => {
   const config = meshApi.config();
   return { magicDns: meshApi.selfNode().dnsName, own: [config?.self.serveUrl, config?.frontDoor], peers: config?.peers.map((p) => p.serveUrl) ?? [] };
 });
+
+// The chat processes a previous server left running are this server's own before anything reads the
+// live records: never a terminal holding their file while the chat host takes them back (§app.chat-processes/survives-restart).
+claimRecordedChats(addOwnPid);
 
 // Every attached org's engine opens before the first request (its pages and share links read it).
 // An import a stop cut off finishes (§app.projects/import): its copy before the orgs open, the rest after.

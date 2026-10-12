@@ -6,20 +6,19 @@
  * what the agent did, and jumps the fullscreen transcript to a topic's original
  * message when selected.
  *
- * Summaries are produced by a configurable chain (see ~/.pi/agent/topic-outline.json):
+ * Summaries are produced by a configurable chain (see <agent dir>/topic-outline.json):
  * Pi model registry (ollama-cloud/deepseek-v4.1-flash) → Claude Code CLI fallback (sonnet).
  * Every layer degrades gracefully: missing models, limits, and failures leave the
  * last good outline in place, marked stale, and never block the session.
  */
 
 import { appendFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 import { locateMarker, markerOrdinalIndex, sameFingerprint, textOf } from "./anchors.ts";
-import { loadConfig, DEFAULT_CONFIG } from "./config.ts";
+import { agentDir, loadConfig, DEFAULT_CONFIG } from "./config.ts";
 import { SummarizerChain } from "./summarizers/chain.ts";
 import { withUsageContext } from "../llm-inflight/attribution.ts";
 import { createClaudeCliSummarizer } from "./summarizers/claude-cli.ts";
@@ -58,7 +57,7 @@ interface JumpAttempt {
 /** Opt-in (PI_TOPIC_OUTLINE_DEBUG=1) jump diagnostics; never includes message text. */
 function logJump(attempt: JumpAttempt): void {
   if (process.env.PI_TOPIC_OUTLINE_DEBUG !== "1") return;
-  try { appendFileSync(join(homedir(), ".pi", "agent", "topic-outline-debug.log"), `${JSON.stringify({ at: new Date().toISOString(), ...attempt })}\n`); }
+  try { appendFileSync(join(agentDir(), "topic-outline-debug.log"), `${JSON.stringify({ at: new Date().toISOString(), ...attempt })}\n`); }
   catch { /* diagnostics are best-effort */ }
 }
 

@@ -46,6 +46,7 @@ import {
   supervisorConfig,
 } from "./chat-runtime/supervisor";
 import { holderAlive, readLock, releaseLockOf } from "./chat-runtime/writer-lock";
+import type { Driver } from "./project-services/drivers";
 import { addOwnPid } from "./live";
 import { bootBuildChecked } from "./mesh/build-id";
 import { meshLinks } from "./mesh/links";
@@ -91,7 +92,15 @@ async function serverBuild(): Promise<string> {
   return diff ? `${boot.commit}+${createHash("sha256").update(diff).digest("hex").slice(0, 8)}` : "unknown";
 }
 
-class ChatHostRouter {
+/** What a test swaps (a fake driver, links over in-memory streams); the server uses the real ones. */
+export interface RouterDeps {
+  driver?: Driver;
+  connect?: typeof connectLink;
+  /** Whether ordinary chats move out now (the server: the chosen host's mode). */
+  out?: () => boolean;
+}
+
+export class ChatHostRouter {
   private readonly remotes = new Map<string, RemoteChatHandle>();
   /** Session id (the supervisor's chat id) → session file. */
   private readonly paths = new Map<string, string>();
@@ -102,15 +111,20 @@ class ChatHostRouter {
   private readonly sup: ChatSupervisor;
   private readonly rollout: Rollout<Link>;
   private readyP: Promise<void> = Promise.resolve();
+  private readonly connect: typeof connectLink;
+  private readonly out: () => boolean;
 
   constructor(
     private readonly epoch: number,
     private readonly build: string,
+    deps: RouterDeps = {},
   ) {
     const cfg = supervisorConfig();
+    this.connect = deps.connect ?? connectLink;
+    this.out = deps.out ?? (() => host.mode === "out");
     this.settings = { ...DEFAULT_RUNTIME_SETTINGS, idleStopMin: cfg.idleMs / 60_000 };
     this.sup = new ChatSupervisor({
-      driver: chatDriver(cfg),
+      driver: deps.driver ?? chatDriver(cfg),
       epoch,
       idleMs: cfg.idleMs,
       claudeIdleMax: cfg.claudeIdleMax,
@@ -215,7 +229,7 @@ class ChatHostRouter {
       const rec = this.sup.record(id);
       if (!rec) return;
       try {
-        const { link } = await connectLink(rec.sock, { epoch: this.epoch, build: this.build, settings: this.settings, since: h.lastSeq });
+        const { link } = await this.connect(rec.sock, { epoch: this.epoch, build: this.build, settings: this.settings, since: h.lastSeq });
         h.repoint(link, { unit: rec.unit, pid: rec.pid ?? h.at.pid });
         return;
       } catch {
@@ -261,7 +275,7 @@ class ChatHostRouter {
     for (let first = true; Date.now() < until; first = false) {
       if (!first) await new Promise((r) => setTimeout(r, 5_000));
       try {
-        const { link } = await connectLink(rec.sock, { epoch: this.epoch, build: this.build, settings: this.settings, since: null, retryForMs: first ? 5_000 : 0 });
+        const { link } = await this.connect(rec.sock, { epoch: this.epoch, build: this.build, settings: this.settings, since: null, retryForMs: first ? 5_000 : 0 });
         const state = await awaitFrame(link, "state", 5_000);
         this.adoptHandle(rec, link, state.mirror);
         return;
@@ -289,7 +303,7 @@ class ChatHostRouter {
       await open.call("reacquire", { force });
       return open;
     }
-    if (host.mode !== "out" || this.inprocOnly.has(path)) return null;
+    if (!this.out() || this.inprocOnly.has(path)) return null;
     let p = this.starting.get(path);
     if (!p) {
       p = this.startChat(path, force).finally(() => this.starting.delete(path));
@@ -327,7 +341,7 @@ class ChatHostRouter {
     }
     let link: Link;
     try {
-      const c = await connectLink(rec.sock, { epoch: this.epoch, build: this.build, settings: this.settings, since: null, retryForMs: 10_000 });
+      const c = await this.connect(rec.sock, { epoch: this.epoch, build: this.build, settings: this.settings, since: null, retryForMs: 10_000 });
       link = c.link;
       this.sup.noteConnected(rec.chatId);
       if (c.hello.state === "booting") await awaitFrame(link, "hello", 30_000, (h) => h.state !== "booting");

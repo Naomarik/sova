@@ -173,6 +173,8 @@ const textOfMsg = (m) => (Array.isArray(m?.content) ? m.content.filter((p) => p.
 const userEntriesWith = (path, text) => entries(path).filter((e) => e.type === "message" && e.message?.role === "user" && JSON.stringify(e.message.content).includes(text)).length;
 /** The server's auto-resume decisions on this chat (overseer-actions.jsonl). */
 const resumeDecisions = (path) => readLines(join(sova, "overseer-actions.jsonl")).filter((a) => a.tool === "auto_resume" && baseName(a.args?.path) === baseName(path));
+/** The chat process's in-flight marker (<stateRoot>/chats/inflight/<sessionId>.json). */
+const hasMarker = (path) => existsSync(join(sova, "chats", "inflight", `${entries(path)[0]?.id}.json`));
 const inLedger = (path) => Object.keys(readJson(join(sova, "runs-in-flight.json"))?.runs ?? {}).some((p) => baseName(p) === baseName(path));
 const deaths = (path) => readLines(join(sova, "chats", "deaths.jsonl")).filter((d) => JSON.stringify(d).includes(baseName(path).replace(/\.jsonl$/, "")) || baseName(d.sessionPath ?? d.session ?? d.path) === baseName(path));
 const fmtDecisions = (ds) => ds.map((a) => `${a.outcome}${a.error ? `: ${a.error}` : ""}`).join("; ") || "none";
@@ -275,6 +277,7 @@ async function t1(model) {
   s.close();
   await restart();
   sameProcess(path, pid1, label);
+  R.check(hasMarker(path), `${label}: the in-flight marker is still there mid-run, after the restart`);
   const s2 = await chat(c, path);
   R.check(s2.hello.isStreaming === true, `${label}: the reconnect's hello says a reply is in progress`);
   const sofar = liveText(s2.hello);
@@ -286,6 +289,7 @@ async function t1(model) {
   R.check(sofar && final.startsWith(sofar), `${label}: the reply so far is a prefix of the final reply`);
   R.check(msgs.length === 1 && msgs[0].stopReason !== "aborted" && msgs[0].stopReason !== "error", `${label}: exactly one assistant entry for the turn, not cut off (${msgs.map((m) => m.stopReason).join(", ")})`);
   R.check(final.includes(model ? "REPLY-DONE real" : "REPLY-DONE t1"), `${label}: the reply completed`);
+  R.check(!hasMarker(path), `${label}: the in-flight marker is gone after the reply settled`);
   if (!model) R.check(mockLog(mock.log).filter((e) => e.tag === "t1" && e.scenario).length === 1, `${label}: the model was asked for the reply once`);
   noResume(path, label);
   s2.close();
@@ -429,6 +433,7 @@ async function t2() {
   await sleep(15000);
   R.check(userEntriesWith(path, CRASH_RESUME_TEXT) === 1, `t2: the cut-off resume was not resumed a second time (${userEntriesWith(path, CRASH_RESUME_TEXT)})`);
   R.check(mockLog(mock.log).filter((e) => e.tag === "resume" && e.scenario).length === 1, "t2: the model was asked to continue once");
+  R.check(!hasMarker(path), "t2: no in-flight marker is left after the deaths were handled");
   const s2 = await chat(c, path);
   R.check(chatPid(path) && chatPid(path) !== pid2, "t2: reconnecting spawns a new process");
   s2.close();
@@ -498,8 +503,8 @@ async function t4() {
   R.check(chatPid(A.path) === pidA, "t4: A, attached, did not reload by itself");
   const from = a2.got.length;
   a2.send({ type: "reload_code" });
-  const reloaded = await a2.until((m) => m.type === "reloaded", 40000, "reloaded", from).catch(() => null);
-  R.check(reloaded, "t4: Reload now reloaded the chat (a 'reloaded' message)");
+  const reloaded = await a2.until((m) => m.type === "error" && m.code === "reloaded", 40000, "the reloaded notice", from).catch(() => null);
+  R.check(reloaded, "t4: Reload now reloaded the chat (an error frame with code reloaded)");
   for (let i = 0; i < 40 && chatPid(A.path) === pidA; i++) await sleep(500);
   const a3 = await chat(c, A.path);
   await sleep(2000);
@@ -511,7 +516,8 @@ async function t4() {
   a3.send({ type: "reload_code" });
   const answer = await a3.until((m) => m.type === "code" || m.type === "error", 10000, "the answer", f2).catch(() => null);
   await sleep(2000);
-  R.check(answer?.type === "code" && answer.state === "current" && chatPid(A.path) === pidA2, `t4: Reload now on a current chat answers {code: current} and reloads nothing (${JSON.stringify(answer)})`);
+  const errs = a3.got.slice(f2).filter((m) => m.type === "error");
+  R.check(answer?.type === "code" && answer.state === "current" && !errs.length && chatPid(A.path) === pidA2, `t4: Reload now on a current chat answers {code: current} and reloads nothing (${JSON.stringify(answer)})`);
   a2.close();
   a3.close();
   await teardown();

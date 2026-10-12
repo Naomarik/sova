@@ -21,14 +21,22 @@ import type {
   ServerToolDecl,
   ServerToolOutcome,
   SpecialSpec,
+  WorkerCursor,
+  WorkerFeedFrame,
+  WorkerKind,
+  WorkerSpec,
 } from "./chat-runtime";
+import type { LlmProcessSnapshot } from "../pi-config/extensions/llm-inflight/tracker";
 import type { HEntry } from "./harness-history";
 import type { ToolResult } from "./harness-tools";
 import type { ChatClientMessage, SessionInsight, SessionSummary, TranscriptItem } from "./protocol";
 
 /** 2 (al_3 stage 3): special loadouts (`open.special`), wait-asks, server actions, call-backs inside
     a served call, run events with acks, `push special`, keyed sends. A proto-1 peer gets ordinary
-    chats only. */
+    chats only.
+    3 (al_3 stage 4): worker chats (`open.worker`, the `feed` and `feedSince`), a parent chat's worker
+    host over its link (`wk*`), the mirror's `worker` and `llm`. A proto-2 peer refuses `open.worker`
+    ("needs protocol 3") and runs its own workers as before. Spoken once the runtime serves them. */
 export const CHAT_WIRE_PROTO = 2;
 export const CHAT_WIRE_MIN_PROTO = 1;
 /** A frame above this is a protocol error: the link closes. */
@@ -127,6 +135,8 @@ export type ChatOpenFrame =
       served: ServerToolDecl[];
       /** A special loadout (proto 2): the chat opens as that kind, never as an ordinary chat. */
       special?: SpecialSpec;
+      /** A worker chat's loadout (proto 3): the chat opens as that worker, never as an ordinary chat. */
+      worker?: WorkerSpec;
     }
   | { t: "opened"; id: string; ok: true; mirror: ChatRuntimeMirror }
   | { t: "opened"; id: string; ok: false; refusal?: ChatRefusal; error?: { message: string } };
@@ -173,6 +183,10 @@ export interface ChatRuntimeMirror extends ChatStateMirror {
   claude: "none" | "idle" | "busy";
   /** What the server's resource monitor shows for the chat. */
   monitor: { title?: string; workers: ChatMonitorWorker[]; toolsRunning: number; lastToolEnd: number };
+  /** A worker chat (proto 3): whose and what, so a server that takes the process back knows it. */
+  worker?: { parentSessionId: string; workerId: string; kind: WorkerKind };
+  /** This process's model-call counts (proto 3), counted into the server's in-flight view. */
+  llm?: LlmProcessSnapshot;
 }
 
 /** A worker as the chat's subagents runtime published it, for the resource monitor (its own
@@ -305,6 +319,24 @@ export type ChatRunWire = { t: "run"; n: number; event: ChatRunEvent } | { t: "r
 /** The runtime asks the server's rollout to reload it on current code. */
 export type ChatRequestWire = { t: "reload.request"; auto: boolean };
 
+/** A worker chat's feed (proto 3), runtime → server: each pi event of WORKER_FEED_EVENTS, as the
+    wire-1 frame its panes get, numbered per process. */
+export type WorkerFeedWire = { t: "feed"; cursor: WorkerCursor; event: unknown };
+
+/**
+ * A parent chat's worker host over its link (proto 3). Ops are idempotent (keys on start and send;
+ * stop and abort repeat harmlessly), so the runtime sends an unanswered `wk` again at the next
+ * control, and each watch again with its last cursor; after serverToolWaitMs with no server, the op
+ * fails with NOT_RUN_NO_SERVER.
+ */
+export type WorkerHostWire =
+  | { t: "wk"; id: string; op: "start" | "send" | "abort" | "stop" | "list"; args: unknown }
+  | { t: "wk.watch"; chatId: string; cursor: WorkerCursor | null }
+  | { t: "wk.unwatch"; chatId: string }
+  | { t: "wk.result"; id: string; ok: true; result: unknown }
+  | { t: "wk.result"; id: string; ok: false; error: { message: string } }
+  | { t: "wk.feed"; chatId: string; frame: WorkerFeedFrame };
+
 export type ChatWireFrame =
   | KernelFrame
   | ChatOpenFrame
@@ -317,7 +349,9 @@ export type ChatWireFrame =
   | ChatRunWire
   | ChatAskWire
   | ChatPushWire
-  | ChatRequestWire;
+  | ChatRequestWire
+  | WorkerFeedWire
+  | WorkerHostWire;
 
 export type ChatWireType = ChatWireFrame["t"];
 export type FrameOf<T extends ChatWireType> = Extract<ChatWireFrame, { t: T }>;

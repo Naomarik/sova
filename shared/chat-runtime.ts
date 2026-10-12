@@ -27,6 +27,21 @@ import type {
   WorkerInfo,
 } from "./protocol";
 import type { SubagentProfilesInfo } from "./subagent-profiles";
+import type { WorkerCursor } from "../pi-config/extensions/subagents/worker-host";
+
+// The one worker loadout (al_3 stage 4): defined beside the subagents extension that computes it
+// (pi-config never imports shared/), re-exported for the server.
+export type {
+  WorkerCursor,
+  WorkerFeedFrame,
+  WorkerHost,
+  WorkerKind,
+  WorkerRef,
+  WorkerSession,
+  WorkerSpec,
+  WorkerStart,
+  WorkerState,
+} from "../pi-config/extensions/subagents/worker-host";
 
 /** A hosted chat's id across the boundary: its session file's canonical path. */
 export type ChatId = string;
@@ -327,6 +342,9 @@ export interface ChatMethods {
   reacquire: { args: { force: boolean }; result: "ok" | "reloaded" };
   /** The chat's next run is an automatic resume (§app.overseer/auto-resume): never resumed again. */
   markResuming: { args: Record<string, never>; result: null };
+  /** A worker chat's feed frames after `seq` of process `proc`, from its ring; a gap when they fell
+      out of it or `proc` is another process (proto 3). */
+  feedSince: { args: { proc: string; seq: number }; result: { frames: { cursor: WorkerCursor; event: unknown }[] } | { gap: true } };
 }
 
 export type ChatMethod = keyof ChatMethods;

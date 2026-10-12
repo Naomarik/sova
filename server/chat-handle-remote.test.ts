@@ -1,0 +1,168 @@
+// Run: pnpm test -- server/chat-handle-remote.test.ts. A chat in a process of its own as the server talks
+// to it (§app.chat-processes/server-messages, §app.chat-processes/special-kinds), over a fake link: a
+// command waits for a relink, a keyed send or a turn's end whose answer was lost goes once more, an ended
+// handle refuses at once; a special chat's run events reach its kind once, acknowledged; a served call's
+// writes are calls back into the chat and move the call's own view of the branch.
+import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { after, test } from "node:test";
+import type { ChatRunEvent, ServerToolCall } from "../shared/chat-runtime";
+import type { ChatRuntimeMirror, ChatWireFrame, ChatWireType, FrameOf, LinkEnd } from "../shared/chat-runtime-wire";
+
+const agentDir = mkdtempSync(join(tmpdir(), "sova-chat-handle-remote-"));
+process.env.PI_CODING_AGENT_DIR = agentDir;
+mkdirSync(join(agentDir, "sessions"), { recursive: true });
+after(() => {});
+
+const { RemoteChatHandle, UNREACHABLE } = await import("./chat-handle-remote");
+const { registerSpecialHost, serveTools } = await import("./chat-handle");
+const { BATON } = await import("./harness/state-kinds");
+
+/** A link a test drives: what the handle sends is recorded; `deliver` plays the chat's frames. */
+class FakeLink {
+  sent: ChatWireFrame[] = [];
+  isOpen = true;
+  compatible = true;
+  peerProto = 2;
+  private handlers = new Map<string, ((f: unknown) => void)[]>();
+  private end!: (e: LinkEnd) => void;
+  readonly closed: Promise<LinkEnd> = new Promise((r) => (this.end = r));
+  on<T extends ChatWireType>(t: T, fn: (f: FrameOf<T>) => void): () => void {
+    const list = this.handlers.get(t) ?? [];
+    list.push(fn as (f: unknown) => void);
+    this.handlers.set(t, list);
+    return () => this.handlers.set(t, (this.handlers.get(t) ?? []).filter((x) => x !== fn));
+  }
+  send(f: ChatWireFrame): boolean {
+    if (!this.isOpen) return false;
+    this.sent.push(f);
+    return true;
+  }
+  deliver(f: ChatWireFrame): void {
+    for (const fn of this.handlers.get(f.t) ?? []) fn(f);
+  }
+  close(): void {
+    this.drop();
+  }
+  drop(): void {
+    if (!this.isOpen) return;
+    this.isOpen = false;
+    this.end({ reason: "lost" });
+  }
+  calls = () => this.sent.filter((f): f is FrameOf<"call"> => f.t === "call");
+}
+
+let seq = 0;
+function sessionFile(): string {
+  const path = join(agentDir, "sessions", `s${++seq}.jsonl`);
+  const lines = [
+    { type: "session", version: 3, id: `sid-${seq}`, timestamp: "2026-10-12T00:00:00.000Z", cwd: agentDir },
+    { type: "message", id: "u1", parentId: null, timestamp: "2026-10-12T00:00:01.000Z", message: { role: "user", content: "hi", timestamp: 1 } },
+  ];
+  writeFileSync(path, `${lines.map((l) => JSON.stringify(l)).join("\n")}\n`);
+  return path;
+}
+
+const mirror = (o: Partial<ChatRuntimeMirror> = {}): ChatRuntimeMirror => ({ sessionId: "sid", special: null, closed: false, ...o }) as unknown as ChatRuntimeMirror;
+const tick = (ms = 0) => new Promise((r) => setTimeout(r, ms));
+
+function handle(o: { special?: ChatRuntimeMirror["special"]; path?: string } = {}) {
+  const link = new FakeLink();
+  const path = o.path ?? sessionFile();
+  const h = new RemoteChatHandle(path, path, { unit: "u", pid: 1 }, link as never, mirror({ special: o.special ?? null }), 7);
+  return { h, link, path };
+}
+
+test("a command made while the link is down waits for the relink, then goes", async () => {
+  const { h, link } = handle();
+  link.drop();
+  await tick();
+  const p = h.call("abort", {});
+  const next = new FakeLink();
+  h.repoint(next as never);
+  await tick();
+  const [c] = next.calls();
+  assert.equal(c?.call.method, "abort");
+  next.deliver({ t: "reply", reply: { id: c!.call.id, ok: true, result: null } });
+  assert.equal(await p, null);
+  assert.equal(link.calls().length, 0);
+});
+
+test("a keyed send whose answer was lost goes once more after the relink; an unkeyed command fails", async () => {
+  const { h, link } = handle();
+  const keyed = h.send({ text: "brief", origin: "server", key: "brief:1" });
+  const plain = h.call("abort", {});
+  assert.equal(link.calls().length, 2);
+  link.drop();
+  await assert.rejects(plain, (e: Error) => e.message === UNREACHABLE);
+  const next = new FakeLink();
+  h.repoint(next as never);
+  const [again] = next.calls();
+  assert.equal(again?.call.method, "send");
+  assert.equal((again!.call.args as { key?: string }).key, "brief:1");
+  next.deliver({ t: "reply", reply: { id: again!.call.id, ok: true, result: { queued: false, turnId: "t1" } } });
+  assert.deepEqual(await keyed, { queued: false, turnId: "t1" });
+  assert.equal(next.calls().length, 1, "once, not again");
+});
+
+test("an ended handle refuses at once", async () => {
+  const { h } = handle();
+  h.endPanes("gone");
+  await assert.rejects(h.call("abort", {}), (e: Error) => e.message === UNREACHABLE);
+});
+
+test("a special chat's run events reach its kind once, in order, and are acknowledged", async () => {
+  const heard: [ChatRunEvent["type"], number][] = [];
+  registerSpecialHost({
+    kind: "baton",
+    matches: () => false,
+    spec: async () => {
+      throw new Error("not in this test");
+    },
+    adopt: async () => {},
+    runStart: async () => ({ prompt: {} }),
+    runEvent: (_path, e, n) => void heard.push([e.type, n]),
+  });
+  const { h, link } = handle({ special: "baton" });
+  link.deliver({ t: "run", n: 1, event: { type: "run.start" } });
+  link.deliver({ t: "run", n: 2, event: { type: "run.settled" } });
+  link.deliver({ t: "run", n: 2, event: { type: "run.settled" } }); // told again (a resend): heard once
+  assert.deepEqual(heard, [
+    ["run.start", 1],
+    ["run.settled", 2],
+  ]);
+  await tick(250);
+  assert.deepEqual(link.sent.filter((f) => f.t === "run.ack"), [{ t: "run.ack", n: 2 }]);
+  h.bye();
+});
+
+test("a served call's write is a call back into the chat, and the call then reads it as its leaf", async () => {
+  const { link, path } = handle();
+  const seen: { leaf: string | null; last: string | undefined }[] = [];
+  serveTools(path, [
+    {
+      name: "probe_write",
+      label: "probe",
+      description: "probe",
+      parameters: { type: "object" },
+      async execute(_id, _p, _s, _u, ctx) {
+        const { serverToolCall } = await import("./chat-handle");
+        const id = await serverToolCall()!.chat.append(BATON, { v: 1 } as never, { announce: true });
+        seen.push({ leaf: ctx!.leafId(), last: ctx!.branch().at(-1)?.id ?? undefined });
+        return { content: [{ type: "text", text: id }], details: null };
+      },
+    },
+  ]);
+  const call: ServerToolCall = { effectId: "fx-1", chatId: path, toolCallId: "tc", name: "probe_write", params: {}, attended: false, card: null };
+  link.deliver({ t: "tool.call", call, ctx: { sessionId: `sid-${seq}`, cwd: agentDir, leafId: "u1", title: null } });
+  await tick(20);
+  const back = link.sent.find((f): f is FrameOf<"tool.back"> => f.t === "tool.back");
+  assert.ok(back && back.op === "append" && back.announce && back.kind === BATON.type && back.effectId === "fx-1");
+  link.deliver({ t: "tool.backResult", id: back.id, ok: true, result: { entryId: "m1", entry: { kind: "state", id: "m1", parentId: "u1", key: BATON.type, data: { v: 1 } } as never } });
+  await tick(20);
+  assert.deepEqual(seen, [{ leaf: "m1", last: "m1" }]);
+  const result = link.sent.find((f): f is FrameOf<"tool.result"> => f.t === "tool.result");
+  assert.deepEqual(result?.outcome, { ok: true, result: { content: [{ type: "text", text: "m1" }], details: null } });
+});

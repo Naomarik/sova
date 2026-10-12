@@ -291,7 +291,8 @@ export class RemoteChatHandle extends ChatHandle {
   async call<M extends ChatMethod>(method: M, args: ChatMethods[M]["args"]): Promise<ChatMethods[M]["result"]> {
     // A chat whose link is down while its handle lives (reconnecting, a reload's swap) is waited for.
     if (!this.link.isOpen && !this.ended) await this.waitRelink();
-    if (!this.link.isOpen) throw new Error(UNREACHABLE);
+    // A handle that ended (the process died, exited or was let go) takes no command: the next open starts afresh.
+    if (!this.link.isOpen || this.ended) throw new Error(UNREACHABLE);
     const call: ChatCall<M> = { id: `${this.epoch}:${++this.calls}`, epoch: this.epoch, chatId: this.chatId, method, args };
     return new Promise((resolve, reject) => {
       this.pending.set(call.id, { call: call as ChatCall, resend: false, resolve: resolve as (v: unknown) => void, reject });

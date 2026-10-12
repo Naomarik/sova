@@ -42,7 +42,7 @@ export function explainState(info: { status?: string; error?: string; note?: str
 }
 
 /**
- * The run's parent stopped (a restart or /reload) before the run settled, and the extension
+ * The run's worker stopped (the server stopped it, or it died) before the run settled, and the extension
  * settled it later. Orthogonal to `explainState`, which still says whether there is a page:
  * `noted` (the page was on disk anyway; it links) or `failed` (no page).
  */

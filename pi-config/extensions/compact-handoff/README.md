@@ -16,8 +16,11 @@ stops a run.
    folds (and says so). If the fork can't start, the command says so and does nothing else.
 2. Nothing of the fork's turn enters the session. The run's row is a hidden `compact-handoff-run`
    custom entry `{v: 1, id, status, at, focus?, path?, error?}`, appended at the start
-   (`running`) and again under the same id at the end (`saved`, `failed`, `cancelled`); a run its
-   session stopped is settled as `interrupted` at the next prompt. The TUI draws each entry as a
+   (`running`) and again under the same id at the end (`saved`, `failed`, `cancelled`). The fork is
+   a hidden chat of its own process (Sova's worker host): a `/reload` or a crash of the session
+   leaves it writing, and the reopened session watches it again and finishes the run. A run whose
+   fork's chat is gone (the server stopped it, or it died for good) is settled as `interrupted`
+   at the next prompt. The TUI draws each entry as a
    line; Sova renders the newest per id as one row.
 3. When the fork settles, the last `<handoff>` block of its final reply is the note. A failed or
    stopped fork, or no block, saves and compacts nothing. The note is written to

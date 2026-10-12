@@ -28,7 +28,9 @@ import { Text } from "@earendil-works/pi-tui";
 import type { ClaudeForkPoint } from "../claude-code/provider/fork-point.ts";
 import {
 	claudeForkPointFor,
+	reattachBackgroundForks,
 	startBackgroundFork,
+	workerHostOf,
 	type BackgroundForkHandle,
 	type BackgroundForkHandlers,
 	type BackgroundForkResult,
@@ -37,6 +39,7 @@ import {
 import { copyForFork, forkable, sweepStale } from "../subagents/fork/copy.ts";
 import type { ForkPolicy } from "../subagents/fork/mirror.ts";
 import { rpcScopedModel } from "../subagents/runner.ts";
+import type { WorkerHost } from "../subagents/worker-host.ts";
 import {
 	agentDir as defaultAgentDir,
 	type BranchEntry,
@@ -74,6 +77,10 @@ export interface CompactHandoffOptions {
 	start?(spec: BackgroundForkSpec, handlers: BackgroundForkHandlers): BackgroundForkHandle;
 	/** Test seam; defaults to the core's claudeForkPointFor. */
 	claudeForkPoint?(model: string | undefined, parentSessionId: string): ClaudeForkPoint | undefined;
+	/** Test seam; defaults to the host Sova announces on pi.events. */
+	workerHost?(): WorkerHost | undefined;
+	/** Test seam; defaults to the shared reattach. */
+	reattach?: typeof reattachBackgroundForks;
 }
 
 interface Run {
@@ -106,6 +113,9 @@ export default function compactHandoff(pi: ExtensionAPI, options: CompactHandoff
 	const now = options.now ?? Date.now;
 	const start = options.start ?? startBackgroundFork;
 	const forkPointOf = options.claudeForkPoint ?? claudeForkPointFor;
+	const announced = options.workerHost ? undefined : workerHostOf(pi.events);
+	const hostOf = options.workerHost ?? (() => announced?.current());
+	const reattachForks = options.reattach ?? reattachBackgroundForks;
 	/** The fork under way, per pi session: from the command until it settles. */
 	const runs = new Map<string, Run>();
 	/** Saved notes waiting to compact, per pi session. */
@@ -138,13 +148,17 @@ export default function compactHandoff(pi: ExtensionAPI, options: CompactHandoff
 		try { rmSync(dir, { recursive: true, force: true }); } catch { /* the sweep takes it later */ }
 	};
 
+	/** The runs a closed session left running, watched again at session_start (`reattach`). */
+	let reattached: Promise<unknown> = Promise.resolve();
+
 	/**
-	 * Settle the running rows no fork of THIS process is behind (a restart, /reload or crash
-	 * stopped them), once per session and only when the session is written anyway: its first
-	 * prompt, or /compact-handoff. Opening a session never writes.
+	 * Settle the running rows no live fork is behind (its chat is gone: the server stopped it, or it
+	 * died for good), once per session, after the reattach, and only when the session is written
+	 * anyway: its first prompt, or /compact-handoff. Opening a session never writes.
 	 */
 	let reconciledFor: string | undefined;
-	const reconcile = (ctx: ExtensionContext): void => {
+	const reconcile = async (ctx: ExtensionContext): Promise<void> => {
+		await reattached;
 		try {
 			const sessionId = idOf(ctx);
 			if (reconciledFor === sessionId) return;
@@ -158,7 +172,7 @@ export default function compactHandoff(pi: ExtensionAPI, options: CompactHandoff
 	};
 
 	pi.on("input", (event, ctx) => { bump(event, ctx); return { action: "continue" }; });
-	pi.on("before_agent_start", (event, ctx) => { bump(event, ctx); reconcile(ctx); });
+	pi.on("before_agent_start", async (event, ctx) => { bump(event, ctx); await reconcile(ctx); });
 	pi.on("agent_start", bump);
 
 	pi.registerEntryRenderer<RunEntryData>(RUN_ENTRY, (entry, _options, theme) => {
@@ -285,7 +299,7 @@ export default function compactHandoff(pi: ExtensionAPI, options: CompactHandoff
 				notify(ctx, "/compact-handoff waits for an idle session: let the turn, compaction or queued messages finish, then run it again.", "warning");
 				return;
 			}
-			reconcile(ctx);
+			await reconcile(ctx);
 			const sessionFile = ctx.sessionManager.getSessionFile();
 			if (!forkable(sessionFile)) {
 				notify(ctx, "/compact-handoff: this session has no conversation on disk yet, so there is nothing to hand off.", "warning");
@@ -313,6 +327,9 @@ export default function compactHandoff(pi: ExtensionAPI, options: CompactHandoff
 			try {
 				run.handle = start(
 					{
+						host: hostOf(),
+						kind: "handoff",
+						parent: { sessionId, path: sessionFile },
 						id,
 						name: WORKER_NAME,
 						task: forkTask(focus),
@@ -360,8 +377,40 @@ export default function compactHandoff(pi: ExtensionAPI, options: CompactHandoff
 		runs.clear();
 		waiting.clear();
 		for (const run of live) run.closing = true;
-		// Nothing is written while a session closes; the next prompt settles their rows as interrupted.
-		await Promise.all(live.map((run) => run.handle?.stop().catch(() => {})));
+		// Nothing is written while a session closes. The forks keep writing: the next session over
+		// this file reattaches them (session_start).
+		for (const run of live) run.handle?.detach();
+	});
+
+	/**
+	 * Watch again the forks the worker host still runs for this session: each whose row is still
+	 * running is a live run again and settles as if never left (saved, then compacted at the next
+	 * idle moment). A row whose fork is gone is the next prompt's `reconcile`.
+	 */
+	const reattach = async (ctx: ExtensionContext): Promise<void> => {
+		const host = hostOf();
+		if (!host) return;
+		const sessionId = idOf(ctx);
+		const rows = new Map(stillRunning(ctx.sessionManager.getBranch() as BranchEntry[]).map((data) => [data.id, data]));
+		const root = runsRoot(dirOf());
+		const handles = await reattachForks(host, "handoff", WORKER_NAME, (id) => {
+			const row = rows.get(id);
+			if (!row || runs.has(sessionId)) return undefined;
+			const run: Run = { id, sessionId, focus: row.focus ?? "", dir: join(root, id), ctx, settled: false, cancelled: false, closing: false };
+			runs.set(sessionId, run);
+			return { onSettled: (result) => settle(run, result) };
+		});
+		for (const [id, handle] of handles) {
+			const run = runs.get(sessionId);
+			if (run?.id === id && !run.settled) run.handle = handle;
+			// It settled while its handle was being made: recorded already; its chat is done.
+			else void handle.stop().catch(() => {});
+		}
+	};
+	pi.on("session_start", (_event, ctx) => {
+		try {
+			reattached = reattach(ctx).catch(() => {});
+		} catch { /* no session to read */ }
 	});
 
 	// After any compaction: the newest note on this branch, hidden, right after the summary. No

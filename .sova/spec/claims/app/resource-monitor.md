@@ -80,7 +80,7 @@ says that it isn't.
   published in process on the `subagents:workers-snapshot` event and **never written to disk**
   (`worker-pid`); a `claude --resume` / `--session-id` uuid — a worker's session id, or a hosted
   session's Claude Code provider (`session-id`); a pi worker's own live record (`live-record`); a
-  member-mcp helper's team env (`team-env`); the environment the agent itself puts on its tool
+  team member's env (`PI_SUBAGENTS_TEAM_MEMBER`, on the member and everything it starts; `team-env`); the environment the agent itself puts on its tool
   children — pi's bash tool sets `PI_SESSION_FILE`, Claude Code sets `CLAUDE_CODE_SESSION_ID` and
   `CLAUDE_PID` — read once per process, ignoring values the server inherited itself (`env`); anything below a charged process
   (`descendant`); and **sid memory** — a session id seen under a charged process keeps its owner

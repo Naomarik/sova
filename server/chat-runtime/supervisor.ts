@@ -216,6 +216,9 @@ export interface SupervisorDeps {
   onDeath?(death: ChatDeath): void | Promise<void>;
   /** The supervisor closed a chat of its own accord (idle). */
   onStopped?(chatId: string, cause: ExitCause): void;
+  /** A chat started here ended (or was given up) before its first hello: a spawn failure, logged and
+      never a death. The router opens it in the server's process until the server restarts. */
+  onBootFailed?(chatId: string, death: ChatDeath): void;
   /** Ask the chat to close (`drain{reason, force:false}`); it re-checks and may refuse. */
   drain?(chatId: string, reason: "idle" | "reload"): Promise<{ ok: boolean }>;
   /** Ask chat `chatId` to let its idle Claude CLI child go (the handle's releaseIdleModelChild). */
@@ -253,6 +256,8 @@ interface Tracked {
   claudeIdleSince: number;
   /** When a release was asked: until the mirror answers, it counts as let go (cleared after 30 s). */
   reaping: number | null;
+  /** It said hello on a link (an adopted chat did, to an earlier server): its end is a death, not a failed start. */
+  connected: boolean;
 }
 
 const isUp = (s: UnitStatus) => s.state === "active" || s.state === "activating";
@@ -314,9 +319,9 @@ export class ChatSupervisor {
     }
     return names.filter((n) => n.endsWith(".json")).flatMap((n) => readRecord(join(this.regDir(), n)) ?? []);
   }
-  private track(rec: ChatRecord): Tracked {
+  private track(rec: ChatRecord, connected = true): Tracked {
     this.chats.get(rec.chatId)?.releasePid();
-    const t: Tracked = { rec, releasePid: rec.pid && this.deps.ownPid ? this.deps.ownPid(rec.pid) : () => {}, idleSince: null, draining: false, claude: "none", claudeIdleSince: 0, reaping: null };
+    const t: Tracked = { rec, releasePid: rec.pid && this.deps.ownPid ? this.deps.ownPid(rec.pid) : () => {}, idleSince: null, draining: false, claude: "none", claudeIdleSince: 0, reaping: null, connected };
     this.chats.set(rec.chatId, t);
     return t;
   }
@@ -386,7 +391,7 @@ export class ChatSupervisor {
       throw err;
     }
     this.write(rec);
-    this.track(rec);
+    this.track(rec, false);
     if (rec.pid === null) await this.check(chat.chatId);
     return rec;
   }
@@ -470,7 +475,20 @@ export class ChatSupervisor {
    * Look at chat `chatId`'s unit now (the server saw its link close, or the watch ticks). A unit
    * that is gone is an expected end (it said it exits, or exit 0), or a death, reported once.
    */
-  async check(chatId: string): Promise<"up" | "ended" | "died" | "unknown"> {
+  /** Chat `chatId` said hello on its link: from now on its end is a death. */
+  noteConnected(chatId: string): void {
+    const t = this.chats.get(chatId);
+    if (t) t.connected = true;
+  }
+
+  /** A start that failed before the chat's first hello: forgotten and logged, never a death. */
+  private bootFailed(t: Tracked, death: ChatDeath): void {
+    this.forget(t.rec.chatId);
+    this.log(`${t.rec.chatId}: its process did not start (${death.detail ?? death.cause}${death.exit !== null ? `, exit ${death.exit}` : ""}${death.signal ? `, ${death.signal}` : ""}): ${death.logTail.at(-1) ?? "no output"}`);
+    this.deps.onBootFailed?.(t.rec.chatId, death);
+  }
+
+  async check(chatId: string): Promise<"up" | "ended" | "died" | "boot-failed" | "unknown"> {
     const t = this.chats.get(chatId);
     if (!t) return "unknown";
     const st = await this.deps.driver.status(t.rec.unit);
@@ -481,17 +499,24 @@ export class ChatSupervisor {
       this.forget(chatId);
       return "ended";
     }
+    if (!t.connected) {
+      this.bootFailed(t, death);
+      return "boot-failed";
+    }
     await this.report(t.rec, death);
     return "died";
   }
 
-  /** The unit is up but the chat stopped answering (no hello, or its link lost for too long): stop it and report it lost. */
+  /** The unit is up but the chat stopped answering (no hello in time, or its link lost for too long): stop it and report it lost (before its first hello, a failed start). */
   async lost(chatId: string, detail: string): Promise<void> {
     const t = this.chats.get(chatId);
     if (!t) return;
     await this.deps.driver.stop(t.rec.unit).catch(() => {});
     const logs = (await this.deps.driver.logs(t.rec.unit, LOG_TAIL).catch(() => [])).map((l) => l.text);
-    await this.report(t.rec, { chatId, sessionPath: t.rec.sessionPath, unit: t.rec.unit, cause: "lost", exit: null, signal: null, detail, logTail: logs, at: new Date(this.now()).toISOString() });
+    const death: ChatDeath = { chatId, sessionPath: t.rec.sessionPath, unit: t.rec.unit, cause: "lost", exit: null, signal: null, detail, logTail: logs, at: new Date(this.now()).toISOString() };
+    // One that never said hello did not start: a failed start, not a death.
+    if (!t.connected) return this.bootFailed(t, death);
+    await this.report(t.rec, death);
   }
 
   /**

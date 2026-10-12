@@ -196,7 +196,11 @@ shell and under a timeout.
   that file is dirty there), cached per master sha and file: one that fails there too is named
   pre-existing and doesn't block. It also runs `leak-scan.mjs` over the commits landing would
   publish (origin/master to the branch's head): a hit is a need, printed as the scan prints it; a
-  scan that can't run is said and doesn't block, since `push` scans again. The verdict, `landable at
+  scan that can't run is said and doesn't block, since `push` scans again. Each area guide
+  (`agents/**/overview.md` in the branch's tree) names in its front-matter the files it `watches`
+  and the files to `alsoUpdate` with them; for each area whose watched files the branch changed
+  while it changed none of that area's also-update files, it prints `also update: touched <area>
+  (…), not <file>`, a question for the owner and never a need. The verdict, `landable at
   <sha>` or `needs: …`, is recorded against the branch's head and master's sha.
 - **`land <branch>`** never merges. With a landable check at the current head and the current
   master, it runs the same leak scan again and, only when it finds no hit, prints the `worktree`

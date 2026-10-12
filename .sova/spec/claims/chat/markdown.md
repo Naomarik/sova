@@ -23,7 +23,7 @@ there:
 ```
 
 **Renderer rules** (any GFM renderer, e.g. `marked`, plus `highlight.js`; adding either
-dependency needs approval under CLAUDE.md):
+dependency needs approval under AGENTS.md):
 
 - **GFM on.** That gives tables, `~~strikethrough~~`, task lists, and autolinks for bare URLs.
 - **Raw HTML is never rendered.** Any HTML in the model's output (block or inline) is emitted as

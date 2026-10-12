@@ -746,7 +746,9 @@ Sova's tools under the same id, seat, cwd, model and effort, in a new pi session
 with one message (`claude-workers.ts` `continuationMessage`: its old transcript's path, its task,
 the last 2,000 characters of its last answer). Its Claude tool names map to Sova's (others are
 dropped), only `permissionMode: plan` of its options is kept, and its record keeps the old session
-as `continuedFrom`.
+as `continuedFrom`. One still running under its detached host when the session starts again is not re-adopted
+(nothing can drive it): `hosting.retire` stops its host and archives the entry, and it is listed
+restored, ready for that resume.
 Nothing is sent to it and no completion is reported; `agent_steer` gives it its
 next task. The session's current sandbox and remote state apply, exactly as at
 spawn. A team member rejoins its team, which becomes live again, with a fresh

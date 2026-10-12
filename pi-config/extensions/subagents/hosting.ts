@@ -332,6 +332,24 @@ export class WorkerHosting {
 		};
 	}
 
+	/**
+	 * Stop an entry nobody may adopt any more (its backend has no runner: a native Claude Code
+	 * worker) and archive it: its host is sent SIGTERM (it signals its worker and exits), and the
+	 * worker's group too in case the host is gone. False if another manager holds it.
+	 */
+	retire(dir: string, meta: WorkerMeta): boolean {
+		if (this.entries.has(meta.id) || !acquireLock(dir)) return false;
+		if (meta.hostPid && pidAlive(meta.hostPid, meta.pidStartTime)) {
+			try { process.kill(meta.hostPid, "SIGTERM"); } catch { /* already gone */ }
+		}
+		if (meta.workerPid && meta.workerStartTime !== undefined && pidAlive(meta.workerPid, meta.workerStartTime)) {
+			try { process.kill(-(meta.workerPgid ?? meta.workerPid), "SIGTERM"); } catch { /* already gone */ }
+		}
+		releaseLock(dir);
+		archive(this.root, dir, meta.ownerSessionId, meta.id);
+		return true;
+	}
+
 	/** A launched entry whose runner was never created: stop any host it started and archive it. */
 	discard(workerId: string): void {
 		const entry = this.entries.get(workerId);

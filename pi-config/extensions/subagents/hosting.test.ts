@@ -528,6 +528,26 @@ test("re-adopt (fake host, real unix socket, real SubagentRunner): history is si
 	assert.deepEqual([after.state, after.consumedOffset], ["detached", ends([...log, ...piRun("third", "third answer")]).at(-1)]);
 });
 
+test("a living host of a native Claude Code worker is stopped and archived, never adopted (a resume continues it on Sova's tools)", { skip, timeout: 20_000 }, async (t) => {
+	const root = tempRoot(t);
+	const owner = `own-${Date.now().toString(36)}`;
+	// A stand-in host process: it exits on SIGTERM, as host.ts does after signalling its worker.
+	const stand = spawn(process.execPath, ["-e", "process.on('SIGTERM', () => process.exit(0)); setInterval(() => {}, 1000)"], { stdio: "ignore" });
+	t.after(() => { try { stand.kill("SIGKILL"); } catch { /* gone */ } });
+	const exited = new Promise<void>((r) => stand.once("exit", () => r()));
+	await until(() => procStartTime(stand.pid!) !== undefined, 3000, "stand-in up");
+	writeEntry(root, owner, "ag_05", {
+		hostPid: stand.pid!, pidStartTime: procStartTime(stand.pid!), backend: "claude-code",
+		spec: { prompt: "review", backend: "claude-code", name: "worker", cwd: root, wake: true },
+	}, []);
+	const m = manager(root, owner);
+	m.start();
+	await until(() => listOwner(root, owner).length === 0, 5000, "archive");
+	await exited;
+	assert.equal((await m.call("agent_list", {})).details.agents.length, 0, "no live worker for it");
+	await m.shutdown();
+});
+
 test("dead host mid-turn: log replayed, worker finalized as lost, registry record 'lost', entry archived", { skip, timeout: 20_000 }, async (t) => {
 	const root = tempRoot(t);
 	const owner = `own-${Date.now().toString(36)}`;

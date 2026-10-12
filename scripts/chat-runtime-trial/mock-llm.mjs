@@ -23,6 +23,8 @@
 //   [served-late]  10 text parts first, then a call to trial_served_sleep {ms:1000}: a call the chat makes
 //              while the trial holds the server down
 //   [served-quick]  a call to trial_served_sleep {ms:500}
+//   [call NAME {json}]  a call to the tool NAME with those arguments, then the closing text: any tool
+//              the chat has, such as an Overseer's server-state tools
 //   [compact]  (pi's compaction request, by its prompt's shape) a summary streamed
 //              over 15 steps, ending "COMPACT-SUMMARY"
 //   [big N]    N thousand characters of text at once (history enough for a compaction to cut)
@@ -73,7 +75,8 @@ const server = createServer(async (req, res) => {
   const long = /process stopped unexpectedly and cut off/.test(userText) ? [null, "20", "resume"] : /\[long (\d+)(?: #([\w-]+))?\]/.exec(userText);
   const bash = /\[bash (\d+)\]/.exec(userText);
   const big = /\[big (\d+)\]/.exec(userText);
-  const scenario = compact ? "compact" : big ? "big" : long ? "long" : bash ? "bash" : /\[served-late\]/.test(userText) ? "served-late" : /\[served-quick\]/.test(userText) ? "served-quick" : /\[served\]/.test(userText) ? "served" : /\[spawn\]/.test(userText) ? "spawn" : /\[ask\]/.test(userText) ? "ask" : "plain";
+  const anyCall = /\[call ([\w-]+) (\{.*?\})\]/.exec(userText);
+  const scenario = compact ? "compact" : big ? "big" : long ? "long" : bash ? "bash" : anyCall ? "call" : /\[served-late\]/.test(userText) ? "served-late" : /\[served-quick\]/.test(userText) ? "served-quick" : /\[served\]/.test(userText) ? "served" : /\[spawn\]/.test(userText) ? "spawn" : /\[ask\]/.test(userText) ? "ask" : "plain";
   const entry = { n: id, at: new Date().toISOString(), scenario, tag: long?.[2] ?? null, afterTool, toolText: toolText.slice(0, 300), anyResume, userText: userText.slice(0, 300), messages: msgs.length };
   if (log) appendFileSync(log, JSON.stringify(entry) + "\n");
 
@@ -141,6 +144,12 @@ const server = createServer(async (req, res) => {
     chunk({ tool_calls: [{ index: 0, id: `call_${id}`, type: "function", function: { name: "trial_served_sleep", arguments: JSON.stringify({ ms: 1000 }) } }] });
     chunk({}, { finish_reason: "tool_calls" });
     usage(500, 40);
+  } else if (scenario === "call" && !afterTool) {
+    let args = {};
+    try {
+      args = JSON.parse(anyCall[2]);
+    } catch {}
+    call(anyCall[1], args);
   } else if (scenario === "served-quick" && !afterTool) {
     call("trial_served_sleep", { ms: 500 });
   } else if (scenario === "served" && !afterTool) {

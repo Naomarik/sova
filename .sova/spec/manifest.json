@@ -15876,6 +15876,7 @@
         "§tools.spec/near-impact",
         "§tools.spec/spec-map",
         "§tools.spec/where-lookup",
+        "§tools.spec/where-topic",
         "§tools.spec/frame",
         "§tools.spec/context-packets",
         "§tools.spec/field-promotion",
@@ -15890,7 +15891,11 @@
         "pi-config/extensions/subagents/spec-brief.ts",
         "pi-config/extensions/subagents/spec-brief.test.ts",
         "pi-config/extensions/mode/index.test.ts"
-      ]
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-12T05:16Z"
+      }
     },
     "§chat.model-menu/favorites": {
       "kind": "behavior",
@@ -17593,6 +17598,26 @@
         "pi-config/extensions/spec/README.md",
         "pi-config/extensions/spec/tests/census-base.test.mjs"
       ]
+    },
+    "§tools.spec/where-topic": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/where-lookup"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/where.mjs",
+        "pi-config/extensions/spec/core/topic.mjs",
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/tests/where.test.mjs",
+        "pi-config/extensions/spec/core/README.md",
+        "pi-config/extensions/spec/README.md"
+      ],
+      "agreed": {
+        "by": "user",
+        "at": "2026-10-11T07:56Z"
+      }
     },
     "§tools.spec/worker-landed": {
       "kind": "behavior",

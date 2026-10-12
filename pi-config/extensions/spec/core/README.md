@@ -12,7 +12,7 @@ node sova-spec.mjs scope  §ns/name      [--root DIR] [--spec DIR] [--json] [--b
 node sova-spec.mjs impact §ns/name      [--root DIR] [--spec DIR] [--json]
 node sova-spec.mjs impact §ns/name --near [--json] [--budget BYTES] [--cursor TOKEN] [--root DIR] [--spec DIR]
 node sova-spec.mjs map    [namespace | §ns/name] [--json] [--budget BYTES] [--cursor TOKEN] [--root DIR] [--spec DIR]
-node sova-spec.mjs where  <path|token>  [--token] [--all] [--json] [--budget BYTES] [--cursor TOKEN] [--root DIR] [--spec DIR]
+node sova-spec.mjs where  <path|token|topic words…> [--token] [--all] [--json] [--budget BYTES] [--cursor TOKEN] [--root DIR] [--spec DIR]
 node sova-spec.mjs graph                [--json] [--budget BYTES] [--cursor TOKEN] [--root DIR] [--spec DIR]
 node sova-spec.mjs census               [--root DIR] [--spec DIR] [--json]
 node sova-spec.mjs census --changed [--base REV] [--related] [--own-base REV]... [--root DIR] [--spec DIR] [--json]
@@ -176,7 +176,7 @@ record (`dangling-edge`), an `embeds` target that is not a surface (`embeds-not-
 
 Computed views over the whole graph, for orientation and lookup. `graph.mjs` holds the shared index
 (areas, interface tokens, code and reverse `requires`/`embeds` maps, agreement counts), `graph` and `impact --near`; `map.mjs`
-and `where.mjs` hold the other two. Like `toc`, each parses its own flags (before or after the
+and `where.mjs` hold the other two, `topic.mjs` the ranker behind `where`'s topic rows. Like `toc`, each parses its own flags (before or after the
 command word), prints compact JSON with `--json` or readable text, pages under one whole-response
 budget (1,024–32,768) with a stateless `--cursor` bound to the request and every computed line, and
 prints its own bounded JSON with `--help`. Exit 0 is done, 1 more lines or a named unknown, 2 a
@@ -198,7 +198,7 @@ absent, `requiredBy` counting requirers and embedders, `agreed` and `built` when
 view the key is absent and the text says so. `agreed` records who decided and when, not that anyone
 read the current words.
 
-**`where <path|token> [--token] [--all]`** (default 12,000). A path is a file some record's `code`
+**`where <path|token|topic words…> [--token] [--all]`** (default 12,000). Several unquoted words are one token, as if quoted; only a single argument can be a file. A path is a file some record's `code`
 lists or that exists under the root; it is read with the core's own refusal rules. `mode: "path"`:
 `file: {path, state, mapped}`, then `ranked` lines (`score`, `shared` tokens, rarest first), then
 `unranked` lines (claims listing the file that share no token), top 10 unless `--all` (`total`,
@@ -206,7 +206,15 @@ lists or that exists under the root; it is read with the core's own refusal rule
 an unreadable file keeps its claims unranked, exit 1. A path-shaped argument that is no file and no record's is searched as a token with `pathLike`,
 `file: {path, state: "absent", mapped: false}` and a `note`, exit 1. `mode: "token"`: `defines` lines (the token in
 the claim's heading or first sentence) then `mentions` lines, each with the matching backticked
-`spans`. An interface token is a backticked span (fences and comments masked) of 3+ characters with
+`spans`, then ranked `topic` lines (`score`, `matched`: the query words it matched) for claims not
+already listed: field-weighted BM25 (K1 1.2, B 0.75) over heading ×4, first sentence ×1, backticked
+names ×1, prose ×2 and an H2's area heading ×1, words lower-cased, split at hyphens, stopwords
+and words under 3 characters dropped, a light suffix stemmer (path-shaped names kept whole and
+unstemmed); rows under 0.35 × the best score drop unless the heading holds every query word.
+`counts.topic`, `topicTerms` (the query words searched) and `topicNotice` are added; `notice` speaks
+for name matches. Top 10: name rows first, unchanged, and topic rows fill only the places they leave
+free; exit 0 when either kind found a claim, 1 when neither did or a name row was cut (cut topic
+rows are counted in `notShown`, not an unknown). An interface token is a backticked span (fences and comments masked) of 3+ characters with
 a letter and a separator, bracket or sigil, an inner capital, or all capitals; it occurs in a file
 with no `[A-Za-z0-9_$]` on either side, and weighs `ln((records + 1) / records using it)`.
 

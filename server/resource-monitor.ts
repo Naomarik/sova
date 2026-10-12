@@ -71,7 +71,20 @@ export function hostedFacts(path: string): { title?: string; workers: WorkerInfo
 
 /** The chats this server runs in processes of their own, as their mirrors report them (server/chat-host.ts). */
 const remoteHosted = new Map<string, { sessionId: string; cwd?: string; title?: string; workers: WorkerInfo[]; toolsRunning: number; lastToolEnd: number; pid: number }>();
-export function setRemoteHosted(path: string, entry: { sessionId: string; cwd?: string; title?: string; workers: WorkerInfo[]; toolsRunning: number; lastToolEnd: number; pid: number } | null): void {
+export function setRemoteHosted(
+  path: string,
+  entry: {
+    sessionId: string;
+    cwd?: string;
+    title?: string;
+    workers: WorkerInfo[];
+    toolsRunning: number;
+    lastToolEnd: number;
+    pid: number;
+    /** A worker chat's process (al_3 stage 4): whose worker it is. */
+    worker?: { parentPath: string; parentSessionId: string; workerId: string };
+  } | null,
+): void {
   if (entry) remoteHosted.set(path, entry);
   else remoteHosted.delete(path);
 }

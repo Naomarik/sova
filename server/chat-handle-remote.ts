@@ -44,6 +44,10 @@ export interface RemoteHooks {
   reload?(h: RemoteChatHandle, auto: boolean): void;
   /** Whether a session is in a live link now (the `sova:link-live` hook a chat here reads). */
   linkLive?(sessionId: string): boolean;
+  /** A worker chat's feed frame (proto 3). */
+  feed?(h: RemoteChatHandle, f: FrameOf<"feed">): void;
+  /** A parent chat's worker host asks (proto 3): an op, a watch, an unwatch. */
+  worker?(h: RemoteChatHandle, f: FrameOf<"wk"> | FrameOf<"wk.watch"> | FrameOf<"wk.unwatch">): void;
 }
 
 const REQUEST_FRAMES = ["tool.call", "tool.abort", "ask"] as const;
@@ -173,6 +177,10 @@ export class RemoteChatHandle extends ChatHandle {
     });
     for (const t of REQUEST_FRAMES) on(t, (f) => this.request(link, f));
     on("reload.request", (f) => this.hooks.reload?.(this, f.auto));
+    on("feed", (f) => this.hooks.feed?.(this, f));
+    on("wk", (f) => this.hooks.worker?.(this, f));
+    on("wk.watch", (f) => this.hooks.worker?.(this, f));
+    on("wk.unwatch", (f) => this.hooks.worker?.(this, f));
     on("run", (f) => this.runEvent(link, f));
     on("tool.backResult", (f) => {
       const b = this.backs.get(f.id);
@@ -386,6 +394,12 @@ export class RemoteChatHandle extends ChatHandle {
   }
   pushCode(state: FrameOf<"push"> extends infer P ? (P extends { kind: "code"; state: infer S } ? S : never) : never, detail?: string): void {
     this.link.send({ t: "push", kind: "code", state, ...(detail ? { detail } : {}) });
+  }
+
+  /** A worker host's answer or feed frame to this parent chat (proto 3); dropped while the link is down
+      (the chat asks again at its next control). */
+  sendWorker(f: FrameOf<"wk.result"> | FrameOf<"wk.feed">): void {
+    if (this.link.isOpen) this.link.send(f);
   }
 
   releaseIdleModelChild() {

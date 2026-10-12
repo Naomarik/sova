@@ -1,0 +1,121 @@
+// A worker chat's feed (al_3 stage 4, design §2.6): the pi events its parent's worker fold consumes,
+// as the wire-1 frames its panes get (a message_end tagged with the entry it was written as), numbered
+// per process and kept in a ring the server reads again after a dropped link (`feedSince`). Never a
+// `message_update`: the fold used them only for liveness. It also says how the last run settled,
+// under the key of the send that started it, so a parent that reattaches announces a settle once.
+import { randomUUID } from "node:crypto";
+import type { HarnessEvent } from "../../shared/harness";
+import { WORKER_FEED_EVENTS, type WorkerCursor, type WorkerState } from "../../pi-config/extensions/subagents/worker-host.ts";
+
+export const FEED_RING_MAX = 4000;
+/** The ring's bound in bytes of JSON, oldest dropped first. */
+export const FEED_RING_BYTES = 8 * 1024 * 1024;
+
+const FED = new Set<string>(WORKER_FEED_EVENTS);
+
+/** What the feed reads of the chat's harness: its events, and the entry a message was written as. */
+export interface FeedSource {
+  subscribe(fn: (event: HarnessEvent) => void): () => void;
+  persistedId(handle: unknown): string | null;
+}
+
+export interface FeedFrame {
+  cursor: WorkerCursor;
+  event: unknown;
+}
+
+export class WorkerFeed {
+  /** This process's start id: a cursor of another process is a gap. */
+  readonly proc: string;
+  private seq = 0;
+  private readonly ring: { f: FeedFrame; bytes: number }[] = [];
+  private bytes = 0;
+  /** Frames waiting behind a message_end whose entry id is read one microtask later. */
+  private held: Record<string, unknown>[] | null = null;
+  /** The key of the last send delivered, and how many runs settled. */
+  private lastKey: string | null = null;
+  private settles = 0;
+  private lastAssistant: { stopReason?: unknown; errorMessage?: unknown } | null = null;
+  settled: WorkerState["lastSettled"] = null;
+
+  constructor(
+    private readonly send: (f: FeedFrame) => void,
+    private readonly o: { max?: number; maxBytes?: number; proc?: string; onSettled?: () => void } = {},
+  ) {
+    this.proc = o.proc ?? randomUUID();
+  }
+
+  cursor(): WorkerCursor {
+    return { proc: this.proc, seq: this.seq };
+  }
+
+  /** A send was delivered under `key` (a task, a steer, a follow-up): the next settle is its run's. */
+  noteSend(key: string | undefined): void {
+    if (key) this.lastKey = key;
+  }
+
+  /** Feed `session`'s events from now on. */
+  attach(session: FeedSource): () => void {
+    return session.subscribe((e) => this.onEvent(session, e));
+  }
+
+  private onEvent(session: FeedSource, e: HarnessEvent): void {
+    const event = (e.frame() as { event?: unknown }).event as Record<string, unknown> & { type?: string; message?: { role?: unknown; stopReason?: unknown; errorMessage?: unknown } };
+    if (!event?.type || !FED.has(event.type)) return;
+    if (event.type === "message_end" && event.message?.role === "assistant") this.lastAssistant = event.message;
+    if (event.type === "agent_settled") this.settle();
+    if (event.type !== "message_end" || !("handle" in e)) return this.out(event);
+    const handle = (e as { handle?: unknown }).handle;
+    if (this.held) return void this.held.push(event);
+    this.held = [event];
+    queueMicrotask(() => {
+      try {
+        const id = session.persistedId(handle);
+        if (id !== null) event.entryId = id;
+      } catch {
+        // untagged: the parent's fold drops nothing on reattach
+      }
+      const out = this.held ?? [];
+      this.held = null;
+      for (const f of out) this.emit(f);
+    });
+  }
+
+  private out(event: Record<string, unknown>): void {
+    if (this.held) this.held.push(event);
+    else this.emit(event);
+  }
+
+  private settle(): void {
+    const a = this.lastAssistant;
+    const outcome = a?.stopReason === "aborted" ? "aborted" : a?.errorMessage || a?.stopReason === "error" ? "error" : "success";
+    this.settles++;
+    this.settled = {
+      key: `${this.lastKey ?? this.proc}#${this.settles}`,
+      outcome,
+      ...(outcome === "error" ? { error: String(a?.errorMessage ?? "assistant turn failed (stopReason: error)") } : {}),
+    };
+    this.lastAssistant = null;
+    this.o.onSettled?.();
+  }
+
+  private emit(event: unknown): void {
+    const f: FeedFrame = { cursor: { proc: this.proc, seq: ++this.seq }, event };
+    const bytes = JSON.stringify(f).length;
+    this.ring.push({ f, bytes });
+    this.bytes += bytes;
+    const max = this.o.max ?? FEED_RING_MAX;
+    const maxBytes = this.o.maxBytes ?? FEED_RING_BYTES;
+    while (this.ring.length > max || (this.bytes > maxBytes && this.ring.length > 1)) this.bytes -= this.ring.shift()!.bytes;
+    this.send(f);
+  }
+
+  /** The frames after `seq` of process `proc`, or a gap (another process, or fallen out of the ring). */
+  since(proc: string, seq: number): { frames: FeedFrame[] } | { gap: true } {
+    if (proc !== this.proc) return { gap: true };
+    if (seq >= this.seq) return { frames: [] };
+    const oldest = this.ring[0]?.f.cursor.seq ?? this.seq + 1;
+    if (seq + 1 < oldest) return { gap: true };
+    return { frames: this.ring.filter((r) => r.f.cursor.seq > seq).map((r) => r.f) };
+  }
+}

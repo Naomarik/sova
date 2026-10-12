@@ -105,6 +105,15 @@ export function chatDriver(config: Pick<SupervisorConfig, "slice" | "driver"> = 
   return new SystemdDriver(exec, { slice: config.slice, timeoutStopSec: CHAT_STOP_SEC, restart: false, envFile: (unit) => join(envDir(), `${unit}.env`) });
 }
 
+/** Workers placed as the server's own detached children (no units here: the switch off, not Linux, no
+    systemd, or a unit that failed): a supervisor of their own, its records, processes and logs under
+    `chats/children/`, its prefix never another supervisor's. They end with the server. */
+export const childrenRoot = () => join(chatsRoot(), "children");
+export const childUnitPrefix = (hash = stateHash()) => `sova-chatw-${hash}-`;
+export function childDriver(): Driver {
+  return new DetachedDriver(CHAT_STOP_SEC * 1000, { restart: false, procsDir: () => join(childrenRoot(), "procs"), logsDir: () => join(childrenRoot(), "logs") });
+}
+
 // ---- socket path and epoch ----------------------------------------------------------------------
 
 /**
@@ -265,7 +274,7 @@ export interface ChatLaunch {
 export interface SupervisorDeps {
   driver: Driver;
   /** The chat process's argv and env (`[bun, main.ts]`; `chatEnv` with SOVA_CHAT_*), and the build it runs. */
-  launch(chat: ChatLaunch & { unit: string; sock: string; epoch: number }): { argv: string[]; env: Record<string, string>; build?: string };
+  launch(chat: ChatLaunch & { unit: string; sock: string; epoch: number }): { argv: string[]; env: Record<string, string>; build?: string; nice?: number };
   /** This server's controller epoch (nextEpoch at boot). */
   epoch: number;
   /** A chat process died without saying it exits: called once per death. */
@@ -456,7 +465,7 @@ export class ChatSupervisor {
 
   /** Start `unit` for `chat` and wait for its main process; the record is the caller's to write. */
   private async spawn(chat: ChatLaunch, unit: string, sock: string): Promise<ChatRecord> {
-    const { argv, env, build } = this.deps.launch({ ...chat, unit, sock, epoch: this.deps.epoch });
+    const { argv, env, build, nice } = this.deps.launch({ ...chat, unit, sock, epoch: this.deps.epoch });
     // What a unit's env file can't carry is dropped there: said once per name, so a missing variable is visible.
     for (const [k, v] of Object.entries(env))
       if (!envFileKeeps(k, v) && !this.skippedEnv.has(k)) {
@@ -464,7 +473,7 @@ export class ChatSupervisor {
         this.log(`env ${k} is not passed to chat processes (${/[\n\r]/.test(v) ? "a value on more than one line" : "not a variable name"})`);
       }
     const rec: ChatRecord = { ...chat, unit, pid: null, sock, epoch: this.deps.epoch, ...(build ? { build } : {}), startedAt: new Date(this.now()).toISOString() };
-    await this.deps.driver.start({ unit, argv, cwd: this.deps.workdir ?? REPO_ROOT, env });
+    await this.deps.driver.start({ unit, argv, cwd: this.deps.workdir ?? REPO_ROOT, env, ...(nice ? { nice } : {}) });
     const until = this.now() + (this.deps.startWaitMs ?? 10_000);
     let st = await this.deps.driver.status(unit);
     while (st.pid === null && st.state === "activating" && this.now() < until) {
@@ -721,6 +730,26 @@ export class ChatSupervisor {
       await this.deps.driver.stop(unit).catch(() => {});
     }
     return { adopted, died };
+  }
+
+  /**
+   * Stop every chat process this supervisor's records name, and every unit of its prefix, adopting
+   * none (workers placed as the server's children: what a server that died left running, at the next
+   * start; and every child at shutdown). The records it stopped.
+   */
+  async stopAll(cause: ExitCause = "operator"): Promise<ChatRecord[]> {
+    const recs = this.records();
+    for (const rec of recs) {
+      if (this.chats.has(rec.chatId)) this.expectExit(rec.chatId, cause);
+      await this.deps.driver.stop(rec.unit).catch(() => {});
+      this.forget(rec.chatId);
+    }
+    for (const unit of await this.deps.driver.units(this.prefix).catch(() => [] as string[])) await this.deps.driver.stop(unit).catch(() => {});
+    for (const [id, c] of this.claims) {
+      c.release();
+      this.claims.delete(id);
+    }
+    return recs;
   }
 
   /** Chat `chatId`'s mirror: idle (quiet, nobody attached) since `since`, or not. */

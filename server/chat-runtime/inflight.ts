@@ -6,7 +6,7 @@
 // `<state root>/chats/inflight/<session id>.json`: `{v: 1, path, since, auto?}`.
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { stateRoot } from "../state-root";
+import { chatStateRoot } from "../state-root";
 
 export interface InflightMarker {
   v: 1;
@@ -18,7 +18,7 @@ export interface InflightMarker {
   auto?: true;
 }
 
-export const inflightDir = () => join(stateRoot(), "chats", "inflight");
+export const inflightDir = () => join(chatStateRoot(), "chats", "inflight");
 const fileOf = (sessionId: string, dir: string) => join(dir, `${encodeURIComponent(sessionId)}.json`);
 
 /** The marker a chat process left, or null. */

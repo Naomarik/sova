@@ -37,7 +37,7 @@ import { startSharedUsageHelper, stopSharedUsageHelper } from "./usage-helper/cl
 import { cachedTitleOf, getSessionSummary, lastReplyOf, listSessions, onSessionArchived, onSummaryLineChanged } from "./sessions-index";
 import { startScheduleKeeper } from "./schedule-routes";
 import { attachWebSockets, upgradeSovaSocket, upgradeSovaStreamSocket } from "./ws";
-import { detachChatHost, startChatHost } from "./chat-host";
+import { detachChatHost, startChatHost, stopWorkerChildren, stopWorkersOf } from "./chat-host";
 import { expectChatRouter } from "./chat-handle";
 import { meshApi, startMesh, stopMesh } from "./mesh";
 import { captureBootBuild } from "./mesh/build-id";
@@ -168,6 +168,8 @@ server.on("error", (err) => {
 // Where ordinary chats run, and the chats a previous server left running taken back: a browser's
 // connect waits for that (bounded) rather than open a chat its process still holds (§app/chat-processes).
 startChatHost();
+// An archived chat's workers stop with it (§app.chat-processes/workers).
+onSessionArchived((sessionId) => void stopWorkersOf(sessionId, "its parent was archived").catch(() => {}));
 attachWebSockets(server);
 
 // The previous server's stop mark: the workers its stop ended are no errors (server/server-stop.ts).
@@ -299,6 +301,8 @@ async function shutdown() {
   // Only chats in this process: a chat in a process of its own runs on, its reply included
   // (§app.chat-processes/survives-restart), and never enters the ledger.
   const aborts = chatHandles().filter((chat) => chat.where === "server" && chat.mirror.running).map((chat) => chat.abort().catch(() => {}));
+  // Workers this server runs as its own children (no units here) stop with it; units run on.
+  await Promise.race([stopWorkerChildren().catch(() => {}), new Promise((r) => setTimeout(r, 6_000))]);
   // Each chat process is told goodbye and let go of, never stopped.
   detachChatHost();
   usagePoller.stop();

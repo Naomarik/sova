@@ -55,6 +55,8 @@ import {
   setSpecialComposerClosed,
   setSpecialPort,
   setSpecialSpec,
+  setWorkerHostSource,
+  setWorkerSpec,
   type SpecialPort,
   type ServerToolLocal,
   titleOf,
@@ -67,6 +69,9 @@ import { InflightRecorder } from "./inflight";
 import type { ControlFrame, HelloFrame, Link } from "./link";
 import { type CallCtx, failureReply, runMethod } from "./methods";
 import { mirrorOf } from "./mirror";
+import { snapshot as llmSnapshot } from "../../pi-config/extensions/llm-inflight/tracker.ts";
+import { WorkerFeed } from "./worker-feed";
+import { LinkWorkerHost, WORKER_PROTO } from "./worker-port";
 
 /** The provider and model runtime warm-up, once per process (main.ts awaits it before "ready"). */
 export { warmChatRuntime } from "../chat-manager";
@@ -182,6 +187,10 @@ export class ChatRuntimeHost {
   /** The chat is being reopened in place (reacquire with force): its close is not this process's end. */
   private reopening = false;
   private readonly recorder: InflightRecorder;
+  /** A worker chat's feed (proto 3), else null. */
+  private feed: WorkerFeed | null = null;
+  /** This chat's own workers, started and driven through the server (§app.chat-processes/workers). */
+  private readonly workers = new LinkWorkerHost(() => this.settings.serverToolWaitMs);
   private readonly now: () => number;
   private readonly log: (line: string) => void;
 
@@ -191,6 +200,7 @@ export class ChatRuntimeHost {
     this.quietSince = this.now();
     this.recorder = new InflightRecorder(() => o.sessionId);
     onChatEvent((e) => this.onEvent(e));
+    setWorkerHostSource((parent) => this.workers.bind(parent));
     this.ticker = setInterval(() => this.tick(), o.tickMs ?? 1_000);
     this.ticker.unref?.();
   }
@@ -220,6 +230,7 @@ export class ChatRuntimeHost {
       if (this.link === link) this.lostLink();
     });
     this.listen(link);
+    if (link.compatible) this.workers.linked(link);
     // Replay the lifecycle events the server missed, or tell it what it can't have.
     if (control.since !== null) {
       const kept = chatEventsSince(0).filter((e) => e.chatId === this.o.path);
@@ -253,6 +264,7 @@ export class ChatRuntimeHost {
   /** The controller's link ended: its panes become orphans (open dialogs wait), asks read as nothing. */
   private lostLink(): void {
     this.link = null;
+    this.workers.unlinked();
     if (this.clients.size && this.chat && !this.chat.disposed) {
       this.chat.orphanClients();
       this.orphaned = true;
@@ -365,6 +377,9 @@ export class ChatRuntimeHost {
     }
     if (f.special && link.peerProto < SPECIAL_PROTO)
       return void reply({ t: "opened", id: f.id, ok: false, error: { message: "A special chat needs a server that speaks protocol 2." } });
+    if (f.worker && link.peerProto < WORKER_PROTO)
+      return void reply({ t: "opened", id: f.id, ok: false, error: { message: "A worker chat needs a server that speaks protocol 3." } });
+    if (f.worker) setWorkerSpec(this.o.path, f.worker);
     if (f.opening) setOpeningChoice(this.o.path, f.opening);
     setServedTools(f.served);
     // A special loadout opens from the server's data, its kind answered over this socket.
@@ -376,6 +391,11 @@ export class ChatRuntimeHost {
     try {
       const chat = await acquireChat(this.o.path, f.force);
       this.chat = chat;
+      // A worker chat feeds its parent (through the server) from its first event.
+      if (f.worker && !this.feed) {
+        this.feed = new WorkerFeed((frame) => this.sendFeed(frame), { onSettled: () => this.pokeSoon() });
+        this.feed.attach(chat.harness);
+      }
       this.setState("open");
       this.quietSince = this.now();
       reply({ t: "opened", id: f.id, ok: true, mirror: this.mirror() });
@@ -550,6 +570,8 @@ export class ChatRuntimeHost {
 
   /** The commands a chat process answers its own way; the rest are the shared table's. */
   private readonly own: Partial<{ [M in ChatMethod]: (chat: ChatSession, args: ChatMethods[M]["args"]) => Promise<ChatMethods[M]["result"]> | ChatMethods[M]["result"] }> = {
+    // A worker chat's feed ring, read again by a server whose link dropped.
+    feedSince: (_chat, { proc, seq }) => this.feed?.since(proc, seq) ?? { gap: true },
     releaseIdleModelChild: () => releaseIdleClaudeChildren("idle session released by the server's cap"),
     reacquire: async (chat, { force }) => {
       assertNotLive(chat.path);
@@ -572,6 +594,8 @@ export class ChatRuntimeHost {
     const chat = this.chat;
     if (!chat || chat.disposed) return void link.send({ t: "reply", reply: { id: call.id, ok: false, error: { message: "This chat is closed." } } });
     let reply: FrameOf<"reply">["reply"];
+    // A worker's settle is told under the key of the send that started its run.
+    if (call.method === "send") this.feed?.noteSend((call.args as { key?: string }).key);
     try {
       const own = this.own[call.method] as ((c: ChatSession, a: unknown) => unknown) | undefined;
       const result = await (own ? own(chat, call.args) : runMethod(chat, call, this.ctx));
@@ -765,6 +789,7 @@ export class ChatRuntimeHost {
       m.dialogs.length === 0 &&
       this.workersWorking === 0 &&
       this.tools.size === 0 &&
+      this.workers.pending === 0 &&
       this.outbox.length === 0 &&
       this.waits.size === 0
     );
@@ -804,7 +829,17 @@ export class ChatRuntimeHost {
       claude: claudeChildState(),
       // What the monitor extension in this process says of the chat; before its first session_start, the title alone.
       monitor: hostedFacts(this.o.path) ?? { title: titleOf(chat.harness.branch()), workers: [], toolsRunning: 0, lastToolEnd: 0 },
+      ...(chat.workerSpec && this.feed
+        ? { worker: { parentSessionId: chat.workerSpec.parent.sessionId, workerId: chat.workerSpec.parent.workerId, kind: chat.workerSpec.kind, proc: this.feed.proc, lastSettled: this.feed.settled } }
+        : {}),
+      llm: llmSnapshot(),
     };
+  }
+
+  /** A worker chat's feed frame, to a server that speaks proto 3 (one that doesn't reads the ring later). */
+  private sendFeed(f: { cursor: { proc: string; seq: number }; event: unknown }): void {
+    const link = this.link;
+    if (link?.isOpen && link.compatible && link.peerProto >= WORKER_PROTO) link.send({ t: "feed", cursor: f.cursor, event: f.event });
   }
 
   // ---- code ---------------------------------------------------------------------------------------

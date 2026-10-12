@@ -8,7 +8,7 @@
 import { createHash } from "node:crypto";
 import { closeSync, mkdirSync, openSync, readFileSync, rmSync, writeSync } from "node:fs";
 import { join } from "node:path";
-import { stateRoot } from "../state-root";
+import { chatStateRoot } from "../state-root";
 
 export interface WriterLockInfo {
   pid: number;
@@ -26,7 +26,7 @@ export class WriterLockHeld extends Error {
   }
 }
 
-export const locksDir = () => join(stateRoot(), "chats", "locks");
+export const locksDir = () => join(chatStateRoot(), "chats", "locks");
 export const lockFileOf = (path: string, dir = locksDir()) => join(dir, `${createHash("sha256").update(path).digest("hex").slice(0, 16)}.lock`);
 
 /** A process's start time (clock ticks since boot), or null: no /proc, or no such process. */

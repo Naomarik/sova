@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Rollout, type RolloutDeps, type RolloutSupervisor } from "./rollout";
+import type { Link } from "./link";
+import { linkWaitReady, Rollout, type RolloutDeps, type RolloutSupervisor } from "./rollout";
 import type { ChatRecord } from "./supervisor";
 
 const recOf = (chatId: string, unit: string): ChatRecord => ({ chatId, sessionPath: `/s/${chatId}.jsonl`, cwd: "/w", unit, pid: 1, sock: `/s/${unit}.sock`, epoch: 1, startedAt: "t" });
@@ -61,7 +62,7 @@ function make(over: Partial<RolloutDeps> = {}) {
 test("a reload boots the replacement first, then drains the old process, then opens the chat there", async () => {
   const { r, calls, codes, recs } = make();
   assert.equal(await r.request("a", { auto: true }), "reloaded");
-  assert.deepEqual(calls, ["start-rep a", "expect a reload", "drain a", "await-exit a", "repoint a u-a-r1", "open a u-a-r1"]);
+  assert.deepEqual(calls, ["start-rep a", "expect a reload", "drain a", "await-exit a", "unlocked /s/a.jsonl", "repoint a u-a-r1", "open a u-a-r1"]);
   assert.deepEqual(codes, ["a:reloading"]);
   assert.equal(recs.get("a")!.unit, "u-a-r1");
 });
@@ -123,4 +124,33 @@ test("reloads run one at a time; a second request for the same chat joins the fi
 test("a chat with no process is gone", async () => {
   const { r } = make();
   assert.equal(await r.request("zz", { auto: true }), "gone");
+});
+
+test("linkWaitReady: dials the replacement without replay, waits for its hello saying ready, and keeps the link", async () => {
+  const closed: string[] = [];
+  const fakeLink = (name: string) => ({ close: () => void closed.push(name) }) as unknown as Link;
+  const dials: unknown[] = [];
+  const settings = {} as never;
+  const ready = linkWaitReady(
+    { epoch: 9, build: "b", settings },
+    (async (sock: string, o: unknown) => {
+      dials.push([sock, o]);
+      return { link: fakeLink(sock), hello: { state: sock.endsWith("warm.sock") ? "ready" : "booting" } };
+    }) as never,
+    (async (_l: Link, t: string, _ms: number, match: (h: { state: string }) => boolean) => {
+      assert.equal(t, "hello");
+      assert.ok(match({ state: "ready" }) && !match({ state: "booting" }));
+      return { state: "ready" };
+    }) as never,
+  );
+  const warm = await ready(recOf("a", "u-a-r1"), 30_000);
+  assert.ok(warm.ok);
+  const [sock, o] = dials[0] as [string, { since: unknown; epoch: number; retryForMs: number }];
+  assert.equal(sock, "/s/u-a-r1.sock");
+  assert.deepEqual([o.since, o.epoch, o.retryForMs], [null, 9, 30_000]);
+  const cold = await linkWaitReady({ epoch: 9, build: "b", settings }, (async () => ({ link: fakeLink("cold"), hello: { state: "booting" } })) as never, (async () => {
+    throw new Error("The link ended (closed)");
+  }) as never)(recOf("a", "u-a-r2"), 30_000);
+  assert.deepEqual(cold, { ok: false, error: "The link ended (closed)" });
+  assert.deepEqual(closed, ["cold"], "a replacement that never got ready: its link is closed");
 });

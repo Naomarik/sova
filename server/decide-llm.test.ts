@@ -150,7 +150,7 @@ describe("claude-code backend", () => {
     const memory = process.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY;
     process.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY = "0";
     const f = fakeSpawn(JSON.stringify({ type: "result", is_error: false, result: "", structured_output: good, usage: { input_tokens: 50, output_tokens: 9 } }));
-    const r = await createLlmProvider(cc, { spawn: f.spawn, env: () => ({ CLAUDE_CODE_DISABLE_AUTO_MEMORY: "false" }) }).decide(req);
+    const r = await createLlmProvider(cc, { claudeBin: "claude", spawn: f.spawn, env: () => ({ CLAUDE_CODE_DISABLE_AUTO_MEMORY: "false" }) }).decide(req);
     delete process.env.CLAUDECODE;
     if (memory === undefined) delete process.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY; else process.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY = memory;
     assert.equal(f.seen[0]!.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY, "1", "an inherited 0 cannot force memory on");
@@ -169,13 +169,13 @@ describe("claude-code backend", () => {
   });
   test("a text `result` envelope parses too (the schema fallback)", async () => {
     const f = fakeSpawn(JSON.stringify({ is_error: false, result: "```json\n" + JSON.stringify(good) + "\n```" }));
-    assert.equal((await createLlmProvider(cc, { spawn: f.spawn }).decide(req)).answers.stuck?.type, "score");
+    assert.equal((await createLlmProvider(cc, { claudeBin: "claude", spawn: f.spawn }).decide(req)).answers.stuck?.type, "score");
   });
   test("is_error envelope → mapped failure; empty output → failure from the exit", async () => {
     const f = fakeSpawn(JSON.stringify({ is_error: true, result: "API Error: 529 overloaded" }), 1);
-    assert.equal((await failure(createLlmProvider(cc, { spawn: f.spawn }).decide(req))).failure, "overloaded");
+    assert.equal((await failure(createLlmProvider(cc, { claudeBin: "claude", spawn: f.spawn }).decide(req))).failure, "overloaded");
     const g = fakeSpawn("", 1);
-    assert.equal((await failure(createLlmProvider(cc, { spawn: g.spawn }).decide(req))).failure, "server");
+    assert.equal((await failure(createLlmProvider(cc, { claudeBin: "claude", spawn: g.spawn }).decide(req))).failure, "server");
   });
   test("schema: choice keys required, score arrays sized", () => {
     const s = answerSchema(qs) as { required: string[]; properties: Record<string, { properties: Record<string, { required?: string[]; minItems?: number }> }> };
@@ -221,7 +221,7 @@ describe("provider request limits (§app.provider-limits/queue)", () => {
     const dir = withLimits({ "claude-code": 1 });
     const held = await acquireSlot("claude-code", { agentDir: dir, kind: "interactive" });
     const f = fakeSpawn(JSON.stringify({ type: "result", is_error: false, result: "", structured_output: good }));
-    const call = createLlmProvider(cc, { spawn: f.spawn, agentDir: () => dir }).decide(req);
+    const call = createLlmProvider(cc, { claudeBin: "claude", spawn: f.spawn, agentDir: () => dir }).decide(req);
     await new Promise((r) => setTimeout(r, 80));
     assert.equal(f.seen.length, 0, "no claude spawned while the limit is full");
     held!.release();
@@ -229,7 +229,7 @@ describe("provider request limits (§app.provider-limits/queue)", () => {
     assert.equal(f.seen.length, 1);
     const none = withLimits({});
     const g = fakeSpawn(JSON.stringify({ type: "result", is_error: false, result: "", structured_output: good }));
-    await createLlmProvider(cc, { spawn: g.spawn, agentDir: () => none }).decide(req);
+    await createLlmProvider(cc, { claudeBin: "claude", spawn: g.spawn, agentDir: () => none }).decide(req);
     assert.equal(g.seen.length, 1, "no limit: runs at once");
     rmSync(dir, { recursive: true, force: true });
     rmSync(none, { recursive: true, force: true });

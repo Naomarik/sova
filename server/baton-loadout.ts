@@ -32,7 +32,7 @@ import { inlineOperatorImages } from "./baton-images";
 import { readBatonSettings } from "./baton-settings";
 import { authorNotes, labelAuthors, streamingText } from "./baton-view";
 import { runWrapup, WRAPUP_SYSTEM, WRAPUP_TOOL, wrapupActive, wrapupTool } from "./baton-wrapup";
-import { acquireChat, BusyError, type ChatSession, RefusedError, registerSpecialLoadout, type SessionMarks } from "./chat-manager";
+import { acquireChatHandle, BusyError, type ChatHandle, chatHandleOf, RefusedError, registerSpecialLoadout, type SessionMarks } from "./chat-handle";
 import { hostOf, onOrgChange, onOrgHostOpened, type Effect, type OrgHostApi } from "./org-engine";
 import type { Step } from "./statecharts";
 import type { Envelope } from "./org-envelope";
@@ -142,26 +142,19 @@ export function ownerAreaSchema(roster: readonly Person[]) {
   };
 }
 
+/** Sessions whose reply the stop-reply effect is stopping (it reports the reply's end itself). */
+const stopping = new Set<string>();
+
 /**
  * Stop the reply being written, for an operator's move that can't wait (Take back, a hand-off, an
  * offer, someone leaving; §app.baton/hand-off "at any time"). Nothing queued behind the reply is
  * dropped: every message still waiting enters the transcript as its sender's, after the stopped
  * reply and before the move's entry, with no reply of its own (counted when it was accepted), so
- * whoever holds the baton next reads it and the model sees it with the next turn. A queue wake
- * could start another run as this one settles, so it checks again, a few times at most.
+ * whoever holds the baton next reads it and the model sees it with the next turn (the chat's
+ * interruptKeepingQueued, which checks again as a queue wake may start another run).
  */
-/** Sessions whose reply the stop-reply effect is stopping (it reports the reply's end itself). */
-const stopping = new Set<string>();
-
-async function interruptReply(chat: ChatSession): Promise<void> {
-  const since = chat.leafId();
-  const kept = [];
-  for (let i = 0; i < 3 && (chat.harness.isRunning() || chat.isCompacting() || chat.turnStarting); i++) {
-    // A turn that is starting (a message just handed over) can't be aborted until its run begins.
-    await chat.whenStarted();
-    kept.push(...(await chat.stopRun(() => true)));
-  }
-  chat.enterQueued(kept, since);
+async function interruptReply(chat: ChatHandle): Promise<void> {
+  await chat.interruptKeepingQueued();
 }
 
 export { LIMIT_QUESTION };
@@ -497,9 +490,8 @@ type BatonEntry = { kind: StateKind<any>; data: Record<string, unknown> };
 const waitingEntries = new Map<string, BatonEntry[]>();
 
 /** Whether the transcript already has the entry an effect writes (a re-run after a restart writes nothing twice). */
-function hasEntry(chat: ChatSession, key: string): boolean {
-  const file = chat.state.file();
-  return BATON_EFFECT_KINDS.some((k) => file.written(k).some((r) => (r.data as { key?: unknown } | null | undefined)?.key === key));
+async function hasEntry(chat: ChatHandle, key: string): Promise<boolean> {
+  return (await chat.fileState(BATON_EFFECT_KINDS)).some((data) => (data as { key?: unknown } | null | undefined)?.key === key);
 }
 
 /** Write a transcript entry the statechart asked for: through the running tool, now, or once the run settles. */
@@ -509,12 +501,12 @@ async function writeEntry(sessionId: string, entry: BatonEntry): Promise<void> {
   const hit = batonById(sessionId);
   if (!hit) return;
   const path = sessionPathOf(hit.dir, hit.row);
-  const chat = await acquireChat(path);
-  if (typeof entry.data.key === "string" && hasEntry(chat, entry.data.key)) return;
+  const chat = await acquireChatHandle(path);
+  if (typeof entry.data.key === "string" && (await hasEntry(chat, entry.data.key))) return;
   const waiting = waitingEntries.get(path);
   if (waiting) return void waiting.push(entry);
   try {
-    chat.appendStateRow(entry.kind, entry.data);
+    await chat.appendStateRow(entry.kind, entry.data);
   } catch (err) {
     if (err instanceof BusyError) waitingEntries.set(path, [entry]);
     else throw err;
@@ -525,10 +517,10 @@ async function writeEntry(sessionId: string, entry: BatonEntry): Promise<void> {
 export async function flushEntries(path: string): Promise<void> {
   const waiting = waitingEntries.get(path);
   if (!waiting) return;
-  const chat = await acquireChat(path);
-  if (chat.harness.isRunning() || chat.isCompacting()) return; // the next settle writes them
+  const chat = await acquireChatHandle(path);
+  if (chat.mirror.running || chat.mirror.compacting) return; // the next settle writes them
   waitingEntries.delete(path);
-  for (const e of waiting) if (typeof e.data.key !== "string" || !hasEntry(chat, e.data.key)) chat.appendStateRow(e.kind, e.data);
+  for (const e of waiting) if (typeof e.data.key !== "string" || !(await hasEntry(chat, e.data.key))) await chat.appendStateRow(e.kind, e.data);
 }
 
 /** The statechart's `baton-entry` as the transcript's custom entry. */
@@ -627,7 +619,7 @@ export function registerBatonEffects(host: OrgHostApi, orgId: string): void {
     const sessionId = sidOfEffect(e);
     const hit = batonById(sessionId);
     if (!hit) return {};
-    const chat = await acquireChat(sessionPathOf(hit.dir, hit.row));
+    const chat = await acquireChatHandle(sessionPathOf(hit.dir, hit.row));
     // The stopped run's own end is not the reply's end yet: the messages queued behind it are written
     // first, then the statechart hears it ended and makes the move it held (its entry comes after them).
     stopping.add(sessionId);
@@ -636,7 +628,7 @@ export function registerBatonEffects(host: OrgHostApi, orgId: string): void {
     } finally {
       stopping.delete(sessionId);
     }
-    if (!chat.harness.isRunning() && !chat.turnStarting) await replyFact(sessionId, "reply/ended");
+    if (!chat.mirror.running && !chat.mirror.starting) await replyFact(sessionId, "reply/ended");
     return {};
   });
 
@@ -772,7 +764,8 @@ registerSpecialLoadout({
   async opened(chat) {
     // The wrap-up's tool is in the allowlist, and active only during the wrap-up turn; read_link
     // only while the session can read links.
-    chat.harness.setActiveTools(activeBatonTools(chat.harness.id));
+    const h = chatHandleOf(chat);
+    await h.setActiveTools(activeBatonTools(h.mirror.sessionId));
   },
   watchSession(session, path) {
     const sessionId = batonOfPath(path)?.row.sessionId;

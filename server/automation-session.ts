@@ -1,7 +1,8 @@
 import { basename } from "node:path";
 import type { Automation } from "../shared/automations";
 import { PROFILE_MINOR_MODES, type ProfileMinorMode, type SnapshotProfile } from "../shared/profiles";
-import { acquireChat } from "./chat-manager";
+import type { ChatModePatch } from "../shared/chat-runtime";
+import { acquireChatHandle } from "./chat-handle";
 import { inlineChoice } from "./session-profile";
 import { applyProfile } from "./session-profile-routes";
 import { promptSession } from "./session-prompt";
@@ -47,21 +48,21 @@ export async function configureAutomationSession(path: string, a: Automation): P
   const s = a.settings;
   if (!s.model && !s.thinking && !s.mode && !s.minorModes && !s.memory) return { ok: true };
   try {
-    const chat = await acquireChat(path);
-    if (s.model && chat.harness.model()?.ref !== s.model) await chat.setModelRef(s.model);
-    if (s.thinking && chat.harness.thinking() !== s.thinking) chat.setThinking(s.thinking);
-    const now = chat.modeState;
+    const chat = await acquireChatHandle(path);
+    if (s.model && chat.mirror.model?.ref !== s.model) await chat.setModel(s.model);
+    if (s.thinking && chat.mirror.thinking !== s.thinking) await chat.setThinking(s.thinking);
+    const now = chat.mirror.mode;
     const wantMinors = s.minorModes ? [...s.minorModes].sort().join(",") : null;
     const modeDiffers = (s.mode && now.mode !== s.mode) || (wantMinors !== null && [...now.minorModes].sort().join(",") !== wantMinors);
-    const mem = s.memory && chat.memoryOffered() ? chat.memory.choiceNow() : null;
+    const mem = s.memory ? chat.mirror.memory : null;
     const memoryDiffers = !!s.memory && !!mem && (mem.type !== s.memory.type || mem.size !== s.memory.size);
     if (modeDiffers || memoryDiffers) {
       await chat.switchMode({
         ...(s.mode ? { mode: s.mode } : {}),
-        ...(s.minorModes ? { minorModes: s.minorModes as typeof now.minorModes } : {}),
+        ...(s.minorModes ? { minorModes: s.minorModes as ChatModePatch["minorModes"] } : {}),
         ...(memoryDiffers ? { memory: s.memory } : {}),
       });
-      chat.pinMode();
+      await chat.pinMode();
     }
     return { ok: true };
   } catch (err) {

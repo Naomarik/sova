@@ -10,7 +10,7 @@ import { unroutedConflicts } from "./decisions";
 import { allBatons, batonById, batonOfPath, batonSummaryField, closeBaton, createBaton, extendBudget, handoffTo, keepLink, keptLinks, linkTimes, liveLinkCount, nameOf, namesOf, offerTo, revokeCurrent, rotateLink, sessionPathOf, setAbilities, setHiddenFromOwner, takeBack, withdrawOffer } from "./baton";
 import { readBatonSettings, writeBatonSettings } from "./baton-settings";
 import { sessionSeesImages } from "./baton-images";
-import { BusyError } from "./chat-manager";
+import { BusyError } from "./chat-handle";
 import {
   addPerson,
   addProject,

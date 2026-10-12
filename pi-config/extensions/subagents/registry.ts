@@ -172,11 +172,25 @@ export class WorkerRegistryRecorder {
 	/**
 	 * A restored worker came back idle (agent_resume): clears its ending in the fold. `modes` are the
 	 * ones this start gave it (the parent's current ones), replacing its first start's, empty included.
+	 * `continued` is a resume that could not reopen its session (an older Claude Code worker): its new
+	 * spawn spec and launch replace the old ones, and the old session is kept as `continuedFrom`.
 	 */
-	resumed(worker: Worker, modes?: readonly string[]): void {
+	resumed(worker: Worker, modes?: readonly string[], continued?: { launch?: WorkerLaunchSpec; from: NonNullable<Fields["continuedFrom"]> }): void {
 		const { key, ref } = identity(worker);
 		this.tracked.set(worker.id, { identity: key, busy: false, finished: false });
-		this.write(worker, { resumedAt: Date.now(), status: "waiting", ...(ref ? { ref } : {}), ...(modes ? { modes: [...modes] } : {}) });
+		this.write(worker, {
+			resumedAt: Date.now(), status: "waiting", ...(ref ? { ref } : {}), ...(modes ? { modes: [...modes] } : {}),
+			...(continued ? {
+				spec: {
+					cwd: worker.cwd,
+					...(worker.model === undefined ? {} : { model: worker.model }),
+					...(worker.effort === undefined ? {} : { effort: worker.effort }),
+					...(continued.launch?.tools ? { tools: [...continued.launch.tools] } : {}),
+				} as Fields["spec"],
+				...(continued.launch ? { launch: continued.launch as unknown as Record<string, unknown> } : {}),
+				continuedFrom: continued.from,
+			} : {}),
+		});
 	}
 
 	/** Re-adopted workers were recorded by an earlier instance; continue from their last identity. */

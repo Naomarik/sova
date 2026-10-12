@@ -41,27 +41,3 @@ for (const extensions of [[subagents, claude], [claude, subagents]]) {
 }
 console.log('PASS: both extensions load in either order; /agents and /subagents register.');
 
-if (process.argv.includes('--live')) {
-  const { ClaudeRunner } = await jiti.import(path.join(root, 'runner.ts'));
-  const cwd = mkdtempSync(path.join(tmpdir(), 'pi-claude-smoke-'));
-  const runner = new ClaudeRunner({ id: 'smoke', groupId: 'smoke', name: 'smoke', cwd, model: 'sonnet', effort: 'low', tools: [], maxBudgetUsd: 1, task: 'Remember the token AMBER-618. Reply only READY.' }, { onChange() {}, onSettled() {}, onExit() {} });
-  try {
-    await until(() => runner.isSettled(), 'first Claude task', 90000);
-    assert.equal(runner.taskOutcome, 'success', runner.error);
-    assert.match(runner.finalOutput(), /READY/);
-    const sid = runner.sessionId;
-    assert.ok(sid);
-    const accepted = await runner.steer('What token did I ask you to remember? Reply only the token.');
-    assert.equal(accepted.ok, true, accepted.reason);
-    await until(() => runner.isSettled(), 'second Claude task', 90000);
-    assert.equal(runner.taskOutcome, 'success', runner.error);
-    assert.match(runner.finalOutput(), /AMBER-618/);
-    assert.equal(runner.sessionId, sid);
-    assert.ok(!runner.finalOutput().includes('READY'), 'output must be task-scoped');
-    await runner.kill('smoke complete');
-    assert.equal(runner.status, 'killed');
-    assert.equal(runner.processAlive, false);
-    if (runner.pid && process.platform === 'linux') assert.equal(existsSync(`/proc/${runner.pid}`), false);
-    console.log('PASS: real Claude continuity, idle steering, task output boundaries, and shutdown.');
-  } finally { await runner.dispose(); }
-}

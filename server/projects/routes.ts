@@ -1,6 +1,6 @@
 import type { Context, Hono } from "hono";
 import type { ProjectList, ProjectRegistered } from "../../shared/projects";
-import { BusyError } from "../chat-manager";
+import { BusyError } from "../chat-handle";
 import { localRequest } from "../mesh/proxy";
 import { OrgError } from "../org-error";
 import { guardedFolderProblem, overseerFolder } from "../overseer-folders";

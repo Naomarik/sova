@@ -49,6 +49,7 @@ import { createClaudeRequestObserver } from "../../llm-inflight/claude.ts";
 import { defaultAgentDir, type UsageLaunch } from "../../llm-inflight/usage-record.ts";
 import { ResumeStore, type ResumeRecord } from "./resume-record.ts";
 import { claudeCliId } from "../catalog.ts";
+import { claudeExecutable } from "../claude-executable.ts";
 import {
 	parseClaudeFrame, parseToolInput, MCP_SERVER_NAME, MCP_TOOL_PREFIX,
 	type ClaudeFrame, type ClaudeSessionBridge, type ClaudeTurnRequest,
@@ -309,6 +310,24 @@ const SESSION_ID_TAKEN = "was handed a session id already in use";
  * the scan and the spawn). Each collision costs one fast-failing spawn (~150 ms).
  */
 const SESSION_ID_PROBES = 32;
+
+/** How much of a dead child's stderr its failure keeps: the newest lines, bounded both ways. */
+export const STDERR_TAIL_LINES = 20;
+export const STDERR_TAIL_BYTES = 2048;
+
+/** The tail of `text` that a failure keeps: its last STDERR_TAIL_LINES non-blank lines, at most STDERR_TAIL_BYTES. */
+export function stderrTail(text: string): string {
+	const lines = text.split(/\r?\n/).filter((line) => line.trim()).slice(-STDERR_TAIL_LINES);
+	let tail = lines.join("\n");
+	if (Buffer.byteLength(tail) > STDERR_TAIL_BYTES) tail = Buffer.from(tail).subarray(-STDERR_TAIL_BYTES).toString("utf8").replace(/^\uFFFD+/, "");
+	return tail.trim();
+}
+
+/** `message`, then the child's stderr tail on its own lines when it wrote any. */
+function withStderr(message: string, stderr: string): string {
+	const tail = stderrTail(stderr);
+	return tail ? `${message}\n${tail}` : message;
+}
 
 // ---------------------------------------------------------------------------
 // Transcript fingerprinting
@@ -1326,6 +1345,9 @@ class CliSession {
 	 * the child is live, or the "Claude <why>" tail for a child already torn down.
 	 */
 	private async launchChild(request: ClaudeTurnRequest, sessionId: string, resume?: string): Promise<string | undefined> {
+		// The one Claude program, found from Sova's environment and never from the chat's cwd; a
+		// missing one fails the launch in plain words, before anything is set up.
+		const executable = this.options.executable ?? claudeExecutable();
 		const built = buildClaudeArgv({
 			permissionMode: "dontAsk",
 			permissionModes: ["dontAsk"],
@@ -1356,9 +1378,10 @@ class CliSession {
 		});
 		this.host = host;
 
-		// Only read when the handshake fails: a child that refuses its session id
-		// says so here and nowhere else.
+		// The first of it is read when the handshake fails (a child that refuses its session id says so
+		// here and nowhere else); the newest, when the child dies, says why.
 		let stderr = "";
+		let stderrRecent = "";
 		// Hooks are bound to their own child. A child being torn down keeps
 		// streaming until the signal lands (the real CLI retries a failed held
 		// call), and none of that may reach the turn or host of its replacement.
@@ -1376,12 +1399,14 @@ class CliSession {
 			// internal calls nothing sees, are reported from here. Their spend is recorded from here
 			// only (per Anthropic message, plus what the CLI's totals show beyond them), for this chat.
 			requestObserver: createClaudeRequestObserver({
-				countRequests: false,
 				usage: { bridge: true, model: claudeCliId(request.model), fresh: !resume, who: () => resolveUsageAttribution(this.piSessionId), launch: () => launch.value },
 			}),
 			hooks: {
 				onEvent: (event) => { if (current()) this.onEvent(event as unknown as Record<string, unknown>); },
-				onStderr: (text) => { if (stderr.length < 4096) stderr += text; },
+				onStderr: (text) => {
+					if (stderr.length < 4096) stderr += text;
+					stderrRecent = (stderrRecent + text).slice(-4 * STDERR_TAIL_BYTES);
+				},
 				// The MCP facade rides the control channel; returning false lets the
 				// transport refuse anything else as unsupported, including a
 				// detached child's tools/call, which is never held.
@@ -1389,12 +1414,12 @@ class CliSession {
 				onProtocolError: (message) => { if (!superseded()) this.protocolError(message); },
 				onStdinError: (message) => { if (!superseded()) this.protocolError(message); },
 				onProcessError: (message) => { if (!superseded()) this.protocolError(message); },
-				onClose: (code, signal) => { if (!superseded()) this.onClose(code, signal); },
+				onClose: (code, signal) => { if (!superseded()) this.onClose(code, signal, stderrRecent); },
 			},
 		});
 		this.transport = transport;
 
-		transport.launch(this.options.executable ?? "claude", args, {
+		transport.launch(executable, args, {
 			cwd: this.cwd,
 			env: {
 				...this.options.env,
@@ -1425,7 +1450,7 @@ class CliSession {
 		// its close, and teardown is what waits for that close.
 		await this.teardown("Claude failed the initialize handshake");
 		return SESSION_ID_TAKEN_RE.test(stderr) ? SESSION_ID_TAKEN
-			: ack === undefined ? "did not answer initialize" : "rejected initialize";
+			: withStderr(ack === undefined ? "did not answer initialize" : "rejected initialize", stderrRecent);
 	}
 
 	private transportTimings(): ClaudeTransportTimings {
@@ -1959,13 +1984,14 @@ class CliSession {
 		void this.teardown(message);
 	}
 
-	private onClose(code: number | null, signal: string | null): void {
+	private onClose(code: number | null, signal: string | null, stderr = ""): void {
 		this.started = false;
 		this.rejectHeld("the Claude process exited");
 		if (this.restarting) return; // A replacement child is already on its way.
 		const turn = this.turn;
 		if (turn && !turn.queue.isEnded()) {
-			const why = this.failure ?? `Claude exited (${signal ?? code ?? "unknown"}) before finishing the turn`;
+			// The stderr tail says why (a broken install, a bad flag): without it the chat only learns that it died.
+			const why = this.failure ?? withStderr(`Claude exited (${signal ?? code ?? "unknown"}) before finishing the turn`, stderr);
 			turn.queue.push({ type: "result", outcome: "error", message: why });
 			turn.queue.end();
 		}

@@ -18,7 +18,7 @@ const declared: HarnessToolInfo[] = [
   { name: "vis_check", description: "Check a vis block.", parameters: params, source: "sova", origin: "sova-vis-check" },
 ];
 const chatOn = (provider: string) =>
-  ({ harness: { model: () => ({ ref: `${provider}/m`, provider, id: "m", images: false }), declaredTools: () => declared } }) as never;
+  ({ mirror: { model: { ref: `${provider}/m`, provider } }, declaredTools: async () => declared }) as never;
 const deps = (o: { summary?: Partial<SessionSummary> | null; provider?: string | null }) => ({
   now: () => 7,
   summary: async () => (o.summary === undefined ? ({} as SessionSummary) : (o.summary as SessionSummary | null)),

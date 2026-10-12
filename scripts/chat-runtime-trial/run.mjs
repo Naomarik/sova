@@ -1876,7 +1876,8 @@ async function t24() {
   })();
   const status = await c.api("/api/settings/claude-status").catch((e) => ({ error: String(e.message ?? e) }));
   R.check(/fake/i.test(status?.version ?? ""), `t24: the server's claude is the fake one (${JSON.stringify(status).slice(0, 160)})`);
-  R.note(`t24: claude one-shots that reached the fake claude so far: ${oneShots.length}${oneShots.length ? ` (${oneShots.at(-1).slice(0, 120)})` : ""}`);
+  if (seen.some((x) => x.approximate)) R.check(oneShots.length >= 1, `t24: the approximate one-shot (the parent's topic outline) ran on the fake claude (${oneShots.length} -p calls logged by its shim${oneShots.length ? `: ${oneShots.at(-1).slice(0, 100)}` : ""})`);
+  else R.note(`t24: no approximate one-shot this time; -p calls on the fake: ${oneShots.length}`);
   // What was asked of the model meanwhile, beside each count over one: who else had a call open.
   const asks = mockLog(mock.log).filter((e) => e.scenario && Date.parse(e.at) >= t0).map((e) => `${e.at.slice(11, 23)} pid ${e.pid} ${e.scenario}${e.tag ? ` #${e.tag}` : ""}${e.afterTool ? " (after a tool)" : ""}`);
   R.note(`t24: counts over time (server ${srv.pid()}, parent ${chatPid(path)}): ${seen.map((x) => `${new Date(x.at).toISOString().slice(11, 23)}=${x.count}${x.approximate ? ` (${x.approximate} approximate)` : ""}`).join(", ")}`);

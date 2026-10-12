@@ -1337,6 +1337,8 @@ const deliveredTo = (path, marker) =>
     if (!s.includes(marker) || s.includes("[call ") || s.includes("[spawn")) return false;
     return !(e.type === "message" && (e.message?.role === "assistant" || e.message?.role === "toolResult"));
   }).length;
+/** The parent's completion entries (custom_message subagent-complete) that hold `marker`. */
+const completions = (path, marker) => entries(path).filter((e) => e.customType === "subagent-complete" && JSON.stringify(e).includes(marker)).length;
 /** The parent's agent_list, through the model: its details' agents [{id, name, status, restored, …}]. */
 async function agentList(o) {
   const r = await turn(o, "[call agent_list {}]");
@@ -1407,7 +1409,7 @@ async function t17(claude = false) {
     R.check(log.filter((e) => e.tag === "t17w" && e.scenario && !e.afterTool).length === 1, `${label}: the model was asked for the worker's reply once`);
   }
   await sleep(5000);
-  const got = deliveredTo(path, claude ? "Fake answer from login" : "REPLY-DONE t17w");
+  const got = completions(path, claude ? "Fake answer from login" : "REPLY-DONE t17w");
   R.check(got === 1, `${label}: the worker's completion was delivered to the parent once (${got})`);
   noResume(path, label);
   R.check(deaths(w.path).length === 0, `${label}: no death recorded for the worker`);
@@ -1450,7 +1452,7 @@ async function t18() {
   await sleep(5000);
   R.check(userEntriesWith(w.path, "STEER-T18") === 1, `t18: the steer after the reload is in the worker's file once (${userEntriesWith(w.path, "STEER-T18")})`);
   R.check(mockLog(mock.log).filter((e) => e.scenario && /STEER-T18/.test(e.userText ?? "")).length === 1, "t18: the worker's model got the steer once");
-  R.check(deliveredTo(path, "REPLY-DONE t18w") === 1, `t18: the worker's completion reached the parent once (${deliveredTo(path, "REPLY-DONE t18w")})`);
+  R.check(completions(path, "REPLY-DONE t18w") === 1, `t18: the worker's completion reached the parent once (${completions(path, "REPLY-DONE t18w")})`);
   noRpc("t18");
   p2.close();
   p3.s.close();
@@ -1482,7 +1484,7 @@ async function t18b() {
   const done = await workerDone(s2, "trial-worker");
   R.check(done?.outcome === "success", `t18b: the worker finished (outcome ${done?.outcome})`);
   await sleep(6000);
-  R.check(deliveredTo(path, "REPLY-DONE t18k") === 1, `t18b: the worker's completion was announced to the parent once (${deliveredTo(path, "REPLY-DONE t18k")})`);
+  R.check(completions(path, "REPLY-DONE t18k") === 1, `t18b: the worker's completion was announced to the parent once (${completions(path, "REPLY-DONE t18k")})`);
   noRpc("t18b");
   s2.close();
 }
@@ -1594,8 +1596,9 @@ async function t20() {
   const done = await workerDone(s, "trial-worker");
   R.check(done?.outcome === "success", `t20: the resumed run finished (outcome ${done?.outcome}${done?.error ? `: ${done.error}` : ""})`);
   await sleep(5000);
-  R.check(deliveredTo(path, "REPLY-DONE resume") === 1, `t20: the parent got one completion (${deliveredTo(path, "REPLY-DONE resume")})`);
+  R.check(completions(path, "REPLY-DONE resume") === 1, `t20: the parent got one completion (${completions(path, "REPLY-DONE resume")})`);
   R.check(userEntriesWith(path, CRASH_RESUME_TEXT) === 0, "t20: the parent was sent no continue");
+  R.check(resumeDecisions(w.path).length === 1, `t20: one auto_resume decision about the worker (${fmtDecisions(resumeDecisions(w.path))})`);
   // A second worker, killed twice: the second death (during the resume) is final.
   const from = s.got.length;
   prompt(s, "[spawn 1 40 #t20b] start another");
@@ -1616,7 +1619,7 @@ async function t20() {
   R.check(/stopped unexpectedly/.test(failed?.error ?? ""), `t20: the second death is an error saying the process stopped unexpectedly (${failed?.error?.slice(0, 200)})`);
   R.check(/Last output/.test(failed?.error ?? ""), "t20: the error carries the last output");
   await sleep(8000);
-  R.check(userEntriesWith(w2.path, CRASH_RESUME_TEXT) === 1, `t20: no second continue (${userEntriesWith(w2.path, CRASH_RESUME_TEXT)})`);
+  R.check(userEntriesWith(w2.path, CRASH_RESUME_TEXT) === 1 && resumeDecisions(w2.path).filter((a) => a.outcome === "ok").length <= 1, `t20: no second continue (${userEntriesWith(w2.path, CRASH_RESUME_TEXT)}; decisions ${fmtDecisions(resumeDecisions(w2.path))})`);
   noRpc("t20");
 }
 
@@ -1665,19 +1668,42 @@ async function t21() {
   await waitFor(() => existsSync(note) && readFileSync(note, "utf8").includes("HANDOFF-NOTE"), 90000);
   R.check(existsSync(note) && readFileSync(note, "utf8").includes("HANDOFF-NOTE"), "t21: /compact-handoff saved the note");
   await waitFor(() => entries(path).some((e) => e.type === "compaction"), 60000);
-  // /btw, saved as a visible note.
-  prompt(s2, "/btw --save [btw #t21] a side question");
+  // /btw through the real slash command (headless in Sova): the answer lands as a btw-note.
+  prompt(s2, "/btw [btw #t21a] a side question");
   const bt = await workerOf(path, (r) => r.kind === "btw");
-  R.check(bt && chatPid(bt.path) !== chatPid(path), `t21: /btw's side thread is a hidden worker chat in a process of its own (${bt && chatPid(bt.path)})`);
-  await waitFor(() => entries(path).some((e) => e.customType === "btw-note" && JSON.stringify(e).includes("BTW-ANSWER t21")), 60000);
-  R.check(entries(path).some((e) => e.customType === "btw-note" && JSON.stringify(e).includes("BTW-ANSWER t21")), "t21: /btw's answer is persisted as a btw-note");
-  // Who asked the model, and what was counted.
+  R.check(bt && chatPid(bt.path) && chatPid(bt.path) !== chatPid(path), `t21: /btw's side thread is a hidden worker chat in a process of its own (${bt && chatPid(bt.path)})`);
+  const btwNote = (tag) => entries(path).some((e) => e.customType === "btw-note" && JSON.stringify(e).includes(`BTW-ANSWER ${tag}`));
+  await waitFor(() => btwNote("t21a"), 60000);
+  R.check(btwNote("t21a"), "t21: /btw's answer is persisted as a btw-note in the parent");
+  // Who asked the model, and what was counted (before :summarize and :inject hand the thread to the
+  // parent, whose own turn then reads it).
   const parents = new Set([ppid, p2, chatPid(path), srv.pid()]);
   const hidden = mockLog(mock.log).filter((e) => !e.event && ["explain", "handoff", "btw"].includes(e.scenario));
   R.check(hidden.length >= 3 && hidden.every((e) => e.pid && !parents.has(e.pid)), `t21: every hidden chat's model call came from a process other than the parent's and the server's (${hidden.map((e) => `${e.scenario}@${e.pid}`).join(", ")})`);
   await sleep(2000);
-  const counted = usageRecords().slice(usage0).filter((r) => r.parent === sid || r.owner === sid);
-  R.check(counted.length >= hidden.length, `t21: the hidden chats' calls are in the usage ledger, attributed to the parent (${counted.length} records for ${hidden.length} calls)`);
+  const counted = usageRecords().slice(usage0).filter((r) => r.parent === sid);
+  R.check(counted.length >= hidden.length, `t21: the hidden chats' calls are in the usage ledger, attributed to the parent (${counted.length} records for ${hidden.length} calls; owners ${[...new Set(counted.map((r) => r.owner))].join(", ")})`);
+  // /btw:summarize: a second, tool-less hidden chat; its summary goes to the parent once confirmed.
+  let f = s2.got.length;
+  prompt(s2, "/btw:summarize");
+  const sum = await s2.until(isConfirm, 60000, "the summarize confirm", f).catch(() => null);
+  R.check(sum, "t21: /btw:summarize asks to confirm the summary");
+  if (sum) s2.send({ type: "ui_response", id: sum.id, value: true });
+  const kinds = () => workerRecords(path).filter((r) => r.kind === "btw").length;
+  await waitFor(() => userEntriesWith(path, "summary of a side conversation") > 0, 60000);
+  R.check(kinds() >= 2 && userEntriesWith(path, "summary of a side conversation") === 1, `t21: the summary came from a second hidden chat (btw chats ${kinds()}) and reached the parent once`);
+  await settled(s2, f, 60000).catch(() => {});
+  // /btw:inject: the thread goes to the parent as one user message once confirmed.
+  prompt(s2, "/btw [btw #t21b] another side question");
+  await waitFor(() => btwNote("t21b"), 60000);
+  f = s2.got.length;
+  prompt(s2, "/btw:inject");
+  const inj = await s2.until(isConfirm, 60000, "the inject confirm", f).catch(() => null);
+  R.check(inj, "t21: /btw:inject asks to confirm");
+  if (inj) s2.send({ type: "ui_response", id: inj.id, value: true });
+  await waitFor(() => userEntriesWith(path, "side conversation I had for additional context") > 0, 60000);
+  await sleep(2000);
+  R.check(userEntriesWith(path, "side conversation I had for additional context") === 1 && userEntriesWith(path, "another side question") >= 1, "t21: /btw:inject sent the thread to the parent once");
   noRpc("t21");
   s2.close();
 }

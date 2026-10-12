@@ -43,7 +43,7 @@
 //     t12b      a restart mid baton reply: it finishes; one reply/writing, one reply/ended
 //     t12c      take-back mid reply: "(taken back)" in the file when the route answers; one reply/ended
 //     t12d      the model hands off (hand_to): one hand-to row, one hand-off entry, one reply/ended
-//     t13       a project overseer's look across a restart: one look message, reported once
+//     t13       a project overseer's look across a restart: one look message, one turn, recorded cut off
 //     t14       a brief while the Overseer reloads (the test tick route): one brief turn
 //     t15       kill -9 of a baton mid-reply: the pane's error, reply/ended once, no "continue"
 //     t16       a powers chat's session_send to another process (hop header); a restart mid-send
@@ -1061,11 +1061,11 @@ async function t13() {
   await restart();
   R.check(pid1 && chatPid(po.path) === pid1, `t13: the project overseer's process survived (${pid1} → ${chatPid(po.path)})`);
   await waitFor(() => mockLog(mock.log).some((e) => e.event === "done" && e.tag === "look"), 60000);
-  // How the look ended: reported (look/finished, look/stopped) or recorded cut off by the resume (a
-  // look/cut-off row, or sova/resumed naming the sova/look run in its cutOff). Which one is right waits
-  // on the claim (the engine cuts off running invocations at resume): either, once, passes for now.
-  const isCut = (r) => r.event === "look/cut-off" || (r.event === "sova/resumed" && JSON.stringify(r.envelope?.cutOff ?? []).includes("sova/look"));
-  const finished = () => orgLog(o).filter((r) => (r.event === "look/finished" || r.event === "look/stopped" || isCut(r)) && r.at >= t0);
+  // How the look ended (the ruling): the engine cuts running invocations off at resume, so the watch's
+  // sova/resumed names the sova/look run in its cutOff and takes last-run.outcome to cut-off; the look
+  // is never reported (no look/finished or look/stopped), re-run or adopted.
+  const isCut = (r) => r.event === "sova/resumed" && JSON.stringify(r.envelope?.cutOff ?? []).includes("sova/look") && r.changed?.["last-run.outcome"]?.[1] === "cut-off";
+  const finished = () => orgLog(o).filter((r) => String(r.session ?? "").startsWith("watch/") && (r.event === "look/finished" || r.event === "look/stopped" || isCut(r)) && r.at >= t0);
   await waitFor(() => finished().length > 0, 30000);
   await sleep(5000);
   await mock.plain("");
@@ -1075,7 +1075,7 @@ async function t13() {
   const f = finished();
   const ends = f.filter((r) => !isCut(r));
   const cuts = f.filter(isCut);
-  R.check((ends.length === 1 && ends[0].event === "look/finished" && !cuts.length) || (!ends.length && cuts.length >= 1), `t13: the look ended once: reported finished, or recorded cut off by the resume (${f.map((r) => r.event).join(", ") || "none"})`);
+  R.check(cuts.length === 1 && !ends.length, `t13: the watch recorded the look cut off at resume, once, and never reported it (${f.map((r) => r.event).join(", ") || "none"})`);
   const answers = users[0] ? entries(po.path).filter((e) => e.type === "message" && e.message?.role === "assistant").length : 0;
   R.check(answers === 1, `t13: one assistant turn answered it (${answers})`);
 }

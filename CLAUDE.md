@@ -89,8 +89,9 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   = the library of named subagent setups (a profile bundles Delegate's four routes, the standing
   coordinator/monitor, the members default, the spec writer and, optionally, the reviewer and the
   align writing style/Visuals override),
-  `subagent-profiles-default.json` = this device's default (never synced; the library syncs whole,
-  newest edit wins), and each chat's hidden `subagent-profile` custom entry `{v: 1, profile}` (an
+  `subagent-profiles-default.json` = this device's default (never synced; the library syncs profile
+  by profile, newest edit per profile wins, deletions recorded in Sova's sync state, never in the file; a
+  seeded starter's mtime is the epoch, so it yields to a library edited elsewhere), and each chat's hidden `subagent-profile` custom entry `{v: 1, profile}` (an
   id or "off", newest on the branch wins — an id reference, not a snapshot: editing a profile
   reaches every chat on it from its next turn or team action). One module,
   `pi-config/extensions/subagents/subagent-profiles.ts` (builtins only, plus `mode/delegate.ts`,

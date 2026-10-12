@@ -26,6 +26,7 @@ export const KNOBS = {
   slice: "SOVA_CHAT_SLICE",
   /** Idle stop after this many minutes (fractional; 0 never). */
   idle: "SOVA_CHAT_IDLE_MIN",
+  idleMs: "SOVA_CHAT_IDLE_MS",
   /** The server build a chat is labelled with. */
   build: "SOVA_BUILD",
   /** A chat process whose build equals this exits 3 before hello (the rollout failure case). */
@@ -96,7 +97,9 @@ export function serverEnv({ agent, port, on, driver, slice, idleMin, build, fail
   if (on) env[KNOBS.switch] = "out";
   if (on && driver === "detached") env[KNOBS.driver] = "detached";
   if (on && slice) env[KNOBS.slice] = slice;
-  if (idleMin !== undefined) env[KNOBS.idle] = String(idleMin);
+  // The idle knob's name is not settled (SOVA_CHAT_IDLE_MIN in the design and supervisor.ts, _MS in
+  // a later message): both are set, each in its own unit.
+  if (idleMin !== undefined) Object.assign(env, { [KNOBS.idle]: String(idleMin), [KNOBS.idleMs]: String(Math.round(idleMin * 60_000)) });
   if (build) env[KNOBS.build] = build;
   if (failBoot) env[KNOBS.failBoot] = failBoot;
   return { ...env, ...extra };

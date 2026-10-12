@@ -196,10 +196,11 @@ export class FakeWorkerHost implements WorkerHost {
 		this.event(chatId, { type: "message_start", message: assistant });
 		this.event(chatId, { type: "message_end", message: assistant, entryId: `e${w.seq + 1}` });
 		this.event(chatId, { type: "agent_end", messages: [] });
-		this.event(chatId, { type: "agent_settled" });
+		const settleKey = o.key ?? `${chatId}:${w.seq}`;
+		this.event(chatId, { type: "agent_settled", settleKey });
 		this.state(chatId, {
 			status: "idle",
-			lastSettled: { key: o.key ?? `${chatId}:${w.seq}`, outcome: o.error ? "error" : "success", ...(o.error ? { error: o.error } : {}) },
+			lastSettled: { key: settleKey, outcome: o.error ? "error" : "success", ...(o.error ? { error: o.error } : {}) },
 		});
 	}
 

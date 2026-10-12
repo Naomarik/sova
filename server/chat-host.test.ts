@@ -190,6 +190,28 @@ test("shutdown: a chat process is told goodbye and runs on; no unit is stopped",
   assert.deepEqual(t.exits, [], "the chat did not exit");
 });
 
+test("a chat process's model calls are counted once in the server (its producer folded), and no longer once it is forgotten", async () => {
+  const { snapshot } = await import("../pi-config/extensions/llm-inflight/tracker.ts");
+  const t = setup();
+  const s = session();
+  const h = await t.router.acquire(s.path, false);
+  assert.ok(h);
+  const r = t.router as unknown as { hooks: { state(h: unknown): void; exit(h: unknown, cause: string): void } };
+  const own = snapshot();
+  const llm = { ...own, producer: "chat-proc-1", pid: 4242, folded: [], active: 1, approximate: 0, claudeTurns: 0, degraded: false };
+  (h as { mirror: object }).mirror = { ...(h as { mirror: object }).mirror, llm };
+  r.hooks.state(h);
+  r.hooks.state(h); // a repeated state replaces, never adds
+  const counted = snapshot();
+  assert.ok(counted.folded.includes("chat-proc-1"));
+  assert.equal(counted.active, own.active + 1);
+  // Its process ended: its counts go with it.
+  t.router.detach();
+  r.hooks.exit(h, "idle");
+  assert.ok(!snapshot().folded.includes("chat-proc-1"));
+  assert.equal(snapshot().active, own.active);
+});
+
 test("after a restart, a taken-back chat's server-hosted tools run here: a call queued while no server was there, and a new one", async () => {
   process.env.SOVA_CHAT_TEST_SERVED = "1";
   after(() => void delete process.env.SOVA_CHAT_TEST_SERVED);

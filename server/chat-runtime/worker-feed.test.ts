@@ -54,6 +54,22 @@ describe("WorkerFeed", () => {
     assert.deepEqual(feed.settled, { key: "k:task#1", outcome: "error", error: "boom" });
   });
 
+  test("a settle names its run's final assistant entry, after that entry's id is read; its frame carries the key", async () => {
+    const out: FeedFrame[] = [];
+    const feed = new WorkerFeed((f) => out.push(f), { proc: "P" });
+    const s = fakeSession();
+    feed.attach(s as never);
+    feed.noteSend("k:task");
+    s.emit({ type: "message_end", message: { role: "assistant", id: "e1", stopReason: "toolUse" } });
+    s.emit({ type: "message_end", message: { role: "assistant", id: "e2", stopReason: "stop" } });
+    s.emit({ type: "agent_settled" });
+    assert.equal(feed.settled, null);
+    await Promise.resolve();
+    assert.deepEqual(feed.settled, { key: "k:task#1", entryId: "e2", outcome: "success" });
+    assert.deepEqual(out.map((f) => (f.event as { type: string }).type), ["message_end", "message_end", "agent_settled"]);
+    assert.equal((out[2]!.event as { settleKey?: string }).settleKey, "k:task#1");
+  });
+
   test("since: the frames after a seq of this process; another process or one out of the ring is a gap", () => {
     const feed = new WorkerFeed(() => {}, { proc: "P", max: 3 });
     const s = fakeSession();

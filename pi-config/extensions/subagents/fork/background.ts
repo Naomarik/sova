@@ -346,7 +346,6 @@ export function startBackgroundFork(spec: BackgroundForkSpec, handlers: Backgrou
 				appendSystemPrompt: null,
 				env,
 				agentDir: null,
-				approve: false,
 				lowered: true,
 			},
 			session: spec.forkSession ? { fork: { from: spec.forkSession, dir: spec.sessionDir } } : { new: { dir: spec.sessionDir } },

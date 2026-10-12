@@ -23,7 +23,7 @@ interface FakeHandle {
 let dir: string;
 let n = 0;
 
-function fakeProcs(o: { failStart?: string } = {}) {
+function fakeProcs(o: { failStart?: string; failSend?: string } = {}) {
   const handles: FakeHandle[] = [];
   const stopped: string[] = [];
   const procs: WorkerProcesses = {
@@ -37,7 +37,10 @@ function fakeProcs(o: { failStart?: string } = {}) {
         calls: [],
         call: async (method, args) => {
           h.calls.push({ method, args });
-          if (method === "send") return { queued: false, turnId: null };
+          if (method === "send") {
+            if (o.failSend) throw new Error(o.failSend);
+            return { queued: false, turnId: null };
+          }
           if (method === "feedSince") return { gap: true };
           return null;
         },
@@ -66,19 +69,21 @@ const start = (key = "sid:ag_01:1", task: string | null = "do it"): WorkerStart 
     appendSystemPrompt: null,
     env: {},
     agentDir: null,
-    approve: false,
     lowered: true,
   },
   session: { new: { dir: join(dir, "sessions") } },
   task,
 });
 
-const reg = (procs: WorkerProcesses, o: { autoResume?: boolean; opened?: string[] } = {}) =>
+const reg = (procs: WorkerProcesses, o: { autoResume?: boolean; opened?: string[]; logged?: unknown[] } = {}) =>
   new WorkerRegistry(procs, {
     dir: () => join(dir, "workers"),
     autoResume: () => o.autoResume ?? true,
     openParent: async (p) => void o.opened?.push(p),
+    logResume: (args, why) => void o.logged?.push({ ...args, outcome: why ?? "resumed" }),
   });
+const PARENT = { sessionId: "sid", path: "/p/parent.jsonl" };
+const linkOf = (p: { sessionId: string; path: string }) => ({ mirror: { sessionId: p.sessionId }, path: p.path, sent: [] as unknown[], sendWorker(f: unknown) { this.sent.push(f); } });
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "chat-workers-"));
@@ -224,7 +229,7 @@ describe("WorkerRegistry", () => {
   test("a parent chat in a process of its own: ops answered on its link, watches fed there", async () => {
     const { procs } = fakeProcs();
     const r = reg(procs);
-    const parent = { sent: [] as unknown[], sendWorker(f: unknown) { this.sent.push(f); } };
+    const parent = linkOf(PARENT);
     r.serve(parent as unknown as RemoteChatHandle, { t: "wk", id: "k1", op: "start", args: start("pk", null) });
     await new Promise((res) => setTimeout(res, 20));
     const res = parent.sent[0] as { t: string; ok: boolean; result: { chatId: string } };
@@ -232,7 +237,7 @@ describe("WorkerRegistry", () => {
     assert.ok(res.ok);
     r.serve(parent as unknown as RemoteChatHandle, { t: "wk.watch", chatId: res.result.chatId, cursor: null });
     assert.equal((parent.sent[1] as { t: string; frame: { t: string } }).frame.t, "state");
-    r.serve(parent as unknown as RemoteChatHandle, { t: "wk", id: "k2", op: "list", args: { parentSessionId: "sid" } });
+    r.serve(parent as unknown as RemoteChatHandle, { t: "wk", id: "k2", op: "list", args: { parentSessionId: "other" } });
     await new Promise((res) => setTimeout(res, 5));
     assert.equal(((parent.sent[2] as { result: unknown[] }).result).length, 1);
   });
@@ -245,6 +250,98 @@ describe("WorkerRegistry", () => {
     again.settleBoot();
     assert.equal(again.list("sid")[0]!.state, "idle");
     assert.equal(again.record(ref.chatId)!.key, "k");
+  });
+
+  test("each crash-resume decision is logged: resumed, already a resume, the setting off, no run in flight", async () => {
+    const logged: unknown[] = [];
+    const { procs } = fakeProcs();
+    const r = reg(procs, { logged });
+    const ref = await r.start(start("k", null));
+    const death: ChatDeath = { chatId: ref.chatId, sessionPath: ref.sessionFile, unit: "u", cause: "crashed", exit: 1, signal: null, logTail: [], at: "t1" };
+    r.died(death, { since: 1 } as never);
+    await new Promise((res) => setTimeout(res, 10));
+    r.died({ ...death, at: "t2" }, { since: 2, auto: true } as never);
+    const off = reg(procs, { logged, autoResume: false });
+    const ref2 = await off.start(start("k2", null));
+    off.died({ ...death, chatId: ref2.chatId }, { since: 1 } as never);
+    const ref3 = await off.start(start("k3", null));
+    off.died({ ...death, chatId: ref3.chatId }, null);
+    const who = { path: ref.sessionFile, parent: "/p/parent.jsonl", workerId: "ag_01" };
+    assert.deepEqual(logged, [
+      { ...who, outcome: "resumed" },
+      { ...who, outcome: "already a resume" },
+      { ...who, path: ref2.sessionFile, outcome: "setting off" },
+      { ...who, path: ref3.sessionFile, outcome: "no run in flight" },
+    ]);
+  });
+
+  test("a task the worker does not accept fails the start and stops its chat (no worker left unowned)", async () => {
+    const { procs, stopped } = fakeProcs({ failSend: "model refused" });
+    const r = reg(procs);
+    await assert.rejects(r.start(start()), /model refused/);
+    assert.equal(stopped.length, 1);
+    assert.deepEqual(r.list("sid"), []);
+  });
+
+  test("a settle a watcher was told of is not announced again by the next server", async (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    const { procs, handles } = fakeProcs();
+    const opened: string[] = [];
+    const r = reg(procs, { opened });
+    const ref = await r.start(start("k", null));
+    const off = r.watch(ref.chatId, null, () => {});
+    const settled = { proc: "p1", lastSettled: { key: "k:task#1", entryId: "e9", outcome: "success" } };
+    handles[0]!.mirror = { ...handles[0]!.mirror, worker: settled };
+    r.onState(handles[0]! as unknown as RemoteChatHandle);
+    off();
+    assert.equal(r.record(ref.chatId)!.seenSettleKey, "k:task#1");
+    const again = reg(procs, { opened });
+    again.adopt({ ...handles[0]!, mirror: { ...handles[0]!.mirror } } as unknown as RemoteChatHandle);
+    t.mock.timers.tick(10_000);
+    assert.deepEqual(opened, []);
+    // A later settle, unwatched, still opens the parent.
+    const h = { ...handles[0]!, mirror: { ...handles[0]!.mirror, worker: { proc: "p1", lastSettled: { key: "k:task#2", outcome: "success" } } } };
+    again.adopt(h as unknown as RemoteChatHandle);
+    t.mock.timers.tick(10_000);
+    assert.deepEqual(opened, ["/p/parent.jsonl"]);
+  });
+
+  test("a parent in this process reaches its own workers only", async () => {
+    const { procs } = fakeProcs();
+    const r = reg(procs);
+    const ref = await r.bind(PARENT).start(start("k", null));
+    const other = r.bind({ sessionId: "other", path: "/p/other.jsonl" });
+    await assert.rejects(other.start(start("k2", null)), /its own parent session only/);
+    await assert.rejects(other.start({ ...start("k", null), spec: { ...start().spec, parent: { sessionId: "other", path: "/p/other.jsonl", workerId: "ag_01" } } }), /No worker chat .* for this session/);
+    await assert.rejects(other.send(ref.chatId, { text: "x", delivery: "prompt", key: "x" }), /No worker chat .* for this session/);
+    await assert.rejects(other.abort(ref.chatId), /for this session/);
+    await assert.rejects(other.stop(ref.chatId, "x"), /for this session/);
+    assert.throws(() => other.watch(ref.chatId, null, () => {}), /for this session/);
+    assert.deepEqual(await other.list(), []);
+    assert.equal((await r.bind(PARENT).list()).length, 1);
+  });
+
+  test("a parent in a process of its own is the one its link names, never the frame", async () => {
+    const { procs } = fakeProcs();
+    const r = reg(procs);
+    const ref = await r.start(start("k", null));
+    const other = linkOf({ sessionId: "other", path: "/p/other.jsonl" });
+    const serve = (f: Parameters<WorkerRegistry["serve"]>[1]) => r.serve(other as unknown as RemoteChatHandle, f);
+    serve({ t: "wk", id: "a", op: "start", args: start("k9", null) });
+    serve({ t: "wk", id: "b", op: "send", args: { chatId: ref.chatId, input: { text: "x", delivery: "prompt", key: "x" } } });
+    serve({ t: "wk", id: "c", op: "abort", args: { chatId: ref.chatId } });
+    serve({ t: "wk", id: "d", op: "stop", args: { chatId: ref.chatId, reason: "x" } });
+    serve({ t: "wk", id: "e", op: "list", args: { parentSessionId: "sid" } });
+    serve({ t: "wk.watch", chatId: ref.chatId, cursor: null });
+    await new Promise((res) => setTimeout(res, 10));
+    const byId = Object.fromEntries((other.sent as { t: string; id?: string }[]).filter((f) => f.t === "wk.result").map((f) => [f.id, f]));
+    assert.match((byId.a as { error: { message: string } }).error.message, /its own parent session only/);
+    for (const id of ["b", "c", "d"]) assert.match((byId[id] as { error: { message: string } }).error.message, /for this session/);
+    assert.deepEqual((byId.e as { result: unknown }).result, []);
+    const fed = (other.sent as { t: string; frame?: { t: string; detail?: string } }[]).find((f) => f.t === "wk.feed");
+    assert.equal(fed?.frame?.t, "ended");
+    assert.match(fed?.frame?.detail ?? "", /for this session/);
+    assert.equal(r.list("sid")[0]!.state, "open");
   });
 
   test("the death text keeps the last 20 lines, at most 2 KB", () => {

@@ -159,7 +159,6 @@ export class BtwChat {
 					appendSystemPrompt: null,
 					env: { [BTW_PROMPT_ENV]: promptFile },
 					agentDir: null,
-					approve: false,
 					lowered: true,
 				},
 				session: { seed: { dir: join(start.root, ".sessions"), messages: start.messages } },

@@ -20,7 +20,7 @@ import type {
   ServerToolOutcome,
 } from "./chat-runtime";
 import type { ToolResult } from "./harness-tools";
-import type { ChatClientMessage, WorkerInfo } from "./protocol";
+import type { ChatClientMessage } from "./protocol";
 
 export const CHAT_WIRE_PROTO = 1;
 export const CHAT_WIRE_MIN_PROTO = 1;
@@ -152,7 +152,21 @@ export interface ChatRuntimeMirror extends ChatStateMirror {
   /** The chat's Claude CLI child, for the cap across chat processes. */
   claude: "none" | "idle" | "busy";
   /** What the server's resource monitor shows for the chat. */
-  monitor: { title?: string; workers: WorkerInfo[]; toolsRunning: number; lastToolEnd: number };
+  monitor: { title?: string; workers: ChatMonitorWorker[]; toolsRunning: number; lastToolEnd: number };
+}
+
+/** A worker as the chat's subagents runtime published it, for the resource monitor (its own
+    WorkerInfo, server/resource-monitor-attrib.ts; `pid` only while alive). */
+export interface ChatMonitorWorker {
+  id: string;
+  name?: string;
+  status?: string;
+  backend?: string;
+  pid?: number;
+  sessionFile?: string;
+  sessionId?: string;
+  teamId?: string;
+  lastActivity?: number;
 }
 
 /** The whole mirror whenever its JSON changed (coalesced), and before any reply to a call that changed it. */

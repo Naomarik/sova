@@ -512,6 +512,9 @@ export class WorkerRegistry {
   died(d: ChatDeath, marker: InflightMarker | null): void {
     const l = this.live.get(d.chatId);
     if (!l || l.rec.state === "ended") return;
+    // A reopen is in flight (this death's resume, or a late second report of the same death): the
+    // process now starting is not the one that died.
+    if (l.opening) return log(`${d.chatId}: a death reported while it reopens; ignored`);
     l.handle = null;
     const detail = deathText(d);
     const logTail = d.logTail.slice(-DEATH_LINES);

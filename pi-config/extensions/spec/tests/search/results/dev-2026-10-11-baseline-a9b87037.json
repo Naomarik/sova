@@ -1,0 +1,1330 @@
+{
+  "meta": {
+    "date": "2026-10-11T08:02:59.378Z",
+    "label": "baseline-a9b87037",
+    "set": "dev",
+    "file": "pi-config/extensions/spec/tests/search/judgments.dev.json",
+    "cli": "(outside the repo)/sova-spec.mjs",
+    "head": "a9b87037",
+    "coreDirty": null,
+    "args": "unquoted words",
+    "judgmentsSpecCommit": "a9b87037"
+  },
+  "groups": {
+    "all": {
+      "n": 52,
+      "r1": 0,
+      "r3": 0,
+      "mrr": 0,
+      "r3any": 0,
+      "meanBytes": 143,
+      "medianBytes": 139,
+      "maxBytes": 364,
+      "meanResults": 0,
+      "exits": {
+        "1": 1,
+        "2": 51
+      }
+    },
+    "vocabulary gap": {
+      "n": 7,
+      "r1": 0,
+      "r3": 0,
+      "mrr": 0,
+      "r3any": 0,
+      "meanBytes": 139,
+      "medianBytes": 139,
+      "maxBytes": 139,
+      "meanResults": 0,
+      "exits": {
+        "2": 7
+      }
+    },
+    "word overlap": {
+      "n": 45,
+      "r1": 0,
+      "r3": 0,
+      "mrr": 0,
+      "r3any": 0,
+      "meanBytes": 144,
+      "medianBytes": 139,
+      "maxBytes": 364,
+      "meanResults": 0,
+      "exits": {
+        "1": 1,
+        "2": 44
+      }
+    }
+  },
+  "rows": [
+    {
+      "id": "a02",
+      "query": "git info in session detail",
+      "vocabularyGap": false,
+      "targets": {
+        "primary": [
+          "§chat.transcript/setup-card-repository"
+        ],
+        "acceptable": [
+          "§chat.transcript/setup-card"
+        ]
+      },
+      "exit": 2,
+      "parsed": true,
+      "bytes": 139,
+      "ms": 28,
+      "results": 0,
+      "top": [],
+      "rankPrimary": null,
+      "rankAny": null,
+      "r1": 0,
+      "r3": 0,
+      "r3any": 0,
+      "rr": 0
+    },
+    {
+      "id": "a04",
+      "query": "welcome message skills loaded",
+      "vocabularyGap": true,
+      "targets": {
+        "primary": [
+          "§chat.transcript/setup-card"
+        ],
+        "acceptable": [
+          "§chat.transcript/setup-card-skills",
+          "§chat.transcript/setup-card-context"
+        ]
+      },
+      "exit": 2,
+      "parsed": true,
+      "bytes": 139,
+      "ms": 26,
+      "results": 0,
+      "top": [],
+      "rankPrimary": null,
+      "rankAny": null,
+      "r1": 0,
+      "r3": 0,
+      "r3any": 0,
+      "rr": 0
+    },
+    {
+      "id": "a05",
+      "query": "new session card commit messages",
+      "vocabularyGap": false,
+      "targets": {
+        "primary": [
+          "§chat.transcript/setup-card-figures"
+        ],
+        "acceptable": [
+          "§chat.transcript/setup-card-repository"
+        ]
+      },
+      "exit": 2,
+      "parsed": true,
+      "bytes": 139,
+      "ms": 28,
+      "results": 0,
+      "top": [],
+      "rankPrimary": null,
+      "rankAny": null,
+      "r1": 0,
+      "r3": 0,
+      "r3any": 0,
+      "rr": 0
+    },
+    {
+      "id": "a08",
+      "query": "collapse left menu thin rail",
+      "vocabularyGap": false,
+      "targets": {
+        "primary": [
+          "§app.session-list/spine"
+        ],
+        "acceptable": []
+      },
+      "exit": 2,
+      "parsed": true,
+      "bytes": 139,
+      "ms": 25,
+      "results": 0,
+      "top": [],
+      "rankPrimary": null,
+      "rankAny": null,
+      "r1": 0,
+      "r3": 0,
+      "r3any": 0,
+      "rr": 0
+    },
+    {
+      "id": "a09",
+      "query": "drag session to archive",
+      "vocabularyGap": false,
+      "targets": {
+        "primary": [
+          "§app.session-list/drop-overlay"
+        ],
+        "acceptable": [
+          "§app.session-list/regions-top-and-archive"
+        ]
+      },
+      "exit": 2,
+      "parsed": true,
+      "bytes": 139,
+      "ms": 31,
+      "results": 0,
+      "top": [],
+      "rankPrimary": null,
+      "rankAny": null,
+      "r1": 0,
+      "r3": 0,
+      "r3any": 0,
+      "rr": 0
+    },
+    {
+      "id": "a10",
+      "query": "favorites in model selector",
+      "vocabularyGap": false,
+      "targets": {
+        "primary": [
+          "§chat.model-menu/favorites"
+        ],
+        "acceptable": [
+          "§chat.model-menu/content-and-order"
+        ]
+      },
+      "exit": 2,
+      "parsed": true,
+      "bytes": 139,
+      "ms": 25,
+      "results": 0,
+      "top": [],
+      "rankPrimary": null,
+      "rankAny": null,
+      "r1": 0,
+      "r3": 0,
+      "r3any": 0,
+      "rr": 0
+    },
+    {
+      "id": "a12",
+      "query": "usage panel redesign",
+      "vocabularyGap": false,
+      "targets": {
+        "primary": [
+          "§app.insights/usage-cards"
+        ],
+        "acceptable": [
+          "§app.insights/usage-page-and-agents-page"
+        ]
+      },
+      "exit": 2,
+      "parsed": true,
+      "bytes": 139,
+      "ms": 27,
+      "results": 0,
+      "top": [],
+      "rankPrimary": null,
+      "rankAny": null,
+      "r1": 0,
+      "r3": 0,
+      "r3any": 0,
+      "rr": 0
+    },
+    {
+      "id": "a13",
+      "query": "topic count usage circle",
+      "vocabularyGap": true,
+      "targets": {
+        "primary": [
+          "§app.session-list/anatomy"
+        ],
+        "acceptable": [
+          "§app.session-list/content-rules"
+        ]
+      },
+      "exit": 2,
+      "parsed": true,
+      "bytes": 139,
+      "ms": 29,
+      "results": 0,
+      "top": [],
+      "rankPrimary": null,
+      "rankAny": null,
+      "r1": 0,
+      "r3": 0,
+      "r3any": 0,
+      "rr": 0
+    },
+    {
+      "id": "a15",
+      "query": "wake up nudge",
+      "vocabularyGap": false,
+      "targets": {
+        "primary": [
+          "§teams.defaults/wake-nudge"
+        ],
+        "acceptable": [
+          "§chat.transcript/transcript-items"
+        ]
+      },
+      "exit": 2,
+      "parsed": true,
+      "bytes": 139,
+      "ms": 25,
+      "results": 0,
+      "top": [],
+      "rankPrimary": null,
+      "rankAny": null,
+      "r1": 0,
+      "r3": 0,
+      "r3any": 0,
+      "rr": 0
+    },
+    {
+      "id": "a20",
+      "query": "team member cap",
+      "vocabularyGap": false,
+      "targets": {
+        "primary": [
+          "§app.teams/seats"
+        ],
+        "acceptable": []
+      },
+      "exit": 2,
+      "parsed": true,
+      "bytes": 139,
+      "ms": 28,
+      "results": 0,
+      "top": [],
+      "rankPrimary": null,
+      "rankAny": null,
+      "r1": 0,
+      "r3": 0,
+      "r3any": 0,
+      "rr": 0
+    },
+    {
+      "id": "a21",
+      "query": "overseer model choice becomes default",
+      "vocabularyGap": false,
+      "targets": {
+        "primary": [
+          "§app.overseer/tools"
+        ],
+        "acceptable": [
+          "§chat.model-menu/saved-default"
+        ]
+      },
+      "exit": 2,
+      "parsed": true,
+      "bytes": 139,
+      "ms": 26,
+      "results": 0,
+      "top": [],
+      "rankPrimary": null,
+      "rankAny": null,
+      "r1": 0,
+      "r3": 0,
+      "r3any": 0,
+      "rr": 0
+    },
+    {
+      "id": "a22",
+      "query": "save button grayed out until change",
+      "vocabularyGap": false,
+      "targets": {
+        "primary": [
+          "§app.settings-dialog/save-bar"
+        ],
+        "acceptable": []
+      },
+      "exit": 2,
+      "parsed": true,
+      "bytes": 139,
+      "ms": 28,
+      "results": 0,
+      "top": [],
+      "rankPrimary": null,
+      "rankAny": null,
+      "r1": 0,
+      "r3": 0,
+      "r3any": 0,
+      "rr": 0
+    },
+    {
+      "id": "a28",
+      "query": "overseer boot sessions with minor modes",
+      "vocabularyGap": false,
+      "targets": {
+        "primary": [
+          "§app.overseer/tools"
+        ],
+        "acceptable": []
+      },
+      "exit": 2,
+      "parsed": true,
+      "bytes": 139,
+      "ms": 29,
+      "results": 0,
+      "top": [],
+      "rankPrimary": null,
+      "rankAny": null,
+      "r1": 0,
+      "r3": 0,
+      "r3any": 0,
+      "rr": 0
+    },
+    {
+      "id": "a33",
+      "query": "subagent pane nothing running",
+      "vocabularyGap": false,
+      "targets": {
+        "primary": [
+          "§app.subagents-pane/hidden-workers"
+        ],
+        "acceptable": [
+          "§app/subagents-pane",
+          "§app.subagents-pane/worker-rows"
+        ]
+      },
+      "exit": 2,
+      "parsed": true,
+      "bytes": 139,
+      "ms": 28,
+      "results": 0,
+      "top": [],
+      "rankPrimary": null,
+      "rankAny": null,
+      "r1": 0,
+      "r3": 0,
+      "r3any": 0,
+      "rr": 0
+    },
+    {
+      "id": "a35",
+      "query": "mesh out of sync resync button",
+      "vocabularyGap": true,
+      "targets": {
+        "primary": [
+          "§mesh.peers/resync"
+        ],
+        "acceptable": [
+          "§mesh.ui/card"
+        ]
+      },
+      "exit": 2,
+      "parsed": true,
+      "bytes": 139,
+      "ms": 26,
+      "results": 0,
+      "top": [],
+      "rankPrimary": null,
+      "rankAny": null,
+      "r1": 0,
+      "r3": 0,
+      "r3any": 0,
+      "rr": 0
+    },
+    {
+      "id": "a36",
+      "query": "open questions bubble icon",
+      "vocabularyGap": false,
+      "targets": {
+        "primary": [
+          "§chat.alignment/session-mark"
+        ],
+        "acceptable": [
+          "§app.session-list/anatomy"
+        ]
+      },
+      "exit": 2,
+      "parsed": true,
+      "bytes": 139,
+      "ms": 29,
+      "results": 0,
+      "top": [],
+      "rankPrimary": null,
+      "rankAny": null,
+      "r1": 0,
+      "r3": 0,
+      "r3any": 0,
+      "rr": 0
+    },
+    {
+      "id": "a38",
+      "query": "page jank switching sessions",
+      "vocabularyGap": false,
+      "targets": {
+        "primary": [
+          "§chat.composer/known-on-switch"
+        ],
+        "acceptable": [
+          "§chat.transcript/rendering"
+        ]
+      },
+      "exit": 2,
+      "parsed": true,
+      "bytes": 139,
+      "ms": 26,
+      "results": 0,
+      "top": [],
+      "rankPrimary": null,
+      "rankAny": null,
+      "r1": 0,
+      "r3": 0,
+      "r3any": 0,
+      "rr": 0
+    },
+    {
+      "id": "a41",
+      "query": "people send us files",
+      "vocabularyGap": false,
+      "targets": {
+        "primary": [
+          "§app.baton/files"
+        ],
+        "acceptable": [
+          "§app/file-intake"
+        ]
+      },
+      "exit": 2,
+      "parsed": true,
+      "bytes": 139,
+      "ms": 26,
+      "results": 0,
+      "top": [],
+      "rankPrimary": null,
+      "rankAny": null,
+      "r1": 0,
+      "r3": 0,
+      "r3any": 0,
+      "rr": 0
+    },
+    {
+      "id": "a42",
+      "query": "playbooks in recent tab",
+      "vocabularyGap": true,
+      "targets": {
+        "primary": [
+          "§app.session-list/profile-shelf"
+        ],
+        "acceptable": [
+          "§app.session-list/recent"
+        ]
+      },
+      "exit": 2,
+      "parsed": true,
+      "bytes": 139,
+      "ms": 27,
+      "results": 0,
+      "top": [],
+      "rankPrimary": null,
+      "rankAny": null,
+      "r1": 0,
+      "r3": 0,
+      "r3any": 0,
+      "rr": 0
+    },
+    {
+      "id": "a45",
+      "query": "placeholder cut off mobile",
+      "vocabularyGap": true,
+      "targets": {
+        "primary": [
+          "§chat.composer/behavior"
+        ],
+        "acceptable": [
+          "§chat.composer/anatomy"
+        ]
+      },
+      "exit": 2,
+      "parsed": true,
+      "bytes": 139,
+      "ms": 28,
+      "results": 0,
+      "top": [],
+      "rankPrimary": null,
+      "rankAny": null,
+      "r1": 0,
+      "r3": 0,
+      "r3any": 0,
+      "rr": 0
+    },
+    {
+      "id": "a48",
+      "query": "card choices per item",
+      "vocabularyGap": false,
+      "targets": {
+        "primary": [
+          "§app.overseer/confirm"
+        ],
+        "acceptable": []
+      },
+      "exit": 2,
+      "parsed": true,
+      "bytes": 139,
+      "ms": 32,
+      "results": 0,
+      "top": [],
+      "rankPrimary": null,
+      "rankAny": null,
+      "r1": 0,
+      "r3": 0,
+      "r3any": 0,
+      "rr": 0
+    },
+    {
+      "id": "a54",
+      "query": "indent line under chevron",
+      "vocabularyGap": true,
+      "targets": {
+        "primary": [
+          "§chat.transcript/tokens"
+        ],
+        "acceptable": [
+          "§chat.transcript/transcript-items"
+        ]
+      },
+      "exit": 2,
+      "parsed": true,
+      "bytes": 139,
+      "ms": 32,
+      "results": 0,
+      "top": [],
+      "rankPrimary": null,
+      "rankAny": null,
+      "r1": 0,
+      "r3": 0,
+      "r3any": 0,
+      "rr": 0
+    },
+    {
+      "id": "a58",
+      "query": "timeline inputs only",
+      "vocabularyGap": false,
+      "targets": {
+        "primary": [
+          "§chat.timeline/inputs-only"
+        ],
+        "acceptable": []
+      },
+      "exit": 2,
+      "parsed": true,
+      "bytes": 139,
+      "ms": 30,
+      "results": 0,
+      "top": [],
+      "rankPrimary": null,
+      "rankAny": null,
+      "r1": 0,
+      "r3": 0,
+      "r3any": 0,
+      "rr": 0
+    },
+    {
+      "id": "a60",
+      "query": "remember scroll position switching sessions",
+      "vocabularyGap": false,
+      "targets": {
+        "primary": [
+          "§chat.transcript/rendering"
+        ],
+        "acceptable": [
+          "§chat.transcript/jump-landing"
+        ]
+      },
+      "exit": 2,
+      "parsed": true,
+      "bytes": 139,
+      "ms": 26,
+      "results": 0,
+      "top": [],
+      "rankPrimary": null,
+      "rankAny": null,
+      "r1": 0,
+      "r3": 0,
+      "r3any": 0,
+      "rr": 0
+    },
+    {
+      "id": "a62",
+      "query": "mesh without tailnet LAN IP",
+      "vocabularyGap": false,
+      "targets": {
+        "primary": [
+          "§mesh/lan"
+        ],
+        "acceptable": [
+          "§mesh.lan/pairing",
+          "§mesh.peers/address-identity"
+        ]
+      },
+      "exit": 2,
+      "parsed": true,
+      "bytes": 139,
+      "ms": 29,
+      "results": 0,
+      "top": [],
+      "rankPrimary": null,
+      "rankAny": null,
+      "r1": 0,
+      "r3": 0,
+      "r3any": 0,
+      "rr": 0
+    },
+    {
+      "id": "a63",
+      "query": "overseer register a project",
+      "vocabularyGap": false,
+      "targets": {
+        "primary": [
+          "§app.overseer/org-project-add"
+        ],
+        "acceptable": [
+          "§app.projects/registration"
+        ]
+      },
+      "exit": 2,
+      "parsed": true,
+      "bytes": 139,
+      "ms": 29,
+      "results": 0,
+      "top": [],
+      "rankPrimary": null,
+      "rankAny": null,
+      "r1": 0,
+      "r3": 0,
+      "r3any": 0,
+      "rr": 0
+    },
+    {
+      "id": "a64",
+      "query": "lift sandbox for subagents",
+      "vocabularyGap": false,
+      "targets": {
+        "primary": [
+          "§chat.sandbox/states"
+        ],
+        "acceptable": [
+          "§chat.sandbox/workers"
+        ]
+      },
+      "exit": 2,
+      "parsed": true,
+      "bytes": 139,
+      "ms": 24,
+      "results": 0,
+      "top": [],
+      "rankPrimary": null,
+      "rankAny": null,
+      "r1": 0,
+      "r3": 0,
+      "r3any": 0,
+      "rr": 0
+    },
+    {
+      "id": "a65",
+      "query": "rename sessions automatically button",
+      "vocabularyGap": false,
+      "targets": {
+        "primary": [
+          "§app.session-list/auto-titles"
+        ],
+        "acceptable": [
+          "§app.session-list/selecting-several-sessions"
+        ]
+      },
+      "exit": 2,
+      "parsed": true,
+      "bytes": 139,
+      "ms": 25,
+      "results": 0,
+      "top": [],
+      "rankPrimary": null,
+      "rankAny": null,
+      "r1": 0,
+      "r3": 0,
+      "r3any": 0,
+      "rr": 0
+    },
+    {
+      "id": "a67",
+      "query": "session from different host stand out",
+      "vocabularyGap": false,
+      "targets": {
+        "primary": [
+          "§app.shell/remote-session-chips"
+        ],
+        "acceptable": [
+          "§mesh.remote-sessions/head-host"
+        ]
+      },
+      "exit": 2,
+      "parsed": true,
+      "bytes": 139,
+      "ms": 29,
+      "results": 0,
+      "top": [],
+      "rankPrimary": null,
+      "rankAny": null,
+      "r1": 0,
+      "r3": 0,
+      "r3any": 0,
+      "rr": 0
+    },
+    {
+      "id": "a68",
+      "query": "scroll jumps down when settles",
+      "vocabularyGap": false,
+      "targets": {
+        "primary": [
+          "§chat.transcript/turn-end-keeps-reader"
+        ],
+        "acceptable": []
+      },
+      "exit": 2,
+      "parsed": true,
+      "bytes": 139,
+      "ms": 25,
+      "results": 0,
+      "top": [],
+      "rankPrimary": null,
+      "rankAny": null,
+      "r1": 0,
+      "r3": 0,
+      "r3any": 0,
+      "rr": 0
+    },
+    {
+      "id": "a69",
+      "query": "subscription usage velocity",
+      "vocabularyGap": false,
+      "targets": {
+        "primary": [
+          "§app.insights/usage-burn"
+        ],
+        "acceptable": [
+          "§app.insights/pace-tick"
+        ]
+      },
+      "exit": 2,
+      "parsed": true,
+      "bytes": 139,
+      "ms": 28,
+      "results": 0,
+      "top": [],
+      "rankPrimary": null,
+      "rankAny": null,
+      "r1": 0,
+      "r3": 0,
+      "r3any": 0,
+      "rr": 0
+    },
+    {
+      "id": "a70",
+      "query": "drop to archive text changing",
+      "vocabularyGap": false,
+      "targets": {
+        "primary": [
+          "§app.session-list/drop-overlay"
+        ],
+        "acceptable": []
+      },
+      "exit": 2,
+      "parsed": true,
+      "bytes": 139,
+      "ms": 28,
+      "results": 0,
+      "top": [],
+      "rankPrimary": null,
+      "rankAny": null,
+      "r1": 0,
+      "r3": 0,
+      "r3any": 0,
+      "rr": 0
+    },
+    {
+      "id": "a72",
+      "query": "voice calibration cutting off",
+      "vocabularyGap": false,
+      "targets": {
+        "primary": [
+          "§app.settings-dialog/voice-calibration"
+        ],
+        "acceptable": []
+      },
+      "exit": 2,
+      "parsed": true,
+      "bytes": 139,
+      "ms": 25,
+      "results": 0,
+      "top": [],
+      "rankPrimary": null,
+      "rankAny": null,
+      "r1": 0,
+      "r3": 0,
+      "r3any": 0,
+      "rr": 0
+    },
+    {
+      "id": "a78",
+      "query": "adversarial review settings toggle",
+      "vocabularyGap": false,
+      "targets": {
+        "primary": [
+          "§app.settings-dialog/alignment"
+        ],
+        "acceptable": [
+          "§chat.alignment-review/flag"
+        ]
+      },
+      "exit": 2,
+      "parsed": true,
+      "bytes": 139,
+      "ms": 27,
+      "results": 0,
+      "top": [],
+      "rankPrimary": null,
+      "rankAny": null,
+      "r1": 0,
+      "r3": 0,
+      "r3any": 0,
+      "rr": 0
+    },
+    {
+      "id": "a79",
+      "query": "keyboard comes up after send",
+      "vocabularyGap": false,
+      "targets": {
+        "primary": [
+          "§chat.composer/behavior"
+        ],
+        "acceptable": []
+      },
+      "exit": 2,
+      "parsed": true,
+      "bytes": 139,
+      "ms": 26,
+      "results": 0,
+      "top": [],
+      "rankPrimary": null,
+      "rankAny": null,
+      "r1": 0,
+      "r3": 0,
+      "r3any": 0,
+      "rr": 0
+    },
+    {
+      "id": "a80",
+      "query": "mode menu stays open",
+      "vocabularyGap": false,
+      "targets": {
+        "primary": [
+          "§chat.mode-menu/menu"
+        ],
+        "acceptable": []
+      },
+      "exit": 2,
+      "parsed": true,
+      "bytes": 139,
+      "ms": 30,
+      "results": 0,
+      "top": [],
+      "rankPrimary": null,
+      "rankAny": null,
+      "r1": 0,
+      "r3": 0,
+      "r3any": 0,
+      "rr": 0
+    },
+    {
+      "id": "a83",
+      "query": "UniiChat",
+      "vocabularyGap": false,
+      "targets": {
+        "primary": [
+          "§chat.memory/types"
+        ],
+        "acceptable": [
+          "§chat.memory/turn",
+          "§chat/memory"
+        ]
+      },
+      "exit": 1,
+      "parsed": true,
+      "bytes": 364,
+      "ms": 87,
+      "results": 0,
+      "top": [],
+      "rankPrimary": null,
+      "rankAny": null,
+      "r1": 0,
+      "r3": 0,
+      "r3any": 0,
+      "rr": 0
+    },
+    {
+      "id": "a84",
+      "query": "summary tree",
+      "vocabularyGap": false,
+      "targets": {
+        "primary": [
+          "§chat.memory/tree"
+        ],
+        "acceptable": [
+          "§chat.memory/summarizer"
+        ]
+      },
+      "exit": 2,
+      "parsed": true,
+      "bytes": 139,
+      "ms": 28,
+      "results": 0,
+      "top": [],
+      "rankPrimary": null,
+      "rankAny": null,
+      "r1": 0,
+      "r3": 0,
+      "r3any": 0,
+      "rr": 0
+    },
+    {
+      "id": "a90",
+      "query": "memory mode summary size",
+      "vocabularyGap": false,
+      "targets": {
+        "primary": [
+          "§chat.mode-menu/memory-panel"
+        ],
+        "acceptable": [
+          "§chat.memory/choice"
+        ]
+      },
+      "exit": 2,
+      "parsed": true,
+      "bytes": 139,
+      "ms": 24,
+      "results": 0,
+      "top": [],
+      "rankPrimary": null,
+      "rankAny": null,
+      "r1": 0,
+      "r3": 0,
+      "r3any": 0,
+      "rr": 0
+    },
+    {
+      "id": "a92",
+      "query": "duplicate opus models",
+      "vocabularyGap": false,
+      "targets": {
+        "primary": [
+          "§app.claude-code-provider/catalog"
+        ],
+        "acceptable": [
+          "§app.claude-code-provider/legacy-ids"
+        ]
+      },
+      "exit": 2,
+      "parsed": true,
+      "bytes": 139,
+      "ms": 29,
+      "results": 0,
+      "top": [],
+      "rankPrimary": null,
+      "rankAny": null,
+      "r1": 0,
+      "r3": 0,
+      "r3any": 0,
+      "rr": 0
+    },
+    {
+      "id": "a93",
+      "query": "model effort levels wrong",
+      "vocabularyGap": false,
+      "targets": {
+        "primary": [
+          "§app/model-levels"
+        ],
+        "acceptable": [
+          "§app.model-levels/scope"
+        ]
+      },
+      "exit": 2,
+      "parsed": true,
+      "bytes": 139,
+      "ms": 27,
+      "results": 0,
+      "top": [],
+      "rankPrimary": null,
+      "rankAny": null,
+      "r1": 0,
+      "r3": 0,
+      "r3any": 0,
+      "rr": 0
+    },
+    {
+      "id": "a96",
+      "query": "merge captain misses merge ready",
+      "vocabularyGap": false,
+      "targets": {
+        "primary": [
+          "§chat/merge-round"
+        ],
+        "acceptable": [
+          "§chat.merge-round/round",
+          "§chat.worktrees/readiness"
+        ]
+      },
+      "exit": 2,
+      "parsed": true,
+      "bytes": 139,
+      "ms": 25,
+      "results": 0,
+      "top": [],
+      "rankPrimary": null,
+      "rankAny": null,
+      "r1": 0,
+      "r3": 0,
+      "r3any": 0,
+      "rr": 0
+    },
+    {
+      "id": "c01",
+      "query": "company hours",
+      "vocabularyGap": false,
+      "targets": {
+        "primary": [
+          "§app.organizations/working-hours"
+        ],
+        "acceptable": []
+      },
+      "exit": 2,
+      "parsed": true,
+      "bytes": 139,
+      "ms": 27,
+      "results": 0,
+      "top": [],
+      "rankPrimary": null,
+      "rankAny": null,
+      "r1": 0,
+      "r3": 0,
+      "r3any": 0,
+      "rr": 0
+    },
+    {
+      "id": "c03",
+      "query": "front door failover",
+      "vocabularyGap": false,
+      "targets": {
+        "primary": [
+          "§mesh.front-door/failover"
+        ],
+        "acceptable": [
+          "§mesh/front-door"
+        ]
+      },
+      "exit": 2,
+      "parsed": true,
+      "bytes": 139,
+      "ms": 28,
+      "results": 0,
+      "top": [],
+      "rankPrimary": null,
+      "rankAny": null,
+      "r1": 0,
+      "r3": 0,
+      "r3any": 0,
+      "rr": 0
+    },
+    {
+      "id": "c11",
+      "query": "markdown syntax highlighting replies",
+      "vocabularyGap": false,
+      "targets": {
+        "primary": [
+          "§chat/markdown"
+        ],
+        "acceptable": []
+      },
+      "exit": 2,
+      "parsed": true,
+      "bytes": 139,
+      "ms": 28,
+      "results": 0,
+      "top": [],
+      "rankPrimary": null,
+      "rankAny": null,
+      "r1": 0,
+      "r3": 0,
+      "r3any": 0,
+      "rr": 0
+    },
+    {
+      "id": "c13",
+      "query": "resource monitor memory scale",
+      "vocabularyGap": true,
+      "targets": {
+        "primary": [
+          "§app.resource-monitor/screen"
+        ],
+        "acceptable": []
+      },
+      "exit": 2,
+      "parsed": true,
+      "bytes": 139,
+      "ms": 27,
+      "results": 0,
+      "top": [],
+      "rankPrimary": null,
+      "rankAny": null,
+      "r1": 0,
+      "r3": 0,
+      "r3any": 0,
+      "rr": 0
+    },
+    {
+      "id": "c14",
+      "query": "group prompt all-or-nothing",
+      "vocabularyGap": false,
+      "targets": {
+        "primary": [
+          "§workspace.groups/the-group-composer"
+        ],
+        "acceptable": [
+          "§workspace.groups/decisions"
+        ]
+      },
+      "exit": 2,
+      "parsed": true,
+      "bytes": 139,
+      "ms": 28,
+      "results": 0,
+      "top": [],
+      "rankPrimary": null,
+      "rankAny": null,
+      "r1": 0,
+      "r3": 0,
+      "r3any": 0,
+      "rr": 0
+    },
+    {
+      "id": "c15",
+      "query": "timeline newest first",
+      "vocabularyGap": false,
+      "targets": {
+        "primary": [
+          "§chat/timeline"
+        ],
+        "acceptable": [
+          "§chat.timeline/rows"
+        ]
+      },
+      "exit": 2,
+      "parsed": true,
+      "bytes": 139,
+      "ms": 27,
+      "results": 0,
+      "top": [],
+      "rankPrimary": null,
+      "rankAny": null,
+      "r1": 0,
+      "r3": 0,
+      "r3any": 0,
+      "rr": 0
+    },
+    {
+      "id": "c16",
+      "query": "project page tabs",
+      "vocabularyGap": false,
+      "targets": {
+        "primary": [
+          "§app.organizations/project-page"
+        ],
+        "acceptable": []
+      },
+      "exit": 2,
+      "parsed": true,
+      "bytes": 139,
+      "ms": 29,
+      "results": 0,
+      "top": [],
+      "rankPrimary": null,
+      "rankAny": null,
+      "r1": 0,
+      "r3": 0,
+      "r3any": 0,
+      "rr": 0
+    },
+    {
+      "id": "c19",
+      "query": "deploy rollback",
+      "vocabularyGap": false,
+      "targets": {
+        "primary": [
+          "§app.project-services/deploy-status"
+        ],
+        "acceptable": []
+      },
+      "exit": 2,
+      "parsed": true,
+      "bytes": 139,
+      "ms": 29,
+      "results": 0,
+      "top": [],
+      "rankPrimary": null,
+      "rankAny": null,
+      "r1": 0,
+      "r3": 0,
+      "r3any": 0,
+      "rr": 0
+    },
+    {
+      "id": "c22",
+      "query": "transcript newest rows first",
+      "vocabularyGap": false,
+      "targets": {
+        "primary": [
+          "§chat.transcript/rendering"
+        ],
+        "acceptable": []
+      },
+      "exit": 2,
+      "parsed": true,
+      "bytes": 139,
+      "ms": 27,
+      "results": 0,
+      "top": [],
+      "rankPrimary": null,
+      "rankAny": null,
+      "r1": 0,
+      "r3": 0,
+      "r3any": 0,
+      "rr": 0
+    },
+    {
+      "id": "c26",
+      "query": "installer defaults to master",
+      "vocabularyGap": false,
+      "targets": {
+        "primary": [
+          "§app.installer/ref"
+        ],
+        "acceptable": []
+      },
+      "exit": 2,
+      "parsed": true,
+      "bytes": 139,
+      "ms": 29,
+      "results": 0,
+      "top": [],
+      "rankPrimary": null,
+      "rankAny": null,
+      "r1": 0,
+      "r3": 0,
+      "r3any": 0,
+      "rr": 0
+    }
+  ]
+}

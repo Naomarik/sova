@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { symlinkSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fixture, cli, pages, write } from "./map-fixture.mjs";
+import { termsOf } from "../core/topic.mjs";
 
 test("where PATH: every claim whose code lists the file, ranked by the rare interface tokens they share with it", () => {
   const root = fixture();
@@ -72,9 +73,9 @@ test("where TOKEN: claims that define it (heading or first sentence) before thos
   const { j } = cli(root, ["where", "draftId"]);
   assert.equal(j.mode, "token");
   assert.deepEqual(j.lines.map((l) => [l.type, l.id]), [["defines", "§ed.seed/compose"], ["mentions", "§ot/uses"]]);
-  assert.deepEqual(j.counts, { claims: 2, defines: 1, mentions: 1 });
-  assert.deepEqual(cli(root, ["where", "/api/send"]).j.lines.map((l) => [l.id, l.spans]), [["§ed.seed/compose", ["POST /api/send"]]]);
-  assert.equal(cli(root, ["where", "draft"]).j.lines.length, 0, "draft is not a whole name inside draftId");
+  assert.deepEqual(j.counts, { claims: 2, defines: 1, mentions: 1, topic: 0 });
+  assert.deepEqual(cli(root, ["where", "/api/send"]).j.lines.filter((l) => l.type !== "topic").map((l) => [l.id, l.spans]), [["§ed.seed/compose", ["POST /api/send"]]]);
+  assert.equal(cli(root, ["where", "draft"]).j.lines.filter((l) => l.type !== "topic").length, 0, "draft is not a whole name inside draftId");
   const forced = cli(root, ["where", "src/editor.ts", "--token"]).j;
   assert.equal(forced.mode, "token");
   const none = cli(root, ["where", "nope/missing.ts"], { json: false }).r;
@@ -82,7 +83,7 @@ test("where TOKEN: claims that define it (heading or first sentence) before thos
   assert.match(none.stdout, /^no file nope\/missing.ts under the root and no record lists it: searched as a token$/m);
   assert.match(none.stdout, /^nope\/missing.ts: no claim uses it in backticks$/m);
   assert.equal(cli(root, ["where"]).j.code, "usage");
-  assert.match(cli(root, ["where", "--help"]).j.help, /^where <path\|token>/);
+  assert.match(cli(root, ["where", "--help"]).j.help, /^where <path\|token\|topic words…>/);
 });
 
 test("where --json never hides results silently: past the top 10 it says how many more and how to page them, and text and JSON agree", () => {
@@ -114,4 +115,85 @@ test("where --json on a path that does not exist says the file is absent, then s
   assert.match(JSON.stringify([j.note, j.notes, j.message, j.unknowns, j.file]), /no file|absent|does not exist|not found/i, "a note says so");
   assert.equal(j.exit, 1);
   assert.equal(cli(root, ["where", "src/editor.ts"]).j.file.state, "read", "an existing path is still read");
+});
+
+test("where WORDS: several unquoted words are one query, ranked as a topic in rows of their own kind; a topic-only hit exits 0", () => {
+  const root = fixture();
+  const { j } = cli(root, ["where", "editor", "pane"]);
+  assert.equal(j.mode, "token");
+  assert.equal(j.query, "editor pane");
+  assert.deepEqual(j.topicTerms, ["editor", "pane"]);
+  assert.equal(j.counts.claims, 0);
+  assert.ok(j.counts.topic > 0);
+  assert.equal(j.lines[0].id, "§ed/seed", "the passage holding both words ranks first");
+  assert.deepEqual(j.lines[0].matched, ["editor", "pane"]);
+  assert.equal(typeof j.lines[0].score, "number");
+  assert.ok(j.lines.every((l) => l.type === "topic"));
+  assert.equal(j.exit, 0);
+  assert.match(j.notice, /literal name match/);
+  assert.match(j.topicNotice, /topic row/);
+  assert.deepEqual(cli(root, ["where", "editor pane"]).j.lines, j.lines, "the same words quoted give the same rows");
+  const text = cli(root, ["where", "editor", "pane"], { json: false }).r;
+  assert.equal(text.status, 0);
+  assert.match(text.stdout, /^editor pane: no claim uses it in backticks$/m);
+  assert.match(text.stdout, /^TOPIC MATCHES: ranked by the query's words/m);
+  assert.match(text.stdout, /^    matched: editor, pane$/m);
+  const none = cli(root, ["where", "zzqx", "blorf"]).j;
+  assert.deepEqual([none.counts.claims, none.counts.topic, none.exit], [0, 0, 1], "neither kind finding a claim is exit 1");
+  assert.match(cli(root, ["where", "zzqx"], { json: false }).r.stdout, /^as a topic: no other claim matches its words$/m);
+});
+
+test("where: a claim found by name is not repeated as a topic row; a file keeps the path reading, with no topic rows", () => {
+  const root = fixture();
+  assert.deepEqual(cli(root, ["where", "draftId"]).j.lines.map((l) => l.type), ["defines", "mentions"]);
+  const both = cli(root, ["where", "draftId", "editor"]).j;
+  assert.equal(both.query, "draftId editor");
+  assert.ok(both.lines.some((l) => l.type === "topic" && l.id === "§ed/seed"));
+  const path = cli(root, ["where", "src/editor.ts"]).j;
+  assert.equal(path.mode, "path");
+  assert.ok(path.lines.every((l) => l.type !== "topic"));
+  assert.equal(path.topicNotice, undefined);
+  assert.equal(path.counts.topic, undefined);
+  assert.equal(cli(root, ["where", "src/editor.ts", "src/save.ts"]).j.mode, "token", "only a single argument is read as a file");
+});
+
+test("where: name rows keep their top ten and topic rows fill only the places left free; a cut name row exits 1, a cut topic row does not", () => {
+  const root = fixture();
+  const m = JSON.parse(readFileSync(join(root, ".sova/spec/manifest.json"), "utf8"));
+  const add = (id, prose) => {
+    m.claims[id] = { kind: "note", requires: [] };
+    write(root, `.sova/spec/claims/${id.slice(1).split("/")[0]}/${id.split("/")[1]}.md`, `# ${id} — Part\n\n${prose}\n`);
+  };
+  for (let i = 0; i < 10; i++) add(`§foo/name-${String.fromCharCode(97 + i)}`, "This part passes `Foo` along.");
+  for (let i = 0; i < 4; i++) add(`§bar/word-${String.fromCharCode(97 + i)}`, "This part is about foo, in plain words.");
+  for (let i = 0; i < 13; i++) add(`§gad/get-${String.fromCharCode(97 + i)}`, "A gizmo turns.");
+  write(root, ".sova/spec/manifest.json", JSON.stringify(m));
+  const { j } = cli(root, ["where", "Foo"]);
+  assert.deepEqual([j.counts.claims, j.counts.topic, j.total, j.shown, j.notShown], [10, 4, 14, 10, 4]);
+  assert.deepEqual(j.lines.map((l) => l.type), Array(10).fill("defines"), "ten name rows fill the ten: no topic row displaces one");
+  assert.equal(j.exit, 0, "every name row is shown");
+  assert.equal(j.hint, "where 'Foo' --token --all");
+  const all = cli(root, ["where", "Foo", "--all"]).j;
+  assert.equal(all.lines.length, 14);
+  assert.equal(all.exit, 0);
+  add("§foo/name-x", "This part passes `Foo` along."); add("§foo/name-y", "This part passes `Foo` along.");
+  write(root, ".sova/spec/manifest.json", JSON.stringify(m));
+  const cut = cli(root, ["where", "Foo"]).j;
+  assert.deepEqual([cut.counts.claims, cut.shown, cut.notShown, cut.exit], [12, 10, 6, 1], "name rows left out: exit 1");
+  assert.ok(cut.lines.every((l) => l.type === "defines"));
+  add("§bar/plain", "A draftid named in plain words.");
+  write(root, ".sova/spec/manifest.json", JSON.stringify(m));
+  const free = cli(root, ["where", "draftId"]).j;
+  assert.deepEqual(free.lines.slice(0, 2).map((l) => l.type), ["defines", "mentions"]);
+  assert.ok(free.lines.slice(2).length > 0 && free.lines.slice(2).every((l) => l.type === "topic") && free.exit === 0, "topic rows fill the places name rows leave free");
+  const tail = cli(root, ["where", "gizmo"]).j;
+  assert.deepEqual([tail.counts.topic, tail.shown, tail.notShown, tail.exit], [13, 10, 3, 0], "topic rows past the ten are counted, and the answer still succeeds");
+  assert.match(cli(root, ["where", "gizmo"], { json: false }).r.stdout, /^3 more not shown: where 'gizmo' --token --all$/m);
+});
+
+test("topic words: a word's -s, -ed and -ing forms land on one term, and -tion words are not cut to a shorter word", () => {
+  assert.deepEqual(termsOf("mentioned functioning"), termsOf("mention function"));
+  assert.deepEqual(termsOf("mentions sessions trees"), termsOf("mention session tree"));
+  assert.notDeepEqual(termsOf("caption"), termsOf("caps"));
+  assert.deepEqual(termsOf("read-only spec/rules.md"), ["spec/rules.md", "read", "spec", "rule"]);
 });

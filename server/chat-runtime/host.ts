@@ -495,7 +495,8 @@ export class ChatRuntimeHost {
     if (this.speaksSpecial()) this.link!.send({ t: "run", n: ++this.runN, event: r.event });
   }
 
-  /** A server action (stage 3): a call on the served-tool path, under an effect id of its own. */
+  /** A server action (stage 3): a call on the served-tool path, under an effect id of its own; it
+      resolves to the action's own result. */
   action(name: ServerActionName, args: unknown): Promise<ServerToolOutcome<unknown>> {
     const turns = this.chat?.userTurns;
     const call: ServerToolCall = {
@@ -507,7 +508,9 @@ export class ChatRuntimeHost {
       attended: turns?.attended() ?? false,
       card: turns?.confirmedCard() ?? null,
     };
-    return this.queueTool(call, null);
+    // The server runs an action as a served tool: its own result is the ToolResult's details (as the
+    // in-process loopback answers it, chat-handle.ts actionOutcome).
+    return this.queueTool(call, null).then((out) => (out.ok ? { ok: true, result: (out.result as ToolResult | undefined)?.details } : out));
   }
 
   /**

@@ -188,7 +188,9 @@ let n = 0;
 async function boot(o = {}) {
   const port = o.agent ? await freePort() : (fixedPort ?? (await freePort()));
   const url = `http://127.0.0.1:${port}`;
-  const env = serverEnv({ agent: o.agent ?? agent, port, on: o.on ?? true, driver, slice: driver === "systemd" ? slice : undefined, idleMs: o.idleMs, build: o.build, failBoot: o.failBoot, extra: o.extra });
+  // A fixed build unless the check sets one: the worktree is edited while the trial runs, and a build
+  // taken from the dirty tree would move between restarts and reload chats mid-check.
+  const env = serverEnv({ agent: o.agent ?? agent, port, on: o.on ?? true, driver, slice: driver === "systemd" ? slice : undefined, idleMs: o.idleMs, build: o.build ?? "trial-fixed", failBoot: o.failBoot, extra: o.extra });
   const s = server({ tag: `${tag}-${++n}`, env, mode, log: join(scratch, `server-${n}.log`) });
   s.up();
   await healthy(url);
@@ -314,16 +316,20 @@ async function t1b() {
   s2.close();
 }
 
+/** The trial_ask confirm (other ui_requests are fire-and-forget status lines). */
+const isConfirm = (m) => m.type === "ui_request" && m.request?.method === "confirm";
 async function t1c() {
   const { path, s } = await newChat();
   prompt(s, "[ask] ask me");
-  const req = await s.until((m) => m.type === "ui_request", 60000, "the dialog");
+  const req = await s.until(isConfirm, 60000, "the dialog");
   const pid1 = chatPid(path);
-  s.close();
+  // The browser stays attached: the restart drops it (a broker drop). Closing it first would be a
+  // plain detach, which resolves open dialogs with their defaults, as today.
   await restart();
+  s.close();
   sameProcess(path, pid1, "t1c");
   const s2 = await chat(c, path);
-  const again = await s2.until((m) => m.type === "ui_request", 15000, "the dialog after the restart").catch(() => null);
+  const again = await s2.until(isConfirm, 15000, "the dialog after the restart").catch(() => null);
   R.check(again, `t1c: the dialog was re-sent after the restart (id ${req.id} → ${again?.id})`);
   if (again) {
     s2.send({ type: "ui_response", id: again.id, value: true });
@@ -358,8 +364,12 @@ async function t1d() {
 
 async function t1e() {
   const { path, s } = await newChat();
-  prompt(s, "say ok");
-  await settled(s, 0, 60000);
+  // History past pi's kept-recent window (~20k tokens), so /compact has something to cut.
+  for (const k of [0, 1]) {
+    const from = s.got.length;
+    prompt(s, "[big 60] history");
+    await settled(s, from, 60000);
+  }
   prompt(s, "/compact");
   for (let i = 0; i < 60 && !mockLog(mock.log).some((e) => e.scenario === "compact"); i++) await sleep(500);
   await sleep(2000);

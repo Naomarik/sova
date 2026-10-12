@@ -1589,7 +1589,7 @@ export function registerSubagents(
 				// The main thread's steers are assignments too: the coordinator's roster lists them.
 				if (source === "parent" || source === "user") persistAssignment(teams.recordOperatorSteer(a.id, message));
 			}
-			else teams.settleAction(action, signal?.aborted ? "unknown" : "failed", accepted.reason);
+			else teams.settleAction(action, signal?.aborted || accepted.unknown ? "unknown" : "failed", accepted.reason);
 			return accepted;
 		} catch (error) {
 			teams.settleAction(action, signal?.aborted ? "unknown" : "failed", String(error));
@@ -2287,10 +2287,10 @@ export function registerSubagents(
 							replyHint(target, me.role),
 						].join("\n");
 						const accepted = await deliverToMember(target, text, target.backend === "pi" ? undefined : "followUp", notice ? "monitor" : "member", notice ?? "message", { kind: "message", from: me.role, fromId: me.workerId, text: request.message! });
-						return { to: target.role, workerId: target.workerId, ok: accepted.ok, ...(accepted.ok ? {} : { reason: accepted.reason }) };
+						return { to: target.role, workerId: target.workerId, ok: accepted.ok, ...(accepted.ok ? {} : { reason: accepted.reason }), ...(accepted.unknown ? { unknown: true } : {}) };
 					}));
 					if (notice === "wrap-up") recordWrapUps(info.team.id, targets, outcomes);
-					const lines = outcomes.map((o) => `${o.to} (${o.workerId}): ${o.ok ? "accepted or queued" : `failed — ${o.reason}`}`);
+					const lines = outcomes.map((o) => `${o.to} (${o.workerId}): ${o.ok ? "accepted or queued" : o.unknown ? `unknown — ${o.reason}` : `failed — ${o.reason}`}`);
 					const failed = outcomes.filter((o) => !o.ok);
 					reply({
 						ok: failed.length < outcomes.length,
@@ -2883,7 +2883,7 @@ export function registerSubagents(
 		name: "agent_steer",
 		label: "Steer Subagent",
 		description:
-			"Send instructions to a live worker. mode=redirect changes the current task (Pi's normal steering). mode=followUp queues work after the current task. Omitted mode preserves backend default steering. Idle workers start a fresh task. Acknowledgment means accepted or queued, not executed or completed. Cancelling acceptance waiting does not stop the worker and may leave delivery unknown; inspect status/transcript before retrying.",
+			"Send instructions to a live worker. mode=redirect changes the current task (Pi's normal steering). mode=followUp queues work after the current task. Omitted mode preserves backend default steering. Idle workers start a fresh task. Acknowledgment means accepted or queued, not executed or completed. Cancelling acceptance waiting, or Sova's server not answering, does not stop the worker and may leave delivery unknown; inspect status/transcript before retrying.",
 		parameters: Type.Object({ id: Nonempty, message: Nonempty, mode: Type.Optional(StringEnum(["redirect", "followUp"] as const)) }),
 		async execute(_id, params, signal, _update, ctx) {
 			context(ctx);
@@ -2891,7 +2891,7 @@ export function registerSubagents(
 			if (!params.message.trim()) throw new Error("Instructions must not be blank.");
 			const a = findAgent(params.id);
 			const accepted = await steerWorker(a, params.message, params.mode, signal, "parent");
-			if (!accepted.ok) throw new Error(`Cannot steer ${a.id}: ${accepted.reason}`);
+			if (!accepted.ok) throw new Error(accepted.unknown ? `Steer to ${a.id}: ${accepted.reason}` : `Cannot steer ${a.id}: ${accepted.reason}`);
 			return result(`Accepted or queued new instructions for ${a.id} (${a.name}); this does not confirm execution or completion.`, { id: a.id, steerCount: a.steerCount });
 		},
 	});

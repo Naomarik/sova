@@ -63,8 +63,8 @@ function stringList(value: unknown): string[] {
 	return Array.isArray(value) ? value.map((v) => String(v)) : [];
 }
 
-/** What a steer delivery returns: accepted, rejected with why, or unknown (no answer). */
-export type Delivery = { ok: true } | { ok: false; reason: string } | undefined;
+/** What a steer delivery returns: accepted, rejected with why, or unknown (no answer: it may have been delivered all the same). */
+export type Delivery = { ok: true } | { ok: false; reason: string; unknown?: true };
 
 export abstract class WorkerFold implements Worker {
 	readonly backend: string = "pi";
@@ -445,10 +445,8 @@ export abstract class WorkerFold implements Worker {
 
 	/** Why a steer can't be sent now, or null. */
 	protected abstract steerRefusal(): string | null;
-	/** Send the steer; its acceptance (or rejection, or undefined: unknown). */
+	/** Send the steer; its acceptance, rejection, or no answer (unknown). */
 	protected abstract deliver(message: string, mode: SteerMode | undefined, wasRunning: boolean): Promise<Delivery>;
-	/** Acceptance unknown: the worker is stopped (a delivery that may have happened, with no way to tell). */
-	protected abstract failUnknown(reason: string): void;
 
 	/**
 	 * Redirect the agent: a steer while it runs, a fresh prompt when idle. Resolves once the worker
@@ -534,20 +532,21 @@ export abstract class WorkerFold implements Worker {
 		this.superseded = null;
 
 		if (this.closed || this.killInitiated) return { ok: false, reason: "process exited" };
-		if (!res) {
-			if (cancelled()) return { ok: false, reason: "steering wait cancelled; delivery unknown — worker was not stopped" };
-			// Delivery is UNKNOWN: the worker may be executing it. Report the ambiguity and fail closed.
-			this.failUnknown("steer acceptance unknown: no answer from Sova's server — stopping the subagent");
-			return { ok: false, reason: "acceptance unknown — subagent stopped" };
-		}
 		if (res.ok !== true) {
-			// Explicit rejection: undo the arm, except completion state that legitimately progressed meanwhile.
+			// A rejection, or no answer (unknown: the worker is healthy and sends are keyed, so it is
+			// neither stopped nor sent again). Either way undo the arm, except completion state that
+			// legitimately progressed meanwhile; should the message land after all, its run shows as
+			// the worker's next task.
+			const result: SteerResult = res.unknown
+				? { ok: false, unknown: true, reason: `${res.reason}; delivery unknown — the message may not have been delivered; the worker was not stopped and nothing is sent again; inspect status/transcript before retrying` }
+				: { ok: false, reason: res.reason };
 			const idx = this.transcript.indexOf(steerItem);
 			if (idx !== -1) {
 				this.transcript.splice(idx, 1);
 				this.transcriptRevision++;
 			}
 			this.steerCount--;
+			if (res.unknown) this.push("error", `${res.reason}; this message may not have been delivered; the worker was not stopped:\n${message}`);
 			if (superseded?.begunSeq) {
 				// The previously armed steer's run began while we waited: it is the current task now.
 				this.armedAwaitingRun = false;
@@ -558,7 +557,7 @@ export abstract class WorkerFold implements Worker {
 				this.taskBoundarySeq = superseded.begunSeq;
 				this.pruneQueuedSteers();
 				this.touch();
-				return { ok: false, reason: res.reason };
+				return result;
 			}
 			// A previously accepted steer may still be awaiting ITS run: restore the armed bookkeeping.
 			this.armedAwaitingRun = snapshot.armedAwaitingRun;
@@ -579,7 +578,7 @@ export abstract class WorkerFold implements Worker {
 			}
 			this.pruneQueuedSteers();
 			this.touch();
-			return { ok: false, reason: res.reason };
+			return result;
 		}
 		// Accepted: the new task is armed and events that raced the acceptance were processed under it.
 		this.pruneQueuedSteers();

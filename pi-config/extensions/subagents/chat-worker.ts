@@ -301,17 +301,11 @@ export class ChatWorker extends WorkerFold {
 			return { ok: true };
 		} catch (err) {
 			const reason = err instanceof Error ? err.message : String(err);
-			// The server never answered: delivery unknown. Anything else is the worker's refusal.
-			if (/isn't answering|not reachable/.test(reason)) return undefined;
+			// The server never answered: delivery unknown (the worker is not stopped for it). Anything
+			// else is the worker's refusal.
+			if (/isn't answering|not reachable/.test(reason)) return { ok: false, unknown: true, reason: "Sova's server didn't answer within a minute" };
 			return { ok: false, reason };
 		}
-	}
-
-	protected failUnknown(reason: string): void {
-		this.error = reason;
-		this.status = "error";
-		this.push("error", reason);
-		void this.kill(reason);
 	}
 
 	/** Stop the worker: its chat process is stopped; resolves when it is gone. */

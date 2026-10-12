@@ -243,14 +243,52 @@ test("a rejected steer reports ok:false and changes nothing (its marker rolled b
 	await h.worker.dispose();
 });
 
-test("a steer whose delivery is unknown (no server) stops the worker", async () => {
-	const h = make({}, { failSend: () => "The Sova server isn't answering" });
+test("a steer the server never answers leaves the worker running and unstopped, reports delivery unknown, and sends nothing again", async () => {
+	let down = true;
+	const NO_SERVER = "The Sova server isn't answering, so this action didn't run. Try it again in a minute.";
+	const h = make({}, { failSend: () => (down ? NO_SERVER : undefined) });
 	await boot(h);
-	const r = await h.worker.steer("x");
+	assistant(h, "working");
+	const r = await h.worker.steer("new plan");
 	assert.equal(r.ok, false);
-	assert.match(r.reason ?? "", /acceptance unknown/);
-	await h.worker.whenClosed;
-	assert.equal(h.host.get(h.chatId()).stops.length, 1);
+	assert.equal(r.unknown, true);
+	assert.match(r.reason ?? "", /delivery unknown/);
+	assert.match(r.reason ?? "", /not stopped/);
+	assert.doesNotMatch(r.reason ?? "", /didn't run/, "never claims the message didn't run");
+	await flush();
+	assert.equal(h.worker.status, "running", "the task in flight stays the current one");
+	assert.equal(h.worker.isFinished(), false);
+	assert.equal(h.host.get(h.chatId()).stops.length, 0, "no stop");
+	assert.equal(h.worker.steerCount, 0, "the arm is undone");
+	assert.ok(!h.worker.transcript.some((t) => t.kind === "steer"));
+	const last = h.worker.transcript.at(-1)!;
+	assert.equal(last.kind, "error");
+	assert.match(last.text, /may not have been delivered; the worker was not stopped/);
+	assert.match(last.text, /new plan/);
+	assert.equal(h.host.get(h.chatId()).sends.length, 1, "sent once, never again");
+	// The task in flight ends as it would have; a later steer once the server is back is delivered.
+	settle(h);
+	assert.equal(h.worker.status, "waiting");
+	assert.equal(h.worker.taskOutcome, "success");
+	down = false;
+	assert.equal((await h.worker.steer("again")).ok, true);
+	assert.equal(h.host.get(h.chatId()).sends.length, 2);
+	await h.worker.dispose();
+});
+
+test("an idle worker whose steer goes unanswered stays waiting with its last outcome", async () => {
+	const h = make({}, { failSend: () => "The Sova server isn't answering, so this action didn't run. Try it again in a minute." });
+	await boot(h);
+	assistant(h, "answer");
+	settle(h);
+	const settled = h.counts.settled;
+	const r = await h.worker.steer("next");
+	assert.equal(r.unknown, true);
+	assert.equal(h.worker.status, "waiting");
+	assert.equal(h.worker.taskOutcome, "success");
+	assert.equal(h.counts.settled, settled, "no new settle announced");
+	assert.equal(h.host.get(h.chatId()).stops.length, 0);
+	await h.worker.dispose();
 });
 
 test("a second steer while acceptance is pending is rejected; the first then lands", async () => {

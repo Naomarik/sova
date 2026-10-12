@@ -3,8 +3,11 @@
 // thread. The chat process then opens the file like any chat (it must exist: chat-manager's open
 // refuses a missing file), so a new session's header is written at once, never at its first reply as
 // pi would.
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { copyForFork } from "../../../pi-config/extensions/subagents/fork/copy.ts";
 import type { WorkerSession } from "../../../shared/chat-runtime";
 
 export interface WorkerSessionFile {
@@ -20,9 +23,17 @@ export function createWorkerSession(session: WorkerSession, cwd: string): Worker
     return { path: session.resume.file, sessionId: sm.getSessionId() };
   }
   if ("fork" in session) {
-    // pi's own fork: a new header naming the source as its parent, then every entry of the source.
-    const sm = SessionManager.forkFrom(session.fork.from, cwd, session.fork.dir);
-    return { path: sm.getSessionFile()!, sessionId: sm.getSessionId() };
+    // pi's own fork (a new header, then every entry of the source), of a copy: pi's fork appends "\n" to
+    // a source whose last line is partial, and the parent may be mid-append right now (fork/copy.ts).
+    mkdirSync(session.fork.dir, { recursive: true });
+    const copy = join(session.fork.dir, `.fork-source-${randomBytes(6).toString("hex")}.jsonl`);
+    try {
+      if (!copyForFork(session.fork.from, copy)) throw new Error(`The session to fork has no complete entry yet: ${session.fork.from}`);
+      const sm = SessionManager.forkFrom(copy, cwd, session.fork.dir);
+      return { path: sm.getSessionFile()!, sessionId: sm.getSessionId() };
+    } finally {
+      rmSync(copy, { force: true });
+    }
   }
   const dir = "new" in session ? session.new.dir : session.seed.dir;
   mkdirSync(dir, { recursive: true });

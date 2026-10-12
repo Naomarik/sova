@@ -92,6 +92,10 @@ export class ChatWorker extends WorkerFold {
 	settleEntryId?: string;
 	/** Picked back up: what the parent last recorded, for a reopened process that no longer knows its settle. */
 	private recorded?: { entryId?: string; at?: number };
+	/** When this worker last learned of a settle (its event or its state), for a resync's file check. */
+	private settleSeenAt?: number;
+	/** A gap was fed: the next state is read as a first one. */
+	private resync = false;
 	private readonly host: WorkerHost;
 	private readonly resumed: boolean;
 	private unwatch: (() => void) | null = null;
@@ -194,6 +198,7 @@ export class ChatWorker extends WorkerFold {
 		if (f.t === "event") {
 			const e = f.event as { settleKey?: unknown; settleEntryId?: unknown } | null;
 			if (typeof e?.settleKey === "string") {
+				this.settleSeenAt = Date.now();
 				this.settleKey = e.settleKey;
 				this.settleEntryId = typeof e.settleEntryId === "string" ? e.settleEntryId : undefined;
 			}
@@ -202,6 +207,9 @@ export class ChatWorker extends WorkerFold {
 		if (f.t === "state") return this.onState(f.state);
 		if (f.t === "gap") {
 			this.push("system", "Some of this worker's activity was missed; its session file has it all.");
+			// The next state is read as a first one: a run that settled in the gap is announced, once.
+			this.resync = true;
+			this.recorded = { entryId: this.settleEntryId, at: this.settleSeenAt ?? this.startedAt };
 			return;
 		}
 		switch (f.cause) {
@@ -236,6 +244,8 @@ export class ChatWorker extends WorkerFold {
 
 	private onState(s: WorkerState): void {
 		const first = this.lastState === null;
+		const resync = this.resync;
+		this.resync = false;
 		this.lastState = s;
 		this.pid = s.pid ?? undefined;
 		this.processAlive = s.pid !== null;
@@ -243,7 +253,7 @@ export class ChatWorker extends WorkerFold {
 		if (s.thinking) this.effort = s.thinking;
 		this.sessionId = s.sessionId;
 		this.sessionFile = s.sessionFile;
-		if (first && this.adopted) {
+		if ((first && this.adopted) || resync) {
 			if (isActive(s.status)) {
 				// Mid-run when picked back up: its settle is owed.
 				this.status = "running";
@@ -254,6 +264,7 @@ export class ChatWorker extends WorkerFold {
 				this.settleAnnounced = false;
 				this.settleKey = s.lastSettled.key;
 				this.settleEntryId = s.lastSettled.entryId;
+				this.settleSeenAt = Date.now();
 				if (s.lastSettled.outcome === "error" && s.lastSettled.error) this.error = s.lastSettled.error;
 				this.processSettled();
 			} else if (!s.lastSettled) {
@@ -270,6 +281,7 @@ export class ChatWorker extends WorkerFold {
 			}
 		}
 		if (s.lastSettled) {
+			if (s.lastSettled.key !== this.settleKey) this.settleSeenAt = Date.now();
 			this.settleKey = s.lastSettled.key;
 			if (s.lastSettled.entryId) this.settleEntryId = s.lastSettled.entryId;
 		}

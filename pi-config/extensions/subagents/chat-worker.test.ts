@@ -480,6 +480,32 @@ test("an idle stop and a reload change nothing the parent sees; a stop with the 
 	assert.equal(h.counts.exits, 0, "let go of, never ended here");
 });
 
+// ── a gap in the feed ──────────────────────────────────────────────────────
+
+test("after a gap the next state is read as a first one: a run that settled in the gap is announced once, a known one never", async () => {
+	const h = make();
+	await boot(h);
+	h.host.state(h.chatId(), { status: "running" });
+	for (const fn of [...h.host.get(h.chatId()).watchers]) fn({ t: "gap" });
+	h.host.state(h.chatId(), { status: "idle", lastSettled: { key: "parent-1:ag_01:x.1:task#1", outcome: "success" } });
+	assert.equal(h.counts.settled, 1);
+	assert.equal(h.worker.status, "waiting");
+	assert.equal(h.worker.settleKey, "parent-1:ag_01:x.1:task#1");
+	// Another gap, the same settle: nothing more.
+	for (const fn of [...h.host.get(h.chatId()).watchers]) fn({ t: "gap" });
+	h.host.state(h.chatId(), { status: "idle", lastSettled: { key: "parent-1:ag_01:x.1:task#1", outcome: "success" } });
+	assert.equal(h.counts.settled, 1);
+	await h.worker.dispose();
+});
+
+test("without a gap, a state alone never announces (the feed's settle event does)", async () => {
+	const h = make();
+	await boot(h);
+	h.host.state(h.chatId(), { status: "idle", lastSettled: { key: "x#1", outcome: "success" } });
+	assert.equal(h.counts.settled, 0);
+	await h.worker.dispose();
+});
+
 // ── picked back up (attach) ────────────────────────────────────────────────
 
 async function attached(host: FakeWorkerHost, ref: WorkerRef, attach: Partial<NonNullable<ConstructorParameters<typeof ChatWorker>[2]["attach"]>> = {}) {

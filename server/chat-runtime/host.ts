@@ -830,7 +830,7 @@ export class ChatRuntimeHost {
       // What the monitor extension in this process says of the chat; before its first session_start, the title alone.
       monitor: hostedFacts(this.o.path) ?? { title: titleOf(chat.harness.branch()), workers: [], toolsRunning: 0, lastToolEnd: 0 },
       ...(chat.workerSpec && this.feed
-        ? { worker: { parentSessionId: chat.workerSpec.parent.sessionId, workerId: chat.workerSpec.parent.workerId, kind: chat.workerSpec.kind, proc: this.feed.proc, lastSettled: this.feed.settled } }
+        ? { worker: { parentSessionId: chat.workerSpec.parent.sessionId, workerId: chat.workerSpec.parent.workerId, kind: chat.workerSpec.kind, proc: this.feed.proc, seq: this.feed.cursor().seq, lastSettled: this.feed.settled } }
         : {}),
       llm: llmSnapshot(),
     };

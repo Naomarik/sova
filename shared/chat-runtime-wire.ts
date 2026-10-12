@@ -185,8 +185,10 @@ export interface ChatRuntimeMirror extends ChatStateMirror {
   /** What the server's resource monitor shows for the chat. */
   monitor: { title?: string; workers: ChatMonitorWorker[]; toolsRunning: number; lastToolEnd: number };
   /** A worker chat (proto 3): whose and what, so a server that takes the process back knows it; its
-      feed's process id (WorkerCursor.proc) and how its last run settled. */
-  worker?: { parentSessionId: string; workerId: string; kind: WorkerKind; proc: string; lastSettled: WorkerState["lastSettled"] };
+      feed's process id (WorkerCursor.proc), the seq of its last feed frame, and how its last run
+      settled. A server that sees a seq beyond the frames it got missed some (no server was linked):
+      it reads them from the process's ring (feedSince). */
+  worker?: { parentSessionId: string; workerId: string; kind: WorkerKind; proc: string; seq?: number; lastSettled: WorkerState["lastSettled"] };
   /** This process's model-call counts (proto 3), counted into the server's in-flight view. */
   llm?: LlmProcessSnapshot;
 }

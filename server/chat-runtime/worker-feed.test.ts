@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, test } from "node:test";
@@ -153,6 +153,14 @@ describe("worker sessions and Bun", () => {
       assert.notEqual(c.sessionId, b.sessionId);
       assert.match(readFileSync(c.path, "utf8"), /"text":"q"/);
       assert.equal(createWorkerSession({ resume: { file: c.path } }, dir).sessionId, c.sessionId);
+      // A parent mid-append (its last line partial) is forked from a copy: its own file is never written.
+      const before = `${readFileSync(b.path, "utf8")}{"type":"message","id":"half`;
+      writeFileSync(b.path, before);
+      const d = createWorkerSession({ fork: { from: b.path, dir: join(dir, "d") } }, dir);
+      assert.equal(readFileSync(b.path, "utf8"), before);
+      assert.match(readFileSync(d.path, "utf8"), /"text":"q"/);
+      assert.doesNotMatch(readFileSync(d.path, "utf8"), /"id":"half/);
+      assert.deepEqual(readdirSync(join(dir, "d")).filter((n) => n.startsWith(".fork-source")), [], "the copy is gone");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

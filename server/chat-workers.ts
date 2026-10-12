@@ -443,11 +443,24 @@ export class WorkerRegistry {
   }
 
   private noteProc(l: Live): void {
-    const proc = l.handle?.mirror.worker?.proc ?? null;
-    if (!proc || proc === l.proc) return;
+    const w = l.handle?.mirror.worker;
+    const proc = w?.proc ?? null;
+    if (!proc) return;
+    // The process's feed is past what this server got (a take-back, or frames sent while no server was
+    // linked): this ring starts there, so an older cursor reads the process's own ring (feedSince).
+    const seq = typeof w?.seq === "number" ? w.seq : 0;
+    if (proc === l.proc) {
+      if (seq > l.seq) {
+        l.seq = seq;
+        l.ring = [];
+        // A watcher missed them: it resyncs from its file and the next state.
+        this.broadcast(l, { t: "gap" });
+      }
+      return;
+    }
     if (l.proc) this.broadcast(l, { t: "ended", cause: "reload" });
     l.proc = proc;
-    l.seq = 0;
+    l.seq = seq;
     l.ring = [];
   }
 

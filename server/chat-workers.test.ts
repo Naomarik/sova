@@ -11,7 +11,7 @@ import type { ChatDeath } from "./chat-runtime/supervisor";
 import { deathText, type Placement, type WorkerProcesses, type WorkerRecord, WorkerRegistry } from "./chat-workers";
 
 interface FakeHandle {
-  mirror: Record<string, unknown> & { sessionId: string; worker: { proc: string; lastSettled: unknown } };
+  mirror: Record<string, unknown> & { sessionId: string; worker: { proc: string; seq?: number; lastSettled: unknown } };
   at: { pid: number; unit: string };
   closed: boolean;
   calls: { method: string; args: unknown }[];
@@ -23,7 +23,7 @@ interface FakeHandle {
 let dir: string;
 let n = 0;
 
-function fakeProcs(o: { failStart?: string; failSend?: string } = {}) {
+function fakeProcs(o: { failStart?: string; failSend?: string; feedSince?: (args: { proc: string; seq: number }) => unknown } = {}) {
   const handles: FakeHandle[] = [];
   const stopped: string[] = [];
   const procs: WorkerProcesses = {
@@ -41,7 +41,7 @@ function fakeProcs(o: { failStart?: string; failSend?: string } = {}) {
             if (o.failSend) throw new Error(o.failSend);
             return { queued: false, turnId: null };
           }
-          if (method === "feedSince") return { gap: true };
+          if (method === "feedSince") return o.feedSince ? o.feedSince(args as { proc: string; seq: number }) : { gap: true };
           return null;
         },
         sent: [],
@@ -345,6 +345,40 @@ describe("WorkerRegistry", () => {
     assert.equal(fed?.frame?.t, "ended");
     assert.match(fed?.frame?.detail ?? "", /for this session/);
     assert.equal(r.list("sid")[0]!.state, "open");
+  });
+
+  test("a take-back starts its ring at the process's feed seq: an older cursor reads the frames sent while no server was linked", async () => {
+    const asked: unknown[] = [];
+    const missed = Array.from({ length: 10 }, (_, i) => ({ cursor: { proc: "p1", seq: 51 + i }, event: { type: "message_end", n: 51 + i } }));
+    const { procs, handles } = fakeProcs({ feedSince: (args) => (asked.push(args), { frames: missed }) });
+    const r = reg(procs);
+    const ref = await r.start(start("k", null));
+    // The next server takes the process back: its feed is at 60.
+    const again = reg(procs);
+    const h = { ...handles[0]!, mirror: { ...handles[0]!.mirror, worker: { proc: "p1", seq: 60, lastSettled: null } } };
+    again.adopt(h as unknown as RemoteChatHandle);
+    const got: WorkerFeedFrame[] = [];
+    again.watch(ref.chatId, { proc: "p1", seq: 50 }, (f) => got.push(f));
+    again.onFeed(h as unknown as RemoteChatHandle, { t: "feed", cursor: { proc: "p1", seq: 61 }, event: { type: "agent_settled" } } as never);
+    await new Promise((res) => setTimeout(res, 10));
+    assert.deepEqual(asked, [{ proc: "p1", seq: 50 }]);
+    const seqs = got.filter((f) => f.t === "event").map((f) => (f as { cursor: { seq: number } }).cursor.seq);
+    assert.deepEqual(seqs, [51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61], "the missed frames, in order, before the live one");
+    assert.ok(!got.some((f) => f.t === "gap"));
+  });
+
+  test("frames a linked server missed (the same process, its seq ahead): watchers are told of a gap", async () => {
+    const { procs, handles } = fakeProcs();
+    const r = reg(procs);
+    const ref = await r.start(start("k", null));
+    const h = handles[0]!;
+    h.mirror = { ...h.mirror, worker: { proc: h.mirror.worker.proc, seq: 0, lastSettled: null } };
+    r.onState(h as unknown as RemoteChatHandle);
+    const got: WorkerFeedFrame[] = [];
+    r.watch(ref.chatId, null, (f) => got.push(f));
+    h.mirror = { ...h.mirror, worker: { ...h.mirror.worker, seq: 7 } };
+    r.onState(h as unknown as RemoteChatHandle);
+    assert.ok(got.some((f) => f.t === "gap"));
   });
 
   test("the death text keeps the last 20 lines, at most 2 KB", () => {

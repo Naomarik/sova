@@ -253,8 +253,10 @@ export class BtwChat {
 				if (!waiter || state.status === "running" || state.status === "starting") return;
 				// Reattached to an idle chat: its last answer is in the file (the caller records it once).
 				if (waiter.key === null) return this.settle(undefined);
-				// Settled while nobody watched (or across a gap): the file has the answer.
-				if (state.lastSettled?.key === waiter.key) this.settle(lastExchange(this.sessionFile));
+				// Settled while nobody watched (or across a gap): the file has the answer. The host names a
+				// settle by the send delivered before it, then `#<n-th settle in that process>`.
+				const settled = state.lastSettled?.key;
+				if (settled === waiter.key || settled?.startsWith(`${waiter.key}#`)) this.settle(lastExchange(this.sessionFile));
 				return;
 			}
 			case "gap":

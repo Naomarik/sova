@@ -156,9 +156,8 @@ export interface ServerToolDecl {
   executionMode?: "sequential" | "parallel";
   exposure?: "model-only";
   /** The arguments are rewritten before the chat checks them against `parameters`, by a rule the
-      chat runs itself (pi asks for them synchronously, so no server call can do it). `true`: the
-      spec's own `prepareArguments`, in the server's process only, until each spec names its rule. */
-  prepares?: PrepareRule | true;
+      chat runs itself (pi asks for them synchronously, so no server call can do it). */
+  prepares?: PrepareRule;
 }
 
 export type { PrepareRule } from "./harness-tools";

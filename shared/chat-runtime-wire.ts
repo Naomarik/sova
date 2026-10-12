@@ -212,7 +212,8 @@ export interface ServerToolCtxWire {
 export type ServerToolWire =
   | { t: "tool.call"; call: ServerToolCall; ctx: ServerToolCtxWire }
   | { t: "tool.update"; effectId: string; update: ToolResult }
-  | { t: "tool.result"; effectId: string; outcome: ServerToolOutcome<ToolResult> }
+  /** `outcome.result`: a tool's ToolResult, or a server action's own result (proto 2). */
+  | { t: "tool.result"; effectId: string; outcome: ServerToolOutcome<unknown> }
   | { t: "tool.abort"; effectId: string };
 
 /** Asks: the chat asking about server state. No side effects; safe to repeat. */

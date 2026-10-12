@@ -8,10 +8,12 @@
 // a server-hosted call in flight reports "outcome unknown" to the next server, and a call made with
 // no server waits for one. It closes on a drain (idle, reload, archive), on SIGTERM, or when the chat
 // closes itself, and says why (`exit`) before it goes.
-import type { ChatCall, ChatLifecycleEvent, ChatMethod, ChatMethods, ChatStateMirror, ServerToolCall, ServerToolOutcome } from "../../shared/chat-runtime";
+import { randomUUID } from "node:crypto";
+import type { ChatCall, ChatLifecycleEvent, ChatMethod, ChatMethods, ChatRunEvent, ChatStateMirror, ServerToolCall, ServerToolDecl, ServerToolOutcome } from "../../shared/chat-runtime";
 import {
   CHAT_WIRE_MIN_PROTO,
   CHAT_WIRE_PROTO,
+  type ChatAskMethod,
   type ChatAsks,
   type ChatCodeState,
   type ChatRuntimeMirror,
@@ -21,6 +23,7 @@ import {
   type FrameOf,
   NOT_RUN_NO_SERVER,
   OUTCOME_UNKNOWN,
+  type ServerActionName,
   type ServerToolCtxWire,
 } from "../../shared/chat-runtime-wire";
 import type { ToolResult } from "../../shared/harness";
@@ -28,6 +31,7 @@ import type { ChatServerMessage } from "../../shared/protocol";
 import { claudeChildState, releaseIdleClaudeChildren } from "../../pi-config/extensions/claude-code/provider/children";
 import {
   acquireChat,
+  appendForCall,
   assertNotLive,
   BusyError,
   type ChatClient,
@@ -44,15 +48,21 @@ import {
   setLinkToken,
   setOpeningChoice,
   setRunRecorder,
+  serverToolSpec,
   setServedTools,
   setServerToolPort,
   setSingletonCheck,
+  setSpecialComposerClosed,
+  setSpecialPort,
+  setSpecialSpec,
+  type SpecialPort,
   type ServerToolLocal,
   titleOf,
 } from "../chat-manager";
 import { listGeneration } from "../list-generation";
 import { readOwnLiveRecords, workerCountsOf } from "../live";
 import { hostedFacts } from "../resource-monitor";
+import { type PowersHost, type PowersSendResult, setPowersHost } from "../session-powers";
 import { InflightRecorder } from "./inflight";
 import type { ControlFrame, HelloFrame, Link } from "./link";
 import { type CallCtx, failureReply, runMethod } from "./methods";
@@ -84,16 +94,38 @@ export interface HostOptions {
 
 type State = HelloFrame["state"];
 
-/** A server-hosted call: queued until a server is linked, then written to that link until its result. */
+/** A server-hosted call: queued until a server is linked, then written to that link until its result.
+    A server action (`@clientSend`, …) is one too, with no tool's local side. */
 interface PendingTool {
   call: ServerToolCall;
   ctx: ServerToolCtxWire;
-  local: ServerToolLocal;
+  local: ServerToolLocal | null;
   /** The link it was written to, or null while it waits for one. */
   sentOn: Link | null;
   timer: NodeJS.Timeout | null;
-  resolve(outcome: ServerToolOutcome<ToolResult>): void;
+  resolve(outcome: ServerToolOutcome<unknown>): void;
 }
+
+/** A wait-ask in flight: `sentOn` the link it was last written to, null while it waits for one. */
+interface PendingWait {
+  id: string;
+  method: WaitAsk;
+  args: unknown;
+  sentOn: Link | null;
+  timer: NodeJS.Timeout | null;
+  resolve(v: unknown): void;
+  reject(err: Error): void;
+}
+
+/** The asks that wait for a server (ASK_POLICY "wait"). */
+type WaitAsk = Exclude<ChatAskMethod, NothingAsk>;
+
+/** Run events kept until the server acks them (the rest are ticks, dropped while no server is linked). */
+const RUN_FACTS = new Set<ChatRunEvent["type"]>(["run.start", "user.entered", "user.end", "run.settled"]);
+/** The streaming reply's text goes to the server at most this often. */
+export const REPLY_TEXT_EVERY_MS = 100;
+/** The protocol that carries special loadouts, wait-asks, actions, call-backs and run events. */
+const SPECIAL_PROTO = 2;
 
 /** The asks that read as nothing without a server (ASK_POLICY "nothing"). */
 type NothingAsk = "project.note" | "playbook.bundleFor" | "playbook.reprime" | "links" | "singleton";
@@ -104,6 +136,9 @@ const NOTHING: { [M in NothingAsk]: ChatAsks[M]["result"] } = {
   links: [],
   singleton: null,
 };
+
+/** A call-back whose call is no longer pending (the link dropped, the call settled). */
+export const GONE_CALL = "That tool call is no longer running.";
 
 /** The text a pane gets when its chat process closes to reload on current code (ChatView reconnects quietly). */
 export const RELOAD_MESSAGE = "Reconnecting. Your draft is kept.";
@@ -125,7 +160,15 @@ export class ChatRuntimeHost {
   private orphanTimer: NodeJS.Timeout | null = null;
   private readonly tools = new Map<string, PendingTool>();
   private readonly asks = new Map<string, { resolve(v: unknown): void; timer: NodeJS.Timeout }>();
+  /** Wait-asks (ASK_POLICY "wait"), in the order they were made: written to each new controller
+      until answered, failed after serverToolWaitMs. */
+  private readonly waits = new Map<string, PendingWait>();
   private askN = 0;
+  /** A special loadout's run events: the last `n`, the facts the server hasn't acked, the reply
+      text waiting for its coalesced send. */
+  private runN = 0;
+  private outbox: FrameOf<"run">[] = [];
+  private replyText: { event: ChatRunEvent; timer: NodeJS.Timeout } | null = null;
   private liveIds = new Set<string>();
   private lastSeq = 0;
   private lastMirror = "";
@@ -187,11 +230,17 @@ export class ChatRuntimeHost {
     if (link.compatible) {
       this.setServerBuild(control.build);
       if (this.chat) this.sendState(true);
-      // Server-hosted calls: written to a link that dropped, their outcome is unknown and they are
-      // never sent again; never written, they go now.
+      // In this order (stage-3 design §8): the run facts the last server didn't ack, the wait-asks,
+      // then the calls. A run's start reaches the server before any tool call of that run.
+      if (link.peerProto >= SPECIAL_PROTO) {
+        for (const f of this.outbox) link.send(f);
+        for (const w of this.waits.values()) this.writeWait(w);
+      }
+      // Server-hosted calls and actions: written to a link that dropped, their outcome is unknown and
+      // they are never sent again; never written, they go now.
       for (const p of [...this.tools.values()]) {
         if (p.sentOn) this.settleTool(p, { ok: false, unknown: true, error: { message: OUTCOME_UNKNOWN } });
-        else this.writeTool(p);
+        else if (this.canWrite(p)) this.writeTool(p);
       }
       if (this.orphaned) {
         if (this.orphanTimer) clearTimeout(this.orphanTimer);
@@ -216,6 +265,10 @@ export class ChatRuntimeHost {
       this.asks.delete(id);
       a.resolve(undefined);
     }
+    // Wait-asks wait for the next server; the reply text so far is only for share pages: dropped.
+    for (const w of this.waits.values()) w.sentOn = null;
+    if (this.replyText) clearTimeout(this.replyText.timer);
+    this.replyText = null;
     // A call written to that link: its outcome is unknown from here. Said at the next control, or
     // when no server comes back in time.
     for (const p of this.tools.values()) if (p.sentOn) this.armToolTimer(p, { ok: false, unknown: true, error: { message: OUTCOME_UNKNOWN } });
@@ -252,12 +305,27 @@ export class ChatRuntimeHost {
       if (c && this.chat) this.chat.detach(c);
       this.pokeSoon();
     }));
-    link.on("tool.update", mine((f: FrameOf<"tool.update">) => this.tools.get(f.effectId)?.local.onUpdate?.(f.update)));
+    link.on("tool.update", mine((f: FrameOf<"tool.update">) => this.tools.get(f.effectId)?.local?.onUpdate?.(f.update)));
     link.on("tool.result", mine((f: FrameOf<"tool.result">) => {
       const p = this.tools.get(f.effectId);
       if (p) this.settleTool(p, f.outcome);
     }));
+    link.on("tool.back", mine((f: FrameOf<"tool.back">) => void this.toolBack(link, f)));
+    link.on("run.ack", mine((f: FrameOf<"run.ack">) => {
+      const before = this.outbox.length;
+      this.outbox = this.outbox.filter((r) => r.n > f.n);
+      if (this.outbox.length !== before) this.pokeSoon();
+    }));
     link.on("answer", mine((f: FrameOf<"answer">) => {
+      const w = this.waits.get(f.id);
+      if (w) {
+        this.waits.delete(f.id);
+        if (w.timer) clearTimeout(w.timer);
+        if (f.ok) w.resolve(f.result);
+        else w.reject(new Error(f.error.message));
+        this.pokeSoon();
+        return;
+      }
       const a = this.asks.get(f.id);
       if (!a) return;
       clearTimeout(a.timer);
@@ -276,6 +344,7 @@ export class ChatRuntimeHost {
     else if (f.kind === "links-changed") notifyLinksChanged(f.sessionIds);
     else if (f.kind === "build") this.setServerBuild(f.build);
     else if (f.kind === "settings") this.settings = f.settings;
+    else if (f.kind === "special") setSpecialComposerClosed(this.o.path, f.composerClosed);
     else if (f.kind === "code") {
       this.codeSaid = f.state === "reloading" || f.state === "failed" ? { state: f.state, ...(f.detail ? { detail: f.detail } : {}) } : null;
       if (f.state !== "reloading") this.reloadAsked = false;
@@ -294,9 +363,16 @@ export class ChatRuntimeHost {
       setLinkOrigin(f.link.origin);
       setLinkToken(f.link.token);
     }
+    if (f.special && link.peerProto < SPECIAL_PROTO)
+      return void reply({ t: "opened", id: f.id, ok: false, error: { message: "A special chat needs a server that speaks protocol 2." } });
     if (f.opening) setOpeningChoice(this.o.path, f.opening);
     setServedTools(f.served);
-    this.wire();
+    // A special loadout opens from the server's data, its kind answered over this socket.
+    if (f.special) {
+      setSpecialSpec(this.o.path, f.special);
+      setSpecialPort(this.o.path, this.specialPort());
+    }
+    this.wire(f.served);
     try {
       const chat = await acquireChat(this.o.path, f.force);
       this.chat = chat;
@@ -313,14 +389,10 @@ export class ChatRuntimeHost {
   }
 
   /** What this process's chat reads of the server, over the socket instead of the server's singletons. */
-  private wire(): void {
+  private wire(served: ServerToolDecl[]): void {
     setRunRecorder(this.recorder);
-    setServerToolPort({
-      call: (call, local) => this.toolCall(call, local),
-      prepare: () => {
-        throw new Error("A tool that rewrites its arguments can't run from a chat process.");
-      },
-    });
+    setPowersHost(this.powersPort(served));
+    setServerToolPort({ call: (call, local) => this.toolCall(call, local) });
     setChatHosts({
       playbook: {
         bundleFor: (sessionId, hint) => this.ask("playbook.bundleFor", { sessionId, hint: hint ?? null }) as never,
@@ -348,6 +420,128 @@ export class ChatRuntimeHost {
       this.asks.set(id, { resolve: (v) => resolve(v === undefined ? NOTHING[method] : (v as ChatAsks[M]["result"])), timer });
       link.send({ t: "ask", id, method, args });
     });
+  }
+
+  /** A wait-ask: written to the controller now, or to the next one; fails with NOT_RUN_NO_SERVER
+      after serverToolWaitMs without an answer (from its making, and again from each new controller). */
+  waitAsk<M extends WaitAsk>(method: M, args: ChatAsks[M]["args"]): Promise<ChatAsks[M]["result"]> {
+    const id = `w${++this.askN}`;
+    return new Promise((resolve, reject) => {
+      const w: PendingWait = { id, method, args, sentOn: null, timer: null, resolve: resolve as (v: unknown) => void, reject };
+      this.waits.set(id, w);
+      this.armWait(w);
+      if (this.speaksSpecial()) this.writeWait(w);
+      this.pokeSoon();
+    });
+  }
+
+  private writeWait(w: PendingWait): void {
+    const link = this.link!;
+    w.sentOn = link;
+    this.armWait(w);
+    link.send({ t: "ask", id: w.id, method: w.method, args: w.args });
+  }
+
+  private armWait(w: PendingWait): void {
+    if (w.timer) clearTimeout(w.timer);
+    w.timer = setTimeout(() => {
+      if (this.waits.get(w.id) !== w) return;
+      this.waits.delete(w.id);
+      this.log(`ask ${w.method} unanswered${w.sentOn ? "" : " (no server)"}`);
+      w.reject(new Error(NOT_RUN_NO_SERVER));
+      this.pokeSoon();
+    }, this.settings.serverToolWaitMs);
+    w.timer.unref?.();
+  }
+
+  /** Whether the controller is linked and speaks the stage-3 frames. */
+  private speaksSpecial(): boolean {
+    return !!this.link?.isOpen && this.link.compatible && this.link.peerProto >= SPECIAL_PROTO;
+  }
+
+  // ---- a special loadout's run events (stage 3) -----------------------------------------------------
+
+  /**
+   * One run event of this chat's special loadout, in the chat's own event: numbered, written at once.
+   * Facts are kept until the server acks them and written again, in order, to the next controller;
+   * ticks go only to a linked server. The reply's text is coalesced (REPLY_TEXT_EVERY_MS), and what
+   * is waiting goes before any other event.
+   */
+  runEvent(event: ChatRunEvent): void {
+    if (event.type === "reply.text") {
+      if (!this.speaksSpecial()) return;
+      if (this.replyText) this.replyText.event = event;
+      else {
+        const timer = setTimeout(() => this.flushReplyText(), REPLY_TEXT_EVERY_MS);
+        timer.unref?.();
+        this.replyText = { event, timer };
+      }
+      return;
+    }
+    this.flushReplyText();
+    if (RUN_FACTS.has(event.type)) {
+      const f: FrameOf<"run"> = { t: "run", n: ++this.runN, event };
+      this.outbox.push(f);
+      if (this.speaksSpecial()) this.link!.send(f);
+      this.pokeSoon();
+    } else if (this.speaksSpecial()) this.link!.send({ t: "run", n: ++this.runN, event });
+  }
+
+  private flushReplyText(): void {
+    const r = this.replyText;
+    if (!r) return;
+    clearTimeout(r.timer);
+    this.replyText = null;
+    if (this.speaksSpecial()) this.link!.send({ t: "run", n: ++this.runN, event: r.event });
+  }
+
+  /** A server action (stage 3): a call on the served-tool path, under an effect id of its own. */
+  action(name: ServerActionName, args: unknown): Promise<ServerToolOutcome<unknown>> {
+    const turns = this.chat?.userTurns;
+    const call: ServerToolCall = {
+      effectId: `${this.o.path}#${name}#${randomUUID()}`,
+      chatId: this.o.path,
+      toolCallId: name,
+      name,
+      params: args,
+      attended: turns?.attended() ?? false,
+      card: turns?.confirmedCard() ?? null,
+    };
+    return this.queueTool(call, null);
+  }
+
+  /**
+   * Session powers in this process (§chat.profiles/session-tools): the tools run here, beside the run
+   * they hear; what they read of other sessions waits for the server (never an empty answer when
+   * none comes); a send is the `@powers.send` action; `queue_open` is served.
+   */
+  private powersPort(served: ServerToolDecl[]): PowersHost {
+    const queueOpen = served.find((d) => d.name === "queue_open");
+    return {
+      sessions: () => this.waitAsk("powers.sessions", {}),
+      session: (id) => this.waitAsk("powers.session", { id }),
+      transcript: (path) => this.waitAsk("powers.transcript", { path }),
+      insight: (path) => this.waitAsk("powers.insight", { path }),
+      held: (path) => this.waitAsk("powers.held", { path }),
+      projectRoot: (cwd) => this.waitAsk("powers.projectRoot", { cwd }),
+      send: async (a) => {
+        const out = await this.action("@powers.send", a);
+        if (out.ok) return out.result as PowersSendResult;
+        return "unknown" in out ? { ok: false, error: out.error.message, unknown: true } : { ok: false, error: out.error.message };
+      },
+      queueOpen: () => (queueOpen ? serverToolSpec(this.o.path, queueOpen) : null),
+    };
+  }
+
+  /** What this process's chat answers for its special loadout (chat-manager's SpecialPort). */
+  specialPort(): SpecialPort {
+    return {
+      runStart: (a) => this.waitAsk("special.runStart", a),
+      compact: (a) => this.waitAsk("special.compact", a),
+      agentEnd: (a) => this.waitAsk("special.agentEnd", a),
+      runEvent: (e) => this.runEvent(e),
+      action: (name, args) => this.action(name, args),
+    };
   }
 
   // ---- commands -----------------------------------------------------------------------------------
@@ -418,25 +612,36 @@ export class ChatRuntimeHost {
   // ---- server-hosted tools ------------------------------------------------------------------------
 
   private toolCall(call: ServerToolCall, local: ServerToolLocal): Promise<ServerToolOutcome<ToolResult>> {
+    return this.queueTool(call, local) as Promise<ServerToolOutcome<ToolResult>>;
+  }
+
+  /** A served tool's call (`local`: its side in this process) or a server action's (null): written
+      to the controller now, or queued for the next one. */
+  private queueTool(call: ServerToolCall, local: ServerToolLocal | null): Promise<ServerToolOutcome<unknown>> {
     const chat = this.chat;
     const ctx: ServerToolCtxWire = {
       sessionId: this.o.sessionId,
-      cwd: chat?.harness.cwd ?? local.ctx?.cwd ?? "",
+      cwd: chat?.harness.cwd ?? local?.ctx?.cwd ?? "",
       leafId: chat?.leafId() ?? null,
       title: chat ? titleOf(chat.harness.branch()) : null,
     };
     return new Promise((resolve) => {
       const p: PendingTool = { call, ctx, local, sentOn: null, timer: null, resolve };
       this.tools.set(call.effectId, p);
-      local.signal?.addEventListener("abort", () => {
+      local?.signal?.addEventListener("abort", () => {
         if (!this.tools.has(call.effectId)) return;
         if (p.sentOn?.isOpen) p.sentOn.send({ t: "tool.abort", effectId: call.effectId });
         else if (!p.sentOn) this.settleTool(p, { ok: false, error: { message: "Stopped before the server ran it." } });
       });
-      if (this.link?.isOpen && this.link.compatible) this.writeTool(p);
+      if (this.canWrite(p)) this.writeTool(p);
       else this.armToolTimer(p, { ok: false, error: { message: NOT_RUN_NO_SERVER } });
       this.pokeSoon();
     });
+  }
+
+  /** A served tool goes to any compatible controller; an action only to one that speaks stage 3. */
+  private canWrite(p: PendingTool): boolean {
+    return !!this.link?.isOpen && this.link.compatible && (p.local !== null || this.link.peerProto >= SPECIAL_PROTO);
   }
 
   private writeTool(p: PendingTool): void {
@@ -448,18 +653,48 @@ export class ChatRuntimeHost {
     link.send({ t: "tool.call", call: p.call, ctx: p.ctx });
   }
 
-  private armToolTimer(p: PendingTool, outcome: ServerToolOutcome<ToolResult>): void {
+  private armToolTimer(p: PendingTool, outcome: ServerToolOutcome<unknown>): void {
     if (p.timer) clearTimeout(p.timer);
     p.timer = setTimeout(() => this.settleTool(p, outcome), this.settings.serverToolWaitMs);
     p.timer.unref?.();
   }
 
-  private settleTool(p: PendingTool, outcome: ServerToolOutcome<ToolResult>): void {
+  private settleTool(p: PendingTool, outcome: ServerToolOutcome<unknown>): void {
     if (this.tools.get(p.call.effectId) !== p) return;
     this.tools.delete(p.call.effectId);
     if (p.timer) clearTimeout(p.timer);
     p.resolve(outcome);
     this.pokeSoon();
+  }
+
+  /**
+   * A call-back inside a served call (stage 3): the server's tool appends a state record to this
+   * chat, or runs a tool the chat registered, within that call. Only for a call still pending on the
+   * link the call-back came over; answered once, on that link.
+   */
+  private async toolBack(link: Link, f: FrameOf<"tool.back">): Promise<void> {
+    const answer = (frame: FrameOf<"tool.backResult">) => {
+      if (link.isOpen) link.send(frame);
+    };
+    const fail = (message: string) => answer({ t: "tool.backResult", id: f.id, ok: false, error: { message } });
+    const p = this.tools.get(f.effectId);
+    const chat = this.chat;
+    if (!p || p.sentOn !== link || !chat || chat.disposed) return fail(GONE_CALL);
+    try {
+      if (f.op === "append") {
+        // Through the chat's writer, or with `announce` through its special extension
+        // (entry_appended fires, as the baton's share refresh needs).
+        const result = await appendForCall(this.o.path, f.kind, f.data, f.announce);
+        return answer({ t: "tool.backResult", id: f.id, ok: true, result });
+      }
+      if (!p.local) return fail("A server action runs no tool of the chat.");
+      const tool = chat.harness.registeredTool(f.name);
+      if (!tool) return fail(`No such tool in this chat: ${f.name}`);
+      const result = await tool.execute(f.toolCallId, f.params, p.local.signal, undefined, p.local.ctx);
+      answer({ t: "tool.backResult", id: f.id, ok: true, result });
+    } catch (err) {
+      fail(err instanceof Error ? err.message : String(err));
+    }
   }
 
   // ---- state --------------------------------------------------------------------------------------
@@ -516,15 +751,35 @@ export class ChatRuntimeHost {
     return this.clients.size + (this.orphaned ? 1 : 0);
   }
 
-  /** Nothing in flight: no run, compaction, start, queue, dialog, working worker or server call. */
+  /** Nothing in flight: no run, compaction, start, queue, dialog, working worker, server call or
+      action, unacked run fact or wait-ask. */
   private quietOf(m: ChatStateMirror): boolean {
-    return !m.running && !m.compacting && !m.starting && m.queue.web === 0 && !m.queue.agent && m.dialogs.length === 0 && this.workersWorking === 0 && this.tools.size === 0;
+    return (
+      !m.running &&
+      !m.compacting &&
+      !m.starting &&
+      m.queue.web === 0 &&
+      !m.queue.agent &&
+      m.dialogs.length === 0 &&
+      this.workersWorking === 0 &&
+      this.tools.size === 0 &&
+      this.outbox.length === 0 &&
+      this.waits.size === 0
+    );
+  }
+
+  /** Wait-asks and server actions waiting on the server. */
+  private hooksWaiting(): number {
+    let actions = 0;
+    for (const p of this.tools.values()) if (!p.local) actions++;
+    return this.waits.size + actions;
   }
 
   private mirror(): ChatRuntimeMirror {
     const chat = this.chat!;
     const base = mirrorOf(chat);
     const quiet = this.quietOf(base);
+    const hooks = this.hooksWaiting();
     if (quiet !== this.wasQuiet) {
       this.wasQuiet = quiet;
       this.quietSince = this.now();
@@ -535,7 +790,15 @@ export class ChatRuntimeHost {
       build: this.o.build,
       startedAt: this.o.startedAt,
       code: this.code(),
-      quiet: { quiet, since: this.quietSince, clients: this.clientCount(), workersWorking: this.workersWorking, serverCalls: this.tools.size },
+      quiet: {
+        quiet,
+        since: this.quietSince,
+        clients: this.clientCount(),
+        workersWorking: this.workersWorking,
+        serverCalls: this.tools.size - (hooks - this.waits.size),
+        outbox: this.outbox.length,
+        hooks,
+      },
       claude: claudeChildState(),
       // What the monitor extension in this process says of the chat; before its first session_start, the title alone.
       monitor: hostedFacts(this.o.path) ?? { title: titleOf(chat.harness.branch()), workers: [], toolsRunning: 0, lastToolEnd: 0 },

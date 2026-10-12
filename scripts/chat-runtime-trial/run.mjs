@@ -1340,7 +1340,7 @@ const deliveredTo = (path, marker) =>
     return !(e.type === "message" && (e.message?.role === "assistant" || e.message?.role === "toolResult"));
   }).length;
 /** The parent's completion entries (custom_message subagent-complete) that hold `marker`. */
-const completions = (path, workerFile) => entries(path).filter((e) => e.customType === "subagent-complete" && JSON.stringify(e).includes(baseName(workerFile))).length;
+const completions = (path, workerFile, marker = "") => entries(path).filter((e) => e.customType === "subagent-complete" && JSON.stringify(e).includes(baseName(workerFile)) && JSON.stringify(e).includes(marker)).length;
 /** The mock's requests whose newest user text holds `marker`, not a parent's own tool call quoting it. */
 const asksWith = (marker) => mockLog(mock.log).filter((e) => e.scenario && (e.userText ?? "").includes(marker) && !(e.userText ?? "").includes("[call "));
 /** The parent's agent_list, through the model: its details' agents [{id, name, status, restored, …}]. */
@@ -1441,7 +1441,7 @@ async function t18() {
   const from = p2.got.length;
   p2.send({ type: "reload_code" });
   const reloaded = await p2.until((m) => m.type === "error" && m.code === "reloaded", 40000, "the reloaded notice", from).catch(() => null);
-  R.check(reloaded, "t18: Reload now reloaded the parent");
+  R.check(reloaded, `t18: Reload now reloaded the parent (code frames: ${JSON.stringify(p2.got.slice(from).filter((m) => m.type === "code"))})`);
   await waitReloaded(path, ppid);
   R.check(chatPid(path) && chatPid(path) !== ppid, `t18: the parent runs a new process (pid ${ppid} → ${chatPid(path) || "none"})`);
   R.check(chatPid(w.path) === wpid && alive(wpid), `t18: the worker's process is unchanged by the parent's reload (pid ${wpid} → ${chatPid(w.path) || "none"})`);
@@ -1456,7 +1456,7 @@ async function t18() {
   await sleep(5000);
   R.check(userEntriesWith(w.path, "STEER-T18") === 1, `t18: the steer after the reload is in the worker's file once (${userEntriesWith(w.path, "STEER-T18")})`);
   R.check(asksWith("STEER-T18").length === 1, "t18: the worker's model got the steer once");
-  R.check(completions(path, w.path) === 1, `t18: the worker's completion reached the parent once (${completions(path, w.path)})`);
+  R.check(completions(path, w.path, "REPLY-DONE t18w") === 1, `t18: the worker's completion of its task reached the parent once (${completions(path, w.path, "REPLY-DONE t18w")})`);
   noRpc("t18");
   p2.close();
   p3.s.close();

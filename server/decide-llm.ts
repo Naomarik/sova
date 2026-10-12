@@ -12,6 +12,7 @@ import { resolveUsageAttribution, withUsagePurpose } from "../pi-config/extensio
 import { recordClaudeEnvelope } from "../pi-config/extensions/llm-inflight/record.ts";
 import { claudeCliId } from "../pi-config/extensions/claude-code/catalog.ts";
 import { FIXED_CLAUDE_ENV, fixedSettingsJson } from "../pi-config/extensions/claude-code/fixed-settings.ts";
+import { claudeExecutable } from "../pi-config/extensions/claude-code/claude-executable.ts";
 import type { ModelPolicy, WorkerChoice } from "../shared/protocol";
 import {
   DecisionError,
@@ -430,7 +431,7 @@ function claudeSpawn(argv: string[], input: string, deps: LlmProviderDeps, timeo
     }, timeoutMs);
     timer.unref?.();
     try {
-      child = (deps.spawn ?? nodeSpawn)(deps.claudeBin ?? "claude", argv, { cwd, env: env as NodeJS.ProcessEnv, stdio: ["pipe", "pipe", "pipe"] });
+      child = (deps.spawn ?? nodeSpawn)(deps.claudeBin ?? claudeExecutable(), argv, { cwd, env: env as NodeJS.ProcessEnv, stdio: ["pipe", "pipe", "pipe"] });
     } catch (err) {
       exited();
       settle(fail("unavailable", `cannot run claude: ${failureMessage(err)}`));

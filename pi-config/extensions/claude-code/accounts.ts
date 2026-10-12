@@ -37,6 +37,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { keychainItemMtime, readKeychainCredentials, type KeychainOptions } from "./keychain.ts";
 import { FIXED_CLAUDE_ENV, fixedSettingsJson } from "./fixed-settings.ts";
+import { claudeExecutable } from "./claude-executable.ts";
 
 export const ACCOUNTS_FILE_NAME = "claude-accounts.json";
 export const ACCOUNTS_STATE_FILE_NAME = "claude-accounts-state.json";
@@ -487,11 +488,11 @@ export function readIdentityFile(file: string): ClaudeLoginIdentity | null {
 	return Object.keys(identity).length ? identity : null;
 }
 /** `claude auth status --json` for a directory: the fallback identity (no account uuid there). */
-export function readIdentityFromStatus(dir: string, executable = "claude", timeoutMs = 10_000): ClaudeLoginIdentity | null {
+export function readIdentityFromStatus(dir: string, executable?: string, timeoutMs = 10_000): ClaudeLoginIdentity | null {
 	try {
 		const env: NodeJS.ProcessEnv = { ...process.env, CLAUDE_CONFIG_DIR: dir };
 		delete env.CLAUDECODE; delete env.CLAUDE_CODE_ENTRYPOINT;
-		const out = spawnSync(executable, ["auth", "status", "--json"], { env, encoding: "utf8", timeout: timeoutMs, stdio: ["ignore", "pipe", "ignore"] });
+		const out = spawnSync(executable ?? claudeExecutable(), ["auth", "status", "--json"], { env, encoding: "utf8", timeout: timeoutMs, stdio: ["ignore", "pipe", "ignore"] });
 		const json = JSON.parse(out.stdout || "null");
 		if (!json?.loggedIn) return null;
 		const identity: ClaudeLoginIdentity = {};
@@ -579,7 +580,7 @@ export function refreshLogin(dir: string, options: { executable?: string; timeou
 		delete env.CLAUDECODE; delete env.CLAUDE_CODE_ENTRYPOINT;
 		let child: ReturnType<typeof spawn>;
 		try {
-			child = spawn(options.executable ?? "claude", [...REFRESH_ARGV], { env, cwd: dir, stdio: ["pipe", "pipe", "ignore"], detached: process.platform !== "win32" });
+			child = spawn(options.executable ?? claudeExecutable(), [...REFRESH_ARGV], { env, cwd: dir, stdio: ["pipe", "pipe", "ignore"], detached: process.platform !== "win32" });
 		} catch { resolve(false); return; }
 		options.logins?.leaseChild({ CLAUDE_CONFIG_DIR: dir }, child);
 		let done = false;

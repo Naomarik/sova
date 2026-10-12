@@ -15,8 +15,13 @@ ln -s ~/pi-config/extensions/claude-code ~/.pi/agent/extensions/claude-code
 ```
 
 Run `/reload` after existing workers have finished (reload stops owned workers).
-`claude` must be installed and authenticated. The runner invokes the executable
-directly, never a shell alias. No credentials are copied into configuration.
+`claude` must be installed and authenticated. Every spawn runs the executable
+directly, never a shell alias, and the same one from every folder (`claude-executable.ts`):
+the first `claude` in an absolute directory of the host's own `PATH` (a mise shim there
+resolved once with `mise which claude` from the host's cwd, then this extension's own
+directory), else `~/.local/bin/claude`, as an absolute path; a chat's or worker's cwd never
+picks it. With none found, the launch fails with "Claude program not found" and where it
+looked. No credentials are copied into configuration.
 
 ## Discover models
 
@@ -408,6 +413,9 @@ meant it) reports no efforts, so it has no thinking levels. The child gets `MCP_
 outlives any pi tool (the CLI's own default is ~27.8 h; a stray value in the
 user's shell would otherwise truncate long tools with a synthetic timeout
 result), and `DISABLE_AUTO_COMPACT=1`, because pi owns compaction (below).
+A child that exits mid-turn, or fails its `initialize` handshake, ends the turn
+with an error followed by the last lines it wrote on stderr (at most 20 lines and
+2 KB, the newest kept), so the chat says why it died.
 
 ### Rebuild on divergence
 

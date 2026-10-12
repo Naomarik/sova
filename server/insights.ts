@@ -43,7 +43,7 @@ import { type PeriodSummary, readingsOf, samePeriod, splitPeriods, splitRuns, su
 import { ownClaudeLoginUnreadable, readAuthStatus, readClaudeLoginAuth } from "./auth-status";
 import { ClaudeAccountsService } from "./claude-accounts";
 import { hasPage, listExplanations, sortExplanations } from "./explanations";
-import { readLiveRecords, type RawLiveRecord, workerCountsOf } from "./live";
+import { isOwnPid, readLiveRecords, type RawLiveRecord, workerCountsOf } from "./live";
 import { modelProvider, sharedWorkerWindowResolver } from "./models";
 import { resolveSessionPath } from "./paths";
 import { collectSkills, hasSkills, skillLinesOf } from "./skills";
@@ -1104,7 +1104,7 @@ async function liveSession({ sessionFile, pid, rec }: RawLiveRecord): Promise<Li
   const presence = isRec(rec.presence) ? rec.presence : undefined;
   const heartbeat = num(rec.heartbeat) ?? 0;
   const age = Date.now() - heartbeat;
-  const workers = decodeWorkers(presence, pid === process.pid);
+  const workers = decodeWorkers(presence, isOwnPid(pid));
   const wc = isRec(presence?.workerCounts) ? presence.workerCounts : null;
   const workerCounts = wc
     ? { total: count(wc.total), working: count(wc.working), waiting: count(wc.waiting), done: count(wc.done), error: count(wc.error), killed: count(wc.killed) }
@@ -1127,7 +1127,7 @@ async function liveSession({ sessionFile, pid, rec }: RawLiveRecord): Promise<Li
     pid,
     mode: str(session.mode) ?? null,
     fresh: age <= FRESH_MS && age >= -FUTURE_SLACK_MS,
-    embedded: pid === process.pid,
+    embedded: isOwnPid(pid),
     state: sessionState(presence, session),
     workerCounts,
     workers,
@@ -1272,7 +1272,7 @@ export async function getSessionInsight(path: string): Promise<SessionInsight> {
   const resolveWindow = await sharedWorkerWindowResolver();
   const restored = live || facts.workerRecords.all.length === 0 ? null : await restorer.restore(facts.workerRecords.all, facts.workerRecords.active, resolveWindow);
   const workers = live
-    ? withWorkerContext(decodeWorkers(presence, live.pid === process.pid), contextReader, resolveWindow, claudeSpawnModels(facts.workerRecords.all))
+    ? withWorkerContext(decodeWorkers(presence, isOwnPid(live.pid)), contextReader, resolveWindow, claudeSpawnModels(facts.workerRecords.all))
     : restored && restored.workers.length > 0 ? restored.workers : null;
   // The record lists at most 40 of the workers it counts: the pane offers the rest on request.
   const counted = live ? workerCountsOf(live.rec)?.total : undefined;

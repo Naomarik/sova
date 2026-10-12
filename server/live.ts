@@ -80,6 +80,24 @@ function pidAlive(pid: number): boolean {
   }
 }
 
+/**
+ * The processes whose live records are this server's own: the chats it hosts write them (the pi
+ * "sessions" extension runs inside every hosted chat). Today every hosted chat runs in this process;
+ * a chat this server hosts in a process of its own is added here for as long as it lives, so its
+ * record never reads as a TUI owning the file, and a process that is not in the set always does.
+ */
+const ownPids = new Set<number>([process.pid]);
+/** Whether a live record's pid is one of this server's hosted chats. */
+export const isOwnPid = (pid: number): boolean => ownPids.has(pid);
+/** A process hosting this server's chats, until the returned call removes it (never this process). */
+export function addOwnPid(pid: number): () => void {
+  if (ownPids.has(pid)) return () => {};
+  ownPids.add(pid);
+  return () => {
+    ownPids.delete(pid);
+  };
+}
+
 const count = (v: unknown) => (typeof v === "number" && Number.isInteger(v) && v >= 0 ? v : null);
 
 /** Each live file's parse, by name, kept while its stat stamp holds: writers replace a record by
@@ -128,7 +146,7 @@ export function readLiveRecords(opts: { includeOwn?: boolean } = {}): RawLiveRec
       parsed.set(name, hit);
     }
     const r = hit.record;
-    if (!r || (r.pid === process.pid && !opts.includeOwn) || !pidAlive(r.pid)) continue;
+    if (!r || (isOwnPid(r.pid) && !opts.includeOwn) || !pidAlive(r.pid)) continue;
     out.push({ sessionFile: r.sessionFile, pid: r.pid, rec: r.rec });
   }
   for (const name of parsed.keys()) if (!seen.has(name)) parsed.delete(name);
@@ -157,7 +175,7 @@ export function readOwnLiveRecords(): Map<string, RawLiveRecord> {
   const now = Date.now();
   const beat = (r: RawLiveRecord) => (typeof r.rec.heartbeat === "number" ? r.rec.heartbeat : 0);
   for (const r of readLiveRecords({ includeOwn: true })) {
-    if (r.pid !== process.pid || !r.sessionFile || now - beat(r) > OWN_FRESH_MS) continue;
+    if (!isOwnPid(r.pid) || !r.sessionFile || now - beat(r) > OWN_FRESH_MS) continue;
     const prev = out.get(r.sessionFile);
     if (!prev || beat(r) > beat(prev)) out.set(r.sessionFile, r);
   }

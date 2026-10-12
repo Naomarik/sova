@@ -41,7 +41,7 @@ import {
   setOverseerRuntime,
 } from "./chat-handle";
 import { heldChat } from "./chat-manager";
-import { activityOf, failedWorkersOf, readLiveRecords, workerErrorTimesOf, workingSubagents } from "./live";
+import { activityOf, failedWorkersOf, isOwnPid, readLiveRecords, workerErrorTimesOf, workingSubagents } from "./live";
 import { endedByRestart, restartWindow } from "./server-stop";
 import { listModels, contextWindow } from "./models";
 import { modelDenial, readModelPolicy } from "./model-policy";
@@ -322,7 +322,7 @@ export function attentionDigest(): Promise<ReturnType<typeof buildDigest>> {
     for (const r of records) {
       if (!r.sessionFile) continue;
       const prev = byPath.get(r.sessionFile);
-      const skip = r.pid === process.pid ? restartEnded : undefined;
+      const skip = isOwnPid(r.pid) ? restartEnded : undefined;
       const failed = failedWorkersOf(r.rec, skip);
       const since = activityOf(r.rec)?.since ?? 0;
       byPath.set(r.sessionFile, {

@@ -2225,6 +2225,34 @@ export class SessionBridge implements ClaudeSessionBridge {
 		await Promise.all(sessions.map((session) => session.teardown(reason)));
 	}
 
+	/** This process's CLI children: busy when any is mid-turn, idle when any is kept for a next
+	    turn, else none (a Sova chat process reports it, for a cap across processes). */
+	childState(): "none" | "idle" | "busy" {
+		let idle = false;
+		for (const session of this.sessions.values()) {
+			if (session.isBusy()) return "busy";
+			idle = true;
+		}
+		return idle ? "idle" : "none";
+	}
+
+	/** Let every idle child go (a busy one never); its session resumes from its record next turn. */
+	releaseIdleSessions(reason = "idle session released"): "released" | "busy" | "none" {
+		let released = false;
+		let busy = false;
+		for (const [key, session] of [...this.sessions]) {
+			if (session.isBusy()) {
+				busy = true;
+				continue;
+			}
+			this.sessions.delete(key);
+			this.reaped.add(key);
+			released = true;
+			void session.teardown(reason);
+		}
+		return released ? "released" : busy ? "busy" : "none";
+	}
+
 	/** Synchronous SIGKILL of every live child group; for the host's `exit` event only. */
 	killAllNow(): void {
 		for (const session of this.sessions.values()) session.killNow();

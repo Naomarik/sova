@@ -62,7 +62,8 @@ export const DEFAULT_RUNTIME_SETTINGS: ChatRuntimeSettings = {
   serverToolWaitMs: 60_000,
 };
 
-/** Kernel frames: frozen forever. */
+/** Kernel frames: frozen forever. A runtime sends `hello` again on its controller link whenever its
+    `state` changes (booting → ready → open → closing). */
 export type KernelFrame =
   /** Runtime → server, first on every connection. `seq`: the last lifecycle seq; `epoch`: the highest
       controller epoch it has seen. */
@@ -199,7 +200,9 @@ export type ChatPushWire =
   | { t: "push"; kind: "link-live"; ids: string[] }
   | { t: "push"; kind: "links-changed"; sessionIds: string[] }
   | { t: "push"; kind: "build"; build: string }
-  | { t: "push"; kind: "settings"; settings: ChatRuntimeSettings };
+  | { t: "push"; kind: "settings"; settings: ChatRuntimeSettings }
+  /** The rollout's word on this chat's code: a replacement is starting, or failed to (`detail`). */
+  | { t: "push"; kind: "code"; state: ChatCodeState["state"]; detail?: string };
 
 /** The runtime asks the server's rollout to reload it on current code. */
 export type ChatRequestWire = { t: "reload.request"; auto: boolean };

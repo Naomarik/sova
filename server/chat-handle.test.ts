@@ -187,7 +187,7 @@ test("server code reaches a chat only through its handle: nothing outside the ch
   const root = join(dirname(fileURLToPath(import.meta.url)), "..");
   // The chat's host: the handle itself, the commands and mirror it shares with a chat process's host
   // (server/chat-runtime/), and the pi adapter the chat runs on.
-  const allowed = new Set(["server/chat-handle.ts", "server/chat-runtime/methods.ts", "server/chat-runtime/mirror.ts"]);
+  const allowed = new Set(["server/chat-handle.ts", "server/chat-runtime/host.ts", "server/chat-runtime/methods.ts", "server/chat-runtime/mirror.ts"]);
   const importers = globSync("{server,shared,src}/**/*.{ts,tsx}", { cwd: root })
     .map((f) => relative(root, join(root, f)))
     .filter((f) => !/\.test\.tsx?$/.test(f) && !f.startsWith("server/harness/") && f !== "server/chat-manager.ts")
@@ -197,7 +197,7 @@ test("server code reaches a chat only through its handle: nothing outside the ch
 });
 
 /** The chat's host: what runs the chat itself, in the server's process or a chat process. */
-const CHAT_HOST = new Set(["server/chat-handle.ts", "server/chat-runtime/methods.ts", "server/chat-runtime/mirror.ts"]);
+const CHAT_HOST = new Set(["server/chat-handle.ts", "server/chat-runtime/host.ts", "server/chat-runtime/methods.ts", "server/chat-runtime/mirror.ts"]);
 
 test("nothing outside the chat's host is handed a chat or its driving session", () => {
   const root = join(dirname(fileURLToPath(import.meta.url)), "..");

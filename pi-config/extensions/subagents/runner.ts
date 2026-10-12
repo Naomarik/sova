@@ -54,14 +54,12 @@ export interface AgentUsage {
 
 /**
  * Memory bounds. The child's own session file is the canonical full record.
- * maxTranscriptBytes is true UTF-8 bytes; maxItemChars and maxLineBytes are
- * JavaScript string characters (which bound the UTF-16 buffer memory).
+ * maxTranscriptBytes is true UTF-8 bytes; maxItemChars is JavaScript string
+ * characters (which bound the UTF-16 buffer memory).
  */
 export interface RunnerLimits {
 	/** In-memory transcript tail cap (UTF-8 bytes). Oldest items are trimmed. */
 	maxTranscriptBytes: number;
-	/** A single RPC line longer than this (in characters) without \n means the protocol is broken. */
-	maxLineBytes: number;
 	/** Per-transcript-item text cap (characters); longer items are truncated in memory. */
 	maxItemChars: number;
 }

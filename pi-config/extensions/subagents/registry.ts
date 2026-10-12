@@ -201,7 +201,7 @@ export class WorkerRegistryRecorder {
 		});
 	}
 
-	/** Re-adopted workers were recorded by an earlier instance; continue from their last identity. */
+	/** Reattached workers were recorded by an earlier instance; continue from their last identity. */
 	resume(worker: Worker): void {
 		if (this.tracked.has(worker.id)) return;
 		this.tracked.set(worker.id, { identity: identity(worker).key, busy: !worker.isSettled(), finished: false });

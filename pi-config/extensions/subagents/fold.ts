@@ -28,7 +28,6 @@ export interface FoldHandlers {
 
 const DEFAULT_LIMITS: RunnerLimits = {
 	maxTranscriptBytes: 2 * 1024 * 1024,
-	maxLineBytes: 4 * 1024 * 1024,
 	maxItemChars: 256 * 1024,
 };
 

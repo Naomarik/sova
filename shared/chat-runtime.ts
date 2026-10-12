@@ -89,6 +89,8 @@ export interface ChatStateMirror {
   model: { ref: string; provider: string; images: boolean } | null;
   thinking: string;
   leafId: string | null;
+  /** How the branch's last assistant message ended (its stop reason); null with none. */
+  lastStop: string | null;
   /** Sova's web queue length, and whether the agent itself still holds queued messages. */
   queue: { web: number; agent: boolean };
   dialogs: ChatDialogInfo[];
@@ -224,8 +226,9 @@ export interface ChatMethods {
   interruptKeepingQueued: { args: Record<string, never>; result: number };
   branch: { args: Record<string, never>; result: HEntry[] };
   entries: { args: Record<string, never>; result: HEntry[] };
-  /** The data of every record of a registered kind the file holds (any branch), oldest first. */
-  fileState: { args: { kind: string }; result: unknown[] };
+  /** The data of every record of these registered kinds the file holds (any branch), kind by kind,
+      each oldest first. */
+  fileState: { args: { kinds: string[] }; result: unknown[] };
   activeTools: { args: Record<string, never>; result: string[] };
   setActiveTools: { args: { names: string[] }; result: null };
   declaredTools: { args: Record<string, never>; result: HarnessToolInfo[] };

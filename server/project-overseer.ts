@@ -30,7 +30,9 @@ import type { HarnessSession } from "../shared/harness";
 import type { OverseerState } from "../shared/protocol";
 import { noteBuildMerged } from "./build-merged";
 import { adoptWorktree, buildSessionPath, buildSetupEnded, buildSid, buildStartedBy, newBuildSessionId, noteBuildSettled, noteBuildStarted, probeBuild, readBuild, readBuilds, syncBuildTurn, syncProjectBuilds, withWorktreePath } from "./build-loadout";
-import { acquireChat, BusyError, disposeHeldChat, drainQueueThenAbort, heldChat, isSessionBusy, onAgentSettled, onAgentStarted, registerSpecialLoadout, type ChatSession, type SessionMarks } from "./chat-manager";
+import { acquireChatHandle, BusyError, chatHandle, closeChat, isSessionBusy, onAgentSettled, onAgentStarted, registerSpecialLoadout, type SessionMarks } from "./chat-handle";
+import type { ChatStreamTrip } from "../shared/chat-runtime";
+import type { HEntry } from "../shared/harness";
 import { shuttingDown } from "./wrapup-recovery";
 import { listModels } from "./models";
 import { workingSubagents } from "./live";
@@ -264,9 +266,9 @@ export async function clearProjectOverseer(projectId: string): Promise<ProjectOv
   const st = readPoState(p);
   const oldPath = st ? await pathOfId(st.current) : null;
   if (oldPath) {
-    const chat = heldChat(oldPath);
-    if (chat?.harness.isRunning()) await drainQueueThenAbort(chat.harness, (m) => chat.broadcast(m), chat.queue).catch(() => {});
-    await disposeHeldChat(oldPath, "The project overseer was cleared. Opening the new conversation.");
+    const chat = chatHandle(oldPath);
+    if (chat?.mirror.running) await chat.drainAndAbort().catch(() => {});
+    await closeChat(oldPath, "The project overseer was cleared. Opening the new conversation.");
   }
   const rt = rtOf(projectId);
   rt.turns.reset();
@@ -430,12 +432,12 @@ export async function patchProjectOverseer(projectId: string, body: unknown): Pr
   if ((body as { autonomy?: unknown }).autonomy !== undefined) await resumeOverseer(projectId, s.autonomy);
   const st = readPoState(p);
   const path = st ? await pathOfId(st.current) : null;
-  const chat = path ? heldChat(path) : undefined;
-  if (chat && !chat.harness.isRunning()) {
-    const cur = chat.harness.model()?.ref ?? null;
+  const chat = path ? chatHandle(path) : undefined;
+  if (chat && !chat.mirror.running) {
+    const cur = chat.mirror.model?.ref ?? null;
     try {
-      if (s.model && s.model !== cur) await chat.setModelRef(s.model);
-      if (s.thinking && s.thinking !== chat.harness.thinking()) chat.setThinking(s.thinking);
+      if (s.model && s.model !== cur) await chat.setModel(s.model);
+      if (s.thinking && s.thinking !== chat.mirror.thinking) await chat.setThinking(s.thinking);
     } catch (err) {
       throw new OrgError(err instanceof Error ? err.message : String(err));
     }
@@ -829,8 +831,8 @@ export async function gatheringChoice(projectId: string, input: { model?: string
 async function overseerRunning(projectId: string): Promise<{ model: string | null; thinking: string | null }> {
   const st = readPoState(projectOverseerPaths(projectId));
   const path = st ? await pathOfId(st.current) : null;
-  const chat = path ? heldChat(path) : undefined;
-  return { model: chat?.harness.model()?.ref ?? null, thinking: chat?.harness.thinking() ?? null };
+  const chat = path ? chatHandle(path) : undefined;
+  return { model: chat?.mirror.model?.ref ?? null, thinking: chat?.mirror.thinking ?? null };
 }
 
 export interface StartedCoding {
@@ -1019,7 +1021,7 @@ export async function removeCodingWorktree(projectId: string, sessionId: unknown
   projectOf(projectId);
   const path = await worktreeAct(projectId, sessionId, "build/remove-worktree");
   // Its cwd is gone: a held runtime would run tools in nothing.
-  if (path) await disposeHeldChat(path, "Its worktree was removed, so it has no folder to work in.").catch(() => {});
+  if (path) await closeChat(path, "Its worktree was removed, so it has no folder to work in.").catch(() => {});
   return projectOverseerInfo(projectId);
 }
 
@@ -1376,10 +1378,8 @@ export async function messageProjectOverseer(projectId: string, text: unknown, o
   const st = readPoState(p);
   const path = st ? await pathOfId(st.current) : null;
   if (!st || !path || !projectOverseerOfPath(path)) throw new OrgError(`${project.name} has no overseer yet. Start it first (op start).`, 409);
-  const chat = await acquireChat(path);
-  chat.assertModelAllowed();
-  const { queued, turn } = chat.acceptPrompt(t, undefined, "client", undefined, { sentByOverseer: { overseerId } });
-  void turn.catch((err) => chat.reportTurnFailure(err));
+  const chat = await acquireChatHandle(path);
+  const { queued } = await chat.send({ text: t, origin: "client", checkModel: true, sentByOverseer: { overseerId } });
   return { queued, sessionId: st.current, path };
 }
 
@@ -1427,14 +1427,15 @@ export async function lookNow(projectId: string, _force = true): Promise<{ start
 
 export const CUT_OFF_DETAIL = "The server restarted during the run.";
 
-/** How an unattended run ended, from its own part of the branch (entries past `from`). */
-function runEnd(chat: ChatSession, from: number, err?: unknown): { outcome: "finished" | "stopped" | "cut-off"; detail?: string } {
-  const mine = chat.harness.branch().slice(from);
+/** How an unattended run ended, from its own part of the branch (entries past `from`) and the stream
+    guard's trip, if it ended the run. */
+function runEnd(branch: readonly HEntry[], trip: ChatStreamTrip | null, from: number, err?: unknown): { outcome: "finished" | "stopped" | "cut-off"; detail?: string } {
+  const mine = branch.slice(from);
   const last = [...mine].reverse().find((e) => e.kind === "assistant");
   const stop = last?.stop;
   const failed = !last || stop === "error" || stop === "aborted" || err !== undefined;
   if (!failed) return { outcome: "finished" };
-  if (chat.lastStreamTrip) return { outcome: "stopped", detail: chat.lastStreamTrip.detail };
+  if (trip) return { outcome: "stopped", detail: trip.detail };
   if (shuttingDown()) return { outcome: "cut-off", detail: CUT_OFF_DETAIL };
   if (stop === "aborted") return { outcome: "stopped", detail: "Stopped." };
   if (stop === "error") return { outcome: "stopped", detail: last?.error || "The model failed." };
@@ -1477,34 +1478,27 @@ async function runLook(projectId: string, text: string, report: InvocationReport
     const st = readPoState(projectOverseerPaths(projectId));
     const path = st ? await pathOfId(st.current) : null;
     if (!path) return report("not-started", "no conversation yet");
-    const po = await acquireChat(path);
-    po.assertModelAllowed();
-    const from = po.harness.branch().length;
+    const po = await acquireChatHandle(path);
+    await po.assertModelAllowed();
+    const from = (await po.branch()).length;
     const rt = rtOf(projectId);
     rt.lookStarting = true;
     rt.lookPending = runId;
-    const { queued, turn } = po.acceptPrompt(`${text}${lookAppendix(projectId)}`, undefined, "server");
-    const end = (err?: unknown) => {
-      const e = runEnd(po, from, err);
+    const receipt = await po.send({ text: `${text}${lookAppendix(projectId)}`, origin: "server", track: true });
+    const end = async (err?: string) => {
+      const e = runEnd(await po.branch(), po.mirror.streamTrip, from, err);
       // Cut off by this process's shutdown: the next start's resume records it (the statechart's `sova/resumed`).
       if (e.outcome === "cut-off") return;
       report(e.outcome === "finished" ? "finished" : "stopped", e.detail);
     };
-    if (queued) {
+    if (receipt.queued) {
       // Held behind a start or a compaction: it runs as the next turn, which ends at the next settle.
       const off = onAgentSettled((settledPath) => {
         if (canonicalPath(settledPath) !== canonicalPath(path)) return;
         off();
-        end();
+        void end();
       });
-    } else
-      void turn.then(
-        () => end(),
-        (err) => {
-          po.reportTurnFailure(err);
-          end(err);
-        },
-      );
+    } else void po.turnEnd(receipt).then((t) => end(t.ok ? undefined : t.error));
   } catch (err) {
     rtOf(projectId).lookStarting = false;
     report("not-started", err instanceof Error ? err.message : String(err));
@@ -1584,14 +1578,8 @@ export function noteCodingSettled(path: string): Promise<void> {
 
 /** Whether the held chat's last assistant message ended in an error or an abort. */
 function lastTurnFailed(path: string): boolean {
-  const chat = heldChat(path);
-  if (!chat) return false;
-  const branch = chat.harness.branch();
-  for (let i = branch.length - 1; i >= 0; i--) {
-    const e = branch[i]!;
-    if (e.kind === "assistant") return e.stop === "error" || e.stop === "aborted";
-  }
-  return false;
+  const stop = chatHandle(path)?.mirror.lastStop;
+  return stop === "error" || stop === "aborted";
 }
 
 let started = false;

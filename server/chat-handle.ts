@@ -166,7 +166,10 @@ const METHODS: Impl = {
   interruptKeepingQueued: (chat) => chat.interruptKeepingQueued(),
   branch: (chat) => [...chat.harness.branch()],
   entries: (chat) => [...chat.harness.entries()],
-  fileState: (chat, { kind }) => chat.state.file().written(kindOf(kind)).map((r) => r.data),
+  fileState: (chat, { kinds }) => {
+    const file = chat.state.file();
+    return kinds.flatMap((kind) => file.written(kindOf(kind)).map((r) => r.data));
+  },
   activeTools: (chat) => chat.harness.activeTools(),
   setActiveTools: (chat, { names }) => (chat.harness.setActiveTools(names), null),
   declaredTools: (chat) => chat.harness.declaredTools(),
@@ -207,21 +210,16 @@ const METHODS: Impl = {
   workerInfo: (chat, { id }) => chat.workerInfo(id),
 };
 
-/** The chat's answer to one call. Run at once: whatever the method does before its first await
-    happens inside the call, as it did when callers called the chat directly. */
-async function answer<M extends ChatMethod>(chat: ChatSession, call: ChatCall<M>, ctx: CallCtx, thrown: WeakMap<object, unknown>): Promise<ChatReply<M>> {
-  let reply: ChatReply<M>;
-  try {
-    const result = await (METHODS[call.method] as (c: ChatSession, a: ChatMethods[M]["args"], x: CallCtx) => ChatMethods[M]["result"] | Promise<ChatMethods[M]["result"]>)(chat, call.args, ctx);
-    return { id: call.id, ok: true, result };
-  } catch (err) {
-    const refusal = refusalOf(err);
-    reply = refusal ? { id: call.id, ok: false, refusal } : { id: call.id, ok: false, error: { message: errorText(err) } };
-    // In one process the caller gets the very error the chat threw (its class, its fields); across
-    // a socket it gets `errorOfRefusal(refusal)`, or an Error with the message.
-    thrown.set(reply, err);
-    return reply;
-  }
+/** The reply a call that threw answers with: its typed refusal, or an error with its message. A
+    caller on the other side of a socket throws it again as `errorOfRefusal(refusal)`, or an Error. */
+export function failureReply(id: string, err: unknown): ChatReply {
+  const refusal = refusalOf(err);
+  return refusal ? { id, ok: false, refusal } : { id, ok: false, error: { message: errorText(err) } };
+}
+
+/** Run one call on the chat. */
+function run<M extends ChatMethod>(chat: ChatSession, call: ChatCall<M>, ctx: CallCtx): ChatMethods[M]["result"] | Promise<ChatMethods[M]["result"]> {
+  return (METHODS[call.method] as (c: ChatSession, a: ChatMethods[M]["args"], x: CallCtx) => ChatMethods[M]["result"] | Promise<ChatMethods[M]["result"]>)(chat, call.args, ctx);
 }
 
 /** The mirror of a chat in this process: every field read from the chat as it is now. */
@@ -260,6 +258,14 @@ class LiveMirror implements ChatStateMirror {
   }
   get leafId() {
     return this.chat.leafId();
+  }
+  get lastStop() {
+    const branch = this.chat.harness.branch();
+    for (let i = branch.length - 1; i >= 0; i--) {
+      const e = branch[i]!;
+      if (e.kind === "assistant") return e.stop ?? null;
+    }
+    return null;
   }
   get queue() {
     return { web: this.chat.queue.size, agent: this.chat.harness.queue.hasQueued() };
@@ -316,7 +322,6 @@ export class ChatHandle {
   /** What the server may read without asking (see ChatStateMirror). */
   readonly mirror: ChatStateMirror;
   private readonly ctx: CallCtx = { turns: new Map() };
-  private readonly thrown = new WeakMap<object, unknown>();
   private calls = 0;
 
   constructor(private readonly chat: ChatSession) {
@@ -334,13 +339,22 @@ export class ChatHandle {
     return this.chat.disposed;
   }
 
-  /** One command: its result, or its refusal thrown as the error class it names. */
-  async call<M extends ChatMethod>(method: M, args: ChatMethods[M]["args"]): Promise<ChatMethods[M]["result"]> {
+  /**
+   * One command: its result, or its refusal thrown as the error class it names. It runs at once:
+   * whatever the method does before its first await happens inside this call, as it did when callers
+   * called the chat directly. In one process the caller gets the very error the chat threw (its
+   * class, its fields; failureReply is what crosses a socket), and the answer takes no turn of the
+   * event loop of its own beyond the promise's: the order callers rely on against the chat's own
+   * events (a settle, a statechart's next effect) was built on direct calls.
+   */
+  call<M extends ChatMethod>(method: M, args: ChatMethods[M]["args"]): Promise<ChatMethods[M]["result"]> {
     const call: ChatCall<M> = { id: `c${++this.calls}`, epoch: EPOCH, chatId: this.chat.path, method, args };
-    const reply = await answer(this.chat, call, this.ctx, this.thrown);
-    if (reply.ok) return reply.result;
-    if (this.thrown.has(reply)) throw this.thrown.get(reply);
-    throw "refusal" in reply ? errorOfRefusal(reply.refusal) : new Error(reply.error.message);
+    try {
+      const out = run(this.chat, call, this.ctx);
+      return out instanceof Promise ? out : Promise.resolve(out);
+    } catch (err) {
+      return Promise.reject(err);
+    }
   }
 
   // ---- the commands, typed ------------------------------------------------------------------------
@@ -436,8 +450,8 @@ export class ChatHandle {
   entries() {
     return this.call("entries", {});
   }
-  fileState<T>(kind: StateKind<T>): Promise<unknown[]> {
-    return this.call("fileState", { kind: kind.type });
+  fileState(kinds: readonly StateKind<unknown>[]): Promise<unknown[]> {
+    return this.call("fileState", { kinds: kinds.map((k) => k.type) });
   }
   activeTools(): Promise<string[]> {
     return this.call("activeTools", {});
@@ -498,6 +512,15 @@ const handleOf = (chat: ChatSession): ChatHandle => {
   if (!h) handles.set(chat, (h = new ChatHandle(chat)));
   return h;
 };
+
+/** The handle of a chat a loadout hook was given (`opened`): loadout policy runs with the chat,
+    and talks to it the way the server does. */
+export const chatHandleOf = handleOf;
+
+// The loadout policy of the special kinds (the Overseer, batons, project overseers): registered by
+// the modules that own them, run where the chat runs (server/chat-manager.ts openSession).
+export { registerSpecialLoadout, setOverseerRuntime } from "./chat-manager";
+export type { ChatSession, OverseerRuntime, SessionMarks, SpecialKind, SpecialLoadout } from "./chat-manager";
 
 /**
  * Get (or open) the chat for a session file. Refused (BusyError) when a TUI owns it, or unless

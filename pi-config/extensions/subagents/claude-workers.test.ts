@@ -26,6 +26,7 @@ test("claudeOnPi: a claude-code spec as the pi worker it runs as; any other spec
 test("a continuation keeps what still means something: mapped tools (others dropped), plan alone of the options", () => {
 	assert.equal(continuationTools(undefined), undefined, "none recorded: the default seven");
 	assert.deepEqual(continuationTools([]), [], "no tools stays no tools");
+	assert.deepEqual(continuationTools(["WebFetch", "WebSearch"]), ["read"], "none maps: read stays, so the handoff's transcript can be opened");
 	assert.deepEqual(continuationTools(["Read", "WebFetch", "Edit", "MultiEdit", "Task", "Read"]), ["read", "edit"]);
 	assert.deepEqual(continuationOptions({ permissionMode: "plan", maxBudgetUsd: 2 }), { permissionMode: "plan" });
 	for (const o of [undefined, null, { permissionMode: "acceptEdits" }, { allowedTools: ["Bash(*)"] }]) assert.equal(continuationOptions(o), undefined);

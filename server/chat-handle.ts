@@ -546,13 +546,27 @@ export interface ChatRouter {
 let router: ChatRouter | null = null;
 export function setChatRouter(r: ChatRouter | null): void {
   router = r;
+  routerComing?.resolve();
+  routerComing = null;
 }
 
 /** A special chat's composer may have changed (a project archived or not): each chat in a process of its own is told. */
 export const specialComposersChanged = (): void => router?.composersChanged?.();
 
+/** Set by a server that will install a router (server/index.ts, before its orgs open): until it is
+    installed, chatsReady waits for it, so a reader at boot never mistakes "not taken back yet" for "none". */
+let routerComing: { promise: Promise<void>; resolve(): void } | null = null;
+export function expectChatRouter(): void {
+  if (router || routerComing) return;
+  let resolve!: () => void;
+  routerComing = { promise: new Promise<void>((r) => (resolve = r)), resolve };
+}
+
 /** Resolves once the chats a previous server left running are taken back (bounded): at once with no router. */
-export const chatsReady = (): Promise<void> => router?.ready() ?? Promise.resolve();
+export const chatsReady = async (): Promise<void> => {
+  if (!router && routerComing) await routerComing.promise;
+  await router?.ready();
+};
 
 /** The open chat of a session id, or undefined. */
 export const chatHandleById = (sessionId: string): ChatHandle | undefined => chatHandles().find((h) => h.mirror.sessionId === sessionId);

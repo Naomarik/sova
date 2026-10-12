@@ -1463,7 +1463,7 @@ async function t18() {
   await sleep(5000);
   R.check(userEntriesWith(w.path, "STEER-T18") === 1, `t18: the steer after the reload is in the worker's file once (${userEntriesWith(w.path, "STEER-T18")})`);
   R.check(asksWith("STEER-T18").length === 1, "t18: the worker's model got the steer once");
-  R.check(completions(path, w.path, "REPLY-DONE t18w") === 1, `t18: the worker's completion of its task reached the parent once (${completions(path, w.path, "REPLY-DONE t18w")})`);
+  R.check(completions(path, w.path) === 1, `t18: the worker's run (its task, the steer taken mid-run) reached the parent as one completion (${completions(path, w.path)})`);
   noRpc("t18");
   p2.close();
   p3.s.close();
@@ -1832,7 +1832,7 @@ function liveDump() {
   return files.map((f) => {
     const r = readJson(join(dir, f)) ?? {};
     const llm = r.presence?.llm;
-    return `${f}: pid ${r.pid} ${baseName(r.session?.sessionFile)} hb ${r.heartbeat} llm ${llm ? JSON.stringify({ producer: llm.producer, active: llm.active, folded: llm.folded }) : "-"}`;
+    return `${f}: ${baseName(r.session?.sessionFile ?? r.sessionFile)} hb ${r.heartbeat} llm ${llm ? JSON.stringify({ producer: llm.producer, active: llm.active, folded: llm.folded }) : "-"}`;
   });
 }
 

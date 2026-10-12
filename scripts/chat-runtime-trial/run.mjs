@@ -18,7 +18,7 @@
 //     t1f       a worker runs across the restart: same worker pid, its completion delivered once
 //     t2        kill -9 of the chat mid-reply: the pane's error, a new process, the crash "continue"
 //               once; a second kill during that resume is not resumed again
-//     t3        idle stop (SOVA_CHAT_IDLE_MS=3000): not while a client is attached or a run is in
+//     t3        idle stop (SOVA_CHAT_IDLE_MIN=0.05): not while a client is attached or a run is in
 //               flight; then the process exits (no death) and reopens on the next attach
 //     t4        new code (SOVA_BUILD a → b): "older" in the pane, Reload now, automatic reload at a
 //               quiet moment, never mid-reply; the new process reports b

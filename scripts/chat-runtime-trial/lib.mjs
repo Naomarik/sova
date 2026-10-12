@@ -24,10 +24,8 @@ export const KNOBS = {
   driver: "SOVA_CHAT_DRIVER",
   /** The slice chat units go into: a stand-in, never sova-chats.slice. */
   slice: "SOVA_CHAT_SLICE",
-  /** Idle stop after this many ms (0 never; default 30 min). */
-  idle: "SOVA_CHAT_IDLE_MS",
-  /** The same in fractional minutes: the team named it both ways, so the trial sets both. */
-  idleMin: "SOVA_CHAT_IDLE_MIN",
+  /** Idle stop after this many minutes (fractional; 0 never; default 30). */
+  idle: "SOVA_CHAT_IDLE_MIN",
   /** The server build a chat is labelled with. */
   build: "SOVA_BUILD",
   /** A chat process whose build equals this exits 3 before hello (the rollout failure case). */
@@ -98,7 +96,7 @@ export function serverEnv({ agent, port, on, driver, slice, idleMs, build, failB
   if (on) env[KNOBS.switch] = "out";
   if (on && driver === "detached") env[KNOBS.driver] = "detached";
   if (on && slice) env[KNOBS.slice] = slice;
-  if (idleMs !== undefined) Object.assign(env, { [KNOBS.idle]: String(idleMs), [KNOBS.idleMin]: String(idleMs / 60_000) });
+  if (idleMs !== undefined) env[KNOBS.idle] = String(idleMs / 60_000);
   if (build) env[KNOBS.build] = build;
   if (failBoot) env[KNOBS.failBoot] = failBoot;
   return { ...env, ...extra };

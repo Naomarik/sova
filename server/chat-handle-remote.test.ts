@@ -173,12 +173,12 @@ test("a served call's write is a call back into the chat, and the call then read
   assert.deepEqual(result?.outcome, { ok: true, result: { content: [{ type: "text", text: "m1" }], details: null } });
 });
 
-test("a server action goes back as a served tool's ToolResult, its own result in details (the chat process unwraps it)", async () => {
+test("a server action answers with its own result over the socket, as in one process", async () => {
   const { link, path } = handle();
   serveTools(path, [{ name: "@probe", label: "@probe", description: "action", parameters: { type: "object" }, execute: async () => ({ content: [], details: { ok: true, by: "operator" } }) }]);
   const call: ServerToolCall = { effectId: "fx-act", chatId: path, toolCallId: "@probe", name: "@probe", params: {}, attended: false, card: null };
   link.deliver({ t: "tool.call", call, ctx: { sessionId: `sid-${seq}`, cwd: agentDir, leafId: "u1", title: null } });
   await tick(20);
   const result = link.sent.find((f): f is FrameOf<"tool.result"> => f.t === "tool.result" && f.effectId === "fx-act");
-  assert.deepEqual(result?.outcome, { ok: true, result: { content: [], details: { ok: true, by: "operator" } } });
+  assert.deepEqual(result?.outcome, { ok: true, result: { ok: true, by: "operator" } });
 });

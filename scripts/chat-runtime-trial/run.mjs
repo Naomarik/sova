@@ -278,9 +278,9 @@ async function teardown(s = srv, agentDir = agent) {
         process.kill(r.pid, "SIGKILL");
       } catch {}
 }
-async function newChat(model = "trial/m1", cl = c) {
+async function newChat(model = "trial/m1", cl = c, ms = 30000) {
   const { path } = await cl.api("/api/sessions", { method: "POST", body: JSON.stringify({ cwd: proj }) });
-  const s = await chat(cl, path);
+  const s = await chat(cl, path, ms);
   s.send({ type: "set_model", ref: model });
   await s.until((m) => m.type === "model" || m.type === "error", 15000, "set_model answer");
   return { path, s };
@@ -1752,7 +1752,10 @@ async function t21() {
 async function t22() {
   await teardown();
   await boot({ on: false, extra: { SOVA_WORKER_NICE: "15" } });
-  const { path, s } = await newChat();
+  // The first open waits for the boot's take-back of what earlier checks left (bounded at 2 min).
+  const t0 = Date.now();
+  const { path, s } = await newChat("trial/m1", c, 130000);
+  R.note(`t22: the first chat opened ${Math.round((Date.now() - t0) / 1000)} s after boot`);
   R.check(!record(path), "t22: the ordinary chat runs in the server (no chat process)");
   prompt(s, "[spawn 1 100 #t22w] start a worker");
   await s.until((m) => m.type === "workers" && m.working >= 1, 60000, "a working worker");

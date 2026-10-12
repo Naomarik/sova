@@ -2026,7 +2026,7 @@ export type ChatClientMessage =
     "queued" = messages are still waiting to go out. NOT the same condition as "streaming", and
     that is the whole reason it exists: `steer()` awaits the extension `input` handlers BEFORE
     queueing, so a steer carrying images on a non-vision model can still be in flight when the turn
-    it meant to interrupt has already ended (CLAUDE.md documents that window). A rewind allowed
+    it meant to interrupt has already ended (agents/server/harness/overview.md documents that window). A rewind allowed
     then would move the leaf, and the queued message would be delivered into the NEW branch on the
     next run — the user's abandoned message resurrecting on the branch they rewound TO. Covers
     Sova's own queue and the SDK's, ours or an extension's, because any of them lands the same way.

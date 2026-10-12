@@ -2,7 +2,7 @@
 // The restart gate of an adopted unit (§app.project-services/adopt): `apply` on an adopted slot 0
 // schedules this script with `systemd-run --user --on-active=30s`, outside the server; on macOS the
 // server starts it in a session of its own with `--delay 30`, and it waits that long itself. When it
-// fires it reads the scheduling server's live records again (CLAUDE.md "Live server restart": a
+// fires it reads the scheduling server's live records again (AGENTS.md "Live server restart": a
 // record of that server's pid, heartbeat at most 30 s old, with a working subagent or a turn in
 // flight) and only then restarts the unit (`systemctl --user restart`; on macOS the launchd agent
 // labelled with the unit's name without `.service`, by `launchctl kickstart -k gui/<uid>/<label>`):

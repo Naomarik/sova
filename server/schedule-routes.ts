@@ -1,6 +1,6 @@
 import type { Hono } from "hono";
 import { agentRoot } from "./state-root";
-// The claude-code extension's login standing (node built-ins only). See CLAUDE.md.
+// The claude-code extension's login standing (node built-ins only). See agents/extensions/claude-code/overview.md.
 import { defaultClaudeDir, loginDir, readAccountsState, readiness } from "../pi-config/extensions/claude-code/accounts.ts";
 import { heldChat } from "./chat-manager";
 import { chatClaudeLogin, loginName } from "./claude-login-state";

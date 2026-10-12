@@ -2,7 +2,7 @@
 // The mode itself is per session; this file is the DEFAULT new sessions start from. We import
 // exactly its three pure modules (state.ts, minor.ts, and delegate.ts in server/delegate.ts:
 // node:fs/node:path only) so validation, the mode and minor-mode lists and
-// the restore rule have one source of truth. Nothing else from pi-config. See CLAUDE.md.
+// the restore rule have one source of truth. Nothing else from pi-config. See agents/modes/overview.md.
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { agentRoot } from "./state-root";

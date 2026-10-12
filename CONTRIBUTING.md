@@ -59,7 +59,7 @@ plans. Don't run the installer against your real home merely to validate its doc
 | `scripts/install.sh` | Published-release installer |
 | `.sova/spec/` | Product documentation; verify implementation before claiming a feature. Propose changes in a draft ([USAGE](.sova/spec/USAGE.md)) |
 
-Use strict TypeScript and ESM; ask before adding dependencies. Read [CLAUDE.md](CLAUDE.md) for
+Use strict TypeScript and ESM; ask before adding dependencies. Read [AGENTS.md](AGENTS.md) and the guide of each area you touch (its "Areas of work" table) for
 architecture, ownership, and session-write safety before changing backend code. Treat live TUI
 sessions as read-only: pi's SDK does not provide file locking.
 

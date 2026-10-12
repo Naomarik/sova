@@ -15,7 +15,7 @@
  * again until it moves. A settled worker's file does not move at all.
  *
  * Read-only throughout: nothing here writes to a session, and the SDK's `SessionManager.open` is
- * never used (it rewrites files; see CLAUDE.md).
+ * never used (it rewrites files; see agents/server/harness/overview.md).
  */
 
 import { readFile, stat } from "node:fs/promises";

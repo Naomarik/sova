@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-// The provider-limits gate (node builtins only, see CLAUDE.md): a one-shot waits for a slot of its
+// The provider-limits gate (node builtins only, see agents/extensions/provider-limits/overview.md): a one-shot waits for a slot of its
 // provider as background work (§app.provider-limits/queue), within its own timeout.
 import { acquireSlot, defaultAgentDir, whileHolding, type Slot } from "../pi-config/extensions/provider-limits/gate.ts";
 import { beginLlmCall } from "../pi-config/extensions/llm-inflight/tracker.ts";

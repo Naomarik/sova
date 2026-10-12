@@ -290,7 +290,7 @@ export function App() {
   };
   // Gated on the boolean, not on the mesh state: the effect read `meshOn()` straight, which reads
   // the whole state, so every mesh poll re-ran it — an extra peer-session fetch and a restarted
-  // interval each time (CLAUDE.md, the `on(deps)` note).
+  // interval each time (agents/frontend/overview.md, the `on(deps)` note).
   const meshIsOn = createMemo(meshOn);
   createEffect(() => {
     if (!meshIsOn()) {

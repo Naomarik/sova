@@ -1,7 +1,7 @@
 import { agentRoot } from "./state-root";
 import { CLAUDE_EFFORTS, DELEGATE_BACKENDS, PI_EFFORTS } from "../pi-config/extensions/mode/delegate.ts";
 // The subagents extension's own reader and writer of the file (node builtins only): the shape, the
-// strict parse, the atomic write, and the defaults a missing file stands for. See CLAUDE.md.
+// strict parse, the atomic write, and the defaults a missing file stands for. See agents/extensions/subagents/overview.md.
 import {
   DEFAULT_TEAM_DEFAULTS,
   parseTeamDefaults,

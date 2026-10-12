@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type { Hono } from "hono";
 import { agentRoot } from "./state-root";
 // The claude-code extension's own registry (node built-ins only): the file, each login's
-// directory, this host's standing of each login and the order. See CLAUDE.md.
+// directory, this host's standing of each login and the order. See agents/extensions/claude-code/overview.md.
 import {
   ClaudeLogins,
   DEFAULT_LOGIN_ID,

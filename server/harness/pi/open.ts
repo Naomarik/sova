@@ -174,7 +174,7 @@ export async function warmClaudeCodeProvider(modelRuntime: ModelRuntime, cwd: st
     // So the warm-up has to go all the way to bindExtensions, exactly as a real chat does, or the
     // extension factory runs and registers nothing (verified: the factory logs, session_start
     // never fires). SessionManager.create() defers writing until the first user or assistant message
-    // (P11; CLAUDE.md, "Backend notes"), and this session never prompts, so no file is left behind.
+    // (P11; agents/server/harness/overview.md, "SDK surprises"), and this session never prompts, so no file is left behind.
     const { session } = await createAgentSessionFromServices({ services, sessionManager: SessionManager.create(cwd) });
     currentTheme(); // extensions may read the theme singleton at session_start; initialize it first
     await session.bindExtensions({

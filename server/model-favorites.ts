@@ -3,7 +3,7 @@ import { agentRoot } from "./state-root";
 import type { ModelFavoriteResult } from "../shared/protocol";
 // The command-palette extension's own store (node builtins only), so the TUI's Ctrl+F and the
 // picker's star read and write one file through one implementation: the palette's lock, re-read
-// and atomic rename, and its refusal to overwrite a file it can't parse. See CLAUDE.md.
+// and atomic rename, and its refusal to overwrite a file it can't parse. See agents/extensions/command-palette/overview.md.
 import { ModelFavorites } from "../pi-config/extensions/command-palette/favorites.ts";
 import { LEGACY_CLAUDE_IDS, resolveLegacyClaude } from "../pi-config/extensions/claude-code/catalog.ts";
 

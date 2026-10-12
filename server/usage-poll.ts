@@ -4,7 +4,7 @@
 // nextFetchAt decide whether anything is actually fetched, so this never fetches more often than a
 // TUI would. Never forced, never a credential write (fetch.ts only reads them).
 
-// Part of the sanctioned pi-config import surface, like server/insights.ts — see CLAUDE.md.
+// Part of the sanctioned pi-config import surface, like server/insights.ts — see agents/extensions/overview.md.
 import { describeErrors, FAILURE_RETRY_MS, nextClaudeReset, refreshCache, type CacheFile, type RefreshResult } from "../pi-config/extensions/usage-status/fetch.ts";
 
 /** Tick bounds: the next tick follows the cache's nextFetchAt, clamped to [MIN, MAX]. */

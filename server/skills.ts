@@ -2,7 +2,7 @@
  * Skills: which ones the session's prompt OFFERED, and which ones it actually LOADED.
  *
  * Read from the session's own JSONL with our parser, never through the SDK: `SessionManager.open`
- * rewrites files (CLAUDE.md), and a TUI may own this one. Pure — it takes a session's lines (a
+ * rewrites files (agents/server/harness/overview.md), and a TUI may own this one. Pure — it takes a session's lines (a
  * harness's neutral history, `skillLinesOf`, or a Claude Code transcript, `claudeSkillLines`) and
  * returns data, so every rule below is pinned by server/skills.test.ts.
  *

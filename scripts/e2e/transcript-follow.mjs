@@ -15,7 +15,7 @@
 // drawn when the reader left), while a turn that started and ended while away still stops at the
 // last row read with "· 2 new". These run real turns, on scripts/fake-claude.mjs: start the server
 // with `PATH="$(scripts/fake-claude-path.sh):$PATH" CLAUDE_CONFIG_DIR=<fixture login dir>` (the
-// Claude Code provider is always on; CLAUDE.md, "Claude logins in a hermetic run"). Without the fake they are skipped, never passed.
+// Claude Code provider is always on; agents/extensions/claude-code/overview.md, "Testing Claude logins without Anthropic"). Without the fake they are skipped, never passed.
 //
 // Writes its fixtures into the hermetic agent dir and drives a hermetic server — `pnpm run
 // dev:hermetic` in THIS worktree, serving the built app (`pnpm run build` first) — through the

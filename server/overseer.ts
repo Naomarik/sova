@@ -40,7 +40,6 @@ import {
   isSessionBusy,
   setOverseerRuntime,
 } from "./chat-handle";
-import { heldChat } from "./chat-manager";
 import { activityOf, failedWorkersOf, isOwnPid, readLiveRecords, workerErrorTimesOf, workingSubagents } from "./live";
 import { endedByRestart, restartWindow } from "./server-stop";
 import { listModels, contextWindow } from "./models";
@@ -103,7 +102,6 @@ import { signalTextOf, teamStallOf } from "./signals-store";
 import { readDecisionSettings } from "./decide-settings";
 import { onAttentionChanged } from "./attention-memo";
 import { notifyBlockers, pushWanted, resetPushState } from "./push";
-import { memoryExtension } from "./harness/pi/memory";
 import { MEMORY_TOOLS } from "../shared/memory";
 import { playbookReviews } from "./projects/playbook-review";
 import { deployAttentionItems } from "./project-services/deploy-attention";
@@ -1036,11 +1034,6 @@ setOverseerRuntime({
               });
             },
           },
-          // Its memory, when its own switch is on (§chat.memory/overseer): the same engine as a chat's.
-          memoryExtension(() => {
-            const chat = heldChat(path);
-            return chat && !chat.disposed ? chat.memoryHost() : null;
-          }),
         ],
         // The OVERRIDE, not appendSystemPrompt: passing appendSystemPrompt suppresses discovery of
         // the user's own APPEND_SYSTEM.md, and the override keeps it (resource-loader.js:386-396).
@@ -1057,6 +1050,8 @@ setOverseerRuntime({
       }),
       model: settings.model,
       thinking: settings.thinking,
+      // Its memory, when its own switch is on (§chat.memory/overseer): the same engine as a chat's.
+      memory: true,
     };
   },
   saveChoice(patch) {

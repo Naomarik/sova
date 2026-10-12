@@ -494,6 +494,9 @@ export interface OverseerRuntime {
     /** From overseer.json, never defaults.json. */
     model: string | null;
     thinking: string | null;
+    /** Run the memory engine (§chat/memory) in this loadout, as an ordinary chat does: the chat binds
+        it to itself, after the loadout's own extensions. */
+    memory?: boolean;
   }>;
   /** The composer changed the Overseer's model or thinking: write it back to overseer.json. */
   saveChoice(patch: { model?: string; thinking?: string }): void;
@@ -3373,15 +3376,19 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
     const outline = special ? false : !isFanoutMember(read);
     // A link member's tools are fixed by its creation marker, read at every build (§mesh.links/tools).
     const linkTools = isLinkMember(read) ? "member" : "legacy";
+    // The memory minor mode's engine (§chat/memory), bound to the chat that hosts this runtime.
+    const memory = () => memoryExtension(() => (visHost.chat && !visHost.chat.disposed ? visHost.chat.memoryHost() : null));
     return {
       loader: special
-        ? special.resourceLoaderOptions
+        ? special.memory
+          ? { ...special.resourceLoaderOptions, extensionFactories: [...(special.resourceLoaderOptions.extensionFactories ?? []), memory()] }
+          : special.resourceLoaderOptions
         : {
             extensionFactories: [
               ...DEFAULT_EXTENSION_FACTORIES,
               visCheckExtension(() => (visHost.chat && !visHost.chat.disposed ? visHost.chat.visCheckHost() : null)),
               // The memory minor mode's engine (§chat/memory): idle until memory is turned on.
-              memoryExtension(() => (visHost.chat && !visHost.chat.disposed ? visHost.chat.memoryHost() : null)),
+              memory(),
               // playbook_read, once a schedule's fire delivered a playbook here (§chat.schedules/playbook-read).
               playbookExtension(playbookHost),
               // project_verbs: its own worktrees' running instances (server/project-services/tools.ts).

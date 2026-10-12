@@ -31,7 +31,7 @@ import {
   setChatRouter,
   takeOpeningChoice,
 } from "./chat-handle";
-import { RemoteChatHandle, type RemoteHooks } from "./chat-handle-remote";
+import { type HeldRequests, holdRequests, RemoteChatHandle, type RemoteHooks } from "./chat-handle-remote";
 import { awaitFrame, connectLink, type Link } from "./chat-runtime/link";
 import { takeInflight } from "./chat-runtime/inflight";
 import { linkWaitReady, Rollout } from "./chat-runtime/rollout";
@@ -39,6 +39,7 @@ import {
   type ChatDeath,
   type ChatHost,
   type ChatRecord,
+  type SupervisorDeps,
   ChatSupervisor,
   chatDriver,
   chatEnv,
@@ -99,6 +100,8 @@ export interface RouterDeps {
   connect?: typeof connectLink;
   /** Whether ordinary chats move out now (the server: the chosen host's mode). */
   out?: () => boolean;
+  /** Where the supervisor keeps its records and sockets, and its units' prefix. */
+  supervisor?: Pick<SupervisorDeps, "registryDir" | "deathsFile" | "socketPath" | "unitPrefix">;
 }
 
 export class ChatHostRouter {
@@ -126,6 +129,7 @@ export class ChatHostRouter {
     this.settings = { ...DEFAULT_RUNTIME_SETTINGS, idleStopMin: cfg.idleMs / 60_000 };
     this.sup = new ChatSupervisor({
       driver: deps.driver ?? chatDriver(cfg),
+      ...deps.supervisor,
       epoch,
       idleMs: cfg.idleMs,
       claudeIdleMax: cfg.claudeIdleMax,
@@ -254,8 +258,8 @@ export class ChatHostRouter {
     throw new Error(f.error?.message ?? "The chat did not open in its process.");
   }
 
-  private adoptHandle(rec: ChatRecord, link: Link, mirror: ChatRuntimeMirror): RemoteChatHandle {
-    const h = new RemoteChatHandle(rec.sessionPath, rec.sessionPath, { unit: rec.unit, pid: rec.pid ?? 0 }, link, mirror, this.epoch, this.hooks);
+  private adoptHandle(rec: ChatRecord, link: Link, mirror: ChatRuntimeMirror, held?: HeldRequests): RemoteChatHandle {
+    const h = new RemoteChatHandle(rec.sessionPath, rec.sessionPath, { unit: rec.unit, pid: rec.pid ?? 0 }, link, mirror, this.epoch, this.hooks, held);
     this.remotes.set(rec.sessionPath, h);
     this.paths.set(rec.chatId, rec.sessionPath);
     this.hooks.state?.(h);
@@ -277,8 +281,13 @@ export class ChatHostRouter {
       if (!first) await new Promise((r) => setTimeout(r, 5_000));
       try {
         const { link } = await this.connect(rec.sock, { epoch: this.epoch, build: this.build, settings: this.settings, since: null, retryForMs: first ? 5_000 : 0 });
+        // The calls it queued while no server was there come at once, before its state: kept for the handle.
+        const held = holdRequests(link);
         const state = await awaitFrame(link, "state", 5_000);
-        this.adoptHandle(rec, link, state.mirror);
+        // Its server-hosted tools run here now, as for a chat this server opened (the same specs: the
+        // chat declared them at its open).
+        servedToolsFor(rec.sessionPath, state.mirror.sessionId, () => this.remotes.get(rec.sessionPath)?.mirror.monitor.title ?? "");
+        this.adoptHandle(rec, link, state.mirror, held);
         return;
       } catch {
         // its unit is up but it did not answer yet: again in 5 s, for a minute

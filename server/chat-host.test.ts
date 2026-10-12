@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Duplex } from "node:stream";
 import { after, test } from "node:test";
-import { CHAT_WIRE_PROTO, CHAT_WIRE_MIN_PROTO, type ExitCause } from "../shared/chat-runtime-wire";
+import { CHAT_WIRE_PROTO, CHAT_WIRE_MIN_PROTO, DEFAULT_RUNTIME_SETTINGS, type ExitCause } from "../shared/chat-runtime-wire";
 
 const agentDir = mkdtempSync(join(tmpdir(), "sova-chat-host-router-"));
 process.on("exit", () => rmSync(agentDir, { recursive: true, force: true }));
@@ -21,9 +21,10 @@ mkdirSync(cwd, { recursive: true });
 
 const { ChatHostRouter } = await import("./chat-host");
 const { ChatRuntimeHost } = await import("./chat-runtime/host");
-const { Link } = await import("./chat-runtime/link");
+const { Link, awaitFrame } = await import("./chat-runtime/link");
 const { FakeDriver } = await import("./chat-runtime/fake-driver");
-const { activeConfigFailure, BusyError, ConfigError, disposeAllChats } = await import("./chat-manager");
+const { ChatSupervisor } = await import("./chat-runtime/supervisor");
+const { activeConfigFailure, BusyError, ConfigError, disposeAllChats, serverToolSpec } = await import("./chat-manager");
 const { canonicalPath } = await import("./paths");
 const { PROFILE_ENTRY } = await import("../shared/profiles");
 const { LINK_MEMBER_ENTRY } = await import("../shared/mesh-links");
@@ -58,6 +59,7 @@ function pair(): [Duplex, Duplex] {
   for (let i = 0; i < 2; i++)
     ends.push(
       new Duplex({
+        allowHalfOpen: false, // as a socket: one end closing closes the other
         read() {},
         write(chunk, _enc, cb) {
           ends[1 - i]!.push(chunk);
@@ -78,6 +80,9 @@ let epoch = 1_000;
 /** A router over a fake driver whose started units answer as chat-runtime hosts in this process. */
 function setup(o: { out?: boolean } = {}) {
   const driver = new FakeDriver();
+  // Its own records and socket paths: a later router takes back only these units.
+  const dir = mkdtempSync(join(agentDir, "sup-"));
+  const supervisor = { registryDir: () => join(dir, "registry"), deathsFile: () => join(dir, "deaths.jsonl"), socketPath: (id: string, suffix?: string) => join(dir, `${id}${suffix ?? ""}.sock`) };
   const hosts = new Map<string, InstanceType<typeof ChatRuntimeHost>>();
   const exits: ExitCause[] = [];
   let connects = 0;
@@ -94,11 +99,15 @@ function setup(o: { out?: boolean } = {}) {
     const runtimeEnd = new Link(a as never, { log: quiet });
     const link = new Link(b as never, { log: quiet });
     const hello = { t: "hello" as const, proto: CHAT_WIRE_PROTO, minProto: CHAT_WIRE_MIN_PROTO, epoch: 0, ...host.hello() };
-    host.onControl(runtimeEnd, { t: "control", proto: CHAT_WIRE_PROTO, epoch: opts.epoch, serverPid: 1, serverStartedAt: 1, build: opts.build, since: opts.since, settings: opts.settings });
+    // The control reaches the chat later, as over a socket: after the caller is listening.
+    const h = host;
+    setImmediate(() => h.onControl(runtimeEnd, { t: "control", proto: CHAT_WIRE_PROTO, epoch: opts.epoch, serverPid: 1, serverStartedAt: 1, build: opts.build, since: opts.since, settings: opts.settings }));
     return { link, hello };
   }) as never;
-  const router = new ChatHostRouter(++epoch, "b1", { driver, connect, out: () => o.out ?? true });
-  return { router, driver, hosts, exits, connects: () => connects };
+  const router = new ChatHostRouter(++epoch, "b1", { driver, connect, out: () => o.out ?? true, supervisor });
+  // The next server: a router over the same units (a restart), with a higher epoch.
+  const again = () => new ChatHostRouter(++epoch, "b1", { driver, connect, out: () => o.out ?? true, supervisor });
+  return { router, driver, hosts, exits, connects: () => connects, again, connect: connect as typeof import("./chat-runtime/link").connectLink, supervisor };
 }
 
 test("an ordinary chat runs in a process of its own; a link member is ordinary", async () => {
@@ -170,6 +179,45 @@ test("shutdown: a chat process is told goodbye and runs on; no unit is stopped",
   assert.deepEqual(t.driver.stopped, []);
   assert.equal(t.driver.table.get(t.driver.started[0]!.unit)?.status.state, "active");
   assert.deepEqual(t.exits, [], "the chat did not exit");
+});
+
+test("after a restart, a taken-back chat's server-hosted tools run here: a call queued while no server was there, and a new one", async () => {
+  process.env.SOVA_CHAT_TEST_SERVED = "1";
+  after(() => void delete process.env.SOVA_CHAT_TEST_SERVED);
+  const t = setup();
+  const s = session();
+  // The previous server, by hand: it started the chat and opened it with its served tools declared.
+  // This process never served them, as a restarted server hasn't.
+  const prev = new ChatSupervisor({
+    driver: t.driver,
+    epoch: ++epoch,
+    ...t.supervisor,
+    launch: (c) => ({ argv: ["bun"], env: { SOVA_CHAT_PATH: c.sessionPath, SOVA_CHAT_ID: c.chatId, SOVA_CHAT_SOCK: c.sock } }),
+    log: quiet,
+  });
+  const rec = await prev.start({ chatId: s.id, sessionPath: s.path, cwd });
+  const { link } = await t.connect(rec.sock, { epoch: epoch, build: "b1", settings: DEFAULT_RUNTIME_SETTINGS, since: null });
+  const decl = { name: "trial_served_sleep", label: "Trial served sleep", description: "sleeps", parameters: { type: "object", properties: { ms: { type: "number" } }, required: ["ms"] } };
+  const opened = awaitFrame(link, "opened", 5_000);
+  link.send({ t: "open", id: "o1", path: s.path, force: true, link: null, served: [decl] });
+  assert.equal((await opened).ok, true);
+  prev.detach();
+  link.close(); // the previous server is gone; the chat runs on
+  await new Promise((r) => setTimeout(r, 50));
+  const queued = serverToolSpec(s.path, decl).execute("tc-1", { ms: 0 }, undefined, undefined, undefined);
+
+  const next = t.again();
+  try {
+    next.start();
+    await next.ready();
+    assert.equal(next.get(s.path)?.where, "process", "taken back");
+    const answer = (p: Promise<unknown>) =>
+      Promise.race([p.then(() => "ran", (e: Error) => e.message), new Promise<string>((r) => setTimeout(() => r("no answer"), 3_000))]);
+    assert.equal(await answer(queued), "ran", "the queued call ran once the chat was taken back");
+    assert.equal(await answer(serverToolSpec(s.path, decl).execute("tc-2", { ms: 0 }, undefined, undefined, undefined)), "ran", "a new call runs too");
+  } finally {
+    next.detach();
+  }
 });
 
 test("a chat whose folder is gone is refused before any process, and remembered until the folder is back", async () => {

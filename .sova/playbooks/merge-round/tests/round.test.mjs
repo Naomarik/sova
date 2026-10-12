@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { acquireLock, busyOf, dirtyPaths, expandArgs, failingTestFiles, groupOf, hasScript, homeShown, needsRestart, ownerOf, parseBatch, parseBoard, parseReply, replyOf, shellPath, suiteOf, tempCommitOf, timeoutFor, touchesSpecReplay } from "../scripts/round.mjs";
+import { acquireLock, alsoUpdateNudges, areaGuides, busyOf, dirtyPaths, expandArgs, failingTestFiles, globRe, groupOf, guideFrontMatter, hasScript, homeShown, needsRestart, ownerOf, parseBatch, parseBoard, parseReply, replyOf, shellPath, suiteOf, tempCommitOf, timeoutFor, touchesSpecReplay } from "../scripts/round.mjs";
 
 const ROUND = fileURLToPath(new URL("../scripts/round.mjs", import.meta.url));
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
@@ -974,4 +974,47 @@ test("pure board rules: the file's shape, the owner rule and the groups", () => 
   assert.equal(g({}, null, 3), "unknown");
   assert.equal(g({ board }, row("in-progress")), "not-ready");
   assert.equal(g({ board, answer: { kind: "not-ready", head: "h" } }, row("ready")), "not-ready");
+});
+
+test("also-update rules: globs, the guides' front-matter and which touched areas missed their files", () => {
+  assert.ok(globRe("pi-config/extensions/spec/**").test("pi-config/extensions/spec/core/a.mjs"));
+  assert.ok(!globRe("pi-config/extensions/spec/**").test("pi-config/extensions/spec2/a.mjs"));
+  assert.ok(globRe("server/**/*.ts").test("server/a.ts") && globRe("server/**/*.ts").test("server/harness/pi/b.ts"));
+  assert.ok(!globRe("server/*.ts").test("server/harness/b.ts"));
+  assert.ok(globRe("src/App.tsx").test("src/App.tsx") && !globRe("src/App.tsx").test("src/AppXtsx"));
+  assert.deepEqual(guideFrontMatter('---\nwatches: ["a/**", "b.ts"]\nalsoUpdate: ["a/CHANGELOG.md"]\n---\n# A\n'), { watches: ["a/**", "b.ts"], alsoUpdate: ["a/CHANGELOG.md"] });
+  assert.deepEqual(guideFrontMatter("---\nwatches:\n  - a/**\n  - 'b.ts'\nalsoUpdate:\n  - \"c.md\"\n---\n"), { watches: ["a/**", "b.ts"], alsoUpdate: ["c.md"] });
+  assert.deepEqual(guideFrontMatter('# no front-matter\nwatches: ["a"]\n'), { watches: [], alsoUpdate: [] });
+  assert.deepEqual(guideFrontMatter("---\nwatches: [not json\n---\n"), { watches: [], alsoUpdate: [] });
+
+  const dir = mkdtempSync(join(root, "guides-"));
+  const guide = (rel, text) => { mkdirSync(dirname(join(dir, rel)), { recursive: true }); writeFileSync(join(dir, rel), text); };
+  guide("agents/modes/spec/overview.md", '---\nwatches: ["pi-config/extensions/spec/**"]\nalsoUpdate: ["pi-config/extensions/spec/docs/CHANGELOG.md"]\n---\n');
+  guide("agents/server/overview.md", '---\nwatches: ["server/**"]\nalsoUpdate: []\n---\n');
+  guide("agents/frontend/overview.md", "# no front-matter\n");
+  guide("agents/frontend/notes.md", '---\nwatches: ["src/**"]\nalsoUpdate: ["x.md"]\n---\n');
+  const guides = areaGuides(dir);
+  assert.deepEqual(guides.map((x) => x.guide), ["agents/frontend/overview.md", "agents/modes/spec/overview.md", "agents/server/overview.md"]);
+  assert.equal(guides[1].area, "modes/spec");
+  assert.deepEqual(areaGuides(join(dir, "none")), []);
+
+  assert.deepEqual(alsoUpdateNudges(["pi-config/extensions/spec/core/a.mjs", "server/x.ts", "src/y.tsx"], guides), [
+    { area: "modes/spec", guide: "agents/modes/spec/overview.md", touched: ["pi-config/extensions/spec/core/a.mjs"], missing: ["pi-config/extensions/spec/docs/CHANGELOG.md"] },
+  ]);
+  assert.deepEqual(alsoUpdateNudges(["pi-config/extensions/spec/core/a.mjs", "pi-config/extensions/spec/docs/CHANGELOG.md"], guides), []);
+  assert.deepEqual(alsoUpdateNudges(["README.md"], guides), []);
+});
+
+test("check prints an also-update line for an area touched without its files, and it holds nothing", async () => {
+  git(main, "worktree", "add", "-q", wt("feat/guide"), "-b", "feat/guide");
+  commit(wt("feat/guide"), "agents/modes/spec/overview.md", '---\nwatches: ["pi-config/extensions/spec/**"]\nalsoUpdate: ["pi-config/extensions/spec/docs/CHANGELOG.md"]\n---\n# Spec\n', "guide: spec");
+  commit(wt("feat/guide"), "pi-config/extensions/spec/core/x.mjs", "export {};\n", "spec: core change");
+  const r = await run(["check", "feat/guide"]);
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /^also update: touched modes\/spec \(1 file, agents\/modes\/spec\/overview\.md\), not pi-config\/extensions\/spec\/docs\/CHANGELOG\.md: ask the owner \("updated" or "not needed because …"\)\.$/m);
+  assert.match(r.out, /landable at [0-9a-f]{7}/);
+  commit(wt("feat/guide"), "pi-config/extensions/spec/docs/CHANGELOG.md", "# Changelog\n", "spec: changelog");
+  const again = await run(["check", "feat/guide"]);
+  assert.equal(again.code, 0, again.out);
+  assert.doesNotMatch(again.out, /^also update:/m);
 });

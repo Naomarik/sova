@@ -10,7 +10,7 @@
 //   note <branch> owner=<id> chip=ready|waiting|none idle=yes|no [source=<word>]
 //   ask <branch> topic=<name>  the session_send text for an idle owner, asking it to answer on the round's topic
 //   reply <branch>        stdin = the delivered topic batch (or the owner's session_read output): READY at this head, NOT READY, stale, no answer
-//   check <branch>        merge master in (in the branch's worktree), typecheck, tests, suites (niced), spec replay, build, spec, leak scan
+//   check <branch>        merge master in (in the branch's worktree), typecheck, tests, suites (niced), spec replay, build, spec, also-update nudges, leak scan
 //   land <branch>         a green check at this head and master, and no leak-scan hit: the `worktree` merge call to make
 //   landed <branch>       verify its head is in master, build the main checkout, record the restart need; next: the clean up
 //   push                  leak-scan, then `git push origin master`, refused under the hold or if not a fast-forward
@@ -285,6 +285,72 @@ export function expandArgs(argv, cwd) {
 /** A changed file that makes `check` run the spec replay suite (a landing gate, never run while working). */
 export const touchesSpecReplay = (file) =>
   /^pi-config\/extensions\/spec\/(?:core|tests\/replay)\//.test(file) || file === "pi-config/extensions/mode/spec-guard.ts" || file === "pi-config/extensions/claude-code/spec-hooks.ts";
+
+/** A path glob as a whole-path RegExp: `**` any depth (`dir/**` the dir's every file), `*` within one segment, `?` one char. */
+export function globRe(glob) {
+  let re = "";
+  for (let i = 0; i < glob.length; i++) {
+    const c = glob[i];
+    if (c === "*" && glob[i + 1] === "*") {
+      i++;
+      if (glob[i + 1] === "/") { i++; re += "(?:.*/)?"; } else re += ".*";
+    } else if (c === "*") re += "[^/]*";
+    else if (c === "?") re += "[^/]";
+    else re += escapeRe(c);
+  }
+  return new RegExp(`^${re}$`);
+}
+
+/** An area guide's front-matter (agents/**\/overview.md): its `watches` and `alsoUpdate` lists, each a
+ *  JSON array on its key's line or a `- item` list under it. No front-matter: both empty. */
+export function guideFrontMatter(text) {
+  const out = { watches: [], alsoUpdate: [] };
+  const m = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(text);
+  if (!m) return out;
+  let key = null;
+  for (const line of m[1].split(/\r?\n/)) {
+    const kv = /^([A-Za-z]+):\s*(.*)$/.exec(line);
+    if (kv) {
+      key = kv[1] in out ? kv[1] : null;
+      if (key && kv[2].trim()) {
+        try { out[key] = JSON.parse(kv[2]).filter((x) => typeof x === "string"); } catch { out[key] = []; }
+        key = null;
+      }
+      continue;
+    }
+    const item = /^\s*-\s+(.+?)\s*$/.exec(line);
+    if (key && item) out[key].push(item[1].replace(/^(["'])(.*)\1$/, "$2"));
+  }
+  return out;
+}
+
+/** Each area guide in `tree` (agents/**\/overview.md) with its front-matter; `area` is its folder under agents/. */
+export function areaGuides(tree) {
+  const guides = [];
+  const walk = (rel) => {
+    let entries = [];
+    try { entries = readdirSync(join(tree, rel), { withFileTypes: true }); } catch { return; }
+    for (const e of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+      if (e.isDirectory()) walk(`${rel}/${e.name}`);
+      else if (e.name === "overview.md") {
+        let text = "";
+        try { text = readFileSync(join(tree, rel, e.name), "utf8"); } catch {}
+        guides.push({ area: rel.slice("agents/".length) || "agents", guide: `${rel}/overview.md`, ...guideFrontMatter(text) });
+      }
+    }
+  };
+  walk("agents");
+  return guides;
+}
+
+/** The landing nudge: each area a branch touched (a changed file its guide `watches`) whose
+ *  `alsoUpdate` files it changed none of. Something to ask the owner about, never a need. */
+export function alsoUpdateNudges(changed, guides) {
+  const hit = (globs) => { const res = globs.map(globRe); return changed.filter((f) => res.some((r) => r.test(f))); };
+  return guides
+    .filter((g) => g.alsoUpdate.length && hit(g.watches).length && !hit(g.alsoUpdate).length)
+    .map((g) => ({ area: g.area, guide: g.guide, touched: hit(g.watches), missing: g.alsoUpdate }));
+}
 
 /** A machine-wide lock file `{pid, at}`, created exclusively and whole (a hard link of a written
  *  file). The holder rewrites `at` every `beatMs` while it holds it; a lock whose `at` is older
@@ -1040,6 +1106,9 @@ class Round {
       if (b.code !== 0) needs.push(b.timedOut ? "build timed out" : "build fails");
     } else lines.push("build: skipped (the typecheck failed).");
     lines.push(...(await this.specChecks(tree)));
+    // The area guides' "also update" files: questions for the owner, never a need.
+    const nudges = alsoUpdateNudges(changed, areaGuides(tree));
+    for (const n of nudges) lines.push(`also update: touched ${n.area} (${n.touched.length} file${n.touched.length === 1 ? "" : "s"}, ${n.guide}), not ${n.missing.join(" or ")}: ask the owner ("updated" or "not needed because …").`);
     // What landing would publish, scanned now: a scrubbed or leaky commit is caught before it lands.
     const scan = await this.leakScanTo(head);
     lines.push(...scan.lines);
@@ -1053,7 +1122,7 @@ class Round {
     if (preexisting.length) lines.push(`Pre-existing on master (not blocking): ${preexisting.join(", ")}.`);
     lines.push(`Logs: ${logDir}`);
     lines.push(ok ? `landable at ${head.slice(0, 7)}` : `needs: ${needs.join("; ")}`);
-    return { exit: ok ? 0 : 1, lines, data: { head, master, ok, needs, preexisting, logs: logDir }, next: ok ? `round.mjs land ${branch}` : "hand it back to the owner with what it needs (session_send, only when idle)" };
+    return { exit: ok ? 0 : 1, lines, data: { head, master, ok, needs, preexisting, alsoUpdate: nudges, logs: logDir }, next: ok ? `round.mjs land ${branch}` : "hand it back to the owner with what it needs (session_send, only when idle)" };
   }
 
   /** Each failing file run again on master, in the main checkout at master's sha, through the same

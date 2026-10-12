@@ -11,6 +11,7 @@ import type { ModeState } from "../pi-config/extensions/mode/state";
 import type { SandboxState } from "../pi-config/extensions/sandbox/state";
 import type { HEntry } from "./harness-history";
 import type { HarnessResources, HarnessToolInfo, ImageInput } from "./harness-session";
+import type { PrepareRule } from "./harness-tools";
 import type { ProfileEntryData } from "./profiles";
 import type {
   ChatClientMessage,
@@ -160,10 +161,7 @@ export interface ServerToolDecl {
   prepares?: PrepareRule | true;
 }
 
-/** How a declaration's arguments are rewritten, chat-side, from data alone. "owner-area": an owner
-    area folded to one of `parameters.properties.ownerArea.enum` (shared/decisions.ts); "pi-edit":
-    pi's own edit tool's legacy shapes (server/harness/pi/tools.ts piPrepare). */
-export type PrepareRule = "owner-area" | "pi-edit";
+export type { PrepareRule } from "./harness-tools";
 
 /** One run of a server-hosted tool, chat → server. `effectId` is the same for every delivery of one
     tool call of one chat: a delivery the server has seen is answered with that run's outcome, never

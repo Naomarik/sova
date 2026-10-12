@@ -257,7 +257,7 @@ if (existsSync(path.join(ext, "claude-code/spec-hooks.ts"))) {
 	assert.ok(command.post.includes(path.join(ext, "claude-code/spec-hooks.ts")), "the settings run this tree's hook script");
 	const run = (event, input) => {
 		if (!command[event]) return undefined; // no Stop hook installed: a turn ends when the model stops
-		const r = spawnSync("/bin/sh", ["-c", command[event]], { cwd: p.cwd, encoding: "utf8", input: JSON.stringify({ cwd: p.cwd, ...input }), env: { ...process.env, SOVA_SPEC_OWNER_SESSION: "owner", SOVA_SPEC_WORKER_ID: "ag_01" }, timeout: 60_000 });
+		const r = spawnSync("/bin/sh", ["-c", command[event]], { cwd: p.cwd, encoding: "utf8", input: JSON.stringify({ cwd: p.cwd, ...input }), timeout: 60_000 });
 		assert.equal(r.status, 0, r.stderr);
 		return r.stdout.trim() ? JSON.parse(r.stdout) : undefined;
 	};

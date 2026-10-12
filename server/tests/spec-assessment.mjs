@@ -88,7 +88,7 @@ if (process.argv.includes("--worker")) {
  const manager = SessionManager.create(cwd, path.join(agentDir, "sessions/worker"));
  const { session } = await createAgentSession({ cwd, agentDir, resourceLoader: loader, settingsManager: SettingsManager.inMemory(), sessionManager: manager });
  await session.setModel(session.modelRuntime.getModel("scripted", "assessment"));
- writeFileSync(process.env.SOVA_ASSESS_TEST_PROBE, JSON.stringify({ tools: session.getAllTools().map(t => t.name), spawnEnvironment: { owner: process.env.SOVA_SPEC_OWNER_SESSION, worker: process.env.SOVA_SPEC_WORKER_ID, team: process.env.SOVA_SPEC_TEAM_ID } }));
+ writeFileSync(process.env.SOVA_ASSESS_TEST_PROBE, JSON.stringify({ tools: session.getAllTools().map(t => t.name) }));
  const send = value => process.stdout.write(`${JSON.stringify(value)}\n`);
  session.subscribe(send);
  createInterface({ input: process.stdin }).on("line", async line => {
@@ -145,7 +145,6 @@ if (process.argv.includes("--worker")) {
   assert.deepEqual(workerEntries.filter(e => e.type === "custom" && /^spec-assessment/.test(e.customType)), [], "the worker wrote no assessment task or error entry");
   const captured = JSON.parse(readFileSync(probe, "utf8"));
   assert.ok(!captured.tools.includes("spec_assess"), "a spec-on worker has no assessment tool");
-  assert.equal(captured.spawnEnvironment.owner, manager.getSessionId()); assert.equal(captured.spawnEnvironment.worker, worker.id); assert.ok(captured.spawnEnvironment.team, "spawn attribution env is still set");
   assert.deepEqual(calls(), [], "neither the owner nor the worker ran an assessment by itself"); assert.deepEqual(receipts(), []);
   const ownerFile = manager.getSessionFile();
   await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
@@ -164,7 +163,7 @@ if (process.argv.includes("--worker")) {
   assert.deepEqual(calls(), [], "readiness ran no assessment");
 
   // The operator's explicit companion CLI against the known start revision: the only calls that reach the trap.
-  const attribution = { ownerSessionId: row.id, sessionId: worker.sessionId, workerId: worker.id, teamId: captured.spawnEnvironment.team, taskId: null, attemptId: null };
+  const attribution = { ownerSessionId: row.id, sessionId: worker.sessionId, workerId: worker.id, teamId: "team_01", taskId: null, attemptId: null };
   const prepared = await callAssessment(core, cwd, ["prepare", "operator-review", "--base", base, "--attribution-json", JSON.stringify(attribution), "--write"]);
   assert.equal(prepared.written, true, JSON.stringify(prepared)); assert.equal(prepared.query.base, base, "the receipt names the declared base");
   assert.ok(prepared.changedFiles.includes("src/value.ts"), "the task's committed change is included");

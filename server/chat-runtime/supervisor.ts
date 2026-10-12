@@ -220,7 +220,7 @@ const preclaimed = new Map<string, Claim>();
  * must never read as a terminal owning its file (session_send, auto-resume, attention). The
  * supervisor takes the claims over, and lets go of each whose process turns out gone.
  */
-export function claimRecordedChats(ownPid: (pid: number) => () => void, dir: () => string = registryDir): void {
+export function claimRecordedChats(ownPid: (pid: number) => () => void, dir: () => string = registryDir, isChatProcess: (pid: number) => boolean = chatProcessAlive): void {
   let names: string[];
   try {
     names = readdirSync(dir());
@@ -230,9 +230,26 @@ export function claimRecordedChats(ownPid: (pid: number) => () => void, dir: () 
   for (const n of names) {
     if (!n.endsWith(".json")) continue;
     const rec = readRecord(join(dir(), n));
-    if (!rec?.pid || rec.death || preclaimed.has(rec.chatId)) continue;
+    if (!rec?.pid || rec.death || preclaimed.has(rec.chatId) || !isChatProcess(rec.pid)) continue;
     preclaimed.set(rec.chatId, { pid: rec.pid, release: ownPid(rec.pid) });
   }
+}
+
+/** Whether `pid` is alive and, where /proc tells, a chat process (never a pid reused by another
+    program, say a terminal's pi on the same file). Without /proc (macOS): alive is enough. */
+export function chatProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "EPERM") return false;
+  }
+  let cmdline: string;
+  try {
+    cmdline = readFileSync(`/proc/${pid}/cmdline`, "utf8");
+  } catch {
+    return process.platform !== "linux";
+  }
+  return cmdline.includes("chat-runtime/main.ts");
 }
 
 export interface ChatLaunch {
@@ -602,7 +619,17 @@ export class ChatSupervisor {
     const t = this.chats.get(chatId);
     if (!t) return "unknown";
     const st = await this.deps.driver.status(t.rec.unit);
-    if (isUp(st) || st.pid !== null) return "up";
+    if (isUp(st) || st.pid !== null) {
+      // A start whose main process came after spawn stopped waiting: recorded and own from now.
+      if (t.rec.pid === null && st.pid !== null && this.chats.get(chatId) === t) {
+        const rec = { ...t.rec, pid: st.pid };
+        this.write(rec);
+        const again = this.track(rec, t.connected);
+        again.idleSince = t.idleSince;
+        again.claude = t.claude;
+      }
+      return "up";
+    }
     if (this.chats.get(chatId) !== t) return "unknown";
     const death = t.rec.exiting ? null : await this.deathOf(t.rec, st);
     if (!death) {

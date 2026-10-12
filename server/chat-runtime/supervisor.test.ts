@@ -476,6 +476,7 @@ test("a stopping server keeps its chat processes' pids as its own; the next coun
       return () => early.delete(pid);
     },
     () => reg,
+    () => true,
   );
   assert.deepEqual([...early].sort(), [a.pid, gone.pid].sort());
   // Its supervisor takes the claims over; the process that is gone is let go at adoption.
@@ -584,4 +585,32 @@ test("chat units: the chats' slice, a 30 s stop, no Restart=, and the env in a 0
   const svc = systemdRunArgv({ unit: "u", argv: ["x"], cwd: "/", env: { A: "1" } });
   assert.ok(svc.includes("--slice=sova-services.slice") && svc.includes("--property=Restart=on-failure") && svc.includes("--setenv=A=1") && svc.includes("--property=TimeoutStopSec=15"));
   assert.equal(envFileText({ "BAD-NAME": "1", NL: "a\nb", Q: 'a"$`\\\'' }), `Q="a\\"\\$\\\`\\\\'"\n`);
+});
+
+test("a recorded pid that is no chat process (dead, or reused by another program) is never claimed", async () => {
+  const { claimRecordedChats, chatProcessAlive } = await import("./supervisor");
+  const d = new FakeDriver();
+  const first = make(d);
+  const a = await first.sup.start(chat);
+  first.sup.detach();
+  const claimed: number[] = [];
+  claimRecordedChats((pid) => (claimed.push(pid), () => {}), () => reg, (pid) => pid !== a.pid);
+  assert.deepEqual(claimed, []);
+  assert.equal(chatProcessAlive(process.pid), process.platform !== "linux", "this test process is alive but no chat process");
+  assert.equal(chatProcessAlive(2 ** 22 + 7), false, "no such process");
+});
+
+test("a chat whose main process came after the start stopped waiting is recorded and own once it is seen", async () => {
+  const d = new FakeDriver();
+  const { sup, owned } = make(d, { startWaitMs: 0 });
+  d.slowNextStart = true;
+  const rec = await sup.start(chat);
+  assert.equal(rec.pid, null);
+  assert.equal(owned.size, 0);
+  d.activate(rec.unit);
+  assert.equal(await sup.check("c1"), "up");
+  const pid = sup.record("c1")!.pid!;
+  assert.ok(pid);
+  assert.ok(owned.has(pid));
+  assert.equal(JSON.parse(readFileSync(join(reg, "c1.json"), "utf8")).pid, pid);
 });

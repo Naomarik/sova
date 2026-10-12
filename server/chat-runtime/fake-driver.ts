@@ -14,6 +14,8 @@ export class FakeDriver implements Driver {
   stopped: string[] = [];
   /** Make the next `start` throw this (a systemd-run failure). */
   failNextStart: string | null = null;
+  /** The next started unit stays activating with no main process until `activate`. */
+  slowNextStart = false;
   private nextPid = 1000;
   async available() {
     return { ok: true, detail: "fake driver" };
@@ -27,7 +29,14 @@ export class FakeDriver implements Driver {
     const old = this.table.get(spec.unit);
     if (old && (old.status.state === "active" || old.status.state === "activating")) throw new Error(`Unit ${spec.unit}.service was already loaded`);
     this.started.push(spec);
-    this.table.set(spec.unit, { spec, status: { state: "active", pid: this.nextPid++ }, logs: [] });
+    const slow = this.slowNextStart;
+    this.slowNextStart = false;
+    this.table.set(spec.unit, { spec, status: slow ? { state: "activating", pid: null } : { state: "active", pid: this.nextPid++ }, logs: [] });
+  }
+  /** A slow unit's main process is there now. */
+  activate(unit: string) {
+    const u = this.table.get(unit);
+    if (u) u.status = { state: "active", pid: this.nextPid++ };
   }
   async stop(unit: string) {
     this.stopped.push(unit);
